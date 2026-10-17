@@ -1,7 +1,7 @@
 import { Context, Service } from "cordis";
 import type { Db, ProjectDb } from "@tomradex/db";
 import type {} from "@tomradex/hub";
-import type { OplogEntity, OplogEntry, OplogOp, RollbackResult, UndoRecord, UndoResult, UndoRunResult, UndoStep } from "@tomradex/domain";
+import { wordsLocale, type OplogEntity, type OplogEntry, type OplogOp, type RollbackResult, type UndoRecord, type UndoResult, type UndoRunResult, type UndoStep, type WordsLocale } from "@tomradex/domain";
 import { extensionScope, writeContext } from "@tomradex/write";
 import type {} from "@tomradex/ipc";
 import { patchOf, rowToEntry, type OplogRow } from "./rows.js";
@@ -133,8 +133,8 @@ export class Oplog extends Service {
   }
 
   /** The person's language, for the summaries ⌘Z shows; English where no settings are loaded. */
-  private locale(): "en" | "zh" {
-    return (this.ctx.get("settings") as { locale?: () => "en" | "zh" } | undefined)?.locale?.() ?? "en";
+  private locale(): WordsLocale {
+    return wordsLocale((this.ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
   }
 
   private get device(): string {

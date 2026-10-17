@@ -33,7 +33,7 @@ import { decide, type Decision, type Evidence } from "./rules.js";
 import { scanRepo, type ScanResult, type ScannedBranch } from "./scanner.js";
 import { classifyRemoteFailure, probeRemote, readRemoteIdentity, type RemoteIdentity } from "./remote.js";
 import { Sessions, type SessionMoment } from "./sessions.js";
-import { CODE_WORDS, type CodeWords } from "./words.js";
+import { CODE_WORDS, type CodeWords, type PlainCodeWord } from "./words.js";
 import { Starter, type StartMode, type StartOptions, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
 import { TerminalSettings, commandOk, exec, launchTerminal, setupTerminal } from "./terminal.js";
@@ -41,6 +41,23 @@ import { registerTools } from "./tools.js";
 
 /** Who the scanner writes as. Evidence from git is not a person's decision, and it is not a model's either. */
 export const AUTHOR: Author = "sync:git";
+
+// Names a word book translates; any other value reads as it is.
+const DELIVERY_STATES = { active: "deliveryActive", completed: "deliveryCompleted", cancelled: "deliveryCancelled" } as const;
+const PR_STATES = { open: "prOpen", merged: "prMerged", closed: "prClosed" } as const;
+const SESSION_STATES = { running: "sessionRunning", waiting: "sessionWaiting", idle: "sessionIdle", error: "sessionError", ended: "sessionEnded", lost: "sessionLost" } as const;
+const STATUSES = { backlog: "statusBacklog", todo: "statusTodo", doing: "statusDoing", verifying: "statusVerifying", done: "statusDone", cancelled: "statusCancelled" } as const;
+const named = (w: CodeWords, keys: Record<string, PlainCodeWord>, value: string): string => (Object.hasOwn(keys, value) ? w(keys[value]!) : value);
+
+/** Relative time, from seconds ago, in the book's language. */
+const agoWords = (w: CodeWords, s: number): string => {
+  if (s < 60) return w("justNow");
+  const m = Math.round(s / 60);
+  if (m < 60) return w("minutesAgo", { n: m });
+  const h = Math.round(m / 60);
+  if (h < 48) return w("hoursAgo", { n: h });
+  return w("daysAgo", { n: Math.round(h / 24) });
+};
 
 const hasLiveSession = (sessions: SessionView[]): boolean =>
   sessions.some((s) => s.mode === "terminal" || s.state === "running" || s.state === "waiting" || s.state === "error");
@@ -204,13 +221,7 @@ const lastLine = (text: string | undefined) => (text ?? "").trim().split("\n").p
 
 /** Relative time for a status line or a section row. */
 export function ago(at: number, now = Date.now()): string {
-  const s = Math.max(0, Math.round((now - at) / 1000));
-  if (s < 60) return "just now";
-  const m = Math.round(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.round(m / 60);
-  if (h < 48) return `${h}h ago`;
-  return `${Math.round(h / 24)}d ago`;
+  return agoWords(CODE_WORDS("en"), Math.max(0, Math.round((now - at) / 1000)));
 }
 
 /** The link the ticket is judged and shown by: an open pull request first, else the branch that moved last. */
@@ -487,7 +498,7 @@ export class CodeLink extends Service {
       ctx.on("storage/imported", (projectId) => this.archiveCompletedSessions(projectId));
       for (const playbook of PLAYBOOKS) ctx.agent.playbook(playbook);
       // A thread on a ticket is one Start opened.
-      ctx.agent.threadOrigins((_projectId, threads) => threads.filter((th) => th.itemId).map((th) => [th.id, this.words().origin] as [string, string]));
+      ctx.agent.threadOrigins((_projectId, threads) => threads.filter((th) => th.itemId).map((th) => [th.id, this.words()("origin")] as [string, string]));
       ctx.on("agent/run-started", (_run, thread) => {
         this.running.set(thread.id, thread);
         const session = this.sessionOf(thread);
@@ -500,7 +511,7 @@ export class CodeLink extends Service {
         const thread = this.running.get(threadId);
         const session = thread && this.sessionOf(thread);
         if (!thread || !session) return;
-        if (event.pending) this.sessions.touch(thread.projectId, session.id, { state: "waiting", activity: event.pending.kind === "permission" ? this.words().needsApproval : this.words().askingYou });
+        if (event.pending) this.sessions.touch(thread.projectId, session.id, { state: "waiting", activity: event.pending.kind === "permission" ? this.words()("needsApproval") : this.words()("askingYou") });
         else if (session.state === "waiting") this.sessions.touch(thread.projectId, session.id, { state: "running", activity: null });
       });
       ctx.on("agent/run-ended", (run, thread) => {
@@ -1037,7 +1048,7 @@ export class CodeLink extends Service {
     const mcp = this.ctx.get("mcp");
     if (!mcp?.url) throw new Error("the MCP server is not running — enable the mcp plugin");
     // A port taken at startup is replaced by a random one; committed, it would point nowhere after the next restart.
-    if (mcp.clash) throw new Error(this.words().connectPortClash(mcp.clash.port, mcp.holderText(this.ctx.settings.locale?.() === "zh")));
+    if (mcp.clash) throw new Error(this.words()("connectPortClash", { port: mcp.clash.port, holder: mcp.holderText() }));
     const placement = this.ctx.repos.checkout(repo.remote);
     if (!placement.checkout || !fs.existsSync(placement.checkout)) throw new Error(`no checkout of ${repo.name} on this machine`);
 
@@ -1049,7 +1060,7 @@ export class CodeLink extends Service {
     if (!this.store.repoState(projectId, repoId)?.connectAgents) this.store.upsertRepoState(projectId, repoId, { connectAgents: chosen });
     const connection = await this.connection(projectId, repoId);
     if (connection.state === "connected") {
-      return { branch, agents: connection.agents, files: [], skipped: [], committed: false, pushed: false, url: null, message: w.connected };
+      return { branch, agents: connection.agents, files: [], skipped: [], committed: false, pushed: false, url: null, message: w("connected") };
     }
     const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-connect-"));
     const worktree = path.join(temporary, "repo");
@@ -1079,10 +1090,10 @@ export class CodeLink extends Service {
       const folder = new GitFolder(this.git, worktree);
       const committed = files.length > 0 && (await folder.commit("Connect this repository to Tomrade\n\nProject MCP config lets Claude Code, Codex and WorkBuddy discover Tomrade, a project extension does it for Pi and opencode.json with a plugin for OpenCode, agent instructions describe the ticket conventions, and their hooks report session lifecycle back."));
 
-      if (!(await folder.remoteUrl())) return { branch, agents, files, skipped, committed, pushed: false, url: null, message: w.connectLocal(branch, repo.defaultBranch) };
-      if (state && !state.agentPush) return { branch, agents, files, skipped, committed, pushed: false, url: null, message: w.connectPushOff(branch) };
+      if (!(await folder.remoteUrl())) return { branch, agents, files, skipped, committed, pushed: false, url: null, message: w("connectLocal", { branch, base: repo.defaultBranch }) };
+      if (state && !state.agentPush) return { branch, agents, files, skipped, committed, pushed: false, url: null, message: w("connectPushOff", { branch }) };
       const pushed = (await this.git(["push", "-q", "-u", "origin", `HEAD:refs/heads/${branch}`], { cwd: worktree, ok: true })).code === 0;
-      if (!pushed) return { branch, agents, files, skipped, committed, pushed: false, url: null, message: w.connectPushFailed(branch) };
+      if (!pushed) return { branch, agents, files, skipped, committed, pushed: false, url: null, message: w("connectPushFailed", { branch }) };
       let url: string | null = null;
       let created = false;
       if (await commandOk("gh")) {
@@ -1100,7 +1111,7 @@ export class CodeLink extends Service {
       }
       url ??= compareUrl(repo.remote, repo.defaultBranch, branch);
       this.notify(projectId);
-      return { branch, agents, files, skipped, committed, pushed, url, message: created ? w.connectOpened : w.connectPushed(branch) };
+      return { branch, agents, files, skipped, committed, pushed, url, message: created ? w("connectOpened") : w("connectPushed", { branch }) };
     } finally {
       await this.git(["worktree", "remove", "--force", worktree], { cwd: placement.checkout, ok: true });
       fs.rmSync(temporary, { recursive: true, force: true });
@@ -1121,17 +1132,17 @@ export class CodeLink extends Service {
     const item = this.ctx.items.get(projectId, itemId);
     if (!item) throw new Error(`unknown item ${itemId}`);
     const open = this.currentLinks(projectId, itemId).filter((l) => l.branch && !l.mergedSha);
-    if (!open.length) return no(w.mergeNoBranch(item.key));
-    if (open.length > 1) return no(w.mergeMany(item.key));
+    if (!open.length) return no(w("mergeNoBranch", { key: item.key }));
+    if (open.length > 1) return no(w("mergeMany", { key: item.key }));
     const link = open[0]!;
     const repo = this.ctx.repos.get(projectId, link.repoId);
-    if (!repo) return no(w.mergeNoBranch(item.key));
+    if (!repo) return no(w("mergeNoBranch", { key: item.key }));
     const base = repo.defaultBranch;
-    if (link.branch === base) return no(w.mergeNoBranch(item.key));
+    if (link.branch === base) return no(w("mergeNoBranch", { key: item.key }));
     const checkout = this.ctx.repos.checkout(repo.remote).checkout;
-    if (!checkout || !fs.existsSync(checkout)) return no(w.mergeNoCheckout(repo.name));
-    if (await new GitFolder(this.git, checkout).remoteUrl()) return no(w.mergeHasRemote(repo.name));
-    if (opts.agent && !this.store.repoState(projectId, repo.id)?.agentMerge) return no(w.mergeAgentOff(repo.name));
+    if (!checkout || !fs.existsSync(checkout)) return no(w("mergeNoCheckout", { repo: repo.name }));
+    if (await new GitFolder(this.git, checkout).remoteUrl()) return no(w("mergeHasRemote", { repo: repo.name }));
+    if (opts.agent && !this.store.repoState(projectId, repo.id)?.agentMerge) return no(w("mergeAgentOff", { repo: repo.name }));
 
     const list = await this.git(["worktree", "list", "--porcelain"], { cwd: checkout, ok: true });
     const holder = list.stdout.split("\n\n").map((block) => ({ path: /^worktree (.+)$/m.exec(block)?.[1], branch: /^branch (.+)$/m.exec(block)?.[1] })).find((b) => b.branch === `refs/heads/${base}`)?.path;
@@ -1139,28 +1150,28 @@ export class CodeLink extends Service {
     let temporary: string | null = null;
     if (cwd) {
       const dirty = await this.git(["status", "--porcelain", "--untracked-files=no"], { cwd, ok: true });
-      if (dirty.code !== 0 || dirty.stdout.trim()) return no(w.mergeDirty(base, cwd));
+      if (dirty.code !== 0 || dirty.stdout.trim()) return no(w("mergeDirty", { base, where: cwd }));
     } else {
       temporary = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-merge-"));
       cwd = path.join(temporary, "repo");
       const added = await this.git(["worktree", "add", "-q", cwd, base], { cwd: checkout, ok: true });
       if (added.code !== 0) {
         fs.rmSync(temporary, { recursive: true, force: true });
-        return no(w.mergeFailed(lastLine(added.stderr)));
+        return no(w("mergeFailed", { error: lastLine(added.stderr) }));
       }
     }
     try {
       const head = async () => (await this.git(["rev-parse", "HEAD"], { cwd: cwd! })).stdout.trim();
       let message: string;
       if ((await this.git(["merge-base", "--is-ancestor", link.branch, "HEAD"], { cwd, ok: true })).code === 0) {
-        message = w.mergeAlready(link.branch, base);
+        message = w("mergeAlready", { branch: link.branch, base });
       } else {
         // The subject leads with the key, so the commit also reads as this ticket's on any later scan.
         const merged = await this.git(["merge", "--no-ff", "-m", `${item.key}: ${item.title}`, "-m", `Merge branch '${link.branch}'`, link.branch], { cwd, ok: true });
         if (merged.code !== 0) {
           const conflicted = (await this.git(["diff", "--name-only", "--diff-filter=U"], { cwd, ok: true })).stdout.trim().split("\n").filter(Boolean);
           await this.git(["merge", "--abort"], { cwd, ok: true });
-          return no(conflicted.length ? w.mergeConflict(link.branch, base, conflicted.join(", ")) : w.mergeFailed(lastLine(merged.stderr || merged.stdout)));
+          return no(conflicted.length ? w("mergeConflict", { branch: link.branch, base, files: conflicted.join(", ") }) : w("mergeFailed", { error: lastLine(merged.stderr || merged.stdout) }));
         }
         message = "";
       }
@@ -1168,7 +1179,7 @@ export class CodeLink extends Service {
       this.store.patchLink(projectId, link.id, { mergedSha: sha, ahead: 0 });
       this.reevaluate(projectId, itemId, repo.id);
       this.notify(projectId);
-      return { merged: true, sha, message: message || w.mergeDone(link.branch, base, sha.slice(0, 7)) };
+      return { merged: true, sha, message: message || w("mergeDone", { branch: link.branch, base, sha: sha.slice(0, 7) }) };
     } finally {
       if (temporary) {
         await this.git(["worktree", "remove", "--force", cwd!], { cwd: checkout, ok: true });
@@ -1761,21 +1772,21 @@ export class CodeLink extends Service {
 
   /** The words the backend writes for the person, in their language at the moment they are written. */
   private limitedWords(until: number, known: boolean, resumes: boolean): string {
-    const locale = this.ctx.settings.locale?.() ?? "en";
-    return CODE_WORDS[locale].limited(untilLabel(until, locale), known, resumes);
+    const w = this.words();
+    return w(known ? "limitedLifts" : "limitedNextTry", { when: untilLabel(until, w.locale), resumes: resumes ? w("limitedResumes") : "" });
   }
 
   private words(): CodeWords {
-    return CODE_WORDS[this.ctx.settings.locale?.() ?? "en"];
+    return CODE_WORDS(this.ctx.settings.locale?.());
   }
 
   private contribute(ctx: Context): void {
     ctx.contributions.section({
       id: "code",
-      title: () => this.words().section,
+      title: () => this.words()("section"),
       render: (item) => {
         const w = this.words();
-        const since = (at: number) => w.ago(Math.max(0, Math.round((Date.now() - at) / 1000)));
+        const since = (at: number) => agoWords(w, Math.max(0, Math.round((Date.now() - at) / 1000)));
         const links = this.store.links(item.projectId, item.id);
         const delivery = this.store.currentDelivery(item.projectId, item.id);
         const open = delivery ? this.store.proposalsForDelivery(item.projectId, item.id, delivery.sequence, "open") : [];
@@ -1788,61 +1799,61 @@ export class CodeLink extends Service {
         const deliveries = this.store.deliveries(item.projectId, item.id);
         const deliveryBySequence = new Map(deliveries.map((entry) => [entry.sequence, entry]));
         const rows: SectionRow[] = [];
-        if (delivery && !current.length) rows.push({ label: w.delivery, icon: "i-merge", state: "live", value: `#${delivery.sequence} · ${w.deliveryState(delivery.state)}` });
+        if (delivery && !current.length) rows.push({ label: w("delivery"), icon: "i-merge", state: "live", value: `#${delivery.sequence} · ${named(w, DELIVERY_STATES, delivery.state)}` });
         let shownDelivery: number | null = null;
         for (const l of ordered) {
           if (deliveries.length > 1 && shownDelivery !== l.delivery) {
             const entry = deliveryBySequence.get(l.delivery);
-            rows.push({ label: w.delivery, icon: "i-merge", state: entry?.state === "active" ? "live" : entry?.state === "completed" ? "ok" : "ended", value: `#${l.delivery} · ${entry ? w.deliveryState(entry.state) : w.historical}` });
+            rows.push({ label: w("delivery"), icon: "i-merge", state: entry?.state === "active" ? "live" : entry?.state === "completed" ? "ok" : "ended", value: `#${l.delivery} · ${entry ? named(w, DELIVERY_STATES, entry.state) : w("historical")}` });
             shownDelivery = l.delivery;
           }
           const repo = this.ctx.repos.get(item.projectId, l.repoId);
-          const name = repo?.name ?? w.repository;
-          if (l.branch) rows.push({ label: w.branch, icon: "i-branch", mono: true, value: `${l.branch} · ${name}${l.ahead || l.behind ? ` · +${l.ahead} −${l.behind}` : ""}` });
+          const name = repo?.name ?? w("repository");
+          if (l.branch) rows.push({ label: w("branch"), icon: "i-branch", mono: true, value: `${l.branch} · ${name}${l.ahead || l.behind ? ` · +${l.ahead} −${l.behind}` : ""}` });
           if (l.prNumber !== null || l.prUrl) {
             rows.push({
-              label: w.pullRequest,
+              label: w("pullRequest"),
               icon: "i-merge",
               state: l.prState === "merged" ? "ok" : l.prState === "closed" ? "ended" : l.prState === "open" ? "live" : undefined,
-              value: `${l.prNumber !== null ? `#${l.prNumber}` : w.openIt}${l.prState ? ` · ${w.prState(l.prState)}` : ""}`,
+              value: `${l.prNumber !== null ? `#${l.prNumber}` : w("openIt")}${l.prState ? ` · ${named(w, PR_STATES, l.prState)}` : ""}`,
               href: l.prUrl ?? undefined
             });
           } else if (l.branch && !l.mergedSha && l.ahead > 0 && this.store.repoState(item.projectId, l.repoId)?.remote === "none") {
-            rows.push({ label: w.pullRequest, icon: "i-merge", value: w.mergeLocal(repo?.defaultBranch ?? "main"), command: "code-link.merge-local" });
+            rows.push({ label: w("pullRequest"), icon: "i-merge", value: w("mergeLocal", { base: repo?.defaultBranch ?? "main" }), command: "code-link.merge-local" });
           } else if (l.branch && !l.mergedSha && l.ahead > 0 && this.worktreeOf(item.projectId, item.id)) {
-            rows.push({ label: w.pullRequest, icon: "i-merge", value: w.openPr, command: "code-link.open-pr" });
+            rows.push({ label: w("pullRequest"), icon: "i-merge", value: w("openPr"), command: "code-link.open-pr" });
           }
           if (l.prState === "open" && l.prUrl && sessions.some((s) => s.blocked === "merge" && s.state !== "ended")) {
-            rows.push({ label: w.mergeByHand, icon: "i-warn", state: "warn", value: w.mergeBlocked, href: l.prUrl });
+            rows.push({ label: w("mergeByHand"), icon: "i-warn", state: "warn", value: w("mergeBlocked"), href: l.prUrl });
           }
-          if (l.mergedSha) rows.push({ label: w.merged, icon: "i-check", state: "ok", mono: true, value: w.mergedOn(l.mergedSha.slice(0, 7), repo?.defaultBranch ?? "main") });
-          if (l.headAt) rows.push({ label: w.lastCommit, icon: "i-clock", value: since(l.headAt) });
+          if (l.mergedSha) rows.push({ label: w("merged"), icon: "i-check", state: "ok", mono: true, value: w("mergedOn", { sha: l.mergedSha.slice(0, 7), branch: repo?.defaultBranch ?? "main" }) });
+          if (l.headAt) rows.push({ label: w("lastCommit"), icon: "i-clock", value: since(l.headAt) });
         }
         const live = sessions.find((s) => s.state !== "ended") ?? sessions[0];
         if (live) {
-          const where = live.mode === "terminal" ? w.inTerminal : w.runByTomrade;
+          const where = live.mode === "terminal" ? w("inTerminal") : w("runByTomrade");
           const when = since(live.lastEventAt ?? live.startedAt);
           const state = ({ running: "live", waiting: "waiting", idle: "idle", error: "warn", ended: "ended", lost: "lost" } as const)[live.state];
           // What it is doing beats what it last said; an error is what it last said.
-          const doing = live.state === "error" ? (live.summary ?? w.stopped) : (live.activity ?? live.summary ?? "");
+          const doing = live.state === "error" ? (live.summary ?? w("stopped")) : (live.activity ?? live.summary ?? "");
           rows.push({
-            label: w.session,
+            label: w("session"),
             icon: live.mode === "terminal" ? "i-terminal" : "i-plug",
             state,
-            value: `${w.sessionState(live.state)} · ${where}${doing ? ` · ${doing}` : ""} · ${w.lastSignal(when)}`
+            value: `${named(w, SESSION_STATES, live.state)} · ${where}${doing ? ` · ${doing}` : ""} · ${w("lastSignal", { when })}`
           });
-          if (live.state !== "running") rows.push({ label: w.continue, icon: "i-send", value: live.mode === "terminal" ? w.continueTerminal : w.continueHere, command: live.mode === "terminal" ? "code-link.start-terminal" : "code-link.start-run" });
-          if (live.threadId) rows.push({ label: w.conversation, icon: "i-panel", value: live.state === "waiting" ? w.openWaiting : w.openInAssistant, command: "code-link.open-thread" });
+          if (live.state !== "running") rows.push({ label: w("continue"), icon: "i-send", value: live.mode === "terminal" ? w("continueTerminal") : w("continueHere"), command: live.mode === "terminal" ? "code-link.start-terminal" : "code-link.start-run" });
+          if (live.threadId) rows.push({ label: w("conversation"), icon: "i-panel", value: live.state === "waiting" ? w("openWaiting") : w("openInAssistant"), command: "code-link.open-thread" });
         }
         const worktree = this.worktreeOf(item.projectId, item.id);
-        if (worktree) rows.push({ label: w.worktree, icon: "i-folder", mono: true, value: worktree, command: "code-link.open-terminal" });
-        else if (live?.worktree && live.state !== "ended") rows.push({ label: w.worktree, icon: "i-folder", mono: true, value: live.worktree });
+        if (worktree) rows.push({ label: w("worktree"), icon: "i-folder", mono: true, value: worktree, command: "code-link.open-terminal" });
+        else if (live?.worktree && live.state !== "ended") rows.push({ label: w("worktree"), icon: "i-folder", mono: true, value: live.worktree });
         const proposal = open.find((p) => p.kind === "propose");
         if (proposal) {
-          rows.push({ label: w.proposal, icon: "i-warn", state: "warn", value: w.accept(w.status(proposal.toStatus ?? "")), command: "code-link.accept-proposal" });
-          rows.push({ label: w.dismiss, icon: "i-close", value: w.notThisTime, command: "code-link.reject-proposal" });
+          rows.push({ label: w("proposal"), icon: "i-warn", state: "warn", value: w("accept", { status: named(w, STATUSES, proposal.toStatus ?? "") }), command: "code-link.accept-proposal" });
+          rows.push({ label: w("dismiss"), icon: "i-close", value: w("notThisTime"), command: "code-link.reject-proposal" });
         }
-        const text = open.map((p) => (p.kind === "flag" ? `⚠ ${p.reason}` : `→ ${w.status(p.toStatus ?? "")}: ${p.reason}`)).join("\n");
+        const text = open.map((p) => (p.kind === "flag" ? `⚠ ${p.reason}` : `→ ${named(w, STATUSES, p.toStatus ?? "")}: ${p.reason}`)).join("\n");
         return { rows, text: text || undefined };
       }
     });
@@ -1862,10 +1873,10 @@ export class CodeLink extends Service {
             if (this.store.currentDelivery(projectId, id)?.sequence !== s.delivery) continue;
             if (s.state === "waiting") waiting.add(id);
             if (s.state !== "error") continue;
-            const summary = s.summary ?? w.stopped;
+            const summary = s.summary ?? w("stopped");
             const repo = s.blocked === "merge" ? this.ctx.repos.get(projectId, s.repoId) : null;
             const checkout = repo ? this.ctx.repos.checkout(repo.remote).checkout : null;
-            stuck.set(id, repo && !(checkout && fs.existsSync(checkout)) ? `${summary}\n${w.mergeUnseen(repo.name)}` : summary);
+            stuck.set(id, repo && !(checkout && fs.existsSync(checkout)) ? `${summary}\n${w("mergeUnseen", { repo: repo.name })}` : summary);
           }
         }
         const out: Record<string, Badge[]> = {};
@@ -1876,13 +1887,13 @@ export class CodeLink extends Service {
           const flag = flags.get(item.id);
           if (!links.length && !flag && !waiting.has(item.id) && !stuck.has(item.id)) continue;
           const badges: Badge[] = [];
-          if (waiting.has(item.id)) badges.push({ id: "waiting", label: w.badgeWaiting, tone: "strong", title: w.badgeWaitingTitle });
-          if (stuck.has(item.id)) badges.push({ id: "stuck", label: w.badgeStuck, tone: "strong", title: stuck.get(item.id) });
-          if (flag) badges.push({ id: "mismatch", label: w.badgeMismatch, tone: "strong", title: flag.reason });
+          if (waiting.has(item.id)) badges.push({ id: "waiting", label: w("badgeWaiting"), tone: "strong", title: w("badgeWaitingTitle") });
+          if (stuck.has(item.id)) badges.push({ id: "stuck", label: w("badgeStuck"), tone: "strong", title: stuck.get(item.id) });
+          if (flag) badges.push({ id: "mismatch", label: w("badgeMismatch"), tone: "strong", title: flag.reason });
           const primary = primaryOf(links);
           if (primary?.prState === "open") badges.push({ id: "pr", label: primary.prNumber !== null ? `PR #${primary.prNumber}` : "PR", tone: "strong", title: primary.prUrl ?? undefined });
-          else if (links.some((l) => l.mergedSha)) badges.push({ id: "merged", label: w.badgeMerged, tone: "faint" });
-          else if (primary?.branch) badges.push({ id: "branch", label: w.badgeBranch, tone: "neutral", title: primary.branch });
+          else if (links.some((l) => l.mergedSha)) badges.push({ id: "merged", label: w("badgeMerged"), tone: "faint" });
+          else if (primary?.branch) badges.push({ id: "branch", label: w("badgeBranch"), tone: "neutral", title: primary.branch });
           if (badges.length) out[item.id] = badges;
         }
         return out;
@@ -1900,110 +1911,111 @@ export class CodeLink extends Service {
         const live = this.store.sessions(projectId, { live: true }).filter((s) => s.state !== "lost");
         const waiting = live.filter((s) => s.state === "waiting").length;
         const stuck = live.filter((s) => s.state === "error").length;
-        if (live.length) parts.push([w.sessions(live.length), waiting ? w.waitingCount(waiting) : "", stuck ? w.stuckCount(stuck) : ""].filter(Boolean).join(" · "));
+        if (live.length) parts.push([w(live.length === 1 ? "sessionsOne" : "sessionsMany", { n: live.length }), waiting ? w("waitingCount", { n: waiting }) : "", stuck ? w("stuckCount", { n: stuck }) : ""].filter(Boolean).join(" · "));
         const unlinked = this.unlinked(projectId).length;
         const open = this.store.proposals(projectId).length;
         const unreachable = this.store.repoStates(projectId).filter((repo) => repo.remote === "unreachable").length;
-        if (unlinked) parts.push(w.unlinked(unlinked));
-        if (open) parts.push(w.toConfirm(open));
-        if (unreachable) parts.push(w.unreachable(unreachable));
+        if (unlinked) parts.push(w("unlinked", { n: unlinked }));
+        if (open) parts.push(w("toConfirm", { n: open }));
+        if (unreachable) parts.push(w("unreachable", { n: unreachable }));
         if (!parts.length && !at) return null;
-        return w.statusLine(parts.join(" · "), at ? w.ago(Math.max(0, Math.round((Date.now() - at) / 1000))) : null);
+        return w("statusLine", { parts: parts.join(" · ") || w("inSync"), scanned: at ? w("statusScanned", { when: agoWords(w, Math.max(0, Math.round((Date.now() - at) / 1000))) }) : "" });
       }
     });
 
-    const group = () => this.words().group;
+    const group = () => this.words()("group");
     const startCommand = (mode: StartMode) => async (scope: { projectId?: string; itemId?: string | null }) => {
       const w = this.words();
-      if (!scope.projectId || !scope.itemId) return { toast: w.selectTicket };
+      if (!scope.projectId || !scope.itemId) return { toast: w("selectTicket") };
       const result = await this.start(scope.projectId, scope.itemId, { mode });
       // the Start dialog says what stopped it and offers the fix; the toast is for surfaces that cannot open it
       if (!result.ok) return { toast: result.message, startDialog: mode };
       const warning = result.warnings?.join("\n");
-      const started = w.started(result.continued, result.branch);
-      if (result.mode === "terminal") return { toast: `${result.launched ? `${started}${w.terminalHasIt}` : w.runThis(result.command ?? "")}${warning ? `\n${warning}` : ""}` };
+      const started = w(result.continued ? "continuing" : "started", { on: result.branch ? w("startedOn", { branch: result.branch }) : "" });
+      if (result.mode === "terminal") return { toast: `${result.launched ? `${started}${w("terminalHasIt")}` : w("runThis", { command: result.command ?? "" })}${warning ? `\n${warning}` : ""}` };
       // a run here is followed in its conversation, which opens with it
-      if (result.waitingOn) return { toast: w.waitingOn(result.waitingOn), showThread: result.threadId };
+      if (result.waitingOn) return { toast: w("waitingOn", { question: result.waitingOn }), showThread: result.threadId };
       return { toast: `${started}${warning ? `\n${warning}` : ""}`, showThread: result.threadId };
     };
-    ctx.contributions.command({ id: "code-link.start-run", title: () => this.words().cmdStartRun, group, run: startCommand("run") });
-    ctx.contributions.command({ id: "code-link.start-terminal", title: () => this.words().cmdStartTerminal, group, run: startCommand("terminal") });
+    ctx.contributions.command({ id: "code-link.start-run", title: () => this.words()("cmdStartRun"), group, run: startCommand("run") });
+    ctx.contributions.command({ id: "code-link.start-terminal", title: () => this.words()("cmdStartTerminal"), group, run: startCommand("terminal") });
     ctx.contributions.command({
       id: "code-link.open-pr",
-      title: () => this.words().cmdOpenPr,
+      title: () => this.words()("cmdOpenPr"),
       group,
       run: async ({ projectId, itemId }) => {
-        if (!projectId || !itemId) return { toast: this.words().selectTicket };
+        if (!projectId || !itemId) return { toast: this.words()("selectTicket") };
         const r = await this.openPr(projectId, itemId);
         return { toast: r.message };
       }
     });
     ctx.contributions.command({
       id: "code-link.merge-local",
-      title: () => this.words().cmdMergeLocal,
+      title: () => this.words()("cmdMergeLocal"),
       group,
       run: async ({ projectId, itemId }) => {
-        if (!projectId || !itemId) return { toast: this.words().selectTicket };
+        if (!projectId || !itemId) return { toast: this.words()("selectTicket") };
         return { toast: (await this.mergeLocal(projectId, itemId)).message };
       }
     });
     ctx.contributions.command({
       id: "code-link.open-thread",
-      title: () => this.words().cmdOpenThread,
+      title: () => this.words()("cmdOpenThread"),
       group,
       run: ({ projectId, itemId }) => {
-        if (!projectId || !itemId) return { toast: this.words().selectTicket };
+        if (!projectId || !itemId) return { toast: this.words()("selectTicket") };
         const sessions = this.store.sessions(projectId, { itemId }).filter((s) => s.threadId);
         const threadId = (sessions.find((s) => s.state !== "ended") ?? sessions[0])?.threadId ?? this.store.links(projectId, itemId).find((l) => l.threadId)?.threadId;
-        return threadId ? { showThread: threadId } : { toast: this.words().noConversation };
+        return threadId ? { showThread: threadId } : { toast: this.words()("noConversation") };
       }
     });
     ctx.contributions.command({
       id: "code-link.open-terminal",
-      title: () => this.words().cmdOpenTerminal,
+      title: () => this.words()("cmdOpenTerminal"),
       group,
       run: async ({ projectId, itemId }) => {
-        if (!projectId || !itemId) return { toast: this.words().selectTicket };
+        if (!projectId || !itemId) return { toast: this.words()("selectTicket") };
         const cwd = this.worktreeOf(projectId, itemId);
-        if (!cwd) return { toast: this.words().noWorktree };
+        if (!cwd) return { toast: this.words()("noWorktree") };
         const settings = TerminalSettings.parse(this.ctx.settings.get().codeLink ?? {});
         const launch = await launchTerminal({ cwd, command: 'exec "${SHELL:-bash}"', dir: path.join(this.sessionDir("shell"), path.basename(cwd)) }, settings.terminal);
-        return { toast: launch.launched ? this.words().opened(cwd) : `cd ${cwd}` };
+        return { toast: launch.launched ? this.words()("opened", { cwd }) : `cd ${cwd}` };
       }
     });
     const settle = (accept: boolean) => (scope: { projectId?: string; itemId?: string | null }) => {
       const w = this.words();
-      if (!scope.projectId || !scope.itemId) return { toast: w.selectTicket };
+      if (!scope.projectId || !scope.itemId) return { toast: w("selectTicket") };
       const proposal = this.store.proposals(scope.projectId, scope.itemId, "open").find((p) => p.kind === "propose");
-      if (!proposal) return { toast: w.nothingProposed };
+      if (!proposal) return { toast: w("nothingProposed") };
       this.resolve(scope.projectId, proposal.id, accept);
-      return { toast: accept ? w.movedTo(w.status(proposal.toStatus ?? "")) : w.dismissed };
+      return { toast: accept ? w("movedTo", { status: named(w, STATUSES, proposal.toStatus ?? "") }) : w("dismissed") };
     };
-    ctx.contributions.command({ id: "code-link.accept-proposal", title: () => this.words().cmdAccept, group, run: settle(true) });
-    ctx.contributions.command({ id: "code-link.reject-proposal", title: () => this.words().cmdReject, group, run: settle(false) });
+    ctx.contributions.command({ id: "code-link.accept-proposal", title: () => this.words()("cmdAccept"), group, run: settle(true) });
+    ctx.contributions.command({ id: "code-link.reject-proposal", title: () => this.words()("cmdReject"), group, run: settle(false) });
     ctx.contributions.command({
       id: "code-link.connect",
-      title: () => this.words().cmdConnect,
+      title: () => this.words()("cmdConnect"),
       group,
       run: async ({ projectId, itemId }) => {
-        if (!projectId) return { toast: this.words().openProject };
+        if (!projectId) return { toast: this.words()("openProject") };
         const item = itemId ? this.ctx.items.get(projectId, itemId) : null;
         const fromItem = item ? this.ctx.boards.get(projectId, item.boardId)?.repoId : null;
         const repos = this.ctx.repos.list(projectId);
         const repoId = fromItem ?? (repos.length === 1 ? repos[0]!.id : null);
-        if (!repoId) return { toast: this.words().pickWorkstream };
+        if (!repoId) return { toast: this.words()("pickWorkstream") };
         const r = await this.connect(projectId, repoId);
         return { toast: r.message };
       }
     });
     ctx.contributions.command({
       id: "code-link.rescan",
-      title: () => this.words().cmdRescan,
+      title: () => this.words()("cmdRescan"),
       group,
       run: async ({ projectId }) => {
-        if (!projectId) return { toast: this.words().openProject };
+        if (!projectId) return { toast: this.words()("openProject") };
         const s = await this.scan(projectId);
-        return { toast: this.words().scanned(s.scanned, s.repos, s.changed, s.proposals, s.skipped.length) };
+        const w = this.words();
+        return { toast: w("scanned", { scanned: s.scanned, repos: s.repos, changed: s.changed, proposals: s.proposals, skipped: s.skipped.length ? w("scannedSkipped", { n: s.skipped.length }) : "" }) };
       }
     });
   }

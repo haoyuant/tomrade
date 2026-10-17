@@ -4,6 +4,7 @@ import type {} from "@tomradex/agent";
 import { MAX_MEDIA_BYTES, type AgentEvent, type Block, type PendingView, type UserInput } from "@tomradex/agent";
 import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/db";
+import { wordsLocale } from "@tomradex/domain";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/oplog";
 import type {} from "@tomradex/projects";
@@ -12,6 +13,7 @@ import { resolveImCapabilities, type ImAdapter, type ImAdapterSetup, type ImCapa
 import { ImConfig, ImSettings, InboundSchema, type ImConnection, type ImNotifyKind, type ImRoute } from "./config.js";
 import { fromAdapter, withContext, type ContextLine } from "./context.js";
 import { prepare } from "./render.js";
+import { IM_WORDS, type ImPlainWord } from "./words.js";
 import { FILE_HANDLE, statusText, awaitingReview, codeNews, codeSeen, deliveryCard, links, proposalText, renderBlock, reviewOutcome, ticket, toolLine, type CodeLookup, type CodeSeen, type Delivered, type ItemLookup, type RenderScope } from "./rich.js";
 import { ImStore, MIGRATIONS, TABLES, type Action, type Binding, type Inbox, type Outbox, type Watch, type WindowRow } from "./store.js";
 
@@ -91,10 +93,10 @@ interface CodeHost extends CodeLookup {
 }
 /** A ticket as a start needs it. */
 interface Startable { id: string; key: string; title: string; status: string; kind: string; workType: string; playbookId: string | null }
-/** What a gate means, in the person's language; the English is the gate's own message. */
-const GATE_ZH: Record<string, string> = {
-  locked: "工单已被人工锁定，请先在桌面解锁", workstream: "工单所在的工作流还没有可用的仓库", checkout: "本机没有该仓库的检出",
-  remote: "无法访问该仓库的远端", readiness: "仓库还没有为 agent 准备好", engine: "所选助手还不能用", mcp: "MCP 服务没有运行", workdir: "工作目录不可用"
+/** What a gate means, in the person's language; where the word is empty, the gate's own message. */
+const GATE: Partial<Record<string, ImPlainWord>> = {
+  locked: "gateLocked", workstream: "gateWorkstream", checkout: "gateCheckout",
+  remote: "gateRemote", readiness: "gateReadiness", engine: "gateEngine", mcp: "gateMcp", workdir: "gateWorkdir"
 };
 /** The part of `ctx.items` a delivery card reads and settles, the service review_delivery records through. */
 interface ReviewHost {
@@ -230,10 +232,10 @@ export class Im extends Service {
       return () => { this.watchers.delete(notify); };
     });
     this.home.inject(["contributions"], ctx => ctx.contributions.statusItem({ id: "im", icon: "message-circle", opens: "settings:im",
-      title: () => this.say("IM connections", "IM 连接"),
+      title: () => this.w("imConnections"),
       text: () => {
         const views = this.views();
-        return views.length ? views.map(v => `${v.id}: ${this.stateWord(v.state)}${v.uncertain ? this.say(` (${v.uncertain} uncertain)`, ` (${v.uncertain} 待确认)`) : ""}`).join(" · ") : null;
+        return views.length ? views.map(v => `${v.id}: ${this.stateWord(v.state)}${v.uncertain ? this.w("uncertain", { n: v.uncertain }) : ""}`).join(" · ") : null;
       } }));
     this.reload();
     const timer = setInterval(() => this.tick(), this.config.pollMs);
@@ -351,7 +353,7 @@ export class Im extends Service {
     this.admit(im, { connectionId, tenantId: claim.tenantId, conversationId: claim.conversationId }, [claim.actorId], "dm", pairing.projectId);
     this.save(im);
     const c = this.connections.get(connectionId);
-    if (c) this.tell(c, { tenantId: claim.tenantId, conversationId: claim.conversationId }, "Paired with Tomrade. Send a message to start.", "已与 Tomrade 配对，发消息即可开始。");
+    if (c) this.tell(c, { tenantId: claim.tenantId, conversationId: claim.conversationId }, this.w("paired"));
     this.changed();
     return true;
   }
@@ -412,36 +414,38 @@ export class Im extends Service {
   }
 
   /** A direct reply outside any conversation, e.g. about pairing. Best effort, never queued. */
-  private tell(c: Connection, address: ImAddress, en: string, zh: string) {
+  private tell(c: Connection, address: ImAddress, text: string) {
     const caps = this.caps.get(c.adapterId);
     if (!caps || !c.session || c.state !== "connected") return;
-    const [content] = prepare({ text: this.say(en, zh) }, caps, (a, b) => this.say(a, b));
+    const [content] = prepare({ text }, caps, this.w);
     this.bestEffort(c.session.deliver({ operationId: `notice:${token()}`, address, content }));
   }
 
   private changed() { for (const notify of this.watchers) notify(); }
 
-  private say(en: string, zh: string): string { return this.home.settings.locale() === "zh" ? zh : en; }
+  /** The book in the desktop's language. */
+  private get w() { return IM_WORDS(this.home.settings.locale()); }
 
   /** The plain-text commands, for adapters that register them natively. */
   private commands(): ImCommand[] {
+    const { w } = this;
     return [
-      { name: "stop", description: this.say("Stop the current run and clear queued messages", "停止当前执行并清空等待消息") },
-      { name: "status", description: this.say("Show what the assistant is doing", "查看助手当前状态") },
-      { name: "new", description: this.say("Start a new conversation", "开始新会话") },
-      { name: "answer", description: this.say("Answer the open question", "回答当前问题"), args: this.say("token answer", "令牌 回答") },
-      { name: "steer", description: this.say("Send into the running turn; the assistant reads it after its current step", "插话：送进正在运行的这一轮，助手做完当前这一步就会读到"), args: this.say("message", "内容") },
-      { name: "queue", description: this.say("List messages waiting for the current turn", "列出等待当前这一轮结束的消息") },
-      { name: "sessions", description: this.say("List this project's recent conversations", "列出本项目最近的会话") },
-      { name: "switch", description: this.say("Continue a conversation from /sessions here", "在这里继续 /sessions 中的某个会话"), args: "N" },
-      { name: "archive", description: this.say("Archive this conversation and start a new one", "归档当前会话并开始新会话") },
-      { name: "engine", description: this.say("Show or change the assistant", "查看或切换助手"), args: this.say("[name]", "[名称]") },
-      { name: "model", description: this.say("Show or change the model", "查看或切换模型"), args: this.say("[model]", "[模型]") },
-      { name: "effort", description: this.say("Show or change the reasoning effort", "查看或切换推理强度"), args: this.say("[level]", "[强度]") },
-      { name: "mode", description: this.say("Show or change the permission mode", "查看或切换权限模式"), args: this.say("[mode]", "[模式]") },
-      { name: "start", description: this.say("Start or continue a ticket's work on this computer", "在本机开工或继续某个工单"), args: this.say("KEY [engine=… model=…]", "工单 [engine=… model=…]") },
-      { name: "unqueue", description: this.say("Withdraw a waiting message", "撤回一条等待中的消息"), args: "N" },
-      { name: "help", description: this.say("Show these commands", "显示这些指令") }
+      { name: "stop", description: w("cmdStop") },
+      { name: "status", description: w("cmdStatus") },
+      { name: "new", description: w("cmdNew") },
+      { name: "answer", description: w("cmdAnswer"), args: w("argsAnswer") },
+      { name: "steer", description: w("cmdSteer"), args: w("argsSteer") },
+      { name: "queue", description: w("cmdQueue") },
+      { name: "sessions", description: w("cmdSessions") },
+      { name: "switch", description: w("cmdSwitch"), args: "N" },
+      { name: "archive", description: w("cmdArchive") },
+      { name: "engine", description: w("cmdEngine"), args: w("argsEngine") },
+      { name: "model", description: w("cmdModel"), args: w("argsModel") },
+      { name: "effort", description: w("cmdEffort"), args: w("argsEffort") },
+      { name: "mode", description: w("cmdMode"), args: w("argsMode") },
+      { name: "start", description: w("cmdStart"), args: w("argsStart") },
+      { name: "unqueue", description: w("cmdUnqueue"), args: "N" },
+      { name: "help", description: w("cmdHelp") }
     ];
   }
 
@@ -451,10 +455,9 @@ export class Im extends Service {
     const engine = this.home.agent.engineOf(thread.engine);
     const project = this.home.projects.get(b.project_id)?.name ?? b.project_id;
     return [
-      this.say(`Project: ${project} · Assistant: ${engine?.title ?? thread.engine}`, `项目：${project} · 助手：${engine?.title ?? thread.engine}`),
+      this.w("helpHead", { project, engine: engine?.title ?? thread.engine }),
       ...this.commands().map(c => `/${c.name}${c.args ? ` ${c.args}` : ""} — ${c.description}`),
-      engine?.steers ? this.say("Replying to the progress message also steers.", "回复进度消息也算插话。")
-        : this.say("This assistant can't take messages mid-turn: /steer queues instead.", "当前助手不支持运行中插话：/steer 会改为排队。")
+      engine?.steers ? this.w("helpSteers") : this.w("helpNoSteer")
     ].join("\n");
   }
 
@@ -487,16 +490,16 @@ export class Im extends Service {
 
   private stateWord(state: ImConnectionView["state"]): string {
     switch (state) {
-      case "connecting": return this.say("connecting", "连接中");
-      case "connected": return this.say("connected", "已连接");
-      case "offline": return this.say("disconnected", "已断开");
-      case "error": return this.say("connection failed", "连接失败");
-      case "unconfigured": return this.say("not configured", "未配置");
+      case "connecting": return this.w("stateConnecting");
+      case "connected": return this.w("stateConnected");
+      case "offline": return this.w("stateOffline");
+      case "error": return this.w("stateError");
+      case "unconfigured": return this.w("stateUnconfigured");
     }
   }
 
   /** A refusal shown to the IM user, in the desktop's language. */
-  private refuse(en: string, zh: string): never { throw new Error(this.say(en, zh)); }
+  private refuse(text: string): never { throw new Error(text); }
 
   private reload() {
     if (this.stopped) return;
@@ -570,7 +573,7 @@ export class Im extends Service {
           if (!active()) return;
           if (c.state !== state) this.changed();
           c.state = state;
-          c.detail = state === "error" ? this.say("Connection failed; check adapter configuration", "连接失败，请检查适配器配置") : undefined;
+          c.detail = state === "error" ? this.w("connectionFailed") : undefined;
           if (c.session && (state === "offline" || state === "error")) {
             c.retryAt = Date.now() + Math.min(60_000, this.config.retryMs * 2 ** Math.min(c.attempts++, 6));
             void this.close(c);
@@ -591,7 +594,7 @@ export class Im extends Service {
     } catch {
       if (!active()) return;
       c.state = "error";
-      c.detail = this.say("Connection failed; check adapter configuration", "连接失败，请检查适配器配置");
+      c.detail = this.w("connectionFailed");
       c.retryAt = Date.now() + Math.min(60_000, this.config.retryMs * 2 ** Math.min(c.attempts++, 6));
       controller.abort();
       this.changed();
@@ -664,7 +667,7 @@ export class Im extends Service {
     }
     this.store.run("INSERT INTO plugin_im_inbox (id, message_key, binding_id, event_json, fingerprint, created_at) VALUES (?, ?, ?, ?, ?, ?)", id, messageKey, b.id, JSON.stringify(event), fingerprint, Date.now());
     // The card says so before anything slower runs, so the press shows at once and its buttons go.
-    if (press) this.settleStart(b, press.card, ...this.startingText(b, press.item));
+    if (press) this.settleStart(b, press.card, this.startingText(b, press.item));
     return { receiptId: id };
   }
 
@@ -725,7 +728,7 @@ export class Im extends Service {
       ...(quoted ? { quoted: fromAdapter(quoted) } : kept ? { quoted: line(kept) } : {}),
       ...(root && root.messageId !== quotedId ? { root: fromAdapter(root) } : {}),
       recent
-    }, this.home.settings.locale() === "zh" ? "zh" : "en");
+    }, wordsLocale(this.home.settings.locale()));
   }
 
   /** A `/pair` code in a direct chat. The desktop confirms who it was; a wrong code counts toward withdrawing it. */
@@ -734,12 +737,12 @@ export class Im extends Service {
     const address = { tenantId: event.address.tenantId, conversationId: event.address.conversationId };
     if (!pairing || pairing.expiresAt < Date.now() || pairing.claim || pairing.code !== code) {
       if (pairing && !pairing.claim && ++pairing.failures >= PAIR_TRIES) this.pairings.delete(c.id);
-      this.tell(c, address, "That pairing code is wrong or has expired. Make a new one in Tomrade's IM settings.", "配对码错误或已过期，请在 Tomrade 的 IM 设置中重新生成。");
+      this.tell(c, address, this.w("pairWrong"));
       this.changed();
       return;
     }
     pairing.claim = { ...address, actorId: event.actor.id, ...(event.actor.name ? { name: event.actor.name } : {}), at: Date.now() };
-    this.tell(c, address, "Code received. Confirm the pairing in Tomrade on your computer.", "已收到配对码，请在电脑上的 Tomrade 中确认配对。");
+    this.tell(c, address, this.w("pairReceived"));
     this.changed();
   }
 
@@ -752,14 +755,13 @@ export class Im extends Service {
     const anchor = anchorOf(original);
     if (event.kind === "retract") {
       if (this.store.run("UPDATE plugin_im_inbox SET state = 'cancelled' WHERE id = ? AND state = 'queued'", row.id).changes) {
-        this.receipt(b, row, this.say("Withdrawn; it won't run.", "已撤回，不会执行。"), anchor, true);
+        this.receipt(b, row, this.w("withdrawn"), anchor, true);
       }
       return;
     }
     if (row.state !== "queued" && row.state !== "accepted") return;
     this.enqueue(b, `edited:${row.id}:${event.eventId}`, { text: row.state === "queued"
-      ? this.say("Edits aren't picked up: the original is still waiting. Withdraw it with /unqueue and send the new version.", "编辑不会生效：原消息仍在等待。用 /unqueue 撤回后重新发送。")
-      : this.say("Edits don't rerun a message. Send it again if the change should count.", "编辑不会重新执行消息。需要按新内容执行请重新发送。") }, { anchor });
+      ? this.w("editQueued") : this.w("editRan") }, { anchor });
   }
 
   /** A waiting message's receipt: kept current in place where the platform edits; elsewhere the first one stands and a withdrawal is said once. */
@@ -805,7 +807,7 @@ export class Im extends Service {
       if (busy) {
         const queue = this.waiting(rows).filter(r => r !== row);
         for (const [i, q] of queue.entries()) {
-          this.receipt(b, q, this.say(`Queued (${i + 1} in line); it runs after the current turn. /queue lists, /unqueue ${i + 1} withdraws.`, `已排队（第 ${i + 1} 位），本轮结束后执行。/queue 查看，/unqueue ${i + 1} 撤回。`),
+          this.receipt(b, q, this.w("queued", { n: i + 1 }),
             anchorOf(JSON.parse(q.event_json) as ImInbound));
         }
       }
@@ -835,9 +837,9 @@ export class Im extends Service {
         const queue = this.waiting(rows).filter(r => r !== row);
         if (text === "/status") {
           const doing = this.activity.get(b.thread_id);
-          const lines = [detail.pending ? this.say(`Waiting for answer: ${detail.pending.question.text}`, `等待回答：${detail.pending.question.text}`)
-            : busy ? (doing ? this.say(`Working: ${doing}`, `正在执行：${doing}`) : this.say("Working", "正在执行")) : this.say("No task is running", "当前没有执行中的任务")];
-          if (queue.length) lines.push(this.say(`${queue.length} waiting`, `${queue.length} 条等待中`));
+          const lines = [detail.pending ? this.w("waitingAnswer", { question: detail.pending.question.text })
+            : busy ? (doing ? this.w("workingOn", { doing }) : this.w("working")) : this.w("noTask")];
+          if (queue.length) lines.push(this.w("waitingCount", { n: queue.length }));
           this.enqueue(b, `status:${row.id}`, { text: lines.join("\n") }, reply);
           this.accept(row); return;
         }
@@ -848,17 +850,17 @@ export class Im extends Service {
         if (text === "/queue") {
           this.enqueue(b, `queue:${row.id}`, { text: queue.length
             ? queue.map((q, i) => `${i + 1}. ${preview(q)}`).join("\n")
-            : this.say("Nothing is waiting", "没有等待中的消息") }, reply);
+            : this.w("nothingWaiting") }, reply);
           this.accept(row); return;
         }
         const unqueue = /^\/unqueue\s+(\d+)$/.exec(text);
         if (unqueue) {
           const target = queue[Number(unqueue[1]) - 1];
-          if (!target) this.refuse(`No waiting message ${unqueue[1]}; /queue lists them`, `没有第 ${unqueue[1]} 条等待中的消息；/queue 可查看`);
-          if ((JSON.parse(target.event_json) as ImInbound).actor.id !== event.actor.id) this.refuse("Only its sender can withdraw that message", "只有发送人可以撤回这条消息");
+          if (!target) this.refuse(this.w("noWaitingMessage", { n: unqueue[1] }));
+          if ((JSON.parse(target.event_json) as ImInbound).actor.id !== event.actor.id) this.refuse(this.w("onlySenderWithdraws"));
           this.store.run("UPDATE plugin_im_inbox SET state = 'cancelled' WHERE id = ? AND state = 'queued'", target.id);
-          if (this.capsOf(b)?.edit) this.receipt(b, target, this.say("Withdrawn; it won't run.", "已撤回，不会执行。"), anchorOf(JSON.parse(target.event_json) as ImInbound), true);
-          this.enqueue(b, `unqueue:${row.id}`, { text: this.say(`Withdrawn: ${preview(target)}`, `已撤回：${preview(target)}`) }, reply);
+          if (this.capsOf(b)?.edit) this.receipt(b, target, this.w("withdrawn"), anchorOf(JSON.parse(target.event_json) as ImInbound), true);
+          this.enqueue(b, `unqueue:${row.id}`, { text: this.w("withdrawnPreview", { preview: preview(target) }) }, reply);
           this.accept(row); return;
         }
         const steer = /^\/steer\s+([\s\S]+)$/.exec(text)?.[1].trim() ?? (!row.input_json && steering(event) ? text : null);
@@ -866,29 +868,28 @@ export class Im extends Service {
           const engine = this.home.agent.engineOf(running.thread.engine);
           if (engine?.steers && await this.home.agent.steer(b.project_id, b.thread_id, `im:${row.id}`, steer)) {
             this.react(b, event.messageId, "received");
-            if (!this.capsOf(b)?.reactions) this.enqueue(b, `steered:${row.id}`, { text: this.say("Sent into the current turn", "已送进当前这一轮") }, reply);
+            if (!this.capsOf(b)?.reactions) this.enqueue(b, `steered:${row.id}`, { text: this.w("steered") }, reply);
             this.accept(row); return;
           }
           // Not taken: it waits for the turn to end like any message, and says so.
           this.store.run("UPDATE plugin_im_inbox SET input_json = ? WHERE id = ?", JSON.stringify({ kind: "text", text: steer }), row.id);
           this.enqueue(b, `steer-queued:${row.id}`, { text: engine?.steers
-            ? this.say("The turn couldn't take it right now; it's queued and runs after this turn.", "当前这一轮暂时无法接收，已改为排队，本轮结束后执行。")
-            : this.say("This assistant can't take messages mid-turn; it's queued and runs after this turn.", "当前助手不支持运行中插话，已改为排队，本轮结束后执行。") }, reply);
+            ? this.w("steerBusy") : this.w("steerUnsupported") }, reply);
           return;
         }
         if (text === "/stop") {
           const run = this.home.agent.activeRuns().find(r => r.thread.id === b.thread_id);
-          if ((run || detail.pending) && b.actor_id !== event.actor.id) this.refuse("Only the initiating user can stop this run", "只有发起人可以停止当前执行");
+          if ((run || detail.pending) && b.actor_id !== event.actor.id) this.refuse(this.w("onlyInitiatorStops"));
           const stopped = run ? this.home.agent.cancel(run.run.id) : this.home.agent.cancelWaiting(b.project_id, b.thread_id);
           this.store.run("UPDATE plugin_im_inbox SET state = 'cancelled' WHERE binding_id = ? AND state = 'queued' AND id != ?", b.id, row.id);
-          this.enqueue(b, `stop:${row.id}`, { text: stopped ? this.say("Stop requested", "已请求停止执行") : this.say("No task is running; queued messages cleared", "当前没有执行中的任务；已清空等待消息") }, reply);
+          this.enqueue(b, `stop:${row.id}`, { text: stopped ? this.w("stopRequested") : this.w("stoppedNothing") }, reply);
           this.accept(row); return;
         }
         if (text === "/new") {
           const th = this.openThread(this.settings.routes.find(r => r.id === b.route_id)!);
           this.rebind(b, th.id, 0, event.actor.id, rebound => {
             this.accept(row);
-            this.enqueue(rebound, `new:${row.id}`, { text: this.say("New conversation started", "已开始新会话") }, reply);
+            this.enqueue(rebound, `new:${row.id}`, { text: this.w("newStarted") }, reply);
           });
           return;
         }
@@ -901,7 +902,7 @@ export class Im extends Service {
         if (match && this.leftBehind(b, row, match[1], reply)) return;
         if (match) input = this.answer(b, match[1], event.actor.id, match[2]);
         else {
-          if (!text && !event.attachments?.length) this.refuse("Empty message", "消息为空");
+          if (!text && !event.attachments?.length) this.refuse(this.w("emptyMessage"));
           if (row.input_json) input = JSON.parse(row.input_json) as UserInput;
           else if (steer !== null) input = { kind: "text", text: steer };
           else {
@@ -909,13 +910,13 @@ export class Im extends Service {
           for (const ref of event.attachments ?? []) {
             const c = this.connections.get(b.connection_id);
             const adapter = c && this.adapters.get(c.adapterId);
-            if (!adapter?.capabilities.inboundFiles || !c?.session?.download) this.refuse("This adapter does not accept attachments", "该渠道不支持附件");
-            if (ref.size > Math.min(adapter.capabilities.maxFileBytes, MAX_MEDIA_BYTES)) this.refuse("Attachment exceeds supported size", "附件超过支持的大小");
+            if (!adapter?.capabilities.inboundFiles || !c?.session?.download) this.refuse(this.w("noAttachments"));
+            if (ref.size > Math.min(adapter.capabilities.maxFileBytes, MAX_MEDIA_BYTES)) this.refuse(this.w("attachmentTooLarge"));
             let bytes: Uint8Array;
             try { bytes = await deadline(c.session.download(ref), this.config.operationTimeoutMs); }
-            catch { this.refuse("Attachment download failed; check adapter diagnostics", "附件下载失败，请检查适配器诊断信息"); }
-            if (!this.current(c) || !this.authorizedBinding(b)) this.refuse("IM authorization changed during download", "下载期间 IM 授权已变更");
-            if (bytes.byteLength !== ref.size) this.refuse("Attachment size does not match its metadata", "附件大小与声明不符");
+            catch { this.refuse(this.w("attachmentFailed")); }
+            if (!this.current(c) || !this.authorizedBinding(b)) this.refuse(this.w("authChanged"));
+            if (bytes.byteLength !== ref.size) this.refuse(this.w("attachmentSizeMismatch"));
             attachments.push(this.home.agent.uploadMedia(b.project_id, b.thread_id, { name: ref.name, mime: ref.mimeType, base64: Buffer.from(bytes).toString("base64") }));
           }
           input = { kind: "text", text: this.contextual(b, row, event), ...(attachments.length ? { attachments } : {}) };
@@ -933,7 +934,7 @@ export class Im extends Service {
       if (input.kind === "text") this.store.run("UPDATE plugin_im_bindings SET actor_id = ?, anchor = ? WHERE id = ?", event.actor.id, reply.anchor, b.id);
       if (event.kind === "message") this.react(b, event.messageId, "received");
       if (input.kind === "text" && this.capsOf(b)?.edit && this.store.get("SELECT 1 FROM plugin_im_outbox WHERE id = ?", `queued:${row.id}`)) {
-        this.replace(b, `queued:${row.id}`, { text: this.say("Running now", "正在执行") });
+        this.replace(b, `queued:${row.id}`, { text: this.w("runningNow") });
       }
       if (input.kind === "answer") this.store.run("UPDATE plugin_im_actions SET consumed = 1 WHERE binding_id = ? AND question_id = ?", b.id, input.questionId);
       this.store.run("UPDATE plugin_im_inbox SET state = 'accepted', run_id = ? WHERE id = ?", runId, row.id);
@@ -948,9 +949,9 @@ export class Im extends Service {
         const anchor = anchorOf(event);
         // A Start press shown as under way, then refused, says on its card that nothing started.
         const press = event.kind === "action" ? this.startPress(b, event.token, event.actor.id, false) : null;
-        if (press) this.settleStart(b, press.card, `${press.item.key} wasn't started`, `${press.item.key} 未开工`);
+        if (press) this.settleStart(b, press.card, this.w("notStarted", { key: press.item.key }));
         // In a group, a refusal is for the sender only where the platform can say so privately.
-        if (this.authorizedBinding(b)) this.enqueue(b, `input-error:${row.id}`, { text: this.say(`Cannot process message: ${errorText(e)}`, `无法处理消息：${errorText(e)}`) },
+        if (this.authorizedBinding(b)) this.enqueue(b, `input-error:${row.id}`, { text: this.w("cannotProcess", { error: errorText(e) }) },
           { anchor, visibleTo: anchor ? event.actor.id : null });
       }
     } finally { this.processing.delete(b.thread_id); }
@@ -1023,7 +1024,7 @@ export class Im extends Service {
     for (const [connectionId, actorId] of new Map(people.map(p => [p.join("\u0000"), p])).values()) {
       const dm = this.directChat(connectionId, actorId);
       if (!dm || !this.notifies(dm, "attention")) continue;
-      const head = `**${n.title}**${n.body ? `\n${n.body}` : ""}\n[${this.say("Open in Tomrade", "在 Tomrade 打开")}](${links.thread(n.projectId, n.threadId)})`;
+      const head = `**${n.title}**${n.body ? `\n${n.body}` : ""}\n[${this.w("openInTomrade")}](${links.thread(n.projectId, n.threadId)})`;
       const content: ImContent = pending ? this.remoteQuestion(dm, n.projectId, n.threadId, pending, actorId, head) : { text: head };
       this.enqueue(dm, `remind:${dm.id}:${n.threadId}:${pending?.question.id ?? `${n.kind}:${runId}`}`, content, { anchor: null });
       reached = true;
@@ -1044,7 +1045,7 @@ export class Im extends Service {
     const actions = question.multiple ? [] : options.map(value => ({ label: value, token: issue(value) }));
     const elements: ImElement[] = [];
     if (question.multiple && options.length) elements.push({ type: "select", token: issue(null), multiple: true, options: options.map(o => ({ label: o, value: o })) });
-    if (question.freeText || (pending.accepts === "text" && !options.length)) elements.push({ type: "input", token: issue(null), label: this.say("Your answer", "你的回答") });
+    if (question.freeText || (pending.accepts === "text" && !options.length)) elements.push({ type: "input", token: issue(null), label: this.w("yourAnswer") });
     return { text: `${head}\n\n${question.text}`, actions, ...(elements.length ? { elements } : {}) };
   }
 
@@ -1055,24 +1056,24 @@ export class Im extends Service {
     if (!a || !projectId) return false;
     const pending = this.home.db.has(projectId) ? this.home.agent.thread(projectId, a.thread_id).pending : null;
     if (a.binding_id !== b.id || a.actor_id !== actorId || a.expires_at < Date.now() || a.consumed || pending?.question.id !== questionId) {
-      this.refuse("Question already handled, expired, or not yours to answer", "问题已处理、已失效，或不由你回答");
+      this.refuse(this.w("questionGone"));
     }
     let answer: unknown = a.value_json === null ? value : JSON.parse(a.value_json);
     if (pending.question.multiple && typeof answer === "string") {
-      try { answer = JSON.parse(answer); } catch { this.refuse("Reply with a JSON array of selected values", "请用 JSON 数组回复所选的值"); }
+      try { answer = JSON.parse(answer); } catch { this.refuse(this.w("jsonArray")); }
     }
     const options = pending.question.options ?? [];
     const valid = pending.question.multiple
       ? Array.isArray(answer) && answer.every(v => typeof v === "string" && (pending.question.freeText || options.includes(v)))
       : typeof answer === "string" && (pending.accepts === "text" || pending.question.freeText || options.includes(answer));
-    if (!valid) this.refuse("Invalid question answer", "回答无效");
+    if (!valid) this.refuse(this.w("invalidAnswer"));
     const event = JSON.parse(row.event_json) as ImInbound;
     this.home.agent.send(projectId, a.thread_id, { kind: "answer", questionId, value: answer as string | string[] }, { requestId: `im:${row.id}`, source: {
       connection: b.connection_id, tenant: event.address.tenantId, conversation: event.address.conversationId, actor: actorId, event: event.eventId
     } });
     this.store.run("UPDATE plugin_im_actions SET consumed = 1, retired = 1 WHERE binding_id = ? AND question_id = ?", b.id, a.question_id);
     const said = Array.isArray(answer) ? answer.join(", ") : String(answer);
-    this.enqueue(b, `remind-answered:${row.id}`, { text: this.say(`Answered: ${said}`, `已回答：${said}`) }, { anchor: null });
+    this.enqueue(b, `remind-answered:${row.id}`, { text: this.w("answered", { said }) }, { anchor: null });
     this.accept(row);
     return true;
   }
@@ -1083,10 +1084,9 @@ export class Im extends Service {
     if (!caps || !c.session || c.state !== "connected") return;
     const chats = new Map(this.store.bindings().filter(b => b.connection_id === c.id && !this.isGroup(b) && this.authorizedBinding(b) && this.notifies(b, "presence"))
       .map(b => [b.address_json, JSON.parse(b.address_json) as ImAddress]));
-    const text = online
-      ? this.say("Tomrade is online on your computer.", "电脑上的 Tomrade 已上线。")
-      : this.say("Tomrade is going offline on your computer. Messages sent while it is offline may not arrive; send them again once it is back.", "电脑上的 Tomrade 即将下线。离线期间发的消息可能收不到，上线后请重新发送。");
-    const [content] = prepare({ text }, caps, (en, zh) => this.say(en, zh));
+    const { w } = this;
+    const text = online ? w("online") : w("goingOffline");
+    const [content] = prepare({ text }, caps, w);
     await Promise.all([...chats.values()].map(address =>
       deadline(c.session!.deliver({ operationId: `presence:${token()}`, address, content }), Math.min(2_000, this.config.operationTimeoutMs)).catch(() => {})));
   }
@@ -1124,9 +1124,8 @@ export class Im extends Service {
   /** Where a question this conversation moved away from still waits. */
   private waitsIn(b: Binding, threadId: string): string {
     const thread = this.home.agent.store.thread(b.project_id, threadId);
-    const title = thread?.title || this.say("Untitled", "未命名");
-    return thread?.archived ? this.say(`This question was archived with “${title}”.`, `该问题已随“${title}”一起归档。`)
-      : this.say(`This question stays in “${title}”; /switch back to answer it.`, `该问题留在“${title}”中，/switch 回去即可回答。`);
+    const title = thread?.title || this.w("untitled");
+    return this.w(thread?.archived ? "questionArchived" : "questionStays", { title });
   }
 
   /** A choice from a question left open in a conversation this one moved away from: says where it waits instead of refusing it. */
@@ -1150,14 +1149,14 @@ export class Im extends Service {
     const target = back && !back.archived && back.surface === "assistant" ? back : this.openThread(this.settings.routes.find(r => r.id === b.route_id)!);
     const cursor = target === back ? this.home.agent.thread(b.project_id, target.id).messages.at(-1)?.seq ?? 0 : 0;
     const item = left?.itemId ? this.items()?.get(b.project_id, left.itemId) : null;
-    const was = item ? (item.status === "done" ? this.say(`${item.key} is done`, `${item.key} 已完成`) : this.say(`${item.key}'s session was archived`, `${item.key} 的会话已归档`))
-      : this.say(`“${left?.title || "Untitled"}” was archived`, `“${left?.title || "未命名"}”已归档`);
-    const title = target.title || this.say("Untitled", "未命名");
+    const { w } = this;
+    const was = item ? (item.status === "done" ? w("itemDone", { key: item.key }) : w("itemSessionArchived", { key: item.key }))
+      : w("threadArchived", { title: left?.title || w("untitled") });
+    const title = target.title || w("untitled");
     let rebound = b;
     this.rebind(b, target.id, cursor, b.actor_id, r => {
       rebound = r;
-      this.enqueue(r, `home:${b.id}:${b.thread_id}`, { text: target === back ? this.say(`${was}; back to “${title}”.`, `${was}，已回到“${title}”会话。`)
-        : this.say(`${was}; a new conversation started.`, `${was}，已开始新会话。`) }, { anchor: null });
+      this.enqueue(r, `home:${b.id}:${b.thread_id}`, { text: target === back ? w("backTo", { was, title }) : w("newAfterArchive", { was }) }, { anchor: null });
     });
     return rebound;
   }
@@ -1186,7 +1185,7 @@ export class Im extends Service {
     // A second click on a card that is starting, or started, already has its answer on the card.
     if (a.binding_id === b.id && mine && a.consumed === 2) return "spent";
     if (a.binding_id !== b.id || a.thread_id !== b.thread_id || !mine || a.expires_at < Date.now() || a.consumed) {
-      this.refuse("That choice has expired or isn't yours", "该选项已失效，或不由你选择");
+      this.refuse(this.w("choiceExpired"));
     }
     // A start card's selects stay live while it shows; Start spends them all.
     if (!a.question_id.startsWith("cmd:start-set:")) this.store.run("UPDATE plugin_im_actions SET consumed = 1, retired = 1 WHERE token = ?", actionToken);
@@ -1215,11 +1214,11 @@ export class Im extends Service {
     const actor = event.actor.id;
     if (name === "start") {
       const [key, ...args] = arg.trim().split(/\s+/).filter(Boolean);
-      if (!key) this.refuse("Name the ticket: /start TOM-12", "请写上工单：/start TOM-12");
-      if (!this.code()) this.refuse("Starting work needs the Code link plugin", "开工需要 Code link 插件");
-      if (this.isGroup(b) && actor !== b.actor_id) this.refuse("Only the person this conversation is with can start work here", "只有发起人可以在这里开工");
+      if (!key) this.refuse(this.w("nameTicket"));
+      if (!this.code()) this.refuse(this.w("needsCodeLink"));
+      if (this.isGroup(b) && actor !== b.actor_id) this.refuse(this.w("onlyOwnerStarts"));
       const item = this.startable(b.project_id, key.toUpperCase());
-      if (!item) this.refuse(`No ticket ${key} in this project`, `本项目没有工单 ${key}`);
+      if (!item) this.refuse(this.w("noTicket", { key }));
       let draft = await this.draftFor(item, `start:${b.id}:${item.id}:${row.id}`);
       if (args.length) draft = await this.withArgs(b.project_id, item, draft, args);
       // Named settings in a direct chat are the start itself; a group, or a bare /start, sees what will run first.
@@ -1232,29 +1231,30 @@ export class Im extends Service {
       const threads = this.home.agent.store.threads(b.project_id, "assistant").slice(0, 20);
       this.listed.set(b.id, threads.map(t => t.id));
       const running = new Set(this.home.agent.activeRuns().map(r => r.thread.id));
-      const lines = threads.map((t, i) => `${i + 1}. ${t.title || this.say("Untitled", "未命名")} · ${this.home.agent.engineOf(t.engine)?.title ?? t.engine} · ${this.ago(t.updatedAt)}`
-        + (t.id === b.thread_id ? this.say(" ← here", " ← 当前") : running.has(t.id) ? this.say(" · running", " · 运行中") : ""));
+      const { w } = this;
+      const lines = threads.map((t, i) => `${i + 1}. ${t.title || w("untitled")} · ${this.home.agent.engineOf(t.engine)?.title ?? t.engine} · ${this.ago(t.updatedAt)}`
+        + (t.id === b.thread_id ? w("here") : running.has(t.id) ? w("running") : ""));
       this.choices(b, `sessions:${row.id}`, actor, "switch", lines.length
-        ? [...lines, this.say("Reply /switch N to continue one here.", "回复 /switch N 在这里继续该会话。")].join("\n")
-        : this.say("No conversations yet", "还没有会话"),
-        threads.filter(t => t.id !== b.thread_id).map(t => ({ label: t.title || this.say("Untitled", "未命名"), value: t.id })), reply);
+        ? [...lines, w("switchHint")].join("\n")
+        : w("noConversations"),
+        threads.filter(t => t.id !== b.thread_id).map(t => ({ label: t.title || w("untitled"), value: t.id })), reply);
       this.accept(row); return true;
     }
     if (name === "switch") {
       const [, n, confirm] = /^(\d+)(\s+confirm)?$/i.exec(arg.trim()) ?? [];
       const ids = this.listed.get(b.id) ?? this.home.agent.store.threads(b.project_id, "assistant").slice(0, 20).map(t => t.id);
       const target = n ? ids[Number(n) - 1] : undefined;
-      if (!target) this.refuse("Pick a number from /sessions", "请从 /sessions 的列表里选一个序号");
+      if (!target) this.refuse(this.w("pickNumber"));
       await this.choose(b, row, actor, confirm ? "switch!" : "switch", target, reply, n);
       return true;
     }
     if (name === "archive") {
-      if (this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id)) this.refuse("Stop the current turn before archiving", "请先停止当前执行，再归档");
+      if (this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id)) this.refuse(this.w("stopBeforeArchive"));
       this.home.agent.archiveThread(b.project_id, b.thread_id);
       const th = this.openThread(this.settings.routes.find(r => r.id === b.route_id)!);
       this.rebind(b, th.id, 0, actor, rebound => {
         this.accept(row);
-        this.enqueue(rebound, `archive:${row.id}`, { text: this.say(`Archived “${thread.title || "Untitled"}”; new conversation started`, `已归档“${thread.title || "未命名"}”，已开始新会话`) }, reply);
+        this.enqueue(rebound, `archive:${row.id}`, { text: this.w("archived", { title: thread.title || this.w("untitled") }) }, reply);
       });
       return true;
     }
@@ -1263,7 +1263,7 @@ export class Im extends Service {
       if (!arg) {
         const views = (await this.home.agent.engineViews()).filter(v => v.ok && !v.terminalOnly);
         this.choices(b, `engine:${row.id}`, actor, "engine",
-          [this.say(`Assistant: ${engine?.title ?? thread.engine}`, `当前助手：${engine?.title ?? thread.engine}`), ...views.map(v => `- ${v.title} (${v.id})`), this.say("Reply /engine <name> to switch.", "回复 /engine <名称> 切换。")].join("\n"),
+          [this.w("currentAssistant", { engine: engine?.title ?? thread.engine }), ...views.map(v => `- ${v.title} (${v.id})`), this.w("engineHint")].join("\n"),
           views.filter(v => v.id !== thread.engine).map(v => ({ label: v.title, value: v.id })), reply);
         this.accept(row); return true;
       }
@@ -1271,12 +1271,12 @@ export class Im extends Service {
     }
     if (name === "mode") {
       const modes = engine?.permissionModes;
-      if (!modes) this.refuse("This assistant has no permission modes", "当前助手没有权限模式可选");
+      if (!modes) this.refuse(this.w("noModes"));
       if (!arg) {
         const current = thread.permissionMode ?? modes.default;
         this.choices(b, `mode:${row.id}`, actor, "mode",
-          [this.say(`Permission mode: ${modes.choices.find(c => c.value === current)?.label ?? current}`, `权限模式：${modes.choices.find(c => c.value === current)?.label ?? current}`),
-            ...modes.choices.map(c => `- ${c.label} (${c.value})`), this.say("Reply /mode <mode> to change it.", "回复 /mode <模式> 切换。")].join("\n"),
+          [this.w("currentMode", { mode: modes.choices.find(c => c.value === current)?.label ?? current }),
+            ...modes.choices.map(c => `- ${c.label} (${c.value})`), this.w("modeHint")].join("\n"),
           modes.choices.map(c => ({ label: c.label, value: c.value })), reply);
         this.accept(row); return true;
       }
@@ -1284,13 +1284,13 @@ export class Im extends Service {
     }
     // model, effort: the engine's own picks.
     const pick = engine?.picks?.().find(p => p.key === name);
-    if (!pick) this.refuse(`This assistant has no ${name} choice`, `当前助手没有可选的${name === "model" ? "模型" : "推理强度"}`);
+    if (!pick) this.refuse(name === "model" ? this.w("noModelChoice") : this.w("noEffortChoice"));
     if (!arg) {
       const current = thread.options?.[name];
       this.choices(b, `${name}:${row.id}`, actor, name,
-        [`${pick.title}: ${typeof current === "string" ? current : this.say("default", "默认")}`, ...pick.choices.map(c => `- ${c.label ?? c.value}${c.label ? ` (${c.value})` : ""}`),
-          this.say(`Reply /${name} <value> to change it, or /${name} default.`, `回复 /${name} <值> 切换，或 /${name} default 恢复默认。`)].join("\n"),
-        [{ label: this.say("Default", "默认"), value: "default" }, ...pick.choices.map(c => ({ label: c.label ?? c.value, value: c.value }))], reply);
+        [`${pick.title}: ${typeof current === "string" ? current : this.w("default")}`, ...pick.choices.map(c => `- ${c.label ?? c.value}${c.label ? ` (${c.value})` : ""}`),
+          this.w("pickHint", { name })].join("\n"),
+        [{ label: this.w("defaultOption"), value: "default" }, ...pick.choices.map(c => ({ label: c.label ?? c.value, value: c.value }))], reply);
       this.accept(row); return true;
     }
     await this.choose(b, row, actor, name, arg.trim(), reply); return true;
@@ -1300,12 +1300,12 @@ export class Im extends Service {
   private async choose(b: Binding, row: Inbox, actorId: string, kind: string, value: string, reply: { anchor: string | null }, n?: string, picked?: string) {
     const { thread } = this.home.agent.thread(b.project_id, b.thread_id);
     const running = this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id);
-    const when = running ? this.say(" It applies from the next turn.", "从下一轮开始生效。") : "";
+    const when = running ? this.w("appliesNextTurn") : "";
     const done = (text: string, on = b) => { this.enqueue(on, `${kind}:${row.id}`, { text }, reply); this.accept(row); };
     if (kind === "proposal") {
       const [, verdict, projectId, proposalId] = /^(accept|reject):([^:]+):(.+)$/.exec(value) ?? [];
       const code = this.code();
-      if (!verdict || !code || projectId !== b.project_id) this.refuse("That choice is no longer available", "该选项已不可用");
+      if (!verdict || !code || projectId !== b.project_id) this.refuse(this.w("choiceGone"));
       // Settled from here, so the change it causes is not news of a settlement elsewhere.
       for (const w of this.store.all<Watch>("SELECT * FROM plugin_im_watch WHERE binding_id = ?", b.id)) {
         const seen = JSON.parse(w.seen_json) as CodeSeen;
@@ -1313,8 +1313,8 @@ export class Im extends Service {
           JSON.stringify({ ...seen, proposals: seen.proposals.filter(id => id !== proposalId) }), w.binding_id, w.item_id);
       }
       const settled = code.resolve(projectId, proposalId, verdict === "accept");
-      this.settleProposal(b, proposalId, settled.state === "accepted" ? this.say("Accepted", "已接受")
-        : settled.state === "rejected" ? this.say("Dismissed", "已忽略") : this.say("No longer applies", "已不再适用"));
+      this.settleProposal(b, proposalId, settled.state === "accepted" ? this.w("proposalAccepted")
+        : settled.state === "rejected" ? this.w("proposalDismissed") : this.w("proposalGone"));
       this.accept(row);
       return;
     }
@@ -1322,28 +1322,28 @@ export class Im extends Service {
       const [verdict, projectId, itemId, submissionId] = kind === "delivery" ? value.split(":") : ["changes!", ...kind.slice("delivery-changes:".length).split(":")];
       const host = this.reviews();
       const item = host && projectId === b.project_id ? host.get(projectId, itemId) : null;
-      if (!host || !item) this.refuse("That choice is no longer available", "该选项已不可用");
+      if (!host || !item) this.refuse(this.w("choiceGone"));
       if (awaitingReview(item)?.id !== submissionId) {
-        this.settleDelivery(b, submissionId, reviewOutcome((en, zh) => this.say(en, zh), item, submissionId));
-        this.refuse("This delivery is no longer waiting for review", "该交付已不再等待验收");
+        this.settleDelivery(b, submissionId, reviewOutcome(this.w, item, submissionId));
+        this.refuse(this.w("deliveryGone"));
       }
       if (verdict === "changes") {
         const t = this.offer(b, `delivery-changes:${projectId}:${itemId}:${submissionId}`, actorId);
-        const ask = this.say(`What should change in ${item.key}?`, `${item.key} 需要改什么？`);
+        const ask = this.w("whatShouldChange", { key: item.key });
         const input = this.capsOf(b)?.textInput;
         this.enqueue(b, `delivery-ask:${b.id}:${submissionId}:${row.id}`, input
-          ? { text: ask, elements: [{ type: "input", token: t, label: this.say("What should change", "修改意见") }] }
-          : { text: `${ask}\n${this.say(`Reply /answer ${t} <what should change>`, `回复 /answer ${t} <修改意见>`)}` }, { ...reply, visibleTo: reply.anchor ? actorId : null });
+          ? { text: ask, elements: [{ type: "input", token: t, label: this.w("changesLabel") }] }
+          : { text: `${ask}\n${this.w("changesHint", { token: t })}` }, { ...reply, visibleTo: reply.anchor ? actorId : null });
         this.accept(row); return;
       }
       const said = value.trim();
-      if (verdict === "changes!" && !said) this.refuse("Say what should change", "请写下需要修改的内容");
+      if (verdict === "changes!" && !said) this.refuse(this.w("sayWhatChanges"));
       const who = this.who(b, actorId);
       // Their own words, as review_delivery keeps them, and who gave the verdict from where.
       const comment = verdict === "accept" ? `Accepted in IM by ${who}` : `${said}\n\nRequested in IM by ${who}`;
       host.reviewDelivery(projectId, item.id, { submissionId, decision: verdict === "accept" ? "accepted" : "changes-requested", comment }, item.version);
-      this.settleDelivery(b, submissionId, verdict === "accept" ? this.say(`Accepted by ${who}`, `${who} 已验收通过`)
-        : this.say(`Sent back for changes by ${who}: ${said}`, `${who} 已退回修改：${said}`));
+      this.settleDelivery(b, submissionId, verdict === "accept" ? this.w("acceptedBy", { who })
+        : this.w("changesBy", { who, said }));
       this.accept(row);
       return;
     }
@@ -1351,13 +1351,13 @@ export class Im extends Service {
     if (kind === "start" || kind === "start-adjust" || kind === "start!" || kind.startsWith("start-set:")) {
       const given = JSON.parse(value) as Partial<StartDraft> & { itemId: string };
       const item = this.code() ? this.startable(b.project_id, given.itemId) : null;
-      if (!item) this.refuse("That choice is no longer available", "该选项已不可用");
+      if (!item) this.refuse(this.w("choiceGone"));
       if (kind === "start!") { await this.startNow(b, row, actorId, given as StartDraft, reply); return; }
       if (kind.startsWith("start-set:")) {
         const knob = kind.slice("start-set:".length);
         const draft = given as StartDraft;
         const chosen = picked?.trim() ?? "";
-        if (!chosen) this.refuse("Pick a value", "请选择一个值");
+        if (!chosen) this.refuse(this.w("pickValue"));
         await this.startCard(b, actorId, await this.withArgs(b.project_id, item, draft, [`${knob}=${chosen}`]), reply, true);
         this.accept(row); return;
       }
@@ -1371,51 +1371,51 @@ export class Im extends Service {
     }
     if (kind === "switch" || kind === "switch!") {
       const target = this.home.agent.store.thread(b.project_id, value);
-      if (!target || target.archived || target.surface !== "assistant") this.refuse("That conversation can't be continued here", "该会话无法在这里继续");
-      if (target.id === b.thread_id) { done(this.say("Already here", "已经是当前会话")); return; }
-      if (this.home.agent.activeRuns().some(r => r.thread.id === target.id)) this.refuse("That conversation is running; try again when it finishes", "该会话正在运行，结束后再试");
-      if (running) this.refuse("Stop the current turn first", "请先停止当前执行");
-      const title = target.title || this.say("Untitled", "未命名");
+      if (!target || target.archived || target.surface !== "assistant") this.refuse(this.w("cantContinue"));
+      if (target.id === b.thread_id) { done(this.w("alreadyHere")); return; }
+      if (this.home.agent.activeRuns().some(r => r.thread.id === target.id)) this.refuse(this.w("conversationRunning"));
+      if (running) this.refuse(this.w("stopFirst"));
+      const title = target.title || this.w("untitled");
       // In a group, the conversation's history becomes visible to everyone there; the person who asked confirms.
       if (kind === "switch" && this.isGroup(b)) {
         const caps = this.capsOf(b);
-        const confirm = caps?.buttons ? [{ label: this.say("Continue it here", "在这里继续"), token: this.offer(b, "switch!", actorId), style: "primary" as const }] : [];
+        const confirm = caps?.buttons ? [{ label: this.w("continueHere"), token: this.offer(b, "switch!", actorId), style: "primary" as const }] : [];
         // The button carries the conversation in its own row, as a select would.
         if (confirm.length) this.store.run("UPDATE plugin_im_actions SET value_json = ? WHERE token = ?", JSON.stringify(target.id), confirm[0].token);
-        this.enqueue(b, `switch-confirm:${row.id}`, { text: this.say(`Everyone in this group will be able to read “${title}” and what follows. Continue it here?${confirm.length ? "" : ` Reply /switch ${n ?? ""} confirm.`}`,
-          `群里所有人都将能看到“${title}”的历史和后续内容。要在这里继续吗？${confirm.length ? "" : `回复 /switch ${n ?? ""} confirm 确认。`}`), actions: confirm }, { ...reply, visibleTo: reply.anchor ? actorId : null });
+        this.enqueue(b, `switch-confirm:${row.id}`, { text: this.w("switchConfirm", { title, reply: confirm.length ? "" : this.w("switchConfirmReply", { n: n ?? "" }) }), actions: confirm }, { ...reply, visibleTo: reply.anchor ? actorId : null });
         this.accept(row); return;
       }
       const cursor = this.home.agent.thread(b.project_id, target.id).messages.at(-1)?.seq ?? 0;
-      this.rebind(b, target.id, cursor, actorId, rebound => done(this.say(`Continuing “${title}” here; the desktop shows the same conversation.`, `已切换到“${title}”，在这里继续；桌面上是同一个会话。`), rebound));
+      this.rebind(b, target.id, cursor, actorId, rebound => done(this.w("continuingHere", { title }), rebound));
       return;
     }
     if (kind === "engine") {
       const views = (await this.home.agent.engineViews()).filter(v => v.ok && !v.terminalOnly);
       const target = views.find(v => v.id === value || v.title.toLowerCase() === value.toLowerCase());
-      if (!target) this.refuse(`No assistant “${value}”; /engine lists them`, `没有名为“${value}”的助手；/engine 可查看`);
-      if (running) this.refuse("The assistant can't change while a turn runs; try again when it finishes", "运行中不能切换助手，请在本轮结束后再试");
+      if (!target) this.refuse(this.w("noAssistant", { value }));
+      if (running) this.refuse(this.w("engineBusy"));
       this.home.agent.setEngine(b.project_id, b.thread_id, target.id);
-      done(this.say(`Assistant: ${target.title}`, `已切换助手：${target.title}`)); return;
+      done(this.w("assistantSet", { engine: target.title })); return;
     }
     if (kind === "mode") {
       const choice = this.home.agent.engineOf(thread.engine)?.permissionModes?.choices.find(c => c.value === value || c.label.toLowerCase() === value.toLowerCase());
-      if (!choice) this.refuse(`No permission mode “${value}”; /mode lists them`, `没有“${value}”这个权限模式；/mode 可查看`);
+      if (!choice) this.refuse(this.w("noMode", { value }));
       this.home.agent.setPermissionMode(b.project_id, b.thread_id, choice.value);
-      done(this.say(`Permission mode: ${choice.label}.${when}`, `权限模式：${choice.label}。${when}`)); return;
+      done(this.w("modeSet", { mode: choice.label, when })); return;
     }
     const pick = this.home.agent.engineOf(thread.engine)?.picks?.().find(p => p.key === kind);
-    if (!pick) this.refuse("That choice is no longer available", "该选项已不可用");
+    if (!pick) this.refuse(this.w("choiceGone"));
     const { [kind]: _old, ...rest } = thread.options ?? {};
     let options: Record<string, unknown> = rest;
     if (value.toLowerCase() !== "default") {
       const chosen = pick.choices.find(c => c.value === value || c.label?.toLowerCase() === value.toLowerCase())?.value ?? (pick.freeText ? value : undefined);
-      if (!chosen) this.refuse(`No ${pick.title} “${value}”; /${kind} lists them`, `没有“${value}”这个${pick.title}；/${kind} 可查看`);
+      if (!chosen) this.refuse(this.w("noPickValue", { title: pick.title, value, kind }));
       options = { ...rest, [kind]: chosen };
     }
     try { this.home.agent.setOptions(b.project_id, b.thread_id, Object.keys(options).length ? options : null); }
-    catch { this.refuse(`The assistant refused that ${pick.title}`, `助手不接受该${pick.title}`); }
-    done(this.say(`${pick.title}: ${typeof options[kind] === "string" ? options[kind] : "default"}.${when}`, `${pick.title}：${typeof options[kind] === "string" ? options[kind] : "默认"}。${when}`));
+    catch { this.refuse(this.w("pickRefused", { title: pick.title })); }
+    const set = options[kind];
+    done(this.w("pickSet", { title: pick.title, value: typeof set === "string" ? set : this.w("default"), when }));
   }
 
   /** A ticket that can be started here, by id or key. */
@@ -1452,30 +1452,30 @@ export class Im extends Service {
     const pairs = args.map(a => { const [k, ...v] = a.split("="); return [k.toLowerCase(), v.join("=")] as const; });
     let next: StartDraft = { ...draft, ...(draft.options ? { options: { ...draft.options } } : {}) };
     for (const [k, v] of [...pairs.filter(p => p[0] === "engine"), ...pairs.filter(p => p[0] !== "engine")]) {
-      if (!v) this.refuse(`Give ${k} a value, as ${k}=…`, `请给 ${k} 一个值，如 ${k}=…`);
+      if (!v) this.refuse(this.w("giveValue", { k }));
       if (k === "engine") {
         const target = engines.find(e => e.id === v || e.title.toLowerCase() === v.toLowerCase());
-        if (!target) this.refuse(`No assistant “${v}” can run here; /engine lists them`, `没有能在本机运行的助手“${v}”；/engine 可查看`);
+        if (!target) this.refuse(this.w("noEngineHere", { value: v }));
         if (target.id !== next.engine) next = { itemId: next.itemId, card: next.card, engine: target.id, ...(next.playbook ? { playbook: next.playbook } : {}) };
         continue;
       }
       const engine = engines.find(e => e.id === next.engine);
       if (k === "mode") {
         const choice = item.workType === "general" ? undefined : engine?.permissionModes?.choices.find(c => c.value === v || c.label.toLowerCase() === v.toLowerCase());
-        if (!choice) this.refuse(`No permission mode “${v}” for this start`, `这次开工没有“${v}”这个权限模式`);
+        if (!choice) this.refuse(this.w("noStartMode", { value: v }));
         next.permissionMode = choice.value; continue;
       }
       if (k === "playbook") {
         const method = item.workType === "general" ? this.methods(projectId).find(m => m.id === v || m.title.toLowerCase() === v.toLowerCase()) : undefined;
-        if (!method) this.refuse(`No method “${v}” for this ticket`, `该工单没有“${v}”这种交付方式`);
+        if (!method) this.refuse(this.w("noMethod", { value: v }));
         next.playbook = method.id; continue;
       }
       const pick = engine?.picks?.find(p => p.key === k);
-      if (!pick) this.refuse(`This start has no setting “${k}”`, `这次开工没有“${k}”这一项`);
+      if (!pick) this.refuse(this.w("noSetting", { k }));
       const { [k]: _old, ...rest } = next.options ?? {};
       if (v.toLowerCase() === "default") { next.options = rest; continue; }
       const chosen = pick.choices.find(c => c.value === v || c.label?.toLowerCase() === v.toLowerCase())?.value ?? (pick.freeText ? v : undefined);
-      if (!chosen) this.refuse(`No ${pick.title} “${v}”`, `没有“${v}”这个${pick.title}`);
+      if (!chosen) this.refuse(this.w("noPick", { title: pick.title, value: v }));
       next.options = { ...rest, [k]: chosen };
     }
     if (next.options && !Object.keys(next.options).length) delete next.options;
@@ -1489,7 +1489,7 @@ export class Im extends Service {
    */
   private async startCard(b: Binding, actorId: string, draft: StartDraft, reply: { anchor: string | null }, update = false) {
     const item = this.startable(b.project_id, draft.itemId);
-    if (!item) this.refuse("That ticket can no longer be started", "该工单已无法开工");
+    if (!item) this.refuse(this.w("cantStart"));
     const engines = await this.headless();
     const engine = engines.find(e => e.id === draft.engine);
     const general = item.workType === "general";
@@ -1497,18 +1497,19 @@ export class Im extends Service {
     const modes = general ? undefined : engine?.permissionModes;
     const methods = general ? this.methods(b.project_id) : [];
     const continuing = this.continuing(b, item.id);
-    const lines = [continuing ? this.say(`Continue ${item.key} ${item.title}`, `继续 ${item.key} ${item.title}`) : this.say(`Start ${item.key} ${item.title}`, `开工 ${item.key} ${item.title}`),
-      `${this.say("Agent", "助手")}: ${engine?.title ?? this.say("none can run here", "本机没有可用的助手")}`];
+    const { w } = this;
+    const lines = [continuing ? w("startContinue", { key: item.key, title: item.title }) : w("startStart", { key: item.key, title: item.title }),
+      `${w("agent")}: ${engine?.title ?? w("noAgentHere")}`];
     for (const p of picks) {
       const v = draft.options?.[p.key];
-      lines.push(`${p.title}: ${v ? p.choices.find(c => c.value === v)?.label ?? v : this.say("default", "默认")}`);
+      lines.push(`${p.title}: ${v ? p.choices.find(c => c.value === v)?.label ?? v : w("default")}`);
     }
     if (modes) {
       const v = draft.permissionMode ?? modes.default;
-      lines.push(`${this.say("Permission mode", "权限模式")}: ${modes.choices.find(c => c.value === v)?.label ?? v}`);
+      lines.push(`${w("permissionMode")}: ${modes.choices.find(c => c.value === v)?.label ?? v}`);
     }
-    if (general) lines.push(`${this.say("Method", "交付方式")}: ${methods.find(m => m.id === draft.playbook)?.title ?? draft.playbook ?? this.say("the ticket's", "工单默认")}`);
-    if (this.isGroup(b)) lines.push(this.say("Everyone in this group will see its progress and questions.", "群里所有人都将看到它的进度和问题。"));
+    if (general) lines.push(`${w("method")}: ${methods.find(m => m.id === draft.playbook)?.title ?? draft.playbook ?? w("ticketsMethod")}`);
+    if (this.isGroup(b)) lines.push(w("groupSeesWork"));
     // A card changed in place keeps its tokens, each now carrying the new settings, so a choice made before the edit shows still applies.
     const live = new Map(this.store.all<Action>("SELECT * FROM plugin_im_actions WHERE binding_id = ? AND question_id LIKE 'cmd:start%' AND consumed = 0 AND value_json LIKE ?", b.id, `%${draft.card}%`)
       .map(a => [a.question_id.slice("cmd:".length), a.token]));
@@ -1523,17 +1524,17 @@ export class Im extends Service {
     const set = (knob: string) => keep(`start-set:${knob}`);
     const selects: ImElement[] = [];
     if (this.capsOf(b)?.select) {
-      if (engines.length > 1) selects.push({ type: "select", token: set("engine"), placeholder: this.say("Agent", "助手"), options: engines.slice(0, 24).map(e => ({ label: e.title, value: e.id })) });
+      if (engines.length > 1) selects.push({ type: "select", token: set("engine"), placeholder: w("agent"), options: engines.slice(0, 24).map(e => ({ label: e.title, value: e.id })) });
       for (const p of picks) selects.push({ type: "select", token: set(p.key), placeholder: p.title,
-        options: [{ label: this.say("Default", "默认"), value: "default" }, ...p.choices.map(c => ({ label: c.label ?? c.value, value: c.value }))].slice(0, 24) });
-      if (modes) selects.push({ type: "select", token: set("mode"), placeholder: this.say("Permission mode", "权限模式"), options: modes.choices.slice(0, 24).map(c => ({ label: c.label, value: c.value })) });
-      if (methods.length > 1) selects.push({ type: "select", token: set("playbook"), placeholder: this.say("Method", "交付方式"), options: methods.slice(0, 24).map(m => ({ label: m.title, value: m.id })) });
+        options: [{ label: w("defaultOption"), value: "default" }, ...p.choices.map(c => ({ label: c.label ?? c.value, value: c.value }))].slice(0, 24) });
+      if (modes) selects.push({ type: "select", token: set("mode"), placeholder: w("permissionMode"), options: modes.choices.slice(0, 24).map(c => ({ label: c.label, value: c.value })) });
+      if (methods.length > 1) selects.push({ type: "select", token: set("playbook"), placeholder: w("method"), options: methods.slice(0, 24).map(m => ({ label: m.title, value: m.id })) });
     } else {
       const knobs = ["engine=…", ...picks.map(p => `${p.key}=…`), ...(modes ? ["mode=…"] : []), ...(general ? ["playbook=…"] : [])].join(" ");
-      lines.push(this.say(`To change it: /start ${item.key} ${knobs}`, `要修改：/start ${item.key} ${knobs}`));
+      lines.push(w("changeHint", { key: item.key, knobs }));
     }
     const content: ImContent = { text: lines.join("\n"), ...(selects.length ? { elements: selects } : {}),
-      actions: engine ? [{ label: continuing ? this.say("Continue", "继续") : this.say("Start", "开始"), token: keep("start!"), style: "primary" }] : [] };
+      actions: engine ? [{ label: continuing ? w("continue") : w("start"), token: keep("start!"), style: "primary" }] : [] };
     for (const t of live.values()) if (!used.has(t)) this.store.run("UPDATE plugin_im_actions SET consumed = 1, retired = 1 WHERE token = ?", t);
     if (update) this.replace(b, draft.card, content);
     else this.enqueue(b, draft.card, content, { ...reply, visibleTo: reply.anchor ? actorId : null });
@@ -1550,8 +1551,8 @@ export class Im extends Service {
     if (!data || typeof data.itemId !== "string" || !this.code()) return content;
     const value = JSON.stringify({ itemId: data.itemId, card });
     return { ...content, actions: [
-      { label: this.continuing(b, data.itemId) ? this.say("Continue", "继续") : this.say("Start", "开始"), token: this.offerValue(b, "start", b.actor_id, value), style: "primary" },
-      { label: this.say("Adjust settings", "调整配置"), token: this.offerValue(b, "start-adjust", b.actor_id, value) }
+      { label: this.continuing(b, data.itemId) ? this.w("continue") : this.w("start"), token: this.offerValue(b, "start", b.actor_id, value), style: "primary" },
+      { label: this.w("adjust"), token: this.offerValue(b, "start-adjust", b.actor_id, value) }
     ] };
   }
 
@@ -1567,8 +1568,8 @@ export class Im extends Service {
     return item ? { card: given.card!, item } : null;
   }
 
-  private startingText(b: Binding, item: { id: string; key: string }): [string, string] {
-    return this.continuing(b, item.id) ? [`Continuing ${item.key}…`, `正在继续 ${item.key}…`] : [`Starting ${item.key}…`, `正在开工 ${item.key}…`];
+  private startingText(b: Binding, item: { id: string; key: string }): string {
+    return this.continuing(b, item.id) ? this.w("continuingKey", { key: item.key }) : this.w("startingKey", { key: item.key });
   }
 
   /** The card, where this platform can change a message it sent. */
@@ -1577,8 +1578,8 @@ export class Im extends Service {
   }
 
   /** The start card says how the start stands, with no buttons left. */
-  private settleStart(b: Binding, card: string, en: string, zh: string) {
-    if (this.editableCard(b, card)) this.replace(b, card, { text: this.say(en, zh) });
+  private settleStart(b: Binding, card: string, text: string) {
+    if (this.editableCard(b, card)) this.replace(b, card, { text });
   }
 
   /**
@@ -1590,15 +1591,16 @@ export class Im extends Service {
   private async startNow(b: Binding, row: Inbox, actorId: string, draft: StartDraft, reply: { anchor: string | null }) {
     const code = this.code();
     const item = this.startable(b.project_id, draft.itemId);
-    if (!code || !item) this.refuse("That ticket can no longer be started", "该工单已无法开工");
-    if (this.isGroup(b) && actorId !== b.actor_id) this.refuse("Only the person this conversation is with can start work here", "只有发起人可以在这里开工");
-    if (this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id)) this.refuse("Stop the current turn first", "请先停止当前执行");
+    if (!code || !item) this.refuse(this.w("cantStart"));
+    if (this.isGroup(b) && actorId !== b.actor_id) this.refuse(this.w("onlyOwnerStarts"));
+    if (this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id)) this.refuse(this.w("stopFirst"));
     const address = JSON.parse(b.address_json) as ImAddress;
     const general = item.workType === "general";
     // The card clicked says at once that the start is under way, and takes no more clicks.
     this.store.run("UPDATE plugin_im_actions SET consumed = 2, retired = 1 WHERE binding_id = ? AND question_id LIKE 'cmd:start%' AND value_json LIKE ?", b.id, `%${draft.card}%`);
-    const settle = (on: Binding, en: string, zh: string) => this.settleStart(on, draft.card, en, zh);
-    settle(b, ...this.startingText(b, item));
+    const { w } = this;
+    const settle = (on: Binding, text: string) => this.settleStart(on, draft.card, text);
+    settle(b, this.startingText(b, item));
     let result: StartOutcome;
     try {
       result = await code.start(b.project_id, item.id, { mode: "run",
@@ -1606,40 +1608,41 @@ export class Im extends Service {
         ...(draft.permissionMode && !general ? { permissionMode: draft.permissionMode } : {}), ...(draft.playbook && general ? { playbook: draft.playbook } : {}),
         ...(draft.allowBlocked ? { allowBlocked: true } : {}),
         source: { connection: b.connection_id, tenant: address.tenantId, conversation: address.conversationId, actor: actorId } });
-    } catch (e) { settle(b, `${item.key} wasn't started`, `${item.key} 未开工`); throw e; }
+    } catch (e) { settle(b, w("notStarted", { key: item.key })); throw e; }
     if (!result.ok) {
-      settle(b, `${item.key} wasn't started`, `${item.key} 未开工`);
+      settle(b, w("notStarted", { key: item.key }));
       if (result.gate === "blocked") {
         const on = (result.blockers ?? []).join(", ");
-        this.enqueue(b, `start-blocked:${row.id}`, { text: this.say(`${item.key} waits on ${on}, still open. Start it anyway? The agent is told what it waits on.`, `${item.key} 依赖的 ${on} 还没完成。仍然开始吗？agent 会知道它在等什么。`),
-          actions: [{ label: this.say("Start anyway", "仍然开始"), token: this.offerValue(b, "start!", actorId, JSON.stringify({ ...draft, allowBlocked: true })), style: "primary" }] }, reply);
+        this.enqueue(b, `start-blocked:${row.id}`, { text: w("startBlocked", { key: item.key, on }),
+          actions: [{ label: w("startAnyway"), token: this.offerValue(b, "start!", actorId, JSON.stringify({ ...draft, allowBlocked: true })), style: "primary" }] }, reply);
       } else {
-        this.enqueue(b, `start-gate:${row.id}`, { text: this.say(`Couldn't start ${item.key}: ${result.message}. It's fixed on the desktop.`, `${item.key} 无法开工：${GATE_ZH[result.gate] ?? result.message}。请在桌面处理。`),
-          elements: [{ type: "links", links: [{ label: this.say("Open in Tomrade", "在 Tomrade 打开"), url: links.item(b.project_id, item.key) }] }] }, reply);
+        const gate = GATE[result.gate];
+        this.enqueue(b, `start-gate:${row.id}`, { text: w("startGate", { key: item.key, reason: (gate && w(gate)) || result.message }),
+          elements: [{ type: "links", links: [{ label: w("openInTomrade"), url: links.item(b.project_id, item.key) }] }] }, reply);
       }
       this.accept(row); return;
     }
     const title = (await this.headless()).find(e => e.id === result.engine)?.title ?? result.engine;
     // The conversation stays where it is; it hears about the ticket, and follows its session only when asked.
-    settle(b, result.continued ? `Continued ${item.key} ${item.title}` : `Started ${item.key} ${item.title}`, result.continued ? `已继续 ${item.key} ${item.title}` : `已开工 ${item.key} ${item.title}`);
+    settle(b, result.continued ? w("continuedTicket", { key: item.key, title: item.title }) : w("startedTicket", { key: item.key, title: item.title }));
     this.watchItem(b, item.id);
     this.accept(row);
     const follow = this.offerValue(b, "follow", actorId, JSON.stringify({ threadId: result.threadId, runId: result.runId ?? null }));
     this.enqueue(b, `started:${row.id}`, { text: [
-      result.continued ? this.say(`Continuing ${item.key} with ${title}.`, `已用 ${title} 继续 ${item.key}。`) : this.say(`Started ${item.key} with ${title}.`, `已用 ${title} 开工 ${item.key}。`),
-      ...(result.waitingOn ? [this.say(`It waits on your answer first: ${result.waitingOn}`, `它先等你回答：${result.waitingOn}`)] : []),
-      ...(result.warnings ?? []).map(w => `⚠ ${w}`),
-      this.say("Follow it here to see its progress and answer its questions in this conversation.", "在这里跟进，就能在本会话看到它的进度并回答问题。")
-    ].join("\n"), actions: [{ label: this.say("Follow here", "在这里跟进"), token: follow, style: "primary" }] }, reply);
+      result.continued ? w("continuingWith", { key: item.key, engine: title }) : w("startedWith", { key: item.key, engine: title }),
+      ...(result.waitingOn ? [w("waitsOnAnswer", { question: result.waitingOn })] : []),
+      ...(result.warnings ?? []).map(warning => `⚠ ${warning}`),
+      w("followHint")
+    ].join("\n"), actions: [{ label: w("followHere"), token: follow, style: "primary" }] }, reply);
   }
 
   /** This conversation follows a ticket's session from now on, and goes back once that session is archived. */
   private follow(b: Binding, row: Inbox, actorId: string, value: string, reply: { anchor: string | null }) {
     const { threadId, runId } = JSON.parse(value) as { threadId: string; runId: string | null };
     const target = this.home.agent.store.thread(b.project_id, threadId);
-    if (!target || target.archived) this.refuse("That session has ended; /sessions lists the others", "该会话已结束；/sessions 可查看其他会话");
-    if (target.id === b.thread_id) { this.enqueue(b, `follow:${row.id}`, { text: this.say("Already here", "已经是当前会话") }, reply); this.accept(row); return; }
-    if (this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id)) this.refuse("Stop the current turn first", "请先停止当前执行");
+    if (!target || target.archived) this.refuse(this.w("sessionEnded"));
+    if (target.id === b.thread_id) { this.enqueue(b, `follow:${row.id}`, { text: this.w("alreadyHere") }, reply); this.accept(row); return; }
+    if (this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id)) this.refuse(this.w("stopFirst"));
     const cursor = this.home.agent.thread(b.project_id, threadId).messages.at(-1)?.seq ?? 0;
     // Back to where this began once the ticket's thread is archived; from one ticket's thread, where that one began.
     const home = this.home.agent.store.thread(b.project_id, b.thread_id)?.itemId ? b.home_thread ?? undefined : b.thread_id;
@@ -1648,19 +1651,18 @@ export class Im extends Service {
       if (runId) this.store.run("INSERT OR IGNORE INTO plugin_im_runs (binding_id, run_id) VALUES (?, ?)", rebound.id, runId);
       this.accept(row);
       this.enqueue(rebound, `follow:${row.id}`, { text: [
-        key ? this.say(`Following ${key} here; its progress and questions come here.`, `已在这里跟进 ${key}，进度和问题会发到这里。`)
-          : this.say("Following that session here.", "已在这里跟进该会话。"),
-        this.say("/sessions takes you back to an earlier conversation.", "/sessions 可回到之前的会话。")
+        key ? this.w("followingKey", { key }) : this.w("followingSession"),
+        this.w("sessionsBack")
       ].join("\n") }, reply);
     }, home ? { home } : {});
   }
 
   private ago(at: number): string {
     const m = Math.max(0, Math.round((Date.now() - at) / 60_000));
-    if (m < 1) return this.say("just now", "刚刚");
-    if (m < 60) return this.say(`${m} min ago`, `${m} 分钟前`);
+    if (m < 1) return this.w("justNow");
+    if (m < 60) return this.w("minAgo", { n: m });
     const h = Math.round(m / 60);
-    return h < 24 ? this.say(`${h} h ago`, `${h} 小时前`) : this.say(`${Math.round(h / 24)} d ago`, `${Math.round(h / 24)} 天前`);
+    return h < 24 ? this.w("hAgo", { n: h }) : this.w("dAgo", { n: Math.round(h / 24) });
   }
 
   private accept(row: Inbox) { this.store.run("UPDATE plugin_im_inbox SET state = 'accepted' WHERE id = ?", row.id); }
@@ -1669,14 +1671,14 @@ export class Im extends Service {
     const a = this.store.get<Action>("SELECT * FROM plugin_im_actions WHERE token = ?", actionToken);
     const current = this.home.agent.thread(b.project_id, b.thread_id);
     const pending = current.pending;
-    if (!a || a.binding_id !== b.id || a.thread_id !== b.thread_id || a.run_id !== current.runs.at(-1)?.id || a.actor_id !== actorId || a.expires_at < Date.now() || a.consumed || pending?.question.id !== a.question_id) this.refuse("Question already handled, expired, or not yours to answer", "问题已处理、已失效，或不由你回答");
+    if (!a || a.binding_id !== b.id || a.thread_id !== b.thread_id || a.run_id !== current.runs.at(-1)?.id || a.actor_id !== actorId || a.expires_at < Date.now() || a.consumed || pending?.question.id !== a.question_id) this.refuse(this.w("questionGone"));
     let answer = a.value_json === null ? value : JSON.parse(a.value_json) as string;
     if (pending.question.multiple && typeof answer === "string") {
-      try { answer = JSON.parse(answer) as string[]; } catch { this.refuse("Reply with a JSON array of selected values", "请用 JSON 数组回复所选的值"); }
+      try { answer = JSON.parse(answer) as string[]; } catch { this.refuse(this.w("jsonArray")); }
     }
-    if (typeof answer !== "string" && (!Array.isArray(answer) || answer.some(v => typeof v !== "string"))) this.refuse("Invalid question answer", "回答无效");
+    if (typeof answer !== "string" && (!Array.isArray(answer) || answer.some(v => typeof v !== "string"))) this.refuse(this.w("invalidAnswer"));
     if (answer === undefined || (Array.isArray(answer) && !pending.question.multiple) ||
-      (pending.accepts === "options" && !pending.question.freeText && [answer].flat().some(v => !pending.question.options?.includes(v)))) this.refuse("Invalid question answer", "回答无效");
+      (pending.accepts === "options" && !pending.question.freeText && [answer].flat().some(v => !pending.question.options?.includes(v)))) this.refuse(this.w("invalidAnswer"));
     return { kind: "answer", questionId: a.question_id, value: answer };
   }
 
@@ -1715,7 +1717,7 @@ export class Im extends Service {
       const id = `question:${b.id}:${a.question_id}`;
       const row = this.store.get<Outbox>("SELECT * FROM plugin_im_outbox WHERE id = ?", id);
       if (row) {
-        const text = this.say("Question handled or expired", "问题已处理或失效");
+        const text = this.w("questionHandled");
         if (this.capsOf(b)?.cardUpdate) this.replace(b, id, { text });
         else this.enqueue(b, `resolved:${id}`, { text });
       }
@@ -1734,7 +1736,7 @@ export class Im extends Service {
     const actions = question.multiple ? [] : options.map(value => ({ label: value, token: issue(value) }));
     const elements: ImElement[] = [];
     if (question.multiple && options.length) elements.push({ type: "select", token: issue(null), multiple: true, options: options.map(o => ({ label: o, value: o })) });
-    if (question.freeText || (pending.accepts === "text" && !options.length)) elements.push({ type: "input", token: issue(null), label: this.say("Your answer", "你的回答") });
+    if (question.freeText || (pending.accepts === "text" && !options.length)) elements.push({ type: "input", token: issue(null), label: this.w("yourAnswer") });
     this.replace(b, id, { text: question.text, actions, ...(elements.length ? { elements } : {}) });
   }
 
@@ -1746,7 +1748,7 @@ export class Im extends Service {
   private scope(b: Binding): RenderScope {
     const items = this.items();
     const code = this.code();
-    return { projectId: b.project_id, threadId: b.thread_id, say: (en, zh) => this.say(en, zh), ...(items ? { items } : {}), ...(code ? { code } : {}) };
+    return { projectId: b.project_id, threadId: b.thread_id, w: this.w, ...(items ? { items } : {}), ...(code ? { code } : {}) };
   }
 
   private items() { return this.home.get("items") as ItemLookup | undefined; }
@@ -1798,14 +1800,14 @@ export class Im extends Service {
       if (!watched && !ours && !live.length) continue;
       this.store.db.transaction(() => {
         for (const sid of new Set(live.map(a => (JSON.parse(a.value_json!) as string).split(":")[3]))) {
-          if (sid !== open?.id) this.settleDelivery(b, sid, reviewOutcome((en, zh) => this.say(en, zh), item, sid));
+          if (sid !== open?.id) this.settleDelivery(b, sid, reviewOutcome(this.w, item, sid));
         }
         if (!open || (!watched && !ours) || this.store.get("SELECT 1 FROM plugin_im_outbox WHERE id = ?", `delivery:${b.id}:${open.id}`)) return;
         this.watchItem(b, item.id);
         const choice = (verdict: "accept" | "changes") => this.offerValue(b, "delivery", b.actor_id, `${verdict}:${projectId}:${item.id}:${open.id}`);
         this.enqueue(b, `delivery:${b.id}:${open.id}`, { ...deliveryCard(this.scope(b), item, open), actions: [
-          { label: this.say("Accept", "接受"), token: choice("accept"), style: "primary" },
-          { label: this.say("Request changes", "要求修改"), token: choice("changes") }
+          { label: this.w("accept"), token: choice("accept"), style: "primary" },
+          { label: this.w("requestChanges"), token: choice("changes") }
         ] }, { anchor: null });
       });
     }
@@ -1818,8 +1820,7 @@ export class Im extends Service {
       this.store.run("UPDATE plugin_im_watch SET status = ? WHERE binding_id = ? AND item_id = ?", item.status, w.binding_id, item.id);
       const b = this.store.binding(w.binding_id);
       if (!w.status || !b || !this.authorizedBinding(b) || !this.notifies(b, "tickets")) continue;
-      const say = (en: string, zh: string) => this.say(en, zh);
-      this.enqueue(b, `item-status:${b.id}:${item.id}:${item.version}`, { text: `${item.key}: ${statusText(say, w.status)} → ${statusText(say, item.status)}`,
+      this.enqueue(b, `item-status:${b.id}:${item.id}:${item.version}`, { text: `${item.key}: ${statusText(this.w, w.status)} → ${statusText(this.w, item.status)}`,
         elements: ticket(this.scope(b), item.key, item.title) }, { anchor: null });
     }
   }
@@ -1829,10 +1830,11 @@ export class Im extends Service {
     if (this.stopped || !this.store || !this.home.db.has(projectId)) return;
     const keys = run.itemIds.map(id => this.items()?.get(projectId, id)?.key).filter((k): k is string => !!k);
     for (const b of this.store.bindings().filter(b => b.project_id === projectId && this.authorizedBinding(b) && this.notifies(b, "routines"))) {
-      const text = !run.ok ? this.say(`Routine “${name}” failed: ${run.error ?? "unknown error"}`, `例行事务“${name}”失败：${run.error ?? "未知错误"}`)
-        : keys.length ? this.say(`Routine “${name}” ran and made ${keys.join(", ")}`, `例行事务“${name}”已运行，新建了 ${keys.join("、")}`)
-        : this.say(`Routine “${name}” ran`, `例行事务“${name}”已运行`);
-      const open = run.threadId ? [{ type: "links" as const, links: [{ label: this.say("Open in Tomrade", "在 Tomrade 打开"), url: links.thread(projectId, run.threadId) }] }] : [];
+      const { w } = this;
+      const text = !run.ok ? w("routineFailed", { name, error: run.error ?? w("unknownError") })
+        : keys.length ? w("routineMade", { name, keys: keys.join(w("listSep")) })
+        : w("routineRan", { name });
+      const open = run.threadId ? [{ type: "links" as const, links: [{ label: w("openInTomrade"), url: links.thread(projectId, run.threadId) }] }] : [];
       this.enqueue(b, `routine:${b.id}:${run.id}`, { text, ...(open.length ? { elements: open } : {}) }, { anchor: null });
     }
   }
@@ -1896,20 +1898,19 @@ export class Im extends Service {
       const was = JSON.parse(w.seen_json) as CodeSeen;
       const now = codeSeen(summary);
       if (JSON.stringify(was) === JSON.stringify(now)) continue;
-      const say = (en: string, zh: string) => this.say(en, zh);
       this.store.db.transaction(() => {
         this.store.run("UPDATE plugin_im_watch SET seen_json = ? WHERE binding_id = ? AND item_id = ?", JSON.stringify(now), w.binding_id, w.item_id);
-        const news = codeNews(say, was, now, summary);
+        const news = codeNews(this.w, was, now, summary);
         const tell = this.notifies(b, "code");
         if (news.length && tell) this.enqueue(b, `code:${b.id}:${item.id}:${hash(now).slice(0, 16)}`, { text: news.join("\n"), elements: ticket(this.scope(b), item.key, item.title) }, { anchor: null });
         for (const p of tell ? summary.proposals.filter(p => p.kind === "propose" && !was.proposals.includes(p.id)) : []) {
           const choice = (verdict: "accept" | "reject") => this.offerValue(b, "proposal", b.actor_id, `${verdict}:${projectId}:${p.id}`);
-          this.enqueue(b, `proposal:${b.id}:${p.id}`, { text: proposalText(say, item.key, p), actions: [
-            { label: this.say("Accept", "接受"), token: choice("accept"), style: "primary" },
-            { label: this.say("Not this time", "这次不用"), token: choice("reject") }
+          this.enqueue(b, `proposal:${b.id}:${p.id}`, { text: proposalText(this.w, item.key, p), actions: [
+            { label: this.w("accept"), token: choice("accept"), style: "primary" },
+            { label: this.w("notThisTime"), token: choice("reject") }
           ] }, { anchor: null });
         }
-        for (const id of was.proposals.filter(id => !now.proposals.includes(id))) this.settleProposal(b, id, this.say("Handled in Tomrade", "已在 Tomrade 处理"));
+        for (const id of was.proposals.filter(id => !now.proposals.includes(id))) this.settleProposal(b, id, this.w("handledInTomrade"));
       });
     }
   }
@@ -1928,13 +1929,13 @@ export class Im extends Service {
   /** The progress message: what the turn is doing, a model retry, and the tools it has called. */
   private progressText(threadId: string, head: string): string {
     const turn = this.turns.get(threadId);
-    const retry = turn?.retry ? this.say(`Retrying (attempt ${turn.retry.attempt}${turn.retry.max ? ` of ${turn.retry.max}` : ""})`, `重试中（第 ${turn.retry.attempt}${turn.retry.max ? ` / ${turn.retry.max}` : ""} 次）`) : "";
+    const retry = turn?.retry ? this.w("retrying", { attempt: turn.retry.attempt, of: turn.retry.max ? this.w("retryOf", { max: turn.retry.max }) : "" }) : "";
     return [retry || head, toolLine(turn?.tools ?? [])].filter(Boolean).join("\n");
   }
 
   private finished(status: string): string {
-    return status === "error" ? this.say("Execution failed", "执行失败") : status === "cancelled" ? this.say("Execution stopped", "执行已停止")
-      : status === "asked" ? this.say("Waiting for your answer", "等待你的回答") : this.say("Turn finished", "本轮执行结束");
+    return status === "error" ? this.w("executionFailed") : status === "cancelled" ? this.w("executionStopped")
+      : status === "asked" ? this.w("waitingForAnswer") : this.w("turnFinished");
   }
 
   private onAgentEvent(threadId: string, event: AgentEvent) {
@@ -1966,7 +1967,7 @@ export class Im extends Service {
         if (event.type === "delta" && streaming) { this.stream(b, event.runId, event.text); continue; }
         // Non-editing providers only receive stable output, so token streams don't spam chats.
         if (!caps.edit) continue;
-        const text = this.progressText(threadId, event.type === "progress" ? event.activity || this.say("Working", "正在执行") : this.say("Writing a reply", "正在生成回复"));
+        const text = this.progressText(threadId, event.type === "progress" ? event.activity || this.w("working") : this.w("writingReply"));
         const runId = event.runId;
         // Throttled, but the latest state still shows once the interval is up.
         const show = () => {
@@ -2072,11 +2073,11 @@ export class Im extends Service {
       let parts: ImContent[];
       if (row.parts_json) parts = JSON.parse(row.parts_json) as ImContent[];
       else {
-        parts = prepare(JSON.parse(row.content_json) as ImContent, caps, (en, zh) => this.say(en, zh));
+        parts = prepare(JSON.parse(row.content_json) as ImContent, caps, this.w);
         // A growing reply shows what fits one message; the final version carries the rest.
         if (row.stream) parts = parts.slice(0, 1);
         // Clear obsolete segments when an edited question or status became shorter.
-        if (caps.edit) while (parts.length < messageIds.length) parts.push({ text: this.say("This message was superseded", "此消息已被更新") });
+        if (caps.edit) while (parts.length < messageIds.length) parts.push({ text: this.w("superseded") });
         row.prepared_revision = row.revision;
         row.part = 0;
         this.store.run("UPDATE plugin_im_outbox SET parts_json = ?, prepared_revision = ?, part = 0 WHERE id = ?", JSON.stringify(parts), row.prepared_revision, row.id);

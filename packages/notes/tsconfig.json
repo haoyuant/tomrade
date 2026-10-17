@@ -8,6 +8,7 @@
   "include": ["src"],
   "references": [
     { "path": "../db" },
+    { "path": "../domain" },
     { "path": "../files" },
     { "path": "../ipc" },
     { "path": "../settings" },

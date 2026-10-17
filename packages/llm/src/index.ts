@@ -1,6 +1,6 @@
 import { Context, Service } from "cordis";
 import { z } from "zod";
-import { modelErrorKind, type ModelErrorKind } from "@tomradex/domain";
+import { modelErrorKind, type ModelErrorKind, type WordsLocale } from "@tomradex/domain";
 import type {} from "@tomradex/db";
 import type {} from "@tomradex/ipc";
 import type { SettingsSection } from "@tomradex/settings";
@@ -13,6 +13,7 @@ import { OpenAiCompatible } from "./openai.js";
 import { withPromptTools } from "./prompt-tools.js";
 import { guessProviders, keyHint, listModels, pickModel, PROVIDERS, usableModels, type ModelListing, type QuickSetupResult } from "./providers.js";
 import { WORKER_CALLS_MIGRATIONS, WORKER_CALLS_TABLES, WorkerCallLog, type WorkerPurpose, type WorkerSpend, type WorkerUsageSummary } from "./worker-usage.js";
+import { LLM_WORDS } from "./words.js";
 
 export * from "./model.js";
 export { PROVIDERS, guessProviders, keyHint, listModels, pickModel, usableModels, type ModelListing, type ProviderPreset, type QuickSetupResult } from "./providers.js";
@@ -39,6 +40,11 @@ export interface CompletionRequest {
 }
 
 const NO_PROFILE = "No model profile configured — add one in Settings → Assistant";
+// Reachable from mainland China first for a Chinese reader; the paid global APIs first otherwise.
+const PROVIDER_ORDER: Record<WordsLocale, string[]> = {
+  en: ["anthropic", "openai", "deepseek", "openrouter", "kimi", "ollama"],
+  zh: ["deepseek", "kimi", "anthropic", "openai", "openrouter", "ollama"]
+};
 
 /** A model that sends nothing for this long has stopped answering; a long document still streaming is never cut. */
 export const COMPLETION_IDLE_MS = 90_000;
@@ -356,10 +362,10 @@ export class Llm extends Service implements LlmService {
 
   ready(): LlmStatus {
     const profile = this.models().profiles[0];
-    const zh = this.ctx.settings.locale?.() === "zh";
-    if (!profile) return { ok: false, reason: zh ? "还没有配置模型——去 设置 → 助手 里添加一个" : "No model profile configured — add one in Settings → Assistant" };
+    const w = this.words();
+    if (!profile) return { ok: false, reason: w("noProfile") };
     // A local endpoint (Ollama, LM Studio) needs no key; Anthropic always does.
-    if (profile.provider === "anthropic" && !profile.apiKey) return { ok: false, reason: zh ? `配置“${profile.title || profile.id}”没有 API Key` : `Profile "${profile.title || profile.id}" has no API key` };
+    if (profile.provider === "anthropic" && !profile.apiKey) return { ok: false, reason: w("noApiKey", { profile: profile.title || profile.id }) };
     return { ok: true, profile: { id: profile.id, title: profile.title || profile.model, provider: profile.provider, model: profile.model } };
   }
 
@@ -462,9 +468,8 @@ export class Llm extends Service implements LlmService {
       const id = chosen.slice(LENT_WORKER.length);
       const lent = this.lent.find((m) => m.id === id);
       if (lent && (await lent.ready().catch(() => false))) return { kind: "lent", lent };
-      const zh = this.zh();
       const name = lent?.title ?? id;
-      return { kind: "none", chosen: true, reason: zh ? `执行模型选的是 ${name}，但它现在用不了——先登录它，或在 设置 → 助手 里换一个` : `The worker is set to ${name}, which cannot answer right now — sign it in, or pick another in Settings → Assistant` };
+      return { kind: "none", chosen: true, reason: this.words()("workerUnavailable", { name }) };
     }
     const profile = this.profileFor("worker");
     if (profile) return { kind: "profile", profile };
@@ -526,17 +531,16 @@ export class Llm extends Service implements LlmService {
     return { ok: false, reason: source.reason };
   }
 
-  private zh(): boolean {
-    return this.ctx.settings.locale?.() === "zh";
+  private words() {
+    return LLM_WORDS(this.ctx.settings.locale?.());
   }
 
   providers(): ProviderView[] {
-    const zh = this.zh();
-    // Reachable from mainland China first for a Chinese reader; the paid global APIs first otherwise.
-    const order = zh ? ["deepseek", "kimi", "anthropic", "openai", "openrouter", "ollama"] : ["anthropic", "openai", "deepseek", "openrouter", "kimi", "ollama"];
+    const locale = this.words().locale;
+    const order = PROVIDER_ORDER[locale];
     return [...PROVIDERS]
       .sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))
-      .map((p) => ({ id: p.id, title: p.title, hint: zh ? p.hint.zh : p.hint.en, ...(p.keyPage ? { keyPage: p.keyPage } : {}), ...(p.local ? { local: true } : {}) }));
+      .map((p) => ({ id: p.id, title: p.title, hint: p.hint[locale], ...(p.keyPage ? { keyPage: p.keyPage } : {}), ...(p.local ? { local: true } : {}) }));
   }
 
   /** Keys exported in the person's shell and local servers, minus what a profile already uses. */

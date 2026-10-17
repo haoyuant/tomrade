@@ -21,6 +21,7 @@
     "@tomradex/agent": "workspace:*",
     "@tomradex/contributions": "workspace:*",
     "@tomradex/db": "workspace:*",
+    "@tomradex/domain": "workspace:*",
     "@tomradex/ipc": "workspace:*",
     "@tomradex/oplog": "workspace:*",
     "@tomradex/plugin-sdk": "workspace:*",

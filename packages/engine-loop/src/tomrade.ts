@@ -1,6 +1,7 @@
 import type { Context } from "cordis";
 import { z } from "zod";
 import type { Engine, EngineAvailability } from "@tomradex/agent";
+import { LOOP_WORDS } from "./words.js";
 
 export const TomradeEngineConfig = z.object({
   /**
@@ -33,7 +34,7 @@ export function createTomradeEngine(ctx: Context, config: TomradeEngineConfig): 
   const own = [config.backlog].flat();
   const ownPart = () => own.map(part).find(Boolean);
   const either = () => ownPart() ?? part(config.work);
-  const zh = () => ctx.settings.locale?.() === "zh";
+  const words = () => LOOP_WORDS(ctx.settings.locale?.());
   const runs = async (engine: Engine | undefined, opts?: { fresh?: boolean; options?: unknown }): Promise<EngineAvailability | null> => {
     if (!engine) return null;
     try {
@@ -107,7 +108,7 @@ export function createTomradeEngine(ctx: Context, config: TomradeEngineConfig): 
       if (!resume)
         io.emit({
           type: "note",
-          text: zh() ? `还没有可用的模型，这段对话由 ${engine.title} 接手。` : `No model is connected, so ${engine.title} is holding this conversation.`
+          text: words()("holding", { engine: engine.title })
         });
       const result = await engine.turn(turnInput, { ...io, resume });
       return result.resume ? { ...result, resume: mark + result.resume } : result;

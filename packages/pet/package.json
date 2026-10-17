@@ -21,6 +21,7 @@
     "@tomradex/agent": "workspace:*",
     "@tomradex/contributions": "workspace:*",
     "@tomradex/desktop-surface": "workspace:*",
+    "@tomradex/domain": "workspace:*",
     "@tomradex/ipc": "workspace:*",
     "@tomradex/settings": "workspace:*",
     "cordis": "4.0.0-rc.8",

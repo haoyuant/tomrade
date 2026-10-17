@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Locale } from "./words.js";
+import type { WordsLocale } from "@tomradex/domain";
 
 const Text = z.object({ en: z.string().min(1).max(600), zh: z.string().min(1).max(600) });
 
@@ -61,7 +61,7 @@ export function matches(issue: KnownIssue, evidence: Evidence): boolean {
   });
 }
 
-export const said = (text: { en: string; zh: string }, locale: Locale): string => text[locale];
+export const said = (text: { en: string; zh: string }, locale: WordsLocale): string => text[locale];
 
 /** The problems known when this release was made. A newer catalog from tomrade.com adds to them. */
 export const BUNDLED: KnownIssue[] = [

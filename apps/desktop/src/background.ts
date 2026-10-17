@@ -10,6 +10,7 @@ import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/settings";
 import { BACKGROUND_FLAG, loginItem, type LoginItem, type LoginState } from "./login-item.js";
 import { hasMainWindow, showMainWindow } from "./main-window.js";
+import { DESKTOP_WORDS } from "./words.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -126,7 +127,7 @@ export const background = {
     const file = config.file;
     const login = loginItem();
     const log = ctx.logger("background");
-    const zh = () => ctx.get("settings")?.locale?.() === "zh";
+    const words = () => DESKTOP_WORDS(ctx.get("settings")?.locale?.());
     let error: string | undefined;
 
     const save = (patch: Partial<Prefs>) => {
@@ -175,14 +176,14 @@ export const background = {
     const menu = () => {
       const mcp = ctx.get("mcp")?.url ?? null;
       const runs = ctx.get("agent")?.activeRuns().length ?? 0;
-      const cn = zh();
+      const w = words();
       return Menu.buildFromTemplate([
-        { label: cn ? "打开 Tomrade" : "Open Tomrade", click: () => void showMainWindow() },
+        { label: w("trayOpen"), click: () => void showMainWindow() },
         { type: "separator" },
-        { label: mcp ? `MCP: ${mcp.replace(/^https?:\/\//, "")}` : cn ? "MCP 未运行" : "MCP not running", enabled: false },
-        { label: cn ? `运行中的智能体：${runs}` : `${runs} agent run${runs === 1 ? "" : "s"} in progress`, enabled: false },
+        { label: mcp ? `MCP: ${mcp.replace(/^https?:\/\//, "")}` : w("trayMcpStopped"), enabled: false },
+        { label: w(runs === 1 ? "trayRunsOne" : "trayRunsMany", { n: runs }), enabled: false },
         { type: "separator" },
-        { label: cn ? "退出 Tomrade" : "Quit Tomrade", click: () => app.quit() }
+        { label: w("trayQuit"), click: () => app.quit() }
       ]);
     };
     const refreshTray = () => tray?.setContextMenu(menu());
@@ -209,14 +210,9 @@ export const background = {
     onAway = () => {
       if (current?.noticed || !Notification.isSupported()) return;
       save({ noticed: true });
-      const cn = zh();
-      const where = process.platform === "darwin" ? (cn ? "菜单栏" : "menu bar") : cn ? "系统托盘" : "system tray";
-      new Notification({
-        title: cn ? "Tomrade 仍在后台运行" : "Tomrade is still running",
-        body: cn
-          ? `MCP 服务、例行任务和同步会继续工作。可以从${where}图标打开或退出 Tomrade。`
-          : `The MCP server, routines and sync keep working. Open or quit Tomrade from its ${where} icon.`
-      }).show();
+      const w = words();
+      const where = w(process.platform === "darwin" ? "menuBar" : "systemTray");
+      new Notification({ title: w("stillRunning"), body: w("stillRunningBody", { where }) }).show();
     };
 
     const changed = () => {

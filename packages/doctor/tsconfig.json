@@ -11,6 +11,7 @@
   "references": [
     { "path": "../agent" },
     { "path": "../contributions" },
+    { "path": "../domain" },
     { "path": "../ipc" },
     { "path": "../llm" },
     { "path": "../mcp" },

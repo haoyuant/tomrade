@@ -374,8 +374,8 @@ export class Agent extends Service {
     for (const playbook of loadPlaybookDir(fileURLToPath(new URL("../playbooks", import.meta.url)))) this.playbook(playbook);
     // A run left "running" by a killed process has no controller; settle it in
     // every project file that is open now and in each one opened later.
-    for (const projectId of this.ctx.db.openIds()) this.store.reconcileInterrupted(projectId, this.words().interrupted);
-    this.ctx.on("db/opened", (projectId) => this.store.reconcileInterrupted(projectId, this.words().interrupted));
+    for (const projectId of this.ctx.db.openIds()) this.store.reconcileInterrupted(projectId, this.words()("interrupted"));
+    this.ctx.on("db/opened", (projectId) => this.store.reconcileInterrupted(projectId, this.words()("interrupted")));
     for (const projectId of this.ctx.db.openIds()) this.armParked(projectId);
     this.ctx.on("db/opened", (projectId) => this.armParked(projectId));
     this.ctx.effect(() => () => {
@@ -701,7 +701,7 @@ export class Agent extends Service {
       // Words alone cannot tell a code change that mentions a design from a design ask: without code.implement, a coding ticket gets no method rather than a medium's.
       const playbookId = candidateIds.has(preferred) ? preferred : workType === "coding" ? null : candidates.find((entry) => entry.workTypes?.includes(workType))?.id ?? null;
       const selected = candidates.find((entry) => entry.id === playbookId);
-      return { workType, playbookId, confidence: playbookId === preferred ? 0.62 : 0.3, reason: words.recommendedByType, source: "fallback", requires: selected?.requires ?? [] };
+      return { workType, playbookId, confidence: playbookId === preferred ? 0.62 : 0.3, reason: words("recommendedByType"), source: "fallback", requires: selected?.requires ?? [] };
     };
     const llm = this.ctx.get("llm") as LlmService | undefined;
     if (!llm || !candidates.length) return fallback();
@@ -712,7 +712,7 @@ export class Agent extends Service {
         ...(budget ? { maxTokens: 400, repair: false } : {}),
         signal,
         purpose: "playbook",
-        system: `Recommend one execution playbook for a ticket. Return only JSON of this shape: {"workType": "coding" | "general", "playbookId": string | null, "confidence": number, "reason": string}. Respect the requested workType. Choose playbookId only from the supplied candidates; use null only when none fits. Confidence is 0..1. In reason, explain the recommendation in one short sentence in ${words.reasonLanguage}, for the person who will run the ticket: say why this method suits the work, without naming ids or fields.`,
+        system: `Recommend one execution playbook for a ticket. Return only JSON of this shape: {"workType": "coding" | "general", "playbookId": string | null, "confidence": number, "reason": string}. Respect the requested workType. Choose playbookId only from the supplied candidates; use null only when none fits. Confidence is 0..1. In reason, explain the recommendation in one short sentence in ${words.locale === "zh" ? "Simplified Chinese" : "English"}, for the person who will run the ticket: say why this method suits the work, without naming ids or fields.`,
         user: JSON.stringify({ requestedWorkType: input.workType ?? null, title: input.title, body: input.body ?? "", candidates: candidates.map(({ id, title, when, workTypes, requires, outputs }) => ({ id, title, when, workTypes, requires, outputs })) })
       }), signal);
       if (input.workType && result.workType !== input.workType || (result.playbookId !== null && !candidateIds.has(result.playbookId))) return fallback();
@@ -869,7 +869,7 @@ export class Agent extends Service {
         if (Date.now() > deadline) throw new Error("The agent has not stopped yet; wait for cancellation before taking over");
         await new Promise(resolve => setTimeout(resolve, 25));
       }
-      for (const { thread } of active) this.appendAndBroadcast(projectId, thread.id, "system", { type: "note", text: this.words().humanTookOver }, null);
+      for (const { thread } of active) this.appendAndBroadcast(projectId, thread.id, "system", { type: "note", text: this.words()("humanTookOver") }, null);
       return { stopped: active.length };
     } finally {
       this.generalStarts.delete(key);
@@ -1044,7 +1044,7 @@ export class Agent extends Service {
     const out = (rest: Omit<EngineTry, "ms" | "at">): EngineTry => ({ ...rest, ms: Date.now() - started, at: Date.now() });
     const thread = this.newThread(projectId, engineId, null, { surface: "probe", title: "probe" });
     try {
-      const { runId } = this.send(projectId, thread.id, { kind: "text", text: this.words().tryAsk });
+      const { runId } = this.send(projectId, thread.id, { kind: "text", text: this.words()("tryAsk") });
       const ended = await new Promise<boolean>((resolve) => {
         const done = (value: boolean) => { clearTimeout(timer); signal?.removeEventListener("abort", abort); off(); resolve(value); };
         const off = this.ctx.on("agent/run-ended", (run) => { if (run.id === runId) done(true); });
@@ -1057,7 +1057,7 @@ export class Agent extends Service {
         this.cancel(runId);
         // let the cancelled run settle before its thread is deleted
         for (let n = 0; n < 50 && this.activeByThread.has(thread.id); n++) await new Promise((resolve) => setTimeout(resolve, 100));
-        return out({ ok: false, error: signal?.aborted ? "cancelled" : this.words().tryTimeout(TRY_MS / 1000) });
+        return out({ ok: false, error: signal?.aborted ? "cancelled" : this.words()("tryTimeout", { s: TRY_MS / 1000 }) });
       }
       const run = this.store.run(projectId, runId);
       const messages = this.store.messages(projectId, thread.id);
@@ -1112,7 +1112,7 @@ export class Agent extends Service {
         // Not there and not made. Unfinished work gets it on its first run; finished work only through a new Start.
         const refused = finished && !thread.archived && !opts.revive;
         const key = ticket?.key ?? thread.title;
-        return { ...none, remote: view.repo.remote, branch: view.branch, problem: refused ? this.words().finishedNoWorktree(key) : null, code: refused ? "finished" : null };
+        return { ...none, remote: view.repo.remote, branch: view.branch, problem: refused ? this.words()("finishedNoWorktree", { key }) : null, code: refused ? "finished" : null };
       }
       return { cwd: view.cwd, remote: view.repo.remote, branch: view.branch, worktree: view.worktree, problem: null, code: null };
     } catch (err) {
@@ -1139,12 +1139,12 @@ export class Agent extends Service {
       // Switching conductors abandons the waiting question; say so in the thread.
       this.store.clearPending(projectId, threadId);
       this.broadcast(threadId, { type: "pending", pending: null });
-      this.appendAndBroadcast(projectId, threadId, "system", { type: "note", text: this.words().cancelledWaiting }, null);
+      this.appendAndBroadcast(projectId, threadId, "system", { type: "note", text: this.words()("cancelledWaiting") }, null);
     }
     // Overrides belong to the engine they were picked for.
     this.store.touchThread(projectId, threadId, { engine: engineId, permissionMode: null, options: null });
     const thread = this.store.thread(projectId, threadId)!;
-    this.appendAndBroadcast(projectId, threadId, "system", { type: "note", text: this.words().engineSwitched(this.engines.get(engineId)?.title ?? engineId) }, null);
+    this.appendAndBroadcast(projectId, threadId, "system", { type: "note", text: this.words()("engineSwitched", { title: this.engines.get(engineId)?.title ?? engineId }) }, null);
     return thread;
   }
 
@@ -1226,10 +1226,10 @@ export class Agent extends Service {
     };
     const thread = this.store.thread(projectId, threadId);
     if (!thread) throw new Error(`unknown thread ${threadId}`);
-    if (thread.archived && !this.activeByThread.has(threadId)) throw new Error(this.words().archivedReadOnly);
+    if (thread.archived && !this.activeByThread.has(threadId)) throw new Error(this.words()("archivedReadOnly"));
     const ticket = thread.itemId && !thread.execution && !this.activeByThread.has(threadId) ? this.itemOf(projectId, thread.itemId) : null;
     // A done ticket's conversation changes nothing until the ticket is reopened.
-    if (ticket?.status === "done") throw new Error(this.words().reopenToContinue(ticket.key));
+    if (ticket?.status === "done") throw new Error(this.words()("reopenToContinue", { key: ticket.key }));
     if (thread.execution && this.generalTakeovers.has(`${projectId}:${thread.itemId}`)) throw new Error("Human takeover is in progress; wait for the agent to stop");
     const permission = this.permissions.get(threadId);
     if (permission && input.kind === "answer") {
@@ -1298,7 +1298,7 @@ export class Agent extends Service {
   cancelWaiting(projectId: string, threadId: string): boolean {
     if (this.activeByThread.has(threadId) || !this.store.pending(projectId, threadId)) return false;
     this.store.clearPending(projectId, threadId);
-    this.appendAndBroadcast(projectId, threadId, "system", { type: "note", text: this.words().stopped }, null);
+    this.appendAndBroadcast(projectId, threadId, "system", { type: "note", text: this.words()("stopped") }, null);
     this.broadcast(threadId, { type: "pending", pending: null });
     return true;
   }
@@ -1327,8 +1327,9 @@ export class Agent extends Service {
     if (run.reverted) return { reverted: 0, kept: [] };
     const result = this.ctx.oplog.undoRun(projectId, runId);
     const view = this.store.markReverted(projectId, runId, result.kept.length);
-    const kept = result.kept.length ? { labels: result.kept.map((k) => k.label).join(", "), reason: result.kept[0].reason } : null;
-    this.appendAndBroadcast(projectId, run.threadId, "system", { type: "note", text: this.words().reverted(result.reverted, kept) }, runId);
+    const w = this.words();
+    const kept = result.kept.length ? w("revertedKept", { labels: result.kept.map((k) => k.label).join(", "), reason: result.kept[0].reason }) : "";
+    this.appendAndBroadcast(projectId, run.threadId, "system", { type: "note", text: w(result.reverted === 1 ? "revertedOne" : "revertedMany", { n: result.reverted, kept }) }, runId);
     this.broadcast(run.threadId, { type: "run", run: view });
     return result;
   }
@@ -1350,7 +1351,7 @@ export class Agent extends Service {
 
   /** The words the platform writes into a conversation, in the person's language now. */
   private words(): AgentWords {
-    return AGENT_WORDS[(this.ctx.get("settings") as { locale?: () => "en" | "zh" } | undefined)?.locale?.() ?? "en"];
+    return AGENT_WORDS((this.ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
   }
 
   private makeRunCtx(run: RunView, thread: ThreadSummary, engine: Engine): RunCtx {
@@ -1609,7 +1610,7 @@ export class Agent extends Service {
         // Its session is gone (another config folder, cleared history): rather than failing every
         // message on the same dead id, run the turn again in a new session with the conversation carried in.
         this.store.setExternal(rc.projectId, rc.threadId, rc.engine.id, null);
-        this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: this.words().sessionLost(rc.engine.title) }, rc.run.id);
+        this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: this.words()("sessionLost", { title: rc.engine.title }) }, rc.run.id);
         rc.io.resume = undefined;
         result = await rc.engine.turn(turnInput, rc.io);
       }
@@ -1686,7 +1687,7 @@ export class Agent extends Service {
     this.broadcast(rc.threadId, { type: "pending", pending: null });
     const spec = this.workflows.get(pending.workflow!);
     if (!spec) {
-      this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: this.words().workflowGone(pending.workflow ?? "") }, rc.run.id);
+      this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: this.words()("workflowGone", { name: pending.workflow ?? "" }) }, rc.run.id);
       return "engine";
     }
     const outcome = await this.asRun(rc, () => this.driveWorkflow(spec, pending.step!, spec.state.parse(pending.state), value, rc));
@@ -1741,10 +1742,11 @@ export class Agent extends Service {
     }
     if (result.stop === "cancelled") {
       const w = this.words();
-      this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: rc.clock.timedOut ? w.timeLimit(rc.clock.limitMs, !rc.thread.itemId) : w.stopped }, rc.run.id);
+      const duration = rc.clock.limitMs >= 60_000 ? w("minutes", { n: Math.round(rc.clock.limitMs / 60_000) }) : w("seconds", { n: Math.round(rc.clock.limitMs / 1000) });
+      this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: rc.clock.timedOut ? w("timeLimit", { duration, hint: rc.thread.itemId ? "" : w("raiseTimeLimit") }) : w("stopped") }, rc.run.id);
     }
     if (result.stop === "budget") {
-      this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: this.words().budget }, rc.run.id);
+      this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: this.words()("budget") }, rc.run.id);
     }
     if (result.stop === "error") {
       const raw = result.error ?? "The engine stopped without an error message.";
@@ -1795,8 +1797,10 @@ export class Agent extends Service {
     this.armPark(projectId, park);
     if (limit.note === false) return park;
     const w = this.words();
-    const locale = (this.ctx.get("settings") as { locale?: () => "en" | "zh" } | undefined)?.locale?.() ?? "en";
-    const said = attempt > LIMIT_TRIES && (limit.resume ?? true) ? w.limitGaveUp(LIMIT_TRIES) : w.limited(untilLabel(park.until, locale), park.known, park.resume);
+    const when = untilLabel(park.until, w.locale);
+    const said = attempt > LIMIT_TRIES && (limit.resume ?? true)
+      ? w("limitGaveUp", { n: LIMIT_TRIES })
+      : w("limited", { lifts: w(park.known ? "limitLiftsAt" : "limitNextTry", { when }), then: w(park.resume ? "limitResumes" : "limitContinue") });
     this.appendAndBroadcast(projectId, threadId, "system", { type: "note", text: said }, park.runId);
     return park;
   }
@@ -1833,7 +1837,7 @@ export class Agent extends Service {
     if (park.resume && this.settingsOf().resumeAfterLimit !== false) {
       this.resuming.set(threadId, park.attempt);
       try {
-        this.send(projectId, threadId, { kind: "text", text: this.words().continueAfterLimit });
+        this.send(projectId, threadId, { kind: "text", text: this.words()("continueAfterLimit") });
         return;
       } catch (err) {
         this.resuming.delete(threadId);
@@ -1979,8 +1983,9 @@ export class Agent extends Service {
           if (!inv.ask) throw new Error("Nobody here can confirm a rule. Tell the user they can add it in Project settings → Rules.");
           const w = this.words();
           const line = rule.replace(/\s+/g, " ").trim().replace(/^[-*]\s*/, "");
-          const answer = await inv.ask(w.proposeRule(line), [w.addRule, w.skipRule]);
-          if (answer !== w.addRule) return { added: false, note: "The user did not add it. Follow it for this conversation only if they asked you to." };
+          const [addRule, skipRule] = [w("addRule"), w("skipRule")];
+          const answer = await inv.ask(w("proposeRule", { rule: line }), [addRule, skipRule]);
+          if (answer !== addRule) return { added: false, note: "The user did not add it. Follow it for this conversation only if they asked you to." };
           const current = this.rules(projectId);
           this.setRules(projectId, current ? `${current}\n- ${line}` : `- ${line}`);
           return { added: true, file: this.rulesFile(projectId) };

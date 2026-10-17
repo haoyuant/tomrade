@@ -22,6 +22,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@tomradex/domain": "workspace:*",
     "@tomradex/settings": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "zod": "^4.4.3"

@@ -12,6 +12,7 @@ import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/tools";
 import { LONG_RESULT, compactList, defineTool, strictInput, type Tools } from "@tomradex/tools";
+import { MCP_WORDS, type McpWords } from "./words.js";
 
 export const MCP_SERVER_NAME = "tomrade";
 
@@ -308,7 +309,7 @@ export class Mcp extends Service {
     if (!bound) throw new Error(`MCP could not bind ${this.config.host}:${this.config.port}`);
     const { server } = bound;
     this.url = `http://${this.config.host}:${bound.port}/mcp`;
-    if (this.clash) this.ctx.logger.warn(`MCP port ${this.clash.port} is held by ${this.holderText(false)}; this instance listens on ${this.url}`);
+    if (this.clash) this.ctx.logger.warn(`MCP port ${this.clash.port} is held by ${this.holderText(MCP_WORDS("en"))}; this instance listens on ${this.url}`);
     else this.ctx.logger.info(`MCP server ready: ${this.url}`);
     this.ctx.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("mcp.url", (projectId) => (projectId ? ctx.mcp.urlFor(projectId) : ctx.mcp.url));
@@ -319,14 +320,11 @@ export class Mcp extends Service {
         icon: "i-warn",
         text: () => {
           if (!this.clash || !this.url) return null;
-          const zh = this.zh();
+          const w = this.words();
           const port = new URL(this.url).port;
-          return zh ? `MCP 在 ${port} 端口 · ${this.clash.port} 被${this.holderText(true)}占用` : `MCP on ${port} · ${this.clash.port} held by ${this.holderText(false)}`;
+          return w("portClash", { port, clashPort: this.clash.port, holder: this.holderText(w) });
         },
-        title: () =>
-          this.zh()
-            ? "按默认端口配置的智能体连到的是另一个 Tomrade 和它的数据，不是这个。退出另一个，或用 TOMRADE_MCP_PORT 给这个实例指定端口。"
-            : "Agents configured for the usual port reach the other Tomrade and its data, not this one. Quit the other, or give this instance its own port with TOMRADE_MCP_PORT."
+        title: () => this.words()("portClashTitle")
       });
     });
     // After the project's rules, which must lead (a client may keep only the start), before everything else.
@@ -345,22 +343,21 @@ export class Mcp extends Service {
     return { app: "tomrade", kind: this.config.instance.kind, version: this.config.instance.version, pid: process.pid };
   }
 
-  private zh(): boolean {
-    return (this.ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.() === "zh";
+  private words(): McpWords {
+    return MCP_WORDS((this.ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
   }
 
   /** Who holds the clashed port, in words. */
-  holderText(zh: boolean): string {
+  holderText(w: McpWords = this.words()): string {
     const held = this.clash?.heldBy;
-    if (!held) return zh ? "其他程序" : "another program";
-    const kind = zh ? (held.kind === "packaged" ? "正式版" : "开发版") : held.kind === "packaged" ? "the installed Tomrade" : "a development Tomrade";
-    return zh ? `${kind} ${held.version}（进程 ${held.pid}）` : `${kind} ${held.version} (pid ${held.pid})`;
+    if (!held) return w("holderUnknown");
+    return w("holder", { kind: w(held.kind === "packaged" ? "holderPackaged" : "holderDev"), version: held.version, pid: held.pid });
   }
 
   /** The first thing a client reads: which Tomrade, and which data, it is talking to. */
   private introduction(): string {
     const { kind, version, dataDir } = this.config.instance;
-    const clash = this.clash ? ` Port ${this.clash.port} is held by ${this.holderText(false)}, which has its own data.` : "";
+    const clash = this.clash ? ` Port ${this.clash.port} is held by ${this.holderText(MCP_WORDS("en"))}, which has its own data.` : "";
     return `This is Tomrade ${kind === "packaged" ? "(installed app)" : "(development build)"} ${version}, pid ${process.pid}${dataDir ? `, data in ${dataDir}` : ""}.${clash} Another Tomrade on this machine keeps separate data; call whoami when unsure which one you reach or whether your writes have synced.`;
   }
 

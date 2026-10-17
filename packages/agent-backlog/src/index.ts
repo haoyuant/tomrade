@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { WorkflowIO } from "@tomradex/agent";
 import type {} from "@tomradex/boards";
 import type {} from "@tomradex/items";
-import type { Item } from "@tomradex/domain";
+import { wordsLocale, type Item, type WordsLocale } from "@tomradex/domain";
 import type { LlmService } from "@tomradex/llm";
 import { defineTool, type RunHandle } from "@tomradex/tools";
 import { dossierSchema, emptyDossier, readiness, renderDossier, REQUIRED_FIELDS, type Dossier, type RequiredField } from "./dossier.js";
@@ -12,6 +12,7 @@ import { applyDependencies, proposeDependencies, reviewQuestion, ticketChanges, 
 import { applyPlan, findGaps, generatePlan, planSchema, type Plan, type PlanLanguage } from "./plan.js";
 import { PLAYBOOKS } from "./playbooks.js";
 import { findSimilar, findSimilarBatch, overlap } from "./similar.js";
+import { BACKLOG_WORDS } from "./words.js";
 
 export { dossierSchema, emptyDossier, readiness, renderDossier, REQUIRED_FIELDS, type Dossier } from "./dossier.js";
 export { findSimilar, findSimilarBatch, overlap, tokens } from "./similar.js";
@@ -37,9 +38,10 @@ const toList = (raw: string): string[] => {
   return trimmed.split(/[,，、;；\n]/).map((s) => s.trim()).filter(Boolean);
 };
 
-const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+const LOCALES: readonly WordsLocale[] = ["en", "zh"];
+const count = (w: ReturnType<typeof BACKLOG_WORDS>, n: number, one: "item" | "epic" | "ticket", many: "items" | "epics" | "tickets") => w(n === 1 ? one : many, { n });
 /** The answers that write a proposed plan, in each language it is asked in. */
-const APPLY = ["Apply", "写入"];
+const APPLY = LOCALES.map((l) => BACKLOG_WORDS(l)("planApply"));
 const answerText = (answer: string | string[] | undefined): string => (Array.isArray(answer) ? answer.join(", ") : (answer ?? ""));
 
 interface WizardState {
@@ -63,7 +65,7 @@ export default {
         .filter((m) => m.role === "user" && m.block.type === "text").slice(-3)
         .map((m) => (m.block.type === "text" ? m.block.text : "")).join(" ");
       if (said.trim()) return /[\u3400-\u9fff]/.test(said) ? "zh" : "en";
-      return ctx.settings.locale?.() === "zh" ? "zh" : "en";
+      return wordsLocale(ctx.settings.locale?.());
     };
     const saveDossier = (run: RunHandle, dossier: Dossier) =>
       ctx.agent.setCard(run.id, { id: "dossier", schema: "backlog.dossier", title: "Requirement dossier", data: dossier });
@@ -154,11 +156,9 @@ export default {
           const next: PlanState = { ...state, plan, writes: 1 + plan.epics.length + features };
           io.emit({ type: "card", id: "proposal", schema: "backlog.proposal", title: "Plan proposal", data: { rootTitle: state.rootTitle, ...plan } });
           // The person reads the tree before any of it is written.
-          const zh = ctx.settings.locale?.() === "zh";
-          const text = zh
-            ? `这份计划会写入 ${next.writes} 项（1 个总 epic、${plan.epics.length} 个 epic、${features} 张票）。写入 backlog 吗？`
-            : `This plan writes ${count(next.writes, "item")} (1 root epic, ${count(plan.epics.length, "epic")}, ${count(features, "ticket")}). Write it to the backlog?`;
-          return { ask: { text, options: zh ? ["写入", "取消"] : ["Apply", "Cancel"] }, state: next };
+          const w = BACKLOG_WORDS(ctx.settings.locale?.());
+          const text = w("planAsk", { writes: count(w, next.writes, "item", "items"), epics: count(w, plan.epics.length, "epic", "epics"), tickets: count(w, features, "ticket", "tickets") });
+          return { ask: { text, options: [w("planApply"), w("planCancel")] }, state: next };
         },
         apply(state, io) {
           const outcome = applyPlan(ctx, {
@@ -253,16 +253,17 @@ export default {
           if (answer !== undefined) {
             if (answerText(answer) !== state.apply || !state.proposal) return { done: { applied: false } };
             const outcome = applyDependencies(ctx, projectId, state.proposal, io.run.author);
-            const zh = state.apply === "现在更新";
+            // The question was asked in the language its apply answer is in.
+            const w = BACKLOG_WORDS(LOCALES.find((l) => BACKLOG_WORDS(l)("dependenciesApply") === state.apply));
             const failed = outcome.failed.map((f) => `${f.key} (${f.reason})`).join("; ");
-            io.emit({ type: "note", text: zh ? `依赖已更新：新增 ${outcome.added} 条，移除 ${outcome.removed} 条。${failed ? `未能更新：${failed}` : ""}` : `Dependencies updated: ${outcome.added} added, ${outcome.removed} removed.${failed ? ` Not updated: ${failed}` : ""}` });
+            io.emit({ type: "note", text: w("dependenciesUpdated", { added: outcome.added, removed: outcome.removed }) + (failed ? w("dependenciesNotUpdated", { failed }) : "") });
             return { done: outcome };
           }
           const changes = ticketChanges(ctx, projectId, state.runIds);
           const model = llm();
           if ((!changes.length && !state.full) || !model || !(await model.worker()).ok) return { done: { proposed: 0 } };
           let proposal: DependencyProposal;
-          io.activity(ctx.settings.locale?.() === "zh" ? "正在检查依赖…" : "Checking dependencies…");
+          io.activity(BACKLOG_WORDS(ctx.settings.locale?.())("checkingDependencies"));
           try {
             proposal = await proposeDependencies(ctx, model, projectId, changes, { signal: io.signal });
           } catch (err) {
@@ -274,8 +275,8 @@ export default {
           if (!proposal.add.length && !proposal.remove.length) return { done: { proposed: 0 } };
           const items = ctx.items.list({ projectId });
           const titleOf = (key: string) => items.find((i) => i.key === key)?.title ?? "";
-          const zh = /[\u3400-\u9fff]/.test([...changes.map((c) => c.title), ...items.slice(0, 20).map((i) => i.title)].join(""));
-          const question = reviewQuestion(proposal, titleOf, zh);
+          const locale: WordsLocale = /[\u3400-\u9fff]/.test([...changes.map((c) => c.title), ...items.slice(0, 20).map((i) => i.title)].join("")) ? "zh" : "en";
+          const question = reviewQuestion(proposal, titleOf, locale);
           return { ask: { text: question.text, options: [question.apply, question.skip] }, state: { ...state, proposal, apply: question.apply } };
         }
       }

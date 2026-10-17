@@ -492,7 +492,7 @@ async function binOf(agent: Agent, engineId: string): Promise<string> {
 async function linkFirst(engine: Engine, locale: string | undefined): Promise<string | null> {
   if (!engine.terminalViaLink) return null;
   const state = (await engine.mcpLink?.status().catch(() => null))?.state;
-  return state === "connected" ? null : CODE_WORDS[locale === "zh" ? "zh" : "en"].linkFirst(engine.title);
+  return state === "connected" ? null : CODE_WORDS(locale)("linkFirst", { title: engine.title });
 }
 
 /** Why an engine cannot be handed a ticket in a terminal, or null when it can. */

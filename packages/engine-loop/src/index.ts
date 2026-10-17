@@ -4,6 +4,7 @@ import { z } from "zod";
 import { HOUSE_RULES, deferredTools, focusSuffix, isSuspended, kitLines, promptSections, type Engine, type ThreadMessage, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
 import { assistantMessage, collect, toolResultsMessage, type Message, type ToolSpec } from "@tomradex/llm";
 import { LONG_RESULT, ToolInputError, compactList, type ToolDescriptor } from "@tomradex/tools";
+import { LOOP_WORDS } from "./words.js";
 
 export const LoopOptions = z.object({
   /** auto: the playbook index guides the model; none: the bare loop. */
@@ -165,7 +166,7 @@ const system = (input: TurnInput, io: TurnIO, options: LoopOptions): string =>
 
 export function createLoopEngine(ctx: Context): Engine {
   // what the engine itself says in the conversation, in the person's language
-  const zh = () => (ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.() === "zh";
+  const words = () => LOOP_WORDS((ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
   return {
     id: "loop",
     title: "Tomrade loop",
@@ -273,14 +274,12 @@ export function createLoopEngine(ctx: Context): Engine {
           // Nothing but reasoning, which is never kept: the same step again, without extended thinking.
           if (effort && !collected.text.trim()) {
             effort = undefined;
-            io.emit({ type: "note", text: zh() ? "模型把整个输出额度都用在了思考上，换成不深度思考再试一次。" : "The model used its whole output allowance thinking. Trying again without extended thinking." });
+            io.emit({ type: "note", text: words()("retryWithoutThinking") });
             continue;
           }
           return {
             stop: "error",
-            error: zh()
-              ? `模型在${collected.text.trim() ? "回答到一半时" : "开始回答前"}就到了输出上限（${options.maxTokens} 个 token）。换个小一点的请求，或者给这个对话选低一点的推理强度。`
-              : `The model reached its output limit (${options.maxTokens} tokens) ${collected.text.trim() ? "mid-answer" : "before answering"}. Ask for something smaller, or pick a lower effort for this thread.`,
+            error: words()(collected.text.trim() ? "outputLimitMidAnswer" : "outputLimitBeforeAnswer", { max: options.maxTokens }),
             ...spent()
           };
         }

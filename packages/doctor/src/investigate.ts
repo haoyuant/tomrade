@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { Context } from "cordis";
 import type { CardAction, FindingCard, ThreadMessage, TurnIO } from "@tomradex/agent";
 import { defineTool, type ToolInvocation } from "@tomradex/tools";
+import type { WordsLocale } from "@tomradex/domain";
 import { errorLines, newestFiles, scrub, tail } from "./evidence.js";
 import type { Diagnosis } from "./service.js";
 
@@ -107,7 +108,7 @@ export async function logSources(ctx: Context, logDir: string | undefined, engin
 }
 
 /** The investigating agent's first message: the job, the house rules, and every piece of evidence the checks gathered. */
-export function brief(diagnosis: Diagnosis, failing: string | null, locale: "en" | "zh"): string {
+export function brief(diagnosis: Diagnosis, failing: string | null, locale: WordsLocale): string {
   const topic = diagnosis.topic;
   let logs = diagnosis.logs.map((l) => `── ${l.source} ──\n${[...errorLines(l.text, 20), "…", ...l.text.split("\n").slice(-40)].join("\n")}`).join("\n\n");
   if (logs.length > BRIEF_LOG_CHARS) logs = `${logs.slice(0, BRIEF_LOG_CHARS)}\n… (more with doctor_read_log)`;

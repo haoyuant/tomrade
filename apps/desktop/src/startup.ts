@@ -1,7 +1,8 @@
 import { app, BrowserWindow, dialog, nativeImage, nativeTheme } from "electron";
+import { DESKTOP_WORDS } from "./words.js";
 
 // Before boot there are no settings to ask: the system's language.
-const zh = () => app.getLocale().toLowerCase().startsWith("zh");
+const words = () => DESKTOP_WORDS(app.getLocale().toLowerCase().startsWith("zh") ? "zh" : "en");
 
 /**
  * A small window from the first moment. Reading the login shell can take
@@ -17,7 +18,7 @@ html,body{height:100%;margin:0}
 body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;font:13px system-ui,-apple-system,"Segoe UI",sans-serif;color:${dark ? "#e8e8e8" : "#1f1f1f"};cursor:default;user-select:none;-webkit-app-region:drag}
 p{margin:0;opacity:.65}
 img{background:#fff;border-radius:16px;padding:6px}
-</style>${logo}<p>${zh() ? "Tomrade 正在启动…" : "Starting Tomrade…"}</p>`;
+</style>${logo}<p>${words()("starting")}</p>`;
   const win = new BrowserWindow({
     width: 320,
     height: 200,
@@ -41,7 +42,7 @@ img{background:#fff;border-radius:16px;padding:6px}
  * hands over to it. True when the person takes one start without their own files.
  */
 export async function startFailed(error: unknown, opts: { logDir: string; retry: boolean }): Promise<boolean> {
-  const cn = zh();
+  const w = words();
   const message = error instanceof Error ? error.message : String(error);
   const reason = message.length > 800 ? `${message.slice(0, 800)}…` : message;
   // Started at login the app is not in front, and the box must still be seen.
@@ -49,15 +50,13 @@ export async function startFailed(error: unknown, opts: { logDir: string; retry:
   const { response } = await dialog.showMessageBox({
     type: "error",
     title: "Tomrade",
-    message: cn ? "Tomrade 无法启动" : "Tomrade could not start",
+    message: w("startFailed"),
     detail: [
       reason,
-      cn ? `日志在 ${opts.logDir}` : `The log is in ${opts.logDir}`,
-      ...(opts.retry
-        ? [cn ? "可以这一次先不加载你的插件开关（tomrade.patch.yml）和你安装的插件来启动。它们都不会被修改或删除。" : "You can start this once without your plugin switches (tomrade.patch.yml) and the plugins you installed. Nothing in them is changed or removed."]
-        : [])
+      w("startLog", { dir: opts.logDir }),
+      ...(opts.retry ? [w("startWithoutHint")] : [])
     ].join("\n\n"),
-    buttons: opts.retry ? (cn ? ["不加载它们启动", "退出"] : ["Start Without Them", "Quit"]) : [cn ? "退出" : "Quit"],
+    buttons: opts.retry ? [w("startWithout"), w("quit")] : [w("quit")],
     defaultId: 0,
     cancelId: opts.retry ? 1 : 0
   });

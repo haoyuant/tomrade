@@ -71,7 +71,7 @@ const PR_NUMBER = /\/pull\/(\d+)(?:[/?#]|$)/;
 const GITHUB_PULL = /^https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\//i;
 
 export function registerTools(ctx: Context, host: ToolHost): void {
-  const untracked = () => CODE_WORDS[ctx.get("settings")?.locale?.() ?? "en"].untrackedSession;
+  const untracked = () => CODE_WORDS(ctx.get("settings")?.locale?.())("untrackedSession");
   const subject = (tool: string, projectId: string, key: string | undefined, inv: ToolInvocation): Subject => {
     const bound = sessionContext.getStore();
     const session = bound && bound.projectId === projectId ? host.store.session(projectId, bound.sessionId) : null;

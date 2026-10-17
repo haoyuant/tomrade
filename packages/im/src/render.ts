@@ -1,17 +1,15 @@
 import { splitImText, type ImContent, type ImElement, type ResolvedImCapabilities } from "@tomradex/plugin-sdk";
-
-export type Say = (en: string, zh: string) => string;
+import type { ImSpeak } from "./words.js";
 
 /** Folds a part the platform cannot show into Markdown, so degrading never drops information. */
-function fold(el: ImElement, say: Say): string {
+function fold(el: ImElement, w: ImSpeak): string {
   switch (el.type) {
     case "section": return [el.title && `**${el.title}**`, el.text, ...(el.fields ?? []).map(f => `${f.label}: ${f.value}`)].filter(Boolean).join("\n");
     case "links": return el.links.map(l => `[${l.label}](${l.url})`).join("\n");
     case "select": return el.multiple
-      ? say(`Options: ${el.options.map(o => o.label).join(", ")}\nReply /answer ${el.token} ["option", …] (a JSON array)`,
-        `可选：${el.options.map(o => o.label).join("、")}\n请回复 /answer ${el.token} ["选项", …]（JSON 数组）`)
+      ? w("foldMultiSelect", { options: el.options.map(o => o.label).join(w("listSep")), token: el.token })
       : el.options.map(o => `${o.label}：/answer ${el.token} ${o.value}`).join("\n");
-    case "input": return say(`Reply /answer ${el.token} your answer`, `请回复 /answer ${el.token} 你的回答`);
+    case "input": return w("foldInput", { token: el.token });
   }
 }
 
@@ -29,12 +27,12 @@ const supported = (el: ImElement, caps: ResolvedImCapabilities) => {
  * written in the adapter's dialect and split to its limit. Controls and files
  * ride on the last message.
  */
-export function prepare(content: ImContent, caps: ResolvedImCapabilities, say: Say): ImContent[] {
+export function prepare(content: ImContent, caps: ResolvedImCapabilities, w: ImSpeak): ImContent[] {
   const lines = [content.text];
   const elements: ImElement[] = [];
   for (const el of content.elements ?? []) {
     if (supported(el, caps)) elements.push(el);
-    else lines.push(fold(el, say));
+    else lines.push(fold(el, w));
   }
   let actions = content.actions;
   if (actions?.length && !caps.buttons) {
@@ -43,7 +41,7 @@ export function prepare(content: ImContent, caps: ResolvedImCapabilities, say: S
   }
   let files = content.files;
   if (files?.length && (!caps.outboundFiles || files.some(f => f.size > caps.maxFileBytes))) {
-    lines.push(say("View attachments in the Tomrade conversation", "附件请在 Tomrade 会话中查看"));
+    lines.push(w("attachmentsInTomrade"));
     files = undefined;
   }
   const chunks = splitImText(lines.filter(Boolean).join("\n"), caps.maxTextLength, caps.markdown);

@@ -1,21 +1,18 @@
 import type { Context } from "cordis";
 import { z } from "zod";
-import type { Item, Priority } from "@tomradex/domain";
+import { wordsLocale, type Item, type Priority, type WordsLocale } from "@tomradex/domain";
 import { overlap } from "@tomradex/agent-backlog";
 import type { InboxEntry, InboxKind, TriageSuggestion } from "@tomradex/inbox";
 import type {} from "@tomradex/items";
 import type { LLMProvider, LlmService } from "@tomradex/llm";
 import type {} from "@tomradex/settings";
+import { TRIAGE_WORDS } from "./words.js";
 
 export const name = "inbox-triage";
 export const inject = ["inbox", "items", "llm", "settings"];
 
-type Locale = "en" | "zh";
-
-const WORDS = {
-  en: { title: "Worker model", language: "English" },
-  zh: { title: "工作模型", language: "Simplified Chinese" }
-} satisfies Record<Locale, unknown>;
+/** The language the model is asked to write in: prompt text, not words. */
+const LANGUAGE: Record<WordsLocale, string> = { en: "English", zh: "Simplified Chinese" };
 
 /** How many tickets and entries the model weighs; the rest are too unlike to matter. */
 const TICKETS = 8;
@@ -79,7 +76,7 @@ export function candidates(entry: InboxEntry, items: Item[], entries: InboxEntry
 export async function suggest(
   llm: LLMProvider,
   entry: InboxEntry,
-  scope: { canReply: boolean; items: Item[]; entries: InboxEntry[]; locale: Locale }
+  scope: { canReply: boolean; items: Item[]; entries: InboxEntry[]; locale: WordsLocale }
 ): Promise<TriageSuggestion> {
   const near = candidates(entry, scope.items, scope.entries);
   const tickets = new Map(near.tickets.map((t, i) => [`T${i + 1}`, t]));
@@ -96,7 +93,7 @@ export async function suggest(
     "ENTRIES",
     ...(others.size ? [...others].map(([label, e]) => `- ${label} ${e.title}${e.body ? ` — ${clip(e.body.replace(/\s+/g, " "), 200)}` : ""}`) : ["- (none)"])
   ].join("\n");
-  const out = await llm.completeJson(answerSchema, { system: SYSTEM(WORDS[scope.locale].language, scope.canReply), user, maxTokens: 1500, timeoutMs: 120_000, purpose: "inbox" });
+  const out = await llm.completeJson(answerSchema, { system: SYSTEM(LANGUAGE[scope.locale], scope.canReply), user, maxTokens: 1500, timeoutMs: 120_000, purpose: "inbox" });
   const target = out.target ?? null;
   const ticket = out.action === "merge" && target ? tickets.get(target) : undefined;
   const other = out.action === "duplicate" && target ? others.get(target) : undefined;
@@ -113,11 +110,11 @@ export async function suggest(
 }
 
 export function apply(ctx: Context) {
-  const locale = (): Locale => (ctx.settings.locale?.() === "zh" ? "zh" : "en");
+  const locale = (): WordsLocale => wordsLocale(ctx.settings.locale?.());
   const llm = (): LlmService => ctx.llm;
   ctx.inbox.triager({
     id: "worker",
-    title: () => WORDS[locale()].title,
+    title: () => TRIAGE_WORDS(locale())("title"),
     available: async () => {
       const worker = await llm().worker();
       return worker.ok ? null : (worker.reason ?? null);

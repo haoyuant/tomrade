@@ -7,6 +7,7 @@ import type {} from "@tomradex/code-link";
 import type {} from "@tomradex/ipc";
 import type { ImReminder } from "@tomradex/im";
 import { showMainWindow, whenLoaded } from "./main-window.js";
+import { DESKTOP_WORDS, type DesktopWords } from "./words.js";
 
 /** One thing an agent is waiting on the person for. */
 export interface AttentionEntry {
@@ -64,63 +65,43 @@ declare module "@tomradex/ipc" {
   }
 }
 
+const en = DESKTOP_WORDS("en");
+const zh = DESKTOP_WORDS("zh");
+
 export const NOTIFICATIONS_SECTION: SettingsSection<NotificationPrefs> = {
   id: "notifications",
-  title: "Notifications",
-  description: "What Tomrade tells you while none of its windows is in front. The Dock count and the badges stay either way.",
+  title: en("notificationsTitle"),
+  description: en("notificationsDescription"),
   schema: z.object({
-    enabled: z.boolean().default(true).meta({ title: "Notify me" }),
-    approvals: z.boolean().default(true).meta({ title: "Approvals and questions" }).describe("An agent needs your permission or asks you something."),
-    waiting: z.boolean().default(true).meta({ title: "Waiting for you" }).describe("A coding session ended its turn and has waited 15 seconds without you."),
-    stopped: z.boolean().default(true).meta({ title: "Stopped" }).describe("A run or a coding session stopped on an error."),
-    finished: z.boolean().default(true).meta({ title: "Finished" }).describe("A ticket's run, or any run over 30 seconds, finished in the background."),
-    away: z.enum(["im", "none"]).default("im").meta({ title: "While you're away, also remind me in" })
-      .describe("Approvals, questions and failures go to your paired IM direct chat, with buttons to answer there. Only one place is reminded.")
+    enabled: z.boolean().default(true).meta({ title: en("notifyEnabledTitle") }),
+    approvals: z.boolean().default(true).meta({ title: en("notifyApprovalsTitle") }).describe(en("notifyApprovalsDescription")),
+    waiting: z.boolean().default(true).meta({ title: en("notifyWaitingTitle") }).describe(en("notifyWaitingDescription")),
+    stopped: z.boolean().default(true).meta({ title: en("notifyStoppedTitle") }).describe(en("notifyStoppedDescription")),
+    finished: z.boolean().default(true).meta({ title: en("notifyFinishedTitle") }).describe(en("notifyFinishedDescription")),
+    away: z.enum(["im", "none"]).default("im").meta({ title: en("notifyAwayTitle") })
+      .describe(en("notifyAwayDescription"))
   }),
   defaults: { enabled: true, approvals: true, waiting: true, stopped: true, finished: true, away: "im" },
   order: 15,
   scope: "user",
   agent: "write",
   words: {
-    en: { fields: { away: { options: { im: "IM direct chat", none: "Nowhere else" } } } },
+    en: { fields: { away: { options: { im: en("notifyAwayIm"), none: en("notifyAwayNone") } } } },
     zh: {
-      title: "通知",
-      description: "Tomrade 的窗口都不在前台时，哪些事要告诉你。Dock 数字和角标不受影响。",
+      title: zh("notificationsTitle"),
+      description: zh("notificationsDescription"),
       fields: {
-        enabled: { title: "发通知" },
-        approvals: { title: "批准与提问", description: "代理需要你批准，或者在问你问题。" },
-        waiting: { title: "在等你", description: "编码会话说完一轮，等了你 15 秒。" },
-        stopped: { title: "停下了", description: "运行或编码会话因出错停下。" },
-        finished: { title: "完成", description: "工单的运行，或者超过 30 秒的运行，在后台完成。" },
-        away: { title: "不在电脑前时，还提醒到", description: "批准、提问和出错会发到你已配对的 IM 私聊，可以直接点按钮处理。只提醒一处。", options: { im: "IM 私聊", none: "不额外提醒" } }
+        enabled: { title: zh("notifyEnabledTitle") },
+        approvals: { title: zh("notifyApprovalsTitle"), description: zh("notifyApprovalsDescription") },
+        waiting: { title: zh("notifyWaitingTitle"), description: zh("notifyWaitingDescription") },
+        stopped: { title: zh("notifyStoppedTitle"), description: zh("notifyStoppedDescription") },
+        finished: { title: zh("notifyFinishedTitle"), description: zh("notifyFinishedDescription") },
+        away: { title: zh("notifyAwayTitle"), description: zh("notifyAwayDescription"), options: { im: zh("notifyAwayIm"), none: zh("notifyAwayNone") } }
       }
     }
   }
 };
 
-const WORDS = {
-  en: {
-    assistant: "The assistant",
-    permission: "{who} needs your approval",
-    question: "{who} is asking you something",
-    waiting: "{who} is waiting for you",
-    stuck: "{who} stopped",
-    finished: "{who} finished",
-    lifted: "{who} can go on",
-    liftedBody: "The usage limit has lifted."
-  },
-  zh: {
-    assistant: "助手",
-    permission: "{who} 需要你批准",
-    question: "{who} 在问你问题",
-    waiting: "{who} 在等你",
-    stuck: "{who} 停下了",
-    finished: "{who} 完成了",
-    lifted: "{who} 可以继续了",
-    liftedBody: "用量限制已经解除。"
-  }
-} as const;
-type Words = (typeof WORDS)[keyof typeof WORDS];
 
 const clip = (text: string | null | undefined, n = 160): string | null => {
   const line = text?.replace(/\s+/g, " ").trim();
@@ -135,7 +116,7 @@ export interface TellerOptions {
   prefs(): NotificationPrefs;
   /** Someone is looking at Tomrade: nothing needs telling. */
   focused(): boolean;
-  words(): Words;
+  words(): DesktopWords;
   tell(note: AttentionNote): void;
 }
 
@@ -197,16 +178,14 @@ export class Teller {
     if (!entry.itemId && (run.endedAt ?? now) - run.startedAt < this.options.finishedAfterMs) return;
     const prefs = this.options.prefs();
     if (!prefs.enabled || !prefs.finished || this.options.focused()) return;
-    const w = this.options.words();
-    this.options.tell({ title: this.titleOf(entry.itemKey, w.finished, entry.who), body: clip(last) ?? "", entry: { ...entry, kind: "waiting", since: now } });
+    this.options.tell({ title: this.titleOf(entry.itemKey, "finished", entry.who), body: clip(last) ?? "", entry: { ...entry, kind: "waiting", since: now } });
   }
 
   /** A usage limit lifted on a conversation nobody continues on its own: the person may now. */
   lifted(entry: Omit<AttentionEntry, "kind" | "since">): void {
     const prefs = this.options.prefs();
     if (!prefs.enabled || !prefs.waiting || this.options.focused()) return;
-    const w = this.options.words();
-    this.options.tell({ title: this.titleOf(entry.itemKey, w.lifted, entry.who), body: w.liftedBody, entry: { ...entry, kind: "waiting", since: Date.now() } });
+    this.options.tell({ title: this.titleOf(entry.itemKey, "lifted", entry.who), body: this.options.words()("liftedBody"), entry: { ...entry, kind: "waiting", since: Date.now() } });
   }
 
   dispose(): void {
@@ -219,12 +198,12 @@ export class Teller {
     const prefs = this.options.prefs();
     const on = entry.kind === "permission" || entry.kind === "question" ? prefs.approvals : entry.kind === "waiting" ? prefs.waiting : prefs.stopped;
     if (!prefs.enabled || !on || this.options.focused()) return;
-    const w = this.options.words();
-    this.options.tell({ title: this.titleOf(entry.itemKey, w[entry.kind], entry.who), body: entry.text ?? "", entry });
+    this.options.tell({ title: this.titleOf(entry.itemKey, entry.kind, entry.who), body: entry.text ?? "", entry });
   }
 
-  private titleOf(itemKey: string | null, phrase: string, who: string | null): string {
-    return [itemKey, phrase.replace("{who}", who ?? this.options.words().assistant)].filter(Boolean).join(" · ");
+  private titleOf(itemKey: string | null, key: AttentionEntry["kind"] | "finished" | "lifted", who: string | null): string {
+    const w = this.options.words();
+    return [itemKey, w(key, { who: who ?? w("assistant") })].filter(Boolean).join(" · ");
   }
 }
 
@@ -256,7 +235,7 @@ export const attention = {
     let since = new Map<string, { kind: AttentionEntry["kind"]; at: number }>();
     let timer: ReturnType<typeof setTimeout> | undefined;
 
-    const words = () => WORDS[ctx.settings.locale()];
+    const words = () => DESKTOP_WORDS(ctx.settings.locale());
     const engineTitle = (id: string) => ctx.agent.codeEngines().find((e) => e.id === id)?.title ?? id;
     const itemKeyOf = (projectId: string, itemId: string | null) => (itemId ? ctx.get("items")?.get(projectId, itemId)?.key ?? null : null);
 

@@ -11,7 +11,8 @@ import type {} from "@tomradex/projects";
 import type {} from "@tomradex/settings";
 import { BUNDLED, KnownIssue, before, matches, said, type Evidence } from "./issues.js";
 import { errorLines, newestFiles, scrub, tail } from "./evidence.js";
-import { WORDS, type Locale, type Words } from "./words.js";
+import { wordsLocale, type WordsLocale } from "@tomradex/domain";
+import { DOCTOR_WORDS, type Words } from "./words.js";
 import { CATALOG_MAX_AGE_MS, fetchCatalog, readCache } from "./catalog.js";
 import { CONCLUSION, brief, conclusionCard, investigationMessages, investigationTools, logSources, scopedTools, type Conclusion } from "./investigate.js";
 import type {} from "@tomradex/tools";
@@ -240,12 +241,12 @@ export class Doctor extends Service {
       for (const tool of investigationTools(host)) ctx.tools.register(tool);
     });
     ctx.inject(["contributions"], (ctx) => {
-      ctx.contributions.command({ id: "doctor.troubleshoot", title: () => this.words().command, group: () => this.words().commandGroup, run: (scope) => this.troubleshoot(scope.projectId) });
+      ctx.contributions.command({ id: "doctor.troubleshoot", title: () => this.words()("command"), group: () => this.words()("commandGroup"), run: (scope) => this.troubleshoot(scope.projectId) });
       // On the right, with a bug: diagnostics, not an ordinary setting.
-      ctx.contributions.statusItem({ id: "doctor", text: () => this.words().statusItem, title: () => this.words().statusTitle, command: "doctor.troubleshoot", icon: "i-bug", align: "end" });
+      ctx.contributions.statusItem({ id: "doctor", text: () => this.words()("statusItem"), title: () => this.words()("statusTitle"), command: "doctor.troubleshoot", icon: "i-bug", align: "end" });
       // The developer answered, or decided: said where the person already looks, until they read it.
-      ctx.contributions.command({ id: "doctor.reports", title: () => this.words().reportsCommand, group: () => this.words().commandGroup, run: () => ({ settingsPane: "about" }) });
-      ctx.contributions.statusItem({ id: "doctor-replies", text: () => (this.unread ? this.words().statusReplies(this.unread) : null), command: "doctor.reports" });
+      ctx.contributions.command({ id: "doctor.reports", title: () => this.words()("reportsCommand"), group: () => this.words()("commandGroup"), run: () => ({ settingsPane: "about" }) });
+      ctx.contributions.statusItem({ id: "doctor-replies", text: () => (this.unread ? (this.unread === 1 ? this.words()("statusReply") : this.words()("statusReplies", { n: this.unread })) : null), command: "doctor.reports" });
     });
     // Reports that could not go out try again while the app runs; replies and newer known issues are looked for too.
     for (const issue of readCache(this.catalogFile())?.issues ?? []) this.remote.set(issue.id, issue);
@@ -260,12 +261,12 @@ export class Doctor extends Service {
     ctx.effect(() => () => { clearTimeout(first); clearTimeout(catalog); clearInterval(catalogTimer); if (this.retryTimer) clearInterval(this.retryTimer); });
   }
 
-  locale(): Locale {
-    return this.ctx.settings.locale() === "zh" ? "zh" : "en";
+  locale(): WordsLocale {
+    return wordsLocale(this.ctx.settings.locale());
   }
 
   words(): Words {
-    return WORDS[this.locale()];
+    return DOCTOR_WORDS(this.locale());
   }
 
   /** A check of a plugin's own — sync, a provider, a service. */
@@ -313,14 +314,14 @@ export class Doctor extends Service {
     const words = this.words();
     const engine = topic.engineId ? this.ctx.agent.engineOf(topic.engineId) : undefined;
     const what = engine?.title ?? topic.engineId;
-    const thread = this.ctx.agent.newThread(projectId, ENGINE_ID, null, { surface: "doctor", title: words.threadTitle(what ?? words.general), options: { topic } });
-    this.ctx.agent.send(projectId, thread.id, { kind: "text", text: what ? words.askFailure(what) : words.askGeneral });
+    const thread = this.ctx.agent.newThread(projectId, ENGINE_ID, null, { surface: "doctor", title: words("threadTitle", { what: what ?? words("general") }), options: { topic } });
+    this.ctx.agent.send(projectId, thread.id, { kind: "text", text: what ? words("askFailure", { engine: what }) : words("askGeneral") });
     return thread;
   }
 
   private async troubleshoot(projectId?: string): Promise<{ showThread: string; projectId: string }> {
     const target = projectId ?? this.ctx.get("projects")?.list().filter((p) => !p.archived).sort((a, b) => b.updatedAt - a.updatedAt)[0]?.id;
-    if (!target) throw new Error(this.locale() === "zh" ? "先创建或打开一个项目" : "Create or open a project first");
+    if (!target) throw new Error(this.words()("noProject"));
     return { showThread: this.start(target, null).id, projectId: target };
   }
 
@@ -348,7 +349,7 @@ export class Doctor extends Service {
     const doctor = this;
     return {
       id: ENGINE_ID,
-      get title() { return doctor.words().engineTitle; },
+      get title() { return doctor.words()("engineTitle"); },
       author: "ai:doctor",
       capabilities: [],
       terminal: false,
@@ -358,7 +359,7 @@ export class Doctor extends Service {
         const { topic = {}, investigator } = DoctorOptions.parse(input.options ?? {});
         const said = input.input.kind === "text" ? input.input.text.trim() : "";
         // Once an agent looks into it, the person talks to that agent; "check again" still checks.
-        if (investigator && said !== doctor.words().recheckSay && doctor.latest(input.threadId)) return doctor.delegate(input, io, investigator);
+        if (investigator && said !== doctor.words()("recheckSay") && doctor.latest(input.threadId)) return doctor.delegate(input, io, investigator);
         const diagnosis = await doctor.runChecks(input.projectId, input.threadId, io.run.id, topic, io.signal);
         if (io.signal.aborted) return { stop: "cancelled" };
         diagnosis.findings.forEach((finding, i) => io.emit({ type: "card", id: `finding-${io.run.id}-${i}`, schema: "finding", title: finding.headline, data: finding }));
@@ -371,7 +372,7 @@ export class Doctor extends Service {
 
   /** One round of checks inside a run: the checklist card fills in, the diagnosis is kept for the report. */
   async runChecks(projectId: string, threadId: string, runId: string, topic: Topic, signal?: AbortSignal, cardId = `checks-${runId}`): Promise<Diagnosis> {
-    const card = (rows: ChecklistCard["rows"]) => this.ctx.agent.setCard(runId, { id: cardId, schema: "checklist", title: this.words().checksTitle, data: { rows } satisfies ChecklistCard });
+    const card = (rows: ChecklistCard["rows"]) => this.ctx.agent.setCard(runId, { id: cardId, schema: "checklist", title: this.words()("checksTitle"), data: { rows } satisfies ChecklistCard });
     const diagnosis = await this.diagnose(projectId, topic, card, signal);
     if (!signal?.aborted) this.save(threadId, diagnosis);
     return diagnosis;
@@ -403,7 +404,7 @@ export class Doctor extends Service {
     if (!engine || engineId === ENGINE_ID) throw new Error(`No agent "${engineId}"`);
     const options = DoctorOptions.parse(thread.options ?? {});
     this.ctx.agent.setOptions(projectId, threadId, { ...options, investigator: engineId });
-    this.ctx.agent.send(projectId, threadId, { kind: "text", text: this.words().investigateAsk(engine.title) });
+    this.ctx.agent.send(projectId, threadId, { kind: "text", text: this.words()("investigateAsk", { title: engine.title }) });
   }
 
   private stateFile(threadId: string): string {
@@ -415,9 +416,9 @@ export class Doctor extends Service {
     const words = this.words();
     const engine = this.ctx.agent.engineOf(engineId);
     const diagnosis = this.latest(input.threadId);
-    if (!engine || !diagnosis) return { stop: "error", error: words.noInvestigator };
+    if (!engine || !diagnosis) return { stop: "error", error: words("noInvestigator") };
     const state = await engine.available().catch(() => null);
-    if (!state?.ok) return { stop: "error", error: `${words.noInvestigator} ${state?.reason ?? ""}`.trim() };
+    if (!state?.ok) return { stop: "error", error: `${words("noInvestigator")} ${state?.reason ?? ""}`.trim() };
     let saved: { engineId: string; startSeq: number; resume?: string } | null = null;
     try { saved = JSON.parse(fs.readFileSync(this.stateFile(input.threadId), "utf8")); } catch {}
     const trigger = input.messages.at(-1)?.seq ?? 0;
@@ -442,7 +443,7 @@ export class Doctor extends Service {
     fs.writeFileSync(this.stateFile(input.threadId), JSON.stringify({ ...session, ...(result.resume ? { resume: result.resume } : {}) }));
     const conclusion = io.run.scratch.get(CONCLUSION) as Conclusion | undefined;
     if (conclusion) {
-      const card = conclusionCard(conclusion, [...this.actionsFor(diagnosis.topic, conclusion.offer), { kind: "report", label: words.actionReport }]);
+      const card = conclusionCard(conclusion, [...this.actionsFor(diagnosis.topic, conclusion.offer), { kind: "report", label: words("actionReport") }]);
       io.emit({ type: "card", id: `finding-${io.run.id}-conclusion`, schema: "finding", title: card.headline, data: card });
       this.save(input.threadId, { ...diagnosis, findings: [...diagnosis.findings, card], investigator: engineId });
     }
@@ -454,14 +455,14 @@ export class Doctor extends Service {
   private actionsFor(topic: Topic, offer: KnownIssue["offer"]): CardAction[] {
     const words = this.words();
     const engine = topic.engineId ? this.engineTitle(topic.engineId) : null;
-    const retryWith: CardAction | null = topic.threadId ? { kind: "retry-with", threadId: topic.threadId, ...(topic.engineId ? { exclude: topic.engineId } : {}), label: words.actionRetryWith } : null;
+    const retryWith: CardAction | null = topic.threadId ? { kind: "retry-with", threadId: topic.threadId, ...(topic.engineId ? { exclude: topic.engineId } : {}), label: words("actionRetryWith") } : null;
     return offer.flatMap((o): CardAction[] => {
       if (o === "retry-with") return retryWith ? [retryWith] : [];
-      if (o === "recheck") return [{ kind: "say", text: words.recheckSay, label: words.actionRecheck }];
-      if (!topic.engineId) return o === "settings" ? [{ kind: "settings", label: words.actionModelSettings }] : [];
-      if (o === "sign-in") return [{ kind: "sign-in", engineId: topic.engineId, label: words.actionSignIn(engine!) }];
-      if (o === "install") return [{ kind: "install", engineId: topic.engineId, label: words.actionInstall(engine!) }];
-      return [{ kind: "settings", engineId: topic.engineId, label: words.actionSettings(engine!) }];
+      if (o === "recheck") return [{ kind: "say", text: words("recheckSay"), label: words("actionRecheck") }];
+      if (!topic.engineId) return o === "settings" ? [{ kind: "settings", label: words("actionModelSettings") }] : [];
+      if (o === "sign-in") return [{ kind: "sign-in", engineId: topic.engineId, label: words("actionSignIn", { engine: engine! }) }];
+      if (o === "install") return [{ kind: "install", engineId: topic.engineId, label: words("actionInstall", { engine: engine! }) }];
+      return [{ kind: "settings", engineId: topic.engineId, label: words("actionSettings", { engine: engine! }) }];
     });
   }
 
@@ -469,7 +470,7 @@ export class Doctor extends Service {
     const words = this.words();
     const applicable = await this.checksFor(topic);
     // A test turn is the slow one: it goes last, after everything quick has said its piece.
-    const probe = topic.engineId ? { id: "probe", title: () => words.checkProbe(this.engineTitle(topic.engineId!)) } : null;
+    const probe = topic.engineId ? { id: "probe", title: () => words("checkProbe", { title: this.engineTitle(topic.engineId!) }) } : null;
     const rows: ChecklistCard["rows"] = [...applicable, ...(probe ? [probe] : [])].map((c) => ({ id: c.id, title: c.title(words), state: "pending" }));
     const evidence: Record<string, string | undefined> = {};
     const facts: Record<string, string> = { version: this.config.version, os: osLine(), locale: this.locale() };
@@ -499,11 +500,11 @@ export class Doctor extends Service {
     if (probe && !signal.aborted) {
       // An agent that is not set up, or a model that does not answer, fails the same way again: no turn needed to see it.
       const ready = !rows.some((r) => (r.id === `engine:${topic.engineId}` || r.id === "models") && r.state === "fail");
-      if (!ready) set("probe", { state: "skip", line: words.probeSkipped });
+      if (!ready) set("probe", { state: "skip", line: words("probeSkipped") });
       else {
         set("probe", { state: "running" });
         probeResult = await this.probe(projectId, topic.engineId!, signal);
-        set("probe", probeResult.ok ? { state: "ok", line: words.probeOk((probeResult.ms / 1000).toFixed(1)) } : { state: "fail", line: words.probeFailed(probeResult.error ?? "") });
+        set("probe", probeResult.ok ? { state: "ok", line: words("probeOk", { seconds: (probeResult.ms / 1000).toFixed(1) }) } : { state: "fail", line: words("probeFailed", { error: probeResult.error ?? "" }) });
         if (!probeResult.ok) evidence.probe = scrub([probeResult.error, probeResult.details].filter(Boolean).join("\n\n"));
       }
     }
@@ -562,21 +563,21 @@ export class Doctor extends Service {
     const words = this.words();
     const locale = this.locale();
     const engine = topic.engineId ? this.engineTitle(topic.engineId) : null;
-    const retryWith: CardAction | null = topic.threadId ? { kind: "retry-with", threadId: topic.threadId, ...(topic.engineId ? { exclude: topic.engineId } : {}), label: words.actionRetryWith } : null;
+    const retryWith: CardAction | null = topic.threadId ? { kind: "retry-with", threadId: topic.threadId, ...(topic.engineId ? { exclude: topic.engineId } : {}), label: words("actionRetryWith") } : null;
     const out: FindingCard[] = issues.map((issue) => ({ tone: "fail", headline: said(issue.title, locale), body: said(issue.explain, locale), confidence: issue.confidence, actions: this.actionsFor(topic, issue.offer) }));
     for (const row of rows) {
       if ((row.state !== "fail" && row.state !== "warn") || row.id === "probe") continue;
       out.push({ tone: row.state, headline: `${row.title}: ${row.line ?? ""}`, actions: actions.get(row.id) ?? [] });
     }
-    if (probe && !probe.ok && !issues.length) out.push({ tone: "fail", headline: words.stillFailing(engine!), body: rows.find((r) => r.id === "probe")?.line, actions: retryWith ? [retryWith] : [] });
-    if (!out.length && probe?.ok && topic.error) out.push({ tone: "ok", headline: words.recovered(engine!), body: words.recoveredBody, actions: topic.threadId && topic.engineId ? [{ kind: "retry-with", threadId: topic.threadId, label: words.actionRetryWith }] : [] });
-    if (!out.length) out.push({ tone: "ok", headline: words.nothingFound, body: words.nothingFoundBody, actions: [] });
+    if (probe && !probe.ok && !issues.length) out.push({ tone: "fail", headline: words("stillFailing", { engine: engine! }), body: rows.find((r) => r.id === "probe")?.line, actions: retryWith ? [retryWith] : [] });
+    if (!out.length && probe?.ok && topic.error) out.push({ tone: "ok", headline: words("recovered", { engine: engine! }), body: words("recoveredBody"), actions: topic.threadId && topic.engineId ? [{ kind: "retry-with", threadId: topic.threadId, label: words("actionRetryWith") }] : [] });
+    if (!out.length) out.push({ tone: "ok", headline: words("nothingFound"), body: words("nothingFoundBody"), actions: [] });
     // Whatever was found, the last card says how to look again and how to tell the developer.
     const last = out[out.length - 1]!;
     if (topic.engineId && !issues.length && out.some((f) => f.tone !== "ok") && retryWith && !last.actions.some((a) => a.kind === "retry-with")) last.actions.push(retryWith);
     // Something left to explain, and another agent to explain it: it may look, once the person says so.
-    if (investigators.length && out.some((f) => f.tone !== "ok")) last.actions.push({ kind: "investigate", engineIds: investigators, note: words.investigateNote, label: words.actionInvestigate });
-    last.actions.push({ kind: "say", text: words.recheckSay, label: words.actionRecheck }, { kind: "report", label: words.actionReport });
+    if (investigators.length && out.some((f) => f.tone !== "ok")) last.actions.push({ kind: "investigate", engineIds: investigators, note: words("investigateNote"), label: words("actionInvestigate") });
+    last.actions.push({ kind: "say", text: words("recheckSay"), label: words("actionRecheck") }, { kind: "report", label: words("actionReport") });
     return out;
   }
 
@@ -612,12 +613,12 @@ export class Doctor extends Service {
           ...(cli?.version ? { [`${id}.version`]: cli.version } : {}),
           ...(cli?.source ? { [`${id}.source`]: cli.source } : {})
         };
-        if (state.ok) return { state: "ok", line: cli?.path ? `${words.engineReady} · ${words.cliFound(cli.path, cli.version)}` : words.engineReady, facts };
+        if (state.ok) return { state: "ok", line: cli?.path ? `${words("engineReady")} · ${(cli.version ? words("cliFoundVersion", { path: cli.path, version: cli.version }) : words("cliFound", { path: cli.path }))}` : words("engineReady"), facts };
         const actions: CardAction[] =
-          state.need === "install" && engine.setup?.install.length ? [{ kind: "install", engineId: id, label: words.actionInstall(engine.title) }]
-          : state.need === "sign-in" && engine.setup?.signIn ? [{ kind: "sign-in", engineId: id, label: words.actionSignIn(engine.title) }]
-          : state.need === "model" ? [{ kind: "settings", label: words.actionModelSettings }]
-          : [{ kind: "settings", engineId: id, label: words.actionSettings(engine.title) }];
+          state.need === "install" && engine.setup?.install.length ? [{ kind: "install", engineId: id, label: words("actionInstall", { engine: engine.title }) }]
+          : state.need === "sign-in" && engine.setup?.signIn ? [{ kind: "sign-in", engineId: id, label: words("actionSignIn", { engine: engine.title }) }]
+          : state.need === "model" ? [{ kind: "settings", label: words("actionModelSettings") }]
+          : [{ kind: "settings", engineId: id, label: words("actionSettings", { engine: engine.title }) }];
         const tried = cli?.attempts?.map((a) => `${a.path} (${a.source}): ${a.ok ? "ok" : "failed"} — ${a.detail}`).join("\n");
         return { state: "fail", line: state.reason ?? id, facts, actions, ...(tried ? { evidence: tried } : {}) };
       }
@@ -630,58 +631,58 @@ export class Doctor extends Service {
     return [
       {
         id: "app",
-        title: (w) => w.checkApp,
+        title: (w) => w("checkApp"),
         async run() {
           const proxy = ["HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "https_proxy", "http_proxy", "all_proxy"].filter((k) => process.env[k]).join(",");
-          return { state: "ok", line: doctor.words().appLine(doctor.config.version, osLine()), facts: { proxy: proxy || "none", arch: process.arch } };
+          return { state: "ok", line: doctor.words()("appLine", { version: doctor.config.version, os: osLine() }), facts: { proxy: proxy || "none", arch: process.arch } };
         }
       },
       {
         id: "models",
-        title: (w) => w.checkModels,
+        title: (w) => w("checkModels"),
         applies: usesModels,
         async run(): Promise<CheckResult> {
           const words = doctor.words();
           const llm = doctor.ctx.get("llm");
           const profiles = ((doctor.ctx.settings.get().models as { profiles?: { id: string; title?: string; model: string }[] } | undefined)?.profiles ?? []).slice(0, 3);
-          if (!llm || !profiles.length) return { state: "warn", line: words.noProfiles, actions: [{ kind: "settings", label: words.actionModelSettings }] };
+          if (!llm || !profiles.length) return { state: "warn", line: words("noProfiles"), actions: [{ kind: "settings", label: words("actionModelSettings") }] };
           const tests = await Promise.all(profiles.map(async (p) => ({ p, test: await llm.test(p as Parameters<typeof llm.test>[0]) })));
           const failed = tests.flatMap((t) => (t.test.ok ? [] : [{ p: t.p, kind: t.test.kind, detail: t.test.detail }]));
           const models = profiles.map((p) => p.model).join(",");
-          if (!failed.length) return { state: "ok", line: words.modelsOk(profiles.length), facts: { models } };
+          if (!failed.length) return { state: "ok", line: (profiles.length === 1 ? words("modelOk") : words("modelsOk", { n: profiles.length })), facts: { models } };
           const first = failed[0]!;
           return {
             state: failed.length === tests.length ? "fail" : "warn",
-            line: words.modelFails(first.p.title || first.p.model, first.detail.slice(0, 160)),
+            line: words("modelFails", { title: first.p.title || first.p.model, detail: first.detail.slice(0, 160) }),
             facts: { models, modelError: first.kind },
-            actions: [{ kind: "settings", label: words.actionModelSettings }],
+            actions: [{ kind: "settings", label: words("actionModelSettings") }],
             evidence: failed.map((f) => `${f.p.title || f.p.model}: ${f.detail}`).join("\n")
           };
         }
       },
       {
         id: "mcp",
-        title: (w) => w.checkMcp,
+        title: (w) => w("checkMcp"),
         applies: (topic) => !topic.engineId || !usesModels(topic),
         async run() {
           const words = doctor.words();
           const url = doctor.ctx.get("mcp")?.url;
-          return url ? { state: "ok", line: words.mcpOn(url) } : { state: "fail", line: words.mcpOff };
+          return url ? { state: "ok", line: words("mcpOn", { url }) } : { state: "fail", line: words("mcpOff") };
         }
       },
       {
         id: "sync",
-        title: (w) => w.checkSync,
+        title: (w) => w("checkSync"),
         applies: (topic) => !topic.engineId,
         async run() {
           const words = doctor.words();
           const hub = doctor.ctx.get("cloudHub") as { info(): { user: unknown; status: { state: string; detail?: string }; pending: number } } | undefined;
-          if (!hub) return { state: "skip", line: words.syncOff };
+          if (!hub) return { state: "skip", line: words("syncOff") };
           const info = hub.info();
-          if (!info.user) return { state: "warn", line: words.syncOff };
+          if (!info.user) return { state: "warn", line: words("syncOff") };
           const { state, detail } = info.status;
           const status = detail ? `${state} (${detail})` : state;
-          return { state: /error|unavailable|diverged/.test(state) ? "warn" : "ok", line: words.syncState(status, info.pending), facts: { sync: state } };
+          return { state: /error|unavailable|diverged/.test(state) ? "warn" : "ok", line: (info.pending ? words("syncStatePending", { status, pending: info.pending }) : words("syncState", { status })), facts: { sync: state } };
         }
       }
     ];
@@ -706,28 +707,28 @@ export class Doctor extends Service {
     const wanted = { ...DEFAULT_INCLUDE, ...include };
     const diagnosis = this.latest(threadId);
     const topic = diagnosis?.topic ?? {};
-    const zh = this.locale() === "zh";
+    const words = this.words();
     const sections: Report["sections"] = [];
     const add = (id: Report["sections"][number]["id"], title: string, text: string) => { if (text.trim()) sections.push({ id, title, text: scrub(text) }); };
-    if (note.trim()) add("note", zh ? "用户说明" : "Note", note.trim());
-    if (wanted.error && (topic.error || topic.details)) add("error", zh ? "出错" : "Error", [topic.engineId ? `engine: ${topic.engineId}` : "", topic.error ?? "", topic.details ?? ""].filter(Boolean).join("\n\n"));
+    if (note.trim()) add("note", words("sectionNote"), note.trim());
+    if (wanted.error && (topic.error || topic.details)) add("error", words("sectionError"), [topic.engineId ? `engine: ${topic.engineId}` : "", topic.error ?? "", topic.details ?? ""].filter(Boolean).join("\n\n"));
     if (wanted.checks && diagnosis) {
-      add("checks", zh ? "检查结果" : "Checks", [
+      add("checks", words("sectionChecks"), [
         ...diagnosis.rows.map((r) => `[${r.state}] ${r.title}: ${r.line}${r.evidence ? `\n    ${r.evidence.split("\n").join("\n    ")}` : ""}`),
         ...(diagnosis.issues.length ? ["", `known issues: ${diagnosis.issues.join(", ")}`] : []),
         "",
         ...diagnosis.findings.map((f) => `${f.tone.toUpperCase()} ${f.headline}${f.confidence ? ` (${f.confidence})` : ""}`)
       ].join("\n"));
     }
-    if (wanted.environment && diagnosis) add("environment", zh ? "环境" : "Environment", Object.entries(diagnosis.facts).map(([k, v]) => `${k}: ${v}`).join("\n"));
-    if (wanted.logs && diagnosis?.logs.length) add("logs", zh ? "日志" : "Logs", diagnosis.logs.map((l) => `── ${l.source} ──\n${l.text}`).join("\n\n"));
+    if (wanted.environment && diagnosis) add("environment", words("sectionEnvironment"), Object.entries(diagnosis.facts).map(([k, v]) => `${k}: ${v}`).join("\n"));
+    if (wanted.logs && diagnosis?.logs.length) add("logs", words("sectionLogs"), diagnosis.logs.map((l) => `── ${l.source} ──\n${l.text}`).join("\n\n"));
     if (wanted.conversation) {
       const conversation = [
         ...(topic.threadId ? this.transcript(projectId, topic.threadId) : []),
         ...(topic.threadId ? ["", "── troubleshooting ──"] : []),
         ...this.transcript(projectId, threadId)
       ].join("\n");
-      add("conversation", zh ? "对话" : "Conversation", conversation);
+      add("conversation", words("sectionConversation"), conversation);
     }
     const issue = diagnosis?.issues[0];
     return {
@@ -753,8 +754,8 @@ export class Doctor extends Service {
   feedbackReport(kind: ReportKind, text: string): Report {
     if (!(REPORT_KINDS as readonly string[]).includes(kind)) throw new Error(`Not a kind of report: ${String(kind)}`);
     const body = scrub(text.trim());
-    if (!body) throw new Error(this.locale() === "zh" ? "先写点什么" : "Write something first");
-    const zh = this.locale() === "zh";
+    if (!body) throw new Error(this.words()("writeSomething"));
+    const words = this.words();
     return {
       code: newCode(),
       kind,
@@ -764,7 +765,7 @@ export class Doctor extends Service {
       summary: body.split("\n")[0]!.slice(0, 200),
       engine: null,
       app: { version: this.config.version, os: osLine(), arch: process.arch, locale: this.locale() },
-      sections: [{ id: "note", title: zh ? "用户说明" : "Note", text: body }]
+      sections: [{ id: "note", title: words("sectionNote"), text: body }]
     };
   }
 

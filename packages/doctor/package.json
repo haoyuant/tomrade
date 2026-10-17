@@ -20,6 +20,7 @@
   "dependencies": {
     "@tomradex/agent": "workspace:*",
     "@tomradex/contributions": "workspace:*",
+    "@tomradex/domain": "workspace:*",
     "@tomradex/ipc": "workspace:*",
     "@tomradex/llm": "workspace:*",
     "@tomradex/mcp": "workspace:*",

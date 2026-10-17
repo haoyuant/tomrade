@@ -197,7 +197,7 @@ export class Sessions {
         if (name !== "create_item") return call(name, args);
         const owner = this.store.session(session.projectId, session.id)?.itemIds[0];
         const key = owner ? items?.get(session.projectId, owner)?.key : undefined;
-        const filed = key ? CODE_WORDS[settings?.locale?.() ?? "en"].filedFrom(key) : "";
+        const filed = key ? CODE_WORDS(settings?.locale?.())("filedFrom", { key }) : "";
         return call(name, await followUp(args, filed, tools.has("find_similar") ? call : null));
       },
       event: (payload: unknown) => this.event(session.projectId, session.id, payload)

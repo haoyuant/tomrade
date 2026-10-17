@@ -8,6 +8,7 @@ import type {} from "@tomradex/ipc";
 import { BUILT_IN_IMAGES, dataAnimation, embeddedAccessory, fileAnimation, PET_DESKTOP_URL } from "./manifest.js";
 import { PetProfiles, type PetImageUpload, type PetProfileView, type PetProfilesView, type ResolvedImage } from "./profiles.js";
 import { emptyPetModel, moodForThread, PET_MOODS, reducePetModel, type PetModel, type PetMood } from "./state.js";
+import { PET_WORDS } from "./words.js";
 
 export * from "./state.js";
 export { DEFAULT_PROFILE, MAX_IMAGE_BYTES, MAX_NAME_LENGTH, sniffImage, type PetImageUpload, type PetProfileView, type PetProfilesView } from "./profiles.js";
@@ -36,32 +37,35 @@ export interface PetViewState {
 
 export type PetPreview = AccessoryAnimation & { custom: boolean };
 
+const en = PET_WORDS("en");
+const zh = PET_WORDS("zh");
+
 export const PET_SECTION: SettingsSection<PetSettings> = {
   id: "pet",
-  title: "Pet",
-  description: "An orange-and-white companion that reflects assistant activity. Disable the plugin itself in Manage plugins to unload it completely.",
+  title: en("title"),
+  description: en("description"),
   schema: z.object({
-    enabled: z.boolean().default(true).meta({ title: "Enabled" }).describe("Show the pet while this plugin is loaded."),
-    displayMode: z.enum(["embedded", "desktop"]).default("embedded").meta({ title: "Display mode" }).describe("Embed above the assistant composer, or float in its own window you can drag anywhere."),
-    size: z.enum(["small", "medium", "large"]).default("medium").meta({ title: "Desktop size" }),
-    clickThrough: z.boolean().default(true).meta({ title: "Transparent click-through" }).describe("Pass clicks through transparent pixels; drag the opaque cat."),
-    allWorkspaces: z.boolean().default(true).meta({ title: "All workspaces" }).describe("Keep the desktop pet visible when switching virtual desktops.")
+    enabled: z.boolean().default(true).meta({ title: en("enabledTitle") }).describe(en("enabledDescription")),
+    displayMode: z.enum(["embedded", "desktop"]).default("embedded").meta({ title: en("displayModeTitle") }).describe(en("displayModeDescription")),
+    size: z.enum(["small", "medium", "large"]).default("medium").meta({ title: en("sizeTitle") }),
+    clickThrough: z.boolean().default(true).meta({ title: en("clickThroughTitle") }).describe(en("clickThroughDescription")),
+    allWorkspaces: z.boolean().default(true).meta({ title: en("allWorkspacesTitle") }).describe(en("allWorkspacesDescription"))
   }),
   defaults: { enabled: true, displayMode: "embedded", size: "medium", clickThrough: true, allWorkspaces: true },
   order: 20,
   scope: "machine",
   agent: "write",
   words: {
-    en: { fields: { displayMode: { options: { embedded: "Embedded", desktop: "On the desktop" } }, size: { options: { small: "Small", medium: "Medium", large: "Large" } } } },
+    en: { fields: { displayMode: { options: { embedded: en("displayModeEmbedded"), desktop: en("displayModeDesktop") } }, size: { options: { small: en("sizeSmall"), medium: en("sizeMedium"), large: en("sizeLarge") } } } },
     zh: {
-      title: "宠物",
-      description: "一只橘白相间的小伙伴，跟着助手的活动变换状态。想彻底卸载它，请在“管理插件”里停用这个插件。",
+      title: zh("title"),
+      description: zh("description"),
       fields: {
-        enabled: { title: "启用", description: "插件加载时显示宠物。" },
-        displayMode: { title: "显示方式", description: "嵌在助手输入框上方，或者浮在独立的窗口里，可以拖到任何地方。", options: { embedded: "嵌入", desktop: "桌面" } },
-        size: { title: "桌面尺寸", options: { small: "小", medium: "中", large: "大" } },
-        clickThrough: { title: "透明处点击穿透", description: "点击透明像素会穿透到下面；拖动不透明的猫来移动它。" },
-        allWorkspaces: { title: "所有桌面", description: "切换虚拟桌面时，桌面宠物依然可见。" }
+        enabled: { title: zh("enabledTitle"), description: zh("enabledDescription") },
+        displayMode: { title: zh("displayModeTitle"), description: zh("displayModeDescription"), options: { embedded: zh("displayModeEmbedded"), desktop: zh("displayModeDesktop") } },
+        size: { title: zh("sizeTitle"), options: { small: zh("sizeSmall"), medium: zh("sizeMedium"), large: zh("sizeLarge") } },
+        clickThrough: { title: zh("clickThroughTitle"), description: zh("clickThroughDescription") },
+        allWorkspaces: { title: zh("allWorkspacesTitle"), description: zh("allWorkspacesDescription") }
       }
     }
   }
