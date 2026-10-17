@@ -406,6 +406,7 @@ export class CodeLink extends Service {
         store: this.store,
         reevaluate: (projectId, itemId, repoId) => this.reevaluate(projectId, itemId, repoId),
         handOver: (projectId, itemId, repoId) => this.handOver(projectId, itemId, repoId),
+        dropSuggested: (projectId, itemId, repoId, branch) => this.dropSuggested(projectId, itemId, repoId, branch),
         noteProgress: (projectId, sessionId, text) => this.sessions.touch(projectId, sessionId, { summary: text, state: "running" }),
         blockMerge: (projectId, sessionId, reason) => this.sessions.blockMerge(projectId, sessionId, reason),
         attach: (projectId, sessionId, itemId, branch, delivery, opts) => this.attach(projectId, sessionId, itemId, branch, delivery, opts),
@@ -1405,6 +1406,12 @@ export class CodeLink extends Service {
         this.store.removeLink(projectId, l.id);
         touched.add(item.id);
       }
+      // A claim's suggested branch left beside the pull request the work went into, from before link_code dropped it.
+      for (const l of this.store.linksForRepo(projectId, repo.id)) {
+        if (l.source !== "mcp" || !l.branch || (l.prNumber === null && !l.prUrl)) continue;
+        if (l.delivery !== this.store.activeDelivery(projectId, l.itemId)?.sequence) continue;
+        if (this.dropSuggested(projectId, l.itemId, repo.id, l.branch, (name) => result.branches.some((b) => b.name === name))) touched.add(l.itemId);
+      }
     }
 
     for (const item of items) this.closeEmptyScannedDelivery(projectId, item, now, repo.id);
@@ -1575,6 +1582,25 @@ export class CodeLink extends Service {
     const seen = new Set(links.filter((l) => l.branch).map((l) => l.id));
     this.judge(projectId, item, repoId, new Map(links.map((l) => [l.id, l])), seen, this.store.repoState(projectId, repoId)?.autoDone ?? true);
     this.notify(projectId);
+  }
+
+  /**
+   * The branch a claim suggested, once the work is linked on `branch` instead: nothing on it (no commit, no pull
+   * request, never seen by a scan), yet it would hold the delivery's "every link merged" open for good. It goes,
+   * and the sessions on it move to `branch`. A suggested branch with anything on it is real work and stays.
+   */
+  dropSuggested(projectId: string, itemId: string, repoId: string, branch: string, present: (name: string) => boolean = () => false): boolean {
+    const delivery = this.store.activeDelivery(projectId, itemId);
+    if (!delivery || !branch) return false;
+    const empty = this.store
+      .links(projectId, itemId)
+      .filter((l) => l.repoId === repoId && l.delivery === delivery.sequence && l.branch && l.branch !== branch && l.source === "mcp")
+      .filter((l) => !l.headSha && l.ahead === 0 && !l.mergedSha && l.prNumber === null && !l.prUrl && !l.prState && !l.threadId && !present(l.branch));
+    for (const l of empty) {
+      this.store.removeLink(projectId, l.id);
+      for (const s of this.store.sessions(projectId, { itemId, delivery: delivery.sequence })) if (s.branch === l.branch) this.store.patchSession(projectId, s.id, { branch });
+    }
+    return empty.length > 0;
   }
 
   /** Without a remote there is no pull request: a session's scoped hand-over is the request for review. */

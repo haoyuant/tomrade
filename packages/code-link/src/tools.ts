@@ -25,6 +25,8 @@ export interface ToolHost {
   reevaluate(projectId: string, itemId: string, repoId: string): void;
   /** A repository with no remote has no pull request: the session's scoped link moves the ticket to Verifying. */
   handOver(projectId: string, itemId: string, repoId: string): void;
+  /** The work is linked on `branch`: the branch a claim suggested, still empty, goes, and the sessions on it move to `branch`. */
+  dropSuggested(projectId: string, itemId: string, repoId: string, branch: string): void;
   noteProgress(projectId: string, sessionId: string, text: string): void;
   /** The agent was not let merge its pull request: the session stops and the person is handed the merge. */
   blockMerge(projectId: string, sessionId: string, reason: string): void;
@@ -207,6 +209,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
             lastSeenAt: Date.now()
           }
         );
+        host.dropSuggested(projectId, item.id, repoId, branch);
         host.reevaluate(projectId, item.id, repoId);
         if (session && !args.prUrl) host.handOver(projectId, item.id, repoId);
         const after = ctx.items.get(projectId, item.id)!;
