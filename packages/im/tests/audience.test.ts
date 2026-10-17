@@ -136,6 +136,16 @@ describe("who sees what in IM", () => {
     expect(w.ctx.im.remind({ projectId: w.project.id, threadId: desk.id, kind: "permission", title: "Test needs your approval", body: "" })).toBe(false);
   });
 
+  it("follows what every conversation hears unless the conversation chose for itself", async () => {
+    const w = await boot({ notify: { routines: true } }, { notify: { routines: false } });
+    await w.receive(dm("d1", "hello"));
+    await w.receive(group("g1", "hello"));
+    await expect.poll(() => w.to("room"), { timeout: 5000 }).toContain("re:hello");
+    w.ctx.emit("schedules/ran", w.project.id, { id: "r1", ok: true, itemIds: [], threadId: null, error: null }, "Weekly review");
+    await expect.poll(() => w.to("room"), { timeout: 5000 }).toContain("Routine “Weekly review” ran");
+    expect(w.to("dm-owner").some(t => t.startsWith("Routine"))).toBe(false);
+  });
+
   it("says when a routine runs, only where the conversation asked for routines", async () => {
     const w = await boot({}, { notify: { routines: true } });
     await w.receive(dm("d1", "hello"));
@@ -176,8 +186,8 @@ describe("who sees what in IM", () => {
     await expect.poll(() => w.to("dm-owner"), { timeout: 5000 }).toContain("re:hello");
     expect(w.to("dm-owner").some(t => t.includes("online"))).toBe(false);
     // Reconnecting with the setting on says hello once.
-    w.set({ announcePresence: true, connections: [{ id: "bot", adapterId: "test_im", enabled: false }] });
-    w.set({ announcePresence: true });
+    w.set({ notify: { presence: true }, connections: [{ id: "bot", adapterId: "test_im", enabled: false }] });
+    w.set({ notify: { presence: true } });
     await expect.poll(() => w.to("dm-owner"), { timeout: 5000 }).toContain("Tomrade is online on your computer.");
     expect(w.to("room")).toEqual([]);
     await w.ctx.fiber.dispose();

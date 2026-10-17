@@ -95,6 +95,9 @@ const run = async () => {
   check("the pane says where credentials are kept", (await $(`document.querySelector('[data-testid=im-secret-storage]')?.textContent ?? ''`)).length > 0);
   await press(`document.querySelector('[data-testid=im-add]')`);
   await waitFor(`!!document.querySelector('#im-cred-botToken')`);
+  // Installed platforms (Discord) come first in the list; this check drives the stand-in.
+  await $(`(() => { const s = document.querySelector('#im-adapter'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'standin'); s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+  await waitFor(`document.querySelector('[data-testid=im-form]')?.textContent.includes('Create an app')`);
   const form = await $(`document.querySelector('[data-testid=im-form]').textContent`);
   check("the wizard shows the platform's steps and permissions", form.includes("Create an app") && form.includes("chat:write"), form);
   check("a secret field is a password field", (await $(`document.querySelector('#im-cred-botToken').type`)) === "password");
@@ -132,6 +135,25 @@ const run = async () => {
   await press(`document.querySelector('[data-testid=im-pair-confirm]')`);
   check("confirming lists them as paired", await waitFor(`document.querySelector('[data-testid=im-people]')?.textContent.includes('U-owner') && !!${button("Revoke")}`));
   check("and connects their direct chat to the project", await waitFor(`!!document.querySelector('[data-im-route]')`));
+
+  // ── what conversations hear ──────────────────────────────────────────
+  const imNow = () => ctx.settings.get().im;
+  const until = async (cond, ms = 4000) => { for (let waited = 0; waited < ms && !cond(); waited += 100) await sleep(100); return cond(); };
+  check("a new conversation follows what every conversation hears", imNow().routes[0]?.notify === undefined && await waitFor(`document.querySelector('[data-im-notify] [role=switch]')?.getAttribute('aria-checked') === 'true'`), imNow().routes[0]);
+  await press(`document.querySelector('[data-im-notify-kind=routines] [role=switch]')`);
+  check("one switch turns a kind on for every conversation", await until(() => imNow().notify.routines === true), imNow().notify);
+  await $(`document.querySelector('[data-testid=im-notify]')?.scrollIntoView({ block: 'center' });true`);
+  await sleep(200);
+  await shot("im-notify-shared.png");
+  await press(`document.querySelector('[data-im-notify] [role=switch]')`);
+  check("a conversation can choose for itself", await waitFor(`document.querySelectorAll('[data-im-notify] [role=switch]').length === 6`) && await until(() => imNow().routes[0]?.notify?.routines === true), imNow().routes[0]);
+  await press(`[...document.querySelectorAll('[data-im-notify] [role=switch]')].find((s) => s.getAttribute('aria-label') === 'Routines as they run')`);
+  check("and its choice stays its own", await until(() => imNow().routes[0]?.notify?.routines === false && imNow().notify.routines === true), imNow());
+  await $(`document.querySelector('[data-im-notify]')?.scrollIntoView({ block: 'center' });true`);
+  await sleep(200);
+  await shot("im-notify-route.png");
+  await press(`document.querySelector('[data-im-notify] [role=switch]')`);
+  check("following again drops it", await waitFor(`document.querySelectorAll('[data-im-notify] [role=switch]').length === 1`) && await until(() => imNow().routes[0]?.notify === undefined), imNow().routes[0]);
 
   // ── talk ─────────────────────────────────────────────────────────────
   await dm("m1", "hello there");

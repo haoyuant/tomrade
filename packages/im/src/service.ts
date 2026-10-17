@@ -9,7 +9,7 @@ import type {} from "@tomradex/oplog";
 import type {} from "@tomradex/projects";
 import type {} from "@tomradex/settings";
 import { resolveImCapabilities, type ImAdapter, type ImAdapterSetup, type ImCapabilities, type Localized, type ImAdapterSession, type ImAddress, type ImCommand, type ImContent, type ImConnectionState, type ImElement, type ImInbound, type ImReaction, type ResolvedImCapabilities } from "@tomradex/plugin-sdk";
-import { ImConfig, ImSettings, InboundSchema, type ImConnection, type ImRoute } from "./config.js";
+import { ImConfig, ImSettings, InboundSchema, type ImConnection, type ImNotifyKind, type ImRoute } from "./config.js";
 import { fromAdapter, withContext, type ContextLine } from "./context.js";
 import { prepare } from "./render.js";
 import { FILE_HANDLE, statusText, awaitingReview, codeNews, codeSeen, deliveryCard, links, proposalText, renderBlock, reviewOutcome, ticket, toolLine, type CodeLookup, type CodeSeen, type Delivered, type ItemLookup, type RenderScope } from "./rich.js";
@@ -173,7 +173,7 @@ export class Im extends Service {
   private readonly dirty = new Set<string>();
   private sweptAt = 0;
   private stopped = false;
-  private settings: ImSettings = { connections: [], identities: [], routes: [], announcePresence: false };
+  private settings: ImSettings = { connections: [], identities: [], routes: [], notify: { tickets: true, code: true, presence: false, routines: false, attention: true } };
   /** Connections that have said "online" since this start. */
   private readonly announced = new Set<string>();
   private ignored: ImIgnoredView[] = [];
@@ -195,6 +195,9 @@ export class Im extends Service {
       description: "Connect an adapter, select a project and explicitly allow users. Group replies share project information with that conversation.",
       words: { zh: { title: "IM 连接", description: "配置适配器、目标项目和允许用户。群聊回复会向该会话公开项目信息。" } },
       schema: ImSettings, defaults: this.settings, scope: "machine", agent: "none", order: 80 });
+    // Settings from before the shared `notify` are written back once in its shape, so the renderer reads them that way too.
+    const stored: unknown = this.home.settings.get().im;
+    if (stored && typeof stored === "object" && "announcePresence" in stored) this.save(ImSettings.parse(stored));
     this.home.on("settings/changed", () => this.reload());
     this.home.on("agent/event", (threadId, event) => this.onAgentEvent(threadId, event));
     this.home.on("codeLink/changed", projectId => this.onCode(projectId));
@@ -390,8 +393,7 @@ export class Im extends Service {
     }
     if (!projectId) throw new Error("Choose a project for this conversation");
     im.routes.push({ id: `${kind}-${hash([where, Date.now()]).slice(0, 12)}`, ...where, projectId, boardId: null, allowedActors: actors,
-      allowDirectMessages: kind === "dm", allowGroups: kind === "group", groupActivation: "reply", output: "progress", desktopTurns: true,
-      notify: { tickets: true, code: true, routines: false, attention: true } });
+      allowDirectMessages: kind === "dm", allowGroups: kind === "group", groupActivation: "reply", output: "progress", desktopTurns: true });
   }
 
   private snapshot(): ImSettings { return structuredClone(ImSettings.parse(this.home.settings.get().im)); }
@@ -1817,16 +1819,14 @@ export class Im extends Service {
     }
   }
 
-  /** Whether this conversation hears about `kind`, as its route says. */
-  private notifies(b: Binding, kind: "tickets" | "code" | "presence" | "routines" | "attention"): boolean {
-    const notify = this.settings.routes.find(r => r.id === b.route_id)?.notify;
-    if (!notify) return kind !== "presence" && kind !== "routines";
-    return kind === "presence" ? notify.presence ?? this.settings.announcePresence : notify[kind];
+  /** Whether this conversation hears about `kind`: its route's own choice, else the shared one. */
+  private notifies(b: Binding, kind: ImNotifyKind): boolean {
+    return this.settings.routes.find(r => r.id === b.route_id)?.notify?.[kind] ?? this.settings.notify[kind];
   }
 
   /** Whether any conversation hears when Tomrade comes online or goes offline. */
   private announces(): boolean {
-    return this.settings.routes.some(r => r.notify?.presence ?? this.settings.announcePresence);
+    return this.settings.routes.some(r => r.notify?.presence ?? this.settings.notify.presence);
   }
 
   /** A delivery's buttons stop working; its card, and any open request for changes, say how it ended. */
