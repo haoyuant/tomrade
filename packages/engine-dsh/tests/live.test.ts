@@ -1,10 +1,13 @@
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 import { Settings } from "@tomradex/settings";
 import { Agent } from "@tomradex/agent";
+import { Llm } from "@tomradex/llm";
 import { Mcp } from "@tomradex/mcp";
 import engineDsh from "@tomradex/engine-dsh";
 
@@ -40,5 +43,29 @@ describe.skipIf(!process.env.TOMRADE_LIVE_DSH)("live dsh", () => {
       expect(run.changes).toBe(0);
       expect(ctx.agent.store.external(project.id, thread.id).dsh).toBeTruthy();
     } finally { await ctx.fiber.dispose(); }
+  }, 300_000);
+});
+
+/** Opt-in: the real dsh (desktop app or CLI) answering a worker call with the person's own account or key. TOMRADE_LIVE_DSH=1 pnpm test */
+describe.skipIf(!process.env.TOMRADE_LIVE_DSH)("live dsh lent", () => {
+  it("answers worker calls as DeepSeek Harness when the worker role names it, with no tools and no session left behind", async () => {
+    const settingsPath = path.join(os.tmpdir(), `tomrade-live-dsh-lent-${Date.now()}.json`);
+    const { ctx } = await fresh({ plugins: [Tools, [Settings, { path: settingsPath }], Agent, [Mcp, { port: 0 }], Llm, engineDsh] });
+    await settle();
+    ctx.settings.set({ ...ctx.settings.get(), models: { profiles: [], roles: { worker: "lent:dsh" } } });
+    try {
+      expect(await ctx.llm.worker()).toMatchObject({ ok: true, via: "lent", title: "DeepSeek Harness" });
+      const schema = z.object({ duplicates: z.array(z.string()), reason: z.string() });
+      const t0 = Date.now();
+      const out = await ctx.llm.completeJson(schema, {
+        system: "You judge duplicate tickets. Reply with one JSON object: {\"duplicates\": [keys of tickets that mean the same work], \"reason\": one sentence}.",
+        user: "New: \"Remind me to drink water every hour\".\nExisting: AL-1 \"Hourly water reminder\", AL-2 \"Dark mode for settings\"."
+      });
+      console.log(`dsh worker call: ${Date.now() - t0} ms`, out);
+      expect(out.duplicates).toEqual(["AL-1"]);
+      expect(fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith("tomrade-dsh-lent-"))).toEqual([]);
+    } finally {
+      await ctx.fiber.dispose();
+    }
   }, 300_000);
 });

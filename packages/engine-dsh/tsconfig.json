@@ -14,6 +14,7 @@
     { "path": "../agent" },
     { "path": "../engine-acp" },
     { "path": "../engine-claude-code" },
+    { "path": "../llm" },
     { "path": "../mcp" }
   ]
 }
