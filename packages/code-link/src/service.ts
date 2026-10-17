@@ -257,6 +257,7 @@ const SETTINGS_SECTION = {
         geminiCommand: { title: "Gemini CLI 命令", description: "{geminiSettings} 是只在本次会话生效的设置文件，作为最低一层读取，你自己的 Gemini 设置仍然优先。" },
         opencodeCommand: { title: "OpenCode 命令", description: "{opencodeConfig} 是只在本次会话生效的配置，会和你自己的 OpenCode 配置合并。" },
         workbuddyCommand: { title: "WorkBuddy 命令" },
+        agyCommand: { title: "Antigravity CLI 命令", description: "agy 没有 MCP 参数：它通过自己用户级的 tomrade 服务连到 Tomrade（先在设置里的 Antigravity CLI 下连接），开始时先认领工作项。" },
         dshCommand: { title: "DeepSeek Harness 命令", description: "DeepSeek Harness 没有终端交互界面：工作项作为一次 headless 运行，通过 {dshReporter} 显示过程并回报，用 --session-id 续接。{bin} 是 Tomrade 找到的 dsh（包括桌面版自带的），{dshPatch} 只为这次运行加上 Tomrade 的服务。" },
         hermesCommand: { title: "Hermes 命令", description: "Hermes 没有 MCP 参数，从它自己的 config.yaml 读 tomrade 服务，请求头引用这个终端导出的 $TOMRADE_MCP_TOKEN。先在设置里的 Hermes 下连接到 Tomrade。" },
         otherCommand: { title: "其他智能体命令", description: "其他带 MCP 客户端的命令行智能体，比如 Gemini CLI、OpenCode、aider……留空表示没有设置。会自动填入 {mcpUrl}、{token}（也在 $TOMRADE_MCP_TOKEN 里）、{prompt} 和 {resume}（会话 id 本身）。" }
@@ -412,6 +413,7 @@ export class CodeLink extends Service {
         blockMerge: (projectId, sessionId, reason) => this.sessions.blockMerge(projectId, sessionId, reason),
         attach: (projectId, sessionId, itemId, branch, delivery, opts) => this.attach(projectId, sessionId, itemId, branch, delivery, opts),
         externalSession: (projectId, repoId) => this.externalSession(projectId, repoId),
+        awaitingClaim: (projectId, itemId) => this.awaitingClaim(projectId, itemId),
         connected: (projectId, connection) => this.connected(projectId, connection),
         connectedSessions: (projectId, connection) => this.connectedSessions(projectId, connection),
         bindConnection: (projectId, connection, sessionId, leaving) => this.bindConnection(projectId, connection, sessionId, leaving),
@@ -850,6 +852,14 @@ export class CodeLink extends Service {
   externalSession(projectId: string, repoId: string): SessionView | null {
     const taken = new Set([...this.connections.values()].filter((c) => c.projectId === projectId).flatMap((c) => c.sessionIds));
     return this.store.sessions(projectId, { live: true }).find((s) => s.repoId === repoId && s.threadId === null && s.state !== "lost" && !s.itemIds.length && !taken.has(s.id)) ?? null;
+  }
+
+  /** A terminal session Start made for this ticket with an agent that reaches Tomrade without its token, which no connection has joined yet. */
+  awaitingClaim(projectId: string, itemId: string): SessionView | null {
+    const agent = this.ctx.get("agent");
+    const taken = new Set([...this.connections.values()].filter((c) => c.projectId === projectId).flatMap((c) => c.sessionIds));
+    return this.store.sessions(projectId, { live: true }).find((s) => s.mode === "terminal" && s.threadId !== null && s.itemIds.includes(itemId) && !taken.has(s.id)
+      && !!agent?.engineOf(s.agent)?.terminalClaims) ?? null;
   }
 
   /** The live session an outside client's connection last claimed for, if any: the one its calls without a key mean. */

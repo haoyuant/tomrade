@@ -521,6 +521,8 @@ export interface Engine {
   terminalOnly?: boolean;
   /** True: in a terminal it reaches Tomrade only through its own user-level connection (`mcpLink`), so that comes first. */
   terminalViaLink?: boolean;
+  /** True: that connection carries no session token, so the session's first act is claim_ticket, which joins it to the session Start made. */
+  terminalClaims?: boolean;
   /** True: it runs on the model profiles set up in Tomrade, so a key or model error is fixed there — not in its own sign-in. */
   usesModels?: boolean;
   /** True: it takes messages sent while a turn runs (io.takeSteers); otherwise the panel queues them. */

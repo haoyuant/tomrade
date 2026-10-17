@@ -1413,6 +1413,36 @@ describe("starting a ticket", () => {
     expect(again.ok ? again.command : again).toContain("--json --session-id session-abc -");
   });
 
+  it("starts Antigravity CLI in a terminal once it is connected, tells it to claim first, and its claim joins the session Start made", async () => {
+    const world = await machine(codeRepo());
+    const { codeLink, ctx, project, repo, checkout, ticket } = world;
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    ctx.settings.set({ ...ctx.settings.get(), codeLink: { terminal: "none" } });
+    let state: "connected" | "missing" = "missing";
+    const view = () => ({ state, url: null, configuredUrl: null, file: null, manual: { connect: "", disconnect: "" } });
+    await ctx.plugin({ name: "fake-agy", inject: ["agent"], apply: (c: Context) => {
+      c.agent.engine({ ...fakeCodeEngine([]), id: "agy", title: "Antigravity CLI", author: "ai:agy", capabilities: ["code", "general"], terminalOnly: true, terminalViaLink: true, terminalClaims: true,
+        mcpLink: { status: async () => view(), connect: async () => view(), disconnect: async () => view() } });
+    } });
+    const { Mcp } = await import("@tomradex/mcp");
+    await ctx.plugin(Mcp, { port: 0 });
+    await settle();
+    const item = ticket("Antigravity terminal work");
+    expect(await codeLink.start(project.id, item.id, { mode: "terminal", engine: "agy" })).toMatchObject({ ok: false, gate: "engine", message: expect.stringContaining("Connect it under Antigravity CLI in Settings") });
+
+    state = "connected";
+    const started = await codeLink.start(project.id, item.id, { mode: "terminal", engine: "agy", options: { model: "gemini-3.6-flash" } });
+    if (!started.ok) throw new Error(JSON.stringify(started));
+    expect(started.command).toMatch(/^agy --model gemini-3\.6-flash -i "\$\(cat ".*prompt\.md"\)"$/);
+    const prompt = fs.readFileSync(path.join(codeLink.sessionDir(started.sessionId), "prompt.md"), "utf8");
+    expect(prompt.startsWith(`Before anything else, call the tomrade MCP tool claim_ticket with key "${item.key}"`)).toBe(true);
+
+    // Its calls carry no token; the claim over its connection is its first act, and it lands on Start's session.
+    const claimed = await ctx.tools.execute("claim_ticket", { key: item.key }, { by: "ai:mcp", projectId: project.id, connection: "agy-conn" }) as { tracking: { tracked: boolean; sessionId: string } };
+    expect(claimed.tracking).toMatchObject({ tracked: true, sessionId: started.sessionId });
+    expect(codeLink.sessionsOf(project.id, item.id).map((s) => s.id)).toEqual([started.sessionId]);
+  });
+
   it("starts Hermes in a terminal once its own sessions reach Tomrade, and asks for that first", async () => {
     const world = await machine(codeRepo());
     const { codeLink, ctx, project, repo, checkout, ticket } = world;

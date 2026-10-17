@@ -261,7 +261,8 @@ plugins:
   - id: engine-pi
     name: "@tomradex/engine-pi"
     implements: [engine]
-  # Gemini CLI over ACP (`gemini --acp`); a ticket can also start it in a terminal.
+  # Gemini CLI over ACP (`gemini --acp`), which a ticket can also start in a terminal;
+  # Antigravity CLI (`agy`), started only in a terminal.
   - id: engine-terminal
     name: "@tomradex/engine-terminal"
     implements: [engine]

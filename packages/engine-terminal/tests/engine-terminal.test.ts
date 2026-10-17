@@ -1,10 +1,13 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { expect, it } from "vitest";
 import { Settings } from "@tomradex/settings";
 import { fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 import { Agent, type TurnInput } from "@tomradex/agent";
 import { Mcp } from "@tomradex/mcp";
-import engineTerminal, { gemini, geminiCallName } from "@tomradex/engine-terminal";
+import engineTerminal, { agyMcpFile, gemini, geminiCallName } from "@tomradex/engine-terminal";
 
 it("registers Gemini CLI as an in-app agent that also takes a ticket in a terminal", async () => {
   const { ctx } = await fresh({ plugins: [Tools, [Settings, { path: `/tmp/tomrade-engine-terminal-${Date.now()}.json` }], Agent, [Mcp, { port: 0 }], engineTerminal] });
@@ -16,7 +19,7 @@ it("registers Gemini CLI as an in-app agent that also takes a ticket in a termin
     expect(view?.terminalOnly).toBeUndefined();
     expect(view?.terminal).toBeUndefined();
     expect(view?.permissionModes?.choices.map((c) => c.value)).toEqual(["full-access", "ask", "read-only"]);
-    expect(ctx.agent.codeEngines().map((e) => e.id)).toEqual(["gemini"]);
+    expect(ctx.agent.codeEngines().map((e) => e.id)).toEqual(["gemini", "agy"]);
   } finally {
     await ctx.fiber.dispose();
   }
@@ -29,4 +32,36 @@ it("starts Gemini CLI's ACP server asking before it acts, in a folder it trusts,
   expect(geminiCallName("mcp_tomrade_list_items__a1b2")).toBe("mcp_tomrade_list_items");
   expect(geminiCallName("run_shell_command__run_shell_command_1792_0")).toBe("run_shell_command");
   expect(geminiCallName("opaque-id")).toBeUndefined();
+});
+
+it("registers Antigravity CLI for a terminal only, connected through its own config and claiming first", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-agy-"));
+  // Stands in for `agy mcp add|remove` as 1.4.0 does it: servers in ~/.gemini/config/mcp_config.json, `serverUrl` for http.
+  const bin = path.join(dir, "agy");
+  fs.writeFileSync(bin, `#!/bin/sh
+f="$HOME/.gemini/config/mcp_config.json"
+[ "$1" = "--version" ] && { echo 1.4.0; exit 0; }
+mkdir -p "$(dirname "$f")"
+if [ "$2" = "add" ]; then printf '{"mcpServers":{"%s":{"serverUrl":"%s","disabled":false}}}' "$3" "$4" > "$f"; else printf '{"mcpServers":{}}' > "$f"; fi
+`, { mode: 0o700 });
+  const home = process.env.HOME;
+  process.env.HOME = dir;
+  const settingsPath = path.join(dir, "settings.json");
+  fs.writeFileSync(settingsPath, JSON.stringify({ agent: { engines: { agy: { command: bin } } } }));
+  const { ctx } = await fresh({ plugins: [Tools, [Settings, { path: settingsPath }], Agent, [Mcp, { port: 0 }], engineTerminal] });
+  await settle();
+  try {
+    const engine = ctx.agent.engineOf("agy")!;
+    expect(engine).toMatchObject({ title: "Antigravity CLI", capabilities: ["code", "general"], terminalOnly: true, terminalViaLink: true, terminalClaims: true });
+    expect(engine.setup?.install[0]).toContain("antigravity.google/cli/install");
+    expect(agyMcpFile(dir)).toBe(path.join(dir, ".gemini", "config", "mcp_config.json"));
+    const link = engine.mcpLink!;
+    expect(await link.status()).toMatchObject({ state: "missing" });
+    expect(await link.connect()).toMatchObject({ state: "connected", configuredUrl: ctx.mcp.url });
+    expect(JSON.parse(fs.readFileSync(agyMcpFile(dir), "utf8")).mcpServers.tomrade.serverUrl).toBe(ctx.mcp.url);
+    expect(await link.disconnect()).toMatchObject({ state: "missing" });
+  } finally {
+    process.env.HOME = home;
+    await ctx.fiber.dispose();
+  }
 });

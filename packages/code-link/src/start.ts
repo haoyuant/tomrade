@@ -329,7 +329,7 @@ export class Starter {
       return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command: null, launched: true, runId, engine: engineId, ...(warnings.length ? { warnings } : {}) };
     }
 
-    const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), terminalPrompt);
+    const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), withClaimFirst(agent, engineId, item.key, terminalPrompt));
     if (!files) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
     const baseCommand = this.command(terminalSettings, engineId, session, files, where.cwd, agent.optionsOf(thread, engineId), await binOf(agent, engineId));
     const command = githubHttps(repo.remote) && await ctx.github.usesHelper(this.host.git, where.cwd) ? ctx.github.wrap(baseCommand) : baseCommand;
@@ -356,7 +356,7 @@ export class Starter {
   private command(settings: TerminalSettings, engineId: string, session: { externalId: string | null }, files: SessionFiles, cwd: string, options: unknown, bin: string): string {
     const template = terminalTemplate(settings, engineId);
     const id = session.externalId;
-    const resume = id ? (engineId === "codex" ? `resume ${id}` : engineId === "pi" ? `--session-id ${id}` : engineId === "gemini" ? `-r ${id}` : engineId === "opencode" ? `--session ${id}` : engineId === "dsh" ? `--session-id ${id}` : engineId === "other" ? id : `--resume ${id}`) : "";
+    const resume = id ? (engineId === "codex" ? `resume ${id}` : engineId === "pi" ? `--session-id ${id}` : engineId === "gemini" ? `-r ${id}` : engineId === "opencode" ? `--session ${id}` : engineId === "dsh" ? `--session-id ${id}` : engineId === "agy" ? `--conversation ${id}` : engineId === "other" ? id : `--resume ${id}`) : "";
     return fillTemplate(withOptions(template, optionFlags(engineId, options)), {
       cwd, prompt: files.prompt, mcpConfig: files.mcpConfig, mcpUrl: files.mcpUrl, token: files.token, settings: files.settings, piExtension: files.piExtension,
       geminiSettings: files.geminiSettings, opencodeConfig: files.opencodeConfig, dshPatch: files.dshPatch, dshReporter: files.dshReporter, resume,
@@ -418,7 +418,7 @@ export class Starter {
     const chosen = agent.codeEngines().find((e) => e.id === agent.answering(engineId));
     const inside = insideOnly(agent, engineId) ?? (chosen ? await linkFirst(chosen, locale) : null);
     if (inside) return { ok: false, gate: "engine", message: inside, engine: engineId };
-    const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), `${prepared.prompt}\n\n${languageLine(locale)}`);
+    const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), withClaimFirst(agent, engineId, item.key, `${prepared.prompt}\n\n${languageLine(locale)}`));
     if (!files) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
     const command = this.command(terminalSettings, engineId, session, files, prepared.cwd, agent.optionsOf(thread, engineId), await binOf(agent, engineId));
     const launch = await launchTerminal({ cwd: prepared.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir }, terminalSettings.terminal);
@@ -470,6 +470,13 @@ export class Starter {
 }
 
 export type { RepoStateView };
+
+/** An agent whose connection carries no session token is told to claim the ticket before anything else, which ties the session to it. */
+function withClaimFirst(agent: Agent, engineId: string, key: string, prompt: string): string {
+  const engine = agent.codeEngines().find((e) => e.id === agent.answering(engineId));
+  if (!engine?.terminalClaims) return prompt;
+  return `Before anything else, call the tomrade MCP tool claim_ticket with key "${key}": this session reaches Tomrade without a session token, and the claim ties it to this ticket.\n\n${prompt}`;
+}
 
 /** The CLI an engine located — an app's own copy included — for a template's {bin}; its id when it found none. */
 async function binOf(agent: Agent, engineId: string): Promise<string> {
