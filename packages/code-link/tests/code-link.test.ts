@@ -359,6 +359,45 @@ describe("code link", () => {
     expect(codeLink.links(project.id, other.id).map((l) => l.branch)).toEqual([otherBranch]);
   });
 
+  it("settles a branch whose commits landed through a sibling's squash-merged pull request", async () => {
+    const { codeLink, items, project, repo, checkout, ticket } = await machine(codeRepo());
+    const item = ticket("Two names for one branch", "verifying");
+    const head = commitOn(checkout, "early-name", "work.ts", `TOM-${item.keyNum}: the work`);
+    git(["push", "-q", "origin", "early-name", "early-name:later-name"], checkout);
+    git(["checkout", "-q", "main"], checkout);
+    git(["merge", "-q", "--squash", "early-name"], checkout);
+    git(["commit", "-q", "-m", `TOM-${item.keyNum}: the work (#7)`], checkout);
+    git(["push", "-q", "origin", "main"], checkout);
+    codeLink.store.ensureActiveDelivery(project.id, item.id);
+    codeLink.store.upsertLink(project.id, { itemId: item.id, repoId: repo.id, branch: "early-name" }, { source: "scan", headSha: head, ahead: 1 });
+    codeLink.store.upsertLink(project.id, { itemId: item.id, repoId: repo.id, branch: "later-name" }, { headSha: head, ahead: 1, prNumber: 7, prUrl: "https://github.com/example/app/pull/7", prState: "open", source: "mcp" });
+
+    await codeLink.scan(project.id);
+    const squash = git(["rev-parse", "main"], checkout);
+    expect(codeLink.links(project.id, item.id).map((l) => [l.branch, l.mergedSha])).toEqual(expect.arrayContaining([["early-name", squash], ["later-name", squash]]));
+    expect(items.get(project.id, item.id)!.status).toBe("done");
+  });
+
+  it("keeps a branch with commits past its sibling's merged head holding the ticket open", async () => {
+    const { codeLink, items, project, repo, checkout, ticket } = await machine(codeRepo());
+    const item = ticket("More on one branch", "verifying");
+    const head = commitOn(checkout, "later-name", "work.ts", `TOM-${item.keyNum}: the work`);
+    git(["checkout", "-q", "-b", "early-name"], checkout);
+    commitOn(checkout, "early-name", "more.ts", `TOM-${item.keyNum}: more work`);
+    git(["push", "-q", "origin", "early-name", "later-name"], checkout);
+    git(["checkout", "-q", "main"], checkout);
+    git(["merge", "-q", "--squash", "later-name"], checkout);
+    git(["commit", "-q", "-m", `TOM-${item.keyNum}: the work (#7)`], checkout);
+    git(["push", "-q", "origin", "main"], checkout);
+    codeLink.store.ensureActiveDelivery(project.id, item.id);
+    codeLink.store.upsertLink(project.id, { itemId: item.id, repoId: repo.id, branch: "early-name" }, { source: "scan", headSha: git(["rev-parse", "early-name"], checkout), ahead: 2 });
+    codeLink.store.upsertLink(project.id, { itemId: item.id, repoId: repo.id, branch: "later-name" }, { headSha: head, ahead: 1, prNumber: 7, prUrl: "https://github.com/example/app/pull/7", prState: "open", source: "mcp" });
+
+    await codeLink.scan(project.id);
+    expect(codeLink.links(project.id, item.id).find((l) => l.branch === "early-name")).toMatchObject({ mergedSha: null });
+    expect(items.get(project.id, item.id)!.status).toBe("verifying");
+  });
+
   it("does not take another ticket's squash commit that mentions this one as its merge", async () => {
     const { codeLink, items, project, checkout, ticket } = await machine(codeRepo());
     const other = ticket("Other", "doing");

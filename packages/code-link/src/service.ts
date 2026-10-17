@@ -1493,6 +1493,28 @@ export class CodeLink extends Service {
       }
     }
 
+    // A branch carrying the commits of a sibling whose pull request was squash-merged never reads as merged
+    // above: those commits never reach the default branch. With nothing past the merged head, it landed too.
+    if (result.defaultRef) {
+      const cwd = this.ctx.repos.checkout(repo.remote).checkout!;
+      for (const l of this.store.linksForRepo(projectId, repo.id)) {
+        if (l.mergedSha || !l.branch || !l.headSha || l.ahead === 0 || l.prNumber !== null || l.prUrl || l.prState) continue;
+        if (l.delivery !== this.store.activeDelivery(projectId, l.itemId)?.sequence) continue;
+        const sha = result.branches.find((b) => b.name === l.branch)?.sha ?? l.headSha;
+        const siblings = this.store.links(projectId, l.itemId).filter((o) => o.id !== l.id && o.repoId === repo.id && o.delivery === l.delivery && o.mergedSha && o.headSha);
+        let carrier: CodeLinkView | undefined;
+        for (const o of siblings) {
+          if (o.headSha === sha || (await this.git(["merge-base", "--is-ancestor", sha, o.headSha!], { cwd, ok: true })).code === 0) {
+            carrier = o;
+            break;
+          }
+        }
+        if (!carrier) continue;
+        this.store.patchLink(projectId, l.id, { mergedSha: carrier.mergedSha });
+        touched.add(l.itemId);
+      }
+    }
+
     let changed = 0;
     let proposals = 0;
     for (const itemId of touched) {
