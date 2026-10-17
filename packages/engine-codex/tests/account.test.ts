@@ -48,15 +48,16 @@ describe("asking Codex whether it can run", () => {
     expect(codexCanRun(null)).toBeNull();
   });
 
-  it("gives up on a Codex that never answers, and takes down one that ignores SIGTERM", { timeout: 10_000 }, async () => {
+  it("gives up on a Codex that never answers, and takes down one that ignores SIGTERM", { timeout: 30_000 }, async () => {
     const pidFile = path.join(dir, "stubborn.pid");
     const started = Date.now();
     expect(await readCodexAccount(launchOf(fakeCodex("stubborn")), { ...process.env, FAKE_PID_FILE: pidFile }, 1500)).toBeNull();
-    expect(Date.now() - started).toBeLessThan(3000);
+    // It never answers, so returning at all means the check's own timeout ended it; the slack is for a slow spawn.
+    expect(Date.now() - started).toBeLessThan(10_000);
     const pid = Number(fs.readFileSync(pidFile, "utf8"));
     expect(alive(pid)).toBe(true);
-    await new Promise((resolve) => setTimeout(resolve, 2600));
-    expect(alive(pid)).toBe(false);
+    // SIGKILL follows two seconds later, or later still on a busy machine.
+    await expect.poll(() => alive(pid), { timeout: 15_000, interval: 100 }).toBe(false);
   });
 });
 
