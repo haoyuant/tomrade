@@ -15,7 +15,7 @@ import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/items";
 import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/repos";
-import { normalizeRemote } from "@tomradex/repos";
+import { normalizeRemote, sameRepository } from "@tomradex/repos";
 import type {} from "@tomradex/settings";
 import type {} from "@tomradex/write";
 import type { Author, Item, Repo } from "@tomradex/domain";
@@ -279,10 +279,11 @@ export class CodeLink extends Service {
   static Config = CodeLinkConfig;
 
   /**
-   * What GitHub says about a pull request: through Tomrade's GitHub account, else `gh`;
-   * null when neither can ask. Replaceable, so tests never reach the network.
+   * What GitHub says about a pull request: through Tomrade's GitHub account, else `gh`
+   * (with the checkout's credential when there is one); null when neither can ask.
+   * Replaceable, so tests never reach the network.
    */
-  pulls = async (repo: string, number: number, cwd: string): Promise<ForgePull | null> => {
+  pulls = async (repo: string, number: number, cwd: string | null): Promise<ForgePull | null> => {
     const route = `/repos/${repo}/pulls/${number}`;
     try {
       if (await this.ctx.github.token()) return readPull(await this.ctx.github.api.request("GET", route));
@@ -291,7 +292,7 @@ export class CodeLink extends Service {
     }
     if (!(await commandOk("gh"))) return null;
     try {
-      return readPull(JSON.parse(await exec("gh", ["api", route.slice(1)], cwd, await this.ctx.github.environment(this.git, cwd))));
+      return readPull(JSON.parse(await exec("gh", ["api", route.slice(1)], cwd ?? os.homedir(), cwd ? await this.ctx.github.environment(this.git, cwd) : undefined)));
     } catch {
       return null;
     }
@@ -306,6 +307,8 @@ export class CodeLink extends Service {
   private readonly unlinkedByProject = new Map<string, UnlinkedBranch[]>();
   private readonly scannedAt = new Map<string, number>();
   private readonly inFlight = new Map<string, Promise<ScanSummary>>();
+  /** Folders hooks events came from that were already looked at for a checkout: one look per folder, not per event. */
+  private readonly placeLooked = new Set<string>();
   /** Machine-local: each thread's worktree, for the section and the terminal. */
   private readonly worktrees = new Map<string, string>();
   /** Which session each outside client's MCP connection claimed for; in memory, so a restart asks the client to name its ticket again. */
@@ -1216,6 +1219,11 @@ export class CodeLink extends Service {
       if (!placement.checkout || !fs.existsSync(placement.checkout)) {
         summary.skipped.push({ repoId: repo.id, reason: "no checkout on this machine" });
         if (!this.store.repoState(projectId, repo.id)) this.store.upsertRepoState(projectId, repo.id, {});
+        // Nothing here can be read from git, but GitHub can still say what became of its pull requests.
+        const outcome = await this.settlePulls(projectId, repo);
+        this.releaseMerged(projectId, repo.id);
+        summary.changed += outcome.changed;
+        summary.proposals += outcome.proposals;
         continue;
       }
       const before = this.store.repoState(projectId, repo.id);
@@ -1246,14 +1254,7 @@ export class CodeLink extends Service {
         }
       }
       const outcome = await this.absorb(projectId, repo, result, before?.autoDone ?? true, now, unlinked);
-      // A merge the agent was refused is over once someone merged it.
-      for (const session of this.store.sessions(projectId, { live: true })) {
-        if (session.repoId !== repo.id || session.blocked !== "merge") continue;
-        const links = session.itemIds.flatMap((id) => this.currentLinks(projectId, id)).filter((l) => l.repoId === repo.id);
-        if (!links.length || !links.every((l) => !!l.mergedSha || l.prState === "merged")) continue;
-        if (this.superseded(projectId, session)) this.sessions.end(projectId, session.id, "ended", true);
-        else this.store.patchSession(projectId, session.id, { blocked: null, state: "idle", activity: null });
-      }
+      this.releaseMerged(projectId, repo.id);
       summary.links += outcome.links;
       summary.changed += outcome.changed;
       summary.proposals += outcome.proposals;
@@ -1378,17 +1379,7 @@ export class CodeLink extends Service {
     const answered = new Set<string>();
     if (result.defaultRef) {
       const cwd = this.ctx.repos.checkout(repo.remote).checkout!;
-      const asked = new Map<string, Promise<ForgePull | null>>();
-      for (const l of this.store.linksForRepo(projectId, repo.id)) {
-        if (l.mergedSha || l.prState === "closed" || (l.prNumber === null && !l.prUrl)) continue;
-        const item = this.ctx.items.get(projectId, l.itemId);
-        if (!item || l.delivery !== this.store.activeDelivery(projectId, item.id)?.sequence) continue;
-        const ref = await githubPull(l.prUrl, l.prNumber, repo.remote);
-        if (!ref) continue;
-        const key = `${ref.repo}#${ref.number}`;
-        if (!asked.has(key)) asked.set(key, this.pulls(ref.repo, ref.number, cwd));
-        const pull = await asked.get(key)!;
-        if (!pull) continue;
+      for (const { link: l, item, pull } of await this.askPulls(projectId, repo, cwd)) {
         if (pull.merged && pull.mergeSha) {
           // Merged into the default branch, or into another branch that has not reached it yet.
           const landed = await this.git(["merge-base", "--is-ancestor", pull.mergeSha, result.defaultRef], { cwd, ok: true });
@@ -1470,6 +1461,60 @@ export class CodeLink extends Service {
       proposals += r.proposals;
     }
     return { links, changed, proposals };
+  }
+
+  /** What GitHub says about each unsettled pull request of a repository's current deliveries, asked once per pull request. */
+  private async askPulls(projectId: string, repo: Repo, cwd: string | null): Promise<{ link: CodeLinkView; item: Item; pull: ForgePull }[]> {
+    const asked = new Map<string, Promise<ForgePull | null>>();
+    const out: { link: CodeLinkView; item: Item; pull: ForgePull }[] = [];
+    for (const link of this.store.linksForRepo(projectId, repo.id)) {
+      if (link.mergedSha || link.prState === "closed" || (link.prNumber === null && !link.prUrl)) continue;
+      const item = this.ctx.items.get(projectId, link.itemId);
+      if (!item || link.delivery !== this.store.activeDelivery(projectId, item.id)?.sequence) continue;
+      const ref = await githubPull(link.prUrl, link.prNumber, repo.remote);
+      if (!ref) continue;
+      const key = `${ref.repo}#${ref.number}`;
+      if (!asked.has(key)) asked.set(key, this.pulls(ref.repo, ref.number, cwd));
+      const pull = await asked.get(key)!;
+      if (pull) out.push({ link, item, pull });
+    }
+    return out;
+  }
+
+  /**
+   * A repository with no checkout here: GitHub alone settles its pull requests. Without the
+   * default branch to look in, a merge counts only when GitHub says it went into that branch.
+   */
+  private async settlePulls(projectId: string, repo: Repo): Promise<{ changed: number; proposals: number }> {
+    const touched = new Set<string>();
+    for (const { link, item, pull } of await this.askPulls(projectId, repo, null)) {
+      if (pull.merged && pull.mergeSha && pull.base === repo.defaultBranch) this.store.patchLink(projectId, link.id, { mergedSha: pull.mergeSha, prState: "merged" });
+      else if (!pull.merged && pull.state === "closed") this.store.patchLink(projectId, link.id, { prState: "closed" });
+      else continue;
+      touched.add(item.id);
+    }
+    let changed = 0;
+    let proposals = 0;
+    const autoDone = this.store.repoState(projectId, repo.id)?.autoDone ?? true;
+    for (const itemId of touched) {
+      const item = this.ctx.items.get(projectId, itemId);
+      if (!item) continue;
+      const r = this.judge(projectId, item, repo.id, new Map(), new Set(), autoDone);
+      changed += r.changed;
+      proposals += r.proposals;
+    }
+    return { changed, proposals };
+  }
+
+  /** A merge the agent was refused is over once someone merged it. */
+  private releaseMerged(projectId: string, repoId: string): void {
+    for (const session of this.store.sessions(projectId, { live: true })) {
+      if (session.repoId !== repoId || session.blocked !== "merge") continue;
+      const links = session.itemIds.flatMap((id) => this.currentLinks(projectId, id)).filter((l) => l.repoId === repoId);
+      if (!links.length || !links.every((l) => !!l.mergedSha || l.prState === "merged")) continue;
+      if (this.superseded(projectId, session)) this.sessions.end(projectId, session.id, "ended", true);
+      else this.store.patchSession(projectId, session.id, { blocked: null, state: "idle", activity: null });
+    }
   }
 
   private closeEmptyScannedDelivery(projectId: string, item: Item, now: number, repoId?: string): void {
@@ -1691,7 +1736,11 @@ export class CodeLink extends Service {
           for (const id of s.itemIds) {
             if (this.store.currentDelivery(projectId, id)?.sequence !== s.delivery) continue;
             if (s.state === "waiting") waiting.add(id);
-            if (s.state === "error") stuck.set(id, s.summary ?? w.stopped);
+            if (s.state !== "error") continue;
+            const summary = s.summary ?? w.stopped;
+            const repo = s.blocked === "merge" ? this.ctx.repos.get(projectId, s.repoId) : null;
+            const checkout = repo ? this.ctx.repos.checkout(repo.remote).checkout : null;
+            stuck.set(id, repo && !(checkout && fs.existsSync(checkout)) ? `${summary}\n${w.mergeUnseen(repo.name)}` : summary);
           }
         }
         const out: Record<string, Badge[]> = {};
@@ -1870,6 +1919,31 @@ export class CodeLink extends Service {
         const created = this.store.createSession(projectId, { repoId: repo.id, branch: "", itemIds: [], mode: "terminal", agent, threadId: null, device: this.ctx.hub.deviceId, externalId: p.session_id ?? null });
         this.sessions.event(projectId, created.id, payload);
         return;
+      }
+    }
+    void this.placeFrom(cwd).catch((err) => this.ctx.logger.warn(`placing a checkout from ${cwd} failed: ${message(err)}`));
+  }
+
+  /**
+   * A coding session in a checkout, or a worktree of one, of a project repository this machine has
+   * no checkout of: that checkout's main working tree is the repository's checkout from now on.
+   */
+  private async placeFrom(cwd: string): Promise<void> {
+    if (this.placeLooked.has(cwd)) return;
+    this.placeLooked.add(cwd);
+    const common = await this.git(["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd, ok: true });
+    const gitDir = common.code === 0 ? common.stdout.trim() : "";
+    // A bare repository, or a git dir kept apart from its working tree, has no main working tree to name.
+    if (path.basename(gitDir) !== ".git") return;
+    const top = path.dirname(gitDir);
+    const origin = await this.git(["remote", "get-url", "origin"], { cwd: top, ok: true });
+    if (origin.code !== 0 || !origin.stdout.trim()) return;
+    for (const projectId of this.ctx.db.openIds()) {
+      for (const repo of this.ctx.repos.list(projectId)) {
+        const placed = this.ctx.repos.checkout(repo.remote).checkout;
+        if (placed && fs.existsSync(placed)) continue;
+        if (!(await sameRepository(origin.stdout.trim(), repo.remote))) continue;
+        await this.ctx.repos.setCheckout(repo.remote, top);
       }
     }
   }
