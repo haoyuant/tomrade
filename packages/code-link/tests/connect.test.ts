@@ -268,6 +268,21 @@ describe("connecting a repository", () => {
     expect(git(["branch", "--show-current"], checkout)).toBe("main");
   });
 
+  it("refuses to connect while another program holds its port, and writes nothing", async () => {
+    const { codeLink, ctx, project, repo, checkout, remote } = await machine();
+    // As if 19090 was taken at startup: this instance listens on a random port that the next restart changes.
+    ctx.mcp.clash = { port: 19090, heldBy: { app: "tomrade", kind: "packaged", version: "1.2.3", pid: 4242 } };
+    expect(await codeLink.connection(project.id, repo.id)).toMatchObject({ state: "unconnected", clash: { port: 19090, heldBy: { kind: "packaged" } } });
+    await expect(codeLink.connect(project.id, repo.id)).rejects.toThrow("port 19090 is held by the installed Tomrade 1.2.3 (pid 4242)");
+    ctx.settings.set({ ...ctx.settings.get(), language: "zh" });
+    await expect(codeLink.connect(project.id, repo.id)).rejects.toThrow("19090 端口被正式版 1.2.3（进程 4242）占用");
+    expect(git(["branch", "--list", "tomrade/connect"], checkout)).toBe("");
+    expect(git(["ls-remote", "--heads", remote, "tomrade/connect"], checkout)).toBe("");
+    expect(git(["worktree", "list"], checkout).split("\n")).toHaveLength(1);
+    expect(fs.existsSync(path.join(checkout, ".mcp.json"))).toBe(false);
+    expect(git(["status", "--porcelain"], checkout)).toBe("");
+  });
+
   it("updates all Tomrade hooks when connecting to another instance", () => {
     const dir = path.join(root, `reconnect-${n++}`);
     fs.mkdirSync(dir);

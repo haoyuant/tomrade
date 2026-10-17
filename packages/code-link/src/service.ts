@@ -977,7 +977,7 @@ export class CodeLink extends Service {
     const mcp = this.ctx.get("mcp");
     const mcpUrl = mcp?.urlFor(projectId) ?? null;
     const branch = "tomrade/connect";
-    const base = { mcpUrl, configuredUrl: null, instance: mcp?.badge().kind ?? "dev", branch, url: null, agents: [] as AgentConnectionView[] } as const;
+    const base = { mcpUrl, configuredUrl: null, instance: mcp?.badge().kind ?? "dev", branch, url: null, agents: [] as AgentConnectionView[], ...(mcp?.clash ? { clash: mcp.clash } : {}) } as const;
     if (!mcpUrl || !mcp?.eventUrl) return { ...base, state: "unavailable" };
     const cwd = this.ctx.repos.checkout(repo.remote).checkout;
     if (!cwd || !fs.existsSync(cwd)) return { ...base, state: "no-checkout" };
@@ -1016,6 +1016,8 @@ export class CodeLink extends Service {
     if (!repo) throw new Error(`unknown repository ${repoId}`);
     const mcp = this.ctx.get("mcp");
     if (!mcp?.url) throw new Error("the MCP server is not running — enable the mcp plugin");
+    // A port taken at startup is replaced by a random one; committed, it would point nowhere after the next restart.
+    if (mcp.clash) throw new Error(this.words().connectPortClash(mcp.clash.port, mcp.holderText(this.ctx.settings.locale?.() === "zh")));
     const placement = this.ctx.repos.checkout(repo.remote);
     if (!placement.checkout || !fs.existsSync(placement.checkout)) throw new Error(`no checkout of ${repo.name} on this machine`);
 
