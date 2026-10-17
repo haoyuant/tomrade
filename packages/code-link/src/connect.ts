@@ -20,7 +20,8 @@ export interface ConnectInput {
 const SECTION_HEADING = "## Tomrade";
 const SECTION_BEGIN = "<!-- BEGIN TOMRADE -->";
 const SECTION_END = "<!-- END TOMRADE -->";
-const MARKED_SECTION = /^<!-- BEGIN TOMRADE -->[ \t]*\r?$[\s\S]*?^<!-- END TOMRADE -->[ \t]*\r?(?:\n|$)/m;
+// The BEGIN nearest its END: a BEGIN that lost its END stays the person's text, as does all that follows it.
+const MARKED_SECTION = /^<!-- BEGIN TOMRADE -->[ \t]*\r?$(?:(?!^<!-- BEGIN TOMRADE -->)[\s\S])*?^<!-- END TOMRADE -->[ \t]*\r?(?:\n|$)/m;
 // Written before the markers: only a heading line that is exactly `## Tomrade`, never `### Tomrade tips`.
 const LEGACY_HEADING = /^## Tomrade[ \t]*\r?$/m;
 const CODEX_START = "# BEGIN TOMRADE MCP";

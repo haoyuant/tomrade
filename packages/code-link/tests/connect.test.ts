@@ -149,6 +149,22 @@ describe("connecting a repository", () => {
     expect(read("AGENTS.md").endsWith("<!-- END TOMRADE -->\n\n# Appendix\n\nThe end.\n")).toBe(true);
   });
 
+  it("keeps everything after a BEGIN marker that lost its END", () => {
+    const dir = path.join(root, `orphan-${n++}`);
+    fs.mkdirSync(dir, { recursive: true });
+    const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
+    const own = "# app\n\nBefore.\n\n<!-- BEGIN TOMRADE -->\n\nBetween.\n\n## Notes\n\nAfter.\n";
+    fs.writeFileSync(path.join(dir, "CLAUDE.md"), own);
+    writeConnectFiles(dir, input);
+    expect(writeConnectFiles(dir, input)).toEqual([]);
+    const moved = { ...input, mcpUrl: "http://127.0.0.1:19091/mcp/p1" };
+    writeConnectFiles(dir, moved);
+    const claude = fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8");
+    expect(claude.startsWith(`${own}\n<!-- BEGIN TOMRADE -->\n## Tomrade\n\n`)).toBe(true);
+    expect(claude).toContain(moved.mcpUrl);
+    expect(claude).not.toContain(input.mcpUrl);
+  });
+
   it("creates Claude hooks from nothing and merges WorkBuddy/Cursor/Gemini settings", () => {
     const dir = path.join(root, `agents-${n++}`);
     fs.mkdirSync(path.join(dir, ".cursor"), { recursive: true });
