@@ -121,7 +121,7 @@ export class AcpRuntime implements Runtime {
     const answer = (option?: Json) => ({ outcome: option ? { outcome: "selected", optionId: option.optionId } : { outcome: "cancelled" } });
     if (!io || io.signal.aborted || params.sessionId !== this.session) return answer();
     const known = this.calls.get(params.toolCall?.toolCallId);
-    const call = { name: params.toolCall?.name ?? known?.name, title: params.toolCall?.title ?? known?.title, kind: params.toolCall?.kind ?? known?.kind, args: params.toolCall?.rawInput ?? known?.args };
+    const call = { name: params.toolCall?.name ?? known?.name ?? this.nameOf(params.toolCall?.toolCallId), title: params.toolCall?.title ?? known?.title, kind: params.toolCall?.kind ?? known?.kind, args: params.toolCall?.rawInput ?? known?.args };
     const label = wrappedTool(call.args) ?? (call.title || call.name || "a tool");
     const refuse = () => {
       this.refused.push(label);
@@ -135,6 +135,10 @@ export class AcpRuntime implements Runtime {
     if (io.signal.aborted) return answer();
     const chosen = said === null ? undefined : options.find((option) => option.name === said);
     return chosen && !chosen.kind?.startsWith("reject") ? answer(chosen) : refuse();
+  }
+
+  private nameOf(toolCallId: unknown): string | undefined {
+    return typeof toolCallId === "string" ? this.agent.callName?.(toolCallId) : undefined;
   }
 
   private option(setting: Setting): Json | undefined {
@@ -194,7 +198,7 @@ export class AcpRuntime implements Runtime {
   /** The reopened session; null when the agent cannot reopen one, "lost" when it tried and no longer has it. */
   private async reopen(sessionId: string, mcpServers: Json[]): Promise<Json | null | "lost"> {
     const resume = !!this.caps.sessionCapabilities?.resume && this.agent.reopen !== "load";
-    const method = resume ? "session/resume" : this.caps.loadSession ? "session/load" : null;
+    const method = this.agent.reopen === "never" ? null : resume ? "session/resume" : this.caps.loadSession ? "session/load" : null;
     if (!method) return null;
     try {
       // A loaded session replays its history first; with no turn listening, the replay goes nowhere.
@@ -259,7 +263,7 @@ export class AcpRuntime implements Runtime {
   }
 
   private explain(error: unknown): string {
-    const message = messageOf(error);
+    const message = innermost(messageOf(error));
     if (error instanceof AcpError && (error.code === AUTH_REQUIRED || /auth|log ?in|sign ?in|credential|api key/i.test(message))) return `${message} — ${this.agent.signIn ?? `sign in to ${this.agent.title}`}, then try again`;
     return message;
   }
@@ -341,7 +345,7 @@ export class AcpRuntime implements Runtime {
       let call = this.calls.get(update.toolCallId);
       if (!call) {
         flush();
-        call = { name: "", title: "", args: {}, at: performance.now() };
+        call = { name: this.nameOf(update.toolCallId) ?? "", title: "", args: {}, at: performance.now() };
         this.calls.set(update.toolCallId, call);
         metrics.toolCalls!++;
       }
@@ -487,3 +491,11 @@ export class AcpRuntime implements Runtime {
 }
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+/** A model API's error passed on as JSON, sometimes JSON in JSON (Gemini CLI): its innermost message. */
+export function innermost(message: string): string {
+  let parsed: any;
+  try { parsed = JSON.parse(message); } catch { return message; }
+  const inner = parsed?.error?.message ?? parsed?.message;
+  return typeof inner === "string" && inner.trim() ? innermost(inner.trim()) : message;
+}

@@ -9,7 +9,7 @@ import { Mcp } from "@tomradex/mcp";
 import { localCli } from "@tomradex/engine-claude-code";
 import type { Block, Engine, TurnIO, TurnInput } from "@tomradex/agent";
 import { createAcpEngine, isTomradeTool, PERMISSION_CHOICES, policyOf, type AcpAgent } from "../src/index.js";
-import { resolveChoice } from "../src/runtime.js";
+import { innermost, resolveChoice } from "../src/runtime.js";
 
 const Options = z.object({ command: z.string().default("tomrade-fake-acp"), model: z.string().optional(), effort: z.string().optional() });
 
@@ -261,6 +261,46 @@ describe("an ACP agent as an engine", () => {
     const text = sent("session/prompt").at(-1).params.prompt[0].text as string;
     expect(text).toContain("You are conducting a thread inside Tomrade");
     expect(text).toContain("RECAP OF EARLIER");
+  });
+
+  it("knows a call named only in its id, so Tomrade's tool runs in a read-only turn and is traced once", async () => {
+    const engine = createAcpEngine(ctx, spec({ callName: (id) => (id.includes("__") ? id.slice(0, id.indexOf("__")) : undefined) }));
+    const { io, blocks } = turnIO();
+    io.requestPermission = async () => { throw new Error("nothing is put to the person in a read-only turn"); };
+    const result = await engine.turn(turnInput({ purpose: "backlog", permissionMode: "read-only", input: { kind: "text", text: "NAMED_BY_ID" } }), io);
+    expect(result.stop, result.error).toBe("end");
+    expect(blocks).toContainEqual({ type: "text", text: "ran, refused" });
+    expect(requests().filter((r) => r.result?.outcome).map((r) => r.result.outcome.optionId)).toEqual(["proceed_once", "cancel"]);
+    // Tomrade's own call is traced by its gateway; the agent's is traced under its own name.
+    expect(blocks.filter((b) => b.type === "trace")).toEqual([expect.objectContaining({ tool: "run_shell_command", ok: false })]);
+  });
+
+  it("opens a new session with the conversation recapped for an agent that never reopens one", async () => {
+    const first = createAcpEngine(ctx, spec({ reopen: "never" }));
+    const one = await first.turn(turnInput(), turnIO().io);
+    expect(one.stop, one.error).toBe("end");
+
+    const cold = createAcpEngine(ctx, spec({ reopen: "never" }));
+    const { io } = turnIO();
+    io.resume = one.resume;
+    io.recap = () => "RECAP OF EARLIER";
+    const two = await cold.turn(turnInput({ input: { kind: "text", text: "again" } }), io);
+    expect(two.stop, two.error).toBe("end");
+    expect(two.resume).not.toBe(one.resume);
+    expect([...sent("session/load"), ...sent("session/resume")]).toEqual([]);
+    expect(sent("session/new")).toHaveLength(2);
+    const text = sent("session/prompt").at(-1).params.prompt[0].text as string;
+    expect(text).toContain("You are conducting a thread inside Tomrade");
+    expect(text).toContain("RECAP OF EARLIER");
+  });
+
+  it("says the innermost message of a model API error passed on as JSON, and how to sign in", async () => {
+    const engine = createAcpEngine(ctx, spec());
+    const failed = await engine.turn(turnInput({ input: { kind: "text", text: "BAD_KEY" } }), turnIO().io);
+    expect(failed).toMatchObject({ stop: "error", error: "API key not valid. Please pass a valid API key. — run fake login, then try again" });
+    expect(failed.details).toContain("INVALID_ARGUMENT");
+    expect(innermost("plain words")).toBe("plain words");
+    expect(innermost('{"error":{"code":500}}')).toBe('{"error":{"code":500}}');
   });
 
   it("switches an agent with modes to the one a full-access turn wants, and adds up a running session total", async () => {

@@ -152,6 +152,22 @@ async function prompt(id, p) {
     update(sid, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'quick' } });
     return send({ id, result: { stopReason: 'end_turn', usage: { inputTokens: 5, outputTokens: 1 } } });
   }
+  if (text.includes('NAMED_BY_ID')) {
+    // As Gemini CLI does: a call's name is only in its id, `<tool>__<id>`.
+    const said = [];
+    for (const call of [{ toolCallId: 'mcp_tomrade_list_items__1', title: 'list_items(search: "x")', kind: 'other' }, { toolCallId: 'run_shell_command__2', title: 'npm test', kind: 'execute' }]) {
+      update(sid, { sessionUpdate: 'tool_call', ...call, status: 'pending' });
+      const answer = await ask('session/request_permission', { sessionId: sid, toolCall: { ...call, status: 'pending' }, options: [
+        { optionId: 'proceed_always', name: 'Allow for this session', kind: 'allow_always' }, { optionId: 'proceed_once', name: 'Allow', kind: 'allow_once' }, { optionId: 'cancel', name: 'Reject', kind: 'reject_once' }] });
+      const ok = answer.outcome.outcome === 'selected' && answer.outcome.optionId !== 'cancel';
+      update(sid, { sessionUpdate: 'tool_call_update', toolCallId: call.toolCallId, status: ok ? 'completed' : 'failed' });
+      said.push(ok ? 'ran' : 'refused');
+    }
+    update(sid, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: said.join(', ') } });
+    return send({ id, result: { stopReason: 'end_turn' } });
+  }
+  // As Gemini CLI passes on its model API's error: JSON in JSON.
+  if (text.includes('BAD_KEY')) return send({ id, error: { code: 400, message: JSON.stringify({ error: { message: JSON.stringify({ error: { code: 400, message: 'API key not valid. Please pass a valid API key.', status: 'INVALID_ARGUMENT' } }, null, 2) + '\n', code: 400, status: '' } }) } });
   if (text.includes('CRASH')) process.exit(3);
   if (text.includes('FAIL')) return send({ id, error: { code: -32000, message: 'Authentication required' } });
   if (text.includes('REFUSE_SAYING')) return send({ id, result: { stopReason: 'refusal', _meta: { reason: 'upstream said no' } } });
