@@ -6,7 +6,7 @@ import type { McpProjectApproval } from "@tomradex/agent";
 import { CURSOR_HOOK_SCRIPT, hasCursorHooks } from "@tomradex/engine-cursor";
 import { configuredMcpUrl } from "@tomradex/engine-opencode";
 import { outsideExtensionUrl } from "@tomradex/engine-pi";
-import { CODEX_HOOK_EVENTS, hookCommand, OPENCODE_PLUGIN, PI_EXTENSION } from "./connect.js";
+import { CODEX_HOOK_EVENTS, hasTomradeSection, hookCommand, OPENCODE_PLUGIN, PI_EXTENSION } from "./connect.js";
 import { HOOK_EVENTS } from "./sessions.js";
 
 export interface AgentConnectionView {
@@ -61,12 +61,12 @@ function inspect(files: Record<string, string>, mcpUrl: string, eventUrl: string
   try { codex = parseToml(files[".codex/config.toml"] ?? ""); } catch { /* Invalid config is not connected. */ }
   const configuredUrl = typeof serverUrl(mcp) === "string" ? serverUrl(mcp) as string : null;
   const agents: AgentConnectionView[] = [
-    { id: "claude-code", title: "Claude Code", tools: configuredUrl === mcpUrl, tracking: hasHooks(settings, HOOK_EVENTS, hookCommand(eventUrl)) ? "hooks" : "none", instructions: files["CLAUDE.md"]?.includes("## Tomrade") ?? false, reviewHooks: false },
-    { id: "codex", title: "Codex", tools: object(object(codex.mcp_servers).tomrade).url === mcpUrl, tracking: object(codex.features).hooks !== false && hasHooks(codex, CODEX_HOOK_EVENTS, hookCommand(eventUrl, "codex")) ? "hooks" : "none", instructions: files["AGENTS.md"]?.includes("## Tomrade") ?? false, reviewHooks: true },
-    { id: "workbuddy", title: "WorkBuddy", tools: configuredUrl === mcpUrl, tracking: hasHooks(json(files[".codebuddy/settings.json"]), HOOK_EVENTS, hookCommand(eventUrl, "workbuddy")) ? "hooks" : "none", instructions: files["AGENTS.md"]?.includes("## Tomrade") ?? false, reviewHooks: false },
-    { id: "pi", title: "Pi", tools: outsideExtensionUrl(files[PI_EXTENSION] ?? "") === mcpUrl, tracking: files[PI_EXTENSION]?.includes(JSON.stringify(eventUrl)) ? "hooks" : "none", instructions: files["AGENTS.md"]?.includes("## Tomrade") ?? false, reviewHooks: false },
-    { id: "opencode", title: "OpenCode", tools: opencodeUrl(files["opencode.json"]) === mcpUrl, tracking: files[OPENCODE_PLUGIN]?.includes(JSON.stringify(eventUrl)) ? "hooks" : "none", instructions: files["AGENTS.md"]?.includes("## Tomrade") ?? false, reviewHooks: false },
-    { id: "cursor", title: "Cursor", tools: serverUrl(json(files[".cursor/mcp.json"])) === mcpUrl, tracking: hasCursorHooks(files[".cursor/hooks.json"]) && !!files[CURSOR_HOOK_SCRIPT]?.includes(hookCommand(eventUrl, "cursor")) ? "hooks" : "none", instructions: files["AGENTS.md"]?.includes("## Tomrade") ?? false, reviewHooks: false },
+    { id: "claude-code", title: "Claude Code", tools: configuredUrl === mcpUrl, tracking: hasHooks(settings, HOOK_EVENTS, hookCommand(eventUrl)) ? "hooks" : "none", instructions: hasTomradeSection(files["CLAUDE.md"]), reviewHooks: false },
+    { id: "codex", title: "Codex", tools: object(object(codex.mcp_servers).tomrade).url === mcpUrl, tracking: object(codex.features).hooks !== false && hasHooks(codex, CODEX_HOOK_EVENTS, hookCommand(eventUrl, "codex")) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: true },
+    { id: "workbuddy", title: "WorkBuddy", tools: configuredUrl === mcpUrl, tracking: hasHooks(json(files[".codebuddy/settings.json"]), HOOK_EVENTS, hookCommand(eventUrl, "workbuddy")) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false },
+    { id: "pi", title: "Pi", tools: outsideExtensionUrl(files[PI_EXTENSION] ?? "") === mcpUrl, tracking: files[PI_EXTENSION]?.includes(JSON.stringify(eventUrl)) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false },
+    { id: "opencode", title: "OpenCode", tools: opencodeUrl(files["opencode.json"]) === mcpUrl, tracking: files[OPENCODE_PLUGIN]?.includes(JSON.stringify(eventUrl)) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false },
+    { id: "cursor", title: "Cursor", tools: serverUrl(json(files[".cursor/mcp.json"])) === mcpUrl, tracking: hasCursorHooks(files[".cursor/hooks.json"]) && !!files[CURSOR_HOOK_SCRIPT]?.includes(hookCommand(eventUrl, "cursor")) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false },
     { id: "gemini", title: "Gemini CLI", tools: serverUrl(json(files[".gemini/settings.json"]), "httpUrl") === mcpUrl, tracking: "none", instructions: false, reviewHooks: false }
   ];
   return { agents, configuredUrl, connected: agents.every((agent) => agent.tools) && agents.filter((agent) => HOOKED.has(agent.id)).every((agent) => agent.tracking === "hooks") };

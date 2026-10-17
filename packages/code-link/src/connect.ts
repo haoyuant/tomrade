@@ -17,7 +17,12 @@ export interface ConnectInput {
   branchTemplate: string;
 }
 
-const SECTION_START = "## Tomrade";
+const SECTION_HEADING = "## Tomrade";
+const SECTION_BEGIN = "<!-- BEGIN TOMRADE -->";
+const SECTION_END = "<!-- END TOMRADE -->";
+const MARKED_SECTION = /^<!-- BEGIN TOMRADE -->[ \t]*\r?$[\s\S]*?^<!-- END TOMRADE -->[ \t]*\r?(?:\n|$)/m;
+// Written before the markers: only a heading line that is exactly `## Tomrade`, never `### Tomrade tips`.
+const LEGACY_HEADING = /^## Tomrade[ \t]*\r?$/m;
 const CODEX_START = "# BEGIN TOMRADE MCP";
 const CODEX_END = "# END TOMRADE MCP";
 export const CODEX_HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PermissionRequest", "Stop", "SessionEnd"] as const;
@@ -74,7 +79,8 @@ function withCodexHooks(existing: string, eventUrl: string): string {
 export function tomradeSection(input: ConnectInput, options: { fetchRules?: boolean } = {}): string {
   const example = `${input.prefix}-42`;
   return [
-    SECTION_START,
+    SECTION_BEGIN,
+    SECTION_HEADING,
     "",
     `The backlog for this repository lives in Tomrade (project "${input.projectName}"), reachable as the \`tomrade\` MCP server (\`.mcp.json\` for Claude Code and WorkBuddy, \`.codex/config.toml\` for Codex, \`.pi/extensions/tomrade.ts\` for Pi, \`opencode.json\` for OpenCode).`,
     "Claude Code, Codex, WorkBuddy and Cursor report session lifecycle through repository hooks, Pi through that extension and OpenCode through `.opencode/plugins/tomrade.js`. In Codex, trust the project and review the new hooks with `/hooks`, then start a new session; older Codex versions without hooks must be upgraded. Pi loads the extension once you trust the project. No `notify` setting is changed.",
@@ -98,6 +104,7 @@ export function tomradeSection(input: ConnectInput, options: { fetchRules?: bool
     ...syncSteps(),
     "",
     "When a meaningful piece of work looks like it belongs to a ticket, you may offer once to sync it back; drop it if the user declines.",
+    SECTION_END,
     ""
   ].join("\n");
 }
@@ -116,11 +123,23 @@ export function codexSyncSkill(input: ConnectInput): string {
   ].join("\n");
 }
 
+/** Whether agent instructions carry the Tomrade section, marked or from before the markers. */
+export function hasTomradeSection(text: string | undefined): boolean {
+  return !!text && (MARKED_SECTION.test(text) || LEGACY_HEADING.test(text));
+}
+
+/** Tomrade owns only what lies between its markers; everything around them is the person's. */
 function withTomradeSection(existing: string, projectName: string, section: string): string {
-  const start = existing.indexOf(SECTION_START);
-  if (start < 0) return existing ? `${existing.replace(/\s*$/, "")}\n\n${section}` : `# ${projectName}\n\n${section}`;
-  const after = existing.indexOf("\n## ", start + SECTION_START.length);
-  return existing.slice(0, start) + section + (after >= 0 ? existing.slice(after + 1) : "");
+  const marked = MARKED_SECTION.exec(existing);
+  if (marked) return existing.slice(0, marked.index) + section + existing.slice(marked.index + marked[0].length);
+  // An unmarked section ends at the next heading of its level or above; reconnecting marks it.
+  const legacy = LEGACY_HEADING.exec(existing);
+  if (legacy) {
+    const body = legacy.index + legacy[0].length;
+    const next = /^ {0,3}#{1,2}(?:[ \t]|\r?$)/m.exec(existing.slice(body));
+    return existing.slice(0, legacy.index) + section + (next ? `\n${existing.slice(body + next.index)}` : "");
+  }
+  return existing ? `${existing.replace(/\s*$/, "")}\n\n${section}` : `# ${projectName}\n\n${section}`;
 }
 
 /** Preserve unrelated Codex config while owning one clearly marked MCP table. */
@@ -154,7 +173,7 @@ function readJson(file: string): Record<string, unknown> | null {
 /**
  * Lay the agent connection files down in a worktree: Claude and Codex each
  * gain a project-scoped `tomrade` MCP server; CLAUDE.md and AGENTS.md gain or
- * replace their `## Tomrade` section; Codex gains the `tomrade-sync` skill;
+ * replace their marked Tomrade section; Codex gains the `tomrade-sync` skill;
  * `.claude/settings.json` and WorkBuddy's `.codebuddy/settings.json` gain one
  * hook per lifecycle event that posts to Tomrade; WorkBuddy reads `.mcp.json`
  * and AGENTS.md as they are; Pi gains a project extension that does both, and

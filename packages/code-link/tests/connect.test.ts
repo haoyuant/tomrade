@@ -117,6 +117,38 @@ describe("connecting a repository", () => {
     expect(writeConnectFiles(dir, input)).toEqual([]);
   });
 
+  it("touches only the Tomrade section, marking one written before the markers", () => {
+    const dir = path.join(root, `section-${n++}`);
+    fs.mkdirSync(dir, { recursive: true });
+    const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
+    const read = (name: string) => fs.readFileSync(path.join(dir, name), "utf8");
+    // Headings that merely start with "Tomrade" are the person's own.
+    const own = "# app\n\n## Setup\n\n### Tomrade tips\n\nRun it first.\n\n### Testing\n\npnpm test\n\n## Tomrade setup\n\nInstall it.\n\n# Appendix\n\nThe end.\n";
+    fs.writeFileSync(path.join(dir, "CLAUDE.md"), own);
+    fs.writeFileSync(path.join(dir, "AGENTS.md"), "# app\n\nIntro.\n\n## Tomrade\n\nold words\n\n### Syncing back\n\nold steps\n\n# Appendix\n\nThe end.\n");
+    writeConnectFiles(dir, input);
+
+    const claude = read("CLAUDE.md");
+    expect(claude.startsWith(`${own}\n<!-- BEGIN TOMRADE -->\n## Tomrade\n\n`)).toBe(true);
+    expect(claude.endsWith("declines.\n<!-- END TOMRADE -->\n")).toBe(true);
+    const agents = read("AGENTS.md");
+    expect(agents).not.toContain("old words");
+    expect(agents).not.toContain("old steps");
+    expect(agents.startsWith("# app\n\nIntro.\n\n<!-- BEGIN TOMRADE -->\n## Tomrade\n\n")).toBe(true);
+    expect(agents.endsWith("<!-- END TOMRADE -->\n\n# Appendix\n\nThe end.\n")).toBe(true);
+    expect(writeConnectFiles(dir, input)).toEqual([]);
+
+    // Reconnecting rewrites what lies between the markers and nothing else.
+    const moved = { ...input, mcpUrl: "http://127.0.0.1:19091/mcp/p1" };
+    expect(writeConnectFiles(dir, moved)).toEqual(expect.arrayContaining(["CLAUDE.md", "AGENTS.md"]));
+    const again = read("CLAUDE.md");
+    expect(again).toContain(moved.mcpUrl);
+    expect(again).not.toContain(input.mcpUrl);
+    expect(again.startsWith(`${own}\n<!-- BEGIN TOMRADE -->\n`)).toBe(true);
+    expect(again.split("## Tomrade\n")).toHaveLength(2);
+    expect(read("AGENTS.md").endsWith("<!-- END TOMRADE -->\n\n# Appendix\n\nThe end.\n")).toBe(true);
+  });
+
   it("creates Claude hooks from nothing and merges WorkBuddy/Cursor/Gemini settings", () => {
     const dir = path.join(root, `agents-${n++}`);
     fs.mkdirSync(path.join(dir, ".cursor"), { recursive: true });
@@ -254,6 +286,18 @@ describe("connecting a repository", () => {
     const view = await codeLink.connection(project.id, repo.id);
     expect(view.state).toBe("unconnected");
     expect(view.agents.find((agent) => agent.id === "cursor")).toMatchObject({ title: "Cursor", tools: true, tracking: "none" });
+  });
+
+  it("finds agent instructions in a section from before the markers, not under a heading that only starts with Tomrade", async () => {
+    const { codeLink, ctx, project, repo, checkout } = await machine();
+    writeConnectFiles(checkout, { projectName: project.name, mcpUrl: ctx.mcp.urlFor(project.id)!, eventUrl: ctx.mcp.eventUrl!, prefix: "TOM", branchTemplate: "{key}/{slug}" });
+    fs.writeFileSync(path.join(checkout, "CLAUDE.md"), "# app\n\n### Tomrade tips\n\n## Tomrade setup\n");
+    fs.writeFileSync(path.join(checkout, "AGENTS.md"), "# app\n\n## Tomrade\n\nold words\n");
+    git(["add", "-A"], checkout);
+    git(["commit", "-q", "-m", "connect, as before"], checkout);
+    const view = await codeLink.connection(project.id, repo.id);
+    expect(view.agents.find((agent) => agent.id === "claude-code")).toMatchObject({ instructions: false });
+    expect(view.agents.find((agent) => agent.id === "codex")).toMatchObject({ instructions: true });
   });
 
   it("keeps the branch and explains push-off, push failure and local merge", async () => {
