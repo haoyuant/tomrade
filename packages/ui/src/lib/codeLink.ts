@@ -1,7 +1,7 @@
 import type { MessageKey } from "~/lib/i18n";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {} from "@tomradex/code-link";
-import type { RepoPolicyPatch, StartOptions } from "@tomradex/code-link";
+import type { ConnectAgent, RepoPolicyPatch, StartOptions } from "@tomradex/code-link";
 import { invoke } from "./api";
 import { invalidateWorkspace } from "./queries";
 
@@ -217,6 +217,15 @@ export function useConnectRepository(projectId: string, repoId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => invoke("codeLink.connect", projectId, repoId),
+    onSettled: () => void qc.invalidateQueries({ queryKey: ["codeLink", projectId, "connection", repoId] })
+  });
+}
+
+/** Which coding agents this repository is connected for; the connection is judged by them alone. */
+export function useChooseConnectAgents(projectId: string, repoId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (connectAgents: ConnectAgent[]) => invoke("codeLink.setRepoPolicy", projectId, repoId, { connectAgents }),
     onSettled: () => void qc.invalidateQueries({ queryKey: ["codeLink", projectId, "connection", repoId] })
   });
 }

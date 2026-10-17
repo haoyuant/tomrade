@@ -477,8 +477,8 @@ export class Sessions {
   }
 }
 
-/** Gemini CLI reads settings.json as JSON with comments. */
-function stripJsonComments(text: string): string {
+/** Plain JSON from JSON with comments and trailing commas, as Gemini CLI and OpenCode read their settings. */
+export function stripJsonComments(text: string): string {
   let out = "";
   for (let i = 0; i < text.length; i++) {
     const c = text[i]!;
@@ -495,7 +495,8 @@ function stripJsonComments(text: string): string {
       i++;
     } else out += c;
   }
-  return out;
+  // Strings are matched whole first, so only a comma outside them is dropped.
+  return out.replace(/("(?:[^"\\]|\\.)*")|,(\s*[}\]])/g, (_, string: string | undefined, close: string) => string ?? close);
 }
 
 /**

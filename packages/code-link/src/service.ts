@@ -24,7 +24,7 @@ import { GitFolder, gitRunner, type Git } from "@tomradex/storage";
 import { keysInText, parseBranch, subjectPr } from "./keys.js";
 import { githubPull, readPull, type ForgePull } from "./forge.js";
 import { inspectConnection, inspectConnectFiles, type AgentConnectionView, type ConnectionView } from "./connection.js";
-import { writeConnectFiles } from "./connect.js";
+import { CONNECT_AGENTS, writeConnectFiles, type ConnectAgent, type SkippedAgent } from "./connect.js";
 import { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
 import { SYNC_PROMPT, syncInstructions, syncPrompt, type SyncScope } from "./sync.js";
 import { githubHttps } from "@tomradex/github";
@@ -110,7 +110,7 @@ export interface CodeSummaryView {
   proposals: Pick<ProposalView, "id" | "kind" | "toStatus" | "reason">[];
 }
 
-export type RepoPolicyPatch =Pick<RepoStatePatch, "branchTemplate" | "autoDone" | "agentPush" | "agentMerge" | "readiness">;
+export type RepoPolicyPatch =Pick<RepoStatePatch, "branchTemplate" | "autoDone" | "agentPush" | "agentMerge" | "readiness" | "connectAgents">;
 
 /** The command an agent merges with when the repository lets it. */
 export const MERGE_COMMAND = "gh pr merge";
@@ -127,6 +127,8 @@ export interface ConnectResult {
   branch: string;
   /** Files written or changed, relative to the repository root. */
   files: string[];
+  /** Chosen agents left out because a file of theirs could not be changed safely. */
+  skipped: SkippedAgent[];
   committed: boolean;
   pushed: boolean;
   /** The pull request, or the compare page to open one from; null when nothing could be pushed. */
@@ -769,9 +771,26 @@ export class CodeLink extends Service {
 
   setRepoPolicy(projectId: string, repoId: string, patch: RepoPolicyPatch): RepoStateView {
     if (!this.ctx.repos.get(projectId, repoId)) throw new Error(`unknown repository ${repoId}`);
-    const state = this.store.upsertRepoState(projectId, repoId, patch);
+    // Known agents only, in their usual order; choosing none goes back to the ones found here.
+    const connectAgents = patch.connectAgents?.length ? CONNECT_AGENTS.filter((id) => patch.connectAgents!.includes(id)) : patch.connectAgents && null;
+    const state = this.store.upsertRepoState(projectId, repoId, { ...patch, connectAgents });
     this.notify(projectId);
     return state;
+  }
+
+  /** The agents a repository is connected for: the person's choice, else the ones installed here, else every one. */
+  private async connectAgents(projectId: string, repoId: string): Promise<ConnectAgent[]> {
+    const chosen = this.store.repoState(projectId, repoId)?.connectAgents;
+    if (chosen?.length) return chosen;
+    const agent = this.ctx.get("agent");
+    const found = await Promise.all(CONNECT_AGENTS.map(async (id) => {
+      const state = await agent?.engineOf(id)?.available().catch(() => null);
+      // Installed is enough: the repository's files do not need it signed in here.
+      return state?.ok || state?.cli?.state === "ready" ? [id] : [];
+    }));
+    const detected = found.flat();
+    // A Tomrade that finds none of them cannot tell which the team uses.
+    return detected.length ? detected : [...CONNECT_AGENTS];
   }
 
   /**
@@ -988,7 +1007,8 @@ export class CodeLink extends Service {
     const hasRemote = await exists(remote);
     // Prefer local work that is ahead; otherwise use the latest fetched default branch.
     const ref = hasLocal && (!hasRemote || (await this.git(["merge-base", "--is-ancestor", remote, local], { cwd, ok: true })).code === 0) ? local : remote;
-    const current = await inspectConnection(this.git, cwd, ref, mcpUrl, mcp.eventUrl);
+    const chosen = await this.connectAgents(projectId, repoId);
+    const current = await inspectConnection(this.git, cwd, ref, mcpUrl, mcp.eventUrl, chosen);
     const configuredUrl = current.configuredUrl;
     if (current.connected) {
       const link = this.ctx.get("agent")?.engineOf("claude-code")?.mcpLink;
@@ -999,7 +1019,7 @@ export class CodeLink extends Service {
     for (const pendingRef of [`refs/heads/${branch}`, `refs/remotes/origin/${branch}`]) {
       if (!(await exists(pendingRef))) continue;
       if ((await this.git(["merge-base", "--is-ancestor", pendingRef, ref], { cwd, ok: true })).code === 0) continue;
-      const pending = await inspectConnection(this.git, cwd, pendingRef, mcpUrl, mcp.eventUrl);
+      const pending = await inspectConnection(this.git, cwd, pendingRef, mcpUrl, mcp.eventUrl, chosen);
       if (pending.connected) return { ...base, agents: pending.agents, configuredUrl, state: "pending", url: compareUrl(repo.remote, repo.defaultBranch, branch) };
     }
     return { ...base, agents: current.agents, configuredUrl, state: configuredUrl && configuredUrl !== mcpUrl ? "other-instance" : "unconnected" };
@@ -1024,9 +1044,12 @@ export class CodeLink extends Service {
     const branch = "tomrade/connect";
     const w = this.words();
     await new GitFolder(this.git, placement.checkout).fetch(repo.defaultBranch);
+    const chosen = await this.connectAgents(projectId, repoId);
+    // What it was connected for stays the choice, whatever is installed here later.
+    if (!this.store.repoState(projectId, repoId)?.connectAgents) this.store.upsertRepoState(projectId, repoId, { connectAgents: chosen });
     const connection = await this.connection(projectId, repoId);
     if (connection.state === "connected") {
-      return { branch, agents: connection.agents, files: [], committed: false, pushed: false, url: null, message: w.connected };
+      return { branch, agents: connection.agents, files: [], skipped: [], committed: false, pushed: false, url: null, message: w.connected };
     }
     const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-connect-"));
     const worktree = path.join(temporary, "repo");
@@ -1045,21 +1068,21 @@ export class CodeLink extends Service {
     const project = this.ctx.db.for(projectId).prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined;
     try {
       if (await exists(base)) await this.git(["merge", "--no-edit", base], { cwd: worktree });
-      const files = writeConnectFiles(worktree, {
+      const { files, skipped } = writeConnectFiles(worktree, {
         projectName: project?.name ?? "Tomrade project",
         mcpUrl: mcp.urlFor(projectId)!,
         eventUrl: mcp.eventUrl!,
         prefix: this.prefixOf(projectId),
         branchTemplate: state?.branchTemplate ?? "{key}/{slug}"
-      });
-      const agents = inspectConnectFiles(worktree, mcp.urlFor(projectId)!, mcp.eventUrl!).agents;
+      }, chosen);
+      const agents = inspectConnectFiles(worktree, mcp.urlFor(projectId)!, mcp.eventUrl!, chosen).agents;
       const folder = new GitFolder(this.git, worktree);
       const committed = files.length > 0 && (await folder.commit("Connect this repository to Tomrade\n\nProject MCP config lets Claude Code, Codex and WorkBuddy discover Tomrade, a project extension does it for Pi and opencode.json with a plugin for OpenCode, agent instructions describe the ticket conventions, and their hooks report session lifecycle back."));
 
-      if (!(await folder.remoteUrl())) return { branch, agents, files, committed, pushed: false, url: null, message: w.connectLocal(branch, repo.defaultBranch) };
-      if (state && !state.agentPush) return { branch, agents, files, committed, pushed: false, url: null, message: w.connectPushOff(branch) };
+      if (!(await folder.remoteUrl())) return { branch, agents, files, skipped, committed, pushed: false, url: null, message: w.connectLocal(branch, repo.defaultBranch) };
+      if (state && !state.agentPush) return { branch, agents, files, skipped, committed, pushed: false, url: null, message: w.connectPushOff(branch) };
       const pushed = (await this.git(["push", "-q", "-u", "origin", `HEAD:refs/heads/${branch}`], { cwd: worktree, ok: true })).code === 0;
-      if (!pushed) return { branch, agents, files, committed, pushed: false, url: null, message: w.connectPushFailed(branch) };
+      if (!pushed) return { branch, agents, files, skipped, committed, pushed: false, url: null, message: w.connectPushFailed(branch) };
       let url: string | null = null;
       let created = false;
       if (await commandOk("gh")) {
@@ -1077,7 +1100,7 @@ export class CodeLink extends Service {
       }
       url ??= compareUrl(repo.remote, repo.defaultBranch, branch);
       this.notify(projectId);
-      return { branch, agents, files, committed, pushed, url, message: created ? w.connectOpened : w.connectPushed(branch) };
+      return { branch, agents, files, skipped, committed, pushed, url, message: created ? w.connectOpened : w.connectPushed(branch) };
     } finally {
       await this.git(["worktree", "remove", "--force", worktree], { cwd: placement.checkout, ok: true });
       fs.rmSync(temporary, { recursive: true, force: true });

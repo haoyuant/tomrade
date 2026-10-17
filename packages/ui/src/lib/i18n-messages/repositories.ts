@@ -8,6 +8,10 @@ export const repositories = {
     agentHooks: "Session hooks configured",
     agentNoTracking: "No lifecycle hooks; followed through its connection once it claims a ticket",
     agentReviewHooks: "Trust the project and review /hooks in Codex; requires a hooks-capable version",
+    "agentSkipped_comments": "{{agent}} skipped: {{file}} has comments or trailing commas that rewriting it would lose. Add Tomrade's entry by hand, or remove them and connect again.",
+    "agentSkipped_invalid": "{{agent}} skipped: {{file}} could not be read, so it was left as it is. Fix it and connect again.",
+    "agentSkipped_codex-hooks": "Codex hooks skipped: .codex/config.toml has inline hook arrays (or Tomrade hooks outside its markers) that cannot be added to without rewriting the file. Write them as [[hooks.…]] tables and connect again.",
+    "connectionChoose": "Only the checked agents get configuration, and only they decide whether this repository is connected.",
 
     "connection_unconnected": "Coding agents are not connected",
     "connection_connected": "Connected",
@@ -115,6 +119,10 @@ export const repositories = {
     agentHooks: "已配置会话 hooks",
     agentNoTracking: "没有生命周期 hooks；认领工单后按连接跟踪",
     agentReviewHooks: "请在支持 hooks 的 Codex 中信任项目并通过 /hooks 审阅",
+    "agentSkipped_comments": "已跳过 {{agent}}：{{file}} 含有注释或尾随逗号，重写会丢失它们。请手动加入 Tomrade 的配置，或删掉它们后重新连接。",
+    "agentSkipped_invalid": "已跳过 {{agent}}：无法解析 {{file}}，已保持原样。修正后重新连接。",
+    "agentSkipped_codex-hooks": "已跳过 Codex hooks：.codex/config.toml 里的 hooks 是行内数组（或 Tomrade 标记之外已有 Tomrade 的 hooks），不重写整个文件就无法添加。请改写成 [[hooks.…]] 表后重新连接。",
+    "connectionChoose": "只为勾选的智能体写入配置，也只按它们判断这个仓库是否已连接。",
 
     "connection_unconnected": "尚未连接编码智能体",
     "connection_connected": "已连接",

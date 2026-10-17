@@ -7,16 +7,18 @@ import type { PortClash } from "@tomradex/mcp";
 import { CURSOR_HOOK_SCRIPT, hasCursorHooks } from "@tomradex/engine-cursor";
 import { configuredMcpUrl } from "@tomradex/engine-opencode";
 import { outsideExtensionUrl } from "@tomradex/engine-pi";
-import { CODEX_HOOK_EVENTS, hasTomradeSection, hookCommand, OPENCODE_PLUGIN, PI_EXTENSION } from "./connect.js";
-import { HOOK_EVENTS } from "./sessions.js";
+import { CODEX_HOOK_EVENTS, hasHooks, hasTomradeSection, hookCommand, OPENCODE_PLUGIN, PI_EXTENSION, type ConnectAgent } from "./connect.js";
+import { HOOK_EVENTS, stripJsonComments } from "./sessions.js";
 
 export interface AgentConnectionView {
-  id: "claude-code" | "codex" | "workbuddy" | "pi" | "opencode" | "cursor" | "gemini";
+  id: ConnectAgent;
   title: string;
   tools: boolean;
   tracking: "hooks" | "none";
   instructions: boolean;
   reviewHooks: boolean;
+  /** Chosen for this repository: Connect writes its files, and only chosen agents decide whether it is connected. */
+  chosen: boolean;
 }
 
 export interface ConnectionView {
@@ -40,53 +42,45 @@ const FILES = [".mcp.json", ".claude/settings.json", ".codebuddy/settings.json",
 const HOOKED = new Set<AgentConnectionView["id"]>(["claude-code", "codex", "workbuddy", "pi", "opencode", "cursor"]);
 const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 function json(text: string | undefined): Record<string, unknown> {
-  try { return object(JSON.parse(text ?? "")); } catch { return {}; }
+  try { return object(JSON.parse(stripJsonComments(text ?? ""))); } catch { return {}; }
 }
 const serverUrl = (config: Record<string, unknown>, key = "url") => object(object(config.mcpServers).tomrade)[key];
-function hasHooks(config: Record<string, unknown>, events: readonly string[], command: string): boolean {
-  return events.every((event) => {
-    const entries = object(config.hooks)[event];
-    return Array.isArray(entries) && entries.some((entry) => {
-      const hooks = object(entry).hooks;
-      return Array.isArray(hooks) && hooks.some((hook) => object(hook).command === command);
-    });
-  });
-}
 
 function opencodeUrl(text: string | undefined): string | null {
-  try { return configuredMcpUrl(text || "{}"); } catch { return null; }
+  try { return configuredMcpUrl(stripJsonComments(text || "{}")); } catch { return null; }
 }
 
-function inspect(files: Record<string, string>, mcpUrl: string, eventUrl: string) {
+function inspect(files: Record<string, string>, mcpUrl: string, eventUrl: string, chosen: readonly ConnectAgent[]) {
   const mcp = json(files[".mcp.json"]);
   const settings = json(files[".claude/settings.json"]);
   let codex: Record<string, unknown> = {};
   try { codex = parseToml(files[".codex/config.toml"] ?? ""); } catch { /* Invalid config is not connected. */ }
   const configuredUrl = typeof serverUrl(mcp) === "string" ? serverUrl(mcp) as string : null;
-  const agents: AgentConnectionView[] = [
+  const agents = ([
     { id: "claude-code", title: "Claude Code", tools: configuredUrl === mcpUrl, tracking: hasHooks(settings, HOOK_EVENTS, hookCommand(eventUrl)) ? "hooks" : "none", instructions: hasTomradeSection(files["CLAUDE.md"]), reviewHooks: false },
     { id: "codex", title: "Codex", tools: object(object(codex.mcp_servers).tomrade).url === mcpUrl, tracking: object(codex.features).hooks !== false && hasHooks(codex, CODEX_HOOK_EVENTS, hookCommand(eventUrl, "codex")) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: true },
     { id: "workbuddy", title: "WorkBuddy", tools: configuredUrl === mcpUrl, tracking: hasHooks(json(files[".codebuddy/settings.json"]), HOOK_EVENTS, hookCommand(eventUrl, "workbuddy")) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false },
     { id: "pi", title: "Pi", tools: outsideExtensionUrl(files[PI_EXTENSION] ?? "") === mcpUrl, tracking: files[PI_EXTENSION]?.includes(JSON.stringify(eventUrl)) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false },
     { id: "opencode", title: "OpenCode", tools: opencodeUrl(files["opencode.json"]) === mcpUrl, tracking: files[OPENCODE_PLUGIN]?.includes(JSON.stringify(eventUrl)) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false },
-    { id: "cursor", title: "Cursor", tools: serverUrl(json(files[".cursor/mcp.json"])) === mcpUrl, tracking: hasCursorHooks(files[".cursor/hooks.json"]) && !!files[CURSOR_HOOK_SCRIPT]?.includes(hookCommand(eventUrl, "cursor")) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false },
+    { id: "cursor", title: "Cursor", tools: serverUrl(json(files[".cursor/mcp.json"])) === mcpUrl, tracking: hasCursorHooks(stripJsonComments(files[".cursor/hooks.json"] ?? "")) && !!files[CURSOR_HOOK_SCRIPT]?.includes(hookCommand(eventUrl, "cursor")) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false },
     { id: "gemini", title: "Gemini CLI", tools: serverUrl(json(files[".gemini/settings.json"]), "httpUrl") === mcpUrl, tracking: "none", instructions: false, reviewHooks: false }
-  ];
-  return { agents, configuredUrl, connected: agents.every((agent) => agent.tools) && agents.filter((agent) => HOOKED.has(agent.id)).every((agent) => agent.tracking === "hooks") };
+  ] satisfies Omit<AgentConnectionView, "chosen">[]).map((agent): AgentConnectionView => ({ ...agent, chosen: chosen.includes(agent.id) }));
+  const counted = agents.filter((agent) => agent.chosen);
+  return { agents, configuredUrl, connected: counted.length > 0 && counted.every((agent) => agent.tools) && counted.filter((agent) => HOOKED.has(agent.id)).every((agent) => agent.tracking === "hooks") };
 }
 
-export function inspectConnectFiles(root: string, mcpUrl: string, eventUrl: string) {
+export function inspectConnectFiles(root: string, mcpUrl: string, eventUrl: string, chosen: readonly ConnectAgent[]) {
   const files = Object.fromEntries(FILES.map((file) => {
     try { return [file, fs.readFileSync(path.join(root, file), "utf8")]; } catch { return [file, ""]; }
   }));
-  return inspect(files, mcpUrl, eventUrl);
+  return inspect(files, mcpUrl, eventUrl, chosen);
 }
 
 /** Inspect committed configuration, never the currently checked-out ticket's files. */
-export async function inspectConnection(git: Git, cwd: string, ref: string, mcpUrl: string, eventUrl: string) {
+export async function inspectConnection(git: Git, cwd: string, ref: string, mcpUrl: string, eventUrl: string, chosen: readonly ConnectAgent[]) {
   const files = Object.fromEntries(await Promise.all(FILES.map(async (file) => {
     const result = await git(["show", `${ref}:${file}`], { cwd, ok: true });
     return [file, result.code === 0 ? result.stdout : ""];
   })));
-  return inspect(files, mcpUrl, eventUrl);
+  return inspect(files, mcpUrl, eventUrl, chosen);
 }

@@ -86,7 +86,7 @@ describe("connecting a repository", () => {
     fs.writeFileSync(path.join(dir, ".claude", "settings.json"), JSON.stringify({ permissions: { allow: ["Bash(pnpm test)"] }, hooks: { Stop: [{ hooks: [{ type: "command", command: "say done" }] }] } }));
     const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
 
-    expect(writeConnectFiles(dir, input).sort()).toEqual([".agents/skills/tomrade-sync/SKILL.md", ".claude/settings.json", ".codebuddy/settings.json", ".codex/config.toml", ".cursor/hooks.json", ".cursor/hooks/tomrade.sh", ".cursor/mcp.json", ".gemini/settings.json", ".mcp.json", ".opencode/plugins/tomrade.js", ".pi/extensions/tomrade.ts", "AGENTS.md", "CLAUDE.md", "opencode.json"]);
+    expect(writeConnectFiles(dir, input).files.sort()).toEqual([".agents/skills/tomrade-sync/SKILL.md", ".claude/settings.json", ".codebuddy/settings.json", ".codex/config.toml", ".cursor/hooks.json", ".cursor/hooks/tomrade.sh", ".cursor/mcp.json", ".gemini/settings.json", ".mcp.json", ".opencode/plugins/tomrade.js", ".pi/extensions/tomrade.ts", "AGENTS.md", "CLAUDE.md", "opencode.json"]);
     const mcp = JSON.parse(fs.readFileSync(path.join(dir, ".mcp.json"), "utf8")) as { mcpServers: Record<string, unknown> };
     expect(Object.keys(mcp.mcpServers).sort()).toEqual(["other", "tomrade"]);
     const codex = fs.readFileSync(path.join(dir, ".codex", "config.toml"), "utf8");
@@ -114,7 +114,7 @@ describe("connecting a repository", () => {
     expect(settings.hooks.SessionStart).toHaveLength(1);
 
     // Idempotent: a second pass changes nothing.
-    expect(writeConnectFiles(dir, input)).toEqual([]);
+    expect(writeConnectFiles(dir, input).files).toEqual([]);
   });
 
   it("touches only the Tomrade section, marking one written before the markers", () => {
@@ -136,11 +136,11 @@ describe("connecting a repository", () => {
     expect(agents).not.toContain("old steps");
     expect(agents.startsWith("# app\n\nIntro.\n\n<!-- BEGIN TOMRADE -->\n## Tomrade\n\n")).toBe(true);
     expect(agents.endsWith("<!-- END TOMRADE -->\n\n# Appendix\n\nThe end.\n")).toBe(true);
-    expect(writeConnectFiles(dir, input)).toEqual([]);
+    expect(writeConnectFiles(dir, input).files).toEqual([]);
 
     // Reconnecting rewrites what lies between the markers and nothing else.
     const moved = { ...input, mcpUrl: "http://127.0.0.1:19091/mcp/p1" };
-    expect(writeConnectFiles(dir, moved)).toEqual(expect.arrayContaining(["CLAUDE.md", "AGENTS.md"]));
+    expect(writeConnectFiles(dir, moved).files).toEqual(expect.arrayContaining(["CLAUDE.md", "AGENTS.md"]));
     const again = read("CLAUDE.md");
     expect(again).toContain(moved.mcpUrl);
     expect(again).not.toContain(input.mcpUrl);
@@ -156,7 +156,7 @@ describe("connecting a repository", () => {
     const own = "# app\n\nBefore.\n\n<!-- BEGIN TOMRADE -->\n\nBetween.\n\n## Notes\n\nAfter.\n";
     fs.writeFileSync(path.join(dir, "CLAUDE.md"), own);
     writeConnectFiles(dir, input);
-    expect(writeConnectFiles(dir, input)).toEqual([]);
+    expect(writeConnectFiles(dir, input).files).toEqual([]);
     const moved = { ...input, mcpUrl: "http://127.0.0.1:19091/mcp/p1" };
     writeConnectFiles(dir, moved);
     const claude = fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8");
@@ -193,21 +193,52 @@ describe("connecting a repository", () => {
     expect(fs.readFileSync(script, "utf8")).toContain(`-H 'X-Tomrade-Agent: cursor' --data-binary @- '${input.eventUrl}'`);
     expect(fs.statSync(script).mode & 0o111).not.toBe(0);
     expect(read(".gemini/settings.json")).toMatchObject({ theme: "dark", mcpServers: { existing: { command: "custom" }, tomrade: { httpUrl: input.mcpUrl } } });
-    expect(writeConnectFiles(dir, input)).toEqual([]);
+    expect(writeConnectFiles(dir, input).files).toEqual([]);
   });
 
-  it.each([false, true])("preserves existing Codex hooks (inline arrays: %s), notify and settings", (inline) => {
+  it("leaves Codex hooks written as inline arrays alone, keeping every comment, and says so", () => {
+    const dir = path.join(root, `codex-inline-${n++}`);
+    fs.mkdirSync(path.join(dir, ".codex"), { recursive: true });
+    const file = path.join(dir, ".codex/config.toml");
+    const own = '# my settings\nnotify = ["notify-me"]\n[hooks]\n# keep me\nSessionStart = [{ hooks = [{ type = "command", command = "echo custom" }] }]\n';
+    fs.writeFileSync(file, own);
+    const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
+    const { files, skipped } = writeConnectFiles(dir, input, ["codex"]);
+    expect(skipped).toEqual([{ agent: "codex", file: ".codex/config.toml", reason: "codex-hooks" }]);
+    expect(files.sort()).toEqual([".agents/skills/tomrade-sync/SKILL.md", ".codex/config.toml", "AGENTS.md"]);
+    // Its MCP server still goes in, between Tomrade's markers; nothing of the person's is rewritten.
+    const text = fs.readFileSync(file, "utf8");
+    expect(text.startsWith(own.trimEnd())).toBe(true);
+    expect(text).toContain('# BEGIN TOMRADE MCP\n[mcp_servers.tomrade]\nurl = "http://127.0.0.1:19090/mcp/p1"\n# END TOMRADE MCP');
+    expect(text).not.toContain("X-Tomrade-Agent");
+    expect(parseToml(text)).toMatchObject({ hooks: { SessionStart: [{ hooks: [{ command: "echo custom" }] }] } });
+    expect(writeConnectFiles(dir, input, ["codex"]).files).toEqual([]);
+  });
+
+  it("keeps Tomrade's Codex hooks an older Tomrade wrote outside the markers while they are current, and never rewrites them", () => {
+    const dir = path.join(root, `codex-serialised-${n++}`);
+    fs.mkdirSync(path.join(dir, ".codex"), { recursive: true });
+    const file = path.join(dir, ".codex/config.toml");
+    const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
+    writeConnectFiles(dir, input, ["codex"]);
+    const unmarked = fs.readFileSync(file, "utf8").replace("# BEGIN TOMRADE HOOKS\n", "").replace("# END TOMRADE HOOKS\n", "");
+    fs.writeFileSync(file, unmarked);
+    expect(writeConnectFiles(dir, input, ["codex"])).toEqual({ files: [], skipped: [] });
+    const moved = { ...input, eventUrl: input.eventUrl.replace("19090", "19091") };
+    expect(writeConnectFiles(dir, moved, ["codex"]).skipped).toEqual([{ agent: "codex", file: ".codex/config.toml", reason: "codex-hooks" }]);
+    expect(fs.readFileSync(file, "utf8")).toBe(unmarked);
+  });
+
+  it("preserves existing Codex hooks, notify and settings", () => {
     const dir = path.join(root, `codex-${n++}`);
     fs.mkdirSync(path.join(dir, ".codex"), { recursive: true });
     const file = path.join(dir, ".codex/config.toml");
-    fs.writeFileSync(file, 'notify = ["notify-me"]\nmodel = "example"\n' + (inline
-      ? '[hooks]\nSessionStart = [{ hooks = [{ type = "command", command = "echo custom" }] }]\n'
-      : '[[hooks.SessionStart]]\n[[hooks.SessionStart.hooks]]\ntype = "command"\ncommand = "echo custom"\n'));
+    fs.writeFileSync(file, 'notify = ["notify-me"]\nmodel = "example"\n[[hooks.SessionStart]]\n[[hooks.SessionStart.hooks]]\ntype = "command"\ncommand = "echo custom"\n');
     const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
     writeConnectFiles(dir, input);
     const config = parseToml(fs.readFileSync(file, "utf8"));
     expect(config).toMatchObject({ notify: ["notify-me"], model: "example", hooks: { SessionStart: [{ hooks: [{ command: "echo custom" }] }, { hooks: [{ command: expect.stringContaining("X-Tomrade-Agent: codex") }] }] } });
-    expect(writeConnectFiles(dir, input)).toEqual([]);
+    expect(writeConnectFiles(dir, input).files).toEqual([]);
     writeConnectFiles(dir, { ...input, eventUrl: input.eventUrl.replace("19090", "19091") });
     const reconnected = fs.readFileSync(file, "utf8");
     expect(reconnected).toContain("19091/sessions/event");
@@ -258,8 +289,8 @@ describe("connecting a repository", () => {
     expect(source).toContain(`const server = {"url":"${input.mcpUrl}"`);
     expect(source).toContain(`const eventUrl = "${input.eventUrl}";`);
     expect(source).toContain('"x-tomrade-agent": "pi"');
-    expect(writeConnectFiles(dir, input)).toEqual([]);
-    expect(writeConnectFiles(dir, { ...input, mcpUrl: "http://127.0.0.1:19091/mcp/p1", eventUrl: "http://127.0.0.1:19091/sessions/event" })).toContain(".pi/extensions/tomrade.ts");
+    expect(writeConnectFiles(dir, input).files).toEqual([]);
+    expect(writeConnectFiles(dir, { ...input, mcpUrl: "http://127.0.0.1:19091/mcp/p1", eventUrl: "http://127.0.0.1:19091/sessions/event" }).files).toContain(".pi/extensions/tomrade.ts");
   });
 
   it("gives OpenCode a tomrade server in opencode.json and a reporting plugin, keeping the project's own config", () => {
@@ -267,15 +298,38 @@ describe("connecting a repository", () => {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, "opencode.json"), JSON.stringify({ $schema: "https://opencode.ai/config.json", model: "deepseek/deepseek-flash" }));
     const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
-    expect(writeConnectFiles(dir, input)).toEqual(expect.arrayContaining(["opencode.json", ".opencode/plugins/tomrade.js"]));
+    expect(writeConnectFiles(dir, input).files).toEqual(expect.arrayContaining(["opencode.json", ".opencode/plugins/tomrade.js"]));
     expect(JSON.parse(fs.readFileSync(path.join(dir, "opencode.json"), "utf8"))).toEqual({ $schema: "https://opencode.ai/config.json", model: "deepseek/deepseek-flash",
       mcp: { tomrade: { type: "remote", url: input.mcpUrl, enabled: true, headers: { "X-Tomrade-Run": "{env:TOMRADE_MCP_TOKEN}" } } } });
     const plugin = fs.readFileSync(path.join(dir, ".opencode/plugins/tomrade.js"), "utf8");
     expect(plugin).toContain(`const eventUrl = "${input.eventUrl}";`);
     expect(plugin).toContain('"x-tomrade-agent": "opencode"');
-    expect(writeConnectFiles(dir, input)).toEqual([]);
+    expect(writeConnectFiles(dir, input).files).toEqual([]);
+    // One it cannot read leaves OpenCode out and the file as it was.
     fs.writeFileSync(path.join(dir, "opencode.json"), "{ not json");
-    expect(() => writeConnectFiles(dir, input)).toThrow("Cannot update opencode.json: expected a JSON object");
+    expect(writeConnectFiles(dir, input)).toEqual({ files: [], skipped: [{ agent: "opencode", file: "opencode.json", reason: "invalid" }] });
+    expect(fs.readFileSync(path.join(dir, "opencode.json"), "utf8")).toBe("{ not json");
+  });
+
+  it("reads JSON with comments, writes only for the chosen agents, and skips one whose file it cannot change safely", () => {
+    const dir = path.join(root, `jsonc-${n++}`);
+    fs.mkdirSync(path.join(dir, ".gemini"), { recursive: true });
+    fs.mkdirSync(path.join(dir, ".cursor"), { recursive: true });
+    const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
+    // Already as it should be, comments and all: nothing to write.
+    const gemini = `{\n  // mine\n  "theme": "dark", /* "x": "//" */\n  "mcpServers": { "tomrade": { "httpUrl": "${input.mcpUrl}" }, },\n}\n`;
+    fs.writeFileSync(path.join(dir, ".gemini/settings.json"), gemini);
+    fs.writeFileSync(path.join(dir, ".cursor/mcp.json"), "{ nope");
+    const { files, skipped } = writeConnectFiles(dir, input, ["claude-code", "cursor", "gemini"]);
+    expect(skipped).toEqual([{ agent: "cursor", file: ".cursor/mcp.json", reason: "invalid" }]);
+    expect(files.sort()).toEqual([".claude/settings.json", ".mcp.json", "CLAUDE.md"]);
+    expect(fs.readFileSync(path.join(dir, ".gemini/settings.json"), "utf8")).toBe(gemini);
+    expect(fs.readFileSync(path.join(dir, ".cursor/mcp.json"), "utf8")).toBe("{ nope");
+    expect(fs.existsSync(path.join(dir, ".cursor/hooks.json"))).toBe(false);
+    // One that needs a change would lose its comments: left alone and reported.
+    const moved = { ...input, mcpUrl: input.mcpUrl.replace("19090", "19091") };
+    expect(writeConnectFiles(dir, moved, ["gemini"])).toEqual({ files: [], skipped: [{ agent: "gemini", file: ".gemini/settings.json", reason: "comments" }] });
+    expect(fs.readFileSync(path.join(dir, ".gemini/settings.json"), "utf8")).toBe(gemini);
   });
 
   it("asks a repository connected before WorkBuddy's hooks existed to connect again", async () => {
@@ -302,6 +356,67 @@ describe("connecting a repository", () => {
     const view = await codeLink.connection(project.id, repo.id);
     expect(view.state).toBe("unconnected");
     expect(view.agents.find((agent) => agent.id === "cursor")).toMatchObject({ title: "Cursor", tools: true, tracking: "none" });
+  });
+
+  it("judges the connection by the chosen agents alone, so a missing opencode.json does not matter when only Claude Code and Codex are chosen", async () => {
+    const { codeLink, ctx, project, repo, checkout } = await machine();
+    writeConnectFiles(checkout, { projectName: project.name, mcpUrl: ctx.mcp.urlFor(project.id)!, eventUrl: ctx.mcp.eventUrl!, prefix: "TOM", branchTemplate: "{key}/{slug}" });
+    fs.rmSync(path.join(checkout, "opencode.json"));
+    git(["add", "-A"], checkout);
+    git(["commit", "-q", "-m", "connect, without OpenCode's server"], checkout);
+    // Nothing chosen and no agent found here: every agent counts, as before.
+    expect((await codeLink.connection(project.id, repo.id)).state).toBe("unconnected");
+    codeLink.setRepoPolicy(project.id, repo.id, { connectAgents: ["codex", "claude-code"] });
+    const view = await codeLink.connection(project.id, repo.id);
+    expect(view.state).toBe("connected");
+    expect(view.agents.filter((agent) => agent.chosen).map((agent) => agent.id)).toEqual(["claude-code", "codex"]);
+    expect(view.agents.find((agent) => agent.id === "opencode")).toMatchObject({ chosen: false, tools: false });
+    expect(await codeLink.connect(project.id, repo.id)).toMatchObject({ committed: false, files: [], message: "Connected" });
+    // Choosing OpenCode as well asks for it again; choosing none goes back to every agent.
+    codeLink.setRepoPolicy(project.id, repo.id, { connectAgents: ["claude-code", "codex", "opencode"] });
+    expect((await codeLink.connection(project.id, repo.id)).state).toBe("unconnected");
+    expect(codeLink.setRepoPolicy(project.id, repo.id, { connectAgents: [] }).connectAgents).toBeNull();
+  });
+
+  it("chooses the agents installed here until someone chooses, and keeps what it connected for", async () => {
+    const { codeLink, ctx, project, repo } = await machine();
+    const engine = (id: string, available: () => Promise<{ ok: boolean; cli?: never }>) =>
+      ctx.agent.engine({ id, title: id, author: `ai:${id}`, available, turn: async () => ({ stop: "end" }) });
+    engine("claude-code", async () => ({ ok: true }));
+    // Installed but not signed in is still found: the repository's files do not need the sign-in.
+    engine("gemini", async () => ({ ok: false, cli: { state: "ready" } as never }));
+    engine("pi", async () => ({ ok: false, cli: { state: "missing" } as never }));
+    const view = await codeLink.connection(project.id, repo.id);
+    expect(view.agents.filter((agent) => agent.chosen).map((agent) => agent.id)).toEqual(["claude-code", "gemini"]);
+    const result = await codeLink.connect(project.id, repo.id);
+    expect(result.files.sort()).toEqual([".claude/settings.json", ".gemini/settings.json", ".mcp.json", "CLAUDE.md"]);
+    expect(result.skipped).toEqual([]);
+    expect(ctx.codeLink.store.repoState(project.id, repo.id)?.connectAgents).toEqual(["claude-code", "gemini"]);
+    engine("codex", async () => ({ ok: true }));
+    expect((await codeLink.connection(project.id, repo.id)).state).toBe("pending");
+  });
+
+  it("connects Claude Code when opencode.json has a comment, and says OpenCode was skipped", async () => {
+    const { codeLink, ctx, project, repo, checkout } = await machine();
+    const own = '{\n  // the model we use\n  "model": "deepseek/deepseek-flash",\n}\n';
+    fs.writeFileSync(path.join(checkout, "opencode.json"), own);
+    git(["add", "-A"], checkout);
+    git(["commit", "-q", "-m", "opencode settings"], checkout);
+    git(["push", "-q", "origin", "HEAD:refs/heads/main"], checkout);
+    const result = await codeLink.connect(project.id, repo.id);
+    expect(result.skipped).toEqual([{ agent: "opencode", file: "opencode.json", reason: "comments" }]);
+    expect(result.files).toEqual(expect.arrayContaining([".mcp.json", ".claude/settings.json", "CLAUDE.md"]));
+    expect(result.files).not.toContain("opencode.json");
+    expect(result.files).not.toContain(".opencode/plugins/tomrade.js");
+    git(["merge", "--ff-only", "tomrade/connect"], checkout);
+    expect(fs.readFileSync(path.join(checkout, "opencode.json"), "utf8")).toBe(own);
+    const view = await codeLink.connection(project.id, repo.id);
+    expect(view.agents.find((agent) => agent.id === "claude-code")).toMatchObject({ tools: true, tracking: "hooks" });
+    expect(view.agents.find((agent) => agent.id === "opencode")).toMatchObject({ tools: false });
+    // Once the person adds the server by hand, comments and all, OpenCode counts as configured.
+    fs.writeFileSync(path.join(checkout, "opencode.json"), own.replace('"model"', `"mcp": { "tomrade": { "type": "remote", "url": ${JSON.stringify(ctx.mcp.urlFor(project.id))}, }, },\n  "model"`));
+    git(["commit", "-q", "-am", "tomrade by hand"], checkout);
+    expect((await codeLink.connection(project.id, repo.id)).agents.find((agent) => agent.id === "opencode")).toMatchObject({ tools: true });
   });
 
   it("finds agent instructions in a section from before the markers, not under a heading that only starts with Tomrade", async () => {
@@ -349,7 +464,7 @@ describe("connecting a repository", () => {
     const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
     writeConnectFiles(dir, input);
     const next = { ...input, mcpUrl: input.mcpUrl.replace("19090", "19091"), eventUrl: input.eventUrl.replace("19090", "19091") };
-    expect(writeConnectFiles(dir, next)).toContain(".claude/settings.json");
+    expect(writeConnectFiles(dir, next).files).toContain(".claude/settings.json");
     const hooks = fs.readFileSync(path.join(dir, ".claude/settings.json"), "utf8");
     expect(hooks).not.toContain("19090");
     expect(hooks).toContain(next.eventUrl);
@@ -357,7 +472,7 @@ describe("connecting a repository", () => {
     const cursor = fs.readFileSync(path.join(dir, ".cursor/hooks/tomrade.sh"), "utf8");
     expect(cursor).toContain(next.eventUrl);
     expect(cursor).not.toContain("19090");
-    expect(writeConnectFiles(dir, next)).toEqual([]);
+    expect(writeConnectFiles(dir, next).files).toEqual([]);
   });
 
   it("commits them on a branch of their own and pushes it, leaving the checkout alone", async () => {

@@ -3,6 +3,7 @@ import type { Db, ProjectDb, Sqlite } from "@tomradex/db";
 import { DeliveryStore } from "@tomradex/db";
 import type { ItemStatus } from "@tomradex/domain";
 import { DEFAULT_BRANCH_TEMPLATE } from "./keys.js";
+import type { ConnectAgent } from "./connect.js";
 import type { PrState } from "./rules.js";
 import { classifyRemoteFailure, type RemoteFailure } from "./remote.js";
 
@@ -146,7 +147,9 @@ CREATE UNIQUE INDEX idx_plugin_code_link_links_key ON plugin_code_link_links(pro
   { version: 6, up: "ALTER TABLE plugin_code_link_deliveries ADD COLUMN bases_json TEXT NOT NULL DEFAULT '{}'" },
   { version: 7, up: "ALTER TABLE plugin_code_link_repos ADD COLUMN agent_merge INTEGER NOT NULL DEFAULT 0" },
   // Where a parallel outside session works, so its hooks find it among the others with the same identity.
-  { version: 8, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN worktree TEXT" }
+  { version: 8, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN worktree TEXT" },
+  // The agents a repository is connected for; NULL until someone chooses or connects.
+  { version: 9, up: "ALTER TABLE plugin_code_link_repos ADD COLUMN connect_agents_json TEXT" }
 ];
 
 /** Durable code links travel with the project; running sessions belong to this machine. */
@@ -215,6 +218,8 @@ export interface RepoStateView {
   agentPush: boolean;
   /** Agents merge their own pull requests once checks pass; off, the person merges. */
   agentMerge: boolean;
+  /** The coding agents Connect writes for and "connected" is judged by; null until chosen. */
+  connectAgents: ConnectAgent[] | null;
   scannedAt: number | null;
   updatedAt: number;
 }
@@ -307,6 +312,7 @@ interface RepoRow {
   auto_done: number;
   agent_push: number;
   agent_merge: number;
+  connect_agents_json: string | null;
   scanned_at: number | null;
   updated_at: number;
 }
@@ -390,6 +396,7 @@ const toRepo = (r: RepoRow): RepoStateView => ({
   autoDone: r.auto_done === 1,
   agentPush: r.agent_push === 1,
   agentMerge: r.agent_merge === 1,
+  connectAgents: r.connect_agents_json ? (JSON.parse(r.connect_agents_json) as ConnectAgent[]) : null,
   scannedAt: r.scanned_at,
   updatedAt: r.updated_at
 });
@@ -462,6 +469,7 @@ export interface RepoStatePatch {
   autoDone?: boolean;
   agentPush?: boolean;
   agentMerge?: boolean;
+  connectAgents?: ConnectAgent[] | null;
   scannedAt?: number | null;
 }
 
@@ -678,18 +686,19 @@ export class CodeLinkStore {
       autoDone: patch.autoDone ?? existing?.autoDone ?? true,
       agentPush: patch.agentPush ?? existing?.agentPush ?? true,
       agentMerge: patch.agentMerge ?? existing?.agentMerge ?? false,
+      connectAgents: patch.connectAgents === undefined ? (existing?.connectAgents ?? null) : patch.connectAgents,
       scannedAt: patch.scannedAt === undefined ? (existing?.scannedAt ?? null) : patch.scannedAt,
       updatedAt: now
     };
     this.db(projectId)
       .prepare(
-        `INSERT INTO plugin_code_link_repos (repo_id, project_id, readiness, remote, remote_detail, remote_at, has_brief, manifests_json, summary, scanned_sha, default_sha, branch_template, auto_done, agent_push, agent_merge, scanned_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO plugin_code_link_repos (repo_id, project_id, readiness, remote, remote_detail, remote_at, has_brief, manifests_json, summary, scanned_sha, default_sha, branch_template, auto_done, agent_push, agent_merge, connect_agents_json, scanned_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(repo_id) DO UPDATE SET
            readiness = excluded.readiness, remote = excluded.remote, remote_detail = excluded.remote_detail, remote_at = excluded.remote_at,
            has_brief = excluded.has_brief, manifests_json = excluded.manifests_json, summary = excluded.summary,
            scanned_sha = excluded.scanned_sha, default_sha = excluded.default_sha, branch_template = excluded.branch_template,
-           auto_done = excluded.auto_done, agent_push = excluded.agent_push, agent_merge = excluded.agent_merge, scanned_at = excluded.scanned_at, updated_at = excluded.updated_at`
+           auto_done = excluded.auto_done, agent_push = excluded.agent_push, agent_merge = excluded.agent_merge, connect_agents_json = excluded.connect_agents_json, scanned_at = excluded.scanned_at, updated_at = excluded.updated_at`
       )
       .run(
         repoId,
@@ -707,6 +716,7 @@ export class CodeLinkStore {
         next.autoDone ? 1 : 0,
         next.agentPush ? 1 : 0,
         next.agentMerge ? 1 : 0,
+        next.connectAgents ? JSON.stringify(next.connectAgents) : null,
         next.scannedAt,
         now
       );
