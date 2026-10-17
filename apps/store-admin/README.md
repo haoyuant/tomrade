@@ -26,6 +26,15 @@ tomrade-store diag status R-7K3F2A wontfix              # new, triaged, fixed, w
 
 The sender sees the status, the reply and the fixing release in Settings → About → My reports. The bottom bar says so until they read it.
 
+**Announcements** pop up once in every Tomrade, signed in or not, within the hour or at its next launch. The body is Markdown; its links open in the browser.
+
+```sh
+tomrade-store announce                                  # what every install can see now, with ids
+tomrade-store announce publish "Tomrade 0.8" --file notes.md --until 2026-11-01
+tomrade-store announce publish "请升级" "0.5 之前的版本无法登录，请到 tomrade.com 下载新版。" --level important --locale zh --versions "<0.5.0"
+tomrade-store announce withdraw <id>                    # machines that showed it already are not asked again
+```
+
 Known issues people can fix themselves belong in the site's `known-issues.json` (`{ "version": 1, "issues": [...] }`, the `KnownIssue` shape in `@tomradex/doctor`). Every Tomrade reads it within six hours, so no release is needed.
 
 Every command but `keygen` needs `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.

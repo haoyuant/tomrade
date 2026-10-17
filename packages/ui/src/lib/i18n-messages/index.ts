@@ -1,4 +1,5 @@
 import { about } from "./about";
+import { announcements } from "./announcements";
 import { legal } from "./legal";
 import { usage } from "./usage";
 import { background } from "./background";
@@ -66,6 +67,7 @@ export const en = {
   language: language.en,
   settingsDialog: settingsDialog.en,
   about: about.en,
+  announcements: announcements.en,
   legal: legal.en,
   usage: usage.en,
   background: background.en,
@@ -135,6 +137,7 @@ export const zh: typeof en = {
   language: language.zh,
   settingsDialog: settingsDialog.zh,
   about: about.zh,
+  announcements: announcements.zh,
   legal: legal.zh,
   usage: usage.zh,
   background: background.zh,

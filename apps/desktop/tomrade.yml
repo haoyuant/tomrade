@@ -170,6 +170,13 @@ plugins:
   # else is read back in. Git is driven only in folders Tomrade made itself.
   - id: storage
     name: "@tomradex/storage"
+  # Announcements Tomrade publishes to every install, read through the account
+  # client above whether or not anyone is signed in; each one pops up once.
+  - id: announcements
+    name: "@tomradex/announcements"
+    config:
+      file: "${userData}/announcements.json"
+      version: "${appVersion}"
   # Activated when the deployment supplies a Supabase URL and publishable key.
   # Migrates only Hub metadata; project storage providers below keep their role.
   - id: hub-cloud

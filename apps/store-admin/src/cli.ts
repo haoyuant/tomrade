@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { attest, generateSigningKey } from "@tomradex/plugin-kit";
-import { satisfies } from "@tomradex/plugin-sdk";
+import { isRange, satisfies } from "@tomradex/plugin-sdk";
 import { mcpClient } from "./mcp.js";
 
 const [command = "help", ...rest] = process.argv.slice(2);
@@ -40,6 +40,10 @@ const usage = `tomrade-store <command>
   diag reply R-XXXXXX "text" [--status s] [--in 0.7.0]   answer it; the sender sees it in the app (--ticket TOM-N: every report on that ticket)
   diag status R-XXXXXX fixed [--in 0.7.0]                new, triaged, fixed, wontfix or duplicate (--ticket TOM-N too)
   diag import --project <id> [--mcp url]                 new reports become TOM tickets through a running Tomrade, one per fingerprint
+  announce                        announcements every install can see now, and their ids
+  announce publish "title" ["markdown"] [--file body.md] [--level important] [--locale en|zh] [--versions "<0.5.0"] [--until 2026-11-01]
+                                  pops up once in every Tomrade (that language, versions in the range) until --until or withdrawn
+  announce withdraw <id>          stop showing it; apps that showed it already keep nothing of it
   maintainer [add|remove <email>]  who triages reports from Tomrade's own inbox (the Tomrade feedback source)
   show publisher/name@version     a listed version as the store holds it
   official publisher/name@version sign one of Tomrade's own plugins as official (STORE_SIGNING_KEY)
@@ -139,6 +143,42 @@ async function main(): Promise<number> {
       for (const [fingerprint, rows] of [...groups].sort((a, b) => b[1].length - a[1].length)) {
         const latest = rows[0]!;
         console.log(`${rows.length}× ${fingerprint}${latest.ticket ? ` · ${latest.ticket}` : ""} · ${latest.engine ?? "-"} · ${latest.summary}\n   ${rows.map((r) => `${r.code} (${r.app_version}, ${String(r.created_at).slice(0, 10)}${rest.includes("--all") ? `, ${r.status}` : ""})`).join(", ")}`);
+      }
+      return 0;
+    }
+    case "announce": {
+      const client = serviceClient();
+      const TABLE = "tomrade_announcements";
+      const [sub, ...args] = positional;
+      if (sub === "publish") {
+        const [title, text] = args;
+        const file = flag("file");
+        const body = file ? fs.readFileSync(file, "utf8") : (text ?? "");
+        const versions = flag("versions");
+        if (!title) throw new Error('announce publish "title" ["markdown"]');
+        if (versions && !isRange(versions)) throw new Error(`--versions ${versions} is not a version range`);
+        const until = flag("until");
+        if (until && Number.isNaN(Date.parse(until))) throw new Error(`--until ${until} is not a date`);
+        const { data, error } = await client.from(TABLE)
+          .insert({ title, body, level: flag("level") ?? "info", locale: flag("locale") ?? null, versions: versions ?? null, ends_at: until ? new Date(until).toISOString() : null })
+          .select("id").single();
+        if (error) throw new Error(error.message);
+        console.log(`published ${data.id}: apps show it within the hour, or at their next launch`);
+        return 0;
+      }
+      if (sub === "withdraw") {
+        if (!args[0]) throw new Error("announce withdraw <id>");
+        const { data, error } = await client.from(TABLE).update({ withdrawn_at: new Date().toISOString() }).eq("id", args[0]).select("id");
+        if (error) throw new Error(error.message);
+        if (!data?.length) throw new Error(`no announcement ${args[0]}`);
+        console.log(`withdrew ${args[0]}`);
+        return 0;
+      }
+      const { data, error } = await client.from(TABLE).select("id, title, level, locale, versions, starts_at, ends_at").is("withdrawn_at", null).order("starts_at", { ascending: false });
+      if (error) throw new Error(error.message);
+      const now = Date.now();
+      for (const r of (data ?? []).filter((r) => !r.ends_at || Date.parse(r.ends_at) > now)) {
+        console.log(`${r.id} · ${String(r.starts_at).slice(0, 10)}${r.ends_at ? `–${String(r.ends_at).slice(0, 10)}` : ""} · ${r.level}${r.locale ? ` · ${r.locale}` : ""}${r.versions ? ` · ${r.versions}` : ""} · ${r.title}`);
       }
       return 0;
     }

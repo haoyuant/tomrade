@@ -59,6 +59,7 @@
   "dependencies": {
     "@tomradex/agent": "workspace:*",
     "@tomradex/agent-backlog": "workspace:*",
+    "@tomradex/announcements": "workspace:*",
     "@tomradex/archify": "workspace:*",
     "@tomradex/boards": "workspace:*",
     "@tomradex/code-link": "workspace:*",
