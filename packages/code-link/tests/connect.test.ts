@@ -346,6 +346,43 @@ describe("outside clients, told apart by their connection", () => {
     expect(await ctx.tools.execute("note_progress", { text: "on the next one" }, a)).toMatchObject({ ok: true, key: next.key });
   });
 
+  it("asks GitHub before refusing the next ticket, so a pull request merged a moment ago lets it through", async () => {
+    const { codeLink, ctx, items, project, board, checkout } = await machine();
+    const first = items.create({ projectId: project.id, boardId: board.id, title: "First", status: "todo", by: "human" });
+    const next = items.create({ projectId: project.id, boardId: board.id, title: "Next", status: "todo", by: "human" });
+    const a = { by: "ai:claude-code" as const, projectId: project.id, connection: "conn-m" };
+    const { branch } = (await ctx.tools.execute("claim_ticket", { key: first.key }, a)) as { branch: string };
+    git(["checkout", "-q", "-b", branch], checkout);
+    fs.writeFileSync(path.join(checkout, "work.ts"), "x\n");
+    git(["add", "-A"], checkout);
+    git(["commit", "-q", "-m", `${first.key}: the work`], checkout);
+    git(["push", "-q", "origin", branch], checkout);
+    git(["checkout", "-q", "main"], checkout);
+    await ctx.tools.execute("link_code", { prUrl: "https://github.com/acme/app/pull/41", scopeChecked: true }, a);
+    await codeLink.scan(project.id);
+    const asked: string[] = [];
+    codeLink.pulls = async (repo, number) => {
+      asked.push(`${repo}#${number}`);
+      return { merged: false, state: "open", mergeSha: null, base: "main" };
+    };
+
+    // Not merged: still refused, and the refusal reads as before.
+    await expect(ctx.tools.execute("claim_ticket", { key: next.key }, a)).rejects.toThrow(`this session still owns ${first.key}, which is verifying — merge its pull request once the checks pass, or if the merge is refused call report_merge_blocked`);
+    expect(asked).toEqual(["acme/app#41"]);
+
+    // Squash-merged under a title naming neither: only GitHub can say so, and the claim asks it there and then.
+    git(["merge", "-q", "--squash", branch], checkout);
+    git(["commit", "-q", "-m", "Tidy things up"], checkout);
+    git(["push", "-q", "origin", "main"], checkout);
+    git(["reset", "-q", "--hard", "HEAD~1"], checkout);
+    const squash = git(["rev-parse", "origin/main"], checkout);
+    codeLink.pulls = async () => ({ merged: true, state: "closed", mergeSha: squash, base: "main" });
+    const claimed = (await ctx.tools.execute("claim_ticket", { key: next.key }, a)) as { key: string };
+    expect(claimed.key).toBe(next.key);
+    expect(items.get(project.id, first.id)!.status).toBe("done");
+    expect(items.get(project.id, next.id)!.status).toBe("doing");
+  });
+
   it("takes the next ticket as a new session once it handed the last one's merge to the person, which keeps waiting on them", async () => {
     const { codeLink, ctx, items, project, board, checkout } = await machine();
     const post = (payload: unknown) => fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });

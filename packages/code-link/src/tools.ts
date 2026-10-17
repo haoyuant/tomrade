@@ -50,6 +50,8 @@ export interface ToolHost {
   /** The same outside agent, as a new session for its next ticket, or for one it works alongside the one it holds. */
   successor(projectId: string, from: SessionView, repoId: string | null, worktree?: string | null): SessionView;
   notify(projectId: string): void;
+  /** A scan that starts now, after any running one: what git and GitHub say at this moment. */
+  rescan(projectId: string): Promise<unknown>;
   summary(projectId: string, itemId: string): CodeSummaryView;
   /** A repository with no remote: merge the ticket's branch into the default branch here. */
   mergeLocal(projectId: string, itemId: string, opts: { agent: boolean }): Promise<{ merged: boolean; sha: string | null; message: string }>;
@@ -341,11 +343,19 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         const connected = !tokened && inv.connection ? host.connected(projectId, inv.connection) : null;
         const again = !tokened && inv.connection ? (host.connectedSessions(projectId, inv.connection).find((s) => s.itemIds.includes(item.id)) ?? null) : null;
         let session = tokened ?? again ?? connected ?? (repoId ? host.externalSession(projectId, repoId) : null);
-        const others = (session?.itemIds ?? []).filter((id) => id !== item.id).map((id) => ctx.items.get(projectId, id));
+        const held = () => (session?.itemIds ?? []).filter((id) => id !== item.id).map((id) => ctx.items.get(projectId, id));
+        let others = held();
         // An outside terminal moves on once its ticket is finished, or once it handed that ticket's merge to the person
         // (report_merge_blocked); until then its wrap-up is still owed. A session Tomrade started is one ticket's thread and worktree.
         const handedOff = session?.blocked === "merge";
-        const owed = others.find((held) => !held || (held.status !== "done" && held.status !== "cancelled" && !(held.status === "verifying" && handedOff)));
+        const owing = () => others.find((held) => !held || (held.status !== "done" && held.status !== "cancelled" && !(held.status === "verifying" && handedOff)));
+        let owed = owing();
+        // The agent may have merged its pull request a moment ago, long before the next timed scan: look now rather than refuse.
+        if (owed?.status === "verifying" && !tokened && !args.parallel && host.store.links(projectId, owed.id).some((l) => l.prState === "open")) {
+          await host.rescan(projectId).catch((err) => ctx.logger.warn(`claim_ticket: scan before claiming ${item.key} failed: ${err instanceof Error ? err.message : String(err)}`));
+          others = held();
+          owed = owing();
+        }
         let leaving: string | undefined;
         let alongside = false;
         if (session && owed && !tokened && args.parallel) {
