@@ -27,6 +27,9 @@ for await (const line of readline.createInterface({ input: process.stdin })) {
   if (m.method === "turn/start") {
     const id = String(++n);
     send({ id: m.id, result: { turn: { id } } });
+    // As Codex does: without it the client learns the turn's id only after awaiting the reply, and a
+    // turn/completed read in the same chunk would go by first.
+    send({ method: "turn/started", params: { threadId: "new-session", turn: { id } } });
     send({ method: "item/completed", params: { threadId: "new-session", turnId: id, item: { id: "msg-" + id, type: "agentMessage", text: "ok" } } });
     send({ method: "turn/completed", params: { threadId: "new-session", turn: { id, status: "completed" } } });
   }
