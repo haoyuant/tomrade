@@ -66,6 +66,8 @@ CREATE TABLE plugin_im_watch (
  PRIMARY KEY (binding_id, item_id)
 );
 CREATE INDEX idx_plugin_im_watch_project ON plugin_im_watch(project_id);
+` }, { version: 8, up: `
+ALTER TABLE plugin_im_bindings ADD COLUMN home_thread TEXT;
 ` }];
 export const TABLES = {
   plugin_im_bindings: { export: false }, plugin_im_inbox: { export: false },
@@ -83,6 +85,8 @@ export interface Binding {
   grp: number | null;
   /** 1 while the desktop asked for its next turn on this thread to reach the group too. */
   share_next: number;
+  /** While it follows a ticket's thread, the conversation it left to start it; it goes back there once that thread is archived. */
+  home_thread: string | null;
 }
 export interface Inbox {
   seq: number; id: string; message_key: string | null; binding_id: string;
@@ -110,7 +114,9 @@ export interface WindowRow {
 export interface Watch { binding_id: string; project_id: string; item_id: string; seen_json: string; at: number }
 export interface Action {
   token: string; binding_id: string; thread_id: string; question_id: string;
-  actor_id: string; run_id: string | null; value_json: string | null; expires_at: number; consumed: number;
+  actor_id: string; run_id: string | null; value_json: string | null; expires_at: number;
+  /** 1 once used; 2 once its start card started, so a later click on it is let go quietly. */
+  consumed: number;
   /** Its card was updated after the question ended; `consumed` alone only stops reuse. */
   retired: number; created_at: number;
 }

@@ -24,12 +24,15 @@ class FakeCode extends Service {
   static inject = ["agent", "items"];
   starts: StartOpts[] = [];
   gate: { gate: string; message: string; blockers?: string[] } | null = null;
+  /** While set, a start waits for it, as a real one waits on its worktree and engine. */
+  hold: Promise<void> | null = null;
   constructor(ctx: Context) { super(ctx, "codeLink"); }
   summary() { return { links: [], session: null, proposals: [] }; }
   resolve() { return { state: "accepted" }; }
   startDefaults() { return { mode: "run", engine: "test", options: { model: "deep" }, permissionMode: "auto" }; }
   async start(projectId: string, itemId: string, opts: StartOpts) {
     this.starts.push(opts);
+    if (this.hold) await this.hold;
     if (this.gate && !(this.gate.gate === "blocked" && opts.allowBlocked)) return { ok: false, ...this.gate };
     const item = this.ctx.items.get(projectId, itemId)!;
     const thread = this.ctx.agent.newThread(projectId, opts.engine, null, { surface: "assistant", itemId, title: `${item.key} ${item.title}` });
@@ -107,6 +110,9 @@ describe("starting a ticket from IM", () => {
     expect(w.code.starts).toEqual([{ mode: "run", engine: "test", options: { model: "deep" }, permissionMode: "auto",
       source: { connection: "bot", tenant: "team", conversation: "chat", actor: "owner" } }]);
     expect((await w.said(/^Started/)).content.text).toContain("⚠ Pushing is off for this repository");
+    // The card clicked says so in place, and a second click on it is let go.
+    expect((await w.said(new RegExp(`^Started ${w.item.key} Fix the login page$`))).replaceMessageId).toBeDefined();
+    await w.receive(act("twice", card.content.actions![0].token));
     // The coding run's question comes here, and is answered here.
     const question = await w.said(/^Which page first\?$/);
     const input = question.content.elements!.find(e => e.type === "input") as { token: string };
@@ -114,6 +120,8 @@ describe("starting a ticket from IM", () => {
     expect(w.ctx.agent.store.thread(w.project.id, thread)?.itemId).toBe(w.item.id);
     await w.receive(act("ans", input.token, "the login form"));
     await expect.poll(() => w.ctx.agent.thread(w.project.id, thread).pending).toBeNull();
+    expect(w.code.starts).toHaveLength(1);
+    expect(w.delivered.some(d => /expired or isn't yours|Cannot process/.test(d.content.text))).toBe(false);
   });
 
   it("/start shows what will run, changes it in place from its selects, and starts on Start", async () => {
@@ -126,13 +134,95 @@ describe("starting a ticket from IM", () => {
     const changed = w.delivered.find(d => d.replaceMessageId && d.content.text.includes("Model: fast"))!;
     await w.receive(act("p", select(changed.content.elements, "Permission mode")!.token, "ask"));
     await expect.poll(() => w.delivered.find(d => d.replaceMessageId && d.content.text.includes("Permission mode: Ask first")), { timeout: 5000 }).toBeDefined();
-    const last = w.delivered.filter(d => d.replaceMessageId && d.content.text.includes("Permission mode: Ask first")).at(-1)!;
-    // The card's earlier choices are spent with it.
+    // A select the card showed before its edits still works, over what the card says now.
     await w.receive(act("old", select(card.content.elements, "Model")!.token, "deep"));
-    await w.said(/expired or isn't yours/);
-    await w.receive(act("go", last.content.actions![0].token));
+    await expect.poll(() => w.delivered.find(d => d.replaceMessageId && d.content.text.includes("Model: Deep\nPermission mode: Ask first")), { timeout: 5000 }).toBeDefined();
+    await w.receive(act("go", card.content.actions![0].token));
     await w.said(/^Started/);
-    expect(w.code.starts.at(-1)).toMatchObject({ engine: "test", options: { model: "fast" }, permissionMode: "ask" });
+    expect(w.code.starts.at(-1)).toMatchObject({ engine: "test", options: { model: "deep" }, permissionMode: "ask" });
+    expect(w.delivered.some(d => /expired or isn't yours/.test(d.content.text))).toBe(false);
+  });
+
+  it("takes two selects changed before the card shows the first change", async () => {
+    const w = await boot();
+    await w.receive(say("s", `/start ${w.item.key}`));
+    const card = await w.said(new RegExp(`^Start ${w.item.key} Fix the login page`));
+    await w.receive(act("m", select(card.content.elements, "Model")!.token, "fast"));
+    await w.receive(act("p", select(card.content.elements, "Permission mode")!.token, "ask"));
+    await expect.poll(() => w.delivered.find(d => d.replaceMessageId && d.content.text.includes("Model: fast\nPermission mode: Ask first")), { timeout: 5000 }).toBeDefined();
+    await w.receive(act("go", card.content.actions![0].token));
+    await w.said(/^Started/);
+    expect(w.code.starts).toMatchObject([{ options: { model: "fast" }, permissionMode: "ask" }]);
+    expect(w.delivered.some(d => /expired or isn't yours/.test(d.content.text))).toBe(false);
+  });
+
+  it("says on the card at once that the start is under way, and starts once however often Start is clicked", async () => {
+    const w = await boot();
+    let release!: () => void;
+    w.code.hold = new Promise(resolve => { release = resolve; });
+    await w.receive(say("s", `/start ${w.item.key}`));
+    const card = await w.said(new RegExp(`^Start ${w.item.key} Fix the login page`));
+    const start = card.content.actions![0].token;
+    await w.receive(act("go", start));
+    const starting = await w.said(new RegExp(`^Starting ${w.item.key}…$`));
+    expect(starting.replaceMessageId).toBeDefined();
+    expect(starting.content.actions ?? []).toEqual([]);
+    expect(starting.content.elements ?? []).toEqual([]);
+    await w.receive(act("again", start));
+    await w.receive(act("model", select(card.content.elements, "Model")!.token, "fast"));
+    release();
+    await w.said(/^Started .* with Test/);
+    await w.said(new RegExp(`^Started ${w.item.key} Fix the login page$`));
+    await w.receive(act("late", start));
+    await w.said(/^Which page first\?$/);
+    await expect.poll(() => w.ctx.im.store.all<{ state: string }>("SELECT state FROM plugin_im_inbox WHERE state = 'queued'").length).toBe(0);
+    expect(w.code.starts).toHaveLength(1);
+    expect(w.delivered.some(d => /expired or isn't yours|Cannot process/.test(d.content.text))).toBe(false);
+  });
+
+  it("goes back to the conversation it left once the ticket is done and its session archived, and the next message goes there", async () => {
+    const w = await boot();
+    await w.receive(say("hi", "hello"));
+    await w.said(/^re:hello$/);
+    const home = w.bound()!;
+    w.ctx.agent.store.touchThread(w.project.id, home, { title: "Planning" });
+    await w.receive(say("go", `/start ${w.item.key} model=fast`));
+    await w.said(/^Started/);
+    const question = await w.said(/^Which page first\?$/);
+    const ticketThread = w.bound()!;
+    expect(ticketThread).not.toBe(home);
+    await w.receive(act("ans", (question.content.elements!.find(e => e.type === "input") as { token: string }).token, "login"));
+    await expect.poll(() => w.ctx.agent.thread(w.project.id, ticketThread).pending).toBeNull();
+    await expect.poll(() => w.ctx.agent.activeRuns().length).toBe(0);
+    // As code link puts a finished ticket's work away.
+    w.ctx.items.update(w.project.id, w.item.id, { status: "done" }, "human");
+    w.ctx.agent.archiveThread(w.project.id, ticketThread);
+    await w.receive(say("after", "what next?"));
+    await w.said(new RegExp(`^${w.item.key} is done; back to “Planning”\.$`));
+    await w.said(/^re:what next\?$/);
+    expect(w.bound()).toBe(home);
+    expect(w.delivered.some(d => /archived|Cannot process/i.test(d.content.text))).toBe(false);
+  });
+
+  it("opens a new conversation when the one it left can't be continued either", async () => {
+    const w = await boot();
+    await w.receive(say("hi", "hello"));
+    await w.said(/^re:hello$/);
+    const home = w.bound()!;
+    await w.receive(say("go", `/start ${w.item.key} model=fast`));
+    const question = await w.said(/^Which page first\?$/);
+    const ticketThread = w.bound()!;
+    await w.receive(act("ans", (question.content.elements!.find(e => e.type === "input") as { token: string }).token, "login"));
+    await expect.poll(() => w.ctx.agent.thread(w.project.id, ticketThread).pending).toBeNull();
+    await expect.poll(() => w.ctx.agent.activeRuns().length).toBe(0);
+    w.ctx.agent.archiveThread(w.project.id, home);
+    w.ctx.agent.archiveThread(w.project.id, ticketThread);
+    await w.said(new RegExp(`^${w.item.key}'s session was archived; a new conversation started\.$`));
+    const fresh = w.bound()!;
+    expect([home, ticketThread]).not.toContain(fresh);
+    await w.receive(say("after", "still here?"));
+    await w.said(/^re:still here\?$/);
+    expect(w.bound()).toBe(fresh);
   });
 
   it("starts at once from /start with settings named, and refuses a setting the agent doesn't have", async () => {
