@@ -6,13 +6,14 @@ import { seedLocale } from "@tomradex/db";
 import type { Item, Project } from "@tomradex/domain";
 import type {} from "@tomradex/boards";
 import type {} from "@tomradex/hub";
+import type { Inbox } from "@tomradex/inbox";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/items";
 import type {} from "@tomradex/projects";
 import type { SettingsSection } from "@tomradex/settings";
 import { PATH, SAMPLE, type SampleWords } from "./sample.js";
 
-export { PATH, SAMPLE, type SampleTicket, type SampleWords } from "./sample.js";
+export { PATH, SAMPLE, type SampleFeedback, type SampleTicket, type SampleWords } from "./sample.js";
 
 declare module "cordis" {
   interface Context {
@@ -72,6 +73,8 @@ export class Onboarding extends Service {
   static Config = OnboardingConfig;
 
   private readonly home: Context;
+  /** Samples whose feedback waits for the inbox, which loads after this plugin. */
+  private readonly pendingFeedback = new Map<string, SampleWords>();
 
   constructor(
     ctx: Context,
@@ -100,6 +103,7 @@ export class Onboarding extends Service {
     this.home.inject(["agent"], (ctx) => {
       for (const playbook of PLAYBOOKS) ctx.agent.playbook(playbook);
     });
+    this.home.inject(["inbox"], (ctx) => this.deliverFeedback(ctx.inbox));
   }
 
   /** The tour, in `locale`. Its seed is how it began, not history: nothing to undo, nothing in History. */
@@ -114,6 +118,8 @@ export class Onboarding extends Service {
         }
       }
     );
+    const inbox = this.ctx.get("inbox");
+    if (inbox) this.deliverFeedback(inbox);
     // Read back: the catalog marked it the sample after the row was made.
     return this.ctx.projects.get(created.id) ?? created;
   }
@@ -148,6 +154,19 @@ export class Onboarding extends Service {
       items.create({ projectId, boardId: example.id, title: ticket.title, body: ticket.body, status: "backlog", workType: "general", rank, by: "human" });
     });
     for (const [from, to] of PATH) items.addRelation(projectId, byKey.get(from)!.id, byKey.get(to)!.id, "human");
+    this.pendingFeedback.set(projectId, words);
+  }
+
+  /** The inbox exercise: the sample's feedback, from the tour itself as source. Added once; triaged entries stay as they are. */
+  private deliverFeedback(inbox: Inbox): void {
+    for (const [projectId, words] of this.pendingFeedback) {
+      this.pendingFeedback.delete(projectId);
+      if (!this.ctx.projects.get(projectId)) continue;
+      const at = Date.now();
+      inbox.add(projectId, words.name, words.feedback.map((f, i) => ({
+        externalId: f.key, kind: f.kind, reporter: f.reporter, title: f.title, body: f.body, receivedAt: at - (i + 1) * 3_600_000
+      })));
+    }
   }
 }
 
