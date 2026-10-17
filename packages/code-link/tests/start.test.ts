@@ -1443,6 +1443,31 @@ describe("starting a ticket", () => {
     expect(codeLink.sessionsOf(project.id, item.id).map((s) => s.id)).toEqual([started.sessionId]);
   });
 
+  it("starts Cursor in a terminal once its own config names Tomrade, and tells it to claim first", async () => {
+    const world = await machine(codeRepo());
+    const { codeLink, ctx, project, repo, checkout, ticket } = world;
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    ctx.settings.set({ ...ctx.settings.get(), codeLink: { terminal: "none" } });
+    let state: "connected" | "missing" = "missing";
+    const view = () => ({ state, url: null, configuredUrl: null, file: null, manual: { connect: "", disconnect: "" } });
+    await ctx.plugin({ name: "fake-cursor", inject: ["agent"], apply: (c: Context) => {
+      c.agent.engine({ ...fakeCodeEngine([]), id: "cursor", title: "Cursor", author: "ai:cursor", capabilities: ["code", "general"], terminalOnly: true, terminalViaLink: true, terminalClaims: true,
+        mcpLink: { status: async () => view(), connect: async () => view(), disconnect: async () => view() } });
+    } });
+    const { Mcp } = await import("@tomradex/mcp");
+    await ctx.plugin(Mcp, { port: 0 });
+    await settle();
+    const item = ticket("Cursor terminal work");
+    expect(await codeLink.start(project.id, item.id, { mode: "terminal", engine: "cursor" })).toMatchObject({ ok: false, gate: "engine", message: expect.stringContaining("Connect it under Cursor in Settings") });
+
+    state = "connected";
+    const started = await codeLink.start(project.id, item.id, { mode: "terminal", engine: "cursor", options: { model: "gpt-5" } });
+    if (!started.ok) throw new Error(JSON.stringify(started));
+    expect(started.command).toMatch(/^cursor-agent --model gpt-5 "\$\(cat ".*prompt\.md"\)"$/);
+    const prompt = fs.readFileSync(path.join(codeLink.sessionDir(started.sessionId), "prompt.md"), "utf8");
+    expect(prompt.startsWith(`Before anything else, call the tomrade MCP tool claim_ticket with key "${item.key}"`)).toBe(true);
+  });
+
   it("starts Hermes in a terminal once its own sessions reach Tomrade, and asks for that first", async () => {
     const world = await machine(codeRepo());
     const { codeLink, ctx, project, repo, checkout, ticket } = world;

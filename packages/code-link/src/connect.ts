@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
+import { CURSOR_HOOK_SCRIPT, cursorHookScript, withCursorHooks } from "@tomradex/engine-cursor";
 import { opencodePlugin, withMcpEntry } from "@tomradex/engine-opencode";
 import { outsideExtension } from "@tomradex/engine-pi";
 import { HOOK_EVENTS } from "./sessions.js";
@@ -22,7 +23,7 @@ const CODEX_END = "# END TOMRADE MCP";
 export const CODEX_HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PermissionRequest", "Stop", "SessionEnd"] as const;
 
 /** Agents whose committed hooks name themselves; Claude Code's carry no header. */
-export type HookAgent = "codex" | "workbuddy";
+export type HookAgent = "codex" | "workbuddy" | "cursor";
 
 /** Pi has no command hooks: a project extension registers the server and reports instead. */
 export const PI_EXTENSION = ".pi/extensions/tomrade.ts";
@@ -76,8 +77,8 @@ export function tomradeSection(input: ConnectInput, options: { fetchRules?: bool
     SECTION_START,
     "",
     `The backlog for this repository lives in Tomrade (project "${input.projectName}"), reachable as the \`tomrade\` MCP server (\`.mcp.json\` for Claude Code and WorkBuddy, \`.codex/config.toml\` for Codex, \`.pi/extensions/tomrade.ts\` for Pi, \`opencode.json\` for OpenCode).`,
-    "Claude Code, Codex and WorkBuddy report session lifecycle through repository hooks, Pi through that extension and OpenCode through `.opencode/plugins/tomrade.js`. In Codex, trust the project and review the new hooks with `/hooks`, then start a new session; older Codex versions without hooks must be upgraded. Pi loads the extension once you trust the project. No `notify` setting is changed.",
-    "Cursor uses `.cursor/mcp.json`; Gemini CLI uses `.gemini/settings.json`. Neither reports its lifecycle, but once it calls `claim_ticket` Tomrade follows the session through its MCP connection: later calls on that connection need no key. Use `note_progress` only when the claim's result says `tracking.tracked` is true.",
+    "Claude Code, Codex, WorkBuddy and Cursor report session lifecycle through repository hooks, Pi through that extension and OpenCode through `.opencode/plugins/tomrade.js`. In Codex, trust the project and review the new hooks with `/hooks`, then start a new session; older Codex versions without hooks must be upgraded. Pi loads the extension once you trust the project. No `notify` setting is changed.",
+    "Cursor uses `.cursor/mcp.json`, and `.cursor/hooks.json` runs `.cursor/hooks/tomrade.sh`. Gemini CLI uses `.gemini/settings.json` and does not report its lifecycle, but once it calls `claim_ticket` Tomrade follows the session through its MCP connection: later calls on that connection need no key. Use `note_progress` only when the claim's result says `tracking.tracked` is true.",
     `For other MCP-capable agents, add a Streamable HTTP server named \`tomrade\` with URL ${input.mcpUrl} in that agent's own settings. No configuration is generated for other tools; reading AGENTS.md alone supplies instructions, not MCP tools or session tracking.`,
     "Not every session works on a ticket, and not every ticket involves code. Work without a ticket is fine: never ask for one before starting, and never invent one.",
     ...(options.fetchRules ? ["Before your first reply in every session, call the `tomrade` MCP tool `get_project_rules` and follow what it returns throughout: the person keeps rules there for every agent in this project."] : []),
@@ -157,7 +158,8 @@ function readJson(file: string): Record<string, unknown> | null {
  * `.claude/settings.json` and WorkBuddy's `.codebuddy/settings.json` gain one
  * hook per lifecycle event that posts to Tomrade; WorkBuddy reads `.mcp.json`
  * and AGENTS.md as they are; Pi gains a project extension that does both, and
- * OpenCode a `tomrade` server in opencode.json and a reporting plugin.
+ * OpenCode a `tomrade` server in opencode.json and a reporting plugin;
+ * Cursor's `.cursor/hooks.json` runs a script that posts the same way.
  * Everything else in each file is kept as it was.
  * Returns the files that changed.
  */
@@ -270,6 +272,26 @@ export function writeConnectFiles(root: string, input: ConnectInput): string[] {
       fs.writeFileSync(settingsFile, JSON.stringify({ ...settings, hooks }, null, 2) + "\n");
       changed.push(name);
     }
+  }
+  const cursorHooksFile = path.join(root, ".cursor", "hooks.json");
+  const cursorHooksExisting = fs.existsSync(cursorHooksFile) ? fs.readFileSync(cursorHooksFile, "utf8") : "";
+  let cursorHooksText: string;
+  try {
+    cursorHooksText = withCursorHooks(cursorHooksExisting);
+  } catch {
+    throw new Error("Cannot update .cursor/hooks.json: expected a JSON object");
+  }
+  if (cursorHooksText !== cursorHooksExisting) {
+    fs.mkdirSync(path.dirname(cursorHooksFile), { recursive: true });
+    fs.writeFileSync(cursorHooksFile, cursorHooksText);
+    changed.push(".cursor/hooks.json");
+  }
+  const cursorScriptFile = path.join(root, CURSOR_HOOK_SCRIPT);
+  const cursorScriptText = cursorHookScript(hookCommand(input.eventUrl, "cursor"));
+  if (!fs.existsSync(cursorScriptFile) || fs.readFileSync(cursorScriptFile, "utf8") !== cursorScriptText) {
+    fs.mkdirSync(path.dirname(cursorScriptFile), { recursive: true });
+    fs.writeFileSync(cursorScriptFile, cursorScriptText, { mode: 0o755 });
+    changed.push(CURSOR_HOOK_SCRIPT);
   }
   return changed;
 }

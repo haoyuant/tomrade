@@ -1,0 +1,35 @@
+{
+  "name": "@tomradex/engine-cursor",
+  "private": true,
+  "license": "BUSL-1.1",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Cursor's CLI (cursor-agent), started only in a terminal: its user-level MCP connection, the hooks a connected repository carries, and worker calls",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomradex/agent": "workspace:*",
+    "@tomradex/engine-claude-code": "workspace:*",
+    "@tomradex/llm": "workspace:*",
+    "@tomradex/mcp": "workspace:*",
+    "cordis": "4.0.0-rc.8"
+  },
+  "devDependencies": {
+    "@tomradex/settings": "workspace:*",
+    "@tomradex/testkit": "workspace:*",
+    "@tomradex/tools": "workspace:*",
+    "@types/node": "^26.2.0",
+    "typescript": "^6.0.0",
+    "vitest": "^3.2.7"
+  }
+}

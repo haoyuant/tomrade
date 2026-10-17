@@ -6,7 +6,7 @@ Connecting a repository writes a `tomrade/connect` branch and offers a pull requ
 | --- | --- | --- |
 | Claude Code | `.mcp.json`, `.claude/settings.json` | Lifecycle hooks, including start and end |
 | Codex CLI | `.codex/config.toml` | Lifecycle hooks, including start and end; requires a hooks-capable version, a trusted project and review through `/hooks` |
-| Cursor | `.cursor/mcp.json` | No lifecycle hooks; followed through its MCP connection once it claims a ticket |
+| Cursor | `.cursor/mcp.json`, `.cursor/hooks.json`, `.cursor/hooks/tomrade.sh` | Lifecycle hooks, including start and end; its own sessions reach Tomrade once Settings → Cursor connects `~/.cursor/mcp.json` |
 | Gemini CLI | `.gemini/settings.json` using `httpUrl` | No lifecycle hooks; followed through its MCP connection once it claims a ticket |
 
 `CLAUDE.md` and `AGENTS.md` explain ticket ownership and when progress reporting is available. Codex also gets the `tomrade-sync` skill.
@@ -22,4 +22,5 @@ Configuration references checked on 2026-10-15:
 - [Codex hooks and trust](https://learn.chatgpt.com/docs/hooks): project inline TOML hooks and their input fields.
 - [Codex notify](https://learn.chatgpt.com/docs/config-file/config-advanced#notifications): turn-completion notifications.
 - [Cursor MCP](https://cursor.com/docs/mcp): project `.cursor/mcp.json`, remote `url`.
+- [Cursor hooks](https://cursor.com/docs/agent/hooks): project `.cursor/hooks.json`, version 1; payloads checked against cursor-agent 2026.10.16 on 2026-10-17. Cursor skips a hook whose command names `curl` or `wget`, so the hook runs a committed script that does.
 - [Gemini CLI MCP](https://geminicli.com/docs/tools/mcp-server/): project `.gemini/settings.json`, Streamable HTTP `httpUrl`.

@@ -284,6 +284,10 @@ plugins:
   - id: engine-opencode
     name: "@tomradex/engine-opencode"
     implements: [engine]
+  # Cursor's CLI (`cursor-agent`), started only in a terminal.
+  - id: engine-cursor
+    name: "@tomradex/engine-cursor"
+    implements: [engine]
   # WorkBuddy's CLI (CodeBuddy Code): `codebuddy` on PATH, else the copy inside the WorkBuddy app.
   - id: engine-workbuddy
     name: "@tomradex/engine-workbuddy"

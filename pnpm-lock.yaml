@@ -77,6 +77,9 @@ importers:
       '@tomradex/engine-codex':
         specifier: workspace:*
         version: link:../../packages/engine-codex
+      '@tomradex/engine-cursor':
+        specifier: workspace:*
+        version: link:../../packages/engine-cursor
       '@tomradex/engine-dsh':
         specifier: workspace:*
         version: link:../../packages/engine-dsh
@@ -475,6 +478,9 @@ importers:
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
+      '@tomradex/engine-cursor':
+        specifier: workspace:*
+        version: link:../engine-cursor
       '@tomradex/engine-opencode':
         specifier: workspace:*
         version: link:../engine-opencode
@@ -777,6 +783,43 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@tomradex/testkit':
+        specifier: workspace:*
+        version: link:../testkit
+      '@tomradex/tools':
+        specifier: workspace:*
+        version: link:../tools
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+      vitest:
+        specifier: ^3.2.7
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@26.2.0)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@8.1.1)(yaml@2.9.0)
+
+  packages/engine-cursor:
+    dependencies:
+      '@tomradex/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@tomradex/engine-claude-code':
+        specifier: workspace:*
+        version: link:../engine-claude-code
+      '@tomradex/llm':
+        specifier: workspace:*
+        version: link:../llm
+      '@tomradex/mcp':
+        specifier: workspace:*
+        version: link:../mcp
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+    devDependencies:
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
       '@tomradex/testkit':
         specifier: workspace:*
         version: link:../testkit
