@@ -749,11 +749,17 @@ export class Storage extends Service {
     const dir = first.dir;
     this.appendTail(projectId);
     // Someone else's change may be sitting in the folder; take it (merging if
-    // need be) before writing over it.
+    // need be) before writing over it. A folder that does not read cleanly —
+    // mid-sync, conflicted, from a newer build — is left as it is: written over,
+    // another machine would take our snapshot for its own work undone.
     if (hasArtifact(dir) && reason !== "merge") {
       const { state: onDisk, problem } = this.readFolder(dir, this.verifies(projectId));
-      if (problem?.state === "syncing") return false;
-      if (onDisk && (onDisk.manifest.snapshot?.digest ?? digestState(onDisk)) !== first.lastPublishedDigest) await this.refresh(projectId);
+      if (problem) return false;
+      if (onDisk && (onDisk.manifest.snapshot?.digest ?? digestState(onDisk)) !== first.lastPublishedDigest) {
+        await this.refresh(projectId);
+        // A pull during the refresh may have brought in what this build cannot read.
+        if (hasArtifact(dir) && this.readFolder(dir, this.verifies(projectId)).problem) return false;
+      }
     }
     // A quit never waits on the network; it goes by the last answer.
     if (!opts.leaving) await this.checkVisibility(projectId);

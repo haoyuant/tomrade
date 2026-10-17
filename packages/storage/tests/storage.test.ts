@@ -8,7 +8,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import type { Context } from "cordis";
 import { z } from "zod";
 import { fresh, settle } from "@tomradex/testkit";
@@ -375,6 +375,53 @@ describe("ctx.storage", () => {
     expect(read(dir, "state/items.jsonl")).toMatch(/After/);
     expect(fs.existsSync(path.join(dir, older))).toBe(true);
     expect((await storage.statusFor(project.id)).state).toBe("synced");
+  });
+
+  it("never writes over a folder it cannot read: from a newer build, with conflict markers, or with a line cut short", async () => {
+    const { storage, items, board, project, dir } = await machine();
+    items.create({ title: "Published", projectId: project.id, boardId: board.id, by: "human" });
+    await storage.publish(project.id);
+    const manifestFile = path.join(dir, ARTIFACT_DIR, "project.json");
+    const itemsFile = path.join(dir, ARTIFACT_DIR, "state", "items.jsonl");
+    const filesOf = () => Object.fromEntries((fs.readdirSync(dir, { recursive: true }) as string[]).filter((rel) => fs.statSync(path.join(dir, rel)).isFile()).map((rel) => [rel, fs.readFileSync(path.join(dir, rel), "utf8")]));
+    const newer = (manifest: string) => fs.writeFileSync(manifestFile, JSON.stringify({ ...JSON.parse(manifest), schemaVersion: JSON.parse(manifest).schemaVersion + 1 }, null, 2) + "\n");
+    const cases: [(manifest: string, rows: string) => void, object][] = [
+      [newer, { state: "error", detail: expect.stringContaining("Update Tomrade") }],
+      [(_, rows) => fs.writeFileSync(itemsFile, `<<<<<<< HEAD\n${rows}=======\n${rows}>>>>>>> origin/main\n`), { state: "error", detail: expect.stringContaining("conflict markers") }],
+      [(_, rows) => fs.writeFileSync(itemsFile, rows.slice(0, -12)), { state: "syncing" }]
+    ];
+    for (const [damage, status] of cases) {
+      const manifest = fs.readFileSync(manifestFile, "utf8");
+      const rows = fs.readFileSync(itemsFile, "utf8");
+      items.create({ title: "Ours", projectId: project.id, boardId: board.id, by: "human" });
+      damage(manifest, rows);
+      const damaged = filesOf();
+      expect(await storage.publish(project.id)).toMatchObject(status);
+      expect(filesOf()).toEqual(damaged);
+      // Once it reads cleanly again, the write goes through.
+      fs.writeFileSync(manifestFile, manifest);
+      fs.writeFileSync(itemsFile, rows);
+      expect((await storage.publish(project.id)).state).toBe("synced");
+    }
+    // A line cut short is a file still arriving, even where the digest is not checked.
+    const rows = fs.readFileSync(itemsFile, "utf8");
+    fs.writeFileSync(itemsFile, rows.slice(0, -12));
+    expect(() => readArtifact(dir, { verify: false })).toThrow(TornArtifactError);
+    fs.writeFileSync(itemsFile, rows);
+    // The folder moved, and taking it in pulls what this build cannot read: that is not written over either.
+    const moved = readArtifact(dir)!;
+    moved.tables.items[0].title = "Renamed elsewhere";
+    moved.manifest.snapshot!.digest = digestState(moved);
+    writeArtifact(dir, moved);
+    items.create({ title: "Ours", projectId: project.id, boardId: board.id, by: "human" });
+    let pulled = {};
+    vi.spyOn(storage, "refresh").mockImplementationOnce(async () => {
+      newer(fs.readFileSync(manifestFile, "utf8"));
+      pulled = filesOf();
+      return storage.statusFor(project.id);
+    });
+    expect(await storage.publish(project.id)).toMatchObject({ state: "error" });
+    expect(filesOf()).toEqual(pulled);
   });
 
   it("never opens one project over another's folder", async () => {

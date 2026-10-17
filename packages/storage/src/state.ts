@@ -360,7 +360,13 @@ export function parseArtifact(files: ArtifactFiles, where: string, opts: { verif
       .filter((l) => l.trim().length > 0)
       .map((l) => {
         if (MARKERS.test(l)) throw new ConflictMarkersError(where);
-        const row = JSON.parse(l) as Record<string, unknown>;
+        let row: Record<string, unknown>;
+        try {
+          row = JSON.parse(l) as Record<string, unknown>;
+        } catch {
+          // A line cut short: the file is still arriving, like a digest that does not match yet.
+          throw new TornArtifactError(where);
+        }
         return columns ? pick(row, columns) : row;
       });
 
