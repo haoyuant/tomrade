@@ -4,6 +4,7 @@ import path from "node:path";
 import type { Context } from "cordis";
 import { chosenCommand, cliLentModel, NotSignedIn, runJsonl, type CliLocator } from "@tomradex/engine-claude-code";
 import { transcriptOf, type LentModel } from "@tomradex/llm";
+import { GEMINI_SIGN_IN } from "./auth.js";
 
 /** Gemini CLI's exit code for a sign-in it cannot finish without a person. */
 const AUTH_EXIT = 41;
@@ -117,7 +118,9 @@ export function geminiLentModel(ctx: Context, opts: { cli: CliLocator; found(): 
         });
         const { code, stderr } = await run.done;
         if (session) forgetSession(geminiDir(), cwd, session);
-        if (code === AUTH_EXIT) throw new NotSignedIn(`Gemini CLI is not signed in (${failure ?? lastLine(stderr)}) — run \`gemini\` and sign in with a Google account`);
+        // Google refuses a personal Google sign-in now, which reads as any other failure.
+        if (code === AUTH_EXIT || /no longer supported for Gemini Code Assist for individuals/i.test(`${failure ?? ""}\n${stderr}`))
+          throw new NotSignedIn(`Gemini CLI is not signed in (${failure ?? lastLine(stderr)}) — ${GEMINI_SIGN_IN}`);
         if (failure || code !== 0 || (!text && said)) throw new Error(`Gemini CLI could not answer: ${failure ?? said ?? (lastLine(stderr) || `exit ${code}`)}`);
       } finally {
         fs.rmSync(tmp, { recursive: true, force: true });

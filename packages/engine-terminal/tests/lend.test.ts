@@ -66,5 +66,12 @@ it("is not ready while Gemini CLI cannot sign in without a person, and says how 
   const { lent, log, ask } = setup();
   fs.writeFileSync(log + ".signed-out", "");
   expect(await lent.ready()).toBe(false);
-  await expect(ask("plan it")).rejects.toThrow(/Gemini CLI is not signed in \(Manual authorization is required.*\) — run `gemini` and sign in/);
+  await expect(ask("plan it")).rejects.toThrow(/Gemini CLI is not signed in \(Manual authorization is required.*\) — run `gemini`, enter \/auth and choose Use Gemini API Key/);
+}, 30_000);
+
+it("takes Google's refusal of a personal sign-in as not signed in, and points at an API key", async () => {
+  const { lent, log, ask } = setup();
+  fs.writeFileSync(log + ".personal", "");
+  await expect(ask("plan it")).rejects.toThrow(/Gemini CLI is not signed in .* Use Gemini API Key .* Settings → Assistant/);
+  expect(await lent.ready()).toBe(false);
 }, 30_000);
