@@ -14,6 +14,8 @@ import { Tools } from "@tomradex/tools";
 import { Settings } from "@tomradex/settings";
 import { Agent } from "@tomradex/agent";
 import { ARTIFACT_DIR, Storage, readHubManifest, readLogs } from "@tomradex/storage";
+import { Contributions } from "@tomradex/contributions";
+import { Inbox } from "@tomradex/inbox";
 import { Onboarding, PATH, SAMPLE } from "@tomradex/onboarding";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-onboarding-"));
@@ -43,6 +45,40 @@ describe("the sample project", () => {
 
     const byKey = new Map(words.tickets.map((t) => [t.key, tickets.find((x) => x.title === t.title)!]));
     for (const [from, to] of PATH) expect(byKey.get(from)!.blocks).toContain(byKey.get(to)!.id);
+  });
+
+  it("lays every tour ticket on one learning path from the first, the same in both languages", () => {
+    for (const words of [SAMPLE.en, SAMPLE.zh]) {
+      const keys = words.tickets.map((t) => t.key);
+      expect(PATH.flat().every((k) => keys.includes(k))).toBe(true);
+      const reached = new Set([keys[0]]);
+      for (let grew = true; grew; ) {
+        grew = false;
+        for (const [from, to] of PATH) if (reached.has(from) && !reached.has(to)) { reached.add(to); grew = true; }
+      }
+      expect([...reached].sort()).toEqual([...keys].sort());
+    }
+    expect(SAMPLE.zh.tickets.map((t) => t.key)).toEqual(SAMPLE.en.tickets.map((t) => t.key));
+    expect(SAMPLE.zh.feedback.map((f) => [f.key, f.kind])).toEqual(SAMPLE.en.feedback.map((f) => [f.key, f.kind]));
+  });
+
+  it("leaves the tour's feedback in the inbox to triage, from the tour as its source, once", async () => {
+    const { ctx, project, items, boards } = await fresh({ firstRun: "none", plugins: [[Onboarding, { locale: "zh" }], Contributions, [Inbox, { pullMs: 3_600_000 }]] });
+    await settle();
+    const waiting = ctx.inbox.list(project.id);
+    expect(waiting.map((e) => [e.title, e.kind, e.source])).toEqual(
+      expect.arrayContaining(SAMPLE.zh.feedback.map((f) => [f.title, f.kind, SAMPLE.zh.name]))
+    );
+    expect(waiting).toHaveLength(SAMPLE.zh.feedback.length);
+
+    // The exercise's merge target is there.
+    const example = boards.list(project.id)[1];
+    expect(items.list({ projectId: project.id, boardId: example.id }).map((i) => i.title)).toContain("设置页");
+
+    // A sample made while the inbox is already running gets its own, and nothing is added twice.
+    ctx.projects.remove(project.id);
+    const again = ctx.onboarding.createSample("en");
+    expect(ctx.inbox.list(again.id).map((e) => e.title).sort()).toEqual(SAMPLE.en.feedback.map((f) => f.title).sort());
   });
 
   it("leaves nothing in History: the seed is how it began, not something to undo", async () => {

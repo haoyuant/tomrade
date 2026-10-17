@@ -13,6 +13,7 @@
     { "path": "../db" },
     { "path": "../domain" },
     { "path": "../hub" },
+    { "path": "../inbox" },
     { "path": "../ipc" },
     { "path": "../items" },
     { "path": "../projects" },

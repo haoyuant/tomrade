@@ -1765,6 +1765,9 @@ importers:
       '@tomradex/hub':
         specifier: workspace:*
         version: link:../hub
+      '@tomradex/inbox':
+        specifier: workspace:*
+        version: link:../inbox
       '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
