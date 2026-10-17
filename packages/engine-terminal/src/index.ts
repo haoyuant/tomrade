@@ -1,8 +1,8 @@
 import type { Context } from "cordis";
 import { z } from "zod";
-import type { Engine, EngineSetup } from "@tomradex/agent";
+import type { Engine } from "@tomradex/agent";
 import { createAcpEngine, PERMISSION_CHOICES, type AcpAgent } from "@tomradex/engine-acp";
-import { localAvailability, localCli } from "@tomradex/engine-claude-code";
+import { localCli } from "@tomradex/engine-claude-code";
 import type {} from "@tomradex/llm";
 import type {} from "@tomradex/mcp";
 import { geminiLentModel } from "./lend.js";
@@ -42,52 +42,6 @@ export const gemini: AcpAgent<GeminiOptions> = {
   signIn: "run `gemini`, enter /auth and choose Use Gemini API Key (or Vertex AI)"
 };
 
-/** A CLI agent Tomrade knows how to start in a terminal; Code link holds its command template. */
-export interface TerminalAgent {
-  id: string;
-  title: string;
-  /** The executable a terminal would run. */
-  bin: string;
-  /** The English tail of "not found — …". */
-  install: string;
-  setup: EngineSetup;
-}
-
-export const TERMINAL_AGENTS: TerminalAgent[] = [
-  {
-    id: "opencode", title: "OpenCode", bin: "opencode", install: "install OpenCode (curl -fsSL https://opencode.ai/install | bash) and add a provider",
-    setup: {
-      install: process.platform === "win32" ? ["npm install -g opencode-ai"] : ["curl -fsSL https://opencode.ai/install | bash", "npm install -g opencode-ai"],
-      signIn: "opencode auth login",
-      signInRuns: true,
-      docs: "https://opencode.ai/docs/"
-    }
-  }
-];
-
-/**
- * Started only where the person can see it: Start hands it the ticket in a
- * terminal with Tomrade's MCP server configured for that one session. There is
- * no in-app turn to take — every run of it is the person's terminal.
- */
-export function createTerminalEngine(ctx: Context, agent: TerminalAgent): Engine {
-  const cli = localCli(agent.bin);
-  return {
-    id: agent.id,
-    title: agent.title,
-    author: `ai:${agent.id}`,
-    capabilities: ["code", "general"],
-    terminalOnly: true,
-    setup: agent.setup,
-    picks: () => [{ key: "model", title: "Model", choices: [], freeText: true }],
-    available: localAvailability(ctx, { engineId: agent.id, title: agent.title, cli, install: agent.install }),
-    checkCli: (file) => cli.check(file),
-    async turn() {
-      return { stop: "error", error: `${agent.title} runs only in a terminal — start the ticket "In a terminal"` };
-    }
-  };
-}
-
 export function createGeminiEngine(ctx: Context): Engine {
   return createAcpEngine(ctx, gemini);
 }
@@ -98,9 +52,8 @@ export default {
   apply(ctx: Context) {
     const engine = createGeminiEngine(ctx);
     ctx.agent.engine(engine);
-    // Gemini CLI answers one prompt headless, so its Google sign-in can do worker calls too; OpenCode is not lent yet.
+    // Gemini CLI answers one prompt headless, so its sign-in can do worker calls too.
     ctx.inject(["llm"], (ctx) => ctx.effect(() => ctx.llm.lend(geminiLentModel(ctx, { cli: gemini.cli, found: async () => (await engine.available()).ok }))));
-    for (const agent of TERMINAL_AGENTS) ctx.agent.engine(createTerminalEngine(ctx, agent));
   }
 };
 

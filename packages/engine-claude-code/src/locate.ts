@@ -353,6 +353,8 @@ export async function knownDirs(host: CliHost): Promise<string[]> {
     p.join(home, ".volta/bin"),
     p.join(home, ".bun/bin"),
     p.join(home, ".claude/local"),
+    // OpenCode's own installer.
+    p.join(home, ".opencode/bin"),
     ...(platform === "darwin" ? [p.join(home, "Library/pnpm")] : [p.join(home, ".local/share/pnpm")]),
     ...versionDirs(p.join(env.NVM_DIR ?? p.join(home, ".nvm"), "versions/node"), "bin", p),
     ...versionDirs(env.FNM_DIR ? p.join(env.FNM_DIR, "node-versions") : undefined, "installation/bin", p),

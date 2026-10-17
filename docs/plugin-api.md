@@ -683,12 +683,13 @@ HTTP MCP server in `session/new`, reopens a stored session with
 for the turn's policy — Tomrade's own tools always, the person in "ask" mode,
 a refusal for anything but reading in "read-only" and backlog turns. ACP has no
 system prompt, so a session's first message carries Tomrade's instructions.
-`engine-hermes` (`hermes acp`), `engine-dsh` (`dsh --profile acp`) and
-`engine-workbuddy` (`codebuddy --acp`, also the copy inside the WorkBuddy app,
-run by that app's Electron binary) are thin descriptions on top of it. An
+`engine-hermes` (`hermes acp`), `engine-dsh` (`dsh --profile acp`),
+`engine-opencode` (`opencode acp`) and `engine-workbuddy` (`codebuddy --acp`,
+also the copy inside the WorkBuddy app, run by that app's Electron binary) are
+thin descriptions on top of it. An
 engine that runs only inside Tomrade sets `terminal: false`, and Start offers
 it no terminal session; the reverse, `terminalOnly: true`, is a CLI Tomrade only
-ever starts in a terminal (Gemini CLI and OpenCode, from `@tomradex/engine-terminal`):
+ever starts in a terminal (Gemini CLI, from `@tomradex/engine-terminal`):
 Start offers it no in-app run, the panel never conducts with it, and Code
 link's command template hands it a session-only MCP config. An engine that runs
 on the model profiles set up in Tomrade (the loop, the built-in agent) sets

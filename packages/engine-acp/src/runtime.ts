@@ -476,8 +476,9 @@ export class AcpRuntime implements Runtime {
   /** A prompt's own usage: this turn's, or the session's running total less what was already counted. */
   private account(usage: Json | null | undefined, add: (sample: RequestUsage) => void): void {
     if (!usage || typeof usage.inputTokens !== "number" || (this.agent.usage !== "turn" && this.agent.usage !== "session")) return;
+    const apart = this.agent.cacheApart ? (usage.cachedReadTokens ?? 0) + (usage.cachedWriteTokens ?? 0) : 0;
     const total: RequestUsage = {
-      input: usage.inputTokens, output: usage.outputTokens ?? 0,
+      input: usage.inputTokens + apart, output: usage.outputTokens ?? 0,
       ...(typeof usage.cachedReadTokens === "number" ? { cacheRead: usage.cachedReadTokens } : {}),
       ...(typeof usage.cachedWriteTokens === "number" ? { cacheWrite: usage.cachedWriteTokens } : {})
     };

@@ -45,7 +45,7 @@ process.env.GEMINI_CLI_HOME = path.join(work, "gemini-home");
 fs.writeFileSync(codebuddy.log + ".signed-out", "");
 
 const run = async () => {
-  const others = ["engine-codex", "engine-pi", "engine-hermes", "engine-dsh"];
+  const others = ["engine-codex", "engine-pi", "engine-hermes", "engine-dsh", "engine-opencode"];
   const { ctx } = await boot({ configFile: path.join(dir, "../tomrade.yml"), vars: { userData: work }, patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, { id: "attention", config: { notify: false } }, ...others.map((id) => ({ id, disabled: true }))]] });
   ctx.hub.configure(path.join(work, "hub"));
   await ctx.storage.ready;

@@ -1036,7 +1036,7 @@ export class CodeLink extends Service {
       });
       const agents = inspectConnectFiles(worktree, mcp.urlFor(projectId)!, mcp.eventUrl!).agents;
       const folder = new GitFolder(this.git, worktree);
-      const committed = files.length > 0 && (await folder.commit("Connect this repository to Tomrade\n\nProject MCP config lets Claude Code, Codex and WorkBuddy discover Tomrade, a project extension does it for Pi, agent instructions describe the ticket conventions, and their hooks report session lifecycle back."));
+      const committed = files.length > 0 && (await folder.commit("Connect this repository to Tomrade\n\nProject MCP config lets Claude Code, Codex and WorkBuddy discover Tomrade, a project extension does it for Pi and opencode.json with a plugin for OpenCode, agent instructions describe the ticket conventions, and their hooks report session lifecycle back."));
 
       if (!(await folder.remoteUrl())) return { branch, agents, files, committed, pushed: false, url: null, message: w.connectLocal(branch, repo.defaultBranch) };
       if (state && !state.agentPush) return { branch, agents, files, committed, pushed: false, url: null, message: w.connectPushOff(branch) };
@@ -1047,7 +1047,7 @@ export class CodeLink extends Service {
       if (await commandOk("gh")) {
         const env = await this.ctx.github.environment(this.git, worktree);
         try {
-          url = (await exec("gh", ["pr", "create", "--head", branch, "--base", repo.defaultBranch, "--title", "Connect this repository to Tomrade", "--body", `Adds ${files.join(", ")} to connect agent tools and Claude Code/Codex/WorkBuddy/Pi lifecycle reports. Review Codex hooks with /hooks after merging.`], worktree, env)).trim().split("\n").pop() ?? null;
+          url = (await exec("gh", ["pr", "create", "--head", branch, "--base", repo.defaultBranch, "--title", "Connect this repository to Tomrade", "--body", `Adds ${files.join(", ")} to connect agent tools and Claude Code/Codex/WorkBuddy/Pi/OpenCode lifecycle reports. Review Codex hooks with /hooks after merging.`], worktree, env)).trim().split("\n").pop() ?? null;
           created = !!url;
         } catch {
           try {
@@ -1951,7 +1951,7 @@ export class CodeLink extends Service {
   private externalEvent(payload: unknown): void {
     const p = (payload ?? {}) as { hook_event_name?: string; session_id?: string; cwd?: string; transcript_path?: string; tomrade_agent?: string };
     if (!p.cwd || !p.session_id) return;
-    const agent = p.tomrade_agent === "codex" || p.tomrade_agent === "workbuddy" || p.tomrade_agent === "pi" || p.tomrade_agent === "hermes" ? p.tomrade_agent : "claude-code";
+    const agent = p.tomrade_agent === "codex" || p.tomrade_agent === "workbuddy" || p.tomrade_agent === "pi" || p.tomrade_agent === "hermes" || p.tomrade_agent === "opencode" ? p.tomrade_agent : "claude-code";
     // Where the transcript lives tells which of the person's Claude Code accounts ran it.
     if (agent === "claude-code" && typeof p.transcript_path === "string") this.ctx.get("agent")?.engineOf("claude-code")?.mcpLink?.sawTranscript?.(p.transcript_path);
     const cwd = path.resolve(p.cwd);

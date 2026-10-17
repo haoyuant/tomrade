@@ -237,6 +237,10 @@ describe("an ACP agent as an engine", () => {
     expect(sent("session/set_model").map((r) => r.params.modelId)).toEqual(["openrouter:b"]);
     expect(blocks.filter((b) => b.type === "note")).toEqual([]);
     expect(engine.picks!()[0]!.choices).toEqual([{ value: "openrouter:a", label: "a" }, { value: "openrouter:b", label: "b" }]);
+    // An agent whose inputTokens leaves out the cache (OpenCode) has it added back.
+    const apart = await createAcpEngine(ctx, spec({ httpMcp: "always", reopen: "load", usage: "turn", cacheApart: true })).turn(input, turnIO().io);
+    expect(apart.usage).toEqual({ inputTokens: 60, outputTokens: 5 });
+    expect(apart.metrics).toMatchObject({ cacheReadTokens: 10, uncachedInputTokens: 50 });
 
     const second = createAcpEngine(ctx, spec({ httpMcp: "always", reopen: "load", usage: "turn" }));
     const resumed = turnIO();

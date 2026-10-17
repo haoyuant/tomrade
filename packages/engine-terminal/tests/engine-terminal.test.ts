@@ -6,7 +6,7 @@ import { Agent, type TurnInput } from "@tomradex/agent";
 import { Mcp } from "@tomradex/mcp";
 import engineTerminal, { gemini, geminiCallName } from "@tomradex/engine-terminal";
 
-it("registers Gemini CLI as an in-app agent that also takes a ticket in a terminal, and OpenCode as terminal-only", async () => {
+it("registers Gemini CLI as an in-app agent that also takes a ticket in a terminal", async () => {
   const { ctx } = await fresh({ plugins: [Tools, [Settings, { path: `/tmp/tomrade-engine-terminal-${Date.now()}.json` }], Agent, [Mcp, { port: 0 }], engineTerminal] });
   await settle();
   try {
@@ -16,8 +16,7 @@ it("registers Gemini CLI as an in-app agent that also takes a ticket in a termin
     expect(view?.terminalOnly).toBeUndefined();
     expect(view?.terminal).toBeUndefined();
     expect(view?.permissionModes?.choices.map((c) => c.value)).toEqual(["full-access", "ask", "read-only"]);
-    expect(views.find((v) => v.id === "opencode")).toMatchObject({ capabilities: ["code", "general"], terminalOnly: true });
-    expect(ctx.agent.codeEngines().map((e) => e.id)).toEqual(expect.arrayContaining(["gemini", "opencode"]));
+    expect(ctx.agent.codeEngines().map((e) => e.id)).toEqual(["gemini"]);
   } finally {
     await ctx.fiber.dispose();
   }
