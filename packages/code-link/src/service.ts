@@ -276,7 +276,7 @@ const SETTINGS_SECTION = {
       title: "代码关联",
       description: "用哪个终端打开工作项，以及在终端里怎样调用 Claude Code、Codex 或 Pi。命令里的 {prompt}、{mcpConfig}、{mcpUrl}、{settings}、{piExtension}、{resume}、{options}（开始时选的模型和推理强度）和 {cwd} 会自动填入。",
       fields: {
-        terminal: { title: "终端应用", description: "Terminal、iTerm、Warp、Ghostty……凡是 `open -a` 能打开的都行。填 herdr 则在 herdr 的工作区里运行，工作项随后跟着那个 pane（brew install herdr）。填 none 则只准备好命令，供你复制。" },
+        terminal: { title: "终端应用", description: "Terminal、iTerm、Warp、Ghostty……凡是 `open -a` 能打开的都行。填 herdr 则在 herdr 的工作区里运行，工作项随后跟着那个 pane（brew install herdr；herdr 里装上 tomrade 插件——herdr plugin install haoyuant/tomrade-plugins/herdr——就能在终端里打开和认领工作项）。填 none 则只准备好命令，供你复制。" },
         claudeCommand: { title: "Claude Code 命令" },
         codexCommand: { title: "Codex 命令" },
         piCommand: { title: "Pi 命令", description: "Pi 没有 MCP 参数；{piExtension} 是只在本次会话生效的扩展，负责注册 Tomrade 的服务，并像 Claude 的 hooks 一样回报进展。" },
