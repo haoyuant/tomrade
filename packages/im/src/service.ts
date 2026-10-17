@@ -534,8 +534,11 @@ export class Im extends Service {
     }
     const dirty = new Set(this.dirty);
     this.dirty.clear();
-    for (const b of this.store.bindings()) {
+    for (let b of this.store.bindings()) {
       if (!this.authorizedBinding(b) || !this.home.db.has(b.project_id)) continue;
+      if (!this.processing.has(b.thread_id)) {
+        try { b = this.leaveArchived(b); } catch { continue; }
+      }
       if (sweep || dirty.has(b.thread_id)) {
         try { this.project(b); } catch { continue; }
       }
@@ -807,6 +810,7 @@ export class Im extends Service {
       if (event.kind === "action") {
         if (this.remoteAnswer(b, row, event.token, event.actor.id, event.value)) return;
         const cmd = this.commandOf(b, event.token, event.actor.id);
+        if (cmd === "spent") { this.accept(row); return; }
         if (cmd) { await this.choose(b, row, event.actor.id, cmd.kind, cmd.value ?? String([event.value ?? ""].flat()[0] ?? ""), reply, undefined, [event.value ?? ""].flat()[0]); return; }
         input = this.answer(b, event.token, event.actor.id, event.value);
       } else {
@@ -876,6 +880,7 @@ export class Im extends Service {
         const match = /^\/answer\s+(\S+)(?:\s+([\s\S]+))?$/.exec(text);
         if (match && this.remoteAnswer(b, row, match[1], event.actor.id, match[2])) return;
         const cmd = match && this.commandOf(b, match[1], event.actor.id);
+        if (cmd === "spent") { this.accept(row); return; }
         if (cmd) { await this.choose(b, row, event.actor.id, cmd.kind, cmd.value ?? match![2]?.trim() ?? "", reply, undefined, match![2]?.trim()); return; }
         if (match) input = this.answer(b, match[1], event.actor.id, match[2]);
         else {
@@ -1071,16 +1076,43 @@ export class Im extends Service {
     return th;
   }
 
-  /** Points the IM conversation at another thread. Only what that thread says from now on is sent; its history stays on the desktop. */
-  private rebind(b: Binding, threadId: string, cursor: number, actorId: string, also: (rebound: Binding) => void) {
+  /**
+   * Points the IM conversation at another thread. Only what that thread says from now on is sent; its history stays on the desktop.
+   * `home` is the conversation to go back to once a ticket's thread is archived; `carry` is a message that moves along, as a start's card.
+   */
+  private rebind(b: Binding, threadId: string, cursor: number, actorId: string, also: (rebound: Binding) => void, opts: { home?: string; carry?: string } = {}) {
     this.store.db.transaction(() => {
-      this.store.run("UPDATE plugin_im_outbox SET state = 'cancelled' WHERE binding_id = ? AND state IN ('queued', 'uncertain', 'failed')", b.id);
-      this.store.run("UPDATE plugin_im_actions SET consumed = 1, retired = 1 WHERE binding_id = ?", b.id);
-      this.store.run("UPDATE plugin_im_bindings SET thread_id = ?, cursor = ?, actor_id = ?, anchor = NULL WHERE id = ?", threadId, cursor, actorId, b.id);
+      this.store.run("UPDATE plugin_im_outbox SET state = 'cancelled' WHERE binding_id = ? AND state IN ('queued', 'uncertain', 'failed') AND id != ?", b.id, opts.carry ?? "");
+      if (opts.carry) this.store.run("UPDATE plugin_im_outbox SET thread_id = ? WHERE id = ? AND binding_id = ?", threadId, opts.carry, b.id);
+      this.store.run("UPDATE plugin_im_actions SET consumed = max(consumed, 1), retired = 1 WHERE binding_id = ?", b.id);
+      this.store.run("UPDATE plugin_im_bindings SET thread_id = ?, cursor = ?, actor_id = ?, anchor = NULL, home_thread = ? WHERE id = ?", threadId, cursor, actorId, opts.home ?? null, b.id);
       // What says so goes out on the new thread; one queued on the old would be dropped as stale.
       also(this.store.binding(b.id)!);
     });
     this.listed.delete(b.id);
+  }
+
+  /**
+   * The thread this conversation follows was archived — its ticket done, or put away on the desktop. It goes back to
+   * the conversation it left for the ticket, or a new one, and says so; messages waiting go to that one.
+   */
+  private leaveArchived(b: Binding): Binding {
+    const left = this.home.agent.store.thread(b.project_id, b.thread_id);
+    if (left && !left.archived) return b;
+    const back = b.home_thread ? this.home.agent.store.thread(b.project_id, b.home_thread) : undefined;
+    const target = back && !back.archived && back.surface === "assistant" ? back : this.openThread(this.settings.routes.find(r => r.id === b.route_id)!);
+    const cursor = target === back ? this.home.agent.thread(b.project_id, target.id).messages.at(-1)?.seq ?? 0 : 0;
+    const item = left?.itemId ? this.items()?.get(b.project_id, left.itemId) : null;
+    const was = item ? (item.status === "done" ? this.say(`${item.key} is done`, `${item.key} 已完成`) : this.say(`${item.key}'s session was archived`, `${item.key} 的会话已归档`))
+      : this.say(`“${left?.title || "Untitled"}” was archived`, `“${left?.title || "未命名"}”已归档`);
+    const title = target.title || this.say("Untitled", "未命名");
+    let rebound = b;
+    this.rebind(b, target.id, cursor, b.actor_id, r => {
+      rebound = r;
+      this.enqueue(r, `home:${b.id}:${b.thread_id}`, { text: target === back ? this.say(`${was}; back to “${title}”.`, `${was}，已回到“${title}”会话。`)
+        : this.say(`${was}; a new conversation started.`, `${was}，已开始新会话。`) }, { anchor: null });
+    });
+    return rebound;
   }
 
   /** A button or select a command offered; only the person it was offered to can use it. */
@@ -1099,15 +1131,18 @@ export class Im extends Service {
   }
 
   /** The command an offered token stands for, and the value it carries, or null when the token is a question's. */
-  private commandOf(b: Binding, actionToken: string, actorId: string): { kind: string; value?: string } | null {
+  private commandOf(b: Binding, actionToken: string, actorId: string): { kind: string; value?: string } | "spent" | null {
     const a = this.store.get<Action>("SELECT * FROM plugin_im_actions WHERE token = ?", actionToken);
     if (!a?.question_id.startsWith("cmd:")) return null;
     // A delivery is reviewed by whoever the conversation started with, or by anyone paired with this computer.
     const mine = a.actor_id === actorId || (a.question_id === "cmd:delivery" && this.paired(b, actorId));
+    // A second click on a card that is starting, or started, already has its answer on the card.
+    if (a.binding_id === b.id && mine && a.consumed === 2) return "spent";
     if (a.binding_id !== b.id || a.thread_id !== b.thread_id || !mine || a.expires_at < Date.now() || a.consumed) {
       this.refuse("That choice has expired or isn't yours", "该选项已失效，或不由你选择");
     }
-    this.store.run("UPDATE plugin_im_actions SET consumed = 1, retired = 1 WHERE token = ?", actionToken);
+    // A start card's selects stay live while it shows; Start spends them all.
+    if (!a.question_id.startsWith("cmd:start-set:")) this.store.run("UPDATE plugin_im_actions SET consumed = 1, retired = 1 WHERE token = ?", actionToken);
     return { kind: a.question_id.slice("cmd:".length), ...(a.value_json ? { value: JSON.parse(a.value_json) as string } : {}) };
   }
 
@@ -1280,9 +1315,11 @@ export class Im extends Service {
         await this.startCard(b, actorId, await this.withArgs(b.project_id, item, draft, [`${knob}=${chosen}`]), reply, true);
         this.accept(row); return;
       }
-      const draft = await this.draftFor(item, `start:${b.id}:${item.id}:${row.id}`);
       // A group sees what will run before it runs; so does the person who asked to adjust it.
-      if (kind === "start" && !this.isGroup(b)) await this.startNow(b, row, actorId, draft, reply);
+      const now = kind === "start" && !this.isGroup(b);
+      // Started at once, the card clicked is the one that says so.
+      const draft = await this.draftFor(item, now && given.card ? given.card : `start:${b.id}:${item.id}:${row.id}`);
+      if (now) await this.startNow(b, row, actorId, draft, reply);
       else { await this.startCard(b, actorId, draft, reply); this.accept(row); }
       return;
     }
@@ -1426,10 +1463,18 @@ export class Im extends Service {
     }
     if (general) lines.push(`${this.say("Method", "交付方式")}: ${methods.find(m => m.id === draft.playbook)?.title ?? draft.playbook ?? this.say("the ticket's", "工单默认")}`);
     if (this.isGroup(b)) lines.push(this.say("Everyone in this group will see its progress and questions.", "群里所有人都将看到它的进度和问题。"));
-    // A card changed in place keeps one live set of choices.
-    this.store.run("UPDATE plugin_im_actions SET consumed = 1, retired = 1 WHERE binding_id = ? AND question_id LIKE 'cmd:start%' AND value_json LIKE ?", b.id, `%${draft.card}%`);
+    // A card changed in place keeps its tokens, each now carrying the new settings, so a choice made before the edit shows still applies.
+    const live = new Map(this.store.all<Action>("SELECT * FROM plugin_im_actions WHERE binding_id = ? AND question_id LIKE 'cmd:start%' AND consumed = 0 AND value_json LIKE ?", b.id, `%${draft.card}%`)
+      .map(a => [a.question_id.slice("cmd:".length), a.token]));
+    const used = new Set<string>();
     const value = JSON.stringify(draft);
-    const set = (knob: string) => { const t = this.offer(b, `start-set:${knob}`, actorId); this.store.run("UPDATE plugin_im_actions SET value_json = ? WHERE token = ?", JSON.stringify(value), t); return t; };
+    const keep = (kind: string) => {
+      const t = live.get(kind) ?? this.offer(b, kind, actorId);
+      used.add(t);
+      this.store.run("UPDATE plugin_im_actions SET value_json = ?, expires_at = ? WHERE token = ?", JSON.stringify(value), Date.now() + this.config.actionTtlMs, t);
+      return t;
+    };
+    const set = (knob: string) => keep(`start-set:${knob}`);
     const selects: ImElement[] = [];
     if (this.capsOf(b)?.select) {
       if (engines.length > 1) selects.push({ type: "select", token: set("engine"), placeholder: this.say("Agent", "助手"), options: engines.slice(0, 24).map(e => ({ label: e.title, value: e.id })) });
@@ -1442,7 +1487,8 @@ export class Im extends Service {
       lines.push(this.say(`To change it: /start ${item.key} ${knobs}`, `要修改：/start ${item.key} ${knobs}`));
     }
     const content: ImContent = { text: lines.join("\n"), ...(selects.length ? { elements: selects } : {}),
-      actions: engine ? [{ label: continuing ? this.say("Continue", "继续") : this.say("Start", "开始"), token: this.offerValue(b, "start!", actorId, value), style: "primary" }] : [] };
+      actions: engine ? [{ label: continuing ? this.say("Continue", "继续") : this.say("Start", "开始"), token: keep("start!"), style: "primary" }] : [] };
+    for (const t of live.values()) if (!used.has(t)) this.store.run("UPDATE plugin_im_actions SET consumed = 1, retired = 1 WHERE token = ?", t);
     if (update) this.replace(b, draft.card, content);
     else this.enqueue(b, draft.card, content, { ...reply, visibleTo: reply.anchor ? actorId : null });
   }
@@ -1453,10 +1499,10 @@ export class Im extends Service {
   }
 
   /** Start and Adjust settings on a start card, for the person this conversation is with. */
-  private startActions(b: Binding, content: ImContent, block: Block): ImContent {
+  private startActions(b: Binding, content: ImContent, block: Block, card: string): ImContent {
     const data = block.type === "card" && block.schema === "start" ? (block.data ?? {}) as Record<string, unknown> : null;
     if (!data || typeof data.itemId !== "string" || !this.code()) return content;
-    const value = JSON.stringify({ itemId: data.itemId });
+    const value = JSON.stringify({ itemId: data.itemId, card });
     return { ...content, actions: [
       { label: this.continuing(b, data.itemId) ? this.say("Continue", "继续") : this.say("Start", "开始"), token: this.offerValue(b, "start", b.actor_id, value), style: "primary" },
       { label: this.say("Adjust settings", "调整配置"), token: this.offerValue(b, "start-adjust", b.actor_id, value) }
@@ -1479,13 +1525,22 @@ export class Im extends Service {
     }
     const address = JSON.parse(b.address_json) as ImAddress;
     const general = item.workType === "general";
-    const result = await code.start(b.project_id, item.id, { mode: "run",
-      ...(draft.engine ? { engine: draft.engine } : {}), ...(draft.options ? { options: draft.options } : {}),
-      ...(draft.permissionMode && !general ? { permissionMode: draft.permissionMode } : {}), ...(draft.playbook && general ? { playbook: draft.playbook } : {}),
-      ...(draft.allowBlocked ? { allowBlocked: true } : {}),
-      source: { connection: b.connection_id, tenant: address.tenantId, conversation: address.conversationId, actor: actorId } });
-    this.store.run("UPDATE plugin_im_actions SET consumed = 1, retired = 1 WHERE binding_id = ? AND question_id LIKE 'cmd:start%' AND value_json LIKE ?", b.id, `%${draft.card}%`);
+    // The card clicked says at once that the start is under way, and takes no more clicks.
+    this.store.run("UPDATE plugin_im_actions SET consumed = 2, retired = 1 WHERE binding_id = ? AND question_id LIKE 'cmd:start%' AND value_json LIKE ?", b.id, `%${draft.card}%`);
+    const card = (this.capsOf(b)?.cardUpdate || this.capsOf(b)?.edit) && this.store.get("SELECT 1 FROM plugin_im_outbox WHERE id = ? AND binding_id = ?", draft.card, b.id) ? draft.card : null;
+    const continuing = this.continuing(b, item.id);
+    const settle = (on: Binding, en: string, zh: string) => { if (card) this.replace(on, card, { text: this.say(en, zh) }); };
+    settle(b, continuing ? `Continuing ${item.key}…` : `Starting ${item.key}…`, continuing ? `正在继续 ${item.key}…` : `正在开工 ${item.key}…`);
+    let result: StartOutcome;
+    try {
+      result = await code.start(b.project_id, item.id, { mode: "run",
+        ...(draft.engine ? { engine: draft.engine } : {}), ...(draft.options ? { options: draft.options } : {}),
+        ...(draft.permissionMode && !general ? { permissionMode: draft.permissionMode } : {}), ...(draft.playbook && general ? { playbook: draft.playbook } : {}),
+        ...(draft.allowBlocked ? { allowBlocked: true } : {}),
+        source: { connection: b.connection_id, tenant: address.tenantId, conversation: address.conversationId, actor: actorId } });
+    } catch (e) { settle(b, `${item.key} wasn't started`, `${item.key} 未开工`); throw e; }
     if (!result.ok) {
+      settle(b, `${item.key} wasn't started`, `${item.key} 未开工`);
       if (result.gate === "blocked") {
         const on = (result.blockers ?? []).join(", ");
         this.enqueue(b, `start-blocked:${row.id}`, { text: this.say(`${item.key} waits on ${on}, still open. Start it anyway? The agent is told what it waits on.`, `${item.key} 依赖的 ${on} 还没完成。仍然开始吗？agent 会知道它在等什么。`),
@@ -1501,7 +1556,10 @@ export class Im extends Service {
     const first = result.runId ? detail.messages.find(m => m.runId === result.runId) : undefined;
     const cursor = first ? first.seq - 1 : detail.messages.at(-1)?.seq ?? 0;
     const title = (await this.headless()).find(e => e.id === result.engine)?.title ?? result.engine;
+    // Back to where this began once the ticket's thread is archived; from one ticket's thread, where that one began.
+    const home = this.home.agent.store.thread(b.project_id, b.thread_id)?.itemId ? b.home_thread ?? undefined : b.thread_id;
     this.rebind(b, result.threadId, cursor, actorId, rebound => {
+      settle(rebound, result.continued ? `Continued ${item.key} ${item.title}` : `Started ${item.key} ${item.title}`, result.continued ? `已继续 ${item.key} ${item.title}` : `已开工 ${item.key} ${item.title}`);
       if (result.runId) this.store.run("INSERT OR IGNORE INTO plugin_im_runs (binding_id, run_id) VALUES (?, ?)", rebound.id, result.runId);
       this.watchItem(rebound, item.id);
       this.accept(row);
@@ -1512,7 +1570,7 @@ export class Im extends Service {
         ...(result.warnings ?? []).map(w => `⚠ ${w}`),
         this.say("/sessions takes you back to an earlier conversation.", "/sessions 可回到之前的会话。")
       ].join("\n") }, reply);
-    });
+    }, { ...(home ? { home } : {}), ...(card ? { carry: card } : {}) });
   }
 
   private ago(at: number): string {
@@ -1545,11 +1603,12 @@ export class Im extends Service {
     this.store.db.transaction(() => {
       for (const message of detail.messages.filter(m => m.seq > b.cursor)) {
         const rendered = message.role === "agent" && this.visible(b, message.runId) ? this.render(b, message.block) : null;
-        const content = rendered && this.startActions(b, rendered, message.block);
+        const streamed = rendered && this.store.get<{ id: string }>("SELECT id FROM plugin_im_outbox WHERE binding_id = ? AND stream_of = ?", b.id, message.id);
+        const id = streamed?.id ?? `message:${b.id}:${message.id}`;
+        const content = rendered && this.startActions(b, rendered, message.block, id);
         if (content) this.watch(b, message.block);
-        const streamed = content && this.store.get<{ id: string }>("SELECT id FROM plugin_im_outbox WHERE binding_id = ? AND stream_of = ?", b.id, message.id);
-        if (streamed) this.replace(b, streamed.id, content, { final: true });
-        else if (content) this.enqueue(b, `message:${b.id}:${message.id}`, content);
+        if (streamed && content) this.replace(b, id, content, { final: true });
+        else if (content) this.enqueue(b, id, content);
         this.store.run("UPDATE plugin_im_bindings SET cursor = ? WHERE id = ?", message.seq, b.id);
       }
       this.pending(b, this.visible(b, detail.runs.at(-1)?.id ?? null) ? detail.pending : null);
