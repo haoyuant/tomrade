@@ -1,6 +1,6 @@
 import type { Block } from "@tomradex/agent";
 import type { ImContent, ImElement } from "@tomradex/plugin-sdk";
-import type { Say } from "./render.js";
+import type { ImPlainWord, ImSpeak } from "./words.js";
 
 /** Opens the object in the desktop app; the app registers the `tomrade:` scheme. */
 export const links = {
@@ -21,22 +21,24 @@ export interface CodeSummary {
 }
 export interface CodeLookup { summary(projectId: string, itemId: string): CodeSummary }
 
-export interface RenderScope { projectId: string; threadId: string; say: Say; items?: ItemLookup; code?: CodeLookup }
+export interface RenderScope { projectId: string; threadId: string; w: ImSpeak; items?: ItemLookup; code?: CodeLookup }
 
 /** How many changed tickets get a card each; the rest are counted. */
 const CARD_LIMIT = 8;
 
-const STATUS: Record<string, [string, string]> = {
-  backlog: ["Backlog", "待规划"], todo: ["Todo", "待办"], doing: ["Doing", "进行中"],
-  verifying: ["Verifying", "待验收"], done: ["Done", "已完成"], cancelled: ["Cancelled", "已取消"]
+const STATUS: Partial<Record<string, ImPlainWord>> = {
+  backlog: "statusBacklog", todo: "statusTodo", doing: "statusDoing",
+  verifying: "statusVerifying", done: "statusDone", cancelled: "statusCancelled"
 };
-const PRIORITY: [string, string][] = [["None", "无"], ["Low", "低"], ["Medium", "中"], ["High", "高"], ["Urgent", "紧急"]];
-const OP: Record<string, [string, string]> = { created: ["Created", "已创建"], updated: ["Updated", "已更新"], deleted: ["Deleted", "已删除"] };
+const PRIORITY: ImPlainWord[] = ["priorityNone", "priorityLow", "priorityMedium", "priorityHigh", "priorityUrgent"];
+const OP: Partial<Record<string, ImPlainWord>> = { created: "opCreated", updated: "opUpdated", deleted: "opDeleted" };
 
-const PR_STATE: Record<string, [string, string]> = { open: ["Open", "进行中"], merged: ["Merged", "已合并"], closed: ["Closed", "已关闭"] };
-const SESSION: Record<string, [string, string]> = {
-  running: ["Running", "运行中"], waiting: ["Waiting for you", "等你处理"], idle: ["Idle", "空闲"], error: ["Stopped", "已停止"], lost: ["Lost", "已失联"]
+const PR_STATE: Partial<Record<string, ImPlainWord>> = { open: "prOpen", merged: "merged", closed: "prClosed" };
+const SESSION: Partial<Record<string, ImPlainWord>> = {
+  running: "sessionRunning", waiting: "sessionWaiting", idle: "sessionIdle", error: "sessionError", lost: "sessionLost"
 };
+/** A stored value by its word, or as stored when it has none. */
+const named = (w: ImSpeak, word: ImPlainWord | undefined, value: string) => word ? w(word) : value;
 
 /** The code a card shows. Code link is optional: without it, or when it fails, the card is the ticket alone. */
 function codeOf(scope: RenderScope, itemId: string): CodeSummary | null {
@@ -44,39 +46,41 @@ function codeOf(scope: RenderScope, itemId: string): CodeSummary | null {
 }
 
 /** The primary branch and pull request, and the session at work, as card fields; the pull request's page as a link. */
-export function codeFields(say: Say, code: CodeSummary | null): { fields: { label: string; value: string }[]; links: { label: string; url: string }[] } {
+export function codeFields(w: ImSpeak, code: CodeSummary | null): { fields: { label: string; value: string }[]; links: { label: string; url: string }[] } {
   const primary = code?.links[0];
   const fields: { label: string; value: string }[] = [];
   const urls: { label: string; url: string }[] = [];
-  if (primary?.branch) fields.push({ label: say("Branch", "分支"), value: primary.branch });
+  if (primary?.branch) fields.push({ label: w("branch"), value: primary.branch });
   if (primary && (primary.prNumber !== null || primary.prUrl)) {
-    const state = primary.prState ? say(...PR_STATE[primary.prState]) : "";
-    fields.push({ label: say("Pull request", "PR"), value: [primary.prNumber !== null ? `#${primary.prNumber}` : "", state].filter(Boolean).join(" · ") });
-    if (primary.prUrl && /^https?:\/\//.test(primary.prUrl)) urls.push({ label: primary.prNumber !== null ? say(`Pull request #${primary.prNumber}`, `PR #${primary.prNumber}`) : say("Pull request", "PR"), url: primary.prUrl });
-  } else if (primary?.mergedSha) fields.push({ label: say("Merged", "已合并"), value: primary.mergedSha.slice(0, 7) });
+    const state = primary.prState ? named(w, PR_STATE[primary.prState], primary.prState) : "";
+    fields.push({ label: w("pullRequest"), value: [primary.prNumber !== null ? `#${primary.prNumber}` : "", state].filter(Boolean).join(" · ") });
+    if (primary.prUrl && /^https?:\/\//.test(primary.prUrl)) urls.push({ label: primary.prNumber !== null ? w("pullRequestNumber", { n: primary.prNumber }) : w("pullRequest"), url: primary.prUrl });
+  } else if (primary?.mergedSha) fields.push({ label: w("merged"), value: primary.mergedSha.slice(0, 7) });
   const session = code?.session;
-  if (session && SESSION[session.state]) fields.push({ label: say("Session", "编码会话"), value: session.blocked === "merge" ? say("Merge waits on you", "等你合并") : say(...SESSION[session.state]) });
+  const sessionWord = session && SESSION[session.state];
+  if (sessionWord) fields.push({ label: w("session"), value: session.blocked === "merge" ? w("mergeWaits") : w(sessionWord) });
   return { fields, links: urls };
 }
 
-export function statusText(say: Say, status: string): string {
-  return say(...(STATUS[status] ?? [status, status]));
+export function statusText(w: ImSpeak, status: string): string {
+  return named(w, STATUS[status], status);
 }
 
 /** A ticket as a card: key and title, its state and code, and links to its pull request and to the ticket on the desktop. */
 export function ticket(scope: RenderScope, key: string, title: string, op?: string): ImElement[] {
-  const { say } = scope;
+  const { w } = scope;
   const item = op === "deleted" ? null : scope.items?.getByKey(scope.projectId, key);
-  const code = item ? codeFields(say, codeOf(scope, item.id)) : { fields: [], links: [] };
+  const code = item ? codeFields(w, codeOf(scope, item.id)) : { fields: [], links: [] };
   const fields = item ? [
-    { label: say("Status", "状态"), value: say(...(STATUS[item.status] ?? [item.status, item.status])) },
-    { label: say("Priority", "优先级"), value: say(...(PRIORITY[item.priority] ?? [String(item.priority), String(item.priority)])) },
+    { label: w("status"), value: statusText(w, item.status) },
+    { label: w("priority"), value: named(w, PRIORITY[item.priority], String(item.priority)) },
     ...code.fields
   ] : [];
-  const verb = op && OP[op] ? `${say(...OP[op])} · ` : "";
+  const verbWord = op ? OP[op] : undefined;
+  const verb = verbWord ? `${w(verbWord)} · ` : "";
   return [
     { type: "section", title: `${verb}${key} ${item?.title ?? title}`, ...(fields.length ? { fields } : {}) },
-    ...(op === "deleted" ? [] : [{ type: "links" as const, links: [...code.links, { label: say("Open in Tomrade", "在 Tomrade 打开"), url: links.item(scope.projectId, key) }] }])
+    ...(op === "deleted" ? [] : [{ type: "links" as const, links: [...code.links, { label: w("openInTomrade"), url: links.item(scope.projectId, key) }] }])
   ];
 }
 
@@ -94,22 +98,22 @@ export function codeSeen(code: CodeSummary): CodeSeen {
 }
 
 /** The events between two sightings, as the card's headline; empty when nothing new is worth a message. */
-export function codeNews(say: Say, was: CodeSeen, now: CodeSeen, code: CodeSummary): string[] {
+export function codeNews(w: ImSpeak, was: CodeSeen, now: CodeSeen, code: CodeSummary): string[] {
   const primary = code.links[0];
   const pr = primary?.prNumber !== null && primary?.prNumber !== undefined ? ` #${primary.prNumber}` : "";
   const news: string[] = [];
-  if (now.merged && !was.merged) news.push(say("Merged", "已合并"));
-  else if (now.pr !== was.pr && primary?.prState === "open") news.push(say(`Pull request${pr} opened`, `已开 PR${pr}`));
-  else if (now.pr !== was.pr && primary?.prState === "closed") news.push(say(`Pull request${pr} closed without merging`, `PR${pr} 已关闭，未合并`));
-  if (now.blocked && !was.blocked) news.push(say("The agent couldn't merge; the merge waits on you", "agent 无法合并，需要你来合并"));
+  if (now.merged && !was.merged) news.push(w("merged"));
+  else if (now.pr !== was.pr && primary?.prState === "open") news.push(w("prOpened", { pr }));
+  else if (now.pr !== was.pr && primary?.prState === "closed") news.push(w("prClosedUnmerged", { pr }));
+  if (now.blocked && !was.blocked) news.push(w("agentCantMerge"));
   for (const p of code.proposals.filter(p => p.kind === "flag" && !was.proposals.includes(p.id))) news.push(`⚠ ${p.reason}`);
   return news;
 }
 
 /** A status change git proposes, worded for the buttons that settle it. */
-export function proposalText(say: Say, key: string, proposal: CodeSummary["proposals"][number]): string {
-  const to = proposal.toStatus ? say(...(STATUS[proposal.toStatus] ?? [proposal.toStatus, proposal.toStatus])) : "";
-  return say(`${key}: move it to ${to}?\n${proposal.reason}`, `${key}：改为「${to}」吗？\n${proposal.reason}`);
+export function proposalText(w: ImSpeak, key: string, proposal: CodeSummary["proposals"][number]): string {
+  const to = proposal.toStatus ? statusText(w, proposal.toStatus) : "";
+  return w("proposal", { key, to, reason: proposal.reason });
 }
 
 /** The part of a ticket's evidence a delivery card reads. */
@@ -132,24 +136,24 @@ export function awaitingReview(item: Delivered) {
 }
 
 /** How a submission stopped waiting, for its card once the buttons go. */
-export function reviewOutcome(say: Say, item: Delivered, submissionId: string): string {
+export function reviewOutcome(w: ImSpeak, item: Delivered, submissionId: string): string {
   const review = item.evidence.reviews.find(r => r.submissionId === submissionId);
-  if (review?.decision === "accepted") return say("Accepted", "已验收通过");
-  if (review) return say("Sent back for changes", "已退回修改");
-  if (item.evidence.submissions.at(-1)?.id !== submissionId) return say("A newer delivery replaced it", "已有更新的交付");
-  return say("No longer waiting for review", "已不再等待验收");
+  if (review?.decision === "accepted") return w("reviewAccepted");
+  if (review) return w("reviewChanges");
+  if (item.evidence.submissions.at(-1)?.id !== submissionId) return w("reviewReplaced");
+  return w("reviewGone");
 }
 
 /** A delivery waiting on the person: its report, its artifacts, and the ticket with its code. */
 export function deliveryCard(scope: RenderScope, item: Delivered, submission: Delivered["evidence"]["submissions"][number]): ImContent {
-  const { say } = scope;
+  const { w } = scope;
   const report = submission.report.length > REPORT_LIMIT ? `${submission.report.slice(0, REPORT_LIMIT)}…` : submission.report;
   const artifacts = submission.artifactIds.flatMap(id => item.evidence.resources.filter(r => r.id === id));
   return {
-    text: [say(`${item.key} is ready for your review`, `${item.key} 已提交交付，等你验收`), report].join("\n\n"),
+    text: [w("readyForReview", { key: item.key }), report].join("\n\n"),
     elements: [
       ...ticket(scope, item.key, item.title),
-      ...(artifacts.length ? [{ type: "section" as const, title: say("Artifacts", "产物"),
+      ...(artifacts.length ? [{ type: "section" as const, title: w("artifacts"),
         text: artifacts.map(a => `- [${a.name}](${links.file(scope.projectId, a.file.fileId)})`).join("\n") }] : [])
     ]
   };
@@ -157,7 +161,7 @@ export function deliveryCard(scope: RenderScope, item: Delivered, submission: De
 
 /** Known card schemas as semantic cards; any other gets its title and a way into the conversation. */
 function card(scope: RenderScope, block: Extract<Block, { type: "card" }>): ImContent {
-  const { say } = scope;
+  const { w } = scope;
   const data = (block.data ?? {}) as Record<string, unknown>;
   switch (block.schema) {
     case "start":
@@ -175,7 +179,7 @@ function card(scope: RenderScope, block: Extract<Block, { type: "card" }>): ImCo
     }
   }
   return { text: "", elements: [{ type: "section", title: block.title },
-    { type: "links", links: [{ label: say("See it in Tomrade", "在 Tomrade 查看"), url: links.thread(scope.projectId, scope.threadId) }] }] };
+    { type: "links", links: [{ label: w("seeInTomrade"), url: links.thread(scope.projectId, scope.threadId) }] }] };
 }
 
 /** A file the turn saved with write_file, by the version the tool returned. */
@@ -200,16 +204,16 @@ export const FILE_HANDLE = /^files:([^:]+):([^:]+)$/;
  * asks for detail, as one line each without arguments or output.
  */
 export function renderBlock(scope: RenderScope, block: Block, detail: boolean): ImContent | null {
-  const { say } = scope;
+  const { w } = scope;
   switch (block.type) {
     case "text": return { text: block.text };
-    case "error": return { text: say(`Execution error: ${block.text}`, `执行出错：${block.text}`) };
+    case "error": return { text: w("executionError", { text: block.text }) };
     case "note": return { text: block.text };
     case "changes": {
       const items = block.items ?? [];
-      if (!items.length) return { text: say(`Changed ${block.count} items`, `已变更 ${block.count} 项`) };
+      if (!items.length) return { text: w("changedCount", { count: block.count }) };
       const rest = items.length - CARD_LIMIT;
-      return { text: rest > 0 ? say(`…and ${rest} more`, `……另有 ${rest} 项`) : "",
+      return { text: rest > 0 ? w("andMore", { n: rest }) : "",
         elements: items.slice(0, CARD_LIMIT).flatMap(i => ticket(scope, i.key, i.label, i.op)) };
     }
     case "media": return { text: block.caption ?? block.media.name, files: [{ id: block.media.id, name: block.media.name, mimeType: block.media.mime, size: block.media.size }] };
@@ -218,7 +222,7 @@ export function renderBlock(scope: RenderScope, block: Block, detail: boolean): 
       const file = savedFile(block);
       if (file) {
         const name = file.path.split("/").pop() ?? file.path;
-        return { text: say(`Saved [${file.path}](${links.file(scope.projectId, file.fileId)})`, `已保存 [${file.path}](${links.file(scope.projectId, file.fileId)})`),
+        return { text: w("saved", { path: file.path, url: links.file(scope.projectId, file.fileId) }),
           files: [{ id: `files:${file.fileId}:${file.versionId}`, name, mimeType: MIME[name.split(".").pop()?.toLowerCase() ?? ""] ?? "application/octet-stream", size: file.size }] };
       }
       return detail ? { text: `${block.ok ? "✓" : "✗"} ${block.tool}` } : null;

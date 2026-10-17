@@ -5,6 +5,9 @@
  * the shapes they use rather than any one of them.
  */
 
+import type { WordsLocale } from "@tomradex/domain";
+import { AGENT_WORDS } from "./words.js";
+
 const LIMITED = /\b(rate[ _-]?limit(?:ed)?|usage limit|limit reached|hit your (?:\w+ )?limit|too many requests|quota (?:exceeded|exhausted)|resource[_ ]exhausted|usage_?limit_?exceeded)\b|\b429\b/i;
 // Out of money is a limit that no clock lifts.
 const NOT_A_WAIT = /\b(insufficient (?:balance|credits?|funds)|billing|payment required|credit balance|out of credits|402)\b/i;
@@ -117,16 +120,17 @@ export function resetTime(text: string | null | undefined, now = Date.now()): nu
   return null;
 }
 
-const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTH_KEYS = ["month1", "month2", "month3", "month4", "month5", "month6", "month7", "month8", "month9", "month10", "month11", "month12"] as const;
 
 /** When a limit lifts, as the person reads it on this machine: "20:00", "tomorrow 09:00", "Oct 15 09:00". */
-export function untilLabel(t: number, locale: "en" | "zh", now = Date.now()): string {
+export function untilLabel(t: number, locale: WordsLocale, now = Date.now()): string {
+  const w = AGENT_WORDS(locale);
   const d = new Date(t);
   const time = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   const day = (x: Date) => `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`;
   const n = new Date(now);
   if (day(d) === day(n)) return time;
   const next = new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1);
-  if (day(d) === day(next)) return locale === "zh" ? `明天 ${time}` : `tomorrow ${time}`;
-  return locale === "zh" ? `${d.getMonth() + 1}月${d.getDate()}日 ${time}` : `${MONTH_NAMES[d.getMonth()]} ${d.getDate()} ${time}`;
+  if (day(d) === day(next)) return w("untilTomorrow", { time });
+  return w("untilDate", { month: w(MONTH_KEYS[d.getMonth()]!), day: d.getDate(), time });
 }

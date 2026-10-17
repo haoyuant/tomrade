@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog } from "electron";
 import type { Context } from "cordis";
 import type {} from "@tomradex/agent";
 import type {} from "@tomradex/storage";
+import { DESKTOP_WORDS } from "./words.js";
 
 let approved = false;
 let pending: Promise<boolean> | null = null;
@@ -33,16 +34,14 @@ async function ask(ctx: Context): Promise<boolean> {
   const active = ctx.get("agent")?.activeRuns() ?? [];
   if (active.length) {
     const code = active.filter((a) => a.thread.itemId).length;
-    const zh = ctx.get("settings")?.locale?.() === "zh";
+    const w = DESKTOP_WORDS(ctx.get("settings")?.locale?.());
     const choice = dialog.showMessageBoxSync({
       type: "warning",
-      buttons: zh ? ["退出", "取消"] : ["Quit", "Cancel"],
+      buttons: [w("quit"), w("cancel")],
       defaultId: 1,
       cancelId: 1,
-      message: zh ? `有 ${active.length} 个智能体运行正在进行` : `${active.length} agent run${active.length === 1 ? " is" : "s are"} in progress`,
-      detail: zh
-        ? code ? `其中 ${code} 个在实现工作项。退出会中断它们；每个工作项都会保留分支，之后可以继续。` : "退出会中断它们。"
-        : code ? `${code} of them implement${code === 1 ? "s" : ""} a ticket. Quitting interrupts them; each ticket keeps its branch and offers Continue.` : "Quitting interrupts them."
+      message: w(active.length === 1 ? "runsInProgressOne" : "runsInProgressMany", { n: active.length }),
+      detail: code ? w(code === 1 ? "runsImplementOne" : "runsImplementMany", { n: code }) : w("runsInterrupted")
     });
     if (choice === 1) return false;
   }
@@ -70,19 +69,17 @@ async function settleUnsynced(ctx: Context): Promise<boolean> {
     const left = storage?.pendingAll() ?? [];
     const total = left.reduce((sum, p) => sum + p.count, 0);
     if (!storage || !total) return true;
-    const zh = ctx.get("settings")?.locale?.() === "zh";
+    const w = DESKTOP_WORDS(ctx.get("settings")?.locale?.());
     // The windows are away; the question must not be.
     if (process.platform === "darwin") app.show();
-    const list = left.map((p) => (zh ? `${p.name}：${p.count} 条` : `${p.name}: ${p.count}`)).join("\n");
+    const list = left.map((p) => w("unsyncedProject", { name: p.name, count: p.count })).join("\n");
     const choice = dialog.showMessageBoxSync({
       type: "warning",
-      buttons: zh ? ["等待同步", "直接退出", "取消"] : ["Wait for sync", "Quit anyway", "Cancel"],
+      buttons: [w("waitForSync"), w("quitAnyway"), w("cancel")],
       defaultId: 0,
       cancelId: 2,
-      message: zh ? `还有 ${total} 条修改没有同步` : `${total} change${total === 1 ? " has" : "s have"} not synced yet`,
-      detail: zh
-        ? `${list}\n\n它们只在这台电脑的这个 Tomrade 里。直接退出的话，下次启动会继续同步；在那之前，其他设备和另一个 Tomrade 都看不到。`
-        : `${list}\n\nThey are only in this Tomrade on this computer. Quit anyway and the next launch syncs them; until then no other device, and no other Tomrade here, sees them.`
+      message: w(total === 1 ? "unsyncedOne" : "unsyncedMany", { n: total }),
+      detail: w("unsyncedDetail", { list })
     });
     if (choice === 1) return true;
     if (choice === 2) {

@@ -9,6 +9,7 @@ import {
   FieldValueError,
   NotFoundError,
   isBuiltinFieldId,
+  wordsLocale,
   type FieldDef,
   type FieldOption,
   type FieldType,
@@ -109,7 +110,7 @@ export class Fields extends Service {
   }
 
   derived(): FieldDef[] {
-    const locale = (this.ctx.get("settings") as { locale?: () => "en" | "zh" } | undefined)?.locale?.() ?? "en";
+    const locale = wordsLocale((this.ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
     return [...this.derivedFields.values()].map((f, n) => ({
       id: f.id,
       projectId: null,

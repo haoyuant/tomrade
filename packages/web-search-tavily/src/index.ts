@@ -2,6 +2,7 @@ import type { Context } from "cordis";
 import { z } from "zod";
 import type { SettingsSection } from "@tomradex/settings";
 import type { ReadResponse, SearchRequest, SearchResponse, WebSearchProvider } from "@tomradex/web-search";
+import { TAVILY_WORDS } from "./words.js";
 
 export const TAVILY_API = "https://api.tavily.com";
 
@@ -10,25 +11,28 @@ export interface TavilySettings {
   searchDepth: "basic" | "advanced";
 }
 
+const en = TAVILY_WORDS("en");
+const zh = TAVILY_WORDS("zh");
+
 export const TAVILY_SECTION: SettingsSection<TavilySettings> = {
   id: "tavily",
-  title: "Tavily",
-  description:
-    "Web search and page reading for the assistant, through Tavily with your own API key from app.tavily.com. A search costs 1 credit (2 at advanced depth); reading pages costs 1 credit per 5. The key stays on this machine and no agent can read it.",
+  title: en("title"),
+  description: en("description"),
   schema: z.object({
-    apiKey: z.string().default("").meta({ title: "API key", format: "password" }).describe("tvly-… — empty uses TAVILY_API_KEY from the environment"),
-    searchDepth: z.enum(["basic", "advanced"]).default("basic").meta({ title: "Search depth" }).describe("advanced: more relevant excerpts per result, at twice the credits")
+    apiKey: z.string().default("").meta({ title: en("apiKeyTitle"), format: "password" }).describe(en("apiKeyDescription")),
+    searchDepth: z.enum(["basic", "advanced"]).default("basic").meta({ title: en("searchDepthTitle") }).describe(en("searchDepthDescription"))
   }),
   defaults: { apiKey: "", searchDepth: "basic" },
   order: 17,
   scope: "machine",
   words: {
-    en: { fields: { searchDepth: { options: { basic: "Basic", advanced: "Advanced" } } } },
+    en: { fields: { searchDepth: { options: { basic: en("searchDepthBasic"), advanced: en("searchDepthAdvanced") } } } },
     zh: {
-      description: "通过 Tavily 为助手提供网页搜索和网页阅读，使用你在 app.tavily.com 申请的 API key。一次搜索消耗 1 积分（高级深度为 2）；每读取 5 个网页消耗 1 积分。key 只保存在这台机器上，任何智能体都读不到。",
+      title: zh("title"),
+      description: zh("description"),
       fields: {
-        apiKey: { description: "tvly-…；留空则使用环境变量 TAVILY_API_KEY" },
-        searchDepth: { title: "搜索深度", description: "高级：每条结果给出更相关的摘录，消耗的积分翻倍", options: { basic: "基础", advanced: "高级" } }
+        apiKey: { title: zh("apiKeyTitle"), description: zh("apiKeyDescription") },
+        searchDepth: { title: zh("searchDepthTitle"), description: zh("searchDepthDescription"), options: { basic: zh("searchDepthBasic"), advanced: zh("searchDepthAdvanced") } }
       }
     }
   }

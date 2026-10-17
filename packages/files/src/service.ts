@@ -27,6 +27,7 @@ import { gitRunner } from "@tomradex/storage";
 import { FilesArchive, boundDirectory, storeId } from "./scopes.js";
 import { MIGRATIONS, OpsStore, RemoteStore, TABLES, type FileOpKind, type FileOpRow, type RemoteRow } from "./store.js";
 import { mimeOf } from "./mime.js";
+import { FILES_STATE_WORD, FILES_WORDS } from "./words.js";
 import { registerTools } from "./tools.js";
 import {
   FileChangedError,
@@ -220,10 +221,7 @@ export class Files extends Service {
 
   /** The status bar's and the palette's words, in the person's language now. */
   private words() {
-    const zh = (this.home.get("settings") as { locale?: () => string } | undefined)?.locale?.() === "zh";
-    return zh
-      ? { conflicts: "文件 · 有冲突", offline: "文件 · 离线", error: "文件 · 出错", sync: "立即同步文件", group: "文件", openProject: "请先打开一个项目", synced: (state: string, detail?: string) => `文件：${({ synced: "已同步", conflicted: "有冲突", offline: "离线", error: "出错" } as Record<string, string>)[state] ?? state}${detail ? `——${detail}` : ""}` }
-      : { conflicts: "Files · conflicts", offline: "Files · offline", error: "Files · error", sync: "Sync files now", group: "Files", openProject: "Open a project first", synced: (state: string, detail?: string) => `Files: ${state}${detail ? ` — ${detail}` : ""}` };
+    return FILES_WORDS((this.home.get("settings") as { locale?: () => string } | undefined)?.locale?.());
   }
   static Config = FilesConfig;
 
@@ -301,17 +299,20 @@ export class Files extends Service {
         text: ({ projectId }) => {
           const state = projectId ? this.lastState.get(projectId) : undefined;
           const w = this.words();
-          return state === "conflicted" ? w.conflicts : state === "offline" ? w.offline : state === "error" ? w.error : null;
+          return state === "conflicted" ? w("conflicts") : state === "offline" ? w("offline") : state === "error" ? w("error") : null;
         }
       });
       ctx.contributions.command({
         id: "files.sync",
-        title: () => this.words().sync,
-        group: () => this.words().group,
+        title: () => this.words()("sync"),
+        group: () => this.words()("group"),
         run: async ({ projectId }) => {
-          if (!projectId) return { toast: this.words().openProject };
+          if (!projectId) return { toast: this.words()("openProject") };
           const status = await this.sync(projectId);
-          return { toast: this.words().synced(status.state, status.detail) };
+          const w = this.words();
+          const key = FILES_STATE_WORD[status.state];
+          const state = key ? w(key) : status.state;
+          return { toast: status.detail ? w("syncedDetail", { state, detail: status.detail }) : w("synced", { state }) };
         }
       });
     });

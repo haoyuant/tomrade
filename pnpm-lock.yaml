@@ -68,6 +68,9 @@ importers:
       '@tomradex/doctor':
         specifier: workspace:*
         version: link:../../packages/doctor
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@tomradex/engine-acp':
         specifier: workspace:*
         version: link:../../packages/engine-acp
@@ -382,6 +385,9 @@ importers:
       '@tomradex/contributions':
         specifier: workspace:*
         version: link:../contributions
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
@@ -652,6 +658,9 @@ importers:
       '@tomradex/contributions':
         specifier: workspace:*
         version: link:../contributions
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
@@ -930,6 +939,9 @@ importers:
       '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@tomradex/llm':
         specifier: workspace:*
         version: link:../llm
@@ -995,6 +1007,9 @@ importers:
       '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@tomradex/engine-claude-code':
         specifier: workspace:*
         version: link:../engine-claude-code
@@ -1368,6 +1383,9 @@ importers:
       '@tomradex/db':
         specifier: workspace:*
         version: link:../db
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
@@ -1504,6 +1522,9 @@ importers:
       '@tomradex/doctor':
         specifier: workspace:*
         version: link:../doctor
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@tomradex/inbox':
         specifier: workspace:*
         version: link:../inbox
@@ -1604,6 +1625,9 @@ importers:
 
   packages/keybindings:
     dependencies:
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
@@ -1722,6 +1746,9 @@ importers:
       '@tomradex/db':
         specifier: workspace:*
         version: link:../db
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@tomradex/files':
         specifier: workspace:*
         version: link:../files
@@ -1836,6 +1863,9 @@ importers:
       '@tomradex/desktop-surface':
         specifier: workspace:*
         version: link:../desktop-surface
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
@@ -2180,6 +2210,9 @@ importers:
 
   packages/shell:
     dependencies:
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
@@ -2584,6 +2617,9 @@ importers:
 
   packages/web-search-tavily:
     dependencies:
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings

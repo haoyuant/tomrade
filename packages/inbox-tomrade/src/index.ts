@@ -3,6 +3,7 @@ import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/doctor";
 import type { InboxEntry, InboxEntryInput, InboxKind, InboxSource, TriageChange } from "@tomradex/inbox";
 import type {} from "@tomradex/settings";
+import { FEEDBACK_WORDS } from "./words.js";
 
 export const name = "inbox-tomrade";
 export const inject = ["inbox"];
@@ -27,40 +28,17 @@ export interface PulledReport {
   created_at: string;
 }
 
-const WORDS = {
-  en: {
-    source: "Tomrade feedback",
-    signIn: "Sign in to your Tomrade account first",
-    notMaintainer: "Only Tomrade's maintainers receive this feedback",
-    status: "Feedback",
-    statusTitle: "Tell Tomrade's developer about a bug, or send feedback or an idea",
-    command: "Send feedback…",
-    group: "Help",
-    from: (version: string, platform: string) => `Tomrade ${version} · ${platform}`
-  },
-  zh: {
-    source: "Tomrade 反馈",
-    signIn: "先登录 Tomrade 账号",
-    notMaintainer: "只有 Tomrade 的维护者能收到这些反馈",
-    status: "反馈",
-    statusTitle: "告诉 Tomrade 的开发者一个问题，或者提反馈、建议",
-    command: "发送反馈…",
-    group: "帮助",
-    from: (version: string, platform: string) => `Tomrade ${version} · ${platform}`
-  }
-};
-
 const KINDS: readonly string[] = ["bug", "feedback", "idea"];
 const MAINTAINER_TTL_MS = 10 * 60_000;
 
 /** A report as an inbox entry: the code stands for whoever sent it. */
-export function toEntry(r: PulledReport, words = WORDS.en): InboxEntryInput {
+export function toEntry(r: PulledReport, words = FEEDBACK_WORDS("en")): InboxEntryInput {
   const sections = r.report?.sections ?? [];
   const note = sections.find((s) => s.id === "note");
   const rest = sections.filter((s) => s !== note);
   const body = [
     note?.text ?? "",
-    words.from(r.app_version, r.platform) + (r.engine ? ` · ${r.engine}` : ""),
+    words("from", { version: r.app_version, platform: r.platform }) + (r.engine ? ` · ${r.engine}` : ""),
     ...rest.map((s) => `#### ${s.title}\n\n\`\`\`\n${s.text}\n\`\`\``)
   ].filter(Boolean).join("\n\n");
   return {
@@ -88,14 +66,13 @@ export function answerFor(change: TriageChange): Record<string, string> {
 }
 
 export function apply(ctx: Context) {
-  const zh = () => (ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.() === "zh";
-  const words = () => (zh() ? WORDS.zh : WORDS.en);
+  const words = () => FEEDBACK_WORDS((ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
   const backend = () => ctx.get("cloudHub") as Backend | undefined;
   let maintainer: { user: string; is: boolean; at: number } | null = null;
 
   const call = async (fn: string, args: Record<string, unknown>) => {
     const hub = backend();
-    if (!hub?.info().user) throw new Error(words().signIn);
+    if (!hub?.info().user) throw new Error(words()("signIn"));
     const { data, error } = await hub.client.rpc(fn, args);
     if (error) throw new Error(error.message);
     return data;
@@ -103,15 +80,15 @@ export function apply(ctx: Context) {
 
   const source: InboxSource = {
     id: "tomrade",
-    title: () => words().source,
+    title: () => words()("source"),
     keyPattern: "R-[0-9A-Z]{6}",
     async available() {
       const user = backend()?.info().user;
-      if (!user) return words().signIn;
+      if (!user) return words()("signIn");
       if (maintainer?.user !== user.id || Date.now() - maintainer.at > MAINTAINER_TTL_MS) {
         maintainer = { user: user.id, is: (await call("tomrade_is_maintainer", {})) === true, at: Date.now() };
       }
-      return maintainer.is ? null : words().notMaintainer;
+      return maintainer.is ? null : words()("notMaintainer");
     },
     async pull({ since }) {
       const rows = ((await call("tomrade_feedback_pull", { p_since: since === null ? null : new Date(since).toISOString(), p_limit: 500 })) ?? []) as PulledReport[];
@@ -133,7 +110,7 @@ export function apply(ctx: Context) {
 
   // Writing in goes through the troubleshooter's outbox: the same retry, the same replies under My reports.
   ctx.inject(["doctor", "contributions"], (ctx) => {
-    ctx.contributions.command({ id: "inbox-tomrade.feedback", title: () => words().command, group: () => words().group, run: () => ({ opens: "feedback" }) });
-    ctx.contributions.statusItem({ id: "feedback", text: () => words().status, title: () => words().statusTitle, opens: "feedback", icon: "i-send", align: "end" });
+    ctx.contributions.command({ id: "inbox-tomrade.feedback", title: () => words()("command"), group: () => words()("group"), run: () => ({ opens: "feedback" }) });
+    ctx.contributions.statusItem({ id: "feedback", text: () => words()("status"), title: () => words()("statusTitle"), opens: "feedback", icon: "i-send", align: "end" });
   });
 }

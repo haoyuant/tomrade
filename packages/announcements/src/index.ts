@@ -5,6 +5,7 @@ import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/ipc";
 import { satisfies } from "@tomradex/plugin-sdk";
 import type {} from "@tomradex/settings";
+import { ANNOUNCEMENT_WORDS } from "./words.js";
 
 export const name = "announcements";
 export const inject = ["ipc"];
@@ -62,11 +63,6 @@ export interface Config {
   version: string;
   everyMs?: number;
 }
-
-const WORDS = {
-  en: { command: "Announcements…", group: "Help" },
-  zh: { command: "查看公告…", group: "帮助" }
-};
 
 const COLUMNS = "id, title, body, level, locale, versions, starts_at";
 const KEEP_SEEN = 500;
@@ -135,8 +131,8 @@ export function apply(ctx: Context, config: Config) {
 
   // Read again whenever wanted, from the palette: the renderer's announcements surface.
   ctx.inject(["contributions"], (ctx) => {
-    const words = () => ((ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.() === "zh" ? WORDS.zh : WORDS.en);
-    ctx.contributions.command({ id: "announcements.open", title: () => words().command, group: () => words().group, run: () => ({ opens: "announcements" }) });
+    const words = () => ANNOUNCEMENT_WORDS((ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
+    ctx.contributions.command({ id: "announcements.open", title: () => words()("command"), group: () => words()("group"), run: () => ({ opens: "announcements" }) });
   });
 
   ctx.effect(() => {

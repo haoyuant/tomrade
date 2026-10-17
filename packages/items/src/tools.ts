@@ -4,6 +4,7 @@ import { ITEM_STATUSES, createItemSchema, filterClauseSchema, itemStatusSchema, 
 import { ToolInputError, defineTool, requireProjectId, type ToolInvocation } from "@tomradex/tools";
 import type {} from "@tomradex/boards";
 import { addResourceSchema, reviewDeliverySchema, submitDeliverySchema } from "@tomradex/domain";
+import { ITEMS_WORDS } from "./words.js";
 
 const itemId = z.string().describe("The item's id, or its key such as TOM-12");
 const withVersion = z.object({ projectId: z.string().optional(), id: itemId, baseVersion: z.number().optional() });
@@ -98,12 +99,10 @@ export function registerTools(ctx: Context): void {
       if (!submission) throw new Error(`${item.key} has no submitted delivery to review — submit_delivery comes first`);
       if (inv.run?.ledger.find((e) => e.ok && (e.tool === "submit_delivery" || e.tool === "link_code"))) throw new Error(`review_delivery: this run delivered work, so it cannot review a delivery — the user accepts ${item.key} in its delivery panel`);
       if (inv.ask) {
-        const zh = (ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.() === "zh";
-        const yes = zh ? (decision === "accepted" ? "验收通过" : "退回修改") : decision === "accepted" ? "Accept" : "Send back";
-        const question = zh
-          ? `智能体要替你记下对 ${item.key} 交付的结论：${yes}。依据你说的：“${userSaid}”`
-          : `The agent will record your verdict on ${item.key}'s delivery: ${yes}. On your words: “${userSaid}”`;
-        if ((await inv.ask(question, [yes, zh ? "取消" : "Cancel"])) !== yes) return { recorded: false, note: "The user did not confirm; nothing was recorded." };
+        const w = ITEMS_WORDS((ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
+        const yes = w(decision === "accepted" ? "reviewAccept" : "reviewSendBack");
+        const question = w("reviewConfirm", { key: item.key, verdict: yes, userSaid });
+        if ((await inv.ask(question, [yes, w("cancel")])) !== yes) return { recorded: false, note: "The user did not confirm; nothing was recorded." };
       }
       const relayed = `Relayed by ${inv.by}; the user said: “${userSaid}”`;
       return ctx.items.reviewDelivery(scope, item.id, { submissionId: submission.id, decision, comment: comment?.trim() ? `${comment.trim()}\n\n${relayed}` : relayed }, item.version);

@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { SettingsSection } from "@tomradex/settings";
 import { defineTool, type ToolInvocation } from "@tomradex/tools";
 import { DEFAULT_TIMEOUT_S, describeResult, findBash, runShell } from "./run.js";
+import { SHELL_WORDS } from "./words.js";
 
 export { OutputBuffer, describeResult, findBash, plain, runShell, type ShellResult, type ShellRun } from "./run.js";
 
@@ -54,10 +55,6 @@ export const SHELL_SECTION: SettingsSection<ShellSettings> = {
 };
 
 /** The approval question and its answers, in the person's language; the answer is compared with the same words. */
-const ASK_WORDS = {
-  en: { once: "Allow once", turn: "Allow for this turn", deny: "Deny", question: (cwd: string, command: string) => `Run this command in ${cwd}?\n\n${command}` },
-  zh: { once: "允许这一次", turn: "这一轮都允许", deny: "拒绝", question: (cwd: string, command: string) => `在 ${cwd} 里运行这条命令？\n\n${command}` }
-};
 // Run-scoped: approval for the rest of the turn, and the command still running.
 const APPROVED = "shell/approved";
 const QUEUE = "shell/queue";
@@ -93,11 +90,12 @@ export function bashTool(ctx: Context, approval: Approval) {
     if (!cwd) throw new Error("This conversation has no folder to run in: put it on a workstream with a checkout, or give the project a folder");
     if (approval === "ask" && !handle.scratch.get(APPROVED)) {
       if (!invocation.ask) throw new Error("Nobody can be asked to approve a command here");
-      const w = ASK_WORDS[(ctx.get("settings") as { locale?: () => "en" | "zh" } | undefined)?.locale?.() ?? "en"];
-      const answer = await invocation.ask(w.question(cwd, command), [w.once, w.turn, w.deny]);
+      const w = SHELL_WORDS((ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
+      const [once, turn, deny] = [w("once"), w("turn"), w("deny")];
+      const answer = await invocation.ask(w("question", { cwd, command }), [once, turn, deny]);
       if (answer === null) throw new Error("Not run — the run was stopped");
-      if (answer === w.deny) throw new Error("The user declined this command. Do not run it another way; go on without it, or ask what they want instead.");
-      if (answer === w.turn) handle.scratch.set(APPROVED, true);
+      if (answer === deny) throw new Error("The user declined this command. Do not run it another way; go on without it, or ask what they want instead.");
+      if (answer === turn) handle.scratch.set(APPROVED, true);
     }
     const result = await runShell(command, { bash, cwd, env: handle.env, timeoutS: timeout, signal: invocation.signal });
     return describeResult(result, timeout);

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Context, Service } from "cordis";
 import { z } from "zod";
-import type { Author, Priority } from "@tomradex/domain";
+import { wordsLocale, type Author, type Priority, type WordsLocale } from "@tomradex/domain";
 import type {} from "@tomradex/agent";
 import type {} from "@tomradex/boards";
 import type {} from "@tomradex/code-link";
@@ -13,6 +13,7 @@ import { defineTool, requireProjectId } from "@tomradex/tools";
 import { Cadence, localDate, nextRun } from "./cadence.js";
 import { suggestions, type Suggestion } from "./suggestions.js";
 import { TemplateInput, fillTemplate } from "./template.js";
+import { SCHEDULE_WORDS } from "./words.js";
 
 export interface Template extends z.output<typeof TemplateInput> {
   id: string;
@@ -187,8 +188,6 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
  * time missed while it was closed or asleep runs once when it is back, unless
  * the schedule says to skip it.
  */
-const ORIGIN = { en: "Routine", zh: "例行事务" } as const;
-
 export class Schedules extends Service {
   static provide = "schedules";
   static inject = ["db", "items", "boards", "agent"];
@@ -233,13 +232,13 @@ export class Schedules extends Service {
       if (!this.home.db.has(projectId)) return [];
       const ids = new Set(threads.map((th) => th.id));
       const rows = this.db(projectId).prepare("SELECT DISTINCT thread_id FROM plugin_schedules_runs WHERE thread_id IS NOT NULL").all() as { thread_id: string }[];
-      const label = ORIGIN[this.locale()];
+      const label = SCHEDULE_WORDS(this.locale())("origin");
       return rows.filter((r) => ids.has(r.thread_id)).map((r) => [r.thread_id, label] as [string, string]);
     });
   }
 
-  private locale(): "en" | "zh" {
-    return (this.home.get("settings") as { locale?: () => "en" | "zh" } | undefined)?.locale?.() ?? "en";
+  private locale(): WordsLocale {
+    return wordsLocale((this.home.get("settings") as { locale?: () => string } | undefined)?.locale?.());
   }
 
   private db(projectId: string) {
@@ -471,8 +470,8 @@ export class Schedules extends Service {
   private registerTools(ctx: Context): void {
     const ask = async (inv: { ask?(text: string, options: string[]): Promise<string | null> }, question: string): Promise<boolean> => {
       if (!inv.ask) throw new Error("Nobody here can confirm this. Tell the user they can do it under Routines in the sidebar.");
-      const w = ASK_WORDS[this.locale()];
-      return (await inv.ask(question, [w.yes, w.no])) === w.yes;
+      const w = SCHEDULE_WORDS(this.locale());
+      return (await inv.ask(question, [w("askYes"), w("askNo")])) === w("askYes");
     };
     ctx.tools.kit("routines", "recurring tickets or prompts, now or scheduled");
     ctx.tools.register(
@@ -498,8 +497,8 @@ export class Schedules extends Service {
         input: TemplateInput.extend({ cadence: Cadence.optional() }),
         execute: async ({ cadence, ...input }, inv) => {
           const projectId = requireProjectId("create_template", undefined, inv);
-          const w = ASK_WORDS[this.locale()];
-          if (!(await ask(inv, cadence ? w.saveScheduled(input.name, describeCadence(cadence, this.locale())) : w.save(input.name)))) return { created: false, note: "The user did not save it." };
+          const w = SCHEDULE_WORDS(this.locale());
+          if (!(await ask(inv, cadence ? w("askSaveScheduled", { name: input.name, when: describeCadence(cadence, this.locale()) }) : w("askSave", { name: input.name })))) return { created: false, note: "The user did not save it." };
           const template = this.createTemplate(projectId, input);
           const schedule = cadence ? this.createSchedule(projectId, { templateId: template.id, cadence }) : null;
           return { created: true, template, schedule };
@@ -527,8 +526,8 @@ export class Schedules extends Service {
           const projectId = requireProjectId("schedule_template", undefined, inv);
           const template = this.template(projectId, id);
           if (!template) throw new Error("No such template");
-          const w = ASK_WORDS[this.locale()];
-          if (!(await ask(inv, w.saveScheduled(template.name, describeCadence(cadence, this.locale()))))) return { scheduled: false, note: "The user did not schedule it." };
+          const w = SCHEDULE_WORDS(this.locale());
+          if (!(await ask(inv, w("askSaveScheduled", { name: template.name, when: describeCadence(cadence, this.locale()) })))) return { scheduled: false, note: "The user did not schedule it." };
           return { scheduled: true, schedule: this.createSchedule(projectId, { templateId: id, cadence }) };
         }
       })
@@ -551,46 +550,19 @@ export class Schedules extends Service {
   }
 }
 
-const ASK_WORDS = {
-  en: {
-    save: (name: string) => `Save "${name}" as a routine?`,
-    saveScheduled: (name: string, when: string) => `Save "${name}" as a routine that runs ${when}? It runs on this machine while Tomrade is open.`,
-    yes: "Save it",
-    no: "Don't"
-  },
-  zh: {
-    save: (name: string) => `把「${name}」存成例行事务吗？`,
-    saveScheduled: (name: string, when: string) => `把「${name}」存成例行事务，并且${when}自动运行吗？它会在这台电脑上、Tomrade 打开时运行。`,
-    yes: "保存",
-    no: "不要"
-  }
-} as const;
-
-const DAY_NAMES = {
-  en: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-  zh: ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
-} as const;
+const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
 
 /** A cadence in a few words, for confirmations and tool results. */
-export function describeCadence(c: z.input<typeof Cadence>, locale: "en" | "zh"): string {
-  const days = (list: number[]) => [...list].sort().map((d) => DAY_NAMES[locale][d - 1]).join(locale === "zh" ? "、" : ", ");
-  if (locale === "zh") {
-    switch (c.kind) {
-      case "daily": return `每天 ${c.at}`;
-      case "weekdays": return `工作日 ${c.at}`;
-      case "weekly": return `每${days(c.days)} ${c.at}`;
-      case "monthly": return `每月 ${c.day} 号 ${c.at}`;
-      case "days": return `每 ${c.every} 天 ${c.at}`;
-      case "hourly": return c.every === 1 ? "每小时" : `每 ${c.every} 小时`;
-    }
-  }
+export function describeCadence(c: z.input<typeof Cadence>, locale: WordsLocale): string {
+  const w = SCHEDULE_WORDS(locale);
+  const days = (list: number[]) => [...list].sort().map((d) => w(DAY_KEYS[d - 1]!)).join(w("daySeparator"));
   switch (c.kind) {
-    case "daily": return `every day at ${c.at}`;
-    case "weekdays": return `on weekdays at ${c.at}`;
-    case "weekly": return `every ${days(c.days)} at ${c.at}`;
-    case "monthly": return `on day ${c.day} of every month at ${c.at}`;
-    case "days": return `every ${c.every} days at ${c.at}`;
-    case "hourly": return c.every === 1 ? "every hour" : `every ${c.every} hours`;
+    case "daily": return w("cadenceDaily", { at: c.at });
+    case "weekdays": return w("cadenceWeekdays", { at: c.at });
+    case "weekly": return w("cadenceWeekly", { days: days(c.days), at: c.at });
+    case "monthly": return w("cadenceMonthly", { day: c.day, at: c.at });
+    case "days": return w("cadenceDays", { every: c.every, at: c.at });
+    case "hourly": return c.every === 1 ? w("cadenceHour") : w("cadenceHours", { every: c.every });
   }
 }
 

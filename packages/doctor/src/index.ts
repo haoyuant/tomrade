@@ -3,4 +3,4 @@ export { parseCatalog, fetchCatalog, CATALOG_MAX_AGE_MS } from "./catalog.js";
 export { Doctor as default } from "./service.js";
 export { BUNDLED, KnownIssue, before, matches, type Evidence } from "./issues.js";
 export { scrub, tail, newestFiles, errorLines } from "./evidence.js";
-export { WORDS, type Locale, type Words } from "./words.js";
+export { DOCTOR_WORDS, type Words } from "./words.js";

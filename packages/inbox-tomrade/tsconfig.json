@@ -18,6 +18,9 @@
       "path": "../doctor"
     },
     {
+      "path": "../domain"
+    },
+    {
       "path": "../inbox"
     },
     {

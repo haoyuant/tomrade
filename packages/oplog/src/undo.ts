@@ -1,7 +1,8 @@
 import type { DeliveryView, ProjectDb } from "@tomradex/db";
 import { InUseError, StaleUndoError, normalizeQuery, type Board, type Item, type OplogEntry, type UndoResult, type UndoRunResult, type View } from "@tomradex/domain";
-import { emptyEvidence } from "@tomradex/domain";
+import { emptyEvidence, type WordsLocale } from "@tomradex/domain";
 import { rowToEntry, type OplogRow, type UndoneRow } from "./rows.js";
+import { OPLOG_WORDS } from "./words.js";
 
 const UNDONE_COLUMNS = "seq, entity, entity_id, op, base_version, before_json, after_json, by, at, run_id, device, device_seq, patch_json, via";
 
@@ -216,17 +217,11 @@ export const undoneRows = (db: ProjectDb, limit: number): UndoneRow[] => db.prep
 
 export const undoneRow = (db: ProjectDb, seq: number): UndoneRow | undefined => db.prepare("SELECT * FROM oplog_undone WHERE seq = ?").get(seq) as UndoneRow | undefined;
 
-export const undoSummary = (entry: OplogEntry, locale: "en" | "zh" = "en"): string => {
-  if (locale === "zh") return `${entry.op === "create" ? "已移除" : entry.op === "delete" ? "已恢复" : entry.op === "rank" ? "已移回" : "已撤销"} ${labelOf(entry)}`;
-  const verb = entry.op === "create" ? "Removed" : entry.op === "delete" ? "Restored" : entry.op === "rank" ? "Moved back" : "Reverted";
-  return `${verb} ${labelOf(entry)}`;
-};
+export const undoSummary = (entry: OplogEntry, locale: WordsLocale = "en"): string =>
+  OPLOG_WORDS(locale)(entry.op === "create" ? "undoCreate" : entry.op === "delete" ? "undoDelete" : entry.op === "rank" ? "undoRank" : "undoChange", { label: labelOf(entry) });
 
-export const redoSummary = (entry: OplogEntry, locale: "en" | "zh" = "en"): string => {
-  if (locale === "zh") return `${entry.op === "create" ? "已重新创建" : entry.op === "delete" ? "已再次删除" : entry.op === "rank" ? "已再次移动" : "已重做"} ${labelOf(entry)}`;
-  const verb = entry.op === "create" ? "Re-created" : entry.op === "delete" ? "Deleted again" : entry.op === "rank" ? "Moved again" : "Re-applied";
-  return `${verb} ${labelOf(entry)}`;
-};
+export const redoSummary = (entry: OplogEntry, locale: WordsLocale = "en"): string =>
+  OPLOG_WORDS(locale)(entry.op === "create" ? "redoCreate" : entry.op === "delete" ? "redoDelete" : entry.op === "rank" ? "redoRank" : "redoChange", { label: labelOf(entry) });
 
 export const labelOf = (entry: OplogEntry): string => {
   const named = (entry.before ?? entry.after) as { key?: string; name?: string } | null;

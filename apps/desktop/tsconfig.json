@@ -42,6 +42,9 @@
       "path": "../../packages/desktop-surface"
     },
     {
+      "path": "../../packages/domain"
+    },
+    {
       "path": "../../packages/alerts"
     },
     {

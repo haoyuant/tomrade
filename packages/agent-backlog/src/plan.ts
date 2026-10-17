@@ -1,6 +1,6 @@
 import type { Context } from "cordis";
 import { z } from "zod";
-import type { Author, Item } from "@tomradex/domain";
+import type { Author, Item, WordsLocale } from "@tomradex/domain";
 import type { LlmService } from "@tomradex/llm";
 import { LlmError } from "@tomradex/llm";
 import { overlap } from "./similar.js";
@@ -46,7 +46,7 @@ const PLAN_SYSTEM = [
 ].join("\n");
 
 /** The language a plan is written in: the person's, which the requirement may not show (an agent can restate it in English). */
-export type PlanLanguage = "en" | "zh";
+export type PlanLanguage = WordsLocale;
 const LANGUAGE_NAME: Record<PlanLanguage, string> = { en: "English", zh: "Simplified Chinese (简体中文)" };
 
 export async function generatePlan(llm: LlmService | null, requirement: string, existing: Item[], language: PlanLanguage = "en"): Promise<Plan> {

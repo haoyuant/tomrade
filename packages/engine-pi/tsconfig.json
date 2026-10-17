@@ -12,6 +12,7 @@
   ],
   "references": [
     { "path": "../agent" },
+    { "path": "../domain" },
     { "path": "../engine-claude-code" },
     { "path": "../llm" },
     { "path": "../mcp" },

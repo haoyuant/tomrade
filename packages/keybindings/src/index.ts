@@ -2,6 +2,7 @@ import type { Context } from "cordis";
 import { z } from "zod";
 import type { SettingsSection } from "@tomradex/settings";
 import { CHORD } from "./chord.js";
+import { KEYBINDINGS_WORDS } from "./words.js";
 
 export { CHORD } from "./chord.js";
 
@@ -14,10 +15,13 @@ export interface KeybindingsSettings {
   overrides: Record<string, string[]>;
 }
 
+const en = KEYBINDINGS_WORDS("en");
+const zh = KEYBINDINGS_WORDS("zh");
+
 export const KEYBINDINGS_SECTION: SettingsSection<KeybindingsSettings> = {
   id: "keybindings",
-  title: "Keyboard shortcuts",
-  description: "Commands the person rebound to other keys.",
+  title: en("title"),
+  description: en("description"),
   schema: z.object({
     overrides: z.record(z.string().regex(/^[a-zA-Z][\w.:-]{0,79}$/), z.array(z.string().regex(CHORD)).max(4)).default({})
   }),
@@ -27,7 +31,7 @@ export const KEYBINDINGS_SECTION: SettingsSection<KeybindingsSettings> = {
   scope: "user",
   agent: "read",
   words: {
-    zh: { title: "键盘快捷键", description: "用户改过按键的命令。" }
+    zh: { title: zh("title"), description: zh("description") }
   }
 };
 

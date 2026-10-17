@@ -6,3 +6,4 @@ export * from "./schema.js";
 export * from "./derive.js";
 export * from "./fields.js";
 export * from "./query.js";
+export * from "./words.js";

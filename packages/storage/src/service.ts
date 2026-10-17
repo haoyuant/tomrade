@@ -51,6 +51,20 @@ import {
   type SyncState,
   type SyncSummary
 } from "./types.js";
+import { STORAGE_WORDS } from "./words.js";
+
+// "synced" with writes still waiting reads as ahead.
+const STATE_WORD: Record<SyncState, Exclude<Parameters<ReturnType<typeof STORAGE_WORDS>>[0], "unsynced">> = {
+  local: "stateLocal",
+  synced: "stateAhead",
+  ahead: "stateAhead",
+  behind: "stateBehind",
+  diverged: "stateDiverged",
+  syncing: "stateSyncing",
+  offline: "stateOffline",
+  error: "stateError",
+  unavailable: "stateUnavailable"
+};
 
 declare module "cordis" {
   interface Context {
@@ -247,10 +261,10 @@ export class Storage extends Service {
           const where = entry.git === "dedicated" && entry.remote ? entry.remote.provider : path.basename(entry.dir);
           const waiting = ctx.storage.pending(projectId)?.count ?? 0;
           if (state === "synced" && !waiting) return where;
-          const zh = (ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.() === "zh";
-          const word = state === "synced" ? (zh ? "待发布" : "ahead") : zh ? ({ ahead: "待发布", behind: "待读取", diverged: "两边都改了", offline: "离线", unavailable: "不可用", error: "出错", syncing: "同步中", local: "仅本机" } as Record<string, string>)[state] ?? state : state;
+          const w = STORAGE_WORDS((ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
+          const word = w(STATE_WORD[state]);
           // How many of this machine's writes have not left it yet: the number to worry about before quitting.
-          return waiting ? `${where} · ${word} · ${zh ? `${waiting} 条未同步` : `${waiting} unsynced`}` : `${where} · ${word}`;
+          return waiting ? `${where} · ${word} · ${w("unsynced", { n: waiting })}` : `${where} · ${word}`;
         }
       });
     });

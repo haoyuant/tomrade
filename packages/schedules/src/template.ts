@@ -1,4 +1,6 @@
 import { z } from "zod";
+import type { WordsLocale } from "@tomradex/domain";
+import { SCHEDULE_WORDS } from "./words.js";
 
 /** One ticket a template makes. Defaults suit a to-do as well as a coding task: General, on To Do. */
 export const TicketSpec = z.object({
@@ -38,10 +40,7 @@ export const TemplateInput = z.object({
 });
 export type TemplateInput = z.input<typeof TemplateInput>;
 
-const WEEKDAYS = {
-  en: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
-  zh: ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
-} as const;
+const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"] as const;
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -55,11 +54,11 @@ function isoWeek(d: Date): string {
 }
 
 /** `{date}` 2026-10-12, `{weekday}` Monday / 周一, `{week}` 2026-W42, `{month}` 2026-10, `{year}` 2026 — on this machine's calendar. */
-export function fillTemplate(text: string, at: number, locale: "en" | "zh" = "en"): string {
+export function fillTemplate(text: string, at: number, locale: WordsLocale = "en"): string {
   const d = new Date(at);
   return text
     .replaceAll("{date}", `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`)
-    .replaceAll("{weekday}", WEEKDAYS[locale][d.getDay()]!)
+    .replaceAll("{weekday}", SCHEDULE_WORDS(locale)(WEEKDAYS[d.getDay()]!))
     .replaceAll("{week}", isoWeek(d))
     .replaceAll("{month}", `${d.getFullYear()}-${pad(d.getMonth() + 1)}`)
     .replaceAll("{year}", String(d.getFullYear()));

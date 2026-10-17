@@ -70,6 +70,7 @@
     "@tomradex/db": "workspace:*",
     "@tomradex/deps-graph": "workspace:*",
     "@tomradex/desktop-surface": "workspace:*",
+    "@tomradex/domain": "workspace:*",
     "@tomradex/engine-claude-code": "workspace:*",
     "@tomradex/engine-codex": "workspace:*",
     "@tomradex/engine-pi": "workspace:*",

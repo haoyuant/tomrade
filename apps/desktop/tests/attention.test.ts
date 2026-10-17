@@ -2,8 +2,9 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 vi.mock("electron", () => ({ app: {}, BrowserWindow: {}, Notification: {} }));
 import { NOTIFICATIONS_SECTION, remindAway, Teller, type AttentionEntry, type AttentionNote, type NotificationPrefs } from "../src/attention.js";
+import { DESKTOP_WORDS } from "../src/words.js";
 
-const WORDS = { assistant: "The assistant", permission: "{who} needs your approval", question: "{who} is asking you something", waiting: "{who} is waiting for you", stuck: "{who} stopped", finished: "{who} finished", lifted: "{who} can go on", liftedBody: "The usage limit has lifted." };
+const WORDS = DESKTOP_WORDS("en");
 
 function setup(overrides: Partial<NotificationPrefs> = {}) {
   const told: AttentionNote[] = [];

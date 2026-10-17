@@ -9,7 +9,7 @@ import type {} from "@tomradex/fields";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/items";
 import type {} from "@tomradex/settings";
-import { WORDS, type Locale, type Words } from "./words.js";
+import { INBOX_WORDS, type InboxWords } from "./words.js";
 
 export const INBOX_KINDS = ["bug", "feedback", "idea"] as const;
 export type InboxKind = (typeof INBOX_KINDS)[number];
@@ -374,6 +374,7 @@ const FEEDBACK_EXPR_SQL = `SELECT NULLIF(COUNT(*), 0) FROM plugin_inbox_entries 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 const text = (value: string | (() => string)) => (typeof value === "function" ? value() : value);
 const isKind = (k: unknown): k is InboxKind => (INBOX_KINDS as readonly unknown[]).includes(k);
+const KIND_KEYS = { bug: "kindBug", feedback: "kindFeedback", idea: "kindIdea" } as const satisfies Record<InboxKind, string>;
 /** How many new arrivals one pull has suggested on its own; the rest wait for a person to ask. */
 const AUTO_SUGGEST = 20;
 
@@ -451,7 +452,7 @@ export class Inbox extends Service {
   [Service.init]() {
     const ctx = this.home;
     ctx.db.migrate("inbox", MIGRATIONS, { tables: TABLES });
-    ctx.fields.derive({ id: "feedback", name: "Feedback", names: { zh: "反馈数" }, values: FEEDBACK_VALUES_SQL, expr: FEEDBACK_EXPR_SQL });
+    ctx.fields.derive({ id: "feedback", name: INBOX_WORDS("en")("feedbackField"), names: { zh: INBOX_WORDS("zh")("feedbackField") }, values: FEEDBACK_VALUES_SQL, expr: FEEDBACK_EXPR_SQL });
     const timer = setInterval(() => void this.pullAll(), this.config.pullMs);
     timer.unref?.();
     ctx.effect(() => () => clearInterval(timer), "inbox pull");
@@ -474,8 +475,8 @@ export class Inbox extends Service {
       ctx.on("inbox/changed", (projectId) => ctx.ipc.send("inbox.changed", projectId));
     });
     ctx.inject(["contributions"], (ctx) => {
-      ctx.contributions.sidebarModule({ id: "inbox", title: () => this.words().module, icon: "i-inbox", opens: "inbox", count: ({ projectId }) => this.count(projectId) });
-      ctx.contributions.section({ id: "inbox", title: () => this.words().section, render: (item) => this.section(item) });
+      ctx.contributions.sidebarModule({ id: "inbox", title: () => this.words()("module"), icon: "i-inbox", opens: "inbox", count: ({ projectId }) => this.count(projectId) });
+      ctx.contributions.section({ id: "inbox", title: () => this.words()("section"), render: (item) => this.section(item) });
       ctx.on("inbox/changed", () => ctx.contributions.changed());
     });
   }
@@ -744,7 +745,7 @@ export class Inbox extends Service {
     const source = this.sourceMap.get(entry.source);
     const body = text.trim();
     if (!body) throw new Error("Write a reply first");
-    if (!source?.reply) throw new Error(this.words().noReply(source ? this.titleOf(source) : entry.source));
+    if (!source?.reply) throw new Error(this.words()("noReply", { source: source ? this.titleOf(source) : entry.source }));
     await source.reply(entry, body);
     const now = Date.now();
     this.db(projectId).prepare("UPDATE plugin_inbox_entries SET reply = ?, replied_at = ?, updated_at = ? WHERE id = ?").run(body, now, now, id);
@@ -784,7 +785,7 @@ export class Inbox extends Service {
   private async suggestNow(projectId: string, id: string): Promise<InboxEntry> {
     const entry = this.open(projectId, id);
     const def = this.triagerDef;
-    if (!def) throw new Error(this.words().noTriager);
+    if (!def) throw new Error(this.words()("noTriager"));
     const unavailable = await this.triagerUnavailable(def);
     if (unavailable) throw new Error(unavailable);
     const db = this.db(projectId);
@@ -843,7 +844,7 @@ export class Inbox extends Service {
   async adopt(projectId: string, id: string, opts: AdoptOptions = {}): Promise<AdoptResult> {
     const entry = this.open(projectId, id);
     const s = entry.suggestion;
-    if (!s) throw new Error(this.words().noSuggestion);
+    if (!s) throw new Error(this.words()("noSuggestion"));
     let item: Item | null = null;
     let done: InboxEntry;
     if (s.action === "merge" && s.itemId) {
@@ -940,7 +941,7 @@ export class Inbox extends Service {
     const source = this.sourceMap.get(entry.source);
     const ref = entry.url ? `[${entry.externalId}](${entry.url})` : `\`${entry.externalId}\``;
     const when = new Date(entry.receivedAt).toISOString().slice(0, 10);
-    const head = `> ${w.quoted(source ? this.titleOf(source) : entry.source, when)} · ${ref}${entry.reporter ? ` · ${w.reporter} ${entry.reporter}` : ""}`;
+    const head = `> ${w("quoted", { source: source ? this.titleOf(source) : entry.source, when })} · ${ref}${entry.reporter ? ` · ${w("reporter")} ${entry.reporter}` : ""}`;
     const files = entry.attachments.map((a) => `- [${a.name}](${a.url})`).join("\n");
     return [head, entry.body.trim(), files].filter(Boolean).join("\n\n");
   }
@@ -955,7 +956,7 @@ export class Inbox extends Service {
       if (kept?.type === "select") return kept;
       const named = this.home.fields.custom(projectId).find((f) => f.name === name);
       if (named?.type === "select") return named;
-      return this.home.fields.create({ projectId, name: named ? `${name} · ${w.module}` : name, type: "select" });
+      return this.home.fields.create({ projectId, name: named ? `${name} · ${w("module")}` : name, type: "select" });
     };
     const option = (def: FieldDef, key: string, name: string): string => {
       const known = options[key];
@@ -965,11 +966,11 @@ export class Inbox extends Service {
       options[key] = id;
       return id;
     };
-    const sourceDef = field(row.source_field, w.sourceField);
-    const kindDef = field(row.kind_field, w.kindField);
+    const sourceDef = field(row.source_field, w("sourceField"));
+    const kindDef = field(row.kind_field, w("kindField"));
     const source = this.sourceMap.get(sourceId);
     const sourceOption = option(sourceDef, `source:${sourceId}`, source ? this.titleOf(source) : sourceId);
-    const kindOption = option(kindDef, `kind:${kind}`, w.kinds[kind]);
+    const kindOption = option(kindDef, `kind:${kind}`, w(KIND_KEYS[kind]));
     this.db(projectId).prepare("UPDATE plugin_inbox_projects SET source_field = ?, kind_field = ?, options_json = ?, updated_at = ? WHERE project_id = ?").run(sourceDef.id, kindDef.id, JSON.stringify(options), Date.now(), projectId);
     return { [sourceDef.id]: sourceOption, [kindDef.id]: kindOption };
   }
@@ -981,7 +982,7 @@ export class Inbox extends Service {
     const view = this.home.views.create(
       {
         projectId,
-        name: this.words().view,
+        name: this.words()("view"),
         icon: "i-inbox",
         layout: "table",
         query: { filter: [{ field: row.source_field, op: "not-in", values: [null] }], groupBy: row.kind_field, fields: ["status", row.source_field, "feedback"] }
@@ -997,7 +998,7 @@ export class Inbox extends Service {
     if (!rows.length) return null;
     const w = this.words();
     return {
-      text: w.sectionText(rows.length),
+      text: rows.length === 1 ? w("sectionOnce") : w("sectionTimes", { n: rows.length }),
       rows: rows.map(rowToEntry).map((e) => {
         const source = this.sourceMap.get(e.source);
         return {
@@ -1064,12 +1065,8 @@ export class Inbox extends Service {
     return typeof source.title === "function" ? source.title() : source.title;
   }
 
-  private locale(): Locale {
-    return (this.home.get("settings") as { locale?: () => Locale } | undefined)?.locale?.() === "zh" ? "zh" : "en";
-  }
-
-  words(): Words {
-    return WORDS[this.locale()];
+  words(): InboxWords {
+    return INBOX_WORDS((this.home.get("settings") as { locale?: () => string } | undefined)?.locale?.());
   }
 
   private changed(projectId: string): void {

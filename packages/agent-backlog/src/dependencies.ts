@@ -2,9 +2,10 @@ import type { Context } from "cordis";
 import { z } from "zod";
 import type {} from "@tomradex/db";
 import type {} from "@tomradex/items";
-import type { Author, Item } from "@tomradex/domain";
+import type { Author, Item, WordsLocale } from "@tomradex/domain";
 import type { LlmService } from "@tomradex/llm";
 import { overlap } from "./similar.js";
+import { BACKLOG_WORDS } from "./words.js";
 
 type Snapshot = Partial<Pick<Item, "id" | "key" | "title" | "kind" | "status" | "body" | "parentId" | "blocks" | "blockedBy">>;
 
@@ -208,10 +209,9 @@ export function applyDependencies(ctx: Context, projectId: string, proposal: Dep
 const short = (title: string) => (title.length > 18 ? `${title.slice(0, 18).trimEnd()}…` : title);
 
 /** The question and its two answers, in the language the tickets are written in. */
-export function reviewQuestion(proposal: DependencyProposal, titleOf: (key: string) => string, zh: boolean): { text: string; apply: string; skip: string } {
-  const edit = (sign: string, e: DependencyEdit) => `${sign} ${e.from} ${short(titleOf(e.from))} → ${e.to} ${short(titleOf(e.to))}${e.reason ? (zh ? `：${e.reason}` : ` — ${e.reason}`) : ""}`;
+export function reviewQuestion(proposal: DependencyProposal, titleOf: (key: string) => string, locale: WordsLocale): { text: string; apply: string; skip: string } {
+  const w = BACKLOG_WORDS(locale);
+  const edit = (sign: string, e: DependencyEdit) => `${sign} ${e.from} ${short(titleOf(e.from))} → ${e.to} ${short(titleOf(e.to))}${e.reason ? w("dependencyReason", { reason: e.reason }) : ""}`;
   const lines = [...proposal.add.map((e) => edit("+", e)), ...proposal.remove.map((e) => edit("−", e))];
-  return zh
-    ? { text: ["刚才的改动影响到 ticket 之间的依赖（A → B：B 要等 A 完成）。建议：", ...lines, "现在更新吗？"].join("\n"), apply: "现在更新", skip: "暂不" }
-    : { text: ["These changes affect dependencies between tickets (A → B: B waits for A). Suggested:", ...lines, "Update them now?"].join("\n"), apply: "Update now", skip: "Not now" };
+  return { text: [w("dependenciesIntro"), ...lines, w("dependenciesQuestion")].join("\n"), apply: w("dependenciesApply"), skip: w("dependenciesSkip") };
 }

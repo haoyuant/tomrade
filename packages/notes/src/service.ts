@@ -15,6 +15,7 @@ import { searchNotes, type NoteSearchInput, type NoteSearchResult } from "./sear
 import { MIGRATIONS, NotesStore, TABLES, nameKey, type IndexBatch } from "./store.js";
 import { isIndexedPath, isNotePath, noteName, parseNote, resolveLink, rewriteLink, type NoteLink } from "./syntax.js";
 import { registerTools } from "./tools.js";
+import { NOTES_WORDS } from "./words.js";
 
 declare module "cordis" {
   interface Context {
@@ -42,22 +43,25 @@ export interface NotesSettings {
   journalFolder: string;
 }
 
+const en = NOTES_WORDS("en");
+const zh = NOTES_WORDS("zh");
+
 export const NOTES_SECTION: SettingsSection<NotesSettings> = {
   id: "notes",
-  title: "Notes",
-  description: "Links between the project's notes, and where a day's journal goes.",
+  title: en("title"),
+  description: en("description"),
   schema: z.object({
-    updateLinks: z.boolean().default(true).meta({ title: "Update links when a note is renamed or moved" }),
-    journalFolder: z.string().default("Journal").meta({ title: "Journal folder" })
+    updateLinks: z.boolean().default(true).meta({ title: en("updateLinksTitle") }),
+    journalFolder: z.string().default("Journal").meta({ title: en("journalFolderTitle") })
   }),
   defaults: { updateLinks: true, journalFolder: "Journal" },
   order: 14,
   agent: "write",
   words: {
     zh: {
-      title: "笔记",
-      description: "项目笔记之间的链接，以及每天的日志放在哪里。",
-      fields: { updateLinks: { title: "笔记重命名或移动时更新链接" }, journalFolder: { title: "日志文件夹" } }
+      title: zh("title"),
+      description: zh("description"),
+      fields: { updateLinks: { title: zh("updateLinksTitle") }, journalFolder: { title: zh("journalFolderTitle") } }
     }
   }
 };
