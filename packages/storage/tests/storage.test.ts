@@ -4,6 +4,7 @@
  * diff, every write must reach the folder's log at once, and a folder changed
  * by someone else must be read back in — or, when both moved, left alone.
  */
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -382,6 +383,49 @@ describe("ctx.storage", () => {
     await expect(b.storage.setFolder(b.project.id, a.dir)).rejects.toThrow(ForeignProjectError);
     const other = await a.storage.attach(b.dir).catch((e: Error) => e);
     expect(other).toBe(b.project.id);
+  });
+
+  it("leaves a folder that lost the project alone, since another project may have it now", async () => {
+    const a = await machine();
+    const b = await machine();
+    a.items.create({ title: "Mine", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    await a.storage.publish(a.project.id);
+    // The folder goes, and another Tomrade makes a fresh one at the same path.
+    fs.rmSync(a.dir, { recursive: true, force: true });
+    fs.mkdirSync(path.join(a.dir, "files"), { recursive: true });
+    await a.storage.publish(a.project.id);
+    await a.storage.reconcile(a.project.id);
+    expect(fs.existsSync(path.join(a.dir, ARTIFACT_DIR))).toBe(false);
+    expect(await a.storage.statusFor(a.project.id)).toMatchObject({ state: "unavailable", detail: expect.stringContaining("no longer holds this project") });
+
+    await b.storage.setFolder(b.project.id, a.dir);
+    expect(String(readArtifact(a.dir)!.manifest.project.id)).toBe(b.project.id);
+    await a.storage.publish(a.project.id).catch(() => {});
+    expect(String(readArtifact(a.dir)!.manifest.project.id)).toBe(b.project.id);
+  });
+
+  it("writes the project back when its folder is chosen again", async () => {
+    const { storage, items, board, project, dir } = await machine();
+    items.create({ title: "Restored", projectId: project.id, boardId: board.id, by: "human" });
+    await storage.publish(project.id);
+    fs.rmSync(path.join(dir, ARTIFACT_DIR), { recursive: true, force: true });
+    expect((await storage.statusFor(project.id)).state).toBe("unavailable");
+    await storage.setFolder(project.id, dir);
+    expect(read(dir, "state/items.jsonl")).toMatch(/Restored/);
+    expect((await storage.statusFor(project.id)).state).toBe("synced");
+  });
+
+  it("puts .tomrade back in a code checkout whose branch had none", async () => {
+    const { storage, items, board, project, hubDir } = await machine();
+    const code = path.join(hubDir, "code");
+    fs.mkdirSync(code);
+    execFileSync("git", ["init", "-q", code]);
+    await storage.setFolder(project.id, code);
+    expect(storage.entry(project.id)?.git).toBe("shared");
+    fs.rmSync(path.join(code, ARTIFACT_DIR), { recursive: true, force: true });
+    items.create({ title: "Back again", projectId: project.id, boardId: board.id, by: "human" });
+    await storage.publish(project.id);
+    expect(read(code, "state/items.jsonl")).toMatch(/Back again/);
   });
 
   it("moves to another folder and leaves the old one as it was", async () => {
