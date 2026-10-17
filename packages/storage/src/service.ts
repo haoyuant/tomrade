@@ -745,7 +745,7 @@ export class Storage extends Service {
   /** The folder written and committed, and pushed where it has a remote; false when it could not be written yet. */
   private async writeOut(projectId: string, reason: string, opts: { leaving?: boolean } = {}): Promise<boolean> {
     const first = this.entry(projectId);
-    if (!first?.dir || !fs.existsSync(first.dir)) return false;
+    if (!first?.dir || !fs.existsSync(first.dir) || this.lost(first)) return false;
     const dir = first.dir;
     this.appendTail(projectId);
     // Someone else's change may be sitting in the folder; take it (merging if
@@ -785,6 +785,16 @@ export class Storage extends Service {
       this.quiet(projectId);
     }
     return true;
+  }
+
+  /**
+   * The folder held this project once and holds none now. Another project may
+   * have it by then, so it is not refilled unasked; choosing the folder again
+   * claims it back. A code checkout is the exception: a branch without
+   * `.tomrade/` is ordinary there.
+   */
+  private lost(entry: CatalogProject): boolean {
+    return !!entry.dir && entry.lastPublishedDigest !== null && entry.git !== "shared" && fs.existsSync(entry.dir) && !hasArtifact(entry.dir);
   }
 
   /** The manifest carries more than the digest covers (repo, exports); a change there is a change worth writing. */
@@ -1183,6 +1193,7 @@ export class Storage extends Service {
     if (!entry) return this.remember(projectId, LOCAL);
     if (!entry.dir) return this.remember(projectId, { ...LOCAL, detail: this.hub.dir ? undefined : "Choose the Hub folder to give this project a folder" });
     if (!fs.existsSync(entry.dir)) return this.remember(projectId, { state: "unavailable", location: entry.dir, detail: "Folder not found", lastSyncAt: entry.lastSyncAt });
+    if (this.lost(entry)) return this.remember(projectId, { state: "unavailable", location: entry.dir, detail: "The folder no longer holds this project; choose it again to write the project there", lastSyncAt: entry.lastSyncAt });
 
     let location = entry.dir;
     let transport: { state: SyncState; detail?: string } = { state: "synced" };
@@ -1228,7 +1239,7 @@ export class Storage extends Service {
   async setFolder(projectId: string, rawDir: string): Promise<StorageInfo> {
     const entry = this.mustEntry(projectId);
     const dir = path.resolve(rawDir);
-    if (entry.dir && path.resolve(entry.dir) === dir) return this.info(projectId);
+    if (entry.dir && path.resolve(entry.dir) === dir && !this.lost(entry)) return this.info(projectId);
     if (hasArtifact(dir)) {
       const { state, problem } = this.readFolder(dir);
       if (problem) throw new Error(problem.detail);
@@ -1238,7 +1249,8 @@ export class Storage extends Service {
     this.unwatch(projectId);
     const marked = hasArtifact(dir) ? this.readFolder(dir).state?.manifest.repo === "dedicated" : entry.git === "dedicated";
     const git = await this.detectOrigin(dir, marked);
-    this.hub.catalog.patchProject(projectId, { dir, git, exports: git === "shared" ? [] : entry.exports });
+    // A folder without the project is claimed afresh: nothing published there yet.
+    this.hub.catalog.patchProject(projectId, { dir, git, exports: git === "shared" ? [] : entry.exports, ...(hasArtifact(dir) ? {} : { lastPublishedDigest: null }) });
     this.scheduleHubWrite();
     if (hasArtifact(dir)) await this.refresh(projectId);
     await this.publish(projectId, "move");
