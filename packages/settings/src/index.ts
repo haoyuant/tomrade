@@ -102,12 +102,21 @@ export const SettingsConfig = z.object({
 /** Where this machine's API keys and tokens rest: encrypted by the OS keychain, or as plain text in settings.json. */
 export type SecretStorage = "keychain" | "plaintext";
 
-/** The languages the app speaks. */
+/** The languages the backend speaks; the interface speaks more, and those fall back to English here. */
 export type Locale = "en" | "zh";
 
-/** A language preference made concrete: "system" follows the system's locale, anything unknown is English. */
+/** Every language a person can pick; the interface translates them all. */
+export const LANGUAGES = ["en", "zh", "zh-Hant", "ja", "es", "de", "fr"] as const;
+
+/** Traditional Chinese systems name a script or a region that writes it. */
+const isSimplifiedChinese = (tag: string): boolean => {
+  const t = tag.toLowerCase();
+  return t.startsWith("zh") && !/^zh[-_](hant|tw|hk|mo)/.test(t);
+};
+
+/** A language preference made concrete: "system" follows the system's locale, any language without backend words is English. */
 export const resolveLocale = (preference: string | undefined, system: string | undefined): Locale =>
-  preference === "zh" || preference === "en" ? preference : system?.toLowerCase().startsWith("zh") ? "zh" : "en";
+  preference === "zh" || preference === "en" ? preference : preference && preference !== "system" ? "en" : system && isSimplifiedChinese(system) ? "zh" : "en";
 export type SettingsConfig = z.infer<typeof SettingsConfig>;
 
 /** The Hub's settings file: user-scope sections, each stamped so two machines can settle a clash by time. */
@@ -136,7 +145,7 @@ const THEME: SettingsSection<AppSettings["theme"]> = {
 const LANGUAGE: SettingsSection<AppSettings["language"]> = {
   id: "language",
   title: "Language",
-  schema: z.enum(["system", "en", "zh"]),
+  schema: z.enum(["system", ...LANGUAGES]),
   defaults: "system",
   order: 1,
   scope: "user",

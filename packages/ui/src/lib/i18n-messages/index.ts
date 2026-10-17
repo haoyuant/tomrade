@@ -200,3 +200,6 @@ export const zh: typeof en = {
   inbox: inbox.zh,
   feedback: feedback.zh
 };
+
+/** A translation beyond en and zh: any string it lacks shows in English. */
+export type PartialMessages = { [N in keyof typeof en]?: Partial<(typeof en)[N]> };

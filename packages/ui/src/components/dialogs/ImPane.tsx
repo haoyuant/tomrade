@@ -5,7 +5,7 @@ import { Icon, type IconId } from "~/components/icons";
 import { SectionHead, Tag } from "~/components/ui/atoms";
 import { invoke, messageOf } from "~/lib/api";
 import { useEngines } from "~/lib/agent";
-import { useI18n, type MessageKey } from "~/lib/i18n";
+import { INTL_TAG, useI18n, type MessageKey } from "~/lib/i18n";
 import {
   useImAdapters, useImAllow, useImClearContext, useImConnections, useImDeliveries, useImDiscard, useImIgnored,
   useImPairCancel, useImPairConfirm, useImPairings, useImPairStart, useImRetry, useImRevoke
@@ -445,7 +445,7 @@ function Ignored({ im, defaultProject, onError }: { im: ImSettings; defaultProje
   const [projectId, setProjectId] = useState(defaultProject);
   useEffect(() => { if (!projectId && defaultProject) setProjectId(defaultProject); }, [defaultProject, projectId]);
   const rows = ignored.data ?? [];
-  const time = (at: number) => new Date(at).toLocaleTimeString(locale === "zh" ? "zh-CN" : "en-US", { hour: "2-digit", minute: "2-digit" });
+  const time = (at: number) => new Date(at).toLocaleTimeString(INTL_TAG[locale], { hour: "2-digit", minute: "2-digit" });
   const routed = (row: ImIgnoredView) => im.routes.some((r) => r.connectionId === row.connectionId && r.tenantId === row.tenantId && r.conversationId === row.conversationId);
   const go = (row: ImIgnoredView, scope: "person" | "group") =>
     allow.mutate([{ ignoredId: row.id, scope, ...(routed(row) ? {} : { projectId }) }], { onError: (e) => onError(messageOf(e)) });
