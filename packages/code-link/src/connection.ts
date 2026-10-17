@@ -3,6 +3,7 @@ import path from "node:path";
 import { parse as parseToml } from "smol-toml";
 import type { Git } from "@tomradex/storage";
 import type { McpProjectApproval } from "@tomradex/agent";
+import type { PortClash } from "@tomradex/mcp";
 import { CURSOR_HOOK_SCRIPT, hasCursorHooks } from "@tomradex/engine-cursor";
 import { configuredMcpUrl } from "@tomradex/engine-opencode";
 import { outsideExtensionUrl } from "@tomradex/engine-pi";
@@ -30,6 +31,8 @@ export interface ConnectionView {
   claudeApproval?: "approved" | "rejected" | "pending";
   /** The same for each Claude Code config folder in use here, with the command that starts Claude Code under it. */
   claudeApprovals?: McpProjectApproval[];
+  /** This Tomrade's port was taken, so `mcpUrl` changes at every restart and Connect refuses to write it. */
+  clash?: PortClash;
 }
 
 const FILES = [".mcp.json", ".claude/settings.json", ".codebuddy/settings.json", ".codex/config.toml", PI_EXTENSION, "opencode.json", OPENCODE_PLUGIN, ".cursor/mcp.json", ".cursor/hooks.json", CURSOR_HOOK_SCRIPT, ".gemini/settings.json", "CLAUDE.md", "AGENTS.md"];

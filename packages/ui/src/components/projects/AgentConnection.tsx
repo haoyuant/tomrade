@@ -17,6 +17,9 @@ export function AgentConnection({ projectId, repoId, hint = false }: { projectId
   // Per Claude Code config folder when this Tomrade knows them; the single answer otherwise.
   const approvals = view?.claudeApprovals ?? (view?.claudeApproval ? [{ profile: "", state: view.claudeApproval, command: "claude" }] : []);
   const unapproved = approvals.filter((a) => a.state !== "approved");
+  // A taken port leaves this Tomrade on one that changes at every restart; Connect refuses to write it.
+  const held = view?.clash?.heldBy;
+  const clash = view?.clash && t("repositories.connectionPortClash", { port: view.clash.port, holder: held ? t(`repositories.connectionHolder_${held.kind}`, { version: held.version, pid: held.pid }) : t("repositories.connectionHolderUnknown") });
   return (
     <div className="stack-2 repo-agent-connection" data-testid="repo-agent-connection" data-state={state} style={{ marginTop: "var(--space-3)" }}>
       <div className="row">
@@ -33,7 +36,8 @@ export function AgentConnection({ projectId, repoId, hint = false }: { projectId
       ))}
       {state && state !== "connected" && <>
         <p className="meta-txt dense">{t("repositories.connectionFiles")}</p>
-        <button type="button" className="btn btn-secondary repo-agent-connect" disabled={connect.isPending || state === "no-checkout" || state === "unavailable"} onClick={() => connect.mutate()}>
+        {clash && <p className="meta-txt dense cli-warn repo-agent-clash">{clash}</p>}
+        <button type="button" className="btn btn-secondary repo-agent-connect" disabled={connect.isPending || state === "no-checkout" || state === "unavailable" || !!clash} onClick={() => connect.mutate()}>
           {connect.isPending ? t("repositories.connectionWorking") : state === "pending" ? t("repositories.connectionRetry") : t("repositories.connectionAction")}
         </button>
       </>}

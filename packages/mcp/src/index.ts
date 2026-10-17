@@ -349,7 +349,8 @@ export class Mcp extends Service {
     return (this.ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.() === "zh";
   }
 
-  private holderText(zh: boolean): string {
+  /** Who holds the clashed port, in words. */
+  holderText(zh: boolean): string {
     const held = this.clash?.heldBy;
     if (!held) return zh ? "其他程序" : "another program";
     const kind = zh ? (held.kind === "packaged" ? "正式版" : "开发版") : held.kind === "packaged" ? "the installed Tomrade" : "a development Tomrade";
