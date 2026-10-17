@@ -24,6 +24,8 @@ export interface AttentionEntry {
   text: string | null;
   /** Since when it has waited in this kind, as far as this run of the app has seen. */
   since: number;
+  /** Where the person was already told, at the terminal: no system notification on top (the count and the badge stay). */
+  toldIn?: "herdr";
 }
 
 /** What one notification says, and the entry it opens when clicked. */
@@ -251,7 +253,8 @@ export const attention = {
             out.set(key, {
               key, projectId, threadId: s.threadId, itemId, itemKey: itemKeyOf(projectId, itemId),
               kind: s.state === "error" ? "stuck" : "waiting",
-              who: engineTitle(s.agent), text: clip(s.activity ?? s.summary)
+              who: engineTitle(s.agent), text: clip(s.activity ?? s.summary),
+              ...(s.herdrPane ? { toldIn: "herdr" as const } : {})
             });
           }
         }
@@ -292,7 +295,7 @@ export const attention = {
         } catch (e) {
           ctx.logger.warn(`couldn't remind in IM: ${(e as Error).message}`);
         }
-        if (!shows || !Notification.isSupported()) return;
+        if (!shows || !Notification.isSupported() || note.entry.toldIn) return;
         if (process.platform === "win32") for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed() && win.isFocusable()) win.flashFrame(true);
         const n = new Notification({ title: note.title, body: note.body, silent: false });
         n.on("click", () => open(note.entry));
