@@ -259,7 +259,7 @@ export class Mcp extends Service {
       const agent = req.get("X-Tomrade-Agent");
       for (const listener of this.eventListeners) {
         try {
-          listener(agent === "codex" || agent === "workbuddy" ? { ...req.body, tomrade_agent: agent } : req.body);
+          listener(agent === "codex" || agent === "workbuddy" || agent === "pi" ? { ...req.body, tomrade_agent: agent } : req.body);
         } catch {
           // one listener's failure is not another's
         }

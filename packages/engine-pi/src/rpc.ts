@@ -145,7 +145,8 @@ export class PiRuntime implements Runtime {
     const tools = toolSelection(input);
     const start = await this.start(input);
     const args = ["--mode", "rpc", "-e", bridge, "--session-id", this.session, "--append-system-prompt", system, ...start.args, ...(tools ? ["--tools", tools] : [])];
-    const child = spawnCli(start.launch, args, { cwd: this.cwd, env: { ...process.env, ...start.env, ...input.env }, stdio: ["pipe", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
+    // The token tells the person's own Tomrade extension, if any, that the bridge holds this session.
+    const child = spawnCli(start.launch, args, { cwd: this.cwd, env: { ...process.env, ...start.env, ...input.env, TOMRADE_MCP_TOKEN: this.token }, stdio: ["pipe", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
     this.child = child;
     child.stdout.on("data", lineSplitter((line) => { try { this.receive(line); } catch (error) { this.fail(new Error(String(error))); this.close(); } }));
     child.stderr.on("data", (chunk) => { this.stderr = (this.stderr + chunk.toString()).slice(-2000); });

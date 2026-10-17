@@ -91,6 +91,10 @@ it("keeps one process across turns, resumes its session id, and answers permissi
     expect(one.metrics).toMatchObject({ transport: "rpc", runtime: "cold", uncachedInputTokens: 10, cacheReadTokens: 7, cacheWriteTokens: 1, providerModel: "fake/fixed-model" });
     expect(deltas).toEqual(["hel\u2028lo"]);
     expect(blocks).toContainEqual({ type: "text", text: "hel\u2028lo" });
+    // The person's own Tomrade extension steps aside for a session carrying its token.
+    const spawned = requests().find((r) => r.spawn) as { token: string | null; bridge: string };
+    expect(spawned.token).toMatch(/\S/);
+    expect(spawned.bridge).toContain(`"X-Tomrade-Run":"${spawned.token}"`);
 
     input.input = { kind: "text", text: "again" };
     io.resume = one.resume;
