@@ -287,6 +287,7 @@ export class Host {
           register: (tool) =>
             host.call(() => {
               host.own(tool.name, "tool");
+              if (tool.kit) host.own(tool.kit, "tool kit");
               const execute = host.back(tool.execute, `tool ${tool.name}`);
               return host.disposerOf(
                 tools().register({
@@ -294,9 +295,15 @@ export class Host {
                   title: tool.title,
                   description: tool.description,
                   input: tool.input,
+                  kit: tool.kit,
                   execute: (args, inv) => execute(args, { projectId: inv.projectId, runId: inv.run?.id, author: inv.by })
                 })
               );
+            }),
+          kit: (id, purpose) =>
+            host.call(() => {
+              host.own(id, "tool kit");
+              return host.disposerOf(tools().kit(id, purpose));
             }),
           list: () => host.call(() => tools().describe()),
           call: (name, args, opts) => host.call(() => tools().execute(name, args, { by: authorFor(ns), projectId: opts?.projectId })),

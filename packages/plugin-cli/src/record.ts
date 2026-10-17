@@ -121,7 +121,19 @@ export function recordingContext(namespace: string, allowed: ServiceName[], rec:
       });
     },
     get tools(): ToolsApi {
-      return need("tools", { register: (tool) => note("tools", tool.name, "tool"), list: async () => [], call: refuse, gate: async () => noop });
+      return need("tools", {
+        register: (tool) => {
+          if (tool.kit && !ownsId(namespace, tool.kit)) rec.violations.push({ kind: "tool kit", id: tool.kit });
+          return note("tools", tool.name, "tool");
+        },
+        kit: async (id) => {
+          if (!ownsId(namespace, id)) rec.violations.push({ kind: "tool kit", id });
+          return noop;
+        },
+        list: async () => [],
+        call: refuse,
+        gate: async () => noop
+      });
     },
     get contributions(): ContributionsApi {
       return need("contributions", {

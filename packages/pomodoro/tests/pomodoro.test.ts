@@ -64,6 +64,9 @@ it('Pomodoro ships on with its desktop widget, lives in the status bar with a qu
     expect(desktop.spec).toMatchObject({ transparent: true, clickThrough: true, anchor: 'sidebar-foot' });
     expect(desktop.spec.url).toMatch(/\/static\/timer\.html$/);
     expect((await status()).config).toMatchObject({ desktop: true, notify: true, sound: 'system:Glass', volume: 70 });
+    // Few conversations need the timer, so its tools wait in a kit until the model loads it.
+    expect(w.ctx.tools.describe().filter((t) => t.name.startsWith('pomodoro_')).map((t) => t.kit)).toEqual(['pomodoro', 'pomodoro']);
+    expect(w.ctx.tools.kits().pomodoro).toMatch(/Pomodoro/);
     // It speaks the app's language, English until the person picks another.
     expect(await c.statusItems({})).toMatchObject([{ id: 'pomodoro.status', text: 'Focus 25:00', icon: 'i-tomato', align: 'end', title: 'Pomodoro' }]);
     expect(await menu()).toEqual(['Start', 'Skip', 'Reset', 'Hide desktop widget', 'All settings…']);

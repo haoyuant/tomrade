@@ -93,7 +93,7 @@ returns is disposed when the service goes.
 | `fields` / `boards` / `views` / `projects` | the project's fields (and `create`/`update`/`remove`/`addOption`), workstreams, saved views, projects — read |
 | `db` | `migrate(steps, { scope, tables })` for `plugin_<namespace>_*`; `all`, `get`, `run`, `batch` (one transaction) against a project id or `"hub"`; `isOpen` |
 | `settings` | `register({ title, schema, defaults })` — the card is drawn from the schema — `get`, `set` |
-| `tools` | `register(defineTool(…))`, `list`, `call`, `gate(check)` (throw to refuse any tool call) |
+| `tools` | `register(defineTool(…))` (SDK 0.2.6: `kit` keeps a rarely needed tool out of each request until the model loads it; `kit(id, purpose)` says what the kit is for), `list`, `call`, `gate(check)` (throw to refuse any tool call) |
 | `contributions` | `command`, `badge`, `statusItem`, `section`, `graph` — see [Contributions](#contributions); callbacks may be async |
 | `agent` | `playbook({ id, title, when, body, tools })` |
 | `surfaces` | `open({ id, document, … })` — a document inside the plugin's own package, never a remote page |
