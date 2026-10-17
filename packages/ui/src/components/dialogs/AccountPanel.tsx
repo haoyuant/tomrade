@@ -16,6 +16,9 @@ const copy = {
   en: {
     title: "Tomrade account", intro: "Your account synchronizes the Hub catalog and preferences. Project content stays in your project folders.", email: "Email", password: "Password", signIn: "Sign in", signUp: "Create account", signOut: "Sign out", sync: "Sync Hub", busy: "Working…", pending: "Pending changes", local: "Keep local", cloud: "Use cloud", conflict: "Choose which version of this Hub record to keep", loading: "Loading account…", retry: "Retry",
     passwordHint: `A new account needs at least ${MIN_PASSWORD} characters.`,
+    why: "An account keeps your project list and preferences in sync across your computers.",
+    useLocally: "Use without an account",
+    localNote: "Your projects stay on this computer. You can sign in later in Settings\u00a0→\u00a0Hub.",
     needEmail: "Enter your email.", badEmail: "That doesn't look like an email address.", needPassword: "Enter your password.", shortPassword: `Use at least ${MIN_PASSWORD} characters for a new account.`,
     otherAccount: (owner: string) => `Another account opens its own projects. ${owner}'s projects stay on this computer for when you sign back in.`,
     switching: (email: string) => `Opening ${email}'s projects…`,
@@ -69,6 +72,9 @@ const copy = {
   zh: {
     title: "Tomrade 账号", intro: "账号同步 Hub 目录和用户偏好。项目内容仍保存在各自的项目文件夹中。", email: "邮箱", password: "密码", signIn: "登录", signUp: "注册账号", signOut: "退出登录", sync: "同步 Hub", busy: "处理中…", pending: "待同步变更", local: "保留本地版本", cloud: "使用云端版本", conflict: "请选择要保留的 Hub 记录版本", loading: "正在读取账号…", retry: "重试",
     passwordHint: `注册新账号需要至少 ${MIN_PASSWORD} 位密码。`,
+    why: "账号用于在多台电脑之间同步项目列表和偏好设置。",
+    useLocally: "不登录，本地使用",
+    localNote: "项目只保存在这台电脑上。之后可以在 设置\u00a0→\u00a0主目录 中登录。",
     needEmail: "请输入邮箱。", badEmail: "邮箱格式不正确。", needPassword: "请输入密码。", shortPassword: `注册新账号的密码至少需要 ${MIN_PASSWORD} 位。`,
     otherAccount: (owner: string) => `换用其他账号会打开那个账号自己的项目；${owner} 的项目仍保留在这台电脑上，重新登录即可回来。`,
     switching: (email: string) => `正在打开 ${email} 的项目…`,
@@ -250,11 +256,13 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
     {problem?.field === "email" && <span id="account-problem" className="field-note is-error" role="alert">{problem.text}</span>}
   </div>;
   const resendLabel = cooldown.left ? t.resendIn(cooldown.left) : t.resend;
+  // Never waits on the server or on another action: local use stays one click away.
+  const continueLocally = () => void invoke("account.useLocally").then(info => qc.setQueryData(["account"], info), e => setNotice(explain(e)));
   return <div className="panel stack-3" aria-busy={busy || switchingTo !== null}>
-    {!entrance && <>
+    {!entrance ? <>
       <h2 className="sec-title">{t.title}</h2>
       <p className="meta-txt">{t.intro}</p>
-    </>}
+    </> : step.kind === "form" && <p className="meta-txt">{t.why}</p>}
     {account.isPending ? <p>{t.loading}</p> : account.error ? <>
       <p role="alert">{account.error.message}</p><button className="btn btn-secondary" onClick={() => void account.refetch()}>{t.retry}</button>
     </> : account.data?.user && deleting ? <form className="account-step stack-3" noValidate aria-labelledby="account-delete-title" onSubmit={e => {
@@ -370,6 +378,10 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
     {!account.data?.user && account.data?.offlineAccess && <button className="btn btn-ghost" disabled={busy} onClick={() => void run(() => invoke("account.signOut"))}>{t.signOut}</button>}
     {account.data?.status.detail && !(entrance && account.data.status.state === "unavailable") && <p role="status">{account.data.status.detail}</p>}
     {notice && <p role="status">{notice}</p>}
+    {entrance && !account.data?.user && switchingTo === null && <div className="account-local">
+      <button type="button" className="link-btn" onClick={continueLocally}>{t.useLocally}</button>
+      <p className="field-note">{t.localNote}</p>
+    </div>}
   </div>;
 }
 
@@ -378,7 +390,7 @@ export function AccountGate({ children }: { children: ReactNode }) {
   const account = useAccount();
   const [entered, setEntered] = useState(false);
   if (hub.isPending) return null;
-  if (hub.data?.cloudEnabled && !account.data?.user && !account.data?.offlineAccess) return <main className="sheet account-gate">
+  if (hub.data?.cloudEnabled && !account.data?.user && !account.data?.offlineAccess && !account.data?.localOnly) return <main className="sheet account-gate">
     <AccountSunrise />
     <div className="account-gate__content">
       <header className="account-gate__brand">

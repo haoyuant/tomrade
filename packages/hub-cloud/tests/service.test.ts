@@ -7,7 +7,7 @@ import { fresh, settle } from "@tomradex/testkit";
 import { Storage, readArtifact, readHubManifest } from "@tomradex/storage";
 import Settings from "@tomradex/settings";
 import { CloudHub, TERMS_VERSION, type LocalAccounts } from "../src/service.js";
-import type { CloudRecord, Mutation } from "../src/cache.js";
+import { CloudCache, type CloudRecord, type Mutation } from "../src/cache.js";
 import { THEME_TYPOGRAPHY_NAMES, THEME_TOKEN_NAMES, type CustomTheme } from "@tomradex/domain";
 
 const remote = vi.hoisted(() => ({
@@ -20,7 +20,9 @@ const remote = vi.hoisted(() => ({
   /** The account's user_metadata, what sign-up sent as metadata, and each metadata update in order. */
   meta: {} as Record<string, unknown>, signUpData: null as Record<string, unknown> | null, metaUpdates: [] as Record<string, unknown>[],
   /** Accounts deleted through the RPC. */
-  deleted: [] as string[]
+  deleted: [] as string[],
+  /** Whether this machine starts with a stored session. */
+  signedIn: true
 }));
 vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
   const mail = async (type: string, email: string, to?: string) => {
@@ -33,7 +35,7 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
   return {
     auth: {
       onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
-      getSession: async () => ({ data: { session: { user: user() } }, error: null }),
+      getSession: async () => ({ data: { session: remote.signedIn ? { user: user() } : null }, error: null }),
       stopAutoRefresh() {}, signOut: async () => ({ error: remote.offline ? { message: "fetch failed" } : null }),
       signInWithPassword: async ({ password }: { password: string }) => password === "wrong"
         ? { data: { user: null, session: null }, error: { message: "Invalid login credentials", code: "invalid_credentials" } }
@@ -89,7 +91,7 @@ beforeEach(() => {
   remote.offline = false; remote.loseReply = false; remote.records.clear(); remote.receipts.clear(); remote.requests = []; remote.forgotten = [];
   remote.as = null; remote.confirm = false; remote.signUps = 0; remote.adopted = [];
   remote.mails = []; remote.taken = false; remote.mailWait = 0;
-  remote.meta = {}; remote.signUpData = null; remote.metaUpdates = []; remote.deleted = [];
+  remote.meta = {}; remote.signUpData = null; remote.metaUpdates = []; remote.deleted = []; remote.signedIn = true;
 });
 afterEach(async () => {
   for (const ctx of contexts.splice(0)) await ctx.fiber.dispose();
@@ -223,6 +225,31 @@ it("persists a removal before the debounce timer or process exit, and explicit s
   expect(cloud.info().offlineAccess).toBe(false);
   expect(cloud.info().user).toBeNull();
   expect(cloud.info().pending).toBeGreaterThan(0);
+});
+
+it("works without an account, sends nothing, and the first account to sign in takes what was made meanwhile", async () => {
+  remote.signedIn = false;
+  const { cloud, ctx, project, dir } = await machine();
+  expect(cloud.info()).toMatchObject({ user: null, owner: null, offlineAccess: false, localOnly: false });
+  expect(cloud.useLocally()).toMatchObject({ user: null, localOnly: true });
+  const made = ctx.projects.create({ name: "Made offline", keyPrefix: "MO" });
+  await ctx.storage.writeHub();
+  await cloud.sync();
+  expect(remote.requests).toEqual([]);
+  expect(cloud.info().pending).toBeGreaterThan(0);
+  // The choice is this local Hub's, so the next start opens straight into the app.
+  expect(new CloudCache(path.join(dir, "hub-cloud.json"), "https://example.supabase.co").data).toMatchObject({ localOnly: true, userId: null });
+
+  const info = await cloud.signIn("user@example.test", "password");
+  expect(info).toMatchObject({ user: { id: remote.userId }, owner: { email: "user@example.test" }, offlineAccess: true, localOnly: false, pending: 0 });
+  expect(remote.records.get(`project:${made.id}`)?.value).toMatchObject({ id: made.id, name: "Made offline" });
+  expect(remote.records.get(`project:${project.id}`)?.value).toMatchObject({ id: project.id });
+  expect(ctx.projects.list().map(p => p.id).sort()).toEqual([project.id, made.id].sort());
+
+  // Signing out returns to the sign-in page, which offers local use again.
+  await cloud.signOut();
+  expect(cloud.info()).toMatchObject({ user: null, offlineAccess: false, localOnly: false });
+  expect(cloud.useLocally()).toMatchObject({ localOnly: true, owner: { email: "user@example.test" } });
 });
 
 it("keeps the first run's untouched project out of the account until someone uses it", async () => {

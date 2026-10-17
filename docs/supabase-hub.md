@@ -73,13 +73,30 @@ and rename; queued requests retain their mutation ids across application restart
 
 ## Offline operation and conflicts
 
-The UI initially requires account sign-in for configured cloud builds. After a
-successful authenticated Hub connection, cached local projects remain usable
-offline, including when the network prevents session renewal. Cloud operations
-still require a valid Supabase session. An explicit local sign-out locks the UI
-and keeps pending edits for the same account's next login; signing in as another
-account from there opens that account's own local Hub instead. This is an application
-gate, not encryption of project files or a change to the local MCP trust model.
+The account is optional. The sign-in page says what one is for (keeping the
+project list and preferences in sync across computers) and offers **Use without
+an account** on every step, whether or not the server can be reached. Choosing it
+sets `localOnly` in `hub-cloud.json` and opens the app; later starts open it
+directly. Projects, tickets and the MCP server work as they do with an account.
+Their catalog entries and settings wait in the outbox, and nothing is sent.
+
+Signing in later from Settings → Hub sends that queue. On a local Hub that nobody
+owns yet, the account takes it as on a first run: the projects made here join its
+Hub under their own ids, and the account's other projects are restored as
+described below. The first successful sync clears `localOnly`. One exception: an
+account that already keeps its own local Hub elsewhere on this machine restarts
+into that one, and the projects made here stay in this folder, unsynced.
+
+After a successful authenticated Hub connection, cached local projects remain
+usable offline, including when the network prevents session renewal. Cloud
+operations still require a valid Supabase session. An explicit local sign-out
+ends the session and returns to the sign-in page. Pending edits stay for the same
+account's next login. Signing in as another account from there opens that
+account's own local Hub instead. **Use without an account** reopens this
+computer's projects without syncing. A lock that only the server could open would
+strand an owner who signed out and then lost the network. The sign-in page is an
+application gate, not encryption of project files or a change to the local MCP
+trust model.
 
 Settings enqueue changes immediately. Project references are derived from the
 existing machine catalog on startup, explicit sync and the periodic sync cycle;

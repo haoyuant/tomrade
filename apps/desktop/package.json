@@ -31,6 +31,7 @@
     "test:github-signin": "electron scripts/github-signin-check.mjs",
     "test:terms": "electron scripts/terms-check.mjs",
     "test:account-delete": "electron scripts/account-delete-check.mjs",
+    "test:account-optional": "electron scripts/account-optional-check.mjs",
     "test:updates": "electron scripts/updates-check.mjs",
     "test:public-repo": "electron scripts/public-repo-check.mjs",
     "test:extensions": "electron scripts/extensions-check.mjs",
