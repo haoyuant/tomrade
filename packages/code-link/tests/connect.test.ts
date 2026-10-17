@@ -416,6 +416,26 @@ describe("outside clients, told apart by their connection", () => {
     expect(codeLink.store.session(project.id, claimed.tracking.sessionId)?.state).toBe("running");
   });
 
+  it("hangs each pull request on the repository its URL names, and is done only once both are merged", async () => {
+    const { codeLink, ctx, items, project, board, repo } = await machine();
+    const plugins = ctx.repos.create({ projectId: project.id, remote: "git@github.com-work:Acme/plugins.git" });
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "Across two repositories", status: "doing", by: "human" });
+    const branch = `tom-${item.keyNum}/both`;
+    const human = { by: "human" as const, projectId: project.id };
+    const link = (prUrl: string, prState?: "merged") => ctx.tools.execute("link_code", { key: item.key, branch, prUrl, ...(prState ? { prState } : {}) }, human);
+    const byRepo = () => Object.fromEntries(codeLink.links(project.id, item.id).map((l) => [l.repoId, [l.prUrl, l.prState]]));
+
+    // This workstream's repository has no GitHub remote, so its pull request stays where the ticket stands.
+    await link("https://github.com/acme/app/pull/24");
+    await link("https://github.com/acme/plugins/pull/8");
+    expect(byRepo()).toEqual({ [repo.id]: ["https://github.com/acme/app/pull/24", "open"], [plugins.id]: ["https://github.com/acme/plugins/pull/8", "open"] });
+
+    await link("https://github.com/acme/app/pull/24", "merged");
+    expect(items.get(project.id, item.id)!.status).toBe("verifying");
+    await link("https://github.com/acme/plugins/pull/8", "merged");
+    expect(items.get(project.id, item.id)!.status).toBe("done");
+  });
+
   it("follows a client with no hooks through its connection until it closes", async () => {
     const { codeLink, ctx, items, project, board, repo } = await machine();
     const item = items.create({ projectId: project.id, boardId: board.id, title: "Cursor work", status: "todo", by: "human" });

@@ -4,7 +4,7 @@ import { z } from "zod";
 import type {} from "@tomradex/agent";
 import type {} from "@tomradex/boards";
 import type {} from "@tomradex/items";
-import type {} from "@tomradex/repos";
+import { remoteIdentity } from "@tomradex/repos";
 import type {} from "@tomradex/storage";
 import type { Item } from "@tomradex/domain";
 import { defineTool, requireProjectId, type ToolInvocation } from "@tomradex/tools";
@@ -68,6 +68,7 @@ interface Subject {
 }
 
 const PR_NUMBER = /\/pull\/(\d+)(?:[/?#]|$)/;
+const GITHUB_PULL = /^https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\//i;
 
 export function registerTools(ctx: Context, host: ToolHost): void {
   const untracked = () => CODE_WORDS[ctx.get("settings")?.locale?.() ?? "en"].untrackedSession;
@@ -118,6 +119,15 @@ export function registerTools(ctx: Context, host: ToolHost): void {
     const repoId = s?.repoId || board?.repoId || null;
     const branch = s?.branch || thread?.branch || null;
     return { item, repoId, branch, session: s };
+  };
+
+  /** The project's repository a GitHub pull request URL names: the pull request is that repository's, whichever one the session stands in. */
+  const repoOfPull = (projectId: string, prUrl: string | undefined): string | null => {
+    const slug = prUrl ? GITHUB_PULL.exec(prUrl)?.[1]?.toLowerCase() : undefined;
+    if (!slug) return null;
+    const named = ctx.repos.list(projectId).filter((r) => remoteIdentity(r.remote)?.path === slug);
+    // An SSH alias (`github.com-work`) still names GitHub; another server's copy of the same path does not come first.
+    return (named.find((r) => remoteIdentity(r.remote)?.host === "github.com") ?? named.find((r) => remoteIdentity(r.remote)?.host.startsWith("github.com")) ?? named[0])?.id ?? null;
   };
 
   /**
@@ -183,7 +193,8 @@ export function registerTools(ctx: Context, host: ToolHost): void {
       }),
       execute: (args, inv) => {
         const projectId = requireProjectId("link_code", args.projectId, inv);
-        const { item, repoId, branch: implied, session } = subject("link_code", projectId, args.key, inv);
+        const { item, repoId: standing, branch: implied, session } = subject("link_code", projectId, args.key, inv);
+        const repoId = repoOfPull(projectId, args.prUrl) ?? standing;
         if (session && args.scopeChecked !== true) {
           throw new Error("link_code: inspect the complete diff against the default branch, remove work outside this ticket, then pass scopeChecked: true");
         }
