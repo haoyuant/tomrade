@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/engine-workbuddy",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "WorkBuddy's CodeBuddy Code CLI as a conductor over ACP: `codebuddy --acp`, also the copy inside the WorkBuddy app, Tomrade tools over MCP",

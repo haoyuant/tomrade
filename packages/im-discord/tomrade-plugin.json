@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "title": "Discord",
   "description": "Talk to a project's assistant from Discord: direct messages, @mentions and replies in channels and threads, buttons and selects for questions, and the /tomrade command. Connects from this computer over the Discord Gateway.",
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "author": {
     "name": "Tomrade"
   },

@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/engine-acp",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "Agent Client Protocol conductor: one ACP agent process per hot thread, Tomrade tools over HTTP MCP, the agent's own session resumed",

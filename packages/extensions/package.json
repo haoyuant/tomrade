@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/extensions",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "The host side of the plugin contract: turns an SDK plugin into a row behind an async, attributed, namespaced PluginContext",

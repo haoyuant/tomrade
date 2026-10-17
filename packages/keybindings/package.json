@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/keybindings",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "The person's keyboard shortcuts: which keys run which command, carried with their settings",

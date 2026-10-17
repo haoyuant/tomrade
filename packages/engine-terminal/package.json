@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/engine-terminal",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "Gemini CLI as an in-app agent over ACP that can also take a ticket in a terminal, and Antigravity CLI (agy) for a terminal only",

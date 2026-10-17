@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/notes",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "ctx.notes \u2014 a project's files read as notes: wiki links and backlinks, tags, a ranked full-text index, link updates when a note moves, and a daily journal. Optional \u2014 Files works the same without it.",

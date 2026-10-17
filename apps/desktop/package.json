@@ -1,7 +1,7 @@
 {
   "name": "@tomrade/desktop",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.1.0",
   "type": "module",
   "description": "Electron shell: boots the cordis context from tomrade.yml, supplies the IPC transport, opens the window",

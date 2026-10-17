@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/engine-pi",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "Pi coding agent conductor: one RPC process per hot thread, Tomrade tools over MCP through a bridge extension, resumable sessions",

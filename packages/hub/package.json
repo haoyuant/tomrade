@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/hub",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "ctx.hub \u2014 this machine's identity, its Hub folder and the catalog of projects it knows",

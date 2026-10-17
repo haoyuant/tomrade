@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/mcp",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.1",
   "type": "module",
   "description": "Projects ctx.tools onto MCP (streamable HTTP on 127.0.0.1) for coding agents",

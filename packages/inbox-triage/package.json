@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/inbox-triage",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "Pre-triage for the inbox: the worker model proposes a duplicate, kind, priority, title and draft reply for each new entry, for a person to confirm",

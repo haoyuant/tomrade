@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/inbox",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "A project's inbox: feedback and bug reports from its sources wait here until someone triages them into tickets",

@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/settings",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "ctx.settings \u2014 a file today, synced later; plugins register schema-described sections",

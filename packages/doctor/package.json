@@ -1,7 +1,7 @@
 {
   "name": "@tomradex/doctor",
   "private": true,
-  "license": "BUSL-1.1",
+  "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
   "description": "The troubleshooter: checks what it can when something fails, says what to do about it, and sends a report the person has read to Tomrade's developer",
