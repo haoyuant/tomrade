@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { QuickSetupResult } from "@tomradex/llm";
 import { Icon } from "~/components/icons";
-import { invoke } from "~/lib/api";
+import { invoke, messageOf } from "~/lib/api";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useQuickSetup, useProviders } from "~/lib/setup";
 import { PlainSecretNote } from "~/components/ui/PlainSecretNote";
@@ -59,7 +59,7 @@ export function QuickModelSetup({ onConnected }: { onConnected?: () => void }) {
           onConnected?.();
         }
       },
-      onError: (error) => setResult({ ok: false, kind: "other", detail: error instanceof Error ? error.message : String(error) })
+      onError: (error) => setResult({ ok: false, kind: "other", detail: messageOf(error) })
     });
   };
 

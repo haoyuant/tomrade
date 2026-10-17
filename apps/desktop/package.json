@@ -24,6 +24,7 @@
     "test:notes": "electron scripts/notes-check.mjs",
     "test:agent-panel": "electron scripts/agent-panel-check.mjs",
     "test:error-details": "electron scripts/error-details-check.mjs",
+    "test:load-error": "electron scripts/load-error-check.mjs",
     "test:codex-commands": "electron scripts/codex-commands-check.mjs",
     "test:doctor": "electron scripts/doctor-check.mjs",
     "test:inbox": "electron scripts/inbox-check.mjs",

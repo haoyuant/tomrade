@@ -11,7 +11,7 @@ import { agoLabel } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { keys, useHubInfo, useMcpUrl, useProjects, useRestores, useSettings, useSettingsSections } from "~/lib/queries";
 import { useSeen } from "~/lib/onboarding";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 import { FirstRunSetup } from "~/components/setup/FirstRunSetup";
 import { useSetup } from "~/lib/setup";
 import { useSettingsHost } from "~/lib/settingsHost";
@@ -162,7 +162,7 @@ function ProjectsHome({ onRestartOnboarding }: { onRestartOnboarding: () => void
       void qc.invalidateQueries({ queryKey: keys.projects });
       void navigate({ to: "/p/$projectId", params: { projectId: project.id } });
     },
-    onError: (err) => toast({ body: err instanceof Error ? err.message : String(err) })
+    onError: (err) => toast(errorSpec(err))
   });
   const mcp = useMcpUrl();
   const [settingsOpen, setSettingsOpen] = useState(false);

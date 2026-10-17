@@ -4,6 +4,7 @@ import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dial
 import { Icon } from "~/components/icons";
 import { invoke } from "~/lib/api";
 import { useI18n, type MessageKey } from "~/lib/i18n";
+import { readableError } from "~/lib/toast";
 
 type Include = { environment: boolean; checks: boolean; error: boolean; logs: boolean; conversation: boolean };
 const SECTIONS: (keyof Include)[] = ["error", "checks", "environment", "logs", "conversation"];
@@ -64,7 +65,7 @@ export function ReportDialog({ projectId, threadId, onOpenChange }: { projectId:
             </fieldset>
             <textarea className="input report-note" rows={3} placeholder={t("doctor.notePlaceholder")} value={note} onChange={(e) => setNote(e.target.value)} />
             <pre className="report-preview" aria-label={t("doctor.previewLabel")}>{text || t("doctor.empty")}</pre>
-            {send.error && <p className="ai-error">{send.error.message}</p>}
+            {send.error && <p className="ai-error">{readableError(send.error)}</p>}
           </>
         )}
       </DialogBody>

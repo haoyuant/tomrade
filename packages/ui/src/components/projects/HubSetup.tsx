@@ -4,7 +4,7 @@ import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import { useI18n } from "~/lib/i18n";
 import { useConfigureHub, useHubInfo } from "~/lib/queries";
 import { pickDirectory } from "~/lib/shell";
-import { useToast } from "~/lib/toast";
+import { errorSpec, useToast } from "~/lib/toast";
 
 /**
  * First run: the one question before anything else. Tomrade keeps every
@@ -33,7 +33,7 @@ export function HubSetup() {
   const submit = () => {
     const trimmed = dir.trim();
     if (!trimmed || configure.isPending) return;
-    configure.mutate(trimmed, { onError: (error) => toast({ body: error instanceof Error ? error.message : String(error) }) });
+    configure.mutate(trimmed, { onError: (error) => toast(errorSpec(error)) });
   };
 
   return (

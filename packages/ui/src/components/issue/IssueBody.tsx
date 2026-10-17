@@ -16,7 +16,7 @@ import { filesKeys } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
 import { renderMarkdown } from "~/lib/markdown";
 import { openExternal } from "~/lib/shell";
-import { errorSpec, useToast } from "~/lib/toast";
+import { errorSpec, readableError, useToast } from "~/lib/toast";
 import { cn } from "~/lib/utils";
 import type { FieldProps } from "./fields";
 import { hits } from "~/lib/keybindings";
@@ -294,7 +294,7 @@ function BodyEditor({ item, write, className, onDone }: FieldProps & { className
       if (ok) close();
       else if (!mounted.current) stash();
     } catch (err) {
-      toast({ body: t("fields.attachFailedToast", { error: err instanceof Error ? err.message : String(err) }) });
+      toast({ body: t("fields.attachFailedToast", { error: readableError(err) }) });
       if (!mounted.current) stash();
     } finally {
       busy.current = false;
@@ -320,7 +320,7 @@ function BodyEditor({ item, write, className, onDone }: FieldProps & { className
         drafts.current.set(draft.id, draft);
         added.push(draft);
       } catch (err) {
-        toast({ body: err instanceof Error ? err.message : String(err) });
+        toast(errorSpec(err));
       }
     }
     const v = view.current;

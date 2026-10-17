@@ -60,6 +60,7 @@ import { restore } from "./restore";
 import { repositories } from "./repositories";
 import { workspaceContext } from "./workspaceContext";
 import { feedback, inbox } from "./inbox";
+import { errors } from "./errors";
 
 export const en = {
   common: common.en,
@@ -128,7 +129,8 @@ export const en = {
   notes: notes.en,
   history: history.en,
   inbox: inbox.en,
-  feedback: feedback.en
+  feedback: feedback.en,
+  errors: errors.en
 };
 
 export const zh: typeof en = {
@@ -198,5 +200,6 @@ export const zh: typeof en = {
   notes: notes.zh,
   history: history.zh,
   inbox: inbox.zh,
-  feedback: feedback.zh
+  feedback: feedback.zh,
+  errors: errors.zh
 };

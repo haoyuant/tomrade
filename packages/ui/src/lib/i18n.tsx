@@ -47,6 +47,11 @@ function interpolate(template: string, vars?: Record<string, string | number>): 
   return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, name: string) => String(vars[name] ?? ""));
 }
 
+let activeLocale: Locale = "en";
+
+/** `t` for words made outside a render — an error made readable — in the language showing now. */
+export const translate = (key: MessageKey, vars?: Record<string, string | number>): string => interpolate(lookup(activeLocale, key), vars);
+
 export function detectSystemLocale(): Locale {
   const tag = (typeof navigator !== "undefined" && navigator.language) || "en";
   return tag.toLowerCase().startsWith("zh") ? "zh" : "en";
@@ -101,6 +106,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   // time…) in step with the active locale before children read them this render — cheaper
   // than threading a locale prop through every call site that formats one of those strings.
   setDomainLocale(locale);
+  activeLocale = locale;
   if (typeof document !== "undefined") document.documentElement.lang = locale;
 
   const t = useCallback((key: MessageKey, vars?: Record<string, string | number>) => interpolate(lookup(locale, key, map), vars), [locale, map]);

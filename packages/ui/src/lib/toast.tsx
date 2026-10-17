@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Icon } from "~/components/icons";
 import { messageOf } from "~/lib/api";
-import { useI18n } from "~/lib/i18n";
+import { domainErrorWords } from "~/lib/errors";
+import { translate, useI18n } from "~/lib/i18n";
 
 export interface ToastSpec {
   /** Rich body: fragments so an issue key can carry the mono treatment. */
@@ -14,16 +15,24 @@ export interface ToastSpec {
   sticky?: boolean;
   /** An error reads as one: marked, said assertively, longer-lived, and its words can be copied. */
   tone?: "error";
+  /** The words behind an error's translated line, copied along with it. */
+  detail?: string;
 }
 
-/** An error in the person's view: no IPC wrapper, no class name in front. */
+/** An error in the person's view: no IPC wrapper, no class name in front, a domain refusal in their language. */
 export const readableError = (error: unknown): string => {
   const raw = messageOf(error);
+  const known = domainErrorWords(raw);
+  if (known) return translate(known.key, known.vars);
   return raw.replace(/^(?:[A-Z][A-Za-z]*Error): /, "").trim() || raw;
 };
 
 /** The toast for a failure: `toast(errorSpec(err))`. */
-export const errorSpec = (error: unknown): ToastSpec => ({ body: readableError(error), tone: "error" });
+export const errorSpec = (error: unknown): ToastSpec => {
+  const body = readableError(error);
+  const raw = messageOf(error);
+  return { body, tone: "error", detail: raw.includes(body) ? undefined : raw };
+};
 
 interface Toast extends ToastSpec {
   id: number;
@@ -123,7 +132,7 @@ function ToastRow({ toast, onDismiss }: { toast: Toast; onDismiss: () => void })
           style={{ padding: 4 }}
           title={t("toast.copy")}
           aria-label={t("toast.copy")}
-          onClick={() => void navigator.clipboard?.writeText(toast.body as string).catch(() => {})}
+          onClick={() => void navigator.clipboard?.writeText([toast.body as string, toast.detail].filter(Boolean).join("\n\n")).catch(() => {})}
         >
           <Icon name="i-copy" size={12} />
         </button>

@@ -356,7 +356,9 @@ export function WorkspaceProvider({
     [fieldById, optionsOf]
   );
 
-  const settled = !projects.isLoading && !views.isLoading && !boards.isLoading;
+  // A read that failed says nothing about whether the project or the view is still there.
+  const failed = [projects, views, boards].filter((q) => q.isError);
+  const settled = !failed.length && !projects.isLoading && !views.isLoading && !boards.isLoading;
 
   const openView = useCallback(
     (nextViewId: string) => void navigate({ to: "/p/$projectId/v/$viewId", params: { projectId, viewId: nextViewId } }),
@@ -498,9 +500,24 @@ export function WorkspaceProvider({
       <div className="app">
         <header className="titlebar" />
         <main className="sheet">
-          <div className="wrap">
-            <p className="meta-txt">{gone ? t("workspaceContext.projectDeleted") : missing ? t("workspaceContext.viewGone") : t("workspaceContext.opening")}</p>
-          </div>
+          {failed.length ? (
+            <div className="route-error" role="alert" data-testid="workspace-read-failed">
+              <p className="meta-txt">{t("workspaceContext.readFailed")}</p>
+              <code className="route-error-detail">{readableError(failed[0].error)}</code>
+              <div className="row" style={{ gap: "var(--space-2)" }}>
+                <button type="button" className="btn btn-primary" disabled={failed.some((q) => q.isFetching)} onClick={() => failed.forEach((q) => void q.refetch())}>
+                  {t("common.tryAgain")}
+                </button>
+                <button type="button" className="btn btn-ghost" onClick={() => void navigate({ to: "/" })}>
+                  {t("common.backToProjects")}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="wrap">
+              <p className="meta-txt">{gone ? t("workspaceContext.projectDeleted") : missing ? t("workspaceContext.viewGone") : t("workspaceContext.opening")}</p>
+            </div>
+          )}
         </main>
         <footer className="statusbar" />
       </div>
