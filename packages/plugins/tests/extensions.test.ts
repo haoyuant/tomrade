@@ -51,8 +51,7 @@ async function pack(name: string, opts: Parameters<typeof source>[1] & { signed?
 
 const packed = async (name: string, opts: Parameters<typeof pack>[1] = {}) => (await pack(name, opts)).file;
 
-async function host() {
-  const root = fs.mkdtempSync(path.join(tmp, "root-"));
+async function host(root = fs.mkdtempSync(path.join(tmp, "root-"))) {
   const w = await fresh({ plugins: [Tools] });
   const store = new ExtensionStore({ root, lockFile: path.join(root, LOCK_FILE), trustedKeys: { [key.keyId]: key.publicKey }, importer: nativeImport });
   await w.ctx.plugin(Plugins, { rows: [], modules: [], extensions: store, resolve: async () => ({ apply() {} }) });
@@ -119,6 +118,15 @@ describe("installed extensions", () => {
     expect(view("someone/studio").state).toBe("disabled");
     expect(ctx.tools.has("studio_hello")).toBe(false);
     await expect(plugins.confirm("someone/studio", "0".repeat(64))).rejects.toThrow(/changed again/);
+  });
+
+  it("still boots when a development folder lost its manifest, and marks only that plugin failed", async () => {
+    const first = await host();
+    const dir = source("moved");
+    await first.plugins.addFolder(dir, "folder");
+    fs.rmSync(path.join(dir, "tomrade-plugin.json"));
+    const next = await host(first.root);
+    expect(next.view("someone/moved").state).toBe("failed");
   });
 
   it("refuses what may not run: a contract it does not meet, code that is not an SDK plugin, a namespace already taken", async () => {
