@@ -18,6 +18,7 @@ it("names the services a plugin waits for that the sandbox does not provide", as
 });
 
 it("gives a plugin with a window a sandbox window, which the scenario can read and speak for", async () => {
+  let closes = 0;
   const plugin = definePlugin({
     inject: ["contributions", "surfaces"],
     async apply(ctx) {
@@ -25,19 +26,21 @@ it("gives a plugin with a window a sandbox window, which the scenario can read a
         id: "demo.open",
         title: "Open",
         run: async () => {
-          const panel = await ctx.surfaces.open({ id: "demo.panel", title: "Panel", document: "panel.html", width: 300, height: 200, onMessage: async (m) => void (await panel.setState({ echo: m })) });
+          const panel = await ctx.surfaces.open({ id: "demo.panel", title: "Panel", document: "panel.html", width: 300, height: 200, onMessage: async (m) => void (await panel.setState({ echo: m })), onClose: () => void closes++ });
           await panel.setState({ ready: true });
         }
       });
     }
   });
   const result = await run(plugin, async (t: never) => {
-    const s = t as { command(id: string): Promise<unknown>; surfaces: { opened(): { id: string; state: unknown }[]; message(id: string, m: unknown): Promise<void> }; check(n: string, ok: boolean, d?: string): void };
+    const s = t as { command(id: string): Promise<unknown>; surfaces: { opened(): { id: string; state: unknown; closed: boolean }[]; message(id: string, m: unknown): Promise<void>; close(id: string): Promise<void> }; check(n: string, ok: boolean, d?: string): void };
     await s.command("demo.open");
     s.check("opened", s.surfaces.opened()[0]?.id === "demo.panel" && JSON.stringify(s.surfaces.opened()[0]!.state) === '{"ready":true}', JSON.stringify(s.surfaces.opened()));
     await s.surfaces.message("demo.panel", "hi");
     s.check("echoed", JSON.stringify(s.surfaces.opened()[0]!.state) === '{"echo":"hi"}', JSON.stringify(s.surfaces.opened()));
+    await s.surfaces.close("demo.panel");
+    s.check("closed", s.surfaces.opened()[0]!.closed && closes === 1, String(closes));
   });
   expect(result.checks.filter((c) => !c.ok)).toEqual([]);
-  expect(result.checks.map((c) => c.name)).toEqual(expect.arrayContaining(["loads", "opened", "echoed"]));
+  expect(result.checks.map((c) => c.name)).toEqual(expect.arrayContaining(["loads", "opened", "echoed", "closed"]));
 });

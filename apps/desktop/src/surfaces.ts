@@ -148,7 +148,11 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
       if (spec.focusable) win.show();
       else win.showInactive();
     });
-    win.on("closed", () => this.forget(record));
+    // destroy() guarantees "closed" too, so every way out passes here.
+    win.on("closed", () => {
+      this.forget(record);
+      spec.onClose?.();
+    });
     void win.loadURL(spec.url);
 
     this.ctx.effect(() => () => this.destroy(record), `desktopSurfaces.open(${spec.id})`);

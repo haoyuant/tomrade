@@ -199,4 +199,44 @@ describe("the extension host", () => {
     expect(handle.id).toBe("demo.face");
     expect(opened[0]).toMatch(/face\.html$/);
   });
+
+  it("tells the plugin once when its window is gone, and refuses calls on it after", async () => {
+    fs.writeFileSync(path.join(dir, "face.html"), "<p>hi</p>");
+    const hostSide: { onClose?: () => void }[] = [];
+    let seen: PluginContext | null = null;
+    const w = await fresh({
+      plugins: [
+        class FakeSurfaces extends Service {
+          static provide = "desktopSurfaces";
+          constructor(ctx: Context) {
+            super(ctx, "desktopSurfaces");
+          }
+          open(spec: { id: string; onClose?: () => void }) {
+            hostSide.push(spec);
+            return { id: spec.id, capabilities: { programmaticPosition: true, forwardedMouseMoves: true }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, setState() {}, close: () => spec.onClose?.() };
+          }
+        }
+      ]
+    });
+    w.ctx.plugin(ext(definePlugin({ inject: ["surfaces"], apply: (p) => void (seen = p) })));
+    await settle();
+    const p = seen as unknown as PluginContext;
+    let closes = 0;
+    const handle = await p.surfaces.open({ id: "demo.face", title: "Face", document: "face.html", width: 1, height: 1, onClose: () => void closes++ });
+    await handle.setState({ a: 1 });
+    // the person closes it; the host may say so more than once
+    hostSide[0]!.onClose!();
+    hostSide[0]!.onClose!();
+    await settle();
+    expect(closes).toBe(1);
+    await expect(handle.setState({ a: 2 })).rejects.toThrow(/demo\.face is closed/);
+    await expect(handle.setPosition(0, 0)).rejects.toThrow(/closed/);
+    await expect(handle.close()).resolves.toBeUndefined();
+
+    const second = await p.surfaces.open({ id: "demo.face2", title: "Face", document: "face.html", width: 1, height: 1, onClose: () => void closes++ });
+    await second.close();
+    await settle();
+    expect(closes).toBe(2);
+    await expect(second.setState({})).rejects.toThrow(/closed/);
+  });
 });

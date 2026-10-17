@@ -419,6 +419,13 @@ export class Host {
               host.own(spec.id, "surface");
               const url = host.documentUrl(spec.document);
               const onMessage = spec.onMessage ? host.listen(spec.onMessage, `surface ${spec.id}`) : undefined;
+              const onClose = spec.onClose ? host.listen(spec.onClose, `surface ${spec.id} close`) : undefined;
+              let closed = false;
+              // A call on a closed window used to go nowhere; the plugin hears of it instead.
+              const live = <T>(fn: () => T) => host.call(() => {
+                if (closed) throw new Error(`surface ${spec.id} is closed`);
+                return fn();
+              });
               const surface = surfaces().open({
                 id: spec.id,
                 title: spec.title,
@@ -431,15 +438,21 @@ export class Host {
                 clickThrough: spec.clickThrough,
                 anchor: spec.anchor,
                 initialState: spec.initialState,
-                onMessage: onMessage ? (m) => within(ns, () => onMessage(m as never), true) : undefined
+                onMessage: onMessage ? (m) => within(ns, () => onMessage(m as never), true) : undefined,
+                onClose: () => {
+                  if (closed) return;
+                  closed = true;
+                  onClose?.();
+                }
               });
               return {
                 id: surface.id,
-                setState: (state: unknown) => host.call(() => surface.setState(state)),
-                setPosition: (x: number, y: number) => host.call(() => surface.setPosition(x, y)),
-                bounds: () => host.call(() => surface.bounds()),
-                workArea: () => host.call(() => surface.workArea()),
-                close: () => host.call(() => surface.close())
+                setState: (state: unknown) => live(() => surface.setState(state)),
+                setPosition: (x: number, y: number) => live(() => surface.setPosition(x, y)),
+                bounds: () => live(() => surface.bounds()),
+                workArea: () => live(() => surface.workArea()),
+                // Closing twice is harmless.
+                close: () => host.call(() => (closed ? undefined : surface.close()))
               };
             })
         };
