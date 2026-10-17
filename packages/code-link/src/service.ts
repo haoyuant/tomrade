@@ -105,7 +105,7 @@ export interface CodeSummaryView {
     mergedSha: string | null;
     lastCommitAt: number | null;
   }[];
-  session: (Pick<SessionView, "id" | "mode" | "agent" | "state" | "summary" | "activity" | "blocked" | "threadId"> & { lastEventAt: number }) | null;
+  session: (Pick<SessionView, "id" | "mode" | "agent" | "state" | "summary" | "activity" | "blocked" | "threadId" | "worktree"> & { lastEventAt: number }) | null;
   proposals: Pick<ProposalView, "id" | "kind" | "toStatus" | "reason">[];
 }
 
@@ -312,8 +312,11 @@ export class CodeLink extends Service {
   private readonly placeLooked = new Set<string>();
   /** Machine-local: each thread's worktree, for the section and the terminal. */
   private readonly worktrees = new Map<string, string>();
-  /** Which session each outside client's MCP connection claimed for; in memory, so a restart asks the client to name its ticket again. */
-  private readonly connections = new Map<string, { projectId: string; sessionId: string }>();
+  /**
+   * Which sessions each outside client's MCP connection claimed for — several when it works tickets in parallel —
+   * and the one a call without a key means; in memory, so a restart asks the client to name its ticket again.
+   */
+  private readonly connections = new Map<string, { projectId: string; sessionIds: string[]; current: string }>();
   /** Threads with a run going, so a question raised mid-run finds its session: agent events name only the thread. */
   private readonly running = new Map<string, ThreadSummary>();
   /** What the Start dialog last ran with on this machine (see `defaults.ts`). */
@@ -408,9 +411,11 @@ export class CodeLink extends Service {
         attach: (projectId, sessionId, itemId, branch, delivery, opts) => this.attach(projectId, sessionId, itemId, branch, delivery, opts),
         externalSession: (projectId, repoId) => this.externalSession(projectId, repoId),
         connected: (projectId, connection) => this.connected(projectId, connection),
-        bindConnection: (projectId, connection, sessionId) => this.bindConnection(projectId, connection, sessionId),
-        connectionSession: (projectId, repoId) => this.connectionSession(projectId, repoId),
-        successor: (projectId, from, repoId) => this.successor(projectId, from, repoId),
+        connectedSessions: (projectId, connection) => this.connectedSessions(projectId, connection),
+        bindConnection: (projectId, connection, sessionId, leaving) => this.bindConnection(projectId, connection, sessionId, leaving),
+        bound: (sessionId) => this.boundAnywhere(sessionId),
+        connectionSession: (projectId, repoId, worktree) => this.connectionSession(projectId, repoId, worktree),
+        successor: (projectId, from, repoId, worktree) => this.successor(projectId, from, repoId, worktree),
         notify: (projectId) => this.notify(projectId),
         summary: (projectId, itemId) => this.summary(projectId, itemId),
         mergeLocal: (projectId, itemId, opts) => this.mergeLocal(projectId, itemId, opts)
@@ -593,7 +598,7 @@ export class CodeLink extends Service {
         lastCommitAt: l.headAt
       })),
       session: live
-        ? { id: live.id, mode: live.mode, agent: live.agent, state: live.state, summary: live.summary, activity: live.activity, blocked: live.blocked, threadId: live.threadId, lastEventAt: live.lastEventAt ?? live.startedAt }
+        ? { id: live.id, mode: live.mode, agent: live.agent, state: live.state, summary: live.summary, activity: live.activity, blocked: live.blocked, threadId: live.threadId, worktree: live.worktree, lastEventAt: live.lastEventAt ?? live.startedAt }
         : null,
       proposals: this.store.proposals(projectId, itemId, "open").map((p) => ({ id: p.id, kind: p.kind, toStatus: p.toStatus, reason: p.reason }))
     };
@@ -840,24 +845,47 @@ export class CodeLink extends Service {
    * Never one that already holds a ticket — that is another terminal's.
    */
   externalSession(projectId: string, repoId: string): SessionView | null {
-    const taken = new Set([...this.connections.values()].filter((c) => c.projectId === projectId).map((c) => c.sessionId));
+    const taken = new Set([...this.connections.values()].filter((c) => c.projectId === projectId).flatMap((c) => c.sessionIds));
     return this.store.sessions(projectId, { live: true }).find((s) => s.repoId === repoId && s.threadId === null && s.state !== "lost" && !s.itemIds.length && !taken.has(s.id)) ?? null;
   }
 
-  /** The live session an outside client's connection claimed for, if any. */
+  /** The live session an outside client's connection last claimed for, if any: the one its calls without a key mean. */
   connected(projectId: string, connection: string): SessionView | null {
-    const bound = this.connections.get(connection);
-    if (!bound || bound.projectId !== projectId) return null;
-    const session = this.store.session(projectId, bound.sessionId);
-    if (session && session.endedAt === null && session.state !== "ended" && session.state !== "lost") return session;
-    this.connections.delete(connection);
-    return null;
+    const sessions = this.connectedSessions(projectId, connection);
+    return sessions.find((s) => s.id === this.connections.get(connection)?.current) ?? null;
   }
 
-  /** From now on this connection's calls belong to the session; a connection it had before is let go. */
-  bindConnection(projectId: string, connection: string, sessionId: string): void {
-    for (const [other, bound] of this.connections) if (bound.sessionId === sessionId && other !== connection) this.connections.delete(other);
-    this.connections.set(connection, { projectId, sessionId });
+  /** Every live session an outside client's connection claimed for; the ones that ended are let go. */
+  connectedSessions(projectId: string, connection: string): SessionView[] {
+    const bound = this.connections.get(connection);
+    if (!bound || bound.projectId !== projectId) return [];
+    const live = bound.sessionIds.map((id) => this.store.session(projectId, id)).filter((s): s is SessionView => !!s && s.endedAt === null && s.state !== "ended" && s.state !== "lost");
+    if (!live.length) this.connections.delete(connection);
+    else if (live.length !== bound.sessionIds.length) {
+      const ids = live.map((s) => s.id);
+      this.connections.set(connection, { projectId, sessionIds: ids, current: ids.includes(bound.current) ? bound.current : ids[ids.length - 1] });
+    }
+    return live;
+  }
+
+  /**
+   * From now on this connection's calls without a key belong to the session; a connection it had before is let go.
+   * The connection keeps the other sessions it works tickets in, except the one it is `leaving` for this one.
+   */
+  bindConnection(projectId: string, connection: string, sessionId: string, leaving?: string): void {
+    for (const [other, bound] of this.connections) {
+      if (other === connection || !bound.sessionIds.includes(sessionId)) continue;
+      const rest = bound.sessionIds.filter((id) => id !== sessionId);
+      if (!rest.length) this.connections.delete(other);
+      else this.connections.set(other, { ...bound, sessionIds: rest, current: bound.current === sessionId ? rest[rest.length - 1] : bound.current });
+    }
+    const held = this.connections.get(connection);
+    const kept = held?.projectId === projectId ? held.sessionIds.filter((id) => id !== sessionId && id !== leaving) : [];
+    this.connections.set(connection, { projectId, sessionIds: [...kept, sessionId], current: sessionId });
+  }
+
+  boundAnywhere(sessionId: string): boolean {
+    return [...this.connections.values()].some((c) => c.sessionIds.includes(sessionId));
   }
 
   /**
@@ -865,8 +893,8 @@ export class CodeLink extends Service {
    * client: followed only through its connection, so its notes and merge
    * hand-offs still reach the ticket. It ends when the connection closes.
    */
-  connectionSession(projectId: string, repoId: string | null): SessionView {
-    return this.store.createSession(projectId, { repoId: repoId ?? "", branch: "", itemIds: [], mode: "terminal", agent: MCP_AGENT, threadId: null, device: this.ctx.hub.deviceId });
+  connectionSession(projectId: string, repoId: string | null, worktree: string | null = null): SessionView {
+    return this.store.createSession(projectId, { repoId: repoId ?? "", branch: "", itemIds: [], mode: "terminal", agent: MCP_AGENT, threadId: null, device: this.ctx.hub.deviceId, worktree });
   }
 
   /**
@@ -874,15 +902,19 @@ export class CodeLink extends Service {
    * new session with the same identity, so its hooks and calls follow the new one (the newest is
    * matched first). The one it leaves keeps the ticket and the merge waiting on the person.
    */
-  successor(projectId: string, from: SessionView, repoId: string | null): SessionView {
-    return this.store.createSession(projectId, { repoId: repoId ?? from.repoId, branch: "", itemIds: [], mode: from.mode, agent: from.agent, threadId: null, device: this.ctx.hub.deviceId, externalId: from.externalId });
+  successor(projectId: string, from: SessionView, repoId: string | null, worktree: string | null = null): SessionView {
+    return this.store.createSession(projectId, { repoId: repoId ?? from.repoId, branch: "", itemIds: [], mode: from.mode, agent: from.agent, threadId: null, device: this.ctx.hub.deviceId, externalId: from.externalId, worktree });
   }
 
-  /** A session another one took over from: nothing reaches it any more, so once its merge lands it is over. */
+  /**
+   * A session another one took over from: nothing reaches it any more, so once its merge lands it is over.
+   * Two sessions of one agent working in worktrees of their own run side by side; neither took over from the other.
+   */
   private superseded(projectId: string, s: SessionView): boolean {
     if (s.threadId !== null) return false;
-    if (s.externalId) return this.store.sessions(projectId, { live: true }).some((o) => o.id !== s.id && o.agent === s.agent && o.externalId === s.externalId && o.startedAt >= s.startedAt);
-    return s.agent === MCP_AGENT && ![...this.connections.values()].some((c) => c.sessionId === s.id);
+    const apart = (o: SessionView) => !!s.worktree && !!o.worktree && s.worktree !== o.worktree;
+    if (s.externalId) return this.store.sessions(projectId, { live: true }).some((o) => o.id !== s.id && o.agent === s.agent && o.externalId === s.externalId && o.startedAt >= s.startedAt && !apart(o));
+    return s.agent === MCP_AGENT && !this.boundAnywhere(s.id);
   }
 
   private disconnected(connection: string): void {
@@ -890,8 +922,10 @@ export class CodeLink extends Service {
     if (!bound) return;
     this.connections.delete(connection);
     // A hooks session ends when its agent says so; one known only by its connection ends with it.
-    const session = this.store.session(bound.projectId, bound.sessionId);
-    if (session?.agent === MCP_AGENT && ![...this.connections.values()].some((c) => c.sessionId === session.id)) this.sessions.end(bound.projectId, session.id);
+    for (const id of bound.sessionIds) {
+      const session = this.store.session(bound.projectId, id);
+      if (session?.agent === MCP_AGENT && !this.boundAnywhere(session.id)) this.sessions.end(bound.projectId, session.id);
+    }
   }
 
   /** A branch that names no ticket becomes one, linked from the start. */
@@ -1713,6 +1747,7 @@ export class CodeLink extends Service {
         }
         const worktree = this.worktreeOf(item.projectId, item.id);
         if (worktree) rows.push({ label: w.worktree, icon: "i-folder", mono: true, value: worktree, command: "code-link.open-terminal" });
+        else if (live?.worktree && live.state !== "ended") rows.push({ label: w.worktree, icon: "i-folder", mono: true, value: live.worktree });
         const proposal = open.find((p) => p.kind === "propose");
         if (proposal) {
           rows.push({ label: w.proposal, icon: "i-warn", state: "warn", value: w.accept(w.status(proposal.toStatus ?? "")), command: "code-link.accept-proposal" });
@@ -1906,13 +1941,28 @@ export class CodeLink extends Service {
       }
       return;
     }
+    const mine = (projectId: string) => this.store.sessions(projectId, { live: true }).filter((s) => s.threadId === null && s.agent === agent && s.externalId === p.session_id);
+    // The agent itself is gone: every session it had, parallel or not, ends with it.
+    const deliver = (projectId: string, sessions: SessionView[]) => {
+      for (const s of p.hook_event_name === "SessionEnd" ? sessions : sessions.slice(0, 1)) this.sessions.event(projectId, s.id, payload);
+    };
+    // One agent working tickets in parallel, each in a worktree it named: an event from inside one is that session's.
+    for (const projectId of this.ctx.db.openIds()) {
+      const all = mine(projectId);
+      const placed = all.filter((s) => s.worktree && within(path.resolve(s.worktree))).sort((a, b) => b.worktree!.length - a.worktree!.length)[0];
+      if (placed) {
+        deliver(projectId, [placed, ...all.filter((s) => s.id !== placed.id)]);
+        return;
+      }
+    }
     for (const projectId of this.ctx.db.openIds()) {
       for (const repo of this.ctx.repos.list(projectId)) {
         const checkout = this.ctx.repos.checkout(repo.remote).checkout;
         if (!checkout || !within(path.resolve(checkout))) continue;
-        const known = p.session_id ? this.store.sessions(projectId, { live: true }).find((s) => s.threadId === null && s.repoId === repo.id && s.agent === agent && s.externalId === p.session_id) : undefined;
-        if (known) {
-          this.sessions.event(projectId, known.id, payload);
+        // Anywhere else in the checkout, the newest of its sessions there.
+        const known = mine(projectId).filter((s) => s.repoId === repo.id);
+        if (known.length) {
+          deliver(projectId, known);
           return;
         }
         // The end of a session never heard of is nothing to record.

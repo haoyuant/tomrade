@@ -144,7 +144,9 @@ CREATE UNIQUE INDEX idx_plugin_code_link_links_key ON plugin_code_link_links(pro
     }
   },
   { version: 6, up: "ALTER TABLE plugin_code_link_deliveries ADD COLUMN bases_json TEXT NOT NULL DEFAULT '{}'" },
-  { version: 7, up: "ALTER TABLE plugin_code_link_repos ADD COLUMN agent_merge INTEGER NOT NULL DEFAULT 0" }
+  { version: 7, up: "ALTER TABLE plugin_code_link_repos ADD COLUMN agent_merge INTEGER NOT NULL DEFAULT 0" },
+  // Where a parallel outside session works, so its hooks find it among the others with the same identity.
+  { version: 8, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN worktree TEXT" }
 ];
 
 /** Durable code links travel with the project; running sessions belong to this machine. */
@@ -251,6 +253,8 @@ export interface SessionView {
   agent: string;
   externalId: string | null;
   threadId: string | null;
+  /** The worktree or folder an outside session said it works in (claim_ticket's worktree); null when it did not say. */
+  worktree: string | null;
   state: SessionState;
   lastEventAt: number | null;
   lastToolAt: number | null;
@@ -334,6 +338,7 @@ interface SessionRow {
   agent: string;
   external_id: string | null;
   thread_id: string | null;
+  worktree: string | null;
   state: string;
   last_event_at: number | null;
   last_tool_at: number | null;
@@ -416,6 +421,7 @@ const toSession = (r: SessionRow): SessionView => ({
   agent: r.agent,
   externalId: r.external_id,
   threadId: r.thread_id,
+  worktree: r.worktree ?? null,
   state: r.state as SessionState,
   lastEventAt: r.last_event_at,
   lastToolAt: r.last_tool_at,
@@ -465,6 +471,7 @@ export interface SessionPatch {
   itemIds?: string[];
   externalId?: string | null;
   threadId?: string | null;
+  worktree?: string | null;
   state?: SessionState;
   lastEventAt?: number | null;
   lastToolAt?: number | null;
@@ -776,15 +783,15 @@ export class CodeLinkStore {
     return row ? toSession(row) : null;
   }
 
-  createSession(projectId: string, input: { id?: string; repoId: string; delivery?: number; branch: string; itemIds: string[]; mode: SessionMode; agent: string; threadId: string | null; device: string; externalId?: string | null }): SessionView {
+  createSession(projectId: string, input: { id?: string; repoId: string; delivery?: number; branch: string; itemIds: string[]; mode: SessionMode; agent: string; threadId: string | null; device: string; externalId?: string | null; worktree?: string | null }): SessionView {
     const id = input.id ?? randomUUID();
     const now = Date.now();
     this.db(projectId)
       .prepare(
-        `INSERT INTO plugin_code_link_sessions (id, project_id, repo_id, delivery, branch, item_ids_json, mode, agent, external_id, thread_id, state, last_event_at, device, started_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)`
+        `INSERT INTO plugin_code_link_sessions (id, project_id, repo_id, delivery, branch, item_ids_json, mode, agent, external_id, thread_id, worktree, state, last_event_at, device, started_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)`
       )
-      .run(id, projectId, input.repoId, input.delivery ?? 1, input.branch, JSON.stringify(input.itemIds), input.mode, input.agent, input.externalId ?? null, input.threadId, now, input.device, now);
+      .run(id, projectId, input.repoId, input.delivery ?? 1, input.branch, JSON.stringify(input.itemIds), input.mode, input.agent, input.externalId ?? null, input.threadId, input.worktree ?? null, now, input.device, now);
     return this.session(projectId, id)!;
   }
 
@@ -795,6 +802,7 @@ export class CodeLinkStore {
       itemIds: "item_ids_json",
       externalId: "external_id",
       threadId: "thread_id",
+      worktree: "worktree",
       state: "state",
       lastEventAt: "last_event_at",
       lastToolAt: "last_tool_at",

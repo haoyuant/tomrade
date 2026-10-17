@@ -412,6 +412,195 @@ describe("outside clients, told apart by their connection", () => {
   });
 });
 
+describe("one outside session working tickets in parallel", () => {
+  type Claimed = { branch: string; tracking: { sessionId: string }; conventions: string[] };
+  const setup = async () => {
+    const world = await machine();
+    const { ctx, items, project, board, checkout } = world;
+    const post = (payload: unknown) => fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    await post({ hook_event_name: "SessionStart", session_id: "cli-par", cwd: checkout });
+    const ticket = (title: string) => items.create({ projectId: project.id, boardId: board.id, title, status: "todo", by: "human" });
+    const inv = { by: "ai:claude-code" as const, projectId: project.id, connection: "conn-par" };
+    const worktree = () => {
+      const dir = path.join(root, `wt-${n++}`);
+      fs.mkdirSync(dir, { recursive: true });
+      return dir;
+    };
+    return { ...world, post, ticket, inv, worktree };
+  };
+
+  it("claims, links and notes each ticket on its own session, and each is done once its own pull request merges", async () => {
+    const { codeLink, ctx, items, project, ticket, inv } = await setup();
+    const a = ticket("Alpha");
+    const b = ticket("Beta");
+    const first = (await ctx.tools.execute("claim_ticket", { key: a.key }, inv)) as Claimed;
+    const before = codeLink.store.session(project.id, first.tracking.sessionId)!;
+
+    // Without parallel, the wrap-up of the first is still owed, and the error says how to work alongside it.
+    await expect(ctx.tools.execute("claim_ticket", { key: b.key }, inv)).rejects.toThrow(`this session still owns ${a.key}, which is doing`);
+    await expect(ctx.tools.execute("claim_ticket", { key: b.key }, inv)).rejects.toThrow(`claim ${b.key} with parallel: true`);
+
+    const second = (await ctx.tools.execute("claim_ticket", { key: b.key, parallel: true }, inv)) as Claimed;
+    expect(second.tracking.sessionId).not.toBe(first.tracking.sessionId);
+    expect(second.branch).toBe(`tom-${b.keyNum}/beta`);
+    expect(second.conventions.some((c) => c.includes(`pass key ${b.key}`))).toBe(true);
+    expect(codeLink.store.session(project.id, second.tracking.sessionId)).toMatchObject({ itemIds: [b.id], branch: second.branch, externalId: "cli-par", agent: before.agent });
+    expect(codeLink.store.session(project.id, first.tracking.sessionId)).toMatchObject({ itemIds: [a.id], branch: first.branch, state: before.state, blocked: null });
+    // Claiming it again on this connection is the same session, not another.
+    expect(await ctx.tools.execute("claim_ticket", { key: b.key, parallel: true }, inv)).toMatchObject({ branch: second.branch, tracking: { sessionId: second.tracking.sessionId } });
+    expect(codeLink.sessionsOf(project.id, b.id)).toHaveLength(1);
+
+    // A key says which session a call is about; no key means the ticket claimed last.
+    expect(await ctx.tools.execute("note_progress", { key: a.key, text: "alpha tests green" }, inv)).toMatchObject({ ok: true, key: a.key });
+    expect(await ctx.tools.execute("note_progress", { key: b.key, text: "beta wired" }, inv)).toMatchObject({ ok: true, key: b.key });
+    expect(await ctx.tools.execute("note_progress", { text: "beta still" }, inv)).toMatchObject({ ok: true, key: b.key });
+    expect(codeLink.store.session(project.id, first.tracking.sessionId)!.summary).toBe("alpha tests green");
+    expect(codeLink.store.session(project.id, second.tracking.sessionId)!.summary).toBe("beta still");
+
+    expect(await ctx.tools.execute("link_code", { key: a.key, prUrl: "https://github.com/acme/app/pull/41", scopeChecked: true }, inv)).toMatchObject({ key: a.key, status: "verifying", branch: first.branch });
+    expect(await ctx.tools.execute("link_code", { key: b.key, prUrl: "https://github.com/acme/app/pull/42", scopeChecked: true }, inv)).toMatchObject({ key: b.key, status: "verifying", branch: second.branch });
+    expect(codeLink.links(project.id, a.id)).toMatchObject([{ branch: first.branch, prNumber: 41 }]);
+    expect(codeLink.links(project.id, b.id)).toMatchObject([{ branch: second.branch, prNumber: 42 }]);
+    expect(await ctx.tools.execute("report_merge_blocked", { key: a.key, reason: "a review is required" }, inv)).toMatchObject({ ok: true, key: a.key });
+    expect(codeLink.store.session(project.id, first.tracking.sessionId)!.blocked).toBe("merge");
+    expect(codeLink.store.session(project.id, second.tracking.sessionId)!.blocked).toBeNull();
+
+    // A ticket never claimed on this connection is refused, never written onto the one claimed last.
+    const c = ticket("Gamma");
+    await expect(ctx.tools.execute("link_code", { key: c.key, prUrl: "https://github.com/acme/app/pull/43", scopeChecked: true }, inv)).rejects.toThrow(`this connection has not claimed ${c.key}`);
+    await expect(ctx.tools.execute("note_progress", { key: c.key, text: "x" }, inv)).rejects.toThrow("parallel: true");
+    expect(codeLink.links(project.id, c.id)).toEqual([]);
+
+    const human = { by: "human" as const, projectId: project.id };
+    await ctx.tools.execute("link_code", { key: b.key, prUrl: "https://github.com/acme/app/pull/42", prState: "merged" }, human);
+    expect(items.get(project.id, b.id)!.status).toBe("done");
+    expect(items.get(project.id, a.id)!.status).toBe("verifying");
+    await ctx.tools.execute("link_code", { key: a.key, prUrl: "https://github.com/acme/app/pull/41", prState: "merged" }, human);
+    await codeLink.scan(project.id);
+    expect(items.get(project.id, a.id)!.status).toBe("done");
+    expect(items.get(project.id, b.id)!.status).toBe("done");
+  });
+
+  it("tells sessions with worktrees of their own apart by where their hooks fire, and keeps both live", async () => {
+    const { codeLink, ctx, items, project, repo, ticket, inv, post, worktree, checkout } = await setup();
+    const a = ticket("Alpha");
+    const b = ticket("Beta");
+    const [wa, wb] = [worktree(), worktree()];
+    const first = (await ctx.tools.execute("claim_ticket", { key: a.key, worktree: wa }, inv)) as Claimed;
+    const second = (await ctx.tools.execute("claim_ticket", { key: b.key, parallel: true, worktree: wb }, inv)) as Claimed;
+    const [sa, sb] = [first.tracking.sessionId, second.tracking.sessionId];
+    expect(codeLink.store.session(project.id, sa)!.worktree).toBe(wa);
+    expect(codeLink.store.session(project.id, sb)!.worktree).toBe(wb);
+    expect(codeLink.summary(project.id, b.id).session).toMatchObject({ id: sb, worktree: wb });
+
+    await post({ hook_event_name: "Stop", session_id: "cli-par", cwd: path.join(wa, "src"), last_assistant_message: "alpha paused" });
+    expect(codeLink.store.session(project.id, sa)).toMatchObject({ state: "waiting", summary: "alpha paused" });
+    expect(codeLink.store.session(project.id, sb)!.state).toBe("running");
+    await post({ hook_event_name: "Stop", session_id: "cli-par", cwd: wb, last_assistant_message: "beta paused" });
+    expect(codeLink.store.session(project.id, sb)).toMatchObject({ state: "waiting", summary: "beta paused" });
+    expect(codeLink.store.session(project.id, sa)!.summary).toBe("alpha paused");
+    // Elsewhere in the checkout, the newest of them.
+    await post({ hook_event_name: "UserPromptSubmit", session_id: "cli-par", cwd: checkout });
+    expect(codeLink.store.session(project.id, sb)!.state).toBe("running");
+    expect(codeLink.store.session(project.id, sa)!.state).toBe("waiting");
+
+    // The older one's merge lands (Done is left to the person here): it was not taken over by the newer one, so it stays live for the agent.
+    codeLink.setRepoPolicy(project.id, repo.id, { autoDone: false });
+    await ctx.tools.execute("link_code", { key: a.key, prUrl: "https://github.com/acme/app/pull/51", scopeChecked: true }, inv);
+    await ctx.tools.execute("report_merge_blocked", { key: a.key, reason: "checks failed" }, inv);
+    await ctx.tools.execute("link_code", { key: a.key, prUrl: "https://github.com/acme/app/pull/51", prState: "merged" }, { by: "human", projectId: project.id });
+    await codeLink.scan(project.id);
+    expect(items.get(project.id, a.id)!.status).toBe("verifying");
+    expect(codeLink.store.session(project.id, sa)).toMatchObject({ state: "idle", blocked: null });
+    expect(codeLink.store.session(project.id, sb)!.state).toBe("running");
+    items.update(project.id, a.id, { status: "done" }, "human");
+
+    // The agent exits: every session it had ends; the tickets and their links stay as they were.
+    await ctx.tools.execute("link_code", { key: b.key, prUrl: "https://github.com/acme/app/pull/52", scopeChecked: true }, inv);
+    const body = items.get(project.id, b.id)!.body;
+    await post({ hook_event_name: "SessionEnd", session_id: "cli-par", cwd: wb, reason: "exit" });
+    expect(codeLink.store.session(project.id, sa)!.state).toBe("ended");
+    expect(codeLink.store.session(project.id, sb)!.state).toBe("ended");
+    await codeLink.scan(project.id);
+    expect(items.get(project.id, a.id)!.status).toBe("done");
+    expect(items.get(project.id, b.id)).toMatchObject({ status: "verifying", body });
+    expect(codeLink.links(project.id, b.id)).toMatchObject([{ branch: second.branch, prNumber: 52, prState: "open" }]);
+  });
+
+  it("never stands in the person's way: tickets with parallel sessions are moved by hand, and other terminals claim and finish other tickets", async () => {
+    const { codeLink, ctx, items, project, ticket, inv } = await setup();
+    const a = ticket("Alpha");
+    const b = ticket("Beta");
+    const first = (await ctx.tools.execute("claim_ticket", { key: a.key }, inv)) as Claimed;
+    const second = (await ctx.tools.execute("claim_ticket", { key: b.key, parallel: true }, inv)) as Claimed;
+    await ctx.tools.execute("link_code", { key: a.key, prUrl: "https://github.com/acme/app/pull/61", scopeChecked: true }, inv);
+
+    items.update(project.id, a.id, { status: "done" }, "human");
+    items.update(project.id, b.id, { status: "cancelled" }, "human");
+    await codeLink.scan(project.id);
+    expect(items.get(project.id, a.id)!.status).toBe("done");
+    expect(items.get(project.id, b.id)!.status).toBe("cancelled");
+    expect(codeLink.links(project.id, a.id)).toMatchObject([{ branch: first.branch, prNumber: 61 }]);
+
+    // Another terminal, on its own connection, goes through a whole ticket meanwhile.
+    const c = ticket("Gamma");
+    const other = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-other" };
+    const claimed = (await ctx.tools.execute("claim_ticket", { key: c.key }, other)) as Claimed;
+    expect([first.tracking.sessionId, second.tracking.sessionId]).not.toContain(claimed.tracking.sessionId);
+    expect(await ctx.tools.execute("link_code", { prUrl: "https://github.com/acme/app/pull/63", scopeChecked: true }, other)).toMatchObject({ key: c.key, status: "verifying" });
+    await ctx.tools.execute("link_code", { key: c.key, prUrl: "https://github.com/acme/app/pull/63", prState: "merged" }, { by: "human", projectId: project.id });
+    expect(items.get(project.id, c.id)!.status).toBe("done");
+    // The parallel connection's keys still reach only its own tickets.
+    await expect(ctx.tools.execute("note_progress", { key: c.key, text: "x" }, inv)).rejects.toThrow(`this connection has not claimed ${c.key}`);
+  });
+
+  it("works four tickets at once over MCP, each claimed, linked and noted, each done once its own pull request merges", async () => {
+    const { codeLink, ctx, items, project, ticket, worktree } = await setup();
+    const tickets = ["Plugin one", "Plugin two", "Plugin three", "Plugin four"].map(ticket);
+    const client = new Client({ name: "claude-code", version: "0" });
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const result = (await client.callTool({ name, arguments: args })) as { isError?: boolean; content: { text: string }[] };
+      if (result.isError) throw new Error(result.content[0]?.text);
+      return JSON.parse(result.content[0].text) as Record<string, unknown>;
+    };
+    try {
+      await client.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.urlFor(project.id)!)));
+      const claims = [];
+      for (const [i, t] of tickets.entries()) claims.push(await call("claim_ticket", { key: t.key, worktree: worktree(), ...(i ? { parallel: true } : {}) }));
+      for (const [i, t] of tickets.entries()) {
+        await call("note_progress", { key: t.key, text: `${t.key} green` });
+        expect(await call("link_code", { key: t.key, prUrl: `https://github.com/acme/plugins/pull/${i + 3}`, scopeChecked: true })).toMatchObject({ status: "verifying", branch: claims[i].branch });
+      }
+      expect(new Set(tickets.map((t) => codeLink.sessionsOf(project.id, t.id)[0].id)).size).toBe(4);
+      for (const t of tickets) expect(codeLink.sessionsOf(project.id, t.id)).toMatchObject([{ itemIds: [t.id], summary: `${t.key} green` }]);
+      for (const [i, t] of tickets.entries()) {
+        await ctx.tools.execute("link_code", { key: t.key, prUrl: `https://github.com/acme/plugins/pull/${i + 3}`, prState: "merged" }, { by: "human", projectId: project.id });
+        expect(items.get(project.id, t.id)!.status).toBe("done");
+        expect(tickets.slice(i + 1).every((rest) => items.get(project.id, rest.id)!.status === "verifying")).toBe(true);
+      }
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("follows a client with no hooks through every ticket it claimed in parallel, until its connection closes", async () => {
+    const { codeLink, ctx, items, project, board } = await machine();
+    const a = items.create({ projectId: project.id, boardId: board.id, title: "Alpha", status: "todo", by: "human" });
+    const b = items.create({ projectId: project.id, boardId: board.id, title: "Beta", status: "todo", by: "human" });
+    const inv = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-cursor-par" };
+    const first = (await ctx.tools.execute("claim_ticket", { key: a.key }, inv)) as Claimed;
+    const second = (await ctx.tools.execute("claim_ticket", { key: b.key, parallel: true }, inv)) as Claimed;
+    expect(codeLink.store.session(project.id, second.tracking.sessionId)).toMatchObject({ agent: "mcp", itemIds: [b.id] });
+    expect(await ctx.tools.execute("note_progress", { key: a.key, text: "alpha" }, inv)).toMatchObject({ ok: true, key: a.key });
+    expect(codeLink.store.session(project.id, first.tracking.sessionId)!.summary).toBe("alpha");
+    // Another client's connection claims on its own, untouched by these.
+    const elsewhere = (await ctx.tools.execute("claim_ticket", { key: b.key }, { ...inv, connection: "conn-else" })) as Claimed;
+    expect([first.tracking.sessionId, second.tracking.sessionId]).not.toContain(elsewhere.tracking.sessionId);
+    ctx.emit("mcp/closed", "conn-cursor-par");
+    expect(codeLink.store.session(project.id, first.tracking.sessionId)!.state).toBe("ended");
+  });
+});
+
 describe("a developer's own Codex session", () => {
   it("uses generated hooks to report start, claim, progress and end with its source", async () => {
     const { codeLink, ctx, items, project, board, repo, checkout } = await machine();
