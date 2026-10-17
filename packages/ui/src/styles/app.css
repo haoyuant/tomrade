@@ -2505,6 +2505,13 @@ button.kref { cursor: pointer; }
 .plug-search input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 3px 0; color: var(--fg); font-family: var(--font-display); font-size: 14px; outline: none; }
 .plug-search input:focus-visible { box-shadow: none; }
 .plug-search input::placeholder { color: var(--meta); }
+.plug-fold.folded .sec-head { margin-bottom: 0; }
+.plug-fold-head { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: transparent; color: var(--fg); cursor: pointer; text-align: left; }
+.plug-fold-head:disabled { cursor: default; }
+.plug-fold-head:hover:not(:disabled) .sec-title { color: var(--accent); }
+.plug-fold-head:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
+.plug-fold-chev { color: var(--meta); transition: transform var(--motion-fast) var(--ease-standard); transform: rotate(90deg); }
+.plug-fold.folded .plug-fold-chev { transform: rotate(0deg); }
 .plug-group + .plug-group { margin-top: var(--space-5); }
 .plug-group-head { display: flex; align-items: baseline; gap: var(--space-2); margin-bottom: var(--space-1); }
 .plug-group-head .eyebrow { margin: 0; }

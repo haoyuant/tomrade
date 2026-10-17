@@ -2,6 +2,7 @@ export const plugins = {
   en: {
     undoWritesConfirm: "Take back everything {{title}} wrote in this project? Writes someone edited afterwards stay.",
     tabInstalled: "Installed",
+    tabModules: "Modules",
     tabBrowse: "Browse",
     tabUpdates: "Updates",
     tabMine: "My plugins",
@@ -192,6 +193,7 @@ export const plugins = {
   zh: {
     undoWritesConfirm: "撤销 {{title}} 在这个项目里写入的全部内容？之后被人改过的写入会保留。",
     tabInstalled: "已安装",
+    tabModules: "模块",
     tabBrowse: "浏览",
     tabUpdates: "更新",
     tabMine: "我的插件",
