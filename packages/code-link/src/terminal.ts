@@ -17,6 +17,8 @@ export const TerminalSettings = z.object({
   opencodeCommand: z.string().default('OPENCODE_CONFIG="{opencodeConfig}" opencode {options} {resume} --prompt "$(cat "{prompt}")"').meta({ title: "OpenCode command" }),
   /** No interactive terminal of its own: one headless run, shown and reported through {dshReporter}, resumed by session id. */
   dshCommand: z.string().default('"{bin}" --profile headless --patch "{dshPatch}" --json {resume} - < "{prompt}" | ELECTRON_RUN_AS_NODE=1 "{node}" "{dshReporter}"').meta({ title: "DeepSeek Harness command" }).describe("DeepSeek Harness has no interactive terminal: the ticket runs as one headless run, shown through {dshReporter} and resumed with --session-id. {bin} is the dsh Tomrade found, the desktop app's own included; {dshPatch} adds Tomrade's server for this run."),
+  /** Antigravity's CLI reads Tomrade's server from its own config; the ticket's prompt asks it to claim first. */
+  agyCommand: z.string().default('agy {options} {resume} -i "$(cat "{prompt}")"').meta({ title: "Antigravity CLI command" }).describe("agy takes no MCP flag: it reaches Tomrade through its own user-level tomrade server (connect it under Antigravity CLI in Settings), and claims the ticket first."),
   hermesCommand: z.string().default('hermes chat {options} {resume} --query-file "{prompt}"').meta({ title: "Hermes command" }).describe("Hermes takes no MCP flag: it reads its tomrade server from its own config.yaml, the header naming the $TOMRADE_MCP_TOKEN this terminal exports. Connect it under Hermes in Settings first."),
   otherCommand: z.string().default("").meta({ title: "Other agent command" }).describe("Any other CLI agent with an MCP client — Gemini CLI, OpenCode, aider… Empty means none is set up. {mcpUrl}, {token} (also in $TOMRADE_MCP_TOKEN), {prompt}, {resume} (the bare session id) are filled in.")
 });
@@ -32,6 +34,7 @@ export function terminalTemplate(settings: TerminalSettings, engine: string): st
     case "opencode": return settings.opencodeCommand;
     case "hermes": return settings.hermesCommand;
     case "dsh": return settings.dshCommand;
+    case "agy": return settings.agyCommand;
     case "other": return settings.otherCommand;
     default: return settings.claudeCommand;
   }
@@ -70,6 +73,9 @@ export function optionFlags(engine: string, options: unknown): string {
     if (effort) flags.push(`--thinking ${bare(effort)}`);
   } else if (engine === "gemini") {
     if (model) flags.push(`-m ${bare(model)}`);
+  } else if (engine === "agy") {
+    if (model) flags.push(`--model ${bare(model)}`);
+    if (effort) flags.push(`--effort ${bare(effort)}`);
   } else if (engine === "hermes") {
     // a model id, or provider:model
     if (model) flags.push(`-m ${bare(model)}`);

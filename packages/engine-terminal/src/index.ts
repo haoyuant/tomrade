@@ -5,6 +5,7 @@ import { createAcpEngine, PERMISSION_CHOICES, type AcpAgent } from "@tomradex/en
 import { localCli } from "@tomradex/engine-claude-code";
 import type {} from "@tomradex/llm";
 import type {} from "@tomradex/mcp";
+import { createAgyEngine } from "./agy.js";
 import { geminiLentModel } from "./lend.js";
 
 export const GeminiOptions = z.object({
@@ -54,7 +55,9 @@ export default {
     ctx.agent.engine(engine);
     // Gemini CLI answers one prompt headless, so its sign-in can do worker calls too.
     ctx.inject(["llm"], (ctx) => ctx.effect(() => ctx.llm.lend(geminiLentModel(ctx, { cli: gemini.cli, found: async () => (await engine.available()).ok }))));
+    ctx.agent.engine(createAgyEngine(ctx));
   }
 };
 
 export { forgetSession, geminiDir, geminiLentModel, ownModel } from "./lend.js";
+export { agyMcpFile, createAgyEngine } from "./agy.js";
