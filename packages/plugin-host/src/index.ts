@@ -5,6 +5,8 @@ import { Settings } from "@tomradex/settings";
 import { Agent, type Engine } from "@tomradex/agent";
 import { Im, ImSettings } from "@tomradex/im";
 import { Contributions } from "@tomradex/contributions";
+import type { AlertNotice } from "@tomradex/alerts";
+import { Service, type Context } from "cordis";
 
 export interface TestCheck {
   name: string;
@@ -30,6 +32,22 @@ export interface HostTestInput {
   scenario: (() => Promise<Record<string, unknown>>) | null;
 }
 
+/** The sandbox's alerts: one system sound, and nothing played or shown — only remembered, for the scenario to read. */
+function recordingAlerts() {
+  const played: { sound: string; volume?: number }[] = [];
+  const notices: AlertNotice[] = [];
+  class Alerts extends Service {
+    static provide = "alerts";
+    constructor(ctx: Context) {
+      super(ctx, "alerts");
+    }
+    sounds = () => [{ id: "system:Glass", title: "Glass" }];
+    play = async (sound: string, opts?: { volume?: number }) => void played.push({ sound, ...opts });
+    notify = (notice: AlertNotice) => void notices.push(notice);
+  }
+  return { Alerts, played, notices };
+}
+
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const timeout = (ms: number, what: string) => new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`${what} did not finish within ${ms} ms`)), ms));
 
@@ -49,8 +67,10 @@ export async function testPlugin(input: HostTestInput): Promise<HostTestResult> 
   const check = (name: string, ok: boolean, detail?: string) => checks.push({ name, ok, ...(detail ? { detail } : {}) });
 
   const p = input.plugin;
-  const im = [...(p.inject ?? []), ...(p.optional ?? [])].includes("im");
-  const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(input.tmp, "settings.json") }], Contributions, ...(im ? [Agent, Im] : [])] });
+  const wants = [...(p.inject ?? []), ...(p.optional ?? [])];
+  const im = wants.includes("im");
+  const alerts = wants.includes("alerts") ? recordingAlerts() : null;
+  const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(input.tmp, "settings.json") }], Contributions, ...(alerts ? [alerts.Alerts] : []), ...(im ? [Agent, Im] : [])] });
   try {
   w.ctx.logger.exporter({ export: (m: { type: string; args: unknown[] }) => void (m.type === "error" || m.type === "warn" ? logs.push(`${m.type}: ${String(m.args[0])}`) : undefined) } as never);
   const samples = [
@@ -107,6 +127,7 @@ export async function testPlugin(input: HostTestInput): Promise<HostTestResult> 
         sections: (itemId: string) => w.ctx.contributions.sectionsFor(w.project.id, itemId),
         graph: (id: string) => w.ctx.contributions.graphEdges(id, scope),
         sidebarModules: () => w.ctx.contributions.sidebarModules(w.project.id),
+        ...(alerts ? { alerts: { played: () => [...alerts.played], notices: () => [...alerts.notices] } } : {}),
         ...(im ? { im: {
           configure: (settings: unknown) => w.ctx.settings.set({ ...w.ctx.settings.get(), im: ImSettings.parse(settings) }),
           engine: (engine: Engine) => w.ctx.agent.engine(engine),

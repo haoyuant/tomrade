@@ -31,6 +31,10 @@ export const CommunityConfig = z.preprocess(
         freshMs: z.number().int().min(60_000).default(15 * 60_000)
       })
     ),
+    /** Official plugins put on every machine once, the way the app's own were; one the person uninstalls stays gone. */
+    starters: z.array(z.string()).default([]),
+    /** Where the starters already put on are remembered; without it, only for this run. */
+    startersFile: z.string().optional(),
     /** How often revocations and updates are checked while online. */
     checkEveryMs: z.number().int().min(60_000).default(6 * 3_600_000),
     /** The binary that runs a plugin's check as Node; defaults to the running one. */
@@ -207,6 +211,7 @@ export class Community extends Service {
 
   private readonly home: Context;
   private revokedNow = new Map<string, string>();
+  private startersSeen = new Set<string>();
   private publisherCache: string | null = null;
   /** Packages fetched to be read before installing, by digest; installing takes them from here. */
   private downloadDir: string | null = null;
@@ -524,9 +529,38 @@ export class Community extends Service {
     return this.installVersion(plan.to, this.sourceFor(id));
   }
 
+  private startersPut(): Set<string> {
+    if (!this.config.startersFile) return this.startersSeen;
+    try {
+      return new Set(JSON.parse(fs.readFileSync(this.config.startersFile, "utf8")) as string[]);
+    } catch {
+      return new Set();
+    }
+  }
+
+  /** Each starter goes on once; one that cannot be fetched yet is tried again at the next check. */
+  async installStarters(): Promise<void> {
+    const put = this.startersPut();
+    const installed = new Set(this.plugins.extensions!.entries().map((e) => e.id));
+    for (const id of this.config.starters.filter((id) => !put.has(id))) {
+      if (!installed.has(id)) {
+        try {
+          await this.install(id);
+        } catch (error) {
+          this.home.logger.info(`${id} is not installed yet: ${message(error)}`);
+          continue;
+        }
+      }
+      put.add(id);
+      this.startersSeen = put;
+      if (this.config.startersFile) fs.writeFileSync(this.config.startersFile, JSON.stringify([...put]));
+    }
+  }
+
   /** Revocations switch a plugin off; updates the rules allow land by themselves. */
   async sweep(): Promise<void> {
     this.official.expire();
+    await this.installStarters();
     const store = this.plugins.extensions!;
     const entries = store.entries();
     const read = await this.perSource(

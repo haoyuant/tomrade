@@ -398,10 +398,6 @@ plugins:
     config:
       # Pets made from the user's own images stay on this machine.
       profilesDir: "${userData}/pet-profiles"
-  # Focus and break timer in the status bar, with a desktop widget. Ships on;
-  # its row switch takes the timer, widget and alerts away together.
-  - id: pomodoro
-    name: "@tomradex/pomodoro"
   # Which keys run which command. The defaults live with the renderer's
   # commands; this row holds only what the person rebound, in their settings.
   - id: keybindings
@@ -412,6 +408,10 @@ plugins:
       nodeBinary: "${nodeRuntime}"
       officialCatalog:
         cacheFile: "${userData}/official-catalog.json"
+      # Pomodoro used to ship inside the app; it now comes from the official
+      # catalog, put on once so nobody who had it loses it.
+      starters: ["tomrade/pomodoro"]
+      startersFile: "${userData}/official-starters.json"
   - id: plugin-studio
     name: "@tomradex/plugin-studio"
     config:
