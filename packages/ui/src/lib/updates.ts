@@ -22,8 +22,8 @@ export type UpdatePhase =
 
 export interface UpdateStatus {
   version: string;
-  /** checkout: updates with git · location: a Mac copy outside Applications · unsupported: cannot replace itself. */
-  blocked: "checkout" | "location" | "unsupported" | null;
+  /** checkout: updates with git · local-build: packaged without a feed · location: a Mac copy outside Applications · unsupported: cannot replace itself. */
+  blocked: "checkout" | "local-build" | "location" | "unsupported" | null;
   phase: UpdatePhase;
   checkedAt: number | null;
 }

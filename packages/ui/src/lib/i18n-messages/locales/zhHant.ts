@@ -260,6 +260,7 @@ export const zhHant: PartialMessages = {
     moveNote: "Tomrade 只能在「應用程式」資料夾裡自動更新。",
     move: "移到「應用程式」",
     unsupportedNote: "這份安裝無法自動更新，新版本請到 tomrade.com 下載。",
+    localBuildNote: "本機建置，不檢查更新。",
     autoCheck: "自動檢查更新",
     autoCheckNote: "啟動後檢查一次，之後每小時一次。你點下載之前什麼都不會下載。",
     channel: "更新通道",

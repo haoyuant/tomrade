@@ -260,6 +260,7 @@ export const fr: PartialMessages = {
     moveNote: "Tomrade ne peut se mettre à jour que depuis le dossier Applications.",
     move: "Déplacer vers Applications",
     unsupportedNote: "Cette copie ne peut pas se mettre à jour elle-même. Les nouvelles versions sont sur tomrade.com.",
+    localBuildNote: "Build local : ne recherche pas de mises à jour.",
     autoCheck: "Rechercher automatiquement les mises à jour",
     autoCheckNote: "Vérifie une fois après le lancement, puis toutes les heures. Rien n’est téléchargé sans votre accord.",
     channel: "Canal de mise à jour",

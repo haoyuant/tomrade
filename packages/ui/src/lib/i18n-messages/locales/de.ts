@@ -260,6 +260,7 @@ export const de: PartialMessages = {
     moveNote: "Tomrade kann sich nur aus dem Programme-Ordner selbst aktualisieren.",
     move: "In Programme verschieben",
     unsupportedNote: "Diese Kopie kann sich nicht selbst aktualisieren. Neue Releases gibt es auf tomrade.com.",
+    localBuildNote: "Lokaler Build – sucht nicht nach Updates.",
     autoCheck: "Automatisch nach Updates suchen",
     autoCheckNote: "Fragt einmal nach dem Start und dann stündlich. Heruntergeladen wird erst, wenn du es sagst.",
     channel: "Update-Kanal",

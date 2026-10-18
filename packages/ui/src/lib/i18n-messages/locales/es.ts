@@ -260,6 +260,7 @@ export const es: PartialMessages = {
     moveNote: "Tomrade solo puede actualizarse desde la carpeta Aplicaciones.",
     move: "Mover a Aplicaciones",
     unsupportedNote: "Esta copia no puede actualizarse sola. Las nuevas versiones están en tomrade.com.",
+    localBuildNote: "Compilación local: no busca actualizaciones.",
     autoCheck: "Buscar actualizaciones automáticamente",
     autoCheckNote: "Pregunta una vez tras el inicio y luego cada hora. No se descarga nada hasta que lo digas.",
     channel: "Canal de actualizaciones",

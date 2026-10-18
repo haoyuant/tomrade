@@ -158,7 +158,7 @@ function UpdatePanel({ status, site }: { status: UpdateStatus; site: string }) {
     return (
       <div className="panel about-update" data-blocked={status.blocked}>
         <div className="about-update-head">
-          <p className="about-update-state">{t(status.blocked === "location" ? "about.moveNote" : "about.unsupportedNote")}</p>
+          <p className="about-update-state">{t(status.blocked === "location" ? "about.moveNote" : status.blocked === "local-build" ? "about.localBuildNote" : "about.unsupportedNote")}</p>
           {status.blocked === "location" && (
             <button type="button" className="btn btn-secondary" disabled={moveToApplications.isPending} onClick={() => moveToApplications.mutate()}>
               {t("about.move")}
