@@ -1,4 +1,5 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Context, Service } from "cordis";
@@ -37,12 +38,25 @@ export const HERDR_INSTALL = "brew install herdr";
 /** How long to wait before subscribing again after the stream ends; doubled each time it fails, up to the maximum. */
 export const RECONNECT_MS = 2_000;
 export const RECONNECT_MAX_MS = 60_000;
+/** How long a server Tomrade started has to answer before the launch goes elsewhere. */
+export const START_TIMEOUT_MS = 10_000;
 
 export interface HerdrConfig {
   /** The first wait before subscribing again; tests make it short. */
   reconnectMs?: number;
   /** The socket to use instead of the one herdr's variables and defaults name; tests point it at a fake. */
   socket?: string;
+  /** The herdr CLI to run instead of the one found on this machine; tests point it at a stand-in. */
+  bin?: string;
+  /** A machine-local file remembering that Tomrade has started herdr's server before, so the person is told only the first time. */
+  statePath?: string;
+  startTimeoutMs?: number;
+}
+
+/** A server answering on the socket, and whether Tomrade just started it. */
+interface HerdrUp {
+  server: HerdrServer;
+  started: boolean;
 }
 
 const STATUSES = new Set<string>(["idle", "working", "blocked", "done", "unknown"]);
@@ -56,9 +70,10 @@ function herdrSearchPath(base: string | undefined): string {
 
 /**
  * herdr on this machine — the terminal workspace manager coding agents run
- * in. Tomrade neither bundles nor starts it: when it is there, a ticket can
- * run in one of its panes and be followed there; when it is not, nothing
- * here is called.
+ * in. Tomrade does not bundle it: when it is installed, a ticket can run in
+ * one of its panes and be followed there — its server started headless for a
+ * launch if it is not running, and never stopped by Tomrade; when it is not
+ * installed, nothing here is called.
  */
 export class Herdr extends Service {
   static provide = "herdr";
@@ -70,11 +85,20 @@ export class Herdr extends Service {
   private disposed = false;
   private readonly reconnectMs: number;
   private readonly socket: string | null;
+  private readonly bin: string | null;
+  private readonly statePath: string | null;
+  private readonly startTimeoutMs: number;
+  /** The server start under way, shared by every launch that wants one meanwhile. */
+  private starting: Promise<HerdrUp | null> | null = null;
+  private toldStarted = false;
 
   constructor(ctx: Context, config: HerdrConfig = {}) {
     super(ctx, "herdr");
     this.reconnectMs = config.reconnectMs ?? RECONNECT_MS;
     this.socket = config.socket ?? null;
+    this.bin = config.bin ?? null;
+    this.statePath = config.statePath ?? null;
+    this.startTimeoutMs = config.startTimeoutMs ?? START_TIMEOUT_MS;
   }
 
   [Service.init]() {
@@ -90,11 +114,29 @@ export class Herdr extends Service {
     return this.socket ?? herdrSocketPath();
   }
 
-  /** The herdr CLI's version, or null when `herdr` is not on PATH. */
+  /** Where the herdr CLI is — the first on that search path — or null when this machine has none. */
+  binary(): string | null {
+    if (this.bin) return this.bin;
+    const search = process.platform === "win32" ? process.env.PATH : herdrSearchPath(process.env.PATH);
+    const name = process.platform === "win32" ? "herdr.exe" : "herdr";
+    for (const dir of (search ?? "").split(path.delimiter).filter(Boolean)) {
+      const file = path.join(dir, name);
+      try {
+        fs.accessSync(file, fs.constants.X_OK);
+        if (fs.statSync(file).isFile()) return file;
+      } catch {
+        // not in this folder
+      }
+    }
+    return null;
+  }
+
+  /** The herdr CLI's version, or null when herdr is not installed. */
   installed(): Promise<string | null> {
+    const bin = this.binary();
+    if (!bin) return Promise.resolve(null);
     return new Promise((resolve) => {
-      const env = process.platform === "win32" ? process.env : { ...process.env, PATH: herdrSearchPath(process.env.PATH) };
-      execFile("herdr", ["--version"], { timeout: 5000, env }, (err, stdout) => {
+      execFile(bin, ["--version"], { timeout: 5000 }, (err, stdout) => {
         if (err) return resolve(null);
         resolve(String(stdout).trim().replace(/^herdr\s+/, "") || null);
       });
@@ -110,6 +152,67 @@ export class Herdr extends Service {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * A server on the socket: the one running, or — herdr installed but not running — `herdr server`
+   * started headless and detached on the same socket, ready once it answers ping. Launches at the
+   * same time share one start. Null when herdr is not installed or did not come up in time.
+   */
+  private async ensureServer(): Promise<HerdrUp | null> {
+    const running = await this.server();
+    if (running) return { server: running, started: false };
+    this.starting ??= this.startServer().finally(() => {
+      this.starting = null;
+    });
+    return this.starting;
+  }
+
+  private async startServer(): Promise<HerdrUp | null> {
+    const bin = this.binary();
+    if (!bin || this.disposed) return null;
+    // A start that finished between this caller's ping and now.
+    const running = await this.server();
+    if (running) return { server: running, started: false };
+    let failed = false;
+    try {
+      // Panes inherit the server's environment; Electron's own switches are not theirs.
+      const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("ELECTRON_")));
+      // Detached and unreferenced: herdr's panes outlive Tomrade by design, so quitting never stops it.
+      const child = spawn(bin, ["server"], { cwd: os.homedir(), env: this.socket ? { ...env, HERDR_SOCKET_PATH: this.socket } : env, detached: true, stdio: "ignore" });
+      child.once("error", () => (failed = true));
+      child.once("exit", (code) => (failed ||= code !== 0));
+      child.unref();
+    } catch {
+      return null;
+    }
+    const deadline = Date.now() + this.startTimeoutMs;
+    while (!failed && Date.now() < deadline) {
+      const server = await this.server();
+      if (server) return { server, started: true };
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    this.ctx.logger.warn(`herdr server ${failed ? "did not start" : `did not answer within ${this.startTimeoutMs / 1000} s`} (${bin})`);
+    return null;
+  }
+
+  /** True the first time ever, on this machine, that a launch started herdr's server: the person is told then, once. */
+  private firstStart(): boolean {
+    if (this.toldStarted) return false;
+    this.toldStarted = true;
+    if (!this.statePath) return true;
+    try {
+      if ((JSON.parse(fs.readFileSync(this.statePath, "utf8")) as { serverStartedAt?: number }).serverStartedAt) return false;
+    } catch {
+      // never written
+    }
+    try {
+      fs.mkdirSync(path.dirname(this.statePath), { recursive: true });
+      fs.writeFileSync(this.statePath, JSON.stringify({ serverStartedAt: Date.now() }));
+    } catch (err) {
+      this.ctx.logger.warn(`could not remember that herdr's server was started: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return true;
   }
 
   /** One request to the server; a refusal is a `HerdrError` with herdr's own code. */
@@ -131,17 +234,37 @@ export class Herdr extends Service {
   }
 
   /**
-   * A workspace of herdr's own for a command: made in the folder, labelled, with the
-   * command typed into its shell. The workspace is not focused — the person is somewhere
-   * else — and the pane is theirs to find. Null when herdr does not answer.
+   * Bring a pane to the front and say so in herdr's window. "noClient" when no herdr client is
+   * attached to see it: herdr's API lists no clients, but a toast with nobody to show it answers
+   * `no_foreground_client`. Null when herdr or the pane is gone.
    */
-  async launch(input: { cwd: string; label?: string; command: string }): Promise<{ paneId: string; workspaceId: string } | null> {
+  async show(paneId: string, title: string): Promise<"shown" | "noClient" | null> {
+    if (!(await this.focus(paneId))) return null;
+    try {
+      const { reason } = await this.call<{ reason?: string }>("notification.show", { title: title.slice(0, 80), body: "", sound: "none" });
+      return reason === "no_foreground_client" ? "noClient" : "shown";
+    } catch (err) {
+      if (!(err instanceof HerdrError)) throw err;
+      return "shown";
+    }
+  }
+
+  /**
+   * A workspace of herdr's own for a command: made in the folder, labelled, with the
+   * command typed into its shell, on a server started for it when none runs (see
+   * `ensureServer`). The workspace is not focused — the person is somewhere else — and
+   * the pane is theirs to find. `startedServer` is "first" the first time ever Tomrade
+   * started the server here. Null when herdr does not answer.
+   */
+  async launch(input: { cwd: string; label?: string; command: string }): Promise<{ paneId: string; workspaceId: string; startedServer?: "first" | "again" } | null> {
+    const up = await this.ensureServer();
+    if (!up) return null;
     try {
       const created = await this.call<{ workspace: { workspace_id: string }; root_pane: { pane_id: string } }>("workspace.create", { cwd: input.cwd, ...(input.label ? { label: input.label } : {}), focus: false });
       const paneId = created.root_pane.pane_id;
       // Typed, with Enter: a newline in the text is not a keypress to herdr.
       await this.call("pane.send_input", { pane_id: paneId, text: input.command, keys: ["enter"] });
-      return { paneId, workspaceId: created.workspace.workspace_id };
+      return { paneId, workspaceId: created.workspace.workspace_id, ...(up.started ? { startedServer: this.firstStart() ? ("first" as const) : ("again" as const) } : {}) };
     } catch (err) {
       if (!(err instanceof HerdrError)) throw err;
       return null;

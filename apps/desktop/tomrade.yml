@@ -351,6 +351,9 @@ plugins:
   # machine has it: a session remembers its pane, and the ticket finds it again.
   - id: herdr
     name: "@tomradex/herdr"
+    config:
+      # Machine-local: whether Tomrade has started herdr's server here before, so the person is told once.
+      statePath: "${userData}/herdr.json"
   # Ticket ↔ code: the branches, pull requests and coding sessions of a ticket,
   # its status read from git, and the Start button that hands a ticket to a
   # local coding agent. Optional — nothing else reads its tables.

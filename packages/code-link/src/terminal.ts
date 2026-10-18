@@ -97,9 +97,9 @@ export interface LaunchInput {
 export const RESUME_SCRIPT = "resume.command";
 export const RESUME_ID_FILE = "resume-id";
 
-/** What a terminal of "herdr" is run through: a workspace with the script going in its pane. */
+/** What a terminal of "herdr" is run through: a workspace with the script going in its pane, on a server started for it when none runs. */
 export interface HerdrTerminal {
-  launch(input: { cwd: string; label?: string; command: string }): Promise<{ paneId: string } | null>;
+  launch(input: { cwd: string; label?: string; command: string }): Promise<{ paneId: string; startedServer?: "first" | "again" } | null>;
   installed(): Promise<string | null>;
 }
 
@@ -110,6 +110,8 @@ export interface LaunchResult {
   paneId?: string;
   /** The terminal is herdr, and herdr did not answer: the script went to the system terminal instead. */
   herdrMissing?: "notInstalled" | "notRunning";
+  /** herdr was not running and Tomrade started its server for this launch; "first" the first time ever on this machine. */
+  herdrStarted?: "first" | "again";
 }
 
 /** Where a herdr launch goes when herdr does not answer; off macOS the platform's own emulator is used whatever the name. */
@@ -130,10 +132,11 @@ export const terminalApp = {
   }
 };
 
-/** What to tell the person when a herdr launch went elsewhere; null when herdr took it. */
+/** What to tell the person after a herdr launch: that it went elsewhere, or — once — that Tomrade started herdr in the background. Null otherwise. */
 export function herdrFallbackNote(locale: unknown, launch: LaunchResult, install: string): string | null {
-  if (!launch.herdrMissing) return null;
   const w = CODE_WORDS(locale);
+  if (launch.herdrStarted === "first") return w("herdrStartedInBackground");
+  if (!launch.herdrMissing) return null;
   const app = process.platform === "darwin" ? SYSTEM_TERMINAL : w("systemTerminal");
   const note = launch.herdrMissing === "notInstalled" ? w("herdrNotInstalledFallback", { app, install }) : w("herdrNotRunningFallback", { app });
   return launch.launched ? note : `${note} ${w("fallbackDidNotOpen", { app })}`;
@@ -187,7 +190,8 @@ export function withOptions(template: string, flags: string): string {
 /**
  * Write a `.command` script and hand it to the terminal app. macOS runs a
  * `.command` file in a new window when it is opened with Terminal or iTerm;
- * elsewhere the common emulators take `-e`. A terminal of "herdr" that does
+ * elsewhere the common emulators take `-e`. A terminal of "herdr" starts
+ * herdr's server when it is installed but not running; one that still does
  * not answer opens the system terminal instead. A terminal of "none" writes
  * the script and stops, for a person to run it themselves.
  */
@@ -208,7 +212,7 @@ export async function launchTerminal(input: LaunchInput, terminal: string, herdr
   if (terminal === "herdr") {
     // The script, not the command: the pid file and the exports come along, and the shell stays after the agent for the person to read.
     const pane = herdr ? await herdr.launch({ cwd: input.cwd, label: input.label, command: `bash ${shellQuote(script)}` }) : null;
-    if (pane) return { script, launched: true, paneId: pane.paneId };
+    if (pane) return { script, launched: true, paneId: pane.paneId, ...(pane.startedServer ? { herdrStarted: pane.startedServer } : {}) };
     herdrMissing = (await herdr?.installed()) ? "notRunning" : "notInstalled";
     terminal = SYSTEM_TERMINAL;
   }

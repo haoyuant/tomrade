@@ -38,7 +38,7 @@ import { Sessions, type SessionMoment } from "./sessions.js";
 import { CODE_WORDS, type CodeWords, type PlainCodeWord } from "./words.js";
 import { Starter, type StartMode, type StartOptions, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
-import { AUTO_TERMINAL, RESUME_ID_FILE, RESUME_SCRIPT, TerminalSettings, commandOk, exec, herdrFallbackNote, launchTerminal, machineTerminalSettings, setupTerminal, terminalApps } from "./terminal.js";
+import { AUTO_TERMINAL, RESUME_ID_FILE, RESUME_SCRIPT, SYSTEM_TERMINAL, TerminalSettings, commandOk, exec, herdrFallbackNote, launchTerminal, machineTerminalSettings, setupTerminal, shellQuote, terminalApps } from "./terminal.js";
 import { registerTools } from "./tools.js";
 
 /** Who the scanner writes as. Evidence from git is not a person's decision, and it is not a model's either. */
@@ -2091,7 +2091,18 @@ export class CodeLink extends Service {
         if (!projectId || !itemId) return { toast: this.words()("selectTicket") };
         // The session already has a terminal, in herdr: show that one rather than open another.
         const pane = this.store.sessions(projectId, { itemId, live: true }).find((s) => s.herdrPane && s.state !== "lost")?.herdrPane;
-        if (pane && (await this.ctx.get("herdr")?.focus(pane))) return { toast: this.words()("shownInHerdr", { pane }) };
+        const herdr = this.ctx.get("herdr");
+        if (pane && herdr) {
+          const w = this.words();
+          const item = this.ctx.items.get(projectId, itemId);
+          const shown = await herdr.show(pane, item ? `${item.key} · ${item.title}` : pane);
+          if (shown === "shown") return { toast: w("shownInHerdr", { pane }) };
+          // In front, but no herdr client is attached to see it: herdr's own client, in the system terminal, shows it.
+          if (shown === "noClient") {
+            const attach = await launchTerminal({ cwd: os.homedir(), command: `exec ${shellQuote(herdr.binary() ?? "herdr")}`, dir: this.sessionDir("herdr-attach") }, SYSTEM_TERMINAL);
+            return { toast: attach.launched ? w("herdrAttached", { app: process.platform === "darwin" ? SYSTEM_TERMINAL : w("systemTerminal"), pane }) : w("herdrRunToSee", { pane }) };
+          }
+        }
         const cwd = this.worktreeOf(projectId, itemId);
         if (!cwd) return { toast: this.words()("noWorktree") };
         const settings = await machineTerminalSettings(this.ctx.settings.get().codeLink, this.ctx.get("herdr"));
