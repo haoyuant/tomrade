@@ -81,14 +81,14 @@ interface Connection {
   credentials: string;
 }
 /** What a start from IM settles, carried in the tokens of its card; `card` is that card's outbox id. */
-interface StartDraft { itemId: string; card: string; engine?: string; options?: Record<string, string>; permissionMode?: string; playbook?: string; allowBlocked?: boolean }
+interface StartDraft { itemId: string; card: string; engine?: string; options?: Record<string, string>; permissionMode?: string; playbook?: string; allowBlocked?: boolean; releaseBranch?: boolean }
 type StartOutcome =
-  | { ok: false; gate: string; message: string; blockers?: string[]; board?: { name: string }; cause?: { code: string; repoId?: string; branch?: string; heldAt?: string } }
+  | { ok: false; gate: string; message: string; blockers?: string[]; board?: { name: string }; cause?: { code: string; repoId?: string; branch?: string; heldAt?: string; releasable?: boolean } }
   | { ok: true; continued: boolean; threadId: string; runId?: string; engine: string; waitingOn?: string; warnings?: string[] };
 /** The part of `ctx.codeLink` IM uses; code link is optional and never imported. */
 interface CodeHost extends CodeLookup {
   resolve(projectId: string, proposalId: string, accept: boolean): { state: string };
-  start(projectId: string, itemId: string, opts: { mode: "run"; engine?: string; options?: Record<string, unknown>; permissionMode?: string; playbook?: string; allowBlocked?: boolean; source?: Record<string, string> }): Promise<StartOutcome>;
+  start(projectId: string, itemId: string, opts: { mode: "run"; engine?: string; options?: Record<string, unknown>; permissionMode?: string; playbook?: string; allowBlocked?: boolean; releaseBranch?: boolean; source?: Record<string, string> }): Promise<StartOutcome>;
   startDefaults(): { engine?: string; options?: Record<string, unknown>; permissionMode?: string; playbook?: string } | null;
 }
 /** A ticket as a start needs it. */
@@ -1587,7 +1587,7 @@ export class Im extends Service {
       case "no-board-repo": return w("workdirNoBoardRepo", { board });
       case "unknown-repo": return w("workdirUnknownRepo", { board, repo: cause.repoId ?? "?" });
       case "no-hub": return w("workdirNoHub");
-      case "branch-in-use": if (cause.branch && cause.heldAt) return w("workdirBranchInUse", { branch: cause.branch, at: cause.heldAt }); break;
+      case "branch-in-use": if (cause.branch && cause.heldAt) return w(cause.releasable ? "workdirBranchReleasable" : "workdirBranchInUse", { branch: cause.branch, at: cause.heldAt }); break;
     }
     return w("gateWorkdir", { detail: result.message });
   }
@@ -1621,7 +1621,7 @@ export class Im extends Service {
       result = await code.start(b.project_id, item.id, { mode: "run",
         ...(draft.engine ? { engine: draft.engine } : {}), ...(draft.options ? { options: draft.options } : {}),
         ...(draft.permissionMode && !general ? { permissionMode: draft.permissionMode } : {}), ...(draft.playbook && general ? { playbook: draft.playbook } : {}),
-        ...(draft.allowBlocked ? { allowBlocked: true } : {}),
+        ...(draft.allowBlocked ? { allowBlocked: true } : {}), ...(draft.releaseBranch ? { releaseBranch: true } : {}),
         source: { connection: b.connection_id, tenant: address.tenantId, conversation: address.conversationId, actor: actorId } });
     } catch (e) { settle(b, w("notStarted", { key: item.key })); throw e; }
     if (!result.ok) {
@@ -1633,7 +1633,10 @@ export class Im extends Service {
       } else {
         const gate = GATE[result.gate];
         const reason = result.gate === "workdir" ? this.workdirReason(result) : (gate && w(gate)) || result.message;
-        this.enqueue(b, `start-gate:${row.id}`, { text: w("startGate", { key: item.key, reason }),
+        // A branch held where nothing would be lost is freed by the person's say-so, here.
+        const free = result.cause?.code === "branch-in-use" && result.cause.releasable;
+        this.enqueue(b, `start-gate:${row.id}`, { text: w(free ? "startGateHere" : "startGate", { key: item.key, reason }),
+          ...(free ? { actions: [{ label: w("freeAndStart"), token: this.offerValue(b, "start!", actorId, JSON.stringify({ ...draft, releaseBranch: true })), style: "primary" as const }] } : {}),
           elements: [{ type: "links", links: [{ label: w("openInTomrade"), url: links.item(b.project_id, item.key) }] }] }, reply);
       }
       this.accept(row); return;

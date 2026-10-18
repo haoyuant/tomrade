@@ -16,14 +16,14 @@ afterEach(async () => { for (const close of cleanups.splice(0).reverse()) await 
 
 const RICH: ImCapabilities = { edit: true, buttons: true, inboundFiles: false, outboundFiles: false, maxTextLength: 4000, maxFileBytes: 0, select: true, textInput: true, cards: true, cardUpdate: true };
 
-type StartOpts = { mode: "run"; engine?: string; options?: Record<string, unknown>; permissionMode?: string; playbook?: string; allowBlocked?: boolean; source?: Record<string, string> };
+type StartOpts = { mode: "run"; engine?: string; options?: Record<string, unknown>; permissionMode?: string; playbook?: string; allowBlocked?: boolean; releaseBranch?: boolean; source?: Record<string, string> };
 
 /** Code link as a start from IM uses it: it opens the ticket's thread and sends the brief, or stops at a gate. */
 class FakeCode extends Service {
   static provide = "codeLink";
   static inject = ["agent", "items"];
   starts: StartOpts[] = [];
-  gate: { gate: string; message: string; blockers?: string[]; board?: { name: string }; cause?: { code: string; branch?: string; heldAt?: string } } | null = null;
+  gate: { gate: string; message: string; blockers?: string[]; board?: { name: string }; cause?: { code: string; branch?: string; heldAt?: string; releasable?: boolean } } | null = null;
   /** While set, a start waits for it, as a real one waits on its worktree and engine. */
   hold: Promise<void> | null = null;
   constructor(ctx: Context) { super(ctx, "codeLink"); }
@@ -33,7 +33,7 @@ class FakeCode extends Service {
   async start(projectId: string, itemId: string, opts: StartOpts) {
     this.starts.push(opts);
     if (this.hold) await this.hold;
-    if (this.gate && !(this.gate.gate === "blocked" && opts.allowBlocked)) return { ok: false, ...this.gate };
+    if (this.gate && !(this.gate.gate === "blocked" && opts.allowBlocked) && !(this.gate.cause?.releasable && opts.releaseBranch)) return { ok: false, ...this.gate };
     const item = this.ctx.items.get(projectId, itemId)!;
     const thread = this.ctx.agent.newThread(projectId, opts.engine, null, { surface: "assistant", itemId, title: `${item.key} ${item.title}` });
     const { runId } = this.ctx.agent.send(projectId, thread.id, { kind: "text", text: `Brief ${item.key}` }, { requestId: `start:${this.starts.length}`, source: opts.source! });
@@ -340,6 +340,18 @@ describe("starting a ticket from IM", () => {
     held.code.gate = { gate: "workdir", message: "held", cause: { code: "branch-in-use", branch: "tom-1/x", heldAt: "/work/other" } };
     await held.receive(say("b", `/start ${held.item.key} model=fast`));
     await held.said(/: tom-1\/x is already checked out in another worktree \(\/work\/other\)/);
+    expect((await held.said(/already checked out/)).content.actions).toBeUndefined();
+
+    // Nothing there would be lost: the person frees the branch from here, and the start goes through.
+    const free = await boot();
+    free.code.gate = { gate: "workdir", message: "held", cause: { code: "branch-in-use", branch: "tom-1/x", heldAt: "/work/other", releasable: true } };
+    await free.receive(say("d", `/start ${free.item.key} model=fast`));
+    const offered = await free.said(/: tom-1\/x is checked out in another worktree \(\/work\/other\), with nothing uncommitted there\./);
+    expect(offered.content.text).not.toContain("fixed on the desktop");
+    expect(offered.content.actions!.map(a => a.label)).toEqual(["Free it and start"]);
+    await free.receive(act("free", offered.content.actions![0].token));
+    await free.said(/^Started .* with Test\./);
+    expect(free.code.starts.at(-1)).toMatchObject({ releaseBranch: true });
 
     const other = await boot();
     other.code.gate = { gate: "workdir", message: "git worktree add failed: disk full" };
