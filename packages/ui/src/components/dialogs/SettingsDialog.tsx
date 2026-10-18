@@ -21,15 +21,16 @@ import { McpServersPane } from "./McpServersPane";
 import { ImPane } from "./ImPane";
 import { PetProfilesPanel } from "./PetProfilesPanel";
 import { PluginsPanel } from "./PluginsPanel";
-import { Eyebrow, LiveDot, Num, SectionHead, Tag } from "~/components/ui/atoms";
+import { Eyebrow, Fold, LiveDot, Num, SectionHead, Tag } from "~/components/ui/atoms";
 import { SchemaField, fieldsOf, problemOf, type JsonSchema } from "~/components/ui/schema-form";
 import { STATUS } from "~/lib/domain";
 import { useBackgroundStatus } from "~/lib/background";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { useCacheDir, useHubInfo, useMcpUrl, usePlugins, useSaveSettings, useSettings, useSettingsSections, useStorageProviders } from "~/lib/queries";
+import { useMcpUrl, usePlugins, useSaveSettings, useSettings, useSettingsSections, useStorageProviders } from "~/lib/queries";
 import { cssColorToHex, useTheme } from "~/lib/theme";
+import { detectedHere } from "~/lib/engines";
 import { engineStateLabel, engineStatus } from "~/lib/localCli";
-import { openExternal, reveal } from "~/lib/shell";
+import { openExternal } from "~/lib/shell";
 import { invoke } from "~/lib/api";
 import { readableError, useToast } from "~/lib/toast";
 import { keyLabel } from "~/lib/keybindings";
@@ -107,12 +108,14 @@ function ScopeTag({ scope }: { scope: "machine" | "user" | undefined }) {
 /**
  * A plugin's settings pane. A typed field saves when it is left, a pick at
  * once. A value that would be refused stays as typed, with the reason under
- * it, instead of springing back to what was stored.
+ * it, instead of springing back to what was stored. Fields the section marks
+ * advanced wait behind one line until asked for.
  */
 function PluginPane({ section, stored, onSave, children }: { section: SettingsSectionView; stored: unknown; onSave: (next: unknown) => Promise<unknown>; children?: ReactNode }) {
   const { t } = useI18n();
   const [value, setValue] = useState<unknown>(stored);
   const [problems, setProblems] = useState<Record<string, string>>({});
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   // A field still being put right keeps what was typed; otherwise the pane follows the stored value.
   const unsettled = Object.keys(problems).length > 0;
   useEffect(() => {
@@ -120,6 +123,8 @@ function PluginPane({ section, stored, onSave, children }: { section: SettingsSe
   }, [stored]); // eslint-disable-line react-hooks/exhaustive-deps
   const schema = section.schema as JsonSchema;
   const fields = fieldsOf(schema);
+  const basic = fields?.filter(([, field]) => !field.advanced) ?? [];
+  const advanced = fields?.filter(([, field]) => field.advanced) ?? [];
   const record = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
   const setProblem = (key: string, problem: string | null) =>
     setProblems((all) => {
@@ -144,30 +149,76 @@ function PluginPane({ section, stored, onSave, children }: { section: SettingsSe
       (err: unknown) => setProblem(key, t("common.notSaved", { reason: readableError(err) }))
     );
   };
+  const draw = ([name, field]: [string, JsonSchema]) => (
+    <SchemaField
+      key={name}
+      id={section.id}
+      name={name}
+      schema={field}
+      value={record(value)[name]}
+      error={problems[name]}
+      onChange={(v) => change(name, v)}
+      onCommit={(v) => commit(name, field, v)}
+    />
+  );
   return (
     <>
       <SectionHead title={section.title} aside={<ScopeTag scope={section.scope} />}>
         {section.description}
       </SectionHead>
-      <div className="panel stack-3">
-        {fields ? (
-          fields.map(([name, field]) => (
-            <SchemaField
-              key={name}
-              id={section.id}
-              name={name}
-              schema={field}
-              value={record(value)[name]}
-              error={problems[name]}
-              onChange={(v) => change(name, v)}
-              onCommit={(v) => commit(name, field, v)}
-            />
-          ))
-        ) : (
+      {fields ? (
+        <>
+          {basic.length > 0 && <div className="panel stack-3">{basic.map(draw)}</div>}
+          {advanced.length > 0 && (
+            <Fold id={`${section.id}-advanced`} title={t("common.advanced")} open={advancedOpen} onToggle={() => setAdvancedOpen((o) => !o)}>
+              <div className="panel stack-3">{advanced.map(draw)}</div>
+            </Fold>
+          )}
+        </>
+      ) : (
+        <div className="panel stack-3">
           <SchemaField id={section.id} name={section.id} schema={schema} value={value} error={problems[""]} onChange={(v) => change(null, v)} onCommit={(v) => commit(null, schema, v)} />
-        )}
-      </div>
+        </div>
+      )}
       {children}
+    </>
+  );
+}
+
+/** Tomrade's own MCP server: where coding agents reach this backlog, and what they may not do to it. */
+function AgentAccessSection() {
+  const { t, tx } = useI18n();
+  const mcp = useMcpUrl();
+  return (
+    <>
+      <SectionHead title={t("settingsDialog.agentsLabel")} aside={<ScopeTag scope="machine" />}>
+        {t("settingsDialog.agentsLede")}
+      </SectionHead>
+      <div className="grid-2">
+        <div className="panel">
+          <div className="row" style={{ gap: 7, marginBottom: "var(--space-3)" }}>
+            <LiveDot />
+            <Eyebrow>{t("settingsDialog.mcpListening")}</Eyebrow>
+          </div>
+          <p className="num" style={{ fontSize: 14, color: "var(--fg-2)" }}>
+            {mcp.data ?? t("settingsDialog.notRunning")}
+          </p>
+          <p className="meta-txt dense" style={{ marginTop: "var(--space-3)" }}>
+            {t("settingsDialog.mcpNote")}
+          </p>
+        </div>
+        <div className="panel">
+          <div className="row" style={{ gap: 7, marginBottom: "var(--space-3)" }}>
+            <Icon name="i-lock" size={14} style={{ color: "var(--meta)" }} />
+            <Eyebrow>{t("settingsDialog.humanProtected")}</Eyebrow>
+          </div>
+          <ul className="dash">
+            <li>{t("settingsDialog.lockedFieldsBullet")}</li>
+            <li>{t("settingsDialog.oplogBullet")}</li>
+            <li>{tx("settingsDialog.undoBullet", { cmdz: <Num>{keyLabel("undo")}</Num> })}</li>
+          </ul>
+        </div>
+      </div>
     </>
   );
 }
@@ -177,22 +228,22 @@ const PANE_EXTRAS: Record<string, () => ReactNode> = {
   pet: () => <PetProfilesPanel />
 };
 
-function TokenEditor({ token, value, disabled, onChange }: { token: ThemeTokenName; value: string; disabled: boolean; onChange: (value: string) => void }) {
+function TokenEditor({ token, value, onChange }: { token: ThemeTokenName; value: string; onChange: (value: string) => void }) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
   return <div className="token-value">
-    <input type="color" className="token-picker" aria-label={`Pick --${token}`} value={cssColorToHex(draft || value)} disabled={disabled}
+    <input type="color" className="token-picker" aria-label={`Pick --${token}`} value={cssColorToHex(draft || value)}
       onChange={(event) => { setDraft(event.target.value); onChange(event.target.value); }} />
-    <input className="field-input token-input" aria-label={`--${token}`} value={draft} disabled={disabled}
+    <input className="field-input token-input" aria-label={`--${token}`} value={draft}
       onChange={(event) => setDraft(event.target.value)} onBlur={() => draft.trim() && onChange(draft.trim())} />
   </div>;
 }
 
-function FontEditor({ name, value, disabled, onChange }: { name: ThemeTypographyName; value: string; disabled: boolean; onChange: (value: string) => void }) {
+function FontEditor({ name, value, onChange }: { name: ThemeTypographyName; value: string; onChange: (value: string) => void }) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
   return <label className="token-font-field"><span className="mono">--{name}</span>
-    <input className="field-input" value={draft} disabled={disabled} onChange={event => setDraft(event.target.value)}
+    <input className="field-input" value={draft} onChange={event => setDraft(event.target.value)}
       onBlur={() => draft.trim() && onChange(draft.trim())} />
   </label>;
 }
@@ -299,14 +350,11 @@ export function SettingsDialog({
   /** With the assistant pane: the engine row to unfold and bring into view. */
   engine?: string;
 }) {
-  const { t, tx, locale } = useI18n();
+  const { t, locale } = useI18n();
   const qc = useQueryClient();
   const settings = useSettings();
   const sections = useSettingsSections(locale);
   const save = useSaveSettings();
-  const mcp = useMcpUrl();
-  const cacheDir = useCacheDir();
-  const hub = useHubInfo();
   const background = useBackgroundStatus();
   const providers = useStorageProviders();
   const { preference, customThemes, automation, setAutomation, createCustomTheme, deleteCustomTheme } = useTheme();
@@ -342,9 +390,7 @@ export function SettingsDialog({
     if (!settings.data || !selectedCustom) return;
     save.mutate({ ...settings.data, customThemes: customThemes.map(theme => theme.id === selectedCustom.id ? change(theme) : theme) });
   };
-  const resolvedValue = (name: string) => selectedCustom
-    ? (selectedCustom.tokens[name as ThemeTokenName] ?? selectedCustom.fonts[name as ThemeTypographyName] ?? "")
-    : (typeof document === "undefined" ? "" : getComputedStyle(document.documentElement).getPropertyValue(`--${name}`).trim());
+  const resolvedValue = (name: string) => selectedCustom?.tokens[name as ThemeTokenName] ?? selectedCustom?.fonts[name as ThemeTypographyName] ?? "";
 
   const TOKENS: [MessageKey, ThemeTokenName, MessageKey][] = [
     ["settingsDialog.tokenCanvas", "bg", "settingsDialog.tokenCanvasWhere"],
@@ -406,40 +452,43 @@ export function SettingsDialog({
           <ThemePreview customThemes={customThemes} />
           <ThemeAutomationPanel automation={automation} themes={customThemes} onChange={setAutomation} />
 
-          <hr className="rule" />
-          <SectionHead title={t("settingsDialog.tokensLabel")}>
-            {selectedCustom ? t("settingsDialog.customTokensLede") : t("settingsDialog.builtinTokensLede")}
-          </SectionHead>
-          <div className="panel" style={{ padding: "var(--space-2) var(--space-3)" }}>
-            <table className="tok-table">
-              <thead>
-                <tr>
-                  <th>{t("settingsDialog.colRole")}</th>
-                  <th>{t("settingsDialog.colToken")}</th>
-                  <th>{t("settingsDialog.colWhere")}</th>
-                  <th>{t("settingsDialog.colValue")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {TOKENS.map(([roleKey, token, whereKey]) => (
-                  <tr key={token}>
-                    <td>{t(roleKey)}</td>
-                    <td className="mono">--{token}</td>
-                    <td>{t(whereKey)}</td>
-                    <td><TokenEditor token={token} value={resolvedValue(token)} disabled={!selectedCustom}
-                      onChange={value => updateCustom(theme => ({ ...theme, tokens: { ...theme.tokens, [token]: value } }))} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {/* Built-in themes are read-only, so their tokens are nothing to edit: the tables come with a custom theme. */}
+          {selectedCustom && (
+            <>
+              <hr className="rule" />
+              <SectionHead title={t("settingsDialog.tokensLabel")}>{t("settingsDialog.customTokensLede")}</SectionHead>
+              <div className="panel" style={{ padding: "var(--space-2) var(--space-3)" }}>
+                <table className="tok-table">
+                  <thead>
+                    <tr>
+                      <th>{t("settingsDialog.colRole")}</th>
+                      <th>{t("settingsDialog.colToken")}</th>
+                      <th>{t("settingsDialog.colWhere")}</th>
+                      <th>{t("settingsDialog.colValue")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {TOKENS.map(([roleKey, token, whereKey]) => (
+                      <tr key={token}>
+                        <td>{t(roleKey)}</td>
+                        <td className="mono">--{token}</td>
+                        <td>{t(whereKey)}</td>
+                        <td><TokenEditor token={token} value={resolvedValue(token)}
+                          onChange={value => updateCustom(theme => ({ ...theme, tokens: { ...theme.tokens, [token]: value } }))} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
-          <hr className="rule" />
-          <SectionHead title={t("settingsDialog.fontsLabel")}>{t("settingsDialog.fontsLede")}</SectionHead>
-          <div className="panel token-fonts">
-            {THEME_TYPOGRAPHY_NAMES.map(name => <FontEditor key={name} name={name} value={resolvedValue(name)} disabled={!selectedCustom}
-              onChange={value => updateCustom(theme => ({ ...theme, fonts: { ...theme.fonts, [name]: value } }))} />)}
-          </div>
+              <hr className="rule" />
+              <SectionHead title={t("settingsDialog.fontsLabel")}>{t("settingsDialog.fontsLede")}</SectionHead>
+              <div className="panel token-fonts">
+                {THEME_TYPOGRAPHY_NAMES.map(name => <FontEditor key={name} name={name} value={resolvedValue(name)}
+                  onChange={value => updateCustom(theme => ({ ...theme, fonts: { ...theme.fonts, [name]: value } }))} />)}
+              </div>
+            </>
+          )}
         </>
       )
     },
@@ -491,47 +540,10 @@ export function SettingsDialog({
         ) : null
     },
     { id: "usage", label: t("usage.label"), icon: "i-bars" as IconId, group: "app" as const, render: () => <UsagePane /> },
-    {
-      id: "agents",
-      label: t("settingsDialog.agentsLabel"),
-      icon: "i-lock",
-      group: "app",
-      render: () => (
-        <>
-          <SectionHead title={t("settingsDialog.agentsLabel")} aside={<ScopeTag scope="machine" />}>
-            {t("settingsDialog.agentsLede")}
-          </SectionHead>
-          <div className="grid-2">
-            <div className="panel">
-              <div className="row" style={{ gap: 7, marginBottom: "var(--space-3)" }}>
-                <LiveDot />
-                <Eyebrow>{t("settingsDialog.mcpListening")}</Eyebrow>
-              </div>
-              <p className="num" style={{ fontSize: 14, color: "var(--fg-2)" }}>
-                {mcp.data ?? t("settingsDialog.notRunning")}
-              </p>
-              <p className="meta-txt dense" style={{ marginTop: "var(--space-3)" }}>
-                {t("settingsDialog.mcpNote")}
-              </p>
-            </div>
-            <div className="panel">
-              <div className="row" style={{ gap: 7, marginBottom: "var(--space-3)" }}>
-                <Icon name="i-lock" size={14} style={{ color: "var(--meta)" }} />
-                <Eyebrow>{t("settingsDialog.humanProtected")}</Eyebrow>
-              </div>
-              <ul className="dash">
-                <li>{t("settingsDialog.lockedFieldsBullet")}</li>
-                <li>{t("settingsDialog.oplogBullet")}</li>
-                <li>{tx("settingsDialog.undoBullet", { cmdz: <Num>{keyLabel("undo")}</Num> })}</li>
-              </ul>
-            </div>
-          </div>
-        </>
-      )
-    },
-    // Drawn only while the plugin that owns the section is loaded.
+    // Drawn only while the plugin that owns the section is loaded. One pane for MCP both ways:
+    // Tomrade's own server, which agents reach, above the servers Tomrade reaches.
     ...(sections.data?.some((s) => s.id === "mcpServers")
-      ? [{ id: "mcpServers", label: t("mcpServers.label"), icon: "i-plug" as IconId, group: "app" as const, render: () => <McpServersPane /> }]
+      ? [{ id: "mcpServers", label: t("mcpServers.label"), icon: "i-plug" as IconId, group: "app" as const, render: () => <><AgentAccessSection /><hr className="rule" /><McpServersPane /></> }]
       : []),
     ...(sections.data?.some((s) => s.id === "im")
       ? [{ id: "im", label: t("imSettings.label"), icon: "i-send" as IconId, group: "app" as const, render: () => <ImPane scopeTag={<ScopeTag scope="machine" />} /> }]
@@ -540,44 +552,13 @@ export function SettingsDialog({
     ...(background.data
       ? [{ id: "background", label: t("background.label"), icon: "i-moon" as IconId, group: "app" as const, render: () => <BackgroundPane scopeTag={<ScopeTag scope="machine" />} /> }]
       : []),
+    // Where everything lives: the Hub folder, its remote, and the cache under it.
     {
       id: "hub",
       label: t("settingsDialog.hubLabel"),
       icon: "i-home",
       group: "app",
       render: () => <HubPane />
-    },
-    {
-      id: "data",
-      label: t("settingsDialog.dataLabel"),
-      icon: "i-archive",
-      group: "app",
-      render: () => (
-        <>
-          <SectionHead title={t("settingsDialog.dataLabel")} aside={<ScopeTag scope="machine" />}>
-            {t(hub.data?.cloudEnabled ? "settingsDialog.cloudDataLede" : "settingsDialog.dataLede")}
-          </SectionHead>
-          <div className="panel stack-3">
-            <div className="field">
-              <label htmlFor="stHub">{t(hub.data?.cloudEnabled ? "settingsDialog.projectsDirLabel" : "settingsDialog.hubDirLabel")}</label>
-              <div className="row" style={{ gap: "var(--space-2)" }}>
-                <input id="stHub" className="input num" style={{ flex: 1 }} readOnly value={(hub.data?.cloudEnabled ? hub.data.projectsDir : hub.data?.dir) ?? ""} />
-                {(hub.data?.cloudEnabled ? hub.data.projectsDir : hub.data?.dir) && (
-                  <button type="button" className="btn btn-ghost" onClick={() => reveal((hub.data?.cloudEnabled ? hub.data.projectsDir : hub.data!.dir)!)}>
-                    {t("settingsDialog.reveal")}
-                  </button>
-                )}
-              </div>
-              <span className="meta-txt">{t(hub.data?.cloudEnabled ? "settingsDialog.projectsDirNote" : "settingsDialog.hubDirNote")}</span>
-            </div>
-            <div className="field">
-              <label htmlFor="stDb">{t("settingsDialog.cacheDirLabel")}</label>
-              <input id="stDb" className="input num" readOnly value={cacheDir.data ?? ""} />
-              <span className="meta-txt">{t("settingsDialog.cacheDirNote")}</span>
-            </div>
-          </div>
-        </>
-      )
     },
     { id: "about", label: t("about.label"), icon: "i-info", group: "app", render: () => <AboutPane /> },
     ...pluginSections.map(
@@ -678,12 +659,19 @@ function AssistantPane({
   const agent = (settings.agent as AgentSettings | undefined) ?? EMPTY_AGENT;
   const runMinutes = agent.maxRunMinutes ?? EMPTY_AGENT.maxRunMinutes;
   const [editing, setEditing] = useState<ModelProfile | null>(null);
-  // An agent's first sign-in check can take a model call; look again until each has answered.
-  const lenders = useQuery({ queryKey: ["llm", "lenders"], queryFn: () => invoke("llm.lenders"), staleTime: 15_000,
-    refetchInterval: (query) => (query.state.data?.some((l) => l.ready === null) ? 1500 : false) }).data ?? [];
-  const worker = useQuery({ queryKey: ["llm", "worker", models.roles.worker], queryFn: () => invoke("llm.worker"), staleTime: 15_000 }).data;
   // removing a profile deletes its key too: asked once, in the row
   const [removing, setRemoving] = useState<string | null>(null);
+  // The agents on this machine make the list; the rest wait behind one line, which opens for an engine someone was sent to set up.
+  const defaultId = findEngine(engines.data, agent.defaultEngine)?.id;
+  const conducting = (engines.data ?? []).filter(conducts);
+  const here = conducting.filter((e) => detectedHere(e) || e.id === defaultId);
+  const elsewhere = conducting.filter((e) => !here.includes(e));
+  const [othersOpen, setOthersOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const focusedElsewhere = !!focusEngine && elsewhere.some((e) => e.id === focusEngine);
+  useEffect(() => {
+    if (focusedElsewhere) setOthersOpen(true);
+  }, [focusedElsewhere]);
 
   const saveModels = (next: ModelsSettings) => onSave({ ...settings, models: next });
   const saveAgent = (next: AgentSettings) => onSave({ ...settings, agent: next });
@@ -698,6 +686,24 @@ function AssistantPane({
     const profiles = models.profiles.filter((p) => p.id !== id);
     saveModels({ profiles, roles: { worker: models.roles.worker === id ? "" : models.roles.worker } });
   };
+
+  const row = (e: EngineView) => (
+    <EngineRow
+      key={e.id}
+      engine={e}
+      isDefault={defaultId === e.id}
+      focused={focusEngine === e.id}
+      onMakeDefault={() => saveAgent({ ...agent, defaultEngine: e.id })}
+      options={(agent.engines[e.id] ?? {}) as Record<string, unknown>}
+      onCommit={(key, value) => {
+        const opts = (agent.engines[e.id] ?? {}) as Record<string, unknown>;
+        const next = { ...opts };
+        if (value.trim()) next[key] = value.trim();
+        else delete next[key];
+        saveAgent({ ...agent, engines: { ...agent.engines, [e.id]: next } });
+      }}
+    />
+  );
 
   return (
     <>
@@ -769,63 +775,26 @@ function AssistantPane({
             })}
           </div>
         )}
-        {(models.profiles.length > 0 || lenders.length > 0) && (
-          <div className="field">
-            <label htmlFor="role-worker">{t("settingsDialog.workerRoleLabel")}</label>
-            <select
-              id="role-worker"
-              className="input"
-              value={models.roles.worker}
-              onChange={(e) => saveModels({ ...models, roles: { worker: e.target.value } })}
-            >
-              <option value="">{t("settingsDialog.workerAuto")}</option>
-              {models.profiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.title || p.model}
-                </option>
-              ))}
-              {lenders.map((l) => (
-                <option key={l.id} value={`${LENT_WORKER}${l.id}`}>
-                  {t(l.ready === null ? "settingsDialog.workerLentChecking" : l.ready ? "settingsDialog.workerLent" : "settingsDialog.workerLentNotReady", { name: l.title })}
-                </option>
-              ))}
-            </select>
-            <span className="meta-txt">{t("settingsDialog.workerRoleHelp")}</span>
-            {worker && !worker.ok && worker.reason && (
-              <span className="meta-txt" role="alert" data-testid="worker-problem">
-                {worker.reason}
-              </span>
-            )}
-          </div>
-        )}
       </div>
 
       <hr className="rule" />
       <SectionHead title={t("settingsDialog.enginesTitle")}>{t("settingsDialog.enginesLede")}</SectionHead>
       <div className="panel stack-3">
         <div className="eng-list" role="radiogroup" aria-label={t("settingsDialog.defaultEngineLabel")}>
-          {(engines.data ?? []).filter(conducts).map((e) => (
-            <EngineRow
-              key={e.id}
-              engine={e}
-              isDefault={findEngine(engines.data, agent.defaultEngine)?.id === e.id}
-              focused={focusEngine === e.id}
-              onMakeDefault={() => saveAgent({ ...agent, defaultEngine: e.id })}
-              options={(agent.engines[e.id] ?? {}) as Record<string, unknown>}
-              onCommit={(key, value) => {
-                const opts = (agent.engines[e.id] ?? {}) as Record<string, unknown>;
-                const next = { ...opts };
-                if (value.trim()) next[key] = value.trim();
-                else delete next[key];
-                saveAgent({ ...agent, engines: { ...agent.engines, [e.id]: next } });
-              }}
-            />
-          ))}
+          {here.map(row)}
         </div>
+        {elsewhere.length > 0 && (
+          <Fold id="other-agents" title={t("settingsDialog.otherAgentsTitle", { count: elsewhere.length })} open={othersOpen} onToggle={() => setOthersOpen((o) => !o)}>
+            <p className="meta-txt">{t("settingsDialog.otherAgentsNote")}</p>
+            <div className="eng-list" role="radiogroup" aria-label={t("settingsDialog.otherAgentsTitle", { count: elsewhere.length })}>
+              {elsewhere.map(row)}
+            </div>
+          </Fold>
+        )}
         <p className="meta-txt">{t("settingsDialog.engineListNote")}</p>
         <p className="meta-txt" data-testid="more-engines">
           {enginesOff.length
-            ? tx("settingsDialog.moreEnginesOff", { list: <span className="mono">{enginesOff.map((p) => p.id).join(", ")}</span> })
+            ? tx("settingsDialog.moreEnginesOff", { list: <span>{enginesOff.map((p) => p.title ?? p.id).join(", ")}</span> })
             : t("settingsDialog.moreEngines")}{" "}
           <button type="button" className="link-btn" onClick={onFindEngines}>
             {t("settingsDialog.moreEnginesLink")}
@@ -869,11 +838,55 @@ function AssistantPane({
       </div>
 
       <hr className="rule" />
-      <SectionHead title={t("playbooks.settingsTitle")}>{t("playbooks.settingsLede")}</SectionHead>
-      <div className="panel stack-3">
-        <PlaybooksBlock agent={agent} onSave={saveAgent} />
-      </div>
+      <Fold id="assistant-advanced" title={t("common.advanced")} open={advancedOpen} onToggle={() => setAdvancedOpen((o) => !o)}>
+        <WorkerRole models={models} onSave={saveModels} />
+        <SectionHead title={t("playbooks.settingsTitle")}>{t("playbooks.settingsLede")}</SectionHead>
+        <div className="panel stack-3">
+          <PlaybooksBlock agent={agent} onSave={saveAgent} />
+        </div>
+      </Fold>
     </>
+  );
+}
+
+/** Which model answers the tools' own calls: a profile, or an agent signed in on this machine. Nothing to pick from, nothing to show. */
+function WorkerRole({ models, onSave }: { models: ModelsSettings; onSave: (next: ModelsSettings) => void }) {
+  const { t } = useI18n();
+  // An agent's first sign-in check can take a model call; look again until each has answered.
+  const lenders = useQuery({ queryKey: ["llm", "lenders"], queryFn: () => invoke("llm.lenders"), staleTime: 15_000,
+    refetchInterval: (query) => (query.state.data?.some((l) => l.ready === null) ? 1500 : false) }).data ?? [];
+  const worker = useQuery({ queryKey: ["llm", "worker", models.roles.worker], queryFn: () => invoke("llm.worker"), staleTime: 15_000 }).data;
+  if (models.profiles.length === 0 && lenders.length === 0) return null;
+  return (
+    <div className="panel stack-3" style={{ marginBottom: "var(--space-5)" }}>
+      <div className="field">
+        <label htmlFor="role-worker">{t("settingsDialog.workerRoleLabel")}</label>
+        <select
+          id="role-worker"
+          className="input"
+          value={models.roles.worker}
+          onChange={(e) => onSave({ ...models, roles: { worker: e.target.value } })}
+        >
+          <option value="">{t("settingsDialog.workerAuto")}</option>
+          {models.profiles.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.title || p.model}
+            </option>
+          ))}
+          {lenders.map((l) => (
+            <option key={l.id} value={`${LENT_WORKER}${l.id}`}>
+              {t(l.ready === null ? "settingsDialog.workerLentChecking" : l.ready ? "settingsDialog.workerLent" : "settingsDialog.workerLentNotReady", { name: l.title })}
+            </option>
+          ))}
+        </select>
+        <span className="meta-txt">{t("settingsDialog.workerRoleHelp")}</span>
+        {worker && !worker.ok && worker.reason && (
+          <span className="meta-txt" role="alert" data-testid="worker-problem">
+            {worker.reason}
+          </span>
+        )}
+      </div>
+    </div>
   );
 }
 

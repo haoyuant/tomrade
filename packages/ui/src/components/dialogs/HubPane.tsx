@@ -6,7 +6,7 @@ import { ConnectionPanel, DestinationPicker, message } from "~/components/projec
 import { Eyebrow, SectionHead, Tag } from "~/components/ui/atoms";
 import { SchemaField, defaultsOf, fieldsOf, type JsonSchema } from "~/components/ui/schema-form";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { useAttachAll, useBindHub, useHubInfo, useHubRemote, useOverwriteCatalog, useRestores, useStorageConnection, useStorageProviders, useSyncHub, useUnbindHub } from "~/lib/queries";
+import { useAttachAll, useBindHub, useCacheDir, useHubInfo, useHubRemote, useOverwriteCatalog, useRestores, useStorageConnection, useStorageProviders, useSyncHub, useUnbindHub } from "~/lib/queries";
 import { reveal } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { RestoreRow } from "~/components/projects/RestoreCards";
@@ -28,15 +28,17 @@ function stateOf(t: (key: MessageKey) => string): Record<SyncState, { label: str
 }
 
 /**
- * The Hub is the person's folder: give it a remote and another machine becomes
- * this one. Its catalog names every project it knows; what is missing here is
- * restored by itself, and each row says how far along it is.
+ * Where everything lives. The Hub is the person's folder: give it a remote and
+ * another machine becomes this one. Its catalog names every project it knows;
+ * what is missing here is restored by itself, and each row says how far along
+ * it is. The cache under it is named too, as the one thing safe to delete.
  */
 export function HubPane() {
   const { t, tx } = useI18n();
   const qc = useQueryClient();
   const STATE = stateOf(t);
   const hub = useHubInfo();
+  const cacheDir = useCacheDir();
   const remote = useHubRemote();
   const restores = useRestores();
   const providers = useStorageProviders();
@@ -45,6 +47,9 @@ export function HubPane() {
   const overwrite = useOverwriteCatalog();
   const toast = useToast();
   const dir = hub.data?.dir ?? null;
+  // With an account, projects get a folder of their own on this machine; the Hub itself is in Supabase.
+  const cloud = !!hub.data?.cloudEnabled;
+  const folder = (cloud ? hub.data?.projectsDir : dir) ?? null;
   const status = remote.data?.status;
   const state = STATE[status?.state ?? "local"];
   const busy = sync.isPending || attachAll.isPending;
@@ -93,22 +98,25 @@ export function HubPane() {
           </div>
         </div>
       )}
-      {!hub.data?.cloudEnabled && (
-        <div className="panel stack-3 hub-pane">
-          <div className="field">
-            <label htmlFor="hubDir">{t("hubPane.folderLabel")}</label>
-            <div className="row" style={{ gap: "var(--space-2)" }}>
-              <input id="hubDir" className="input num" style={{ flex: 1 }} readOnly value={dir ?? ""} />
-              {dir && (
-                <button type="button" className="btn btn-ghost" onClick={() => reveal(dir)}>
-                  {t("hubPane.reveal")}
-                </button>
-              )}
-            </div>
-            <span className="meta-txt">{t("hubPane.folderNote")}</span>
+      <div className="panel stack-3 hub-pane">
+        <div className="field">
+          <label htmlFor="hubDir">{t(cloud ? "settingsDialog.projectsDirLabel" : "hubPane.folderLabel")}</label>
+          <div className="row" style={{ gap: "var(--space-2)" }}>
+            <input id="hubDir" className="input num" style={{ flex: 1 }} readOnly value={folder ?? ""} />
+            {folder && (
+              <button type="button" className="btn btn-ghost" onClick={() => reveal(folder)}>
+                {t("hubPane.reveal")}
+              </button>
+            )}
           </div>
+          <span className="meta-txt">{t(cloud ? "settingsDialog.projectsDirNote" : "hubPane.folderNote")}</span>
         </div>
-      )}
+        <div className="field">
+          <label htmlFor="hubCache">{t("settingsDialog.cacheDirLabel")}</label>
+          <input id="hubCache" className="input num" readOnly value={cacheDir.data ?? ""} />
+          <span className="meta-txt">{t("settingsDialog.cacheDirNote")}</span>
+        </div>
+      </div>
 
       {hub.data?.cloudEnabled ? <AccountPanel /> : <HubRemoteSection bound={remote.data?.remote ?? null} location={status?.location ?? null} disabled={busy || !dir} providers={providers.data ?? []} />}
 

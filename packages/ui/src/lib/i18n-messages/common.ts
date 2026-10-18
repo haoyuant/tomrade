@@ -34,7 +34,8 @@ export const common = {
     numberAtLeast: "Enter {{min}} or more.",
     numberAtMost: "Enter {{max}} or less.",
     notJson: "This is not valid JSON, so it was not saved.",
-    notSaved: "Not saved: {{reason}}"
+    notSaved: "Not saved: {{reason}}",
+    advanced: "Advanced"
   },
   zh: {
     cancel: "取消",
@@ -71,6 +72,7 @@ export const common = {
     numberAtLeast: "请输入不小于 {{min}} 的数。",
     numberAtMost: "请输入不大于 {{max}} 的数。",
     notJson: "这不是有效的 JSON，所以没有保存。",
-    notSaved: "没有保存：{{reason}}"
+    notSaved: "没有保存：{{reason}}",
+    advanced: "高级"
   }
 };

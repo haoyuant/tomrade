@@ -133,6 +133,7 @@ export interface SettingsSectionSpec<T> {
   id?: string;
   title: string;
   description?: string;
+  /** Drawn from its JSON Schema; a field with `.meta({ advanced: true })` is folded under Advanced. */
   schema: z.ZodType<T>;
   defaults: T;
   scope?: "machine" | "user";

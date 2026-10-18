@@ -31,6 +31,17 @@ export const SectionHead = ({ title, aside, children }: { title: string; aside?:
   </div>
 );
 
+/** A quiet disclosure: what most people never need stays behind its one line until asked for. */
+export const Fold = ({ id, title, open, onToggle, children }: { id: string; title: React.ReactNode; open: boolean; onToggle: () => void; children: React.ReactNode }) => (
+  <section className={cn("fold", !open && "folded")} data-fold={id}>
+    <button type="button" className="fold-head" aria-expanded={open} onClick={onToggle}>
+      <Icon name={open ? "i-chevdown" : "i-chev"} size={12} />
+      <span className="fold-title">{title}</span>
+    </button>
+    {open && <div className="fold-body">{children}</div>}
+  </section>
+);
+
 /** An empty label is a command the person unbound: no key cap at all. */
 export const Kbd = ({ children }: { children: React.ReactNode }) => (children === "" ? null : <span className="kbd">{children}</span>);
 

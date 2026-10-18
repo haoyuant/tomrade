@@ -76,6 +76,11 @@ const run = async () => {
   await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: ',', metaKey: true, bubbles: true }));true`);
   await sleep(800);
   await press(`[...document.querySelectorAll('.dlg-nav .side-row')].find((r) => r.textContent?.trim() === 'Assistant')`);
+  await sleep(300);
+  // the worker role is an advanced knob: the fold opens it, and the sign-in checks start then
+  const advanced = `document.querySelector('[data-fold="assistant-advanced"] .fold-head')`;
+  check("the worker picker waits behind Advanced", (await $(`!document.querySelector('#role-worker') && ${advanced}?.getAttribute('aria-expanded') === 'false'`)) === true);
+  await press(advanced);
   // the first time, each CLI checks its sign-in; the picker shows them meanwhile and looks again
   const opened = Date.now();
   let options = [];
@@ -107,6 +112,8 @@ const run = async () => {
   await press(`[...document.querySelectorAll('.dlg-nav .side-row')].find((r) => r.textContent?.trim() !== 'Assistant')`);
   await sleep(300);
   await press(`[...document.querySelectorAll('.dlg-nav .side-row')].find((r) => r.textContent?.trim() === 'Assistant')`);
+  await sleep(300);
+  await press(advanced);
   await sleep(1500);
   const problem = await $(`document.querySelector('[data-testid="worker-problem"]')?.textContent ?? ''`);
   check("and Settings shows why under the picker", /Claude Code/.test(problem), problem);

@@ -41,7 +41,8 @@ const refusal = { stopReason: "refusal", _meta: { "codebuddy.ai/requestId": "r-1
 
 const run = async () => {
   await new Promise((r) => endpoint.listen(0, "127.0.0.1", r));
-  const { ctx } = await boot({ configFile: path.join(dir, "../tomrade.yml"), vars: { userData: work }, patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, { id: "attention", config: { notify: false } }]] });
+  // The pet ships switched off; this check reads a turn's outcome off it.
+  const { ctx } = await boot({ configFile: path.join(dir, "../tomrade.yml"), vars: { userData: work }, patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, { id: "attention", config: { notify: false } }, { id: "pet", disabled: false }]] });
   ctx.hub.configure(path.join(work, "hub"));
   await ctx.storage.ready;
   for (const seeded of ctx.projects.list()) ctx.projects.remove(seeded.id);

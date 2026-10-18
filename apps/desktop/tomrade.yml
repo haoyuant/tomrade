@@ -246,13 +246,16 @@ plugins:
   # a signed-in Claude Code or Codex when no model is connected) and implements tickets.
   - id: engine-tomrade
     name: "@tomradex/engine-loop/tomrade"
+    title: Tomrade
     implements: [engine]
   - id: engine-loop
     name: "@tomradex/engine-loop"
+    title: Tomrade loop
     implements: [engine]
   # Pi shipped inside the app, run on the model profiles: a local agent with nothing to install or sign in to.
   - id: engine-pi-builtin
     name: "@tomradex/engine-pi/builtin"
+    title: Built-in agent
     implements: [engine]
     config:
       cli: "${appDir}/vendor/pi/dist/bundle/cli.js"
@@ -261,40 +264,50 @@ plugins:
   # Off until switched on in Settings → Manage plugins: a menu of workflows, no model.
   - id: engine-scripted
     name: "@tomradex/engine-scripted"
+    title: Scripted (no model)
     implements: [engine]
     disabled: true
   - id: engine-claude-code
     name: "@tomradex/engine-claude-code"
+    title: Claude Code
     implements: [engine]
   - id: engine-codex
     name: "@tomradex/engine-codex"
+    title: Codex
     implements: [engine]
   - id: engine-pi
     name: "@tomradex/engine-pi"
+    title: Pi
     implements: [engine]
   # Gemini CLI over ACP (`gemini --acp`), which a ticket can also start in a terminal;
   # Antigravity CLI (`agy`), started only in a terminal.
   - id: engine-terminal
     name: "@tomradex/engine-terminal"
+    title: Gemini CLI and Antigravity CLI
     implements: [engine]
   # Agents that speak ACP (the Agent Client Protocol) over stdio, each its own row.
   - id: engine-hermes
     name: "@tomradex/engine-hermes"
+    title: Hermes
     implements: [engine]
   - id: engine-dsh
     name: "@tomradex/engine-dsh"
+    title: DeepSeek Harness
     implements: [engine]
   # OpenCode over ACP (`opencode acp`); a ticket can also start it in a terminal.
   - id: engine-opencode
     name: "@tomradex/engine-opencode"
+    title: OpenCode
     implements: [engine]
   # Cursor's CLI (`cursor-agent`), started only in a terminal.
   - id: engine-cursor
     name: "@tomradex/engine-cursor"
+    title: Cursor
     implements: [engine]
   # WorkBuddy's CLI (CodeBuddy Code): `codebuddy` on PATH, else the copy inside the WorkBuddy app.
   - id: engine-workbuddy
     name: "@tomradex/engine-workbuddy"
+    title: WorkBuddy
     implements: [engine]
   # The troubleshooter: when something fails, checks what it can (the agent,
   # its sign-in, a test turn, the models), says what to do, and sends a report
@@ -412,9 +425,12 @@ plugins:
   - id: contributions
     name: "@tomradex/contributions"
   # Optional task-state companion: its row switch unloads the contribution,
-  # channels, listeners, timers and desktop surface together.
+  # channels, listeners, timers and desktop surface together. Off until
+  # switched on in Settings → Manage plugins; a switch already thrown in
+  # tomrade.patch.yml wins over this default.
   - id: pet
     name: "@tomradex/pet"
+    disabled: true
     config:
       # Pets made from the user's own images stay on this machine.
       profilesDir: "${userData}/pet-profiles"
