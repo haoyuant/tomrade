@@ -239,7 +239,15 @@ export function registerTools(ctx: Context, host: ToolHost): void {
       title: "Offer to start a ticket",
       description:
         "You do not change code or carry out tickets yourself. When the user wants a ticket implemented (code changed, a document written, any ticket's work done), make sure a ticket describes it — create one if needed — then call this: the user gets a Start button that opens the Start dialog, where they pick the agent, where it works and its permissions. Then end your turn.",
-      input: z.object({ key: z.string().describe("Ticket key, e.g. TOM-42"), projectId: z.string().optional() }),
+      input: z.object({
+        key: z.string().describe("Ticket key, e.g. TOM-42"),
+        task: z
+          .string()
+          .max(500)
+          .optional()
+          .describe("What the session is to do first, when that is not the ticket's work as written — e.g. \"PR #73 conflicts with main: merge origin/main, resolve the conflicts, run the tests, push, then merge it\". Shown on the card and handed to the session after its brief."),
+        projectId: z.string().optional()
+      }),
       // Every engine in a Tomrade conversation may offer Start; an outside client has no conversation to put the button in.
       mcp: "run",
       readOnly: true,
@@ -251,8 +259,9 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         if (!item) throw new Error(`offer_start: no ticket ${args.key} in this project`);
         if (item.kind !== "ticket") throw new Error(`offer_start: ${item.key} is an epic — offer one of its tickets`);
         if (item.status === "done" || item.status === "cancelled") throw new Error(`offer_start: ${item.key} is ${item.status} — reopen it first`);
+        const task = args.task?.trim();
         // One card per turn: a card id seen before only updates that card, so an offer made again would never reach the stream.
-        agent.setCard(inv.run.id, { id: `start-${item.id}-${inv.run.id}`, schema: "start", title: `${item.key} ${item.title}`, data: { itemId: item.id, key: item.key, title: item.title } });
+        agent.setCard(inv.run.id, { id: `start-${item.id}-${inv.run.id}`, schema: "start", title: `${item.key} ${item.title}`, data: { itemId: item.id, key: item.key, title: item.title, ...(task ? { task } : {}) } });
         return { offered: item.key, note: "A Start button is in the conversation; the user starts the ticket from there. End your turn." };
       }
     })

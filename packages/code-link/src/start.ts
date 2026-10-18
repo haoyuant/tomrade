@@ -44,7 +44,7 @@ export interface StartOptions {
   releaseBranch?: boolean;
   /** Carry this conversation on the ticket into the current delivery — a reopened ticket continued where it was talked about. */
   threadId?: string;
-  /** Headless runs only: the person's own words, sent after the brief. */
+  /** The person's own words, or the task the Start was offered with, sent after the brief. */
   message?: string;
   /** Headless runs only: where the person asked for the start (an IM conversation), kept on the brief as its provenance. */
   source?: Record<string, string>;
@@ -328,7 +328,7 @@ export class Starter {
       ? continuePrompt(item, repo, live ?? store.sessions(projectId, { itemId: item.id })[0] ?? null, link, completionPolicy, local, ctx.settings.locale?.() ?? "en", state?.agentMerge ?? false)
       : firstPrompt({ item, repo, state, branch, blockers, bootstrap: bootstrapping, mcpUrl: ctx.get("mcp")?.urlFor(projectId) ?? null, decisions, subdir: board.repoPath.replace(/^\/+|\/+$/g, ""), completionPolicy, local, locale: ctx.settings.locale?.() ?? "en" });
     const briefed = warnings.length ? `${basePrompt}\n\n${warnings.join("\n")}` : basePrompt;
-    const prompt = opts.message?.trim() && opts.mode === "run" ? `${briefed}\n\n${opts.message.trim()}` : briefed;
+    const prompt = opts.message?.trim() ? `${briefed}\n\n${opts.message.trim()}` : briefed;
     // An in-app run hears the rules with every turn; a terminal agent only ever reads this file.
     const rules = agent.rules(projectId);
     const terminalPrompt = rules ? `${prompt}\n\n${rulesSection(rules)}` : prompt;

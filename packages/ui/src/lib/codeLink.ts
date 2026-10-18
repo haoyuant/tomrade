@@ -183,19 +183,19 @@ export const permissionHint = (t: (key: MessageKey) => string, value: string | u
 export const isFullAccess = (value: string | undefined): boolean => value === "full-access" || value === "bypassPermissions";
 
 // A start that stopped somewhere without a dialog (a section's Continue, the palette) asks the ticket's own Start button to open.
-// null only opens the dialog, for the person to choose; a mode also starts at once.
-type StartListener = (mode: "run" | "terminal" | null) => void;
+// null only opens the dialog, for the person to choose; a mode also starts at once. An offer may name what to do first.
+type StartListener = (mode: "run" | "terminal" | null, task?: string) => void;
 const startRequests = new Map<string, Set<StartListener>>();
 // An offer taken while its ticket is still opening waits for the first Start button that mounts.
-const waitingOffers = new Map<string, number>();
+const waitingOffers = new Map<string, { at: number; task?: string }>();
 
 export function onStartRequest(itemId: string, listener: StartListener): () => void {
   const set = startRequests.get(itemId) ?? new Set();
   set.add(listener);
   startRequests.set(itemId, set);
-  const at = waitingOffers.get(itemId);
+  const offer = waitingOffers.get(itemId);
   waitingOffers.delete(itemId);
-  if (at !== undefined && Date.now() - at < 10_000) listener(null);
+  if (offer && Date.now() - offer.at < 10_000) listener(null, offer.task);
   return () => set.delete(listener);
 }
 
@@ -207,10 +207,10 @@ export function requestStart(itemId: string, mode: "run" | "terminal"): boolean 
 }
 
 /** Opens the ticket's Start dialog — now, or once the ticket being opened shows its Start button. */
-export function offerStart(itemId: string): void {
+export function offerStart(itemId: string, task?: string): void {
   const listeners = [...(startRequests.get(itemId) ?? [])];
-  if (listeners.length) listeners.at(-1)!(null);
-  else waitingOffers.set(itemId, Date.now());
+  if (listeners.length) listeners.at(-1)!(null, task);
+  else waitingOffers.set(itemId, { at: Date.now(), ...(task ? { task } : {}) });
 }
 
 export const useRepositoryConnection = (projectId: string, repoId: string) =>
