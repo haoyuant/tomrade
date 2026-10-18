@@ -8,6 +8,13 @@ import { Tools } from "@tomradex/tools";
 import { Mcp } from "@tomradex/mcp";
 import type { TurnInput, TurnIO } from "@tomradex/agent";
 
+// The fake CLI appends a line per message while it runs, so a read can land after the file is created but before
+// its first write, or mid-line: only newline-terminated lines are finished.
+const logged = (file: string): any[] => {
+  const text = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+  return text.slice(0, text.lastIndexOf("\n") + 1).split("\n").filter(Boolean).map((line) => JSON.parse(line));
+};
+
 it("drives the actual SDK across multiple messages, diffs cumulative cost, and retains its process after interrupt", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-sdk-"));
   const log = path.join(dir, "requests.jsonl");
@@ -49,7 +56,7 @@ it("drives the actual SDK across multiple messages, diffs cumulative cost, and r
     input.input = { kind: "text", text: "again" }; io.signal = new AbortController().signal;
     expect((await engine.turn(input, io)).stop).toBe("end");
     expect(deltas).toEqual(["hello", "hello", "hello"]);
-    const requests = fs.readFileSync(log, "utf8").trim().split("\n").map((s) => JSON.parse(s));
+    const requests = logged(log);
     expect(requests.filter((r) => r.spawn)).toHaveLength(1);
     const users = requests.filter((r) => r.type === "user");
     expect(users[0].message.content).toContainEqual({ type: "image", source: { type: "base64", media_type: "image/png", data: "YWJj" } });
@@ -73,7 +80,7 @@ it("reports a session Claude Code no longer has, and leads a new session's first
   const io: TurnIO = { emit() {}, delta() {}, progress() {}, signal: new AbortController().signal, resume: "gone", recap: () => "RECAP OF EARLIER",
     tools: { describe: () => [], execute: async () => ({}) }, llm: null, playbooks: { index: () => [], open: () => null }, workflows: { list: () => [] },
     run: { id: "run", threadId: "thread", projectId: "project", author: "ai:claude-code", ledger: { all: () => [], find: () => undefined }, waivers: new Set(), scratch: new Map() } };
-  const sentTexts = () => fs.readFileSync(log, "utf8").trim().split("\n").map((s) => JSON.parse(s)).filter((m) => m.type === "user").map((m) => JSON.stringify(m.message.content));
+  const sentTexts = () => logged(log).filter((m) => m.type === "user").map((m) => JSON.stringify(m.message.content));
   try {
     expect(await engine.turn(input, io)).toMatchObject({ stop: "error", lostSession: true });
     io.resume = undefined;
@@ -134,12 +141,12 @@ it("steers a running turn through the SDK's input queue, waits out a steer that 
     tools: { describe: () => [], execute: async () => ({}) }, llm: null, playbooks: { index: () => [], open: () => null }, workflows: { list: () => [] },
     run: { id: "run", threadId: "thread", projectId: "project", author: "ai:claude-code", ledger: { all: () => [], find: () => undefined }, waivers: new Set(), scratch: new Map() },
     steerTo: (fn) => { forward = fn; }, steered: (id) => order.push(`steered:${id}`) };
-  const requests = () => fs.readFileSync(log, "utf8").trim().split("\n").map((s) => JSON.parse(s));
+  const requests = () => logged(log);
   const when = async (cond: () => boolean) => { const t0 = Date.now(); while (!cond()) { if (Date.now() - t0 > 10_000) throw new Error("timed out"); await new Promise((r) => setTimeout(r, 20)); } };
   try {
     // while a tool runs: joins the same CLI turn, placed after the tool's result
     let turn = engine.turn(input, io);
-    await when(() => order.includes("trace") || (fs.existsSync(log) && requests().some((r) => r.type === "user")));
+    await when(() => order.includes("trace") || requests().some((r) => r.type === "user"));
     await new Promise((r) => setTimeout(r, 100));
     expect(await forward!({ id: "s1", text: "make it blue" })).toBe(true);
     let result = await turn;
