@@ -73,6 +73,23 @@ describe("a terminal of herdr", () => {
     opened.mockRestore();
     fs.rmSync(dir, { recursive: true, force: true });
   });
+
+  it("says once that herdr now runs in the background when the launch started its server", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-herdr-started-"));
+    const opened = vi.spyOn(terminalApp, "open").mockResolvedValue();
+    const starts: ("first" | "again")[] = ["first", "again"];
+    const herdr: HerdrTerminal = { launch: async () => ({ paneId: "w1:p1", startedServer: starts.shift() }), installed: async () => "0.9.5" };
+    const first = await launchTerminal({ cwd: "/work", command: "claude", dir }, "herdr", herdr);
+    expect(first).toEqual({ script: path.join(dir, "run.command"), launched: true, paneId: "w1:p1", herdrStarted: "first" });
+    expect(herdrFallbackNote("en", first, "brew install herdr")).toBe("herdr is running in the background now. Run `herdr` in a terminal to see its panes.");
+    expect(herdrFallbackNote("zh", first, "brew install herdr")).toContain("herdr 已在后台运行");
+    const again = await launchTerminal({ cwd: "/work", command: "claude", dir }, "herdr", herdr);
+    expect(again.herdrStarted).toBe("again");
+    expect(herdrFallbackNote("en", again, "brew install herdr")).toBeNull();
+    expect(opened).not.toHaveBeenCalled();
+    opened.mockRestore();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
 });
 
 describe("terminal command options", () => {

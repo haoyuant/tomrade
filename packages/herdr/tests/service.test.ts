@@ -3,17 +3,63 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { Context } from "cordis";
-import { Herdr, type HerdrPaneEvent } from "@tomradex/herdr";
+import { Herdr, type HerdrConfig, type HerdrPaneEvent } from "@tomradex/herdr";
 import { FakeHerdr } from "@tomradex/testkit";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-herdr-service-"));
-afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
+/** Stand-in servers a test started; detached, so nothing else ends them. */
+const spawned: number[] = [];
+afterAll(() => {
+  for (const pid of spawned) {
+    try {
+      process.kill(pid);
+    } catch {
+      // already gone
+    }
+  }
+  fs.rmSync(root, { recursive: true, force: true });
+});
 
-async function herdrOn(fake: FakeHerdr): Promise<{ ctx: Context; herdr: Herdr }> {
+// No herdr on this machine unless a test brings one: a stopped fake must never start the real one.
+async function herdrOn(fake: FakeHerdr, config: HerdrConfig = {}): Promise<{ ctx: Context; herdr: Herdr }> {
   const ctx = new Context();
-  await ctx.plugin(Herdr, { reconnectMs: 30, socket: fake.socket });
+  await ctx.plugin(Herdr, { reconnectMs: 30, socket: fake.socket, bin: path.join(root, "absent"), ...config });
   return { ctx, herdr: ctx.herdr };
 }
+
+/**
+ * A herdr CLI stand-in: `--version` answers, and `server` notes the socket it was given and stays
+ * running as the server's process — or, `failing`, exits at once. The test's FakeHerdr answers on the socket.
+ */
+function herdrCli(name: string, failing = false): { bin: string; starts: () => { pid: number; socket: string }[] } {
+  const dir = fs.mkdtempSync(path.join(root, `${name}-`));
+  const bin = path.join(dir, "herdr");
+  const log = path.join(dir, "starts");
+  const server = failing ? "exit 1" : `echo "$$ $HERDR_SOCKET_PATH" >> '${log}'; exec sleep 60`;
+  fs.writeFileSync(bin, `#!/bin/sh\ncase "$1" in\n  --version) echo "herdr 0.9.5" ;;\n  server) ${server} ;;\nesac\n`, { mode: 0o755 });
+  const starts = () => {
+    let text = "";
+    try {
+      text = fs.readFileSync(log, "utf8");
+    } catch {
+      return [];
+    }
+    return text.trim().split("\n").map((line) => {
+      const [pid, socket] = line.split(" ");
+      return { pid: Number(pid), socket: socket! };
+    });
+  };
+  return { bin, starts };
+}
+
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 const until = async (check: () => boolean, timeout = 3000) => {
   const started = Date.now();
@@ -141,7 +187,7 @@ describe("herdr service", () => {
 
   it.skipIf(process.platform === "win32")("finds an installed herdr when the app was opened from the Dock with launchd's bare PATH", async () => {
     const fake = new FakeHerdr();
-    const { herdr } = await herdrOn(fake);
+    const { herdr } = await herdrOn(fake, { bin: undefined });
     const home = path.join(root, "home");
     fs.mkdirSync(path.join(home, ".local/bin"), { recursive: true });
     fs.writeFileSync(path.join(home, ".local/bin/herdr"), "#!/bin/sh\necho herdr 0.9.5\n", { mode: 0o755 });
@@ -149,12 +195,100 @@ describe("herdr service", () => {
     process.env.PATH = "/usr/bin:/bin";
     process.env.HOME = home;
     try {
-      // A Homebrew herdr on this machine may answer first; either way it is found.
+      // A Homebrew herdr on this machine may answer first; either way it is found, and the server would start from it.
       expect(await herdr.installed()).not.toBeNull();
+      expect(herdr.binary()).toMatch(/\/herdr$/);
     } finally {
       process.env.PATH = saved.PATH;
       process.env.HOME = saved.HOME;
       fake.close();
     }
+  });
+
+  it("shows a pane, and says when no herdr client is attached to see it", async () => {
+    const fake = new FakeHerdr();
+    const { herdr } = await herdrOn(fake);
+    const pane = fake.createPane("/work");
+    expect(await herdr.show(pane.pane_id, "TOM-7 · Work")).toBe("shown");
+    expect(fake.of("pane.focus")).toEqual([{ pane_id: pane.pane_id }]);
+    expect(fake.of("notification.show")).toEqual([{ title: "TOM-7 · Work", body: "", sound: "none" }]);
+    fake.attached = false;
+    expect(await herdr.show(pane.pane_id, "TOM-7 · Work")).toBe("noClient");
+    expect(await herdr.show("w9:p9", "gone")).toBeNull();
+    fake.close();
+  });
+});
+
+// The stand-in CLI is a shell script.
+describe.skipIf(process.platform === "win32")("herdr installed but not running", () => {
+  // Spawning, even /bin/sh, can wait on the system's policy check on a busy Mac.
+  const slow = { timeout: 90_000 };
+
+  it("starts its server headless on Tomrade's socket, waits for it to answer, launches into it, and never stops it", slow, async () => {
+    const fake = new FakeHerdr();
+    fake.stop();
+    const cli = herdrCli("start");
+    const statePath = path.join(root, "state", "herdr.json");
+    const { ctx, herdr } = await herdrOn(fake, { bin: cli.bin, statePath, startTimeoutMs: 60_000 });
+    const launching = herdr.launch({ cwd: "/work/tom-7", label: "TOM-7", command: "bash run.command" });
+    await until(() => cli.starts().length === 1, 60_000);
+    const [start] = cli.starts();
+    spawned.push(start!.pid);
+    expect(start!.socket).toBe(fake.socket);
+    // Started but not answering yet: the launch waits rather than going elsewhere.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    fake.start();
+    expect(await launching).toEqual({ paneId: "w1:p1", workspaceId: "w1", startedServer: "first" });
+    expect(fake.calls.map((call) => call.method)).toEqual(["ping", "workspace.create", "pane.send_input"]);
+    // Running now: the next launch goes straight in.
+    expect(await herdr.launch({ cwd: "/work", command: "true" })).toEqual({ paneId: "w2:p1", workspaceId: "w2" });
+    expect(cli.starts().length).toBe(1);
+
+    // Quitting Tomrade leaves it running: herdr's sessions outlive Tomrade.
+    await ctx.fiber.dispose();
+    expect(alive(start!.pid)).toBe(true);
+    expect(fake.of("server.stop")).toEqual([]);
+
+    // Told once on this machine: a later Tomrade starting it again says nothing new.
+    fake.stop();
+    const later = await herdrOn(fake, { bin: cli.bin, statePath, startTimeoutMs: 60_000 });
+    const relaunching = later.herdr.launch({ cwd: "/work", command: "true" });
+    await until(() => cli.starts().length === 2, 60_000);
+    spawned.push(cli.starts()[1]!.pid);
+    fake.start();
+    expect(await relaunching).toMatchObject({ startedServer: "again" });
+    fake.close();
+  });
+
+  it("starts one server for launches at the same time", slow, async () => {
+    const fake = new FakeHerdr();
+    fake.stop();
+    const cli = herdrCli("together");
+    const { herdr } = await herdrOn(fake, { bin: cli.bin, startTimeoutMs: 60_000 });
+    const both = Promise.all([herdr.launch({ cwd: "/a", command: "a" }), herdr.launch({ cwd: "/b", command: "b" })]);
+    await until(() => cli.starts().length === 1, 60_000);
+    spawned.push(cli.starts()[0]!.pid);
+    fake.start();
+    const [a, b] = await both;
+    expect(cli.starts().length).toBe(1);
+    expect(fake.of("workspace.create").length).toBe(2);
+    // …and the person is told once, not once per launch.
+    expect([a?.startedServer, b?.startedServer].sort()).toEqual(["again", "first"]);
+    fake.close();
+  });
+
+  it("gives up at once when the server does not start, and starts nothing without herdr", slow, async () => {
+    const fake = new FakeHerdr();
+    fake.stop();
+    const { herdr } = await herdrOn(fake, { bin: herdrCli("failing", true).bin, startTimeoutMs: 60_000 });
+    const t0 = Date.now();
+    expect(await herdr.launch({ cwd: "/work", command: "true" })).toBeNull();
+    // The server's exit is the answer; the timeout is not waited out.
+    expect(Date.now() - t0).toBeLessThan(55_000);
+    expect(await herdr.installed()).toBe("0.9.5");
+    const none = await herdrOn(fake);
+    expect(await none.herdr.launch({ cwd: "/work", command: "true" })).toBeNull();
+    expect(await none.herdr.installed()).toBeNull();
+    fake.close();
   });
 });

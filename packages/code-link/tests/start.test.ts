@@ -163,7 +163,10 @@ it("runs a ticket in a herdr workspace, follows the pane's status as the session
   await ctx.plugin(Mcp, { port: 0 });
   const fake = new FakeHerdr();
   fake.stop();
-  await ctx.plugin(Herdr, { reconnectMs: 30, socket: fake.socket });
+  // A herdr CLI whose server never comes up: a launch with herdr stopped tries to start it, and goes elsewhere.
+  const herdrBin = path.join(fs.mkdtempSync(path.join(root, "herdr-cli-")), "herdr");
+  fs.writeFileSync(herdrBin, '#!/bin/sh\n[ "$1" = --version ] && echo "herdr 0.9.5" && exit 0\nexit 1\n', { mode: 0o755 });
+  await ctx.plugin(Herdr, { reconnectMs: 30, socket: fake.socket, bin: herdrBin });
   await settle();
   // No saved terminal preference: herdr, once it is installed.
   expect(ctx.settings.get().codeLink?.terminal).toBe("auto");
@@ -253,8 +256,23 @@ it("runs a ticket in a herdr workspace, follows the pane's status as the session
   expect(fresh2).toMatchObject({ ok: true, launched: true, pane: "w2:p1" });
   expect(fake.of("workspace.create").length).toBe(2);
 
-  // herdr gone: the session opens in the system terminal instead, and the person is told why.
+  // Jump to pane: herdr shows it and says so in its window…
   const opened = vi.spyOn(terminalApp, "open").mockResolvedValue();
+  const jump = () => ctx.contributions.run("code-link.open-terminal", { projectId: project.id, itemId: item.id });
+  expect((await jump()).toast).toBe("Shown in herdr (pane w2:p1)");
+  expect(fake.of("pane.focus").at(-1)).toEqual({ pane_id: "w2:p1" });
+  expect(fake.of("notification.show").at(-1)).toEqual({ title: `${item.key} · ${item.title}`, body: "", sound: "none" });
+  expect(opened).not.toHaveBeenCalled();
+  // …and with no herdr client attached to see it, the system terminal opens herdr's own, attached.
+  fake.attached = false;
+  expect((await jump()).toast).toBe(`Opened herdr in ${process.platform === "darwin" ? "Terminal" : "the system terminal"}, at pane w2:p1`);
+  const attach = path.join(codeLink.sessionDir("herdr-attach"), "run.command");
+  expect(opened).toHaveBeenLastCalledWith("Terminal", attach);
+  expect(fs.readFileSync(attach, "utf8")).toContain(`exec '${herdrBin}'`);
+  fake.attached = true;
+  opened.mockClear();
+
+  // herdr gone, and its server does not start: the session opens in the system terminal instead, and the person is told why.
   fake.stop();
   expect(await codeLink.herdrStatus()).toBe("notRunning");
   const stopped = await codeLink.start(project.id, ticket("Stopped").id, { mode: "terminal" });

@@ -265,7 +265,7 @@ function StartTicketDialog({
             {mode === "terminal" && herdrStatus.data && (
               <p className="meta-txt" role="status" data-testid="start-herdr-status">
                 {t(herdrStatus.data === "running" ? "codeLink.herdrRunning" : herdrStatus.data === "notRunning" ? "codeLink.herdrNotRunning" : "codeLink.herdrNotInstalled")}
-                {herdrStatus.data !== "running" && <> · {t("codeLink.herdrSetupHint")}</>}
+                {herdrStatus.data !== "running" && <> · {t(herdrStatus.data === "notRunning" ? "codeLink.herdrStartsOnStart" : "codeLink.herdrSetupHint")}</>}
               </p>
             )}
             {rememberedStart && !latest && !thread && (

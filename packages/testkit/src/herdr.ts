@@ -36,6 +36,8 @@ export class FakeHerdr {
   private server: net.Server | null = null;
   private readonly streams = new Set<{ connection: net.Socket; subscriptions: { type: string; pane_id?: string }[] }>();
   private workspaces = 0;
+  /** Whether a herdr client (its terminal UI) is attached: without one, a toast has nobody to show it. */
+  attached = true;
   /** Answers tried before the built-in ones; undefined leaves the call to them. */
   answer: (method: string, params: Record<string, unknown>) => Reply | undefined = () => undefined;
 
@@ -157,7 +159,7 @@ export class FakeHerdr {
       case "pane.report_agent_session":
         return paneOf(params.pane_id) ? { result: { type: "ok" } } : notFound(params.pane_id);
       case "notification.show":
-        return { result: { type: "notification_show", shown: true, reason: "shown" } };
+        return { result: { type: "notification_show", shown: this.attached, reason: this.attached ? "shown" : "no_foreground_client" } };
       case "pane.get": {
         const pane = paneOf(params.pane_id);
         return pane ? { result: { type: "pane_info", pane: { ...pane, focused: false, revision: 0 } } } : notFound(params.pane_id);
