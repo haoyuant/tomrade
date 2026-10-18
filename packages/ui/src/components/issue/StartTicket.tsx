@@ -16,6 +16,7 @@ import { readableError, useToast } from "~/lib/toast";
 import { cn } from "~/lib/utils";
 import { Icon } from "~/components/icons";
 import { useAgentDock } from "~/components/chrome/ProjectShell";
+import { useHerdrHint } from "~/components/setup/HerdrRecommend";
 import { Dialog, DialogBody, DialogClose, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { isFullAccess, permissionHint, permissionLabel } from "~/lib/codeLink";
 
@@ -130,6 +131,7 @@ function StartTicketDialog({
   const [chosenMode, setChosenMode] = useState<StartOptions["mode"] | null>(requested ?? null);
   const mode: StartOptions["mode"] = chosenMode ?? ((latest?.mode ?? rememberedStart?.mode) === "terminal" ? "terminal" : "run");
   const herdrStatus = useHerdrStatus(mode === "terminal");
+  const herdrHint = useHerdrHint();
   const capability = general ? "general" : "code";
   // An agent Tomrade drives over ACP has no terminal session to open.
   const candidates = useMemo(
@@ -224,6 +226,7 @@ function StartTicketDialog({
           } else if (result.launched) {
             const started = t("codeLink.terminalToast", vars);
             toast({ body: warning ? `${started}\n${warning}` : started });
+            herdrHint(result, herdrStatus.data);
           } else {
             const command = result.command ?? "";
             toast({ body: warning ? `${command}\n${warning}` : command, actions: [{ label: t("codeLink.copyCommand"), run: () => void navigator.clipboard?.writeText(command).then(() => toast({ body: t("codeLink.commandCopied") })) }] });

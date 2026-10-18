@@ -56,6 +56,72 @@ app.whenReady().then(async () => {
     assert("运行中不再显示安装指引", !(await line()).includes("brew install"));
     await js(`document.querySelectorAll('[data-testid="start-mode"] button')[0].click(); true`);
     await wait(() => js(`!document.querySelector('[data-testid="start-herdr-status"]')`));
+
+    // herdr recommended in Settings' terminal picker: the guide without Homebrew, the install button with it.
+    await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`);
+    state = "notInstalled";
+    let installs = 0;
+    let plan = { command: null, guide: "https://herdr.dev/docs/install/" };
+    ctx.codeLink.herdrInstall = async () => plan;
+    ctx.codeLink.installHerdr = async () => { installs++; return { launched: true, command: plan.command }; };
+    const openCodeLink = async () => {
+      await wait(() => js(`!!document.querySelector('button[aria-label="设置"]')`));
+      await js(`document.querySelector('button[aria-label="设置"]').click(); true`);
+      await wait(() => js(`!![...document.querySelectorAll('.side-row')].find(r => r.textContent.includes('代码关联'))`));
+      await js(`[...document.querySelectorAll('.side-row')].find(r => r.textContent.includes('代码关联')).click(); true`);
+      await wait(() => js(`!!document.querySelector('[data-testid="herdr-recommendation"]')`));
+    };
+    await openCodeLink();
+    const recommendation = () => js(`document.querySelector('[data-testid="herdr-recommendation"]').textContent`);
+    assert("终端选择下方推荐 herdr 并说明好处", (await recommendation()).includes("推荐") && (await recommendation()).includes("Tomrade 退出后"));
+    assert("终端选项里 herdr 标为推荐", await js(`[...document.querySelectorAll('#sf-codeLink-terminal option')].find(o => o.value === 'herdr')?.textContent === 'herdr（推荐）'`));
+    await wait(() => js(`!!document.querySelector('[data-testid="herdr-install-guide"]')`));
+    assert("没有 Homebrew 时只给安装指南", await js(`!document.querySelector('[data-testid="herdr-install"]')`));
+    win.webContents.reload();
+    plan = { command: "brew install herdr", guide: plan.guide };
+    await wait(() => js(`!!document.querySelector('[data-testid="start-ticket"]')`));
+    await openCodeLink();
+    await wait(() => js(`!!document.querySelector('[data-testid="herdr-install"]')`));
+    fs.writeFileSync(path.join(work, "herdr-settings.png"), (await win.webContents.capturePage()).toPNG());
+    assert("打开设置不会安装", installs === 0);
+    await js(`document.querySelector('[data-testid="herdr-install"]').click(); true`);
+    await wait(async () => installs === 1);
+    assert("点击后才安装", installs === 1);
+    state = "running";
+    await wait(() => js(`!document.querySelector('[data-testid="herdr-install"]')`));
+    assert("装好后不再显示安装按钮，推荐仍在", (await recommendation()).includes("推荐"));
+
+    // After a launch in a plain terminal: one hint with the same pitch and the install, then never again.
+    state = "notInstalled";
+    ctx.settings.set({ ...ctx.settings.get(), onboarding: { seen: ["hint.start", "hint.graph", "hint.revert", "hint.workstreams", "sample-tile", "setup-screen", "setup-required"] } });
+    ctx.codeLink.start = async (projectId, itemId, opts) => ({ ok: true, continued: false, threadId: "t-herdr", sessionId: "s-herdr", branch: "hdr-1/herdr-readiness", worktree: null, cwd: work, mode: opts.mode, command: "claude", launched: true, pane: null, engine: "ready" });
+    win.webContents.reload();
+    const hint = () => js(`[...document.querySelectorAll('.toast')].filter(t => t.textContent.includes('普通终端')).length`);
+    const startInTerminal = async () => {
+      await wait(() => js(`!!document.querySelector('[data-testid="start-ticket"]')`));
+      await js(`document.querySelector('[data-testid="start-ticket"]').click(); true`);
+      await wait(() => js(`!!document.querySelector('[data-testid="start-mode"]')`));
+      await js(`document.querySelectorAll('[data-testid="start-mode"] button')[1].click(); true`);
+      await wait(async () => (await line()).includes("未安装"));
+      await wait(() => js(`!![...document.querySelectorAll('#stEngine option')].find(o => o.value === 'ready')`));
+      await js(`(() => { const select = document.querySelector('#stEngine'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, 'ready'); select.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+      await wait(() => js(`!document.querySelector('[data-testid="start-confirm"]').disabled`));
+      await js(`document.querySelector('[data-testid="start-confirm"]').click(); true`);
+      await wait(() => js(`!document.querySelector('[data-testid="start-mode"]')`));
+    };
+    await startInTerminal();
+    await wait(async () => (await hint()) === 1);
+    fs.writeFileSync(path.join(work, "herdr-hint.png"), (await win.webContents.capturePage()).toPNG());
+    assert("普通终端启动后提示 herdr 的好处", await js(`[...document.querySelectorAll('.toast')].some(t => t.textContent.includes('普通终端') && t.textContent.includes('Tomrade 退出后'))`));
+    assert("提示出现时没有安装任何东西", installs === 1);
+    await wait(async () => ctx.settings.get().onboarding.seen.includes("hint.herdr"));
+    assert("提示按用户记作已看过", ctx.settings.get().onboarding.seen.includes("hint.herdr"));
+    await js(`[...document.querySelectorAll('.toast.is-sticky button')].find(b => b.textContent === '安装 herdr').click(); true`);
+    await wait(async () => installs === 2);
+    assert("点击提示里的安装才安装，提示随之收起", (await hint()) === 0);
+    await startInTerminal();
+    await sleep(1500);
+    assert("关掉后不再出现", (await hint()) === 0);
     console.log(`界面截图：${work}`);
     win.destroy();
     await ctx.fiber.dispose();

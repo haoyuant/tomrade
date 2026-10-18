@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { AgentSettings, EnginePick, EngineView, PlaybookSource } from "@tomradex/agent";
 import { THEME_TYPOGRAPHY_NAMES, type ModelErrorKind, type AppSettings, type CustomTheme, type ThemeAutomation, type ThemePreference, type ThemeTokenName, type ThemeTypographyName } from "@tomradex/domain";
 import type { ModelProfile, ModelsSettings } from "@tomradex/llm";
@@ -21,6 +21,7 @@ import { McpServersPane } from "./McpServersPane";
 import { ImPane } from "./ImPane";
 import { PetProfilesPanel } from "./PetProfilesPanel";
 import { PluginsPanel } from "./PluginsPanel";
+import { HerdrRecommendation } from "~/components/setup/HerdrRecommend";
 import { Eyebrow, Fold, LiveDot, Num, SectionHead, Tag } from "~/components/ui/atoms";
 import { SchemaField, fieldsOf, problemOf, type JsonSchema } from "~/components/ui/schema-form";
 import { STATUS } from "~/lib/domain";
@@ -149,18 +150,24 @@ function PluginPane({ section, stored, onSave, children }: { section: SettingsSe
       (err: unknown) => setProblem(key, t("common.notSaved", { reason: readableError(err) }))
     );
   };
-  const draw = ([name, field]: [string, JsonSchema]) => (
-    <SchemaField
-      key={name}
-      id={section.id}
-      name={name}
-      schema={field}
-      value={record(value)[name]}
-      error={problems[name]}
-      onChange={(v) => change(name, v)}
-      onCommit={(v) => commit(name, field, v)}
-    />
-  );
+  const draw = ([name, field]: [string, JsonSchema]) => {
+    const extra = FIELD_EXTRAS[`${section.id}.${name}`];
+    const labels = extra?.options && Object.fromEntries(Object.entries(extra.options).map(([option, key]) => [option, t(key)]));
+    return (
+      <Fragment key={name}>
+        <SchemaField
+          id={section.id}
+          name={name}
+          schema={labels ? { ...field, enumLabels: { ...field.enumLabels, ...labels } } : field}
+          value={record(value)[name]}
+          error={problems[name]}
+          onChange={(v) => change(name, v)}
+          onCommit={(v) => commit(name, field, v)}
+        />
+        {extra?.below?.()}
+      </Fragment>
+    );
+  };
   return (
     <>
       <SectionHead title={section.title} aside={<ScopeTag scope={section.scope} />}>
@@ -222,6 +229,11 @@ function AgentAccessSection() {
     </>
   );
 }
+
+/** What one plugin field shows beyond its schema: words for some of its options, and a line under it. */
+const FIELD_EXTRAS: Record<string, { options?: Record<string, MessageKey>; below?: () => ReactNode }> = {
+  "codeLink.terminal": { options: { herdr: "codeLink.herdrOption" }, below: () => <HerdrRecommendation /> }
+};
 
 /** What a plugin's pane shows beyond its schema, for the plugins whose settings are more than fields. */
 const PANE_EXTRAS: Record<string, () => ReactNode> = {

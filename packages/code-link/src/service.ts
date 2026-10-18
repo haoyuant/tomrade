@@ -14,7 +14,7 @@ import type {} from "@tomradex/hub";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/items";
 import type {} from "@tomradex/herdr";
-import { HERDR_INSTALL, type HerdrPaneEvent } from "@tomradex/herdr";
+import { HERDR_INSTALL, herdrInstall, type HerdrInstall, type HerdrPaneEvent } from "@tomradex/herdr";
 import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/repos";
 import { normalizeRemote, sameRepository } from "@tomradex/repos";
@@ -205,6 +205,10 @@ declare module "@tomradex/ipc" {
     /** What the Start dialog last ran with on this machine, so it opens the way it was left. */
     "codeLink.startDefaults": () => StartDefaultsView | null;
     "codeLink.herdrStatus": () => "notInstalled" | "notRunning" | "running";
+    /** How herdr installs on this machine: Homebrew's command where brew is, else only its install guide. */
+    "codeLink.herdrInstall": () => HerdrInstall;
+    /** Install herdr in a terminal with that command; the page never names it. */
+    "codeLink.installHerdr": () => { launched: boolean; command: string };
   }
   interface Broadcasts {
     "codeLink.changed": (projectId: string) => void;
@@ -595,6 +599,8 @@ export class CodeLink extends Service {
       ctx.ipc.handle("codeLink.setupInTerminal", (engineId, step) => ctx.codeLink.setupInTerminal(engineId, step));
       ctx.ipc.handle("codeLink.startDefaults", () => ctx.codeLink.startDefaults());
       ctx.ipc.handle("codeLink.herdrStatus", () => ctx.codeLink.herdrStatus());
+      ctx.ipc.handle("codeLink.herdrInstall", () => ctx.codeLink.herdrInstall());
+      ctx.ipc.handle("codeLink.installHerdr", () => ctx.codeLink.installHerdr());
     });
     this.home.inject(["contributions"], (ctx) => this.contribute(ctx));
     // herdr's reading of the panes ticket sessions run in, as the hook events those sessions would post.
@@ -895,6 +901,20 @@ export class CodeLink extends Service {
     const herdr = this.ctx.get("herdr");
     if (await herdr?.server()) return "running";
     return await herdr?.installed() ? "notRunning" : "notInstalled";
+  }
+
+  /** Homebrew's formula only where brew answers; Windows has none. */
+  async herdrInstall(): Promise<HerdrInstall> {
+    return herdrInstall({ brew: process.platform !== "win32" && (await commandOk("brew")) });
+  }
+
+  /** Runs only on a person's click, in a terminal they watch, like an engine's install. */
+  async installHerdr(): Promise<{ launched: boolean; command: string }> {
+    const { command } = await this.herdrInstall();
+    if (!command) throw new Error(this.words()("herdrNoInstaller"));
+    const settings = await machineTerminalSettings(this.ctx.settings.get().codeLink, this.ctx.get("herdr"));
+    const { launched } = await setupTerminal(command, path.join(this.sessionDir("setup"), "herdr"), settings.terminal, this.ctx.get("herdr") ?? null);
+    return { launched, command };
   }
 
   /** What the Start dialog last ran with on this machine; null when nothing usable is remembered. */
