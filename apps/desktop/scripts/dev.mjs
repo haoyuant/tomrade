@@ -14,19 +14,24 @@ function isAvailable(port) {
   });
 }
 
-function waitForServer(port) {
+// Ready means Vite printed its own URL: a connection to the port could reach another checkout's
+// dev server. Resolves null when Vite exits first.
+function startUi(port) {
   return new Promise((resolve, reject) => {
-    const started = Date.now();
-    const check = () => {
-      const socket = net.createConnection({ host, port });
-      socket.once("connect", () => { socket.destroy(); resolve(); });
-      socket.once("error", () => {
-        socket.destroy();
-        if (Date.now() - started > 15_000) reject(new Error(`Vite did not start on ${host}:${port}`));
-        else setTimeout(check, 100);
-      });
-    };
-    check();
+    const ui = spawn("pnpm", ["-F", "@tomradex/ui", "exec", "vite", "--host", host, "--port", String(port), "--strictPort"], {
+      env: process.stdout.isTTY ? { ...process.env, FORCE_COLOR: "1" } : process.env,
+      stdio: ["inherit", "pipe", "inherit"]
+    });
+    const url = `http://${host}:${port}/`;
+    let output = "";
+    const timer = setTimeout(() => { ui.kill("SIGTERM"); reject(new Error(`Vite did not start on ${host}:${port}`)); }, 15_000);
+    ui.stdout.on("data", (chunk) => {
+      process.stdout.write(chunk);
+      if (output === null) return;
+      output += chunk.toString().replace(/\x1b\[[0-9;]*m/g, "");
+      if (output.includes(url)) { output = null; clearTimeout(timer); resolve(ui); }
+    });
+    ui.once("exit", () => { if (output !== null) { clearTimeout(timer); resolve(null); } });
   });
 }
 
@@ -35,14 +40,20 @@ const fetchPi = spawnSync("node", [path.join(path.dirname(fileURLToPath(import.m
 if (fetchPi.status !== 0) console.warn("Could not fetch the built-in agent; starting without it");
 
 let port = firstPort;
-while (!(await isAvailable(port))) port += 1;
+let ui;
+for (;;) {
+  while (!(await isAvailable(port))) port += 1;
+  ui = await startUi(port);
+  if (ui) break;
+  // Another dev server took the port between the probe and Vite binding it; any other failure is real.
+  if (await isAvailable(port)) process.exit(1);
+  console.log(`Port ${port} was taken meanwhile; trying the next one`);
+}
 
 // Switching accounts restarts the app. Electron exits with this code and is
 // started again here, because a self-relaunched app would outlive this script and its dev server.
 const RESTART = 75;
 const env = { ...process.env, VITE_DEV_SERVER_URL: `http://${host}:${port}`, TOMRADE_RESTART_EXIT_CODE: String(RESTART) };
-const ui = spawn("pnpm", ["-F", "@tomradex/ui", "exec", "vite", "--host", host, "--port", String(port)], { env, stdio: "inherit" });
-await waitForServer(port);
 let electron;
 let shuttingDown = false;
 const startElectron = () => {
