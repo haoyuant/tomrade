@@ -22,9 +22,11 @@ app.whenReady().then(async () => {
     const item = ctx.items.create({ projectId: project.id, boardId: board.id, title: "Herdr readiness", workType: "coding", status: "todo", by: "human" });
     ctx.agent.engine({ id: "ready", title: "Ready", author: "ai:ready", capabilities: ["code"], available: async () => ({ ok: true }), async turn() { return { stop: "end" }; } });
     ctx.settings.set({ ...ctx.settings.get(), language: "zh", onboarding: { seen: ["*"] }, agent: { ...ctx.settings.get().agent, defaultEngine: "ready" } });
-    assert("默认终端是 herdr", ctx.settings.get().codeLink.terminal === "herdr");
+    assert("默认终端是自动", ctx.settings.get().codeLink.terminal === "auto");
     for (const locale of ["en", "zh", "fr"]) {
-      const help = ctx.settings.sections(locale).find(s => s.id === "codeLink").schema.properties.terminal.description;
+      const field = ctx.settings.sections(locale).find(s => s.id === "codeLink").schema.properties.terminal;
+      assert(`${locale} 终端选项以自动开头并有说明`, field.enum[0] === "auto" && !!field.enumLabels?.auto);
+      const help = field.description;
       assert(`${locale} 设置说明包含安装和启动命令`, help.includes("brew install herdr") && help.includes("`herdr`"));
       assert(`${locale} 设置说明不含错误插件命令`, !help.includes("plugin install"));
     }

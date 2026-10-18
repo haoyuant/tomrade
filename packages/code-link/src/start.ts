@@ -18,7 +18,7 @@ import { BOOTSTRAP_LABEL, bootstrapBody, continuePrompt, firstPrompt, languageLi
 import { classifyRemoteFailure, probeRemote, remoteFailureDetail, remoteFailureMessage, scrubRemoteOutput } from "./remote.js";
 import type { SessionFiles, Sessions } from "./sessions.js";
 import type { CodeLinkStore, RepoStateView, SessionMode, SessionView } from "./store.js";
-import { RESUME_ID_FILE, TerminalSettings, fillTemplate, herdrFallbackNote, launchTerminal, optionFlags, shellQuote, terminalTemplate, withOptions } from "./terminal.js";
+import { RESUME_ID_FILE, TerminalSettings, fillTemplate, herdrFallbackNote, launchTerminal, machineTerminalSettings, optionFlags, shellQuote, terminalTemplate, withOptions } from "./terminal.js";
 import { CODE_WORDS } from "./words.js";
 import { githubHttps } from "@tomradex/github";
 
@@ -216,7 +216,7 @@ export class Starter {
 
     const agent = ctx.get("agent");
     if (!agent) return { ok: false, gate: "engine", message: "the agent plugin is not loaded" };
-    const terminalSettings = TerminalSettings.parse(ctx.settings.get().codeLink ?? {});
+    const terminalSettings = await machineTerminalSettings(ctx.settings.get().codeLink, ctx.get("herdr"));
     const mode: SessionMode = opts.mode === "run" ? "headless" : "terminal";
     const surface = mode === "terminal" ? "code" : "assistant";
     // In a terminal any CLI agent with an MCP client will do: "other" is whatever the machine's command template names.
@@ -487,7 +487,7 @@ export class Starter {
     const { ctx, store } = this.host;
     const agent = ctx.get("agent");
     if (!agent) return { ok: false, gate: "engine", message: "the agent plugin is not loaded" };
-    const terminalSettings = TerminalSettings.parse(ctx.settings.get().codeLink ?? {});
+    const terminalSettings = await machineTerminalSettings(ctx.settings.get().codeLink, ctx.get("herdr"));
     const locale = ctx.settings.locale?.() ?? "en";
     const mode: SessionMode = opts.mode === "run" ? "headless" : "terminal";
     if (opts.mode === "terminal" && !ctx.get("mcp")?.url) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };

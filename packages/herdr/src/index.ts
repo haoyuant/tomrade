@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import os from "node:os";
+import path from "node:path";
 import { Context, Service } from "cordis";
 import type {} from "@tomradex/doctor";
 import type { Check } from "@tomradex/doctor";
@@ -45,6 +47,13 @@ export interface HerdrConfig {
 
 const STATUSES = new Set<string>(["idle", "working", "blocked", "done", "unknown"]);
 
+/** PATH with the folders herdr installs into: an app opened from the Dock whose login shell could not be read lacks them. */
+function herdrSearchPath(base: string | undefined): string {
+  const dirs = (base ?? "").split(path.delimiter).filter(Boolean);
+  for (const dir of ["/opt/homebrew/bin", "/usr/local/bin", path.join(os.homedir(), ".local/bin")]) if (!dirs.includes(dir)) dirs.push(dir);
+  return dirs.join(path.delimiter);
+}
+
 /**
  * herdr on this machine — the terminal workspace manager coding agents run
  * in. Tomrade neither bundles nor starts it: when it is there, a ticket can
@@ -84,7 +93,8 @@ export class Herdr extends Service {
   /** The herdr CLI's version, or null when `herdr` is not on PATH. */
   installed(): Promise<string | null> {
     return new Promise((resolve) => {
-      execFile("herdr", ["--version"], { timeout: 5000 }, (err, stdout) => {
+      const env = process.platform === "win32" ? process.env : { ...process.env, PATH: herdrSearchPath(process.env.PATH) };
+      execFile("herdr", ["--version"], { timeout: 5000, env }, (err, stdout) => {
         if (err) return resolve(null);
         resolve(String(stdout).trim().replace(/^herdr\s+/, "") || null);
       });

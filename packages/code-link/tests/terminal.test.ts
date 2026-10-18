@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { TerminalSettings, fillTemplate, herdrFallbackNote, launchTerminal, optionFlags, setupTerminal, terminalApp, terminalApps, terminalTemplate, withOptions, writeGeminiHome, type HerdrTerminal } from "@tomradex/code-link";
+import { AUTO_TERMINAL, SYSTEM_TERMINAL, TerminalSettings, fillTemplate, herdrFallbackNote, launchTerminal, machineTerminalSettings, optionFlags, setupTerminal, terminalApp, terminalApps, terminalTemplate, withOptions, writeGeminiHome, type HerdrTerminal } from "@tomradex/code-link";
 
 it("lists installed terminal apps with the special launch choices", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-terminal-apps-"));
@@ -15,8 +15,8 @@ it("lists installed terminal apps with the special launch choices", () => {
 });
 
 describe("a terminal of herdr", () => {
-  it("defaults to herdr and preserves a saved terminal choice", () => {
-    expect(TerminalSettings.parse({}).terminal).toBe("herdr");
+  it("defaults to automatic and preserves a saved terminal choice", () => {
+    expect(TerminalSettings.parse({}).terminal).toBe(AUTO_TERMINAL);
     expect(TerminalSettings.parse({ terminal: "Terminal" }).terminal).toBe("Terminal");
     expect(TerminalSettings.parse({ terminal: "none" }).terminal).toBe("none");
   });
@@ -145,5 +145,35 @@ describe("Gemini CLI's session home", () => {
     expect(terminalTemplate(TerminalSettings.parse({}), "gemini")).toBe('GEMINI_CLI_HOME="{geminiHome}" gemini {options} {resume} -i "$(cat "{prompt}")"');
     const saved = TerminalSettings.parse({ geminiCommand: 'GEMINI_CLI_SYSTEM_DEFAULTS_PATH="{geminiSettings}" gemini --yolo {options} {resume} -i "$(cat "{prompt}")"' });
     expect(terminalTemplate(saved, "gemini")).toBe('GEMINI_CLI_HOME="{geminiHome}" gemini --yolo {options} {resume} -i "$(cat "{prompt}")"');
+  });
+});
+
+describe("an unset terminal", () => {
+  const herdrThat = (version: string | null) => ({ installed: async () => version });
+
+  it("never changes a terminal the person picked, herdr installed or not", async () => {
+    for (const terminal of ["Warp", "Terminal", "herdr", "none"]) {
+      expect((await machineTerminalSettings({ terminal }, herdrThat("0.9.5"))).terminal).toBe(terminal);
+      expect((await machineTerminalSettings({ terminal }, herdrThat(null))).terminal).toBe(terminal);
+    }
+  });
+
+  it("is herdr where herdr is installed, and the system terminal where it is not", async () => {
+    expect((await machineTerminalSettings(undefined, herdrThat("0.9.5"))).terminal).toBe("herdr");
+    expect((await machineTerminalSettings({ terminal: AUTO_TERMINAL }, herdrThat("0.9.5"))).terminal).toBe("herdr");
+    expect((await machineTerminalSettings(undefined, herdrThat(null))).terminal).toBe(SYSTEM_TERMINAL);
+    // Without the herdr plugin there is nothing to run herdr through.
+    expect((await machineTerminalSettings({}, null)).terminal).toBe(SYSTEM_TERMINAL);
+    expect(SYSTEM_TERMINAL).toBe("Terminal");
+  });
+
+  it("follows herdr once it is installed later, with nothing saved in between", async () => {
+    let version: string | null = null;
+    const herdr = { installed: async () => version };
+    const stored = { terminal: AUTO_TERMINAL, claudeCommand: "claude" };
+    expect(await machineTerminalSettings(stored, herdr)).toMatchObject({ terminal: SYSTEM_TERMINAL, claudeCommand: "claude" });
+    version = "0.9.5";
+    expect(await machineTerminalSettings(stored, herdr)).toMatchObject({ terminal: "herdr", claudeCommand: "claude" });
+    expect(stored.terminal).toBe(AUTO_TERMINAL);
   });
 });
