@@ -48,7 +48,7 @@ export default {
     ctx.inject(["llm"], (ctx) => ctx.effect(() => ctx.llm.lend(codexLentModel(ctx, async () => (await engine.available()).ok))));
   }
 };
-export { CodexOptions, codexCanRun, codexEngineInfo, codexModel, codexSignedIn } from "./engine.js";
+export { CodexOptions, codexCanRun, codexEngineInfo, codexInstall, codexModel, codexSignedIn } from "./engine.js";
 export { codexHome, readCodexAccount, type CodexAccount } from "./account.js";
 export { codexLentModel } from "./lend.js";
 export { codexMcpLink, codexUserFile } from "./mcp-link.js";

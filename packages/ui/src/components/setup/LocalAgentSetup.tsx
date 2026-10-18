@@ -4,6 +4,7 @@ import { Icon } from "~/components/icons";
 import { useI18n } from "~/lib/i18n";
 import { engineStateLabel, engineStatus, useRecheckEngines } from "~/lib/localCli";
 import { setupRows, useSetupInTerminal } from "~/lib/setup";
+import { openExternal } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 
 function CommandLine({ command }: { command: string }) {
@@ -75,7 +76,15 @@ export function LocalAgentSetup({ engines, onOpenSettings }: { engines: EngineVi
                 {e.title} <span className="meta-txt">· {engineStateLabel(e, t, t("settingsDialog.engineUnavailable"))}</span>
               </span>
               {status === "desktop-only" && <span className="setup-fix">{t("localCli.desktopOnlyDetail", { app: e.cli?.desktopApp ?? "", name: e.cli?.name ?? "" })}</span>}
-              {(status === "missing" || status === "desktop-only") && (
+              {(status === "missing" || status === "desktop-only") && !setup.install[0] && setup.docs && (
+                <span className="setup-fix">
+                  {t("setup.noInstaller")}
+                  <button type="button" className="link-btn setup-action" data-testid={`install-guide-${e.id}`} onClick={() => openExternal(setup.docs!)}>
+                    {t("localCli.docs")} →
+                  </button>
+                </span>
+              )}
+              {(status === "missing" || status === "desktop-only") && setup.install[0] && (
                 <span className="setup-fix">
                   <CommandLine command={setup.install[0]} />
                   <button type="button" className="btn btn-secondary btn-xs setup-action" data-testid={`install-${e.id}`} disabled={terminal.isPending} onClick={() => run(e, "install")}>

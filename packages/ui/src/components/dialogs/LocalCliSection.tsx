@@ -150,7 +150,7 @@ export function LocalCliSection({ engine, cli, command, onSaveCommand }: { engin
               <li key={step}>
                 {step === "install" && (
                   <>
-                    {tx("localCli.stepInstall", { command: code(install[0]) })}
+                    {install[0] ? tx("localCli.stepInstall", { command: code(install[0]) }) : t("localCli.stepInstallGuide")}
                     {install[1] && <> {tx("localCli.stepInstallOr", { command: code(install[1]) })}</>}
                     {agent.docs && (
                       <>

@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Context } from "cordis";
 import { Agent, type RunView } from "@tomradex/agent";
-import engineCodex, { codexSignedIn } from "@tomradex/engine-codex";
+import engineCodex, { codexInstall, codexSignedIn } from "@tomradex/engine-codex";
 import { Mcp } from "@tomradex/mcp";
 import { Settings } from "@tomradex/settings";
 import { fresh, settle } from "@tomradex/testkit";
@@ -67,5 +67,14 @@ describe("whether Codex is signed in", () => {
     expect(codexSignedIn("Logged in using an API key - sk-***\n")).toBe(true);
     expect(codexSignedIn("Not logged in\n")).toBe(false);
     expect(codexSignedIn("error: unrecognized subcommand 'login'")).toBeNull();
+  });
+});
+
+describe("how Codex installs on this machine", () => {
+  it("offers npm only where npm is, Homebrew where it is, and no command without either", () => {
+    expect(codexInstall({ npm: true, brew: false })).toEqual(["npm install -g @openai/codex"]);
+    expect(codexInstall({ npm: true, brew: true })).toEqual(["npm install -g @openai/codex", "brew install --cask codex"]);
+    expect(codexInstall({ npm: false, brew: true })).toEqual(["brew install --cask codex"]);
+    expect(codexInstall({ npm: false, brew: false })).toEqual([]);
   });
 });
