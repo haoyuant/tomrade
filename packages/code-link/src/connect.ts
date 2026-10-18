@@ -13,10 +13,11 @@ export type ConnectAgent = (typeof CONNECT_AGENTS)[number];
 
 /**
  * Why Connect left an agent out: its file has comments or trailing commas a
- * rewrite would lose, cannot be read at all, or (Codex) holds hooks Tomrade
- * cannot add to without rewriting the whole file.
+ * rewrite would lose, cannot be read at all, (Codex) holds hooks Tomrade
+ * cannot add to without rewriting the whole file, or is tracked by git while
+ * the connection is for this machine only.
  */
-export type SkipReason = "comments" | "invalid" | "codex-hooks";
+export type SkipReason = "comments" | "invalid" | "codex-hooks" | "tracked";
 export interface SkippedAgent {
   agent: ConnectAgent;
   file: string;
@@ -51,6 +52,11 @@ export type HookAgent = "codex" | "workbuddy" | "cursor";
 export const PI_EXTENSION = ".pi/extensions/tomrade.ts";
 /** OpenCode loads a project plugin from here by itself. */
 export const OPENCODE_PLUGIN = ".opencode/plugins/tomrade.js";
+/** Claude Code's personal settings for one checkout: a machine-only connection keeps its hooks there. */
+export const CLAUDE_LOCAL_SETTINGS = ".claude/settings.local.json";
+export const CODEX_SYNC_SKILL = ".agents/skills/tomrade-sync/SKILL.md";
+/** Every file a connection may write, committed or for this machine only. */
+export const CONNECT_FILES = [".mcp.json", ".claude/settings.json", CLAUDE_LOCAL_SETTINGS, ".codebuddy/settings.json", ".codex/config.toml", CODEX_SYNC_SKILL, PI_EXTENSION, "opencode.json", OPENCODE_PLUGIN, ".cursor/mcp.json", ".cursor/hooks.json", CURSOR_HOOK_SCRIPT, ".gemini/settings.json", "CLAUDE.md", "AGENTS.md"] as const;
 
 /** The committed hook's command; `pane: false` is the one written before hooks named their herdr pane, which still counts as connected. */
 export function hookCommand(eventUrl: string, agent?: HookAgent, options: { pane?: boolean } = {}): string {
@@ -63,14 +69,27 @@ export const hookCommands = (eventUrl: string, agent?: HookAgent): string[] => [
 
 const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 
-/** Whether every event runs `command` among its hooks, in Claude Code's (and Codex's) hook format. */
-export function hasHooks(config: Record<string, unknown>, events: readonly string[], commands: string | string[]): boolean {
+/** A URL, or text naming URLs, with every host and port taken out: the project id in the path is what tells two Tomrades' addresses apart. */
+export const anyHost = (text: string): string => text.replace(/https?:\/\/[^/\s"']+/g, "");
+
+/** Whether `text` names `url` on any host and port. */
+export function namesEndpoint(text: string | undefined, url: string): boolean {
+  return !!text && [...text.matchAll(/https?:\/\/[^\s"']+/g)].some((match) => anyHost(match[0]) === anyHost(url));
+}
+
+/**
+ * Whether every event runs one of `commands` among its hooks, in Claude
+ * Code's (and Codex's) hook format; `loose` takes the same command posting
+ * to another host or port as well.
+ */
+export function hasHooks(config: Record<string, unknown>, events: readonly string[], commands: string | string[], loose = false): boolean {
   const ours = Array.isArray(commands) ? commands : [commands];
+  const same = (found: unknown) => typeof found === "string" && ours.some((command) => found === command || (loose && anyHost(found) === anyHost(command)));
   return events.every((event) => {
     const entries = object(config.hooks)[event];
     return Array.isArray(entries) && entries.some((entry) => {
       const hooks = object(entry).hooks;
-      return Array.isArray(hooks) && hooks.some((hook) => ours.includes(object(hook).command as string));
+      return Array.isArray(hooks) && hooks.some((hook) => same(object(hook).command));
     });
   });
 }
@@ -101,9 +120,11 @@ function withCodexHooks(existing: string, eventUrl: string): string | null {
 
 /**
  * The CLAUDE.md section that tells any coding agent how this repository and
- * Tomrade stay in step — when the work has a ticket at all. Claude Code reads
- * the project's rules in the MCP server's instructions; agents that read
- * AGENTS.md (Codex) take those for tool notes, so `fetchRules` has them ask.
+ * Tomrade stay in step — when the work has a ticket at all, and only where
+ * the `tomrade` server is reachable: the file is committed, Tomrade is one
+ * developer's. Claude Code reads the project's rules in the MCP server's
+ * instructions; agents that read AGENTS.md (Codex) take those for tool
+ * notes, so `fetchRules` has them ask.
  */
 export function tomradeSection(input: ConnectInput, options: { fetchRules?: boolean } = {}): string {
   const example = `${input.prefix}-42`;
@@ -112,13 +133,14 @@ export function tomradeSection(input: ConnectInput, options: { fetchRules?: bool
     SECTION_HEADING,
     "",
     `The backlog for this repository lives in Tomrade (project "${input.projectName}"), reachable as the \`tomrade\` MCP server (\`.mcp.json\` for Claude Code and WorkBuddy, \`.codex/config.toml\` for Codex, \`.pi/extensions/tomrade.ts\` for Pi, \`opencode.json\` for OpenCode).`,
+    "This section applies only when the `tomrade` MCP server is available in your session. Tomrade runs on one developer's machine; without it (no such server, or its tools fail to connect) everything below is void: work as usual, never try to reach Tomrade another way, and never mention tickets you cannot read.",
     "Claude Code, Codex, WorkBuddy and Cursor report session lifecycle through repository hooks, Pi through that extension and OpenCode through `.opencode/plugins/tomrade.js`. In Codex, trust the project and review the new hooks with `/hooks`, then start a new session; older Codex versions without hooks must be upgraded. Pi loads the extension once you trust the project. No `notify` setting is changed.",
     "Cursor uses `.cursor/mcp.json`, and `.cursor/hooks.json` runs `.cursor/hooks/tomrade.sh`. Gemini CLI uses `.gemini/settings.json` and does not report its lifecycle, but once it calls `claim_ticket` Tomrade follows the session through its MCP connection: later calls on that connection need no key. Use `note_progress` only when the claim's result says `tracking.tracked` is true.",
     `For other MCP-capable agents, add a Streamable HTTP server named \`tomrade\` with URL ${input.mcpUrl} in that agent's own settings. No configuration is generated for other tools; reading AGENTS.md alone supplies instructions, not MCP tools or session tracking.`,
     "Not every session works on a ticket, and not every ticket involves code. Work without a ticket is fine: never ask for one before starting, and never invent one.",
-    ...(options.fetchRules ? ["Before your first reply in every session, call the `tomrade` MCP tool `get_project_rules` and follow what it returns throughout: the person keeps rules there for every agent in this project."] : []),
+    ...(options.fetchRules ? ["When the `tomrade` MCP server is available, call its tool `get_project_rules` before your first reply in every session and follow what it returns throughout: the person keeps rules there for every agent in this project."] : []),
     "",
-    `### When the work is a ticket (the user or the branch names a key such as \`${example}\`)`,
+    `### When the work is a ticket (the user or the branch names a key such as \`${example}\`) and the \`tomrade\` server is available`,
     "",
     `- Call \`claim_ticket("${example}")\` before starting: it returns the ticket and the branch to use, and marks it Doing. A session that claimed a ticket owns only that ticket.`,
     "- Implement only its stated outcome and acceptance criteria; neighboring tickets are context, not extra work. Work you find for another ticket stays untouched — mention it when you sync.",
@@ -128,7 +150,7 @@ export function tomradeSection(input: ConnectInput, options: { fetchRules?: bool
     "",
     "### Syncing back",
     "",
-    "When the user asks to sync with Tomrade (in Claude Code: `/tomrade:sync`; in Codex: `$tomrade-sync`):",
+    "When the user asks to sync with Tomrade (in Claude Code: `/tomrade:sync`; in Codex: `$tomrade-sync`) and the `tomrade` server is available:",
     "",
     ...syncSteps(),
     "",
@@ -247,6 +269,24 @@ const withSessionHooks = (command: string) => (json: string) => {
   return JSON.stringify({ ...settings, hooks }, null, 2) + "\n";
 };
 
+/** Claude Code loads the checkout's `.mcp.json` server without asking once its settings list it; a rejection from before gives way. */
+const withApprovedServer = (json: string) => {
+  const settings = object(json ? JSON.parse(json) : {});
+  const list = (key: string) => (Array.isArray(settings[key]) ? settings[key] as unknown[] : []);
+  const enabled = list("enabledMcpjsonServers").includes("tomrade") ? list("enabledMcpjsonServers") : [...list("enabledMcpjsonServers"), "tomrade"];
+  const disabled = list("disabledMcpjsonServers").filter((name) => name !== "tomrade");
+  return JSON.stringify({ ...settings, enabledMcpjsonServers: enabled, ...(settings.disabledMcpjsonServers === undefined ? {} : { disabledMcpjsonServers: disabled }) }, null, 2) + "\n";
+};
+
+/**
+ * A connection for this machine only: the files go into the checkout
+ * untracked, so one git already tracks cannot be changed, and the agent
+ * instruction files stay the team's.
+ */
+export interface LocalConnect {
+  tracked: ReadonlySet<string>;
+}
+
 /**
  * Lay the chosen agents' connection files down in a worktree: Claude and Codex
  * each gain a project-scoped `tomrade` MCP server; CLAUDE.md and AGENTS.md
@@ -259,8 +299,13 @@ const withSessionHooks = (command: string) => (json: string) => {
  * script that posts the same way. Everything else in each file is kept as it
  * was. An agent whose file cannot be changed without losing what is in it is
  * skipped whole and reported, never failing the others.
+ *
+ * For this machine only (`local`), the same files go into the checkout
+ * itself: Claude Code's hooks and its approval of the `.mcp.json` server in
+ * `.claude/settings.local.json`, no instruction section, and no change to a
+ * file git tracks — that agent is skipped and says so.
  */
-export function writeConnectFiles(root: string, input: ConnectInput, agents: readonly ConnectAgent[] = CONNECT_AGENTS): { files: string[]; skipped: SkippedAgent[] } {
+export function writeConnectFiles(root: string, input: ConnectInput, agents: readonly ConnectAgent[] = CONNECT_AGENTS, local?: LocalConnect): { files: string[]; skipped: SkippedAgent[] } {
   interface Write { name: string; text: string | null; mode?: number }
   const read = (name: string) => {
     const file = path.join(root, name);
@@ -268,10 +313,11 @@ export function writeConnectFiles(root: string, input: ConnectInput, agents: rea
   };
   const exact = (name: string, text: string, mode?: number): Write => ({ name, text: read(name) === text ? null : text, ...(mode ? { mode } : {}) });
   const json = (name: string, change: (json: string) => string): Write => ({ name, text: nextJson(root, name, change) });
-  const section = (name: "CLAUDE.md" | "AGENTS.md"): Write => {
+  const section = (name: "CLAUDE.md" | "AGENTS.md"): Write[] => {
+    if (local) return [];
     const existing = read(name) ?? "";
     const body = withTomradeSection(existing, input.projectName, tomradeSection(input, { fetchRules: name === "AGENTS.md" }));
-    return { name, text: body === existing ? null : body };
+    return [{ name, text: body === existing ? null : body }];
   };
   const skipped: SkippedAgent[] = [];
   const codex = (): Write => {
@@ -291,14 +337,15 @@ export function writeConnectFiles(root: string, input: ConnectInput, agents: rea
     return { name, text: next === existing ? null : next };
   };
   const mcp = () => json(".mcp.json", withServer({ type: "http", url: input.mcpUrl }));
+  const claudeHooks = withSessionHooks(hookCommand(input.eventUrl));
   const plans: Record<ConnectAgent, () => Write[]> = {
-    "claude-code": () => [mcp(), json(".claude/settings.json", withSessionHooks(hookCommand(input.eventUrl))), section("CLAUDE.md")],
-    codex: () => [codex(), section("AGENTS.md"), exact(".agents/skills/tomrade-sync/SKILL.md", codexSyncSkill(input))],
+    "claude-code": () => [mcp(), local ? json(CLAUDE_LOCAL_SETTINGS, (text) => withApprovedServer(claudeHooks(text))) : json(".claude/settings.json", claudeHooks), ...section("CLAUDE.md")],
+    codex: () => [codex(), ...section("AGENTS.md"), exact(CODEX_SYNC_SKILL, codexSyncSkill(input))],
     // WorkBuddy's CLI takes Claude Code's hook format in its own settings file.
-    workbuddy: () => [mcp(), json(".codebuddy/settings.json", withSessionHooks(hookCommand(input.eventUrl, "workbuddy"))), section("AGENTS.md")],
-    pi: () => [exact(PI_EXTENSION, outsideExtension(input.mcpUrl, input.eventUrl)), section("AGENTS.md")],
-    opencode: () => [json("opencode.json", (text) => withMcpEntry(text, input.mcpUrl)), exact(OPENCODE_PLUGIN, opencodePlugin(input.eventUrl)), section("AGENTS.md")],
-    cursor: () => [json(".cursor/mcp.json", withServer({ url: input.mcpUrl })), json(".cursor/hooks.json", withCursorHooks), exact(CURSOR_HOOK_SCRIPT, cursorHookScript(hookCommand(input.eventUrl, "cursor")), 0o755), section("AGENTS.md")],
+    workbuddy: () => [mcp(), json(".codebuddy/settings.json", withSessionHooks(hookCommand(input.eventUrl, "workbuddy"))), ...section("AGENTS.md")],
+    pi: () => [exact(PI_EXTENSION, outsideExtension(input.mcpUrl, input.eventUrl)), ...section("AGENTS.md")],
+    opencode: () => [json("opencode.json", (text) => withMcpEntry(text, input.mcpUrl)), exact(OPENCODE_PLUGIN, opencodePlugin(input.eventUrl)), ...section("AGENTS.md")],
+    cursor: () => [json(".cursor/mcp.json", withServer({ url: input.mcpUrl })), json(".cursor/hooks.json", withCursorHooks), exact(CURSOR_HOOK_SCRIPT, cursorHookScript(hookCommand(input.eventUrl, "cursor")), 0o755), ...section("AGENTS.md")],
     gemini: () => [json(".gemini/settings.json", withServer({ httpUrl: input.mcpUrl }))]
   };
 
@@ -306,7 +353,10 @@ export function writeConnectFiles(root: string, input: ConnectInput, agents: rea
   const writes = new Map<string, Write>();
   for (const agent of CONNECT_AGENTS.filter((id) => agents.includes(id))) {
     try {
-      for (const write of plans[agent]()) writes.set(write.name, write);
+      for (const write of plans[agent]()) {
+        if (write.text !== null && local?.tracked.has(write.name)) throw new Unwritable(write.name, "tracked");
+        writes.set(write.name, write);
+      }
     } catch (error) {
       if (!(error instanceof Unwritable)) throw error;
       skipped.push({ agent, file: error.file, reason: error.reason });

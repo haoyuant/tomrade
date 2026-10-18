@@ -1,6 +1,10 @@
 # Repository agent connections
 
-Connecting a repository writes a `tomrade/connect` branch and offers a pull request. Merge it, update the checkout and open a new agent session. The URL belongs to the Tomrade instance that generated it.
+A repository is connected in one of two ways.
+
+**This machine only** writes the chosen agents' files into the checkout itself and lists them in `.git/info/exclude`, so nothing is committed, pushed or pulled: the same files as below, except that Claude Code's hooks and its approval of the `.mcp.json` server (`enabledMcpjsonServers`) go in `.claude/settings.local.json`, and `CLAUDE.md` / `AGENTS.md` are left alone — the agents get the rules from the MCP server's instructions and from `claim_ticket`. A file the repository already tracks is never changed: its agent is skipped and the result says so (`tracked`). Codex still asks to trust the project and to review the hooks with `/hooks`, as for any project hooks. Start a new agent session afterwards. If the team's connection lands in the repository later, pulling it replaces these ignored files with the committed ones, and the exclude lines no longer matter.
+
+**For the team** writes a `tomrade/connect` branch and offers a pull request. Merge it, update the checkout and open a new agent session. The committed instruction text applies only where the `tomrade` server is available, so a clone on a machine without Tomrade is told to carry on as usual. The URL names the Tomrade instance that generated it; another Tomrade opening the same project on another port (a development build, a teammate) sees the repository as connected to that one and does not ask to reconnect — only an address with another project id is "another instance".
 
 Only the agents chosen for the repository get configuration, and only they decide whether it counts as connected. Until someone chooses, they are the agents installed on this machine (all of them when none is found); connecting keeps that choice with the repository in the project, so an agent installed or added to Tomrade later does not make it unconnected.
 
