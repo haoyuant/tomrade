@@ -83,7 +83,7 @@ interface Connection {
 /** What a start from IM settles, carried in the tokens of its card; `card` is that card's outbox id. */
 interface StartDraft { itemId: string; card: string; engine?: string; options?: Record<string, string>; permissionMode?: string; playbook?: string; allowBlocked?: boolean }
 type StartOutcome =
-  | { ok: false; gate: string; message: string; blockers?: string[] }
+  | { ok: false; gate: string; message: string; blockers?: string[]; board?: { name: string }; cause?: { code: string; repoId?: string; branch?: string; heldAt?: string } }
   | { ok: true; continued: boolean; threadId: string; runId?: string; engine: string; waitingOn?: string; warnings?: string[] };
 /** The part of `ctx.codeLink` IM uses; code link is optional and never imported. */
 interface CodeHost extends CodeLookup {
@@ -96,7 +96,7 @@ interface Startable { id: string; key: string; title: string; status: string; ki
 /** What a gate means, in the person's language; where the word is empty, the gate's own message. */
 const GATE: Partial<Record<string, ImPlainWord>> = {
   locked: "gateLocked", workstream: "gateWorkstream", checkout: "gateCheckout",
-  remote: "gateRemote", readiness: "gateReadiness", engine: "gateEngine", mcp: "gateMcp", workdir: "gateWorkdir"
+  remote: "gateRemote", readiness: "gateReadiness", engine: "gateEngine", mcp: "gateMcp"
 };
 /** The part of `ctx.items` a delivery card reads and settles, the service review_delivery records through. */
 interface ReviewHost {
@@ -1577,6 +1577,21 @@ export class Im extends Service {
     return (this.capsOf(b)?.cardUpdate || this.capsOf(b)?.edit) && this.store.get("SELECT 1 FROM plugin_im_outbox WHERE id = ? AND binding_id = ?", card, b.id) ? card : null;
   }
 
+  /** No working folder, said by its cause with what names the fix — never the bare "no folder". */
+  private workdirReason(result: Extract<StartOutcome, { ok: false }>): string {
+    const { w } = this;
+    const board = result.board?.name ?? "";
+    const cause = result.cause;
+    switch (cause?.code) {
+      case "no-board": return w("workdirNoBoard");
+      case "no-board-repo": return w("workdirNoBoardRepo", { board });
+      case "unknown-repo": return w("workdirUnknownRepo", { board, repo: cause.repoId ?? "?" });
+      case "no-hub": return w("workdirNoHub");
+      case "branch-in-use": if (cause.branch && cause.heldAt) return w("workdirBranchInUse", { branch: cause.branch, at: cause.heldAt }); break;
+    }
+    return w("gateWorkdir", { detail: result.message });
+  }
+
   /** The start card says how the start stands, with no buttons left. */
   private settleStart(b: Binding, card: string, text: string) {
     if (this.editableCard(b, card)) this.replace(b, card, { text });
@@ -1617,7 +1632,8 @@ export class Im extends Service {
           actions: [{ label: w("startAnyway"), token: this.offerValue(b, "start!", actorId, JSON.stringify({ ...draft, allowBlocked: true })), style: "primary" }] }, reply);
       } else {
         const gate = GATE[result.gate];
-        this.enqueue(b, `start-gate:${row.id}`, { text: w("startGate", { key: item.key, reason: (gate && w(gate)) || result.message }),
+        const reason = result.gate === "workdir" ? this.workdirReason(result) : (gate && w(gate)) || result.message;
+        this.enqueue(b, `start-gate:${row.id}`, { text: w("startGate", { key: item.key, reason }),
           elements: [{ type: "links", links: [{ label: w("openInTomrade"), url: links.item(b.project_id, item.key) }] }] }, reply);
       }
       this.accept(row); return;

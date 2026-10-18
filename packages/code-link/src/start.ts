@@ -24,6 +24,8 @@ import { githubHttps } from "@tomradex/github";
 
 export type StartMode = "run" | "terminal";
 export type StartGate = "locked" | "workstream" | "checkout" | "remote" | "readiness" | "blocked" | "engine" | "mcp" | "workdir";
+/** Why the workdir gate found no folder, when that is known. */
+export type WorkdirCause = "no-board" | "no-board-repo" | "unknown-repo" | "no-hub" | "branch-in-use";
 
 /** What the Start dialog settles: where the work runs, who runs it, and with which knobs. */
 export interface StartOptions {
@@ -61,6 +63,8 @@ export type StartResult =
       repo?: { id: string; name: string };
       /** The engine that is not ready, when one was asked for. */
       engine?: string;
+      /** Workdir gate: what stood in the way — the repository id a workstream still names, the branch and the worktree that has it. */
+      cause?: { code: WorkdirCause; repoId?: string; branch?: string; heldAt?: string };
     }
   | {
       ok: true;
@@ -277,7 +281,7 @@ export class Starter {
     if (where.problem || !where.cwd) {
       discard();
       uncarry();
-      return { ok: false, gate: where.code === "no-checkout" ? "checkout" : "workdir", message: where.problem ?? "no working folder for this thread", ...onRepo };
+      return this.workdirGate(projectId, thread, where, onRepo);
     }
     if (carried && where.worktree) {
       const moved = await this.moveWorktree(where.worktree, branch, repo.defaultBranch);
@@ -410,6 +414,34 @@ export class Starter {
       // The CLI Tomrade located (an app's own copy included), and a runtime for scripts that needs no Node installed.
       bin, node: process.execPath
     });
+  }
+
+  /** No folder for the run: said with its cause, so a screen can point at the one thing that fixes it. */
+  private workdirGate(
+    projectId: string,
+    thread: { boardId: string | null },
+    where: { code: string | null; problem: string | null; branch: string | null; heldAt?: string },
+    onRepo: Pick<Extract<StartResult, { ok: false }>, "board" | "repo" | "remote">
+  ): StartResult {
+    if (where.code === "no-checkout") return { ok: false, gate: "checkout", message: where.problem ?? "no checkout on this machine", ...onRepo };
+    // The conversation's own workstream, which a continued conversation may not share with the ticket.
+    const board = thread.boardId ? this.host.ctx.boards.get(projectId, thread.boardId) : null;
+    const onBoard = board ? { board: { id: board.id, name: board.name } } : {};
+    const name = board?.name ?? "This conversation's workstream";
+    switch (where.code) {
+      case "no-board":
+        return { ok: false, gate: "workdir", message: "this conversation belongs to no workstream, so it has no repository to work in", cause: { code: "no-board" }, ...onRepo };
+      case "no-board-repo":
+        return { ok: false, gate: "workdir", message: `${name} has no repository yet — link one under Repositories`, cause: { code: "no-board-repo" }, ...onRepo, ...onBoard };
+      case "unknown-repo":
+        return { ok: false, gate: "workdir", message: `${name} points at repository ${board?.repoId ?? "?"}, which this project no longer has — link it to another under Repositories`, cause: { code: "unknown-repo", ...(board?.repoId ? { repoId: board.repoId } : {}) }, ...onRepo, ...onBoard };
+      case "no-hub":
+        return { ok: false, gate: "workdir", message: where.problem ?? "no Hub folder is chosen on this machine", cause: { code: "no-hub" }, ...onRepo };
+      case "branch-in-use":
+        return { ok: false, gate: "workdir", message: where.problem ?? "the branch is checked out in another worktree", cause: { code: "branch-in-use", ...(where.branch ? { branch: where.branch } : {}), ...(where.heldAt ? { heldAt: where.heldAt } : {}) }, ...onRepo };
+      default:
+        return { ok: false, gate: "workdir", message: where.problem ?? "no working folder for this conversation", ...onRepo };
+    }
   }
 
   /**
