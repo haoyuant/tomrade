@@ -18,7 +18,7 @@ import { BOOTSTRAP_LABEL, bootstrapBody, continuePrompt, firstPrompt, languageLi
 import { classifyRemoteFailure, probeRemote, remoteFailureDetail, remoteFailureMessage, scrubRemoteOutput } from "./remote.js";
 import type { SessionFiles, Sessions } from "./sessions.js";
 import type { CodeLinkStore, RepoStateView, SessionMode, SessionView } from "./store.js";
-import { RESUME_ID_FILE, TerminalSettings, fillTemplate, launchTerminal, optionFlags, shellQuote, terminalTemplate, withOptions } from "./terminal.js";
+import { RESUME_ID_FILE, TerminalSettings, fillTemplate, herdrFallbackNote, launchTerminal, optionFlags, shellQuote, terminalTemplate, withOptions } from "./terminal.js";
 import { CODE_WORDS } from "./words.js";
 import { githubHttps } from "@tomradex/github";
 
@@ -361,7 +361,8 @@ export class Starter {
     const baseResume = this.resumeCommand(terminalSettings, engineId, files, where.cwd, options, bin);
     const resume = baseResume && wrapped ? ctx.github.wrap(baseResume) : baseResume;
     const launch = await launchTerminal({ cwd: where.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir, label: item.key, ...(resume ? { resume } : {}) }, terminalSettings.terminal, ctx.get("herdr") ?? null);
-    if (launch.needsHerdr) warnings.push(terminalWords("herdrUnreachable", { install: HERDR_INSTALL }));
+    const fallback = herdrFallbackNote(terminalWords.locale, launch, HERDR_INSTALL);
+    if (fallback) warnings.push(fallback);
     store.patchSession(projectId, session.id, { state: "running", lastEventAt: now, ...(launch.paneId ? { herdrPane: launch.paneId } : {}) });
     this.host.notify(projectId);
     return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command, launched: launch.launched, pane: launch.paneId ?? null, engine: engineId, ...(warnings.length ? { warnings } : {}) };
@@ -544,7 +545,8 @@ export class Starter {
     const launch = await launchTerminal({ cwd: prepared.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir, label: item.key, ...(resume ? { resume } : {}) }, terminalSettings.terminal, ctx.get("herdr") ?? null);
     store.patchSession(projectId, session.id, { state: "running", lastEventAt: now, ...(launch.paneId ? { herdrPane: launch.paneId } : {}) });
     this.host.notify(projectId);
-    return { ...base, command, launched: launch.launched, pane: launch.paneId ?? null, ...(launch.needsHerdr ? { warnings: [CODE_WORDS(locale)("herdrUnreachable", { install: HERDR_INSTALL })] } : {}) };
+    const fallback = herdrFallbackNote(locale, launch, HERDR_INSTALL);
+    return { ...base, command, launched: launch.launched, pane: launch.paneId ?? null, ...(fallback ? { warnings: [fallback] } : {}) };
   }
 
   /** The first code engine that can take a ticket right now; one that can only chat (Tomrade with no model) is passed over. */

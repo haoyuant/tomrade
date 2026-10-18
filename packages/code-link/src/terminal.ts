@@ -86,6 +86,7 @@ export const RESUME_ID_FILE = "resume-id";
 /** What a terminal of "herdr" is run through: a workspace with the script going in its pane. */
 export interface HerdrTerminal {
   launch(input: { cwd: string; label?: string; command: string }): Promise<{ paneId: string } | null>;
+  installed(): Promise<string | null>;
 }
 
 export interface LaunchResult {
@@ -93,8 +94,35 @@ export interface LaunchResult {
   launched: boolean;
   /** The herdr pane the script runs in, when the terminal is herdr. */
   paneId?: string;
-  /** The terminal is herdr, and herdr did not answer: the script is written, for the person to run. */
-  needsHerdr?: boolean;
+  /** The terminal is herdr, and herdr did not answer: the script went to the system terminal instead. */
+  herdrMissing?: "notInstalled" | "notRunning";
+}
+
+/** Where a herdr launch goes when herdr does not answer; off macOS the platform's own emulator is used whatever the name. */
+export const SYSTEM_TERMINAL = "Terminal";
+
+/** Hands a script to a terminal app; an object so tests can stand in for the app. */
+export const terminalApp = {
+  async open(terminal: string, script: string): Promise<void> {
+    if (process.platform === "darwin") await run("open", ["-a", terminal, script]);
+    else if (process.platform === "win32") await run("cmd", ["/c", "start", "", "bash", script]);
+    else {
+      try {
+        await run("x-terminal-emulator", ["-e", `bash ${shellQuote(script)}`]);
+      } catch {
+        await run("gnome-terminal", ["--", "bash", script]);
+      }
+    }
+  }
+};
+
+/** What to tell the person when a herdr launch went elsewhere; null when herdr took it. */
+export function herdrFallbackNote(locale: unknown, launch: LaunchResult, install: string): string | null {
+  if (!launch.herdrMissing) return null;
+  const w = CODE_WORDS(locale);
+  const app = process.platform === "darwin" ? SYSTEM_TERMINAL : w("systemTerminal");
+  const note = launch.herdrMissing === "notInstalled" ? w("herdrNotInstalledFallback", { app, install }) : w("herdrNotRunningFallback", { app });
+  return launch.launched ? note : `${note} ${w("fallbackDidNotOpen", { app })}`;
 }
 
 /** Fill a command template. Unknown placeholders are left as they are, so a typo is visible in the terminal. */
@@ -145,8 +173,9 @@ export function withOptions(template: string, flags: string): string {
 /**
  * Write a `.command` script and hand it to the terminal app. macOS runs a
  * `.command` file in a new window when it is opened with Terminal or iTerm;
- * elsewhere the common emulators take `-e`. A terminal of "none" writes the
- * script and stops, for a person to run it themselves.
+ * elsewhere the common emulators take `-e`. A terminal of "herdr" that does
+ * not answer opens the system terminal instead. A terminal of "none" writes
+ * the script and stops, for a person to run it themselves.
  */
 export async function launchTerminal(input: LaunchInput, terminal: string, herdr: HerdrTerminal | null = null): Promise<LaunchResult> {
   fs.mkdirSync(input.dir, { recursive: true });
@@ -161,24 +190,20 @@ export async function launchTerminal(input: LaunchInput, terminal: string, herdr
   // The same wrapper around the resume: the pid file and the token come back with the session.
   if (input.resume) fs.writeFileSync(path.join(input.dir, RESUME_SCRIPT), wrap(input.resume), { mode: 0o755 });
   if (terminal === "none") return { script, launched: false };
+  let herdrMissing: LaunchResult["herdrMissing"];
   if (terminal === "herdr") {
     // The script, not the command: the pid file and the exports come along, and the shell stays after the agent for the person to read.
     const pane = herdr ? await herdr.launch({ cwd: input.cwd, label: input.label, command: `bash ${shellQuote(script)}` }) : null;
-    return pane ? { script, launched: true, paneId: pane.paneId } : { script, launched: false, needsHerdr: true };
+    if (pane) return { script, launched: true, paneId: pane.paneId };
+    herdrMissing = (await herdr?.installed()) ? "notRunning" : "notInstalled";
+    terminal = SYSTEM_TERMINAL;
   }
+  const missing = herdrMissing ? { herdrMissing } : {};
   try {
-    if (process.platform === "darwin") await run("open", ["-a", terminal, script]);
-    else if (process.platform === "win32") await run("cmd", ["/c", "start", "", "bash", script]);
-    else {
-      try {
-        await run("x-terminal-emulator", ["-e", `bash ${shellQuote(script)}`]);
-      } catch {
-        await run("gnome-terminal", ["--", "bash", script]);
-      }
-    }
-    return { script, launched: true };
+    await terminalApp.open(terminal, script);
+    return { script, launched: true, ...missing };
   } catch {
-    return { script, launched: false };
+    return { script, launched: false, ...missing };
   }
 }
 
