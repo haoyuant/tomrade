@@ -1,8 +1,9 @@
 import { z } from "zod";
+import { LANGUAGE_PACK_LIMITS, LanguageEntrySchema } from "./language.js";
 import { isRange, isVersion } from "./semver.js";
 
 /** The contract this SDK describes. A plugin's `engines.sdk` range is checked against the host's. */
-export const SDK_CONTRACT = "0.2.7";
+export const SDK_CONTRACT = "0.2.8";
 
 export const PLUGIN_ID = /^[a-z0-9][a-z0-9-]{0,38}\/[a-z0-9][a-z0-9-]{0,63}$/;
 export const NAMESPACE = /^[a-z][a-z0-9_]{1,31}$/;
@@ -58,8 +59,11 @@ export const ManifestSchema = z.object({
   homepage: z.url().optional(),
   author: z.object({ name: z.string().min(1), url: z.url().optional() }).optional(),
   engines: z.object({ sdk: z.string().refine(isRange, "a version range such as ^0.2.0") }),
-  main: z.string().default("dist/index.js"),
+  /** The built code; `null` for a plugin that is data only, such as a language pack. */
+  main: z.string().nullable().default("dist/index.js"),
   icon: z.string().optional(),
+  /** Languages the plugin adds, each a JSON file of words (SDK 0.2.8). */
+  languages: z.array(LanguageEntrySchema).max(LANGUAGE_PACK_LIMITS.languages).default([]),
   permissions: PermissionsSchema,
   /** Stamped by `tomrade-plugin build` from the exported plugin. */
   inject: z.array(SERVICE).default([]),
@@ -81,6 +85,10 @@ export function parseManifest(raw: unknown): Manifest {
   const ns = namespaceOf(manifest);
   if (!NAMESPACE.test(ns)) throw new Error(`${manifest.id}: the name part does not make a valid namespace ("${ns}"); set "namespace" in ${MANIFEST_FILE}`);
   if (RESERVED_NAMESPACES.has(ns) && publisherOf(manifest.id) !== OFFICIAL_PUBLISHER) throw new Error(`${manifest.id}: namespace "${ns}" is reserved`);
+  if (manifest.main === null && !manifest.languages.length) throw new Error(`${manifest.id}: "main" is null, so the plugin has no code; it must add a language under "languages"`);
+  const tags = manifest.languages.map((l) => l.tag);
+  const twice = tags.find((t, i) => tags.indexOf(t) !== i);
+  if (twice) throw new Error(`${manifest.id}: the language "${twice}" is listed twice`);
   return manifest;
 }
 

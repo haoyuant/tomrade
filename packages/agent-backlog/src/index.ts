@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { WorkflowIO } from "@tomradex/agent";
 import type {} from "@tomradex/boards";
 import type {} from "@tomradex/items";
-import { wordsLocale, type Item, type WordsLocale } from "@tomradex/domain";
+import { languageTag, type Item, type WordsLocale } from "@tomradex/domain";
 import type { LlmService } from "@tomradex/llm";
 import { defineTool, type RunHandle } from "@tomradex/tools";
 import { dossierSchema, emptyDossier, readiness, renderDossier, REQUIRED_FIELDS, type Dossier, type RequiredField } from "./dossier.js";
@@ -65,7 +65,7 @@ export default {
         .filter((m) => m.role === "user" && m.block.type === "text").slice(-3)
         .map((m) => (m.block.type === "text" ? m.block.text : "")).join(" ");
       if (said.trim()) return /[\u3400-\u9fff]/.test(said) ? "zh" : "en";
-      return wordsLocale(ctx.settings.locale?.());
+      return languageTag(ctx.settings.locale?.());
     };
     const saveDossier = (run: RunHandle, dossier: Dossier) =>
       ctx.agent.setCard(run.id, { id: "dossier", schema: "backlog.dossier", title: "Requirement dossier", data: dossier });

@@ -1,6 +1,6 @@
 import { defineWords } from "@tomradex/domain";
 
-export const INBOX_WORDS = defineWords({
+export const INBOX_WORDS = defineWords("inbox", {
   en: {
     module: "Inbox",
     sourceField: "Source",

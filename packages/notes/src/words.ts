@@ -1,7 +1,7 @@
 import { defineWords } from "@tomradex/domain";
 
 /** The notes settings card. */
-export const NOTES_WORDS = defineWords({
+export const NOTES_WORDS = defineWords("notes", {
   en: {
     title: "Notes",
     description: "Links between the project's notes, and where a day's journal goes.",

@@ -1,6 +1,6 @@
 import { defineWords } from "@tomradex/domain";
 
-export const BACKLOG_WORDS = defineWords({
+export const BACKLOG_WORDS = defineWords("agent-backlog", {
   en: {
     planAsk: "This plan writes {{writes}} (1 root epic, {{epics}}, {{tickets}}). Write it to the backlog?",
     item: "{{n}} item",

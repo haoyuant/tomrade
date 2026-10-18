@@ -1,6 +1,6 @@
 import { defineWords } from "@tomradex/domain";
 
-export const GITHUB_WORDS = defineWords({
+export const GITHUB_WORDS = defineWords("inbox-github", {
   en: {
     source: "GitHub issues",
     connect: "Connect a GitHub account first — from a project's destination or Files settings",

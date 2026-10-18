@@ -1,6 +1,6 @@
 import { defineWords } from "@tomradex/domain";
 
-export const PI_WORDS = defineWords({
+export const PI_WORDS = defineWords("engine-pi", {
   en: {
     title: "Built-in agent",
     refusedPick: 'The built-in agent cannot run on "{{name}}": it does not call tools itself',

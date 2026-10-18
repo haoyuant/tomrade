@@ -1,7 +1,7 @@
 import { defineWords } from "@tomradex/domain";
 
 /** What the platform itself writes into a conversation, in the person's language at the moment it is written. */
-export const AGENT_WORDS = defineWords({
+export const AGENT_WORDS = defineWords("agent", {
   en: {
     humanTookOver: "The human took over this delivery. Agent execution has stopped.",
     cancelledWaiting: "Cancelled the waiting question — the engine changed.",

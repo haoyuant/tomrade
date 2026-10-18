@@ -1,6 +1,6 @@
 import { defineWords } from "@tomradex/domain";
 
-export const ANNOUNCEMENT_WORDS = defineWords({
+export const ANNOUNCEMENT_WORDS = defineWords("announcements", {
   en: { command: "Announcements…", group: "Help" },
   zh: { command: "查看公告…", group: "帮助" }
 });

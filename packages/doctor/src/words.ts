@@ -5,7 +5,7 @@
  */
 import { defineWords } from "@tomradex/domain";
 
-export const DOCTOR_WORDS = defineWords({
+export const DOCTOR_WORDS = defineWords("doctor", {
   en: {
     engineTitle: "Troubleshooter",
     command: "Troubleshoot a problem…",

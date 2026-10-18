@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as tar from "tar";
-import { MANIFEST_FILE, nameOf, parseManifest, publisherOf, type Manifest } from "@tomradex/plugin-sdk";
+import { LANGUAGE_PACK_LIMITS, MANIFEST_FILE, nameOf, parseLanguagePack, parseManifest, publisherOf, type LanguageEntry, type LanguagePack, type Manifest } from "@tomradex/plugin-sdk";
 import { listFiles, treeDigest } from "./digest.js";
 import type { Attestation } from "./sign.js";
 
@@ -20,12 +20,24 @@ export function readManifest(dir: string): Manifest {
   return parseManifest(JSON.parse(fs.readFileSync(file, "utf8")));
 }
 
+/** One language a plugin adds, read from its JSON file and checked against the pack format. */
+export function readLanguagePack(dir: string, entry: LanguageEntry): LanguagePack {
+  const file = path.join(dir, entry.file);
+  if (!fs.existsSync(file)) throw new Error(`the language file ${entry.file} is missing`);
+  const stat = fs.lstatSync(file);
+  if (!stat.isFile()) throw new Error(`${entry.file} is not a regular file`);
+  if (stat.size > LANGUAGE_PACK_LIMITS.fileBytes) throw new Error(`${entry.file} is larger than a language pack may be (${LANGUAGE_PACK_LIMITS.fileBytes} bytes)`);
+  return parseLanguagePack(entry, fs.readFileSync(file, "utf8"));
+}
+
 /** The files a package carries: the manifest, the build, and the papers that go with the code. */
 export function packageFiles(dir: string, manifest: Manifest): string[] {
+  const packs = new Set(manifest.languages.map((l) => l.file));
   const files = listFiles(dir, (rel) => rel === "node_modules" || rel === ".git" || rel === ATTESTATION_FILE).filter(
-    (rel) => rel === MANIFEST_FILE || rel === manifest.icon || SHIPPED.some((re) => re.test(rel))
+    (rel) => rel === MANIFEST_FILE || rel === manifest.icon || packs.has(rel) || SHIPPED.some((re) => re.test(rel))
   );
-  if (!files.includes(manifest.main)) throw new Error(`${manifest.id}: ${manifest.main} is missing — run the build first`);
+  if (manifest.main !== null && !files.includes(manifest.main)) throw new Error(`${manifest.id}: ${manifest.main} is missing — run the build first`);
+  for (const file of packs) if (!files.includes(file)) throw new Error(`${manifest.id}: the language file ${file} is missing`);
   if (files.length > LIMITS.files) throw new Error(`${manifest.id}: ${files.length} files is more than a package may carry (${LIMITS.files})`);
   return files;
 }

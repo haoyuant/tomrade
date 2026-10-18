@@ -1,6 +1,6 @@
 import { Context, Service } from "cordis";
 import { z } from "zod";
-import { modelErrorKind, type ModelErrorKind, type WordsLocale } from "@tomradex/domain";
+import { modelErrorKind, wordsLocale, type ModelErrorKind, type WordsLocale } from "@tomradex/domain";
 import type {} from "@tomradex/db";
 import type {} from "@tomradex/ipc";
 import type { SettingsSection } from "@tomradex/settings";
@@ -536,7 +536,7 @@ export class Llm extends Service implements LlmService {
   }
 
   providers(): ProviderView[] {
-    const locale = this.words().locale;
+    const locale = wordsLocale(this.words().locale);
     const order = PROVIDER_ORDER[locale];
     return [...PROVIDERS]
       .sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))

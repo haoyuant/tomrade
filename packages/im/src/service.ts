@@ -4,7 +4,6 @@ import type {} from "@tomradex/agent";
 import { MAX_MEDIA_BYTES, type AgentEvent, type Block, type PendingView, type UserInput } from "@tomradex/agent";
 import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/db";
-import { wordsLocale } from "@tomradex/domain";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/oplog";
 import type {} from "@tomradex/projects";
@@ -728,7 +727,7 @@ export class Im extends Service {
       ...(quoted ? { quoted: fromAdapter(quoted) } : kept ? { quoted: line(kept) } : {}),
       ...(root && root.messageId !== quotedId ? { root: fromAdapter(root) } : {}),
       recent
-    }, wordsLocale(this.home.settings.locale()));
+    }, this.home.settings.locale());
   }
 
   /** A `/pair` code in a direct chat. The desktop confirms who it was; a wrong code counts toward withdrawing it. */

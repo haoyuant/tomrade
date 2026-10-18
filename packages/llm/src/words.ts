@@ -1,6 +1,6 @@
 import { defineWords } from "@tomradex/domain";
 
-export const LLM_WORDS = defineWords({
+export const LLM_WORDS = defineWords("llm", {
   en: {
     noProfile: "No model profile configured — add one in Settings → Assistant",
     noApiKey: "Profile \"{{profile}}\" has no API key",

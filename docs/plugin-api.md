@@ -139,6 +139,10 @@ to its own copies wherever the plugin lives. Documents for surfaces go in
 `static/` and are copied beside it. The build stamps `inject`, `optional` and
 `contributes` into the manifest from what the plugin was seen to do.
 
+A plugin that is data only says `"main": null` and has nothing to build; today
+that is a [language pack](#languages), whose `languages` files ship in the
+package beside the manifest.
+
 A `.tomrade-plugin` file is the package: a tarball of the manifest, `dist/`,
 the README, the license and, for Tomrade's own plugins, `ATTESTATION.json` —
 the store key's Ed25519 signature over the package's digest, its tier and its
@@ -1600,10 +1604,13 @@ Extensions speak the app's language, not their own. A section's `title`,
 `description` and the schema's `.meta({ title })` / `.describe()` are the
 English; `words: { zh: { title, description, fields: { key: { title,
 description, options } } } }` gives the card in Chinese, as built-ins do.
-`ctx.settings.locale()` is the language now (`"en"` or `"zh"`); it is a setting,
-so `settings.changed` fires when the person switches it. Titles the app draws —
+`ctx.settings.locale()` is the language now, a BCP 47 tag: `"en"`, `"zh"`, one
+of the other languages the app ships, or one a [language pack](#languages)
+adds (SDK 0.2.8; before, only `"en"` or `"zh"`). It is a setting, so
+`settings.changed` fires when the person switches it. Titles the app draws —
 commands and their group, status item and section titles, sidebar modules —
-take a `Localized`: a string, or `{ en, zh }` picked each time it is shown.
+take a `Localized`: a string, or `{ en, zh, … }` keyed by tag and picked each
+time it is shown, English where the language has no entry.
 Text a callback returns (a status item's `text` and `menu`, a surface's state)
 is the plugin's to put in `locale()`.
 
@@ -1633,6 +1640,69 @@ since. The open sections today are `theme`, `themeAutomation`, `customThemes`,
 First-party plugins register sections the same way: `@tomradex/files` contributes
 `files`, whose `agentIndexTokens` (1500) is how much of an agent's prompt the
 index of a project's files may take, and zero turns the index off.
+
+## Languages
+
+English is the source of every string: the interface's dictionaries
+(`packages/ui/src/lib/i18n-messages`) and each package's backend book
+(`defineWords("<book>", { en, zh })` in its `words.ts`) are written in English
+first, and the compiler holds Simplified Chinese to every key and `{{slot}}`
+English has. Any other language is data and may miss strings: each one it
+lacks shows in English.
+
+A plugin adds a language with a **language pack** (SDK 0.2.8), which is data
+only. The manifest names each language and the JSON file holding its words;
+`"main": null` says the plugin has no code at all:
+
+```json
+{
+  "id": "alice/portugues",
+  "version": "1.0.0",
+  "title": "Português (Brasil)",
+  "license": "MIT",
+  "engines": { "sdk": "^0.2.8" },
+  "main": null,
+  "languages": [{ "tag": "pt-BR", "name": "Português (Brasil)", "file": "languages/pt-BR.json" }]
+}
+```
+
+```json
+{
+  "ui": { "common": { "cancel": "Cancelar", "closeTitled": "Fechar {{title}}" } },
+  "backend": { "doctor": { "...": "..." } }
+}
+```
+
+- `tag` is a canonical BCP 47 tag and never `en`; `name` is the language in
+  itself, as Settings → Language lists it. A plugin with code may add languages
+  too.
+- The file maps `namespace → key → template`: `ui` keys are the interface's
+  (`common.cancel` is `t("common.cancel")`), `backend` keys are a book id and
+  its key (`doctor`, `code-link`, `im`… — the id `defineWords` names). It holds
+  strings only, at most 4,000 characters each and 2 MB in all, and each is
+  shown as plain text where the English would be.
+- An entry counts only where English has the key and the template asks for the
+  same `{{slot}}`s (and `[[cmd:…]]` key chords); anything else reads English.
+- One pack per language: a second for the same tag is set aside with a
+  warning. A pack for a language the app ships speaks before its built-in words.
+
+Installed — from a file, a folder or the store — the language joins Settings →
+Language while the plugin runs, and "System" picks it when the system prefers
+it (same language and script; zh-TW finds zh-Hant, never zh). The main process
+reads the pack and hands the interface's half to the renderer
+(`settings.languages`, `settings.languagePack`), so the window, the status bar,
+MCP answers and IM messages speak it alike. Switching the plugin off takes the
+language away; a person who had chosen it reads English until it is back.
+
+Prompts written for an agent are not words and no pack translates them: they
+stay English and name the person's language in a line such as "write
+everything the person will read in Brazilian Portuguese".
+
+`plugin_check` reports each pack's coverage against the English of the
+Tomrade it runs in — strings translated, the ones it does not translate (with
+their English), keys English no longer has, and entries whose slots differ.
+None of it blocks: a gap reads English. `tomrade-plugin check` outside the app
+checks the format only.
 
 ## Contributions
 

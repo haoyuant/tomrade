@@ -1,6 +1,6 @@
 import { defineWords } from "@tomradex/domain";
 
-export const FEEDBACK_WORDS = defineWords({
+export const FEEDBACK_WORDS = defineWords("inbox-tomrade", {
   en: {
     source: "Tomrade feedback",
     signIn: "Sign in to your Tomrade account first",

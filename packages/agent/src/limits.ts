@@ -5,7 +5,7 @@
  * the shapes they use rather than any one of them.
  */
 
-import type { WordsLocale } from "@tomradex/domain";
+import type { LanguageTag } from "@tomradex/domain";
 import { AGENT_WORDS } from "./words.js";
 
 const LIMITED = /\b(rate[ _-]?limit(?:ed)?|usage limit|limit reached|hit your (?:\w+ )?limit|too many requests|quota (?:exceeded|exhausted)|resource[_ ]exhausted|usage_?limit_?exceeded)\b|\b429\b/i;
@@ -123,7 +123,7 @@ export function resetTime(text: string | null | undefined, now = Date.now()): nu
 const MONTH_KEYS = ["month1", "month2", "month3", "month4", "month5", "month6", "month7", "month8", "month9", "month10", "month11", "month12"] as const;
 
 /** When a limit lifts, as the person reads it on this machine: "20:00", "tomorrow 09:00", "Oct 15 09:00". */
-export function untilLabel(t: number, locale: WordsLocale, now = Date.now()): string {
+export function untilLabel(t: number, locale: LanguageTag, now = Date.now()): string {
   const w = AGENT_WORDS(locale);
   const d = new Date(t);
   const time = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;

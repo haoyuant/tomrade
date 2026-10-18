@@ -1,11 +1,13 @@
-import { createContext, Fragment, useCallback, useContext, useLayoutEffect, useMemo, type ReactNode } from "react";
-import type { AppSettings, LanguagePreference } from "@tomradex/domain";
+import { createContext, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, type ReactNode } from "react";
+import { languageTag, pickLanguage, type AppSettings, type Dictionaries, type LanguagePreference } from "@tomradex/domain";
 import { keys, useSaveSettings, useSettings } from "./queries";
-import { useQueryClient } from "@tanstack/react-query";
-import { interpolate, message, type Locale, type MessageKey } from "./dicts";
-import { INTL_TAG, setDomainLocale } from "./domain";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { invoke } from "./api";
+import { interpolate, message, setPackMessages, type BuiltinLocale, type Locale, type MessageKey } from "./dicts";
+import { intlTag, setDomainLocale } from "./domain";
+import { en } from "./i18n-messages";
 
-export { INTL_TAG };
+export { intlTag };
 import { shortcut } from "./keys";
 import { announceKeymap, formatChord, isCommandId, primeKeymap, resolveKeymap, type Keymap } from "./keybindings";
 
@@ -34,33 +36,51 @@ let activeLocale: Locale = "en";
 /** `t` for words made outside a render — an error made readable — in the language showing now. */
 export const translate = (key: MessageKey, vars?: Record<string, string | number>): string => interpolate(lookup(activeLocale, key), vars);
 
-export function detectSystemLocale(): Locale {
-  const tag = ((typeof navigator !== "undefined" && navigator.language) || "en").toLowerCase();
-  if (tag.startsWith("zh")) return /^zh-(hant|tw|hk|mo)/.test(tag) ? "zh-Hant" : "zh";
-  const base = tag.split("-")[0];
-  return base === "ja" || base === "es" || base === "de" || base === "fr" ? base : "en";
+/** A language as Settings → Language lists it: its tag and its name in itself. */
+export interface LanguageOption {
+  tag: Locale;
+  name: string;
 }
 
-export function resolveLocale(preference: LanguagePreference): Locale {
-  return preference === "system" ? detectSystemLocale() : preference;
-}
-
-export const LANGUAGE_OPTIONS: { value: LanguagePreference; labelKey?: MessageKey; literal?: string }[] = [
-  { value: "system", labelKey: "common.system" },
-  { value: "en", literal: "English" },
-  { value: "zh", literal: "简体中文" },
-  { value: "zh-Hant", literal: "繁體中文" },
-  { value: "ja", literal: "日本語" },
-  { value: "es", literal: "Español" },
-  { value: "de", literal: "Deutsch" },
-  { value: "fr", literal: "Français" }
+/** The languages the interface ships, each named in its own script. */
+export const BUILTIN_LANGUAGES: { tag: BuiltinLocale; name: string }[] = [
+  { tag: "en", name: "English" },
+  { tag: "zh", name: "简体中文" },
+  { tag: "zh-Hant", name: "繁體中文" },
+  { tag: "ja", name: "日本語" },
+  { tag: "es", name: "Español" },
+  { tag: "de", name: "Deutsch" },
+  { tag: "fr", name: "Français" }
 ];
+
+/** The system's language among those there are — the shipped ones and any a pack added — else English. */
+export function detectSystemLocale(available: readonly Locale[] = BUILTIN_LANGUAGES.map((l) => l.tag)): Locale {
+  return pickLanguage((typeof navigator !== "undefined" && navigator.language) || "en", available) ?? "en";
+}
+
+export function resolveLocale(preference: LanguagePreference, available?: readonly Locale[]): Locale {
+  return preference === "system" ? detectSystemLocale(available) : languageTag(preference);
+}
+
+const languagesKey = [...keys.settings, "languages"] as const;
+
+/** Languages installed packs add; a pack for a shipped language keeps the shipped name. */
+function useLanguages(): { options: LanguageOption[]; packs: Set<string> } {
+  const packs = useQuery({ queryKey: languagesKey, queryFn: () => invoke("settings.languages"), enabled: typeof window !== "undefined" && !!window.tomrade, staleTime: Infinity }).data;
+  return useMemo(() => {
+    const shipped = new Set<string>(BUILTIN_LANGUAGES.map((l) => l.tag));
+    const added = (packs ?? []).filter((p) => !shipped.has(p.tag)).map(({ tag, name }) => ({ tag, name }));
+    return { options: [...BUILTIN_LANGUAGES, ...added], packs: new Set((packs ?? []).map((p) => p.tag)) };
+  }, [packs]);
+}
 
 interface I18nContextValue {
   /** What the user chose — 'system' included. */
   preference: LanguagePreference;
   /** What is actually showing right now. */
   locale: Locale;
+  /** Every language there is to choose: the shipped ones, then those packs add. */
+  languages: LanguageOption[];
   setPreference: (p: LanguagePreference) => void;
   t: (key: MessageKey, vars?: Record<string, string | number>) => string;
   /** Like `t`, but vars may be React nodes — for sentences that embed a `<span>` or similar. */
@@ -70,6 +90,7 @@ interface I18nContextValue {
 const fallback: I18nContextValue = {
   preference: "system",
   locale: "en",
+  languages: BUILTIN_LANGUAGES,
   setPreference: () => {},
   t: (key, vars) => interpolate(lookup("en", key), vars),
   tx: (key, vars) => interpolate(lookup("en", key), vars as Record<string, string | number> | undefined)
@@ -82,7 +103,16 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const save = useSaveSettings();
   const qc = useQueryClient();
   const preference = settings.data?.language ?? "system";
-  const locale = resolveLocale(preference);
+  const languages = useLanguages();
+  const locale = resolveLocale(preference, [...languages.options.map((l) => l.tag), ...languages.packs]);
+  // A pack's words come from the main process, which read them from the plugin; English shows until they arrive.
+  const packTag = languages.packs.has(locale) ? locale : null;
+  const pack = useQuery({ queryKey: [...languagesKey, packTag], queryFn: () => invoke("settings.languagePack", packTag!), enabled: !!packTag, staleTime: Infinity }).data;
+  setPackMessages(packTag, pack?.tag === packTag ? (pack?.ui ?? null) : null);
+  // What a pack translates is measured against this English; the main process keeps it for plugin_check.
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.tomrade) void invoke("settings.uiEnglish", en as Dictionaries).catch(() => {});
+  }, []);
   // The keymap rides on the settings this provider already reads: every label naming a key follows a rebinding.
   const overrides = (settings.data?.keybindings as { overrides?: Record<string, string[]> } | undefined)?.overrides;
   const overridesKey = JSON.stringify(overrides ?? {});
@@ -96,9 +126,11 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   // than threading a locale prop through every call site that formats one of those strings.
   setDomainLocale(locale);
   activeLocale = locale;
-  if (typeof document !== "undefined") document.documentElement.lang = INTL_TAG[locale];
+  if (typeof document !== "undefined") document.documentElement.lang = intlTag(locale);
 
-  const t = useCallback((key: MessageKey, vars?: Record<string, string | number>) => interpolate(lookup(locale, key, map), vars), [locale, map]);
+  // `pack` stands for the words setPackMessages took in: a new t once they arrive.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const t = useCallback((key: MessageKey, vars?: Record<string, string | number>) => interpolate(lookup(locale, key, map), vars), [locale, map, pack]);
 
   const tx = useCallback(
     (key: MessageKey, vars?: Record<string, ReactNode>): ReactNode => {
@@ -111,7 +143,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
         return part ? <Fragment key={i}>{part}</Fragment> : null;
       });
     },
-    [locale, map]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [locale, map, pack]
   );
 
   const setPreference = useCallback(
@@ -123,7 +156,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     [qc, save]
   );
 
-  const value = useMemo(() => ({ preference, locale, setPreference, t, tx }), [preference, locale, setPreference, t, tx]);
+  const value = useMemo(() => ({ preference, locale, languages: languages.options, setPreference, t, tx }), [preference, locale, languages.options, setPreference, t, tx]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

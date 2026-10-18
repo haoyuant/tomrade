@@ -1,7 +1,7 @@
 import { defineWords } from "@tomradex/domain";
 
 /** What ⌘Z and ⇧⌘Z say they did. */
-export const OPLOG_WORDS = defineWords({
+export const OPLOG_WORDS = defineWords("oplog", {
   en: {
     undoCreate: "Removed {{label}}",
     undoDelete: "Restored {{label}}",
