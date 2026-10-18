@@ -190,12 +190,12 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
   const ready = engineId === "other" ? true : !!engine?.ok;
   const busy = start.isPending || takeover.isPending;
 
-  const submit = (allowBlocked = waitsOn.length > 0) => {
+  const submit = (allowBlocked = waitsOn.length > 0, releaseBranch = false) => {
     setError(null);
     const options: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(pickValues)) if (value) options[key] = value;
     start.mutate(
-      { itemId: item.id, mode, engine: engineId, options, ...(general ? { playbook } : {}), ...(permissionMode ? { permissionMode } : {}), ...(allowBlocked ? { allowBlocked } : {}) },
+      { itemId: item.id, mode, engine: engineId, options, ...(general ? { playbook } : {}), ...(permissionMode ? { permissionMode } : {}), ...(allowBlocked ? { allowBlocked } : {}), ...(releaseBranch ? { releaseBranch } : {}) },
       {
         onSuccess: (result) => {
           if (!result.ok) {
@@ -377,7 +377,7 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
                         projectId={projectId}
                         itemId={item.id}
                         failure={error.failure}
-                        onRetry={(allowBlocked) => submit(allowBlocked)}
+                        onRetry={(allowBlocked, releaseBranch) => submit(allowBlocked, releaseBranch)}
                         onLeave={onClose}
                         onOpenRepositories={onOpenRepositories}
                         onOpenIssue={onOpenIssue}

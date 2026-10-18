@@ -40,6 +40,8 @@ export interface StartOptions {
   permissionMode?: string;
   /** Start although tickets this one waits on are still open; the agent is told which. */
   allowBlocked?: boolean;
+  /** Let go of the ticket's branch in the other worktree that has it checked out, when nothing there would be lost. */
+  releaseBranch?: boolean;
   /** Carry this conversation on the ticket into the current delivery — a reopened ticket continued where it was talked about. */
   threadId?: string;
   /** Headless runs only: the person's own words, sent after the brief. */
@@ -64,7 +66,7 @@ export type StartResult =
       /** The engine that is not ready, when one was asked for. */
       engine?: string;
       /** Workdir gate: what stood in the way — the repository id a workstream still names, the branch and the worktree that has it. */
-      cause?: { code: WorkdirCause; repoId?: string; branch?: string; heldAt?: string };
+      cause?: { code: WorkdirCause; repoId?: string; branch?: string; heldAt?: string; releasable?: boolean };
     }
   | {
       ok: true;
@@ -265,7 +267,7 @@ export class Starter {
     }
     // A thread made for this Start and then refused has no link to find it by: it goes, so a retry does not leave it behind.
     const discard = () => { if (fresh) agent.deleteThread(projectId, fresh); };
-    let where: Awaited<ReturnType<typeof agent.workdir>>;
+    let where: Awaited<ReturnType<typeof agent.workdir>> & { releasable?: boolean };
     try {
       if (!asked && engineId !== "other" && !agent.activeRuns().some((a) => a.thread.id === thread!.id)) {
         if (opts.options !== undefined) thread = agent.setOptions(projectId, thread.id, opts.options);
@@ -273,6 +275,11 @@ export class Starter {
       }
       // Start is the person asking for the work, so a finished ticket's worktree may come back here.
       where = await agent.workdir(projectId, thread.id, { create: true, revive: true });
+      if (where.code === "branch-in-use" && where.heldAt) {
+        const held = await this.branchHolder(projectId, item.id, where.heldAt);
+        if (held.releasable && (held.ours || opts.releaseBranch) && (await this.releaseBranch(where.heldAt))) where = await agent.workdir(projectId, thread.id, { create: true, revive: true });
+        else where = { ...where, releasable: held.releasable };
+      }
     } catch (err) {
       discard();
       uncarry();
@@ -377,6 +384,31 @@ export class Starter {
     return herdr.prompt(pane, `Tomrade: continue this ticket — read ${file} and follow it.`);
   }
 
+  /**
+   * The worktree git keeps the ticket's branch in: whether letting go of the branch there loses
+   * nothing — a linked worktree, not the person's checkout, with no uncommitted changes and no
+   * session running in it — and whether it is where this ticket was worked before.
+   */
+  private async branchHolder(projectId: string, itemId: string, heldAt: string): Promise<{ releasable: boolean; ours: boolean }> {
+    const git = this.host.git;
+    const real = (dir: string) => { try { return fs.realpathSync(dir); } catch { return path.resolve(dir); } };
+    const at = real(heldAt);
+    const sessions = this.host.store.sessions(projectId);
+    const there = (s: (typeof sessions)[number]) => (s.worktree ? real(s.worktree) === at : false) || (!!s.threadId && path.basename(at) === s.threadId);
+    const ours = sessions.some((s) => s.itemIds.includes(itemId) && there(s));
+    if (sessions.some((s) => s.state === "running" && there(s))) return { releasable: false, ours };
+    const dirs = await git(["rev-parse", "--git-dir", "--git-common-dir"], { cwd: heldAt, ok: true });
+    const [own, common] = dirs.stdout.trim().split("\n").map((d) => path.resolve(heldAt, d.trim()));
+    if (dirs.code !== 0 || !own || own === common) return { releasable: false, ours };
+    const status = await git(["status", "--porcelain", "--untracked-files=no"], { cwd: heldAt, ok: true });
+    return { releasable: status.code === 0 && !status.stdout.trim(), ours };
+  }
+
+  /** Detaches the other worktree at the commit it is on: its files stay as they are, and the branch is free to check out here. */
+  private async releaseBranch(heldAt: string): Promise<boolean> {
+    return (await this.host.git(["switch", "--detach"], { cwd: heldAt, ok: true })).code === 0;
+  }
+
   /** A carried conversation's worktree onto the new delivery's branch, from the default branch; the reason it cannot, or null. */
   private async moveWorktree(worktree: string, branch: string, defaultBranch: string): Promise<string | null> {
     const git = this.host.git;
@@ -420,7 +452,7 @@ export class Starter {
   private workdirGate(
     projectId: string,
     thread: { boardId: string | null },
-    where: { code: string | null; problem: string | null; branch: string | null; heldAt?: string },
+    where: { code: string | null; problem: string | null; branch: string | null; heldAt?: string; releasable?: boolean },
     onRepo: Pick<Extract<StartResult, { ok: false }>, "board" | "repo" | "remote">
   ): StartResult {
     if (where.code === "no-checkout") return { ok: false, gate: "checkout", message: where.problem ?? "no checkout on this machine", ...onRepo };
@@ -438,7 +470,7 @@ export class Starter {
       case "no-hub":
         return { ok: false, gate: "workdir", message: where.problem ?? "no Hub folder is chosen on this machine", cause: { code: "no-hub" }, ...onRepo };
       case "branch-in-use":
-        return { ok: false, gate: "workdir", message: where.problem ?? "the branch is checked out in another worktree", cause: { code: "branch-in-use", ...(where.branch ? { branch: where.branch } : {}), ...(where.heldAt ? { heldAt: where.heldAt } : {}) }, ...onRepo };
+        return { ok: false, gate: "workdir", message: where.problem ?? "the branch is checked out in another worktree", cause: { code: "branch-in-use", ...(where.branch ? { branch: where.branch } : {}), ...(where.heldAt ? { heldAt: where.heldAt } : {}), releasable: !!where.releasable }, ...onRepo };
       default:
         return { ok: false, gate: "workdir", message: where.problem ?? "no working folder for this conversation", ...onRepo };
     }
