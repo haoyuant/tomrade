@@ -2,7 +2,17 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { TerminalSettings, fillTemplate, launchTerminal, optionFlags, terminalTemplate, withOptions, writeGeminiHome, type HerdrTerminal } from "@tomradex/code-link";
+import { TerminalSettings, fillTemplate, launchTerminal, optionFlags, terminalApps, terminalTemplate, withOptions, writeGeminiHome, type HerdrTerminal } from "@tomradex/code-link";
+
+it("lists installed terminal apps with the special launch choices", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-terminal-apps-"));
+  try {
+    for (const name of ["Warp.app", "Utilities/Terminal.app", "Notes.app"]) fs.mkdirSync(path.join(root, name), { recursive: true });
+    expect(terminalApps([root], "darwin")).toEqual(["Terminal", "Warp", "herdr", "none"]);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 
 describe("a terminal of herdr", () => {
   it("runs the script in a herdr workspace labelled for the ticket, and without herdr leaves the script for the person", async () => {

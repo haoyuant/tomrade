@@ -6,7 +6,7 @@ import { z } from "zod";
 
 /** Machine settings: which terminal opens, and how each coding agent is invoked in it. */
 export const TerminalSettings = z.object({
-  terminal: z.string().default("Terminal").meta({ title: "Terminal app" }).describe('Terminal, iTerm, Warp, Ghostty… — anything `open -a` knows. "herdr" runs the ticket in a herdr workspace, whose pane the ticket then follows (brew install herdr; the tomrade plugin for herdr — herdr plugin install haoyuant/tomrade-plugins/herdr — opens and claims tickets from the terminal). "none" only prepares the command for copying.'),
+  terminal: z.string().default("Terminal").meta({ title: "Terminal app" }).describe('Choose an installed terminal app. "herdr" runs the ticket in a herdr workspace, whose pane the ticket then follows (brew install herdr; the tomrade plugin for herdr — herdr plugin install haoyuant/tomrade-plugins/herdr — opens and claims tickets from the terminal). "none" only prepares the command for copying.'),
   claudeCommand: z.string().default('claude {options} --mcp-config "{mcpConfig}" --settings "{settings}" {resume} "$(cat "{prompt}")"').meta({ title: "Claude Code command" }),
   codexCommand: z.string().default('codex {resume} {options} -c mcp_servers.tomrade.url="{mcpUrl}" -c mcp_servers.tomrade.bearer_token_env_var="TOMRADE_MCP_TOKEN" "$(cat "{prompt}")"').meta({ title: "Codex command" }),
   piCommand: z.string().default('pi {options} -e "{piExtension}" {resume} "$(cat "{prompt}")"').meta({ title: "Pi command" }).describe("Pi takes no MCP flag; {piExtension} is a session-only extension that registers the server and reports like Claude's hooks."),
@@ -25,6 +25,27 @@ export const TerminalSettings = z.object({
   otherCommand: z.string().default("").meta({ title: "Other agent command" }).describe("Any other CLI agent with an MCP client — Gemini CLI, OpenCode, aider… Empty means none is set up. {mcpUrl}, {token} (also in $TOMRADE_MCP_TOKEN), {prompt}, {resume} (the bare session id) are filled in.")
 });
 export type TerminalSettings = z.infer<typeof TerminalSettings>;
+
+const TERMINAL_APPS = new Set(["terminal", "iterm", "iterm2", "warp", "ghostty", "alacritty", "kitty", "wezterm", "hyper", "tabby", "rio", "wave"]);
+
+/** Installed macOS terminal bundles that `open -a` can launch. */
+export function terminalApps(roots = ["/Applications", path.join(os.homedir(), "Applications"), "/System/Applications"], platform = process.platform): string[] {
+  if (platform !== "darwin") return ["herdr", "none"];
+  const found = new Set<string>();
+  const scan = (dir: string, depth: number) => {
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name.endsWith(".app")) {
+        const name = entry.name.slice(0, -4);
+        if (TERMINAL_APPS.has(name.toLowerCase())) found.add(name);
+      } else if (depth < 1) scan(path.join(dir, entry.name), depth + 1);
+    }
+  };
+  for (const root of roots) scan(root, 0);
+  return [...found].sort((a, b) => a.localeCompare(b)).concat("herdr", "none");
+}
 
 /** The command template a terminal session starts an engine with; Claude Code's flags are the common ground. */
 export function terminalTemplate(settings: TerminalSettings, engine: string): string {
