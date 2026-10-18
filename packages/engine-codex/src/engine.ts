@@ -45,12 +45,42 @@ export function codexCanRun(account: CodexAccount | null, env: NodeJS.ProcessEnv
   return !account.requiresOpenaiAuth || account.signedIn || (env.CODEX_API_KEY ? null : false);
 }
 
+const NPM_INSTALL = "npm install -g @openai/codex";
+const BREW_INSTALL = "brew install --cask codex";
+
+/** The install commands this machine can run: npm when it has npm, then Homebrew's cask; none leaves the install guide. */
+export const codexInstall = (found: { npm: boolean; brew: boolean }): string[] =>
+  [...(found.npm ? [NPM_INSTALL] : []), ...(found.brew ? [BREW_INSTALL] : [])];
+
 /** Everything about the Codex engine except how a turn runs: identity, options, availability, setup. */
 export function codexEngineInfo(ctx: Context): Omit<Engine, "turn"> {
   const cli = localCli("codex");
   // Models Codex listed, per CLI and CODEX_HOME, so switching either never shows the other's.
   const models = new Map<string, CodexAccount["models"]>();
   const modelsKey = (manual: string | undefined) => `${manual ?? ""}\0${codexHome()}`;
+  const available = localAvailability(ctx, {
+    engineId: "codex",
+    title: "Codex",
+    cli,
+    install: "install OpenAI Codex and sign in",
+    // The Codex desktop app does not put the `codex` CLI on this machine.
+    desktopApp: { title: "Codex", mac: ["Codex"], windows: ["Programs\\Codex"] },
+    signIn: {
+      async ask(manual) {
+        const key = modelsKey(manual);
+        const account = await readCodexAccount(await cli.launch(manual));
+        if (account) models.set(key, account.models);
+        const verdict = codexCanRun(account);
+        if (account) return verdict;
+        // An older Codex without account/read: its login status is all there is to go on.
+        const { stdout, stderr } = await cli.run(manual, ["login", "status"], 8000);
+        return codexSignedIn(`${stdout}\n${stderr}`);
+      },
+      reason: "Codex is not signed in and its model provider needs an OpenAI account — run `codex login` in a terminal"
+    },
+    configDir: () => codexHome()
+  });
+  const setup = { install: [NPM_INSTALL], signIn: "codex login", docs: "https://github.com/openai/codex", suggested: true };
   return {
     id: "codex",
     title: "Codex",
@@ -64,30 +94,15 @@ export function codexEngineInfo(ctx: Context): Omit<Engine, "turn"> {
       { key: "model", title: "Model", choices: models.get(modelsKey(cli.manualOf(chosenCommand(ctx, "codex")))) ?? [], freeText: true },
       { key: "effort", title: "Effort", choices: [{ value: "minimal" }, { value: "low" }, { value: "medium" }, { value: "high" }] }
     ],
-    available: localAvailability(ctx, {
-      engineId: "codex",
-      title: "Codex",
-      cli,
-      install: "install OpenAI Codex and sign in",
-      // The Codex desktop app does not put the `codex` CLI on this machine.
-      desktopApp: { title: "Codex", mac: ["Codex"], windows: ["Programs\\Codex"] },
-      signIn: {
-        async ask(manual) {
-          const key = modelsKey(manual);
-          const account = await readCodexAccount(await cli.launch(manual));
-          if (account) models.set(key, account.models);
-          const verdict = codexCanRun(account);
-          if (account) return verdict;
-          // An older Codex without account/read: its login status is all there is to go on.
-          const { stdout, stderr } = await cli.run(manual, ["login", "status"], 8000);
-          return codexSignedIn(`${stdout}\n${stderr}`);
-        },
-        reason: "Codex is not signed in and its model provider needs an OpenAI account — run `codex login` in a terminal"
-      },
-      configDir: () => codexHome()
-    }),
+    available: async (opts) => {
+      const state = await available(opts);
+      if (state.need !== "install") return state;
+      // Without npm the declared command only fails in the terminal, so offer what this machine has; the cask is macOS-only.
+      const [npm, brew] = await Promise.all([localCli("npm").locate({ fresh: opts?.fresh }), process.platform === "darwin" ? localCli("brew").locate({ fresh: opts?.fresh }) : null]);
+      return { ...state, setup: { ...setup, install: codexInstall({ npm: npm.state === "ready", brew: brew?.state === "ready" }) } };
+    },
     checkCli: (file) => cli.check(file),
     mcpLink: codexMcpLink(ctx, cli),
-    setup: { install: ["npm install -g @openai/codex"], signIn: "codex login", docs: "https://github.com/openai/codex", suggested: true }
+    setup
   };
 }
