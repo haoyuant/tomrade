@@ -31,7 +31,10 @@
     "cordis": "4.0.0-rc.8"
   },
   "devDependencies": {
+    "@tomradex/domain": "workspace:*",
+    "@tomradex/tools": "workspace:*",
     "@types/node": "^26.2.0",
-    "typescript": "^6.0.0"
+    "typescript": "^6.0.0",
+    "zod": "^4.4.3"
   }
 }
