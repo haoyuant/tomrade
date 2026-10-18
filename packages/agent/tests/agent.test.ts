@@ -583,6 +583,37 @@ describe("crash recovery", () => {
     // already terminal — cancelling again is a genuine no-op
     expect(agent.cancel(stale.id)).toBe(false);
   });
+
+  it("stops a run whose project is closed under it, and the run ends without writing there or rejecting unhandled", async () => {
+    const { agent, project, projects } = await boot([]);
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      let working = false;
+      let stopped = false;
+      agent.engine({
+        id: "waiting",
+        title: "Waiting engine",
+        author: "ai:test",
+        available: async () => ({ ok: true }),
+        turn: (_input, io) => new Promise((resolve) => {
+          working = true;
+          io.signal.addEventListener("abort", () => { stopped = true; resolve({ stop: "cancelled" }); }, { once: true });
+        })
+      });
+      const thread = agent.newThread(project.id, "waiting");
+      agent.send(project.id, thread.id, { kind: "text", text: "take your time" });
+      await vi.waitFor(() => expect(working).toBe(true));
+      projects.remove(project.id);
+      await vi.waitFor(() => expect(agent.activeRuns()).toHaveLength(0));
+      await new Promise((r) => setTimeout(r, 50));
+      expect(stopped).toBe(true);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
 });
 
 describe("the knobs a thread opens on", () => {

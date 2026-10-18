@@ -384,6 +384,10 @@ export class Agent extends Service {
     this.ctx.on("db/opened", (projectId) => this.store.reconcileInterrupted(projectId, this.words()("interrupted")));
     for (const projectId of this.ctx.db.openIds()) this.armParked(projectId);
     this.ctx.on("db/opened", (projectId) => this.armParked(projectId));
+    // A project closing (removed from this machine) stops the runs working in it.
+    this.ctx.on("db/closed", (projectId) => {
+      for (const rc of this.activeById.values()) if (rc.projectId === projectId) rc.abort.abort();
+    });
     this.ctx.effect(() => () => {
       for (const timer of this.parkTimers.values()) clearTimeout(timer);
       this.parkTimers.clear();
@@ -1638,7 +1642,7 @@ export class Agent extends Service {
         result = { stop: "error", error: message(err), details: describeFailure({ error: err }) };
       }
     } finally {
-      rc.settleRetry(result?.stop !== "error" && result?.stop !== "cancelled" && !!result);
+      if (this.ctx.db.has(rc.projectId)) rc.settleRetry(result?.stop !== "error" && result?.stop !== "cancelled" && !!result);
       this.finish(rc, await this.runFollowUps(rc, result ?? { stop: "error", error: "engine returned nothing" }));
     }
   }
@@ -1749,6 +1753,8 @@ export class Agent extends Service {
     rc.abort.abort();
     this.activeByThread.delete(rc.threadId);
     this.activeById.delete(rc.run.id);
+    // Its project closed under it (removed, or the app quitting) and took the file along: there is nowhere to write how it ended.
+    if (!this.ctx.db.has(rc.projectId)) return;
     // A run cut short keeps what it had already said, marked as unfinished, and says why it ended.
     if ((result.stop === "cancelled" || result.stop === "error") && rc.partial.text.trim()) {
       this.appendAndBroadcast(rc.projectId, rc.threadId, "agent", { type: "text", text: `${rc.partial.text.trim()} …` }, rc.run.id);
