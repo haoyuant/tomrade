@@ -31,8 +31,15 @@ export function useGateWords() {
         return { lead: t("codeLink.gateMcp") };
       case "locked":
         return { lead: t("codeLink.gateLocked", { key: itemKey }) };
-      case "workdir":
+      case "workdir": {
+        const cause = f.cause;
+        if (cause?.code === "no-board") return { lead: t("codeLink.gateWorkdirNoBoard") };
+        if (cause?.code === "no-board-repo") return { lead: t("codeLink.gateWorkstream", { board }) };
+        if (cause?.code === "unknown-repo") return { lead: t("codeLink.gateWorkdirUnknownRepo", { board, repo: cause.repoId ?? "?" }) };
+        if (cause?.code === "no-hub") return { lead: t("codeLink.gateWorkdirNoHub") };
+        if (cause?.code === "branch-in-use" && cause.branch && cause.heldAt) return { lead: t("codeLink.gateWorkdirBranchInUse", { branch: cause.branch, at: cause.heldAt }) };
         return { lead: t("codeLink.gateWorkdir"), detail: f.message };
+      }
       case "readiness":
         return f.bootstrapKey ? { lead: t("codeLink.gateReadiness", { repo, bootstrap: f.bootstrapKey, key: itemKey }) } : { lead: f.message };
       case "blocked":

@@ -1867,18 +1867,9 @@ importers:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8
     devDependencies:
-      '@tomradex/testkit':
-        specifier: workspace:*
-        version: link:../testkit
-      '@tomradex/tools':
-        specifier: workspace:*
-        version: link:../tools
       typescript:
         specifier: ^6.0.0
         version: 6.0.3
-      zod:
-        specifier: ^4.4.3
-        version: 4.4.3
 
   packages/pet:
     dependencies:
@@ -2387,12 +2378,21 @@ importers:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8
     devDependencies:
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@tomradex/tools':
+        specifier: workspace:*
+        version: link:../tools
       '@types/node':
         specifier: ^26.2.0
         version: 26.2.0
       typescript:
         specifier: ^6.0.0
         version: 6.0.3
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
 
   packages/tools:
     dependencies:

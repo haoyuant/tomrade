@@ -25,8 +25,11 @@ export type UpdatePhase =
   | { kind: "ready"; version: string }
   | { kind: "failed"; message: string };
 
-/** Why this build cannot replace itself: a checkout updates with git; a Mac copy outside Applications cannot be written. */
-export type UpdateBlock = "checkout" | "location" | "unsupported";
+/**
+ * Why this build cannot replace itself: a checkout updates with git; a local build (`--dir`) has no
+ * app-update.yml to name its feed; a Mac copy outside Applications cannot be written.
+ */
+export type UpdateBlock = "checkout" | "local-build" | "location" | "unsupported";
 
 export interface UpdateStatus {
   version: string;
@@ -234,6 +237,8 @@ export class Updates {
 
 function blockedHere(): UpdateBlock | null {
   if (!app.isPackaged && !process.env.TOMRADE_UPDATE_URL) return "checkout";
+  // electron-builder writes the feed file only for installer targets; without it every check fails with ENOENT.
+  if (app.isPackaged && !process.env.TOMRADE_UPDATE_URL && !fs.existsSync(path.join(process.resourcesPath, "app-update.yml"))) return "local-build";
   if (process.platform === "darwin" && app.isPackaged && !app.isInApplicationsFolder()) return "location";
   if (process.platform === "linux" && !process.env.APPIMAGE) return "unsupported";
   return null;

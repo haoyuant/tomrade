@@ -37,6 +37,10 @@ export interface SettingsSection<T = unknown> {
   id: string;
   title: string;
   description?: string;
+  /**
+   * Drawn from its JSON Schema. `.meta({ title })` and `.describe()` label a
+   * field; `.meta({ advanced: true })` folds it under Advanced in the pane.
+   */
   schema: z.ZodType<T>;
   defaults: T;
   /** Lower renders first. Core sections sit below 10. */

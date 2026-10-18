@@ -1,7 +1,7 @@
 import type {} from "cordis";
 
-export { CodeLink, CodeLinkConfig, AUTHOR, ago, compareUrl, lastSaid, primaryOf, type CodeSummaryView, type ConnectResult, type OpenPrResult, type MergeCheckView, MERGE_COMMAND, type RepoPolicyPatch, type ScanSummary, type UnlinkedBranch } from "./service.js";
-export { CONNECT_AGENTS, codexSyncSkill, hookCommand, hookCommands, tomradeSection, writeConnectFiles, type ConnectAgent, type ConnectInput, type SkippedAgent, type SkipReason } from "./connect.js";
+export { CodeLink, CodeLinkConfig, AUTHOR, ago, compareUrl, lastSaid, primaryOf, type CodeSummaryView, type ConnectMode, type ConnectResult, type OpenPrResult, type MergeCheckView, MERGE_COMMAND, type RepoPolicyPatch, type ScanSummary, type UnlinkedBranch } from "./service.js";
+export { CLAUDE_LOCAL_SETTINGS, CONNECT_AGENTS, CONNECT_FILES, codexSyncSkill, hookCommand, hookCommands, tomradeSection, writeConnectFiles, type ConnectAgent, type ConnectInput, type LocalConnect, type SkippedAgent, type SkipReason } from "./connect.js";
 export { SYNC_PROMPT, syncInstructions, syncPrompt, syncSteps, type SyncScope } from "./sync.js";
 export { covered, decisionsDir, listDecisions, recordDecision, type Decision as DecisionNote, type DecisionInput, type DecisionStatus } from "./decisions.js";
 export {
@@ -31,7 +31,7 @@ export { classifyRemoteFailure, probeRemote, readRemoteIdentity, remoteFailureDe
 export { githubPull, readPull, type ForgePull } from "./forge.js";
 export { decide, type Decision, type Evidence, type PrState, type RulePolicy } from "./rules.js";
 export { DEFAULT_BRANCH_TEMPLATE, SLUG_MAX, branchFor, deliveredKeys, keysInText, parseBranch, slugify, subjectPr, titleSlug, usableSlug } from "./keys.js";
-export { Starter, type StartGate, type StartMode, type StartOptions, type StartResult } from "./start.js";
+export { Starter, type StartGate, type StartMode, type StartOptions, type StartResult, type WorkdirCause } from "./start.js";
 export { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
 export { Sessions, HERDR_PANE_HEADER, HERDR_YIELD_MS, HOOK_EVENTS, describeTool, hooksSettings, piExtension, sessionContext, writeGeminiHome, END_AFTER_MS, IDLE_AFTER_MS, type SessionMoment, type SessionsOptions } from "./sessions.js";
 export { TerminalSettings, fillTemplate, launchTerminal, optionFlags, terminalApps, terminalTemplate, withOptions, type HerdrTerminal, type LaunchResult } from "./terminal.js";

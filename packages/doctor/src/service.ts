@@ -615,7 +615,7 @@ export class Doctor extends Service {
         };
         if (state.ok) return { state: "ok", line: cli?.path ? `${words("engineReady")} · ${(cli.version ? words("cliFoundVersion", { path: cli.path, version: cli.version }) : words("cliFound", { path: cli.path }))}` : words("engineReady"), facts };
         const actions: CardAction[] =
-          state.need === "install" && engine.setup?.install.length ? [{ kind: "install", engineId: id, label: words("actionInstall", { engine: engine.title }) }]
+          state.need === "install" && (state.setup ?? engine.setup)?.install.length ? [{ kind: "install", engineId: id, label: words("actionInstall", { engine: engine.title }) }]
           : state.need === "sign-in" && engine.setup?.signIn ? [{ kind: "sign-in", engineId: id, label: words("actionSignIn", { engine: engine.title }) }]
           : state.need === "model" ? [{ kind: "settings", label: words("actionModelSettings") }]
           : [{ kind: "settings", engineId: id, label: words("actionSettings", { engine: engine.title }) }];

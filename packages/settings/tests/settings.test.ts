@@ -48,7 +48,7 @@ describe("settings", () => {
       name: "demo",
       inject: ["settings"],
       apply(ctx) {
-        ctx.settings.register({ id: "demo", title: "Demo", schema: z.object({ days: z.number().int().min(1), label: z.string() }), defaults: { days: 14, label: "stale" } });
+        ctx.settings.register({ id: "demo", title: "Demo", schema: z.object({ days: z.number().int().min(1), label: z.string().meta({ advanced: true }) }), defaults: { days: 14, label: "stale" } });
       }
     });
     expect(ctx.settings.get().demo).toEqual({ days: 14, label: "stale" });
@@ -59,6 +59,8 @@ describe("settings", () => {
     const card = ctx.settings.sections().find((s) => s.id === "demo") as SettingsSectionView;
     expect(card.title).toBe("Demo");
     expect((card.schema.properties as Record<string, unknown>).days).toMatchObject({ type: "integer" });
+    // a field's meta rides along, which is how a plugin folds a knob under Advanced
+    expect((card.schema.properties as Record<string, unknown>).label).toMatchObject({ type: "string", advanced: true });
 
     await fiber.dispose();
     expect(ctx.settings.sections().map((s) => s.id)).toEqual(["theme", "themeAutomation", "customThemes", "language"]);

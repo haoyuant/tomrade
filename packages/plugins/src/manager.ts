@@ -347,7 +347,7 @@ export class Plugins extends Service {
   private describe(row: PluginRow, provides: string[], holds: string[]): PluginView {
     const fiber = this.fibers.get(row.id);
     const error = this.errors.get(row.id);
-    const base: Omit<PluginView, "state"> = { id: row.id, name: row.name, config: row.config, provides, injects: Object.keys(fiber?.inject ?? {}), holds, implements: this.contractsOf(row, fiber) };
+    const base: Omit<PluginView, "state"> = { id: row.id, name: row.name, ...(row.title ? { title: row.title } : {}), config: row.config, provides, injects: Object.keys(fiber?.inject ?? {}), holds, implements: this.contractsOf(row, fiber) };
     const store = this.config.extensions;
     if (store?.has(row.id)) {
       try {

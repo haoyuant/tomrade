@@ -29,21 +29,31 @@ afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 const git = (args: string[], cwd: string) => execFileSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } }).trim();
 
 let n = 0;
+/** Built once with git, then copied: every spawn costs, and a fresh repository is the same bytes each time. */
+let template: { remote: string; checkout: string } | null = null;
 function codeRepo(): { remote: string; checkout: string } {
+  if (!template) {
+    const remote = path.join(root, "template-remote.git");
+    fs.mkdirSync(remote, { recursive: true });
+    git(["init", "--bare", "-b", "main", "."], remote);
+    const checkout = path.join(root, "template-checkout");
+    fs.mkdirSync(checkout, { recursive: true });
+    git(["init", "-q", "-b", "main"], checkout);
+    git(["remote", "add", "origin", remote], checkout);
+    git(["config", "user.email", "dev@localhost"], checkout);
+    git(["config", "user.name", "Dev"], checkout);
+    fs.writeFileSync(path.join(checkout, "package.json"), '{ "name": "app" }\n');
+    fs.writeFileSync(path.join(checkout, "CLAUDE.md"), "# app\n\nRun `pnpm test`.\n\n## Layout\n\nsrc/ holds it.\n");
+    git(["add", "-A"], checkout);
+    git(["commit", "-q", "-m", "initial"], checkout);
+    git(["push", "-q", "-u", "origin", "HEAD:refs/heads/main"], checkout);
+    template = { remote, checkout };
+  }
   const remote = path.join(root, `remote-${n++}.git`);
-  fs.mkdirSync(remote, { recursive: true });
-  git(["init", "--bare", "-b", "main", "."], remote);
   const checkout = path.join(root, `checkout-${n++}`);
-  fs.mkdirSync(checkout, { recursive: true });
-  git(["init", "-q", "-b", "main"], checkout);
-  git(["remote", "add", "origin", remote], checkout);
-  git(["config", "user.email", "dev@localhost"], checkout);
-  git(["config", "user.name", "Dev"], checkout);
-  fs.writeFileSync(path.join(checkout, "package.json"), '{ "name": "app" }\n');
-  fs.writeFileSync(path.join(checkout, "CLAUDE.md"), "# app\n\nRun `pnpm test`.\n\n## Layout\n\nsrc/ holds it.\n");
-  git(["add", "-A"], checkout);
-  git(["commit", "-q", "-m", "initial"], checkout);
-  git(["push", "-q", "-u", "origin", "HEAD:refs/heads/main"], checkout);
+  fs.cpSync(template.remote, remote, { recursive: true });
+  fs.cpSync(template.checkout, checkout, { recursive: true });
+  git(["remote", "set-url", "origin", remote], checkout);
   return { remote, checkout };
 }
 
@@ -103,8 +113,11 @@ describe("connecting a repository", () => {
     expect(claude).toContain("## Layout\n\nkeep me");
     expect(fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8")).toContain('claim_ticket("APP-42")');
     // Codex takes MCP instructions for tool notes, so AGENTS.md has it fetch the rules; Claude Code reads them from the instructions.
-    expect(fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8")).toContain("Before your first reply in every session, call the `tomrade` MCP tool `get_project_rules`");
+    expect(fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8")).toContain("When the `tomrade` MCP server is available, call its tool `get_project_rules` before your first reply in every session");
     expect(claude).not.toContain("get_project_rules");
+    // The file is committed while Tomrade is one developer's: a clone without it is told to carry on as usual.
+    expect(claude).toContain("This section applies only when the `tomrade` MCP server is available in your session.");
+    expect(claude).toContain("and the `tomrade` server is available");
     const skill = fs.readFileSync(path.join(dir, ".agents", "skills", "tomrade-sync", "SKILL.md"), "utf8");
     expect(skill).toMatch(/^---\nname: tomrade-sync\ndescription: "Bring .*\(project \\"App\\"\).*"\n---\n/);
     expect(skill).toContain("ticket keys look like APP-42");
@@ -477,6 +490,65 @@ describe("connecting a repository", () => {
     expect(git(["worktree", "list"], checkout).split("\n")).toHaveLength(1);
     expect(fs.existsSync(path.join(checkout, ".mcp.json"))).toBe(false);
     expect(git(["status", "--porcelain"], checkout)).toBe("");
+  });
+
+  it("connects for this machine only: files in the checkout kept out of git, a tracked file untouched and its agent skipped, and sessions report with no pull request", async () => {
+    const { codeLink, ctx, project, repo, checkout } = await machine();
+    // A Cursor server the team committed: a machine-only connection cannot change it.
+    fs.mkdirSync(path.join(checkout, ".cursor"), { recursive: true });
+    fs.writeFileSync(path.join(checkout, ".cursor/mcp.json"), JSON.stringify({ mcpServers: { team: { command: "x" } } }));
+    git(["add", "-A"], checkout);
+    git(["commit", "-q", "-m", "the team's cursor server"], checkout);
+    codeLink.setRepoPolicy(project.id, repo.id, { connectAgents: ["claude-code", "codex", "cursor"] });
+    const result = await codeLink.connect(project.id, repo.id, "local");
+    expect(result).toMatchObject({ local: true, committed: false, pushed: false, url: null, branch: "" });
+    expect(result.files.sort()).toEqual([".agents/skills/tomrade-sync/SKILL.md", ".claude/settings.local.json", ".codex/config.toml", ".mcp.json"]);
+    expect(result.skipped).toEqual([{ agent: "cursor", file: ".cursor/mcp.json", reason: "tracked" }]);
+    expect(result.message).toContain("this machine only");
+    // Nothing for git to see: the files are excluded in this clone; the tracked one, the instructions and the team's settings file are untouched.
+    expect(git(["status", "--porcelain"], checkout)).toBe("");
+    expect(fs.readFileSync(path.join(checkout, ".git/info/exclude"), "utf8")).toContain("# Tomrade: agent connection files for this machine only\n/.mcp.json\n/.codex/config.toml\n");
+    // Ignored either by Tomrade's exclude or already by this machine's global git excludes (Claude Code adds one when it writes the file).
+    expect(git(["check-ignore", ".claude/settings.local.json"], checkout)).toBe(".claude/settings.local.json");
+    expect(fs.readFileSync(path.join(checkout, ".cursor/mcp.json"), "utf8")).not.toContain("tomrade");
+    expect(fs.readFileSync(path.join(checkout, "CLAUDE.md"), "utf8")).not.toContain("Tomrade");
+    expect(fs.existsSync(path.join(checkout, "AGENTS.md"))).toBe(false);
+    expect(fs.existsSync(path.join(checkout, ".claude/settings.json"))).toBe(false);
+    expect(git(["branch", "--list", "tomrade/connect"], checkout)).toBe("");
+    // Claude Code loads the server without asking, and its hooks post from its personal settings file.
+    const settings = JSON.parse(fs.readFileSync(path.join(checkout, ".claude/settings.local.json"), "utf8")) as { enabledMcpjsonServers: string[]; hooks: Record<string, { hooks: { command: string }[] }[]> };
+    expect(settings.enabledMcpjsonServers).toEqual(["tomrade"]);
+    expect(settings.hooks.SessionStart[0]!.hooks[0]!.command).toContain(ctx.mcp.eventUrl);
+    // Cursor was skipped, so with it chosen the repository is not connected; without it, it is — on this machine alone.
+    expect((await codeLink.connection(project.id, repo.id)).state).toBe("unconnected");
+    codeLink.setRepoPolicy(project.id, repo.id, { connectAgents: ["claude-code", "codex"] });
+    const view = await codeLink.connection(project.id, repo.id);
+    expect(view).toMatchObject({ state: "connected", local: true, configuredUrl: ctx.mcp.urlFor(project.id) });
+    expect(view.agents.find((agent) => agent.id === "claude-code")).toMatchObject({ tools: true, tracking: "hooks", instructions: false });
+    expect(view.agents.find((agent) => agent.id === "codex")).toMatchObject({ tools: true, tracking: "hooks" });
+    expect(await codeLink.connect(project.id, repo.id, "local")).toMatchObject({ files: [], local: true, message: "Connected" });
+    // A Codex session in the checkout reports through the excluded hooks, with no pull request anywhere.
+    await fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json", "X-Tomrade-Agent": "codex" }, body: JSON.stringify({ hook_event_name: "SessionStart", session_id: "codex-1", cwd: checkout }) });
+    expect(codeLink.sessionsOf(project.id)).toEqual([expect.objectContaining({ agent: "codex", externalId: "codex-1", repoId: repo.id, state: "running" })]);
+    // The team's connection is still open from a machine-only one, on its own branch as ever.
+    expect(await codeLink.connect(project.id, repo.id)).toMatchObject({ committed: true, pushed: true, branch: "tomrade/connect" });
+    expect(git(["status", "--porcelain"], checkout)).toBe("");
+  });
+
+  it("takes the same project committed on another port as connected to that Tomrade, never a reason to reconnect", async () => {
+    const { codeLink, ctx, project, repo, checkout } = await machine();
+    const mcpUrl = ctx.mcp.urlFor(project.id)!;
+    const port = new URL(mcpUrl).port;
+    const other = (url: string) => url.replace(`:${port}/`, `:${Number(port) + 1}/`);
+    writeConnectFiles(checkout, { projectName: project.name, mcpUrl: other(mcpUrl), eventUrl: other(ctx.mcp.eventUrl!), prefix: "TOM", branchTemplate: "{key}/{slug}" });
+    git(["add", "-A"], checkout);
+    git(["commit", "-q", "-m", "connected to the development build"], checkout);
+    const view = await codeLink.connection(project.id, repo.id);
+    expect(view).toMatchObject({ state: "connected", configuredUrl: other(mcpUrl) });
+    expect(view.local).toBeUndefined();
+    expect(view.agents.filter((agent) => agent.chosen).map((agent) => [agent.tools, agent.tracking === "hooks" || agent.id === "gemini"])).toEqual(Array(7).fill([true, true]));
+    expect(await codeLink.connect(project.id, repo.id)).toMatchObject({ committed: false, files: [], message: "Connected" });
+    expect(git(["branch", "--list", "tomrade/connect"], checkout)).toBe("");
   });
 
   it("updates all Tomrade hooks when connecting to another instance", () => {
@@ -1188,7 +1260,8 @@ describe("a checkout learnt from a session's hooks", () => {
 
     await post({ hook_event_name: "SessionStart", session_id: "cli-wt", cwd: unrelated.checkout });
     await post({ hook_event_name: "SessionStart", session_id: "cli-wt", cwd: worktree });
-    await vi.waitFor(() => expect(ctx.repos.checkout(elsewhere.remote).checkout).not.toBeNull());
+    // The hook's answer is git asking the worktree for its main checkout; under load that takes longer than the 1 s default.
+    await vi.waitFor(() => expect(ctx.repos.checkout(elsewhere.remote).checkout).not.toBeNull(), { timeout: 10_000 });
     expect(fs.realpathSync(ctx.repos.checkout(elsewhere.remote).checkout!)).toBe(fs.realpathSync(elsewhere.checkout));
     // A repository placed already keeps its checkout; a folder no project repository names places nothing.
     expect(ctx.repos.checkout(remote).checkout).toBe(checkout);

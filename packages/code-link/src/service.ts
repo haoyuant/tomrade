@@ -26,7 +26,7 @@ import { GitFolder, gitRunner, type Git } from "@tomradex/storage";
 import { keysInText, parseBranch, subjectPr } from "./keys.js";
 import { githubPull, readPull, type ForgePull } from "./forge.js";
 import { inspectConnection, inspectConnectFiles, type AgentConnectionView, type ConnectionView } from "./connection.js";
-import { CONNECT_AGENTS, writeConnectFiles, type ConnectAgent, type SkippedAgent } from "./connect.js";
+import { CONNECT_AGENTS, CONNECT_FILES, writeConnectFiles, type ConnectAgent, type SkippedAgent } from "./connect.js";
 import { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
 import { SYNC_PROMPT, syncInstructions, syncPrompt, type SyncScope } from "./sync.js";
 import { githubHttps } from "@tomradex/github";
@@ -141,8 +141,12 @@ export interface MergeCheckView {
   check: CommandCheck | null;
 }
 
+/** For everyone who clones the repository (a branch and pull request), or for this machine only (untracked files in the checkout). */
+export type ConnectMode = "team" | "local";
+
 export interface ConnectResult {
   agents: AgentConnectionView[];
+  /** The connection branch; empty for this machine only. */
   branch: string;
   /** Files written or changed, relative to the repository root. */
   files: string[];
@@ -152,6 +156,8 @@ export interface ConnectResult {
   pushed: boolean;
   /** The pull request, or the compare page to open one from; null when nothing could be pushed. */
   url: string | null;
+  /** Written into the checkout and kept out of git, nothing committed. */
+  local?: boolean;
   message: string;
 }
 
@@ -189,8 +195,8 @@ declare module "@tomradex/ipc" {
     "codeLink.adoptBranch": (projectId: string, repoId: string, branch: string) => Item;
     /** Connection evidence on the default and connection branches of the local clone. */
     "codeLink.connection": (projectId: string, repoId: string) => ConnectionView;
-    /** Put agent configuration into the repository on its own branch. */
-    "codeLink.connect": (projectId: string, repoId: string) => ConnectResult;
+    /** Put agent configuration into the repository on its own branch, or (local) into the checkout alone, kept out of git. */
+    "codeLink.connect": (projectId: string, repoId: string, mode?: ConnectMode) => ConnectResult;
     /** Install or sign in to a local agent in a terminal, with the command its engine declares. */
     "codeLink.setupInTerminal": (engineId: string, step: "install" | "signIn") => { launched: boolean; command: string };
     /** What the Start dialog last ran with on this machine, so it opens the way it was left. */
@@ -578,7 +584,7 @@ export class CodeLink extends Service {
       ctx.ipc.handle("codeLink.worktree", (projectId, itemId) => ctx.codeLink.worktreeOf(projectId, itemId));
       ctx.ipc.handle("codeLink.adoptBranch", (projectId, repoId, branch) => ctx.codeLink.adoptBranch(projectId, repoId, branch));
       ctx.ipc.handle("codeLink.connection", (projectId, repoId) => ctx.codeLink.connection(projectId, repoId));
-      ctx.ipc.handle("codeLink.connect", (projectId, repoId) => ctx.codeLink.connect(projectId, repoId));
+      ctx.ipc.handle("codeLink.connect", (projectId, repoId, mode) => ctx.codeLink.connect(projectId, repoId, mode));
       ctx.ipc.handle("codeLink.setupInTerminal", (engineId, step) => ctx.codeLink.setupInTerminal(engineId, step));
       ctx.ipc.handle("codeLink.startDefaults", () => ctx.codeLink.startDefaults());
       ctx.ipc.handle("codeLink.herdrStatus", () => ctx.codeLink.herdrStatus());
@@ -1062,7 +1068,7 @@ export class CodeLink extends Service {
       const link = this.ctx.get("agent")?.engineOf("claude-code")?.mcpLink;
       const claudeApproval = link?.projectApproval?.(cwd);
       const claudeApprovals = link?.projectApprovals?.(cwd);
-      return { ...base, agents: current.agents, configuredUrl, state: "connected", ...(claudeApproval ? { claudeApproval } : {}), ...(claudeApprovals ? { claudeApprovals } : {}) };
+      return { ...base, agents: current.agents, configuredUrl, state: "connected", ...(current.local ? { local: true } : {}), ...(claudeApproval ? { claudeApproval } : {}), ...(claudeApprovals ? { claudeApprovals } : {}) };
     }
     for (const pendingRef of [`refs/heads/${branch}`, `refs/remotes/origin/${branch}`]) {
       if (!(await exists(pendingRef))) continue;
@@ -1070,21 +1076,24 @@ export class CodeLink extends Service {
       const pending = await inspectConnection(this.git, cwd, pendingRef, mcpUrl, mcp.eventUrl, chosen);
       if (pending.connected) return { ...base, agents: pending.agents, configuredUrl, state: "pending", url: compareUrl(repo.remote, repo.defaultBranch, branch) };
     }
-    return { ...base, agents: current.agents, configuredUrl, state: configuredUrl && configuredUrl !== mcpUrl ? "other-instance" : "unconnected" };
+    // Another project id is another instance's repository; the same project on another port is only incomplete here.
+    return { ...base, agents: current.agents, configuredUrl, state: configuredUrl && !current.sameProject ? "other-instance" : "unconnected" };
   }
 
   /**
    * Connect a repository to Tomrade for everyone who clones it: Claude and
    * Codex MCP config, agent instruction files, and Claude lifecycle hooks —
    * written in a worktree on a branch of their own and offered as a pull
-   * request, never into the user's checkout.
+   * request, never into the user's checkout. For this machine only (`local`),
+   * the same files go into the checkout untracked and listed in
+   * `.git/info/exclude`: nothing to push, merge or pull.
    */
-  async connect(projectId: string, repoId: string): Promise<ConnectResult> {
+  async connect(projectId: string, repoId: string, mode: ConnectMode = "team"): Promise<ConnectResult> {
     const repo = this.ctx.repos.get(projectId, repoId);
     if (!repo) throw new Error(`unknown repository ${repoId}`);
     const mcp = this.ctx.get("mcp");
     if (!mcp?.url) throw new Error("the MCP server is not running — enable the mcp plugin");
-    // A port taken at startup is replaced by a random one; committed, it would point nowhere after the next restart.
+    // A port taken at startup is replaced by a random one; written down, it would point nowhere after the next restart.
     if (mcp.clash) throw new Error(this.words()("connectPortClash", { port: mcp.clash.port, holder: mcp.holderText() }));
     const placement = this.ctx.repos.checkout(repo.remote);
     if (!placement.checkout || !fs.existsSync(placement.checkout)) throw new Error(`no checkout of ${repo.name} on this machine`);
@@ -1096,7 +1105,19 @@ export class CodeLink extends Service {
     // What it was connected for stays the choice, whatever is installed here later.
     if (!this.store.repoState(projectId, repoId)?.connectAgents) this.store.upsertRepoState(projectId, repoId, { connectAgents: chosen });
     const connection = await this.connection(projectId, repoId);
-    if (connection.state === "connected") {
+    const input = {
+      projectName: (this.ctx.db.for(projectId).prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name ?? "Tomrade project",
+      mcpUrl: mcp.urlFor(projectId)!,
+      eventUrl: mcp.eventUrl!,
+      prefix: this.prefixOf(projectId),
+      branchTemplate: this.store.repoState(projectId, repoId)?.branchTemplate ?? "{key}/{slug}"
+    };
+    if (mode === "local") {
+      if (connection.state === "connected") return { branch: "", agents: connection.agents, files: [], skipped: [], committed: false, pushed: false, url: null, local: true, message: w("connected") };
+      return this.connectLocally(projectId, repoId, placement.checkout, input, chosen);
+    }
+    // A connection this machine alone holds does not stand in for the team's.
+    if (connection.state === "connected" && !connection.local) {
       return { branch, agents: connection.agents, files: [], skipped: [], committed: false, pushed: false, url: null, message: w("connected") };
     }
     const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-connect-"));
@@ -1113,16 +1134,9 @@ export class CodeLink extends Service {
       throw error;
     }
     const state = this.store.repoState(projectId, repoId);
-    const project = this.ctx.db.for(projectId).prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined;
     try {
       if (await exists(base)) await this.git(["merge", "--no-edit", base], { cwd: worktree });
-      const { files, skipped } = writeConnectFiles(worktree, {
-        projectName: project?.name ?? "Tomrade project",
-        mcpUrl: mcp.urlFor(projectId)!,
-        eventUrl: mcp.eventUrl!,
-        prefix: this.prefixOf(projectId),
-        branchTemplate: state?.branchTemplate ?? "{key}/{slug}"
-      }, chosen);
+      const { files, skipped } = writeConnectFiles(worktree, input, chosen);
       const agents = inspectConnectFiles(worktree, mcp.urlFor(projectId)!, mcp.eventUrl!, chosen).agents;
       const folder = new GitFolder(this.git, worktree);
       const committed = files.length > 0 && (await folder.commit("Connect this repository to Tomrade\n\nProject MCP config lets Claude Code, Codex and WorkBuddy discover Tomrade, a project extension does it for Pi and opencode.json with a plugin for OpenCode, agent instructions describe the ticket conventions, and their hooks report session lifecycle back."));
@@ -1154,6 +1168,34 @@ export class CodeLink extends Service {
       fs.rmSync(temporary, { recursive: true, force: true });
       this.notify(projectId);
     }
+  }
+
+  /**
+   * The chosen agents' files, written into the checkout and kept out of git
+   * through `.git/info/exclude`: a tracked file is never changed (its agent
+   * is skipped and says so), and the team's CLAUDE.md / AGENTS.md stay as
+   * they are — the agents get the rules from the MCP server.
+   */
+  private async connectLocally(projectId: string, repoId: string, checkout: string, input: Parameters<typeof writeConnectFiles>[1], chosen: ConnectAgent[]): Promise<ConnectResult> {
+    const listed = await this.git(["ls-files", "-z", "--", ...CONNECT_FILES], { cwd: checkout, ok: true });
+    const tracked = new Set(listed.code === 0 ? listed.stdout.split("\0").filter(Boolean) : CONNECT_FILES);
+    const { files, skipped } = writeConnectFiles(checkout, input, chosen, { tracked });
+    // Only what git does not ignore already; the exclude file is this clone's own, never committed.
+    const exposed: string[] = [];
+    for (const file of files) {
+      if ((await this.git(["check-ignore", "-q", "--", file], { cwd: checkout, ok: true })).code !== 0) exposed.push(file);
+    }
+    if (exposed.length) {
+      const where = (await this.git(["rev-parse", "--git-path", "info/exclude"], { cwd: checkout, ok: true })).stdout.trim();
+      const exclude = path.isAbsolute(where) ? where : path.join(checkout, where);
+      fs.mkdirSync(path.dirname(exclude), { recursive: true });
+      const existing = fs.existsSync(exclude) ? fs.readFileSync(exclude, "utf8") : "";
+      const lines = ["# Tomrade: agent connection files for this machine only", ...exposed.map((file) => `/${file}`)];
+      fs.writeFileSync(exclude, `${existing.replace(/\s*$/, "")}${existing.trim() ? "\n\n" : ""}${lines.join("\n")}\n`);
+    }
+    this.notify(projectId);
+    const { agents } = await this.connection(projectId, repoId);
+    return { branch: "", agents, files, skipped, committed: false, pushed: false, url: null, local: true, message: this.words()(files.length === 1 ? "connectedLocallyOne" : "connectedLocallyMany", { n: files.length }) };
   }
 
   /**
@@ -2034,9 +2076,9 @@ export class CodeLink extends Service {
     };
     ctx.contributions.command({ id: "code-link.accept-proposal", title: () => this.words()("cmdAccept"), group, run: settle(true) });
     ctx.contributions.command({ id: "code-link.reject-proposal", title: () => this.words()("cmdReject"), group, run: settle(false) });
-    ctx.contributions.command({
-      id: "code-link.connect",
-      title: () => this.words()("cmdConnect"),
+    const connectCommand = (id: string, title: () => string, mode: ConnectMode) => ctx.contributions.command({
+      id,
+      title,
       group,
       run: async ({ projectId, itemId }) => {
         if (!projectId) return { toast: this.words()("openProject") };
@@ -2045,10 +2087,12 @@ export class CodeLink extends Service {
         const repos = this.ctx.repos.list(projectId);
         const repoId = fromItem ?? (repos.length === 1 ? repos[0]!.id : null);
         if (!repoId) return { toast: this.words()("pickWorkstream") };
-        const r = await this.connect(projectId, repoId);
+        const r = await this.connect(projectId, repoId, mode);
         return { toast: r.message };
       }
     });
+    connectCommand("code-link.connect-local", () => this.words()("cmdConnectLocal"), "local");
+    connectCommand("code-link.connect", () => this.words()("cmdConnect"), "team");
     ctx.contributions.command({
       id: "code-link.rescan",
       title: () => this.words()("cmdRescan"),

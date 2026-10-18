@@ -23,7 +23,7 @@ class FakeCode extends Service {
   static provide = "codeLink";
   static inject = ["agent", "items"];
   starts: StartOpts[] = [];
-  gate: { gate: string; message: string; blockers?: string[] } | null = null;
+  gate: { gate: string; message: string; blockers?: string[]; board?: { name: string }; cause?: { code: string; branch?: string; heldAt?: string } } | null = null;
   /** While set, a start waits for it, as a real one waits on its worktree and engine. */
   hold: Promise<void> | null = null;
   constructor(ctx: Context) { super(ctx, "codeLink"); }
@@ -328,6 +328,23 @@ describe("starting a ticket from IM", () => {
     await other.receive(say("c", `/start ${other.item.key} model=fast`));
     const gate = await other.said(/^Couldn't start .*: No checkout of tomrade on this machine\. It's fixed on the desktop\.$/);
     expect(gate.content.elements).toEqual([{ type: "links", links: [{ label: "Open in Tomrade", url: `tomrade://item/${encodeURIComponent(other.project.id)}/${other.item.key}` }] }]);
+  });
+
+  it("says why there is no working folder, and never without the detail", async () => {
+    const w = await boot();
+    w.code.gate = { gate: "workdir", message: "Docs has no repository yet", board: { name: "Docs" }, cause: { code: "no-board-repo" } };
+    await w.receive(say("a", `/start ${w.item.key} model=fast`));
+    await w.said(/: the workstream “Docs” has no repository yet — link one under Repositories on the desktop\./);
+
+    const held = await boot();
+    held.code.gate = { gate: "workdir", message: "held", cause: { code: "branch-in-use", branch: "tom-1/x", heldAt: "/work/other" } };
+    await held.receive(say("b", `/start ${held.item.key} model=fast`));
+    await held.said(/: tom-1\/x is already checked out in another worktree \(\/work\/other\)/);
+
+    const other = await boot();
+    other.code.gate = { gate: "workdir", message: "git worktree add failed: disk full" };
+    await other.receive(say("c", `/start ${other.item.key} model=fast`));
+    await other.said(/: no working folder \(git worktree add failed: disk full\)\./);
   });
 
   it("in a group, only the person the conversation is with starts, after seeing the group will see it", async () => {

@@ -7,7 +7,7 @@ import type { PortClash } from "@tomradex/mcp";
 import { CURSOR_HOOK_SCRIPT, hasCursorHooks } from "@tomradex/engine-cursor";
 import { configuredMcpUrl } from "@tomradex/engine-opencode";
 import { outsideExtensionUrl } from "@tomradex/engine-pi";
-import { CODEX_HOOK_EVENTS, hasHooks, hasTomradeSection, hookCommands, OPENCODE_PLUGIN, PI_EXTENSION, type ConnectAgent } from "./connect.js";
+import { anyHost, CLAUDE_LOCAL_SETTINGS, CODEX_HOOK_EVENTS, CONNECT_FILES, hasHooks, hasTomradeSection, hookCommands, namesEndpoint, OPENCODE_PLUGIN, PI_EXTENSION, type ConnectAgent } from "./connect.js";
 import { HOOK_EVENTS, stripJsonComments } from "./sessions.js";
 
 export interface AgentConnectionView {
@@ -24,11 +24,14 @@ export interface AgentConnectionView {
 export interface ConnectionView {
   state: "unconnected" | "connected" | "pending" | "other-instance" | "no-checkout" | "unavailable";
   mcpUrl: string | null;
+  /** The address the repository's files name; on another host or port with the same project id, it is still connected — to that Tomrade. */
   configuredUrl: string | null;
   instance: "packaged" | "dev";
   branch: string;
   url: string | null;
   agents: AgentConnectionView[];
+  /** Connected only through files on this machine, kept out of git; the committed files alone do not connect it. */
+  local?: boolean;
   /** Once connected: whether Claude Code in the checkout loads the committed `.mcp.json` server, which it asks about once. */
   claudeApproval?: "approved" | "rejected" | "pending";
   /** The same for each Claude Code config folder in use here, with the command that starts Claude Code under it. */
@@ -37,7 +40,7 @@ export interface ConnectionView {
   clash?: PortClash;
 }
 
-const FILES = [".mcp.json", ".claude/settings.json", ".codebuddy/settings.json", ".codex/config.toml", PI_EXTENSION, "opencode.json", OPENCODE_PLUGIN, ".cursor/mcp.json", ".cursor/hooks.json", CURSOR_HOOK_SCRIPT, ".gemini/settings.json", "CLAUDE.md", "AGENTS.md"];
+const FILES: readonly string[] = CONNECT_FILES;
 /** Agents whose committed hooks a connected repository carries. */
 const HOOKED = new Set<AgentConnectionView["id"]>(["claude-code", "codex", "workbuddy", "pi", "opencode", "cursor"]);
 const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -45,6 +48,9 @@ function json(text: string | undefined): Record<string, unknown> {
   try { return object(JSON.parse(stripJsonComments(text ?? ""))); } catch { return {}; }
 }
 const serverUrl = (config: Record<string, unknown>, key = "url") => object(object(config.mcpServers).tomrade)[key];
+const asUrl = (value: unknown): string | null => (typeof value === "string" ? value : null);
+/** The same project on any Tomrade: a dev build or a teammate on another port is not another instance to reconnect to. */
+const sameProject = (configured: string | null, mcpUrl: string) => configured !== null && anyHost(configured) === anyHost(mcpUrl);
 
 function opencodeUrl(text: string | undefined): string | null {
   try { return configuredMcpUrl(stripJsonComments(text || "{}")); } catch { return null; }
@@ -53,20 +59,30 @@ function opencodeUrl(text: string | undefined): string | null {
 function inspect(files: Record<string, string>, mcpUrl: string, eventUrl: string, chosen: readonly ConnectAgent[]) {
   const mcp = json(files[".mcp.json"]);
   const settings = json(files[".claude/settings.json"]);
+  const localSettings = json(files[CLAUDE_LOCAL_SETTINGS]);
   let codex: Record<string, unknown> = {};
   try { codex = parseToml(files[".codex/config.toml"] ?? ""); } catch { /* Invalid config is not connected. */ }
-  const configuredUrl = typeof serverUrl(mcp) === "string" ? serverUrl(mcp) as string : null;
+  const urls = {
+    mcp: asUrl(serverUrl(mcp)),
+    codex: asUrl(object(object(codex.mcp_servers).tomrade).url),
+    pi: outsideExtensionUrl(files[PI_EXTENSION] ?? ""),
+    opencode: opencodeUrl(files["opencode.json"]),
+    cursor: asUrl(serverUrl(json(files[".cursor/mcp.json"]))),
+    gemini: asUrl(serverUrl(json(files[".gemini/settings.json"]), "httpUrl"))
+  };
+  const configuredUrl = urls.mcp ?? urls.codex ?? urls.pi ?? urls.opencode ?? urls.cursor ?? urls.gemini;
+  const claudeHooks = hasHooks(settings, HOOK_EVENTS, hookCommands(eventUrl), true) || hasHooks(localSettings, HOOK_EVENTS, hookCommands(eventUrl), true);
   const agents = ([
-    { id: "claude-code", title: "Claude Code", tools: configuredUrl === mcpUrl, tracking: hasHooks(settings, HOOK_EVENTS, hookCommands(eventUrl)) ? "hooks" : "none", instructions: hasTomradeSection(files["CLAUDE.md"]), reviewHooks: false },
-    { id: "codex", title: "Codex", tools: object(object(codex.mcp_servers).tomrade).url === mcpUrl, tracking: object(codex.features).hooks !== false && hasHooks(codex, CODEX_HOOK_EVENTS, hookCommands(eventUrl, "codex")) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: true },
-    { id: "workbuddy", title: "WorkBuddy", tools: configuredUrl === mcpUrl, tracking: hasHooks(json(files[".codebuddy/settings.json"]), HOOK_EVENTS, hookCommands(eventUrl, "workbuddy")) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false },
-    { id: "pi", title: "Pi", tools: outsideExtensionUrl(files[PI_EXTENSION] ?? "") === mcpUrl, tracking: files[PI_EXTENSION]?.includes(JSON.stringify(eventUrl)) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false },
-    { id: "opencode", title: "OpenCode", tools: opencodeUrl(files["opencode.json"]) === mcpUrl, tracking: files[OPENCODE_PLUGIN]?.includes(JSON.stringify(eventUrl)) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false },
-    { id: "cursor", title: "Cursor", tools: serverUrl(json(files[".cursor/mcp.json"])) === mcpUrl, tracking: hasCursorHooks(stripJsonComments(files[".cursor/hooks.json"] ?? "")) && hookCommands(eventUrl, "cursor").some((command) => !!files[CURSOR_HOOK_SCRIPT]?.includes(command)) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false },
-    { id: "gemini", title: "Gemini CLI", tools: serverUrl(json(files[".gemini/settings.json"]), "httpUrl") === mcpUrl, tracking: "none", instructions: false, reviewHooks: false }
+    { id: "claude-code", title: "Claude Code", tools: sameProject(urls.mcp, mcpUrl), tracking: claudeHooks ? "hooks" : "none", instructions: hasTomradeSection(files["CLAUDE.md"]), reviewHooks: false },
+    { id: "codex", title: "Codex", tools: sameProject(urls.codex, mcpUrl), tracking: object(codex.features).hooks !== false && hasHooks(codex, CODEX_HOOK_EVENTS, hookCommands(eventUrl, "codex"), true) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: true },
+    { id: "workbuddy", title: "WorkBuddy", tools: sameProject(urls.mcp, mcpUrl), tracking: hasHooks(json(files[".codebuddy/settings.json"]), HOOK_EVENTS, hookCommands(eventUrl, "workbuddy"), true) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false },
+    { id: "pi", title: "Pi", tools: sameProject(urls.pi, mcpUrl), tracking: namesEndpoint(files[PI_EXTENSION], eventUrl) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false },
+    { id: "opencode", title: "OpenCode", tools: sameProject(urls.opencode, mcpUrl), tracking: namesEndpoint(files[OPENCODE_PLUGIN], eventUrl) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false },
+    { id: "cursor", title: "Cursor", tools: sameProject(urls.cursor, mcpUrl), tracking: hasCursorHooks(stripJsonComments(files[".cursor/hooks.json"] ?? "")) && namesEndpoint(files[CURSOR_HOOK_SCRIPT], eventUrl) && !!files[CURSOR_HOOK_SCRIPT]?.includes("X-Tomrade-Agent: cursor") ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false },
+    { id: "gemini", title: "Gemini CLI", tools: sameProject(urls.gemini, mcpUrl), tracking: "none", instructions: false, reviewHooks: false }
   ] satisfies Omit<AgentConnectionView, "chosen">[]).map((agent): AgentConnectionView => ({ ...agent, chosen: chosen.includes(agent.id) }));
   const counted = agents.filter((agent) => agent.chosen);
-  return { agents, configuredUrl, connected: counted.length > 0 && counted.every((agent) => agent.tools) && counted.filter((agent) => HOOKED.has(agent.id)).every((agent) => agent.tracking === "hooks") };
+  return { agents, configuredUrl, sameProject: sameProject(configuredUrl, mcpUrl), connected: counted.length > 0 && counted.every((agent) => agent.tools) && counted.filter((agent) => HOOKED.has(agent.id)).every((agent) => agent.tracking === "hooks") };
 }
 
 export function inspectConnectFiles(root: string, mcpUrl: string, eventUrl: string, chosen: readonly ConnectAgent[]) {
@@ -76,11 +92,23 @@ export function inspectConnectFiles(root: string, mcpUrl: string, eventUrl: stri
   return inspect(files, mcpUrl, eventUrl, chosen);
 }
 
-/** Inspect committed configuration, never the currently checked-out ticket's files. */
+/**
+ * Inspect committed configuration, never the currently checked-out ticket's
+ * files — plus the files a machine-only connection keeps untracked in the
+ * checkout. `local` says the committed files alone would not connect it.
+ */
 export async function inspectConnection(git: Git, cwd: string, ref: string, mcpUrl: string, eventUrl: string, chosen: readonly ConnectAgent[]) {
-  const files = Object.fromEntries(await Promise.all(FILES.map(async (file) => {
+  const listed = await git(["ls-files", "-z", "--", ...FILES], { cwd, ok: true });
+  const tracked = new Set(listed.code === 0 ? listed.stdout.split("\0").filter(Boolean) : FILES);
+  const committed: Record<string, string> = {};
+  const untracked: Record<string, string> = {};
+  await Promise.all(FILES.map(async (file) => {
     const result = await git(["show", `${ref}:${file}`], { cwd, ok: true });
-    return [file, result.code === 0 ? result.stdout : ""];
-  })));
-  return inspect(files, mcpUrl, eventUrl, chosen);
+    committed[file] = result.code === 0 ? result.stdout : "";
+    if (result.code === 0 || tracked.has(file)) return;
+    try { untracked[file] = fs.readFileSync(path.join(cwd, file), "utf8"); } catch { /* Not there: nothing local for it. */ }
+  }));
+  const whole = inspect({ ...committed, ...untracked }, mcpUrl, eventUrl, chosen);
+  const local = whole.connected && !inspect(committed, mcpUrl, eventUrl, chosen).connected;
+  return { ...whole, local };
 }

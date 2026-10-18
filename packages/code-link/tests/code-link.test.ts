@@ -23,23 +23,37 @@ afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 const git = (args: string[], cwd: string) => execFileSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } }).trim();
 
 let n = 0;
+/** Each shape built once with git, then copied: every spawn costs, and a fresh repository is the same bytes each time. */
+const templates = new Map<string, { remote: string; checkout: string }>();
 /** A bare remote with one commit on main, and a developer's checkout of it. */
 function codeRepo(opts: { manifest?: boolean; empty?: boolean } = {}): { remote: string; checkout: string } {
+  const key = `${opts.manifest !== false}-${Boolean(opts.empty)}`;
+  let template = templates.get(key);
+  if (!template) {
+    const remote = path.join(root, `template-${key}-remote.git`);
+    fs.mkdirSync(remote, { recursive: true });
+    git(["init", "--bare", "-b", "main", "."], remote);
+    const checkout = path.join(root, `template-${key}-checkout`);
+    fs.mkdirSync(checkout, { recursive: true });
+    git(["init", "-q", "-b", "main"], checkout);
+    git(["remote", "add", "origin", remote], checkout);
+    git(["config", "user.email", "dev@localhost"], checkout);
+    git(["config", "user.name", "Dev"], checkout);
+    if (!opts.empty) {
+      fs.writeFileSync(path.join(checkout, "README.md"), "# app\n");
+      if (opts.manifest !== false) fs.writeFileSync(path.join(checkout, "package.json"), '{ "name": "app" }\n');
+      git(["add", "-A"], checkout);
+      git(["commit", "-q", "-m", "initial"], checkout);
+      git(["push", "-q", "-u", "origin", "HEAD:refs/heads/main"], checkout);
+    }
+    template = { remote, checkout };
+    templates.set(key, template);
+  }
   const remote = path.join(root, `remote-${n++}.git`);
-  fs.mkdirSync(remote, { recursive: true });
-  git(["init", "--bare", "-b", "main", "."], remote);
   const checkout = path.join(root, `checkout-${n++}`);
-  fs.mkdirSync(checkout, { recursive: true });
-  git(["init", "-q", "-b", "main"], checkout);
-  git(["remote", "add", "origin", remote], checkout);
-  git(["config", "user.email", "dev@localhost"], checkout);
-  git(["config", "user.name", "Dev"], checkout);
-  if (opts.empty) return { remote, checkout };
-  fs.writeFileSync(path.join(checkout, "README.md"), "# app\n");
-  if (opts.manifest !== false) fs.writeFileSync(path.join(checkout, "package.json"), '{ "name": "app" }\n');
-  git(["add", "-A"], checkout);
-  git(["commit", "-q", "-m", "initial"], checkout);
-  git(["push", "-q", "-u", "origin", "HEAD:refs/heads/main"], checkout);
+  fs.cpSync(template.remote, remote, { recursive: true });
+  fs.cpSync(template.checkout, checkout, { recursive: true });
+  git(["remote", "set-url", "origin", remote], checkout);
   return { remote, checkout };
 }
 

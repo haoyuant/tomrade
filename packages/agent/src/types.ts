@@ -413,6 +413,8 @@ export interface EngineAvailability {
   cli?: LocalCliStatus;
   /** What it can take on right now, when only part of it is ready; absent means all its capabilities. */
   capabilities?: EngineCapability[];
+  /** How it installs on this machine, when that differs from the engine's declared setup — an installer that is not here is left out. */
+  setup?: EngineSetup;
   /** The folder a local CLI reads its sign-in from, when it is not signed in (CODEX_HOME, CLAUDE_CONFIG_DIR). */
   configDir?: string;
 }

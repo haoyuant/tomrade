@@ -16,6 +16,7 @@ export function AgentConnection({ projectId, repoId, hint = false }: { projectId
   if (hint && (dismissed || !view || view.state === "connected")) return null;
   const url = connect.data?.url ?? view?.url;
   const state = view?.state;
+  const connected = state === "connected";
   // Per Claude Code config folder when this Tomrade knows them; the single answer otherwise.
   const approvals = view?.claudeApprovals ?? (view?.claudeApproval ? [{ profile: "", state: view.claudeApproval, command: "claude" }] : []);
   const unapproved = approvals.filter((a) => a.state !== "approved");
@@ -25,27 +26,38 @@ export function AgentConnection({ projectId, repoId, hint = false }: { projectId
   // The live view, so a changed choice shows at once; the last chosen agent cannot be unchecked.
   const agents = view?.agents ?? connect.data?.agents ?? [];
   const chosen = agents.filter((agent) => agent.chosen).map((agent) => agent.id);
+  const busy = connect.isPending || state === "no-checkout" || state === "unavailable" || !!clash;
+  const working = (mode: "local" | "team") => connect.isPending && (connect.variables ?? "team") === mode;
   return (
-    <div className="stack-2 repo-agent-connection" data-testid="repo-agent-connection" data-state={state} style={{ marginTop: "var(--space-3)" }}>
+    <div className="stack-2 repo-agent-connection" data-testid="repo-agent-connection" data-state={state} data-local={view?.local || undefined} style={{ marginTop: "var(--space-3)" }}>
       <div className="row">
-        <strong className="cfg-name">{state ? t(`repositories.connection_${state}`) : t("repositories.connectionChecking")}</strong>
+        <strong className="cfg-name">{connected && view?.local ? t("repositories.connectionLocal") : state ? t(`repositories.connection_${state}`) : t("repositories.connectionChecking")}</strong>
         {hint && <button type="button" className="btn btn-ghost" onClick={() => { localStorage.setItem(hintKey, "dismissed"); dismiss(true); }}>{t("repositories.connectionDismiss")}</button>}
       </div>
       {view?.mcpUrl && <p className="meta-txt dense" style={{ overflowWrap: "anywhere" }}>{t(view.instance === "packaged" ? "repositories.connectionPackaged" : "repositories.connectionDevelopment")} · {view.mcpUrl}</p>}
-      {view?.configuredUrl && view.configuredUrl !== view.mcpUrl && <p className="meta-txt dense" style={{ overflowWrap: "anywhere" }}>{t("repositories.connectionElsewhere", { url: view.configuredUrl })}</p>}
-      {state === "connected" && unapproved.map((approval) => (
+      {view?.configuredUrl && view.configuredUrl !== view.mcpUrl && <p className="meta-txt dense repo-agent-elsewhere" style={{ overflowWrap: "anywhere" }}>{t(connected ? "repositories.connectionOtherPort" : "repositories.connectionElsewhere", { url: view.configuredUrl })}</p>}
+      {connected && unapproved.map((approval) => (
         <p className="meta-txt dense cli-warn repo-agent-approval" data-approval={approval.state} data-profile={approval.profile || undefined} key={approval.profile}>
           {approvals.length > 1 && <><strong className="mono">{approval.profile.split(/[\\/]/).filter(Boolean).at(-1)}</strong> · </>}
           {t(approval.state === "pending" ? "repositories.claudeApprovalPending" : "repositories.claudeApprovalRejected", { command: approval.command })}
         </p>
       ))}
-      {state && state !== "connected" && <>
+      {state && !connected && <>
+        <p className="meta-txt dense">{t("repositories.connectionLocalFiles")}</p>
         <p className="meta-txt dense">{t("repositories.connectionFiles")}</p>
         {clash && <p className="meta-txt dense cli-warn repo-agent-clash">{clash}</p>}
-        <button type="button" className="btn btn-secondary repo-agent-connect" disabled={connect.isPending || state === "no-checkout" || state === "unavailable" || !!clash} onClick={() => connect.mutate()}>
-          {connect.isPending ? t("repositories.connectionWorking") : state === "pending" ? t("repositories.connectionRetry") : t("repositories.connectionAction")}
-        </button>
+        <div className="row" style={{ flexWrap: "wrap", gap: "var(--space-2)" }}>
+          <button type="button" className="btn btn-secondary repo-agent-connect-local" disabled={busy} onClick={() => connect.mutate("local")}>
+            {working("local") ? t("repositories.connectionWorking") : t("repositories.connectionActionLocal")}
+          </button>
+          <button type="button" className="btn btn-ghost repo-agent-connect" disabled={busy} onClick={() => connect.mutate("team")}>
+            {working("team") ? t("repositories.connectionWorking") : state === "pending" ? t("repositories.connectionRetry") : t("repositories.connectionAction")}
+          </button>
+        </div>
       </>}
+      {connected && view?.local && <button type="button" className="btn btn-ghost repo-agent-connect" disabled={busy} onClick={() => connect.mutate("team")}>
+        {working("team") ? t("repositories.connectionWorking") : t("repositories.connectionAlsoTeam")}
+      </button>}
       <button type="button" className="btn btn-ghost" disabled={connection.isFetching} onClick={() => void connection.refetch()}>{t("repositories.connectionRefresh")}</button>
       {connection.error && <p role="alert" className="meta-txt">{readableError(connection.error)}</p>}
       {connect.error && <p role="alert" className="meta-txt">{readableError(connect.error)}</p>}

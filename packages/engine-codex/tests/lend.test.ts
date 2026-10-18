@@ -43,7 +43,8 @@ it("asks Codex in a read-only sandbox with the instructions leading the prompt",
 it("ends a Codex that never answers when the call gives up, and stops its process", async () => {
   const { dir, model } = fakeCodex();
   const pidFile = path.join(dir, "pid");
-  await expect(completeJson(model, z.object({}), { system: "", user: `HANG ${pidFile}`, timeoutMs: 3000 }, "Codex")).rejects.toThrow("Codex did not answer within 3s");
+  // The fake notes its pid only once Node is up and has read the prompt; on a busy machine that alone can take seconds.
+  await expect(completeJson(model, z.object({}), { system: "", user: `HANG ${pidFile}`, timeoutMs: 10_000 }, "Codex")).rejects.toThrow("Codex did not answer within 10s");
   const pid = Number(fs.readFileSync(pidFile, "utf8"));
   await expect.poll(() => alive(pid), { timeout: 5000 }).toBe(false);
 }, 30_000);

@@ -26,9 +26,6 @@
     "cordis": "4.0.0-rc.8"
   },
   "devDependencies": {
-    "@tomradex/testkit": "workspace:*",
-    "@tomradex/tools": "workspace:*",
-    "typescript": "^6.0.0",
-    "zod": "^4.4.3"
+    "typescript": "^6.0.0"
   }
 }

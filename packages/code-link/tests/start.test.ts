@@ -31,21 +31,34 @@ afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 const git = (args: string[], cwd: string) => execFileSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } }).trim();
 
 let n = 0;
+/** Each shape built once with git, then copied: every spawn costs, and a fresh repository is the same bytes each time. */
+const templates = new Map<string, { remote: string; checkout: string }>();
 function codeRepo(opts: { manifest?: boolean } = {}): { remote: string; checkout: string } {
+  const key = `${opts.manifest !== false}`;
+  let template = templates.get(key);
+  if (!template) {
+    const remote = path.join(root, `template-${key}-remote.git`);
+    fs.mkdirSync(remote, { recursive: true });
+    git(["init", "--bare", "-b", "main", "."], remote);
+    const checkout = path.join(root, `template-${key}-checkout`);
+    fs.mkdirSync(checkout, { recursive: true });
+    git(["init", "-q", "-b", "main"], checkout);
+    git(["remote", "add", "origin", remote], checkout);
+    git(["config", "user.email", "dev@localhost"], checkout);
+    git(["config", "user.name", "Dev"], checkout);
+    fs.writeFileSync(path.join(checkout, "README.md"), "# app\n");
+    if (opts.manifest !== false) fs.writeFileSync(path.join(checkout, "package.json"), '{ "name": "app" }\n');
+    git(["add", "-A"], checkout);
+    git(["commit", "-q", "-m", "initial"], checkout);
+    git(["push", "-q", "-u", "origin", "HEAD:refs/heads/main"], checkout);
+    template = { remote, checkout };
+    templates.set(key, template);
+  }
   const remote = path.join(root, `remote-${n++}.git`);
-  fs.mkdirSync(remote, { recursive: true });
-  git(["init", "--bare", "-b", "main", "."], remote);
   const checkout = path.join(root, `checkout-${n++}`);
-  fs.mkdirSync(checkout, { recursive: true });
-  git(["init", "-q", "-b", "main"], checkout);
-  git(["remote", "add", "origin", remote], checkout);
-  git(["config", "user.email", "dev@localhost"], checkout);
-  git(["config", "user.name", "Dev"], checkout);
-  fs.writeFileSync(path.join(checkout, "README.md"), "# app\n");
-  if (opts.manifest !== false) fs.writeFileSync(path.join(checkout, "package.json"), '{ "name": "app" }\n');
-  git(["add", "-A"], checkout);
-  git(["commit", "-q", "-m", "initial"], checkout);
-  git(["push", "-q", "-u", "origin", "HEAD:refs/heads/main"], checkout);
+  fs.cpSync(template.remote, remote, { recursive: true });
+  fs.cpSync(template.checkout, checkout, { recursive: true });
+  git(["remote", "set-url", "origin", remote], checkout);
   return { remote, checkout };
 }
 
@@ -770,7 +783,8 @@ describe("starting a ticket", () => {
     const { repo: local } = await ctx.repos.addFromFolder(project.id, localRepo());
     await running;
     const t0 = Date.now();
-    while (codeLink.repoStates(project.id).find((s) => s.repoId === local.id)?.remote !== "none" && Date.now() - t0 < 5000) await new Promise((r) => setTimeout(r, 50));
+    // The follow-up scan runs git too; a loaded machine needs well over the 5 s a quiet one does.
+    while (codeLink.repoStates(project.id).find((s) => s.repoId === local.id)?.remote !== "none" && Date.now() - t0 < 30_000) await new Promise((r) => setTimeout(r, 50));
     expect(codeLink.repoStates(project.id).find((s) => s.repoId === local.id)).toMatchObject({ remote: "none", readiness: "scaffolded" });
   });
 
@@ -798,7 +812,7 @@ describe("starting a ticket", () => {
     const session = () => codeLink.sessionsOf(project.id, item.id)[0];
 
     // The question holds the run: the ticket says the session waits for the person…
-    await vi.waitFor(() => expect(session()).toMatchObject({ state: "waiting", activity: "needs your approval" }));
+    await vi.waitFor(() => expect(session()).toMatchObject({ state: "waiting", activity: "needs your approval" }), { timeout: 10_000 });
     expect((await ctx.contributions.badgesFor(project.id))[item.id]).toEqual(expect.arrayContaining([expect.objectContaining({ id: "waiting" })]));
     // …and still does after a long silence, where a running session would be called idle.
     codeLink.sessions.sweep(project.id, Date.now() + 11 * 60 * 1000);
@@ -1078,6 +1092,46 @@ describe("starting a ticket", () => {
     expect(retried.ok).toBe(true);
     expect(agent.store.threadsForItem(project.id, item.id)).toHaveLength(1);
     await untilRunsSettle(agent);
+  });
+
+  it("says why a continued conversation has no folder: a workstream with no repository, one whose repository is gone, no workstream at all", async () => {
+    const { codeLink, ctx, agent, boards, project, repo, checkout, ticket } = await machine(codeRepo());
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    const item = ticket("Conversation moved off the workstream");
+    const started = await codeLink.start(project.id, item.id, { mode: "run" });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    await untilRunsSettle(agent);
+
+    const docs = boards.create({ projectId: project.id, name: "Docs" });
+    agent.setWorkstream(project.id, started.threadId, docs.id);
+    // A conversation may run without a folder, so looking is no problem; a Start that needs one says why.
+    expect(await agent.workdir(project.id, started.threadId)).toMatchObject({ cwd: null, problem: null, code: "no-board-repo" });
+    expect(await codeLink.start(project.id, item.id, { mode: "run" })).toMatchObject({ ok: false, gate: "workdir", cause: { code: "no-board-repo" }, board: { id: docs.id, name: "Docs" }, message: expect.stringContaining("Docs has no repository yet") });
+
+    boards.update(project.id, docs.id, { repoId: "repo-gone" });
+    expect(await codeLink.start(project.id, item.id, { mode: "run" })).toMatchObject({ ok: false, gate: "workdir", cause: { code: "unknown-repo", repoId: "repo-gone" }, message: expect.stringContaining("repo-gone") });
+
+    agent.setWorkstream(project.id, started.threadId, null);
+    expect(await codeLink.start(project.id, item.id, { mode: "run" })).toMatchObject({ ok: false, gate: "workdir", cause: { code: "no-board" }, message: expect.stringContaining("no workstream") });
+  });
+
+  it("names the worktree that already has the ticket's branch", async () => {
+    const { codeLink, ctx, agent, project, repo, checkout, ticket } = await machine(codeRepo());
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    const item = ticket("Branch held elsewhere");
+    const started = await codeLink.start(project.id, item.id, { mode: "run" });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    await untilRunsSettle(agent);
+    // Another session takes the branch into a worktree of its own, and Tomrade's is gone.
+    git(["worktree", "remove", "--force", started.worktree!], checkout!);
+    const elsewhere = path.join(root, `elsewhere-${n++}`);
+    git(["worktree", "add", "-q", elsewhere, started.branch], checkout!);
+    const refused = await codeLink.start(project.id, item.id, { mode: "run" });
+    expect(refused).toMatchObject({ ok: false, gate: "workdir", cause: { code: "branch-in-use", branch: started.branch }, message: expect.stringContaining("already checked out in") });
+    if (refused.ok) return;
+    expect(fs.realpathSync(refused.cause!.heldAt!)).toBe(fs.realpathSync(elsewhere));
   });
 
   it("starts a reopened ticket in a fresh delivery, thread and suffixed branch", async () => {
@@ -1467,7 +1521,7 @@ describe("starting a ticket", () => {
     await on.tool_result!({ toolName: "bash", input: { command: "flutter create ." }, content: [{ type: "text", text: "ok" }], isError: false });
     expect(session().activity).toBeNull();
     on.agent_end!({ messages: [{ role: "assistant", content: [{ type: "text", text: "Scaffold in place.\n\nNext: CI." }], stopReason: "stop" }] });
-    await vi.waitFor(() => expect(session()).toMatchObject({ state: "waiting", summary: "Scaffold in place." }));
+    await vi.waitFor(() => expect(session()).toMatchObject({ state: "waiting", summary: "Scaffold in place." }), { timeout: 10_000 });
     await on.session_shutdown!({ type: "session_shutdown", reason: "quit" });
     expect(session().state).toBe("ended");
 

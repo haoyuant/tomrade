@@ -1588,7 +1588,9 @@ validates each registered section against its schema and persists the file.
 The settings dialog draws a card for every section it does not lay out by hand,
 from the schema's JSON Schema: strings, numbers, booleans and enums; a string
 with `format: "password"` is masked, `format: "directory"` gets a folder picker
-and `format: "audio"` a picker for one sound file. `show(id)` opens Settings on a section
+and `format: "audio"` a picker for one sound file. A field marked
+`.meta({ advanced: true })` is folded under an Advanced disclosure, so the card
+opens on what most people set. `show(id)` opens Settings on a section
 from outside the window — a click in a desktop surface: it broadcasts
 `settings.show`, the renderer turns Settings to that pane, and the desktop shell
 brings the main window forward. Extensions call `ctx.settings.show()` for their

@@ -8,7 +8,7 @@ import type { Hub } from "@tomradex/hub";
 import type {} from "@tomradex/boards";
 import { InUseError, NotFoundError, type CreateRepoInput, type Repo, type RepoPatch } from "@tomradex/domain";
 import type {} from "@tomradex/ipc";
-import { GitFolder, cloneInto, gitRunner, slugOf, type Git } from "@tomradex/storage";
+import { GitError, GitFolder, cloneInto, gitRunner, slugOf, type Git } from "@tomradex/storage";
 import { defineTool, requireProjectId } from "@tomradex/tools";
 import { isLocalRemote, normalizeRemote, sameRepository } from "./remotes.js";
 
@@ -111,6 +111,25 @@ export class CheckoutUnsetError extends Error {
   constructor(public readonly remote: string) {
     super(`No local checkout for ${remote} on this machine — point Tomrade at yours, or let it clone one`);
     this.name = "CheckoutUnsetError";
+  }
+}
+
+/** Worktrees live under the Hub folder, and none is chosen on this machine. */
+export class HubUnsetError extends Error {
+  constructor() {
+    super("No Hub folder is chosen on this machine — choose one under Settings › Hub; worktrees are made in it");
+    this.name = "HubUnsetError";
+  }
+}
+
+/** git keeps a branch in one worktree at a time, and another worktree already has this one. */
+export class BranchInUseError extends Error {
+  constructor(
+    public readonly branch: string,
+    public readonly at: string
+  ) {
+    super(`${branch} is already checked out in ${at} — finish or remove that worktree, then start again`);
+    this.name = "BranchInUseError";
   }
 }
 
@@ -411,7 +430,7 @@ export class Repos extends Service {
       return { repo, cwd, worktree: null, checkout: placement.checkout, branch: repo.defaultBranch };
     }
     const hubDir = this.hub.dir;
-    if (!hubDir) throw new Error("Choose the Hub folder first");
+    if (!hubDir) throw new HubUnsetError();
     const worktree = path.join(hubDir, "worktrees", slugOf(repo.name), threadId);
     // Looking never writes: a worktree that is not there is reported, not made.
     if (opts.create === false && !fs.existsSync(worktree)) return { repo, cwd: null, worktree: null, checkout: placement.checkout, branch: opts.branch ?? repo.defaultBranch };
@@ -437,8 +456,12 @@ export class Repos extends Service {
         // A ticket's branch: continued where it already exists (an earlier
         // session here, or a push from elsewhere), started from the default
         // branch otherwise. Detached is for a thread with no ticket.
-        if (await verify(`refs/heads/${branch}`)) await this.runGit(["worktree", "add", worktree, branch], { cwd: checkout });
-        else if (await verify(`refs/remotes/origin/${branch}`)) await this.runGit(["worktree", "add", "--track", "-b", branch, worktree, `origin/${branch}`], { cwd: checkout });
+        if (await verify(`refs/heads/${branch}`)) {
+          await this.runGit(["worktree", "add", worktree, branch], { cwd: checkout }).catch((err: unknown) => {
+            const at = err instanceof GitError ? /is already (?:used by worktree|checked out) at '([^']+)'/.exec(err.stderr)?.[1] : undefined;
+            throw at ? new BranchInUseError(branch, at) : err;
+          });
+        } else if (await verify(`refs/remotes/origin/${branch}`)) await this.runGit(["worktree", "add", "--track", "-b", branch, worktree, `origin/${branch}`], { cwd: checkout });
         else if (start) await this.runGit(["worktree", "add", "-b", branch, worktree, start], { cwd: checkout });
         else await this.runGit(["worktree", "add", "--orphan", "-b", branch, worktree], { cwd: checkout });
       } else if (start) {
