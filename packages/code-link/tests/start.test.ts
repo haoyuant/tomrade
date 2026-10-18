@@ -1094,6 +1094,46 @@ describe("starting a ticket", () => {
     await untilRunsSettle(agent);
   });
 
+  it("says why a continued conversation has no folder: a workstream with no repository, one whose repository is gone, no workstream at all", async () => {
+    const { codeLink, ctx, agent, boards, project, repo, checkout, ticket } = await machine(codeRepo());
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    const item = ticket("Conversation moved off the workstream");
+    const started = await codeLink.start(project.id, item.id, { mode: "run" });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    await untilRunsSettle(agent);
+
+    const docs = boards.create({ projectId: project.id, name: "Docs" });
+    agent.setWorkstream(project.id, started.threadId, docs.id);
+    // A conversation may run without a folder, so looking is no problem; a Start that needs one says why.
+    expect(await agent.workdir(project.id, started.threadId)).toMatchObject({ cwd: null, problem: null, code: "no-board-repo" });
+    expect(await codeLink.start(project.id, item.id, { mode: "run" })).toMatchObject({ ok: false, gate: "workdir", cause: { code: "no-board-repo" }, board: { id: docs.id, name: "Docs" }, message: expect.stringContaining("Docs has no repository yet") });
+
+    boards.update(project.id, docs.id, { repoId: "repo-gone" });
+    expect(await codeLink.start(project.id, item.id, { mode: "run" })).toMatchObject({ ok: false, gate: "workdir", cause: { code: "unknown-repo", repoId: "repo-gone" }, message: expect.stringContaining("repo-gone") });
+
+    agent.setWorkstream(project.id, started.threadId, null);
+    expect(await codeLink.start(project.id, item.id, { mode: "run" })).toMatchObject({ ok: false, gate: "workdir", cause: { code: "no-board" }, message: expect.stringContaining("no workstream") });
+  });
+
+  it("names the worktree that already has the ticket's branch", async () => {
+    const { codeLink, ctx, agent, project, repo, checkout, ticket } = await machine(codeRepo());
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    const item = ticket("Branch held elsewhere");
+    const started = await codeLink.start(project.id, item.id, { mode: "run" });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    await untilRunsSettle(agent);
+    // Another session takes the branch into a worktree of its own, and Tomrade's is gone.
+    git(["worktree", "remove", "--force", started.worktree!], checkout!);
+    const elsewhere = path.join(root, `elsewhere-${n++}`);
+    git(["worktree", "add", "-q", elsewhere, started.branch], checkout!);
+    const refused = await codeLink.start(project.id, item.id, { mode: "run" });
+    expect(refused).toMatchObject({ ok: false, gate: "workdir", cause: { code: "branch-in-use", branch: started.branch }, message: expect.stringContaining("already checked out in") });
+    if (refused.ok) return;
+    expect(fs.realpathSync(refused.cause!.heldAt!)).toBe(fs.realpathSync(elsewhere));
+  });
+
   it("starts a reopened ticket in a fresh delivery, thread and suffixed branch", async () => {
     const world = await machine(codeRepo());
     const { codeLink, ctx, agent, project, repo, checkout, ticket } = world;

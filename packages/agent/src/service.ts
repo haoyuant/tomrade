@@ -70,7 +70,13 @@ export interface WorkdirStatus {
   branch: string | null;
   worktree: string | null;
   problem: string | null;
-  code: "no-checkout" | "no-repos" | "finished" | "error" | null;
+  /**
+   * Why there is no folder. no-board, no-board-repo and unknown-repo come with no `problem`: a conversation
+   * on a workstream without a repository runs fine without one, and only a Start needs to say so.
+   */
+  code: "no-checkout" | "no-repos" | "no-board" | "no-board-repo" | "unknown-repo" | "no-hub" | "branch-in-use" | "finished" | "error" | null;
+  /** branch-in-use: the other worktree that has the branch. */
+  heldAt?: string;
 }
 
 export interface PlaybookRecommendation {
@@ -1096,7 +1102,8 @@ export class Agent extends Service {
       fs.mkdirSync(cwd, { recursive: true });
       return { ...none, cwd };
     }
-    if (!thread?.boardId) return none;
+    if (!thread) return none;
+    if (!thread.boardId) return { ...none, code: "no-board" };
     const repos = this.ctx.get("repos") as
       | { workdirFor(projectId: string, boardId: string, threadId: string, opts?: { branch?: string | null; create?: boolean }): Promise<{ cwd: string | null; worktree: string | null; branch: string; repo: { remote: string } } | null> }
       | undefined;
@@ -1107,7 +1114,10 @@ export class Agent extends Service {
       const finished = thread.archived || (!!thread.itemId && (!ticket || ticket.status === "done"));
       const create = !!opts.create && (!finished || !!opts.revive);
       const view = await repos.workdirFor(projectId, thread.boardId, threadId, { branch: thread.branch, create });
-      if (!view) return none;
+      if (!view) {
+        const board = (this.ctx.get("boards") as { get(projectId: string, id: string): { repoId: string | null } | null } | undefined)?.get(projectId, thread.boardId);
+        return { ...none, code: board?.repoId ? "unknown-repo" : "no-board-repo" };
+      }
       if (!view.cwd) {
         // Not there and not made. Unfinished work gets it on its first run; finished work only through a new Start.
         const refused = finished && !thread.archived && !opts.revive;
@@ -1116,8 +1126,9 @@ export class Agent extends Service {
       }
       return { cwd: view.cwd, remote: view.repo.remote, branch: view.branch, worktree: view.worktree, problem: null, code: null };
     } catch (err) {
-      const remote = (err as { remote?: string }).remote ?? null;
-      return { ...none, remote, problem: message(err), code: (err as { name?: string }).name === "CheckoutUnsetError" ? "no-checkout" : "error" };
+      const { remote, name, branch, at } = err as { remote?: string; name?: string; branch?: string; at?: string };
+      const code = name === "CheckoutUnsetError" ? "no-checkout" : name === "HubUnsetError" ? "no-hub" : name === "BranchInUseError" ? "branch-in-use" : "error";
+      return { ...none, remote: remote ?? null, branch: branch ?? null, problem: message(err), code, ...(at ? { heldAt: at } : {}) };
     }
   }
 
