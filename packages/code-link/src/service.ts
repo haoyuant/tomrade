@@ -469,6 +469,7 @@ export class CodeLink extends Service {
         bound: (sessionId) => this.boundAnywhere(sessionId),
         connectionSession: (projectId, repoId, worktree) => this.connectionSession(projectId, repoId, worktree),
         successor: (projectId, from, repoId, worktree) => this.successor(projectId, from, repoId, worktree),
+        letGo: (projectId, connection, sessionId, itemId) => this.letGo(projectId, connection, sessionId, itemId),
         rescan: (projectId) => this.rescan(projectId),
         notify: (projectId) => this.notify(projectId),
         summary: (projectId, itemId) => this.summary(projectId, itemId),
@@ -999,6 +1000,28 @@ export class CodeLink extends Service {
    */
   successor(projectId: string, from: SessionView, repoId: string | null, worktree: string | null = null): SessionView {
     return this.store.createSession(projectId, { repoId: repoId ?? from.repoId, branch: "", itemIds: [], mode: from.mode, agent: from.agent, threadId: null, device: this.ctx.hub.deviceId, externalId: from.externalId, worktree });
+  }
+
+  /**
+   * A claim taken back: the session drops the ticket. One made only for claims — a client known by its
+   * connection alone, or a parallel successor — ends once it holds nothing, so the agent's hooks reach its
+   * other session again; the agent's own hooks session stays, free for its next claim.
+   */
+  letGo(projectId: string, connection: string, sessionId: string, itemId: string): void {
+    const session = this.store.session(projectId, sessionId);
+    if (!session) return;
+    const rest = session.itemIds.filter((id) => id !== itemId);
+    const forClaims = session.agent === MCP_AGENT
+      || (!!session.externalId && this.store.sessions(projectId, { live: true }).some((s) => s.id !== session.id && s.agent === session.agent && s.externalId === session.externalId && s.startedAt <= session.startedAt));
+    this.store.patchSession(projectId, sessionId, { itemIds: rest, ...(rest.length ? {} : { branch: "" }) });
+    if (!rest.length && forClaims) {
+      this.sessions.end(projectId, sessionId, "ended", true);
+      const bound = this.connections.get(connection);
+      const kept = bound?.sessionIds.filter((id) => id !== sessionId) ?? [];
+      if (!bound || !kept.length) this.connections.delete(connection);
+      else this.connections.set(connection, { projectId, sessionIds: kept, current: bound.current === sessionId ? kept[kept.length - 1] : bound.current });
+    }
+    this.notify(projectId);
   }
 
   /**
