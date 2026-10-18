@@ -17,6 +17,8 @@ export interface JsonSchema {
   minimum?: number;
   maximum?: number;
   default?: unknown;
+  /** Set by the section's `.meta({ advanced: true })`: a knob most people never turn, folded away until asked for. */
+  advanced?: boolean;
 }
 
 /** Top-level fields of an object schema, in declaration order; null when it is not one. */

@@ -2508,6 +2508,12 @@ button.kref { cursor: pointer; }
 .plug-search input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 3px 0; color: var(--fg); font-family: var(--font-display); font-size: 14px; outline: none; }
 .plug-search input:focus-visible { box-shadow: none; }
 .plug-search input::placeholder { color: var(--meta); }
+.fold { margin-top: var(--space-4); }
+.fold-head { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: transparent; color: var(--fg-2); font: inherit; font-size: var(--text-sm); cursor: pointer; text-align: left; }
+.fold-head svg { color: var(--meta); }
+.fold-head:hover { color: var(--accent); }
+.fold-head:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
+.fold-body { margin-top: var(--space-3); }
 .plug-fold.folded .sec-head { margin-bottom: 0; }
 .plug-fold-head { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: transparent; color: var(--fg); cursor: pointer; text-align: left; }
 .plug-fold-head:disabled { cursor: default; }

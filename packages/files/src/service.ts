@@ -107,7 +107,7 @@ export const FILES_SECTION: SettingsSection<FilesSettings> = {
   title: "Files",
   description: "How much room the list of this project's files takes in an agent's prompt. Zero leaves agents to browse for themselves.",
   schema: z.object({
-    agentIndexTokens: z.number().int().min(0).max(20_000).default(1_500).meta({ title: "Room for the file list" }).describe("In tokens, the unit models count text in — roughly ¾ of an English word each. From 0 to 20,000.")
+    agentIndexTokens: z.number().int().min(0).max(20_000).default(1_500).meta({ title: "Room for the file list", advanced: true }).describe("In tokens, the unit models count text in — roughly ¾ of an English word each. From 0 to 20,000.")
   }),
   defaults: { agentIndexTokens: 1_500 },
   order: 13,

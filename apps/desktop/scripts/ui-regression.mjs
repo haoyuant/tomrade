@@ -996,10 +996,10 @@ const run = async () => {
 
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:',',metaKey:true,bubbles:true}));true`);
   await sleep(900);
-  check("⌘, opens settings", (await $(`!!document.querySelector('.tok-table')`)) === true);
+  check("⌘, opens settings", (await $(`!!document.querySelector('.mode-grid')`)) === true);
   check("an overlay demotes the chrome's primary button", (await $(`document.documentElement.classList.contains('overlay-open')`)) === true);
   check("all three themes preview at once", (await $(`document.querySelectorAll('.mode').length`)) === 3);
-  check("the token table resolves live swatches", (await $(`document.querySelectorAll('.tok-table .chip').length`)) === 8);
+  check("a built-in theme is read-only, so no token table is drawn for it", (await $(`!!document.querySelector('.tok-table')`)) === false);
   check("the theme switch reports the preference, not the resolved theme", (await $(`document.querySelectorAll('.dlg-body .theme-seg[aria-pressed="true"]').length`)) === 1);
   // one pane at a time: the menu is what makes the sheet short enough to read
   check("settings opens on a side menu", (await $(`document.querySelectorAll('.dlg-nav .side-row').length`)) >= 4);
@@ -1021,6 +1021,7 @@ const run = async () => {
   const clickToast = (selector) => $(`(() => { const b = ${selector}; if (!b) return false; b.click(); return true; })()`);
   await press(`document.querySelector('.theme-selection-actions button[aria-label="Create custom theme"]')`);
   check("creating a custom theme opens its editor", await wait(() => $(`!!document.querySelector('.theme-custom-controls')`)) && customThemes() === 1);
+  check("and brings the token table, which only a custom theme can use", (await $(`document.querySelectorAll('.tok-table .token-picker').length`)) === 21);
   await press(`document.querySelector('.theme-custom-controls .icon-btn.danger')`);
   check("its bin deletes it and the toast offers Undo", await wait(() => $(`[...document.querySelectorAll('.toast')].some((n) => (n.textContent ?? '').includes('Deleted the theme') && (n.textContent ?? '').includes('Undo'))`)) && customThemes() === 0);
   await clickToast(`[...document.querySelectorAll('.toast button')].find((b) => (b.textContent ?? '').includes('Undo'))`);
@@ -1035,12 +1036,12 @@ const run = async () => {
   await sleep(600);
   const sheetBox = `(() => { const r = document.querySelector('.palette.modal').getBoundingClientRect(); return r.width + 'x' + r.height; })()`;
   const boxOnAppearance = await $(sheetBox);
-  await press(settingsNav("Agent access"));
+  await press(settingsNav("MCP servers"));
   await sleep(400);
   check("and the MCP endpoint stays on this machine", (await $(`document.querySelector('.dlg-body .scope-tag')?.textContent`)) === "This machine");
   await sleep(600);
-  check("choosing a menu row swaps the pane", (await $(`document.querySelector('.dlg-body .sec-title')?.textContent`)) === "Agent access");
-  check("and takes the pane it replaced out of the body", (await $(`!!document.querySelector('.tok-table')`)) === false);
+  check("choosing a menu row swaps the pane, agent access heading the MCP one", (await $(`document.querySelector('.dlg-body .sec-title')?.textContent`)) === "Agent access");
+  check("and takes the pane it replaced out of the body", (await $(`!!document.querySelector('.mode-grid')`)) === false);
   // the tallest pane and the shortest one leave the sheet exactly the same size
   check("the sheet keeps its frame across panes", (await $(sheetBox)) === boxOnAppearance);
   await checkCentred("settings on its shortest pane");
@@ -1159,7 +1160,8 @@ const run = async () => {
   const fixture = path.join(__dirname, "../../../packages/mcp-client/tests/fixtures/stdio-server.mjs");
   await press(settingsNav("MCP servers"));
   await sleep(600);
-  check("MCP servers is a settings pane", (await $(`document.querySelector('.dlg-body .sec-title')?.textContent`)) === "MCP servers");
+  // Agent access heads the pane; the servers Tomrade reaches follow it.
+  check("MCP servers is a settings pane", (await $(`[...document.querySelectorAll('.dlg-body .sec-title')].map((n) => n.textContent).join('|')`)) === "Agent access|MCP servers");
   check("with nothing connected it says how to start", (await $(`!!document.querySelector('[data-testid="mcp-add"]') && !!document.querySelector('[data-testid="mcp-import-open"]')`)) === true);
   await press(`document.querySelector('[data-testid="mcp-import-open"]')`);
   await sleep(300);
@@ -1215,6 +1217,11 @@ const run = async () => {
   await press(settingsNav("Manage plugins"));
   await sleep(600);
 
+  // The pet ships switched off; its row switch loads it whole.
+  check("the pet waits switched off", !ctx.get("pet") && ctx.contributions.assistantAccessories().length === 0);
+  await press(`${rowFor("pet")}.querySelector('.switch')`);
+  await sleep(1200);
+  check("switching the pet on loads its service and accessory", !!ctx.get("pet") && ctx.contributions.assistantAccessories().some((a) => a.id === "tomrade.pet"));
   await press(`${rowFor("pet")}.querySelector('.switch')`);
   await sleep(900);
   check("switching the pet off unloads its service and accessory", !ctx.get("pet") && ctx.contributions.assistantAccessories().length === 0);
@@ -1581,18 +1588,27 @@ const run = async () => {
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:',',metaKey:true,bubbles:true}));true`);
   await sleep(900);
   const navLabels = `[...document.querySelectorAll('.dlg-nav .side-row')].map(r => r.textContent.trim()).join(' | ')`;
-  check("a plugin's own settings pane is still offered", (await $(navLabels)).includes("Pet"));
+  check("a plugin's own settings pane is still offered", (await $(navLabels)).includes("Files"));
   check("but a destination's account is not a settings pane", (await $(navLabels)).includes("GitHub") === false);
   check("theme automation is drawn once, on Appearance, and not again as a plugin pane", (await $(navLabels)).includes("Theme automation") === false);
   const fieldLabels = `[...document.querySelectorAll('.dlg-body .field > label')].map(l => l.textContent)`;
+  // A field the plugin marks advanced waits behind one line; the terminal choice is the only thing drawn at first.
+  const advancedFold = `document.querySelector('.dlg-body .fold[data-fold$="-advanced"] .fold-head')`;
   await press(settingsNav("Code link"));
   await sleep(500);
+  const plainLabels = await $(fieldLabels);
+  check("the command templates wait behind Advanced", plainLabels.includes("Terminal app") && !plainLabels.includes("Claude Code command") && (await $(`${advancedFold}?.getAttribute('aria-expanded')`)) === "false", plainLabels);
+  await press(advancedFold);
+  await sleep(300);
   const codeLabels = await $(fieldLabels);
   check("a plugin field without a title still reads as words, not its key", codeLabels.includes("Claude Code command") && !codeLabels.some((l) => /^[a-z]+[A-Z]/.test(l)), codeLabels);
   check("and no field shows [object Object]", (await $(`[...document.querySelectorAll('.dlg-body input, .dlg-body textarea')].some(i => i.value.includes('[object Object]'))`)) === false);
   // A value the schema refuses stays as typed with the reason under it, instead of springing back.
   await press(settingsNav("Files"));
   await sleep(500);
+  check("the token budget waits behind Advanced too", (await $(`!!document.querySelector('#sf-files-agentIndexTokens')`)) === false && (await $(`!!${advancedFold}`)) === true);
+  await press(advancedFold);
+  await sleep(300);
   const budget = () => ctx.settings.get().files?.agentIndexTokens;
   const budgetBefore = budget();
   const leaveWith = (selector, text) =>
@@ -1608,7 +1624,10 @@ const run = async () => {
   const language = ctx.settings.get().language;
   ctx.settings.set({ ...ctx.settings.get(), language: "zh" });
   await sleep(900);
-  check("a plugin pane speaks Chinese when the app does", (await $(navLabels)).includes("宠物") && (await $(fieldLabels)).includes("文件清单的篇幅"), await $(fieldLabels));
+  // the pane may be drawn afresh in the new language, with Advanced folded again
+  await $(`(() => { const h = ${advancedFold}; if (h?.getAttribute('aria-expanded') === 'false') h.click(); return true; })()`);
+  await sleep(300);
+  check("a plugin pane speaks Chinese when the app does", (await $(navLabels)).includes("文件") && (await $(fieldLabels)).includes("文件清单的篇幅"), await $(fieldLabels));
   ctx.settings.set({ ...ctx.settings.get(), language, files: { ...ctx.settings.get().files, agentIndexTokens: budgetBefore } });
   await sleep(700);
   await press(settingsNav("Hub"));
@@ -1619,11 +1638,10 @@ const run = async () => {
   check("and lists the projects not on this computer yet", (await $(`document.querySelectorAll('.hub-other').length`)) === missing.length);
   check("saying so when there is nothing", (await $(`!!document.querySelector('.hub-others-none')`)) === (missing.length === 0));
   check("retrying them all waits for one that is not already under way", (await $(`document.querySelector('.hub-attach-all')?.disabled ?? true`)) === missing.every((e) => e.state === "restoring"));
+  // One pane says where everything lives: the folder above, the cache under it, and no Data pane of its own.
+  check("and the cache folder beneath it", (await $(`document.querySelector('#hubCache')?.value`)) === path.join(WORK, "cache"));
+  check("so there is no separate Data pane", (await $(navLabels)).includes("Data") === false);
   await shot("30-hub-pane");
-  await press(`[...document.querySelectorAll('.dlg-nav .side-row')].find(r => /^Data/.test(r.textContent.trim()))`);
-  await sleep(500);
-  check("the data pane names the Hub folder", (await $(`document.querySelector('#stHub')?.value`)) === path.join(WORK, "hub"));
-  check("and the cache folder beneath it", (await $(`document.querySelector('#stDb')?.value`)) === path.join(WORK, "cache"));
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`);
   await sleep(500);
 

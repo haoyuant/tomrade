@@ -188,7 +188,8 @@ const run = async () => {
   // Assistant lists only the engines that are running, and says where the rest are.
   await press(`[...document.querySelectorAll('.dlg-nav .side-row')].find(r => r.textContent.trim() === 'Assistant')`);
   await sleep(700);
-  check("the Assistant pane names the engine that is switched off", (await $(`document.querySelector('[data-testid="more-engines"]')?.textContent ?? ''`)).includes("engine-scripted"));
+  const moreEngines = await $(`document.querySelector('[data-testid="more-engines"]')?.textContent ?? ''`);
+  check("the Assistant pane names the engine that is switched off, by name rather than row id", moreEngines.includes("Scripted (no model)") && !moreEngines.includes("engine-scripted"), moreEngines);
   await $(`document.querySelector('[data-testid="more-engines"]').scrollIntoView({ block: 'center' });true`);
   await sleep(300);
   await shot("30-assistant-more-engines");

@@ -5,6 +5,8 @@ import type { ExtensionInfo, ExtensionStore } from "./extensions.js";
 export interface PluginRow {
   id: string;
   name: string;
+  /** What to call the row where the plugin cannot say itself — switched off, it registers no title. */
+  title?: string;
   config?: unknown;
   disabled?: boolean;
   /** Contract ids this row fills, for when it is switched off and registers nothing to observe. */
@@ -40,6 +42,7 @@ export type PluginState = "active" | "failed" | "pending" | "disabled";
 export interface PluginView {
   id: string;
   name: string;
+  title?: string;
   config?: unknown;
   state: PluginState;
   error?: string;
