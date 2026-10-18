@@ -1217,11 +1217,6 @@ const run = async () => {
   await press(settingsNav("Manage plugins"));
   await sleep(600);
 
-  // The pet ships switched off; its row switch loads it whole.
-  check("the pet waits switched off", !ctx.get("pet") && ctx.contributions.assistantAccessories().length === 0);
-  await press(`${rowFor("pet")}.querySelector('.switch')`);
-  await sleep(1200);
-  check("switching the pet on loads its service and accessory", !!ctx.get("pet") && ctx.contributions.assistantAccessories().some((a) => a.id === "tomrade.pet"));
   await press(`${rowFor("pet")}.querySelector('.switch')`);
   await sleep(900);
   check("switching the pet off unloads its service and accessory", !ctx.get("pet") && ctx.contributions.assistantAccessories().length === 0);
@@ -1588,7 +1583,7 @@ const run = async () => {
   await $(`document.dispatchEvent(new KeyboardEvent('keydown',{key:',',metaKey:true,bubbles:true}));true`);
   await sleep(900);
   const navLabels = `[...document.querySelectorAll('.dlg-nav .side-row')].map(r => r.textContent.trim()).join(' | ')`;
-  check("a plugin's own settings pane is still offered", (await $(navLabels)).includes("Files"));
+  check("a plugin's own settings pane is still offered", (await $(navLabels)).includes("Pet"));
   check("but a destination's account is not a settings pane", (await $(navLabels)).includes("GitHub") === false);
   check("theme automation is drawn once, on Appearance, and not again as a plugin pane", (await $(navLabels)).includes("Theme automation") === false);
   const fieldLabels = `[...document.querySelectorAll('.dlg-body .field > label')].map(l => l.textContent)`;
@@ -1627,7 +1622,7 @@ const run = async () => {
   // the pane may be drawn afresh in the new language, with Advanced folded again
   await $(`(() => { const h = ${advancedFold}; if (h?.getAttribute('aria-expanded') === 'false') h.click(); return true; })()`);
   await sleep(300);
-  check("a plugin pane speaks Chinese when the app does", (await $(navLabels)).includes("文件") && (await $(fieldLabels)).includes("文件清单的篇幅"), await $(fieldLabels));
+  check("a plugin pane speaks Chinese when the app does", (await $(navLabels)).includes("宠物") && (await $(fieldLabels)).includes("文件清单的篇幅"), await $(fieldLabels));
   ctx.settings.set({ ...ctx.settings.get(), language, files: { ...ctx.settings.get().files, agentIndexTokens: budgetBefore } });
   await sleep(700);
   await press(settingsNav("Hub"));

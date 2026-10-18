@@ -425,12 +425,9 @@ plugins:
   - id: contributions
     name: "@tomradex/contributions"
   # Optional task-state companion: its row switch unloads the contribution,
-  # channels, listeners, timers and desktop surface together. Off until
-  # switched on in Settings → Manage plugins; a switch already thrown in
-  # tomrade.patch.yml wins over this default.
+  # channels, listeners, timers and desktop surface together.
   - id: pet
     name: "@tomradex/pet"
-    disabled: true
     config:
       # Pets made from the user's own images stay on this machine.
       profilesDir: "${userData}/pet-profiles"
