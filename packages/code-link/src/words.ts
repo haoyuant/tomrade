@@ -7,7 +7,7 @@ import { defineWords, type Slots, type Speak } from "@tomradex/domain";
  */
 export const CODE_WORDS = defineWords({
   en: {
-    terminalHelp: '1. Install herdr with `brew install herdr`. 2. Open a terminal and run `herdr` to start it. With herdr selected, tickets run in its workspace; Tomrade follows the pane’s status and last output, lets you Continue, and jumps back to the pane. If herdr is unavailable, Tomrade prepares a script for you to run yourself. Choose another installed terminal app, or "none" to only prepare the script.',
+    terminalHelp: '1. Install herdr with `brew install herdr`. 2. Open a terminal and run `herdr` to start it. With herdr selected, tickets run in its workspace; Tomrade follows the pane’s status and last output, lets you Continue, and jumps back to the pane. If herdr is unavailable, the session opens in the system terminal instead. Choose another installed terminal app, or "none" to only prepare the script.',
     untrackedSession: "This session is not tracked by Tomrade: no session token or repository hook event was received. Progress notes and session status are unavailable. In Tomrade, run “Connect repository to coding agents” for this workstream, commit and merge the generated .mcp.json, .claude/settings.json, .codebuddy/settings.json, .codex/config.toml, .pi/extensions/tomrade.ts, opencode.json, .opencode/plugins/tomrade.js, .cursor/hooks.json and .cursor/hooks/tomrade.sh — or “Connect on this machine only”, which writes them into the checkout kept out of git — (in Codex, also review its hooks with /hooks), then start a new session. Any MCP client is followed through its connection once it calls claim_ticket.",
     connected: "Connected",
     connectedLocallyOne: "Connected on this machine only: {{n}} file written into the checkout and kept out of git through .git/info/exclude. Start a new agent session; in Codex, trust the project and review its hooks with /hooks.",
@@ -110,7 +110,10 @@ export const CODE_WORDS = defineWords({
     terminalHasIt: " — your terminal has it",
     herdrHasIt: " — herdr has it, pane {{pane}}",
     herdrNeedsYou: "{{what}} needs you",
-    herdrUnreachable: "herdr is not running: start it with `herdr`, or install it with `{{install}}`. Until then, run the command yourself.",
+    herdrNotInstalledFallback: "herdr is not installed, so this opened in {{app}} instead. Install herdr with `{{install}}`.",
+    herdrNotRunningFallback: "herdr is not running, so this opened in {{app}} instead. Start herdr by running `herdr` in a terminal.",
+    fallbackDidNotOpen: "{{app}} did not open either: run the command yourself.",
+    systemTerminal: "the system terminal",
     runThis: "Run this in a terminal:\n{{command}}",
     waitingOn: "It is waiting for your answer: {{question}}",
     noConversation: "This ticket has no conversation yet — start it first",
@@ -142,7 +145,7 @@ export const CODE_WORDS = defineWords({
     filedFrom: "Filed from {{key}}'s coding session."
   },
   zh: {
-    terminalHelp: '1. 运行 `brew install herdr` 安装。2. 打开一个终端，运行 `herdr` 启动它。选 herdr 后，工单在 herdr 的 workspace 里运行；Tomrade 跟进这个 pane 的状态和最后输出，支持继续（Continue）和跳回 pane。herdr 不可用时，Tomrade 只写好脚本，提示你自行运行。也可以选择其他已安装的终端应用，或选 none 只准备脚本。',
+    terminalHelp: '1. 运行 `brew install herdr` 安装。2. 打开一个终端，运行 `herdr` 启动它。选 herdr 后，工单在 herdr 的 workspace 里运行；Tomrade 跟进这个 pane 的状态和最后输出，支持继续（Continue）和跳回 pane。herdr 不可用时，改在系统终端里打开。也可以选择其他已安装的终端应用，或选 none 只准备脚本。',
     untrackedSession: "当前会话未被 Tomrade 跟踪：没有收到会话令牌或仓库 hooks 事件，进度备注和会话状态不可用。请在 Tomrade 中对该工作流运行「把仓库连接到编码智能体」，提交并合并生成的 .mcp.json、.claude/settings.json、.codebuddy/settings.json、.codex/config.toml、.pi/extensions/tomrade.ts、opencode.json、.opencode/plugins/tomrade.js、.cursor/hooks.json 和 .cursor/hooks/tomrade.sh——或选「仅连接本机」，把它们写进本机仓库目录并不纳入 git——（Codex 还需用 /hooks 审阅其中的 hooks），再新开会话。任何 MCP 客户端调用 claim_ticket 后，都会按它的连接被跟踪。",
     connected: "已连接",
     connectedLocallyOne: "已仅连接本机：{{n}} 个文件写入了本机仓库目录，并通过 .git/info/exclude 排除在 git 之外。请新开智能体会话；Codex 还需信任项目并用 /hooks 审阅其 hooks。",
@@ -245,7 +248,10 @@ export const CODE_WORDS = defineWords({
     terminalHasIt: "——已交给你的终端",
     herdrHasIt: "——已交给 herdr，pane {{pane}}",
     herdrNeedsYou: "{{what}} 需要你",
-    herdrUnreachable: "herdr 没有在运行：先运行 `herdr` 启动它，或用 `{{install}}` 安装。在那之前请自己运行这条命令。",
+    herdrNotInstalledFallback: "herdr 未安装，已改在 {{app}} 里打开。可用 `{{install}}` 安装 herdr。",
+    herdrNotRunningFallback: "herdr 没有在运行，已改在 {{app}} 里打开。在终端里运行 `herdr` 即可启动它。",
+    fallbackDidNotOpen: "{{app}} 也没能打开：请自己运行这条命令。",
+    systemTerminal: "系统终端",
     runThis: "在终端里运行：\n{{command}}",
     waitingOn: "它在等你回答：{{question}}",
     noConversation: "这个工单还没有对话——先开始它",

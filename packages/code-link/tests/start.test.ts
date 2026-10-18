@@ -14,7 +14,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Context } from "cordis";
 import { Agent, type Engine, type TurnInput } from "@tomradex/agent";
 import { fakeLlm } from "@tomradex/llm";
-import { CodeLink, BOOTSTRAP_LABEL, sessionContext } from "@tomradex/code-link";
+import { CodeLink, BOOTSTRAP_LABEL, sessionContext, terminalApp } from "@tomradex/code-link";
 import { Contributions } from "@tomradex/contributions";
 import { Repos } from "@tomradex/repos";
 import GitHubAccount from "@tomradex/github";
@@ -143,7 +143,8 @@ async function until(check: () => boolean, timeout = 3000): Promise<void> {
   }
 }
 
-it("runs a ticket in a herdr workspace, follows the pane's status as the session's, and continues it in the same pane", async () => {
+// Several Starts, each a worktree: well past the default timeout on a busy machine.
+it("runs a ticket in a herdr workspace, follows the pane's status as the session's, and continues it in the same pane", { timeout: 60_000 }, async () => {
   const world = await machine(codeRepo());
   const { codeLink, ctx, project, repo, checkout, ticket } = world;
   await ctx.repos.setCheckout(repo!.remote, checkout!);
@@ -241,15 +242,24 @@ it("runs a ticket in a herdr workspace, follows the pane's status as the session
   expect(fresh2).toMatchObject({ ok: true, launched: true, pane: "w2:p1" });
   expect(fake.of("workspace.create").length).toBe(2);
 
-  // herdr gone: the script is written and the person told to run it, and why.
+  // herdr gone: the session opens in the system terminal instead, and the person is told why.
+  const opened = vi.spyOn(terminalApp, "open").mockResolvedValue();
   fake.stop();
   expect(await codeLink.herdrStatus()).toBe("notRunning");
+  const stopped = await codeLink.start(project.id, ticket("Stopped").id, { mode: "terminal" });
+  expect(stopped).toMatchObject({ ok: true, launched: true, pane: null, warnings: [expect.stringContaining("herdr is not running")] });
   installed.mockResolvedValue(null);
   expect(await codeLink.herdrStatus()).toBe("notInstalled");
   const alone = ticket("Alone");
   const without = await codeLink.start(project.id, alone.id, { mode: "terminal" });
-  expect(without).toMatchObject({ ok: true, launched: false, pane: null, warnings: [expect.stringContaining("brew install herdr")] });
+  expect(without).toMatchObject({ ok: true, launched: true, pane: null, warnings: [expect.stringContaining("brew install herdr")] });
   expect(without.ok && without.command).toMatch(/^claude /);
+  expect(opened).toHaveBeenLastCalledWith("Terminal", path.join(codeLink.sessionDir(without.ok ? without.sessionId : ""), "run.command"));
+  // the worktree's own terminal too
+  const shell = await ctx.contributions.run("code-link.open-terminal", { projectId: project.id, itemId: alone.id });
+  expect(shell.toast).toContain("herdr is not installed");
+  expect(opened).toHaveBeenCalledTimes(3);
+  opened.mockRestore();
   fake.close();
 });
 

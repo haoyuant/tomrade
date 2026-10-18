@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { TerminalSettings, fillTemplate, launchTerminal, optionFlags, terminalApps, terminalTemplate, withOptions, writeGeminiHome, type HerdrTerminal } from "@tomradex/code-link";
+import { TerminalSettings, fillTemplate, herdrFallbackNote, launchTerminal, optionFlags, setupTerminal, terminalApp, terminalApps, terminalTemplate, withOptions, writeGeminiHome, type HerdrTerminal } from "@tomradex/code-link";
 
 it("lists installed terminal apps with the special launch choices", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-terminal-apps-"));
@@ -21,21 +21,56 @@ describe("a terminal of herdr", () => {
     expect(TerminalSettings.parse({ terminal: "none" }).terminal).toBe("none");
   });
 
-  it("runs the script in a herdr workspace labelled for the ticket, and without herdr leaves the script for the person", async () => {
+  it("runs the script in a herdr workspace labelled for the ticket", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-herdr-terminal-"));
+    const opened = vi.spyOn(terminalApp, "open").mockResolvedValue();
     const launches: { cwd: string; label?: string; command: string }[] = [];
-    const herdr: HerdrTerminal = { launch: async (input) => { launches.push(input); return { paneId: "w2:p1" }; } };
+    const herdr: HerdrTerminal = { launch: async (input) => { launches.push(input); return { paneId: "w2:p1" }; }, installed: async () => "0.9.5" };
     const launched = await launchTerminal({ cwd: "/work/tom-9", command: "claude", env: { TOMRADE_MCP_TOKEN: "t" }, dir, label: "TOM-9" }, "herdr", herdr);
     expect(launched).toEqual({ script: path.join(dir, "run.command"), launched: true, paneId: "w2:p1" });
     expect(launches).toEqual([{ cwd: "/work/tom-9", label: "TOM-9", command: `bash '${path.join(dir, "run.command")}'` }]);
     expect(fs.readFileSync(path.join(dir, "run.command"), "utf8")).toContain("export TOMRADE_MCP_TOKEN='t'\nclaude");
-
-    const gone: HerdrTerminal = { launch: async () => null };
-    expect(await launchTerminal({ cwd: "/work/tom-9", command: "claude", dir, label: "TOM-9" }, "herdr", gone)).toEqual({ script: path.join(dir, "run.command"), launched: false, needsHerdr: true });
-    expect(await launchTerminal({ cwd: "/work/tom-9", command: "claude", dir }, "herdr", null)).toMatchObject({ launched: false, needsHerdr: true });
     // any other terminal is untouched by herdr being there
     expect(await launchTerminal({ cwd: "/work/tom-9", command: "claude", dir }, "none", herdr)).toEqual({ script: path.join(dir, "run.command"), launched: false });
     expect(launches.length).toBe(1);
+    expect(opened).not.toHaveBeenCalled();
+    opened.mockRestore();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("without herdr opens the script in the system terminal, and says why", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-herdr-fallback-"));
+    const opened = vi.spyOn(terminalApp, "open").mockResolvedValue();
+    const script = path.join(dir, "run.command");
+    const stopped: HerdrTerminal = { launch: async () => null, installed: async () => "0.9.5" };
+    const absent: HerdrTerminal = { launch: async () => null, installed: async () => null };
+
+    const notRunning = await launchTerminal({ cwd: "/work/tom-9", command: "claude", env: { TOMRADE_MCP_TOKEN: "t" }, dir, label: "TOM-9", resume: "claude --resume x" }, "herdr", stopped);
+    expect(notRunning).toEqual({ script, launched: true, herdrMissing: "notRunning" });
+    expect(opened).toHaveBeenLastCalledWith("Terminal", script);
+    // the same script any terminal app gets: the heartbeat, the token and the resume beside it
+    const written = fs.readFileSync(script, "utf8");
+    expect(written).toContain("echo $$ >");
+    expect(written).toContain("export TOMRADE_MCP_TOKEN='t'\nclaude");
+    expect(fs.readFileSync(path.join(dir, "resume.command"), "utf8")).toContain("claude --resume x");
+    expect(await launchTerminal({ cwd: "/work/tom-9", command: "claude", dir }, "herdr", absent)).toEqual({ script, launched: true, herdrMissing: "notInstalled" });
+    expect(await launchTerminal({ cwd: "/work/tom-9", command: "claude", dir }, "herdr", null)).toEqual({ script, launched: true, herdrMissing: "notInstalled" });
+    // engine setup goes the same way
+    expect(await setupTerminal("npm i -g x", dir, "herdr", absent)).toEqual({ launched: true });
+    expect(opened).toHaveBeenCalledTimes(4);
+
+    // the system terminal failing too leaves the script for the person
+    opened.mockRejectedValueOnce(new Error("no app"));
+    const failed = await launchTerminal({ cwd: "/work/tom-9", command: "claude", dir }, "herdr", stopped);
+    expect(failed).toEqual({ script, launched: false, herdrMissing: "notRunning" });
+
+    const app = process.platform === "darwin" ? "Terminal" : "the system terminal";
+    expect(herdrFallbackNote("en", notRunning, "brew install herdr")).toBe(`herdr is not running, so this opened in ${app} instead. Start herdr by running \`herdr\` in a terminal.`);
+    expect(herdrFallbackNote("en", { script, launched: true, herdrMissing: "notInstalled" }, "brew install herdr")).toContain("brew install herdr");
+    expect(herdrFallbackNote("en", failed, "brew install herdr")).toContain("run the command yourself");
+    expect(herdrFallbackNote("zh", notRunning, "brew install herdr")).toContain("herdr 没有在运行");
+    expect(herdrFallbackNote("en", { script, launched: true, paneId: "w1:p1" }, "brew install herdr")).toBeNull();
+    opened.mockRestore();
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });
