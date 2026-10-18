@@ -76,7 +76,7 @@ packages/testkit      boots a fresh in-memory context for tests
 packages/ui           React UI (TanStack Router + Query, Tailwind v4, Radix); consumes contributions as data
 apps/store-admin      the store's admin tool: reports, revocations, official signatures
 design/               OpenDesign prototype — the visual authority for the UI
-docs/                 plugin-api.md (the contract), design-system.md (tokens, invariants), releasing.md (installers, signing)
+docs/                 plugin-api.md (the contract), design-system.md (tokens, invariants), releasing.md (installers, signing), testing.md (failure kinds, when to merge with failures)
 ```
 
 ### Data model
@@ -136,6 +136,8 @@ pnpm --filter @tomrade/desktop test:local-cli    # finding Claude Code and Codex
 pnpm --filter @tomrade/desktop test:github-signin  # signing in to GitHub from a destination against a stand-in GitHub, token fallback, both languages (needs the dev server)
 pnpm --filter @tomrade/desktop package           # installers (DMG/ZIP, NSIS, AppImage); -- --dir for an unpacked app
 ```
+
+`pnpm test` ends by sorting its failures into `timeout-under-load`, `network` and `real`. [`docs/testing.md`](docs/testing.md) says what each means, what to check before blaming load, and when a pull request may merge with failures.
 
 The backend is one TypeScript build graph: every emitting package is `composite` and lists its workspace dependencies as `references`, and the root `tsconfig.json` references them all, so `tsc -b` rebuilds only what changed. `pnpm dev` runs it before launching Electron; the runtime boot itself loads every plugin in well under a second.
 

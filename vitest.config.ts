@@ -35,6 +35,8 @@ export default defineConfig({
   },
   test: {
     include: ["packages/*/tests/**/*.test.ts", "apps/*/tests/**/*.test.ts"],
+    // The usual output, then every failure sorted into timeout-under-load, network or real (docs/testing.md).
+    reporters: ["default", "./packages/testkit/src/failure-kinds.ts"],
     // A poll waits on work the test started; 1 s is too tight on a loaded machine, and the test's own timeout stays the ceiling.
     expect: { poll: { timeout: 30_000 } }
   }
