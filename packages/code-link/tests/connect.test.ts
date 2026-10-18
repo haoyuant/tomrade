@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it, onTestFinished, vi } from "vitest";
 import { Agent } from "@tomradex/agent";
 import { CodeLink, hookCommand, posixHookCommand, writeConnectFiles } from "@tomradex/code-link";
 import { Contributions } from "@tomradex/contributions";
@@ -18,13 +18,17 @@ import { Repos } from "@tomradex/repos";
 import GitHubAccount from "@tomradex/github";
 import { Settings } from "@tomradex/settings";
 import { Storage, digestState, exportState } from "@tomradex/storage";
-import { fresh, settle } from "@tomradex/testkit";
+import { FakeGh, fresh, settle } from "@tomradex/testkit";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Tools } from "@tomradex/tools";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-code-connect-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
+
+// Connecting opens its pull request with gh: this one answers here, signed out unless a test says otherwise, and never asks GitHub.
+const gh = new FakeGh(path.join(root, "gh"));
+vi.stubEnv("PATH", `${gh.dir}${path.delimiter}${process.env.PATH}`);
 
 const git = (args: string[], cwd: string) => execFileSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } }).trim();
 
@@ -587,7 +591,8 @@ describe("connecting a repository", () => {
     // As on Windows, where git records no executable bit from the disk.
     git(["config", "core.fileMode", "false"], checkout);
     const result = await codeLink.connect(project.id, repo.id);
-    expect(result).toMatchObject({ branch: "tomrade/connect", committed: true, pushed: true });
+    // gh is signed out here, so no pull request: the branch is pushed for the person to open one.
+    expect(result).toMatchObject({ branch: "tomrade/connect", committed: true, pushed: true, url: null });
     expect(result.files.sort()).toEqual([".agents/skills/tomrade-sync/SKILL.md", ".claude/settings.json", ".codebuddy/settings.json", ".codex/config.toml", ".cursor/hooks.json", ".cursor/hooks/tomrade", ".cursor/hooks/tomrade.ps1", ".cursor/mcp.json", ".gemini/settings.json", ".mcp.json", ".opencode/plugins/tomrade.js", ".pi/extensions/tomrade.ts", "AGENTS.md", "CLAUDE.md", "opencode.json"]);
     // The remote has the branch with the files; the user's checkout was never touched.
     expect(git(["ls-remote", "--heads", remote, "tomrade/connect"], checkout)).toMatch(/tomrade\/connect/);
@@ -598,6 +603,20 @@ describe("connecting a repository", () => {
     expect(git(["ls-tree", "origin/tomrade/connect", "--", ".cursor/hooks/tomrade"], checkout)).toMatch(/^100755 /);
     expect(fs.existsSync(path.join(checkout, ".mcp.json"))).toBe(false);
     expect(git(["status", "--porcelain"], checkout)).toBe("");
+  });
+
+  it("opens the pull request with gh, and leaves the branch pushed when gh is rate-limited or offline", async () => {
+    const { codeLink, project, repo } = await machine();
+    onTestFinished(() => gh.reset());
+    const pull = "https://github.com/example/app/pull/7";
+    gh.answer("pr create", { stdout: pull });
+    expect(await codeLink.connect(project.id, repo.id)).toMatchObject({ pushed: true, url: pull, message: expect.stringContaining("Pull request opened") });
+    expect(gh.calls.at(-1)).toEqual(["pr", "create", "--head", "tomrade/connect", "--base", "main", "--title", "Connect this repository to Tomrade", "--body", expect.stringContaining(".mcp.json")]);
+    gh.answer("pr create", "rate-limited");
+    gh.answer("pr view", "offline");
+    // A remote GitHub does not host has no compare page either.
+    expect(await codeLink.connect(project.id, repo.id)).toMatchObject({ pushed: true, url: null, message: expect.stringContaining("tomrade/connect pushed") });
+    expect(gh.calls.slice(-2).map((call) => call.slice(0, 2).join(" "))).toEqual(["pr create", "pr view"]);
   });
 });
 
