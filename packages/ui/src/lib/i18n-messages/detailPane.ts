@@ -36,7 +36,7 @@ export const detailPane = {
     versionWord: "版本",
 
     lockedNoticeStrong: "锁定",
-    lockedNotice: "标题与描述已{{strong}}。智能体仍可读取该工作项并修改其状态，但改不了已锁定的文字。",
+    lockedNotice: "标题与描述已{{strong}}。智能体仍可读取该工单并修改其状态，但改不了已锁定的文字。",
 
     activityHeading: "历史",
     noWritesYet: "还没有任何修改记录。",

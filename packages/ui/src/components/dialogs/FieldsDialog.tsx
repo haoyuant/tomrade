@@ -607,7 +607,7 @@ export function FieldsDialog({
   projectName: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** The field to land on — "board" opens straight onto the workstream editor. */
+  /** The field to land on — "board" opens the Workstreams sheet: the workstream editor alone. */
   initialFieldId?: string | null;
   /** With "board": the workstream whose card to land on. */
   initialBoardId?: string | null;
@@ -657,6 +657,31 @@ export function FieldsDialog({
       }
     );
   };
+
+  // Opened from a workstream: the Workstream field's editor alone, under its own title.
+  const boardField = builtin.find((f) => f.id === "board");
+  if (initialFieldId === "board") {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange} label={t("fieldsDialog.workstreamsTitle")} className="sheet-board">
+        <DialogHead title={t("fieldsDialog.workstreamsTitle")} aside={<Tag tone="neutral">{projectName}</Tag>} />
+        <DialogBody className="stack-4">
+          {boardField && (
+            <div className="fld-list">
+              <div className="fld-item">
+                <FieldRow def={boardField} count={null} />
+                <WorkstreamEditor projectId={projectId} items={rows} focusBoardId={open ? initialBoardId : null} onOpenRepositories={openRepositories} />
+              </div>
+            </div>
+          )}
+        </DialogBody>
+        <DialogFoot>
+          <button type="button" className="btn btn-ghost" onClick={() => onOpenChange(false)}>
+            {t("fieldsDialog.close")}
+          </button>
+        </DialogFoot>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange} label={t("fieldsDialog.dialogLabel")} className="sheet-board">

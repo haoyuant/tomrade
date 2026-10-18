@@ -866,7 +866,7 @@ describe("starting a ticket", () => {
     expect(section.rows.map((r) => r.label)).toEqual(expect.arrayContaining(["分支", "会话", "继续", "对话", "工作树"]));
     expect(section.rows.find((r) => r.label === "会话")?.value).toMatch(/^空闲 · 由 Tomrade 运行/);
     expect((await ctx.contributions.statusItems({ projectId: project.id })).find((s) => s.id === "code-link")?.text).toMatch(/^代码：1 个会话/);
-    expect(ctx.contributions.commands().find((c) => c.id === "code-link.start-run")).toMatchObject({ title: "在这里开始工作项", group: "代码" });
+    expect(ctx.contributions.commands().find((c) => c.id === "code-link.start-run")).toMatchObject({ title: "在这里开始工单", group: "代码" });
     // The agent reads the brief in English but answers in the language the person reads Tomrade in.
     const brief = agent.store.messages(project.id, started.threadId)[0]?.block;
     expect(brief?.type === "text" && brief.text).toContain("write everything the person will read");

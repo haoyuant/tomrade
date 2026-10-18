@@ -18,10 +18,10 @@ export const errors = {
     humanLocked: "这张工单已被人锁定，只有人可以修改。",
     notFound: "它已经不在了，可能已在别处被删除。",
     inUse: "它仍在被使用：{{reason}}",
-    inUseWorkstreamHolds: "工作流「{{name}}」里还有 {{count}} 个工作项——请先把它们移走。",
-    inUseLastWorkstream: "「{{name}}」是这个项目的最后一个工作流，新的工作项需要有地方放。",
+    inUseWorkstreamHolds: "工作流「{{name}}」里还有 {{count}} 个工单——请先把它们移走。",
+    inUseLastWorkstream: "「{{name}}」是这个项目的最后一个工作流，新的工单需要有地方放。",
     inUseLastView: "「{{name}}」是这个项目的最后一个视图。",
-    inUseUndoHolds: "这个工作流现在有 {{count}} 个工作项——请先把它们移走，再撤销。",
+    inUseUndoHolds: "这个工作流现在有 {{count}} 个工单——请先把它们移走，再撤销。",
     inUseRepository: "「{{name}}」仍是 {{count}} 个工作流的代码仓库。",
     cycle: "这样会让依赖关系首尾相连，形成循环：{{path}}",
     unpublishedEdits: "本机还有文件夹里没有的编辑（{{reason}}）。缓存已保留，编辑不会丢失——请先同步，再重建。"

@@ -1,7 +1,7 @@
 export const newIssueDialog = {
   en: {
-    dialogLabel: "New issue",
-    title: "New issue",
+    dialogLabel: "New ticket",
+    title: "New ticket",
     titleFieldLabel: "Title",
     titlePlaceholder: "An independently reviewable outcome…",
     statusLabel: "Status",
@@ -10,12 +10,12 @@ export const newIssueDialog = {
     parentEpicLabel: "Parent epic",
     noneOption: "None",
     cancel: "Cancel",
-    createIssue: "Create issue",
+    createIssue: "Create ticket",
     createdToast: "Created {{key}}"
   },
   zh: {
-    dialogLabel: "新建工作项",
-    title: "新建工作项",
+    dialogLabel: "新建工单",
+    title: "新建工单",
     titleFieldLabel: "标题",
     titlePlaceholder: "一个可以独立验收的成果…",
     statusLabel: "状态",
@@ -24,7 +24,7 @@ export const newIssueDialog = {
     parentEpicLabel: "所属需求组",
     noneOption: "无",
     cancel: "取消",
-    createIssue: "创建工作项",
+    createIssue: "创建工单",
     createdToast: "已创建 {{key}}"
   }
 };

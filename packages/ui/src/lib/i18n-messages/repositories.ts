@@ -37,7 +37,7 @@ export const repositories = {
 
     label: "Repositories",
     note: "The code a workstream stands for. Its URL is shared with the project; where it is checked out is this machine's alone. Tomrade fetches and adds worktrees; connecting coding agents may push a configuration branch. A folder with no remote works too: it stays on this machine.",
-    none: "No repository yet. Add one by URL or choose a folder on this machine, then point a workstream at it in the Fields sheet.",
+    none: "No repository yet. Add one by URL or choose a folder on this machine, then point a workstream at it from Manage workstreams in the sidebar.",
     branchAria: "Default branch of {{name}}",
     workstreamsLabel: "Its code is for:",
     workstreamsHint: "Pick the workstreams whose tickets are coded in this repository — Start runs them here.",
@@ -152,7 +152,7 @@ export const repositories = {
 
     label: "仓库",
     note: "工作流所对应的代码。它的 URL 随项目共享；它在这台机器上的位置只属于这台机器。Tomrade 会 fetch 并添加 worktree；连接编码智能体时可能推送配置分支。没有远端的文件夹也可以，它只留在这台机器上。",
-    none: "还没有仓库。按 URL 添加，或选择本机的一个文件夹，再在「字段」面板里让某个工作流指向它。",
+    none: "还没有仓库。按 URL 添加，或选择本机的一个文件夹，再在侧边栏的「管理工作流」里让某个工作流指向它。",
     branchAria: "{{name}} 的默认分支",
     workstreamsLabel: "用于工作流：",
     workstreamsHint: "选上哪些工作流的工单在这个仓库里写代码——点 Start 就会在这里运行。",

@@ -59,7 +59,7 @@ export const sidebar = {
     newWorkstreamNameAria: "新工作流名称",
     workstreamNamePlaceholder: "工作流名称…",
     createdWorkstreamToast: "已创建工作流 {{name}}",
-    backlogEyebrow: "工作项",
+    backlogEyebrow: "工单",
     foldModule: "折叠{{name}}",
     unfoldModule: "展开{{name}}",
     dragToReorder: "拖动可排序 · 右键查看更多",
@@ -77,6 +77,6 @@ export const sidebar = {
     workstreamsHelpWhat: "工作流是项目里的一条工作线——比如应用、官网、文档。每个工单都恰好属于一个工作流，每个工作流都有自己的页面，点一下就能切换过去。",
     workstreamsHelpRepo: "每个工作流都可以指向自己的代码仓库，以及仓库里的某个文件夹。点 Start 时，工单的编码智能体就在那里运行——所以一个项目可以横跨多个仓库。",
     workstreamsHelpExample: "例如：应用 → acme/app，官网 → acme/site，文档 → acme/app 的 docs/。",
-    workstreamsHint: "工作涉及多个部分或多个仓库时，可以把工作项分到几个工作流里——每个工作流都能连接自己的仓库。"
+    workstreamsHint: "工作涉及多个部分或多个仓库时，可以把工单分到几个工作流里——每个工作流都能连接自己的仓库。"
   }
 };

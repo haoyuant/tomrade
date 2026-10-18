@@ -907,9 +907,9 @@ const run = async () => {
   await sleep(500);
   await press(`document.querySelector('.fld-opt button[aria-label="Remove option Web"]')`);
   await sleep(400);
-  check("removing an option issues hold asks first", (await $(`!!document.querySelector('.fld-opt-confirm select[aria-label="What happens to the issues holding Web"]')`)) === true);
+  check("removing an option issues hold asks first", (await $(`!!document.querySelector('.fld-opt-confirm select[aria-label="What happens to the tickets holding Web"]')`)) === true);
   await shot("15-fields-option-confirm");
-  check("and says how many hold it", (await $(`document.querySelector('.fld-opt-confirm p')?.textContent ?? ''`)).startsWith("2 issues hold Web"));
+  check("and says how many hold it", (await $(`document.querySelector('.fld-opt-confirm p')?.textContent ?? ''`)).startsWith("2 tickets hold Web"));
   check("nothing is cleared before the confirm", webHolders.length === 2 && webHolders.every((id) => areaOf(id) === areaOpt("Web")));
   await pick(`document.querySelector('.fld-opt-confirm select')`, areaOpt("Agent"));
   await press(`document.querySelector('.fld-opt-confirm .btn-danger')`);

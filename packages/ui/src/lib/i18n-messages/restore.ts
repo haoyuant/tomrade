@@ -24,7 +24,7 @@ export const restore = {
 
     bodyQueued: "Backed up to {{where}}. It comes back to this computer by itself.",
     bodyQueuedLocal: "It has no backup destination; Tomrade looks for its folder on this computer first.",
-    bodyRestoring: "Bringing back its issues, workstreams, views, agent conversations and history.",
+    bodyRestoring: "Bringing back its tickets, workstreams, views, agent conversations and history.",
     bodyOffline: "{{where}} cannot be reached right now. Tomrade tries again {{when}}.",
     bodyUnpublished: "Nothing has reached {{where}} yet. Open the project on the computer that has it and sync — it comes here by itself after that.",
     bodyNeedsConnection: "Connect your {{provider}} account on this computer to restore it from {{where}}.",
@@ -97,7 +97,7 @@ export const restore = {
 
     bodyQueued: "已备份到 {{where}}，会自动恢复到这台电脑。",
     bodyQueuedLocal: "它没有备份目的地；Tomrade 会先在这台电脑上查找它的文件夹。",
-    bodyRestoring: "正在取回它的工作项、工作流、视图、智能体对话和历史记录。",
+    bodyRestoring: "正在取回它的工单、工作流、视图、智能体对话和历史记录。",
     bodyOffline: "暂时无法连接 {{where}}。Tomrade 将{{when}}重试。",
     bodyUnpublished: "{{where}} 里还没有内容。请在保存着这个项目的电脑上打开它并同步，之后它会自动出现在这里。",
     bodyNeedsConnection: "在这台电脑上连接你的 {{provider}} 账号，即可从 {{where}} 恢复。",

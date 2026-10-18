@@ -15,10 +15,10 @@ const DOMAIN_ERRORS: Record<string, MessageKey> = {
 
 /** The reasons the backend gives for an InUseError: id-free, and each says what to do. */
 const IN_USE: [RegExp, MessageKey, string[]][] = [
-  [/^Workstream (.+) still holds (\d+) issues? — move them first$/, "errors.inUseWorkstreamHolds", ["name", "count"]],
-  [/^Workstream (.+) is the project's last; new issues need somewhere to land$/, "errors.inUseLastWorkstream", ["name"]],
+  [/^Workstream (.+) still holds (\d+) tickets? — move them first$/, "errors.inUseWorkstreamHolds", ["name", "count"]],
+  [/^Workstream (.+) is the project's last; new tickets need somewhere to land$/, "errors.inUseLastWorkstream", ["name"]],
   [/^(.+) is the project's last view$/, "errors.inUseLastView", ["name"]],
-  [/^That workstream now holds (\d+) issues? — move them before undoing it$/, "errors.inUseUndoHolds", ["count"]],
+  [/^That workstream now holds (\d+) tickets? — move them before undoing it$/, "errors.inUseUndoHolds", ["count"]],
   [/^(.+) is still the repository of (\d+) workstreams?$/, "errors.inUseRepository", ["name", "count"]]
 ];
 

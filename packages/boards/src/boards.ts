@@ -127,8 +127,8 @@ export class Boards extends Service {
     if (!existing) throw new NotFoundError(id);
     const db = this.db(projectId);
     const owned = (db.prepare("SELECT COUNT(*) AS n FROM items WHERE board_id = ?").get(id) as { n: number }).n;
-    if (owned > 0) throw new InUseError(id, `Workstream ${existing.name} still holds ${owned} issue${owned === 1 ? "" : "s"} — move them first`);
-    if (this.list(projectId).length <= 1) throw new InUseError(id, `Workstream ${existing.name} is the project's last; new issues need somewhere to land`);
+    if (owned > 0) throw new InUseError(id, `Workstream ${existing.name} still holds ${owned} ticket${owned === 1 ? "" : "s"} — move them first`);
+    if (this.list(projectId).length <= 1) throw new InUseError(id, `Workstream ${existing.name} is the project's last; new tickets need somewhere to land`);
     write(this.ctx, { projectId, entity: "board", op: "delete", id, by, before: existing, after: null }, () =>
       db.transaction(() => {
         db.prepare("DELETE FROM boards WHERE id = ?").run(id);
