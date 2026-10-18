@@ -267,7 +267,7 @@ function RouteRow({ route, names, shared, onChange, onRemove }: { route: ImRoute
           <label htmlFor={id("engine")}>{t("imSettings.engine")}</label>
           <select id={id("engine")} className="input" value={route.engine ?? ""} onChange={(e) => set({ engine: e.target.value || undefined, options: undefined, permissionMode: undefined })}>
             <option value="">{t("imSettings.engineDefault")}</option>
-            {(engines.data ?? []).filter((e) => e.ok || e.id === route.engine).map((e) => <option key={e.id} value={e.id}>{e.title}</option>)}
+            {(engines.data ?? []).filter((e) => (e.ok && !e.terminalOnly) || e.id === route.engine).map((e) => <option key={e.id} value={e.id}>{e.title}</option>)}
           </select>
         </div>
         {(engine?.picks ?? []).map((pick) => (

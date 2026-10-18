@@ -983,6 +983,12 @@ function EngineRow({
           </button>
         )}
       </div>
+      {/* Folded or not: a signed-in agent missing from chat and Start would otherwise look broken. */}
+      {engine.terminalOnly && (
+        <div className="eng-body meta-txt" data-terminal-only-note>
+          {t("settingsDialog.terminalOnlyNote", { title: engine.title })}
+        </div>
+      )}
       {open && engine.cli && (
         <div className="eng-body">
           <LocalCliSection engine={engine} cli={engine.cli} command={typeof options.command === "string" ? options.command : ""} onSaveCommand={(value) => onCommit("command", value)} />
