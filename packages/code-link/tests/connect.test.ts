@@ -651,9 +651,12 @@ describe("outside clients, told apart by their connection", () => {
     expect(await ctx.tools.execute("note_progress", { text: "second going" }, b)).toMatchObject({ key: second.key });
     expect(codeLink.sessionsOf(project.id, first.id).map((s) => [s.id, s.summary])).toEqual([[hooked.id, "first going"]]);
     expect(codeLink.sessionsOf(project.id, second.id).map((s) => s.summary)).toEqual(["second going"]);
-    await expect(ctx.tools.execute("claim_ticket", { key: second.key }, a)).rejects.toThrow(`this session still owns ${first.key}, which is doing`);
+    // The other terminal's ticket is not this one's to take; a free one waits until its own is finished.
+    expect(await ctx.tools.execute("claim_ticket", { key: second.key }, a)).toMatchObject({ claimed: false, heldBy: [{ sessionId: claimed.tracking.sessionId }] });
+    const third = items.create({ projectId: project.id, boardId: board.id, title: "Third", status: "todo", by: "human" });
+    await expect(ctx.tools.execute("claim_ticket", { key: third.key }, a)).rejects.toThrow(`this session still owns ${first.key}, which is doing`);
     items.update(project.id, first.id, { status: "verifying" }, "human");
-    await expect(ctx.tools.execute("claim_ticket", { key: second.key }, a)).rejects.toThrow(`this session still owns ${first.key}, which is verifying`);
+    await expect(ctx.tools.execute("claim_ticket", { key: third.key }, a)).rejects.toThrow(`this session still owns ${first.key}, which is verifying`);
   });
 
   it("lets an outside session take the next ticket once its last one is done, from a fresh branch", async () => {
@@ -810,6 +813,82 @@ describe("outside clients, told apart by their connection", () => {
     } finally {
       await client.close();
     }
+  });
+});
+
+describe("a ticket another session is working", () => {
+  type Claimed = { branch: string; tracking: { sessionId: string } };
+  const setup = async () => {
+    const world = await machine();
+    const { ctx, items, project, board } = world;
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "Taken", status: "todo", by: "human" });
+    const a = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-holder" };
+    const b = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-late" };
+    const held = (await ctx.tools.execute("claim_ticket", { key: item.key, worktree: path.join(root, "wt-holder") }, a)) as Claimed;
+    await ctx.tools.execute("note_progress", { text: "half way" }, a);
+    return { ...world, item, a, b, held };
+  };
+
+  it("is not claimed from under it: the claim says who holds it and changes nothing, unless told to take it over", async () => {
+    const { codeLink, ctx, items, project, item, b, held } = await setup();
+    const refused = await ctx.tools.execute("claim_ticket", { key: item.key }, b);
+    expect(refused).toMatchObject({
+      claimed: false,
+      key: item.key,
+      status: "doing",
+      heldBy: [{ sessionId: held.tracking.sessionId, agent: "mcp", worktree: path.join(root, "wt-holder"), state: "running", summary: "half way" }],
+      next: expect.stringContaining("takeOver: true")
+    });
+    expect(codeLink.sessionsOf(project.id, item.id).map((s) => s.id)).toEqual([held.tracking.sessionId]);
+    await expect(ctx.tools.execute("note_progress", { text: "x" }, b)).rejects.toThrow("pass key");
+
+    const taken = (await ctx.tools.execute("claim_ticket", { key: item.key, takeOver: true }, b)) as Claimed;
+    expect(taken.tracking.sessionId).not.toBe(held.tracking.sessionId);
+    expect(taken.branch).toBe(held.branch);
+    expect(items.get(project.id, item.id)!.status).toBe("doing");
+  });
+
+  it("counts a session's own repeat claim and its parallel tickets as its own, and no one who handed the merge over or went quiet", async () => {
+    const { codeLink, ctx, items, project, board, item, a, b, held } = await setup();
+    expect(await ctx.tools.execute("claim_ticket", { key: item.key }, a)).toMatchObject({ tracking: { sessionId: held.tracking.sessionId } });
+    const other = items.create({ projectId: project.id, boardId: board.id, title: "Beside", status: "todo", by: "human" });
+    const beside = (await ctx.tools.execute("claim_ticket", { key: other.key, parallel: true }, a)) as Claimed;
+    expect(await ctx.tools.execute("claim_ticket", { key: item.key }, a)).toMatchObject({ key: item.key, tracking: { sessionId: held.tracking.sessionId } });
+    expect(await ctx.tools.execute("claim_ticket", { key: other.key }, a)).toMatchObject({ key: other.key, tracking: { sessionId: beside.tracking.sessionId } });
+
+    codeLink.store.patchSession(project.id, held.tracking.sessionId, { lastEventAt: Date.now() - 2 * 60 * 60 * 1000 });
+    expect(await ctx.tools.execute("claim_ticket", { key: item.key }, b)).not.toHaveProperty("claimed");
+    codeLink.store.patchSession(project.id, beside.tracking.sessionId, { blocked: "merge" });
+    expect(await ctx.tools.execute("claim_ticket", { key: other.key, parallel: true }, b)).not.toHaveProperty("claimed");
+  });
+
+  it("lets a session give back a ticket it claimed: a session made for the claim ends, the agent's own hooks session stays", async () => {
+    const { codeLink, ctx, items, project, board, checkout, item, a, b, held } = await setup();
+    expect(await ctx.tools.execute("release_ticket", { key: item.key }, b)).toMatchObject({ released: false, key: item.key });
+
+    // Released by the one holding it: its connection-only session ends, and the ticket's status stays.
+    expect(await ctx.tools.execute("release_ticket", { key: item.key }, a)).toEqual({ released: true, key: item.key, status: "doing", note: `${item.key} stays doing; change its status only if the person says so` });
+    expect(codeLink.store.session(project.id, held.tracking.sessionId)).toMatchObject({ itemIds: [], state: "ended" });
+    expect(items.get(project.id, item.id)!.status).toBe("doing");
+    expect(await ctx.tools.execute("claim_ticket", { key: item.key }, b)).not.toHaveProperty("claimed");
+
+    // An agent with hooks gives back the ticket it took alongside its own: the parallel session ends and its
+    // hooks reach the session it holds again; the hooks session itself stays when it drops its last ticket.
+    const post = (payload: unknown) => fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    await post({ hook_event_name: "SessionStart", session_id: "cli-give", cwd: checkout });
+    const c = { by: "ai:claude-code" as const, projectId: project.id, connection: "conn-give" };
+    const mine = items.create({ projectId: project.id, boardId: board.id, title: "Mine", status: "todo", by: "human" });
+    const wrong = items.create({ projectId: project.id, boardId: board.id, title: "Wrong", status: "todo", by: "human" });
+    const own = (await ctx.tools.execute("claim_ticket", { key: mine.key }, c)) as Claimed;
+    const extra = (await ctx.tools.execute("claim_ticket", { key: wrong.key, parallel: true }, c)) as Claimed;
+    expect(await ctx.tools.execute("release_ticket", { key: wrong.key }, c)).toMatchObject({ released: true });
+    expect(codeLink.store.session(project.id, extra.tracking.sessionId)).toMatchObject({ itemIds: [], state: "ended" });
+    expect(await ctx.tools.execute("note_progress", { text: "back on mine" }, c)).toMatchObject({ ok: true, key: mine.key });
+    await post({ hook_event_name: "UserPromptSubmit", session_id: "cli-give", cwd: checkout });
+    expect(codeLink.store.session(project.id, own.tracking.sessionId)).toMatchObject({ itemIds: [mine.id], state: "running" });
+
+    expect(await ctx.tools.execute("release_ticket", { key: mine.key }, c)).toMatchObject({ released: true });
+    expect(codeLink.store.session(project.id, own.tracking.sessionId)).toMatchObject({ itemIds: [], state: "running" });
   });
 });
 
@@ -994,8 +1073,9 @@ describe("one outside session working tickets in parallel", () => {
     expect(codeLink.store.session(project.id, second.tracking.sessionId)).toMatchObject({ agent: "mcp", itemIds: [b.id] });
     expect(await ctx.tools.execute("note_progress", { key: a.key, text: "alpha" }, inv)).toMatchObject({ ok: true, key: a.key });
     expect(codeLink.store.session(project.id, first.tracking.sessionId)!.summary).toBe("alpha");
-    // Another client's connection claims on its own, untouched by these.
-    const elsewhere = (await ctx.tools.execute("claim_ticket", { key: b.key }, { ...inv, connection: "conn-else" })) as Claimed;
+    // Another client's connection is told the ticket is held; taking it over, it claims on its own, untouched by these.
+    expect(await ctx.tools.execute("claim_ticket", { key: b.key }, { ...inv, connection: "conn-else" })).toMatchObject({ claimed: false, heldBy: [{ sessionId: second.tracking.sessionId }] });
+    const elsewhere = (await ctx.tools.execute("claim_ticket", { key: b.key, takeOver: true }, { ...inv, connection: "conn-else" })) as Claimed;
     expect([first.tracking.sessionId, second.tracking.sessionId]).not.toContain(elsewhere.tracking.sessionId);
     ctx.emit("mcp/closed", "conn-cursor-par");
     expect(codeLink.store.session(project.id, first.tracking.sessionId)!.state).toBe("ended");

@@ -13,7 +13,7 @@ import { DEFAULT_BRANCH_TEMPLATE, branchFor, titleSlug } from "./keys.js";
 import { CODE_WORDS } from "./words.js";
 import type {} from "@tomradex/settings";
 import { mergeLine } from "./prompts.js";
-import { sessionContext } from "./sessions.js";
+import { END_AFTER_MS, sessionContext } from "./sessions.js";
 import type { CodeLinkStore, CodeLinkView, SessionView } from "./store.js";
 import type { PrState } from "./rules.js";
 import type { CodeSummaryView } from "./service.js";
@@ -51,6 +51,8 @@ export interface ToolHost {
   connectionSession(projectId: string, repoId: string | null, worktree?: string | null): SessionView;
   /** The same outside agent, as a new session for its next ticket, or for one it works alongside the one it holds. */
   successor(projectId: string, from: SessionView, repoId: string | null, worktree?: string | null): SessionView;
+  /** A claim taken back: the session drops the ticket, and one made only for claims ends once it holds nothing. */
+  letGo(projectId: string, connection: string, sessionId: string, itemId: string): void;
   notify(projectId: string): void;
   /** A scan that starts now, after any running one: what git and GitHub say at this moment. */
   rescan(projectId: string): Promise<unknown>;
@@ -72,6 +74,17 @@ const GITHUB_PULL = /^https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\//i;
 
 export function registerTools(ctx: Context, host: ToolHost): void {
   const untracked = () => CODE_WORDS(ctx.get("settings")?.locale?.())("untrackedSession");
+  // One that handed its merge to the person, or has been silent for an hour, is no longer working the ticket.
+  const workingOn = (projectId: string, itemId: string): SessionView[] =>
+    host.store.sessions(projectId, { itemId, live: true }).filter((s) => s.state !== "lost" && s.endedAt === null && s.blocked !== "merge" && Date.now() - (s.lastEventAt ?? s.startedAt) < END_AFTER_MS);
+  const holderView = (s: SessionView) => ({
+    sessionId: s.id,
+    agent: s.agent,
+    worktree: s.worktree,
+    state: s.state,
+    lastSeen: new Date(s.lastEventAt ?? s.startedAt).toISOString(),
+    summary: s.summary
+  });
   const subject = (tool: string, projectId: string, key: string | undefined, inv: ToolInvocation): Subject => {
     const bound = sessionContext.getStore();
     const session = bound && bound.projectId === projectId ? host.store.session(projectId, bound.sessionId) : null;
@@ -337,11 +350,12 @@ export function registerTools(ctx: Context, host: ToolHost): void {
       kit: "code",
       title: "Claim a ticket to work on",
       description:
-        "Before implementing a ticket from your own terminal: returns the ticket, the branch to use, and marks it Doing. A session owns one ticket at a time: another can be claimed once that one is done, or alongside it with parallel: true, each on its own branch or worktree (never in a session Tomrade started).",
+        "Before implementing a ticket from your own terminal: returns the ticket, the branch to use, and marks it Doing. A session owns one ticket at a time: another can be claimed once that one is done, or alongside it with parallel: true, each on its own branch or worktree (never in a session Tomrade started). When another live session is already working the ticket, nothing changes and the result says claimed: false and who holds it. A claim made by mistake is undone with release_ticket.",
       input: z.object({
         key: z.string().min(1).describe("Ticket key, e.g. TOM-42"),
         parallel: z.boolean().optional().describe("Work on this ticket alongside the one you hold, instead of finishing that one first; then pass key to link_code, note_progress and report_merge_blocked"),
         worktree: z.string().optional().describe("The worktree or folder this ticket is worked in"),
+        takeOver: z.boolean().optional().describe("Claim it although another live session holds it — only when the person says so, that session is gone, or it is your own from before a reconnect"),
         projectId: z.string().optional()
       }),
       execute: async (args, inv) => {
@@ -368,6 +382,19 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         // An agent that reaches Tomrade without its session's token (agy) claims as its first act: that joins the terminal session Start made for this ticket.
         const started = !tokened && !again && !connected && inv.connection ? host.awaitingClaim(projectId, item.id) : null;
         let session = tokened ?? again ?? connected ?? started ?? (repoId ? host.externalSession(projectId, repoId) : null);
+        // Another session on this ticket is someone's work in progress: say who and change nothing, unless told to take it over.
+        const own = new Set([...(session ? [session.id] : []), ...(!tokened && inv.connection ? host.connectedSessions(projectId, inv.connection).map((s) => s.id) : [])]);
+        const holders = workingOn(projectId, item.id).filter((s) => !own.has(s.id));
+        if (holders.length && !args.takeOver) {
+          return {
+            claimed: false,
+            key: item.key,
+            title: item.title,
+            status: item.status,
+            heldBy: holders.map(holderView),
+            next: `another session is working ${item.key}: do not start on it, and tell the person who holds it. Claim again with takeOver: true only if the person says so, if that session is gone, or if it is your own from before a reconnect (the same worktree).`
+          };
+        }
         const held = () => (session?.itemIds ?? []).filter((id) => id !== item.id).map((id) => ctx.items.get(projectId, id));
         let others = held();
         // An outside terminal moves on once its ticket is finished, or once it handed that ticket's merge to the person
@@ -448,6 +475,37 @@ export function registerTools(ctx: Context, host: ToolHost): void {
             local && !state?.agentMerge ? `the person merges your branch into ${repo?.defaultBranch ?? "the default branch"}` : mergeLine(!!state?.agentMerge, local).replace(/^- /, ""),
             ...(session ? ["call note_progress with one line at milestones"] : [untracked()])
           ]
+        };
+      }
+    })
+  );
+
+  ctx.tools.register(
+    defineTool({
+      name: "release_ticket",
+      kit: "code",
+      title: "Let go of a ticket you claimed",
+      description:
+        "Undo claim_ticket on a ticket you will not work on — claimed by mistake, or someone else is on it: your session drops it. The ticket's status stays as it is.",
+      input: z.object({ key: z.string().min(1).describe("Ticket key, e.g. TOM-42"), projectId: z.string().optional() }),
+      execute: async (args, inv) => {
+        const projectId = requireProjectId("release_ticket", args.projectId, inv);
+        const item = ctx.items.getByKey(projectId, args.key.toUpperCase());
+        if (!item) throw new Error(`release_ticket: no ticket ${args.key} in this project`);
+        const bound = sessionContext.getStore();
+        if (bound && bound.projectId === projectId && host.store.session(projectId, bound.sessionId)) {
+          throw new Error(`release_ticket: a session Tomrade started works its own ticket — stop it from Tomrade instead`);
+        }
+        const mine = inv.connection ? host.connectedSessions(projectId, inv.connection).filter((s) => s.itemIds.includes(item.id)) : [];
+        if (!mine.length) return { released: false, key: item.key, status: item.status, message: `this connection holds no claim on ${item.key}` };
+        for (const s of mine) host.letGo(projectId, inv.connection!, s.id, item.id);
+        const others = workingOn(projectId, item.id);
+        return {
+          released: true,
+          key: item.key,
+          status: item.status,
+          note: `${item.key} stays ${item.status}; change its status only if the person says so`,
+          ...(others.length ? { stillWorkedBy: others.map(holderView) } : {})
         };
       }
     })
