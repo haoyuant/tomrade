@@ -1359,6 +1359,8 @@ describe("the last hook event this machine heard from each agent", () => {
 
     const registrations = ctx.db.registrations("project");
     const digest = () => digestState(exportState(db, project.id, { registrations, exports: ["code_link"] }));
+    // Setting the checkout started a scan that writes the exported repository state; joining it keeps that out of the comparison.
+    await codeLink.scan(project.id);
     const exported = digest();
     const writes = vi.spyOn(codeLink.store, "noteHookHeard");
     const post = (payload: Record<string, unknown>) => fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: "cli-h", cwd: checkout, ...payload }) });
