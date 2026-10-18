@@ -260,6 +260,7 @@ export const ja: PartialMessages = {
     moveNote: "Tomrade は「アプリケーション」フォルダーにある場合のみ自動アップデートできます。",
     move: "「アプリケーション」に移動",
     unsupportedNote: "このコピーは自動アップデートできません。新しいリリースは tomrade.com にあります。",
+    localBuildNote: "ローカルビルドのため、アップデートは確認しません。",
     autoCheck: "アップデートを自動で確認",
     autoCheckNote: "起動後に一度、その後は1時間ごとに確認します。指示するまで何もダウンロードしません。",
     channel: "アップデートチャンネル",
