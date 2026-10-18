@@ -21,7 +21,7 @@ import GitHubAccount from "@tomradex/github";
 import { Settings } from "@tomradex/settings";
 import { Storage } from "@tomradex/storage";
 import { FakeHerdr, fresh, settle } from "@tomradex/testkit";
-import { Herdr } from "@tomradex/herdr";
+import { Herdr, herdrInstall } from "@tomradex/herdr";
 import { Tools, defineTool } from "@tomradex/tools";
 import { z } from "zod";
 
@@ -297,6 +297,24 @@ it("runs a ticket in a herdr workspace, follows the pane's status as the session
   expect(opened).toHaveBeenCalledTimes(4);
   opened.mockRestore();
   fake.close();
+});
+
+it("installs herdr with Homebrew in a terminal the person watches, and runs nothing where only the guide fits", async () => {
+  // No herdr on this machine: the terminal setting, left on automatic, is the system terminal.
+  const { codeLink } = await machine(null);
+  const opened = vi.spyOn(terminalApp, "open").mockResolvedValue();
+  const plan = vi.spyOn(codeLink, "herdrInstall").mockResolvedValue(herdrInstall({ brew: true }));
+  try {
+    expect(await codeLink.installHerdr()).toEqual({ launched: true, command: "brew install herdr" });
+    const script = path.join(codeLink.sessionDir("setup"), "herdr", "run.command");
+    expect(opened).toHaveBeenCalledWith("Terminal", script);
+    expect(fs.readFileSync(script, "utf8")).toContain("brew install herdr");
+    plan.mockResolvedValue(herdrInstall({ brew: false }));
+    await expect(codeLink.installHerdr()).rejects.toThrow("install guide");
+    expect(opened).toHaveBeenCalledTimes(1);
+  } finally {
+    opened.mockRestore();
+  }
 });
 
 async function untilRunsSettle(agent: Agent, timeout = 8000) {

@@ -35,6 +35,17 @@ declare module "cordis" {
 /** Where to get herdr; shown wherever it is missing. */
 export const HERDR_INSTALL = "brew install herdr";
 
+/** herdr's own install guide, for a machine Homebrew is not on. */
+export const HERDR_GUIDE = "https://herdr.dev/docs/install/";
+
+/** How herdr installs on a machine: Homebrew's formula where brew is, otherwise only the guide. */
+export interface HerdrInstall {
+  command: string | null;
+  guide: string;
+}
+
+export const herdrInstall = (found: { brew: boolean }): HerdrInstall => ({ command: found.brew ? HERDR_INSTALL : null, guide: HERDR_GUIDE });
+
 /** How long to wait before subscribing again after the stream ends; doubled each time it fails, up to the maximum. */
 export const RECONNECT_MS = 2_000;
 export const RECONNECT_MAX_MS = 60_000;
