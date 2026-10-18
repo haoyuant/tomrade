@@ -229,7 +229,7 @@ function Trace({ block }: { block: Block & { type: "trace" } }) {
   );
 }
 
-type StartOfferCard = { itemId: string; key: string; title: string };
+type StartOfferCard = { itemId: string; key: string; title: string; task?: string };
 
 // The assistant does not carry tickets out; it hands them to the Start dialog, where the person chooses.
 function StartOffer({ card, onOpenIssue }: { card: StartOfferCard; onOpenIssue: (id: string) => void }) {
@@ -240,6 +240,7 @@ function StartOffer({ card, onOpenIssue }: { card: StartOfferCard; onOpenIssue: 
         <Icon name="i-plug" size={12} />
         {card.key} {card.title}
       </div>
+      {card.task && <p className="tool-row" data-testid="start-offer-task">{t("codeLink.startTask", { task: card.task })}</p>}
       <p className="tool-row">{t("agentPanel.startOfferLead")}</p>
       <div className="tool-row">
         <button
@@ -247,7 +248,7 @@ function StartOffer({ card, onOpenIssue }: { card: StartOfferCard; onOpenIssue: 
           className="btn btn-primary btn-xs"
           onClick={() => {
             onOpenIssue(card.itemId);
-            offerStart(card.itemId);
+            offerStart(card.itemId, card.task);
           }}
         >
           {t("agentPanel.startOffer", { key: card.key })}

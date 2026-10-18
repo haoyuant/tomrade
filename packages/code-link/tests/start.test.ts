@@ -1380,7 +1380,8 @@ describe("starting a ticket", () => {
     await settle();
     // a terminal agent gets no system prompt from Tomrade: the project's rules travel in its first prompt
     ctx.agent.setRules(project.id, "- Commit messages in English");
-    const result = await codeLink.start(project.id, item.id, { mode: "terminal" });
+    // What the Start was offered with is the terminal agent's first instruction after its brief, as it is a headless run's.
+    const result = await codeLink.start(project.id, item.id, { mode: "terminal", message: "PR #9 conflicts with main: merge origin/main first" });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result).toMatchObject({ mode: "terminal", launched: false });
@@ -1395,6 +1396,7 @@ describe("starting a ticket", () => {
     expect(fs.readFileSync(path.join(dir, "prompt.md"), "utf8")).toContain(`Implement ${item.key}`);
     expect(fs.readFileSync(path.join(dir, "prompt.md"), "utf8")).toContain(`this run owns exactly ${item.key}`);
     expect(fs.readFileSync(path.join(dir, "prompt.md"), "utf8")).toContain("inspect the full diff");
+    expect(fs.readFileSync(path.join(dir, "prompt.md"), "utf8")).toContain("\n\nPR #9 conflicts with main: merge origin/main first\n\nProject rules");
     expect(fs.readFileSync(path.join(dir, "prompt.md"), "utf8")).toMatch(/Project rules — [^\n]*\n- Commit messages in English$/);
     expect(fs.existsSync(path.join(dir, "run.command"))).toBe(true);
 
@@ -1892,6 +1894,10 @@ it("lets the assistant offer Start as a card instead of doing the work itself", 
     author: "ai:test",
     available: async () => ({ ok: true }),
     async turn(_input, io) {
+      if (_input.input.kind === "text" && _input.input.text === "merge it") {
+        await io.tools.execute("offer_start", { key: item.key, task: "  PR #9 conflicts with main: merge origin/main, resolve, test, push, merge  " });
+        return { stop: "end" };
+      }
       for (const key of [item.key, "TOM-999"]) results.push(await io.tools.execute("offer_start", { key }).catch((err: Error) => err.message));
       return { stop: "end" };
     }
@@ -1913,6 +1919,11 @@ it("lets the assistant offer Start as a card instead of doing the work itself", 
     const after = agent.thread(project.id, thread.id).messages.filter((m) => m.block.type === "card");
     expect(after).toHaveLength(2);
     expect(after.at(-1)).toMatchObject({ runId: again.runId, block: { schema: "start", data: { itemId: item.id } } });
+    // A merge refused for a conflict is offered with what to do first; the card carries it for the Start to hand on.
+    const merge = agent.send(project.id, thread.id, { kind: "text", text: "merge it" });
+    await expect.poll(() => agent.store.run(project.id, merge.runId)?.status).toBe("done");
+    const offered = agent.thread(project.id, thread.id).messages.filter((m) => m.block.type === "card").at(-1);
+    expect(offered).toMatchObject({ runId: merge.runId, block: { data: { itemId: item.id, task: "PR #9 conflicts with main: merge origin/main, resolve, test, push, merge" } } });
   } finally {
     await ctx.fiber.dispose();
   }

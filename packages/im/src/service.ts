@@ -81,14 +81,14 @@ interface Connection {
   credentials: string;
 }
 /** What a start from IM settles, carried in the tokens of its card; `card` is that card's outbox id. */
-interface StartDraft { itemId: string; card: string; engine?: string; options?: Record<string, string>; permissionMode?: string; playbook?: string; allowBlocked?: boolean; releaseBranch?: boolean }
+interface StartDraft { itemId: string; card: string; engine?: string; options?: Record<string, string>; permissionMode?: string; playbook?: string; allowBlocked?: boolean; releaseBranch?: boolean; task?: string }
 type StartOutcome =
   | { ok: false; gate: string; message: string; blockers?: string[]; board?: { name: string }; cause?: { code: string; repoId?: string; branch?: string; heldAt?: string; releasable?: boolean } }
   | { ok: true; continued: boolean; threadId: string; runId?: string; engine: string; waitingOn?: string; warnings?: string[] };
 /** The part of `ctx.codeLink` IM uses; code link is optional and never imported. */
 interface CodeHost extends CodeLookup {
   resolve(projectId: string, proposalId: string, accept: boolean): { state: string };
-  start(projectId: string, itemId: string, opts: { mode: "run"; engine?: string; options?: Record<string, unknown>; permissionMode?: string; playbook?: string; allowBlocked?: boolean; releaseBranch?: boolean; source?: Record<string, string> }): Promise<StartOutcome>;
+  start(projectId: string, itemId: string, opts: { mode: "run"; engine?: string; options?: Record<string, unknown>; permissionMode?: string; playbook?: string; allowBlocked?: boolean; releaseBranch?: boolean; message?: string; source?: Record<string, string> }): Promise<StartOutcome>;
   startDefaults(): { engine?: string; options?: Record<string, unknown>; permissionMode?: string; playbook?: string } | null;
 }
 /** A ticket as a start needs it. */
@@ -1364,7 +1364,8 @@ export class Im extends Service {
       // A group sees what will run before it runs; so does the person who asked to adjust it.
       const now = kind === "start" && !this.isGroup(b);
       // Started at once, the card clicked is the one that says so.
-      const draft = await this.draftFor(item, now && given.card ? given.card : `start:${b.id}:${item.id}:${row.id}`);
+      const drafted = await this.draftFor(item, now && given.card ? given.card : `start:${b.id}:${item.id}:${row.id}`);
+      const draft = given.task ? { ...drafted, task: given.task } : drafted;
       if (now) await this.startNow(b, row, actorId, draft, reply);
       else { await this.startCard(b, actorId, draft, reply); this.accept(row); }
       return;
@@ -1456,7 +1457,7 @@ export class Im extends Service {
       if (k === "engine") {
         const target = engines.find(e => e.id === v || e.title.toLowerCase() === v.toLowerCase());
         if (!target) this.refuse(this.w("noEngineHere", { value: v }));
-        if (target.id !== next.engine) next = { itemId: next.itemId, card: next.card, engine: target.id, ...(next.playbook ? { playbook: next.playbook } : {}) };
+        if (target.id !== next.engine) next = { itemId: next.itemId, card: next.card, engine: target.id, ...(next.playbook ? { playbook: next.playbook } : {}), ...(next.task ? { task: next.task } : {}) };
         continue;
       }
       const engine = engines.find(e => e.id === next.engine);
@@ -1509,6 +1510,7 @@ export class Im extends Service {
       lines.push(`${w("permissionMode")}: ${modes.choices.find(c => c.value === v)?.label ?? v}`);
     }
     if (general) lines.push(`${w("method")}: ${methods.find(m => m.id === draft.playbook)?.title ?? draft.playbook ?? w("ticketsMethod")}`);
+    if (draft.task) lines.push(w("startTask", { task: draft.task }));
     if (this.isGroup(b)) lines.push(w("groupSeesWork"));
     // A card changed in place keeps its tokens, each now carrying the new settings, so a choice made before the edit shows still applies.
     const live = new Map(this.store.all<Action>("SELECT * FROM plugin_im_actions WHERE binding_id = ? AND question_id LIKE 'cmd:start%' AND consumed = 0 AND value_json LIKE ?", b.id, `%${draft.card}%`)
@@ -1549,7 +1551,7 @@ export class Im extends Service {
   private startActions(b: Binding, content: ImContent, block: Block, card: string): ImContent {
     const data = block.type === "card" && block.schema === "start" ? (block.data ?? {}) as Record<string, unknown> : null;
     if (!data || typeof data.itemId !== "string" || !this.code()) return content;
-    const value = JSON.stringify({ itemId: data.itemId, card });
+    const value = JSON.stringify({ itemId: data.itemId, card, ...(typeof data.task === "string" && data.task ? { task: data.task } : {}) });
     return { ...content, actions: [
       { label: this.continuing(b, data.itemId) ? this.w("continue") : this.w("start"), token: this.offerValue(b, "start", b.actor_id, value), style: "primary" },
       { label: this.w("adjust"), token: this.offerValue(b, "start-adjust", b.actor_id, value) }
@@ -1621,7 +1623,7 @@ export class Im extends Service {
       result = await code.start(b.project_id, item.id, { mode: "run",
         ...(draft.engine ? { engine: draft.engine } : {}), ...(draft.options ? { options: draft.options } : {}),
         ...(draft.permissionMode && !general ? { permissionMode: draft.permissionMode } : {}), ...(draft.playbook && general ? { playbook: draft.playbook } : {}),
-        ...(draft.allowBlocked ? { allowBlocked: true } : {}), ...(draft.releaseBranch ? { releaseBranch: true } : {}),
+        ...(draft.allowBlocked ? { allowBlocked: true } : {}), ...(draft.releaseBranch ? { releaseBranch: true } : {}), ...(draft.task ? { message: draft.task } : {}),
         source: { connection: b.connection_id, tenant: address.tenantId, conversation: address.conversationId, actor: actorId } });
     } catch (e) { settle(b, w("notStarted", { key: item.key })); throw e; }
     if (!result.ok) {

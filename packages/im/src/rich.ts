@@ -165,7 +165,7 @@ function card(scope: RenderScope, block: Extract<Block, { type: "card" }>): ImCo
   const data = (block.data ?? {}) as Record<string, unknown>;
   switch (block.schema) {
     case "start":
-      if (typeof data.key === "string") return { text: "", elements: ticket(scope, data.key, String(data.title ?? "")) };
+      if (typeof data.key === "string") return { text: typeof data.task === "string" && data.task ? w("startTask", { task: data.task }) : "", elements: ticket(scope, data.key, String(data.title ?? "")) };
       break;
     case "backlog.proposal": {
       const epics = Array.isArray(data.epics) ? data.epics as { title?: string; features?: { title?: string }[] }[] : [];

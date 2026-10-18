@@ -16,7 +16,7 @@ afterEach(async () => { for (const close of cleanups.splice(0).reverse()) await 
 
 const RICH: ImCapabilities = { edit: true, buttons: true, inboundFiles: false, outboundFiles: false, maxTextLength: 4000, maxFileBytes: 0, select: true, textInput: true, cards: true, cardUpdate: true };
 
-type StartOpts = { mode: "run"; engine?: string; options?: Record<string, unknown>; permissionMode?: string; playbook?: string; allowBlocked?: boolean; releaseBranch?: boolean; source?: Record<string, string> };
+type StartOpts = { mode: "run"; engine?: string; options?: Record<string, unknown>; permissionMode?: string; playbook?: string; allowBlocked?: boolean; releaseBranch?: boolean; message?: string; source?: Record<string, string> };
 
 /** Code link as a start from IM uses it: it opens the ticket's thread and sends the brief, or stops at a gate. */
 class FakeCode extends Service {
@@ -61,10 +61,11 @@ async function boot() {
   const turn: Engine["turn"] = async (input, io) => {
     const text = input.input.kind === "text" ? input.input.text : "";
     turns.push({ text, options: { ...(input.options as Record<string, unknown>) }, ...(input.permissionMode ? { mode: input.permissionMode } : {}) });
-    if (text === "offer") {
+    if (text === "offer" || text === "offer the merge") {
       const run = world.ctx.agent.activeRuns().find(r => r.thread.id === input.threadId)!;
       const item = world.ctx.items.getByKey(world.project.id, ticket)!;
-      world.ctx.agent.setCard(run.run.id, { id: `start-${item.id}-${run.run.id}`, schema: "start", title: `${item.key} ${item.title}`, data: { itemId: item.id, key: item.key, title: item.title } });
+      const task = text === "offer the merge" ? { task: "PR #9 conflicts with main: merge origin/main, resolve, test, push, merge" } : {};
+      world.ctx.agent.setCard(run.run.id, { id: `start-${item.id}-${run.run.id}`, schema: "start", title: `${item.key} ${item.title}`, data: { itemId: item.id, key: item.key, title: item.title, ...task } });
     }
     if (text === "wait" && probe.hold) await probe.hold;
     if (text === "ask") { await io.tools.execute("ask_user", { question: "Ship it?", options: ["Yes", "No"] }); return { stop: "end" }; }
@@ -151,6 +152,27 @@ describe("starting a ticket from IM", () => {
     await w.receive(act("go", cards()[1].content.actions![0].token));
     await w.said(/^Started .* with Test\./);
     expect(w.code.starts).toHaveLength(1);
+  });
+
+  it("says on the card what a start offered with a task does first, and hands the task to the session", async () => {
+    const w = await boot();
+    await w.receive(say("a", "offer the merge"));
+    const card = await w.said(/^First: PR #9 conflicts with main: merge origin\/main, resolve, test, push, merge$/);
+    await expect.poll(() => w.ctx.agent.activeRuns().length).toBe(0);
+    await w.receive(act("go", card.content.actions!.find(a => a.label === "Start")!.token));
+    await w.said(/^Started .* with Test\./);
+    expect(w.code.starts.at(-1)).toMatchObject({ message: "PR #9 conflicts with main: merge origin/main, resolve, test, push, merge" });
+
+    // Adjusted first, the card shows the task too, and its Start still hands it on.
+    const adjusted = await boot();
+    await adjusted.receive(say("b", "offer the merge"));
+    const offered = await adjusted.said(/^First: PR #9/);
+    await expect.poll(() => adjusted.ctx.agent.activeRuns().length).toBe(0);
+    await adjusted.receive(act("adjust", offered.content.actions!.find(a => a.label === "Adjust settings")!.token));
+    const settings = await adjusted.said(/\nFirst: PR #9 conflicts with main/);
+    await adjusted.receive(act("start", settings.content.actions!.find(a => a.label === "Start")!.token));
+    await adjusted.said(/^Started .* with Test\./);
+    expect(adjusted.code.starts.at(-1)).toMatchObject({ message: "PR #9 conflicts with main: merge origin/main, resolve, test, push, merge" });
   });
 
   it("starts and follows a ticket while a question waits here, leaving the question's card saying where it stays", async () => {

@@ -42,10 +42,12 @@ export function StartTicket(props: StartTicketProps) {
   const [open, setOpen] = useState(false);
   // asked to open from elsewhere: in that mode, starting at once so what stopped it shows with its fix
   const [requested, setRequested] = useState<"run" | "terminal" | null>(null);
+  const [task, setTask] = useState<string | undefined>(undefined);
   useEffect(
     () =>
-      onStartRequest(item.id, (mode) => {
+      onStartRequest(item.id, (mode, offered) => {
         setRequested(mode);
+        setTask(offered);
         setOpen(true);
       }),
     [item.id]
@@ -68,9 +70,11 @@ export function StartTicket(props: StartTicketProps) {
         <StartTicketDialog
           {...props}
           requested={requested}
+          task={task}
           onClose={() => {
             setOpen(false);
             setRequested(null);
+            setTask(undefined);
           }}
         />
       )}
@@ -78,7 +82,15 @@ export function StartTicket(props: StartTicketProps) {
   );
 }
 
-function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, onClose, requested }: StartTicketProps & { onClose: () => void; requested?: "run" | "terminal" | null }) {
+function StartTicketDialog({
+  projectId,
+  item,
+  onOpenIssue,
+  onOpenRepositories,
+  onClose,
+  requested,
+  task
+}: StartTicketProps & { onClose: () => void; requested?: "run" | "terminal" | null; task?: string }) {
   const { t } = useI18n();
   const toast = useToast();
   const qc = useQueryClient();
@@ -195,7 +207,7 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
     const options: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(pickValues)) if (value) options[key] = value;
     start.mutate(
-      { itemId: item.id, mode, engine: engineId, options, ...(general ? { playbook } : {}), ...(permissionMode ? { permissionMode } : {}), ...(allowBlocked ? { allowBlocked } : {}), ...(releaseBranch ? { releaseBranch } : {}) },
+      { itemId: item.id, mode, engine: engineId, options, ...(general ? { playbook } : {}), ...(permissionMode ? { permissionMode } : {}), ...(allowBlocked ? { allowBlocked } : {}), ...(releaseBranch ? { releaseBranch } : {}), ...(task ? { message: task } : {}) },
       {
         onSuccess: (result) => {
           if (!result.ok) {
@@ -235,6 +247,11 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
       <DialogHead title={title} />
       <DialogBody>
         <div className="stack-4" data-testid="start-dialog">
+          {task && (
+            <p className="meta-txt" role="note" data-testid="start-task">
+              {t("codeLink.startTask", { task })}
+            </p>
+          )}
           <Field label={t("codeLink.where")}>
             <div className="seg" role="group" aria-label={t("codeLink.where")} data-testid="start-mode">
               <button type="button" aria-pressed={mode === "run"} onClick={() => setChosenMode("run")}>
