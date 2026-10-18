@@ -36,8 +36,8 @@ export const playbooks = {
     tagUser: "本机",
     tagProject: "项目",
     methodAssistWhen: "规划、执行或跟进这项工作，包括需要你亲自去做的部分。",
-    methodDesignWhen: "根据工作项里的受众、约束和参考资料，探索方案并交付设计。",
-    methodDocumentWhen: "撰写或修改文档——可以是工作项的交付物，也可以是存放在 Files 里的笔记。",
+    methodDesignWhen: "根据工单里的受众、约束和参考资料，探索方案并交付设计。",
+    methodDocumentWhen: "撰写或修改文档——可以是工单的交付物，也可以是存放在 Files 里的笔记。",
     methodMediaWhen: "用你已经配置的生成服务制作音乐、动画等媒体。"
   }
 };

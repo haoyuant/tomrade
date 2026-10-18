@@ -31,8 +31,8 @@ const check = (name, cond, detail) => {
 
 const zh = process.env.TOMRADE_LANG === "zh";
 const say = zh
-  ? { what: "一条工作线", repo: "自己的代码仓库", connect: "连接仓库", backlog: "工作项" }
-  : { what: "one line of work", repo: "its own repository", connect: "Connect a repository", backlog: "Backlog" };
+  ? { what: "一条工作线", repo: "自己的代码仓库", connect: "连接仓库", backlog: "工单", workstreams: "工作流" }
+  : { what: "one line of work", repo: "its own repository", connect: "Connect a repository", backlog: "Backlog", workstreams: "Workstreams" };
 
 const run = async () => {
   const { ctx } = await boot({ configFile: path.join(dir, "../tomrade.yml"), vars: { userData: work }, patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, { id: "attention", config: { notify: false } }]] });
@@ -98,7 +98,8 @@ const run = async () => {
   check("an unbound page offers to connect one", (await $(`document.querySelector('.ws-repo-chip')?.classList.contains('is-none')`)) === true);
   await press(`document.querySelector('.ws-repo-chip')`);
   await sleep(900);
-  check("which opens the Fields sheet on that workstream's card", (await $(`document.querySelector('.fld-ws.is-focus')?.dataset.board`)) === unbound.id);
+  check("which opens the Workstreams sheet on that workstream's card", (await $(`document.querySelector('.fld-ws.is-focus')?.dataset.board`)) === unbound.id);
+  check("titled for workstreams, not fields", (await text(".dlg-head .dlg-title")) === say.workstreams, await text(".dlg-head .dlg-title"));
   await shot("backlog-sidebar-03-connect");
   await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`);
   await sleep(500);

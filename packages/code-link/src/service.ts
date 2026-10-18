@@ -285,7 +285,7 @@ const SETTINGS_SECTION = {
   words: {
     zh: {
       title: "代码关联",
-      description: "用哪个终端打开工作项，以及在终端里怎样调用 Claude Code、Codex 或 Pi。命令里的 {prompt}、{mcpConfig}、{mcpUrl}、{settings}、{piExtension}、{resume}、{options}（开始时选的模型和推理强度）和 {cwd} 会自动填入。",
+      description: "用哪个终端打开工单，以及在终端里怎样调用 Claude Code、Codex 或 Pi。命令里的 {prompt}、{mcpConfig}、{mcpUrl}、{settings}、{piExtension}、{resume}、{options}（开始时选的模型和推理强度）和 {cwd} 会自动填入。",
       fields: {
         terminal: { title: "终端应用", description: CODE_WORDS("zh")("terminalHelp") },
         claudeCommand: { title: "Claude Code 命令" },
@@ -294,9 +294,9 @@ const SETTINGS_SECTION = {
         geminiCommand: { title: "Gemini CLI 命令", description: "{geminiHome} 是只给本次会话用的 Gemini 主目录：沿用你自己的 ~/.gemini（登录、扩展、历史），在它设置的副本里加上 Tomrade 的服务。你自己的文件不会被改动。" },
         opencodeCommand: { title: "OpenCode 命令", description: "{opencodeConfig} 是只在本次会话生效的配置，会和你自己的 OpenCode 配置合并。" },
         workbuddyCommand: { title: "WorkBuddy 命令" },
-        agyCommand: { title: "Antigravity CLI 命令", description: "agy 没有 MCP 参数：它通过自己用户级的 tomrade 服务连到 Tomrade（先在设置里的 Antigravity CLI 下连接），开始时先认领工作项。" },
-        cursorCommand: { title: "Cursor 命令", description: "cursor-agent 没有 MCP 参数：它通过自己用户级的 tomrade 服务连到 Tomrade（先在设置里的 Cursor 下连接），开始时先认领工作项。" },
-        dshCommand: { title: "DeepSeek Harness 命令", description: "DeepSeek Harness 没有终端交互界面：工作项作为一次 headless 运行，通过 {dshReporter} 显示过程并回报，用 --session-id 续接。{bin} 是 Tomrade 找到的 dsh（包括桌面版自带的），{dshPatch} 只为这次运行加上 Tomrade 的服务。" },
+        agyCommand: { title: "Antigravity CLI 命令", description: "agy 没有 MCP 参数：它通过自己用户级的 tomrade 服务连到 Tomrade（先在设置里的 Antigravity CLI 下连接），开始时先认领工单。" },
+        cursorCommand: { title: "Cursor 命令", description: "cursor-agent 没有 MCP 参数：它通过自己用户级的 tomrade 服务连到 Tomrade（先在设置里的 Cursor 下连接），开始时先认领工单。" },
+        dshCommand: { title: "DeepSeek Harness 命令", description: "DeepSeek Harness 没有终端交互界面：工单作为一次 headless 运行，通过 {dshReporter} 显示过程并回报，用 --session-id 续接。{bin} 是 Tomrade 找到的 dsh（包括桌面版自带的），{dshPatch} 只为这次运行加上 Tomrade 的服务。" },
         hermesCommand: { title: "Hermes 命令", description: "Hermes 没有 MCP 参数，从它自己的 config.yaml 读 tomrade 服务，请求头引用这个终端导出的 $TOMRADE_MCP_TOKEN。先在设置里的 Hermes 下连接到 Tomrade。" },
         otherCommand: { title: "其他智能体命令", description: "其他带 MCP 客户端的命令行智能体，比如 Gemini CLI、OpenCode、aider……留空表示没有设置。会自动填入 {mcpUrl}、{token}（也在 $TOMRADE_MCP_TOKEN 里）、{prompt} 和 {resume}（会话 id 本身）。" }
       }

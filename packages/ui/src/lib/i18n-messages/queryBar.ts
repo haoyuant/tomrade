@@ -25,7 +25,7 @@ export const queryBar = {
     swimlanes: "Swimlanes",
     groupBy: "Group by",
     sort: "Sort",
-    sortTitle: "Order the issues by a field; Manual keeps the dragged order",
+    sortTitle: "Order the tickets by a field; Manual keeps the dragged order",
     sortHint: "pick again to flip",
 
     unsavedAria: "Unsaved changes",
@@ -37,8 +37,8 @@ export const queryBar = {
     newViewPlaceholder: "View name…"
   },
   zh: {
-    searchPlaceholder: "搜索工作项",
-    searchAria: "在此视图中搜索工作项",
+    searchPlaceholder: "搜索工单",
+    searchAria: "在此视图中搜索工单",
     clearSearch: "清除搜索",
     searchElsewhere: "此视图之外还有 {{n}} 个",
     searchElsewhereTitle: "它们也匹配，但被此视图的筛选条件排除了",
@@ -51,7 +51,7 @@ export const queryBar = {
     allFields: "全部字段",
     selectedCount: "已选 {{n}} 项",
     clearFacet: "清除{{name}}筛选",
-    nothingToFilter: "这里还没有工作项带有{{name}}。",
+    nothingToFilter: "这里还没有工单带有{{name}}。",
     editFilterTitle: "编辑此筛选",
     removeFilterTitle: "移除此筛选",
     removeFilterAria: "移除筛选 {{name}}",

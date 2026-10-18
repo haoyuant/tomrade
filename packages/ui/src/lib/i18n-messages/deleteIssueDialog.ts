@@ -8,14 +8,14 @@ export const deleteIssueDialog = {
     manualOrder: "its place in every saved view's manual order",
 
     dialogLabelWithKey: "Delete {{key}} permanently",
-    dialogLabelEmpty: "Delete issue",
+    dialogLabelEmpty: "Delete ticket",
     headTitle: "Delete permanently",
 
     notUndoable: "This is {{strong}}. Every other change in Tomrade can be taken back with {{cmdz}}, because each one keeps a copy of what came before — this one deletes that history too, so there is nothing left to restore from.",
     notUndoableStrong: "not undoable",
     alsoTakes: "Deleting {{key}} also takes:",
-    childrenNoteOne: "{{n}} issue sits under it. It is released to “No epic”, not deleted — and that reparenting is not undoable either.",
-    childrenNoteMany: "{{n}} issues sit under it. They are released to “No epic”, not deleted — and that reparenting is not undoable either.",
+    childrenNoteOne: "{{n}} ticket sits under it. It is released to “No epic”, not deleted — and that reparenting is not undoable either.",
+    childrenNoteMany: "{{n}} tickets sit under it. They are released to “No epic”, not deleted — and that reparenting is not undoable either.",
     keyRetired: "The key {{key}} is retired with it — the project counter never rewinds, so nothing is ever handed that number again.",
 
     cancel: "Cancel",
@@ -35,15 +35,15 @@ export const deleteIssueDialog = {
     manualOrder: "它在每个已保存视图手动排序中的位置",
 
     dialogLabelWithKey: "永久删除 {{key}}",
-    dialogLabelEmpty: "删除工作项",
+    dialogLabelEmpty: "删除工单",
     headTitle: "永久删除",
 
     notUndoable: "这个操作{{strong}}。Tomrade 里其他所有修改都可以用 {{cmdz}} 撤回，因为每一处修改都保留着之前的样子——唯独这一次会连同历史一起删除，所以之后没有任何东西可以恢复。",
     notUndoableStrong: "不可撤销",
     alsoTakes: "删除 {{key}} 还会一并带走：",
-    childrenNoteOne: "有 {{n}} 个工作项挂在它下面。它会被释放为「无需求组」，而不是被删除——但这次重新归属同样不可撤销。",
-    childrenNoteMany: "有 {{n}} 个工作项挂在它下面。它们会被释放为「无需求组」，而不是被删除——但这次重新归属同样不可撤销。",
-    keyRetired: "编号 {{key}} 会随之退役——项目计数器不会回退，这个编号不会再分配给任何工作项。",
+    childrenNoteOne: "有 {{n}} 个工单挂在它下面。它会被释放为「无需求组」，而不是被删除——但这次重新归属同样不可撤销。",
+    childrenNoteMany: "有 {{n}} 个工单挂在它下面。它们会被释放为「无需求组」，而不是被删除——但这次重新归属同样不可撤销。",
+    keyRetired: "编号 {{key}} 会随之退役——项目计数器不会回退，这个编号不会再分配给任何工单。",
 
     cancel: "取消",
     deleting: "正在删除…",

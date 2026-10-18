@@ -68,7 +68,7 @@ export const AGENT_WORDS = defineWords({
     budget: "这一轮的步数用完了，已停下——说“继续”就能接着做。",
     interrupted: "已中断——这次运行进行中时应用关闭了。",
     sessionLost: "{{title}} 找不到这段对话原来的会话了（会话记录可能被移走或清理）。已开新会话，并带上之前的对话继续。",
-    recommendedByType: "根据工作项描述的工作类型选出。",
+    recommendedByType: "根据工单描述的工作类型选出。",
     limited: "用量到了上限{{lifts}}。{{then}}",
     limitLiftsAt: "，{{when}} 解除",
     limitNextTry: "，没说什么时候解除，下次在 {{when}} 再试",

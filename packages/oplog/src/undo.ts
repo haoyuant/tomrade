@@ -144,7 +144,7 @@ function removeItemRows(db: ProjectDb, id: string): void {
 
 function removeBoard(db: ProjectDb, id: string): void {
   const owned = (db.prepare("SELECT COUNT(*) AS n FROM items WHERE board_id = ?").get(id) as { n: number }).n;
-  if (owned > 0) throw new InUseError(id, `That workstream now holds ${owned} issue${owned === 1 ? "" : "s"} — move them before undoing it`);
+  if (owned > 0) throw new InUseError(id, `That workstream now holds ${owned} ticket${owned === 1 ? "" : "s"} — move them before undoing it`);
   db.prepare("DELETE FROM boards WHERE id = ?").run(id);
 }
 

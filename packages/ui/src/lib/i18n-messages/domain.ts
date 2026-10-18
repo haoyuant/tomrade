@@ -110,7 +110,7 @@ export const domain = {
     fieldType_select: "单选",
     fieldType_checkbox: "勾选框",
     fieldType_labels: "标签",
-    fieldType_item: "工作项",
+    fieldType_item: "条目",
     layout_board: "看板",
     layout_table: "表格",
     layout_graph: "关系图",

@@ -1,6 +1,6 @@
 export const workspace = {
   en: {
-    itemsReadFailed: "This project's issues could not be read — the backlog is not empty, it did not load.",
+    itemsReadFailed: "This project's tickets could not be read — the backlog is not empty, it did not load.",
     conflictBanner: "Version conflict on “{{title}}”. An agent wrote to it while this view was open — the view re-fetched, so try the move again.",
     dismiss: "Dismiss",
     nothingToUndo: "Nothing left to undo",
@@ -13,7 +13,7 @@ export const workspace = {
     createdViewToast: "Created view {{name}}"
   },
   zh: {
-    itemsReadFailed: "没能读取这个项目的工作项——不是待办为空，而是没加载出来。",
+    itemsReadFailed: "没能读取这个项目的工单——不是待办为空，而是没加载出来。",
     conflictBanner: "「{{title}}」出现版本冲突。有智能体在此视图打开期间写入了它——视图已重新拉取，请重试这次移动。",
     dismiss: "关闭",
     nothingToUndo: "没有可撤销的操作了",

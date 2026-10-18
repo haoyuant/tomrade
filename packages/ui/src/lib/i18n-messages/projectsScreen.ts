@@ -11,7 +11,7 @@ export const projectsScreen = {
     settingsShortcutTitle: "Settings — [[cmd:settings]]",
     settingsAria: "Settings",
     leadParagraph:
-      "Every project is a folder you can see. Its backlog is one list of issues with built-in and custom fields; saved views filter, group and sort it without moving anything.",
+      "Every project is a folder you can see. Its backlog is one list of tickets with built-in and custom fields; saved views filter, group and sort it without moving anything.",
     newProjectCardDesc: "Creates a “Main” workstream and the default views.",
     agentsTitle: "Connect an outside agent",
     agentsLede: "Claude Code, Cline or any app that speaks MCP can work on your backlog from outside Tomrade. The agents built into Tomrade do not need this.",
@@ -30,7 +30,7 @@ export const projectsScreen = {
     noBoards: "No workstreams",
     boardsStat: "workstreams",
     openStat: "open",
-    issuesStat: "issues",
+    issuesStat: "tickets",
     lastWriteStat: "last write",
     settingsForTitle: "Settings for {{name}}"
   },
@@ -45,7 +45,7 @@ export const projectsScreen = {
     newProject: "新建项目",
     settingsShortcutTitle: "设置 — [[cmd:settings]]",
     settingsAria: "设置",
-    leadParagraph: "每个项目都是一个看得见的文件夹。它的 backlog 是一份带有内置字段和自定义字段的工作项列表；已保存的视图对它筛选、分组、排序，而不移动任何东西。",
+    leadParagraph: "每个项目都是一个看得见的文件夹。它的 backlog 是一份带有内置字段和自定义字段的工单列表；已保存的视图对它筛选、分组、排序，而不移动任何东西。",
     newProjectCardDesc: "创建一个「主线」工作流和默认视图。",
     agentsTitle: "连接外部智能体",
     agentsLede: "Claude Code、Cline 或任何支持 MCP 的应用，都可以从 Tomrade 外部处理你的待办库。Tomrade 内置的智能体不需要这一步。",
@@ -53,9 +53,9 @@ export const projectsScreen = {
     notRunning: "未运行",
     mcpHint: "把这个地址加到该智能体的 MCP 设置里。",
     toolsExposed: "它能做什么",
-    canTickets: "查找、读取、创建和更新工作项，修改状态",
+    canTickets: "查找、读取、创建和更新工单，修改状态",
     canUndo: "它做的每处修改都会标明来自智能体，并且可以撤销",
-    lockedWritesBullet: "你锁定的工作项，标题和正文会保持原样",
+    lockedWritesBullet: "你锁定的工单，标题和正文会保持原样",
 
     openProjectTitle: "打开{{name}}",
     archived: "已归档",
@@ -64,7 +64,7 @@ export const projectsScreen = {
     noBoards: "暂无工作流",
     boardsStat: "工作流",
     openStat: "未完成",
-    issuesStat: "工作项",
+    issuesStat: "工单",
     lastWriteStat: "最后写入",
     settingsForTitle: "{{name}} 的设置"
   }

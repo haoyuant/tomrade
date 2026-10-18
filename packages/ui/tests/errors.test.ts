@@ -29,10 +29,10 @@ it("says each typed domain refusal in words, with no id in them", () => {
 
 // Worded as the boards, views, oplog and repos services word them.
 const reasons = [
-  ["Workstream Core still holds 3 issues — move them first", "工作流「Core」里还有 3 个工作项——请先把它们移走。"],
-  ["Workstream Core is the project's last; new issues need somewhere to land", "「Core」是这个项目的最后一个工作流，新的工作项需要有地方放。"],
+  ["Workstream Core still holds 3 tickets — move them first", "工作流「Core」里还有 3 个工单——请先把它们移走。"],
+  ["Workstream Core is the project's last; new tickets need somewhere to land", "「Core」是这个项目的最后一个工作流，新的工单需要有地方放。"],
   ["Board is the project's last view", "「Board」是这个项目的最后一个视图。"],
-  ["That workstream now holds 1 issue — move them before undoing it", "这个工作流现在有 1 个工作项——请先把它们移走，再撤销。"],
+  ["That workstream now holds 1 ticket — move them before undoing it", "这个工作流现在有 1 个工单——请先把它们移走，再撤销。"],
   ["tomrade is still the repository of 2 workstreams", "「tomrade」仍是 2 个工作流的代码仓库。"]
 ];
 

@@ -144,7 +144,7 @@ export const plugins = {
     nameLabel: "Name",
     nameHint: "Lowercase letters, digits and dashes — it becomes the plugin's id.",
     describeLabel: "What should it do?",
-    describePlaceholder: "Mark issues that have been in Doing for more than a week, and count them in the status bar.",
+    describePlaceholder: "Mark tickets that have been in Doing for more than a week, and count them in the status bar.",
     engineLabel: "Agent",
     engineDefault: "The default agent",
     startBuilding: "Start",
