@@ -1,5 +1,9 @@
 export const codeLink = {
   en: {
+    herdrNotInstalled: "herdr · Not installed",
+    herdrNotRunning: "herdr · Installed, not running",
+    herdrRunning: "herdr · Running",
+    herdrSetupHint: "Install with brew install herdr, then open a terminal and run herdr. You can still start now.",
     perm_auto: "Auto",
     perm_full: "Full access",
     perm_acceptEdits: "Accept edits",
@@ -96,6 +100,10 @@ export const codeLink = {
     rescanned: "Scanned {{scanned}}/{{repos}} repositories · {{moved}} moved"
   },
   zh: {
+    herdrNotInstalled: "herdr · 未安装",
+    herdrNotRunning: "herdr · 已安装未运行",
+    herdrRunning: "herdr · 运行中",
+    herdrSetupHint: "运行 brew install herdr 安装，再打开一个终端运行 herdr。也可以直接开始。",
     perm_auto: "自动",
     perm_full: "完全访问",
     perm_acceptEdits: "自动接受编辑",

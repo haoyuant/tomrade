@@ -3,10 +3,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
+import { CODE_WORDS } from "./words.js";
 
 /** Machine settings: which terminal opens, and how each coding agent is invoked in it. */
 export const TerminalSettings = z.object({
-  terminal: z.string().default("Terminal").meta({ title: "Terminal app" }).describe('Choose an installed terminal app. "herdr" runs the ticket in a herdr workspace, whose pane the ticket then follows (brew install herdr; the tomrade plugin for herdr — herdr plugin install haoyuant/tomrade-plugins/herdr — opens and claims tickets from the terminal). "none" only prepares the command for copying.'),
+  terminal: z.string().default("herdr").meta({ title: "Terminal app" }).describe(CODE_WORDS("en")("terminalHelp")),
   claudeCommand: z.string().default('claude {options} --mcp-config "{mcpConfig}" --settings "{settings}" {resume} "$(cat "{prompt}")"').meta({ title: "Claude Code command" }),
   codexCommand: z.string().default('codex {resume} {options} -c mcp_servers.tomrade.url="{mcpUrl}" -c mcp_servers.tomrade.bearer_token_env_var="TOMRADE_MCP_TOKEN" "$(cat "{prompt}")"').meta({ title: "Codex command" }),
   piCommand: z.string().default('pi {options} -e "{piExtension}" {resume} "$(cat "{prompt}")"').meta({ title: "Pi command" }).describe("Pi takes no MCP flag; {piExtension} is a session-only extension that registers the server and reports like Claude's hooks."),

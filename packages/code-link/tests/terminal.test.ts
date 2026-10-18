@@ -15,6 +15,12 @@ it("lists installed terminal apps with the special launch choices", () => {
 });
 
 describe("a terminal of herdr", () => {
+  it("defaults to herdr and preserves a saved terminal choice", () => {
+    expect(TerminalSettings.parse({}).terminal).toBe("herdr");
+    expect(TerminalSettings.parse({ terminal: "Terminal" }).terminal).toBe("Terminal");
+    expect(TerminalSettings.parse({ terminal: "none" }).terminal).toBe("none");
+  });
+
   it("runs the script in a herdr workspace labelled for the ticket, and without herdr leaves the script for the person", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-herdr-terminal-"));
     const launches: { cwd: string; label?: string; command: string }[] = [];

@@ -195,6 +195,7 @@ declare module "@tomradex/ipc" {
     "codeLink.setupInTerminal": (engineId: string, step: "install" | "signIn") => { launched: boolean; command: string };
     /** What the Start dialog last ran with on this machine, so it opens the way it was left. */
     "codeLink.startDefaults": () => StartDefaultsView | null;
+    "codeLink.herdrStatus": () => "notInstalled" | "notRunning" | "running";
   }
   interface Broadcasts {
     "codeLink.changed": (projectId: string) => void;
@@ -277,7 +278,7 @@ const SETTINGS_SECTION = {
       title: "代码关联",
       description: "用哪个终端打开工作项，以及在终端里怎样调用 Claude Code、Codex 或 Pi。命令里的 {prompt}、{mcpConfig}、{mcpUrl}、{settings}、{piExtension}、{resume}、{options}（开始时选的模型和推理强度）和 {cwd} 会自动填入。",
       fields: {
-        terminal: { title: "终端应用", description: "从本机已安装的终端应用中选择。选 herdr 则在 herdr 的工作区里运行，工作项随后跟着那个 pane（brew install herdr；herdr 里装上 tomrade 插件——herdr plugin install haoyuant/tomrade-plugins/herdr——就能在终端里打开和认领工作项）。选 none 则只准备好命令，供你复制。" },
+        terminal: { title: "终端应用", description: CODE_WORDS("zh")("terminalHelp") },
         claudeCommand: { title: "Claude Code 命令" },
         codexCommand: { title: "Codex 命令" },
         piCommand: { title: "Pi 命令", description: "Pi 没有 MCP 参数；{piExtension} 是只在本次会话生效的扩展，负责注册 Tomrade 的服务，并像 Claude 的 hooks 一样回报进展。" },
@@ -580,6 +581,7 @@ export class CodeLink extends Service {
       ctx.ipc.handle("codeLink.connect", (projectId, repoId) => ctx.codeLink.connect(projectId, repoId));
       ctx.ipc.handle("codeLink.setupInTerminal", (engineId, step) => ctx.codeLink.setupInTerminal(engineId, step));
       ctx.ipc.handle("codeLink.startDefaults", () => ctx.codeLink.startDefaults());
+      ctx.ipc.handle("codeLink.herdrStatus", () => ctx.codeLink.herdrStatus());
     });
     this.home.inject(["contributions"], (ctx) => this.contribute(ctx));
     // herdr's reading of the panes ticket sessions run in, as the hook events those sessions would post.
@@ -873,6 +875,13 @@ export class CodeLink extends Service {
     // clear leaves the memory as it was, and an engine the caller left to Tomrade is not lost.
     if (result.ok) this.defaults.write({ mode: opts.mode, engine: result.engine, options: opts.options, permissionMode: opts.permissionMode, playbook: opts.playbook });
     return result;
+  }
+
+  /** Machine-local readiness; it informs Start without gating it. */
+  async herdrStatus(): Promise<"notInstalled" | "notRunning" | "running"> {
+    const herdr = this.ctx.get("herdr");
+    if (await herdr?.server()) return "running";
+    return await herdr?.installed() ? "notRunning" : "notInstalled";
   }
 
   /** What the Start dialog last ran with on this machine; null when nothing usable is remembered. */

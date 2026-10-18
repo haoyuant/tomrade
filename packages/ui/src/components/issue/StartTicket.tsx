@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { findEngine, methodWords, ticketMethods, useAgentThread, useAgentThreads, useEngines, usePlaybooks } from "~/lib/agent";
 import { invoke } from "~/lib/api";
-import { onStartRequest, useCodeDeliveries, useCodeSessions, useStartDefaults, useStartTicket } from "~/lib/codeLink";
+import { onStartRequest, useHerdrStatus, useCodeDeliveries, useCodeSessions, useStartDefaults, useStartTicket } from "~/lib/codeLink";
 import { StartGateFix, useGateWords, type StartFailure } from "./StartGateFix";
 import { useI18n } from "~/lib/i18n";
 import { engineStateLabel } from "~/lib/localCli";
@@ -117,6 +117,7 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
   const rememberedStart = defaults.data ?? null;
   const [chosenMode, setChosenMode] = useState<StartOptions["mode"] | null>(requested ?? null);
   const mode: StartOptions["mode"] = chosenMode ?? ((latest?.mode ?? rememberedStart?.mode) === "terminal" ? "terminal" : "run");
+  const herdrStatus = useHerdrStatus(mode === "terminal");
   const capability = general ? "general" : "code";
   // An agent Tomrade drives over ACP has no terminal session to open.
   const candidates = useMemo(
@@ -244,6 +245,12 @@ function StartTicketDialog({ projectId, item, onOpenIssue, onOpenRepositories, o
               </button>
             </div>
             <p className="meta-txt">{t(mode === "run" ? (general ? "codeLink.startHereGeneralHint" : "codeLink.startHereHint") : general ? "codeLink.startTerminalGeneralHint" : "codeLink.startTerminalHint")}</p>
+            {mode === "terminal" && herdrStatus.data && (
+              <p className="meta-txt" role="status" data-testid="start-herdr-status">
+                {t(herdrStatus.data === "running" ? "codeLink.herdrRunning" : herdrStatus.data === "notRunning" ? "codeLink.herdrNotRunning" : "codeLink.herdrNotInstalled")}
+                {herdrStatus.data !== "running" && <> · {t("codeLink.herdrSetupHint")}</>}
+              </p>
+            )}
             {rememberedStart && !latest && !thread && (
               <p className="meta-txt" data-testid="start-remembered">{t("codeLink.rememberedHint")}</p>
             )}

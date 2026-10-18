@@ -17,6 +17,9 @@ export const codeLinkKeys = {
   startDefaults: ["codeLink", "startDefaults"] as const
 };
 
+export const useHerdrStatus = (enabled: boolean) =>
+  useQuery({ queryKey: ["codeLink", "herdrStatus"], queryFn: () => invoke("codeLink.herdrStatus"), enabled, refetchInterval: 5000 });
+
 /** How the Start dialog was left on this machine; null before anything was started here. */
 export const useStartDefaults = () =>
   useQuery({ queryKey: codeLinkKeys.startDefaults, queryFn: () => invoke("codeLink.startDefaults") });
