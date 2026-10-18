@@ -37,7 +37,7 @@ export function useGateWords() {
         if (cause?.code === "no-board-repo") return { lead: t("codeLink.gateWorkstream", { board }) };
         if (cause?.code === "unknown-repo") return { lead: t("codeLink.gateWorkdirUnknownRepo", { board, repo: cause.repoId ?? "?" }) };
         if (cause?.code === "no-hub") return { lead: t("codeLink.gateWorkdirNoHub") };
-        if (cause?.code === "branch-in-use" && cause.branch && cause.heldAt) return { lead: t("codeLink.gateWorkdirBranchInUse", { branch: cause.branch, at: cause.heldAt }) };
+        if (cause?.code === "branch-in-use" && cause.branch && cause.heldAt) return { lead: t(cause.releasable ? "codeLink.gateWorkdirBranchReleasable" : "codeLink.gateWorkdirBranchInUse", { branch: cause.branch, at: cause.heldAt }) };
         return { lead: t("codeLink.gateWorkdir"), detail: f.message };
       }
       case "readiness":
@@ -69,7 +69,7 @@ export function StartGateFix({
   itemId: string;
   failure: StartFailure;
   /** Start again, past whatever was just fixed. */
-  onRetry: (allowBlocked?: boolean) => void;
+  onRetry: (allowBlocked?: boolean, releaseBranch?: boolean) => void;
   /** The fix is somewhere else: close the dialog first. */
   onLeave: () => void;
   onOpenRepositories?: () => void;
@@ -181,8 +181,17 @@ export function StartGateFix({
         </div>
       );
     }
-    case "remote":
     case "workdir":
+      if (failure.cause?.code === "branch-in-use" && failure.cause.releasable)
+        return (
+          <div className="gate-fix">
+            <button type="button" className="btn btn-primary" data-testid="gate-free-branch" onClick={() => onRetry(undefined, true)}>
+              {t("codeLink.gateFreeBranch")}
+            </button>
+          </div>
+        );
+      return repositories ? <div className="gate-fix">{repositories}</div> : null;
+    case "remote":
       return repositories ? <div className="gate-fix">{repositories}</div> : null;
     case "engine":
       return (

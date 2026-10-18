@@ -1132,6 +1132,43 @@ describe("starting a ticket", () => {
     expect(refused).toMatchObject({ ok: false, gate: "workdir", cause: { code: "branch-in-use", branch: started.branch }, message: expect.stringContaining("already checked out in") });
     if (refused.ok) return;
     expect(fs.realpathSync(refused.cause!.heldAt!)).toBe(fs.realpathSync(elsewhere));
+    // Not this ticket's worktree, so only the person lets go of it there; its files stay, detached at the same commit.
+    expect(refused.cause!.releasable).toBe(true);
+    const head = git(["rev-parse", "HEAD"], elsewhere);
+    const released = await codeLink.start(project.id, item.id, { mode: "run", releaseBranch: true });
+    expect(released).toMatchObject({ ok: true, branch: started.branch });
+    expect(git(["rev-parse", "--abbrev-ref", "HEAD"], elsewhere)).toBe("HEAD");
+    expect(git(["rev-parse", "HEAD"], elsewhere)).toBe(head);
+    await untilRunsSettle(agent);
+  });
+
+  it("continues where this ticket's earlier session left its branch, and never takes it from uncommitted work or a running session", async () => {
+    const { codeLink, ctx, agent, project, repo, checkout, ticket } = await machine(codeRepo());
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    const item = ticket("Branch left in a session's worktree");
+    const started = await codeLink.start(project.id, item.id, { mode: "run" });
+    if (!started.ok) throw new Error(started.message);
+    await untilRunsSettle(agent);
+    git(["worktree", "remove", "--force", started.worktree!], checkout!);
+    // A terminal session that claimed the ticket worked it in a worktree of its own, and is waiting at its prompt.
+    const theirs = path.join(root, `claimed-${n++}`);
+    git(["worktree", "add", "-q", theirs, started.branch], checkout!);
+    const outside = codeLink.store.createSession(project.id, { repoId: repo!.id, branch: started.branch, itemIds: [item.id], mode: "terminal", agent: "claude-code", threadId: null, device: "test", worktree: theirs });
+    codeLink.store.patchSession(project.id, outside.id, { state: "running" });
+    expect(await codeLink.start(project.id, item.id, { mode: "run", releaseBranch: true })).toMatchObject({ ok: false, cause: { code: "branch-in-use", releasable: false } });
+    expect(git(["rev-parse", "--abbrev-ref", "HEAD"], theirs)).toBe(started.branch);
+
+    codeLink.store.patchSession(project.id, outside.id, { state: "waiting" });
+    fs.appendFileSync(path.join(theirs, "README.md"), "half done\n");
+    expect(await codeLink.start(project.id, item.id, { mode: "run", releaseBranch: true })).toMatchObject({ ok: false, cause: { code: "branch-in-use", releasable: false } });
+    expect(git(["rev-parse", "--abbrev-ref", "HEAD"], theirs)).toBe(started.branch);
+    expect(fs.readFileSync(path.join(theirs, "README.md"), "utf8")).toContain("half done");
+
+    git(["checkout", "--", "README.md"], theirs);
+    const continued = await codeLink.start(project.id, item.id, { mode: "run" });
+    expect(continued).toMatchObject({ ok: true, branch: started.branch });
+    expect(git(["rev-parse", "--abbrev-ref", "HEAD"], theirs)).toBe("HEAD");
+    await untilRunsSettle(agent);
   });
 
   it("starts a reopened ticket in a fresh delivery, thread and suffixed branch", async () => {
@@ -1860,6 +1897,12 @@ it("lets the assistant offer Start as a card instead of doing the work itself", 
     const cards = agent.thread(project.id, thread.id).messages.flatMap((m) => (m.block.type === "card" ? [m.block] : []));
     expect(cards).toEqual([expect.objectContaining({ schema: "start", data: { itemId: item.id, key: item.key, title: "Fix the login form" } })]);
     expect(ctx.items.get(project.id, item.id)?.status).toBe("todo");
+    // Offered again later in the same conversation, the card comes again, where the person is reading now.
+    const again = agent.send(project.id, thread.id, { kind: "text", text: "give me the start button" });
+    await expect.poll(() => agent.store.run(project.id, again.runId)?.status).toBe("done");
+    const after = agent.thread(project.id, thread.id).messages.filter((m) => m.block.type === "card");
+    expect(after).toHaveLength(2);
+    expect(after.at(-1)).toMatchObject({ runId: again.runId, block: { schema: "start", data: { itemId: item.id } } });
   } finally {
     await ctx.fiber.dispose();
   }
