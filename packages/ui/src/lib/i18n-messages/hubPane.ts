@@ -28,6 +28,14 @@ export const hubPane = {
     syncing: "Syncing…",
     syncedToast: "Hub {{label}} · {{location}}",
 
+    catalogProblemTitle: "This machine's project list could not be read whole",
+    catalogNotJson: "It is not valid JSON ({{detail}})",
+    catalogEntriesDropped: "{{count}} of its {{of}} entries could not be read ({{detail}})",
+    catalogProblemNote: "{{reason}}. The file was kept as {{keptAs}}. What could be read is in use, but changes to the list are not saved until you write over it — a newer Tomrade may still read the original, so check that first.",
+    catalogOverwrite: "Write over it",
+    catalogOverwriting: "Writing…",
+    catalogOverwrittenToast: "The project list is saved again",
+
     scopeMachine: "This machine",
     scopeUser: "Follows the Hub"
   },
@@ -59,6 +67,14 @@ export const hubPane = {
     syncNow: "立即同步",
     syncing: "同步中…",
     syncedToast: "主目录 {{label}} · {{location}}",
+
+    catalogProblemTitle: "本机的项目目录文件没能完整读取",
+    catalogNotJson: "它不是有效的 JSON（{{detail}}）",
+    catalogEntriesDropped: "它的 {{of}} 个条目中有 {{count}} 个读不出来（{{detail}}）",
+    catalogProblemNote: "{{reason}}。原文件已另存为 {{keptAs}}。能读出的部分照常使用，但在你选择覆盖之前，目录的改动不会保存——更新版的 Tomrade 也许能读原文件，请先确认。",
+    catalogOverwrite: "覆盖原文件",
+    catalogOverwriting: "写入中…",
+    catalogOverwrittenToast: "项目目录已恢复保存",
 
     scopeMachine: "仅本机",
     scopeUser: "随主目录"

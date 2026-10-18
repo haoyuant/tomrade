@@ -67,29 +67,96 @@ const CatalogFile = z.object({
   repos: z.record(z.string(), CatalogRepo).default({})
 });
 
+/** A catalog file that did not read whole: why, and the copy it was kept as. */
+export interface CatalogDamage {
+  /** Entries that could not be read, of how many; null when the file is not JSON at all. */
+  dropped: { count: number; of: number } | null;
+  /** The parser's own words, for whoever repairs the file. */
+  detail: string;
+  keptAs: string;
+}
+
+const stamp = () => new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
+const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
 /**
  * `catalog.json`: the machine-local list of projects and repository checkouts.
- * Atomic writes; a file we cannot parse is treated as empty rather than guessed at.
+ * Atomic writes. A file that does not read whole is kept beside itself and
+ * what reads of it is used, but nothing is written over it until the person
+ * says so: written over, every project's sync state — or the entries a newer
+ * build wrote — would be gone with it.
  */
 export class Catalog {
   private data: z.infer<typeof CatalogFile> = { v: 1, projects: [], repos: {} };
+  private damage: CatalogDamage | null = null;
 
   constructor(private readonly file: string | null) {
     this.load();
   }
 
+  /** Why the file did not read whole and where its copy is; saves are refused until `confirmOverwrite`. */
+  get corrupt(): CatalogDamage | null {
+    return this.damage;
+  }
+
+  /** The person's say-so: what was salvaged is written over the file that failed to read. Its copy stays. */
+  confirmOverwrite(): void {
+    if (!this.damage) return;
+    this.damage = null;
+    this.save();
+  }
+
   private load(): void {
     if (!this.file) return;
+    let text: string;
     try {
-      const parsed = CatalogFile.safeParse(JSON.parse(fs.readFileSync(this.file, "utf8")));
-      if (parsed.success) this.data = parsed.data;
+      text = fs.readFileSync(this.file, "utf8");
     } catch {
-      // first run
+      return; // first run
     }
+    let raw: unknown;
+    try {
+      raw = JSON.parse(text);
+    } catch (error) {
+      this.keep(text, null, message(error));
+      return;
+    }
+    const parsed = CatalogFile.safeParse(raw);
+    if (parsed.success) {
+      this.data = parsed.data;
+      return;
+    }
+    // Entry by entry: one a newer build wrote costs that entry, not every other project's state.
+    const file = (raw && typeof raw === "object" ? raw : {}) as { projects?: unknown; repos?: unknown };
+    const projects = Array.isArray(file.projects) ? file.projects : [];
+    const repos = file.repos && typeof file.repos === "object" && !Array.isArray(file.repos) ? Object.entries(file.repos as Record<string, unknown>) : [];
+    const keptProjects = projects.flatMap((p) => {
+      const r = CatalogProject.safeParse(p);
+      return r.success ? [r.data] : [];
+    });
+    const keptRepos = repos.flatMap(([remote, r]) => {
+      const parsedRepo = CatalogRepo.safeParse(r);
+      return parsedRepo.success ? [[remote, parsedRepo.data] as const] : [];
+    });
+    this.data = { v: 1, projects: keptProjects, repos: Object.fromEntries(keptRepos) };
+    const of = projects.length + repos.length;
+    const issue = parsed.error.issues[0];
+    this.keep(text, { count: of - keptProjects.length - keptRepos.length, of }, issue ? `${issue.path.join(".") || "file"}: ${issue.message}` : "schema mismatch");
+  }
+
+  /** The file as it is, beside itself; a launch that finds the same bytes already kept adds no copy. */
+  private keep(text: string, dropped: CatalogDamage["dropped"], detail: string): void {
+    const file = this.file!;
+    const dir = path.dirname(file);
+    const prefix = `${path.basename(file)}.corrupt-`;
+    const same = fs.readdirSync(dir).filter((n) => n.startsWith(prefix)).find((n) => fs.readFileSync(path.join(dir, n), "utf8") === text);
+    const keptAs = path.join(dir, same ?? `${prefix}${stamp()}`);
+    if (!same) fs.copyFileSync(file, keptAs);
+    this.damage = { dropped, detail, keptAs };
   }
 
   private save(): void {
-    if (!this.file) return;
+    if (!this.file || this.damage) return;
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     const body = JSON.stringify({ ...this.data, projects: [...this.data.projects].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id)) }, null, 2) + "\n";
     const tmp = `${this.file}.tmp`;

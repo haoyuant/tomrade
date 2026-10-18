@@ -1651,7 +1651,7 @@ export const zhHant: PartialMessages = {
     syncNow: "立即同步",
     rebuildCache: "重建快取",
     rebuilding: "重建中…",
-    rebuildConfirm: "捨棄快取並重新讀取資料夾？",
+    rebuildConfirm: "先把本機最新的編輯寫入資料夾，再捨棄快取並重新讀取資料夾？",
     rebuildYes: "重建",
     rebuiltToast: "已從資料夾重建快取",
     cancel: "取消",

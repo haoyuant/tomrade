@@ -6,7 +6,7 @@ import { ConnectionPanel, DestinationPicker, message } from "~/components/projec
 import { Eyebrow, SectionHead, Tag } from "~/components/ui/atoms";
 import { SchemaField, defaultsOf, fieldsOf, type JsonSchema } from "~/components/ui/schema-form";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { useAttachAll, useBindHub, useHubInfo, useHubRemote, useRestores, useStorageConnection, useStorageProviders, useSyncHub, useUnbindHub } from "~/lib/queries";
+import { useAttachAll, useBindHub, useHubInfo, useHubRemote, useOverwriteCatalog, useRestores, useStorageConnection, useStorageProviders, useSyncHub, useUnbindHub } from "~/lib/queries";
 import { reveal } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { RestoreRow } from "~/components/projects/RestoreCards";
@@ -42,16 +42,24 @@ export function HubPane() {
   const providers = useStorageProviders();
   const sync = useSyncHub();
   const attachAll = useAttachAll();
+  const overwrite = useOverwriteCatalog();
   const toast = useToast();
   const dir = hub.data?.dir ?? null;
   const status = remote.data?.status;
   const state = STATE[status?.state ?? "local"];
   const busy = sync.isPending || attachAll.isPending;
   const missing = restores.data?.entries ?? [];
+  const catalogProblem = hub.data?.catalogProblem ?? null;
 
   const syncNow = () =>
     sync.mutate(undefined, {
       onSuccess: (next) => toast({ body: <>{tx("hubPane.syncedToast", { label: STATE[next.state].label, location: <span className="num">{next.location ?? ""}</span> })}</> }),
+      onError: (error) => toast({ body: message(error) })
+    });
+
+  const overwriteCatalog = () =>
+    overwrite.mutate(undefined, {
+      onSuccess: () => toast({ body: t("hubPane.catalogOverwrittenToast") }),
       onError: (error) => toast({ body: message(error) })
     });
 
@@ -64,6 +72,27 @@ export function HubPane() {
   return (
     <>
       <SectionHead title={t("hubPane.title")}>{t(hub.data?.cloudEnabled ? "hubPane.cloudLede" : "hubPane.lede")}</SectionHead>
+      {catalogProblem && (
+        <div className="panel stack-2 hub-catalog-problem" style={{ marginBottom: "var(--space-3)" }}>
+          <div className="cfg-row">
+            <Icon name="i-warn" size={15} style={{ color: "var(--danger)" }} />
+            <span className="cfg-name">{t("hubPane.catalogProblemTitle")}</span>
+          </div>
+          <p className="meta-txt dense">
+            {tx("hubPane.catalogProblemNote", {
+              reason: catalogProblem.dropped
+                ? t("hubPane.catalogEntriesDropped", { count: catalogProblem.dropped.count, of: catalogProblem.dropped.of, detail: catalogProblem.detail })
+                : t("hubPane.catalogNotJson", { detail: catalogProblem.detail }),
+              keptAs: <span className="num">{catalogProblem.keptAs}</span>
+            })}
+          </p>
+          <div className="row" style={{ gap: "var(--space-2)" }}>
+            <button type="button" className="btn btn-secondary hub-catalog-overwrite" disabled={overwrite.isPending} onClick={overwriteCatalog}>
+              {overwrite.isPending ? t("hubPane.catalogOverwriting") : t("hubPane.catalogOverwrite")}
+            </button>
+          </div>
+        </div>
+      )}
       {!hub.data?.cloudEnabled && (
         <div className="panel stack-3 hub-pane">
           <div className="field">
@@ -83,7 +112,7 @@ export function HubPane() {
 
       {hub.data?.cloudEnabled ? <AccountPanel /> : <HubRemoteSection bound={remote.data?.remote ?? null} location={status?.location ?? null} disabled={busy || !dir} providers={providers.data ?? []} />}
 
-      {remote.data?.remote && (
+      {(remote.data?.remote || status?.state === "error") && (
         <div style={{ marginTop: "var(--space-4)" }}>
           <Eyebrow>{t("hubPane.stateLabel")}</Eyebrow>
           <div className="cfg-row hub-status" style={{ marginTop: "var(--space-2)" }}>
@@ -96,12 +125,14 @@ export function HubPane() {
               {status.detail}
             </p>
           )}
-          <div className="row" style={{ gap: "var(--space-2)", marginTop: "var(--space-3)" }}>
-            <button type="button" className="btn btn-secondary hub-sync" disabled={busy} onClick={syncNow}>
-              <Icon name="i-sync" size={13} />
-              {sync.isPending ? t("hubPane.syncing") : t("hubPane.syncNow")}
-            </button>
-          </div>
+          {remote.data?.remote && (
+            <div className="row" style={{ gap: "var(--space-2)", marginTop: "var(--space-3)" }}>
+              <button type="button" className="btn btn-secondary hub-sync" disabled={busy} onClick={syncNow}>
+                <Icon name="i-sync" size={13} />
+                {sync.isPending ? t("hubPane.syncing") : t("hubPane.syncNow")}
+              </button>
+            </div>
+          )}
         </div>
       )}
 

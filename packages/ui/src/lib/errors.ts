@@ -9,7 +9,8 @@ const DOMAIN_ERRORS: Record<string, MessageKey> = {
   HumanLockedError: "errors.humanLocked",
   NotFoundError: "errors.notFound",
   InUseError: "errors.inUse",
-  DependencyCycleError: "errors.cycle"
+  DependencyCycleError: "errors.cycle",
+  UnpublishedEditsError: "errors.unpublishedEdits"
 };
 
 /** The reasons the backend gives for an InUseError: id-free, and each says what to do. */
@@ -28,6 +29,8 @@ export function domainErrorWords(raw: string): { key: MessageKey; vars?: Record<
   if (!key) return null;
   // The cycle's path is ticket keys, worth keeping in any language.
   if (key === "errors.cycle") return { key, vars: { path: /would close a cycle: (.+)$/.exec(raw)?.[1] ?? "" } };
+  // Why the folder could not take the edits: the folder's or git's own words.
+  if (key === "errors.unpublishedEdits") return { key, vars: { reason: /does not hold yet — (.+)\. The cache was kept/.exec(raw)?.[1] ?? "" } };
   if (key === "errors.inUse") {
     const reason = raw.slice(named!.length + 2);
     for (const [pattern, known, names] of IN_USE) {

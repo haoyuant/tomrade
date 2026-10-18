@@ -40,6 +40,7 @@ import {
   HubUnconfiguredError,
   SharedCheckoutError,
   UnknownProviderError,
+  UnpublishedEditsError,
   type AttentionView,
   type ConnectionState,
   type GitOrigin,
@@ -150,6 +151,8 @@ export class Storage extends Service {
   private publishedMem = new Map<string, ProjectState>();
   private reconcileTimer: ReturnType<typeof setInterval> | null = null;
   private hubWriteTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Why the Hub folder's manifest cannot be read, until it reads again: nothing is written over it meanwhile. */
+  private hubUnreadable: string | null = null;
   /** Projects removed on purpose on this machine; the Hub's catalog must not bring them back. */
   private tombstones = new Map<string, number>();
   private attentionByProject = new Map<string, Attention[]>();
@@ -1463,28 +1466,51 @@ export class Storage extends Service {
     }
   }
 
-  /** Drop the cache and read the folder again — the folder is the truth, so nothing is lost but the window's undo. */
+  /**
+   * Drop the cache and read the folder again. The folder is the truth once it
+   * holds this machine's writes — the snapshot trails them by up to
+   * `snapshotMaxMs` — so writes it lacks are published first, and a folder that
+   * cannot take them refuses the rebuild rather than lose them. A cache that
+   * lost rows without an op for it is what the rebuild is for: nothing is
+   * published then, and only the window's undo goes.
+   */
   async rebuild(projectId: string): Promise<StorageStatus> {
     const entry = this.mustEntry(projectId);
     if (!entry.dir || !hasArtifact(entry.dir)) throw new Error("The project's folder holds no snapshot to rebuild from");
-    const state = readArtifact(entry.dir, { verify: this.verifies(projectId) });
-    if (!state) throw new Error("The project's folder holds no snapshot to rebuild from");
-    if (projectIdOf(state) !== projectId) throw new ForeignProjectError(projectId, projectIdOf(state));
-    this.unwatch(projectId);
-    const pool = this.ctx.db as Db;
-    pool.remove(projectId);
-    const db = pool.open(projectId);
-    importState(db, state, { registrations: pool.registrations("project") });
-    // Every machine's log, this one's included: history comes back without snapshots, as evidence.
-    for (const log of readLogs(entry.dir)) this.oplog.importForeign(projectId, log.ops.flatMap((op) => this.foreignOp(op)), { includeOwn: true });
-    this.savePublished(projectId, state);
-    const last = db.prepare("SELECT MAX(seq) AS m FROM oplog").get() as { m: number | null };
-    this.hub.catalog.patchProject(projectId, { lastPublishedDigest: state.manifest.snapshot?.digest ?? digestState(state), lastSyncAt: Date.now(), lastLoggedSeq: last.m ?? 0, unimported: this.unimportedOf(state) });
-    this.watch(projectId);
-    this.home.emit("storage/imported", projectId);
-    this.home.emit("projects/changed", projectId);
-    this.notify(projectId);
-    return this.statusFor(projectId);
+    const dir = entry.dir;
+    return this.inTurn(projectId, async () => {
+      const folder = this.readFolder(dir, this.verifies(projectId));
+      // Our rows past the snapshot's checkpoint for this device are what it does not reflect yet.
+      if (this.ownTop(projectId) > (folder.state?.manifest.snapshot?.checkpoint?.[this.hub.deviceId] ?? 0)) {
+        let why: string | null = null;
+        try {
+          if (!(await this.writeOut(projectId, "rebuild"))) why = folder.problem?.detail ?? "the folder could not be written";
+        } catch (error) {
+          // Git may have refused the commit after the snapshot was written; the digest below tells.
+          why = message(error);
+        }
+        const current = this.mustEntry(projectId);
+        if (digestState(this.exportFor(projectId, current)) !== current.lastPublishedDigest) throw new UnpublishedEditsError(projectId, why ?? "the folder could not be written");
+      }
+      const state = readArtifact(dir, { verify: this.verifies(projectId) });
+      if (!state) throw new Error("The project's folder holds no snapshot to rebuild from");
+      if (projectIdOf(state) !== projectId) throw new ForeignProjectError(projectId, projectIdOf(state));
+      this.unwatch(projectId);
+      const pool = this.ctx.db as Db;
+      pool.remove(projectId);
+      const db = pool.open(projectId);
+      importState(db, state, { registrations: pool.registrations("project") });
+      // Every machine's log, this one's included: history comes back without snapshots, as evidence.
+      for (const log of readLogs(dir)) this.oplog.importForeign(projectId, log.ops.flatMap((op) => this.foreignOp(op)), { includeOwn: true });
+      this.savePublished(projectId, state);
+      const last = db.prepare("SELECT MAX(seq) AS m FROM oplog").get() as { m: number | null };
+      this.hub.catalog.patchProject(projectId, { lastPublishedDigest: state.manifest.snapshot?.digest ?? digestState(state), lastSyncAt: Date.now(), lastLoggedSeq: last.m ?? 0, unimported: this.unimportedOf(state) });
+      this.watch(projectId);
+      this.home.emit("storage/imported", projectId);
+      this.home.emit("projects/changed", projectId);
+      this.notify(projectId);
+      return this.statusFor(projectId);
+    });
   }
 
   // ── restoring ────────────────────────────────────────────────────────────────
@@ -1723,12 +1749,39 @@ export class Storage extends Service {
     this.hubWriteTimer.unref?.();
   }
 
-  /** What this machine knows, folded into the Hub's portable catalog, plus the ignore list a Hub repository needs. */
+  /** The Hub folder's manifest, or why it cannot be read now; the Hub's status says so until it reads again. */
+  private readHub(dir: string): { manifest: HubManifest | null; problem?: string } {
+    let problem: string | null = null;
+    let manifest: HubManifest | null = null;
+    try {
+      manifest = readHubManifest(dir);
+    } catch (error) {
+      problem = message(error);
+    }
+    if (problem !== this.hubUnreadable) {
+      this.hubUnreadable = problem;
+      this.home.get("ipc")?.send("hub.changed");
+    }
+    return problem ? { manifest: null, problem } : { manifest };
+  }
+
+  /**
+   * What this machine knows, folded into the Hub's portable catalog, plus the
+   * ignore list a Hub repository needs. A manifest that cannot be read is left
+   * as it is: written over with this machine's projects alone, every other
+   * machine's would be gone from the catalog.
+   */
   async writeHub(): Promise<HubManifest | null> {
     const dir = this.hub.dir;
     if (!dir && !this.hubBackend) return null;
     const now = Date.now();
-    const current = this.hubBackend?.read() ?? (dir ? readHubManifest(dir) : null) ?? emptyHub();
+    let current = emptyHub();
+    if (this.hubBackend) current = this.hubBackend.read();
+    else if (dir) {
+      const { manifest, problem } = this.readHub(dir);
+      if (problem) return null;
+      current = manifest ?? emptyHub();
+    }
     const mine: HubManifest = { v: 1, projects: [], repos: [], removed: [...this.tombstones].map(([id, at]) => ({ id, at })) };
     const ignores = new Set<string>(["repos/", "worktrees/", "*.tmp", ".DS_Store"]);
     const ignore = (projectDir: string | null) => {
@@ -1779,7 +1832,7 @@ export class Storage extends Service {
 
   hubManifest(): HubManifest | null {
     if (this.hubBackend) return this.hubBackend.read();
-    return this.hub.dir ? readHubManifest(this.hub.dir) : null;
+    return this.hub.dir ? this.readHub(this.hub.dir).manifest : null;
   }
 
   async hubInfo(): Promise<{ dir: string | null; remote: RemoteRef | null; status: StorageStatus; manifest: HubManifest | null; attachable: string[] }> {
@@ -1803,6 +1856,7 @@ export class Storage extends Service {
     const dir = this.hub.dir;
     if (!dir) return LOCAL;
     if (!fs.existsSync(dir)) return { state: "unavailable", location: dir, detail: "Folder not found", lastSyncAt: null };
+    if (this.hubUnreadable) return { state: "error", location: dir, detail: this.hubUnreadable, lastSyncAt: null };
     const remote = await this.hubRemote();
     if (!remote) return { state: "local", location: dir, lastSyncAt: null };
     const location = `${cleanRemote(remote.url).replace(/^https?:\/\//, "").replace(/\.git$/, "")} · ${remote.branch}`;
@@ -1855,6 +1909,8 @@ export class Storage extends Service {
     const dir = this.hub.dir;
     if (!dir) return LOCAL;
     await this.writeHub();
+    // A manifest that cannot be read is not committed or pushed either; the status says why.
+    if (this.hubUnreadable) return this.hubStatus();
     const remote = await this.hubRemote();
     if (!remote) return this.hubStatus();
     const g = this.git(dir);

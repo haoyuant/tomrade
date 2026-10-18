@@ -179,6 +179,17 @@ export class SharedCheckoutError extends Error {
   }
 }
 
+/** The cache holds writes the folder has not taken; dropping it now would lose them. */
+export class UnpublishedEditsError extends Error {
+  constructor(
+    public readonly projectId: string,
+    why: string
+  ) {
+    super(`This machine has edits the folder does not hold yet — ${why}. The cache was kept so they are not lost; sync first, then rebuild.`);
+    this.name = "UnpublishedEditsError";
+  }
+}
+
 export class HubUnconfiguredError extends Error {
   constructor() {
     super("Choose where Tomrade keeps its files first (the Hub folder)");

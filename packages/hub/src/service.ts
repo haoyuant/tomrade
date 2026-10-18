@@ -5,7 +5,7 @@ import path from "node:path";
 import { Context, Service } from "cordis";
 import { z } from "zod";
 import type {} from "@tomradex/ipc";
-import { Catalog, RemoteRef } from "./catalog.js";
+import { Catalog, RemoteRef, type CatalogDamage } from "./catalog.js";
 
 declare module "cordis" {
   interface Context {
@@ -26,6 +26,8 @@ export interface HubInfo {
   defaultDir: string;
   configured: boolean;
   cloudEnabled: boolean;
+  /** `catalog.json` did not read whole: why, and the copy kept. Nothing is saved over it until `hub.overwriteCatalog`. */
+  catalogProblem: CatalogDamage | null;
 }
 
 declare module "@tomradex/ipc" {
@@ -33,6 +35,8 @@ declare module "@tomradex/ipc" {
     "hub.info": () => HubInfo;
     /** First run, or a move: name the Hub folder. Created if absent. */
     "hub.configure": (dir: string) => HubInfo;
+    /** The person has read why `catalog.json` failed to read: what was salvaged is written over it. */
+    "hub.overwriteCatalog": () => HubInfo;
   }
   interface Broadcasts {
     "hub.changed": () => void;
@@ -112,6 +116,7 @@ export class Hub extends Service {
     this.home.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("hub.info", () => ctx.hub.info());
       ctx.ipc.handle("hub.configure", (dir) => ctx.hub.configure(dir));
+      ctx.ipc.handle("hub.overwriteCatalog", () => ctx.hub.overwriteCatalog());
     });
   }
 
@@ -136,7 +141,13 @@ export class Hub extends Service {
   }
 
   info(): HubInfo {
-    return { deviceId: this.deviceId, dir: this.dir, projectsDir: this.projectsDir, defaultDir: this.defaultDir, configured: this.configured, cloudEnabled: this.cloudEnabled };
+    return { deviceId: this.deviceId, dir: this.dir, projectsDir: this.projectsDir, defaultDir: this.defaultDir, configured: this.configured, cloudEnabled: this.cloudEnabled, catalogProblem: this.catalog.corrupt };
+  }
+
+  overwriteCatalog(): HubInfo {
+    this.catalog.confirmOverwrite();
+    this.home.get("ipc")?.send("hub.changed");
+    return this.info();
   }
 
   /** Cloud owns Hub metadata; this only enables local placement defaults. */

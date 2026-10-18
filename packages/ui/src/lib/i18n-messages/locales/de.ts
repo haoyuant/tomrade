@@ -1651,7 +1651,7 @@ export const de: PartialMessages = {
     syncNow: "Jetzt synchronisieren",
     rebuildCache: "Cache neu aufbauen",
     rebuilding: "Wird neu aufgebaut…",
-    rebuildConfirm: "Cache verwerfen und den Ordner neu einlesen?",
+    rebuildConfirm: "Die neuesten Änderungen dieses Computers in den Ordner schreiben, dann den Cache verwerfen und den Ordner neu einlesen?",
     rebuildYes: "Neu aufbauen",
     rebuiltToast: "Cache aus dem Ordner neu aufgebaut",
     cancel: "Abbrechen",

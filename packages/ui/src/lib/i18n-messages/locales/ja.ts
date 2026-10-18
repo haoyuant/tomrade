@@ -1651,7 +1651,7 @@ export const ja: PartialMessages = {
     syncNow: "今すぐ同期",
     rebuildCache: "キャッシュを再構築",
     rebuilding: "再構築しています…",
-    rebuildConfirm: "キャッシュを破棄してフォルダを読み直しますか?",
+    rebuildConfirm: "このマシンの最新の編集をフォルダに書き込んでから、キャッシュを破棄してフォルダを読み直しますか?",
     rebuildYes: "再構築",
     rebuiltToast: "フォルダからキャッシュを再構築しました",
     cancel: "キャンセル",

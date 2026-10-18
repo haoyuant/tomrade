@@ -502,6 +502,63 @@ describe("ctx.storage", () => {
     expect(read(dir, "state/items.jsonl")).toMatch(/Kept/);
   });
 
+  it("writes this machine's unpublished edits to the folder before rebuilding, so none is lost", async () => {
+    const { ctx, storage, items, board, project, dir } = await machine({ cacheDir: tmp("cache") });
+    const a = items.create({ title: "Published", projectId: project.id, boardId: board.id, by: "human" });
+    await storage.publish(project.id);
+    // Up to snapshotMaxMs of edits sit in the log alone; the quiet timers here never fire.
+    items.update(project.id, a.id, { status: "doing" }, "human");
+    const b = items.create({ title: "Unpublished", projectId: project.id, boardId: board.id, by: "human" });
+    expect(read(dir, "state/items.jsonl")).not.toMatch(/Unpublished/);
+    await storage.rebuild(project.id);
+    expect(items.get(project.id, a.id)?.status).toBe("doing");
+    expect(items.get(project.id, b.id)?.title).toBe("Unpublished");
+    expect(read(dir, "state/items.jsonl")).toMatch(/Unpublished/);
+    expect(ctx.oplog.historyFor(project.id, "item", a.id).map((e) => e.op)).toEqual(["update", "create"]);
+    expect((await storage.statusFor(project.id)).state).toBe("synced");
+  });
+
+  it("refuses to rebuild while the folder cannot take the unpublished edits, and keeps the cache", async () => {
+    const { storage, items, board, project, dir } = await machine({ cacheDir: tmp("cache") });
+    await storage.publish(project.id);
+    const a = items.create({ title: "Kept in the cache", projectId: project.id, boardId: board.id, by: "human" });
+    const manifestFile = path.join(dir, ARTIFACT_DIR, "project.json");
+    const manifest = fs.readFileSync(manifestFile, "utf8");
+    fs.writeFileSync(manifestFile, "<<<<<<< HEAD\n" + manifest);
+    await expect(storage.rebuild(project.id)).rejects.toThrow(/edits the folder does not hold yet — .*conflict markers/);
+    expect(items.get(project.id, a.id)?.title).toBe("Kept in the cache");
+    expect(fs.readFileSync(manifestFile, "utf8")).toMatch(/^<<<<<<< HEAD/);
+    fs.writeFileSync(manifestFile, manifest);
+    await storage.rebuild(project.id);
+    expect(items.get(project.id, a.id)?.title).toBe("Kept in the cache");
+    expect(read(dir, "state/items.jsonl")).toMatch(/Kept in the cache/);
+  });
+
+  it("leaves the Hub folder untouched while its manifest cannot be read, and says why", async () => {
+    const { storage, hubDir } = await machine();
+    const manifestFile = path.join(hubDir, "hub.json");
+    const ignoreFile = path.join(hubDir, ".gitignore");
+    expect(JSON.parse(fs.readFileSync(manifestFile, "utf8")).v).toBe(1);
+    const ignore = fs.readFileSync(ignoreFile, "utf8");
+    fs.writeFileSync(manifestFile, "{ not json");
+    fs.rmSync(ignoreFile);
+    expect(await storage.writeHub()).toBeNull();
+    expect(fs.readFileSync(manifestFile, "utf8")).toBe("{ not json");
+    expect(fs.existsSync(ignoreFile)).toBe(false);
+    expect(await storage.hubStatus()).toMatchObject({ state: "error", detail: expect.stringContaining("hub.json could not be read") });
+    expect(storage.hubManifest()).toBeNull();
+    // Valid JSON of the wrong shape is no better.
+    const odd = JSON.stringify({ v: 1, projects: "none" });
+    fs.writeFileSync(manifestFile, odd);
+    expect(await storage.writeHub()).toBeNull();
+    expect(fs.readFileSync(manifestFile, "utf8")).toBe(odd);
+    // Repaired, it is written again — with the other machine's project kept.
+    fs.writeFileSync(manifestFile, JSON.stringify({ v: 1, projects: [{ id: "elsewhere", name: "Other machine's", keyPrefix: "OTH", remote: null, hint: null, updatedAt: 1 }], repos: [], removed: [] }));
+    expect((await storage.writeHub())?.projects.map((p) => p.id)).toContain("elsewhere");
+    expect(fs.readFileSync(ignoreFile, "utf8")).toBe(ignore);
+    expect((await storage.hubStatus()).state).toBe("local");
+  });
+
   it("removing a project keeps its folder unless asked", async () => {
     const { projects, dir } = await machine();
     const kept = projects.create({ name: "Kept" });

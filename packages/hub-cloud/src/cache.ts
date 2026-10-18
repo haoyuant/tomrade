@@ -39,12 +39,26 @@ const empty = (endpoint: string): CacheState => ({
   v: 1, endpoint, userId: null, hubId: null, email: null, records: [], outbox: [], observed: {}, conflicts: [], migrated: false, lastSyncAt: null, offlineAccess: false, localOnly: false, terms: null
 });
 
+const stamp = () => new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
+
 /** A durable outbox, outside the disposable SQLite caches. No credentials or project rows. */
 export class CloudCache {
   data: CacheState;
-  constructor(private readonly file: string, private readonly endpoint: string) {
-    this.data = fs.existsSync(file) ? State.parse(JSON.parse(fs.readFileSync(file, "utf8"))) : empty(endpoint);
+  constructor(private readonly file: string, private readonly endpoint: string, private readonly warn: (text: string) => void = () => {}) {
+    this.data = this.load() ?? empty(endpoint);
     if (this.data.endpoint !== endpoint) throw new Error("This local Hub belongs to another Supabase project. Use a separate TOMRADE_USER_DATA directory.");
+  }
+  /** A file that does not read is moved aside and the cache starts empty: the account still signs in, and what was queued is in the copy. */
+  private load(): CacheState | null {
+    if (!fs.existsSync(this.file)) return null;
+    try {
+      return State.parse(JSON.parse(fs.readFileSync(this.file, "utf8")));
+    } catch (error) {
+      const keptAs = `${this.file}.corrupt-${stamp()}`;
+      fs.renameSync(this.file, keptAs);
+      this.warn(`hub-cloud: ${this.file} could not be read (${error instanceof Error ? error.message : String(error)}); kept as ${keptAs}, starting from an empty cache`);
+      return null;
+    }
   }
   /** The account is gone: this local Hub belongs to nobody, and the next account starts it afresh from what is on this machine. */
   release(): void {
