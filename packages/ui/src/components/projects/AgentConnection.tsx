@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useChooseConnectAgents, useConnectRepository, useRepositoryConnection } from "~/lib/codeLink";
+import { agoLabel } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { openExternal } from "~/lib/shell";
 import { readableError } from "~/lib/toast";
@@ -26,6 +27,8 @@ export function AgentConnection({ projectId, repoId, hint = false }: { projectId
   // The live view, so a changed choice shows at once; the last chosen agent cannot be unchecked.
   const agents = view?.agents ?? connect.data?.agents ?? [];
   const chosen = agents.filter((agent) => agent.chosen).map((agent) => agent.id);
+  // Connected, yet this machine never heard their hooks: the files alone do not prove an agent reports.
+  const silent = connected ? agents.filter((agent) => agent.chosen && agent.tracking === "hooks" && !agent.lastEventAt) : [];
   const busy = connect.isPending || state === "no-checkout" || state === "unavailable" || !!clash;
   const working = (mode: "local" | "team") => connect.isPending && (connect.variables ?? "team") === mode;
   return (
@@ -69,7 +72,13 @@ export function AgentConnection({ projectId, repoId, hint = false }: { projectId
           <strong>{agent.title}</strong>
         </label> · {t(agent.tools ? "repositories.agentTools" : agent.instructions ? "repositories.agentInstructions" : "repositories.agentNotConfigured")} · {t(agent.tracking === "hooks" ? "repositories.agentHooks" : "repositories.agentNoTracking")}
         {agent.reviewHooks && agent.tracking === "hooks" && <> · {t("repositories.agentReviewHooks")}</>}
+        {agent.chosen && agent.lastEventAt && <> · <span className="repo-agent-heard">{t("repositories.agentHeard", { time: agoLabel(agent.lastEventAt) })}</span></>}
+        {silent.includes(agent) && <> · {t("repositories.agentNotHeard")}</>}
       </p>)}
+      {silent.length > 0 && <p className="meta-txt dense cli-warn repo-agent-silent">
+        {t("repositories.agentNotHeardHint", { agents: silent.map((agent) => agent.title).join(", ") })}
+        {silent.some((agent) => agent.id === "codex") && <> {t("repositories.agentNotHeardCodex")}</>}
+      </p>}
       {choose.error && <p role="alert" className="meta-txt">{readableError(choose.error)}</p>}
       {connect.data?.skipped.map((skip) => <p className="meta-txt dense cli-warn repo-agent-skipped" key={skip.agent} data-agent={skip.agent} data-reason={skip.reason}>
         {t(`repositories.agentSkipped_${skip.reason}`, { agent: agents.find((agent) => agent.id === skip.agent)?.title ?? skip.agent, file: skip.file })}
