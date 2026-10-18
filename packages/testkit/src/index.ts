@@ -72,3 +72,4 @@ export async function fresh(opts: FreshOptions = {}) {
 }
 
 export { FakeHerdr, type FakeHerdrCall, type FakePane } from "./herdr.js";
+export { FakeGh, type FakeGhReply } from "./gh.js";
