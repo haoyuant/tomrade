@@ -43,14 +43,27 @@ const sortManifest = (m: HubManifest): HubManifest => ({
   removed: [...m.removed].sort((a, b) => a.id.localeCompare(b.id))
 });
 
+/** The Hub folder holds a manifest that cannot be read; nothing is written over it until it can. */
+export class HubManifestUnreadableError extends Error {
+  constructor(
+    public readonly file: string,
+    detail: string
+  ) {
+    super(`${file} could not be read (${detail}); repair or remove it before Tomrade writes the Hub's catalog again`);
+    this.name = "HubManifestUnreadableError";
+  }
+}
+
+/** Null when there is no manifest yet. One that is there but does not read throws: written over as empty, it would lose every other machine's projects. */
 export function readHubManifest(dir: string): HubManifest | null {
   const file = path.join(dir, HUB_MANIFEST);
   if (!fs.existsSync(file)) return null;
   try {
-    const raw = JSON.parse(fs.readFileSync(file, "utf8")) as Partial<HubManifest>;
+    const raw = JSON.parse(fs.readFileSync(file, "utf8")) as Partial<HubManifest> | null;
+    if (!raw || typeof raw !== "object" || [raw.projects, raw.repos, raw.removed].some((list) => list !== undefined && !Array.isArray(list))) throw new Error("not a Hub manifest");
     return sortManifest({ v: 1, projects: raw.projects ?? [], repos: raw.repos ?? [], removed: raw.removed ?? [] });
-  } catch {
-    return null;
+  } catch (error) {
+    throw new HubManifestUnreadableError(file, error instanceof Error ? error.message : String(error));
   }
 }
 

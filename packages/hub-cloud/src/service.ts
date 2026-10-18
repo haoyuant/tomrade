@@ -125,7 +125,7 @@ export class CloudHub extends Service {
     const endpoint = new URL(config.url);
     if (endpoint.protocol !== "https:" && !["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname)) throw new Error("Supabase requires HTTPS outside localhost.");
     this.origin = endpoint.origin;
-    this.cache = new CloudCache(config.cacheFile, endpoint.origin);
+    this.cache = new CloudCache(config.cacheFile, endpoint.origin, (text) => this.home.logger.warn(text));
     // supabase-js's own default, named so sign-out can forget the session without the server.
     this.sessionKey = `sb-${endpoint.hostname.split(".")[0]}-auth-token`;
     this.client = createClient(endpoint.origin, config.publishableKey, {

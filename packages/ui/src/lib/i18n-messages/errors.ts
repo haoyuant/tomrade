@@ -10,7 +10,8 @@ export const errors = {
     inUseLastView: "{{reason}}",
     inUseUndoHolds: "{{reason}}",
     inUseRepository: "{{reason}}",
-    cycle: "That would make the dependencies loop back on themselves: {{path}}"
+    cycle: "That would make the dependencies loop back on themselves: {{path}}",
+    unpublishedEdits: "This machine has edits the folder does not hold yet ({{reason}}). The cache was kept so they are not lost — sync first, then rebuild."
   },
   zh: {
     conflict: "你操作期间，它在别处被改过了。请看一下最新内容，再试一次。",
@@ -22,6 +23,7 @@ export const errors = {
     inUseLastView: "「{{name}}」是这个项目的最后一个视图。",
     inUseUndoHolds: "这个工作流现在有 {{count}} 个工作项——请先把它们移走，再撤销。",
     inUseRepository: "「{{name}}」仍是 {{count}} 个工作流的代码仓库。",
-    cycle: "这样会让依赖关系首尾相连，形成循环：{{path}}"
+    cycle: "这样会让依赖关系首尾相连，形成循环：{{path}}",
+    unpublishedEdits: "本机还有文件夹里没有的编辑（{{reason}}）。缓存已保留，编辑不会丢失——请先同步，再重建。"
   }
 };

@@ -34,10 +34,40 @@ describe("the catalog", () => {
     expect(fs.existsSync(`${file}.tmp`)).toBe(false);
   });
 
-  it("treats a file it cannot parse as empty rather than guessing", () => {
+  it("keeps a file it cannot parse beside itself and saves nothing over it until told to", () => {
     const file = path.join(dir, "broken.json");
     fs.writeFileSync(file, "{ not json");
-    expect(new Catalog(file).projects()).toEqual([]);
+    const catalog = new Catalog(file);
+    expect(catalog.projects()).toEqual([]);
+    expect(catalog.corrupt).toMatchObject({ dropped: null, detail: expect.stringMatching(/JSON/) });
+    const keptAs = catalog.corrupt!.keptAs;
+    expect(keptAs).toMatch(/broken\.json\.corrupt-\d{8}T\d{6}$/);
+    expect(fs.readFileSync(keptAs, "utf8")).toBe("{ not json");
+    catalog.upsertProject({ id: "p1", name: "New" });
+    expect(fs.readFileSync(file, "utf8")).toBe("{ not json");
+    // The next launch finds the same bytes already kept and adds no copy.
+    expect(new Catalog(file).corrupt?.keptAs).toBe(keptAs);
+    expect(fs.readdirSync(dir).filter((n) => n.startsWith("broken.json.corrupt-"))).toHaveLength(1);
+    catalog.confirmOverwrite();
+    expect(catalog.corrupt).toBeNull();
+    expect(new Catalog(file).projects().map((p) => p.id)).toEqual(["p1"]);
+    expect(fs.readFileSync(keptAs, "utf8")).toBe("{ not json");
+  });
+
+  it("salvages the entries that read from a file a newer build wrote", () => {
+    const file = path.join(dir, "newer.json");
+    const good = { id: "p1", name: "Readable", createdAt: 1 };
+    const bad = { id: "p2", name: "From a newer build", git: "mirrored", createdAt: 2 };
+    fs.writeFileSync(file, JSON.stringify({ v: 1, projects: [good, bad], repos: { "git@github.com:acme/app.git": { checkout: "/code/app" }, odd: { checkout: 42 } } }));
+    const catalog = new Catalog(file);
+    expect(catalog.projects().map((p) => p.id)).toEqual(["p1"]);
+    expect(Object.keys(catalog.repos())).toEqual(["git@github.com:acme/app.git"]);
+    expect(catalog.corrupt).toMatchObject({ dropped: { count: 2, of: 4 }, detail: expect.stringMatching(/^projects\.1\.git/) });
+    expect(JSON.parse(fs.readFileSync(catalog.corrupt!.keptAs, "utf8")).projects).toHaveLength(2);
+    catalog.patchProject("p1", { archived: true });
+    expect(JSON.parse(fs.readFileSync(file, "utf8")).projects).toHaveLength(2);
+    catalog.confirmOverwrite();
+    expect(new Catalog(file).projects().map((p) => [p.id, p.archived])).toEqual([["p1", true]]);
   });
 });
 

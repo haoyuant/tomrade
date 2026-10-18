@@ -30,7 +30,7 @@ export {
   type SnapshotInfo,
   type StateDb
 } from "./state.js";
-export { HUB_MANIFEST, emptyHub, hubProjectOf, mergeHubManifests, readHubManifest, writeHubManifest, type HubManifest, type HubProject, type HubBackend } from "./hub.js";
+export { HUB_MANIFEST, HubManifestUnreadableError, emptyHub, hubProjectOf, mergeHubManifests, readHubManifest, writeHubManifest, type HubManifest, type HubProject, type HubBackend } from "./hub.js";
 export { appendLog, compactLog, logFile, parseLog, parseOpId, readLogs, toLine, type DeviceLog, type LogLine } from "./log.js";
 export { GIT_ENV, GitError, GitFolder, GitMissingError, clearStaleIndexLock, cleanRemote, cloneBranch, cloneInto, credentialArgs, gitRunner, hasConflictMarkers, probeUrl, shortHash, type Git, type GitCredential, type RemoteReach } from "./git.js";
 export { RestoreProblem, fetchProject, locationOf, type RestoreEntry, type RestoreState, type RestoreStep, type RestoreSummary } from "./restore.js";
@@ -42,6 +42,7 @@ export {
   NewerSchemaError,
   SharedCheckoutError,
   UnknownProviderError,
+  UnpublishedEditsError,
   type AttentionView,
   type ConnectionState,
   type GitOrigin,

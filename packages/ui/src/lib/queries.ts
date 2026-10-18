@@ -571,6 +571,12 @@ export function useConfigureHub() {
   });
 }
 
+/** The person has read why `catalog.json` failed to read and writes the salvaged list over it. */
+export function useOverwriteCatalog() {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: () => invoke("hub.overwriteCatalog"), onSuccess: () => void qc.invalidateQueries({ queryKey: keys.hub }) });
+}
+
 export type { Board, Item, Project, View };
 
 /* ── the Hub's own remote ─────────────────────────────────────────────── */

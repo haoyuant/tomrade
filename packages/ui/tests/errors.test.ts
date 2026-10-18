@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { ConflictError, DependencyCycleError, HumanLockedError, InUseError, NotFoundError } from "@tomradex/domain";
+import { UnpublishedEditsError } from "@tomradex/storage";
 import { messageOf } from "../src/lib/api";
 import { domainErrorWords } from "../src/lib/errors";
 import { en, zh } from "../src/lib/i18n-messages";
@@ -53,6 +54,12 @@ it("keeps a cycle's ticket keys, which read the same in any language", () => {
   const words = wordsOf(new DependencyCycleError("id", ["TOM-1", "TOM-2", "TOM-1"]));
   expect(words).toEqual({ key: "errors.cycle", vars: { path: "TOM-1 → TOM-2 → TOM-1" } });
   expect(shown(zh, new DependencyCycleError("id", ["TOM-1", "TOM-2", "TOM-1"]))).toContain("TOM-1 → TOM-2 → TOM-1");
+});
+
+it("says why a rebuild was refused, keeping the folder's own reason", () => {
+  const error = new UnpublishedEditsError("id", "/tmp/p/.tomrade/project.json holds unresolved git conflict markers");
+  expect(wordsOf(error)).toEqual({ key: "errors.unpublishedEdits", vars: { reason: "/tmp/p/.tomrade/project.json holds unresolved git conflict markers" } });
+  expect(shown(zh, error)).toMatch(/^本机还有文件夹里没有的编辑（\/tmp\/p\/\.tomrade\/project\.json holds/);
 });
 
 it("leaves every other error to its own words", () => {
