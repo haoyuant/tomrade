@@ -17,7 +17,7 @@ import { Mcp } from "@tomradex/mcp";
 import { Repos } from "@tomradex/repos";
 import GitHubAccount from "@tomradex/github";
 import { Settings } from "@tomradex/settings";
-import { Storage } from "@tomradex/storage";
+import { Storage, digestState, exportState } from "@tomradex/storage";
 import { fresh, settle } from "@tomradex/testkit";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -1245,6 +1245,45 @@ describe("a developer's own Claude Code session", () => {
     await codeLink.scan(project.id);
     expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ branch: "tom-777/dark-mode-toggle", source: "manual", ahead: 1 });
     expect(ctx.items.get(project.id, item.id)!.status).toBe("doing");
+  });
+});
+
+describe("the last hook event this machine heard from each agent", () => {
+  it("shows on the connection, never in the project's export, and reaches the database once a minute", async () => {
+    const { codeLink, ctx, db, project, repo, checkout } = await machine();
+    writeConnectFiles(checkout, { projectName: project.name, mcpUrl: ctx.mcp.urlFor(project.id)!, eventUrl: ctx.mcp.eventUrl!, prefix: "TOM", branchTemplate: "{key}/{slug}" });
+    git(["add", "-A"], checkout);
+    git(["commit", "-q", "-m", "connect"], checkout);
+    codeLink.setRepoPolicy(project.id, repo.id, { connectAgents: ["claude-code", "codex"] });
+    const heard = async (agent: string) => (await codeLink.connection(project.id, repo.id)).agents.find((a) => a.id === agent)!.lastEventAt;
+    expect((await codeLink.connection(project.id, repo.id)).state).toBe("connected");
+    expect(await heard("claude-code")).toBeUndefined();
+
+    const registrations = ctx.db.registrations("project");
+    const digest = () => digestState(exportState(db, project.id, { registrations, exports: ["code_link"] }));
+    const exported = digest();
+    const writes = vi.spyOn(codeLink.store, "noteHookHeard");
+    const post = (payload: Record<string, unknown>) => fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: "cli-h", cwd: checkout, ...payload }) });
+    const before = Date.now();
+    // Claude Code posts around every tool call.
+    await post({ hook_event_name: "SessionStart" });
+    await post({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "pnpm test" } });
+    await post({ hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "pnpm test" } });
+    expect(writes).toHaveBeenCalledTimes(1);
+    expect(await heard("claude-code")).toBeGreaterThanOrEqual(before);
+    expect(await heard("codex")).toBeUndefined();
+    expect(digest()).toBe(exported);
+
+    // A minute on, the next one is written down again.
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + 61_000 });
+    try {
+      await post({ hook_event_name: "PreToolUse", tool_name: "Read" });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(writes).toHaveBeenCalledTimes(2);
+    expect(codeLink.store.hooksHeard(project.id, repo.id)["claude-code"]).toBeGreaterThanOrEqual(before + 61_000);
+    expect(digest()).toBe(exported);
   });
 });
 

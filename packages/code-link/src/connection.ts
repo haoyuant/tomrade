@@ -19,6 +19,8 @@ export interface AgentConnectionView {
   reviewHooks: boolean;
   /** Chosen for this repository: Connect writes its files, and only chosen agents decide whether it is connected. */
   chosen: boolean;
+  /** When this machine last received the agent's hooks from this repository; absent until it has. */
+  lastEventAt?: number;
 }
 
 export interface ConnectionView {

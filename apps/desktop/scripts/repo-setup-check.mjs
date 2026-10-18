@@ -177,6 +177,15 @@ const run = async () => {
   check("nothing is committed or visible to git", execSync("git status --porcelain", { cwd: soloDir, encoding: "utf8" }).trim() === "" && fs.existsSync(path.join(soloDir, ".mcp.json")) && fs.existsSync(path.join(soloDir, ".claude/settings.local.json")) && !fs.existsSync(path.join(soloDir, ".claude/settings.json")));
   await shot("repo-setup-05-agents-local");
 
+  // ── what this machine last heard from each agent's hooks ──
+  const soloAgent = (agent) => `document.querySelector('[data-repo="${solo.id}"] [data-agent="${agent}"]')`;
+  check("an agent not heard from yet says so, with the usual causes", await wait(() => $(`${soloAgent("claude-code")}?.textContent.includes('no hook event on this machine yet') && !!document.querySelector('[data-repo="${solo.id}"] .repo-agent-silent')?.textContent.includes('/hooks')`), 100));
+  // What Claude Code's hooks post around a tool call.
+  await fetch(ctx.mcp.eventUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hook_event_name: "PreToolUse", session_id: "cli-solo", cwd: soloDir, tool_name: "Bash", tool_input: { command: "ls" } }) });
+  check("a Claude Code tool call shows as just heard, Codex still silent", await wait(() => $(`${soloAgent("claude-code")}?.querySelector('.repo-agent-heard')?.textContent === 'last hook event now' && ${soloAgent("codex")}?.textContent.includes('no hook event on this machine yet')`), 100));
+  await $(`${soloAgent("codex")}?.scrollIntoView({ block: "center" });true`);
+  await shot("repo-setup-06-agents-heard");
+
   check("harness reached the end", true);
 };
 

@@ -151,7 +151,20 @@ CREATE UNIQUE INDEX idx_plugin_code_link_links_key ON plugin_code_link_links(pro
   // The agents a repository is connected for; NULL until someone chooses or connects.
   { version: 9, up: "ALTER TABLE plugin_code_link_repos ADD COLUMN connect_agents_json TEXT" },
   // The herdr pane a session runs in, as its hooks report it: where "open in terminal" finds it again.
-  { version: 10, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN herdr_pane TEXT" }
+  { version: 10, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN herdr_pane TEXT" },
+  // When this machine last heard each agent's hooks from a repository: its own health, never the project's data.
+  {
+    version: 11,
+    up: `
+CREATE TABLE plugin_code_link_hooks_heard (
+  repo_id     TEXT NOT NULL,
+  agent       TEXT NOT NULL,
+  project_id  TEXT NOT NULL,
+  heard_at    INTEGER NOT NULL,
+  PRIMARY KEY (repo_id, agent)
+);
+`
+  }
 ];
 
 /** Durable code links travel with the project; running sessions belong to this machine. */
@@ -160,7 +173,8 @@ export const TABLES = {
   plugin_code_link_deliveries: { project: "project_id", export: false },
   plugin_code_link_repos: { project: "project_id", export: { order: "repo_id" } },
   plugin_code_link_proposals: { project: "project_id", export: { order: "id" } },
-  plugin_code_link_sessions: { project: "project_id", export: false }
+  plugin_code_link_sessions: { project: "project_id", export: false },
+  plugin_code_link_hooks_heard: { project: "project_id", export: false }
 } as const;
 
 export type LinkSource = "start" | "scan" | "mcp" | "manual";
@@ -728,6 +742,18 @@ export class CodeLinkStore {
         now
       );
     return next;
+  }
+
+  /** Each agent's last hook event from this repository on this machine, by agent id. */
+  hooksHeard(projectId: string, repoId: string): Record<string, number> {
+    const rows = this.db(projectId).prepare("SELECT agent, heard_at FROM plugin_code_link_hooks_heard WHERE repo_id = ?").all(repoId) as { agent: string; heard_at: number }[];
+    return Object.fromEntries(rows.map((r) => [r.agent, r.heard_at]));
+  }
+
+  noteHookHeard(projectId: string, repoId: string, agent: string, at: number): void {
+    this.db(projectId)
+      .prepare("INSERT INTO plugin_code_link_hooks_heard (repo_id, agent, project_id, heard_at) VALUES (?, ?, ?, ?) ON CONFLICT(repo_id, agent) DO UPDATE SET heard_at = excluded.heard_at")
+      .run(repoId, agent, projectId, at);
   }
 
   // ── proposals ──────────────────────────────────────────────────────────────
