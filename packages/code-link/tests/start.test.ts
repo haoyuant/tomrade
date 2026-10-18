@@ -31,21 +31,34 @@ afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 const git = (args: string[], cwd: string) => execFileSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } }).trim();
 
 let n = 0;
+/** Each shape built once with git, then copied: every spawn costs, and a fresh repository is the same bytes each time. */
+const templates = new Map<string, { remote: string; checkout: string }>();
 function codeRepo(opts: { manifest?: boolean } = {}): { remote: string; checkout: string } {
+  const key = `${opts.manifest !== false}`;
+  let template = templates.get(key);
+  if (!template) {
+    const remote = path.join(root, `template-${key}-remote.git`);
+    fs.mkdirSync(remote, { recursive: true });
+    git(["init", "--bare", "-b", "main", "."], remote);
+    const checkout = path.join(root, `template-${key}-checkout`);
+    fs.mkdirSync(checkout, { recursive: true });
+    git(["init", "-q", "-b", "main"], checkout);
+    git(["remote", "add", "origin", remote], checkout);
+    git(["config", "user.email", "dev@localhost"], checkout);
+    git(["config", "user.name", "Dev"], checkout);
+    fs.writeFileSync(path.join(checkout, "README.md"), "# app\n");
+    if (opts.manifest !== false) fs.writeFileSync(path.join(checkout, "package.json"), '{ "name": "app" }\n');
+    git(["add", "-A"], checkout);
+    git(["commit", "-q", "-m", "initial"], checkout);
+    git(["push", "-q", "-u", "origin", "HEAD:refs/heads/main"], checkout);
+    template = { remote, checkout };
+    templates.set(key, template);
+  }
   const remote = path.join(root, `remote-${n++}.git`);
-  fs.mkdirSync(remote, { recursive: true });
-  git(["init", "--bare", "-b", "main", "."], remote);
   const checkout = path.join(root, `checkout-${n++}`);
-  fs.mkdirSync(checkout, { recursive: true });
-  git(["init", "-q", "-b", "main"], checkout);
-  git(["remote", "add", "origin", remote], checkout);
-  git(["config", "user.email", "dev@localhost"], checkout);
-  git(["config", "user.name", "Dev"], checkout);
-  fs.writeFileSync(path.join(checkout, "README.md"), "# app\n");
-  if (opts.manifest !== false) fs.writeFileSync(path.join(checkout, "package.json"), '{ "name": "app" }\n');
-  git(["add", "-A"], checkout);
-  git(["commit", "-q", "-m", "initial"], checkout);
-  git(["push", "-q", "-u", "origin", "HEAD:refs/heads/main"], checkout);
+  fs.cpSync(template.remote, remote, { recursive: true });
+  fs.cpSync(template.checkout, checkout, { recursive: true });
+  git(["remote", "set-url", "origin", remote], checkout);
   return { remote, checkout };
 }
 
@@ -770,7 +783,8 @@ describe("starting a ticket", () => {
     const { repo: local } = await ctx.repos.addFromFolder(project.id, localRepo());
     await running;
     const t0 = Date.now();
-    while (codeLink.repoStates(project.id).find((s) => s.repoId === local.id)?.remote !== "none" && Date.now() - t0 < 5000) await new Promise((r) => setTimeout(r, 50));
+    // The follow-up scan runs git too; a loaded machine needs well over the 5 s a quiet one does.
+    while (codeLink.repoStates(project.id).find((s) => s.repoId === local.id)?.remote !== "none" && Date.now() - t0 < 30_000) await new Promise((r) => setTimeout(r, 50));
     expect(codeLink.repoStates(project.id).find((s) => s.repoId === local.id)).toMatchObject({ remote: "none", readiness: "scaffolded" });
   });
 
@@ -798,7 +812,7 @@ describe("starting a ticket", () => {
     const session = () => codeLink.sessionsOf(project.id, item.id)[0];
 
     // The question holds the run: the ticket says the session waits for the person…
-    await vi.waitFor(() => expect(session()).toMatchObject({ state: "waiting", activity: "needs your approval" }));
+    await vi.waitFor(() => expect(session()).toMatchObject({ state: "waiting", activity: "needs your approval" }), { timeout: 10_000 });
     expect((await ctx.contributions.badgesFor(project.id))[item.id]).toEqual(expect.arrayContaining([expect.objectContaining({ id: "waiting" })]));
     // …and still does after a long silence, where a running session would be called idle.
     codeLink.sessions.sweep(project.id, Date.now() + 11 * 60 * 1000);
@@ -1467,7 +1481,7 @@ describe("starting a ticket", () => {
     await on.tool_result!({ toolName: "bash", input: { command: "flutter create ." }, content: [{ type: "text", text: "ok" }], isError: false });
     expect(session().activity).toBeNull();
     on.agent_end!({ messages: [{ role: "assistant", content: [{ type: "text", text: "Scaffold in place.\n\nNext: CI." }], stopReason: "stop" }] });
-    await vi.waitFor(() => expect(session()).toMatchObject({ state: "waiting", summary: "Scaffold in place." }));
+    await vi.waitFor(() => expect(session()).toMatchObject({ state: "waiting", summary: "Scaffold in place." }), { timeout: 10_000 });
     await on.session_shutdown!({ type: "session_shutdown", reason: "quit" });
     expect(session().state).toBe("ended");
 

@@ -28,7 +28,7 @@ function bareRemote(): string {
   return dir;
 }
 
-const QUIET = { snapshotIdleMs: 60_000, snapshotMaxMs: 60_000, watch: false, reconcileMs: 0, autoRestore: false };
+const QUIET = { snapshotIdleMs: 3_600_000, snapshotMaxMs: 3_600_000, watch: false, reconcileMs: 0, autoRestore: false };
 
 async function machine(label: string, storage: Record<string, unknown> = {}) {
   const hubDir = path.join(root, `${label}-${n++}`);

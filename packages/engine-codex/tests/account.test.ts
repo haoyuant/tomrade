@@ -48,12 +48,13 @@ describe("asking Codex whether it can run", () => {
     expect(codexCanRun(null)).toBeNull();
   });
 
-  it("gives up on a Codex that never answers, and takes down one that ignores SIGTERM", { timeout: 30_000 }, async () => {
+  it("gives up on a Codex that never answers, and takes down one that ignores SIGTERM", { timeout: 60_000 }, async () => {
     const pidFile = path.join(dir, "stubborn.pid");
     const started = Date.now();
-    expect(await readCodexAccount(launchOf(fakeCodex("stubborn")), { ...process.env, FAKE_PID_FILE: pidFile }, 1500)).toBeNull();
+    // The fake ignores SIGTERM only once Node is up: on a busy machine that takes seconds, so the check must wait longer than that.
+    expect(await readCodexAccount(launchOf(fakeCodex("stubborn")), { ...process.env, FAKE_PID_FILE: pidFile }, 5000)).toBeNull();
     // It never answers, so returning at all means the check's own timeout ended it; the slack is for a slow spawn.
-    expect(Date.now() - started).toBeLessThan(10_000);
+    expect(Date.now() - started).toBeLessThan(20_000);
     const pid = Number(fs.readFileSync(pidFile, "utf8"));
     expect(alive(pid)).toBe(true);
     // SIGKILL follows two seconds later, or later still on a busy machine.

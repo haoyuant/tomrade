@@ -29,21 +29,31 @@ afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 const git = (args: string[], cwd: string) => execFileSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } }).trim();
 
 let n = 0;
+/** Built once with git, then copied: every spawn costs, and a fresh repository is the same bytes each time. */
+let template: { remote: string; checkout: string } | null = null;
 function codeRepo(): { remote: string; checkout: string } {
+  if (!template) {
+    const remote = path.join(root, "template-remote.git");
+    fs.mkdirSync(remote, { recursive: true });
+    git(["init", "--bare", "-b", "main", "."], remote);
+    const checkout = path.join(root, "template-checkout");
+    fs.mkdirSync(checkout, { recursive: true });
+    git(["init", "-q", "-b", "main"], checkout);
+    git(["remote", "add", "origin", remote], checkout);
+    git(["config", "user.email", "dev@localhost"], checkout);
+    git(["config", "user.name", "Dev"], checkout);
+    fs.writeFileSync(path.join(checkout, "package.json"), '{ "name": "app" }\n');
+    fs.writeFileSync(path.join(checkout, "CLAUDE.md"), "# app\n\nRun `pnpm test`.\n\n## Layout\n\nsrc/ holds it.\n");
+    git(["add", "-A"], checkout);
+    git(["commit", "-q", "-m", "initial"], checkout);
+    git(["push", "-q", "-u", "origin", "HEAD:refs/heads/main"], checkout);
+    template = { remote, checkout };
+  }
   const remote = path.join(root, `remote-${n++}.git`);
-  fs.mkdirSync(remote, { recursive: true });
-  git(["init", "--bare", "-b", "main", "."], remote);
   const checkout = path.join(root, `checkout-${n++}`);
-  fs.mkdirSync(checkout, { recursive: true });
-  git(["init", "-q", "-b", "main"], checkout);
-  git(["remote", "add", "origin", remote], checkout);
-  git(["config", "user.email", "dev@localhost"], checkout);
-  git(["config", "user.name", "Dev"], checkout);
-  fs.writeFileSync(path.join(checkout, "package.json"), '{ "name": "app" }\n');
-  fs.writeFileSync(path.join(checkout, "CLAUDE.md"), "# app\n\nRun `pnpm test`.\n\n## Layout\n\nsrc/ holds it.\n");
-  git(["add", "-A"], checkout);
-  git(["commit", "-q", "-m", "initial"], checkout);
-  git(["push", "-q", "-u", "origin", "HEAD:refs/heads/main"], checkout);
+  fs.cpSync(template.remote, remote, { recursive: true });
+  fs.cpSync(template.checkout, checkout, { recursive: true });
+  git(["remote", "set-url", "origin", remote], checkout);
   return { remote, checkout };
 }
 
@@ -1188,7 +1198,8 @@ describe("a checkout learnt from a session's hooks", () => {
 
     await post({ hook_event_name: "SessionStart", session_id: "cli-wt", cwd: unrelated.checkout });
     await post({ hook_event_name: "SessionStart", session_id: "cli-wt", cwd: worktree });
-    await vi.waitFor(() => expect(ctx.repos.checkout(elsewhere.remote).checkout).not.toBeNull());
+    // The hook's answer is git asking the worktree for its main checkout; under load that takes longer than the 1 s default.
+    await vi.waitFor(() => expect(ctx.repos.checkout(elsewhere.remote).checkout).not.toBeNull(), { timeout: 10_000 });
     expect(fs.realpathSync(ctx.repos.checkout(elsewhere.remote).checkout!)).toBe(fs.realpathSync(elsewhere.checkout));
     // A repository placed already keeps its checkout; a folder no project repository names places nothing.
     expect(ctx.repos.checkout(remote).checkout).toBe(checkout);

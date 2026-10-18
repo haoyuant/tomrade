@@ -88,7 +88,7 @@ const Config = z.object({ branch: z.string().default("main") });
 async function machine(target: { origin: string; url: string }, password: string) {
   const hubDir = path.join(root, `hub-${n++}`);
   fs.mkdirSync(hubDir, { recursive: true });
-  const bag = await fresh({ hubDir, plugins: [[Storage, { snapshotIdleMs: 60_000, snapshotMaxMs: 60_000, watch: false, reconcileMs: 0 }], storageGit] });
+  const bag = await fresh({ hubDir, plugins: [[Storage, { snapshotIdleMs: 3_600_000, snapshotMaxMs: 3_600_000, watch: false, reconcileMs: 0 }], storageGit] });
   await settle();
   let connected = true;
   bag.ctx.storage.register(
