@@ -160,7 +160,7 @@ function NewPluginDialog({ projectId, onClose, onLeave }: { projectId: string; o
   const create = useStudioCreate();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const usable = (engines.data ?? []).filter((e) => e.ok && conducts(e));
+  const usable = (engines.data ?? []).filter((e) => e.ok && !e.terminalOnly && conducts(e));
   const [engine, setEngine] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const valid = NAME.test(name) && description.trim().length > 3;

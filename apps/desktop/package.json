@@ -56,6 +56,7 @@
     "test:im-audience": "electron scripts/im-audience-check.mjs",
     "test:deep-link": "electron scripts/deep-link-check.mjs",
     "test:im-settings": "electron scripts/im-settings-check.mjs",
+    "test:terminal-only": "electron scripts/terminal-only-check.mjs",
     "package": "node scripts/package.mjs"
   },
   "dependencies": {

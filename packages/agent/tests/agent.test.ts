@@ -51,6 +51,16 @@ describe("the loop engine on the platform", () => {
     expect(errors[0]?.block).toEqual({ type: "error", text: "The selected model is unavailable." });
   });
 
+  it("never gives a conversation without a ticket to a terminal-only agent, even when it is the default", async () => {
+    const { agent, project, ctx } = await boot([]);
+    agent.engine({ id: "termy", title: "Termy", author: "ai:termy", capabilities: ["code"], terminalOnly: true, available: async () => ({ ok: true }), turn: async () => ({ stop: "end" }) });
+    ctx.settings.set({ ...ctx.settings.get(), agent: { ...ctx.settings.get().agent, defaultEngine: "termy" } });
+    expect(agent.newThread(project.id).engine).not.toBe("termy");
+    expect(agent.newThread(project.id, "termy").engine).not.toBe("termy");
+    // A ticket started in a terminal keeps the agent it was started with.
+    expect(agent.newThread(project.id, "termy", null, { itemId: "ticket" }).engine).toBe("termy");
+  });
+
   it("folds what an engine knew under its error, and describes an error it threw", async () => {
     const { ctx, agent, project } = await boot([]);
     agent.engine({

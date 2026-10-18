@@ -804,7 +804,10 @@ export function AgentPanel({
   // No thread yet: the chip shows what a new thread WOULD get, and picking an
   // engine creates the thread right there instead of doing silently nothing.
   const agentSettings = settings.data?.agent as AgentSettings | undefined;
-  const usable = (id: string) => !!findEngine(engines.data, id)?.ok;
+  const usable = (id: string) => {
+    const found = findEngine(engines.data, id);
+    return !!found?.ok && !found.terminalOnly;
+  };
   // The settings' engine may not run here yet — no model, say — while another does: a new thread takes the one that can answer.
   const configuredEngine = findEngine(engines.data, agentSettings?.defaultEngine)?.id ?? agentSettings?.defaultEngine ?? "tomrade";
   const defaultEngine = !engines.data || usable(configuredEngine) ? configuredEngine : (engines.data.find((e) => e.ok && !e.terminalOnly && e.capabilities.includes("backlog"))?.id ?? configuredEngine);

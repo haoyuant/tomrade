@@ -835,8 +835,10 @@ export class Agent extends Service {
 
   newThread(projectId: string, engine?: string, boardId: string | null = null, opts: NewThreadOptions = {}): ThreadSummary {
     const chosen = this.answering(engine ?? this.settingsOf().defaultEngine);
-    const known = this.engines.has(chosen);
-    const engineId = known ? chosen : ([...this.engines.keys()][0] ?? chosen);
+    // A terminal-only agent works a ticket in a terminal; a conversation without one goes to an engine that can hold it.
+    const holds = (e: Engine | undefined) => !!e && (!e.terminalOnly || !!opts.itemId);
+    const known = holds(this.engines.get(chosen));
+    const engineId = known ? chosen : ([...this.engines.values()].find((e) => holds(e))?.id ?? chosen);
     const thread = this.store.createThread(projectId, engineId, opts.title ?? "", boardId, opts.itemId ?? null, opts.branch ?? null, opts.surface ?? "assistant");
     // The knobs the thread was opened from — a thread keeps the engine and effort it was started with
     // instead of falling back to the engine's defaults. Only when the engine asked for is the one that
