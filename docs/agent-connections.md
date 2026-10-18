@@ -12,7 +12,7 @@ Only the agents chosen for the repository get configuration, and only they decid
 | --- | --- | --- |
 | Claude Code | `.mcp.json`, `.claude/settings.json` | Lifecycle hooks, including start and end |
 | Codex CLI | `.codex/config.toml` | Lifecycle hooks, including start and end; requires a hooks-capable version, a trusted project and review through `/hooks` |
-| Cursor | `.cursor/mcp.json`, `.cursor/hooks.json`, `.cursor/hooks/tomrade.sh` | Lifecycle hooks, including start and end; its own sessions reach Tomrade once Settings → Cursor connects `~/.cursor/mcp.json` |
+| Cursor | `.cursor/mcp.json`, `.cursor/hooks.json`, `.cursor/hooks/tomrade` (`.cursor/hooks/tomrade.ps1` on Windows) | Lifecycle hooks, including start and end; its own sessions reach Tomrade once Settings → Cursor connects `~/.cursor/mcp.json` |
 | Gemini CLI | `.gemini/settings.json` using `httpUrl` | No lifecycle hooks; followed through its MCP connection once it claims a ticket |
 
 `CLAUDE.md` and `AGENTS.md` explain ticket ownership and when progress reporting is available. Codex also gets the `tomrade-sync` skill. In those two files Tomrade writes only between `<!-- BEGIN TOMRADE -->` and `<!-- END TOMRADE -->`; a `## Tomrade` section from before the markers is replaced up to the next heading of the same or higher level, and marked, when the repository is connected again.
@@ -21,12 +21,17 @@ An agent Tomrade did not start carries no session token, so its claim is tied to
 
 Codex hooks carry the `X-Tomrade-Agent: codex` header and the native `session_id`, `cwd` and `hook_event_name` payload. Tomrade records the source as Codex, independently of Claude session IDs. The generated command requires `curl`, finishes within two seconds and does not block work when Tomrade is offline. Codex's own hook trust policy remains in control. Older versions without lifecycle hooks should be upgraded; `notify` alone only reports completed turns and cannot provide session start/end.
 
+The hooks run on macOS, Linux and Windows without Git Bash. Claude Code, Codex and WorkBuddy get one command that sh, bash, zsh, Git Bash and PowerShell all read the same way: Claude Code runs hooks in Git Bash on Windows, or in PowerShell where Git Bash is missing, and Codex runs them in PowerShell. Each step keeps its output in a variable (`set tomrade "$(…)"`, which PowerShell reads as `Set-Variable`), so nothing reaches the agent and the hook exits 0. Windows PowerShell's `curl` alias is removed first so that `curl.exe` (part of Windows 10 1803 and later) runs. `cmd.exe` is not supported; Codex falls back to it only when it finds no PowerShell. Cursor on Windows wraps every hook in PowerShell and pipes the payload in. For a command that names a path without an extension, it runs the `.ps1` file beside that path, so `.cursor/hooks.json` names `.cursor/hooks/tomrade`. Other systems run that POSIX script directly, so it is committed as executable even from a Windows checkout. Repositories connected before keep their POSIX-only hooks (`sh .cursor/hooks/tomrade.sh` for Cursor) and still count as connected; connecting again replaces them.
+
 For other agents with Streamable HTTP MCP support, manually add a server named `tomrade` using the project URL shown in Repository settings. The connection does not create configuration for those agents. Reading `AGENTS.md` supplies instructions only; it does not itself grant tool access or session tracking.
 
-Configuration references checked on 2026-10-15:
+Configuration references checked on 2026-10-15 (hook shells on 2026-10-18):
 
 - [Codex hooks and trust](https://learn.chatgpt.com/docs/hooks): project inline TOML hooks and their input fields.
 - [Codex notify](https://learn.chatgpt.com/docs/config-file/config-advanced#notifications): turn-completion notifications.
 - [Cursor MCP](https://cursor.com/docs/mcp): project `.cursor/mcp.json`, remote `url`.
 - [Cursor hooks](https://cursor.com/docs/agent/hooks): project `.cursor/hooks.json`, version 1; payloads checked against cursor-agent 2026.10.16 on 2026-10-17. Cursor skips a hook whose command names `curl` or `wget`, so the hook runs a committed script that does.
 - [Gemini CLI MCP](https://geminicli.com/docs/tools/mcp-server/): project `.gemini/settings.json`, Streamable HTTP `httpUrl`.
+- [Claude Code hooks](https://code.claude.com/docs/en/hooks): shell-form hooks run in `sh -c`, Git Bash on Windows, or PowerShell where Git Bash is missing.
+- Codex runs hook commands in the session's shell: the user's shell elsewhere, and PowerShell on Windows (`pwsh`, then `powershell`, then `cmd.exe`). This comes from its source (`codex-rs/hooks`), because the hooks page does not say. It also accepts a `commandWindows` override, which Tomrade does not need.
+- Cursor on Windows: cursor-agent 2026.10.16 runs a hook as `… | & { $input | <command> }` in `pwsh` or `powershell -ExecutionPolicy Bypass`, and resolves a path without an extension to `.ps1`, `.exe`, `.bat` or `.cmd`. This was read from its bundle, because the hooks page does not say.

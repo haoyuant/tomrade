@@ -4,7 +4,7 @@ import { parse as parseToml } from "smol-toml";
 import type { Git } from "@tomradex/storage";
 import type { McpProjectApproval } from "@tomradex/agent";
 import type { PortClash } from "@tomradex/mcp";
-import { CURSOR_HOOK_SCRIPT, hasCursorHooks } from "@tomradex/engine-cursor";
+import { cursorHookScripts } from "@tomradex/engine-cursor";
 import { configuredMcpUrl } from "@tomradex/engine-opencode";
 import { outsideExtensionUrl } from "@tomradex/engine-pi";
 import { anyHost, CLAUDE_LOCAL_SETTINGS, CODEX_HOOK_EVENTS, CONNECT_FILES, hasHooks, hasTomradeSection, hookCommands, namesEndpoint, OPENCODE_PLUGIN, PI_EXTENSION, type ConnectAgent } from "./connect.js";
@@ -74,13 +74,16 @@ function inspect(files: Record<string, string>, mcpUrl: string, eventUrl: string
   };
   const configuredUrl = urls.mcp ?? urls.codex ?? urls.pi ?? urls.opencode ?? urls.cursor ?? urls.gemini;
   const claudeHooks = hasHooks(settings, HOOK_EVENTS, hookCommands(eventUrl), true) || hasHooks(localSettings, HOOK_EVENTS, hookCommands(eventUrl), true);
+  // Each script the hooks run posts here as Cursor: the sh one names the header as curl does, the PowerShell one as a table.
+  const cursorScripts = cursorHookScripts(stripJsonComments(files[".cursor/hooks.json"] ?? ""));
+  const cursorHooks = cursorScripts.length > 0 && cursorScripts.every((file) => namesEndpoint(files[file], eventUrl) && /X-Tomrade-Agent(?::|' =) '?cursor\b/.test(files[file] ?? ""));
   const agents = ([
     { id: "claude-code", title: "Claude Code", tools: sameProject(urls.mcp, mcpUrl), tracking: claudeHooks ? "hooks" : "none", instructions: hasTomradeSection(files["CLAUDE.md"]), reviewHooks: false },
     { id: "codex", title: "Codex", tools: sameProject(urls.codex, mcpUrl), tracking: object(codex.features).hooks !== false && hasHooks(codex, CODEX_HOOK_EVENTS, hookCommands(eventUrl, "codex"), true) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: true },
     { id: "workbuddy", title: "WorkBuddy", tools: sameProject(urls.mcp, mcpUrl), tracking: hasHooks(json(files[".codebuddy/settings.json"]), HOOK_EVENTS, hookCommands(eventUrl, "workbuddy"), true) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false },
     { id: "pi", title: "Pi", tools: sameProject(urls.pi, mcpUrl), tracking: namesEndpoint(files[PI_EXTENSION], eventUrl) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false },
     { id: "opencode", title: "OpenCode", tools: sameProject(urls.opencode, mcpUrl), tracking: namesEndpoint(files[OPENCODE_PLUGIN], eventUrl) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false },
-    { id: "cursor", title: "Cursor", tools: sameProject(urls.cursor, mcpUrl), tracking: hasCursorHooks(stripJsonComments(files[".cursor/hooks.json"] ?? "")) && namesEndpoint(files[CURSOR_HOOK_SCRIPT], eventUrl) && !!files[CURSOR_HOOK_SCRIPT]?.includes("X-Tomrade-Agent: cursor") ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false },
+    { id: "cursor", title: "Cursor", tools: sameProject(urls.cursor, mcpUrl), tracking: cursorHooks ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false },
     { id: "gemini", title: "Gemini CLI", tools: sameProject(urls.gemini, mcpUrl), tracking: "none", instructions: false, reviewHooks: false }
   ] satisfies Omit<AgentConnectionView, "chosen">[]).map((agent): AgentConnectionView => ({ ...agent, chosen: chosen.includes(agent.id) }));
   const counted = agents.filter((agent) => agent.chosen);

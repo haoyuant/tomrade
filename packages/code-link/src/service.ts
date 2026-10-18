@@ -21,7 +21,7 @@ import { normalizeRemote, sameRepository } from "@tomradex/repos";
 import type {} from "@tomradex/settings";
 import type {} from "@tomradex/write";
 import type { Author, Item, Repo } from "@tomradex/domain";
-import { cursorHookReader } from "@tomradex/engine-cursor";
+import { CURSOR_HOOK_SCRIPT, cursorHookReader } from "@tomradex/engine-cursor";
 import { GitFolder, gitRunner, type Git } from "@tomradex/storage";
 import { keysInText, parseBranch, subjectPr } from "./keys.js";
 import { githubPull, readPull, type ForgePull } from "./forge.js";
@@ -1146,6 +1146,8 @@ export class CodeLink extends Service {
       const { files, skipped } = writeConnectFiles(worktree, input, chosen);
       const agents = inspectConnectFiles(worktree, mcp.urlFor(projectId)!, mcp.eventUrl!, chosen).agents;
       const folder = new GitFolder(this.git, worktree);
+      // A checkout on Windows records no executable bit, and elsewhere Cursor runs the script by its path.
+      if (files.includes(CURSOR_HOOK_SCRIPT)) await this.git(["add", "--chmod=+x", "--", CURSOR_HOOK_SCRIPT], { cwd: worktree });
       const committed = files.length > 0 && (await folder.commit("Connect this repository to Tomrade\n\nProject MCP config lets Claude Code, Codex and WorkBuddy discover Tomrade, a project extension does it for Pi and opencode.json with a plugin for OpenCode, agent instructions describe the ticket conventions, and their hooks report session lifecycle back."));
 
       if (!(await folder.remoteUrl())) return { branch, agents, files, skipped, committed, pushed: false, url: null, message: w("connectLocal", { branch, base: repo.defaultBranch }) };

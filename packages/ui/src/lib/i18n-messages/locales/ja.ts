@@ -1373,7 +1373,7 @@ export const ja: PartialMessages = {
     connectionPackaged: "インストール済みのアプリに接続します",
     connectionDevelopment: "開発ビルドに接続します",
     connectionElsewhere: "現在のアドレス：{{url}}",
-    connectionFiles: "チーム向け：tomrade/connect ブランチ / プルリクエストを作成します。内容は .mcp.json、.claude/settings.json の Claude フック、.codebuddy/settings.json の WorkBuddy フック、.pi/extensions/tomrade.ts の Pi 拡張、OpenCode の opencode.json と .opencode/plugins/tomrade.js、CLAUDE.md / AGENTS.md の Tomrade セクション、Codex のフック/設定、Cursor の .cursor/mcp.json と .cursor/hooks.json のフック（.cursor/hooks/tomrade.sh 付き）、そして .gemini/settings.json です。",
+    connectionFiles: "チーム向け：tomrade/connect ブランチ / プルリクエストを作成します。内容は .mcp.json、.claude/settings.json の Claude フック、.codebuddy/settings.json の WorkBuddy フック、.pi/extensions/tomrade.ts の Pi 拡張、OpenCode の opencode.json と .opencode/plugins/tomrade.js、CLAUDE.md / AGENTS.md の Tomrade セクション、Codex のフック/設定、Cursor の .cursor/mcp.json と .cursor/hooks.json のフック（.cursor/hooks/tomrade と .cursor/hooks/tomrade.ps1 付き）、そして .gemini/settings.json です。",
     connectionWorking: "接続中…",
     connectionAction: "チーム向けに接続（プルリクエスト）",
     connectionRetry: "プッシュ / プルリクエスト作成を再試行",
