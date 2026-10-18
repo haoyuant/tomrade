@@ -159,6 +159,24 @@ const run = async () => {
   await press(`document.querySelector('[data-repo="${repo.id}"] .repo-remove-confirm-btn')`);
   check("confirming removes it", await wait(() => ctx.repos.list(project.id).length === 0));
 
+  // ── a second repository, connected for this machine only: nothing committed ──
+  const soloDir = path.join(work, "code", "solo");
+  fs.mkdirSync(soloDir, { recursive: true });
+  fs.writeFileSync(path.join(soloDir, "package.json"), JSON.stringify({ name: "solo", version: "0.0.0" }));
+  fs.writeFileSync(path.join(soloDir, "CLAUDE.md"), "# Solo\n");
+  execSync("git init -q -b main && git add -A && git -c user.email=dev@localhost -c user.name=Dev commit -q -m start", { cwd: soloDir, stdio: "ignore" });
+  const solo = ctx.repos.create({ projectId: project.id, remote: soloDir });
+  await ctx.repos.setCheckout(soloDir, soloDir);
+  ctx.codeLink.setRepoPolicy(project.id, solo.id, { connectAgents: ["claude-code", "codex"] });
+  // Enabled, not just shown: until the checkout is known the row says so and the buttons wait.
+  await wait(() => $(`!!document.querySelector('[data-repo="${solo.id}"] .repo-agent-connect-local:not(:disabled)')`));
+  check("an unconnected repository offers this machine only first", await $(`(() => { const row = document.querySelector('[data-repo="${solo.id}"] .repo-agent-connection'); const buttons = [...row.querySelectorAll('button')].filter((b) => /repo-agent-connect/.test(b.className)); return buttons[0]?.classList.contains('repo-agent-connect-local') && buttons[1]?.classList.contains('repo-agent-connect'); })()`));
+  await press(`document.querySelector('[data-repo="${solo.id}"] .repo-agent-connect-local')`);
+  check("this machine only reports what it wrote", await wait(() => $(`document.querySelector('[data-repo="${solo.id}"] .repo-agent-result')?.textContent.includes('this machine only')`), 100));
+  check("it is connected on this machine only, with the team option left open", await wait(() => $(`document.querySelector('[data-repo="${solo.id}"] .repo-agent-connection')?.dataset.local === 'true' && document.querySelector('[data-repo="${solo.id}"] .repo-agent-connection .cfg-name')?.textContent === 'Connected on this machine only' && !!document.querySelector('[data-repo="${solo.id}"] .repo-agent-connect')`), 100));
+  check("nothing is committed or visible to git", execSync("git status --porcelain", { cwd: soloDir, encoding: "utf8" }).trim() === "" && fs.existsSync(path.join(soloDir, ".mcp.json")) && fs.existsSync(path.join(soloDir, ".claude/settings.local.json")) && !fs.existsSync(path.join(soloDir, ".claude/settings.json")));
+  await shot("repo-setup-05-agents-local");
+
   check("harness reached the end", true);
 };
 

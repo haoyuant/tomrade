@@ -1,7 +1,7 @@
 import type { MessageKey } from "~/lib/i18n";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {} from "@tomradex/code-link";
-import type { ConnectAgent, RepoPolicyPatch, StartOptions } from "@tomradex/code-link";
+import type { ConnectAgent, ConnectMode, RepoPolicyPatch, StartOptions } from "@tomradex/code-link";
 import { invoke } from "./api";
 import { invalidateWorkspace } from "./queries";
 
@@ -216,10 +216,11 @@ export function offerStart(itemId: string): void {
 export const useRepositoryConnection = (projectId: string, repoId: string) =>
   useQuery({ queryKey: ["codeLink", projectId, "connection", repoId], queryFn: () => invoke("codeLink.connection", projectId, repoId), refetchInterval: 10_000 });
 
+/** For the team through a branch and pull request, or for this machine only: files in the checkout that git ignores. */
 export function useConnectRepository(projectId: string, repoId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => invoke("codeLink.connect", projectId, repoId),
+    mutationFn: (mode: ConnectMode = "team") => invoke("codeLink.connect", projectId, repoId, mode),
     onSettled: () => void qc.invalidateQueries({ queryKey: ["codeLink", projectId, "connection", repoId] })
   });
 }
