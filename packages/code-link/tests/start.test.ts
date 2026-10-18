@@ -137,9 +137,16 @@ it("runs a ticket in a herdr workspace, follows the pane's status as the session
   const { Mcp } = await import("@tomradex/mcp");
   await ctx.plugin(Mcp, { port: 0 });
   const fake = new FakeHerdr();
+  fake.stop();
   await ctx.plugin(Herdr, { reconnectMs: 30, socket: fake.socket });
   await settle();
-  ctx.settings.set({ ...ctx.settings.get(), codeLink: { terminal: "herdr" } });
+  // No saved terminal preference: a fresh installation uses herdr.
+  expect(ctx.settings.get().codeLink?.terminal).toBe("herdr");
+  const installed = vi.spyOn(ctx.herdr, "installed").mockResolvedValue(null);
+  expect(await codeLink.herdrStatus()).toBe("notInstalled");
+  installed.mockResolvedValue("0.9.5");
+  expect(await codeLink.herdrStatus()).toBe("notRunning");
+  fake.start();
   const item = ticket("Herdr work");
 
   const result = await codeLink.start(project.id, item.id, { mode: "terminal" });
@@ -147,6 +154,7 @@ it("runs a ticket in a herdr workspace, follows the pane's status as the session
   if (!result.ok) return;
   // A workspace for the ticket, in its worktree, with the session's script typed into its pane.
   expect(result).toMatchObject({ mode: "terminal", launched: true, pane: "w1:p1" });
+  expect(await codeLink.herdrStatus()).toBe("running");
   expect(fake.of("workspace.create")).toEqual([{ cwd: result.cwd, label: item.key, focus: false }]);
   const dir = codeLink.sessionDir(result.sessionId);
   expect(fake.of("pane.send_input")).toEqual([{ pane_id: "w1:p1", text: `bash '${path.join(dir, "run.command")}'`, keys: ["enter"] }]);
@@ -222,6 +230,9 @@ it("runs a ticket in a herdr workspace, follows the pane's status as the session
 
   // herdr gone: the script is written and the person told to run it, and why.
   fake.stop();
+  expect(await codeLink.herdrStatus()).toBe("notRunning");
+  installed.mockResolvedValue(null);
+  expect(await codeLink.herdrStatus()).toBe("notInstalled");
   const alone = ticket("Alone");
   const without = await codeLink.start(project.id, alone.id, { mode: "terminal" });
   expect(without).toMatchObject({ ok: true, launched: false, pane: null, warnings: [expect.stringContaining("brew install herdr")] });

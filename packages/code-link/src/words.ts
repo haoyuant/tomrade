@@ -7,6 +7,7 @@ import { defineWords, type Slots, type Speak } from "@tomradex/domain";
  */
 export const CODE_WORDS = defineWords({
   en: {
+    terminalHelp: '1. Install herdr with `brew install herdr`. 2. Open a terminal and run `herdr` to start it. With herdr selected, tickets run in its workspace; Tomrade follows the pane’s status and last output, lets you Continue, and jumps back to the pane. If herdr is unavailable, Tomrade prepares a script for you to run yourself. Choose another installed terminal app, or "none" to only prepare the script.',
     untrackedSession: "This session is not tracked by Tomrade: no session token or repository hook event was received. Progress notes and session status are unavailable. In Tomrade, run “Connect repository to coding agents” for this workstream, commit and merge the generated .mcp.json, .claude/settings.json, .codebuddy/settings.json, .codex/config.toml, .pi/extensions/tomrade.ts, opencode.json, .opencode/plugins/tomrade.js, .cursor/hooks.json and .cursor/hooks/tomrade.sh (in Codex, also review its hooks with /hooks), then start a new session. Any MCP client is followed through its connection once it calls claim_ticket.",
     connected: "Connected",
     linkFirst: "{{title}} reaches Tomrade in a terminal through its own settings. Connect it under {{title}} in Settings, then start again.",
@@ -138,6 +139,7 @@ export const CODE_WORDS = defineWords({
     filedFrom: "Filed from {{key}}'s coding session."
   },
   zh: {
+    terminalHelp: '1. 运行 `brew install herdr` 安装。2. 打开一个终端，运行 `herdr` 启动它。选 herdr 后，工作项在 herdr 的 workspace 里运行；Tomrade 跟进这个 pane 的状态和最后输出，支持继续（Continue）和跳回 pane。herdr 不可用时，Tomrade 只写好脚本，提示你自行运行。也可以选择其他已安装的终端应用，或选 none 只准备脚本。',
     untrackedSession: "当前会话未被 Tomrade 跟踪：没有收到会话令牌或仓库 hooks 事件，进度备注和会话状态不可用。请在 Tomrade 中对该工作流运行「把仓库连接到编码智能体」，提交并合并生成的 .mcp.json、.claude/settings.json、.codebuddy/settings.json、.codex/config.toml、.pi/extensions/tomrade.ts、opencode.json、.opencode/plugins/tomrade.js、.cursor/hooks.json 和 .cursor/hooks/tomrade.sh（Codex 还需用 /hooks 审阅其中的 hooks），再新开会话。任何 MCP 客户端调用 claim_ticket 后，都会按它的连接被跟踪。",
     connected: "已连接",
     linkFirst: "{{title}} 在终端里要通过它自己的设置连到 Tomrade。请先在设置里的 {{title}} 下连接，再重新开始。",
