@@ -17,7 +17,7 @@ afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
 const git = (args: string[], cwd: string) => execFileSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } }).trim();
 let n = 0;
-const QUIET = { snapshotIdleMs: 60_000, snapshotMaxMs: 60_000, watch: false, reconcileMs: 0, autoRestore: false };
+const QUIET = { snapshotIdleMs: 3_600_000, snapshotMaxMs: 3_600_000, watch: false, reconcileMs: 0, autoRestore: false };
 
 async function machine() {
   const hubDir = path.join(root, `hub-${n++}`);

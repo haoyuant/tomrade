@@ -26,7 +26,8 @@ function bareRemote(): string {
   return dir;
 }
 
-const QUIET = { snapshotIdleMs: 60_000, snapshotMaxMs: 60_000, watch: false, reconcileMs: 0 };
+// The snapshot timers must never fire mid-test: a timed publish fetches, merges and pushes, and a loaded machine can run a test past a minute.
+const QUIET = { snapshotIdleMs: 3_600_000, snapshotMaxMs: 3_600_000, watch: false, reconcileMs: 0 };
 
 async function machine(label: string, storage: Record<string, unknown> = {}) {
   const hubDir = path.join(root, `${label}-${n++}`);
