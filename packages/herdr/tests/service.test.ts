@@ -138,4 +138,23 @@ describe("herdr service", () => {
     expect(herdr.watching()).toEqual([]);
     fake.close();
   });
+
+  it.skipIf(process.platform === "win32")("finds an installed herdr when the app was opened from the Dock with launchd's bare PATH", async () => {
+    const fake = new FakeHerdr();
+    const { herdr } = await herdrOn(fake);
+    const home = path.join(root, "home");
+    fs.mkdirSync(path.join(home, ".local/bin"), { recursive: true });
+    fs.writeFileSync(path.join(home, ".local/bin/herdr"), "#!/bin/sh\necho herdr 0.9.5\n", { mode: 0o755 });
+    const saved = { PATH: process.env.PATH, HOME: process.env.HOME };
+    process.env.PATH = "/usr/bin:/bin";
+    process.env.HOME = home;
+    try {
+      // A Homebrew herdr on this machine may answer first; either way it is found.
+      expect(await herdr.installed()).not.toBeNull();
+    } finally {
+      process.env.PATH = saved.PATH;
+      process.env.HOME = saved.HOME;
+      fake.close();
+    }
+  });
 });

@@ -143,6 +143,17 @@ async function until(check: () => boolean, timeout = 3000): Promise<void> {
   }
 }
 
+it("offers the terminal on automatic first in Settings, and keeps it unset while other settings are saved", async () => {
+  const { ctx } = await machine(null);
+  const field = (ctx.settings.sections("en").find((s) => s.id === "codeLink")!.schema.properties as Record<string, { enum: string[]; enumLabels: Record<string, string> }>).terminal;
+  expect(field.enum[0]).toBe("auto");
+  expect(field.enumLabels.auto).toBe("Automatic: herdr if installed, else the system terminal");
+  expect((ctx.settings.sections("zh").find((s) => s.id === "codeLink")!.schema.properties as Record<string, { enumLabels: Record<string, string> }>).terminal.enumLabels.auto).toBe("自动：装了 herdr 用 herdr，否则用系统终端");
+  // The window saves every section at once: an untouched terminal goes along as automatic, never as what it resolved to.
+  ctx.settings.set({ ...ctx.settings.get(), theme: "dark" });
+  expect(ctx.settings.get().codeLink?.terminal).toBe("auto");
+});
+
 // Several Starts, each a worktree: well past the default timeout on a busy machine.
 it("runs a ticket in a herdr workspace, follows the pane's status as the session's, and continues it in the same pane", { timeout: 60_000 }, async () => {
   const world = await machine(codeRepo());
@@ -154,8 +165,8 @@ it("runs a ticket in a herdr workspace, follows the pane's status as the session
   fake.stop();
   await ctx.plugin(Herdr, { reconnectMs: 30, socket: fake.socket });
   await settle();
-  // No saved terminal preference: a fresh installation uses herdr.
-  expect(ctx.settings.get().codeLink?.terminal).toBe("herdr");
+  // No saved terminal preference: herdr, once it is installed.
+  expect(ctx.settings.get().codeLink?.terminal).toBe("auto");
   const installed = vi.spyOn(ctx.herdr, "installed").mockResolvedValue(null);
   expect(await codeLink.herdrStatus()).toBe("notInstalled");
   installed.mockResolvedValue("0.9.5");
@@ -250,6 +261,13 @@ it("runs a ticket in a herdr workspace, follows the pane's status as the session
   expect(stopped).toMatchObject({ ok: true, launched: true, pane: null, warnings: [expect.stringContaining("herdr is not running")] });
   installed.mockResolvedValue(null);
   expect(await codeLink.herdrStatus()).toBe("notInstalled");
+  // Left on automatic, a machine without herdr opens the system terminal, with nothing to explain.
+  const plain = await codeLink.start(project.id, ticket("Plain").id, { mode: "terminal" });
+  expect(plain).toMatchObject({ ok: true, launched: true, pane: null });
+  expect(plain).not.toHaveProperty("warnings");
+  expect(opened).toHaveBeenLastCalledWith("Terminal", path.join(codeLink.sessionDir(plain.ok ? plain.sessionId : ""), "run.command"));
+  // herdr picked by the person stays picked: the system terminal stands in, and says why.
+  ctx.settings.set({ ...ctx.settings.get(), codeLink: { ...ctx.settings.get().codeLink, terminal: "herdr" } });
   const alone = ticket("Alone");
   const without = await codeLink.start(project.id, alone.id, { mode: "terminal" });
   expect(without).toMatchObject({ ok: true, launched: true, pane: null, warnings: [expect.stringContaining("brew install herdr")] });
@@ -258,7 +276,7 @@ it("runs a ticket in a herdr workspace, follows the pane's status as the session
   // the worktree's own terminal too
   const shell = await ctx.contributions.run("code-link.open-terminal", { projectId: project.id, itemId: alone.id });
   expect(shell.toast).toContain("herdr is not installed");
-  expect(opened).toHaveBeenCalledTimes(3);
+  expect(opened).toHaveBeenCalledTimes(4);
   opened.mockRestore();
   fake.close();
 });

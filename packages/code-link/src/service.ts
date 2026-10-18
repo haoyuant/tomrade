@@ -38,7 +38,7 @@ import { Sessions, type SessionMoment } from "./sessions.js";
 import { CODE_WORDS, type CodeWords, type PlainCodeWord } from "./words.js";
 import { Starter, type StartMode, type StartOptions, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
-import { RESUME_ID_FILE, RESUME_SCRIPT, TerminalSettings, commandOk, exec, herdrFallbackNote, launchTerminal, setupTerminal, terminalApps } from "./terminal.js";
+import { AUTO_TERMINAL, RESUME_ID_FILE, RESUME_SCRIPT, TerminalSettings, commandOk, exec, herdrFallbackNote, launchTerminal, machineTerminalSettings, setupTerminal, terminalApps } from "./terminal.js";
 import { registerTools } from "./tools.js";
 
 /** Who the scanner writes as. Evidence from git is not a person's decision, and it is not a model's either. */
@@ -280,14 +280,15 @@ const SETTINGS_SECTION = {
   description: "Which terminal opens a ticket, and how Claude Code, Codex or Pi is invoked in it. {prompt}, {mcpConfig}, {mcpUrl}, {settings}, {piExtension}, {resume}, {options} (the model and effort chosen at Start) and {cwd} are filled in.",
   schema: TerminalSettings,
   defaults: TerminalSettings.parse({}),
-  choices: () => ({ terminal: terminalApps() }),
+  choices: () => ({ terminal: [AUTO_TERMINAL, ...terminalApps()] }),
   order: 30,
   words: {
+    en: { fields: { terminal: { options: { [AUTO_TERMINAL]: CODE_WORDS("en")("terminalAuto") } } } },
     zh: {
       title: "代码关联",
       description: "用哪个终端打开工单，以及在终端里怎样调用 Claude Code、Codex 或 Pi。命令里的 {prompt}、{mcpConfig}、{mcpUrl}、{settings}、{piExtension}、{resume}、{options}（开始时选的模型和推理强度）和 {cwd} 会自动填入。",
       fields: {
-        terminal: { title: "终端应用", description: CODE_WORDS("zh")("terminalHelp") },
+        terminal: { title: "终端应用", description: `${CODE_WORDS("zh")("terminalAutoHelp")}${CODE_WORDS("zh")("terminalHelp")}`, options: { [AUTO_TERMINAL]: CODE_WORDS("zh")("terminalAuto") } },
         claudeCommand: { title: "Claude Code 命令" },
         codexCommand: { title: "Codex 命令" },
         piCommand: { title: "Pi 命令", description: "Pi 没有 MCP 参数；{piExtension} 是只在本次会话生效的扩展，负责注册 Tomrade 的服务，并像 Claude 的 hooks 一样回报进展。" },
@@ -781,7 +782,7 @@ export class CodeLink extends Service {
     const setup = (await this.ctx.get("agent")?.engineViews())?.find((e) => e.id === engineId)?.setup;
     const command = step === "install" ? setup?.install[0] : setup?.signIn;
     if (!command) throw new Error(`${engineId} has no ${step} command`);
-    const settings = TerminalSettings.parse(this.ctx.settings.get().codeLink ?? {});
+    const settings = await machineTerminalSettings(this.ctx.settings.get().codeLink, this.ctx.get("herdr"));
     const { launched } = await setupTerminal(command, path.join(this.sessionDir("setup"), engineId), settings.terminal, this.ctx.get("herdr") ?? null);
     return { launched, command };
   }
@@ -2068,7 +2069,7 @@ export class CodeLink extends Service {
         if (pane && (await this.ctx.get("herdr")?.focus(pane))) return { toast: this.words()("shownInHerdr", { pane }) };
         const cwd = this.worktreeOf(projectId, itemId);
         if (!cwd) return { toast: this.words()("noWorktree") };
-        const settings = TerminalSettings.parse(this.ctx.settings.get().codeLink ?? {});
+        const settings = await machineTerminalSettings(this.ctx.settings.get().codeLink, this.ctx.get("herdr"));
         const launch = await launchTerminal({ cwd, command: 'exec "${SHELL:-bash}"', dir: path.join(this.sessionDir("shell"), path.basename(cwd)), label: path.basename(cwd) }, settings.terminal, this.ctx.get("herdr") ?? null);
         const fallback = herdrFallbackNote(this.words().locale, launch, HERDR_INSTALL);
         const said = launch.launched ? this.words()("opened", { cwd }) : `cd ${cwd}`;

@@ -5,9 +5,12 @@ import path from "node:path";
 import { z } from "zod";
 import { CODE_WORDS } from "./words.js";
 
+/** The terminal until the person picks one: it follows what this machine has. */
+export const AUTO_TERMINAL = "auto";
+
 /** Machine settings: which terminal opens, and how each coding agent is invoked in it. */
 export const TerminalSettings = z.object({
-  terminal: z.string().default("herdr").meta({ title: "Terminal app" }).describe(CODE_WORDS("en")("terminalHelp")),
+  terminal: z.string().default(AUTO_TERMINAL).meta({ title: "Terminal app" }).describe(`${CODE_WORDS("en")("terminalAutoHelp")} ${CODE_WORDS("en")("terminalHelp")}`),
   claudeCommand: z.string().default('claude {options} --mcp-config "{mcpConfig}" --settings "{settings}" {resume} "$(cat "{prompt}")"').meta({ title: "Claude Code command", advanced: true }),
   codexCommand: z.string().default('codex {resume} {options} -c mcp_servers.tomrade.url="{mcpUrl}" -c mcp_servers.tomrade.bearer_token_env_var="TOMRADE_MCP_TOKEN" "$(cat "{prompt}")"').meta({ title: "Codex command", advanced: true }),
   piCommand: z.string().default('pi {options} -e "{piExtension}" {resume} "$(cat "{prompt}")"').meta({ title: "Pi command", advanced: true }).describe("Pi takes no MCP flag; {piExtension} is a session-only extension that registers the server and reports like Claude's hooks."),
@@ -26,6 +29,17 @@ export const TerminalSettings = z.object({
   otherCommand: z.string().default("").meta({ title: "Other agent command", advanced: true }).describe("Any other CLI agent with an MCP client — Gemini CLI, OpenCode, aider… Empty means none is set up. {mcpUrl}, {token} (also in $TOMRADE_MCP_TOKEN), {prompt}, {resume} (the bare session id) are filled in.")
 });
 export type TerminalSettings = z.infer<typeof TerminalSettings>;
+
+/**
+ * The section as this machine runs it. A terminal left on automatic is looked
+ * at again each time — herdr once it is installed, the system terminal until
+ * then — and one the person picked stays as it is.
+ */
+export async function machineTerminalSettings(stored: unknown, herdr: Pick<HerdrTerminal, "installed"> | null | undefined): Promise<TerminalSettings> {
+  const settings = TerminalSettings.parse(stored ?? {});
+  if (settings.terminal !== AUTO_TERMINAL) return settings;
+  return { ...settings, terminal: (await herdr?.installed()) ? "herdr" : SYSTEM_TERMINAL };
+}
 
 const TERMINAL_APPS = new Set(["terminal", "iterm", "iterm2", "warp", "ghostty", "alacritty", "kitty", "wezterm", "hyper", "tabby", "rio", "wave"]);
 
