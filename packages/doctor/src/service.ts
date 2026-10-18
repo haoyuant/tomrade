@@ -11,7 +11,7 @@ import type {} from "@tomradex/projects";
 import type {} from "@tomradex/settings";
 import { BUNDLED, KnownIssue, before, matches, said, type Evidence } from "./issues.js";
 import { errorLines, newestFiles, scrub, tail } from "./evidence.js";
-import { wordsLocale, type WordsLocale } from "@tomradex/domain";
+import { languageTag, type LanguageTag } from "@tomradex/domain";
 import { DOCTOR_WORDS, type Words } from "./words.js";
 import { CATALOG_MAX_AGE_MS, fetchCatalog, readCache } from "./catalog.js";
 import { CONCLUSION, brief, conclusionCard, investigationMessages, investigationTools, logSources, scopedTools, type Conclusion } from "./investigate.js";
@@ -261,8 +261,8 @@ export class Doctor extends Service {
     ctx.effect(() => () => { clearTimeout(first); clearTimeout(catalog); clearInterval(catalogTimer); if (this.retryTimer) clearInterval(this.retryTimer); });
   }
 
-  locale(): WordsLocale {
-    return wordsLocale(this.ctx.settings.locale());
+  locale(): LanguageTag {
+    return languageTag(this.ctx.settings.locale());
   }
 
   words(): Words {

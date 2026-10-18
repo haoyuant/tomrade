@@ -5,7 +5,7 @@ import { defineWords, type Slots, type Speak } from "@tomradex/domain";
  * in English and Chinese. The backend writes these words, so it picks the
  * language — the person's setting, else the system's — when it writes them.
  */
-export const CODE_WORDS = defineWords({
+export const CODE_WORDS = defineWords("code-link", {
   en: {
     terminalHelp: '1. Install herdr with `brew install herdr`. 2. Open a terminal and run `herdr` to start it. With herdr selected, tickets run in its workspace; Tomrade follows the pane’s status and last output, lets you Continue, and jumps back to the pane. If herdr is unavailable, the session opens in the system terminal instead. Choose another installed terminal app, or "none" to only prepare the script.',
     untrackedSession: "This session is not tracked by Tomrade: no session token or repository hook event was received. Progress notes and session status are unavailable. In Tomrade, run “Connect repository to coding agents” for this workstream, commit and merge the generated .mcp.json, .claude/settings.json, .codebuddy/settings.json, .codex/config.toml, .pi/extensions/tomrade.ts, opencode.json, .opencode/plugins/tomrade.js, .cursor/hooks.json, .cursor/hooks/tomrade and .cursor/hooks/tomrade.ps1 — or “Connect on this machine only”, which writes them into the checkout kept out of git — (in Codex, also review its hooks with /hooks), then start a new session. Any MCP client is followed through its connection once it calls claim_ticket.",

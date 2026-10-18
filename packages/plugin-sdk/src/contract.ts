@@ -29,9 +29,9 @@ import type {
 
 export type Disposer = () => void;
 
-/** The languages the app speaks. */
-export type Locale = "en" | "zh";
-/** Text in the app's language: a plain string, or one per language picked each time it is shown (English is the fallback). */
+/** A language the app may be speaking: a BCP 47 tag such as "en", "zh", "zh-Hant" or one a language pack adds ("pt-BR"). SDK 0.2.8 widened it from "en" | "zh". */
+export type Locale = string;
+/** Text in the app's language: a plain string, or one per language tag picked each time it is shown (English is the fallback). */
 export type Localized = string | ({ en: string } & Partial<Record<Locale, string>>);
 
 /** A settings section's text in one language; fields are keyed by schema property. */

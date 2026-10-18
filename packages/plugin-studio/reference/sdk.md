@@ -37,7 +37,7 @@ await ctx.db.get(projectId, sql, params); await ctx.db.run(projectId, sql, param
 `export: { order: "item_id" }` makes the table travel in the project's folder; `false` keeps it on this machine. `"hub"` as the target addresses the Hub's database (migrate with `scope: "hub"`).
 
 ## settings
-`register({ title, description?, schema: z.object({...}), defaults })` (id defaults to the namespace) · `get<T>()` · `set(value)` · `show()` opens Settings on your section (from a desktop surface click) · `locale()` is the app's language (`"en"`/`"zh"`; `settings.changed` fires on a switch). Never write two languages side by side: the schema's `.meta({ title })`/`.describe()` are English, `words: { zh: { title, description, fields: { key: { title, description } } } }` is the Chinese card, and command / status item titles take `{ en, zh }`. The card is drawn from the schema; use `.describe()` on fields for labels.
+`register({ title, description?, schema: z.object({...}), defaults })` (id defaults to the namespace) · `get<T>()` · `set(value)` · `show()` opens Settings on your section (from a desktop surface click) · `locale()` is the app's language, a BCP 47 tag (`"en"`, `"zh"`, `"ja"`, or one a language pack adds; `settings.changed` fires on a switch). Never write two languages side by side: the schema's `.meta({ title })`/`.describe()` are English, `words: { zh: { title, description, fields: { key: { title, description } } } }` is the Chinese card, and command / status item titles take `{ en, zh }`. The card is drawn from the schema; use `.describe()` on fields for labels.
 
 ## tools — for agents
 ```ts
@@ -68,6 +68,9 @@ await ctx.tools.register(defineTool({
 
 ## Manifest (`tomrade-plugin.json`)
 `id` publisher/name · `version` · `title` · `description` · `license` (OSI SPDX id) · `repository` (public GitHub URL, to publish) · `engines.sdk` · `permissions: { network: ["api.example.com"], fs: "none"|"plugin"|"project"|"any", exec: false }`. `inject`, `optional` and `contributes` are filled in by the build.
+
+## Language packs (data only)
+A plugin that adds a language: `"engines": { "sdk": "^0.2.8" }`, `"main": null` (no code, no `src/`), `"languages": [{ "tag": "pt-BR", "name": "Português (Brasil)", "file": "languages/pt-BR.json" }]` (a canonical tag, never `en`; the name in the language itself). The file is `{ "ui": { "<namespace>": { "<key>": "…" } }, "backend": { "<book>": { "<key>": "…" } } }`, strings only, each shown as plain text. Keep every `{{slot}}` and `[[cmd:…]]` its English has; an entry that changes them, or a key English lacks, reads English, and so does anything left out. `plugin_check` lists the coverage per side: `next` holds the next strings to translate with their English — translate those, check again. Agent prompts are not translatable.
 
 ## Scenario (`src/test.ts`)
 ```ts

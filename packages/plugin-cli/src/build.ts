@@ -32,6 +32,8 @@ const format = (m: esbuild.Message) => `${m.location ? `${m.location.file}:${m.l
  */
 export async function build(dir: string): Promise<BuildResult> {
   const manifest = readManifest(dir);
+  // A plugin that is data only (a language pack) has nothing to bundle.
+  if (manifest.main === null) return { ok: true, outfile: "", errors: [], warnings: [], bundled: [] };
   const entry = entryOf(dir);
   const outfile = path.join(dir, manifest.main);
   if (!entry) return { ok: false, outfile, errors: [`no entry point: expected one of ${ENTRIES.join(", ")}`], warnings: [], bundled: [] };

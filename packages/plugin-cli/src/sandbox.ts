@@ -75,6 +75,10 @@ export async function runSandboxed(mode: "test", dir: string, opts?: SandboxOpti
 export async function runSandboxed(mode: "inspect" | "test", dir: string, opts: SandboxOptions = {}): Promise<InspectResult | TestResult> {
   const pluginDir = fs.realpathSync(dir);
   const manifest = readManifest(pluginDir);
+  if (manifest.main === null) {
+    const error = "the plugin has no code to run (main is null)";
+    return mode === "inspect" ? { ok: false, error, inject: [], optional: [], recording: null } : { ok: false, error, checks: [], logs: [] };
+  }
   const child = childFile();
   if (!fs.existsSync(child)) throw new Error(`${child} is missing; build @tomradex/plugin-cli first`);
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-sandbox-")));

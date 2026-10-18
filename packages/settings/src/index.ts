@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { Context, Service } from "cordis";
 import { z } from "zod";
-import type { AppSettings } from "@tomradex/domain";
+import { englishWords, installWords, isLanguageTag, languageTag, pickLanguage, type AppSettings, type Dictionaries, type LanguageTag } from "@tomradex/domain";
 import type {} from "@tomradex/hub";
 import type {} from "@tomradex/ipc";
 import { agentAccess } from "./agent.js";
@@ -78,6 +78,8 @@ declare module "cordis" {
     "settings/changed"(next: AppSettings, previous: AppSettings): void;
     /** Someone outside the window (a plugin's desktop surface) asked to see this section. */
     "settings/show"(id: string): void;
+    /** A language pack came or went. */
+    "settings/languages"(): void;
   }
 }
 
@@ -87,8 +89,16 @@ declare module "@tomradex/ipc" {
     "settings.set": (next: AppSettings) => AppSettings;
     "settings.sections": (locale?: Locale) => SettingsSectionView[];
     "settings.secretStorage": () => SecretStorage;
+    /** The languages installed packs add, beyond the ones the app ships. */
+    "settings.languages": () => LanguageInfo[];
+    /** A pack's words for the interface, as it wrote them; the renderer keeps what English has. */
+    "settings.languagePack": (tag: string) => { tag: LanguageTag; name: string; ui: Dictionaries } | null;
+    /** The interface's English, which the renderer holds: what a pack's coverage is measured against. */
+    "settings.uiEnglish": (english: Dictionaries) => void;
   }
   interface Broadcasts {
+    /** A language pack came or went. */
+    "settings.languagesChanged": () => void;
     /** Changed from somewhere other than this window's own save: an agent, another machine. */
     "settings.changed": (next: AppSettings) => void;
     /** Open Settings on this section. */
@@ -108,21 +118,33 @@ export const SettingsConfig = z.object({
 /** Where this machine's API keys and tokens rest: encrypted by the OS keychain, or as plain text in settings.json. */
 export type SecretStorage = "keychain" | "plaintext";
 
-/** The languages the backend speaks; the interface speaks more, and those fall back to English here. */
-export type Locale = "en" | "zh";
+/** A language tag the app speaks in; a word a language lacks reads English. */
+export type Locale = LanguageTag;
 
-/** Every language a person can pick; the interface translates them all. */
+/** The languages the app ships; the interface translates them all, the backend writes en and zh. Language packs add more. */
 export const LANGUAGES = ["en", "zh", "zh-Hant", "ja", "es", "de", "fr"] as const;
 
-/** Traditional Chinese systems name a script or a region that writes it. */
-const isSimplifiedChinese = (tag: string): boolean => {
-  const t = tag.toLowerCase();
-  return t.startsWith("zh") && !/^zh[-_](hant|tw|hk|mo)/.test(t);
-};
+/** A language a plugin's pack added, with the words it brings. */
+export interface InstalledLanguage extends LanguageInfo {
+  ui: Dictionaries;
+  backend: Dictionaries;
+}
 
-/** A language preference made concrete: "system" follows the system's locale, any language without backend words is English. */
-export const resolveLocale = (preference: string | undefined, system: string | undefined): Locale =>
-  preference === "zh" || preference === "en" ? preference : preference && preference !== "system" ? "en" : system && isSimplifiedChinese(system) ? "zh" : "en";
+/** A language a pack added, as Settings → Language lists it. */
+export interface LanguageInfo {
+  tag: LanguageTag;
+  /** Its name in itself. */
+  name: string;
+  /** The plugin that added it. */
+  plugin: string;
+}
+
+/** A language preference made concrete: "system" picks among the languages there are, anything else is the language chosen. */
+export const resolveLocale = (preference: string | undefined, system: string | undefined, available: readonly LanguageTag[] = LANGUAGES): Locale =>
+  preference && preference !== "system" ? languageTag(preference) : (pickLanguage(system, available) ?? "en");
+
+const isDictionaries = (v: unknown): v is Dictionaries =>
+  isRecord(v) && Object.values(v).every((ns) => isRecord(ns) && Object.values(ns).every((t) => typeof t === "string"));
 export type SettingsConfig = z.infer<typeof SettingsConfig>;
 
 /** The Hub's settings file: user-scope sections, each stamped so two machines can settle a clash by time. */
@@ -151,7 +173,10 @@ const THEME: SettingsSection<AppSettings["theme"]> = {
 const LANGUAGE: SettingsSection<AppSettings["language"]> = {
   id: "language",
   title: "Language",
-  schema: z.enum(["system", ...LANGUAGES]),
+  schema: z
+    .string()
+    .refine((v) => v === "system" || isLanguageTag(v), "\"system\" or a language tag")
+    .describe(`"system", or a language tag: ${LANGUAGES.map((l) => `"${l}"`).join(", ")}, or one an installed language pack adds.`),
   defaults: "system",
   order: 1,
   scope: "user",
@@ -255,6 +280,8 @@ export class Settings extends Service {
   private userStore: UserSettingsStore | null = null;
   /** Sealed values this run couldn't open, by where they sit: written back as they were until that field is set again. */
   private unopened = new Map<string, string>();
+  private packs = new Map<LanguageTag, InstalledLanguage>();
+  private uiEnglish: Dictionaries | null = null;
 
   /** Only registered, validated user sections may cross the cloud boundary. */
   exportUser(): UserSettingsFile {
@@ -308,10 +335,14 @@ export class Settings extends Service {
     this.home.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("settings.get", () => ctx.settings.get());
       ctx.ipc.handle("settings.set", (next) => ctx.settings.set(next));
-      ctx.ipc.handle("settings.sections", (locale) => ctx.settings.sections(locale === "en" || locale === "zh" ? locale : undefined));
+      ctx.ipc.handle("settings.sections", (locale) => ctx.settings.sections(isLanguageTag(locale) ? languageTag(locale) : undefined));
       ctx.ipc.handle("settings.secretStorage", () => ctx.settings.secretStorage());
+      ctx.ipc.handle("settings.languages", () => ctx.settings.languages());
+      ctx.ipc.handle("settings.languagePack", (tag) => ctx.settings.languagePack(tag));
+      ctx.ipc.handle("settings.uiEnglish", (english) => ctx.settings.useUiEnglish(english));
       ctx.on("settings/changed", (next) => ctx.ipc.send("settings.changed", next));
       ctx.on("settings/show", (id) => ctx.ipc.send("settings.show", id));
+      ctx.on("settings/languages", () => ctx.ipc.send("settings.languagesChanged"));
     });
     this.home.inject(["tools", "db", "oplog", "hub"], (ctx) => agentAccess(ctx));
     // User-scope sections follow the Hub folder once there is one.
@@ -376,7 +407,48 @@ export class Settings extends Service {
   /** Registered sections come back complete: defaults filled in under whatever was stored. */
   /** The language to speak to the person in — for words the backend writes, which the renderer shows as they are. */
   locale(): Locale {
-    return resolveLocale(this.get().language as string | undefined, this.config.locale);
+    return resolveLocale(this.get().language as string | undefined, this.config.locale, [...LANGUAGES, ...this.packs.keys()]);
+  }
+
+  /**
+   * A plugin's language, for as long as the plugin runs: Settings → Language
+   * lists it, "system" picks it when the system prefers it, and the backend's
+   * books and the interface speak it, English wherever it is silent. One pack
+   * per language: a second is set aside with a warning.
+   */
+  addLanguage(pack: InstalledLanguage): () => void {
+    return this.ctx.effect(() => {
+      if (this.packs.has(pack.tag)) {
+        this.home.logger.warn(`${pack.plugin}: ${this.packs.get(pack.tag)!.plugin} already adds the language "${pack.tag}"; this one is not used`);
+        return () => {};
+      }
+      this.packs.set(pack.tag, pack);
+      const unspeak = installWords(pack.tag, pack.backend);
+      this.home.emit("settings/languages");
+      return () => {
+        unspeak();
+        this.packs.delete(pack.tag);
+        this.home.emit("settings/languages");
+      };
+    }, `settings.addLanguage(${pack.tag})`);
+  }
+
+  languages(): LanguageInfo[] {
+    return [...this.packs.values()].map(({ tag, name, plugin }) => ({ tag, name, plugin }));
+  }
+
+  languagePack(tag: string): { tag: LanguageTag; name: string; ui: Dictionaries } | null {
+    const pack = this.packs.get(languageTag(tag));
+    return pack ? { tag: pack.tag, name: pack.name, ui: pack.ui } : null;
+  }
+
+  /** What a language pack translates: the backend's books, and the interface's dictionaries once a window has said what they are. */
+  english(): { ui: Dictionaries | null; backend: Dictionaries } {
+    return { ui: this.uiEnglish, backend: englishWords() };
+  }
+
+  useUiEnglish(english: unknown): void {
+    if (isDictionaries(english)) this.uiEnglish = english;
   }
 
   /** Asks the app window to open Settings on a registered section; the shell brings the window forward. */

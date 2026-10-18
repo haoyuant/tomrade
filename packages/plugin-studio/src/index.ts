@@ -6,9 +6,9 @@ import { z } from "zod";
 import { loadPlaybookDir } from "@tomradex/agent";
 import type {} from "@tomradex/db";
 import type {} from "@tomradex/ipc";
-import { build, check, pack, scaffold, test, type CheckReport } from "@tomradex/plugin-cli";
+import { build, check, pack, scaffold, test, type CheckReport, type EnglishWords } from "@tomradex/plugin-cli";
 import { dataDirFor, packageDigest, readManifest, type Analysis } from "@tomradex/plugin-kit";
-import { MANIFEST_FILE, namespaceOf, riskOf, type Manifest, type Risk } from "@tomradex/plugin-sdk";
+import { MANIFEST_FILE, namespaceOf, riskOf, type Dictionaries, type LanguageCoverage, type Manifest, type Risk } from "@tomradex/plugin-sdk";
 import type { PluginView, Plugins } from "@tomradex/plugins";
 import { defineTool } from "@tomradex/tools";
 
@@ -171,13 +171,34 @@ export default {
       return { file, rel: back.split(path.sep).join("/") };
     };
 
-    const summary = (report: CheckReport) => ({
+    // What a language pack translates: the backend's books, and the interface's once a window has said.
+    const english = () => (ctx.get("settings") as { english?: () => EnglishWords } | undefined)?.english?.();
+    const coverageOf = (coverage: LanguageCoverage | null, source: Dictionaries | null | undefined) => {
+      if (!coverage || !source) return null;
+      const englishOf = (key: string) => {
+        const at = key.indexOf(".");
+        return source[key.slice(0, at)]?.[key.slice(at + 1)] ?? "";
+      };
+      return {
+        translated: coverage.translated,
+        total: coverage.total,
+        missing: coverage.missing.length,
+        // The next strings to translate, with the English they stand for.
+        next: Object.fromEntries(coverage.missing.slice(0, 40).map((key) => [key, englishOf(key)])),
+        stale: coverage.stale,
+        slotMismatches: coverage.slotMismatches
+      };
+    };
+    const summary = (report: CheckReport, words = english()) => ({
       verdict: report.verdict,
       problems: report.problems,
       findings: report.analysis?.findings.map((f) => `[${f.severity}] ${f.rule}: ${f.message} (${f.file}:${f.line})`) ?? [],
       risk: report.risk,
       contributes: report.manifest?.contributes,
       ...(report.imAdapters.length ? { imAdapters: report.imAdapters } : {}),
+      ...(report.languages.length
+        ? { languages: report.languages.map((l) => ({ tag: l.tag, name: l.name, ui: coverageOf(l.ui, words?.ui), backend: coverageOf(l.backend, words?.backend) })) }
+        : {}),
       ...(report.notes.length ? { notes: report.notes } : {}),
       beforePublishing: report.publishing
     });
@@ -296,7 +317,7 @@ export default {
         title: "Check a plugin",
         description: "Build, inspect in the sandbox and read the code: namespace problems, what the code does compared with what the manifest says, risk, and what stands before publishing.",
         input: z.object({ plugin }),
-        execute: async ({ plugin: name }) => summary(await check(dirOf(name), { execPath: config.nodeBinary }))
+        execute: async ({ plugin: name }) => summary(await check(dirOf(name), { execPath: config.nodeBinary, english: english() }))
       })
     );
     reg(
@@ -307,7 +328,7 @@ export default {
         input: z.object({ plugin }),
         execute: async ({ plugin: name }) => {
           const dir = dirOf(name);
-          const report = await check(dir, { execPath: config.nodeBinary });
+          const report = await check(dir, { execPath: config.nodeBinary, english: english() });
           if (report.verdict === "blocked") return { waiting: false, ...summary(report) };
           const id = idOf(dir);
           await manager().addFolder(dir, "studio");
@@ -364,7 +385,7 @@ export default {
       const confirmedBundle = path.join(dataDir(manifest.id), "confirmed.js");
       const previous = fs.existsSync(confirmedManifest) ? (JSON.parse(fs.readFileSync(confirmedManifest, "utf8")) as Manifest) : null;
       let diff: Review["diff"] = null;
-      if (fs.existsSync(confirmedBundle) && fs.existsSync(path.join(dir, manifest.main))) {
+      if (manifest.main !== null && fs.existsSync(confirmedBundle) && fs.existsSync(path.join(dir, manifest.main))) {
         const before = fs.readFileSync(confirmedBundle, "utf8").split("\n");
         const after = fs.readFileSync(path.join(dir, manifest.main), "utf8").split("\n");
         const count = (lines: string[]) => lines.reduce((m, l) => m.set(l, (m.get(l) ?? 0) + 1), new Map<string, number>());
@@ -440,7 +461,7 @@ export default {
         const manifest = readManifest(dir);
         fs.mkdirSync(dataDir(id), { recursive: true });
         fs.writeFileSync(path.join(dataDir(id), "confirmed-manifest.json"), JSON.stringify(manifest));
-        fs.copyFileSync(path.join(dir, manifest.main), path.join(dataDir(id), "confirmed.js"));
+        if (manifest.main !== null) fs.copyFileSync(path.join(dir, manifest.main), path.join(dataDir(id), "confirmed.js"));
         notify();
         return { snapshot: file };
       });

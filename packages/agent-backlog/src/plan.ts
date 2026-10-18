@@ -1,6 +1,6 @@
 import type { Context } from "cordis";
 import { z } from "zod";
-import type { Author, Item, WordsLocale } from "@tomradex/domain";
+import { languageName, type Author, type Item, type LanguageTag } from "@tomradex/domain";
 import type { LlmService } from "@tomradex/llm";
 import { LlmError } from "@tomradex/llm";
 import { overlap } from "./similar.js";
@@ -46,12 +46,12 @@ const PLAN_SYSTEM = [
 ].join("\n");
 
 /** The language a plan is written in: the person's, which the requirement may not show (an agent can restate it in English). */
-export type PlanLanguage = WordsLocale;
-const LANGUAGE_NAME: Record<PlanLanguage, string> = { en: "English", zh: "Simplified Chinese (简体中文)" };
+export type PlanLanguage = LanguageTag;
+const languageNameOf = (language: PlanLanguage): string => (language === "zh" ? "Simplified Chinese (简体中文)" : languageName(language));
 
 export async function generatePlan(llm: LlmService | null, requirement: string, existing: Item[], language: PlanLanguage = "en"): Promise<Plan> {
   if (!llm) throw new LlmError("planning needs a worker model — configure one in Settings → Assistant");
-  const system = `${PLAN_SYSTEM}\n- Write every title, body and note in ${LANGUAGE_NAME[language]}, the person's language, whatever language the requirement is written in. JSON keys and workType values stay in English.`;
+  const system = `${PLAN_SYSTEM}\n- Write every title, body and note in ${languageNameOf(language)}, the person's language, whatever language the requirement is written in. JSON keys and workType values stay in English.`;
   const user = [
     "REQUIREMENT:",
     requirement,

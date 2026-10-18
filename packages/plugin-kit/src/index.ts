@@ -10,6 +10,7 @@ export {
   packageDigest,
   packageFiles,
   placePackage,
+  readLanguagePack,
   readManifest,
   unpackPlugin,
   versionDir,

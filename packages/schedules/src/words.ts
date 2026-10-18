@@ -1,6 +1,6 @@
 import { defineWords } from "@tomradex/domain";
 
-export const SCHEDULE_WORDS = defineWords({
+export const SCHEDULE_WORDS = defineWords("schedules", {
   en: {
     origin: "Routine",
     askSave: 'Save "{{name}}" as a routine?',

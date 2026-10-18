@@ -1,6 +1,6 @@
 import type { Context } from "cordis";
 import { z } from "zod";
-import { wordsLocale, type Item, type Priority, type WordsLocale } from "@tomradex/domain";
+import { languageName, languageTag, type Item, type LanguageTag, type Priority } from "@tomradex/domain";
 import { overlap } from "@tomradex/agent-backlog";
 import type { InboxEntry, InboxKind, TriageSuggestion } from "@tomradex/inbox";
 import type {} from "@tomradex/items";
@@ -10,9 +10,6 @@ import { TRIAGE_WORDS } from "./words.js";
 
 export const name = "inbox-triage";
 export const inject = ["inbox", "items", "llm", "settings"];
-
-/** The language the model is asked to write in: prompt text, not words. */
-const LANGUAGE: Record<WordsLocale, string> = { en: "English", zh: "Simplified Chinese" };
 
 /** How many tickets and entries the model weighs; the rest are too unlike to matter. */
 const TICKETS = 8;
@@ -76,7 +73,7 @@ export function candidates(entry: InboxEntry, items: Item[], entries: InboxEntry
 export async function suggest(
   llm: LLMProvider,
   entry: InboxEntry,
-  scope: { canReply: boolean; items: Item[]; entries: InboxEntry[]; locale: WordsLocale }
+  scope: { canReply: boolean; items: Item[]; entries: InboxEntry[]; locale: LanguageTag }
 ): Promise<TriageSuggestion> {
   const near = candidates(entry, scope.items, scope.entries);
   const tickets = new Map(near.tickets.map((t, i) => [`T${i + 1}`, t]));
@@ -93,7 +90,7 @@ export async function suggest(
     "ENTRIES",
     ...(others.size ? [...others].map(([label, e]) => `- ${label} ${e.title}${e.body ? ` — ${clip(e.body.replace(/\s+/g, " "), 200)}` : ""}`) : ["- (none)"])
   ].join("\n");
-  const out = await llm.completeJson(answerSchema, { system: SYSTEM(LANGUAGE[scope.locale], scope.canReply), user, maxTokens: 1500, timeoutMs: 120_000, purpose: "inbox" });
+  const out = await llm.completeJson(answerSchema, { system: SYSTEM(languageName(scope.locale), scope.canReply), user, maxTokens: 1500, timeoutMs: 120_000, purpose: "inbox" });
   const target = out.target ?? null;
   const ticket = out.action === "merge" && target ? tickets.get(target) : undefined;
   const other = out.action === "duplicate" && target ? others.get(target) : undefined;
@@ -110,7 +107,7 @@ export async function suggest(
 }
 
 export function apply(ctx: Context) {
-  const locale = (): WordsLocale => wordsLocale(ctx.settings.locale?.());
+  const locale = (): LanguageTag => languageTag(ctx.settings.locale?.());
   const llm = (): LlmService => ctx.llm;
   ctx.inbox.triager({
     id: "worker",

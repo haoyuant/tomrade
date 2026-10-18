@@ -1,7 +1,7 @@
 import { defineWords } from "@tomradex/domain";
 
 /** The pet's settings card. */
-export const PET_WORDS = defineWords({
+export const PET_WORDS = defineWords("pet", {
   en: {
     title: "Pet",
     description: "An orange-and-white companion that reflects assistant activity. Disable the plugin itself in Manage plugins to unload it completely.",

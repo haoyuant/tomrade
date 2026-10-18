@@ -1,7 +1,7 @@
 import { defineWords } from "@tomradex/domain";
 
 /** What the engine itself says in the conversation. */
-export const LOOP_WORDS = defineWords({
+export const LOOP_WORDS = defineWords("engine-loop", {
   en: {
     holding: "No model is connected, so {{engine}} is holding this conversation.",
     retryWithoutThinking: "The model used its whole output allowance thinking. Trying again without extended thinking.",

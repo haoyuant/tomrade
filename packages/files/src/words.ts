@@ -2,7 +2,7 @@ import { defineWords } from "@tomradex/domain";
 import type { FilesSyncState } from "./types.js";
 
 /** The status bar's and the palette's words. */
-export const FILES_WORDS = defineWords({
+export const FILES_WORDS = defineWords("files", {
   en: {
     conflicts: "Files · conflicts",
     offline: "Files · offline",

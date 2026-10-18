@@ -1,7 +1,7 @@
 import { defineWords } from "@tomradex/domain";
 
 /** The Tavily settings card. The name and the key's title read the same in both languages. */
-export const TAVILY_WORDS = defineWords({
+export const TAVILY_WORDS = defineWords("web-search-tavily", {
   en: {
     title: "Tavily",
     description:

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Context, Service } from "cordis";
 import { z } from "zod";
-import { wordsLocale, type Author, type Priority, type WordsLocale } from "@tomradex/domain";
+import { languageTag, wordsLocale, type Author, type LanguageTag, type Priority } from "@tomradex/domain";
 import type {} from "@tomradex/agent";
 import type {} from "@tomradex/boards";
 import type {} from "@tomradex/code-link";
@@ -237,8 +237,8 @@ export class Schedules extends Service {
     });
   }
 
-  private locale(): WordsLocale {
-    return wordsLocale((this.home.get("settings") as { locale?: () => string } | undefined)?.locale?.());
+  private locale(): LanguageTag {
+    return languageTag((this.home.get("settings") as { locale?: () => string } | undefined)?.locale?.());
   }
 
   private db(projectId: string) {
@@ -296,7 +296,7 @@ export class Schedules extends Service {
   }
 
   suggestions(): Suggestion[] {
-    return suggestions(this.locale());
+    return suggestions(wordsLocale(this.locale()));
   }
 
   /** A suggestion becomes the project's own template, and its schedule too when asked. */
@@ -553,7 +553,7 @@ export class Schedules extends Service {
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
 
 /** A cadence in a few words, for confirmations and tool results. */
-export function describeCadence(c: z.input<typeof Cadence>, locale: WordsLocale): string {
+export function describeCadence(c: z.input<typeof Cadence>, locale: LanguageTag): string {
   const w = SCHEDULE_WORDS(locale);
   const days = (list: number[]) => [...list].sort().map((d) => w(DAY_KEYS[d - 1]!)).join(w("daySeparator"));
   switch (c.kind) {

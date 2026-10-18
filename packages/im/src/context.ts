@@ -1,4 +1,4 @@
-import type { WordsLocale } from "@tomradex/domain";
+import type { LanguageTag } from "@tomradex/domain";
 import type { ImContextMessage } from "@tomradex/plugin-sdk";
 import { IM_WORDS } from "./words.js";
 
@@ -22,7 +22,7 @@ const clip = (text: string) => {
 export const fromAdapter = (m: ImContextMessage): ContextLine => ({ author: m.author, text: m.text });
 
 /** The message with its context in front, as a quote block the Agent can tell apart from the request. */
-export function withContext(text: string, ctx: GroupContext, locale: WordsLocale): string {
+export function withContext(text: string, ctx: GroupContext, locale: LanguageTag): string {
   const w = IM_WORDS(locale);
   const who = (a: ContextAuthor) => `${a.name ?? a.id}${a.isBot ? ` (${w("contextBot")})` : ""}`;
   const lines: string[] = [];

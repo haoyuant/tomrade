@@ -3,7 +3,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Context } from "cordis";
 import { afterAll, describe, expect, it } from "vitest";
+import { defineWords } from "@tomradex/domain";
 import { Items } from "@tomradex/items";
+import { Settings } from "@tomradex/settings";
 import { Tools } from "@tomradex/tools";
 import { fresh, settle } from "@tomradex/testkit";
 import { ATTESTATION_FILE, LOCK_FILE, attest, generateSigningKey, packPlugin, packageDigest } from "@tomradex/plugin-kit";
@@ -149,6 +151,49 @@ describe("installed extensions", () => {
     expect(fs.existsSync(path.join(root, "someone", "gone", "data"))).toBe(false);
     expect(plugins.snapshot().plugins.some((p) => p.id === "someone/gone")).toBe(false);
     expect(store.has("someone/gone")).toBe(false);
+  });
+
+  it("loads a language pack that has no code: its language is there while it runs, and gone when it is switched off", async () => {
+    const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(tmp, `settings-${Math.random().toString(36).slice(2, 8)}.json`) }]] });
+    const root = fs.mkdtempSync(path.join(tmp, "root-"));
+    const store = new ExtensionStore({ root, lockFile: path.join(root, LOCK_FILE), trustedKeys: {}, importer: nativeImport });
+    await w.ctx.plugin(Plugins, { rows: [], modules: [], extensions: store, resolve: async () => ({ apply() {} }) });
+    await settle();
+    const { plugins, settings } = w.ctx;
+    const speak = defineWords("extensions-test", { en: { hi: "Hi, {{name}}." }, zh: { hi: "嗨，{{name}}。" } });
+
+    const dir = path.join(tmp, "src", `pt-${Math.random().toString(36).slice(2, 8)}`);
+    fs.mkdirSync(path.join(dir, "languages"), { recursive: true });
+    const manifest = { id: "someone/portugues", version: "1.0.0", title: "Português", license: "MIT", engines: { sdk: "^0.2.8" }, main: null, languages: [{ tag: "pt-BR", name: "Português (Brasil)", file: "languages/pt-BR.json" }] };
+    fs.writeFileSync(path.join(dir, "tomrade-plugin.json"), JSON.stringify(manifest));
+    fs.writeFileSync(path.join(dir, "languages/pt-BR.json"), JSON.stringify({ ui: { common: { cancel: "Cancelar" } }, backend: { "extensions-test": { hi: "Oi, {{name}}." } } }));
+    const { file } = await packPlugin(dir, path.join(tmp, `pt-${Math.random().toString(36).slice(2, 8)}.tomrade-plugin`));
+
+    await plugins.installFile(file);
+    expect(plugins.snapshot().plugins.find((p) => p.id === "someone/portugues")).toMatchObject({ state: "active", extension: { risk: { level: "low" } } });
+    expect(settings.languages()).toEqual([{ tag: "pt-BR", name: "Português (Brasil)", plugin: "someone/portugues" }]);
+    expect(settings.languagePack("pt-BR")?.ui).toEqual({ common: { cancel: "Cancelar" } });
+    expect(speak("pt-BR")("hi", { name: "Ana" })).toBe("Oi, Ana.");
+
+    await plugins.setEnabled("someone/portugues", false);
+    expect(settings.languages()).toEqual([]);
+    expect(speak("pt-BR")("hi", { name: "Ana" })).toBe("Hi, Ana.");
+  });
+
+  it("refuses a language pack whose file is not the format, and loads none of it", async () => {
+    const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(tmp, `settings-${Math.random().toString(36).slice(2, 8)}.json`) }]] });
+    const root = fs.mkdtempSync(path.join(tmp, "root-"));
+    const store = new ExtensionStore({ root, lockFile: path.join(root, LOCK_FILE), trustedKeys: {}, importer: nativeImport });
+    await w.ctx.plugin(Plugins, { rows: [], modules: [], extensions: store, resolve: async () => ({ apply() {} }) });
+    await settle();
+    const dir = path.join(tmp, "src", `ko-${Math.random().toString(36).slice(2, 8)}`);
+    fs.mkdirSync(path.join(dir, "languages"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "tomrade-plugin.json"), JSON.stringify({ id: "someone/korean", version: "1.0.0", title: "Korean", license: "MIT", engines: { sdk: "^0.2.8" }, main: null, languages: [{ tag: "ko", name: "한국어", file: "languages/ko.json" }] }));
+    fs.writeFileSync(path.join(dir, "languages/ko.json"), JSON.stringify({ ui: { common: { cancel: { html: "<b>x</b>" } } } }));
+    await w.ctx.plugins.addFolder(dir, "folder");
+    expect(w.ctx.plugins.snapshot().plugins.find((p) => p.id === "someone/korean")).toMatchObject({ state: "failed", error: expect.stringMatching(/languages\/ko\.json ui\.common\.cancel/) });
+    expect(w.ctx.settings.languages()).toEqual([]);
+    w.ctx.plugins.extensions?.close();
   });
 
   it("brings installed extensions back with the lock on the next boot", async () => {

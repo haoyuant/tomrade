@@ -1,6 +1,6 @@
 import { defineWords } from "@tomradex/domain";
 
-export const STORAGE_WORDS = defineWords({
+export const STORAGE_WORDS = defineWords("storage", {
   en: {
     stateLocal: "local",
     stateAhead: "ahead",

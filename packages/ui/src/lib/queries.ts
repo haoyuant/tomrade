@@ -89,7 +89,7 @@ export const useProjects = () => useQuery({ queryKey: keys.projects, queryFn: ()
 export const useSettings = () => useQuery({ queryKey: keys.settings, queryFn: () => invoke("settings.get") });
 /** The cards' words come back in the renderer's language, so a language switch fetches them again. */
 export const useSettingsSections = (locale?: string) =>
-  useQuery({ queryKey: [...keys.settingsSections, locale ?? ""], queryFn: () => invoke("settings.sections", locale === "zh" ? "zh" : "en") });
+  useQuery({ queryKey: [...keys.settingsSections, locale ?? ""], queryFn: () => invoke("settings.sections", locale ?? "en") });
 /** The project's own MCP address when one is given; the unscoped server otherwise. */
 export const useMcpUrl = (projectId?: string) => useQuery({ queryKey: keys.mcp(projectId), queryFn: () => invoke("mcp.url", projectId), retry: false });
 /** Where this machine keeps its caches. Never the truth — every file there can be rebuilt. */

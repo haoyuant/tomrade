@@ -1,6 +1,6 @@
 import { defineWords, type Slots, type WordBook } from "@tomradex/domain";
 
-export const IM_WORDS = defineWords({
+export const IM_WORDS = defineWords("im", {
   en: {
     listSep: ", ",
     imConnections: "IM connections",

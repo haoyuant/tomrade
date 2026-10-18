@@ -1,6 +1,6 @@
 import { defineWords } from "@tomradex/domain";
 
-export const DESKTOP_WORDS = defineWords({
+export const DESKTOP_WORDS = defineWords("desktop", {
   en: {
     // quitting
     quit: "Quit",

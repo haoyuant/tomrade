@@ -13,8 +13,9 @@ import { say, type Locale, type MessageKey } from "./dicts";
  */
 let currentLocale: Locale = "en";
 
-/** The tag `Intl` and `<html lang>` take for each locale. */
-export const INTL_TAG: Record<Locale, string> = { en: "en", zh: "zh-CN", "zh-Hant": "zh-TW", ja: "ja", es: "es", de: "de", fr: "fr" };
+/** The tag `Intl` and `<html lang>` take for a locale: the Chinese ones name their region, any other tag is its own. */
+const INTL_TAG: Record<string, string> = { zh: "zh-CN", "zh-Hant": "zh-TW" };
+export const intlTag = (locale: Locale): string => (Object.hasOwn(INTL_TAG, locale) ? INTL_TAG[locale]! : locale);
 
 /** Words in the language `setDomainLocale` last set. */
 const word = (key: MessageKey, vars?: Record<string, string | number>): string => say(currentLocale, key, vars);
@@ -141,7 +142,7 @@ export function clockLabel(ts: number, now = Date.now()): string {
   if (day(d) === day(n)) return time;
   if (day(d) === day(new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1))) return `${word("domain.time_tomorrow")} ${time}`;
   if (currentLocale === "en") return `${d.toLocaleString("en", { month: "short" })} ${d.getDate()} ${time}`;
-  return `${d.toLocaleDateString(INTL_TAG[currentLocale], { month: "short", day: "numeric" })} ${time}`;
+  return `${d.toLocaleDateString(intlTag(currentLocale), { month: "short", day: "numeric" })} ${time}`;
 }
 
 /** Short relative time, the same string the card prints and recency sorts on. */

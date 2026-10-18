@@ -2,13 +2,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Plugin } from "cordis";
-import { adaptSdkPlugin, identityOf } from "@tomradex/extensions";
+import { adaptLanguagePacks, adaptSdkPlugin, identityOf } from "@tomradex/extensions";
 import { SDK_CONTRACT, isSdkPlugin, namespaceOf, riskOf, satisfies, type Manifest, type Risk } from "@tomradex/plugin-sdk";
 import {
   analyzePackage,
   dataDirFor,
   packageDigest,
   placePackage,
+  readLanguagePack,
   readLock,
   readManifest,
   tierOf,
@@ -169,10 +170,19 @@ export class ExtensionStore {
     if ((entry.source === "store" || entry.source === "file") && digest !== entry.digest && !entry.modified) {
       this.put({ ...entry, modified: true, autoUpdate: false, updatedAt: now() });
     }
+    const languages = manifest.languages.map((language) => {
+      try {
+        return readLanguagePack(entry.dir, language);
+      } catch (error) {
+        throw new ExtensionRefused(`${id}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    });
+    const identity = identityOf(manifest, { root: entry.dir, dataDir: dataDirFor(this.config.root, id) });
+    if (manifest.main === null) return adaptLanguagePacks(identity, languages);
     const url = `${pathToFileURL(path.join(entry.dir, manifest.main)).href}?v=${digest.slice(0, 16)}`;
     const mod = (await this.config.importer(url)) as { default?: unknown };
     if (!isSdkPlugin(mod.default)) throw new ExtensionRefused(`${id} does not export a plugin written with @tomradex/plugin-sdk's definePlugin`);
-    return adaptSdkPlugin(mod.default, identityOf(manifest, { root: entry.dir, dataDir: dataDirFor(this.config.root, id) }));
+    return adaptSdkPlugin(mod.default, identity, languages);
   }
 
   /**
@@ -304,13 +314,16 @@ export class ExtensionStore {
   private watch(entry: LockEntry): void {
     if (entry.source !== "folder" && entry.source !== "studio") return;
     this.unwatch(entry.id);
-    let main: string;
+    let main: string | undefined;
     try {
-      main = readManifest(entry.dir).main;
+      const manifest = readManifest(entry.dir);
+      // A plugin that is only languages changes where its words are.
+      main = manifest.main ?? manifest.languages[0]?.file;
     } catch {
       // Loading reports a folder that lost its manifest; watching it must not stop the boot.
       return;
     }
+    if (!main) return;
     const dist = path.dirname(path.join(entry.dir, main));
     if (!fs.existsSync(dist)) return;
     let timer: ReturnType<typeof setTimeout> | undefined;

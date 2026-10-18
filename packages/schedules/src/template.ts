@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { WordsLocale } from "@tomradex/domain";
+import type { LanguageTag } from "@tomradex/domain";
 import { SCHEDULE_WORDS } from "./words.js";
 
 /** One ticket a template makes. Defaults suit a to-do as well as a coding task: General, on To Do. */
@@ -54,7 +54,7 @@ function isoWeek(d: Date): string {
 }
 
 /** `{date}` 2026-10-12, `{weekday}` Monday / 周一, `{week}` 2026-W42, `{month}` 2026-10, `{year}` 2026 — on this machine's calendar. */
-export function fillTemplate(text: string, at: number, locale: WordsLocale = "en"): string {
+export function fillTemplate(text: string, at: number, locale: LanguageTag = "en"): string {
   const d = new Date(at);
   return text
     .replaceAll("{date}", `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`)

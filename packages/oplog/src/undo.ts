@@ -1,6 +1,6 @@
 import type { DeliveryView, ProjectDb } from "@tomradex/db";
 import { InUseError, StaleUndoError, normalizeQuery, type Board, type Item, type OplogEntry, type UndoResult, type UndoRunResult, type View } from "@tomradex/domain";
-import { emptyEvidence, type WordsLocale } from "@tomradex/domain";
+import { emptyEvidence, type LanguageTag } from "@tomradex/domain";
 import { rowToEntry, type OplogRow, type UndoneRow } from "./rows.js";
 import { OPLOG_WORDS } from "./words.js";
 
@@ -217,10 +217,10 @@ export const undoneRows = (db: ProjectDb, limit: number): UndoneRow[] => db.prep
 
 export const undoneRow = (db: ProjectDb, seq: number): UndoneRow | undefined => db.prepare("SELECT * FROM oplog_undone WHERE seq = ?").get(seq) as UndoneRow | undefined;
 
-export const undoSummary = (entry: OplogEntry, locale: WordsLocale = "en"): string =>
+export const undoSummary = (entry: OplogEntry, locale: LanguageTag = "en"): string =>
   OPLOG_WORDS(locale)(entry.op === "create" ? "undoCreate" : entry.op === "delete" ? "undoDelete" : entry.op === "rank" ? "undoRank" : "undoChange", { label: labelOf(entry) });
 
-export const redoSummary = (entry: OplogEntry, locale: WordsLocale = "en"): string =>
+export const redoSummary = (entry: OplogEntry, locale: LanguageTag = "en"): string =>
   OPLOG_WORDS(locale)(entry.op === "create" ? "redoCreate" : entry.op === "delete" ? "redoDelete" : entry.op === "rank" ? "redoRank" : "redoChange", { label: labelOf(entry) });
 
 export const labelOf = (entry: OplogEntry): string => {

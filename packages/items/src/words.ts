@@ -1,6 +1,6 @@
 import { defineWords } from "@tomradex/domain";
 
-export const ITEMS_WORDS = defineWords({
+export const ITEMS_WORDS = defineWords("items", {
   en: {
     reviewAccept: "Accept",
     reviewSendBack: "Send back",

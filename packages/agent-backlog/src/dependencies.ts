@@ -2,7 +2,7 @@ import type { Context } from "cordis";
 import { z } from "zod";
 import type {} from "@tomradex/db";
 import type {} from "@tomradex/items";
-import type { Author, Item, WordsLocale } from "@tomradex/domain";
+import type { Author, Item, LanguageTag } from "@tomradex/domain";
 import type { LlmService } from "@tomradex/llm";
 import { overlap } from "./similar.js";
 import { BACKLOG_WORDS } from "./words.js";
@@ -209,7 +209,7 @@ export function applyDependencies(ctx: Context, projectId: string, proposal: Dep
 const short = (title: string) => (title.length > 18 ? `${title.slice(0, 18).trimEnd()}…` : title);
 
 /** The question and its two answers, in the language the tickets are written in. */
-export function reviewQuestion(proposal: DependencyProposal, titleOf: (key: string) => string, locale: WordsLocale): { text: string; apply: string; skip: string } {
+export function reviewQuestion(proposal: DependencyProposal, titleOf: (key: string) => string, locale: LanguageTag): { text: string; apply: string; skip: string } {
   const w = BACKLOG_WORDS(locale);
   const edit = (sign: string, e: DependencyEdit) => `${sign} ${e.from} ${short(titleOf(e.from))} → ${e.to} ${short(titleOf(e.to))}${e.reason ? w("dependencyReason", { reason: e.reason }) : ""}`;
   const lines = [...proposal.add.map((e) => edit("+", e)), ...proposal.remove.map((e) => edit("−", e))];

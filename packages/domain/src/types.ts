@@ -316,8 +316,12 @@ export interface ThemeAutomation {
   shuffleMinutes: number;
 }
 
-/** 'system' follows the OS locale, falling back to English when that locale isn't supported. */
-export type LanguagePreference = "system" | "en" | "zh" | "zh-Hant" | "ja" | "es" | "de" | "fr";
+/**
+ * 'system' follows the OS locale, falling back to English when no language
+ * the app has matches it; otherwise a language tag — one the app ships
+ * ("en", "zh", "zh-Hant", "ja", "es", "de", "fr") or one a language pack adds.
+ */
+export type LanguagePreference = "system" | (string & {});
 
 export interface LlmSettings {
   apiKey: string;

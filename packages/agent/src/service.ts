@@ -11,7 +11,7 @@ import type {} from "@tomradex/fields";
 import type {} from "@tomradex/oplog";
 import type {} from "@tomradex/ipc";
 import { writeContext } from "@tomradex/write";
-import type { Item, Patch, UndoRunResult } from "@tomradex/domain";
+import { languageName, type Item, type Patch, type UndoRunResult } from "@tomradex/domain";
 import type { LlmService } from "@tomradex/llm";
 import type { SettingsSection } from "@tomradex/settings";
 import { defineTool, requireProjectId, type RunHandle, type LedgerEntry } from "@tomradex/tools";
@@ -718,7 +718,7 @@ export class Agent extends Service {
         ...(budget ? { maxTokens: 400, repair: false } : {}),
         signal,
         purpose: "playbook",
-        system: `Recommend one execution playbook for a ticket. Return only JSON of this shape: {"workType": "coding" | "general", "playbookId": string | null, "confidence": number, "reason": string}. Respect the requested workType. Choose playbookId only from the supplied candidates; use null only when none fits. Confidence is 0..1. In reason, explain the recommendation in one short sentence in ${words.locale === "zh" ? "Simplified Chinese" : "English"}, for the person who will run the ticket: say why this method suits the work, without naming ids or fields.`,
+        system: `Recommend one execution playbook for a ticket. Return only JSON of this shape: {"workType": "coding" | "general", "playbookId": string | null, "confidence": number, "reason": string}. Respect the requested workType. Choose playbookId only from the supplied candidates; use null only when none fits. Confidence is 0..1. In reason, explain the recommendation in one short sentence in ${languageName(words.locale)}, for the person who will run the ticket: say why this method suits the work, without naming ids or fields.`,
         user: JSON.stringify({ requestedWorkType: input.workType ?? null, title: input.title, body: input.body ?? "", candidates: candidates.map(({ id, title, when, workTypes, requires, outputs }) => ({ id, title, when, workTypes, requires, outputs })) })
       }), signal);
       if (input.workType && result.workType !== input.workType || (result.playbookId !== null && !candidateIds.has(result.playbookId))) return fallback();

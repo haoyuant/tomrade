@@ -1,5 +1,5 @@
 import { attachmentsLine, waitsOnLine } from "@tomradex/agent";
-import type { Item, Repo } from "@tomradex/domain";
+import { languageName, type Item, type LanguageTag, type Repo } from "@tomradex/domain";
 import type { Decision } from "./decisions.js";
 import type { CodeLinkView, RepoStateView, SessionView } from "./store.js";
 
@@ -23,7 +23,7 @@ export interface FirstPromptInput {
   /** The repository lets agents merge their own pull requests. */
   merge?: boolean;
   /** Tomrade's own language, so the agent's output matches what the person reads in the app. */
-  locale?: "en" | "zh";
+  locale?: LanguageTag;
 }
 
 /**
@@ -31,10 +31,10 @@ export interface FirstPromptInput {
  * agent writes its output in it. Worded as the cheapest nudge — the agent
  * still reads the English brief and the code, it only answers in this language.
  */
-export const languageLine = (locale: "en" | "zh" = "en") =>
-  locale === "zh"
-    ? "Language: the person reads Tomrade in Simplified Chinese — write everything the person will read (your replies, note_progress, questions, reports) in Simplified Chinese; keep code, identifiers, commands, file paths and commit messages as they are."
-    : "Language: the person reads Tomrade in English — write everything the person will read (your replies, note_progress, questions, reports) in English; keep code, identifiers, commands, file paths and commit messages as they are.";
+export const languageLine = (locale: LanguageTag = "en") => {
+  const name = languageName(locale);
+  return `Language: the person reads Tomrade in ${name} — write everything the person will read (your replies, note_progress, questions, reports) in ${name}; keep code, identifiers, commands, file paths and commit messages as they are.`;
+};
 
 /** Who merges: the pull request, or, with no remote, the branch into the default branch here. */
 export const mergeLine = (merge: boolean, local = false): string =>
@@ -98,7 +98,7 @@ export function firstPrompt(input: FirstPromptInput): string {
 }
 
 /** Picking a thread back up: where it stopped, what the branch looks like now. */
-export function continuePrompt(item: Item, repo: Repo, session: SessionView | null, link: CodeLinkView | null, completionPolicy: "merge" | "human" = "human", local = false, locale: "en" | "zh" = "en", merge = false): string {
+export function continuePrompt(item: Item, repo: Repo, session: SessionView | null, link: CodeLinkView | null, completionPolicy: "merge" | "human" = "human", local = false, locale: LanguageTag = "en", merge = false): string {
   const parts = [
     `Continue ${item.key} — "${item.title}" on branch ${link?.branch ?? session?.branch ?? "(see the thread)"}.`,
     languageLine(locale),

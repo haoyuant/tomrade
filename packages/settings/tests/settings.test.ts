@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { resolveLocale, Settings, type SettingsSectionView } from "@tomradex/settings";
+import { defineWords } from "@tomradex/domain";
+import { resolveLocale, Settings, type InstalledLanguage, type SettingsSectionView } from "@tomradex/settings";
 import { fresh } from "@tomradex/testkit";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-settings-"));
@@ -142,13 +143,80 @@ describe("settings", () => {
 });
 
 describe("resolveLocale", () => {
-  it("speaks Chinese only for Simplified Chinese, and English for every other language", () => {
+  it("keeps the language chosen, and lets system pick among the languages there are", () => {
     expect(resolveLocale("zh", "en-US")).toBe("zh");
-    expect(resolveLocale("ja", "zh-CN")).toBe("en");
-    expect(resolveLocale("zh-Hant", "zh-CN")).toBe("en");
+    expect(resolveLocale("ja", "zh-CN")).toBe("ja");
+    expect(resolveLocale("pt-br", "zh-CN")).toBe("pt-BR");
     expect(resolveLocale("system", "zh-CN")).toBe("zh");
-    expect(resolveLocale("system", "zh-Hant-TW")).toBe("en");
-    expect(resolveLocale("system", "zh-TW")).toBe("en");
-    expect(resolveLocale(undefined, "fr-FR")).toBe("en");
+    expect(resolveLocale("system", "zh-Hant-TW")).toBe("zh-Hant");
+    expect(resolveLocale("system", "zh-TW")).toBe("zh-Hant");
+    expect(resolveLocale(undefined, "fr-FR")).toBe("fr");
+    expect(resolveLocale("system", "pt-BR")).toBe("en");
+    expect(resolveLocale("system", "pt-PT", ["en", "zh", "pt-BR"])).toBe("pt-BR");
+    expect(resolveLocale("system", undefined)).toBe("en");
+  });
+});
+
+describe("language packs", () => {
+  const SPEAK = defineWords("settings-test", { en: { hello: "Hello, {{name}}." }, zh: { hello: "你好，{{name}}。" } });
+  const pack = (plugin: string, tag = "pt-BR"): InstalledLanguage => ({
+    tag,
+    name: "Português (Brasil)",
+    plugin,
+    ui: { common: { cancel: "Cancelar" } },
+    backend: { "settings-test": { hello: "Olá, {{name}}." } }
+  });
+
+  it("lists a pack's language while its plugin runs, speaks it, and lets system pick it", async () => {
+    const { ctx } = await fresh({ plugins: [[Settings, { path: file(), locale: "pt-BR" }]] });
+    const changes: number[] = [];
+    ctx.on("settings/languages", () => changes.push(ctx.settings.languages().length));
+    expect(ctx.settings.locale()).toBe("en");
+
+    const fiber = ctx.plugin({ name: "pt-pack", inject: ["settings"], apply: (inner) => void inner.settings.addLanguage(pack("alice/pt")) });
+    await fiber;
+    expect(ctx.settings.languages()).toEqual([{ tag: "pt-BR", name: "Português (Brasil)", plugin: "alice/pt" }]);
+    expect(ctx.settings.languagePack("pt-br")).toEqual({ tag: "pt-BR", name: "Português (Brasil)", ui: { common: { cancel: "Cancelar" } } });
+    expect(ctx.settings.locale()).toBe("pt-BR");
+    expect(SPEAK(ctx.settings.locale())("hello", { name: "Ana" })).toBe("Olá, Ana.");
+
+    await fiber.dispose();
+    expect(ctx.settings.languages()).toEqual([]);
+    expect(ctx.settings.languagePack("pt-BR")).toBeNull();
+    expect(ctx.settings.locale()).toBe("en");
+    expect(SPEAK("pt-BR")("hello", { name: "Ana" })).toBe("Hello, Ana.");
+    expect(changes).toEqual([1, 0]);
+  });
+
+  it("keeps the first pack for a language and sets a second aside", async () => {
+    const { ctx } = await fresh({ plugins: [[Settings, { path: file() }]] });
+    const first = ctx.plugin({ name: "first", inject: ["settings"], apply: (inner) => void inner.settings.addLanguage(pack("alice/pt")) });
+    const second = ctx.plugin({ name: "second", inject: ["settings"], apply: (inner) => void inner.settings.addLanguage({ ...pack("bob/pt"), backend: { "settings-test": { hello: "Oi, {{name}}." } } }) });
+    await first;
+    await second;
+    expect(ctx.settings.languages().map((l) => l.plugin)).toEqual(["alice/pt"]);
+    expect(SPEAK("pt-BR")("hello", { name: "Ana" })).toBe("Olá, Ana.");
+    await second.dispose();
+    expect(ctx.settings.languages().map((l) => l.plugin)).toEqual(["alice/pt"]);
+    await first.dispose();
+  });
+
+  it("accepts any language tag as the language setting, and refuses what is not one", async () => {
+    const { ctx } = await fresh({ plugins: [[Settings, { path: file() }]] });
+    ctx.settings.set({ ...ctx.settings.get(), language: "pt-BR" });
+    expect(ctx.settings.get().language).toBe("pt-BR");
+    // The pack is not installed: the language is still the one chosen, and its words read English.
+    expect(ctx.settings.locale()).toBe("pt-BR");
+    expect(() => ctx.settings.set({ ...ctx.settings.get(), language: "not a language" })).toThrow(/language/);
+  });
+
+  it("keeps the interface's English a window sends, for a pack's coverage", async () => {
+    const { ctx } = await fresh({ plugins: [[Settings, { path: file() }]] });
+    expect(ctx.settings.english().ui).toBeNull();
+    expect(ctx.settings.english().backend["settings-test"]).toEqual({ hello: "Hello, {{name}}." });
+    ctx.settings.useUiEnglish({ common: { cancel: 3 } });
+    expect(ctx.settings.english().ui).toBeNull();
+    ctx.settings.useUiEnglish({ common: { cancel: "Cancel" } });
+    expect(ctx.settings.english().ui).toEqual({ common: { cancel: "Cancel" } });
   });
 });

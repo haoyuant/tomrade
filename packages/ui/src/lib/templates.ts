@@ -2,8 +2,8 @@ import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Cadence, ScheduleInput, TemplateInput } from "@tomradex/schedules";
 import { invoke, subscribe } from "./api";
-import { INTL_TAG } from "./domain";
-import { isLocale, say, type Locale, type MessageKey } from "./dicts";
+import { intlTag } from "./domain";
+import { say, type MessageKey } from "./dicts";
 
 const keys = {
   all: (projectId: string) => ["schedules", projectId] as const,
@@ -50,13 +50,10 @@ export function useTemplateActions(projectId: string) {
   };
 }
 
-const known = (locale: string): Locale => (isLocale(locale) ? locale : "en");
-
 const DAY_KEYS: MessageKey[] = ["cadence.day0", "cadence.day1", "cadence.day2", "cadence.day3", "cadence.day4", "cadence.day5", "cadence.day6"];
 
 /** A cadence in a few words: "every day at 08:00", "每 3 天 09:00". */
-export function cadenceLabel(c: Cadence, locale: string): string {
-  const l = known(locale);
+export function cadenceLabel(c: Cadence, l: string): string {
   switch (c.kind) {
     case "daily":
       return say(l, "cadence.daily", { at: c.at });
@@ -77,6 +74,6 @@ export function cadenceLabel(c: Cadence, locale: string): string {
 
 /** When it runs next, as a calendar reads it: "Mon, Oct 19, 09:00". */
 export const nextLabel = (ts: number, locale: string) =>
-  new Date(ts).toLocaleString(INTL_TAG[known(locale)], { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+  new Date(ts).toLocaleString(intlTag(locale), { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
 
-export const dayNames = (locale: string): string[] => DAY_KEYS.map((key) => say(known(locale), key));
+export const dayNames = (locale: string): string[] => DAY_KEYS.map((key) => say(locale, key));

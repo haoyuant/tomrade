@@ -1,6 +1,6 @@
 import { defineWords } from "@tomradex/domain";
 
-export const MCP_WORDS = defineWords({
+export const MCP_WORDS = defineWords("mcp", {
   en: {
     portClash: "MCP on {{port}} · {{clashPort}} held by {{holder}}",
     portClashTitle: "Agents configured for the usual port reach the other Tomrade and its data, not this one. Quit the other, or give this instance its own port with TOMRADE_MCP_PORT.",

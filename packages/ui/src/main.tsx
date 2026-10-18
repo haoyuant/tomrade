@@ -34,6 +34,8 @@ if (window.tomrade) {
   subscribe("contributions.changed", () => void queryClient.invalidateQueries({ queryKey: ["contributions"] }));
   // An agent, or another machine, changed a setting: the theme and language follow at once.
   subscribe("settings.changed", (next) => queryClient.setQueryData(["settings"], next));
+  // A language pack came or went: Settings → Language lists it, and "system" may now pick it.
+  subscribe("settings.languagesChanged", () => void queryClient.invalidateQueries({ queryKey: ["settings", "languages"] }));
   // A plugin's desktop surface asked for its section; the shell has already brought this window forward.
   subscribe("settings.show", (id) => void openSettingsPane(id));
   // Switched from another window, or from the manager in this one.

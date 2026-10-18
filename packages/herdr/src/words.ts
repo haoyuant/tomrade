@@ -1,7 +1,7 @@
 import { defineWords } from "@tomradex/domain";
 
 /** What the troubleshooter's herdr line says. */
-export const HERDR_WORDS = defineWords({
+export const HERDR_WORDS = defineWords("herdr", {
   en: {
     notInstalled: "not installed (optional: {{install}})",
     installedNotRunning: "herdr {{version}} installed; its server is not running",
