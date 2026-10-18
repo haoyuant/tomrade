@@ -61,6 +61,9 @@ const agoWords = (w: CodeWords, s: number): string => {
   return w("daysAgo", { n: Math.round(h / 24) });
 };
 
+/** How often a repository's agent's hook events reach the database; memory has every one. */
+const HOOK_HEARD_WRITE_MS = 60_000;
+
 const hasLiveSession = (sessions: SessionView[]): boolean =>
   sessions.some((s) => s.mode === "terminal" || s.state === "running" || s.state === "waiting" || s.state === "error");
 
@@ -347,6 +350,8 @@ export class CodeLink extends Service {
   private readonly inFlight = new Map<string, Promise<ScanSummary>>();
   /** Folders hooks events came from that were already looked at for a checkout: one look per folder, not per event. */
   private readonly placeLooked = new Set<string>();
+  /** Per `projectId\0repoId`, each agent's last hook event here and when it was last written down. */
+  private readonly hooksHeard = new Map<string, Map<string, { at: number; written: number }>>();
   /** Cursor's hooks, read into Claude Code's shape; it remembers each conversation's last reply for its stop. */
   private readonly readCursorHook = cursorHookReader();
   /** Machine-local: each thread's worktree, for the section and the terminal. */
@@ -1064,20 +1069,22 @@ export class CodeLink extends Service {
     const chosen = await this.connectAgents(projectId, repoId);
     const current = await inspectConnection(this.git, cwd, ref, mcpUrl, mcp.eventUrl, chosen);
     const configuredUrl = current.configuredUrl;
+    const lastHooks = this.lastHooks(projectId, repoId);
+    const heard = (agents: AgentConnectionView[]) => agents.map((agent) => (lastHooks[agent.id] ? { ...agent, lastEventAt: lastHooks[agent.id] } : agent));
     if (current.connected) {
       const link = this.ctx.get("agent")?.engineOf("claude-code")?.mcpLink;
       const claudeApproval = link?.projectApproval?.(cwd);
       const claudeApprovals = link?.projectApprovals?.(cwd);
-      return { ...base, agents: current.agents, configuredUrl, state: "connected", ...(current.local ? { local: true } : {}), ...(claudeApproval ? { claudeApproval } : {}), ...(claudeApprovals ? { claudeApprovals } : {}) };
+      return { ...base, agents: heard(current.agents), configuredUrl, state: "connected", ...(current.local ? { local: true } : {}), ...(claudeApproval ? { claudeApproval } : {}), ...(claudeApprovals ? { claudeApprovals } : {}) };
     }
     for (const pendingRef of [`refs/heads/${branch}`, `refs/remotes/origin/${branch}`]) {
       if (!(await exists(pendingRef))) continue;
       if ((await this.git(["merge-base", "--is-ancestor", pendingRef, ref], { cwd, ok: true })).code === 0) continue;
       const pending = await inspectConnection(this.git, cwd, pendingRef, mcpUrl, mcp.eventUrl, chosen);
-      if (pending.connected) return { ...base, agents: pending.agents, configuredUrl, state: "pending", url: compareUrl(repo.remote, repo.defaultBranch, branch) };
+      if (pending.connected) return { ...base, agents: heard(pending.agents), configuredUrl, state: "pending", url: compareUrl(repo.remote, repo.defaultBranch, branch) };
     }
     // Another project id is another instance's repository; the same project on another port is only incomplete here.
-    return { ...base, agents: current.agents, configuredUrl, state: configuredUrl && !current.sameProject ? "other-instance" : "unconnected" };
+    return { ...base, agents: heard(current.agents), configuredUrl, state: configuredUrl && !current.sameProject ? "other-instance" : "unconnected" };
   }
 
   /**
@@ -2125,6 +2132,7 @@ export class CodeLink extends Service {
       for (const projectId of this.ctx.db.openIds()) {
         const session = this.store.sessions(projectId, { live: true }).find((s) => s.threadId === threadId);
         if (session) {
+          this.heardHook(projectId, session.repoId, agent);
           this.sessions.event(projectId, session.id, payload);
           return;
         }
@@ -2141,6 +2149,7 @@ export class CodeLink extends Service {
       const all = mine(projectId);
       const placed = all.filter((s) => s.worktree && within(path.resolve(s.worktree))).sort((a, b) => b.worktree!.length - a.worktree!.length)[0];
       if (placed) {
+        this.heardHook(projectId, placed.repoId, agent);
         deliver(projectId, [placed, ...all.filter((s) => s.id !== placed.id)]);
         return;
       }
@@ -2149,6 +2158,7 @@ export class CodeLink extends Service {
       for (const repo of this.ctx.repos.list(projectId)) {
         const checkout = this.ctx.repos.checkout(repo.remote).checkout;
         if (!checkout || !within(path.resolve(checkout))) continue;
+        this.heardHook(projectId, repo.id, agent);
         // Anywhere else in the checkout, the newest of its sessions there.
         const known = mine(projectId).filter((s) => s.repoId === repo.id);
         if (known.length) {
@@ -2163,6 +2173,28 @@ export class CodeLink extends Service {
       }
     }
     void this.placeFrom(cwd).catch((err) => this.ctx.logger.warn(`placing a checkout from ${cwd} failed: ${message(err)}`));
+  }
+
+  /** A repository's hooks reached this Tomrade. Claude Code posts on every tool call, so the database hears of it once a minute at most. */
+  private heardHook(projectId: string, repoId: string, agent: string): void {
+    const key = `${projectId}\0${repoId}`;
+    const byAgent = this.hooksHeard.get(key) ?? new Map<string, { at: number; written: number }>();
+    this.hooksHeard.set(key, byAgent);
+    const at = Date.now();
+    const seen = byAgent.get(agent);
+    if (seen && at - seen.written < HOOK_HEARD_WRITE_MS) {
+      seen.at = at;
+      return;
+    }
+    this.store.noteHookHeard(projectId, repoId, agent, at);
+    byAgent.set(agent, { at, written: at });
+  }
+
+  /** Each agent's last hook event from the repository on this machine: memory where it is newer than the database. */
+  private lastHooks(projectId: string, repoId: string): Record<string, number> {
+    const last = this.store.hooksHeard(projectId, repoId);
+    for (const [agent, { at }] of this.hooksHeard.get(`${projectId}\0${repoId}`) ?? []) last[agent] = Math.max(last[agent] ?? 0, at);
+    return last;
   }
 
   /**
