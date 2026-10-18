@@ -1364,26 +1364,31 @@ describe("the last hook event this machine heard from each agent", () => {
     const exported = digest();
     const writes = vi.spyOn(codeLink.store, "noteHookHeard");
     const post = (payload: Record<string, unknown>) => fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: "cli-h", cwd: checkout, ...payload }) });
-    const before = Date.now();
-    // Claude Code posts around every tool call.
-    await post({ hook_event_name: "SessionStart" });
-    await post({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "pnpm test" } });
-    await post({ hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "pnpm test" } });
-    expect(writes).toHaveBeenCalledTimes(1);
-    expect(await heard("claude-code")).toBeGreaterThanOrEqual(before);
-    expect(await heard("codex")).toBeUndefined();
-    expect(digest()).toBe(exported);
-
-    // A minute on, the next one is written down again.
-    vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + 61_000 });
+    // The test moves the clock, so "within a minute" never depends on how busy the machine is.
+    const start = Date.now();
+    vi.useFakeTimers({ toFake: ["Date"], now: start });
     try {
+      // Claude Code posts around every tool call.
+      await post({ hook_event_name: "SessionStart" });
+      vi.setSystemTime(start + 30_000);
+      await post({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "pnpm test" } });
+      vi.setSystemTime(start + 59_999);
+      await post({ hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "pnpm test" } });
+      expect(writes).toHaveBeenCalledTimes(1);
+      expect(codeLink.store.hooksHeard(project.id, repo.id)["claude-code"]).toBe(start);
+      expect(await heard("claude-code")).toBe(start + 59_999);
+      expect(await heard("codex")).toBeUndefined();
+      expect(digest()).toBe(exported);
+
+      // A minute on, the next one is written down again.
+      vi.setSystemTime(start + 60_000);
       await post({ hook_event_name: "PreToolUse", tool_name: "Read" });
+      expect(writes).toHaveBeenCalledTimes(2);
+      expect(codeLink.store.hooksHeard(project.id, repo.id)["claude-code"]).toBe(start + 60_000);
+      expect(digest()).toBe(exported);
     } finally {
       vi.useRealTimers();
     }
-    expect(writes).toHaveBeenCalledTimes(2);
-    expect(codeLink.store.hooksHeard(project.id, repo.id)["claude-code"]).toBeGreaterThanOrEqual(before + 61_000);
-    expect(digest()).toBe(exported);
   });
 });
 
