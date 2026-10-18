@@ -8,7 +8,7 @@ import { Mcp } from "@tomradex/mcp";
 import { Settings } from "@tomradex/settings";
 import { fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
-import engineCursor, { CURSOR_HOOK_COMMAND, cursorHookReader, cursorHookScript, cursorLentModel, cursorWorkerDir, cursorMcpFile, cursorSignedIn, hasCursorHooks, withCursorHooks, withMcpEntry } from "../src/index.js";
+import engineCursor, { CURSOR_HOOK_COMMAND, CURSOR_HOOK_POWERSHELL, CURSOR_HOOK_SCRIPT, LEGACY_CURSOR_HOOK_SCRIPT, cursorHookPowerShell, cursorHookReader, cursorHookScript, cursorHookScripts, cursorLentModel, cursorWorkerDir, cursorMcpFile, cursorSignedIn, withCursorHooks, withMcpEntry } from "../src/index.js";
 import { localCli } from "@tomradex/engine-claude-code";
 
 const home = process.env.HOME;
@@ -107,13 +107,25 @@ describe("Cursor's hooks", () => {
     expect(parsed.hooks.stop).toEqual([{ command: "say done" }, { command: CURSOR_HOOK_COMMAND }]);
     expect(parsed.hooks.afterFileEdit).toEqual([{ command: "prettier" }]);
     expect(Object.keys(parsed.hooks).sort()).toEqual(["afterAgentResponse", "afterFileEdit", "beforeSubmitPrompt", "postToolUse", "postToolUseFailure", "preToolUse", "sessionEnd", "sessionStart", "stop"]);
-    expect(hasCursorHooks(written)).toBe(true);
-    expect(hasCursorHooks(mine)).toBe(false);
+    expect(cursorHookScripts(written)).toEqual([CURSOR_HOOK_SCRIPT, CURSOR_HOOK_POWERSHELL]);
+    expect(cursorHookScripts(mine)).toEqual([]);
     expect(withCursorHooks(written)).toBe(written);
     expect(() => withCursorHooks("[1]")).toThrow("expected a JSON object");
     // Cursor skips a hook command that names curl, so the script carries it.
     expect(CURSOR_HOOK_COMMAND).not.toMatch(/curl|wget/);
     expect(cursorHookScript("curl x")).toMatch(/^#!\/bin\/sh\n[\s\S]*\ncurl x\n$/);
+    expect(cursorHookPowerShell("exit 0")).toMatch(/^# [^\n]*\nexit 0\n$/);
+    // A path without an extension: Cursor on Windows takes the .ps1 beside it.
+    expect(CURSOR_HOOK_COMMAND).toBe(".cursor/hooks/tomrade");
+    expect(CURSOR_HOOK_POWERSHELL).toBe(`${CURSOR_HOOK_COMMAND}.ps1`);
+  });
+
+  it("still count as connected when an older Tomrade ran its script through sh, and give way to today's", () => {
+    const old = JSON.stringify({ version: 1, hooks: Object.fromEntries(["sessionStart", "beforeSubmitPrompt", "preToolUse", "postToolUse", "postToolUseFailure", "afterAgentResponse", "stop", "sessionEnd"].map((event) => [event, [{ command: "say done" }, { command: `sh ${LEGACY_CURSOR_HOOK_SCRIPT}` }]])) });
+    expect(cursorHookScripts(old)).toEqual([LEGACY_CURSOR_HOOK_SCRIPT]);
+    const now = JSON.parse(withCursorHooks(old)) as { hooks: Record<string, { command: string }[]> };
+    expect(now.hooks.stop).toEqual([{ command: "say done" }, { command: CURSOR_HOOK_COMMAND }]);
+    expect(cursorHookScripts(JSON.stringify(now))).toEqual([CURSOR_HOOK_SCRIPT, CURSOR_HOOK_POWERSHELL]);
   });
 
   it("read in Claude Code's names, the last reply kept for the stop", () => {

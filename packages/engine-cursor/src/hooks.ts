@@ -1,10 +1,19 @@
 /** The Cursor hook events Tomrade listens to, as `.cursor/hooks.json` names them. */
 export const CURSOR_HOOK_EVENTS = ["sessionStart", "beforeSubmitPrompt", "preToolUse", "postToolUse", "postToolUseFailure", "afterAgentResponse", "stop", "sessionEnd"] as const;
 
-/** The script a connected repository carries; Cursor runs it from the project root. */
-export const CURSOR_HOOK_SCRIPT = ".cursor/hooks/tomrade.sh";
-/** `sh` rather than the bare path, so a checkout that lost the executable bit still reports. */
-export const CURSOR_HOOK_COMMAND = `sh ${CURSOR_HOOK_SCRIPT}`;
+/** The POSIX script a connected repository carries; Cursor runs it from the project root. */
+export const CURSOR_HOOK_SCRIPT = ".cursor/hooks/tomrade";
+/** Its Windows twin: given a path without an extension, Cursor on Windows runs the `.ps1` beside it. */
+export const CURSOR_HOOK_POWERSHELL = `${CURSOR_HOOK_SCRIPT}.ps1`;
+/** The bare path, which runs on every system; so it needs the executable bit everywhere but Windows. */
+export const CURSOR_HOOK_COMMAND = CURSOR_HOOK_SCRIPT;
+/** What an older Tomrade committed: `sh` runs it, which Windows has only with Git Bash. */
+export const LEGACY_CURSOR_HOOK_SCRIPT = ".cursor/hooks/tomrade.sh";
+const LEGACY_CURSOR_HOOK_COMMAND = `sh ${LEGACY_CURSOR_HOOK_SCRIPT}`;
+const FORMS = [
+  { command: CURSOR_HOOK_COMMAND, scripts: [CURSOR_HOOK_SCRIPT, CURSOR_HOOK_POWERSHELL] },
+  { command: LEGACY_CURSOR_HOOK_COMMAND, scripts: [LEGACY_CURSOR_HOOK_SCRIPT] }
+];
 
 /**
  * The reporting script: Cursor (2026.10) skips a hook whose command names
@@ -17,12 +26,20 @@ ${command}
 `;
 }
 
+/** The same report for Cursor on Windows, which pipes the payload into the script. */
+export function cursorHookPowerShell(script: string): string {
+  return `# Written by Tomrade: reports Cursor sessions in this repository to Tomrade. Cursor on Windows runs it from .cursor/hooks.json.
+${script}
+`;
+}
+
 type HookEntry = { command?: unknown };
-const ours = (entry: unknown) => (entry as HookEntry)?.command === CURSOR_HOOK_COMMAND;
+const ours = (entry: unknown) => FORMS.some(({ command }) => (entry as HookEntry)?.command === command);
 
 /**
  * `.cursor/hooks.json` with Tomrade's script once on each event, after the
- * person's own hooks. Throws on a file that is not a JSON object.
+ * person's own hooks, in place of an older Tomrade's. Throws on a file that
+ * is not a JSON object.
  */
 export function withCursorHooks(text: string): string {
   const config = (text.trim() ? JSON.parse(text) : {}) as Record<string, unknown>;
@@ -36,18 +53,22 @@ export function withCursorHooks(text: string): string {
   return JSON.stringify({ ...config, version: config.version ?? 1, hooks }, null, 2) + "\n";
 }
 
-/** Whether a hooks.json runs Tomrade's script on every event Tomrade listens to. */
-export function hasCursorHooks(text: string | undefined): boolean {
+/**
+ * The scripts a hooks.json runs on every event Tomrade listens to — today's
+ * pair, or the one an older Tomrade wrote — or none.
+ */
+export function cursorHookScripts(text: string | undefined): string[] {
   let config: { hooks?: Record<string, unknown> };
   try {
     config = JSON.parse(text || "{}") as typeof config;
   } catch {
-    return false;
+    return [];
   }
-  return CURSOR_HOOK_EVENTS.every((event) => {
+  const form = FORMS.find(({ command }) => CURSOR_HOOK_EVENTS.every((event) => {
     const entries = config?.hooks?.[event];
-    return Array.isArray(entries) && entries.some(ours);
-  });
+    return Array.isArray(entries) && entries.some((entry) => (entry as HookEntry)?.command === command);
+  }));
+  return form?.scripts ?? [];
 }
 
 interface CursorPayload {

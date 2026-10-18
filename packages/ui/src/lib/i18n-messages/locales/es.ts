@@ -1373,7 +1373,7 @@ export const es: PartialMessages = {
     connectionPackaged: "Se conecta a la app instalada",
     connectionDevelopment: "Se conecta a la compilación de desarrollo",
     connectionElsewhere: "Dirección actual: {{url}}",
-    connectionFiles: "Para el equipo: crea una rama / pull request tomrade/connect con .mcp.json, hooks de Claude en .claude/settings.json, hooks de WorkBuddy en .codebuddy/settings.json, una extensión de Pi en .pi/extensions/tomrade.ts, opencode.json y .opencode/plugins/tomrade.js de OpenCode, una sección de Tomrade en CLAUDE.md / AGENTS.md, hooks/configuración de Codex, .cursor/mcp.json de Cursor y hooks en .cursor/hooks.json con .cursor/hooks/tomrade.sh, y .gemini/settings.json.",
+    connectionFiles: "Para el equipo: crea una rama / pull request tomrade/connect con .mcp.json, hooks de Claude en .claude/settings.json, hooks de WorkBuddy en .codebuddy/settings.json, una extensión de Pi en .pi/extensions/tomrade.ts, opencode.json y .opencode/plugins/tomrade.js de OpenCode, una sección de Tomrade en CLAUDE.md / AGENTS.md, hooks/configuración de Codex, .cursor/mcp.json de Cursor y hooks en .cursor/hooks.json con .cursor/hooks/tomrade y .cursor/hooks/tomrade.ps1, y .gemini/settings.json.",
     connectionWorking: "Conectando…",
     connectionAction: "Conectar para el equipo (pull request)",
     connectionRetry: "Reintentar push / abrir pull request",

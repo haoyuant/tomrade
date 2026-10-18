@@ -11,7 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { Agent } from "@tomradex/agent";
-import { CodeLink, hookCommand, writeConnectFiles } from "@tomradex/code-link";
+import { CodeLink, hookCommand, posixHookCommand, writeConnectFiles } from "@tomradex/code-link";
 import { Contributions } from "@tomradex/contributions";
 import { Mcp } from "@tomradex/mcp";
 import { Repos } from "@tomradex/repos";
@@ -96,7 +96,7 @@ describe("connecting a repository", () => {
     fs.writeFileSync(path.join(dir, ".claude", "settings.json"), JSON.stringify({ permissions: { allow: ["Bash(pnpm test)"] }, hooks: { Stop: [{ hooks: [{ type: "command", command: "say done" }] }] } }));
     const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
 
-    expect(writeConnectFiles(dir, input).files.sort()).toEqual([".agents/skills/tomrade-sync/SKILL.md", ".claude/settings.json", ".codebuddy/settings.json", ".codex/config.toml", ".cursor/hooks.json", ".cursor/hooks/tomrade.sh", ".cursor/mcp.json", ".gemini/settings.json", ".mcp.json", ".opencode/plugins/tomrade.js", ".pi/extensions/tomrade.ts", "AGENTS.md", "CLAUDE.md", "opencode.json"]);
+    expect(writeConnectFiles(dir, input).files.sort()).toEqual([".agents/skills/tomrade-sync/SKILL.md", ".claude/settings.json", ".codebuddy/settings.json", ".codex/config.toml", ".cursor/hooks.json", ".cursor/hooks/tomrade", ".cursor/hooks/tomrade.ps1", ".cursor/mcp.json", ".gemini/settings.json", ".mcp.json", ".opencode/plugins/tomrade.js", ".pi/extensions/tomrade.ts", "AGENTS.md", "CLAUDE.md", "opencode.json"]);
     const mcp = JSON.parse(fs.readFileSync(path.join(dir, ".mcp.json"), "utf8")) as { mcpServers: Record<string, unknown> };
     expect(Object.keys(mcp.mcpServers).sort()).toEqual(["other", "tomrade"]);
     const codex = fs.readFileSync(path.join(dir, ".codex", "config.toml"), "utf8");
@@ -201,11 +201,14 @@ describe("connecting a repository", () => {
     expect(read(".cursor/mcp.json")).toMatchObject({ mcpServers: { existing: { command: "custom" }, tomrade: { url: input.mcpUrl } } });
     // Cursor's hooks name it, on each event it reports, after the person's own.
     const cursorHooks = read(".cursor/hooks.json");
-    expect(cursorHooks.hooks.stop).toEqual([{ command: "say done" }, { command: "sh .cursor/hooks/tomrade.sh" }]);
+    // The bare path: Cursor on Windows runs the .ps1 beside it, everything else the POSIX script itself.
+    expect(cursorHooks.hooks.stop).toEqual([{ command: "say done" }, { command: ".cursor/hooks/tomrade" }]);
     expect(cursorHooks.hooks.afterFileEdit).toEqual([{ command: "prettier" }]);
-    const script = path.join(dir, ".cursor/hooks/tomrade.sh");
+    const script = path.join(dir, ".cursor/hooks/tomrade");
     expect(fs.readFileSync(script, "utf8")).toContain(`-H 'X-Tomrade-Agent: cursor' --data-binary @- '${input.eventUrl}'`);
     expect(fs.statSync(script).mode & 0o111).not.toBe(0);
+    expect(fs.readFileSync(`${script}.ps1`, "utf8")).toContain(`$headers = @{ 'X-Tomrade-Agent' = 'cursor' }`);
+    expect(fs.readFileSync(`${script}.ps1`, "utf8")).toContain(`-Uri '${input.eventUrl}'`);
     expect(read(".gemini/settings.json")).toMatchObject({ theme: "dark", mcpServers: { existing: { command: "custom" }, tomrade: { httpUrl: input.mcpUrl } } });
     expect(writeConnectFiles(dir, input).files).toEqual([]);
   });
@@ -361,24 +364,33 @@ describe("connecting a repository", () => {
     expect(view.agents.find((agent) => agent.id === "cursor")).toMatchObject({ title: "Cursor", tools: true, tracking: "hooks", instructions: true });
   });
 
-  it("still reads a repository connected before hooks named their herdr pane as tracked", async () => {
+  it.each([true, false])("still reads a repository connected before hooks ran on Windows as tracked (pane header: %s)", async (pane) => {
     const { codeLink, ctx, project, repo, checkout } = await machine();
     const input = { projectName: project.name, mcpUrl: ctx.mcp.urlFor(project.id)!, eventUrl: ctx.mcp.eventUrl!, prefix: "TOM", branchTemplate: "{key}/{slug}" };
     writeConnectFiles(checkout, input);
-    // As the Tomrade before this one wrote them: the same hooks, without the pane header.
-    for (const [file, agent] of [[".claude/settings.json", undefined], [".codebuddy/settings.json", "workbuddy"], [".cursor/hooks/tomrade.sh", "cursor"]] as const) {
-      // settings files hold the command as a JSON string, the script as it is
-      const quoted = (command: string) => (file.endsWith(".json") ? JSON.stringify(command).slice(1, -1) : command);
-      const now = quoted(hookCommand(input.eventUrl, agent));
+    // As older Tomrades wrote them: POSIX-only commands, from before or after hooks named their herdr pane, and Cursor's script run by sh.
+    for (const [file, agent] of [[".claude/settings.json", undefined], [".codebuddy/settings.json", "workbuddy"], [".codex/config.toml", "codex"]] as const) {
+      const quoted = (command: string) => JSON.stringify(command).slice(1, -1);
       const text = fs.readFileSync(path.join(checkout, file), "utf8");
-      expect(text).toContain(now);
-      fs.writeFileSync(path.join(checkout, file), text.split(now).join(quoted(hookCommand(input.eventUrl, agent, { pane: false }))));
+      expect(text).toContain(quoted(hookCommand(input.eventUrl, agent)));
+      fs.writeFileSync(path.join(checkout, file), text.split(quoted(hookCommand(input.eventUrl, agent))).join(quoted(posixHookCommand(input.eventUrl, agent, { pane }))));
     }
+    fs.rmSync(path.join(checkout, ".cursor/hooks"), { recursive: true });
+    fs.mkdirSync(path.join(checkout, ".cursor/hooks"));
+    fs.writeFileSync(path.join(checkout, ".cursor/hooks/tomrade.sh"), `#!/bin/sh\n${posixHookCommand(input.eventUrl, "cursor", { pane })}\n`);
+    const cursorHooks = path.join(checkout, ".cursor/hooks.json");
+    fs.writeFileSync(cursorHooks, fs.readFileSync(cursorHooks, "utf8").split('".cursor/hooks/tomrade"').join('"sh .cursor/hooks/tomrade.sh"'));
     git(["add", "-A"], checkout);
     git(["commit", "-q", "-m", "connected before"], checkout);
     const view = await codeLink.connection(project.id, repo.id);
     expect(view.state).toBe("connected");
-    for (const id of ["claude-code", "workbuddy", "cursor"]) expect(view.agents.find((agent) => agent.id === id)).toMatchObject({ tools: true, tracking: "hooks" });
+    for (const id of ["claude-code", "codex", "workbuddy", "cursor"]) expect(view.agents.find((agent) => agent.id === id)).toMatchObject({ tools: true, tracking: "hooks" });
+    // Connecting again moves them all to today's commands, Cursor's onto its pair of scripts.
+    writeConnectFiles(checkout, input);
+    expect(fs.readFileSync(path.join(checkout, ".claude/settings.json"), "utf8")).toContain(JSON.stringify(hookCommand(input.eventUrl)).slice(1, -1));
+    expect(fs.readFileSync(path.join(checkout, ".codex/config.toml"), "utf8")).not.toContain(JSON.stringify(posixHookCommand(input.eventUrl, "codex", { pane })).slice(1, -1));
+    expect(fs.readFileSync(cursorHooks, "utf8")).not.toContain("tomrade.sh");
+    expect(fs.existsSync(path.join(checkout, ".cursor/hooks/tomrade.ps1"))).toBe(true);
   });
 
   it("asks a repository connected before Cursor's hooks existed to connect again", async () => {
@@ -562,22 +574,28 @@ describe("connecting a repository", () => {
     expect(hooks).not.toContain("19090");
     expect(hooks).toContain(next.eventUrl);
     // Cursor's command moves to the new address in place.
-    const cursor = fs.readFileSync(path.join(dir, ".cursor/hooks/tomrade.sh"), "utf8");
-    expect(cursor).toContain(next.eventUrl);
-    expect(cursor).not.toContain("19090");
+    for (const script of [".cursor/hooks/tomrade", ".cursor/hooks/tomrade.ps1"]) {
+      const cursor = fs.readFileSync(path.join(dir, script), "utf8");
+      expect(cursor).toContain(next.eventUrl);
+      expect(cursor).not.toContain("19090");
+    }
     expect(writeConnectFiles(dir, next).files).toEqual([]);
   });
 
   it("commits them on a branch of their own and pushes it, leaving the checkout alone", async () => {
     const { codeLink, project, repo, checkout, remote } = await machine();
+    // As on Windows, where git records no executable bit from the disk.
+    git(["config", "core.fileMode", "false"], checkout);
     const result = await codeLink.connect(project.id, repo.id);
     expect(result).toMatchObject({ branch: "tomrade/connect", committed: true, pushed: true });
-    expect(result.files.sort()).toEqual([".agents/skills/tomrade-sync/SKILL.md", ".claude/settings.json", ".codebuddy/settings.json", ".codex/config.toml", ".cursor/hooks.json", ".cursor/hooks/tomrade.sh", ".cursor/mcp.json", ".gemini/settings.json", ".mcp.json", ".opencode/plugins/tomrade.js", ".pi/extensions/tomrade.ts", "AGENTS.md", "CLAUDE.md", "opencode.json"]);
+    expect(result.files.sort()).toEqual([".agents/skills/tomrade-sync/SKILL.md", ".claude/settings.json", ".codebuddy/settings.json", ".codex/config.toml", ".cursor/hooks.json", ".cursor/hooks/tomrade", ".cursor/hooks/tomrade.ps1", ".cursor/mcp.json", ".gemini/settings.json", ".mcp.json", ".opencode/plugins/tomrade.js", ".pi/extensions/tomrade.ts", "AGENTS.md", "CLAUDE.md", "opencode.json"]);
     // The remote has the branch with the files; the user's checkout was never touched.
     expect(git(["ls-remote", "--heads", remote, "tomrade/connect"], checkout)).toMatch(/tomrade\/connect/);
     git(["fetch", "-q", "origin"], checkout);
     expect(git(["show", "origin/tomrade/connect:.mcp.json"], checkout)).toContain("/mcp/");
     expect(git(["show", "origin/tomrade/connect:.codex/config.toml"], checkout)).toContain("mcp_servers.tomrade");
+    // Cursor runs the POSIX script by its path, so it is committed executable even so.
+    expect(git(["ls-tree", "origin/tomrade/connect", "--", ".cursor/hooks/tomrade"], checkout)).toMatch(/^100755 /);
     expect(fs.existsSync(path.join(checkout, ".mcp.json"))).toBe(false);
     expect(git(["status", "--porcelain"], checkout)).toBe("");
   });
