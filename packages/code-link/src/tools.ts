@@ -251,7 +251,8 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         if (!item) throw new Error(`offer_start: no ticket ${args.key} in this project`);
         if (item.kind !== "ticket") throw new Error(`offer_start: ${item.key} is an epic — offer one of its tickets`);
         if (item.status === "done" || item.status === "cancelled") throw new Error(`offer_start: ${item.key} is ${item.status} — reopen it first`);
-        agent.setCard(inv.run.id, { id: `start-${item.id}`, schema: "start", title: `${item.key} ${item.title}`, data: { itemId: item.id, key: item.key, title: item.title } });
+        // One card per turn: a card id seen before only updates that card, so an offer made again would never reach the stream.
+        agent.setCard(inv.run.id, { id: `start-${item.id}-${inv.run.id}`, schema: "start", title: `${item.key} ${item.title}`, data: { itemId: item.id, key: item.key, title: item.title } });
         return { offered: item.key, note: "A Start button is in the conversation; the user starts the ticket from there. End your turn." };
       }
     })

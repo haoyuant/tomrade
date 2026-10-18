@@ -64,7 +64,7 @@ async function boot() {
     if (text === "offer") {
       const run = world.ctx.agent.activeRuns().find(r => r.thread.id === input.threadId)!;
       const item = world.ctx.items.getByKey(world.project.id, ticket)!;
-      world.ctx.agent.setCard(run.run.id, { id: `start-${item.id}`, schema: "start", title: `${item.key} ${item.title}`, data: { itemId: item.id, key: item.key, title: item.title } });
+      world.ctx.agent.setCard(run.run.id, { id: `start-${item.id}-${run.run.id}`, schema: "start", title: `${item.key} ${item.title}`, data: { itemId: item.id, key: item.key, title: item.title } });
     }
     if (text === "wait" && probe.hold) await probe.hold;
     if (text === "ask") { await io.tools.execute("ask_user", { question: "Ship it?", options: ["Yes", "No"] }); return { stop: "end" }; }
@@ -137,6 +137,20 @@ describe("starting a ticket from IM", () => {
     await expect.poll(() => w.ctx.agent.thread(w.project.id, thread).pending).toBeNull();
     expect(w.code.starts).toHaveLength(1);
     expect(w.delivered.some(d => /expired or isn't yours|Cannot process/.test(d.content.text))).toBe(false);
+  });
+
+  it("shows a card offered again in the same conversation, and starts from the newest", async () => {
+    const w = await boot();
+    const cards = () => w.delivered.filter(d => d.content.actions?.some(a => a.label === "Start"));
+    await w.receive(say("a", "offer"));
+    await expect.poll(() => cards().length, { timeout: 5000 }).toBe(1);
+    await expect.poll(() => w.ctx.agent.activeRuns().length).toBe(0);
+    await w.receive(say("b", "offer"));
+    await expect.poll(() => cards().length, { timeout: 5000 }).toBe(2);
+    await expect.poll(() => w.ctx.agent.activeRuns().length).toBe(0);
+    await w.receive(act("go", cards()[1].content.actions![0].token));
+    await w.said(/^Started .* with Test\./);
+    expect(w.code.starts).toHaveLength(1);
   });
 
   it("starts and follows a ticket while a question waits here, leaving the question's card saying where it stays", async () => {

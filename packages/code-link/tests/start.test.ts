@@ -1897,6 +1897,12 @@ it("lets the assistant offer Start as a card instead of doing the work itself", 
     const cards = agent.thread(project.id, thread.id).messages.flatMap((m) => (m.block.type === "card" ? [m.block] : []));
     expect(cards).toEqual([expect.objectContaining({ schema: "start", data: { itemId: item.id, key: item.key, title: "Fix the login form" } })]);
     expect(ctx.items.get(project.id, item.id)?.status).toBe("todo");
+    // Offered again later in the same conversation, the card comes again, where the person is reading now.
+    const again = agent.send(project.id, thread.id, { kind: "text", text: "give me the start button" });
+    await expect.poll(() => agent.store.run(project.id, again.runId)?.status).toBe("done");
+    const after = agent.thread(project.id, thread.id).messages.filter((m) => m.block.type === "card");
+    expect(after).toHaveLength(2);
+    expect(after.at(-1)).toMatchObject({ runId: again.runId, block: { schema: "start", data: { itemId: item.id } } });
   } finally {
     await ctx.fiber.dispose();
   }
