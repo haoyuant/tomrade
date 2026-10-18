@@ -65,6 +65,23 @@ describe("settings", () => {
     expect(ctx.settings.get().demo).toEqual({ days: 3, label: "stale" });
   });
 
+  it("refreshes machine choices and keeps an existing value selectable", async () => {
+    const { ctx } = await fresh({ plugins: [[Settings, { path: file() }]] });
+    let available = ["Terminal", "none"];
+    await ctx.plugin({
+      name: "terminal-choices",
+      inject: ["settings"],
+      apply(ctx) {
+        ctx.settings.register({ id: "terminalChoices", title: "Terminal", schema: z.object({ terminal: z.string() }), defaults: { terminal: "Terminal" }, choices: () => ({ terminal: available }) });
+      }
+    });
+    ctx.settings.set({ ...ctx.settings.get(), terminalChoices: { terminal: "Old Terminal" } });
+    const options = () => ((ctx.settings.sections().find((s) => s.id === "terminalChoices")!.schema.properties as Record<string, { enum: string[] }>).terminal.enum);
+    expect(options()).toEqual(["Terminal", "none", "Old Terminal"]);
+    available = ["Warp", "none"];
+    expect(options()).toEqual(["Warp", "none", "Old Terminal"]);
+  });
+
   it("a card speaks the asked-for language, falls back to the declaration, and a refusal names the field", async () => {
     const { ctx } = await fresh({ plugins: [[Settings, { path: file(), locale: "zh-CN" }]] });
     await ctx.plugin({

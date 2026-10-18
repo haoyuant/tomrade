@@ -49,6 +49,8 @@ export interface SettingsSection<T = unknown> {
    * say, such as labels for enum options. Another language falls back to `en`.
    */
   words?: Partial<Record<Locale, SectionWords>>;
+  /** Machine-specific choices for fields rendered as selects; validation stays with the schema. */
+  choices?: () => Record<string, string[]>;
 }
 
 /**
@@ -185,9 +187,16 @@ function parseSection<T>(section: SettingsSection<T>, value: unknown): T {
   throw new Error(`${[section.id, ...issue.path].join(".")}: ${issue.message}`);
 }
 
-function cardOf(section: SettingsSection, scope: SettingsScope, locale: Locale): SettingsSectionView {
+function cardOf(section: SettingsSection, scope: SettingsScope, locale: Locale, stored?: unknown): SettingsSectionView {
   const schema = z.toJSONSchema(section.schema) as Record<string, unknown>;
   const properties = isRecord(schema.properties) ? schema.properties : {};
+  for (const [name, choices] of Object.entries(section.choices?.() ?? {})) {
+    const property = properties[name];
+    if (!isRecord(property)) continue;
+    const saved = isRecord(stored) ? stored[name] : undefined;
+    const current = typeof saved === "string" ? saved : isRecord(section.defaults) ? section.defaults[name] : undefined;
+    property.enum = typeof current === "string" && !choices.includes(current) ? [...choices, current] : choices;
+  }
   let title = section.title;
   let description = section.description;
   for (const words of locale === "en" ? [section.words?.en] : [section.words?.en, section.words?.[locale]]) {
@@ -348,7 +357,7 @@ export class Settings extends Service {
   /** The cards, in the renderer's language when it says, else the person's. */
   sections(locale: Locale = this.locale()): SettingsSectionView[] {
     return [...this.registry.values()]
-      .map((s) => cardOf(s, this.scopeOf(s), locale))
+      .map((s) => cardOf(s, this.scopeOf(s), locale, this.storedValue(s)))
       .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
   }
 
