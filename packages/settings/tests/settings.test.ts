@@ -151,6 +151,7 @@ describe("resolveLocale", () => {
     expect(resolveLocale("system", "zh-Hant-TW")).toBe("zh-Hant");
     expect(resolveLocale("system", "zh-TW")).toBe("zh-Hant");
     expect(resolveLocale(undefined, "fr-FR")).toBe("fr");
+    expect(resolveLocale("system", "ru-RU")).toBe("ru");
     expect(resolveLocale("system", "pt-BR")).toBe("en");
     expect(resolveLocale("system", "pt-PT", ["en", "zh", "pt-BR"])).toBe("pt-BR");
     expect(resolveLocale("system", undefined)).toBe("en");

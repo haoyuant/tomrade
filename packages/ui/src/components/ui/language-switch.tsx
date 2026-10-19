@@ -5,7 +5,7 @@ import { useI18n } from "~/lib/i18n";
  * Each language names itself in its own script regardless of the active
  * locale — the names are literals, never routed through `t()`. Only
  * "System" follows the current language, the same as the theme switcher.
- * Seven languages and any a pack adds are too many for segments, so this is a select.
+ * Eight languages and any a pack adds are too many for segments, so this is a select.
  */
 export function LanguageSwitch() {
   const { preference, setPreference, languages, t } = useI18n();

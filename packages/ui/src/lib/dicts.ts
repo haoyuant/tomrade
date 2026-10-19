@@ -1,9 +1,9 @@
 import { usableWords, type Dictionaries } from "@tomradex/domain";
 import { en, zh, type PartialMessages } from "./i18n-messages";
-import { de, es, fr, ja, zhHant } from "./i18n-messages/locales";
+import { de, es, fr, ja, ru, zhHant } from "./i18n-messages/locales";
 
 /** The languages the interface ships. */
-export type BuiltinLocale = "en" | "zh" | "zh-Hant" | "ja" | "es" | "de" | "fr";
+export type BuiltinLocale = "en" | "zh" | "zh-Hant" | "ja" | "es" | "de" | "fr" | "ru";
 
 /** A language tag: one the interface ships, or one an installed language pack adds. */
 export type Locale = string;
@@ -16,7 +16,7 @@ export type MessageKey = {
 }[keyof Messages];
 
 /** English and Simplified Chinese are complete; the rest may miss a string, which then shows in English. */
-export const DICTS: Record<BuiltinLocale, PartialMessages> = { en, zh, "zh-Hant": zhHant, ja, es, de, fr };
+export const DICTS: Record<BuiltinLocale, PartialMessages> = { en, zh, "zh-Hant": zhHant, ja, es, de, fr, ru };
 
 export const isBuiltinLocale = (locale: string): locale is BuiltinLocale => Object.hasOwn(DICTS, locale);
 
