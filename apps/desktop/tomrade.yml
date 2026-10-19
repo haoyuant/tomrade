@@ -489,11 +489,11 @@ plugins:
     config:
       # Pets made from the user's own images stay on this machine.
       profilesDir: "${userData}/pet-profiles"
-  # Off until switched on in Settings → Manage plugins: a window per project
-  # with its code sessions' herdr terminals side by side.
+  # Off until switched on in Settings → Manage plugins: a Terminal window per
+  # project, its herdr terminals and code sessions side by side.
   - id: code-sessions
     name: "@tomradex/code-sessions"
-    title: Code sessions window
+    title: Terminal
     disabled: true
     config:
       document: "${uiPages}code-sessions.html"

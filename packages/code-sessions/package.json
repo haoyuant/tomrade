@@ -4,7 +4,7 @@
   "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
-  "description": "A window per project for its code sessions: live status, and their herdr terminals side by side",
+  "description": "A Terminal window per project: herdr terminals and its code sessions, with live status, side by side",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
