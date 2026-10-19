@@ -492,8 +492,16 @@ describe("the extension host", () => {
                     apiKey: profile.apiKey,
                     model: profile.model,
                     webSearch: "responses",
-                    headers: async (request) => (asked.push(request), { "api-key": profile.apiKey })
+                    headers: async (request) => (asked.push(request), { "api-key": profile.apiKey }),
+                    responses: (json) => ({ ...json, max_output_tokens: 777 })
                   })
+              });
+              await p.models.registerProvider({
+                id: "demo-unshaped",
+                title: "Unshaped",
+                baseURL: { default: "https://azure.example/openai/v1" },
+                list: () => ({ ok: true, models: null }),
+                build: (profile) => p.models.compatible({ baseURL: "https://azure.example/openai/v1", apiKey: profile.apiKey, model: profile.model, webSearch: "responses", responses: () => { throw new Error("no effort scale"); } })
               });
               await p.models.registerProvider({
                 id: "demo-broken",
@@ -517,6 +525,11 @@ describe("the extension host", () => {
       // what the plugin was handed is exactly what went out, so a signature over it holds
       expect(asked.map((a) => a.body)).toEqual([sent[1]!.body, sent[2]!.body]);
       expect(sent.slice(1).map((s) => [s.headers.get("api-key"), s.headers.get("authorization")])).toEqual([["azure-key", null], ["azure-key", null]]);
+      // the plugin's last word on the Responses body, and none on chat/completions
+      expect(JSON.parse(sent[2]!.body)).toMatchObject({ max_output_tokens: 777, tools: [{ type: "web_search" }] });
+      expect(JSON.parse(sent[1]!.body)).not.toHaveProperty("max_output_tokens");
+      w.ctx.settings.set({ ...w.ctx.settings.get(), models: { profiles: [{ id: "u", title: "Unshaped", provider: "demo-unshaped", apiKey: "k", model: "m" }], roles: { worker: "" } } });
+      await expect(collect(llm.forProfile("u").chat({ system: "s", messages: [userMessage("search")], webSearch: true }))).rejects.toThrow(/someone\/demo could not shape the request: no effort scale/);
       w.ctx.settings.set({ ...w.ctx.settings.get(), models: { profiles: [{ id: "b", title: "Broken", provider: "demo-broken", apiKey: "k", model: "m" }], roles: { worker: "" } } });
       await expect(collect(llm.forProfile("b").chat({ system: "s", messages: [userMessage("hi")] }))).rejects.toThrow(/someone\/demo could not set the request headers: signed out/);
       expect(sent).toHaveLength(3);
