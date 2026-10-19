@@ -15,5 +15,5 @@ export function registerExtensionResolution(appRoots: string[]): void {
     }
   }
   const inside = appRoots.map((root) => pathToFileURL(path.resolve(root) + path.sep).href);
-  register("./extension-hooks.js", { parentURL: import.meta.url, data: { map, inside } });
+  register("./extension-hooks.js", { parentURL: import.meta.url, data: { map, inside, anchor: import.meta.url } });
 }

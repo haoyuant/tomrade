@@ -16,7 +16,9 @@ A Mac build fails rather than ship unsigned when a secret is missing. Re-running
 
 Where the time goes (v0.10.0): a release takes about 15 minutes, nearly all of it in the two Mac builds waiting on Apple. Signing and notarizing the app takes about 9 minutes, the DMG's own notarization about 3, and the rest of the build (tsc, vite, packaging, zip and DMG) about a minute. Windows and Linux finish in 2 minutes.
 
-The workflow reads six repository secrets (Settings → Secrets and variables → Actions):
+The same tag publishes the plugin authors' npm packages (`scripts/npm-release.mjs`): the SDK, the CLI, the domain types and the CLI's test host on the SDK's version line, and every other app package as declarations for full-mode plugins at the tag's version. A version npm already has is skipped, so the SDK line publishes only when the SDK's version moved. Without `NPM_TOKEN` the job runs as a dry run and says so; `node scripts/npm-release.mjs --verify` stages, packs and typechecks a full-mode plugin against the packs outside the checkout.
+
+The workflow reads six repository secrets (Settings → Secrets and variables → Actions), and `NPM_TOKEN` for npm:
 
 | Secret | Value |
 | --- | --- |
@@ -26,6 +28,7 @@ The workflow reads six repository secrets (Settings → Secrets and variables �
 | `APPLE_API_KEY_ID` | Its Key ID |
 | `APPLE_API_ISSUER` | The Issuer ID |
 | `CLOUDFLARE_API_TOKEN` | A Cloudflare API token with Workers R2 Storage: Edit on the account that holds the `tomrade-downloads` bucket; haoyuant/tomrade-site's Deploy uses the same kind |
+| `NPM_TOKEN` | An npm granular access token that can publish the `@tomradex` scope (optional: without it the npm job is a dry run) |
 
 ```sh
 R=haoyuant/tomrade

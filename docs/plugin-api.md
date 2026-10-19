@@ -364,6 +364,21 @@ write a plugin; full mode is for what it does not offer.
   author, as the app's modules do.
 - **When two extensions change one row**, both details say so; the one
   installed last is laid on last.
+- **It imports the app's own packages**, as a dsh plugin imports dsh's through
+  its peers: `import { Llm, NativeSearchRefused } from "@tomradex/llm"` in a
+  full-mode plugin's code gets the running app's copy, the same classes the app
+  uses, so `instanceof` holds. `tomrade-plugin build` leaves every
+  `@tomradex/*` import to the app. To build against them, install the package's
+  declarations at the Tomrade version the plugin names: each app package is on
+  npm under its own name, declarations only, at the app's version
+  (`npm i -D @tomradex/llm@0.14.0 @tomradex/web-search@0.14.0`); the code they
+  stand for comes from the app at run time. These are internals: any minor
+  release may change them, which is what `engines.tomrade` is for.
+  `tomrade-plugin check` holds the plugin's imports to the Tomrade its CLI came
+  with (a checkout's own packages, from a checkout): a module or a name that
+  Tomrade does not have is a problem. An SDK-mode plugin gets no `@tomradex/*`
+  package but the SDK (and `@tomradex/domain`, which it may bundle); importing
+  one is a problem there too.
 - **Safe start.** File → Restart Without Plugins starts once without the
   person's patch files and installed plugins, and so does `--safe`. A start that
   never got as far as its window is noticed at the next launch, which offers the

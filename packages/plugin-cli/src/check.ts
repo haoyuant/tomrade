@@ -7,6 +7,7 @@ import { build, scenarioOf, type BuildResult } from "./build.js";
 import { officialProblems } from "./official.js";
 import { runSandboxed, type InspectResult, type SandboxOptions, type TestResult } from "./sandbox.js";
 import { sdkImportProblems } from "./sdk-imports.js";
+import { appExports, appImportProblems } from "./app-exports.js";
 import type { Recording } from "./record.js";
 
 export interface CheckReport {
@@ -121,6 +122,9 @@ export async function check(dir: string, opts: SandboxOptions & { build?: boolea
     const imports = sdkImportProblems(path.join(dir, report.manifest.main), report.manifest.engines.sdk);
     report.problems.push(...imports.problems);
     report.notes.push(...imports.notes);
+    const internals = appImportProblems(path.join(dir, report.manifest.main), report.manifest, await appExports());
+    report.problems.push(...internals.problems);
+    report.notes.push(...internals.notes);
     report.inspection = await runSandboxed("inspect", dir, opts);
     if (!report.inspection.ok) {
       report.problems.push(report.inspection.error ?? "the plugin could not be inspected");

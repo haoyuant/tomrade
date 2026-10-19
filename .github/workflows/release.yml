@@ -218,6 +218,43 @@ jobs:
           retention-days: 1
           path: apps/desktop/release/*-mac.yml
 
+  # The plugin authors' packages on npm (scripts/npm-release.mjs): the SDK line,
+  # and the app's declarations at the tag's version. Without NPM_TOKEN, a dry run.
+  npm:
+    name: npm packages
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26
+          registry-url: https://registry.npmjs.org
+
+      - name: Install pnpm
+        shell: bash
+        run: npm install -g "$(node -p 'require("./package.json").packageManager')"
+
+      - name: Version from the tag
+        shell: bash
+        working-directory: apps/desktop
+        run: npm pkg set version="${GITHUB_REF_NAME#v}"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Stage, verify and publish
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "$NODE_AUTH_TOKEN" ]; then
+            node scripts/npm-release.mjs --verify --publish
+          else
+            echo "::warning::NPM_TOKEN is not set: the npm packages are staged and checked, and nothing is published"
+            node scripts/npm-release.mjs --verify --publish --dry-run
+          fi
+
   # Once every build is on the draft. A draft without *-mac.yml had a build fail.
   release:
     needs: build
