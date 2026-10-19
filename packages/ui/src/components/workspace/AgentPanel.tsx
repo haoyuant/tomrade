@@ -864,7 +864,11 @@ export function AgentPanel({
     setAttachments(previous => [...previous, ...files]);
   };
   const picks = engine?.picks ?? [];
-  const pickValue = (key: string) => (typeof engineOptions[key] === "string" && engineOptions[key] ? (engineOptions[key] as string) : null);
+  // Only a free-text pick keeps a value outside its choices; elsewhere that is a choice gone (a removed profile), so the default.
+  const pickValue = (pick: EnginePick) => {
+    const value = engineOptions[pick.key];
+    return typeof value === "string" && value && (pick.freeText || pick.choices.some((c) => c.value === value)) ? value : null;
+  };
   const setPick = (key: string, value: string | null) => {
     if (threadId) {
       const next = { ...threadOptions } as Record<string, unknown>;
@@ -1657,7 +1661,7 @@ export function AgentPanel({
             <span className="meta-txt">{t("agentPanel.modeQueued", { mode: permissionLabel(selectedPermissionMode) ?? "" })}</span>
           )}
           {picks.map((pick) => {
-            const current = pickValue(pick.key);
+            const current = pickValue(pick);
             const shown = current ? (pick.choices.find((c) => c.value === current)?.label ?? current) : pickTitle(pick);
             return (
               <Menu

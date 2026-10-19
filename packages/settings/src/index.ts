@@ -334,7 +334,8 @@ export class Settings extends Service {
     this.register(LANGUAGE);
     this.home.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("settings.get", () => ctx.settings.get());
-      ctx.ipc.handle("settings.set", (next) => ctx.settings.set(next));
+      // What listeners settled on (e.g. a removed profile's picks dropped), not what was sent.
+      ctx.ipc.handle("settings.set", (next) => (ctx.settings.set(next), ctx.settings.get()));
       ctx.ipc.handle("settings.sections", (locale) => ctx.settings.sections(isLanguageTag(locale) ? languageTag(locale) : undefined));
       ctx.ipc.handle("settings.secretStorage", () => ctx.settings.secretStorage());
       ctx.ipc.handle("settings.languages", () => ctx.settings.languages());

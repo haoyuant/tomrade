@@ -414,6 +414,7 @@ export class Agent extends Service {
       return next();
     });
     this.migrateConversationRole();
+    this.ctx.on("settings/changed", () => this.forgetRemovedProfiles());
     this.registerPlatformTools();
     this.ctx.inject(["fields"], (ctx) => ctx.fields.derive({ id: "cost", name: "Cost", names: { zh: "花费" }, unit: "usd", values: COST_VALUES_SQL, expr: COST_EXPR_SQL }));
     this.loadUserPlaybooks();
@@ -524,6 +525,7 @@ export class Agent extends Service {
     if (this.engines.has(engine.id)) throw new Error(`engine "${engine.id}" is already registered`);
     return this.ctx.effect(() => {
       this.engines.set(engine.id, engine);
+      if (engine.usesModels) this.forgetRemovedProfiles();
       return () => this.engines.delete(engine.id);
     }, `agent.engine(${engine.id})`);
   }
@@ -835,6 +837,23 @@ export class Agent extends Service {
     const loop = (agent.engines.loop ?? {}) as Record<string, unknown>;
     if (loop.profile !== undefined) return;
     this.ctx.settings.set({ ...all, agent: { ...agent, engines: { ...agent.engines, loop: { ...loop, profile: legacy } } } });
+  }
+
+  /** A removed model profile stops being an engine's pick, so the engine is back on its default rather than a dead id. */
+  private forgetRemovedProfiles(): void {
+    const all = this.ctx.settings.get();
+    const profiles = (all.models as { profiles?: { id: string }[] } | undefined)?.profiles;
+    if (!profiles) return;
+    const agent = this.settingsOf();
+    const engines = { ...agent.engines };
+    let dropped = false;
+    for (const [id, options] of Object.entries(agent.engines)) {
+      const { profile, ...rest } = (options ?? {}) as Record<string, unknown>;
+      if (!this.engines.get(id)?.usesModels || typeof profile !== "string" || !profile || profiles.some((p) => p.id === profile)) continue;
+      engines[id] = rest;
+      dropped = true;
+    }
+    if (dropped) this.ctx.settings.set({ ...all, agent: { ...agent, engines } });
   }
 
   newThread(projectId: string, engine?: string, boardId: string | null = null, opts: NewThreadOptions = {}): ThreadSummary {
