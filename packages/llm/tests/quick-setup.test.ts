@@ -14,7 +14,7 @@ import { guessProviders, Llm, pickModel, PROVIDERS, usableModels, type ModelsSet
 let server: http.Server;
 let base = "";
 const realFetch = globalThis.fetch;
-const listed: Record<string, string[]> = { deepseek: ["deepseek-reasoner", "deepseek-v4-flash", "deepseek-v4-pro"], ollama: [] };
+const listed: Record<string, string[]> = { deepseek: ["deepseek-flash", "deepseek-v4-pro"], ollama: [] };
 
 beforeAll(async () => {
   server = http.createServer((req, res) => {
@@ -56,6 +56,10 @@ it("tells keys apart by their shape where it can", () => {
   expect(pickModel({ model: "deepseek-chat", prefer: [/flash/] }, ["deepseek-reasoner", "deepseek-v4-flash", "deepseek-v3-flash"])).toBe("deepseek-v4-flash");
   expect(pickModel({ model: "deepseek-chat", prefer: [/flash/] }, ["deepseek-chat", "deepseek-v4-flash"])).toBe("deepseek-chat");
   expect(pickModel({ model: "deepseek-chat", prefer: [] }, null)).toBe("deepseek-chat");
+  // DeepSeek's current name wins over the retired aliases it still routes for a while.
+  const deepseek = PROVIDERS.find((p) => p.id === "deepseek")!;
+  expect(pickModel(deepseek, ["deepseek-chat", "deepseek-reasoner", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp", "deepseek-flash", "deepseek-v4-pro"])).toBe("deepseek-flash");
+  expect(pickModel(deepseek, null)).toBe("deepseek-flash");
   expect(pickModel({ model: "", prefer: [/^gpt-\d+(\.\d+)?$/] }, ["gpt-5", "gpt-5.10", "gpt-5.9", "gpt-image-2"])).toBe("gpt-5.10");
 });
 
@@ -63,7 +67,7 @@ it("turns a pasted key into the first profile, with a model the provider lists",
   const ctx = await llm();
   ctx.settings.set({ ...ctx.settings.get(), models: { profiles: [{ id: "old", title: "Old", provider: "openai-compatible", baseURL: "https://example.com/v1", apiKey: "x", model: "y" }], roles: { worker: "" } } });
   expect(await ctx.llm.quickSetup({ preset: "deepseek", apiKey: "sk-bad" })).toMatchObject({ ok: false, kind: "auth" });
-  expect(await ctx.llm.quickSetup({ preset: "deepseek", apiKey: " sk-good " })).toEqual({ ok: true, profile: { id: "deepseek", title: "DeepSeek", model: "deepseek-v4-flash" } });
+  expect(await ctx.llm.quickSetup({ preset: "deepseek", apiKey: " sk-good " })).toEqual({ ok: true, profile: { id: "deepseek", title: "DeepSeek", model: "deepseek-flash" } });
   const profiles = (ctx.settings.get().models as ModelsSettings).profiles;
   expect(profiles.map((p) => p.id)).toEqual(["deepseek", "old"]);
   expect(profiles[0]).toMatchObject({ provider: "openai-compatible", baseURL: "https://api.deepseek.com", apiKey: "sk-good" });
@@ -89,7 +93,7 @@ it("finds keys in the environment and a local Ollama, and adopts them without th
 
 it("lists an endpoint's chat models for the profile form, or why it cannot", async () => {
   const ctx = await llm();
-  expect(await ctx.llm.listing({ provider: "openai-compatible", baseURL: "https://api.deepseek.com", apiKey: "sk-good" })).toEqual({ ok: true, models: ["deepseek-v4-pro", "deepseek-v4-flash", "deepseek-reasoner"] });
+  expect(await ctx.llm.listing({ provider: "openai-compatible", baseURL: "https://api.deepseek.com", apiKey: "sk-good" })).toEqual({ ok: true, models: ["deepseek-v4-pro", "deepseek-flash"] });
   expect(await ctx.llm.listing({ provider: "openai-compatible", baseURL: "https://api.deepseek.com", apiKey: "" })).toMatchObject({ ok: false, kind: "auth" });
   expect(usableModels("openai-compatible", ["gpt-5", "text-embedding-3-large", "whisper-1", "gpt-image-2", "tts-1", "gpt-5.10"])).toEqual(["gpt-5.10", "gpt-5"]);
   expect(usableModels("openai-images", ["gpt-5", "gpt-image-2", "dall-e-3"])).toEqual(["gpt-image-2", "dall-e-3"]);
