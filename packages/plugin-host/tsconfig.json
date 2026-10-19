@@ -33,6 +33,9 @@
       "path": "../im"
     },
     {
+      "path": "../llm"
+    },
+    {
       "path": "../agent"
     },
     {

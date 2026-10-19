@@ -6,6 +6,7 @@ import { Agent, type Engine } from "@tomradex/agent";
 import { Im, ImSettings } from "@tomradex/im";
 import { Contributions } from "@tomradex/contributions";
 import { WebSearch } from "@tomradex/web-search";
+import { Llm, collect, userMessage, type ModelProfile } from "@tomradex/llm";
 import type { AlertNotice } from "@tomradex/alerts";
 import type { DesktopSurfaceSpec } from "@tomradex/desktop-surface";
 import { cordisName } from "@tomradex/extensions";
@@ -136,7 +137,9 @@ export async function testPlugin(input: HostTestInput): Promise<HostTestResult> 
   // The real web search module: a provider plugin answers web_search in the sandbox as it would in the app.
   const webSearch = wants.includes("webSearch");
   const terminals = wants.includes("terminals");
-  const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(input.tmp, "settings.json") }], Contributions, ...(alerts ? [alerts.Alerts] : []), ...(surfaces ? [surfaces.Surfaces] : []), ...(webSearch ? [WebSearch] : []), ...(terminals ? [SandboxHerdr] : []), ...(im ? [Agent, Im] : [])] });
+  // The real model seam, so a provider plugin's profiles build and answer as they would in the app.
+  const models = wants.includes("models");
+  const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(input.tmp, "settings.json") }], Contributions, ...(alerts ? [alerts.Alerts] : []), ...(surfaces ? [surfaces.Surfaces] : []), ...(webSearch ? [WebSearch] : []), ...(terminals ? [SandboxHerdr] : []), ...(im ? [Agent, Im] : []), ...(models ? [Llm] : [])] });
   try {
   w.ctx.logger.exporter({ export: (m: { type: string; args: unknown[] }) => void (m.type === "error" || m.type === "warn" ? logs.push(`${m.type}: ${String(m.args[0])}`) : undefined) } as never);
   const samples = [
@@ -207,6 +210,15 @@ export async function testPlugin(input: HostTestInput): Promise<HostTestResult> 
           threads: () => w.ctx.agent.store.threads(w.project.id),
           thread: (id: string) => w.ctx.agent.thread(w.project.id, id),
           connections: () => w.ctx.im.views()
+        } } : {}),
+        ...(models ? { models: {
+          providers: () => (w.ctx.llm as Llm).modelProviders(),
+          presets: () => (w.ctx.llm as Llm).providers(),
+          /** One turn on a profile through its provider, as a conversation would ask it. */
+          ask: (profile: ModelProfile, prompt: string) => {
+            w.ctx.settings.set({ ...w.ctx.settings.get(), models: { profiles: [profile], roles: { worker: "" } } });
+            return collect(w.ctx.llm.forProfile(profile.id).chat({ system: "", messages: [userMessage(prompt)] }));
+          }
         } } : {}),
         check
       };

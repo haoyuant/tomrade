@@ -11,6 +11,7 @@ import type {} from "@tomradex/db";
 import type {} from "@tomradex/desktop-surface";
 import type {} from "@tomradex/fields";
 import type {} from "@tomradex/items";
+import type { ChatModel, ModelProviderSpec as CoreModelProvider } from "@tomradex/llm";
 import type {} from "@tomradex/oplog";
 import type {} from "@tomradex/projects";
 import type {} from "@tomradex/settings";
@@ -32,7 +33,11 @@ import {
   type ItemsApi,
   type Locale,
   type Localized,
+  type ModelChat,
+  type ModelChatEvent,
+  type ModelProviderSpec,
   type ModelRequest,
+  type ModelsApi,
   type ModelRequestChange,
   type OplogApi,
   type PendingWrite,
@@ -85,7 +90,8 @@ const CORDIS: Record<ServiceName, string> = {
   alerts: "alerts",
   oplog: "oplog",
   webSearch: "webSearch",
-  terminals: "herdr"
+  terminals: "herdr",
+  models: "llm"
 };
 
 export const cordisName = (name: ServiceName): string => CORDIS[name];
@@ -107,6 +113,7 @@ interface Services {
   oplog: Context["oplog"];
   webSearch: Context["webSearch"];
   terminals: Context["herdr"];
+  models: Context["llm"];
 }
 
 /** A render callback has this long before its contribution is dropped for the refresh. */
@@ -239,6 +246,79 @@ export class Host {
 
   private get logger() {
     return this.ctx.logger(this.identity.id);
+  }
+
+  /** A stream the plugin yields, each step pulled inside its scope. */
+  private async *pulled<T>(open: () => AsyncIterable<T>): AsyncGenerator<T> {
+    const it = await within(this.ns, () => open()[Symbol.asyncIterator]());
+    let done = false;
+    try {
+      for (;;) {
+        const step = await within(this.ns, () => it.next());
+        if (step.done) {
+          done = true;
+          return;
+        }
+        yield step.value;
+      }
+    } finally {
+      // A turn cut short (aborted, or the caller stopped reading) lets the plugin clean up.
+      if (!done) await within(this.ns, () => it.return?.()).catch(() => {});
+    }
+  }
+
+  /** A plugin's model provider as core reads one: every call back runs in its scope, and what it leaves out takes the defaults. */
+  private modelProvider(spec: ModelProviderSpec): CoreModelProvider {
+    const host = this;
+    const label = `model provider ${spec.id}`;
+    const both = (w: Localized | undefined) => (w === undefined ? { en: "", zh: "" } : typeof w === "string" ? { en: w, zh: w } : { en: wordsFor("en", w), zh: wordsFor("zh", w) });
+    const signIn = spec.signIn ? this.back(spec.signIn.run.bind(spec.signIn), `${label} sign-in`) : null;
+    const chatOf = (model: ModelChat): ChatModel => ({
+      get capabilities() {
+        return host.now(() => copy(model.capabilities), `${label} capabilities`, () => ({ tools: false, streaming: true, json: false }));
+      },
+      // its own copy of the conversation, so nothing it changes reaches the transcript
+      chat: (request, signal) => host.pulled<ModelChatEvent>(() => model.chat(copy(request), signal))
+    });
+    return {
+      id: spec.id,
+      title: both(spec.title),
+      keyRequired: spec.keyRequired ?? true,
+      baseURL: { default: spec.baseURL.default, editable: spec.baseURL.editable ?? true },
+      chat: spec.chat ?? true,
+      presets: (spec.presets ?? []).map((p) => ({
+        id: p.id,
+        title: p.title,
+        // none: the provider's own default, as it is for a profile without an address
+        baseURL: p.baseURL ?? "",
+        model: p.model ?? "",
+        prefer: p.prefer ?? [],
+        ...(p.keyPage ? { keyPage: p.keyPage } : {}),
+        ...(p.env ? { env: p.env } : {}),
+        ...(p.keyShapes ? { keyShapes: p.keyShapes } : {}),
+        ...(p.local ? { local: true } : {}),
+        hint: both(p.hint)
+      })),
+      list: async (endpoint, timeoutMs = 15_000) => {
+        try {
+          // held to the time even when the plugin does not listen to the signal
+          const listed = await this.back(spec.list.bind(spec), `${label} list`, { ms: timeoutMs })({ ...endpoint }, AbortSignal.timeout(timeoutMs));
+          return listed.ok ? { ok: true, models: listed.models, capabilities: listed.capabilities ?? {} } : listed;
+        } catch (error) {
+          return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+        }
+      },
+      usable: (listed) => (spec.usable ? this.now(() => spec.usable!([...listed]), `${label} usable`, () => listed) : listed),
+      defaultInput: spec.defaultInput ?? [],
+      capabilities: (model, listed) => (spec.capabilities ? this.now(() => spec.capabilities!(model, copy(listed)), `${label} capabilities`, () => listed) : listed),
+      ...(signIn ? { signIn: { title: both(spec.signIn!.title), run: (helpers: { open(url: string): void; signal: AbortSignal }) => signIn(helpers) } } : {}),
+      build: (profile) =>
+        chatOf(
+          this.now(() => spec.build(copy(profile)), `${label} build`, (message) => {
+            throw new Error(`${both(spec.title).en} could not start ${profile.model}: ${message}`);
+          })
+        )
+    };
   }
 
   private disposerOf(off: () => void): Disposer {
@@ -645,6 +725,17 @@ export class Host {
                   ...(read ? { read: (request, signal) => read(request, signal) } : {})
                 })
               );
+            })
+        };
+      },
+
+      get models(): ModelsApi {
+        return {
+          registerProvider: (spec) =>
+            host.call(() => {
+              host.own(spec.id, "model provider");
+              for (const preset of spec.presets ?? []) host.own(preset.id, "model preset");
+              return host.disposerOf(host.svc("models").registerProvider(host.modelProvider(spec)));
             })
         };
       },

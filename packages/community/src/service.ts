@@ -156,6 +156,8 @@ declare module "@tomradex/ipc" {
     "community.plugin": (id: string) => PluginDetail;
     "community.inspect": (id: string, version?: string) => Inspection;
     "community.install": (id: string, version?: string) => PluginsSnapshot;
+    /** Official plugins not installed that bring `kind`, with the ids they register. */
+    "community.providing": (kind: string) => Providing[];
     "community.updates": () => UpdatePlan[];
     "community.update": (id: string) => PluginsSnapshot;
     "community.revoked": () => { id: string; reason: string }[];
@@ -172,6 +174,14 @@ declare module "@tomradex/ipc" {
 }
 
 export type SortKey = "downloads" | "updated" | "title";
+
+/** An official plugin to offer where the person picks what it brings, such as a model provider in the model setup. */
+export interface Providing {
+  id: string;
+  title: string;
+  /** What its latest installable version registers of the kind asked for. */
+  ids: string[];
+}
 
 const safeText = (text: string) => text.replace(/[^\p{L}\p{N}\s_./-]/gu, " ").trim().slice(0, 80);
 
@@ -249,6 +259,7 @@ export class Community extends Service {
       ctx.ipc.handle("community.plugin", (id) => this.plugin(id));
       ctx.ipc.handle("community.inspect", (id, version) => this.inspect(id, version));
       ctx.ipc.handle("community.install", (id, version) => this.install(id, version));
+      ctx.ipc.handle("community.providing", (kind) => this.providing(kind));
       ctx.ipc.handle("community.updates", () => this.updates());
       ctx.ipc.handle("community.update", (id) => this.update(id));
       ctx.ipc.handle("community.revoked", () => [...this.revokedNow].map(([id, reason]) => ({ id, reason })));
@@ -582,6 +593,21 @@ export class Community extends Service {
       if (contributes?.[kind]?.length) out.push({ id: s.id, title: String(row.title) });
     }
     return out;
+  }
+
+  /** Official plugins not installed whose latest version this Tomrade can install contributes `kind`; none without a plugin store or a readable catalog. */
+  async providing(kind: string): Promise<Providing[]> {
+    const store = (this.home.get("plugins") as Plugins | undefined)?.extensions;
+    if (!store) return [];
+    const installed = new Set(store.entries().map((e) => e.id));
+    const listed = (await this.official.plugins().catch(() => [])).filter((p) => !installed.has(String(p.id)));
+    if (!listed.length) return [];
+    const [versions, revocations] = await Promise.all([this.official.versions(listed.map((p) => String(p.id))), this.official.revocations()]);
+    return listed.flatMap((p) => {
+      const latest = latestInstallable(versions.filter((v) => v.plugin_id === p.id), revocations);
+      const ids = (latest?.manifest?.contributes as Record<string, string[] | undefined> | undefined)?.[kind] ?? [];
+      return ids.length ? [{ id: String(p.id), title: String(p.title), ids }] : [];
+    });
   }
 
   /** Each starter goes on once; one that cannot be fetched yet is tried again at the next check. */

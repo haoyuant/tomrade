@@ -11,6 +11,8 @@ import {
   type FieldsApi,
   type ItemsApi,
   type AlertsApi,
+  type ModelProviderSpec,
+  type ModelsApi,
   type OplogApi,
   type TerminalsApi,
   type WebSearchApi,
@@ -40,6 +42,9 @@ export interface Recording {
   webSearchProviders: string[];
   /** The CLI agent hook events it hears. */
   agentHooks: string[];
+  modelProviders: string[];
+  /** Registrations that do not fit their contract, in words the author can act on. */
+  invalid: string[];
   /** Which IM contract each adapter is written against, from the capabilities it declares. */
   imContracts: { id: string; contract: "0.2.2" | "0.2.5"; capabilities: string[]; invalid?: string }[];
   /** Ids that do not carry the namespace. */
@@ -48,7 +53,7 @@ export interface Recording {
   stopped: string | null;
 }
 
-export const emptyRecording = (): Recording => ({ tools: [], commands: [], badges: [], statusItems: [], sections: [], graphs: [], sidebarModules: [], playbooks: [], settings: [], surfaces: [], tables: [], imAdapters: [], webSearchProviders: [], agentHooks: [], imContracts: [], violations: [], stopped: null });
+export const emptyRecording = (): Recording => ({ tools: [], commands: [], badges: [], statusItems: [], sections: [], graphs: [], sidebarModules: [], playbooks: [], settings: [], surfaces: [], tables: [], imAdapters: [], webSearchProviders: [], agentHooks: [], modelProviders: [], invalid: [], imContracts: [], violations: [], stopped: null });
 
 const noop = () => {};
 const DRY = "dry run: nothing is written while a plugin is inspected";
@@ -60,7 +65,7 @@ const DRY = "dry run: nothing is written while a plugin is inspected";
  */
 export function recordingContext(namespace: string, allowed: ServiceName[], rec: Recording): PluginContext {
   const settings = new Map<string, unknown>();
-  const note = (kind: keyof Omit<Recording, "violations" | "stopped" | "imContracts">, id: string, label: string) => {
+  const note = (kind: keyof Omit<Recording, "violations" | "stopped" | "imContracts" | "invalid">, id: string, label: string) => {
     rec[kind].push(id);
     if (!ownsId(namespace, id)) rec.violations.push({ kind: label, id });
     return Promise.resolve(noop);
@@ -191,6 +196,15 @@ export function recordingContext(namespace: string, allowed: ServiceName[], rec:
     get webSearch(): WebSearchApi {
       return need("webSearch", { register: (provider) => note("webSearchProviders", provider.id, "web search provider") });
     },
+    get models(): ModelsApi {
+      return need("models", {
+        registerProvider: (spec) => {
+          for (const preset of spec.presets ?? []) if (!ownsId(namespace, preset.id)) rec.violations.push({ kind: "model preset", id: preset.id });
+          rec.invalid.push(...providerProblems(spec));
+          return note("modelProviders", spec.id, "model provider");
+        }
+      });
+    },
     get terminals(): TerminalsApi {
       return need("terminals", {
         state: async () => ({ state: "notInstalled" as const }),
@@ -205,4 +219,20 @@ export function recordingContext(namespace: string, allowed: ServiceName[], rec:
     effect: noop,
     interval: () => noop
   };
+}
+
+/** What a model provider lacks that Tomrade needs to list, check and build its models. */
+export function providerProblems(spec: ModelProviderSpec): string[] {
+  const label = `model provider "${spec.id}"`;
+  const out: string[] = [];
+  if (!spec.title) out.push(`${label} has no title`);
+  if (typeof spec.baseURL?.default !== "string") out.push(`${label} needs baseURL.default, the address a profile without its own talks to`);
+  if (typeof spec.list !== "function") out.push(`${label} needs list(endpoint, signal), which doubles as the key check`);
+  if (typeof spec.build !== "function") out.push(`${label} needs build(profile), which makes a profile's model`);
+  if (spec.signIn && typeof spec.signIn.run !== "function") out.push(`${label} declares a sign-in without run()`);
+  for (const preset of spec.presets ?? []) {
+    if (!preset.title) out.push(`${label}: preset "${preset.id}" has no title`);
+    if ([...(preset.prefer ?? []), ...(preset.keyShapes ?? [])].some((r) => !(r instanceof RegExp))) out.push(`${label}: preset "${preset.id}" lists prefer or keyShapes that are not regular expressions`);
+  }
+  return out;
 }

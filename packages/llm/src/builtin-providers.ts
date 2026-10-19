@@ -12,7 +12,6 @@ import { guessFrom, listModels, usableModels, type ProviderPreset } from "./prov
 export const OPENAI_COMPATIBLE: ModelProviderSpec = {
   id: "openai-compatible",
   title: { en: "OpenAI-compatible", zh: "兼容 OpenAI" },
-  signIn: "apiKey",
   keyRequired: false,
   baseURL: { default: "https://api.deepseek.com", editable: true },
   chat: true,
@@ -55,7 +54,6 @@ export const OPENAI_COMPATIBLE: ModelProviderSpec = {
 export const ANTHROPIC: ModelProviderSpec = {
   id: "anthropic",
   title: { en: "Anthropic", zh: "Anthropic" },
-  signIn: "apiKey",
   keyRequired: true,
   baseURL: { default: "https://api.anthropic.com", editable: false },
   chat: true,
@@ -77,7 +75,6 @@ export const ANTHROPIC: ModelProviderSpec = {
 export const OPENAI_IMAGES: ModelProviderSpec = {
   id: "openai-images",
   title: { en: "OpenAI Images API (generate / edit)", zh: "OpenAI 图像接口（生成 / 编辑）" },
-  signIn: "apiKey",
   keyRequired: false,
   baseURL: { default: "https://api.openai.com/v1", editable: true },
   chat: false,
@@ -97,7 +94,6 @@ const GEMINI_COMPATIBLE = /^https?:\/\/generativelanguage\.googleapis\.com\/v1be
 export const GEMINI: ModelProviderSpec = {
   id: "gemini",
   title: { en: "Google Gemini", zh: "Google Gemini" },
-  signIn: "apiKey",
   keyRequired: true,
   baseURL: { default: GEMINI_BASE, editable: false },
   chat: true,

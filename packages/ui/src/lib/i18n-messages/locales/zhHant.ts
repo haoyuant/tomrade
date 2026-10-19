@@ -2242,6 +2242,14 @@ export const zhHant: PartialMessages = {
     restartConfirm: "開始"
   },
   setup: {
+    officialPlugin: "Tomrade 官方外掛",
+    pluginProvider: "{{title}} 以 Tomrade 官方外掛的形式提供。裝好後貼上 Key 或登入即可。",
+    installProvider: "安裝 {{title}}",
+    installingProvider: "正在安裝…",
+    installFailed: "{{title}} 沒有裝上：{{message}}",
+    providerNotReady: "{{title}} 已安裝，但還沒有提供模型。到設定 → 外掛裡看看。",
+    signingIn: "請在瀏覽器裡完成登入…",
+    signInFailed: "登入沒有完成：{{message}}",
     eyebrow: "開始之前",
     title: "先連上一個 AI",
     lede: "下面兩種任選其一就夠了。填一個 API Key，內建代理也就能用了；用已登入的 Claude Code、WorkBuddy 或 Codex，規劃也交給它們來做。",

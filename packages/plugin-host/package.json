@@ -24,6 +24,7 @@
     "@tomradex/desktop-surface": "workspace:*",
     "@tomradex/extensions": "workspace:*",
     "@tomradex/im": "workspace:*",
+    "@tomradex/llm": "workspace:*",
     "@tomradex/settings": "workspace:*",
     "@tomradex/testkit": "workspace:*",
     "@tomradex/tools": "workspace:*",

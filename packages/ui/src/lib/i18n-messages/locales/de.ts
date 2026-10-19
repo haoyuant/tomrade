@@ -2242,6 +2242,14 @@ export const de: PartialMessages = {
     restartConfirm: "Starten"
   },
   setup: {
+    officialPlugin: "Offizielles Tomrade-Plugin",
+    pluginProvider: "{{title}} kommt als offizielles Tomrade-Plugin. Installiere es, dann füge einen Schlüssel ein oder melde dich an.",
+    installProvider: "{{title}} installieren",
+    installingProvider: "Wird installiert…",
+    installFailed: "{{title}} wurde nicht installiert: {{message}}",
+    providerNotReady: "{{title}} ist installiert, bietet aber noch kein Modell an. Sieh unter Einstellungen → Plugins nach.",
+    signingIn: "Schließe die Anmeldung in deinem Browser ab…",
+    signInFailed: "Die Anmeldung wurde nicht abgeschlossen: {{message}}",
     eyebrow: "Bevor du loslegst",
     title: "KI verbinden",
     lede: "Tomrade funktioniert mit beidem – eins reicht. Ein API-Schlüssel betreibt auch den eingebauten Agenten; ein angemeldetes Claude Code, WorkBuddy oder Codex übernimmt auch die Planung.",

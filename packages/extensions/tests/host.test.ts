@@ -8,6 +8,8 @@ import { Contributions } from "@tomradex/contributions";
 import { Settings } from "@tomradex/settings";
 import { Tools } from "@tomradex/tools";
 import { WebSearch } from "@tomradex/web-search";
+import { Llm, collect, userMessage } from "@tomradex/llm";
+import type {} from "@tomradex/desktop-surface";
 import { definePlugin, type PendingWrite, type PluginContext } from "@tomradex/plugin-sdk";
 import { windowTitle } from "@tomradex/extensions";
 import { fresh, sdk, settle } from "@tomradex/testkit";
@@ -336,6 +338,61 @@ describe("the extension host", () => {
     await fiber.dispose();
     await settle();
     expect(streams[0]!.closed).toBe(true);
+  });
+
+  it("lets a plugin add a model provider: its presets show, its profiles list, build and answer through it, its sign-in ends in a key, until it unloads", async () => {
+    const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(dir, "models.json") }], Llm] });
+    const llm = w.ctx.llm as Llm;
+    const asked: unknown[] = [];
+    let opened = "";
+    w.ctx.on("desktop/open-external", (url) => void (opened = url));
+    const never = () => ({ ok: true as const, models: null });
+    const fiber = w.ctx.plugin(
+      ext(
+        definePlugin({
+          inject: ["models"],
+          async apply(p) {
+            await expect(p.models.registerProvider({ id: "other", title: "x", baseURL: { default: "" }, list: never, build: () => { throw new Error("no"); } })).rejects.toThrow(/must be named "demo"/);
+            await expect(p.models.registerProvider({ id: "demo", title: "x", baseURL: { default: "" }, presets: [{ id: "elsewhere", title: "x" }], list: never, build: () => { throw new Error("no"); } })).rejects.toThrow(/must be named "demo"/);
+            await p.models.registerProvider({
+              id: "demo",
+              title: { en: "Demo AI", zh: "演示 AI" },
+              baseURL: { default: "https://api.demo.example/v1", editable: false },
+              presets: [{ id: "demo", title: "Demo AI", keyShapes: [/^demo-/], prefer: [/^demo-large/], hint: { en: "Demo's own models", zh: "演示自家的模型" } }],
+              list: (endpoint) => (endpoint.apiKey === "demo-key" ? { ok: true, models: ["demo-small", "demo-large-2", "demo-embed"] } : { ok: false, status: 401, detail: "401 invalid api key" }),
+              usable: (listed) => listed.filter((m) => !m.includes("embed")),
+              signIn: { title: "Sign in with Demo", run: async ({ open }) => { open("https://demo.example/auth"); return { apiKey: "demo-key" }; } },
+              build: (profile) => ({
+                capabilities: { tools: true, streaming: true, json: false },
+                async *chat(request) {
+                  asked.push({ model: profile.model, key: profile.apiKey, system: request.system });
+                  yield { type: "text", delta: "Hello" };
+                  yield { type: "usage", inputTokens: 3, outputTokens: 1 };
+                  yield { type: "stop", reason: "end" };
+                }
+              })
+            });
+          }
+        })
+      )
+    );
+    await fiber;
+    await settle();
+    expect(llm.providers()).toContainEqual(expect.objectContaining({ id: "demo", title: "Demo AI", provider: "demo", hint: "Demo's own models" }));
+    expect(llm.modelProviders()).toContainEqual({ id: "demo", title: "Demo AI", keyRequired: true, baseURL: { default: "https://api.demo.example/v1", editable: false }, chat: true, defaultInput: [], signIn: "Sign in with Demo" });
+    expect(await llm.listing({ provider: "demo", apiKey: "demo-key" })).toEqual({ ok: true, models: ["demo-small", "demo-large-2"], capabilities: {} });
+    expect(await llm.listing({ provider: "demo", apiKey: "nope" })).toMatchObject({ ok: false, kind: "auth" });
+
+    expect(await llm.signIn("demo")).toEqual({ ok: true, apiKey: "demo-key" });
+    expect(opened).toBe("https://demo.example/auth");
+    expect(await llm.quickSetup({ preset: "demo", apiKey: "demo-key" })).toEqual({ ok: true, profile: { id: "demo", title: "Demo AI", model: "demo-large-2" } });
+    expect(await collect(llm.for("worker").chat({ system: "Be brief.", messages: [userMessage("hi")] }))).toMatchObject({ text: "Hello", stop: "end", usage: { inputTokens: 3, outputTokens: 1 } });
+    expect(asked.at(-1)).toEqual({ model: "demo-large-2", key: "demo-key", system: "Be brief." });
+
+    await fiber.dispose();
+    await settle();
+    expect(llm.providers().some((p) => p.provider === "demo")).toBe(false);
+    expect(() => llm.for("worker")).toThrow(/No model provider "demo" is installed/);
   });
 
   it("reads a provider's unavailable() that throws as unavailable, with the reason", async () => {
