@@ -237,6 +237,12 @@ async function asked<T>(ctx: Context, hook: string, ask: () => Promise<T | void>
   }
 }
 
+/** The picked profile while it exists; a removed one counts as no pick, so the first profile answers. */
+const profileOf = (llm: LlmService, picked: string | undefined): string | undefined => {
+  const profiles = llm.profiles();
+  return profiles.find((p) => p.id === picked)?.id ?? profiles[0]?.id;
+};
+
 export function createLoopEngine(ctx: Context): Engine {
   // what the engine itself says in the conversation, in the person's language
   const words = () => LOOP_WORDS((ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
@@ -248,7 +254,7 @@ export function createLoopEngine(ctx: Context): Engine {
     media: options => {
       const parsed = LoopOptions.parse(options ?? {});
       const llm = ctx.get("llm");
-      const profile = parsed.profile ?? llm?.profiles()[0]?.id;
+      const profile = llm && profileOf(llm, parsed.profile);
       if (!llm || !profile) return { input: [], output: [] };
       const caps = llm.forProfile(profile).capabilities;
       return { input: caps.mediaInput ?? [], output: caps.mediaOutput ?? [] };
@@ -282,7 +288,7 @@ export function createLoopEngine(ctx: Context): Engine {
     async turn(input: TurnInput, io: TurnIO): Promise<TurnResult> {
       if (!io.llm) return { stop: "error", error: "no language model available" };
       const options = LoopOptions.parse(input.options ?? {});
-      const profileId = options.profile ?? io.llm.profiles()[0]?.id;
+      const profileId = profileOf(io.llm, options.profile);
       if (!profileId) return { stop: "error", error: "no language model profile configured" };
       const model = io.llm.forProfile(profileId);
       // Off for the rest of the turn once the provider turns its own search down.
