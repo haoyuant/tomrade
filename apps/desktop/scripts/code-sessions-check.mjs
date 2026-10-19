@@ -190,7 +190,8 @@ app.whenReady().then(async () => {
       await wait(async () => BrowserWindow.getFocusedWindow() === again, 3000);
       if (BrowserWindow.getFocusedWindow() !== again) forward = false;
       again?.close();
-      await sleep(500);
+      // Gone before the next round looks for the window by its title.
+      await wait(async () => !again || again.isDestroyed(), 5000);
     }
     front.destroy();
     if (canFocus) check("关掉再打开（三次）、被别的窗口挡住时再点，窗口都到最前并获得焦点", forward, `focused: ${focusedTitle}`);
@@ -218,6 +219,11 @@ app.whenReady().then(async () => {
     const plainPane = saved()[0]?.pane;
     const typed = !!plainPane && (await wait(async () => herdr("pane", "read", plainPane, "--source", "recent", "--lines", "20").includes("plain-terminal-ok")));
     check("在新终端里输入的命令跑了", typed, `pane: ${plainPane}`);
+    // An agent's hooks name their pane from HERDR_PANE_ID: in a plain terminal it is that terminal's pane.
+    herdr("pane", "send-text", plainPane, "echo pane-is-$HERDR_PANE_ID");
+    herdr("pane", "send-keys", plainPane, "enter");
+    const named = await wait(async () => herdr("pane", "read", plainPane, "--source", "recent", "--lines", "20").replace(/\n/g, "").includes(`pane-is-${plainPane}`));
+    check("新终端里的 HERDR_PANE_ID 就是它自己的 pane（hooks 靠它报告 pane）", named);
     fs.writeFileSync(path.join(shots, "code-sessions-terminal.png"), (await tw.webContents.capturePage()).toPNG());
 
     // Kept across the window: reopened, the same cell shows it again.
@@ -229,6 +235,24 @@ app.whenReady().then(async () => {
     tjs = (code) => tw.webContents.executeJavaScript(code, true);
     const back = await wait(async () => (await tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return !!cell?.querySelector('.xterm') && [...cell.querySelectorAll('.xterm-rows > div')].some((r) => r.textContent.includes('plain-terminal-ok')); })()`)));
     check("关窗重开后，新终端在原来的格子里接回来", back);
+
+    // An agent in it claims a ticket: code link learns the pane (as the repo's hooks report it) and the cell becomes
+    // that session in place — same xterm, same picture, no second row. Letting the claim go makes it a terminal again.
+    const claimed = ctx.items.create({ projectId: project.id, boardId: board.id, title: "在终端里认领", workType: "coding", status: "doing", by: "human" });
+    const claimSession = ctx.codeLink.store.createSession(project.id, { repoId: "check", branch: `${claimed.key.toLowerCase()}/claimed`, itemIds: [claimed.id], mode: "terminal", agent: "claude-code", threadId: null, device: "check", worktree: cwd });
+    await tjs(`document.querySelector('.cs-cell[data-cell-terminal] .xterm').dataset.mark = 'same'; true`);
+    ctx.codeLink.store.patchSession(project.id, claimSession.id, { state: "running", herdrPane: plainPane });
+    ctx.emit("codeLink/changed", project.id);
+    const folded = await wait(async () => tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return !!cell && cell.querySelector('.cs-cell-name').textContent.includes(${JSON.stringify(claimed.key)}) && [...cell.querySelectorAll('.link-btn')].some((b) => b.textContent === '继续'); })()`));
+    check("终端里的 agent 认领工单后，这个格子原地变成该工单的会话", folded);
+    const inPlace = await tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return cell.querySelector('.xterm')?.dataset.mark === 'same' && [...cell.querySelectorAll('.xterm-rows > div')].some((r) => r.textContent.includes('plain-terminal-ok')); })()`);
+    check("不换格子也不重连：还是原来的终端画面", inPlace);
+    const rows = await tjs(`[document.querySelectorAll('[data-terminal]').length, [...document.querySelectorAll('.cs-row')].filter((r) => r.textContent.includes(${JSON.stringify(claimed.key)})).length]`);
+    check("列表里只有工单会话这一行，没有重复的终端行", rows[0] === 0 && rows[1] === 1, JSON.stringify(rows));
+    ctx.codeLink.store.patchSession(project.id, claimSession.id, { itemIds: [] });
+    ctx.emit("codeLink/changed", project.id);
+    const plainAgain = await wait(async () => tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return !!cell && [...cell.querySelectorAll('.link-btn')].some((b) => b.textContent === '关闭终端') && cell.querySelector('.xterm')?.dataset.mark === 'same'; })()`));
+    check("释放工单后，格子变回普通终端（不清空、不重连）", plainAgain);
 
     // Closed from its cell: the pane ends in herdr.
     await tjs(`[...document.querySelector('.cs-cell[data-cell-terminal]').querySelectorAll('.link-btn')].find((b) => b.textContent === '关闭终端').click(); true`);

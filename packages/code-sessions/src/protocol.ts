@@ -30,6 +30,10 @@ export interface TerminalRow {
   /** Null while herdr is still opening it. */
   pane: string | null;
   startedAt: number;
+  /** The code session its agent claimed a ticket for: the cell shows that session, on the same pane. */
+  sessionId: string | null;
+  /** Why it stays a plain terminal although an agent claimed a ticket, when Tomrade cannot tell which terminal that was. */
+  note: string | null;
 }
 
 /** A folder a new terminal can start in: the project's repository, or one of its worktrees. */

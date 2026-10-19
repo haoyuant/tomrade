@@ -14,6 +14,8 @@ export interface FakePane {
   agent_status: string;
   /** What `pane.read` returns. */
   text: string;
+  /** What runs in the foreground, for `pane.process_info`; the shell when unset. */
+  foreground?: { cmdline: string; cwd: string };
 }
 
 export interface FakeHerdrCall {
@@ -200,6 +202,12 @@ export class FakeHerdr {
       case "pane.get": {
         const pane = paneOf(params.pane_id);
         return pane ? { result: { type: "pane_info", pane: { ...pane, focused: false, revision: 0 } } } : notFound(params.pane_id);
+      }
+      case "pane.process_info": {
+        const pane = paneOf(params.pane_id);
+        if (!pane) return notFound(params.pane_id);
+        const fg = pane.foreground ?? { cmdline: "-zsh", cwd: pane.cwd };
+        return { result: { type: "pane_process_info", process_info: { pane_id: pane.pane_id, shell_pid: 1, foreground_process_group_id: pane.foreground ? 2 : 1, foreground_processes: [{ ...fg, name: fg.cmdline.split(" ")[0], pid: pane.foreground ? 2 : 1 }] } } };
       }
       case "pane.close": {
         const pane = paneOf(params.pane_id);

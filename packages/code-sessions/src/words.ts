@@ -15,7 +15,8 @@ export const CODE_SESSIONS_WORDS = defineWords("codeSessions", {
     installYourself: "Install herdr yourself: {{command}}",
     terminalFailed: "herdr did not open a terminal — is it running?",
     closeFailed: "herdr did not answer; the terminal is still open",
-    sessionsUnreadable: "Code sessions could not be read just now; new terminals still open"
+    sessionsUnreadable: "Code sessions could not be read just now; new terminals still open",
+    unmatched: "An agent claimed a ticket, but Tomrade cannot tell which terminal it runs in — this stays a plain terminal"
   },
   zh: {
     open: "打开代码会话窗口",
@@ -30,6 +31,7 @@ export const CODE_SESSIONS_WORDS = defineWords("codeSessions", {
     installYourself: "请自行安装 herdr：{{command}}",
     terminalFailed: "herdr 没能打开终端，它在运行吗？",
     closeFailed: "herdr 没有响应，终端还开着",
-    sessionsUnreadable: "暂时读不到代码会话，新终端照常可以打开"
+    sessionsUnreadable: "暂时读不到代码会话，新终端照常可以打开",
+    unmatched: "有 agent 认领了工单，但 Tomrade 分不清它在哪个终端里，这里先保持为普通终端"
   }
 });
