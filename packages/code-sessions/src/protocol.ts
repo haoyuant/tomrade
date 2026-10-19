@@ -22,7 +22,23 @@ export interface SessionRow {
   startedAt: number;
 }
 
-/** A cell of the window's layout: one session, or a split of two. */
+/** A plain terminal the window opened: a herdr pane of the person's, with no ticket or code-link session behind it. */
+export interface TerminalRow {
+  id: string;
+  title: string;
+  cwd: string;
+  /** Null while herdr is still opening it. */
+  pane: string | null;
+  startedAt: number;
+}
+
+/** A folder a new terminal can start in: the project's repository, or one of its worktrees. */
+export interface TerminalPlace {
+  label: string;
+  cwd: string;
+}
+
+/** A cell of the window's layout: one session or terminal (by its id), or a split of two. */
 export type Layout = { type: "leaf"; id: string; sessionId: string | null } | { type: "split"; id: string; direction: "row" | "column"; ratio: number; a: Layout; b: Layout };
 
 /** What the window shows, set as its whole state. */
@@ -39,12 +55,20 @@ export interface WindowState {
   /** The terminal setting, as code link reads it on this machine. */
   terminal: string;
   sessions: SessionRow[];
+  /** Said above the cells when the sessions could not be read; terminals still open. */
+  warning: string | null;
+  terminals: TerminalRow[];
+  /** Where a new terminal can start, the repository first. */
+  places: TerminalPlace[];
   layout: Layout;
 }
 
 /** What the window asks for. */
 export type WindowMessage =
   | { type: "attach"; cell: string; sessionId: string; cols: number; rows: number }
+  /** The window names the new terminal's id, so its cell shows it before herdr has opened it. */
+  | { type: "newTerminal"; terminalId: string; cwd: string | null }
+  | { type: "closeTerminal"; terminalId: string }
   | { type: "detach"; cell: string }
   | { type: "input"; cell: string; data: string }
   | { type: "resize"; cell: string; cols: number; rows: number }

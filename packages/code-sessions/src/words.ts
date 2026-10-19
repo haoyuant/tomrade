@@ -12,7 +12,10 @@ export const CODE_SESSIONS_WORDS = defineWords("codeSessions", {
     noTicket: "This session has no ticket",
     noWorktree: "No worktree for this session on this computer",
     installing: "Installing herdr in a terminal — come back when it is done",
-    installYourself: "Install herdr yourself: {{command}}"
+    installYourself: "Install herdr yourself: {{command}}",
+    terminalFailed: "herdr did not open a terminal — is it running?",
+    closeFailed: "herdr did not answer; the terminal is still open",
+    sessionsUnreadable: "Code sessions could not be read just now; new terminals still open"
   },
   zh: {
     open: "打开代码会话窗口",
@@ -24,6 +27,9 @@ export const CODE_SESSIONS_WORDS = defineWords("codeSessions", {
     noTicket: "这个会话没有关联工单",
     noWorktree: "这个会话在本机没有 worktree",
     installing: "正在终端里安装 herdr，装好后回来即可",
-    installYourself: "请自行安装 herdr：{{command}}"
+    installYourself: "请自行安装 herdr：{{command}}",
+    terminalFailed: "herdr 没能打开终端，它在运行吗？",
+    closeFailed: "herdr 没有响应，终端还开着",
+    sessionsUnreadable: "暂时读不到代码会话，新终端照常可以打开"
   }
 });

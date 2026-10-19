@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Layout, SessionRow, WindowState } from "@tomradex/code-sessions";
+import type { Layout, SessionRow, TerminalPlace, TerminalRow, WindowState } from "@tomradex/code-sessions";
 import { interpolate, message } from "~/lib/dicts";
 import { onLook, onState, onToast, send, type Look } from "./bridge";
 import { close, leaves, prune, resize, show, split } from "./layout";
 import { TerminalCell } from "./TerminalCell";
 
 type Say = (key: string, vars?: Record<string, string | number>) => string;
+
+const ASKED_GRACE_MS = 5000;
 
 const live = (s: SessionRow) => s.state !== "ended" && s.state !== "lost";
 
@@ -39,6 +41,7 @@ function Banner({ state, say }: { state: WindowState; say: Say }) {
   return (
     <>
       {body && <div className="cs-banner" data-testid="cs-bridge">{body}</div>}
+      {state.warning && <div className="cs-banner" data-testid="cs-warning">{state.warning}</div>}
       {state.askSwitch && (
         <div className="cs-banner" data-testid="cs-ask-switch">
           <span>{say("askSwitch", { terminal: state.terminal })}</span>
@@ -80,13 +83,62 @@ function SessionList({ sessions, active, onPick, say }: { sessions: SessionRow[]
   );
 }
 
-function Cell({ leaf, session, focused, only, onFocus, onSplit, onClose, look, say }: { leaf: Extract<Layout, { type: "leaf" }>; session: SessionRow | undefined; focused: boolean; only: boolean; onFocus: () => void; onSplit: (d: "row" | "column") => void; onClose: () => void; look: Look; say: Say }) {
+function TerminalList({ terminals, active, onPick, say }: { terminals: TerminalRow[]; active: Set<string>; onPick: (t: TerminalRow) => void; say: Say }) {
+  if (!terminals.length) return null;
+  return (
+    <ul className="cs-list">
+      {terminals.map((t) => (
+        <li key={t.id}>
+          <button type="button" className="cs-row" data-terminal={t.id} data-active={active.has(t.id) || undefined} onClick={() => onPick(t)}>
+            <span className="cs-row-head">
+              <span className="mono">{t.title}</span>
+              {!t.pane && <span className="cs-chip">{say("starting")}</span>}
+            </span>
+            <span className="cs-row-meta mono">{t.cwd}</span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** An empty cell's way to a new terminal: where it starts, then the button. */
+function NewTerminal({ places, ready, onOpen, say }: { places: TerminalPlace[]; ready: boolean; onOpen: (cwd: string) => void; say: Say }) {
+  const [cwd, setCwd] = useState(places[0]?.cwd ?? "");
+  const where = places.some((p) => p.cwd === cwd) ? cwd : (places[0]?.cwd ?? "");
+  return (
+    <div className="cs-new-terminal">
+      {places.length > 1 && (
+        <label>
+          {say("startIn")}{" "}
+          <select value={where} onChange={(e) => setCwd(e.target.value)}>
+            {places.map((p) => (
+              <option key={p.cwd} value={p.cwd} title={p.cwd}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <button type="button" className="btn btn-secondary btn-xs" data-testid="cs-new-terminal" disabled={!ready || !where} onClick={() => onOpen(where)}>
+        {say("newTerminal")}
+      </button>
+    </div>
+  );
+}
+
+function Cell({ leaf, session, terminal, places, ready, onNewTerminal, focused, only, onFocus, onSplit, onClose, look, say }: { leaf: Extract<Layout, { type: "leaf" }>; session: SessionRow | undefined; terminal: TerminalRow | undefined; places: TerminalPlace[]; ready: boolean; onNewTerminal: (cwd: string) => void; focused: boolean; only: boolean; onFocus: () => void; onSplit: (d: "row" | "column") => void; onClose: () => void; look: Look; say: Say }) {
   const act = (type: "continue" | "openWorktree" | "openPr" | "focusHerdr" | "openThread") => session && send({ type, sessionId: session.id });
   const labels = useMemo(() => ({ detached: (reason: string | null) => (reason ? say("detached", { reason }) : say("detachedPlain")), reattach: say("reattach") }), [say]);
   return (
-    <div className="cs-cell" data-focused={focused || undefined} onMouseDownCapture={onFocus}>
+    <div className="cs-cell" data-focused={focused || undefined} data-cell-terminal={terminal?.id} onMouseDownCapture={onFocus}>
       <div className="cs-cell-bar">
-        <span className="cs-cell-name">{session ? `${session.key ?? ""} ${session.title ?? session.branch}`.trim() : say("pick")}</span>
+        <span className="cs-cell-name">{session ? `${session.key ?? ""} ${session.title ?? session.branch}`.trim() : terminal ? `${terminal.title} · ${terminal.cwd}` : say("pick")}</span>
+        {terminal && (
+          <span className="cs-cell-actions">
+            <button type="button" className="link-btn" onClick={() => send({ type: "closeTerminal", terminalId: terminal.id })}>{say("closeTerminal")}</button>
+          </span>
+        )}
         {session && (
           <span className="cs-cell-actions">
             {session.mode === "run" ? (
@@ -107,10 +159,17 @@ function Cell({ leaf, session, focused, only, onFocus, onSplit, onClose, look, s
           <button type="button" className="icon-btn" title={only ? say("clearCell") : say("closeCell")} aria-label={only ? say("clearCell") : say("closeCell")} onClick={onClose}>×</button>
         </span>
       </div>
-      {session?.pane ? (
-        <TerminalCell cell={leaf.id} sessionId={session.id} tokens={look.tokens} font={look.tokens["--font-mono"] ?? ""} labels={labels} />
+      {session?.pane || terminal?.pane ? (
+        <TerminalCell cell={leaf.id} sessionId={(session ?? terminal)!.id} tokens={look.tokens} font={look.tokens["--font-mono"] ?? ""} labels={labels} />
+      ) : terminal ? (
+        <div className="cs-cell-empty">{say("starting")}</div>
+      ) : session ? (
+        <div className="cs-cell-empty">{session.mode === "run" ? say("runMode") : say("otherMachine")}</div>
       ) : (
-        <div className="cs-cell-empty">{session ? (session.mode === "run" ? say("runMode") : say("otherMachine")) : say("pick")}</div>
+        <div className="cs-cell-empty">
+          <span>{say("pickOrNew")}</span>
+          <NewTerminal places={places} ready={ready} onOpen={onNewTerminal} say={say} />
+        </div>
       )}
     </div>
   );
@@ -169,10 +228,14 @@ export function App() {
   }, [locale]);
 
   // The first state brings the remembered layout; after that the window owns it, minus sessions that went.
-  const known = useMemo(() => new Set(state?.sessions.map((s) => s.id) ?? []), [state?.sessions]);
+  // A terminal just asked for may miss from a state sent before the ask arrived; its cell keeps it a moment.
+  const asked = useRef(new Map<string, number>());
+  const known = useMemo(() => new Set([...(state?.sessions.map((s) => s.id) ?? []), ...(state?.terminals.map((t) => t.id) ?? [])]), [state?.sessions, state?.terminals]);
   useEffect(() => {
     if (!state) return;
-    setLayout((current) => prune(current ?? state.layout, known));
+    const now = Date.now();
+    for (const [id, at] of asked.current) if (known.has(id) || now - at > ASKED_GRACE_MS) asked.current.delete(id);
+    setLayout((current) => prune(current ?? state.layout, new Set([...known, ...asked.current.keys()])));
   }, [state, known]);
   const change = useCallback((next: Layout) => {
     setLayout(next);
@@ -186,12 +249,33 @@ export function App() {
   const cells = leaves(layout);
   const target = cells.find((c) => c.id === focused) ?? cells.find((c) => !c.sessionId) ?? cells[0]!;
   const byId = new Map(state.sessions.map((s) => [s.id, s]));
+  const terminalsById = new Map(state.terminals.map((t) => [t.id, t]));
   const active = new Set(cells.map((c) => c.sessionId).filter((id): id is string => !!id));
+  // A server that is not running is started by the launch itself.
+  const ready = state.bridge.state === "ready" || state.bridge.state === "notRunning";
 
   const pick = (s: SessionRow) => {
     if (s.mode === "run" && !s.pane) return send({ type: "openThread", sessionId: s.id });
     change(show(layout, target.id, s.id));
     setFocused(target.id);
+  };
+  const pickTerminal = (t: TerminalRow) => {
+    change(show(layout, target.id, t.id));
+    setFocused(target.id);
+  };
+  const openTerminal = (base: Layout, cell: string, cwd: string) => {
+    const terminalId = crypto.randomUUID();
+    asked.current.set(terminalId, Date.now());
+    change(show(base, cell, terminalId));
+    setFocused(cell);
+    send({ type: "newTerminal", terminalId, cwd });
+  };
+  // From the list's button: the first empty cell, or a new one beside the focused cell.
+  const newTerminal = () => {
+    const empty = cells.find((c) => !c.sessionId);
+    if (empty) return openTerminal(layout, empty.id, state.places[0]!.cwd);
+    const next = split(layout, target.id, "row");
+    openTerminal(next.layout, next.created, state.places[0]!.cwd);
   };
 
   const render = (node: Layout): ReactNode =>
@@ -202,6 +286,10 @@ export function App() {
         key={node.id}
         leaf={node}
         session={node.sessionId ? byId.get(node.sessionId) : undefined}
+        terminal={node.sessionId ? terminalsById.get(node.sessionId) : undefined}
+        places={state.places}
+        ready={ready}
+        onNewTerminal={(cwd) => openTerminal(layout, node.id, cwd)}
         focused={node.id === target.id && cells.length > 1}
         only={cells.length === 1}
         onFocus={() => setFocused(node.id)}
@@ -221,6 +309,13 @@ export function App() {
       <aside className="cs-side">
         <h2 className="cs-side-head">{say("sessions")}</h2>
         <SessionList sessions={state.sessions} active={active} onPick={pick} say={say} />
+        <div className="cs-side-head cs-side-sub">
+          <h2>{say("terminals")}</h2>
+          <button type="button" className="btn btn-secondary btn-xs" data-testid="cs-side-new-terminal" disabled={!ready} onClick={newTerminal}>
+            + {say("newTerminal")}
+          </button>
+        </div>
+        <TerminalList terminals={state.terminals} active={active} onPick={pickTerminal} say={say} />
       </aside>
       <main className="cs-main">
         <Banner state={state} say={say} />

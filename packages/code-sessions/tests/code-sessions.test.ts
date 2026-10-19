@@ -6,7 +6,8 @@ import { Service, type Context } from "cordis";
 import CodeSessions, { sessionRows, type WindowMessage, type WindowPost, type WindowState } from "@tomradex/code-sessions";
 import { Contributions } from "@tomradex/contributions";
 import { Settings } from "@tomradex/settings";
-import { fresh, settle } from "@tomradex/testkit";
+import { Herdr } from "@tomradex/herdr";
+import { FakeHerdr, fresh, settle } from "@tomradex/testkit";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-code-sessions-"));
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -155,4 +156,99 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   await expect(w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id })).rejects.toThrow("no window");
   await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
   expect(opened).toHaveLength(6);
+});
+
+it("opens plain terminals in herdr without code link, keeps them, closes them, and still opens when sessions cannot be read", async () => {
+  const fake = new FakeHerdr();
+  const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[]; posts: WindowPost[] }[] = [];
+  const attached: string[] = [];
+  let sessionsBroken = false;
+  const repo = fs.mkdtempSync(path.join(dir, "repo-"));
+
+  class FakeSurfaces extends Service {
+    static provide = "desktopSurfaces";
+    constructor(ctx: Context) {
+      super(ctx, "desktopSurfaces");
+    }
+    open(spec: (typeof opened)[number]["spec"]) {
+      const entry = { spec, states: [spec.initialState as WindowState], posts: [] as WindowPost[] };
+      opened.push(entry);
+      return { id: "s", capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus() {}, setState: (s: WindowState) => void entry.states.push(s), post: (m: WindowPost) => void entry.posts.push(m), close: () => spec.onClose() };
+    }
+  }
+  class FakeCodeLink extends Service {
+    static provide = "codeLink";
+    constructor(ctx: Context) {
+      super(ctx, "codeLink");
+    }
+    sessionsOf = () => {
+      if (sessionsBroken) throw new Error("bad session row");
+      return [];
+    };
+    links = () => [];
+    repositoriesOf = () => [{ workstream: "Main", name: "tomrade", path: repo, defaultBranch: "main" }];
+    herdrInstall = async () => ({ command: null, guide: "" });
+  }
+
+  const stateFile = path.join(dir, "terminals.json");
+  const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "settings-t.json") }], Contributions, FakeSurfaces, [Herdr, { socket: fake.socket, bin: path.join(dir, "absent"), reconnectMs: 30 }], FakeCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile }]] });
+  const herdr = w.ctx.get("herdr")!;
+  herdr.bridge = async () => ({ state: "ready", version: "0.9.5" });
+  herdr.terminal = async (pane: string) => {
+    attached.push(pane);
+    return { paneId: pane, mode: "control", closed: false, onFrame: () => () => {}, onClose: () => () => {}, input() {}, resize() {}, scroll() {}, mouse() {}, close() {} } as never;
+  };
+  await settle();
+
+  await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
+  const win = opened[0]!;
+  expect(win.states[0]!).toMatchObject({ terminals: [], places: [{ label: "tomrade", cwd: repo }], warning: null });
+  const say = async (m: WindowMessage) => {
+    win.spec.onMessage(m);
+    await settle();
+    await new Promise((r) => setTimeout(r, 50));
+  };
+
+  // A new terminal: a plain shell in a tab of the project's workspace, nothing typed into it.
+  await say({ type: "newTerminal", terminalId: "t1", cwd: repo });
+  expect(fake.of("workspace.create")).toEqual([{ cwd: repo, label: w.project.name, focus: false }]);
+  expect(fake.of("pane.send_input")).toEqual([]);
+  expect(win.states.some((s) => s.terminals.some((t) => t.id === "t1" && t.pane === null))).toBe(true);
+  expect(win.states.at(-1)!.terminals).toEqual([expect.objectContaining({ id: "t1", title: path.basename(repo), cwd: repo, pane: "w1:p1" })]);
+  await say({ type: "attach", cell: "c1", sessionId: "t1", cols: 80, rows: 24 });
+  expect(attached).toEqual(["w1:p1"]);
+
+  // Kept: a window opened later lists it again.
+  win.spec.onClose();
+  await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
+  expect(opened[1]!.states[0]!.terminals).toEqual([expect.objectContaining({ id: "t1", pane: "w1:p1" })]);
+
+  // Sessions that cannot be read are a warning; a terminal still opens.
+  sessionsBroken = true;
+  const next = opened[1]!;
+  next.spec.onMessage({ type: "newTerminal", terminalId: "t2", cwd: null });
+  await settle();
+  await new Promise((r) => setTimeout(r, 50));
+  expect(next.states.at(-1)).toMatchObject({ sessions: [], warning: expect.any(String) });
+  expect(next.states.at(-1)!.terminals.map((t) => t.id)).toEqual(["t1", "t2"]);
+  sessionsBroken = false;
+
+  // Closed by the person: the pane ends and the terminal is forgotten. One whose pane went is forgotten too.
+  next.spec.onMessage({ type: "closeTerminal", terminalId: "t1" });
+  await settle();
+  await new Promise((r) => setTimeout(r, 50));
+  expect(fake.of("pane.close")).toEqual([{ pane_id: "w1:p1" }]);
+  fake.exit(next.states.at(-1)!.terminals[0]!.pane!);
+  next.spec.onMessage({ type: "refresh" });
+  await settle();
+  await new Promise((r) => setTimeout(r, 50));
+  expect(next.states.at(-1)!.terminals).toEqual([]);
+
+  // herdr gone: the window says so, nothing is kept.
+  fake.stop();
+  next.spec.onMessage({ type: "newTerminal", terminalId: "t3", cwd: repo });
+  await settle();
+  await new Promise((r) => setTimeout(r, 200));
+  expect(next.posts.at(-1)).toMatchObject({ type: "toast" });
+  expect(JSON.parse(fs.readFileSync(stateFile, "utf8")).terminals[w.project.id]).toEqual([]);
 });

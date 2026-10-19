@@ -5,6 +5,8 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-window { display: flex; height: 100%; }
 .cs-side { width: 280px; flex: none; border-right: 1px solid var(--border-soft); background: var(--surface-warm); overflow-y: auto; }
 .cs-side-head { margin: 0; padding: 12px 14px 8px; font-size: var(--text-sm); color: var(--muted); font-weight: 600; letter-spacing: 0.02em; }
+.cs-side-sub { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cs-side-sub h2 { margin: 0; font: inherit; }
 .cs-empty { padding: 0 14px; color: var(--muted); font-size: var(--text-sm); line-height: 1.5; }
 .cs-list { list-style: none; margin: 0; padding: 0 6px 12px; }
 .cs-row { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; padding: 8px; border: 1px solid transparent; border-radius: 8px; background: none; color: inherit; cursor: pointer; font: inherit; }
@@ -43,7 +45,9 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-cell-tools { display: flex; gap: 2px; flex: none; }
 .cs-cell-tools .icon-btn { width: 22px; height: 22px; border: 0; border-radius: 4px; background: none; color: var(--muted); cursor: pointer; }
 .cs-cell-tools .icon-btn:hover { background: var(--tag-bg-faint); color: var(--fg); }
-.cs-cell-empty { flex: 1; display: grid; place-items: center; color: var(--muted); font-size: var(--text-sm); padding: 16px; text-align: center; }
+.cs-cell-empty { flex: 1; display: flex; flex-direction: column; gap: 10px; align-items: center; justify-content: center; color: var(--muted); font-size: var(--text-sm); padding: 16px; text-align: center; }
+.cs-new-terminal { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; }
+.cs-new-terminal select { max-width: 240px; font: inherit; }
 
 .cs-term { position: relative; flex: 1; min-height: 0; }
 .cs-term-host { position: absolute; inset: 4px 0 0 6px; }
