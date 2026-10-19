@@ -50,13 +50,14 @@ export function pickModel(preset: Pick<ProviderPreset, "model" | "prefer">, list
 export const keyHint = (key: string): string => (key.length > 10 ? `${key.slice(0, 3)}…${key.slice(-4)}` : "…");
 
 /** A provider's models, or why the key or address does not work. Listing doubles as the key check. */
-export async function listModels(preset: Pick<ProviderPreset, "provider" | "baseURL">, apiKey: string, timeoutMs = 15_000): Promise<ModelListResult> {
+export async function listModels(preset: Pick<ProviderPreset, "provider" | "baseURL">, apiKey: string, timeoutMs = 15_000, signal?: AbortSignal): Promise<ModelListResult> {
   const anthropic = preset.provider === "anthropic";
   const base = (anthropic ? preset.baseURL || "https://api.anthropic.com/v1" : preset.baseURL).replace(/\/$/, "");
   const headers: Record<string, string> = anthropic ? { "x-api-key": apiKey, "anthropic-version": "2023-06-01" } : apiKey ? { authorization: `Bearer ${apiKey}` } : {};
   if (GEMINI.test(base)) return geminiModels(new URL(base).origin, apiKey, timeoutMs);
   try {
-    const res = await fetch(`${base}/models${anthropic ? "?limit=100" : ""}`, { headers, signal: AbortSignal.timeout(timeoutMs) });
+    const stop = AbortSignal.timeout(timeoutMs);
+    const res = await fetch(`${base}/models${anthropic ? "?limit=100" : ""}`, { headers, signal: signal ? AbortSignal.any([signal, stop]) : stop });
     // Some compatible endpoints answer chat but have no listing; the chat probe decides then.
     if (res.status === 404 || res.status === 405) return { ok: true, models: null, capabilities: {} };
     const text = await res.text();
