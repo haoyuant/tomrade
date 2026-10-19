@@ -171,7 +171,8 @@ const run = async () => {
   await sleep(500);
   await send("fourth");
   await sleep(2000);
-  check("and the conversation answers through it", (await $(`[...document.querySelectorAll('.ai-scroll .turn-ai')].pop()?.textContent ?? ''`)).includes("acme pong"));
+  const answered = await $(`[...document.querySelectorAll('.ai-scroll .turn-ai')].pop()?.textContent ?? ''`);
+  check("and the conversation answers through it", answered.includes("acme pong"), answered);
   check("harness reached the end", true);
 };
 

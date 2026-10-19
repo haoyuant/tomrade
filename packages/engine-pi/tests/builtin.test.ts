@@ -30,7 +30,11 @@ it("writes models.json with keys named by variable, never the key itself", () =>
     profile({ id: "local", baseURL: "http://127.0.0.1:11434/v1", apiKey: "", model: "qwen3" }),
     profile({ id: "claude", provider: "anthropic", model: "claude-sonnet-5" }),
     profile({ id: "pics", provider: "openai-images", model: "gpt-image" }),
-    profile({ id: "gem", provider: "gemini", model: "gemini-4-argon", inputModalities: ["image", "pdf"] })
+    profile({ id: "gem", provider: "gemini", model: "gemini-4-argon", inputModalities: ["image", "pdf"] }),
+    profile({ id: "ds", provider: "deepseek", model: "deepseek-flash" }),
+    profile({ id: "or", provider: "openrouter", baseURL: "https://openrouter.ai/api/v1", model: "x/y" }),
+    // a plugin's provider talks its own API: pi never gets its key, nor guesses an address for it
+    profile({ id: "acme", provider: "acme", model: "acme-large" })
   ]);
   expect(JSON.stringify(file)).not.toContain("sk-secret");
   expect(file.providers["tomrade-p1"]).toEqual({ baseUrl: "https://api.example.com/v1", api: "openai-completions", apiKey: "$TOMRADE_KEY_P1", models: [{ id: "m", name: "m", input: ["text", "image"] }] });
@@ -38,6 +42,9 @@ it("writes models.json with keys named by variable, never the key itself", () =>
   expect(file.providers["tomrade-claude"]).toMatchObject({ baseUrl: "https://api.anthropic.com", api: "anthropic-messages", models: [{ input: ["text", "image"] }] });
   expect(file.providers["tomrade-pics"]).toBeUndefined();
   expect(file.providers["tomrade-gem"]).toMatchObject({ baseUrl: "https://generativelanguage.googleapis.com/v1beta", api: "google-generative-ai", models: [{ input: ["text", "image"] }] });
+  expect(file.providers["tomrade-ds"]).toMatchObject({ baseUrl: "https://api.deepseek.com", api: "openai-completions" });
+  expect(file.providers["tomrade-or"]).toMatchObject({ baseUrl: "https://openrouter.ai/api/v1", api: "openai-completions" });
+  expect(file.providers["tomrade-acme"]).toBeUndefined();
 });
 
 async function boot(cli: string) {
@@ -72,6 +79,15 @@ it("leaves a model that renders tools into the prompt to the loop, saying why", 
     expect(await pi.available({ options: { profile: "cloud" } })).toMatchObject({ ok: true });
     expect(await pi.available()).toMatchObject({ ok: true });
   }
+});
+
+it("leaves a model on a provider whose API pi does not speak to the loop, saying why", async () => {
+  const { ctx, engine, useModel } = await boot(fs.existsSync(bundled) ? bundled : process.execPath);
+  useModel({ provider: "acme", title: "Acme" });
+  expect(await engine()).toMatchObject({ ok: false, need: "model", reason: expect.stringContaining("APIs the built-in agent does not") });
+  ctx.settings.set({ ...ctx.settings.get(), models: { profiles: [profile({ id: "acme", title: "Acme", provider: "acme" }), profile({ id: "cloud" })], roles: { worker: "" } } });
+  const pi = ctx.agent.engineOf("pi-builtin")!;
+  expect(await pi.available({ options: { profile: "acme" } })).toMatchObject({ ok: false, need: "model", reason: expect.stringContaining('"Acme"') });
 });
 
 const bundled = path.resolve("apps/desktop/vendor/pi/dist/bundle/cli.js");

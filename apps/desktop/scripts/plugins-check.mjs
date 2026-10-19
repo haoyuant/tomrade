@@ -115,9 +115,17 @@ const run = async () => {
   await ctx.plugins.setEnabled("web-search-tavily", true);
   check("switching it back on offers them again", servesSearch() && ctx.tools.has("web_fetch"));
 
+  // Each model provider is a row: switched off, its presets go; back on, they return.
+  const presets = () => ctx.llm.providers().map((p) => p.id);
+  check("every model provider's presets are offered", ["deepseek", "kimi", "anthropic", "openai", "gemini", "openrouter", "ollama"].every((id) => presets().includes(id)), presets());
+  await ctx.plugins.setEnabled("model-kimi", false);
+  check("switching a provider off takes its presets away", !presets().includes("kimi") && presets().includes("deepseek"), presets());
+  await ctx.plugins.setEnabled("model-kimi", true);
+  check("switching it back on brings them back", presets().includes("kimi"), presets());
+
   // Contracts: declared on the row so a switched-off one still groups, and
   // held to what the running rows actually register.
-  check("the snapshot carries the composition's contracts", ctx.plugins.snapshot().contracts.map((c) => c.id).join() === "engine,storage,files,im,inboxSource,inboxTriager,webSearch");
+  check("the snapshot carries the composition's contracts", ctx.plugins.snapshot().contracts.map((c) => c.id).join() === "engine,storage,files,im,inboxSource,inboxTriager,webSearch,modelProvider");
   check("a switched-off engine still counts as an engine", view("engine-scripted")?.state === "disabled" && view("engine-scripted")?.implements.join() === "engine");
   await ctx.plugins.setEnabled("engine-scripted", true);
   const declared = new Map(ctx.plugins.rows().map((r) => [r.id, r.implements ?? []]));

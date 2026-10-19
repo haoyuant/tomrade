@@ -11,7 +11,7 @@ import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/settings";
 import { listedModels, PERMISSION_MODES } from "./options.js";
 import { PiRuntime, type PiLaunch } from "./rpc.js";
-import { CATALOG_ENV, modelsFile, piTarget, usableProfile } from "./target.js";
+import { CATALOG_ENV, modelsFile, piSpeaks, piTarget, usableProfile } from "./target.js";
 import { PI_WORDS } from "./words.js";
 
 const EFFORTS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -61,9 +61,10 @@ export function createBuiltinPiEngine(ctx: Context, config: BuiltinPiConfig): En
   const refusedPick = (options: unknown): string | null => {
     const chosen = BuiltinPiOptions.safeParse(options ?? {}).data?.profile;
     const picked = chosen ? connected().find((p) => p.id === chosen) : undefined;
-    if (!picked?.promptTools) return null;
+    if (!picked) return null;
     const name = picked.title || picked.model;
-    return words()("refusedPick", { name });
+    if (picked.promptTools) return words()("refusedPick", { name });
+    return piSpeaks(picked.provider) ? null : words()("foreignPick", { name });
   };
   const profileOf = (options: unknown): ModelProfile | undefined => {
     const all = profiles();
@@ -123,10 +124,11 @@ export function createBuiltinPiEngine(ctx: Context, config: BuiltinPiConfig): En
       if (!ctx.get("mcp")?.url) return { ok: false, need: "service", reason: words()("noMcp") };
       if (!profiles().length) {
         const promptOnly = connected().some((p) => p.promptTools);
+        const foreign = connected().some((p) => !piSpeaks(p.provider));
         return {
           ok: false,
           need: "model",
-          reason: words()(promptOnly ? "noToolModels" : "connectModel")
+          reason: words()(promptOnly ? "noToolModels" : foreign ? "foreignModels" : "connectModel")
         };
       }
       const refused = refusedPick(opts?.options);
