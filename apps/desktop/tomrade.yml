@@ -238,9 +238,6 @@ plugins:
       mediaDir: "${userData}/agent-media"
   - id: im
     name: "@tomradex/im"
-  # Discord, as an IM adapter extension: it does nothing until a connection is set up in Settings → IM.
-  - id: im-discord
-    name: "@tomradex/im-discord"
   # Engines are conductors; several can be installed, a thread picks one.
   # Tomrade: the one in-app choice — the built-in pi holds backlog conversations (the loop when pi cannot run,
   # a signed-in Claude Code or Codex when no model is connected) and implements tickets.
@@ -444,9 +441,9 @@ plugins:
       nodeBinary: "${nodeRuntime}"
       officialCatalog:
         cacheFile: "${userData}/official-catalog.json"
-      # Pomodoro used to ship inside the app; it now comes from the official
-      # catalog, put on once so nobody who had it loses it.
-      starters: ["tomrade/pomodoro"]
+      # Pomodoro and Discord used to ship inside the app; they now come from the
+      # official catalog, put on once so nobody who had them loses them.
+      starters: ["tomrade/pomodoro", "tomrade/discord"]
       startersFile: "${userData}/official-starters.json"
   - id: plugin-studio
     name: "@tomradex/plugin-studio"

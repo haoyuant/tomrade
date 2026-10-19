@@ -336,14 +336,14 @@ TOM-92 与平台子工单需要根据新目标重新确认范围。按 CONTEXT.m
 
 ## Discord 适配器（TOM-100）
 
-`packages/im-discord`（扩展 `tomrade/discord`，命名空间 `discord`，随应用加载，配置连接前什么都不做）。网络权限只声明 `discord.com`、`discord.gg`、`discordapp.com`、`discordapp.net`。只需要 Bot Token，不开特权 Intent（GUILDS、GUILD_MESSAGES、DIRECT_MESSAGES）：私信和 @ 本身带正文；没有 Message Content 时频道里的其他消息正文为空，不送公共层。
+官方插件 `tomrade/discord`（tomrade-plugins 的 `packages/discord`，命名空间 `discord`；TOM-300 之前随应用内置，现在由官方目录的 starters 每台机器装一次，配置连接前什么都不做）。网络权限只声明 `discord.com`、`discord.gg`、`discordapp.com`、`discordapp.net`。只需要 Bot Token，不开特权 Intent（GUILDS、GUILD_MESSAGES、DIRECT_MESSAGES）：私信和 @ 本身带正文；没有 Message Content 时频道里的其他消息正文为空，不送公共层。
 
 - **Gateway**：心跳带抖动，漏一次 ack 视为僵尸连接；断线后用 `resume_gateway_url` + 会话号 resume，Discord 补发漏掉的事件，公共层按事件 id 去重；op 7/9、4007/4009 按规定重连或重新 identify；4004（令牌错误）和 Intent 类关闭码直接报“连接失败”，交给公共层退避重开。
 - **入站**：私信 → `dm`（tenant `@me`）；@ 机器人 → `mention`；回复机器人消息 → `reply`。帖子（thread）是父频道的话题（`topicId`），所以父频道的 route 覆盖它。附件按 CDN 地址下载。删除自己发的消息 → `retract`，编辑 → `edit`。
 - **交互**：按钮、单选/多选 string select、自由文本用按钮弹出 modal；组件先回 `DEFERRED_UPDATE_MESSAGE`（type 6），`/tomrade <子命令>` 先回 `DEFERRED_CHANNEL_MESSAGE`（type 5），都在 3 秒内，之后再交给公共层。延迟回复被改写成“› /status”这条可见消息，回复引用它。
 - **出站**：Discord Markdown，2000 字分段；小节为 embed，按钮和选择器为组件（最多 5 行），编辑时总带上 components 以便收口后摘掉按钮；`tomrade://` 链接 Discord 不允许做链接按钮，作为文字显示。消息带强制 nonce，丢回应后重试也不会重复发；429 按 `retry_after` 退避；每频道每 5 秒 5 条。👀 / ✅ / ❌ 表情回执，typing。文件上限 10 MB（multipart）。
 - `/tomrade` 指令：每个 IM 指令一个子命令（带 `args` 文本参数），每次连上后整体覆盖注册。
-- 测试：`src/fake.ts` 是内存中的 Discord（Gateway + REST）；`tests/` 接真实 IM 公共层和 Agent 跑完整对话；`src/test.ts` 是 `tomrade-plugin test` 场景；`apps/desktop/scripts/im-discord-check.mjs` 在真实界面里走向导和连接。真实账号逐项验收需要你的 Discord 测试服务器。
+- 测试：`src/fake.ts` 是内存中的 Discord（Gateway + REST）；`tests/` 对着假 Discord 直接驱动适配器；`src/test.ts` 是 `tomrade-plugin test` 场景，接真实 IM 公共层和 Agent 跑完整对话。真实账号逐项验收需要你的 Discord 测试服务器。
 
 ## 代码进展（TOM-171）
 

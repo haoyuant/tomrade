@@ -134,9 +134,6 @@ importers:
       '@tomradex/im':
         specifier: workspace:*
         version: link:../../packages/im
-      '@tomradex/im-discord':
-        specifier: workspace:*
-        version: link:../../packages/im-discord
       '@tomradex/inbox':
         specifier: workspace:*
         version: link:../../packages/inbox
@@ -1439,34 +1436,6 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
-      '@types/node':
-        specifier: ^26.2.0
-        version: 26.2.0
-      typescript:
-        specifier: ^6.0.0
-        version: 6.0.3
-
-  packages/im-discord:
-    dependencies:
-      '@tomradex/plugin-sdk':
-        specifier: workspace:*
-        version: link:../plugin-sdk
-    devDependencies:
-      '@tomradex/agent':
-        specifier: workspace:*
-        version: link:../agent
-      '@tomradex/im':
-        specifier: workspace:*
-        version: link:../im
-      '@tomradex/settings':
-        specifier: workspace:*
-        version: link:../settings
-      '@tomradex/testkit':
-        specifier: workspace:*
-        version: link:../testkit
-      '@tomradex/tools':
-        specifier: workspace:*
-        version: link:../tools
       '@types/node':
         specifier: ^26.2.0
         version: 26.2.0
