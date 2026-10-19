@@ -9,7 +9,7 @@ import type {} from "@tomradex/db";
 import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/items";
 import type {} from "@tomradex/settings";
-import type { CodeLink } from "@tomradex/code-link";
+import { MCP_AGENT, type CodeLink } from "@tomradex/code-link";
 import type { DesktopSurface } from "@tomradex/desktop-surface";
 import type { HerdrBridge, TerminalStream } from "@tomradex/herdr";
 import type { Layout, SessionRow, TerminalPlace, TerminalRow, WindowMessage, WindowPost, WindowState } from "./protocol.js";
@@ -34,10 +34,32 @@ interface Saved {
   asked?: boolean;
   layouts?: Record<string, Layout>;
   /** Each project's plain terminals, by the herdr pane they run in. */
-  terminals?: Record<string, (TerminalRow & { pane: string })[]>;
+  terminals?: Record<string, SavedTerminal[]>;
 }
 
+type SavedTerminal = Omit<TerminalRow, "sessionId" | "note"> & { pane: string };
+type StartingTerminal = Omit<SavedTerminal, "pane"> & { pane: null };
+
 const run = promisify(execFile);
+
+/** Coding agents' commands, as they show in a terminal's foreground process. */
+const AGENT_COMMAND = /(?:^|[\s/])(?:gemini|qwen|cursor-agent|claude|codex|opencode|droid|copilot|kimi|amp|codebuddy)(?:\s|$)/;
+
+const within = (dir: string, root: string) => {
+  const rel = path.relative(path.resolve(root), path.resolve(dir));
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+};
+
+/** Where a pane's agent runs, when one does: herdr sees it, or the foreground command names one. Null otherwise. */
+async function agentIn(herdr: { call<T>(method: string, params: Record<string, unknown>): Promise<T> }, pane: string, cwd: string): Promise<string | null> {
+  const seen = await herdr.call<{ pane: { agent?: string | null } }>("pane.get", { pane_id: pane }).then((r) => !!r.pane.agent, () => false);
+  const info = await herdr
+    .call<{ process_info: { foreground_processes?: { cmdline?: string; cwd?: string }[] } }>("pane.process_info", { pane_id: pane })
+    .then((r) => r.process_info.foreground_processes ?? [], () => []);
+  const named = info.find((p) => p.cmdline && AGENT_COMMAND.test(p.cmdline));
+  if (!seen && !named) return null;
+  return named?.cwd ?? info[0]?.cwd ?? cwd;
+}
 /** A repository's worktrees besides the checkout itself, as `git worktree list` gives them; none when git cannot say. */
 async function worktreesOf(repo: string): Promise<TerminalPlace[]> {
   try {
@@ -140,9 +162,9 @@ function apply(ctx: Context, config: Config) {
   };
 
   /** Terminals herdr is still opening, by project: shown as starting, never saved. */
-  const pending = new Map<string, Map<string, TerminalRow>>();
+  const pending = new Map<string, Map<string, StartingTerminal>>();
   const savedTerminals = (projectId: string) => stateOf(config.stateFile).terminals?.[projectId] ?? [];
-  const saveTerminals = (projectId: string, list: (TerminalRow & { pane: string })[]) => save(config.stateFile, { terminals: { ...stateOf(config.stateFile).terminals, [projectId]: list } });
+  const saveTerminals = (projectId: string, list: SavedTerminal[]) => save(config.stateFile, { terminals: { ...stateOf(config.stateFile).terminals, [projectId]: list } });
 
   /** The project's terminals; one whose pane herdr no longer has is forgotten. While herdr does not answer, they all stay. */
   const terminals = async (projectId: string): Promise<TerminalRow[]> => {
@@ -151,7 +173,47 @@ function apply(ctx: Context, config: Config) {
     const alive = herdr ? await Promise.all(saved.map((t) => herdr.paneAlive(t.pane).catch(() => null))) : saved.map(() => null);
     const kept = saved.filter((_, i) => alive[i] !== false);
     if (kept.length !== saved.length) saveTerminals(projectId, kept);
-    return [...kept, ...(pending.get(projectId)?.values() ?? [])];
+    return [...kept, ...(pending.get(projectId)?.values() ?? [])].map((t) => ({ ...t, sessionId: null, note: null }));
+  };
+
+  /**
+   * A terminal whose agent claimed a ticket shows as that session. Agents with hooks report their pane. For one known
+   * only by its MCP connection (Gemini CLI, any MCP client), the pane is taken only when exactly one terminal without
+   * a session runs an agent — herdr sees one, or its foreground command names one — inside the session's worktree, or
+   * the project's repository when it names none. Anything less certain stays a plain terminal, with a note.
+   */
+  const fold = async (projectId: string, sessions: SessionRow[], list: TerminalRow[]): Promise<TerminalRow[]> => {
+    const claimed = sessions.filter((s) => s.itemId && s.state !== "ended" && s.state !== "lost");
+    const owner = (pane: string | null) => (pane ? claimed.filter((s) => s.pane === pane).sort((a, b) => b.startedAt - a.startedAt)[0]?.id ?? null : null);
+    const out = list.map((t) => ({ ...t, sessionId: owner(t.pane) }));
+    const unplaced = claimed.filter((s) => s.agent === MCP_AGENT && !s.pane);
+    const herdr = ctx.get("herdr");
+    if (!unplaced.length || !herdr) return out;
+    const free = out.filter((t) => t.pane && !t.sessionId);
+    const where = await Promise.all(free.map((t) => agentIn(herdr, t.pane!, t.cwd)));
+    const running = free.flatMap((t, i) => (where[i] ? [{ t, cwd: where[i] }] : []));
+    let repos: string[] = [];
+    try {
+      repos = ctx.codeLink.repositoriesOf(projectId).flatMap((r) => (r.path ? [r.path] : []));
+    } catch {
+      // No repository to hold it to.
+    }
+    if (unplaced.length === 1) {
+      const s = unplaced[0]!;
+      const roots = s.worktree ? [s.worktree] : repos;
+      const fits = running.filter((r) => !roots.length || roots.some((root) => within(r.cwd, root)));
+      if (fits.length === 1) {
+        const only = fits[0]!.t;
+        try {
+          ctx.codeLink.store.patchSession(projectId, s.id, { herdrPane: only.pane! });
+        } catch (error) {
+          ctx.logger.warn(`code sessions: could not link a claim to its terminal: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        return out.map((t) => (t === only ? { ...t, sessionId: s.id } : t));
+      }
+    }
+    const note = words()("unmatched");
+    return out.map((t) => (running.some((r) => r.t === t) ? { ...t, note } : t));
   };
 
   /** The project's repositories on this machine and their worktrees; the home folder when it has none here. */
@@ -172,6 +234,7 @@ function apply(ctx: Context, config: Config) {
 
   const state = async (projectId: string): Promise<WindowState> => {
     const b = await bridge();
+    const shown = listed(projectId);
     const setting = terminal();
     return {
       projectId,
@@ -182,8 +245,8 @@ function apply(ctx: Context, config: Config) {
       // "auto" lands in herdr once it is installed; only a terminal named otherwise keeps sessions out of it.
       askSwitch: setting !== "herdr" && setting !== "auto" && !stateOf(config.stateFile).asked,
       terminal: setting,
-      ...listed(projectId),
-      terminals: await terminals(projectId),
+      ...shown,
+      terminals: await fold(projectId, shown.sessions, await terminals(projectId)),
       places: await places(projectId),
       layout: stateOf(config.stateFile).layouts?.[projectId] ?? fresh()
     };
@@ -249,8 +312,8 @@ function apply(ctx: Context, config: Config) {
   /** A plain shell in a new tab of the project's herdr workspace. It needs nothing of code link: only herdr has to answer. */
   const newTerminal = async (projectId: string, win: Open, id: string, cwd: string | null) => {
     const where = cwd && fs.existsSync(cwd) ? cwd : (await places(projectId))[0]!.cwd;
-    const row: TerminalRow = { id, title: path.basename(where) || where, cwd: where, pane: null, startedAt: Date.now() };
-    const starting = pending.get(projectId) ?? new Map<string, TerminalRow>();
+    const row: StartingTerminal = { id, title: path.basename(where) || where, cwd: where, pane: null, startedAt: Date.now() };
+    const starting = pending.get(projectId) ?? new Map<string, StartingTerminal>();
     pending.set(projectId, starting.set(id, row));
     void refresh(projectId);
     try {

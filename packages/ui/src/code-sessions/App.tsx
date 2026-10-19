@@ -84,10 +84,12 @@ function SessionList({ sessions, active, onPick, say }: { sessions: SessionRow[]
 }
 
 function TerminalList({ terminals, active, onPick, say }: { terminals: TerminalRow[]; active: Set<string>; onPick: (t: TerminalRow) => void; say: Say }) {
-  if (!terminals.length) return null;
+  // One that became a code session is listed as that session.
+  const plain = terminals.filter((t) => !t.sessionId);
+  if (!plain.length) return null;
   return (
     <ul className="cs-list">
-      {terminals.map((t) => (
+      {plain.map((t) => (
         <li key={t.id}>
           <button type="button" className="cs-row" data-terminal={t.id} data-active={active.has(t.id) || undefined} onClick={() => onPick(t)}>
             <span className="cs-row-head">
@@ -134,7 +136,8 @@ function Cell({ leaf, session, terminal, places, ready, onNewTerminal, focused, 
     <div className="cs-cell" data-focused={focused || undefined} data-cell-terminal={terminal?.id} onMouseDownCapture={onFocus}>
       <div className="cs-cell-bar">
         <span className="cs-cell-name">{session ? `${session.key ?? ""} ${session.title ?? session.branch}`.trim() : terminal ? `${terminal.title} · ${terminal.cwd}` : say("pick")}</span>
-        {terminal && (
+        {terminal?.note && !session && <span className="cs-cell-note" title={terminal.note}>{terminal.note}</span>}
+        {terminal && !session && (
           <span className="cs-cell-actions">
             <button type="button" className="link-btn" onClick={() => send({ type: "closeTerminal", terminalId: terminal.id })}>{say("closeTerminal")}</button>
           </span>
@@ -160,7 +163,7 @@ function Cell({ leaf, session, terminal, places, ready, onNewTerminal, focused, 
         </span>
       </div>
       {session?.pane || terminal?.pane ? (
-        <TerminalCell cell={leaf.id} sessionId={(session ?? terminal)!.id} tokens={look.tokens} font={look.tokens["--font-mono"] ?? ""} labels={labels} />
+        <TerminalCell cell={leaf.id} sessionId={leaf.sessionId!} tokens={look.tokens} font={look.tokens["--font-mono"] ?? ""} labels={labels} />
       ) : terminal ? (
         <div className="cs-cell-empty">{say("starting")}</div>
       ) : session ? (
@@ -250,12 +253,17 @@ export function App() {
   const target = cells.find((c) => c.id === focused) ?? cells.find((c) => !c.sessionId) ?? cells[0]!;
   const byId = new Map(state.sessions.map((s) => [s.id, s]));
   const terminalsById = new Map(state.terminals.map((t) => [t.id, t]));
-  const active = new Set(cells.map((c) => c.sessionId).filter((id): id is string => !!id));
+  // A terminal whose agent claimed a ticket shows that session in its own cell, on the pane it already has.
+  const sessionIn = (id: string | null) => (id ? byId.get(terminalsById.get(id)?.sessionId ?? id) : undefined);
+  const active = new Set(cells.flatMap((c) => (c.sessionId ? [c.sessionId, terminalsById.get(c.sessionId)?.sessionId ?? c.sessionId] : [])));
   // A server that is not running is started by the launch itself.
   const ready = state.bridge.state === "ready" || state.bridge.state === "notRunning";
 
   const pick = (s: SessionRow) => {
     if (s.mode === "run" && !s.pane) return send({ type: "openThread", sessionId: s.id });
+    // Already in a terminal's cell: that cell, never a second controller on the same pane.
+    const holding = cells.find((c) => c.sessionId && terminalsById.get(c.sessionId)?.sessionId === s.id);
+    if (holding) return setFocused(holding.id);
     change(show(layout, target.id, s.id));
     setFocused(target.id);
   };
@@ -285,7 +293,7 @@ export function App() {
       <Cell
         key={node.id}
         leaf={node}
-        session={node.sessionId ? byId.get(node.sessionId) : undefined}
+        session={sessionIn(node.sessionId)}
         terminal={node.sessionId ? terminalsById.get(node.sessionId) : undefined}
         places={state.places}
         ready={ready}

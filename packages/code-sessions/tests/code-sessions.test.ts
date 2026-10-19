@@ -252,3 +252,92 @@ it("opens plain terminals in herdr without code link, keeps them, closes them, a
   expect(next.posts.at(-1)).toMatchObject({ type: "toast" });
   expect(JSON.parse(fs.readFileSync(stateFile, "utf8")).terminals[w.project.id]).toEqual([]);
 });
+
+it("shows a terminal as the code session its agent claimed, in place, and as a plain terminal again once the claim goes", async () => {
+  const fake = new FakeHerdr();
+  const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[] }[] = [];
+  const sessions: Session[] = [];
+  const patched: [string, unknown][] = [];
+
+  class FakeSurfaces extends Service {
+    static provide = "desktopSurfaces";
+    constructor(ctx: Context) {
+      super(ctx, "desktopSurfaces");
+    }
+    open(spec: (typeof opened)[number]["spec"]) {
+      const entry = { spec, states: [spec.initialState as WindowState] };
+      opened.push(entry);
+      return { id: "s", capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus() {}, setState: (s: WindowState) => void entry.states.push(s), post() {}, close: () => spec.onClose() };
+    }
+  }
+  class FakeCodeLink extends Service {
+    static provide = "codeLink";
+    constructor(ctx: Context) {
+      super(ctx, "codeLink");
+    }
+    sessionsOf = () => sessions;
+    links = () => [];
+    repositoriesOf = () => [];
+    herdrInstall = async () => ({ command: null, guide: "" });
+    store = {
+      patchSession: (_projectId: string, id: string, patch: { herdrPane?: string }) => {
+        patched.push([id, patch]);
+        Object.assign(sessions.find((s) => s.id === id)!, patch);
+      }
+    };
+  }
+
+  const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "settings-f.json") }], Contributions, FakeSurfaces, [Herdr, { socket: fake.socket, bin: path.join(dir, "absent"), reconnectMs: 30 }], FakeCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile: path.join(dir, "fold.json") }]] });
+  w.ctx.get("herdr")!.bridge = async () => ({ state: "ready", version: "0.9.5" });
+  const ticket = w.ctx.items.create({ projectId: w.project.id, boardId: w.board.id, title: "Claimed here", workType: "coding", status: "doing", by: "human" });
+  await settle();
+  await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
+  const win = opened[0]!;
+  const now = async () => {
+    win.spec.onMessage({ type: "refresh" });
+    await settle();
+    await new Promise((r) => setTimeout(r, 50));
+    return win.states.at(-1)!.terminals;
+  };
+  for (const id of ["t1", "t2", "t3"]) {
+    win.spec.onMessage({ type: "newTerminal", terminalId: id, cwd: dir });
+    await settle();
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  const pane = Object.fromEntries((await now()).map((t) => [t.id, t.pane!]));
+  expect((await now()).map((t) => [t.id, t.sessionId, t.note])).toEqual([["t1", null, null], ["t2", null, null], ["t3", null, null]]);
+
+  // Claude Code with the repo's hooks: its session reports the pane; before the claim it holds no ticket and stays plain.
+  sessions.push(session({ id: "hooked", herdrPane: pane.t1!, startedAt: 2 }));
+  expect((await now()).find((t) => t.id === "t1")!.sessionId).toBeNull();
+  sessions[0]!.itemIds = [ticket.id];
+  expect((await now()).find((t) => t.id === "t1")!.sessionId).toBe("hooked");
+  // The claim let go: a plain terminal again, still there.
+  sessions[0]!.itemIds = [];
+  expect((await now()).find((t) => t.id === "t1")).toMatchObject({ sessionId: null, pane: pane.t1 });
+  sessions[0]!.itemIds = [ticket.id];
+  sessions[0]!.state = "ended";
+  expect((await now()).find((t) => t.id === "t1")!.sessionId).toBeNull();
+
+  // An agent known only by its MCP connection: two terminals run agents, so neither is guessed — both say why.
+  fake.setStatus(pane.t2!, "cursor", "working");
+  fake.setStatus(pane.t3!, "cursor", "idle");
+  sessions.push(session({ id: "hookless", agent: "mcp", itemIds: [ticket.id], startedAt: 3 }));
+  const unsure = await now();
+  expect(unsure.filter((t) => t.note).map((t) => t.id)).toEqual(["t2", "t3"]);
+  expect(unsure.every((t) => !t.sessionId) && patched.length === 0).toBe(true);
+  // One of them ends: the claim is the other's, and the session learns its pane.
+  fake.exit(pane.t3!);
+  const sure = await now();
+  expect(sure.map((t) => [t.id, t.sessionId, t.note])).toEqual([["t1", null, null], ["t2", "hookless", null]]);
+  expect(patched).toEqual([["hookless", { herdrPane: pane.t2 }]]);
+
+  // Gemini CLI: herdr does not know it, its command does. Outside the session's worktree it is not taken.
+  sessions[1]!.state = "ended";
+  fake.panes.get(pane.t2!)!.agent = null;
+  fake.panes.get(pane.t1!)!.foreground = { cmdline: "node /opt/homebrew/bin/gemini", cwd: dir };
+  sessions.push(session({ id: "gemini", agent: "mcp", itemIds: [ticket.id], startedAt: 4, worktree: "/somewhere/else" }));
+  expect((await now()).find((t) => t.id === "t1")).toMatchObject({ sessionId: null, note: expect.any(String) });
+  sessions[2]!.worktree = dir;
+  expect((await now()).find((t) => t.id === "t1")).toMatchObject({ sessionId: "gemini", note: null });
+});
