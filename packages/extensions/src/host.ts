@@ -148,6 +148,12 @@ const copy = <T>(value: T): T => {
   }
 };
 
+/** A plugin's headers as fetch takes them; anything but an object of names and values is refused. */
+const strings = (headers: unknown): Record<string, string> => {
+  if (!headers || typeof headers !== "object" || Array.isArray(headers)) throw new Error("headers must be an object of names and values");
+  return Object.fromEntries(Object.entries(headers).map(([name, value]) => [name, String(value)]));
+};
+
 /**
  * One plugin's view of the app. It hands out nothing live: every method is a
  * call made inside the plugin's scope and answered with a Promise, every
@@ -322,11 +328,12 @@ export class Host {
     };
   }
 
-  /** The app's own OpenAI-compatible adapter for a plugin's provider; its `body` runs in the plugin's scope. */
+  /** The app's own OpenAI-compatible adapter for a plugin's provider; its `body` and `headers` run in the plugin's scope. */
   private compatible(options: CompatibleModelOptions): ChatModel {
     this.svc("models");
     const shape = options.body;
     const label = `compatible model ${options.model} body`;
+    const sign = options.headers ? this.back(options.headers.bind(options), `compatible model ${options.model} headers`, { ms: 30_000 }) : null;
     return new OpenAiCompatible({
       baseURL: String(options.baseURL),
       apiKey: String(options.apiKey ?? ""),
@@ -340,6 +347,17 @@ export class Host {
               this.now(() => shape(json, copy(request)), label, (message) => {
                 throw new Error(`${this.identity.id} could not shape the request: ${message}`);
               })
+          }
+        : {}),
+      ...(sign
+        ? {
+            headers: async (request: { url: string; body: string }) => {
+              try {
+                return strings(await sign({ ...request }));
+              } catch (error) {
+                throw new Error(`${this.identity.id} could not set the request headers: ${error instanceof Error ? error.message : String(error)}`);
+              }
+            }
           }
         : {})
     });
@@ -765,7 +783,7 @@ export class Host {
           listCompatible: (endpoint, signal) =>
             host.call(async () => {
               host.svc("models");
-              const listed = await listModels({ provider: "openai-compatible", baseURL: String(endpoint.baseURL) }, String(endpoint.apiKey ?? ""), 15_000, signal);
+              const listed = await listModels({ provider: "openai-compatible", baseURL: String(endpoint.baseURL) }, String(endpoint.apiKey ?? ""), 15_000, signal, endpoint.headers ? strings(endpoint.headers) : undefined);
               return listed.ok ? { ok: true as const, models: listed.models, capabilities: listed.capabilities } : listed;
             })
         };

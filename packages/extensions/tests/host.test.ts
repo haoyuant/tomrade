@@ -462,6 +462,69 @@ describe("the extension host", () => {
     }
   });
 
+  it("sends a plugin's own headers in place of the bearer key, on chat/completions, the Responses API and the listing", async () => {
+    const sent: { url: string; headers: Headers; body: string }[] = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      sent.push({ url, headers: new Headers(init?.headers), body: String(init?.body ?? "") });
+      if (url.endsWith("/models")) return new Response(JSON.stringify({ data: [{ id: "gpt-x" }] }));
+      if (url.endsWith("/responses")) return new Response(`data: ${JSON.stringify({ type: "response.output_text.delta", delta: "found" })}\n\ndata: ${JSON.stringify({ type: "response.completed", response: {} })}\n\n`, { headers: { "content-type": "text/event-stream" } });
+      return new Response('data: {"choices":[{"delta":{"content":"hi"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n', { headers: { "content-type": "text/event-stream" } });
+    });
+    try {
+      const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(dir, "compatible-headers.json") }], Llm] });
+      const llm = w.ctx.llm as Llm;
+      const asked: { url: string; body: string }[] = [];
+      let listed: unknown;
+      await w.ctx.plugin(
+        ext(
+          definePlugin({
+            inject: ["models"],
+            async apply(p) {
+              listed = await p.models.listCompatible({ baseURL: "https://azure.example/openai/v1", apiKey: "", headers: { "api-key": "azure-key" } });
+              await p.models.registerProvider({
+                id: "demo",
+                title: "Demo",
+                baseURL: { default: "https://azure.example/openai/v1" },
+                list: () => ({ ok: true, models: null }),
+                build: (profile) =>
+                  p.models.compatible({
+                    baseURL: "https://azure.example/openai/v1",
+                    apiKey: profile.apiKey,
+                    model: profile.model,
+                    webSearch: "responses",
+                    headers: async (request) => (asked.push(request), { "api-key": profile.apiKey })
+                  })
+              });
+              await p.models.registerProvider({
+                id: "demo-broken",
+                title: "Broken",
+                baseURL: { default: "https://azure.example/openai/v1" },
+                list: () => ({ ok: true, models: null }),
+                build: (profile) => p.models.compatible({ baseURL: "https://azure.example/openai/v1", apiKey: profile.apiKey, model: profile.model, headers: () => { throw new Error("signed out"); } })
+              });
+            }
+          })
+        )
+      );
+      await settle();
+      expect(listed).toMatchObject({ ok: true, models: ["gpt-x"] });
+      expect([sent[0]!.headers.get("api-key"), sent[0]!.headers.get("authorization")]).toEqual(["azure-key", null]);
+      w.ctx.settings.set({ ...w.ctx.settings.get(), models: { profiles: [{ id: "a", title: "Azure", provider: "demo", apiKey: "azure-key", model: "gpt-x" }], roles: { worker: "" } } });
+      const model = llm.forProfile("a");
+      expect((await collect(model.chat({ system: "s", messages: [userMessage("hi")] }))).text).toBe("hi");
+      expect((await collect(model.chat({ system: "s", messages: [userMessage("search")], webSearch: true }))).text).toBe("found");
+      expect(asked.map((a) => a.url)).toEqual(["https://azure.example/openai/v1/chat/completions", "https://azure.example/openai/v1/responses"]);
+      // what the plugin was handed is exactly what went out, so a signature over it holds
+      expect(asked.map((a) => a.body)).toEqual([sent[1]!.body, sent[2]!.body]);
+      expect(sent.slice(1).map((s) => [s.headers.get("api-key"), s.headers.get("authorization")])).toEqual([["azure-key", null], ["azure-key", null]]);
+      w.ctx.settings.set({ ...w.ctx.settings.get(), models: { profiles: [{ id: "b", title: "Broken", provider: "demo-broken", apiKey: "k", model: "m" }], roles: { worker: "" } } });
+      await expect(collect(llm.forProfile("b").chat({ system: "s", messages: [userMessage("hi")] }))).rejects.toThrow(/someone\/demo could not set the request headers: signed out/);
+      expect(sent).toHaveLength(3);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("reads a provider's unavailable() that throws as unavailable, with the reason", async () => {
     const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(dir, "web-search-throws.json") }], WebSearch] });
     await w.ctx.plugin(ext(definePlugin({ inject: ["webSearch"], apply: (p) => void p.webSearch.register({ id: "demo", title: "Demo", unavailable: () => { throw new Error("boom"); }, search: () => ({ results: [] }) }) })));

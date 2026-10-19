@@ -148,6 +148,12 @@ export interface CompatibleModelOptions {
   webSearch?: "chat" | "responses";
   /** The last word on each chat/completions body (a copy of the request beside it): a vendor's own fields. Throw to fail the request. */
   body?(json: Record<string, unknown>, request: ModelChatRequest): Record<string, unknown>;
+  /**
+   * The headers of each request in place of `Authorization: Bearer <apiKey>`: a vendor's own key
+   * header, a token that expires, a signature over `url` and the exact `body` sent. Asked again
+   * before every try, retries included. Throw to fail the request.
+   */
+  headers?(request: { url: string; body: string }): Maybe<Record<string, string>>;
 }
 
 export interface ModelsApi {
@@ -158,6 +164,9 @@ export interface ModelsApi {
    * calls, retries, media, the token-field quirks — for a vendor that serves chat/completions.
    */
   compatible(options: CompatibleModelOptions): ModelChat;
-  /** The app's own listing of a chat/completions endpoint (`GET /models`), media read from it; one without a listing answers `models: null`. */
-  listCompatible(endpoint: { baseURL: string; apiKey: string }, signal?: AbortSignal): Promise<ModelListing>;
+  /**
+   * The app's own listing of a chat/completions endpoint (`GET /models`), media read from it; one
+   * without a listing answers `models: null`. `headers` go in place of the bearer key.
+   */
+  listCompatible(endpoint: { baseURL: string; apiKey: string; headers?: Record<string, string> }, signal?: AbortSignal): Promise<ModelListing>;
 }
