@@ -90,6 +90,9 @@ const run = async () => {
   const file = fs.readFileSync(path.join(work, "settings.json"), "utf8");
   check("settings.json keeps the key sealed by the keychain, not in plain text", JSON.parse(file).models.profiles[0].apiKey.startsWith("tomrade-encrypted:v1:") && !file.includes('"good"'), JSON.parse(file).models.profiles[0].apiKey.slice(0, 24));
   check("and only this user can read the file", (fs.statSync(path.join(work, "settings.json")).mode & 0o777) === 0o600);
+  // a local stand-in neither searches on its own nor brings a search service
+  const route = await $(`document.querySelector('[data-testid="search-route"]')?.textContent ?? ''`);
+  check("Settings says which way web search goes, and how to set it up when nothing searches", route.startsWith("Web search: no model here can search the web yet") && route.includes("Set up web search"), route);
 
   // ── a model error in the conversation says what to do ────────────────
   await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);

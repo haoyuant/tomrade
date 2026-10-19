@@ -37,7 +37,7 @@ import { invoke } from "~/lib/api";
 import { readableError, useToast } from "~/lib/toast";
 import { keyLabel } from "~/lib/keybindings";
 import { PlainSecretNote } from "~/components/ui/PlainSecretNote";
-import { useSettingsSheet } from "~/lib/settingsHost";
+import { openSettingsPane, useSettingsSheet } from "~/lib/settingsHost";
 
 /** Each preview re-declares the token block locally, so all built-in themes are
  *  visible at once — the clearest proof that one class swaps the lot. */
@@ -798,6 +798,7 @@ function AssistantPane({
             })}
           </div>
         )}
+        {models.profiles.length > 0 && <SearchRouteLine profiles={models.profiles} />}
       </div>
 
       <hr className="rule" />
@@ -1198,6 +1199,34 @@ function ModelPickField({ draft, host, keyRequired, onChange, onPicked }: { draf
         </span>
       )}
     </div>
+  );
+}
+
+/** Which way web search goes now: the models that search on their own, and the service that searches for the rest. */
+function SearchRouteLine({ profiles }: { profiles: ModelProfile[] }) {
+  const { t, locale } = useI18n();
+  // asked again whenever a profile changes: a key can bring or take a search service
+  const { data: route } = useQuery({ queryKey: ["llm", "searchRoute", JSON.stringify(profiles)], queryFn: () => invoke("llm.searchRoute"), staleTime: 15_000 });
+  if (!route) return null;
+  const models = new Intl.ListFormat(intlTag(locale), { type: "conjunction" }).format(route.native);
+  const everyone = route.native.length >= profiles.length;
+  const line = everyone
+    ? t("settingsDialog.searchAllNative")
+    : route.native.length
+      ? route.service ? t("settingsDialog.searchNativeThenService", { models, service: route.service }) : t("settingsDialog.searchNativeOnly", { models })
+      : route.service ? t("settingsDialog.searchService", { service: route.service }) : t("settingsDialog.searchNone");
+  return (
+    <p className="meta-txt" data-testid="search-route">
+      {line}
+      {!everyone && !route.service && (
+        <>
+          {" "}
+          <button type="button" className="link-inline" onClick={() => openSettingsPane("plugins")}>
+            {t("settingsDialog.searchSetUp")}
+          </button>
+        </>
+      )}
+    </p>
   );
 }
 

@@ -22,6 +22,9 @@
     },
     {
       "path": "../settings"
+    },
+    {
+      "path": "../web-search"
     }
   ]
 }

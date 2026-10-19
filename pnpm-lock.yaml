@@ -1711,6 +1711,9 @@ importers:
       '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
+      '@tomradex/web-search':
+        specifier: workspace:*
+        version: link:../web-search
       cordis:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8

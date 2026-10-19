@@ -1,4 +1,5 @@
 import type { ModelErrorKind } from "@tomradex/domain";
+import type { WebSearchProvider } from "@tomradex/web-search";
 import { listedCapabilities, type ListedModel, type ModelCapabilities } from "./capabilities.js";
 import type { ModelListResult } from "./provider.js";
 
@@ -24,6 +25,8 @@ export interface ProviderPreset {
   /** Runs on this computer and needs no key. */
   local?: boolean;
   hint: { en: string; zh: string };
+  /** A web search service its key also opens; offered while a profile has that key, so using the model brings the search. */
+  search?(profiles: () => { baseURL?: string; apiKey?: string }[]): WebSearchProvider;
 }
 
 /** Which presets a pasted key most likely belongs to, in their order; empty when it could be anyone's. */

@@ -4,6 +4,7 @@ import { modelErrorKind, wordsLocale, type ModelErrorKind, type WordsLocale } fr
 import type {} from "@tomradex/db";
 import type {} from "@tomradex/ipc";
 import type { SettingsSection } from "@tomradex/settings";
+import type { WebSearchProvider } from "@tomradex/web-search";
 import { BUILTIN_PROVIDERS } from "./builtin-providers.js";
 import { sameCapabilities, type ModelCapabilities } from "./capabilities.js";
 export { ImagesModel } from "./images.js";
@@ -20,6 +21,8 @@ export * from "./model.js";
 export { guessFrom, keyHint, listModels, pickModel, usableModels, type ModelListing, type ProviderPreset, type QuickSetupResult } from "./providers.js";
 export { ANTHROPIC, BUILTIN_PROVIDERS, GEMINI, OPENAI_COMPATIBLE, OPENAI_IMAGES, PROVIDERS, guessProviders } from "./builtin-providers.js";
 export { GeminiModel, type GeminiConfig } from "./gemini.js";
+export { deepseekKey, deepseekProvider, type DeepSeekKey } from "./search/deepseek.js";
+export { kimiKey, kimiProvider, type KimiKey } from "./search/kimi.js";
 export type { ModelListResult, ModelProviderSpec, ModelProviderView, ProviderProfile } from "./provider.js";
 export { LlmError, MediaRefused, NativeMediaRefused, NativeSearchRefused, type LlmErrorResponse } from "./errors.js";
 export { OpenAiCompatible, type OpenAiConfig } from "./openai.js";
@@ -149,6 +152,13 @@ export const LENDER_WAIT_MS = 1500;
 /** Lent calls start local processes; past this many at once, the rest wait their turn. */
 export const LENT_CONCURRENCY = 2;
 
+/** Which way web search goes: the profiles whose model searches on its own, and the service that searches for the rest. */
+export interface SearchRoute {
+  native: string[];
+  /** null: nobody can search for the other models. */
+  service: string | null;
+}
+
 /** Who answers worker calls (planning, duplicate checks): a profile, a lent model, or nobody yet. */
 export interface WorkerStatus {
   ok: boolean;
@@ -194,6 +204,7 @@ declare module "@tomradex/ipc" {
     "llm.quickSetup": (input: { preset: string; apiKey?: string }) => QuickSetupResult;
     "llm.adopt": (id: string) => QuickSetupResult;
     "llm.workerUsage": () => WorkerUsageSummary;
+    "llm.searchRoute": () => SearchRoute;
   }
 }
 
@@ -354,6 +365,7 @@ export class Llm extends Service implements LlmService {
   [Service.init]() {
     this.ctx.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("llm.test", (profile) => ctx.llm.test(profile));
+      ctx.ipc.handle("llm.searchRoute", () => this.searchRoute());
       ctx.ipc.handle("llm.models", (endpoint) => ctx.llm.listing(endpoint));
       ctx.ipc.handle("llm.worker", () => ctx.llm.worker());
       ctx.ipc.handle("llm.lenders", () => this.lenders());
@@ -380,6 +392,7 @@ export class Llm extends Service implements LlmService {
     this.ctx.settings.register(MODELS_SECTION);
     this.migrateLegacy();
     this.claimProfiles();
+    this.ctx.inject(["webSearch"], (ctx) => this.offerSearches(ctx));
     this.ctx.on("settings/changed", () => {
       this.cache.clear();
       this.refused.keepFor(this.models().profiles);
@@ -714,6 +727,39 @@ export class Llm extends Service implements LlmService {
   private async readyLent(): Promise<LentModel | undefined> {
     for (const model of this.lent) if (await model.ready().catch(() => false)) return model;
     return undefined;
+  }
+
+  /** A preset's own search service goes on while one of the person's profiles has its key, and off when none does. */
+  private offerSearches(ctx: Context): void {
+    const made = new Map<string, WebSearchProvider>();
+    const on = new Map<string, () => void>();
+    const sync = () => {
+      for (const preset of this.presets()) {
+        if (!preset.search) continue;
+        const service = made.get(preset.id) ?? preset.search(() => this.models().profiles);
+        made.set(preset.id, service);
+        const ready = !service.unavailable();
+        if (ready && !on.has(preset.id)) on.set(preset.id, ctx.webSearch.register(service));
+        if (!ready && on.has(preset.id)) {
+          on.get(preset.id)!();
+          on.delete(preset.id);
+        }
+      }
+    };
+    sync();
+    ctx.on("settings/changed", sync);
+  }
+
+  searchRoute(): SearchRoute {
+    const native = this.models().profiles.filter((p) => {
+      try {
+        return !!this.adapterOf(p).capabilities.nativeWebSearch;
+      } catch {
+        return false;
+      }
+    });
+    const web = this.ctx.get("webSearch");
+    return { native: native.map((p) => p.title || p.model), service: web?.providers().find((p) => !p.unavailable())?.title ?? null };
   }
 
   /** Profiles a provider now serves better than the one they were saved for move to it, keys and roles kept. */
