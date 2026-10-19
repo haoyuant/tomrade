@@ -86,6 +86,8 @@ export interface PluginsSnapshot {
   modules: ModuleView[];
   contracts: ContractSpec[];
   plugins: PluginView[];
+  /** Records of compatibility.json that could not be read, which no exemption comes from. */
+  compatibilityProblems?: string[];
 }
 
 export interface PluginsConfig {

@@ -3,7 +3,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Plugin } from "cordis";
 import { adaptLanguagePacks, adaptSdkPlugin, claimFullPlugin, identityOf } from "@tomradex/extensions";
-import { SDK_CONTRACT, isSdkPlugin, namespaceOf, ownsId, riskOf, satisfies, type Manifest, type ManifestRow, type Risk } from "@tomradex/plugin-sdk";
+import { SDK_CONTRACT, isSdkPlugin, isVersion, namespaceOf, ownsId, riskOf, satisfies, type Manifest, type ManifestRow, type Risk } from "@tomradex/plugin-sdk";
 import {
   analyzePackage,
   dataDirFor,
@@ -54,6 +54,23 @@ export interface FullModeInfo {
   restart: boolean;
 }
 
+/**
+ * A version range the plugin's manifest names that this Tomrade is outside:
+ * `tomrade` for a full-mode plugin's `engines.tomrade`, `sdk` for `engines.sdk`.
+ * `granted`: the person let this exact plugin version run on this exact version anyway.
+ */
+export interface RangeMiss {
+  kind: "tomrade" | "sdk";
+  range: string;
+  version: string;
+  granted: boolean;
+}
+
+/** Grants by `<plugin id>@<version>`: the exact Tomrade versions and SDK contracts each may run on outside its range. */
+type Grants = Map<string, { tomrade: Set<string>; sdk: Set<string> }>;
+
+export const COMPATIBILITY_FILE = "compatibility.json";
+
 /** What the manager shows for a row that is an extension. */
 export interface ExtensionInfo {
   id: string;
@@ -80,6 +97,8 @@ export interface ExtensionInfo {
   full: FullModeInfo | null;
   /** The CLI agent hook events it hears, as its build recorded them. */
   agentHooks: string[];
+  /** The ranges it names that this Tomrade is outside, each granted or not. */
+  outOfRange: RangeMiss[];
 }
 
 export class ExtensionRefused extends Error {
@@ -122,9 +141,101 @@ export class ExtensionStore {
   /** Each full-mode extension's rows as this start applied them, to tell when the next start would differ. */
   private readonly applied = new Map<string, string>();
   onChange: (id: string) => void = () => {};
+  private grants: Grants = new Map();
+  /** What could not be read from `compatibility.json`; while the file itself cannot be parsed it is never overwritten. */
+  compatibilityProblems: string[] = [];
+  private compatibilityReadOnly = false;
 
   constructor(private readonly config: ExtensionStoreConfig) {
     this.lock = readLock(config.lockFile);
+    this.readGrants();
+  }
+
+  private get compatibilityFile(): string {
+    return path.join(path.dirname(this.config.lockFile), COMPATIBILITY_FILE);
+  }
+
+  /** Every record that reads as a grant applies; the rest are reported, never fatal. */
+  private readGrants(): void {
+    this.grants = new Map();
+    this.compatibilityProblems = [];
+    this.compatibilityReadOnly = false;
+    if (!fs.existsSync(this.compatibilityFile)) return;
+    let raw: unknown;
+    try {
+      raw = JSON.parse(fs.readFileSync(this.compatibilityFile, "utf8"));
+    } catch (error) {
+      this.compatibilityReadOnly = true;
+      this.compatibilityProblems.push(`${COMPATIBILITY_FILE} is not JSON (${error instanceof Error ? error.message : String(error)}); no exemption applies until it is repaired by hand`);
+      return;
+    }
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+      this.compatibilityReadOnly = true;
+      this.compatibilityProblems.push(`${COMPATIBILITY_FILE} is not an object of "<plugin id>@<version>" records; no exemption applies until it is repaired by hand`);
+      return;
+    }
+    const versions = (value: unknown) => (Array.isArray(value) && value.every((v) => typeof v === "string" && isVersion(v)) ? new Set(value as string[]) : null);
+    for (const [key, record] of Object.entries(raw)) {
+      const tomrade = versions((record as { tomrade?: unknown } | null)?.tomrade ?? []);
+      const sdk = versions((record as { sdk?: unknown } | null)?.sdk ?? []);
+      const [id, version] = [key.slice(0, key.lastIndexOf("@")), key.slice(key.lastIndexOf("@") + 1)];
+      if (!id || !isVersion(version) || typeof record !== "object" || record === null || !tomrade || !sdk) {
+        this.compatibilityProblems.push(`${COMPATIBILITY_FILE}: "${key}" is not a grant ({ "tomrade": [versions], "sdk": [versions] } under "<plugin id>@<version>"); it is left out`);
+        // a record that cannot be read would be lost on rewrite
+        this.compatibilityReadOnly = true;
+        continue;
+      }
+      this.grants.set(key, { tomrade, sdk });
+    }
+  }
+
+  private writeGrants(): void {
+    const out: Record<string, { tomrade: string[]; sdk: string[] }> = {};
+    for (const [key, grant] of this.grants) if (grant.tomrade.size || grant.sdk.size) out[key] = { tomrade: [...grant.tomrade].sort(), sdk: [...grant.sdk].sort() };
+    fs.mkdirSync(path.dirname(this.compatibilityFile), { recursive: true });
+    const tmp = `${this.compatibilityFile}.tmp`;
+    fs.writeFileSync(tmp, `${JSON.stringify(out, null, 2)}\n`);
+    fs.renameSync(tmp, this.compatibilityFile);
+  }
+
+  /** The ranges a manifest names that this Tomrade is outside, and whether this exact pair was let in. */
+  private misses(manifest: Manifest): RangeMiss[] {
+    const grant = this.grants.get(`${manifest.id}@${manifest.version}`);
+    const out: RangeMiss[] = [];
+    if (!satisfies(SDK_CONTRACT, manifest.engines.sdk)) out.push({ kind: "sdk", range: manifest.engines.sdk, version: SDK_CONTRACT, granted: !!grant?.sdk.has(SDK_CONTRACT) });
+    const app = this.config.appVersion;
+    if (manifest.context === "full" && app && !satisfies(app, manifest.engines.tomrade!)) out.push({ kind: "tomrade", range: manifest.engines.tomrade!, version: app, granted: !!grant?.tomrade.has(app) });
+    return out;
+  }
+
+  /**
+   * Lets this exact version of the plugin run on this exact Tomrade, outside the ranges it names. The
+   * person has been told it may crash Tomrade or lose data; neither a new plugin version nor a new
+   * Tomrade inherits it.
+   */
+  allowVersion(id: string): LockEntry {
+    const entry = this.entry(id);
+    const manifest = readManifest(entry.dir);
+    const misses = this.misses(manifest);
+    if (!misses.length) throw new ExtensionRefused(`${id} ${manifest.version} already runs on this version of Tomrade`);
+    if (this.compatibilityReadOnly) throw new ExtensionRefused(`${COMPATIBILITY_FILE} has records Tomrade cannot read; repair it by hand before letting a plugin in`);
+    const key = `${manifest.id}@${manifest.version}`;
+    const grant = this.grants.get(key) ?? { tomrade: new Set<string>(), sdk: new Set<string>() };
+    for (const miss of misses) grant[miss.kind].add(miss.version);
+    this.grants.set(key, grant);
+    this.writeGrants();
+    this.onChange(id);
+    return entry;
+  }
+
+  /** Takes back what `allowVersion` let in for this plugin version, on any Tomrade. */
+  withdrawVersion(id: string): LockEntry {
+    const entry = this.entry(id);
+    const manifest = readManifest(entry.dir);
+    if (this.compatibilityReadOnly) throw new ExtensionRefused(`${COMPATIBILITY_FILE} has records Tomrade cannot read; repair it by hand`);
+    if (this.grants.delete(`${manifest.id}@${manifest.version}`)) this.writeGrants();
+    this.onChange(id);
+    return entry;
   }
 
   /** Installed first, laid on first: an update or a switch does not move a plugin in this order. */
@@ -143,11 +254,14 @@ export class ExtensionStore {
     return manifest.context === "full" ? manifest : null;
   }
 
-  /** Why this Tomrade does not run a full-mode plugin, or null when it does. */
+  /** Why this Tomrade does not run the plugin for its ranges, or null when it does: in range, or let in for this exact pair. */
   private outOfRange(manifest: Manifest): string | null {
-    const version = this.config.appVersion;
-    const range = manifest.engines.tomrade!;
-    return version && !satisfies(version, range) ? `${manifest.id} runs with Tomrade's whole context and works with Tomrade ${range}; this is ${version}` : null;
+    const miss = this.misses(manifest).find((m) => !m.granted);
+    if (!miss) return null;
+    const anyway = " — Settings → Plugins can run it on this version anyway";
+    return miss.kind === "sdk"
+      ? `${manifest.id} needs plugin SDK ${miss.range}; this Tomrade provides ${miss.version}${anyway}`
+      : `${manifest.id} runs with Tomrade's whole context and works with Tomrade ${miss.range}; this is ${miss.version}${anyway}`;
   }
 
   /** Each of an extension's rows as this start would lay it on, checked against the app's own rows. */
@@ -300,7 +414,8 @@ export class ExtensionStore {
       pending,
       attestation: entry.attestation,
       full: manifest.context === "full" ? this.fullInfo(entry, manifest) : null,
-      agentHooks: manifest.contributes.agentHooks ?? []
+      agentHooks: manifest.contributes.agentHooks ?? [],
+      outOfRange: this.misses(manifest)
     };
   }
 
@@ -312,7 +427,8 @@ export class ExtensionStore {
   async load(id: string): Promise<Plugin> {
     const entry = this.entry(id);
     const manifest = readManifest(entry.dir);
-    if (!satisfies(SDK_CONTRACT, manifest.engines.sdk)) throw new ExtensionRefused(`${id} needs plugin SDK ${manifest.engines.sdk}; this Tomrade provides ${SDK_CONTRACT}`);
+    const refused = this.outOfRange(manifest);
+    if (refused) throw new ExtensionRefused(refused);
     const digest = packageDigest(entry.dir, manifest);
     if (entry.source === "studio" && !entry.confirmed.includes(digest)) throw new ExtensionRefused(`${id} changed since it was last confirmed; confirm the new build to load it`);
     if ((entry.source === "store" || entry.source === "file") && digest !== entry.digest && !entry.modified) {
@@ -327,8 +443,6 @@ export class ExtensionStore {
     });
     const identity = identityOf(manifest, { root: entry.dir, dataDir: dataDirFor(this.config.root, id) });
     if (manifest.main === null) return adaptLanguagePacks(identity, languages);
-    const refused = manifest.context === "full" ? this.outOfRange(manifest) : null;
-    if (refused) throw new ExtensionRefused(refused);
     const url = `${pathToFileURL(path.join(entry.dir, manifest.main)).href}?v=${digest.slice(0, 16)}`;
     const mod = (await this.config.importer(url)) as { default?: unknown };
     if (manifest.context === "full") return this.fullPlugin(id, manifest, mod.default);

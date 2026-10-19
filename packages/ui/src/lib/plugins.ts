@@ -41,6 +41,8 @@ export const useUninstall = () => useSnapshotMutation((a: { id: string; removeDa
 export const useRollback = () => useSnapshotMutation((id: string) => invoke("plugins.rollback", id));
 export const useReload = () => useSnapshotMutation((id: string) => invoke("plugins.reload", id));
 export const useSetAutoUpdate = () => useSnapshotMutation((a: { id: string; on: boolean }) => invoke("plugins.setAutoUpdate", a.id, a.on));
+export const useAllowVersion = () => useSnapshotMutation((id: string) => invoke("plugins.allowVersion", id));
+export const useWithdrawVersion = () => useSnapshotMutation((id: string) => invoke("plugins.withdrawVersion", id));
 export const useStoreInstall = () => useSnapshotMutation((a: { id: string; version?: string }) => invoke("community.install", a.id, a.version));
 export const useStoreUpdate = () => useSnapshotMutation((id: string) => invoke("community.update", id));
 

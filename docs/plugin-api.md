@@ -26,6 +26,16 @@ There are two kinds of plugin, and this document is the contract for both:
   SDK's contract version is `SDK_CONTRACT`; a plugin states the range it needs
   in `engines.sdk` and is refused, with the reason, by a Tomrade outside it.
   Until `1.0` a minor version may break.
+- A person may still run a refused plugin, as dsh's version exemptions allow:
+  Settings → Plugins offers "Run it on this version anyway", warns that it may
+  crash Tomrade or lose data, and records the exact pair — `<id>@<version>` and
+  this SDK contract or, for `engines.tomrade`, this Tomrade version — in
+  `compatibility.json` beside the plugins lock (`{ "someone/acme@1.0.0":
+  { "tomrade": ["0.14.0"], "sdk": [] } }`). A new version of either side asks
+  again, and the grant is taken back in the same place. A record the file
+  cannot read is reported and left out, never fatal, and the file is not
+  rewritten until it is repaired by hand. The store's own filtering is
+  unchanged: a grant covers what is already installed or loaded from a folder.
 - `@tomradex/plugin-sdk` is not bundled into a plugin: `tomrade-plugin build`
   leaves it out, and the plugin imports the copy that comes with the Tomrade it
   runs in. A value the SDK added in some version (marked "SDK 0.2.x" here, and
@@ -331,7 +341,8 @@ write a plugin; full mode is for what it does not offer.
 
 - **`engines.tomrade`** names the Tomrade versions it works with: full mode
   reaches internals the SDK's range does not cover. A release outside the range
-  refuses it with the reason instead of loading it to fail; a checkout (always
+  refuses it with the reason instead of loading it to fail, unless the person
+  lets that exact pair in (see [Stability](#stability)); a checkout (always
   `0.1.0`) checks no range.
 - **`rows`** are laid over the app's composition, merged by id like
   `tomrade.patch.yml` rows: an app row's id switches it off, replaces its

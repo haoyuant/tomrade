@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { CLI_HOOK_COVERAGE, type CliHookEvent } from "@tomradex/plugin-sdk";
-import type { FullModeInfo, PluginView } from "@tomradex/plugins";
+import type { FullModeInfo, PluginView, RangeMiss } from "@tomradex/plugins";
 import { Icon } from "~/components/icons";
 import { Tag } from "~/components/ui/atoms";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { Menu, MenuActionItem } from "~/components/ui/menu";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { useReload, useRollback, useSetAutoUpdate, useUndoVia, useUninstall } from "~/lib/plugins";
+import { useAllowVersion, useReload, useRollback, useSetAutoUpdate, useUndoVia, useUninstall, useWithdrawVersion } from "~/lib/plugins";
 import { useSetPluginEnabled } from "~/lib/queries";
 import { restartApp, reveal } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
@@ -107,6 +107,7 @@ export function ExtensionRow({ plugin }: { plugin: PluginView }) {
       <div className="plug-ext-reach">
         <Reach reasons={ext.risk.reasons} inject={ext.inject} hosts={ext.permissions.network.filter((h) => h !== "*")} />
       </div>
+      {!!ext.outOfRange.length && <VersionRange id={plugin.id} title={ext.title} version={ext.version} misses={ext.outOfRange} />}
       {ext.full && <FullMode full={ext.full} refused={plugin.rowsRefused} />}
       {!!ext.agentHooks.length && <AgentHooks events={ext.agentHooks} />}
       {error && (
@@ -117,6 +118,76 @@ export function ExtensionRow({ plugin }: { plugin: PluginView }) {
       {uninstalling && <UninstallDialog id={plugin.id} title={ext.title} onClose={() => setUninstalling(false)} />}
       {confirming && <ConfirmBuildDialog name={name} title={ext.title} onClose={() => setConfirming(false)} />}
     </div>
+  );
+}
+
+const RANGE_KEY: Record<RangeMiss["kind"], MessageKey> = { tomrade: "plugins.rangeTomrade", sdk: "plugins.rangeSdk" };
+
+/**
+ * A plugin built for other versions than this one: it is refused until the person lets this exact
+ * version run here anyway, warned that it may crash Tomrade or lose data, and can take that back.
+ */
+function VersionRange({ id, title, version, misses }: { id: string; title: string; version: string; misses: RangeMiss[] }) {
+  const { t } = useI18n();
+  const withdraw = useWithdrawVersion();
+  const [asking, setAsking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const granted = misses.every((m) => m.granted);
+  return (
+    <div className="plug-ext-reach" data-testid="version-range">
+      {misses.map((m) => (
+        <div key={m.kind} className="meta-txt dense">
+          {t(RANGE_KEY[m.kind], { range: m.range, version: m.version })}
+        </div>
+      ))}
+      {granted ? (
+        <div className="row" style={{ gap: 8, alignItems: "center" }}>
+          <span className="meta-txt dense">{t("plugins.runsByExemption", { version })}</span>
+          <button type="button" className="btn btn-ghost btn-xs" data-testid="withdraw-version" disabled={withdraw.isPending} onClick={() => withdraw.mutate(id, { onError: (e) => setError(messageOf(e)) })}>
+            {t("plugins.withdrawExemption")}
+          </button>
+        </div>
+      ) : (
+        <button type="button" className="btn btn-xs" data-testid="allow-version" onClick={() => setAsking(true)}>
+          {t("plugins.runAnyway")}
+        </button>
+      )}
+      {error && <p className="meta-txt dense" style={{ color: "var(--danger)" }}>{error}</p>}
+      {asking && <AllowVersionDialog id={id} title={title} version={version} misses={misses} onClose={() => setAsking(false)} />}
+    </div>
+  );
+}
+
+function AllowVersionDialog({ id, title, version, misses, onClose }: { id: string; title: string; version: string; misses: RangeMiss[]; onClose: () => void }) {
+  const { t } = useI18n();
+  const allow = useAllowVersion();
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()} label={t("plugins.runAnywayTitle", { title, version })} className="sheet-md">
+      <DialogHead title={t("plugins.runAnywayTitle", { title, version })} />
+      <DialogBody>
+        {misses.map((m) => (
+          <p key={m.kind}>{t(RANGE_KEY[m.kind], { range: m.range, version: m.version })}</p>
+        ))}
+        <p style={{ color: "var(--danger)" }}>{t("plugins.runAnywayRisk")}</p>
+        <p className="meta-txt">{t("plugins.runAnywayScope", { title, version })}</p>
+        {error && <p className="meta-txt" style={{ color: "var(--danger)" }}>{error}</p>}
+      </DialogBody>
+      <DialogFoot>
+        <button type="button" className="btn btn-ghost" onClick={onClose}>
+          {t("plugins.cancel")}
+        </button>
+        <button
+          type="button"
+          className="btn btn-danger"
+          data-testid="allow-version-confirm"
+          disabled={allow.isPending}
+          onClick={() => allow.mutate(id, { onSuccess: onClose, onError: (e) => setError(messageOf(e)) })}
+        >
+          {t("plugins.runAnywayConfirm")}
+        </button>
+      </DialogFoot>
+    </Dialog>
   );
 }
 
