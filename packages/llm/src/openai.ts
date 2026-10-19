@@ -12,8 +12,14 @@ export interface OpenAiConfig {
   retries?: number;
   /** The first wait between tries; each later one is three times longer. Default 1000. */
   retryDelayMs?: number;
-  /** Whether the model searches the web on its own through the Responses API; by default OpenAI's current models and DeepSeek's v4-pro. */
-  webSearch?: boolean;
+  /**
+   * Whether the model searches the web on its own: through the Responses API by default (OpenAI's
+   * current models and DeepSeek's v4-pro unless said otherwise); "chat" keeps it on chat/completions,
+   * where `body` sets the vendor's own flag.
+   */
+  webSearch?: boolean | "chat";
+  /** The last word on each chat/completions body: a vendor's own fields. */
+  body?: (body: Record<string, unknown>, request: ChatRequest) => Record<string, unknown>;
 }
 
 interface OpenAiMessage {
@@ -120,7 +126,7 @@ export class OpenAiCompatible implements ChatModel {
       json: true,
       mediaInput: inputMimes(this.config.inputModalities ?? []),
       mediaOutput: this.config.outputModalities ?? [],
-      nativeWebSearch: this.config.webSearch ?? searchesOnResponses(this.config.baseURL, this.config.model)
+      nativeWebSearch: this.config.webSearch === undefined ? searchesOnResponses(this.config.baseURL, this.config.model) : !!this.config.webSearch
     };
   }
 
@@ -189,7 +195,7 @@ export class OpenAiCompatible implements ChatModel {
       if (block.type === "media" && !this.capabilities.mediaInput.includes(block.media.mime)) throw new LlmError(`This model profile does not accept ${block.media.mime}`);
     }
     // The model's own search lives on the Responses API; only a request that asks for it goes there.
-    if (request.webSearch && this.capabilities.nativeWebSearch && fitsResponses(request)) {
+    if (request.webSearch && this.capabilities.nativeWebSearch && this.config.webSearch !== "chat" && fitsResponses(request)) {
       yield* this.respond(request, signal);
       return;
     }
@@ -214,7 +220,7 @@ export class OpenAiCompatible implements ChatModel {
         if (choice) out.tool_choice = typeof choice === "string" ? choice : { type: "function", function: { name: choice.name } };
       }
       if (request.json) out.response_format = { type: "json_object" };
-      return out;
+      return this.config.body ? this.config.body(out, request) : out;
     };
 
     const url = this.config.baseURL.replace(/\/$/, "") + "/chat/completions";

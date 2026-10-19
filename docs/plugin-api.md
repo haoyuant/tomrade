@@ -508,6 +508,18 @@ await ctx.models.registerProvider({
   the vendor's own apps; a signed-in CLI is used through `ctx.llm.lend` instead.
 - What the spec leaves out takes the defaults: a key is required, the address
   is editable, it chats, all listed models are usable.
+- **A vendor that serves chat/completions** needs no adapter of its own:
+  `ctx.models.compatible({ baseURL, apiKey, model, inputModalities?,
+  outputModalities?, webSearch?, body? })` — synchronous, so `build` can return
+  it — is a model on the app's own OpenAI-compatible adapter (streaming, tool
+  calls, retries, media, the token-field quirks). `body(json, request)` has the
+  last word on each request body, for the vendor's own fields; one that throws
+  fails the request with its message. `webSearch: "chat"` says the model
+  searches on its own when a request asks, on chat/completions with the flag
+  `body` sets (Qwen's `enable_search`, say); `"responses"` sends such a request
+  to the Responses API instead. `ctx.models.listCompatible({ baseURL, apiKey },
+  signal)` is the app's own `GET /models` listing, media read from it, for
+  `list`.
 
 The build records the providers in `contributes.modelProviders`, and
 `tomrade-plugin check` refuses one whose presets lack the namespace, whose

@@ -134,7 +134,30 @@ export interface ModelProviderSpec {
   build(profile: ModelProfileInfo): ModelChat;
 }
 
+/** A model on the app's own OpenAI-compatible adapter. */
+export interface CompatibleModelOptions {
+  baseURL: string;
+  apiKey: string;
+  model: string;
+  inputModalities?: ModelInput[];
+  outputModalities?: ModelOutput[];
+  /**
+   * The model searches the web on its own when a request asks: `"chat"` on chat/completions, with
+   * the vendor's own flag set by `body`; `"responses"` on the Responses API. Absent, it does not.
+   */
+  webSearch?: "chat" | "responses";
+  /** The last word on each chat/completions body (a copy of the request beside it): a vendor's own fields. Throw to fail the request. */
+  body?(json: Record<string, unknown>, request: ModelChatRequest): Record<string, unknown>;
+}
+
 export interface ModelsApi {
   /** Serves the profiles naming `provider.id` and offers its presets until disposed or the plugin unloads. */
   registerProvider(provider: ModelProviderSpec): Promise<Disposer>;
+  /**
+   * Synchronous, like `build`: a model on the app's own OpenAI-compatible adapter — streaming, tool
+   * calls, retries, media, the token-field quirks — for a vendor that serves chat/completions.
+   */
+  compatible(options: CompatibleModelOptions): ModelChat;
+  /** The app's own listing of a chat/completions endpoint (`GET /models`), media read from it; one without a listing answers `models: null`. */
+  listCompatible(endpoint: { baseURL: string; apiKey: string }, signal?: AbortSignal): Promise<ModelListing>;
 }

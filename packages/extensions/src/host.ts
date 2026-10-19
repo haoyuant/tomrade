@@ -11,7 +11,7 @@ import type {} from "@tomradex/db";
 import type {} from "@tomradex/desktop-surface";
 import type {} from "@tomradex/fields";
 import type {} from "@tomradex/items";
-import type { ChatModel, ModelProviderSpec as CoreModelProvider } from "@tomradex/llm";
+import { OpenAiCompatible, listModels, type ChatModel, type ModelProviderSpec as CoreModelProvider } from "@tomradex/llm";
 import type {} from "@tomradex/oplog";
 import type {} from "@tomradex/projects";
 import type {} from "@tomradex/settings";
@@ -33,6 +33,7 @@ import {
   type ItemsApi,
   type Locale,
   type Localized,
+  type CompatibleModelOptions,
   type ModelChat,
   type ModelChatEvent,
   type ModelProviderSpec,
@@ -319,6 +320,29 @@ export class Host {
           })
         )
     };
+  }
+
+  /** The app's own OpenAI-compatible adapter for a plugin's provider; its `body` runs in the plugin's scope. */
+  private compatible(options: CompatibleModelOptions): ChatModel {
+    this.svc("models");
+    const shape = options.body;
+    const label = `compatible model ${options.model} body`;
+    return new OpenAiCompatible({
+      baseURL: String(options.baseURL),
+      apiKey: String(options.apiKey ?? ""),
+      model: String(options.model),
+      inputModalities: options.inputModalities,
+      outputModalities: options.outputModalities,
+      webSearch: options.webSearch === "chat" ? "chat" : options.webSearch === "responses",
+      ...(shape
+        ? {
+            body: (json: Record<string, unknown>, request: Parameters<ChatModel["chat"]>[0]) =>
+              this.now(() => shape(json, copy(request)), label, (message) => {
+                throw new Error(`${this.identity.id} could not shape the request: ${message}`);
+              })
+          }
+        : {})
+    });
   }
 
   private disposerOf(off: () => void): Disposer {
@@ -736,6 +760,13 @@ export class Host {
               host.own(spec.id, "model provider");
               for (const preset of spec.presets ?? []) host.own(preset.id, "model preset");
               return host.disposerOf(host.svc("models").registerProvider(host.modelProvider(spec)));
+            }),
+          compatible: (options) => host.compatible(options),
+          listCompatible: (endpoint, signal) =>
+            host.call(async () => {
+              host.svc("models");
+              const listed = await listModels({ provider: "openai-compatible", baseURL: String(endpoint.baseURL) }, String(endpoint.apiKey ?? ""), 15_000, signal);
+              return listed.ok ? { ok: true as const, models: listed.models, capabilities: listed.capabilities } : listed;
             })
         };
       },

@@ -202,7 +202,14 @@ export function recordingContext(namespace: string, allowed: ServiceName[], rec:
           for (const preset of spec.presets ?? []) if (!ownsId(namespace, preset.id)) rec.violations.push({ kind: "model preset", id: preset.id });
           rec.invalid.push(...providerProblems(spec));
           return note("modelProviders", spec.id, "model provider");
-        }
+        },
+        compatible: () => ({
+          capabilities: { tools: true, streaming: true, json: true },
+          chat: () => {
+            throw new Error(DRY);
+          }
+        }),
+        listCompatible: async () => ({ ok: false, detail: DRY })
       });
     },
     get terminals(): TerminalsApi {

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { Context, Service } from "cordis";
 import { z } from "zod";
 import { Contributions } from "@tomradex/contributions";
@@ -393,6 +393,73 @@ describe("the extension host", () => {
     await settle();
     expect(llm.providers().some((p) => p.provider === "demo")).toBe(false);
     expect(() => llm.for("worker")).toThrow(/No model provider "demo" is installed/);
+  });
+
+  it("builds a plugin's models on the app's OpenAI-compatible adapter, with the vendor's own fields and its search on chat/completions", async () => {
+    const sent: { url: string; body: Record<string, unknown> }[] = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/models")) return new Response(JSON.stringify({ data: [{ id: "qwen-max", input_modalities: ["text", "image"] }, { id: "qwen-plus" }] }));
+      sent.push({ url, body: JSON.parse(String(init?.body)) });
+      const chunks = [
+        { choices: [{ delta: { tool_calls: [{ index: 0, id: "c1", function: { name: "add", arguments: '{"a":2,' } }] }, finish_reason: null }] },
+        { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '"b":3}' } }] }, finish_reason: "tool_calls" }] }
+      ];
+      return new Response(chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join("") + "data: [DONE]\n\n", { headers: { "content-type": "text/event-stream" } });
+    });
+    try {
+      const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(dir, "compatible.json") }], Llm] });
+      const llm = w.ctx.llm as Llm;
+      let listed: unknown;
+      await w.ctx.plugin(
+        ext(
+          definePlugin({
+            inject: ["models"],
+            async apply(p) {
+              listed = await p.models.listCompatible({ baseURL: "https://dashscope.example/v1", apiKey: "sk-q" });
+              await p.models.registerProvider({
+                id: "demo",
+                title: "Demo",
+                baseURL: { default: "https://dashscope.example/v1" },
+                list: (endpoint, signal) => p.models.listCompatible({ baseURL: endpoint.baseURL ?? "https://dashscope.example/v1", apiKey: endpoint.apiKey }, signal),
+                build: (profile) =>
+                  p.models.compatible({
+                    baseURL: profile.baseURL ?? "https://dashscope.example/v1",
+                    apiKey: profile.apiKey,
+                    model: profile.model,
+                    webSearch: "chat",
+                    body: (json, request) => (request.webSearch ? { ...json, enable_search: true } : json)
+                  })
+              });
+              await p.models.registerProvider({
+                id: "demo-broken",
+                title: "Broken",
+                baseURL: { default: "https://dashscope.example/v1" },
+                list: () => ({ ok: true, models: null }),
+                build: (profile) => p.models.compatible({ baseURL: "https://dashscope.example/v1", apiKey: profile.apiKey, model: profile.model, body: () => { throw new Error("no shape"); } })
+              });
+            }
+          })
+        )
+      );
+      await settle();
+      expect(listed).toEqual({ ok: true, models: ["qwen-max", "qwen-plus"], capabilities: { "qwen-max": { inputModalities: ["image"], outputModalities: [] } } });
+      w.ctx.settings.set({ ...w.ctx.settings.get(), models: { profiles: [{ id: "q", title: "Qwen", provider: "demo", apiKey: "sk-q", model: "qwen-max" }], roles: { worker: "" } } });
+      const model = llm.forProfile("q");
+      expect(model.capabilities.nativeWebSearch).toBe(true);
+      const tools = [{ name: "add", description: "Adds", inputSchema: { type: "object" } }];
+      const step = await collect(model.chat({ system: "s", messages: [userMessage("search, then add")], tools, webSearch: true }));
+      expect(step.toolCalls).toEqual([{ id: "c1", name: "add", args: { a: 2, b: 3 } }]);
+      // on chat/completions, never the Responses API, with the vendor's flag beside the app's own fields
+      expect(sent.map((s) => s.url)).toEqual(["https://dashscope.example/v1/chat/completions"]);
+      expect(sent[0]!.body).toMatchObject({ model: "qwen-max", stream: true, enable_search: true, tools: [{ type: "function", function: { name: "add" } }] });
+      await collect(model.chat({ system: "s", messages: [userMessage("no search")] }));
+      expect(sent[1]!.body).not.toHaveProperty("enable_search");
+      w.ctx.settings.set({ ...w.ctx.settings.get(), models: { profiles: [{ id: "b", title: "Broken", provider: "demo-broken", apiKey: "k", model: "m" }], roles: { worker: "" } } });
+      await expect(collect(llm.forProfile("b").chat({ system: "s", messages: [userMessage("hi")] }))).rejects.toThrow(/someone\/demo could not shape the request: no shape/);
+      expect(sent).toHaveLength(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("reads a provider's unavailable() that throws as unavailable, with the reason", async () => {
