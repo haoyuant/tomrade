@@ -22,7 +22,7 @@ export const OPENAI_COMPATIBLE: ModelProviderSpec = {
   presets: [
     {
       id: "ollama", title: "Ollama", baseURL: "http://127.0.0.1:11434/v1", model: "", prefer: [/qwen/, /llama/, /deepseek/], local: true,
-      hint: { en: "Models running on this computer: free, no key, needs a capable machine", zh: "在这台电脑上运行模型：免费、不用 Key，需要电脑性能够" }
+      hint: { en: "Models running on this computer: free, no key, needs a capable machine. Ollama must be running, with at least one model pulled", zh: "在这台电脑上运行模型：免费、不用 Key，需要电脑性能够。Ollama 需要正在运行，并且至少下载了一个模型" }
     }
   ],
   list: (endpoint, timeoutMs) => listModels({ provider: "openai-compatible", baseURL: endpoint.baseURL || COMPATIBLE_BASE }, endpoint.apiKey, timeoutMs),
