@@ -442,8 +442,9 @@ plugins:
       officialCatalog:
         cacheFile: "${userData}/official-catalog.json"
       # Pomodoro and Discord used to ship inside the app; they now come from the
-      # official catalog, put on once so nobody who had them loses them.
-      starters: ["tomrade/pomodoro", "tomrade/discord"]
+      # official catalog, put on once so nobody who had them loses them. Kimi
+      # Search is put on the same way, so a Kimi model can search with no setup.
+      starters: ["tomrade/pomodoro", "tomrade/discord", "tomrade/kimi-search"]
       startersFile: "${userData}/official-starters.json"
   - id: plugin-studio
     name: "@tomradex/plugin-studio"
