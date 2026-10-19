@@ -397,6 +397,23 @@ describe("connecting a repository", () => {
     expect(fs.existsSync(path.join(checkout, ".cursor/hooks/tomrade.ps1"))).toBe(true);
   });
 
+  it("still reads hooks from before they named their terminal as tracked", async () => {
+    const { codeLink, ctx, project, repo, checkout } = await machine();
+    const input = { projectName: project.name, mcpUrl: ctx.mcp.urlFor(project.id)!, eventUrl: ctx.mcp.eventUrl!, prefix: "TOM", branchTemplate: "{key}/{slug}" };
+    writeConnectFiles(checkout, input);
+    for (const [file, agent] of [[".claude/settings.json", undefined], [".codebuddy/settings.json", "workbuddy"], [".codex/config.toml", "codex"]] as const) {
+      const quoted = (command: string) => JSON.stringify(command).slice(1, -1);
+      const text = fs.readFileSync(path.join(checkout, file), "utf8");
+      expect(text).toContain("X-Tomrade-Terminal: $TERM_PROGRAM");
+      fs.writeFileSync(path.join(checkout, file), text.split(quoted(hookCommand(input.eventUrl, agent))).join(quoted(hookCommand(input.eventUrl, agent, { terminal: false }))));
+    }
+    git(["add", "-A"], checkout);
+    git(["commit", "-q", "-m", "connected before terminals"], checkout);
+    const view = await codeLink.connection(project.id, repo.id);
+    expect(view.state).toBe("connected");
+    for (const id of ["claude-code", "codex", "workbuddy"]) expect(view.agents.find((agent) => agent.id === id)).toMatchObject({ tools: true, tracking: "hooks" });
+  });
+
   it("asks a repository connected before Cursor's hooks existed to connect again", async () => {
     const { codeLink, ctx, project, repo, checkout } = await machine();
     writeConnectFiles(checkout, { projectName: project.name, mcpUrl: ctx.mcp.urlFor(project.id)!, eventUrl: ctx.mcp.eventUrl!, prefix: "TOM", branchTemplate: "{key}/{slug}" });

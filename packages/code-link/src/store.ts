@@ -164,7 +164,9 @@ CREATE TABLE plugin_code_link_hooks_heard (
   PRIMARY KEY (repo_id, agent)
 );
 `
-  }
+  },
+  // The terminal app an outside session runs in (TERM_PROGRAM), as its hooks report it.
+  { version: 12, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN terminal TEXT" }
 ];
 
 /** Durable code links travel with the project; running sessions belong to this machine. */
@@ -278,6 +280,8 @@ export interface SessionView {
   worktree: string | null;
   /** The herdr pane (`w1:p1`) the session's hooks report from; null outside herdr. */
   herdrPane: string | null;
+  /** The terminal app its hooks run in, as `TERM_PROGRAM` names it (iTerm.app, Apple_Terminal, vscode…); null when unsaid. */
+  terminal: string | null;
   state: SessionState;
   lastEventAt: number | null;
   lastToolAt: number | null;
@@ -364,6 +368,7 @@ interface SessionRow {
   thread_id: string | null;
   worktree: string | null;
   herdr_pane: string | null;
+  terminal: string | null;
   state: string;
   last_event_at: number | null;
   last_tool_at: number | null;
@@ -449,6 +454,7 @@ const toSession = (r: SessionRow): SessionView => ({
   threadId: r.thread_id,
   worktree: r.worktree ?? null,
   herdrPane: r.herdr_pane ?? null,
+  terminal: r.terminal ?? null,
   state: r.state as SessionState,
   lastEventAt: r.last_event_at,
   lastToolAt: r.last_tool_at,
@@ -501,6 +507,7 @@ export interface SessionPatch {
   threadId?: string | null;
   worktree?: string | null;
   herdrPane?: string | null;
+  terminal?: string | null;
   state?: SessionState;
   lastEventAt?: number | null;
   lastToolAt?: number | null;
@@ -847,6 +854,7 @@ export class CodeLinkStore {
       threadId: "thread_id",
       worktree: "worktree",
       herdrPane: "herdr_pane",
+      terminal: "terminal",
       state: "state",
       lastEventAt: "last_event_at",
       lastToolAt: "last_tool_at",

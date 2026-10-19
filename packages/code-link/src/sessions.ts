@@ -47,6 +47,8 @@ interface HookPayload {
   reason?: string;
   /** The herdr pane the hook ran in, from the header or the script. */
   herdr_pane?: string;
+  /** The terminal app it ran in (`TERM_PROGRAM`), from the header or the script. */
+  terminal?: string;
   /** Which of Tomrade's own posts it came from, for an agent that reports twice (dsh: its hook bridge and its reporter). */
   tomrade_source?: HookSource;
   /** Not a hook at all: herdr's reading of the pane, shaped like one. */
@@ -66,6 +68,9 @@ export const HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "P
  * such header. Scripts that post from JavaScript add `herdr_pane` themselves.
  */
 export const HERDR_PANE_HEADER = `-H "X-Tomrade-Herdr-Pane: $HERDR_PANE_ID"`;
+
+/** The terminal app a hook runs in, the same way: empty, and no header, where the terminal does not set it. */
+export const TERMINAL_HEADER = `-H "X-Tomrade-Terminal: $TERM_PROGRAM"`;
 
 /** A moment worth a line in the ticket's thread, as the session's owner reports it. */
 export interface SessionMoment {
@@ -376,6 +381,7 @@ export class Sessions {
     const patch: Parameters<Sessions["touch"]>[2] = {};
     if (typeof p.session_id === "string" && p.session_id) patch.externalId = p.session_id;
     if (typeof p.herdr_pane === "string" && p.herdr_pane.trim()) patch.herdrPane = p.herdr_pane.trim();
+    if (typeof p.terminal === "string" && p.terminal.trim() && p.terminal.trim() !== session.terminal) patch.terminal = p.terminal.trim().slice(0, 64);
     const command = bashCommand(p);
     if (p.hook_event_name === "PreToolUse" && session.blocked === "credentials" && BLOCKED_COMMAND.test(command)) {
       this.touch(projectId, sessionId, { ...patch, state: "error", activity: null });
@@ -458,7 +464,7 @@ export class Sessions {
   }
 
   /** Any sign of life, with what it says about the session. */
-  touch(projectId: string, sessionId: string, patch: { state?: SessionState; externalId?: string; herdrPane?: string; endedAt?: number; tool?: boolean; summary?: string; activity?: string | null; blocked?: SessionBlock | null } = {}): void {
+  touch(projectId: string, sessionId: string, patch: { state?: SessionState; externalId?: string; herdrPane?: string; terminal?: string; endedAt?: number; tool?: boolean; summary?: string; activity?: string | null; blocked?: SessionBlock | null } = {}): void {
     const session = this.store.session(projectId, sessionId);
     if (!session) return;
     const now = Date.now();
@@ -472,6 +478,7 @@ export class Sessions {
       ...(state ? { state } : {}),
       ...(patch.externalId ? { externalId: patch.externalId } : {}),
       ...(patch.herdrPane ? { herdrPane: patch.herdrPane } : {}),
+      ...(patch.terminal ? { terminal: patch.terminal } : {}),
       ...(patch.endedAt ? { endedAt: patch.endedAt } : {}),
       ...(patch.summary !== undefined ? { summary: patch.summary } : {}),
       ...(patch.activity !== undefined ? { activity: patch.activity } : {}),
@@ -658,7 +665,7 @@ export function piExtension(mcpUrl: string, token: string, eventUrl: string): st
 const eventUrl = ${JSON.stringify(eventUrl)};
 const names = { bash: "Bash", read: "Read", edit: "Edit", write: "Write", grep: "Grep", find: "Glob", ls: "LS" };
 const textOf = (content) => (content ?? []).filter((part) => part.type === "text").map((part) => part.text).join("\\n");
-const pane = process.env.HERDR_PANE_ID ? { herdr_pane: process.env.HERDR_PANE_ID } : {};
+const pane = { ...(process.env.HERDR_PANE_ID ? { herdr_pane: process.env.HERDR_PANE_ID } : {}), ...(process.env.TERM_PROGRAM ? { terminal: process.env.TERM_PROGRAM } : {}) };
 
 export default function (pi) {
   pi.registerMcpServer("tomrade", server);
@@ -729,7 +736,7 @@ const eventUrl = ${JSON.stringify(eventUrl)};
 const names = { bash: "Bash", read: "Read", edit: "Edit", write: "Write", grep: "Grep", glob: "Glob" };
 let sessionId;
 const sent = [];
-const pane = process.env.HERDR_PANE_ID ? { herdr_pane: process.env.HERDR_PANE_ID } : {};
+const pane = { ...(process.env.HERDR_PANE_ID ? { herdr_pane: process.env.HERDR_PANE_ID } : {}), ...(process.env.TERM_PROGRAM ? { terminal: process.env.TERM_PROGRAM } : {}) };
 const post = (payload) => { sent.push(fetch(eventUrl, { method: "POST", headers: { "content-type": "application/json" },
   body: JSON.stringify({ session_id: sessionId, ...pane, ...payload, tomrade_source: "dsh-report" }), signal: AbortSignal.timeout(5000) }).catch(() => {})); };
 const brief = (input) => { const text = typeof input === "string" ? input : JSON.stringify(input ?? {}); return text.length > 120 ? text.slice(0, 117) + "..." : text; };

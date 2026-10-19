@@ -41,9 +41,9 @@ async function stub(): Promise<{ url: string; down: string; heard: Heard[]; clos
   return { url: `http://127.0.0.1:${port}/sessions/event`, down: `http://127.0.0.1:${downPort}/sessions/event`, heard, close: () => server.close() };
 }
 
-function run(program: string, args: string[], options: { cwd?: string; stdin?: string; pane?: string } = {}): Promise<{ code: number | null; stdout: string; stderr: string; ms: number }> {
+function run(program: string, args: string[], options: { cwd?: string; stdin?: string; pane?: string; terminal?: string } = {}): Promise<{ code: number | null; stdout: string; stderr: string; ms: number }> {
   const started = Date.now();
-  const child = spawn(program, args, { cwd: options.cwd, env: { ...process.env, HERDR_PANE_ID: options.pane ?? "" } });
+  const child = spawn(program, args, { cwd: options.cwd, env: { ...process.env, HERDR_PANE_ID: options.pane ?? "", TERM_PROGRAM: options.terminal ?? "" } });
   let stdout = "";
   let stderr = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
@@ -58,7 +58,7 @@ describe("the committed hook command", () => {
     // Double quotes only; no `||`, file redirection or `/dev/null`, which one of them lacks.
     expect(command.replaceAll("2>&1", "")).not.toMatch(/'|\|\||>|\/dev\/null/);
     expect(command).toMatch(/^set tomrade "\$\(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1\)"; set tomrade "\$\(curl -s -m 2 -X POST .* 2>&1\)"; exit 0$/);
-    expect(command).toContain(`-H "Content-Type: application/json" -H "X-Tomrade-Herdr-Pane: $HERDR_PANE_ID" -H "X-Tomrade-Agent: codex" --data-binary "@-" "http://127.0.0.1:19090/sessions/event"`);
+    expect(command).toContain(`-H "Content-Type: application/json" -H "X-Tomrade-Herdr-Pane: $HERDR_PANE_ID" -H "X-Tomrade-Terminal: $TERM_PROGRAM" -H "X-Tomrade-Agent: codex" --data-binary "@-" "http://127.0.0.1:19090/sessions/event"`);
     expect(hookCommand("http://127.0.0.1:19090/sessions/event")).not.toContain("X-Tomrade-Agent");
     // Nothing in the address can expand in either shell.
     expect(hookCommand('http://127.0.0.1:1/a$b`c"d\\e')).toContain('"http://127.0.0.1:1/a%24b%60c%22d%5Ce"');
@@ -67,11 +67,11 @@ describe("the committed hook command", () => {
   it.skipIf(process.platform === "win32")("posts the payload under sh -c, says nothing and exits 0, and gives up as quietly when Tomrade is down", async () => {
     const tomrade = await stub();
     try {
-      const sent = await run("sh", ["-c", hookCommand(tomrade.url, "codex")], { stdin: payload, pane: "w1-2" });
+      const sent = await run("sh", ["-c", hookCommand(tomrade.url, "codex")], { stdin: payload, pane: "w1-2", terminal: "iTerm.app" });
       expect(sent).toMatchObject({ code: 0, stdout: "", stderr: "" });
       expect(tomrade.heard).toHaveLength(1);
       expect(tomrade.heard[0]!.body).toBe(payload);
-      expect(tomrade.heard[0]!.headers).toMatchObject({ "content-type": "application/json", "x-tomrade-agent": "codex", "x-tomrade-herdr-pane": "w1-2" });
+      expect(tomrade.heard[0]!.headers).toMatchObject({ "content-type": "application/json", "x-tomrade-agent": "codex", "x-tomrade-herdr-pane": "w1-2", "x-tomrade-terminal": "iTerm.app" });
       const down = await run("sh", ["-c", hookCommand(tomrade.down, "codex")], { stdin: payload });
       expect(down).toMatchObject({ code: 0, stdout: "", stderr: "" });
       expect(down.ms).toBeLessThan(3000);

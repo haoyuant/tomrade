@@ -1514,6 +1514,9 @@ describe("starting a ticket", () => {
     const paned = await fetch(ctx.mcp.eventUrlFor(token)!, { method: "POST", headers: { "Content-Type": "application/json", "X-Tomrade-Herdr-Pane": "w2:p1" }, body: JSON.stringify({ hook_event_name: "UserPromptSubmit", session_id: "cli-abc" }) });
     expect(paned.status).toBe(200);
     expect(codeLink.sessionsOf(project.id, item.id)[0].herdrPane).toBe("w2:p1");
+    // And the terminal app it runs in, for a window that cannot show it.
+    await fetch(ctx.mcp.eventUrlFor(token)!, { method: "POST", headers: { "Content-Type": "application/json", "X-Tomrade-Terminal": "iTerm.app" }, body: JSON.stringify({ hook_event_name: "UserPromptSubmit", session_id: "cli-abc" }) });
+    expect(codeLink.sessionsOf(project.id, item.id)[0].terminal).toBe("iTerm.app");
     expect((await ctx.contributions.sectionsFor(project.id, item.id)).find((s) => s.id === "code")!.rows.find((r) => r.label === "Session")).toMatchObject({ value: expect.stringContaining("in herdr"), command: "code-link.open-terminal" });
     await post({ hook_event_name: "Stop", session_id: "cli-abc" });
     expect(codeLink.sessionsOf(project.id, item.id)[0].state).toBe("waiting");

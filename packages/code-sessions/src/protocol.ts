@@ -16,6 +16,12 @@ export interface SessionRow {
   agent: string;
   /** The herdr pane it runs in, on this machine; null when it has no terminal here. */
   pane: string | null;
+  /** Where its terminal is: a herdr pane here, another terminal app here, another computer, or Tomrade running it. */
+  where: "herdr" | "outside" | "elsewhere" | "tomrade";
+  /** The terminal app it runs in, by name (iTerm2, Terminal, VS Code…); null when its hooks did not say. */
+  terminal: string | null;
+  /** That app can be brought forward from here. */
+  switchable: boolean;
   threadId: string | null;
   prUrl: string | null;
   worktree: string | null;
@@ -101,6 +107,8 @@ export type WindowMessage =
   | { type: "openWorktree"; sessionId: string }
   | { type: "openPr"; sessionId: string }
   | { type: "focusHerdr"; sessionId: string }
+  /** Bring forward the terminal app an outside session runs in. */
+  | { type: "switchTo"; sessionId: string }
   | { type: "install" }
   | { type: "openGuide" }
   | { type: "switchTerminal"; switch: boolean }

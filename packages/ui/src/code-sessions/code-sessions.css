@@ -54,6 +54,9 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-preset-name { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cs-preset .icon-btn[data-default] { color: var(--accent); }
 .cs-auto-place { display: flex; gap: 6px; align-items: center; padding: 4px 14px 14px; font-size: var(--text-sm); color: var(--muted); }
+.cs-where { margin-left: 6px; }
+.cs-not-here { display: flex; flex-direction: column; gap: 10px; align-items: center; max-width: 420px; line-height: 1.5; }
+.cs-not-here-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .cs-new-terminal { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; }
 .cs-new-terminal select { max-width: 240px; font: inherit; }
 

@@ -18,7 +18,8 @@ export const CODE_SESSIONS_WORDS = defineWords("codeSessions", {
     sessionsUnreadable: "Code sessions could not be read just now; new terminals still open",
     unmatched: "An agent claimed a ticket, but Tomrade cannot tell which terminal it runs in — this stays a plain terminal",
     stateUnreadable: "The saved layout could not be read, so this window starts from one cell",
-    presetName: "Layout"
+    presetName: "Layout",
+    switchFailed: "Could not bring {{app}} forward"
   },
   zh: {
     open: "打开代码会话窗口",
@@ -36,6 +37,7 @@ export const CODE_SESSIONS_WORDS = defineWords("codeSessions", {
     sessionsUnreadable: "暂时读不到代码会话，新终端照常可以打开",
     unmatched: "有 agent 认领了工单，但 Tomrade 分不清它在哪个终端里，这里先保持为普通终端",
     stateUnreadable: "读不到保存的布局，这个窗口先从一个格子开始",
-    presetName: "布局"
+    presetName: "布局",
+    switchFailed: "没能切到 {{app}}"
   }
 });
