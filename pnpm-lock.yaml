@@ -1396,9 +1396,6 @@ importers:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8
     devDependencies:
-      '@tomradex/testkit':
-        specifier: workspace:*
-        version: link:../testkit
       '@types/node':
         specifier: ^26.2.0
         version: 26.2.0

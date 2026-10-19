@@ -4,7 +4,8 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { Context } from "cordis";
 import { Herdr, type HerdrConfig, type HerdrPaneEvent } from "@tomradex/herdr";
-import { FakeHerdr } from "@tomradex/testkit";
+// Straight from the source: depending on testkit would close a cycle through extensions, which depends on herdr.
+import { FakeHerdr } from "../../testkit/src/herdr.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-herdr-service-"));
 /** Stand-in servers a test started; detached, so nothing else ends them. */
