@@ -53,7 +53,8 @@ export const SDK_EXPORTS: Readonly<Record<string, string>> = {
   SDK_EXPORTS: "0.2.9",
   lowestContract: "0.2.9",
   pickLanguage: "0.2.9",
-  wordsFor: "0.2.9"
+  wordsFor: "0.2.9",
+  RowSchema: "0.2.13"
 };
 
 /** The oldest contract `range` accepts, up to this SDK's own; null when it accepts none of them. */

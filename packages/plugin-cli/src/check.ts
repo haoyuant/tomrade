@@ -126,17 +126,21 @@ export async function check(dir: string, opts: SandboxOptions & { build?: boolea
       report.problems.push(report.inspection.error ?? "the plugin could not be inspected");
       return report;
     }
-    stamp(dir, report.inspection);
-    report.manifest = readManifest(dir);
-    const rec = report.inspection.recording!;
-    for (const v of rec.violations) report.problems.push(`${v.kind} "${v.id}" must start with the namespace`);
-    if (rec.stopped) report.problems.push(`apply() stopped when inspected: ${rec.stopped}`);
-    report.imAdapters = rec.imContracts ?? [];
-    for (const im of report.imAdapters) {
-      if (im.invalid) report.problems.push(`IM adapter "${im.id}" declares invalid capabilities: ${im.invalid}`);
-      // An older host ignores these fields, so the adapter still loads there, only without them.
-      else if (im.contract === "0.2.5" && satisfies("0.2.4", report.manifest.engines.sdk))
-        report.notes.push(`IM adapter "${im.id}" declares ${im.capabilities.join(", ")} (SDK 0.2.5); with engines.sdk "${report.manifest.engines.sdk}" a Tomrade older than 0.2.5 loads it without them — use "^0.2.5" to require them`);
+    if (report.inspection.full) {
+      report.notes.push("full mode: the plugin gets Tomrade's whole context, so the sandbox only checks its shape — try it in Tomrade (plugin_try); its rows apply when Tomrade starts again");
+    } else {
+      stamp(dir, report.inspection);
+      report.manifest = readManifest(dir);
+      const rec = report.inspection.recording!;
+      for (const v of rec.violations) report.problems.push(`${v.kind} "${v.id}" must start with the namespace`);
+      if (rec.stopped) report.problems.push(`apply() stopped when inspected: ${rec.stopped}`);
+      report.imAdapters = rec.imContracts ?? [];
+      for (const im of report.imAdapters) {
+        if (im.invalid) report.problems.push(`IM adapter "${im.id}" declares invalid capabilities: ${im.invalid}`);
+        // An older host ignores these fields, so the adapter still loads there, only without them.
+        else if (im.contract === "0.2.5" && satisfies("0.2.4", report.manifest.engines.sdk))
+          report.notes.push(`IM adapter "${im.id}" declares ${im.capabilities.join(", ")} (SDK 0.2.5); with engines.sdk "${report.manifest.engines.sdk}" a Tomrade older than 0.2.5 loads it without them — use "^0.2.5" to require them`);
+      }
     }
   }
   checkLanguages(dir, report, opts.english);
@@ -145,7 +149,7 @@ export async function check(dir: string, opts: SandboxOptions & { build?: boolea
   report.publishing = publishingProblems(dir, report.manifest);
   if (opts.official) {
     report.official = officialProblems(dir, report.manifest);
-    if (scenarioOf(dir)) {
+    if (scenarioOf(dir) && report.manifest.context !== "full") {
       const scenario = await test(dir, { ...opts, build: false });
       if (scenario.error) report.official.push(`src/test.ts did not run: ${scenario.error}`);
       for (const c of scenario.checks.filter((c) => !c.ok)) report.official.push(`src/test.ts: "${c.name}" failed${c.detail ? ` — ${c.detail}` : ""}`);

@@ -15,8 +15,11 @@ export interface BootOptions {
   patchFiles?: string[];
   patches?: PluginPatch[][];
   vars: Record<string, string>;
-  /** Where installed extensions live, and whose attestations to believe. Absent: no extension store. */
-  extensions?: { root: string; trustedKeys: Record<string, string> };
+  /**
+   * Where installed extensions live, and whose attestations to believe. Absent: no extension store.
+   * `appVersion` is what a full-mode plugin's `engines.tomrade` is held to; a checkout passes none.
+   */
+  extensions?: { root: string; trustedKeys: Record<string, string>; appVersion?: string | null };
 }
 
 export interface Booted {
@@ -42,15 +45,31 @@ export class ConfigUnreadable extends Error {
   override name = "ConfigUnreadable";
 }
 
-/** Everything read before a plugin starts — the person's patch files and extension lock among it. */
+/**
+ * Everything read before a plugin starts — the person's patch files and extension lock among it.
+ * Rows are laid on in order: the app's, then full-mode extensions' in the order they were
+ * installed, then the person's patch files, so the person's own word is the last.
+ */
 function compose(opts: BootOptions, vars: Record<string, string>) {
   const { rows: base, modules, contracts } = readConfig(opts.configFile);
   const fromFiles = (opts.patchFiles ?? []).filter((f) => fs.existsSync(f)).map(readRows);
-  const rows = interpolate(applyPatches(base, [...fromFiles, ...(opts.patches ?? [])]), vars);
   const extensions = opts.extensions
-    ? new ExtensionStore({ root: opts.extensions.root, lockFile: path.join(opts.extensions.root, LOCK_FILE), trustedKeys: opts.extensions.trustedKeys, importer: (url) => import(url) })
+    ? new ExtensionStore({ root: opts.extensions.root, lockFile: path.join(opts.extensions.root, LOCK_FILE), trustedKeys: opts.extensions.trustedKeys, importer: (url) => import(url), appVersion: opts.extensions.appVersion ?? null })
     : undefined;
-  return { rows, modules, contracts, extensions };
+  // An extension's rows that name a variable this start does not have are its problem, not the start's.
+  const dropped: string[] = [];
+  const fromPackages = (extensions?.patches(base.map((r) => r.id)) ?? []).filter((p) => {
+    try {
+      interpolate(p.rows, vars);
+      return true;
+    } catch (error) {
+      dropped.push(`${p.from}: its rows were not applied — ${error instanceof Error ? error.message : String(error)}`);
+      return false;
+    }
+  });
+  const recompose = (without: ReadonlySet<string>) =>
+    interpolate(applyPatches(base, [...fromPackages.filter((p) => !without.has(p.from)).map((p) => p.rows), ...fromFiles, ...(opts.patches ?? [])]), vars);
+  return { rows: recompose(new Set()), modules, contracts, extensions, recompose, rowsFrom: fromPackages.map((p) => p.from), dropped };
 }
 
 /**
@@ -76,7 +95,8 @@ export async function boot(opts: BootOptions): Promise<Booted> {
     ctx.logger("boot").error(error);
     throw new ConfigUnreadable(error instanceof Error ? error.message : String(error), { cause: error });
   }
-  const { rows, modules, contracts, extensions } = composition;
+  const { rows, modules, contracts, extensions, recompose, rowsFrom, dropped } = composition;
+  for (const reason of dropped) ctx.logger("boot").warn(reason);
   // A promise nobody waited on would otherwise leave no trace in a packaged build.
   const unhandled = (reason: unknown) => ctx.logger("process").error(reason);
   process.on("unhandledRejection", unhandled);
@@ -91,7 +111,9 @@ export async function boot(opts: BootOptions): Promise<Booted> {
     contracts,
     extensions,
     resolve: (row) => resolvePlugin(row, baseDir, extensionsRoot),
-    persist: patchFile ? (id, disabled) => writePatchRow(patchFile, id, { disabled }) : undefined
+    persist: patchFile ? (id, disabled) => writePatchRow(patchFile, id, { disabled }) : undefined,
+    recompose,
+    rowsFrom
   });
 
   return { ctx, rows, dump: () => stringify(ctx.plugins.snapshot()) };

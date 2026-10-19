@@ -96,6 +96,13 @@ plugins:
     expect(applyPatches(base, [readRows(patch)])).toEqual([{ id: "mcp", name: "@tomradex/mcp", disabled: true }]);
   });
 
+  it("credits a row's plugin to the extension that named it only until a later layer names another", () => {
+    const base = [{ id: "llm", name: "@tomradex/llm" }];
+    const fromExtension = [{ id: "llm", name: "/plugins/deep/dist/llm.js", from: "someone/deep" }];
+    expect(applyPatches(base, [fromExtension, [{ id: "llm", config: { model: "x" } }]])).toEqual([{ id: "llm", name: "/plugins/deep/dist/llm.js", from: "someone/deep", config: { model: "x" } }]);
+    expect(applyPatches(base, [fromExtension, [{ id: "llm", name: "/opt/mine/llm.js" }]])).toEqual([{ id: "llm", name: "/opt/mine/llm.js" }]);
+  });
+
   it("ignores a switch left behind for a plugin the app no longer ships", () => {
     const base = readConfig(write("tomrade.yml", "plugins:\n  - id: mcp\n    name: \"@tomradex/mcp\"\n")).rows;
     const patch = write("patch.yml", "plugins:\n  - id: stale\n    disabled: true\n  - id: mine\n    name: /opt/mine/index.js\n");

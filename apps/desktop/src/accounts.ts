@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
 import { relaunchArgs } from "./background.js";
+import { requestSafeStart, SAFE_FLAG, SAFE_REQUEST_FILE } from "./safe-start.js";
 
 export interface Roots {
   userData: string;
@@ -118,8 +119,10 @@ export class AccountFolders {
   }
 }
 
-/** Quit through the usual flush, then start again. */
-export function restart(): void {
+/** Quit through the usual flush, then start again — once without the person's own plugins when `safe`. */
+export function restart(opts: { safe?: boolean } = {}): void {
+  // A file rather than an argument, so the dev launcher's restart carries it too.
+  if (opts.safe) requestSafeStart(path.join(machineRoots().userData, SAFE_REQUEST_FILE));
   // `pnpm dev` owns the dev server: its launcher starts Electron again on this code.
   const code = Number(process.env.TOMRADE_RESTART_EXIT_CODE);
   if (code) {
@@ -128,7 +131,7 @@ export function restart(): void {
       app.exit(code);
     });
   } else {
-    app.relaunch({ args: relaunchArgs() });
+    app.relaunch({ args: relaunchArgs().filter((arg) => arg !== SAFE_FLAG) });
   }
   app.quit();
 }

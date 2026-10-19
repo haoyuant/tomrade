@@ -74,7 +74,8 @@ export function officialProblems(dir: string, manifest: Manifest): string[] {
   const changelog = files.find((f) => /^CHANGELOG/i.test(f));
   if (!changelog) out.push("a CHANGELOG must say what changed in each version");
   else if (!new RegExp(`^#+\\s*\\[?v?${escape(manifest.version)}\\]?(\\s|$)`, "m").test(fs.readFileSync(path.join(dir, changelog), "utf8"))) out.push(`${changelog} has no entry for ${manifest.version}`);
-  if (!fs.existsSync(path.join(dir, "src", "test.ts"))) out.push("src/test.ts, the sandbox scenario, is missing");
+  // A full-mode plugin needs the whole app to run, which the sandbox scenario does not have.
+  if (manifest.context !== "full" && !fs.existsSync(path.join(dir, "src", "test.ts"))) out.push("src/test.ts, the sandbox scenario, is missing");
   if (!sourceFiles(path.join(dir, "tests")).some((f) => /\.test\.[cm]?[jt]sx?$/.test(f))) out.push("tests/ has no unit tests");
   for (const gap of bilingualGaps(path.join(dir, "src"))) out.push(`${gap.file}:${gap.line} has text without its ${gap.missing === "zh" ? "Chinese (zh)" : "English (en)"} half`);
   const p = manifest.permissions;
@@ -82,5 +83,6 @@ export function officialProblems(dir: string, manifest: Manifest): string[] {
   if (p.fs === "any" && !p.why?.fs) out.push('permissions.fs "any" needs permissions.why.fs');
   if (p.exec && !p.why?.exec) out.push("permissions.exec needs permissions.why.exec");
   if (p.window && !p.why?.window) out.push("permissions.window needs permissions.why.window");
+  if (manifest.context === "full" && !p.why?.full) out.push('"context": "full" needs permissions.why.full');
   return out;
 }

@@ -35,6 +35,8 @@ declare module "@tomradex/ipc" {
     "shell.saveTextFile": (opts: { title?: string; defaultName: string; text: string }) => string | null;
     /** Native open dialog for one text file, read back. Null when cancelled. */
     "shell.openTextFile": (opts: { title?: string; extensions?: string[] }) => { path: string; text: string } | null;
+    /** Quit through the usual questions and start again — once without the person's own plugins when `safe`. */
+    "shell.restart": (opts?: { safe?: boolean }) => void;
   }
 }
 
@@ -58,6 +60,8 @@ export const pickProgram = (title?: string, buttonLabel?: string): Promise<strin
 export const reveal = (target: string): void => void invoke("shell.reveal", target).catch(() => {});
 
 export const openExternal = (url: string): void => void invoke("shell.openExternal", url).catch(() => {});
+
+export const restartApp = (opts?: { safe?: boolean }): void => void invoke("shell.restart", opts).catch(() => {});
 
 /** Null in a browser tab, or for a File the OS drag never backed with a real path. */
 export const pathForFile = (file: File): string | null => {

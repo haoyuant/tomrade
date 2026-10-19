@@ -2,7 +2,7 @@ import { app, BrowserWindow, session } from "electron";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { aboutInfo } from "./about.js";
-import { AccountFolders, machineRoots } from "./accounts.js";
+import { AccountFolders, machineRoots, restart } from "./accounts.js";
 import { cameBack, keepsRunning, launchMode, PREFS_FILE, wentAway } from "./background.js";
 import { boot, ConfigUnreadable, type Booted } from "./boot.js";
 import { deliverDeepLink, registerScheme } from "./deep-link.js";
@@ -12,7 +12,8 @@ import { loginItem } from "./login-item.js";
 import { provideMainWindow } from "./main-window.js";
 import { leaveOnSignal, leaving, prepareToQuit, quitApproved } from "./quit.js";
 import { adoptShellEnv } from "./shell-env.js";
-import { showSplash, startFailed } from "./startup.js";
+import { offerSafeStart, saySafeStart, showSplash, startFailed } from "./startup.js";
+import { beginStart, hasOwnPlugins, SAFE_FLAG, SAFE_REQUEST_FILE, STARTING_FILE, startFinished, takeSafeRequest } from "./safe-start.js";
 import { followSystemProxy } from "./system-proxy.js";
 import { trustedKeys } from "./trust.js";
 import { createWindow } from "./window.js";
@@ -68,7 +69,7 @@ app.whenReady().then(async () => {
   // BrowserWindow's `icon` option is a no-op for the Dock on macOS since dev mode
   // runs Electron's own bundled app; the Dock icon has to be set explicitly.
   if (process.platform === "darwin") app.dock?.setIcon(iconPath);
-  installAppMenu();
+  installAppMenu({ restartWithoutPlugins: () => restart({ safe: true }) });
   // The app menu's About item, which a checkout would otherwise credit to Electron.
   void aboutInfo(path.resolve(here, "../../..")).then((info) =>
     app.setAboutPanelOptions({
@@ -108,19 +109,34 @@ app.whenReady().then(async () => {
         // A checkout runs beside the installed app; on a port of its own, agents set up for the app keep reaching it.
         mcpPort: process.env.TOMRADE_MCP_PORT ?? (app.isPackaged ? "19090" : "19091")
       },
-      extensions: safe ? undefined : { root: pluginsRoot, trustedKeys: trustedKeys() }
+      // A checkout is always 0.1.0, so only a release holds full-mode plugins to the Tomrade versions they name.
+      extensions: safe ? undefined : { root: pluginsRoot, trustedKeys: trustedKeys(), appVersion: app.isPackaged ? app.getVersion() : null }
     });
+  // A plugin with the app's whole context can stop a start before it gets anywhere; the next start notices.
+  const dumping = argv.includes("--dump-config");
+  const startingFile = path.join(machine.userData, STARTING_FILE);
+  const unfinished = !dumping && beginStart(startingFile);
+  let safe = argv.includes(SAFE_FLAG) || takeSafeRequest(path.join(machine.userData, SAFE_REQUEST_FILE));
+  if (!safe && unfinished && mode === "window" && hasOwnPlugins(path.join(machine.userData, "tomrade.patch.yml"), pluginsRoot)) {
+    splash?.hide();
+    safe = await offerSafeStart({ logDir });
+    splash?.show();
+  }
   let booted: Booted;
   try {
-    booted = await start(false);
+    booted = await start(safe);
   } catch (error) {
     // Nothing has started yet, so this process can try once more without the files the person controls.
-    if (!(error instanceof ConfigUnreadable) || argv.includes("--dump-config")) throw error;
+    if (safe || !(error instanceof ConfigUnreadable) || dumping) throw error;
     splash?.hide();
     if (!(await startFailed(error, { logDir, retry: true }))) return app.quit();
     splash?.show();
     booted = await start(true);
-    booted.ctx.logger("boot").warn("started without tomrade.patch.yml and installed plugins, as asked after a failed start");
+    safe = true;
+  }
+  if (safe) {
+    booted.ctx.logger("boot").warn("started without tomrade.patch.yml and installed plugins, as asked");
+    if (!dumping) saySafeStart();
   }
   const { ctx, dump } = booted;
   if (shellProblem) ctx.logger("shell-env").warn(shellProblem);
@@ -168,7 +184,9 @@ app.whenReady().then(async () => {
   provideMainWindow({ open: openMain, current: () => [...mainWindows].find((w) => !w.isDestroyed()) });
   // Reached only with background running on: any other last close became a quit.
   app.on("window-all-closed", () => {});
-  if (mode === "window") openMain();
+  // The start got as far as a window that loaded, or as far as it goes without one.
+  if (mode === "window") openMain().webContents.once("did-finish-load", () => startFinished(startingFile));
+  else startFinished(startingFile);
   // After the main window is up, so there is never a moment with none.
   splash?.destroy();
   splash = null;

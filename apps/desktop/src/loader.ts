@@ -81,7 +81,10 @@ export function applyPatches(base: PluginPatch[], patches: PluginPatch[][]): Plu
     for (const row of patch) {
       // A switch left behind for a plugin the app no longer ships.
       if (!rows.has(row.id) && typeof row.name !== "string") continue;
-      rows.set(row.id, { ...rows.get(row.id), ...row });
+      const merged = { ...rows.get(row.id), ...row };
+      // A plugin named by a later layer is that layer's, not the extension's whose rows named one before.
+      if (row.name !== undefined && row.from === undefined) delete merged.from;
+      rows.set(row.id, merged);
     }
   }
   return [...rows.values()].map((r, i) => {

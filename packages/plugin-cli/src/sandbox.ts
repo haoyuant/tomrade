@@ -18,6 +18,8 @@ export interface InspectResult {
   inject: string[];
   optional: string[];
   recording: Recording | null;
+  /** A full-mode plugin: a plain cordis plugin, checked for its shape and never applied here. */
+  full?: boolean;
 }
 
 export interface TestCheck {
@@ -91,6 +93,7 @@ export async function runSandboxed(mode: "inspect" | "test", dir: string, opts: 
     namespace: namespaceOf(manifest),
     title: manifest.title,
     window: manifest.permissions.window,
+    full: manifest.context === "full",
     tmp,
     scenario: opts.scenario ? path.join(pluginDir, opts.scenario) : null
   };

@@ -8,11 +8,13 @@ that claims a key on that context.
 
 There are two kinds of plugin, and this document is the contract for both:
 
-- **Extensions** are written against `@tomradex/plugin-sdk`. Their `apply`
-  receives a `PluginContext`: an async, attributed, namespaced view of the app
-  that the host builds for them. Everything that comes from outside the app —
-  Community, a `.tomrade-plugin` file, a folder, Plugin Studio — must be one.
-  `tomrade-plugin init` scaffolds one that builds and passes its tests.
+- **Extensions** come from outside the app — Community, a `.tomrade-plugin`
+  file, a folder, Plugin Studio. Most are written against
+  `@tomradex/plugin-sdk`: their `apply` receives a `PluginContext`, an async,
+  attributed, namespaced view of the app that the host builds for them.
+  `tomrade-plugin init` scaffolds one that builds and passes its tests. An
+  extension that needs more declares [full mode](#full-mode) and is loaded as a
+  built-in row is, with the raw `Context` and rows of its own.
 - **Built-in rows** are the app's own cordis plugins, listed in `tomrade.yml`.
   They take the raw `Context` and the services below it ([Services](#services)
   onward). A built-in may also be written with the SDK — `@tomradex/deps-graph`
@@ -42,9 +44,11 @@ Plugins run in the main process with the same rights as Tomrade itself:
 `better-sqlite3`, the filesystem, the network, and the user's API key. **This is
 not a sandbox.** What the system does guarantee:
 
-- An extension reaches the app only through its `PluginContext`: every call
-  returns a Promise and every value that crosses is plain data, so the same
-  plugin can later run behind a process boundary without changing.
+- An SDK extension reaches the app only through its `PluginContext`: every
+  call returns a Promise and every value that crosses is plain data, so the
+  same plugin can later run behind a process boundary without changing. A
+  [full-mode](#full-mode) extension is loaded as the app's own rows are, with
+  the raw `Context`, and is labelled so.
 - A service not named in `inject` or `optional` is refused.
 - **The host says who wrote.** Writes through the facade take no author: they
   are the person's when a person drove the call (a palette command, a surface
@@ -298,6 +302,66 @@ still waiting for, or `disabled` — alongside what it provides and needs.
 The same list is the Plugins pane in the app (⌘K → Plugins, or Settings →
 Manage plugins), where a row can be switched on or off without a restart. See
 [Modules](#modules) for the one switch it will not throw.
+
+## Full mode
+
+An installed extension can reach as far as the app's own modules: declare
+`"context": "full"` and its `main` is a plain cordis plugin, loaded like a
+built-in row with the whole `Context` — engines, `llm`, storage, every event
+and waterfall (`write/pre-commit` among them). The SDK stays the simple way to
+write a plugin; full mode is for what it does not offer.
+
+```json
+{
+  "id": "alice/local-model",
+  "version": "1.0.0",
+  "title": "Local model",
+  "license": "MIT",
+  "engines": { "sdk": "^0.2.13", "tomrade": ">=0.13.0 <0.14.0" },
+  "context": "full",
+  "rows": [
+    { "id": "llm", "name": "./dist/llm.js", "config": { "model": "qwen3" } },
+    { "id": "web-search-tavily", "disabled": true },
+    { "id": "local_model-warmup", "name": "./dist/warmup.js" }
+  ],
+  "permissions": { "why": { "full": "Runs the model on this machine in place of the app's own." } }
+}
+```
+
+- **`engines.tomrade`** names the Tomrade versions it works with: full mode
+  reaches internals the SDK's range does not cover. A release outside the range
+  refuses it with the reason instead of loading it to fail; a checkout (always
+  `0.1.0`) checks no range.
+- **`rows`** are laid over the app's composition, merged by id like
+  `tomrade.patch.yml` rows: an app row's id switches it off, replaces its
+  plugin or changes its config, and a new id — which carries the namespace —
+  adds one. A relative `name` is a file inside the package. Rows are laid on at
+  start: the app's, then each full-mode extension's in the order they were
+  installed, then the person's patch files, which have the last word. Installing,
+  switching or removing such an extension changes its rows at the next start;
+  its detail in the Plugins pane says so and offers a restart.
+- **Tomrade keeps itself.** Rows may not change `ipc` — the renderer's
+  channels, through which a plugin is switched off and removed — or
+  `community`, which verifies and revokes plugins. A row that switches off the
+  last plugin of a required module is refused at install; one that replaces it
+  with a plugin that provides nothing is taken back at start, the extension
+  installed last first, and its detail names the module.
+- **What it writes is still its own.** Writes made from its context, from its
+  listeners and from any plugin it or its rows load carry `via: <namespace>` in
+  the oplog, so `oplog.undoVia` and revocation reach them. It names its own
+  author, as the app's modules do.
+- **When two extensions change one row**, both details say so; the one
+  installed last is laid on last.
+- **Safe start.** File → Restart Without Plugins starts once without the
+  person's patch files and installed plugins, and so does `--safe`. A start that
+  never got as far as its window is noticed at the next launch, which offers the
+  same. Nothing is changed or removed.
+
+Full mode is labelled high risk wherever a person decides (`full`, and `rows`
+when it has any), never refused for it; Tomrade's official plugins must say why
+in `permissions.why.full`. `tomrade-plugin check` holds it to its shape — a
+function, a class, or an object with `apply()` — and the sandbox does not run
+it: try it in Tomrade with `plugin_try`.
 
 ## Services
 
@@ -1971,6 +2035,7 @@ leaves open is closed when it unloads. The `plugin_test` sandbox has no herdr.
   engine's model — and a CLI agent can be the engine.
 - No code evaluation in configuration. `tomrade.yml` is static YAML with
   `${userData}`-style substitution and nothing more.
-- No profile or bundle layering. One file, one patch file, merged by id.
+- No profile or bundle layering beyond one file, the full-mode extensions'
+  rows, and one patch file, merged by id in that order.
 - No renderer plugin bundles. Contributions are data; the only documents a
   plugin ships are surfaces, opened from inside its own package.

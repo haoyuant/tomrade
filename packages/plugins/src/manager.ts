@@ -1,5 +1,7 @@
 import { Context, Service, type EffectMeta, type Fiber } from "cordis";
 import type {} from "@tomradex/ipc";
+import type { Manifest } from "@tomradex/plugin-sdk";
+import { ExtensionRefused } from "./extensions.js";
 import {
   RequiredModuleError,
   type ModuleView,
@@ -60,6 +62,8 @@ export class Plugins extends Service {
 
   private fibers = new Map<string, Fiber>();
   private errors = new Map<string, unknown>();
+  /** Full-mode extensions whose rows this start took back, and the required modules those rows left empty. */
+  private rowsRefused = new Map<string, string[]>();
   private notify: () => void = () => {};
   private queue: Promise<void> = Promise.resolve();
   /**
@@ -92,6 +96,7 @@ export class Plugins extends Service {
       if (!row.disabled) await this.start(row);
     }
     await this.settle();
+    await this.keepRequired();
 
     for (const view of this.list()) {
       if (view.state === "pending") this.home.logger.warn(`${view.id} is waiting for: ${view.waitingFor?.join(", ") ?? "?"}`);
@@ -237,12 +242,12 @@ export class Plugins extends Service {
   }
 
   async installFile(file: string, opts: { source?: "store" | "file"; digest?: string; attestation?: unknown } = {}): Promise<PluginsSnapshot> {
-    const entry = await this.store().installFile(file, opts);
+    const entry = await this.store().installFile(file, { ...opts, vet: (manifest) => this.vetRows(manifest) });
     return this.add({ id: entry.id, name: `ext:${entry.id}`, disabled: entry.disabled });
   }
 
   addFolder(dir: string, source: "folder" | "studio" = "folder"): Promise<PluginsSnapshot> {
-    const entry = this.store().addFolder(dir, source);
+    const entry = this.store().addFolder(dir, source, (manifest) => this.vetRows(manifest));
     const row = this.store().rows().find((r) => r.id === entry.id)!;
     return this.add(row);
   }
@@ -313,11 +318,81 @@ export class Plugins extends Service {
     throw new RequiredModuleError(row.id, emptied);
   }
 
+  /**
+   * A full-mode extension whose rows switch off the last provider of a required
+   * module is refused as it is installed. A row that replaces one is judged when
+   * its rows are laid on, at the next start.
+   */
+  private vetRows(manifest: Manifest): void {
+    if (manifest.context !== "full") return;
+    const held = this.soleProviders(this.providers());
+    for (const row of manifest.rows) {
+      const modules = row.disabled ? held.get(row.id) : undefined;
+      if (!modules?.length) continue;
+      const titles = this.viewsOf(modules).map((m) => m.title);
+      throw new ExtensionRefused(`${manifest.id} switches off “${row.id}”, which would leave ${titles.join(", ")} with no plugin`);
+    }
+  }
+
+  /**
+   * Rows of full-mode extensions that left a required module empty are taken
+   * back, the extension laid on last first, and each one taken back is told
+   * which modules its rows emptied. One whose rows were not the cause is put back.
+   */
+  private async keepRequired(): Promise<void> {
+    const recompose = this.config.recompose;
+    const from = this.config.rowsFrom ?? [];
+    if (!recompose || !from.length) return;
+    const empty = () => this.modules().filter((m) => m.required && !m.providers.length).map((m) => m.id);
+    const without = new Set<string>();
+    for (const id of [...from].reverse()) {
+      const before = empty();
+      if (!before.length) return;
+      without.add(id);
+      await this.lay(recompose(without));
+      const filled = before.filter((m) => !empty().includes(m));
+      if (filled.length) {
+        this.rowsRefused.set(id, this.viewsOf(filled).map((m) => m.title));
+        this.home.logger.warn(`${id}: its rows left ${this.rowsRefused.get(id)!.join(", ")} with no plugin, so this start runs without them`);
+      } else {
+        without.delete(id);
+        await this.lay(recompose(without));
+      }
+    }
+  }
+
+  /** Bring the composition's own rows to `next`: a changed row restarts, a row gone stops, a new row starts. Extensions' rows stay. */
+  private async lay(next: PluginRow[]): Promise<void> {
+    const same = (a: PluginRow, b: PluginRow) => a.name === b.name && !!a.disabled === !!b.disabled && a.from === b.from && JSON.stringify(a.config) === JSON.stringify(b.config);
+    const stop = async (id: string) => {
+      const fiber = this.fibers.get(id);
+      this.fibers.delete(id);
+      this.errors.delete(id);
+      if (fiber) await fiber.dispose();
+    };
+    for (const row of [...this.config.rows]) {
+      if (row.name.startsWith("ext:") || next.some((n) => n.id === row.id)) continue;
+      await stop(row.id);
+      this.config.rows = this.config.rows.filter((r) => r.id !== row.id);
+    }
+    for (const want of next) {
+      const at = this.config.rows.findIndex((r) => r.id === want.id);
+      if (at >= 0 && same(this.config.rows[at]!, want)) continue;
+      if (at >= 0) await stop(want.id);
+      const row = { ...want };
+      if (at >= 0) this.config.rows[at] = row;
+      else this.config.rows.push(row);
+      if (!row.disabled) await this.start(row);
+    }
+    await this.settle();
+  }
+
   private async start(row: PluginRow): Promise<void> {
     this.errors.delete(row.id);
     try {
       const store = this.config.extensions;
       const plugin = row.name.startsWith("ext:") && store ? await store.load(row.id) : await this.config.resolve(row);
+      if (row.from) store?.claim(plugin as object, row.from);
       this.fibers.set(row.id, this.home.plugin(plugin, row.config));
     } catch (error) {
       this.errors.set(row.id, error);
@@ -349,6 +424,8 @@ export class Plugins extends Service {
     const error = this.errors.get(row.id);
     const base: Omit<PluginView, "state"> = { id: row.id, name: row.name, ...(row.title ? { title: row.title } : {}), config: row.config, provides, injects: Object.keys(fiber?.inject ?? {}), holds, implements: this.contractsOf(row, fiber) };
     const store = this.config.extensions;
+    const refused = this.rowsRefused.get(row.id);
+    if (refused) base.rowsRefused = refused;
     if (store?.has(row.id)) {
       try {
         base.extension = store.info(row.id);
