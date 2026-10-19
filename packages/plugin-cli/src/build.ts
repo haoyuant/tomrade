@@ -32,6 +32,8 @@ const format = (m: esbuild.Message) => `${m.location ? `${m.location.file}:${m.l
  */
 export async function build(dir: string): Promise<BuildResult> {
   const manifest = readManifest(dir);
+  // A full-mode plugin is handed the app's own packages at run time, as it is the SDK.
+  const shared = manifest.context === "full" ? [...external, "@tomradex/*"] : external;
   // A plugin that is data only (a language pack) has nothing to bundle.
   if (manifest.main === null) return { ok: true, outfile: "", errors: [], warnings: [], bundled: [] };
   const entry = entryOf(dir);
@@ -43,7 +45,7 @@ export async function build(dir: string): Promise<BuildResult> {
     platform: "node",
     format: "esm",
     target: "node22",
-    external,
+    external: shared,
     minify: false,
     sourcemap: false,
     legalComments: "inline",

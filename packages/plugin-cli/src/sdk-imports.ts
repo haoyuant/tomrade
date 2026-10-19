@@ -12,24 +12,30 @@ interface Node {
   exportKind?: string;
 }
 
-/** The names a built file takes from the SDK, and whether it also takes the whole module. */
-export function sdkImportsOf(code: string): { names: string[]; namespace: boolean } {
+/** The names a built file takes from each module `wanted` picks, and whether it also takes a module whole. */
+export function importsOf(code: string, wanted: (specifier: string) => boolean): Record<string, { names: string[]; namespace: boolean }> {
   const ast = parse(code, { sourceType: "module", errorRecovery: true }) as unknown as { program: { body: Node[] } };
-  const names = new Set<string>();
-  let namespace = false;
+  const found = new Map<string, { names: Set<string>; namespace: boolean }>();
   for (const node of ast.program.body) {
-    if (node.source?.value !== SDK) continue;
-    if (node.type === "ExportAllDeclaration") namespace = true;
+    const source = node.source?.value;
+    if (!source || !wanted(source)) continue;
+    const seen = found.get(source) ?? { names: new Set<string>(), namespace: false };
+    found.set(source, seen);
+    if (node.type === "ExportAllDeclaration") seen.namespace = true;
     if (node.type !== "ImportDeclaration" && node.type !== "ExportNamedDeclaration") continue;
     for (const s of node.specifiers ?? []) {
-      if (s.type === "ImportNamespaceSpecifier" || s.type === "ExportNamespaceSpecifier") namespace = true;
-      else if (s.type === "ImportDefaultSpecifier") names.add("default");
-      else if (s.type === "ImportSpecifier") names.add(s.imported?.name ?? s.imported?.value ?? "");
-      else if (s.type === "ExportSpecifier") names.add(s.local?.name ?? "");
+      if (s.type === "ImportNamespaceSpecifier" || s.type === "ExportNamespaceSpecifier") seen.namespace = true;
+      else if (s.type === "ImportDefaultSpecifier") seen.names.add("default");
+      else if (s.type === "ImportSpecifier") seen.names.add(s.imported?.name ?? s.imported?.value ?? "");
+      else if (s.type === "ExportSpecifier") seen.names.add(s.local?.name ?? "");
     }
   }
-  names.delete("");
-  return { names: [...names].sort(), namespace };
+  return Object.fromEntries([...found].map(([source, { names, namespace }]) => [source, { names: [...names].filter(Boolean).sort(), namespace }]));
+}
+
+/** The names a built file takes from the SDK, and whether it also takes the whole module. */
+export function sdkImportsOf(code: string): { names: string[]; namespace: boolean } {
+  return importsOf(code, (s) => s === SDK)[SDK] ?? { names: [], namespace: false };
 }
 
 /**

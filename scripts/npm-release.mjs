@@ -1,15 +1,21 @@
 /**
- * The packages plugin authors install from npm: @tomradex/domain (the types a
- * plugin sees), @tomradex/plugin-sdk (the contract), @tomradex/plugin-cli (one
- * bundled file per entry) and @tomradex/plugin-host (the Tomrade the CLI tests
- * a plugin against, bundled). All four are Apache-2.0, like the rest of the repository.
- * Staged under build/npm/, packed there, and published only with --publish.
+ * The packages plugin authors install from npm. On the SDK's version line:
+ * @tomradex/domain (the types a plugin sees), @tomradex/plugin-sdk (the
+ * contract), @tomradex/plugin-cli (one bundled file per entry, with the app's
+ * exports for its check) and @tomradex/plugin-host (the Tomrade the CLI tests a
+ * plugin against, bundled). On the app's version line, every other package of
+ * the app as a full-mode plugin imports it: its declarations only, since
+ * Tomrade hands the plugin its own copies at run time. All Apache-2.0, like the
+ * rest of the repository. Staged under build/npm/ and packed there.
  *
  *   node scripts/npm-release.mjs              stage and pack
- *   node scripts/npm-release.mjs --publish    …then npm publish each (npm login first)
+ *   node scripts/npm-release.mjs --verify     …and typecheck a full-mode plugin against the packs, outside the checkout
+ *   node scripts/npm-release.mjs --publish    …then npm publish each version npm does not have (npm login or NPM_TOKEN)
+ *   … --publish --dry-run                     the same, publishing nothing
  */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -19,6 +25,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const esbuild = await import(pathToFileURL(createRequire(path.join(root, "packages/plugin-cli/package.json")).resolve("esbuild")).href);
 const out = path.join(root, "build", "npm");
 const publish = process.argv.includes("--publish");
+const dryRun = process.argv.includes("--dry-run");
+const verify = process.argv.includes("--verify");
 const run = (cmd, args, cwd = root) => execFileSync(cmd, args, { cwd, stdio: "inherit" });
 const json = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
 
@@ -180,8 +188,114 @@ fs.writeFileSync(
   )}\n`
 );
 
-for (const dir of [domain, sdkDir, hostDir, cliDir]) {
-  run("npm", ["pack", "--pack-destination", out], dir);
-  if (publish) run("npm", ["publish", "--access", "public"], dir);
+// What each of the app's packages exports, so the CLI's check can hold a full-mode plugin's imports to this Tomrade.
+const APP_VERSION = json(path.join(root, "apps/desktop/package.json")).version;
+const { collectAppExports, APP_EXPORTS_FILE } = await import(pathToFileURL(path.join(root, "packages/plugin-cli/dist/app-exports.js")).href);
+fs.writeFileSync(path.join(cliDir, "dist", APP_EXPORTS_FILE), `${JSON.stringify(await collectAppExports(root, APP_VERSION), null, 2)}\n`);
+
+// The app's own packages, declarations only, all at the app's version as dsh's move together.
+const SDK_LINE = new Set(["@tomradex/domain", "@tomradex/plugin-sdk", "@tomradex/plugin-cli", "@tomradex/plugin-host"]);
+// Types every package leans on stay dependencies; the rest are optional peers, so a types install builds nothing native.
+const KEPT = new Set(["cordis", "zod"]);
+const typesOut = path.join(out, "types");
+const typed = [];
+for (const name of fs.readdirSync(path.join(root, "packages")).sort()) {
+  const source = path.join(root, "packages", name);
+  if (!fs.existsSync(path.join(source, "package.json"))) continue;
+  const pkg = json(path.join(source, "package.json"));
+  if (!pkg.name?.startsWith("@tomradex/") || SDK_LINE.has(pkg.name) || !pkg.exports) continue;
+  const dir = path.join(typesOut, name);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.cpSync(path.join(source, "dist"), path.join(dir, "dist"), { recursive: true, filter: (src) => fs.statSync(src).isDirectory() || src.endsWith(".d.ts") });
+  if (fs.existsSync(path.join(source, "README.md"))) fs.copyFileSync(path.join(source, "README.md"), path.join(dir, "README.md"));
+  fs.copyFileSync(licenseFile(source), path.join(dir, "LICENSE"));
+  fs.writeFileSync(
+    path.join(dir, "dist/runtime.js"),
+    `throw new Error(${JSON.stringify(`${pkg.name} is Tomrade's own code: a full-mode plugin gets the running app's copy, so load the plugin in Tomrade`)});\n`
+  );
+  const exports = Object.fromEntries(Object.entries(pkg.exports).map(([sub, target]) => [sub, { types: typeof target === "string" ? target.replace(/\.js$/, ".d.ts") : target.types, default: "./dist/runtime.js" }]));
+  const dependencies = {};
+  const peerDependencies = {};
+  for (const [dep, range] of Object.entries(pkg.dependencies ?? {})) {
+    if (dep.startsWith("@tomradex/")) dependencies[dep] = SDK_LINE.has(dep) ? VERSION : APP_VERSION;
+    else if (KEPT.has(dep)) dependencies[dep] = range;
+    else peerDependencies[dep] = range;
+  }
+  fs.writeFileSync(
+    path.join(dir, "package.json"),
+    `${JSON.stringify(
+      {
+        name: pkg.name,
+        ...common,
+        version: APP_VERSION,
+        license: licensed(source),
+        description: `${pkg.description ?? pkg.name} — declarations for full-mode plugins; Tomrade provides the code at run time`,
+        keywords: ["tomrade", "tomrade-plugin", "types"],
+        types: exports["."]?.types,
+        exports,
+        files: ["dist"],
+        dependencies,
+        ...(Object.keys(peerDependencies).length ? { peerDependencies, peerDependenciesMeta: Object.fromEntries(Object.keys(peerDependencies).map((d) => [d, { optional: true }])) } : {})
+      },
+      null,
+      2
+    )}\n`
+  );
+  typed.push(dir);
 }
-console.log(`\nstaged and packed in ${path.relative(root, out)}${publish ? "; published" : ""}`);
+
+const packs = path.join(out, "packs");
+fs.mkdirSync(packs, { recursive: true });
+for (const dir of [domain, sdkDir, hostDir, cliDir, ...typed]) run("npm", ["pack", "--pack-destination", packs, "--silent"], dir);
+
+if (verify) {
+  // A full-mode plugin as an author writes it, far from the checkout, with nothing but the packs and the registry.
+  const sample = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "tomrade-full-plugin-"));
+  const tarballs = Object.fromEntries(fs.readdirSync(packs).map((f) => [f.replace(/^tomradex-/, "@tomradex/").replace(/-\d+\.\d+\.\d+.*\.tgz$/, ""), `file:${path.join(packs, f)}`]));
+  fs.writeFileSync(path.join(sample, "package.json"), JSON.stringify({ name: "sample", private: true, type: "module", devDependencies: { ...tarballs, typescript: json(path.join(root, "packages/plugin-sdk/package.json")).devDependencies.typescript, "@types/node": json(path.join(root, "packages/llm/package.json")).devDependencies["@types/node"] }, overrides: tarballs }, null, 2));
+  fs.writeFileSync(path.join(sample, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", strict: true, skipLibCheck: true, noEmit: true, types: ["node"] }, include: ["index.ts"] }, null, 2));
+  fs.writeFileSync(
+    path.join(sample, "index.ts"),
+    `import type { Context } from "cordis";
+import { Llm, type ModelProviderSpec } from "@tomradex/llm";
+import { WebSearch } from "@tomradex/web-search";
+
+const echo = {} as ModelProviderSpec;
+
+export default {
+  name: "sample",
+  inject: ["llm", "webSearch"],
+  apply(ctx: Context) {
+    const own: boolean = ctx.llm instanceof Llm && ctx.webSearch instanceof WebSearch;
+    const off: () => void = ctx.llm.registerProvider(echo);
+    const searching: string[] = ctx.webSearch.providers().map((p) => p.id);
+    // the declarations are real, not any: a wrong call is an error
+    // @ts-expect-error a provider spec, not a string
+    ctx.llm.registerProvider("echo");
+    return { own, off, searching };
+  }
+};
+`
+  );
+  run("npm", ["install", "--no-audit", "--no-fund", "--loglevel=error"], sample);
+  run("npx", ["tsc", "-p", "."], sample);
+  console.log(`a full-mode plugin typechecks against the packs, outside the checkout (${sample})`);
+}
+
+if (publish) {
+  if (APP_VERSION === "0.1.0") throw new Error("apps/desktop is at a checkout's 0.1.0: set the release's version first (npm pkg set version=…)");
+  for (const dir of [domain, sdkDir, hostDir, cliDir, ...typed]) {
+    const { name, version } = json(path.join(dir, "package.json"));
+    // A version is published once; the SDK line's often stays as it was over several app releases.
+    const listed = (() => {
+      try {
+        return execFileSync("npm", ["view", `${name}@${version}`, "version"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() === version;
+      } catch {
+        return false;
+      }
+    })();
+    if (listed) console.log(`${name}@${version} is on npm already`);
+    else run("npm", ["publish", "--access", "public", ...(dryRun ? ["--dry-run"] : [])], dir);
+  }
+}
+console.log(`\nstaged and packed in ${path.relative(root, out)} (SDK ${VERSION}, app ${APP_VERSION}, ${typed.length} declaration packages)${publish ? (dryRun ? "; publish dry run" : "; published") : ""}`);

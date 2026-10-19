@@ -89,6 +89,29 @@ const run = async () => {
 
   await ctx.plugins.uninstall("someone/hello", { removeData: true });
   check("uninstalling takes its tool with it", !ctx.tools.has("hello_count"));
+
+  // A full-mode plugin imports the app's own packages and gets the app's copies; an SDK plugin does not.
+  const full = path.join(WORK, "src", "full");
+  fs.mkdirSync(path.join(full, "dist"), { recursive: true });
+  fs.writeFileSync(path.join(full, "tomrade-plugin.json"), JSON.stringify({ id: "someone/full", version: "1.0.0", title: "Full", license: "MIT", engines: { sdk: "^0.2.13", tomrade: ">=0.13.0" }, context: "full" }));
+  fs.writeFileSync(
+    path.join(full, "dist/index.js"),
+    `import { Llm, NativeSearchRefused } from "@tomradex/llm";
+import { WebSearch } from "@tomradex/web-search";
+export default { name: "full", inject: ["llm", "webSearch"], apply(ctx) { globalThis.__full = { Llm, NativeSearchRefused, WebSearch, sameLlm: ctx.llm instanceof Llm, sameSearch: ctx.webSearch instanceof WebSearch }; } };`
+  );
+  await ctx.plugins.addFolder(full);
+  const llmModule = await import("@tomradex/llm");
+  const seen = globalThis.__full;
+  check("a full-mode plugin imports the app's own packages and gets the app's copies", view("someone/full")?.state === "active" && seen?.sameLlm === true && seen?.sameSearch === true && seen?.NativeSearchRefused === llmModule.NativeSearchRefused, JSON.stringify({ state: view("someone/full")?.state, error: view("someone/full")?.error, sameLlm: seen?.sameLlm, sameSearch: seen?.sameSearch }));
+
+  const sdkOnly = path.join(WORK, "src", "sdk-internal");
+  extension(sdkOnly, "someone/sdk-internal", `import { Llm } from "@tomradex/llm";
+import { definePlugin } from "@tomradex/plugin-sdk";
+export default definePlugin({ inject: ["tools"], async apply() { globalThis.__sdkLlm = Llm; } });
+`);
+  await ctx.plugins.addFolder(sdkOnly);
+  check("an SDK plugin still cannot reach the app's internals", view("someone/sdk-internal")?.state === "failed" && globalThis.__sdkLlm === undefined, JSON.stringify({ state: view("someone/sdk-internal")?.state, error: view("someone/sdk-internal")?.error }));
 };
 
 app.whenReady().then(async () => {
