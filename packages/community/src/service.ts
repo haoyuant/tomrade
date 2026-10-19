@@ -9,7 +9,7 @@ import type {} from "@tomradex/hub-cloud";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/settings";
 import { ATTESTATION_FILE, LIMITS, PACKAGE_EXT, analyzePackage, observedRisk, packPlugin, readManifest, tierOf, unpackPlugin, type Finding, type TrustTier } from "@tomradex/plugin-kit";
-import { SDK_CONTRACT, satisfies, type Manifest } from "@tomradex/plugin-sdk";
+import { SDK_CONTRACT, compareVersions, satisfies, type Manifest } from "@tomradex/plugin-sdk";
 import type { Plugins, PluginsSnapshot } from "@tomradex/plugins";
 import { linkGitHub } from "./oauth.js";
 import { OFFICIAL_CATALOG_URL, OfficialCatalog, isOfficialId } from "./official.js";
@@ -31,8 +31,11 @@ export const CommunityConfig = z.preprocess(
         freshMs: z.number().int().min(60_000).default(15 * 60_000)
       })
     ),
-    /** Official plugins put on every machine once, the way the app's own were; one the person uninstalls stays gone. */
-    starters: z.array(z.string()).default([]),
+    /**
+     * Official plugins put on every machine once, the way the app's own were; one the person uninstalls stays gone.
+     * One with `whenModelHost` goes on only once the person has a model profile on one of those hosts (a provider's own plugin).
+     */
+    starters: z.array(z.union([z.string(), z.object({ id: z.string(), whenModelHost: z.array(z.string().min(1)).min(1) })])).default([]),
     /** Where the starters already put on are remembered; without it, only for this run. */
     startersFile: z.string().optional(),
     /** How often revocations and updates are checked while online. */
@@ -212,6 +215,7 @@ export class Community extends Service {
   private readonly home: Context;
   private revokedNow = new Map<string, string>();
   private startersSeen = new Set<string>();
+  private startersRunning: Promise<void> | null = null;
   private publisherCache: string | null = null;
   /** Packages fetched to be read before installing, by digest; installing takes them from here. */
   private downloadDir: string | null = null;
@@ -261,6 +265,11 @@ export class Community extends Service {
       ctx.ipc.handle("community.becomePublisher", () => this.becomePublisher());
       ctx.ipc.handle("community.publish", (dir) => this.publish(dir));
       ctx.ipc.handle("community.published", () => this.published());
+    });
+    // A model added later can make a provider's starter due; it goes on then, not at the next check hours away.
+    this.home.on("settings/changed", (next, previous) => {
+      if (JSON.stringify(next.models) === JSON.stringify(previous.models) || !this.starters().some((s) => s.hosts && this.due(s))) return;
+      void this.installStarters().catch((error: unknown) => this.home.logger.info(`starters not installed: ${message(error)}`));
     });
     const sweep = () => void this.sweep().catch((error: unknown) => this.home.logger.info(`community check skipped: ${message(error)}`));
     const first = setTimeout(sweep, 15_000);
@@ -538,11 +547,54 @@ export class Community extends Service {
     }
   }
 
+  private starters(): { id: string; hosts?: string[] }[] {
+    return this.config.starters.map((s) => (typeof s === "string" ? { id: s } : { id: s.id, hosts: s.whenModelHost.map((h) => h.toLowerCase()) }));
+  }
+
+  /** Whether the person has a model a starter is for; one without hosts is for everyone. */
+  private due(starter: { hosts?: string[] }): boolean {
+    if (!starter.hosts) return true;
+    const profiles = ((this.home.settings.get() as { models?: { profiles?: { baseURL?: string }[] } }).models?.profiles ?? []);
+    return profiles.some((p) => {
+      try {
+        return !!p.baseURL && starter.hosts!.includes(new URL(p.baseURL).hostname.toLowerCase());
+      } catch {
+        return false;
+      }
+    });
+  }
+
+  /**
+   * Official plugins this person's models call for that are not installed (not yet put on, or uninstalled since),
+   * which contribute `kind` — offered where they would help, such as the card saying web search is unavailable.
+   */
+  async offers(kind: string): Promise<{ id: string; title: string }[]> {
+    const installed = new Set(this.plugins.extensions!.entries().map((e) => e.id));
+    const wanted = this.starters().filter((s) => s.hosts && this.due(s) && !installed.has(s.id));
+    if (!wanted.length) return [];
+    const listed = await this.official.plugins();
+    const out: { id: string; title: string }[] = [];
+    for (const s of wanted) {
+      const row = listed.find((p) => p.id === s.id);
+      if (!row) continue;
+      const latest = (await this.official.versions([s.id])).sort((a, b) => compareVersions(b.version, a.version))[0];
+      const contributes = latest?.manifest?.contributes as Record<string, string[] | undefined> | undefined;
+      if (contributes?.[kind]?.length) out.push({ id: s.id, title: String(row.title) });
+    }
+    return out;
+  }
+
   /** Each starter goes on once; one that cannot be fetched yet is tried again at the next check. */
-  async installStarters(): Promise<void> {
+  installStarters(): Promise<void> {
+    // One run at a time: a settings change during a store check must not install the same plugin twice.
+    this.startersRunning ??= this.putStarters().finally(() => (this.startersRunning = null));
+    return this.startersRunning;
+  }
+
+  private async putStarters(): Promise<void> {
     const put = this.startersPut();
     const installed = new Set(this.plugins.extensions!.entries().map((e) => e.id));
-    for (const id of this.config.starters.filter((id) => !put.has(id))) {
+    for (const { id } of this.starters().filter((s) => !put.has(s.id) && this.due(s))) {
       if (!installed.has(id)) {
         try {
           await this.install(id);

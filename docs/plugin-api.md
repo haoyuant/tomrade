@@ -226,6 +226,15 @@ a version shows only when its attestation verifies for the exact digest, id and
 version listed — the host serving it is not trusted. The last good catalog is
 kept on disk, so a machine offline still lists what it saw.
 
+Some official plugins are **starters**, put on once per machine by the store
+check (`community.starters` in `tomrade.yml`); one the person uninstalls stays
+gone. A starter written `{ id, whenModelHost: [hosts] }` goes on only once the
+person has a model profile on one of those hosts, checked again whenever the
+model settings change: a provider's own plugin (`tomrade/kimi-search` for a
+Kimi model) reaches exactly the people who use that provider. Such a starter
+that is not installed, and whose latest version contributes web search, is
+offered as an install button on the card that says web search is unavailable.
+
 An official plugin meets the standard `tomrade-plugin check --official` holds
 it to, written up in tomrade-plugins' `STANDARDS.md`: everything the store asks
 of any plugin, plus the `tomrade/<name>` id in `packages/<name>`, an icon, a

@@ -4,7 +4,7 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Context, Service } from "cordis";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import GitHubAccount from "@tomradex/github";
 import { Settings } from "@tomradex/settings";
 import { Tools } from "@tomradex/tools";
@@ -329,6 +329,38 @@ describe("the official catalog", () => {
     await ctx.plugins.uninstall("tomrade/memo");
     await community.installStarters();
     expect(store.has("tomrade/memo")).toBe(false);
+    server.close();
+  }, 60_000);
+
+  it("puts a provider's starter on only once the person has that provider's model, offers it again after an uninstall, and never to anyone else", async () => {
+    const { catalog, server, url } = await catalogServer();
+    const startersFile = path.join(fs.mkdtempSync(path.join(tmp, "starters-")), "official-starters.json");
+    const pkg = await officialPackage("1.0.0");
+    // The catalog says what each version contributes; this one answers web search.
+    catalog.plugins.push({ id: "tomrade/memo", title: "Memo Search", description: "x", license: "Apache-2.0", repository: "https://github.com/haoyuant/tomrade-plugins", versions: [{ ...pkg, manifest: { ...pkg.manifest, contributes: { webSearchProviders: ["memo"] } } }] });
+    const { ctx, store, community } = await storeHost({}, "http://127.0.0.1:9", null, { cloud: false, config: { officialCatalog: { url }, starters: [{ id: "tomrade/memo", whenModelHost: ["api.moonshot.cn", "api.moonshot.ai"] }], startersFile } });
+    const models = (baseURL: string) => ctx.settings.set({ ...ctx.settings.get(), models: { profiles: [{ id: "m", provider: "openai-compatible", baseURL, apiKey: "k", model: "x" }], roles: { worker: "" } } } as never);
+
+    await community.installStarters();
+    expect(store.has("tomrade/memo")).toBe(false);
+    expect(await community.offers("webSearchProviders")).toEqual([]);
+    models("https://api.deepseek.com");
+    await settle();
+    expect(store.has("tomrade/memo")).toBe(false);
+
+    // Adding the model is enough: it goes on now, not at the next store check.
+    models("https://api.moonshot.ai/v1");
+    await vi.waitFor(() => expect(store.info("tomrade/memo")).toMatchObject({ tier: "official", source: "store" }), { timeout: 20_000 });
+    expect(await community.offers("webSearchProviders")).toEqual([]);
+
+    await ctx.plugins.uninstall("tomrade/memo");
+    await community.installStarters();
+    expect(store.has("tomrade/memo")).toBe(false);
+    expect(await community.offers("webSearchProviders")).toEqual([{ id: "tomrade/memo", title: "Memo Search" }]);
+    expect(await community.offers("imAdapters")).toEqual([]);
+    models("https://api.deepseek.com");
+    await settle();
+    expect(await community.offers("webSearchProviders")).toEqual([]);
     server.close();
   }, 60_000);
 
