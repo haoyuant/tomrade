@@ -1,5 +1,9 @@
 # Tomrade
 
+## Tests
+
+On a ticket, iterate with `pnpm test:related` (only the tests that reach the files changed against `origin/main`); run the full `pnpm test` once before opening the pull request, and put that run's node and **Failures by kind** block in the PR body. See `docs/testing.md`.
+
 ## Tomrade
 
 The backlog for this repository lives in Tomrade (project "Tomrade"), reachable as the `tomrade` MCP server (`.mcp.json` for Claude Code, `.codex/config.toml` for Codex).

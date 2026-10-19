@@ -25,6 +25,12 @@ Check which `node` runs the tests. On macOS a notarized node outside Homebrew (n
 
 `pnpm test` (`scripts/test.mjs`) picks the node for you and prints it first: `TOMRADE_TEST_NODE` when set, else on macOS the first adhoc-signed or unsigned node among the current one, those on `PATH`, `/opt/homebrew/bin/node` and `/usr/local/bin/node`, else the current one. Its directory goes first on `PATH`, so fakes started as plain `node` use it too, and vitest's workers inherit it as `process.execPath`. It also times one `node -e 0` while the run starts and warns when that takes over 1 s; the warning never holds the run. A full run (no path or file named) also waits its turn: one full `pnpm test` at a time on this machine, through a lock in the system temp folder; the next one prints `waiting for the test run in <worktree> (pid N)` and starts when it ends, and a lock whose run is gone is taken over. Runs of a file or package skip the lock. vitest uses at most 4 workers; `TOMRADE_TEST_WORKERS` changes that. `pnpm test:ui` runs under Electron, whose spawns go through Electron's own binary, so it is not affected.
 
+## While working on a ticket
+
+Iterate with `pnpm test:related`: it lists the files changed against `origin/main` (commits, staged and unstaged edits, and new untracked files) and runs `vitest related` on them, so only tests that import them run. When no test imports any of them (a script, a fixture), it runs the `tests/` of the packages they are in. A change to `package.json` or the vitest config makes every test related. It never takes the full-run lock.
+
+Run the full `pnpm test` once, before opening the pull request; that run is the one the description reports.
+
 ## When a pull request may merge with failing tests
 
 A pull request may merge with failing tests only when **both** hold:
