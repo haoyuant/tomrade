@@ -89,6 +89,8 @@ export async function runSandboxed(mode: "inspect" | "test", dir: string, opts: 
     main: path.join(pluginDir, manifest.main),
     id: manifest.id,
     namespace: namespaceOf(manifest),
+    title: manifest.title,
+    window: manifest.permissions.window,
     tmp,
     scenario: opts.scenario ? path.join(pluginDir, opts.scenario) : null
   };

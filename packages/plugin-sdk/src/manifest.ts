@@ -3,7 +3,7 @@ import { LANGUAGE_PACK_LIMITS, LanguageEntrySchema } from "./language.js";
 import { isRange, isVersion } from "./semver.js";
 
 /** The contract this SDK describes. A plugin's `engines.sdk` range is checked against the host's. */
-export const SDK_CONTRACT = "0.2.10";
+export const SDK_CONTRACT = "0.2.11";
 
 export const PLUGIN_ID = /^[a-z0-9][a-z0-9-]{0,38}\/[a-z0-9][a-z0-9-]{0,63}$/;
 export const NAMESPACE = /^[a-z][a-z0-9_]{1,31}$/;
@@ -25,10 +25,12 @@ export const PermissionsSchema = z
     fs: z.enum(["none", "plugin", "project", "any"]).default("none"),
     /** Starts other programs. */
     exec: z.boolean().default(false),
+    /** SDK 0.2.11: opens working windows of its own (a surface of kind "window"), which take keys like any app window. */
+    window: z.boolean().default(false),
     /** Why the plugin needs a wide permission, in a sentence a person installing it can judge. Official plugins must say. */
-    why: z.object({ network: z.string().min(1), fs: z.string().min(1), exec: z.string().min(1) }).partial().optional()
+    why: z.object({ network: z.string().min(1), fs: z.string().min(1), exec: z.string().min(1), window: z.string().min(1) }).partial().optional()
   })
-  .default({ network: [], fs: "none", exec: false });
+  .default({ network: [], fs: "none", exec: false, window: false });
 
 export const ContributesSchema = z
   .object({
@@ -109,7 +111,7 @@ export type RiskLevel = "low" | "elevated" | "high";
 
 export interface Risk {
   level: RiskLevel;
-  /** Stable keys the UI words: `exec`, `fs-any`, `network-any`, `network`, `fs-project`, `db`. */
+  /** Stable keys the UI words: `exec`, `fs-any`, `network-any`, `network`, `fs-project`, `db`, `window`. */
   reasons: string[];
 }
 
@@ -123,7 +125,9 @@ export function riskOf(manifest: Pick<Manifest, "permissions" | "inject" | "opti
   const elevated = [
     p.network.length && !p.network.includes("*") && "network",
     p.fs === "project" && "fs-project",
-    [...manifest.inject, ...manifest.optional].includes("db") && "db"
+    [...manifest.inject, ...manifest.optional].includes("db") && "db",
+    // A window that takes keys could pass itself off as another app's: worth a look before installing.
+    p.window && "window"
   ].filter(Boolean) as string[];
   return { level: high.length ? "high" : elevated.length ? "elevated" : "low", reasons: [...high, ...elevated] };
 }

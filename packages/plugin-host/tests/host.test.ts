@@ -45,6 +45,35 @@ it("gives a plugin with a window a sandbox window, which the scenario can read a
   expect(result.checks.map((c) => c.name)).toEqual(expect.arrayContaining(["loads", "opened", "echoed", "closed"]));
 });
 
+it("opens a working window in the sandbox for a plugin whose manifest grants it, and records what it posts", async () => {
+  const plugin = definePlugin({
+    inject: ["contributions", "surfaces"],
+    async apply(ctx) {
+      await ctx.contributions.command({
+        id: "demo.open",
+        title: "Open",
+        run: async () => {
+          const win = await ctx.surfaces.open({ id: "demo.win", title: "Sessions", document: "panel.html", width: 900, height: 600, kind: "window", minWidth: 400 });
+          await win.post({ frame: 1 });
+        }
+      });
+    }
+  });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "plugin-host-"));
+  fs.writeFileSync(path.join(dir, "panel.html"), "<!doctype html>");
+  const result = await testPlugin({ plugin: plugin as HostTestInput["plugin"], id: "local/demo", namespace: "demo", title: "Demo", window: true, dir, tmp: dir, scenario: async () => ({
+    default: async (t: never) => {
+      const s = t as { command(id: string): Promise<unknown>; surfaces: { opened(): { id: string; title: string; kind: string; posted: unknown[] }[] }; check(n: string, ok: boolean, d?: string): void };
+      await s.command("demo.open");
+      const [win] = s.surfaces.opened();
+      s.check("a window", win?.kind === "window" && win.title === "Sessions — Demo", JSON.stringify(win));
+      s.check("posted", JSON.stringify(win?.posted) === '[{"frame":1}]', JSON.stringify(win?.posted));
+    }
+  }) });
+  expect(result.checks.filter((c) => !c.ok)).toEqual([]);
+  expect(result.checks.map((c) => c.name)).toEqual(expect.arrayContaining(["a window", "posted"]));
+});
+
 it("gives a web search provider the app's web search module, so the scenario can search through it", async () => {
   const plugin = definePlugin({
     inject: ["webSearch"],

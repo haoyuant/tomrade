@@ -81,5 +81,6 @@ export function officialProblems(dir: string, manifest: Manifest): string[] {
   if (p.network.includes("*") && !p.why?.network) out.push('permissions.network "*" (any host) needs permissions.why.network; list the hosts instead where you can');
   if (p.fs === "any" && !p.why?.fs) out.push('permissions.fs "any" needs permissions.why.fs');
   if (p.exec && !p.why?.exec) out.push("permissions.exec needs permissions.why.exec");
+  if (p.window && !p.why?.window) out.push("permissions.window needs permissions.why.window");
   return out;
 }

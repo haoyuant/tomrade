@@ -104,7 +104,7 @@ returns is disposed when the service goes.
 | `tools` | `register(defineTool(…))` (SDK 0.2.6: `kit` keeps a rarely needed tool out of each request until the model loads it; `kit(id, purpose)` says what the kit is for), `list`, `call`, `gate(check)` (throw to refuse any tool call) |
 | `contributions` | `command`, `badge`, `statusItem`, `section`, `graph` — see [Contributions](#contributions); callbacks may be async |
 | `agent` | `playbook({ id, title, when, body, tools })` |
-| `surfaces` | `open({ id, document, … })` — a document inside the plugin's own package, never a remote page (SDK 0.2.7: `onClose()` says the window is gone, however it went; the handle's calls then reject) |
+| `surfaces` | `open({ id, document, … })` — a document inside the plugin's own package, never a remote page (SDK 0.2.7: `onClose()` says the window is gone, however it went; the handle's calls then reject). SDK 0.2.11: `kind: "window"` (with `minWidth` / `minHeight`) opens a working window and needs `permissions.window`; `post(message)` sends one message to the document; see [Auxiliary desktop surfaces](#auxiliary-desktop-surfaces) |
 | `alerts` | `sounds()` (the system's, its own alert sound first), `play(sound, { volume })` — `system:<name>` or an audio file's absolute path, played by the host — and `notify({ title, body })`, a silent system notification. SDK 0.2.4 |
 | `oplog` | `recent`, `history` |
 | `im` | `register(adapter)` — an IM transport: `capabilities`, `open(connectionId, io)` returning a session with `deliver` (and optionally `download`). SDK 0.2.5 adds optional capabilities (`threads`, `reactions`, `typing`, `stream`, `select`, `multiSelect`, `textInput`, `cards`, `cardUpdate`, `nativeCommands`, `ephemeral`, `markdown` dialect, `rateLimit`), session methods `indicate`, `react`, `stream.start/append/stop`, `commands`, and `toImDialect` / `splitImText`; also `setup` (credential fields, console steps, permissions, manifest) whose values arrive sealed-at-rest as `io.credentials`, a session `identity`, the `ambient` group activation, a message's `replyTo`, and `retract` / `edit` inbound events. An adapter that declares none of them keeps the 0.2.2 behaviour |
@@ -1871,6 +1871,29 @@ top-level positioning is also unavailable on native Wayland, exposed as
 stay stationary there. Surface documents can report preferences such as
 `prefers-reduced-motion` through `onMessage` so feature-owned movement stops as
 well as CSS animation.
+
+### Windows
+
+A surface of `kind: "window"` (SDK 0.2.11) is a working window instead of a
+widget: native frame, resizable down to `minWidth` / `minHeight`, minimizable,
+full-screenable and closable (closing calls `onClose`), listed in the Dock or
+taskbar, and reopened where the person last left it, by surface id. Several
+open at once under different ids. Its title is always the surface's title
+followed by the plugin's (`Code sessions — herdr window`), and the document's
+own `<title>` never replaces it, so a window cannot pass for Tomrade's or
+another app's. An extension needs `permissions.window` in its manifest — shown
+at install as a reason to look closer; official plugins also give
+`permissions.why.window` — and opening one without it is refused. Built-ins
+need none.
+
+The document still has no Node access. Its bridge, `window.tomradeSurface`,
+stays feature-neutral: `onState(fn)` hears the whole state the plugin sets,
+`onMessage(fn)` hears each `handle.post(message)` in order (for frequent small
+updates such as terminal frames; posts made before the document loads wait
+for it), `onLook(fn)` hears how the app looks — `{ theme, dark, tokens,
+locale }`, the theme's CSS variables as the main window paints them — at once
+and on every change, and `send(message)` reaches the plugin's `onMessage`.
+Widgets get the same bridge.
 
 ## Alerts
 

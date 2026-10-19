@@ -2,7 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { THEME_TYPOGRAPHY_NAMES, THEME_TOKEN_NAMES, type AppSettings, type BuiltInTheme, type CustomTheme, type ThemeAutomation, type ThemePreference } from "@tomradex/domain";
 import { useQueryClient } from "@tanstack/react-query";
 import { keys, useSaveSettings, useSettings } from "./queries";
-import type { MessageKey } from "./i18n";
+import { useI18n, type MessageKey } from "./i18n";
+import { sendSurfaceLook } from "./surface-look";
 
 export type ResolvedTheme = BuiltInTheme;
 export { THEME_TYPOGRAPHY_NAMES, THEME_TOKEN_NAMES };
@@ -74,10 +75,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const active = activePreference(preference, automation, customThemes);
   const resolved = resolve(active, customThemes);
   const [theme, setTheme] = useState<ResolvedTheme>(resolved.base);
+  const { locale } = useI18n();
   useEffect(() => {
     const apply = () => { const next = resolve(activePreference(preference, automation, customThemes), customThemes); setTheme(next.base); paint(next.base, next.custom, true); };
     apply();
   }, [preference, customThemes, automation, active]);
+  // Plugin windows match the app: told after each paint, and when the language changes.
+  useEffect(() => sendSurfaceLook(document.documentElement.dataset.themeId ?? theme, locale), [active, customThemes, locale, theme]);
   useEffect(() => {
     if (automation.mode === "none") return;
     const refresh = () => setClock(value => value + 1);
