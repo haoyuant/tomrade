@@ -1,10 +1,14 @@
 import { BrowserWindow } from "electron";
 import type { Context } from "cordis";
 import type {} from "@tomradex/ipc";
+import type { SurfaceBounds } from "@tomradex/desktop-surface";
+import { sendToWindow } from "./ipc.js";
 
 export interface WindowChrome {
   /** macOS draws the traffic lights over the renderer's header while windowed. */
   trafficLights: boolean;
+  /** The window app-wide prompts land in, the one the shell brings forward; the others leave them be. */
+  lead: boolean;
 }
 
 declare module "@tomradex/ipc" {
@@ -13,31 +17,46 @@ declare module "@tomradex/ipc" {
   }
 }
 
+/** Where a window stands, and whether it fills its screen. */
+export interface WindowPlace extends SurfaceBounds {
+  maximized?: boolean;
+}
+
+/** What the preload reads off a window a tab moved into. */
+export const DETACHED_ARG = "--tomrade-window=detached";
+
 export interface WindowOptions {
   preload: string;
   uiIndex: string;
   icon: string;
   devServerUrl?: string;
+  /** A window a tab moved into: the route it opens on and where it stands. */
+  detached?: { route: string; place: WindowPlace };
+  /** Whether this window leads, asked each time it is told. */
+  lead: (win: BrowserWindow) => boolean;
+}
+
+/** Tells a window how its chrome stands now. */
+export function sayChrome(win: BrowserWindow, lead: boolean): void {
+  if (win.isDestroyed()) return;
+  sendToWindow(win, "window.chrome", { trafficLights: process.platform === "darwin" && !win.isFullScreen(), lead } satisfies WindowChrome);
 }
 
 export function createWindow(ctx: Context, opts: WindowOptions): BrowserWindow {
+  const place = opts.detached?.place;
   const win = new BrowserWindow({
-    width: 1440,
-    height: 900,
+    ...(place ? { x: place.x, y: place.y, width: place.width, height: place.height } : { width: 1440, height: 900 }),
     minWidth: 900,
     minHeight: 600,
     title: "Tomrade",
     icon: opts.icon,
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 14, y: 14 },
-    webPreferences: { preload: opts.preload, contextIsolation: true, nodeIntegration: false }
+    webPreferences: { preload: opts.preload, contextIsolation: true, nodeIntegration: false, ...(opts.detached ? { additionalArguments: [DETACHED_ARG] } : {}) }
   });
-  win.maximize();
+  if (!place || place.maximized) win.maximize();
 
-  const sendChrome = () => {
-    if (win.isDestroyed()) return;
-    ctx.get("ipc")?.send("window.chrome", { trafficLights: process.platform === "darwin" && !win.isFullScreen() });
-  };
+  const sendChrome = () => sayChrome(win, opts.lead(win));
   win.webContents.on("did-finish-load", sendChrome);
   // The renderer's own failures belong in the log the troubleshooter reads.
   const log = ctx.logger("renderer");
@@ -46,7 +65,8 @@ export function createWindow(ctx: Context, opts: WindowOptions): BrowserWindow {
   win.on("enter-full-screen", sendChrome);
   win.on("leave-full-screen", sendChrome);
 
-  if (opts.devServerUrl) void win.loadURL(opts.devServerUrl);
-  else void win.loadFile(opts.uiIndex);
+  const route = opts.detached?.route;
+  if (opts.devServerUrl) void win.loadURL(route ? `${opts.devServerUrl.replace(/#.*$/, "")}#${route}` : opts.devServerUrl);
+  else void win.loadFile(opts.uiIndex, route ? { hash: route } : undefined);
   return win;
 }

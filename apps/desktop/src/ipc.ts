@@ -27,4 +27,9 @@ export class ElectronIpc extends Service implements Ipc {
   }
 }
 
+/** A broadcast for one window only: what is true of that window and no other. */
+export function sendToWindow<K extends BroadcastName>(win: BrowserWindow, channel: K, ...args: unknown[]): void {
+  if (!win.isDestroyed()) win.webContents.send(PREFIX + channel, ...args);
+}
+
 export default ElectronIpc;

@@ -16,7 +16,7 @@ import { offerSafeStart, saySafeStart, showSplash, startFailed } from "./startup
 import { beginStart, hasOwnPlugins, SAFE_FLAG, SAFE_REQUEST_FILE, STARTING_FILE, startFinished, takeSafeRequest } from "./safe-start.js";
 import { followSystemProxy } from "./system-proxy.js";
 import { trustedKeys } from "./trust.js";
-import { createWindow } from "./window.js";
+import { TomradeWindows, type TabTarget } from "./windows.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(1);
@@ -154,34 +154,36 @@ app.whenReady().then(async () => {
   });
   for (const signal of ["SIGTERM", "SIGINT"] as const) process.once(signal, () => void leaveOnSignal(ctx).finally(() => app.exit(0)));
 
-  const open = () =>
-    createWindow(ctx, {
+  // A window a tab moved into stands where the last one was left: a place of the machine's, like its screens.
+  const windows = new TomradeWindows(
+    ctx,
+    {
       preload: path.join(here, "../preload.cjs"),
       // A packaged build carries the renderer beside dist/; a checkout builds it in packages/ui.
       uiIndex: app.isPackaged ? path.join(here, "../ui/index.html") : path.join(here, "../../../packages/ui/dist/index.html"),
       icon: iconPath,
       devServerUrl: process.env.VITE_DEV_SERVER_URL
-    });
-  const mainWindows = new Set<BrowserWindow>();
-  const openMain = () => {
+    },
+    path.join(machine.userData, "window-places.json")
+  );
+  const openMain = (tab?: TabTarget) => {
     cameBack();
-    const win = open();
-    mainWindows.add(win);
+    const win = windows.open(tab);
     // Closing the last Tomrade window quits, on macOS too, whatever surfaces are
     // still up; it waits on the quit so that cancelling it keeps the window.
     // With background running on it only closes, and the process stays.
     win.on("close", (event) => {
-      if (quitApproved() || keepsRunning() || [...mainWindows].some((other) => other !== win && !other.isDestroyed())) return;
+      if (quitApproved() || keepsRunning() || windows.all().some((other) => other !== win)) return;
       event.preventDefault();
       app.quit();
     });
     win.on("closed", () => {
-      mainWindows.delete(win);
-      if (!leaving() && !quitApproved() && ![...mainWindows].some((w) => !w.isDestroyed())) wentAway();
+      if (!leaving() && !quitApproved() && windows.all().length === 0) wentAway();
     });
     return win;
   };
-  provideMainWindow({ open: openMain, current: () => [...mainWindows].find((w) => !w.isDestroyed()) });
+  provideMainWindow({ open: openMain, current: () => windows.lead() });
+  ctx.ipc.handle("windows.openTab", (tab) => void openMain(tab));
   // Reached only with background running on: any other last close became a quit.
   app.on("window-all-closed", () => {});
   // The start got as far as a window that loaded, or as far as it goes without one.
@@ -194,7 +196,7 @@ app.whenReady().then(async () => {
   app.on("second-instance", (_event, args) => {
     if (leaving()) return;
     for (const arg of args) deliverDeepLink(arg);
-    const win = [...mainWindows].find((w) => !w.isDestroyed()) ?? openMain();
+    const win = windows.lead() ?? openMain();
     if (win.isMinimized()) win.restore();
     win.show();
     win.focus();
@@ -203,7 +205,7 @@ app.whenReady().then(async () => {
     if (leaving()) return;
     // Auxiliary plugin surfaces are top-level BrowserWindows too; only a real
     // Tomrade window satisfies application activation.
-    if (![...mainWindows].some((win) => !win.isDestroyed())) openMain();
+    if (!windows.lead()) openMain();
   });
 }).catch(async (error: unknown) => {
   console.error(error);

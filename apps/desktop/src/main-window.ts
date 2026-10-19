@@ -13,6 +13,9 @@ export function provideMainWindow(provider: NonNullable<typeof opener>): void {
 
 export const hasMainWindow = (): boolean => !!opener?.current();
 
+/** The window that leads — the oldest open — without bringing it forward. */
+export const leadWindow = (): BrowserWindow | undefined => opener?.current();
+
 /** The main window brought forward, opened first when there is none. Null before main.ts provides one. */
 export function showMainWindow(): BrowserWindow | null {
   if (!opener) return null;

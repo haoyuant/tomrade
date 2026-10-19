@@ -50,6 +50,7 @@
     "test:search": "electron scripts/search-check.mjs",
     "test:backlog-sidebar": "electron scripts/backlog-sidebar-check.mjs",
     "test:tabs-keys": "electron scripts/tabs-keys-check.mjs",
+    "test:tab-windows": "electron scripts/tab-windows-check.mjs",
     "test:model-setup": "electron scripts/model-setup-check.mjs",
     "test:setup": "electron scripts/setup-check.mjs",
     "test:worker-source": "electron scripts/worker-source-check.mjs",

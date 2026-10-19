@@ -1,4 +1,13 @@
 import { useSyncExternalStore } from "react";
+import { invoke } from "./api";
+import { isDetachedWindow } from "./window-chrome";
+
+declare module "@tomradex/ipc" {
+  interface Channels {
+    /** `route` is what the new window opens on; `dropped`, it was dragged out and opens under the pointer. */
+    "windows.openTab": (tab: { route: string; dropped?: boolean }) => void;
+  }
+}
 
 /**
  * A project's tab strip. The Backlog tab is always there and never closes; it
@@ -6,7 +15,8 @@ import { useSyncExternalStore } from "react";
  * gets a tab of its own; folders share one browsing tab, which follows the
  * folder last opened. Routines, once opened, has one tab of its own beside
  * Backlog until it is closed. Kept per project in this browser only — a convenience,
- * like a folded sidebar, not something that travels.
+ * like a folded sidebar, not something that travels. A window a tab moved into keeps
+ * its own strip for as long as it is open, and never writes over the main window's.
  */
 export type BacklogPlace = { kind: "view"; id: string } | { kind: "workstream"; id: string };
 
@@ -26,6 +36,7 @@ export interface TabsState {
 
 const EMPTY: TabsState = { backlog: null, routines: false, tabs: [] };
 const storageKey = (projectId: string) => `tomrade.tabs.${projectId}`;
+const store = (): Storage => (isDetachedWindow() ? sessionStorage : localStorage);
 
 const cache = new Map<string, TabsState>();
 const listeners = new Map<string, Set<() => void>>();
@@ -35,7 +46,7 @@ function read(projectId: string): TabsState {
   if (hit) return hit;
   let state = EMPTY;
   try {
-    const raw = JSON.parse(localStorage.getItem(storageKey(projectId)) ?? "null") as Partial<TabsState> | null;
+    const raw = JSON.parse(store().getItem(storageKey(projectId)) ?? "null") as Partial<TabsState> | null;
     if (raw && Array.isArray(raw.tabs)) {
       const tabs = raw.tabs.filter((t): t is FileTab => !!t && (t.kind === "file" || t.kind === "folder") && typeof t.path === "string");
       const backlog = raw.backlog && (raw.backlog.kind === "view" || raw.backlog.kind === "workstream") && typeof raw.backlog.id === "string" ? raw.backlog : null;
@@ -53,7 +64,7 @@ function write(projectId: string, next: TabsState): void {
   if (prev === next) return;
   cache.set(projectId, next);
   try {
-    localStorage.setItem(storageKey(projectId), JSON.stringify(next));
+    store().setItem(storageKey(projectId), JSON.stringify(next));
   } catch {
     // the strip still works for this session
   }
@@ -136,4 +147,9 @@ export function renameTabs(projectId: string, from: string, to: string): void {
     return t;
   });
   if (changed) write(projectId, { ...state, tabs });
+}
+
+/** Opens a window of its own on `route`, a tab's place in this app. */
+export function openTabWindow(route: string, dropped = false): Promise<void> {
+  return invoke("windows.openTab", { route, ...(dropped ? { dropped } : {}) });
 }

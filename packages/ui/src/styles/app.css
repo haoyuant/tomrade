@@ -565,6 +565,9 @@ strong { font-weight: var(--font-weight-medium); }
 }
 .tab:hover .tab-close, .tab[aria-selected="true"] .tab-close, .tab:focus-visible .tab-close { opacity: 1; }
 .tab-close:hover { background: var(--border-soft); color: var(--fg); }
+/* dragged, and faded once out of the window: let go there and it opens in one of its own */
+.tab[data-drag] { cursor: grabbing; }
+.tab[data-drag="out"] { opacity: 0.45; }
 
 /* ─── board region ───────────────────────────────────────────────────── */
 .board-region { display: flex; flex-direction: column; min-height: 0;
