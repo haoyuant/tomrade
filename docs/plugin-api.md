@@ -501,7 +501,9 @@ await ctx.models.registerProvider({
 - **`signIn`** `{ title, run({ open, signal }) }` adds a button beside the key:
   `run` shows the provider's page with `open(url)` and answers `{ apiKey }`,
   which the profile keeps. Only for a sign-in the provider allows third-party
-  apps — OpenRouter's OAuth PKCE, credentials a cloud CLI already holds — never
+  apps — OpenRouter's OAuth PKCE (the app's `openrouter` provider signs in so,
+  through a callback on localhost that lives only while it waits), credentials
+  a cloud CLI already holds — never
   a consumer subscription (Claude Pro/Max, ChatGPT Plus), whose terms keep it to
   the vendor's own apps; a signed-in CLI is used through `ctx.llm.lend` instead.
 - What the spec leaves out takes the defaults: a key is required, the address

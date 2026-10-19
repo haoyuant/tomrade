@@ -137,6 +137,14 @@ const run = async () => {
   await sleep(600);
   check("and removes it once confirmed", profiles().length === 0);
 
+  // ── OpenRouter offers its own sign-in beside the key (not clicked: it opens openrouter.ai) ──
+  await press(button("+ OpenRouter"));
+  await sleep(400);
+  const signIn = await $(`document.querySelector('[data-testid="profile-sign-in"]')?.textContent ?? ''`);
+  check("OpenRouter's profile form offers its own sign-in", signIn === "Sign in with OpenRouter", signIn);
+  await press(button("Cancel"));
+  await sleep(300);
+
   // ── a plugin adds a model provider ───────────────────────────────────
   const acme = path.join(work, "acme");
   fs.mkdirSync(path.join(acme, "dist"), { recursive: true });
