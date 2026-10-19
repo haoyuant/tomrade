@@ -71,6 +71,8 @@ export type CardAction =
   | { kind: "retry-with"; threadId: string; exclude?: string; label: string }
   /** Says this in the card's own thread. */
   | { kind: "say"; text: string; label: string }
+  /** Installs one of Tomrade's own plugins from the official catalog; `done` is what the person is told once it is on. */
+  | { kind: "install-plugin"; pluginId: string; done: string; label: string }
   /** Opens the report about this thread, to read and send to Tomrade's developer. */
   | { kind: "report"; label: string }
   /** Lets one of these agents look into it; `note` says what it will read and where that goes. */

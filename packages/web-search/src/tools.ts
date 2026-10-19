@@ -49,12 +49,21 @@ export function formatPages({ pages, failed }: ReadResponse): string {
 const UNAVAILABLE_CARD = "web-search-unavailable";
 
 type CardPoster = { setCard(runId: string, card: { id: string; schema: string; title: string; data: unknown }): unknown };
+type Offerer = { offers(kind: string): Promise<{ id: string; title: string }[]> };
+
+/** Official search plugins the person's models call for, not installed; none when the catalog cannot be read. */
+async function searchOffers(ctx: Context): Promise<{ id: string; title: string }[]> {
+  const community = ctx.get("community") as Offerer | undefined;
+  return (await community?.offers("webSearchProviders").catch(() => [])) ?? [];
+}
 
 /** Shows the person in the conversation how to get web search; false when the call is not from one. */
-function tellPerson(ctx: Context, invocation: ToolInvocation, settings: string | undefined): boolean {
+async function tellPerson(ctx: Context, invocation: ToolInvocation, settings: string | undefined): Promise<boolean> {
   const agent = ctx.get("agent") as CardPoster | undefined;
   if (!invocation.run || !agent) return false;
   const w = WEB_SEARCH_WORDS((ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
+  // One click when a plugin for a model they already have would do it.
+  const installs = (await searchOffers(ctx)).map((p) => ({ kind: "install-plugin", pluginId: p.id, label: w("installPlugin", { title: p.title }), done: w("installed", { title: p.title }) }));
   agent.setCard(invocation.run.id, {
     id: UNAVAILABLE_CARD,
     schema: "finding",
@@ -64,6 +73,7 @@ function tellPerson(ctx: Context, invocation: ToolInvocation, settings: string |
       headline: w("unavailableHeadline"),
       body: w("unavailableBody"),
       actions: [
+        ...installs,
         { kind: "settings", label: w("switchModel") },
         { kind: "settings", pane: settings ?? "plugins", label: w("setUpSearch") }
       ]
@@ -86,7 +96,7 @@ const searchTool = (ctx: Context, service: WebSearch, mcp: boolean) =>
     async execute(args, invocation) {
       const missing = service.unavailable();
       if (missing) {
-        const told = tellPerson(ctx, invocation, missing.settings);
+        const told = await tellPerson(ctx, invocation, missing.settings);
         throw new Error(told ? `${missing.reason}. The user has been shown how to fix this in the conversation; go on without the web and say in one line that you could not search.` : missing.reason);
       }
       const { results } = await service.search({ ...args, maxResults: args.maxResults ?? 5, topic: args.topic ?? "general" }, invocation.signal);

@@ -1133,6 +1133,10 @@ export function AgentPanel({
       } else if (action.kind === "settings") {
         if (!action.pane || !openSettingsPane(action.pane)) onOpenSettings(action.engineId);
       }
+      else if (action.kind === "install-plugin") {
+        await invoke("community.install", action.pluginId);
+        toast({ body: action.done });
+      }
       else if (action.kind === "report") setReportFor(inThread);
       else if (action.kind === "investigate" && engineId) await invoke("doctor.investigate", projectId, inThread, engineId);
       else if (action.kind === "say") { if (!busy) await send.mutateAsync({ threadId: inThread, text: action.text }); }

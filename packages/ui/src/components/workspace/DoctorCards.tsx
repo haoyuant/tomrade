@@ -64,7 +64,7 @@ export function FindingBlock({ card, engines, allEngines, onAction }: { card: Fi
             }
             if (action.kind !== "retry-with") {
               return (
-                <button key={i} type="button" className={`btn ${action.kind === "report" ? "btn-primary" : "btn-ghost"}`} onClick={() => onAction(action)}>
+                <button key={i} type="button" className={`btn ${action.kind === "report" || action.kind === "install-plugin" ? "btn-primary" : "btn-ghost"}`} onClick={() => onAction(action)}>
                   {action.label}
                 </button>
               );

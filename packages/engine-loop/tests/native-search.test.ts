@@ -8,7 +8,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { Context } from "cordis";
+import { Service, type Context } from "cordis";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { fresh } from "@tomradex/testkit";
@@ -105,6 +105,25 @@ describe("web search in the loop", () => {
     expect(card.tone).toBe("warn");
     expect(card.actions).toEqual([expect.objectContaining({ kind: "settings" }), expect.objectContaining({ kind: "settings", pane: "plugins" })]);
     expect(card.actions[0].pane).toBeUndefined();
+  });
+
+  it("offers in one click an official search plugin the person's models call for", async () => {
+    class FakeCommunity extends Service {
+      static provide = "community";
+      constructor(ctx: Context) {
+        super(ctx, "community");
+      }
+      offers = async (kind: string) => (kind === "webSearchProviders" ? [{ id: "tomrade/kimi-search", title: "Kimi Search" }] : []);
+    }
+    const searching = { name: "search-with-offer", apply: (ctx: Context) => void (ctx.plugin(WebSearch), ctx.plugin(FakeCommunity)) };
+    const { cards } = await drive(
+      false,
+      (request) => (request.messages.at(-1)?.content.some((b) => b.type === "tool_result") ? answer : [{ type: "tool_call", id: "s", name: "web_search", args: { query: "kimi" } }, { type: "stop", reason: "tool_use" }]),
+      searching
+    );
+    const actions = (cards[0]?.data as { actions: { kind: string; pluginId?: string; label: string; done?: string }[] }).actions;
+    expect(actions[0]).toEqual({ kind: "install-plugin", pluginId: "tomrade/kimi-search", label: "Install Kimi Search", done: "Kimi Search is installed: web search works from your next message." });
+    expect(actions.slice(1).map((a) => a.kind)).toEqual(["settings", "settings"]);
   });
 
   it("shows no such card when search works", async () => {
