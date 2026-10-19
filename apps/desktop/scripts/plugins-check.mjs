@@ -43,8 +43,8 @@ const run = async () => {
   const view = (id) => ctx.plugins.list().find((p) => p.id === id);
   const module = (id) => ctx.plugins.modules().find((m) => m.id === id);
 
-  // The scripted engine ships switched off.
-  const shippedOff = new Set(["engine-scripted"]);
+  // Rows the composition ships switched off (the scripted engine, say) stay off; every other one starts.
+  const shippedOff = new Set(ctx.plugins.rows().filter((r) => r.disabled).map((r) => r.id));
   check("every row the composition switches on is active", ctx.plugins.list().every((p) => p.state === (shippedOff.has(p.id) ? "disabled" : "active")));
   check("every required module has a provider", ctx.plugins.modules().every((m) => !m.required || m.providers.length));
   // The assistant's shell is in the tool registry for engines here, and nowhere on the MCP server.
@@ -117,7 +117,7 @@ const run = async () => {
 
   // Contracts: declared on the row so a switched-off one still groups, and
   // held to what the running rows actually register.
-  check("the snapshot carries the composition's contracts", ctx.plugins.snapshot().contracts.map((c) => c.id).join() === "engine,storage,files,im,inboxSource,webSearch");
+  check("the snapshot carries the composition's contracts", ctx.plugins.snapshot().contracts.map((c) => c.id).join() === "engine,storage,files,im,inboxSource,inboxTriager,webSearch");
   check("a switched-off engine still counts as an engine", view("engine-scripted")?.state === "disabled" && view("engine-scripted")?.implements.join() === "engine");
   await ctx.plugins.setEnabled("engine-scripted", true);
   const declared = new Map(ctx.plugins.rows().map((r) => [r.id, r.implements ?? []]));
