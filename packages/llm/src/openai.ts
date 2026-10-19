@@ -1,5 +1,6 @@
 import { inputMimes, type InputModality, type MediaData, type ChatEvent, type ChatModel, type ChatRequest, type StopReason } from "./model.js";
-import { LlmError } from "./errors.js";
+import { LlmError, NativeSearchRefused } from "./errors.js";
+import { fitsResponses, readResponses, responsesBody, searchesOnResponses } from "./responses.js";
 
 export interface OpenAiConfig {
   baseURL: string;
@@ -11,6 +12,8 @@ export interface OpenAiConfig {
   retries?: number;
   /** The first wait between tries; each later one is three times longer. Default 1000. */
   retryDelayMs?: number;
+  /** Whether the model searches the web on its own through the Responses API; by default OpenAI's current models and DeepSeek's v4-pro. */
+  webSearch?: boolean;
 }
 
 interface OpenAiMessage {
@@ -101,7 +104,16 @@ export const pause = (ms: number, signal?: AbortSignal): Promise<void> =>
   });
 
 export class OpenAiCompatible implements ChatModel {
-  get capabilities() { return { tools: true, streaming: true, json: true, mediaInput: inputMimes(this.config.inputModalities ?? []), mediaOutput: this.config.outputModalities ?? [] }; }
+  get capabilities() {
+    return {
+      tools: true,
+      streaming: true,
+      json: true,
+      mediaInput: inputMimes(this.config.inputModalities ?? []),
+      mediaOutput: this.config.outputModalities ?? [],
+      nativeWebSearch: this.config.webSearch ?? searchesOnResponses(this.config.baseURL, this.config.model)
+    };
+  }
 
   /**
    * OpenAI's newer models take only `max_completion_tokens` and only the default
@@ -166,6 +178,11 @@ export class OpenAiCompatible implements ChatModel {
   async *chat(request: ChatRequest, signal?: AbortSignal): AsyncIterable<ChatEvent> {
     for (const message of request.messages) for (const block of message.content) {
       if (block.type === "media" && !this.capabilities.mediaInput.includes(block.media.mime)) throw new LlmError(`This model profile does not accept ${block.media.mime}`);
+    }
+    // The model's own search lives on the Responses API; only a request that asks for it goes there.
+    if (request.webSearch && this.capabilities.nativeWebSearch && fitsResponses(request)) {
+      yield* this.respond(request, signal);
+      return;
     }
     const messages = toMessages(request);
     const body = (): Record<string, unknown> => {
@@ -266,5 +283,24 @@ export class OpenAiCompatible implements ChatModel {
       yield { type: "media", media: { name: "response.wav", mime: "audio/wav", base64: Buffer.concat([header, pcm]).toString("base64") } };
     }
     yield { type: "stop", reason: stop };
+  }
+
+  private async *respond(request: ChatRequest, signal?: AbortSignal): AsyncIterable<ChatEvent> {
+    const url = this.config.baseURL.replace(/\/$/, "") + "/responses";
+    const res = yield* this.post(url, {
+      method: "POST",
+      headers: { Authorization: "Bearer " + this.config.apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify(responsesBody(this.config.model, request)),
+      signal
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      // An endpoint, model or account without the search refuses it: the caller searches another way.
+      if (res.status === 400 || res.status === 404 || res.status === 422) throw new NativeSearchRefused(`The model's web search was refused (${res.status}): ${text.slice(0, 300)}`);
+      const requestId = res.headers.get("x-request-id") ?? res.headers.get("request-id") ?? undefined;
+      throw new LlmError(`LLM request failed ${res.status}: ${text.slice(0, 300)}`, undefined, { status: res.status, url: res.url || url, ...(requestId ? { requestId } : {}), body: text.slice(0, 8000) });
+    }
+    if (!res.body) throw new LlmError("LLM response had no body");
+    yield* readResponses(sseData(res.body));
   }
 }
