@@ -1,6 +1,7 @@
 // `pnpm test`: runs vitest on a node whose launches are fast (docs/testing.md).
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -32,6 +33,63 @@ function pickNode() {
   }
   return { bin: process.execPath, why: "current node; no adhoc-signed node found" };
 }
+
+// Full runs from every session on this machine share one syspolicyd and the CPUs: one at a time beats all timing out together.
+const LOCK = path.join(os.tmpdir(), "tomrade-full-test-run");
+const OWNER = path.join(LOCK, "owner.json");
+
+const alive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err.code === "EPERM";
+  }
+};
+
+// A path or a file name narrows the run to part of the suite, which needs no lock.
+const narrowed = process.argv.slice(2).some((arg) => !arg.startsWith("-") && (arg.includes("/") || arg.includes(".") || fs.existsSync(path.resolve(root, arg))));
+
+async function takeLock() {
+  let said = false;
+  for (;;) {
+    try {
+      fs.mkdirSync(LOCK);
+      fs.writeFileSync(OWNER, JSON.stringify({ pid: process.pid, dir: root }));
+      const release = () => {
+        try {
+          if (JSON.parse(fs.readFileSync(OWNER, "utf8")).pid === process.pid) fs.rmSync(LOCK, { recursive: true, force: true });
+        } catch {
+          // Already gone.
+        }
+      };
+      process.on("exit", release);
+      return;
+    } catch (err) {
+      if (err.code !== "EEXIST") throw err;
+    }
+    let owner = null;
+    try {
+      owner = JSON.parse(fs.readFileSync(OWNER, "utf8"));
+    } catch {
+      // Taken a moment ago and not written yet, or left half-made by a run that died between the two steps.
+      const age = Date.now() - (fs.statSync(LOCK, { throwIfNoEntry: false })?.mtimeMs ?? Date.now());
+      if (age > 10_000) fs.rmSync(LOCK, { recursive: true, force: true });
+    }
+    if (owner && !alive(owner.pid)) {
+      console.log(`[test] taking over the lock of a run that ended (pid ${owner.pid})`);
+      fs.rmSync(LOCK, { recursive: true, force: true });
+      continue;
+    }
+    if (owner && !said) {
+      console.log(`[test] waiting for the test run in ${owner.dir} (pid ${owner.pid})`);
+      said = true;
+    }
+    await new Promise((r) => setTimeout(r, 1_000));
+  }
+}
+
+if (!narrowed) await takeLock();
 
 const node = pickNode();
 console.log(`[test] node: ${node.bin} (${node.why})`);
