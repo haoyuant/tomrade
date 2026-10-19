@@ -435,7 +435,8 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         const existing = repoId ? host.store.links(projectId, item.id).find((l) => l.repoId === repoId && l.delivery === delivery.sequence && l.branch) : null;
         // An external session starts with no branch of its own; the template names one.
         // Only a branch that has to be invented needs a slug, and only a CJK title needs the model.
-        const settled = existing?.branch || (session?.delivery === delivery.sequence ? session.branch : "");
+        // The session's branch is this ticket's only while the session stays on it; moving on to another ticket starts a new one.
+        const settled = existing?.branch || (!switched && session?.delivery === delivery.sequence ? session.branch : "");
         const baseBranch = settled
           ? ""
           : branchFor(state?.branchTemplate ?? DEFAULT_BRANCH_TEMPLATE, item.key, item.title, await titleSlug(ctx.get("llm") ?? null, item.title));

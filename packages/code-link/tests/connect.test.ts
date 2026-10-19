@@ -705,12 +705,14 @@ describe("outside clients, told apart by their connection", () => {
     const first = items.create({ projectId: project.id, boardId: board.id, title: "First", status: "todo", by: "human" });
     const next = items.create({ projectId: project.id, boardId: board.id, title: "Next", status: "todo", by: "human" });
     const a = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-a" };
-    const { tracking } = (await ctx.tools.execute("claim_ticket", { key: first.key }, a)) as { tracking: { sessionId: string } };
+    const { tracking, branch: firstBranch } = (await ctx.tools.execute("claim_ticket", { key: first.key }, a)) as { tracking: { sessionId: string }; branch: string };
     items.update(project.id, first.id, { status: "done" }, "human");
     // Done as far as the ticket goes, while the terminal is still open.
     codeLink.store.patchSession(project.id, tracking.sessionId, { state: "running", endedAt: null });
     const claimed = (await ctx.tools.execute("claim_ticket", { key: next.key }, a)) as { branch: string; tracking: { sessionId: string }; conventions: string[] };
     expect(claimed.tracking.sessionId).toBe(tracking.sessionId);
+    expect(claimed.branch).not.toBe(firstBranch);
+    expect(claimed.branch.startsWith(next.key.toLowerCase())).toBe(true);
     expect(claimed.conventions.some((c) => c.includes("from the latest") && c.includes("previous ticket"))).toBe(true);
     expect(codeLink.store.session(project.id, tracking.sessionId)).toMatchObject({ itemIds: [next.id], branch: claimed.branch });
     expect(await ctx.tools.execute("note_progress", { text: "on the next one" }, a)).toMatchObject({ ok: true, key: next.key });
