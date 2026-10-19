@@ -114,7 +114,7 @@ async function geminiModels(origin: string, apiKey: string, timeoutMs: number): 
  */
 export function usableModels(provider: string, listed: string[]): string[] {
   const images = /image|dall-e/i;
-  const notChat = /embed|whisper|tts|transcribe|moderation|rerank|dall-e|gpt-image|davinci|babbage|realtime|audio|(^|[/-])live([.-]|$)|(^|[/-])(imagen|veo|sora)-|(^|\/)aqa$|search-preview|computer-use/i;
+  const notChat = /embed|whisper|tts|transcribe|moderation|rerank|dall-e|gpt-image|davinci|babbage|realtime|native-audio|(^|[/-])live([.-]|$)|(^|[/-])(imagen|veo|sora)-|(^|\/)aqa$|search-preview|computer-use/i;
   const kept = provider === "openai-images" ? listed.filter((id) => images.test(id)) : listed.filter((id) => !notChat.test(id));
   return [...new Set(kept)].sort((a, b) => b.localeCompare(a, "en", { numeric: true }));
 }
