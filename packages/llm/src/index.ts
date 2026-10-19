@@ -4,21 +4,22 @@ import { modelErrorKind, wordsLocale, type ModelErrorKind, type WordsLocale } fr
 import type {} from "@tomradex/db";
 import type {} from "@tomradex/ipc";
 import type { SettingsSection } from "@tomradex/settings";
-import { AnthropicModel } from "./anthropic.js";
-import { detectCapabilities, sameCapabilities, type ModelCapabilities } from "./capabilities.js";
-import { ImagesModel } from "./images.js";
+import { BUILTIN_PROVIDERS } from "./builtin-providers.js";
+import { sameCapabilities, type ModelCapabilities } from "./capabilities.js";
 export { ImagesModel } from "./images.js";
 import { LlmError, MediaRefused } from "./errors.js";
 import { assistantMessage, collect, modalityOf, userMessage, type ChatEvent, type ChatModel, type ChatRequest, type Collected, type LlmRole, type Message } from "./model.js";
-import { OpenAiCompatible } from "./openai.js";
 import { withPromptTools } from "./prompt-tools.js";
-import { guessProviders, keyHint, listModels, pickModel, PROVIDERS, usableModels, type ModelListing, type QuickSetupResult } from "./providers.js";
+import type { ModelProviderSpec, ModelProviderView } from "./provider.js";
+import { guessFrom, keyHint, pickModel, type ModelListing, type ProviderPreset, type QuickSetupResult } from "./providers.js";
 import { WORKER_CALLS_MIGRATIONS, WORKER_CALLS_TABLES, WorkerCallLog, type WorkerPurpose, type WorkerSpend, type WorkerUsageSummary } from "./worker-usage.js";
 import { REFUSED_MEDIA_MIGRATION, REFUSED_MEDIA_TABLES, RefusedMedia } from "./refused-media.js";
 import { LLM_WORDS } from "./words.js";
 
 export * from "./model.js";
-export { PROVIDERS, guessProviders, keyHint, listModels, pickModel, usableModels, type ModelListing, type ProviderPreset, type QuickSetupResult } from "./providers.js";
+export { guessFrom, keyHint, listModels, pickModel, usableModels, type ModelListing, type ProviderPreset, type QuickSetupResult } from "./providers.js";
+export { ANTHROPIC, BUILTIN_PROVIDERS, OPENAI_COMPATIBLE, OPENAI_IMAGES, PROVIDERS, guessProviders } from "./builtin-providers.js";
+export type { ModelListResult, ModelProviderSpec, ModelProviderView, ProviderProfile } from "./provider.js";
 export { LlmError, MediaRefused, NativeMediaRefused, NativeSearchRefused, type LlmErrorResponse } from "./errors.js";
 export { OpenAiCompatible, type OpenAiConfig } from "./openai.js";
 export { AnthropicModel, type AnthropicConfig } from "./anthropic.js";
@@ -45,8 +46,8 @@ export interface CompletionRequest {
 const NO_PROFILE = "No model profile configured — add one in Settings → Assistant";
 // Reachable from mainland China first for a Chinese reader; the paid global APIs first otherwise.
 const PROVIDER_ORDER: Record<WordsLocale, string[]> = {
-  en: ["anthropic", "openai", "deepseek", "openrouter", "kimi", "ollama"],
-  zh: ["deepseek", "kimi", "anthropic", "openai", "openrouter", "ollama"]
+  en: ["anthropic", "openai", "gemini", "deepseek", "openrouter", "kimi", "ollama"],
+  zh: ["deepseek", "kimi", "anthropic", "openai", "gemini", "openrouter", "ollama"]
 };
 
 /** A model that sends nothing for this long has stopped answering; a long document still streaming is never cut. */
@@ -104,6 +105,10 @@ export interface ProviderView {
   id: string;
   title: string;
   hint: string;
+  /** The model provider a profile for it uses, and where it starts. */
+  provider: string;
+  baseURL: string;
+  model: string;
   keyPage?: string;
   local?: boolean;
 }
@@ -162,6 +167,8 @@ export interface LlmService extends LLMProvider {
   /** Offer a model for worker calls while no profile is configured; returns the withdrawal. */
   lend(model: LentModel): () => void;
   worker(): Promise<WorkerStatus>;
+  /** Serve the profiles naming `provider.id`, and offer its presets; returns the withdrawal. */
+  registerProvider(provider: ModelProviderSpec): () => void;
 }
 
 declare module "@tomradex/ipc" {
@@ -171,6 +178,7 @@ declare module "@tomradex/ipc" {
     "llm.worker": () => WorkerStatus;
     "llm.lenders": () => LenderView[];
     "llm.providers": () => ProviderView[];
+    "llm.modelProviders": () => ModelProviderView[];
     "llm.guess": (key: string) => string[];
     "llm.detect": () => DetectedModel[];
     "llm.quickSetup": (input: { preset: string; apiKey?: string }) => QuickSetupResult;
@@ -188,7 +196,8 @@ declare module "cordis" {
 export const modelProfileSchema = z.object({
   id: z.string().min(1),
   title: z.string().default(""),
-  provider: z.enum(["openai-compatible", "anthropic", "openai-images"]),
+  /** The model provider that builds it: "openai-compatible", "anthropic", "openai-images", or one a plugin adds. */
+  provider: z.string().min(1),
   baseURL: z.string().optional(),
   apiKey: z.string().default(""),
   model: z.string().min(1),
@@ -321,6 +330,7 @@ export class Llm extends Service implements LlmService {
   static inject = ["settings"];
 
   private cache = new Map<string, ChatModel>();
+  private kinds = new Map<string, ModelProviderSpec>(BUILTIN_PROVIDERS.map((p) => [p.id, p]));
   private lent: LentModel[] = [];
   private lentRunning = 0;
   private lentWaiting: (() => void)[] = [];
@@ -338,7 +348,8 @@ export class Llm extends Service implements LlmService {
       ctx.ipc.handle("llm.worker", () => ctx.llm.worker());
       ctx.ipc.handle("llm.lenders", () => this.lenders());
       ctx.ipc.handle("llm.providers", () => this.providers());
-      ctx.ipc.handle("llm.guess", (key) => guessProviders(key));
+      ctx.ipc.handle("llm.modelProviders", () => this.modelProviders());
+      ctx.ipc.handle("llm.guess", (key) => guessFrom(this.presets(), key));
       ctx.ipc.handle("llm.detect", () => this.detect());
       ctx.ipc.handle("llm.quickSetup", (input) => this.quickSetup(input));
       ctx.ipc.handle("llm.adopt", (id) => this.adopt(id));
@@ -379,7 +390,7 @@ export class Llm extends Service implements LlmService {
     const w = this.words();
     if (!profile) return { ok: false, reason: w("noProfile") };
     // A local endpoint (Ollama, LM Studio) needs no key; Anthropic always does.
-    if (profile.provider === "anthropic" && !profile.apiKey) return { ok: false, reason: w("noApiKey", { profile: profile.title || profile.id }) };
+    if (this.kinds.get(profile.provider)?.keyRequired && !profile.apiKey) return { ok: false, reason: w("noApiKey", { profile: profile.title || profile.id }) };
     return { ok: true, profile: { id: profile.id, title: profile.title || profile.model, provider: profile.provider, model: profile.model } };
   }
 
@@ -401,21 +412,23 @@ export class Llm extends Service implements LlmService {
 
   async test(input: ModelProfile): Promise<ModelTest> {
     const profile = modelProfileSchema.parse(input);
+    const kind = this.kinds.get(profile.provider);
+    if (!kind) return { ok: false, kind: "model", detail: this.unknown(profile.provider) };
     // an image endpoint has no one-token request; it shows its worth on the first picture
-    if (profile.provider === "openai-images") return { ok: true };
+    if (!kind.chat) return { ok: true };
     return probe(this.build(profile));
   }
 
   /** What the endpoint lists, for the profile form's model picker. A listing-less endpoint is an empty list, not an error. */
   async listing(endpoint: Pick<ModelProfile, "provider" | "baseURL" | "apiKey">): Promise<ModelListing> {
-    // the same defaults build() talks to
-    const baseURL = endpoint.baseURL || { anthropic: "", "openai-images": "https://api.openai.com/v1", "openai-compatible": "https://api.deepseek.com" }[endpoint.provider];
-    const result = await listModels({ provider: endpoint.provider === "anthropic" ? "anthropic" : "openai-compatible", baseURL }, endpoint.apiKey.trim());
+    const kind = this.kinds.get(endpoint.provider);
+    if (!kind) return { ok: false, kind: "model", detail: this.unknown(endpoint.provider) };
+    const result = await kind.list({ baseURL: endpoint.baseURL || undefined, apiKey: endpoint.apiKey.trim() });
     if (!result.ok) return { ok: false, kind: modelErrorKind(result.detail), detail: result.detail };
-    const models = usableModels(endpoint.provider, result.models ?? []);
+    const models = kind.usable(result.models ?? []);
     const capabilities: Record<string, ModelCapabilities> = {};
     for (const id of models) {
-      const detected = detectCapabilities(endpoint.provider, id, result.capabilities[id]);
+      const detected = kind.capabilities(id, result.capabilities[id]);
       if (detected) capabilities[id] = detected;
     }
     return { ok: true, models, capabilities };
@@ -430,7 +443,7 @@ export class Llm extends Service implements LlmService {
     const asked = new Map<string, Promise<ModelListing | null>>();
     const found = new Map<string, { model: string; detected: ModelCapabilities }>();
     for (const profile of this.models().profiles) {
-      if (profile.provider === "openai-images") continue;
+      if (!this.kinds.get(profile.provider)?.chat) continue;
       const key = JSON.stringify([profile.provider, profile.baseURL ?? "", profile.apiKey]);
       if (!asked.has(key)) asked.set(key, this.listing(profile).catch(() => null));
       const listing = await asked.get(key);
@@ -446,6 +459,29 @@ export class Llm extends Service implements LlmService {
       return hit && hit.model === p.model ? { ...p, ...hit.detected } : p;
     });
     this.ctx.settings.set({ ...all, models: { ...models, profiles } });
+  }
+
+  registerProvider(provider: ModelProviderSpec): () => void {
+    this.kinds.set(provider.id, provider);
+    this.cache.clear();
+    return () => {
+      if (this.kinds.get(provider.id) !== provider) return;
+      this.kinds.delete(provider.id);
+      this.cache.clear();
+    };
+  }
+
+  private unknown(provider: string): string {
+    return `No model provider "${provider}" is installed — switch its plugin back on, or pick another profile in Settings → Assistant`;
+  }
+
+  private presets(): ProviderPreset[] {
+    return [...this.kinds.values()].flatMap((spec) => spec.presets.map((preset) => ({ ...preset, provider: spec.id })));
+  }
+
+  modelProviders(): ModelProviderView[] {
+    const locale = wordsLocale(this.words().locale);
+    return [...this.kinds.values()].map((k) => ({ id: k.id, title: k.title[locale], keyRequired: k.keyRequired, baseURL: k.baseURL, chat: k.chat, defaultInput: k.defaultInput }));
   }
 
   private adapterOf(profile: ModelProfile): ChatModel {
@@ -478,13 +514,10 @@ export class Llm extends Service implements LlmService {
   }
 
   private build(profile: ModelProfile): ChatModel {
-    const base: ChatModel =
-      profile.provider === "openai-images"
-        ? new ImagesModel({ baseURL: profile.baseURL ?? "https://api.openai.com/v1", apiKey: profile.apiKey, model: profile.model })
-        : profile.provider === "anthropic"
-        ? new AnthropicModel({ apiKey: profile.apiKey, model: profile.model, baseURL: profile.baseURL, inputModalities: profile.inputModalities })
-        : new OpenAiCompatible({ baseURL: profile.baseURL ?? "https://api.deepseek.com", apiKey: profile.apiKey, model: profile.model, inputModalities: profile.inputModalities, outputModalities: profile.outputModalities });
-    return profile.promptTools && profile.provider !== "openai-images" ? withPromptTools({ capabilities: { ...base.capabilities, tools: false }, chat: (r, s) => base.chat(r, s) }) : base;
+    const kind = this.kinds.get(profile.provider);
+    if (!kind) throw new LlmError(this.unknown(profile.provider));
+    const base = kind.build(profile);
+    return profile.promptTools && kind.chat ? withPromptTools({ capabilities: { ...base.capabilities, tools: false }, chat: (r, s) => base.chat(r, s) }) : base;
   }
 
   async completeJson<T>(schema: z.ZodType<T>, request: CompletionRequest): Promise<T> {
@@ -605,22 +638,24 @@ export class Llm extends Service implements LlmService {
   providers(): ProviderView[] {
     const locale = wordsLocale(this.words().locale);
     const order = PROVIDER_ORDER[locale];
-    return [...PROVIDERS]
-      .sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))
-      .map((p) => ({ id: p.id, title: p.title, hint: p.hint[locale], ...(p.keyPage ? { keyPage: p.keyPage } : {}), ...(p.local ? { local: true } : {}) }));
+    const rank = (id: string) => (order.includes(id) ? order.indexOf(id) : order.length);
+    return this.presets()
+      // a provider's own presets, which the order does not know, come after the app's
+      .sort((a, b) => rank(a.id) - rank(b.id))
+      .map((p) => ({ id: p.id, title: p.title, hint: p.hint[locale], provider: p.provider, baseURL: p.baseURL, model: p.model, ...(p.keyPage ? { keyPage: p.keyPage } : {}), ...(p.local ? { local: true } : {}) }));
   }
 
   /** Keys exported in the person's shell and local servers, minus what a profile already uses. */
   async detect(): Promise<DetectedModel[]> {
     const profiles = this.models().profiles;
     const found: DetectedModel[] = [];
-    for (const preset of PROVIDERS) {
+    for (const preset of this.presets()) {
       if (preset.env) {
         const key = process.env[preset.env]?.trim();
         if (key && !profiles.some((p) => p.apiKey === key)) found.push({ id: `env:${preset.env}`, preset: preset.id, source: "env", detail: `${preset.env} · ${keyHint(key)}` });
       }
       if (preset.local && !profiles.some((p) => p.baseURL === preset.baseURL)) {
-        const listing = await listModels(preset, "", 800);
+        const listing = await this.kinds.get(preset.provider)!.list({ baseURL: preset.baseURL, apiKey: "" }, 800);
         if (listing.ok && listing.models?.length) found.push({ id: `local:${preset.id}`, preset: preset.id, source: "local", detail: listing.models.slice(0, 3).join(", ") });
       }
     }
@@ -630,7 +665,7 @@ export class Llm extends Service implements LlmService {
   adopt(id: string): Promise<QuickSetupResult> {
     const [source, name] = id.split(":");
     if (source === "local") return this.quickSetup({ preset: name });
-    const preset = PROVIDERS.find((p) => p.env === name);
+    const preset = this.presets().find((p) => p.env === name);
     if (source !== "env" || !preset) throw new Error(`Nothing detected as ${id}`);
     return this.quickSetup({ preset: preset.id, apiKey: process.env[name] ?? "" });
   }
@@ -641,11 +676,12 @@ export class Llm extends Service implements LlmService {
    * every engine uses it. A profile on the same endpoint takes the new key.
    */
   async quickSetup(input: { preset: string; apiKey?: string }): Promise<QuickSetupResult> {
-    const preset = PROVIDERS.find((p) => p.id === input.preset);
+    const preset = this.presets().find((p) => p.id === input.preset);
     if (!preset) throw new Error(`Unknown provider ${input.preset}`);
+    const kind = this.kinds.get(preset.provider)!;
     const apiKey = input.apiKey?.trim() ?? "";
     if (!preset.local && !apiKey) return { ok: false, kind: "auth", detail: "no API key" };
-    const listing = await listModels(preset, apiKey);
+    const listing = await kind.list({ baseURL: preset.baseURL || undefined, apiKey });
     if (!listing.ok) return { ok: false, kind: modelErrorKind(listing.detail), detail: listing.detail };
     const model = pickModel(preset, listing.models);
     if (!model) return { ok: false, kind: "model", detail: `${preset.title} lists no model to use` };
@@ -654,7 +690,7 @@ export class Llm extends Service implements LlmService {
     const taken = new Set(models.profiles.map((p) => p.id));
     let id = same?.id ?? preset.id;
     for (let n = 2; !same && taken.has(id); n += 1) id = `${preset.id}-${n}`;
-    const detected = detectCapabilities(preset.provider, model, listing.capabilities[model]);
+    const detected = kind.capabilities(model, listing.capabilities[model]);
     const media = detected ?? (same?.model === model ? {} : { inputModalities: undefined, outputModalities: undefined });
     const profile: ModelProfile = { ...same, id, title: same?.title || preset.title, provider: preset.provider, ...(preset.baseURL ? { baseURL: preset.baseURL } : {}), apiKey, model, ...media };
     const test = await this.test(profile);
@@ -724,6 +760,10 @@ export class FakeLlm implements LlmService {
   async worker(): Promise<WorkerStatus> {
     return { ok: true, via: "profile", title: "fake" };
   }
+
+  registerProvider(): () => void {
+    return () => {};
+  }
 }
 
 /** A plugin that provides ctx.llm from a FakeLlm — the seam, swapped. */
@@ -773,6 +813,7 @@ export const fakeChat = (model: ChatModel, respond?: (system: string, user: stri
       test: async () => ({ ok: true }),
       listing: async () => ({ ok: true, models: ["fake"], capabilities: {} }),
       lend: () => () => {},
+      registerProvider: () => () => {},
       worker: async () => ({ ok: true, via: "profile", title: "fake" }),
       completeJson: async <T,>(schema: z.ZodType<T>, request: CompletionRequest): Promise<T> => {
         if (!respond) throw new LlmError("fakeChat was given no completeJson responder");
