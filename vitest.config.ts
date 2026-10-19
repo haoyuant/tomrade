@@ -37,6 +37,8 @@ export default defineConfig({
     include: ["packages/*/tests/**/*.test.ts", "apps/*/tests/**/*.test.ts"],
     // The usual output, then every failure sorted into timeout-under-load, network or real (docs/testing.md).
     reporters: ["default", "./packages/testkit/src/failure-kinds.ts"],
+    // Every worker spawns processes the system checks one at a time, and other sessions run tests too: more workers only lengthen that queue.
+    maxWorkers: Number(process.env.TOMRADE_TEST_WORKERS) || 4,
     // A poll waits on work the test started; 1 s is too tight on a loaded machine, and the test's own timeout stays the ceiling.
     expect: { poll: { timeout: 30_000 } }
   }
