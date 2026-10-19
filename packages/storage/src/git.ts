@@ -245,6 +245,12 @@ export class GitFolder {
     return r.code === 2 ? "absent" : "offline";
   }
 
+  /** Where this folder last saw the remote branch, or null before any fetch. */
+  async tip(branch: string, name = "origin"): Promise<string | null> {
+    const r = await this.git(["rev-parse", "-q", "--verify", `refs/remotes/${name}/${branch}`], { cwd: this.dir, ok: true });
+    return r.code === 0 ? r.stdout.trim() : null;
+  }
+
   /** `ok`: an unreachable remote is an answer, not a failure. */
   async fetch(branch: string, name = "origin"): Promise<boolean> {
     const r = await this.git(["fetch", "-q", name, branch], { cwd: this.dir, ok: true });

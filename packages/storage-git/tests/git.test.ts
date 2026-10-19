@@ -8,7 +8,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { fresh, settle } from "@tomradex/testkit";
 import { ARTIFACT_DIR, GitError, GitFolder, Storage, clearStaleIndexLock, digestState, gitRunner, readArtifact, writeArtifact, type Git } from "@tomradex/storage";
 import storageGit from "@tomradex/storage-git";
@@ -27,7 +27,7 @@ function bareRemote(): string {
 }
 
 // The snapshot timers must never fire mid-test: a timed publish fetches, merges and pushes, and a loaded machine can run a test past a minute.
-const QUIET = { snapshotIdleMs: 3_600_000, snapshotMaxMs: 3_600_000, watch: false, reconcileMs: 0 };
+const QUIET = { snapshotIdleMs: 3_600_000, snapshotMaxMs: 3_600_000, watch: false, reconcileMs: 0, remoteFreshMs: 0, remoteRetryMs: 0 };
 
 async function machine(label: string, storage: Record<string, unknown> = {}) {
   const hubDir = path.join(root, `${label}-${n++}`);
@@ -244,6 +244,69 @@ describe("a dedicated repository", () => {
     fs.rmSync(remote, { recursive: true, force: true });
     const status = await a.storage.statusFor(a.project.id);
     expect(status.state).toBe("offline");
+  });
+
+  it("asks the remote once for status reads that overlap or follow closely, and at once on Sync now", async () => {
+    const log = path.join(root, `git-calls-${n++}.log`);
+    const counting = path.join(root, `git-counting-${n++}`);
+    fs.writeFileSync(counting, `#!/bin/sh\necho "$*" >> '${log}'\nexec git "$@"\n`, { mode: 0o755 });
+    const a = await machine("asks", { gitBinary: counting, remoteFreshMs: 60_000, remoteRetryMs: 0 });
+    const remote = bareRemote();
+    a.items.create({ title: "Mine", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    await a.storage.bind(a.project.id, "git", { remote, branch: "main" });
+    const asks = () => fs.readFileSync(log, "utf8").split("\n").filter((l) => /(^| )(ls-remote|fetch)( |$)/.test(l)).length;
+    const before = asks();
+
+    // Our push just now is an answer for reads.
+    await a.storage.statusFor(a.project.id);
+    expect(asks()).toBe(before);
+
+    // Past the window, five reads at once share one ls-remote and one fetch; the next read takes that answer.
+    let now = Date.now() + 61_000;
+    const spy = vi.spyOn(Date, "now").mockImplementation(() => now);
+    try {
+      const reads = await Promise.all(Array.from({ length: 5 }, () => a.storage.statusFor(a.project.id)));
+      expect(reads.map((s) => s.state)).toEqual(Array(5).fill("synced"));
+      expect(asks() - before).toBe(2);
+      now += 1_000;
+      await a.storage.statusFor(a.project.id);
+      expect(asks() - before).toBe(2);
+    } finally {
+      spy.mockRestore();
+    }
+    const settled = asks();
+
+    // "Sync now" goes to the remote whatever the reads remember, and brings the teammate's push in.
+    teammateEdits(remote, (dir) => fs.writeFileSync(path.join(dir, "NOTES.md"), "hi\n"));
+    await a.storage.sync(a.project.id);
+    expect(asks()).toBeGreaterThan(settled);
+    expect(fs.existsSync(path.join(a.dir, "NOTES.md"))).toBe(true);
+  });
+
+  it("waits longer each time the remote cannot be reached, and says how long", async () => {
+    const a = await machine("backoff", { remoteFreshMs: 0, remoteRetryMs: 10_000 });
+    const remote = bareRemote();
+    await a.storage.bind(a.project.id, "git", { remote, branch: "main" });
+    fs.rmSync(remote, { recursive: true, force: true });
+    const said: string[] = [];
+    a.ctx.logger.exporter({ export: (m) => { if (String(m.args[0]).includes("cannot reach the remote")) said.push(String(m.args[0])); } });
+    let now = Date.now();
+    const spy = vi.spyOn(Date, "now").mockImplementation(() => now);
+    try {
+      expect((await a.storage.statusFor(a.project.id)).state).toBe("offline");
+      now += 5_000;
+      expect((await a.storage.statusFor(a.project.id)).state).toBe("offline");
+      now += 6_000;
+      expect((await a.storage.statusFor(a.project.id)).state).toBe("offline");
+      now += 15_000;
+      expect((await a.storage.statusFor(a.project.id)).state).toBe("offline");
+      now += 6_000;
+      expect((await a.storage.statusFor(a.project.id)).state).toBe("offline");
+    } finally {
+      spy.mockRestore();
+    }
+    // Asked at 0 s, 11 s and 32 s; the reads in between took the last answer.
+    expect(said.map((m) => m.match(/in (\d+) s/)?.[1])).toEqual(["10", "20", "40"]);
   });
 
   it("inside someone's checkout it writes only .tomrade and never pushes", async () => {

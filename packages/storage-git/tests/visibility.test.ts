@@ -68,7 +68,7 @@ const plugins = {
 async function machine(label: string, storage: Record<string, unknown> = {}) {
   const hubDir = path.join(root, `${label}-${n++}`);
   fs.mkdirSync(hubDir, { recursive: true });
-  const bag = await fresh({ hubDir, plugins: [[Storage, { snapshotIdleMs: 3_600_000, snapshotMaxMs: 3_600_000, watch: false, reconcileMs: 0, ...storage }], storageGit, hosted, plugins] });
+  const bag = await fresh({ hubDir, plugins: [[Storage, { snapshotIdleMs: 3_600_000, snapshotMaxMs: 3_600_000, watch: false, reconcileMs: 0, remoteFreshMs: 0, remoteRetryMs: 0, ...storage }], storageGit, hosted, plugins] });
   await settle();
   await bag.ctx.storage.ready;
   const id = bag.project.id;
