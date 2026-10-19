@@ -1417,7 +1417,8 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 }
 .ai-resize { position: absolute; left: -3px; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 5; }
 .ai-resize:hover { background: var(--accent); opacity: 0.28; }
-.ai-head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+/* sits beside the titlebar, so it shares its height and the two rules line up */
+.ai-head { display: flex; align-items: center; gap: var(--space-2); height: var(--titlebar-h); padding: 0 var(--space-4); border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .ai-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-4); scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .ai-foot { padding: var(--space-3); border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: var(--space-2); flex-shrink: 0; }
 .pet-stage {
