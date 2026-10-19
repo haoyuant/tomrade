@@ -2,6 +2,7 @@ import { useCallback, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { invoke, subscribe } from "~/lib/api";
+import { isLeadWindow } from "~/lib/window-chrome";
 
 /** One thing an agent is waiting on the person for — the desktop shell's attention row keeps the list. */
 export interface AttentionEntry {
@@ -72,8 +73,10 @@ export function useOpenAttention(): (entry: Pick<AttentionEntry, "projectId" | "
 export function AttentionOpener() {
   const open = useOpenAttention();
   const navigate = useNavigate();
-  useEffect(() => subscribe("attention.open", open), [open]);
+  // Every window hears it; the one the shell brought forward opens it.
+  useEffect(() => subscribe("attention.open", (entry) => isLeadWindow() && open(entry)), [open]);
   useEffect(() => subscribe("app.open", (target) => {
+    if (!isLeadWindow()) return;
     if (target.path !== undefined) void navigate({ to: "/p/$projectId/f/$", params: { projectId: target.projectId, _splat: target.path } });
     else open({ projectId: target.projectId, threadId: target.threadId ?? null, itemId: target.itemId ?? null });
   }), [open, navigate]);

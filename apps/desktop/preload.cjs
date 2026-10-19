@@ -13,5 +13,7 @@ contextBridge.exposeInMainWorld("tomrade", {
   },
   // File.path was removed in Electron 32; this is the replacement, and it must
   // run here in the preload world since a File can't cross into the main process.
-  getPathForFile: (file) => webUtils.getPathForFile(file)
+  getPathForFile: (file) => webUtils.getPathForFile(file),
+  // A window a tab moved into keeps its tabs and panes to itself.
+  window: { detached: process.argv.includes("--tomrade-window=detached") }
 });

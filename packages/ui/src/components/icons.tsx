@@ -64,6 +64,7 @@ export const ICON_IDS = [
   "i-link",
   "i-calendar",
   "i-split",
+  "i-popout",
   "i-inbox",
   "s-backlog",
   "s-todo",
@@ -146,6 +147,7 @@ export function IconSprite() {
         <symbol id="i-link" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><path d="M6.1 7.9a2.4 2.4 0 0 0 3.4 0l2-2a2.4 2.4 0 0 0-3.4-3.4l-.9.9"/><path d="M7.9 6.1a2.4 2.4 0 0 0-3.4 0l-2 2a2.4 2.4 0 0 0 3.4 3.4l.9-.9"/></g></symbol>
         <symbol id="i-calendar" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2.8" width="10" height="9.2" rx="1.2"/><path d="M2 5.8h10M4.8 1.6v2.2M9.2 1.6v2.2"/></g></symbol>
         <symbol id="i-split" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2"><rect x="1.6" y="2.4" width="10.8" height="9.2" rx="1.4"/><path d="M7 2.4v9.2"/></g></symbol>
+        <symbol id="i-popout" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M6.2 2.4H3a1.2 1.2 0 0 0-1.2 1.2V11A1.2 1.2 0 0 0 3 12.2h7.4a1.2 1.2 0 0 0 1.2-1.2V7.8"/><path d="M8.6 1.8h3.6v3.6M12.2 1.8 7 7"/></g></symbol>
         <symbol id="i-cut" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="3.4" cy="3.4" r="1.5"/><circle cx="3.4" cy="10.6" r="1.5"/><path d="M4.6 4.4 11.6 11M4.6 9.6 11.6 3"/></g></symbol>
         <symbol id="i-paste" viewBox="0 0 14 14"><g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"><rect x="3.2" y="2.6" width="7.6" height="9.8" rx="1.1"/><rect x="5.2" y="1.4" width="3.6" height="1.8" rx="0.6"/><path d="M5 6.6h4M5 9h4" strokeLinecap="round"/></g></symbol>
 

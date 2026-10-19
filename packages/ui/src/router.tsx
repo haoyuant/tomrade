@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { createHashHistory, createRootRoute, createRoute, createRouter, Outlet, redirect } from "@tanstack/react-router";
 import { IconSprite } from "~/components/icons";
 import { ProjectShell } from "~/components/chrome/ProjectShell";
@@ -17,6 +18,12 @@ import { TermsPrompt } from "~/components/dialogs/TermsPrompt";
 import { RouteError } from "~/components/chrome/RouteError";
 import { AttentionOpener } from "~/lib/attention";
 import { DoneGuardProvider } from "~/lib/doneGuard";
+import { useLeadWindow } from "~/lib/window-chrome";
+
+/** Notices that ask once for the whole app: the leading window shows them, the others stay quiet. */
+function LeadOnly({ children }: { children: ReactNode }) {
+  return useLeadWindow() ? <>{children}</> : null;
+}
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -29,8 +36,10 @@ const rootRoute = createRootRoute({
           </DoneGuardProvider>
           <TermsPrompt />
           <PendingBuildWatcher />
-          <UpdateNotice />
-          <AnnouncementNotice />
+          <LeadOnly>
+            <UpdateNotice />
+            <AnnouncementNotice />
+          </LeadOnly>
           <AttentionOpener />
         </ToastProvider>
       </ThemeProvider>

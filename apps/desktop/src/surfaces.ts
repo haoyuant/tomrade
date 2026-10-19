@@ -5,7 +5,7 @@ import { Context, Service } from "cordis";
 import type { DesktopSurface, DesktopSurfaceHost, DesktopSurfaceSpec, SurfaceBounds, SurfaceCapabilities, SurfaceLook } from "@tomradex/desktop-surface";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/settings";
-import { showMainWindow } from "./main-window.js";
+import { leadWindow, showMainWindow } from "./main-window.js";
 import { SurfaceBoundsStore, placeWindow } from "./surface-bounds.js";
 
 const STATE_CHANNEL = "tomrade-surface:state";
@@ -224,9 +224,9 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
     return controller;
   }
 
-  /** The Tomrade window: not a surface, not a dialog. */
+  /** The Tomrade window, the leading one of several: not a surface, not a dialog. */
   private mainWindow(): BrowserWindow | undefined {
-    return BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && !w.getParentWindow() && w.isFocusable() && !this.openByContents.has(w.webContents.id));
+    return leadWindow() ?? BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && !w.getParentWindow() && w.isFocusable() && !this.openByContents.has(w.webContents.id));
   }
 
   /** The anchor's top-left on screen, once the window has drawn it; null when it never shows. */

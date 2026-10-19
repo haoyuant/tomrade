@@ -15,6 +15,8 @@ import type {} from "@tomradex/settings";
 export interface WindowChrome {
   /** macOS draws the traffic lights over the header while windowed. */
   trafficLights: boolean;
+  /** App-wide prompts land in this window; the shell brings it forward. Absent from an older shell. */
+  lead?: boolean;
 }
 
 declare module "@tomradex/ipc" {
@@ -30,6 +32,8 @@ declare global {
       on: Subscribe;
       /** The main process never sees the File — only the preload world can resolve its disk path. */
       getPathForFile: (file: File) => string;
+      /** How the shell opened this window; absent outside it. */
+      window?: { detached: boolean };
     };
   }
 }

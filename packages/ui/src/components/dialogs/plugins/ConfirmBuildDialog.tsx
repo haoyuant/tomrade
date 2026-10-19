@@ -5,6 +5,7 @@ import { subscribe } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
 import { useBuildReview, useStudioConfirm, useWorkspaces } from "~/lib/plugins";
 import { useToast } from "~/lib/toast";
+import { isLeadWindow } from "~/lib/window-chrome";
 import { Findings, Reach, TrustTags, messageOf } from "./parts";
 
 const wider = (before: { permissions: { network: string[]; fs: string; exec: boolean; window?: boolean }; inject: string[] } | null, after: { permissions: { network: string[]; fs: string; exec: boolean; window?: boolean }; inject: string[] }) => {
@@ -88,8 +89,8 @@ export function ConfirmBuildDialog({ name, title, onClose }: { name: string; tit
 }
 
 /**
- * Wherever the person is, a build the agent staged surfaces as a toast; the
- * review opens from it without a trip through Settings.
+ * Wherever the person is, a build the agent staged surfaces as a toast — in the
+ * leading window, not in every one; the review opens from it without a trip through Settings.
  */
 export function PendingBuildWatcher() {
   const { t } = useI18n();
@@ -99,6 +100,7 @@ export function PendingBuildWatcher() {
   useEffect(() => {
     if (!window.tomrade) return;
     return subscribe("studio.pending", (id) => {
+      if (!isLeadWindow()) return;
       void refetch().then(({ data }) => {
         const w = data?.find((x) => x.id === id);
         if (!w) return;
