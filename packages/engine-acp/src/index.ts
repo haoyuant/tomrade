@@ -3,18 +3,49 @@ import type { Engine } from "@tomradex/agent";
 import { localAvailability, RuntimePool, runtimeFingerprint } from "@tomradex/engine-claude-code";
 import type {} from "@tomradex/mcp";
 import type { AcpAgent, AcpOptions, Catalog } from "./agent.js";
+import { askCatalog, keptCatalogs } from "./catalog.js";
 import { AcpRuntime } from "./runtime.js";
 
 /**
  * An engine for a local agent that speaks ACP: one agent process per hot
  * thread, Tomrade's tools handed to it as an HTTP MCP server, its session
- * resumed from the agent's own store on the next cold turn.
+ * resumed from the agent's own store on the next cold turn. What its sessions
+ * offer is kept across restarts; with nothing kept, one short session asks.
  */
 export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAgent<O>): Engine {
   const pool = new RuntimePool<AcpRuntime>();
   ctx.effect(() => () => pool.close());
   const catalog: Catalog = { models: [], efforts: (agent.efforts ?? []).map((value) => ({ value })) };
+  const kept = keptCatalogs(ctx);
+  Object.assign(catalog, kept.read(agent.id));
+  const remember = () => kept.write(agent.id, catalog);
   const probe = agent.probe;
+  const check = localAvailability(ctx, {
+    engineId: agent.id,
+    title: agent.title,
+    cli: agent.cli,
+    install: agent.install,
+    ...(probe ? { signIn: { args: probe.args, says: (output: string) => probe.says(output, catalog), reason: probe.reason, need: probe.need } }
+      : agent.signedIn ? { signIn: { ask: async () => agent.signedIn!.ask(), reason: agent.signedIn.reason } } : {})
+  });
+  const quit = new AbortController();
+  ctx.effect(() => () => quit.abort());
+  let asking = false;
+  let failedAt = 0;
+  // In the background, once at a time, and not again for a while after a failure.
+  const ask = () => {
+    if (catalog.models.length || asking || quit.signal.aborted || Date.now() - failedAt < 10 * 60_000) return;
+    asking = true;
+    void Promise.resolve()
+      .then(() => askCatalog(ctx, agent, agent.options.parse(ctx.get("agent")?.settingsOf().engines[agent.id] ?? {}), quit.signal))
+      .then((offered) => {
+        if (!offered.models) { failedAt = Date.now(); return; }
+        if (catalog.models.length) return;
+        Object.assign(catalog, offered);
+        remember();
+      }, () => { failedAt = Date.now(); })
+      .finally(() => { asking = false; });
+  };
   return {
     id: agent.id,
     title: agent.title,
@@ -29,17 +60,14 @@ export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAg
     ...(agent.setup ? { setup: agent.setup } : {}),
     picks: () => [
       // What the agent can use depends on its own sign-in; the list is what its last session offered.
-      { key: "model", title: "Model", choices: catalog.models, freeText: true },
+      { key: "model", title: "Model", choices: catalog.models, freeText: true, ...(asking && !catalog.models.length ? { pending: true } : {}) },
       ...(catalog.efforts.length ? [{ key: "effort", title: "Effort", choices: catalog.efforts }] : [])
     ],
-    available: localAvailability(ctx, {
-      engineId: agent.id,
-      title: agent.title,
-      cli: agent.cli,
-      install: agent.install,
-      ...(probe ? { signIn: { args: probe.args, says: (output: string) => probe.says(output, catalog), reason: probe.reason, need: probe.need } }
-        : agent.signedIn ? { signIn: { ask: async () => agent.signedIn!.ask(), reason: agent.signedIn.reason } } : {})
-    }),
+    async available(opts) {
+      const state = await check(opts);
+      if (state.ok) ask();
+      return state;
+    },
     checkCli: (file) => agent.cli.check(file),
     diagnostics: {
       logs: () => agent.diagnostics?.logs?.() ?? [],
@@ -48,7 +76,7 @@ export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAg
     async turn(input, io) {
       if (!ctx.mcp.url) return { stop: "error", error: "The MCP server is not running" };
       return pool.run(`${input.projectId}:${input.threadId}`, runtimeFingerprint(input, io, ctx.mcp.url),
-        () => new AcpRuntime(ctx, agent, catalog, input), input, io);
+        () => new AcpRuntime(ctx, agent, catalog, input, remember), input, io);
     }
   };
 }

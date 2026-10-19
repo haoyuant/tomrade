@@ -2,6 +2,8 @@
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 
+if (process.argv.includes('--version')) { console.log('1.0.0'); process.exit(0); }
+
 const log = process.env.TOMRADE_TEST_LOG;
 const style = process.env.FAKE_STYLE ?? 'config';
 const record = (value) => { if (log) fs.appendFileSync(log, JSON.stringify(value) + '\n'); };

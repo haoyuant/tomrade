@@ -64,7 +64,9 @@ export const methodWords = (t: (key: MessageKey) => string, id: string, entry?: 
   return words ? { title: t(words[0]), when: t(words[1]) } : { title: entry?.title ?? id, when: entry?.when ?? "" };
 };
 
-export const useEngines = () => useQuery({ queryKey: agentKeys.engines, queryFn: () => invoke("agent.engines"), staleTime: 15_000 });
+// While an engine is still asking its agent for its models, look again shortly.
+export const useEngines = () => useQuery({ queryKey: agentKeys.engines, queryFn: () => invoke("agent.engines"), staleTime: 15_000,
+  refetchInterval: (query) => (query.state.data?.some((engine) => engine.picks?.some((pick) => pick.pending)) ? 3000 : false) });
 
 /** The engine answering for an id a thread, run or setting holds — itself, or the engine that took it in. */
 export const findEngine = (engines: EngineView[] | undefined, id: string | null | undefined): EngineView | undefined =>
