@@ -1,5 +1,5 @@
-import { inputMimes, type InputModality, type MediaData, type ChatEvent, type ChatModel, type ChatRequest, type StopReason } from "./model.js";
-import { LlmError, NativeSearchRefused } from "./errors.js";
+import { inputMimes, type InputModality, type OutputModality, type MediaData, type ChatEvent, type ChatModel, type ChatRequest, type StopReason } from "./model.js";
+import { LlmError, NativeMediaRefused, NativeSearchRefused } from "./errors.js";
 import { fitsResponses, readResponses, replaysSearches, responsesBody, searchesOnResponses } from "./responses.js";
 
 export interface OpenAiConfig {
@@ -7,7 +7,7 @@ export interface OpenAiConfig {
   apiKey: string;
   model: string;
   inputModalities?: InputModality[];
-  outputModalities?: ("image" | "audio")[];
+  outputModalities?: OutputModality[];
   /** Tries after the first for a 429, a 5xx or a dropped connection, before any reply has streamed. Default 2. */
   retries?: number;
   /** The first wait between tries; each later one is three times longer. Default 1000. */
@@ -185,6 +185,8 @@ export class OpenAiCompatible implements ChatModel {
       return;
     }
     const messages = toMessages(request);
+    // Only a request that asks for media carries `modalities`: an audio-out model would otherwise speak every reply.
+    const media = (request.mediaOutput ?? []).filter((kind) => this.config.outputModalities?.includes(kind));
     const body = (): Record<string, unknown> => {
       const out: Record<string, unknown> = {
         model: this.config.model,
@@ -192,8 +194,8 @@ export class OpenAiCompatible implements ChatModel {
         stream_options: { include_usage: true },
         messages
       };
-      if (this.config.outputModalities?.length) out.modalities = ["text", ...this.config.outputModalities];
-      if (this.config.outputModalities?.includes("audio")) out.audio = { voice: "alloy", format: "pcm16" };
+      if (media.length) out.modalities = ["text", ...media];
+      if (media.includes("audio")) out.audio = { voice: "alloy", format: "pcm16" };
       if (request.temperature !== undefined && !this.omitTemperature) out.temperature = request.temperature;
       if (request.maxTokens !== undefined) out[this.tokenField] = request.maxTokens;
       if (request.effort && !(this.omitEffortWithTools && request.tools?.length)) out.reasoning_effort = request.effort;
@@ -218,6 +220,7 @@ export class OpenAiCompatible implements ChatModel {
       if (res.ok) break;
       const text = await res.text().catch(() => "");
       if (res.status === 400 && adjusted < 3 && this.adjustTo(text)) continue;
+      if (media.length && (res.status === 400 || res.status === 422)) throw new NativeMediaRefused(`The model's ${media.join(" and ")} output was refused (${res.status}): ${text.slice(0, 300)}`);
       const requestId = res.headers.get("x-request-id") ?? res.headers.get("request-id") ?? undefined;
       throw new LlmError(`LLM request failed ${res.status}: ${text.slice(0, 300)}`, undefined, { status: res.status, url: res.url || url, ...(requestId ? { requestId } : {}), body: text.slice(0, 8000) });
     }

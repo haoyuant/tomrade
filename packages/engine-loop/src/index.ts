@@ -2,7 +2,7 @@ import type {} from "cordis";
 import type { Context } from "cordis";
 import { z } from "zod";
 import { HOUSE_RULES, deferredTools, focusSuffix, isSuspended, kitLines, promptSections, type Engine, type ThreadMessage, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
-import { NativeSearchRefused, assistantMessage, collect, toolResultsMessage, type Message, type ToolSpec } from "@tomradex/llm";
+import { NativeMediaRefused, NativeSearchRefused, assistantMessage, collect, toolResultsMessage, userMessage, type LlmService, type Message, type OutputModality, type ToolSpec } from "@tomradex/llm";
 import { LONG_RESULT, ToolInputError, compactList, type ToolDescriptor } from "@tomradex/tools";
 import { LOOP_WORDS } from "./words.js";
 
@@ -32,6 +32,34 @@ export const LOAD_TOOLS = "load_tools";
 
 /** The web search plugin's tool; a model that searches on its own is not offered it. */
 const WEB_SEARCH = "web_search";
+
+/** The loop's own tool: an image or speech, made by the thread's model when it can, else by another profile that can. */
+export const MAKE_MEDIA = "make_media";
+
+const makeMediaSpec: ToolSpec = {
+  name: MAKE_MEDIA,
+  description: "Make an image or a spoken audio clip and show it in the conversation. Use it when the person asks for a picture or to hear something, or when one serves them better than words. Write prompt to stand on its own: for an image, a complete description of it; for audio, the exact words to speak.",
+  inputSchema: {
+    type: "object",
+    properties: { kind: { type: "string", enum: ["image", "audio"] }, prompt: { type: "string" } },
+    required: ["kind", "prompt"],
+    additionalProperties: false
+  }
+};
+
+const MAKER_SYSTEM: Record<OutputModality, string> = {
+  image: "Make the image the user describes. Answer with the image and at most one short sentence.",
+  audio: "Say the user's text aloud, word for word, and nothing else."
+};
+
+/** Whether a profile's model can make `kind` itself. */
+const makes = (llm: LlmService, id: string, kind: OutputModality): boolean => {
+  try {
+    return !!llm.forProfile(id).capabilities.mediaOutput?.includes(kind);
+  } catch {
+    return false;
+  }
+};
 
 const spec = (t: ToolDescriptor): ToolSpec => ({ name: t.name, description: t.description, inputSchema: t.inputSchema });
 
@@ -224,6 +252,7 @@ export function createLoopEngine(ctx: Context): Engine {
       const offered = (): ToolSpec[] => {
         if (!model.capabilities.tools) return [];
         const carried = described.filter((t) => !deferred.has(t.name) && !(nativeSearch && t.name === WEB_SEARCH)).map(spec);
+        carried.push(makeMediaSpec);
         return deferred.size ? [...carried, loadToolsSpec([...deferred.values()], io.tools.kits?.())] : carried;
       };
       const whole = new Set(described.filter((t) => t.whole).map((t) => t.name));
@@ -243,6 +272,32 @@ export function createLoopEngine(ctx: Context): Engine {
       const memo = new Map<string, string>();
       // What the last request cost in input tokens; 0 until a provider reports it.
       let lastInput = 0;
+      // "profile kind" a provider turned down; that profile is not asked for that kind again this turn.
+      const refused = new Set<string>();
+      const llm = io.llm;
+      const makeMedia = async (kind: OutputModality, prompt: string): Promise<{ content: string; isError?: boolean }> => {
+        if (!io.media) throw new Error("This runtime cannot publish media");
+        // The thread's own model first, then any other profile that makes this kind (an Image API profile for pictures).
+        const makers = [profileId, ...llm.profiles().map((p) => p.id).filter((id) => id !== profileId)].filter((id) => !refused.has(`${id} ${kind}`) && makes(llm, id, kind));
+        for (const id of makers) {
+          let made;
+          try {
+            made = await collect(llm.forProfile(id).chat({ system: MAKER_SYSTEM[kind], messages: [userMessage(prompt)], maxTokens: options.maxTokens, mediaOutput: [kind] }, io.signal));
+          } catch (err) {
+            if (!(err instanceof NativeMediaRefused)) throw err;
+            if (id === profileId) io.emit({ type: "note", text: words()(kind === "image" ? "imageRefused" : "audioRefused") });
+            refused.add(`${id} ${kind}`);
+            continue;
+          }
+          usage.inputTokens += made.usage.inputTokens;
+          usage.outputTokens += made.usage.outputTokens;
+          const shown = (made.media ?? []).map((media) => io.media!.publish(media));
+          if (!shown.length) return { content: `ERROR: the ${kind} model answered without one${made.text.trim() ? `: ${made.text.trim()}` : ""}`, isError: true };
+          return { content: `Shown in the conversation: ${shown.map((m) => `${m.name} (media ID ${m.id})`).join(", ")}.${made.text.trim() ? ` The model said: ${made.text.trim()}` : ""}` };
+        }
+        io.emit({ type: "note", text: words()(kind === "image" ? "noImageMaker" : "noAudioMaker") });
+        return { content: `ERROR: no model profile here can make ${kind === "image" ? "images" : "audio"}. The person has been told how to add one; do not call ${MAKE_MEDIA} for it again this turn, and answer in words.`, isError: true };
+      };
 
       for (let step = 1; step <= options.maxSteps; step += 1) {
         const chars = sizeOf(messages);
@@ -333,6 +388,16 @@ export function createLoopEngine(ctx: Context): Engine {
               return loaded.length
                 ? { id: call.id, suspended: false, content: `Loaded ${loaded.join(", ")}: call them directly.`, invalid: false }
                 : { id: call.id, suspended: false, content: `ERROR: no kit "${String(kit)}" left to load`, isError: true, invalid: true };
+            }
+            if (call.name === MAKE_MEDIA) {
+              const { kind, prompt } = call.args as { kind?: unknown; prompt?: unknown };
+              if ((kind !== "image" && kind !== "audio") || typeof prompt !== "string" || !prompt.trim())
+                return { id: call.id, suspended: false, content: `ERROR: ${MAKE_MEDIA} needs kind ("image" or "audio") and a prompt`, isError: true, invalid: true };
+              try {
+                return { id: call.id, suspended: false, ...(await makeMedia(kind, prompt)), invalid: false };
+              } catch (err) {
+                return { id: call.id, suspended: false, content: `ERROR: ${err instanceof Error ? err.message : String(err)}`, isError: true, invalid: false };
+              }
             }
             const key = READ_TOOL.test(call.name) ? `${call.name} ${JSON.stringify(call.args)}` : null;
             if (key && memo.has(key)) return { id: call.id, suspended: false, content: "(identical to an earlier call this turn — nothing has changed since; use the result you already have)", invalid: false };
