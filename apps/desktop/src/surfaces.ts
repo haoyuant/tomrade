@@ -181,6 +181,14 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
         if (record.loaded) win.webContents.send(PUSH_CHANNEL, message);
         else record.queued.push(message);
       },
+      focus: () => {
+        if (win.isDestroyed()) return;
+        if (win.isMinimized()) win.restore();
+        win.show();
+        // show() alone can leave a window behind the one the click came from.
+        win.moveTop();
+        win.focus();
+      },
       close: () => this.destroy(record)
     };
     record = { spec, win, contentsId: win.webContents.id, state: spec.initialState, loaded: false, queued: [], controller };
@@ -201,7 +209,8 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
       if (this.look) win.webContents.send(LOOK_CHANNEL, this.look);
       win.webContents.send(STATE_CHANNEL, record.state);
       for (const message of record.queued.splice(0)) win.webContents.send(PUSH_CHANNEL, message);
-      if (window || spec.focusable) win.show();
+      if (window) controller.focus();
+      else if (spec.focusable) win.show();
       else win.showInactive();
     });
     // destroy() guarantees "closed" too, so every way out passes here.
