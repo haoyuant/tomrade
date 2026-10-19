@@ -5,6 +5,7 @@ export const LOOP_WORDS = defineWords("engine-loop", {
   en: {
     holding: "No model is connected, so {{engine}} is holding this conversation.",
     retryWithoutThinking: "The model used its whole output allowance thinking. Trying again without extended thinking.",
+    keptGoing: "A plugin asked the assistant to keep going before it finishes.",
     nativeSearchRefused: "The model's own web search was turned down here, so for the rest of this turn web search goes through Tomrade's web search plugin.",
     imageRefused: "The model turned down making images itself here, so for the rest of this turn it is not asked to again.",
     audioRefused: "The model turned down speaking itself here, so for the rest of this turn it is not asked to again.",
@@ -22,6 +23,7 @@ export const LOOP_WORDS = defineWords("engine-loop", {
   zh: {
     holding: "还没有可用的模型，这段对话由 {{engine}} 接手。",
     retryWithoutThinking: "模型把整个输出额度都用在了思考上，换成不深度思考再试一次。",
+    keptGoing: "有插件要求助手先继续，再结束这一轮。",
     nativeSearchRefused: "模型自带的联网搜索在这里被拒绝了，本轮剩下的联网搜索改由 Tomrade 的联网搜索插件来做。",
     imageRefused: "模型在这里拒绝了自己生成图片，本轮剩下的时间里不再让它生成。",
     audioRefused: "模型在这里拒绝了自己生成语音，本轮剩下的时间里不再让它生成。",

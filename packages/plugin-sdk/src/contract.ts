@@ -291,8 +291,81 @@ export interface PlaybookSpec {
   tools?: string[];
 }
 
+/** SDK 0.2.14: one block of a model message, as an in-app conversation sends it. */
+export type ModelContent =
+  | { type: "text"; text: string }
+  | { type: "media"; media: { mime: string; base64: string; name: string } }
+  | { type: "tool_call"; id: string; name: string; args: unknown }
+  | { type: "tool_result"; id: string; content: string; isError?: boolean }
+  | { type: "native"; provider: string; data: unknown };
+
+export interface ModelMessage {
+  role: "user" | "assistant";
+  content: ModelContent[];
+}
+
+/** A tool as the model is offered it; `inputSchema` is JSON Schema. */
+export interface ModelTool {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+/** Which turn, step and model profile a request belongs to. */
+export interface TurnInfo {
+  runId: string;
+  threadId: string;
+  projectId: string;
+  purpose: string;
+  profile: string;
+  step: number;
+}
+
+/** SDK 0.2.14: one model request an in-app conversation is about to send. A copy: what the hook answers is what changes. */
+export interface ModelRequest {
+  system: string;
+  tools: ModelTool[];
+  messages: ModelMessage[];
+  turn: TurnInfo;
+}
+
+export type ModelRequestChange = Partial<Pick<ModelRequest, "system" | "tools" | "messages">>;
+
+export interface ModelRequestFailure {
+  /** What the provider or the network said. */
+  message: string;
+  request: ModelRequest;
+  /** How many times this step was already sent again on a hook's answer. */
+  attempt: number;
+}
+
+/** Send the request again: changed, on another model profile (an id from the person's profiles), or both. */
+export interface ModelRetry {
+  request?: ModelRequestChange;
+  profile?: string;
+}
+
+export interface TurnEnding {
+  /** What the model said last. */
+  text: string;
+  turn: TurnInfo;
+  /** How many times this turn was already kept going. */
+  continued: number;
+}
+
+/**
+ * The agent's in-app conversations. The three hooks (SDK 0.2.14) reach the
+ * conversation Tomrade runs itself (`engine-loop`); CLI agents — Claude Code,
+ * Codex, dsh and the rest — run their own loop and send nothing through them.
+ */
 export interface AgentApi {
   playbook(spec: PlaybookSpec): Promise<Disposer>;
+  /** Before each model request: answer the parts to send instead, or nothing to leave it as it is. */
+  request(hook: (request: ModelRequest) => Maybe<ModelRequestChange | void>): Promise<Disposer>;
+  /** A model request failed: answer what to try instead, or nothing to let the failure stand. The first plugin to answer decides. */
+  requestError(hook: (failure: ModelRequestFailure) => Maybe<ModelRetry | void>): Promise<Disposer>;
+  /** A turn is about to end: answer `{ continue }` with a message to the model to keep it going. Bounded, so it cannot run forever. */
+  turnEnding(hook: (ending: TurnEnding) => Maybe<{ continue: string } | void>): Promise<Disposer>;
 }
 
 export interface SurfaceSpec {
