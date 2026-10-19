@@ -18,16 +18,17 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@tomradex/agent": "workspace:*",
     "@tomradex/alerts": "workspace:*",
     "@tomradex/contributions": "workspace:*",
+    "@tomradex/desktop-surface": "workspace:*",
+    "@tomradex/extensions": "workspace:*",
+    "@tomradex/im": "workspace:*",
     "@tomradex/settings": "workspace:*",
     "@tomradex/testkit": "workspace:*",
     "@tomradex/tools": "workspace:*",
-    "cordis": "4.0.0-rc.8",
-    "@tomradex/im": "workspace:*",
-    "@tomradex/agent": "workspace:*",
-    "@tomradex/desktop-surface": "workspace:*",
-    "@tomradex/extensions": "workspace:*"
+    "@tomradex/web-search": "workspace:*",
+    "cordis": "4.0.0-rc.8"
   },
   "devDependencies": {
     "typescript": "^6.0.0",

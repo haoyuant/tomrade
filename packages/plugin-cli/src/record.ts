@@ -11,6 +11,7 @@ import {
   type ItemsApi,
   type AlertsApi,
   type OplogApi,
+  type WebSearchApi,
   type PluginContext,
   type ProjectsApi,
   type ServiceName,
@@ -34,6 +35,7 @@ export interface Recording {
   surfaces: string[];
   tables: string[];
   imAdapters: string[];
+  webSearchProviders: string[];
   /** Which IM contract each adapter is written against, from the capabilities it declares. */
   imContracts: { id: string; contract: "0.2.2" | "0.2.5"; capabilities: string[]; invalid?: string }[];
   /** Ids that do not carry the namespace. */
@@ -42,7 +44,7 @@ export interface Recording {
   stopped: string | null;
 }
 
-export const emptyRecording = (): Recording => ({ tools: [], commands: [], badges: [], statusItems: [], sections: [], graphs: [], sidebarModules: [], playbooks: [], settings: [], surfaces: [], tables: [], imAdapters: [], imContracts: [], violations: [], stopped: null });
+export const emptyRecording = (): Recording => ({ tools: [], commands: [], badges: [], statusItems: [], sections: [], graphs: [], sidebarModules: [], playbooks: [], settings: [], surfaces: [], tables: [], imAdapters: [], webSearchProviders: [], imContracts: [], violations: [], stopped: null });
 
 const noop = () => {};
 const DRY = "dry run: nothing is written while a plugin is inspected";
@@ -176,6 +178,9 @@ export function recordingContext(namespace: string, allowed: ServiceName[], rec:
     },
     get oplog(): OplogApi {
       return need("oplog", { recent: async () => [], history: async () => [] });
+    },
+    get webSearch(): WebSearchApi {
+      return need("webSearch", { register: (provider) => note("webSearchProviders", provider.id, "web search provider") });
     },
     on: () => noop,
     when: () => noop,

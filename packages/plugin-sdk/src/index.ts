@@ -28,4 +28,5 @@ export type {
 } from "@tomradex/domain";
 
 export * from "./im.js";
+export * from "./web-search.js";
 export * from "./im-markdown.js";

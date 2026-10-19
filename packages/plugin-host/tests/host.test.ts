@@ -44,3 +44,19 @@ it("gives a plugin with a window a sandbox window, which the scenario can read a
   expect(result.checks.filter((c) => !c.ok)).toEqual([]);
   expect(result.checks.map((c) => c.name)).toEqual(expect.arrayContaining(["loads", "opened", "echoed", "closed"]));
 });
+
+it("gives a web search provider the app's web search module, so the scenario can search through it", async () => {
+  const plugin = definePlugin({
+    inject: ["webSearch"],
+    async apply(ctx) {
+      await ctx.webSearch.register({ id: "demo", title: "Demo", unavailable: () => null, search: (r) => ({ results: [{ title: r.query, url: "https://example.com/", content: "hit" }] }) });
+    }
+  });
+  const result = await run(plugin, async (t: never) => {
+    const s = t as { tool(name: string, args: unknown): Promise<unknown>; check(n: string, ok: boolean, d?: string): void };
+    const text = await s.tool("web_search", { query: "tomrade" });
+    s.check("searches through the provider", text === "1. tomrade\nhttps://example.com/\nhit", String(text));
+  });
+  expect(result.checks.filter((c) => !c.ok)).toEqual([]);
+  expect(result.checks.map((c) => c.name)).toEqual(expect.arrayContaining(["loads", "searches through the provider"]));
+});

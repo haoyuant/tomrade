@@ -5,6 +5,7 @@ import { Settings } from "@tomradex/settings";
 import { Agent, type Engine } from "@tomradex/agent";
 import { Im, ImSettings } from "@tomradex/im";
 import { Contributions } from "@tomradex/contributions";
+import { WebSearch } from "@tomradex/web-search";
 import type { AlertNotice } from "@tomradex/alerts";
 import type { DesktopSurfaceSpec } from "@tomradex/desktop-surface";
 import { cordisName } from "@tomradex/extensions";
@@ -116,7 +117,9 @@ export async function testPlugin(input: HostTestInput): Promise<HostTestResult> 
   const im = wants.includes("im");
   const alerts = wants.includes("alerts") ? recordingAlerts() : null;
   const surfaces = wants.includes("surfaces") ? recordingSurfaces() : null;
-  const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(input.tmp, "settings.json") }], Contributions, ...(alerts ? [alerts.Alerts] : []), ...(surfaces ? [surfaces.Surfaces] : []), ...(im ? [Agent, Im] : [])] });
+  // The real web search module: a provider plugin answers web_search in the sandbox as it would in the app.
+  const webSearch = wants.includes("webSearch");
+  const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(input.tmp, "settings.json") }], Contributions, ...(alerts ? [alerts.Alerts] : []), ...(surfaces ? [surfaces.Surfaces] : []), ...(webSearch ? [WebSearch] : []), ...(im ? [Agent, Im] : [])] });
   try {
   w.ctx.logger.exporter({ export: (m: { type: string; args: unknown[] }) => void (m.type === "error" || m.type === "warn" ? logs.push(`${m.type}: ${String(m.args[0])}`) : undefined) } as never);
   const samples = [
