@@ -28,7 +28,7 @@ The workflow reads six repository secrets (Settings → Secrets and variables �
 | `APPLE_API_KEY_ID` | Its Key ID |
 | `APPLE_API_ISSUER` | The Issuer ID |
 | `CLOUDFLARE_API_TOKEN` | A Cloudflare API token with Workers R2 Storage: Edit on the account that holds the `tomrade-downloads` bucket; haoyuant/tomrade-site's Deploy uses the same kind |
-| `NPM_TOKEN` | An npm granular access token that can publish the `@tomradex` scope (optional: without it the npm job is a dry run) |
+| `NPM_TOKEN` | An npm granular access token that can publish the `@tomradex` scope (optional: without it the npm job is a dry run); see below |
 
 ```sh
 R=haoyuant/tomrade
@@ -38,6 +38,18 @@ gh secret set APPLE_API_KEY_P8 -R $R < AuthKey_XXXXXXXXXX.p8
 gh secret set APPLE_API_KEY_ID -R $R --body XXXXXXXXXX
 gh secret set APPLE_API_ISSUER -R $R --body xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 gh secret set CLOUDFLARE_API_TOKEN -R $R        # prompts
+```
+
+`NPM_TOKEN` expires: npm lets a token that can publish live 90 days at most, and the npm job fails with "NPM_TOKEN no longer works" once it has. Make a new one on npmjs.com (avatar → Access Tokens → Generate New Token → Granular Access Token):
+
+- Expiration: up to 90 days.
+- Packages and scopes: Read and write, on the scope `@tomradex` rather than on chosen packages, so a package that was never published can be published.
+- Bypass 2FA: on, since CI cannot type a one-time code.
+
+Then store it (gh asks for the value):
+
+```sh
+gh secret set NPM_TOKEN -R haoyuant/tomrade
 ```
 
 ## Self-hosted runners: the Mac mini
