@@ -2,7 +2,7 @@ import type {} from "cordis";
 import type { Context } from "cordis";
 import { z } from "zod";
 import { HOUSE_RULES, deferredTools, focusSuffix, isSuspended, kitLines, promptSections, type Engine, type ThreadMessage, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
-import { assistantMessage, collect, toolResultsMessage, type Message, type ToolSpec } from "@tomradex/llm";
+import { NativeSearchRefused, assistantMessage, collect, toolResultsMessage, type Message, type ToolSpec } from "@tomradex/llm";
 import { LONG_RESULT, ToolInputError, compactList, type ToolDescriptor } from "@tomradex/tools";
 import { LOOP_WORDS } from "./words.js";
 
@@ -29,6 +29,9 @@ const READ_TOOL = /^(list|get|count|find|read|open)_|^diagram_schema$/;
 
 /** The loop's own tool: brings a kit this conversation was not given into the requests that follow. */
 export const LOAD_TOOLS = "load_tools";
+
+/** The web search plugin's tool; a model that searches on its own is not offered it. */
+const WEB_SEARCH = "web_search";
 
 const spec = (t: ToolDescriptor): ToolSpec => ({ name: t.name, description: t.description, inputSchema: t.inputSchema });
 
@@ -204,13 +207,15 @@ export function createLoopEngine(ctx: Context): Engine {
       const profileId = options.profile ?? io.llm.profiles()[0]?.id;
       if (!profileId) return { stop: "error", error: "no language model profile configured" };
       const model = io.llm.forProfile(profileId);
+      // Off for the rest of the turn once the provider turns its own search down.
+      let nativeSearch = !!model.capabilities.nativeWebSearch;
       const described = io.tools.describe().sort((a, b) => a.name.localeCompare(b.name));
       // A kit this kind of conversation does not carry stays out of every request until the model loads it.
       const deferred = new Map(deferredTools(described, input.purpose, input.messages).map((t) => [t.name, t]));
       const load = (names: readonly string[]) => names.filter((name) => deferred.delete(name));
       const offered = (): ToolSpec[] => {
         if (!model.capabilities.tools) return [];
-        const carried = described.filter((t) => !deferred.has(t.name)).map(spec);
+        const carried = described.filter((t) => !deferred.has(t.name) && !(nativeSearch && t.name === WEB_SEARCH)).map(spec);
         return deferred.size ? [...carried, loadToolsSpec([...deferred.values()], io.tools.kits?.())] : carried;
       };
       const whole = new Set(described.filter((t) => t.whole).map((t) => t.name));
@@ -238,21 +243,32 @@ export function createLoopEngine(ctx: Context): Engine {
         if (tokens > CONTEXT_BUDGET && elideOldResults(messages, Math.ceil(chars * (1 - CONTEXT_TARGET / tokens))) > 0)
           // A remembered answer may be one just dropped; the model must be free to ask again.
           memo.clear();
-        const collected = await collect(
-          model.chat(
-            {
-              system: system(input, io, options),
-              messages,
-              tools: offered(),
-              toolChoice: invalidStreak >= 2 ? "none" : undefined,
-              maxTokens: options.maxTokens,
-              effort
-            },
-            io.signal
-          ),
-          (delta) => io.delta(delta),
-          ({ attempt, max, reason, delayMs }) => io.retry?.({ attempt, max, reason, delayMs })
-        );
+        let collected;
+        try {
+          collected = await collect(
+            model.chat(
+              {
+                system: system(input, io, options),
+                messages,
+                tools: offered(),
+                toolChoice: invalidStreak >= 2 ? "none" : undefined,
+                maxTokens: options.maxTokens,
+                effort,
+                ...(nativeSearch ? { webSearch: true } : {})
+              },
+              io.signal
+            ),
+            (delta) => io.delta(delta),
+            ({ attempt, max, reason, delayMs }) => io.retry?.({ attempt, max, reason, delayMs })
+          );
+        } catch (err) {
+          if (!(err instanceof NativeSearchRefused) || !nativeSearch) throw err;
+          // Refused before anything streamed: the same step again, searching through the plugin.
+          nativeSearch = false;
+          io.emit({ type: "note", text: words()("nativeSearchRefused") });
+          step -= 1;
+          continue;
+        }
         lastInput = collected.usage.inputTokens;
         // a reply with only tool calls streams no text; it still means the request went through
         io.retry?.(null);

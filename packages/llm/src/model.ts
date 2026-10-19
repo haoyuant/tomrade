@@ -12,7 +12,9 @@ export type ContentBlock =
   | { type: "text"; text: string }
   | { type: "media"; media: MediaData }
   | { type: "tool_call"; id: string; name: string; args: unknown }
-  | { type: "tool_result"; id: string; content: string; isError?: boolean };
+  | { type: "tool_result"; id: string; content: string; isError?: boolean }
+  /** The provider's own record of a reply that used its server-side tools; replayed only by the adapter that wrote it. */
+  | { type: "native"; provider: string; data: unknown };
 
 export interface Message {
   role: "user" | "assistant";
@@ -37,6 +39,8 @@ export interface ChatRequest {
   effort?: string;
   /** Ask for a single JSON document; adapters that can enforce it do. */
   json?: boolean;
+  /** Let the model search the web itself; only for a model whose capabilities say `nativeWebSearch`. */
+  webSearch?: boolean;
 }
 
 export type StopReason = "end" | "tool_use" | "max_tokens" | "refusal";
@@ -45,6 +49,7 @@ export type ChatEvent =
   | { type: "text"; delta: string }
   | { type: "media"; media: MediaData }
   | { type: "tool_call"; id: string; name: string; args: unknown }
+  | { type: "native"; provider: string; data: unknown }
   /** `inputTokens` is every prompt token read, cached ones included; the cache counts are parts of it, absent when the provider does not say. */
   | { type: "usage"; inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number }
   /** The request failed before anything streamed and is sent again after `delayMs`; `attempt` counts the retries. */
@@ -57,6 +62,8 @@ export interface ChatCapabilities {
   tools: boolean;
   streaming: boolean;
   json: boolean;
+  /** The provider can search the web on its own when a request sets `webSearch`. */
+  nativeWebSearch?: boolean;
 }
 
 /** The conversational seam: anything that can stream one assistant turn, tools included. */
@@ -72,6 +79,7 @@ export interface Collected {
   media?: MediaData[];
   text: string;
   toolCalls: { id: string; name: string; args: unknown }[];
+  native?: { provider: string; data: unknown }[];
   stop: StopReason;
   usage: { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number };
 }
@@ -87,6 +95,8 @@ export async function collect(events: AsyncIterable<ChatEvent>, onText?: (delta:
       (out.media ??= []).push(event.media);
     } else if (event.type === "tool_call") {
       out.toolCalls.push({ id: event.id, name: event.name, args: event.args });
+    } else if (event.type === "native") {
+      (out.native ??= []).push({ provider: event.provider, data: event.data });
     } else if (event.type === "usage") {
       out.usage.inputTokens += event.inputTokens ?? 0;
       out.usage.outputTokens += event.outputTokens ?? 0;
@@ -103,8 +113,8 @@ export async function collect(events: AsyncIterable<ChatEvent>, onText?: (delta:
 }
 
 /** The turn an assistant message with tool calls becomes in the transcript. */
-export function assistantMessage(collected: Pick<Collected, "text" | "toolCalls">): Message {
-  const content: ContentBlock[] = [];
+export function assistantMessage(collected: Pick<Collected, "text" | "toolCalls" | "native">): Message {
+  const content: ContentBlock[] = (collected.native ?? []).map((n) => ({ type: "native", provider: n.provider, data: n.data }));
   if (collected.text) content.push(text(collected.text));
   for (const call of collected.toolCalls) content.push({ type: "tool_call", id: call.id, name: call.name, args: call.args });
   return { role: "assistant", content };
