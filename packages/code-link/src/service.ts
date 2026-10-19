@@ -254,6 +254,16 @@ export function primaryOf(links: CodeLinkView[]): CodeLinkView | null {
   })[0]!;
 }
 
+const isMerged = (l: CodeLinkView): boolean => !!l.mergedSha || l.prState === "merged";
+/** Left behind, not waiting: a pull request closed unmerged, or a bare branch with nothing on it. */
+const isAbandoned = (l: CodeLinkView): boolean =>
+  !l.mergedSha && (l.prState === "closed" || (l.prNumber === null && !l.prUrl && !l.prState && l.ahead === 0));
+
+/** A delivery is merged once something merged and every other link merged too or was abandoned. */
+export function deliveryMerged(links: CodeLinkView[]): boolean {
+  return links.some(isMerged) && links.every((l) => isMerged(l) || isAbandoned(l));
+}
+
 const signature = (kind: string, to: string | null, reason: string): string => `${kind}|${to ?? ""}|${reason}`;
 
 /** A merge commit shows in the scan itself; a fast-forward only as the head this link last saw ahead of the default branch now sitting inside it. */
@@ -427,7 +437,7 @@ export class CodeLink extends Service {
         // A person's acceptance always lands (TOM-129); only an agent or a sync waits for every link to merge.
         if (intent.by !== "human" && before?.status !== "done" && after?.status === "done" && after.workType === "coding" && mixed) {
           const links = this.currentLinks(intent.projectId, intent.id);
-          if (!links.length || links.some(link => !link.mergedSha && link.prState !== "merged")) throw new Error("Merge all code links before accepting this mixed delivery");
+          if (!deliveryMerged(links)) throw new Error("Merge all code links before accepting this mixed delivery");
         }
       }
       return next();
@@ -1763,7 +1773,7 @@ export class CodeLink extends Service {
     for (const session of this.store.sessions(projectId, { live: true })) {
       if (session.repoId !== repoId || session.blocked !== "merge") continue;
       const links = session.itemIds.flatMap((id) => this.currentLinks(projectId, id)).filter((l) => l.repoId === repoId);
-      if (!links.length || !links.every((l) => !!l.mergedSha || l.prState === "merged")) continue;
+      if (!deliveryMerged(links)) continue;
       if (this.superseded(projectId, session)) this.sessions.end(projectId, session.id, "ended", true);
       else this.store.patchSession(projectId, session.id, { blocked: null, state: "idle", activity: null });
     }
@@ -1858,7 +1868,7 @@ export class CodeLink extends Service {
     const evidence: Evidence = {
       branch: present.length > 0,
       ahead: present.reduce((max, l) => Math.max(max, l.ahead), 0),
-      merged: this.currentLinks(projectId, item.id).every(l => !!l.mergedSha || l.prState === "merged"),
+      merged: deliveryMerged(this.currentLinks(projectId, item.id)),
       working,
       pr: primary?.prState ?? null,
       movedAfterDone:
