@@ -77,6 +77,9 @@
       "path": "./packages/herdr"
     },
     {
+      "path": "./packages/code-sessions"
+    },
+    {
       "path": "./packages/engine-loop"
     },
     {

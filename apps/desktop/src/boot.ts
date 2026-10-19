@@ -1,6 +1,7 @@
 import { Context, Logger } from "cordis";
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { stringify } from "yaml";
 import { ExtensionStore, Plugins, type PluginRow } from "@tomradex/plugins";
 import { LOCK_FILE } from "@tomradex/plugin-kit";
@@ -65,7 +66,7 @@ export async function boot(opts: BootOptions): Promise<Booted> {
   // A run that names no Hub or plugin folders keeps them beside its own data,
   // so a check never seeds projects into the person's ~/Tomrade.
   const own = opts.vars.userData ?? baseDir;
-  const vars = { appDir: baseDir, hubDir: path.join(own, "hub"), pluginsRoot: path.join(own, "plugins"), pluginsDevRoot: path.join(own, "plugins-dev"), logDir: path.join(own, "logs"), appVersion: "dev", locale: "en", instanceKind: "dev", mcpPort: "19090", nodeRuntime: nodeRuntime(), userData: own, machineData: own, ...opts.vars };
+  const vars = { appDir: baseDir, hubDir: path.join(own, "hub"), pluginsRoot: path.join(own, "plugins"), pluginsDevRoot: path.join(own, "plugins-dev"), logDir: path.join(own, "logs"), appVersion: "dev", locale: "en", instanceKind: "dev", mcpPort: "19090", nodeRuntime: nodeRuntime(), userData: own, machineData: own, uiPages: pathToFileURL(path.join(baseDir, "../../packages/ui/dist/")).href, ...opts.vars };
   // Before any file is read, so a start that fails on one leaves the reason in the log.
   ctx.logger.exporter(fileExporter(vars.logDir));
   let composition: ReturnType<typeof compose>;

@@ -7,5 +7,6 @@ export default defineConfig({
   base: "./",
   resolve: { alias: { "~": new URL("./src", import.meta.url).pathname } },
   server: { host: "127.0.0.1", port: 5173, strictPort: true },
-  build: { outDir: "dist" }
+  // The app window, and the pages built-ins open as windows of their own.
+  build: { outDir: "dist", rollupOptions: { input: { main: "index.html", "code-sessions": "code-sessions.html" } } }
 });

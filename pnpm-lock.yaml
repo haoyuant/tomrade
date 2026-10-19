@@ -50,6 +50,9 @@ importers:
       '@tomradex/code-link':
         specifier: workspace:*
         version: link:../../packages/code-link
+      '@tomradex/code-sessions':
+        specifier: workspace:*
+        version: link:../../packages/code-sessions
       '@tomradex/community':
         specifier: workspace:*
         version: link:../../packages/community
@@ -542,6 +545,49 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
         version: 1.30.0(supports-color@8.1.1)(zod@4.4.3)
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/code-sessions:
+    dependencies:
+      '@tomradex/code-link':
+        specifier: workspace:*
+        version: link:../code-link
+      '@tomradex/contributions':
+        specifier: workspace:*
+        version: link:../contributions
+      '@tomradex/db':
+        specifier: workspace:*
+        version: link:../db
+      '@tomradex/desktop-surface':
+        specifier: workspace:*
+        version: link:../desktop-surface
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@tomradex/herdr':
+        specifier: workspace:*
+        version: link:../herdr
+      '@tomradex/items':
+        specifier: workspace:*
+        version: link:../items
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@tomradex/testkit':
+        specifier: workspace:*
+        version: link:../testkit
       '@types/node':
         specifier: ^26.2.0
         version: 26.2.0
@@ -2486,6 +2532,12 @@ importers:
       '@tomradex/storage':
         specifier: workspace:*
         version: link:../storage
+      '@xterm/addon-fit':
+        specifier: 0.10.0
+        version: 0.10.0(@xterm/xterm@5.5.0)
+      '@xterm/xterm':
+        specifier: 5.5.0
+        version: 5.5.0
       '@xyflow/react':
         specifier: 12.11.5
         version: 12.11.5(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -2520,6 +2572,9 @@ importers:
       '@tomradex/code-link':
         specifier: workspace:*
         version: link:../code-link
+      '@tomradex/code-sessions':
+        specifier: workspace:*
+        version: link:../code-sessions
       '@tomradex/community':
         specifier: workspace:*
         version: link:../community
@@ -3979,6 +4034,14 @@ packages:
   '@xmldom/xmldom@0.8.15':
     resolution: {integrity: sha512-/5NV/vDALVFDXgLmfsy9TRCBlKwO2LNBFzpzvb9iIj+jR+eSc6DLYYvVOdivT/jm7MtU6TebYuRmzEOI7w40UA==}
     engines: {node: '>=10.0.0'}
+
+  '@xterm/addon-fit@0.10.0':
+    resolution: {integrity: sha512-UFYkDm4HUahf2lnEyHvio51TNGiLK66mqP2JoATy7hRZeXaGMRDr00JiSF7m63vR5WKATF605yEggJKsw0JpMQ==}
+    peerDependencies:
+      '@xterm/xterm': ^5.0.0
+
+  '@xterm/xterm@5.5.0':
+    resolution: {integrity: sha512-hqJHYaQb5OptNunnyAnkHyM8aCjZ1MEIDTQu1iIbbTD/xops91NB5yq1ZK/dC2JDbVWtF23zUtl9JE2NqwT87A==}
 
   '@xyflow/react@12.11.5':
     resolution: {integrity: sha512-QqoryGkqEhWBuQN9bZWRKhwr3Uoj9lCGj/tg0NnIWHHEOXV+5c8cYsc7Q9TST63V92lHqcNV9P5cjvJ9ZAmblQ==}
@@ -7212,6 +7275,12 @@ snapshots:
       tinyrainbow: 2.0.0
 
   '@xmldom/xmldom@0.8.15': {}
+
+  '@xterm/addon-fit@0.10.0(@xterm/xterm@5.5.0)':
+    dependencies:
+      '@xterm/xterm': 5.5.0
+
+  '@xterm/xterm@5.5.0': {}
 
   '@xyflow/react@12.11.5(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:

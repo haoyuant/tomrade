@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, shell as electronShell } from "electron";
+import type {} from "@tomradex/desktop-surface";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -92,10 +93,14 @@ export const shell = {
       electronShell.showItemInFolder(target);
     });
 
-    ctx.ipc.handle("shell.openExternal", (url) => {
+    const openExternal = (url: string) => {
       // Only ever the web: a file:// or custom scheme from a plugin is not ours to run.
       if (/^https?:\/\//i.test(url)) void electronShell.openExternal(url);
-    });
+    };
+    ctx.ipc.handle("shell.openExternal", openExternal);
+    // The same for main-process features, such as a plugin's window that has no renderer channel of its own.
+    ctx.on("desktop/open-external", openExternal);
+    ctx.on("desktop/reveal", (target) => electronShell.showItemInFolder(target));
 
     ctx.ipc.handle("shell.about", () => aboutInfo(repoRoot));
 

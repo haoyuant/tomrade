@@ -1,6 +1,6 @@
 import { app, BrowserWindow, session } from "electron";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { aboutInfo } from "./about.js";
 import { AccountFolders, machineRoots } from "./accounts.js";
 import { cameBack, keepsRunning, launchMode, PREFS_FILE, wentAway } from "./background.js";
@@ -103,6 +103,8 @@ app.whenReady().then(async () => {
       vars: {
         userData, hubDir, pluginsRoot, pluginsDevRoot, logDir, appVersion: app.getVersion(), locale: app.getLocale(),
         instanceKind: app.isPackaged ? "packaged" : "dev",
+        // Where the renderer's own pages are, for a built-in's window: the dev server, the packaged copy, or a checkout's build.
+        uiPages: process.env.VITE_DEV_SERVER_URL ? new URL("./", process.env.VITE_DEV_SERVER_URL).href : pathToFileURL(app.isPackaged ? path.join(here, "../ui/") : path.join(here, "../../../packages/ui/dist/")).href,
         // A checkout runs beside the installed app; on a port of its own, agents set up for the app keep reaching it.
         mcpPort: process.env.TOMRADE_MCP_PORT ?? (app.isPackaged ? "19090" : "19091")
       },

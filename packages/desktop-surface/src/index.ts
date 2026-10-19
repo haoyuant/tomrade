@@ -78,4 +78,12 @@ declare module "cordis" {
   interface Context {
     desktopSurfaces: DesktopSurfaceHost;
   }
+  interface Events {
+    /** Bring the app window forward on a project's conversation, or on its ticket when there is none. */
+    "desktop/open"(target: { projectId: string; threadId?: string; itemId?: string }): void;
+    /** A web page in the person's browser; anything but http(s) is ignored. */
+    "desktop/open-external"(url: string): void;
+    /** A folder or file shown in Finder or Explorer. */
+    "desktop/reveal"(target: string): void;
+  }
 }

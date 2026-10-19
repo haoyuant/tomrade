@@ -1,0 +1,52 @@
+/* The code sessions window: a list of sessions beside a layout of terminals. Colours are the app's theme variables. */
+html, body, #root { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); overflow: hidden; }
+
+.cs-window { display: flex; height: 100%; }
+.cs-side { width: 280px; flex: none; border-right: 1px solid var(--border-soft); background: var(--surface-warm); overflow-y: auto; }
+.cs-side-head { margin: 0; padding: 12px 14px 8px; font-size: var(--text-sm); color: var(--muted); font-weight: 600; letter-spacing: 0.02em; }
+.cs-empty { padding: 0 14px; color: var(--muted); font-size: var(--text-sm); line-height: 1.5; }
+.cs-list { list-style: none; margin: 0; padding: 0 6px 12px; }
+.cs-row { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; padding: 8px; border: 1px solid transparent; border-radius: 8px; background: none; color: inherit; cursor: pointer; font: inherit; }
+.cs-row:hover { background: var(--tag-bg-faint); }
+.cs-row[data-active] { border-color: var(--border); background: var(--surface); }
+.cs-row[data-needs] { border-color: var(--warn); }
+.cs-row[data-ended] { opacity: 0.6; }
+.cs-row-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: var(--text-sm); }
+.cs-row-title { font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-row-meta, .cs-row-activity { font-size: var(--text-xs); color: var(--meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-chip { font-size: var(--text-xs); padding: 1px 6px; border-radius: 999px; background: var(--tag-bg-soft); color: var(--tag-fg); white-space: nowrap; }
+.cs-chip[data-state="running"] { background: var(--accent-light); color: var(--accent-active); }
+.cs-chip[data-state="needs"] { background: var(--warn); color: var(--accent-on); font-weight: 600; }
+.cs-chip[data-state="error"], .cs-chip[data-state="lost"] { background: var(--danger); color: var(--accent-on); }
+
+.cs-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.cs-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border-soft); background: var(--surface-warm); font-size: var(--text-sm); }
+.cs-banner code { font-family: var(--font-mono); font-size: var(--text-xs); }
+.cs-layout { flex: 1; min-height: 0; display: flex; padding: 6px; }
+.cs-layout > * { flex: 1; min-width: 0; min-height: 0; }
+
+.cs-split { display: flex; height: 100%; width: 100%; min-width: 0; min-height: 0; }
+.cs-split[data-direction="column"] { flex-direction: column; }
+.cs-split-part { display: flex; min-width: 0; min-height: 0; }
+.cs-split-part > * { flex: 1; min-width: 0; min-height: 0; }
+.cs-divider { flex: none; background: transparent; }
+.cs-divider[data-direction="row"] { width: 6px; cursor: col-resize; }
+.cs-divider[data-direction="column"] { height: 6px; cursor: row-resize; }
+.cs-divider:hover { background: var(--border-soft); }
+
+.cs-cell { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--border-soft); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.cs-cell[data-focused] { border-color: var(--accent); }
+.cs-cell-bar { display: flex; align-items: center; gap: 10px; padding: 4px 8px; border-bottom: 1px solid var(--border-soft); font-size: var(--text-xs); min-height: 28px; }
+.cs-cell-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); }
+.cs-cell-actions { display: flex; gap: 10px; flex: none; }
+.cs-cell-tools { display: flex; gap: 2px; flex: none; }
+.cs-cell-tools .icon-btn { width: 22px; height: 22px; border: 0; border-radius: 4px; background: none; color: var(--muted); cursor: pointer; }
+.cs-cell-tools .icon-btn:hover { background: var(--tag-bg-faint); color: var(--fg); }
+.cs-cell-empty { flex: 1; display: grid; place-items: center; color: var(--muted); font-size: var(--text-sm); padding: 16px; text-align: center; }
+
+.cs-term { position: relative; flex: 1; min-height: 0; }
+.cs-term-host { position: absolute; inset: 4px 0 0 6px; }
+.cs-term-closed { position: absolute; inset: auto 0 0 0; display: flex; gap: 8px; align-items: center; justify-content: center; padding: 6px; background: var(--surface-warm); border-top: 1px solid var(--border-soft); font-size: var(--text-xs); }
+
+.cs-toast { position: fixed; right: 16px; bottom: 16px; max-width: 420px; padding: 10px 14px; border-radius: 8px; background: var(--fg); color: var(--bg); font-size: var(--text-sm); white-space: pre-wrap; box-shadow: 0 6px 24px rgb(0 0 0 / 0.18); cursor: pointer; }
