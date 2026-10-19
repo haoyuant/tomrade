@@ -168,13 +168,14 @@ const paragraph = (render: (scope: McpScope) => string | null, scope: McpScope):
   }
 };
 
-/** A hook that ran in a herdr pane names it in a header; the payload carries it on as `herdr_pane`. */
+/** A hook that ran in a herdr pane names it in a header, and its terminal app in another; the payload carries them on as `herdr_pane` and `terminal`. */
 const withPane = (req: express.Request): Record<string, unknown> => {
   const body = (req.body && typeof req.body === "object" ? req.body : {}) as Record<string, unknown>;
   const pane = req.get("X-Tomrade-Herdr-Pane")?.trim();
+  const terminal = req.get("X-Tomrade-Terminal")?.trim();
   // An agent that reports twice says which of Tomrade's posts this is (dsh: its hook bridge).
   const source = req.get("X-Tomrade-Source")?.trim();
-  return { ...body, ...(pane ? { herdr_pane: pane } : {}), ...(source === "dsh-hooks" ? { tomrade_source: source } : {}) };
+  return { ...body, ...(pane ? { herdr_pane: pane } : {}), ...(terminal ? { terminal } : {}), ...(source === "dsh-hooks" ? { tomrade_source: source } : {}) };
 };
 
 const sessionIdOf = (req: express.Request): string | undefined => {

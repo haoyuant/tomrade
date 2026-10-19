@@ -49,6 +49,8 @@ describe("code-link delivery migration", () => {
     expect(session.herdrPane).toBeNull();
     expect(store.patchSession(project.id, session.id, { herdrPane: "w3:p1" }).herdrPane).toBe("w3:p1");
     expect(store.session(project.id, session.id)!.herdrPane).toBe("w3:p1");
+    expect(session.terminal).toBeNull();
+    expect(store.patchSession(project.id, session.id, { terminal: "iTerm.app" }).terminal).toBe("iTerm.app");
     await ctx.fiber.dispose();
   });
 

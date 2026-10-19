@@ -12,9 +12,9 @@ import { FakeHerdr, fresh, settle } from "@tomradex/testkit";
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-code-sessions-"));
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-type Session = { id: string; itemIds: string[]; branch: string; state: string; mode: "headless" | "terminal"; agent: string; herdrPane: string | null; threadId: string | null; worktree: string | null; activity: string | null; summary: string | null; blocked: unknown; startedAt: number; endedAt: number | null; lastEventAt: number | null };
+type Session = { id: string; itemIds: string[]; branch: string; state: string; mode: "headless" | "terminal"; agent: string; herdrPane: string | null; terminal: string | null; device: string; threadId: string | null; worktree: string | null; activity: string | null; summary: string | null; blocked: unknown; startedAt: number; endedAt: number | null; lastEventAt: number | null };
 
-const session = (over: Partial<Session> & { id: string }): Session => ({ itemIds: [], branch: "b", state: "running", mode: "terminal", agent: "claude-code", herdrPane: null, threadId: null, worktree: null, activity: null, summary: null, blocked: null, startedAt: 1, endedAt: null, lastEventAt: null, ...over });
+const session = (over: Partial<Session> & { id: string }): Session => ({ itemIds: [], branch: "b", state: "running", mode: "terminal", agent: "claude-code", herdrPane: null, terminal: null, device: "here", threadId: null, worktree: null, activity: null, summary: null, blocked: null, startedAt: 1, endedAt: null, lastEventAt: null, ...over });
 
 it("lists live sessions first, needs-you before the rest, and ended ones only for a day", () => {
   const now = 10 * 24 * 3600_000;
@@ -30,6 +30,28 @@ it("lists live sessions first, needs-you before the rest, and ended ones only fo
   expect(rows[1]).toMatchObject({ key: "TOM-1", title: "One", pane: "w1:p1", prUrl: "https://example.com/pr/1", mode: "terminal" });
   // An ended session's pane is no terminal to attach to.
   expect(rows[2]).toMatchObject({ pane: null, state: "ended" });
+});
+
+it("says where a session's terminal is: herdr here, another app here by name, another computer, or Tomrade", () => {
+  const sessions = [
+    session({ id: "herdr", herdrPane: "w1:p1", startedAt: 6 }),
+    session({ id: "iterm", terminal: "iTerm.app", startedAt: 5 }),
+    session({ id: "odd", terminal: "SomeTerm", startedAt: 4 }),
+    session({ id: "unsaid", startedAt: 3 }),
+    session({ id: "away", device: "laptop", terminal: "iTerm.app", startedAt: 2 }),
+    session({ id: "run", mode: "headless", threadId: "t", startedAt: 1 })
+  ];
+  const rows = (platform: NodeJS.Platform) => sessionRows({ sessionsOf: () => sessions as never, links: () => [] }, { get: () => null }, "p", Date.now(), "here", platform);
+  expect(rows("darwin").map((r) => [r.id, r.where, r.terminal, r.switchable])).toEqual([
+    ["herdr", "herdr", null, false],
+    ["iterm", "outside", "iTerm2", true],
+    ["odd", "outside", "SomeTerm", false],
+    ["unsaid", "outside", null, false],
+    ["away", "elsewhere", "iTerm2", false],
+    ["run", "tomrade", null, false]
+  ]);
+  // Only macOS brings an app forward from here.
+  expect(rows("linux").find((r) => r.id === "iterm")!.switchable).toBe(false);
 });
 
 it("opens a window per project, streams a session's pane into a cell, and lets go when the cell or window does", async () => {

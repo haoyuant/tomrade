@@ -71,7 +71,7 @@ app.whenReady().then(async () => {
     for (const program of programs) {
       const item = ctx.items.create({ projectId: project.id, boardId: board.id, title: program.title, workType: "coding", status: "doing", by: "human" });
       const pane = await ctx.herdr.launch({ cwd, label: item.key, command: program.command, workspace: { key: project.id, label: project.name } });
-      const session = ctx.codeLink.store.createSession(project.id, { repoId: "check", branch: `${item.key.toLowerCase()}/check`, itemIds: [item.id], mode: "terminal", agent: "claude-code", threadId: null, device: "check", worktree: cwd });
+      const session = ctx.codeLink.store.createSession(project.id, { repoId: "check", branch: `${item.key.toLowerCase()}/check`, itemIds: [item.id], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, worktree: cwd });
       ctx.codeLink.store.patchSession(project.id, session.id, { state: "running", herdrPane: pane.paneId });
       sessions.push({ ...session, pane: pane.paneId, item });
     }
@@ -239,7 +239,7 @@ app.whenReady().then(async () => {
     // An agent in it claims a ticket: code link learns the pane (as the repo's hooks report it) and the cell becomes
     // that session in place — same xterm, same picture, no second row. Letting the claim go makes it a terminal again.
     const claimed = ctx.items.create({ projectId: project.id, boardId: board.id, title: "在终端里认领", workType: "coding", status: "doing", by: "human" });
-    const claimSession = ctx.codeLink.store.createSession(project.id, { repoId: "check", branch: `${claimed.key.toLowerCase()}/claimed`, itemIds: [claimed.id], mode: "terminal", agent: "claude-code", threadId: null, device: "check", worktree: cwd });
+    const claimSession = ctx.codeLink.store.createSession(project.id, { repoId: "check", branch: `${claimed.key.toLowerCase()}/claimed`, itemIds: [claimed.id], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, worktree: cwd });
     await tjs(`document.querySelector('.cs-cell[data-cell-terminal] .xterm').dataset.mark = 'same'; true`);
     ctx.codeLink.store.patchSession(project.id, claimSession.id, { state: "running", herdrPane: plainPane });
     ctx.emit("codeLink/changed", project.id);
@@ -283,7 +283,7 @@ app.whenReady().then(async () => {
     const appear = async (title) => {
       const item = ctx.items.create({ projectId: project.id, boardId: board.id, title, workType: "coding", status: "doing", by: "human" });
       const p = await ctx.herdr.launch({ cwd, label: item.key, command: `echo ${item.key}`, workspace: { key: project.id, label: project.name } });
-      const s = ctx.codeLink.store.createSession(project.id, { repoId: "check", branch: `${item.key.toLowerCase()}/check`, itemIds: [item.id], mode: "terminal", agent: "claude-code", threadId: null, device: "check", worktree: cwd });
+      const s = ctx.codeLink.store.createSession(project.id, { repoId: "check", branch: `${item.key.toLowerCase()}/check`, itemIds: [item.id], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, worktree: cwd });
       ctx.codeLink.store.patchSession(project.id, s.id, { state: "running", herdrPane: p.paneId });
       ctx.emit("codeLink/changed", project.id);
       return item.key;
@@ -302,6 +302,24 @@ app.whenReady().then(async () => {
     await sleep(2500);
     check("关掉自动分配后，新会话不会自己占面板", !(await inCell(manual)) && (await tjs(`document.querySelectorAll('.cs-cell [data-testid=cs-new-terminal]').length`)) >= 1);
     fs.writeFileSync(path.join(shots, "code-sessions-layouts.png"), (await tw.webContents.capturePage()).toPNG());
+
+    // A session in iTerm2 (its hooks said so): tagged in the list, and its pane says where it runs and what can be done.
+    const outsideItem = ctx.items.create({ projectId: project.id, boardId: board.id, title: "在 iTerm2 里跑", workType: "coding", status: "doing", by: "human" });
+    const outside = ctx.codeLink.store.createSession(project.id, { repoId: "check", branch: `${outsideItem.key.toLowerCase()}/iterm`, itemIds: [outsideItem.id], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, worktree: cwd });
+    ctx.codeLink.store.patchSession(project.id, outside.id, { state: "running", terminal: "iTerm.app" });
+    ctx.emit("codeLink/changed", project.id);
+    const rowOf = `[...document.querySelectorAll('.cs-row')].find((r) => r.textContent.includes(${JSON.stringify(outsideItem.key)}))`;
+    const tagged = await wait(async () => tjs(`${rowOf}?.querySelector('.cs-where')?.textContent === 'iTerm2'`), 8000);
+    check("外部终端里的会话在列表里标出 iTerm2", tagged);
+    await tjs(`${rowOf}.click(); true`);
+    const told = await wait(async () => tjs(`(() => { const box = document.querySelector('[data-testid=cs-outside]'); return !!box && box.textContent.includes('这个会话在 iTerm2 里运行') && [...box.querySelectorAll('button')].map((b) => b.textContent).join('|'); })()`), 5000);
+    const buttons = await tjs(`[...document.querySelector('[data-testid=cs-outside]')?.querySelectorAll('button') ?? []].map((b) => b.textContent)`);
+    check("面板里说明它在 iTerm2 里、不能在这里显示，有「切到 iTerm2」，运行中不给接着做", !!told && buttons.join() === (process.platform === "darwin" ? "切到 iTerm2" : ""), JSON.stringify(buttons));
+    ctx.codeLink.store.patchSession(project.id, outside.id, { state: "idle" });
+    ctx.emit("codeLink/changed", project.id);
+    const resumable = await wait(async () => tjs(`[...document.querySelector('[data-testid=cs-outside]')?.querySelectorAll('button') ?? []].some((b) => b.textContent === '在新终端里接着做')`), 5000);
+    check("空闲后才出现「在新终端里接着做」", resumable);
+    fs.writeFileSync(path.join(shots, "code-sessions-outside.png"), (await tw.webContents.capturePage()).toPNG());
     tw.close();
   } catch (error) {
     check("检查跑完", false, error?.stack ?? String(error));

@@ -115,7 +115,21 @@ const save = (file: string | undefined, patch: Saved) => {
 };
 
 /** A project's code sessions as the window lists them: live ones first, then the ones ended in the last day. */
-export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, items: { get(projectId: string, id: string): { key: string; title: string } | null | undefined }, projectId: string, now = Date.now()): SessionRow[] {
+/** Terminal apps by `TERM_PROGRAM`: the name the window shows, and the macOS app that brings it forward. */
+const TERMINAL_APPS: Record<string, { name: string; app: string }> = {
+  "iTerm.app": { name: "iTerm2", app: "iTerm" },
+  Apple_Terminal: { name: "Terminal", app: "Terminal" },
+  vscode: { name: "VS Code", app: "Visual Studio Code" },
+  WarpTerminal: { name: "Warp", app: "Warp" },
+  ghostty: { name: "Ghostty", app: "Ghostty" },
+  WezTerm: { name: "WezTerm", app: "WezTerm" },
+  Hyper: { name: "Hyper", app: "Hyper" },
+  Tabby: { name: "Tabby", app: "Tabby" },
+  kitty: { name: "kitty", app: "kitty" },
+  alacritty: { name: "Alacritty", app: "Alacritty" }
+};
+
+export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, items: { get(projectId: string, id: string): { key: string; title: string } | null | undefined }, projectId: string, now = Date.now(), device?: string, platform: NodeJS.Platform = process.platform): SessionRow[] {
   const prs = new Map(codeLink.links(projectId).filter((l) => l.prUrl).map((l) => [l.branch, l.prUrl]));
   return codeLink
     .sessionsOf(projectId)
@@ -124,6 +138,8 @@ export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, it
       const itemId = s.itemIds[0] ?? null;
       const item = itemId ? items.get(projectId, itemId) : null;
       const live = s.state !== "ended" && s.state !== "lost";
+      const app = s.terminal ? TERMINAL_APPS[s.terminal] : undefined;
+      const where = s.mode === "headless" ? "tomrade" : device && s.device && s.device !== device ? "elsewhere" : s.herdrPane ? "herdr" : "outside";
       return {
         id: s.id,
         itemId,
@@ -136,6 +152,9 @@ export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, it
         mode: s.mode === "headless" ? "run" : "terminal",
         agent: s.agent,
         pane: live ? s.herdrPane : null,
+        where,
+        terminal: app?.name ?? s.terminal ?? null,
+        switchable: where === "outside" && !!app && platform === "darwin",
         threadId: s.threadId,
         prUrl: prs.get(s.branch) ?? null,
         worktree: s.worktree,
@@ -173,7 +192,7 @@ function apply(ctx: Context, config: Config) {
   /** The sessions to list; when they cannot be read the window says so and its terminals work on. */
   const listed = (projectId: string): { sessions: SessionRow[]; warning: string | null } => {
     try {
-      return { sessions: sessionRows(ctx.codeLink, ctx.items, projectId), warning: null };
+      return { sessions: sessionRows(ctx.codeLink, ctx.items, projectId, Date.now(), ctx.get("hub")?.deviceId), warning: null };
     } catch (error) {
       ctx.logger.warn(`code sessions: listing sessions failed: ${error instanceof Error ? error.message : String(error)}`);
       return { sessions: [], warning: words()("sessionsUnreadable") };
@@ -416,6 +435,12 @@ function apply(ctx: Context, config: Config) {
         const s = sessionOf(projectId, m.sessionId);
         if (s?.threadId) return void ctx.emit("desktop/open", { projectId, threadId: s.threadId });
         return command(projectId, win, "code-link.open-thread", m.sessionId);
+      }
+      case "switchTo": {
+        const s = sessionOf(projectId, m.sessionId);
+        const app = s?.terminal ? TERMINAL_APPS[s.terminal]?.app : undefined;
+        if (!app || process.platform !== "darwin") return;
+        return void run("open", ["-a", app]).catch(() => post(win, { type: "toast", text: words()("switchFailed", { app }) }));
       }
       case "focusHerdr":
         return command(projectId, win, "code-link.open-terminal", m.sessionId);

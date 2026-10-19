@@ -86,6 +86,7 @@ interface CursorPayload {
   reason?: string;
   tomrade_agent?: string;
   herdr_pane?: string;
+  terminal?: string;
 }
 
 const EVENTS: Record<string, string> = {
@@ -111,7 +112,7 @@ export function cursorHookReader(): (payload: unknown) => Record<string, unknown
     const session_id = p.session_id ?? p.conversation_id;
     const cwd = p.cwd ?? p.workspace_roots?.[0];
     if (!session_id || !cwd || !p.hook_event_name) return null;
-    const base = { session_id, cwd, tomrade_agent: "cursor", ...(p.herdr_pane ? { herdr_pane: p.herdr_pane } : {}) };
+    const base = { session_id, cwd, tomrade_agent: "cursor", ...(p.herdr_pane ? { herdr_pane: p.herdr_pane } : {}), ...(p.terminal ? { terminal: p.terminal } : {}) };
     const tool = p.tool_name ? { tool_name: TOOLS[p.tool_name] ?? p.tool_name, tool_input: p.tool_input ?? {} } : {};
     switch (p.hook_event_name) {
       case "afterAgentResponse":

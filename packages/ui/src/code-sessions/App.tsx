@@ -80,7 +80,12 @@ function SessionList({ sessions, active, onPick, say }: { sessions: SessionRow[]
             {s.title && <span className="cs-row-title">{s.title}</span>}
             <span className="cs-row-meta">
               <span className="mono">{s.branch}</span>
-              {s.mode === "run" ? ` · ${say("runMode")}` : !s.pane && live(s) ? ` · ${say("otherMachine")}` : ""}
+              {s.mode === "run" ? ` · ${say("runMode")}` : ""}
+              {!s.pane && live(s) && s.where !== "tomrade" && (
+                <span className="cs-chip cs-where" data-where={s.where} title={s.where === "elsewhere" ? say("elsewhere") : say("outsideTitle", { terminal: s.terminal ?? say("outsideTerminal") })}>
+                  {s.where === "elsewhere" ? say("elsewhereTag") : (s.terminal ?? say("outsideTerminal"))}
+                </span>
+              )}
             </span>
             {s.activity && <span className="cs-row-activity">{s.activity}</span>}
           </button>
@@ -201,6 +206,39 @@ function Layouts({ presets, defaultPreset, autoPlace, onApply, onSave, say }: { 
   );
 }
 
+/** A session whose terminal this window cannot show: where it runs, and what can be done from here. */
+function NotHere({ session, say }: { session: SessionRow; say: Say }) {
+  const done = session.state === "idle" || session.state === "ended" || session.state === "lost" || session.state === "error";
+  // Never while the outside one may still run: two copies would share one conversation.
+  const resume = done && session.where !== "elsewhere" && (
+    <button type="button" className="btn btn-secondary btn-xs" onClick={() => send({ type: "continue", sessionId: session.id })}>
+      {say("continueNew")}
+    </button>
+  );
+  if (!live(session) || session.where === "herdr")
+    return (
+      <div className="cs-not-here">
+        <span>{say("endedHere")}</span>
+        {resume}
+      </div>
+    );
+  if (session.where === "elsewhere") return <div className="cs-not-here">{say("elsewhere")}</div>;
+  const terminal = session.terminal ?? say("outsideTerminal");
+  return (
+    <div className="cs-not-here" data-testid="cs-outside">
+      <span>{say("outside", { terminal })}</span>
+      <span className="cs-not-here-actions">
+        {session.switchable && (
+          <button type="button" className="btn btn-secondary btn-xs" onClick={() => send({ type: "switchTo", sessionId: session.id })}>
+            {say("switchTo", { terminal })}
+          </button>
+        )}
+        {resume}
+      </span>
+    </div>
+  );
+}
+
 function Cell({ leaf, session, terminal, places, ready, onNewTerminal, focused, only, onFocus, onSplit, onClose, menu, look, say }: { leaf: Extract<Layout, { type: "leaf" }>; session: SessionRow | undefined; terminal: TerminalRow | undefined; places: TerminalPlace[]; ready: boolean; onNewTerminal: (cwd: string) => void; focused: boolean; only: boolean; onFocus: () => void; onSplit: (d: "row" | "column") => void; onClose: () => void; menu: ReactNode; look: Look; say: Say }) {
   // Right-click on the bar, or on a cell with no terminal: inside a terminal it is the program's own.
   const withMenu = (node: ReactElement) => (
@@ -224,12 +262,12 @@ function Cell({ leaf, session, terminal, places, ready, onNewTerminal, focused, 
           <span className="cs-cell-actions">
             {session.mode === "run" ? (
               <button type="button" className="link-btn" onClick={() => act("openThread")}>{say("openThread")}</button>
-            ) : (
+            ) : session.where === "herdr" ? (
               <>
                 <button type="button" className="link-btn" onClick={() => act("continue")}>{say("continue")}</button>
                 <button type="button" className="link-btn" onClick={() => act("focusHerdr")}>{say("focusHerdr")}</button>
               </>
-            )}
+            ) : null}
             <button type="button" className="link-btn" onClick={() => act("openWorktree")}>{say("openWorktree")}</button>
             <button type="button" className="link-btn" onClick={() => act("openPr")}>{say("openPr")}</button>
           </span>
@@ -245,7 +283,7 @@ function Cell({ leaf, session, terminal, places, ready, onNewTerminal, focused, 
       ) : terminal ? (
         withMenu(<div className="cs-cell-empty">{say("starting")}</div>)
       ) : session ? (
-        withMenu(<div className="cs-cell-empty">{session.mode === "run" ? say("runMode") : say("otherMachine")}</div>)
+        withMenu(<div className="cs-cell-empty">{session.mode === "run" ? say("runMode") : <NotHere session={session} say={say} />}</div>)
       ) : (
         withMenu(
           <div className="cs-cell-empty">
