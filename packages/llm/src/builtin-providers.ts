@@ -3,6 +3,7 @@ import { detectCapabilities, type ModelCapabilities } from "./capabilities.js";
 import { bareModel, GEMINI_BASE, GeminiModel } from "./gemini.js";
 import { ImagesModel } from "./images.js";
 import { OpenAiCompatible } from "./openai.js";
+import { openRouterSignIn } from "./openrouter-auth.js";
 import { deepseekKey, deepseekProvider } from "./search/deepseek.js";
 import { kimiKey, kimiProvider } from "./search/kimi.js";
 import type { ModelProviderSpec } from "./provider.js";
@@ -44,10 +45,11 @@ const hostOf = (url: string): string => {
  * compatible adapter at its address, and the catch-all profiles saved at one
  * of its hosts, which move to it with their address kept.
  */
-function compatibleService(spec: Pick<ModelProviderSpec, "id" | "title" | "presets"> & { baseURL: string; hosts: string[] }): ModelProviderSpec {
+function compatibleService(spec: Pick<ModelProviderSpec, "id" | "title" | "presets" | "signIn"> & { baseURL: string; hosts: string[] }): ModelProviderSpec {
   return {
     id: spec.id,
     title: spec.title,
+    ...(spec.signIn ? { signIn: spec.signIn } : {}),
     keyRequired: true,
     baseURL: { default: spec.baseURL, editable: true },
     chat: true,
@@ -108,10 +110,11 @@ export const OPENAI = compatibleService({
   ]
 });
 
-/** One key for many vendors' models. */
+/** One key for many vendors' models; signing in on openrouter.ai makes one. */
 export const OPENROUTER = compatibleService({
   id: "openrouter",
   title: { en: "OpenRouter", zh: "OpenRouter" },
+  signIn: { title: { en: "Sign in with OpenRouter", zh: "用 OpenRouter 账号登录" }, run: openRouterSignIn },
   baseURL: "https://openrouter.ai/api/v1",
   hosts: ["openrouter.ai"],
   presets: [

@@ -22,6 +22,7 @@ export * from "./model.js";
 export { guessFrom, keyHint, listModels, pickModel, usableModels, type ModelListing, type ProviderPreset, type QuickSetupResult } from "./providers.js";
 export { ANTHROPIC, BUILTIN_PROVIDERS, DEEPSEEK, GEMINI, KIMI, OPENAI, OPENAI_COMPATIBLE, OPENAI_IMAGES, OPENROUTER, PROVIDERS, guessProviders } from "./builtin-providers.js";
 export { GeminiModel, type GeminiConfig } from "./gemini.js";
+export { openRouterSignIn, type OpenRouterSignIn } from "./openrouter-auth.js";
 export { deepseekKey, deepseekProvider, type DeepSeekKey } from "./search/deepseek.js";
 export { kimiKey, kimiProvider, type KimiKey } from "./search/kimi.js";
 export type { ModelListResult, ModelProviderSpec, ModelProviderView, ProviderProfile, ProviderSignIn } from "./provider.js";
