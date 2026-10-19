@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, expect, it } from "vitest";
 import { Service, type Context } from "cordis";
-import CodeSessions, { sessionRows, type WindowMessage, type WindowPost, type WindowState } from "@tomradex/code-sessions";
+import CodeSessions, { sessionRows, type Layout, type WindowMessage, type WindowPost, type WindowState } from "@tomradex/code-sessions";
 import { Contributions } from "@tomradex/contributions";
 import { Settings } from "@tomradex/settings";
 import { Herdr } from "@tomradex/herdr";
@@ -340,4 +340,65 @@ it("shows a terminal as the code session its agent claimed, in place, and as a p
   expect((await now()).find((t) => t.id === "t1")).toMatchObject({ sessionId: null, note: expect.any(String) });
   sessions[2]!.worktree = dir;
   expect((await now()).find((t) => t.id === "t1")).toMatchObject({ sessionId: "gemini", note: null });
+});
+
+it("keeps named layouts and the auto-place switch for every window, and starts from one cell when the saved state is broken", async () => {
+  const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[] }[] = [];
+  class FakeSurfaces extends Service {
+    static provide = "desktopSurfaces";
+    constructor(ctx: Context) {
+      super(ctx, "desktopSurfaces");
+    }
+    open(spec: (typeof opened)[number]["spec"]) {
+      const entry = { spec, states: [spec.initialState as WindowState] };
+      opened.push(entry);
+      return { id: "s", capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus() {}, setState: (s: WindowState) => void entry.states.push(s), post() {}, close: () => spec.onClose() };
+    }
+  }
+  class FakeCodeLink extends Service {
+    static provide = "codeLink";
+    constructor(ctx: Context) {
+      super(ctx, "codeLink");
+    }
+    sessionsOf = () => [];
+    links = () => [];
+    repositoriesOf = () => [];
+    herdrInstall = async () => ({ command: null, guide: "" });
+  }
+  const stateFile = path.join(dir, "presets.json");
+  fs.writeFileSync(stateFile, "{ not json");
+  const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "settings-p.json") }], Contributions, FakeSurfaces, FakeCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile }]] });
+  await settle();
+
+  // Broken: one cell and a warning, and the window opens all the same.
+  await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
+  const win = opened[0]!;
+  expect(win.states[0]).toMatchObject({ layout: { type: "leaf", sessionId: null }, presets: [], defaultPreset: null, autoPlace: true, warning: expect.any(String) });
+  const say = async (m: WindowMessage) => {
+    win.spec.onMessage(m);
+    await settle();
+  };
+
+  // Saved under a name with its sessions left out; renamed, made the default, then deleted.
+  const grid: Layout = { type: "split", id: "g", direction: "row", ratio: 0.3, a: { type: "leaf", id: "a", sessionId: "s1" }, b: { type: "leaf", id: "b", sessionId: "t1" } };
+  await say({ type: "savePreset", name: "  Two  ", layout: grid });
+  const saved = win.states.at(-1)!;
+  expect(saved.warning).toBeNull();
+  expect(saved.presets).toEqual([{ id: expect.any(String), name: "Two", layout: { ...grid, a: { ...grid.a, sessionId: null }, b: { ...grid.b, sessionId: null } } }]);
+  const id = saved.presets[0]!.id;
+  await say({ type: "renamePreset", id, name: "Side by side" });
+  await say({ type: "renamePreset", id, name: "   " });
+  await say({ type: "defaultPreset", id });
+  await say({ type: "autoPlace", on: false });
+  expect(win.states.at(-1)).toMatchObject({ presets: [{ id, name: "Side by side" }], defaultPreset: id, autoPlace: false });
+
+  // Another project, with no layout of its own, opens with the default preset.
+  const other = w.ctx.projects.create({ name: "Other", keyPrefix: "OTH" });
+  await w.ctx.contributions.run("code-sessions.open", { projectId: other.id });
+  expect(opened[1]!.states[0]!.layout).toMatchObject({ type: "split", ratio: 0.3 });
+  // A layout that is not one is never kept; deleting the default preset clears it.
+  await say({ type: "layout", layout: { type: "split", id: "x" } as unknown as Layout });
+  expect(JSON.parse(fs.readFileSync(stateFile, "utf8")).layouts).toBeUndefined();
+  await say({ type: "deletePreset", id });
+  expect(win.states.at(-1)).toMatchObject({ presets: [], defaultPreset: null });
 });

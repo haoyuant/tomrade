@@ -258,6 +258,50 @@ app.whenReady().then(async () => {
     await tjs(`[...document.querySelector('.cs-cell[data-cell-terminal]').querySelectorAll('.link-btn')].find((b) => b.textContent === '关闭终端').click(); true`);
     const ended = await wait(async () => !JSON.parse(herdr("pane", "list")).result.panes.some((p) => p.pane_id === plainPane) && saved().length === 0);
     check("关闭终端：herdr 里的 pane 结束，列表里也没了", ended);
+
+    // A layout kept under a name.
+    await tjs(`document.querySelector('[data-testid=cs-save-layout]').click(); true`);
+    await sleep(200);
+    tw.webContents.insertText("七格");
+    await tjs(`[...document.querySelectorAll('.cs-layout-form button')].find((b) => b.textContent === '保存').click(); true`);
+    const kept = await wait(async () => (await tjs(`[...document.querySelectorAll('.cs-preset-name')].map((b) => b.textContent).join()`)) === "七格");
+    const stored = JSON.parse(fs.readFileSync(path.join(work, "code-sessions.json"), "utf8")).presets ?? [];
+    const noSessions = (l) => (l.type === "leaf" ? l.sessionId === null : noSessions(l.a) && noSessions(l.b));
+    check("布局能存成预设，预设里不带会话", kept && stored.length === 1 && noSessions(stored[0].layout), JSON.stringify(stored.map((p) => p.name)));
+
+    // Right-click on a pane's bar: the menu, and Detach empties that pane.
+    const emptyCells = () => tjs(`document.querySelectorAll('.cs-cell [data-testid=cs-new-terminal]').length`);
+    const emptyBefore = await emptyCells();
+    await tjs(`document.querySelector('.cs-cell .cs-cell-bar').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 20 })); true`);
+    const menu = await wait(async () => tjs(`[...document.querySelectorAll('[role=menuitem]')].map((i) => i.textContent).join('|')`).then((t) => t.includes("连接会话") && t.includes("新终端") && t.includes("断开")), 3000);
+    check("面板右键菜单：连接会话 / 新终端 / 断开 / 拆分 / 关闭", menu);
+    await tjs(`[...document.querySelectorAll('[role=menuitem]')].find((i) => i.textContent === '断开').click(); true`);
+    const emptied = await wait(async () => (await emptyCells()) === emptyBefore + 1, 3000);
+    check("右键断开后那个面板空了出来", emptied);
+
+    // A session that appears goes to the empty pane by itself; switched off, the next one does not.
+    const appear = async (title) => {
+      const item = ctx.items.create({ projectId: project.id, boardId: board.id, title, workType: "coding", status: "doing", by: "human" });
+      const p = await ctx.herdr.launch({ cwd, label: item.key, command: `echo ${item.key}`, workspace: { key: project.id, label: project.name } });
+      const s = ctx.codeLink.store.createSession(project.id, { repoId: "check", branch: `${item.key.toLowerCase()}/check`, itemIds: [item.id], mode: "terminal", agent: "claude-code", threadId: null, device: "check", worktree: cwd });
+      ctx.codeLink.store.patchSession(project.id, s.id, { state: "running", herdrPane: p.paneId });
+      ctx.emit("codeLink/changed", project.id);
+      return item.key;
+    };
+    const inCell = (key) => tjs(`[...document.querySelectorAll('.cs-cell-name')].some((n) => n.textContent.includes(${JSON.stringify(key)}))`);
+    const auto = await appear("自动放进空面板");
+    check("新会话自动放进空面板", await wait(async () => inCell(auto), 8000));
+    await tjs(`document.querySelector('[data-testid=cs-side-new-terminal]').click(); true`);
+    await sleep(300);
+    await tjs(`document.querySelector('.cs-cell-bar').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 20 })); true`);
+    await sleep(300);
+    await tjs(`[...document.querySelectorAll('[role=menuitem]')].find((i) => i.textContent === '断开')?.click(); true`);
+    await tjs(`document.querySelector('[data-testid=cs-auto-place]').click(); true`);
+    await wait(async () => !JSON.parse(fs.readFileSync(path.join(work, "code-sessions.json"), "utf8")).autoPlace === false || JSON.parse(fs.readFileSync(path.join(work, "code-sessions.json"), "utf8")).autoPlace === false, 3000);
+    const manual = await appear("关掉自动分配");
+    await sleep(2500);
+    check("关掉自动分配后，新会话不会自己占面板", !(await inCell(manual)) && (await tjs(`document.querySelectorAll('.cs-cell [data-testid=cs-new-terminal]').length`)) >= 1);
+    fs.writeFileSync(path.join(shots, "code-sessions-layouts.png"), (await tw.webContents.capturePage()).toPNG());
     tw.close();
   } catch (error) {
     check("检查跑完", false, error?.stack ?? String(error));

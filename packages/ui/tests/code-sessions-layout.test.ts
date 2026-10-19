@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { Layout } from "@tomradex/code-sessions";
-import { close, leaves, prune, resize, show, split } from "../src/code-sessions/layout";
+import { applyPreset, close, leaves, place, prune, resize, shape, show, split } from "../src/code-sessions/layout";
 
 const one: Layout = { type: "leaf", id: "c1", sessionId: "s1" };
 
@@ -24,4 +24,18 @@ it("shows a session in one cell only, keeps ratios in bounds, and empties cells 
   expect((resize(two, "c2s", 0.99) as Extract<Layout, { type: "split" }>).ratio).toBe(0.85);
   expect((resize(two, "c2s", 0.3) as Extract<Layout, { type: "split" }>).ratio).toBe(0.3);
   expect(leaves(prune(show(two, "c2", "s9"), new Set(["s1"]))).map((l) => l.sessionId)).toEqual(["s1", null]);
+});
+
+it("keeps a preset's shape, refills it in reading order, places new ids in the first empty cell", () => {
+  const grid = split(split(one, "c1", "row", "c2").layout, "c1", "column", "c3").layout;
+  const full = show(show(grid, "c2", "s2"), "c3", "s3");
+  expect(leaves(shape(full)).map((l) => l.sessionId)).toEqual([null, null, null]);
+  let n = 0;
+  const fresh = () => `n${++n}`;
+  // Two cells in the preset, three sessions shown: the first two come along, the third is let go.
+  const applied = applyPreset(full, split({ type: "leaf", id: "p1", sessionId: "gone" }, "p1", "row", "p2").layout, fresh);
+  expect(leaves(applied).map((l) => l.sessionId)).toEqual(["s1", "s3"]);
+  expect(leaves(applied).every((l) => l.id.startsWith("n"))).toBe(true);
+  expect(leaves(place(grid, "s9")).map((l) => l.sessionId)).toEqual(["s1", "s9", null]);
+  expect(place(full, "s9")).toEqual(full);
 });

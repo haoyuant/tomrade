@@ -195,6 +195,24 @@ export function ContextMenu({ trigger, label, children }: { trigger: ReactNode; 
   );
 }
 
+/** A row that opens a second list beside the context menu. */
+export function ContextMenuSub({ icon, name, children }: { icon: ReactNode; name: string; children: ReactNode }) {
+  return (
+    <RadixContextMenu.Sub>
+      <RadixContextMenu.SubTrigger className="menu-row m-link">
+        <span className="m-mark">{icon}</span>
+        <span className="m-name">{name}</span>
+        <Icon name="i-chev" size={12} />
+      </RadixContextMenu.SubTrigger>
+      <RadixContextMenu.Portal>
+        <RadixContextMenu.SubContent className="menu is-floating" sideOffset={4}>
+          {children}
+        </RadixContextMenu.SubContent>
+      </RadixContextMenu.Portal>
+    </RadixContextMenu.Sub>
+  );
+}
+
 export function ContextMenuActionItem({ icon, name, onSelect, disabled }: { icon: ReactNode; name: string; onSelect: () => void; disabled?: boolean }) {
   return (
     <RadixContextMenu.Item className="menu-row m-link" disabled={disabled} onSelect={onSelect}>

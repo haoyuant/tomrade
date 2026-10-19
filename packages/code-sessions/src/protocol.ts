@@ -42,6 +42,13 @@ export interface TerminalPlace {
   cwd: string;
 }
 
+/** A layout the person saved under a name: its shape and ratios, every cell empty. */
+export interface LayoutPreset {
+  id: string;
+  name: string;
+  layout: Layout;
+}
+
 /** A cell of the window's layout: one session or terminal (by its id), or a split of two. */
 export type Layout = { type: "leaf"; id: string; sessionId: string | null } | { type: "split"; id: string; direction: "row" | "column"; ratio: number; a: Layout; b: Layout };
 
@@ -65,6 +72,11 @@ export interface WindowState {
   /** Where a new terminal can start, the repository first. */
   places: TerminalPlace[];
   layout: Layout;
+  presets: LayoutPreset[];
+  /** The preset a project's window opens with while it has no layout of its own. */
+  defaultPreset: string | null;
+  /** New sessions and terminals go to the first empty cell. */
+  autoPlace: boolean;
 }
 
 /** What the window asks for. */
@@ -73,6 +85,11 @@ export type WindowMessage =
   /** The window names the new terminal's id, so its cell shows it before herdr has opened it. */
   | { type: "newTerminal"; terminalId: string; cwd: string | null }
   | { type: "closeTerminal"; terminalId: string }
+  | { type: "savePreset"; name: string; layout: Layout }
+  | { type: "renamePreset"; id: string; name: string }
+  | { type: "deletePreset"; id: string }
+  | { type: "defaultPreset"; id: string | null }
+  | { type: "autoPlace"; on: boolean }
   | { type: "detach"; cell: string }
   | { type: "input"; cell: string; data: string }
   | { type: "resize"; cell: string; cols: number; rows: number }
