@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseLanguagePack, parseManifest } from "@tomradex/plugin-sdk";
+import { parseLanguagePack, parseManifest, wordsFor } from "@tomradex/plugin-sdk";
 
 const base = { id: "someone/portugues", version: "1.0.0", title: "Português", license: "MIT", engines: { sdk: "^0.2.8" } };
 const pt = { tag: "pt-BR", name: "Português (Brasil)", file: "languages/pt-BR.json" };
@@ -41,5 +41,21 @@ describe("a language pack file", () => {
     expect(() => parseLanguagePack(pt, JSON.stringify({ ui: { common: { cancel: { html: "<b>x</b>" } } } }))).toThrow(/ui\.common\.cancel/);
     expect(() => parseLanguagePack(pt, JSON.stringify({ prompts: { system: "Responda em português" } }))).toThrow(/\(root\)/);
     expect(() => parseLanguagePack(pt, JSON.stringify({ ui: { common: { cancel: "x".repeat(5000) } } }))).toThrow(/ui\.common\.cancel/);
+  });
+});
+
+describe("a plugin's own words in the app's language", () => {
+  const words = { en: "Focus", zh: "专注", "pt-BR": "Foco" };
+
+  it("picks the language the app speaks, or the closest one the plugin has", () => {
+    expect(wordsFor("zh", words)).toBe("专注");
+    expect(wordsFor("pt-PT", words)).toBe("Foco");
+  });
+
+  it("reads English where the plugin has nothing in that language or script", () => {
+    expect(wordsFor("ja", words)).toBe("Focus");
+    // Traditional Chinese readers are not handed the simplified script.
+    expect(wordsFor("zh-Hant", words)).toBe("Focus");
+    expect(wordsFor("system", words)).toBe("Focus");
   });
 });

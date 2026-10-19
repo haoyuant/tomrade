@@ -1,7 +1,17 @@
 import { z } from "zod";
-import { canonicalTag, type Dictionaries } from "@tomradex/domain";
+import { canonicalTag, pickLanguage, type Dictionaries } from "@tomradex/domain";
+import type { Locale } from "./contract.js";
 
-export { languageCoverage, slotsOf, type Dictionaries, type LanguageCoverage } from "@tomradex/domain";
+export { languageCoverage, pickLanguage, slotsOf, type Dictionaries, type LanguageCoverage } from "@tomradex/domain";
+
+/**
+ * A plugin's own words in the app's language (`ctx.settings.locale()`): the
+ * closest language it has, picked as Tomrade picks its own (zh-TW finds
+ * zh-Hant, never zh), and English when it has none of that language.
+ */
+export function wordsFor<T>(locale: Locale, words: { en: T } & Partial<Record<Locale, T>>): T {
+  return words[pickLanguage(locale, Object.keys(words)) ?? "en"] ?? words.en;
+}
 
 /**
  * A language pack: data only. The manifest names each language a plugin adds

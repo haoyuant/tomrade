@@ -41,6 +41,7 @@ import {
   type ToolsApi,
   type ViewsApi
 } from "@tomradex/plugin-sdk";
+import { wordsFor } from "@tomradex/plugin-sdk";
 import { authorFor, within, withTimeout } from "./scope.js";
 
 export interface ExtensionIdentity {
@@ -130,7 +131,7 @@ export class Host {
 
   /** Per-language text becomes words the core reads each time it shows them, so a switch shows at once. */
   private say<W extends Localized | undefined>(w: W): W extends undefined ? undefined : Words {
-    return (w === undefined || typeof w === "string" ? w : () => w[this.locale()] ?? w.en) as never;
+    return (w === undefined || typeof w === "string" ? w : () => wordsFor(this.locale(), w)) as never;
   }
 
   private svc<K extends ServiceName>(name: K): Services[K] {

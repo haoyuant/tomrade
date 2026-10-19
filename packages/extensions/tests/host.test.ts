@@ -49,6 +49,31 @@ describe("the extension host", () => {
     expect(await ctx.contributions.statusItems({})).toEqual([]);
   });
 
+  it("lets a plugin that did not ask for settings read the app's language, hear it change, and shows its titles in it", async () => {
+    const seen: string[] = [];
+    let changed = 0;
+    const { ctx } = await world(definePlugin({
+      inject: ["contributions"],
+      async apply(p) {
+        p.on("settings.changed", async () => { changed++; seen.push(await p.settings.locale()); });
+        seen.push(await p.settings.locale());
+        await p.contributions.command({ id: "demo.focus", title: { en: "Focus", zh: "专注", "pt-BR": "Foco" }, run: () => {} });
+      }
+    }));
+    const title = () => ctx.contributions.commands().find((c) => c.id === "demo.focus")?.title;
+    expect(seen).toEqual(["en"]);
+    expect(title()).toBe("Focus");
+    ctx.settings.set({ ...ctx.settings.get(), language: "zh" });
+    await settle();
+    expect(changed).toBe(1);
+    expect(seen.at(-1)).toBe("zh");
+    expect(title()).toBe("专注");
+    // The closest language the plugin has, as Tomrade picks its own; never the simplified script for Traditional Chinese.
+    ctx.settings.set({ ...ctx.settings.get(), language: "zh-Hant" });
+    await settle();
+    expect(title()).toBe("Focus");
+  });
+
   it("answers every call with a Promise and writes as the plugin, stamped with its namespace", async () => {
     let seen: PluginContext | null = null;
     const { oplog, project, board } = await world(
