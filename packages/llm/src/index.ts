@@ -5,6 +5,7 @@ import type {} from "@tomradex/db";
 import type {} from "@tomradex/ipc";
 import type { SettingsSection } from "@tomradex/settings";
 import { AnthropicModel } from "./anthropic.js";
+import { detectCapabilities, sameCapabilities, type ModelCapabilities } from "./capabilities.js";
 import { ImagesModel } from "./images.js";
 export { ImagesModel } from "./images.js";
 import { LlmError, MediaRefused } from "./errors.js";
@@ -21,6 +22,7 @@ export { PROVIDERS, guessProviders, keyHint, listModels, pickModel, usableModels
 export { LlmError, MediaRefused, NativeMediaRefused, NativeSearchRefused, type LlmErrorResponse } from "./errors.js";
 export { OpenAiCompatible, type OpenAiConfig } from "./openai.js";
 export { AnthropicModel, type AnthropicConfig } from "./anthropic.js";
+export type { ModelCapabilities } from "./capabilities.js";
 export { withPromptTools } from "./prompt-tools.js";
 export type { WorkerPurpose, WorkerSpend, WorkerUsage, WorkerUsageSummary } from "./worker-usage.js";
 
@@ -192,8 +194,9 @@ export const modelProfileSchema = z.object({
   model: z.string().min(1),
   /** Render tools into the prompt for a model without native tool calling. Degraded. */
   promptTools: z.boolean().optional(),
+  /** What the model reads and makes besides text, detected by Tomrade from the provider's listing; never ticked by hand. */
   inputModalities: z.array(z.enum(["image", "audio", "video", "pdf"])).optional(),
-  outputModalities: z.array(z.enum(["image", "audio"])).max(1).optional()
+  outputModalities: z.array(z.enum(["image", "audio"])).optional()
 });
 export type ModelProfile = z.infer<typeof modelProfileSchema>;
 
@@ -359,6 +362,7 @@ export class Llm extends Service implements LlmService {
       this.cache.clear();
       this.refused.keepFor(this.models().profiles);
     });
+    void this.redetect().catch((err) => this.ctx.logger.warn(`model media not re-detected: ${err instanceof Error ? err.message : String(err)}`));
   }
 
   private models(): ModelsSettings {
@@ -408,7 +412,40 @@ export class Llm extends Service implements LlmService {
     const baseURL = endpoint.baseURL || { anthropic: "", "openai-images": "https://api.openai.com/v1", "openai-compatible": "https://api.deepseek.com" }[endpoint.provider];
     const result = await listModels({ provider: endpoint.provider === "anthropic" ? "anthropic" : "openai-compatible", baseURL }, endpoint.apiKey.trim());
     if (!result.ok) return { ok: false, kind: modelErrorKind(result.detail), detail: result.detail };
-    return { ok: true, models: usableModels(endpoint.provider, result.models ?? []) };
+    const models = usableModels(endpoint.provider, result.models ?? []);
+    const capabilities: Record<string, ModelCapabilities> = {};
+    for (const id of models) {
+      const detected = detectCapabilities(endpoint.provider, id, result.capabilities[id]);
+      if (detected) capabilities[id] = detected;
+    }
+    return { ok: true, models, capabilities };
+  }
+
+  /**
+   * Profiles take the media their endpoint now lists for their model, replacing
+   * values saved before detection or ticked by hand. An endpoint that answers
+   * nothing about the model leaves the stored values.
+   */
+  async redetect(): Promise<void> {
+    const asked = new Map<string, Promise<ModelListing | null>>();
+    const found = new Map<string, { model: string; detected: ModelCapabilities }>();
+    for (const profile of this.models().profiles) {
+      if (profile.provider === "openai-images") continue;
+      const key = JSON.stringify([profile.provider, profile.baseURL ?? "", profile.apiKey]);
+      if (!asked.has(key)) asked.set(key, this.listing(profile).catch(() => null));
+      const listing = await asked.get(key);
+      const detected = listing?.ok ? listing.capabilities[profile.model] : undefined;
+      if (detected && !sameCapabilities(profile, detected)) found.set(profile.id, { model: profile.model, detected });
+    }
+    if (!found.size) return;
+    // read again: the person may have edited a profile while the listings were asked
+    const all = this.ctx.settings.get();
+    const models = this.models();
+    const profiles = models.profiles.map((p) => {
+      const hit = found.get(p.id);
+      return hit && hit.model === p.model ? { ...p, ...hit.detected } : p;
+    });
+    this.ctx.settings.set({ ...all, models: { ...models, profiles } });
   }
 
   private adapterOf(profile: ModelProfile): ChatModel {
@@ -617,7 +654,9 @@ export class Llm extends Service implements LlmService {
     const taken = new Set(models.profiles.map((p) => p.id));
     let id = same?.id ?? preset.id;
     for (let n = 2; !same && taken.has(id); n += 1) id = `${preset.id}-${n}`;
-    const profile: ModelProfile = { ...same, id, title: same?.title || preset.title, provider: preset.provider, ...(preset.baseURL ? { baseURL: preset.baseURL } : {}), apiKey, model };
+    const detected = detectCapabilities(preset.provider, model, listing.capabilities[model]);
+    const media = detected ?? (same?.model === model ? {} : { inputModalities: undefined, outputModalities: undefined });
+    const profile: ModelProfile = { ...same, id, title: same?.title || preset.title, provider: preset.provider, ...(preset.baseURL ? { baseURL: preset.baseURL } : {}), apiKey, model, ...media };
     const test = await this.test(profile);
     if (!test.ok && test.kind !== "rate") return test;
     const all = this.ctx.settings.get();
@@ -667,7 +706,7 @@ export class FakeLlm implements LlmService {
   }
 
   async listing(): Promise<ModelListing> {
-    return { ok: true, models: [] };
+    return { ok: true, models: [], capabilities: {} };
   }
 
   profiles(): { id: string; title: string }[] {
@@ -732,7 +771,7 @@ export const fakeChat = (model: ChatModel, respond?: (system: string, user: stri
       profiles: () => [{ id: "fake", title: "fake" }],
       ready: () => ({ ok: true, profile: { id: "fake", title: "fake", provider: "fake", model: "fake" } }),
       test: async () => ({ ok: true }),
-      listing: async () => ({ ok: true, models: ["fake"] }),
+      listing: async () => ({ ok: true, models: ["fake"], capabilities: {} }),
       lend: () => () => {},
       worker: async () => ({ ok: true, via: "profile", title: "fake" }),
       completeJson: async <T,>(schema: z.ZodType<T>, request: CompletionRequest): Promise<T> => {
