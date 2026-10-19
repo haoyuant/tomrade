@@ -16,3 +16,11 @@ export class LlmError extends Error {
     this.name = "LlmError";
   }
 }
+
+/** The provider turned down its own web search (the model, the account or the endpoint); the caller searches another way. */
+export class NativeSearchRefused extends LlmError {
+  constructor(message: string, cause?: unknown) {
+    super(message, cause);
+    this.name = "NativeSearchRefused";
+  }
+}
