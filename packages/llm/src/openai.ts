@@ -20,6 +20,8 @@ export interface OpenAiConfig {
   webSearch?: boolean | "chat";
   /** The last word on each chat/completions body: a vendor's own fields. */
   body?: (body: Record<string, unknown>, request: ChatRequest) => Record<string, unknown>;
+  /** The headers of each try in place of the bearer key: a vendor's own key header, a token that expires, a signature over the URL and body. */
+  headers?: (request: { url: string; body: string }) => Record<string, string> | Promise<Record<string, string>>;
 }
 
 interface OpenAiMessage {
@@ -168,17 +170,20 @@ export class OpenAiCompatible implements ChatModel {
    * longer ends a run twenty steps in: it is tried again, after Retry-After when
    * the server names one. Only before the reply streams, so nothing is said twice.
    */
-  private async *post(url: string, init: RequestInit & { signal?: AbortSignal }): AsyncGenerator<ChatEvent, Response> {
+  private async *post(url: string, body: string, signal?: AbortSignal): AsyncGenerator<ChatEvent, Response> {
     const retries = this.config.retries ?? 2;
     const wait = (attempt: number) => (this.config.retryDelayMs ?? 1000) * 3 ** (attempt - 1);
     for (let attempt = 1; ; attempt += 1) {
+      // asked again for every try: a token may expire, and a signature carries the time
+      const headers = new Headers({ "Content-Type": "application/json" });
+      for (const [name, value] of Object.entries(this.config.headers ? await this.config.headers({ url, body }) : { Authorization: "Bearer " + this.config.apiKey })) headers.set(name, value);
       let res: Response;
       try {
-        res = await fetch(url, init);
+        res = await fetch(url, { method: "POST", headers, body, signal });
       } catch (err) {
-        if (init.signal?.aborted || attempt > retries) throw err;
+        if (signal?.aborted || attempt > retries) throw err;
         yield { type: "retry", attempt, max: retries, reason: fetchFailure(err), delayMs: wait(attempt) };
-        await pause(wait(attempt), init.signal);
+        await pause(wait(attempt), signal);
         continue;
       }
       if (!TRANSIENT.has(res.status) || attempt > retries) return res;
@@ -186,7 +191,7 @@ export class OpenAiCompatible implements ChatModel {
       await res.body?.cancel().catch(() => {});
       const delayMs = Number.isFinite(after) && after > 0 && after <= 20 ? after * 1000 : wait(attempt);
       yield { type: "retry", attempt, max: retries, reason: `HTTP ${res.status}`, delayMs };
-      await pause(delayMs, init.signal);
+      await pause(delayMs, signal);
     }
   }
 
@@ -226,12 +231,7 @@ export class OpenAiCompatible implements ChatModel {
     const url = this.config.baseURL.replace(/\/$/, "") + "/chat/completions";
     let res: Response;
     for (let adjusted = 0; ; adjusted += 1) {
-      res = yield* this.post(url, {
-        method: "POST",
-        headers: { Authorization: "Bearer " + this.config.apiKey, "Content-Type": "application/json" },
-        body: JSON.stringify(body()),
-        signal
-      });
+      res = yield* this.post(url, JSON.stringify(body()), signal);
       if (res.ok) break;
       const text = await res.text().catch(() => "");
       if (res.status === 400 && adjusted < 3 && this.adjustTo(text)) continue;
@@ -304,12 +304,7 @@ export class OpenAiCompatible implements ChatModel {
 
   private async *respond(request: ChatRequest, signal?: AbortSignal): AsyncIterable<ChatEvent> {
     const url = this.config.baseURL.replace(/\/$/, "") + "/responses";
-    const res = yield* this.post(url, {
-      method: "POST",
-      headers: { Authorization: "Bearer " + this.config.apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify(responsesBody(this.config.model, request, replaysSearches(this.config.baseURL))),
-      signal
-    });
+    const res = yield* this.post(url, JSON.stringify(responsesBody(this.config.model, request, replaysSearches(this.config.baseURL))), signal);
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       // An endpoint, model or account without the search refuses it: the caller searches another way.

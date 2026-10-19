@@ -12,11 +12,14 @@ let server: http.Server;
 let base = "";
 let hits = 0;
 let plan: number[] = [];
+let seen: { headers: http.IncomingHttpHeaders; body: string }[] = [];
 beforeAll(async () => {
   server = http.createServer((req, res) => {
-    req.resume();
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
     req.on("end", () => {
       hits += 1;
+      seen.push({ headers: req.headers, body });
       const status = plan.shift() ?? 200;
       if (status !== 200) return res.writeHead(status, { "content-type": "application/json" }).end(`{"error":{"message":"status ${status}"}}`);
       res.writeHead(200, { "content-type": "text/event-stream" }).end('data: {"choices":[{"delta":{"content":"pong"}}]}\n\ndata: [DONE]\n\n');
@@ -67,6 +70,25 @@ describe("retries", () => {
     plan = [400];
     await expect(ask()).rejects.toThrow("400");
     expect(hits).toBe(1);
+  });
+  it("asks for the headers again before each try, in place of the bearer key, with the body it sends", async () => {
+    plan = [503];
+    seen = [];
+    const asked: { url: string; body: string }[] = [];
+    const model = new OpenAiCompatible({ baseURL: base, apiKey: "k", model: "m", retryDelayMs: 5, headers: async (request) => (asked.push(request), { "api-key": `token-${asked.length}` }) });
+    expect((await collect(model.chat({ system: "s", messages: [userMessage("ping")] }))).text).toBe("pong");
+    expect(asked.map((a) => a.url)).toEqual([`${base}/chat/completions`, `${base}/chat/completions`]);
+    expect(seen.map((s) => [s.headers["api-key"], s.headers.authorization, s.headers["content-type"]])).toEqual([
+      ["token-1", undefined, "application/json"],
+      ["token-2", undefined, "application/json"]
+    ]);
+    expect(asked.map((a) => a.body)).toEqual(seen.map((s) => s.body));
+  });
+  it("fails the request when the headers cannot be had, without trying", async () => {
+    hits = 0;
+    const model = new OpenAiCompatible({ baseURL: base, apiKey: "k", model: "m", retryDelayMs: 5, headers: () => { throw new Error("token expired"); } });
+    await expect(collect(model.chat({ system: "s", messages: [userMessage("ping")] }))).rejects.toThrow("token expired");
+    expect(hits).toBe(0);
   });
   it("stops waiting when the run is stopped", async () => {
     hits = 0;

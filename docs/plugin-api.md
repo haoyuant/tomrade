@@ -546,9 +546,14 @@ await ctx.models.registerProvider({
   fails the request with its message. `webSearch: "chat"` says the model
   searches on its own when a request asks, on chat/completions with the flag
   `body` sets (Qwen's `enable_search`, say); `"responses"` sends such a request
-  to the Responses API instead. `ctx.models.listCompatible({ baseURL, apiKey },
+  to the Responses API instead. `headers({ url, body })`, sync or async, gives
+  the headers of each try in place of `Authorization: Bearer <apiKey>`: a
+  vendor's own key header (Azure's `api-key`), a token that expires (fetch it
+  there, not in `build`), or a signature over the URL and the exact body sent
+  (SigV4). It is asked again before every try; one that throws fails the request
+  with its message. `ctx.models.listCompatible({ baseURL, apiKey, headers? },
   signal)` is the app's own `GET /models` listing, media read from it, for
-  `list`.
+  `list`; `headers` go in place of the bearer key there too.
 
 A plugin that names `models` is labelled elevated risk (`models`): it reads
 the conversations and keys of the profiles on its provider. It is shown, never
