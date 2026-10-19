@@ -8,6 +8,7 @@ import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/tools";
 import type { Author } from "@tomradex/domain";
 import { looksRateLimited, resetTime } from "@tomradex/agent";
+import { hookCommand } from "./connect.js";
 import { classifyRemoteFailure, remoteFailureDetail } from "./remote.js";
 import { CODE_WORDS } from "./words.js";
 import type { CodeLinkStore, SessionBlock, SessionState, SessionView } from "./store.js";
@@ -582,9 +583,12 @@ export function writeGeminiHome(home: string, servers: Record<string, unknown>, 
   fs.writeFileSync(path.join(own, "settings.json"), JSON.stringify({ ...settings, mcpServers }, null, 2));
 }
 
-/** Claude Code settings that make every lifecycle event a POST to Tomrade. Loaded with `--settings`, so the repository is left alone. */
+/**
+ * Claude Code settings that make every lifecycle event a POST to Tomrade. Loaded with `--settings`, so the repository is left alone.
+ * The command is the committed hooks' own, so it runs in the same shells, Windows' included; Tomrade's answer is left for the agent.
+ */
 export function hooksSettings(eventUrl: string): Record<string, unknown> {
-  const post = { type: "command", command: `curl -s -m 5 -X POST -H 'Content-Type: application/json' ${HERDR_PANE_HEADER} --data-binary @- '${eventUrl}' 2>/dev/null || true` };
+  const post = { type: "command", command: hookCommand(eventUrl, undefined, { reply: true, seconds: 5 }) };
   const hooks: Record<string, unknown> = {};
   for (const event of HOOK_EVENTS) hooks[event] = [{ hooks: [post] }];
   return { hooks };
