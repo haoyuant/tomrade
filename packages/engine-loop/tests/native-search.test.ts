@@ -113,7 +113,7 @@ describe("web search in the loop", () => {
       constructor(ctx: Context) {
         super(ctx, "community");
       }
-      offers = async (kind: string) => (kind === "webSearchProviders" ? [{ id: "tomrade/kimi-search", title: "Kimi Search" }] : []);
+      offers = async (kind: string) => (kind === "webSearchProviders" ? [{ id: "tomrade/example-search", title: "Example Search" }] : []);
     }
     const searching = { name: "search-with-offer", apply: (ctx: Context) => void (ctx.plugin(WebSearch), ctx.plugin(FakeCommunity)) };
     const { cards } = await drive(
@@ -122,7 +122,7 @@ describe("web search in the loop", () => {
       searching
     );
     const actions = (cards[0]?.data as { actions: { kind: string; pluginId?: string; label: string; done?: string }[] }).actions;
-    expect(actions[0]).toEqual({ kind: "install-plugin", pluginId: "tomrade/kimi-search", label: "Install Kimi Search", done: "Kimi Search is installed: web search works from your next message." });
+    expect(actions[0]).toEqual({ kind: "install-plugin", pluginId: "tomrade/example-search", label: "Install Example Search", done: "Example Search is installed: web search works from your next message." });
     expect(actions.slice(1).map((a) => a.kind)).toEqual(["settings", "settings"]);
   });
 

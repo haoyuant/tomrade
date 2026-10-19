@@ -245,8 +245,8 @@ Some official plugins are **starters**, put on once per machine by the store
 check (`community.starters` in `tomrade.yml`); one the person uninstalls stays
 gone. A starter written `{ id, whenModelHost: [hosts] }` goes on only once the
 person has a model profile on one of those hosts, checked again whenever the
-model settings change: a provider's own plugin (`tomrade/kimi-search` for a
-Kimi model) reaches exactly the people who use that provider. Such a starter
+model settings change: a provider's own plugin reaches exactly the people who
+use that provider. Such a starter
 that is not installed, and whose latest version contributes web search, is
 offered as an install button on the card that says web search is unavailable.
 

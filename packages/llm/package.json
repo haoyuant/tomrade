@@ -4,7 +4,7 @@
   "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
-  "description": "ctx.llm — structured completion behind one interface; the provider is configuration",
+  "description": "ctx.llm \u2014 structured completion behind one interface; the provider is configuration",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -23,6 +23,7 @@
     "@tomradex/domain": "workspace:*",
     "@tomradex/ipc": "workspace:*",
     "@tomradex/settings": "workspace:*",
+    "@tomradex/web-search": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "zod": "^4.4.3"
   },

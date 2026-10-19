@@ -3,6 +3,8 @@ import { detectCapabilities, type ModelCapabilities } from "./capabilities.js";
 import { bareModel, GEMINI_BASE, GeminiModel } from "./gemini.js";
 import { ImagesModel } from "./images.js";
 import { OpenAiCompatible } from "./openai.js";
+import { deepseekKey, deepseekProvider } from "./search/deepseek.js";
+import { kimiKey, kimiProvider } from "./search/kimi.js";
 import type { ModelProviderSpec } from "./provider.js";
 import { guessFrom, listModels, usableModels, type ProviderPreset } from "./providers.js";
 
@@ -18,12 +20,14 @@ export const OPENAI_COMPATIBLE: ModelProviderSpec = {
     {
       id: "deepseek", title: "DeepSeek", baseURL: "https://api.deepseek.com", model: "deepseek-flash", prefer: [/flash/, /^deepseek-v\d/],
       keyPage: "https://platform.deepseek.com/api_keys", env: "DEEPSEEK_API_KEY", keyShapes: [/^sk-[0-9a-f]{32}$/],
-      hint: { en: "Low pay-as-you-go prices; reachable from mainland China", zh: "按量付费、价格低，国内可直连" }
+      hint: { en: "Low pay-as-you-go prices; reachable from mainland China", zh: "按量付费、价格低，国内可直连" },
+      search: (profiles) => deepseekProvider({ id: "deepseek", key: () => deepseekKey(profiles()) })
     },
     {
       id: "kimi", title: "Kimi", baseURL: "https://api.moonshot.cn/v1", model: "", prefer: [/^kimi-k\d/],
       keyPage: "https://platform.moonshot.cn/console/api-keys", env: "MOONSHOT_API_KEY", keyShapes: [/^sk-[A-Za-z0-9]{40,}$/],
-      hint: { en: "Moonshot's Kimi models; reachable from mainland China", zh: "月之暗面 Kimi 模型，国内可直连" }
+      hint: { en: "Moonshot's Kimi models; reachable from mainland China", zh: "月之暗面 Kimi 模型，国内可直连" },
+      search: (profiles) => kimiProvider({ id: "kimi", key: () => kimiKey(profiles()) })
     },
     {
       id: "openai", title: "OpenAI", baseURL: "https://api.openai.com/v1", model: "", prefer: [/^gpt-\d+(\.\d+)?$/],

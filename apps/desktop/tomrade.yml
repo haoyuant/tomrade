@@ -212,6 +212,8 @@ plugins:
   # this machine's checkout in the catalog, a worktree per agent thread.
   - id: repos
     name: "@tomradex/repos"
+  # Model providers. DeepSeek's and Kimi's web search goes on with a model's key
+  # (credited to this row while it is registered).
   - id: llm
     name: "@tomradex/llm"
   - id: tools
@@ -451,14 +453,10 @@ plugins:
       officialCatalog:
         cacheFile: "${userData}/official-catalog.json"
       # Pomodoro and Discord used to ship inside the app; they now come from the
-      # official catalog, put on once so nobody who had them loses them. A
-      # provider's search plugin goes on once the person has that provider's
-      # model, so it searches with no setup and nobody else gets it.
+      # official catalog, put on once so nobody who had them loses them.
       starters:
         - "tomrade/pomodoro"
         - "tomrade/discord"
-        - { id: "tomrade/kimi-search", whenModelHost: ["api.moonshot.cn", "api.moonshot.ai"] }
-        - { id: "tomrade/deepseek-search", whenModelHost: ["api.deepseek.com"] }
       startersFile: "${userData}/official-starters.json"
   - id: plugin-studio
     name: "@tomradex/plugin-studio"
