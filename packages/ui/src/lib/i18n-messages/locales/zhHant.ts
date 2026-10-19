@@ -562,6 +562,7 @@ export const zhHant: PartialMessages = {
     risk_network: "會連上網際網路",
     "risk_fs-project": "讀寫專案資料夾",
     risk_db: "可讀寫你專案中的所有資料表",
+    risk_models: "處理模型請求：能讀到使用它的模型設定的對話內容和 Key",
     risk_window: "會開啟自己的視窗，可接收鍵盤輸入",
     "risk_raw-database": "繞過歷史與撤銷，直接開啟資料庫",
     "risk_core-table-writes": "繞過歷史與撤銷，直接寫應用程式自身的資料表",

@@ -64,3 +64,10 @@ it("asks for a key only where the provider needs one", async () => {
   const local = await llm([{ id: "o", title: "", provider: "openai-compatible", baseURL: "http://127.0.0.1:11434/v1", apiKey: "", model: "qwen3" }]);
   expect(local.ready()).toMatchObject({ ok: true });
 });
+
+it("reads a provider registered against the older contract, signIn: \"apiKey\", as one without a sign-in", async () => {
+  const service = await llm([]);
+  service.registerProvider({ ...echo([]), signIn: "apiKey" as never });
+  expect(service.modelProviders().find((p) => p.id === "echo")).not.toHaveProperty("signIn");
+  expect(await service.signIn("echo")).toEqual({ ok: false, detail: "Echo has no sign-in; paste a key instead" });
+});

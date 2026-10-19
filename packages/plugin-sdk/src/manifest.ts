@@ -152,7 +152,7 @@ export type RiskLevel = "low" | "elevated" | "high";
 
 export interface Risk {
   level: RiskLevel;
-  /** Stable keys the UI words: `full`, `rows`, `exec`, `fs-any`, `network-any`, `network`, `fs-project`, `db`, `window`. */
+  /** Stable keys the UI words: `full`, `rows`, `exec`, `fs-any`, `network-any`, `network`, `fs-project`, `db`, `models`, `window`. */
   reasons: string[];
 }
 
@@ -169,6 +169,8 @@ export function riskOf(manifest: Pick<Manifest, "permissions" | "inject" | "opti
     p.network.length && !p.network.includes("*") && "network",
     p.fs === "project" && "fs-project",
     [...manifest.inject, ...manifest.optional].includes("db") && "db",
+    // A model provider reads the conversations of the profiles on it, and their keys.
+    [...manifest.inject, ...manifest.optional].includes("models") && "models",
     // A window that takes keys could pass itself off as another app's: worth a look before installing.
     p.window && "window"
   ].filter(Boolean) as string[];

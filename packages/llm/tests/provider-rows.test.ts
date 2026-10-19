@@ -5,7 +5,7 @@
  */
 import os from "node:os";
 import path from "node:path";
-import { Context } from "cordis";
+import { Context, Service } from "cordis";
 import { afterEach, expect, it, vi } from "vitest";
 import { Settings } from "@tomradex/settings";
 import { Tools } from "@tomradex/tools";
@@ -94,4 +94,26 @@ it("takes a provider's search service away with its row, and brings it back with
   expect(searches()).toEqual([]);
   await ctx.plugin(ProviderRow, { provider: "kimi" });
   expect(searches()).toEqual(["kimi"]);
+});
+
+it("offers nothing on an llm row replaced by one that takes no providers, and loads without failing", async () => {
+  const ctx = new Context();
+  const warned: string[] = [];
+  // the documented seam: an LLMProvider of one's own in the llm row
+  class OwnLlm extends Service {
+    static provide = "llm";
+    constructor(ctx: Context) {
+      super(ctx, "llm");
+    }
+    async completeJson() {
+      return {};
+    }
+  }
+  await ctx.plugin(OwnLlm);
+  const original = ctx.logger;
+  (ctx as unknown as { logger: unknown }).logger = (name: string) => ({ ...original.call(ctx, name), warn: (message: string) => warned.push(message) });
+  const row = ctx.plugin(ProviderRow, { provider: "kimi" });
+  await expect(row).resolves.toBeDefined();
+  expect(warned).toEqual(["kimi: the llm row in use takes no model providers, so this one is not offered"]);
+  expect(typeof (ctx.llm as { completeJson?: unknown }).completeJson).toBe("function");
 });

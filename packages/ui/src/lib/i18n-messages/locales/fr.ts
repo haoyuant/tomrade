@@ -562,6 +562,7 @@ export const fr: PartialMessages = {
     risk_network: "Communique avec Internet",
     "risk_fs-project": "Lit et écrit dans les dossiers des projets",
     risk_db: "Lit et écrit toutes les tables de vos projets",
+    risk_models: "Traite les requêtes aux modèles : lit les conversations et les clés des profils de modèle qui l’utilisent",
     risk_window: "Ouvre ses propres fenêtres, qui reçoivent ce que vous tapez",
     "risk_raw-database": "Ouvre directement la base de données, en contournant l’historique et l’annulation",
     "risk_core-table-writes": "Écrit dans les tables de l’application en contournant l’historique et l’annulation",
