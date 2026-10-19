@@ -1,4 +1,5 @@
 import path from "node:path";
+import type {} from "@tomradex/desktop-surface";
 import { app } from "electron";
 import type { Context } from "cordis";
 import type {} from "@tomradex/files";
@@ -85,6 +86,12 @@ export const deepLinks = {
         else ctx.ipc.send("app.open", target);
       }).catch((e: unknown) => ctx.logger.warn(`couldn't open ${url}: ${(e as Error).message}`));
     };
+    // A main-process feature asks for the same: the window comes forward on the conversation or ticket.
+    ctx.on("desktop/open", (target) => {
+      const win = showMainWindow();
+      if (win) whenLoaded(win, () => ctx.ipc.send("app.open", target));
+      else ctx.ipc.send("app.open", target);
+    });
     ctx.effect(() => {
       handler = follow;
       for (const url of waiting.splice(0)) follow(url);

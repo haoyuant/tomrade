@@ -9,6 +9,7 @@ import { agentPanel } from "./agentPanel";
 import { board } from "./board";
 import { card } from "./card";
 import { codeLink } from "./codeLink";
+import { codeSessions } from "./codeSessions";
 import { commandPalette } from "./commandPalette";
 import { common } from "./common";
 import { deleteIssueDialog } from "./deleteIssueDialog";
@@ -97,6 +98,7 @@ export const en = {
   toast: toast.en,
   shortcuts: shortcuts.en,
   tabs: tabs.en,
+  codeSessions: codeSessions.en,
 
   hubSetup: hubSetup.en,
   hubPane: hubPane.en,
@@ -173,6 +175,7 @@ export const zh: typeof en = {
   toast: toast.zh,
   shortcuts: shortcuts.zh,
   tabs: tabs.zh,
+  codeSessions: codeSessions.zh,
 
   hubSetup: hubSetup.zh,
   hubPane: hubPane.zh,

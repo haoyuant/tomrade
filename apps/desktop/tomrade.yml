@@ -431,6 +431,15 @@ plugins:
     config:
       # Pets made from the user's own images stay on this machine.
       profilesDir: "${userData}/pet-profiles"
+  # Off until switched on in Settings → Manage plugins: a window per project
+  # with its code sessions' herdr terminals side by side.
+  - id: code-sessions
+    name: "@tomradex/code-sessions"
+    title: Code sessions window
+    disabled: true
+    config:
+      document: "${uiPages}code-sessions.html"
+      stateFile: "${userData}/code-sessions.json"
   # Which keys run which command. The defaults live with the renderer's
   # commands; this row holds only what the person rebound, in their settings.
   - id: keybindings

@@ -1,0 +1,37 @@
+{
+  "name": "@tomradex/code-sessions",
+  "private": true,
+  "license": "Apache-2.0",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "A window per project for its code sessions: live status, and their herdr terminals side by side",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomradex/code-link": "workspace:*",
+    "@tomradex/contributions": "workspace:*",
+    "@tomradex/db": "workspace:*",
+    "@tomradex/desktop-surface": "workspace:*",
+    "@tomradex/domain": "workspace:*",
+    "@tomradex/herdr": "workspace:*",
+    "@tomradex/items": "workspace:*",
+    "@tomradex/settings": "workspace:*",
+    "cordis": "4.0.0-rc.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@tomradex/testkit": "workspace:*",
+    "@types/node": "^26.2.0",
+    "typescript": "^6.0.0"
+  }
+}

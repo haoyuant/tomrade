@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": ["node"]
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../code-link" },
+    { "path": "../contributions" },
+    { "path": "../db" },
+    { "path": "../desktop-surface" },
+    { "path": "../domain" },
+    { "path": "../herdr" },
+    { "path": "../items" },
+    { "path": "../settings" }
+  ]
+}
