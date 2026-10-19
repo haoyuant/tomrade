@@ -66,6 +66,8 @@ export interface DesktopSurface {
   setState(state: unknown): void;
   /** One message to the document, in order; sent once it has loaded. */
   post(message: unknown): void;
+  /** Shown in front with focus, restored if minimized. */
+  focus(): void;
   close(): void;
 }
 

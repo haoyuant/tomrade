@@ -32,7 +32,8 @@ it("lists live sessions first, needs-you before the rest, and ended ones only fo
 });
 
 it("opens a window per project, streams a session's pane into a cell, and lets go when the cell or window does", async () => {
-  const opened: { spec: Record<string, unknown> & { onMessage(m: unknown): void; onClose(): void }; states: WindowState[]; posts: WindowPost[]; closed: boolean }[] = [];
+  const opened: { spec: Record<string, unknown> & { onMessage(m: unknown): void; onClose(): void }; states: WindowState[]; posts: WindowPost[]; closed: boolean; focused: number }[] = [];
+  let failNext = false;
   const streams: { pane: string; size: unknown; sent: unknown[]; closed: boolean; frame(text: string): void }[] = [];
   const events: [string, unknown][] = [];
   const sessions = [session({ id: "s1", itemIds: [], herdrPane: "w1:p1", branch: "tom-1/x", worktree: "/work/tom-1" })];
@@ -44,9 +45,13 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
       super(ctx, "desktopSurfaces");
     }
     open(spec: (typeof opened)[number]["spec"]) {
-      const entry = { spec, states: [spec.initialState as WindowState], posts: [] as WindowPost[], closed: false };
+      if (failNext) {
+        failNext = false;
+        throw new Error("no window");
+      }
+      const entry = { spec, states: [spec.initialState as WindowState], posts: [] as WindowPost[], closed: false, focused: 0 };
       opened.push(entry);
-      return { id: spec.id, capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, setState: (s: WindowState) => void entry.states.push(s), post: (m: WindowPost) => void entry.posts.push(m), close: () => { entry.closed = true; spec.onClose(); } };
+      return { id: spec.id, capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus: () => void entry.focused++, setState: (s: WindowState) => void entry.states.push(s), post: (m: WindowPost) => void entry.posts.push(m), close: () => { entry.closed = true; spec.onClose(); } };
     }
   }
   class FakeHerdr extends Service {
@@ -93,6 +98,7 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   // Opening it again brings the same window forward with fresh state.
   await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
   expect(opened).toHaveLength(1);
+  expect(win.focused).toBe(1);
 
   const say = async (m: WindowMessage) => {
     win.spec.onMessage(m);
@@ -135,4 +141,18 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
   expect(opened).toHaveLength(2);
   expect(opened[1]!.states[0]!.layout).toEqual(layout);
+  // Closed and opened again, as often as the person likes; each time it comes forward.
+  for (let i = 0; i < 3; i++) {
+    opened.at(-1)!.spec.onClose();
+    await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
+    await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
+    expect(opened.at(-1)!.focused).toBe(1);
+  }
+  expect(opened).toHaveLength(5);
+  // An open that fails leaves nothing behind: the next one opens a window.
+  opened.at(-1)!.spec.onClose();
+  failNext = true;
+  await expect(w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id })).rejects.toThrow("no window");
+  await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
+  expect(opened).toHaveLength(6);
 });

@@ -128,7 +128,7 @@ function apply(ctx: Context, config: Config) {
 
   const refresh = async (projectId: string) => {
     const win = open.get(projectId);
-    if (!win || win.closed) return;
+    if (!win || win.closed || !win.surface) return;
     const next = await state(projectId);
     if (!win.closed) win.surface.setState(next);
   };
@@ -245,11 +245,30 @@ function apply(ctx: Context, config: Config) {
 
   const show = async (projectId: string) => {
     const already = open.get(projectId);
-    if (already && !already.closed) return void already.surface.setState(await state(projectId));
+    if (already && !already.closed) {
+      // Still opening: that call brings it up.
+      if (!already.surface) return;
+      already.surface.focus();
+      return void already.surface.setState(await state(projectId));
+    }
     const w = words();
     const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), timer: setInterval(() => void refresh(projectId), BRIDGE_POLL_MS), closed: false };
     win.timer.unref?.();
     open.set(projectId, win);
+    try {
+      await opening(projectId, win, w);
+    } catch (error) {
+      // A failed open leaves nothing behind, so the next try opens afresh.
+      win.closed = true;
+      clearInterval(win.timer);
+      if (open.get(projectId) === win) open.delete(projectId);
+      ctx.logger.warn(`code sessions: window did not open: ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
+    }
+  };
+
+  const opening = async (projectId: string, win: Open, w: ReturnType<typeof words>) => {
+    const initialState = await state(projectId);
     win.surface = ctx.desktopSurfaces.open({
       id: `code-sessions.${projectId}`,
       title: w("windowTitle", { project: projectName(projectId) }),
@@ -259,7 +278,7 @@ function apply(ctx: Context, config: Config) {
       height: 760,
       minWidth: 640,
       minHeight: 400,
-      initialState: await state(projectId),
+      initialState,
       onMessage: (message) => void onMessage(projectId, win, message as WindowMessage).catch((error: unknown) => {
         ctx.logger.warn(`code sessions: ${(message as { type?: string }).type ?? "message"} failed: ${error instanceof Error ? error.message : String(error)}`);
         post(win, { type: "toast", text: error instanceof Error ? error.message : String(error) });

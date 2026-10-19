@@ -165,6 +165,31 @@ app.whenReady().then(async () => {
     win.close();
     await sleep(500);
     check("关窗后 pane 还在 herdr 里跑", JSON.parse(herdr("pane", "list")).result.panes.length >= 6);
+
+    // Closed and opened again, and opened while another window is in front: it comes forward each time.
+    const front = new BrowserWindow({ width: 1600, height: 1000, x: 0, y: 0, title: "app window stand-in" });
+    await front.loadURL("about:blank");
+    const sessionsWindow = () => BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.getTitle().startsWith("代码会话"));
+    let forward = true;
+    let focusedTitle = "";
+    for (let i = 0; i < 3; i++) {
+      front.focus();
+      await sleep(300);
+      await ctx.contributions.run("code-sessions.open", { projectId: project.id });
+      await wait(async () => BrowserWindow.getFocusedWindow() === sessionsWindow(), 10000);
+      const again = sessionsWindow();
+      focusedTitle = BrowserWindow.getFocusedWindow()?.getTitle() ?? "none";
+      if (!again || BrowserWindow.getFocusedWindow() !== again) forward = false;
+      front.focus();
+      await sleep(300);
+      await ctx.contributions.run("code-sessions.open", { projectId: project.id });
+      await wait(async () => BrowserWindow.getFocusedWindow() === again, 3000);
+      if (BrowserWindow.getFocusedWindow() !== again) forward = false;
+      again?.close();
+      await sleep(500);
+    }
+    front.destroy();
+    check("关掉再打开（三次）、被别的窗口挡住时再点，窗口都到最前并获得焦点", forward, `focused: ${focusedTitle}`);
   } catch (error) {
     check("检查跑完", false, error?.stack ?? String(error));
   } finally {
