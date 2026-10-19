@@ -95,7 +95,7 @@ const run = async () => {
   check("the pane says where credentials are kept", (await $(`document.querySelector('[data-testid=im-secret-storage]')?.textContent ?? ''`)).length > 0);
   await press(`document.querySelector('[data-testid=im-add]')`);
   await waitFor(`!!document.querySelector('#im-cred-botToken')`);
-  // Installed platforms (Discord) come first in the list; this check drives the stand-in.
+  // Installed platforms come first in the list; this check drives the stand-in.
   await $(`(() => { const s = document.querySelector('#im-adapter'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'standin'); s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
   await waitFor(`document.querySelector('[data-testid=im-form]')?.textContent.includes('Create an app')`);
   const form = await $(`document.querySelector('[data-testid=im-form]').textContent`);
