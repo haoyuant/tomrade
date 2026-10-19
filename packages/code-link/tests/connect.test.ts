@@ -678,6 +678,28 @@ describe("outside clients, told apart by their connection", () => {
     await expect(ctx.tools.execute("claim_ticket", { key: third.key }, a)).rejects.toThrow(`this session still owns ${first.key}, which is verifying`);
   });
 
+  it("gives a tokenless claim to the session whose hooks announced it, not the newest idle one", async () => {
+    const { codeLink, ctx, items, project, board, checkout } = await machine();
+    const post = (payload: unknown) => fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    // Two Claude Code sessions in one checkout; the one that claims is not the one heard from last.
+    await post({ hook_event_name: "SessionStart", session_id: "worker", cwd: checkout });
+    await post({ hook_event_name: "SessionStart", session_id: "coordinator", cwd: checkout });
+    await post({ hook_event_name: "Stop", session_id: "coordinator", cwd: checkout, last_assistant_message: "waiting on the subagents" });
+    const byExternal = (id: string) => codeLink.sessionsOf(project.id).find((s) => s.externalId === id)!;
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "Work", status: "todo", by: "human" });
+    const other = items.create({ projectId: project.id, boardId: board.id, title: "Other", status: "todo", by: "human" });
+
+    // An announcement for another ticket vouches for nothing.
+    await post({ hook_event_name: "PreToolUse", session_id: "coordinator", cwd: checkout, tool_name: "mcp__tomrade__claim_ticket", tool_input: { key: other.key } });
+    await post({ hook_event_name: "PreToolUse", session_id: "worker", cwd: checkout, tool_name: "mcp__tomrade__claim_ticket", tool_input: { key: item.key.toLowerCase() } });
+    const claimed = (await ctx.tools.execute("claim_ticket", { key: item.key }, { by: "ai:mcp", projectId: project.id, connection: "conn-w" })) as { tracking: { sessionId: string } };
+    expect(claimed.tracking.sessionId).toBe(byExternal("worker").id);
+
+    await post({ hook_event_name: "Stop", session_id: "coordinator", cwd: checkout, last_assistant_message: "still waiting" });
+    expect(codeLink.sessionsOf(project.id, item.id).map((s) => s.externalId)).toEqual(["worker"]);
+    expect(byExternal("coordinator").itemIds).toEqual([]);
+  });
+
   it("lets an outside session take the next ticket once its last one is done, from a fresh branch", async () => {
     const { codeLink, ctx, items, project, board } = await machine();
     const first = items.create({ projectId: project.id, boardId: board.id, title: "First", status: "todo", by: "human" });

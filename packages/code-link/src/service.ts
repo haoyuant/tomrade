@@ -466,7 +466,7 @@ export class CodeLink extends Service {
         noteProgress: (projectId, sessionId, text) => this.sessions.touch(projectId, sessionId, { summary: text, state: "running" }),
         blockMerge: (projectId, sessionId, reason) => this.sessions.blockMerge(projectId, sessionId, reason),
         attach: (projectId, sessionId, itemId, branch, delivery, opts) => this.attach(projectId, sessionId, itemId, branch, delivery, opts),
-        externalSession: (projectId, repoId) => this.externalSession(projectId, repoId),
+        externalSession: (projectId, repoId, key) => this.externalSession(projectId, repoId, key),
         awaitingClaim: (projectId, itemId) => this.awaitingClaim(projectId, itemId),
         connected: (projectId, connection) => this.connected(projectId, connection),
         connectedSessions: (projectId, connection) => this.connectedSessions(projectId, connection),
@@ -949,11 +949,15 @@ export class CodeLink extends Service {
   }
 
   /**
-   * The hooks session a tokenless claim most likely comes from: the latest live
-   * one on that repository that holds no ticket and no client's connection yet.
-   * Never one that already holds a ticket — that is another terminal's.
+   * The hooks session a tokenless claim comes from: the one whose PreToolUse just
+   * announced this claim; failing that, a guess — the latest live one on that
+   * repository that holds no ticket and no client's connection yet.
+   * The guess never takes one that already holds a ticket — that is another terminal's.
    */
-  externalSession(projectId: string, repoId: string): SessionView | null {
+  externalSession(projectId: string, repoId: string, key?: string): SessionView | null {
+    const asked = key ? this.sessions.claimer(projectId, key) : null;
+    const asking = asked ? this.store.session(projectId, asked) : null;
+    if (asking && asking.repoId === repoId && asking.threadId === null && asking.endedAt === null && asking.state !== "ended" && asking.state !== "lost") return asking;
     const taken = new Set([...this.connections.values()].filter((c) => c.projectId === projectId).flatMap((c) => c.sessionIds));
     return this.store.sessions(projectId, { live: true }).find((s) => s.repoId === repoId && s.threadId === null && s.state !== "lost" && !s.itemIds.length && !taken.has(s.id)) ?? null;
   }

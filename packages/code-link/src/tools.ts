@@ -35,8 +35,8 @@ export interface ToolHost {
    * On a ticket's new delivery the branch is replaced; `replace` swaps the finished tickets out.
    */
   attach(projectId: string, sessionId: string, itemId: string, branch: string, delivery: number, opts?: { replace?: boolean }): void;
-  /** The hooks session a tokenless claim most likely comes from: live on that repository, holding no ticket and no client's connection. */
-  externalSession(projectId: string, repoId: string): SessionView | null;
+  /** The hooks session a tokenless claim of `key` comes from: the one whose hooks announced it, else a guess (live on that repository, holding no ticket and no client's connection). */
+  externalSession(projectId: string, repoId: string, key?: string): SessionView | null;
   /** A terminal session Start made for this ticket with an agent that reaches Tomrade without its token, no connection has joined yet. */
   awaitingClaim(projectId: string, itemId: string): SessionView | null;
   /** The session an outside client's connection last claimed for: the one its calls without a key mean. */
@@ -381,7 +381,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         const again = !tokened && inv.connection ? (host.connectedSessions(projectId, inv.connection).find((s) => s.itemIds.includes(item.id)) ?? null) : null;
         // An agent that reaches Tomrade without its session's token (agy) claims as its first act: that joins the terminal session Start made for this ticket.
         const started = !tokened && !again && !connected && inv.connection ? host.awaitingClaim(projectId, item.id) : null;
-        let session = tokened ?? again ?? connected ?? started ?? (repoId ? host.externalSession(projectId, repoId) : null);
+        let session = tokened ?? again ?? connected ?? started ?? (repoId ? host.externalSession(projectId, repoId, item.key) : null);
         // Another session on this ticket is someone's work in progress: say who and change nothing, unless told to take it over.
         const own = new Set([...(session ? [session.id] : []), ...(!tokened && inv.connection ? host.connectedSessions(projectId, inv.connection).map((s) => s.id) : [])]);
         const holders = workingOn(projectId, item.id).filter((s) => !own.has(s.id));
