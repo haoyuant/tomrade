@@ -100,13 +100,35 @@ export const StorageConfig = z.preprocess(
     /** Bring back, without being asked, every project the Hub names and this machine lacks. */
     autoRestore: z.boolean().default(true),
     /** How long a remote's answer to "who can read you?" stands before the next push asks again. */
-    visibilityMs: z.number().int().min(0).default(600_000)
+    visibilityMs: z.number().int().min(0).default(600_000),
+    /** How long the remote's answer stands for a status read; it doubles while nothing moves, up to five minutes. */
+    remoteFreshMs: z.number().int().min(0).default(30_000),
+    /** After the remote could not be reached, the first wait before asking again; it doubles each time, up to ten minutes. */
+    remoteRetryMs: z.number().int().min(0).default(15_000)
   })
 );
 export type StorageConfig = z.infer<typeof StorageConfig>;
 
 const LOCAL: StorageStatus = { state: "local", location: null, lastSyncAt: null };
 const DAY = 86_400_000;
+const QUIET_MAX_MS = 300_000;
+const RETRY_MAX_MS = 600_000;
+/** A publish or a refresh about to act on the remote takes an answer this young, such as the one a refresh just got. */
+const ACT_FRESH_MS = 2_000;
+
+type RemoteProbe = "exists" | "absent" | "offline";
+/** One folder's remote branch: the ask under way, and the last answer. */
+interface RemoteAsk {
+  pending: Promise<RemoteProbe> | null;
+  probe: RemoteProbe | null;
+  at: number;
+  /** Answers in a row in which the remote did not move. */
+  quiet: number;
+  /** Answers in a row in which it could not be reached. */
+  failures: number;
+  /** The answer came with a fetch, not from our own push: something to act on. */
+  fetched: boolean;
+}
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -365,6 +387,48 @@ export class Storage extends Service {
   private notify(projectId: string): void {
     const ipc = this.home.get("ipc");
     ipc?.send("storage.changed", projectId);
+  }
+
+  private readonly remoteAsks = new Map<string, RemoteAsk>();
+
+  /**
+   * ls-remote, then fetch: at most one at a time per folder and branch, joined
+   * by whoever asks meanwhile. A status read takes the last answer while it is
+   * fresh; an unreachable remote is asked again only after a growing wait.
+   */
+  private askRemote(dir: string, branch: string, use: "status" | "act"): Promise<RemoteProbe> {
+    const key = `${dir}\0${branch}`;
+    let ask = this.remoteAsks.get(key);
+    if (!ask) this.remoteAsks.set(key, (ask = { pending: null, probe: null, at: 0, quiet: 0, failures: 0, fetched: false }));
+    if (ask.pending) return ask.pending;
+    // A clock set back makes every answer stale rather than fresh for ever.
+    const age = Date.now() - ask.at;
+    if (ask.probe === "offline" && age >= 0 && age < this.retryAfter(ask.failures)) return Promise.resolve("offline");
+    const base = this.config.remoteFreshMs;
+    const fresh = use === "act" ? (ask.fetched ? Math.min(ACT_FRESH_MS, base) : 0) : Math.min(base * 2 ** Math.min(ask.quiet, 10), Math.max(base, QUIET_MAX_MS));
+    if (ask.probe && ask.probe !== "offline" && age >= 0 && age < fresh) return Promise.resolve(ask.probe);
+    const current = ask;
+    current.pending = (async () => {
+      const g = this.git(dir);
+      const before = await g.tip(branch);
+      let probe = await g.probe(branch);
+      if (probe === "exists" && !(await g.fetch(branch))) probe = "offline";
+      current.quiet = probe === "offline" ? current.quiet : (await g.tip(branch)) === before ? current.quiet + 1 : 0;
+      current.failures = probe === "offline" ? current.failures + 1 : 0;
+      if (probe === "offline") this.home.logger.info(`storage: cannot reach the remote of ${dir}; asking again in ${Math.round(this.retryAfter(current.failures) / 1000)} s`);
+      Object.assign(current, { probe, at: Date.now(), fetched: probe === "exists" });
+      return probe;
+    })().finally(() => (current.pending = null));
+    return current.pending;
+  }
+
+  private retryAfter(failures: number): number {
+    return Math.min(this.config.remoteRetryMs * 2 ** Math.min(Math.max(failures - 1, 0), 10), RETRY_MAX_MS);
+  }
+
+  /** Our push just landed: the remote holds what we hold, and it moved. */
+  private pushedTo(dir: string, branch: string): void {
+    this.remoteAsks.set(`${dir}\0${branch}`, { pending: null, probe: "exists", at: Date.now(), quiet: 0, failures: 0, fetched: false });
   }
 
   private remember(projectId: string, status: StorageStatus): StorageStatus {
@@ -884,9 +948,8 @@ export class Storage extends Service {
     await g.commit(summary);
     const remote = await this.remoteOf(entry);
     if (!remote) return true;
-    const probe = await g.probe(remote.branch);
+    const probe = await this.askRemote(entry.dir!, remote.branch, "act");
     if (probe === "offline") return false; // the commit waits
-    if (probe === "exists") await g.fetch(remote.branch);
     const counts = probe === "exists" ? await g.aheadBehind(remote.branch) : null;
     if (counts && counts.behind > 0) {
       if (counts.ahead === 0) {
@@ -897,6 +960,7 @@ export class Storage extends Service {
       }
     }
     await g.push(remote.branch);
+    this.pushedTo(entry.dir!, remote.branch);
     return true;
   }
 
@@ -1069,7 +1133,7 @@ export class Storage extends Service {
       const remote = await this.remoteOf(entry);
       if (remote) {
         const g = this.git(entry.dir);
-        if ((await g.probe(remote.branch)) === "exists" && (await g.fetch(remote.branch))) {
+        if ((await this.askRemote(entry.dir, remote.branch, "act")) === "exists") {
           const counts = await g.aheadBehind(remote.branch);
           if (counts && counts.behind > 0 && counts.ahead === 0) await g.fastForward(remote.branch);
           else if (counts && counts.behind > 0) {
@@ -1253,6 +1317,9 @@ export class Storage extends Service {
 
   /** What the "Sync now" button does: take theirs, then publish ours. */
   async sync(projectId: string): Promise<StorageStatus> {
+    // Asked by hand: the remote is tried now, whatever the wait after a failure says.
+    const dir = this.entry(projectId)?.dir;
+    if (dir) for (const [key, ask] of this.remoteAsks) if (key.startsWith(`${dir}\0`) && ask.probe === "offline") this.remoteAsks.delete(key);
     await this.checkVisibility(projectId, true);
     await this.refresh(projectId);
     return this.publish(projectId, "sync");
@@ -1278,11 +1345,10 @@ export class Storage extends Service {
         if (remote) {
           location = `${cleanRemote(remote.url).replace(/^https?:\/\//, "").replace(/\.git$/, "")} · ${remote.branch}`;
           const g = this.git(entry.dir);
-          const probe = await g.probe(remote.branch);
+          const probe = await this.askRemote(entry.dir, remote.branch, "status");
           if (probe === "offline") transport = { state: "offline", detail: `Cannot reach ${location}` };
           else if (probe === "absent") transport = { state: "ahead", detail: "Nothing published yet" };
           else {
-            await g.fetch(remote.branch);
             const counts = await g.aheadBehind(remote.branch);
             if (counts && counts.ahead && counts.behind) transport = { state: "diverged", detail: `${counts.ahead} local, ${counts.behind} remote commits` };
             else if (counts?.behind) transport = { state: "behind", detail: `${counts.behind} commits behind` };
