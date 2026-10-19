@@ -160,3 +160,16 @@ describe("OpenCode answering worker calls", () => {
     expect(await model.ready()).toBe(false);
   }, 30_000);
 });
+
+it("offers the models `opencode models` lists before any session has opened", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-opencode-models-"));
+  const bin = path.join(dir, "opencode");
+  fs.writeFileSync(bin, `#!/bin/sh\n[ "$1" = --version ] && { echo 1.19.3; exit 0; }\n[ "$1" = models ] && { echo "INFO loading providers" >&2; printf 'opencode/big-pickle\\ndeepseek/deepseek-v4-pro\\n'; }\n`, { mode: 0o700 });
+  const settingsPath = path.join(dir, "settings.json");
+  fs.writeFileSync(settingsPath, JSON.stringify({ agent: { engines: { opencode: { command: bin } } } }));
+  const { ctx } = await fresh({ plugins: [Tools, [Settings, { path: settingsPath }], Agent, [Mcp, { port: 0 }], engineOpencode] });
+  await settle();
+  const engine = ctx.agent.engineOf("opencode")!;
+  expect((await engine.available({ fresh: true })).ok).toBe(true);
+  expect(engine.picks!()[0]).toMatchObject({ key: "model", choices: [{ value: "opencode/big-pickle" }, { value: "deepseek/deepseek-v4-pro" }] });
+});
