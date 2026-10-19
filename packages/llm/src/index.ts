@@ -12,7 +12,7 @@ export { ImagesModel } from "./images.js";
 import { LlmError, MediaRefused } from "./errors.js";
 import { assistantMessage, collect, modalityOf, userMessage, type ChatEvent, type ChatModel, type ChatRequest, type Collected, type LlmRole, type Message } from "./model.js";
 import { withPromptTools } from "./prompt-tools.js";
-import type { ModelProviderSpec, ModelProviderView } from "./provider.js";
+import type { ModelProviderSpec, ModelProviderView, ProviderSignIn } from "./provider.js";
 import { guessFrom, keyHint, pickModel, type ModelListing, type ProviderPreset, type QuickSetupResult } from "./providers.js";
 import { WORKER_CALLS_MIGRATIONS, WORKER_CALLS_TABLES, WorkerCallLog, type WorkerPurpose, type WorkerSpend, type WorkerUsageSummary } from "./worker-usage.js";
 import { REFUSED_MEDIA_MIGRATION, REFUSED_MEDIA_TABLES, RefusedMedia } from "./refused-media.js";
@@ -365,6 +365,10 @@ export const LlmConfig = z.object({
 }).prefault({});
 export type LlmConfig = z.infer<typeof LlmConfig>;
 
+/** A provider's sign-in, or none: one registered against an older contract says `signIn: "apiKey"`. */
+const signInOf = (kind: ModelProviderSpec): ProviderSignIn | undefined =>
+  typeof kind.signIn === "object" && kind.signIn !== null && typeof kind.signIn.run === "function" ? kind.signIn : undefined;
+
 /** ctx.llm: profiles + roles from settings, adapters cached until settings change. */
 export class Llm extends Service implements LlmService {
   static provide = "llm";
@@ -534,12 +538,13 @@ export class Llm extends Service implements LlmService {
 
   async signIn(provider: string): Promise<SignInResult> {
     const kind = this.kinds.get(provider);
-    if (!kind?.signIn) return { ok: false, detail: kind ? `${kind.title.en} has no sign-in; paste a key instead` : this.unknown(provider) };
+    const signIn = kind && signInOf(kind);
+    if (!signIn) return { ok: false, detail: kind ? `${kind.title.en} has no sign-in; paste a key instead` : this.unknown(provider) };
     const signal = AbortSignal.timeout(SIGN_IN_MS);
     // given up on time even when the sign-in does not listen to the signal
     const gaveUp = new Promise<never>((_, reject) => signal.addEventListener("abort", () => reject(new Error(`${kind.title.en} sign-in was not finished within ${SIGN_IN_MS / 60_000} minutes`)), { once: true }));
     try {
-      const { apiKey } = await Promise.race([kind.signIn.run({ open: (url) => this.ctx.emit("desktop/open-external", url), signal }), gaveUp]);
+      const { apiKey } = await Promise.race([signIn.run({ open: (url) => this.ctx.emit("desktop/open-external", url), signal }), gaveUp]);
       if (typeof apiKey !== "string" || !apiKey.trim()) return { ok: false, detail: `${kind.title.en} sign-in ended without a key` };
       return { ok: true, apiKey: apiKey.trim() };
     } catch (err) {
@@ -575,7 +580,7 @@ export class Llm extends Service implements LlmService {
   modelProviders(): ModelProviderView[] {
     const locale = wordsLocale(this.words().locale);
     return this.ranked().map((k) => ({
-      id: k.id, title: k.title[locale], keyRequired: k.keyRequired, baseURL: k.baseURL, chat: k.chat, defaultInput: k.defaultInput, ...(k.signIn ? { signIn: k.signIn.title[locale] } : {})
+      id: k.id, title: k.title[locale], keyRequired: k.keyRequired, baseURL: k.baseURL, chat: k.chat, defaultInput: k.defaultInput, ...(signInOf(k) ? { signIn: signInOf(k)!.title[locale] } : {})
     }));
   }
 

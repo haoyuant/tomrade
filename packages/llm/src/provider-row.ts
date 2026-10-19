@@ -14,6 +14,11 @@ export default {
   inject: ["llm"],
   Config: BuiltinProviderConfig,
   apply(ctx: Context, config: BuiltinProviderConfig) {
+    // A replaced llm row (an LLMProvider of one's own) need not take providers; its own models answer.
+    if (typeof ctx.llm.registerProvider !== "function") {
+      ctx.logger("model-provider").warn(`${config.provider}: the llm row in use takes no model providers, so this one is not offered`);
+      return;
+    }
     ctx.llm.registerProvider(BUILTIN_PROVIDERS.find((p) => p.id === config.provider)!);
   }
 };

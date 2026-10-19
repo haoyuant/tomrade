@@ -562,6 +562,7 @@ export const es: PartialMessages = {
     risk_network: "Se comunica con internet",
     "risk_fs-project": "Lee y escribe en las carpetas de proyecto",
     risk_db: "Lee y escribe en todas las tablas de tus proyectos",
+    risk_models: "Atiende las peticiones a modelos: lee las conversaciones y las claves de los perfiles de modelo que lo usan",
     risk_window: "Abre ventanas propias que reciben lo que escribes",
     "risk_raw-database": "Abre la base de datos directamente, eludiendo el historial y el deshacer",
     "risk_core-table-writes": "Escribe en las tablas propias de la app eludiendo el historial y el deshacer",

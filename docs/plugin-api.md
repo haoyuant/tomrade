@@ -415,6 +415,9 @@ class Anthropic extends Service implements LLMProvider {
 ```
 
 Replace the `llm` row's `name` in `tomrade.yml` and the assistant never notices.
+The row keeps its `config` (`builtins: false`), which a replacement may ignore.
+The `model-*` provider rows offer nothing to one without `registerProvider`:
+each logs a warning and loads, and the replacement's own models answer.
 
 The shipped `completeJson` runs on the **worker** role, whichever engine holds the
 conversation. Output that does not fit the schema gets one repair round with the
@@ -521,7 +524,9 @@ await ctx.models.registerProvider({
   signal)` is the app's own `GET /models` listing, media read from it, for
   `list`.
 
-The build records the providers in `contributes.modelProviders`, and
+A plugin that names `models` is labelled elevated risk (`models`): it reads
+the conversations and keys of the profiles on its provider. It is shown, never
+restricted. The build records the providers in `contributes.modelProviders`, and
 `tomrade-plugin check` refuses one whose presets lack the namespace, whose
 `list` or `build` is missing, or whose `engines.sdk` admits a Tomrade older
 than 0.2.16. An official plugin that contributes `modelProviders` and is not

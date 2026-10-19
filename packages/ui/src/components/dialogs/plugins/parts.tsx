@@ -35,7 +35,7 @@ export function TrustTags({ tier, risk }: { tier: TierName | null; risk?: RiskNa
   );
 }
 
-const REASONS = new Set(["full", "rows", "exec", "fs-any", "network-any", "network", "fs-project", "db", "raw-database", "core-table-writes", "dynamic-code", "env", "fs", "window"]);
+const REASONS = new Set(["full", "rows", "exec", "fs-any", "network-any", "network", "fs-project", "db", "models", "raw-database", "core-table-writes", "dynamic-code", "env", "fs", "window"]);
 
 /** What a plugin can reach, in plain words: the risk reasons first, then the services and hosts it names. */
 export function Reach({ reasons, inject, hosts }: { reasons: string[]; inject: string[]; hosts?: string[] }) {

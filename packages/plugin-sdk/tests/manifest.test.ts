@@ -41,3 +41,9 @@ it("takes a plugin that adds model providers through the models service", () => 
   expect(m.inject).toEqual(["models"]);
   expect(m.contributes.modelProviders).toEqual(["acme"]);
 });
+
+it("labels a model provider plugin elevated: it reads the conversations and keys of the profiles on it", () => {
+  const provider = ManifestSchema.parse({ id: "someone/acme", version: "1.0.0", title: "Acme", license: "MIT", engines: { sdk: "^0.2.16" }, inject: ["models"] });
+  expect(riskOf(provider)).toEqual({ level: "elevated", reasons: ["models"] });
+  expect(riskOf({ ...provider, inject: [], optional: ["models"] }).reasons).toEqual(["models"]);
+});

@@ -562,6 +562,7 @@ export const ja: PartialMessages = {
     risk_network: "インターネットと通信する",
     "risk_fs-project": "プロジェクトフォルダーを読み書きする",
     risk_db: "プロジェクト内のすべてのテーブルを読み書きする",
+    risk_models: "モデルへのリクエストを処理します：これを使うモデルプロファイルの会話とキーを読み取ります",
     risk_window: "キー入力を受け付ける独自のウィンドウを開く",
     "risk_raw-database": "履歴と取り消しを経由せずにデータベースを直接開く",
     "risk_core-table-writes": "履歴と取り消しを経由せずにアプリ自体のテーブルに書き込む",
