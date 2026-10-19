@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { AgentSettings, EnginePick, EngineView, PlaybookSource } from "@tomradex/agent";
-import { THEME_TYPOGRAPHY_NAMES, type ModelErrorKind, type AppSettings, type CustomTheme, type ThemeAutomation, type ThemePreference, type ThemeTokenName, type ThemeTypographyName } from "@tomradex/domain";
+import { THEME_TYPOGRAPHY_NAMES, modelRefusal, providerMessage, type ModelErrorKind, type AppSettings, type CustomTheme, type ThemeAutomation, type ThemePreference, type ThemeTokenName, type ThemeTypographyName } from "@tomradex/domain";
 import type { ModelProfile, ModelProviderView, ModelsSettings, ProviderView } from "@tomradex/llm";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { agentKeys, conducts, findEngine, useEngines, usePlaybooks } from "~/lib/agent";
@@ -1125,16 +1125,22 @@ function useModelListing(endpoint: Pick<ModelProfile, "provider" | "baseURL" | "
   });
 }
 
+// Listings do not say what a key's tier may use: a model the check refused leaves that key's picker until restart.
+const refusedModels = new Map<string, Set<string>>();
+const endpointOf = (p: Pick<ModelProfile, "provider" | "baseURL" | "apiKey">) => JSON.stringify([p.provider, p.baseURL ?? "", p.apiKey.trim()]);
+const refuseModel = (p: ModelProfile) => refusedModels.set(endpointOf(p), new Set(refusedModels.get(endpointOf(p))).add(p.model));
+
 const sameModes = (detected: string[], stored: string[] | undefined) => !!stored && detected.length === stored.length && detected.every((m) => stored.includes(m));
 
 /**
  * The model, picked from what the endpoint lists; typed in when it lists nothing or the model is not listed.
  * Picking a model also takes the media Tomrade detected for it; an undetected model falls back to the provider's default.
  */
-function ModelPickField({ draft, host, keyRequired, onChange }: { draft: ModelProfile; host: string; keyRequired: boolean; onChange: (patch: Partial<ModelProfile>) => void }) {
+function ModelPickField({ draft, host, keyRequired, onChange, onPicked }: { draft: ModelProfile; host: string; keyRequired: boolean; onChange: (patch: Partial<ModelProfile>) => void; onPicked: (model: string) => void }) {
   const { t } = useI18n();
   const listing = useModelListing(draft, keyRequired);
-  const models = listing.data?.ok ? listing.data.models : [];
+  const refused = refusedModels.get(endpointOf(draft));
+  const models = listing.data?.ok ? listing.data.models.filter((id) => !refused?.has(id)) : [];
   const detected = (model: string) => (listing.data?.ok ? listing.data.capabilities[model] : undefined);
   const pick = (model: string) => onChange({ model, ...(detected(model) ?? { inputModalities: undefined, outputModalities: undefined }) });
   // A profile saved with hand-ticked media takes what the listing now says once it answers.
@@ -1164,7 +1170,10 @@ function ModelPickField({ draft, host, keyRequired, onChange }: { draft: ModelPr
           onChange={(e) => {
             const other = e.target.value === CUSTOM_PICK;
             setCustom(other);
-            if (!other) pick(e.target.value);
+            if (!other) {
+              pick(e.target.value);
+              onPicked(e.target.value);
+            }
           }}
         >
           {draft.model === "" && !custom && <option value="" disabled>{t("settingsDialog.modelPickPlaceholder")}</option>}
@@ -1215,7 +1224,10 @@ function ProfileForm({ profile, onSave, onCancel }: { profile: ModelProfile; onS
   const [draft, setDraft] = useState<ModelProfile>(profile);
   const [checking, setChecking] = useState(false);
   const [problem, setProblem] = useState<{ kind: ModelErrorKind; detail: string } | null>(null);
+  // a check's answer counts only while nothing was edited after it was asked
+  const asked = useRef(0);
   const set = (patch: Partial<ModelProfile>) => {
+    asked.current += 1;
     setProblem(null);
     setDraft((d) => ({ ...d, ...patch }));
   };
@@ -1228,18 +1240,33 @@ function ProfileForm({ profile, onSave, onCancel }: { profile: ModelProfile; onS
   const candidate = (): ModelProfile => ({ ...draft, title: draft.title || draft.model });
   // A wrong key or address shows here, at save, not in the first conversation. A rate limit means the key works.
   const checkAndSave = async () => {
+    asked.current += 1;
     setChecking(true);
     setProblem(null);
     try {
       const result = await invoke("llm.test", candidate());
       if (result.ok || result.kind === "rate") onSave(candidate());
-      else setProblem(result);
+      else {
+        if (result.kind === "model") refuseModel(draft);
+        setProblem(result);
+      }
     } catch {
       onSave(candidate());
     } finally {
       setChecking(false);
     }
   };
+  // A picked model is checked at once: a key's tier or the model's API shows here, before save.
+  const tryModel = async (model: string) => {
+    const run = ++asked.current;
+    const tried = { ...candidate(), model };
+    const result = await invoke("llm.test", tried).catch(() => null);
+    if (run !== asked.current || !result || result.ok || result.kind === "rate") return;
+    if (result.kind === "model") refuseModel(tried);
+    setProblem(result);
+  };
+  const refusal = problem?.kind === "model" ? modelRefusal(problem.detail) : null;
+  const said = problem?.kind === "model" ? providerMessage(problem.detail) : null;
   return (
     <div className="panel stack-3" style={{ background: "var(--bg)" }}>
       <div className="grid-2">
@@ -1278,11 +1305,12 @@ function ProfileForm({ profile, onSave, onCancel }: { profile: ModelProfile; onS
           )}
         </span>
       </div>
-      <ModelPickField draft={draft} host={host || t("settingsDialog.theEndpoint")} keyRequired={kind.keyRequired} onChange={set} />
+      <ModelPickField draft={draft} host={host || t("settingsDialog.theEndpoint")} keyRequired={kind.keyRequired} onChange={set} onPicked={(model) => void tryModel(model)} />
       {kind.chat && <ModelMediaLine draft={draft} host={host || t("settingsDialog.theEndpoint")} defaultInput={kind.defaultInput} />}
       {problem && (
         <div className="profile-problem" role="alert">
-          <p>{t(`settingsDialog.profileCheck_${problem.kind}` as MessageKey, { host: host || t("settingsDialog.theEndpoint"), model: draft.model })}</p>
+          <p>{t(refusal === "method" ? "settingsDialog.profileCheck_modelMethod" : refusal === "tier" ? "settingsDialog.profileCheck_modelTier" : (`settingsDialog.profileCheck_${problem.kind}` as MessageKey), { host: host || t("settingsDialog.theEndpoint"), model: draft.model })}</p>
+          {said && <p className="meta-txt">{t("settingsDialog.profileCheckSaid", { host: host || t("settingsDialog.theEndpoint"), message: said })}</p>}
           <details className="ai-error-details">
             <summary>{t("agentPanel.errorDetails")}</summary>
             <code>{problem.detail}</code>
