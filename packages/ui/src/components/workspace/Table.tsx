@@ -1,5 +1,5 @@
-import { Fragment, useMemo, useState, type ReactNode } from "react";
-import { groupKeyOf, type FieldDef, type Item, type SortKey } from "@tomradex/domain";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { EMPTY_KEY, groupKeyOf, type FieldDef, type Item, type SortKey } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { BoardField, CustomField, DerivedField, EpicField, LabelsField, PriorityField, StatusField, useIssueWriter, type IssueWrite } from "~/components/issue/fields";
 import { DEFAULT_SHOWN_FIELDS, PROVENANCE, agoLabel, fieldLabel, provenanceOf } from "~/lib/domain";
@@ -7,6 +7,7 @@ import { useI18n } from "~/lib/i18n";
 import { useCreateItem } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 import { useIsSelected, useWorkspace, type WorkspaceValue } from "./context";
+import { EpicPriority, EpicProgressBar, EpicStatus, EpicTitle, epicProgress } from "./EpicHeader";
 import { mergePatch, seedFromFilter, toCreateInput } from "./patches";
 import { useToastUndo } from "~/lib/undo";
 
@@ -123,6 +124,44 @@ function ComposerRow({ span }: { span: number }) {
   );
 }
 
+function EpicGroupRow({
+  epic,
+  label,
+  count,
+  progress,
+  columns,
+  collapsed,
+  onToggle,
+  onOpen,
+  isNone
+}: {
+  epic: Item | undefined;
+  label: string;
+  count: number;
+  progress: { done: number; total: number };
+  columns: FieldDef[];
+  collapsed: boolean;
+  onToggle: () => void;
+  onOpen: (id: string) => void;
+  isNone: boolean;
+}) {
+  return (
+    <tr className={isNone ? "tbl-epic is-none" : "tbl-epic"} data-group={epic?.id ?? EMPTY_KEY} data-collapsed={collapsed}>
+      <td className="tbl-cell tbl-title-cell" data-field="title">
+        <EpicTitle epic={epic} label={label} count={count} collapsed={collapsed} onToggle={onToggle} onOpen={onOpen} />
+        {epic && progress.total > 0 && <EpicProgressBar {...progress} />}
+      </td>
+      {columns.map((def) => (
+        <td className="tbl-cell" key={def.id} data-field={def.id}>
+          {epic && def.id === "status" && <EpicStatus epic={epic} />}
+          {epic && def.id === "priority" && <EpicPriority epic={epic} />}
+          {epic && def.id === "updated" && <span className="num tbl-dim">{agoLabel(epic.updatedAt)}</span>}
+        </td>
+      ))}
+    </tr>
+  );
+}
+
 /** The table layout: one row per visible issue, one column per shown field, headers that sort. */
 export function Table({ onConflict }: { onConflict: (title: string) => void }) {
   void onConflict; // cell edits report conflicts through the issue writer's toast
@@ -133,9 +172,31 @@ export function Table({ onConflict }: { onConflict: (title: string) => void }) {
   const { write } = useIssueWriter(ws.project.id);
 
   const columns = useMemo(() => {
-    const ids = (query.fields.length ? query.fields : DEFAULT_SHOWN_FIELDS.table).filter((id) => id !== "title" && fieldById.has(id));
+    // grouped by epic, the column would only repeat the group head on every row
+    const ids = (query.fields.length ? query.fields : DEFAULT_SHOWN_FIELDS.table).filter((id) => id !== "title" && fieldById.has(id) && !(id === "epic" && groupBy === "epic"));
     return ids.map((id) => fieldById.get(id)!);
-  }, [query.fields, fieldById]);
+  }, [query.fields, fieldById, groupBy]);
+
+  const byEpic = groupBy === "epic";
+  const epicById = useMemo(() => new Map(ws.epics.map((e) => [e.id, e])), [ws.epics]);
+  const progress = useMemo(() => (byEpic ? epicProgress(ws.owned) : null), [byEpic, ws.owned]);
+  const [shut, setShut] = useState<Set<string>>(new Set());
+  const toggle = (key: string) =>
+    setShut((current) => {
+      const next = new Set(current);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+  // epic heads stick under the column header, so they need its height
+  const headRef = useRef<HTMLTableSectionElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const head = headRef.current;
+    if (!head || !byEpic) return;
+    const ro = new ResizeObserver(() => wrapRef.current?.style.setProperty("--tbl-head-h", `${head.offsetHeight}px`));
+    ro.observe(head);
+    return () => ro.disconnect();
+  }, [byEpic]);
 
   const sortOf = (fieldId: string): "asc" | "desc" | null => (query.sortBy.length === 1 && query.sortBy[0].field === fieldId ? query.sortBy[0].dir : null);
 
@@ -173,9 +234,9 @@ export function Table({ onConflict }: { onConflict: (title: string) => void }) {
   const span = columns.length + 1;
 
   return (
-    <div className="tbl-wrap" data-group-by={groupBy ?? undefined}>
+    <div className="tbl-wrap" ref={wrapRef} data-group-by={groupBy ?? undefined}>
       <table className="tbl">
-        <thead className="tbl-head">
+        <thead className="tbl-head" ref={headRef}>
           <tr>
             <th className="tbl-cell tbl-title-cell" scope="col" data-field="title" aria-sort={sortOf("title") === "asc" ? "ascending" : sortOf("title") === "desc" ? "descending" : "none"}>
               {header(null)}
@@ -196,7 +257,20 @@ export function Table({ onConflict }: { onConflict: (title: string) => void }) {
         <tbody>
           {groups.map((group) => (
             <Fragment key={group.key ?? "all"}>
-              {group.key !== null && groupBy && (
+              {group.key !== null && byEpic && (
+                <EpicGroupRow
+                  epic={epicById.get(group.key)}
+                  label={groupLabel("epic", group.key)}
+                  count={group.items.length}
+                  progress={progress?.get(group.key) ?? { done: 0, total: 0 }}
+                  columns={columns}
+                  collapsed={shut.has(group.key)}
+                  onToggle={() => toggle(group.key!)}
+                  onOpen={ws.select}
+                  isNone={group.key === EMPTY_KEY}
+                />
+              )}
+              {group.key !== null && groupBy && !byEpic && (
                 <tr className="tbl-group" data-group={group.key}>
                   <td className="tbl-cell" colSpan={span}>
                     <span className="tbl-group-name">{groupLabel(groupBy, group.key)}</span>
@@ -204,7 +278,7 @@ export function Table({ onConflict }: { onConflict: (title: string) => void }) {
                   </td>
                 </tr>
               )}
-              {group.items.map((item) => (
+              {!(group.key !== null && shut.has(group.key)) && group.items.map((item) => (
                 <Row key={item.id} item={item} columns={columns} ws={ws} write={write} />
               ))}
             </Fragment>

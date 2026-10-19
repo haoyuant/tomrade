@@ -44,6 +44,7 @@ import { settingsDialog } from "./settingsDialog";
 import { sidebar } from "./sidebar";
 import { statusBar } from "./statusBar";
 import { table } from "./table";
+import { epics } from "./epics";
 import { storageBlock } from "./storageBlock";
 import { theme } from "./theme";
 import { titleBar } from "./titleBar";
@@ -116,6 +117,7 @@ export const en = {
   board: board.en,
   card: card.en,
   table: table.en,
+  epics: epics.en,
   graphView: graphView.en,
   queryBar: queryBar.en,
   workspaceContext: workspaceContext.en,
@@ -191,6 +193,7 @@ export const zh: typeof en = {
   board: board.zh,
   card: card.zh,
   table: table.zh,
+  epics: epics.zh,
   graphView: graphView.zh,
   queryBar: queryBar.zh,
   workspaceContext: workspaceContext.zh,
