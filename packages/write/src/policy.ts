@@ -35,12 +35,14 @@ export const humanOnlyPurge = {
 /**
  * An extension may write as a person only while a person is driving it; left
  * to itself it is one more AI author, which also keeps purge out of its reach.
+ * A full-mode plugin names its author itself, as the app's own modules do.
  */
 export const extensionAuthorship = {
   name: "write-policy:extension-authorship",
   apply(ctx: Context) {
     ctx.on("write/pre-commit", (intent, next) => {
-      if (intent.via && intent.by === "human" && !extensionScope.getStore()?.human) throw new ExtensionAuthorError(intent.via, intent.entity, intent.op);
+      const scope = extensionScope.getStore();
+      if (intent.via && intent.via === scope?.pluginId && intent.by === "human" && !scope.human) throw new ExtensionAuthorError(intent.via, intent.entity, intent.op);
       return next();
     });
   }

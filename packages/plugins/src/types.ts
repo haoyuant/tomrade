@@ -11,7 +11,19 @@ export interface PluginRow {
   disabled?: boolean;
   /** Contract ids this row fills, for when it is switched off and registers nothing to observe. */
   implements?: string[];
+  /** The full-mode extension whose rows put this row's plugin here: its writes carry that extension's namespace. */
+  from?: string;
 }
+
+/** A row as a patch file or a full-mode extension writes it: the fields it changes on the row with its id. */
+export type RowPatch = Partial<PluginRow> & { id: string };
+
+/**
+ * Rows no extension's rows may change: the renderer's channels, through which a
+ * plugin is switched off and removed, and the catalog that verifies and revokes
+ * plugins. Protecting Tomrade itself is the one limit full mode has.
+ */
+export const PROTECTED_ROWS: ReadonlySet<string> = new Set(["ipc", "community"]);
 
 /**
  * A module is a capability, named by the service key that carries it. A
@@ -58,6 +70,8 @@ export interface PluginView {
   implements: string[];
   /** Present when the row is an installed extension rather than part of the app. */
   extension?: ExtensionInfo;
+  /** A full-mode extension's rows taken back this start, and the required modules they left with no plugin. */
+  rowsRefused?: string[];
 }
 
 export interface ModuleView {
@@ -88,6 +102,13 @@ export interface PluginsConfig {
   extensions?: ExtensionStore;
   /** Called after a row is switched, so the choice survives a restart. */
   persist?(id: string, disabled: boolean): void | Promise<void>;
+  /**
+   * The composition again, without the rows of the full-mode extensions named:
+   * how a start takes back rows that left a required module empty.
+   */
+  recompose?(without: ReadonlySet<string>): PluginRow[];
+  /** The full-mode extensions whose rows this start applied, in the order they were laid on. */
+  rowsFrom?: string[];
 }
 
 /** Refusing to empty a required module is the guard; it reads as one sentence. */

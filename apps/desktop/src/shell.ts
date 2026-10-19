@@ -7,6 +7,7 @@ import type { Context } from "cordis";
 import { AUDIO_EXTENSIONS } from "@tomradex/alerts";
 import type {} from "@tomradex/ipc";
 import { aboutInfo, type AboutInfo } from "./about.js";
+import { restart } from "./accounts.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -30,6 +31,8 @@ declare module "@tomradex/ipc" {
     "shell.saveTextFile": (opts: { title?: string; defaultName: string; text: string }) => string | null;
     /** Native open dialog for one text file, read back — a settings file to import. Null when cancelled. */
     "shell.openTextFile": (opts: { title?: string; extensions?: string[] }) => { path: string; text: string } | null;
+    /** Quit through the usual questions and start again — once without the person's own plugins when `safe`. */
+    "shell.restart": (opts?: { safe?: boolean }) => void;
   }
 }
 
@@ -103,6 +106,8 @@ export const shell = {
     ctx.on("desktop/reveal", (target) => electronShell.showItemInFolder(target));
 
     ctx.ipc.handle("shell.about", () => aboutInfo(repoRoot));
+    // After the reply, so the renderer is not torn down mid-call.
+    ctx.ipc.handle("shell.restart", (opts) => void setTimeout(() => restart({ safe: opts?.safe === true }), 100));
 
     ctx.ipc.handle("shell.saveTextFile", async ({ title, defaultName, text }) => {
       const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];

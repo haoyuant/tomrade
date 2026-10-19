@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { PluginView } from "@tomradex/plugins";
+import type { FullModeInfo, PluginView } from "@tomradex/plugins";
 import { Icon } from "~/components/icons";
 import { Tag } from "~/components/ui/atoms";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
@@ -7,7 +7,7 @@ import { Menu, MenuActionItem } from "~/components/ui/menu";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useReload, useRollback, useSetAutoUpdate, useUndoVia, useUninstall } from "~/lib/plugins";
 import { useSetPluginEnabled } from "~/lib/queries";
-import { reveal } from "~/lib/shell";
+import { restartApp, reveal } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { cn } from "~/lib/utils";
 import { ConfirmBuildDialog } from "./ConfirmBuildDialog";
@@ -106,6 +106,7 @@ export function ExtensionRow({ plugin }: { plugin: PluginView }) {
       <div className="plug-ext-reach">
         <Reach reasons={ext.risk.reasons} inject={ext.inject} hosts={ext.permissions.network.filter((h) => h !== "*")} />
       </div>
+      {ext.full && <FullMode full={ext.full} refused={plugin.rowsRefused} />}
       {error && (
         <p className="meta-txt dense" style={{ margin: "5px 0 0 var(--space-3)", color: "var(--danger)" }}>
           {error}
@@ -113,6 +114,43 @@ export function ExtensionRow({ plugin }: { plugin: PluginView }) {
       )}
       {uninstalling && <UninstallDialog id={plugin.id} title={ext.title} onClose={() => setUninstalling(false)} />}
       {confirming && <ConfirmBuildDialog name={name} title={ext.title} onClose={() => setConfirming(false)} />}
+    </div>
+  );
+}
+
+const ROW_KEY: Record<FullModeInfo["rows"][number]["change"], MessageKey> = {
+  adds: "plugins.rowAdds",
+  replaces: "plugins.rowReplaces",
+  "switches-off": "plugins.rowSwitches-off",
+  configures: "plugins.rowConfigures"
+};
+
+/** What a full-mode plugin does to Tomrade itself: its rows, who else changes them, and whether a restart is due. */
+function FullMode({ full, refused }: { full: FullModeInfo; refused?: string[] }) {
+  const { t } = useI18n();
+  return (
+    <div className="plug-ext-reach meta-txt dense" data-testid="full-mode">
+      <p style={{ margin: 0 }}>{t("plugins.fullMode", { range: full.tomrade })}</p>
+      {!!full.rows.length && (
+        <ul className="dash">
+          {full.rows.map((row) => (
+            <li key={row.id}>
+              {t(ROW_KEY[row.change], { id: row.id })}
+              {!!row.alsoBy.length && ` · ${t("plugins.rowAlsoBy", { others: row.alsoBy.join(", ") })}`}
+              {row.refused && <span style={{ color: "var(--danger)" }}>{` · ${t("plugins.rowRefused", { reason: row.refused })}`}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {!!refused?.length && <p style={{ margin: 0, color: "var(--danger)" }}>{t("plugins.rowsRefused", { modules: refused.join(", ") })}</p>}
+      {full.restart && (
+        <p className="row" style={{ margin: 0, gap: 8 }}>
+          {t("plugins.rowsRestart")}
+          <button type="button" className="btn btn-xs" onClick={() => restartApp()}>
+            {t("plugins.restartNow")}
+          </button>
+        </p>
+      )}
     </div>
   );
 }

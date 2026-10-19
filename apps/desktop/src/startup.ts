@@ -1,8 +1,31 @@
-import { app, BrowserWindow, dialog, nativeImage, nativeTheme } from "electron";
+import { app, BrowserWindow, dialog, nativeImage, nativeTheme, Notification } from "electron";
 import { DESKTOP_WORDS } from "./words.js";
 
 // Before boot there are no settings to ask: the system's language.
 const words = () => DESKTOP_WORDS(app.getLocale().toLowerCase().startsWith("zh") ? "zh" : "en");
+
+/** The last start never got as far as its window: offer one start without the person's own files. True when they take it. */
+export async function offerSafeStart(opts: { logDir: string }): Promise<boolean> {
+  const w = words();
+  app.focus({ steal: true });
+  const { response } = await dialog.showMessageBox({
+    type: "warning",
+    title: "Tomrade",
+    message: w("startUnfinished"),
+    detail: [w("startUnfinishedHint"), w("startLog", { dir: opts.logDir })].join("\n\n"),
+    buttons: [w("startWithout"), w("startNormally")],
+    defaultId: 0,
+    cancelId: 1
+  });
+  return response === 0;
+}
+
+/** A safe start says so once, so nobody wonders where their plugins went. */
+export function saySafeStart(): void {
+  if (!Notification.isSupported()) return;
+  const w = words();
+  new Notification({ title: w("startedSafe"), body: w("startedSafeBody"), silent: true }).show();
+}
 
 /**
  * A small window from the first moment. Reading the login shell can take

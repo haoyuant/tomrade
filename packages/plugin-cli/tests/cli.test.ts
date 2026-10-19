@@ -78,6 +78,26 @@ describe("tomrade-plugin", () => {
     expect(report.problems).toEqual([expect.stringMatching(/badge "blocked" must start with the namespace/)]);
   }, 60_000);
 
+  it("checks a full-mode plugin for its shape, labels what it can reach, and leaves running it to Tomrade", async () => {
+    const dir = path.join(tmp, "deep");
+    scaffold(dir, { id: "someone/deep" });
+    fs.writeFileSync(path.join(dir, "src/index.ts"), `export default { name: "deep", inject: ["llm"], apply() {} };`);
+    const manifest = { ...manifestOf(dir), engines: { sdk: "^0.2.13", tomrade: ">=0.13.0" }, context: "full", rows: [{ id: "web-search-tavily", disabled: true }] };
+    fs.writeFileSync(path.join(dir, MANIFEST_FILE), JSON.stringify(manifest, null, 2));
+    const report = await check(dir);
+    expect(report.problems).toEqual([]);
+    expect(report.verdict).toBe("review");
+    expect(report.risk).toEqual({ level: "high", reasons: ["full", "rows"] });
+    expect(report.analysis!.findings.map((f) => f.rule)).toEqual(expect.arrayContaining(["full-context", "rows"]));
+    expect(report.notes).toEqual(expect.arrayContaining([expect.stringMatching(/^full mode: /)]));
+    // Nothing of the SDK's is stamped: it names no SDK services.
+    expect(manifestOf(dir)).not.toHaveProperty("contributes");
+    expect((await test(dir, { build: false })).error).toMatch(/plugin_try/);
+
+    fs.writeFileSync(path.join(dir, "src/index.ts"), `export default 42;`);
+    expect((await check(dir)).problems).toEqual([expect.stringMatching(/a cordis plugin/)]);
+  }, 60_000);
+
   it("blocks an import from the SDK that the oldest Tomrade its engines.sdk accepts does not have", async () => {
     const dir = path.join(tmp, "speaks");
     scaffold(dir, { id: "someone/speaks" });

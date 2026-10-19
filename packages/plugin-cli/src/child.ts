@@ -17,6 +17,7 @@ interface Payload {
   namespace: string;
   title?: string;
   window?: boolean;
+  full?: boolean;
   tmp: string;
   scenario: string | null;
 }
@@ -66,7 +67,18 @@ const configOf = (p: SdkPlugin) => {
   return parsed?.success ? parsed.data : undefined;
 };
 
+/** A full-mode plugin needs the whole app to apply; here it is only held to its shape. */
+async function inspectFull() {
+  const sdk = (await import(shared["@tomradex/plugin-sdk"]!)) as { isSdkPlugin(v: unknown): boolean };
+  const candidate = (await load(payload.main)).default;
+  if (sdk.isSdkPlugin(candidate)) throw new Error('the default export is written with definePlugin, which runs behind the SDK\'s facade; drop "context": "full" from the manifest');
+  const applicable = typeof candidate === "function" || (typeof candidate === "object" && candidate !== null && typeof (candidate as { apply?: unknown }).apply === "function");
+  if (!applicable) throw new Error("in full mode the default export is a cordis plugin: a function, a class, or an object with apply()");
+  report({ ok: true, full: true, inject: [], optional: [], recording: null });
+}
+
 async function inspect() {
+  if (payload.full) return inspectFull();
   const p = await plugin();
   const recording = emptyRecording();
   const ctx = recordingContext(payload.namespace, [...(p.inject ?? []), ...(p.optional ?? [])] as never, recording);
@@ -80,6 +92,7 @@ async function inspect() {
 
 /** The Tomrade a plugin is tested against lives in @tomradex/plugin-host, so this package carries none of it. */
 async function test() {
+  if (payload.full) return report({ ok: false, error: "a full-mode plugin runs with Tomrade's whole context, which this sandbox does not have; try it in Tomrade (Plugin Studio's plugin_try)", checks: [], logs: [] });
   const { testPlugin } = await import("@tomradex/plugin-host");
   const p = await plugin();
   const scenario = payload.scenario;

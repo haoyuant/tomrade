@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { ManifestSchema, riskOf } from "@tomradex/plugin-sdk";
+import { ManifestSchema, parseManifest, riskOf } from "@tomradex/plugin-sdk";
 
 const manifest = (permissions: Record<string, unknown> = {}) => ManifestSchema.parse({ id: "someone/demo", version: "1.0.0", title: "Demo", license: "MIT", engines: { sdk: "^0.2.11" }, permissions });
 
@@ -10,4 +10,21 @@ it("grants no windows unless the manifest says so, and shows a window as a reaso
   expect(windowed.permissions.window).toBe(true);
   expect(riskOf(windowed)).toEqual({ level: "elevated", reasons: ["window"] });
   expect(riskOf(manifest({ window: true, exec: true }))).toEqual({ level: "high", reasons: ["exec", "window"] });
+});
+
+const full = (fields: Record<string, unknown>) => ({ id: "someone/deep", version: "1.0.0", title: "Deep", license: "MIT", engines: { sdk: "^0.2.13", tomrade: ">=0.13.0 <0.14.0" }, context: "full", ...fields });
+
+it("takes a full-mode plugin that names its Tomrade versions, labels it high risk, and holds rows to full mode", () => {
+  const plain = parseManifest(full({}));
+  expect(plain.context).toBe("full");
+  expect(riskOf(plain)).toEqual({ level: "high", reasons: ["full"] });
+  const rowed = parseManifest(full({ rows: [{ id: "llm", name: "./dist/llm.js" }, { id: "web-search-tavily", disabled: true }] }));
+  expect(riskOf(rowed)).toEqual({ level: "high", reasons: ["full", "rows"] });
+  expect(parseManifest({ ...full({}), context: undefined }).context).toBe("sdk");
+
+  expect(() => parseManifest(full({ engines: { sdk: "^0.2.13" } }))).toThrow(/engines.tomrade/);
+  expect(() => parseManifest(full({ main: null, languages: [{ tag: "pt-BR", name: "Português", file: "languages/pt-BR.json" }] }))).toThrow(/needs "main"/);
+  expect(() => parseManifest(full({ context: "sdk", rows: [{ id: "llm", disabled: true }] }))).toThrow(/takes "context": "full"/);
+  expect(() => parseManifest(full({ rows: [{ id: "llm", disabled: true }, { id: "llm", config: {} }] }))).toThrow(/listed twice/);
+  expect(() => ManifestSchema.parse(full({ rows: [{ id: "llm" }] }))).toThrow(/changes something/);
 });

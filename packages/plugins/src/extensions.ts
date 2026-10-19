@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Plugin } from "cordis";
-import { adaptLanguagePacks, adaptSdkPlugin, identityOf } from "@tomradex/extensions";
-import { SDK_CONTRACT, isSdkPlugin, namespaceOf, riskOf, satisfies, type Manifest, type Risk } from "@tomradex/plugin-sdk";
+import { adaptLanguagePacks, adaptSdkPlugin, claimFullPlugin, identityOf } from "@tomradex/extensions";
+import { SDK_CONTRACT, isSdkPlugin, namespaceOf, ownsId, riskOf, satisfies, type Manifest, type ManifestRow, type Risk } from "@tomradex/plugin-sdk";
 import {
   analyzePackage,
   dataDirFor,
@@ -22,6 +22,7 @@ import {
   type LockEntry,
   type TrustTier
 } from "@tomradex/plugin-kit";
+import { PROTECTED_ROWS, type RowPatch } from "./types.js";
 
 export interface ExtensionStoreConfig {
   /** `~/Tomrade/plugins`: installed versions and each plugin's data. */
@@ -31,6 +32,26 @@ export interface ExtensionStoreConfig {
   trustedKeys: Record<string, string>;
   /** The host's own `import()`, so a plugin's bare imports resolve the host's way. */
   importer(url: string): Promise<unknown>;
+  /** This Tomrade's version, held to a full-mode plugin's `engines.tomrade`. Absent in a checkout, which checks no range. */
+  appVersion?: string | null;
+}
+
+/** What one row of a full-mode extension does to Tomrade's composition. */
+export interface RowChange {
+  id: string;
+  change: "adds" | "replaces" | "switches-off" | "configures";
+  /** Other extensions whose rows change the same row; the one installed last is laid on last. */
+  alsoBy: string[];
+  /** Why it is not applied, when it is not. */
+  refused?: string;
+}
+
+export interface FullModeInfo {
+  /** The Tomrade versions it says it works with. */
+  tomrade: string;
+  rows: RowChange[];
+  /** Its rows are not the ones this start applied: they change with the next start. */
+  restart: boolean;
 }
 
 /** What the manager shows for a row that is an extension. */
@@ -55,6 +76,8 @@ export interface ExtensionInfo {
   /** A studio build nobody has confirmed yet: its digest and what the analyzer found in it. */
   pending: { digest: string; analysis: Analysis } | null;
   attestation: Attestation | null;
+  /** Runs with Tomrade's whole Context rather than the SDK's facade. */
+  full: FullModeInfo | null;
 }
 
 export class ExtensionRefused extends Error {
@@ -62,6 +85,26 @@ export class ExtensionRefused extends Error {
 }
 
 const now = () => Date.now();
+
+/** What a full-mode extension's rows do this start: each row as it is laid on, or why it is not. */
+interface RowPlan {
+  row: ManifestRow;
+  change: RowChange["change"];
+  patch: RowPatch | null;
+  refused?: string;
+}
+
+/** A row's plugin is a file inside the package, or a package the app itself resolves. */
+function rowName(dir: string, name: string): string {
+  if (!name.startsWith(".")) {
+    if (path.isAbsolute(name)) throw new Error(`its plugin "${name}" is a path outside the package; name a file inside it (./dist/…)`);
+    return name;
+  }
+  const file = path.resolve(dir, name);
+  const rel = path.relative(dir, file);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) throw new Error(`its plugin "${name}" is outside the package`);
+  return file;
+}
 
 /**
  * The installed extensions and the rules for loading one: the files must be
@@ -72,10 +115,111 @@ export class ExtensionStore {
   private lock: Lock;
   private readonly watchers = new Map<string, fs.FSWatcher>();
   private readonly pendingAnalysis = new Map<string, { digest: string; analysis: Analysis }>();
+  /** The app's own row ids, which a full-mode extension's rows may change; known once the composition asks for rows. */
+  private appRows: ReadonlySet<string> = new Set();
+  /** Each full-mode extension's rows as this start applied them, to tell when the next start would differ. */
+  private readonly applied = new Map<string, string>();
   onChange: (id: string) => void = () => {};
 
   constructor(private readonly config: ExtensionStoreConfig) {
     this.lock = readLock(config.lockFile);
+  }
+
+  /** Installed first, laid on first: an update or a switch does not move a plugin in this order. */
+  private inOrder(): LockEntry[] {
+    return [...this.lock.plugins].sort((a, b) => a.installedAt - b.installedAt || a.id.localeCompare(b.id));
+  }
+
+  /** A full-mode extension's manifest, when it is one that may run here; null for an SDK plugin. */
+  private full(entry: LockEntry): Manifest | null {
+    let manifest: Manifest;
+    try {
+      manifest = readManifest(entry.dir);
+    } catch {
+      return null;
+    }
+    return manifest.context === "full" ? manifest : null;
+  }
+
+  /** Why this Tomrade does not run a full-mode plugin, or null when it does. */
+  private outOfRange(manifest: Manifest): string | null {
+    const version = this.config.appVersion;
+    const range = manifest.engines.tomrade!;
+    return version && !satisfies(version, range) ? `${manifest.id} runs with Tomrade's whole context and works with Tomrade ${range}; this is ${version}` : null;
+  }
+
+  /** Each of an extension's rows as this start would lay it on, checked against the app's own rows. */
+  private plan(entry: LockEntry, manifest: Manifest): RowPlan[] {
+    const ns = namespaceOf(manifest);
+    return manifest.rows.map((row): RowPlan => {
+      const ours = this.appRows.has(row.id);
+      const change: RowChange["change"] = !ours ? "adds" : row.disabled ? "switches-off" : row.name ? "replaces" : "configures";
+      const refuse = (refused: string): RowPlan => ({ row, change, patch: null, refused });
+      if (ours && PROTECTED_ROWS.has(row.id)) return refuse(`Tomrade keeps “${row.id}” itself: plugins are switched off, removed and revoked through it`);
+      if (!ours && !ownsId(ns, row.id)) return refuse(`a row it adds is named “${ns}” or starts with it`);
+      if (!ours && !row.name) return refuse("a row it adds names its plugin");
+      let name: string | undefined;
+      try {
+        name = row.name === undefined ? undefined : rowName(entry.dir, row.name);
+      } catch (error) {
+        return refuse(error instanceof Error ? error.message : String(error));
+      }
+      const patch: RowPatch = { id: row.id };
+      // Only a plugin the extension supplies is its code; an app row it reconfigures stays the app's.
+      if (name !== undefined) Object.assign(patch, { name, from: entry.id });
+      if (row.title !== undefined) patch.title = row.title;
+      if (row.config !== undefined) patch.config = row.config;
+      if (row.disabled !== undefined) patch.disabled = row.disabled;
+      return { row, change, patch };
+    });
+  }
+
+  /** The rows an extension lays on now: none while it is off, unconfirmed, or outside its Tomrade range. */
+  private active(entry: LockEntry): { manifest: Manifest; plan: RowPlan[] } | null {
+    const manifest = this.full(entry);
+    if (!manifest || entry.disabled || !this.confirmed(entry) || this.outOfRange(manifest)) return null;
+    return { manifest, plan: this.plan(entry, manifest) };
+  }
+
+  /**
+   * The rows full-mode extensions lay over the app's, one list per extension in
+   * the order they were installed, for the composition to apply after the
+   * app's rows and before the person's own patch file. What it returns is what
+   * this start applies.
+   */
+  patches(appRows: Iterable<string>): { from: string; rows: RowPatch[] }[] {
+    this.appRows = new Set(appRows);
+    const out: { from: string; rows: RowPatch[] }[] = [];
+    for (const entry of this.inOrder()) {
+      const rows = (this.active(entry)?.plan ?? []).flatMap((p) => (p.patch ? [p.patch] : []));
+      this.applied.set(entry.id, JSON.stringify(rows));
+      if (rows.length) out.push({ from: entry.id, rows });
+    }
+    return out;
+  }
+
+  /** A plugin one of an extension's rows loads is that extension's code: its writes carry the namespace too. */
+  claim(plugin: object, from: string): void {
+    if (!this.has(from)) return;
+    const manifest = this.full(this.entry(from));
+    if (manifest) claimFullPlugin(plugin, namespaceOf(manifest));
+  }
+
+  /** What an extension's rows do, and which other extensions' rows change the same ones. */
+  private fullInfo(entry: LockEntry, manifest: Manifest): FullModeInfo {
+    const plan = this.plan(entry, manifest);
+    const others = new Map<string, string[]>();
+    for (const other of this.inOrder()) {
+      if (other.id === entry.id) continue;
+      for (const p of this.active(other)?.plan ?? []) if (p.patch && this.appRows.has(p.row.id)) others.set(p.row.id, [...(others.get(p.row.id) ?? []), other.id]);
+    }
+    const current = this.active(entry);
+    const rows = JSON.stringify((current?.plan ?? []).flatMap((p) => (p.patch ? [p.patch] : [])));
+    return {
+      tomrade: manifest.engines.tomrade!,
+      rows: plan.map((p) => ({ id: p.row.id, change: p.change, alsoBy: p.change === "adds" ? [] : (others.get(p.row.id) ?? []), ...(p.refused ? { refused: p.refused } : {}) })),
+      restart: rows !== (this.applied.get(entry.id) ?? "[]")
+    };
   }
 
   get root(): string {
@@ -152,7 +296,8 @@ export class ExtensionStore {
       autoUpdate: entry.autoUpdate,
       previousVersion: entry.previous?.version ?? null,
       pending,
-      attestation: entry.attestation
+      attestation: entry.attestation,
+      full: manifest.context === "full" ? this.fullInfo(entry, manifest) : null
     };
   }
 
@@ -179,10 +324,22 @@ export class ExtensionStore {
     });
     const identity = identityOf(manifest, { root: entry.dir, dataDir: dataDirFor(this.config.root, id) });
     if (manifest.main === null) return adaptLanguagePacks(identity, languages);
+    const refused = manifest.context === "full" ? this.outOfRange(manifest) : null;
+    if (refused) throw new ExtensionRefused(refused);
     const url = `${pathToFileURL(path.join(entry.dir, manifest.main)).href}?v=${digest.slice(0, 16)}`;
     const mod = (await this.config.importer(url)) as { default?: unknown };
+    if (manifest.context === "full") return this.fullPlugin(id, manifest, mod.default);
     if (!isSdkPlugin(mod.default)) throw new ExtensionRefused(`${id} does not export a plugin written with @tomradex/plugin-sdk's definePlugin`);
     return adaptSdkPlugin(mod.default, identity, languages);
+  }
+
+  /** A full-mode plugin is loaded as it is, like a row of the app's own; only what it writes is marked as its. */
+  private fullPlugin(id: string, manifest: Manifest, candidate: unknown): Plugin {
+    if (isSdkPlugin(candidate)) throw new ExtensionRefused(`${id} is written with definePlugin, which runs behind the SDK's facade; drop "context": "full" from its manifest`);
+    const applicable = typeof candidate === "function" || (typeof candidate === "object" && candidate !== null && typeof (candidate as { apply?: unknown }).apply === "function");
+    if (!applicable) throw new ExtensionRefused(`${id} runs in full mode, so its main exports a cordis plugin: a function, a class, or an object with apply()`);
+    claimFullPlugin(candidate as object, namespaceOf(manifest));
+    return candidate as Plugin;
   }
 
   /**
@@ -190,7 +347,7 @@ export class ExtensionStore {
    * contents must have (and, for Tomrade's own plugins, an attestation), or
    * handed over by a person.
    */
-  async installFile(file: string, opts: { source?: "store" | "file"; digest?: string; attestation?: unknown } = {}): Promise<LockEntry> {
+  async installFile(file: string, opts: { source?: "store" | "file"; digest?: string; attestation?: unknown; vet?: (manifest: Manifest) => void } = {}): Promise<LockEntry> {
     const unpacked = await unpackPlugin(file);
     if (opts.source === "store" && unpacked.digest !== opts.digest) {
       fs.rmSync(unpacked.dir, { recursive: true, force: true });
@@ -202,6 +359,12 @@ export class ExtensionStore {
       throw new ExtensionRefused(`${unpacked.manifest.id} is loaded from a development folder here; remove it first`);
     }
     this.refuseClash(unpacked.manifest);
+    try {
+      opts.vet?.(unpacked.manifest);
+    } catch (error) {
+      fs.rmSync(unpacked.dir, { recursive: true, force: true });
+      throw error;
+    }
     const dir = placePackage(unpacked, this.config.root);
     const prior = this.has(unpacked.manifest.id) ? this.entry(unpacked.manifest.id) : null;
     return this.put({
@@ -222,10 +385,11 @@ export class ExtensionStore {
   }
 
   /** A person's own directory, loaded as it stands and reloaded when its build changes. */
-  addFolder(dir: string, source: "folder" | "studio" = "folder"): LockEntry {
+  addFolder(dir: string, source: "folder" | "studio" = "folder", vet?: (manifest: Manifest) => void): LockEntry {
     const manifest = readManifest(dir);
     if (this.has(manifest.id) && this.entry(manifest.id).dir !== dir) throw new ExtensionRefused(`${manifest.id} is already installed; remove it before loading a folder in its place`);
     this.refuseClash(manifest);
+    vet?.(manifest);
     fs.mkdirSync(dataDirFor(this.config.root, manifest.id), { recursive: true });
     const prior = this.has(manifest.id) ? this.entry(manifest.id) : null;
     const entry = this.put({

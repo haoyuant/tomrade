@@ -213,7 +213,7 @@ export function analyzePackage(dir: string, manifest: Manifest): Analysis {
     else if (/\.html?$/.test(rel)) analyzeDocument(text, rel, observed, findings);
   }
   if (observed.network) observed.hosts.sort();
-  findings.push(...mismatches(manifest, observed));
+  findings.push(...fullMode(manifest), ...mismatches(manifest, observed));
   const worst = findings.reduce<Severity | null>((w, f) => (w === null || RANK[f.severity] > RANK[w] ? f.severity : w), null);
   return { observed, findings, worst };
 }
@@ -239,6 +239,16 @@ export function observedRisk(observed: Observed, manifest: Manifest): { level: R
   return { level, reasons: [...reasons] };
 }
 
+/** A full-mode plugin is declared, not observed: what it can reach is everything the app's own modules can. Named, not refused. */
+export function fullMode(manifest: Manifest): Finding[] {
+  if (manifest.context !== "full") return [];
+  const at = (rule: string, message: string): Finding => ({ rule, severity: "high", message, file: "tomrade-plugin.json", line: 1 });
+  const out = [at("full-context", "runs with Tomrade's whole context, as the app's own modules do: every service, event and policy")];
+  const changes = manifest.rows.map((r) => `${r.id} (${r.disabled ? "switched off" : r.name ? "plugin replaced or added" : "config changed"})`);
+  if (changes.length) out.push(at("rows", `changes Tomrade's own rows: ${changes.join(", ")}`));
+  return out;
+}
+
 /** Where the code does more than the manifest admits. Named, not refused: the listing shows what was observed. */
 export function mismatches(manifest: Manifest, observed: Observed): Finding[] {
   const out: Finding[] = [];
@@ -251,7 +261,8 @@ export function mismatches(manifest: Manifest, observed: Observed): Finding[] {
     const undeclared = observed.hosts.filter((h) => !p.network.some((d) => h === d || h.endsWith(`.${d}`)));
     if (undeclared.length) out.push(at("undeclared-hosts", "warn", `names hosts it does not declare: ${undeclared.join(", ")}`));
   }
-  if ((observed.rawDatabase || observed.coreTableWrites.length) && !manifest.inject.includes("db") && !manifest.optional.includes("db")) out.push(at("undeclared-db", "high", "writes databases without injecting db"));
+  // A full-mode plugin holds the database through its context; it injects no SDK service.
+  if ((observed.rawDatabase || observed.coreTableWrites.length) && manifest.context !== "full" && !manifest.inject.includes("db") && !manifest.optional.includes("db")) out.push(at("undeclared-db", "high", "writes databases without injecting db"));
   return out;
 }
 

@@ -3,7 +3,7 @@ import { LANGUAGE_PACK_LIMITS, LanguageEntrySchema } from "./language.js";
 import { isRange, isVersion } from "./semver.js";
 
 /** The contract this SDK describes. A plugin's `engines.sdk` range is checked against the host's. */
-export const SDK_CONTRACT = "0.2.12";
+export const SDK_CONTRACT = "0.2.13";
 
 export const PLUGIN_ID = /^[a-z0-9][a-z0-9-]{0,38}\/[a-z0-9][a-z0-9-]{0,63}$/;
 export const NAMESPACE = /^[a-z][a-z0-9_]{1,31}$/;
@@ -28,7 +28,7 @@ export const PermissionsSchema = z
     /** SDK 0.2.11: opens working windows of its own (a surface of kind "window"), which take keys like any app window. */
     window: z.boolean().default(false),
     /** Why the plugin needs a wide permission, in a sentence a person installing it can judge. Official plugins must say. */
-    why: z.object({ network: z.string().min(1), fs: z.string().min(1), exec: z.string().min(1), window: z.string().min(1) }).partial().optional()
+    why: z.object({ network: z.string().min(1), fs: z.string().min(1), exec: z.string().min(1), window: z.string().min(1), full: z.string().min(1) }).partial().optional()
   })
   .default({ network: [], fs: "none", exec: false, window: false });
 
@@ -50,6 +50,24 @@ export const ContributesSchema = z
   })
   .partial();
 
+/**
+ * One row a full-mode plugin lays over Tomrade's composition, merged by id like a
+ * `tomrade.patch.yml` row: an app row's id switches it off, replaces its plugin or
+ * changes its config; a new id (carrying the namespace) adds a row. A relative
+ * `name` is a file inside the package.
+ */
+export const RowSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1).optional(),
+    title: z.string().min(1).optional(),
+    config: z.unknown().optional(),
+    disabled: z.boolean().optional()
+  })
+  .refine((row) => row.name !== undefined || row.config !== undefined || row.disabled !== undefined, "a row changes something: name, config or disabled");
+
+export type ManifestRow = z.output<typeof RowSchema>;
+
 export const ManifestSchema = z.object({
   id: z.string().regex(PLUGIN_ID, "publisher/name, lowercase letters, digits and dashes"),
   namespace: z.string().regex(NAMESPACE, "lowercase letters, digits and underscores, 2–32 long, starting with a letter").optional(),
@@ -61,7 +79,18 @@ export const ManifestSchema = z.object({
   repository: z.url().optional(),
   homepage: z.url().optional(),
   author: z.object({ name: z.string().min(1), url: z.url().optional() }).optional(),
-  engines: z.object({ sdk: z.string().refine(isRange, "a version range such as ^0.2.0") }),
+  engines: z.object({
+    sdk: z.string().refine(isRange, "a version range such as ^0.2.0"),
+    /** SDK 0.2.13: the Tomrade versions a full-mode plugin works with; it reaches internals the SDK range does not cover. */
+    tomrade: z.string().refine(isRange, "a version range such as >=0.13.0 <0.14.0").optional()
+  }),
+  /**
+   * SDK 0.2.13: what `main` receives. `"sdk"` is a `definePlugin` plugin behind the async facade;
+   * `"full"` is a plain cordis plugin given Tomrade's whole Context, as the app's own modules are.
+   */
+  context: z.enum(["sdk", "full"]).default("sdk"),
+  /** SDK 0.2.13, full mode only: rows laid over Tomrade's own, as `tomrade.patch.yml` rows are. */
+  rows: z.array(RowSchema).default([]),
   /** The built code; `null` for a plugin that is data only, such as a language pack. */
   main: z.string().nullable().default("dist/index.js"),
   icon: z.string().optional(),
@@ -89,6 +118,14 @@ export function parseManifest(raw: unknown): Manifest {
   if (!NAMESPACE.test(ns)) throw new Error(`${manifest.id}: the name part does not make a valid namespace ("${ns}"); set "namespace" in ${MANIFEST_FILE}`);
   if (RESERVED_NAMESPACES.has(ns) && publisherOf(manifest.id) !== OFFICIAL_PUBLISHER) throw new Error(`${manifest.id}: namespace "${ns}" is reserved`);
   if (manifest.main === null && !manifest.languages.length) throw new Error(`${manifest.id}: "main" is null, so the plugin has no code; it must add a language under "languages"`);
+  if (manifest.context === "full") {
+    if (manifest.main === null) throw new Error(`${manifest.id}: a full-mode plugin needs "main", the cordis plugin it runs`);
+    if (!manifest.engines.tomrade) throw new Error(`${manifest.id}: a full-mode plugin names the Tomrade versions it works with in "engines.tomrade"`);
+    if (manifest.languages.length) throw new Error(`${manifest.id}: a full-mode plugin adds its languages from its own code (ctx.settings.addLanguage), not under "languages"`);
+  } else if (manifest.rows.length) throw new Error(`${manifest.id}: "rows" change Tomrade's own composition, which takes "context": "full"`);
+  const ids = manifest.rows.map((r) => r.id);
+  const repeated = ids.find((id, i) => ids.indexOf(id) !== i);
+  if (repeated) throw new Error(`${manifest.id}: the row "${repeated}" is listed twice`);
   const tags = manifest.languages.map((l) => l.tag);
   const twice = tags.find((t, i) => tags.indexOf(t) !== i);
   if (twice) throw new Error(`${manifest.id}: the language "${twice}" is listed twice`);
@@ -111,17 +148,19 @@ export type RiskLevel = "low" | "elevated" | "high";
 
 export interface Risk {
   level: RiskLevel;
-  /** Stable keys the UI words: `exec`, `fs-any`, `network-any`, `network`, `fs-project`, `db`, `window`. */
+  /** Stable keys the UI words: `full`, `rows`, `exec`, `fs-any`, `network-any`, `network`, `fs-project`, `db`, `window`. */
   reasons: string[];
 }
 
 /**
- * High risk is labelled, not refused: running programs, reading anywhere on
- * disk, or talking to any host. Elevated is what a person should still see.
+ * High risk is labelled, not refused: running with Tomrade's whole context or
+ * changing its own rows, running programs, reading anywhere on disk, or talking
+ * to any host. Elevated is what a person should still see.
  */
-export function riskOf(manifest: Pick<Manifest, "permissions" | "inject" | "optional">): Risk {
+export function riskOf(manifest: Pick<Manifest, "permissions" | "inject" | "optional"> & Partial<Pick<Manifest, "context" | "rows">>): Risk {
   const p = manifest.permissions;
-  const high = [p.exec && "exec", p.fs === "any" && "fs-any", p.network.includes("*") && "network-any"].filter(Boolean) as string[];
+  const full = manifest.context === "full";
+  const high = [full && "full", full && manifest.rows?.length && "rows", p.exec && "exec", p.fs === "any" && "fs-any", p.network.includes("*") && "network-any"].filter(Boolean) as string[];
   const elevated = [
     p.network.length && !p.network.includes("*") && "network",
     p.fs === "project" && "fs-project",
