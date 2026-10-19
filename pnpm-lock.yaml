@@ -1161,6 +1161,9 @@ importers:
       '@tomradex/fields':
         specifier: workspace:*
         version: link:../fields
+      '@tomradex/herdr':
+        specifier: workspace:*
+        version: link:../herdr
       '@tomradex/im':
         specifier: workspace:*
         version: link:../im
@@ -1340,6 +1343,9 @@ importers:
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
+      '@tomradex/ipc':
+        specifier: workspace:*
+        version: link:../ipc
       cordis:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8

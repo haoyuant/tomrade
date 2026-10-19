@@ -101,6 +101,7 @@ returns is disposed when the service goes.
 | `oplog` | `recent`, `history` |
 | `im` | `register(adapter)` — an IM transport: `capabilities`, `open(connectionId, io)` returning a session with `deliver` (and optionally `download`). SDK 0.2.5 adds optional capabilities (`threads`, `reactions`, `typing`, `stream`, `select`, `multiSelect`, `textInput`, `cards`, `cardUpdate`, `nativeCommands`, `ephemeral`, `markdown` dialect, `rateLimit`), session methods `indicate`, `react`, `stream.start/append/stop`, `commands`, and `toImDialect` / `splitImText`; also `setup` (credential fields, console steps, permissions, manifest) whose values arrive sealed-at-rest as `io.credentials`, a session `identity`, the `ambient` group activation, a message's `replyTo`, and `retract` / `edit` inbound events. An adapter that declares none of them keeps the 0.2.2 behaviour |
 | `webSearch` | `register({ id, title, unavailable(), search(request, signal), read?(request, signal), settings? })` — a provider answering the agent's `web_search` / `web_fetch`, exactly as the app's own do; see [Web search](#web-search). SDK 0.2.9 |
+| `terminals` | `state()` — whether herdr can hand over a live terminal, and the fix when it cannot — and `open(paneId, { mode, cols, rows })`: a pane's terminal as frames in and `input` / `resize` / `scroll` / `mouse` out; see [Terminals](#terminals). SDK 0.2.10 |
 | `on(event, fn)` | `write` (after commit: entity, op, id, by, via, runId), `tool.result`, `project.opened`, `project.closed`, `settings.changed` |
 | `effect`, `interval` | cleanup and timers that end with the plugin |
 | `id`, `namespace`, `dataDir`, `logger` | who it is, its prefix, a directory only it writes, its log |
@@ -1873,6 +1874,26 @@ host refuses anything that is not an existing audio file, so the plugin never
 reads it and needs no file permission. The desktop shell plays through the
 platform's player (`afplay`, PowerShell's MediaPlayer, `paplay`). Extensions
 reach it as `alerts` in `inject` or `optional`.
+
+## Terminals
+
+`@tomradex/herdr` (`ctx.herdr`) can hand over a live terminal of a herdr pane:
+`terminal(paneId, { mode, cols, rows })` runs `herdr terminal session control`
+(or `observe`) for it and returns a stream. `control` takes the pane's input
+and size from any other owner; `observe` watches beside others and drops
+input. Frames are ANSI bytes that paint the viewport — the whole of it when
+`full`, else only the cells that changed — so scrolling back is asked for with
+`scroll`, never kept by the renderer. Closing a controller releases the pane;
+it keeps running in herdr. `bridge()` says whether this works here and, when
+not, what fixes it: herdr missing, older than 0.9.2, its server stopped, or an
+upgraded CLI beside a server still running the old build (`stale`). Native
+Windows is `unsupported`. The app's windows reach it over IPC (`herdr.bridge`,
+`herdr.terminalOpen` …, frames as the `herdr.terminalFrame` broadcast).
+
+Extensions reach it as `terminals` in `inject` or `optional`
+(`ctx.terminals.state()` / `ctx.terminals.open(…)`, SDK 0.2.10): a plugin
+never connects to herdr's socket or starts its CLI itself, and a terminal it
+leaves open is closed when it unloads. The `plugin_test` sandbox has no herdr.
 
 ## What is deliberately not here
 

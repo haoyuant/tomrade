@@ -51,6 +51,18 @@ function recordingAlerts() {
   return { Alerts, played, notices };
 }
 
+/** The sandbox's herdr: none is installed, so a plugin's terminals answer as on a machine without it. */
+class SandboxHerdr extends Service {
+  static provide = "herdr";
+  constructor(ctx: Context) {
+    super(ctx, "herdr");
+  }
+  bridge = async () => ({ state: "notInstalled" as const });
+  terminal = async (paneId: string) => {
+    throw new Error(`herdr is not installed in the sandbox: no terminal for ${paneId}`);
+  };
+}
+
 /** The sandbox's windows: none opens; each one is remembered with the last state it was given, and the scenario can speak for its document. */
 function recordingSurfaces() {
   const opened: { spec: DesktopSurfaceSpec; state: unknown; closed: boolean }[] = [];
@@ -119,7 +131,8 @@ export async function testPlugin(input: HostTestInput): Promise<HostTestResult> 
   const surfaces = wants.includes("surfaces") ? recordingSurfaces() : null;
   // The real web search module: a provider plugin answers web_search in the sandbox as it would in the app.
   const webSearch = wants.includes("webSearch");
-  const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(input.tmp, "settings.json") }], Contributions, ...(alerts ? [alerts.Alerts] : []), ...(surfaces ? [surfaces.Surfaces] : []), ...(webSearch ? [WebSearch] : []), ...(im ? [Agent, Im] : [])] });
+  const terminals = wants.includes("terminals");
+  const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(input.tmp, "settings.json") }], Contributions, ...(alerts ? [alerts.Alerts] : []), ...(surfaces ? [surfaces.Surfaces] : []), ...(webSearch ? [WebSearch] : []), ...(terminals ? [SandboxHerdr] : []), ...(im ? [Agent, Im] : [])] });
   try {
   w.ctx.logger.exporter({ export: (m: { type: string; args: unknown[] }) => void (m.type === "error" || m.type === "warn" ? logs.push(`${m.type}: ${String(m.args[0])}`) : undefined) } as never);
   const samples = [

@@ -4,11 +4,14 @@ import os from "node:os";
 import path from "node:path";
 import { Context, Service } from "cordis";
 import type {} from "@tomradex/doctor";
-import type { Check } from "@tomradex/doctor";
+import type {} from "@tomradex/ipc";
+import type { Check, CheckResult } from "@tomradex/doctor";
 import { HerdrError, herdrCall, herdrSocketPath, herdrStream, type HerdrEvent } from "./client.js";
+import { openTerminal, type TerminalFrame, type TerminalMode, type TerminalMouse, type TerminalScroll, type TerminalStream } from "./terminal.js";
 import { HERDR_WORDS } from "./words.js";
 
 export { HerdrError, herdrCall, herdrSocketPath, herdrStream, type HerdrEvent } from "./client.js";
+export * from "./terminal.js";
 
 /** The herdr server answering on this machine's socket. */
 export interface HerdrServer {
@@ -32,19 +35,73 @@ declare module "cordis" {
   }
 }
 
+declare module "@tomradex/ipc" {
+  interface Channels {
+    "herdr.bridge": () => HerdrBridge;
+    /** A live terminal of a pane for this window; its frames come as `herdr.terminalFrame` under the returned id. */
+    "herdr.terminalOpen": (paneId: string, opts: { mode?: TerminalMode; cols: number; rows: number }) => string;
+    "herdr.terminalInput": (id: string, data: string | Uint8Array) => void;
+    "herdr.terminalResize": (id: string, cols: number, rows: number) => void;
+    "herdr.terminalScroll": (id: string, scroll: TerminalScroll) => void;
+    "herdr.terminalMouse": (id: string, mouse: TerminalMouse) => void;
+    "herdr.terminalClose": (id: string) => void;
+  }
+  interface Broadcasts {
+    "herdr.terminalFrame": (id: string, frame: TerminalFrame) => void;
+    "herdr.terminalClosed": (id: string, reason: string | null) => void;
+  }
+}
+
 /** Where to get herdr; shown wherever it is missing. */
 export const HERDR_INSTALL = "brew install herdr";
 
-/** herdr's own install guide, for a machine Homebrew is not on. */
+/** herdr's own installer, for macOS and Linux without Homebrew: it puts herdr in ~/.local/bin. */
+export const HERDR_SCRIPT_INSTALL = "curl -fsSL https://herdr.dev/install.sh | sh";
+
+/** herdr's own install guide, for a machine neither installer suits. */
 export const HERDR_GUIDE = "https://herdr.dev/docs/install/";
 
-/** How herdr installs on a machine: Homebrew's formula where brew is, otherwise only the guide. */
+/** How herdr installs on a machine: Homebrew's formula where brew is, herdr's installer on other Macs and Linux, otherwise only the guide. */
 export interface HerdrInstall {
   command: string | null;
   guide: string;
 }
 
-export const herdrInstall = (found: { brew: boolean }): HerdrInstall => ({ command: found.brew ? HERDR_INSTALL : null, guide: HERDR_GUIDE });
+export const herdrInstall = (found: { brew: boolean; platform?: NodeJS.Platform }): HerdrInstall => {
+  const platform = found.platform ?? process.platform;
+  const command = found.brew ? HERDR_INSTALL : platform === "darwin" || platform === "linux" ? HERDR_SCRIPT_INSTALL : null;
+  return { command, guide: HERDR_GUIDE };
+};
+
+/** The oldest herdr whose terminal sessions take everything a window sends them (mouse events came in 0.9.2). */
+export const BRIDGE_MIN_VERSION = "0.9.2";
+
+/** Whether herdr can hand Tomrade a live terminal, and what to do when it cannot. */
+export type HerdrBridge =
+  | { state: "ready"; version: string }
+  /** herdr's direct attach does not run on native Windows. */
+  | { state: "unsupported" }
+  | { state: "notInstalled" }
+  | { state: "notRunning"; version: string }
+  | { state: "tooOld"; version: string; need: string; fix: string }
+  /** The CLI was upgraded but the server still runs the old build: they no longer speak the same private protocol. */
+  | { state: "stale"; version: string; server: string; fix: string };
+
+/** Compares dotted versions by their numbers; a suffix such as `-preview` is ignored. */
+export function compareVersions(a: string, b: string): number {
+  const parts = (v: string) => v.replace(/^v/, "").split(/[-+]/)[0]!.split(".").map((n) => Number(n) || 0);
+  const [x, y] = [parts(a), parts(b)];
+  for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) < (y[i] ?? 0) ? -1 : 1;
+  return 0;
+}
+
+/** Where Tomrade keeps a project's herdr workspace: its sessions open there, one tab each. */
+export interface HerdrWorkspaceRef {
+  /** What the workspace is remembered by — the project's id. */
+  key: string;
+  /** What herdr shows it as — the project's name. */
+  label: string;
+}
 
 /** How long to wait before subscribing again after the stream ends; doubled each time it fails, up to the maximum. */
 export const RECONNECT_MS = 2_000;
@@ -62,6 +119,13 @@ export interface HerdrConfig {
   /** A machine-local file remembering that Tomrade has started herdr's server before, so the person is told only the first time. */
   statePath?: string;
   startTimeoutMs?: number;
+}
+
+/** What Tomrade remembers about herdr on this machine. */
+interface HerdrState {
+  serverStartedAt?: number;
+  /** Each project's workspace, by project id. */
+  workspaces?: Record<string, string>;
 }
 
 /** A server answering on the socket, and whether Tomrade just started it. */
@@ -102,6 +166,10 @@ export class Herdr extends Service {
   /** The server start under way, shared by every launch that wants one meanwhile. */
   private starting: Promise<HerdrUp | null> | null = null;
   private toldStarted = false;
+  /** The terminals open now, closed with the service. */
+  private readonly terminals = new Set<TerminalStream>();
+  /** A project workspace being made, shared by launches into it meanwhile. */
+  private readonly making = new Map<string, Promise<void>>();
 
   constructor(ctx: Context, config: HerdrConfig = {}) {
     super(ctx, "herdr");
@@ -114,10 +182,12 @@ export class Herdr extends Service {
 
   [Service.init]() {
     this.ctx.inject(["doctor"], (ctx) => ctx.doctor.check(this.check(ctx)));
+    this.ctx.inject(["ipc"], (ctx) => this.serveTerminals(ctx));
     this.ctx.effect(() => () => {
       this.disposed = true;
       this.stopGlobal();
       for (const paneId of [...this.watched.keys()]) this.unwatch(paneId);
+      for (const terminal of [...this.terminals]) terminal.close();
     });
   }
 
@@ -187,10 +257,9 @@ export class Herdr extends Service {
     if (running) return { server: running, started: false };
     let failed = false;
     try {
-      // Panes inherit the server's environment; Electron's own switches are not theirs.
-      const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("ELECTRON_")));
       // Detached and unreferenced: herdr's panes outlive Tomrade by design, so quitting never stops it.
-      const child = spawn(bin, ["server"], { cwd: os.homedir(), env: this.socket ? { ...env, HERDR_SOCKET_PATH: this.socket } : env, detached: true, stdio: "ignore" });
+      // Panes inherit the server's environment; Electron's own switches are not theirs.
+      const child = spawn(bin, ["server"], { cwd: os.homedir(), env: this.cliEnv(), detached: true, stdio: "ignore" });
       child.once("error", () => (failed = true));
       child.once("exit", (code) => (failed ||= code !== 0));
       child.unref();
@@ -212,18 +281,80 @@ export class Herdr extends Service {
     if (this.toldStarted) return false;
     this.toldStarted = true;
     if (!this.statePath) return true;
+    if (this.readState().serverStartedAt) return false;
+    this.writeState({ serverStartedAt: Date.now() });
+    return true;
+  }
+
+  private memory: HerdrState = {};
+
+  private readState(): HerdrState {
+    if (!this.statePath) return this.memory;
     try {
-      if ((JSON.parse(fs.readFileSync(this.statePath, "utf8")) as { serverStartedAt?: number }).serverStartedAt) return false;
+      return JSON.parse(fs.readFileSync(this.statePath, "utf8")) as HerdrState;
     } catch {
-      // never written
+      return {};
+    }
+  }
+
+  private writeState(patch: HerdrState): void {
+    const next = { ...this.readState(), ...patch };
+    if (!this.statePath) {
+      this.memory = next;
+      return;
     }
     try {
       fs.mkdirSync(path.dirname(this.statePath), { recursive: true });
-      fs.writeFileSync(this.statePath, JSON.stringify({ serverStartedAt: Date.now() }));
+      fs.writeFileSync(this.statePath, JSON.stringify(next));
     } catch (err) {
-      this.ctx.logger.warn(`could not remember that herdr's server was started: ${err instanceof Error ? err.message : String(err)}`);
+      this.ctx.logger.warn(`could not write herdr's state for Tomrade: ${err instanceof Error ? err.message : String(err)}`);
     }
-    return true;
+  }
+
+  /** Whether a live terminal can be had, and the fix when it cannot; never starts anything. */
+  async bridge(): Promise<HerdrBridge> {
+    if (process.platform === "win32") return { state: "unsupported" };
+    const version = await this.installed();
+    if (!version) return { state: "notInstalled" };
+    if (compareVersions(version, BRIDGE_MIN_VERSION) < 0) return { state: "tooOld", version, need: BRIDGE_MIN_VERSION, fix: this.upgradeCommand() };
+    const server = await this.server();
+    if (!server) return { state: "notRunning", version };
+    // The CLI that bridges talks the server's private protocol, which only the same build is sure to speak.
+    if (server.version && server.version !== version) return { state: "stale", version, server: server.version, fix: "herdr server stop" };
+    return { state: "ready", version };
+  }
+
+  /** How this herdr is upgraded: through Homebrew when that is where it came from, else herdr's own updater. */
+  upgradeCommand(): string {
+    const bin = this.binary();
+    let real = bin ?? "";
+    try {
+      if (bin) real = fs.realpathSync(bin);
+    } catch {
+      // a broken link reads as not Homebrew's
+    }
+    return /\/(Cellar|homebrew|linuxbrew)\//.test(real) ? "brew upgrade herdr" : "herdr update";
+  }
+
+  /** The environment the CLI runs in: the socket Tomrade uses, and none of Electron's own switches. */
+  private cliEnv(): NodeJS.ProcessEnv {
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("ELECTRON_")));
+    return this.socket ? { ...env, HERDR_SOCKET_PATH: this.socket } : env;
+  }
+
+  /**
+   * A live terminal of a pane: `control` takes its input and size from any other owner, `observe`
+   * watches beside others. Refused with a HerdrError named for the bridge's state when it is not ready.
+   */
+  async terminal(paneId: string, opts: { mode?: TerminalMode; cols: number; rows: number }): Promise<TerminalStream> {
+    const bridge = await this.bridge();
+    const bin = this.binary();
+    if (bridge.state !== "ready" || !bin) throw new HerdrError(bridge.state, `herdr cannot stream ${paneId}: ${bridge.state}`);
+    if (this.disposed) throw new HerdrError("closed", "herdr is gone");
+    const stream = openTerminal({ bin, paneId, mode: opts.mode ?? "control", cols: opts.cols, rows: opts.rows, env: this.cliEnv() });
+    this.terminals.add(stream);
+    stream.onClose(() => this.terminals.delete(stream));
+    return stream;
   }
 
   /** One request to the server; a refusal is a `HerdrError` with herdr's own code. */
@@ -261,23 +392,75 @@ export class Herdr extends Service {
   }
 
   /**
-   * A workspace of herdr's own for a command: made in the folder, labelled, with the
-   * command typed into its shell, on a server started for it when none runs (see
-   * `ensureServer`). The workspace is not focused — the person is somewhere else — and
-   * the pane is theirs to find. `startedServer` is "first" the first time ever Tomrade
-   * started the server here. Null when herdr does not answer.
+   * A pane for a command, with the command typed into its shell, on a server started for it when
+   * none runs (see `ensureServer`). With `workspace`, the pane is a new tab — labelled `label` — in
+   * that project's workspace, made the first time and again when herdr no longer has it; without,
+   * a workspace of its own labelled `label`. Nothing is focused — the person is somewhere else — and
+   * the pane is theirs to find. `startedServer` is "first" the first time ever Tomrade started the
+   * server here. Null when herdr does not answer.
    */
-  async launch(input: { cwd: string; label?: string; command: string }): Promise<{ paneId: string; workspaceId: string; startedServer?: "first" | "again" } | null> {
+  async launch(input: { cwd: string; label?: string; command: string; workspace?: HerdrWorkspaceRef }): Promise<{ paneId: string; workspaceId: string; startedServer?: "first" | "again" } | null> {
     const up = await this.ensureServer();
     if (!up) return null;
     try {
-      const created = await this.call<{ workspace: { workspace_id: string }; root_pane: { pane_id: string } }>("workspace.create", { cwd: input.cwd, ...(input.label ? { label: input.label } : {}), focus: false });
-      const paneId = created.root_pane.pane_id;
+      const pane = input.workspace ? await this.tabIn(input.workspace, input.cwd, input.label) : await this.ownWorkspace(input.cwd, input.label);
       // Typed, with Enter: a newline in the text is not a keypress to herdr.
-      await this.call("pane.send_input", { pane_id: paneId, text: input.command, keys: ["enter"] });
-      return { paneId, workspaceId: created.workspace.workspace_id, ...(up.started ? { startedServer: this.firstStart() ? ("first" as const) : ("again" as const) } : {}) };
+      await this.call("pane.send_input", { pane_id: pane.paneId, text: input.command, keys: ["enter"] });
+      return { ...pane, ...(up.started ? { startedServer: this.firstStart() ? ("first" as const) : ("again" as const) } : {}) };
     } catch (err) {
       if (!(err instanceof HerdrError)) throw err;
+      return null;
+    }
+  }
+
+  private async ownWorkspace(cwd: string, label: string | undefined): Promise<{ paneId: string; workspaceId: string }> {
+    const created = await this.call<{ workspace: { workspace_id: string }; root_pane: { pane_id: string } }>("workspace.create", { cwd, ...(label ? { label } : {}), focus: false });
+    return { paneId: created.root_pane.pane_id, workspaceId: created.workspace.workspace_id };
+  }
+
+  /** A new tab in the project's workspace; the workspace's own first tab when it was just made. */
+  private async tabIn(ref: HerdrWorkspaceRef, cwd: string, label: string | undefined): Promise<{ paneId: string; workspaceId: string }> {
+    const known = await this.projectWorkspace(ref);
+    if (known) {
+      try {
+        const created = await this.call<{ root_pane: { pane_id: string } }>("tab.create", { workspace_id: known, cwd, ...(label ? { label } : {}), focus: false });
+        return { paneId: created.root_pane.pane_id, workspaceId: known };
+      } catch (err) {
+        if (!(err instanceof HerdrError) || err.code !== "workspace_not_found") throw err;
+      }
+    }
+    // Launches into the same project at once share one new workspace.
+    const pending = this.making.get(ref.key);
+    if (pending) {
+      await pending;
+      return this.tabIn(ref, cwd, label);
+    }
+    // Remembered before anyone waiting hears it is made.
+    const making = this.call<{ workspace: { workspace_id: string }; tab?: { tab_id?: string }; root_pane: { pane_id: string } }>("workspace.create", { cwd, label: ref.label, focus: false }).then((created) => {
+      this.writeState({ workspaces: { ...this.readState().workspaces, [ref.key]: created.workspace.workspace_id } });
+      return created;
+    });
+    this.making.set(ref.key, making.then(() => undefined, () => undefined));
+    try {
+      const created = await making;
+      // The workspace's first tab is this session's: named for it, like the tabs after it.
+      if (label && created.tab?.tab_id) await this.ok("tab.rename", { tab_id: created.tab.tab_id, label });
+      return { paneId: created.root_pane.pane_id, workspaceId: created.workspace.workspace_id };
+    } finally {
+      this.making.delete(ref.key);
+    }
+  }
+
+  /** The project's workspace herdr still has under the project's name; null when it has to be made. */
+  private async projectWorkspace(ref: HerdrWorkspaceRef): Promise<string | null> {
+    const id = this.readState().workspaces?.[ref.key];
+    if (!id) return null;
+    try {
+      const { workspace } = await this.call<{ workspace: { label?: string } }>("workspace.get", { workspace_id: id });
+      // herdr gives a closed workspace's id to a later one: only ours, by its name, is taken.
+      return workspace.label === ref.label ? id : null;
+    } catch (err) {
+      if (!(err instanceof HerdrError) || err.code !== "workspace_not_found") throw err;
       return null;
     }
   }
@@ -313,9 +496,9 @@ export class Herdr extends Service {
     return this.ok("pane.report_agent_session", { pane_id: paneId, source: "tomrade", agent, agent_session_id: sessionId, resume_argv: resumeArgv });
   }
 
-  /** What herdr's sidebar shows on a workspace, as `name: value` tokens; null clears one. */
-  async reportMetadata(workspaceId: string, tokens: Record<string, string | null>): Promise<boolean> {
-    return this.ok("workspace.report_metadata", { workspace_id: workspaceId, source: "tomrade", tokens });
+  /** What herdr's sidebar shows on a pane, as `name: value` tokens; null clears one. Per pane, since a project's sessions share a workspace. */
+  async reportMetadata(paneId: string, tokens: Record<string, string | null>): Promise<boolean> {
+    return this.ok("pane.report_metadata", { pane_id: paneId, source: "tomrade", tokens });
   }
 
   /** A toast in herdr's own window, for the person at the terminal. */
@@ -471,17 +654,47 @@ export class Herdr extends Service {
     global.stream = stream;
   }
 
+  /** Terminals for the app's windows, by an id of their own; they close with the window channel. */
+  private serveTerminals(ctx: Context): void {
+    const open = new Map<string, TerminalStream>();
+    let next = 0;
+    const of = (id: string) => open.get(id);
+    ctx.ipc.handle("herdr.bridge", () => this.bridge());
+    ctx.ipc.handle("herdr.terminalOpen", async (paneId, opts) => {
+      const stream = await this.terminal(paneId, opts);
+      const id = `t${++next}`;
+      open.set(id, stream);
+      stream.onFrame((frame) => ctx.ipc.send("herdr.terminalFrame", id, frame));
+      stream.onClose((reason) => {
+        open.delete(id);
+        ctx.ipc.send("herdr.terminalClosed", id, reason);
+      });
+      return id;
+    });
+    ctx.ipc.handle("herdr.terminalInput", (id, data) => of(id)?.input(data));
+    ctx.ipc.handle("herdr.terminalResize", (id, cols, rows) => of(id)?.resize(cols, rows));
+    ctx.ipc.handle("herdr.terminalScroll", (id, scroll) => of(id)?.scroll(scroll));
+    ctx.ipc.handle("herdr.terminalMouse", (id, mouse) => of(id)?.mouse(mouse));
+    ctx.ipc.handle("herdr.terminalClose", (id) => of(id)?.close());
+    ctx.effect(() => () => {
+      for (const stream of [...open.values()]) stream.close();
+    });
+  }
+
   /** The troubleshooter's line about herdr: there or not, never a problem in itself. */
   private check(ctx: Context): Check {
     return {
       id: "herdr",
       title: () => "herdr",
-      run: async () => {
+      run: async (): Promise<CheckResult> => {
         const w = HERDR_WORDS(ctx.doctor.locale());
         const version = await this.installed();
         if (!version) return { state: "skip", line: w("notInstalled", { install: HERDR_INSTALL }) };
+        // Only a live terminal needs these; everything else herdr does for Tomrade still works.
+        if (compareVersions(version, BRIDGE_MIN_VERSION) < 0) return { state: "warn", line: w("tooOld", { version, need: BRIDGE_MIN_VERSION, fix: this.upgradeCommand() }), facts: { herdr: version } };
         const server = await this.server();
         if (!server) return { state: "ok", line: w("installedNotRunning", { version }), facts: { herdr: version } };
+        if (server.version && server.version !== version) return { state: "warn", line: w("stale", { version, server: server.version, fix: "herdr server stop" }), facts: { herdr: version, herdrServer: server.version } };
         return { state: "ok", line: w("running", { version: server.version, socket: server.socket }), facts: { herdr: server.version } };
       }
     };

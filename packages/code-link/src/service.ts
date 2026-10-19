@@ -2305,9 +2305,9 @@ export class CodeLink extends Service {
 
   /**
    * Every live session with a pane is followed in herdr, and herdr is kept told about it: the
-   * ticket and where it stands on the workspace, and — once the hooks have said the agent's own
+   * ticket and where it stands on the pane, and — once the hooks have said the agent's own
    * session id — how to bring the session back, connected, after a restart of herdr's own. A
-   * session that ended is let go, and its workspace cleared.
+   * session that ended is let go, and its pane cleared.
    */
   private watchPanes(ctx: Context): void {
     const wanted = new Set<string>();
@@ -2318,7 +2318,6 @@ export class CodeLink extends Service {
         if (!s.herdrPane) continue;
         const live = s.state !== "ended" && s.state !== "lost";
         const told = this.herdrTold.get(s.id) ?? {};
-        const workspaceId = s.herdrPane.split(":")[0]!;
         if (live) {
           wanted.add(s.herdrPane);
           seen.add(s.id);
@@ -2327,7 +2326,7 @@ export class CodeLink extends Service {
           const wanting = JSON.stringify(tokens);
           if (told.tokens !== wanting) {
             this.herdrTold.set(s.id, { ...told, tokens: wanting });
-            void ctx.herdr.reportMetadata(workspaceId, tokens).then((ok) => { if (!ok) this.herdrTold.set(s.id, { ...(this.herdrTold.get(s.id) ?? {}), tokens: undefined }); });
+            void ctx.herdr.reportMetadata(s.herdrPane, tokens).then((ok) => { if (!ok) this.herdrTold.set(s.id, { ...(this.herdrTold.get(s.id) ?? {}), tokens: undefined }); });
           }
           const script = path.join(this.sessionDir(s.id), RESUME_SCRIPT);
           if (s.externalId && told.resume !== s.externalId && fs.existsSync(script)) {
@@ -2337,7 +2336,7 @@ export class CodeLink extends Service {
           }
         } else if (told.tokens) {
           this.herdrTold.delete(s.id);
-          void ctx.herdr.reportMetadata(workspaceId, { ticket: null, status: null, session: null });
+          void ctx.herdr.reportMetadata(s.herdrPane, { ticket: null, status: null, session: null });
         }
       }
     }

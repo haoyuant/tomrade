@@ -155,7 +155,7 @@ it("offers the terminal on automatic first in Settings, and keeps it unset while
 });
 
 // Several Starts, each a worktree: well past the default timeout on a busy machine.
-it("runs a ticket in a herdr workspace, follows the pane's status as the session's, and continues it in the same pane", { timeout: 60_000 }, async () => {
+it("runs a ticket in a tab of its project's herdr workspace, follows the pane's status as the session's, and continues it in the same pane", { timeout: 60_000 }, async () => {
   const world = await machine(codeRepo());
   const { codeLink, ctx, project, repo, checkout, ticket } = world;
   await ctx.repos.setCheckout(repo!.remote, checkout!);
@@ -180,19 +180,20 @@ it("runs a ticket in a herdr workspace, follows the pane's status as the session
   const result = await codeLink.start(project.id, item.id, { mode: "terminal" });
   expect(result.ok).toBe(true);
   if (!result.ok) return;
-  // A workspace for the ticket, in its worktree, with the session's script typed into its pane.
+  // The project's workspace, its first tab named for the ticket, in its worktree, with the session's script typed into its pane.
   expect(result).toMatchObject({ mode: "terminal", launched: true, pane: "w1:p1" });
   expect(await codeLink.herdrStatus()).toBe("running");
-  expect(fake.of("workspace.create")).toEqual([{ cwd: result.cwd, label: item.key, focus: false }]);
+  expect(fake.of("workspace.create")).toEqual([{ cwd: result.cwd, label: project.name, focus: false }]);
+  expect(fake.of("tab.rename")).toEqual([{ tab_id: "w1:t1", label: item.key }]);
   const dir = codeLink.sessionDir(result.sessionId);
   expect(fake.of("pane.send_input")).toEqual([{ pane_id: "w1:p1", text: `bash '${path.join(dir, "run.command")}'`, keys: ["enter"] }]);
   expect(codeLink.store.session(project.id, result.sessionId)).toMatchObject({ herdrPane: "w1:p1", state: "running" });
   const row = async () => (await ctx.contributions.sectionsFor(project.id, item.id)).find((s) => s.id === "code")!.rows.find((r) => r.label === "Session")!;
   expect((await row()).value).toContain("in herdr");
   await until(() => fake.of("events.subscribe").length === 2);
-  // herdr's sidebar shows the ticket and where it stands.
-  await until(() => fake.of("workspace.report_metadata").length >= 1);
-  expect(fake.of("workspace.report_metadata").at(-1)).toEqual({ workspace_id: "w1", source: "tomrade", tokens: { ticket: item.key, status: "Doing", session: "running" } });
+  // herdr's sidebar shows the ticket and where it stands, on its pane: the workspace is the project's.
+  await until(() => fake.of("pane.report_metadata").length >= 1);
+  expect(fake.of("pane.report_metadata").at(-1)).toEqual({ pane_id: "w1:p1", source: "tomrade", tokens: { ticket: item.key, status: "Doing", session: "running" } });
 
   // herdr's reading of the pane moves the session: blocked is "needs you", done a stop with what the screen says.
   fake.setStatus("w1:p1", "claude", "working");
@@ -204,7 +205,7 @@ it("runs a ticket in a herdr workspace, follows the pane's status as the session
   // …and the person at the terminal is told there, once.
   await until(() => fake.of("notification.show").length === 1);
   expect(fake.of("notification.show")).toEqual([{ title: `${item.key} needs you`, body: "needs your approval", sound: "request" }]);
-  await until(() => fake.of("workspace.report_metadata").at(-1)?.tokens?.session === "waiting for you");
+  await until(() => fake.of("pane.report_metadata").at(-1)?.tokens?.session === "waiting for you");
   fake.setStatus("w1:p1", "claude", "working");
   await until(() => codeLink.store.session(project.id, result.sessionId)!.state === "running");
   fake.panes.get("w1:p1")!.text = "⏺ Scaffold in place.\n╭────╮\n│ > │\n╰────╯\n? for shortcuts";
@@ -248,24 +249,26 @@ it("runs a ticket in a herdr workspace, follows the pane's status as the session
   // The pane closing is the end of the session, whatever a hook said last; then Continue opens a new pane.
   fake.exit("w1:p1");
   await until(() => codeLink.store.session(project.id, result.sessionId)!.state === "ended");
-  // …and the workspace's sidebar is cleared; the session id was reported once.
-  await until(() => fake.of("workspace.report_metadata").at(-1)?.tokens?.ticket === null);
-  expect(fake.of("workspace.report_metadata").at(-1)).toEqual({ workspace_id: "w1", source: "tomrade", tokens: { ticket: null, status: null, session: null } });
+  // …and the pane's sidebar row is cleared; the session id was reported once.
+  await until(() => fake.of("pane.report_metadata").at(-1)?.tokens?.ticket === null);
+  expect(fake.of("pane.report_metadata").at(-1)).toEqual({ pane_id: "w1:p1", source: "tomrade", tokens: { ticket: null, status: null, session: null } });
   expect(fake.of("pane.report_agent_session").length).toBe(1);
   const fresh2 = await codeLink.start(project.id, item.id, { mode: "terminal" });
-  expect(fresh2).toMatchObject({ ok: true, launched: true, pane: "w2:p1" });
-  expect(fake.of("workspace.create").length).toBe(2);
+  // A new tab in the same workspace.
+  expect(fresh2).toMatchObject({ ok: true, launched: true, pane: "w1:p2" });
+  expect(fake.of("workspace.create").length).toBe(1);
+  expect(fake.of("tab.create")).toEqual([{ workspace_id: "w1", cwd: fresh2.ok ? fresh2.cwd : "", label: item.key, focus: false }]);
 
   // Jump to pane: herdr shows it and says so in its window…
   const opened = vi.spyOn(terminalApp, "open").mockResolvedValue();
   const jump = () => ctx.contributions.run("code-link.open-terminal", { projectId: project.id, itemId: item.id });
-  expect((await jump()).toast).toBe("Shown in herdr (pane w2:p1)");
-  expect(fake.of("pane.focus").at(-1)).toEqual({ pane_id: "w2:p1" });
+  expect((await jump()).toast).toBe("Shown in herdr (pane w1:p2)");
+  expect(fake.of("pane.focus").at(-1)).toEqual({ pane_id: "w1:p2" });
   expect(fake.of("notification.show").at(-1)).toEqual({ title: `${item.key} · ${item.title}`, body: "", sound: "none" });
   expect(opened).not.toHaveBeenCalled();
   // …and with no herdr client attached to see it, the system terminal opens herdr's own, attached.
   fake.attached = false;
-  expect((await jump()).toast).toBe(`Opened herdr in ${process.platform === "darwin" ? "Terminal" : "the system terminal"}, at pane w2:p1`);
+  expect((await jump()).toast).toBe(`Opened herdr in ${process.platform === "darwin" ? "Terminal" : "the system terminal"}, at pane w1:p2`);
   const attach = path.join(codeLink.sessionDir("herdr-attach"), "run.command");
   expect(opened).toHaveBeenLastCalledWith("Terminal", attach);
   expect(fs.readFileSync(attach, "utf8")).toContain(`exec '${herdrBin}'`);
@@ -299,7 +302,7 @@ it("runs a ticket in a herdr workspace, follows the pane's status as the session
   fake.close();
 });
 
-it("installs herdr with Homebrew in a terminal the person watches, and runs nothing where only the guide fits", async () => {
+it("installs herdr with Homebrew, or herdr's own installer without it, in a terminal the person watches, and runs nothing where only the guide fits", async () => {
   // No herdr on this machine: the terminal setting, left on automatic, is the system terminal.
   const { codeLink } = await machine(null);
   const opened = vi.spyOn(terminalApp, "open").mockResolvedValue();
@@ -309,9 +312,12 @@ it("installs herdr with Homebrew in a terminal the person watches, and runs noth
     const script = path.join(codeLink.sessionDir("setup"), "herdr", "run.command");
     expect(opened).toHaveBeenCalledWith("Terminal", script);
     expect(fs.readFileSync(script, "utf8")).toContain("brew install herdr");
-    plan.mockResolvedValue(herdrInstall({ brew: false }));
+    plan.mockResolvedValue(herdrInstall({ brew: false, platform: "linux" }));
+    expect(await codeLink.installHerdr()).toEqual({ launched: true, command: "curl -fsSL https://herdr.dev/install.sh | sh" });
+    expect(fs.readFileSync(script, "utf8")).toContain("curl -fsSL https://herdr.dev/install.sh | sh");
+    plan.mockResolvedValue(herdrInstall({ brew: false, platform: "win32" }));
     await expect(codeLink.installHerdr()).rejects.toThrow("install guide");
-    expect(opened).toHaveBeenCalledTimes(1);
+    expect(opened).toHaveBeenCalledTimes(2);
   } finally {
     opened.mockRestore();
   }

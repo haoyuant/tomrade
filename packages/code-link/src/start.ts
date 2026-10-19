@@ -360,7 +360,10 @@ export class Starter {
     const command = wrapped ? ctx.github.wrap(baseCommand) : baseCommand;
     const baseResume = this.resumeCommand(terminalSettings, engineId, files, where.cwd, options, bin);
     const resume = baseResume && wrapped ? ctx.github.wrap(baseResume) : baseResume;
-    const launch = await launchTerminal({ cwd: where.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir, label: item.key, ...(resume ? { resume } : {}) }, terminalSettings.terminal, ctx.get("herdr") ?? null);
+    // A project's sessions share one herdr workspace, a tab each.
+    const projectName = (ctx.db.for(projectId).prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name;
+    const workspace = projectName ? { key: projectId, label: projectName } : undefined;
+    const launch = await launchTerminal({ cwd: where.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir, label: item.key, ...(workspace ? { workspace } : {}), ...(resume ? { resume } : {}) }, terminalSettings.terminal, ctx.get("herdr") ?? null);
     const fallback = herdrFallbackNote(terminalWords.locale, launch, HERDR_INSTALL);
     if (fallback) warnings.push(fallback);
     store.patchSession(projectId, session.id, { state: "running", lastEventAt: now, ...(launch.paneId ? { herdrPane: launch.paneId } : {}) });
