@@ -100,6 +100,7 @@ returns is disposed when the service goes.
 | `alerts` | `sounds()` (the system's, its own alert sound first), `play(sound, { volume })` — `system:<name>` or an audio file's absolute path, played by the host — and `notify({ title, body })`, a silent system notification. SDK 0.2.4 |
 | `oplog` | `recent`, `history` |
 | `im` | `register(adapter)` — an IM transport: `capabilities`, `open(connectionId, io)` returning a session with `deliver` (and optionally `download`). SDK 0.2.5 adds optional capabilities (`threads`, `reactions`, `typing`, `stream`, `select`, `multiSelect`, `textInput`, `cards`, `cardUpdate`, `nativeCommands`, `ephemeral`, `markdown` dialect, `rateLimit`), session methods `indicate`, `react`, `stream.start/append/stop`, `commands`, and `toImDialect` / `splitImText`; also `setup` (credential fields, console steps, permissions, manifest) whose values arrive sealed-at-rest as `io.credentials`, a session `identity`, the `ambient` group activation, a message's `replyTo`, and `retract` / `edit` inbound events. An adapter that declares none of them keeps the 0.2.2 behaviour |
+| `webSearch` | `register({ id, title, unavailable(), search(request, signal), read?(request, signal), settings? })` — a provider answering the agent's `web_search` / `web_fetch`, exactly as the app's own do; see [Web search](#web-search). SDK 0.2.9 |
 | `on(event, fn)` | `write` (after commit: entity, op, id, by, via, runId), `tool.result`, `project.opened`, `project.closed`, `settings.changed` |
 | `effect`, `interval` | cleanup and timers that end with the plugin |
 | `id`, `namespace`, `dataDir`, `logger` | who it is, its prefix, a directory only it writes, its log |
@@ -989,11 +990,22 @@ ctx.webSearch.register({
 
 The first registered provider that is not `unavailable()` answers; when none
 is, the first one's reason is the tool's error, so the agent can tell the
-person what to set up. `web_search` exists while any provider is registered and
-`web_fetch` while one of them can `read`, so switching off the last provider
-takes the tools with it. A search is stopped after 30 s and a read after 60 s,
+person what to set up, and a conversation in Tomrade gets one card saying how
+(pointing at the provider's `settings` pane). `web_search` is always there for
+Tomrade's own agent and is served over MCP while any provider is registered;
+`web_fetch` exists while one of them can `read`. A model that searches the web
+on its own (`capabilities.nativeWebSearch`) is not offered the module's
+`web_search` at all. A search is stopped after 30 s and a read after 60 s,
 and either stops with the caller's `signal`. `ctx.webSearch.search()` and
 `read()` are the same calls for plugins that search on their own.
+
+An extension provides one the same way with `webSearch` in `inject` (SDK
+0.2.9): `ctx.webSearch.register(…)` takes the same shape, its id carries the
+namespace, `search` and `read` are called back in the plugin's scope with the
+caller's `signal`, and `unavailable()` is asked synchronously, so it must
+answer at once; one that throws reads as unavailable with the error. The
+provider goes when the plugin unloads. `tomrade-plugin test` loads the real
+module, so a scenario can `tool("web_search", …)` through its provider.
 
 `@tomradex/web-search-tavily` is the provider the app ships: its `tavily`
 section holds the API key (a password field, so machine-scoped and out of every

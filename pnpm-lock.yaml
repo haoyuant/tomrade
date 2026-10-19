@@ -1185,6 +1185,9 @@ importers:
       '@tomradex/tools':
         specifier: workspace:*
         version: link:../tools
+      '@tomradex/web-search':
+        specifier: workspace:*
+        version: link:../web-search
       '@tomradex/write':
         specifier: workspace:*
         version: link:../write
@@ -1965,6 +1968,9 @@ importers:
       '@tomradex/tools':
         specifier: workspace:*
         version: link:../tools
+      '@tomradex/web-search':
+        specifier: workspace:*
+        version: link:../web-search
       cordis:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8

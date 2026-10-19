@@ -7,6 +7,7 @@ import { z } from "zod";
 import { Contributions } from "@tomradex/contributions";
 import { Settings } from "@tomradex/settings";
 import { Tools } from "@tomradex/tools";
+import { WebSearch } from "@tomradex/web-search";
 import { definePlugin, type PluginContext } from "@tomradex/plugin-sdk";
 import { fresh, sdk, settle } from "@tomradex/testkit";
 
@@ -164,6 +165,52 @@ describe("the extension host", () => {
     expect(await ctx.contributions.statusItems({ projectId: project.id })).toEqual([{ id: "demo.ok", text: "fine" }]);
     expect(Date.now() - started).toBeLessThan(4_000);
   }, 10_000);
+
+  it("lets a plugin answer the agent's web search, as the app's own providers do, until it unloads", async () => {
+    let key = "";
+    const asked: unknown[] = [];
+    const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(dir, "web-search.json") }], WebSearch] });
+    const fiber = w.ctx.plugin(
+      ext(
+        definePlugin({
+          inject: ["webSearch"],
+          async apply(p) {
+            await expect(p.webSearch.register({ id: "other", title: "x", unavailable: () => null, search: () => ({ results: [] }) })).rejects.toThrow(/must be named "demo"/);
+            await p.webSearch.register({
+              id: "demo",
+              title: "Demo search",
+              settings: "demo",
+              unavailable: () => (key ? null : "Demo search has no key — add one in Settings → Demo"),
+              search: async (request) => {
+                asked.push(request);
+                return { results: [{ title: "Found", url: "https://example.com/a", content: "An excerpt." }] };
+              },
+              read: ({ urls }) => ({ pages: urls.map((url) => ({ url, content: `# ${url}` })), failed: [] })
+            });
+          }
+        })
+      )
+    );
+    await fiber;
+    await settle();
+    expect(w.ctx.webSearch.unavailable()).toEqual({ reason: "Demo search has no key — add one in Settings → Demo", settings: "demo" });
+    key = "k";
+    expect(w.ctx.webSearch.unavailable()).toBeNull();
+    expect(await w.ctx.tools.execute("web_search", { query: "tomrade" }, { by: "human" })).toBe("1. Found\nhttps://example.com/a\nAn excerpt.");
+    expect(asked).toEqual([{ query: "tomrade", maxResults: 5, topic: "general" }]);
+    expect(await w.ctx.tools.execute("web_fetch", { urls: ["https://example.com/a"] }, { by: "human" })).toBe("# https://example.com/a\n\n# https://example.com/a");
+    await fiber.dispose();
+    await settle();
+    expect(w.ctx.webSearch.providers()).toEqual([]);
+    expect(w.ctx.tools.has("web_fetch")).toBe(false);
+  });
+
+  it("reads a provider's unavailable() that throws as unavailable, with the reason", async () => {
+    const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(dir, "web-search-throws.json") }], WebSearch] });
+    await w.ctx.plugin(ext(definePlugin({ inject: ["webSearch"], apply: (p) => void p.webSearch.register({ id: "demo", title: "Demo", unavailable: () => { throw new Error("boom"); }, search: () => ({ results: [] }) }) })));
+    await settle();
+    expect(w.ctx.webSearch.unavailable()?.reason).toBe("Demo could not say whether it is set up: boom");
+  });
 
   it("reaches an optional service only while it is there", async () => {
     const events: string[] = [];

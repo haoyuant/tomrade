@@ -19,23 +19,24 @@
   },
   "dependencies": {
     "@tomradex/agent": "workspace:*",
+    "@tomradex/alerts": "workspace:*",
     "@tomradex/boards": "workspace:*",
     "@tomradex/contributions": "workspace:*",
     "@tomradex/db": "workspace:*",
     "@tomradex/desktop-surface": "workspace:*",
     "@tomradex/domain": "workspace:*",
     "@tomradex/fields": "workspace:*",
+    "@tomradex/im": "workspace:*",
     "@tomradex/items": "workspace:*",
     "@tomradex/oplog": "workspace:*",
     "@tomradex/plugin-sdk": "workspace:*",
     "@tomradex/projects": "workspace:*",
     "@tomradex/settings": "workspace:*",
     "@tomradex/tools": "workspace:*",
+    "@tomradex/web-search": "workspace:*",
     "@tomradex/write": "workspace:*",
     "cordis": "4.0.0-rc.8",
-    "zod": "^4.4.3",
-    "@tomradex/im": "workspace:*",
-    "@tomradex/alerts": "workspace:*"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "typescript": "^6.0.0",

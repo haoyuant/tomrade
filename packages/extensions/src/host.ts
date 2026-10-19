@@ -15,7 +15,8 @@ import type {} from "@tomradex/oplog";
 import type {} from "@tomradex/projects";
 import type {} from "@tomradex/settings";
 import type {} from "@tomradex/tools";
-import type { WriteIntent } from "@tomradex/write";
+import type {} from "@tomradex/web-search";
+import { extensionScope, type WriteIntent } from "@tomradex/write";
 import {
   assertOwned,
   type AgentApi,
@@ -31,6 +32,7 @@ import {
   type Locale,
   type Localized,
   type OplogApi,
+  type WebSearchApi,
   type PluginContext,
   type ProjectsApi,
   type ServiceName,
@@ -42,7 +44,7 @@ import {
   type ViewsApi
 } from "@tomradex/plugin-sdk";
 import { wordsFor } from "@tomradex/plugin-sdk";
-import { authorFor, within, withTimeout } from "./scope.js";
+import { authorFor, scopeFor, within, withTimeout } from "./scope.js";
 
 export interface ExtensionIdentity {
   /** `publisher/name` for an extension, the row id for a built-in. */
@@ -69,7 +71,8 @@ const CORDIS: Record<ServiceName, string> = {
   im: "im",
   surfaces: "desktopSurfaces",
   alerts: "alerts",
-  oplog: "oplog"
+  oplog: "oplog",
+  webSearch: "webSearch"
 };
 
 export const cordisName = (name: ServiceName): string => CORDIS[name];
@@ -89,6 +92,7 @@ interface Services {
   surfaces: Context["desktopSurfaces"];
   alerts: Context["alerts"];
   oplog: Context["oplog"];
+  webSearch: Context["webSearch"];
 }
 
 /** A render callback has this long before its contribution is dropped for the refresh. */
@@ -149,6 +153,17 @@ export class Host {
   private back<F extends Fn>(fn: F, label: string, opts: { human?: boolean; ms?: number | null } = {}) {
     return (...args: Parameters<F>): Promise<Awaited<ReturnType<F>>> =>
       withTimeout(within(this.ns, () => fn(...args) as ReturnType<F>, opts.human ?? false), opts.ms ?? null, `${this.identity.id} ${label}`);
+  }
+
+  /** A callback the host must answer at once (the core asks it synchronously): run in the plugin's scope, a throw read as `failed`. */
+  private now<T>(fn: () => T, label: string, failed: (message: string) => T): T {
+    try {
+      return extensionScope.run(scopeFor(this.ns), fn);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`${this.identity.id} ${label}: ${message}`);
+      return failed(message);
+    }
   }
 
   /** Fire-and-forget: a listener that throws is logged, never propagated into the host's emit. */
@@ -473,6 +488,28 @@ export class Host {
         return {
           recent: (projectId, limit) => host.call(() => oplog().recent(projectId, limit)),
           history: (projectId, entity, id, limit) => host.call(() => oplog().historyFor(projectId, entity, id, limit))
+        };
+      },
+
+      get webSearch(): WebSearchApi {
+        return {
+          register: (spec) =>
+            host.call(() => {
+              host.own(spec.id, "web search provider");
+              const label = `web search provider ${spec.id}`;
+              const search = host.back(spec.search.bind(spec), `${label} search`);
+              const read = spec.read ? host.back(spec.read.bind(spec), `${label} read`) : null;
+              return host.disposerOf(
+                host.svc("webSearch").register({
+                  id: spec.id,
+                  title: spec.title,
+                  ...(spec.settings ? { settings: spec.settings } : {}),
+                  unavailable: () => host.now(() => spec.unavailable(), `${label} unavailable`, (message) => `${spec.title} could not say whether it is set up: ${message}`),
+                  search: (request, signal) => search(request, signal),
+                  ...(read ? { read: (request, signal) => read(request, signal) } : {})
+                })
+              );
+            })
         };
       },
 
