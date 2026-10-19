@@ -529,7 +529,7 @@ export const fr: PartialMessages = {
     contractFiles: "Partage de fichiers",
     contractFilesLede: "Où les fichiers d’un projet sont versionnés et d’où ils sont partagés.",
     contractWebSearch: "Recherche web",
-    contractWebSearchLede: "Qui répond aux outils web_search et web_fetch de l’assistant. Le premier configuré s’en charge ; si aucun n’est activé, les outils ne sont pas proposés.",
+    contractWebSearchLede: "Qui répond aux outils web_search et web_fetch de l’assistant pour un modèle qui ne cherche pas lui-même sur le web. Un modèle qui le fait (Claude via l’API d’Anthropic, par exemple) n’a besoin d’aucun d’eux ni de clé d’API. Le premier configuré s’en charge.",
     otherPlugins: "Tout le reste"
   },
   plugins: {

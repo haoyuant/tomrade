@@ -65,8 +65,8 @@ export interface ChecklistCard {
 export type CardAction =
   /** Runs the engine's declared install or sign-in command in a terminal. */
   | { kind: "install" | "sign-in"; engineId: string; label: string }
-  /** Opens settings: the engine's own row, or model settings without one. */
-  | { kind: "settings"; engineId?: string; label: string }
+  /** Opens settings: the engine's own row, or model settings without one; `pane` opens that pane instead. */
+  | { kind: "settings"; engineId?: string; pane?: string; label: string }
   /** Moves that thread to another ready agent and sends its last message again. */
   | { kind: "retry-with"; threadId: string; exclude?: string; label: string }
   /** Says this in the card's own thread. */
@@ -588,7 +588,8 @@ export interface CommandCheck {
 export interface EnginePick {
   key: string;
   title: string;
-  choices: { value: string; label?: string }[];
+  /** `searchesWeb`: the model searches the web on its own, so needs no web search key. */
+  choices: { value: string; label?: string; searchesWeb?: boolean }[];
   /** Choices are suggestions only — settings may hold any string (e.g. a model id the CLI knows). */
   freeText?: boolean;
 }

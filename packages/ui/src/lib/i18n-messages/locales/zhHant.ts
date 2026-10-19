@@ -529,7 +529,7 @@ export const zhHant: PartialMessages = {
     contractFiles: "檔案共享",
     contractFilesLede: "專案檔案在哪裡儲存版本、從哪裡共享。",
     contractWebSearch: "網路搜尋",
-    contractWebSearchLede: "由誰來回答助手的 web_search 與 web_fetch 工具。第一個設定好的外掛負責回答；一個都沒開啟時，這兩個工具不會提供給助手。",
+    contractWebSearchLede: "為不內建網路搜尋的模型回答助手的 web_search 與 web_fetch 工具。內建網路搜尋的模型（例如透過 Anthropic API 使用的 Claude）不需要這些外掛，也不需要 API key。第一個設定好的外掛負責回答。",
     otherPlugins: "其他外掛"
   },
   plugins: {

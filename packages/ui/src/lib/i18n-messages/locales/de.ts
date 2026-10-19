@@ -529,7 +529,7 @@ export const de: PartialMessages = {
     contractFiles: "Dateifreigabe",
     contractFilesLede: "Von wo die Dateien eines Projekts versioniert und geteilt werden.",
     contractWebSearch: "Websuche",
-    contractWebSearchLede: "Wer die Tools web_search und web_fetch des Assistenten beantwortet. Das erste eingerichtete übernimmt; ist keines eingeschaltet, werden die Tools nicht angeboten.",
+    contractWebSearchLede: "Wer die Tools web_search und web_fetch des Assistenten für ein Modell beantwortet, das nicht selbst im Web sucht. Ein Modell, das das kann (etwa Claude über die Anthropic-API), braucht keines davon und keinen API-Schlüssel. Das erste eingerichtete übernimmt.",
     otherPlugins: "Alles andere"
   },
   plugins: {

@@ -194,10 +194,18 @@ export function createLoopEngine(ctx: Context): Engine {
       return state.ok ? state : { ...state, need: "model" };
     },
     picks: () => {
-      const profiles = ctx.get("llm")?.profiles() ?? [];
+      const llm = ctx.get("llm");
+      const profiles = llm?.profiles() ?? [];
+      const searchesWeb = (id: string) => {
+        try {
+          return !!llm?.forProfile(id).capabilities.nativeWebSearch;
+        } catch {
+          return false;
+        }
+      };
       return [
         // shown even with one profile, so it's clear at a glance which model the thread uses
-        ...(profiles.length > 0 ? [{ key: "profile", title: "Model", choices: profiles.map((p) => ({ value: p.id, label: p.title })) }] : []),
+        ...(profiles.length > 0 ? [{ key: "profile", title: "Model", choices: profiles.map((p) => ({ value: p.id, label: p.title, ...(searchesWeb(p.id) ? { searchesWeb: true } : {}) })) }] : []),
         { key: "effort", title: "Effort", choices: [{ value: "minimal" }, { value: "low" }, { value: "medium" }, { value: "high" }] }
       ];
     },

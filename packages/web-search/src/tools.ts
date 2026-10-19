@@ -1,7 +1,8 @@
 import type { Context } from "cordis";
 import { z } from "zod";
-import { defineTool } from "@tomradex/tools";
+import { defineTool, type ToolInvocation } from "@tomradex/tools";
 import type { ReadResponse, SearchHit, WebSearch } from "./index.js";
+import { WEB_SEARCH_WORDS } from "./words.js";
 
 const EXCERPT_MAX = 1_200;
 /** What all pages of one web_fetch may take together; the loop cuts a result at 20k. */
@@ -44,7 +45,34 @@ export function formatPages({ pages, failed }: ReadResponse): string {
   return parts.join("\n\n---\n\n");
 }
 
-const searchTool = (service: WebSearch) =>
+/** The conversation's card about it; one id, so a thread shows it once however often the search is tried. */
+const UNAVAILABLE_CARD = "web-search-unavailable";
+
+type CardPoster = { setCard(runId: string, card: { id: string; schema: string; title: string; data: unknown }): unknown };
+
+/** Shows the person in the conversation how to get web search; false when the call is not from one. */
+function tellPerson(ctx: Context, invocation: ToolInvocation, settings: string | undefined): boolean {
+  const agent = ctx.get("agent") as CardPoster | undefined;
+  if (!invocation.run || !agent) return false;
+  const w = WEB_SEARCH_WORDS((ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
+  agent.setCard(invocation.run.id, {
+    id: UNAVAILABLE_CARD,
+    schema: "finding",
+    title: w("unavailableHeadline"),
+    data: {
+      tone: "warn",
+      headline: w("unavailableHeadline"),
+      body: w("unavailableBody"),
+      actions: [
+        { kind: "settings", label: w("switchModel") },
+        { kind: "settings", pane: settings ?? "plugins", label: w("setUpSearch") }
+      ]
+    }
+  });
+  return true;
+}
+
+const searchTool = (ctx: Context, service: WebSearch, mcp: boolean) =>
   defineTool({
     name: "web_search",
     title: "Web search",
@@ -54,7 +82,13 @@ const searchTool = (service: WebSearch) =>
       UNTRUSTED
     ].join(" "),
     input: SearchArgs,
+    ...(mcp ? {} : { mcp: false }),
     async execute(args, invocation) {
+      const missing = service.unavailable();
+      if (missing) {
+        const told = tellPerson(ctx, invocation, missing.settings);
+        throw new Error(told ? `${missing.reason}. The user has been shown how to fix this in the conversation; go on without the web and say in one line that you could not search.` : missing.reason);
+      }
       const { results } = await service.search({ ...args, maxResults: args.maxResults ?? 5, topic: args.topic ?? "general" }, invocation.signal);
       return formatResults(args.query, results);
     }
@@ -80,13 +114,20 @@ const keep = (on: boolean, registered: (() => void) | null, register: () => () =
   return null;
 };
 
-/** The tools exist while some provider does: web_fetch only while one of them can read pages. */
+/**
+ * web_search always exists for Tomrade's own agent, so it learns when search is unavailable and the
+ * person is told; outside clients get it only while a provider does. web_fetch only while one can read pages.
+ */
 export function registerTools(ctx: Context, service: WebSearch): void {
-  let search: (() => void) | null = null;
+  let search: { served: boolean; off: () => void } | null = null;
   let read: (() => void) | null = null;
   const sync = () => {
     const providers = service.providers();
-    search = keep(providers.length > 0, search, () => ctx.tools.register(searchTool(service)));
+    const served = providers.length > 0;
+    if (search?.served !== served) {
+      search?.off();
+      search = { served, off: ctx.tools.register(searchTool(ctx, service, served)) };
+    }
     read = keep(providers.some((p) => p.read), read, () => ctx.tools.register(fetchTool(service)));
   };
   sync();
