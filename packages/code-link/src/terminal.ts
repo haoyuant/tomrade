@@ -87,8 +87,10 @@ export interface LaunchInput {
   env?: Record<string, string>;
   /** Where the script is written: the session's folder. */
   dir: string;
-  /** What herdr labels the workspace: the ticket's key. */
+  /** What herdr labels the session's tab (or its own workspace): the ticket's key. */
   label?: string;
+  /** The project's herdr workspace the session opens in as a tab; without, herdr gets a workspace of its own. */
+  workspace?: { key: string; label: string };
   /** The command that resumes the agent's session later, written beside the script for herdr to run after a restart of its own. */
   resume?: string;
 }
@@ -97,9 +99,9 @@ export interface LaunchInput {
 export const RESUME_SCRIPT = "resume.command";
 export const RESUME_ID_FILE = "resume-id";
 
-/** What a terminal of "herdr" is run through: a workspace with the script going in its pane, on a server started for it when none runs. */
+/** What a terminal of "herdr" is run through: a pane with the script going in it, on a server started for it when none runs. */
 export interface HerdrTerminal {
-  launch(input: { cwd: string; label?: string; command: string }): Promise<{ paneId: string; startedServer?: "first" | "again" } | null>;
+  launch(input: { cwd: string; label?: string; command: string; workspace?: { key: string; label: string } }): Promise<{ paneId: string; startedServer?: "first" | "again" } | null>;
   installed(): Promise<string | null>;
 }
 
@@ -211,7 +213,7 @@ export async function launchTerminal(input: LaunchInput, terminal: string, herdr
   let herdrMissing: LaunchResult["herdrMissing"];
   if (terminal === "herdr") {
     // The script, not the command: the pid file and the exports come along, and the shell stays after the agent for the person to read.
-    const pane = herdr ? await herdr.launch({ cwd: input.cwd, label: input.label, command: `bash ${shellQuote(script)}` }) : null;
+    const pane = herdr ? await herdr.launch({ cwd: input.cwd, label: input.label, command: `bash ${shellQuote(script)}`, ...(input.workspace ? { workspace: input.workspace } : {}) }) : null;
     if (pane) return { script, launched: true, paneId: pane.paneId, ...(pane.startedServer ? { herdrStarted: pane.startedServer } : {}) };
     herdrMissing = (await herdr?.installed()) ? "notRunning" : "notInstalled";
     terminal = SYSTEM_TERMINAL;

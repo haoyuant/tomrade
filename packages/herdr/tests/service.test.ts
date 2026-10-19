@@ -158,14 +158,14 @@ describe("herdr service", () => {
     fake.close();
   });
 
-  it("tells herdr how to resume a pane's agent, what to show on a workspace, and what to say to the person", async () => {
+  it("tells herdr how to resume a pane's agent, what to show on the pane, and what to say to the person", async () => {
     const fake = new FakeHerdr();
     const { herdr } = await herdrOn(fake);
     const pane = fake.createPane("/work");
     expect(await herdr.reportSession(pane.pane_id, "claude", "sess-1", ["bash", "/s/resume.command"])).toBe(true);
     expect(fake.of("pane.report_agent_session")).toEqual([{ pane_id: "w1:p1", source: "tomrade", agent: "claude", agent_session_id: "sess-1", resume_argv: ["bash", "/s/resume.command"] }]);
-    expect(await herdr.reportMetadata(pane.workspace_id, { ticket: "TOM-7", status: "Doing", session: null })).toBe(true);
-    expect(fake.of("workspace.report_metadata")).toEqual([{ workspace_id: "w1", source: "tomrade", tokens: { ticket: "TOM-7", status: "Doing", session: null } }]);
+    expect(await herdr.reportMetadata(pane.pane_id, { ticket: "TOM-7", status: "Doing", session: null })).toBe(true);
+    expect(fake.of("pane.report_metadata")).toEqual([{ pane_id: "w1:p1", source: "tomrade", tokens: { ticket: "TOM-7", status: "Doing", session: null } }]);
     expect(await herdr.notify("TOM-7 needs you", "x".repeat(300))).toBe(true);
     expect(fake.of("notification.show")).toEqual([{ title: "TOM-7 needs you", body: "x".repeat(240), sound: "request" }]);
     expect(await herdr.reportSession("w9:p9", "claude", "sess-1", ["bash", "x"])).toBe(false);

@@ -36,6 +36,10 @@ export class FakeHerdr {
   private server: net.Server | null = null;
   private readonly streams = new Set<{ connection: net.Socket; subscriptions: { type: string; pane_id?: string }[] }>();
   private workspaces = 0;
+  /** The workspaces it holds, with their labels and how many panes and tabs each has made. */
+  readonly spaces = new Map<string, { label: string; panes: number; tabs: number }>();
+  /** The build the server says it runs, in its pong. */
+  version = "0.9.5";
   /** Whether a herdr client (its terminal UI) is attached: without one, a toast has nobody to show it. */
   attached = true;
   /** Answers tried before the built-in ones; undefined leaves the call to them. */
@@ -102,9 +106,25 @@ export class FakeHerdr {
   /** The panes of herdr's own making (workspace.create) are `w<n>:p1`. */
   createPane(cwd: string, label: string | null = null): FakePane {
     const n = ++this.workspaces;
+    this.spaces.set(`w${n}`, { label: label ?? String(n), panes: 1, tabs: 1 });
     const pane: FakePane = { pane_id: `w${n}:p1`, workspace_id: `w${n}`, tab_id: `w${n}:t1`, cwd, label, agent: null, agent_status: "unknown", text: "" };
     this.panes.set(pane.pane_id, pane);
     return pane;
+  }
+
+  /** A new tab in a workspace: its pane is the workspace's next, `w<n>:p<m>`. */
+  createTab(workspaceId: string, cwd: string, label: string | null = null): FakePane | null {
+    const space = this.spaces.get(workspaceId);
+    if (!space) return null;
+    const pane: FakePane = { pane_id: `${workspaceId}:p${++space.panes}`, workspace_id: workspaceId, tab_id: `${workspaceId}:t${++space.tabs}`, cwd, label, agent: null, agent_status: "unknown", text: "" };
+    this.panes.set(pane.pane_id, pane);
+    return pane;
+  }
+
+  /** The person closed a workspace, and its panes with it. */
+  closeWorkspace(workspaceId: string): void {
+    this.spaces.delete(workspaceId);
+    for (const [id, pane] of this.panes) if (pane.workspace_id === workspaceId) this.panes.delete(id);
   }
 
   private serve(connection: net.Socket): void {
@@ -143,9 +163,10 @@ export class FakeHerdr {
     const paneOf = (id: unknown) => (typeof id === "string" ? this.panes.get(id) : undefined);
     const notFound = (id: unknown): Reply => ({ error: { code: "pane_not_found", message: `pane ${String(id)} not found` } });
     const noAgent = (id: unknown): Reply => ({ error: { code: "agent_not_found", message: `agent target ${String(id)} not found` } });
+    const noSpace = (id: unknown): Reply => ({ error: { code: "workspace_not_found", message: `workspace ${String(id)} not found` } });
     switch (method) {
       case "ping":
-        return { result: { type: "pong", version: "0.9.5", protocol: 22 } };
+        return { result: { type: "pong", version: this.version, protocol: 22 } };
       case "workspace.create": {
         const pane = this.createPane(typeof params.cwd === "string" ? params.cwd : "/", typeof params.label === "string" ? params.label : null);
         const workspace = { workspace_id: pane.workspace_id, number: this.workspaces, label: pane.label ?? String(this.workspaces), focused: params.focus === true, pane_count: 1, tab_count: 1, active_tab_id: pane.tab_id, agent_status: "unknown" };
@@ -154,8 +175,24 @@ export class FakeHerdr {
       case "workspace.focus":
       case "tab.focus":
         return { result: { type: "ok" } };
+      case "workspace.get": {
+        const space = typeof params.workspace_id === "string" ? this.spaces.get(params.workspace_id) : undefined;
+        return space ? { result: { type: "workspace_info", workspace: { workspace_id: params.workspace_id, label: space.label, tab_count: space.tabs, pane_count: space.panes, focused: false, agent_status: "unknown" } } } : noSpace(params.workspace_id);
+      }
+      case "tab.create": {
+        const pane = typeof params.workspace_id === "string" ? this.createTab(params.workspace_id, typeof params.cwd === "string" ? params.cwd : "/", typeof params.label === "string" ? params.label : null) : null;
+        if (!pane) return noSpace(params.workspace_id);
+        return { result: { type: "tab_created", tab: { tab_id: pane.tab_id, workspace_id: pane.workspace_id, label: pane.label, focused: params.focus === true, pane_count: 1 }, root_pane: { ...pane, focused: false, revision: 0 } } };
+      }
+      case "tab.rename": {
+        const pane = [...this.panes.values()].find((p) => p.tab_id === params.tab_id);
+        if (!pane) return { error: { code: "tab_not_found", message: `tab ${String(params.tab_id)} not found` } };
+        pane.label = typeof params.label === "string" ? params.label : pane.label;
+        return { result: { type: "ok" } };
+      }
       case "workspace.report_metadata":
-        return typeof params.workspace_id === "string" && [...this.panes.values()].some((pane) => pane.workspace_id === params.workspace_id) ? { result: { type: "ok" } } : { error: { code: "workspace_not_found", message: `workspace ${String(params.workspace_id)} not found` } };
+        return typeof params.workspace_id === "string" && this.spaces.has(params.workspace_id) ? { result: { type: "ok" } } : noSpace(params.workspace_id);
+      case "pane.report_metadata":
       case "pane.report_agent_session":
         return paneOf(params.pane_id) ? { result: { type: "ok" } } : notFound(params.pane_id);
       case "notification.show":

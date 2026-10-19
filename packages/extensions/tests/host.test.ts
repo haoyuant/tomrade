@@ -205,6 +205,73 @@ describe("the extension host", () => {
     expect(w.ctx.tools.has("web_fetch")).toBe(false);
   });
 
+  it("hands a plugin terminals of herdr panes through the app, and closes the ones it left open when it unloads", async () => {
+    type Frame = { seq: number; width: number; height: number; full: boolean; bytes: Uint8Array };
+    const streams: { paneId: string; opts: unknown; sent: unknown[]; closed: boolean; frame(f: Frame): void }[] = [];
+    class FakeHerdr extends Service {
+      static provide = "herdr";
+      constructor(ctx: Context) {
+        super(ctx, "herdr");
+      }
+      bridge = async () => ({ state: "ready" as const, version: "0.9.5" });
+      terminal = async (paneId: string, opts: { mode?: string; cols: number; rows: number }) => {
+        const frames = new Set<(f: Frame) => void>();
+        const closes = new Set<(r: string | null) => void>();
+        const entry = { paneId, opts, sent: [] as unknown[], closed: false, frame: (f: Frame) => frames.forEach((l) => l(f)) };
+        streams.push(entry);
+        return {
+          paneId,
+          mode: opts.mode ?? "control",
+          closed: false,
+          onFrame: (l: (f: Frame) => void) => (frames.add(l), () => frames.delete(l)),
+          onClose: (l: (r: string | null) => void) => (closes.add(l), () => closes.delete(l)),
+          input: (data: unknown) => entry.sent.push(["input", data]),
+          resize: (cols: number, rows: number) => entry.sent.push(["resize", cols, rows]),
+          scroll: (s: unknown) => entry.sent.push(["scroll", s]),
+          mouse: (m: unknown) => entry.sent.push(["mouse", m]),
+          close: () => {
+            if (entry.closed) return;
+            entry.closed = true;
+            closes.forEach((l) => l(null));
+          }
+        };
+      };
+    }
+    const heard: string[] = [];
+    let state: unknown = null;
+    const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(dir, "terminals.json") }], FakeHerdr] });
+    const fiber = w.ctx.plugin(
+      ext(
+        definePlugin({
+          inject: ["terminals"],
+          async apply(p) {
+            state = await p.terminals.state();
+            const kept = await p.terminals.open("w1:p1", { cols: 100, rows: 30 });
+            kept.onFrame((f) => void heard.push(Buffer.from(f.bytes).toString()));
+            kept.input("ls\r");
+            kept.resize(120, 40);
+            const watched = await p.terminals.open("w1:p2", { mode: "observe", cols: 80, rows: 24 });
+            watched.close();
+          }
+        })
+      )
+    );
+    await fiber;
+    await settle();
+    expect(state).toEqual({ state: "ready", version: "0.9.5" });
+    expect(streams.map((s) => [s.paneId, s.opts, s.closed])).toEqual([
+      ["w1:p1", { mode: "control", cols: 100, rows: 30 }, false],
+      ["w1:p2", { mode: "observe", cols: 80, rows: 24 }, true]
+    ]);
+    expect(streams[0]!.sent).toEqual([["input", "ls\r"], ["resize", 120, 40]]);
+    streams[0]!.frame({ seq: 1, width: 100, height: 30, full: true, bytes: new Uint8Array(Buffer.from("hello")) });
+    await settle();
+    expect(heard).toEqual(["hello"]);
+    await fiber.dispose();
+    await settle();
+    expect(streams[0]!.closed).toBe(true);
+  });
+
   it("reads a provider's unavailable() that throws as unavailable, with the reason", async () => {
     const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(dir, "web-search-throws.json") }], WebSearch] });
     await w.ctx.plugin(ext(definePlugin({ inject: ["webSearch"], apply: (p) => void p.webSearch.register({ id: "demo", title: "Demo", unavailable: () => { throw new Error("boom"); }, search: () => ({ results: [] }) }) })));

@@ -34,19 +34,23 @@ export function HerdrRecommendation() {
       {missing && plan && (
         <div className="row" style={{ gap: "var(--space-2)", marginTop: "var(--space-2)" }}>
           {plan.command ? (
-            <button
-              type="button"
-              className="btn btn-secondary btn-xs"
-              data-testid="herdr-install"
-              title={plan.command}
-              disabled={busy}
-              onClick={() => {
-                setBusy(true);
-                void install().finally(() => setBusy(false));
-              }}
-            >
-              {t("codeLink.herdrInstall")}
-            </button>
+            <>
+              <button
+                type="button"
+                className="btn btn-secondary btn-xs"
+                data-testid="herdr-install"
+                title={plan.command}
+                disabled={busy}
+                onClick={() => {
+                  setBusy(true);
+                  void install().finally(() => setBusy(false));
+                }}
+              >
+                {t("codeLink.herdrInstall")}
+              </button>
+              {/* What the button runs, in full: without Homebrew it is a script fetched from herdr's site. */}
+              <code data-testid="herdr-install-command">{plan.command}</code>
+            </>
           ) : (
             <button type="button" className="link-btn" data-testid="herdr-install-guide" onClick={() => openExternal(plan.guide)}>
               {t("codeLink.herdrInstallGuide")} →

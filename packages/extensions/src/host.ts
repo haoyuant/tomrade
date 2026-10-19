@@ -15,6 +15,7 @@ import type {} from "@tomradex/oplog";
 import type {} from "@tomradex/projects";
 import type {} from "@tomradex/settings";
 import type {} from "@tomradex/tools";
+import type {} from "@tomradex/herdr";
 import type {} from "@tomradex/web-search";
 import { extensionScope, type WriteIntent } from "@tomradex/write";
 import {
@@ -32,6 +33,7 @@ import {
   type Locale,
   type Localized,
   type OplogApi,
+  type TerminalsApi,
   type WebSearchApi,
   type PluginContext,
   type ProjectsApi,
@@ -72,7 +74,8 @@ const CORDIS: Record<ServiceName, string> = {
   surfaces: "desktopSurfaces",
   alerts: "alerts",
   oplog: "oplog",
-  webSearch: "webSearch"
+  webSearch: "webSearch",
+  terminals: "herdr"
 };
 
 export const cordisName = (name: ServiceName): string => CORDIS[name];
@@ -93,6 +96,7 @@ interface Services {
   alerts: Context["alerts"];
   oplog: Context["oplog"];
   webSearch: Context["webSearch"];
+  terminals: Context["herdr"];
 }
 
 /** A render callback has this long before its contribution is dropped for the refresh. */
@@ -509,6 +513,32 @@ export class Host {
                   ...(read ? { read: (request, signal) => read(request, signal) } : {})
                 })
               );
+            })
+        };
+      },
+
+      get terminals(): TerminalsApi {
+        const herdr = () => host.svc("terminals");
+        return {
+          state: () => host.call(() => herdr().bridge()),
+          open: (paneId, opts) =>
+            host.call(async () => {
+              const stream = await herdr().terminal(String(paneId), { mode: opts.mode === "observe" ? "observe" : "control", cols: Number(opts.cols), rows: Number(opts.rows) });
+              // One the plugin leaves open goes with it.
+              const release = host.ctx.effect(() => () => stream.close(), `terminal ${stream.paneId}`);
+              stream.onClose(() => release());
+              const label = `terminal ${stream.paneId}`;
+              return {
+                paneId: stream.paneId,
+                mode: stream.mode,
+                onFrame: (listener) => host.disposerOf(stream.onFrame(host.listen(listener, `${label} frame`))),
+                onClose: (listener) => host.disposerOf(stream.onClose(host.listen(listener, `${label} close`))),
+                input: (data) => stream.input(data),
+                resize: (cols, rows) => stream.resize(cols, rows),
+                scroll: (scroll) => stream.scroll(scroll),
+                mouse: (mouse) => stream.mouse(mouse),
+                close: () => stream.close()
+              };
             })
         };
       },

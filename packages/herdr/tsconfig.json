@@ -8,6 +8,7 @@
   "include": ["src"],
   "references": [
     { "path": "../doctor" },
-    { "path": "../domain" }
+    { "path": "../domain" },
+    { "path": "../ipc" }
   ]
 }

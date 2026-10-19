@@ -29,4 +29,5 @@ export type {
 
 export * from "./im.js";
 export * from "./web-search.js";
+export * from "./terminals.js";
 export * from "./im-markdown.js";

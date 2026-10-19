@@ -11,6 +11,7 @@ import {
   type ItemsApi,
   type AlertsApi,
   type OplogApi,
+  type TerminalsApi,
   type WebSearchApi,
   type PluginContext,
   type ProjectsApi,
@@ -181,6 +182,14 @@ export function recordingContext(namespace: string, allowed: ServiceName[], rec:
     },
     get webSearch(): WebSearchApi {
       return need("webSearch", { register: (provider) => note("webSearchProviders", provider.id, "web search provider") });
+    },
+    get terminals(): TerminalsApi {
+      return need("terminals", {
+        state: async () => ({ state: "notInstalled" as const }),
+        open: async () => {
+          throw new Error("no terminals in a dry run");
+        }
+      });
     },
     on: () => noop,
     when: () => noop,

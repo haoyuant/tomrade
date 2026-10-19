@@ -21,14 +21,14 @@ describe("a terminal of herdr", () => {
     expect(TerminalSettings.parse({ terminal: "none" }).terminal).toBe("none");
   });
 
-  it("runs the script in a herdr workspace labelled for the ticket", async () => {
+  it("runs the script in herdr, as a tab named for the ticket in the project's workspace", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-herdr-terminal-"));
     const opened = vi.spyOn(terminalApp, "open").mockResolvedValue();
-    const launches: { cwd: string; label?: string; command: string }[] = [];
+    const launches: Parameters<HerdrTerminal["launch"]>[0][] = [];
     const herdr: HerdrTerminal = { launch: async (input) => { launches.push(input); return { paneId: "w2:p1" }; }, installed: async () => "0.9.5" };
-    const launched = await launchTerminal({ cwd: "/work/tom-9", command: "claude", env: { TOMRADE_MCP_TOKEN: "t" }, dir, label: "TOM-9" }, "herdr", herdr);
+    const launched = await launchTerminal({ cwd: "/work/tom-9", command: "claude", env: { TOMRADE_MCP_TOKEN: "t" }, dir, label: "TOM-9", workspace: { key: "p1", label: "Tomrade" } }, "herdr", herdr);
     expect(launched).toEqual({ script: path.join(dir, "run.command"), launched: true, paneId: "w2:p1" });
-    expect(launches).toEqual([{ cwd: "/work/tom-9", label: "TOM-9", command: `bash '${path.join(dir, "run.command")}'` }]);
+    expect(launches).toEqual([{ cwd: "/work/tom-9", label: "TOM-9", command: `bash '${path.join(dir, "run.command")}'`, workspace: { key: "p1", label: "Tomrade" } }]);
     expect(fs.readFileSync(path.join(dir, "run.command"), "utf8")).toContain("export TOMRADE_MCP_TOKEN='t'\nclaude");
     // any other terminal is untouched by herdr being there
     expect(await launchTerminal({ cwd: "/work/tom-9", command: "claude", dir }, "none", herdr)).toEqual({ script: path.join(dir, "run.command"), launched: false });

@@ -33,6 +33,7 @@
     "@tomradex/projects": "workspace:*",
     "@tomradex/settings": "workspace:*",
     "@tomradex/tools": "workspace:*",
+    "@tomradex/herdr": "workspace:*",
     "@tomradex/web-search": "workspace:*",
     "@tomradex/write": "workspace:*",
     "cordis": "4.0.0-rc.8",
