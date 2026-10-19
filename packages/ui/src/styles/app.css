@@ -1376,6 +1376,7 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 .md-body > :first-child { margin-top: 0; }
 .md-body > :last-child { margin-bottom: 0; }
 .md-body img.md-file { cursor: pointer; }
+.md-body img.md-file:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
 .md-file:not([src]) { display: inline-block; width: 12em; height: 6em; vertical-align: top; background: var(--surface-warm); border-radius: var(--radius-sm); }
 .md-file-missing {
   display: inline-block; padding: 2px 8px; border: 1px dashed var(--border); border-radius: var(--radius-sm);
@@ -1716,6 +1717,24 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
   max-height: min(var(--overlay-max-h), 760px);
 }
 .palette.modal.wide { width: min(760px, calc(100vw - 64px)); }
+
+/* an image looked at from a ticket: the sheet takes the window, the image fits inside it */
+.image-preview-host { display: contents; }
+.palette.modal.sheet-image { width: calc(100vw - 64px); height: var(--overlay-max-h); max-height: var(--overlay-max-h); }
+.sheet-image .dlg-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet-image .dlg-head .num { flex-shrink: 0; }
+.image-preview-stage {
+  position: relative; flex: 1; min-height: 0; padding: var(--space-5);
+  display: flex; align-items: center; justify-content: center; background: var(--surface-warm);
+}
+.image-preview-stage img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: var(--radius-sm); }
+.image-preview-step {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  background: var(--surface); border: 1px solid var(--border); box-shadow: var(--elev-raised);
+}
+.image-preview-step:hover { background: var(--surface); }
+.image-preview-step.is-prev { left: var(--space-3); }
+.image-preview-step.is-next { right: var(--space-3); }
 
 /* Settings outgrew one scroll, so its body is a menu beside a pane rather than
  * one column. The rail borrows the sidebar's rows at a narrower width: one row

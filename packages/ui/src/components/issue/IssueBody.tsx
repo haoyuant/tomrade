@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type SyntheticEvent } from "react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { EditorState, Prec, type Text } from "@codemirror/state";
@@ -19,6 +19,7 @@ import { openExternal } from "~/lib/shell";
 import { errorSpec, readableError, useToast } from "~/lib/toast";
 import { cn } from "~/lib/utils";
 import type { FieldProps } from "./fields";
+import { ImagePreview, type PreviewImage } from "./ImagePreview";
 import { hits } from "~/lib/keybindings";
 
 /** The Files store's binary read limit: anything larger could be saved but never shown again. */
@@ -93,6 +94,8 @@ const readDataUrl = (file: File): Promise<string> =>
     reader.onerror = () => reject(reader.error ?? new Error(`Could not read ${file.name}`));
     reader.readAsDataURL(file);
   });
+
+const stop = (e: SyntheticEvent) => e.stopPropagation();
 
 const label = (name: string) => name.replace(/[\\[\]]/g, "\\$&");
 
@@ -171,8 +174,11 @@ function BodyMarkdown({ projectId, text, drafts }: { projectId: string; text: st
     tpl.innerHTML = base;
     for (const img of tpl.content.querySelectorAll<HTMLImageElement>("img.md-file")) {
       const src = img.dataset.draftId ? (drafts?.get(img.dataset.draftId)?.src ?? null) : sources[imageIds.indexOf(img.dataset.fileId!)];
-      if (src) img.src = src;
-      else if (src === null) {
+      if (src) {
+        img.src = src;
+        // focusable, so Enter opens it and closing the preview can hand focus back
+        if (img.dataset.fileId) img.tabIndex = 0;
+      } else if (src === null) {
         // a body synced ahead of its files reads as waiting, not broken
         const missing = document.createElement("span");
         missing.className = "md-file-missing";
@@ -185,10 +191,24 @@ function BodyMarkdown({ projectId, text, drafts }: { projectId: string; text: st
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base, drafts, imageIds, loaded, t]);
 
+  // a new object each render would have React rewrite the body, swapping out the image the preview hands focus back to
+  const inner = useMemo(() => ({ __html: html }), [html]);
+
   const open = (fileId: string, name: string) =>
     void invoke("files.locate", projectId, fileId)
       .then((path) => (path ? void navigate({ to: "/p/$projectId/f/$", params: { projectId, _splat: path } }) : toast({ body: t("fields.attachMissing", { name }) })))
       .catch((err: Error) => toast(errorSpec(err)));
+
+  const [preview, setPreview] = useState<{ images: PreviewImage[]; at: number | null }>({ images: [], at: null });
+  const showPreview = (img: HTMLImageElement) => {
+    const shown = [...(img.closest("article")?.querySelectorAll<HTMLImageElement>("img.md-file[data-file-id][src]") ?? [])];
+    const list = shown.map((el) => {
+      const fileId = el.dataset.fileId!;
+      const name = images[imageIds.indexOf(fileId)]?.data?.name ?? (el.alt || t("fields.attachUnnamed"));
+      return { fileId, name, src: el.src };
+    });
+    setPreview({ images: list, at: Math.max(0, shown.indexOf(img)) });
+  };
 
   const onClick = (e: MouseEvent<HTMLElement>) => {
     const target = e.target as HTMLElement;
@@ -199,12 +219,38 @@ function BodyMarkdown({ projectId, text, drafts }: { projectId: string; text: st
     if (file?.dataset.draftId) return;
     // a link is somewhere to go, not a way into the editor
     e.stopPropagation();
+    if (file instanceof HTMLImageElement && file.dataset.fileId && file.src) return showPreview(file);
     if (file?.dataset.fileId) return open(file.dataset.fileId, file.getAttribute("alt") ?? file.textContent ?? "");
     const href = anchor?.getAttribute("href") ?? "";
     if (/^(https?:|mailto:)/i.test(href)) openExternal(href);
   };
 
-  return <article className="md-view md-body" dangerouslySetInnerHTML={{ __html: html }} onClick={onClick} />;
+  const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
+    const target = e.target as HTMLElement;
+    if (e.key !== "Enter" || !(target instanceof HTMLImageElement) || !target.matches("img.md-file[data-file-id][src]")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    showPreview(target);
+  };
+
+  return (
+    <>
+      <article className="md-view md-body" dangerouslySetInnerHTML={inner} onClick={onClick} onKeyDown={onKeyDown} />
+      {/* the preview is portalled, but its events still bubble through React to the read view's click-to-edit and the editor's keys */}
+      <div className="image-preview-host" onClick={stop} onKeyDown={stop} onBlur={stop}>
+        <ImagePreview
+          images={preview.images}
+          at={preview.at}
+          onStep={(at) => setPreview((p) => ({ ...p, at }))}
+          onClose={() => setPreview((p) => ({ ...p, at: null }))}
+          onOpenInFiles={(image) => {
+            setPreview((p) => ({ ...p, at: null }));
+            open(image.fileId, image.name);
+          }}
+        />
+      </div>
+    </>
+  );
 }
 
 function BodyEditor({ item, write, className, onDone }: FieldProps & { className: string; onDone: () => void }) {
@@ -442,9 +488,9 @@ function BodyEditor({ item, write, className, onDone }: FieldProps & { className
       tabIndex={-1}
       onKeyDown={onKeyDown}
       onBlur={() =>
-        // after the tick focus lands somewhere: inside the frame, or nowhere because the window lost it
+        // after the tick focus lands somewhere: inside the frame, in a preview of its image, or nowhere because the window lost it
         setTimeout(() => {
-          if (mounted.current && document.hasFocus() && !frame.current?.contains(document.activeElement)) void commitRef.current();
+          if (mounted.current && document.hasFocus() && !frame.current?.contains(document.activeElement) && !document.activeElement?.closest(".sheet-image")) void commitRef.current();
         }, 0)
       }
       onDragOver={(e) => {
