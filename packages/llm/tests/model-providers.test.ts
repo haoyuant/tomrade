@@ -49,7 +49,7 @@ it("builds, lists and checks a profile through the provider it names, and offers
 
   expect(service.providers().at(-1)).toMatchObject({ id: "echo-cloud", provider: "echo", model: "echo-1", hint: "Echoes" });
   expect(service.modelProviders().find((p) => p.id === "echo")).toEqual({ id: "echo", title: "Echo", keyRequired: true, baseURL: { default: "https://echo.example", editable: false }, chat: true, defaultInput: ["image"] });
-  expect(service.modelProviders().map((p) => p.id)).toEqual(["openai-compatible", "anthropic", "openai-images", "echo"]);
+  expect(service.modelProviders().map((p) => p.id)).toEqual(["openai-compatible", "anthropic", "gemini", "openai-images", "echo"]);
   expect(await service.quickSetup({ preset: "echo-cloud", apiKey: "echo-key" })).toMatchObject({ ok: true, profile: { model: "echo-1" } });
 
   withdraw();

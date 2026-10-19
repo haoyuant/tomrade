@@ -18,7 +18,8 @@ import { LLM_WORDS } from "./words.js";
 
 export * from "./model.js";
 export { guessFrom, keyHint, listModels, pickModel, usableModels, type ModelListing, type ProviderPreset, type QuickSetupResult } from "./providers.js";
-export { ANTHROPIC, BUILTIN_PROVIDERS, OPENAI_COMPATIBLE, OPENAI_IMAGES, PROVIDERS, guessProviders } from "./builtin-providers.js";
+export { ANTHROPIC, BUILTIN_PROVIDERS, GEMINI, OPENAI_COMPATIBLE, OPENAI_IMAGES, PROVIDERS, guessProviders } from "./builtin-providers.js";
+export { GeminiModel, type GeminiConfig } from "./gemini.js";
 export type { ModelListResult, ModelProviderSpec, ModelProviderView, ProviderProfile } from "./provider.js";
 export { LlmError, MediaRefused, NativeMediaRefused, NativeSearchRefused, type LlmErrorResponse } from "./errors.js";
 export { OpenAiCompatible, type OpenAiConfig } from "./openai.js";
@@ -67,17 +68,24 @@ export interface LLMProvider {
 /** One tiny request with a profile: whether it answers, and if not, which part to fix. */
 export type ModelTest = { ok: true } | { ok: false; kind: ModelErrorKind; detail: string };
 
-/** One token from `model`, or why not. A timeout reads as the address, not the key. */
-export async function probe(model: ChatModel, timeoutMs = 20_000): Promise<ModelTest> {
+/** One token from `model`, or why not. A model that never answers in time is slow or busy, not an unreachable address. */
+export async function probe(model: ChatModel, timeoutMs = 45_000): Promise<ModelTest> {
+  let retried = "";
   try {
     // a retry is not an answer: the request it announces may still fail
-    for await (const event of model.chat({ system: "Reply with one word.", messages: [userMessage("ping")], maxTokens: 1 }, AbortSignal.timeout(timeoutMs))) if (event.type !== "retry") break;
+    for await (const event of model.chat({ system: "Reply with one word.", messages: [userMessage("ping")], maxTokens: 1 }, AbortSignal.timeout(timeoutMs))) {
+      if (event.type !== "retry") break;
+      retried = event.reason;
+    }
     return { ok: true };
   } catch (err) {
     // the message keeps 300 characters of the body; a tier refusal names its limit further on
     const response = err instanceof LlmError ? err.response : undefined;
     const detail = response && response.body.length > 300 ? `LLM request failed ${response.status}: ${response.body.slice(0, 2000)}` : err instanceof Error ? err.message : String(err);
-    return { ok: false, kind: err instanceof Error && err.name === "TimeoutError" ? "network" : modelErrorKind(detail), detail };
+    if (!(err instanceof Error && err.name === "TimeoutError")) return { ok: false, kind: modelErrorKind(detail), detail };
+    // Out of time while retrying an overloaded or limited model is that answer, not an unreachable address.
+    if (retried) return { ok: false, kind: modelErrorKind(retried), detail: `No answer within ${timeoutMs / 1000}s; the last try said ${retried}` };
+    return { ok: false, kind: "slow", detail: `No answer within ${timeoutMs / 1000}s: ${detail}` };
   }
 }
 
@@ -371,6 +379,7 @@ export class Llm extends Service implements LlmService {
     });
     this.ctx.settings.register(MODELS_SECTION);
     this.migrateLegacy();
+    this.claimProfiles();
     this.ctx.on("settings/changed", () => {
       this.cache.clear();
       this.refused.keepFor(this.models().profiles);
@@ -705,6 +714,26 @@ export class Llm extends Service implements LlmService {
   private async readyLent(): Promise<LentModel | undefined> {
     for (const model of this.lent) if (await model.ready().catch(() => false)) return model;
     return undefined;
+  }
+
+  /** Profiles a provider now serves better than the one they were saved for move to it, keys and roles kept. */
+  private claimProfiles(): void {
+    const all = this.ctx.settings.get();
+    const models = all.models as ModelsSettings | undefined;
+    if (!models?.profiles?.length) return;
+    let moved = false;
+    const profiles = models.profiles.map((profile) => {
+      for (const kind of this.kinds.values()) {
+        const claimed = kind.claims?.(profile);
+        if (claimed) {
+          moved = true;
+          const { baseURL, ...rest } = { ...profile, ...claimed };
+          return baseURL ? { ...rest, baseURL } : rest;
+        }
+      }
+      return profile;
+    });
+    if (moved) this.ctx.settings.set({ ...all, models: { ...models, profiles } });
   }
 
   /** A v1 `llm` section with a key becomes the first profile, bound to both roles. */

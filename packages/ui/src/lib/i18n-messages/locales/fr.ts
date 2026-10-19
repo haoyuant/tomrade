@@ -203,6 +203,7 @@ export const fr: PartialMessages = {
     profileCheck_model: "{{host}} ne connaît pas le modèle « {{model}} ».",
     profileCheck_server: "{{host}} a rencontré une erreur de son côté — réessayez plus tard, ou enregistrez quand même.",
     profileCheck_network: "Impossible de joindre {{host}} — vérifiez l’URL de base et votre connexion.",
+    profileCheck_slow: "{{host}} n’a pas répondu à temps avec « {{model}} » — le modèle est peut-être saturé ou lent. Essayez un autre modèle, ou enregistrez quand même.",
     profileCheck_other: "La requête de test vers {{host}} a échoué.",
     myModelPlaceholder: "Mon modèle",
     presetDeepseek: "DeepSeek",

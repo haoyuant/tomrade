@@ -203,6 +203,7 @@ export const zhHant: PartialMessages = {
     profileCheck_model: "{{host}} 不認識模型「{{model}}」。",
     profileCheck_server: "{{host}} 自己出錯了——稍後再試，或者仍然儲存。",
     profileCheck_network: "連不上 {{host}}——檢查 base URL 和網路。",
+    profileCheck_slow: "{{host}} 的「{{model}}」沒有在時限內回覆——可能正忙或回應慢。換個模型試試，或者仍然儲存。",
     profileCheck_other: "向 {{host}} 發的測試請求失敗了。",
     myModelPlaceholder: "我的模型",
     presetDeepseek: "DeepSeek",

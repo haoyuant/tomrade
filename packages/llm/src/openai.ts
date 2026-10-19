@@ -55,7 +55,7 @@ function toMessages(request: ChatRequest): OpenAiMessage[] {
   return out;
 }
 
-async function* sseData(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
+export async function* sseData(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
   const decoder = new TextDecoder();
   let buffer = "";
   for await (const chunk of body as unknown as AsyncIterable<Uint8Array>) {

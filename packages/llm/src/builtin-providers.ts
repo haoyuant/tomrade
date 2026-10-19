@@ -1,5 +1,6 @@
 import { AnthropicModel } from "./anthropic.js";
-import { detectCapabilities } from "./capabilities.js";
+import { detectCapabilities, type ModelCapabilities } from "./capabilities.js";
+import { bareModel, GEMINI_BASE, GeminiModel } from "./gemini.js";
 import { ImagesModel } from "./images.js";
 import { OpenAiCompatible } from "./openai.js";
 import type { ModelProviderSpec } from "./provider.js";
@@ -28,13 +29,6 @@ export const OPENAI_COMPATIBLE: ModelProviderSpec = {
       id: "openai", title: "OpenAI", baseURL: "https://api.openai.com/v1", model: "", prefer: [/^gpt-\d+(\.\d+)?$/],
       keyPage: "https://platform.openai.com/api-keys", env: "OPENAI_API_KEY", keyShapes: [/^sk-(proj|svcacct|admin)-/, /^sk-[A-Za-z0-9]{40,}$/],
       hint: { en: "GPT models, from a paid OpenAI API account", zh: "GPT 模型，需要付费的 OpenAI API 账户" }
-    },
-    {
-      // Google's OpenAI-compatible endpoint; it lists models as `models/<id>`.
-      id: "gemini", title: "Google Gemini", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/", model: "",
-      prefer: [/^(models\/)?gemini-\d+(\.\d+)?-flash$/, /^(models\/)?gemini-\d+(\.\d+)?-pro$/],
-      keyPage: "https://aistudio.google.com/apikey", env: "GEMINI_API_KEY", keyShapes: [/^AIza[0-9A-Za-z_-]{35}$/],
-      hint: { en: "Gemini models with a Google AI Studio key; a free tier to start", zh: "用 Google AI Studio 的 Key 跑 Gemini 模型，有免费额度" }
     },
     {
       id: "openrouter", title: "OpenRouter", baseURL: "https://openrouter.ai/api/v1", model: "", prefer: [/^anthropic\/claude-sonnet-/, /^deepseek\/deepseek-chat/],
@@ -91,7 +85,40 @@ export const OPENAI_IMAGES: ModelProviderSpec = {
   build: (p) => new ImagesModel({ baseURL: p.baseURL ?? "https://api.openai.com/v1", apiKey: p.apiKey, model: p.model })
 };
 
-export const BUILTIN_PROVIDERS: ModelProviderSpec[] = [OPENAI_COMPATIBLE, ANTHROPIC, OPENAI_IMAGES];
+const GEMINI_MEDIA: ModelCapabilities = { inputModalities: ["image", "pdf", "audio", "video"], outputModalities: [] };
+// Google's OpenAI-compatible endpoint, where Gemini profiles were saved before Gemini had its own provider.
+const GEMINI_COMPATIBLE = /^https?:\/\/generativelanguage\.googleapis\.com\/v1beta\/openai\/?$/i;
+
+/** Gemini on Google's own API: Google Search beside function tools, thinking levels, its own listing. */
+export const GEMINI: ModelProviderSpec = {
+  id: "gemini",
+  title: { en: "Google Gemini", zh: "Google Gemini" },
+  signIn: "apiKey",
+  keyRequired: true,
+  baseURL: { default: GEMINI_BASE, editable: false },
+  chat: true,
+  presets: [
+    {
+      id: "gemini", title: "Google Gemini", baseURL: "", model: "", prefer: [/^gemini-\d+(\.\d+)?-flash$/, /^gemini-\d+(\.\d+)?-pro$/],
+      keyPage: "https://aistudio.google.com/apikey", env: "GEMINI_API_KEY", keyShapes: [/^AIza[0-9A-Za-z_-]{35}$/, /^AQ\.[0-9A-Za-z_.-]{40,}$/],
+      hint: { en: "Gemini models with a Google AI Studio key; a free tier to start", zh: "用 Google AI Studio 的 Key 跑 Gemini 模型，有免费额度" }
+    }
+  ],
+  list: async (endpoint, timeoutMs) => {
+    const out = await listModels({ provider: "gemini", baseURL: endpoint.baseURL || GEMINI_BASE }, endpoint.apiKey, timeoutMs);
+    if (!out.ok) return out;
+    return { ok: true, models: out.models?.map(bareModel) ?? null, capabilities: Object.fromEntries(Object.entries(out.capabilities).map(([id, caps]) => [bareModel(id), caps])) };
+  },
+  // Gemini first, newest first, then Gemma; image-making models stay with the compatible endpoint, which asks for their output
+  usable: (listed) => usableModels("gemini", listed).filter((id) => !/-image(-preview)?$|banana/.test(id)).sort((a, b) => Number(b.startsWith("gemini-")) - Number(a.startsWith("gemini-")) || b.localeCompare(a, "en", { numeric: true })),
+  defaultInput: GEMINI_MEDIA.inputModalities,
+  capabilities: (model, listed) => listed ?? (/^gemini-/.test(bareModel(model)) ? GEMINI_MEDIA : undefined),
+  // a profile that makes images stays where its image output works
+  claims: (p) => (p.provider === "openai-compatible" && GEMINI_COMPATIBLE.test(p.baseURL ?? "") && !p.outputModalities?.length ? { ...p, provider: "gemini", baseURL: undefined, model: bareModel(p.model) } : undefined),
+  build: (p) => new GeminiModel({ apiKey: p.apiKey, model: p.model, baseURL: p.baseURL, inputModalities: p.inputModalities })
+};
+
+export const BUILTIN_PROVIDERS: ModelProviderSpec[] = [OPENAI_COMPATIBLE, ANTHROPIC, GEMINI, OPENAI_IMAGES];
 
 /** Every built-in preset with the provider that serves it. */
 export const PROVIDERS: ProviderPreset[] = BUILTIN_PROVIDERS.flatMap((spec) => spec.presets.map((preset) => ({ ...preset, provider: spec.id })));
