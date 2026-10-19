@@ -21,11 +21,9 @@ When the reporter is unsure, it says `real`. A test with several errors is `real
 
 ## Before calling a failure "load"
 
-Check which `node` runs the tests. On macOS a notarized node outside Homebrew (nvm's, for one) can make every child process wait while the system checks it online: 30–50 s per spawn on the maintainer's Mac, against about 50 ms for Homebrew's. The whole suite took 808 s with 80 failures under nvm's node and 55 s with 1 failure under Homebrew's (2026-10-18). Mass timeouts are this, not the code under test, and the fix is the PATH:
+Check which `node` runs the tests. On macOS a notarized node outside Homebrew (nvm's, for one) can make every child process wait while the system checks it online: 30–50 s per spawn on the maintainer's Mac, against about 50 ms for Homebrew's. The whole suite took 808 s with 80 failures under nvm's node and 55 s with 1 failure under Homebrew's (2026-10-18). Mass timeouts are this, not the code under test.
 
-```sh
-PATH=/opt/homebrew/bin:$PATH /opt/homebrew/bin/node node_modules/vitest/vitest.mjs run
-```
+`pnpm test` (`scripts/test.mjs`) picks the node for you and prints it first: `TOMRADE_TEST_NODE` when set, else on macOS the first adhoc-signed or unsigned node among the current one, those on `PATH`, `/opt/homebrew/bin/node` and `/usr/local/bin/node`, else the current one. Its directory goes first on `PATH`, so fakes started as plain `node` use it too, and vitest's workers inherit it as `process.execPath`. It also times one `node -e 0` while the run starts and warns when that takes over 1 s; the warning never holds the run. `pnpm test:ui` runs under Electron, whose spawns go through Electron's own binary, so it is not affected.
 
 ## When a pull request may merge with failing tests
 

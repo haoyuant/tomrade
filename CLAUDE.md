@@ -12,7 +12,7 @@ Local-first backlog workbench: an Electron app (`apps/desktop`) with a React UI 
 
 - `pnpm install` — needed once per fresh worktree
 - `pnpm typecheck` — `tsc -b` for the backend, then the UI
-- `pnpm test` — vitest across packages
+- `pnpm test` — vitest across packages, on a fast-spawning node (`TOMRADE_TEST_NODE`, else an adhoc-signed one such as Homebrew's; see `docs/testing.md`)
 - `pnpm test:ui` — Electron UI regression harness (slow; has a known flaky baseline)
 - `pnpm dev` — run the desktop app
 
