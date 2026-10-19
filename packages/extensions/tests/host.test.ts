@@ -8,7 +8,7 @@ import { Contributions } from "@tomradex/contributions";
 import { Settings } from "@tomradex/settings";
 import { Tools } from "@tomradex/tools";
 import { WebSearch } from "@tomradex/web-search";
-import { definePlugin, type PluginContext } from "@tomradex/plugin-sdk";
+import { definePlugin, type PendingWrite, type PluginContext } from "@tomradex/plugin-sdk";
 import { windowTitle } from "@tomradex/extensions";
 import { fresh, sdk, settle } from "@tomradex/testkit";
 
@@ -117,6 +117,71 @@ describe("the extension host", () => {
     expect(w.ctx.tools.describe().find((t) => t.name === "demo_timer")).toMatchObject({ kit: "demo" });
     await dropKit();
     expect(w.ctx.tools.kits()).not.toHaveProperty("demo");
+  });
+
+  it("lets a plugin refuse any write before it lands, whoever writes, until it unloads", async () => {
+    const seen: PendingWrite[] = [];
+    const { items, project, board, fiber } = await world(definePlugin({
+      inject: ["items"],
+      async apply(p) {
+        await p.items.gate((write) => {
+          seen.push(write);
+          if ((write.patch as { title?: string } | null)?.title === "forbidden") throw new Error("demo: that title is not allowed");
+          // The gate holds a copy: changing it changes nothing that lands.
+          if (write.after) (write.after as { title: string }).title = "tampered";
+        });
+      }
+    }));
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "kept", by: "human" });
+    expect(items.get(project.id, item.id)!.title).toBe("kept");
+    expect(() => items.update(project.id, item.id, { title: "forbidden" }, "human")).toThrow(/not allowed/);
+    expect(items.get(project.id, item.id)!.title).toBe("kept");
+    expect(seen.at(-1)).toMatchObject({ projectId: project.id, entity: "item", op: "update", id: item.id, by: "human", via: null, runId: null, patch: { title: "forbidden" } });
+    await fiber.dispose();
+    items.update(project.id, item.id, { title: "forbidden" }, "human");
+    expect(items.get(project.id, item.id)!.title).toBe("forbidden");
+  });
+
+  it("does not wait for a write gate that answers with a Promise, and says so", async () => {
+    const warnings: string[] = [];
+    const { ctx, items, project, board } = await world(definePlugin({
+      inject: ["items"],
+      async apply(p) {
+        await p.items.gate((async () => {
+          throw new Error("too late");
+        }) as never);
+      }
+    }));
+    ctx.logger.exporter({ colors: 0, export: (m: { type: string; args: unknown[] }) => void (m.type === "warn" && warnings.push(String(m.args[0]))) } as never);
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "lands", by: "human" });
+    await settle();
+    expect(items.get(project.id, item.id)!.title).toBe("lands");
+    expect(warnings.join("\n")).toMatch(/write gate answered with a Promise/);
+  });
+
+  it("lets a tool gate go on with other arguments, which the tool checks again, or answer in the tool's place", async () => {
+    const { ctx, fiber } = await world(definePlugin({
+      inject: ["tools"],
+      async apply(p) {
+        await p.tools.gate((call) => {
+          if (call.name !== "demo_echo") return;
+          const text = (call.args as { text: unknown }).text;
+          // Changing the copy it is shown is not an answer.
+          (call.args as { text: unknown }).text = "ignored";
+          if (text === "cached") return { result: "from the gate" };
+          if (text === "bad") return { args: { text: 7 } };
+          return { args: { text: `${String(text)}!` } };
+        });
+      }
+    }));
+    let ran = 0;
+    ctx.tools.register({ name: "demo_echo", title: "Echo", description: "x", input: z.object({ text: z.string() }), execute: ({ text }) => (ran++, text) });
+    expect(await ctx.tools.execute("demo_echo", { text: "hi" }, { by: "ai:test" })).toBe("hi!");
+    expect(await ctx.tools.execute("demo_echo", { text: "cached" }, { by: "ai:test" })).toBe("from the gate");
+    await expect(ctx.tools.execute("demo_echo", { text: "bad" }, { by: "ai:test" })).rejects.toThrow(/demo_echo: invalid arguments/);
+    expect(ran).toBe(1);
+    await fiber.dispose();
+    expect(await ctx.tools.execute("demo_echo", { text: "hi" }, { by: "ai:test" })).toBe("hi");
   });
 
   it("runs a palette command as the person who chose it, and a badge as the plugin", async () => {

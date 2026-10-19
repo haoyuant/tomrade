@@ -83,7 +83,8 @@ export function recordingContext(namespace: string, allowed: ServiceName[], rec:
         delete: refuse,
         addRelation: refuse,
         removeRelation: refuse,
-        labels: async () => []
+        labels: async () => [],
+        gate: async () => noop
       });
     },
     get fields(): FieldsApi {

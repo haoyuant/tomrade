@@ -33,6 +33,7 @@ import {
   type Locale,
   type Localized,
   type OplogApi,
+  type PendingWrite,
   type TerminalsApi,
   type WebSearchApi,
   type PluginContext,
@@ -114,6 +115,15 @@ type Fn = (...args: never[]) => unknown;
 
 const spread = (params: SqlParams | undefined): unknown[] => (params === undefined ? [] : Array.isArray(params) ? params : [params]);
 
+/** What a policy is shown: its own copy where the value allows one, so a change of its reaches nothing. */
+const copy = <T>(value: T): T => {
+  try {
+    return structuredClone(value);
+  } catch {
+    return value;
+  }
+};
+
 /**
  * One plugin's view of the app. It hands out nothing live: every method is a
  * call made inside the plugin's scope and answered with a Promise, every
@@ -177,6 +187,22 @@ export class Host {
     }
   }
 
+  /**
+   * A write gate is asked inside the write's transaction, so it answers at once: a throw refuses the
+   * write, and a Promise is not waited for. It sees a copy, so no change of its reaches later policies.
+   */
+  private judge(check: (write: PendingWrite) => unknown, intent: WriteIntent): void {
+    const write: PendingWrite = copy({
+      projectId: intent.projectId, entity: intent.entity, op: intent.op, id: intent.id, by: intent.by, via: intent.via ?? null, runId: intent.runId ?? null,
+      baseVersion: intent.baseVersion ?? null, before: intent.before, after: intent.after, patch: intent.patch ?? null
+    });
+    const answer = extensionScope.run(scopeFor(this.ns), () => check(write));
+    if (typeof (answer as PromiseLike<unknown> | undefined)?.then === "function") {
+      Promise.resolve(answer).catch(() => {});
+      this.logger.warn(`${this.identity.id} write gate answered with a Promise; a write gate must answer at once, so ${intent.entity} ${intent.id} was written without its answer`);
+    }
+  }
+
   /** Fire-and-forget: a listener that throws is logged, never propagated into the host's emit. */
   private listen<F extends Fn>(fn: F, label: string) {
     const wrapped = this.back(fn, label);
@@ -221,7 +247,17 @@ export class Host {
           delete: (projectId, id) => host.call(() => items().delete(projectId, id, authorFor(ns))),
           addRelation: (projectId, id, blockedId) => host.call(() => items().addRelation(projectId, id, blockedId, authorFor(ns))),
           removeRelation: (projectId, id, blockedId) => host.call(() => items().removeRelation(projectId, id, blockedId, authorFor(ns))),
-          labels: (projectId) => host.call(() => items().labelsFor(projectId))
+          labels: (projectId) => host.call(() => items().labelsFor(projectId)),
+          gate: (check) =>
+            host.call(() => {
+              items(); // refused, like every items call, unless the plugin named "items"
+              return host.disposerOf(
+                host.ctx.on("write/pre-commit", (intent, next) => {
+                  host.judge(check, intent);
+                  return next();
+                })
+              );
+            })
         };
       },
 
@@ -339,8 +375,13 @@ export class Host {
               const run = host.back(check, "tool gate");
               return host.disposerOf(
                 host.ctx.on("tools/pre-execute", async (call, next) => {
-                  const info: ToolCallInfo = { name: call.name, args: call.args, author: call.by, projectId: call.projectId, runId: call.run?.id };
-                  await run(info);
+                  // A copy: arguments change only through an `{ args }` answer, which the tool's input checks again.
+                  const info: ToolCallInfo = { name: call.name, args: copy(call.args), author: call.by, projectId: call.projectId, runId: call.run?.id };
+                  const answer = await run(info);
+                  if (answer && typeof answer === "object") {
+                    if ("result" in answer) return answer.result;
+                    if ("args" in answer) call.args = answer.args;
+                  }
                   return next();
                 })
               );

@@ -74,6 +74,31 @@ export interface ItemsApi {
   addRelation(projectId: string, id: string, blockedId: string): Promise<void>;
   removeRelation(projectId: string, id: string, blockedId: string): Promise<void>;
   labels(projectId: string): Promise<string[]>;
+  /**
+   * SDK 0.2.12: a policy over every write before it lands — items, and the workstream and view
+   * writes that take the same path — whoever writes. Throw to refuse it. It is asked inside the
+   * write's transaction, so it must answer at once: a check that returns a Promise is not waited
+   * for, and the write goes on.
+   */
+  gate(check: (write: PendingWrite) => void): Promise<Disposer>;
+}
+
+/** SDK 0.2.12: a write about to land, as a write gate sees it. A copy: changing it changes nothing. */
+export interface PendingWrite<T = unknown> {
+  projectId: string;
+  entity: OplogEntity;
+  op: OplogOp;
+  id: string;
+  by: Author;
+  /** The extension making the write, when one is. */
+  via: string | null;
+  runId: string | null;
+  /** The version the writer read, when it asserts one. */
+  baseVersion: number | null;
+  before: T | null;
+  after: T | null;
+  /** For an update: only the fields the writer asked to change. */
+  patch: Record<string, unknown> | null;
 }
 
 export interface FieldsApi {
@@ -187,9 +212,15 @@ export interface ToolsApi {
   kit(id: string, purpose: string): Promise<Disposer>;
   list(): Promise<{ name: string; title: string; description: string; inputSchema: Record<string, unknown> }[]>;
   call(name: string, args: unknown, opts?: { projectId?: string }): Promise<unknown>;
-  /** A policy over every tool call: throw to refuse it. */
-  gate(check: (call: ToolCallInfo) => void | Promise<void>): Promise<Disposer>;
+  /**
+   * A policy over every tool call: throw to refuse it. SDK 0.2.12: or answer `{ args }` to go on with
+   * other arguments (checked against the tool's input again), or `{ result }` to answer in the tool's place.
+   */
+  gate(check: (call: ToolCallInfo) => ToolGateAnswer | void | Promise<ToolGateAnswer | void>): Promise<Disposer>;
 }
+
+/** SDK 0.2.12: what a tool gate may answer besides letting the call through unchanged. `result` wins over `args`. */
+export type ToolGateAnswer = { args: unknown } | { result: unknown };
 
 export type BadgeTone = "faint" | "neutral" | "strong";
 export interface Badge {

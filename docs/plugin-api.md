@@ -56,7 +56,9 @@ not a sandbox.** What the system does guarantee:
 - **Everything it registers carries its namespace**: tools, commands, badges,
   status items, sections, graphs, settings sections, playbooks, surfaces, and
   `plugin_<namespace>_*` tables. Two extensions cannot share one.
-- Every tool call passes `tools/pre-execute`, where a policy can refuse it.
+- Every tool call passes `tools/pre-execute`, and every write `write/pre-commit`:
+  a policy there — the app's own or an extension's gate — can refuse it, and a
+  tool policy can change its arguments or answer in the tool's place.
 - A render callback (badge, section, status item, graph) that throws or takes
   longer than two seconds costs only itself, never the refresh it is part of.
 - Every registration is an effect: unload the plugin and its tools, channels,
@@ -97,11 +99,11 @@ returns is disposed when the service goes.
 
 | Member | What it offers |
 |---|---|
-| `items` | `list`, `query`, `get`, `getByKey`, `create`, `update`, `delete`, `addRelation`, `removeRelation`, `labels` |
+| `items` | `list`, `query`, `get`, `getByKey`, `create`, `update`, `delete`, `addRelation`, `removeRelation`, `labels`; SDK 0.2.12: `gate(check)`, a policy over every write before it lands — see [Policies](#policies) |
 | `fields` / `boards` / `views` / `projects` | the project's fields (and `create`/`update`/`remove`/`addOption`), workstreams, saved views, projects — read |
 | `db` | `migrate(steps, { scope, tables })` for `plugin_<namespace>_*`; `all`, `get`, `run`, `batch` (one transaction) against a project id or `"hub"`; `isOpen` |
 | `settings` | `register({ title, schema, defaults })` — the card is drawn from the schema — `get`, `set` |
-| `tools` | `register(defineTool(…))` (SDK 0.2.6: `kit` keeps a rarely needed tool out of each request until the model loads it; `kit(id, purpose)` says what the kit is for), `list`, `call`, `gate(check)` (throw to refuse any tool call) |
+| `tools` | `register(defineTool(…))` (SDK 0.2.6: `kit` keeps a rarely needed tool out of each request until the model loads it; `kit(id, purpose)` says what the kit is for), `list`, `call`, `gate(check)` (throw to refuse any tool call; SDK 0.2.12: answer `{ args }` or `{ result }` — see [Policies](#policies)) |
 | `contributions` | `command`, `badge`, `statusItem`, `section`, `graph` — see [Contributions](#contributions); callbacks may be async |
 | `agent` | `playbook({ id, title, when, body, tools })` |
 | `surfaces` | `open({ id, document, … })` — a document inside the plugin's own package, never a remote page (SDK 0.2.7: `onClose()` says the window is gone, however it went; the handle's calls then reject). SDK 0.2.11: `kind: "window"` (with `minWidth` / `minHeight`) opens a working window and needs `permissions.window`; `post(message)` sends one message to the document; see [Auxiliary desktop surfaces](#auxiliary-desktop-surfaces) |
@@ -868,9 +870,9 @@ inside a SQLite transaction.
 
 | Event | Mode | Purpose |
 |---|---|---|
-| `write/pre-commit` | waterfall | Refuse or allow a mutation before it lands. `WriteIntent` carries `entity`, `op`, `id`, `by`, `baseVersion`, `before`, `after`, `patch`. |
+| `write/pre-commit` | waterfall | Refuse or allow a mutation before it lands. `WriteIntent` carries `entity`, `op`, `id`, `by`, `baseVersion`, `before`, `after`, `patch`. Extensions reach it with `items.gate`. |
 | `write/committed` | emit | A durable fact: the rows and the oplog entry exist. |
-| `tools/pre-execute` | waterfall | Refuse or allow a tool call, first-party or plugin, whoever invokes it. `ToolCall.run` is present when it belongs to an agent run. |
+| `tools/pre-execute` | waterfall | Refuse or allow a tool call, first-party or plugin, whoever invokes it. `ToolCall.run` is present when it belongs to an agent run. A listener may replace `call.args` (the tool runs with them once they pass its input again) or return a result without calling `next()`, which answers in the tool's place. Extensions reach it with `tools.gate`. |
 | `tools/result` | emit | The outcome of a tool call, success or failure. |
 | `settings/changed` | emit | Settings were saved; providers re-read. |
 | `agent/event` | emit | Main-process agent lifecycle stream. Receives `(threadId, AgentEvent)`; feature plugins subscribe here instead of observing renderer IPC. |
@@ -901,6 +903,38 @@ everywhere, and `patch` — the fields the op changed — which is what the
 project folder's log carries. Undo reaches only this machine's own rows; a row
 that arrived from another machine's log is history and evidence, and taking it
 back is a new write of ours.
+
+### Policies
+
+An extension sets policies with the reach the app's own have (SDK 0.2.12, so
+`engines.sdk` `^0.2.12`). Both reach every engine and client: every write and
+every Tomrade tool call passes these two waterfalls.
+
+- `ctx.items.gate(check)` runs on `write/pre-commit` for every write — an item,
+  a workstream, a view; a person's, an agent's, another plugin's. `check` gets
+  a copy of the pending write — `{ projectId, entity, op, id, by, via, runId,
+  baseVersion, before, after, patch }` — and throws to refuse it; the error
+  reaches whoever wrote. It is asked inside the write's SQLite transaction, so
+  it answers at once: a check that returns a Promise is not waited for, and the
+  write goes on with a warning in the log.
+- `ctx.tools.gate(check)` runs on `tools/pre-execute`. `check` gets `{ name,
+  args, author, projectId, runId }`, with a copy of the arguments, and may throw
+  to refuse the call, return nothing to let it through, return `{ args }` to go
+  on with other arguments — checked against the tool's input again, so a gate
+  cannot hand a tool what it would refuse from a caller — or `{ result }` to
+  answer in the tool's place without running it. Gates run in the order their
+  plugins loaded, each seeing the arguments the one before it chose.
+
+Both return disposers and go with the plugin. `tomrade-plugin test` puts a
+plugin's gates in front of its scenario's `updateItem` and `tool` calls.
+
+```ts
+await ctx.items.gate((write) => {
+  const patch = write.patch as { status?: string } | null;
+  if (write.entity === "item" && patch?.status === "done" && write.by !== "human") throw new Error("Only a person closes a ticket here");
+});
+await ctx.tools.gate((call) => (call.name === "list_items" ? { args: { ...(call.args as object), limit: 20 } } : undefined));
+```
 
 ### Undo, redo and the timeline
 
