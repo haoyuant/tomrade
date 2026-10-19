@@ -1423,7 +1423,7 @@ export const zhHant: PartialMessages = {
     "mergeWhy_auto-mode": "{{engine}} 的自動模式可能拒絕沒有規則允許的合併。",
     mergeWhy_plan: "{{engine}} 以規劃模式執行，不會合併。",
     "mergeWhy_dont-ask": "{{engine}} 會拒絕設定裡沒有允許的指令。",
-    mergeUnknown: "Tomrade 讀不到 {{engine}} 的權限設定。若它被拒絕，你會收到通知，可以手動合併。",
+    mergeUnknown: "Tomrade 讀不到 {{engines}} 的權限設定。若合併被拒絕，你會收到通知，可以手動合併。",
     mergeFix: "允許：把 {{rule}} 加到 {{file}}",
     mergeFixing: "正在新增規則…",
     mergeFixedToast: "{{engine}} 現在可以合併了——已把 {{rule}} 加到 {{file}}",

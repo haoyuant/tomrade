@@ -1,7 +1,7 @@
 import type { MessageKey } from "~/lib/i18n";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {} from "@tomradex/code-link";
-import type { ConnectAgent, ConnectMode, RepoPolicyPatch, StartOptions } from "@tomradex/code-link";
+import type { ConnectAgent, ConnectMode, MergeCheckView, RepoPolicyPatch, StartOptions } from "@tomradex/code-link";
 import { invoke } from "./api";
 import { invalidateWorkspace } from "./queries";
 
@@ -85,6 +85,13 @@ export function useSetRepoPolicy(projectId: string) {
 /** Whether each installed coding agent's own settings let it run gh pr merge in this repository. */
 export const useMergeChecks = (projectId: string, repoId: string, enabled: boolean) =>
   useQuery({ queryKey: codeLinkKeys.mergeChecks(projectId, repoId), queryFn: () => invoke("codeLink.mergeChecks", projectId, repoId), enabled });
+
+export type ReadMergeCheck = MergeCheckView & { check: NonNullable<MergeCheckView["check"]> };
+
+/** Agents whose settings were read get a row each; the rest are named together in one. */
+export function splitMergeChecks(views: MergeCheckView[]): { known: ReadMergeCheck[]; unknown: string[] } {
+  return { known: views.filter((view): view is ReadMergeCheck => view.check !== null), unknown: views.filter((view) => !view.check).map((view) => view.title) };
+}
 
 export function useAllowMerge(projectId: string, repoId: string) {
   const qc = useQueryClient();

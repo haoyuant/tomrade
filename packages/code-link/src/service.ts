@@ -137,6 +137,9 @@ export type RepoPolicyPatch =Pick<RepoStatePatch, "branchTemplate" | "autoDone" 
 /** The command an agent merges with when the repository lets it. */
 export const MERGE_COMMAND = "gh pr merge";
 
+/** The permission mode engines share for a run that asks nothing and is sandboxed nowhere. */
+const FULL_ACCESS = "full-access";
+
 /** Whether one local coding agent's own settings let it merge; `check` is null when Tomrade cannot read them. */
 export interface MergeCheckView {
   engine: string;
@@ -889,10 +892,12 @@ export class CodeLink extends Service {
     const repo = this.ctx.repos.get(projectId, repoId);
     if (!repo) throw new Error(`unknown repository ${repoId}`);
     const engine = this.ctx.get("agent")?.codeEngines().find((e) => e.id === engineId);
-    if (!engine?.commands) return null;
-    const placement = this.ctx.repos.checkout(repo.remote);
+    if (!engine) return null;
     const remembered = this.defaults.read();
     const permissionMode = remembered?.engine === engineId && remembered.permissionMode ? remembered.permissionMode : engine.permissionModes?.default;
+    // Tomrade itself hands full access to the run, so no setting of the agent's can stop the command.
+    if (!engine.commands) return permissionMode === FULL_ACCESS ? { state: "allowed", why: "bypass", mode: FULL_ACCESS } : null;
+    const placement = this.ctx.repos.checkout(repo.remote);
     const opts = { cwd: placement.checkout ?? null, worktree: !placement.runInCheckout, ...(permissionMode ? { permissionMode } : {}) };
     return allow && engine.commands.allow ? engine.commands.allow(MERGE_COMMAND, opts) : engine.commands.check(MERGE_COMMAND, opts);
   }

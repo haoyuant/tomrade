@@ -1423,7 +1423,7 @@ export const ja: PartialMessages = {
     "mergeWhy_auto-mode": "{{engine}} の自動モードは、どのルールでも許可されていないマージを拒否することがあります。",
     mergeWhy_plan: "{{engine}} はプランモードで実行されるため、マージしません。",
     "mergeWhy_dont-ask": "{{engine}} は設定で許可されていないコマンドを拒否します。",
-    mergeUnknown: "Tomrade は {{engine}} の権限設定を読み取れません。拒否された場合はお知らせするので、手動でマージできます。",
+    mergeUnknown: "Tomrade は {{engines}} の権限設定を読み取れません。マージが拒否された場合はお知らせするので、手動でマージできます。",
     mergeFix: "許可する：{{file}} に {{rule}} を追加",
     mergeFixing: "ルールを追加中…",
     mergeFixedToast: "{{engine}} がマージできるようになりました — {{file}} に {{rule}} を追加しました",
