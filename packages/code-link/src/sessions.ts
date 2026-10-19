@@ -17,6 +17,9 @@ export const IDLE_AFTER_MS = 10 * 60 * 1000;
 export const END_AFTER_MS = 60 * 60 * 1000;
 /** How long after a hook spoke herdr's reading of the screen is left unsaid. */
 export const HERDR_YIELD_MS = 30 * 1000;
+/** How long a PreToolUse for claim_ticket vouches for the claim that follows it. */
+export const CLAIM_HEARD_MS = 10 * 1000;
+const CLAIM_TOOL = /(?:^|[_.:/])claim_ticket$/;
 
 /** The coding session a tool call belongs to, when it came in over a session's MCP token. */
 export const sessionContext = new AsyncLocalStorage<{ projectId: string; sessionId: string }>();
@@ -186,6 +189,8 @@ export class Sessions {
   private readonly live = new Map<string, { token: string; unbind: () => void }>();
   /** When each session's own hooks last spoke, which herdr's reading of the screen defers to. */
   private readonly heardAt = new Map<string, number>();
+  /** A claim_ticket each session's hooks announced, waiting for the call itself. */
+  private readonly claiming = new Map<string, { projectId: string; key: string; at: number }>();
 
   constructor(
     private readonly ctx: Context,
@@ -306,6 +311,18 @@ export class Sessions {
     this.options.onMoment?.(this.store.session(projectId, sessionId) ?? session, { kind: "failed", text: summary });
   }
 
+  /** The session whose hooks just announced a claim of this ticket, if one did; the announcement is used up. */
+  claimer(projectId: string, key: string): string | null {
+    const wanted = key.trim().toUpperCase();
+    let best: { sessionId: string; at: number } | null = null;
+    for (const [sessionId, c] of this.claiming) {
+      if (Date.now() - c.at > CLAIM_HEARD_MS) this.claiming.delete(sessionId);
+      else if (c.projectId === projectId && c.key === wanted && (!best || c.at > best.at)) best = { sessionId, at: c.at };
+    }
+    if (best) this.claiming.delete(best.sessionId);
+    return best?.sessionId ?? null;
+  }
+
   /** A hook fired in the agent's process: what it says about the session, and what the thread should hear. */
   event(projectId: string, sessionId: string, payload: unknown): Record<string, unknown> {
     const p = (payload ?? {}) as HookPayload;
@@ -342,6 +359,9 @@ export class Sessions {
         break;
       case "PreToolUse":
         Object.assign(patch, { state: "running", activity: p.tool_name ? describeTool(p.tool_name, p.tool_input) : null });
+        if (p.tool_name && CLAIM_TOOL.test(p.tool_name) && typeof p.tool_input?.key === "string") {
+          this.claiming.set(sessionId, { projectId, key: p.tool_input.key.trim().toUpperCase(), at: Date.now() });
+        }
         break;
       case "PostToolUse":
         Object.assign(patch, { state: "running", tool: true, activity: null });
