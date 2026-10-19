@@ -529,7 +529,7 @@ export const ja: PartialMessages = {
     contractFiles: "ファイル共有",
     contractFilesLede: "プロジェクトのファイルをバージョン管理し、共有する場所です。",
     contractWebSearch: "Web 検索",
-    contractWebSearchLede: "アシスタントの web_search と web_fetch ツールに応答するプラグインです。最初に設定されたものが応答します。どれもオンになっていない場合、これらのツールは提供されません。",
+    contractWebSearchLede: "自分でウェブ検索しないモデルのために、アシスタントの web_search と web_fetch ツールに応答するプラグインです。自分で検索できるモデル（たとえば Anthropic の API 経由の Claude）には、これらも API キーも必要ありません。最初に設定されたものが応答します。",
     otherPlugins: "その他すべて"
   },
   plugins: {

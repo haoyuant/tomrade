@@ -537,7 +537,7 @@ export const ru: PartialMessages = {
     contractFiles: "Обмен файлами",
     contractFilesLede: "Где версионируются и откуда раздаются файлы проекта.",
     contractWebSearch: "Веб-поиск",
-    contractWebSearchLede: "Кто отвечает на инструменты ассистента web_search и web_fetch. Отвечает первый настроенный; если ни один не включён, инструменты не предлагаются.",
+    contractWebSearchLede: "Кто отвечает на инструменты ассистента web_search и web_fetch для модели, которая сама не ищет в интернете. Модели, которая умеет (например, Claude через API Anthropic), не нужны ни они, ни API-ключ. Отвечает первый настроенный.",
     otherPlugins: "Всё остальное"
   },
   plugins: {

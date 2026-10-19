@@ -20,6 +20,7 @@ import { useAttention, type AttentionEntry } from "~/lib/attention";
 import { offerStart, permissionLabel as permissionName } from "~/lib/codeLink";
 import { engineStateLabel } from "~/lib/localCli";
 import { useSetupInTerminal } from "~/lib/setup";
+import { openSettingsPane } from "~/lib/settingsHost";
 import { readableError, useErrorToast, useToast } from "~/lib/toast";
 import { ReportDialog } from "~/components/dialogs/ReportDialog";
 import { ChecklistBlock, FindingBlock } from "./DoctorCards";
@@ -1129,7 +1130,9 @@ export function AgentPanel({
       if (action.kind === "install" || action.kind === "sign-in") {
         const started = await setupInTerminal.mutateAsync({ engineId: action.engineId, step: action.kind === "install" ? "install" : "signIn" });
         toast({ body: started.launched ? t("doctor.inTerminal") : t("agentPanel.signInManual", { command: started.command }) });
-      } else if (action.kind === "settings") onOpenSettings(action.engineId);
+      } else if (action.kind === "settings") {
+        if (!action.pane || !openSettingsPane(action.pane)) onOpenSettings(action.engineId);
+      }
       else if (action.kind === "report") setReportFor(inThread);
       else if (action.kind === "investigate" && engineId) await invoke("doctor.investigate", projectId, inThread, engineId);
       else if (action.kind === "say") { if (!busy) await send.mutateAsync({ threadId: inThread, text: action.text }); }
@@ -1667,7 +1670,7 @@ export function AgentPanel({
                 <MenuHead title={pickTitle(pick)} />
                 <MenuRadioItem checked={!current} name={t("agentPanel.pickDefault")} onSelect={() => setPick(pick.key, null)} />
                 {pick.choices.map((c) => (
-                  <MenuRadioItem key={c.value} checked={c.value === current} name={c.label ?? c.value} onSelect={() => setPick(pick.key, c.value)} />
+                  <MenuRadioItem key={c.value} checked={c.value === current} name={c.label ?? c.value} chips={c.searchesWeb ? [t("agentPanel.searchesWeb")] : undefined} onSelect={() => setPick(pick.key, c.value)} />
                 ))}
                 {/* a value typed by hand in settings still shows as what's in charge */}
                 {current && !pick.choices.some((c) => c.value === current) && <MenuRadioItem checked name={current} onSelect={() => {}} />}

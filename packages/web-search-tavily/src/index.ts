@@ -95,6 +95,7 @@ export function tavilyProvider({ settings, env = process.env, fetch: send = fetc
   return {
     id: "tavily",
     title: "Tavily",
+    settings: TAVILY_SECTION.id,
     unavailable: () => (key() ? null : "Web search has no Tavily API key yet — tell the user to add one in Settings → Tavily (keys come from https://app.tavily.com)"),
 
     async search(request: SearchRequest, signal: AbortSignal): Promise<SearchResponse> {

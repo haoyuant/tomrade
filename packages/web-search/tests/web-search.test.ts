@@ -40,9 +40,11 @@ async function boot(...providers: WebSearchProvider[]) {
 const by = "human" as const;
 
 describe("web search tools", () => {
-  it("are offered only while a provider is registered, web_fetch only while one can read, and are served over MCP", async () => {
+  it("serve web_search over MCP only while a provider is registered, web_fetch only while one can read", async () => {
     const { ctx } = await boot();
-    expect(ctx.tools.has("web_search")).toBe(false);
+    // Tomrade's own agent still has it, to learn that search is unavailable.
+    expect(ctx.tools.has("web_search")).toBe(true);
+    expect(ctx.tools.served().map((t) => t.name)).not.toContain("web_search");
 
     const searchOnly = ctx.plugin(providerPlugin(fake("a")));
     await settle();
@@ -58,7 +60,7 @@ describe("web search tools", () => {
     expect(ctx.tools.has("web_fetch")).toBe(false);
     expect(ctx.tools.has("web_search")).toBe(true);
     await searchOnly.dispose();
-    expect(ctx.tools.has("web_search")).toBe(false);
+    expect(ctx.tools.served().map((t) => t.name)).not.toContain("web_search");
     await ctx.fiber.dispose();
   });
 
@@ -76,6 +78,12 @@ describe("web search tools", () => {
   it("passes on why nobody can answer, so the agent can tell the person what to set up", async () => {
     const { ctx } = await boot(fake("a", { unavailable: () => "Web search has no Tavily API key yet" }));
     await expect(ctx.tools.execute("web_search", { query: "x" }, { by })).rejects.toThrow("Web search has no Tavily API key yet");
+    await ctx.fiber.dispose();
+  });
+
+  it("says nothing is switched on when no provider is registered", async () => {
+    const { ctx } = await boot();
+    await expect(ctx.tools.execute("web_search", { query: "x" }, { by })).rejects.toThrow("No web search provider is switched on");
     await ctx.fiber.dispose();
   });
 

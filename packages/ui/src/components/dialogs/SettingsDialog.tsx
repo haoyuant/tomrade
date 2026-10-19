@@ -1069,7 +1069,7 @@ function EnginePickField({ engine, pick, value, onCommit }: { engine: EngineView
         <option value="">{t("settingsDialog.pickDefaultOption")}</option>
         {pick.choices.map((c) => (
           <option key={c.value} value={c.value}>
-            {c.label ?? c.value}
+            {c.searchesWeb ? t("settingsDialog.pickSearchesWeb", { label: c.label ?? c.value }) : (c.label ?? c.value)}
           </option>
         ))}
         {pick.freeText && <option value={CUSTOM_PICK}>{t("settingsDialog.pickCustomOption")}</option>}

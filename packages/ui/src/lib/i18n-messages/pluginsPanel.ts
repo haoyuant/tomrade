@@ -46,7 +46,7 @@ export const pluginsPanel = {
     contractFiles: "File sharing",
     contractFilesLede: "Where a project's files are versioned and shared from.",
     contractWebSearch: "Web search",
-    contractWebSearchLede: "Who answers the assistant's web_search and web_fetch tools. The first one that is set up does; with none switched on, the tools are not offered.",
+    contractWebSearchLede: "Who answers the assistant's web_search and web_fetch tools for a model that does not search the web on its own. A model that does (Claude through Anthropic's API, for one) needs none of these and no API key. The first one that is set up answers.",
     otherPlugins: "Everything else",
   },
   zh: {
@@ -94,7 +94,7 @@ export const pluginsPanel = {
     contractFiles: "文件共享",
     contractFilesLede: "项目文件在哪里保存版本、从哪里共享。",
     contractWebSearch: "联网搜索",
-    contractWebSearchLede: "由谁来回答助手的 web_search 与 web_fetch 工具。第一个配置好的插件负责回答；一个都没打开时，这两个工具不会提供给助手。",
+    contractWebSearchLede: "为不自带联网搜索的模型回答助手的 web_search 与 web_fetch 工具。自带联网搜索的模型（比如通过 Anthropic API 使用的 Claude）不需要这些插件，也不需要 API key。第一个配置好的插件负责回答。",
     otherPlugins: "其他插件",
   }
 };

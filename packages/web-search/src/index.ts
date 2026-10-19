@@ -48,6 +48,14 @@ export interface WebSearchProvider {
   search(request: SearchRequest, signal: AbortSignal): Promise<SearchResponse>;
   /** Pages as Markdown. A provider without it leaves `web_fetch` to another. */
   read?(request: ReadRequest, signal: AbortSignal): Promise<ReadResponse>;
+  /** The settings pane where the person sets it up. */
+  settings?: string;
+}
+
+/** Why no provider can search, and where the person fixes it. */
+export interface Unavailable {
+  reason: string;
+  settings?: string;
 }
 
 declare module "cordis" {
@@ -105,13 +113,23 @@ export class WebSearch extends Service {
     return bounded(`${provider.title} page reading`, READ_TIMEOUT_MS, signal, (s) => provider.read!(request, s));
   }
 
+  /** Why nobody can search right now; null when a provider can. */
+  unavailable(): Unavailable | null {
+    return this.missing(() => true);
+  }
+
   /** The first available provider that can do it, else the first one's reason for not being available. */
   private pick(can: (p: WebSearchProvider) => boolean): WebSearchProvider {
+    const missing = this.missing(can);
+    if (missing) throw new Error(missing.reason);
+    return this.providers().filter(can).find((p) => !p.unavailable())!;
+  }
+
+  private missing(can: (p: WebSearchProvider) => boolean): Unavailable | null {
     const able = this.providers().filter(can);
-    const ready = able.find((p) => !p.unavailable());
-    if (ready) return ready;
-    if (!able.length) throw new Error("No web search provider is switched on — the user can turn one on in Settings → Plugins");
-    throw new Error(able[0].unavailable()!);
+    if (able.some((p) => !p.unavailable())) return null;
+    if (!able.length) return { reason: "No web search provider is switched on — the user can turn one on in Settings → Plugins", settings: "plugins" };
+    return { reason: able[0].unavailable()!, ...(able[0].settings ? { settings: able[0].settings } : {}) };
   }
 }
 

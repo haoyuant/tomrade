@@ -2629,6 +2629,9 @@ importers:
 
   packages/web-search:
     dependencies:
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@tomradex/tools':
         specifier: workspace:*
         version: link:../tools
