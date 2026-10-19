@@ -9,10 +9,14 @@ const until = async (cond: () => boolean) => {
   expect(cond()).toBe(true);
 };
 
-async function boot(results: ((n: number) => TurnResult), fake = true) {
+// Local noon by default: the lift time it prints then never crosses midnight.
+async function boot(results: ((n: number) => TurnResult), fake = true, now = new Date(2026, 9, 18, 12, 0)) {
   const { ctx, project } = await fresh({ plugins: [Tools, [Settings, { path: `/tmp/tomrade-limit-${Date.now()}-${Math.random()}.json` }], Agent] });
   await settle();
-  if (fake) vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  if (fake) {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    vi.setSystemTime(now);
+  }
   const said: string[] = [];
   ctx.agent.engine({ id: "limited", title: "Limited", author: "ai:test", available: async () => ({ ok: true }),
     async turn(input) {
@@ -30,14 +34,17 @@ async function boot(results: ((n: number) => TurnResult), fake = true) {
 
 afterEach(() => vi.useRealTimers());
 
-it("parks a run stopped by a usage limit and continues the conversation once it lifts", async () => {
+it.each([
+  { at: new Date(2026, 9, 18, 12, 0), lifts: "13:00" },
+  { at: new Date(2026, 9, 18, 23, 30), lifts: "tomorrow 00:30" }
+])("parks a run stopped by a usage limit and continues the conversation once it lifts (at $lifts)", async ({ at, lifts }) => {
   let resetAt = 0;
-  const t = await boot((n) => (n === 1 ? { stop: "error", error: "You've hit your limit", limit: { until: (resetAt = Date.now() + 60 * 60_000) } } : { stop: "end" }));
+  const t = await boot((n) => (n === 1 ? { stop: "error", error: "You've hit your limit", limit: { until: (resetAt = Date.now() + 60 * 60_000) } } : { stop: "end" }), true, at);
   try {
     t.ctx.agent.send(t.project.id, t.thread.id, { kind: "text", text: "build it" });
     await t.settled(1);
     expect(t.ctx.agent.parked(t.project.id, t.thread.id)).toMatchObject({ until: resetAt, known: true, resume: true, attempt: 1 });
-    expect(t.notes().at(-1)).toMatch(/^Hit a usage limit; it lifts at \d\d:\d\d\. Tomrade continues this conversation then\.$/);
+    expect(t.notes().at(-1)).toBe(`Hit a usage limit; it lifts at ${lifts}. Tomrade continues this conversation then.`);
 
     vi.advanceTimersByTime(59 * 60_000);
     await t.settled(1);
