@@ -9,7 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { CodeLink, type ForgePull } from "@tomradex/code-link";
+import { CodeLink, deliveryMerged, type CodeLinkView, type ForgePull } from "@tomradex/code-link";
 import { Contributions } from "@tomradex/contributions";
 import { Repos } from "@tomradex/repos";
 import GitHubAccount from "@tomradex/github";
@@ -226,6 +226,72 @@ describe("code link", () => {
       expect(codeLink.links(project.id, item.id).map((l) => l.branch).sort()).toEqual([other, real].sort());
       expect(items.get(project.id, item.id)?.status).not.toBe("done");
     } finally { await ctx.fiber.dispose(); }
+  });
+  it("finishes on merge beside an earlier pull request that was closed unmerged", async () => {
+    const { codeLink, ctx, items, project, repo, checkout, ticket } = await machine(codeRepo());
+    try {
+      const item = ticket("Second attempt", "verifying");
+      const dropped = `tom-${item.keyNum}/first-try`;
+      const real = `tom-${item.keyNum}/second-try`;
+      commitOn(checkout, dropped, "first.ts", `${item.key}: first try`);
+      commitOn(checkout, real, "second.ts", `${item.key}: second try`);
+      git(["push", "-q", "origin", dropped, real], checkout);
+      codeLink.store.ensureActiveDelivery(project.id, item.id);
+      codeLink.store.upsertLink(project.id, { itemId: item.id, repoId: repo.id, branch: dropped }, { prNumber: 1, prUrl: "https://github.com/example/app/pull/1", prState: "closed", source: "mcp" });
+      git(["checkout", "-q", "main"], checkout);
+      git(["merge", "-q", "--no-ff", "-m", `Merge ${real}`, real], checkout);
+      git(["push", "-q", "origin", "main"], checkout);
+      await codeLink.scan(project.id);
+      expect(items.get(project.id, item.id)?.status).toBe("done");
+    } finally { await ctx.fiber.dispose(); }
+  });
+  it("finishes on merge when another repository only has an empty branch for the ticket", async () => {
+    const { codeLink, ctx, items, project, checkout, ticket } = await machine(codeRepo());
+    try {
+      const second = codeRepo();
+      const other = ctx.repos.create({ projectId: project.id, remote: second.remote });
+      await ctx.repos.setCheckout(second.remote, second.checkout);
+      const item = ticket("Lands in one repository", "verifying");
+      const branch = `tom-${item.keyNum}/fix`;
+      // what claiming leaves in a repository the work never touched
+      git(["branch", branch, "main"], second.checkout);
+      codeLink.store.ensureActiveDelivery(project.id, item.id);
+      codeLink.store.upsertLink(project.id, { itemId: item.id, repoId: other.id, branch }, { source: "mcp" });
+      commitOn(checkout, branch, "fix.ts", `${item.key}: fix`);
+      git(["checkout", "-q", "main"], checkout);
+      git(["merge", "-q", "--no-ff", "-m", `Merge ${branch}`, branch], checkout);
+      git(["push", "-q", "origin", "main"], checkout);
+      await codeLink.scan(project.id);
+      expect(items.get(project.id, item.id)?.status).toBe("done");
+    } finally { await ctx.fiber.dispose(); }
+  });
+  it("still waits on another repository's open pull request after one repository merged", async () => {
+    const { codeLink, ctx, items, project, checkout, ticket } = await machine(codeRepo());
+    try {
+      const second = codeRepo();
+      const other = ctx.repos.create({ projectId: project.id, remote: second.remote });
+      await ctx.repos.setCheckout(second.remote, second.checkout);
+      const item = ticket("Spans two repositories", "verifying");
+      const branch = `tom-${item.keyNum}/both`;
+      codeLink.store.ensureActiveDelivery(project.id, item.id);
+      codeLink.store.upsertLink(project.id, { itemId: item.id, repoId: other.id, branch }, { prNumber: 4, prUrl: "https://github.com/example/other/pull/4", prState: "open", source: "mcp" });
+      commitOn(checkout, branch, "half.ts", `${item.key}: first half`);
+      git(["checkout", "-q", "main"], checkout);
+      git(["merge", "-q", "--no-ff", "-m", `Merge ${branch}`, branch], checkout);
+      git(["push", "-q", "origin", "main"], checkout);
+      await codeLink.scan(project.id);
+      expect(items.get(project.id, item.id)?.status).toBe("verifying");
+    } finally { await ctx.fiber.dispose(); }
+  });
+  it("counts a delivery merged only once something merged and the rest merged or was abandoned", () => {
+    const link = (patch: Partial<CodeLinkView>) => ({ mergedSha: null, prNumber: null, prUrl: null, prState: null, ahead: 0, ...patch }) as CodeLinkView;
+    const merged = link({ mergedSha: "abc", prState: "merged", prNumber: 2 });
+    expect(deliveryMerged([merged, link({ prNumber: 1, prState: "closed" })])).toBe(true);
+    expect(deliveryMerged([merged, link({})])).toBe(true);
+    expect(deliveryMerged([merged, link({ ahead: 2 })])).toBe(false);
+    expect(deliveryMerged([merged, link({ prNumber: 3, prState: "open" })])).toBe(false);
+    expect(deliveryMerged([link({ prNumber: 1, prState: "closed" }), link({})])).toBe(false);
+    expect(deliveryMerged([])).toBe(false);
   });
   it("links a branch named after a ticket and moves the ticket to doing, then done on merge", async () => {
     const { codeLink, ctx, items, project, repo, checkout, ticket } = await machine(codeRepo());
