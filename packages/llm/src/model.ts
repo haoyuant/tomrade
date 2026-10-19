@@ -2,6 +2,7 @@ import type { z } from "zod";
 
 export type LlmRole = "worker";
 export type InputModality = "image" | "audio" | "video" | "pdf";
+export type OutputModality = "image" | "audio";
 export interface MediaData { mime: string; base64: string; name: string }
 export const IMAGE_MIMES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 export function inputMimes(modalities: readonly InputModality[]): string[] {
@@ -41,6 +42,8 @@ export interface ChatRequest {
   json?: boolean;
   /** Let the model search the web itself; only for a model whose capabilities say `nativeWebSearch`. */
   webSearch?: boolean;
+  /** Media the reply should carry; only for a model whose capabilities list it in `mediaOutput`. An ordinary turn asks for none. */
+  mediaOutput?: OutputModality[];
 }
 
 export type StopReason = "end" | "tool_use" | "max_tokens" | "refusal";

@@ -17,7 +17,7 @@ import { LLM_WORDS } from "./words.js";
 
 export * from "./model.js";
 export { PROVIDERS, guessProviders, keyHint, listModels, pickModel, usableModels, type ModelListing, type ProviderPreset, type QuickSetupResult } from "./providers.js";
-export { LlmError, NativeSearchRefused, type LlmErrorResponse } from "./errors.js";
+export { LlmError, NativeMediaRefused, NativeSearchRefused, type LlmErrorResponse } from "./errors.js";
 export { OpenAiCompatible, type OpenAiConfig } from "./openai.js";
 export { AnthropicModel, type AnthropicConfig } from "./anthropic.js";
 export { withPromptTools } from "./prompt-tools.js";

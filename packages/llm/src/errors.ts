@@ -24,3 +24,11 @@ export class NativeSearchRefused extends LlmError {
     this.name = "NativeSearchRefused";
   }
 }
+
+/** The provider turned down a request for media output (`modalities`); the caller makes it another way. */
+export class NativeMediaRefused extends LlmError {
+  constructor(message: string, cause?: unknown) {
+    super(message, cause);
+    this.name = "NativeMediaRefused";
+  }
+}

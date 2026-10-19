@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { AnthropicModel, OpenAiCompatible, ImagesModel, collect } from "@tomradex/llm";
+import { AnthropicModel, NativeMediaRefused, OpenAiCompatible, ImagesModel, collect, userMessage } from "@tomradex/llm";
 
 afterEach(() => vi.unstubAllGlobals());
 const media = { mime: "image/png", name: "input.png", base64: "aGVsbG8=" };
@@ -27,13 +27,41 @@ it("sends image-only input and collects native image output without losing bytes
   ]));
   vi.stubGlobal("fetch", fetcher);
   const model = new OpenAiCompatible({ baseURL: "http://localhost/v1", apiKey: "test", model: "vision", inputModalities: ["image"], outputModalities: ["image"] });
-  const result = await collect(model.chat(request));
+  const result = await collect(model.chat({ ...request, mediaOutput: ["image"] }));
   const body = JSON.parse((fetcher.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
   expect(body.modalities).toEqual(["text", "image"]);
   expect(body.messages[1]).toEqual({ role: "user", content: [{ type: "image_url", image_url: { url: "data:image/png;base64,aGVsbG8=" } }] });
   expect(result.text).toBe("Here it is");
   expect(result.media).toHaveLength(1);
   expect(result.media![0]).toMatchObject({ mime: "image/png", base64: media.base64 });
+});
+
+it("sends no modalities on an ordinary turn of a model that can produce audio and images", async () => {
+  const fetcher = vi.fn(async () => sse([{ choices: [{ delta: { content: "hi" }, finish_reason: "stop" }] }]));
+  vi.stubGlobal("fetch", fetcher);
+  const model = new OpenAiCompatible({ baseURL: "http://localhost/v1", apiKey: "", model: "omni", outputModalities: ["audio", "image"] });
+  await collect(model.chat({ system: "s", messages: [userMessage("hello")] }));
+  const body = JSON.parse((fetcher.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+  expect(body.modalities).toBeUndefined();
+  expect(body.audio).toBeUndefined();
+});
+
+it("asks only for the kind a turn needs, and only of a model that can produce it", async () => {
+  const fetcher = vi.fn(async () => sse([{ choices: [{ delta: { content: "hi" }, finish_reason: "stop" }] }]));
+  vi.stubGlobal("fetch", fetcher);
+  const bodies = () => (fetcher.mock.calls as unknown as [string, RequestInit][]).map(([, init]) => JSON.parse(init.body as string));
+  await collect(new OpenAiCompatible({ baseURL: "http://localhost/v1", apiKey: "", model: "omni", outputModalities: ["audio", "image"] }).chat({ system: "s", messages: [userMessage("draw")], mediaOutput: ["image"] }));
+  await collect(new OpenAiCompatible({ baseURL: "http://localhost/v1", apiKey: "", model: "text-only" }).chat({ system: "s", messages: [userMessage("draw")], mediaOutput: ["image"] }));
+  expect(bodies()[0].modalities).toEqual(["text", "image"]);
+  expect(bodies()[0].audio).toBeUndefined();
+  expect(bodies()[1].modalities).toBeUndefined();
+});
+
+it("reports a refused media request as such, and an ordinary 400 as an ordinary failure", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response("modalities not supported", { status: 400 })));
+  const model = new OpenAiCompatible({ baseURL: "http://localhost/v1", apiKey: "", model: "omni", outputModalities: ["image"], retries: 0 });
+  await expect(collect(model.chat({ system: "s", messages: [userMessage("draw")], mediaOutput: ["image"] }))).rejects.toBeInstanceOf(NativeMediaRefused);
+  await expect(collect(model.chat({ system: "s", messages: [userMessage("hi")] }))).rejects.not.toBeInstanceOf(NativeMediaRefused);
 });
 
 it("rejects unsupported input before contacting a text-only endpoint", async () => {
@@ -47,7 +75,7 @@ it("serializes PDF/audio/video inputs and wraps streamed PCM in a playable WAV",
   const fetcher = vi.fn(async () => sse([{ choices: [{ delta: { audio: { data: "AQACAAMA", transcript: "Hello" } } }] }]));
   vi.stubGlobal("fetch", fetcher);
   const model = new OpenAiCompatible({ baseURL: "http://localhost/v1", apiKey: "", model: "multi", inputModalities: ["pdf", "audio", "video"], outputModalities: ["audio"] });
-  const result = await collect(model.chat({ system: "s", messages: [{ role: "user", content: ["application/pdf", "audio/wav", "video/mp4"].map(mime => ({ type: "media", media: { ...media, mime } })) }] }));
+  const result = await collect(model.chat({ system: "s", messages: [{ role: "user", content: ["application/pdf", "audio/wav", "video/mp4"].map(mime => ({ type: "media", media: { ...media, mime } })) }], mediaOutput: ["audio"] }));
   const body = JSON.parse((fetcher.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
   expect(body.messages[1].content.map((part: { type: string }) => part.type)).toEqual(["file", "input_audio", "video_url"]);
   expect(body.audio.format).toBe("pcm16");
