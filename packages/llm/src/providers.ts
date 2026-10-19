@@ -23,7 +23,7 @@ export interface ProviderPreset {
 
 export const PROVIDERS: ProviderPreset[] = [
   {
-    id: "deepseek", title: "DeepSeek", provider: "openai-compatible", baseURL: "https://api.deepseek.com", model: "deepseek-chat", prefer: [/flash/, /^deepseek-v\d/],
+    id: "deepseek", title: "DeepSeek", provider: "openai-compatible", baseURL: "https://api.deepseek.com", model: "deepseek-flash", prefer: [/flash/, /^deepseek-v\d/],
     keyPage: "https://platform.deepseek.com/api_keys", env: "DEEPSEEK_API_KEY",
     hint: { en: "Low pay-as-you-go prices; reachable from mainland China", zh: "按量付费、价格低，国内可直连" }
   },

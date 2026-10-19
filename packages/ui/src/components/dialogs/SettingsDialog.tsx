@@ -632,7 +632,7 @@ export function SettingsDialog({
 }
 
 const PRESETS = [
-  { titleKey: "settingsDialog.presetDeepseek" as const, provider: "openai-compatible" as const, baseURL: "https://api.deepseek.com", model: "deepseek-chat" },
+  { titleKey: "settingsDialog.presetDeepseek" as const, provider: "openai-compatible" as const, baseURL: "https://api.deepseek.com", model: "deepseek-flash" },
   { titleKey: "settingsDialog.presetAnthropic" as const, provider: "anthropic" as const, baseURL: "", model: "claude-sonnet-5" },
   { titleKey: "settingsDialog.presetOpenai" as const, provider: "openai-compatible" as const, baseURL: "https://api.openai.com/v1", model: "" },
   { titleKey: "settingsDialog.presetKimi" as const, provider: "openai-compatible" as const, baseURL: "https://api.moonshot.cn/v1", model: "" },
