@@ -103,6 +103,10 @@ export const fields = {
     attachMissing: "{{name}} is not on this machine yet",
     attachTooLargeToast: "{{name}} is larger than 8 MB — add it in Files instead.",
     attachFailedToast: "The attachments were not saved: {{error}}",
+    imagePreviewOpenInFiles: "Open in Files",
+    imagePreviewPrev: "Previous image",
+    imagePreviewNext: "Next image",
+    imagePreviewCount: "{{n}} of {{total}}",
 
     conflictToast: "Someone wrote to {{key}} first — it re-read; your change is still there to try again.",
 
@@ -214,6 +218,10 @@ export const fields = {
     attachMissing: "{{name}} 尚未同步到本机",
     attachTooLargeToast: "{{name}} 超过 8 MB，请从 Files 添加。",
     attachFailedToast: "附件未能保存：{{error}}",
+    imagePreviewOpenInFiles: "在 Files 中打开",
+    imagePreviewPrev: "上一张",
+    imagePreviewNext: "下一张",
+    imagePreviewCount: "第 {{n}} / {{total}} 张",
 
     conflictToast: "有人先一步写入了 {{key}}——内容已重新读取，你的修改还在，可以再试一次。",
 
