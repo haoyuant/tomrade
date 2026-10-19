@@ -1,6 +1,6 @@
 import { inputMimes, type InputModality, type MediaData, type ChatEvent, type ChatModel, type ChatRequest, type StopReason } from "./model.js";
 import { LlmError, NativeSearchRefused } from "./errors.js";
-import { fitsResponses, readResponses, responsesBody, searchesOnResponses } from "./responses.js";
+import { fitsResponses, readResponses, replaysSearches, responsesBody, searchesOnResponses } from "./responses.js";
 
 export interface OpenAiConfig {
   baseURL: string;
@@ -290,7 +290,7 @@ export class OpenAiCompatible implements ChatModel {
     const res = yield* this.post(url, {
       method: "POST",
       headers: { Authorization: "Bearer " + this.config.apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify(responsesBody(this.config.model, request)),
+      body: JSON.stringify(responsesBody(this.config.model, request, replaysSearches(this.config.baseURL))),
       signal
     });
     if (!res.ok) {
@@ -301,6 +301,6 @@ export class OpenAiCompatible implements ChatModel {
       throw new LlmError(`LLM request failed ${res.status}: ${text.slice(0, 300)}`, undefined, { status: res.status, url: res.url || url, ...(requestId ? { requestId } : {}), body: text.slice(0, 8000) });
     }
     if (!res.body) throw new LlmError("LLM response had no body");
-    yield* readResponses(sseData(res.body));
+    yield* readResponses(sseData(res.body), replaysSearches(this.config.baseURL));
   }
 }

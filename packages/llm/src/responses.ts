@@ -11,6 +11,14 @@ const DEEPSEEK = /^https?:\/\/api\.deepseek\.com(\/|$)/i;
 export const searchesOnResponses = (baseURL: string, model: string): boolean =>
   (OPENAI.test(baseURL) && /^(gpt-4\.1|gpt-4o|gpt-5|o3|o4)/.test(model)) || (DEEPSEEK.test(baseURL) && /^deepseek-v4-pro/.test(model));
 
+const SEARCHES = "responses-web-search";
+
+/**
+ * Whether the endpoint takes its earlier `web_search_call` items back to restore their results, as DeepSeek's does.
+ * OpenAI's reasoning models refuse one replayed without its reasoning item, which is not kept.
+ */
+export const replaysSearches = (baseURL: string): boolean => DEEPSEEK.test(baseURL);
+
 /** Whether every input of the request has a Responses form; one that has not goes through chat/completions without the search. */
 export const fitsResponses = (request: ChatRequest): boolean =>
   !request.json && request.messages.every((m) => m.content.every((b) => b.type !== "media" || b.media.mime.startsWith("image/") || b.media.mime === "application/pdf"));
@@ -19,7 +27,7 @@ export const fitsResponses = (request: ChatRequest): boolean =>
  * The conversation as Responses input items. Reasoning is not sent back, as on chat/completions; a
  * function call goes without an item id, so no model asks for the reasoning that came with it.
  */
-export function toResponsesInput(request: ChatRequest): Record<string, unknown>[] {
+export function toResponsesInput(request: ChatRequest, replay = false): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = [];
   for (const message of request.messages) {
     if (message.role === "user") {
@@ -32,6 +40,7 @@ export function toResponsesInput(request: ChatRequest): Record<string, unknown>[
       });
       if (parts.length) out.push({ role: "user", content: parts });
     } else {
+      if (replay) for (const block of message.content) if (block.type === "native" && block.provider === SEARCHES) out.push(...(block.data as Record<string, unknown>[]));
       const text = message.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("\n");
       if (text) out.push({ role: "assistant", content: text });
       for (const block of message.content) if (block.type === "tool_call") out.push({ type: "function_call", call_id: block.id, name: block.name, arguments: JSON.stringify(block.args ?? {}) });
@@ -40,12 +49,12 @@ export function toResponsesInput(request: ChatRequest): Record<string, unknown>[
   return out;
 }
 
-export function responsesBody(model: string, request: ChatRequest): Record<string, unknown> {
+export function responsesBody(model: string, request: ChatRequest, replay = false): Record<string, unknown> {
   const choice = request.toolChoice;
   return {
     model,
     instructions: request.system,
-    input: toResponsesInput(request),
+    input: toResponsesInput(request, replay),
     stream: true,
     store: false,
     tools: [...(request.tools ?? []).map((t) => ({ type: "function", name: t.name, description: t.description, parameters: t.inputSchema })), { type: "web_search" }],
@@ -76,12 +85,16 @@ interface ResponseEvent {
   message?: string;
 }
 
-/** A Responses stream as chat events: text as it comes, function calls when complete, the cited pages listed after the answer. */
-export async function* readResponses(data: AsyncIterable<string>): AsyncGenerator<ChatEvent> {
+/**
+ * A Responses stream as chat events: text as it comes, function calls when complete, the cited pages listed after the answer,
+ * and, with `keep`, the searches it ran as native data for the next request of the turn.
+ */
+export async function* readResponses(data: AsyncIterable<string>, keep = false): AsyncGenerator<ChatEvent> {
   const sources = new Map<string, string>();
   const cite = (a?: { type?: string; url?: string; title?: string }) => {
     if (a?.type === "url_citation" && a.url && !sources.has(a.url)) sources.set(a.url, a.title || a.url);
   };
+  const searches: unknown[] = [];
   let stop: StopReason = "end";
   let calls = 0;
   for await (const raw of data) {
@@ -97,6 +110,8 @@ export async function* readResponses(data: AsyncIterable<string>): AsyncGenerato
     else if (event.type === "response.output_item.done" && event.item?.type === "function_call") {
       calls += 1;
       yield { type: "tool_call", id: event.item.call_id ?? `call_${calls}`, name: event.item.name ?? "", args: parseArgs(event.item.arguments ?? "") };
+    } else if (event.type === "response.output_item.done" && event.item?.type === "web_search_call") {
+      if (keep) searches.push(event.item);
     } else if (event.type === "response.output_item.done" && event.item?.type === "message") {
       for (const part of event.item.content ?? []) for (const a of part.annotations ?? []) cite(a);
     } else if (event.type === "response.completed" || event.type === "response.incomplete") {
@@ -109,6 +124,7 @@ export async function* readResponses(data: AsyncIterable<string>): AsyncGenerato
       throw new LlmError(`LLM request failed: ${event.response?.error?.message ?? event.message ?? event.type}`);
     }
   }
+  if (searches.length) yield { type: "native", provider: SEARCHES, data: searches };
   if (sources.size) yield { type: "text", delta: "\n\n" + [...sources].map(([url, title]) => `- [${title.replace(/[[\]]/g, "")}](${url})`).join("\n") };
   yield { type: "stop", reason: calls > 0 && stop === "end" ? "tool_use" : stop };
 }
