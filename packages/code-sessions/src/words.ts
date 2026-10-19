@@ -3,10 +3,10 @@ import { defineWords } from "@tomradex/domain";
 /** What the code sessions plugin says outside its window: the command, the sidebar door, the window's title and its notes. */
 export const CODE_SESSIONS_WORDS = defineWords("codeSessions", {
   en: {
-    open: "Open code sessions window",
+    open: "Open terminal",
     group: "Code link",
-    sidebar: "Code sessions",
-    windowTitle: "Code sessions — {{project}}",
+    sidebar: "Terminal",
+    windowTitle: "Terminal — {{project}}",
     openProject: "Open a project first",
     noTerminal: "This session has no herdr terminal on this computer",
     noTicket: "This session has no ticket",
@@ -22,10 +22,10 @@ export const CODE_SESSIONS_WORDS = defineWords("codeSessions", {
     switchFailed: "Could not bring {{app}} forward"
   },
   zh: {
-    open: "打开代码会话窗口",
+    open: "打开终端",
     group: "代码关联",
-    sidebar: "代码会话",
-    windowTitle: "代码会话 — {{project}}",
+    sidebar: "终端",
+    windowTitle: "终端 — {{project}}",
     openProject: "请先打开一个项目",
     noTerminal: "这个会话在本机没有 herdr 终端",
     noTicket: "这个会话没有关联工单",

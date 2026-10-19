@@ -87,10 +87,10 @@ app.whenReady().then(async () => {
     await ctx.contributions.run("code-sessions.open", { projectId: project.id });
     let win;
     for (let i = 0; i < 50 && !win; i++) {
-      win = BrowserWindow.getAllWindows().find((w) => w.getTitle().startsWith("代码会话"));
+      win = BrowserWindow.getAllWindows().find((w) => w.getTitle().startsWith("终端 — "));
       if (!win) await sleep(100);
     }
-    check("窗口打开，标题带项目名", win?.getTitle() === `代码会话 — ${project.name}`, win?.getTitle());
+    check("窗口打开，标题带项目名", win?.getTitle() === `终端 — ${project.name}`, win?.getTitle());
     win.setBounds({ x: 40, y: 40, width: 1680, height: 1000 });
     const js = (code) => win.webContents.executeJavaScript(code, true);
     const terminalText = (i) => js(`(() => { const cell = document.querySelectorAll('.cs-cell')[${i}]; return cell ? [...cell.querySelectorAll('.xterm-rows > div')].map((r) => r.textContent).join('\\n') : ''; })()`);
@@ -169,7 +169,7 @@ app.whenReady().then(async () => {
     // Closed and opened again, and opened while another window is in front: it comes forward each time.
     const front = new BrowserWindow({ width: 1600, height: 1000, x: 0, y: 0, title: "app window stand-in" });
     await front.loadURL("about:blank");
-    const sessionsWindow = () => BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.getTitle().startsWith("代码会话"));
+    const sessionsWindow = () => BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.getTitle().startsWith("终端 — "));
     // Focus only moves inside the app that is in front; macOS may keep it with the app the person is using.
     app.focus({ steal: true });
     front.focus();

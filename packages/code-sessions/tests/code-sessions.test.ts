@@ -114,7 +114,7 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
 
   await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
   const win = opened[0]!;
-  expect(win.spec).toMatchObject({ id: `code-sessions.${w.project.id}`, kind: "window", url: "file:///ui/code-sessions.html", minWidth: 640, minHeight: 400, title: `Code sessions — ${w.project.name}` });
+  expect(win.spec).toMatchObject({ id: `code-sessions.${w.project.id}`, kind: "window", url: "file:///ui/code-sessions.html", minWidth: 640, minHeight: 400, title: `Terminal — ${w.project.name}` });
   const first = win.states[0]!;
   expect(first).toMatchObject({ projectId: w.project.id, bridge: { state: "ready" }, askSwitch: true, terminal: "iTerm", layout: { type: "leaf", sessionId: null } });
   expect(first.sessions).toEqual([expect.objectContaining({ id: "s1", key: ticket.key, title: "Window work", pane: "w1:p1" })]);
