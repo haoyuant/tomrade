@@ -364,6 +364,11 @@ function InstalledTab({ initialQuery }: { initialQuery?: string }) {
           }
         >
           {installError && <p className="meta-txt" style={{ color: "var(--danger)", whiteSpace: "pre-wrap" }}>{installError}</p>}
+          {plugins.data?.compatibilityProblems?.map((problem) => (
+            <p key={problem} className="meta-txt" style={{ color: "var(--danger)" }} data-testid="compatibility-problem">
+              {problem}
+            </p>
+          ))}
           <div className="stack-2" data-testid="extensions">
             {extensions.map((plugin) => (
               <ExtensionRow key={plugin.id} plugin={plugin} />

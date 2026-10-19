@@ -32,6 +32,9 @@ declare module "@tomradex/ipc" {
     /** Allow a development build to load at exactly this digest. */
     "plugins.confirm": (id: string, digest: string) => PluginsSnapshot;
     "plugins.setAutoUpdate": (id: string, on: boolean) => PluginsSnapshot;
+    /** Run this exact plugin version on this exact Tomrade anyway, outside the ranges it names; the person accepted the risk. */
+    "plugins.allowVersion": (id: string) => PluginsSnapshot;
+    "plugins.withdrawVersion": (id: string) => PluginsSnapshot;
   }
   interface Broadcasts {
     "plugins.changed": () => void;
@@ -116,6 +119,8 @@ export class Plugins extends Service {
       ctx.ipc.handle("plugins.rollback", (id) => ctx.plugins.rollback(id));
       ctx.ipc.handle("plugins.reload", (id) => ctx.plugins.reload(id));
       ctx.ipc.handle("plugins.confirm", (id, digest) => ctx.plugins.confirm(id, digest));
+      ctx.ipc.handle("plugins.allowVersion", (id) => ctx.plugins.allowVersion(id));
+      ctx.ipc.handle("plugins.withdrawVersion", (id) => ctx.plugins.withdrawVersion(id));
       ctx.ipc.handle("plugins.setAutoUpdate", (id, on) => {
         this.store().setAutoUpdate(id, on);
         this.notify();
@@ -133,7 +138,8 @@ export class Plugins extends Service {
   }
 
   snapshot(): PluginsSnapshot {
-    return { modules: this.modules(), contracts: this.config.contracts ?? [], plugins: this.list() };
+    const problems = this.config.extensions?.compatibilityProblems ?? [];
+    return { modules: this.modules(), contracts: this.config.contracts ?? [], plugins: this.list(), ...(problems.length ? { compatibilityProblems: problems } : {}) };
   }
 
   list(): PluginView[] {
@@ -254,6 +260,16 @@ export class Plugins extends Service {
 
   async confirm(id: string, digest: string): Promise<PluginsSnapshot> {
     this.store().confirm(id, digest);
+    return this.reload(id);
+  }
+
+  async allowVersion(id: string): Promise<PluginsSnapshot> {
+    this.store().allowVersion(id);
+    return this.reload(id);
+  }
+
+  async withdrawVersion(id: string): Promise<PluginsSnapshot> {
+    this.store().withdrawVersion(id);
     return this.reload(id);
   }
 

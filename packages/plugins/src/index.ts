@@ -14,4 +14,4 @@ export {
   type PluginsSnapshot,
   type RowPatch
 } from "./types.js";
-export { ExtensionRefused, ExtensionStore, type ExtensionInfo, type ExtensionStoreConfig, type FullModeInfo, type RowChange } from "./extensions.js";
+export { COMPATIBILITY_FILE, ExtensionRefused, ExtensionStore, type ExtensionInfo, type ExtensionStoreConfig, type FullModeInfo, type RangeMiss, type RowChange } from "./extensions.js";

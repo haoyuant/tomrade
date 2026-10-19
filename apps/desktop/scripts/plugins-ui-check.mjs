@@ -1,7 +1,8 @@
 /**
  * The Plugins screens against the real shell: a store package and a local one
  * installed, an agent's build waiting in Plugin Studio and loaded only once a
- * person confirms it in the dialog, and the four tabs, in both languages.
+ * person confirms it in the dialog, a plugin built for another SDK let in by
+ * the person for this version and taken back, and the four tabs, in both languages.
  *
  *   pnpm --filter @tomrade/desktop test:plugins-ui      (needs the dev server up)
  */
@@ -102,6 +103,11 @@ const run = async () => {
   const keeper = await extension("keeper", { official: true, permissions: { network: [], fs: "none", exec: false } });
   await ctx.plugins.installFile(keeper.file, { source: "store", digest: keeper.digest });
   await ctx.plugins.installFile((await extension("runner", { permissions: { network: [], fs: "none", exec: true } })).file);
+  // built for an SDK this Tomrade does not have
+  await extension("later", { permissions: { network: [], fs: "none", exec: false } });
+  const laterManifest = path.join(WORK, "src", "later", "tomrade-plugin.json");
+  fs.writeFileSync(laterManifest, JSON.stringify({ ...JSON.parse(fs.readFileSync(laterManifest, "utf8")), engines: { sdk: "^9.0.0" } }, null, 2));
+  await ctx.plugins.installFile((await packPlugin(path.join(WORK, "src", "later"), path.join(WORK, "later-9.tomrade-plugin"))).file);
   const view = (id) => ctx.plugins.list().find((p) => p.id === id);
   check("a store package installs as Community", view("someone/counter")?.extension?.tier === "community" && view("someone/counter")?.state === "active");
   check("one Tomrade signed installs as Official", view("someone/keeper")?.extension?.tier === "official");
@@ -156,6 +162,19 @@ const run = async () => {
   await sleep(2500);
   check("confirming loads exactly that build", view("local/notes")?.state === "active" && ctx.tools.has("notes_count_open"), JSON.stringify(view("local/notes")));
   check("and the dialog closes", (await $(`!!document.querySelector('[data-testid="confirm-build"]')`)) === false);
+
+  // A plugin built for another SDK: refused, let in for this version with a warning, taken back.
+  check("a plugin built for another SDK is refused and says which", view("someone/later")?.state === "failed" && (await $(`${ext("someone/later")}?.querySelector('[data-testid="version-range"]')?.textContent.includes('Built for plugin SDK ^9.0.0')`)) === true);
+  await press(`${ext("someone/later")}.querySelector('[data-testid="allow-version"]')`);
+  await sleep(600);
+  check("running it anyway warns what may happen first", (await $(`document.querySelector('.dlg-body, [role="dialog"]') && [...document.querySelectorAll('[role="dialog"]')].some((d) => d.textContent.includes('crash Tomrade'))`)) === true);
+  await shot("31b-plugins-run-anyway");
+  await press(`document.querySelector('[data-testid="allow-version-confirm"]')`);
+  await sleep(2000);
+  check("and once confirmed it runs, saying why", view("someone/later")?.state === "active" && (await $(`${ext("someone/later")}?.textContent.includes('because you let 0.1.0 in')`)) === true, JSON.stringify(view("someone/later")));
+  await press(`${ext("someone/later")}.querySelector('[data-testid="withdraw-version"]')`);
+  await sleep(2000);
+  check("taking it back refuses it again", view("someone/later")?.state === "failed" && (await $(`!!${ext("someone/later")}?.querySelector('[data-testid="allow-version"]')`)) === true);
 
   // Rows sit under the contract they fill; a search narrows rows and extensions alike.
   const search = (text) =>
