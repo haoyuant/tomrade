@@ -1423,7 +1423,7 @@ export const de: PartialMessages = {
     "mergeWhy_auto-mode": "Der Auto-Modus von {{engine}} kann einen Merge verweigern, den keine Regel erlaubt.",
     mergeWhy_plan: "{{engine}} läuft im Planmodus und mergt nicht.",
     "mergeWhy_dont-ask": "{{engine}} verweigert Befehle, die seine Einstellungen nicht erlauben.",
-    mergeUnknown: "Tomrade kann die Berechtigungen von {{engine}} nicht lesen. Verweigert es, erfährst du es und kannst manuell mergen.",
+    mergeUnknown: "Tomrade kann die Berechtigungen von {{engines}} nicht lesen. Wird ein Merge verweigert, erfährst du es und kannst manuell mergen.",
     mergeFix: "Erlauben: {{rule}} zu {{file}} hinzufügen",
     mergeFixing: "Füge die Regel hinzu…",
     mergeFixedToast: "{{engine}} darf jetzt mergen – {{rule}} zu {{file}} hinzugefügt",

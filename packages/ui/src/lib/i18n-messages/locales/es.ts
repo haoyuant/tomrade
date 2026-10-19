@@ -1423,7 +1423,7 @@ export const es: PartialMessages = {
     "mergeWhy_auto-mode": "El modo automático de {{engine}} puede rechazar una fusión que ninguna regla permita.",
     mergeWhy_plan: "{{engine}} se ejecuta en modo plan y no fusionará.",
     "mergeWhy_dont-ask": "{{engine}} rechaza los comandos que sus ajustes no permiten.",
-    mergeUnknown: "Tomrade no puede leer los permisos de {{engine}}. Si lo rechaza, se te avisará y podrás fusionar a mano.",
+    mergeUnknown: "Tomrade no puede leer los permisos de {{engines}}. Si se rechaza una fusión, se te avisará y podrás fusionar a mano.",
     mergeFix: "Permitirlo: añadir {{rule}} a {{file}}",
     mergeFixing: "Añadiendo la regla…",
     mergeFixedToast: "{{engine}} ya puede fusionar: se añadió {{rule}} a {{file}}",

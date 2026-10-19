@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import type { MergeCheckView, RepoStateView } from "@tomradex/code-link";
+import type { RepoStateView } from "@tomradex/code-link";
 import type { Board, Repo } from "@tomradex/domain";
 import type { CheckoutView, FolderRepo } from "@tomradex/repos";
 import { Icon } from "~/components/icons";
 import { Eyebrow } from "~/components/ui/atoms";
-import { useAllowMerge, useGithubCredential, useGithubCredentialAccount, useMergeChecks, useRecheckRemote, useRemoteIdentity, useRepoStates, useSetRepoPolicy } from "~/lib/codeLink";
-import { useI18n, type MessageKey } from "~/lib/i18n";
+import { splitMergeChecks, useAllowMerge, useGithubCredential, useGithubCredentialAccount, useMergeChecks, useRecheckRemote, useRemoteIdentity, useRepoStates, useSetRepoPolicy, type ReadMergeCheck } from "~/lib/codeLink";
+import { intlTag, useI18n, type MessageKey } from "~/lib/i18n";
 import { normalizeRemote } from "~/lib/remotes";
 import {
   useAddRepoFromFolder,
@@ -417,12 +417,13 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
 
 /** The repository's merge policy, and what each agent's own settings say about it — with the one rule that would let it. */
 function AgentMerge({ projectId, repoId, on, local }: { projectId: string; repoId: string; on: boolean; local: boolean }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const policy = useSetRepoPolicy(projectId);
   // With no remote the agent merges through Tomrade's own tool, which its shell rules don't gate.
   const checks = useMergeChecks(projectId, repoId, on && !local);
   const label = t(local ? "repositories.agentMergeLocal" : "repositories.agentMerge");
   const toast = useToast();
+  const { known, unknown } = splitMergeChecks(checks.data ?? []);
   return (
     <>
       <div className="cfg-row" style={{ marginTop: 0 }}>
@@ -441,18 +442,26 @@ function AgentMerge({ projectId, repoId, on, local }: { projectId: string; repoI
       <p className="meta-txt dense">{t(local ? "repositories.agentMergeLocalNote" : "repositories.agentMergeNote")}</p>
       {on && checks.isLoading && <p className="meta-txt dense repo-merge-checking">{t("repositories.mergeChecking")}</p>}
       {on && checks.data?.length === 0 && <p className="meta-txt dense">{t("repositories.mergeNoEngines")}</p>}
-      {on && checks.data?.map((view) => <MergeCheckRow key={view.engine} projectId={projectId} repoId={repoId} view={view} />)}
+      {on && known.map((view) => <MergeCheckRow key={view.engine} projectId={projectId} repoId={repoId} view={view} />)}
+      {on && unknown.length > 0 && (
+        <div className="cfg-row repo-merge-check" data-state="unknown" style={{ marginTop: 0 }}>
+          <Icon name="i-clock" size={14} style={{ color: "var(--meta)" }} />
+          <span className="repo-remote-copy">
+            <span className="cfg-name">{t("repositories.mergeUnknown", { engines: new Intl.ListFormat(intlTag(locale), { type: "conjunction" }).format(unknown) })}</span>
+          </span>
+        </div>
+      )}
     </>
   );
 }
 
-function MergeCheckRow({ projectId, repoId, view }: { projectId: string; repoId: string; view: MergeCheckView }) {
+function MergeCheckRow({ projectId, repoId, view }: { projectId: string; repoId: string; view: ReadMergeCheck }) {
   const { t } = useI18n();
   const toast = useToast();
   const allow = useAllowMerge(projectId, repoId);
   const check = view.check;
-  const vars = { engine: view.title, rule: check?.rule?.rule ?? check?.fix?.rule ?? "", file: check?.rule?.file ?? check?.fix?.file ?? "" };
-  const state = check?.state ?? "unknown";
+  const vars = { engine: view.title, rule: check.rule?.rule ?? check.fix?.rule ?? "", file: check.rule?.file ?? check.fix?.file ?? "" };
+  const state = check.state;
   return (
     <div className="cfg-row repo-merge-check" data-engine={view.engine} data-state={state} style={{ marginTop: 0 }}>
       <Icon
@@ -461,14 +470,14 @@ function MergeCheckRow({ projectId, repoId, view }: { projectId: string; repoId:
         style={{ color: state === "allowed" ? "var(--accent)" : state === "blocked" ? "var(--danger)" : "var(--meta)" }}
       />
       <span className="repo-remote-copy">
-        <span className="cfg-name">{check ? t(`repositories.mergeWhy_${check.why}` as MessageKey, vars) : t("repositories.mergeUnknown", vars)}</span>
+        <span className="cfg-name">{t(`repositories.mergeWhy_${check.why}` as MessageKey, vars)}</span>
       </span>
-      {check?.rule && (
+      {check.rule && (
         <button type="button" className="btn btn-ghost" onClick={() => reveal(check.rule!.file)}>
           {t("repositories.mergeShowFile")}
         </button>
       )}
-      {check?.fix && (
+      {check.fix && (
         <button
           type="button"
           className="btn btn-secondary repo-merge-fix"

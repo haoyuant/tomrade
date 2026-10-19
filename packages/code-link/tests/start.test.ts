@@ -1342,6 +1342,12 @@ describe("starting a ticket", () => {
 
     expect(codeLink.setRepoPolicy(project.id, repo!.id, { agentMerge: true }).agentMerge).toBe(true);
     expect(await codeLink.mergeChecks(project.id, repo!.id)).toEqual([{ engine: "fake-code", title: "Fake coding agent", check: null }]);
+    const engine = agent.codeEngines().find((e) => e.id === "fake-code")!;
+    engine.permissionModes = { default: "full-access", choices: [] };
+    expect(await codeLink.mergeChecks(project.id, repo!.id)).toEqual([{ engine: "fake-code", title: "Fake coding agent", check: { state: "allowed", why: "bypass", mode: "full-access" } }]);
+    engine.permissionModes = { default: "ask", choices: [] };
+    expect(await codeLink.mergeChecks(project.id, repo!.id)).toEqual([{ engine: "fake-code", title: "Fake coding agent", check: null }]);
+    delete engine.permissionModes;
     const item = ticket("Merge it yourself");
     const started = await codeLink.start(project.id, item.id, { mode: "run" });
     if (!started.ok) throw new Error(started.message);
