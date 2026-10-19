@@ -20,6 +20,8 @@ export interface OpenAiConfig {
   webSearch?: boolean | "chat";
   /** The last word on each chat/completions body: a vendor's own fields. */
   body?: (body: Record<string, unknown>, request: ChatRequest) => Record<string, unknown>;
+  /** The last word on each Responses body, as `body` is on chat/completions. */
+  responses?: (body: Record<string, unknown>, request: ChatRequest) => Record<string, unknown>;
   /** The headers of each try in place of the bearer key: a vendor's own key header, a token that expires, a signature over the URL and body. */
   headers?: (request: { url: string; body: string }) => Record<string, string> | Promise<Record<string, string>>;
 }
@@ -121,6 +123,9 @@ function refusal(res: Response, url: string, text: string, request: ChatRequest)
 }
 
 export class OpenAiCompatible implements ChatModel {
+  /** The provider turned its search down; later turns search through a plugin from the start. */
+  private searchRefused = false;
+
   get capabilities() {
     return {
       tools: true,
@@ -128,7 +133,7 @@ export class OpenAiCompatible implements ChatModel {
       json: true,
       mediaInput: inputMimes(this.config.inputModalities ?? []),
       mediaOutput: this.config.outputModalities ?? [],
-      nativeWebSearch: this.config.webSearch === undefined ? searchesOnResponses(this.config.baseURL, this.config.model) : !!this.config.webSearch
+      nativeWebSearch: !this.searchRefused && (this.config.webSearch === undefined ? searchesOnResponses(this.config.baseURL, this.config.model) : !!this.config.webSearch)
     };
   }
 
@@ -304,11 +309,15 @@ export class OpenAiCompatible implements ChatModel {
 
   private async *respond(request: ChatRequest, signal?: AbortSignal): AsyncIterable<ChatEvent> {
     const url = this.config.baseURL.replace(/\/$/, "") + "/responses";
-    const res = yield* this.post(url, JSON.stringify(responsesBody(this.config.model, request, replaysSearches(this.config.baseURL))), signal);
+    const body = responsesBody(this.config.model, request, replaysSearches(this.config.baseURL));
+    const res = yield* this.post(url, JSON.stringify(this.config.responses ? this.config.responses(body, request) : body), signal);
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      // An endpoint, model or account without the search refuses it: the caller searches another way.
-      if ((res.status === 400 || res.status === 404 || res.status === 422) && !mediaRefusal(res.status, text, request)) throw new NativeSearchRefused(`The model's web search was refused (${res.status}): ${text.slice(0, 300)}`);
+      // An endpoint, model or account without the search refuses it (Ark says 403 when its search is off): the caller searches another way.
+      if ([400, 403, 404, 422].includes(res.status) && !mediaRefusal(res.status, text, request)) {
+        this.searchRefused = true;
+        throw new NativeSearchRefused(`The model's web search was refused (${res.status}): ${text.slice(0, 300)}`);
+      }
       throw refusal(res, url, text, request);
     }
     if (!res.body) throw new LlmError("LLM response had no body");

@@ -332,6 +332,7 @@ export class Host {
   private compatible(options: CompatibleModelOptions): ChatModel {
     this.svc("models");
     const shape = options.body;
+    const answer = options.responses;
     const label = `compatible model ${options.model} body`;
     const sign = options.headers ? this.back(options.headers.bind(options), `compatible model ${options.model} headers`, { ms: 30_000 }) : null;
     return new OpenAiCompatible({
@@ -345,6 +346,14 @@ export class Host {
         ? {
             body: (json: Record<string, unknown>, request: Parameters<ChatModel["chat"]>[0]) =>
               this.now(() => shape(json, copy(request)), label, (message) => {
+                throw new Error(`${this.identity.id} could not shape the request: ${message}`);
+              })
+          }
+        : {}),
+      ...(answer
+        ? {
+            responses: (json: Record<string, unknown>, request: Parameters<ChatModel["chat"]>[0]) =>
+              this.now(() => answer(json, copy(request)), `compatible model ${options.model} responses`, (message) => {
                 throw new Error(`${this.identity.id} could not shape the request: ${message}`);
               })
           }

@@ -143,6 +143,31 @@ describe("searching on the Responses API", () => {
     await expect(collect(openai().chat(ask()))).rejects.not.toBeInstanceOf(NativeSearchRefused);
   });
 
+  it("reads a 403 on the search as a refusal, and searches through a plugin from then on", async () => {
+    const chat = () => new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', { headers: { "content-type": "text/event-stream" } });
+    serve(new Response('{"error":{"code":"AccessDenied","message":"Access denied for web search"}}', { status: 403 }), chat());
+    const model = new OpenAiCompatible({ baseURL: "https://ark.example/api/v3", apiKey: "k", model: "doubao-seed-2-1-pro", webSearch: true });
+    expect(model.capabilities.nativeWebSearch).toBe(true);
+    await expect(collect(model.chat(ask()))).rejects.toBeInstanceOf(NativeSearchRefused);
+    expect(model.capabilities.nativeWebSearch).toBe(false);
+    // a request that still asks goes to chat/completions, without the search
+    await collect(model.chat(ask()));
+    expect(sent.map((s) => s.url)).toEqual(["https://ark.example/api/v3/responses", "https://ark.example/api/v3/chat/completions"]);
+  });
+
+  it("gives the vendor the last word on the Responses body", async () => {
+    serve(sse(answered));
+    const model = new OpenAiCompatible({
+      baseURL: "https://api.x.example/v1",
+      apiKey: "k",
+      model: "grok-x",
+      webSearch: true,
+      responses: (body, request) => ({ ...body, reasoning: { effort: request.effort === "minimal" ? "low" : request.effort }, max_output_tokens: 32768 })
+    });
+    await collect(model.chat(ask({ effort: "minimal" })));
+    expect(sent[0]!.body).toMatchObject({ model: "grok-x", reasoning: { effort: "low" }, max_output_tokens: 32768, tools: [{ type: "web_search" }] });
+  });
+
   it("fails with the provider's reason when the stream says it failed", async () => {
     serve(sse([{ type: "response.failed", response: { error: { message: "search backend unavailable" } } }]));
     await expect(collect(openai().chat(ask()))).rejects.toThrow("search backend unavailable");

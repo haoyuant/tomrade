@@ -546,7 +546,13 @@ await ctx.models.registerProvider({
   fails the request with its message. `webSearch: "chat"` says the model
   searches on its own when a request asks, on chat/completions with the flag
   `body` sets (Qwen's `enable_search`, say); `"responses"` sends such a request
-  to the Responses API instead. `headers({ url, body })`, sync or async, gives
+  to the Responses API instead; since the engine asks a searching model to
+  search on every step, most of its requests then go there, and
+  `responses(json, request)` has the last word on each Responses body (the
+  vendor's effort scale, its token limit), as `body` has on chat/completions.
+  A search the vendor refuses (400, 403, 404, 422) is remembered: the model
+  stops declaring it, and later turns search through a plugin from the start.
+  `headers({ url, body })`, sync or async, gives
   the headers of each try in place of `Authorization: Bearer <apiKey>`: a
   vendor's own key header (Azure's `api-key`), a token that expires (fetch it
   there, not in `build`), or a signature over the URL and the exact body sent
