@@ -21,6 +21,7 @@
     { "path": "../ipc" },
     { "path": "../items" },
     { "path": "../mcp" },
+    { "path": "../plugin-sdk" },
     { "path": "../repos" },
     { "path": "../settings" },
     { "path": "../storage" },

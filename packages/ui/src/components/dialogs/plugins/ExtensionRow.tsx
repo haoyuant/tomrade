@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { CLI_HOOK_COVERAGE, type CliHookEvent } from "@tomradex/plugin-sdk";
 import type { FullModeInfo, PluginView } from "@tomradex/plugins";
 import { Icon } from "~/components/icons";
 import { Tag } from "~/components/ui/atoms";
@@ -107,6 +108,7 @@ export function ExtensionRow({ plugin }: { plugin: PluginView }) {
         <Reach reasons={ext.risk.reasons} inject={ext.inject} hosts={ext.permissions.network.filter((h) => h !== "*")} />
       </div>
       {ext.full && <FullMode full={ext.full} refused={plugin.rowsRefused} />}
+      {!!ext.agentHooks.length && <AgentHooks events={ext.agentHooks} />}
       {error && (
         <p className="meta-txt dense" style={{ margin: "5px 0 0 var(--space-3)", color: "var(--danger)" }}>
           {error}
@@ -151,6 +153,32 @@ function FullMode({ full, refused }: { full: FullModeInfo; refused?: string[] })
           </button>
         </p>
       )}
+    </div>
+  );
+}
+
+const AGENT_NAMES: Record<string, string> = { "claude-code": "Claude Code", workbuddy: "WorkBuddy", dsh: "DeepSeek Harness", pi: "Pi", codex: "Codex", cursor: "Cursor", opencode: "OpenCode", hermes: "Hermes" };
+
+/** Which coding agents each of its hooks reaches: the ones that act on its answer, and the ones it only hears. */
+function AgentHooks({ events }: { events: string[] }) {
+  const { t } = useI18n();
+  const names = (agents: readonly string[]) => agents.map((a) => AGENT_NAMES[a] ?? a).join(", ");
+  return (
+    <div className="plug-ext-reach meta-txt dense" data-testid="agent-hooks">
+      <p style={{ margin: 0 }}>{t("plugins.agentHooks")}</p>
+      <ul className="dash">
+        {[...new Set(events)].flatMap((event) => {
+          const reach = CLI_HOOK_COVERAGE[event as CliHookEvent];
+          if (!reach) return [];
+          return [
+            <li key={event}>
+              {t(`plugins.agentHook_${event}` as MessageKey)}
+              {!!reach.answers.length && ` · ${t("plugins.agentHookAnswers", { agents: names(reach.answers) })}`}
+              {` · ${t("plugins.agentHookSees", { agents: names(reach.sees) })}`}
+            </li>
+          ];
+        })}
+      </ul>
     </div>
   );
 }

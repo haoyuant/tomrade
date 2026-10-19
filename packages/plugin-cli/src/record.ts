@@ -1,4 +1,5 @@
 import {
+  CLI_HOOK_EVENTS,
   IM_CAPABILITIES_V2,
   ImCapabilitiesSchema,
   ownsId,
@@ -37,6 +38,8 @@ export interface Recording {
   tables: string[];
   imAdapters: string[];
   webSearchProviders: string[];
+  /** The CLI agent hook events it hears. */
+  agentHooks: string[];
   /** Which IM contract each adapter is written against, from the capabilities it declares. */
   imContracts: { id: string; contract: "0.2.2" | "0.2.5"; capabilities: string[]; invalid?: string }[];
   /** Ids that do not carry the namespace. */
@@ -45,7 +48,7 @@ export interface Recording {
   stopped: string | null;
 }
 
-export const emptyRecording = (): Recording => ({ tools: [], commands: [], badges: [], statusItems: [], sections: [], graphs: [], sidebarModules: [], playbooks: [], settings: [], surfaces: [], tables: [], imAdapters: [], webSearchProviders: [], imContracts: [], violations: [], stopped: null });
+export const emptyRecording = (): Recording => ({ tools: [], commands: [], badges: [], statusItems: [], sections: [], graphs: [], sidebarModules: [], playbooks: [], settings: [], surfaces: [], tables: [], imAdapters: [], webSearchProviders: [], agentHooks: [], imContracts: [], violations: [], stopped: null });
 
 const noop = () => {};
 const DRY = "dry run: nothing is written while a plugin is inspected";
@@ -151,7 +154,11 @@ export function recordingContext(namespace: string, allowed: ServiceName[], rec:
       });
     },
     get agent(): AgentApi {
-      return need("agent", { playbook: (spec) => note("playbooks", spec.id, "playbook"), request: async () => noop, requestError: async () => noop, turnEnding: async () => noop });
+      return need("agent", { playbook: (spec) => note("playbooks", spec.id, "playbook"), request: async () => noop, requestError: async () => noop, turnEnding: async () => noop,
+        cliHook: async (spec) => {
+          rec.agentHooks.push(...(spec.events?.length ? spec.events : CLI_HOOK_EVENTS));
+          return noop;
+        } });
     },
     get im(): ImApi {
       return need("im", {

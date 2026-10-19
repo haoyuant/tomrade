@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { ManifestSchema, parseManifest, riskOf } from "@tomradex/plugin-sdk";
+import { CLI_HOOK_COVERAGE, ManifestSchema, parseManifest, riskOf } from "@tomradex/plugin-sdk";
 
 const manifest = (permissions: Record<string, unknown> = {}) => ManifestSchema.parse({ id: "someone/demo", version: "1.0.0", title: "Demo", license: "MIT", engines: { sdk: "^0.2.11" }, permissions });
 
@@ -27,4 +27,11 @@ it("takes a full-mode plugin that names its Tomrade versions, labels it high ris
   expect(() => parseManifest(full({ context: "sdk", rows: [{ id: "llm", disabled: true }] }))).toThrow(/takes "context": "full"/);
   expect(() => parseManifest(full({ rows: [{ id: "llm", disabled: true }, { id: "llm", config: {} }] }))).toThrow(/listed twice/);
   expect(() => ManifestSchema.parse(full({ rows: [{ id: "llm" }] }))).toThrow(/changes something/);
+});
+
+it("says which agents a CLI hook reaches: every agent that reports hooks, the ones that act on an answer among them", () => {
+  expect(CLI_HOOK_COVERAGE["pre-tool"]).toEqual({ answers: ["claude-code", "workbuddy", "dsh", "pi"], sees: ["codex", "cursor", "opencode", "hermes"] });
+  expect(CLI_HOOK_COVERAGE.stop.answers).not.toContain("pi");
+  expect(CLI_HOOK_COVERAGE["session-end"].answers).toEqual([]);
+  for (const reach of Object.values(CLI_HOOK_COVERAGE)) expect([...reach.answers, ...reach.sees].sort()).toEqual(["claude-code", "codex", "cursor", "dsh", "hermes", "opencode", "pi", "workbuddy"]);
 });

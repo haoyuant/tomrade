@@ -109,7 +109,7 @@ returns is disposed when the service goes.
 | `settings` | `register({ title, schema, defaults })` — the card is drawn from the schema — `get`, `set` |
 | `tools` | `register(defineTool(…))` (SDK 0.2.6: `kit` keeps a rarely needed tool out of each request until the model loads it; `kit(id, purpose)` says what the kit is for), `list`, `call`, `gate(check)` (throw to refuse any tool call; SDK 0.2.12: answer `{ args }` or `{ result }` — see [Policies](#policies)) |
 | `contributions` | `command`, `badge`, `statusItem`, `section`, `graph` — see [Contributions](#contributions); callbacks may be async |
-| `agent` | `playbook({ id, title, when, body, tools })`; SDK 0.2.14: `request(hook)`, `requestError(hook)`, `turnEnding(hook)` — the in-app conversation's loop, see [Hooks in the agent's loop](#hooks-in-the-agents-loop) |
+| `agent` | `playbook({ id, title, when, body, tools })`; SDK 0.2.14: `request(hook)`, `requestError(hook)`, `turnEnding(hook)` — the in-app conversation's loop, see [Hooks in the agent's loop](#hooks-in-the-agents-loop); SDK 0.2.15: `cliHook({ events, tools, agents, handle })` — the CLI agents' hooks, see [Hooks in CLI agents](#hooks-in-cli-agents) |
 | `surfaces` | `open({ id, document, … })` — a document inside the plugin's own package, never a remote page (SDK 0.2.7: `onClose()` says the window is gone, however it went; the handle's calls then reject). SDK 0.2.11: `kind: "window"` (with `minWidth` / `minHeight`) opens a working window and needs `permissions.window`; `post(message)` sends one message to the document; see [Auxiliary desktop surfaces](#auxiliary-desktop-surfaces) |
 | `alerts` | `sounds()` (the system's, its own alert sound first), `play(sound, { volume })` — `system:<name>` or an audio file's absolute path, played by the host — and `notify({ title, body })`, a silent system notification. SDK 0.2.4 |
 | `oplog` | `recent`, `history` |
@@ -943,6 +943,7 @@ inside a SQLite transaction.
 | `agent/request` | waterfall | Each model request an in-app engine is about to send: `{ system, tools, messages, turn }`. Change it before or after `next()`; what comes back is sent. |
 | `agent/request-error` | serial | A model request failed: `{ error, request, attempt }`. The first listener to answer `{ request?, profile? }` has it sent again — changed, on another model profile, or both. |
 | `agent/turn-stopping` | serial | An in-app turn is about to end: `{ text, turn, continued }`. The first listener to answer `{ continue }` keeps it going with that message to the model. |
+| `agent/cli-hook` | serial | A CLI agent's hook reached Tomrade: `{ event, agent, answerable, projectId, sessionId, ticket, cwd, tool?, text?, raw }`. The first listener to answer `{ deny?, context?, continue? }` decides; it reaches the agent when `answerable`. |
 
 A main-process observer loaded while work is already active can seed itself
 from `ctx.agent.activities()`, which returns current in-memory runs and durable
@@ -1008,7 +1009,8 @@ await ctx.tools.gate((call) => (call.name === "list_items" ? { args: { ...(call.
 The conversation Tomrade runs itself (`engine-loop`, the in-app assistant)
 passes three hooks, as a DeepSeek Harness agent passes its own. CLI agents —
 Claude Code, Codex, dsh, OpenCode and the rest — run their own loop in their
-own process and send nothing through them; what reaches every engine is
+own process and send nothing through them; their own hooks reach plugins as
+[Hooks in CLI agents](#hooks-in-cli-agents), and what reaches every engine is
 [Policies](#policies), since their calls to Tomrade's tools and every write
 still pass `tools/pre-execute` and `write/pre-commit`.
 
@@ -1031,6 +1033,54 @@ await ctx.agent.request((request) => ({ system: `${request.system}\n\nAnswer in 
 await ctx.agent.requestError((failure) => (failure.message.includes("overloaded") ? { profile: "backup" } : undefined));
 await ctx.agent.turnEnding((ending) => (ending.continued === 0 && !ending.text.includes("tests pass") ? { continue: "Run the tests before you finish." } : undefined));
 ```
+
+### Hooks in CLI agents
+
+The CLI agents Tomrade works with — Claude Code, Codex, DeepSeek Harness and the
+rest — run their own loop, but their hooks already report to Tomrade: in a
+session Tomrade starts, through the session's own token (Claude Code and
+WorkBuddy with `--settings`, Pi through its session extension, dsh through its
+own Claude Code hook bridge, which the session's `--patch` turns on); in a
+repository Tomrade connects, through the hooks committed there. A plugin hooks
+into all of them at once, with one shape whichever agent sent the event:
+
+```ts
+await ctx.agent.cliHook({
+  events: ["pre-tool"],      // session-start, prompt, pre-tool, post-tool, stop, session-end; all when left out
+  tools: "^(Bash|bash)$",    // a regular expression on the tool's name
+  agents: ["claude-code", "dsh"],
+  handle: (call) => (JSON.stringify(call.tool?.input).includes("rm -rf") ? { deny: "Not in this repository." } : undefined)
+});
+```
+
+`call` carries the event, the agent, the project, Tomrade's code session and
+its ticket, the working directory, the tool (name, input, and output or error
+after it ran), what the model said last at `stop`, and the hook's own payload.
+An answer — `{ deny }` before a tool, `{ context }` at a session's start, a
+prompt or after a tool, `{ continue }` when a turn stops — goes back in Claude
+Code's hook output, which each agent that answers reads. `call.answerable` says
+whether it will be acted on:
+
+| Event | Acts on the answer, in sessions Tomrade starts | Heard only |
+|---|---|---|
+| `session-start`, `prompt` | Claude Code, WorkBuddy, DeepSeek Harness | Pi, Codex, Cursor, OpenCode, Hermes |
+| `pre-tool`, `post-tool` | Claude Code, WorkBuddy, DeepSeek Harness, Pi | Codex, Cursor, OpenCode, Hermes |
+| `stop` | Claude Code, WorkBuddy, DeepSeek Harness | Pi, Codex, Cursor, OpenCode, Hermes |
+| `session-end` | — | all of them |
+
+A connected repository's hooks are heard only — they post without a token,
+and nothing is read back — and an event a started session already reports
+through its token is not heard twice. Gemini CLI and Antigravity report no
+hooks, so none reach them. `CLI_HOOK_COVERAGE` in the SDK is this table, and a
+plugin's detail in the Plugins pane shows it for the events the plugin hears
+(its build records them in `contributes.agentHooks`).
+
+Tomrade's own answer comes first: a tool it refuses (a push after the
+repository's credentials failed) stays refused, and a plugin's context sits
+beside its own. The agent waits five seconds for the answer, so a plugin's hook
+has three; one that throws or runs out is logged and passed over. Hooks go
+with the plugin: nothing is written into an agent's or a repository's files
+for them.
 
 ### Undo, redo and the timeline
 

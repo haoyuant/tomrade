@@ -7,7 +7,9 @@ import type { Context } from "cordis";
 import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/tools";
 import type { Author } from "@tomradex/domain";
-import { looksRateLimited, resetTime } from "@tomradex/agent";
+import { looksRateLimited, resetTime, type CliHookAnswer } from "@tomradex/agent";
+import { CLI_HOOK_COVERAGE } from "@tomradex/plugin-sdk";
+import { BRIDGED_BY_DSH, cliHookCall, cliHookEvent, hookReply, mergeAnswers, type HookSource } from "./cli-hooks.js";
 import { hookCommand } from "./connect.js";
 import { classifyRemoteFailure, remoteFailureDetail } from "./remote.js";
 import { CODE_WORDS } from "./words.js";
@@ -45,6 +47,8 @@ interface HookPayload {
   reason?: string;
   /** The herdr pane the hook ran in, from the header or the script. */
   herdr_pane?: string;
+  /** Which of Tomrade's own posts it came from, for an agent that reports twice (dsh: its hook bridge and its reporter). */
+  tomrade_source?: HookSource;
   /** Not a hook at all: herdr's reading of the pane, shaped like one. */
   herdr?: boolean;
 }
@@ -223,7 +227,7 @@ export class Sessions {
         const filed = key ? CODE_WORDS(settings?.locale?.())("filedFrom", { key }) : "";
         return call(name, await followUp(args, filed, tools.has("find_similar") ? call : null));
       },
-      event: (payload: unknown) => this.event(session.projectId, session.id, payload)
+      event: (payload: unknown) => this.hook(session.projectId, session.id, payload, true)
     };
   }
 
@@ -246,6 +250,7 @@ export class Sessions {
     const geminiHome = path.join(dir, "gemini-home");
     const opencodeConfig = path.join(dir, "opencode.json");
     const dshPatch = path.join(dir, "dsh-patch.yml");
+    const dshHooks = path.join(dir, "dsh-hooks.json");
     const dshReporter = path.join(dir, "dsh-report.mjs");
     const promptFile = path.join(dir, "prompt.md");
     fs.writeFileSync(mcpConfig, JSON.stringify({ mcpServers: { tomrade: { type: "http", url: mcpUrl, headers: { "X-Tomrade-Run": token } } } }, null, 2));
@@ -253,7 +258,8 @@ export class Sessions {
     fs.writeFileSync(piFile, piExtension(mcpUrl, token, eventUrl));
     writeGeminiHome(geminiHome, { tomrade: { httpUrl: mcpUrl, headers: { "X-Tomrade-Run": token } } });
     fs.writeFileSync(opencodeConfig, JSON.stringify({ $schema: "https://opencode.ai/config.json", mcp: { tomrade: { type: "remote", url: mcpUrl, enabled: true, headers: { "X-Tomrade-Run": token } } } }, null, 2));
-    fs.writeFileSync(dshPatch, dshMcpPatch(mcpUrl, token));
+    fs.writeFileSync(dshHooks, JSON.stringify(dshHooksSettings(eventUrl), null, 2));
+    fs.writeFileSync(dshPatch, dshMcpPatch(mcpUrl, token, dshHooks));
     fs.writeFileSync(dshReporter, dshReport(eventUrl));
     fs.writeFileSync(promptFile, prompt);
     fs.rmSync(path.join(dir, "pid"), { force: true });
@@ -324,9 +330,43 @@ export class Sessions {
     return best?.sessionId ?? null;
   }
 
-  /** A hook fired in the agent's process: what it says about the session, and what the thread should hear. */
+  /** A hook fired in the agent's process: what it says about the session, and Tomrade's answer as the agent reads it. */
   event(projectId: string, sessionId: string, payload: unknown): Record<string, unknown> {
     const p = (payload ?? {}) as HookPayload;
+    return hookReply(p.hook_event_name ?? "", this.observe(projectId, sessionId, p));
+  }
+
+  /**
+   * The same, with plugins asked as well (`agent/cli-hook`). Their answer reaches the
+   * agent when it can answer: a session Tomrade started (`replies`), by an agent that
+   * acts on this event. A connected repository's hooks for a session that also reports
+   * through its token are left to that token.
+   */
+  async hook(projectId: string, sessionId: string, payload: unknown, replies: boolean): Promise<Record<string, unknown>> {
+    const p = (payload ?? {}) as HookPayload;
+    const name = p.hook_event_name ?? "";
+    const event = cliHookEvent(name);
+    // dsh's bridge carries answers only; its reporter has told the session's story already.
+    const own = p.tomrade_source === "dsh-hooks" ? {} : this.observe(projectId, sessionId, p);
+    const bridged = !!event && BRIDGED_BY_DSH.has(event);
+    const skip = !event || p.herdr || (!replies && this.live.has(sessionId)) || (p.tomrade_source === "dsh-report" && bridged);
+    const session = skip ? null : this.store.session(projectId, sessionId);
+    if (!event || !session) return hookReply(name, own);
+    const ticketId = session.itemIds[0];
+    const ticket = ticketId ? ((this.ctx.get("items") as { get(projectId: string, id: string): { key: string } | null } | undefined)?.get(projectId, ticketId)?.key ?? null) : null;
+    const answerable = replies && CLI_HOOK_COVERAGE[event].answers.includes(session.agent);
+    const call = cliHookCall(event, p as Record<string, unknown>, { agent: session.agent, answerable, projectId, sessionId, ticket });
+    let answer: CliHookAnswer | undefined;
+    try {
+      answer = (await this.ctx.serial("agent/cli-hook", call)) ?? undefined;
+    } catch (error) {
+      this.ctx.logger("code-link").warn(`agent/cli-hook: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    return hookReply(name, answerable ? mergeAnswers(own, answer) : own);
+  }
+
+  /** What a hook says about the session, recorded; and what Tomrade itself answers the agent. */
+  private observe(projectId: string, sessionId: string, p: HookPayload): CliHookAnswer {
     const session = this.store.session(projectId, sessionId);
     if (!session) return {};
     // herdr reads the screen; a hook that spoke a moment ago knows better. The pane closing is the end whatever was said.
@@ -340,15 +380,16 @@ export class Sessions {
     if (p.hook_event_name === "PreToolUse" && session.blocked === "credentials" && BLOCKED_COMMAND.test(command)) {
       this.touch(projectId, sessionId, { ...patch, state: "error", activity: null });
       const detail = session.summary?.replace(/^cannot reach origin from this worktree:\s*/, "") || "credential failure";
-      return { hookSpecificOutput: { permissionDecision: "deny", permissionDecisionReason: credentialStopText(detail) } };
+      return { deny: credentialStopText(detail) };
     }
     const failedOutput = p.hook_event_name === "PostToolUseFailure" ? p.tool_error ?? "" : p.hook_event_name === "PostToolUse" && showsNonzeroExit(p.tool_output) ? outputText(p.tool_output) : "";
     if (command && REMOTE_COMMAND.test(command) && classifyRemoteFailure(failedOutput) === "credentials") {
-      return this.blockCredentials(projectId, sessionId, failedOutput, { ...(patch.externalId ? { externalId: patch.externalId } : {}), tool: true });
+      const said = this.blockCredentials(projectId, sessionId, failedOutput, { ...(patch.externalId ? { externalId: patch.externalId } : {}), tool: true }).additionalContext;
+      return typeof said === "string" ? { context: said } : {};
     }
     if (command && MERGE_COMMAND.test(command) && MERGE_REFUSED.test(failedOutput)) {
       this.blockMerge(projectId, sessionId, failedOutput, { ...(patch.externalId ? { externalId: patch.externalId } : {}), tool: true });
-      return { additionalContext: "Tomrade: the merge was refused and the person has been handed it. Do not try to merge another way — stop here." };
+      return { context: "Tomrade: the merge was refused and the person has been handed it. Do not try to merge another way — stop here." };
     }
     let moment: SessionMoment | null = null;
     switch (p.hook_event_name) {
@@ -595,6 +636,17 @@ export function hooksSettings(eventUrl: string): Record<string, unknown> {
 }
 
 /**
+ * The hooks DeepSeek Harness's own Claude Code bridge runs in a session Tomrade
+ * started: the events it can answer, posted with Tomrade's answer read back, so
+ * plugins' hooks reach dsh as they reach Claude Code. They carry answers only —
+ * the reporter still tells the session's story.
+ */
+export function dshHooksSettings(eventUrl: string): Record<string, unknown> {
+  const post = { type: "command", command: hookCommand(eventUrl, undefined, { reply: true, seconds: 5, source: "dsh-hooks" }) };
+  return { hooks: Object.fromEntries(["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"].map((event) => [event, [{ hooks: [post] }]])) };
+}
+
+/**
  * Pi has neither an MCP flag nor command hooks, so its terminal session loads
  * this extension instead: it registers Tomrade's server for the session and
  * posts the same events Claude's hooks do, under Claude's tool names, so the
@@ -644,9 +696,10 @@ export default function (pi) {
 
 /**
  * DeepSeek Harness takes extra configuration as a `--patch` overlay: this one
- * adds Tomrade's server, with the session's token, for that run alone.
+ * adds Tomrade's server, with the session's token, for that run alone — and,
+ * given a hooks file, dsh's own Claude Code hook bridge running it.
  */
-export function dshMcpPatch(mcpUrl: string, token: string): string {
+export function dshMcpPatch(mcpUrl: string, token: string, hooksFile?: string): string {
   return [
     "- insert:",
     "    - id: tomrade-mcp",
@@ -659,6 +712,7 @@ export function dshMcpPatch(mcpUrl: string, token: string): string {
     `          X-Tomrade-Run: ${JSON.stringify(token)}`,
     // Compound tools call a worker model and can outlast the 60s default.
     "        toolCallTimeoutMs: 600000",
+    ...(hooksFile ? ["    - id: tomrade-hooks", "      name: '@deepseek-ai/dsh-hooks-claude-code'", "      config:", `        configPath: ${JSON.stringify(hooksFile)}`] : []),
     ""
   ].join("\n");
 }
@@ -677,7 +731,7 @@ let sessionId;
 const sent = [];
 const pane = process.env.HERDR_PANE_ID ? { herdr_pane: process.env.HERDR_PANE_ID } : {};
 const post = (payload) => { sent.push(fetch(eventUrl, { method: "POST", headers: { "content-type": "application/json" },
-  body: JSON.stringify({ session_id: sessionId, ...pane, ...payload }), signal: AbortSignal.timeout(5000) }).catch(() => {})); };
+  body: JSON.stringify({ session_id: sessionId, ...pane, ...payload, tomrade_source: "dsh-report" }), signal: AbortSignal.timeout(5000) }).catch(() => {})); };
 const brief = (input) => { const text = typeof input === "string" ? input : JSON.stringify(input ?? {}); return text.length > 120 ? text.slice(0, 117) + "..." : text; };
 const lines = readline.createInterface({ input: process.stdin });
 lines.on("line", (line) => {
