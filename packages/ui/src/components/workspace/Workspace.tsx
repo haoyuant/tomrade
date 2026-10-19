@@ -344,7 +344,7 @@ export function Workspace() {
                 <TableRegion onConflict={setConflict} />
               ) : (
                 <>
-                  {ws.query.groupBy !== "epic" && <EpicStripRegion />}
+                  {ws.query.groupBy !== "epic" && ws.query.columnBy !== "epic" && <EpicStripRegion />}
                   <BoardRegion onConflict={setConflict} />
                 </>
               )}

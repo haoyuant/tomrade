@@ -149,8 +149,6 @@
 .tbl-epic .tbl-title-cell { z-index: 3; }
 .tbl-epic .epic-progress { display: flex; margin: 6px 0 0 26px; }
 .tbl-epic.is-none .tbl-cell { background: var(--bg); }
-/* a little room above each shelf after the first, so groups read as blocks */
-.tbl-row + .tbl-epic .tbl-cell { box-shadow: 0 -12px 0 var(--bg); }
 .tbl-epic + .tbl-row .tbl-cell, .tbl-epic + .tbl-epic .tbl-cell { border-top: 0; }
 .tbl-wrap[data-group-by="epic"] .tbl-row .tbl-title-cell { padding-left: calc(var(--space-3) + 26px); }
 
