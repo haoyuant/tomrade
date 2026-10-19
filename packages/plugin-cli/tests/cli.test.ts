@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { MANIFEST_FILE } from "@tomradex/plugin-sdk";
 import { unpackPlugin } from "@tomradex/plugin-kit";
-import { check, pack, scaffold, test } from "@tomradex/plugin-cli";
+import { check, pack, scaffold, sdkImportsOf, test } from "@tomradex/plugin-cli";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-cli-"));
 afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
@@ -77,6 +77,31 @@ describe("tomrade-plugin", () => {
     expect(report.verdict).toBe("blocked");
     expect(report.problems).toEqual([expect.stringMatching(/badge "blocked" must start with the namespace/)]);
   }, 60_000);
+
+  it("blocks an import from the SDK that the oldest Tomrade its engines.sdk accepts does not have", async () => {
+    const dir = path.join(tmp, "speaks");
+    scaffold(dir, { id: "someone/speaks" });
+    fs.writeFileSync(
+      path.join(dir, "src/index.ts"),
+      `import { definePlugin, wordsFor } from "@tomradex/plugin-sdk";
+       export default definePlugin({ inject: ["settings"], async apply(ctx) { wordsFor(await ctx.settings.locale(), { en: "Hi", zh: "你好" }); } });`
+    );
+    const edit = (sdk: string) => fs.writeFileSync(path.join(dir, MANIFEST_FILE), JSON.stringify({ ...manifestOf(dir), engines: { sdk } }, null, 2));
+    edit("^0.2.6");
+    const old = await check(dir);
+    expect(old.verdict).toBe("blocked");
+    expect(old.problems).toEqual([
+      'imports "wordsFor" from @tomradex/plugin-sdk, which Tomrade has from SDK 0.2.9; engines.sdk "^0.2.6" also accepts SDK 0.2.6, where the plugin fails to load',
+      expect.stringMatching(/^raise engines.sdk to "\^0.2.9"/)
+    ]);
+    edit("^0.2.9");
+    expect((await check(dir)).problems).toEqual([]);
+  }, 60_000);
+
+  it("reads which names a built plugin takes from the SDK", () => {
+    expect(sdkImportsOf(`import { definePlugin, wordsFor as w } from "@tomradex/plugin-sdk";\nimport { z } from "zod";\nexport { satisfies } from "@tomradex/plugin-sdk";`)).toEqual({ names: ["definePlugin", "satisfies", "wordsFor"], namespace: false });
+    expect(sdkImportsOf(`import * as sdk from "@tomradex/plugin-sdk";`)).toEqual({ names: [], namespace: true });
+  });
 
   it("runs a plugin where it cannot write to disk or start a program", async () => {
     const dir = path.join(tmp, "escape");
