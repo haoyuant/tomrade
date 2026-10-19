@@ -2,10 +2,10 @@
  * OpenAI's current models and DeepSeek's v4-pro search the web on their own
  * through the Responses API: a request that asks for it goes to /responses with
  * the conversation as input items, the stream comes back as the same chat
- * events, the cited pages are kept, and a refusal says it was the search.
+ * events, the cited pages are kept, DeepSeek gets its earlier searches back, and a refusal says it was the search.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { LlmError, NativeSearchRefused, OpenAiCompatible, collect, toolResultsMessage, userMessage, type ChatRequest } from "@tomradex/llm";
+import { LlmError, NativeSearchRefused, OpenAiCompatible, assistantMessage, collect, toolResultsMessage, userMessage, type ChatRequest } from "@tomradex/llm";
 
 const sse = (events: Record<string, unknown>[]) =>
   new Response(events.map((e) => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join(""), { headers: { "content-type": "text/event-stream" } });
@@ -78,6 +78,35 @@ describe("searching on the Responses API", () => {
     expect(out.text).toBe("DeepSeek shipped a search API.\n\n- [Search & Fetch](https://api-docs.deepseek.com/guides/search/)");
     expect(out.usage).toEqual({ inputTokens: 900, outputTokens: 40, cacheReadTokens: 512 });
     expect(out.stop).toBe("end");
+  });
+
+  it("gives DeepSeek the searches it ran earlier in the turn back, before that step's text and calls, and nothing else", async () => {
+    const search = { type: "web_search_call", id: "ws_1", status: "completed", action: { type: "search", query: "deepseek news" } };
+    const searched = [
+      { type: "response.output_item.done", item: search },
+      { type: "response.output_text.delta", delta: "Checking the ticket." },
+      { type: "response.output_item.done", item: { type: "function_call", call_id: "c1", name: "get_item", arguments: '{"key":"TOM-1"}' } },
+      { type: "response.completed", response: {} }
+    ];
+    const chat = () => new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', { headers: { "content-type": "text/event-stream" } });
+    serve(sse(searched), sse(answered), sse(searched), sse(answered), chat());
+    const step = await collect(deepseek("deepseek-v4-pro").chat(ask()));
+    const messages = [userMessage("what's new?"), assistantMessage(step), toolResultsMessage([{ id: "c1", content: "{}" }])];
+    await collect(deepseek("deepseek-v4-pro").chat(ask({ messages })));
+    expect(sent[1]!.body.input).toEqual([
+      { role: "user", content: [{ type: "input_text", text: "what's new?" }] },
+      search,
+      { role: "assistant", content: "Checking the ticket." },
+      { type: "function_call", call_id: "c1", name: "get_item", arguments: '{"key":"TOM-1"}' },
+      { type: "function_call_output", call_id: "c1", output: "{}" }
+    ]);
+
+    const fromOpenAi = await collect(openai().chat(ask()));
+    expect(fromOpenAi.native).toBeUndefined();
+    await collect(openai().chat(ask({ messages })));
+    expect(JSON.stringify(sent[3]!.body.input)).not.toContain("web_search_call");
+    await collect(deepseek("deepseek-v4-pro").chat(ask({ messages, webSearch: false })));
+    expect(JSON.stringify(sent[4]!.body)).not.toContain("web_search_call");
   });
 
   it("hands over a function call once it is complete, and says when the output ran out", async () => {
