@@ -34,6 +34,7 @@ import { QueryBar, focusTicketSearch } from "./QueryBar";
 import { Sidebar, sidebarOpenKey } from "./Sidebar";
 import { TabStrip } from "./TabStrip";
 import { Table } from "./Table";
+import { EpicStrip } from "./EpicStrip";
 import { TitleBar, ViewHead } from "./TitleBar";
 import { ShortcutsDialog } from "~/components/dialogs/ShortcutsDialog";
 import { hitChord, isBare, type CommandId } from "~/lib/keybindings";
@@ -45,6 +46,7 @@ const QueryBarRegion = memo(QueryBar);
 const BoardRegion = memo(Board);
 const TableRegion = memo(Table);
 const GraphRegion = memo(GraphView);
+const EpicStripRegion = memo(EpicStrip);
 import { useSelectedId, useWorkspace } from "./context";
 import { notesSearch, useNotesSearchState } from "~/lib/notes";
 import { useToastUndo } from "~/lib/undo";
@@ -341,7 +343,10 @@ export function Workspace() {
               ) : ws.layout === "table" ? (
                 <TableRegion onConflict={setConflict} />
               ) : (
-                <BoardRegion onConflict={setConflict} />
+                <>
+                  {ws.query.groupBy !== "epic" && ws.query.columnBy !== "epic" && <EpicStripRegion />}
+                  <BoardRegion onConflict={setConflict} />
+                </>
               )}
             </section>
           )}

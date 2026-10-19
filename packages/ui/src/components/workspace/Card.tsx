@@ -66,6 +66,7 @@ export function Card({ item, onOpen, onNudge, dragging, dragHandleRef }: CardPro
       ref={dragHandleRef}
       className={`card${dragging ? " dragging" : ""}`}
       data-id={item.id}
+      data-epic={item.parentId ?? undefined}
       role="button"
       tabIndex={0}
       data-selected={selected}

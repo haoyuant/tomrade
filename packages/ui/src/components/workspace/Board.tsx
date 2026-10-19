@@ -12,6 +12,7 @@ import { useCreateItem, usePatchItem, useSetViewRank, useSetViewRanks } from "~/
 import { errorSpec, useToast } from "~/lib/toast";
 import { Card } from "./Card";
 import { useWorkspace, type WorkspaceValue } from "./context";
+import { EpicPriority, EpicProgressBar, EpicStatus, EpicTitle, epicProgress, type EpicProgress } from "./EpicHeader";
 import { mergePatch, seedFromFilter, toCreateInput } from "./patches";
 import { useToastUndo } from "~/lib/undo";
 
@@ -170,6 +171,37 @@ function patchForMove(ws: WorkspaceValue, from: { lane: string; col: string }, t
   return Object.keys(patch).length ? patch : null;
 }
 
+function EpicLaneHead({
+  epic,
+  label,
+  count,
+  progress,
+  collapsed,
+  onToggle,
+  onOpen
+}: {
+  epic: Item | undefined;
+  label: string;
+  count: number;
+  progress: EpicProgress | undefined;
+  collapsed: boolean;
+  onToggle: () => void;
+  onOpen: (id: string) => void;
+}) {
+  return (
+    <div className={epic ? "lane-head lane-epic" : "lane-head lane-epic is-none"}>
+      <EpicTitle epic={epic} label={label} count={count} collapsed={collapsed} onToggle={onToggle} onOpen={onOpen} />
+      {epic && (
+        <span className="lane-epic-facts">
+          <EpicStatus epic={epic} />
+          <EpicPriority epic={epic} />
+          {progress && progress.total > 0 && <EpicProgressBar {...progress} />}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function Board({ onConflict }: { onConflict: (title: string) => void }) {
   const { t, tx } = useI18n();
   const ws = useWorkspace();
@@ -184,6 +216,8 @@ export function Board({ onConflict }: { onConflict: (title: string) => void }) {
   const cb = query.columnBy ?? "status";
   const groupBy = query.groupBy;
   const lanes = useMemo(() => (groupBy ? groupSpace(groupBy) : [""]), [groupBy, groupSpace]);
+  const epicById = useMemo(() => new Map(ws.epics.map((e) => [e.id, e])), [ws.epics]);
+  const progress = useMemo(() => (groupBy === "epic" ? epicProgress(ws.owned) : null), [groupBy, ws.owned]);
 
   const server = useMemo<Cells>(() => {
     const out: Cells = {};
@@ -375,11 +409,15 @@ export function Board({ onConflict }: { onConflict: (title: string) => void }) {
             const shut = isShut(lane, n);
             return (
               <section className={`lane${shut ? " collapsed" : ""}`} key={lane || EMPTY_KEY} data-lane={lane || EMPTY_KEY} aria-label={t("board.laneAria", { label: groupLabel(groupBy, lane), n })}>
-                <button type="button" className="lane-head" aria-expanded={!shut} title={t(shut ? "board.expandLane" : "board.collapseLane")} onClick={() => toggleLane(lane, n)}>
-                  <Icon className="lane-chev" name="i-chev" size={12} />
-                  <span className="lane-name">{groupLabel(groupBy, lane)}</span>
-                  <span className="lane-count num">{n}</span>
-                </button>
+                {groupBy === "epic" ? (
+                  <EpicLaneHead epic={epicById.get(lane)} label={groupLabel(groupBy, lane)} count={n} progress={progress?.get(lane)} collapsed={shut} onToggle={() => toggleLane(lane, n)} onOpen={select} />
+                ) : (
+                  <button type="button" className="lane-head" aria-expanded={!shut} title={t(shut ? "board.expandLane" : "board.collapseLane")} onClick={() => toggleLane(lane, n)}>
+                    <Icon className="lane-chev" name="i-chev" size={12} />
+                    <span className="lane-name">{groupLabel(groupBy, lane)}</span>
+                    <span className="lane-count num">{n}</span>
+                  </button>
+                )}
                 {!shut && <div className="lane-cols">{columnKeys.map((col, i) => renderColumn(lane, col, i, false))}</div>}
               </section>
             );
