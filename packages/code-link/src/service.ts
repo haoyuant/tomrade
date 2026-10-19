@@ -1610,6 +1610,16 @@ export class CodeLink extends Service {
         if (l.delivery !== this.store.activeDelivery(projectId, l.itemId)?.sequence) continue;
         if (this.dropSuggested(projectId, l.itemId, repo.id, l.branch, (name) => result.branches.some((b) => b.name === name))) touched.add(l.itemId);
       }
+      // A claim's suggested branch in this repository, never created, once the work showed up in another one.
+      for (const l of this.store.linksForRepo(projectId, repo.id)) {
+        if (l.source !== "mcp" || !l.branch || l.headSha || l.ahead > 0 || l.mergedSha || l.prNumber !== null || l.prUrl || l.prState || l.threadId) continue;
+        if (result.branches.some((b) => b.name === l.branch)) continue;
+        if (l.delivery !== this.store.activeDelivery(projectId, l.itemId)?.sequence) continue;
+        const real = this.store.links(projectId, l.itemId).some((o) => o.id !== l.id && o.delivery === l.delivery && (!!o.headSha || o.prNumber !== null || !!o.prUrl));
+        if (!real) continue;
+        this.store.removeLink(projectId, l.id);
+        touched.add(l.itemId);
+      }
     }
 
     for (const item of items) this.closeEmptyScannedDelivery(projectId, item, now, repo.id);

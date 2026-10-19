@@ -293,6 +293,52 @@ describe("code link", () => {
     expect(deliveryMerged([link({ prNumber: 1, prState: "closed" }), link({})])).toBe(false);
     expect(deliveryMerged([])).toBe(false);
   });
+  describe("a claim's suggested branch in a repository the work never touched", () => {
+    async function claimed(title: string) {
+      const world = await machine(codeRepo());
+      const second = codeRepo();
+      const other = world.ctx.repos.create({ projectId: world.project.id, remote: second.remote });
+      await world.ctx.repos.setCheckout(second.remote, second.checkout);
+      const item = world.ticket(title, "doing");
+      const branch = `tom-${item.keyNum}/work`;
+      world.codeLink.store.ensureActiveDelivery(world.project.id, item.id);
+      world.codeLink.store.upsertLink(world.project.id, { itemId: item.id, repoId: world.repo.id, branch }, { source: "mcp" });
+      return { ...world, second, other, item, branch };
+    }
+    const branches = (codeLink: CodeLink, projectId: string, itemId: string) => codeLink.links(projectId, itemId).map((l) => `${l.repoId}:${l.branch}`).sort();
+
+    it("goes once the work shows up in the other repository", async () => {
+      const { codeLink, ctx, project, second, other, item, branch } = await claimed("Lands elsewhere");
+      try {
+        commitOn(second.checkout, branch, "work.ts", `${item.key}: work`);
+        git(["push", "-q", "origin", branch], second.checkout);
+        // repositories scan in turn; the next round sees the other one's branch
+        await codeLink.scan(project.id);
+        await codeLink.scan(project.id);
+        expect(branches(codeLink, project.id, item.id)).toEqual([`${other.id}:${branch}`]);
+      } finally { await ctx.fiber.dispose(); }
+    });
+    it("stays once its branch exists here too", async () => {
+      const { codeLink, ctx, project, repo, checkout, second, other, item, branch } = await claimed("Lands in both");
+      for (const cwd of [checkout, second.checkout]) {
+        commitOn(cwd, branch, "work.ts", `${item.key}: work`);
+        git(["push", "-q", "origin", branch], cwd);
+      }
+      try {
+        await codeLink.scan(project.id);
+        await codeLink.scan(project.id);
+        expect(branches(codeLink, project.id, item.id)).toEqual([`${other.id}:${branch}`, `${repo.id}:${branch}`].sort());
+      } finally { await ctx.fiber.dispose(); }
+    });
+    it("stays while it is the ticket's only link", async () => {
+      const { codeLink, ctx, project, repo, item, branch } = await claimed("Not started");
+      try {
+        await codeLink.scan(project.id);
+        await codeLink.scan(project.id);
+        expect(branches(codeLink, project.id, item.id)).toEqual([`${repo.id}:${branch}`]);
+      } finally { await ctx.fiber.dispose(); }
+    });
+  });
   it("links a branch named after a ticket and moves the ticket to doing, then done on merge", async () => {
     const { codeLink, ctx, items, project, repo, checkout, ticket } = await machine(codeRepo());
     const item = ticket("Push notifications", "todo");
