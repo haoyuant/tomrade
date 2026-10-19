@@ -26,7 +26,7 @@ import { Eyebrow, Fold, LiveDot, Num, SectionHead, Tag } from "~/components/ui/a
 import { SchemaField, fieldsOf, problemOf, type JsonSchema } from "~/components/ui/schema-form";
 import { STATUS } from "~/lib/domain";
 import { useBackgroundStatus } from "~/lib/background";
-import { useI18n, type MessageKey } from "~/lib/i18n";
+import { intlTag, useI18n, type MessageKey } from "~/lib/i18n";
 import { useMcpUrl, usePlugins, useSaveSettings, useSettings, useSettingsSections, useStorageProviders } from "~/lib/queries";
 import { cssColorToHex, useTheme } from "~/lib/theme";
 import { detectedHere } from "~/lib/engines";
@@ -1121,11 +1121,23 @@ function useModelListing(endpoint: Pick<ModelProfile, "provider" | "baseURL" | "
   });
 }
 
-/** The model, picked from what the endpoint lists; typed in when it lists nothing or the model is not listed. */
-function ModelPickField({ draft, host, onChange }: { draft: ModelProfile; host: string; onChange: (model: string) => void }) {
+const sameModes = (detected: string[], stored: string[] | undefined) => !!stored && detected.length === stored.length && detected.every((m) => stored.includes(m));
+
+/**
+ * The model, picked from what the endpoint lists; typed in when it lists nothing or the model is not listed.
+ * Picking a model also takes the media Tomrade detected for it; an undetected model falls back to the provider's default.
+ */
+function ModelPickField({ draft, host, onChange }: { draft: ModelProfile; host: string; onChange: (patch: Partial<ModelProfile>) => void }) {
   const { t } = useI18n();
   const listing = useModelListing(draft);
   const models = listing.data?.ok ? listing.data.models : [];
+  const detected = (model: string) => (listing.data?.ok ? listing.data.capabilities[model] : undefined);
+  const pick = (model: string) => onChange({ model, ...(detected(model) ?? { inputModalities: undefined, outputModalities: undefined }) });
+  // A profile saved with hand-ticked media takes what the listing now says once it answers.
+  const found = detected(draft.model);
+  useEffect(() => {
+    if (found && !(sameModes(found.inputModalities, draft.inputModalities) && sameModes(found.outputModalities, draft.outputModalities))) onChange(found);
+  }, [found, draft.model]);
   const [custom, setCustom] = useState(false);
   const typed = custom || models.length === 0 || (draft.model !== "" && !models.includes(draft.model));
   const status = listing.isFetching
@@ -1148,7 +1160,7 @@ function ModelPickField({ draft, host, onChange }: { draft: ModelProfile; host: 
           onChange={(e) => {
             const other = e.target.value === CUSTOM_PICK;
             setCustom(other);
-            if (!other) onChange(e.target.value);
+            if (!other) pick(e.target.value);
           }}
         >
           {draft.model === "" && !custom && <option value="" disabled>{t("settingsDialog.modelPickPlaceholder")}</option>}
@@ -1158,7 +1170,7 @@ function ModelPickField({ draft, host, onChange }: { draft: ModelProfile; host: 
           <option value={CUSTOM_PICK}>{t("settingsDialog.modelPickOther")}</option>
         </select>
       )}
-      {typed && <input id="pfModel" className="input num" value={draft.model} onChange={(e) => onChange(e.target.value)} />}
+      {typed && <input id="pfModel" className="input num" value={draft.model} onChange={(e) => pick(e.target.value)} />}
       {status && (
         <span className="meta-txt">
           {status}
@@ -1172,6 +1184,24 @@ function ModelPickField({ draft, host, onChange }: { draft: ModelProfile; host: 
           )}
         </span>
       )}
+    </div>
+  );
+}
+
+/** What the model reads and makes, as Tomrade detected it: read-only, so nobody ticks media from memory. */
+function ModelMediaLine({ draft, host }: { draft: ModelProfile; host: string }) {
+  const { t, locale } = useI18n();
+  const list = (items: string[]) => new Intl.ListFormat(intlTag(locale), { type: "conjunction" }).format(items);
+  // the adapters' own defaults when nothing was detected
+  const input = draft.inputModalities ?? (draft.provider === "anthropic" ? ["image", "pdf"] : []);
+  const output = draft.outputModalities ?? [];
+  const reads = t("settingsDialog.modelMediaReads", { list: list(["text", ...input].map((m) => t(`settingsDialog.modelMedia_${m}` as MessageKey))) });
+  const makes = output.length ? ` ${t("settingsDialog.modelMediaMakes", { list: list(output.map((m) => t(`settingsDialog.modelMedia_${m}` as MessageKey))) })}` : "";
+  return (
+    <div className="field">
+      <label htmlFor="pfMedia">{t("settingsDialog.modelMediaLabel")}</label>
+      <output id="pfMedia">{reads}{makes}</output>
+      <span className="meta-txt">{t("settingsDialog.modelMediaNote", { host })}</span>
     </div>
   );
 }
@@ -1241,20 +1271,8 @@ function ProfileForm({ profile, onSave, onCancel }: { profile: ModelProfile; onS
           )}
         </span>
       </div>
-      <ModelPickField draft={draft} host={host || t("settingsDialog.theEndpoint")} onChange={(model) => set({ model })} />
-      {draft.provider !== "openai-images" && <fieldset className="field">
-        <legend>{t("agentPanel.modelMediaInput")}</legend>
-        <p className="meta-txt">{t("agentPanel.modelMediaHelp")}</p>
-        {(["image", "pdf", ...(draft.provider === "openai-compatible" ? ["audio", "video"] : [])] as NonNullable<ModelProfile["inputModalities"]>).map(mode => {
-          const selected = draft.inputModalities ?? (draft.provider === "anthropic" ? ["image", "pdf"] : []);
-          return <label key={mode}><input type="checkbox" checked={selected.includes(mode)} onChange={event => set({ inputModalities: event.target.checked ? [...selected, mode] : selected.filter(value => value !== mode) })} /> {mode}</label>;
-        })}
-      </fieldset>}
-      {draft.provider === "openai-compatible" && <fieldset className="field">
-        <legend>{t("agentPanel.modelMediaOutput")}</legend>
-        <p className="meta-txt">{t("agentPanel.modelMediaOutputHelp")}</p>
-        {(["image", "audio"] as const).map(mode => <label key={mode}><input type="checkbox" checked={draft.outputModalities?.includes(mode) ?? false} onChange={event => set({ outputModalities: event.target.checked ? [mode] : [] })} /> {mode}</label>)}
-      </fieldset>}
+      <ModelPickField draft={draft} host={host || t("settingsDialog.theEndpoint")} onChange={set} />
+      {draft.provider !== "openai-images" && <ModelMediaLine draft={draft} host={host || t("settingsDialog.theEndpoint")} />}
       {problem && (
         <div className="profile-problem" role="alert">
           <p>{t(`settingsDialog.profileCheck_${problem.kind}` as MessageKey, { host: host || t("settingsDialog.theEndpoint"), model: draft.model })}</p>

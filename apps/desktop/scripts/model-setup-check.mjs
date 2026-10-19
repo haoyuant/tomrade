@@ -34,6 +34,8 @@ const endpoint = http.createServer((req, res) => {
   req.on("data", (c) => (body += c));
   req.on("end", () => {
     if (req.headers.authorization !== "Bearer good") return res.writeHead(401, { "content-type": "application/json" }).end('{"error":{"message":"Authentication Fails, Your api key is invalid"}}');
+    // lists its one model the way DeepSeek does, modalities included
+    if (req.url.endsWith("/models")) return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ object: "list", data: [{ id: "flaky", input_modalities: ["text", "image"], output_modalities: ["text"] }] }));
     if (body.includes("second") && failures < 3 && ++failures) return res.writeHead(503, { "content-type": "application/json" }).end('{"error":{"message":"Service Unavailable"}}');
     res.writeHead(200, { "content-type": "text/event-stream" });
     res.end('data: {"choices":[{"delta":{"content":"pong"},"finish_reason":null}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
@@ -79,9 +81,12 @@ const run = async () => {
   await fill("#pfKey", "good");
   await sleep(100);
   check("editing the key clears the complaint", (await $(`!document.querySelector('.profile-problem')`)) === true);
+  await sleep(1500);
+  check("the form shows what the listing says the model reads, with no boxes to tick", (await $(`document.querySelector('#pfMedia')?.textContent ?? ''`)) === "Reads text and images." && (await $(`!document.querySelector('.panel input[type=checkbox]')`)) === true, await $(`document.querySelector('#pfMedia')?.textContent ?? ''`));
   await press(button("Save profile"));
   await sleep(1500);
   check("a key the endpoint accepts saves the profile", profiles().length === 1 && profiles()[0].apiKey === "good", profiles());
+  check("with the detected media", JSON.stringify(profiles()[0]?.inputModalities) === '["image"]' && JSON.stringify(profiles()[0]?.outputModalities) === "[]", profiles()[0]);
   const file = fs.readFileSync(path.join(work, "settings.json"), "utf8");
   check("settings.json keeps the key sealed by the keychain, not in plain text", JSON.parse(file).models.profiles[0].apiKey.startsWith("tomrade-encrypted:v1:") && !file.includes('"good"'), JSON.parse(file).models.profiles[0].apiKey.slice(0, 24));
   check("and only this user can read the file", (fs.statSync(path.join(work, "settings.json")).mode & 0o777) === 0o600);

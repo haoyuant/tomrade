@@ -1,4 +1,5 @@
 import type { ModelErrorKind } from "@tomradex/domain";
+import { listedCapabilities, type ListedModel, type ModelCapabilities } from "./capabilities.js";
 
 /**
  * Well-known model providers: where their keys come from, what a key looks
@@ -87,19 +88,24 @@ export function pickModel(preset: Pick<ProviderPreset, "model" | "prefer">, list
 export const keyHint = (key: string): string => (key.length > 10 ? `${key.slice(0, 3)}…${key.slice(-4)}` : "…");
 
 /** A provider's models, or why the key or address does not work. Listing doubles as the key check. */
-export async function listModels(preset: Pick<ProviderPreset, "provider" | "baseURL">, apiKey: string, timeoutMs = 15_000): Promise<{ ok: true; models: string[] | null } | { ok: false; status?: number; detail: string }> {
+export async function listModels(preset: Pick<ProviderPreset, "provider" | "baseURL">, apiKey: string, timeoutMs = 15_000): Promise<{ ok: true; models: string[] | null; capabilities: Record<string, ModelCapabilities> } | { ok: false; status?: number; detail: string }> {
   const anthropic = preset.provider === "anthropic";
   const base = (anthropic ? preset.baseURL || "https://api.anthropic.com/v1" : preset.baseURL).replace(/\/$/, "");
   const headers: Record<string, string> = anthropic ? { "x-api-key": apiKey, "anthropic-version": "2023-06-01" } : apiKey ? { authorization: `Bearer ${apiKey}` } : {};
   try {
     const res = await fetch(`${base}/models${anthropic ? "?limit=100" : ""}`, { headers, signal: AbortSignal.timeout(timeoutMs) });
     // Some compatible endpoints answer chat but have no listing; the chat probe decides then.
-    if (res.status === 404 || res.status === 405) return { ok: true, models: null };
+    if (res.status === 404 || res.status === 405) return { ok: true, models: null, capabilities: {} };
     const text = await res.text();
     if (!res.ok) return { ok: false, status: res.status, detail: `${res.status} ${text.slice(0, 300)}` };
-    const body = JSON.parse(text) as { data?: { id?: string }[] };
+    const body = JSON.parse(text) as { data?: ListedModel[] };
     const ids = (body.data ?? []).map((m) => m.id).filter((id): id is string => !!id);
-    return { ok: true, models: ids.length ? ids : null };
+    const capabilities: Record<string, ModelCapabilities> = {};
+    for (const entry of body.data ?? []) {
+      const listed = entry.id ? listedCapabilities(entry) : null;
+      if (entry.id && listed) capabilities[entry.id] = listed;
+    }
+    return { ok: true, models: ids.length ? ids : null, capabilities };
   } catch (err) {
     return { ok: false, detail: err instanceof Error ? `${err.name === "TimeoutError" ? "timed out" : ""} ${err.message}`.trim() : String(err) };
   }
@@ -116,7 +122,8 @@ export function usableModels(provider: "openai-compatible" | "anthropic" | "open
   return [...new Set(kept)].sort((a, b) => b.localeCompare(a, "en", { numeric: true }));
 }
 
-export type ModelListing = { ok: true; models: string[] } | { ok: false; kind: ModelErrorKind; detail: string };
+/** `capabilities` holds the models whose media Tomrade could detect, by id. */
+export type ModelListing = { ok: true; models: string[]; capabilities: Record<string, ModelCapabilities> } | { ok: false; kind: ModelErrorKind; detail: string };
 
 export type QuickSetupResult =
   | { ok: true; profile: { id: string; title: string; model: string } }
