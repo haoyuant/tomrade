@@ -104,6 +104,15 @@ app.whenReady().then(async () => {
     };
     check("侧栏列出六个会话", await wait(async () => (await js(`document.querySelectorAll('.cs-row').length`)) === 6));
     check("六个格子同时连上终端", await wait(async () => (await js(`document.querySelectorAll('.cs-cell .xterm').length`)) === 6));
+    // On Tomrade's theme: the terminal's background is its pane's, nothing dark around light, and its ANSI colours are the theme's.
+    const colours = await js(`(() => {
+      const term = document.querySelector('.cs-cell .cs-term');
+      const viewport = term.querySelector('.xterm-viewport');
+      return { pane: getComputedStyle(term).backgroundColor, terminal: getComputedStyle(viewport).backgroundColor };
+    })()`);
+    const rgb = (css) => (css.match(/\d+(\.\d+)?/g) ?? []).slice(0, 3).map(Number);
+    const near = (a, b) => a.length === 3 && b.length === 3 && a.every((v, i) => Math.abs(v - b[i]) <= 2);
+    check("终端底色就是面板底色（Tomrade 主题，不再是深色）", near(rgb(colours.pane), rgb(colours.terminal)) && !near(rgb(colours.terminal), [30, 30, 30]), JSON.stringify(colours));
     const markers = await wait(async () => {
       const texts = await Promise.all([3, 4, 5].map(terminalText));
       return texts[0].includes("marker-four") && texts[1].includes("marker-five") && texts[2].includes("marker-six");

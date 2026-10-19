@@ -3,24 +3,23 @@ html, body, #root { height: 100%; margin: 0; }
 body { background: var(--bg); color: var(--fg); font-family: var(--font-body); overflow: hidden; }
 
 .cs-window { display: flex; height: 100%; }
-.cs-side { width: 280px; flex: none; border-right: 1px solid var(--border-soft); background: var(--surface-warm); overflow-y: auto; }
-.cs-side-head { margin: 0; padding: 12px 14px 8px; font-size: var(--text-sm); color: var(--muted); font-weight: 600; letter-spacing: 0.02em; }
+/* The list reads like the app's own sidebar: its background, eyebrow heads, side rows and tags. */
+.cs-side { --text-xs: 13px; --text-sm: 14px; width: 280px; flex: none; border-right: 1px solid var(--border); background: var(--bg); overflow-y: auto; padding: 0 var(--space-3) var(--space-3); scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.cs-side-head { margin: 0; padding: var(--space-5) var(--space-2) var(--space-2); }
 .cs-side-sub { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.cs-side-sub h2 { margin: 0; font: inherit; }
-.cs-empty { padding: 0 14px; color: var(--muted); font-size: var(--text-sm); line-height: 1.5; }
-.cs-list { list-style: none; margin: 0; padding: 0 6px 12px; }
-.cs-row { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; padding: 8px; border: 1px solid transparent; border-radius: 8px; background: none; color: inherit; cursor: pointer; font: inherit; }
-.cs-row:hover { background: var(--tag-bg-faint); }
-.cs-row[data-active] { border-color: var(--border); background: var(--surface); }
-.cs-row[data-needs] { border-color: var(--warn); }
+.cs-side-sub h2 { margin: 0; }
+.cs-side-sub .side-add { font-size: var(--text-xs); }
+.cs-empty { margin: 0; padding: 0 var(--space-2); color: var(--meta); font-size: var(--text-sm); line-height: 1.5; }
+.cs-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.cs-row { flex-direction: column; align-items: stretch; gap: 2px; cursor: pointer; }
+.cs-row[data-needs] { border-left-color: var(--warn); }
 .cs-row[data-ended] { opacity: 0.6; }
 .cs-row-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: var(--text-sm); }
 .cs-row-title { font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cs-row-meta, .cs-row-activity { font-size: var(--text-xs); color: var(--meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cs-chip { font-size: var(--text-xs); padding: 1px 6px; border-radius: 999px; background: var(--tag-bg-soft); color: var(--tag-fg); white-space: nowrap; }
-.cs-chip[data-state="running"] { background: var(--accent-light); color: var(--accent-active); }
-.cs-chip[data-state="needs"] { background: var(--warn); color: var(--accent-on); font-weight: 600; }
-.cs-chip[data-state="error"], .cs-chip[data-state="lost"] { background: var(--danger); color: var(--accent-on); }
+.cs-chip[data-state="needs"] { background: color-mix(in oklab, var(--warn) 18%, transparent); color: var(--warn); }
+.cs-chip[data-state="error"], .cs-chip[data-state="lost"] { background: color-mix(in oklab, var(--danger) 14%, transparent); color: var(--danger); }
+.cs-chip[data-state="ended"], .cs-chip[data-state="idle"] { background: var(--surface-warm); color: var(--muted); }
 
 .cs-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .cs-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border-soft); background: var(--surface-warm); font-size: var(--text-sm); }
@@ -40,28 +39,32 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-cell { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--border-soft); border-radius: 8px; overflow: hidden; background: var(--surface); }
 .cs-cell[data-focused] { border-color: var(--accent); }
 .cs-cell-bar { display: flex; align-items: center; gap: 10px; padding: 4px 8px; border-bottom: 1px solid var(--border-soft); font-size: var(--text-xs); min-height: 28px; }
-.cs-cell-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); }
-.cs-cell-actions { display: flex; gap: 10px; flex: none; }
+.cs-cell-name { flex: 1 1 auto; min-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); }
+/* A narrow pane clips its actions before the name of what it shows. */
+.cs-cell-actions { display: flex; gap: 10px; flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; }
 .cs-cell-tools { display: flex; gap: 2px; flex: none; }
 .cs-cell-tools .icon-btn { width: 22px; height: 22px; border: 0; border-radius: 4px; background: none; color: var(--muted); cursor: pointer; }
 .cs-cell-tools .icon-btn:hover { background: var(--tag-bg-faint); color: var(--fg); }
 .cs-cell-empty { flex: 1; display: flex; flex-direction: column; gap: 10px; align-items: center; justify-content: center; color: var(--muted); font-size: var(--text-sm); padding: 16px; text-align: center; }
 .cs-cell-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--warn); font-size: var(--text-xs); }
-.cs-layouts { border-top: 1px solid var(--border-soft); margin-top: 4px; }
-.cs-layout-form { display: flex; gap: 6px; padding: 0 14px 8px; align-items: center; }
+.cs-layouts { border-top: 1px solid var(--border); margin-top: var(--space-4); }
+.cs-layout-form { display: flex; gap: 6px; padding: 0 var(--space-2) 8px; align-items: center; }
 .cs-layout-form input { flex: 1; min-width: 0; font: inherit; font-size: var(--text-sm); }
-.cs-preset { display: flex; align-items: center; gap: 4px; padding: 2px 8px; }
+.cs-preset { display: flex; align-items: center; gap: 4px; padding: 2px var(--space-2); }
 .cs-preset-name { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cs-preset .icon-btn[data-default] { color: var(--accent); }
-.cs-auto-place { display: flex; gap: 6px; align-items: center; padding: 4px 14px 14px; font-size: var(--text-sm); color: var(--muted); }
+.cs-auto-place { display: flex; gap: 6px; align-items: center; padding: var(--space-2) var(--space-2) 0; font-size: var(--text-sm); color: var(--muted); }
 .cs-where { margin-left: 6px; }
 .cs-not-here { display: flex; flex-direction: column; gap: 10px; align-items: center; max-width: 420px; line-height: 1.5; }
 .cs-not-here-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .cs-new-terminal { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; }
 .cs-new-terminal select { max-width: 240px; font: inherit; }
 
-.cs-term { position: relative; flex: 1; min-height: 0; }
+/* The terminal's own background around its grid too, so no strip of another colour shows. */
+.cs-term { position: relative; flex: 1; min-height: 0; background: var(--surface); }
 .cs-term-host { position: absolute; inset: 4px 0 0 6px; }
+/* herdr keeps the scrollback: xterm's own scrollbar gutter would only draw a line down the pane. */
+.cs-term .xterm-viewport { overflow-y: hidden; }
 .cs-term-closed { position: absolute; inset: auto 0 0 0; display: flex; gap: 8px; align-items: center; justify-content: center; padding: 6px; background: var(--surface-warm); border-top: 1px solid var(--border-soft); font-size: var(--text-xs); }
 
 .cs-toast { position: fixed; right: 16px; bottom: 16px; max-width: 420px; padding: 10px 14px; border-radius: 8px; background: var(--fg); color: var(--bg); font-size: var(--text-sm); white-space: pre-wrap; box-shadow: 0 6px 24px rgb(0 0 0 / 0.18); cursor: pointer; }

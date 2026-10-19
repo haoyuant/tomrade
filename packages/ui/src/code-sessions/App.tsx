@@ -70,10 +70,10 @@ function SessionList({ sessions, active, onPick, say }: { sessions: SessionRow[]
     <ul className="cs-list">
       {sessions.map((s) => (
         <li key={s.id}>
-          <button type="button" className="cs-row" data-active={active.has(s.id) || undefined} data-needs={s.needsYou || undefined} data-ended={!live(s) || undefined} onClick={() => onPick(s)}>
+          <button type="button" className="side-row cs-row" aria-current={active.has(s.id) ? "true" : undefined} data-active={active.has(s.id) || undefined} data-needs={s.needsYou || undefined} data-ended={!live(s) || undefined} onClick={() => onPick(s)}>
             <span className="cs-row-head">
               <span className="mono">{s.key ?? s.branch}</span>
-              <span className="cs-chip" data-state={s.needsYou ? "needs" : s.state}>
+              <span className="tag cs-chip" data-state={s.needsYou ? "needs" : s.state}>
                 {s.needsYou ? say("needsYou") : say(s.state)}
               </span>
             </span>
@@ -82,7 +82,7 @@ function SessionList({ sessions, active, onPick, say }: { sessions: SessionRow[]
               <span className="mono">{s.branch}</span>
               {s.mode === "run" ? ` · ${say("runMode")}` : ""}
               {!s.pane && live(s) && s.where !== "tomrade" && (
-                <span className="cs-chip cs-where" data-where={s.where} title={s.where === "elsewhere" ? say("elsewhere") : say("outsideTitle", { terminal: s.terminal ?? say("outsideTerminal") })}>
+                <span className="tag faint cs-chip cs-where" data-where={s.where} title={s.where === "elsewhere" ? say("elsewhere") : say("outsideTitle", { terminal: s.terminal ?? say("outsideTerminal") })}>
                   {s.where === "elsewhere" ? say("elsewhereTag") : (s.terminal ?? say("outsideTerminal"))}
                 </span>
               )}
@@ -103,10 +103,10 @@ function TerminalList({ terminals, active, onPick, say }: { terminals: TerminalR
     <ul className="cs-list">
       {plain.map((t) => (
         <li key={t.id}>
-          <button type="button" className="cs-row" data-terminal={t.id} data-active={active.has(t.id) || undefined} onClick={() => onPick(t)}>
+          <button type="button" className="side-row cs-row" data-terminal={t.id} aria-current={active.has(t.id) ? "true" : undefined} data-active={active.has(t.id) || undefined} onClick={() => onPick(t)}>
             <span className="cs-row-head">
               <span className="mono">{t.title}</span>
-              {!t.pane && <span className="cs-chip">{say("starting")}</span>}
+              {!t.pane && <span className="tag faint cs-chip">{say("starting")}</span>}
             </span>
             <span className="cs-row-meta mono">{t.cwd}</span>
           </button>
@@ -148,9 +148,9 @@ function Layouts({ presets, defaultPreset, autoPlace, onApply, onSave, say }: { 
   return (
     <div className="cs-layouts">
       <div className="cs-side-head cs-side-sub">
-        <h2>{say("layouts")}</h2>
+        <h2 className="eyebrow">{say("layouts")}</h2>
         {naming === null && (
-          <button type="button" className="btn btn-secondary btn-xs" data-testid="cs-save-layout" onClick={() => setNaming("")}>
+          <button type="button" className="link-btn side-add" data-testid="cs-save-layout" onClick={() => setNaming("")}>
             {say("saveLayout")}
           </button>
         )}
@@ -483,11 +483,11 @@ export function App() {
   return (
     <div className="cs-window">
       <aside className="cs-side">
-        <h2 className="cs-side-head">{say("sessions")}</h2>
+        <h2 className="cs-side-head eyebrow">{say("sessions")}</h2>
         <SessionList sessions={state.sessions} active={active} onPick={pick} say={say} />
         <div className="cs-side-head cs-side-sub">
-          <h2>{say("terminals")}</h2>
-          <button type="button" className="btn btn-secondary btn-xs" data-testid="cs-side-new-terminal" disabled={!ready} onClick={newTerminal}>
+          <h2 className="eyebrow">{say("terminals")}</h2>
+          <button type="button" className="link-btn side-add" data-testid="cs-side-new-terminal" disabled={!ready} onClick={newTerminal}>
             + {say("newTerminal")}
           </button>
         </div>
