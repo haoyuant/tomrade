@@ -8,47 +8,120 @@ import { kimiKey, kimiProvider } from "./search/kimi.js";
 import type { ModelProviderSpec } from "./provider.js";
 import { guessFrom, listModels, usableModels, type ProviderPreset } from "./providers.js";
 
-/** Chat/completions and the APIs that copy it: most hosted services, and local servers. */
+// a catch-all profile without an address talks here, as profiles always have
+const COMPATIBLE_BASE = "https://api.deepseek.com";
+
+/** Chat/completions and the APIs that copy it, at any address: local servers, proxies, vendors without a provider of their own. */
 export const OPENAI_COMPATIBLE: ModelProviderSpec = {
   id: "openai-compatible",
   title: { en: "OpenAI-compatible", zh: "兼容 OpenAI" },
   keyRequired: false,
-  baseURL: { default: "https://api.deepseek.com", editable: true },
+  baseURL: { default: COMPATIBLE_BASE, editable: true },
   chat: true,
+  presets: [
+    {
+      id: "ollama", title: "Ollama", baseURL: "http://127.0.0.1:11434/v1", model: "", prefer: [/qwen/, /llama/, /deepseek/], local: true,
+      hint: { en: "Models running on this computer: free, no key, needs a capable machine", zh: "在这台电脑上运行模型：免费、不用 Key，需要电脑性能够" }
+    }
+  ],
+  list: (endpoint, timeoutMs) => listModels({ provider: "openai-compatible", baseURL: endpoint.baseURL || COMPATIBLE_BASE }, endpoint.apiKey, timeoutMs),
+  usable: (listed) => usableModels("openai-compatible", listed),
+  defaultInput: [],
+  capabilities: (model, listed) => detectCapabilities("openai-compatible", model, listed),
+  build: (p) => new OpenAiCompatible({ baseURL: p.baseURL ?? COMPATIBLE_BASE, apiKey: p.apiKey, model: p.model, inputModalities: p.inputModalities, outputModalities: p.outputModalities })
+};
+
+const hostOf = (url: string): string => {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+};
+
+/**
+ * A service on the chat/completions wire with a provider of its own: the
+ * compatible adapter at its address, and the catch-all profiles saved at one
+ * of its hosts, which move to it with their address kept.
+ */
+function compatibleService(spec: Pick<ModelProviderSpec, "id" | "title" | "presets"> & { baseURL: string; hosts: string[] }): ModelProviderSpec {
+  return {
+    id: spec.id,
+    title: spec.title,
+    keyRequired: true,
+    baseURL: { default: spec.baseURL, editable: true },
+    chat: true,
+    presets: spec.presets,
+    list: (endpoint, timeoutMs) => listModels({ provider: "openai-compatible", baseURL: endpoint.baseURL || spec.baseURL }, endpoint.apiKey, timeoutMs),
+    usable: (listed) => usableModels("openai-compatible", listed),
+    defaultInput: [],
+    capabilities: (model, listed) => detectCapabilities("openai-compatible", model, listed),
+    claims: (p) => (p.provider === "openai-compatible" && spec.hosts.includes(hostOf(p.baseURL || COMPATIBLE_BASE)) ? { ...p, provider: spec.id, baseURL: p.baseURL || COMPATIBLE_BASE } : undefined),
+    build: (p) => new OpenAiCompatible({ baseURL: p.baseURL || spec.baseURL, apiKey: p.apiKey, model: p.model, inputModalities: p.inputModalities, outputModalities: p.outputModalities })
+  };
+}
+
+/** DeepSeek's models, with its Responses search on the models that have it and its Search API for the rest. */
+export const DEEPSEEK = compatibleService({
+  id: "deepseek",
+  title: { en: "DeepSeek", zh: "DeepSeek" },
+  baseURL: "https://api.deepseek.com",
+  hosts: ["api.deepseek.com"],
   presets: [
     {
       id: "deepseek", title: "DeepSeek", baseURL: "https://api.deepseek.com", model: "deepseek-flash", prefer: [/flash/, /^deepseek-v\d/],
       keyPage: "https://platform.deepseek.com/api_keys", env: "DEEPSEEK_API_KEY", keyShapes: [/^sk-[0-9a-f]{32}$/],
       hint: { en: "Low pay-as-you-go prices; reachable from mainland China", zh: "按量付费、价格低，国内可直连" },
       search: (profiles) => deepseekProvider({ id: "deepseek", key: () => deepseekKey(profiles()) })
-    },
+    }
+  ]
+});
+
+/** Moonshot's Kimi models, with Kimi's search service. */
+export const KIMI = compatibleService({
+  id: "kimi",
+  title: { en: "Kimi", zh: "Kimi" },
+  baseURL: "https://api.moonshot.cn/v1",
+  hosts: ["api.moonshot.cn", "api.moonshot.ai"],
+  presets: [
     {
       id: "kimi", title: "Kimi", baseURL: "https://api.moonshot.cn/v1", model: "", prefer: [/^kimi-k\d/],
       keyPage: "https://platform.moonshot.cn/console/api-keys", env: "MOONSHOT_API_KEY", keyShapes: [/^sk-[A-Za-z0-9]{40,}$/],
       hint: { en: "Moonshot's Kimi models; reachable from mainland China", zh: "月之暗面 Kimi 模型，国内可直连" },
       search: (profiles) => kimiProvider({ id: "kimi", key: () => kimiKey(profiles()) })
-    },
+    }
+  ]
+});
+
+/** OpenAI's GPT models, searching the web on the Responses API. */
+export const OPENAI = compatibleService({
+  id: "openai",
+  title: { en: "OpenAI", zh: "OpenAI" },
+  baseURL: "https://api.openai.com/v1",
+  hosts: ["api.openai.com"],
+  presets: [
     {
       id: "openai", title: "OpenAI", baseURL: "https://api.openai.com/v1", model: "", prefer: [/^gpt-\d+(\.\d+)?$/],
       keyPage: "https://platform.openai.com/api-keys", env: "OPENAI_API_KEY", keyShapes: [/^sk-(proj|svcacct|admin)-/, /^sk-[A-Za-z0-9]{40,}$/],
       hint: { en: "GPT models, from a paid OpenAI API account", zh: "GPT 模型，需要付费的 OpenAI API 账户" }
-    },
+    }
+  ]
+});
+
+/** One key for many vendors' models. */
+export const OPENROUTER = compatibleService({
+  id: "openrouter",
+  title: { en: "OpenRouter", zh: "OpenRouter" },
+  baseURL: "https://openrouter.ai/api/v1",
+  hosts: ["openrouter.ai"],
+  presets: [
     {
       id: "openrouter", title: "OpenRouter", baseURL: "https://openrouter.ai/api/v1", model: "", prefer: [/^anthropic\/claude-sonnet-/, /^deepseek\/deepseek-chat/],
       keyPage: "https://openrouter.ai/keys", env: "OPENROUTER_API_KEY", keyShapes: [/^sk-or-/],
       hint: { en: "One key for models from many providers", zh: "一个 Key 用多家的模型" }
-    },
-    {
-      id: "ollama", title: "Ollama", baseURL: "http://127.0.0.1:11434/v1", model: "", prefer: [/qwen/, /llama/, /deepseek/], local: true,
-      hint: { en: "Models running on this computer: free, no key, needs a capable machine", zh: "在这台电脑上运行模型：免费、不用 Key，需要电脑性能够" }
     }
-  ],
-  list: (endpoint, timeoutMs) => listModels({ provider: "openai-compatible", baseURL: endpoint.baseURL || "https://api.deepseek.com" }, endpoint.apiKey, timeoutMs),
-  usable: (listed) => usableModels("openai-compatible", listed),
-  defaultInput: [],
-  capabilities: (model, listed) => detectCapabilities("openai-compatible", model, listed),
-  build: (p) => new OpenAiCompatible({ baseURL: p.baseURL ?? "https://api.deepseek.com", apiKey: p.apiKey, model: p.model, inputModalities: p.inputModalities, outputModalities: p.outputModalities })
-};
+  ]
+});
 
 /** Anthropic's Messages API, or a proxy of it. */
 export const ANTHROPIC: ModelProviderSpec = {
@@ -118,7 +191,8 @@ export const GEMINI: ModelProviderSpec = {
   build: (p) => new GeminiModel({ apiKey: p.apiKey, model: p.model, baseURL: p.baseURL, inputModalities: p.inputModalities })
 };
 
-export const BUILTIN_PROVIDERS: ModelProviderSpec[] = [OPENAI_COMPATIBLE, ANTHROPIC, GEMINI, OPENAI_IMAGES];
+/** The app's own providers, in the order the profile form lists them. */
+export const BUILTIN_PROVIDERS: ModelProviderSpec[] = [OPENAI_COMPATIBLE, ANTHROPIC, GEMINI, DEEPSEEK, KIMI, OPENAI, OPENROUTER, OPENAI_IMAGES];
 
 /** Every built-in preset with the provider that serves it. */
 export const PROVIDERS: ProviderPreset[] = BUILTIN_PROVIDERS.flatMap((spec) => spec.presets.map((preset) => ({ ...preset, provider: spec.id })));

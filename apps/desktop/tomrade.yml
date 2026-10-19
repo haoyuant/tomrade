@@ -113,6 +113,9 @@ contracts:
   - id: webSearch
     title: Web search
     registry: webSearch.register
+  - id: modelProvider
+    title: Model providers
+    registry: llm.registerProvider
 
 plugins:
   - id: archify
@@ -212,10 +215,63 @@ plugins:
   # this machine's checkout in the catalog, a worktree per agent thread.
   - id: repos
     name: "@tomradex/repos"
-  # Model providers. DeepSeek's and Kimi's web search goes on with a model's key
-  # (credited to this row while it is registered).
+  # Model profiles, roles and quick setup. DeepSeek's and Kimi's web search goes
+  # on with a model's key (credited to this row while it is registered).
   - id: llm
     name: "@tomradex/llm"
+    config:
+      builtins: false
+  # The model providers, each a row of its own: switched off, its presets go, and
+  # its profiles say to switch it back on. A plugin adds more the same way.
+  # Any chat/completions address: Ollama, LM Studio, vLLM, proxies.
+  - id: model-openai-compatible
+    name: "@tomradex/llm/provider"
+    title: OpenAI-compatible
+    implements: [modelProvider]
+    config:
+      provider: openai-compatible
+  - id: model-anthropic
+    name: "@tomradex/llm/provider"
+    title: Anthropic
+    implements: [modelProvider]
+    config:
+      provider: anthropic
+  - id: model-openai
+    name: "@tomradex/llm/provider"
+    title: OpenAI
+    implements: [modelProvider]
+    config:
+      provider: openai
+  - id: model-gemini
+    name: "@tomradex/llm/provider"
+    title: Google Gemini
+    implements: [modelProvider]
+    config:
+      provider: gemini
+  - id: model-deepseek
+    name: "@tomradex/llm/provider"
+    title: DeepSeek
+    implements: [modelProvider]
+    config:
+      provider: deepseek
+  - id: model-kimi
+    name: "@tomradex/llm/provider"
+    title: Kimi
+    implements: [modelProvider]
+    config:
+      provider: kimi
+  - id: model-openrouter
+    name: "@tomradex/llm/provider"
+    title: OpenRouter
+    implements: [modelProvider]
+    config:
+      provider: openrouter
+  - id: model-openai-images
+    name: "@tomradex/llm/provider"
+    title: OpenAI Images
+    implements: [modelProvider]
+    config:
+      provider: openai-images
   - id: tools
     name: "@tomradex/tools"
   # A bash tool for the in-app assistant, asked before each command by default

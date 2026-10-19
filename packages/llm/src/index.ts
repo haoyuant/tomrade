@@ -20,7 +20,7 @@ import { LLM_WORDS } from "./words.js";
 
 export * from "./model.js";
 export { guessFrom, keyHint, listModels, pickModel, usableModels, type ModelListing, type ProviderPreset, type QuickSetupResult } from "./providers.js";
-export { ANTHROPIC, BUILTIN_PROVIDERS, GEMINI, OPENAI_COMPATIBLE, OPENAI_IMAGES, PROVIDERS, guessProviders } from "./builtin-providers.js";
+export { ANTHROPIC, BUILTIN_PROVIDERS, DEEPSEEK, GEMINI, KIMI, OPENAI, OPENAI_COMPATIBLE, OPENAI_IMAGES, OPENROUTER, PROVIDERS, guessProviders } from "./builtin-providers.js";
 export { GeminiModel, type GeminiConfig } from "./gemini.js";
 export { deepseekKey, deepseekProvider, type DeepSeekKey } from "./search/deepseek.js";
 export { kimiKey, kimiProvider, type KimiKey } from "./search/kimi.js";
@@ -230,7 +230,7 @@ declare module "cordis" {
 export const modelProfileSchema = z.object({
   id: z.string().min(1),
   title: z.string().default(""),
-  /** The model provider that builds it: "openai-compatible", "anthropic", "openai-images", or one a plugin adds. */
+  /** The model provider that builds it: one of the app's own ("deepseek", "anthropic", "openai-compatible"…) or one a plugin adds. */
   provider: z.string().min(1),
   baseURL: z.string().optional(),
   apiKey: z.string().default(""),
@@ -358,21 +358,33 @@ async function collectWithin(
   }
 }
 
+export const LlmConfig = z.object({
+  /** The app's own providers come with the service; a composition that gives each a row of its own sets false. */
+  builtins: z.boolean().default(true)
+}).prefault({});
+export type LlmConfig = z.infer<typeof LlmConfig>;
+
 /** ctx.llm: profiles + roles from settings, adapters cached until settings change. */
 export class Llm extends Service implements LlmService {
   static provide = "llm";
   static inject = ["settings"];
+  static Config = LlmConfig;
 
   private cache = new Map<string, ChatModel>();
-  private kinds = new Map<string, ModelProviderSpec>(BUILTIN_PROVIDERS.map((p) => [p.id, p]));
+  private kinds: Map<string, ModelProviderSpec>;
+  /** Its own context: a provider registers from the caller's, which need not have settings. */
+  private readonly home: Context;
+  private resyncSearches: (() => void) | null = null;
   private lent: LentModel[] = [];
   private lentRunning = 0;
   private lentWaiting: (() => void)[] = [];
   private calls: WorkerCallLog | null = null;
   private refused = new RefusedMedia();
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, config: LlmConfig = { builtins: true }) {
     super(ctx, "llm");
+    this.home = ctx;
+    this.kinds = new Map((config.builtins ? BUILTIN_PROVIDERS : []).map((p) => [p.id, p]));
   }
 
   [Service.init]() {
@@ -405,7 +417,7 @@ export class Llm extends Service implements LlmService {
     });
     this.ctx.settings.register(MODELS_SECTION);
     this.migrateLegacy();
-    this.claimProfiles();
+    this.claimProfiles([...this.kinds.values()]);
     this.ctx.inject(["webSearch"], (ctx) => this.offerSearches(ctx));
     this.ctx.on("settings/changed", () => {
       this.cache.clear();
@@ -503,6 +515,7 @@ export class Llm extends Service implements LlmService {
     // tied to the caller, so a plugin's provider goes with it
     return this.ctx.effect(() => {
       this.kinds.set(provider.id, provider);
+      this.claimProfiles([provider]);
       this.providersChanged();
       return () => {
         if (this.kinds.get(provider.id) !== provider) return;
@@ -514,6 +527,7 @@ export class Llm extends Service implements LlmService {
 
   private providersChanged(): void {
     this.cache.clear();
+    this.resyncSearches?.();
     this.ctx.get("ipc")?.send("llm.providersChanged");
   }
 
@@ -536,13 +550,30 @@ export class Llm extends Service implements LlmService {
     return `No model provider "${provider}" is installed — switch its plugin back on, or pick another profile in Settings → Assistant`;
   }
 
+  /** The app's own in their order, whichever row registered first; a plugin's after them. */
+  private ranked(): ModelProviderSpec[] {
+    const rank = (id: string) => {
+      const i = BUILTIN_PROVIDERS.findIndex((p) => p.id === id);
+      return i < 0 ? BUILTIN_PROVIDERS.length : i;
+    };
+    return [...this.kinds.values()].sort((a, b) => rank(a.id) - rank(b.id));
+  }
+
   private presets(): ProviderPreset[] {
-    return [...this.kinds.values()].flatMap((spec) => spec.presets.map((preset) => ({ ...preset, provider: spec.id })));
+    return this.ranked().flatMap((spec) => spec.presets.map((preset) => ({ ...preset, provider: spec.id })));
+  }
+
+  /** The presets in the reader's order: reachable ones first for a Chinese reader, the paid global APIs first otherwise. */
+  private ordered(): ProviderPreset[] {
+    const order = PROVIDER_ORDER[wordsLocale(this.words().locale)];
+    const rank = (id: string) => (order.includes(id) ? order.indexOf(id) : order.length);
+    // a provider's own presets, which the order does not know, come after the app's
+    return this.presets().sort((a, b) => rank(a.id) - rank(b.id));
   }
 
   modelProviders(): ModelProviderView[] {
     const locale = wordsLocale(this.words().locale);
-    return [...this.kinds.values()].map((k) => ({
+    return this.ranked().map((k) => ({
       id: k.id, title: k.title[locale], keyRequired: k.keyRequired, baseURL: k.baseURL, chat: k.chat, defaultInput: k.defaultInput, ...(k.signIn ? { signIn: k.signIn.title[locale] } : {})
     }));
   }
@@ -700,19 +731,14 @@ export class Llm extends Service implements LlmService {
 
   providers(): ProviderView[] {
     const locale = wordsLocale(this.words().locale);
-    const order = PROVIDER_ORDER[locale];
-    const rank = (id: string) => (order.includes(id) ? order.indexOf(id) : order.length);
-    return this.presets()
-      // a provider's own presets, which the order does not know, come after the app's
-      .sort((a, b) => rank(a.id) - rank(b.id))
-      .map((p) => ({ id: p.id, title: p.title, hint: p.hint[locale], provider: p.provider, baseURL: p.baseURL, model: p.model, ...(p.keyPage ? { keyPage: p.keyPage } : {}), ...(p.local ? { local: true } : {}) }));
+    return this.ordered().map((p) => ({ id: p.id, title: p.title, hint: p.hint[locale], provider: p.provider, baseURL: p.baseURL, model: p.model, ...(p.keyPage ? { keyPage: p.keyPage } : {}), ...(p.local ? { local: true } : {}) }));
   }
 
   /** Keys exported in the person's shell and local servers, minus what a profile already uses. */
   async detect(): Promise<DetectedModel[]> {
     const profiles = this.models().profiles;
     const found: DetectedModel[] = [];
-    for (const preset of this.presets()) {
+    for (const preset of this.ordered()) {
       if (preset.env) {
         const key = process.env[preset.env]?.trim();
         if (key && !profiles.some((p) => p.apiKey === key)) found.push({ id: `env:${preset.env}`, preset: preset.id, source: "env", detail: `${preset.env} · ${keyHint(key)}` });
@@ -773,7 +799,15 @@ export class Llm extends Service implements LlmService {
     const made = new Map<string, WebSearchProvider>();
     const on = new Map<string, () => void>();
     const sync = () => {
-      for (const preset of this.presets()) {
+      const presets = this.presets();
+      // a provider switched off takes its search service with it
+      for (const [id, off] of on) {
+        if (presets.some((p) => p.id === id && p.search)) continue;
+        off();
+        on.delete(id);
+        made.delete(id);
+      }
+      for (const preset of presets) {
         if (!preset.search) continue;
         const service = made.get(preset.id) ?? preset.search(() => this.models().profiles);
         made.set(preset.id, service);
@@ -787,6 +821,8 @@ export class Llm extends Service implements LlmService {
     };
     sync();
     ctx.on("settings/changed", sync);
+    this.resyncSearches = sync;
+    ctx.effect(() => () => (this.resyncSearches = null));
   }
 
   searchRoute(): SearchRoute {
@@ -802,13 +838,13 @@ export class Llm extends Service implements LlmService {
   }
 
   /** Profiles a provider now serves better than the one they were saved for move to it, keys and roles kept. */
-  private claimProfiles(): void {
-    const all = this.ctx.settings.get();
+  private claimProfiles(kinds: ModelProviderSpec[]): void {
+    const all = this.home.settings.get();
     const models = all.models as ModelsSettings | undefined;
     if (!models?.profiles?.length) return;
     let moved = false;
     const profiles = models.profiles.map((profile) => {
-      for (const kind of this.kinds.values()) {
+      for (const kind of kinds) {
         const claimed = kind.claims?.(profile);
         if (claimed) {
           moved = true;
@@ -818,7 +854,7 @@ export class Llm extends Service implements LlmService {
       }
       return profile;
     });
-    if (moved) this.ctx.settings.set({ ...all, models: { ...models, profiles } });
+    if (moved) this.home.settings.set({ ...all, models: { ...models, profiles } });
   }
 
   /** A v1 `llm` section with a key becomes the first profile, bound to both roles. */

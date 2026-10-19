@@ -453,9 +453,17 @@ ever reaching the page.
 A profile names its **provider**, and core builds, lists and checks it only
 through that provider: `ctx.llm.registerProvider(spec)` serves the profiles
 naming `spec.id` and offers its presets until disposed (or the registering
-plugin unloads). The app's own — `openai-compatible` (OpenAI, DeepSeek, Kimi,
-OpenRouter, Ollama…), `anthropic`, `gemini`, `openai-images` — register the
-same way. An extension adds one with `models` in `inject` (SDK 0.2.16):
+plugin unloads). The app's own are rows of `@tomradex/llm/provider`, one per
+provider (`config: { provider: deepseek }`), so each is switched off like any
+plugin: `anthropic`, `gemini`, `deepseek`, `kimi`, `openai`, `openrouter`,
+`openai-images`, and `openai-compatible`, the catch-all for Ollama, LM Studio,
+vLLM and any other compatible address. The `llm` row runs with `builtins:
+false`; without it (tests, other compositions) the service registers them all
+itself. A provider's `claims(profile)` moves a profile saved for another one
+when the provider registers — the catch-all's profiles at api.deepseek.com,
+the Moonshot hosts, api.openai.com and openrouter.ai go to their own provider
+with address and key kept. An extension adds one with `models` in `inject`
+(SDK 0.2.16):
 
 ```ts
 await ctx.models.registerProvider({
@@ -573,6 +581,7 @@ contracts:
 | `storage` | `ctx.storage.register` | `storage-git`, `storage-github` |
 | `files` | `ctx.files.register` | `files` (this machine only), `files-github` |
 | `webSearch` | `ctx.webSearch.register` | `web-search-tavily` |
+| `modelProvider` | `ctx.llm.registerProvider` | `model-openai-compatible`, `model-anthropic`, `model-gemini`, `model-deepseek`, `model-kimi`, `model-openai`, `model-openrouter`, `model-openai-images` |
 | `inboxSource` | `ctx.inbox.source` | `inbox-tomrade`, `inbox-github` |
 | `inboxTriager` | `ctx.inbox.triager` | `inbox-triage` |
 

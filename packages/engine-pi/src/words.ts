@@ -4,6 +4,8 @@ export const PI_WORDS = defineWords("engine-pi", {
   en: {
     title: "Built-in agent",
     refusedPick: 'The built-in agent cannot run on "{{name}}": it does not call tools itself',
+    foreignPick: 'The built-in agent cannot run on "{{name}}": its provider speaks an API the agent does not',
+    foreignModels: "The connected models' providers speak APIs the built-in agent does not — it runs on OpenAI-compatible, Anthropic and Gemini models",
     notBundled: "This build has no built-in agent — run `pnpm --filter @tomrade/desktop fetch:pi`",
     noMcp: "The MCP server is not running — enable the mcp plugin",
     noToolModels: "The connected models cannot call tools themselves — the built-in agent needs one that can",
@@ -13,6 +15,8 @@ export const PI_WORDS = defineWords("engine-pi", {
   zh: {
     title: "内置智能体",
     refusedPick: "内置智能体不能用“{{name}}”：它不能自己调用工具",
+    foreignPick: "内置智能体不能用“{{name}}”：它的服务商用的接口内置智能体不支持",
+    foreignModels: "已连接模型的服务商用的接口内置智能体都不支持——它能用兼容 OpenAI、Anthropic 和 Gemini 的模型",
     notBundled: "这个版本没有内置智能体——运行 `pnpm --filter @tomrade/desktop fetch:pi`",
     noMcp: "MCP 服务没有运行——请启用 mcp 插件",
     noToolModels: "已连接的模型不能自己调用工具，内置智能体需要一个能调用工具的模型",

@@ -11,6 +11,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./provider": {
+      "types": "./dist/provider-row.d.ts",
+      "default": "./dist/provider-row.js"
     }
   },
   "scripts": {

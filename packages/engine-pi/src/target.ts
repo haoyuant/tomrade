@@ -12,9 +12,27 @@ const KNOWN: Record<string, { provider: string; env: string }> = {
 };
 
 // Where a profile without its own address talks, by its provider.
-const DEFAULT_BASE: Record<string, string> = { anthropic: "https://api.anthropic.com", gemini: "https://generativelanguage.googleapis.com/v1beta" };
-// pi's API for each provider whose wire is not chat/completions.
-const PI_API: Record<string, string> = { anthropic: "anthropic-messages", gemini: "google-generative-ai" };
+const DEFAULT_BASE: Record<string, string> = {
+  anthropic: "https://api.anthropic.com",
+  gemini: "https://generativelanguage.googleapis.com/v1beta",
+  openai: "https://api.openai.com/v1",
+  deepseek: "https://api.deepseek.com",
+  kimi: "https://api.moonshot.cn/v1",
+  openrouter: "https://openrouter.ai/api/v1"
+};
+// pi's API for each provider it can drive. Any other (a plugin's) talks a wire of its own, and its key must not go to an address pi guesses.
+const PI_API: Record<string, string> = {
+  "openai-compatible": "openai-completions",
+  openai: "openai-completions",
+  deepseek: "openai-completions",
+  kimi: "openai-completions",
+  openrouter: "openai-completions",
+  anthropic: "anthropic-messages",
+  gemini: "google-generative-ai"
+};
+
+/** Whether pi has an API for the profile's provider. */
+export const piSpeaks = (provider: string): boolean => Object.hasOwn(PI_API, provider);
 
 /** Every known provider's variable, so one listing shows the whole catalog. */
 export const CATALOG_ENV: Record<string, string> = Object.fromEntries(Object.values(KNOWN).map(({ env }) => [env, "catalog"]));
@@ -41,7 +59,7 @@ const keyVariable = (profile: ModelProfile): string => `TOMRADE_KEY_${profile.id
  * pi has no way to render tools into the prompt, which the loop does for `promptTools`.
  */
 export const usableProfile = (profile: ModelProfile): boolean =>
-  profile.provider !== "openai-images" && (profile.provider !== "anthropic" || !!profile.apiKey) && !profile.promptTools;
+  piSpeaks(profile.provider) && (profile.provider !== "anthropic" || !!profile.apiKey) && !profile.promptTools;
 
 /**
  * A known endpoint whose model pi's catalog lists runs as that provider, so pi
@@ -67,7 +85,7 @@ export function modelsFile(profiles: ModelProfile[]): { providers: Record<string
     const images = profile.inputModalities?.includes("image") ?? profile.provider === "anthropic";
     providers[customProvider(profile)] = {
       baseUrl: profile.baseURL || DEFAULT_BASE[profile.provider] || "https://api.deepseek.com",
-      api: PI_API[profile.provider] ?? "openai-completions",
+      api: PI_API[profile.provider],
       apiKey: profile.apiKey ? `$${keyVariable(profile)}` : "none",
       models: [{ id: profile.model, name: profile.title || profile.model, input: images ? ["text", "image"] : ["text"] }]
     };

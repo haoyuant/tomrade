@@ -113,7 +113,7 @@ it("turns a pasted key into the first profile, with a model the provider lists",
   expect(await ctx.llm.quickSetup({ preset: "deepseek", apiKey: " sk-good " })).toEqual({ ok: true, profile: { id: "deepseek", title: "DeepSeek", model: "deepseek-flash" } });
   const profiles = (ctx.settings.get().models as ModelsSettings).profiles;
   expect(profiles.map((p) => p.id)).toEqual(["deepseek", "old"]);
-  expect(profiles[0]).toMatchObject({ provider: "openai-compatible", baseURL: "https://api.deepseek.com", apiKey: "sk-good" });
+  expect(profiles[0]).toMatchObject({ provider: "deepseek", baseURL: "https://api.deepseek.com", apiKey: "sk-good" });
   expect(ctx.llm.ready().ok).toBe(true);
   // a second key for the same endpoint replaces the first rather than stacking profiles
   await ctx.llm.quickSetup({ preset: "deepseek", apiKey: "sk-good" });

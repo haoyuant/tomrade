@@ -185,6 +185,8 @@ it("moves a profile saved on Gemini's compatible endpoint to the Gemini provider
   await ctx.plugin(Llm);
   const saved = (ctx.settings.get().models as ModelsSettings).profiles;
   expect(saved[0]).toEqual({ id: "g", title: "Gemini", provider: "gemini", apiKey: "AIza-key", model: "gemini-3.8-flash" });
-  expect(saved.slice(1)).toEqual(profiles.slice(1));
+  expect(saved[1]).toEqual(profiles[1]);
+  // DeepSeek's own provider takes its profile, as Gemini's takes Gemini's
+  expect(saved[2]).toEqual({ ...profiles[2], provider: "deepseek" });
   expect((ctx.settings.get().models as ModelsSettings).roles.worker).toBe("g");
 });
