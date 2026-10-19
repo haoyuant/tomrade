@@ -7,17 +7,18 @@ import type { SettingsSection } from "@tomradex/settings";
 import { AnthropicModel } from "./anthropic.js";
 import { ImagesModel } from "./images.js";
 export { ImagesModel } from "./images.js";
-import { LlmError } from "./errors.js";
-import { assistantMessage, collect, userMessage, type ChatEvent, type ChatModel, type ChatRequest, type Collected, type LlmRole, type Message } from "./model.js";
+import { LlmError, MediaRefused } from "./errors.js";
+import { assistantMessage, collect, modalityOf, userMessage, type ChatEvent, type ChatModel, type ChatRequest, type Collected, type LlmRole, type Message } from "./model.js";
 import { OpenAiCompatible } from "./openai.js";
 import { withPromptTools } from "./prompt-tools.js";
 import { guessProviders, keyHint, listModels, pickModel, PROVIDERS, usableModels, type ModelListing, type QuickSetupResult } from "./providers.js";
 import { WORKER_CALLS_MIGRATIONS, WORKER_CALLS_TABLES, WorkerCallLog, type WorkerPurpose, type WorkerSpend, type WorkerUsageSummary } from "./worker-usage.js";
+import { REFUSED_MEDIA_MIGRATION, REFUSED_MEDIA_TABLES, RefusedMedia } from "./refused-media.js";
 import { LLM_WORDS } from "./words.js";
 
 export * from "./model.js";
 export { PROVIDERS, guessProviders, keyHint, listModels, pickModel, usableModels, type ModelListing, type ProviderPreset, type QuickSetupResult } from "./providers.js";
-export { LlmError, NativeMediaRefused, NativeSearchRefused, type LlmErrorResponse } from "./errors.js";
+export { LlmError, MediaRefused, NativeMediaRefused, NativeSearchRefused, type LlmErrorResponse } from "./errors.js";
 export { OpenAiCompatible, type OpenAiConfig } from "./openai.js";
 export { AnthropicModel, type AnthropicConfig } from "./anthropic.js";
 export { withPromptTools } from "./prompt-tools.js";
@@ -321,6 +322,7 @@ export class Llm extends Service implements LlmService {
   private lentRunning = 0;
   private lentWaiting: (() => void)[] = [];
   private calls: WorkerCallLog | null = null;
+  private refused = new RefusedMedia();
 
   constructor(ctx: Context) {
     super(ctx, "llm");
@@ -340,15 +342,23 @@ export class Llm extends Service implements LlmService {
       ctx.ipc.handle("llm.workerUsage", () => this.workerUsage());
     });
     this.ctx.inject(["db"], (ctx) => {
-      ctx.db.migrate("llm", WORKER_CALLS_MIGRATIONS, { scope: "hub", tables: WORKER_CALLS_TABLES });
+      ctx.db.migrate("llm", [...WORKER_CALLS_MIGRATIONS, REFUSED_MEDIA_MIGRATION], { scope: "hub", tables: { ...WORKER_CALLS_TABLES, ...REFUSED_MEDIA_TABLES } });
       ctx.effect(() => {
         this.calls = new WorkerCallLog(ctx.db.hub);
-        return () => (this.calls = null);
+        this.refused.attach(ctx.db.hub);
+        this.refused.keepFor(this.models().profiles);
+        return () => {
+          this.calls = null;
+          this.refused.attach(null);
+        };
       });
     });
     this.ctx.settings.register(MODELS_SECTION);
     this.migrateLegacy();
-    this.ctx.on("settings/changed", () => this.cache.clear());
+    this.ctx.on("settings/changed", () => {
+      this.cache.clear();
+      this.refused.keepFor(this.models().profiles);
+    });
   }
 
   private models(): ModelsSettings {
@@ -405,9 +415,29 @@ export class Llm extends Service implements LlmService {
     const key = JSON.stringify(profile);
     const cached = this.cache.get(key);
     if (cached) return cached;
-    const model = this.build(profile);
+    const model = this.remembering(profile, this.build(profile));
     this.cache.set(key, model);
     return model;
+  }
+
+  /** The profile's model, minus the media it has refused; a new refusal is kept as it passes through. */
+  private remembering(profile: ModelProfile, base: ChatModel): ChatModel {
+    const refused = this.refused;
+    return {
+      get capabilities() {
+        const caps = base.capabilities;
+        const off = refused.of(profile.id, profile.model);
+        return off.length && caps.mediaInput ? { ...caps, mediaInput: caps.mediaInput.filter((mime) => !off.includes(modalityOf(mime)!)) } : caps;
+      },
+      async *chat(request, signal) {
+        try {
+          yield* base.chat(request, signal);
+        } catch (err) {
+          if (err instanceof MediaRefused) refused.add(profile.id, profile.model, err.kinds);
+          throw err;
+        }
+      }
+    };
   }
 
   private build(profile: ModelProfile): ChatModel {

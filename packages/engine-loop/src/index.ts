@@ -2,7 +2,7 @@ import type {} from "cordis";
 import type { Context } from "cordis";
 import { z } from "zod";
 import { HOUSE_RULES, deferredTools, focusSuffix, isSuspended, kitLines, promptSections, type Engine, type ThreadMessage, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
-import { NativeMediaRefused, NativeSearchRefused, assistantMessage, collect, toolResultsMessage, userMessage, type LlmService, type Message, type OutputModality, type ToolSpec } from "@tomradex/llm";
+import { MediaRefused, NativeMediaRefused, NativeSearchRefused, assistantMessage, collect, modalityOf, toolResultsMessage, userMessage, type InputModality, type LlmService, type Message, type OutputModality, type ToolSpec } from "@tomradex/llm";
 import { LONG_RESULT, ToolInputError, compactList, type ToolDescriptor } from "@tomradex/tools";
 import { LOOP_WORDS } from "./words.js";
 
@@ -183,6 +183,21 @@ export function elideOldResults(messages: Message[], free: number, keep = KEEP_R
 }
 
 /**
+ * Takes media of the refused kinds out of the request, in place, each replaced by a line saying it
+ * was left out, so the model knows a file was there. Returns how many were taken out.
+ */
+export function withoutMedia(messages: Message[], kinds: readonly InputModality[]): number {
+  let taken = 0;
+  for (const m of messages)
+    m.content = m.content.map((b) => {
+      if (b.type !== "media" || !kinds.includes(modalityOf(b.media.mime)!)) return b;
+      taken += 1;
+      return { type: "text", text: `(attachment ${b.media.name} left out: this model cannot read ${modalityOf(b.media.mime)} files)` };
+    });
+  return taken;
+}
+
+/**
  * What the person sent while the turn ran, worded so the model takes it as a change of course.
  * After a finished reply the model must not write it again: the person has already read it.
  */
@@ -325,6 +340,13 @@ export function createLoopEngine(ctx: Context): Engine {
             ({ attempt, max, reason, delayMs }) => io.retry?.({ attempt, max, reason, delayMs })
           );
         } catch (err) {
+          // Refused for media it cannot read: the same step again without it, said once per kind.
+          if (err instanceof MediaRefused && withoutMedia(messages, err.kinds) > 0) {
+            const w = words();
+            io.emit({ type: "note", text: w("mediaRefused", { kinds: err.kinds.map((kind) => w(`kind_${kind}`)).join(w("kindJoin")) }) });
+            step -= 1;
+            continue;
+          }
           if (!(err instanceof NativeSearchRefused) || !nativeSearch) throw err;
           // Refused before anything streamed: the same step again, searching through the plugin.
           nativeSearch = false;
