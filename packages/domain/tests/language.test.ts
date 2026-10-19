@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { canonicalTag, languageCoverage, languageName, pickLanguage, slotsOf, usableWords } from "@tomradex/domain";
 
-const SHIPPED = ["en", "zh", "zh-Hant", "ja", "es", "de", "fr"];
+const SHIPPED = ["en", "zh", "zh-Hant", "ja", "es", "de", "fr", "ru"];
 
 describe("pickLanguage", () => {
   it("picks what the shipped languages always picked", () => {
@@ -12,6 +12,7 @@ describe("pickLanguage", () => {
     expect(pickLanguage("es-419", SHIPPED)).toBe("es");
     expect(pickLanguage("de-CH", SHIPPED)).toBe("de");
     expect(pickLanguage("fr-CA", SHIPPED)).toBe("fr");
+    expect(pickLanguage("ru-RU", SHIPPED)).toBe("ru");
     expect(pickLanguage("en-GB", SHIPPED)).toBe("en");
     expect(pickLanguage("pt-BR", SHIPPED)).toBeNull();
   });

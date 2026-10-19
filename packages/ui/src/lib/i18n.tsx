@@ -50,7 +50,8 @@ export const BUILTIN_LANGUAGES: { tag: BuiltinLocale; name: string }[] = [
   { tag: "ja", name: "日本語" },
   { tag: "es", name: "Español" },
   { tag: "de", name: "Deutsch" },
-  { tag: "fr", name: "Français" }
+  { tag: "fr", name: "Français" },
+  { tag: "ru", name: "Русский" }
 ];
 
 /** The system's language among those there are — the shipped ones and any a pack added — else English. */

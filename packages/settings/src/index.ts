@@ -122,7 +122,7 @@ export type SecretStorage = "keychain" | "plaintext";
 export type Locale = LanguageTag;
 
 /** The languages the app ships; the interface translates them all, the backend writes en and zh. Language packs add more. */
-export const LANGUAGES = ["en", "zh", "zh-Hant", "ja", "es", "de", "fr"] as const;
+export const LANGUAGES = ["en", "zh", "zh-Hant", "ja", "es", "de", "fr", "ru"] as const;
 
 /** A language a plugin's pack added, with the words it brings. */
 export interface InstalledLanguage extends LanguageInfo {
