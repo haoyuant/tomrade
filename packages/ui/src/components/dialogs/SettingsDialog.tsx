@@ -27,7 +27,8 @@ import { SchemaField, fieldsOf, problemOf, type JsonSchema } from "~/components/
 import { STATUS } from "~/lib/domain";
 import { useBackgroundStatus } from "~/lib/background";
 import { intlTag, useI18n, type MessageKey } from "~/lib/i18n";
-import { useModelProviders, useProviders } from "~/lib/setup";
+import { useInstallProvider, useModelProviders, useProviderPlugins, useProviderSignIn, useProviders } from "~/lib/setup";
+import { ProviderInstallProblem } from "~/components/setup/QuickModelSetup";
 import { useMcpUrl, usePlugins, useSaveSettings, useSettings, useSettingsSections, useStorageProviders } from "~/lib/queries";
 import { cssColorToHex, useTheme } from "~/lib/theme";
 import { detectedHere } from "~/lib/engines";
@@ -682,6 +683,11 @@ function AssistantPane({
   const [editing, setEditing] = useState<ModelProfile | null>(null);
   const { data: kinds } = useModelProviders();
   const { data: presets } = useProviders();
+  const plugins = useProviderPlugins().data ?? [];
+  const startProfile = (preset: Pick<ProviderView, "provider" | "baseURL" | "model">, title: string) =>
+    setEditing({ id: `p${Date.now().toString(36)}`, title, provider: preset.provider, baseURL: preset.baseURL || undefined, apiKey: "", model: preset.model });
+  // a provider plugin installed from here opens its first preset's form once it has registered it
+  const offer = useInstallProvider((preset) => startProfile(preset, preset.title));
   // removing a profile deletes its key too: asked once, in the row
   const [removing, setRemoving] = useState<string | null>(null);
   // The agents on this machine make the list; the rest wait behind one line, which opens for an engine someone was sent to set up.
@@ -777,27 +783,28 @@ function AssistantPane({
             {[...(presets ?? []), { id: "custom", title: "", provider: "openai-compatible", baseURL: "", model: "" }].map((preset) => {
               const title = preset.id === "custom" ? t("settingsDialog.presetCustom") : PRESET_TITLES[preset.id] ? t(PRESET_TITLES[preset.id]) : preset.title;
               return (
-                <button
-                  key={preset.id}
-                  type="button"
-                  className="chip-opt"
-                  onClick={() =>
-                    setEditing({
-                      id: `p${Date.now().toString(36)}`,
-                      title: preset.id === "custom" ? "" : title,
-                      provider: preset.provider,
-                      baseURL: preset.baseURL || undefined,
-                      apiKey: "",
-                      model: preset.model
-                    })
-                  }
-                >
+                <button key={preset.id} type="button" className="chip-opt" onClick={() => startProfile(preset, preset.id === "custom" ? "" : title)}>
                   + {title}
                 </button>
               );
             })}
+            {plugins.map((plugin) => (
+              <button
+                key={plugin.id}
+                type="button"
+                className="chip-opt"
+                data-plugin={plugin.id}
+                title={t("setup.officialPlugin")}
+                disabled={!!offer.busy}
+                aria-busy={offer.busy === plugin.id}
+                onClick={() => offer.install(plugin)}
+              >
+                <Icon name="i-plug" size={11} /> {offer.busy === plugin.id ? t("setup.installingProvider") : `+ ${plugin.title}`}
+              </button>
+            ))}
           </div>
         )}
+        {!editing && plugins.map((plugin) => <ProviderInstallProblem key={plugin.id} plugin={plugin} offer={offer} />)}
         {models.profiles.length > 0 && <SearchRouteLine profiles={models.profiles} />}
       </div>
 
@@ -1262,6 +1269,7 @@ function ProfileForm({ profile, onSave, onCancel }: { profile: ModelProfile; onS
   };
   const { data: kinds } = useModelProviders();
   const { data: presets } = useProviders();
+  const signIn = useProviderSignIn();
   const kind = providerOf(kinds, draft.provider);
   const valid = draft.model.trim().length > 0 && (!kind.keyRequired || draft.apiKey.trim().length > 0);
   const host = hostOf(draft.baseURL || kind.baseURL.default);
@@ -1320,7 +1328,24 @@ function ProfileForm({ profile, onSave, onCancel }: { profile: ModelProfile; onS
       )}
       <div className="field">
         <label htmlFor="pfKey">{t("settingsDialog.apiKeyLabel")}</label>
-        <input id="pfKey" className="input num" type="password" value={draft.apiKey} onChange={(e) => set({ apiKey: e.target.value })} />
+        <div className="row" style={{ gap: "var(--space-2)" }}>
+          <input id="pfKey" className="input num" style={{ flex: 1 }} type="password" value={draft.apiKey} onChange={(e) => set({ apiKey: e.target.value })} />
+          {kind.signIn && (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              data-testid="profile-sign-in"
+              disabled={signIn.isPending}
+              aria-busy={signIn.isPending}
+              onClick={() =>
+                signIn.mutate(draft.provider, { onSuccess: (outcome) => outcome.ok && set({ apiKey: outcome.apiKey }) })
+              }
+            >
+              {signIn.isPending ? t("setup.signingIn") : kind.signIn}
+            </button>
+          )}
+        </div>
+        {signIn.data && !signIn.data.ok && <p className="profile-problem" role="alert">{t("setup.signInFailed", { message: signIn.data.detail })}</p>}
         <PlainSecretNote />
         <span className="meta-txt">
           {t("settingsDialog.localEndpointNote")}

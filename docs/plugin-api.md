@@ -115,6 +115,7 @@ returns is disposed when the service goes.
 | `oplog` | `recent`, `history` |
 | `im` | `register(adapter)` — an IM transport: `capabilities`, `open(connectionId, io)` returning a session with `deliver` (and optionally `download`). SDK 0.2.5 adds optional capabilities (`threads`, `reactions`, `typing`, `stream`, `select`, `multiSelect`, `textInput`, `cards`, `cardUpdate`, `nativeCommands`, `ephemeral`, `markdown` dialect, `rateLimit`), session methods `indicate`, `react`, `stream.start/append/stop`, `commands`, and `toImDialect` / `splitImText`; also `setup` (credential fields, console steps, permissions, manifest) whose values arrive sealed-at-rest as `io.credentials`, a session `identity`, the `ambient` group activation, a message's `replyTo`, and `retract` / `edit` inbound events. An adapter that declares none of them keeps the 0.2.2 behaviour |
 | `webSearch` | `register({ id, title, unavailable(), search(request, signal), read?(request, signal), settings? })` — a provider answering the agent's `web_search` / `web_fetch`, exactly as the app's own do; see [Web search](#web-search). SDK 0.2.9 |
+| `models` | `registerProvider({ id, title, baseURL, presets?, list(endpoint, signal), usable?, capabilities?, signIn?, build(profile) })` — a model provider serving the profiles that name it and offering its presets in the model setup, as the app's own do; see [Model providers](#model-providers). SDK 0.2.16 |
 | `terminals` | `state()` — whether herdr can hand over a live terminal, and the fix when it cannot — and `open(paneId, { mode, cols, rows })`: a pane's terminal as frames in and `input` / `resize` / `scroll` / `mouse` out; see [Terminals](#terminals). SDK 0.2.10 |
 | `on(event, fn)` | `write` (after commit: entity, op, id, by, via, runId), `tool.result`, `project.opened`, `project.closed`, `settings.changed` |
 | `effect`, `interval` | cleanup and timers that end with the plugin |
@@ -446,6 +447,66 @@ shape, `llm.quickSetup({ preset, apiKey })` checks the key against the provider'
 model listing, picks a model and saves the profile first, and `llm.detect` /
 `llm.adopt` offer keys exported in the shell and a local Ollama without the key
 ever reaching the page.
+
+### Model providers
+
+A profile names its **provider**, and core builds, lists and checks it only
+through that provider: `ctx.llm.registerProvider(spec)` serves the profiles
+naming `spec.id` and offers its presets until disposed (or the registering
+plugin unloads). The app's own — `openai-compatible` (OpenAI, DeepSeek, Kimi,
+OpenRouter, Ollama…), `anthropic`, `gemini`, `openai-images` — register the
+same way. An extension adds one with `models` in `inject` (SDK 0.2.16):
+
+```ts
+await ctx.models.registerProvider({
+  id: "acme",                                   // carries the namespace; profiles store it
+  title: { en: "Acme AI", zh: "Acme AI" },
+  baseURL: { default: "https://api.acme.example/v1", editable: false },
+  presets: [{ id: "acme", title: "Acme AI", keyPage: "https://acme.example/keys", env: "ACME_API_KEY", keyShapes: [/^ak-/], prefer: [/^acme-large/] }],
+  list: async ({ baseURL, apiKey }, signal) => ({ ok: true, models: ["acme-large-2", "acme-small"] }),
+  build: (profile) => ({
+    capabilities: { tools: true, streaming: true, json: true },
+    async *chat(request, signal) {
+      yield { type: "text", delta: "…" };
+      yield { type: "usage", inputTokens: 12, outputTokens: 3 };
+      yield { type: "stop", reason: "end" };
+    }
+  })
+});
+```
+
+- **Presets** show in the quick setup and the profile form; a pasted key
+  matching `keyShapes` picks the preset, and `env` is the variable the setup
+  looks for in the shell. Their ids carry the namespace too.
+- **`list`** answers the models the endpoint has (`models: null` when it has no
+  listing) or `{ ok: false, status, detail }`; it doubles as the key check when
+  a profile is saved. `usable(listed)` keeps the ones a profile can use, best
+  first; `capabilities(model, listed)` and `defaultInput` say what a model reads
+  besides text.
+- **`build(profile)`** is asked synchronously when a profile is first used and
+  again once it changes; the model it returns streams one assistant turn per
+  `chat` (text, media, tool calls, `native` blocks it wants back in later
+  requests, usage, `retry`, then `stop`). A failed request throws with what the
+  provider said; Tomrade reads the words (key, quota, model, address) to tell
+  the person what to fix. Each step is pulled in the plugin's scope, and the
+  request it sees is its own copy.
+- **`signIn`** `{ title, run({ open, signal }) }` adds a button beside the key:
+  `run` shows the provider's page with `open(url)` and answers `{ apiKey }`,
+  which the profile keeps. Only for a sign-in the provider allows third-party
+  apps — OpenRouter's OAuth PKCE, credentials a cloud CLI already holds — never
+  a consumer subscription (Claude Pro/Max, ChatGPT Plus), whose terms keep it to
+  the vendor's own apps; a signed-in CLI is used through `ctx.llm.lend` instead.
+- What the spec leaves out takes the defaults: a key is required, the address
+  is editable, it chats, all listed models are usable.
+
+The build records the providers in `contributes.modelProviders`, and
+`tomrade-plugin check` refuses one whose presets lack the namespace, whose
+`list` or `build` is missing, or whose `engines.sdk` admits a Tomrade older
+than 0.2.16. An official plugin that contributes `modelProviders` and is not
+installed is offered beside the presets (`community.providing`): one click
+installs it and opens its first preset. `tomrade-plugin test` loads the real
+model seam, so a scenario can `t.models.ask(profile, prompt)` through the
+provider with `fetch` stubbed.
 
 ## Modules
 

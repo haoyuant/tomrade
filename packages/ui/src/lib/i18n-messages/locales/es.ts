@@ -2242,6 +2242,14 @@ export const es: PartialMessages = {
     restartConfirm: "Empezar"
   },
   setup: {
+    officialPlugin: "Plugin oficial de Tomrade",
+    pluginProvider: "{{title}} viene como plugin oficial de Tomrade. Instálalo y luego pega una clave o inicia sesión.",
+    installProvider: "Instalar {{title}}",
+    installingProvider: "Instalando…",
+    installFailed: "{{title}} no se instaló: {{message}}",
+    providerNotReady: "{{title}} está instalado pero aún no ofrece ningún modelo. Revísalo en Ajustes → Plugins.",
+    signingIn: "Termina de iniciar sesión en tu navegador…",
+    signInFailed: "El inicio de sesión no terminó: {{message}}",
     eyebrow: "Antes de empezar",
     title: "Conecta una IA",
     lede: "Tomrade funciona con cualquiera de estas opciones; basta con una. Una clave de API también hace funcionar el agente integrado; un Claude Code, WorkBuddy o Codex con sesión iniciada también se encarga de la planificación.",

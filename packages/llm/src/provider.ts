@@ -25,8 +25,8 @@ export type ModelListResult = { ok: true; models: string[] | null; capabilities:
 export interface ModelProviderSpec {
   id: string;
   title: { en: string; zh: string };
-  /** How one signs in; an API key for every provider so far. */
-  signIn: "apiKey";
+  /** A sign-in the provider allows third-party apps besides pasting a key; it ends in the key the profile keeps. */
+  signIn?: ProviderSignIn;
   /** A profile without a key cannot work; a local endpoint can do without one. */
   keyRequired: boolean;
   /** Where a profile without its own address talks; not `editable`, the form leaves the address out. */
@@ -48,6 +48,11 @@ export interface ModelProviderSpec {
   build(profile: ProviderProfile): ChatModel;
 }
 
+export interface ProviderSignIn {
+  title: { en: string; zh: string };
+  run(helpers: { open(url: string): void; signal: AbortSignal }): Promise<{ apiKey: string }>;
+}
+
 /** A provider as the profile form draws it. */
 export interface ModelProviderView {
   id: string;
@@ -56,4 +61,6 @@ export interface ModelProviderView {
   baseURL: { default: string; editable: boolean };
   chat: boolean;
   defaultInput: InputModality[];
+  /** The sign-in button's words, when it has one. */
+  signIn?: string;
 }

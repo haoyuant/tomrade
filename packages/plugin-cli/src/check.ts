@@ -43,7 +43,7 @@ export function stamp(dir: string, inspection: InspectResult): void {
   raw.optional = inspection.optional;
   if (rec) {
     const contributes: Record<string, string[]> = {};
-    for (const key of ["tools", "commands", "badges", "statusItems", "sections", "graphs", "sidebarModules", "playbooks", "settings", "surfaces", "tables", "imAdapters", "webSearchProviders", "agentHooks"] as const) if (rec[key].length) contributes[key] = [...new Set(rec[key])].sort();
+    for (const key of ["tools", "commands", "badges", "statusItems", "sections", "graphs", "sidebarModules", "playbooks", "settings", "surfaces", "tables", "imAdapters", "webSearchProviders", "agentHooks", "modelProviders"] as const) if (rec[key].length) contributes[key] = [...new Set(rec[key])].sort();
     raw.contributes = contributes;
   }
   fs.writeFileSync(file, `${JSON.stringify(raw, null, 2)}\n`);
@@ -133,6 +133,9 @@ export async function check(dir: string, opts: SandboxOptions & { build?: boolea
       report.manifest = readManifest(dir);
       const rec = report.inspection.recording!;
       for (const v of rec.violations) report.problems.push(`${v.kind} "${v.id}" must start with the namespace`);
+      report.problems.push(...rec.invalid);
+      // An older Tomrade does not know the service and refuses the plugin as it installs.
+      if (rec.modelProviders.length && satisfies("0.2.15", report.manifest.engines.sdk)) report.problems.push(`model providers need SDK 0.2.16; with engines.sdk "${report.manifest.engines.sdk}" an older Tomrade cannot load the plugin — use "^0.2.16"`);
       if (rec.stopped) report.problems.push(`apply() stopped when inspected: ${rec.stopped}`);
       report.imAdapters = rec.imContracts ?? [];
       for (const im of report.imAdapters) {

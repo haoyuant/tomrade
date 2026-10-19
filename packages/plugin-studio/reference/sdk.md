@@ -15,7 +15,7 @@ export default definePlugin({
 });
 ```
 
-Services: `items` `fields` `boards` `views` `projects` `db` `settings` `tools` `contributions` `agent` `surfaces` `oplog`.
+Services: `items` `fields` `boards` `views` `projects` `db` `settings` `tools` `contributions` `agent` `surfaces` `oplog` `models`.
 Every call returns a Promise. Values are plain data.
 
 ## items
@@ -59,6 +59,9 @@ await ctx.tools.register(defineTool({
 ## agent
 `ctx.agent.playbook({ id: `${ns}.how`, title, when: "one line", body: "markdown steps", tools: [...] })`. SDK 0.2.14, the in-app conversation only (not CLI agents): `ctx.agent.request(r => ({ system, tools, messages }))` changes each model request; `ctx.agent.requestError(f => ({ request, profile }))` sends a failed one again; `ctx.agent.turnEnding(e => ({ continue: "message to the model" }))` keeps a turn going (bounded). Return nothing to leave things as they are. SDK 0.2.15, the CLI agents (Claude Code, Codex, dsh…): `ctx.agent.cliHook({ events: ["pre-tool"], tools: "^Bash$", handle: call => ({ deny: "why" }) })` hears their hooks and, in a session Tomrade started, answers — `{ deny }` before a tool, `{ context }`, `{ continue }` at a stop; `call.answerable` says whether the agent acts on it (`CLI_HOOK_COVERAGE`).
 
+## models (SDK 0.2.16)
+`ctx.models.registerProvider({ id: ns, title, baseURL: { default: "https://api.example.com/v1" }, presets: [{ id: ns, title, keyPage, env, keyShapes: [/^ex-/], prefer: [/^ex-large/] }], list: (endpoint, signal) => ({ ok: true, models: [...] }), usable?, capabilities?, signIn?, build: (profile) => ({ capabilities: { tools, streaming, json, nativeWebSearch? }, async *chat(request, signal) { yield { type: "text", delta }; … yield { type: "stop", reason: "end" } } }) })` adds a model provider like the app's own: its presets show in the model setup, `list` doubles as the key check, profiles naming it build through `build`. A failed request throws with what the provider said. `signIn: { title, run({ open, signal }) => ({ apiKey }) }` only for a sign-in the provider allows third-party apps (OAuth that ends in a key), never a consumer subscription. Needs `"engines": { "sdk": "^0.2.16" }`.
+
 ## surfaces
 `ctx.surfaces.open({ id, title, document: "dist/static/panel.html", width, height, focusable?, transparent?, clickThrough?, anchor?: "sidebar-foot", onMessage, onClose })` → handle with `setState`, `close`. `onClose` runs once when the window is gone (the person, `close()`, unloading); after it the handle's calls reject, so open a new window rather than reuse it. Documents are files in the package (put them in `static/`).
 
@@ -84,4 +87,4 @@ export default async function (t) {
   await t.command(`${ns}.cmd`, a.id);
 }
 ```
-A plugin that names `surfaces` gets windows that never open: `t.surfaces.opened()` lists them (`{ id, title, state, closed }`, `state` the last `setState`), `await t.surfaces.message(id, msg)` sends `msg` as if the document had, and `await t.surfaces.close(id)` closes it as the person would. A plugin that waits on a service the sandbox lacks fails `loads`, naming it.
+A plugin that names `surfaces` gets windows that never open: `t.surfaces.opened()` lists them (`{ id, title, state, closed }`, `state` the last `setState`), `await t.surfaces.message(id, msg)` sends `msg` as if the document had, and `await t.surfaces.close(id)` closes it as the person would. A plugin that names `models` gets the real model seam: `t.models.presets()`, `t.models.providers()`, and `await t.models.ask(profile, "hi")` — one turn through its provider (stub `fetch` for the network). A plugin that waits on a service the sandbox lacks fails `loads`, naming it.

@@ -2242,6 +2242,14 @@ export const ja: PartialMessages = {
     restartConfirm: "開始"
   },
   setup: {
+    officialPlugin: "Tomrade 公式プラグイン",
+    pluginProvider: "{{title}} は Tomrade 公式プラグインとして提供されます。インストールしてから、キーを貼り付けるかサインインしてください。",
+    installProvider: "{{title}} をインストール",
+    installingProvider: "インストール中…",
+    installFailed: "{{title}} をインストールできませんでした：{{message}}",
+    providerNotReady: "{{title}} はインストールされましたが、まだモデルを提供していません。設定 → プラグインで確認してください。",
+    signingIn: "ブラウザでサインインを完了してください…",
+    signInFailed: "サインインが完了しませんでした：{{message}}",
     eyebrow: "始める前に",
     title: "AI を接続",
     lede: "Tomrade はこのどちらでも動作します — 1 つあれば十分です。API キーがあれば組み込みエージェントも動き、サインイン済みの Claude Code、WorkBuddy、Codex なら計画も担当します。",

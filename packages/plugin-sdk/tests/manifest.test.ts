@@ -35,3 +35,9 @@ it("says which agents a CLI hook reaches: every agent that reports hooks, the on
   expect(CLI_HOOK_COVERAGE["session-end"].answers).toEqual([]);
   for (const reach of Object.values(CLI_HOOK_COVERAGE)) expect([...reach.answers, ...reach.sees].sort()).toEqual(["claude-code", "codex", "cursor", "dsh", "hermes", "opencode", "pi", "workbuddy"]);
 });
+
+it("takes a plugin that adds model providers through the models service", () => {
+  const m = ManifestSchema.parse({ id: "someone/acme", version: "1.0.0", title: "Acme", license: "MIT", engines: { sdk: "^0.2.16" }, inject: ["models"], contributes: { modelProviders: ["acme"] } });
+  expect(m.inject).toEqual(["models"]);
+  expect(m.contributes.modelProviders).toEqual(["acme"]);
+});

@@ -39,7 +39,15 @@ export const setup = {
     openTour: "Open the sample project",
     toProjects: "Go to my projects",
     cardTitle: "Connect an AI first — a model or a local agent, either one works.",
-    cardMore: "More options"
+    cardMore: "More options",
+    officialPlugin: "Official Tomrade plugin",
+    pluginProvider: "{{title}} comes as an official Tomrade plugin. Install it, then paste a key or sign in.",
+    installProvider: "Install {{title}}",
+    installingProvider: "Installing…",
+    installFailed: "{{title}} was not installed: {{message}}",
+    providerNotReady: "{{title}} is installed but has not offered a model yet. Check it in Settings → Plugins.",
+    signingIn: "Finish signing in in your browser…",
+    signInFailed: "Sign-in did not finish: {{message}}"
   },
   zh: {
     eyebrow: "开始之前",
@@ -81,6 +89,14 @@ export const setup = {
     openTour: "打开示例项目",
     toProjects: "去我的项目",
     cardTitle: "先连上一个 AI——模型或本地智能体，任选其一。",
-    cardMore: "更多选项"
+    cardMore: "更多选项",
+    officialPlugin: "Tomrade 官方插件",
+    pluginProvider: "{{title}} 以 Tomrade 官方插件的形式提供。装好后粘贴 Key 或登录即可。",
+    installProvider: "安装 {{title}}",
+    installingProvider: "正在安装…",
+    installFailed: "{{title}} 没有装上：{{message}}",
+    providerNotReady: "{{title}} 已安装，但还没有提供模型。去设置 → 插件里看看。",
+    signingIn: "请在浏览器里完成登录…",
+    signInFailed: "登录没有完成：{{message}}"
   }
 };

@@ -2242,6 +2242,14 @@ export const fr: PartialMessages = {
     restartConfirm: "Démarrer"
   },
   setup: {
+    officialPlugin: "Plugin officiel Tomrade",
+    pluginProvider: "{{title}} est fourni sous forme de plugin officiel Tomrade. Installez-le, puis collez une clé ou connectez-vous.",
+    installProvider: "Installer {{title}}",
+    installingProvider: "Installation…",
+    installFailed: "{{title}} n'a pas été installé : {{message}}",
+    providerNotReady: "{{title}} est installé mais ne propose encore aucun modèle. Vérifiez dans Réglages → Plugins.",
+    signingIn: "Terminez la connexion dans votre navigateur…",
+    signInFailed: "La connexion n'a pas abouti : {{message}}",
     eyebrow: "Avant de commencer",
     title: "Connecter une IA",
     lede: "Tomrade fonctionne avec l’un ou l’autre — un seul suffit. Une clé API fait aussi tourner l’agent intégré ; un Claude Code, WorkBuddy ou Codex connecté se charge aussi de la planification.",

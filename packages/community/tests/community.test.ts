@@ -364,6 +364,28 @@ describe("the official catalog", () => {
     server.close();
   }, 60_000);
 
+  it("offers the official plugins that bring a model provider until one is installed, and never a revoked one", async () => {
+    const { catalog, server, url } = await catalogServer();
+    const pkg = await officialPackage("1.0.0");
+    const other = await officialPackage("1.0.0", { id: "tomrade/notes" });
+    catalog.plugins.push(
+      { id: "tomrade/memo", title: "Memo Models", description: "x", license: "Apache-2.0", repository: "https://github.com/haoyuant/tomrade-plugins", versions: [{ ...pkg, manifest: { ...pkg.manifest, contributes: { modelProviders: ["memo"] } } }] },
+      { id: "tomrade/notes", title: "Notes", description: "x", license: "Apache-2.0", repository: "https://github.com/haoyuant/tomrade-plugins", versions: [other] }
+    );
+    const { ctx, store, community } = await storeHost({}, "http://127.0.0.1:9", null, { cloud: false, config: { officialCatalog: { url } } });
+
+    expect(await community.providing("modelProviders")).toEqual([{ id: "tomrade/memo", title: "Memo Models", ids: ["memo"] }]);
+    await community.install("tomrade/memo");
+    expect(store.has("tomrade/memo")).toBe(true);
+    expect(await community.providing("modelProviders")).toEqual([]);
+
+    await ctx.plugins.uninstall("tomrade/memo");
+    catalog.revoked.push({ id: "tomrade/memo", versions: "*", reason: "Built into Tomrade" });
+    community.official.expire();
+    expect(await community.providing("modelProviders")).toEqual([]);
+    server.close();
+  }, 60_000);
+
   it("shows and installs only versions Tomrade signed for that exact build, under its own publisher, that this Tomrade can run", async () => {
     const { catalog, server, url } = await catalogServer();
     const good = await officialPackage("1.0.0");

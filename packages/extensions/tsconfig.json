@@ -39,6 +39,9 @@
       "path": "../items"
     },
     {
+      "path": "../llm"
+    },
+    {
       "path": "../oplog"
     },
     {

@@ -20,6 +20,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
     "@tomradex/db": "workspace:*",
+    "@tomradex/desktop-surface": "workspace:*",
     "@tomradex/domain": "workspace:*",
     "@tomradex/ipc": "workspace:*",
     "@tomradex/settings": "workspace:*",

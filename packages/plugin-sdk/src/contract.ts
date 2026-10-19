@@ -2,6 +2,7 @@ import type { z } from "zod";
 import type { ImApi } from "./im.js";
 import type { TerminalsApi } from "./terminals.js";
 import type { WebSearchApi } from "./web-search.js";
+import type { ModelsApi } from "./models.js";
 import type {
   Author,
   Board,
@@ -44,7 +45,7 @@ export interface SectionWords {
 }
 
 /** The services a plugin names in `inject` (required) or `optional`. */
-export type ServiceName = "items" | "fields" | "boards" | "views" | "projects" | "db" | "settings" | "tools" | "contributions" | "agent" | "surfaces" | "alerts" | "oplog" | "im" | "webSearch" | "terminals";
+export type ServiceName = "items" | "fields" | "boards" | "views" | "projects" | "db" | "settings" | "tools" | "contributions" | "agent" | "surfaces" | "alerts" | "oplog" | "im" | "webSearch" | "terminals" | "models";
 
 export interface Logger {
   debug(...args: unknown[]): void;
@@ -522,6 +523,8 @@ export interface PluginContext {
   readonly webSearch: WebSearchApi;
   /** SDK 0.2.10: live terminals of the herdr panes code sessions run in. */
   readonly terminals: TerminalsApi;
+  /** SDK 0.2.16: model providers, as the app's own are. */
+  readonly models: ModelsApi;
   on<K extends keyof Events>(event: K, listener: Events[K]): Disposer;
   /** Runs `fn` while an optional service is present; what it returns is disposed when the service goes. */
   when(name: ServiceName, fn: (ctx: PluginContext) => Maybe<Disposer | void>): Disposer;

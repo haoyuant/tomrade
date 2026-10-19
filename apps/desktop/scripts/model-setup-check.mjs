@@ -3,7 +3,8 @@
  * not in the first conversation, and a model error in the conversation says
  * what to do about it. A local stand-in for an OpenAI-compatible endpoint
  * refuses any key but "good", and answers the message "second" with a 503
- * three times running, so it outlasts the adapter's retries.
+ * three times running, so it outlasts the adapter's retries. A plugin that
+ * adds a model provider offers its preset and sign-in like the app's own.
  *
  *   pnpm build:backend && pnpm dev:ui   then
  *   pnpm --filter @tomrade/desktop test:model-setup
@@ -45,7 +46,13 @@ const endpoint = http.createServer((req, res) => {
 const run = async () => {
   await new Promise((r) => endpoint.listen(0, "127.0.0.1", r));
   const base = `http://127.0.0.1:${endpoint.address().port}/v1`;
-  const { ctx } = await boot({ configFile: path.join(dir, "../tomrade.yml"), vars: { userData: work }, patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, { id: "attention", config: { notify: false } }]] });
+  const { ctx } = await boot({
+    configFile: path.join(dir, "../tomrade.yml"),
+    vars: { userData: work },
+    // the store stays off: nothing here installs from the network
+    patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, { id: "attention", config: { notify: false } }, { id: "community", disabled: true }]],
+    extensions: { root: path.join(work, "plugins"), trustedKeys: {} }
+  });
   ctx.hub.configure(path.join(work, "hub"));
   await ctx.storage.ready;
   for (const seeded of ctx.projects.list()) ctx.projects.remove(seeded.id);
@@ -129,6 +136,42 @@ const run = async () => {
   await press(`document.querySelector('.profile-remove .btn-danger')`);
   await sleep(600);
   check("and removes it once confirmed", profiles().length === 0);
+
+  // ── a plugin adds a model provider ───────────────────────────────────
+  const acme = path.join(work, "acme");
+  fs.mkdirSync(path.join(acme, "dist"), { recursive: true });
+  fs.writeFileSync(path.join(acme, "tomrade-plugin.json"), JSON.stringify({ id: "someone/acme", version: "1.0.0", title: "Acme AI", license: "MIT", engines: { sdk: "^0.2.16" }, inject: ["models"] }));
+  fs.writeFileSync(
+    path.join(acme, "dist/index.js"),
+    `export default { [Symbol.for("tomrade.sdk-plugin")]: 1, inject: ["models"], async apply(ctx) {
+      await ctx.models.registerProvider({
+        id: "acme", title: "Acme AI", baseURL: { default: "https://api.acme.example/v1", editable: false },
+        presets: [{ id: "acme", title: "Acme AI", prefer: [/^acme-/] }],
+        list: ({ apiKey }) => (apiKey === "acme-key" ? { ok: true, models: ["acme-large"] } : { ok: false, status: 401, detail: "401 invalid api key" }),
+        signIn: { title: "Sign in with Acme", run: async () => ({ apiKey: "acme-key" }) },
+        build: () => ({ capabilities: { tools: true, streaming: true, json: false }, async *chat() { yield { type: "text", delta: "acme pong" }; yield { type: "stop", reason: "end" }; } })
+      });
+    } };`
+  );
+  await ctx.plugins.addFolder(acme);
+  await sleep(1500);
+  check("a plugin's model provider offers its preset in Settings, with no reload", (await $(`!!${button("+ Acme AI")}`)) === true);
+  await press(button("+ Acme AI"));
+  await sleep(500);
+  await press(`document.querySelector('[data-testid="profile-sign-in"]')`);
+  await sleep(800);
+  check("its sign-in fills the key", (await $(`document.querySelector('#pfKey')?.value ?? ''`)) === "acme-key");
+  await sleep(1500);
+  await $(`(() => { const s = document.querySelector('select#pfModel'); if (!s) return false; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'acme-large'); s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+  await sleep(1500);
+  await press(button("Save profile"));
+  await sleep(1500);
+  check("its listing picks the model and the save check answers through the plugin", profiles().length === 1 && profiles()[0].provider === "acme" && profiles()[0].model === "acme-large", profiles());
+  await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
+  await sleep(500);
+  await send("fourth");
+  await sleep(2000);
+  check("and the conversation answers through it", (await $(`[...document.querySelectorAll('.ai-scroll .turn-ai')].pop()?.textContent ?? ''`)).includes("acme pong"));
   check("harness reached the end", true);
 };
 

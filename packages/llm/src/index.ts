@@ -2,6 +2,7 @@ import { Context, Service } from "cordis";
 import { z } from "zod";
 import { modelErrorKind, wordsLocale, type ModelErrorKind, type WordsLocale } from "@tomradex/domain";
 import type {} from "@tomradex/db";
+import type {} from "@tomradex/desktop-surface";
 import type {} from "@tomradex/ipc";
 import type { SettingsSection } from "@tomradex/settings";
 import type { WebSearchProvider } from "@tomradex/web-search";
@@ -23,7 +24,7 @@ export { ANTHROPIC, BUILTIN_PROVIDERS, GEMINI, OPENAI_COMPATIBLE, OPENAI_IMAGES,
 export { GeminiModel, type GeminiConfig } from "./gemini.js";
 export { deepseekKey, deepseekProvider, type DeepSeekKey } from "./search/deepseek.js";
 export { kimiKey, kimiProvider, type KimiKey } from "./search/kimi.js";
-export type { ModelListResult, ModelProviderSpec, ModelProviderView, ProviderProfile } from "./provider.js";
+export type { ModelListResult, ModelProviderSpec, ModelProviderView, ProviderProfile, ProviderSignIn } from "./provider.js";
 export { LlmError, MediaRefused, NativeMediaRefused, NativeSearchRefused, type LlmErrorResponse } from "./errors.js";
 export { OpenAiCompatible, type OpenAiConfig } from "./openai.js";
 export { AnthropicModel, type AnthropicConfig } from "./anthropic.js";
@@ -152,6 +153,12 @@ export const LENDER_WAIT_MS = 1500;
 /** Lent calls start local processes; past this many at once, the rest wait their turn. */
 export const LENT_CONCURRENCY = 2;
 
+/** A sign-in ends in the key the profile keeps, or says why not. */
+export type SignInResult = { ok: true; apiKey: string } | { ok: false; detail: string };
+
+/** How long a sign-in in the browser may take before it is given up. */
+export const SIGN_IN_MS = 5 * 60_000;
+
 /** Which way web search goes: the profiles whose model searches on its own, and the service that searches for the rest. */
 export interface SearchRoute {
   native: string[];
@@ -205,6 +212,12 @@ declare module "@tomradex/ipc" {
     "llm.adopt": (id: string) => QuickSetupResult;
     "llm.workerUsage": () => WorkerUsageSummary;
     "llm.searchRoute": () => SearchRoute;
+    /** Runs the provider's own sign-in, in the person's browser. */
+    "llm.signIn": (provider: string) => SignInResult;
+  }
+  interface Broadcasts {
+    /** A model provider came or went (a plugin's); the setup and the profile form refetch. */
+    "llm.providersChanged": () => void;
   }
 }
 
@@ -376,6 +389,7 @@ export class Llm extends Service implements LlmService {
       ctx.ipc.handle("llm.quickSetup", (input) => this.quickSetup(input));
       ctx.ipc.handle("llm.adopt", (id) => this.adopt(id));
       ctx.ipc.handle("llm.workerUsage", () => this.workerUsage());
+      ctx.ipc.handle("llm.signIn", (provider) => this.signIn(provider));
     });
     this.ctx.inject(["db"], (ctx) => {
       ctx.db.migrate("llm", [...WORKER_CALLS_MIGRATIONS, REFUSED_MEDIA_MIGRATION], { scope: "hub", tables: { ...WORKER_CALLS_TABLES, ...REFUSED_MEDIA_TABLES } });
@@ -486,13 +500,36 @@ export class Llm extends Service implements LlmService {
   }
 
   registerProvider(provider: ModelProviderSpec): () => void {
-    this.kinds.set(provider.id, provider);
+    // tied to the caller, so a plugin's provider goes with it
+    return this.ctx.effect(() => {
+      this.kinds.set(provider.id, provider);
+      this.providersChanged();
+      return () => {
+        if (this.kinds.get(provider.id) !== provider) return;
+        this.kinds.delete(provider.id);
+        this.providersChanged();
+      };
+    }, `llm.registerProvider(${provider.id})`);
+  }
+
+  private providersChanged(): void {
     this.cache.clear();
-    return () => {
-      if (this.kinds.get(provider.id) !== provider) return;
-      this.kinds.delete(provider.id);
-      this.cache.clear();
-    };
+    this.ctx.get("ipc")?.send("llm.providersChanged");
+  }
+
+  async signIn(provider: string): Promise<SignInResult> {
+    const kind = this.kinds.get(provider);
+    if (!kind?.signIn) return { ok: false, detail: kind ? `${kind.title.en} has no sign-in; paste a key instead` : this.unknown(provider) };
+    const signal = AbortSignal.timeout(SIGN_IN_MS);
+    // given up on time even when the sign-in does not listen to the signal
+    const gaveUp = new Promise<never>((_, reject) => signal.addEventListener("abort", () => reject(new Error(`${kind.title.en} sign-in was not finished within ${SIGN_IN_MS / 60_000} minutes`)), { once: true }));
+    try {
+      const { apiKey } = await Promise.race([kind.signIn.run({ open: (url) => this.ctx.emit("desktop/open-external", url), signal }), gaveUp]);
+      if (typeof apiKey !== "string" || !apiKey.trim()) return { ok: false, detail: `${kind.title.en} sign-in ended without a key` };
+      return { ok: true, apiKey: apiKey.trim() };
+    } catch (err) {
+      return { ok: false, detail: err instanceof Error ? err.message : String(err) };
+    }
   }
 
   private unknown(provider: string): string {
@@ -505,7 +542,9 @@ export class Llm extends Service implements LlmService {
 
   modelProviders(): ModelProviderView[] {
     const locale = wordsLocale(this.words().locale);
-    return [...this.kinds.values()].map((k) => ({ id: k.id, title: k.title[locale], keyRequired: k.keyRequired, baseURL: k.baseURL, chat: k.chat, defaultInput: k.defaultInput }));
+    return [...this.kinds.values()].map((k) => ({
+      id: k.id, title: k.title[locale], keyRequired: k.keyRequired, baseURL: k.baseURL, chat: k.chat, defaultInput: k.defaultInput, ...(k.signIn ? { signIn: k.signIn.title[locale] } : {})
+    }));
   }
 
   private adapterOf(profile: ModelProfile): ChatModel {

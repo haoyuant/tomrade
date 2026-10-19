@@ -2281,6 +2281,14 @@ export const ru: PartialMessages = {
     restartConfirm: "Начать"
   },
   setup: {
+    officialPlugin: "Официальный плагин Tomrade",
+    pluginProvider: "{{title}} поставляется как официальный плагин Tomrade. Установите его, затем вставьте ключ или войдите.",
+    installProvider: "Установить {{title}}",
+    installingProvider: "Установка…",
+    installFailed: "{{title}} не установлен: {{message}}",
+    providerNotReady: "{{title}} установлен, но пока не предлагает моделей. Проверьте в Настройки → Плагины.",
+    signingIn: "Завершите вход в браузере…",
+    signInFailed: "Вход не завершён: {{message}}",
     eyebrow: "Перед началом",
     title: "Подключите ИИ",
     lede: "Tomrade работает с любым из этих вариантов — достаточно одного. API-ключ также запускает встроенного агента; Claude Code, WorkBuddy или Codex с выполненным входом также берут на себя планирование.",

@@ -28,6 +28,7 @@
     "@tomradex/fields": "workspace:*",
     "@tomradex/im": "workspace:*",
     "@tomradex/items": "workspace:*",
+    "@tomradex/llm": "workspace:*",
     "@tomradex/oplog": "workspace:*",
     "@tomradex/plugin-sdk": "workspace:*",
     "@tomradex/projects": "workspace:*",
