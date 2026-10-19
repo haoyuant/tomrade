@@ -9,7 +9,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { hookCommand, writeConnectFiles } from "@tomradex/code-link";
+import { hookCommand, hooksSettings, writeConnectFiles } from "@tomradex/code-link";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-hook-shells-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -18,6 +18,7 @@ const payload = JSON.stringify({ session_id: "s1", hook_event_name: "SessionStar
 const powershell = ["pwsh", "powershell"].find((name) => spawnSync(name, ["-NoProfile", "-Command", "exit 0"], { stdio: "ignore", timeout: 30_000 }).status === 0);
 
 interface Heard { headers: http.IncomingHttpHeaders; body: string }
+const REPLY = JSON.stringify({ hookSpecificOutput: { permissionDecision: "deny", permissionDecisionReason: "stop" } });
 
 /** A Tomrade that answers as the real one does, and the address of one that is down. */
 async function stub(): Promise<{ url: string; down: string; heard: Heard[]; close: () => void }> {
@@ -28,7 +29,7 @@ async function stub(): Promise<{ url: string; down: string; heard: Heard[]; clos
     req.on("data", (chunk) => (body += chunk));
     req.on("end", () => {
       heard.push({ headers: req.headers, body });
-      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true }));
+      res.writeHead(200, { "content-type": "application/json" }).end(REPLY);
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -88,6 +89,35 @@ describe("the committed hook command", () => {
       expect(tomrade.heard[0]!.body).toBe(payload);
       expect(tomrade.heard[0]!.headers["content-type"]).toBe("application/json");
       expect(await run(powershell!, ["-NoProfile", "-Command", hookCommand(tomrade.down)], { stdin: payload })).toMatchObject({ code: 0, stdout: "", stderr: "" });
+    } finally {
+      tomrade.close();
+    }
+  }, 60_000);
+});
+
+describe("the hooks of a session Tomrade started", () => {
+  const command = (url: string) => (hooksSettings(url) as { hooks: Record<string, { hooks: { command: string }[] }[]> }).hooks.PreToolUse![0]!.hooks[0]!.command;
+
+  it.skipIf(process.platform === "win32")("post the payload under sh -c and leave Tomrade's answer for the agent, and exit 0 when Tomrade is down", async () => {
+    const tomrade = await stub();
+    try {
+      const sent = await run("sh", ["-c", command(tomrade.url)], { stdin: payload, pane: "w1-2" });
+      expect(sent).toMatchObject({ code: 0, stdout: REPLY, stderr: "" });
+      expect(tomrade.heard.map((heard) => [heard.body, heard.headers["x-tomrade-herdr-pane"]])).toEqual([[payload, "w1-2"]]);
+      expect(await run("sh", ["-c", command(tomrade.down)], { stdin: payload })).toMatchObject({ code: 0, stdout: "", stderr: "" });
+    } finally {
+      tomrade.close();
+    }
+  }, 30_000);
+
+  it.skipIf(!powershell)("do the same under PowerShell", async () => {
+    const tomrade = await stub();
+    try {
+      const sent = await run(powershell!, ["-NoProfile", "-Command", command(tomrade.url)], { stdin: payload });
+      expect(sent.code).toBe(0);
+      expect(sent.stdout.trim()).toBe(REPLY);
+      expect(tomrade.heard.map((heard) => heard.body)).toEqual([payload]);
+      expect(await run(powershell!, ["-NoProfile", "-Command", command(tomrade.down)], { stdin: payload })).toMatchObject({ code: 0, stdout: "", stderr: "" });
     } finally {
       tomrade.close();
     }
