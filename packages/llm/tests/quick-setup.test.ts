@@ -9,7 +9,7 @@ import path from "node:path";
 import { Context } from "cordis";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { Settings } from "@tomradex/settings";
-import { guessProviders, Llm, pickModel, PROVIDERS, usableModels, type ModelProfile, type ModelsSettings } from "@tomradex/llm";
+import { guessProviders, Llm, OpenAiCompatible, pickModel, probe, PROVIDERS, usableModels, type ModelProfile, type ModelsSettings } from "@tomradex/llm";
 
 let server: http.Server;
 let base = "";
@@ -27,9 +27,38 @@ const listed: Record<string, (string | Record<string, unknown>)[]> = {
   ]
 };
 
+// Gemini's native listing, two pages of it, in the documented shape.
+const geminiPages: { name: string; supportedGenerationMethods: string[] }[][] = [
+  [
+    { name: "models/gemini-2.5-flash", supportedGenerationMethods: ["generateContent", "countTokens", "createCachedContent", "batchGenerateContent"] },
+    { name: "models/gemini-2.5-pro", supportedGenerationMethods: ["generateContent", "countTokens"] },
+    { name: "models/gemini-2.5-flash-live-preview", supportedGenerationMethods: ["bidiGenerateContent"] },
+    { name: "models/gemini-2.5-flash-preview-tts", supportedGenerationMethods: ["generateContent", "countTokens"] },
+    { name: "models/gemini-embedding-001", supportedGenerationMethods: ["embedContent", "countTextTokens"] }
+  ],
+  [
+    { name: "models/gemini-2.5-flash-image", supportedGenerationMethods: ["generateContent", "countTokens"] },
+    { name: "models/gemini-2.5-flash-native-audio-preview-09-2025", supportedGenerationMethods: ["countTokens", "bidiGenerateContent"] },
+    { name: "models/imagen-4.0-generate-001", supportedGenerationMethods: ["predict"] },
+    { name: "models/veo-3.0-generate-001", supportedGenerationMethods: ["predictLongRunning"] },
+    { name: "models/aqa", supportedGenerationMethods: ["generateAnswer"] }
+  ]
+];
+
 beforeAll(async () => {
   server = http.createServer((req, res) => {
     const [, who] = req.url!.split("/");
+    if (who === "tier") {
+      const message = "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits.\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.5-pro";
+      return res.writeHead(429, { "content-type": "application/json" }).end(JSON.stringify([{ error: { code: 429, message, status: "RESOURCE_EXHAUSTED" } }], null, 2));
+    }
+    if (who === "gemini") {
+      const url = new URL(req.url!, "http://x");
+      if (url.pathname !== "/gemini/v1beta/models" || url.searchParams.has("key")) return res.writeHead(404).end();
+      if (req.headers["x-goog-api-key"] !== "AIza-good") return res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: { code: 400, message: "API key not valid. Please pass a valid API key.", status: "INVALID_ARGUMENT" } }));
+      const page = Number(url.searchParams.get("pageToken") ?? 0);
+      return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ models: geminiPages[page], ...(page + 1 < geminiPages.length ? { nextPageToken: String(page + 1) } : {}) }));
+    }
     let body = "";
     req.on("data", (c) => (body += c));
     req.on("end", () => {
@@ -47,7 +76,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 async function llm() {
   vi.stubGlobal("fetch", (url: string, init?: RequestInit) =>
-    realFetch(String(url).replace("https://api.deepseek.com", `${base}/deepseek`).replace("http://127.0.0.1:11434/v1", `${base}/ollama`), init));
+    realFetch(String(url).replace("https://api.deepseek.com", `${base}/deepseek`).replace("https://generativelanguage.googleapis.com", `${base}/gemini`).replace("http://127.0.0.1:11434/v1", `${base}/ollama`), init));
   const ctx = new Context();
   await ctx.plugin(Settings, { path: path.join(os.tmpdir(), `tomrade-quick-${Date.now()}-${Math.random()}.json`) });
   await ctx.plugin(Llm);
@@ -108,7 +137,33 @@ it("lists an endpoint's chat models for the profile form, or why it cannot", asy
   expect(await ctx.llm.listing({ provider: "openai-compatible", baseURL: "https://api.deepseek.com", apiKey: "sk-good" })).toEqual({ ok: true, models: ["deepseek-v4-pro", "deepseek-flash"], capabilities: {} });
   expect(await ctx.llm.listing({ provider: "openai-compatible", baseURL: "https://api.deepseek.com", apiKey: "" })).toMatchObject({ ok: false, kind: "auth" });
   expect(usableModels("openai-compatible", ["gpt-5", "text-embedding-3-large", "whisper-1", "gpt-image-2", "tts-1", "gpt-5.10"])).toEqual(["gpt-5.10", "gpt-5"]);
+  // realtime, speech-only, image-only and search/computer-use models do not answer a plain chat turn; audio chat models (native speech output) stay
+  expect(usableModels("openai-compatible", ["gpt-5", "o3", "gpt-4o-realtime-preview", "gpt-realtime", "gpt-4o-audio-preview", "gpt-audio", "gpt-4o-mini-tts", "gpt-4o-search-preview", "computer-use-preview", "sora-2", "omni-moderation-latest"])).toEqual(["o3", "gpt-audio", "gpt-5", "gpt-4o-audio-preview"]);
+  expect(usableModels("openai-compatible", ["openai/gpt-4o-audio-preview", "anthropic/claude-sonnet-4.5", "google/gemini-2.5-flash-image", "deepseek/deepseek-chat", "google/gemini-2.5-flash-lite", "openai/gpt-4o-search-preview"])).toEqual(["openai/gpt-4o-audio-preview", "google/gemini-2.5-flash-lite", "google/gemini-2.5-flash-image", "deepseek/deepseek-chat", "anthropic/claude-sonnet-4.5"]);
+  expect(usableModels("openai-compatible", ["deepseek-chat", "deepseek-reasoner", "deepseek-v4-flash"])).toEqual(["deepseek-v4-flash", "deepseek-reasoner", "deepseek-chat"]);
+  expect(usableModels("openai-compatible", ["models/gemini-2.0-flash-live-001", "models/gemini-live-2.5-flash-preview", "models/gemini-2.5-flash", "models/imagen-4.0-generate-001", "models/veo-3.0-generate-001", "models/aqa", "models/gemini-embedding-001"])).toEqual(["models/gemini-2.5-flash"]);
   expect(usableModels("openai-images", ["gpt-5", "gpt-image-2", "dall-e-3"])).toEqual(["gpt-image-2", "dall-e-3"]);
+});
+
+it("lists only the Gemini models a key can chat with, from Gemini's own listing", async () => {
+  const ctx = await llm();
+  const endpoint = { provider: "openai-compatible", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/" };
+  const listing = await ctx.llm.listing({ ...endpoint, apiKey: "AIza-good" });
+  expect(listing).toEqual({
+    ok: true,
+    models: ["models/gemini-2.5-pro", "models/gemini-2.5-flash-image", "models/gemini-2.5-flash"],
+    capabilities: {
+      "models/gemini-2.5-pro": { inputModalities: ["image", "audio"], outputModalities: [] },
+      "models/gemini-2.5-flash-image": { inputModalities: ["image"], outputModalities: ["image"] },
+      "models/gemini-2.5-flash": { inputModalities: ["image", "audio"], outputModalities: [] }
+    }
+  });
+  expect(await ctx.llm.listing({ ...endpoint, apiKey: "AIza-bad" })).toMatchObject({ ok: false, kind: "auth" });
+});
+
+it("reads a free tier with no allowance for the model as the model, though the limit comes late in the body", async () => {
+  const result = await probe(new OpenAiCompatible({ baseURL: `${base}/tier`, apiKey: "", model: "models/gemini-2.5-pro", retries: 0 }));
+  expect(result).toMatchObject({ ok: false, kind: "model", detail: expect.stringContaining("limit: 0") });
 });
 
 it("detects each listed model's media from the listing, then from what it knows of the provider", async () => {

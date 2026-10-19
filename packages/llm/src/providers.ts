@@ -1,5 +1,6 @@
 import type { ModelErrorKind } from "@tomradex/domain";
 import { listedCapabilities, type ListedModel, type ModelCapabilities } from "./capabilities.js";
+import type { ModelListResult } from "./provider.js";
 
 /**
  * A well-known service a model provider serves: where its keys come from, what
@@ -46,10 +47,11 @@ export function pickModel(preset: Pick<ProviderPreset, "model" | "prefer">, list
 export const keyHint = (key: string): string => (key.length > 10 ? `${key.slice(0, 3)}…${key.slice(-4)}` : "…");
 
 /** A provider's models, or why the key or address does not work. Listing doubles as the key check. */
-export async function listModels(preset: Pick<ProviderPreset, "provider" | "baseURL">, apiKey: string, timeoutMs = 15_000): Promise<{ ok: true; models: string[] | null; capabilities: Record<string, ModelCapabilities> } | { ok: false; status?: number; detail: string }> {
+export async function listModels(preset: Pick<ProviderPreset, "provider" | "baseURL">, apiKey: string, timeoutMs = 15_000): Promise<ModelListResult> {
   const anthropic = preset.provider === "anthropic";
   const base = (anthropic ? preset.baseURL || "https://api.anthropic.com/v1" : preset.baseURL).replace(/\/$/, "");
   const headers: Record<string, string> = anthropic ? { "x-api-key": apiKey, "anthropic-version": "2023-06-01" } : apiKey ? { authorization: `Bearer ${apiKey}` } : {};
+  if (GEMINI.test(base)) return geminiModels(new URL(base).origin, apiKey, timeoutMs);
   try {
     const res = await fetch(`${base}/models${anthropic ? "?limit=100" : ""}`, { headers, signal: AbortSignal.timeout(timeoutMs) });
     // Some compatible endpoints answer chat but have no listing; the chat probe decides then.
@@ -69,13 +71,50 @@ export async function listModels(preset: Pick<ProviderPreset, "provider" | "base
   }
 }
 
+const GEMINI = /^https:\/\/generativelanguage\.googleapis\.com\//;
+
+interface GeminiModel {
+  name?: string;
+  supportedGenerationMethods?: string[];
+}
+
+/**
+ * Gemini's own listing: its OpenAI-style one also lists Live, Imagen, Veo and
+ * embedding models that chat cannot reach, and only this one says which API
+ * each answers on. Names keep the `models/` prefix the compatible API uses.
+ */
+async function geminiModels(origin: string, apiKey: string, timeoutMs: number): Promise<ModelListResult> {
+  const signal = AbortSignal.timeout(timeoutMs);
+  const models: string[] = [];
+  const capabilities: Record<string, ModelCapabilities> = {};
+  let page = "";
+  try {
+    for (let n = 0; n < 20; n += 1) {
+      const res = await fetch(`${origin}/v1beta/models?pageSize=1000${page ? `&pageToken=${encodeURIComponent(page)}` : ""}`, { headers: apiKey ? { "x-goog-api-key": apiKey } : {}, signal });
+      const text = await res.text();
+      if (!res.ok) return { ok: false, status: res.status, detail: `${res.status} ${text.slice(0, 300)}` };
+      const body = JSON.parse(text) as { models?: GeminiModel[]; nextPageToken?: string };
+      for (const m of body.models ?? []) {
+        if (!m.name || (m.supportedGenerationMethods && !m.supportedGenerationMethods.includes("generateContent"))) continue;
+        models.push(m.name);
+        if (/-image(-preview)?$/.test(m.name)) capabilities[m.name] = { inputModalities: ["image"], outputModalities: ["image"] };
+      }
+      page = body.nextPageToken ?? "";
+      if (!page) break;
+    }
+    return { ok: true, models: models.length ? models : null, capabilities };
+  } catch (err) {
+    return { ok: false, detail: err instanceof Error ? `${err.name === "TimeoutError" ? "timed out" : ""} ${err.message}`.trim() : String(err) };
+  }
+}
+
 /**
  * The listed models a profile of this kind can use, newest-looking first. An
  * OpenAI-style listing mixes in embeddings, speech and moderation models.
  */
 export function usableModels(provider: string, listed: string[]): string[] {
   const images = /image|dall-e/i;
-  const notChat = /embed|whisper|tts|transcribe|moderation|rerank|dall-e|gpt-image|davinci|babbage/i;
+  const notChat = /embed|whisper|tts|transcribe|moderation|rerank|dall-e|gpt-image|davinci|babbage|realtime|native-audio|(^|[/-])live([.-]|$)|(^|[/-])(imagen|veo|sora)-|(^|\/)aqa$|search-preview|computer-use/i;
   const kept = provider === "openai-images" ? listed.filter((id) => images.test(id)) : listed.filter((id) => !notChat.test(id));
   return [...new Set(kept)].sort((a, b) => b.localeCompare(a, "en", { numeric: true }));
 }

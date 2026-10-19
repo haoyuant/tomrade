@@ -74,7 +74,9 @@ export async function probe(model: ChatModel, timeoutMs = 20_000): Promise<Model
     for await (const event of model.chat({ system: "Reply with one word.", messages: [userMessage("ping")], maxTokens: 1 }, AbortSignal.timeout(timeoutMs))) if (event.type !== "retry") break;
     return { ok: true };
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
+    // the message keeps 300 characters of the body; a tier refusal names its limit further on
+    const response = err instanceof LlmError ? err.response : undefined;
+    const detail = response && response.body.length > 300 ? `LLM request failed ${response.status}: ${response.body.slice(0, 2000)}` : err instanceof Error ? err.message : String(err);
     return { ok: false, kind: err instanceof Error && err.name === "TimeoutError" ? "network" : modelErrorKind(detail), detail };
   }
 }
