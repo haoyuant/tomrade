@@ -57,7 +57,7 @@ await ctx.tools.register(defineTool({
 - `graph({ id, title, icon?, compute: async (items) => [{ from, to, tone?, title? }] })`
 
 ## agent
-`ctx.agent.playbook({ id: `${ns}.how`, title, when: "one line", body: "markdown steps", tools: [...] })`.
+`ctx.agent.playbook({ id: `${ns}.how`, title, when: "one line", body: "markdown steps", tools: [...] })`. SDK 0.2.14, the in-app conversation only (not CLI agents): `ctx.agent.request(r => ({ system, tools, messages }))` changes each model request; `ctx.agent.requestError(f => ({ request, profile }))` sends a failed one again; `ctx.agent.turnEnding(e => ({ continue: "message to the model" }))` keeps a turn going (bounded). Return nothing to leave things as they are.
 
 ## surfaces
 `ctx.surfaces.open({ id, title, document: "dist/static/panel.html", width, height, focusable?, transparent?, clickThrough?, anchor?: "sidebar-foot", onMessage, onClose })` → handle with `setState`, `close`. `onClose` runs once when the window is gone (the person, `close()`, unloading); after it the handle's calls reject, so open a new window rather than reuse it. Documents are files in the package (put them in `static/`).

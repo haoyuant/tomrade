@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Context } from "cordis";
-import type {} from "@tomradex/agent";
+import type { AgentRequest } from "@tomradex/agent";
 import type {} from "@tomradex/alerts";
 import type {} from "@tomradex/im";
 import type {} from "@tomradex/boards";
@@ -32,6 +32,8 @@ import {
   type ItemsApi,
   type Locale,
   type Localized,
+  type ModelRequest,
+  type ModelRequestChange,
   type OplogApi,
   type PendingWrite,
   type TerminalsApi,
@@ -110,12 +112,24 @@ interface Services {
 /** A render callback has this long before its contribution is dropped for the refresh. */
 export const RENDER_MS = 2_000;
 export const COMMAND_MS = 60_000;
+/** A hook in the agent's loop has this long before the step goes on without it. */
+export const HOOK_MS = 10_000;
 
 type Fn = (...args: never[]) => unknown;
 
 const spread = (params: SqlParams | undefined): unknown[] => (params === undefined ? [] : Array.isArray(params) ? params : [params]);
 
 /** What a policy is shown: its own copy where the value allows one, so a change of its reaches nothing. */
+/** A request as a plugin's hook sees it: plain data, its own copy. */
+const modelRequest = (request: AgentRequest): ModelRequest => copy({ system: request.system, tools: request.tools, messages: request.messages, turn: request.turn }) as ModelRequest;
+
+/** Only the parts a hook may change, and only when they are the right shape. */
+const changeOf = (change: ModelRequestChange): Partial<Pick<AgentRequest, "system" | "tools" | "messages">> => ({
+  ...(typeof change.system === "string" ? { system: change.system } : {}),
+  ...(Array.isArray(change.tools) ? { tools: change.tools } : {}),
+  ...(Array.isArray(change.messages) ? { messages: change.messages as AgentRequest["messages"] } : {})
+});
+
 const copy = <T>(value: T): T => {
   try {
     return structuredClone(value);
@@ -200,6 +214,16 @@ export class Host {
     if (typeof (answer as PromiseLike<unknown> | undefined)?.then === "function") {
       Promise.resolve(answer).catch(() => {});
       this.logger.warn(`${this.identity.id} write gate answered with a Promise; a write gate must answer at once, so ${intent.entity} ${intent.id} was written without its answer`);
+    }
+  }
+
+  /** A hook's answer, or none when it threw or ran out of time: a plugin's hook never ends the agent's turn. */
+  private async hooked<T>(fn: () => Promise<T>, label: string): Promise<T | undefined> {
+    try {
+      return await fn();
+    } catch (error) {
+      this.logger.warn(`${this.identity.id} ${label}: ${error instanceof Error ? error.message : String(error)}`);
+      return undefined;
     }
   }
 
@@ -449,6 +473,42 @@ export class Host {
             host.call(() => {
               host.own(spec.id, "playbook");
               return host.disposerOf(agent().playbook({ id: spec.id, title: spec.title, when: spec.when, body: spec.body, tools: spec.tools }));
+            }),
+          request: (hook) =>
+            host.call(() => {
+              agent(); // refused, like every agent call, unless the plugin named "agent"
+              const run = host.back(hook, "request hook", { ms: HOOK_MS });
+              return host.disposerOf(
+                host.ctx.on("agent/request", async (request, next) => {
+                  const change = await host.hooked(() => run(modelRequest(request)), "request hook");
+                  if (change) Object.assign(request, changeOf(change));
+                  return next();
+                })
+              );
+            }),
+          requestError: (hook) =>
+            host.call(() => {
+              agent();
+              const run = host.back(hook, "request error hook", { ms: HOOK_MS });
+              return host.disposerOf(
+                host.ctx.on("agent/request-error", async (failure) => {
+                  const message = failure.error instanceof Error ? failure.error.message : String(failure.error);
+                  const answer = await host.hooked(() => run({ message, request: modelRequest(failure.request), attempt: failure.attempt }), "request error hook");
+                  if (!answer || (!answer.request && !answer.profile)) return undefined;
+                  return { ...(answer.request ? { request: changeOf(answer.request) } : {}), ...(typeof answer.profile === "string" ? { profile: answer.profile } : {}) };
+                })
+              );
+            }),
+          turnEnding: (hook) =>
+            host.call(() => {
+              agent();
+              const run = host.back(hook, "turn ending hook", { ms: HOOK_MS });
+              return host.disposerOf(
+                host.ctx.on("agent/turn-stopping", async (ending) => {
+                  const answer = await host.hooked(() => run(copy(ending)), "turn ending hook");
+                  return typeof answer?.continue === "string" && answer.continue.trim() ? { continue: answer.continue } : undefined;
+                })
+              );
             })
         };
       },

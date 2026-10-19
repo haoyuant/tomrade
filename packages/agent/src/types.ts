@@ -1,7 +1,7 @@
 import type {} from "cordis";
 import type { z } from "zod";
 import type { Author } from "@tomradex/domain";
-import type { LlmService } from "@tomradex/llm";
+import type { LlmService, Message, ToolSpec } from "@tomradex/llm";
 import type { RunHandle, ToolDescriptor } from "@tomradex/tools";
 
 /**
@@ -717,7 +717,56 @@ declare module "cordis" {
     "agent/limit-lifted"(park: ParkView, thread: ThreadSummary): void;
     /** A project's rules file was written through Tomrade. */
     "agent/rules-changed"(projectId: string): void;
+    /**
+     * Each model request an in-app engine (`engine-loop`) is about to send: a listener may change its
+     * system prompt, tools and messages, before or after `next()`; what comes back is sent. CLI agents
+     * run their own loop and send nothing through here.
+     */
+    "agent/request"(request: AgentRequest, next: () => Promise<AgentRequest>): Promise<AgentRequest>;
+    /** A model request an in-app engine sent failed. The first listener to answer decides what to try instead. */
+    "agent/request-error"(failure: AgentRequestFailure): Promise<AgentRetry | void> | AgentRetry | void;
+    /** An in-app turn is about to end. The first listener to answer keeps it going, with a message to the model. */
+    "agent/turn-stopping"(ending: TurnEnding): Promise<{ continue: string } | void> | { continue: string } | void;
   }
+}
+
+/** Which turn, step and model profile a request belongs to: read, never changed. */
+export interface AgentTurnInfo {
+  runId: string;
+  threadId: string;
+  projectId: string;
+  purpose: TurnPurpose;
+  profile: string;
+  step: number;
+}
+
+/** One model request as an in-app engine is about to send it. */
+export interface AgentRequest {
+  system: string;
+  tools: ToolSpec[];
+  messages: Message[];
+  turn: AgentTurnInfo;
+}
+
+export interface AgentRequestFailure {
+  error: unknown;
+  request: AgentRequest;
+  /** How many times this step was already tried again on a listener's answer. */
+  attempt: number;
+}
+
+/** Send the request again: changed, on another model profile, or both. */
+export interface AgentRetry {
+  request?: Partial<Pick<AgentRequest, "system" | "tools" | "messages">>;
+  profile?: string;
+}
+
+export interface TurnEnding {
+  /** What the model said last. */
+  text: string;
+  turn: AgentTurnInfo;
+  /** How many times this turn was already kept going. */
+  continued: number;
 }
 
 export interface AgentPolicy {

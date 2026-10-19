@@ -109,7 +109,7 @@ returns is disposed when the service goes.
 | `settings` | `register({ title, schema, defaults })` — the card is drawn from the schema — `get`, `set` |
 | `tools` | `register(defineTool(…))` (SDK 0.2.6: `kit` keeps a rarely needed tool out of each request until the model loads it; `kit(id, purpose)` says what the kit is for), `list`, `call`, `gate(check)` (throw to refuse any tool call; SDK 0.2.12: answer `{ args }` or `{ result }` — see [Policies](#policies)) |
 | `contributions` | `command`, `badge`, `statusItem`, `section`, `graph` — see [Contributions](#contributions); callbacks may be async |
-| `agent` | `playbook({ id, title, when, body, tools })` |
+| `agent` | `playbook({ id, title, when, body, tools })`; SDK 0.2.14: `request(hook)`, `requestError(hook)`, `turnEnding(hook)` — the in-app conversation's loop, see [Hooks in the agent's loop](#hooks-in-the-agents-loop) |
 | `surfaces` | `open({ id, document, … })` — a document inside the plugin's own package, never a remote page (SDK 0.2.7: `onClose()` says the window is gone, however it went; the handle's calls then reject). SDK 0.2.11: `kind: "window"` (with `minWidth` / `minHeight`) opens a working window and needs `permissions.window`; `post(message)` sends one message to the document; see [Auxiliary desktop surfaces](#auxiliary-desktop-surfaces) |
 | `alerts` | `sounds()` (the system's, its own alert sound first), `play(sound, { volume })` — `system:<name>` or an audio file's absolute path, played by the host — and `notify({ title, body })`, a silent system notification. SDK 0.2.4 |
 | `oplog` | `recent`, `history` |
@@ -940,6 +940,9 @@ inside a SQLite transaction.
 | `tools/result` | emit | The outcome of a tool call, success or failure. |
 | `settings/changed` | emit | Settings were saved; providers re-read. |
 | `agent/event` | emit | Main-process agent lifecycle stream. Receives `(threadId, AgentEvent)`; feature plugins subscribe here instead of observing renderer IPC. |
+| `agent/request` | waterfall | Each model request an in-app engine is about to send: `{ system, tools, messages, turn }`. Change it before or after `next()`; what comes back is sent. |
+| `agent/request-error` | serial | A model request failed: `{ error, request, attempt }`. The first listener to answer `{ request?, profile? }` has it sent again — changed, on another model profile, or both. |
+| `agent/turn-stopping` | serial | An in-app turn is about to end: `{ text, turn, continued }`. The first listener to answer `{ continue }` keeps it going with that message to the model. |
 
 A main-process observer loaded while work is already active can seed itself
 from `ctx.agent.activities()`, which returns current in-memory runs and durable
@@ -998,6 +1001,35 @@ await ctx.items.gate((write) => {
   if (write.entity === "item" && patch?.status === "done" && write.by !== "human") throw new Error("Only a person closes a ticket here");
 });
 await ctx.tools.gate((call) => (call.name === "list_items" ? { args: { ...(call.args as object), limit: 20 } } : undefined));
+```
+
+### Hooks in the agent's loop
+
+The conversation Tomrade runs itself (`engine-loop`, the in-app assistant)
+passes three hooks, as a DeepSeek Harness agent passes its own. CLI agents —
+Claude Code, Codex, dsh, OpenCode and the rest — run their own loop in their
+own process and send nothing through them; what reaches every engine is
+[Policies](#policies), since their calls to Tomrade's tools and every write
+still pass `tools/pre-execute` and `write/pre-commit`.
+
+| Hook | Engines | What a plugin can do |
+|---|---|---|
+| `agent/request` | `engine-loop` | Change each request's system prompt, tools and messages before it is sent. |
+| `agent/request-error` | `engine-loop` | Have a failed request sent again, changed or on another model profile — at most twice a step. |
+| `agent/turn-stopping` | `engine-loop` | Keep a turn going with a message to the model until its own condition holds — at most three times a turn, within the step budget; the conversation says a plugin kept it going. |
+
+Extensions reach them with `ctx.agent.request(hook)`, `ctx.agent.requestError(hook)`
+and `ctx.agent.turnEnding(hook)` (SDK 0.2.14, `inject: ["agent"]`). A hook gets
+a copy and answers what to change — `{ system?, tools?, messages? }`,
+`{ request?, profile? }`, `{ continue }` — or nothing. One that throws or takes
+longer than ten seconds is logged and passed over: a plugin never ends the
+turn. Built-in and full-mode plugins listen on the events themselves; one that
+throws is passed over the same way.
+
+```ts
+await ctx.agent.request((request) => ({ system: `${request.system}\n\nAnswer in the person's own words.` }));
+await ctx.agent.requestError((failure) => (failure.message.includes("overloaded") ? { profile: "backup" } : undefined));
+await ctx.agent.turnEnding((ending) => (ending.continued === 0 && !ending.text.includes("tests pass") ? { continue: "Run the tests before you finish." } : undefined));
 ```
 
 ### Undo, redo and the timeline

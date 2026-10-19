@@ -1,7 +1,7 @@
 import type {} from "cordis";
 import type { Context } from "cordis";
 import { z } from "zod";
-import { HOUSE_RULES, deferredTools, focusSuffix, isSuspended, kitLines, promptSections, type Engine, type ThreadMessage, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
+import { HOUSE_RULES, deferredTools, focusSuffix, isSuspended, kitLines, promptSections, type AgentRequest, type AgentTurnInfo, type Engine, type ThreadMessage, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
 import { MediaRefused, NativeMediaRefused, NativeSearchRefused, assistantMessage, collect, modalityOf, toolResultsMessage, userMessage, type InputModality, type LlmService, type Message, type OutputModality, type ToolSpec } from "@tomradex/llm";
 import { LONG_RESULT, ToolInputError, compactList, type ToolDescriptor } from "@tomradex/tools";
 import { LOOP_WORDS } from "./words.js";
@@ -210,6 +210,33 @@ export const steering = (texts: string[], afterReply = false) => ({
 const system = (input: TurnInput, io: TurnIO, options: LoopOptions): string =>
   [IDENTITY, ...promptSections(input, io, { playbooks: options.guidance === "auto" })].join("\n\n");
 
+/** Times one step is sent again on plugins' answers to a failed request. */
+const RETRIES_PER_STEP = 2;
+/** Times plugins may keep one turn going; the step budget bounds it as well. */
+const CONTINUES_PER_TURN = 3;
+
+const messageOf = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+/** What plugins make of a step's request. A listener that throws is passed over: it never ends the turn. */
+async function shape(ctx: Context, draft: AgentRequest): Promise<AgentRequest> {
+  try {
+    return await ctx.waterfall("agent/request", draft, async () => draft);
+  } catch (err) {
+    ctx.logger("engine-loop").warn(`agent/request: ${messageOf(err)}`);
+    return draft;
+  }
+}
+
+/** The first plugin's answer to a hook, or none when every listener passed or one threw. */
+async function asked<T>(ctx: Context, hook: string, ask: () => Promise<T | void>): Promise<T | undefined> {
+  try {
+    return (await ask()) ?? undefined;
+  } catch (err) {
+    ctx.logger("engine-loop").warn(`${hook}: ${messageOf(err)}`);
+    return undefined;
+  }
+}
+
 export function createLoopEngine(ctx: Context): Engine {
   // what the engine itself says in the conversation, in the person's language
   const words = () => LOOP_WORDS((ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
@@ -290,6 +317,9 @@ export function createLoopEngine(ctx: Context): Engine {
       // "profile kind" a provider turned down; that profile is not asked for that kind again this turn.
       const refused = new Set<string>();
       const llm = io.llm;
+      // Times plugins kept this turn going past where the model would have stopped.
+      let continued = 0;
+      const about = (step: number): AgentTurnInfo => ({ runId: io.run.id, threadId: input.threadId, projectId: input.projectId, purpose: input.purpose, profile: profileId, step });
       const makeMedia = async (kind: OutputModality, prompt: string): Promise<{ content: string; isError?: boolean }> => {
         if (!io.media) throw new Error("This runtime cannot publish media");
         // The thread's own model first, then any other profile that makes this kind (an Image API profile for pictures).
@@ -321,39 +351,64 @@ export function createLoopEngine(ctx: Context): Engine {
         if (tokens > CONTEXT_BUDGET && elideOldResults(messages, Math.ceil(chars * (1 - CONTEXT_TARGET / tokens))) > 0)
           // A remembered answer may be one just dropped; the model must be free to ask again.
           memo.clear();
+        // Plugins see each step's request before it is sent, and what they hand back is what goes.
+        let request = await shape(ctx, { system: system(input, io, options), tools: offered(), messages: [...messages], turn: about(step) });
+        let chat = model;
         let collected;
-        try {
-          collected = await collect(
-            model.chat(
-              {
-                system: system(input, io, options),
-                messages,
-                tools: offered(),
-                toolChoice: invalidStreak >= 2 ? "none" : undefined,
-                maxTokens: options.maxTokens,
-                effort,
-                ...(nativeSearch ? { webSearch: true } : {})
-              },
-              io.signal
-            ),
-            (delta) => io.delta(delta),
-            ({ attempt, max, reason, delayMs }) => io.retry?.({ attempt, max, reason, delayMs })
-          );
-        } catch (err) {
-          // Refused for media it cannot read: the same step again without it, said once per kind.
-          if (err instanceof MediaRefused && withoutMedia(messages, err.kinds) > 0) {
-            const w = words();
-            io.emit({ type: "note", text: w("mediaRefused", { kinds: err.kinds.map((kind) => w(`kind_${kind}`)).join(w("kindJoin")) }) });
-            step -= 1;
-            continue;
+        let again = false;
+        for (let attempt = 0; ; attempt += 1) {
+          try {
+            collected = await collect(
+              chat.chat(
+                {
+                  system: request.system,
+                  messages: request.messages,
+                  tools: request.tools,
+                  toolChoice: invalidStreak >= 2 ? "none" : undefined,
+                  maxTokens: options.maxTokens,
+                  effort,
+                  ...(nativeSearch ? { webSearch: true } : {})
+                },
+                io.signal
+              ),
+              (delta) => io.delta(delta),
+              ({ attempt, max, reason, delayMs }) => io.retry?.({ attempt, max, reason, delayMs })
+            );
+            break;
+          } catch (err) {
+            // Refused for media it cannot read: the same step again without it, said once per kind.
+            if (err instanceof MediaRefused && withoutMedia(messages, err.kinds) > 0) {
+              const w = words();
+              io.emit({ type: "note", text: w("mediaRefused", { kinds: err.kinds.map((kind) => w(`kind_${kind}`)).join(w("kindJoin")) }) });
+              again = true;
+              break;
+            }
+            // Refused before anything streamed: the same step again, searching through the plugin.
+            if (err instanceof NativeSearchRefused && nativeSearch) {
+              nativeSearch = false;
+              io.emit({ type: "note", text: words()("nativeSearchRefused") });
+              again = true;
+              break;
+            }
+            // A plugin may know what to try instead: a changed request, another model, or both. A stopped turn stays stopped.
+            if (io.signal.aborted) throw err;
+            const retry = attempt < RETRIES_PER_STEP ? await asked(ctx, "agent/request-error", () => ctx.serial("agent/request-error", { error: err, request, attempt })) : undefined;
+            if (!retry) throw err;
+            if (retry.profile) {
+              try {
+                chat = llm.forProfile(retry.profile);
+              } catch (cause) {
+                ctx.logger("engine-loop").warn(`agent/request-error named the model profile "${retry.profile}": ${messageOf(cause)}`);
+              }
+            }
+            request = { ...request, ...retry.request, turn: request.turn };
           }
-          if (!(err instanceof NativeSearchRefused) || !nativeSearch) throw err;
-          // Refused before anything streamed: the same step again, searching through the plugin.
-          nativeSearch = false;
-          io.emit({ type: "note", text: words()("nativeSearchRefused") });
+        }
+        if (again) {
           step -= 1;
           continue;
         }
+        if (!collected) throw new Error("the model request ended without a reply");
         lastInput = collected.usage.inputTokens;
         // a reply with only tool calls streams no text; it still means the request went through
         io.retry?.(null);
@@ -387,8 +442,17 @@ export function createLoopEngine(ctx: Context): Engine {
         if (!collected.toolCalls.length) {
           // A message that came in while the model wrote its last reply still belongs to this turn.
           const late = io.takeSteers?.() ?? [];
-          if (!late.length) return { stop: "end", ...spent() };
-          messages.push(assistantMessage(collected), { role: "user", content: [steering(late, !!collected.text.trim())] });
+          if (late.length) {
+            messages.push(assistantMessage(collected), { role: "user", content: [steering(late, !!collected.text.trim())] });
+            continue;
+          }
+          // A plugin whose condition does not hold yet keeps the turn going, a few times at most.
+          const text = collected.text;
+          const more = continued < CONTINUES_PER_TURN ? await asked(ctx, "agent/turn-stopping", () => ctx.serial("agent/turn-stopping", { text, turn: about(step), continued })) : undefined;
+          if (!more?.continue) return { stop: "end", ...spent() };
+          continued += 1;
+          io.emit({ type: "note", text: words()("keptGoing") });
+          messages.push(assistantMessage(collected), { role: "user", content: [{ type: "text", text: more.continue }] });
           continue;
         }
 

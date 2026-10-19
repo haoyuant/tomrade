@@ -151,7 +151,7 @@ export function recordingContext(namespace: string, allowed: ServiceName[], rec:
       });
     },
     get agent(): AgentApi {
-      return need("agent", { playbook: (spec) => note("playbooks", spec.id, "playbook") });
+      return need("agent", { playbook: (spec) => note("playbooks", spec.id, "playbook"), request: async () => noop, requestError: async () => noop, turnEnding: async () => noop });
     },
     get im(): ImApi {
       return need("im", {
