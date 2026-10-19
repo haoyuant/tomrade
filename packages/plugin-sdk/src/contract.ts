@@ -366,6 +366,50 @@ export interface AgentApi {
   requestError(hook: (failure: ModelRequestFailure) => Maybe<ModelRetry | void>): Promise<Disposer>;
   /** A turn is about to end: answer `{ continue }` with a message to the model to keep it going. Bounded, so it cannot run forever. */
   turnEnding(hook: (ending: TurnEnding) => Maybe<{ continue: string } | void>): Promise<Disposer>;
+  /**
+   * SDK 0.2.15: a hook in the CLI agents Tomrade works with — Claude Code, Codex, dsh and the rest. It
+   * hears their sessions and, in one Tomrade started, may answer: see `CLI_HOOK_COVERAGE` for which.
+   */
+  cliHook(spec: CliHookSpec): Promise<Disposer>;
+}
+
+export type { CliHookEvent } from "./cli-hooks.js";
+
+/** SDK 0.2.15: what a CLI agent's hook says happened, whichever agent sent it. */
+export interface CliHookCall {
+  event: import("./cli-hooks.js").CliHookEvent;
+  /** `claude-code`, `codex`, `dsh`, `pi`, `workbuddy`, `cursor`, `opencode`, `hermes`… */
+  agent: string;
+  /** Whether an answer reaches the agent: a session Tomrade started, by an agent that acts on this event. */
+  answerable: boolean;
+  projectId: string;
+  /** Tomrade's code session the hook belongs to. */
+  sessionId: string;
+  /** The ticket the session works, when it has one. */
+  ticket: string | null;
+  cwd: string | null;
+  tool?: { name: string; input: unknown; output?: string; error?: string };
+  /** What the model said last, at `stop`. */
+  text?: string;
+  /** The hook's own payload, as the agent sent it. */
+  raw: Record<string, unknown>;
+}
+
+/** Refuse the tool (`pre-tool`), add context for the model (`session-start`, `prompt`, `post-tool`), or keep the turn going (`stop`). */
+export interface CliHookAnswer {
+  deny?: string;
+  context?: string;
+  continue?: string;
+}
+
+export interface CliHookSpec {
+  /** The events it hears; all of them when left out. */
+  events?: import("./cli-hooks.js").CliHookEvent[];
+  /** A regular expression the tool's name must match, for `pre-tool` and `post-tool`. */
+  tools?: string;
+  /** The agents it hears; all of them when left out. */
+  agents?: string[];
+  handle(call: CliHookCall): Maybe<CliHookAnswer | void>;
 }
 
 export interface SurfaceSpec {

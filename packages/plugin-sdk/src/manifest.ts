@@ -3,7 +3,7 @@ import { LANGUAGE_PACK_LIMITS, LanguageEntrySchema } from "./language.js";
 import { isRange, isVersion } from "./semver.js";
 
 /** The contract this SDK describes. A plugin's `engines.sdk` range is checked against the host's. */
-export const SDK_CONTRACT = "0.2.14";
+export const SDK_CONTRACT = "0.2.15";
 
 export const PLUGIN_ID = /^[a-z0-9][a-z0-9-]{0,38}\/[a-z0-9][a-z0-9-]{0,63}$/;
 export const NAMESPACE = /^[a-z][a-z0-9_]{1,31}$/;
@@ -46,7 +46,9 @@ export const ContributesSchema = z
     surfaces: z.array(z.string()).default([]),
     tables: z.array(z.string()).default([]),
     imAdapters: z.array(z.string()).default([]),
-    webSearchProviders: z.array(z.string()).default([])
+    webSearchProviders: z.array(z.string()).default([]),
+    /** SDK 0.2.15: the CLI agent hook events it hears. */
+    agentHooks: z.array(z.string()).default([])
   })
   .partial();
 

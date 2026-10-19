@@ -70,10 +70,10 @@ export const CONNECT_FILES = [".mcp.json", ".claude/settings.json", CLAUDE_LOCAL
  * `reply` is for the hooks of a session Tomrade started: Tomrade's answer (a
  * denied tool, context to add) is left on stdout for the agent to read.
  */
-export function hookCommand(eventUrl: string, agent?: HookAgent, options: { reply?: boolean; seconds?: number } = {}): string {
+export function hookCommand(eventUrl: string, agent?: HookAgent, options: { reply?: boolean; seconds?: number; source?: "dsh-hooks" } = {}): string {
   // Within double quotes sh or PowerShell would expand these; a URL carries them percent-encoded.
   const url = eventUrl.replace(/["$`\\]/g, encodeURIComponent);
-  const curl = `curl -s -m ${options.seconds ?? 2} -X POST -H "Content-Type: application/json" ${HERDR_PANE_HEADER}${agent ? ` -H "X-Tomrade-Agent: ${agent}"` : ""} --data-binary "@-" "${url}"`;
+  const curl = `curl -s -m ${options.seconds ?? 2} -X POST -H "Content-Type: application/json" ${HERDR_PANE_HEADER}${agent ? ` -H "X-Tomrade-Agent: ${agent}"` : ""}${options.source ? ` -H "X-Tomrade-Source: ${options.source}"` : ""} --data-binary "@-" "${url}"`;
   return `set tomrade "$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)"; ${options.reply ? curl : `set tomrade "$(${curl} 2>&1)"`}; exit 0`;
 }
 

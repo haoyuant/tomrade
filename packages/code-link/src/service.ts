@@ -2216,7 +2216,7 @@ export class CodeLink extends Service {
         const session = this.store.sessions(projectId, { live: true }).find((s) => s.threadId === threadId);
         if (session) {
           this.heardHook(projectId, session.repoId, agent);
-          this.sessions.event(projectId, session.id, payload);
+          this.heard(projectId, session.id, payload);
           return;
         }
       }
@@ -2225,7 +2225,7 @@ export class CodeLink extends Service {
     const mine = (projectId: string) => this.store.sessions(projectId, { live: true }).filter((s) => s.threadId === null && s.agent === agent && s.externalId === p.session_id);
     // The agent itself is gone: every session it had, parallel or not, ends with it.
     const deliver = (projectId: string, sessions: SessionView[]) => {
-      for (const s of p.hook_event_name === "SessionEnd" ? sessions : sessions.slice(0, 1)) this.sessions.event(projectId, s.id, payload);
+      for (const s of p.hook_event_name === "SessionEnd" ? sessions : sessions.slice(0, 1)) this.heard(projectId, s.id, payload);
     };
     // One agent working tickets in parallel, each in a worktree it named: an event from inside one is that session's.
     for (const projectId of this.ctx.db.openIds()) {
@@ -2251,11 +2251,16 @@ export class CodeLink extends Service {
         // The end of a session never heard of is nothing to record.
         if (p.hook_event_name === "SessionEnd") return;
         const created = this.store.createSession(projectId, { repoId: repo.id, branch: "", itemIds: [], mode: "terminal", agent, threadId: null, device: this.ctx.hub.deviceId, externalId: p.session_id ?? null });
-        this.sessions.event(projectId, created.id, payload);
+        this.heard(projectId, created.id, payload);
         return;
       }
     }
     void this.placeFrom(cwd).catch((err) => this.ctx.logger.warn(`placing a checkout from ${cwd} failed: ${message(err)}`));
+  }
+
+  /** A connected repository's hook, for a session: recorded, and shown to plugins' hooks, which cannot answer it. */
+  private heard(projectId: string, sessionId: string, payload: unknown): void {
+    void this.sessions.hook(projectId, sessionId, payload, false).catch((err) => this.ctx.logger.warn(`a repository hook for ${sessionId}: ${message(err)}`));
   }
 
   /** A repository's hooks reached this Tomrade. Claude Code posts on every tool call, so the database hears of it once a minute at most. */

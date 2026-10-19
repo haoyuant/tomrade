@@ -33,6 +33,7 @@
     "@tomradex/items": "workspace:*",
     "@tomradex/llm": "workspace:*",
     "@tomradex/mcp": "workspace:*",
+    "@tomradex/plugin-sdk": "workspace:*",
     "@tomradex/repos": "workspace:*",
     "@tomradex/settings": "workspace:*",
     "@tomradex/storage": "workspace:*",

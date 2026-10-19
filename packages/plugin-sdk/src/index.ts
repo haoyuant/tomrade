@@ -31,4 +31,5 @@ export type {
 export * from "./im.js";
 export * from "./web-search.js";
 export * from "./terminals.js";
+export { CLI_HOOK_COVERAGE, CLI_HOOK_EVENTS } from "./cli-hooks.js";
 export * from "./im-markdown.js";

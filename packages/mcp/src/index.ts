@@ -172,7 +172,9 @@ const paragraph = (render: (scope: McpScope) => string | null, scope: McpScope):
 const withPane = (req: express.Request): Record<string, unknown> => {
   const body = (req.body && typeof req.body === "object" ? req.body : {}) as Record<string, unknown>;
   const pane = req.get("X-Tomrade-Herdr-Pane")?.trim();
-  return pane ? { ...body, herdr_pane: pane } : body;
+  // An agent that reports twice says which of Tomrade's posts this is (dsh: its hook bridge).
+  const source = req.get("X-Tomrade-Source")?.trim();
+  return { ...body, ...(pane ? { herdr_pane: pane } : {}), ...(source === "dsh-hooks" ? { tomrade_source: source } : {}) };
 };
 
 const sessionIdOf = (req: express.Request): string | undefined => {

@@ -78,6 +78,8 @@ export interface ExtensionInfo {
   attestation: Attestation | null;
   /** Runs with Tomrade's whole Context rather than the SDK's facade. */
   full: FullModeInfo | null;
+  /** The CLI agent hook events it hears, as its build recorded them. */
+  agentHooks: string[];
 }
 
 export class ExtensionRefused extends Error {
@@ -297,7 +299,8 @@ export class ExtensionStore {
       previousVersion: entry.previous?.version ?? null,
       pending,
       attestation: entry.attestation,
-      full: manifest.context === "full" ? this.fullInfo(entry, manifest) : null
+      full: manifest.context === "full" ? this.fullInfo(entry, manifest) : null,
+      agentHooks: manifest.contributes.agentHooks ?? []
     };
   }
 

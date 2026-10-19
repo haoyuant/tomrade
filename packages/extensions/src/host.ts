@@ -114,6 +114,8 @@ export const RENDER_MS = 2_000;
 export const COMMAND_MS = 60_000;
 /** A hook in the agent's loop has this long before the step goes on without it. */
 export const HOOK_MS = 10_000;
+/** A CLI agent waits five seconds for Tomrade's answer to its hook; a plugin's comes inside that, or not at all. */
+export const CLI_HOOK_MS = 3_000;
 
 type Fn = (...args: never[]) => unknown;
 
@@ -507,6 +509,24 @@ export class Host {
                 host.ctx.on("agent/turn-stopping", async (ending) => {
                   const answer = await host.hooked(() => run(copy(ending)), "turn ending hook");
                   return typeof answer?.continue === "string" && answer.continue.trim() ? { continue: answer.continue } : undefined;
+                })
+              );
+            }),
+          cliHook: (spec) =>
+            host.call(() => {
+              agent();
+              const events = spec.events?.length ? new Set<string>(spec.events) : null;
+              const agents = spec.agents?.length ? new Set(spec.agents) : null;
+              const tools = spec.tools ? new RegExp(spec.tools) : null;
+              const run = host.back(spec.handle.bind(spec), "CLI hook", { ms: CLI_HOOK_MS });
+              const said = (value: unknown) => (typeof value === "string" && value.trim() ? value : undefined);
+              return host.disposerOf(
+                host.ctx.on("agent/cli-hook", async (call) => {
+                  if ((events && !events.has(call.event)) || (agents && !agents.has(call.agent)) || (tools && !(call.tool && tools.test(call.tool.name)))) return undefined;
+                  const answer = await host.hooked(() => run(copy(call)), "CLI hook");
+                  if (!answer || !call.answerable) return undefined;
+                  const deny = said(answer.deny), context = said(answer.context), more = said(answer.continue);
+                  return deny || context || more ? { ...(deny ? { deny } : {}), ...(context ? { context } : {}), ...(more ? { continue: more } : {}) } : undefined;
                 })
               );
             })

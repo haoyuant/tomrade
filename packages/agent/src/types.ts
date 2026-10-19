@@ -727,7 +727,41 @@ declare module "cordis" {
     "agent/request-error"(failure: AgentRequestFailure): Promise<AgentRetry | void> | AgentRetry | void;
     /** An in-app turn is about to end. The first listener to answer keeps it going, with a message to the model. */
     "agent/turn-stopping"(ending: TurnEnding): Promise<{ continue: string } | void> | { continue: string } | void;
+    /**
+     * A CLI agent's hook reached Tomrade — Claude Code, Codex, dsh and the rest. The first listener to
+     * answer decides; the answer reaches the agent only when `answerable` (a session Tomrade started).
+     */
+    "agent/cli-hook"(call: CliHookCall): Promise<CliHookAnswer | void> | CliHookAnswer | void;
   }
+}
+
+/** What a CLI agent's hook says happened, in one set of names whichever agent sent it. */
+export type CliHookEvent = "session-start" | "prompt" | "pre-tool" | "post-tool" | "stop" | "session-end";
+
+export interface CliHookCall {
+  event: CliHookEvent;
+  /** The agent that sent it: `claude-code`, `codex`, `dsh`, `pi`, `workbuddy`, `cursor`, `opencode`, `hermes`… */
+  agent: string;
+  /** Whether an answer reaches the agent: true in a session Tomrade started, false for a connected repository's hooks. */
+  answerable: boolean;
+  projectId: string;
+  /** Tomrade's code session the hook belongs to. */
+  sessionId: string;
+  /** The ticket the session works, when it has one. */
+  ticket: string | null;
+  cwd: string | null;
+  tool?: { name: string; input: unknown; output?: string; error?: string };
+  /** What the model said last, at `stop`. */
+  text?: string;
+  /** The hook's own payload, as the agent sent it. */
+  raw: Record<string, unknown>;
+}
+
+/** Refuse the tool (`pre-tool`), add context for the model, or keep the turn going (`stop`). */
+export interface CliHookAnswer {
+  deny?: string;
+  context?: string;
+  continue?: string;
 }
 
 /** Which turn, step and model profile a request belongs to: read, never changed. */
