@@ -201,6 +201,12 @@ export class FakeHerdr {
         const pane = paneOf(params.pane_id);
         return pane ? { result: { type: "pane_info", pane: { ...pane, focused: false, revision: 0 } } } : notFound(params.pane_id);
       }
+      case "pane.close": {
+        const pane = paneOf(params.pane_id);
+        if (!pane) return notFound(params.pane_id);
+        this.exit(pane.pane_id);
+        return { result: { type: "ok" } };
+      }
       case "pane.focus":
       case "pane.send_input":
       case "pane.send_text":

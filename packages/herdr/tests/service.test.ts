@@ -99,6 +99,21 @@ describe("herdr service", () => {
     expect(await herdr.server()).toBeNull();
   });
 
+  it("opens a plain shell when there is no command, and closes a pane", async () => {
+    const fake = new FakeHerdr();
+    const { herdr } = await herdrOn(fake);
+    const launched = await herdr.launch({ cwd: "/work", label: "work", workspace: { key: "p1", label: "Project" } });
+    expect(launched).toEqual({ paneId: "w1:p1", workspaceId: "w1" });
+    expect(fake.of("pane.send_input")).toEqual([]);
+    expect(await herdr.closePane("w1:p1")).toBe(true);
+    expect(fake.of("pane.close")).toEqual([{ pane_id: "w1:p1" }]);
+    expect(await herdr.paneAlive("w1:p1")).toBe(false);
+    // Already gone counts as closed; herdr not answering does not.
+    expect(await herdr.closePane("w1:p1")).toBe(true);
+    fake.stop();
+    expect(await herdr.closePane("w1:p1")).toBe(false);
+  });
+
   it("follows a pane's status per pane, once per change, hears its end, and lets it go", async () => {
     const fake = new FakeHerdr();
     const { herdr } = await herdrOn(fake);

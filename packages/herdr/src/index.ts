@@ -392,20 +392,20 @@ export class Herdr extends Service {
   }
 
   /**
-   * A pane for a command, with the command typed into its shell, on a server started for it when
+   * A pane for a command, with the command typed into its shell (a plain shell without one), on a server started for it when
    * none runs (see `ensureServer`). With `workspace`, the pane is a new tab — labelled `label` — in
    * that project's workspace, made the first time and again when herdr no longer has it; without,
    * a workspace of its own labelled `label`. Nothing is focused — the person is somewhere else — and
    * the pane is theirs to find. `startedServer` is "first" the first time ever Tomrade started the
    * server here. Null when herdr does not answer.
    */
-  async launch(input: { cwd: string; label?: string; command: string; workspace?: HerdrWorkspaceRef }): Promise<{ paneId: string; workspaceId: string; startedServer?: "first" | "again" } | null> {
+  async launch(input: { cwd: string; label?: string; command?: string; workspace?: HerdrWorkspaceRef }): Promise<{ paneId: string; workspaceId: string; startedServer?: "first" | "again" } | null> {
     const up = await this.ensureServer();
     if (!up) return null;
     try {
       const pane = input.workspace ? await this.tabIn(input.workspace, input.cwd, input.label) : await this.ownWorkspace(input.cwd, input.label);
       // Typed, with Enter: a newline in the text is not a keypress to herdr.
-      await this.call("pane.send_input", { pane_id: pane.paneId, text: input.command, keys: ["enter"] });
+      if (input.command) await this.call("pane.send_input", { pane_id: pane.paneId, text: input.command, keys: ["enter"] });
       return { ...pane, ...(up.started ? { startedServer: this.firstStart() ? ("first" as const) : ("again" as const) } : {}) };
     } catch (err) {
       if (!(err instanceof HerdrError)) throw err;
@@ -462,6 +462,17 @@ export class Herdr extends Service {
     } catch (err) {
       if (!(err instanceof HerdrError) || err.code !== "workspace_not_found") throw err;
       return null;
+    }
+  }
+
+  /** Close a pane and end what runs in it. True once it is gone, also when it already was; false when herdr does not answer. */
+  async closePane(paneId: string): Promise<boolean> {
+    try {
+      await this.call("pane.close", { pane_id: paneId });
+      return true;
+    } catch (err) {
+      if (!(err instanceof HerdrError)) throw err;
+      return err.code === "pane_not_found";
     }
   }
 

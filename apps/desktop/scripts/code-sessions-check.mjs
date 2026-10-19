@@ -170,9 +170,13 @@ app.whenReady().then(async () => {
     const front = new BrowserWindow({ width: 1600, height: 1000, x: 0, y: 0, title: "app window stand-in" });
     await front.loadURL("about:blank");
     const sessionsWindow = () => BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.getTitle().startsWith("代码会话"));
+    // Focus only moves inside the app that is in front; macOS may keep it with the app the person is using.
+    app.focus({ steal: true });
+    front.focus();
+    const canFocus = await wait(async () => BrowserWindow.getFocusedWindow() === front, 3000);
     let forward = true;
     let focusedTitle = "";
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 3 && canFocus; i++) {
       front.focus();
       await sleep(300);
       await ctx.contributions.run("code-sessions.open", { projectId: project.id });
@@ -189,7 +193,48 @@ app.whenReady().then(async () => {
       await sleep(500);
     }
     front.destroy();
-    check("关掉再打开（三次）、被别的窗口挡住时再点，窗口都到最前并获得焦点", forward, `focused: ${focusedTitle}`);
+    if (canFocus) check("关掉再打开（三次）、被别的窗口挡住时再点，窗口都到最前并获得焦点", forward, `focused: ${focusedTitle}`);
+    else console.log("INFO: skipped the focus step — another app is in front, so this app's windows cannot take focus");
+
+    // A plain terminal from the list's button: every cell is taken, so it opens in a new one beside them.
+    await ctx.contributions.run("code-sessions.open", { projectId: project.id });
+    await wait(async () => sessionsWindow()?.isVisible() ?? false, 10000);
+    let tw = sessionsWindow();
+    let tjs = (code) => tw.webContents.executeJavaScript(code, true);
+    await wait(async () => (await tjs(`document.querySelectorAll('.cs-cell .xterm').length`)) === 6);
+    await tjs(`document.querySelector('[data-testid=cs-side-new-terminal]').click(); true`);
+    const opened = await wait(async () => (await tjs(`document.querySelectorAll('.cs-cell').length === 7 && !!document.querySelector('.cs-cell[data-cell-terminal] .xterm')`)));
+    check("新终端：格子都占满时，在旁边新开一格并连上 herdr", opened);
+    const listed = await wait(async () => (await tjs(`document.querySelectorAll('[data-terminal]').length`)) === 1, 5000);
+    check("左侧终端列表列出它", listed);
+    await tjs(`document.querySelector('.cs-cell[data-cell-terminal] .xterm-helper-textarea').focus(); true`);
+    await sleep(200);
+    tw.webContents.insertText("echo plain-terminal-ok");
+    await sleep(200);
+    tw.webContents.sendInputEvent({ type: "keyDown", keyCode: "Return" });
+    tw.webContents.sendInputEvent({ type: "char", keyCode: "\r" });
+    tw.webContents.sendInputEvent({ type: "keyUp", keyCode: "Return" });
+    const saved = () => JSON.parse(fs.readFileSync(path.join(work, "code-sessions.json"), "utf8")).terminals?.[project.id] ?? [];
+    const plainPane = saved()[0]?.pane;
+    const typed = !!plainPane && (await wait(async () => herdr("pane", "read", plainPane, "--source", "recent", "--lines", "20").includes("plain-terminal-ok")));
+    check("在新终端里输入的命令跑了", typed, `pane: ${plainPane}`);
+    fs.writeFileSync(path.join(shots, "code-sessions-terminal.png"), (await tw.webContents.capturePage()).toPNG());
+
+    // Kept across the window: reopened, the same cell shows it again.
+    tw.close();
+    await sleep(500);
+    await ctx.contributions.run("code-sessions.open", { projectId: project.id });
+    await wait(async () => sessionsWindow()?.isVisible() ?? false, 10000);
+    tw = sessionsWindow();
+    tjs = (code) => tw.webContents.executeJavaScript(code, true);
+    const back = await wait(async () => (await tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return !!cell?.querySelector('.xterm') && [...cell.querySelectorAll('.xterm-rows > div')].some((r) => r.textContent.includes('plain-terminal-ok')); })()`)));
+    check("关窗重开后，新终端在原来的格子里接回来", back);
+
+    // Closed from its cell: the pane ends in herdr.
+    await tjs(`[...document.querySelector('.cs-cell[data-cell-terminal]').querySelectorAll('.link-btn')].find((b) => b.textContent === '关闭终端').click(); true`);
+    const ended = await wait(async () => !JSON.parse(herdr("pane", "list")).result.panes.some((p) => p.pane_id === plainPane) && saved().length === 0);
+    check("关闭终端：herdr 里的 pane 结束，列表里也没了", ended);
+    tw.close();
   } catch (error) {
     check("检查跑完", false, error?.stack ?? String(error));
   } finally {

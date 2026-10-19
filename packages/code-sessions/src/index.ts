@@ -1,5 +1,8 @@
+import { execFile } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import type { Context } from "cordis";
 import { z } from "zod";
 import type {} from "@tomradex/db";
@@ -9,7 +12,7 @@ import type {} from "@tomradex/settings";
 import type { CodeLink } from "@tomradex/code-link";
 import type { DesktopSurface } from "@tomradex/desktop-surface";
 import type { HerdrBridge, TerminalStream } from "@tomradex/herdr";
-import type { Layout, SessionRow, WindowMessage, WindowPost, WindowState } from "./protocol.js";
+import type { Layout, SessionRow, TerminalPlace, TerminalRow, WindowMessage, WindowPost, WindowState } from "./protocol.js";
 import { CODE_SESSIONS_WORDS } from "./words.js";
 
 export type * from "./protocol.js";
@@ -30,6 +33,23 @@ export const BRIDGE_POLL_MS = 10_000;
 interface Saved {
   asked?: boolean;
   layouts?: Record<string, Layout>;
+  /** Each project's plain terminals, by the herdr pane they run in. */
+  terminals?: Record<string, (TerminalRow & { pane: string })[]>;
+}
+
+const run = promisify(execFile);
+/** A repository's worktrees besides the checkout itself, as `git worktree list` gives them; none when git cannot say. */
+async function worktreesOf(repo: string): Promise<TerminalPlace[]> {
+  try {
+    const { stdout } = await run("git", ["worktree", "list", "--porcelain"], { cwd: repo, timeout: 3000 });
+    return stdout
+      .split("\n\n")
+      .map((block) => ({ dir: /^worktree (.+)$/m.exec(block)?.[1], branch: /^branch refs\/heads\/(.+)$/m.exec(block)?.[1] }))
+      .filter((w): w is { dir: string; branch: string | undefined } => !!w.dir && path.resolve(w.dir) !== path.resolve(repo) && fs.existsSync(w.dir))
+      .map((w) => ({ label: w.branch ?? path.basename(w.dir), cwd: w.dir }));
+  } catch {
+    return [];
+  }
 }
 
 const fresh = (): Layout => ({ type: "leaf", id: "c1", sessionId: null });
@@ -109,6 +129,47 @@ function apply(ctx: Context, config: Config) {
 
   const bridge = async (): Promise<HerdrBridge> => (await ctx.get("herdr")?.bridge()) ?? { state: "notInstalled" };
 
+  /** The sessions to list; when they cannot be read the window says so and its terminals work on. */
+  const listed = (projectId: string): { sessions: SessionRow[]; warning: string | null } => {
+    try {
+      return { sessions: sessionRows(ctx.codeLink, ctx.items, projectId), warning: null };
+    } catch (error) {
+      ctx.logger.warn(`code sessions: listing sessions failed: ${error instanceof Error ? error.message : String(error)}`);
+      return { sessions: [], warning: words()("sessionsUnreadable") };
+    }
+  };
+
+  /** Terminals herdr is still opening, by project: shown as starting, never saved. */
+  const pending = new Map<string, Map<string, TerminalRow>>();
+  const savedTerminals = (projectId: string) => stateOf(config.stateFile).terminals?.[projectId] ?? [];
+  const saveTerminals = (projectId: string, list: (TerminalRow & { pane: string })[]) => save(config.stateFile, { terminals: { ...stateOf(config.stateFile).terminals, [projectId]: list } });
+
+  /** The project's terminals; one whose pane herdr no longer has is forgotten. While herdr does not answer, they all stay. */
+  const terminals = async (projectId: string): Promise<TerminalRow[]> => {
+    const herdr = ctx.get("herdr");
+    const saved = savedTerminals(projectId);
+    const alive = herdr ? await Promise.all(saved.map((t) => herdr.paneAlive(t.pane).catch(() => null))) : saved.map(() => null);
+    const kept = saved.filter((_, i) => alive[i] !== false);
+    if (kept.length !== saved.length) saveTerminals(projectId, kept);
+    return [...kept, ...(pending.get(projectId)?.values() ?? [])];
+  };
+
+  /** The project's repositories on this machine and their worktrees; the home folder when it has none here. */
+  const places = async (projectId: string): Promise<TerminalPlace[]> => {
+    let repos: { name: string; path: string | null }[] = [];
+    try {
+      repos = ctx.codeLink.repositoriesOf(projectId);
+    } catch {
+      // No repository to read: the home folder will do.
+    }
+    const found: TerminalPlace[] = [];
+    for (const repo of repos) {
+      if (!repo.path || found.some((p) => p.cwd === repo.path)) continue;
+      found.push({ label: repo.name, cwd: repo.path }, ...(await worktreesOf(repo.path)));
+    }
+    return found.length ? found : [{ label: "~", cwd: os.homedir() }];
+  };
+
   const state = async (projectId: string): Promise<WindowState> => {
     const b = await bridge();
     const setting = terminal();
@@ -121,7 +182,9 @@ function apply(ctx: Context, config: Config) {
       // "auto" lands in herdr once it is installed; only a terminal named otherwise keeps sessions out of it.
       askSwitch: setting !== "herdr" && setting !== "auto" && !stateOf(config.stateFile).asked,
       terminal: setting,
-      sessions: sessionRows(ctx.codeLink, ctx.items, projectId),
+      ...listed(projectId),
+      terminals: await terminals(projectId),
+      places: await places(projectId),
       layout: stateOf(config.stateFile).layouts?.[projectId] ?? fresh()
     };
   };
@@ -155,7 +218,7 @@ function apply(ctx: Context, config: Config) {
   const attach = async (projectId: string, win: Open, cell: string, sessionId: string, cols: number, rows: number) => {
     detach(win, cell);
     const mine = turn(win, cell);
-    const pane = sessionOf(projectId, sessionId)?.herdrPane;
+    const pane = sessionOf(projectId, sessionId)?.herdrPane ?? savedTerminals(projectId).find((t) => t.id === sessionId)?.pane;
     const herdr = ctx.get("herdr");
     if (!pane || !herdr) return post(win, { type: "closed", cell, reason: words()("noTerminal") });
     let stream: TerminalStream;
@@ -183,12 +246,43 @@ function apply(ctx: Context, config: Config) {
     if (result.toast) post(win, { type: "toast", text: result.toast });
   };
 
+  /** A plain shell in a new tab of the project's herdr workspace. It needs nothing of code link: only herdr has to answer. */
+  const newTerminal = async (projectId: string, win: Open, id: string, cwd: string | null) => {
+    const where = cwd && fs.existsSync(cwd) ? cwd : (await places(projectId))[0]!.cwd;
+    const row: TerminalRow = { id, title: path.basename(where) || where, cwd: where, pane: null, startedAt: Date.now() };
+    const starting = pending.get(projectId) ?? new Map<string, TerminalRow>();
+    pending.set(projectId, starting.set(id, row));
+    void refresh(projectId);
+    try {
+      const launched = await ctx.get("herdr")?.launch({ cwd: where, label: row.title, workspace: { key: projectId, label: projectName(projectId) } });
+      if (!launched) return post(win, { type: "toast", text: words()("terminalFailed") });
+      saveTerminals(projectId, [...savedTerminals(projectId), { ...row, pane: launched.paneId }]);
+    } finally {
+      starting.delete(id);
+      await refresh(projectId);
+    }
+  };
+
+  const closeTerminal = async (projectId: string, win: Open, id: string) => {
+    const t = savedTerminals(projectId).find((x) => x.id === id);
+    if (!t) return;
+    for (const [cell, stream] of win.terminals) if (stream.paneId === t.pane) detach(win, cell);
+    const gone = (await ctx.get("herdr")?.closePane(t.pane)) ?? false;
+    if (!gone) return post(win, { type: "toast", text: words()("closeFailed") });
+    saveTerminals(projectId, savedTerminals(projectId).filter((x) => x.id !== id));
+    await refresh(projectId);
+  };
+
   const onMessage = async (projectId: string, win: Open, m: WindowMessage) => {
     switch (m.type) {
       case "attach":
         return attach(projectId, win, m.cell, m.sessionId, m.cols, m.rows);
       case "detach":
         return detach(win, m.cell);
+      case "newTerminal":
+        return newTerminal(projectId, win, m.terminalId, m.cwd);
+      case "closeTerminal":
+        return closeTerminal(projectId, win, m.terminalId);
       case "input":
         return win.terminals.get(m.cell)?.input(m.data);
       case "resize":
