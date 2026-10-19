@@ -16,6 +16,9 @@ export const OpencodeOptions = z.object({
 });
 export type OpencodeOptions = z.infer<typeof OpencodeOptions>;
 
+/** `opencode models` prints one `provider/model` per line; anything else (logs, warnings) is not a model. */
+export const listedModels = (output: string): string[] => output.split("\n").map((line) => line.trim()).filter((line) => /^[\w.-]+\/\S+$/.test(line));
+
 export const opencode: AcpAgent<OpencodeOptions> = {
   id: "opencode",
   title: "OpenCode",
@@ -40,6 +43,16 @@ export const opencode: AcpAgent<OpencodeOptions> = {
   signIn: "run `opencode auth login` to add a provider and its key",
   diagnostics: {
     logs: () => [path.join(process.env.XDG_DATA_HOME?.trim() || path.join(os.homedir(), ".local", "share"), "opencode", "log", "opencode.log")]
+  },
+  // Fills the Model pick before any session has opened; a session's own list replaces it.
+  probe: {
+    args: ["models"],
+    says: (output, catalog) => {
+      const models = listedModels(output);
+      if (models.length && !catalog.models.length) catalog.models = models.map((value) => ({ value }));
+      return null;
+    },
+    reason: ""
   }
 };
 
