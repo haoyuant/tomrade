@@ -594,6 +594,8 @@ export interface EnginePick {
   choices: { value: string; label?: string; searchesWeb?: boolean }[];
   /** Choices are suggestions only — settings may hold any string (e.g. a model id the CLI knows). */
   freeText?: boolean;
+  /** The engine is still asking its agent for the choices; ask again shortly. */
+  pending?: boolean;
 }
 
 /** One real turn on an engine, asked for by the person: does it answer? */

@@ -4,6 +4,7 @@ import { attachedMedia, describeFailure, withRecap, type TurnIO, type TurnInput,
 import { bindTurn, runtimeDirectory, sessionSystem, spawnCli, stopCli, turnPrompt, type Runtime } from "@tomradex/engine-claude-code";
 import type {} from "@tomradex/mcp";
 import { isTomradeTool, policyOf, wrappedTool, type AcpAgent, type AcpOptions, type Catalog, type Policy, type RequestUsage } from "./agent.js";
+import { advertised, choicesOf, optionOf, type Setting } from "./catalog.js";
 import { AcpConnection, AcpError, AUTH_REQUIRED, type AcpPeer } from "./connection.js";
 
 type Json = Record<string, any>;
@@ -17,17 +18,6 @@ const steerText = (text: string) => `${text}\n\n(Sent while you were working. If
 
 /** Kinds that only look; a read-only turn lets them through. */
 const LOOKS = new Set(["read", "search", "think", "fetch"]);
-
-/** Session settings by what they are: agents name them differently but tag them with these categories. */
-const SETTINGS = {
-  mode: { category: "mode", ids: ["mode"] },
-  model: { category: "model", ids: ["model"] },
-  effort: { category: "thought_level", ids: ["reasoning_effort", "effort", "thought_level"] }
-};
-type Setting = keyof typeof SETTINGS;
-
-/** A select's choices, its groups flattened. */
-const choicesOf = (option: Json): Json[] => (option.options ?? []).flatMap((entry: Json) => (Array.isArray(entry.options) ? entry.options : [entry]));
 
 /**
  * The choice a typed value means: its exact value, its name, or — for agents
@@ -45,13 +35,6 @@ export function resolveChoice(option: Json, value: string): string | undefined {
     } catch { return false; }
   })?.value;
 }
-
-/** A choice's name, with a short description such as a credit multiplier. */
-const labelOf = (value: string, name?: string, description?: string | null): string | undefined => {
-  const base = name && name !== value ? name : undefined;
-  if (description && description.length <= 24) return `${base ?? value} · ${description}`;
-  return base;
-};
 
 interface Call { name: string; title: string; kind?: string; args: unknown; at: number; done?: boolean }
 
@@ -83,7 +66,7 @@ export class AcpRuntime implements Runtime {
   private sessionUsage?: RequestUsage;
   private sessionCost?: number;
 
-  constructor(private ctx: Context, private agent: AcpAgent<any>, private catalog: Catalog, input: TurnInput) {
+  constructor(private ctx: Context, private agent: AcpAgent<any>, private catalog: Catalog, input: TurnInput, private learned?: () => void) {
     const directory = runtimeDirectory(input);
     this.token = directory.token; this.cwd = directory.cwd;
   }
@@ -142,8 +125,7 @@ export class AcpRuntime implements Runtime {
   }
 
   private option(setting: Setting): Json | undefined {
-    const { category, ids } = SETTINGS[setting];
-    return this.config.find((option) => option.type === "select" && (option.category === category || ids.includes(option.id)));
+    return optionOf(this.config, setting);
   }
 
   private async setOption(option: Json, value: string): Promise<void> {
@@ -154,13 +136,10 @@ export class AcpRuntime implements Runtime {
 
   /** What the session advertised feeds the picks the next time they are drawn. */
   private learn(): void {
-    const model = this.option("model");
-    const models = model
-      ? choicesOf(model).map((choice) => ({ value: String(choice.value), label: labelOf(String(choice.value), choice.name, choice.description) }))
-      : (this.models?.availableModels ?? []).map((m: Json) => ({ value: String(m.modelId), label: labelOf(String(m.modelId), m.name, m.description) }));
-    if (models.length) this.catalog.models = models;
-    const effort = this.option("effort");
-    if (effort) this.catalog.efforts = choicesOf(effort).map((choice) => ({ value: String(choice.value), label: labelOf(String(choice.value), choice.name) }));
+    const offered = advertised(this.config, this.models);
+    if (!offered.models && !offered.efforts) return;
+    Object.assign(this.catalog, offered);
+    this.learned?.();
   }
 
   /** The agent's own mode sets how much it asks. Only a failure that could leave it asking less than wanted stops the turn. */

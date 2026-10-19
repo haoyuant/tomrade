@@ -92,6 +92,65 @@ describe("an ACP agent as an engine", () => {
     return { io, blocks, deltas, progress };
   };
 
+  describe("the model list before the first turn", () => {
+    const until = async (cond: () => boolean) => { const t0 = Date.now(); while (!cond()) { if (Date.now() - t0 > 10_000) throw new Error("timed out"); await new Promise((r) => setTimeout(r, 20)); } };
+    const LISTED = [{ value: '["fake","small"]', label: "small" }, { value: '["fake","large"]', label: "Large · x2 credits" }];
+    beforeEach(() => {
+      ctx.provide("agent", { settingsOf: () => ({ engines: { fake: { command: bin } } }) } as never);
+      ctx.provide("db", { config: { dir } } as never);
+      process.env.TOMRADE_TEST_LOG = log;
+    });
+    afterEach(() => { delete process.env.TOMRADE_TEST_LOG; });
+
+    it("asks a short session of its own in the background, keeps what it offered, and stops it", async () => {
+      const engine = createAcpEngine(ctx, spec());
+      expect(engine.picks!()[0]!.choices).toEqual([]);
+      expect((await engine.available()).ok).toBe(true);
+      expect(engine.picks!()[0]).toMatchObject({ key: "model", pending: true });
+      await until(() => engine.picks!()[0]!.choices.length > 0);
+      expect(engine.picks!()[0]).toEqual({ key: "model", title: "Model", freeText: true, choices: LISTED });
+      // In Tomrade's own folder, without its tools, and never prompted.
+      const [opened] = sent("session/new");
+      expect(opened.params).toEqual({ cwd: path.join(dir, "acp-models"), mcpServers: [] });
+      expect(sent("session/prompt")).toHaveLength(0);
+      const pid = requests().find((r) => r.spawn)!.spawn;
+      await until(() => { try { process.kill(pid, 0); return false; } catch { return true; } });
+      // Once known, nothing asks again.
+      await engine.available({ fresh: true });
+      expect(requests().filter((r) => r.spawn)).toHaveLength(1);
+      expect(JSON.parse(fs.readFileSync(path.join(dir, "acp-models.json"), "utf8")).fake.models).toEqual(LISTED);
+    });
+
+    it("shows what was kept at once after a restart, without asking", async () => {
+      fs.writeFileSync(path.join(dir, "acp-models.json"), JSON.stringify({ fake: { models: [{ value: "kept/one" }], efforts: [{ value: "high" }] } }));
+      const engine = createAcpEngine(ctx, spec());
+      expect(engine.picks!()).toEqual([
+        { key: "model", title: "Model", freeText: true, choices: [{ value: "kept/one" }] },
+        { key: "effort", title: "Effort", choices: [{ value: "high" }] }
+      ]);
+      await engine.available();
+      expect(fs.existsSync(log)).toBe(false);
+    });
+
+    it("keeps what a turn's session offered", async () => {
+      fs.writeFileSync(path.join(dir, "acp-models.json"), JSON.stringify({ fake: { models: [{ value: "old/one" }] } }));
+      const engine = createAcpEngine(ctx, spec());
+      expect((await engine.turn(turnInput(), turnIO().io)).stop).toBe("end");
+      expect(JSON.parse(fs.readFileSync(path.join(dir, "acp-models.json"), "utf8")).fake.models).toEqual(LISTED);
+    });
+
+    it("leaves the list empty, and does not ask again at once, when the agent cannot answer", async () => {
+      const runs = path.join(dir, "runs");
+      fs.writeFileSync(bin, `#!/bin/sh\n[ "$1" = --version ] && { echo 1.0.0; exit 0; }\necho run >> '${runs}'\nexit 3\n`, { mode: 0o700 });
+      const engine = createAcpEngine(ctx, spec());
+      expect((await engine.available()).ok).toBe(true);
+      await until(() => fs.existsSync(runs) && !engine.picks!()[0]!.pending);
+      await engine.available({ fresh: true });
+      expect(engine.picks!()[0]).toEqual({ key: "model", title: "Model", freeText: true, choices: [] });
+      expect(fs.readFileSync(runs, "utf8").trim().split("\n")).toHaveLength(1);
+    });
+  });
+
   it("keeps one process across turns: streams text, counts tokens, opens the session with Tomrade's tools and instructions", async () => {
     const engine: Engine = createAcpEngine(ctx, spec());
     const { io, blocks, deltas, progress } = turnIO();
