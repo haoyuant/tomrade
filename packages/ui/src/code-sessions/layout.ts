@@ -33,3 +33,21 @@ export const resize = (layout: Layout, splitId: string, ratio: number): Layout =
 
 /** Sessions that are gone from the list leave their cells empty. */
 export const prune = (layout: Layout, known: Set<string>): Layout => leaves(layout).filter((l) => l.sessionId && !known.has(l.sessionId)).reduce((acc, l) => show(acc, l.id, null), layout);
+
+/** The layout's shape alone, as a preset keeps it: every cell empty. */
+export const shape = (layout: Layout): Layout => (layout.type === "leaf" ? { ...layout, sessionId: null } : { ...layout, a: shape(layout.a), b: shape(layout.b) });
+
+/** An id into the first empty cell, in reading order; unchanged when every cell is taken. */
+export function place(layout: Layout, id: string): Layout {
+  const empty = leaves(layout).find((l) => !l.sessionId);
+  return empty ? show(layout, empty.id, id) : layout;
+}
+
+/** A preset's shape with fresh cell ids, refilled in reading order with what the current layout showed; what does not fit is let go. */
+export function applyPreset(current: Layout, preset: Layout, id = nextId): Layout {
+  const renamed = (node: Layout): Layout => (node.type === "leaf" ? { type: "leaf", id: id(), sessionId: null } : { ...node, id: `${id()}s`, a: renamed(node.a), b: renamed(node.b) });
+  return leaves(current)
+    .flatMap((l) => (l.sessionId ? [l.sessionId] : []))
+    .reduce((acc, shown) => place(acc, shown), renamed(shape(preset)));
+}
+

@@ -1,13 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Layout, SessionRow, TerminalPlace, TerminalRow, WindowState } from "@tomradex/code-sessions";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
+import type { Layout, LayoutPreset, SessionRow, TerminalPlace, TerminalRow, WindowState } from "@tomradex/code-sessions";
+import { ContextMenu, ContextMenuActionItem, ContextMenuSub } from "~/components/ui/menu";
 import { interpolate, message } from "~/lib/dicts";
 import { onLook, onState, onToast, send, type Look } from "./bridge";
-import { close, leaves, prune, resize, show, split } from "./layout";
+import { applyPreset, close, leaves, place, prune, resize, show, split } from "./layout";
 import { TerminalCell } from "./TerminalCell";
 
 type Say = (key: string, vars?: Record<string, string | number>) => string;
 
 const ASKED_GRACE_MS = 5000;
+
+/** What can go into a cell by itself: a session with a terminal here that no terminal of the window already shows, and plain terminals. */
+const placeableIds = (state: WindowState): string[] => {
+  const folded = new Set(state.terminals.flatMap((t) => (t.sessionId ? [t.sessionId] : [])));
+  return [...state.sessions.filter((s) => s.pane && live(s) && !folded.has(s.id)).map((s) => s.id), ...state.terminals.filter((t) => t.pane && !t.sessionId).map((t) => t.id)];
+};
 
 const live = (s: SessionRow) => s.state !== "ended" && s.state !== "lost";
 
@@ -129,12 +136,83 @@ function NewTerminal({ places, ready, onOpen, say }: { places: TerminalPlace[]; 
   );
 }
 
-function Cell({ leaf, session, terminal, places, ready, onNewTerminal, focused, only, onFocus, onSplit, onClose, look, say }: { leaf: Extract<Layout, { type: "leaf" }>; session: SessionRow | undefined; terminal: TerminalRow | undefined; places: TerminalPlace[]; ready: boolean; onNewTerminal: (cwd: string) => void; focused: boolean; only: boolean; onFocus: () => void; onSplit: (d: "row" | "column") => void; onClose: () => void; look: Look; say: Say }) {
+/** Saved layouts: apply one, keep the current one under a name, pick the one new windows open with; and the auto-place switch. */
+function Layouts({ presets, defaultPreset, autoPlace, onApply, onSave, say }: { presets: LayoutPreset[]; defaultPreset: string | null; autoPlace: boolean; onApply: (p: LayoutPreset) => void; onSave: (name: string) => void; say: Say }) {
+  const [naming, setNaming] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
+  return (
+    <div className="cs-layouts">
+      <div className="cs-side-head cs-side-sub">
+        <h2>{say("layouts")}</h2>
+        {naming === null && (
+          <button type="button" className="btn btn-secondary btn-xs" data-testid="cs-save-layout" onClick={() => setNaming("")}>
+            {say("saveLayout")}
+          </button>
+        )}
+      </div>
+      {naming !== null && (
+        <form
+          className="cs-layout-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            onSave(naming);
+            setNaming(null);
+          }}
+        >
+          <input autoFocus value={naming} placeholder={say("layoutName")} aria-label={say("layoutName")} onChange={(e) => setNaming(e.target.value)} />
+          <button type="submit" className="btn btn-primary btn-xs">{say("save")}</button>
+          <button type="button" className="btn btn-secondary btn-xs" onClick={() => setNaming(null)}>{say("cancel")}</button>
+        </form>
+      )}
+      <ul className="cs-list">
+        {presets.map((p) => (
+          <li key={p.id} className="cs-preset" data-preset={p.id}>
+            {renaming?.id === p.id ? (
+              <form
+                className="cs-layout-form"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  send({ type: "renamePreset", id: p.id, name: renaming.name });
+                  setRenaming(null);
+                }}
+              >
+                <input autoFocus value={renaming.name} aria-label={say("layoutName")} onChange={(e) => setRenaming({ id: p.id, name: e.target.value })} />
+                <button type="submit" className="btn btn-primary btn-xs">{say("save")}</button>
+              </form>
+            ) : (
+              <>
+                <button type="button" className="link-btn cs-preset-name" title={say("applyLayout")} onClick={() => onApply(p)}>
+                  {p.name}
+                </button>
+                <button type="button" className="icon-btn" data-default={p.id === defaultPreset || undefined} title={p.id === defaultPreset ? say("unsetDefault") : say("setDefault")} aria-label={p.id === defaultPreset ? say("unsetDefault") : say("setDefault")} onClick={() => send({ type: "defaultPreset", id: p.id === defaultPreset ? null : p.id })}>
+                  {p.id === defaultPreset ? "★" : "☆"}
+                </button>
+                <button type="button" className="icon-btn" title={say("rename")} aria-label={say("rename")} onClick={() => setRenaming({ id: p.id, name: p.name })}>✎</button>
+                <button type="button" className="icon-btn" title={say("deleteLayout")} aria-label={say("deleteLayout")} onClick={() => send({ type: "deletePreset", id: p.id })}>×</button>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+      <label className="cs-auto-place">
+        <input type="checkbox" data-testid="cs-auto-place" checked={autoPlace} onChange={(e) => send({ type: "autoPlace", on: e.target.checked })} /> {say("autoPlace")}
+      </label>
+    </div>
+  );
+}
+
+function Cell({ leaf, session, terminal, places, ready, onNewTerminal, focused, only, onFocus, onSplit, onClose, menu, look, say }: { leaf: Extract<Layout, { type: "leaf" }>; session: SessionRow | undefined; terminal: TerminalRow | undefined; places: TerminalPlace[]; ready: boolean; onNewTerminal: (cwd: string) => void; focused: boolean; only: boolean; onFocus: () => void; onSplit: (d: "row" | "column") => void; onClose: () => void; menu: ReactNode; look: Look; say: Say }) {
+  // Right-click on the bar, or on a cell with no terminal: inside a terminal it is the program's own.
+  const withMenu = (node: ReactElement) => (
+    <ContextMenu label={say("cellMenu")} trigger={node}>
+      {menu}
+    </ContextMenu>
+  );
   const act = (type: "continue" | "openWorktree" | "openPr" | "focusHerdr" | "openThread") => session && send({ type, sessionId: session.id });
   const labels = useMemo(() => ({ detached: (reason: string | null) => (reason ? say("detached", { reason }) : say("detachedPlain")), reattach: say("reattach") }), [say]);
   return (
     <div className="cs-cell" data-focused={focused || undefined} data-cell-terminal={terminal?.id} onMouseDownCapture={onFocus}>
-      <div className="cs-cell-bar">
+      {withMenu(<div className="cs-cell-bar">
         <span className="cs-cell-name">{session ? `${session.key ?? ""} ${session.title ?? session.branch}`.trim() : terminal ? `${terminal.title} · ${terminal.cwd}` : say("pick")}</span>
         {terminal?.note && !session && <span className="cs-cell-note" title={terminal.note}>{terminal.note}</span>}
         {terminal && !session && (
@@ -161,18 +239,20 @@ function Cell({ leaf, session, terminal, places, ready, onNewTerminal, focused, 
           <button type="button" className="icon-btn" title={say("splitDown")} aria-label={say("splitDown")} onClick={() => onSplit("column")}>⤓</button>
           <button type="button" className="icon-btn" title={only ? say("clearCell") : say("closeCell")} aria-label={only ? say("clearCell") : say("closeCell")} onClick={onClose}>×</button>
         </span>
-      </div>
+      </div>)}
       {session?.pane || terminal?.pane ? (
         <TerminalCell cell={leaf.id} sessionId={leaf.sessionId!} tokens={look.tokens} font={look.tokens["--font-mono"] ?? ""} labels={labels} />
       ) : terminal ? (
-        <div className="cs-cell-empty">{say("starting")}</div>
+        withMenu(<div className="cs-cell-empty">{say("starting")}</div>)
       ) : session ? (
-        <div className="cs-cell-empty">{session.mode === "run" ? say("runMode") : say("otherMachine")}</div>
+        withMenu(<div className="cs-cell-empty">{session.mode === "run" ? say("runMode") : say("otherMachine")}</div>)
       ) : (
-        <div className="cs-cell-empty">
-          <span>{say("pickOrNew")}</span>
-          <NewTerminal places={places} ready={ready} onOpen={onNewTerminal} say={say} />
-        </div>
+        withMenu(
+          <div className="cs-cell-empty">
+            <span>{say("pickOrNew")}</span>
+            <NewTerminal places={places} ready={ready} onOpen={onNewTerminal} say={say} />
+          </div>
+        )
       )}
     </div>
   );
@@ -234,16 +314,30 @@ export function App() {
   // A terminal just asked for may miss from a state sent before the ask arrived; its cell keeps it a moment.
   const asked = useRef(new Map<string, number>());
   const known = useMemo(() => new Set([...(state?.sessions.map((s) => s.id) ?? []), ...(state?.terminals.map((t) => t.id) ?? [])]), [state?.sessions, state?.terminals]);
+  const current = useRef<Layout | null>(null);
+  // What the first state already listed is not new: only what appears after it is placed.
+  const seen = useRef<Set<string> | null>(null);
+  const change = useCallback((next: Layout) => {
+    current.current = next;
+    setLayout(next);
+    send({ type: "layout", layout: next });
+  }, []);
   useEffect(() => {
     if (!state) return;
     const now = Date.now();
     for (const [id, at] of asked.current) if (known.has(id) || now - at > ASKED_GRACE_MS) asked.current.delete(id);
-    setLayout((current) => prune(current ?? state.layout, new Set([...known, ...asked.current.keys()])));
-  }, [state, known]);
-  const change = useCallback((next: Layout) => {
-    setLayout(next);
-    send({ type: "layout", layout: next });
-  }, []);
+    const pruned = prune(current.current ?? state.layout, new Set([...known, ...asked.current.keys()]));
+    const placeable = placeableIds(state);
+    const fresh = seen.current ? placeable.filter((id) => !seen.current!.has(id)) : [];
+    seen.current = new Set([...(seen.current ?? []), ...placeable]);
+    const shownIds = new Set(leaves(pruned).flatMap((l) => (l.sessionId ? [l.sessionId, state.terminals.find((t) => t.id === l.sessionId)?.sessionId ?? l.sessionId] : [])));
+    const placed = state.autoPlace ? fresh.filter((id) => !shownIds.has(id)).reduce(place, pruned) : pruned;
+    if (placed !== pruned) change(placed);
+    else {
+      current.current = pruned;
+      setLayout(pruned);
+    }
+  }, [state, known, change]);
 
   const say: Say = useCallback((key, vars) => interpolate(message(locale, `codeSessions.${key}`), vars), [locale]);
   const shown: Look = look ?? { theme: "", dark: false, tokens: {}, locale };
@@ -266,6 +360,41 @@ export function App() {
     if (holding) return setFocused(holding.id);
     change(show(layout, target.id, s.id));
     setFocused(target.id);
+  };
+  // The cell menu's "connect": one session or terminal into that cell.
+  const connect = (cell: string, id: string) => {
+    const s = byId.get(id);
+    if (s?.mode === "run" && !s.pane) return send({ type: "openThread", sessionId: s.id });
+    const holding = cells.find((c) => c.sessionId && terminalsById.get(c.sessionId)?.sessionId === id);
+    if (holding) return setFocused(holding.id);
+    change(show(layout, cell, id));
+    setFocused(cell);
+  };
+  const cellMenu = (node: Extract<Layout, { type: "leaf" }>): ReactNode => {
+    const terminals = state.terminals.filter((t) => !t.sessionId && t.pane);
+    const choices = [...state.sessions.filter(live), ...terminals];
+    return (
+      <>
+        <ContextMenuSub icon={null} name={say("connect")}>
+          {choices.length ? (
+            choices.map((c) =>
+              "branch" in c ? (
+                <ContextMenuActionItem key={c.id} icon={c.needsYou ? "●" : null} name={`${c.key ?? c.branch}${c.title ? ` ${c.title}` : ""}`} onSelect={() => connect(node.id, c.id)} />
+              ) : (
+                <ContextMenuActionItem key={c.id} icon={null} name={`${say("terminal")} · ${c.title}`} onSelect={() => connect(node.id, c.id)} />
+              )
+            )
+          ) : (
+            <ContextMenuActionItem icon={null} name={say("nothingToConnect")} disabled onSelect={() => undefined} />
+          )}
+        </ContextMenuSub>
+        <ContextMenuActionItem icon={null} name={say("newTerminal")} disabled={!ready} onSelect={() => openTerminal(layout, node.id, state.places[0]!.cwd)} />
+        <ContextMenuActionItem icon={null} name={say("detach")} disabled={!node.sessionId} onSelect={() => change(show(layout, node.id, null))} />
+        <ContextMenuActionItem icon={null} name={say("splitRight")} onSelect={() => change(split(layout, node.id, "row").layout)} />
+        <ContextMenuActionItem icon={null} name={say("splitDown")} onSelect={() => change(split(layout, node.id, "column").layout)} />
+        <ContextMenuActionItem icon={null} name={cells.length === 1 ? say("clearCell") : say("closeCell")} onSelect={() => change(close(layout, node.id))} />
+      </>
+    );
   };
   const pickTerminal = (t: TerminalRow) => {
     change(show(layout, target.id, t.id));
@@ -307,6 +436,7 @@ export function App() {
           setFocused(next.created);
         }}
         onClose={() => change(close(layout, node.id))}
+        menu={cellMenu(node)}
         look={shown}
         say={say}
       />
@@ -324,6 +454,17 @@ export function App() {
           </button>
         </div>
         <TerminalList terminals={state.terminals} active={active} onPick={pickTerminal} say={say} />
+        <Layouts
+          presets={state.presets}
+          defaultPreset={state.defaultPreset}
+          autoPlace={state.autoPlace}
+          onApply={(p) => {
+            change(applyPreset(layout, p.layout));
+            setFocused(null);
+          }}
+          onSave={(name) => send({ type: "savePreset", name, layout })}
+          say={say}
+        />
       </aside>
       <main className="cs-main">
         <Banner state={state} say={say} />

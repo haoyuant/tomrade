@@ -12,7 +12,8 @@ import type {} from "@tomradex/settings";
 import { MCP_AGENT, type CodeLink } from "@tomradex/code-link";
 import type { DesktopSurface } from "@tomradex/desktop-surface";
 import type { HerdrBridge, TerminalStream } from "@tomradex/herdr";
-import type { Layout, SessionRow, TerminalPlace, TerminalRow, WindowMessage, WindowPost, WindowState } from "./protocol.js";
+import { randomUUID } from "node:crypto";
+import type { Layout, LayoutPreset, SessionRow, TerminalPlace, TerminalRow, WindowMessage, WindowPost, WindowState } from "./protocol.js";
 import { CODE_SESSIONS_WORDS } from "./words.js";
 
 export type * from "./protocol.js";
@@ -35,6 +36,9 @@ interface Saved {
   layouts?: Record<string, Layout>;
   /** Each project's plain terminals, by the herdr pane they run in. */
   terminals?: Record<string, SavedTerminal[]>;
+  presets?: LayoutPreset[];
+  defaultPreset?: string | null;
+  autoPlace?: boolean;
 }
 
 type SavedTerminal = Omit<TerminalRow, "sessionId" | "note"> & { pane: string };
@@ -76,14 +80,29 @@ async function worktreesOf(repo: string): Promise<TerminalPlace[]> {
 
 const fresh = (): Layout => ({ type: "leaf", id: "c1", sessionId: null });
 
-const stateOf = (file: string | undefined): Saved => {
-  if (!file) return {};
+/** Whether a stored value is a layout the window can draw. */
+export function isLayout(value: unknown): value is Layout {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  if (typeof v.id !== "string") return false;
+  if (v.type === "leaf") return v.sessionId === null || typeof v.sessionId === "string";
+  return v.type === "split" && (v.direction === "row" || v.direction === "column") && typeof v.ratio === "number" && isLayout(v.a) && isLayout(v.b);
+}
+
+const emptied = (layout: Layout): Layout => (layout.type === "leaf" ? { ...layout, sessionId: null } : { ...layout, a: emptied(layout.a), b: emptied(layout.b) });
+
+/** The saved state, and whether the file is there but cannot be read: then it starts over, and the window says so. */
+const readState = (file: string | undefined): { saved: Saved; broken: boolean } => {
+  if (!file || !fs.existsSync(file)) return { saved: {}, broken: false };
   try {
-    return JSON.parse(fs.readFileSync(file, "utf8")) as Saved;
+    const parsed: unknown = JSON.parse(fs.readFileSync(file, "utf8"));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? { saved: parsed as Saved, broken: false } : { saved: {}, broken: true };
   } catch {
-    return {};
+    return { saved: {}, broken: true };
   }
 };
+
+const stateOf = (file: string | undefined): Saved => readState(file).saved;
 
 const save = (file: string | undefined, patch: Saved) => {
   if (!file) return;
@@ -236,6 +255,11 @@ function apply(ctx: Context, config: Config) {
     const b = await bridge();
     const shown = listed(projectId);
     const setting = terminal();
+    const { saved, broken } = readState(config.stateFile);
+    const remembered = saved.layouts?.[projectId];
+    const presets = (saved.presets ?? []).filter((p) => p && typeof p.id === "string" && typeof p.name === "string" && isLayout(p.layout));
+    const preset = presets.find((p) => p.id === saved.defaultPreset);
+    const warning = [shown.warning, broken || (remembered !== undefined && !isLayout(remembered)) ? words()("stateUnreadable") : null].filter(Boolean).join(" · ") || null;
     return {
       projectId,
       projectName: projectName(projectId),
@@ -243,12 +267,16 @@ function apply(ctx: Context, config: Config) {
       bridge: b,
       install: b.state === "notInstalled" ? await ctx.codeLink.herdrInstall() : null,
       // "auto" lands in herdr once it is installed; only a terminal named otherwise keeps sessions out of it.
-      askSwitch: setting !== "herdr" && setting !== "auto" && !stateOf(config.stateFile).asked,
+      askSwitch: setting !== "herdr" && setting !== "auto" && !saved.asked,
       terminal: setting,
       ...shown,
+      warning,
       terminals: await fold(projectId, shown.sessions, await terminals(projectId)),
       places: await places(projectId),
-      layout: stateOf(config.stateFile).layouts?.[projectId] ?? fresh()
+      layout: isLayout(remembered) ? remembered : preset ? preset.layout : fresh(),
+      presets,
+      defaultPreset: preset?.id ?? null,
+      autoPlace: saved.autoPlace !== false
     };
   };
 
@@ -257,6 +285,11 @@ function apply(ctx: Context, config: Config) {
     if (!win || win.closed || !win.surface) return;
     const next = await state(projectId);
     if (!win.closed) win.surface.setState(next);
+  };
+
+  // Presets and the auto-place switch belong to every project's window.
+  const refreshAll = async () => {
+    await Promise.all([...open.keys()].map((projectId) => refresh(projectId)));
   };
 
   const post = (win: Open, message: WindowPost) => {
@@ -346,6 +379,26 @@ function apply(ctx: Context, config: Config) {
         return newTerminal(projectId, win, m.terminalId, m.cwd);
       case "closeTerminal":
         return closeTerminal(projectId, win, m.terminalId);
+      case "savePreset": {
+        if (!isLayout(m.layout)) return;
+        const preset = { id: randomUUID(), name: m.name.trim() || words()("presetName"), layout: emptied(m.layout) };
+        save(config.stateFile, { presets: [...(stateOf(config.stateFile).presets ?? []), preset] });
+        return refreshAll();
+      }
+      case "renamePreset":
+        save(config.stateFile, { presets: (stateOf(config.stateFile).presets ?? []).map((p) => (p.id === m.id && m.name.trim() ? { ...p, name: m.name.trim() } : p)) });
+        return refreshAll();
+      case "deletePreset": {
+        const saved = stateOf(config.stateFile);
+        save(config.stateFile, { presets: (saved.presets ?? []).filter((p) => p.id !== m.id), ...(saved.defaultPreset === m.id ? { defaultPreset: null } : {}) });
+        return refreshAll();
+      }
+      case "defaultPreset":
+        save(config.stateFile, { defaultPreset: m.id });
+        return refreshAll();
+      case "autoPlace":
+        save(config.stateFile, { autoPlace: m.on });
+        return refreshAll();
       case "input":
         return win.terminals.get(m.cell)?.input(m.data);
       case "resize":
@@ -355,6 +408,7 @@ function apply(ctx: Context, config: Config) {
       case "mouse":
         return win.terminals.get(m.cell)?.mouse(m);
       case "layout":
+        if (!isLayout(m.layout)) return;
         return save(config.stateFile, { layouts: { ...stateOf(config.stateFile).layouts, [projectId]: m.layout } });
       case "continue":
         return command(projectId, win, "code-link.start-terminal", m.sessionId);
