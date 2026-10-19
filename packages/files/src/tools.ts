@@ -172,7 +172,7 @@ export function registerTools(ctx: Context, files: Files): void {
         "Save text into the project's Files store as a new version, creating folders as needed. Returns the file's stable fileId and the immutable versionId of what was saved — pass both to add_delivery_resource to make it a ticket's material or output artifact. Give itemId for a ticket's own files: the path is then placed in the ticket's workstream folder, where its artifacts belong. Paths are relative and no segment may start with a dot.",
       input: z.object({
         projectId: z.string().optional(),
-        itemId: z.string().optional().describe("The ticket the file is for; its workstream folder becomes the path's root"),
+        itemId: z.string().optional().describe("The ticket the file is for — its id, or its key such as TOM-12; its workstream folder becomes the path's root"),
         path: z.string().describe("Where to save, e.g. docs/brief.md — or brief.md inside the ticket's workstream folder when itemId is given"),
         content: z.string(),
         message: z.string().optional().describe("What changed, shown in the file's history")

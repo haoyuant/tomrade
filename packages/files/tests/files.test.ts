@@ -126,6 +126,11 @@ describe("ctx.files", { timeout: 30_000 }, () => {
       const inv = { by: "ai:test" as const, projectId: project.id };
       const written = (await ctx.tools.execute("write_file", { itemId: ticket.id, path: "brief.md", content: "# Brief" }, inv)) as { path: string };
       expect(written.path).toBe("Web - App/brief.md");
+      const byKey = (await ctx.tools.execute("write_file", { itemId: ticket.key.toLowerCase(), path: "by-key.md", content: "keyed" }, inv)) as { path: string };
+      expect(byKey.path).toBe("Web - App/by-key.md");
+      const num = ticket.key.split("-").pop();
+      await expect(ctx.tools.execute("write_file", { itemId: `${ticket.key.split("-")[0]}-9999`, path: "x.md", content: "x" }, inv)).rejects.toThrow(/9999/);
+      await expect(ctx.tools.execute("write_file", { itemId: `OTHER-${num}`, path: "x.md", content: "x" }, inv)).rejects.toThrow(/OTHER/);
       const elsewhere = (await ctx.tools.execute("write_file", { path: "notes/loose.md", content: "loose" }, inv)) as { path: string };
       expect(elsewhere.path).toBe("notes/loose.md");
 

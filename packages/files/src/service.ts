@@ -1096,11 +1096,21 @@ export class Files extends Service {
    * workstream starts a new folder and moves nothing.
    */
   folderFor(projectId: string, itemId: string): string {
-    const item = this.ctx.items.get(projectId, itemId);
-    if (!item) throw new NotFoundError(itemId);
+    const item = this.ticketOf(projectId, itemId);
     const board = this.ctx.boards.get(projectId, item.boardId);
     if (!board) throw new NotFoundError(item.boardId);
     return folderName(board.name);
+  }
+
+  /** Agents name tickets by key as often as by id, like every other item tool accepts. */
+  private ticketOf(projectId: string, idOrKey: string): Item {
+    const byId = this.ctx.items.get(projectId, idOrKey);
+    if (byId) return byId;
+    const key = idOrKey.trim();
+    const byKey = /^[A-Za-z][A-Za-z0-9]*-\d+$/.test(key) ? this.ctx.items.getByKey(projectId, key) : null;
+    // getByKey matches the number alone, so OTHER-12 must not land on TOM-12
+    if (!byKey || byKey.key.toUpperCase() !== key.toUpperCase()) throw new NotFoundError(idOrKey);
+    return byKey;
   }
 
   /** `path` inside the ticket's workstream folder. */
