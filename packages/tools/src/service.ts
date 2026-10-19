@@ -305,7 +305,15 @@ export class Tools extends Service {
     if (!parsed.success) throw new ToolInputError(name, parsed.error.issues);
     const call: ToolCall = { name, args: parsed.data, by: invocation.by, projectId: invocation.projectId, run: invocation.run };
     try {
-      const gated = () => this.ctx.waterfall("tools/pre-execute", call, async () => tool.execute(parsed.data, invocation));
+      const gated = () =>
+        this.ctx.waterfall("tools/pre-execute", call, async () => {
+          if (call.args === parsed.data) return tool.execute(parsed.data, invocation);
+          // A policy replaced the arguments: they answer to the tool's input as the caller's did.
+          const again = strictInput(tool.input).safeParse(call.args ?? {});
+          if (!again.success) throw new ToolInputError(name, again.error.issues);
+          call.args = again.data;
+          return tool.execute(again.data, invocation);
+        });
       // Writes made anywhere under this call carry the run id in the oplog.
       const result = await (invocation.run ? writeContext.run({ runId: invocation.run.id, author: invocation.by }, gated) : gated());
       this.ctx.emit("tools/result", call, { ok: true, result });

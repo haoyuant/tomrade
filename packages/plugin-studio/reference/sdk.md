@@ -47,7 +47,7 @@ await ctx.tools.register(defineTool({
   execute: async ({ projectId }, inv) => { const pid = requireProjectId(`${ns}_something`, projectId, inv); … }
 }));
 ```
-`inv` is `{ projectId?, runId?, author }`. `ctx.tools.call(name, args, {projectId})` calls another tool. `ctx.tools.gate(call => { if (…) throw new Error("why") })` refuses calls.
+`inv` is `{ projectId?, runId?, author }`. `ctx.tools.call(name, args, {projectId})` calls another tool. `ctx.tools.gate(call => { if (…) throw new Error("why") })` refuses calls; SDK 0.2.12 (`engines.sdk` `^0.2.12`): return `{ args }` to go on with other arguments, or `{ result }` to answer in the tool's place. `ctx.items.gate(write => { if (…) throw new Error("why") })` refuses any write before it lands (`{ projectId, entity, op, id, by, via, before, after, patch }`); it must answer at once — never `async`.
 
 ## contributions — what the person sees
 - `command({ id, title, group?, run: async ({projectId, itemId}) => ({ toast }) })` — palette; runs as the person.

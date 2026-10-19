@@ -89,3 +89,29 @@ it("gives a web search provider the app's web search module, so the scenario can
   expect(result.checks.filter((c) => !c.ok)).toEqual([]);
   expect(result.checks.map((c) => c.name)).toEqual(expect.arrayContaining(["loads", "searches through the provider"]));
 });
+
+it("puts a policy plugin's write gate and tool gate in front of the sandbox's writes and tool calls", async () => {
+  const plugin = definePlugin({
+    inject: ["items", "tools"],
+    async apply(ctx) {
+      await ctx.items.gate((write) => {
+        if ((write.patch as { title?: string } | null)?.title === "") throw new Error("demo: a title cannot be empty");
+      });
+      await ctx.tools.gate((call) => (call.name === "count_items" ? { result: 42 } : undefined));
+    }
+  });
+  const result = await run(plugin, async (t: never) => {
+    const s = t as { createItem(title: string): { id: string }; updateItem(id: string, patch: Record<string, unknown>): unknown; tool(name: string, args?: unknown): Promise<unknown>; check(n: string, ok: boolean, d?: string): void };
+    const item = s.createItem("Named");
+    let refused = "";
+    try {
+      s.updateItem(item.id, { title: "" });
+    } catch (error) {
+      refused = (error as Error).message;
+    }
+    s.check("write refused", refused.includes("cannot be empty"), refused);
+    s.check("tool answered by the gate", (await s.tool("count_items")) === 42);
+  });
+  expect(result.checks.filter((c) => !c.ok)).toEqual([]);
+  expect(result.checks.map((c) => c.name)).toEqual(expect.arrayContaining(["write refused", "tool answered by the gate"]));
+});

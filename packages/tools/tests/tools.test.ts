@@ -109,6 +109,22 @@ describe("tool registry", () => {
     expect(outcomes).toEqual([false, true]);
   });
 
+  it("a policy on tools/pre-execute may replace the arguments, which the tool's input checks again", async () => {
+    const { ctx } = await fresh({ plugins: [Tools] });
+    ctx.tools.register(defineTool({ name: "echo", title: "Echo", description: "Echo the input.", input: z.object({ text: z.string() }), execute: ({ text }) => text }));
+    let replacement: unknown = { text: "rewritten" };
+    ctx.on("tools/pre-execute", (call, next) => {
+      call.args = replacement;
+      return next();
+    });
+    const seen: unknown[] = [];
+    ctx.on("tools/result", (call) => seen.push(call.args));
+    expect(await ctx.tools.execute("echo", { text: "hi" }, { by: "ai:test" })).toBe("rewritten");
+    expect(seen).toEqual([{ text: "rewritten" }]);
+    replacement = { text: 42 };
+    await expect(ctx.tools.execute("echo", { text: "hi" }, { by: "ai:test" })).rejects.toBeInstanceOf(ToolInputError);
+  });
+
   it("a plugin's tools are removed when it unloads, and a name cannot be taken twice", async () => {
     const { ctx } = await fresh({ plugins: [Tools] });
     const echo = defineTool({ name: "echo", title: "Echo", description: "Echo the input.", input: z.object({ text: z.string() }), execute: ({ text }) => text });
