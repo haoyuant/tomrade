@@ -1607,12 +1607,17 @@ description, options } } } }` gives the card in Chinese, as built-ins do.
 `ctx.settings.locale()` is the language now, a BCP 47 tag: `"en"`, `"zh"`, one
 of the other languages the app ships, or one a [language pack](#languages)
 adds (SDK 0.2.8; before, only `"en"` or `"zh"`). It is a setting, so
-`settings.changed` fires when the person switches it. Titles the app draws —
+`settings.changed` fires when the person switches it. Every plugin may call
+`locale()` and hear `settings.changed`, whether or not it names `settings` in
+`inject`. Titles the app draws —
 commands and their group, status item and section titles, sidebar modules —
 take a `Localized`: a string, or `{ en, zh, … }` keyed by tag and picked each
-time it is shown, English where the language has no entry.
+time it is shown: the closest language the plugin wrote, as Tomrade picks its
+own (`pickLanguage`: same language and script, so zh-TW finds zh-Hant and never
+zh), English where it wrote none.
 Text a callback returns (a status item's `text` and `menu`, a surface's state)
-is the plugin's to put in `locale()`.
+is the plugin's to put in `locale()`; `wordsFor(await ctx.settings.locale(),
+{ en, zh, … })` picks from the plugin's own words the same way.
 
 A section has a **scope**. `machine` (the default) stays in
 `<userData>/settings.json`: credentials, paths, binaries. `user` follows the
