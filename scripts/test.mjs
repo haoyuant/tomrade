@@ -1,4 +1,5 @@
 // `pnpm test`: runs vitest on a node whose launches are fast (docs/testing.md).
+// `pnpm test:related` (`--related`): only the tests that reach the files changed against origin/main.
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -48,7 +49,9 @@ const alive = (pid) => {
 };
 
 // A path or a file name narrows the run to part of the suite, which needs no lock.
-const narrowed = process.argv.slice(2).some((arg) => !arg.startsWith("-") && (arg.includes("/") || arg.includes(".") || fs.existsSync(path.resolve(root, arg))));
+const related = process.argv[2] === "--related";
+const args = process.argv.slice(related ? 3 : 2);
+const narrowed = related || args.some((arg) => !arg.startsWith("-") && (arg.includes("/") || arg.includes(".") || fs.existsSync(path.resolve(root, arg))));
 
 async function takeLock() {
   let said = false;
@@ -109,13 +112,62 @@ probe.unref();
 
 // The node's own directory goes first on PATH, so fakes spawned as plain `node` use it too.
 const env = { ...process.env, PATH: [path.dirname(node.bin), process.env.PATH].filter(Boolean).join(path.delimiter) };
-const child = spawn(node.bin, [path.join(root, "node_modules/vitest/vitest.mjs"), "run", ...process.argv.slice(2)], { cwd: root, env, stdio: "inherit" });
-for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => child.kill(sig));
-child.on("exit", (code, signal) => {
-  clearTimeout(slow);
-  process.exit(signal ? 1 : (code ?? 1));
-});
-child.on("error", (err) => {
-  console.error(`[test] could not start ${node.bin}: ${err.message}`);
-  process.exit(1);
-});
+
+/** Runs vitest with these arguments; with `look`, `found` says whether it had a test file to run (its output is piped to tell). */
+function vitest(argv, look = false) {
+  return new Promise((resolve) => {
+    const child = spawn(node.bin, [path.join(root, "node_modules/vitest/vitest.mjs"), ...argv], { cwd: root, env, stdio: ["inherit", look ? "pipe" : "inherit", "inherit"] });
+    let found = true;
+    child.stdout?.on("data", (chunk) => {
+      if (/No test files found/.test(String(chunk))) found = false;
+      process.stdout.write(chunk);
+    });
+    const stop = (sig) => child.kill(sig);
+    for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, stop);
+    child.on("exit", (code, signal) => resolve({ code: signal ? 1 : (code ?? 1), found }));
+    child.on("error", (err) => {
+      console.error(`[test] could not start ${node.bin}: ${err.message}`);
+      resolve({ code: 1, found });
+    });
+  });
+}
+
+const lines = (cmd) => {
+  const r = spawnSync("git", cmd, { cwd: root, encoding: "utf8" });
+  return r.status === 0 ? r.stdout.split("\n").filter(Boolean) : [];
+};
+
+/** Files this branch changed against origin/main, committed or not, that still exist. */
+function changedFiles() {
+  const base = lines(["merge-base", "origin/main", "HEAD"])[0];
+  if (!base) {
+    console.error("[test] no merge base with origin/main; fetch it first");
+    process.exit(1);
+  }
+  const all = [...lines(["diff", "--name-only", base]), ...lines(["ls-files", "--others", "--exclude-standard"])];
+  return [...new Set(all)].filter((f) => fs.lstatSync(path.join(root, f), { throwIfNoEntry: false })?.isFile());
+}
+
+let code;
+if (!related) code = (await vitest(["run", ...args])).code;
+else {
+  const files = changedFiles();
+  if (!files.length) {
+    console.log("[test] nothing changed against origin/main");
+    code = 0;
+  } else {
+    console.log(`[test] related to ${files.length} changed file(s)`);
+    const first = await vitest(["related", "--run", "--passWithNoTests", ...args, ...files], true);
+    code = first.code;
+    if (!first.found) {
+      // Nothing imports the change statically (a script, a fixture, a config): run the tests of the packages it is in.
+      const dirs = [...new Set(files.map((f) => f.split("/").slice(0, 2).join("/")))].map((d) => `${d}/tests`).filter((d) => fs.existsSync(path.join(root, d)));
+      if (dirs.length) {
+        console.log(`[test] no test imports those files; running ${dirs.join(", ")}`);
+        code = (await vitest(["run", ...args, ...dirs])).code;
+      } else console.log("[test] no test imports those files, and no package tests to fall back on");
+    }
+  }
+}
+clearTimeout(slow);
+process.exit(code);

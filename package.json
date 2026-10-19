@@ -14,6 +14,7 @@
     "build": "tsc -b && pnpm --filter @tomradex/ui build",
     "typecheck": "tsc -b && pnpm --filter @tomradex/ui typecheck",
     "test": "node scripts/test.mjs",
+    "test:related": "node scripts/test.mjs --related",
     "test:ui": "pnpm --filter @tomrade/desktop test:ui",
     "rebuild:desktop": "pnpm --filter @tomrade/desktop exec electron-rebuild -f -w better-sqlite3",
     "build:backend": "tsc -b",

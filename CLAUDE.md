@@ -13,6 +13,7 @@ Local-first backlog workbench: an Electron app (`apps/desktop`) with a React UI 
 - `pnpm install` — needed once per fresh worktree
 - `pnpm typecheck` — `tsc -b` for the backend, then the UI
 - `pnpm test` — vitest across packages, on a fast-spawning node (`TOMRADE_TEST_NODE`, else an adhoc-signed one such as Homebrew's; see `docs/testing.md`)
+- `pnpm test:related` — only the tests that reach the files changed against `origin/main` (committed or not); falls back to the touched packages' tests
 - `pnpm test:ui` — Electron UI regression harness (slow; has a known flaky baseline)
 - `pnpm dev` — run the desktop app
 
@@ -22,6 +23,7 @@ Local-first backlog workbench: an Electron app (`apps/desktop`) with a React UI 
 - Every user-facing string goes through `t(...)` with both en and zh entries.
 - Minimal comments: short why-comments only.
 - Commit messages name the ticket key (e.g. `TOM-42: …`).
+- On a ticket, iterate with `pnpm test:related`; run the full `pnpm test` once before opening the pull request, and put that run's node and **Failures by kind** block in the PR body.
 
 ## Tomrade
 
