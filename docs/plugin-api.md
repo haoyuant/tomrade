@@ -24,6 +24,14 @@ There are two kinds of plugin, and this document is the contract for both:
   SDK's contract version is `SDK_CONTRACT`; a plugin states the range it needs
   in `engines.sdk` and is refused, with the reason, by a Tomrade outside it.
   Until `1.0` a minor version may break.
+- `@tomradex/plugin-sdk` is not bundled into a plugin: `tomrade-plugin build`
+  leaves it out, and the plugin imports the copy that comes with the Tomrade it
+  runs in. A value the SDK added in some version (marked "SDK 0.2.x" here, and
+  listed with it in `SDK_EXPORTS`) exists only in a Tomrade from that version
+  on, so a plugin that imports one must keep `engines.sdk` at that version or
+  later — `wordsFor` needs `^0.2.9` — or a Tomrade its range still accepts fails
+  to load it. `tomrade-plugin check` blocks such an import. Types are erased
+  at build time and need nothing.
 - What this file describes is what we promise. Anything reachable but not
   written here — table shapes, private methods, event argument internals — may
   change without notice.
@@ -1635,11 +1643,15 @@ adds (SDK 0.2.8; before, only `"en"` or `"zh"`). It is a setting, so
 commands and their group, status item and section titles, sidebar modules —
 take a `Localized`: a string, or `{ en, zh, … }` keyed by tag and picked each
 time it is shown: the closest language the plugin wrote, as Tomrade picks its
-own (`pickLanguage`: same language and script, so zh-TW finds zh-Hant and never
-zh), English where it wrote none.
+own (same language and script, so zh-TW finds zh-Hant and never zh), English
+where it wrote none. A Tomrade before SDK 0.2.9 takes only the exact tag.
 Text a callback returns (a status item's `text` and `menu`, a surface's state)
-is the plugin's to put in `locale()`; `wordsFor(await ctx.settings.locale(),
-{ en, zh, … })` picks from the plugin's own words the same way.
+is the plugin's to put in `locale()`. `wordsFor(await ctx.settings.locale(),
+{ en, zh, … })` picks from the plugin's own words the same way, and
+`pickLanguage(locale, tags)` names the tag it picks (both SDK 0.2.9, so
+`engines.sdk` `^0.2.9`, see [Stability](#stability)). A plugin that still loads
+in an older Tomrade picks the words itself, e.g. its `zh` words for `"zh"` and
+English for anything else.
 
 A section has a **scope**. `machine` (the default) stays in
 `<userData>/settings.json`: credentials, paths, binaries. `user` follows the
