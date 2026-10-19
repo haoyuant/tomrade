@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { ListRootsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { fresh, settle } from "@tomradex/testkit";
 import { Tools, defineTool } from "@tomradex/tools";
@@ -68,6 +69,22 @@ describe("the MCP surface", () => {
       expect(closed).toEqual([seen[0]]);
     } finally { await a.close(); await b.close(); await ctx.fiber.dispose(); }
   });
+  it("hands a tool the folders a client declares as its roots, and nothing when it declares none", async () => {
+    const { ctx } = await fresh({ plugins: [Tools, [Mcp, { port: 0 }]] });
+    await settle();
+    ctx.tools.register(defineTool({ name: "where", title: "Where", description: "test", input: z.object({}), execute: async (_args, inv) => ({ roots: inv.roots ? await inv.roots() : null }) }));
+    const rooted = new Client({ name: "rooted", version: "0" }, { capabilities: { roots: {} } });
+    rooted.setRequestHandler(ListRootsRequestSchema, () => ({ roots: [{ uri: "file:///tmp/work%20tree", name: "work" }] }));
+    const plain = new Client({ name: "plain", version: "0" });
+    const text = (r: unknown) => JSON.parse((r as { content: { text: string }[] }).content[0]!.text);
+    try {
+      await rooted.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.url!)));
+      await plain.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.url!)));
+      expect(text(await rooted.callTool({ name: "where", arguments: {} }))).toEqual({ roots: ["/tmp/work tree"] });
+      expect(text(await plain.callTool({ name: "where", arguments: {} }))).toEqual({ roots: null });
+    } finally { await rooted.close(); await plain.close(); await ctx.fiber.dispose(); }
+  });
+
   it("logs a slow tool call by name and time, never its arguments", async () => {
     const { ctx } = await fresh({ plugins: [Tools, [Mcp, { port: 0, slowCallMs: 0 }]] });
     await settle();

@@ -112,6 +112,47 @@ describe("ctx.files", { timeout: 30_000 }, () => {
     }
   });
 
+  it("uploads a binary file from the caller's working directory or as base64, and refuses anything else", async () => {
+    const { ctx, items, project, board } = await machine();
+    try {
+      const ticket = items.create({ projectId: project.id, boardId: board.id, title: "Show the design", workType: "general", by: "human" });
+      const work = path.join(root, `work-${n++}`);
+      fs.mkdirSync(path.join(work, "shots"), { recursive: true });
+      const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 1, 2, 255, 254]);
+      fs.writeFileSync(path.join(work, "shots", "table.png"), png);
+      const outside = path.join(root, `secret-${n++}.png`);
+      fs.writeFileSync(outside, png);
+      const client = { by: "ai:test" as const, projectId: project.id, roots: async () => [work] };
+      type Saved = { fileId: string; versionId: string; path: string; markdown: string };
+
+      const fromDisk = (await ctx.tools.execute("upload_file", { itemId: ticket.key, sourcePath: "shots/table.png" }, client)) as Saved;
+      expect(fromDisk.path).toBe(`${board.name}/table.png`);
+      expect(fromDisk.markdown).toBe(`![table.png](tomrade-file://${fromDisk.fileId})`);
+      const read = await ctx.files.read(project.id, fromDisk.path);
+      expect(Buffer.from(read!.body, read!.encoding === "base64" ? "base64" : "utf8").equals(png)).toBe(true);
+      expect((await ctx.files.readVersion(project.id, { fileId: fromDisk.fileId, versionId: fromDisk.versionId }))?.path).toBe(fromDisk.path);
+
+      const inline = (await ctx.tools.execute("upload_file", { path: "shots/inline.png", base64: png.toString("base64") }, { by: "ai:test" as const, projectId: project.id })) as Saved;
+      const inlineRead = await ctx.files.read(project.id, inline.path);
+      expect(Buffer.from(inlineRead!.body, "base64").equals(png)).toBe(true);
+
+      const refuse = (args: Record<string, unknown>, why: RegExp, inv: object = client) =>
+        expect(ctx.tools.execute("upload_file", args, { by: "ai:test" as const, projectId: project.id, ...inv })).rejects.toThrow(why);
+      await refuse({ sourcePath: outside }, /outside the working directory/);
+      await refuse({ sourcePath: path.join(work, "..", path.basename(outside)) }, /outside the working directory/);
+      await refuse({ sourcePath: "shots/table.png" }, /declares no working directory/, { roots: undefined });
+      await refuse({ sourcePath: "shots/table.png", base64: "AA==" }, /exactly one/);
+      await refuse({ base64: "AA==" }, /Give a path/);
+      await refuse({ path: "notes.md", base64: Buffer.from("# hi").toString("base64") }, /write_file/);
+      fs.writeFileSync(path.join(work, "big.png"), Buffer.alloc(8 * 1024 * 1024 + 1));
+      await refuse({ sourcePath: "big.png" }, /larger than 8 MB/);
+      fs.symlinkSync(outside, path.join(work, "link.png"));
+      await refuse({ sourcePath: "link.png" }, /outside the working directory/);
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+
   it("lands a ticket's files in a folder named after its workstream", async () => {
     const { ctx, items, boards, project, board } = await machine();
     try {

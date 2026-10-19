@@ -1,8 +1,12 @@
+import fs from "node:fs";
+import nodePath from "node:path";
 import type { Context } from "cordis";
 import { z } from "zod";
-import { defineTool, requireProjectId } from "@tomradex/tools";
+import { defineTool, requireProjectId, type ToolInvocation } from "@tomradex/tools";
 import { formatSize, shortDate } from "./agent-index.js";
+import { BINARY_LIMIT } from "./git-store.js";
 import { listingAt } from "./git-sync.js";
+import { mimeOf } from "./mime.js";
 import type { Files } from "./service.js";
 import type { FileContent, FileEntry, FilesAgentPolicy } from "./types.js";
 
@@ -12,6 +16,32 @@ const SEARCH_MAX = 200;
 const READ_DEFAULT = 48 * 1024;
 const READ_CEILING = 256 * 1024;
 const LIBRARY = "The project's Files library — its documents, notes and references, not the code repository.";
+
+/** What upload_file takes: media a ticket shows or delivers, never text (write_file) or anything executable. */
+const UPLOADABLE = /^(image|audio|video)\/|^application\/(pdf|zip)$/;
+
+const inside = (root: string, file: string): boolean => {
+  const rel = nodePath.relative(root, file);
+  return !!rel && !rel.startsWith(`..${nodePath.sep}`) && rel !== ".." && !nodePath.isAbsolute(rel);
+};
+
+/**
+ * Where a sourcePath may come from: a conversation's own checkout, else the
+ * folders an outside client declares as its MCP roots. Nothing else on the
+ * machine is the caller's to hand over, so with neither the path is refused.
+ */
+async function sourceFile(given: string, inv: ToolInvocation): Promise<string> {
+  const own = [inv.run?.cwd, inv.run?.scratch.get("mediaWorkdir")].filter((d): d is string => typeof d === "string");
+  const roots = own.length ? own : ((await inv.roots?.()) ?? []);
+  if (!roots.length) throw new Error("This client declares no working directory (MCP roots), so a sourcePath cannot be checked; send the bytes as base64 instead");
+  const real = roots.flatMap((r) => (fs.existsSync(r) ? [fs.realpathSync(r)] : []));
+  const candidate = nodePath.resolve(real[0] ?? roots[0], given);
+  if (!fs.existsSync(candidate)) throw new Error(`No file at ${given}`);
+  const file = fs.realpathSync(candidate);
+  if (!real.some((root) => inside(root, file))) throw new Error(`${given} is outside the working directory (${roots.join(", ")})`);
+  if (!fs.statSync(file).isFile()) throw new Error(`${given} is not a file`);
+  return file;
+}
 
 const listed = (entries: FileEntry[], policy: FilesAgentPolicy): FileEntry[] =>
   entries.filter((entry) => (entry.listing?.mode ?? listingAt(policy, entry.path, entry.kind === "dir").mode) === "listed");
@@ -183,6 +213,41 @@ export function registerTools(ctx: Context, files: Files): void {
         const saved = await files.write(projectId, path, args.content, args.message ? { message: args.message } : {});
         // Ids first: a run's one-line summary of this result keeps them even when a long path is cut.
         return { fileId: saved.fileId, versionId: saved.versionId, size: saved.size, path: saved.path };
+      }
+    })
+  );
+
+  ctx.tools.register(
+    defineTool({
+      name: "upload_file",
+      title: "Upload a binary project file",
+      description:
+        "Save an image, PDF, audio, video or zip into the project's Files store as a new version — a screenshot for a ticket, a delivered PDF. Text goes through write_file. " +
+        `Give sourcePath for a file in your working directory (preferred: the bytes never pass through the conversation), or base64 with path. At most ${BINARY_LIMIT / (1024 * 1024)} MB. ` +
+        "Give itemId to place it in that ticket's workstream folder. Returns fileId, versionId and a Markdown image line: put that line in a ticket body (update_item) to show the image there, or pass fileId and versionId to add_delivery_resource to make it the ticket's material or output.",
+      input: z.object({
+        projectId: z.string().optional(),
+        itemId: z.string().optional().describe("The ticket the file is for — its id, or its key such as TOM-12; its workstream folder becomes the path's root"),
+        sourcePath: z.string().optional().describe("A file inside your working directory, absolute or relative to it"),
+        base64: z.string().optional().describe("The file's bytes, when no sourcePath can be given"),
+        path: z.string().optional().describe("Where to save, e.g. shots/table.png; defaults to the source file's name. Required with base64"),
+        message: z.string().optional().describe("What changed, shown in the file's history")
+      }),
+      execute: async (args, inv) => {
+        const projectId = requireProjectId("upload_file", args.projectId, inv);
+        if (!!args.sourcePath === !!args.base64) throw new Error("Give exactly one of sourcePath or base64");
+        const source = args.sourcePath ? await sourceFile(args.sourcePath, inv) : null;
+        const name = args.path ?? (source ? nodePath.basename(source) : null);
+        if (!name) throw new Error("Give a path to save base64 content under");
+        const mime = mimeOf(name);
+        if (!UPLOADABLE.test(mime)) throw new Error(`${name}: only images, PDF, audio, video and zip can be uploaded (this reads as ${mime}); save text with write_file`);
+        const size = source ? fs.statSync(source).size : Buffer.byteLength(args.base64!, "base64");
+        if (size > BINARY_LIMIT) throw new Error(`${name} is larger than ${BINARY_LIMIT / (1024 * 1024)} MB`);
+        const body = source ? fs.readFileSync(source) : Buffer.from(args.base64!, "base64");
+        const target = args.itemId ? files.pathFor(projectId, args.itemId, name) : name;
+        const saved = await files.write(projectId, target, body, args.message ? { message: args.message } : {});
+        const alt = nodePath.posix.basename(saved.path).replace(/[[\]]/g, "");
+        return { fileId: saved.fileId, versionId: saved.versionId, size: saved.size, path: saved.path, markdown: mime.startsWith("image/") ? `![${alt}](tomrade-file://${saved.fileId})` : `[${alt}](tomrade-file://${saved.fileId})` };
       }
     })
   );
