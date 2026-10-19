@@ -97,6 +97,27 @@ export function inspectConnectFiles(root: string, mcpUrl: string, eventUrl: stri
   return inspect(files, mcpUrl, eventUrl, chosen);
 }
 
+/** Every connection file `ref` holds, read by one `git cat-file --batch`; one it lacks is absent from the map. */
+async function committedFiles(git: Git, cwd: string, ref: string): Promise<Map<string, string>> {
+  const result = await git(["cat-file", "--batch"], { cwd, ok: true, stdin: FILES.map((file) => `${ref}:${file}\n`).join("") });
+  const files = new Map<string, string>();
+  if (result.code !== 0) return files;
+  // Each answer is "<sha> <type> <size>\n<content>\n", or "<input> missing\n"; sizes count bytes.
+  const out = Buffer.from(result.stdout, "utf8");
+  let at = 0;
+  for (const file of FILES) {
+    const end = out.indexOf(10, at);
+    if (end === -1) break;
+    const header = out.subarray(at, end).toString("utf8").split(" ");
+    at = end + 1;
+    if (header.length !== 3 || !/^\d+$/.test(header[2]!)) continue;
+    const size = Number(header[2]);
+    if (header[1] === "blob") files.set(file, out.subarray(at, at + size).toString("utf8"));
+    at += size + 1;
+  }
+  return files;
+}
+
 /**
  * Inspect committed configuration, never the currently checked-out ticket's
  * files — plus the files a machine-only connection keeps untracked in the
@@ -105,14 +126,14 @@ export function inspectConnectFiles(root: string, mcpUrl: string, eventUrl: stri
 export async function inspectConnection(git: Git, cwd: string, ref: string, mcpUrl: string, eventUrl: string, chosen: readonly ConnectAgent[]) {
   const listed = await git(["ls-files", "-z", "--", ...FILES], { cwd, ok: true });
   const tracked = new Set(listed.code === 0 ? listed.stdout.split("\0").filter(Boolean) : FILES);
+  const found = await committedFiles(git, cwd, ref);
   const committed: Record<string, string> = {};
   const untracked: Record<string, string> = {};
-  await Promise.all(FILES.map(async (file) => {
-    const result = await git(["show", `${ref}:${file}`], { cwd, ok: true });
-    committed[file] = result.code === 0 ? result.stdout : "";
-    if (result.code === 0 || tracked.has(file)) return;
+  for (const file of FILES) {
+    committed[file] = found.get(file) ?? "";
+    if (found.has(file) || tracked.has(file)) continue;
     try { untracked[file] = fs.readFileSync(path.join(cwd, file), "utf8"); } catch { /* Not there: nothing local for it. */ }
-  }));
+  }
   const whole = inspect({ ...committed, ...untracked }, mcpUrl, eventUrl, chosen);
   const local = whole.connected && !inspect(committed, mcpUrl, eventUrl, chosen).connected;
   return { ...whole, local };
