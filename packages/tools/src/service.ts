@@ -52,6 +52,8 @@ export interface ToolInvocation {
    * whichever agent it is. Absent for calls made inside this process.
    */
   connection?: string;
+  /** The folders an outside client says it works in (its MCP roots), as absolute paths. Absent when the client declares none. */
+  roots?(): Promise<string[]>;
   /** Ask the person behind the call to pick one of `options`; null when the call was cancelled. Absent when nobody can be asked. */
   ask?(text: string, options: string[]): Promise<string | null>;
 }

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import type { Server as HttpServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import type express from "express";
@@ -473,7 +474,14 @@ export class Mcp extends Service {
           const target = (args as { projectId?: unknown }).projectId;
           const pid = typeof target === "string" ? target : projectId;
           const mark = storage && pid ? storage.writeMark(pid) : null;
-          const result = textResult(await tools.execute(tool.name, args, { by: "ai:mcp", projectId, signal: extra.signal, ...(extra.sessionId ? { connection: extra.sessionId } : {}) }), tool.whole);
+          // Asked only when a tool needs it: most calls never touch the client's folders.
+          const roots = server.server.getClientCapabilities()?.roots
+            ? async () => (await server.server.listRoots(undefined, { signal: extra.signal })).roots.map((r) => fileURLToPath(r.uri))
+            : undefined;
+          const result = textResult(
+            await tools.execute(tool.name, args, { by: "ai:mcp", projectId, signal: extra.signal, ...(extra.sessionId ? { connection: extra.sessionId } : {}), ...(roots ? { roots } : {}) }),
+            tool.whole
+          );
           // Only after a call that wrote: the agent learns whether the write is still on this instance alone.
           if (storage && pid && mark !== null && storage.writeMark(pid) > mark) result.content.push(block(syncNote(storage.syncSummary(pid), this.config.instance)));
           return result;
