@@ -1,5 +1,5 @@
 import { inputMimes, type InputModality, type OutputModality, type MediaData, type ChatEvent, type ChatModel, type ChatRequest, type StopReason } from "./model.js";
-import { LlmError, NativeMediaRefused, NativeSearchRefused } from "./errors.js";
+import { LlmError, MediaRefused, NativeMediaRefused, NativeSearchRefused, mediaRefusal } from "./errors.js";
 import { fitsResponses, readResponses, replaysSearches, responsesBody, searchesOnResponses } from "./responses.js";
 
 export interface OpenAiConfig {
@@ -102,6 +102,15 @@ export const pause = (ms: number, signal?: AbortSignal): Promise<void> =>
     const timer = setTimeout(resolve, ms);
     signal?.addEventListener("abort", () => (clearTimeout(timer), reject(signal.reason)), { once: true });
   });
+
+/** A failed request as its error: a refusal of the media it carried says so, so the caller can go on without it. */
+function refusal(res: Response, url: string, text: string, request: ChatRequest): LlmError {
+  const requestId = res.headers.get("x-request-id") ?? res.headers.get("request-id") ?? undefined;
+  const response = { status: res.status, url: res.url || url, ...(requestId ? { requestId } : {}), body: text.slice(0, 8000) };
+  const kinds = mediaRefusal(res.status, text, request);
+  if (kinds) return new MediaRefused(`The model refused ${kinds.join(", ")} input (${res.status}): ${text.slice(0, 300)}`, kinds, undefined, response);
+  return new LlmError(`LLM request failed ${res.status}: ${text.slice(0, 300)}`, undefined, response);
+}
 
 export class OpenAiCompatible implements ChatModel {
   get capabilities() {
@@ -221,8 +230,7 @@ export class OpenAiCompatible implements ChatModel {
       const text = await res.text().catch(() => "");
       if (res.status === 400 && adjusted < 3 && this.adjustTo(text)) continue;
       if (media.length && (res.status === 400 || res.status === 422)) throw new NativeMediaRefused(`The model's ${media.join(" and ")} output was refused (${res.status}): ${text.slice(0, 300)}`);
-      const requestId = res.headers.get("x-request-id") ?? res.headers.get("request-id") ?? undefined;
-      throw new LlmError(`LLM request failed ${res.status}: ${text.slice(0, 300)}`, undefined, { status: res.status, url: res.url || url, ...(requestId ? { requestId } : {}), body: text.slice(0, 8000) });
+      throw refusal(res, url, text, request);
     }
     if (!res.body) throw new LlmError("LLM response had no body");
 
@@ -299,9 +307,8 @@ export class OpenAiCompatible implements ChatModel {
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       // An endpoint, model or account without the search refuses it: the caller searches another way.
-      if (res.status === 400 || res.status === 404 || res.status === 422) throw new NativeSearchRefused(`The model's web search was refused (${res.status}): ${text.slice(0, 300)}`);
-      const requestId = res.headers.get("x-request-id") ?? res.headers.get("request-id") ?? undefined;
-      throw new LlmError(`LLM request failed ${res.status}: ${text.slice(0, 300)}`, undefined, { status: res.status, url: res.url || url, ...(requestId ? { requestId } : {}), body: text.slice(0, 8000) });
+      if ((res.status === 400 || res.status === 404 || res.status === 422) && !mediaRefusal(res.status, text, request)) throw new NativeSearchRefused(`The model's web search was refused (${res.status}): ${text.slice(0, 300)}`);
+      throw refusal(res, url, text, request);
     }
     if (!res.body) throw new LlmError("LLM response had no body");
     yield* readResponses(sseData(res.body), replaysSearches(this.config.baseURL));

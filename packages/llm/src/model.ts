@@ -8,6 +8,9 @@ export const IMAGE_MIMES = ["image/png", "image/jpeg", "image/webp", "image/gif"
 export function inputMimes(modalities: readonly InputModality[]): string[] {
   return modalities.flatMap(mode => mode === "image" ? IMAGE_MIMES : mode === "audio" ? ["audio/wav", "audio/mpeg"] : mode === "video" ? ["video/mp4", "video/webm"] : ["application/pdf"]);
 }
+export function modalityOf(mime: string): InputModality | undefined {
+  return mime.startsWith("image/") ? "image" : mime.startsWith("audio/") ? "audio" : mime.startsWith("video/") ? "video" : mime === "application/pdf" ? "pdf" : undefined;
+}
 
 export type ContentBlock =
   | { type: "text"; text: string }

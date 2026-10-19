@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { inputMimes, type InputModality, type ChatEvent, type ChatModel, type ChatRequest, type Message, type StopReason } from "./model.js";
-import { LlmError, NativeSearchRefused } from "./errors.js";
+import { LlmError, MediaRefused, NativeSearchRefused, mediaRefusal } from "./errors.js";
 import { fetchFailure, pause } from "./openai.js";
 
 export interface AnthropicConfig {
@@ -113,6 +113,8 @@ export class AnthropicModel implements ChatModel {
           stream = await send(messages);
           break;
         } catch (err) {
+          const kinds = err instanceof Anthropic.BadRequestError || err instanceof Anthropic.UnprocessableEntityError ? mediaRefusal(err.status, err.message, request) : null;
+          if (kinds) throw new MediaRefused(`Claude refused ${kinds.join(", ")} input: ${err instanceof Error ? err.message : String(err)}`, kinds, err);
           if (search && err instanceof Anthropic.BadRequestError) throw new NativeSearchRefused(`Claude's web search was refused: ${err.message}`, err);
           const status = err instanceof Anthropic.APIError ? err.status : undefined;
           const transient = err instanceof Anthropic.APIConnectionError || (status !== undefined && TRANSIENT.has(status));
