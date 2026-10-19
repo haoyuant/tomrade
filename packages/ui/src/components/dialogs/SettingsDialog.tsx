@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { AgentSettings, EnginePick, EngineView, PlaybookSource } from "@tomradex/agent";
 import { THEME_TYPOGRAPHY_NAMES, type ModelErrorKind, type AppSettings, type CustomTheme, type ThemeAutomation, type ThemePreference, type ThemeTokenName, type ThemeTypographyName } from "@tomradex/domain";
-import type { ModelProfile, ModelsSettings } from "@tomradex/llm";
+import type { ModelProfile, ModelProviderView, ModelsSettings, ProviderView } from "@tomradex/llm";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { agentKeys, conducts, findEngine, useEngines, usePlaybooks } from "~/lib/agent";
 import type { SettingsSectionView } from "@tomradex/settings";
@@ -27,6 +27,7 @@ import { SchemaField, fieldsOf, problemOf, type JsonSchema } from "~/components/
 import { STATUS } from "~/lib/domain";
 import { useBackgroundStatus } from "~/lib/background";
 import { intlTag, useI18n, type MessageKey } from "~/lib/i18n";
+import { useModelProviders, useProviders } from "~/lib/setup";
 import { useMcpUrl, usePlugins, useSaveSettings, useSettings, useSettingsSections, useStorageProviders } from "~/lib/queries";
 import { cssColorToHex, useTheme } from "~/lib/theme";
 import { detectedHere } from "~/lib/engines";
@@ -631,16 +632,24 @@ export function SettingsDialog({
   );
 }
 
-const PRESETS = [
-  { titleKey: "settingsDialog.presetDeepseek" as const, provider: "openai-compatible" as const, baseURL: "https://api.deepseek.com", model: "deepseek-flash" },
-  { titleKey: "settingsDialog.presetAnthropic" as const, provider: "anthropic" as const, baseURL: "", model: "claude-sonnet-5" },
-  { titleKey: "settingsDialog.presetOpenai" as const, provider: "openai-compatible" as const, baseURL: "https://api.openai.com/v1", model: "" },
-  { titleKey: "settingsDialog.presetKimi" as const, provider: "openai-compatible" as const, baseURL: "https://api.moonshot.cn/v1", model: "" },
-  { titleKey: "settingsDialog.presetGemini" as const, provider: "openai-compatible" as const, baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/", model: "" },
-  { titleKey: "settingsDialog.presetOpenrouter" as const, provider: "openai-compatible" as const, baseURL: "https://openrouter.ai/api/v1", model: "" },
-  { titleKey: "settingsDialog.presetOllama" as const, provider: "openai-compatible" as const, baseURL: "http://127.0.0.1:11434/v1", model: "" },
-  { titleKey: "settingsDialog.presetCustom" as const, provider: "openai-compatible" as const, baseURL: "", model: "" }
-];
+// The app's own presets keep their translated names; a provider's other presets show the title it gives.
+const PRESET_TITLES: Record<string, MessageKey> = {
+  deepseek: "settingsDialog.presetDeepseek",
+  anthropic: "settingsDialog.presetAnthropic",
+  openai: "settingsDialog.presetOpenai",
+  kimi: "settingsDialog.presetKimi",
+  gemini: "settingsDialog.presetGemini",
+  openrouter: "settingsDialog.presetOpenrouter",
+  ollama: "settingsDialog.presetOllama"
+};
+const PROVIDER_TITLES: Record<string, MessageKey> = {
+  "openai-compatible": "settingsDialog.providerOpenaiCompatible",
+  anthropic: "settingsDialog.providerAnthropic",
+  "openai-images": "agentPanel.imageApi"
+};
+// A profile whose provider is not installed still opens, as a plain compatible endpoint.
+const UNKNOWN_PROVIDER: Omit<ModelProviderView, "id" | "title"> = { keyRequired: false, baseURL: { default: "", editable: true }, chat: true, defaultInput: [] };
+const providerOf = (kinds: ModelProviderView[] | undefined, id: string): ModelProviderView => kinds?.find((k) => k.id === id) ?? { id, title: id, ...UNKNOWN_PROVIDER };
 
 const EMPTY_MODELS: ModelsSettings = { profiles: [], roles: { worker: "" } };
 // LENT_WORKER in @tomradex/llm: roles.worker naming a signed-in local agent
@@ -671,6 +680,8 @@ function AssistantPane({
   const agent = (settings.agent as AgentSettings | undefined) ?? EMPTY_AGENT;
   const runMinutes = agent.maxRunMinutes ?? EMPTY_AGENT.maxRunMinutes;
   const [editing, setEditing] = useState<ModelProfile | null>(null);
+  const { data: kinds } = useModelProviders();
+  const { data: presets } = useProviders();
   // removing a profile deletes its key too: asked once, in the row
   const [removing, setRemoving] = useState<string | null>(null);
   // The agents on this machine make the list; the rest wait behind one line, which opens for an engine someone was sent to set up.
@@ -745,7 +756,7 @@ function AssistantPane({
           ) : (
             <div className="profile-row" key={p.id}>
               <span className="p-title">{p.title || p.model}</span>
-              <span className="p-model num">{p.provider === "anthropic" ? "anthropic" : (p.baseURL ?? "")} · {p.model}</span>
+              <span className="p-model num">{providerOf(kinds, p.provider).baseURL.editable ? (p.baseURL ?? "") : (p.baseURL || p.provider)} · {p.model}</span>
               {!editing && (
                 <>
                   <button type="button" className="btn btn-ghost" onClick={() => setEditing(p)}>
@@ -763,17 +774,17 @@ function AssistantPane({
           <ProfileForm profile={editing} onCancel={() => setEditing(null)} onSave={upsert} />
         ) : (
           <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-            {PRESETS.map((preset) => {
-              const title = t(preset.titleKey);
+            {[...(presets ?? []), { id: "custom", title: "", provider: "openai-compatible", baseURL: "", model: "" }].map((preset) => {
+              const title = preset.id === "custom" ? t("settingsDialog.presetCustom") : PRESET_TITLES[preset.id] ? t(PRESET_TITLES[preset.id]) : preset.title;
               return (
                 <button
-                  key={preset.titleKey}
+                  key={preset.id}
                   type="button"
                   className="chip-opt"
                   onClick={() =>
                     setEditing({
                       id: `p${Date.now().toString(36)}`,
-                      title: preset.titleKey === "settingsDialog.presetCustom" ? "" : title,
+                      title: preset.id === "custom" ? "" : title,
                       provider: preset.provider,
                       baseURL: preset.baseURL || undefined,
                       apiKey: "",
@@ -1085,27 +1096,20 @@ function EnginePickField({ engine, pick, value, onCommit }: { engine: EngineView
   );
 }
 
-/** Where each well-known provider hands out keys, by the host its profile talks to. */
-const KEY_PAGES: Record<string, string> = {
-  "api.deepseek.com": "https://platform.deepseek.com/api_keys",
-  "api.anthropic.com": "https://console.anthropic.com/settings/keys",
-  "api.openai.com": "https://platform.openai.com/api-keys",
-  "api.moonshot.cn": "https://platform.moonshot.cn/console/api-keys",
-  "openrouter.ai": "https://openrouter.ai/keys",
-  "generativelanguage.googleapis.com": "https://aistudio.google.com/apikey"
-};
-
-const hostOf = (p: ModelProfile): string => {
-  if (p.provider === "anthropic" && !p.baseURL) return "api.anthropic.com";
+const hostOf = (address: string): string => {
   try {
-    return new URL(p.baseURL ?? "").host;
+    return new URL(address).host;
   } catch {
-    return p.baseURL ?? "";
+    return address;
   }
 };
 
+/** Where a well-known service hands out keys, by the host a profile for it talks to. */
+const keyPageFor = (host: string, presets: ProviderView[] | undefined, kinds: ModelProviderView[] | undefined): string | undefined =>
+  presets?.find((p) => p.keyPage && hostOf(p.baseURL || providerOf(kinds, p.provider).baseURL.default) === host)?.keyPage;
+
 /** The endpoint's own listing, refetched once typing settles: a key or address mid-edit asks nothing. */
-function useModelListing(endpoint: Pick<ModelProfile, "provider" | "baseURL" | "apiKey">) {
+function useModelListing(endpoint: Pick<ModelProfile, "provider" | "baseURL" | "apiKey">, keyRequired: boolean) {
   const [settled, setSettled] = useState(endpoint);
   useEffect(() => {
     const timer = setTimeout(() => setSettled(endpoint), 600);
@@ -1115,7 +1119,7 @@ function useModelListing(endpoint: Pick<ModelProfile, "provider" | "baseURL" | "
   return useQuery({
     queryKey: ["llm.models", provider, baseURL ?? "", apiKey],
     queryFn: () => invoke("llm.models", { provider, baseURL, apiKey }),
-    enabled: provider !== "anthropic" || apiKey.trim().length > 0,
+    enabled: !keyRequired || apiKey.trim().length > 0,
     staleTime: 5 * 60_000,
     retry: false
   });
@@ -1127,9 +1131,9 @@ const sameModes = (detected: string[], stored: string[] | undefined) => !!stored
  * The model, picked from what the endpoint lists; typed in when it lists nothing or the model is not listed.
  * Picking a model also takes the media Tomrade detected for it; an undetected model falls back to the provider's default.
  */
-function ModelPickField({ draft, host, onChange }: { draft: ModelProfile; host: string; onChange: (patch: Partial<ModelProfile>) => void }) {
+function ModelPickField({ draft, host, keyRequired, onChange }: { draft: ModelProfile; host: string; keyRequired: boolean; onChange: (patch: Partial<ModelProfile>) => void }) {
   const { t } = useI18n();
-  const listing = useModelListing(draft);
+  const listing = useModelListing(draft, keyRequired);
   const models = listing.data?.ok ? listing.data.models : [];
   const detected = (model: string) => (listing.data?.ok ? listing.data.capabilities[model] : undefined);
   const pick = (model: string) => onChange({ model, ...(detected(model) ?? { inputModalities: undefined, outputModalities: undefined }) });
@@ -1189,11 +1193,11 @@ function ModelPickField({ draft, host, onChange }: { draft: ModelProfile; host: 
 }
 
 /** What the model reads and makes, as Tomrade detected it: read-only, so nobody ticks media from memory. */
-function ModelMediaLine({ draft, host }: { draft: ModelProfile; host: string }) {
+function ModelMediaLine({ draft, host, defaultInput }: { draft: ModelProfile; host: string; defaultInput: string[] }) {
   const { t, locale } = useI18n();
   const list = (items: string[]) => new Intl.ListFormat(intlTag(locale), { type: "conjunction" }).format(items);
   // the adapters' own defaults when nothing was detected
-  const input = draft.inputModalities ?? (draft.provider === "anthropic" ? ["image", "pdf"] : []);
+  const input = draft.inputModalities ?? defaultInput;
   const output = draft.outputModalities ?? [];
   const reads = t("settingsDialog.modelMediaReads", { list: list(["text", ...input].map((m) => t(`settingsDialog.modelMedia_${m}` as MessageKey))) });
   const makes = output.length ? ` ${t("settingsDialog.modelMediaMakes", { list: list(output.map((m) => t(`settingsDialog.modelMedia_${m}` as MessageKey))) })}` : "";
@@ -1215,9 +1219,12 @@ function ProfileForm({ profile, onSave, onCancel }: { profile: ModelProfile; onS
     setProblem(null);
     setDraft((d) => ({ ...d, ...patch }));
   };
-  const valid = draft.model.trim().length > 0 && (draft.provider !== "anthropic" || draft.apiKey.trim().length > 0);
-  const host = hostOf(draft);
-  const keyPage = KEY_PAGES[host];
+  const { data: kinds } = useModelProviders();
+  const { data: presets } = useProviders();
+  const kind = providerOf(kinds, draft.provider);
+  const valid = draft.model.trim().length > 0 && (!kind.keyRequired || draft.apiKey.trim().length > 0);
+  const host = hostOf(draft.baseURL || kind.baseURL.default);
+  const keyPage = keyPageFor(host, presets, kinds);
   const candidate = (): ModelProfile => ({ ...draft, title: draft.title || draft.model });
   // A wrong key or address shows here, at save, not in the first conversation. A rate limit means the key works.
   const checkAndSave = async () => {
@@ -1242,14 +1249,14 @@ function ProfileForm({ profile, onSave, onCancel }: { profile: ModelProfile; onS
         </div>
         <div className="field">
           <label htmlFor="pfProvider">{t("settingsDialog.profileProviderLabel")}</label>
-          <select id="pfProvider" className="input" value={draft.provider} onChange={(e) => set({ provider: e.target.value as ModelProfile["provider"] })}>
-            <option value="openai-compatible">{t("settingsDialog.providerOpenaiCompatible")}</option>
-            <option value="anthropic">{t("settingsDialog.providerAnthropic")}</option>
-            <option value="openai-images">{t("agentPanel.imageApi")}</option>
+          <select id="pfProvider" className="input" value={draft.provider} onChange={(e) => set({ provider: e.target.value })}>
+            {(kinds?.some((k) => k.id === draft.provider) ? kinds : [...(kinds ?? []), kind]).map((k) => (
+              <option key={k.id} value={k.id}>{PROVIDER_TITLES[k.id] ? t(PROVIDER_TITLES[k.id]) : k.title}</option>
+            ))}
           </select>
         </div>
       </div>
-      {draft.provider !== "anthropic" && (
+      {kind.baseURL.editable && (
         <div className="field">
           <label htmlFor="pfBase">{t("settingsDialog.baseUrlLabel")}</label>
           <input id="pfBase" className="input num" value={draft.baseURL ?? ""} onChange={(e) => set({ baseURL: e.target.value })} />
@@ -1271,8 +1278,8 @@ function ProfileForm({ profile, onSave, onCancel }: { profile: ModelProfile; onS
           )}
         </span>
       </div>
-      <ModelPickField draft={draft} host={host || t("settingsDialog.theEndpoint")} onChange={set} />
-      {draft.provider !== "openai-images" && <ModelMediaLine draft={draft} host={host || t("settingsDialog.theEndpoint")} />}
+      <ModelPickField draft={draft} host={host || t("settingsDialog.theEndpoint")} keyRequired={kind.keyRequired} onChange={set} />
+      {kind.chat && <ModelMediaLine draft={draft} host={host || t("settingsDialog.theEndpoint")} defaultInput={kind.defaultInput} />}
       {problem && (
         <div className="profile-problem" role="alert">
           <p>{t(`settingsDialog.profileCheck_${problem.kind}` as MessageKey, { host: host || t("settingsDialog.theEndpoint"), model: draft.model })}</p>

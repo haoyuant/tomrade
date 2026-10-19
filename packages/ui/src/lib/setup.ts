@@ -11,6 +11,7 @@ import { keys, useSettings } from "./queries";
 const setupKeys = {
   worker: ["llm", "worker"] as const,
   providers: (locale: string) => ["llm", "providers", locale] as const,
+  modelProviders: (locale: string) => ["llm", "modelProviders", locale] as const,
   detected: ["llm", "detected"] as const
 };
 
@@ -52,6 +53,12 @@ export function useSetup() {
 export const useProviders = () => {
   const { locale } = useI18n();
   return useQuery({ queryKey: setupKeys.providers(locale), queryFn: () => invoke("llm.providers"), staleTime: Infinity });
+};
+
+/** The model providers profiles can name, as the profile form draws them. */
+export const useModelProviders = () => {
+  const { locale } = useI18n();
+  return useQuery({ queryKey: setupKeys.modelProviders(locale), queryFn: () => invoke("llm.modelProviders"), staleTime: Infinity });
 };
 
 export const useDetected = () => useQuery({ queryKey: setupKeys.detected, queryFn: () => invoke("llm.detect"), staleTime: 30_000 });

@@ -2,14 +2,15 @@ import type { ModelErrorKind } from "@tomradex/domain";
 import { listedCapabilities, type ListedModel, type ModelCapabilities } from "./capabilities.js";
 
 /**
- * Well-known model providers: where their keys come from, what a key looks
- * like, and which of the listed models to start with. The UI draws the quick
- * setup from this and knows no provider itself.
+ * A well-known service a model provider serves: where its keys come from, what
+ * a key looks like, and which of the listed models to start with. The UI draws
+ * the quick setup from these and knows no provider itself.
  */
 export interface ProviderPreset {
   id: string;
   title: string;
-  provider: "openai-compatible" | "anthropic";
+  /** The model provider that serves it (a profile's `provider`). */
+  provider: string;
   baseURL: string;
   /** Tried first; otherwise the newest listed model matching `prefer`, then the first listed. */
   model: string;
@@ -17,60 +18,17 @@ export interface ProviderPreset {
   keyPage?: string;
   /** The variable people export it as, which detection looks for. */
   env?: string;
+  /** What its keys look like, to tell a pasted key's provider. */
+  keyShapes?: RegExp[];
   /** Runs on this computer and needs no key. */
   local?: boolean;
   hint: { en: string; zh: string };
 }
 
-export const PROVIDERS: ProviderPreset[] = [
-  {
-    id: "deepseek", title: "DeepSeek", provider: "openai-compatible", baseURL: "https://api.deepseek.com", model: "deepseek-flash", prefer: [/flash/, /^deepseek-v\d/],
-    keyPage: "https://platform.deepseek.com/api_keys", env: "DEEPSEEK_API_KEY",
-    hint: { en: "Low pay-as-you-go prices; reachable from mainland China", zh: "按量付费、价格低，国内可直连" }
-  },
-  {
-    id: "kimi", title: "Kimi", provider: "openai-compatible", baseURL: "https://api.moonshot.cn/v1", model: "", prefer: [/^kimi-k\d/],
-    keyPage: "https://platform.moonshot.cn/console/api-keys", env: "MOONSHOT_API_KEY",
-    hint: { en: "Moonshot's Kimi models; reachable from mainland China", zh: "月之暗面 Kimi 模型，国内可直连" }
-  },
-  {
-    id: "anthropic", title: "Anthropic", provider: "anthropic", baseURL: "", model: "", prefer: [/^claude-sonnet-/],
-    keyPage: "https://console.anthropic.com/settings/keys", env: "ANTHROPIC_API_KEY",
-    hint: { en: "Claude models, from a paid Anthropic API account", zh: "Claude 模型，需要付费的 Anthropic API 账户" }
-  },
-  {
-    id: "openai", title: "OpenAI", provider: "openai-compatible", baseURL: "https://api.openai.com/v1", model: "", prefer: [/^gpt-\d+(\.\d+)?$/],
-    keyPage: "https://platform.openai.com/api-keys", env: "OPENAI_API_KEY",
-    hint: { en: "GPT models, from a paid OpenAI API account", zh: "GPT 模型，需要付费的 OpenAI API 账户" }
-  },
-  {
-    // Google's OpenAI-compatible endpoint; it lists models as `models/<id>`.
-    id: "gemini", title: "Google Gemini", provider: "openai-compatible", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/", model: "",
-    prefer: [/^(models\/)?gemini-\d+(\.\d+)?-flash$/, /^(models\/)?gemini-\d+(\.\d+)?-pro$/],
-    keyPage: "https://aistudio.google.com/apikey", env: "GEMINI_API_KEY",
-    hint: { en: "Gemini models with a Google AI Studio key; a free tier to start", zh: "用 Google AI Studio 的 Key 跑 Gemini 模型，有免费额度" }
-  },
-  {
-    id: "openrouter", title: "OpenRouter", provider: "openai-compatible", baseURL: "https://openrouter.ai/api/v1", model: "", prefer: [/^anthropic\/claude-sonnet-/, /^deepseek\/deepseek-chat/],
-    keyPage: "https://openrouter.ai/keys", env: "OPENROUTER_API_KEY",
-    hint: { en: "One key for models from many providers", zh: "一个 Key 用多家的模型" }
-  },
-  {
-    id: "ollama", title: "Ollama", provider: "openai-compatible", baseURL: "http://127.0.0.1:11434/v1", model: "", prefer: [/qwen/, /llama/, /deepseek/], local: true,
-    hint: { en: "Models running on this computer: free, no key, needs a capable machine", zh: "在这台电脑上运行模型：免费、不用 Key，需要电脑性能够" }
-  }
-];
-
-/** Which providers a pasted key most likely belongs to, most likely first; empty when it could be anyone's. */
-export function guessProviders(key: string): string[] {
+/** Which presets a pasted key most likely belongs to, in their order; empty when it could be anyone's. */
+export function guessFrom(presets: ProviderPreset[], key: string): string[] {
   const k = key.trim();
-  if (/^sk-ant-/.test(k)) return ["anthropic"];
-  if (/^sk-or-/.test(k)) return ["openrouter"];
-  if (/^AIza[0-9A-Za-z_-]{35}$/.test(k)) return ["gemini"];
-  if (/^sk-(proj|svcacct|admin)-/.test(k)) return ["openai"];
-  if (/^sk-[0-9a-f]{32}$/.test(k)) return ["deepseek"];
-  if (/^sk-[A-Za-z0-9]{40,}$/.test(k)) return ["kimi", "openai"];
-  return [];
+  return presets.filter((p) => p.keyShapes?.some((shape) => shape.test(k))).map((p) => p.id);
 }
 
 /** The model to start with from what the endpoint lists (null: it lists nothing). */
@@ -115,7 +73,7 @@ export async function listModels(preset: Pick<ProviderPreset, "provider" | "base
  * The listed models a profile of this kind can use, newest-looking first. An
  * OpenAI-style listing mixes in embeddings, speech and moderation models.
  */
-export function usableModels(provider: "openai-compatible" | "anthropic" | "openai-images", listed: string[]): string[] {
+export function usableModels(provider: string, listed: string[]): string[] {
   const images = /image|dall-e/i;
   const notChat = /embed|whisper|tts|transcribe|moderation|rerank|dall-e|gpt-image|davinci|babbage/i;
   const kept = provider === "openai-images" ? listed.filter((id) => images.test(id)) : listed.filter((id) => !notChat.test(id));
