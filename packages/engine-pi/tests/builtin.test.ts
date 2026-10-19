@@ -14,10 +14,11 @@ import { builtinPi, modelsFile, piTarget } from "@tomradex/engine-pi";
 const profile = (patch: Partial<ModelProfile>): ModelProfile => ({ id: "p1", title: "", provider: "openai-compatible", apiKey: "sk-secret", model: "m", ...patch });
 
 it("runs a known endpoint as pi's own provider only when pi's catalog lists the model", () => {
-  const catalog = new Set(["deepseek/deepseek-flash", "anthropic/claude-sonnet-5", "moonshotai-cn/kimi-k3"]);
+  const catalog = new Set(["deepseek/deepseek-flash", "anthropic/claude-sonnet-5", "moonshotai-cn/kimi-k3", "google/gemini-3.8-flash"]);
   expect(piTarget(profile({ baseURL: "https://api.deepseek.com", model: "deepseek-flash" }), catalog)).toEqual({ model: "deepseek/deepseek-flash", env: { DEEPSEEK_API_KEY: "sk-secret" } });
   expect(piTarget(profile({ provider: "anthropic", model: "claude-sonnet-5" }), catalog)).toEqual({ model: "anthropic/claude-sonnet-5", env: { ANTHROPIC_API_KEY: "sk-secret" } });
   expect(piTarget(profile({ baseURL: "https://api.moonshot.cn/v1", model: "kimi-k3" }), catalog).model).toBe("moonshotai-cn/kimi-k3");
+  expect(piTarget(profile({ provider: "gemini", model: "gemini-3.8-flash" }), catalog)).toEqual({ model: "google/gemini-3.8-flash", env: { GEMINI_API_KEY: "sk-secret" } });
   // an alias pi does not list, and an endpoint pi has no provider for
   expect(piTarget(profile({ baseURL: "https://api.deepseek.com", model: "deepseek-chat" }), catalog)).toEqual({ model: "tomrade-p1/deepseek-chat", env: { TOMRADE_KEY_P1: "sk-secret" } });
   expect(piTarget(profile({ id: "my local", baseURL: "http://127.0.0.1:11434/v1", apiKey: "", model: "qwen3" }), catalog)).toEqual({ model: "tomrade-my-local/qwen3", env: {} });
@@ -28,13 +29,15 @@ it("writes models.json with keys named by variable, never the key itself", () =>
     profile({ baseURL: "https://api.example.com/v1", inputModalities: ["image"] }),
     profile({ id: "local", baseURL: "http://127.0.0.1:11434/v1", apiKey: "", model: "qwen3" }),
     profile({ id: "claude", provider: "anthropic", model: "claude-sonnet-5" }),
-    profile({ id: "pics", provider: "openai-images", model: "gpt-image" })
+    profile({ id: "pics", provider: "openai-images", model: "gpt-image" }),
+    profile({ id: "gem", provider: "gemini", model: "gemini-4-argon", inputModalities: ["image", "pdf"] })
   ]);
   expect(JSON.stringify(file)).not.toContain("sk-secret");
   expect(file.providers["tomrade-p1"]).toEqual({ baseUrl: "https://api.example.com/v1", api: "openai-completions", apiKey: "$TOMRADE_KEY_P1", models: [{ id: "m", name: "m", input: ["text", "image"] }] });
   expect(file.providers["tomrade-local"]).toMatchObject({ apiKey: "none", models: [{ input: ["text"] }] });
   expect(file.providers["tomrade-claude"]).toMatchObject({ baseUrl: "https://api.anthropic.com", api: "anthropic-messages", models: [{ input: ["text", "image"] }] });
   expect(file.providers["tomrade-pics"]).toBeUndefined();
+  expect(file.providers["tomrade-gem"]).toMatchObject({ baseUrl: "https://generativelanguage.googleapis.com/v1beta", api: "google-generative-ai", models: [{ input: ["text", "image"] }] });
 });
 
 async function boot(cli: string) {

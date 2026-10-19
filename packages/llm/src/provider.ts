@@ -43,6 +43,8 @@ export interface ModelProviderSpec {
   defaultInput: InputModality[];
   /** A model's media: what its listing entry says, else what the provider knows; undefined keeps a profile's stored values. */
   capabilities(model: string, listed?: ModelCapabilities): ModelCapabilities | undefined;
+  /** A profile saved for another provider that this one now serves, rewritten for it; read once at start-up. */
+  claims?(profile: ProviderProfile): ProviderProfile | undefined;
   build(profile: ProviderProfile): ChatModel;
 }
 

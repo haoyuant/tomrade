@@ -7,8 +7,14 @@ const KNOWN: Record<string, { provider: string; env: string }> = {
   "api.openai.com": { provider: "openai", env: "OPENAI_API_KEY" },
   "openrouter.ai": { provider: "openrouter", env: "OPENROUTER_API_KEY" },
   "api.moonshot.ai": { provider: "moonshotai", env: "MOONSHOT_API_KEY" },
-  "api.moonshot.cn": { provider: "moonshotai-cn", env: "MOONSHOT_API_KEY" }
+  "api.moonshot.cn": { provider: "moonshotai-cn", env: "MOONSHOT_API_KEY" },
+  "generativelanguage.googleapis.com": { provider: "google", env: "GEMINI_API_KEY" }
 };
+
+// Where a profile without its own address talks, by its provider.
+const DEFAULT_BASE: Record<string, string> = { anthropic: "https://api.anthropic.com", gemini: "https://generativelanguage.googleapis.com/v1beta" };
+// pi's API for each provider whose wire is not chat/completions.
+const PI_API: Record<string, string> = { anthropic: "anthropic-messages", gemini: "google-generative-ai" };
 
 /** Every known provider's variable, so one listing shows the whole catalog. */
 export const CATALOG_ENV: Record<string, string> = Object.fromEntries(Object.values(KNOWN).map(({ env }) => [env, "catalog"]));
@@ -20,9 +26,8 @@ export interface PiTarget {
 }
 
 function hostOf(profile: ModelProfile): string {
-  if (profile.provider === "anthropic" && !profile.baseURL) return "api.anthropic.com";
   try {
-    return new URL(profile.baseURL ?? "https://api.deepseek.com").host;
+    return new URL(profile.baseURL || DEFAULT_BASE[profile.provider] || "https://api.deepseek.com").host;
   } catch {
     return "";
   }
@@ -59,11 +64,10 @@ export function piTarget(profile: ModelProfile, catalog: ReadonlySet<string>): P
 export function modelsFile(profiles: ModelProfile[]): { providers: Record<string, unknown> } {
   const providers: Record<string, unknown> = {};
   for (const profile of profiles.filter(usableProfile)) {
-    const anthropic = profile.provider === "anthropic";
-    const images = profile.inputModalities?.includes("image") ?? anthropic;
+    const images = profile.inputModalities?.includes("image") ?? profile.provider === "anthropic";
     providers[customProvider(profile)] = {
-      baseUrl: anthropic ? (profile.baseURL || "https://api.anthropic.com") : (profile.baseURL || "https://api.deepseek.com"),
-      api: anthropic ? "anthropic-messages" : "openai-completions",
+      baseUrl: profile.baseURL || DEFAULT_BASE[profile.provider] || "https://api.deepseek.com",
+      api: PI_API[profile.provider] ?? "openai-completions",
       apiKey: profile.apiKey ? `$${keyVariable(profile)}` : "none",
       models: [{ id: profile.model, name: profile.title || profile.model, input: images ? ["text", "image"] : ["text"] }]
     };

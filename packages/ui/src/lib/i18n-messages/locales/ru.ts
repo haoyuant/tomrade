@@ -211,6 +211,7 @@ export const ru: PartialMessages = {
     profileCheck_model: "{{host}} не знает модель «{{model}}».",
     profileCheck_server: "На стороне {{host}} произошла ошибка — повторите позже или всё равно сохраните.",
     profileCheck_network: "Не удалось подключиться к {{host}} — проверьте базовый URL и подключение к сети.",
+    profileCheck_slow: "{{host}} не ответил вовремя для «{{model}}» — модель может быть перегружена или медленной. Попробуйте другую модель или всё равно сохраните.",
     profileCheck_other: "Тестовый запрос к {{host}} не удался.",
     myModelPlaceholder: "Моя модель",
     presetDeepseek: "DeepSeek",

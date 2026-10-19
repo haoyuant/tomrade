@@ -203,6 +203,7 @@ export const ja: PartialMessages = {
     profileCheck_model: "{{host}} はモデル「{{model}}」を認識していません。",
     profileCheck_server: "{{host}} 側でエラーが発生しました。後でもう一度試すか、このまま保存してください。",
     profileCheck_network: "{{host}} に接続できませんでした。ベース URL と接続状況を確認してください。",
+    profileCheck_slow: "{{host}} の「{{model}}」が時間内に応答しませんでした。混雑しているか、応答が遅い可能性があります。別のモデルを試すか、このまま保存してください。",
     profileCheck_other: "{{host}} へのテストリクエストが失敗しました。",
     myModelPlaceholder: "マイモデル",
     presetDeepseek: "DeepSeek",

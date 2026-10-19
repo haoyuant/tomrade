@@ -93,8 +93,11 @@ export class FieldDefinitionError extends Error {
   }
 }
 
-/** What a failed model call means for the person — each wants a different fix: the key, the address, a wait. */
-export type ModelErrorKind = "auth" | "quota" | "rate" | "model" | "server" | "network" | "other";
+/**
+ * What a failed model call means for the person — each wants a different fix: the key, the address, a wait.
+ * `slow`: the model was reached but gave no answer in time; only a check that waits for one says it.
+ */
+export type ModelErrorKind = "auth" | "quota" | "rate" | "model" | "server" | "network" | "slow" | "other";
 
 /** Why a model turned a working key down: the wrong API for it, not open to this key's tier or account, or not known. */
 export type ModelRefusal = "method" | "tier" | "unknown";

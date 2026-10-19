@@ -90,10 +90,12 @@ it("tells keys apart by their shape where it can", () => {
   expect(guessProviders("sk-0123456789abcdef0123456789abcdef")).toEqual(["deepseek"]);
   expect(guessProviders("AIzaSyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q")).toEqual(["gemini"]);
   expect(guessProviders("whatever")).toEqual([]);
-  // Gemini's compatible endpoint lists `models/<id>`: the newest flash, not an image or TTS model.
+  // Google's newer key shape too
+  expect(guessProviders("AQ.Ab8RN6Lmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRS")).toEqual(["gemini"]);
+  // Gemini runs on its own provider: the newest flash, not an image or TTS model.
   const gemini = PROVIDERS.find((p) => p.id === "gemini")!;
-  expect(gemini).toMatchObject({ provider: "openai-compatible", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/", keyPage: "https://aistudio.google.com/apikey", env: "GEMINI_API_KEY" });
-  expect(pickModel(gemini, ["models/gemini-2.5-flash", "models/gemini-2.5-flash-image", "models/gemini-3.6-flash", "models/gemini-3.1-pro-preview", "models/gemini-2.5-flash-preview-tts"])).toBe("models/gemini-3.6-flash");
+  expect(gemini).toMatchObject({ provider: "gemini", baseURL: "", keyPage: "https://aistudio.google.com/apikey", env: "GEMINI_API_KEY" });
+  expect(pickModel(gemini, ["gemini-2.5-flash", "gemini-2.5-flash-image", "gemini-3.6-flash", "gemini-3.1-pro-preview", "gemini-2.5-flash-preview-tts"])).toBe("gemini-3.6-flash");
   expect(pickModel({ model: "deepseek-chat", prefer: [/flash/] }, ["deepseek-reasoner", "deepseek-v4-flash", "deepseek-v3-flash"])).toBe("deepseek-v4-flash");
   expect(pickModel({ model: "deepseek-chat", prefer: [/flash/] }, ["deepseek-chat", "deepseek-v4-flash"])).toBe("deepseek-chat");
   expect(pickModel({ model: "deepseek-chat", prefer: [] }, null)).toBe("deepseek-chat");
@@ -159,6 +161,13 @@ it("lists only the Gemini models a key can chat with, from Gemini's own listing"
     }
   });
   expect(await ctx.llm.listing({ ...endpoint, apiKey: "AIza-bad" })).toMatchObject({ ok: false, kind: "auth" });
+});
+
+it("lists Gemini's chat models for its own provider without the prefix, Gemini before the rest, image makers left out", async () => {
+  const ctx = await llm();
+  const listing = await ctx.llm.listing({ provider: "gemini", apiKey: "AIza-good" });
+  expect(listing).toMatchObject({ ok: true, models: ["gemini-2.5-pro", "gemini-2.5-flash"] });
+  expect(listing.ok && listing.capabilities["gemini-2.5-flash"]).toEqual({ inputModalities: ["image", "pdf", "audio", "video"], outputModalities: [] });
 });
 
 it("reads a free tier with no allowance for the model as the model, though the limit comes late in the body", async () => {
