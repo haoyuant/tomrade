@@ -2,14 +2,25 @@ import { app, autoUpdater, BrowserWindow, ipcMain, screen, type IpcMainEvent } f
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Context, Service } from "cordis";
-import type { DesktopSurface, DesktopSurfaceHost, DesktopSurfaceSpec, SurfaceBounds, SurfaceCapabilities } from "@tomradex/desktop-surface";
+import type { DesktopSurface, DesktopSurfaceHost, DesktopSurfaceSpec, SurfaceBounds, SurfaceCapabilities, SurfaceLook } from "@tomradex/desktop-surface";
+import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/settings";
 import { showMainWindow } from "./main-window.js";
+import { SurfaceBoundsStore, placeWindow } from "./surface-bounds.js";
 
 const STATE_CHANNEL = "tomrade-surface:state";
 const INTERACTIVE_CHANNEL = "tomrade-surface:interactive";
 const MESSAGE_CHANNEL = "tomrade-surface:message";
+const PUSH_CHANNEL = "tomrade-surface:push";
+const LOOK_CHANNEL = "tomrade-surface:look";
 const here = path.dirname(fileURLToPath(import.meta.url));
+
+declare module "@tomradex/ipc" {
+  interface Channels {
+    /** The main window says how the app looks now; every surface document hears it. */
+    "surfaces.look": (look: SurfaceLook) => void;
+  }
+}
 
 interface OpenSurface {
   spec: DesktopSurfaceSpec;
@@ -17,6 +28,8 @@ interface OpenSurface {
   contentsId: number;
   state: unknown;
   loaded: boolean;
+  /** Posts made before the document loaded, sent in order once it has. */
+  queued: unknown[];
   controller: DesktopSurface;
 }
 
@@ -39,6 +52,8 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
 
   private openByContents = new Map<number, OpenSurface>();
   private openById = new Map<string, OpenSurface>();
+  private look: SurfaceLook | null = null;
+  private readonly places = new SurfaceBoundsStore(path.join(app.getPath("userData"), "surface-bounds.json"));
 
   constructor(ctx: Context) {
     super(ctx, "desktopSurfaces");
@@ -57,6 +72,12 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
     };
     ipcMain.on(INTERACTIVE_CHANNEL, onInteractive);
     ipcMain.on(MESSAGE_CHANNEL, onMessage);
+    this.ctx.inject(["ipc"], (ctx) => {
+      ctx.ipc.handle("surfaces.look", (look) => {
+        this.look = look;
+        for (const surface of this.openById.values()) if (surface.loaded && !surface.win.isDestroyed()) surface.win.webContents.send(LOOK_CHANNEL, look);
+      });
+    });
     // A surface that asks for Settings is outside the window; the window comes forward to show it.
     // Running in the background there may be none yet, and one opens.
     this.ctx.on("settings/show", () => void showMainWindow());
@@ -75,38 +96,66 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
     if (this.openById.has(spec.id)) throw new Error(`desktop surface "${spec.id}" is already open`);
 
     const caps = capabilities();
-    const win = new BrowserWindow({
-      width: spec.width,
-      height: spec.height,
-      useContentSize: true,
-      show: false,
-      frame: false,
-      transparent: spec.transparent ?? false,
-      backgroundColor: spec.transparent ? "#00000000" : undefined,
-      resizable: false,
-      movable: true,
-      minimizable: false,
-      maximizable: false,
-      fullscreenable: false,
-      closable: false,
-      focusable: spec.focusable ?? false,
-      skipTaskbar: true,
-      hasShadow: false,
-      acceptFirstMouse: true,
-      title: spec.title,
-      webPreferences: {
-        preload: path.join(here, "../surface-preload.cjs"),
-        contextIsolation: true,
-        nodeIntegration: false
-      }
-    });
+    const window = spec.kind === "window";
+    const webPreferences = { preload: path.join(here, "../surface-preload.cjs"), contextIsolation: true, nodeIntegration: false };
+    const place = window ? placeWindow(this.places.get(spec.id), spec, [screen.getPrimaryDisplay().workArea, ...screen.getAllDisplays().map((d) => d.workArea)]) : null;
+    const win = window
+      ? new BrowserWindow({
+          ...(caps.programmaticPosition ? { x: place!.x, y: place!.y } : {}),
+          width: place!.width,
+          height: place!.height,
+          ...(spec.minWidth ? { minWidth: spec.minWidth } : {}),
+          ...(spec.minHeight ? { minHeight: spec.minHeight } : {}),
+          show: false,
+          title: spec.title,
+          backgroundColor: this.look?.tokens["--bg"] || undefined,
+          webPreferences
+        })
+      : new BrowserWindow({
+          width: spec.width,
+          height: spec.height,
+          useContentSize: true,
+          show: false,
+          frame: false,
+          transparent: spec.transparent ?? false,
+          backgroundColor: spec.transparent ? "#00000000" : undefined,
+          resizable: false,
+          movable: true,
+          minimizable: false,
+          maximizable: false,
+          fullscreenable: false,
+          closable: false,
+          focusable: spec.focusable ?? false,
+          skipTaskbar: true,
+          hasShadow: false,
+          acceptFirstMouse: true,
+          title: spec.title,
+          webPreferences
+        });
     win.setMenuBarVisibility(false);
-    if (spec.alwaysOnTop) win.setAlwaysOnTop(true, "floating");
-    if (spec.visibleOnAllWorkspaces) win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    if (spec.clickThrough && caps.forwardedMouseMoves) win.setIgnoreMouseEvents(true, { forward: true });
-
-    const initialArea = screen.getPrimaryDisplay().workArea;
-    if (caps.programmaticPosition) win.setPosition(initialArea.x + initialArea.width - spec.width - 24, initialArea.y + initialArea.height - spec.height - 18, false);
+    if (window) {
+      // The title is the host's — the plugin's name in it — never the document's own <title>.
+      win.on("page-title-updated", (event) => event.preventDefault());
+      let saving: NodeJS.Timeout | null = null;
+      const remember = () => {
+        if (saving) clearTimeout(saving);
+        saving = setTimeout(() => {
+          if (!win.isDestroyed() && !win.isMinimized() && !win.isFullScreen() && !win.isMaximized()) this.places.set(spec.id, win.getBounds());
+        }, 300);
+      };
+      win.on("resize", remember);
+      win.on("move", remember);
+      win.on("close", () => {
+        if (saving) clearTimeout(saving);
+        if (!win.isMinimized() && !win.isFullScreen() && !win.isMaximized()) this.places.set(spec.id, win.getBounds());
+      });
+    } else {
+      if (spec.alwaysOnTop) win.setAlwaysOnTop(true, "floating");
+      if (spec.visibleOnAllWorkspaces) win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+      if (spec.clickThrough && caps.forwardedMouseMoves) win.setIgnoreMouseEvents(true, { forward: true });
+      const initialArea = screen.getPrimaryDisplay().workArea;
+      if (caps.programmaticPosition) win.setPosition(initialArea.x + initialArea.width - spec.width - 24, initialArea.y + initialArea.height - spec.height - 18, false);
+    }
 
     let record!: OpenSurface;
     const controller: DesktopSurface = {
@@ -127,13 +176,18 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
         record.state = state;
         if (record.loaded && !win.isDestroyed()) win.webContents.send(STATE_CHANNEL, state);
       },
+      post: (message) => {
+        if (win.isDestroyed()) return;
+        if (record.loaded) win.webContents.send(PUSH_CHANNEL, message);
+        else record.queued.push(message);
+      },
       close: () => this.destroy(record)
     };
-    record = { spec, win, contentsId: win.webContents.id, state: spec.initialState, loaded: false, controller };
+    record = { spec, win, contentsId: win.webContents.id, state: spec.initialState, loaded: false, queued: [], controller };
     this.openById.set(spec.id, record);
     this.openByContents.set(record.contentsId, record);
     // Registered first, so the search for the app window cannot land on this surface.
-    if (spec.anchor && caps.programmaticPosition) void this.anchorOf(spec.anchor).then((at) => {
+    if (!window && spec.anchor && caps.programmaticPosition) void this.anchorOf(spec.anchor).then((at) => {
       if (!at || win.isDestroyed()) return;
       const area = screen.getDisplayMatching({ x: at.x, y: at.y, width: 1, height: 1 }).workArea;
       const x = Math.max(area.x, Math.min(area.x + area.width - spec.width, at.x));
@@ -144,8 +198,10 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
     win.webContents.on("did-finish-load", () => {
       if (win.isDestroyed()) return;
       record.loaded = true;
+      if (this.look) win.webContents.send(LOOK_CHANNEL, this.look);
       win.webContents.send(STATE_CHANNEL, record.state);
-      if (spec.focusable) win.show();
+      for (const message of record.queued.splice(0)) win.webContents.send(PUSH_CHANNEL, message);
+      if (window || spec.focusable) win.show();
       else win.showInactive();
     });
     // destroy() guarantees "closed" too, so every way out passes here.

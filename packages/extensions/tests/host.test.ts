@@ -9,6 +9,7 @@ import { Settings } from "@tomradex/settings";
 import { Tools } from "@tomradex/tools";
 import { WebSearch } from "@tomradex/web-search";
 import { definePlugin, type PluginContext } from "@tomradex/plugin-sdk";
+import { windowTitle } from "@tomradex/extensions";
 import { fresh, sdk, settle } from "@tomradex/testkit";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-ext-"));
@@ -337,6 +338,44 @@ describe("the extension host", () => {
     const handle = await p.surfaces.open({ id: "demo.face", title: "Face", document: "face.html", width: 1, height: 1 });
     expect(handle.id).toBe("demo.face");
     expect(opened[0]).toMatch(/face\.html$/);
+  });
+
+  it("opens a working window only for a plugin whose manifest grants it, titled with the plugin's name, and posts to it", async () => {
+    fs.writeFileSync(path.join(dir, "face.html"), "<p>hi</p>");
+    const specs: { id: string; title: string; kind?: string; minWidth?: number; minHeight?: number }[] = [];
+    const posted: unknown[] = [];
+    class FakeSurfaces extends Service {
+      static provide = "desktopSurfaces";
+      constructor(ctx: Context) {
+        super(ctx, "desktopSurfaces");
+      }
+      open(spec: { id: string; title: string; kind?: string }) {
+        specs.push(spec);
+        return { id: spec.id, capabilities: { programmaticPosition: true, forwardedMouseMoves: true }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, setState() {}, post: (m: unknown) => void posted.push(m), close() {} };
+      }
+    }
+    const w = await fresh({ plugins: [FakeSurfaces] });
+    const contexts: PluginContext[] = [];
+    const grab = definePlugin({ inject: ["surfaces"], apply: (p) => void contexts.push(p) });
+    w.ctx.plugin(sdk(grab, { id: "someone/plain", namespace: "plain", origin: "extension", root: dir, dataDir: dir, title: "Plain" }));
+    w.ctx.plugin(sdk(grab, { id: "someone/demo", namespace: "demo", origin: "extension", root: dir, dataDir: dir, title: "Demo Tools", window: true }));
+    w.ctx.plugin(sdk(grab, { id: "pet", namespace: "pet", origin: "builtin", root: dir, dataDir: null }));
+    await settle();
+    const [plain, demo, builtin] = contexts as [PluginContext, PluginContext, PluginContext];
+    await expect(plain.surfaces.open({ id: "plain.win", title: "Win", document: "face.html", width: 800, height: 600, kind: "window" })).rejects.toThrow(/does not grant permissions\.window/);
+    // A widget needs nothing new, and keeps its own title.
+    await plain.surfaces.open({ id: "plain.face", title: "Face", document: "face.html", width: 10, height: 10 });
+    const win = await demo.surfaces.open({ id: "demo.sessions", title: "Code sessions", document: "face.html", width: 900, height: 600, kind: "window", minWidth: 480, minHeight: 320 });
+    await win.post({ frame: 1 });
+    await win.post({ frame: 2 });
+    await builtin.surfaces.open({ id: "pet.window", title: "Pet", document: "face.html", width: 300, height: 300, kind: "window" });
+    expect(specs.map((spec) => [spec.id, spec.title, spec.kind, spec.minWidth, spec.minHeight])).toEqual([
+      ["plain.face", "Face", undefined, undefined, undefined],
+      ["demo.sessions", "Code sessions — Demo Tools", "window", 480, 320],
+      ["pet.window", "Pet", "window", undefined, undefined]
+    ]);
+    expect(posted).toEqual([{ frame: 1 }, { frame: 2 }]);
+    expect(windowTitle("Demo Tools", "Demo Tools")).toBe("Demo Tools");
   });
 
   it("tells the plugin once when its window is gone, and refuses calls on it after", async () => {

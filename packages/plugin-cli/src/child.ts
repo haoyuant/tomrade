@@ -15,6 +15,8 @@ interface Payload {
   main: string;
   id: string;
   namespace: string;
+  title?: string;
+  window?: boolean;
   tmp: string;
   scenario: string | null;
 }
@@ -81,7 +83,7 @@ async function test() {
   const { testPlugin } = await import("@tomradex/plugin-host");
   const p = await plugin();
   const scenario = payload.scenario;
-  report(await testPlugin({ plugin: p, id: payload.id, namespace: payload.namespace, dir: payload.dir, tmp: payload.tmp, scenario: scenario ? () => load(scenario) : null }));
+  report(await testPlugin({ plugin: p, id: payload.id, namespace: payload.namespace, title: payload.title, window: payload.window, dir: payload.dir, tmp: payload.tmp, scenario: scenario ? () => load(scenario) : null }));
 }
 
 (payload.mode === "inspect" ? inspect() : test()).catch((error) =>

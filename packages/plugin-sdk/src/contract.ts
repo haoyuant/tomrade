@@ -267,6 +267,15 @@ export interface AgentApi {
 export interface SurfaceSpec {
   id: string;
   title: string;
+  /**
+   * SDK 0.2.11: `"window"` is a working window — title bar, resizable, closable, in the Dock or
+   * taskbar, its bounds remembered — and needs `permissions.window`. The default `"widget"` is
+   * the fixed, frameless surface it always was. A window's title carries the plugin's own.
+   */
+  kind?: "widget" | "window";
+  /** SDK 0.2.11, windows only: how small the person may make it. */
+  minWidth?: number;
+  minHeight?: number;
   /** A document inside the plugin's package, relative to its root. Remote pages are refused. */
   document: string;
   width: number;
@@ -288,6 +297,8 @@ export interface SurfaceSpec {
 export interface SurfaceHandle {
   readonly id: string;
   setState(state: unknown): Promise<void>;
+  /** SDK 0.2.11: one message to the document's `tomradeSurface.onMessage`, for frequent small updates; `setState` replaces the whole state. */
+  post(message: unknown): Promise<void>;
   setPosition(x: number, y: number): Promise<void>;
   bounds(): Promise<{ x: number; y: number; width: number; height: number }>;
   workArea(): Promise<{ x: number; y: number; width: number; height: number }>;

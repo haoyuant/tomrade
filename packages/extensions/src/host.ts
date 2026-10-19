@@ -57,7 +57,14 @@ export interface ExtensionIdentity {
   /** Where the plugin's own files are: surface documents resolve against it. */
   root: string | null;
   dataDir: string | null;
+  /** The plugin's title, carried by every window it opens. */
+  title?: string;
+  /** Its manifest grants `permissions.window`; a built-in needs none. */
+  window?: boolean;
 }
+
+/** What a plugin's window is called: its own title, then the plugin's, so it never passes for Tomrade's or another app's. */
+export const windowTitle = (title: string, owner: string | undefined): string => (owner && title !== owner ? `${title} — ${owner}` : title);
 
 const CORDIS: Record<ServiceName, string> = {
   items: "items",
@@ -437,6 +444,8 @@ export class Host {
           open: (spec) =>
             host.call(() => {
               host.own(spec.id, "surface");
+              const window = spec.kind === "window";
+              if (window && host.identity.origin === "extension" && !host.identity.window) throw new Error(`${host.identity.id} opens window "${spec.id}" but its manifest does not grant permissions.window`);
               const url = host.documentUrl(spec.document);
               const onMessage = spec.onMessage ? host.listen(spec.onMessage, `surface ${spec.id}`) : undefined;
               const onClose = spec.onClose ? host.listen(spec.onClose, `surface ${spec.id} close`) : undefined;
@@ -448,10 +457,11 @@ export class Host {
               });
               const surface = surfaces().open({
                 id: spec.id,
-                title: spec.title,
+                title: window ? windowTitle(String(spec.title), host.identity.title) : spec.title,
                 url,
                 width: spec.width,
                 height: spec.height,
+                ...(window ? { kind: "window" as const, ...(spec.minWidth ? { minWidth: spec.minWidth } : {}), ...(spec.minHeight ? { minHeight: spec.minHeight } : {}) } : {}),
                 transparent: spec.transparent,
                 alwaysOnTop: spec.alwaysOnTop,
                 focusable: spec.focusable,
@@ -468,6 +478,7 @@ export class Host {
               return {
                 id: surface.id,
                 setState: (state: unknown) => live(() => surface.setState(state)),
+                post: (message: unknown) => live(() => surface.post(message)),
                 setPosition: (x: number, y: number) => live(() => surface.setPosition(x, y)),
                 bounds: () => live(() => surface.bounds()),
                 workArea: () => live(() => surface.workArea()),

@@ -67,7 +67,7 @@ await ctx.tools.register(defineTool({
 `ctx.interval(fn, ms)` · `ctx.effect(() => dispose)` · `ctx.when("agent", inner => …)` · `ctx.has("agent")`. Everything is undone when the plugin unloads.
 
 ## Manifest (`tomrade-plugin.json`)
-`id` publisher/name · `version` · `title` · `description` · `license` (OSI SPDX id) · `repository` (public GitHub URL, to publish) · `engines.sdk` · `permissions: { network: ["api.example.com"], fs: "none"|"plugin"|"project"|"any", exec: false }`. `inject`, `optional` and `contributes` are filled in by the build.
+`id` publisher/name · `version` · `title` · `description` · `license` (OSI SPDX id) · `repository` (public GitHub URL, to publish) · `engines.sdk` · `permissions: { network: ["api.example.com"], fs: "none"|"plugin"|"project"|"any", exec: false, window: false }` (`window`: may open working windows, SDK 0.2.11). `inject`, `optional` and `contributes` are filled in by the build.
 
 ## Language packs (data only)
 A plugin that adds a language: `"engines": { "sdk": "^0.2.8" }`, `"main": null` (no code, no `src/`), `"languages": [{ "tag": "pt-BR", "name": "Português (Brasil)", "file": "languages/pt-BR.json" }]` (a canonical tag, never `en`; the name in the language itself). The file is `{ "ui": { "<namespace>": { "<key>": "…" } }, "backend": { "<book>": { "<key>": "…" } } }`, strings only, each shown as plain text. Keep every `{{slot}}` and `[[cmd:…]]` its English has; an entry that changes them, or a key English lacks, reads English, and so does anything left out. `plugin_check` lists the coverage per side: `next` holds the next strings to translate with their English — translate those, check again. Agent prompts are not translatable.

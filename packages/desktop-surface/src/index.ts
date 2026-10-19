@@ -14,12 +14,30 @@ export interface SurfaceCapabilities {
   forwardedMouseMoves: boolean;
 }
 
+/** How the app looks right now, for a surface document to match: the theme's CSS variables and the language. */
+export interface SurfaceLook {
+  /** The theme in use: a built-in's name or a custom theme's id. */
+  theme: string;
+  dark: boolean;
+  /** `--name` → value, the app's theme variables as the main window computes them. */
+  tokens: Record<string, string>;
+  locale: string;
+}
+
 export interface DesktopSurfaceSpec {
   id: string;
   title: string;
   url: string;
   width: number;
   height: number;
+  /**
+   * `window`: a working window — native frame, resizable, minimizable, full screen, closable, in
+   * the Dock or taskbar, its last bounds restored by id. `widget` (the default): fixed and frameless.
+   */
+  kind?: "widget" | "window";
+  /** Windows only. */
+  minWidth?: number;
+  minHeight?: number;
   transparent?: boolean;
   alwaysOnTop?: boolean;
   /** Allow keyboard input; defaults to false for passive widgets. */
@@ -46,6 +64,8 @@ export interface DesktopSurface {
   workArea(): SurfaceBounds;
   setPosition(x: number, y: number): void;
   setState(state: unknown): void;
+  /** One message to the document, in order; sent once it has loaded. */
+  post(message: unknown): void;
   close(): void;
 }
 

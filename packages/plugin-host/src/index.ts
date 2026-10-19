@@ -28,6 +28,9 @@ export interface HostTestInput {
   plugin: { inject?: string[]; optional?: string[]; config?: { safeParse(v: unknown): { success: boolean; data?: unknown } }; apply(ctx: unknown, config: unknown): unknown };
   id: string;
   namespace: string;
+  /** From the manifest: the title its windows carry, and whether it may open them. */
+  title?: string;
+  window?: boolean;
   dir: string;
   /** A directory the plugin may write: its data dir and the throwaway settings file go here. */
   tmp: string;
@@ -65,14 +68,14 @@ class SandboxHerdr extends Service {
 
 /** The sandbox's windows: none opens; each one is remembered with the last state it was given, and the scenario can speak for its document. */
 function recordingSurfaces() {
-  const opened: { spec: DesktopSurfaceSpec; state: unknown; closed: boolean }[] = [];
+  const opened: { spec: DesktopSurfaceSpec; state: unknown; posted: unknown[]; closed: boolean }[] = [];
   class Surfaces extends Service {
     static provide = "desktopSurfaces";
     constructor(ctx: Context) {
       super(ctx, "desktopSurfaces");
     }
     open = (spec: DesktopSurfaceSpec) => {
-      const entry = { spec, state: spec.initialState, closed: false };
+      const entry = { spec, state: spec.initialState, posted: [] as unknown[], closed: false };
       opened.push(entry);
       const area = { x: 0, y: 0, width: 1440, height: 900 };
       return {
@@ -82,6 +85,7 @@ function recordingSurfaces() {
         workArea: () => area,
         setPosition: () => {},
         setState: (state: unknown) => void (entry.state = state),
+        post: (message: unknown) => void entry.posted.push(message),
         close: () => shut(entry)
       };
     };
@@ -91,7 +95,7 @@ function recordingSurfaces() {
     entry.closed = true;
     entry.spec.onClose?.();
   };
-  const view = () => opened.map((o) => ({ id: o.spec.id, title: o.spec.title, width: o.spec.width, height: o.spec.height, state: o.state, closed: o.closed }));
+  const view = () => opened.map((o) => ({ id: o.spec.id, title: o.spec.title, kind: o.spec.kind ?? "widget", width: o.spec.width, height: o.spec.height, state: o.state, posted: [...o.posted], closed: o.closed }));
   const message = async (id: string, msg: unknown) => {
     const entry = [...opened].reverse().find((o) => o.spec.id === id && !o.closed);
     if (!entry) throw new Error(`no open window ${id}`);
@@ -141,7 +145,7 @@ export async function testPlugin(input: HostTestInput): Promise<HostTestResult> 
     w.items.create({ projectId: w.project.id, boardId: w.board.id, title: "One that is done", status: "done", by: "human" })
   ];
   const before = new Set(w.ctx.tools.list().map((t) => t.name));
-  const fiber = w.ctx.plugin(sdk(p as never, { id: input.id, namespace: input.namespace, origin: "extension", root: input.dir, dataDir: input.tmp }), configOf(p));
+  const fiber = w.ctx.plugin(sdk(p as never, { id: input.id, namespace: input.namespace, origin: "extension", root: input.dir, dataDir: input.tmp, title: input.title, window: input.window }), configOf(p));
   try {
     await Promise.race([fiber, timeout(5_000, "loading the plugin")]);
     await settle();

@@ -41,7 +41,7 @@ export function adaptLanguagePacks(identity: ExtensionIdentity, languages: reado
 }
 
 export function identityOf(manifest: Manifest, where: { root: string; dataDir: string }): ExtensionIdentity {
-  return { id: manifest.id, namespace: namespaceOf(manifest), origin: "extension", root: where.root, dataDir: where.dataDir };
+  return { id: manifest.id, namespace: namespaceOf(manifest), origin: "extension", root: where.root, dataDir: where.dataDir, title: manifest.title, window: manifest.permissions.window };
 }
 
 /** A built-in row written against the SDK: named by its row, trusted like the rest of the app. */

@@ -7,14 +7,15 @@ import { useBuildReview, useStudioConfirm, useWorkspaces } from "~/lib/plugins";
 import { useToast } from "~/lib/toast";
 import { Findings, Reach, TrustTags, messageOf } from "./parts";
 
-const wider = (before: { permissions: { network: string[]; fs: string; exec: boolean }; inject: string[] } | null, after: { permissions: { network: string[]; fs: string; exec: boolean }; inject: string[] }) => {
+const wider = (before: { permissions: { network: string[]; fs: string; exec: boolean; window?: boolean }; inject: string[] } | null, after: { permissions: { network: string[]; fs: string; exec: boolean; window?: boolean }; inject: string[] }) => {
   if (!before) return [];
   const FS = ["none", "plugin", "project", "any"];
   return [
     ...after.inject.filter((s) => !before.inject.includes(s)),
     ...after.permissions.network.filter((h) => !before.permissions.network.includes(h)),
     ...(FS.indexOf(after.permissions.fs) > FS.indexOf(before.permissions.fs) ? [`fs: ${after.permissions.fs}`] : []),
-    ...(after.permissions.exec && !before.permissions.exec ? ["exec"] : [])
+    ...(after.permissions.exec && !before.permissions.exec ? ["exec"] : []),
+    ...(after.permissions.window && !before.permissions.window ? ["window"] : [])
   ];
 };
 
