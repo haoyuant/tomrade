@@ -167,6 +167,9 @@
       "path": "./packages/web-search-tavily"
     },
     {
+      "path": "./packages/web-search-kimi"
+    },
+    {
       "path": "./packages/write"
     },
     {

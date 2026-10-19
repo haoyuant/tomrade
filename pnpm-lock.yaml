@@ -224,6 +224,9 @@ importers:
       '@tomradex/web-search':
         specifier: workspace:*
         version: link:../../packages/web-search
+      '@tomradex/web-search-kimi':
+        specifier: workspace:*
+        version: link:../../packages/web-search-kimi
       '@tomradex/web-search-tavily':
         specifier: workspace:*
         version: link:../../packages/web-search-tavily
@@ -2641,6 +2644,25 @@ importers:
       zod:
         specifier: ^4.4.3
         version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/web-search-kimi:
+    dependencies:
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
+      '@tomradex/web-search':
+        specifier: workspace:*
+        version: link:../web-search
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
     devDependencies:
       '@types/node':
         specifier: ^26.2.0

@@ -108,10 +108,14 @@ const run = async () => {
   await ctx.mcpClient.settled();
   check("switching it back on reconnects from the saved settings", ctx.tools.has("fx__echo"));
 
+  // web_search stays for Tomrade's own agent, to say search is unavailable; outside clients lose it.
+  const servesSearch = () => ctx.tools.served().some((t) => t.name === "web_search");
   await ctx.plugins.setEnabled("web-search-tavily", false);
-  check("switching off the last web search provider takes the web tools with it", !ctx.tools.has("web_search") && !ctx.tools.has("web_fetch"));
+  await ctx.plugins.setEnabled("web-search-kimi", false);
+  check("switching off every web search provider takes web_fetch and the served web_search with it", !servesSearch() && !ctx.tools.has("web_fetch") && ctx.tools.has("web_search"));
   await ctx.plugins.setEnabled("web-search-tavily", true);
-  check("switching it back on offers them again", ctx.tools.has("web_search") && ctx.tools.has("web_fetch"));
+  await ctx.plugins.setEnabled("web-search-kimi", true);
+  check("switching them back on offers them again", servesSearch() && ctx.tools.has("web_fetch"));
 
   // Contracts: declared on the row so a switched-off one still groups, and
   // held to what the running rows actually register.

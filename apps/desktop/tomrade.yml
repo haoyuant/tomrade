@@ -229,6 +229,10 @@ plugins:
   - id: web-search-tavily
     name: "@tomradex/web-search-tavily"
     implements: [webSearch]
+  # …and Kimi's search API, with the key of a Kimi model profile, so it needs no setup of its own.
+  - id: web-search-kimi
+    name: "@tomradex/web-search-kimi"
+    implements: [webSearch]
   # The platform: threads, runs, the ledger, run-scoped undo, and the
   # engine/workflow/playbook/policy registries. It conducts nothing itself.
   - id: agent
