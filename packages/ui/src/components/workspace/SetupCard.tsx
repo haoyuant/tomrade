@@ -1,9 +1,7 @@
-import { DetectedModels } from "~/components/setup/DetectedModels";
-import { LocalAgentSetup } from "~/components/setup/LocalAgentSetup";
-import { QuickModelSetup } from "~/components/setup/QuickModelSetup";
+import { SetupOptions } from "~/components/setup/SetupOptions";
 import { useI18n } from "~/lib/i18n";
 import { useSeen } from "~/lib/onboarding";
-import { setupRows, useSetup } from "~/lib/setup";
+import { useSetup } from "~/lib/setup";
 
 /**
  * Until Tomrade can work: connect a model or a local agent, either one. A
@@ -22,14 +20,20 @@ export function SetupCard({ onOpenSettings }: { onOpenSettings: (engineId?: stri
   return (
     <div className={noneReady ? "agent-empty agent-setup" : "agent-setup"} data-testid="setup-card">
       <p className="setup-head">{t("setup.cardTitle")}</p>
-      <DetectedModels />
-      <QuickModelSetup />
-      {setupRows(engines).length > 0 && (
-        <div className="stack-2">
-          <p className="setup-name">{t("setup.cliTitle")}</p>
-          <LocalAgentSetup engines={engines} onOpenSettings={onOpenSettings} />
-        </div>
-      )}
+      <SetupOptions
+        engines={engines}
+        onOpenSettings={onOpenSettings}
+        frame={(part) =>
+          part.id === "key" ? (
+            part.body
+          ) : (
+            <div className="stack-2">
+              <p className="setup-name">{part.title}</p>
+              {part.body}
+            </div>
+          )
+        }
+      />
       <button type="button" className="link-btn meta-txt" onClick={() => onOpenSettings()}>
         {t("setup.cardMore")} →
       </button>
