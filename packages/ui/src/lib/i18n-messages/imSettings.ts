@@ -23,7 +23,9 @@ export const imSettings = {
     remove: "Remove",
     confirmRemove: "Remove {{name}}",
     enableAria: "Enable {{name}}",
-    fold: "Show or hide pairing and conversations of {{name}}",
+    foldBot: "Fold {{name}}",
+    unfoldBot: "Unfold {{name}}",
+    foldedSummary: "Conversations: {{routes}} · Paired: {{people}}",
 
     platform: "Platform",
     idLabel: "Connection ID",
@@ -145,7 +147,9 @@ export const imSettings = {
     remove: "移除",
     confirmRemove: "移除 {{name}}",
     enableAria: "启用 {{name}}",
-    fold: "展开或收起 {{name}} 的配对和会话",
+    foldBot: "折叠 {{name}}",
+    unfoldBot: "展开 {{name}}",
+    foldedSummary: "会话 {{routes}} · 已配对 {{people}}",
 
     platform: "平台",
     idLabel: "连接 ID",
