@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
+import { spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { AUTO_TERMINAL, SYSTEM_TERMINAL, TerminalSettings, fillTemplate, herdrFallbackNote, launchTerminal, machineTerminalSettings, optionFlags, setupTerminal, terminalApp, terminalApps, terminalTemplate, withOptions, writeGeminiHome, type HerdrTerminal } from "@tomradex/code-link";
+import { AUTO_TERMINAL, GitBashMissing, SYSTEM_TERMINAL, TerminalSettings, fillTemplate, gitBash, herdrFallbackNote, launchTerminal, machineTerminalSettings, openOnWindows, optionFlags, setupTerminal, terminalApp, terminalApps, terminalTemplate, withOptions, writeGeminiHome, type HerdrTerminal } from "@tomradex/code-link";
 
 it("lists installed terminal apps with the special launch choices", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-terminal-apps-"));
@@ -47,7 +49,7 @@ describe("a terminal of herdr", () => {
 
     const notRunning = await launchTerminal({ cwd: "/work/tom-9", command: "claude", env: { TOMRADE_MCP_TOKEN: "t" }, dir, label: "TOM-9", resume: "claude --resume x" }, "herdr", stopped);
     expect(notRunning).toEqual({ script, launched: true, herdrMissing: "notRunning" });
-    expect(opened).toHaveBeenLastCalledWith("Terminal", script);
+    expect(opened).toHaveBeenLastCalledWith("Terminal", script, "/work/tom-9");
     // the same script any terminal app gets: the heartbeat, the token and the resume beside it
     const written = fs.readFileSync(script, "utf8");
     expect(written).toContain("echo $$ >");
@@ -192,5 +194,66 @@ describe("an unset terminal", () => {
     version = "0.9.5";
     expect(await machineTerminalSettings(stored, herdr)).toMatchObject({ terminal: "herdr", claudeCommand: "claude" });
     expect(stored.terminal).toBe(AUTO_TERMINAL);
+  });
+});
+
+describe("the system terminal on Windows", () => {
+  const ENV = { ProgramFiles: "C:\\Program Files", "ProgramFiles(x86)": "C:\\Program Files (x86)", LOCALAPPDATA: "C:\\Users\\mira\\AppData\\Local" };
+  /** A spawn that starts what `works` names and fails the rest, recording each try. */
+  const spawner = (works: (command: string) => boolean) => {
+    const tries: { command: string; args: string[]; cwd?: string; detached?: boolean }[] = [];
+    const launch = ((command: string, args: string[], options: { cwd?: string; detached?: boolean }) => {
+      tries.push({ command, args, cwd: options.cwd, detached: options.detached });
+      const child = new EventEmitter() as EventEmitter & { unref(): void };
+      child.unref = () => {};
+      queueMicrotask(() => (works(command) ? child.emit("spawn") : child.emit("error", new Error(`spawn ${command} ENOENT`))));
+      return child;
+    }) as unknown as typeof spawn;
+    return { tries, launch };
+  };
+
+  it("finds Git Bash where Git for Windows installs it, never a bash on PATH", () => {
+    const user = "C:\\Users\\mira\\AppData\\Local\\Programs\\Git\\bin\\bash.exe";
+    expect(gitBash(ENV, (file) => file === "C:\\Program Files\\Git\\bin\\bash.exe")).toBe("C:\\Program Files\\Git\\bin\\bash.exe");
+    expect(gitBash(ENV, (file) => file === user)).toBe(user);
+    expect(gitBash({ ...ENV, PATH: "C:\\Windows\\System32" }, (file) => file === "C:\\Windows\\System32\\bash.exe")).toBeNull();
+    expect(gitBash({}, () => true)).toBeNull();
+  });
+
+  it("runs the script with Git Bash in Windows Terminal, in the session's folder", async () => {
+    const { tries, launch } = spawner(() => true);
+    expect(await openOnWindows("C:\\s\\run.command", "C:\\work\\tom-9", "C:\\Git\\bin\\bash.exe", launch)).toBe("Windows Terminal");
+    expect(tries).toEqual([{ command: "wt.exe", args: ["-d", "C:\\work\\tom-9", "C:\\Git\\bin\\bash.exe", "C:\\s\\run.command"], cwd: "C:\\work\\tom-9", detached: true }]);
+  });
+
+  it("opens Git Bash in a console window of its own when Windows Terminal is missing", async () => {
+    const { tries, launch } = spawner((command) => command !== "wt.exe");
+    expect(await openOnWindows("C:\\s\\run.command", "C:\\work", "C:\\Git\\bin\\bash.exe", launch)).toBe("Git Bash");
+    expect(tries.map((t) => [t.command, ...t.args])).toEqual([
+      ["wt.exe", "-d", "C:\\work", "C:\\Git\\bin\\bash.exe", "C:\\s\\run.command"],
+      ["C:\\Git\\bin\\bash.exe", "C:\\s\\run.command"]
+    ]);
+  });
+
+  it("opens nothing without Git Bash, and says Git for Windows is needed", async () => {
+    const { tries, launch } = spawner(() => true);
+    await expect(openOnWindows("C:\\s\\run.command", "C:\\work", null, launch)).rejects.toBeInstanceOf(GitBashMissing);
+    expect(tries).toEqual([]);
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-no-git-bash-"));
+    const opened = vi.spyOn(terminalApp, "open").mockRejectedValue(new GitBashMissing());
+    const script = path.join(dir, "run.command");
+    const launched = await launchTerminal({ cwd: "/work/tom-9", command: "claude", dir }, SYSTEM_TERMINAL);
+    expect(launched).toEqual({ script, launched: false, gitBashMissing: true });
+    expect(opened).toHaveBeenCalledWith(SYSTEM_TERMINAL, script, "/work/tom-9");
+    expect(herdrFallbackNote("en", launched, "brew install herdr")).toContain("Git for Windows");
+    expect(herdrFallbackNote("zh", launched, "brew install herdr")).toContain("Git for Windows");
+    // herdr missing too: the herdr note, then why nothing opened
+    const both = herdrFallbackNote("en", { ...launched, herdrMissing: "notInstalled" }, "brew install herdr")!;
+    expect(both).toContain("herdr is not installed");
+    expect(both).toContain("needs Git Bash");
+    expect(both).not.toContain("run the command yourself");
+    opened.mockRestore();
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });
