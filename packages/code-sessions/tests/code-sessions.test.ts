@@ -17,7 +17,7 @@ type Session = { id: string; itemIds: string[]; branch: string; state: string; m
 
 const session = (over: Partial<Session> & { id: string }): Session => ({ itemIds: [], branch: "b", state: "running", mode: "terminal", agent: "claude-code", herdrPane: null, terminal: null, device: "here", threadId: null, worktree: null, activity: null, summary: null, blocked: null, startedAt: 1, endedAt: null, lastEventAt: null, ...over });
 
-it("lists live sessions first, needs-you before the rest, and ended ones only for a day", () => {
+it("lists live sessions first, needs-you before the rest, then every ended one with when it ended", () => {
   const now = 10 * 24 * 3600_000;
   const sessions = [
     session({ id: "old", state: "ended", endedAt: now - 2 * 24 * 3600_000, startedAt: 1 }),
@@ -26,7 +26,8 @@ it("lists live sessions first, needs-you before the rest, and ended ones only fo
     session({ id: "asks", state: "waiting", blocked: { kind: "permission" }, startedAt: 3, mode: "headless", threadId: "t1", summary: "May I?" })
   ];
   const rows = sessionRows({ sessionsOf: () => sessions as never, links: () => [{ branch: "tom-1/x", prUrl: "https://example.com/pr/1" }] as never }, { get: (_p, id) => (id === "i1" ? { key: "TOM-1", title: "One" } : null) }, "p", now);
-  expect(rows.map((r) => r.id)).toEqual(["asks", "busy", "done"]);
+  expect(rows.map((r) => r.id)).toEqual(["asks", "busy", "done", "old"]);
+  expect(rows.map((r) => r.endedAt)).toEqual([null, null, now - 3600_000, now - 2 * 24 * 3600_000]);
   expect(rows[0]).toMatchObject({ needsYou: true, mode: "run", activity: "May I?", threadId: "t1" });
   expect(rows[1]).toMatchObject({ key: "TOM-1", title: "One", pane: "w1:p1", prUrl: "https://example.com/pr/1", mode: "terminal" });
   // An ended session's pane is no terminal to attach to.
@@ -115,7 +116,7 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
 
   await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
   const win = opened[0]!;
-  expect(win.spec).toMatchObject({ id: `code-sessions.${w.project.id}`, kind: "window", url: "file:///ui/code-sessions.html", minWidth: 640, minHeight: 400, title: `Terminal — ${w.project.name}` });
+  expect(win.spec).toMatchObject({ id: `code-sessions.${w.project.id}`, kind: "window", url: "file:///ui/code-sessions.html", minWidth: 640, minHeight: 400, title: `${w.project.name} — Terminal` });
   const first = win.states[0]!;
   expect(first).toMatchObject({ projectId: w.project.id, bridge: { state: "ready" }, askSwitch: true, terminal: "iTerm", layout: { type: "leaf", sessionId: null } });
   expect(first.sessions).toEqual([expect.objectContaining({ id: "s1", key: ticket.key, title: "Window work", pane: "w1:p1" })]);
@@ -179,6 +180,74 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   await expect(w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id })).rejects.toThrow("no window");
   await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
   expect(opened).toHaveLength(6);
+});
+
+it("puts ended sessions in the archive, keeps one a cell shows, sends the archive only while it is open, and remembers the fold per project", async () => {
+  const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[] }[] = [];
+  const now = Date.now();
+  const sessions = [
+    session({ id: "live", herdrPane: "w1:p1", startedAt: 5 }),
+    session({ id: "iterm", terminal: "iTerm.app", startedAt: 4 }),
+    session({ id: "shown", state: "ended", endedAt: now - 5000, startedAt: 3 }),
+    session({ id: "old", state: "ended", endedAt: now - 30 * 24 * 3600_000, startedAt: 1 }),
+    session({ id: "lost", state: "lost", endedAt: now - 60_000, startedAt: 2, mode: "headless", threadId: "t" })
+  ];
+  class FakeSurfaces extends Service {
+    static provide = "desktopSurfaces";
+    constructor(ctx: Context) {
+      super(ctx, "desktopSurfaces");
+    }
+    open(spec: (typeof opened)[number]["spec"]) {
+      const entry = { spec, states: [spec.initialState as WindowState] };
+      opened.push(entry);
+      return { id: "s", capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus() {}, setState: (s: WindowState) => void entry.states.push(s), post() {}, close: () => spec.onClose() };
+    }
+  }
+  class ReadyHerdr extends Service {
+    static provide = "herdr";
+    constructor(ctx: Context) {
+      super(ctx, "herdr");
+    }
+    bridge = async () => ({ state: "ready" as const, version: "0.9.5" });
+  }
+  class FakeCodeLink extends Service {
+    static provide = "codeLink";
+    constructor(ctx: Context) {
+      super(ctx, "codeLink");
+    }
+    sessionsOf = () => sessions;
+    links = () => [];
+    repositoriesOf = () => [];
+  }
+  const stateFile = path.join(dir, "archive-state.json");
+  const shown: Layout = { type: "split", id: "r", direction: "row", ratio: 0.5, a: { type: "leaf", id: "c1", sessionId: "live" }, b: { type: "leaf", id: "c2", sessionId: "shown" } };
+  const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "archive-settings.json") }], Contributions, FakeSurfaces, ReadyHerdr, FakeCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile }]] });
+  fs.writeFileSync(stateFile, JSON.stringify({ layouts: { [w.project.id]: shown } }));
+  for (const s of sessions) s.device = w.ctx.hub.deviceId;
+  await settle();
+  await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
+  const win = opened[0]!;
+  const say = async (m: WindowMessage) => {
+    win.spec.onMessage(m);
+    await settle();
+  };
+  // Live ones, an outside one among them, and the ended one a cell shows; the rest are only counted.
+  expect(win.states[0]!.sessions.map((s) => s.id)).toEqual(["live", "iterm", "shown"]);
+  expect(win.states[0]).toMatchObject({ archive: { count: 3, rows: null }, folded: false });
+  expect(win.states[0]!.sessions.find((s) => s.id === "iterm")).toMatchObject({ where: "outside", terminal: "iTerm2", endedAt: null });
+
+  await say({ type: "archive", open: true });
+  expect(win.states.at(-1)!.archive.rows!.map((s) => s.id)).toEqual(["shown", "lost", "old"]);
+  await say({ type: "archive", open: false });
+  expect(win.states.at(-1)!.archive).toEqual({ count: 3, rows: null });
+
+  // Folded for this project only, and still folded when the window opens again.
+  await say({ type: "fold", folded: true });
+  expect(win.states.at(-1)!.folded).toBe(true);
+  expect(JSON.parse(fs.readFileSync(stateFile, "utf8")).folded).toEqual({ [w.project.id]: true });
+  win.spec.onClose();
+  await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
+  expect(opened[1]!.states[0]).toMatchObject({ folded: true, archive: { count: 3, rows: null } });
 });
 
 it("shows a session code link asks for: the window opens or comes forward with it to reveal, only while herdr can show panes", async () => {

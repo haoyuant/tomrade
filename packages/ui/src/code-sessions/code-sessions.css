@@ -6,6 +6,20 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 /* The list reads like the app's own sidebar: its background, eyebrow heads, side rows and tags. */
 .cs-side { --text-xs: 13px; --text-sm: 14px; width: 280px; flex: none; border-right: 1px solid var(--border); background: var(--bg); overflow-y: auto; padding: 0 var(--space-3) var(--space-3); scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .cs-side-head { margin: 0; padding: var(--space-5) var(--space-2) var(--space-2); }
+/* The project this window belongs to, first thing in the list, beside the fold. */
+.cs-project-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: var(--space-4) var(--space-2) 0; }
+.cs-project { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); font-weight: 600; color: var(--fg); }
+.cs-fold { width: 24px; height: 24px; flex: none; border: 0; border-radius: 4px; background: none; color: var(--muted); cursor: pointer; }
+.cs-fold:hover { background: var(--tag-bg-faint); color: var(--fg); }
+/* Folded: a strip with the way back, the needs-you count and the project's name. */
+.cs-side[data-folded] { width: 40px; padding: 0; overflow: hidden; }
+.cs-strip { display: flex; flex-direction: column; align-items: center; gap: 10px; padding-top: var(--space-3); height: 100%; }
+.cs-strip-name { writing-mode: vertical-rl; min-height: 0; max-height: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-xs); color: var(--meta); }
+.cs-group { margin-top: 6px; }
+.cs-group-head { flex-direction: row; align-items: center; gap: 6px; width: 100%; cursor: pointer; font-size: var(--text-sm); color: var(--muted); }
+.cs-group-name { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-group-caret { width: 10px; flex: none; }
+.cs-archive-open { display: block; margin: var(--space-4) var(--space-2) 0; font-size: var(--text-sm); }
 .cs-side-sub { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .cs-side-sub h2 { margin: 0; }
 .cs-side-sub .side-add { font-size: var(--text-xs); }

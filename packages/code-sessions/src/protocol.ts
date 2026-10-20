@@ -26,6 +26,8 @@ export interface SessionRow {
   prUrl: string | null;
   worktree: string | null;
   startedAt: number;
+  /** When it ended; null while it lives. */
+  endedAt: number | null;
 }
 
 /** A plain terminal the window opened: a herdr pane of the person's, with no ticket or code-link session behind it. */
@@ -60,7 +62,10 @@ export interface LayoutPreset {
 /** A cell of the window's layout: one session or terminal (by its id), or a split of two. */
 export type Layout = { type: "leaf"; id: string; sessionId: string | null } | { type: "split"; id: string; direction: "row" | "column"; ratio: number; a: Layout; b: Layout };
 
-/** What the window shows, set as its whole state. */
+/**
+ * What the window shows, set as its whole state. `sessions` holds the live ones and the ended ones a cell still
+ * shows; the rest are in `archive`.
+ */
 export interface WindowState {
   projectId: string;
   projectName: string;
@@ -89,6 +94,10 @@ export interface WindowState {
   autoPlace: boolean;
   /** A session asked to be shown, from outside the window: put in a cell and selected once; `at` tells a new ask from one done. */
   reveal: { sessionId: string; at: number } | null;
+  /** Ended sessions, put away: how many, and the rows themselves only while the window has the archive open, newest first. */
+  archive: { count: number; rows: SessionRow[] | null };
+  /** The sidebar folded to a strip, as this project's window was left. */
+  folded: boolean;
 }
 
 /** What the window asks for. */
@@ -104,6 +113,9 @@ export type WindowMessage =
   | { type: "deletePreset"; id: string }
   | { type: "defaultPreset"; id: string | null }
   | { type: "autoPlace"; on: boolean }
+  /** The archive opened or closed: its rows come with the state while it is open. */
+  | { type: "archive"; open: boolean }
+  | { type: "fold"; folded: boolean }
   | { type: "detach"; cell: string }
   | { type: "input"; cell: string; data: string }
   | { type: "resize"; cell: string; cols: number; rows: number }

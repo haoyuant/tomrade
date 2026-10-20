@@ -2,8 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, t
 import type { Layout, LayoutPreset, SessionRow, TerminalPlace, TerminalRow, WindowState } from "@tomradex/code-sessions";
 import { ContextMenu, ContextMenuActionItem, ContextMenuSub } from "~/components/ui/menu";
 import { interpolate, message } from "~/lib/dicts";
+import { formatChord, matchesChord } from "~/lib/keybindings";
+import { isMac } from "~/lib/keys";
 import { onLook, onState, onToast, send, type Look } from "./bridge";
 import { applyPreset, close, leaves, place, prune, resize, reveal, show, split } from "./layout";
+import { foldChord, sessionGroups } from "./lists";
 import { TerminalCell } from "./TerminalCell";
 
 type Say = (key: string, vars?: Record<string, string | number>) => string;
@@ -103,6 +106,50 @@ function SessionList({ sessions, active, selected, onPick, say }: { sessions: Se
               )}
             </span>
             {s.activity && <span className="cs-row-activity">{s.activity}</span>}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Live sessions this window cannot show, under one head that counts them and the ones that need you; closed until opened. */
+function OutsideGroup({ sessions, open, onToggle, list, say }: { sessions: SessionRow[]; open: boolean; onToggle: () => void; list: ReactNode; say: Say }) {
+  if (!sessions.length) return null;
+  const needs = sessions.filter((s) => s.needsYou).length;
+  return (
+    <div className="cs-group" data-testid="cs-outside-group">
+      <button type="button" className="side-row cs-group-head" aria-expanded={open} title={say("outsideGroupTitle")} onClick={onToggle}>
+        <span className="cs-group-caret" aria-hidden>{open ? "▾" : "▸"}</span>
+        <span className="cs-group-name">{say("outsideGroup")}</span>
+        <span className="tag faint cs-chip" data-testid="cs-outside-count">{sessions.length}</span>
+        {needs > 0 && (
+          <span className="tag cs-chip" data-state="needs" data-testid="cs-outside-needs">
+            {say("needsYouCount", { n: needs })}
+          </span>
+        )}
+      </button>
+      {open && list}
+    </div>
+  );
+}
+
+/** The ended sessions, newest first: picking one shows it in a pane as an ended session. */
+function ArchiveList({ rows, locale, active, selected, onPick, say }: { rows: SessionRow[] | null; locale: string; active: Set<string>; selected: Set<string>; onPick: (s: SessionRow) => void; say: Say }) {
+  if (!rows) return <p className="cs-empty">{say("archiveLoading")}</p>;
+  if (!rows.length) return <p className="cs-empty">{say("archiveEmpty")}</p>;
+  const when = (at: number) => new Date(at).toLocaleString(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return (
+    <ul className="cs-list" data-testid="cs-archive-list">
+      {rows.map((s) => (
+        <li key={s.id}>
+          <button type="button" className="side-row cs-row" aria-current={selected.has(s.id) ? "true" : undefined} data-active={active.has(s.id) || undefined} onClick={() => onPick(s)}>
+            <span className="cs-row-head">
+              <span className="mono">{s.key ?? s.branch}</span>
+              <span className="cs-row-meta">{say("endedAt", { when: when(s.endedAt!) })}</span>
+            </span>
+            {s.title && <span className="cs-row-title">{s.title}</span>}
+            <span className="cs-row-meta mono">{s.branch}</span>
           </button>
         </li>
       ))}
@@ -345,6 +392,31 @@ export function App() {
   const [layout, setLayout] = useState<Layout | null>(null);
   const [focused, setFocused] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [outsideOpen, setOutsideOpen] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  // The window's own say once it has spoken; until then, the fold the project's window was left with.
+  const [foldedHere, setFoldedHere] = useState<boolean | null>(null);
+  const folded = foldedHere ?? state?.folded ?? false;
+  const toggleFold = useCallback(() => {
+    setFoldedHere(!folded);
+    send({ type: "fold", folded: !folded });
+  }, [folded]);
+  // Before the terminal sees it, so the key never reaches the shell.
+  useEffect(() => {
+    const chord = foldChord(isMac);
+    const onKey = (e: KeyboardEvent) => {
+      if (!matchesChord(e, chord)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      toggleFold();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [toggleFold]);
+  const openArchive = (open: boolean) => {
+    setArchiveOpen(open);
+    send({ type: "archive", open });
+  };
 
   useEffect(() => onState((next) => setState(next)), []);
   useEffect(() => onLook(setLook), []);
@@ -370,7 +442,7 @@ export function App() {
   // The first state brings the remembered layout; after that the window owns it, minus sessions that went.
   // A terminal just asked for may miss from a state sent before the ask arrived; its cell keeps it a moment.
   const asked = useRef(new Map<string, number>());
-  const known = useMemo(() => new Set([...(state?.sessions.map((s) => s.id) ?? []), ...(state?.terminals.map((t) => t.id) ?? [])]), [state?.sessions, state?.terminals]);
+  const known = useMemo(() => new Set([...(state?.sessions.map((s) => s.id) ?? []), ...(state?.archive.rows?.map((s) => s.id) ?? []), ...(state?.terminals.map((t) => t.id) ?? [])]), [state?.sessions, state?.archive.rows, state?.terminals]);
   const current = useRef<Layout | null>(null);
   // What the first state already listed is not new: only what appears after it is placed.
   const seen = useRef<Set<string> | null>(null);
@@ -420,7 +492,9 @@ export function App() {
   if (!state || !layout) return null;
   const cells = leaves(layout);
   const target = selectedCell(cells, focused);
-  const byId = new Map(state.sessions.map((s) => [s.id, s]));
+  // An archived session picked into a cell is in the archive's rows until the next state carries it.
+  const byId = new Map([...(state.archive.rows ?? []), ...state.sessions].map((s) => [s.id, s]));
+  const groups = sessionGroups(state.sessions);
   const terminalsById = new Map(state.terminals.map((t) => [t.id, t]));
   // A terminal whose agent claimed a ticket shows that session in its own cell, on the pane it already has.
   const sessionIn = (id: string | null) => (id ? byId.get(terminalsById.get(id)?.sessionId ?? id) : undefined);
@@ -525,29 +599,76 @@ export function App() {
       />
     );
 
+  const needsYou = state.sessions.filter((s) => s.needsYou).length;
+  const foldLabel = `${say(folded ? "unfold" : "fold")} (${formatChord(foldChord(isMac))})`;
+
   return (
     <div className="cs-window">
-      <aside ref={side} className="cs-side">
-        <h2 className="cs-side-head eyebrow">{say("sessions")}</h2>
-        <SessionList sessions={state.sessions} active={active} selected={selected} onPick={pick} say={say} />
-        <div className="cs-side-head cs-side-sub">
-          <h2 className="eyebrow">{say("terminals")}</h2>
-          <button type="button" className="link-btn side-add" data-testid="cs-side-new-terminal" disabled={!canOpen} onClick={newTerminal}>
-            + {say("newTerminal")}
-          </button>
-        </div>
-        <TerminalList terminals={state.terminals} active={active} selected={selected} onPick={pickTerminal} say={say} />
-        <Layouts
-          presets={state.presets}
-          defaultPreset={state.defaultPreset}
-          autoPlace={state.autoPlace}
-          onApply={(p) => {
-            change(applyPreset(layout, p.layout));
-            setFocused(null);
-          }}
-          onSave={(name) => send({ type: "savePreset", name, layout })}
-          say={say}
-        />
+      <aside ref={side} className="cs-side" data-folded={folded || undefined}>
+        {folded ? (
+          <div className="cs-strip">
+            <button type="button" className="icon-btn cs-fold" data-testid="cs-fold" title={foldLabel} aria-label={foldLabel} onClick={toggleFold}>
+              »
+            </button>
+            {needsYou > 0 && (
+              <span className="tag cs-chip" data-state="needs" title={say("needsYouCount", { n: needsYou })}>
+                {needsYou}
+              </span>
+            )}
+            <span className="cs-strip-name" data-testid="cs-project" title={say("projectTitle", { project: state.projectName })}>
+              {state.projectName}
+            </span>
+          </div>
+        ) : (
+          <>
+            <div className="cs-project-head">
+              <span className="cs-project" data-testid="cs-project" title={say("projectTitle", { project: state.projectName })}>
+                {state.projectName}
+              </span>
+              <button type="button" className="icon-btn cs-fold" data-testid="cs-fold" title={foldLabel} aria-label={foldLabel} onClick={toggleFold}>
+                «
+              </button>
+            </div>
+            {archiveOpen ? (
+              <>
+                <div className="cs-side-head cs-side-sub">
+                  <h2 className="eyebrow">{say("archiveHead")}</h2>
+                  <button type="button" className="link-btn side-add" data-testid="cs-archive-back" onClick={() => openArchive(false)}>
+                    ← {say("archiveBack")}
+                  </button>
+                </div>
+                <ArchiveList rows={state.archive.rows} locale={locale} active={active} selected={selected} onPick={pick} say={say} />
+              </>
+            ) : (
+              <>
+                <h2 className="cs-side-head eyebrow">{say("sessions")}</h2>
+                {(groups.here.length > 0 || !groups.away.length) && <SessionList sessions={groups.here} active={active} selected={selected} onPick={pick} say={say} />}
+                <OutsideGroup sessions={groups.away} open={outsideOpen} onToggle={() => setOutsideOpen((o) => !o)} list={<SessionList sessions={groups.away} active={active} selected={selected} onPick={pick} say={say} />} say={say} />
+                <div className="cs-side-head cs-side-sub">
+                  <h2 className="eyebrow">{say("terminals")}</h2>
+                  <button type="button" className="link-btn side-add" data-testid="cs-side-new-terminal" disabled={!canOpen} onClick={newTerminal}>
+                    + {say("newTerminal")}
+                  </button>
+                </div>
+                <TerminalList terminals={state.terminals} active={active} selected={selected} onPick={pickTerminal} say={say} />
+                <Layouts
+                  presets={state.presets}
+                  defaultPreset={state.defaultPreset}
+                  autoPlace={state.autoPlace}
+                  onApply={(p) => {
+                    change(applyPreset(layout, p.layout));
+                    setFocused(null);
+                  }}
+                  onSave={(name) => send({ type: "savePreset", name, layout })}
+                  say={say}
+                />
+                <button type="button" className="link-btn cs-archive-open" data-testid="cs-archive" onClick={() => openArchive(true)}>
+                  {say("archive", { n: state.archive.count })}
+                </button>
+              </>
+            )}
+          </>
+        )}
       </aside>
       <main className="cs-main">
         <Banner state={state} say={say} />
