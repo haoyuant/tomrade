@@ -3098,6 +3098,8 @@ export const de: PartialMessages = {
     unfold: "Seitenleiste anzeigen",
     projectTitle: "Projekt dieses Fensters: {{project}}",
     pickHint: "Klick zeigt sie im ausgewählten Bereich · {{mod}}-Klick öffnet sie in einem neuen Bereich",
+    samePane: "{{n}} Tickets in einem Terminal",
+    samePaneHint: "Ein Agent bearbeitet diese Tickets im selben Terminalbereich: Der Bereich erscheint als das Ticket, das du wählst",
     leftPane: "{{name}} hat den Bereich verlassen und läuft weiter",
     shownInOther: "Bereits in einem anderen Bereich geöffnet",
     undo: "Rückgängig",

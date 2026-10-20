@@ -3098,6 +3098,8 @@ export const es: PartialMessages = {
     unfold: "Mostrar la barra lateral",
     projectTitle: "Proyecto de esta ventana: {{project}}",
     pickHint: "Clic para mostrarla en el panel seleccionado · {{mod}}-clic para abrirla en un panel nuevo",
+    samePane: "{{n}} tickets en una terminal",
+    samePaneHint: "Un agente trabaja estos tickets en el mismo panel de terminal: el panel se muestra como el ticket que elijas",
     leftPane: "{{name}} salió del panel y sigue en ejecución",
     shownInOther: "Ya está abierta en otro panel",
     undo: "Deshacer",

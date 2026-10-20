@@ -3098,6 +3098,8 @@ export const ja: PartialMessages = {
     unfold: "サイドバーを表示",
     projectTitle: "このウィンドウのプロジェクト：{{project}}",
     pickHint: "クリックで選択中のペインに表示 · {{mod}}-クリックで新しいペインに開く",
+    samePane: "{{n}} 件のチケットが 1 つのターミナルに",
+    samePaneHint: "1 つのエージェントがこれらのチケットを同じターミナルペインで進めています：どれを選んでも、そのペインがそのチケットとして表示されます",
     leftPane: "{{name}} はペインから外れましたが、実行を続けています",
     shownInOther: "すでに別のペインで開いています",
     undo: "元に戻す",

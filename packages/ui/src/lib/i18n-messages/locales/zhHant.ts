@@ -3099,6 +3099,8 @@ export const zhHant: PartialMessages = {
     unfold: "顯示側邊欄",
     projectTitle: "這個視窗所屬的專案：{{project}}",
     pickHint: "點擊：在選取的窗格中顯示 · {{mod}} 點擊：在新窗格中開啟",
+    samePane: "同一終端機裡的 {{n}} 張工單",
+    samePaneHint: "同一個代理在同一個終端機窗格裡處理這些工單：點哪一張，窗格就顯示為哪一張",
     leftPane: "{{name}} 已移出窗格，仍在背景執行",
     shownInOther: "已在另一個窗格裡開啟",
     undo: "復原",

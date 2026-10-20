@@ -3098,6 +3098,8 @@ export const fr: PartialMessages = {
     unfold: "Afficher la barre latérale",
     projectTitle: "Projet de cette fenêtre : {{project}}",
     pickHint: "Clic pour l’afficher dans le panneau sélectionné · {{mod}}-clic pour l’ouvrir dans un nouveau panneau",
+    samePane: "{{n}} tickets dans un même terminal",
+    samePaneHint: "Un agent traite ces tickets dans le même panneau de terminal : le panneau s’affiche comme le ticket choisi",
     leftPane: "{{name}} a quitté le panneau et continue de tourner",
     shownInOther: "Déjà ouverte dans un autre panneau",
     undo: "Annuler",
