@@ -27,6 +27,33 @@ describe("the MCP surface", () => {
       expect(unscoped).toBe(0);
     } finally { await client.close(); await ctx.fiber.dispose(); }
   });
+  it("hands Gemini CLI an object for a result that is JSON but not one, and every other client the text alone", async () => {
+    const { ctx } = await fresh({ plugins: [Tools, [Mcp, { port: 0 }]] });
+    await settle();
+    ctx.tools.register(defineTool({ name: "rows", title: "Rows", description: "test", input: z.object({}), execute: () => [{ key: "AL-1" }, { key: "AL-2" }] }));
+    ctx.tools.register(defineTool({ name: "one", title: "One", description: "test", input: z.object({}), execute: () => ({ key: "AL-1" }) }));
+    ctx.tools.register(defineTool({ name: "prose", title: "Prose", description: "test", input: z.object({}), execute: () => "Done." }));
+    const unbind = ctx.mcp.bindRun("gemini-run", { author: "ai:gemini", execute: async () => [1, 2] });
+    // Gemini CLI's own client: its transport reads a first JSON block as structured content.
+    const gemini = new Client({ name: "gemini-cli-mcp-client", version: "0.64.0" });
+    const geminiRun = new Client({ name: "gemini-cli-mcp-client", version: "0.64.0" });
+    const other = new Client({ name: "claude-code", version: "2" });
+    try {
+      await gemini.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.url!)));
+      await geminiRun.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.url!), { requestInit: { headers: { "X-Tomrade-Run": "gemini-run" } } }));
+      await other.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.url!)));
+      const rows = await gemini.callTool({ name: "rows", arguments: {} });
+      expect(rows.content).toEqual([{ type: "text", text: '[{"key":"AL-1"},{"key":"AL-2"}]' }]);
+      expect(rows.structuredContent).toEqual({ result: [{ key: "AL-1" }, { key: "AL-2" }] });
+      expect((await geminiRun.callTool({ name: "rows", arguments: {} })).structuredContent).toEqual({ result: [1, 2] });
+      // An object, prose and an error are left as they are.
+      expect((await gemini.callTool({ name: "one", arguments: {} })).structuredContent).toBeUndefined();
+      expect((await gemini.callTool({ name: "prose", arguments: {} })).structuredContent).toBeUndefined();
+      expect((await gemini.callTool({ name: "rows", arguments: { extra: 1 } })).structuredContent).toBeUndefined();
+      const plain = await other.callTool({ name: "rows", arguments: {} });
+      expect(plain).toEqual({ content: [{ type: "text", text: '[{"key":"AL-1"},{"key":"AL-2"}]' }] });
+    } finally { unbind(); await gemini.close(); await geminiRun.close(); await other.close(); await ctx.fiber.dispose(); }
+  });
   it("refuses a misspelt parameter with the name it meant, instead of dropping it, and lists the schema as closed", async () => {
     const { ctx } = await fresh({ plugins: [Tools, [Mcp, { port: 0 }]] });
     await settle();

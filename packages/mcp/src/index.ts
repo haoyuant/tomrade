@@ -128,6 +128,24 @@ function textResult(data: unknown, whole?: boolean) {
 const errorResult = (e: unknown) => ({ content: [{ type: "text" as const, text: `ERROR: ${e instanceof Error ? e.message : String(e)}` }], isError: true });
 
 /**
+ * Gemini CLI (0.64) reads a result whose first block is JSON as its structured
+ * content, which must be an object, and refuses a call that answers an array:
+ * it gets an object holding the value. Every other client reads the text alone.
+ */
+export function forClient<R extends { content: { type: "text"; text: string }[]; structuredContent?: Record<string, unknown> }>(client: string | undefined, result: R): R {
+  if (!client?.startsWith("gemini-cli") || result.structuredContent) return result;
+  const first = result.content[0];
+  if (!first) return result;
+  let value: unknown;
+  try {
+    value = JSON.parse(first.text);
+  } catch {
+    return result;
+  }
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? result : { ...result, structuredContent: { result: value } };
+}
+
+/**
  * An agent run announcing itself: a session opened with the binding's token in
  * `X-Tomrade-Run` executes tools through the run's own gateway, so the ledger,
  * the policies and run-scoped undo see a CLI agent exactly as they see the
@@ -468,11 +486,12 @@ export class Mcp extends Service {
       // Strict, so a misspelt parameter is refused here with a suggestion instead of stripped before the tool sees it.
       server.registerTool(tool.name, { title: tool.title, description: tool.description, inputSchema: strictInput(tool.input), annotations }, async (args, extra) => {
         const started = Date.now();
+        const client = server.server.getClientVersion()?.name;
         try {
           if (token) {
             const binding = this.bindings.get(token);
             if (!binding) throw new Error("No active run for this runtime");
-            return textResult(await binding.execute(tool.name, args, extra.signal), tool.whole);
+            return forClient(client, textResult(await binding.execute(tool.name, args, extra.signal), tool.whole));
           }
           const storage = tool.readOnly ? undefined : (this.ctx.get("storage") as StorageLike | undefined);
           const target = (args as { projectId?: unknown }).projectId;
@@ -488,7 +507,7 @@ export class Mcp extends Service {
           );
           // Only after a call that wrote: the agent learns whether the write is still on this instance alone.
           if (storage && pid && mark !== null && storage.writeMark(pid) > mark) result.content.push(block(syncNote(storage.syncSummary(pid), this.config.instance)));
-          return result;
+          return forClient(client, result);
         } catch (e) {
           return errorResult(e);
         } finally {
