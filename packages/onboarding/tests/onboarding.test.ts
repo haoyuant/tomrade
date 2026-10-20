@@ -47,16 +47,21 @@ describe("the sample project", () => {
     for (const [from, to] of PATH) expect(byKey.get(from)!.blocks).toContain(byKey.get(to)!.id);
   });
 
-  it("lays every tour ticket on one learning path from the first, the same in both languages", () => {
+  it("starts its learning path from the first lesson and blocks a lesson only on what it needs, the same in both languages", () => {
     for (const words of [SAMPLE.en, SAMPLE.zh]) {
       const keys = words.tickets.map((t) => t.key);
       expect(PATH.flat().every((k) => keys.includes(k))).toBe(true);
+      const waiting = new Set(PATH.map(([, to]) => to));
+      // The sample opens on the one lesson that starts the path.
+      expect([...new Set(PATH.map(([from]) => from))].filter((k) => !waiting.has(k))).toEqual([keys[0]]);
       const reached = new Set([keys[0]]);
       for (let grew = true; grew; ) {
         grew = false;
         for (const [from, to] of PATH) if (reached.has(from) && !reached.has(to)) { reached.add(to); grew = true; }
       }
-      expect([...reached].sort()).toEqual([...keys].sort());
+      expect([...waiting].every((k) => reached.has(k))).toBe(true);
+      // Lessons that need nothing open at once: a fresh tour is not a wall of "Blocked".
+      expect(waiting.size).toBeLessThanOrEqual(keys.length / 2);
     }
     expect(SAMPLE.zh.tickets.map((t) => t.key)).toEqual(SAMPLE.en.tickets.map((t) => t.key));
     expect(SAMPLE.zh.feedback.map((f) => [f.key, f.kind])).toEqual(SAMPLE.en.feedback.map((f) => [f.key, f.kind]));
