@@ -31,6 +31,43 @@ describe("tomrade-plugin", () => {
     expect(fs.existsSync(path.join(unpacked.dir, "dist/index.js"))).toBe(true);
   }, 60_000);
 
+  it("runs a local agent's scenario in the sandbox, which may not listen, and takes its installer by address", async () => {
+    const dir = path.join(tmp, "acme");
+    fs.mkdirSync(path.join(dir, "src"), { recursive: true });
+    fs.writeFileSync(path.join(dir, MANIFEST_FILE), JSON.stringify({ id: "someone/acme", version: "0.1.0", title: "Acme", license: "MIT", engines: { sdk: "^0.2.18" }, main: "dist/index.js", permissions: { exec: true, fs: "any" }, inject: ["agent"] }));
+    fs.writeFileSync(
+      path.join(dir, "src/index.ts"),
+      `import { definePlugin } from "@tomradex/plugin-sdk";
+export default definePlugin({
+  inject: ["agent"],
+  async apply(ctx) {
+    await ctx.agent.localAgent({ id: "acme", title: "Acme", cli: { name: "acme" }, install: "install Acme ({install})", setup: { install: [{ script: "https://acme.example/install.sh" }] }, picks: [{ key: "model", title: "Model", choices: [], freeText: true }] });
+  }
+});
+`
+    );
+    fs.writeFileSync(
+      path.join(dir, "src/test.ts"),
+      `export default async function scenario(t: any) {
+  const engine = t.localAgents.engine("acme");
+  t.check("registers the agent with its installer written out", engine?.terminalOnly === true && engine.setup.install[0].startsWith("curl -fsSL https://acme.example/install.sh "), JSON.stringify(engine));
+}
+`
+    );
+    const report = await check(dir);
+    expect(report.problems).toEqual([]);
+    expect(report.analysis.findings.filter((f) => f.severity === "critical")).toEqual([]);
+    expect(report.manifest?.contributes?.localAgents).toEqual(["acme"]);
+    const result = await test(dir, { build: false });
+    expect(result.error).toBeUndefined();
+    expect(result.checks.filter((c) => !c.ok)).toEqual([]);
+    expect(result.checks.map((c) => c.name)).toContain("registers the agent with its installer written out");
+
+    // An older SDK range cannot show the installer.
+    fs.writeFileSync(path.join(dir, MANIFEST_FILE), JSON.stringify({ ...manifestOf(dir), engines: { sdk: "^0.2.17" } }));
+    expect((await check(dir)).problems).toEqual([expect.stringMatching(/installer script needs SDK 0\.2\.18/)]);
+  }, 60_000);
+
   it("checks and runs an IM adapter against the real IM layer and Agent", async () => {
     const dir = path.join(tmp, "fake-im");
     fs.cpSync(path.join(import.meta.dirname, "../../im/tests/fixtures/fake-adapter"), dir, { recursive: true });

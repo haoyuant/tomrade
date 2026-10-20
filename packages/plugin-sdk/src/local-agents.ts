@@ -43,10 +43,17 @@ export interface LocalAgentPick {
   freeText?: boolean;
 }
 
+/**
+ * SDK 0.2.18. An installer script the app runs for the person: `script` (a
+ * POSIX shell installer) as `curl -fsSL <url> | bash`, `powershell` as
+ * `irm <url> | iex`. Plugin code names only the address.
+ */
+export type LocalAgentInstaller = { script: string } | { powershell: string };
+
 /** How the agent is installed and signed in, for setup screens. */
 export interface LocalAgentSetup {
-  /** Install commands, the recommended one first. */
-  install: string[];
+  /** Install commands, the recommended one first; an installer script by its address (SDK 0.2.18). */
+  install: (string | LocalAgentInstaller)[];
   signIn?: string;
   /** Signing in starts the agent itself, which then asks; otherwise the command signs in and returns. */
   signInRuns?: boolean;
@@ -226,7 +233,7 @@ export interface LocalAgentSpec<O extends LocalAgentOptions = LocalAgentOptions>
     bundled?(host: LocalCliHost): Maybe<BundledCli[]>;
     desktopApp?: LocalAgentDesktopApp;
   };
-  /** The English tail of "not found — …". */
+  /** The English tail of "not found — …"; `{install}` stands for the first of `setup.install` (SDK 0.2.18). */
   install: string;
   setup?: LocalAgentSetup;
   /** The agent's settings (`engines.<id>`), drawn by the settings UI; an ACP agent needs one with `command`. */

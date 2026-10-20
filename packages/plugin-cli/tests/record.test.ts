@@ -53,3 +53,16 @@ it("records the local agents a plugin registers, and what keeps one from running
     'local agent "other": lend needs ask(request, io)'
   ]);
 });
+
+it("takes an installer only as a script's https address", async () => {
+  const rec = emptyRecording();
+  const ctx = recordingContext("acme", ["agent"], rec);
+  await ctx.agent.localAgent({ id: "acme", title: "Acme", cli: { name: "acme" }, install: "install Acme ({install})", setup: { install: [{ script: "https://acme.example/install.sh" }, { powershell: "https://acme.example/install.ps1" }] } });
+  expect(rec.invalid).toEqual([]);
+  expect(rec.localAgentInstallers).toEqual(["acme"]);
+  await ctx.agent.localAgent({ id: "acme_two", title: "Acme", cli: { name: "acme" }, install: "x", setup: { install: [{ script: "http://acme.example/install.sh" }, { script: "https://acme.example/i.sh | sh" }] } });
+  expect(rec.invalid).toEqual([
+    'local agent "acme_two": an installer is a script\'s https address, not "http://acme.example/install.sh"',
+    'local agent "acme_two": an installer is a script\'s https address, not "https://acme.example/i.sh | sh"'
+  ]);
+});

@@ -1,6 +1,6 @@
 import os from "node:os";
 import { Context, Service } from "cordis";
-import type { Engine, EngineMcpLink, McpLinkView } from "@tomradex/agent";
+import type { Engine, EngineMcpLink, EngineSetup, McpLinkView } from "@tomradex/agent";
 import {
   chosenCommand,
   cliLentModel,
@@ -16,7 +16,7 @@ import {
 } from "@tomradex/engine-claude-code";
 import { transcriptOf } from "@tomradex/llm";
 import type {} from "@tomradex/mcp";
-import type { LocalAgentIo, LocalAgentOptions, LocalAgentSpec, LocalCli, LocalCliResult, LocalCliRunOptions, McpLinkState } from "@tomradex/plugin-sdk";
+import type { LocalAgentInstaller, LocalAgentIo, LocalAgentOptions, LocalAgentSpec, LocalCli, LocalCliResult, LocalCliRunOptions, McpLinkState } from "@tomradex/plugin-sdk";
 import type { AcpAgent, AcpOptions, Catalog } from "./agent.js";
 import { createAcpEngine } from "./index.js";
 
@@ -27,6 +27,8 @@ declare module "cordis" {
 }
 
 type Spec = LocalAgentSpec<LocalAgentOptions>;
+/** A spec whose setup the app has written out as the commands it runs. */
+type Written = Omit<Spec, "setup"> & { setup?: EngineSetup };
 
 /** Tomrade's own environment with the agent's additions; `undefined` takes a variable out. */
 function envOf(add: Record<string, string | undefined> | undefined): NodeJS.ProcessEnv {
@@ -109,7 +111,7 @@ function pluginLink(ctx: Context, link: Extract<NonNullable<Spec["mcpLink"]>, { 
   };
 }
 
-function acpAgentOf(spec: Spec, locator: CliLocator): AcpAgent<AcpOptions> {
+function acpAgentOf(spec: Written, locator: CliLocator): AcpAgent<AcpOptions> {
   const acp = spec.acp!;
   const options = spec.options as unknown as AcpAgent<AcpOptions>["options"];
   return {
@@ -142,7 +144,7 @@ function acpAgentOf(spec: Spec, locator: CliLocator): AcpAgent<AcpOptions> {
 }
 
 /** A CLI Tomrade only hands a ticket in a terminal: never driven turn by turn here. */
-function terminalEngine(ctx: Context, spec: Spec, locator: CliLocator): Engine {
+function terminalEngine(ctx: Context, spec: Written, locator: CliLocator): Engine {
   const probe = spec.probe;
   const empty: Catalog = { models: [], efforts: [] };
   return {
@@ -173,8 +175,20 @@ function terminalEngine(ctx: Context, spec: Spec, locator: CliLocator): Engine {
   };
 }
 
+/** An installer script as the command the app runs for the person; the plugin names only its address. */
+export const installCommand = (step: string | LocalAgentInstaller): string =>
+  typeof step === "string" ? step : "script" in step ? `curl -fsSL ${step.script} | bash` : `irm ${step.powershell} | iex`;
+
+/** The spec with its setup written out as commands, and `{install}` in the not-found words as the first of them. */
+function written(spec: Spec): Written {
+  const { setup, ...rest } = spec;
+  const install = (setup?.install ?? []).map(installCommand);
+  return { ...rest, install: spec.install.replace("{install}", install[0] ?? ""), ...(setup ? { setup: { ...setup, install } } : {}) };
+}
+
 /** Everything one spec stands for, on a context that has the agent and the MCP server. */
-function apply(ctx: Context, spec: Spec): void {
+function apply(ctx: Context, given: Spec): void {
+  const spec = written(given);
   const locator = localCli(spec.cli.name, spec.cli.bundled ? { bundled: (host) => spec.cli.bundled!(host) } : {});
   const cli = cliHandle(ctx, spec.id, locator);
   const optionsOf = (): LocalAgentOptions => {

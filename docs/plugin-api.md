@@ -1231,8 +1231,8 @@ await ctx.agent.localAgent({
   id: "acme",                       // the engine id; settings live under engines.acme
   title: "Acme",
   cli: { name: "acme", bundled: (host) => [{ file: "/Applications/Acme.app/Contents/Resources/cli/acme" }] },
-  install: "install Acme (npm install -g acme-cli) and sign in",
-  setup: { install: ["npm install -g acme-cli"], signIn: "acme login", signInRuns: true },
+  install: "install Acme ({install}) and sign in",
+  setup: { install: [{ script: "https://acme.example/install.sh" }, "npm install -g acme-cli"], signIn: "acme login", signInRuns: true },
   options: z.object({ command: z.string().default("acme"), model: z.string().optional() }),
   acp: {
     permissionModes: { default: "full-access", choices: [PERMISSION_CHOICES["full-access"], PERMISSION_CHOICES.ask] },
@@ -1265,6 +1265,12 @@ await ctx.agent.localAgent({
   the plugin manages (each answers the link's state), or `{ cli: { file,
   configuredUrl, add, remove } }`, run through the agent's own `mcp add` /
   `mcp remove`.
+- **`setup.install`** lists install commands, the recommended one first. An
+  installer script is named by its address (SDK 0.2.18): `{ script: url }`
+  runs as `curl -fsSL <url> | bash`, `{ powershell: url }` as
+  `irm <url> | iex`. The app writes the command, so plugin code carries no
+  download-and-run of its own (the store's checks refuse that); `{install}` in
+  `install`, the words after "not found —", stands for the first command.
 - **`lend`** lends its sign-in to the worker for one-shot calls, ready only
   while the agent is available and signed in; throwing `NotSignedIn` marks it
   signed out until it is checked again.
