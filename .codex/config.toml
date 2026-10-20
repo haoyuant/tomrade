@@ -7,43 +7,43 @@ url = "http://127.0.0.1:19090/mcp/014ce729-9739-41b5-a148-8d73f7825928"
 [[hooks.SessionStart]]
 [[hooks.SessionStart.hooks]]
 type = "command"
-command = "curl -s -m 2 -X POST -H 'Content-Type: application/json' -H 'X-Tomrade-Agent: codex' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+command = "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; set tomrade \"$(curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" -H \"X-Tomrade-Agent: codex\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\" 2>&1)\"; exit 0"
 timeout = 3
 
 [[hooks.UserPromptSubmit]]
 [[hooks.UserPromptSubmit.hooks]]
 type = "command"
-command = "curl -s -m 2 -X POST -H 'Content-Type: application/json' -H 'X-Tomrade-Agent: codex' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+command = "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; set tomrade \"$(curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" -H \"X-Tomrade-Agent: codex\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\" 2>&1)\"; exit 0"
 timeout = 3
 
 [[hooks.PreToolUse]]
 [[hooks.PreToolUse.hooks]]
 type = "command"
-command = "curl -s -m 2 -X POST -H 'Content-Type: application/json' -H 'X-Tomrade-Agent: codex' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+command = "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; set tomrade \"$(curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" -H \"X-Tomrade-Agent: codex\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\" 2>&1)\"; exit 0"
 timeout = 3
 
 [[hooks.PostToolUse]]
 [[hooks.PostToolUse.hooks]]
 type = "command"
-command = "curl -s -m 2 -X POST -H 'Content-Type: application/json' -H 'X-Tomrade-Agent: codex' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+command = "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; set tomrade \"$(curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" -H \"X-Tomrade-Agent: codex\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\" 2>&1)\"; exit 0"
 timeout = 3
 
 [[hooks.PermissionRequest]]
 [[hooks.PermissionRequest.hooks]]
 type = "command"
-command = "curl -s -m 2 -X POST -H 'Content-Type: application/json' -H 'X-Tomrade-Agent: codex' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+command = "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; set tomrade \"$(curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" -H \"X-Tomrade-Agent: codex\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\" 2>&1)\"; exit 0"
 timeout = 3
 
 [[hooks.Stop]]
 [[hooks.Stop.hooks]]
 type = "command"
-command = "curl -s -m 2 -X POST -H 'Content-Type: application/json' -H 'X-Tomrade-Agent: codex' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+command = "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; set tomrade \"$(curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" -H \"X-Tomrade-Agent: codex\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\" 2>&1)\"; exit 0"
 timeout = 3
 
 [[hooks.SessionEnd]]
 [[hooks.SessionEnd.hooks]]
 type = "command"
-command = "curl -s -m 2 -X POST -H 'Content-Type: application/json' -H 'X-Tomrade-Agent: codex' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+command = "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; set tomrade \"$(curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" -H \"X-Tomrade-Agent: codex\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\" 2>&1)\"; exit 0"
 timeout = 3
 
 # END TOMRADE HOOKS
