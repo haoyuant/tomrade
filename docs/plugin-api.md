@@ -1213,6 +1213,71 @@ has three; one that throws or runs out is logged and passed over. Hooks go
 with the plugin: nothing is written into an agent's or a repository's files
 for them.
 
+### Local agents
+
+A coding agent installed on the person's machine — a CLI like Hermes, OpenCode
+or Cursor's — can be added by an SDK plugin without writing an engine. The
+plugin describes the agent and Tomrade's own conductor (the `local-agents`
+row, `@tomradex/engine-acp`) runs it exactly as it runs the agents the app
+ships: the CLI is found where a person would look (their chosen path in
+Settings, PATH, a login shell's PATH, npm's prefix, WSL, a copy inside a
+desktop app), sessions run over the Agent Client Protocol with Tomrade's tools
+handed over as an MCP server, and its picks, kept model list, availability and
+troubleshooter facts behave like any built-in engine's. SDK 0.2.17, `inject:
+["agent"]`, `"engines": { "sdk": "^0.2.17" }`:
+
+```ts
+await ctx.agent.localAgent({
+  id: "acme",                       // the engine id; settings live under engines.acme
+  title: "Acme",
+  cli: { name: "acme", bundled: (host) => [{ file: "/Applications/Acme.app/Contents/Resources/cli/acme" }] },
+  install: "install Acme (npm install -g acme-cli) and sign in",
+  setup: { install: ["npm install -g acme-cli"], signIn: "acme login", signInRuns: true },
+  options: z.object({ command: z.string().default("acme"), model: z.string().optional() }),
+  acp: {
+    permissionModes: { default: "full-access", choices: [PERMISSION_CHOICES["full-access"], PERMISSION_CHOICES.ask] },
+    args: (options) => ["acp"],
+    mode: (policy) => (policy === "full-access" ? "bypass" : "default"),
+    usage: "turn",
+    terminal: true                  // code link can also hand it a ticket in a terminal
+  },
+  probe: { args: ["models"], says: (output, catalog) => null, reason: "" },
+  mcpLink: { cli: { file: () => "~/.acme/mcp.json", configuredUrl: () => null, add: (url) => ["mcp", "add", "tomrade", url], remove: () => ["mcp", "remove", "tomrade"] } },
+  lend: {
+    rank: 60,
+    async ask(request, io) {
+      const run = await io.cli.run(["-p", `${request.system}\n\n${request.transcript}`], { cwd: os.tmpdir(), signal: io.signal });
+      if (/not logged in/i.test(run.stderr)) throw new NotSignedIn("Acme is not signed in — run `acme login`");
+      return { text: run.stdout.trim(), inputTokens: 0, outputTokens: 0 };
+    }
+  }
+});
+```
+
+- **`acp`** present: an in-app engine over ACP — `args` starts its ACP server
+  on stdio, and the rest names its quirks (`mode` per policy, where it reports
+  tokens, how a session reopens, how it takes a message mid-turn, its own words
+  for a refused turn). Absent: an agent with no ACP that Tomrade starts only in
+  a terminal (`terminalOnly`), handed the ticket and heard over its user-level
+  MCP connection; `picks` are its Model and Effort picks.
+- **`mcpLink`** is the agent's own user-level connection to Tomrade, shown and
+  switched in Settings → Assistant: either `{ status, connect, disconnect }`
+  the plugin manages (each answers the link's state), or `{ cli: { file,
+  configuredUrl, add, remove } }`, run through the agent's own `mcp add` /
+  `mcp remove`.
+- **`lend`** lends its sign-in to the worker for one-shot calls, ready only
+  while the agent is available and signed in; throwing `NotSignedIn` marks it
+  signed out until it is checked again.
+- Callbacks get `io`: `io.cli` runs the CLI as Tomrade found it (`run` to its
+  end, `jsonl` reading JSON lines), `io.mcp` is Tomrade's MCP address and the
+  hooks' event address, and `io.options` the person's settings for it.
+
+What the core asks at once (`args`, `mode`, a usage reader…) runs in the
+plugin's scope: a throw from `args` or `env` fails that turn, one from the
+others reads as "no answer". What it awaits is held to its time. The engine,
+its link and its lent model go when the plugin unloads. An agent the app still
+ships under the same id keeps its place, and the plugin's copy stays off.
+
 ### Undo, redo and the timeline
 
 ⌘Z is `oplog.undo(projectId)`: the newest thing this machine did, wherever it

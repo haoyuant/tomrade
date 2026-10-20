@@ -5,6 +5,7 @@ import {
   ownsId,
   type AgentApi,
   type ImApi,
+  type LocalAgentSpec,
   type BoardsApi,
   type ContributionsApi,
   type DbApi,
@@ -43,6 +44,7 @@ export interface Recording {
   /** The CLI agent hook events it hears. */
   agentHooks: string[];
   modelProviders: string[];
+  localAgents: string[];
   /** Registrations that do not fit their contract, in words the author can act on. */
   invalid: string[];
   /** Which IM contract each adapter is written against, from the capabilities it declares. */
@@ -53,7 +55,7 @@ export interface Recording {
   stopped: string | null;
 }
 
-export const emptyRecording = (): Recording => ({ tools: [], commands: [], badges: [], statusItems: [], sections: [], graphs: [], sidebarModules: [], playbooks: [], settings: [], surfaces: [], tables: [], imAdapters: [], webSearchProviders: [], agentHooks: [], modelProviders: [], invalid: [], imContracts: [], violations: [], stopped: null });
+export const emptyRecording = (): Recording => ({ tools: [], commands: [], badges: [], statusItems: [], sections: [], graphs: [], sidebarModules: [], playbooks: [], settings: [], surfaces: [], tables: [], imAdapters: [], webSearchProviders: [], agentHooks: [], modelProviders: [], localAgents: [], invalid: [], imContracts: [], violations: [], stopped: null });
 
 const noop = () => {};
 const DRY = "dry run: nothing is written while a plugin is inspected";
@@ -163,6 +165,10 @@ export function recordingContext(namespace: string, allowed: ServiceName[], rec:
         cliHook: async (spec) => {
           rec.agentHooks.push(...(spec.events?.length ? spec.events : CLI_HOOK_EVENTS));
           return noop;
+        },
+        localAgent: (spec) => {
+          rec.invalid.push(...localAgentProblems(spec as LocalAgentSpec));
+          return note("localAgents", spec.id, "local agent");
         } });
     },
     get im(): ImApi {
@@ -241,5 +247,23 @@ export function providerProblems(spec: ModelProviderSpec): string[] {
     if (!preset.title) out.push(`${label}: preset "${preset.id}" has no title`);
     if ([...(preset.prefer ?? []), ...(preset.keyShapes ?? [])].some((r) => !(r instanceof RegExp))) out.push(`${label}: preset "${preset.id}" lists prefer or keyShapes that are not regular expressions`);
   }
+  return out;
+}
+
+/** What a local agent lacks that Tomrade needs to find, run and connect it. */
+export function localAgentProblems(spec: LocalAgentSpec): string[] {
+  const label = `local agent "${spec.id}"`;
+  const out: string[] = [];
+  if (!spec.title) out.push(`${label} has no title`);
+  if (!spec.cli?.name) out.push(`${label} needs cli.name, the command Tomrade looks for`);
+  if (!spec.install) out.push(`${label} needs install, the words after "not found —"`);
+  if (spec.acp) {
+    if (!spec.options) out.push(`${label} talks ACP but has no options schema (its settings, with \`command\`)`);
+    if (typeof spec.acp.args !== "function") out.push(`${label} needs acp.args(options), what starts its ACP server`);
+    if (!spec.acp.permissionModes?.choices?.length) out.push(`${label} needs acp.permissionModes with at least one choice`);
+  }
+  const link = spec.mcpLink;
+  if (link && !("cli" in link) && [link.status, link.connect, link.disconnect].some((fn) => typeof fn !== "function")) out.push(`${label}: mcpLink needs status, connect and disconnect, or cli`);
+  if (spec.lend && typeof spec.lend.ask !== "function") out.push(`${label}: lend needs ask(request, io)`);
   return out;
 }

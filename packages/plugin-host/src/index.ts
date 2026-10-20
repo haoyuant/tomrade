@@ -6,7 +6,9 @@ import { Agent, type Engine } from "@tomradex/agent";
 import { Im, ImSettings } from "@tomradex/im";
 import { Contributions } from "@tomradex/contributions";
 import { WebSearch } from "@tomradex/web-search";
-import { Llm, collect, userMessage, type ModelProfile } from "@tomradex/llm";
+import { Llm, collect, userMessage, type LentModel, type ModelProfile } from "@tomradex/llm";
+import { Mcp } from "@tomradex/mcp";
+import { LocalAgents } from "@tomradex/engine-acp";
 import type { AlertNotice } from "@tomradex/alerts";
 import type { DesktopSurfaceSpec } from "@tomradex/desktop-surface";
 import { cordisName } from "@tomradex/extensions";
@@ -139,7 +141,9 @@ export async function testPlugin(input: HostTestInput): Promise<HostTestResult> 
   const terminals = wants.includes("terminals");
   // The real model seam, so a provider plugin's profiles build and answer as they would in the app.
   const models = wants.includes("models");
-  const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(input.tmp, "settings.json") }], Contributions, ...(alerts ? [alerts.Alerts] : []), ...(surfaces ? [surfaces.Surfaces] : []), ...(webSearch ? [WebSearch] : []), ...(terminals ? [SandboxHerdr] : []), ...(im ? [Agent, Im] : []), ...(models ? [Llm] : [])] });
+  // The app's own conductor for a local agent, with a loopback MCP server and the worker it lends to.
+  const agent = wants.includes("agent");
+  const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(input.tmp, "settings.json") }], Contributions, ...(alerts ? [alerts.Alerts] : []), ...(surfaces ? [surfaces.Surfaces] : []), ...(webSearch ? [WebSearch] : []), ...(terminals ? [SandboxHerdr] : []), ...(agent || im ? [Agent] : []), ...(im ? [Im] : []), ...(agent ? [[Mcp, { port: 0 }] as [typeof Mcp, unknown], LocalAgents] : []), ...(models || agent ? [Llm] : [])] });
   try {
   w.ctx.logger.exporter({ export: (m: { type: string; args: unknown[] }) => void (m.type === "error" || m.type === "warn" ? logs.push(`${m.type}: ${String(m.args[0])}`) : undefined) } as never);
   const samples = [
@@ -211,6 +215,28 @@ export async function testPlugin(input: HostTestInput): Promise<HostTestResult> 
           thread: (id: string) => w.ctx.agent.thread(w.project.id, id),
           connections: () => w.ctx.im.views()
         } } : {}),
+        ...(agent ? { localAgents: {
+          /** What the app shows of a registered agent, as plain data; null when none has the id. */
+          engine: (id: string) => {
+            const engine = w.ctx.agent.engineOf(id);
+            if (!engine) return null;
+            const { turn: _turn, available: _available, checkCli: _checkCli, mcpLink, picks, diagnostics: _diagnostics, options: _options, ...rest } = engine;
+            return { ...rest, picks: picks?.() ?? [], mcpLink: !!mcpLink, options: !!engine.options };
+          },
+          available: (id: string, fresh = true) => w.ctx.agent.engineOf(id)!.available({ fresh }),
+          link: (id: string) => w.ctx.agent.engineOf(id)!.mcpLink!.status(),
+          /** One worker call on the agent's lent sign-in, as Tomrade's worker would make it. */
+          lend: async (id: string, prompt: string, system = "") => {
+            const lent = (w.ctx.llm as unknown as { lent: LentModel[] }).lent.find((m) => m.id === id);
+            if (!lent) throw new Error(`no lent model "${id}"`);
+            return collect(lent.model.chat({ system, messages: [userMessage(prompt)] }));
+          },
+          /** The person's settings for an agent (`engines.<id>`), as Settings would write them. */
+          configure: (id: string, options: Record<string, unknown>) => {
+            const current = w.ctx.agent.settingsOf();
+            w.ctx.settings.set({ ...w.ctx.settings.get(), agent: { ...current, engines: { ...current.engines, [id]: options } } });
+          }
+        } } : {}),
         ...(models ? { models: {
           providers: () => (w.ctx.llm as Llm).modelProviders(),
           presets: () => (w.ctx.llm as Llm).providers(),
@@ -231,7 +257,7 @@ export async function testPlugin(input: HostTestInput): Promise<HostTestResult> 
   }
   return { ok: checks.every((c) => c.ok), checks, logs };
   } finally {
-    if (im) {
+    if (agent || im) {
       for (const run of w.ctx.agent.activeRuns()) w.ctx.agent.cancel(run.run.id);
       await settle();
     }

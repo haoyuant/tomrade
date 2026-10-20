@@ -56,7 +56,9 @@ export const SDK_EXPORTS: Readonly<Record<string, string>> = {
   wordsFor: "0.2.9",
   RowSchema: "0.2.13",
   CLI_HOOK_COVERAGE: "0.2.15",
-  CLI_HOOK_EVENTS: "0.2.15"
+  CLI_HOOK_EVENTS: "0.2.15",
+  NotSignedIn: "0.2.17",
+  PERMISSION_CHOICES: "0.2.17"
 };
 
 /** The oldest contract `range` accepts, up to this SDK's own; null when it accepts none of them. */

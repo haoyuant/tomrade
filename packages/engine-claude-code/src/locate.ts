@@ -402,6 +402,8 @@ const shared = new Map<string, CliLocator>();
 export function localCli(name: string, opts: { bundled?: BundledApps } = {}): CliLocator {
   let locator = shared.get(name);
   if (!locator) shared.set(name, (locator = new CliLocator(name, machineHost(), undefined, opts.bundled)));
+  // A plugin loaded again (an update) brings its own finder; the old one belongs to the code it replaced.
+  else if (opts.bundled) locator.findBundled(opts.bundled);
   return locator;
 }
 
@@ -424,6 +426,13 @@ export class CliLocator {
 
   // Looking for app installs may read the registry, so a turn reuses what the last search saw.
   private apps?: Promise<BundledCli[]>;
+
+  findBundled(bundled: BundledApps): void {
+    if (bundled === this.bundled) return;
+    this.bundled = bundled;
+    this.apps = undefined;
+    this.cache.clear();
+  }
   private bundledApps(fresh = false): Promise<BundledCli[]> {
     if (fresh || !this.apps) this.apps = Promise.resolve().then(() => this.bundled(this.host)).catch(() => []);
     return this.apps;

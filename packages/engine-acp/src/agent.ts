@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import type { EngineNeed, EnginePick, EngineSetup, TurnInput } from "@tomradex/agent";
-import type { CliLocator } from "@tomradex/engine-claude-code";
+import type { CliLocator, DesktopApp } from "@tomradex/engine-claude-code";
 
 /** How much the agent may do without asking, as Tomrade settles it for one turn. */
 export type Policy = "full-access" | "ask" | "read-only";
@@ -88,6 +88,8 @@ export interface AcpAgent<O extends AcpOptions = AcpOptions> {
   signedIn?: { ask(): boolean | null | Promise<boolean | null>; reason: string };
   /** The agent's own logs and setup facts, for the troubleshooter; the models it offers are added to the facts. */
   diagnostics?: { logs?(): string[]; facts?(catalog: Catalog): Record<string, string> };
+  /** Its desktop app, named when the app is installed without the CLI. */
+  desktopApp?: DesktopApp;
 }
 
 export const PERMISSION_CHOICES = {
