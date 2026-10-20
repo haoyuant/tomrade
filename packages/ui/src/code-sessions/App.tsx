@@ -6,7 +6,7 @@ import { isMac } from "~/lib/keys";
 import { onLook, onShownIn, onState, onToast, send, type Look } from "./bridge";
 import { keyLabel, windowKey, type WindowKey } from "./keys";
 import { applyPreset, close, cycle, dedupe, heir, holder, landing, leaves, lock, neighbour, place, prune, resize, reveal, show, split, type Key } from "./layout";
-import { sessionGroups } from "./lists";
+import { sessionName, sidebarRows, type HereRow } from "./lists";
 import { TerminalCell } from "./TerminalCell";
 
 type Say = (key: string, vars?: Record<string, string | number>) => string;
@@ -106,33 +106,86 @@ function Banner({ state, say }: { state: WindowState; say: Say }) {
   );
 }
 
+/** A session in the list: its ticket (else what its agent calls the conversation), where it stands, and where it runs. */
+function SessionBody({ s, say }: { s: SessionRow; say: Say }) {
+  const name = sessionName(s);
+  const title = s.title ?? s.agentTitle ?? (s.itemId ? null : say("noTicket"));
+  return (
+    <>
+      <span className="cs-row-head">
+        <span className="mono">{name}</span>
+        <span className="tag cs-chip" data-state={s.needsYou ? "needs" : s.state}>
+          {s.needsYou ? say("needsYou") : say(s.state)}
+        </span>
+      </span>
+      {title && <span className="cs-row-title">{title}</span>}
+      <span className="cs-row-meta">
+        {s.branch && s.branch !== name && <span className="mono">{s.branch}</span>}
+        {s.mode === "run" ? `${s.branch && s.branch !== name ? " · " : ""}${say("runMode")}` : ""}
+        {!s.pane && live(s) && s.where !== "tomrade" && (
+          <span className="tag faint cs-chip cs-where" data-where={s.where} title={s.where === "elsewhere" ? say("elsewhere") : say("outsideTitle", { terminal: s.terminal ?? say("outsideTerminal") })}>
+            {s.where === "elsewhere" ? say("elsewhereTag") : (s.terminal ?? say("outsideTerminal"))}
+          </span>
+        )}
+      </span>
+      {s.activity && <span className="cs-row-activity">{s.activity}</span>}
+    </>
+  );
+}
+
 function SessionList({ sessions, active, selected, onPick, say }: { sessions: SessionRow[]; active: Set<string>; selected: Set<string>; onPick: (s: SessionRow, beside: boolean) => void; say: Say }) {
-  if (!sessions.length) return <p className="cs-empty">{say("none")}</p>;
   return (
     <ul className="cs-list">
       {sessions.map((s) => (
         <li key={s.id}>
           <button type="button" className="side-row cs-row" title={say("pickHint", { mod: MOD })} aria-current={selected.has(s.id) ? "true" : undefined} data-active={active.has(s.id) || undefined} data-needs={s.needsYou || undefined} data-ended={!live(s) || undefined} onClick={(e) => onPick(s, besideClick(e))}>
-            <span className="cs-row-head">
-              <span className="mono">{s.key ?? s.branch}</span>
-              <span className="tag cs-chip" data-state={s.needsYou ? "needs" : s.state}>
-                {s.needsYou ? say("needsYou") : say(s.state)}
-              </span>
-            </span>
-            {s.title && <span className="cs-row-title">{s.title}</span>}
-            <span className="cs-row-meta">
-              <span className="mono">{s.branch}</span>
-              {s.mode === "run" ? ` · ${say("runMode")}` : ""}
-              {!s.pane && live(s) && s.where !== "tomrade" && (
-                <span className="tag faint cs-chip cs-where" data-where={s.where} title={s.where === "elsewhere" ? say("elsewhere") : say("outsideTitle", { terminal: s.terminal ?? say("outsideTerminal") })}>
-                  {s.where === "elsewhere" ? say("elsewhereTag") : (s.terminal ?? say("outsideTerminal"))}
-                </span>
-              )}
-            </span>
-            {s.activity && <span className="cs-row-activity">{s.activity}</span>}
+            <SessionBody s={s} say={say} />
           </button>
         </li>
       ))}
+    </ul>
+  );
+}
+
+/**
+ * What this window shows, one row each: a session in a pane of its own, or a terminal opened here — read as the ticket
+ * its agent claimed, else as what the agent calls the conversation, else as its folder.
+ */
+function HereList({ rows, active, selected, onSession, onTerminal, say }: { rows: HereRow[]; active: Set<string>; selected: Set<string>; onSession: (s: SessionRow, beside: boolean) => void; onTerminal: (t: TerminalRow, beside: boolean) => void; say: Say }) {
+  if (!rows.length) return <p className="cs-empty">{say("none")}</p>;
+  const has = (set: Set<string>, r: HereRow) => set.has(r.id) || (!!r.session && set.has(r.session.id));
+  return (
+    <ul className="cs-list">
+      {rows.map((r) => {
+        const s = r.session;
+        return (
+          <li key={r.id}>
+            <button
+              type="button"
+              className="side-row cs-row"
+              data-terminal={r.kind === "terminal" ? r.terminal.id : undefined}
+              title={say("pickHint", { mod: MOD })}
+              aria-current={has(selected, r) ? "true" : undefined}
+              data-active={has(active, r) || undefined}
+              data-needs={s?.needsYou || undefined}
+              onClick={(e) => (r.kind === "terminal" ? onTerminal(r.terminal, besideClick(e)) : onSession(r.session, besideClick(e)))}
+            >
+              {s ? (
+                <SessionBody s={s} say={say} />
+              ) : r.kind === "terminal" ? (
+                <>
+                  <span className="cs-row-head">
+                    <span className="mono">{r.terminal.title}</span>
+                    {!r.terminal.pane && <span className="tag faint cs-chip">{say("starting")}</span>}
+                  </span>
+                  {r.terminal.agentTitle && <span className="cs-row-title">{r.terminal.agentTitle}</span>}
+                  <span className="cs-row-meta mono">{r.terminal.cwd}</span>
+                </>
+              ) : null}
+            </button>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -169,33 +222,11 @@ function ArchiveList({ rows, locale, active, selected, onPick, say }: { rows: Se
         <li key={s.id}>
           <button type="button" className="side-row cs-row" aria-current={selected.has(s.id) ? "true" : undefined} data-active={active.has(s.id) || undefined} onClick={() => onPick(s)}>
             <span className="cs-row-head">
-              <span className="mono">{s.key ?? s.branch}</span>
+              <span className="mono">{sessionName(s)}</span>
               <span className="cs-row-meta">{say("endedAt", { when: when(s.endedAt!) })}</span>
             </span>
             {s.title && <span className="cs-row-title">{s.title}</span>}
             <span className="cs-row-meta mono">{s.branch}</span>
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function TerminalList({ terminals, active, selected, onPick, say }: { terminals: TerminalRow[]; active: Set<string>; selected: Set<string>; onPick: (t: TerminalRow, beside: boolean) => void; say: Say }) {
-  // One that became a code session is listed as that session.
-  const plain = terminals.filter((t) => !t.sessionId);
-  if (!plain.length) return null;
-  return (
-    <ul className="cs-list">
-      {plain.map((t) => (
-        <li key={t.id}>
-          <button type="button" className="side-row cs-row" data-terminal={t.id} title={say("pickHint", { mod: MOD })} aria-current={selected.has(t.id) ? "true" : undefined} data-active={active.has(t.id) || undefined} onClick={(e) => onPick(t, besideClick(e))}>
-            <span className="cs-row-head">
-              <span className="mono">{t.title}</span>
-              {!t.pane && <span className="tag faint cs-chip">{say("starting")}</span>}
-            </span>
-            {t.agentTitle && <span className="cs-row-title">{t.agentTitle}</span>}
-            <span className="cs-row-meta mono">{t.cwd}</span>
           </button>
         </li>
       ))}
@@ -337,7 +368,7 @@ function Cell({ leaf, session, terminal, places, ready, onNewTerminal, focused, 
   return (
     <div className="cs-cell" data-cell={leaf.id} data-focused={focused || undefined} data-locked={leaf.locked || undefined} data-cell-terminal={terminal?.id} onMouseDownCapture={onFocus} onFocusCapture={onFocus}>
       {withMenu(<div className="cs-cell-bar">
-        <span className="cs-cell-name">{session ? `${session.key ?? ""} ${session.title ?? session.branch}`.trim() : terminal ? `${terminal.agentTitle ?? terminal.title} · ${terminal.cwd}` : say("pick")}</span>
+        <span className="cs-cell-name">{session ? (session.key ? `${session.key} ${session.title ?? session.branch}`.trim() : (session.agentTitle ?? sessionName(session))) : terminal ? `${terminal.agentTitle ?? terminal.title} · ${terminal.cwd}` : say("pick")}</span>
         {terminal?.note && !session && <span className="cs-cell-note" title={terminal.note}>{terminal.note}</span>}
         {terminal && !session && (
           <span className="cs-cell-actions">
@@ -542,7 +573,7 @@ export function App() {
   const target = selectedCell(cells, focused);
   // An archived session picked into a cell is in the archive's rows until the next state carries it.
   const byId = new Map([...(state.archive.rows ?? []), ...state.sessions].map((s) => [s.id, s]));
-  const groups = sessionGroups(state.sessions);
+  const groups = sidebarRows(state.sessions, state.terminals);
   const terminalsById = new Map(state.terminals.map((t) => [t.id, t]));
   const key = paneKey(state);
   // A terminal whose agent claimed a ticket shows that session in its own cell, on the pane it already has.
@@ -559,7 +590,7 @@ export function App() {
 
   const nameOf = (id: string) => {
     const s = sessionIn(id);
-    if (s) return s.key ?? s.branch;
+    if (s) return sessionName(s);
     const t = terminalsById.get(id);
     return t ? (t.agentTitle ?? t.title) : id;
   };
@@ -614,7 +645,7 @@ export function App() {
             {choices.length ? (
               choices.map((c) =>
                 "branch" in c ? (
-                  <ContextMenuActionItem key={c.id} icon={c.needsYou ? "●" : null} name={`${c.key ?? c.branch}${c.title ? ` ${c.title}` : ""}`} onSelect={() => connect(node.id, c.id)} />
+                  <ContextMenuActionItem key={c.id} icon={c.needsYou ? "●" : null} name={`${sessionName(c)}${(c.title ?? c.agentTitle) ? ` ${c.title ?? c.agentTitle}` : ""}`} onSelect={() => connect(node.id, c.id)} />
                 ) : (
                   <ContextMenuActionItem key={c.id} icon={null} name={`${say("terminal")} · ${c.title}`} onSelect={() => connect(node.id, c.id)} />
                 )
@@ -754,16 +785,14 @@ export function App() {
               </>
             ) : (
               <>
-                <h2 className="cs-side-head eyebrow">{say("sessions")}</h2>
-                {(groups.here.length > 0 || !groups.away.length) && <SessionList sessions={groups.here} active={active} selected={selected} onPick={pick} say={say} />}
-                <OutsideGroup sessions={groups.away} open={outsideOpen} onToggle={() => setOutsideOpen((o) => !o)} list={<SessionList sessions={groups.away} active={active} selected={selected} onPick={pick} say={say} />} say={say} />
-                <div className="cs-side-head cs-side-sub">
-                  <h2 className="eyebrow">{say("terminals")}</h2>
+                <div className="cs-side-head">
+                  <h2 className="eyebrow">{say("here")}</h2>
                   <button type="button" className="link-btn side-add" data-testid="cs-side-new-terminal" disabled={!canOpen} onClick={newTerminal}>
                     + {say("newTerminal")}
                   </button>
                 </div>
-                <TerminalList terminals={state.terminals} active={active} selected={selected} onPick={pickTerminal} say={say} />
+                {(groups.here.length > 0 || !groups.away.length) && <HereList rows={groups.here} active={active} selected={selected} onSession={pick} onTerminal={pickTerminal} say={say} />}
+                <OutsideGroup sessions={groups.away} open={outsideOpen} onToggle={() => setOutsideOpen((o) => !o)} list={<SessionList sessions={groups.away} active={active} selected={selected} onPick={pick} say={say} />} say={say} />
                 <Layouts
                   presets={state.presets}
                   defaultPreset={state.defaultPreset}

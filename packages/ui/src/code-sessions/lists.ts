@@ -1,11 +1,36 @@
-import type { SessionRow } from "@tomradex/code-sessions";
+import type { SessionRow, TerminalRow } from "@tomradex/code-sessions";
 
-/** A live session this window cannot show: it runs in another terminal app here, or on another computer. */
-export const away = (s: SessionRow): boolean => s.endedAt === null && !s.pane && (s.where === "outside" || s.where === "elsewhere");
+/** A live session this window cannot show: it runs in another terminal app here, on another computer, or in the assistant panel. */
+export const away = (s: SessionRow): boolean => s.endedAt === null && s.where !== "herdr";
 
-/** The sidebar's two lists of live sessions: the ones this window shows or Tomrade runs, and the ones it cannot show. Ended ones are the archive's. */
-export function sessionGroups(sessions: SessionRow[]): { here: SessionRow[]; away: SessionRow[] } {
+/**
+ * One row of what this window shows: a session in a herdr pane of its own, or a terminal opened here — with the
+ * ticket session its agent claimed, once it has.
+ */
+export type HereRow = { kind: "session"; id: string; session: SessionRow } | { kind: "terminal"; id: string; terminal: TerminalRow; session: SessionRow | null };
+
+/**
+ * The sidebar: one list of what this window shows, and the live sessions it cannot. A session with no ticket is never a
+ * row of its own when a terminal here holds its pane: that terminal is the row. Ended sessions are the archive's.
+ */
+export function sidebarRows(sessions: SessionRow[], terminals: TerminalRow[]): { here: HereRow[]; away: SessionRow[] } {
   const live = sessions.filter((s) => s.endedAt === null);
-  return { here: live.filter((s) => !away(s)), away: live.filter(away) };
+  const byId = new Map(live.map((s) => [s.id, s]));
+  const terminalPanes = new Set(terminals.flatMap((t) => (t.pane ? [t.pane] : [])));
+  const claimed = new Set(terminals.flatMap((t) => (t.sessionId ? [t.sessionId] : [])));
+  const rows: HereRow[] = [
+    ...terminals.map((t): HereRow => ({ kind: "terminal", id: t.id, terminal: t, session: t.sessionId ? (byId.get(t.sessionId) ?? null) : null })),
+    ...live.filter((s) => !away(s) && !claimed.has(s.id) && !(s.pane && !s.itemId && terminalPanes.has(s.pane))).map((s): HereRow => ({ kind: "session", id: s.id, session: s }))
+  ];
+  // Needs-you first, then the ones working a ticket, then plain terminals; newest first within each.
+  const rank = (r: HereRow) => {
+    const s = r.session;
+    if (s?.needsYou) return 0;
+    return s?.itemId ? 1 : 2;
+  };
+  const started = (r: HereRow) => (r.kind === "terminal" ? r.terminal.startedAt : r.session.startedAt);
+  return { here: rows.sort((a, b) => rank(a) - rank(b) || started(b) - started(a)), away: live.filter(away) };
 }
 
+/** What a session goes by in the list: its ticket, else its branch, else its agent. */
+export const sessionName = (s: SessionRow): string => s.key ?? (s.branch || s.agentName || s.agent);
