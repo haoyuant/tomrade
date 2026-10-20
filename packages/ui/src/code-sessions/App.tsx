@@ -116,24 +116,22 @@ function TerminalList({ terminals, active, onPick, say }: { terminals: TerminalR
   );
 }
 
-/** An empty cell's way to a new terminal: where it starts, then the button. */
-function NewTerminal({ places, ready, onOpen, say }: { places: TerminalPlace[]; ready: boolean; onOpen: (cwd: string) => void; say: Say }) {
-  const [cwd, setCwd] = useState(places[0]?.cwd ?? "");
+/** A cell's way to a new terminal, the same wherever it shows: the folder it starts in, then the button below. */
+function NewTerminal({ places, initial, ready, onOpen, say }: { places: TerminalPlace[]; initial?: string | null; ready: boolean; onOpen: (cwd: string) => void; say: Say }) {
+  const [cwd, setCwd] = useState(initial ?? places[0]?.cwd ?? "");
   const where = places.some((p) => p.cwd === cwd) ? cwd : (places[0]?.cwd ?? "");
   return (
     <div className="cs-new-terminal">
-      {places.length > 1 && (
-        <label>
-          {say("startIn")}{" "}
-          <select value={where} onChange={(e) => setCwd(e.target.value)}>
-            {places.map((p) => (
-              <option key={p.cwd} value={p.cwd} title={p.cwd}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
+      <label className="cs-new-terminal-where">
+        <span>{say("startIn")}</span>
+        <select className="select" data-testid="cs-new-terminal-where" value={where} disabled={!places.length} onChange={(e) => setCwd(e.target.value)}>
+          {places.map((p) => (
+            <option key={p.cwd} value={p.cwd} title={p.cwd}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+      </label>
       <button type="button" className="btn btn-secondary btn-xs" data-testid="cs-new-terminal" disabled={!ready || !where} onClick={() => onOpen(where)}>
         {say("newTerminal")}
       </button>
@@ -207,7 +205,7 @@ function Layouts({ presets, defaultPreset, autoPlace, onApply, onSave, say }: { 
 }
 
 /** A session whose terminal this window cannot show: where it runs, and what can be done from here. */
-function NotHere({ session, say }: { session: SessionRow; say: Say }) {
+function NotHere({ session, picker, say }: { session: SessionRow; picker: ReactNode; say: Say }) {
   const done = session.state === "idle" || session.state === "ended" || session.state === "lost" || session.state === "error";
   // Never while the outside one may still run: two copies would share one conversation.
   const resume = done && session.where !== "elsewhere" && (
@@ -217,9 +215,10 @@ function NotHere({ session, say }: { session: SessionRow; say: Say }) {
   );
   if (!live(session) || session.where === "herdr")
     return (
-      <div className="cs-not-here">
+      <div className="cs-not-here" data-testid="cs-ended">
         <span>{say("endedHere")}</span>
         {resume}
+        {picker}
       </div>
     );
   if (session.where === "elsewhere") return <div className="cs-not-here">{say("elsewhere")}</div>;
@@ -283,7 +282,11 @@ function Cell({ leaf, session, terminal, places, ready, onNewTerminal, focused, 
       ) : terminal ? (
         withMenu(<div className="cs-cell-empty">{say("starting")}</div>)
       ) : session ? (
-        withMenu(<div className="cs-cell-empty">{session.mode === "run" ? say("runMode") : <NotHere session={session} say={say} />}</div>)
+        withMenu(
+          <div className="cs-cell-empty">
+            {session.mode === "run" ? say("runMode") : <NotHere session={session} picker={<NewTerminal places={places} initial={session.worktree} ready={ready} onOpen={onNewTerminal} say={say} />} say={say} />}
+          </div>
+        )
       ) : (
         withMenu(
           <div className="cs-cell-empty">

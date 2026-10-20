@@ -55,10 +55,16 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-preset .icon-btn[data-default] { color: var(--accent); }
 .cs-auto-place { display: flex; gap: 6px; align-items: center; padding: var(--space-2) var(--space-2) 0; font-size: var(--text-sm); color: var(--muted); }
 .cs-where { margin-left: 6px; }
-.cs-not-here { display: flex; flex-direction: column; gap: 10px; align-items: center; max-width: 420px; line-height: 1.5; }
+.cs-not-here { display: flex; flex-direction: column; gap: 10px; align-items: center; max-width: min(420px, 100%); min-width: 0; line-height: 1.5; }
 .cs-not-here-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-.cs-new-terminal { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; }
-.cs-new-terminal select { max-width: 240px; font: inherit; }
+.cs-new-terminal { display: flex; flex-direction: column; gap: 10px; align-items: center; max-width: 100%; }
+.cs-not-here .cs-new-terminal { margin-top: 6px; }
+/* In a narrow pane the dropdown gives way; the label stays. */
+.cs-new-terminal-where { display: flex; gap: 8px; align-items: center; max-width: 100%; }
+.cs-new-terminal-where > span { flex-shrink: 0; }
+.cs-new-terminal-where .select { flex: 0 1 240px; width: 240px; min-width: 0; padding: 5px 8px; font-size: var(--text-sm); }
+/* Picked with the mouse, the select keeps focus: the border alone says so, without a second ring around it. */
+.cs-new-terminal-where .select:focus { box-shadow: none; }
 
 /* The terminal's own background around its grid too, so no strip of another colour shows. */
 .cs-term { position: relative; flex: 1; min-height: 0; background: var(--surface); }
