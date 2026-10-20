@@ -410,26 +410,35 @@ app.whenReady().then(async () => {
     const canFocus = await wait(async () => BrowserWindow.getFocusedWindow() === front, 3000);
     let forward = true;
     let focusedTitle = "";
-    for (let i = 0; i < 3 && canFocus; i++) {
+    // The person going to another app meanwhile takes focus from this whole app: then the step cannot tell, and says so.
+    let interrupted = false;
+    const cameForward = async (win, ms) => {
+      await wait(async () => BrowserWindow.getFocusedWindow() === win, ms);
+      const now = BrowserWindow.getFocusedWindow();
+      if (!now) interrupted = true;
+      else if (now !== win || !win?.isVisible()) {
+        forward = false;
+        focusedTitle = now.getTitle();
+      }
+    };
+    for (let i = 0; i < 3 && canFocus && !interrupted; i++) {
       front.focus();
       await sleep(300);
       await ctx.contributions.run("code-sessions.open", { projectId: project.id });
-      await wait(async () => BrowserWindow.getFocusedWindow() === sessionsWindow(), 10000);
+      await wait(async () => !!sessionsWindow(), 10000);
       const again = sessionsWindow();
-      focusedTitle = BrowserWindow.getFocusedWindow()?.getTitle() ?? "none";
-      if (!again || BrowserWindow.getFocusedWindow() !== again) forward = false;
+      await cameForward(again, 10000);
       front.focus();
       await sleep(300);
       await ctx.contributions.run("code-sessions.open", { projectId: project.id });
-      await wait(async () => BrowserWindow.getFocusedWindow() === again, 3000);
-      if (BrowserWindow.getFocusedWindow() !== again) forward = false;
+      await cameForward(again, 3000);
       again?.close();
       // Gone before the next round looks for the window by its title.
       await wait(async () => !again || again.isDestroyed(), 5000);
     }
     front.destroy();
-    if (canFocus) check("关掉再打开（三次）、被别的窗口挡住时再点，窗口都到最前并获得焦点", forward, `focused: ${focusedTitle}`);
-    else console.log("INFO: skipped the focus step — another app is in front, so this app's windows cannot take focus");
+    if (canFocus && !interrupted) check("关掉再打开（三次）、被别的窗口挡住时再点，窗口都到最前并获得焦点", forward, `focused: ${focusedTitle}`);
+    else console.log(`INFO: skipped the focus step — ${canFocus ? "another app took focus while it ran" : "another app is in front"}, so this app's windows cannot take focus`);
 
     // A plain terminal from the list's button: every cell is taken, so it opens in a new one beside them.
     await ctx.contributions.run("code-sessions.open", { projectId: project.id });
