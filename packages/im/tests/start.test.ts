@@ -295,6 +295,18 @@ describe("starting a ticket from IM", () => {
     expect(w.delivered.some(d => d.content.text.includes("→ Verifying"))).toBe(false);
   });
 
+  it("tells every conversation of the project when any of its tickets moves, though it never saw the ticket", async () => {
+    const w = await boot();
+    await w.receive(say("hi", "hello"));
+    await w.said(/^re:hello$/);
+    expect(w.delivered.some(d => d.content.text.includes(w.item.key))).toBe(false);
+    w.ctx.items.update(w.project.id, w.item.id, { title: "Fix the sign-in page" }, "human");
+    w.ctx.items.update(w.project.id, w.item.id, { status: "verifying" }, "human");
+    const moved = await w.said(new RegExp(`^${w.item.key}: Todo → Verifying$`));
+    expect(moved.address.conversationId).toBe("chat");
+    expect(w.delivered.filter(d => d.content.text.startsWith(`${w.item.key}:`))).toHaveLength(1);
+  });
+
   it("goes back to the conversation it left once the ticket is done and its session archived, and the next message goes there", async () => {
     const w = await boot();
     await w.receive(say("hi", "hello"));

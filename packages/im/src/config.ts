@@ -32,7 +32,7 @@ export const ImSettings = z.preprocess(upgrade, z.object({
   notify: z.object({
     /** Status changes of every ticket in the conversation's project. */
     tickets: z.boolean().default(true),
-    /** Pull requests, merges and git's status proposals for those tickets. */
+    /** Pull requests, merges and git's status proposals for the tickets a conversation saw or started. */
     code: z.boolean().default(true),
     /** In each paired direct chat, when Tomrade comes online and goes offline on this computer. */
     presence: z.boolean().default(false),
