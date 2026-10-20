@@ -31,6 +31,8 @@ export type Config = z.infer<typeof Config>;
 export const RECENTLY_ENDED_MS = 24 * 60 * 60 * 1000;
 /** How often an open window asks herdr how it is, besides every session change. */
 export const BRIDGE_POLL_MS = 10_000;
+/** The most typing a cell holds while its terminal attaches. */
+export const HELD_INPUT_MAX = 64 * 1024;
 
 interface Saved {
   asked?: boolean;
@@ -216,6 +218,8 @@ interface Open {
   turns: Map<string, number>;
   /** Cells showing a terminal that ended or never attached: attached again once herdr's server is back. */
   detached: Set<string>;
+  /** What was typed into each cell while its terminal attached, sent once it is live; `over` once some did not fit. */
+  held: Map<string, { text: string; over: boolean }>;
   timer: NodeJS.Timeout;
   closed: boolean;
   /** The latest ask to show a session, kept in every state so a window that opens late still sees it. */
@@ -487,6 +491,13 @@ function apply(ctx: Context, config: Config) {
   /** The herdr pane a cell's id stands for: a session's, or a terminal's. */
   const paneOf = (projectId: string, id: string): string | undefined => sessionOf(projectId, id)?.herdrPane ?? savedTerminals(projectId).find((t) => t.id === id)?.pane;
 
+  /** Typing a cell held for a terminal that will not come: said, never dropped without a word. */
+  const letGoHeld = (win: Open, cell: string) => {
+    const held = win.held.get(cell);
+    win.held.delete(cell);
+    if (held?.text || held?.over) post(win, { type: "toast", text: words()("notSent") });
+  };
+
   const attach = async (projectId: string, win: Open, cell: string, sessionId: string, cols: number, rows: number) => {
     detach(win, cell);
     const mine = turn(win, cell);
@@ -501,11 +512,14 @@ function apply(ctx: Context, config: Config) {
       if (still && paneOf(projectId, still) === pane) return post(win, { type: "shownIn", cell, other });
       detach(win, other);
     }
+    // Typing while herdr attaches waits for the terminal; a newer attach of the cell takes it over.
+    if (!win.held.has(cell)) win.held.set(cell, { text: "", over: false });
     let stream: TerminalStream;
     try {
       stream = await herdr.terminal(pane, { cols, rows });
     } catch (error) {
       if (win.turns.get(cell) !== mine) return;
+      letGoHeld(win, cell);
       win.detached.add(cell);
       if (error instanceof HerdrError && error.code === "notRunning") {
         post(win, { type: "closed", cell, reason: words()("herdrRestarting") });
@@ -516,6 +530,10 @@ function apply(ctx: Context, config: Config) {
     if (win.closed || win.turns.get(cell) !== mine) return stream.close();
     win.terminals.set(cell, stream);
     win.detached.delete(cell);
+    const held = win.held.get(cell);
+    win.held.delete(cell);
+    if (held?.text) stream.input(held.text);
+    if (held?.over) post(win, { type: "toast", text: words()("notSent") });
     stream.onFrame((f) => post(win, { type: "frame", cell, seq: f.seq, width: f.width, height: f.height, full: f.full, bytes: f.bytes }));
     stream.onClose((reason) => {
       if (win.terminals.get(cell) !== stream) return;
@@ -574,6 +592,7 @@ function apply(ctx: Context, config: Config) {
       case "attach":
         return attach(projectId, win, m.cell, m.sessionId, m.cols, m.rows);
       case "detach":
+        letGoHeld(win, m.cell);
         return detach(win, m.cell);
       case "openOutside": {
         const where = m.cwd && fs.existsSync(m.cwd) ? m.cwd : (await places(projectId))[0]!.cwd;
@@ -619,8 +638,15 @@ function apply(ctx: Context, config: Config) {
       case "fold":
         save(config.stateFile, { folded: { ...stateOf(config.stateFile).folded, [projectId]: m.folded } });
         return refresh(projectId);
-      case "input":
-        return win.terminals.get(m.cell)?.input(m.data);
+      case "input": {
+        const stream = win.terminals.get(m.cell);
+        if (stream) return stream.input(m.data);
+        const held = win.held.get(m.cell);
+        if (!held) return;
+        if (held.text.length + m.data.length > HELD_INPUT_MAX) held.over = true;
+        else held.text += m.data;
+        return;
+      }
       case "drop": {
         // Copies go to the temp folder, which the system clears of what has not been used for a while.
         const text = droppedPaste(await readableDrops(m.paths, path.join(os.tmpdir(), "tomrade-drops")));
@@ -705,7 +731,7 @@ function apply(ctx: Context, config: Config) {
       return refresh(projectId);
     }
     const w = words();
-    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), timer: setInterval(() => void refresh(projectId), BRIDGE_POLL_MS), closed: false, reveal: asked, archive: false, states: { begun: 0, shown: 0 } };
+    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), held: new Map(), timer: setInterval(() => void refresh(projectId), BRIDGE_POLL_MS), closed: false, reveal: asked, archive: false, states: { begun: 0, shown: 0 } };
     win.timer.unref?.();
     open.set(projectId, win);
     try {
