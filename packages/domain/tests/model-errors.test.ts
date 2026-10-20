@@ -42,6 +42,12 @@ it("keeps quota, rate and the rest apart from the model", () => {
   expect(modelErrorKind("LLM request failed 503: The model is overloaded")).toBe("server");
 });
 
+it("reads a service that was not reached as network, in fetch's words and the SDKs'", () => {
+  for (const message of ["fetch failed", "TypeError: fetch failed\n\ncaused by Error: connect ECONNREFUSED 127.0.0.1:65031", "Connection error.", "Request timed out."]) {
+    expect(modelErrorKind(message), message).toBe("network");
+  }
+});
+
 it("pulls the provider's own words out of a failed call", () => {
   expect(providerMessage(gemini(403, "This model is not available on the free tier.", "PERMISSION_DENIED"))).toBe("This model is not available on the free tier.");
   expect(providerMessage(`LLM request failed 404: {"error":{"message":"The model \\"x\\" is gone`)).toBe(`The model "x" is gone…`);
