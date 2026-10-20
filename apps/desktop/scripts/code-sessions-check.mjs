@@ -91,10 +91,10 @@ app.whenReady().then(async () => {
     await ctx.contributions.run("code-sessions.open", { projectId: project.id });
     let win;
     for (let i = 0; i < 50 && !win; i++) {
-      win = BrowserWindow.getAllWindows().find((w) => w.getTitle().startsWith("终端 — "));
+      win = BrowserWindow.getAllWindows().find((w) => w.getTitle().endsWith(" — 终端"));
       if (!win) await sleep(100);
     }
-    check("窗口打开，标题带项目名", win?.getTitle() === `终端 — ${project.name}`, win?.getTitle());
+    check("窗口打开，标题以项目名开头", win?.getTitle() === `${project.name} — 终端`, win?.getTitle());
     win.setBounds({ x: 40, y: 40, width: 1680, height: 1000 });
     const js = (code) => win.webContents.executeJavaScript(code, true);
     const terminalText = (i) => js(`(() => { const cell = document.querySelectorAll('.cs-cell')[${i}]; return cell ? [...cell.querySelectorAll('.xterm-rows > div')].map((r) => r.textContent).join('\\n') : ''; })()`);
@@ -227,7 +227,7 @@ app.whenReady().then(async () => {
     // Closed and opened again, and opened while another window is in front: it comes forward each time.
     const front = new BrowserWindow({ width: 1600, height: 1000, x: 0, y: 0, title: "app window stand-in" });
     await front.loadURL("about:blank");
-    const sessionsWindow = () => BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.getTitle().startsWith("终端 — "));
+    const sessionsWindow = () => BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.getTitle().endsWith(" — 终端"));
     // Focus only moves inside the app that is in front; macOS may keep it with the app the person is using.
     app.focus({ steal: true });
     front.focus();
@@ -380,6 +380,10 @@ app.whenReady().then(async () => {
     ctx.codeLink.store.patchSession(project.id, outside.id, { state: "running", terminal: "iTerm.app" });
     ctx.emit("codeLink/changed", project.id);
     const rowOf = `[...document.querySelectorAll('.cs-row')].find((r) => r.textContent.includes(${JSON.stringify(outsideItem.key)}))`;
+    // It waits in its own group, closed, which counts it; opened, the row is there.
+    const grouped = await wait(async () => tjs(`(() => { const g = document.querySelector('[data-testid=cs-outside-group]'); return !!g && g.querySelector('[aria-expanded]').getAttribute('aria-expanded') === 'false' && g.querySelector('[data-testid=cs-outside-count]').textContent === '1' && !${rowOf}; })()`), 8000);
+    check("外部终端里的会话在「在其他终端」分组里，默认收起，分组标题数着它", grouped);
+    await tjs(`document.querySelector('[data-testid=cs-outside-group] [aria-expanded]').click(); true`);
     const tagged = await wait(async () => tjs(`${rowOf}?.querySelector('.cs-where')?.textContent === 'iTerm2'`), 8000);
     check("外部终端里的会话在列表里标出 iTerm2", tagged);
     await tjs(`${rowOf}.click(); true`);
@@ -391,6 +395,20 @@ app.whenReady().then(async () => {
     const resumable = await wait(async () => tjs(`[...document.querySelector('[data-testid=cs-outside]')?.querySelectorAll('button') ?? []].some((b) => b.textContent === '在新终端里接着做')`), 5000);
     check("空闲后才出现「在新终端里接着做」", resumable);
     fs.writeFileSync(path.join(shots, "code-sessions-outside.png"), (await tw.webContents.capturePage()).toPNG());
+
+    // The project named at the top; ⌘B folds the list to a strip that still names it, even from inside a terminal, and back.
+    check("侧栏顶上写着这个窗口的项目", (await tjs(`document.querySelector('[data-testid=cs-project]')?.textContent`)) === project.name);
+    await tjs(`document.querySelector('.cs-cell .xterm-helper-textarea')?.focus(); true`);
+    const foldKey = () => tw.webContents.sendInputEvent({ type: "keyDown", keyCode: "B", modifiers: [process.platform === "darwin" ? "meta" : "control", ...(process.platform === "darwin" ? [] : ["shift"])] });
+    foldKey();
+    const foldedNow = await wait(async () => tjs(`!!document.querySelector('.cs-side[data-folded]') && document.querySelector('[data-testid=cs-project]')?.textContent === ${JSON.stringify(project.name)} && document.querySelector('.cs-side').getBoundingClientRect().width < 60`), 3000);
+    await sleep(300);
+    fs.writeFileSync(path.join(shots, "code-sessions-folded.png"), (await tw.webContents.capturePage()).toPNG());
+    foldKey();
+    const unfolded = await wait(async () => tjs(`!document.querySelector('.cs-side[data-folded]') && !!document.querySelector('.cs-row')`), 3000);
+    check("⌘B 收起侧栏（窄条上还写着项目名），再按一次展开", foldedNow && unfolded);
+    await sleep(300);
+    fs.writeFileSync(path.join(shots, "code-sessions-unfolded.png"), (await tw.webContents.capturePage()).toPNG());
 
     // A session whose terminal is gone keeps "continue" and offers the same new-terminal picker, starting in its
     // worktree (the project's repository and that worktree are the places now); a terminal opened there takes the cell.
@@ -411,8 +429,14 @@ app.whenReady().then(async () => {
     ctx.codeLink.store.patchSession(project.id, gone.id, { state: "ended", endedAt: Date.now() });
     ctx.emit("codeLink/changed", project.id);
     const goneRow = `[...document.querySelectorAll('.cs-row')].find((r) => r.textContent.includes(${JSON.stringify(goneItem.key)}))`;
-    await wait(async () => tjs(`!!${goneRow} && document.querySelectorAll('[data-testid=cs-new-terminal-where] option').length >= 2`), 8000);
+    // Ended, it leaves the list for the archive; opened there, it shows in a pane as before.
+    const archived = await wait(async () => tjs(`!${goneRow} && /\\d/.test(document.querySelector('[data-testid=cs-archive]')?.textContent ?? '') && document.querySelectorAll('[data-testid=cs-new-terminal-where] option').length >= 2`), 8000);
+    await tjs(`document.querySelector('[data-testid=cs-archive]').click(); true`);
+    const inArchive = await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-archive-list]') && !!${goneRow}`), 8000);
+    check("结束的会话离开列表，在归档里找得到", archived && inArchive);
+    fs.writeFileSync(path.join(shots, "code-sessions-archive.png"), (await tw.webContents.capturePage()).toPNG());
     await tjs(`${goneRow}.click(); true`);
+    await tjs(`document.querySelector('[data-testid=cs-archive-back]').click(); true`);
     const goneCell = `document.querySelector('[data-testid=cs-ended]')`;
     const offered = await wait(async () => tjs(`(() => { const box = ${goneCell}; return !!box && [...box.querySelectorAll('button')].some((b) => b.textContent === '在新终端里接着做') && !!box.querySelector('[data-testid=cs-new-terminal-where]') && !!box.querySelector('[data-testid=cs-new-terminal]'); })()`), 5000);
     check("终端已经没有的会话：保留「在新终端里接着做」，也有目录和「新终端」", offered);
