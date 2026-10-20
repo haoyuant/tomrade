@@ -434,7 +434,8 @@ function apply(ctx: Context, config: Config) {
       // "auto" lands in herdr once it is installed; only a terminal named otherwise keeps sessions out of it.
       askSwitch: setting !== "herdr" && setting !== "auto" && !saved.asked,
       terminal: setting,
-      sessions: await titled(shown.sessions.filter((s) => s.endedAt === null || inCells.has(s.id)), savedTerminals(projectId)),
+      // An ended one asked for from outside (a ticket's earlier session) comes along, so the window can put it in a cell.
+      sessions: await titled(shown.sessions.filter((s) => s.endedAt === null || inCells.has(s.id) || s.id === win?.reveal?.sessionId), savedTerminals(projectId)),
       warning,
       terminals: await fold(projectId, shown.sessions, await terminals(projectId)),
       places: await places(projectId),
@@ -749,7 +750,10 @@ function apply(ctx: Context, config: Config) {
   const showable = async () => ["ready", "notRunning"].includes((await bridge()).state);
   ctx.on("codeLink/terminal-window", async () => (await showable()) || undefined);
   ctx.on("codeLink/show-session", async (projectId, sessionId) => {
-    if (!sessionOf(projectId, sessionId)?.herdrPane || !(await showable())) return;
+    const session = sessionOf(projectId, sessionId);
+    // A live one shows its pane; an ended one, its conversation, read-only.
+    const ended = session?.state === "ended" || session?.state === "lost";
+    if (!session || (!session.herdrPane && !ended) || !(await showable())) return;
     await show(projectId, sessionId);
     return true;
   });
