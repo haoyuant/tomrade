@@ -1,4 +1,4 @@
-import type { HerdrBridge, TerminalMouse, TerminalScroll } from "@tomradex/herdr";
+import type { HerdrBridge, HerdrScroll, TerminalMouse, TerminalScroll } from "@tomradex/herdr";
 
 /** One code session as the window lists it. */
 export interface SessionRow {
@@ -142,6 +142,8 @@ export type WindowMessage =
   | { type: "drop"; cell: string; paths: string[] }
   | { type: "resize"; cell: string; cols: number; rows: number }
   | ({ type: "scroll"; cell: string } & TerminalScroll)
+  /** Dragging the cell's scrollbar: its pane's view, this many rows above the bottom of the scrollback. */
+  | { type: "scrollTo"; cell: string; offset: number }
   | ({ type: "mouse"; cell: string } & TerminalMouse)
   | { type: "layout"; layout: Layout }
   | { type: "continue"; sessionId: string }
@@ -162,6 +164,8 @@ export type WindowMessage =
 export type WindowPost =
   | { type: "frame"; cell: string; seq: number; width: number; height: number; full: boolean; bytes: Uint8Array }
   | { type: "closed"; cell: string; reason: string | null }
+  /** Where the cell's pane is in its scrollback, in rows, for its scrollbar. */
+  | ({ type: "scrolled"; cell: string } & HerdrScroll)
   /** herdr's server is back: attach the cell's pane again. */
   | { type: "reattach"; cell: string }
   /** A session's conversation, read-only; `lines` null when its agent's record cannot be read. */

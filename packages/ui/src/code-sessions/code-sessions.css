@@ -93,6 +93,11 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-term .xterm-viewport { overflow-y: hidden; }
 /* xterm measures a glyph as 32 in a row; Chromium's default trim halves adjacent full-width punctuation, so CJK lines ran past the edge. */
 .cs-term .xterm { text-spacing-trim: space-all; }
+/* herdr's scrollback has a bar of its own: an overlay on the right edge, seen only while the view moves or the pointer is on it. */
+.cs-scrollbar { position: absolute; top: 4px; right: 0; bottom: 0; width: 12px; opacity: 0; transition: opacity 0.3s; touch-action: none; }
+.cs-scrollbar:hover, .cs-scrollbar[data-shown] { opacity: 1; transition-duration: 0.1s; }
+.cs-scrollbar-thumb { position: absolute; right: 3px; width: 6px; height: var(--thumb); top: calc((100% - var(--thumb)) * var(--at)); border-radius: 3px; background: color-mix(in oklch, var(--fg) 28%, transparent); transition: width 0.1s, right 0.1s; }
+.cs-scrollbar:hover .cs-scrollbar-thumb, .cs-scrollbar[data-held] .cs-scrollbar-thumb { right: 2px; width: 8px; background: color-mix(in oklch, var(--fg) 42%, transparent); }
 .cs-term-drop { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; outline: 2px dashed var(--accent); outline-offset: -4px; background: color-mix(in oklch, var(--accent) 8%, transparent); color: var(--fg); font-size: var(--text-sm); }
 .cs-term-closed { position: absolute; inset: auto 0 0 0; display: flex; gap: 8px; align-items: center; justify-content: center; padding: 6px; background: var(--surface-warm); border-top: 1px solid var(--border-soft); font-size: var(--text-xs); }
 

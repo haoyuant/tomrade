@@ -557,6 +557,7 @@ function apply(ctx: Context, config: Config) {
     if (held?.text) stream.input(held.text);
     if (held?.over) post(win, { type: "toast", text: words()("notSent") });
     stream.onFrame((f) => post(win, { type: "frame", cell, seq: f.seq, width: f.width, height: f.height, full: f.full, bytes: f.bytes }));
+    stream.onClose(herdr.onScroll(pane, (s) => win.terminals.get(cell) === stream && post(win, { type: "scrolled", cell, ...s })));
     stream.onClose((reason) => {
       if (win.terminals.get(cell) !== stream) return;
       win.terminals.delete(cell);
@@ -679,6 +680,11 @@ function apply(ctx: Context, config: Config) {
         return win.terminals.get(m.cell)?.resize(m.cols, m.rows);
       case "scroll":
         return win.terminals.get(m.cell)?.scroll(m);
+      case "scrollTo": {
+        const pane = win.terminals.get(m.cell)?.paneId;
+        if (pane) void ctx.get("herdr")?.scrollTo(pane, m.offset).catch(() => undefined);
+        return;
+      }
       case "mouse":
         return win.terminals.get(m.cell)?.mouse(m);
       case "layout":

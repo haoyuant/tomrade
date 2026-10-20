@@ -60,6 +60,8 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   const opened: { spec: Record<string, unknown> & { onMessage(m: unknown): void; onClose(): void }; states: WindowState[]; posts: WindowPost[]; closed: boolean; focused: number }[] = [];
   let failNext = false;
   const streams: { pane: string; size: unknown; sent: unknown[]; closed: boolean; frame(text: string): void }[] = [];
+  const scrolls = new Map<string, (s: { offset: number; max: number; rows: number }) => void>();
+  const scrolledTo: [string, number][] = [];
   const events: [string, unknown][] = [];
   const sessions = [session({ id: "s1", itemIds: [], herdrPane: "w1:p1", branch: "tom-1/x", worktree: "/work/tom-1" })];
   const commands: [string, unknown][] = [];
@@ -94,6 +96,8 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
       streams.push(entry);
       return { paneId: pane, mode: "control", closed: false, onFrame: (l: (f: unknown) => void) => (frames.add(l), () => frames.delete(l)), onClose: () => () => {}, input: (d: unknown) => entry.sent.push(["input", d]), resize: (c: number, r: number) => entry.sent.push(["resize", c, r]), scroll: (s: unknown) => entry.sent.push(["scroll", s]), mouse: (m: unknown) => entry.sent.push(["mouse", m]), close: () => void (entry.closed = true) };
     };
+    onScroll = (pane: string, listener: (s: { offset: number; max: number; rows: number }) => void) => (scrolls.set(pane, listener), () => scrolls.delete(pane));
+    scrollTo = async (pane: string, offset: number) => (scrolledTo.push([pane, offset]), true);
   }
   class FakeCodeLink extends Service {
     static provide = "codeLink";
@@ -149,6 +153,12 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   await say({ type: "resize", cell: "c1", cols: 90, rows: 20 });
   await say({ type: "scroll", cell: "c1", direction: "up", lines: 3 });
   expect(live.sent).toEqual([["input", "ls\r"], ["resize", 90, 20], ["scroll", { type: "scroll", cell: "c1", direction: "up", lines: 3 }]]);
+  // The pane's place in its scrollback reaches the cell's scrollbar; dragging it moves the pane.
+  scrolls.get("w1:p1")!({ offset: 3, max: 278, rows: 20 });
+  expect(win.posts.at(-1)).toEqual({ type: "scrolled", cell: "c1", offset: 3, max: 278, rows: 20 });
+  await say({ type: "scrollTo", cell: "c1", offset: 120 });
+  await say({ type: "scrollTo", cell: "nowhere", offset: 1 });
+  expect(scrolledTo).toEqual([["w1:p1", 120]]);
   // Dropped files are typed as one paste of their paths.
   await say({ type: "drop", cell: "c1", paths: ["/work/a b.png", "/work/c"] });
   expect(live.sent.at(-1)).toEqual(["input", "\x1b[200~/work/a\\ b.png /work/c \x1b[201~"]);
@@ -930,6 +940,7 @@ it("starts herdr's server again when it went away, on opening with saved termina
       streams.push({ pane, end: (reason) => ends.forEach((l) => l(reason)) });
       return { paneId: pane, mode: "control", closed: false, onFrame: () => () => {}, onClose: (l: (reason: string | null) => void) => (ends.add(l), () => ends.delete(l)), input() {}, resize() {}, scroll() {}, mouse() {}, close() {} };
     };
+    onScroll = () => () => {};
   }
   class NoCodeLink extends Service {
     static provide = "codeLink";
