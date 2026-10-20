@@ -114,16 +114,52 @@ export interface LaunchResult {
   herdrMissing?: "notInstalled" | "notRunning";
   /** herdr was not running and Tomrade started its server for this launch; "first" the first time ever on this machine. */
   herdrStarted?: "first" | "again";
+  /** On Windows, no Git Bash to run the script with: nothing opened. */
+  gitBashMissing?: true;
 }
 
 /** Where a herdr launch goes when herdr does not answer; off macOS the platform's own emulator is used whatever the name. */
 export const SYSTEM_TERMINAL = "Terminal";
 
+/** Git Bash where Git for Windows installs it (the shell plugin's findBash looks in the same places); WSL's bash.exe sees another filesystem, so a bare `bash` on PATH never counts. */
+export function gitBash(env: NodeJS.ProcessEnv = process.env, exists: (file: string) => boolean = fs.existsSync): string | null {
+  const roots = [env.ProgramFiles, env["ProgramFiles(x86)"], env.LOCALAPPDATA && path.win32.join(env.LOCALAPPDATA, "Programs")];
+  return roots.filter((dir): dir is string => !!dir).map((dir) => path.win32.join(dir, "Git", "bin", "bash.exe")).find(exists) ?? null;
+}
+
+/** Thrown when Windows has no Git Bash to run a session's script. */
+export class GitBashMissing extends Error {
+  constructor() {
+    super("Git Bash is not installed");
+  }
+}
+
+/**
+ * A script on Windows: Git Bash runs it in Windows Terminal, in the session's folder, as the Terminal window's New
+ * terminal opens there; without Windows Terminal, in a console window of its own. Resolves with the app it opened.
+ */
+export function openOnWindows(script: string, cwd: string, bash: string | null = gitBash(), launch: typeof spawn = spawn): Promise<string> {
+  if (!bash) return Promise.reject(new GitBashMissing());
+  const start = (command: string, args: string[]) =>
+    new Promise<void>((resolve, reject) => {
+      const child = launch(command, args, { cwd, detached: true, stdio: "ignore", windowsHide: false });
+      child.once("error", reject);
+      child.once("spawn", () => {
+        child.unref();
+        resolve();
+      });
+    });
+  return start("wt.exe", ["-d", cwd, bash, script]).then(
+    () => "Windows Terminal",
+    () => start(bash, [script]).then(() => "Git Bash")
+  );
+}
+
 /** Hands a script to a terminal app; an object so tests can stand in for the app. */
 export const terminalApp = {
-  async open(terminal: string, script: string): Promise<void> {
+  async open(terminal: string, script: string, cwd: string = os.homedir()): Promise<void> {
     if (process.platform === "darwin") await run("open", ["-a", terminal, script]);
-    else if (process.platform === "win32") await run("cmd", ["/c", "start", "", "bash", script]);
+    else if (process.platform === "win32") await openOnWindows(script, cwd);
     else {
       try {
         await run("x-terminal-emulator", ["-e", `bash ${shellQuote(script)}`]);
@@ -134,14 +170,15 @@ export const terminalApp = {
   }
 };
 
-/** What to tell the person after a herdr launch: that it went elsewhere, or — once — that Tomrade started herdr in the background. Null otherwise. */
+/** What to tell the person after a launch: that it went elsewhere, that Windows has no Git Bash to run it, or — once — that Tomrade started herdr in the background. Null otherwise. */
 export function herdrFallbackNote(locale: unknown, launch: LaunchResult, install: string): string | null {
   const w = CODE_WORDS(locale);
   if (launch.herdrStarted === "first") return w("herdrStartedInBackground");
-  if (!launch.herdrMissing) return null;
+  const noBash = launch.gitBashMissing ? w("gitBashMissing") : null;
+  if (!launch.herdrMissing) return noBash;
   const app = process.platform === "darwin" ? SYSTEM_TERMINAL : w("systemTerminal");
   const note = launch.herdrMissing === "notInstalled" ? w("herdrNotInstalledFallback", { app, install }) : w("herdrNotRunningFallback", { app });
-  return launch.launched ? note : `${note} ${w("fallbackDidNotOpen", { app })}`;
+  return launch.launched ? note : `${note} ${noBash ?? w("fallbackDidNotOpen", { app })}`;
 }
 
 /** Fill a command template. Unknown placeholders are left as they are, so a typo is visible in the terminal. */
@@ -192,7 +229,8 @@ export function withOptions(template: string, flags: string): string {
 /**
  * Write a `.command` script and hand it to the terminal app. macOS runs a
  * `.command` file in a new window when it is opened with Terminal or iTerm;
- * elsewhere the common emulators take `-e`. A terminal of "herdr" starts
+ * Windows runs it with Git Bash in Windows Terminal; elsewhere the common
+ * emulators take `-e`. A terminal of "herdr" starts
  * herdr's server when it is installed but not running; one that still does
  * not answer opens the system terminal instead. A terminal of "none" writes
  * the script and stops, for a person to run it themselves.
@@ -220,10 +258,10 @@ export async function launchTerminal(input: LaunchInput, terminal: string, herdr
   }
   const missing = herdrMissing ? { herdrMissing } : {};
   try {
-    await terminalApp.open(terminal, script);
+    await terminalApp.open(terminal, script, input.cwd);
     return { script, launched: true, ...missing };
-  } catch {
-    return { script, launched: false, ...missing };
+  } catch (error) {
+    return { script, launched: false, ...missing, ...(error instanceof GitBashMissing ? { gitBashMissing: true as const } : {}) };
   }
 }
 

@@ -270,7 +270,7 @@ it("runs a ticket in a tab of its project's herdr workspace, follows the pane's 
   fake.attached = false;
   expect((await jump()).toast).toBe(`Opened herdr in ${process.platform === "darwin" ? "Terminal" : "the system terminal"}, at pane w1:p2`);
   const attach = path.join(codeLink.sessionDir("herdr-attach"), "run.command");
-  expect(opened).toHaveBeenLastCalledWith("Terminal", attach);
+  expect(opened).toHaveBeenLastCalledWith("Terminal", attach, os.homedir());
   expect(fs.readFileSync(attach, "utf8")).toContain(`exec '${herdrBin}'`);
   fake.attached = true;
   opened.mockClear();
@@ -307,14 +307,14 @@ it("runs a ticket in a tab of its project's herdr workspace, follows the pane's 
   const plain = await codeLink.start(project.id, ticket("Plain").id, { mode: "terminal" });
   expect(plain).toMatchObject({ ok: true, launched: true, pane: null });
   expect(plain).not.toHaveProperty("warnings");
-  expect(opened).toHaveBeenLastCalledWith("Terminal", path.join(codeLink.sessionDir(plain.ok ? plain.sessionId : ""), "run.command"));
+  expect(opened).toHaveBeenLastCalledWith("Terminal", path.join(codeLink.sessionDir(plain.ok ? plain.sessionId : ""), "run.command"), expect.any(String));
   // herdr picked by the person stays picked: the system terminal stands in, and says why.
   ctx.settings.set({ ...ctx.settings.get(), codeLink: { ...ctx.settings.get().codeLink, terminal: "herdr" } });
   const alone = ticket("Alone");
   const without = await codeLink.start(project.id, alone.id, { mode: "terminal" });
   expect(without).toMatchObject({ ok: true, launched: true, pane: null, warnings: [expect.stringContaining("brew install herdr")] });
   expect(without.ok && without.command).toMatch(/^claude /);
-  expect(opened).toHaveBeenLastCalledWith("Terminal", path.join(codeLink.sessionDir(without.ok ? without.sessionId : ""), "run.command"));
+  expect(opened).toHaveBeenLastCalledWith("Terminal", path.join(codeLink.sessionDir(without.ok ? without.sessionId : ""), "run.command"), expect.any(String));
   // the worktree's own terminal too
   const shell = await ctx.contributions.run("code-link.open-terminal", { projectId: project.id, itemId: alone.id });
   expect(shell.toast).toContain("herdr is not installed");
@@ -331,7 +331,7 @@ it("installs herdr with Homebrew, or herdr's own installer without it, in a term
   try {
     expect(await codeLink.installHerdr()).toEqual({ launched: true, command: "brew install herdr" });
     const script = path.join(codeLink.sessionDir("setup"), "herdr", "run.command");
-    expect(opened).toHaveBeenCalledWith("Terminal", script);
+    expect(opened).toHaveBeenCalledWith("Terminal", script, os.homedir());
     expect(fs.readFileSync(script, "utf8")).toContain("brew install herdr");
     plan.mockResolvedValue(herdrInstall({ brew: false, platform: "linux" }));
     expect(await codeLink.installHerdr()).toEqual({ launched: true, command: "curl -fsSL https://herdr.dev/install.sh | sh" });
