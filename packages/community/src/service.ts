@@ -12,7 +12,7 @@ import { ATTESTATION_FILE, LIMITS, PACKAGE_EXT, analyzePackage, observedRisk, pa
 import { SDK_CONTRACT, compareVersions, satisfies, type Manifest } from "@tomradex/plugin-sdk";
 import type { Plugins, PluginsSnapshot } from "@tomradex/plugins";
 import { linkGitHub } from "./oauth.js";
-import { OFFICIAL_CATALOG_URL, OfficialCatalog, isOfficialId } from "./official.js";
+import { BUNDLE_CATALOG, OFFICIAL_CATALOG_URL, OfficialCatalog, bundledPackage, isOfficialId } from "./official.js";
 import { githubAccess, prepareRelease, type GitHubAccess } from "./publish.js";
 import { latestInstallable, planUpdate, revoked, type Revocation, type Tier, type UpdatePlan, type VersionRow } from "./rules.js";
 
@@ -32,10 +32,18 @@ export const CommunityConfig = z.preprocess(
       })
     ),
     /**
+     * Official packages the app carries with the catalog they came from, so a machine that cannot reach it still
+     * gets its starters: checked as a download is, and used only for the exact build the catalog lists.
+     */
+    officialBundle: z.object({ dir: z.string() }).optional(),
+    /**
      * Official plugins put on every machine once, the way the app's own were; one the person uninstalls stays gone.
      * One with `whenModelHost` goes on only once the person has a model profile on one of those hosts (a provider's own plugin).
+     * One that `replaces` a row the app used to ship goes on switched off when the person had switched that row off.
      */
-    starters: z.array(z.union([z.string(), z.object({ id: z.string(), whenModelHost: z.array(z.string().min(1)).min(1) })])).default([]),
+    starters: z
+      .array(z.union([z.string(), z.object({ id: z.string(), whenModelHost: z.array(z.string().min(1)).min(1).optional(), replaces: z.string().min(1).optional() })]))
+      .default([]),
     /** Where the starters already put on are remembered; without it, only for this run. */
     startersFile: z.string().optional(),
     /** How often revocations and updates are checked while online. */
@@ -229,6 +237,8 @@ export class Community extends Service {
   private publisherCache: string | null = null;
   /** Packages fetched to be read before installing, by digest; installing takes them from here. */
   private downloadDir: string | null = null;
+  /** Bundled packages that did not verify: this run gets those builds from the network. */
+  private bundleRefused = new Set<string>();
   /** For tests: GitHub access other than through the connected account. */
   github: GitHubAccess;
   readonly official: OfficialCatalog;
@@ -244,6 +254,7 @@ export class Community extends Service {
     this.github = githubAccess(() => this.home.github.token());
     this.official = new OfficialCatalog({
       ...config.officialCatalog,
+      bundleFile: config.officialBundle && path.join(config.officialBundle.dir, BUNDLE_CATALOG),
       verify: (raw, digest) => this.plugins.extensions!.verify(raw, digest),
       warn: (text) => this.home.logger.warn(text)
     });
@@ -444,6 +455,7 @@ export class Community extends Service {
     this.downloadDir ??= fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-download-"));
     const file = path.join(this.downloadDir, `${row.digest}${PACKAGE_EXT}`);
     if (fs.existsSync(file)) return file;
+    if (source.name === "official" && (await this.fromBundle(row, file))) return file;
     const res = await fetch(source.packageUrl(row), { signal: AbortSignal.timeout(120_000) });
     if (!res.ok) throw new Error(`the package could not be downloaded (${res.status})`);
     const bytes = Buffer.from(await res.arrayBuffer());
@@ -451,6 +463,28 @@ export class Community extends Service {
     fs.writeFileSync(`${file}.part`, bytes);
     fs.renameSync(`${file}.part`, file);
     return file;
+  }
+
+  /** The app's own copy of this exact build, checked as a download is; one that is not that build is passed over for the network. */
+  private async fromBundle(row: VersionRow, file: string): Promise<boolean> {
+    const bundled = this.config.officialBundle && bundledPackage(this.config.officialBundle.dir, row.digest!);
+    if (!bundled || this.bundleRefused.has(bundled) || !fs.existsSync(bundled)) return false;
+    let dir: string | null = null;
+    try {
+      fs.copyFileSync(bundled, `${file}.part`);
+      const unpacked = await unpackPlugin(`${file}.part`);
+      dir = unpacked.dir;
+      if (unpacked.digest !== row.digest) throw new Error("it is not the build the catalog lists");
+      fs.renameSync(`${file}.part`, file);
+      return true;
+    } catch (error) {
+      this.bundleRefused.add(bundled);
+      fs.rmSync(`${file}.part`, { force: true });
+      this.home.logger.warn(`the bundled ${row.plugin_id} ${row.version} is not used: ${message(error)}`);
+      return false;
+    } finally {
+      if (dir) fs.rmSync(dir, { recursive: true, force: true });
+    }
   }
 
   private async pick(id: string, version?: string): Promise<{ row: VersionRow; source: Source }> {
@@ -488,10 +522,10 @@ export class Community extends Service {
     }
   }
 
-  private async installVersion(row: VersionRow, source: Source): Promise<PluginsSnapshot> {
+  private async installVersion(row: VersionRow, source: Source, opts: { disabled?: boolean } = {}): Promise<PluginsSnapshot> {
     const file = await this.download(row, source);
     try {
-      const snapshot = await this.plugins.installFile(file, { source: "store", digest: row.digest!, attestation: row.attestation ?? undefined });
+      const snapshot = await this.plugins.installFile(file, { source: "store", digest: row.digest!, attestation: row.attestation ?? undefined, disabled: opts.disabled });
       source.downloaded(row.plugin_id);
       this.changed();
       return snapshot;
@@ -558,8 +592,8 @@ export class Community extends Service {
     }
   }
 
-  private starters(): { id: string; hosts?: string[] }[] {
-    return this.config.starters.map((s) => (typeof s === "string" ? { id: s } : { id: s.id, hosts: s.whenModelHost.map((h) => h.toLowerCase()) }));
+  private starters(): { id: string; hosts?: string[]; replaces?: string }[] {
+    return this.config.starters.map((s) => (typeof s === "string" ? { id: s } : { id: s.id, hosts: s.whenModelHost?.map((h) => h.toLowerCase()), replaces: s.replaces }));
   }
 
   /** Whether the person has a model a starter is for; one without hosts is for everyone. */
@@ -620,10 +654,11 @@ export class Community extends Service {
   private async putStarters(): Promise<void> {
     const put = this.startersPut();
     const installed = new Set(this.plugins.extensions!.entries().map((e) => e.id));
-    for (const { id } of this.starters().filter((s) => !put.has(s.id) && this.due(s))) {
+    for (const { id, replaces } of this.starters().filter((s) => !put.has(s.id) && this.due(s))) {
       if (!installed.has(id)) {
         try {
-          await this.install(id);
+          const { row, source } = await this.pick(id);
+          await this.installVersion(row, source, { disabled: !!replaces && this.plugins.switchedOff(replaces) });
         } catch (error) {
           this.home.logger.info(`${id} is not installed yet: ${message(error)}`);
           continue;

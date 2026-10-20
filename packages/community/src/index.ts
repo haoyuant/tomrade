@@ -2,4 +2,4 @@ export { Community, Community as default, CommunityConfig, type BrowseResult, ty
 export { PublishRefused, githubAccess, prepareRelease, type GitHubAccess, type Prepared } from "./publish.js";
 export { expansion, latestInstallable, planUpdate, revoked, type Revocation, type RiskLevel, type Tier, type UpdatePlan, type VersionRow } from "./rules.js";
 export { linkGitHub } from "./oauth.js";
-export { OFFICIAL_CATALOG_URL, OfficialCatalog, isOfficialId, type CatalogState } from "./official.js";
+export { OFFICIAL_CATALOG_URL, OfficialCatalog, bundleOfficialPlugins, isOfficialId, type CatalogState } from "./official.js";

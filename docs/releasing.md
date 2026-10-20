@@ -2,6 +2,23 @@
 
 `pnpm --filter @tomrade/desktop package` builds the backend and the renderer, then the installers, into `apps/desktop/release/`. On macOS that's a DMG and a ZIP. Add `-- --dir` to build just the unpacked app.
 
+## Official plugins carried in the app
+
+Packaging needs github.com: after the backend is built and before electron-builder runs, `apps/desktop/scripts/bundle-official-plugins.mjs` puts the official starters into the app, so a machine that cannot reach GitHub (offline, or mainland China without a proxy) still gets them on first run or upgrade. It reads `starters` from the community row in `apps/desktop/tomrade.yml`, fetches the official catalog, and writes to `apps/desktop/official-plugins/` (gitignored):
+
+- `<digest>.tomrade-plugin` for each starter: the version this build would install, downloaded, with its digest checked and its signature verified against the app's keys (`apps/desktop/src/trust.ts`);
+- `catalog.json`: the catalog as it was fetched.
+
+electron-builder copies the folder into the app beside `tomrade.yml` (`files` in `electron-builder.yml`), where the community row's `officialBundle` points (`${appDir}/official-plugins`).
+
+The build stops if a starter can't be bundled. That happens when the catalog has no version of it this Tomrade can install (not released yet, revoked, needs a newer SDK, or not signed with a trusted key), when the download fails, or when the package isn't the build the catalog lists. A plugin must be released from tomrade-plugins before `tomrade.yml` names it as a starter. To check the bundle without packaging:
+
+```sh
+pnpm build:backend && pnpm --filter @tomrade/desktop bundle:official
+```
+
+In the app, the bundle changes nothing while the catalog can be reached. A version whose digest matches a bundled package installs from that package rather than downloading it, and a newer one downloads and updates as before. If the catalog can't be fetched, the app uses its cached copy or the bundled one, whichever is newer. A bundled package that doesn't verify is not used: the reason goes to the log, and that starter is tried from the network at the next check.
+
 ## CI: a tag builds every installer
 
 Pushing a tag `v<semver>` runs `.github/workflows/release.yml`:

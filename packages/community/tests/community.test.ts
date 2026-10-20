@@ -9,10 +9,10 @@ import GitHubAccount from "@tomradex/github";
 import { Settings } from "@tomradex/settings";
 import { Tools } from "@tomradex/tools";
 import { fresh, settle } from "@tomradex/testkit";
-import { ATTESTATION_FILE, LOCK_FILE, attest, generateSigningKey, packPlugin, packageDigest, unpackPlugin } from "@tomradex/plugin-kit";
+import { ATTESTATION_FILE, LOCK_FILE, attest, generateSigningKey, packPlugin, packageDigest, unpackPlugin, verifyAttestation } from "@tomradex/plugin-kit";
 import { ExtensionStore, Plugins } from "@tomradex/plugins";
 import { release, scaffold } from "@tomradex/plugin-cli";
-import { Community, planUpdate, prepareRelease, type GitHubAccess, type VersionRow } from "@tomradex/community";
+import { Community, bundleOfficialPlugins, planUpdate, prepareRelease, type GitHubAccess, type VersionRow } from "@tomradex/community";
 import type { Manifest } from "@tomradex/plugin-sdk";
 
 // Inside the repository: vitest's module runner will not import from the system temp directory.
@@ -145,7 +145,7 @@ async function storePackage(version: string, opts: { official?: boolean; served?
   return { file, attestation, digest };
 }
 
-async function storeHost(tables: Record<string, Record<string, unknown>[]>, base: string, user: Record<string, unknown> | null = null, opts: { cloud?: boolean; config?: Record<string, unknown> } = {}) {
+async function storeHost(tables: Record<string, Record<string, unknown>[]>, base: string, user: Record<string, unknown> | null = null, opts: { cloud?: boolean; config?: Record<string, unknown>; leftSwitches?: Record<string, boolean> } = {}) {
   const client = fakeSupabase(tables, base, user);
   class FakeCloud extends Service {
     static provide = "cloudHub";
@@ -157,7 +157,7 @@ async function storeHost(tables: Record<string, Record<string, unknown>[]>, base
   const root = fs.mkdtempSync(path.join(tmp, "root-"));
   const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(root, "settings.json") }], GitHubAccount, ...(opts.cloud === false ? [] : [FakeCloud])] });
   const store = new ExtensionStore({ root, lockFile: path.join(root, LOCK_FILE), trustedKeys: { [key.keyId]: key.publicKey }, importer });
-  await w.ctx.plugin(Plugins, { rows: [], modules: [], extensions: store, resolve: async () => ({ apply() {} }) });
+  await w.ctx.plugin(Plugins, { rows: [], modules: [], extensions: store, resolve: async () => ({ apply() {} }), leftSwitches: opts.leftSwitches });
   await w.ctx.plugin(Community, opts.config ?? {});
   await settle();
   return { ...w, client, store, community: w.ctx.community };
@@ -258,7 +258,7 @@ describe("the official catalog", () => {
     const { optional: _optional, contributes: _contributes, ...written } = m;
     fs.writeFileSync(
       path.join(dir, "dist/index.js"),
-      `export default { [Symbol.for("tomrade.sdk-plugin")]: 1, inject: ["tools"], async apply(ctx) { await ctx.tools.register({ name: "memo_version", title: "v", description: "v", input: { safeParse: (v) => ({ success: true, data: v }) }, execute: () => "${version}" }); } };`
+      `export default { [Symbol.for("tomrade.sdk-plugin")]: 1, inject: ["tools"], async apply(ctx) { await ctx.tools.register({ name: "${id.split("/")[1]}_version", title: "v", description: "v", input: { safeParse: (v) => ({ success: true, data: v }) }, execute: () => "${version}" }); } };`
     );
     const digest = packageDigest(dir);
     const attestation = attest({ v: 1, id, version, digest: opts.attestDigest ?? digest, tier: "official", risk: "low", issuedAt: 1 }, (opts.signer ?? key).privateKey);
@@ -270,7 +270,9 @@ describe("the official catalog", () => {
 
   async function catalogServer() {
     const catalog = { v: 1, generatedAt: "2026-10-17T00:00:00Z", plugins: [] as Record<string, unknown>[], revoked: [] as Record<string, unknown>[] };
+    const requests: string[] = [];
     const server = http.createServer((req, res) => {
+      requests.push(req.url ?? "");
       if (req.url === "/official/catalog.json") return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(catalog));
       const file = path.join(tmp, "served", decodeURIComponent(req.url ?? ""));
       if (!fs.existsSync(file)) return res.writeHead(404).end();
@@ -278,8 +280,24 @@ describe("the official catalog", () => {
     });
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
     const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/official/catalog.json`;
-    return { catalog, server, url };
+    return { catalog, server, url, requests };
   }
+
+  const plugin = (id: string, versions: unknown[]) => ({ id, title: id, description: "x", license: "Apache-2.0", repository: "https://github.com/haoyuant/tomrade-plugins", versions });
+  const verify = (raw: unknown, digest: string) => verifyAttestation(raw, digest, { [key.keyId]: key.publicKey });
+  /** What the build script does: the starters' packages and the catalog, in a folder the app carries. */
+  const bundle = async (url: string, ids: string[]) => {
+    const dir = path.join(fs.mkdtempSync(path.join(tmp, "bundle-")), "official-plugins");
+    await bundleOfficialPlugins({ url, ids, dir, verify });
+    return dir;
+  };
+  /** No host answers: what a machine that cannot reach GitHub sees. */
+  const refuseNetwork = () => vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new TypeError("fetch failed", { cause: new Error("connect ECONNREFUSED") }))));
+  const warningsOf = (ctx: Context) => {
+    const warnings: string[] = [];
+    ctx.logger.exporter({ colors: 0, export: (m: { type: string; args: unknown[] }) => void (m.type === "warn" && warnings.push(String(m.args[0]))) } as never);
+    return warnings;
+  };
 
   it("lists, reads and installs Tomrade's own plugins without a cloud account, signed and kept up to date", async () => {
     const { catalog, server, url } = await catalogServer();
@@ -490,5 +508,97 @@ describe("the official catalog", () => {
 
     const never = await storeHost({}, "http://127.0.0.1:9", null, { cloud: false, config: { officialCatalog: { url, cacheFile: path.join(tmp, "none.json") } } });
     await expect(never.community.search({ source: "official" })).rejects.toThrow(/official catalog is unavailable/);
+  }, 60_000);
+
+  it("puts every bundled starter on with the network refused, from the app's own copy, and updates it from the catalog once it answers", async () => {
+    const { catalog, server, url, requests } = await catalogServer();
+    catalog.plugins.push(plugin("tomrade/memo", [await officialPackage("1.0.0")]), plugin("tomrade/notes", [await officialPackage("1.0.0", { id: "tomrade/notes" })]));
+    const dir = await bundle(url, ["tomrade/memo", "tomrade/notes"]);
+    const startersFile = path.join(fs.mkdtempSync(path.join(tmp, "starters-")), "official-starters.json");
+    refuseNetwork();
+    try {
+      const { ctx, store, community } = await storeHost({}, "http://127.0.0.1:9", null, { cloud: false, config: { officialCatalog: { url, cacheFile: path.join(tmp, "never-fetched.json") }, officialBundle: { dir }, starters: ["tomrade/memo", "tomrade/notes"], startersFile } });
+      await community.installStarters();
+      expect(store.info("tomrade/memo")).toMatchObject({ version: "1.0.0", tier: "official", source: "store" });
+      expect(store.info("tomrade/notes")).toMatchObject({ version: "1.0.0", tier: "official", source: "store" });
+      expect(await ctx.tools.execute("memo_version", {}, { by: "human" })).toBe("1.0.0");
+      expect(await ctx.tools.execute("notes_version", {}, { by: "human" })).toBe("1.0.0");
+      expect(JSON.parse(fs.readFileSync(startersFile, "utf8"))).toEqual(["tomrade/memo", "tomrade/notes"]);
+      // Only the catalog was asked for, and it did not answer.
+      expect(vi.mocked(fetch).mock.calls.map(([u]) => String(u))).toEqual([url]);
+      expect(community.sources()[0]).toMatchObject({ available: true, stale: true });
+
+      vi.unstubAllGlobals();
+      requests.length = 0;
+      (catalog.plugins[0]!.versions as unknown[]).push(await officialPackage("1.1.0"));
+      await community.sweep();
+      expect(await ctx.tools.execute("memo_version", {}, { by: "human" })).toBe("1.1.0");
+      expect(requests).toContain("/official/tomrade-memo/1.1.0.tomrade-plugin");
+    } finally {
+      vi.unstubAllGlobals();
+      server.close();
+    }
+  }, 60_000);
+
+  it("passes over a bundled package that is not the build the catalog lists, says why, and gets it from the network later", async () => {
+    const { catalog, server, url, requests } = await catalogServer();
+    const memo = await officialPackage("1.0.0");
+    catalog.plugins.push(plugin("tomrade/memo", [memo]));
+    const dir = await bundle(url, ["tomrade/memo"]);
+    // Another build where the listed one should be.
+    const other = await officialPackage("1.0.0", { id: "tomrade/other" });
+    fs.copyFileSync(path.join(tmp, "served", "official", other.url), path.join(dir, `${memo.digest}.tomrade-plugin`));
+    refuseNetwork();
+    try {
+      const { ctx, store, community } = await storeHost({}, "http://127.0.0.1:9", null, { cloud: false, config: { officialCatalog: { url, cacheFile: path.join(tmp, "never-fetched.json") }, officialBundle: { dir }, starters: ["tomrade/memo"] } });
+      const warnings = warningsOf(ctx);
+      await community.installStarters();
+      expect(store.has("tomrade/memo")).toBe(false);
+      expect(store.has("tomrade/other")).toBe(false);
+      expect(warnings).toContainEqual(expect.stringMatching(/bundled tomrade\/memo 1\.0\.0 is not used: it is not the build the catalog lists/));
+
+      vi.unstubAllGlobals();
+      requests.length = 0;
+      community.official.expire();
+      await community.installStarters();
+      expect(store.info("tomrade/memo")).toMatchObject({ version: "1.0.0", tier: "official" });
+      expect(await ctx.tools.execute("memo_version", {}, { by: "human" })).toBe("1.0.0");
+      expect(requests).toEqual(["/official/catalog.json", "/official/tomrade-memo/1.0.0.tomrade-plugin"]);
+    } finally {
+      vi.unstubAllGlobals();
+      server.close();
+    }
+  }, 60_000);
+
+  it("puts a starter that replaces a row on switched off when the person had switched that row off, and on otherwise", async () => {
+    const { catalog, server, url } = await catalogServer();
+    catalog.plugins.push(plugin("tomrade/memo", [await officialPackage("1.0.0")]), plugin("tomrade/notes", [await officialPackage("1.0.0", { id: "tomrade/notes" })]));
+    const { ctx, store, community } = await storeHost({}, "http://127.0.0.1:9", null, {
+      cloud: false,
+      config: { officialCatalog: { url }, starters: [{ id: "tomrade/memo", replaces: "engine-memo" }, { id: "tomrade/notes", replaces: "engine-notes" }] },
+      leftSwitches: { "engine-memo": true, "engine-notes": false }
+    });
+    await community.installStarters();
+    expect(store.entry("tomrade/memo")).toMatchObject({ version: "1.0.0", disabled: true });
+    expect(ctx.plugins.snapshot().plugins.find((p) => p.id === "tomrade/memo")?.state).toBe("disabled");
+    expect(store.entry("tomrade/notes")).toMatchObject({ version: "1.0.0", disabled: false });
+    expect(await ctx.tools.execute("notes_version", {}, { by: "human" })).toBe("1.0.0");
+    server.close();
+  }, 60_000);
+
+  it("bundles only what the app would install, and refuses to bundle a starter it cannot have", async () => {
+    const { catalog, server, url } = await catalogServer();
+    catalog.plugins.push(plugin("tomrade/memo", [await officialPackage("1.0.0"), { ...(await officialPackage("1.3.0")), sdkRange: "^9.0.0" }]));
+    const dir = await bundle(url, ["tomrade/memo"]);
+    expect(fs.readdirSync(dir).sort()).toEqual([`${(catalog.plugins[0]!.versions as { digest: string }[])[0]!.digest}.tomrade-plugin`, "catalog.json"].sort());
+    expect(JSON.parse(fs.readFileSync(path.join(dir, "catalog.json"), "utf8"))).toMatchObject({ catalog: { plugins: [{ id: "tomrade/memo" }] } });
+
+    const missing = path.join(tmp, "bundle-missing");
+    await expect(bundleOfficialPlugins({ url, ids: ["tomrade/memo", "tomrade/absent"], dir: missing, verify })).rejects.toThrow(/tomrade\/absent: the catalog has no version this Tomrade can install/);
+    expect(fs.existsSync(missing)).toBe(false);
+    // A package that is not the build the catalog lists.
+    (catalog.plugins[0]!.versions as { digest: string }[])[0]!.digest = "a".repeat(64);
+    await expect(bundleOfficialPlugins({ url, ids: ["tomrade/memo"], dir: missing, verify: () => ({ v: 1, id: "tomrade/memo", version: "1.0.0", digest: "a".repeat(64), tier: "official", risk: "low", issuedAt: 1, keyId: "k", signature: "s" }) })).rejects.toThrow(/not the build the catalog lists/);
+    server.close();
   }, 60_000);
 });

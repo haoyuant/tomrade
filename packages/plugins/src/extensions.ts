@@ -464,7 +464,7 @@ export class ExtensionStore {
    * contents must have (and, for Tomrade's own plugins, an attestation), or
    * handed over by a person.
    */
-  async installFile(file: string, opts: { source?: "store" | "file"; digest?: string; attestation?: unknown; vet?: (manifest: Manifest) => void } = {}): Promise<LockEntry> {
+  async installFile(file: string, opts: { source?: "store" | "file"; digest?: string; attestation?: unknown; vet?: (manifest: Manifest) => void; disabled?: boolean } = {}): Promise<LockEntry> {
     const unpacked = await unpackPlugin(file);
     if (opts.source === "store" && unpacked.digest !== opts.digest) {
       fs.rmSync(unpacked.dir, { recursive: true, force: true });
@@ -491,7 +491,7 @@ export class ExtensionStore {
       digest: unpacked.digest,
       attestation,
       source: opts.source ?? (attestation ? "store" : "file"),
-      disabled: prior?.disabled ?? false,
+      disabled: prior?.disabled ?? opts.disabled ?? false,
       previous: prior && prior.version !== unpacked.manifest.version ? { version: prior.version, dir: prior.dir, digest: prior.digest, attestation: prior.attestation } : (prior?.previous ?? null),
       confirmed: [],
       modified: false,

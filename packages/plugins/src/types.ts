@@ -111,6 +111,8 @@ export interface PluginsConfig {
   recompose?(without: ReadonlySet<string>): PluginRow[];
   /** The full-mode extensions whose rows this start applied, in the order they were laid on. */
   rowsFrom?: string[];
+  /** The person's switches for rows the composition no longer has, by row id: what a plugin taking such a row's place starts as. */
+  leftSwitches?: Record<string, boolean>;
 }
 
 /** Refusing to empty a required module is the guard; it reads as one sentence. */

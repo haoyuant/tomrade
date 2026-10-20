@@ -69,7 +69,10 @@ function compose(opts: BootOptions, vars: Record<string, string>) {
   });
   const recompose = (without: ReadonlySet<string>) =>
     interpolate(applyPatches(base, [...fromPackages.filter((p) => !without.has(p.from)).map((p) => p.rows), ...fromFiles, ...(opts.patches ?? [])]), vars);
-  return { rows: recompose(new Set()), modules, contracts, extensions, recompose, rowsFrom: fromPackages.map((p) => p.from), dropped };
+  const rows = recompose(new Set());
+  // applyPatches drops the switch of a row the app stopped shipping; a plugin that takes that row's place still reads it.
+  const leftSwitches = Object.fromEntries(fromFiles.flat().flatMap((r) => (typeof r.disabled === "boolean" && !rows.some((row) => row.id === r.id) ? [[r.id, r.disabled]] : [])));
+  return { rows, modules, contracts, extensions, recompose, rowsFrom: fromPackages.map((p) => p.from), dropped, leftSwitches };
 }
 
 /**
@@ -95,7 +98,7 @@ export async function boot(opts: BootOptions): Promise<Booted> {
     ctx.logger("boot").error(error);
     throw new ConfigUnreadable(error instanceof Error ? error.message : String(error), { cause: error });
   }
-  const { rows, modules, contracts, extensions, recompose, rowsFrom, dropped } = composition;
+  const { rows, modules, contracts, extensions, recompose, rowsFrom, dropped, leftSwitches } = composition;
   for (const reason of dropped) ctx.logger("boot").warn(reason);
   // A promise nobody waited on would otherwise leave no trace in a packaged build.
   const unhandled = (reason: unknown) => ctx.logger("process").error(reason);
@@ -113,7 +116,8 @@ export async function boot(opts: BootOptions): Promise<Booted> {
     resolve: (row) => resolvePlugin(row, baseDir, extensionsRoot),
     persist: patchFile ? (id, disabled) => writePatchRow(patchFile, id, { disabled }) : undefined,
     recompose,
-    rowsFrom
+    rowsFrom,
+    leftSwitches
   });
 
   return { ctx, rows, dump: () => stringify(ctx.plugins.snapshot()) };

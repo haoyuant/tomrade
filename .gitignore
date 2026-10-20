@@ -22,6 +22,8 @@ apps/desktop/ui/
 apps/desktop/release/
 # The built-in agent's Pi, fetched by apps/desktop/scripts/fetch-pi.mjs
 apps/desktop/vendor/
+# The official starters the app carries, fetched by apps/desktop/scripts/bundle-official-plugins.mjs
+apps/desktop/official-plugins/
 
 # UI harness output
 apps/desktop/scripts/shots/
