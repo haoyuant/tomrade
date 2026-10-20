@@ -140,6 +140,9 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   await say({ type: "resize", cell: "c1", cols: 90, rows: 20 });
   await say({ type: "scroll", cell: "c1", direction: "up", lines: 3 });
   expect(live.sent).toEqual([["input", "ls\r"], ["resize", 90, 20], ["scroll", { type: "scroll", cell: "c1", direction: "up", lines: 3 }]]);
+  // Dropped files are typed as one paste of their paths.
+  await say({ type: "drop", cell: "c1", paths: ["/work/a b.png", "/work/c"] });
+  expect(live.sent.at(-1)).toEqual(["input", "\x1b[200~/work/a\\ b.png /work/c \x1b[201~"]);
 
   // The toolbar: continue through code link, the PR in the browser, the worktree in Finder.
   await say({ type: "continue", sessionId: "s1" });
