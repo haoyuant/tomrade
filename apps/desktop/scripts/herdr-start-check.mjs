@@ -122,6 +122,29 @@ app.whenReady().then(async () => {
     await startInTerminal();
     await sleep(1500);
     assert("关掉后不再出现", (await hint()) === 0);
+
+    // With Tomrade's Terminal window showing herdr's sessions: Start offers it first, and the start opens there.
+    const shownSessions = [];
+    ctx.codeLink.terminalWindow = async () => true;
+    ctx.codeLink.showSession = async (projectId, sessionId) => (shownSessions.push(sessionId), true);
+    ctx.codeLink.start = async (projectId, itemId, opts) => ({ ok: true, continued: false, threadId: "t-window", sessionId: "s-window", branch: "hdr-1/herdr-readiness", worktree: null, cwd: work, mode: opts.mode, command: "claude", launched: true, pane: "w1:p1", engine: "ready" });
+    state = "running";
+    win.webContents.reload();
+    await wait(() => js(`!!document.querySelector('[data-testid="start-ticket"]')`));
+    await js(`document.querySelector('[data-testid="start-ticket"]').click(); true`);
+    await wait(() => js(`!!document.querySelector('[data-testid="start-mode"][data-terminal-window]')`));
+    const pressed = () => js(`document.querySelector('[data-testid="start-mode"] [aria-pressed="true"]')?.dataset.mode`);
+    assert("终端窗口可用时，默认在 Tomrade 终端里跑", (await pressed()) === "terminal");
+    assert("两个选项说清楚去处", await js(`(() => { const b = [...document.querySelectorAll('[data-testid="start-mode"] button')].map(x => x.textContent.trim()); return b.includes('在助手面板里跑') && b.includes('在 Tomrade 终端里跑'); })()`));
+    assert("说明里写着在终端窗口里打开", await js(`[...document.querySelectorAll('.meta-txt')].some(p => p.textContent.includes('Tomrade 的终端窗口'))`));
+    fs.writeFileSync(path.join(work, "start-terminal-window.png"), (await win.webContents.capturePage()).toPNG());
+    await wait(() => js(`!![...document.querySelectorAll('#stEngine option')].find(o => o.value === 'ready')`));
+    await wait(() => js(`!document.querySelector('[data-testid="start-confirm"]').disabled`));
+    await js(`document.querySelector('[data-testid="start-confirm"]').click(); true`);
+    await wait(async () => shownSessions.length === 1);
+    assert("开始后在终端窗口里显示这个会话", shownSessions[0] === "s-window");
+    await wait(() => js(`[...document.querySelectorAll('.toast')].some(t => t.textContent.includes('已在终端窗口里'))`));
+    assert("提示说会话在终端窗口里", true);
     console.log(`界面截图：${work}`);
     win.destroy();
     await ctx.fiber.dispose();

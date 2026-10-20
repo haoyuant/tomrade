@@ -3,7 +3,7 @@ import type { Layout, LayoutPreset, SessionRow, TerminalPlace, TerminalRow, Wind
 import { ContextMenu, ContextMenuActionItem, ContextMenuSub } from "~/components/ui/menu";
 import { interpolate, message } from "~/lib/dicts";
 import { onLook, onState, onToast, send, type Look } from "./bridge";
-import { applyPreset, close, leaves, place, prune, resize, show, split } from "./layout";
+import { applyPreset, close, leaves, place, prune, resize, reveal, show, split } from "./layout";
 import { TerminalCell } from "./TerminalCell";
 
 type Say = (key: string, vars?: Record<string, string | number>) => string;
@@ -373,6 +373,9 @@ export function App() {
   const current = useRef<Layout | null>(null);
   // What the first state already listed is not new: only what appears after it is placed.
   const seen = useRef<Set<string> | null>(null);
+  const focusedNow = useRef(focused);
+  focusedNow.current = focused;
+  const revealed = useRef(0);
   const change = useCallback((next: Layout) => {
     current.current = next;
     setLayout(next);
@@ -387,7 +390,15 @@ export function App() {
     const fresh = seen.current ? placeable.filter((id) => !seen.current!.has(id)) : [];
     seen.current = new Set([...(seen.current ?? []), ...placeable]);
     const shownIds = new Set(leaves(pruned).flatMap((l) => (l.sessionId ? [l.sessionId, state.terminals.find((t) => t.id === l.sessionId)?.sessionId ?? l.sessionId] : [])));
-    const placed = state.autoPlace ? fresh.filter((id) => !shownIds.has(id)).reduce(place, pruned) : pruned;
+    let placed = state.autoPlace ? fresh.filter((id) => !shownIds.has(id)).reduce(place, pruned) : pruned;
+    // Asked from outside (a start, "open in terminal"): the session in a cell, that cell selected — once it has its pane.
+    const ask = state.reveal;
+    if (ask && ask.at !== revealed.current && state.sessions.some((s) => s.id === ask.sessionId && s.pane)) {
+      revealed.current = ask.at;
+      const shown = reveal(placed, ask.sessionId, focusedNow.current, (id) => state.terminals.find((t) => t.id === id)?.sessionId ?? id);
+      placed = shown.layout;
+      setFocused(shown.cell);
+    }
     if (placed !== pruned) change(placed);
     else {
       current.current = pruned;

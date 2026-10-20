@@ -181,6 +181,75 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   expect(opened).toHaveLength(6);
 });
 
+it("shows a session code link asks for: the window opens or comes forward with it to reveal, only while herdr can show panes", async () => {
+  const opened: { spec: Record<string, unknown> & { onMessage(m: unknown): void; onClose(): void }; states: WindowState[]; posts: WindowPost[]; focused: number }[] = [];
+  const sessions = [session({ id: "s1", herdrPane: "w1:p1" }), session({ id: "s2", herdrPane: "w1:p2" }), session({ id: "s3", mode: "headless" })];
+  let bridge: { state: string } = { state: "ready" };
+  const herdrShown: string[] = [];
+
+  class FakeSurfaces extends Service {
+    static provide = "desktopSurfaces";
+    constructor(ctx: Context) {
+      super(ctx, "desktopSurfaces");
+    }
+    open(spec: (typeof opened)[number]["spec"]) {
+      const entry = { spec, states: [spec.initialState as WindowState], posts: [] as WindowPost[], focused: 0 };
+      opened.push(entry);
+      return { id: spec.id, capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus: () => void entry.focused++, setState: (st: WindowState) => void entry.states.push(st), post: (m: WindowPost) => void entry.posts.push(m), close: () => spec.onClose() };
+    }
+  }
+  class FakeHerdr extends Service {
+    static provide = "herdr";
+    constructor(ctx: Context) {
+      super(ctx, "herdr");
+    }
+    bridge = async () => bridge;
+  }
+  class FakeCodeLink extends Service {
+    static provide = "codeLink";
+    constructor(ctx: Context) {
+      super(ctx, "codeLink");
+    }
+    sessionsOf = () => sessions;
+    links = () => [];
+    herdrInstall = async () => ({ command: null, guide: "" });
+    showInHerdr = async (_projectId: string, itemId: string) => (herdrShown.push(itemId), "Shown in herdr");
+  }
+
+  const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "settings-reveal.json") }], Contributions, FakeSurfaces, FakeHerdr, FakeCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile: path.join(dir, "reveal.json") }]] });
+  const ticket = w.ctx.items.create({ projectId: w.project.id, boardId: w.board.id, title: "Shown", workType: "coding", status: "doing", by: "human" });
+  sessions[0]!.itemIds = [ticket.id];
+  await settle();
+  const ask = (sessionId: string) => w.ctx.serial("codeLink/show-session", w.project.id, sessionId);
+
+  expect(await w.ctx.serial("codeLink/terminal-window", w.project.id)).toBe(true);
+  // Closed: it opens, already asked to reveal the session.
+  expect(await ask("s1")).toBe(true);
+  expect(opened).toHaveLength(1);
+  const first = opened[0]!.states[0]!.reveal;
+  expect(first).toMatchObject({ sessionId: "s1" });
+  // Open: it comes forward with a new ask, and every later state keeps it until the next.
+  expect(await ask("s2")).toBe(true);
+  expect(opened).toHaveLength(1);
+  expect(opened[0]!.focused).toBe(1);
+  const second = opened[0]!.states.at(-1)!.reveal!;
+  expect(second.sessionId).toBe("s2");
+  expect(second.at).toBeGreaterThan(first!.at);
+  // Nothing to show here: a run without a pane, or a session it does not know, is left to code link.
+  expect(await ask("s3")).toBeUndefined();
+  expect(await ask("gone")).toBeUndefined();
+  // herdr unable to show panes in this window: no answer, so code link falls back.
+  bridge = { state: "unsupported" };
+  expect(await w.ctx.serial("codeLink/terminal-window", w.project.id)).toBeUndefined();
+  expect(await ask("s1")).toBeUndefined();
+
+  // "Show in herdr" in the window means herdr's own client, never this window again.
+  opened[0]!.spec.onMessage({ type: "focusHerdr", sessionId: "s1" });
+  await settle();
+  expect(herdrShown).toEqual([ticket.id]);
+  expect(opened[0]!.posts.at(-1)).toEqual({ type: "toast", text: "Shown in herdr" });
+});
+
 it("opens plain terminals in herdr without code link, keeps them, closes them, and still opens when sessions cannot be read", async () => {
   const fake = new FakeHerdr();
   const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[]; posts: WindowPost[] }[] = [];

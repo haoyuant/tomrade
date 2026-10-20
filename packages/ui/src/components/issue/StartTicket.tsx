@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { findEngine, methodWords, ticketMethods, useAgentThread, useAgentThreads, useEngines, usePlaybooks } from "~/lib/agent";
 import { invoke } from "~/lib/api";
-import { onStartRequest, useHerdrStatus, useCodeDeliveries, useCodeSessions, useStartDefaults, useStartTicket } from "~/lib/codeLink";
+import { defaultStartMode, onStartRequest, useHerdrStatus, useCodeDeliveries, useCodeSessions, useStartDefaults, useStartTicket, useTerminalWindow } from "~/lib/codeLink";
 import { StartGateFix, useGateWords, type StartFailure } from "./StartGateFix";
 import { useI18n } from "~/lib/i18n";
 import { engineStateLabel } from "~/lib/localCli";
@@ -129,8 +129,18 @@ function StartTicketDialog({
   const defaults = useStartDefaults();
   const rememberedStart = defaults.data ?? null;
   const [chosenMode, setChosenMode] = useState<StartOptions["mode"] | null>(requested ?? null);
-  const mode: StartOptions["mode"] = chosenMode ?? ((latest?.mode ?? rememberedStart?.mode) === "terminal" ? "terminal" : "run");
+  // Coding work goes to Tomrade's own Terminal window when it can show it, unless the agent picked last has no terminal.
+  const terminalWindow = useTerminalWindow(projectId).data === true;
+  const agentInTerminal = useMemo(() => {
+    const code = (engines.data ?? []).filter((engine) => engine.capabilities.includes("code"));
+    const last = findEngine(code, latest?.agent ?? thread?.engine ?? rememberedStart?.engine ?? null);
+    return last ? last.terminal !== false : code.some((engine) => engine.terminal !== false);
+  }, [engines.data, latest?.agent, thread?.engine, rememberedStart?.engine]);
+  const mode: StartOptions["mode"] =
+    chosenMode ?? defaultStartMode({ latest: latest?.mode ?? null, remembered: rememberedStart?.mode ?? null, terminalWindow, coding: !general, agentInTerminal });
   const herdrStatus = useHerdrStatus(mode === "terminal");
+  // Coding work in a terminal lands in Tomrade's Terminal window: the choices say so.
+  const inTomrade = terminalWindow && !general;
   const herdrHint = useHerdrHint();
   const capability = general ? "general" : "code";
   // An agent Tomrade drives over ACP has no terminal session to open.
@@ -224,9 +234,13 @@ function StartTicketDialog({
             toast({ body: warning ? `${started}\n${warning}` : started });
             showThread(result.threadId);
           } else if (result.launched) {
-            const started = t("codeLink.terminalToast", vars);
-            toast({ body: warning ? `${started}\n${warning}` : started });
             herdrHint(result, herdrStatus.data);
+            // In herdr: brought up in Tomrade's Terminal window when that is on, else where herdr shows it.
+            const shown = result.pane ? invoke("codeLink.showSession", projectId, result.sessionId).catch(() => false) : Promise.resolve(false);
+            void shown.then((inWindow) => {
+              const started = t(inWindow ? "codeLink.terminalWindowToast" : "codeLink.terminalToast", vars);
+              toast({ body: warning ? `${started}\n${warning}` : started });
+            });
           } else {
             const command = result.command ?? "";
             toast({ body: warning ? `${command}\n${warning}` : command, actions: [{ label: t("codeLink.copyCommand"), run: () => void navigator.clipboard?.writeText(command).then(() => toast({ body: t("codeLink.commandCopied") })) }] });
@@ -256,15 +270,15 @@ function StartTicketDialog({
             </p>
           )}
           <Field label={t("codeLink.where")}>
-            <div className="seg" role="group" aria-label={t("codeLink.where")} data-testid="start-mode">
-              <button type="button" aria-pressed={mode === "run"} onClick={() => setChosenMode("run")}>
-                <Icon name="i-plug" size={13} /> {t("codeLink.startHere")}
+            <div className="seg" role="group" aria-label={t("codeLink.where")} data-testid="start-mode" data-terminal-window={inTomrade || undefined}>
+              <button type="button" aria-pressed={mode === "run"} data-mode="run" onClick={() => setChosenMode("run")}>
+                <Icon name="i-plug" size={13} /> {t(inTomrade ? "codeLink.startPanel" : "codeLink.startHere")}
               </button>
-              <button type="button" aria-pressed={mode === "terminal"} onClick={() => setChosenMode("terminal")}>
-                <Icon name="i-terminal" size={13} /> {t("codeLink.startTerminal")}
+              <button type="button" aria-pressed={mode === "terminal"} data-mode="terminal" onClick={() => setChosenMode("terminal")}>
+                <Icon name="i-terminal" size={13} /> {t(inTomrade ? "codeLink.startTomrade" : "codeLink.startTerminal")}
               </button>
             </div>
-            <p className="meta-txt">{t(mode === "run" ? (general ? "codeLink.startHereGeneralHint" : "codeLink.startHereHint") : general ? "codeLink.startTerminalGeneralHint" : "codeLink.startTerminalHint")}</p>
+            <p className="meta-txt">{t(mode === "run" ? (general ? "codeLink.startHereGeneralHint" : "codeLink.startHereHint") : general ? "codeLink.startTerminalGeneralHint" : inTomrade ? "codeLink.startTomradeHint" : "codeLink.startTerminalHint")}</p>
             {mode === "terminal" && herdrStatus.data && (
               <p className="meta-txt" role="status" data-testid="start-herdr-status">
                 {t(herdrStatus.data === "running" ? "codeLink.herdrRunning" : herdrStatus.data === "notRunning" ? "codeLink.herdrNotRunning" : "codeLink.herdrNotInstalled")}
