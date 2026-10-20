@@ -1,8 +1,8 @@
 /**
  * The agents Tomrade drives over ACP — Hermes, dsh, WorkBuddy — as the app
  * shows them: their state in Settings and the Start dialog, what Hermes says
- * when its ACP support is missing, the models WorkBuddy lists, and that only
- * WorkBuddy is offered for a terminal. Stand-in CLIs make every state
+ * when its ACP support is missing, the models WorkBuddy lists, and that each
+ * can also be handed a ticket in a terminal. Stand-in CLIs make every state
  * deterministic; the other local agents are switched off.
  *
  *   pnpm build:backend && pnpm dev:ui   then
@@ -67,7 +67,8 @@ const run = async () => {
   const view = (id) => views.find((e) => e.id === id);
   check("Hermes without its ACP support needs repair, and says why", view("hermes") && !view("hermes").ok && view("hermes").need === "repair" && /ACP support/.test(view("hermes").reason), view("hermes"));
   check("WorkBuddy and dsh are ready with the CLI they found", view("workbuddy")?.ok && view("workbuddy").cli.path === codebuddy && view("dsh")?.ok, [view("workbuddy"), view("dsh")]);
-  check("only WorkBuddy can be handed a terminal", view("hermes").terminal === false && view("dsh").terminal === false && view("workbuddy").terminal === undefined);
+  // A view names `terminal` only for an engine that cannot take one.
+  check("each can also be handed a ticket in a terminal", ["hermes", "dsh", "workbuddy"].every((id) => view(id).terminal !== false), ["hermes", "dsh", "workbuddy"].map((id) => view(id).terminal));
   check("WorkBuddy's models come from its help before any session", view("workbuddy").picks[0].choices.map((c) => c.value).join() === "default-model,hy3,gpt-5.5", view("workbuddy").picks);
   check("dsh offers its reasoning efforts", view("dsh").picks[1]?.choices.map((c) => c.value).join() === "off,low,high,max", view("dsh").picks);
 
@@ -103,7 +104,7 @@ const run = async () => {
   await mode("Run here");
   await wait(async () => (await options()).length === 3, "three agents");
   const here = await options();
-  check("Run here offers all three, Hermes with its state", here.join("|") === "Hermes — Found, but won't run|dsh|WorkBuddy", here);
+  check("Run here offers all three, Hermes with its state", here.join("|") === "Hermes — Found, but won't run|DeepSeek Harness|WorkBuddy", here);
   check("the first ready one is chosen", (await $(`document.querySelector('#stEngine').value`)) === "dsh");
   check("dsh's efforts are a pick", (await $(`[...document.querySelectorAll('#stPick-effort option')].map((o) => o.value).join()`)) === ",off,low,high,max");
   await $(`(() => { const s = document.querySelector('#stEngine'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'workbuddy'); s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
@@ -111,7 +112,7 @@ const run = async () => {
   await shot("acp-engines-01-start-here");
 
   await mode("Open in terminal");
-  check("a terminal is offered only to WorkBuddy", await wait(async () => (await options()).join("|") === "WorkBuddy", "terminal agents"), await options());
+  check("a terminal is offered to all three, Hermes with its state", await wait(async () => (await options()).join("|") === "Hermes — Found, but won't run|DeepSeek Harness|WorkBuddy", "terminal agents"), await options());
   await shot("acp-engines-02-start-terminal");
 
   // ── Settings, from the agent that is not ready ────────────────────────
