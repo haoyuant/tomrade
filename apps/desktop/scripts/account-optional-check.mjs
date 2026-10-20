@@ -161,6 +161,8 @@ const run = async () => {
   await sleep(2500);
   check("which says what an account is for", (await gateText()).includes("An account keeps your project list and preferences in sync across your computers."), await gateText());
   check("and offers to go on without one", await $(`!!${button("Use without an account", gate)}`) && (await gateText()).includes("Your projects stay on this computer. You can sign in later in Settings\u00a0→\u00a0Hub."), await gateText());
+  const localInView = await $(`(() => { const r = ${button("Use without an account", gate)}?.getBoundingClientRect(); return { bottom: r?.bottom, innerHeight }; })()`);
+  check("in view without scrolling", localInView.bottom !== undefined && localInView.bottom <= localInView.innerHeight, localInView);
   await shot("account-optional-01-gate");
 
   await typeInto(".account-gate input[type=email]", "later@example.test");

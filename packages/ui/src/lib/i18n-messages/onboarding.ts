@@ -1,9 +1,9 @@
 export const onboarding = {
   en: {
     gotIt: "Got it",
-    revertHint: "The assistant's changes are marked as its own. Revert takes back the whole run; History in the title bar lists every write.",
+    revertHint: "The assistant's changes are marked as its own. Revert takes back the whole run; History, at the bottom of the window, lists every write.",
     startHint: "Start hands this ticket to a local agent that works on it in the background, then waits for you to accept the result.",
-    graphHint: "Tickets in this project now depend on each other. Switch a view's layout to Graph in the title bar to see the chain.",
+    graphHint: "Tickets in this project now depend on each other. Switch the view to Graph with the layout buttons beside its name to see the chain.",
     sampleTag: "Tour",
     sampleTileTitle: "Sample project",
     sampleTileDesc: "A short tour of Tomrade, written as tickets. Only on this computer.",
@@ -18,9 +18,9 @@ export const onboarding = {
   },
   zh: {
     gotIt: "知道了",
-    revertHint: "助手的修改都标明了是它做的。「撤销」会撤回整次运行；标题栏的「历史」列出每一次写入。",
+    revertHint: "助手的修改都标明了是它做的。「撤销」会撤回整次运行；窗口底部的「历史」列出每一次写入。",
     startHint: "「开始」把这个工单交给本地智能体在后台完成，做完后等你验收。",
-    graphHint: "这个项目里的工单开始互相依赖了。在标题栏把视图布局切到「关系图」，就能看到它们怎么串起来。",
+    graphHint: "这个项目里的工单开始互相依赖了。用视图名称旁边的布局按钮切到「关系图」，就能看到它们怎么串起来。",
     sampleTag: "教程",
     sampleTileTitle: "示例项目",
     sampleTileDesc: "用一组工单写成的 Tomrade 简短教程，只存在这台电脑上。",
