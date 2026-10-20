@@ -113,7 +113,7 @@ export interface WindowRow {
   author_json: string; text: string; created_at: number;
 }
 /** A ticket a conversation was shown, and its code as last told there; news of the code goes to that conversation. */
-export interface Watch { binding_id: string; project_id: string; item_id: string; seen_json: string; at: number; status: string | null }
+export interface Watch { binding_id: string; project_id: string; item_id: string; seen_json: string; at: number }
 export interface Action {
   token: string; binding_id: string; thread_id: string; question_id: string;
   actor_id: string; run_id: string | null; value_json: string | null; expires_at: number;

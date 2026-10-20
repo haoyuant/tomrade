@@ -136,6 +136,18 @@ const run = async () => {
   check("confirming lists them as paired", await waitFor(`document.querySelector('[data-testid=im-people]')?.textContent.includes('U-owner') && !!${button("Revoke")}`));
   check("and connects their direct chat to the project", await waitFor(`!!document.querySelector('[data-im-route]')`));
 
+  // ── the pane's order, and a bot folds ────────────────────────────────
+  check("what conversations hear comes before the bots",
+    await $(`!!(document.querySelector('[data-testid=im-notify]')?.compareDocumentPosition(document.querySelector('[data-testid=im-bots]')) & Node.DOCUMENT_POSITION_FOLLOWING)`));
+  await press(`document.querySelector('[data-im-connection=team] [data-testid=im-fold]')`);
+  check("folding a bot hides its pairing and conversations", await waitFor(`document.querySelector('[data-im-connection=team] [data-testid=im-fold]')?.getAttribute('aria-expanded') === 'false'
+    && !document.querySelector('[data-im-connection=team] [data-im-route]') && !document.querySelector('[data-im-connection=team] [data-testid=im-people]')`));
+  await $(`document.querySelector('[data-testid=im-bots]')?.scrollIntoView({ block: 'start' });true`);
+  await sleep(200);
+  await shot("im-folded.png");
+  await press(`document.querySelector('[data-im-connection=team] [data-testid=im-fold]')`);
+  check("and unfolding shows them again", await waitFor(`!!document.querySelector('[data-im-connection=team] [data-im-route]')`));
+
   // ── what conversations hear ──────────────────────────────────────────
   const imNow = () => ctx.settings.get().im;
   const until = async (cond, ms = 4000) => { for (let waited = 0; waited < ms && !cond(); waited += 100) await sleep(100); return cond(); };
