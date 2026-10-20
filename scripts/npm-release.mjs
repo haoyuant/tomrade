@@ -13,7 +13,7 @@
  *   node scripts/npm-release.mjs --publish    …then npm publish each version npm does not have (npm login or NPM_TOKEN)
  *   … --publish --dry-run                     the same, publishing nothing
  */
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -284,6 +284,7 @@ export default {
 
 if (publish) {
   if (APP_VERSION === "0.1.0") throw new Error("apps/desktop is at a checkout's 0.1.0: set the release's version first (npm pkg set version=…)");
+  const deferred = [];
   for (const dir of [domain, sdkDir, hostDir, cliDir, ...typed]) {
     const { name, version } = json(path.join(dir, "package.json"));
     // A version is published once; the SDK line's often stays as it was over several app releases.
@@ -294,8 +295,17 @@ if (publish) {
         return false;
       }
     })();
-    if (listed) console.log(`${name}@${version} is on npm already`);
-    else run("npm", ["publish", "--access", "public", ...(dryRun ? ["--dry-run"] : [])], dir);
+    if (listed) {
+      console.log(`${name}@${version} is on npm already`);
+      continue;
+    }
+    const published = spawnSync("npm", ["publish", "--access", "public", ...(dryRun ? ["--dry-run"] : [])], { cwd: dir, stdio: ["ignore", "inherit", "pipe"], encoding: "utf8" });
+    process.stderr.write(published.stderr ?? "");
+    if (published.status === 0) continue;
+    // npm limits how many new packages an account creates in a while; the rest wait for .github/workflows/npm-packages.yml.
+    if (/\bE429\b|429 Too Many Requests/.test(published.stderr ?? "")) deferred.push(`${name}@${version}`);
+    else throw new Error(`npm publish ${name}@${version} failed (exit ${published.status})`);
   }
+  if (deferred.length) console.log(`::warning::npm refused ${deferred.length} new package(s) for now (429); the daily npm packages workflow publishes them once it allows: ${deferred.join(", ")}`);
 }
 console.log(`\nstaged and packed in ${path.relative(root, out)} (SDK ${VERSION}, app ${APP_VERSION}, ${typed.length} declaration packages)${publish ? (dryRun ? "; publish dry run" : "; published") : ""}`);
