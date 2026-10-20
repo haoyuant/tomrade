@@ -52,6 +52,8 @@ export interface TerminalRow {
   startedAt: number;
   /** What the agent herdr sees in it calls the conversation; null without one. */
   agentTitle: string | null;
+  /** How herdr reads that agent; null without one, or when herdr cannot tell. */
+  agentStatus: "working" | "blocked" | "idle" | "done" | null;
   /** With no agent in it: what runs in its foreground when that is not the shell, else the title its shell set. */
   running: string | null;
   /** The code session its agent claimed a ticket for: the cell shows that session, on the same pane. */

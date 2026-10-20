@@ -84,6 +84,9 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
     constructor(ctx: Context) {
       super(ctx, "herdr");
     }
+    onPane = () => () => {};
+    watch = () => () => {};
+    watching = (): string[] => [];
     bridge = async () => ({ state: "ready" as const, version: "0.9.5" });
     terminal = async (pane: string, size: unknown) => {
       const frames = new Set<(f: unknown) => void>();
@@ -243,6 +246,9 @@ it("puts ended sessions in the archive, keeps one a cell shows, sends the archiv
     constructor(ctx: Context) {
       super(ctx, "herdr");
     }
+    onPane = () => () => {};
+    watch = () => () => {};
+    watching = (): string[] => [];
     bridge = async () => ({ state: "ready" as const, version: "0.9.5" });
     panes = async () => [];
   }
@@ -310,10 +316,13 @@ it("never shows a state older than one already shown, so a pick from the archive
     constructor(ctx: Context) {
       super(ctx, "herdr");
     }
+    onPane = () => () => {};
+    watch = () => () => {};
+    watching = (): string[] => [];
     bridge = async () => ({ state: "ready" as const, version: "0.9.5" });
     panes = () =>
       new Promise((resolve) => {
-        const answer = () => resolve([{ paneId: "w1:p9", agent: null, agentSession: null, title: null }]);
+        const answer = () => resolve([{ paneId: "w1:p9", agent: null, agentSession: null, status: "unknown" as const, title: null }]);
         if (held) held.push(answer);
         else answer();
       });
@@ -382,10 +391,13 @@ it("keeps a terminal that finishes opening while herdr is asked for its panes, a
     constructor(ctx: Context) {
       super(ctx, "herdr");
     }
+    onPane = () => () => {};
+    watch = () => () => {};
+    watching = (): string[] => [];
     bridge = async () => ({ state: "ready" as const, version: "0.9.5" });
     panes = () =>
       new Promise((resolve) => {
-        const answer = () => resolve(alive.map((paneId) => ({ paneId, agent: null, agentSession: null, title: null })));
+        const answer = () => resolve(alive.map((paneId) => ({ paneId, agent: null, agentSession: null, status: "unknown" as const, title: null })));
         if (held) held.push(answer);
         else answer();
       });
@@ -457,6 +469,9 @@ it("shows a session code link asks for: the window opens or comes forward with i
     constructor(ctx: Context) {
       super(ctx, "herdr");
     }
+    onPane = () => () => {};
+    watch = () => () => {};
+    watching = (): string[] => [];
     bridge = async () => bridge;
     panes = async () => [];
   }
@@ -604,6 +619,70 @@ it("opens plain terminals in herdr without code link, keeps them, closes them, a
   await new Promise((r) => setTimeout(r, 200));
   expect(next.posts.at(-1)).toMatchObject({ type: "toast" });
   expect(JSON.parse(fs.readFileSync(stateFile, "utf8")).terminals[w.project.id]).toEqual([]);
+});
+
+it("shows how herdr reads the agent in a plain terminal as it changes, nothing for a bare shell, and lets the pane go with the window", async () => {
+  const fake = new FakeHerdr();
+  const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[] }[] = [];
+
+  class FakeSurfaces extends Service {
+    static provide = "desktopSurfaces";
+    constructor(ctx: Context) {
+      super(ctx, "desktopSurfaces");
+    }
+    open(spec: (typeof opened)[number]["spec"]) {
+      const entry = { spec, states: [spec.initialState as WindowState] };
+      opened.push(entry);
+      return { id: "s", capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus() {}, setState: (s: WindowState) => void entry.states.push(s), post() {}, close: () => spec.onClose() };
+    }
+  }
+  class FakeCodeLink extends Service {
+    static provide = "codeLink";
+    constructor(ctx: Context) {
+      super(ctx, "codeLink");
+    }
+    sessionsOf = () => [];
+    links = () => [];
+    repositoriesOf = () => [];
+    herdrInstall = async () => ({ command: null, guide: "" });
+  }
+
+  const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "settings-status.json") }], Contributions, FakeSurfaces, [Herdr, { socket: fake.socket, bin: path.join(dir, "absent"), reconnectMs: 30 }], FakeCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile: path.join(dir, "status.json") }]] });
+  const herdr = w.ctx.get("herdr")!;
+  herdr.bridge = async () => ({ state: "ready", version: "0.9.5" });
+  await settle();
+  await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
+  const win = opened[0]!;
+  win.spec.onMessage({ type: "newTerminal", terminalId: "t1", cwd: dir });
+  const status = () => win.states.at(-1)!.terminals[0]?.agentStatus;
+  const shows = async (want: unknown) => {
+    for (let i = 0; i < 100 && status() !== want; i++) await new Promise((r) => setTimeout(r, 20));
+    return status();
+  };
+  expect(await shows(null)).toBeNull();
+  const pane = win.states.at(-1)!.terminals[0]!.pane!;
+  expect(herdr.watching()).toEqual([pane]);
+
+  // Heard from herdr, not the next poll; blocked is the person's turn, done is finished work not yet looked at.
+  fake.setStatus(pane, "claude", "working");
+  expect(await shows("working")).toBe("working");
+  fake.setStatus(pane, "claude", "blocked");
+  expect(await shows("blocked")).toBe("blocked");
+  fake.setStatus(pane, "claude", "done");
+  expect(await shows("done")).toBe("done");
+  fake.setStatus(pane, "claude", "idle");
+  expect(await shows("idle")).toBe("idle");
+  // An agent herdr cannot read, and the shell once the agent leaves, show nothing.
+  fake.setStatus(pane, "claude", "unknown");
+  expect(await shows(null)).toBeNull();
+  fake.setStatus(pane, "claude", "working");
+  expect(await shows("working")).toBe("working");
+  fake.setStatus(pane, null, "unknown");
+  expect(await shows(null)).toBeNull();
+
+  win.spec.onClose();
+  expect(herdr.watching()).toEqual([]);
+  fake.close();
 });
 
 it("shows a terminal as the code session its agent claimed, in place, and as a plain terminal again once the claim goes", async () => {
@@ -828,10 +907,13 @@ it("starts herdr's server again when it went away, on opening with saved termina
     constructor(ctx: Context) {
       super(ctx, "herdr");
     }
+    onPane = () => () => {};
+    watch = () => () => {};
+    watching = (): string[] => [];
     bridge = async () => (running ? { state: "ready" as const, version: "0.9.5" } : { state: "notRunning" as const, version: "0.9.5" });
     binary = () => "/opt/homebrew/bin/herdr";
     server = async () => (running ? { version: "0.9.5", protocol: 22, socket: "/h.sock" } : null);
-    panes = async () => (running ? [{ paneId: "w8:p1", agent: null, agentSession: null, title: null }] : null);
+    panes = async () => (running ? [{ paneId: "w8:p1", agent: null, agentSession: null, status: "unknown" as const, title: null }] : null);
     call = async () => ({ process_info: { foreground_processes: [] } });
     revive = (force = false) => {
       revives.push(force);

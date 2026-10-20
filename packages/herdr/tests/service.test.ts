@@ -150,6 +150,25 @@ describe("herdr service", () => {
     expect(herdr.watching()).toEqual([]);
   });
 
+  it("follows a pane while anyone holds it, and reads each pane's status with the list", async () => {
+    const fake = new FakeHerdr();
+    const { herdr } = await herdrOn(fake);
+    const heard: HerdrPaneEvent[] = [];
+    herdr.onPane((event) => heard.push(event));
+    const pane = fake.createPane("/work");
+    const first = herdr.watch(pane.pane_id);
+    const second = herdr.watch(pane.pane_id);
+    first();
+    first();
+    expect(herdr.watching()).toEqual([pane.pane_id]);
+    fake.setStatus(pane.pane_id, "claude", "blocked");
+    await until(() => heard.some((event) => event.kind === "status" && event.status === "blocked"));
+    expect((await herdr.panes())!.find((p) => p.paneId === pane.pane_id)).toMatchObject({ agent: "claude", status: "blocked" });
+    second();
+    expect(herdr.watching()).toEqual([]);
+    fake.close();
+  });
+
   it("subscribes again when herdr comes back, and reports a watched pane that went while it was away", async () => {
     const fake = new FakeHerdr();
     const { herdr } = await herdrOn(fake);

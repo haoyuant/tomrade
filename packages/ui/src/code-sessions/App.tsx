@@ -115,6 +115,16 @@ function StateChip({ s, say }: { s: SessionRow; say: Say }) {
   );
 }
 
+/** How herdr reads the agent in a plain terminal, in the session chip's words; blocked is "needs you". */
+function AgentChip({ status, say }: { status: NonNullable<TerminalRow["agentStatus"]>; say: Say }) {
+  const state = status === "working" ? "running" : status === "blocked" ? "needs" : status;
+  return (
+    <span className="tag cs-chip" data-testid="cs-state" data-state={state}>
+      {say(state === "needs" ? "needsYou" : state)}
+    </span>
+  );
+}
+
 /** A session in the list: its ticket (else what its agent calls the conversation), where it stands, and where it runs. */
 function SessionBody({ s, say }: { s: SessionRow; say: Say }) {
   const name = sessionName(s);
@@ -467,7 +477,7 @@ function Cell({ leaf, session, terminal, places, ready, onNewTerminal, onTalk, f
             </>
           ) : session ? (session.agentTitle ?? sessionName(session)) : terminal ? `${terminal.agentTitle ?? terminal.running ?? terminal.title} · ${terminal.cwd}` : say("pick")}
         </span>
-        {session && <StateChip s={session} say={say} />}
+        {session ? <StateChip s={session} say={say} /> : terminal?.agentStatus && <AgentChip status={terminal.agentStatus} say={say} />}
         {terminal?.note && !session && <span className="cs-cell-note" title={terminal.note}>{terminal.note}</span>}
         {terminal && !session && (
           <span className="cs-cell-actions">

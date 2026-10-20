@@ -529,6 +529,8 @@ app.whenReady().then(async () => {
     herdr("pane", "send-keys", plainPane, "enter");
     const back = await wait(async () => (await tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return !!cell?.querySelector('.xterm') && [...cell.querySelectorAll('.xterm-rows > div')].some((r) => r.textContent.includes('reopened-ok')); })()`)));
     check("关窗重开后，新终端在原来的格子里接回来", back);
+    const plainChip = () => tjs(`document.querySelector('.cs-cell[data-cell-terminal] .cs-cell-bar [data-testid=cs-state]')?.dataset.state ?? null`);
+    check("普通终端里只有 shell 时，标题栏不显示状态", (await plainChip()) === null, String(await plainChip()));
 
     // An agent in it claims a ticket: code link learns the pane (as the repo's hooks report it) and the cell becomes
     // that session in place — same xterm, same picture, no second row. Letting the claim go makes it a terminal again.
@@ -554,6 +556,12 @@ app.whenReady().then(async () => {
     ctx.emit("codeLink/changed", project.id);
     const plainAgain = await wait(async () => tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return !!cell && [...cell.querySelectorAll('.link-btn')].some((b) => b.textContent === '关闭终端') && cell.querySelector('.xterm')?.dataset.mark === 'same'; })()`));
     check("释放工单后，格子变回普通终端（不清空、不重连）", plainAgain);
+
+    // An agent started in the plain terminal: herdr reads it, and the pane's bar shows how it stands, before any claim.
+    herdr("pane", "send-text", plainPane, "claude");
+    herdr("pane", "send-keys", plainPane, "enter");
+    const agentChip = await wait(async () => ["running", "needs", "idle", "done"].includes(await plainChip()), 20000);
+    check("普通终端里跑起 agent 后，标题栏按 herdr 的判断显示它的状态", agentChip, JSON.stringify({ chip: await plainChip(), pane: JSON.parse(herdr("pane", "get", plainPane)).result.pane }));
 
     // Closed from its cell: the pane ends in herdr.
     await tjs(`[...document.querySelector('.cs-cell[data-cell-terminal]').querySelectorAll('.link-btn')].find((b) => b.textContent === '关闭终端').click(); true`);
