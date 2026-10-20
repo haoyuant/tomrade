@@ -22,7 +22,7 @@ import { ImPane } from "./ImPane";
 import { PetProfilesPanel } from "./PetProfilesPanel";
 import { PluginsPanel } from "./PluginsPanel";
 import { HerdrRecommendation } from "~/components/setup/HerdrRecommend";
-import { Eyebrow, Fold, LiveDot, Num, SectionHead, Tag } from "~/components/ui/atoms";
+import { Eyebrow, Fold, FoldChevron, FoldChevronSpace, LiveDot, Num, SectionHead, Tag } from "~/components/ui/atoms";
 import { SchemaField, fieldsOf, problemOf, type JsonSchema } from "~/components/ui/schema-form";
 import { STATUS } from "~/lib/domain";
 import { useBackgroundStatus } from "~/lib/background";
@@ -999,6 +999,7 @@ function EngineRow({
   return (
     <div className="eng-row" ref={row} data-engine={engine.id}>
       <div className={`eng-head${hasBody ? " eng-head-toggle" : ""}`} onClick={toggle}>
+        {hasBody ? <FoldChevron open={open} label={t("settingsDialog.engineToggleAria", { title: engine.title })} onToggle={toggle} /> : <FoldChevronSpace />}
         <label className="eng-pick" onClick={(e) => e.stopPropagation()}>
           {/* a terminal-only CLI conducts no conversation, so it cannot be the default */}
           <input type="radio" className="bs-radio" name="defaultEngine" checked={isDefault} onChange={onMakeDefault} disabled={engine.terminalOnly} />
@@ -1008,11 +1009,6 @@ function EngineRow({
         <span className={`meta-txt eng-state${status === "ready" || status === "other" ? "" : " is-warn"}`} title={engine.ok ? undefined : engine.reason}>
           {engine.cli ? engineStateLabel(engine, t, t("settingsDialog.engineUnavailable")) : engine.ok ? t("settingsDialog.engineReady") : (engine.reason ?? t("settingsDialog.engineUnavailable"))}
         </span>
-        {hasBody && (
-          <button type="button" className="btn btn-icon" aria-expanded={open} aria-label={t("settingsDialog.engineToggleAria", { title: engine.title })}>
-            <Icon name={open ? "i-chevdown" : "i-chev"} size={12} />
-          </button>
-        )}
       </div>
       {/* Folded or not: a signed-in agent missing from chat and Start would otherwise look broken. */}
       {engine.terminalOnly && (

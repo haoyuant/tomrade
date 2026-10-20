@@ -178,6 +178,7 @@ const run = async () => {
   codexEngine.available = async () => ({ ok: false, need: "install", reason: "codex is installed only inside WSL", cli: wsl });
   await click('[data-testid="cli-recheck"]');
   check("Check again looks without waiting for the cache", await wait(async () => (await text('[data-engine="codex"] .eng-state')) === "Only installed in WSL", "wsl state"));
+  check("an engine's chevron leads its row", (await $(`document.querySelector('[data-engine="codex"] .eng-head')?.firstElementChild?.classList.contains('fold-chev')`)) === true);
   await click('[data-engine="codex"] .eng-head');
   check("the Codex row unfolds", await wait(() => has('[data-testid="cli-setup-codex"]'), "codex row"));
   const guide = await text('[data-testid="cli-setup-codex"]');

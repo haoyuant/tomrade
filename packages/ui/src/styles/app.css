@@ -1633,15 +1633,16 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 .cfg-row.off { background: transparent; border-style: dashed; }
 .cfg-row .cfg-name { flex: 1; min-width: 0; font-family: var(--font-display); font-size: 14px; color: var(--fg); }
 .cfg-row.off .cfg-name { color: var(--meta); }
-/* An IM bot folds like a sidebar module: the chevron sits outside its card, on the left. */
-.im-bot-head { display: flex; align-items: center; gap: var(--space-2); }
-.im-bot-head > .cfg-row { flex: 1; min-width: 0; }
-.im-bot-fold { flex-shrink: 0; width: 22px; height: 22px; color: var(--fg-2); }
-.im-bot-fold:hover:not(:disabled) { color: var(--accent); }
-.im-bot-fold svg { transition: transform var(--motion-fast) var(--ease-standard); }
-.im-bot-body { padding-left: calc(22px + var(--space-2)); }
+/* A row that folds, as everywhere in Tomrade: the chevron sits left of it, outside its card, and what unfolds lines up with the card. */
+.fold-row { display: flex; align-items: center; gap: var(--space-2); }
+.fold-row > .cfg-row { flex: 1; min-width: 0; }
+.fold-chev, .fold-chev-space { flex-shrink: 0; width: 22px; height: 22px; }
+.fold-chev { color: var(--fg-2); }
+.fold-chev:hover:not(:disabled) { color: var(--accent); }
+.fold-chev svg { transition: transform var(--motion-fast) var(--ease-standard); }
+.fold-row-body { padding-left: calc(22px + var(--space-2)); }
 .mcp-oneline { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.mcp-detail { margin: var(--space-2) 0 0 var(--space-3); }
+.mcp-detail { margin-top: var(--space-2); }
 .mcp-detail tr.off td { color: var(--meta); }
 .mcp-error { margin: 0; padding: 8px 10px; max-height: 200px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
   font-family: var(--font-mono); font-size: var(--text-xs); color: var(--danger); background: var(--surface-warm); border-radius: 6px; }
@@ -1668,9 +1669,6 @@ button.fld-row:hover { background: var(--surface-warm); }
 button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
 .fld-row.is-selected { border-color: var(--accent); }
 .fld-row.is-builtin .cfg-name { color: var(--muted); }
-/* only an interactive row gets a chevron, so it reads as operable before anyone hovers it */
-.fld-row .fld-chev { color: var(--meta); flex-shrink: 0; transition: transform var(--motion-fast) var(--ease-standard); }
-.fld-row[aria-expanded="true"] .fld-chev { transform: rotate(180deg); }
 .fld-editor { padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); }
 .fld-opt { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: var(--space-2); align-items: center; }
 .fld-opt-confirm { grid-column: 1 / -1; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3);
@@ -2226,7 +2224,7 @@ html.overlay-open .titlebar .btn-primary {
 .eng-head-toggle { cursor: pointer; }
 .eng-pick { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: var(--text-sm); color: var(--fg); }
 .eng-state { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
-.eng-body { padding: 2px 0 var(--space-3) 23px; }
+.eng-body { padding: 2px 0 var(--space-3) calc(22px + var(--space-2) + 23px); }
 .eng-state.is-warn { color: var(--warn); }
 /* Try it: one real turn on request, and what came back. */
 .eng-try { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; font-size: var(--text-sm); }
