@@ -18,10 +18,12 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { boot } from "../dist/boot.js";
+import { quietStarters } from "./official-agents.mjs";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-doctor-"));
 app.setPath("userData", work);
+quietStarters(work);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const results = [];
 const check = (name, cond, detail) => {
@@ -57,7 +59,7 @@ fs.writeFileSync(agentLog, `POST https://copilot.tencent.com/v2/chat for ${os.ho
 
 const run = async () => {
   await new Promise((r) => endpoint.listen(0, "127.0.0.1", r));
-  const local = ["engine-claude-code", "engine-codex", "engine-pi", "engine-pi-builtin", "engine-terminal", "engine-hermes", "engine-dsh", "engine-opencode", "engine-cursor", "engine-workbuddy"];
+  const local = ["engine-claude-code", "engine-codex", "engine-pi", "engine-pi-builtin"];
   const { ctx } = await boot({
     configFile: path.join(dir, "../tomrade.yml"),
     vars: { userData: work },

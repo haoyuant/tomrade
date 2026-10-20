@@ -16,10 +16,12 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { boot } from "../dist/boot.js";
+import { quietStarters } from "./official-agents.mjs";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-setup-"));
 app.setPath("userData", work);
+quietStarters(work);
 const shots = path.join(dir, "shots");
 fs.mkdirSync(shots, { recursive: true });
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -62,7 +64,7 @@ const run = async () => {
     vars: { userData: work, locale: "en-US" },
     // This machine may have a local agent signed in, which would make the screen unnecessary.
     // Tomrade hands its backlog turns to the built-in pi here too, so the turn below runs the bundled agent.
-    patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, { id: "engine-tomrade", config: { backlog: "pi-builtin" } }, ...["engine-claude-code", "engine-codex", "engine-pi", "engine-terminal", "engine-hermes", "engine-dsh", "engine-opencode", "engine-cursor", "engine-workbuddy"].map((id) => ({ id, disabled: true }))]]
+    patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, { id: "engine-tomrade", config: { backlog: "pi-builtin" } }, ...["engine-claude-code", "engine-codex", "engine-pi"].map((id) => ({ id, disabled: true }))]]
   });
   ctx.hub.configure(path.join(work, "hub"));
   await ctx.storage.ready;

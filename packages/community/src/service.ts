@@ -233,7 +233,7 @@ export class Community extends Service {
   private readonly home: Context;
   private revokedNow = new Map<string, string>();
   private startersSeen = new Set<string>();
-  private startersRunning: Promise<void> | null = null;
+  private startersRunning: Promise<void> = Promise.resolve();
   private publisherCache: string | null = null;
   /** Packages fetched to be read before installing, by digest; installing takes them from here. */
   private downloadDir: string | null = null;
@@ -292,6 +292,13 @@ export class Community extends Service {
     this.home.on("settings/changed", (next, previous) => {
       if (JSON.stringify(next.models) === JSON.stringify(previous.models) || !this.starters().some((s) => s.hosts && this.due(s))) return;
       void this.installStarters().catch((error: unknown) => this.home.logger.info(`starters not installed: ${message(error)}`));
+    });
+    // A starter taking the place of a row the app used to ship is back as the app starts, from what the app carries: the
+    // first check is seconds away and may wait on the network, and until then that row's threads would find no engine.
+    // The plugin manager is there once every row of the start has had its go.
+    this.home.inject(["plugins"], (ctx) => {
+      if (!this.config.officialBundle || !(ctx.get("plugins") as Plugins).extensions) return;
+      void this.installStarters({ carried: true }).catch((error: unknown) => this.home.logger.info(`carried starters not installed: ${message(error)}`));
     });
     const sweep = () => void this.sweep().catch((error: unknown) => this.home.logger.info(`community check skipped: ${message(error)}`));
     const first = setTimeout(sweep, 15_000);
@@ -645,19 +652,29 @@ export class Community extends Service {
   }
 
   /** Each starter goes on once; one that cannot be fetched yet is tried again at the next check. */
-  installStarters(): Promise<void> {
+  /** `carried`: only starters that replace a row, from the app's own copies, with no network. */
+  installStarters(opts: { carried?: boolean } = {}): Promise<void> {
     // One run at a time: a settings change during a store check must not install the same plugin twice.
-    this.startersRunning ??= this.putStarters().finally(() => (this.startersRunning = null));
-    return this.startersRunning;
+    const run = this.startersRunning.then(() => this.putStarters(opts));
+    this.startersRunning = run.catch(() => {});
+    return run;
   }
 
-  private async putStarters(): Promise<void> {
+  /** The newest version of a plugin the app carries that it may install, and where it comes from. */
+  private carried(id: string): { row: VersionRow; source: Source } {
+    const bundle = this.official.carried([id]);
+    const row = bundle && latestInstallable(bundle.versions, bundle.revocations);
+    if (!row) throw new Error("the app carries no version of it");
+    return { row, source: this.officialSource };
+  }
+
+  private async putStarters(opts: { carried?: boolean }): Promise<void> {
     const put = this.startersPut();
     const installed = new Set(this.plugins.extensions!.entries().map((e) => e.id));
-    for (const { id, replaces } of this.starters().filter((s) => !put.has(s.id) && this.due(s))) {
+    for (const { id, replaces } of this.starters().filter((s) => !put.has(s.id) && this.due(s) && (!opts.carried || s.replaces))) {
       if (!installed.has(id)) {
         try {
-          const { row, source } = await this.pick(id);
+          const { row, source } = opts.carried ? this.carried(id) : await this.pick(id);
           await this.installVersion(row, source, { disabled: !!replaces && this.plugins.switchedOff(replaces) });
         } catch (error) {
           this.home.logger.info(`${id} is not installed yet: ${message(error)}`);

@@ -59,21 +59,6 @@
       "path": "./packages/engine-acp"
     },
     {
-      "path": "./packages/engine-hermes"
-    },
-    {
-      "path": "./packages/engine-opencode"
-    },
-    {
-      "path": "./packages/engine-cursor"
-    },
-    {
-      "path": "./packages/engine-dsh"
-    },
-    {
-      "path": "./packages/engine-workbuddy"
-    },
-    {
       "path": "./packages/herdr"
     },
     {
@@ -141,9 +126,6 @@
     },
     {
       "path": "./packages/shell"
-    },
-    {
-      "path": "./packages/engine-terminal"
     },
     {
       "path": "./packages/schedules"

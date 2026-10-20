@@ -16,7 +16,6 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describeFailure } from "@tomradex/agent";
-import { codebuddyFailure } from "@tomradex/engine-workbuddy";
 import { boot } from "../dist/boot.js";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
@@ -54,7 +53,7 @@ const run = async () => {
     available: async () => ({ ok: true }),
     setup: { install: [], signIn: "refusing login" },
     async turn() {
-      return { stop: "error", error: `Refusing stopped: ${codebuddyFailure(refusal)}`, details: describeFailure({ response: refusal, stderr: "warn: endpoint drift\n" }) };
+      return { stop: "error", error: "Refusing stopped: Request failed with status code 401", details: describeFailure({ response: refusal, stderr: "warn: endpoint drift\n" }) };
     }
   });
   const settings = ctx.settings.get();

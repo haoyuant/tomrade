@@ -186,6 +186,16 @@ export class OfficialCatalog {
     });
   }
 
+  /** What the app carries, read without the network: the versions of these plugins and the revocations the bundled catalog lists. */
+  carried(ids: string[]): { versions: VersionRow[]; revocations: Revocation[] } | null {
+    const held = this.copy(this.opts.bundleFile);
+    if (!held) return null;
+    return {
+      versions: held.catalog.plugins.filter((p) => ids.includes(p.id)).flatMap((p) => this.trusted(p)),
+      revocations: held.catalog.revoked.filter((r) => isOfficialId(r.id)).map((r) => ({ plugin_id: r.id, versions: r.versions, reason: r.reason }))
+    };
+  }
+
   async versions(ids: string[]): Promise<VersionRow[]> {
     const catalog = await this.read();
     return catalog.plugins.filter((p) => ids.includes(p.id)).flatMap((p) => this.trusted(p));

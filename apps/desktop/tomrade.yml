@@ -339,36 +339,6 @@ plugins:
     name: "@tomradex/engine-pi"
     title: Pi
     implements: [engine]
-  # Gemini CLI over ACP (`gemini --acp`), which a ticket can also start in a terminal;
-  # Antigravity CLI (`agy`), started only in a terminal.
-  - id: engine-terminal
-    name: "@tomradex/engine-terminal"
-    title: Gemini CLI and Antigravity CLI
-    implements: [engine]
-  # Agents that speak ACP (the Agent Client Protocol) over stdio, each its own row.
-  - id: engine-hermes
-    name: "@tomradex/engine-hermes"
-    title: Hermes
-    implements: [engine]
-  - id: engine-dsh
-    name: "@tomradex/engine-dsh"
-    title: DeepSeek Harness
-    implements: [engine]
-  # OpenCode over ACP (`opencode acp`); a ticket can also start it in a terminal.
-  - id: engine-opencode
-    name: "@tomradex/engine-opencode"
-    title: OpenCode
-    implements: [engine]
-  # Cursor's CLI (`cursor-agent`), started only in a terminal.
-  - id: engine-cursor
-    name: "@tomradex/engine-cursor"
-    title: Cursor
-    implements: [engine]
-  # WorkBuddy's CLI (CodeBuddy Code): `codebuddy` on PATH, else the copy inside the WorkBuddy app.
-  - id: engine-workbuddy
-    name: "@tomradex/engine-workbuddy"
-    title: WorkBuddy
-    implements: [engine]
   # The troubleshooter: when something fails, checks what it can (the agent,
   # its sign-in, a test turn, the models), says what to do, and sends a report
   # the person has read to Tomrade's developer. Its own engine opens the
@@ -519,11 +489,21 @@ plugins:
       # that script has run.
       officialBundle:
         dir: "${appDir}/official-plugins"
-      # Pomodoro and Discord used to ship inside the app; they now come from the
-      # official catalog, put on once so nobody who had them loses them.
+      # Pomodoro, Discord and the local agents below used to ship inside the app;
+      # they now come from the official catalog, put on once so nobody who had
+      # them loses them. An agent takes its old row's place: one the person had
+      # switched off goes on switched off. They go on in their rows' old order,
+      # which is the order pickers list them in.
       starters:
         - "tomrade/pomodoro"
         - "tomrade/discord"
+        - { id: "tomrade/gemini-cli", replaces: engine-terminal }
+        - { id: "tomrade/antigravity", replaces: engine-terminal }
+        - { id: "tomrade/hermes", replaces: engine-hermes }
+        - { id: "tomrade/dsh", replaces: engine-dsh }
+        - { id: "tomrade/opencode", replaces: engine-opencode }
+        - { id: "tomrade/cursor", replaces: engine-cursor }
+        - { id: "tomrade/workbuddy", replaces: engine-workbuddy }
       startersFile: "${userData}/official-starters.json"
   - id: plugin-studio
     name: "@tomradex/plugin-studio"

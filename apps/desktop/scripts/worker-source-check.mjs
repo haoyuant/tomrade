@@ -15,10 +15,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { boot } from "../dist/boot.js";
+import { officialAgentRows, officialTestFile, quietStarters } from "./official-agents.mjs";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-worker-source-"));
 app.setPath("userData", work);
+quietStarters(work);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const results = [];
 const check = (name, cond, detail) => {
@@ -35,18 +37,18 @@ const spawns = () => (fs.existsSync(log) ? fs.readFileSync(log, "utf8").trim().s
 const fakeCli = (name, script) => {
   const file = path.join(work, name);
   const fakeLog = path.join(work, `${name}.jsonl`);
-  fs.writeFileSync(file, `#!/bin/sh\nTOMRADE_TEST_LOG='${fakeLog}' ELECTRON_RUN_AS_NODE=1 exec '${process.execPath}' '${path.resolve(dir, "../../..", script)}' "$@"\n`, { mode: 0o700 });
+  fs.writeFileSync(file, `#!/bin/sh\nTOMRADE_TEST_LOG='${fakeLog}' ELECTRON_RUN_AS_NODE=1 exec '${process.execPath}' '${script}' "$@"\n`, { mode: 0o700 });
   return { file, log: fakeLog };
 };
-const codebuddy = fakeCli("codebuddy", "packages/engine-workbuddy/tests/fake-codebuddy-lent.mjs");
-const gemini = fakeCli("gemini", "packages/engine-terminal/tests/fake-gemini-lent.mjs");
+const codebuddy = fakeCli("codebuddy", officialTestFile("workbuddy", "fake-codebuddy-lent.mjs"));
+const gemini = fakeCli("gemini", officialTestFile("gemini-cli", "fake-gemini-lent.mjs"));
 process.env.GEMINI_CLI_HOME = path.join(work, "gemini-home");
 // WorkBuddy starts signed out: it is offered, but not ready
 fs.writeFileSync(codebuddy.log + ".signed-out", "");
 
 const run = async () => {
-  const others = ["engine-codex", "engine-pi", "engine-hermes", "engine-dsh", "engine-opencode", "engine-cursor"];
-  const { ctx } = await boot({ configFile: path.join(dir, "../tomrade.yml"), vars: { userData: work }, patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, { id: "attention", config: { notify: false } }, ...others.map((id) => ({ id, disabled: true }))]] });
+  const others = ["engine-codex", "engine-pi"];
+  const { ctx } = await boot({ configFile: path.join(dir, "../tomrade.yml"), vars: { userData: work }, patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, { id: "attention", config: { notify: false } }, ...others.map((id) => ({ id, disabled: true })), ...officialAgentRows(["workbuddy", "gemini-cli"])]] });
   ctx.hub.configure(path.join(work, "hub"));
   await ctx.storage.ready;
   for (const seeded of ctx.projects.list()) ctx.projects.remove(seeded.id);
