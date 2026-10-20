@@ -19,7 +19,9 @@ export const CODE_SESSIONS_WORDS = defineWords("codeSessions", {
     unmatched: "An agent claimed a ticket, but Tomrade cannot tell which terminal it runs in — this stays a plain terminal",
     stateUnreadable: "The saved layout could not be read, so this window starts from one cell",
     presetName: "Layout",
-    switchFailed: "Could not bring {{app}} forward"
+    switchFailed: "Could not bring {{app}} forward",
+    openedOutside: "Opened in {{app}}. An agent you start there shows up here as a session",
+    outsideFailed: "Could not open a terminal: {{reason}}"
   },
   zh: {
     open: "打开终端",
@@ -38,6 +40,8 @@ export const CODE_SESSIONS_WORDS = defineWords("codeSessions", {
     unmatched: "有 agent 认领了工单，但 Tomrade 分不清它在哪个终端里，这里先保持为普通终端",
     stateUnreadable: "读不到保存的布局，这个窗口先从一个格子开始",
     presetName: "布局",
-    switchFailed: "没能切到 {{app}}"
+    switchFailed: "没能切到 {{app}}",
+    openedOutside: "已在 {{app}} 里打开。在那里启动的 agent 会作为会话出现在这里",
+    outsideFailed: "没能打开终端：{{reason}}"
   }
 });

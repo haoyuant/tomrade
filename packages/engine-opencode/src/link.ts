@@ -41,7 +41,7 @@ export const TomradePlugin = async ({ directory }) => {
   const token = process.env.TOMRADE_MCP_TOKEN;
   const url = token ? eventUrl.replace("/sessions/event", "/sessions/" + token + "/event") : eventUrl;
   const prompts = new Set();
-  const pane = { ...(process.env.HERDR_PANE_ID ? { herdr_pane: process.env.HERDR_PANE_ID } : {}), ...(process.env.TERM_PROGRAM ? { terminal: process.env.TERM_PROGRAM } : {}) };
+  const pane = { ...(process.env.HERDR_PANE_ID ? { herdr_pane: process.env.HERDR_PANE_ID } : {}), ...(process.env.TERM_PROGRAM || process.env.WT_SESSION ? { terminal: process.env.TERM_PROGRAM || "WindowsTerminal" } : {}) };
   const post = (payload) => { void fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-tomrade-agent": "opencode" },
     body: JSON.stringify({ cwd: directory, ...pane, ...payload }), signal: AbortSignal.timeout(2000) }).catch(() => {}); };
   return {

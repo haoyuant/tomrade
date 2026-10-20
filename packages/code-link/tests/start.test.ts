@@ -1517,6 +1517,9 @@ describe("starting a ticket", () => {
     // And the terminal app it runs in, for a window that cannot show it.
     await fetch(ctx.mcp.eventUrlFor(token)!, { method: "POST", headers: { "Content-Type": "application/json", "X-Tomrade-Terminal": "iTerm.app" }, body: JSON.stringify({ hook_event_name: "UserPromptSubmit", session_id: "cli-abc" }) });
     expect(codeLink.sessionsOf(project.id, item.id)[0].terminal).toBe("iTerm.app");
+    // Windows Terminal says only its session id: the session takes it for Windows Terminal.
+    await fetch(ctx.mcp.eventUrlFor(token)!, { method: "POST", headers: { "Content-Type": "application/json", "X-Tomrade-WT": "6a3f-wt" }, body: JSON.stringify({ hook_event_name: "UserPromptSubmit", session_id: "cli-abc" }) });
+    expect(codeLink.sessionsOf(project.id, item.id)[0].terminal).toBe("WindowsTerminal");
     expect((await ctx.contributions.sectionsFor(project.id, item.id)).find((s) => s.id === "code")!.rows.find((r) => r.label === "Session")).toMatchObject({ value: expect.stringContaining("in herdr"), command: "code-link.open-terminal" });
     await post({ hook_event_name: "Stop", session_id: "cli-abc" });
     expect(codeLink.sessionsOf(project.id, item.id)[0].state).toBe("waiting");

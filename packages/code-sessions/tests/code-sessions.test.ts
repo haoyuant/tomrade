@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, expect, it } from "vitest";
 import { Service, type Context } from "cordis";
-import CodeSessions, { sessionRows, type Layout, type WindowMessage, type WindowPost, type WindowState } from "@tomradex/code-sessions";
+import { EventEmitter } from "node:events";
+import CodeSessions, { openSystemTerminal, sessionRows, type Layout, type WindowMessage, type WindowPost, type WindowState } from "@tomradex/code-sessions";
 import { Contributions } from "@tomradex/contributions";
 import { Settings } from "@tomradex/settings";
 import { Herdr } from "@tomradex/herdr";
@@ -423,4 +424,32 @@ it("keeps named layouts and the auto-place switch for every window, and starts f
   expect(JSON.parse(fs.readFileSync(stateFile, "utf8")).layouts).toBeUndefined();
   await say({ type: "deletePreset", id });
   expect(win.states.at(-1)).toMatchObject({ presets: [], defaultPreset: null });
+});
+
+it("opens the system terminal where herdr cannot show one: Windows Terminal in the folder, else PowerShell, nothing elsewhere", async () => {
+  const calls: [string, string[], { cwd?: string }][] = [];
+  const launcher = (missing: string[]) =>
+    ((command: string, args: string[], options: { cwd?: string }) => {
+      calls.push([command, args, options]);
+      const child = Object.assign(new EventEmitter(), { unref() {} });
+      setImmediate(() => (missing.includes(command) ? child.emit("error", Object.assign(new Error(`spawn ${command} ENOENT`), { code: "ENOENT" })) : child.emit("spawn")));
+      return child;
+    }) as never;
+  expect(await openSystemTerminal("C:\\work", "win32", launcher([]))).toBe("Windows Terminal");
+  expect(calls).toEqual([["wt.exe", ["-d", "C:\\work"], expect.objectContaining({ cwd: "C:\\work", detached: true })]]);
+  calls.length = 0;
+  expect(await openSystemTerminal("C:\\work", "win32", launcher(["wt.exe"]))).toBe("PowerShell");
+  expect(calls.map((c) => [c[0], c[2].cwd])).toEqual([["wt.exe", "C:\\work"], ["powershell.exe", "C:\\work"]]);
+  calls.length = 0;
+  await expect(openSystemTerminal("/work", "darwin", launcher([]))).rejects.toThrow("no system terminal fallback");
+  expect(calls).toEqual([]);
+});
+
+it("names Windows Terminal and Git Bash, and offers no switching to them", () => {
+  const sessions = [session({ id: "wt", terminal: "WindowsTerminal", startedAt: 2 }), session({ id: "bash", terminal: "mintty", startedAt: 1 })];
+  const rows = sessionRows({ sessionsOf: () => sessions as never, links: () => [] }, { get: () => null }, "p", Date.now(), "here", "darwin");
+  expect(rows.map((r) => [r.id, r.where, r.terminal, r.switchable])).toEqual([
+    ["wt", "outside", "Windows Terminal", false],
+    ["bash", "outside", "Git Bash", false]
+  ]);
 });

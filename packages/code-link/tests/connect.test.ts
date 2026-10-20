@@ -397,7 +397,7 @@ describe("connecting a repository", () => {
     expect(fs.existsSync(path.join(checkout, ".cursor/hooks/tomrade.ps1"))).toBe(true);
   });
 
-  it("still reads hooks from before they named their terminal as tracked", async () => {
+  it.each([{ terminal: false }, { wt: false }])("still reads hooks from before they named their terminal or Windows Terminal as tracked (%o)", async (older) => {
     const { codeLink, ctx, project, repo, checkout } = await machine();
     const input = { projectName: project.name, mcpUrl: ctx.mcp.urlFor(project.id)!, eventUrl: ctx.mcp.eventUrl!, prefix: "TOM", branchTemplate: "{key}/{slug}" };
     writeConnectFiles(checkout, input);
@@ -405,7 +405,7 @@ describe("connecting a repository", () => {
       const quoted = (command: string) => JSON.stringify(command).slice(1, -1);
       const text = fs.readFileSync(path.join(checkout, file), "utf8");
       expect(text).toContain("X-Tomrade-Terminal: $TERM_PROGRAM");
-      fs.writeFileSync(path.join(checkout, file), text.split(quoted(hookCommand(input.eventUrl, agent))).join(quoted(hookCommand(input.eventUrl, agent, { terminal: false }))));
+      fs.writeFileSync(path.join(checkout, file), text.split(quoted(hookCommand(input.eventUrl, agent))).join(quoted(hookCommand(input.eventUrl, agent, older))));
     }
     git(["add", "-A"], checkout);
     git(["commit", "-q", "-m", "connected before terminals"], checkout);
