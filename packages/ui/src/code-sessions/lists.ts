@@ -9,5 +9,3 @@ export function sessionGroups(sessions: SessionRow[]): { here: SessionRow[]; awa
   return { here: live.filter((s) => !away(s)), away: live.filter(away) };
 }
 
-/** Folds the sidebar: ⌘B on a Mac, as in the app; Ctrl+Shift+B elsewhere, where Ctrl+B is the shell's and tmux's. */
-export const foldChord = (mac: boolean): string => (mac ? "Mod+B" : "Mod+Shift+B");

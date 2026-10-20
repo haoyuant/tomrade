@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { Layout } from "@tomradex/code-sessions";
-import { applyPreset, close, landing, leaves, lock, place, prune, resize, reveal, shape, show, split } from "../src/code-sessions/layout";
+import { applyPreset, close, cycle, heir, landing, leaves, lock, neighbour, place, prune, resize, reveal, shape, show, split } from "../src/code-sessions/layout";
 
 const one: Layout = { type: "leaf", id: "c1", sessionId: "s1" };
 
@@ -105,4 +105,35 @@ it("keeps a cell locked while it shows something: nothing automatic replaces it,
   // Two locked cells into a one-cell preset: the second gets a cell beside, locked too.
   const two = applyPreset(lock(locked, "c1", true), { type: "leaf", id: "p1", sessionId: null }, fresh);
   expect(leaves(two).map((l) => [l.sessionId, !!l.locked])).toEqual([["s1", true], ["s3", true]]);
+});
+
+it("finds the pane across each edge, the next and previous in reading order, and what takes a closed pane's place", () => {
+  // c1 on the left, full height; on the right c2 above c3, and c3 split again into c3 | c4.
+  const right = split(one, "c1", "row", "c2").layout;
+  const stacked = split(right, "c2", "column", "c3").layout;
+  const grid = split(stacked, "c3", "row", "c4").layout;
+  expect(neighbour(grid, "c1", "right")).toBe("c2");
+  expect(neighbour(grid, "c1", "left")).toBeNull();
+  expect(neighbour(grid, "c2", "left")).toBe("c1");
+  expect(neighbour(grid, "c2", "down")).toBe("c3");
+  expect(neighbour(grid, "c3", "up")).toBe("c2");
+  expect(neighbour(grid, "c3", "right")).toBe("c4");
+  expect(neighbour(grid, "c4", "left")).toBe("c3");
+  expect(neighbour(grid, "c4", "up")).toBe("c2");
+  expect(neighbour(grid, "c3", "left")).toBe("c1");
+  expect(neighbour(grid, "c2", "up")).toBeNull();
+  // A wider neighbour wins: from c1 rightwards, c2 shares half the edge, c3 a quarter.
+  expect(neighbour(resize(grid, "c2s", 0.5), "c1", "right")).toBe("c2");
+  expect(neighbour(one, "c1", "right")).toBeNull();
+
+  expect(cycle(grid, "c1", 1)).toBe("c2");
+  expect(cycle(grid, "c4", 1)).toBe("c1");
+  expect(cycle(grid, "c1", -1)).toBe("c4");
+  expect(cycle(grid, "gone", 1)).toBe("c1");
+
+  expect(heir(grid, "c4")).toBe("c3");
+  expect(heir(grid, "c3")).toBe("c4");
+  expect(heir(grid, "c2")).toBe("c3");
+  expect(heir(grid, "c1")).toBe("c2");
+  expect(heir(one, "c1")).toBeNull();
 });

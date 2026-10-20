@@ -1,0 +1,50 @@
+import { isMac } from "../lib/keys";
+import { formatChord, matchesChord } from "../lib/keybindings";
+
+export type Direction = "left" | "right" | "up" | "down";
+export type WindowKey = "splitRight" | "splitDown" | "close" | Direction | "previous" | "next" | "fold";
+
+/**
+ * The window's own keys: iTerm2's for panes on a Mac, and ⌘B for the sidebar as in the app. Elsewhere Ctrl+Shift
+ * chords and Alt+arrows, as Linux terminals use them — Ctrl alone and ⌃ on a Mac belong to the shell (Ctrl+D,
+ * Ctrl+W, and Ctrl+B for tmux), so they are never taken.
+ */
+export const WINDOW_KEYS: Record<"mac" | "other", Record<WindowKey, string>> = {
+  mac: {
+    splitRight: "Mod+D",
+    splitDown: "Mod+Shift+D",
+    close: "Mod+W",
+    left: "Mod+Alt+ArrowLeft",
+    right: "Mod+Alt+ArrowRight",
+    up: "Mod+Alt+ArrowUp",
+    down: "Mod+Alt+ArrowDown",
+    previous: "Mod+[",
+    next: "Mod+]",
+    fold: "Mod+B"
+  },
+  other: {
+    splitRight: "Mod+Shift+D",
+    splitDown: "Mod+Shift+O",
+    close: "Mod+Shift+W",
+    left: "Alt+ArrowLeft",
+    right: "Alt+ArrowRight",
+    up: "Alt+ArrowUp",
+    down: "Alt+ArrowDown",
+    previous: "Mod+Shift+Tab",
+    next: "Mod+Tab",
+    fold: "Mod+Shift+B"
+  }
+};
+
+type KeyEventLike = Pick<KeyboardEvent, "key" | "code" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey"> & { isComposing?: boolean };
+
+/** The window key a key press is, or null for every other key, which the terminal gets as it is. */
+export function windowKey(e: KeyEventLike, mac = isMac): WindowKey | null {
+  if (e.isComposing) return null;
+  const table = WINDOW_KEYS[mac ? "mac" : "other"];
+  for (const id of Object.keys(table) as WindowKey[]) if (matchesChord(e, table[id], { mac })) return id;
+  return null;
+}
+
+/** A window key as this platform writes it: "⇧⌘D" on a Mac, "Ctrl+Shift+O" elsewhere. */
+export const keyLabel = (id: WindowKey, mac = isMac): string => formatChord(WINDOW_KEYS[mac ? "mac" : "other"][id], mac);

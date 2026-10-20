@@ -213,11 +213,12 @@ export function ContextMenuSub({ icon, name, children }: { icon: ReactNode; name
   );
 }
 
-export function ContextMenuActionItem({ icon, name, onSelect, disabled }: { icon: ReactNode; name: string; onSelect: () => void; disabled?: boolean }) {
+export function ContextMenuActionItem({ icon, name, hint, onSelect, disabled }: { icon: ReactNode; name: string; hint?: string; onSelect: () => void; disabled?: boolean }) {
   return (
     <RadixContextMenu.Item className="menu-row m-link" disabled={disabled} onSelect={onSelect}>
       <span className="m-mark">{icon}</span>
       <span className="m-name">{name}</span>
+      {hint && <span className="m-go">{hint}</span>}
     </RadixContextMenu.Item>
   );
 }

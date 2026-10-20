@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SessionRow } from "@tomradex/code-sessions";
-import { matchesChord } from "../src/lib/keybindings";
-import { away, foldChord, sessionGroups } from "../src/code-sessions/lists";
+import { away, sessionGroups } from "../src/code-sessions/lists";
 
 const row = (over: Partial<SessionRow> & { id: string }): SessionRow => ({
   itemId: null,
@@ -39,13 +38,5 @@ describe("the Terminal window's lists", () => {
     expect(elsewhere.map((s) => s.id)).toEqual(["iterm", "laptop"]);
     // Once it ends, an outside one is the archive's like the rest.
     expect(away(row({ id: "x", state: "ended", endedAt: 9 }))).toBe(false);
-  });
-
-  it("folds on ⌘B on a Mac and on Ctrl+Shift+B elsewhere, never on the shell's Ctrl+B", () => {
-    const key = (over: Partial<KeyboardEvent>) => ({ key: "b", code: "KeyB", metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...over }) as KeyboardEvent;
-    expect(matchesChord(key({ metaKey: true }), foldChord(true), { mac: true })).toBe(true);
-    expect(matchesChord(key({ ctrlKey: true }), foldChord(true), { mac: true })).toBe(false);
-    expect(matchesChord(key({ ctrlKey: true, shiftKey: true, key: "B" }), foldChord(false), { mac: false })).toBe(true);
-    expect(matchesChord(key({ ctrlKey: true }), foldChord(false), { mac: false })).toBe(false);
   });
 });

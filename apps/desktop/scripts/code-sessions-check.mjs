@@ -247,6 +247,47 @@ app.whenReady().then(async () => {
     const guarded = await js(`(() => { const e = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() }); document.querySelector('.cs-side').dispatchEvent(e); return e.defaultPrevented; })()`);
     check("拖到终端以外的地方不会把窗口导航走", guarded);
 
+    // iTerm2's pane keys, pressed while a terminal has the keyboard: the window takes them, the shell never sees them.
+    const press = (keyCode, modifiers) => {
+      win.webContents.sendInputEvent({ type: "keyDown", keyCode, modifiers });
+      win.webContents.sendInputEvent({ type: "keyUp", keyCode, modifiers });
+    };
+    const paneCells = () => js(`(() => { const cells = [...document.querySelectorAll('.cs-cell')]; return { count: cells.length, selected: cells.findIndex((c) => c.dataset.focused), typing: cells.findIndex((c) => c.contains(document.activeElement)), empty: cells.map((c) => !c.querySelector('.xterm')) }; })()`);
+    const settled = (want) => wait(async () => {
+      const now = await paneCells();
+      return Object.entries(want).every(([k, v]) => JSON.stringify(now[k]) === JSON.stringify(v));
+    }, 5000);
+    await js(`(() => { const cell = document.querySelectorAll('.cs-cell')[3]; cell.querySelector('.cs-cell-bar').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); cell.querySelector('.xterm-helper-textarea').focus(); return true; })()`);
+    const rowsBefore = await js(`document.querySelectorAll('.cs-row').length`);
+    press("D", ["meta"]);
+    const splitRight = await settled({ count: 7, selected: 4 });
+    const rightEmpty = (await paneCells()).empty[4];
+    press("D", ["meta", "shift"]);
+    const splitDown = await settled({ count: 8, selected: 5 });
+    check("⌘D 向右分屏、⇧⌘D 向下分屏，新面板是空的并被选中", splitRight && rightEmpty && splitDown, JSON.stringify(await paneCells()));
+    press("Left", ["meta", "alt"]);
+    const wentLeft = await settled({ selected: 3, typing: 3 });
+    press("Right", ["meta", "alt"]);
+    const wentRight = await settled({ selected: 4 });
+    check("⌥⌘← / ⌥⌘→ 选中旁边的面板，键盘跟着进到它的终端", wentLeft && wentRight, JSON.stringify(await paneCells()));
+    press("W", ["meta"]);
+    const closedOne = await settled({ count: 7, selected: 4 });
+    press("W", ["meta"]);
+    const closedTwo = await settled({ count: 6, selected: 3 });
+    const rowsAfter = await js(`document.querySelectorAll('.cs-row').length`);
+    check("⌘W 关掉选中的面板，会话还在列表里", closedOne && closedTwo && rowsAfter === rowsBefore, `${JSON.stringify(await paneCells())} · rows ${rowsBefore} → ${rowsAfter}`);
+    // Moved in the layout, the cell attached its terminal again: typing waits for its picture.
+    await wait(async () => (await terminalText(3)).includes("marker-four"));
+    await js(`document.querySelectorAll('.cs-cell')[3].querySelector('.xterm-helper-textarea').focus(); true`);
+    win.webContents.insertText("echo after-pane-keys");
+    await sleep(200);
+    win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Return" });
+    win.webContents.sendInputEvent({ type: "char", keyCode: "\r" });
+    win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Return" });
+    // Its output on a line of its own: a key that had leaked into the shell would have spoiled the command.
+    const ranClean = await wait(async () => herdr("pane", "read", sessions[3].pane, "--source", "recent", "--lines", "20").split("\n").some((l) => l.trim() === "after-pane-keys"), 10000);
+    check("快捷键没有进到终端里：之后输入的命令原样执行并有回显", ranClean, herdr("pane", "read", sessions[3].pane, "--source", "recent", "--lines", "8").slice(-300));
+
     // Another controller takes the pane over: the cell says it was let go and offers to attach again.
     const thief = spawn("herdr", ["terminal", "session", "control", sessions[5].pane, "--takeover", "--cols", "60", "--rows", "10"], { env: { ...process.env, HERDR_SESSION }, stdio: ["pipe", "ignore", "ignore"] });
     others.push(thief);
