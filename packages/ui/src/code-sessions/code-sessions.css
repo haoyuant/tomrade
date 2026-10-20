@@ -57,8 +57,10 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-cell[data-focused] { border-color: var(--accent); }
 .cs-cell-bar { display: flex; align-items: center; gap: 10px; padding: 4px 8px; border-bottom: 1px solid var(--border-soft); font-size: var(--text-xs); min-height: 28px; }
 .cs-cell-name { flex: 1 1 auto; min-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); }
+.cs-cell-agent { color: var(--muted); }
+.cs-cell-bar .cs-chip { flex: none; }
 /* A narrow pane clips its actions before the name of what it shows. */
-.cs-cell-actions { display: flex; gap: 10px; flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; }
+.cs-cell-actions { display: flex; gap: 10px; flex: 0 1000 auto; min-width: 0; overflow: hidden; white-space: nowrap; }
 .cs-cell-tools { display: flex; gap: 2px; flex: none; }
 .cs-cell-tools .icon-btn { width: 22px; height: 22px; border: 0; border-radius: 4px; background: none; color: var(--muted); cursor: pointer; }
 .cs-cell-tools .icon-btn:hover { background: var(--tag-bg-faint); color: var(--fg); }

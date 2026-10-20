@@ -106,6 +106,15 @@ function Banner({ state, say }: { state: WindowState; say: Say }) {
   );
 }
 
+/** Where a session stands; "needs you" wins over its state. */
+function StateChip({ s, say }: { s: SessionRow; say: Say }) {
+  return (
+    <span className="tag cs-chip" data-testid="cs-state" data-state={s.needsYou ? "needs" : s.state}>
+      {s.needsYou ? say("needsYou") : say(s.state)}
+    </span>
+  );
+}
+
 /** A session in the list: its ticket (else what its agent calls the conversation), where it stands, and where it runs. */
 function SessionBody({ s, say }: { s: SessionRow; say: Say }) {
   const name = sessionName(s);
@@ -114,9 +123,7 @@ function SessionBody({ s, say }: { s: SessionRow; say: Say }) {
     <>
       <span className="cs-row-head">
         <span className="mono">{name}</span>
-        <span className="tag cs-chip" data-state={s.needsYou ? "needs" : s.state}>
-          {s.needsYou ? say("needsYou") : say(s.state)}
-        </span>
+        <StateChip s={s} say={say} />
       </span>
       {title && <span className="cs-row-title">{title}</span>}
       <span className="cs-row-meta">
@@ -451,7 +458,16 @@ function Cell({ leaf, session, terminal, places, ready, onNewTerminal, onTalk, f
   return (
     <div className="cs-cell" data-cell={leaf.id} data-focused={focused || undefined} data-locked={leaf.locked || undefined} data-cell-terminal={terminal?.id} onMouseDownCapture={onFocus} onFocusCapture={onFocus}>
       {withMenu(<div className="cs-cell-bar">
-        <span className="cs-cell-name">{session ? (session.key ? `${session.key} ${session.title ?? session.branch}`.trim() : (session.agentTitle ?? sessionName(session))) : terminal ? `${terminal.agentTitle ?? terminal.running ?? terminal.title} · ${terminal.cwd}` : say("pick")}</span>
+        <span className="cs-cell-name">
+          {session?.key ? (
+            <>
+              <span className="mono">{session.key}</span>{" "}
+              {session.agentName && <><span className="cs-cell-agent">{session.agentName}</span>{" "}</>}
+              {session.title ?? session.branch}
+            </>
+          ) : session ? (session.agentTitle ?? sessionName(session)) : terminal ? `${terminal.agentTitle ?? terminal.running ?? terminal.title} · ${terminal.cwd}` : say("pick")}
+        </span>
+        {session && <StateChip s={session} say={say} />}
         {terminal?.note && !session && <span className="cs-cell-note" title={terminal.note}>{terminal.note}</span>}
         {terminal && !session && (
           <span className="cs-cell-actions">
