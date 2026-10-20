@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { LlmService } from "@tomradex/llm";
-import { SLUG_MAX, branchFor, deliveredKeys, keysInText, parseBranch, slugify, titleSlug, usableSlug } from "@tomradex/code-link";
+import { SLUG_MAX, branchFor, deliveredKeys, keysInText, parseBranch, slugify, subjectKey, titleSlug, usableSlug } from "@tomradex/code-link";
 
 /** Only completeJson is exercised; the rest throws so a wrong path is loud. */
 const llmAnswering = (answer: unknown, seen?: string[]): LlmService =>
@@ -109,5 +109,12 @@ describe("keys", () => {
     expect(deliveredKeys("Merge pull request #237 from haoyuant/tom-142/pomodoro-desktop-widget", "TOM-142: Pomodoro ships, unlike TOM-90", "TOM")).toEqual([142]);
     expect(deliveredKeys("Tidy the importer", "Closes TOM-12, fixes: TOM-13 and resolves tom-14; refs TOM-15", "TOM")).toEqual([12, 13, 14]);
     expect(deliveredKeys("Revert \"TOM-12: add push\"", "This reverts commit abc.", "TOM")).toEqual([]);
+  });
+
+  it("names the ticket a commit is about from its subject", () => {
+    expect(subjectKey("TOM-147: bootstrap once (#242)", "TOM")).toBe(147);
+    expect(subjectKey("fix: crash in the dialog (TOM-12)", "TOM")).toBe(12);
+    expect(subjectKey("Merge pull request #237 from haoyuant/tom-142/pomodoro", "TOM")).toBe(142);
+    expect(subjectKey("Tidy the importer", "TOM")).toBeNull();
   });
 });

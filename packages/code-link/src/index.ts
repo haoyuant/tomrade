@@ -30,7 +30,7 @@ export { BRIEF_FILES, MANIFESTS, scanRepo, type MergedCommit, type ScanOptions, 
 export { classifyRemoteFailure, probeRemote, readRemoteIdentity, remoteFailureDetail, remoteFailureMessage, scrubRemoteOutput, type RemoteFailure, type RemoteIdentity, type RemoteProbe } from "./remote.js";
 export { githubPull, readPull, type ForgePull } from "./forge.js";
 export { decide, type Decision, type Evidence, type PrState, type RulePolicy } from "./rules.js";
-export { DEFAULT_BRANCH_TEMPLATE, SLUG_MAX, branchFor, deliveredKeys, keysInText, parseBranch, slugify, subjectPr, titleSlug, usableSlug } from "./keys.js";
+export { DEFAULT_BRANCH_TEMPLATE, SLUG_MAX, branchFor, deliveredKeys, keysInText, parseBranch, slugify, subjectKey, subjectPr, titleSlug, usableSlug } from "./keys.js";
 export { Starter, type StartGate, type StartMode, type StartOptions, type StartResult, type WorkdirCause } from "./start.js";
 export { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
 export { Sessions, HERDR_PANE_HEADER, HERDR_YIELD_MS, TERMINAL_HEADER, WT_HEADER, WINDOWS_TERMINAL, HOOK_EVENTS, describeTool, dshHooksSettings, hooksSettings, piExtension, sessionContext, writeGeminiHome, END_AFTER_MS, IDLE_AFTER_MS, type SessionMoment, type SessionsOptions } from "./sessions.js";

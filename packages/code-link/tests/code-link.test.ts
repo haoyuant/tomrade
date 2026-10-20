@@ -541,6 +541,78 @@ describe("code link", () => {
     expect(items.get(project.id, item.id)!.status).toBe("verifying");
   });
 
+  it("proposes Done when another ticket's squash lists a commit of this one, and accepting settles it from that commit", async () => {
+    const { codeLink, items, project, checkout, ticket } = await machine(codeRepo());
+    const other = ticket("Other", "doing");
+    const item = ticket("Rode along", "doing");
+    commitOn(checkout, `tom-${item.keyNum}/work`, "work.ts", `TOM-${item.keyNum}: the work`);
+    await codeLink.scan(project.id);
+    git(["checkout", "-q", "main"], checkout);
+    fs.writeFileSync(path.join(checkout, "other.ts"), "other\n");
+    git(["add", "-A"], checkout);
+    git(["commit", "-q", "-m", `TOM-${other.keyNum}: the other work (#5)`, "-m", `* TOM-${other.keyNum}: the other work\n\n* TOM-${item.keyNum}: part of it`], checkout);
+    git(["push", "-q", "origin", "main"], checkout);
+    const squash = git(["rev-parse", "main"], checkout);
+
+    await codeLink.scan(project.id);
+    expect(items.get(project.id, item.id)!.status).toBe("doing");
+    expect(codeLink.links(project.id, item.id)).toEqual([expect.objectContaining({ branch: `tom-${item.keyNum}/work`, mergedSha: null })]);
+    const [proposal] = codeLink.proposals(project.id, item.id);
+    expect(proposal).toMatchObject({ kind: "propose", toStatus: "done", evidenceSha: squash });
+    expect(proposal!.reason).toContain(`#5 (TOM-${other.keyNum})`);
+
+    // Another scan keeps the question standing rather than withdrawing it.
+    await codeLink.scan(project.id);
+    expect(codeLink.proposals(project.id, item.id).map((p) => p.id)).toEqual([proposal!.id]);
+
+    codeLink.resolve(project.id, proposal!.id, true);
+    expect(items.get(project.id, item.id)!.status).toBe("done");
+    expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ mergedSha: squash });
+    expect(codeLink.store.activeDelivery(project.id, item.id)).toBeNull();
+  });
+
+  it("keeps a closing word in another ticket's commit on the ticket as evidence, and a dismissal is not asked again", async () => {
+    const { codeLink, items, project, checkout, ticket } = await machine(codeRepo());
+    const other = ticket("Other", "doing");
+    const item = ticket("Named in passing", "todo");
+    await codeLink.scan(project.id);
+    fs.writeFileSync(path.join(checkout, "other.ts"), "other\n");
+    git(["add", "-A"], checkout);
+    git(["commit", "-q", "-m", `TOM-${other.keyNum}: the other work`, "-m", `Fixes TOM-${item.keyNum} too`], checkout);
+    git(["push", "-q", "origin", "main"], checkout);
+    const sha = git(["rev-parse", "main"], checkout);
+
+    await codeLink.scan(project.id);
+    expect(items.get(project.id, item.id)!.status).toBe("todo");
+    expect(codeLink.links(project.id, item.id)).toEqual([expect.objectContaining({ branch: "", headSha: sha, mergedSha: null })]);
+    const [proposal] = codeLink.proposals(project.id, item.id);
+    expect(proposal!.reason).toContain(sha.slice(0, 7));
+
+    codeLink.resolve(project.id, proposal!.id, false);
+    codeLink.store.upsertRepoState(project.id, codeLink.store.links(project.id, item.id)[0]!.repoId, { scannedSha: null });
+    await codeLink.scan(project.id);
+    expect(codeLink.proposals(project.id, item.id)).toEqual([]);
+    expect(items.get(project.id, item.id)!.status).toBe("todo");
+  });
+
+  it("still closes a ticket whose key leads the squash subject while another one is only listed", async () => {
+    const { codeLink, items, project, checkout, ticket } = await machine(codeRepo());
+    const item = ticket("Its own merge", "verifying");
+    const other = ticket("Listed", "doing");
+    const branch = `tom-${item.keyNum}/work`;
+    commitOn(checkout, branch, "work.ts", `TOM-${item.keyNum}: the work`);
+    await codeLink.scan(project.id);
+    git(["checkout", "-q", "main"], checkout);
+    git(["merge", "-q", "--squash", branch], checkout);
+    git(["commit", "-q", "-m", `TOM-${item.keyNum}: the work (#8)`, "-m", `* TOM-${item.keyNum}: the work\n\n* TOM-${other.keyNum}: a piece`], checkout);
+    git(["push", "-q", "origin", "main"], checkout);
+
+    await codeLink.scan(project.id);
+    expect(items.get(project.id, item.id)!.status).toBe("done");
+    expect(items.get(project.id, other.id)!.status).toBe("doing");
+    expect(codeLink.proposals(project.id, other.id)).toEqual([expect.objectContaining({ toStatus: "done" })]);
+  });
+
   describe("a pull request GitHub can answer for", () => {
     async function pr(title: string) {
       const world = await machine(codeRepo());
