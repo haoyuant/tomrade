@@ -30,6 +30,15 @@ const check = (name, cond, detail) => {
 
 // the "second" message fails three times running — the first try and both retries — then answers
 let failures = 0;
+// Only the person's last message decides: the tools' own descriptions say "second" too.
+const lastUserText = (body) => {
+  try {
+    const last = (JSON.parse(body).messages ?? []).findLast((m) => m.role === "user");
+    return typeof last?.content === "string" ? last.content : (last?.content ?? []).map((part) => part.text ?? "").join("");
+  } catch {
+    return "";
+  }
+};
 const endpoint = http.createServer((req, res) => {
   let body = "";
   req.on("data", (c) => (body += c));
@@ -37,7 +46,7 @@ const endpoint = http.createServer((req, res) => {
     if (req.headers.authorization !== "Bearer good") return res.writeHead(401, { "content-type": "application/json" }).end('{"error":{"message":"Authentication Fails, Your api key is invalid"}}');
     // lists its one model the way DeepSeek does, modalities included
     if (req.url.endsWith("/models")) return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ object: "list", data: [{ id: "flaky", input_modalities: ["text", "image"], output_modalities: ["text"] }] }));
-    if (body.includes("second") && failures < 3 && ++failures) return res.writeHead(503, { "content-type": "application/json" }).end('{"error":{"message":"Service Unavailable"}}');
+    if (lastUserText(body).includes("second") && failures < 3 && ++failures) return res.writeHead(503, { "content-type": "application/json" }).end('{"error":{"message":"Service Unavailable"}}');
     res.writeHead(200, { "content-type": "text/event-stream" });
     res.end('data: {"choices":[{"delta":{"content":"pong"},"finish_reason":null}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
   });
@@ -49,8 +58,9 @@ const run = async () => {
   const { ctx } = await boot({
     configFile: path.join(dir, "../tomrade.yml"),
     vars: { userData: work },
-    // the store stays off: nothing here installs from the network
-    patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, { id: "attention", config: { notify: false } }, { id: "community", disabled: true }]],
+    // the store stays off: nothing here installs from the network. The conversation is the loop's, whose
+    // errors and retries this checks — with the built-in pi present, Tomrade would hand it to pi instead.
+    patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, { id: "attention", config: { notify: false } }, { id: "community", disabled: true }, { id: "engine-tomrade", config: { backlog: "loop" } }]],
     extensions: { root: path.join(work, "plugins"), trustedKeys: {} }
   });
   ctx.hub.configure(path.join(work, "hub"));
