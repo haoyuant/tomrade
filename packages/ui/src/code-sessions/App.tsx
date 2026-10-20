@@ -3,9 +3,9 @@ import type { Layout, LayoutPreset, SessionRow, TerminalPlace, TerminalRow, Wind
 import { ContextMenu, ContextMenuActionItem, ContextMenuSub } from "~/components/ui/menu";
 import { interpolate, message } from "~/lib/dicts";
 import { isMac } from "~/lib/keys";
-import { onLook, onState, onToast, send, type Look } from "./bridge";
+import { onLook, onShownIn, onState, onToast, send, type Look } from "./bridge";
 import { keyLabel, windowKey, type WindowKey } from "./keys";
-import { applyPreset, close, cycle, heir, landing, leaves, lock, neighbour, place, prune, resize, reveal, show, split } from "./layout";
+import { applyPreset, close, cycle, dedupe, heir, holder, landing, leaves, lock, neighbour, place, prune, resize, reveal, show, split, type Key } from "./layout";
 import { sessionGroups } from "./lists";
 import { TerminalCell } from "./TerminalCell";
 
@@ -20,6 +20,14 @@ const placeableIds = (state: WindowState): string[] => {
 };
 
 const live = (s: SessionRow) => s.state !== "ended" && s.state !== "lost";
+
+/** A cell's id as the herdr pane it shows: a session and the terminal it runs in are one pane, never two cells. */
+const paneKey = (state: WindowState): Key => {
+  const panes = new Map<string, string>();
+  for (const s of [...(state.archive.rows ?? []), ...state.sessions]) if (s.pane) panes.set(s.id, s.pane);
+  for (const t of state.terminals) if (t.pane) panes.set(t.id, t.pane);
+  return (id) => (panes.has(id) ? `pane:${panes.get(id)}` : id);
+};
 
 type Leaf = Extract<Layout, { type: "leaf" }>;
 
@@ -485,21 +493,23 @@ export function App() {
     if (!state) return;
     const now = Date.now();
     for (const [id, at] of asked.current) if (known.has(id) || now - at > ASKED_GRACE_MS) asked.current.delete(id);
-    const pruned = prune(current.current ?? state.layout, new Set([...known, ...asked.current.keys()]));
+    const key = paneKey(state);
+    const kept = prune(current.current ?? state.layout, new Set([...known, ...asked.current.keys()]));
+    // One pane in one cell: a cell that would show it a second time is emptied, and that is saved.
+    const pruned = dedupe(kept, key, focusedNow.current);
     const placeable = placeableIds(state);
     const fresh = seen.current ? placeable.filter((id) => !seen.current!.has(id)) : [];
     seen.current = new Set([...(seen.current ?? []), ...placeable]);
-    const shownIds = new Set(leaves(pruned).flatMap((l) => (l.sessionId ? [l.sessionId, state.terminals.find((t) => t.id === l.sessionId)?.sessionId ?? l.sessionId] : [])));
-    let placed = state.autoPlace ? fresh.filter((id) => !shownIds.has(id)).reduce(place, pruned) : pruned;
+    let placed = state.autoPlace ? fresh.reduce((acc, id) => place(acc, id, key), pruned) : pruned;
     // Asked from outside (a start, "open in terminal"): the session in a cell, that cell selected — once it has its pane.
     const ask = state.reveal;
     if (ask && ask.at !== revealed.current && state.sessions.some((s) => s.id === ask.sessionId && s.pane)) {
       revealed.current = ask.at;
-      const shown = reveal(placed, ask.sessionId, focusedNow.current, (id) => state.terminals.find((t) => t.id === id)?.sessionId ?? id);
+      const shown = reveal(placed, ask.sessionId, focusedNow.current, key);
       placed = shown.layout;
       setFocused(shown.cell);
     }
-    if (placed !== pruned) change(placed);
+    if (placed !== kept) change(placed);
     else {
       current.current = pruned;
       setLayout(pruned);
@@ -507,6 +517,17 @@ export function App() {
   }, [state, known, change]);
 
   const say: Say = useCallback((key, vars) => interpolate(message(locale, `codeSessions.${key}`), vars), [locale]);
+  // The plugin would not stream a pane into a second cell: that cell empties, and the one showing it is selected.
+  useEffect(
+    () =>
+      onShownIn(({ cell, other }) => {
+        const now = current.current;
+        if (now && leaves(now).some((l) => l.id === cell && l.sessionId)) change(show(now, cell, null));
+        setFocused(other);
+        setToast({ text: say("shownInOther") });
+      }),
+    [change, say]
+  );
   const shown: Look = look ?? { theme: "", dark: false, tokens: {}, locale };
 
   // The selected cell's row comes into view in the list.
@@ -523,6 +544,7 @@ export function App() {
   const byId = new Map([...(state.archive.rows ?? []), ...state.sessions].map((s) => [s.id, s]));
   const groups = sessionGroups(state.sessions);
   const terminalsById = new Map(state.terminals.map((t) => [t.id, t]));
+  const key = paneKey(state);
   // A terminal whose agent claimed a ticket shows that session in its own cell, on the pane it already has.
   const sessionIn = (id: string | null) => (id ? byId.get(terminalsById.get(id)?.sessionId ?? id) : undefined);
   const rowsOf = (c: Leaf) => (c.sessionId ? [c.sessionId, terminalsById.get(c.sessionId)?.sessionId ?? c.sessionId] : []);
@@ -544,7 +566,7 @@ export function App() {
   // Shown where `landing` says: never a second controller on the same pane, never over a locked cell or one that needs
   // you. Whatever left a pane is said, with a way back.
   const land = (id: string, beside: boolean) => {
-    const at = landing(layout, id, { selected: target.id, beside, recent: recent.current, needsYou: (shown) => !!sessionIn(shown)?.needsYou, shows: (shown) => terminalsById.get(shown)?.sessionId ?? shown });
+    const at = landing(layout, id, { selected: target.id, beside, recent: recent.current, needsYou: (shown) => !!sessionIn(shown)?.needsYou, key });
     if (at.layout !== layout) change(at.layout);
     setFocused(at.cell);
     const left = at.replaced;
@@ -556,7 +578,10 @@ export function App() {
         run: () => {
           const now = current.current;
           if (!now || !leaves(now).some((l) => l.id === at.cell)) return;
-          change(show(now, at.cell, left));
+          // Put back unless another cell shows it by now.
+          const elsewhere = holder(now, left, key);
+          if (elsewhere && elsewhere.id !== at.cell) return setFocused(elsewhere.id);
+          change(show(now, at.cell, left, key));
           setFocused(at.cell);
         }
       }
@@ -570,10 +595,10 @@ export function App() {
   const connect = (cell: string, id: string) => {
     const s = byId.get(id);
     if (s?.mode === "run" && !s.pane) return send({ type: "openThread", sessionId: s.id });
-    const holding = cells.find((c) => c.sessionId && (c.sessionId === id || terminalsById.get(c.sessionId)?.sessionId === id));
-    // Shown in a locked cell, it stays there.
-    if (holding && (holding.locked || terminalsById.get(holding.sessionId!)?.sessionId === id)) return setFocused(holding.id);
-    change(show(layout, cell, id));
+    // Shown in a locked cell, or under the terminal it runs in, it stays there; else it moves to this cell.
+    const holding = holder(layout, id, key);
+    if (holding && (holding.locked || holding.sessionId !== id)) return setFocused(holding.id);
+    change(show(layout, cell, id, key));
     setFocused(cell);
   };
   const cellMenu = (node: Extract<Layout, { type: "leaf" }>): ReactNode => {
@@ -744,7 +769,7 @@ export function App() {
                   defaultPreset={state.defaultPreset}
                   autoPlace={state.autoPlace}
                   onApply={(p) => {
-                    change(applyPreset(layout, p.layout));
+                    change(applyPreset(layout, p.layout, undefined, key));
                     setFocused(null);
                   }}
                   onSave={(name) => send({ type: "savePreset", name, layout })}

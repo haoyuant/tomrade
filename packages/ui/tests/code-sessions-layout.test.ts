@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { Layout } from "@tomradex/code-sessions";
-import { applyPreset, close, cycle, heir, landing, leaves, lock, neighbour, place, prune, resize, reveal, shape, show, split } from "../src/code-sessions/layout";
+import { applyPreset, close, cycle, dedupe, heir, holder, landing, leaves, lock, neighbour, place, prune, resize, reveal, shape, show, split } from "../src/code-sessions/layout";
 
 const one: Layout = { type: "leaf", id: "c1", sessionId: "s1" };
 
@@ -62,7 +62,7 @@ it("lands a pick in the selected cell, or where it already shows, and says what 
   expect(leaves(landing(three(), "s9", { selected: "c2" }).layout).map((l) => l.sessionId)).toEqual(["s1", "s9", "s3"]);
   // Already shown: that cell, nothing moves; a terminal's cell counts as its session's.
   expect(landing(three(), "s3", { selected: "c1" })).toEqual({ layout: three(), cell: "c3", replaced: null });
-  expect(landing(three(), "claimed", { selected: "c1", shows: (id) => (id === "s2" ? "claimed" : id) })).toMatchObject({ cell: "c2", replaced: null });
+  expect(landing(three(), "claimed", { selected: "c1", key: (id) => (id === "s2" ? "claimed" : id) })).toMatchObject({ cell: "c2", replaced: null });
   // An empty selected cell replaces nothing.
   expect(landing(show(three(), "c2", null), "s9", { selected: "c2" })).toMatchObject({ cell: "c2", replaced: null });
 });
@@ -136,4 +136,27 @@ it("finds the pane across each edge, the next and previous in reading order, and
   expect(heir(grid, "c2")).toBe("c3");
   expect(heir(grid, "c1")).toBe("c2");
   expect(heir(one, "c1")).toBeNull();
+});
+
+it("never puts one herdr pane in two cells, whatever id it comes under", () => {
+  // s2 is the session the agent in terminal t2 claimed: one pane, two ids.
+  const key = (id: string) => (id === "s2" || id === "t2" ? "pane:w1:p2" : id);
+  const layout = show(three(), "c2", "t2");
+  expect(holder(layout, "s2", key)?.id).toBe("c2");
+  // A pick of the session, plain or ⌘: the cell with its terminal, nothing split, nothing replaced.
+  expect(landing(layout, "s2", { selected: "c1", key })).toEqual({ layout, cell: "c2", replaced: null });
+  expect(landing(layout, "s2", { selected: "c1", beside: true, key })).toEqual({ layout, cell: "c2", replaced: null });
+  // Auto-place and reveal leave it where it is.
+  const roomy = show(layout, "c3", null);
+  expect(place(roomy, "s2", key)).toBe(roomy);
+  expect(reveal(roomy, "s2", "c1", key)).toEqual({ layout: roomy, cell: "c2" });
+  // Shown elsewhere on purpose, it moves: the old cell empties.
+  expect(leaves(show(layout, "c1", "s2", key)).map((l) => l.sessionId)).toEqual(["s2", null, "s3"]);
+  // A layout that has it twice keeps the first, or the one asked to keep.
+  const twice = show(layout, "c3", "s2");
+  expect(leaves(dedupe(twice, key)).map((l) => l.sessionId)).toEqual(["s1", "t2", null]);
+  expect(leaves(dedupe(twice, key, "c3")).map((l) => l.sessionId)).toEqual(["s1", null, "s2"]);
+  expect(dedupe(layout, key)).toBe(layout);
+  // A preset refills each pane once.
+  expect(leaves(applyPreset(twice, one, () => "n1", key)).map((l) => l.sessionId)).toEqual(["s1"]);
 });

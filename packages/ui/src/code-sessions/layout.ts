@@ -13,6 +13,13 @@ const holding = (leaf: Leaf, sessionId: string | null): Leaf => {
   return sessionId && locked ? { ...rest, sessionId, locked } : { ...rest, sessionId };
 };
 
+/**
+ * What a cell's id stands for when telling two apart: the herdr pane it shows, where it has one. A session and the
+ * terminal it runs in are one pane under two ids; two cells must never show it.
+ */
+export type Key = (id: string) => string;
+const byId: Key = (id) => id;
+
 const map = (layout: Layout, id: string, fn: (node: Layout) => Layout): Layout => {
   if (layout.id === id) return fn(layout);
   return layout.type === "split" ? { ...layout, a: map(layout.a, id, fn), b: map(layout.b, id, fn) } : layout;
@@ -79,9 +86,20 @@ export function cycle(layout: Layout, cell: string, by: 1 | -1): string {
 }
 
 /** Shows a session in a cell. One session shows in one cell at a time: herdr gives a pane's input to one controller. */
-export function show(layout: Layout, cell: string, sessionId: string | null): Layout {
-  const cleared = sessionId ? leaves(layout).filter((l) => l.sessionId === sessionId && l.id !== cell).reduce((acc, l) => map(acc, l.id, (n) => holding(n as Leaf, null)), layout) : layout;
+export function show(layout: Layout, cell: string, sessionId: string | null, key: Key = byId): Layout {
+  const cleared = sessionId ? leaves(layout).filter((l) => l.sessionId && l.id !== cell && key(l.sessionId) === key(sessionId)).reduce((acc, l) => map(acc, l.id, (n) => holding(n as Leaf, null)), layout) : layout;
   return map(cleared, cell, (node) => (node.type === "leaf" ? holding(node, sessionId) : node));
+}
+
+/** The cell that shows what `id` stands for, under that id or another. */
+export const holder = (layout: Layout, id: string, key: Key = byId): Leaf | undefined => leaves(layout).find((l) => l.sessionId && key(l.sessionId) === key(id));
+
+/** One pane twice (an old saved layout, a race): the first cell in reading order keeps it, unless `keep` holds it too. */
+export function dedupe(layout: Layout, key: Key, keep: string | null = null): Layout {
+  const cells = leaves(layout).filter((l) => l.sessionId);
+  const owner = new Map<string, string>();
+  for (const l of [...cells.filter((c) => c.id === keep), ...cells]) if (!owner.has(key(l.sessionId!))) owner.set(key(l.sessionId!), l.id);
+  return cells.filter((l) => owner.get(key(l.sessionId!)) !== l.id).reduce((acc, l) => map(acc, l.id, (n) => holding(n as Leaf, null)), layout);
 }
 
 /** A locked cell keeps what it shows until the person unlocks or closes it: nothing automatic replaces it. An empty cell does not lock. */
@@ -100,15 +118,16 @@ export const prune = (layout: Layout, known: Set<string>): Layout => leaves(layo
 /** The layout's shape alone, as a preset keeps it: every cell empty and unlocked. */
 export const shape = (layout: Layout): Layout => (layout.type === "leaf" ? holding(layout, null) : { ...layout, a: shape(layout.a), b: shape(layout.b) });
 
-/** An id into the first empty cell, in reading order; unchanged when every cell is taken. */
-export function place(layout: Layout, id: string): Layout {
+/** An id into the first empty cell, in reading order; unchanged when every cell is taken, or a cell already shows it. */
+export function place(layout: Layout, id: string, key: Key = byId): Layout {
+  if (holder(layout, id, key)) return layout;
   const empty = leaves(layout).find((l) => !l.sessionId && !l.locked);
-  return empty ? show(layout, empty.id, id) : layout;
+  return empty ? show(layout, empty.id, id, key) : layout;
 }
 
 /**
- * Where a pick from the list lands. What a cell already shows (`shows` reads a cell's id as the session it shows): that
- * cell. With `beside` (⌘-click): a new cell beside the selected one. Else the selected cell, unless it is locked or
+ * Where a pick from the list lands. What a cell already shows, under any id for the same pane (`key`): that cell, with
+ * or without ⌘. With `beside` (⌘-click): a new cell beside the selected one. Else the selected cell, unless it is locked or
  * shows a session that needs the person; then the first empty cell, else the cell selected least recently (`recent`
  * lists cells, the last selected last) that is neither, else a new cell beside the selected one. `replaced` is what
  * the cell showed before.
@@ -116,17 +135,17 @@ export function place(layout: Layout, id: string): Layout {
 export function landing(
   layout: Layout,
   id: string,
-  opts: { selected: string | null; beside?: boolean; recent?: string[]; needsYou?: (shown: string) => boolean; shows?: (cellId: string) => string; newId?: string }
+  opts: { selected: string | null; beside?: boolean; recent?: string[]; needsYou?: (shown: string) => boolean; key?: Key; newId?: string }
 ): { layout: Layout; cell: string; replaced: string | null } {
   const cells = leaves(layout);
-  const shows = opts.shows ?? ((cellId: string) => cellId);
-  const already = cells.find((l) => l.sessionId && (l.sessionId === id || shows(l.sessionId) === id));
+  const key = opts.key ?? byId;
+  const already = holder(layout, id, key);
   if (already) return { layout, cell: already.id, replaced: null };
   const selected = cells.find((l) => l.id === opts.selected) ?? cells[0]!;
-  const into = (cell: Leaf) => ({ layout: show(layout, cell.id, id), cell: cell.id, replaced: cell.sessionId });
+  const into = (cell: Leaf) => ({ layout: show(layout, cell.id, id, key), cell: cell.id, replaced: cell.sessionId });
   const beside = () => {
     const next = split(layout, selected.id, "row", opts.newId);
-    return { layout: show(next.layout, next.created, id), cell: next.created, replaced: null };
+    return { layout: show(next.layout, next.created, id, key), cell: next.created, replaced: null };
   };
   if (opts.beside) return beside();
   const free = (cell: Leaf) => !cell.locked && !(cell.sessionId && opts.needsYou?.(cell.sessionId));
@@ -140,28 +159,28 @@ export function landing(
 }
 
 /**
- * A session brought into view: the cell that already shows it (`shows` reads a cell's id as the session it shows), else
- * the first empty cell, else a new cell beside `near`. Nothing else is moved out.
+ * A session brought into view: the cell that already shows its pane, under any id (`key`), else the first empty cell,
+ * else a new cell beside `near`. Nothing else is moved out.
  */
-export function reveal(layout: Layout, id: string, near: string | null, shows: (cellId: string) => string = (cellId) => cellId, newId = nextId()): { layout: Layout; cell: string } {
+export function reveal(layout: Layout, id: string, near: string | null, key: Key = byId, newId = nextId()): { layout: Layout; cell: string } {
   const cells = leaves(layout);
-  const holding = cells.find((l) => l.sessionId && shows(l.sessionId) === id);
-  if (holding) return { layout, cell: holding.id };
+  const already = holder(layout, id, key);
+  if (already) return { layout, cell: already.id };
   const empty = cells.find((l) => !l.sessionId && !l.locked);
-  if (empty) return { layout: show(layout, empty.id, id), cell: empty.id };
+  if (empty) return { layout: show(layout, empty.id, id, key), cell: empty.id };
   const beside = split(layout, (cells.find((l) => l.id === near) ?? cells[0]!).id, "row", newId);
-  return { layout: show(beside.layout, beside.created, id), cell: beside.created };
+  return { layout: show(beside.layout, beside.created, id, key), cell: beside.created };
 }
 
 /**
  * A preset's shape with fresh cell ids, refilled in reading order with what the current layout showed; what does not
  * fit is let go. Locked cells go first and stay locked, in cells added beside the last when the preset has too few.
  */
-export function applyPreset(current: Layout, preset: Layout, id = nextId): Layout {
+export function applyPreset(current: Layout, preset: Layout, id = nextId, key: Key = byId): Layout {
   const renamed = (node: Layout): Layout => (node.type === "leaf" ? { type: "leaf", id: id(), sessionId: null } : { ...node, id: `${id()}s`, a: renamed(node.a), b: renamed(node.b) });
-  const shown = leaves(current).filter((l) => l.sessionId);
+  const shown = leaves(dedupe(current, key)).filter((l) => l.sessionId);
   return [...shown.filter((l) => l.locked), ...shown.filter((l) => !l.locked)].reduce((acc, l) => {
-    if (!l.locked) return place(acc, l.sessionId!);
+    if (!l.locked) return place(acc, l.sessionId!, key);
     const cells = leaves(acc);
     const empty = cells.find((c) => !c.sessionId);
     if (empty) return lock(show(acc, empty.id, l.sessionId), empty.id, true);
