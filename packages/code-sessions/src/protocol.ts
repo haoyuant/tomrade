@@ -145,4 +145,6 @@ export type WindowPost =
   | { type: "closed"; cell: string; reason: string | null }
   /** herdr's server is back: attach the cell's pane again. */
   | { type: "reattach"; cell: string }
+  /** The pane the cell asked for streams in `other` already: one pane, one cell. */
+  | { type: "shownIn"; cell: string; other: string }
   | { type: "toast"; text: string };

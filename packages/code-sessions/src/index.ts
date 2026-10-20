@@ -94,6 +94,13 @@ export function isLayout(value: unknown): value is Layout {
 
 const leafIds = (layout: Layout): string[] => (layout.type === "leaf" ? (layout.sessionId ? [layout.sessionId] : []) : [...leafIds(layout.a), ...leafIds(layout.b)]);
 
+/** The cell of that id in a saved layout, if the layout has it. */
+const leafOf = (layout: Layout | undefined, cell: string): Extract<Layout, { type: "leaf" }> | undefined => {
+  if (!layout || !isLayout(layout)) return undefined;
+  if (layout.type === "leaf") return layout.id === cell ? layout : undefined;
+  return leafOf(layout.a, cell) ?? leafOf(layout.b, cell);
+};
+
 const emptied = (layout: Layout): Layout => (layout.type === "leaf" ? { type: "leaf", id: layout.id, sessionId: null } : { ...layout, a: emptied(layout.a), b: emptied(layout.b) });
 
 /** The saved state, and whether the file is there but cannot be read: then it starts over, and the window says so. */
@@ -434,12 +441,23 @@ function apply(ctx: Context, config: Config) {
     stream?.close();
   };
 
+  /** The herdr pane a cell's id stands for: a session's, or a terminal's. */
+  const paneOf = (projectId: string, id: string): string | undefined => sessionOf(projectId, id)?.herdrPane ?? savedTerminals(projectId).find((t) => t.id === id)?.pane;
+
   const attach = async (projectId: string, win: Open, cell: string, sessionId: string, cols: number, rows: number) => {
     detach(win, cell);
     const mine = turn(win, cell);
-    const pane = sessionOf(projectId, sessionId)?.herdrPane ?? savedTerminals(projectId).find((t) => t.id === sessionId)?.pane;
+    const pane = paneOf(projectId, sessionId);
     const herdr = ctx.get("herdr");
     if (!pane || !herdr) return post(win, { type: "closed", cell, reason: words()("noTerminal") });
+    // One pane, one cell: a second attach would take it over and knock the other cell off. A cell the saved layout no
+    // longer shows it in is a move, and lets go.
+    const other = [...win.terminals].find(([c, stream]) => c !== cell && stream.paneId === pane)?.[0];
+    if (other) {
+      const still = leafOf(stateOf(config.stateFile).layouts?.[projectId], other)?.sessionId;
+      if (still && paneOf(projectId, still) === pane) return post(win, { type: "shownIn", cell, other });
+      detach(win, other);
+    }
     let stream: TerminalStream;
     try {
       stream = await herdr.terminal(pane, { cols, rows });

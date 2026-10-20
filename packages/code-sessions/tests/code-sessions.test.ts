@@ -160,6 +160,18 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   expect(JSON.parse(fs.readFileSync(stateFile, "utf8"))).toEqual({ layouts: { [w.project.id]: layout }, asked: true });
   expect(win.states.at(-1)).toMatchObject({ askSwitch: false, terminal: "herdr" });
 
+  // One pane, one cell: another cell asking for the pane c1 streams is told where it is, and c1 keeps it.
+  await say({ type: "attach", cell: "c2", sessionId: "s1", cols: 80, rows: 24 });
+  expect(win.posts.at(-1)).toEqual({ type: "shownIn", cell: "c2", other: "c1" });
+  expect(streams).toHaveLength(2);
+  expect(live.closed).toBe(false);
+  // Moved there on purpose (the saved layout shows it in c2 now): c1 lets it go and c2 streams it.
+  const moved = { ...layout, a: { ...layout.a, sessionId: null }, b: { ...layout.b, sessionId: "s1" } };
+  await say({ type: "layout", layout: moved });
+  await say({ type: "attach", cell: "c2", sessionId: "s1", cols: 80, rows: 24 });
+  expect(streams.map((x) => x.closed)).toEqual([true, true, false]);
+  await say({ type: "layout", layout });
+  await say({ type: "detach", cell: "c2" });
   await say({ type: "detach", cell: "c1" });
   expect(live.closed).toBe(true);
   await say({ type: "attach", cell: "c2", sessionId: "s1", cols: 80, rows: 24 });

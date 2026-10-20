@@ -213,6 +213,12 @@ app.whenReady().then(async () => {
     const besideShown = await wait(async () => (await js(`document.querySelectorAll('.cs-cell').length`)) === 7 && (await cellShows(seventhItem.key)), 3000);
     const besideOthers = (await cellNames()).filter((n) => !n.startsWith(`${seventhItem.key} `));
     check("⌘ 点击在新面板中打开，原来的六个面板不变", besideShown && JSON.stringify(besideOthers) === JSON.stringify(sixShown), JSON.stringify(await cellNames()));
+    // ⌘-click on what a pane already shows: that pane is selected, nothing opens a second time.
+    const sevenCells = await js(`document.querySelectorAll('.cs-cell').length`);
+    await js(`${seventhRow}.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: ${process.platform === "darwin"}, ctrlKey: ${process.platform !== "darwin"} })); true`);
+    await sleep(800);
+    const once = (await js(`document.querySelectorAll('.cs-cell').length`)) === sevenCells && (await cellNames()).filter((n) => n.startsWith(`${seventhItem.key} `)).length === 1;
+    check("⌘ 点击已经在面板里的会话：选中那个面板，不再开第二份", once, JSON.stringify(await cellNames()));
     await js(`(() => { const cell = [...document.querySelectorAll('.cs-cell')].find((c) => c.querySelector('.cs-cell-name').textContent.startsWith(${JSON.stringify(`${seventhItem.key} `)})); [...cell.querySelectorAll('.cs-cell-tools .icon-btn')].at(-1).click(); return true; })()`);
     await js(`document.querySelectorAll('.cs-cell')[3].querySelector('[data-testid=cs-lock]').click(); true`);
     const sixBack = await wait(async () => (await js(`document.querySelectorAll('.cs-cell').length === 6 && !document.querySelector('.cs-cell[data-locked]')`)) && JSON.stringify(await cellNames()) === JSON.stringify(sixShown), 3000);
@@ -239,11 +245,17 @@ app.whenReady().then(async () => {
       ${files === "real" ? "data.items.add(document.getElementById('cs-drop-probe').files[0]);" : "data.items.add(new File(['x'], 'from-a-page.png', { type: 'image/png' }));"}
       term.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: data }));
       term.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: data }));
-      return new Promise((resolve) => requestAnimationFrame(() => {
-        const shown = !!term.querySelector('.cs-term-drop')?.textContent;
-        term.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: data }));
-        resolve(shown);
-      }));
+      // A drag-over is not drawn at once: wait for the hint, a little, before letting go.
+      return new Promise((resolve) => {
+        const end = Date.now() + 2000;
+        const look = () => {
+          const shown = !!term.querySelector('.cs-term-drop')?.textContent;
+          if (!shown && Date.now() < end) return requestAnimationFrame(look);
+          term.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: data }));
+          resolve(shown);
+        };
+        requestAnimationFrame(look);
+      });
     })()`);
     const paneFive = () => herdr("pane", "read", sessions[4].pane, "--source", "recent", "--lines", "20");
     const untouched = paneFive();
@@ -368,6 +380,19 @@ app.whenReady().then(async () => {
     await tjs(`document.querySelector('[data-testid=cs-side-new-terminal]').click(); true`);
     const opened = await wait(async () => (await tjs(`document.querySelectorAll('.cs-cell').length === 7 && !!document.querySelector('.cs-cell[data-cell-terminal] .xterm')`)));
     check("新终端：格子都占满时，在旁边新开一格并连上 herdr", opened);
+    // The agent in it starts, and its hooks make it a session with no ticket on the same pane: it is not placed in a
+    // second cell, and the terminal's cell is not knocked off.
+    const cellsNow = await tjs(`document.querySelectorAll('.cs-cell').length`);
+    const newPane = (JSON.parse(fs.readFileSync(path.join(work, "code-sessions.json"), "utf8")).terminals?.[project.id] ?? []).sort((a, b) => b.startedAt - a.startedAt)[0]?.pane;
+    const hooked = ctx.codeLink.store.createSession(project.id, { repoId: "check", branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, worktree: cwd });
+    ctx.codeLink.store.patchSession(project.id, hooked.id, { state: "running", herdrPane: newPane });
+    ctx.emit("codeLink/changed", project.id);
+    await sleep(2000);
+    // Only the terminal's own cell counts: herdr's own TUI, still attached from above, may take other panes over.
+    const single = await tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return [document.querySelectorAll('.cs-cell').length, !!cell?.querySelector('.xterm'), !!cell?.querySelector('.cs-term-closed')?.offsetParent]; })()`);
+    check("同一个 pane 上的会话不会被放进第二个格子，终端的格子也不会被挤掉", !!newPane && single[0] === cellsNow && single[1] && !single[2], JSON.stringify({ cellsNow, single }));
+    ctx.codeLink.store.patchSession(project.id, hooked.id, { state: "ended", endedAt: Date.now() });
+    ctx.emit("codeLink/changed", project.id);
     const listed = await wait(async () => (await tjs(`document.querySelectorAll('[data-terminal]').length`)) === 1, 5000);
     check("左侧终端列表列出它", listed);
     await tjs(`document.querySelector('.cs-cell[data-cell-terminal] .xterm-helper-textarea').focus(); true`);
