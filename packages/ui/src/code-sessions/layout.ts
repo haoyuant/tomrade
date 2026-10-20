@@ -31,6 +31,53 @@ export function close(layout: Layout, cell: string): Layout {
   return { ...layout, a: close(layout.a, cell), b: close(layout.b, cell) };
 }
 
+/** What takes a cell's place once it is closed: the first cell of its sibling; null for the last cell. */
+export function heir(layout: Layout, cell: string): string | null {
+  if (layout.type === "leaf") return null;
+  if (layout.a.id === cell) return leaves(layout.b)[0]!.id;
+  if (layout.b.id === cell) return leaves(layout.a)[0]!.id;
+  return heir(layout.a, cell) ?? heir(layout.b, cell);
+}
+
+type Box = { x: number; y: number; w: number; h: number };
+
+/** Where each cell sits, as fractions of the window. */
+export function boxes(layout: Layout, box: Box = { x: 0, y: 0, w: 1, h: 1 }): Map<string, Box> {
+  if (layout.type === "leaf") return new Map([[layout.id, box]]);
+  const r = layout.ratio;
+  const [a, b] =
+    layout.direction === "row"
+      ? [{ ...box, w: box.w * r }, { ...box, x: box.x + box.w * r, w: box.w * (1 - r) }]
+      : [{ ...box, h: box.h * r }, { ...box, y: box.y + box.h * r, h: box.h * (1 - r) }];
+  return new Map([...boxes(layout.a, a), ...boxes(layout.b, b)]);
+}
+
+const EDGE = 1e-6;
+
+/** The cell across one edge of this one: of those touching it there, the one sharing most of it; null at the window's edge. */
+export function neighbour(layout: Layout, cell: string, direction: "left" | "right" | "up" | "down"): string | null {
+  const all = boxes(layout);
+  const from = all.get(cell);
+  if (!from) return null;
+  const across = (b: Box) =>
+    direction === "left" ? Math.abs(b.x + b.w - from.x) < EDGE : direction === "right" ? Math.abs(from.x + from.w - b.x) < EDGE : direction === "up" ? Math.abs(b.y + b.h - from.y) < EDGE : Math.abs(from.y + from.h - b.y) < EDGE;
+  const shared = (b: Box) => (direction === "left" || direction === "right" ? Math.min(from.y + from.h, b.y + b.h) - Math.max(from.y, b.y) : Math.min(from.x + from.w, b.x + b.w) - Math.max(from.x, b.x));
+  let best: { id: string; shared: number } | null = null;
+  for (const [id, b] of all) {
+    if (id === cell || !across(b)) continue;
+    const s = shared(b);
+    if (s > EDGE && (!best || s > best.shared + EDGE)) best = { id, shared: s };
+  }
+  return best?.id ?? null;
+}
+
+/** The cell before or after this one in reading order, going round. */
+export function cycle(layout: Layout, cell: string, by: 1 | -1): string {
+  const ids = leaves(layout).map((l) => l.id);
+  const at = ids.indexOf(cell);
+  return at < 0 ? ids[0]! : ids[(at + by + ids.length) % ids.length]!;
+}
+
 /** Shows a session in a cell. One session shows in one cell at a time: herdr gives a pane's input to one controller. */
 export function show(layout: Layout, cell: string, sessionId: string | null): Layout {
   const cleared = sessionId ? leaves(layout).filter((l) => l.sessionId === sessionId && l.id !== cell).reduce((acc, l) => map(acc, l.id, (n) => holding(n as Leaf, null)), layout) : layout;

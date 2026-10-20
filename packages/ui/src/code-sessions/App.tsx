@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, t
 import type { Layout, LayoutPreset, SessionRow, TerminalPlace, TerminalRow, WindowState } from "@tomradex/code-sessions";
 import { ContextMenu, ContextMenuActionItem, ContextMenuSub } from "~/components/ui/menu";
 import { interpolate, message } from "~/lib/dicts";
-import { formatChord, matchesChord } from "~/lib/keybindings";
 import { isMac } from "~/lib/keys";
 import { onLook, onState, onToast, send, type Look } from "./bridge";
-import { applyPreset, close, landing, leaves, lock, place, prune, resize, reveal, show, split } from "./layout";
-import { foldChord, sessionGroups } from "./lists";
+import { keyLabel, windowKey, type WindowKey } from "./keys";
+import { applyPreset, close, cycle, heir, landing, leaves, lock, neighbour, place, prune, resize, reveal, show, split } from "./layout";
+import { sessionGroups } from "./lists";
 import { TerminalCell } from "./TerminalCell";
 
 type Say = (key: string, vars?: Record<string, string | number>) => string;
@@ -327,7 +327,7 @@ function Cell({ leaf, session, terminal, places, ready, onNewTerminal, focused, 
   const act = (type: "continue" | "openWorktree" | "openPr" | "focusHerdr" | "openThread") => session && send({ type, sessionId: session.id });
   const labels = useMemo(() => ({ detached: (reason: string | null) => (reason ? say("detached", { reason }) : say("detachedPlain")), reattach: say("reattach"), drop: say("dropFiles") }), [say]);
   return (
-    <div className="cs-cell" data-focused={focused || undefined} data-locked={leaf.locked || undefined} data-cell-terminal={terminal?.id} onMouseDownCapture={onFocus} onFocusCapture={onFocus}>
+    <div className="cs-cell" data-cell={leaf.id} data-focused={focused || undefined} data-locked={leaf.locked || undefined} data-cell-terminal={terminal?.id} onMouseDownCapture={onFocus} onFocusCapture={onFocus}>
       {withMenu(<div className="cs-cell-bar">
         <span className="cs-cell-name">{session ? `${session.key ?? ""} ${session.title ?? session.branch}`.trim() : terminal ? `${terminal.agentTitle ?? terminal.title} · ${terminal.cwd}` : say("pick")}</span>
         {terminal?.note && !session && <span className="cs-cell-note" title={terminal.note}>{terminal.note}</span>}
@@ -356,9 +356,9 @@ function Cell({ leaf, session, terminal, places, ready, onNewTerminal, focused, 
               <LockGlyph locked={!!leaf.locked} />
             </button>
           )}
-          <button type="button" className="icon-btn" title={say("splitRight")} aria-label={say("splitRight")} onClick={() => onSplit("row")}>⇥</button>
-          <button type="button" className="icon-btn" title={say("splitDown")} aria-label={say("splitDown")} onClick={() => onSplit("column")}>⤓</button>
-          <button type="button" className="icon-btn" title={only ? say("clearCell") : say("closeCell")} aria-label={only ? say("clearCell") : say("closeCell")} onClick={onClose}>×</button>
+          <button type="button" className="icon-btn" title={say("withKey", { action: say("splitRight"), key: keyLabel("splitRight") })} aria-label={say("splitRight")} onClick={() => onSplit("row")}>⇥</button>
+          <button type="button" className="icon-btn" title={say("withKey", { action: say("splitDown"), key: keyLabel("splitDown") })} aria-label={say("splitDown")} onClick={() => onSplit("column")}>⤓</button>
+          <button type="button" className="icon-btn" title={only ? say("clearCell") : say("withKey", { action: say("closeCell"), key: keyLabel("close") })} aria-label={only ? say("clearCell") : say("closeCell")} onClick={onClose}>×</button>
         </span>
       </div>)}
       {session?.pane || terminal?.pane ? (
@@ -422,18 +422,6 @@ export function App() {
     setFoldedHere(!folded);
     send({ type: "fold", folded: !folded });
   }, [folded]);
-  // Before the terminal sees it, so the key never reaches the shell.
-  useEffect(() => {
-    const chord = foldChord(isMac);
-    const onKey = (e: KeyboardEvent) => {
-      if (!matchesChord(e, chord)) return;
-      e.preventDefault();
-      e.stopPropagation();
-      toggleFold();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [toggleFold]);
   const openArchive = (open: boolean) => {
     setArchiveOpen(open);
     send({ type: "archive", open });
@@ -475,6 +463,19 @@ export function App() {
     if (focused) recent.current = [...recent.current.filter((id) => id !== focused), focused];
   }, [focused]);
   const revealed = useRef(0);
+  // The window's keys, taken before a terminal hears them, so they never reach the shell; what they do is read from the latest render.
+  const onWindowKey = useRef<(key: WindowKey) => void>(() => undefined);
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      const key = windowKey(e);
+      if (!key) return;
+      e.preventDefault();
+      e.stopPropagation();
+      onWindowKey.current(key);
+    };
+    window.addEventListener("keydown", down, true);
+    return () => window.removeEventListener("keydown", down, true);
+  }, []);
   const change = useCallback((next: Layout) => {
     current.current = next;
     setLayout(next);
@@ -600,9 +601,19 @@ export function App() {
         )}
         <ContextMenuActionItem icon={null} name={say("newTerminal")} disabled={!canOpen || !!node.locked} onSelect={() => openTerminal(layout, node.id, state.places[0]!.cwd)} />
         <ContextMenuActionItem icon={null} name={say("detach")} disabled={!node.sessionId || !!node.locked} onSelect={() => change(show(layout, node.id, null))} />
-        <ContextMenuActionItem icon={null} name={say("splitRight")} onSelect={() => change(split(layout, node.id, "row").layout)} />
-        <ContextMenuActionItem icon={null} name={say("splitDown")} onSelect={() => change(split(layout, node.id, "column").layout)} />
-        <ContextMenuActionItem icon={null} name={cells.length === 1 ? say("clearCell") : say("closeCell")} onSelect={() => change(close(layout, node.id))} />
+        <ContextMenuActionItem icon={null} name={say("splitRight")} hint={keyLabel("splitRight")} onSelect={() => change(split(layout, node.id, "row").layout)} />
+        <ContextMenuActionItem icon={null} name={say("splitDown")} hint={keyLabel("splitDown")} onSelect={() => change(split(layout, node.id, "column").layout)} />
+        <ContextMenuActionItem icon={null} name={cells.length === 1 ? say("clearCell") : say("closeCell")} hint={cells.length === 1 ? undefined : keyLabel("close")} onSelect={() => change(close(layout, node.id))} />
+        {cells.length > 1 && (
+          <ContextMenuSub icon={null} name={say("goToPane")}>
+            {(["left", "right", "up", "down"] as const).map((d) => {
+              const to = neighbour(layout, node.id, d);
+              return <ContextMenuActionItem key={d} icon={null} name={say(`pane${d[0]!.toUpperCase()}${d.slice(1)}`)} hint={keyLabel(d)} disabled={!to} onSelect={() => to && select(to)} />;
+            })}
+            <ContextMenuActionItem icon={null} name={say("panePrevious")} hint={keyLabel("previous")} onSelect={() => select(cycle(layout, node.id, -1))} />
+            <ContextMenuActionItem icon={null} name={say("paneNext")} hint={keyLabel("next")} onSelect={() => select(cycle(layout, node.id, 1))} />
+          </ContextMenuSub>
+        )}
       </>
     );
   };
@@ -614,6 +625,33 @@ export function App() {
     change(show(base, cell, terminalId));
     setFocused(cell);
     send({ type: "newTerminal", terminalId, cwd });
+  };
+  // Selected by key: the keyboard goes along, to the cell's terminal, or nowhere for a cell without one.
+  const select = (cell: string) => {
+    setFocused(cell);
+    requestAnimationFrame(() => {
+      const box = document.querySelector<HTMLTextAreaElement>(`.cs-cell[data-cell="${cell}"] .xterm-helper-textarea`);
+      if (box) box.focus();
+      else (document.activeElement as HTMLElement | null)?.blur();
+    });
+  };
+  const splitCell = (cell: string, direction: "row" | "column") => {
+    const next = split(layout, cell, direction);
+    change(next.layout);
+    return next.created;
+  };
+  onWindowKey.current = (key) => {
+    if (key === "fold") return toggleFold();
+    if (key === "splitRight" || key === "splitDown") return select(splitCell(target.id, key === "splitRight" ? "row" : "column"));
+    if (key === "close") {
+      if (cells.length === 1) return window.close();
+      const to = heir(layout, target.id);
+      change(close(layout, target.id));
+      return to && select(to);
+    }
+    if (key === "previous" || key === "next") return select(cycle(layout, target.id, key === "next" ? 1 : -1));
+    const to = neighbour(layout, target.id, key);
+    if (to) select(to);
   };
   // From the list's button: the first empty cell, or a new one beside the focused cell.
   const newTerminal = () => {
@@ -641,11 +679,7 @@ export function App() {
         only={cells.length === 1}
         onFocus={() => setFocused(node.id)}
         onLock={() => change(lock(layout, node.id, !node.locked))}
-        onSplit={(direction) => {
-          const next = split(layout, node.id, direction);
-          change(next.layout);
-          setFocused(next.created);
-        }}
+        onSplit={(direction) => setFocused(splitCell(node.id, direction))}
         onClose={() => change(close(layout, node.id))}
         menu={cellMenu(node)}
         look={shown}
@@ -654,7 +688,7 @@ export function App() {
     );
 
   const needsYou = state.sessions.filter((s) => s.needsYou).length;
-  const foldLabel = `${say(folded ? "unfold" : "fold")} (${formatChord(foldChord(isMac))})`;
+  const foldLabel = `${say(folded ? "unfold" : "fold")} (${keyLabel("fold")})`;
 
   return (
     <div className="cs-window">
