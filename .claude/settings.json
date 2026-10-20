@@ -10,7 +10,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl -s -m 2 -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+            "command": "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; set tomrade \"$(curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\" 2>&1)\"; exit 0"
           }
         ]
       }
@@ -20,7 +20,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl -s -m 2 -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+            "command": "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; set tomrade \"$(curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\" 2>&1)\"; exit 0"
           }
         ]
       }
@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl -s -m 2 -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+            "command": "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; set tomrade \"$(curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\" 2>&1)\"; exit 0"
           }
         ]
       }
@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl -s -m 2 -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+            "command": "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; set tomrade \"$(curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\" 2>&1)\"; exit 0"
           }
         ]
       }
@@ -50,7 +50,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl -s -m 2 -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+            "command": "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; set tomrade \"$(curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\" 2>&1)\"; exit 0"
           }
         ]
       }
@@ -60,7 +60,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl -s -m 2 -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+            "command": "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; set tomrade \"$(curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\" 2>&1)\"; exit 0"
           }
         ]
       }
@@ -70,7 +70,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl -s -m 2 -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+            "command": "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; set tomrade \"$(curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\" 2>&1)\"; exit 0"
           }
         ]
       }
@@ -80,7 +80,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl -s -m 2 -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+            "command": "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; set tomrade \"$(curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\" 2>&1)\"; exit 0"
           }
         ]
       }
@@ -90,7 +90,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl -s -m 2 -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+            "command": "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; set tomrade \"$(curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\" 2>&1)\"; exit 0"
           }
         ]
       }
@@ -100,7 +100,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl -s -m 2 -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+            "command": "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; set tomrade \"$(curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\" 2>&1)\"; exit 0"
           }
         ]
       }
@@ -110,7 +110,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl -s -m 2 -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:19090/sessions/event' >/dev/null 2>&1 || true"
+            "command": "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; set tomrade \"$(curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\" 2>&1)\"; exit 0"
           }
         ]
       }
