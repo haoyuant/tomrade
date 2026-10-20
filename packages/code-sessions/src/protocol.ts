@@ -60,7 +60,8 @@ export interface LayoutPreset {
 }
 
 /** A cell of the window's layout: one session or terminal (by its id), or a split of two. */
-export type Layout = { type: "leaf"; id: string; sessionId: string | null } | { type: "split"; id: string; direction: "row" | "column"; ratio: number; a: Layout; b: Layout };
+/** A leaf `locked` keeps its session until the person unlocks or closes it. */
+export type Layout = { type: "leaf"; id: string; sessionId: string | null; locked?: true } | { type: "split"; id: string; direction: "row" | "column"; ratio: number; a: Layout; b: Layout };
 
 /**
  * What the window shows, set as its whole state. `sessions` holds the live ones and the ended ones a cell still

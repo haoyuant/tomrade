@@ -91,4 +91,8 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-term-drop { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; outline: 2px dashed var(--accent); outline-offset: -4px; background: color-mix(in oklch, var(--accent) 8%, transparent); color: var(--fg); font-size: var(--text-sm); }
 .cs-term-closed { position: absolute; inset: auto 0 0 0; display: flex; gap: 8px; align-items: center; justify-content: center; padding: 6px; background: var(--surface-warm); border-top: 1px solid var(--border-soft); font-size: var(--text-xs); }
 
-.cs-toast { position: fixed; right: 16px; bottom: 16px; max-width: 420px; padding: 10px 14px; border-radius: 8px; background: var(--fg); color: var(--bg); font-size: var(--text-sm); white-space: pre-wrap; box-shadow: 0 6px 24px rgb(0 0 0 / 0.18); cursor: pointer; }
+.cs-toast { position: fixed; right: 16px; bottom: 16px; max-width: 420px; padding: 10px 14px; border-radius: 8px; background: var(--fg); color: var(--bg); font-size: var(--text-sm); white-space: pre-wrap; box-shadow: 0 6px 24px rgb(0 0 0 / 0.18); cursor: pointer; display: flex; gap: 12px; align-items: baseline; }
+.cs-toast-action { flex: none; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }
+/* A locked pane: its lock stays lit in the bar. */
+.cs-lock { display: inline-flex; align-items: center; justify-content: center; }
+.cs-lock[aria-pressed="true"] { color: var(--accent); }

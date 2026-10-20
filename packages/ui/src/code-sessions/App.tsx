@@ -5,7 +5,7 @@ import { interpolate, message } from "~/lib/dicts";
 import { formatChord, matchesChord } from "~/lib/keybindings";
 import { isMac } from "~/lib/keys";
 import { onLook, onState, onToast, send, type Look } from "./bridge";
-import { applyPreset, close, leaves, place, prune, resize, reveal, show, split } from "./layout";
+import { applyPreset, close, landing, leaves, lock, place, prune, resize, reveal, show, split } from "./layout";
 import { foldChord, sessionGroups } from "./lists";
 import { TerminalCell } from "./TerminalCell";
 
@@ -22,6 +22,22 @@ const placeableIds = (state: WindowState): string[] => {
 const live = (s: SessionRow) => s.state !== "ended" && s.state !== "lost";
 
 type Leaf = Extract<Layout, { type: "leaf" }>;
+
+/** ⌘-click (Ctrl-click off a Mac) opens a row in a new pane instead of the selected one. */
+const besideClick = (e: React.MouseEvent) => (isMac ? e.metaKey : e.ctrlKey);
+const MOD = isMac ? "⌘" : "Ctrl";
+
+type Toast = { text: string; action?: { label: string; run: () => void } };
+
+/** The app's lock glyph; open, the shackle lifts off one side. */
+const LockGlyph = ({ locked }: { locked: boolean }) => (
+  <svg width="13" height="13" viewBox="0 0 14 14" aria-hidden="true">
+    <g fill="none" stroke="currentColor" strokeWidth="1.15">
+      <rect x="3.3" y="6.2" width="7.4" height="5.4" rx="1.2" />
+      <path d={locked ? "M5.1 6.2V4.7a1.9 1.9 0 0 1 3.8 0v1.5" : "M5.1 6.2V4.7a1.9 1.9 0 0 1 3.7-.6"} />
+    </g>
+  </svg>
+);
 
 /** The selected cell, where a pick from the list goes: the one clicked last, else the first empty one, else the first. */
 const selectedCell = (cells: Leaf[], focused: string | null): Leaf => cells.find((c) => c.id === focused) ?? cells.find((c) => !c.sessionId) ?? cells[0]!;
@@ -82,13 +98,13 @@ function Banner({ state, say }: { state: WindowState; say: Say }) {
   );
 }
 
-function SessionList({ sessions, active, selected, onPick, say }: { sessions: SessionRow[]; active: Set<string>; selected: Set<string>; onPick: (s: SessionRow) => void; say: Say }) {
+function SessionList({ sessions, active, selected, onPick, say }: { sessions: SessionRow[]; active: Set<string>; selected: Set<string>; onPick: (s: SessionRow, beside: boolean) => void; say: Say }) {
   if (!sessions.length) return <p className="cs-empty">{say("none")}</p>;
   return (
     <ul className="cs-list">
       {sessions.map((s) => (
         <li key={s.id}>
-          <button type="button" className="side-row cs-row" aria-current={selected.has(s.id) ? "true" : undefined} data-active={active.has(s.id) || undefined} data-needs={s.needsYou || undefined} data-ended={!live(s) || undefined} onClick={() => onPick(s)}>
+          <button type="button" className="side-row cs-row" title={say("pickHint", { mod: MOD })} aria-current={selected.has(s.id) ? "true" : undefined} data-active={active.has(s.id) || undefined} data-needs={s.needsYou || undefined} data-ended={!live(s) || undefined} onClick={(e) => onPick(s, besideClick(e))}>
             <span className="cs-row-head">
               <span className="mono">{s.key ?? s.branch}</span>
               <span className="tag cs-chip" data-state={s.needsYou ? "needs" : s.state}>
@@ -157,7 +173,7 @@ function ArchiveList({ rows, locale, active, selected, onPick, say }: { rows: Se
   );
 }
 
-function TerminalList({ terminals, active, selected, onPick, say }: { terminals: TerminalRow[]; active: Set<string>; selected: Set<string>; onPick: (t: TerminalRow) => void; say: Say }) {
+function TerminalList({ terminals, active, selected, onPick, say }: { terminals: TerminalRow[]; active: Set<string>; selected: Set<string>; onPick: (t: TerminalRow, beside: boolean) => void; say: Say }) {
   // One that became a code session is listed as that session.
   const plain = terminals.filter((t) => !t.sessionId);
   if (!plain.length) return null;
@@ -165,7 +181,7 @@ function TerminalList({ terminals, active, selected, onPick, say }: { terminals:
     <ul className="cs-list">
       {plain.map((t) => (
         <li key={t.id}>
-          <button type="button" className="side-row cs-row" data-terminal={t.id} aria-current={selected.has(t.id) ? "true" : undefined} data-active={active.has(t.id) || undefined} onClick={() => onPick(t)}>
+          <button type="button" className="side-row cs-row" data-terminal={t.id} title={say("pickHint", { mod: MOD })} aria-current={selected.has(t.id) ? "true" : undefined} data-active={active.has(t.id) || undefined} onClick={(e) => onPick(t, besideClick(e))}>
             <span className="cs-row-head">
               <span className="mono">{t.title}</span>
               {!t.pane && <span className="tag faint cs-chip">{say("starting")}</span>}
@@ -301,7 +317,7 @@ function NotHere({ session, picker, say }: { session: SessionRow; picker: ReactN
   );
 }
 
-function Cell({ leaf, session, terminal, places, ready, onNewTerminal, focused, only, onFocus, onSplit, onClose, menu, look, say }: { leaf: Extract<Layout, { type: "leaf" }>; session: SessionRow | undefined; terminal: TerminalRow | undefined; places: TerminalPlace[]; ready: boolean; onNewTerminal: (cwd: string) => void; focused: boolean; only: boolean; onFocus: () => void; onSplit: (d: "row" | "column") => void; onClose: () => void; menu: ReactNode; look: Look; say: Say }) {
+function Cell({ leaf, session, terminal, places, ready, onNewTerminal, focused, selected, only, onFocus, onSplit, onClose, onLock, menu, look, say }: { leaf: Extract<Layout, { type: "leaf" }>; session: SessionRow | undefined; terminal: TerminalRow | undefined; places: TerminalPlace[]; ready: boolean; onNewTerminal: (cwd: string) => void; focused: boolean; selected: boolean; only: boolean; onFocus: () => void; onSplit: (d: "row" | "column") => void; onClose: () => void; onLock: () => void; menu: ReactNode; look: Look; say: Say }) {
   // Right-click on the bar, or on a cell with no terminal: inside a terminal it is the program's own.
   const withMenu = (node: ReactElement) => (
     <ContextMenu label={say("cellMenu")} trigger={node}>
@@ -311,7 +327,7 @@ function Cell({ leaf, session, terminal, places, ready, onNewTerminal, focused, 
   const act = (type: "continue" | "openWorktree" | "openPr" | "focusHerdr" | "openThread") => session && send({ type, sessionId: session.id });
   const labels = useMemo(() => ({ detached: (reason: string | null) => (reason ? say("detached", { reason }) : say("detachedPlain")), reattach: say("reattach"), drop: say("dropFiles") }), [say]);
   return (
-    <div className="cs-cell" data-focused={focused || undefined} data-cell-terminal={terminal?.id} onMouseDownCapture={onFocus}>
+    <div className="cs-cell" data-focused={focused || undefined} data-locked={leaf.locked || undefined} data-cell-terminal={terminal?.id} onMouseDownCapture={onFocus} onFocusCapture={onFocus}>
       {withMenu(<div className="cs-cell-bar">
         <span className="cs-cell-name">{session ? `${session.key ?? ""} ${session.title ?? session.branch}`.trim() : terminal ? `${terminal.agentTitle ?? terminal.title} · ${terminal.cwd}` : say("pick")}</span>
         {terminal?.note && !session && <span className="cs-cell-note" title={terminal.note}>{terminal.note}</span>}
@@ -335,13 +351,18 @@ function Cell({ leaf, session, terminal, places, ready, onNewTerminal, focused, 
           </span>
         )}
         <span className="cs-cell-tools">
+          {leaf.sessionId && (
+            <button type="button" className="icon-btn cs-lock" data-testid="cs-lock" aria-pressed={!!leaf.locked} title={leaf.locked ? `${say("unlockCell")} · ${say("lockedHint")}` : say("lockCell")} aria-label={leaf.locked ? say("unlockCell") : say("lockCell")} onClick={onLock}>
+              <LockGlyph locked={!!leaf.locked} />
+            </button>
+          )}
           <button type="button" className="icon-btn" title={say("splitRight")} aria-label={say("splitRight")} onClick={() => onSplit("row")}>⇥</button>
           <button type="button" className="icon-btn" title={say("splitDown")} aria-label={say("splitDown")} onClick={() => onSplit("column")}>⤓</button>
           <button type="button" className="icon-btn" title={only ? say("clearCell") : say("closeCell")} aria-label={only ? say("clearCell") : say("closeCell")} onClick={onClose}>×</button>
         </span>
       </div>)}
       {session?.pane || terminal?.pane ? (
-        <TerminalCell cell={leaf.id} sessionId={leaf.sessionId!} tokens={look.tokens} font={look.tokens["--font-mono"] ?? ""} labels={labels} />
+        <TerminalCell cell={leaf.id} sessionId={leaf.sessionId!} tokens={look.tokens} font={look.tokens["--font-mono"] ?? ""} labels={labels} autoFocus={selected} />
       ) : terminal ? (
         withMenu(<div className="cs-cell-empty">{say("starting")}</div>)
       ) : session ? (
@@ -391,7 +412,7 @@ export function App() {
   const [look, setLook] = useState<Look | null>(null);
   const [layout, setLayout] = useState<Layout | null>(null);
   const [focused, setFocused] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<Toast | null>(null);
   const [outsideOpen, setOutsideOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   // The window's own say once it has spoken; until then, the fold the project's window was left with.
@@ -420,7 +441,7 @@ export function App() {
 
   useEffect(() => onState((next) => setState(next)), []);
   useEffect(() => onLook(setLook), []);
-  useEffect(() => onToast((text) => setToast(text)), []);
+  useEffect(() => onToast((text) => setToast({ text })), []);
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), 6000);
@@ -448,6 +469,11 @@ export function App() {
   const seen = useRef<Set<string> | null>(null);
   const focusedNow = useRef(focused);
   focusedNow.current = focused;
+  // Cells in the order they were selected, the last selected last: a pick that must not go to the selected cell goes to the least recent.
+  const recent = useRef<string[]>([]);
+  useEffect(() => {
+    if (focused) recent.current = [...recent.current.filter((id) => id !== focused), focused];
+  }, [focused]);
   const revealed = useRef(0);
   const change = useCallback((next: Layout) => {
     current.current = next;
@@ -508,20 +534,44 @@ export function App() {
   const outside = state.bridge.state === "unsupported";
   const canOpen = ready || outside;
 
-  const pick = (s: SessionRow) => {
+  const nameOf = (id: string) => {
+    const s = sessionIn(id);
+    if (s) return s.key ?? s.branch;
+    const t = terminalsById.get(id);
+    return t ? (t.agentTitle ?? t.title) : id;
+  };
+  // Shown where `landing` says: never a second controller on the same pane, never over a locked cell or one that needs
+  // you. Whatever left a pane is said, with a way back.
+  const land = (id: string, beside: boolean) => {
+    const at = landing(layout, id, { selected: target.id, beside, recent: recent.current, needsYou: (shown) => !!sessionIn(shown)?.needsYou, shows: (shown) => terminalsById.get(shown)?.sessionId ?? shown });
+    if (at.layout !== layout) change(at.layout);
+    setFocused(at.cell);
+    const left = at.replaced;
+    if (!left) return;
+    setToast({
+      text: say("leftPane", { name: nameOf(left) }),
+      action: {
+        label: say("undo"),
+        run: () => {
+          const now = current.current;
+          if (!now || !leaves(now).some((l) => l.id === at.cell)) return;
+          change(show(now, at.cell, left));
+          setFocused(at.cell);
+        }
+      }
+    });
+  };
+  const pick = (s: SessionRow, beside = false) => {
     if (s.mode === "run" && !s.pane) return send({ type: "openThread", sessionId: s.id });
-    // Already in a terminal's cell: that cell, never a second controller on the same pane.
-    const holding = cells.find((c) => c.sessionId && terminalsById.get(c.sessionId)?.sessionId === s.id);
-    if (holding) return setFocused(holding.id);
-    change(show(layout, target.id, s.id));
-    setFocused(target.id);
+    land(s.id, beside);
   };
   // The cell menu's "connect": one session or terminal into that cell.
   const connect = (cell: string, id: string) => {
     const s = byId.get(id);
     if (s?.mode === "run" && !s.pane) return send({ type: "openThread", sessionId: s.id });
-    const holding = cells.find((c) => c.sessionId && terminalsById.get(c.sessionId)?.sessionId === id);
-    if (holding) return setFocused(holding.id);
+    const holding = cells.find((c) => c.sessionId && (c.sessionId === id || terminalsById.get(c.sessionId)?.sessionId === id));
+    // Shown in a locked cell, it stays there.
+    if (holding && (holding.locked || terminalsById.get(holding.sessionId!)?.sessionId === id)) return setFocused(holding.id);
     change(show(layout, cell, id));
     setFocused(cell);
   };
@@ -530,31 +580,33 @@ export function App() {
     const choices = [...state.sessions.filter(live), ...terminals];
     return (
       <>
-        <ContextMenuSub icon={null} name={say("connect")}>
-          {choices.length ? (
-            choices.map((c) =>
-              "branch" in c ? (
-                <ContextMenuActionItem key={c.id} icon={c.needsYou ? "●" : null} name={`${c.key ?? c.branch}${c.title ? ` ${c.title}` : ""}`} onSelect={() => connect(node.id, c.id)} />
-              ) : (
-                <ContextMenuActionItem key={c.id} icon={null} name={`${say("terminal")} · ${c.title}`} onSelect={() => connect(node.id, c.id)} />
+        <ContextMenuActionItem icon={null} name={node.locked ? say("unlockCell") : say("lockCell")} disabled={!node.sessionId} onSelect={() => change(lock(layout, node.id, !node.locked))} />
+        {node.locked ? (
+          <ContextMenuActionItem icon={null} name={say("connect")} disabled onSelect={() => undefined} />
+        ) : (
+          <ContextMenuSub icon={null} name={say("connect")}>
+            {choices.length ? (
+              choices.map((c) =>
+                "branch" in c ? (
+                  <ContextMenuActionItem key={c.id} icon={c.needsYou ? "●" : null} name={`${c.key ?? c.branch}${c.title ? ` ${c.title}` : ""}`} onSelect={() => connect(node.id, c.id)} />
+                ) : (
+                  <ContextMenuActionItem key={c.id} icon={null} name={`${say("terminal")} · ${c.title}`} onSelect={() => connect(node.id, c.id)} />
+                )
               )
-            )
-          ) : (
-            <ContextMenuActionItem icon={null} name={say("nothingToConnect")} disabled onSelect={() => undefined} />
-          )}
-        </ContextMenuSub>
-        <ContextMenuActionItem icon={null} name={say("newTerminal")} disabled={!canOpen} onSelect={() => openTerminal(layout, node.id, state.places[0]!.cwd)} />
-        <ContextMenuActionItem icon={null} name={say("detach")} disabled={!node.sessionId} onSelect={() => change(show(layout, node.id, null))} />
+            ) : (
+              <ContextMenuActionItem icon={null} name={say("nothingToConnect")} disabled onSelect={() => undefined} />
+            )}
+          </ContextMenuSub>
+        )}
+        <ContextMenuActionItem icon={null} name={say("newTerminal")} disabled={!canOpen || !!node.locked} onSelect={() => openTerminal(layout, node.id, state.places[0]!.cwd)} />
+        <ContextMenuActionItem icon={null} name={say("detach")} disabled={!node.sessionId || !!node.locked} onSelect={() => change(show(layout, node.id, null))} />
         <ContextMenuActionItem icon={null} name={say("splitRight")} onSelect={() => change(split(layout, node.id, "row").layout)} />
         <ContextMenuActionItem icon={null} name={say("splitDown")} onSelect={() => change(split(layout, node.id, "column").layout)} />
         <ContextMenuActionItem icon={null} name={cells.length === 1 ? say("clearCell") : say("closeCell")} onSelect={() => change(close(layout, node.id))} />
       </>
     );
   };
-  const pickTerminal = (t: TerminalRow) => {
-    change(show(layout, target.id, t.id));
-    setFocused(target.id);
-  };
+  const pickTerminal = (t: TerminalRow, beside = false) => land(t.id, beside);
   const openTerminal = (base: Layout, cell: string, cwd: string) => {
     if (outside) return send({ type: "openOutside", cwd });
     const terminalId = crypto.randomUUID();
@@ -585,8 +637,10 @@ export function App() {
         ready={canOpen}
         onNewTerminal={(cwd) => openTerminal(layout, node.id, cwd)}
         focused={node.id === target.id && cells.length > 1}
+        selected={node.id === target.id}
         only={cells.length === 1}
         onFocus={() => setFocused(node.id)}
+        onLock={() => change(lock(layout, node.id, !node.locked))}
         onSplit={(direction) => {
           const next = split(layout, node.id, direction);
           change(next.layout);
@@ -675,8 +729,13 @@ export function App() {
         <div className="cs-layout">{render(layout)}</div>
       </main>
       {toast && (
-        <div className="cs-toast" role="status" onClick={() => setToast(null)}>
-          {toast}
+        <div className="cs-toast" role="status" data-testid="cs-toast" onClick={() => setToast(null)}>
+          {toast.text}
+          {toast.action && (
+            <button type="button" className="cs-toast-action" data-testid="cs-toast-action" onClick={toast.action.run}>
+              {toast.action.label}
+            </button>
+          )}
         </div>
       )}
     </div>
