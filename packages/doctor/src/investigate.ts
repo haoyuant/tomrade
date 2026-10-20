@@ -153,7 +153,8 @@ export function investigationMessages(messages: ThreadMessage[], startSeq: numbe
 export function scopedTools(io: TurnIO): TurnIO["tools"] {
   return {
     describe: () => io.tools.describe().filter((t) => INVESTIGATION_TOOLS.has(t.name)),
-    execute: (name, args) => (INVESTIGATION_TOOLS.has(name) ? io.tools.execute(name, args) : Promise.reject(new Error(`${name} is not available while troubleshooting — read, look up, ask and conclude only`)))
+    execute: (name, args) => (INVESTIGATION_TOOLS.has(name) ? io.tools.execute(name, args) : Promise.reject(new Error(`${name} is not available while troubleshooting — read, look up, ask and conclude only`))),
+    only: true
   };
 }
 

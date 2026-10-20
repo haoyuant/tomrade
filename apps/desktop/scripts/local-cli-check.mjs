@@ -17,11 +17,14 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { boot } from "../dist/boot.js";
+import { ensureBundledPi } from "./bundled-pi.mjs";
 import { quietStarters } from "./official-agents.mjs";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-local-cli-"));
 app.setPath("userData", work);
+// What Tomrade runs on with no model and nothing signed in comes from the app itself.
+ensureBundledPi();
 quietStarters(work);
 const shots = path.join(dir, "shots");
 fs.mkdirSync(shots, { recursive: true });
@@ -45,7 +48,8 @@ const run = async () => {
   const { ctx } = await boot({
     configFile: path.join(dir, "../tomrade.yml"),
     vars: { userData: work, locale: "en-US" },
-    patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }]]
+    // The person's own Pi CLI, signed in on a machine that has one, would make the "nothing ready" steps untrue.
+    patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, { id: "engine-pi", disabled: true }]]
   });
   ctx.hub.configure(path.join(work, "hub"));
   await ctx.storage.ready;
@@ -248,7 +252,8 @@ const run = async () => {
   await openEnginePicker();
   check("the picker offers it now, with no hint", await wait(async () => (await $(`${engineRow("Claude Code")}?.classList.contains('is-unready')`)) === false, "claude choosable") && (await rowPart("Claude Code", ".m-sub")) === null);
   await escape();
-  check("and the assistant already conducts with it, the one engine that can", await wait(async () => (await text('.ai-knobs .chip-btn[title="Who conducts this thread"]'))?.startsWith("Claude Code"), "claude chip"), await text('.ai-knobs .chip-btn[title="Who conducts this thread"]'));
+  // Tomrade is the one in-app choice: with no model, it holds the conversation on the signed-in Claude Code (its fallback).
+  check("and the assistant already conducts, Tomrade on the signed-in Claude Code", await wait(async () => (await text('.ai-knobs .chip-btn[title="Who conducts this thread"]'))?.startsWith("Tomrade") && !!(await ctx.agent.engineViews(true)).find((e) => e.id === "tomrade")?.ok, "tomrade chip"), await text('.ai-knobs .chip-btn[title="Who conducts this thread"]'));
 
   // ── a model alone is enough too: it also runs the built-in agent ──────
   fs.writeFileSync(claude, `#!/bin/sh\ncase "$1" in\n  --version) echo "claude 9.9.9";;\n  *) echo '{"loggedIn": false}';;\nesac\n`, { mode: 0o755 });

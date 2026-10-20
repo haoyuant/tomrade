@@ -144,7 +144,8 @@ const run = async () => {
   const done = await waitFor(`!!document.querySelector('.finding')`, 30_000);
   check("the checks finish with a finding", done);
   const rows = await $(`[...document.querySelectorAll('.checklist .check-row')].map((r) => [r.querySelector('.check-title').textContent, r.className.match(/is-(\\w+)/)[1]])`);
-  check("Tomrade, the agent, the tools and a test turn were checked", JSON.stringify(rows.map((r) => r[1])) === JSON.stringify(["ok", "ok", "ok", "fail"]), rows);
+  const states = Object.fromEntries(rows);
+  check("Tomrade, the agent, the tools and a test turn were checked", states["Tomrade"] === "ok" && states["Refusing"] === "ok" && states["Tomrade's tools for local agents"] === "ok" && states["A test turn with Refusing"] === "fail", rows);
   check("the test turn really ran, in a thread nobody sees and that is gone", turns === 2 && !ctx.agent.store.threads(project.id, null).some((t) => t.surface === "probe"), { turns });
   const finding = await $(`(() => { const f = document.querySelector('.finding'); return { head: f.querySelector('.finding-head span').textContent, buttons: [...document.querySelectorAll('.finding button')].map((b) => b.textContent.trim()) }; })()`);
   check("the known issue is named", finding.head === "Refusing is the internal edition", finding);

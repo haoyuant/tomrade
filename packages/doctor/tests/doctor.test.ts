@@ -191,14 +191,14 @@ describe("the troubleshooter", () => {
 describe("an agent looking into it", () => {
   it("is another ready agent, briefed with the evidence, held to the troubleshooting tools, and its conclusion becomes a card", async () => {
     const { ctx, project } = await boot();
-    const seen: { text: string; tools: string[]; resume?: string; refused?: string; sources?: unknown }[] = [];
+    const seen: { text: string; tools: string[]; only?: boolean; resume?: string; refused?: string; sources?: unknown }[] = [];
     ctx.agent.engine({
       id: "helper",
       title: "Helper",
       author: "ai:helper",
       available: async () => ({ ok: true }),
       async turn(input, io) {
-        const entry: (typeof seen)[number] = { text: input.input.kind === "text" ? input.input.text : "", tools: io.tools.describe().map((t) => t.name), resume: io.resume };
+        const entry: (typeof seen)[number] = { text: input.input.kind === "text" ? input.input.text : "", tools: io.tools.describe().map((t) => t.name), only: io.tools.only, resume: io.resume };
         seen.push(entry);
         entry.sources = await io.tools.execute("doctor_read_log", {});
         await io.tools.execute("list_items", {}).catch((error: Error) => { entry.refused = error.message; });
@@ -227,6 +227,8 @@ describe("an agent looking into it", () => {
     expect(seen[0]!.text).not.toContain(os.homedir());
     expect(seen[0]!.tools.every((name) => ["doctor_read_log", "doctor_check_again", "doctor_conclude", "ask_user", "web_search", "web_fetch"].includes(name))).toBe(true);
     expect(seen[0]!.tools).toContain("doctor_conclude");
+    // No tool of the engine's own either (the loop's make_media).
+    expect(seen[0]!.only).toBe(true);
     expect(seen[0]!.refused).toMatch(/not available while troubleshooting/);
     expect(seen[0]!.sources).toEqual({ sources: expect.arrayContaining(["acme/acme.log"]) });
 

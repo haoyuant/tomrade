@@ -16,11 +16,14 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { boot } from "../dist/boot.js";
+import { ensureBundledPi } from "./bundled-pi.mjs";
 import { quietStarters } from "./official-agents.mjs";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-setup-"));
 app.setPath("userData", work);
+// What Tomrade runs on with no model and nothing signed in comes from the app itself.
+ensureBundledPi();
 quietStarters(work);
 const shots = path.join(dir, "shots");
 fs.mkdirSync(shots, { recursive: true });
