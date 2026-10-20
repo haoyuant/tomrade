@@ -120,7 +120,8 @@ export function modelErrorKind(message: string): ModelErrorKind {
   if (/\b429\b|rate.?limit|too many requests/i.test(message)) return "rate";
   if (/\b404\b|model.{0,40}(not found|does not exist|not exist|unknown|invalid)|no such model|unknown model/i.test(message)) return "model";
   if (/\b5\d\d\b|overloaded|bad gateway|service unavailable/i.test(message)) return "server";
-  if (/fetch failed|ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|network|timed? ?out|socket hang up|certificate/i.test(message)) return "network";
+  // "Connection error." is how the OpenAI and Anthropic SDKs — the built-in pi's — say the service was not reached.
+  if (/fetch failed|ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|network|connection error|timed? ?out|socket hang up|certificate/i.test(message)) return "network";
   return "other";
 }
 
