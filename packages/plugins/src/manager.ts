@@ -137,6 +137,12 @@ export class Plugins extends Service {
     return this.config.rows;
   }
 
+  /** Whether a row is switched off, a row the app no longer ships included: the person's switch for it outlives the row. */
+  switchedOff(id: string): boolean {
+    const row = this.config.rows.find((r) => r.id === id);
+    return row ? !!row.disabled : this.config.leftSwitches?.[id] === true;
+  }
+
   snapshot(): PluginsSnapshot {
     const problems = this.config.extensions?.compatibilityProblems ?? [];
     return { modules: this.modules(), contracts: this.config.contracts ?? [], plugins: this.list(), ...(problems.length ? { compatibilityProblems: problems } : {}) };
@@ -247,7 +253,8 @@ export class Plugins extends Service {
     return this.snapshot();
   }
 
-  async installFile(file: string, opts: { source?: "store" | "file"; digest?: string; attestation?: unknown } = {}): Promise<PluginsSnapshot> {
+  /** `disabled`: a first install goes on switched off; an update keeps the switch it had. */
+  async installFile(file: string, opts: { source?: "store" | "file"; digest?: string; attestation?: unknown; disabled?: boolean } = {}): Promise<PluginsSnapshot> {
     const entry = await this.store().installFile(file, { ...opts, vet: (manifest) => this.vetRows(manifest) });
     return this.add({ id: entry.id, name: `ext:${entry.id}`, disabled: entry.disabled });
   }

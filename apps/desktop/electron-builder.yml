@@ -45,6 +45,8 @@ files:
   - package.json
   # The built-in agent's Pi (scripts/fetch-pi.mjs).
   - vendor/**
+  # The official starters, for a machine that cannot reach GitHub (scripts/bundle-official-plugins.mjs).
+  - official-plugins/**
   - "!**/*.map"
   - "!**/*.tsbuildinfo"
 mac:

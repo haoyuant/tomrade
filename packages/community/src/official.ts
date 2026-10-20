@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
-import { parseCatalog, type Attestation, type Catalog, type CatalogPlugin } from "@tomradex/plugin-kit";
+import { LIMITS, PACKAGE_EXT, parseCatalog, unpackPlugin, type Attestation, type Catalog, type CatalogPlugin } from "@tomradex/plugin-kit";
 import { OFFICIAL_PUBLISHER, compareVersions, nameOf, namespaceOf, parseManifest } from "@tomradex/plugin-sdk";
 import type { Manifest } from "@tomradex/plugin-sdk";
-import type { Revocation, VersionRow } from "./rules.js";
+import { latestInstallable, type Revocation, type VersionRow } from "./rules.js";
 
 /** Where Tomrade's own plugins are released: github.com/haoyuant/tomrade-plugins. */
 export const OFFICIAL_CATALOG_URL = "https://github.com/haoyuant/tomrade-plugins/releases/download/catalog/catalog.json";
@@ -12,6 +12,10 @@ const CATALOG_BYTES = 5 * 1024 * 1024;
 const RETRY_MS = 60_000;
 
 export const isOfficialId = (id: string): boolean => id.startsWith(`${OFFICIAL_PUBLISHER}/`);
+
+/** A bundle the app carries: the catalog it was built against, in the cache's shape, beside each package named for its digest. */
+export const BUNDLE_CATALOG = "catalog.json";
+export const bundledPackage = (dir: string, digest: string): string => path.join(dir, `${digest}${PACKAGE_EXT}`);
 
 export interface CatalogState {
   /** When the catalog in use was fetched; null when there is none yet. */
@@ -25,6 +29,8 @@ export interface OfficialCatalogOptions {
   url: string;
   /** Where the last good catalog is kept, so a machine offline still lists what it saw. */
   cacheFile?: string;
+  /** The catalog the app was built against, in the cache's shape: used offline when no newer copy is kept. */
+  bundleFile?: string;
   /** How long a fetched catalog is used before it is fetched again. */
   freshMs: number;
   /** Whether this build believes an attestation for a digest. */
@@ -86,7 +92,8 @@ export class OfficialCatalog {
       this.save(raw);
     } catch (error) {
       this.error = message(error);
-      this.held ??= this.cached();
+      // A cache from before an upgrade may lack what the new build's starters need.
+      this.held ??= [this.copy(this.opts.cacheFile), this.copy(this.opts.bundleFile)].filter((h) => !!h).sort((a, b) => b.fetchedAt - a.fetchedAt)[0] ?? null;
       this.nextFetchAt = Date.now() + RETRY_MS;
     }
   }
@@ -103,10 +110,10 @@ export class OfficialCatalog {
     }
   }
 
-  private cached(): Held | null {
-    if (!this.opts.cacheFile || !fs.existsSync(this.opts.cacheFile)) return null;
+  private copy(file: string | undefined): Held | null {
+    if (!file || !fs.existsSync(file)) return null;
     try {
-      const { fetchedAt, catalog } = JSON.parse(fs.readFileSync(this.opts.cacheFile, "utf8")) as { fetchedAt: number; catalog: unknown };
+      const { fetchedAt, catalog } = JSON.parse(fs.readFileSync(file, "utf8")) as { fetchedAt: number; catalog: unknown };
       return { catalog: parseCatalog(catalog).catalog, fetchedAt: Number(fetchedAt) || 0 };
     } catch {
       return null;
@@ -188,4 +195,49 @@ export class OfficialCatalog {
     const catalog = await this.read();
     return catalog.revoked.filter((r) => isOfficialId(r.id)).map((r) => ({ plugin_id: r.id, versions: r.versions, reason: r.reason }));
   }
+}
+
+/**
+ * What a build carries for a machine that cannot reach the catalog: the catalog as it stands, and the version of
+ * each plugin named that this Tomrade would install, downloaded and checked as an install checks it. Throws when
+ * one cannot be had, so a build never goes out without it.
+ */
+export async function bundleOfficialPlugins(opts: { url: string; ids: string[]; dir: string; verify(raw: unknown, digest: string): Attestation | null }): Promise<{ id: string; version: string; digest: string }[]> {
+  fs.rmSync(opts.dir, { recursive: true, force: true });
+  fs.mkdirSync(opts.dir, { recursive: true });
+  const skipped: string[] = [];
+  const catalog = new OfficialCatalog({ url: opts.url, cacheFile: path.join(opts.dir, BUNDLE_CATALOG), freshMs: 60_000, verify: opts.verify, warn: (text) => skipped.push(text) });
+  const problems: string[] = [];
+  const bundled: { id: string; version: string; digest: string }[] = [];
+  try {
+    const [versions, revocations] = await Promise.all([catalog.versions(opts.ids), catalog.revocations()]);
+    for (const id of opts.ids) {
+      const row = latestInstallable(versions.filter((v) => v.plugin_id === id), revocations);
+      if (!row) {
+        problems.push(`${id}: the catalog has no version this Tomrade can install`);
+        continue;
+      }
+      const file = bundledPackage(opts.dir, row.digest!);
+      try {
+        const res = await fetch(row.package_path!, { signal: AbortSignal.timeout(120_000) });
+        if (!res.ok) throw new Error(`the package could not be downloaded (${res.status})`);
+        const bytes = Buffer.from(await res.arrayBuffer());
+        if (bytes.length > LIMITS.packageBytes) throw new Error("the package is larger than a plugin may be");
+        fs.writeFileSync(file, bytes);
+        const unpacked = await unpackPlugin(file);
+        fs.rmSync(unpacked.dir, { recursive: true, force: true });
+        if (unpacked.digest !== row.digest) throw new Error("the package is not the build the catalog lists");
+        bundled.push({ id, version: row.version, digest: row.digest! });
+      } catch (error) {
+        problems.push(`${id} ${row.version}: ${message(error)}`);
+      }
+    }
+  } catch (error) {
+    problems.push(message(error));
+  }
+  if (problems.length) {
+    fs.rmSync(opts.dir, { recursive: true, force: true });
+    throw new Error([...problems, ...skipped].join("\n"));
+  }
+  return bundled;
 }

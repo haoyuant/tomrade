@@ -260,6 +260,11 @@ model settings change: a provider's own plugin reaches exactly the people who
 use that provider. Such a starter
 that is not installed, and whose latest version contributes web search, is
 offered as an install button on the card that says web search is unavailable.
+A starter written `{ id, replaces: "<row id>" }` takes the place of a row the
+app used to ship. If the person had switched that row off, which their patch
+file still records, the plugin is installed switched off. The app carries every
+starter's package and the catalog it was built against (`officialBundle`;
+docs/releasing.md), so a machine that cannot reach GitHub still gets them.
 
 An official plugin meets the standard `tomrade-plugin check --official` holds
 it to, written up in tomrade-plugins' `STANDARDS.md`: everything the store asks

@@ -86,3 +86,20 @@ describe("a full-mode extension's rows", () => {
     }
   });
 });
+
+describe("the person's switches", () => {
+  it("are still read for a row the app no longer ships, and the patch file is left as it was", async () => {
+    const configFile = write("tomrade.yml", "plugins:\n  - id: kept\n    name: ./kept.js\n");
+    write("kept.js", "export default { apply() {} };");
+    const text = "plugins:\n  - id: kept\n    disabled: true\n  - id: engine-gone\n    disabled: true\n  - id: engine-back\n    disabled: false\n";
+    const patch = write("tomrade.patch.yml", text);
+    const { rows, ctx } = await boot({ configFile, patchFiles: [patch], vars: { userData: dir } });
+    try {
+      expect(rows.map((r) => r.id)).toEqual(["kept"]);
+      expect(["kept", "engine-gone", "engine-back", "never-there"].map((id) => ctx.plugins.switchedOff(id))).toEqual([true, true, false, false]);
+      expect(fs.readFileSync(patch, "utf8")).toBe(text);
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+});

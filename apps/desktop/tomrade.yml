@@ -508,6 +508,12 @@ plugins:
       nodeBinary: "${nodeRuntime}"
       officialCatalog:
         cacheFile: "${userData}/official-catalog.json"
+      # The starters and the catalog they came from, carried in the app
+      # (scripts/bundle-official-plugins.mjs, run by packaging), so a machine
+      # that cannot reach GitHub still gets them. A checkout has none until
+      # that script has run.
+      officialBundle:
+        dir: "${appDir}/official-plugins"
       # Pomodoro and Discord used to ship inside the app; they now come from the
       # official catalog, put on once so nobody who had them loses them.
       starters:
