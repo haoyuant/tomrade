@@ -18,8 +18,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-code-sessions-"));
 const shots = process.env.TOMRADE_CHECK_SHOTS ?? work;
-const HERDR_SESSION = "tomrade-cs-check";
+// Inside a herdr pane HERDR_SOCKET_PATH names the person's server and wins over HERDR_SESSION: drop the pane's variables
+// so this run, everything it spawns and the Tomrade under test reach only the server started here.
+for (const key of ["HERDR_SOCKET_PATH", "HERDR_CLIENT_SOCKET_PATH", "HERDR_PANE_ID", "HERDR_TAB_ID", "HERDR_WORKSPACE_ID", "HERDR_ENV"]) delete process.env[key];
+const HERDR_SESSION = `tomrade-cs-check-${process.pid}`;
 process.env.HERDR_SESSION = HERDR_SESSION;
+const ownSocket = path.join(os.homedir(), ".config/herdr/sessions", HERDR_SESSION, "herdr.sock");
 app.setPath("userData", work);
 app.on("window-all-closed", () => {});
 
@@ -376,7 +380,10 @@ app.whenReady().then(async () => {
   } finally {
     for (const p of others) p.kill();
     try {
-      herdr("server", "stop");
+      // Stop only this run's server: never one that a changed environment points elsewhere.
+      const socket = herdr("status").match(/socket:\s*(\S+)/)?.[1];
+      if (socket === ownSocket) herdr("server", "stop");
+      else console.log(`INFO: left herdr at ${socket ?? "an unknown socket"} running; this run's is ${ownSocket}`);
     } catch {
       // already gone
     }
