@@ -119,6 +119,8 @@ export type WindowMessage =
   | { type: "fold"; folded: boolean }
   | { type: "detach"; cell: string }
   | { type: "input"; cell: string; data: string }
+  /** Files dropped onto a cell's terminal, by their paths on disk: typed into it as a paste. */
+  | { type: "drop"; cell: string; paths: string[] }
   | { type: "resize"; cell: string; cols: number; rows: number }
   | ({ type: "scroll"; cell: string } & TerminalScroll)
   | ({ type: "mouse"; cell: string } & TerminalMouse)

@@ -3,7 +3,6 @@ import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { onCell, pathForFile, send } from "./bridge";
-import { droppedPaste } from "./drop";
 
 /**
  * A CSS colour as xterm takes it (#rrggbb): the page resolves var(), oklch() and color-mix(),
@@ -170,8 +169,8 @@ export function TerminalCell({ cell, sessionId, tokens, font, labels, autoFocus 
     if (!takesFiles(e)) return;
     e.preventDefault();
     setDragging(false);
-    const text = droppedPaste([...e.dataTransfer.files].map(pathForFile));
-    if (text) send({ type: "input", cell, data: text });
+    const paths = [...e.dataTransfer.files].map(pathForFile).filter(Boolean);
+    if (paths.length) send({ type: "drop", cell, paths });
     term.current?.focus();
   };
 

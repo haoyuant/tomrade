@@ -13,6 +13,7 @@ import { MCP_AGENT, WINDOWS_TERMINAL, type CodeLink } from "@tomradex/code-link"
 import type { DesktopSurface } from "@tomradex/desktop-surface";
 import { HerdrError, type HerdrBridge, type TerminalStream } from "@tomradex/herdr";
 import { randomUUID } from "node:crypto";
+import { droppedPaste, readableDrops } from "./drop.js";
 import type { Layout, LayoutPreset, SessionRow, TerminalPlace, TerminalRow, WindowMessage, WindowPost, WindowState } from "./protocol.js";
 import { CODE_SESSIONS_WORDS } from "./words.js";
 
@@ -550,6 +551,12 @@ function apply(ctx: Context, config: Config) {
         return refresh(projectId);
       case "input":
         return win.terminals.get(m.cell)?.input(m.data);
+      case "drop": {
+        // Copies go to the temp folder, which the system clears of what has not been used for a while.
+        const text = droppedPaste(await readableDrops(m.paths, path.join(os.tmpdir(), "tomrade-drops")));
+        if (text) win.terminals.get(m.cell)?.input(text);
+        return;
+      }
       case "resize":
         return win.terminals.get(m.cell)?.resize(m.cols, m.rows);
       case "scroll":
