@@ -29,6 +29,7 @@
     "test:codex-commands": "electron scripts/codex-commands-check.mjs",
     "test:doctor": "electron scripts/doctor-check.mjs",
     "test:inbox": "electron scripts/inbox-check.mjs",
+    "test:settings-sheet": "electron scripts/settings-sheet-check.mjs",
     "test:restore": "electron scripts/restore-check.mjs",
     "test:github-signin": "electron scripts/github-signin-check.mjs",
     "test:terms": "electron scripts/terms-check.mjs",

@@ -20,6 +20,7 @@ export const zhHant: PartialMessages = {
     system: "系統",
     closeTitled: "關閉{{title}}",
     resizeGrip: "拖曳以調整大小 · 按兩下恢復預設",
+    moveSheet: "拖曳以移動 · 按兩下回到中央",
     plainSecret: "這台電腦沒有 Tomrade 可用的系統鑰匙圈，所以它以明文儲存在 Tomrade 的設定檔裡。",
     priorityAria: "優先順序：{{priority}}",
     agentWrite: "最近一次由代理寫入",

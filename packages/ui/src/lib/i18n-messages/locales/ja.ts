@@ -20,6 +20,7 @@ export const ja: PartialMessages = {
     system: "システム",
     closeTitled: "{{title}}を閉じる",
     resizeGrip: "ドラッグでサイズ変更 · ダブルクリックでリセット",
+    moveSheet: "ドラッグで移動 · ダブルクリックで中央に戻す",
     plainSecret: "このコンピューターには Tomrade が使えるシステムキーチェーンがないため、Tomrade の設定ファイルにプレーンテキストで保存されます。",
     priorityAria: "優先度: {{priority}}",
     agentWrite: "最後にエージェントが書き込みました",
