@@ -1633,6 +1633,13 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 .cfg-row.off { background: transparent; border-style: dashed; }
 .cfg-row .cfg-name { flex: 1; min-width: 0; font-family: var(--font-display); font-size: 14px; color: var(--fg); }
 .cfg-row.off .cfg-name { color: var(--meta); }
+/* An IM bot folds like a sidebar module: the chevron sits outside its card, on the left. */
+.im-bot-head { display: flex; align-items: center; gap: var(--space-2); }
+.im-bot-head > .cfg-row { flex: 1; min-width: 0; }
+.im-bot-fold { flex-shrink: 0; width: 22px; height: 22px; color: var(--fg-2); }
+.im-bot-fold:hover:not(:disabled) { color: var(--accent); }
+.im-bot-fold svg { transition: transform var(--motion-fast) var(--ease-standard); }
+.im-bot-body { padding-left: calc(22px + var(--space-2)); }
 .mcp-oneline { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .mcp-detail { margin: var(--space-2) 0 0 var(--space-3); }
 .mcp-detail tr.off td { color: var(--meta); }

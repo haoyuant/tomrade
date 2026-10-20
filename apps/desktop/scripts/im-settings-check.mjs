@@ -139,14 +139,24 @@ const run = async () => {
   // ── the pane's order, and a bot folds ────────────────────────────────
   check("what conversations hear comes before the bots",
     await $(`!!(document.querySelector('[data-testid=im-notify]')?.compareDocumentPosition(document.querySelector('[data-testid=im-bots]')) & Node.DOCUMENT_POSITION_FOLLOWING)`));
+  check("a bot's fold chevron sits outside its card, on the left", await $(`(() => {
+    const fold = document.querySelector('[data-im-connection=team] [data-testid=im-fold]');
+    const card = document.querySelector('[data-im-connection=team] .cfg-row');
+    return !!fold && !!card && !card.contains(fold) && fold.getBoundingClientRect().right <= card.getBoundingClientRect().left;
+  })()`));
   await press(`document.querySelector('[data-im-connection=team] [data-testid=im-fold]')`);
   check("folding a bot hides its pairing and conversations", await waitFor(`document.querySelector('[data-im-connection=team] [data-testid=im-fold]')?.getAttribute('aria-expanded') === 'false'
     && !document.querySelector('[data-im-connection=team] [data-im-route]') && !document.querySelector('[data-im-connection=team] [data-testid=im-people]')`));
+  check("and its card says what is folded away", await waitFor(`document.querySelector('[data-im-connection=team] [data-testid=im-folded-summary]')?.textContent === 'Conversations: 1 · Paired: 1'`),
+    await $(`document.querySelector('[data-im-connection=team] [data-testid=im-folded-summary]')?.textContent`));
   await $(`document.querySelector('[data-testid=im-bots]')?.scrollIntoView({ block: 'start' });true`);
   await sleep(200);
   await shot("im-folded.png");
   await press(`document.querySelector('[data-im-connection=team] [data-testid=im-fold]')`);
   check("and unfolding shows them again", await waitFor(`!!document.querySelector('[data-im-connection=team] [data-im-route]')`));
+  await $(`document.querySelector('[data-testid=im-bots]')?.scrollIntoView({ block: 'start' });true`);
+  await sleep(200);
+  await shot("im-unfolded.png");
 
   // ── what conversations hear ──────────────────────────────────────────
   const imNow = () => ctx.settings.get().im;

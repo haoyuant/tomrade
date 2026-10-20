@@ -398,7 +398,8 @@ function ConnectionCard({ view, adapter, im, pairing, defaultProject, busy, onEd
   const spec = im.connections.find((c) => c.id === view.id);
   const name = view.label ?? view.id;
   const routes = im.routes.filter((r) => r.connectionId === view.id);
-  const names = new Map(im.identities.filter((i) => i.connectionId === view.id && i.name).map((i) => [i.actorId, i.name!]));
+  const paired = im.identities.filter((i) => i.connectionId === view.id);
+  const names = new Map(paired.filter((i) => i.name).map((i) => [i.actorId, i.name!]));
   const fieldLabel = (key: string) => adapter?.setup?.fields.find((f) => f.key === key)?.label ?? key;
   const detail = view.identity ? t("imSettings.signedInAs", { name: view.identity.name ?? view.identity.id })
     : !adapter ? t("imSettings.noAdapter")
@@ -406,32 +407,36 @@ function ConnectionCard({ view, adapter, im, pairing, defaultProject, busy, onEd
     : view.detail ?? "";
   return (
     <div className="stack-3" data-im-connection={view.id} data-state={view.state}>
-      <div className={cn("cfg-row", !spec?.enabled && "off")}>
-        <Icon name="i-send" size={15} style={{ color: view.state === "error" ? "var(--danger)" : view.state === "connected" ? "var(--accent)" : "var(--meta)" }} />
-        <div className="cfg-name">
-          {name}
-          <div className="meta-txt dense">{adapter?.title ?? view.adapterId}</div>
-          <div className="meta-txt dense" style={view.state === "error" ? { color: "var(--danger)" } : undefined}>{detail}</div>
-          {(view.pending + view.uncertain + view.failed) > 0 && <div className="meta-txt dense">{t("imSettings.counts", { pending: view.pending, uncertain: view.uncertain, failed: view.failed })}</div>}
-        </div>
-        <Tag tone={view.state === "connected" ? "strong" : view.state === "unconfigured" ? "faint" : "neutral"}>{t(STATE_KEY[view.state])}</Tag>
-        <button type="button" className="icon-btn" aria-expanded={open} aria-label={t("imSettings.fold", { name })} title={t("imSettings.fold", { name })} disabled={!!pairing} onClick={() => setOpen(!stored)} data-testid="im-fold">
-          <Icon name={open ? "i-chevdown" : "i-chev"} size={14} />
+      <div className="im-bot-head">
+        <button type="button" className="btn btn-icon im-bot-fold" aria-expanded={open} aria-label={t(open ? "imSettings.foldBot" : "imSettings.unfoldBot", { name })}
+          title={t(open ? "imSettings.foldBot" : "imSettings.unfoldBot", { name })} disabled={!!pairing} onClick={() => setOpen(!stored)} data-testid="im-fold">
+          <Icon name="i-chevdown" size={14} style={open ? undefined : { transform: "rotate(-90deg)" }} />
         </button>
-        <button type="button" className="icon-btn" aria-label={t("imSettings.edit")} title={t("imSettings.edit")} disabled={!adapter} onClick={onEdit}>
-          <Icon name="i-pen" size={14} />
-        </button>
-        {confirming ? (
-          <button type="button" className="btn btn-danger" onClick={onRemove} onBlur={() => setConfirming(false)} autoFocus>{t("imSettings.confirmRemove", { name })}</button>
-        ) : (
-          <button type="button" className="icon-btn danger" aria-label={t("imSettings.remove")} title={t("imSettings.remove")} onClick={() => setConfirming(true)}>
-            <Icon name="i-trash" size={14} />
+        <div className={cn("cfg-row", !spec?.enabled && "off")}>
+          <Icon name="i-send" size={15} style={{ color: view.state === "error" ? "var(--danger)" : view.state === "connected" ? "var(--accent)" : "var(--meta)" }} />
+          <div className="cfg-name">
+            {name}
+            <div className="meta-txt dense">{adapter?.title ?? view.adapterId}</div>
+            <div className="meta-txt dense" style={view.state === "error" ? { color: "var(--danger)" } : undefined}>{detail}</div>
+            {(view.pending + view.uncertain + view.failed) > 0 && <div className="meta-txt dense">{t("imSettings.counts", { pending: view.pending, uncertain: view.uncertain, failed: view.failed })}</div>}
+            {!open && <div className="meta-txt dense" data-testid="im-folded-summary">{t("imSettings.foldedSummary", { routes: routes.length, people: paired.length })}</div>}
+          </div>
+          <Tag tone={view.state === "connected" ? "strong" : view.state === "unconfigured" ? "faint" : "neutral"}>{t(STATE_KEY[view.state])}</Tag>
+          <button type="button" className="icon-btn" aria-label={t("imSettings.edit")} title={t("imSettings.edit")} disabled={!adapter} onClick={onEdit}>
+            <Icon name="i-pen" size={14} />
           </button>
-        )}
-        <button type="button" className="switch" role="switch" aria-checked={!!spec?.enabled} aria-label={t("imSettings.enableAria", { name })} disabled={busy} onClick={onToggle} />
+          {confirming ? (
+            <button type="button" className="btn btn-danger" onClick={onRemove} onBlur={() => setConfirming(false)} autoFocus>{t("imSettings.confirmRemove", { name })}</button>
+          ) : (
+            <button type="button" className="icon-btn danger" aria-label={t("imSettings.remove")} title={t("imSettings.remove")} onClick={() => setConfirming(true)}>
+              <Icon name="i-trash" size={14} />
+            </button>
+          )}
+          <button type="button" className="switch" role="switch" aria-checked={!!spec?.enabled} aria-label={t("imSettings.enableAria", { name })} disabled={busy} onClick={onToggle} />
+        </div>
       </div>
       {open && (
-        <div className="stack-3" style={{ paddingLeft: 24 }}>
+        <div className="stack-3 im-bot-body">
           <People connection={view} im={im} pairing={pairing} defaultProject={defaultProject} onError={onError} />
           <div className="stack-2">
             <div className="eyebrow">{t("imSettings.routes")}</div>
