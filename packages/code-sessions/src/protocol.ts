@@ -91,6 +91,8 @@ export type WindowMessage =
   /** The window names the new terminal's id, so its cell shows it before herdr has opened it. */
   | { type: "newTerminal"; terminalId: string; cwd: string | null }
   | { type: "closeTerminal"; terminalId: string }
+  /** Where herdr cannot show a terminal here: open one in the system terminal, in this folder. */
+  | { type: "openOutside"; cwd: string | null }
   | { type: "savePreset"; name: string; layout: Layout }
   | { type: "renamePreset"; id: string; name: string }
   | { type: "deletePreset"; id: string }

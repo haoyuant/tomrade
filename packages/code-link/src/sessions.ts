@@ -72,6 +72,12 @@ export const HERDR_PANE_HEADER = `-H "X-Tomrade-Herdr-Pane: $HERDR_PANE_ID"`;
 /** The terminal app a hook runs in, the same way: empty, and no header, where the terminal does not set it. */
 export const TERMINAL_HEADER = `-H "X-Tomrade-Terminal: $TERM_PROGRAM"`;
 
+/** Windows Terminal sets no TERM_PROGRAM, only its session id: the header says the hook ran there. */
+export const WT_HEADER = `-H "X-Tomrade-WT: $WT_SESSION"`;
+
+/** The name a hook's terminal goes by when only Windows Terminal's session id says where it runs. */
+export const WINDOWS_TERMINAL = "WindowsTerminal";
+
 /** A moment worth a line in the ticket's thread, as the session's owner reports it. */
 export interface SessionMoment {
   kind: "said" | "failed" | "ended";
@@ -665,7 +671,7 @@ export function piExtension(mcpUrl: string, token: string, eventUrl: string): st
 const eventUrl = ${JSON.stringify(eventUrl)};
 const names = { bash: "Bash", read: "Read", edit: "Edit", write: "Write", grep: "Grep", find: "Glob", ls: "LS" };
 const textOf = (content) => (content ?? []).filter((part) => part.type === "text").map((part) => part.text).join("\\n");
-const pane = { ...(process.env.HERDR_PANE_ID ? { herdr_pane: process.env.HERDR_PANE_ID } : {}), ...(process.env.TERM_PROGRAM ? { terminal: process.env.TERM_PROGRAM } : {}) };
+const pane = { ...(process.env.HERDR_PANE_ID ? { herdr_pane: process.env.HERDR_PANE_ID } : {}), ...(process.env.TERM_PROGRAM || process.env.WT_SESSION ? { terminal: process.env.TERM_PROGRAM || "WindowsTerminal" } : {}) };
 
 export default function (pi) {
   pi.registerMcpServer("tomrade", server);
@@ -736,7 +742,7 @@ const eventUrl = ${JSON.stringify(eventUrl)};
 const names = { bash: "Bash", read: "Read", edit: "Edit", write: "Write", grep: "Grep", glob: "Glob" };
 let sessionId;
 const sent = [];
-const pane = { ...(process.env.HERDR_PANE_ID ? { herdr_pane: process.env.HERDR_PANE_ID } : {}), ...(process.env.TERM_PROGRAM ? { terminal: process.env.TERM_PROGRAM } : {}) };
+const pane = { ...(process.env.HERDR_PANE_ID ? { herdr_pane: process.env.HERDR_PANE_ID } : {}), ...(process.env.TERM_PROGRAM || process.env.WT_SESSION ? { terminal: process.env.TERM_PROGRAM || "WindowsTerminal" } : {}) };
 const post = (payload) => { sent.push(fetch(eventUrl, { method: "POST", headers: { "content-type": "application/json" },
   body: JSON.stringify({ session_id: sessionId, ...pane, ...payload, tomrade_source: "dsh-report" }), signal: AbortSignal.timeout(5000) }).catch(() => {})); };
 const brief = (input) => { const text = typeof input === "string" ? input : JSON.stringify(input ?? {}); return text.length > 120 ? text.slice(0, 117) + "..." : text; };

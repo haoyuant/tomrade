@@ -390,6 +390,9 @@ export function App() {
   const active = new Set(cells.flatMap((c) => (c.sessionId ? [c.sessionId, terminalsById.get(c.sessionId)?.sessionId ?? c.sessionId] : [])));
   // A server that is not running is started by the launch itself.
   const ready = state.bridge.state === "ready" || state.bridge.state === "notRunning";
+  // Where herdr cannot show a terminal here (Windows), a new one opens in the system terminal instead.
+  const outside = state.bridge.state === "unsupported";
+  const canOpen = ready || outside;
 
   const pick = (s: SessionRow) => {
     if (s.mode === "run" && !s.pane) return send({ type: "openThread", sessionId: s.id });
@@ -426,7 +429,7 @@ export function App() {
             <ContextMenuActionItem icon={null} name={say("nothingToConnect")} disabled onSelect={() => undefined} />
           )}
         </ContextMenuSub>
-        <ContextMenuActionItem icon={null} name={say("newTerminal")} disabled={!ready} onSelect={() => openTerminal(layout, node.id, state.places[0]!.cwd)} />
+        <ContextMenuActionItem icon={null} name={say("newTerminal")} disabled={!canOpen} onSelect={() => openTerminal(layout, node.id, state.places[0]!.cwd)} />
         <ContextMenuActionItem icon={null} name={say("detach")} disabled={!node.sessionId} onSelect={() => change(show(layout, node.id, null))} />
         <ContextMenuActionItem icon={null} name={say("splitRight")} onSelect={() => change(split(layout, node.id, "row").layout)} />
         <ContextMenuActionItem icon={null} name={say("splitDown")} onSelect={() => change(split(layout, node.id, "column").layout)} />
@@ -439,6 +442,7 @@ export function App() {
     setFocused(target.id);
   };
   const openTerminal = (base: Layout, cell: string, cwd: string) => {
+    if (outside) return send({ type: "openOutside", cwd });
     const terminalId = crypto.randomUUID();
     asked.current.set(terminalId, Date.now());
     change(show(base, cell, terminalId));
@@ -447,6 +451,7 @@ export function App() {
   };
   // From the list's button: the first empty cell, or a new one beside the focused cell.
   const newTerminal = () => {
+    if (outside) return send({ type: "openOutside", cwd: state.places[0]!.cwd });
     const empty = cells.find((c) => !c.sessionId);
     if (empty) return openTerminal(layout, empty.id, state.places[0]!.cwd);
     const next = split(layout, target.id, "row");
@@ -463,7 +468,7 @@ export function App() {
         session={sessionIn(node.sessionId)}
         terminal={node.sessionId ? terminalsById.get(node.sessionId) : undefined}
         places={state.places}
-        ready={ready}
+        ready={canOpen}
         onNewTerminal={(cwd) => openTerminal(layout, node.id, cwd)}
         focused={node.id === target.id && cells.length > 1}
         only={cells.length === 1}
@@ -487,7 +492,7 @@ export function App() {
         <SessionList sessions={state.sessions} active={active} onPick={pick} say={say} />
         <div className="cs-side-head cs-side-sub">
           <h2 className="eyebrow">{say("terminals")}</h2>
-          <button type="button" className="link-btn side-add" data-testid="cs-side-new-terminal" disabled={!ready} onClick={newTerminal}>
+          <button type="button" className="link-btn side-add" data-testid="cs-side-new-terminal" disabled={!canOpen} onClick={newTerminal}>
             + {say("newTerminal")}
           </button>
         </div>

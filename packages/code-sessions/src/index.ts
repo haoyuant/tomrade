@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -9,7 +9,7 @@ import type {} from "@tomradex/db";
 import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/items";
 import type {} from "@tomradex/settings";
-import { MCP_AGENT, type CodeLink } from "@tomradex/code-link";
+import { MCP_AGENT, WINDOWS_TERMINAL, type CodeLink } from "@tomradex/code-link";
 import type { DesktopSurface } from "@tomradex/desktop-surface";
 import type { HerdrBridge, TerminalStream } from "@tomradex/herdr";
 import { randomUUID } from "node:crypto";
@@ -114,9 +114,8 @@ const save = (file: string | undefined, patch: Saved) => {
   }
 };
 
-/** A project's code sessions as the window lists them: live ones first, then the ones ended in the last day. */
-/** Terminal apps by `TERM_PROGRAM`: the name the window shows, and the macOS app that brings it forward. */
-const TERMINAL_APPS: Record<string, { name: string; app: string }> = {
+/** Terminal apps by `TERM_PROGRAM`: the name the window shows, and the macOS app that brings it forward, where there is one. */
+const TERMINAL_APPS: Record<string, { name: string; app?: string }> = {
   "iTerm.app": { name: "iTerm2", app: "iTerm" },
   Apple_Terminal: { name: "Terminal", app: "Terminal" },
   vscode: { name: "VS Code", app: "Visual Studio Code" },
@@ -126,9 +125,33 @@ const TERMINAL_APPS: Record<string, { name: string; app: string }> = {
   Hyper: { name: "Hyper", app: "Hyper" },
   Tabby: { name: "Tabby", app: "Tabby" },
   kitty: { name: "kitty", app: "kitty" },
-  alacritty: { name: "Alacritty", app: "Alacritty" }
+  alacritty: { name: "Alacritty", app: "Alacritty" },
+  [WINDOWS_TERMINAL]: { name: "Windows Terminal" },
+  mintty: { name: "Git Bash" }
 };
 
+/**
+ * Where a new terminal opens when herdr cannot show one in a pane (native Windows): Windows Terminal in
+ * the folder, or a PowerShell window there when it is not installed. Resolves with the app it opened.
+ */
+export function openSystemTerminal(cwd: string, platform: NodeJS.Platform = process.platform, launch: typeof spawn = spawn): Promise<string> {
+  if (platform !== "win32") return Promise.reject(new Error(`no system terminal fallback on ${platform}`));
+  const start = (command: string, args: string[]) =>
+    new Promise<void>((resolve, reject) => {
+      const child = launch(command, args, { cwd, detached: true, stdio: "ignore", windowsHide: false });
+      child.once("error", reject);
+      child.once("spawn", () => {
+        child.unref();
+        resolve();
+      });
+    });
+  return start("wt.exe", ["-d", cwd]).then(
+    () => "Windows Terminal",
+    () => start("powershell.exe", ["-NoExit"]).then(() => "PowerShell")
+  );
+}
+
+/** A project's code sessions as the window lists them: live ones first, then the ones ended in the last day. */
 export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, items: { get(projectId: string, id: string): { key: string; title: string } | null | undefined }, projectId: string, now = Date.now(), device?: string, platform: NodeJS.Platform = process.platform): SessionRow[] {
   const prs = new Map(codeLink.links(projectId).filter((l) => l.prUrl).map((l) => [l.branch, l.prUrl]));
   return codeLink
@@ -154,7 +177,7 @@ export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, it
         pane: live ? s.herdrPane : null,
         where,
         terminal: app?.name ?? s.terminal ?? null,
-        switchable: where === "outside" && !!app && platform === "darwin",
+        switchable: where === "outside" && !!app?.app && platform === "darwin",
         threadId: s.threadId,
         prUrl: prs.get(s.branch) ?? null,
         worktree: s.worktree,
@@ -394,6 +417,14 @@ function apply(ctx: Context, config: Config) {
         return attach(projectId, win, m.cell, m.sessionId, m.cols, m.rows);
       case "detach":
         return detach(win, m.cell);
+      case "openOutside": {
+        const where = m.cwd && fs.existsSync(m.cwd) ? m.cwd : (await places(projectId))[0]!.cwd;
+        try {
+          return post(win, { type: "toast", text: words()("openedOutside", { app: await openSystemTerminal(where) }) });
+        } catch (error) {
+          return post(win, { type: "toast", text: words()("outsideFailed", { reason: error instanceof Error ? error.message : String(error) }) });
+        }
+      }
       case "newTerminal":
         return newTerminal(projectId, win, m.terminalId, m.cwd);
       case "closeTerminal":

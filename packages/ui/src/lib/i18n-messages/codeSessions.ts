@@ -60,7 +60,7 @@ export const codeSessions = {
     notRunning: "herdr's server is not running. Tomrade starts it with the next ticket you start in a terminal.",
     tooOld: "herdr {{version}} is older than {{need}}. Upgrade it to show terminals here: {{fix}}",
     stale: "herdr was upgraded to {{version}} but its server still runs {{server}}. Restart it to show terminals: {{fix}} (running panes end, their agents resume)",
-    unsupported: "Terminals cannot show here on Windows: herdr's direct attach does not run there.",
+    unsupported: "On Windows terminals cannot show inside this window: New terminal opens one in Windows Terminal (or PowerShell), and an agent you start there shows up here as a session.",
     askSwitch: "Code link opens tickets in {{terminal}}, not herdr, so they will not show here. Use herdr for tickets started in a terminal?",
     switchYes: "Use herdr",
     switchNo: "Not now"
@@ -125,7 +125,7 @@ export const codeSessions = {
     notRunning: "herdr 服务未运行。你下次在终端里开始工单时，Tomrade 会启动它。",
     tooOld: "herdr {{version}} 低于 {{need}}，升级后才能在这里显示终端：{{fix}}",
     stale: "herdr 已升级到 {{version}}，但服务仍在运行 {{server}}。重启后才能显示终端：{{fix}}（正在运行的 pane 会结束，其中的 agent 会恢复）",
-    unsupported: "Windows 上无法在这里显示终端：herdr 的直接连接不支持 Windows。",
+    unsupported: "Windows 上终端不能显示在这个窗口里：「新终端」会在 Windows Terminal（没有时用 PowerShell）里打开，在那里启动的 agent 会作为会话出现在这里。",
     askSwitch: "代码关联目前在 {{terminal}} 中打开工单，而不是 herdr，所以它们不会显示在这里。以后在终端里开始的工单改用 herdr 吗？",
     switchYes: "改用 herdr",
     switchNo: "暂不"

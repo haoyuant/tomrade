@@ -4,7 +4,7 @@ import { parse as parseToml } from "smol-toml";
 import { CURSOR_HOOK_POWERSHELL, CURSOR_HOOK_SCRIPT, LEGACY_CURSOR_HOOK_SCRIPT, cursorHookPowerShell, cursorHookScript, withCursorHooks } from "@tomradex/engine-cursor";
 import { opencodePlugin, withMcpEntry } from "@tomradex/engine-opencode";
 import { outsideExtension } from "@tomradex/engine-pi";
-import { HERDR_PANE_HEADER, HOOK_EVENTS, TERMINAL_HEADER, stripJsonComments } from "./sessions.js";
+import { HERDR_PANE_HEADER, HOOK_EVENTS, TERMINAL_HEADER, WT_HEADER, stripJsonComments } from "./sessions.js";
 import { syncPrompt, syncSteps } from "./sync.js";
 
 /** The agents a repository can be connected for, in the order they are shown. */
@@ -70,10 +70,10 @@ export const CONNECT_FILES = [".mcp.json", ".claude/settings.json", CLAUDE_LOCAL
  * `reply` is for the hooks of a session Tomrade started: Tomrade's answer (a
  * denied tool, context to add) is left on stdout for the agent to read.
  */
-export function hookCommand(eventUrl: string, agent?: HookAgent, options: { reply?: boolean; seconds?: number; source?: "dsh-hooks"; terminal?: boolean } = {}): string {
+export function hookCommand(eventUrl: string, agent?: HookAgent, options: { reply?: boolean; seconds?: number; source?: "dsh-hooks"; terminal?: boolean; wt?: boolean } = {}): string {
   // Within double quotes sh or PowerShell would expand these; a URL carries them percent-encoded.
   const url = eventUrl.replace(/["$`\\]/g, encodeURIComponent);
-  const curl = `curl -s -m ${options.seconds ?? 2} -X POST -H "Content-Type: application/json" ${HERDR_PANE_HEADER}${options.terminal === false ? "" : ` ${TERMINAL_HEADER}`}${agent ? ` -H "X-Tomrade-Agent: ${agent}"` : ""}${options.source ? ` -H "X-Tomrade-Source: ${options.source}"` : ""} --data-binary "@-" "${url}"`;
+  const curl = `curl -s -m ${options.seconds ?? 2} -X POST -H "Content-Type: application/json" ${HERDR_PANE_HEADER}${options.terminal === false ? "" : ` ${TERMINAL_HEADER}`}${options.terminal === false || options.wt === false ? "" : ` ${WT_HEADER}`}${agent ? ` -H "X-Tomrade-Agent: ${agent}"` : ""}${options.source ? ` -H "X-Tomrade-Source: ${options.source}"` : ""} --data-binary "@-" "${url}"`;
   return `set tomrade "$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)"; ${options.reply ? curl : `set tomrade "$(${curl} 2>&1)"`}; exit 0`;
 }
 
@@ -82,13 +82,21 @@ export function hookCommand(eventUrl: string, agent?: HookAgent, options: { repl
  * Tomrade committed it as the hook itself — `pane: false` from before hooks
  * named their herdr pane — which still counts as connected.
  */
-export function posixHookCommand(eventUrl: string, agent?: HookAgent, options: { pane?: boolean; terminal?: boolean } = {}): string {
+export function posixHookCommand(eventUrl: string, agent?: HookAgent, options: { pane?: boolean; terminal?: boolean; wt?: boolean } = {}): string {
   const url = eventUrl.replace(/'/g, "'\\''");
-  return `curl -s -m 2 -X POST -H 'Content-Type: application/json'${options.pane === false ? "" : ` ${HERDR_PANE_HEADER}`}${options.pane === false || options.terminal === false ? "" : ` ${TERMINAL_HEADER}`}${agent ? ` -H 'X-Tomrade-Agent: ${agent}'` : ""} --data-binary @- '${url}' >/dev/null 2>&1 || true`;
+  return `curl -s -m 2 -X POST -H 'Content-Type: application/json'${options.pane === false ? "" : ` ${HERDR_PANE_HEADER}`}${options.pane === false || options.terminal === false ? "" : ` ${TERMINAL_HEADER}`}${options.pane === false || options.terminal === false || options.wt === false ? "" : ` ${WT_HEADER}`}${agent ? ` -H 'X-Tomrade-Agent: ${agent}'` : ""} --data-binary @- '${url}' >/dev/null 2>&1 || true`;
 }
 
-/** Every command of ours a hook may carry: today's, the one from before hooks named their terminal, and the POSIX ones an older Tomrade committed. */
-export const hookCommands = (eventUrl: string, agent?: HookAgent): string[] => [hookCommand(eventUrl, agent), hookCommand(eventUrl, agent, { terminal: false }), posixHookCommand(eventUrl, agent), posixHookCommand(eventUrl, agent, { terminal: false }), posixHookCommand(eventUrl, agent, { pane: false })];
+/** Every command of ours a hook may carry: today's, the ones from before hooks named their terminal or Windows Terminal, and the POSIX ones an older Tomrade committed. */
+export const hookCommands = (eventUrl: string, agent?: HookAgent): string[] => [
+  hookCommand(eventUrl, agent),
+  hookCommand(eventUrl, agent, { wt: false }),
+  hookCommand(eventUrl, agent, { terminal: false }),
+  posixHookCommand(eventUrl, agent),
+  posixHookCommand(eventUrl, agent, { wt: false }),
+  posixHookCommand(eventUrl, agent, { terminal: false }),
+  posixHookCommand(eventUrl, agent, { pane: false })
+];
 
 /** The same report in PowerShell, for a script that gets the payload piped in (or on stdin); it gives up after 2 s and exits 0. */
 export function powershellHook(eventUrl: string, agent: HookAgent): string {
@@ -97,7 +105,7 @@ export function powershellHook(eventUrl: string, agent: HookAgent): string {
     "if (-not $body.Length -and [Console]::IsInputRedirected) { $stdin = New-Object IO.MemoryStream; [Console]::OpenStandardInput().CopyTo($stdin); $body = $stdin.ToArray() }",
     `$headers = @{ 'X-Tomrade-Agent' = '${agent}' }`,
     "if ($env:HERDR_PANE_ID) { $headers['X-Tomrade-Herdr-Pane'] = $env:HERDR_PANE_ID }",
-    "if ($env:TERM_PROGRAM) { $headers['X-Tomrade-Terminal'] = $env:TERM_PROGRAM }",
+    "if ($env:TERM_PROGRAM) { $headers['X-Tomrade-Terminal'] = $env:TERM_PROGRAM } elseif ($env:WT_SESSION) { $headers['X-Tomrade-WT'] = $env:WT_SESSION }",
     `try { Invoke-WebRequest -UseBasicParsing -Method Post -Uri '${eventUrl.replace(/'/g, "''")}' -TimeoutSec 2 -ContentType 'application/json' -Headers $headers -Body $body -ErrorAction Stop | Out-Null } catch { }`,
     "exit 0"
   ].join("\n");
