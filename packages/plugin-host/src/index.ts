@@ -7,7 +7,6 @@ import { Im, ImSettings } from "@tomradex/im";
 import { Contributions } from "@tomradex/contributions";
 import { WebSearch } from "@tomradex/web-search";
 import { Llm, collect, userMessage, type LentModel, type ModelProfile } from "@tomradex/llm";
-import { Mcp } from "@tomradex/mcp";
 import { LocalAgents } from "@tomradex/engine-acp";
 import type { AlertNotice } from "@tomradex/alerts";
 import type { DesktopSurfaceSpec } from "@tomradex/desktop-surface";
@@ -67,6 +66,18 @@ class SandboxHerdr extends Service {
   terminal = async (paneId: string) => {
     throw new Error(`herdr is not installed in the sandbox: no terminal for ${paneId}`);
   };
+}
+
+/** An address for the agent's MCP server and its hooks, and no server: the sandbox may not listen on the network. */
+class SandboxMcp extends Service {
+  static provide = "mcp";
+  url = "http://127.0.0.1:19090/mcp/sandbox";
+  eventUrl = "http://127.0.0.1:19090/sessions/event";
+  constructor(ctx: Context) {
+    super(ctx, "mcp");
+  }
+  // What the agent tells MCP clients: nobody connects here to read it.
+  instruct = () => () => {};
 }
 
 /** The sandbox's windows: none opens; each one is remembered with the last state it was given, and the scenario can speak for its document. */
@@ -141,9 +152,9 @@ export async function testPlugin(input: HostTestInput): Promise<HostTestResult> 
   const terminals = wants.includes("terminals");
   // The real model seam, so a provider plugin's profiles build and answer as they would in the app.
   const models = wants.includes("models");
-  // The app's own conductor for a local agent, with a loopback MCP server and the worker it lends to.
+  // The app's own conductor for a local agent, with an MCP address and the worker it lends to.
   const agent = wants.includes("agent");
-  const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(input.tmp, "settings.json") }], Contributions, ...(alerts ? [alerts.Alerts] : []), ...(surfaces ? [surfaces.Surfaces] : []), ...(webSearch ? [WebSearch] : []), ...(terminals ? [SandboxHerdr] : []), ...(agent || im ? [Agent] : []), ...(im ? [Im] : []), ...(agent ? [[Mcp, { port: 0 }] as [typeof Mcp, unknown], LocalAgents] : []), ...(models || agent ? [Llm] : [])] });
+  const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(input.tmp, "settings.json") }], Contributions, ...(alerts ? [alerts.Alerts] : []), ...(surfaces ? [surfaces.Surfaces] : []), ...(webSearch ? [WebSearch] : []), ...(terminals ? [SandboxHerdr] : []), ...(agent || im ? [Agent] : []), ...(im ? [Im] : []), ...(agent ? [SandboxMcp, LocalAgents] : []), ...(models || agent ? [Llm] : [])] });
   try {
   w.ctx.logger.exporter({ export: (m: { type: string; args: unknown[] }) => void (m.type === "error" || m.type === "warn" ? logs.push(`${m.type}: ${String(m.args[0])}`) : undefined) } as never);
   const samples = [

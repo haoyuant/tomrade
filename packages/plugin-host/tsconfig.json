@@ -45,9 +45,6 @@
       "path": "../engine-acp"
     },
     {
-      "path": "../mcp"
-    },
-    {
       "path": "../extensions"
     }
   ]

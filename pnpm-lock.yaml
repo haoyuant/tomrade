@@ -1998,9 +1998,6 @@ importers:
       '@tomradex/llm':
         specifier: workspace:*
         version: link:../llm
-      '@tomradex/mcp':
-        specifier: workspace:*
-        version: link:../mcp
       '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings

@@ -170,6 +170,25 @@ describe("a plugin's local agent, run by the app's conductor", () => {
     await w.ctx.fiber.dispose();
   });
 
+  it("writes an installer script out as the command the app runs, here and in the not-found words", async () => {
+    const w = await world(async (p) => {
+      await p.agent.localAgent({
+        id: "demo",
+        title: "Demo",
+        cli: { name: "tomrade-no-such-demo-cli" },
+        install: "install Demo ({install}) and sign in",
+        setup: { install: [{ script: "https://demo.example/install.sh" }, { powershell: "https://demo.example/install.ps1" }, "npm install -g demo"], signIn: "demo login" }
+      });
+    });
+    w.ctx.settings.set({ ...w.ctx.settings.get(), agent: { ...w.ctx.agent.settingsOf(), engines: {} } });
+    const engine = w.ctx.agent.engineOf("demo")!;
+    expect(engine.setup).toEqual({ install: ["curl -fsSL https://demo.example/install.sh | bash", "irm https://demo.example/install.ps1 | iex", "npm install -g demo"], signIn: "demo login" });
+    const state = await engine.available({ fresh: true });
+    expect(state).toMatchObject({ ok: false, need: "install" });
+    expect(state.reason).toContain("install Demo (curl -fsSL https://demo.example/install.sh | bash) and sign in");
+    await w.ctx.fiber.dispose();
+  });
+
   it("keeps an agent the app still ships, and leaves the plugin's copy off", async () => {
     const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(dir, "settings.json") }], Agent, [Mcp, { port: 0 }], Llm, LocalAgents] });
     const builtIn = { id: "demo", title: "Built-in demo", author: "ai:demo" as const, available: async () => ({ ok: true }), turn: async () => ({ stop: "end" as const }) };

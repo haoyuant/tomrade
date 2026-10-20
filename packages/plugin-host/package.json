@@ -26,7 +26,6 @@
     "@tomradex/extensions": "workspace:*",
     "@tomradex/im": "workspace:*",
     "@tomradex/llm": "workspace:*",
-    "@tomradex/mcp": "workspace:*",
     "@tomradex/settings": "workspace:*",
     "@tomradex/testkit": "workspace:*",
     "@tomradex/tools": "workspace:*",

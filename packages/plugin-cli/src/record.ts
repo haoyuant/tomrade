@@ -45,6 +45,8 @@ export interface Recording {
   agentHooks: string[];
   modelProviders: string[];
   localAgents: string[];
+  /** Local agents that name an installer script, which needs SDK 0.2.18. */
+  localAgentInstallers: string[];
   /** Registrations that do not fit their contract, in words the author can act on. */
   invalid: string[];
   /** Which IM contract each adapter is written against, from the capabilities it declares. */
@@ -55,7 +57,7 @@ export interface Recording {
   stopped: string | null;
 }
 
-export const emptyRecording = (): Recording => ({ tools: [], commands: [], badges: [], statusItems: [], sections: [], graphs: [], sidebarModules: [], playbooks: [], settings: [], surfaces: [], tables: [], imAdapters: [], webSearchProviders: [], agentHooks: [], modelProviders: [], localAgents: [], invalid: [], imContracts: [], violations: [], stopped: null });
+export const emptyRecording = (): Recording => ({ tools: [], commands: [], badges: [], statusItems: [], sections: [], graphs: [], sidebarModules: [], playbooks: [], settings: [], surfaces: [], tables: [], imAdapters: [], webSearchProviders: [], agentHooks: [], modelProviders: [], localAgents: [], localAgentInstallers: [], invalid: [], imContracts: [], violations: [], stopped: null });
 
 const noop = () => {};
 const DRY = "dry run: nothing is written while a plugin is inspected";
@@ -168,6 +170,7 @@ export function recordingContext(namespace: string, allowed: ServiceName[], rec:
         },
         localAgent: (spec) => {
           rec.invalid.push(...localAgentProblems(spec as LocalAgentSpec));
+          if (spec.setup?.install.some((step) => typeof step !== "string")) rec.localAgentInstallers.push(spec.id);
           return note("localAgents", spec.id, "local agent");
         } });
     },
@@ -265,5 +268,10 @@ export function localAgentProblems(spec: LocalAgentSpec): string[] {
   const link = spec.mcpLink;
   if (link && !("cli" in link) && [link.status, link.connect, link.disconnect].some((fn) => typeof fn !== "function")) out.push(`${label}: mcpLink needs status, connect and disconnect, or cli`);
   if (spec.lend && typeof spec.lend.ask !== "function") out.push(`${label}: lend needs ask(request, io)`);
+  for (const step of spec.setup?.install ?? []) {
+    if (typeof step === "string") continue;
+    const url = "script" in step ? step.script : (step as { powershell?: unknown }).powershell;
+    if (typeof url !== "string" || !/^https:\/\/[^\s'"|;&`$]+$/.test(url)) out.push(`${label}: an installer is a script's https address, not ${JSON.stringify(url ?? step)}`);
+  }
   return out;
 }
