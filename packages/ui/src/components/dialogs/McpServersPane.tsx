@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { McpClientSettings, McpServerConfig, McpServerView, McpTestResult } from "@tomradex/mcp-client";
 import { Icon } from "~/components/icons";
-import { SectionHead, Tag } from "~/components/ui/atoms";
+import { FoldChevron, FoldChevronSpace, SectionHead, Tag } from "~/components/ui/atoms";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useMcpServers, useParseMcpConfig, useReconnectMcpServer, useTestMcpServer } from "~/lib/mcpClient";
 import { useSaveSettings, useSettings } from "~/lib/queries";
@@ -262,52 +262,51 @@ function ServerRow({
           ? t("mcpServers.detailOff")
           : error;
   const retrying = server.state === "failed" && server.retry;
+  const foldable = server.state === "connected" || server.state === "failed";
   return (
     <div className="mcp-server" data-mcp-server={server.id} data-state={server.state}>
-      <div className={cn("cfg-row", !server.enabled && "off")}>
-        <Icon
-          name={server.transport === "stdio" ? "i-terminal" : "i-globe"}
-          size={15}
-          style={{ color: server.state === "failed" ? "var(--danger)" : server.enabled ? "var(--accent)" : "var(--meta)" }}
-        />
-        <div className="cfg-name">
-          {server.id}
-          <span className="meta-txt mono mcp-oneline" title={server.target}>
-            {server.target}
-          </span>
-          <div className="meta-txt dense mcp-oneline" title={server.state === "failed" ? server.error : undefined} style={server.state === "failed" ? { color: "var(--danger)" } : undefined}>
-            {detail}
+      <div className="fold-row">
+        {foldable ? <FoldChevron open={open} label={t("mcpServers.showTools")} onToggle={() => setOpen(!open)} /> : <FoldChevronSpace />}
+        <div className={cn("cfg-row", !server.enabled && "off")}>
+          <Icon
+            name={server.transport === "stdio" ? "i-terminal" : "i-globe"}
+            size={15}
+            style={{ color: server.state === "failed" ? "var(--danger)" : server.enabled ? "var(--accent)" : "var(--meta)" }}
+          />
+          <div className="cfg-name">
+            {server.id}
+            <span className="meta-txt mono mcp-oneline" title={server.target}>
+              {server.target}
+            </span>
+            <div className="meta-txt dense mcp-oneline" title={server.state === "failed" ? server.error : undefined} style={server.state === "failed" ? { color: "var(--danger)" } : undefined}>
+              {detail}
+            </div>
           </div>
+          <Tag tone={server.state === "connected" ? "strong" : server.state === "off" ? "faint" : "neutral"} title={retrying ? t("mcpServers.retryingTitle", retrying) : undefined}>
+            {retrying ? t("mcpServers.stateRetrying", retrying) : t(STATE_KEY[server.state])}
+          </Tag>
+          {server.enabled && (
+            <button type="button" className="icon-btn" aria-label={t("mcpServers.reconnect")} title={t("mcpServers.reconnect")} disabled={busy || server.state === "connecting"} onClick={onReconnect}>
+              <Icon name="i-sync" size={14} />
+            </button>
+          )}
+          <button type="button" className="icon-btn" aria-label={t("mcpServers.edit")} title={t("mcpServers.edit")} onClick={onEdit}>
+            <Icon name="i-pen" size={14} />
+          </button>
+          {confirming ? (
+            <button type="button" className="btn btn-danger" onClick={onRemove} onBlur={() => setConfirming(false)} autoFocus>
+              {t("mcpServers.confirmRemove", { id: server.id })}
+            </button>
+          ) : (
+            <button type="button" className="icon-btn danger" aria-label={t("mcpServers.remove")} title={t("mcpServers.remove")} onClick={() => setConfirming(true)}>
+              <Icon name="i-trash" size={14} />
+            </button>
+          )}
+          <button type="button" className="switch" role="switch" aria-checked={server.enabled} aria-label={t("mcpServers.enableAria", { id: server.id })} disabled={busy} onClick={onToggle} />
         </div>
-        <Tag tone={server.state === "connected" ? "strong" : server.state === "off" ? "faint" : "neutral"} title={retrying ? t("mcpServers.retryingTitle", retrying) : undefined}>
-          {retrying ? t("mcpServers.stateRetrying", retrying) : t(STATE_KEY[server.state])}
-        </Tag>
-        {(server.state === "connected" || server.state === "failed") && (
-          <button type="button" className="icon-btn" aria-expanded={open} aria-label={t("mcpServers.showTools")} title={t("mcpServers.showTools")} onClick={() => setOpen(!open)}>
-            <Icon name={open ? "i-chevdown" : "i-chev"} size={14} />
-          </button>
-        )}
-        {server.enabled && (
-          <button type="button" className="icon-btn" aria-label={t("mcpServers.reconnect")} title={t("mcpServers.reconnect")} disabled={busy || server.state === "connecting"} onClick={onReconnect}>
-            <Icon name="i-sync" size={14} />
-          </button>
-        )}
-        <button type="button" className="icon-btn" aria-label={t("mcpServers.edit")} title={t("mcpServers.edit")} onClick={onEdit}>
-          <Icon name="i-pen" size={14} />
-        </button>
-        {confirming ? (
-          <button type="button" className="btn btn-danger" onClick={onRemove} onBlur={() => setConfirming(false)} autoFocus>
-            {t("mcpServers.confirmRemove", { id: server.id })}
-          </button>
-        ) : (
-          <button type="button" className="icon-btn danger" aria-label={t("mcpServers.remove")} title={t("mcpServers.remove")} onClick={() => setConfirming(true)}>
-            <Icon name="i-trash" size={14} />
-          </button>
-        )}
-        <button type="button" className="switch" role="switch" aria-checked={server.enabled} aria-label={t("mcpServers.enableAria", { id: server.id })} disabled={busy} onClick={onToggle} />
       </div>
-      {open && (
-        <div className="mcp-detail">
+      {open && foldable && (
+        <div className="mcp-detail fold-row-body">
           {server.state === "failed" && server.error && <pre className="mcp-error">{server.error}</pre>}
           {server.state === "connected" && <ToolTable server={server} />}
         </div>

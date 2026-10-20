@@ -42,6 +42,21 @@ export const Fold = ({ id, title, open, onToggle, children }: { id: string; titl
   </section>
 );
 
+/**
+ * A row that folds opens from this chevron, left of the row and outside its card.
+ * With a `label` it is the row's own toggle; without one the row is itself the
+ * button, and the chevron only shows which way it is.
+ */
+export const FoldChevron = ({ open, label, disabled, onToggle, testId }: { open: boolean; label?: string; disabled?: boolean; onToggle: () => void; testId?: string }) => (
+  <button type="button" className="btn btn-icon fold-chev" aria-expanded={label ? open : undefined} aria-label={label} title={label} aria-hidden={label ? undefined : true} tabIndex={label ? undefined : -1}
+    disabled={disabled} onClick={(e) => { e.stopPropagation(); onToggle(); }} data-testid={testId}>
+    <Icon name="i-chevdown" size={14} style={open ? undefined : { transform: "rotate(-90deg)" }} />
+  </button>
+);
+
+/** Holds a chevron's place in a row that doesn't fold, so it lines up with those that do. */
+export const FoldChevronSpace = () => <span className="fold-chev-space" aria-hidden />;
+
 /** An empty label is a command the person unbound: no key cap at all. */
 export const Kbd = ({ children }: { children: React.ReactNode }) => (children === "" ? null : <span className="kbd">{children}</span>);
 

@@ -874,6 +874,12 @@ const run = async () => {
   await press(`document.querySelector('.view-fields-btn')`);
   await sleep(900);
   check("the Fields sheet lists the built-ins and the project's own", (await $(`document.querySelectorAll('.fld-row.is-builtin').length`)) === 9 && (await $(`document.querySelectorAll('.fld-row:not(.is-builtin)').length`)) === repos.fields.custom(project.id).length);
+  check("a field that opens has its chevron left of its row, and the others keep its place", (await $(`(() => {
+    const row = document.querySelector('button.fld-row[data-field="board"]');
+    const fold = row?.parentElement.querySelector('.fold-chev');
+    const fixed = document.querySelector('div.fld-row.is-builtin');
+    return !!fold && !!fixed && fold.getBoundingClientRect().right <= row.getBoundingClientRect().left && Math.abs(fixed.getBoundingClientRect().left - row.getBoundingClientRect().left) < 1;
+  })()`)) === true);
   await press(`document.querySelector('button.fld-row[data-field="board"]')`);
   await sleep(600);
   check("the Workstream row opens the workstream editor", (await $(`document.querySelectorAll('.fld-editor[data-editor="workstream"] .fld-ws').length`)) === repos.boards.list(project.id).length);
@@ -1173,6 +1179,12 @@ const run = async () => {
   check("pasting another client's mcpServers JSON saves the server", ctx.settings.get().mcpServers?.servers?.[0]?.id === "fx");
   check("it connects and its tools join the registry", ctx.tools.has("fx__echo") && ctx.tools.has("fx__files_read"));
   check("the row turns connected without a reload", (await $(`${mcpRow("fx")}?.dataset.state`)) === "connected");
+  check("its Tools chevron sits outside the server's card, on the left", (await $(`(() => {
+    const row = ${mcpRow("fx")};
+    const fold = row?.querySelector('[aria-label="Tools"]');
+    const card = row?.querySelector('.cfg-row');
+    return !!fold && !!card && !card.contains(fold) && fold.getBoundingClientRect().right <= card.getBoundingClientRect().left;
+  })()`)) === true);
   await press(`${mcpRow("fx")}.querySelector('[aria-label="Tools"]')`);
   await sleep(400);
   check("the row opens onto the tools it registered", (await $(`document.querySelectorAll('${SHEET} [data-testid="mcp-tools"] tbody tr').length`)) === 9);

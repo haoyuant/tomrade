@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ImAdapterView, ImConnectionView, ImIgnoredView, ImNotifyKind, ImPairingView, ImRoute, ImSettings } from "@tomradex/im";
 import { Icon, type IconId } from "~/components/icons";
-import { SectionHead, Tag } from "~/components/ui/atoms";
+import { FoldChevron, SectionHead, Tag } from "~/components/ui/atoms";
 import { invoke, messageOf } from "~/lib/api";
 import { useEngines } from "~/lib/agent";
 import { intlTag, useI18n, type MessageKey } from "~/lib/i18n";
@@ -407,11 +407,8 @@ function ConnectionCard({ view, adapter, im, pairing, defaultProject, busy, onEd
     : view.detail ?? "";
   return (
     <div className="stack-3" data-im-connection={view.id} data-state={view.state}>
-      <div className="im-bot-head">
-        <button type="button" className="btn btn-icon im-bot-fold" aria-expanded={open} aria-label={t(open ? "imSettings.foldBot" : "imSettings.unfoldBot", { name })}
-          title={t(open ? "imSettings.foldBot" : "imSettings.unfoldBot", { name })} disabled={!!pairing} onClick={() => setOpen(!stored)} data-testid="im-fold">
-          <Icon name="i-chevdown" size={14} style={open ? undefined : { transform: "rotate(-90deg)" }} />
-        </button>
+      <div className="fold-row">
+        <FoldChevron open={open} label={t(open ? "imSettings.foldBot" : "imSettings.unfoldBot", { name })} disabled={!!pairing} onToggle={() => setOpen(!stored)} testId="im-fold" />
         <div className={cn("cfg-row", !spec?.enabled && "off")}>
           <Icon name="i-send" size={15} style={{ color: view.state === "error" ? "var(--danger)" : view.state === "connected" ? "var(--accent)" : "var(--meta)" }} />
           <div className="cfg-name">
@@ -436,7 +433,7 @@ function ConnectionCard({ view, adapter, im, pairing, defaultProject, busy, onEd
         </div>
       </div>
       {open && (
-        <div className="stack-3 im-bot-body">
+        <div className="stack-3 fold-row-body">
           <People connection={view} im={im} pairing={pairing} defaultProject={defaultProject} onError={onError} />
           <div className="stack-2">
             <div className="eyebrow">{t("imSettings.routes")}</div>

@@ -5,7 +5,7 @@ import { Icon, type IconId } from "~/components/icons";
 import { useChooseRepoFolder } from "~/components/projects/RepositoriesBlock";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { IconPicker } from "~/components/ui/icon-picker";
-import { Eyebrow, Tag } from "~/components/ui/atoms";
+import { Eyebrow, FoldChevron, FoldChevronSpace, Tag } from "~/components/ui/atoms";
 import { BOARD_GLYPHS, FIELD_TYPE_LABEL, fieldLabel, viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { normalizeRemote } from "~/lib/remotes";
@@ -86,12 +86,19 @@ function FieldRow({ def, count, selected, onSelect }: { def: FieldDef; count: nu
       {def.builtin && <Icon name="i-lock" size={12} style={{ color: "var(--meta)" }} aria-hidden />}
     </>
   );
-  if (!onSelect) return <div className="cfg-row fld-row is-builtin" data-field={def.id}>{body}</div>;
+  if (!onSelect) return (
+    <div className="fold-row">
+      <FoldChevronSpace />
+      <div className="cfg-row fld-row is-builtin" data-field={def.id}>{body}</div>
+    </div>
+  );
   return (
-    <button type="button" className={`cfg-row fld-row${def.builtin ? " is-builtin" : ""}${selected ? " is-selected" : ""}`} data-field={def.id} aria-expanded={selected} onClick={onSelect}>
-      {body}
-      <Icon className="fld-chev" name="i-chevdown" size={11} aria-hidden />
-    </button>
+    <div className="fold-row">
+      <FoldChevron open={!!selected} onToggle={onSelect} />
+      <button type="button" className={`cfg-row fld-row${def.builtin ? " is-builtin" : ""}${selected ? " is-selected" : ""}`} data-field={def.id} aria-expanded={selected} onClick={onSelect}>
+        {body}
+      </button>
+    </div>
   );
 }
 
@@ -669,7 +676,9 @@ export function FieldsDialog({
             <div className="fld-list">
               <div className="fld-item">
                 <FieldRow def={boardField} count={null} />
-                <WorkstreamEditor projectId={projectId} items={rows} focusBoardId={open ? initialBoardId : null} onOpenRepositories={openRepositories} />
+                <div className="fold-row-body">
+                  <WorkstreamEditor projectId={projectId} items={rows} focusBoardId={open ? initialBoardId : null} onOpenRepositories={openRepositories} />
+                </div>
               </div>
             </div>
           )}
@@ -694,7 +703,7 @@ export function FieldsDialog({
               f.id === "board" ? (
                 <div key={f.id} className="fld-item">
                   <FieldRow def={f} count={null} selected={selectedId === f.id} onSelect={() => setSelectedId(selectedId === f.id ? null : f.id)} />
-                  {selectedId === f.id && <WorkstreamEditor projectId={projectId} items={rows} focusBoardId={open ? initialBoardId : null} onOpenRepositories={openRepositories} />}
+                  {selectedId === f.id && <div className="fold-row-body"><WorkstreamEditor projectId={projectId} items={rows} focusBoardId={open ? initialBoardId : null} onOpenRepositories={openRepositories} /></div>}
                 </div>
               ) : (
                 <FieldRow key={f.id} def={f} count={null} />
@@ -720,7 +729,7 @@ export function FieldsDialog({
                 {custom.map((f) => (
                   <div key={f.id} className="fld-item">
                     <FieldRow def={f} count={holders(rows, f.id)} selected={f.id === selectedId} onSelect={() => setSelectedId(f.id === selectedId ? null : f.id)} />
-                    {f.id === selectedId && <FieldEditor projectId={projectId} def={f} items={rows} onDeleted={() => setSelectedId(null)} />}
+                    {f.id === selectedId && <div className="fold-row-body"><FieldEditor projectId={projectId} def={f} items={rows} onDeleted={() => setSelectedId(null)} /></div>}
                   </div>
                 ))}
               </div>
