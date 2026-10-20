@@ -31,27 +31,22 @@ export interface SampleWords {
 }
 
 /**
- * The learning path, blocker first. A needs nothing set up, B needs a model,
- * C a local coding agent, D reaches past this window; A1 opens all four.
+ * The learning path, blocker first: only what a lesson really needs. A1 comes
+ * first and is the only lesson that starts the path; the rest of A and the
+ * optional D lessons need nothing and wait on nothing. B needs an AI connected
+ * (B1), and so do Start (C1) and talking from a chat app (D3); undoing waits
+ * for the run it undoes, and the code lesson for Start.
  */
 export const PATH: readonly [string, string][] = [
   ["a1", "a2"],
-  ["a2", "a3"],
-  ["a3", "a4"],
-  ["a4", "a5"],
-  ["a5", "a6"],
-  ["a6", "a7"],
   ["a1", "b1"],
   ["b1", "b2"],
   ["b2", "b3"],
-  ["b3", "b4"],
-  ["b4", "b5"],
-  ["a1", "c1"],
+  ["b1", "b4"],
+  ["b1", "b5"],
+  ["b1", "c1"],
   ["c1", "c2"],
-  ["a1", "d1"],
-  ["d1", "d2"],
-  ["d2", "d3"],
-  ["d3", "d4"]
+  ["b1", "d3"]
 ];
 
 const en: SampleWords = {
@@ -67,7 +62,7 @@ const en: SampleWords = {
       body: `Welcome to Tomrade. This project is the tutorial: each ticket in **Getting started** teaches one thing, and you finish it by moving it to Done.
 
 - The sidebar holds your workstreams, views and files; the board is in the middle; the assistant is on the right.
-- The tickets are linked by *blocks*, so they form a path — the next ticket shows you how to see it.
+- Some tickets wait for others — they are linked by *blocks* — and the next ticket shows you how to see that.
 - This project stays on this computer and never syncs to your account. Delete it from its project settings when you are done.
 
 **Now:** move this card to Done. Drag it to the right — the board scrolls on its own when you hold it near the edge — or open it and set **Status** to Done.`
@@ -75,10 +70,10 @@ const en: SampleWords = {
     {
       key: "a2",
       title: "Open the Learning path view",
-      body: `Every ticket here blocks the ones that come after it. The **Learning path** view in the sidebar draws that as a graph.
+      body: `Some tickets here wait for others: the ones that need a model wait for **Connect a model**, for instance. The **Learning path** view in the sidebar draws that as a graph.
 
 1. Click **Learning path** under Views.
-2. Follow the arrows: a ticket whose blockers are all done is ready to do. Arrows from finished tickets fade.
+2. Follow the arrows: a ticket whose blockers are all done is ready to do, and one with no arrow into it is ready now. Arrows from finished tickets fade.
 3. Any view can be drawn this way — switch it to **Graph** in the row above the board, next to Board and Table.
 
 Then move this ticket to Done.`
@@ -299,7 +294,7 @@ const zh: SampleWords = {
       body: `欢迎来到 Tomrade。这个项目本身就是教程：**入门**里的每个工单教一个功能，做完就把它移到「已完成」。
 
 - 左边是工作流、视图和文件，中间是看板，右边是助手。
-- 这些工单用 *blocks* 关系串成一条路径，下一个工单会教你怎么看到它。
+- 有些工单要等别的工单先完成——它们用 *blocks* 关系连着——下一个工单会教你怎么看到它。
 - 这个项目只在这台电脑上，不会同步到账号。学完可以在项目设置里删掉。
 
 **现在**：把这张卡片移到「已完成」。往右拖，拖到看板边缘停一下，看板会自己滚过去；或者打开它，把**状态**改成「已完成」。`
@@ -307,10 +302,10 @@ const zh: SampleWords = {
     {
       key: "a2",
       title: "打开「学习路径」视图",
-      body: `这里的每个工单都卡着后面的工单。侧边栏视图里的 **学习路径** 把这种关系画成关系图。
+      body: `这里有些工单要等别的工单先完成，比如需要模型的那几个，要等 **接上一个模型**。侧边栏视图里的 **学习路径** 把这种关系画成关系图。
 
 1. 点视图里的 **学习路径**。
-2. 顺着箭头看：前置都完成了的工单就可以做了，从已完成的工单出发的箭头会变淡。
+2. 顺着箭头看：前置都完成了的工单就可以做了，没有箭头指向的工单现在就能做。从已完成的工单出发的箭头会变淡。
 3. 任何视图都可以这样画——在看板上方那一行，把「看板」「表格」切到 **关系图**。
 
 然后把这个工单移到「已完成」。`
