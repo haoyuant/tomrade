@@ -38,6 +38,7 @@ import { Sessions, type SessionMoment } from "./sessions.js";
 import { CODE_WORDS, type CodeWords, type PlainCodeWord } from "./words.js";
 import { Starter, type StartMode, type StartOptions, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
+import { findTranscript, transcriptTitle } from "./titles.js";
 import { AUTO_TERMINAL, RESUME_ID_FILE, RESUME_SCRIPT, SYSTEM_TERMINAL, TerminalSettings, commandOk, exec, herdrFallbackNote, launchTerminal, machineTerminalSettings, setupTerminal, shellQuote, terminalApps } from "./terminal.js";
 import { registerTools } from "./tools.js";
 
@@ -385,6 +386,8 @@ export class CodeLink extends Service {
   private readonly inFlight = new Map<string, Promise<ScanSummary>>();
   /** Folders hooks events came from that were already looked at for a checkout: one look per folder, not per event. */
   private readonly placeLooked = new Set<string>();
+  /** Ended sessions already looked for a transcript title. */
+  private readonly titlesLooked = new Set<string>();
   /** When each session last asked herdr for its pane. */
   private readonly paneLooked = new Map<string, number>();
   /** Per `projectId\0repoId`, each agent's last hook event here and when it was last written down. */
@@ -778,6 +781,25 @@ export class CodeLink extends Service {
     }
     this.notify(projectId);
     return state;
+  }
+
+  /**
+   * Conversations that ended before Tomrade kept their titles: a Claude Code one finds its transcript by the agent's
+   * session id, and keeps the title once found. Each session is looked for once.
+   */
+  findTitles(projectId: string): boolean {
+    let found = false;
+    for (const s of this.store.sessions(projectId)) {
+      if (s.title || s.itemIds.length || s.agent !== "claude-code" || !s.externalId || s.state !== "ended" && s.state !== "lost") continue;
+      if (this.titlesLooked.has(s.id)) continue;
+      this.titlesLooked.add(s.id);
+      const transcript = s.transcript ?? findTranscript(s.externalId);
+      const title = transcript ? transcriptTitle(transcript) : null;
+      if (!title) continue;
+      this.store.patchSession(projectId, s.id, { title, transcript, prompted: true });
+      found = true;
+    }
+    return found;
   }
 
   sessionsOf(projectId: string, itemId?: string): SessionView[] {

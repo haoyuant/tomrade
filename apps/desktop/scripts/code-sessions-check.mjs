@@ -466,6 +466,19 @@ app.whenReady().then(async () => {
     const plainPane = saved()[0]?.pane;
     const typed = !!plainPane && (await wait(async () => herdr("pane", "read", plainPane, "--source", "recent", "--lines", "20").includes("plain-terminal-ok")));
     check("在新终端里输入的命令跑了", typed, `pane: ${plainPane}`);
+    // A plain terminal goes by what runs in it while it runs. Sent once the shell is back at its prompt: typed ahead,
+    // zsh drops it.
+    const foreground = () => JSON.parse(herdr("pane", "process-info", "--pane", plainPane)).result.process_info.foreground_processes.map((p) => p.cmdline);
+    await sleep(1500);
+    herdr("pane", "send-text", plainPane, "sleep 8");
+    herdr("pane", "send-keys", plainPane, "enter");
+    const sleeping = await wait(async () => foreground().includes("sleep 8"), 4000);
+    const runningShown = sleeping && (await wait(async () => {
+      ctx.emit("codeLink/changed", project.id);
+      return (await tjs(`document.querySelector('[data-terminal] .cs-row-head')?.textContent ?? ''`)).includes("sleep 8");
+    }, 5000));
+    check("普通终端在列表里显示正在跑的命令", runningShown, JSON.stringify({ sleeping, rows: await tjs(`[...document.querySelectorAll('[data-terminal] .cs-row-head')].map((h) => h.textContent)`) }));
+    await wait(async () => !foreground().includes("sleep 8"), 10000);
     // An agent's hooks name their pane from HERDR_PANE_ID: in a plain terminal it is that terminal's pane.
     herdr("pane", "send-text", plainPane, "echo pane-is-$HERDR_PANE_ID");
     herdr("pane", "send-keys", plainPane, "enter");
@@ -664,6 +677,30 @@ app.whenReady().then(async () => {
       fs.writeFileSync(path.join(shots, "code-sessions-took.png"), (await tw.webContents.capturePage()).toPNG());
     }
 
+    // A conversation had without a ticket, ended: on the archive's 对话 shelf by its title, and taken up again in a new
+    // terminal by its agent's resume, in the folder it ran in.
+    const talk = ctx.codeLink.store.createSession(project.id, { repoId: repo.id, branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, externalId: "talk-check-1" });
+    ctx.codeLink.store.patchSession(project.id, talk.id, { title: "终端侧栏设计讨论", prompted: true, cwd: repoDir, state: "ended", endedAt: Date.now() });
+    ctx.emit("codeLink/changed", project.id);
+    await tjs(`document.querySelector('[data-testid=cs-archive]').click(); true`);
+    await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-shelf-talks]')`), 5000);
+    await tjs(`document.querySelector('[data-testid=cs-shelf-talks]').click(); true`);
+    const talkRow = `[...document.querySelectorAll('[data-testid=cs-archive-list] .cs-row')].find((r) => r.textContent.includes('终端侧栏设计讨论'))`;
+    const shelved = await wait(async () => tjs(`!!${talkRow}`), 5000);
+    check("没有工单的对话结束后在归档的「对话」栏里，用它的标题", shelved);
+    await tjs(`${talkRow}?.click(); true`);
+    await tjs(`document.querySelector('[data-testid=cs-archive-back]').click(); true`);
+    const offeredTalk = await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-talk-on]')`), 5000);
+    const panesBefore = new Set(JSON.parse(herdr("pane", "list")).result.panes.map((p) => p.pane_id));
+    await tjs(`document.querySelector('[data-testid=cs-talk-on]')?.click(); true`);
+    const resumed = offeredTalk && (await wait(async () => {
+      const fresh = JSON.parse(herdr("pane", "list")).result.panes.filter((p) => !panesBefore.has(p.pane_id));
+      return fresh.some((p) => p.cwd === fs.realpathSync(repoDir) || p.cwd === repoDir) && fresh.some((p) => herdr("pane", "read", p.pane_id, "--source", "recent", "--lines", "20").includes("claude --resume talk-check-1"));
+    }, 15000));
+    check("「在新终端里接着聊」在它原来的文件夹开新终端，跑 claude --resume", resumed);
+    // Its cell attached before what follows counts the cells.
+    await wait(async () => tjs(`[...document.querySelectorAll('.cs-cell')].every((c) => !c.dataset.cellTerminal || !!c.querySelector('.xterm'))`), 10000);
+
     // herdr's server goes away under the window (this run's own, by its socket): Tomrade starts it again, herdr brings
     // the panes back with their ids, and the cells attach on their own.
     const paneIds = () => JSON.parse(herdr("pane", "list")).result.panes.map((p) => p.pane_id).sort().join(",");
@@ -682,7 +719,7 @@ app.whenReady().then(async () => {
     const cameBack = wentDown && (await wait(async () => up() && paneIds() === before, 30000));
     check("herdr 服务停掉后，Tomrade 自己把它重新启动，pane 原样回来", own && cameBack, `before ${before} · after ${up() ? paneIds() : "not running"}`);
     const reattached = await wait(async () => tjs(`document.querySelectorAll('.cs-cell .xterm').length === ${attachedBefore} && ![...document.querySelectorAll('.cs-term-closed')].some((e) => e.offsetParent)`), 20000);
-    check("格子自己重新连上，不用点「重新连接」", reattached);
+    check("格子自己重新连上，不用点「重新连接」", reattached, JSON.stringify({ before: attachedBefore, cells: await tjs(`[...document.querySelectorAll('.cs-cell')].map((c) => [c.querySelector('.cs-cell-name')?.textContent?.slice(0, 30), !!c.querySelector('.xterm'), !!c.querySelector('.cs-term-closed')?.offsetParent])`) }));
     const here = await tjs(`[...document.querySelectorAll('.cs-cell')].indexOf(document.querySelector('.cs-cell[data-cell="${goneId}"]'))`);
     const answers = here >= 0 && (await typeInCell(tw.webContents, tjs, here, "echo back-after-restart", "back-after-restart"));
     check("重启后在终端里输入照常有回显", answers);

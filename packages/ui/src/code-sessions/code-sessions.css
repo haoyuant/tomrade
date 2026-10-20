@@ -96,3 +96,5 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 /* A locked pane: its lock stays lit in the bar. */
 .cs-lock { display: inline-flex; align-items: center; justify-content: center; }
 .cs-lock[aria-pressed="true"] { color: var(--accent); }
+.cs-shelves { display: flex; margin: 0 var(--space-2) var(--space-2); }
+.cs-shelves > button { flex: 1; }

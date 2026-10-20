@@ -18,6 +18,14 @@ export interface SessionRow {
   agentName: string | null;
   /** What the agent herdr sees in the session's pane calls the conversation; null without one, or when a terminal row speaks for it. */
   agentTitle: string | null;
+  /** What the conversation was called, kept after it ended: the agent's title, its pane's, or its first prompt. */
+  conversation: string | null;
+  /** The folder the agent ran in, as its hooks said. */
+  cwd: string | null;
+  /** Someone spoke to it. */
+  prompted: boolean;
+  /** Its agent can take it up again by its id in a new terminal. */
+  resumable: boolean;
   /** The herdr pane it runs in, on this machine; null when it has no terminal here. */
   pane: string | null;
   /** Where its terminal is: a herdr pane here, another terminal app here, another computer, or Tomrade running it. */
@@ -44,6 +52,8 @@ export interface TerminalRow {
   startedAt: number;
   /** What the agent herdr sees in it calls the conversation; null without one. */
   agentTitle: string | null;
+  /** With no agent in it: what runs in its foreground when that is not the shell, else the title its shell set. */
+  running: string | null;
   /** The code session its agent claimed a ticket for: the cell shows that session, on the same pane. */
   sessionId: string | null;
   /** Why it stays a plain terminal although an agent claimed a ticket, when Tomrade cannot tell which terminal that was. */
@@ -109,7 +119,8 @@ export interface WindowState {
 export type WindowMessage =
   | { type: "attach"; cell: string; sessionId: string; cols: number; rows: number }
   /** The window names the new terminal's id, so its cell shows it before herdr has opened it. */
-  | { type: "newTerminal"; terminalId: string; cwd: string | null }
+  /** `resume`: a conversation's session, taken up again in the new terminal by its agent. */
+  | { type: "newTerminal"; terminalId: string; cwd: string | null; resume?: string }
   | { type: "closeTerminal"; terminalId: string }
   /** Where herdr cannot show a terminal here: open one in the system terminal, in this folder. */
   | { type: "openOutside"; cwd: string | null }

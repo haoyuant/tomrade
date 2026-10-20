@@ -9,7 +9,7 @@ import type {} from "@tomradex/db";
 import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/items";
 import type {} from "@tomradex/settings";
-import { MCP_AGENT, WINDOWS_TERMINAL, type CodeLink } from "@tomradex/code-link";
+import { MCP_AGENT, WINDOWS_TERMINAL, resumeCommand, type CodeLink } from "@tomradex/code-link";
 import type { DesktopSurface } from "@tomradex/desktop-surface";
 import { HerdrError, type HerdrBridge, type TerminalStream } from "@tomradex/herdr";
 import { randomUUID } from "node:crypto";
@@ -44,7 +44,7 @@ interface Saved {
   folded?: Record<string, boolean>;
 }
 
-type SavedTerminal = Omit<TerminalRow, "sessionId" | "note" | "agentTitle"> & { pane: string };
+type SavedTerminal = Omit<TerminalRow, "sessionId" | "note" | "agentTitle" | "running"> & { pane: string };
 type StartingTerminal = Omit<SavedTerminal, "pane"> & { pane: null };
 
 const run = promisify(execFile);
@@ -56,6 +56,9 @@ const within = (dir: string, root: string) => {
   const rel = path.relative(path.resolve(root), path.resolve(dir));
   return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
 };
+
+/** A login or interactive shell, as a foreground command's first word. */
+const SHELL = /^-?(?:.*\/)?(zsh|bash|fish|sh|dash|ksh|tcsh|nu|login)$/;
 
 /** Where a pane's agent runs, when one does: herdr sees it, or the foreground command names one. Null otherwise. */
 async function agentIn(herdr: { call<T>(method: string, params: Record<string, unknown>): Promise<T> }, pane: string, cwd: string): Promise<string | null> {
@@ -187,6 +190,10 @@ export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, it
         agent: s.agent,
         agentName: null,
         agentTitle: null,
+        conversation: s.title ?? null,
+        cwd: s.cwd ?? null,
+        prompted: !!s.prompted,
+        resumable: !!resumeCommand(s.agent, s.externalId),
         pane: live ? s.herdrPane : null,
         where,
         terminal: app?.name ?? s.terminal ?? null,
@@ -269,7 +276,19 @@ function apply(ctx: Context, config: Config) {
       const info = pane ? byPane.get(pane) : undefined;
       return info?.agent ? info.title : null;
     };
-    return [...saved.filter((t) => !gone.has(t.id)), ...opening].map((t) => ({ ...t, agentTitle: agentTitle(t.pane), sessionId: null, note: null }));
+    // A terminal with no agent goes by what runs in it: its foreground command, else what its shell calls it.
+    const running = async (pane: string | null): Promise<string | null> => {
+      const info = pane ? byPane.get(pane) : undefined;
+      if (!herdr || !pane || !info || info.agent) return null;
+      const fg = await herdr
+        .call<{ process_info: { foreground_processes?: { cmdline?: string }[] } }>("pane.process_info", { pane_id: pane })
+        .then((r) => r.process_info.foreground_processes ?? [], () => []);
+      const command = fg.map((p) => p.cmdline?.trim() ?? "").find((c) => c && !SHELL.test(c.split(/\s+/)[0]!));
+      return command ? command.slice(0, 80) : info.title;
+    };
+    const rows = [...saved.filter((t) => !gone.has(t.id)), ...opening];
+    const runs = await Promise.all(rows.map((t) => running(t.pane)));
+    return rows.map((t, i) => ({ ...t, agentTitle: agentTitle(t.pane), running: runs[i] ?? null, sessionId: null, note: null }));
   };
 
   /**
@@ -399,7 +418,8 @@ function apply(ctx: Context, config: Config) {
     const layout = isLayout(remembered) ? remembered : preset ? preset.layout : fresh();
     // An ended session stays with the state while a cell shows it; the rest wait in the archive.
     const inCells = new Set(leafIds(layout));
-    const ended = shown.sessions.filter((s) => s.endedAt !== null);
+    // Ticket work, and conversations someone had; a start nobody spoke to is not kept.
+    const ended = shown.sessions.filter((s) => s.endedAt !== null && (s.itemId || s.conversation || s.prompted));
     const win = open.get(projectId);
     // Read with the layout, before anything is awaited: a state begun before a pick from the archive was saved must
     // still carry that session, or the window would drop it from the cell it was just put in.
@@ -519,14 +539,17 @@ function apply(ctx: Context, config: Config) {
   };
 
   /** A plain shell in a new tab of the project's herdr workspace. It needs nothing of code link: only herdr has to answer. */
-  const newTerminal = async (projectId: string, win: Open, id: string, cwd: string | null) => {
+  const newTerminal = async (projectId: string, win: Open, id: string, cwd: string | null, resume?: string) => {
     const where = cwd && fs.existsSync(cwd) ? cwd : (await places(projectId))[0]!.cwd;
+    // A conversation taken up again: its agent, by its id, in the folder it ran in.
+    const talk = resume ? sessionOf(projectId, resume) : undefined;
+    const command = talk ? resumeCommand(talk.agent, talk.externalId) : null;
     const row: StartingTerminal = { id, title: path.basename(where) || where, cwd: where, pane: null, startedAt: Date.now() };
     const starting = pending.get(projectId) ?? new Map<string, StartingTerminal>();
     pending.set(projectId, starting.set(id, row));
     void refresh(projectId);
     try {
-      const launched = await ctx.get("herdr")?.launch({ cwd: where, label: row.title, workspace: { key: projectId, label: projectName(projectId) } });
+      const launched = await ctx.get("herdr")?.launch({ cwd: where, label: talk?.title ?? row.title, workspace: { key: projectId, label: projectName(projectId) }, ...(command ? { command } : {}) });
       if (!launched) return post(win, { type: "toast", text: words()("terminalFailed") });
       saveTerminals(projectId, [...savedTerminals(projectId), { ...row, pane: launched.paneId }]);
     } finally {
@@ -560,7 +583,7 @@ function apply(ctx: Context, config: Config) {
         }
       }
       case "newTerminal":
-        return newTerminal(projectId, win, m.terminalId, m.cwd);
+        return newTerminal(projectId, win, m.terminalId, m.cwd, m.resume);
       case "closeTerminal":
         return closeTerminal(projectId, win, m.terminalId);
       case "savePreset": {
@@ -585,6 +608,8 @@ function apply(ctx: Context, config: Config) {
         return refreshAll();
       case "archive":
         win.archive = m.open;
+        // Conversations from before titles were kept get theirs from the agent's transcript, once.
+        if (m.open) ctx.codeLink.findTitles?.(projectId);
         return refresh(projectId);
       case "fold":
         save(config.stateFile, { folded: { ...stateOf(config.stateFile).folded, [projectId]: m.folded } });
