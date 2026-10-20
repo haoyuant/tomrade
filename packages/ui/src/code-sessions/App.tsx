@@ -46,6 +46,16 @@ function Banner({ state, say }: { state: WindowState; say: Say }) {
         )}
       </>
     );
+  else if (state.revive === "starting") body = <span>{say("herdrStarting")}</span>;
+  else if (b.state === "notRunning" && state.revive === "failed")
+    body = (
+      <>
+        <span>{say("herdrStartFailed")}</span>
+        <button type="button" className="btn btn-secondary btn-xs" onClick={() => send({ type: "startHerdr" })}>
+          {say("herdrRetry")}
+        </button>
+      </>
+    );
   else if (b.state === "notRunning") body = <span>{say("notRunning")}</span>;
   else if (b.state === "tooOld") body = <span>{say("tooOld", { version: b.version, need: b.need, fix: b.fix })}</span>;
   else if (b.state === "stale") body = <span>{say("stale", { version: b.version, server: b.server, fix: b.fix })}</span>;

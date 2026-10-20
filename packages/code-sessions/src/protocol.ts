@@ -65,6 +65,8 @@ export interface WindowState {
   /** The app's language, so the window speaks it even before the main window says how it looks. */
   locale: string;
   bridge: HerdrBridge;
+  /** herdr's server went away under this window's terminals: being started again, or that did not work (the person can retry). */
+  revive: "starting" | "failed" | null;
   /** How herdr installs here, when it is missing: the command shown on the button, or only the guide. */
   install: { command: string | null; guide: string } | null;
   /** The code-link terminal setting is not herdr, and the person has not yet been asked to switch it. */
@@ -114,10 +116,14 @@ export type WindowMessage =
   | { type: "install" }
   | { type: "openGuide" }
   | { type: "switchTerminal"; switch: boolean }
+  /** Start herdr's server again after it would not come up. */
+  | { type: "startHerdr" }
   | { type: "refresh" };
 
 /** What the plugin posts to the window, one by one. */
 export type WindowPost =
   | { type: "frame"; cell: string; seq: number; width: number; height: number; full: boolean; bytes: Uint8Array }
   | { type: "closed"; cell: string; reason: string | null }
+  /** herdr's server is back: attach the cell's pane again. */
+  | { type: "reattach"; cell: string }
   | { type: "toast"; text: string };

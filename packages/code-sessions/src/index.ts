@@ -11,7 +11,7 @@ import type {} from "@tomradex/items";
 import type {} from "@tomradex/settings";
 import { MCP_AGENT, WINDOWS_TERMINAL, type CodeLink } from "@tomradex/code-link";
 import type { DesktopSurface } from "@tomradex/desktop-surface";
-import type { HerdrBridge, TerminalStream } from "@tomradex/herdr";
+import { HerdrError, type HerdrBridge, type TerminalStream } from "@tomradex/herdr";
 import { randomUUID } from "node:crypto";
 import type { Layout, LayoutPreset, SessionRow, TerminalPlace, TerminalRow, WindowMessage, WindowPost, WindowState } from "./protocol.js";
 import { CODE_SESSIONS_WORDS } from "./words.js";
@@ -193,6 +193,8 @@ interface Open {
   terminals: Map<string, TerminalStream>;
   /** Each cell's latest attach or detach: an attach that resolves after a newer one lets its stream go. */
   turns: Map<string, number>;
+  /** Cells showing a terminal that ended or never attached: attached again once herdr's server is back. */
+  detached: Set<string>;
   timer: NodeJS.Timeout;
   closed: boolean;
 }
@@ -293,9 +295,49 @@ function apply(ctx: Context, config: Config) {
     return found.length ? found : [{ label: "~", cwd: os.homedir() }];
   };
 
+  /** herdr's server being started again for the windows, and whether the last start did not work (then only the person's retry tries again). */
+  let reviving: Promise<void> | null = null;
+  let reviveFailed = false;
+
+  /** A window with saved terminals, or sessions that ran in herdr, has panes to bring back. */
+  const wantsHerdr = (projectId: string, sessions: SessionRow[]) => savedTerminals(projectId).length > 0 || sessions.some((s) => s.where === "herdr");
+
+  const serverGone = async () => {
+    const herdr = ctx.get("herdr");
+    return !!herdr?.binary() && !(await herdr.server());
+  };
+
+  /**
+   * Start herdr's server again, once for every window: herdr brings back its panes with their ids and resumes their
+   * agents, and the cells cut off attach again. herdr's own limit keeps a server that keeps dying from being started
+   * over and over; Tomrade never stops it.
+   */
+  const revive = (force = false) => {
+    const herdr = ctx.get("herdr");
+    if (!herdr || reviving || (!force && reviveFailed)) return;
+    reviving = (async () => {
+      const result = await herdr.revive(force).catch(() => "failed" as const);
+      reviveFailed = result === "failed" || result === "held";
+      if (result === "failed" || result === "held") ctx.logger.warn(`code sessions: herdr's server did not come back (${result})`);
+      if (result !== "started" && result !== "running") return;
+      for (const win of open.values()) {
+        // A started server means every old stream is gone, a frozen one too.
+        const cells = new Set([...win.detached, ...(result === "started" ? win.terminals.keys() : [])]);
+        win.detached.clear();
+        for (const cell of cells) post(win, { type: "reattach", cell });
+      }
+    })().finally(() => {
+      reviving = null;
+      void refreshAll();
+    });
+    void refreshAll();
+  };
+
   const state = async (projectId: string): Promise<WindowState> => {
     const b = await bridge();
     const shown = listed(projectId);
+    if (b.state === "ready") reviveFailed = false;
+    if (b.state === "notRunning" && wantsHerdr(projectId, shown.sessions)) revive();
     const setting = terminal();
     const { saved, broken } = readState(config.stateFile);
     const remembered = saved.layouts?.[projectId];
@@ -307,6 +349,7 @@ function apply(ctx: Context, config: Config) {
       projectName: projectName(projectId),
       locale: ctx.settings.locale(),
       bridge: b,
+      revive: reviving ? "starting" : reviveFailed && b.state === "notRunning" ? "failed" : null,
       install: b.state === "notInstalled" ? await ctx.codeLink.herdrInstall() : null,
       // "auto" lands in herdr once it is installed; only a terminal named otherwise keeps sessions out of it.
       askSwitch: setting !== "herdr" && setting !== "auto" && !saved.asked,
@@ -348,6 +391,7 @@ function apply(ctx: Context, config: Config) {
 
   const detach = (win: Open, cell: string) => {
     turn(win, cell);
+    win.detached.delete(cell);
     const stream = win.terminals.get(cell);
     win.terminals.delete(cell);
     stream?.close();
@@ -363,15 +407,28 @@ function apply(ctx: Context, config: Config) {
     try {
       stream = await herdr.terminal(pane, { cols, rows });
     } catch (error) {
+      if (win.turns.get(cell) !== mine) return;
+      win.detached.add(cell);
+      if (error instanceof HerdrError && error.code === "notRunning") {
+        post(win, { type: "closed", cell, reason: words()("herdrRestarting") });
+        return revive();
+      }
       return post(win, { type: "closed", cell, reason: error instanceof Error ? error.message : String(error) });
     }
     if (win.closed || win.turns.get(cell) !== mine) return stream.close();
     win.terminals.set(cell, stream);
+    win.detached.delete(cell);
     stream.onFrame((f) => post(win, { type: "frame", cell, seq: f.seq, width: f.width, height: f.height, full: f.full, bytes: f.bytes }));
     stream.onClose((reason) => {
       if (win.terminals.get(cell) !== stream) return;
       win.terminals.delete(cell);
-      post(win, { type: "closed", cell, reason });
+      win.detached.add(cell);
+      // The server going away is not the pane ending: it is started again and the cell comes back on its own.
+      void serverGone().then((gone) => {
+        if (win.turns.get(cell) !== mine) return;
+        post(win, { type: "closed", cell, reason: gone ? words()("herdrRestarting") : reason });
+        if (gone) revive();
+      });
     });
   };
 
@@ -505,6 +562,9 @@ function apply(ctx: Context, config: Config) {
         }
         return refresh(projectId);
       }
+      case "startHerdr":
+        reviveFailed = false;
+        return revive(true);
       case "refresh":
         return refresh(projectId);
     }
@@ -519,7 +579,7 @@ function apply(ctx: Context, config: Config) {
       return void already.surface.setState(await state(projectId));
     }
     const w = words();
-    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), timer: setInterval(() => void refresh(projectId), BRIDGE_POLL_MS), closed: false };
+    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), timer: setInterval(() => void refresh(projectId), BRIDGE_POLL_MS), closed: false };
     win.timer.unref?.();
     open.set(projectId, win);
     try {

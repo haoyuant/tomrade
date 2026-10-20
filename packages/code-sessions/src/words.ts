@@ -21,7 +21,8 @@ export const CODE_SESSIONS_WORDS = defineWords("codeSessions", {
     presetName: "Layout",
     switchFailed: "Could not bring {{app}} forward",
     openedOutside: "Opened in {{app}}. An agent you start there shows up here as a session",
-    outsideFailed: "Could not open a terminal: {{reason}}"
+    outsideFailed: "Could not open a terminal: {{reason}}",
+    herdrRestarting: "herdr's server stopped — starting it again, this terminal comes back on its own"
   },
   zh: {
     open: "打开终端",
@@ -42,6 +43,7 @@ export const CODE_SESSIONS_WORDS = defineWords("codeSessions", {
     presetName: "布局",
     switchFailed: "没能切到 {{app}}",
     openedOutside: "已在 {{app}} 里打开。在那里启动的 agent 会作为会话出现在这里",
-    outsideFailed: "没能打开终端：{{reason}}"
+    outsideFailed: "没能打开终端：{{reason}}",
+    herdrRestarting: "herdr 服务停了，正在重新启动，这个终端会自己回来"
   }
 });

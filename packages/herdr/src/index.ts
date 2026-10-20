@@ -108,6 +108,12 @@ export const RECONNECT_MS = 2_000;
 export const RECONNECT_MAX_MS = 60_000;
 /** How long a server Tomrade started has to answer before the launch goes elsewhere. */
 export const START_TIMEOUT_MS = 10_000;
+/** At most this many starts by `revive` within the window, so a server that keeps dying is not started over and over. */
+export const REVIVE_LIMIT = 3;
+export const REVIVE_WINDOW_MS = 5 * 60_000;
+
+/** How `revive` went: the server answers (already, or started now), did not come up, is held by the limit, or herdr is not here. */
+export type HerdrRevive = "running" | "started" | "failed" | "held" | "notInstalled";
 
 export interface HerdrConfig {
   /** The first wait before subscribing again; tests make it short. */
@@ -119,6 +125,8 @@ export interface HerdrConfig {
   /** A machine-local file remembering that Tomrade has started herdr's server before, so the person is told only the first time. */
   statePath?: string;
   startTimeoutMs?: number;
+  /** How many starts `revive` makes within REVIVE_WINDOW_MS; tests make it small. */
+  reviveLimit?: number;
 }
 
 /** What Tomrade remembers about herdr on this machine. */
@@ -163,8 +171,12 @@ export class Herdr extends Service {
   private readonly bin: string | null;
   private readonly statePath: string | null;
   private readonly startTimeoutMs: number;
+  private readonly reviveLimit: number;
   /** The server start under way, shared by every launch that wants one meanwhile. */
   private starting: Promise<HerdrUp | null> | null = null;
+  /** When `revive` started the server, oldest first. */
+  private revived: number[] = [];
+  private reviving: Promise<HerdrRevive> | null = null;
   private toldStarted = false;
   /** The terminals open now, closed with the service. */
   private readonly terminals = new Set<TerminalStream>();
@@ -178,6 +190,7 @@ export class Herdr extends Service {
     this.bin = config.bin ?? null;
     this.statePath = config.statePath ?? null;
     this.startTimeoutMs = config.startTimeoutMs ?? START_TIMEOUT_MS;
+    this.reviveLimit = config.reviveLimit ?? REVIVE_LIMIT;
   }
 
   [Service.init]() {
@@ -247,6 +260,29 @@ export class Herdr extends Service {
       this.starting = null;
     });
     return this.starting;
+  }
+
+  /**
+   * The server answering again after it went away, for a window showing its panes: started as a launch starts it,
+   * and herdr restores its panes, same ids, and resumes their agents. Shares a start already under way. Unless
+   * `force` (the person asked), at most `reviveLimit` starts in REVIVE_WINDOW_MS. Never stops a server.
+   */
+  revive(force = false): Promise<HerdrRevive> {
+    this.reviving ??= this.reviveOnce(force).finally(() => {
+      this.reviving = null;
+    });
+    return this.reviving;
+  }
+
+  private async reviveOnce(force: boolean): Promise<HerdrRevive> {
+    if (await this.server()) return "running";
+    if (!(await this.installed())) return "notInstalled";
+    const now = Date.now();
+    this.revived = this.revived.filter((at) => now - at < REVIVE_WINDOW_MS);
+    if (!force && this.revived.length >= this.reviveLimit) return "held";
+    this.revived.push(now);
+    const up = await this.ensureServer();
+    return up ? (up.started ? "started" : "running") : "failed";
   }
 
   private async startServer(): Promise<HerdrUp | null> {

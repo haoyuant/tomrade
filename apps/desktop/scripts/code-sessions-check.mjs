@@ -385,6 +385,33 @@ app.whenReady().then(async () => {
     await tjs(`${goneCell}.querySelector('[data-testid=cs-new-terminal]').click(); true`);
     const took = await wait(async () => tjs(`(() => { const cell = document.querySelectorAll('.cs-cell')[${at}]; return !!cell?.dataset.cellTerminal && !!cell.querySelector('.xterm') && cell.querySelector('.cs-cell-name').textContent.includes(${JSON.stringify(path.basename(wtDir))}); })()`), 10000);
     check("在那里开的新终端占了这个格子，目录就是 worktree", took);
+
+    // herdr's server goes away under the window (this run's own, by its socket): Tomrade starts it again, herdr brings
+    // the panes back with their ids, and the cells attach on their own.
+    const paneIds = () => JSON.parse(herdr("pane", "list")).result.panes.map((p) => p.pane_id).sort().join(",");
+    const up = () => {
+      try {
+        return /status: running/.test(herdr("status"));
+      } catch {
+        return false;
+      }
+    };
+    const before = paneIds();
+    const attachedBefore = await tjs(`document.querySelectorAll('.cs-cell .xterm').length`);
+    const own = herdr("status").match(/socket:\s*(\S+)/)?.[1] === ownSocket;
+    if (own) herdr("server", "stop");
+    const wentDown = await wait(async () => !up(), 10000);
+    const cameBack = wentDown && (await wait(async () => up() && paneIds() === before, 30000));
+    check("herdr 服务停掉后，Tomrade 自己把它重新启动，pane 原样回来", own && cameBack, `before ${before} · after ${up() ? paneIds() : "not running"}`);
+    const reattached = await wait(async () => tjs(`document.querySelectorAll('.cs-cell .xterm').length === ${attachedBefore} && ![...document.querySelectorAll('.cs-term-closed')].some((e) => e.offsetParent)`), 20000);
+    check("格子自己重新连上，不用点「重新连接」", reattached);
+    await tjs(`document.querySelectorAll('.cs-cell')[${at}].querySelector('.xterm-helper-textarea').focus(); true`);
+    tw.webContents.insertText("echo back-after-restart");
+    await sleep(200);
+    tw.webContents.sendInputEvent({ type: "keyDown", keyCode: "Return" });
+    tw.webContents.sendInputEvent({ type: "char", keyCode: "\r" });
+    const answers = await wait(async () => (await tjs(`document.querySelectorAll('.cs-cell')[${at}].textContent`)).includes("back-after-restart"), 10000);
+    check("重启后在终端里输入照常有回显", answers);
     tw.close();
   } catch (error) {
     check("检查跑完", false, error?.stack ?? String(error));
