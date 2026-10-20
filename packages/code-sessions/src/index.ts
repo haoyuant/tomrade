@@ -26,8 +26,8 @@ export const Config = z.object({
 });
 export type Config = z.infer<typeof Config>;
 
-/** Ended sessions stay listed this long, so the last look at one is a click away. */
-export const ENDED_SHOWN_MS = 24 * 60 * 60 * 1000;
+/** A session that ended in herdr this recently may come back with herdr's server: the window starts it for them. */
+export const RECENTLY_ENDED_MS = 24 * 60 * 60 * 1000;
 /** How often an open window asks herdr how it is, besides every session change. */
 export const BRIDGE_POLL_MS = 10_000;
 
@@ -39,6 +39,8 @@ interface Saved {
   presets?: LayoutPreset[];
   defaultPreset?: string | null;
   autoPlace?: boolean;
+  /** Each project's window with its sidebar folded. */
+  folded?: Record<string, boolean>;
 }
 
 type SavedTerminal = Omit<TerminalRow, "sessionId" | "note" | "agentTitle"> & { pane: string };
@@ -88,6 +90,8 @@ export function isLayout(value: unknown): value is Layout {
   if (v.type === "leaf") return v.sessionId === null || typeof v.sessionId === "string";
   return v.type === "split" && (v.direction === "row" || v.direction === "column") && typeof v.ratio === "number" && isLayout(v.a) && isLayout(v.b);
 }
+
+const leafIds = (layout: Layout): string[] => (layout.type === "leaf" ? (layout.sessionId ? [layout.sessionId] : []) : [...leafIds(layout.a), ...leafIds(layout.b)]);
 
 const emptied = (layout: Layout): Layout => (layout.type === "leaf" ? { ...layout, sessionId: null } : { ...layout, a: emptied(layout.a), b: emptied(layout.b) });
 
@@ -151,12 +155,11 @@ export function openSystemTerminal(cwd: string, platform: NodeJS.Platform = proc
   );
 }
 
-/** A project's code sessions as the window lists them: live ones first, then the ones ended in the last day. */
+/** A project's code sessions, live ones first and needs-you before the rest, then every ended one code link keeps. */
 export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, items: { get(projectId: string, id: string): { key: string; title: string } | null | undefined }, projectId: string, now = Date.now(), device?: string, platform: NodeJS.Platform = process.platform): SessionRow[] {
   const prs = new Map(codeLink.links(projectId).filter((l) => l.prUrl).map((l) => [l.branch, l.prUrl]));
   return codeLink
     .sessionsOf(projectId)
-    .filter((s) => (s.state !== "ended" && s.state !== "lost") || now - (s.endedAt ?? s.lastEventAt ?? s.startedAt) < ENDED_SHOWN_MS)
     .map((s): SessionRow => {
       const itemId = s.itemIds[0] ?? null;
       const item = itemId ? items.get(projectId, itemId) : null;
@@ -181,7 +184,8 @@ export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, it
         threadId: s.threadId,
         prUrl: prs.get(s.branch) ?? null,
         worktree: s.worktree,
-        startedAt: s.startedAt
+        startedAt: s.startedAt,
+        endedAt: live ? null : (s.endedAt ?? s.lastEventAt ?? s.startedAt)
       };
     })
     .sort((a, b) => Number(b.state !== "ended" && b.state !== "lost") - Number(a.state !== "ended" && a.state !== "lost") || Number(b.needsYou) - Number(a.needsYou) || b.startedAt - a.startedAt);
@@ -199,6 +203,8 @@ interface Open {
   closed: boolean;
   /** The latest ask to show a session, kept in every state so a window that opens late still sees it. */
   reveal: WindowState["reveal"];
+  /** The archive is open: its rows go with every state. */
+  archive: boolean;
 }
 
 /**
@@ -309,8 +315,9 @@ function apply(ctx: Context, config: Config) {
   let reviving: Promise<void> | null = null;
   let reviveFailed = false;
 
-  /** A window with saved terminals, or sessions that ran in herdr, has panes to bring back. */
-  const wantsHerdr = (projectId: string, sessions: SessionRow[]) => savedTerminals(projectId).length > 0 || sessions.some((s) => s.where === "herdr");
+  /** A window with saved terminals, or sessions that run or lately ran in herdr, has panes to bring back. */
+  const wantsHerdr = (projectId: string, sessions: SessionRow[]) =>
+    savedTerminals(projectId).length > 0 || sessions.some((s) => s.where === "herdr" && (s.endedAt === null || Date.now() - s.endedAt < RECENTLY_ENDED_MS));
 
   const serverGone = async () => {
     const herdr = ctx.get("herdr");
@@ -354,6 +361,11 @@ function apply(ctx: Context, config: Config) {
     const presets = (saved.presets ?? []).filter((p) => p && typeof p.id === "string" && typeof p.name === "string" && isLayout(p.layout));
     const preset = presets.find((p) => p.id === saved.defaultPreset);
     const warning = [shown.warning, broken || (remembered !== undefined && !isLayout(remembered)) ? words()("stateUnreadable") : null].filter(Boolean).join(" · ") || null;
+    const layout = isLayout(remembered) ? remembered : preset ? preset.layout : fresh();
+    // An ended session stays with the state while a cell shows it; the rest wait in the archive.
+    const inCells = new Set(leafIds(layout));
+    const ended = shown.sessions.filter((s) => s.endedAt !== null);
+    const win = open.get(projectId);
     return {
       projectId,
       projectName: projectName(projectId),
@@ -364,15 +376,17 @@ function apply(ctx: Context, config: Config) {
       // "auto" lands in herdr once it is installed; only a terminal named otherwise keeps sessions out of it.
       askSwitch: setting !== "herdr" && setting !== "auto" && !saved.asked,
       terminal: setting,
-      ...shown,
+      sessions: shown.sessions.filter((s) => s.endedAt === null || inCells.has(s.id)),
       warning,
       terminals: await fold(projectId, shown.sessions, await terminals(projectId)),
       places: await places(projectId),
-      layout: isLayout(remembered) ? remembered : preset ? preset.layout : fresh(),
+      layout,
       presets,
       defaultPreset: preset?.id ?? null,
       autoPlace: saved.autoPlace !== false,
-      reveal: open.get(projectId)?.reveal ?? null
+      reveal: win?.reveal ?? null,
+      archive: { count: ended.length, rows: win?.archive ? [...ended].sort((a, b) => b.endedAt! - a.endedAt!) : null },
+      folded: saved.folded?.[projectId] === true
     };
   };
 
@@ -517,6 +531,12 @@ function apply(ctx: Context, config: Config) {
       case "autoPlace":
         save(config.stateFile, { autoPlace: m.on });
         return refreshAll();
+      case "archive":
+        win.archive = m.open;
+        return refresh(projectId);
+      case "fold":
+        save(config.stateFile, { folded: { ...stateOf(config.stateFile).folded, [projectId]: m.folded } });
+        return refresh(projectId);
       case "input":
         return win.terminals.get(m.cell)?.input(m.data);
       case "resize":
@@ -597,7 +617,7 @@ function apply(ctx: Context, config: Config) {
       return void already.surface.setState(await state(projectId));
     }
     const w = words();
-    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), timer: setInterval(() => void refresh(projectId), BRIDGE_POLL_MS), closed: false, reveal: asked };
+    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), timer: setInterval(() => void refresh(projectId), BRIDGE_POLL_MS), closed: false, reveal: asked, archive: false };
     win.timer.unref?.();
     open.set(projectId, win);
     try {

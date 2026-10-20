@@ -67,7 +67,19 @@ export const codeSessions = {
     unsupported: "On Windows terminals cannot show inside this window: New terminal opens one in Windows Terminal (or PowerShell), and an agent you start there shows up here as a session.",
     askSwitch: "Code link opens tickets in {{terminal}}, not herdr, so they will not show here. Use herdr for tickets started in a terminal?",
     switchYes: "Use herdr",
-    switchNo: "Not now"
+    switchNo: "Not now",
+    outsideGroup: "In other terminals",
+    outsideGroupTitle: "Sessions that run in another terminal app or on another computer: their screens cannot show here",
+    needsYouCount: "{{n}} need you",
+    archive: "Archive ({{n}})",
+    archiveHead: "Archive",
+    archiveBack: "Back",
+    archiveEmpty: "No ended sessions yet.",
+    archiveLoading: "Loading…",
+    endedAt: "Ended {{when}}",
+    fold: "Fold the sidebar",
+    unfold: "Show the sidebar",
+    projectTitle: "This window's project: {{project}}"
   },
   zh: {
     sessions: "会话",
@@ -136,6 +148,18 @@ export const codeSessions = {
     unsupported: "Windows 上终端不能显示在这个窗口里：「新终端」会在 Windows Terminal（没有时用 PowerShell）里打开，在那里启动的 agent 会作为会话出现在这里。",
     askSwitch: "代码关联目前在 {{terminal}} 中打开工单，而不是 herdr，所以它们不会显示在这里。以后在终端里开始的工单改用 herdr 吗？",
     switchYes: "改用 herdr",
-    switchNo: "暂不"
+    switchNo: "暂不",
+    outsideGroup: "在其他终端",
+    outsideGroupTitle: "在其他终端应用或其他电脑上运行的会话：它们的画面不能显示在这里",
+    needsYouCount: "{{n}} 个需要你",
+    archive: "归档（{{n}}）",
+    archiveHead: "归档",
+    archiveBack: "返回",
+    archiveEmpty: "还没有结束的会话。",
+    archiveLoading: "正在读取…",
+    endedAt: "结束于 {{when}}",
+    fold: "收起侧栏",
+    unfold: "展开侧栏",
+    projectTitle: "这个窗口所属的项目：{{project}}"
   }
 };
