@@ -23,7 +23,7 @@ import { usePanelOpen } from "~/lib/panel";
 import { useSettingsHost } from "~/lib/settingsHost";
 import { useCreateView, useRedo, useRunCommand, useUndo } from "~/lib/queries";
 import { errorSpec, useToast, useToastDismiss } from "~/lib/toast";
-import { useHintToast } from "~/lib/onboarding";
+import { useHintToast, useSeen } from "~/lib/onboarding";
 import { FilesRegion } from "~/components/files/FilesRegion";
 import { RoutinesRegion } from "~/components/routines/RoutinesRegion";
 import { Board } from "./Board";
@@ -53,6 +53,7 @@ import { useToastUndo } from "~/lib/undo";
 
 /** Below this the three panes cannot all hold their minimum. */
 const THREE_PANE_FLOOR = 1380;
+const FIRST_LESSON = "sample-first-lesson";
 
 function ConflictBanner({ title, onDismiss }: { title: string; onDismiss: () => void }) {
   const { t, tx } = useI18n();
@@ -73,6 +74,14 @@ export function Workspace() {
   usePlaybookConflictNotice(ws.project.id);
   // The sample teaches the graph with a ticket of its own; elsewhere, the first dependency points at it.
   useHintToast("hint.graph", !ws.project.sample && ws.layout !== "graph" && ws.items.some((i) => i.blocks.length > 0), "onboarding.graphHint");
+  // The sample's first visit opens its first lesson — where the learning path starts — not the example backlog beside it.
+  const { seen, markSeen } = useSeen();
+  const firstLesson = ws.project.sample ? ws.items.find((i) => i.blocks.length > 0 && i.blockedBy.length === 0) : undefined;
+  useEffect(() => {
+    if (!firstLesson || seen(FIRST_LESSON)) return;
+    markSeen(FIRST_LESSON);
+    ws.select(firstLesson.id);
+  }, [firstLesson, seen, markSeen, ws.select]);
   const { t, tx } = useI18n();
   const undo = useUndo(ws.project.id);
   const undoWrite = useToastUndo(ws.project.id);

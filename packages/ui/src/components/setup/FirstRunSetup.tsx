@@ -27,6 +27,11 @@ export function FirstRunSetup({ onDone }: { onDone: () => void }) {
   // The engine the panel will open threads on: the chosen default when it can run, else the first that can.
   const assistant = state ? (findEngine(state.assistant, preferred) ?? state.assistant[0]) : undefined;
   const sample = projects.data?.find((p) => p.sample);
+  // Done either way, the tour is where a first run goes next.
+  const openTour = () => {
+    onDone();
+    if (sample) void navigate({ to: "/p/$projectId", params: { projectId: sample.id } });
+  };
 
   return (
     <div className="app first-run" data-testid="first-run-setup">
@@ -72,10 +77,7 @@ export function FirstRunSetup({ onDone }: { onDone: () => void }) {
                       type="button"
                       className="btn btn-primary"
                       data-testid="setup-open-tour"
-                      onClick={() => {
-                        onDone();
-                        void navigate({ to: "/p/$projectId", params: { projectId: sample.id } });
-                      }}
+                      onClick={openTour}
                     >
                       {t("setup.openTour")}
                     </button>
@@ -108,7 +110,7 @@ export function FirstRunSetup({ onDone }: { onDone: () => void }) {
                 </section>
               )}
               <div className="row" style={{ gap: "var(--space-3)", alignItems: "center" }}>
-                <button type="button" className="btn btn-ghost" data-testid="setup-later" onClick={onDone}>
+                <button type="button" className="btn btn-ghost" data-testid="setup-later" onClick={openTour}>
                   {t("setup.later")}
                 </button>
                 <span className="meta-txt">{t("setup.laterNote")}</span>
