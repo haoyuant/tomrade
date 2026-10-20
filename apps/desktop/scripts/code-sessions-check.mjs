@@ -304,23 +304,24 @@ app.whenReady().then(async () => {
       ${files === "real" ? "data.items.add(document.getElementById('cs-drop-probe').files[0]);" : "data.items.add(new File(['x'], 'from-a-page.png', { type: 'image/png' }));"}
       term.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: data }));
       term.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: data }));
-      // A drag-over is not drawn at once: wait for the hint, a little, before letting go.
+      // A drag-over is not drawn at once: wait for the hint, a little, before letting go. On a timer, not animation
+      // frames: a hidden window or a sleeping display draws none, and the wait would never end.
       return new Promise((resolve) => {
         const end = Date.now() + 2000;
         const look = () => {
           const shown = !!term.querySelector('.cs-term-drop')?.textContent;
-          if (!shown && Date.now() < end) return requestAnimationFrame(look);
+          if (!shown && Date.now() < end) return setTimeout(look, 30);
           term.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: data }));
           resolve(shown);
         };
-        requestAnimationFrame(look);
+        look();
       });
     })()`);
     const paneFive = () => herdr("pane", "read", sessions[4].pane, "--source", "recent", "--lines", "20");
     const untouched = paneFive();
     const hinted = await dropOn("page");
     await sleep(1000);
-    check("拖到终端上时格子提示可以放下", hinted);
+    check("拖到终端上时格子提示可以放下", hinted, `no hint within 2 s; the page is ${await js("document.visibilityState")}`);
     check("没有真实路径的拖入什么也不发", paneFive() === untouched, paneFive().slice(-200));
     await dropOn("real");
     const pasted = await wait(async () => paneFive().includes("拖入\\ 文件\\(1\\).txt"));
