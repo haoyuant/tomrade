@@ -1,0 +1,66 @@
+name: npm packages
+
+# The plugin authors' packages for a release (scripts/npm-release.mjs), again:
+# npm limits how many new packages an account creates in a while, so the
+# release's own npm job leaves the ones it refused to this. It publishes only
+# what npm does not have yet, so a day with nothing left does nothing.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release tag to publish for, such as v0.15.0; the newest release when left empty
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  npm:
+    name: npm packages
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Which release
+        id: release
+        shell: bash
+        env:
+          INPUT: ${{ inputs.tag }}
+        run: |
+          tag="${INPUT:-$(git tag --list 'v*' --sort=-v:refname | grep -v -- - | head -1)}"
+          git checkout --quiet "refs/tags/$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26
+          registry-url: https://registry.npmjs.org
+
+      - name: Install pnpm
+        shell: bash
+        run: npm install -g "$(node -p 'require("./package.json").packageManager')"
+
+      - name: Version from the tag
+        shell: bash
+        working-directory: apps/desktop
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: npm pkg set version="${TAG#v}"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Publish what npm does not have yet
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::warning::NPM_TOKEN is not set: nothing is published"
+            exit 0
+          fi
+          node scripts/npm-release.mjs --publish
