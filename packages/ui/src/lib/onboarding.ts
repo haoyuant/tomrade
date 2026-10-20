@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import type { AppSettings } from "@tomradex/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { useSaveSettings, useSettings } from "~/lib/queries";
+import { keys, useSaveSettings, useSettings } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
 
 /** "*" puts every hint and card away at once — what a check sets before the page loads. */
@@ -13,16 +15,22 @@ const ALL = "*";
  * seen: a hint that flashes and vanishes is worse than one that waits a beat.
  */
 export function useSeen() {
+  const qc = useQueryClient();
   const settings = useSettings();
-  const save = useSaveSettings();
+  const { mutate: save } = useSaveSettings();
   const list = (settings.data?.onboarding as { seen?: string[] } | undefined)?.seen ?? [];
   const seen = useCallback((id: string) => !settings.data || list.includes(ALL) || list.includes(id), [settings.data, list]);
   const markSeen = useCallback(
     (id: string) => {
-      if (!settings.data || seen(id)) return;
-      save.mutate({ ...settings.data, onboarding: { seen: [...list, id] } });
+      // From the newest settings, written back at once: two put away in one moment must both stay away.
+      const current = qc.getQueryData<AppSettings>(keys.settings);
+      const now = (current?.onboarding as { seen?: string[] } | undefined)?.seen ?? [];
+      if (!current || now.includes(ALL) || now.includes(id)) return;
+      const next = { ...current, onboarding: { seen: [...now, id] } };
+      qc.setQueryData(keys.settings, next);
+      save(next);
     },
-    [settings.data, seen, list, save]
+    [qc, save]
   );
   return { seen, markSeen };
 }
