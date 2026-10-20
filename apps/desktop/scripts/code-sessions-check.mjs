@@ -106,6 +106,23 @@ app.whenReady().then(async () => {
       }
       return false;
     };
+    // Typed into a cell's terminal until its output shows there: a shell still starting (after a restore) drops what
+    // it was sent, so a few tries, each waiting on the output rather than a fixed time.
+    const typeInCell = async (wc, run, i, command, marker, seen = async () => (await run(`document.querySelectorAll('.cs-cell')[${i}]?.textContent ?? ''`)).includes(marker)) => {
+      const inCell = `document.activeElement?.closest('.cs-cell') === document.querySelectorAll('.cs-cell')[${i}]`;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        // The window moves the keyboard itself when a pane is selected; type only once it is in this cell.
+        await run(`document.querySelectorAll('.cs-cell')[${i}].querySelector('.xterm-helper-textarea').focus(); true`);
+        await wait(async () => run(inCell), 2000);
+        wc.insertText(command);
+        await sleep(200);
+        wc.sendInputEvent({ type: "keyDown", keyCode: "Return" });
+        wc.sendInputEvent({ type: "char", keyCode: "\r" });
+        wc.sendInputEvent({ type: "keyUp", keyCode: "Return" });
+        if (await wait(seen, 8000)) return true;
+      }
+      return false;
+    };
     check("侧栏列出六个会话", await wait(async () => (await js(`document.querySelectorAll('.cs-row').length`)) === 6));
     check("六个格子同时连上终端", await wait(async () => (await js(`document.querySelectorAll('.cs-cell .xterm').length`)) === 6));
     // A pane selected: its session is the list's one current row, wherever the selection goes next; all six still read as shown.
@@ -203,14 +220,7 @@ app.whenReady().then(async () => {
     await selectPane(1);
 
     // Text committed the way an input method commits it, into the wide-character pane's shell.
-    await js(`document.querySelectorAll('.cs-cell')[2].querySelector('.xterm-helper-textarea').focus(); true`);
-    await sleep(200);
-    win.webContents.insertText("echo 输入法提交");
-    await sleep(200);
-    win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Return" });
-    win.webContents.sendInputEvent({ type: "char", keyCode: "\r" });
-    win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Return" });
-    const ime = await wait(async () => herdr("pane", "read", sessions[2].pane, "--source", "recent", "--lines", "20").includes("输入法提交"));
+    const ime = await typeInCell(win.webContents, js, 2, "echo 输入法提交", "输入法提交", async () => herdr("pane", "read", sessions[2].pane, "--source", "recent", "--lines", "20").includes("输入法提交"));
     check("像输入法那样提交的中文进到了 pane", ime);
 
     // Files dropped from outside onto a terminal: a real file goes in as its escaped path; one without a path sends nothing.
@@ -306,13 +316,7 @@ app.whenReady().then(async () => {
     const tui = spawn("script", ["-q", "/dev/null", "herdr"], { env: { ...process.env, HERDR_SESSION, TERM: "xterm-256color", COLUMNS: "100", LINES: "30" }, stdio: ["pipe", "ignore", "ignore"] });
     others.push(tui);
     await sleep(3000);
-    await js(`document.querySelectorAll('.cs-cell')[3].querySelector('.xterm-helper-textarea').focus(); true`);
-    win.webContents.insertText("echo after-herdr-tui");
-    await sleep(200);
-    win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Return" });
-    win.webContents.sendInputEvent({ type: "char", keyCode: "\r" });
-    win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Return" });
-    const coexist = await wait(async () => (await terminalText(3)).includes("after-herdr-tui"), 8000);
+    const coexist = await typeInCell(win.webContents, js, 3, "echo after-herdr-tui", "after-herdr-tui");
     const stillOpen = await js(`[...document.querySelectorAll('.cs-cell')].filter((c) => c.querySelector('.cs-term-closed')).length`);
     check("herdr 自己的 TUI 连着时，窗口仍能输入并看到输出", coexist, `closed cells: ${stillOpen}`);
     console.log(`INFO: with herdr's TUI attached → typed text shown: ${coexist}, cells let go: ${stillOpen}`);
@@ -390,7 +394,10 @@ app.whenReady().then(async () => {
     await wait(async () => sessionsWindow()?.isVisible() ?? false, 10000);
     tw = sessionsWindow();
     tjs = (code) => tw.webContents.executeJavaScript(code, true);
-    const back = await wait(async () => (await tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return !!cell?.querySelector('.xterm') && [...cell.querySelectorAll('.xterm-rows > div')].some((r) => r.textContent.includes('plain-terminal-ok')); })()`)));
+    // Something new on the pane, not an old line the reopened cell's viewport may no longer hold: the cell streams it.
+    herdr("pane", "send-text", plainPane, "echo reopened-ok");
+    herdr("pane", "send-keys", plainPane, "enter");
+    const back = await wait(async () => (await tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return !!cell?.querySelector('.xterm') && [...cell.querySelectorAll('.xterm-rows > div')].some((r) => r.textContent.includes('reopened-ok')); })()`)));
     check("关窗重开后，新终端在原来的格子里接回来", back);
 
     // An agent in it claims a ticket: code link learns the pane (as the repo's hooks report it) and the cell becomes
@@ -402,7 +409,7 @@ app.whenReady().then(async () => {
     ctx.emit("codeLink/changed", project.id);
     const folded = await wait(async () => tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return !!cell && cell.querySelector('.cs-cell-name').textContent.includes(${JSON.stringify(claimed.key)}) && [...cell.querySelectorAll('.link-btn')].some((b) => b.textContent === '继续'); })()`));
     check("终端里的 agent 认领工单后，这个格子原地变成该工单的会话", folded);
-    const inPlace = await tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return cell.querySelector('.xterm')?.dataset.mark === 'same' && [...cell.querySelectorAll('.xterm-rows > div')].some((r) => r.textContent.includes('plain-terminal-ok')); })()`);
+    const inPlace = await tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return cell.querySelector('.xterm')?.dataset.mark === 'same' && [...cell.querySelectorAll('.xterm-rows > div')].some((r) => r.textContent.includes('reopened-ok')); })()`);
     check("不换格子也不重连：还是原来的终端画面", inPlace);
     const rows = await tjs(`[document.querySelectorAll('[data-terminal]').length, [...document.querySelectorAll('.cs-row')].filter((r) => r.textContent.includes(${JSON.stringify(claimed.key)})).length]`);
     check("列表里只有工单会话这一行，没有重复的终端行", rows[0] === 0 && rows[1] === 1, JSON.stringify(rows));
@@ -546,15 +553,23 @@ app.whenReady().then(async () => {
     check("目录下拉框有边框，「新终端」在它下方", order && boxed);
     // Seven panes side by side: narrow ones keep the label and the whole dropdown inside the pane.
     const inside = await tjs(`[...document.querySelectorAll('.cs-new-terminal-where')].map((row) => { const cell = row.closest('.cs-cell').getBoundingClientRect(); const label = row.querySelector('span').getBoundingClientRect(); const select = row.querySelector('select').getBoundingClientRect(); return label.left >= cell.left && select.right <= cell.right && label.width > 0; })`);
-    check("窄格子里「目录」和整个下拉框都在格子内", inside.length >= 2 && inside.every(Boolean), JSON.stringify(inside));
+    // The ended session's cell is always one of them; how many empty ones there are depends on what was placed before.
+    check("窄格子里「目录」和整个下拉框都在格子内", inside.length >= 1 && inside.every(Boolean), JSON.stringify(inside));
     await tjs(`(() => { const s = ${goneCell}.querySelector('select'); s.focus(); return true; })()`);
     const oneFrame = await tjs(`getComputedStyle(${goneCell}.querySelector('select')).boxShadow`);
     check("选过之后只有边框变色，不再多一圈", oneFrame === "none", oneFrame);
     fs.writeFileSync(path.join(shots, "code-sessions-ended.png"), (await tw.webContents.capturePage()).toPNG());
-    const at = await tjs(`[...document.querySelectorAll('.cs-cell')].indexOf(${goneCell}.closest('.cs-cell'))`);
+    // Followed by the cell's own id, not its place: other cells may come and go while herdr opens the pane.
+    const goneId = await tjs(`${goneCell}.closest('.cs-cell').dataset.cell`);
     await tjs(`${goneCell}.querySelector('[data-testid=cs-new-terminal]').click(); true`);
-    const took = await wait(async () => tjs(`(() => { const cell = document.querySelectorAll('.cs-cell')[${at}]; return !!cell?.dataset.cellTerminal && !!cell.querySelector('.xterm') && cell.querySelector('.cs-cell-name').textContent.includes(${JSON.stringify(path.basename(wtDir))}); })()`), 10000);
+    const took = await wait(async () => tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell="${goneId}"]'); return !!cell?.dataset.cellTerminal && !!cell.querySelector('.xterm') && cell.querySelector('.cs-cell-name').textContent.includes(${JSON.stringify(path.basename(wtDir))}); })()`), 20000);
     check("在那里开的新终端占了这个格子，目录就是 worktree", took);
+    if (!took) {
+      // What the cell showed instead, for TOM-404's last flaky step.
+      const seen = await tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell="${goneId}"]'); return cell ? { terminal: cell.dataset.cellTerminal ?? null, xterm: !!cell.querySelector('.xterm'), name: cell.querySelector('.cs-cell-name')?.textContent ?? null, body: cell.textContent.slice(0, 200) } : null; })()`);
+      console.log(`INFO: the cell after "新终端" → ${JSON.stringify(seen)}; saved terminals ${JSON.stringify(JSON.parse(fs.readFileSync(path.join(work, "code-sessions.json"), "utf8")).terminals?.[project.id] ?? [])}`);
+      fs.writeFileSync(path.join(shots, "code-sessions-took.png"), (await tw.webContents.capturePage()).toPNG());
+    }
 
     // herdr's server goes away under the window (this run's own, by its socket): Tomrade starts it again, herdr brings
     // the panes back with their ids, and the cells attach on their own.
@@ -575,12 +590,8 @@ app.whenReady().then(async () => {
     check("herdr 服务停掉后，Tomrade 自己把它重新启动，pane 原样回来", own && cameBack, `before ${before} · after ${up() ? paneIds() : "not running"}`);
     const reattached = await wait(async () => tjs(`document.querySelectorAll('.cs-cell .xterm').length === ${attachedBefore} && ![...document.querySelectorAll('.cs-term-closed')].some((e) => e.offsetParent)`), 20000);
     check("格子自己重新连上，不用点「重新连接」", reattached);
-    await tjs(`document.querySelectorAll('.cs-cell')[${at}].querySelector('.xterm-helper-textarea').focus(); true`);
-    tw.webContents.insertText("echo back-after-restart");
-    await sleep(200);
-    tw.webContents.sendInputEvent({ type: "keyDown", keyCode: "Return" });
-    tw.webContents.sendInputEvent({ type: "char", keyCode: "\r" });
-    const answers = await wait(async () => (await tjs(`document.querySelectorAll('.cs-cell')[${at}].textContent`)).includes("back-after-restart"), 10000);
+    const here = await tjs(`[...document.querySelectorAll('.cs-cell')].indexOf(document.querySelector('.cs-cell[data-cell="${goneId}"]'))`);
+    const answers = here >= 0 && (await typeInCell(tw.webContents, tjs, here, "echo back-after-restart", "back-after-restart"));
     check("重启后在终端里输入照常有回显", answers);
     tw.close();
   } catch (error) {

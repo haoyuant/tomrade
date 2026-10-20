@@ -205,6 +205,8 @@ interface Open {
   reveal: WindowState["reveal"];
   /** The archive is open: its rows go with every state. */
   archive: boolean;
+  /** States begun, and the newest one shown: one that finishes after a newer one is not shown. */
+  states: { begun: number; shown: number };
 }
 
 /**
@@ -366,6 +368,9 @@ function apply(ctx: Context, config: Config) {
     const inCells = new Set(leafIds(layout));
     const ended = shown.sessions.filter((s) => s.endedAt !== null);
     const win = open.get(projectId);
+    // Read with the layout, before anything is awaited: a state begun before a pick from the archive was saved must
+    // still carry that session, or the window would drop it from the cell it was just put in.
+    const archiveOpen = win?.archive ?? false;
     return {
       projectId,
       projectName: projectName(projectId),
@@ -385,7 +390,7 @@ function apply(ctx: Context, config: Config) {
       defaultPreset: preset?.id ?? null,
       autoPlace: saved.autoPlace !== false,
       reveal: win?.reveal ?? null,
-      archive: { count: ended.length, rows: win?.archive ? [...ended].sort((a, b) => b.endedAt! - a.endedAt!) : null },
+      archive: { count: ended.length, rows: archiveOpen ? [...ended].sort((a, b) => b.endedAt! - a.endedAt!) : null },
       folded: saved.folded?.[projectId] === true
     };
   };
@@ -393,8 +398,11 @@ function apply(ctx: Context, config: Config) {
   const refresh = async (projectId: string) => {
     const win = open.get(projectId);
     if (!win || win.closed || !win.surface) return;
+    const turn = ++win.states.begun;
     const next = await state(projectId);
-    if (!win.closed) win.surface.setState(next);
+    if (win.closed || turn < win.states.shown) return;
+    win.states.shown = turn;
+    win.surface.setState(next);
   };
 
   // Presets and the auto-place switch belong to every project's window.
@@ -614,10 +622,10 @@ function apply(ctx: Context, config: Config) {
       // Still opening: that call brings it up.
       if (!already.surface) return;
       already.surface.focus();
-      return void already.surface.setState(await state(projectId));
+      return refresh(projectId);
     }
     const w = words();
-    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), timer: setInterval(() => void refresh(projectId), BRIDGE_POLL_MS), closed: false, reveal: asked, archive: false };
+    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), timer: setInterval(() => void refresh(projectId), BRIDGE_POLL_MS), closed: false, reveal: asked, archive: false, states: { begun: 0, shown: 0 } };
     win.timer.unref?.();
     open.set(projectId, win);
     try {

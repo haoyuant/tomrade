@@ -250,6 +250,77 @@ it("puts ended sessions in the archive, keeps one a cell shows, sends the archiv
   expect(opened[1]!.states[0]).toMatchObject({ folded: true, archive: { count: 3, rows: null } });
 });
 
+it("never shows a state older than one already shown, so a pick from the archive keeps its cell when the archive closes", async () => {
+  const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[] }[] = [];
+  const now = Date.now();
+  const sessions = [session({ id: "live", herdrPane: "w1:p1", startedAt: 5 }), session({ id: "old", state: "ended", endedAt: now - 60_000, startedAt: 1 })];
+  // herdr's pane list answers when let go, so a state can be held after it read the layout.
+  let held: (() => void)[] | null = null;
+  class FakeSurfaces extends Service {
+    static provide = "desktopSurfaces";
+    constructor(ctx: Context) {
+      super(ctx, "desktopSurfaces");
+    }
+    open(spec: (typeof opened)[number]["spec"]) {
+      const entry = { spec, states: [spec.initialState as WindowState] };
+      opened.push(entry);
+      return { id: "s", capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus() {}, setState: (s: WindowState) => void entry.states.push(s), post() {}, close: () => spec.onClose() };
+    }
+  }
+  class HeldHerdr extends Service {
+    static provide = "herdr";
+    constructor(ctx: Context) {
+      super(ctx, "herdr");
+    }
+    bridge = async () => ({ state: "ready" as const, version: "0.9.5" });
+    panes = () =>
+      new Promise((resolve) => {
+        const answer = () => resolve([{ paneId: "w1:p9", agent: null, agentSession: null, title: null }]);
+        if (held) held.push(answer);
+        else answer();
+      });
+  }
+  class FakeCodeLink extends Service {
+    static provide = "codeLink";
+    constructor(ctx: Context) {
+      super(ctx, "codeLink");
+    }
+    sessionsOf = () => sessions;
+    links = () => [];
+    repositoriesOf = () => [];
+  }
+  const stateFile = path.join(dir, "stale-state.json");
+  const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "stale-settings.json") }], Contributions, FakeSurfaces, HeldHerdr, FakeCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile }]] });
+  const one: Layout = { type: "split", id: "r", direction: "row", ratio: 0.5, a: { type: "leaf", id: "c1", sessionId: "live" }, b: { type: "leaf", id: "c2", sessionId: null } };
+  fs.writeFileSync(stateFile, JSON.stringify({ layouts: { [w.project.id]: one }, terminals: { [w.project.id]: [{ id: "t1", title: "repo", cwd: dir, pane: "w1:p9", startedAt: 1 }] } }));
+  for (const s of sessions) s.device = w.ctx.hub.deviceId;
+  await settle();
+  await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
+  const win = opened[0]!;
+  win.spec.onMessage({ type: "archive", open: true });
+  await settle();
+  expect(win.states.at(-1)!.archive.rows!.map((s) => s.id)).toEqual(["old"]);
+
+  // A state begins with the archive open; the archived session is picked into a cell and the archive closes.
+  held = [];
+  w.ctx.emit("codeLink/changed", w.project.id);
+  await settle();
+  win.spec.onMessage({ type: "layout", layout: { ...one, b: { type: "leaf", id: "c2", sessionId: "old" } } });
+  win.spec.onMessage({ type: "archive", open: false });
+  await settle();
+  const [older, newer] = held;
+  held = null;
+  const before = win.states.length;
+  newer!();
+  await settle();
+  older!();
+  await settle();
+  // The newer state alone is shown: the archive closed, the picked session still in the state for its cell.
+  expect(win.states.length).toBe(before + 1);
+  expect(win.states.at(-1)!.archive.rows).toBeNull();
+  expect(win.states.at(-1)!.sessions.map((s) => s.id)).toEqual(["live", "old"]);
+});
+
 it("shows a session code link asks for: the window opens or comes forward with it to reveal, only while herdr can show panes", async () => {
   const opened: { spec: Record<string, unknown> & { onMessage(m: unknown): void; onClose(): void }; states: WindowState[]; posts: WindowPost[]; focused: number }[] = [];
   const sessions = [session({ id: "s1", herdrPane: "w1:p1" }), session({ id: "s2", herdrPane: "w1:p2" }), session({ id: "s3", mode: "headless" })];
