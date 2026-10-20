@@ -121,7 +121,7 @@ const run = async () => {
   await press(`${byText(".side-views .side-name", "Learning path")}?.closest('a, button, .side-row')`);
   check("and draws as a graph", await wait(() => has('.board-region[data-layout="graph"]'), "graph layout"));
   await shot("onboarding-02-learning-path");
-  check("the sample teaches the graph itself, so no graph hint", !(await toasts()).some((t) => t.includes("Switch a view's layout to Graph")));
+  check("the sample teaches the graph itself, so no graph hint", !(await toasts()).some((t) => t.includes("Switch the view to Graph")));
 
   // ── what the assistant still needs ────────────────────────────────────
   check("the assistant keeps a setup card until an AI is connected", await wait(() => has(".agent-setup"), "setup card"));
@@ -163,7 +163,7 @@ const run = async () => {
   const b = ctx.items.create({ projectId: plain.id, boardId: board.id, title: "Second", by: "human" });
   ctx.items.addRelation(plain.id, a.id, b.id);
   await $(`location.hash = '#/p/${plain.id}';true`);
-  check("a project whose tickets depend on each other points at the graph", await wait(async () => (await toasts()).some((t) => t.includes("Switch a view's layout to Graph")), "graph hint"));
+  check("a project whose tickets depend on each other points at the graph", await wait(async () => (await toasts()).some((t) => t.includes("Switch the view to Graph")), "graph hint"));
   check("seen as soon as it is shown", seen().includes("hint.graph"));
 
   // ── deleted, and made again in the person's language ──────────────────

@@ -2,7 +2,7 @@ export const setup = {
   en: {
     eyebrow: "Before you start",
     title: "Connect an AI",
-    lede: "Tomrade works with either of these — one is enough. An API key also runs the built-in agent; a signed-in Claude Code, WorkBuddy or Codex also does the planning.",
+    lede: "One of these is enough: the assistant and the agents that work on your tickets both run on it.",
     detectedTitle: "Found on this computer",
     detectedEnv: "{{provider}} key in your shell · {{detail}}",
     detectedLocal: "{{provider}} is running here · {{detail}}",
@@ -52,7 +52,7 @@ export const setup = {
   zh: {
     eyebrow: "开始之前",
     title: "先连上一个 AI",
-    lede: "下面两种任选其一就够了。填一个 API Key，内置智能体也就能用了；用已登录的 Claude Code、WorkBuddy 或 Codex，规划也交给它们来做。",
+    lede: "下面两种任选其一就够了：助手，以及替你处理工单的智能体，都会用它来运行。",
     detectedTitle: "在这台电脑上找到了",
     detectedEnv: "终端环境里的 {{provider}} Key · {{detail}}",
     detectedLocal: "这台电脑上运行着 {{provider}} · {{detail}}",

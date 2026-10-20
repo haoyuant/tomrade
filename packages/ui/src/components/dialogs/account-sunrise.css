@@ -5,7 +5,8 @@
   --poster-red: #9c392c;
   --poster-ink: #532f27;
   --poster-muted: #795c4c;
-  --poster-horizon: clamp(280px, 50vh, 620px);
+  /* The sky gives way first, so the whole form, down to using Tomrade without an account, fits the window. */
+  --poster-horizon: clamp(240px, calc(100dvh - 580px), 620px);
   --fg: var(--poster-ink);
   --fg-2: var(--poster-ink);
   --muted: var(--poster-muted);
@@ -45,7 +46,7 @@
 .account-sunrise__sky { position: absolute; inset: 0 0 auto; height: var(--poster-horizon); overflow: hidden; mask-image: linear-gradient(#000 calc(100% - 24px), transparent); }
 .account-sunrise__sun {
   position: absolute;
-  width: clamp(200px, 29vh, 290px);
+  width: clamp(200px, min(29vh, var(--poster-horizon) - 30px), 290px);
   aspect-ratio: 1;
   bottom: -9px;
   left: 50%;
@@ -121,7 +122,6 @@
 @keyframes account-form-rise { from { transform: translateY(26px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes account-wave { from { transform: translateX(-20px); } to { transform: translateX(20px); } }
 @media (max-height: 720px) {
-  .account-gate { --poster-horizon: clamp(240px, 46vh, 330px); }
   .account-sunrise__sun { width: 200px; }
   .account-gate__form { margin-top: 24px; }
 }
