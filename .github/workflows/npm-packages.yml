@@ -34,6 +34,8 @@ jobs:
         run: |
           tag="${INPUT:-$(git tag --list 'v*' --sort=-v:refname | grep -v -- - | head -1)}"
           git checkout --quiet "refs/tags/$tag"
+          # The release's packages with this branch's script, which leaves a package npm refuses for later rather than stopping.
+          git checkout --quiet "$GITHUB_SHA" -- scripts/npm-release.mjs
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
