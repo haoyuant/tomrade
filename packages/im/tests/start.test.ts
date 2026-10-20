@@ -286,8 +286,8 @@ describe("starting a ticket from IM", () => {
     await w.receive(say("go", `/start ${w.item.key} model=fast`));
     await w.said(/^Started .* with Test\./);
     w.ctx.items.update(w.project.id, w.item.id, { status: "doing" }, "human");
-    const moved = await w.said(new RegExp(`^${w.item.key}: Todo → Doing$`));
-    expect(moved.address.conversationId).toBe("chat");
+    // The group nobody wrote in hears it too: it was allowed.
+    await expect.poll(() => w.delivered.filter(d => d.content.text === `${w.item.key}: Todo → Doing`).map(d => d.address.conversationId).sort(), { timeout: 5000 }).toEqual(["chat", "room"]);
     const im = w.ctx.settings.get().im as ImSettings;
     w.ctx.settings.set({ ...w.ctx.settings.get(), im: { ...im, routes: im.routes.map(r => ({ ...r, notify: { ...r.notify, tickets: false } })) } });
     w.ctx.items.update(w.project.id, w.item.id, { status: "verifying" }, "human");
@@ -302,9 +302,8 @@ describe("starting a ticket from IM", () => {
     expect(w.delivered.some(d => d.content.text.includes(w.item.key))).toBe(false);
     w.ctx.items.update(w.project.id, w.item.id, { title: "Fix the sign-in page" }, "human");
     w.ctx.items.update(w.project.id, w.item.id, { status: "verifying" }, "human");
-    const moved = await w.said(new RegExp(`^${w.item.key}: Todo → Verifying$`));
-    expect(moved.address.conversationId).toBe("chat");
-    expect(w.delivered.filter(d => d.content.text.startsWith(`${w.item.key}:`))).toHaveLength(1);
+    await expect.poll(() => w.delivered.filter(d => d.content.text === `${w.item.key}: Todo → Verifying`).map(d => d.address.conversationId).sort(), { timeout: 5000 }).toEqual(["chat", "room"]);
+    expect(w.delivered.filter(d => d.content.text.startsWith(`${w.item.key}:`))).toHaveLength(2);
   });
 
   it("goes back to the conversation it left once the ticket is done and its session archived, and the next message goes there", async () => {
