@@ -830,7 +830,7 @@ export class CodeLink extends Service {
       // Shared sessions stay available while any associated ticket still needs work.
       if (session.state === "ended" || !session.itemIds.length || !session.itemIds.every(done)) continue;
       if (session.threadId && running.has(session.threadId)) continue;
-      this.sessions.end(projectId, session.id, "ended", true);
+      this.sessions.end(projectId, session.id, "ended", true, "its tickets are done");
       changed = true;
     }
     for (const thread of agent.store.threads(projectId, null)) {
@@ -1144,7 +1144,7 @@ export class CodeLink extends Service {
       || (!!session.externalId && this.store.sessions(projectId, { live: true }).some((s) => s.id !== session.id && s.agent === session.agent && s.externalId === session.externalId && s.startedAt <= session.startedAt));
     this.store.patchSession(projectId, sessionId, { itemIds: rest, ...(rest.length ? {} : { branch: "" }) });
     if (!rest.length && forClaims) {
-      this.sessions.end(projectId, sessionId, "ended", true);
+      this.sessions.end(projectId, sessionId, "ended", true, "its claim was let go and it holds nothing");
       const bound = this.connections.get(connection);
       const kept = bound?.sessionIds.filter((id) => id !== sessionId) ?? [];
       if (!bound || !kept.length) this.connections.delete(connection);
@@ -1171,7 +1171,7 @@ export class CodeLink extends Service {
     // A hooks session ends when its agent says so; one known only by its connection ends with it.
     for (const id of bound.sessionIds) {
       const session = this.store.session(bound.projectId, id);
-      if (session?.agent === MCP_AGENT && !this.boundAnywhere(session.id)) this.sessions.end(bound.projectId, session.id);
+      if (session?.agent === MCP_AGENT && !this.boundAnywhere(session.id)) this.sessions.end(bound.projectId, session.id, "ended", false, "its MCP connection closed");
     }
   }
 
@@ -1878,7 +1878,7 @@ export class CodeLink extends Service {
       if (session.repoId !== repoId || session.blocked !== "merge") continue;
       const links = session.itemIds.flatMap((id) => this.currentLinks(projectId, id)).filter((l) => l.repoId === repoId);
       if (!deliveryMerged(links)) continue;
-      if (this.superseded(projectId, session)) this.sessions.end(projectId, session.id, "ended", true);
+      if (this.superseded(projectId, session)) this.sessions.end(projectId, session.id, "ended", true, "another session took over from it");
       else this.store.patchSession(projectId, session.id, { blocked: null, state: "idle", activity: null });
     }
   }
@@ -2297,8 +2297,9 @@ export class CodeLink extends Service {
     if (agent === "claude-code" && typeof p.transcript_path === "string") this.ctx.get("agent")?.engineOf("claude-code")?.mcpLink?.sawTranscript?.(p.transcript_path);
     const cwd = path.resolve(p.cwd);
     const within = (root: string) => cwd === root || cwd.startsWith(root + path.sep);
-    // Resumed, by hand or by herdr after its server restarted: the conversation goes on in the session it had.
-    if (p.hook_event_name === "SessionStart" && p.source === "resume") this.continueEnded(agent, p.session_id);
+    // Resumed, by hand or by herdr after its server restarted, or still going after another process of it ended
+    // (`claude --continue` elsewhere): the conversation goes on in the session it had.
+    if (p.hook_event_name !== "SessionEnd") this.continueEnded(agent, p.session_id);
     for (const [threadId, dir] of this.worktrees) {
       if (!within(path.resolve(dir))) continue;
       for (const projectId of this.ctx.db.openIds()) {
@@ -2360,8 +2361,11 @@ export class CodeLink extends Service {
   private continueEnded(agent: string, externalId: string): void {
     const now = Date.now();
     const ended: { projectId: string; session: SessionView }[] = [];
+    const ownOf = (s: SessionView) => s.threadId === null && s.mode === "terminal" && s.agent === agent && s.externalId === externalId;
+    // Asked on every hook: the live ones first, and the ended ones only when none is.
+    if (this.ctx.db.openIds().some((projectId) => this.store.sessions(projectId, { live: true }).some((s) => ownOf(s) && s.state !== "lost"))) return;
     for (const projectId of this.ctx.db.openIds()) {
-      const own = this.store.sessions(projectId).filter((s) => s.threadId === null && s.mode === "terminal" && s.agent === agent && s.externalId === externalId);
+      const own = this.store.sessions(projectId).filter(ownOf);
       if (own.some((s) => s.state !== "ended" && s.state !== "lost")) return;
       for (const session of own) {
         if (session.state !== "ended" || !session.endedAt || now - session.endedAt > RESUME_WITHIN_MS) continue;
@@ -2378,6 +2382,7 @@ export class CodeLink extends Service {
     for (const { projectId, session } of ended) {
       if (session.endedAt! < last - ENDED_TOGETHER_MS) continue;
       this.store.patchSession(projectId, session.id, { state: "running", endedAt: null });
+      this.ctx.logger.info(`session ${session.id} (${agent} ${externalId}) lives again: its conversation goes on`);
       changed.add(projectId);
     }
     for (const projectId of changed) this.notify(projectId);
@@ -2527,7 +2532,7 @@ export class CodeLink extends Service {
       const session = this.store.sessions(projectId, { live: true }).find((s) => s.herdrPane === event.paneId && s.state !== "lost");
       if (!session) continue;
       if (event.kind === "exited") {
-        this.sessions.event(projectId, session.id, { hook_event_name: "SessionEnd", reason: "pane closed", herdr: true });
+        this.sessions.event(projectId, session.id, { hook_event_name: "SessionEnd", reason: "pane closed", herdr: true, herdr_pane: event.paneId });
         return;
       }
       const name = event.status === "working" ? "PreToolUse" : event.status === "blocked" ? "PermissionRequest" : event.status === "done" ? "Stop" : null;

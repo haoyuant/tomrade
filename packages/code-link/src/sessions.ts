@@ -217,6 +217,8 @@ export class Sessions {
   private readonly heardAt = new Map<string, number>();
   /** A claim_ticket each session's hooks announced, waiting for the call itself. */
   private readonly claiming = new Map<string, { projectId: string; key: string; at: number }>();
+  /** The herdr panes each session's hooks spoke from and did not end in, the latest last: one conversation can run in two. */
+  private readonly panes = new Map<string, Set<string>>();
 
   constructor(
     private readonly ctx: Context,
@@ -428,6 +430,13 @@ export class Sessions {
     if (p.herdr) {
       if (p.hook_event_name !== "SessionEnd" && Date.now() - (this.heardAt.get(sessionId) ?? 0) < HERDR_YIELD_MS) return {};
     } else this.heardAt.set(sessionId, Date.now());
+    const pane = typeof p.herdr_pane === "string" ? p.herdr_pane.trim() : "";
+    if (p.hook_event_name === "SessionEnd" && this.goesOn(projectId, session, pane)) return {};
+    if (pane && !p.herdr) {
+      const heard = this.panes.get(sessionId) ?? new Set<string>();
+      heard.delete(pane);
+      this.panes.set(sessionId, heard.add(pane));
+    }
     const patch: Parameters<Sessions["touch"]>[2] = {};
     if (typeof p.session_id === "string" && p.session_id) patch.externalId = p.session_id;
     if (typeof p.herdr_pane === "string" && p.herdr_pane.trim()) patch.herdrPane = p.herdr_pane.trim();
@@ -494,6 +503,7 @@ export class Sessions {
       case "SessionEnd":
         Object.assign(patch, { state: "ended", activity: null, endedAt: Date.now() });
         moment = { kind: "ended", text: p.reason ?? "" };
+        this.said(session, `ended: ${p.herdr ? "herdr" : "its hook"} said ${p.reason ?? "SessionEnd"}${pane ? ` in pane ${pane}` : ""}`);
         break;
       default:
         break;
@@ -508,10 +518,40 @@ export class Sessions {
     if (moment) this.options.onMoment?.(this.store.session(projectId, sessionId) ?? session, moment);
     if (patch.state === "ended") {
       this.release(sessionId);
+      this.panes.delete(sessionId);
       const ended = this.store.session(projectId, sessionId);
       if (ended) this.options.onEnd?.(ended);
     }
     return {};
+  }
+
+  /**
+   * One conversation can run in two processes at once (`claude --continue` in another pane). One ending in a pane
+   * while the session's hooks also spoke from another leaves the session to that one, as long as herdr still has it.
+   */
+  private goesOn(projectId: string, session: SessionView, pane: string): boolean {
+    const heard = this.panes.get(session.id);
+    if (!pane || !heard) return false;
+    heard.delete(pane);
+    const other = [...heard].at(-1);
+    if (!other) return false;
+    if (session.herdrPane !== other) this.store.patchSession(projectId, session.id, { herdrPane: other });
+    this.said(session, `goes on in pane ${other}: another process of its conversation ended in ${pane}`);
+    void this.ctx
+      .get("herdr")
+      ?.paneAlive(other)
+      .then((alive) => {
+        if (alive !== false || !this.panes.get(session.id)?.has(other)) return;
+        this.panes.delete(session.id);
+        this.end(projectId, session.id, "ended", false, `pane ${other} is gone too`);
+      })
+      .catch(() => undefined);
+    return true;
+  }
+
+  /** Why a session's life changed, in the log: the trail when a session ends that should not have. */
+  private said(session: SessionView, what: string): void {
+    this.ctx.logger("code-link").info(`session ${session.id} (${session.agent}${session.externalId ? ` ${session.externalId}` : ""}) ${what}`);
   }
 
   /** Any sign of life, with what it says about the session. */
@@ -538,12 +578,14 @@ export class Sessions {
     this.options.onChange(projectId);
   }
 
-  /** `quiet` skips the follow-up rescan, for sessions closed because their tickets are already done. */
-  end(projectId: string, sessionId: string, state: "ended" | "lost" = "ended", quiet = false): void {
+  /** `quiet` skips the follow-up rescan, for sessions closed because their tickets are already done; `why` goes to the log. */
+  end(projectId: string, sessionId: string, state: "ended" | "lost" = "ended", quiet = false, why = "code link ended it"): void {
     const session = this.store.session(projectId, sessionId);
     if (!session || session.state === "ended") return;
     this.store.patchSession(projectId, sessionId, { state, endedAt: Date.now(), activity: null });
+    this.said(session, `${state}: ${why}`);
     this.release(sessionId);
+    this.panes.delete(sessionId);
     this.options.onChange(projectId);
     if (state === "ended" && !quiet) this.options.onEnd?.(this.store.session(projectId, sessionId)!);
   }
@@ -578,6 +620,7 @@ export class Sessions {
       if (s.state === "lost") continue;
       if (s.mode === "terminal" && this.processAlive(s.id) === false) {
         this.store.patchSession(projectId, s.id, { state: "ended", endedAt: now, activity: null });
+        this.said(s, "ended: the process Tomrade launched exited");
         this.release(s.id);
         this.options.onMoment?.(this.store.session(projectId, s.id)!, { kind: "ended", text: "process exited" });
         ended.push(this.store.session(projectId, s.id)!);
@@ -592,6 +635,7 @@ export class Sessions {
         changed = true;
       } else if (s.state === "idle" && s.mode === "terminal" && quiet >= END_AFTER_MS && this.processAlive(s.id) === false) {
         this.store.patchSession(projectId, s.id, { state: "ended", endedAt: now, activity: null });
+        this.said(s, "ended: quiet, and the process Tomrade launched is gone");
         this.release(s.id);
         ended.push(this.store.session(projectId, s.id)!);
         changed = true;
