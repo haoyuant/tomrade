@@ -6,7 +6,7 @@ import { isMac } from "~/lib/keys";
 import { onCell, onLook, onShownIn, onState, onToast, send, type Look } from "./bridge";
 import { keyLabel, windowKey, type WindowKey } from "./keys";
 import { applyPreset, close, cycle, dedupe, heir, holder, landing, leaves, lock, neighbour, place, prune, resize, reveal, show, split, type Key } from "./layout";
-import { sessionName, sidebarRows, type HereRow } from "./lists";
+import { bundles, sessionName, sidebarRows, type HereRow } from "./lists";
 import { TerminalCell } from "./TerminalCell";
 
 type Say = (key: string, vars?: Record<string, string | number>) => string;
@@ -30,6 +30,17 @@ const paneKey = (state: WindowState): Key => {
 };
 
 type Leaf = Extract<Layout, { type: "leaf" }>;
+
+/**
+ * A pick or reveal that found its pane in a cell under another ticket of the same agent: the cell now reads as the one
+ * picked. A terminal and the session its agent claimed are one row, and the cell keeps the id it has.
+ */
+const asPicked = (state: WindowState, layout: Layout, cell: string, id: string, key: Key): Layout => {
+  const held = leaves(layout).find((l) => l.id === cell)?.sessionId;
+  const claimedBy = (terminal: string) => state.terminals.find((t) => t.id === terminal)?.sessionId;
+  if (!held || held === id || claimedBy(held) === id || claimedBy(id) === held) return layout;
+  return show(layout, cell, id, key);
+};
 
 /** ⌘-click (Ctrl-click off a Mac) opens a row in a new pane instead of the selected one. */
 const besideClick = (e: React.MouseEvent) => (isMac ? e.metaKey : e.ctrlKey);
@@ -166,40 +177,56 @@ function SessionList({ sessions, active, selected, onPick, say }: { sessions: Se
 
 /**
  * What this window shows, one row each: a session in a pane of its own, or a terminal opened here — read as the ticket
- * its agent claimed, else as what the agent calls the conversation, else as its folder.
+ * its agent claimed, else as what the agent calls the conversation, else as its folder. The tickets one agent works in
+ * one pane come as a bundle; the ones its cell does not show are marked as on that pane, apart from the one it does.
  */
-function HereList({ rows, active, selected, onSession, onTerminal, say }: { rows: HereRow[]; active: Set<string>; selected: Set<string>; onSession: (s: SessionRow, beside: boolean) => void; onTerminal: (t: TerminalRow, beside: boolean) => void; say: Say }) {
+function HereList({ rows, active, selected, shownPanes, selectedPane, pane, onSession, onTerminal, say }: { rows: HereRow[]; active: Set<string>; selected: Set<string>; shownPanes: Set<string>; selectedPane: string | null; pane: Key; onSession: (s: SessionRow, beside: boolean) => void; onTerminal: (t: TerminalRow, beside: boolean) => void; say: Say }) {
   if (!rows.length) return <p className="cs-empty">{say("none")}</p>;
   const has = (set: Set<string>, r: HereRow) => set.has(r.id) || (!!r.session && set.has(r.session.id));
+  const item = (r: HereRow) => {
+    const s = r.session;
+    const current = has(selected, r);
+    const bound = current || has(active, r) ? undefined : pane(r.id) === selectedPane ? "selected" : shownPanes.has(pane(r.id)) ? "shown" : undefined;
+    return (
+      <li key={r.id}>
+        <button
+          type="button"
+          className="side-row cs-row"
+          data-terminal={r.kind === "terminal" ? r.terminal.id : undefined}
+          title={say("pickHint", { mod: MOD })}
+          aria-current={current ? "true" : undefined}
+          data-active={has(active, r) || undefined}
+          data-bound={bound}
+          data-needs={s?.needsYou || undefined}
+          onClick={(e) => (r.kind === "terminal" ? onTerminal(r.terminal, besideClick(e)) : onSession(r.session, besideClick(e)))}
+        >
+          {s ? (
+            <SessionBody s={s} say={say} />
+          ) : r.kind === "terminal" ? (
+            <>
+              <span className="cs-row-head">
+                <span className="mono">{r.terminal.running ?? r.terminal.title}</span>
+                {!r.terminal.pane && <span className="tag faint cs-chip">{say("starting")}</span>}
+              </span>
+              {r.terminal.agentTitle && <span className="cs-row-title">{r.terminal.agentTitle}</span>}
+              <span className="cs-row-meta mono">{r.terminal.cwd}</span>
+            </>
+          ) : null}
+        </button>
+      </li>
+    );
+  };
   return (
     <ul className="cs-list">
-      {rows.map((r) => {
-        const s = r.session;
+      {bundles(rows).map((group) => {
+        if (group.length === 1) return item(group[0]!);
+        const at = pane(group[0]!.id);
         return (
-          <li key={r.id}>
-            <button
-              type="button"
-              className="side-row cs-row"
-              data-terminal={r.kind === "terminal" ? r.terminal.id : undefined}
-              title={say("pickHint", { mod: MOD })}
-              aria-current={has(selected, r) ? "true" : undefined}
-              data-active={has(active, r) || undefined}
-              data-needs={s?.needsYou || undefined}
-              onClick={(e) => (r.kind === "terminal" ? onTerminal(r.terminal, besideClick(e)) : onSession(r.session, besideClick(e)))}
-            >
-              {s ? (
-                <SessionBody s={s} say={say} />
-              ) : r.kind === "terminal" ? (
-                <>
-                  <span className="cs-row-head">
-                    <span className="mono">{r.terminal.running ?? r.terminal.title}</span>
-                    {!r.terminal.pane && <span className="tag faint cs-chip">{say("starting")}</span>}
-                  </span>
-                  {r.terminal.agentTitle && <span className="cs-row-title">{r.terminal.agentTitle}</span>}
-                  <span className="cs-row-meta mono">{r.terminal.cwd}</span>
-                </>
-              ) : null}
-            </button>
+          <li key={`bundle:${at}`} className="cs-bundle" data-testid="cs-bundle" data-shown={shownPanes.has(at) || undefined} data-selected={at === selectedPane || undefined}>
+            <span className="cs-bundle-head" title={say("samePaneHint")}>
+              {say("samePane", { n: group.length })}
+            </span>
+            <ul className="cs-list">{group.map(item)}</ul>
           </li>
         );
       })}
@@ -456,7 +483,7 @@ function NotHere({ session, cell, locale, picker, onTalk, say }: { session: Sess
   );
 }
 
-function Cell({ leaf, session, terminal, places, ready, onNewTerminal, onTalk, focused, selected, only, onFocus, onSplit, onClose, onLock, menu, look, say }: { leaf: Extract<Layout, { type: "leaf" }>; session: SessionRow | undefined; terminal: TerminalRow | undefined; places: TerminalPlace[]; ready: boolean; onNewTerminal: (cwd: string) => void; onTalk: (s: SessionRow) => void; focused: boolean; selected: boolean; only: boolean; onFocus: () => void; onSplit: (d: "row" | "column") => void; onClose: () => void; onLock: () => void; menu: ReactNode; look: Look; say: Say }) {
+function Cell({ leaf, pane, session, terminal, places, ready, onNewTerminal, onTalk, focused, selected, only, onFocus, onSplit, onClose, onLock, menu, look, say }: { leaf: Extract<Layout, { type: "leaf" }>; pane: string; session: SessionRow | undefined; terminal: TerminalRow | undefined; places: TerminalPlace[]; ready: boolean; onNewTerminal: (cwd: string) => void; onTalk: (s: SessionRow) => void; focused: boolean; selected: boolean; only: boolean; onFocus: () => void; onSplit: (d: "row" | "column") => void; onClose: () => void; onLock: () => void; menu: ReactNode; look: Look; say: Say }) {
   // Right-click on the bar, or on a cell with no terminal: inside a terminal it is the program's own.
   const withMenu = (node: ReactElement) => (
     <ContextMenu label={say("cellMenu")} trigger={node}>
@@ -510,7 +537,7 @@ function Cell({ leaf, session, terminal, places, ready, onNewTerminal, onTalk, f
         </span>
       </div>)}
       {session?.pane || terminal?.pane ? (
-        <TerminalCell cell={leaf.id} sessionId={leaf.sessionId!} tokens={look.tokens} font={look.tokens["--font-mono"] ?? ""} labels={labels} autoFocus={selected} />
+        <TerminalCell cell={leaf.id} sessionId={leaf.sessionId!} pane={pane} tokens={look.tokens} font={look.tokens["--font-mono"] ?? ""} labels={labels} autoFocus={selected} />
       ) : terminal ? (
         withMenu(<div className="cs-cell-empty">{say("starting")}</div>)
       ) : session ? (
@@ -646,7 +673,7 @@ export function App() {
     if (ask && ask.at !== revealed.current && state.sessions.some((s) => s.id === ask.sessionId && (s.pane || s.endedAt !== null))) {
       revealed.current = ask.at;
       const shown = reveal(placed, ask.sessionId, focusedNow.current, key);
-      placed = shown.layout;
+      placed = asPicked(state, shown.layout, shown.cell, ask.sessionId, key);
       setFocused(shown.cell);
     }
     if (placed !== kept) change(placed);
@@ -691,6 +718,9 @@ export function App() {
   // Every cell's row reads as shown; the selected cell's alone as current.
   const active = new Set(cells.flatMap(rowsOf));
   const selected = new Set(rowsOf(target));
+  // The panes cells show, for the other tickets their agents work there.
+  const shownPanes = new Set(cells.flatMap((c) => (c.sessionId ? [key(c.sessionId)] : [])));
+  const selectedPane = target.sessionId ? key(target.sessionId) : null;
   // A server that is not running is started by the launch itself.
   const ready = state.bridge.state === "ready" || state.bridge.state === "notRunning";
   // Where herdr cannot show a terminal here (Windows), a new one opens in the system terminal instead.
@@ -707,7 +737,8 @@ export function App() {
   // you. Whatever left a pane is said, with a way back.
   const land = (id: string, beside: boolean) => {
     const at = landing(layout, id, { selected: target.id, beside, recent: recent.current, needsYou: (shown) => !!sessionIn(shown)?.needsYou, key });
-    if (at.layout !== layout) change(at.layout);
+    const next = asPicked(state, at.layout, at.cell, id, key);
+    if (next !== layout) change(next);
     setFocused(at.cell);
     const left = at.replaced;
     if (!left) return;
@@ -834,6 +865,7 @@ export function App() {
       <Cell
         key={node.id}
         leaf={node}
+        pane={node.sessionId ? key(node.sessionId) : ""}
         session={sessionIn(node.sessionId)}
         terminal={node.sessionId ? terminalsById.get(node.sessionId) : undefined}
         places={state.places}
@@ -901,7 +933,7 @@ export function App() {
                     + {say("newTerminal")}
                   </button>
                 </div>
-                {(groups.here.length > 0 || !groups.away.length) && <HereList rows={groups.here} active={active} selected={selected} onSession={pick} onTerminal={pickTerminal} say={say} />}
+                {(groups.here.length > 0 || !groups.away.length) && <HereList rows={groups.here} active={active} selected={selected} shownPanes={shownPanes} selectedPane={selectedPane} pane={key} onSession={pick} onTerminal={pickTerminal} say={say} />}
                 <OutsideGroup sessions={groups.away} open={outsideOpen} onToggle={() => setOutsideOpen((o) => !o)} list={<SessionList sessions={groups.away} active={active} selected={selected} onPick={pick} say={say} />} say={say} />
                 <Layouts
                   presets={state.presets}

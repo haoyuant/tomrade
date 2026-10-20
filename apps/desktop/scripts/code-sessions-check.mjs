@@ -288,6 +288,29 @@ app.whenReady().then(async () => {
     } else console.log("INFO: skipped the focus-selects step — another app is in front, so this window gets no focus events");
     await selectPane(3);
 
+    // One agent claims a second ticket alongside, in the same pane: the two rows sit together, the one the pane does not
+    // read as is marked as on it, and picking it makes the pane read as that ticket without attaching again.
+    const alongItem = ctx.items.create({ projectId: project.id, boardId: board.id, title: "Marker four, alongside", workType: "coding", status: "doing", by: "human" });
+    const along = ctx.codeLink.store.createSession(project.id, { repoId: "check", branch: `${alongItem.key.toLowerCase()}/check`, itemIds: [alongItem.id], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, worktree: cwd });
+    ctx.codeLink.store.patchSession(project.id, along.id, { state: "running", herdrPane: sessions[3].pane });
+    ctx.emit("codeLink/changed", project.id);
+    const rowWith = (key) => `[...document.querySelectorAll('.cs-row')].find((r) => r.textContent.includes(${JSON.stringify(key)}))`;
+    const bundled = await wait(async () => js(`(() => { const b = [...document.querySelectorAll('[data-testid=cs-bundle]')]; return b.length === 1 && b[0].hasAttribute('data-selected') && b[0].querySelectorAll('.cs-row').length === 2 && b[0].textContent.includes(${JSON.stringify(sessions[3].item.key)}) && b[0].textContent.includes(${JSON.stringify(alongItem.key)}); })()`), 5000);
+    const marks = () => js(`[${rowWith(sessions[3].item.key)}, ${rowWith(alongItem.key)}].map((r) => [r?.getAttribute('aria-current') ?? '', r?.dataset.bound ?? ''])`);
+    const bundleMarks = await marks();
+    check("同一面板里并行认领的工单在侧栏放在一组，当前工单高亮，另一个标成「在这个面板」", bundled && JSON.stringify(bundleMarks) === JSON.stringify([["true", ""], ["", "selected"]]), JSON.stringify(bundleMarks));
+    fs.writeFileSync(path.join(shots, "code-sessions-bundle.png"), (await win.webContents.capturePage()).toPNG());
+    const streamsBefore = streams.length;
+    await js(`${rowWith(alongItem.key)}.click(); true`);
+    const switched = await wait(async () => JSON.stringify(await marks()) === JSON.stringify([["", "selected"], ["true", ""]]) && (await js(`document.querySelectorAll('.cs-cell')[3].querySelector('.cs-cell-name').textContent`)).startsWith(`${alongItem.key} `), 3000);
+    await sleep(800);
+    check("点同组的另一个工单：面板改为显示它、侧栏当前行跟过去，终端不重连", switched && streams.length === streamsBefore, JSON.stringify({ marks: await marks(), streamsBefore, now: streams.length }));
+    await js(`${rowWith(sessions[3].item.key)}.click(); true`);
+    check("再点回原工单，面板和当前行都回来", await wait(async () => JSON.stringify(await marks()) === JSON.stringify(bundleMarks), 3000), JSON.stringify(await marks()));
+    ctx.codeLink.store.patchSession(project.id, along.id, { state: "ended", endedAt: Date.now() });
+    ctx.emit("codeLink/changed", project.id);
+    await wait(async () => (await js(`document.querySelectorAll('.cs-row').length`)) === 6, 5000);
+
     // Every pane full and a seventh session in the list: a pick never silently hides what a pane showed.
     const seventhItem = ctx.items.create({ projectId: project.id, boardId: board.id, title: "Marker seven", workType: "coding", status: "doing", by: "human" });
     const seventhPane = await ctx.herdr.launch({ cwd, label: seventhItem.key, command: "echo marker-seven", workspace: { key: project.id, label: project.name } });

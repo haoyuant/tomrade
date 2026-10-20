@@ -9,9 +9,13 @@ export const away = (s: SessionRow): boolean => s.endedAt === null && s.where !=
  */
 export type HereRow = { kind: "session"; id: string; session: SessionRow } | { kind: "terminal"; id: string; terminal: TerminalRow; session: SessionRow | null };
 
+/** The herdr pane a row's terminal is; null while it has none. */
+export const paneOf = (r: HereRow): string | null => (r.kind === "terminal" ? r.terminal.pane : r.session.pane);
+
 /**
  * The sidebar: one list of what this window shows, and the live sessions it cannot. A session with no ticket is never a
- * row of its own when a terminal here holds its pane: that terminal is the row. Ended sessions are the archive's.
+ * row of its own when a terminal here holds its pane: that terminal is the row. Rows on one pane — an agent working
+ * several tickets side by side — sit together, where the first of them would. Ended sessions are the archive's.
  */
 export function sidebarRows(sessions: SessionRow[], terminals: TerminalRow[]): { here: HereRow[]; away: SessionRow[] } {
   const live = sessions.filter((s) => s.endedAt === null);
@@ -29,7 +33,26 @@ export function sidebarRows(sessions: SessionRow[], terminals: TerminalRow[]): {
     return s?.itemId ? 1 : 2;
   };
   const started = (r: HereRow) => (r.kind === "terminal" ? r.terminal.startedAt : r.session.startedAt);
-  return { here: rows.sort((a, b) => rank(a) - rank(b) || started(b) - started(a)), away: live.filter(away) };
+  const sorted = rows.sort((a, b) => rank(a) - rank(b) || started(b) - started(a));
+  const here: HereRow[] = [];
+  for (const r of sorted) {
+    if (here.includes(r)) continue;
+    const pane = paneOf(r);
+    here.push(...(pane ? sorted.filter((o) => paneOf(o) === pane) : [r]));
+  }
+  return { here, away: live.filter(away) };
+}
+
+/** The list cut where the pane changes: rows on one pane make one bundle, every other row one of its own. */
+export function bundles(rows: HereRow[]): HereRow[][] {
+  const out: HereRow[][] = [];
+  for (const r of rows) {
+    const last = out.at(-1);
+    const pane = paneOf(r);
+    if (last && pane && paneOf(last[0]!) === pane) last.push(r);
+    else out.push([r]);
+  }
+  return out;
 }
 
 /** What a session goes by in the list: its ticket, else its branch, else its agent. */

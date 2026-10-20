@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SessionRow, TerminalRow } from "@tomradex/code-sessions";
-import { away, sessionName, sidebarRows } from "../src/code-sessions/lists";
+import { away, bundles, sessionName, sidebarRows } from "../src/code-sessions/lists";
 
 const row = (over: Partial<SessionRow> & { id: string }): SessionRow => ({
   itemId: null,
@@ -68,6 +68,23 @@ describe("the Terminal window's sidebar", () => {
     ];
     const terminals = [terminal({ id: "t-old", pane: "w1:p8", startedAt: 3 }), terminal({ id: "t-new", pane: "w1:p9", startedAt: 7 })];
     expect(sidebarRows(sessions, terminals).here.map((r) => r.id)).toEqual(["needs", "new-ticket", "old-ticket", "loose", "t-new", "t-old"]);
+  });
+
+  it("keeps the tickets one agent works side by side in one pane together, where the first of them sorts", () => {
+    const sessions = [
+      row({ id: "441", itemId: "i1", key: "TOM-441", where: "herdr", pane: "w1:pF", startedAt: 1 }),
+      row({ id: "442", itemId: "i2", key: "TOM-442", where: "herdr", pane: "w1:pF", startedAt: 4 }),
+      row({ id: "445", itemId: "i5", key: "TOM-445", where: "herdr", pane: "w1:pJ", startedAt: 6 }),
+      row({ id: "444", itemId: "i4", key: "TOM-444", where: "herdr", pane: "w1:pF", startedAt: 7 })
+    ];
+    // The terminal the agent was opened in claimed one of them: its row is the pane's too.
+    const terminals = [terminal({ id: "t1", pane: "w1:pF", sessionId: "441", startedAt: 0 }), terminal({ id: "t2", pane: "w1:p9", startedAt: 9 })];
+    const { here } = sidebarRows(sessions, terminals);
+    expect(here.map((r) => r.id)).toEqual(["444", "442", "t1", "445", "t2"]);
+    expect(bundles(here).map((b) => b.map((r) => r.id))).toEqual([["444", "442", "t1"], ["445"], ["t2"]]);
+    // Rows without a pane yet never bundle.
+    const starting = [terminal({ id: "a", startedAt: 2 }), terminal({ id: "b", startedAt: 1 })];
+    expect(bundles(sidebarRows([], starting).here).map((b) => b.length)).toEqual([1, 1]);
   });
 
   it("names a session by its ticket, else its branch, else its agent", () => {
