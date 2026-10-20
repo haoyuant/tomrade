@@ -20,6 +20,8 @@ export interface FakePane {
   agent_session?: { source: string; agent: string; kind: string; value: string } | null;
   /** The title the program in the pane set, styling stripped. */
   terminal_title_stripped?: string | null;
+  /** Where its view is in its scrollback, as `pane.get` and `pane.scroll_changed` tell it. */
+  scroll?: { offset_from_bottom: number; max_offset_from_bottom: number; viewport_rows: number };
 }
 
 export interface FakeHerdrCall {
@@ -90,6 +92,14 @@ export class FakeHerdr {
     pane.agent = agent;
     pane.agent_status = status;
     this.push({ event: "pane.agent_status_changed", data: { pane_id: paneId, workspace_id: pane.workspace_id, agent, agent_status: status } });
+  }
+
+  /** The pane's view moved in its scrollback; the pane's scroll subscribers hear it. */
+  setScroll(paneId: string, scroll: NonNullable<FakePane["scroll"]>): void {
+    const pane = this.panes.get(paneId);
+    if (!pane) throw new Error(`no pane ${paneId}`);
+    pane.scroll = scroll;
+    this.push({ event: "pane.scroll_changed", data: { pane_id: paneId, workspace_id: pane.workspace_id, scroll } });
   }
 
   /** The pane's process ended and the pane closed with it. */
@@ -220,6 +230,13 @@ export class FakeHerdr {
         if (!pane) return notFound(params.pane_id);
         this.exit(pane.pane_id);
         return { result: { type: "ok" } };
+      }
+      case "pane.scroll": {
+        const pane = paneOf(params.pane_id);
+        if (!pane) return notFound(params.pane_id);
+        const scroll = pane.scroll ?? { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+        this.setScroll(pane.pane_id, { ...scroll, offset_from_bottom: Math.min(scroll.max_offset_from_bottom, Number(params.offset_from_bottom) || 0) });
+        return { result: { type: "pane_info", pane: { ...pane, focused: false, revision: 0 } } };
       }
       case "pane.focus":
       case "pane.send_input":

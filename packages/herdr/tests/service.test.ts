@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { Context } from "cordis";
-import { Herdr, type HerdrConfig, type HerdrPaneEvent } from "@tomradex/herdr";
+import { Herdr, type HerdrConfig, type HerdrPaneEvent, type HerdrScroll } from "@tomradex/herdr";
 // Straight from the source: depending on testkit would close a cycle through extensions, which depends on herdr.
 import { FakeHerdr } from "../../testkit/src/herdr.js";
 
@@ -166,6 +166,36 @@ describe("herdr service", () => {
     expect((await herdr.panes())!.find((p) => p.paneId === pane.pane_id)).toMatchObject({ agent: "claude", status: "blocked" });
     second();
     expect(herdr.watching()).toEqual([]);
+    fake.close();
+  });
+
+  it("tells where a pane's view is in its scrollback, now and on each change, moves it, and stops when asked", async () => {
+    const fake = new FakeHerdr();
+    const { herdr } = await herdrOn(fake);
+    const pane = fake.createPane("/work");
+    pane.scroll = { offset_from_bottom: 0, max_offset_from_bottom: 278, viewport_rows: 24 };
+    const heard: HerdrScroll[] = [];
+    const stop = herdr.onScroll(pane.pane_id, (scroll) => heard.push(scroll));
+    await until(() => heard.length === 1);
+    expect(heard[0]).toEqual({ offset: 0, max: 278, rows: 24 });
+    expect(fake.of("events.subscribe")).toEqual([{ subscriptions: [{ type: "pane.scroll_changed", pane_id: "w1:p1" }] }]);
+
+    fake.setScroll(pane.pane_id, { offset_from_bottom: 10, max_offset_from_bottom: 278, viewport_rows: 24 });
+    // The same place again is not news.
+    fake.setScroll(pane.pane_id, { offset_from_bottom: 10, max_offset_from_bottom: 278, viewport_rows: 24 });
+    await until(() => heard.length === 2);
+    expect(heard[1]).toEqual({ offset: 10, max: 278, rows: 24 });
+
+    expect(await herdr.scrollTo(pane.pane_id, 100.4)).toBe(true);
+    expect(fake.of("pane.scroll")).toEqual([{ pane_id: "w1:p1", offset_from_bottom: 100 }]);
+    await until(() => heard.length === 3);
+    expect(heard[2]).toEqual({ offset: 100, max: 278, rows: 24 });
+    expect(await herdr.scrollTo("w9:p1", 0)).toBe(false);
+
+    stop();
+    fake.setScroll(pane.pane_id, { offset_from_bottom: 0, max_offset_from_bottom: 278, viewport_rows: 24 });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(heard.length).toBe(3);
     fake.close();
   });
 

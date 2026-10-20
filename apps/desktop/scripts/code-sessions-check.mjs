@@ -234,6 +234,49 @@ app.whenReady().then(async () => {
     check("中日韩字符按双宽显示，后面的字符位置正确", cjk.includes("END") && cjk.replace(/\s+$/, "").length < 30, JSON.stringify(cjk));
     fs.writeFileSync(path.join(shots, "code-sessions-six.png"), (await win.webContents.capturePage()).toPNG());
 
+    // herdr's scrollback has a bar: unseen at rest, shown while the view moves and gone a second after; dragging it scrolls the pane.
+    const wideCell = `document.querySelectorAll('.cs-cell')[2]`;
+    const paneScroll = () => JSON.parse(herdr("pane", "get", sessions[2].pane)).result.pane.scroll ?? {};
+    const bar = () => js(`(() => {
+      const bar = ${wideCell}.querySelector('.cs-scrollbar');
+      if (!bar) return null;
+      const t = bar.querySelector('.cs-scrollbar-thumb').getBoundingClientRect();
+      const b = bar.getBoundingClientRect();
+      return { shown: bar.dataset.shown === 'true', opacity: Number(getComputedStyle(bar).opacity), above: Math.round(t.top - b.top), below: Math.round(b.bottom - t.bottom), x: Math.round(t.left + t.width / 2), y: Math.round(t.top + t.height / 2), trackTop: Math.round(b.top) };
+    })()`);
+    herdr("pane", "run", sessions[2].pane, "seq 1 400");
+    const atRest = await wait(async () => {
+      const b = await bar();
+      return !!b && b.below < 2 && !b.shown && b.opacity === 0;
+    });
+    check("输出超过一屏后有滚动条，不滚动时看不见", atRest, JSON.stringify({ bar: await bar(), scroll: paneScroll() }));
+    await js(`${wideCell}.querySelector('.xterm-screen').dispatchEvent(new WheelEvent('wheel', { deltaY: -400, bubbles: true, cancelable: true }))`);
+    const scrolledUp = await wait(async () => {
+      const b = await bar();
+      return !!b && b.shown && b.below > 2 && paneScroll().offset_from_bottom > 0;
+    }, 5000);
+    check("滚动时滚动条出现，滑块离开底部", scrolledUp, JSON.stringify({ bar: await bar(), scroll: paneScroll() }));
+    const hidAgain = await wait(async () => (await bar())?.opacity === 0, 4000);
+    check("停止滚动约一秒后滚动条自动隐藏", hidAgain, JSON.stringify(await bar()));
+    const thumb = await bar();
+    if (thumb) {
+      const wc = win.webContents;
+      wc.sendInputEvent({ type: "mouseMove", x: thumb.x, y: thumb.y });
+      wc.sendInputEvent({ type: "mouseDown", x: thumb.x, y: thumb.y, button: "left", clickCount: 1 });
+      for (let y = thumb.y; y >= thumb.trackTop - 40; y -= 20) {
+        wc.sendInputEvent({ type: "mouseMove", x: thumb.x, y, modifiers: ["leftButtonDown"] });
+        await sleep(20);
+      }
+      wc.sendInputEvent({ type: "mouseUp", x: thumb.x, y: thumb.trackTop - 40, button: "left", clickCount: 1 });
+    }
+    const draggedTop = await wait(() => {
+      const s = paneScroll();
+      return s.max_offset_from_bottom > 0 && s.offset_from_bottom === s.max_offset_from_bottom;
+    }, 5000);
+    check("把滑块拖到顶：pane 滚到最早的输出", draggedTop, JSON.stringify({ bar: await bar(), scroll: paneScroll() }));
+    fs.writeFileSync(path.join(shots, "code-sessions-scrollbar.png"), (await win.webContents.capturePage()).toPNG());
+    await ctx.herdr.scrollTo(sessions[2].pane, 0);
+
     // Focus that enters a pane without a click (Tab, a file drop, a script) selects it: the border marks where typing goes.
     // A window without focus gets no focus events, so the step needs this app in front.
     win.focus();

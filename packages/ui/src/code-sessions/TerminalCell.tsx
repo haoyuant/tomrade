@@ -1,8 +1,12 @@
-import { useEffect, useRef, useState, type DragEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent } from "react";
 import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
+import type { WindowPost } from "@tomradex/code-sessions";
 import { onCell, pathForFile, send } from "./bridge";
+
+/** Where a pane's view is in herdr's scrollback, in rows. */
+type PaneScroll = Omit<Extract<WindowPost, { type: "scrolled" }>, "type" | "cell">;
 
 /**
  * A CSS colour as xterm takes it (#rrggbb): the page resolves var(), oklch() and color-mix(),
@@ -65,6 +69,83 @@ export function terminalTheme(): ITheme {
 
 const BUTTONS = ["left", "middle", "right"] as const;
 
+/** How long the scrollbar stays after the view stops moving. */
+const SCROLLBAR_HIDE_MS = 1_000;
+const THUMB_MIN_PX = 24;
+
+/**
+ * herdr's scrollback as an overlay bar on the pane's right edge, taking no width from the grid: shown while the view
+ * moves, the pointer is on it or it is dragged, and faded out a second after. Dragging the thumb, or pressing the
+ * track, puts the view there.
+ */
+function PaneScrollbar({ scroll, onScrollTo, onWheel }: { scroll: PaneScroll | null; onScrollTo: (offset: number) => void; onWheel: (deltaY: number) => void }) {
+  const track = useRef<HTMLDivElement>(null);
+  const [moved, setMoved] = useState(false);
+  // While dragging, the place asked for: the thumb follows the pointer ahead of herdr's answer.
+  const [asked, setAsked] = useState<number | null>(null);
+  const grab = useRef<number | null>(null);
+  const pending = useRef<number | null>(null);
+  const seen = useRef<number | undefined>(undefined);
+  const offset = scroll?.offset;
+
+  useEffect(() => {
+    const first = seen.current === undefined;
+    if (offset === undefined || offset === seen.current) return;
+    seen.current = offset;
+    if (grab.current === null) setAsked(null);
+    // The place it attached at is not a move.
+    if (first) return;
+    setMoved(true);
+    const timer = setTimeout(() => setMoved(false), SCROLLBAR_HIDE_MS);
+    return () => clearTimeout(timer);
+  }, [offset]);
+
+  if (!scroll || scroll.max <= 0) return null;
+  const { max, rows } = scroll;
+  const share = rows / (max + rows);
+  const at = 1 - (asked ?? scroll.offset) / max;
+
+  const offsetAt = (clientY: number, held: number) => {
+    const box = track.current!.getBoundingClientRect();
+    const room = box.height - Math.max(THUMB_MIN_PX, box.height * share);
+    if (room <= 0) return scroll.offset;
+    return Math.round((1 - Math.min(1, Math.max(0, (clientY - box.top - held) / room))) * max);
+  };
+  // At most one ask to herdr a frame, the latest place.
+  const ask = (next: number) => {
+    setAsked(next);
+    if (pending.current === null)
+      setTimeout(() => {
+        if (pending.current !== null) onScrollTo(pending.current);
+        pending.current = null;
+      }, 16);
+    pending.current = next;
+  };
+  const down = (e: PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const thumb = (e.target as HTMLElement).closest(".cs-scrollbar-thumb");
+    const box = track.current!.getBoundingClientRect();
+    grab.current = thumb ? e.clientY - thumb.getBoundingClientRect().top : Math.max(THUMB_MIN_PX, box.height * share) / 2;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    if (!thumb) ask(offsetAt(e.clientY, grab.current));
+  };
+  const move = (e: PointerEvent<HTMLDivElement>) => {
+    if (grab.current !== null) ask(offsetAt(e.clientY, grab.current));
+  };
+  const up = () => {
+    grab.current = null;
+    setMoved(true);
+    setTimeout(() => setMoved(false), SCROLLBAR_HIDE_MS);
+  };
+
+  return (
+    <div ref={track} className="cs-scrollbar" data-shown={moved || grab.current !== null || undefined} data-held={grab.current !== null || undefined} style={{ "--thumb": `max(${THUMB_MIN_PX}px, ${share * 100}%)`, "--at": at } as CSSProperties} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onWheel={(e) => onWheel(e.deltaY)}>
+      <div className="cs-scrollbar-thumb" />
+    </div>
+  );
+}
+
 /**
  * One session's terminal: herdr's frames painted into xterm, keys and pastes sent back as input,
  * the wheel and Page Up/Down as scrolls (herdr keeps the scrollback; xterm keeps none, since every
@@ -80,6 +161,8 @@ export function TerminalCell({ cell, sessionId, tokens, font, labels, autoFocus 
   const [closed, setClosed] = useState<string | null | undefined>(undefined);
   const [attempt, setAttempt] = useState(0);
   const [dragging, setDragging] = useState(false);
+  const [scroll, setScroll] = useState<PaneScroll | null>(null);
+  const wheel = (deltaY: number) => send({ type: "scroll", cell, direction: deltaY < 0 ? "up" : "down", lines: Math.max(1, Math.round(Math.abs(deltaY) / 40)) });
 
   useEffect(() => {
     const el = host.current;
@@ -95,8 +178,10 @@ export function TerminalCell({ cell, sessionId, tokens, font, labels, autoFocus 
       // not laid out yet; the observer fits it once it is
     }
     setClosed(undefined);
+    setScroll(null);
     const off = onCell(cell, (post) => {
       if (post.type === "frame") terminal.write(post.bytes);
+      else if (post.type === "scrolled") setScroll({ offset: post.offset, max: post.max, rows: post.rows });
       else if (post.type === "reattach") setAttempt((n) => n + 1);
       else if (post.type === "closed") setClosed(post.reason);
     });
@@ -104,8 +189,7 @@ export function TerminalCell({ cell, sessionId, tokens, font, labels, autoFocus 
     const input = terminal.onData((data) => send({ type: "input", cell, data }));
     const sized = terminal.onResize(({ cols, rows }) => send({ type: "resize", cell, cols, rows }));
     terminal.attachCustomWheelEventHandler((e) => {
-      const lines = Math.max(1, Math.round(Math.abs(e.deltaY) / 40));
-      send({ type: "scroll", cell, direction: e.deltaY < 0 ? "up" : "down", lines });
+      wheel(e.deltaY);
       return false;
     });
     terminal.attachCustomKeyEventHandler((e) => {
@@ -177,6 +261,7 @@ export function TerminalCell({ cell, sessionId, tokens, font, labels, autoFocus 
   return (
     <div className="cs-term" onDragEnter={over} onDragOver={over} onDragLeave={leave} onDrop={drop}>
       <div ref={host} className="cs-term-host" />
+      <PaneScrollbar scroll={closed === undefined ? scroll : null} onScrollTo={(offset) => send({ type: "scrollTo", cell, offset })} onWheel={wheel} />
       {dragging && <div className="cs-term-drop">{labels.drop}</div>}
       {closed !== undefined && (
         <div className="cs-term-closed">

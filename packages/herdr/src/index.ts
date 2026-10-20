@@ -29,6 +29,19 @@ export type HerdrPaneEvent =
   /** The pane's process ended, or the pane was closed: nothing runs there any more. */
   | { kind: "exited"; paneId: string };
 
+/** A pane's view in its scrollback, in rows: `offset` above the bottom, at most `max`, `rows` on screen. */
+export interface HerdrScroll {
+  offset: number;
+  max: number;
+  rows: number;
+}
+
+const scrollOf = (raw: unknown): HerdrScroll | null => {
+  const s = raw as { offset_from_bottom?: unknown; max_offset_from_bottom?: unknown; viewport_rows?: unknown } | null;
+  if (typeof s?.offset_from_bottom !== "number" || typeof s.max_offset_from_bottom !== "number" || typeof s.viewport_rows !== "number") return null;
+  return { offset: s.offset_from_bottom, max: s.max_offset_from_bottom, rows: s.viewport_rows };
+};
+
 declare module "cordis" {
   interface Context {
     herdr: Herdr;
@@ -622,6 +635,35 @@ export class Herdr extends Service {
       if (!(err instanceof HerdrError)) throw err;
       return null;
     }
+  }
+
+  /**
+   * Where a pane's view is in its scrollback: now, then on every change (output, scrolls, resizes, typing that snaps
+   * it back to the bottom). Lives until the returned function is called or herdr ends the subscription; a terminal
+   * attached again after that listens again.
+   */
+  onScroll(paneId: string, listener: (scroll: HerdrScroll) => void): () => void {
+    let last = "";
+    let stopped = false;
+    const tell = (raw: unknown) => {
+      const scroll = scrollOf(raw);
+      const key = scroll ? `${scroll.offset}:${scroll.max}:${scroll.rows}` : last;
+      if (stopped || !scroll || key === last) return;
+      last = key;
+      listener(scroll);
+    };
+    const stream = herdrStream(this.socketPath(), [{ type: "pane.scroll_changed", pane_id: paneId }], (event) => event.event === "pane.scroll_changed" && tell(event.data.scroll), () => undefined, () => {
+      void this.call<{ pane: { scroll?: unknown } }>("pane.get", { pane_id: paneId }).then(({ pane }) => tell(pane.scroll), () => undefined);
+    });
+    return () => {
+      stopped = true;
+      stream.close();
+    };
+  }
+
+  /** Put a pane's view this many rows above the bottom of its scrollback. False when herdr would not. */
+  async scrollTo(paneId: string, offset: number): Promise<boolean> {
+    return this.ok("pane.scroll", { pane_id: paneId, offset_from_bottom: Math.max(0, Math.round(offset)) });
   }
 
   /** Hear about the panes being watched. The stream to herdr lives while someone listens, and comes back when herdr does. */
