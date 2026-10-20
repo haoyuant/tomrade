@@ -130,10 +130,15 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
     win.spec.onMessage(m);
     await settle();
   };
-  // An attach that a newer one overtakes lets its stream go.
+  // An attach that a newer one overtakes lets its stream go; what was typed meanwhile reaches the one that stays.
   win.spec.onMessage({ type: "attach", cell: "c1", sessionId: "s1", cols: 100, rows: 30 });
-  await say({ type: "attach", cell: "c1", sessionId: "s1", cols: 120, rows: 40 });
+  win.spec.onMessage({ type: "attach", cell: "c1", sessionId: "s1", cols: 120, rows: 40 });
+  win.spec.onMessage({ type: "input", cell: "c1", data: "输入法" });
+  await say({ type: "input", cell: "c1", data: "\r" });
   expect(streams.map((s) => [s.size, s.closed])).toEqual([[{ cols: 100, rows: 30 }, true], [{ cols: 120, rows: 40 }, false]]);
+  expect(streams[0]!.sent).toEqual([]);
+  expect(streams[1]!.sent).toEqual([["input", "输入法\r"]]);
+  streams[1]!.sent.length = 0;
   const live = streams[1]!;
   live.frame("hello");
   expect(win.posts.at(-1)).toMatchObject({ type: "frame", cell: "c1", full: true });
@@ -181,7 +186,13 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   await say({ type: "detach", cell: "c2" });
   await say({ type: "detach", cell: "c1" });
   expect(live.closed).toBe(true);
+  // Typed while attaching, then the cell goes: the window says it was not sent.
+  win.spec.onMessage({ type: "attach", cell: "c2", sessionId: "s1", cols: 80, rows: 24 });
+  win.spec.onMessage({ type: "input", cell: "c2", data: "lost" });
+  await say({ type: "detach", cell: "c2" });
+  expect(win.posts.at(-1)).toEqual({ type: "toast", text: "What you typed while the terminal was connecting was not sent" });
   await say({ type: "attach", cell: "c2", sessionId: "s1", cols: 80, rows: 24 });
+  expect(streams.at(-1)!.sent).toEqual([]);
   win.spec.onClose();
   expect(streams.at(-1)!.closed).toBe(true);
   // Closed: the next open is a new window, with the remembered layout.
