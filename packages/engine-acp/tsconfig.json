@@ -13,6 +13,8 @@
   "references": [
     { "path": "../agent" },
     { "path": "../engine-claude-code" },
-    { "path": "../mcp" }
+    { "path": "../llm" },
+    { "path": "../mcp" },
+    { "path": "../plugin-sdk" }
   ]
 }

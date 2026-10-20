@@ -296,6 +296,11 @@ plugins:
       mediaDir: "${userData}/agent-media"
   - id: im
     name: "@tomradex/im"
+  # Coding agents a plugin describes rather than implements (SDK agent.localAgent):
+  # their CLI found, run over ACP or handed a ticket in a terminal, their
+  # connection to Tomrade kept and their sign-in lent to the worker.
+  - id: local-agents
+    name: "@tomradex/engine-acp"
   # Engines are conductors; several can be installed, a thread picks one.
   # Tomrade: the one in-app choice — the built-in pi holds backlog conversations (the loop when pi cannot run,
   # a signed-in Claude Code or Codex when no model is connected) and implements tickets.

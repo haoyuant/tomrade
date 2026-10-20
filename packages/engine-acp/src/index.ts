@@ -25,6 +25,7 @@ export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAg
     title: agent.title,
     cli: agent.cli,
     install: agent.install,
+    ...(agent.desktopApp ? { desktopApp: agent.desktopApp } : {}),
     ...(probe ? { signIn: { args: probe.args, says: (output: string) => probe.says(output, catalog), reason: probe.reason, need: probe.need } }
       : agent.signedIn ? { signIn: { ask: async () => agent.signedIn!.ask(), reason: agent.signedIn.reason } } : {})
   });
@@ -84,3 +85,4 @@ export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAg
 export { PERMISSION_CHOICES, isTomradeTool, policyOf, wrappedTool, type AcpAgent, type AcpOptions, type Catalog, type Policy, type RequestUsage } from "./agent.js";
 export { AcpConnection, AcpError, AUTH_REQUIRED, type AcpPeer } from "./connection.js";
 export { AcpRuntime } from "./runtime.js";
+export { LocalAgents, LocalAgents as default } from "./local.js";

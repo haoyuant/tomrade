@@ -757,9 +757,15 @@ importers:
       '@tomradex/engine-claude-code':
         specifier: workspace:*
         version: link:../engine-claude-code
+      '@tomradex/llm':
+        specifier: workspace:*
+        version: link:../llm
       '@tomradex/mcp':
         specifier: workspace:*
         version: link:../mcp
+      '@tomradex/plugin-sdk':
+        specifier: workspace:*
+        version: link:../plugin-sdk
       cordis:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8
@@ -767,6 +773,9 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
       '@tomradex/testkit':
         specifier: workspace:*
         version: link:../testkit
@@ -1977,6 +1986,9 @@ importers:
       '@tomradex/desktop-surface':
         specifier: workspace:*
         version: link:../desktop-surface
+      '@tomradex/engine-acp':
+        specifier: workspace:*
+        version: link:../engine-acp
       '@tomradex/extensions':
         specifier: workspace:*
         version: link:../extensions
@@ -1986,6 +1998,9 @@ importers:
       '@tomradex/llm':
         specifier: workspace:*
         version: link:../llm
+      '@tomradex/mcp':
+        specifier: workspace:*
+        version: link:../mcp
       '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings

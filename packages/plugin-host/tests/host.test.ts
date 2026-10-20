@@ -11,10 +11,31 @@ const run = (plugin: unknown, scenario?: (t: never) => Promise<void>) => {
   return testPlugin({ plugin: plugin as HostTestInput["plugin"], id: "local/demo", namespace: "demo", dir, tmp: dir, scenario: scenario ? async () => ({ default: scenario }) : null });
 };
 
-it("names the services a plugin waits for that the sandbox does not provide", async () => {
-  const result = await run(definePlugin({ inject: ["tools", "agent"], async apply() {} }));
-  expect(result.ok).toBe(false);
-  expect(result.checks).toEqual([{ name: "loads", ok: false, detail: "waits for agent, which this sandbox does not provide; move it to optional to load without it" }]);
+it("runs a plugin's local agent with the app's own conductor, for its scenario to read and lend", async () => {
+  const result = await run(
+    definePlugin({
+      inject: ["agent"],
+      async apply(ctx) {
+        await ctx.agent.localAgent({
+          id: "demo",
+          title: "Demo",
+          cli: { name: "tomrade-sandbox-no-such-cli" },
+          install: "install Demo",
+          picks: [{ key: "model", title: "Model", choices: [], freeText: true }],
+          lend: { rank: 80, ask: async (request, io) => ({ text: `${io.options.model ?? "default"}: ${request.transcript}`, inputTokens: 1, outputTokens: 1 }) }
+        });
+      }
+    }),
+    async (t: any) => {
+      expect(t.localAgents.engine("demo")).toMatchObject({ id: "demo", title: "Demo", author: "ai:demo", terminalOnly: true, picks: [{ key: "model", title: "Model", choices: [], freeText: true }], mcpLink: false });
+      expect(await t.localAgents.available("demo")).toMatchObject({ ok: false, need: "install" });
+      t.localAgents.configure("demo", { model: "small" });
+      expect(await t.localAgents.lend("demo", "hi")).toMatchObject({ text: "small: hi" });
+      t.check("scenario ran", true);
+    }
+  );
+  expect(result.checks.filter((c) => !c.ok)).toEqual([]);
+  expect(result.checks.map((c) => c.name)).toContain("scenario ran");
 });
 
 it("gives a plugin with a window a sandbox window, which the scenario can read and speak for", async () => {

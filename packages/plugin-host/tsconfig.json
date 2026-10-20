@@ -42,6 +42,12 @@
       "path": "../desktop-surface"
     },
     {
+      "path": "../engine-acp"
+    },
+    {
+      "path": "../mcp"
+    },
+    {
       "path": "../extensions"
     }
   ]

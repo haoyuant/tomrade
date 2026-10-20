@@ -3,6 +3,7 @@ import type { ImApi } from "./im.js";
 import type { TerminalsApi } from "./terminals.js";
 import type { WebSearchApi } from "./web-search.js";
 import type { ModelsApi } from "./models.js";
+import type { LocalAgentOptions, LocalAgentSpec } from "./local-agents.js";
 import type {
   Author,
   Board,
@@ -372,6 +373,12 @@ export interface AgentApi {
    * hears their sessions and, in one Tomrade started, may answer: see `CLI_HOOK_COVERAGE` for which.
    */
   cliHook(spec: CliHookSpec): Promise<Disposer>;
+  /**
+   * SDK 0.2.17: a coding agent installed on this machine, run by Tomrade's own
+   * conductor — its CLI found, its sessions driven over ACP or handed a ticket
+   * in a terminal, its connection to Tomrade kept, its sign-in lent to the worker.
+   */
+  localAgent<O extends LocalAgentOptions>(spec: LocalAgentSpec<O>): Promise<Disposer>;
 }
 
 export type { CliHookEvent } from "./cli-hooks.js";

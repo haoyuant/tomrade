@@ -20,7 +20,9 @@
   "dependencies": {
     "@tomradex/agent": "workspace:*",
     "@tomradex/engine-claude-code": "workspace:*",
+    "@tomradex/llm": "workspace:*",
     "@tomradex/mcp": "workspace:*",
+    "@tomradex/plugin-sdk": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "zod": "^4.4.3"
   },
@@ -29,6 +31,7 @@
     "@tomradex/testkit": "workspace:*",
     "@tomradex/tools": "workspace:*",
     "typescript": "^6.0.0",
-    "vitest": "^3.2.7"
+    "vitest": "^3.2.7",
+    "@tomradex/settings": "workspace:*"
   }
 }
