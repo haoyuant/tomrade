@@ -224,6 +224,7 @@ it("puts ended sessions in the archive, keeps one a cell shows, sends the archiv
       super(ctx, "herdr");
     }
     bridge = async () => ({ state: "ready" as const, version: "0.9.5" });
+    panes = async () => [];
   }
   class FakeCodeLink extends Service {
     static provide = "codeLink";
@@ -433,6 +434,7 @@ it("shows a session code link asks for: the window opens or comes forward with i
       super(ctx, "herdr");
     }
     bridge = async () => bridge;
+    panes = async () => [];
   }
   class FakeCodeLink extends Service {
     static provide = "codeLink";
@@ -632,6 +634,13 @@ it("shows a terminal as the code session its agent claimed, in place, and as a p
   fake.panes.get(pane.t2!)!.terminal_title_stripped = "zsh";
   expect((await now()).map((t) => [t.id, t.agentTitle])).toEqual([["t1", "选中面板与侧边栏会话联动"], ["t2", null], ["t3", null]]);
   fake.panes.get(pane.t1!)!.agent = null;
+  // A session with no ticket in a herdr pane this window did not open goes by its conversation; one in a terminal here does not need to.
+  const other = Object.assign(fake.createPane(dir), { agent: "claude", terminal_title_stripped: "整理测试" });
+  sessions.push(session({ id: "loose", herdrPane: other.pane_id, startedAt: 9 }), session({ id: "inside", herdrPane: pane.t3!, startedAt: 9 }));
+  await now();
+  const titles = Object.fromEntries(win.states.at(-1)!.sessions.map((s) => [s.id, s.agentTitle]));
+  expect([titles.loose, titles.inside]).toEqual(["整理测试", null]);
+  sessions.splice(-2);
 
   // Claude Code with the repo's hooks: its session reports the pane; before the claim it holds no ticket and stays plain.
   sessions.push(session({ id: "hooked", herdrPane: pane.t1!, startedAt: 2 }));

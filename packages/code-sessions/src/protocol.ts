@@ -14,6 +14,10 @@ export interface SessionRow {
   activity: string | null;
   mode: "run" | "terminal";
   agent: string;
+  /** The agent's own name (Claude Code, Codex…), for a session with no ticket to go by; null when Tomrade does not know it. */
+  agentName: string | null;
+  /** What the agent herdr sees in the session's pane calls the conversation; null without one, or when a terminal row speaks for it. */
+  agentTitle: string | null;
   /** The herdr pane it runs in, on this machine; null when it has no terminal here. */
   pane: string | null;
   /** Where its terminal is: a herdr pane here, another terminal app here, another computer, or Tomrade running it. */

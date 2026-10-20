@@ -335,7 +335,7 @@ app.whenReady().then(async () => {
     console.log(`INFO: with herdr's TUI attached → typed text shown: ${coexist}, cells let go: ${stillOpen}`);
     fs.writeFileSync(path.join(shots, "code-sessions-after.png"), (await win.webContents.capturePage()).toPNG());
 
-    check("窗口说的是应用的语言", (await js(`document.querySelector('.cs-side-head').textContent`)) === "会话");
+    check("窗口说的是应用的语言", (await js(`document.querySelector('.cs-side-head .eyebrow').textContent`)) === "这个窗口里");
     win.close();
     await sleep(500);
     check("关窗后 pane 还在 herdr 里跑", JSON.parse(herdr("pane", "list")).result.panes.length >= 6);
@@ -380,8 +380,10 @@ app.whenReady().then(async () => {
     await tjs(`document.querySelector('[data-testid=cs-side-new-terminal]').click(); true`);
     const opened = await wait(async () => (await tjs(`document.querySelectorAll('.cs-cell').length === 7 && !!document.querySelector('.cs-cell[data-cell-terminal] .xterm')`)));
     check("新终端：格子都占满时，在旁边新开一格并连上 herdr", opened);
-    // The agent in it starts, and its hooks make it a session with no ticket on the same pane: it is not placed in a
-    // second cell, and the terminal's cell is not knocked off.
+    // An empty pane beside it, auto-place on; then the agent in the terminal starts, and its hooks make it a session with
+    // no ticket on the same pane: it is not placed in the empty pane, and the terminal's cell is not knocked off.
+    await tjs(`document.querySelector('.cs-cell[data-cell-terminal] button[aria-label="向右分屏"]').click(); true`);
+    await wait(async () => (await tjs(`[...document.querySelectorAll('.cs-cell-name')].filter((n) => n.textContent === '从左侧选一个会话，在这里显示它的终端').length`)) === 1, 5000);
     const cellsNow = await tjs(`document.querySelectorAll('.cs-cell').length`);
     const newPane = (JSON.parse(fs.readFileSync(path.join(work, "code-sessions.json"), "utf8")).terminals?.[project.id] ?? []).sort((a, b) => b.startedAt - a.startedAt)[0]?.pane;
     const hooked = ctx.codeLink.store.createSession(project.id, { repoId: "check", branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, worktree: cwd });
@@ -389,12 +391,15 @@ app.whenReady().then(async () => {
     ctx.emit("codeLink/changed", project.id);
     await sleep(2000);
     // Only the terminal's own cell counts: herdr's own TUI, still attached from above, may take other panes over.
-    const single = await tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return [document.querySelectorAll('.cs-cell').length, !!cell?.querySelector('.xterm'), !!cell?.querySelector('.cs-term-closed')?.offsetParent]; })()`);
-    check("同一个 pane 上的会话不会被放进第二个格子，终端的格子也不会被挤掉", !!newPane && single[0] === cellsNow && single[1] && !single[2], JSON.stringify({ cellsNow, single }));
+    const single = await tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return [document.querySelectorAll('.cs-cell').length, !!cell?.querySelector('.xterm'), !!cell?.querySelector('.cs-term-closed')?.offsetParent, [...document.querySelectorAll('.cs-cell-name')].filter((n) => n.textContent === '从左侧选一个会话，在这里显示它的终端').length]; })()`);
+    check("同一个 pane 上的会话不会被放进旁边的空面板，终端的格子也不会被挤掉", !!newPane && single[0] === cellsNow && single[1] && !single[2] && single[3] === 1, JSON.stringify({ cellsNow, single }));
+    // The empty pane goes again, for what follows.
+    await tjs(`(() => { const empty = [...document.querySelectorAll('.cs-cell')].find((c) => c.querySelector('.cs-cell-name').textContent === '从左侧选一个会话，在这里显示它的终端'); empty?.querySelector('button[aria-label="关闭这个窗格"]')?.click(); return true; })()`);
+    await wait(async () => (await tjs(`document.querySelectorAll('.cs-cell').length`)) === cellsNow - 1, 5000);
     ctx.codeLink.store.patchSession(project.id, hooked.id, { state: "ended", endedAt: Date.now() });
     ctx.emit("codeLink/changed", project.id);
     const listed = await wait(async () => (await tjs(`document.querySelectorAll('[data-terminal]').length`)) === 1, 5000);
-    check("左侧终端列表列出它", listed);
+    check("左侧列表把它列成一行", listed);
     await tjs(`document.querySelector('.cs-cell[data-cell-terminal] .xterm-helper-textarea').focus(); true`);
     await sleep(200);
     tw.webContents.insertText("echo plain-terminal-ok");
@@ -429,16 +434,23 @@ app.whenReady().then(async () => {
     // An agent in it claims a ticket: code link learns the pane (as the repo's hooks report it) and the cell becomes
     // that session in place — same xterm, same picture, no second row. Letting the claim go makes it a terminal again.
     const claimed = ctx.items.create({ projectId: project.id, boardId: board.id, title: "在终端里认领", workType: "coding", status: "doing", by: "human" });
-    const claimSession = ctx.codeLink.store.createSession(project.id, { repoId: "check", branch: `${claimed.key.toLowerCase()}/claimed`, itemIds: [claimed.id], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, worktree: cwd });
+    // Before the claim the agent's hooks have made it a session with no ticket: still the terminal's one row, never a blank one.
+    const rowCount = await tjs(`document.querySelectorAll('.cs-row').length`);
+    const claimSession = ctx.codeLink.store.createSession(project.id, { repoId: "check", branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, worktree: cwd });
     await tjs(`document.querySelector('.cs-cell[data-cell-terminal] .xterm').dataset.mark = 'same'; true`);
     ctx.codeLink.store.patchSession(project.id, claimSession.id, { state: "running", herdrPane: plainPane });
+    ctx.emit("codeLink/changed", project.id);
+    await sleep(1500);
+    const unclaimed = await tjs(`[document.querySelectorAll('.cs-row').length, document.querySelectorAll('[data-terminal]').length, [...document.querySelectorAll('.cs-row .cs-row-head .mono')].filter((n) => !n.textContent.trim()).length]`);
+    check("还没认领工单的 agent 只是它终端的那一行，没有空白的会话行", unclaimed[0] === rowCount && unclaimed[1] === 1 && unclaimed[2] === 0, JSON.stringify({ before: rowCount, now: unclaimed }));
+    ctx.codeLink.store.patchSession(project.id, claimSession.id, { itemIds: [claimed.id], branch: `${claimed.key.toLowerCase()}/claimed` });
     ctx.emit("codeLink/changed", project.id);
     const folded = await wait(async () => tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return !!cell && cell.querySelector('.cs-cell-name').textContent.includes(${JSON.stringify(claimed.key)}) && [...cell.querySelectorAll('.link-btn')].some((b) => b.textContent === '继续'); })()`));
     check("终端里的 agent 认领工单后，这个格子原地变成该工单的会话", folded);
     const inPlace = await tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return cell.querySelector('.xterm')?.dataset.mark === 'same' && [...cell.querySelectorAll('.xterm-rows > div')].some((r) => r.textContent.includes('reopened-ok')); })()`);
     check("不换格子也不重连：还是原来的终端画面", inPlace);
-    const rows = await tjs(`[document.querySelectorAll('[data-terminal]').length, [...document.querySelectorAll('.cs-row')].filter((r) => r.textContent.includes(${JSON.stringify(claimed.key)})).length]`);
-    check("列表里只有工单会话这一行，没有重复的终端行", rows[0] === 0 && rows[1] === 1, JSON.stringify(rows));
+    const rows = await tjs(`(() => { const withKey = [...document.querySelectorAll('.cs-row')].filter((r) => r.textContent.includes(${JSON.stringify(claimed.key)})); return [document.querySelectorAll('.cs-row').length, withKey.length, withKey.filter((r) => r.dataset.terminal).length]; })()`);
+    check("还是终端的那一行，现在显示工单，没有多出第二行", rows[0] === rowCount && rows[1] === 1 && rows[2] === 1, JSON.stringify({ before: rowCount, now: rows }));
     ctx.codeLink.store.patchSession(project.id, claimSession.id, { itemIds: [] });
     ctx.emit("codeLink/changed", project.id);
     const plainAgain = await wait(async () => tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return !!cell && [...cell.querySelectorAll('.link-btn')].some((b) => b.textContent === '关闭终端') && cell.querySelector('.xterm')?.dataset.mark === 'same'; })()`));
@@ -514,7 +526,7 @@ app.whenReady().then(async () => {
     const rowOf = `[...document.querySelectorAll('.cs-row')].find((r) => r.textContent.includes(${JSON.stringify(outsideItem.key)}))`;
     // It waits in its own group, closed, which counts it; opened, the row is there.
     const grouped = await wait(async () => tjs(`(() => { const g = document.querySelector('[data-testid=cs-outside-group]'); return !!g && g.querySelector('[aria-expanded]').getAttribute('aria-expanded') === 'false' && g.querySelector('[data-testid=cs-outside-count]').textContent === '1' && !${rowOf}; })()`), 8000);
-    check("外部终端里的会话在「在其他终端」分组里，默认收起，分组标题数着它", grouped);
+    check("外部终端里的会话在「在其他地方」分组里，默认收起，分组标题数着它", grouped);
     await tjs(`document.querySelector('[data-testid=cs-outside-group] [aria-expanded]').click(); true`);
     const tagged = await wait(async () => tjs(`${rowOf}?.querySelector('.cs-where')?.textContent === 'iTerm2'`), 8000);
     check("外部终端里的会话在列表里标出 iTerm2", tagged);

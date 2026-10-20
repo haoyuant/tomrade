@@ -185,6 +185,8 @@ export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, it
         activity: s.activity ?? s.summary,
         mode: s.mode === "headless" ? "run" : "terminal",
         agent: s.agent,
+        agentName: null,
+        agentTitle: null,
         pane: live ? s.herdrPane : null,
         where,
         terminal: app?.name ?? s.terminal ?? null,
@@ -235,7 +237,9 @@ function apply(ctx: Context, config: Config) {
   /** The sessions to list; when they cannot be read the window says so and its terminals work on. */
   const listed = (projectId: string): { sessions: SessionRow[]; warning: string | null } => {
     try {
-      return { sessions: sessionRows(ctx.codeLink, ctx.items, projectId, Date.now(), ctx.get("hub")?.deviceId), warning: null };
+      const agents = ctx.get("agent");
+      const rows = sessionRows(ctx.codeLink, ctx.items, projectId, Date.now(), ctx.get("hub")?.deviceId);
+      return { sessions: rows.map((r) => ({ ...r, agentName: agents?.engineOf(r.agent)?.title ?? null })), warning: null };
     } catch (error) {
       ctx.logger.warn(`code sessions: listing sessions failed: ${error instanceof Error ? error.message : String(error)}`);
       return { sessions: [], warning: words()("sessionsUnreadable") };
@@ -266,6 +270,24 @@ function apply(ctx: Context, config: Config) {
       return info?.agent ? info.title : null;
     };
     return [...saved.filter((t) => !gone.has(t.id)), ...opening].map((t) => ({ ...t, agentTitle: agentTitle(t.pane), sessionId: null, note: null }));
+  };
+
+  /**
+   * A session with no ticket, in a herdr pane this window did not open, goes by what its agent calls the conversation.
+   * One in a terminal opened here needs none: that terminal's row speaks for it.
+   */
+  const titled = async (sessions: SessionRow[], saved: SavedTerminal[]): Promise<SessionRow[]> => {
+    const herdr = ctx.get("herdr");
+    const terminalPanes = new Set(saved.map((t) => t.pane));
+    const loose = sessions.filter((s) => !s.itemId && s.pane && !terminalPanes.has(s.pane));
+    if (!herdr || !loose.length) return sessions;
+    const panes = await herdr.panes().catch(() => null);
+    if (!panes) return sessions;
+    const byPane = new Map(panes.map((p) => [p.paneId, p]));
+    return sessions.map((s) => {
+      const info = loose.includes(s) ? byPane.get(s.pane!) : undefined;
+      return info?.agent && info.title ? { ...s, agentTitle: info.title } : s;
+    });
   };
 
   /**
@@ -392,7 +414,7 @@ function apply(ctx: Context, config: Config) {
       // "auto" lands in herdr once it is installed; only a terminal named otherwise keeps sessions out of it.
       askSwitch: setting !== "herdr" && setting !== "auto" && !saved.asked,
       terminal: setting,
-      sessions: shown.sessions.filter((s) => s.endedAt === null || inCells.has(s.id)),
+      sessions: await titled(shown.sessions.filter((s) => s.endedAt === null || inCells.has(s.id)), savedTerminals(projectId)),
       warning,
       terminals: await fold(projectId, shown.sessions, await terminals(projectId)),
       places: await places(projectId),
