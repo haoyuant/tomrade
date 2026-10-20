@@ -321,6 +321,80 @@ it("never shows a state older than one already shown, so a pick from the archive
   expect(win.states.at(-1)!.sessions.map((s) => s.id)).toEqual(["live", "old"]);
 });
 
+it("keeps a terminal that finishes opening while herdr is asked for its panes, and forgets only the terminals whose panes went", async () => {
+  const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[] }[] = [];
+  // herdr's pane list and a launch each answer when let go.
+  let held: (() => void)[] | null = null;
+  let alive = ["w1:p9"];
+  let launched: () => void = () => undefined;
+  class FakeSurfaces extends Service {
+    static provide = "desktopSurfaces";
+    constructor(ctx: Context) {
+      super(ctx, "desktopSurfaces");
+    }
+    open(spec: (typeof opened)[number]["spec"]) {
+      const entry = { spec, states: [spec.initialState as WindowState] };
+      opened.push(entry);
+      return { id: "s", capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus() {}, setState: (s: WindowState) => void entry.states.push(s), post() {}, close: () => spec.onClose() };
+    }
+  }
+  class HeldHerdr extends Service {
+    static provide = "herdr";
+    constructor(ctx: Context) {
+      super(ctx, "herdr");
+    }
+    bridge = async () => ({ state: "ready" as const, version: "0.9.5" });
+    panes = () =>
+      new Promise((resolve) => {
+        const answer = () => resolve(alive.map((paneId) => ({ paneId, agent: null, agentSession: null, title: null })));
+        if (held) held.push(answer);
+        else answer();
+      });
+    launch = () => new Promise((resolve) => (launched = () => resolve({ paneId: "w1:pB", workspaceId: "w1" })));
+  }
+  class FakeCodeLink extends Service {
+    static provide = "codeLink";
+    constructor(ctx: Context) {
+      super(ctx, "codeLink");
+    }
+    sessionsOf = () => [];
+    links = () => [];
+    repositoriesOf = () => [];
+  }
+  const stateFile = path.join(dir, "opening-state.json");
+  const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "opening-settings.json") }], Contributions, FakeSurfaces, HeldHerdr, FakeCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile }]] });
+  fs.writeFileSync(stateFile, JSON.stringify({ terminals: { [w.project.id]: [{ id: "t1", title: "repo", cwd: dir, pane: "w1:p9", startedAt: 1 }] } }));
+  await settle();
+  await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
+  const win = opened[0]!;
+  const ids = () => win.states.at(-1)!.terminals.map((t) => t.id);
+  const saved = () => (JSON.parse(fs.readFileSync(stateFile, "utf8")).terminals[w.project.id] as { id: string }[]).map((t) => t.id);
+
+  // A new terminal starts opening; the window hears of it.
+  held = [];
+  win.spec.onMessage({ type: "newTerminal", terminalId: "t2", cwd: dir });
+  await settle();
+  held.shift()!();
+  await settle();
+  expect(ids()).toEqual(["t1", "t2"]);
+  // A state begins while it opens; meanwhile it finishes opening, and the first terminal's pane goes.
+  w.ctx.emit("codeLink/changed", w.project.id);
+  await settle();
+  launched();
+  await settle();
+  alive = ["w1:pB"];
+  held.shift()!();
+  await settle();
+  // That state still has the new terminal, and only the gone one left the saved list.
+  expect(ids()).toEqual(["t2"]);
+  expect(saved()).toEqual(["t2"]);
+  for (const answer of held.splice(0)) answer();
+  held = null;
+  await settle();
+  expect(ids()).toEqual(["t2"]);
+  expect(saved()).toEqual(["t2"]);
+});
+
 it("shows a session code link asks for: the window opens or comes forward with it to reveal, only while herdr can show panes", async () => {
   const opened: { spec: Record<string, unknown> & { onMessage(m: unknown): void; onClose(): void }; states: WindowState[]; posts: WindowPost[]; focused: number }[] = [];
   const sessions = [session({ id: "s1", herdrPane: "w1:p1" }), session({ id: "s2", herdrPane: "w1:p2" }), session({ id: "s3", mode: "headless" })];
