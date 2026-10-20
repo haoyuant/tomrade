@@ -46,7 +46,7 @@ interface Saved {
   folded?: Record<string, boolean>;
 }
 
-type SavedTerminal = Omit<TerminalRow, "sessionId" | "note" | "agentTitle" | "running"> & { pane: string };
+type SavedTerminal = Omit<TerminalRow, "sessionId" | "note" | "agentTitle" | "agentStatus" | "running"> & { pane: string };
 type StartingTerminal = Omit<SavedTerminal, "pane"> & { pane: null };
 
 const run = promisify(execFile);
@@ -228,6 +228,8 @@ interface Open {
   archive: boolean;
   /** States begun, and the newest one shown: one that finishes after a newer one is not shown. */
   states: { begun: number; shown: number };
+  /** The panes of its terminals followed in herdr, so an agent's status there shows as it changes. */
+  follows: Map<string, () => void>;
 }
 
 /**
@@ -280,6 +282,10 @@ function apply(ctx: Context, config: Config) {
       const info = pane ? byPane.get(pane) : undefined;
       return info?.agent ? info.title : null;
     };
+    const agentStatus = (pane: string | null): TerminalRow["agentStatus"] => {
+      const info = pane ? byPane.get(pane) : undefined;
+      return info?.agent && info.status !== "unknown" ? info.status : null;
+    };
     // A terminal with no agent goes by what runs in it: its foreground command, else what its shell calls it.
     const running = async (pane: string | null): Promise<string | null> => {
       const info = pane ? byPane.get(pane) : undefined;
@@ -292,7 +298,7 @@ function apply(ctx: Context, config: Config) {
     };
     const rows = [...saved.filter((t) => !gone.has(t.id)), ...opening];
     const runs = await Promise.all(rows.map((t) => running(t.pane)));
-    return rows.map((t, i) => ({ ...t, agentTitle: agentTitle(t.pane), running: runs[i] ?? null, sessionId: null, note: null }));
+    return rows.map((t, i) => ({ ...t, agentTitle: agentTitle(t.pane), agentStatus: agentStatus(t.pane), running: runs[i] ?? null, sessionId: null, note: null }));
   };
 
   /**
@@ -342,7 +348,8 @@ function apply(ctx: Context, config: Config) {
       if (fits.length === 1) {
         const only = fits[0]!.t;
         try {
-          ctx.codeLink.store.patchSession(projectId, s.id, { herdrPane: only.pane! });
+          // A state computed alongside this one may have linked it already.
+          if (!sessionOf(projectId, s.id)?.herdrPane) ctx.codeLink.store.patchSession(projectId, s.id, { herdrPane: only.pane! });
         } catch (error) {
           ctx.logger.warn(`code sessions: could not link a claim to its terminal: ${error instanceof Error ? error.message : String(error)}`);
         }
@@ -453,6 +460,20 @@ function apply(ctx: Context, config: Config) {
     };
   };
 
+  /** Follow the panes of the terminals a window shows, and only those; one herdr stopped following is followed afresh. */
+  const follow = (win: Open, list: TerminalRow[]) => {
+    const herdr = ctx.get("herdr");
+    const wanted = new Set(win.closed || !herdr ? [] : list.flatMap((t) => (t.pane ? [t.pane] : [])));
+    for (const [pane, release] of win.follows) {
+      if (wanted.has(pane)) continue;
+      release();
+      win.follows.delete(pane);
+    }
+    if (!herdr) return;
+    const watching = new Set(herdr.watching());
+    for (const pane of wanted) if (!win.follows.has(pane) || !watching.has(pane)) win.follows.set(pane, herdr.watch(pane));
+  };
+
   const refresh = async (projectId: string) => {
     const win = open.get(projectId);
     if (!win || win.closed || !win.surface) return;
@@ -460,6 +481,7 @@ function apply(ctx: Context, config: Config) {
     const next = await state(projectId);
     if (win.closed || turn < win.states.shown) return;
     win.states.shown = turn;
+    follow(win, next.terminals);
     win.surface.setState(next);
   };
 
@@ -731,7 +753,7 @@ function apply(ctx: Context, config: Config) {
       return refresh(projectId);
     }
     const w = words();
-    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), held: new Map(), timer: setInterval(() => void refresh(projectId), BRIDGE_POLL_MS), closed: false, reveal: asked, archive: false, states: { begun: 0, shown: 0 } };
+    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), held: new Map(), timer: setInterval(() => void refresh(projectId), BRIDGE_POLL_MS), closed: false, reveal: asked, archive: false, states: { begun: 0, shown: 0 }, follows: new Map() };
     win.timer.unref?.();
     open.set(projectId, win);
     try {
@@ -740,6 +762,7 @@ function apply(ctx: Context, config: Config) {
       // A failed open leaves nothing behind, so the next try opens afresh.
       win.closed = true;
       clearInterval(win.timer);
+      follow(win, []);
       if (open.get(projectId) === win) open.delete(projectId);
       ctx.logger.warn(`code sessions: window did not open: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
@@ -748,6 +771,7 @@ function apply(ctx: Context, config: Config) {
 
   const opening = async (projectId: string, win: Open, w: ReturnType<typeof words>) => {
     const initialState = await state(projectId);
+    follow(win, initialState.terminals);
     win.surface = ctx.desktopSurfaces.open({
       id: `code-sessions.${projectId}`,
       title: w("windowTitle", { project: projectName(projectId) }),
@@ -765,6 +789,7 @@ function apply(ctx: Context, config: Config) {
       onClose: () => {
         win.closed = true;
         clearInterval(win.timer);
+        follow(win, []);
         for (const cell of [...win.terminals.keys()]) detach(win, cell);
         if (open.get(projectId) === win) open.delete(projectId);
       }
@@ -772,6 +797,12 @@ function apply(ctx: Context, config: Config) {
   };
 
   ctx.on("codeLink/changed", (projectId) => void refresh(projectId));
+  // An agent in a terminal changing how it stands, or the terminal ending, shows at once.
+  ctx.inject(["herdr"], (ctx) => {
+    ctx.herdr.onPane((event) => {
+      for (const [projectId, win] of open) if (win.follows.has(event.paneId)) void refresh(projectId);
+    });
+  });
   // Code link's starts and "open in terminal" land here while this window can show herdr's panes.
   const showable = async () => ["ready", "notRunning"].includes((await bridge()).state);
   ctx.on("codeLink/terminal-window", async () => (await showable()) || undefined);

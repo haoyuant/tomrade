@@ -648,6 +648,10 @@ export class CodeLink extends Service {
     // herdr's reading of the panes ticket sessions run in, as the hook events those sessions would post.
     this.home.inject(["herdr"], (ctx) => {
       ctx.herdr.onPane((event) => void this.herdrEvent(ctx, event).catch((err) => this.ctx.logger.warn(`herdr event on ${event.paneId} failed: ${message(err)}`)));
+      ctx.effect(() => () => {
+        for (const release of this.herdrHolds.values()) release();
+        this.herdrHolds.clear();
+      });
       this.watchPanes(ctx);
       ctx.on("codeLink/changed", () => this.watchPanes(ctx));
       // a ticket moved (by a person, a scan, a merge) shows on its workspace too
@@ -2533,6 +2537,9 @@ export class CodeLink extends Service {
     this.home.get("ipc")?.send("agent.event", session.threadId, { type: "message", message });
   }
 
+  /** The panes this service follows in herdr; others (the Terminal window's) follow theirs. */
+  private readonly herdrHolds = new Map<string, () => void>();
+
   /** What herdr was last told about each session with a pane, so it is told only what changed. */
   private readonly herdrTold = new Map<string, { tokens?: string; resume?: string }>();
 
@@ -2574,8 +2581,14 @@ export class CodeLink extends Service {
       }
     }
     for (const id of this.herdrTold.keys()) if (!seen.has(id)) this.herdrTold.delete(id);
-    for (const paneId of ctx.herdr.watching()) if (!wanted.has(paneId)) ctx.herdr.watch(paneId)();
-    for (const paneId of wanted) ctx.herdr.watch(paneId);
+    for (const [paneId, release] of this.herdrHolds) {
+      if (wanted.has(paneId)) continue;
+      release();
+      this.herdrHolds.delete(paneId);
+    }
+    // A pane herdr stopped following (it said the pane was gone) is followed afresh while a session still wants it.
+    const watching = new Set(ctx.herdr.watching());
+    for (const paneId of wanted) if (!this.herdrHolds.has(paneId) || !watching.has(paneId)) this.herdrHolds.set(paneId, ctx.herdr.watch(paneId));
   }
 
   /**

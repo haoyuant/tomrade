@@ -37,6 +37,7 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-chip[data-state="needs"] { background: color-mix(in oklab, var(--warn) 18%, transparent); color: var(--warn); }
 .cs-chip[data-state="error"], .cs-chip[data-state="lost"] { background: color-mix(in oklab, var(--danger) 14%, transparent); color: var(--danger); }
 .cs-chip[data-state="ended"], .cs-chip[data-state="idle"] { background: var(--surface-warm); color: var(--muted); }
+.cs-chip[data-state="done"] { background: color-mix(in oklab, var(--success) 16%, transparent); color: var(--success); }
 
 .cs-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .cs-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border-soft); background: var(--surface-warm); font-size: var(--text-sm); }

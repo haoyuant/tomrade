@@ -115,11 +115,13 @@ export const REVIVE_WINDOW_MS = 5 * 60_000;
 export const CONTROL_SETTLE_MS = 2_000;
 
 /** How `revive` went: the server answers (already, or started now), did not come up, is held by the limit, or herdr is not here. */
-/** What herdr reads off one pane: the agent it detected there, that agent's own session id, and the title on the pane. */
+/** What herdr reads off one pane: the agent it detected there, that agent's own session id, how it reads that agent, and the title on the pane. */
 export interface HerdrPaneInfo {
   paneId: string;
   agent: string | null;
   agentSession: string | null;
+  /** `unknown` for a pane with no agent, too. */
+  status: HerdrStatus;
   title: string | null;
 }
 
@@ -153,6 +155,7 @@ interface HerdrUp {
 }
 
 const STATUSES = new Set<string>(["idle", "working", "blocked", "done", "unknown"]);
+const statusOf = (value: unknown): HerdrStatus => (typeof value === "string" && STATUSES.has(value) ? (value as HerdrStatus) : "unknown");
 
 /** PATH with the folders herdr installs into: an app opened from the Dock whose login shell could not be read lacks them. */
 function herdrSearchPath(base: string | undefined): string {
@@ -172,8 +175,8 @@ export class Herdr extends Service {
   static provide = "herdr";
 
   private readonly listeners = new Set<(event: HerdrPaneEvent) => void>();
-  /** The panes being followed, each with its own status stream (herdr subscribes to status per pane). */
-  private readonly watched = new Map<string, { stream: { close(): void } | null; timer: NodeJS.Timeout | null; delay: number; last: string | null }>();
+  /** The panes being followed, each with its own status stream (herdr subscribes to status per pane), and who follows it. */
+  private readonly watched = new Map<string, { stream: { close(): void } | null; timer: NodeJS.Timeout | null; delay: number; last: string | null; holds: Set<symbol> }>();
   private global: { stream: { close(): void } | null; timer: NodeJS.Timeout | null; delay: number } | null = null;
   private disposed = false;
   private readonly reconnectMs: number;
@@ -556,11 +559,12 @@ export class Herdr extends Service {
   /** Every pane herdr has, as it reads them; null when herdr does not answer. */
   async panes(): Promise<HerdrPaneInfo[] | null> {
     try {
-      const { panes } = await this.call<{ panes: Array<{ pane_id: string; agent?: string | null; agent_session?: { kind?: string; value?: string } | null; terminal_title_stripped?: string | null }> }>("pane.list");
+      const { panes } = await this.call<{ panes: Array<{ pane_id: string; agent?: string | null; agent_session?: { kind?: string; value?: string } | null; agent_status?: string; terminal_title_stripped?: string | null }> }>("pane.list");
       return panes.map((p) => ({
         paneId: p.pane_id,
         agent: p.agent ?? null,
         agentSession: p.agent_session?.kind === "id" && p.agent_session.value ? p.agent_session.value : null,
+        status: statusOf(p.agent_status),
         title: p.terminal_title_stripped?.trim() || null
       }));
     } catch {
@@ -632,12 +636,23 @@ export class Herdr extends Service {
     }, "herdr.onPane");
   }
 
-  /** Follow a pane's status: herdr tells it per pane, so each gets a subscription of its own. The returned function stops following it. */
+  /**
+   * Follow a pane's status: herdr tells it per pane, so each gets a subscription of its own. The returned function
+   * lets this hold go; the pane is followed while anyone holds it.
+   */
   watch(paneId: string): () => void {
-    if (this.watched.has(paneId)) return () => this.unwatch(paneId);
-    this.watched.set(paneId, { stream: null, timer: null, delay: this.reconnectMs, last: null });
-    this.subscribePane(paneId);
-    return () => this.unwatch(paneId);
+    const hold = Symbol(paneId);
+    const entry = this.watched.get(paneId);
+    if (entry) entry.holds.add(hold);
+    else {
+      this.watched.set(paneId, { stream: null, timer: null, delay: this.reconnectMs, last: null, holds: new Set([hold]) });
+      this.subscribePane(paneId);
+    }
+    return () => {
+      const current = this.watched.get(paneId);
+      if (!current?.holds.delete(hold)) return;
+      if (!current.holds.size) this.unwatch(paneId);
+    };
   }
 
   watching(): string[] {
@@ -693,7 +708,7 @@ export class Herdr extends Service {
   private onPaneEvent(paneId: string, event: HerdrEvent): void {
     const entry = this.watched.get(paneId);
     if (!entry || event.event !== "pane.agent_status_changed") return;
-    const status = typeof event.data.agent_status === "string" && STATUSES.has(event.data.agent_status) ? (event.data.agent_status as HerdrStatus) : "unknown";
+    const status = statusOf(event.data.agent_status);
     const agent = typeof event.data.agent === "string" ? event.data.agent : null;
     const key = `${agent ?? ""}:${status}`;
     if (entry.last === key) return;
