@@ -58,6 +58,8 @@ export const ImSettings = z.preprocess(upgrade, z.object({
     output: z.enum(["final", "progress", "verbose"]).default("progress"),
     /** In a direct chat, turns started on the desktop show here too. A group only ever shows turns started from IM, or shared from the desktop. */
     desktopTurns: z.boolean().default(true),
+    /** In a group, where the platform can, each ticket being worked gets a topic of its own for its news. */
+    ticketTopics: z.boolean().default(true),
     /** This conversation's own answers to the shared `notify`; a kind left out follows it. */
     notify: z.partialRecord(z.enum(NOTIFY_KINDS), z.boolean()).optional(),
     /** In a group, keep its recent messages on this computer and show them to the Agent when it is woken. Off unless set. */

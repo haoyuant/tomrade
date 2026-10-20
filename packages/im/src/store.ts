@@ -70,11 +70,21 @@ CREATE INDEX idx_plugin_im_watch_project ON plugin_im_watch(project_id);
 ALTER TABLE plugin_im_bindings ADD COLUMN home_thread TEXT;
 ` }, { version: 9, up: `
 ALTER TABLE plugin_im_watch ADD COLUMN status TEXT;
+` }, { version: 10, up: `
+CREATE TABLE plugin_im_topics (
+ id TEXT PRIMARY KEY, parent_id TEXT NOT NULL, project_id TEXT NOT NULL, item_id TEXT NOT NULL,
+ state TEXT NOT NULL DEFAULT 'opening', topic_id TEXT, binding_id TEXT, thread_id TEXT, run_id TEXT,
+ title TEXT NOT NULL, closed INTEGER NOT NULL DEFAULT 0, synced TEXT, own INTEGER NOT NULL DEFAULT 0,
+ attempts INTEGER NOT NULL DEFAULT 0, retry_at INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL,
+ UNIQUE (parent_id, item_id)
+);
+CREATE INDEX idx_plugin_im_topics_binding ON plugin_im_topics(binding_id);
+CREATE INDEX idx_plugin_im_topics_item ON plugin_im_topics(project_id, item_id);
 ` }];
 export const TABLES = {
   plugin_im_bindings: { export: false }, plugin_im_inbox: { export: false },
   plugin_im_outbox: { export: false }, plugin_im_actions: { export: false }, plugin_im_runs: { export: false },
-  plugin_im_window: { export: false }, plugin_im_watch: { export: false }
+  plugin_im_window: { export: false }, plugin_im_watch: { export: false }, plugin_im_topics: { export: false }
 } as const;
 
 export interface Binding {
@@ -114,6 +124,25 @@ export interface WindowRow {
 }
 /** A ticket a conversation was shown, and its code as last told there; news of the code goes to that conversation. */
 export interface Watch { binding_id: string; project_id: string; item_id: string; seen_json: string; at: number }
+/** A ticket's own topic under a group conversation, opened by the bot; the ticket's news goes there. */
+export interface Topic {
+  id: string;
+  /** The group conversation it opened under. */
+  parent_id: string; project_id: string; item_id: string;
+  /** `opening` until the platform made it; `failed` sends the ticket's news to the group as before. */
+  state: "opening" | "open" | "failed";
+  topic_id: string | null;
+  /** The topic's own conversation, once open. */
+  binding_id: string | null;
+  /** A session started from the group, for the topic to show once open. */
+  thread_id: string | null; run_id: string | null;
+  title: string; closed: number;
+  /** The title and closed state last told to the platform, as SQLite's json_array. */
+  synced: string | null;
+  /** 1 once the topic has a conversation of its own; until someone writes there it holds the group's, showing none of it. */
+  own: number;
+  attempts: number; retry_at: number; created_at: number;
+}
 export interface Action {
   token: string; binding_id: string; thread_id: string; question_id: string;
   actor_id: string; run_id: string | null; value_json: string | null; expires_at: number;
@@ -141,6 +170,7 @@ export class ImStore {
       this.run("DELETE FROM plugin_im_actions WHERE question_id LIKE 'remind:%' AND expires_at < ?", before);
       this.run("DELETE FROM plugin_im_actions WHERE question_id LIKE 'cmd:%' AND expires_at < ?", before);
       this.run("DELETE FROM plugin_im_watch WHERE at < ? OR binding_id NOT IN (SELECT id FROM plugin_im_bindings)", before);
+      this.run("DELETE FROM plugin_im_topics WHERE parent_id NOT IN (SELECT id FROM plugin_im_bindings)");
     });
   }
 }

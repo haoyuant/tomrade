@@ -766,6 +766,10 @@ export class Host {
                   append: host.back(session.stream.append.bind(session.stream), `IM adapter ${spec.id} stream append`),
                   stop: host.back(session.stream.stop.bind(session.stream), `IM adapter ${spec.id} stream stop`)
                 } } : {}),
+                ...(session.topics ? { topics: {
+                  open: host.back(session.topics.open.bind(session.topics), `IM adapter ${spec.id} topic open`),
+                  update: host.back(session.topics.update.bind(session.topics), `IM adapter ${spec.id} topic update`)
+                } } : {}),
                 ...(session.identity ? { identity: session.identity } : {}),
                 close: host.back(session.close.bind(session), `IM adapter ${spec.id} close`)
               };
