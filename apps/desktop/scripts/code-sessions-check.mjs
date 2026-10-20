@@ -155,6 +155,40 @@ app.whenReady().then(async () => {
     const ime = await wait(async () => herdr("pane", "read", sessions[2].pane, "--source", "recent", "--lines", "20").includes("输入法提交"));
     check("像输入法那样提交的中文进到了 pane", ime);
 
+    // Files dropped from outside onto a terminal: a real file goes in as its escaped path; one without a path sends nothing.
+    const dropped = path.join(work, "拖入 文件(1).txt");
+    fs.writeFileSync(dropped, "drop");
+    await js(`(() => { const i = document.createElement('input'); i.type = 'file'; i.id = 'cs-drop-probe'; i.style.display = 'none'; document.body.append(i); return true; })()`);
+    win.webContents.debugger.attach("1.3");
+    const { root } = await win.webContents.debugger.sendCommand("DOM.getDocument");
+    const { nodeId } = await win.webContents.debugger.sendCommand("DOM.querySelector", { nodeId: root.nodeId, selector: "#cs-drop-probe" });
+    await win.webContents.debugger.sendCommand("DOM.setFileInputFiles", { nodeId, files: [dropped] });
+    win.webContents.debugger.detach();
+    const dropOn = (files) => js(`(() => {
+      const term = document.querySelectorAll('.cs-cell')[4].querySelector('.cs-term');
+      const data = new DataTransfer();
+      ${files === "real" ? "data.items.add(document.getElementById('cs-drop-probe').files[0]);" : "data.items.add(new File(['x'], 'from-a-page.png', { type: 'image/png' }));"}
+      term.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: data }));
+      term.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: data }));
+      return new Promise((resolve) => requestAnimationFrame(() => {
+        const shown = !!term.querySelector('.cs-term-drop')?.textContent;
+        term.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: data }));
+        resolve(shown);
+      }));
+    })()`);
+    const paneFive = () => herdr("pane", "read", sessions[4].pane, "--source", "recent", "--lines", "20");
+    const untouched = paneFive();
+    const hinted = await dropOn("page");
+    await sleep(1000);
+    check("拖到终端上时格子提示可以放下", hinted);
+    check("没有真实路径的拖入什么也不发", paneFive() === untouched, paneFive().slice(-200));
+    await dropOn("real");
+    const pasted = await wait(async () => paneFive().includes("拖入\\ 文件\\(1\\).txt"));
+    check("拖入的文件以转义后的路径输入到终端", pasted, paneFive().slice(-300));
+    check("拖放后键盘焦点在那个终端", await js(`document.activeElement === document.querySelectorAll('.cs-cell')[4].querySelector('.xterm-helper-textarea')`));
+    const guarded = await js(`(() => { const e = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() }); document.querySelector('.cs-side').dispatchEvent(e); return e.defaultPrevented; })()`);
+    check("拖到终端以外的地方不会把窗口导航走", guarded);
+
     // Another controller takes the pane over: the cell says it was let go and offers to attach again.
     const thief = spawn("herdr", ["terminal", "session", "control", sessions[5].pane, "--takeover", "--cols", "60", "--rows", "10"], { env: { ...process.env, HERDR_SESSION }, stdio: ["pipe", "ignore", "ignore"] });
     others.push(thief);

@@ -12,6 +12,7 @@ interface SurfaceBridge {
   onMessage(listener: (message: unknown) => void): () => void;
   onLook(listener: (look: Look) => void): () => void;
   send(message: unknown): void;
+  pathForFile?(file: File): string;
 }
 
 declare global {
@@ -23,6 +24,7 @@ declare global {
 const surface = (): SurfaceBridge | undefined => window.tomradeSurface;
 
 export const send = (message: WindowMessage): void => surface()?.send(message);
+export const pathForFile = (file: File): string => surface()?.pathForFile?.(file) ?? "";
 export const onState = (listener: (state: WindowState) => void) => surface()?.onState((s) => listener(s as WindowState)) ?? (() => undefined);
 export const onLook = (listener: (look: Look) => void) => surface()?.onLook(listener) ?? (() => undefined);
 

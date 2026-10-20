@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 const STATE_CHANNEL = "tomrade-surface:state";
 const INTERACTIVE_CHANNEL = "tomrade-surface:interactive";
@@ -34,5 +34,7 @@ contextBridge.exposeInMainWorld("tomradeSurface", {
     return () => lookListeners.delete(listener);
   },
   setInteractive: (interactive) => ipcRenderer.send(INTERACTIVE_CHANNEL, !!interactive),
-  send: (message) => ipcRenderer.send(MESSAGE_CHANNEL, message)
+  send: (message) => ipcRenderer.send(MESSAGE_CHANNEL, message),
+  /** A dropped or chosen File's path on disk, "" when it has none; only the preload can read it. */
+  pathForFile: (file) => webUtils.getPathForFile(file)
 });
