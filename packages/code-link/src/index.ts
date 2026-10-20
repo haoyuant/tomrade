@@ -41,4 +41,4 @@ export { CodeLink as default } from "./service.js";
 
 export type { ConnectionView, AgentConnectionView } from "./connection.js";
 export { BRIDGED_BY_DSH, cliHookCall, cliHookEvent, hookReply, mergeAnswers } from "./cli-hooks.js";
-export { findTranscript, promptTitle, resumeCommand, transcriptTitle } from "./titles.js";
+export { findCodexRollout, findTranscript, promptTitle, readConversation, resumeCommand, transcriptTitle, type ConversationLine } from "./titles.js";

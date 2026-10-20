@@ -38,7 +38,7 @@ import { Sessions, type SessionMoment } from "./sessions.js";
 import { CODE_WORDS, type CodeWords, type PlainCodeWord } from "./words.js";
 import { Starter, type StartMode, type StartOptions, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
-import { findTranscript, transcriptTitle } from "./titles.js";
+import { findCodexRollout, findTranscript, readConversation, transcriptTitle, type ConversationLine } from "./titles.js";
 import { AUTO_TERMINAL, RESUME_ID_FILE, RESUME_SCRIPT, SYSTEM_TERMINAL, TerminalSettings, commandOk, exec, herdrFallbackNote, launchTerminal, machineTerminalSettings, setupTerminal, shellQuote, terminalApps } from "./terminal.js";
 import { registerTools } from "./tools.js";
 
@@ -800,6 +800,14 @@ export class CodeLink extends Service {
       found = true;
     }
     return found;
+  }
+
+  /** A session's conversation from its agent's own record, read-only; null when Tomrade cannot read that agent's record. */
+  conversation(projectId: string, sessionId: string): { lines: ConversationLine[]; cut: boolean } | null {
+    const s = this.store.session(projectId, sessionId);
+    if (!s?.externalId) return null;
+    const file = s.agent === "claude-code" ? (s.transcript ?? findTranscript(s.externalId)) : s.agent === "codex" ? findCodexRollout(s.externalId) : null;
+    return file ? readConversation(s.agent, file) : null;
   }
 
   sessionsOf(projectId: string, itemId?: string): SessionView[] {

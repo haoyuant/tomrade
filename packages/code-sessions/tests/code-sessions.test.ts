@@ -103,6 +103,7 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
     installHerdr = async () => ({ launched: true, command: "brew install herdr" });
     worktreeOf = () => null;
     openPr = async () => ({ url: null, message: "pushed" });
+    conversation = (_projectId: string, id: string) => (id === "s1" ? { lines: [{ who: "person" as const, text: "侧栏怎么分组？" }], cut: true } : null);
   }
 
   const stateFile = path.join(dir, "state.json");
@@ -143,6 +144,12 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   // Dropped files are typed as one paste of their paths.
   await say({ type: "drop", cell: "c1", paths: ["/work/a b.png", "/work/c"] });
   expect(live.sent.at(-1)).toEqual(["input", "\x1b[200~/work/a\\ b.png /work/c \x1b[201~"]);
+
+  // An ended session's cell asks for its conversation, read from its agent's own record.
+  await say({ type: "conversation", cell: "c2", sessionId: "s1" });
+  expect(win.posts.at(-1)).toEqual({ type: "conversation", cell: "c2", sessionId: "s1", lines: [{ who: "person", text: "侧栏怎么分组？" }], cut: true });
+  await say({ type: "conversation", cell: "c2", sessionId: "nobody" });
+  expect(win.posts.at(-1)).toEqual({ type: "conversation", cell: "c2", sessionId: "nobody", lines: null, cut: false });
 
   // The toolbar: continue through code link, the PR in the browser, the worktree in Finder.
   await say({ type: "continue", sessionId: "s1" });
