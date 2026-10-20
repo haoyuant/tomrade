@@ -152,7 +152,10 @@ function PaneScrollbar({ scroll, onScrollTo, onWheel }: { scroll: PaneScroll | n
  * frame repaints the viewport), clicks as mouse events, files dropped on it as their paths, and the
  * size following the cell.
  */
-export function TerminalCell({ cell, sessionId, tokens, font, labels, autoFocus }: { cell: string; sessionId: string; tokens: Record<string, string>; font: string; labels: { detached: (reason: string | null) => string; reattach: string; drop: string }; autoFocus: boolean }) {
+export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, autoFocus }: { cell: string; sessionId: string; pane: string; tokens: Record<string, string>; font: string; labels: { detached: (reason: string | null) => string; reattach: string; drop: string }; autoFocus: boolean }) {
+  // Another ticket the same agent works in this pane is the same terminal: only another pane attaches again.
+  const attachAs = useRef(sessionId);
+  attachAs.current = sessionId;
   // Only the selected cell takes focus when it attaches: focus selects a cell, so another one attaching must not.
   const focusOnAttach = useRef(autoFocus);
   focusOnAttach.current = autoFocus;
@@ -185,7 +188,7 @@ export function TerminalCell({ cell, sessionId, tokens, font, labels, autoFocus 
       else if (post.type === "reattach") setAttempt((n) => n + 1);
       else if (post.type === "closed") setClosed(post.reason);
     });
-    send({ type: "attach", cell, sessionId, cols: terminal.cols, rows: terminal.rows });
+    send({ type: "attach", cell, sessionId: attachAs.current, cols: terminal.cols, rows: terminal.rows });
     const input = terminal.onData((data) => send({ type: "input", cell, data }));
     const sized = terminal.onResize(({ cols, rows }) => send({ type: "resize", cell, cols, rows }));
     terminal.attachCustomWheelEventHandler((e) => {
@@ -229,7 +232,7 @@ export function TerminalCell({ cell, sessionId, tokens, font, labels, autoFocus 
     };
     // Tokens and font change the look only; the effect below repaints without reattaching.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cell, sessionId, attempt]);
+  }, [cell, pane, attempt]);
 
   // The window writes the look's variables in its own effect, after this one: read them a frame later.
   useEffect(() => {
