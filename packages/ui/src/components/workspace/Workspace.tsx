@@ -80,7 +80,8 @@ export function Workspace() {
   useEffect(() => {
     if (!firstLesson || seen(FIRST_LESSON)) return;
     markSeen(FIRST_LESSON);
-    ws.select(firstLesson.id);
+    // Narrower, opening it would close the assistant, and the setup card with it.
+    if (window.innerWidth >= THREE_PANE_FLOOR) ws.select(firstLesson.id);
   }, [firstLesson, seen, markSeen, ws.select]);
   const { t, tx } = useI18n();
   const undo = useUndo(ws.project.id);
