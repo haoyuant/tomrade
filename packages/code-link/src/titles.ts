@@ -95,3 +95,125 @@ export function resumeCommand(agent: string, sessionId: string | null): string |
   if (agent === "codex") return `codex resume ${sessionId}`;
   return null;
 }
+
+/** One line of a conversation as the Terminal window shows it, read-only. */
+export interface ConversationLine {
+  who: "person" | "agent" | "tool";
+  text: string;
+}
+
+/** How much of a conversation's record is read, from its end. */
+const CONVERSATION_TAIL = 2 * 1024 * 1024;
+
+/** How long one line may run in the view. */
+const LINE_TEXT = 4000;
+
+/** Text that is the agent's machinery, not the conversation: commands, reminders, injected context. */
+const meta = (text: string) => /^\s*</.test(text);
+
+const clip = (text: string) => (text.length > LINE_TEXT ? `${text.slice(0, LINE_TEXT)}…` : text);
+
+/** A tool call as one quiet line: the tool, and what it ran or touched. */
+function toolLine(name: string, input: unknown): string {
+  const i = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+  const what = [i.description, i.command, i.file_path, i.path, i.pattern, i.url, i.query, i.key].find((v) => typeof v === "string" && v.trim()) as string | undefined;
+  return what ? `${name} · ${what.replace(/\s+/g, " ").slice(0, 160)}` : name;
+}
+
+function claudeLines(o: Record<string, unknown>): ConversationLine[] {
+  if (o.isMeta || o.isSidechain) return [];
+  const message = o.message as { content?: unknown } | undefined;
+  const content = message?.content;
+  if (o.type === "user") {
+    if (typeof content === "string") return meta(content) ? [] : [{ who: "person", text: clip(content.trim()) }];
+    if (!Array.isArray(content)) return [];
+    return content.flatMap((b: { type?: string; text?: string }) => (b.type === "text" && b.text && !meta(b.text) ? [{ who: "person" as const, text: clip(b.text.trim()) }] : []));
+  }
+  if (o.type === "assistant" && Array.isArray(content)) {
+    return content.flatMap((b: { type?: string; text?: string; name?: string; input?: unknown }): ConversationLine[] => {
+      if (b.type === "text" && b.text?.trim()) return [{ who: "agent", text: clip(b.text.trim()) }];
+      if (b.type === "tool_use" && b.name) return [{ who: "tool", text: toolLine(b.name, b.input) }];
+      return [];
+    });
+  }
+  return [];
+}
+
+function codexLines(o: Record<string, unknown>): ConversationLine[] {
+  if (o.type !== "response_item") return [];
+  const p = (o.payload ?? {}) as { type?: string; role?: string; content?: { type?: string; text?: string }[]; name?: string; arguments?: string };
+  if (p.type === "message" && (p.role === "user" || p.role === "assistant")) {
+    const who = p.role === "user" ? "person" : "agent";
+    return (p.content ?? []).flatMap((b) => (b.text && !meta(b.text) ? [{ who, text: clip(b.text.trim()) } as ConversationLine] : []));
+  }
+  if (p.type === "function_call" && p.name) {
+    let args: unknown = {};
+    try {
+      args = JSON.parse(p.arguments ?? "{}");
+    } catch {
+      // arguments that are not JSON say nothing more
+    }
+    const cmd = (args as { cmd?: unknown; command?: unknown }).cmd ?? (args as { command?: unknown }).command;
+    return [{ who: "tool", text: toolLine(p.name, { command: Array.isArray(cmd) ? cmd.join(" ") : cmd }) }];
+  }
+  return [];
+}
+
+/**
+ * A conversation from its agent's own record, read-only: what the person said, what the agent answered, a line per
+ * tool call. Only the record's tail is read; `cut` says the start was left out. Null for agents Tomrade cannot read.
+ */
+export function readConversation(agent: string, file: string): { lines: ConversationLine[]; cut: boolean } | null {
+  const reader = agent === "claude-code" ? claudeLines : agent === "codex" ? codexLines : null;
+  if (!reader) return null;
+  let fd: number;
+  try {
+    fd = fs.openSync(file, "r");
+  } catch {
+    return null;
+  }
+  try {
+    const size = fs.fstatSync(fd).size;
+    const start = Math.max(0, size - CONVERSATION_TAIL);
+    const text = read(fd, start, size - start);
+    // From the middle of a file the first line is a piece of one.
+    const rows = (start > 0 ? text.slice(text.indexOf("\n") + 1) : text).split("\n");
+    const lines: ConversationLine[] = [];
+    for (const row of rows) {
+      if (!row.trim()) continue;
+      try {
+        lines.push(...reader(JSON.parse(row) as Record<string, unknown>));
+      } catch {
+        // a line still being written
+      }
+    }
+    return { lines, cut: start > 0 };
+  } catch {
+    return null;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/** Where a Codex conversation's record is, by its id: the rollout file under `~/.codex/sessions` that ends with it. */
+export function findCodexRollout(sessionId: string, home = os.homedir()): string | null {
+  if (!/^[\w-]+$/.test(sessionId)) return null;
+  const walk = (dir: string, depth: number): string | null => {
+    let names: string[];
+    try {
+      names = fs.readdirSync(dir);
+    } catch {
+      return null;
+    }
+    for (const name of names.sort().reverse()) {
+      const full = path.join(dir, name);
+      if (name.startsWith("rollout-") && name.endsWith(`${sessionId}.jsonl`)) return full;
+      if (depth < 3 && !name.includes(".")) {
+        const found = walk(full, depth + 1);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+  return walk(path.join(home, ".codex", "sessions"), 0);
+}

@@ -680,7 +680,9 @@ app.whenReady().then(async () => {
     // A conversation had without a ticket, ended: on the archive's 对话 shelf by its title, and taken up again in a new
     // terminal by its agent's resume, in the folder it ran in.
     const talk = ctx.codeLink.store.createSession(project.id, { repoId: repo.id, branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, externalId: "talk-check-1" });
-    ctx.codeLink.store.patchSession(project.id, talk.id, { title: "终端侧栏设计讨论", prompted: true, cwd: repoDir, state: "ended", endedAt: Date.now() });
+    const talkFile = path.join(work, "talk-check-1.jsonl");
+    fs.writeFileSync(talkFile, [{ type: "user", message: { content: "侧栏该怎么分组？" } }, { type: "assistant", message: { content: [{ type: "text", text: "分成「这个窗口里」和「在其他地方」两组。" }, { type: "tool_use", name: "Bash", input: { description: "Show the sidebar code" } }] } }].map((o) => JSON.stringify(o)).join("\n"));
+    ctx.codeLink.store.patchSession(project.id, talk.id, { title: "终端侧栏设计讨论", prompted: true, cwd: repoDir, transcript: talkFile, state: "ended", endedAt: Date.now() });
     ctx.emit("codeLink/changed", project.id);
     await tjs(`document.querySelector('[data-testid=cs-archive]').click(); true`);
     await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-shelf-talks]')`), 5000);
@@ -691,6 +693,10 @@ app.whenReady().then(async () => {
     await tjs(`${talkRow}?.click(); true`);
     await tjs(`document.querySelector('[data-testid=cs-archive-back]').click(); true`);
     const offeredTalk = await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-talk-on]')`), 5000);
+    // Its cell says who worked it and shows the conversation, read-only, under the way to go on.
+    const readBack = await wait(async () => tjs(`(() => { const by = document.querySelector('[data-testid=cs-ended-by]')?.textContent ?? ''; const lines = [...document.querySelectorAll('[data-testid=cs-convo] .cs-convo-line')].map((l) => [l.dataset.who, l.textContent]); return by.startsWith('Claude Code') && JSON.stringify(lines) === JSON.stringify([["person", "侧栏该怎么分组？"], ["agent", "分成「这个窗口里」和「在其他地方」两组。"], ["tool", "Bash · Show the sidebar code"]]); })()`), 5000);
+    check("结束的对话格子里写着是 Claude Code 做的，并只读显示当时的对话", readBack, JSON.stringify(await tjs(`document.querySelector('[data-testid=cs-ended]')?.textContent?.slice(0, 200)`)));
+    fs.writeFileSync(path.join(shots, "code-sessions-convo.png"), (await tw.webContents.capturePage()).toPNG());
     const panesBefore = new Set(JSON.parse(herdr("pane", "list")).result.panes.map((p) => p.pane_id));
     await tjs(`document.querySelector('[data-testid=cs-talk-on]')?.click(); true`);
     const resumed = offeredTalk && (await wait(async () => {

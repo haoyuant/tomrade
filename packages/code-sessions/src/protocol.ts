@@ -119,6 +119,8 @@ export interface WindowState {
 export type WindowMessage =
   | { type: "attach"; cell: string; sessionId: string; cols: number; rows: number }
   /** The window names the new terminal's id, so its cell shows it before herdr has opened it. */
+  /** The ended session a cell shows: its conversation, read from its agent's own record. */
+  | { type: "conversation"; cell: string; sessionId: string }
   /** `resume`: a conversation's session, taken up again in the new terminal by its agent. */
   | { type: "newTerminal"; terminalId: string; cwd: string | null; resume?: string }
   | { type: "closeTerminal"; terminalId: string }
@@ -160,6 +162,8 @@ export type WindowPost =
   | { type: "closed"; cell: string; reason: string | null }
   /** herdr's server is back: attach the cell's pane again. */
   | { type: "reattach"; cell: string }
+  /** A session's conversation, read-only; `lines` null when its agent's record cannot be read. */
+  | { type: "conversation"; cell: string; sessionId: string; lines: { who: "person" | "agent" | "tool"; text: string }[] | null; cut: boolean }
   /** The pane the cell asked for streams in `other` already: one pane, one cell. */
   | { type: "shownIn"; cell: string; other: string }
   | { type: "toast"; text: string };

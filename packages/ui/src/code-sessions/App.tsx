@@ -3,7 +3,7 @@ import type { Layout, LayoutPreset, SessionRow, TerminalPlace, TerminalRow, Wind
 import { ContextMenu, ContextMenuActionItem, ContextMenuSub } from "~/components/ui/menu";
 import { interpolate, message } from "~/lib/dicts";
 import { isMac } from "~/lib/keys";
-import { onLook, onShownIn, onState, onToast, send, type Look } from "./bridge";
+import { onCell, onLook, onShownIn, onState, onToast, send, type Look } from "./bridge";
 import { keyLabel, windowKey, type WindowKey } from "./keys";
 import { applyPreset, close, cycle, dedupe, heir, holder, landing, leaves, lock, neighbour, place, prune, resize, reveal, show, split, type Key } from "./layout";
 import { sessionName, sidebarRows, type HereRow } from "./lists";
@@ -343,7 +343,61 @@ function Layouts({ presets, defaultPreset, autoPlace, onApply, onSave, say }: { 
 }
 
 /** A session whose terminal this window cannot show: where it runs, and what can be done from here. */
-function NotHere({ session, picker, onTalk, say }: { session: SessionRow; picker: ReactNode; onTalk: () => void; say: Say }) {
+type Line = { who: "person" | "agent" | "tool"; text: string };
+
+/**
+ * An ended session's cell: which agent worked it and when it ended, the way to go on, and its conversation read-only
+ * from the agent's own record — or, without one, just the way to go on.
+ */
+function Ended({ session, cell, locale, resume, picker, say }: { session: SessionRow; cell: string; locale: string; resume: ReactNode; picker: ReactNode; say: Say }) {
+  const [read, setRead] = useState<{ lines: Line[] | null; cut: boolean } | null>(null);
+  const [picking, setPicking] = useState(false);
+  useEffect(() => {
+    setRead(null);
+    const off = onCell(cell, (post) => {
+      if (post.type === "conversation" && post.sessionId === session.id) setRead({ lines: post.lines, cut: post.cut });
+    });
+    send({ type: "conversation", cell, sessionId: session.id });
+    return off;
+  }, [cell, session.id]);
+  const lines = read?.lines?.length ? read.lines : null;
+  const when = session.endedAt ? new Date(session.endedAt).toLocaleString(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : null;
+  const who = session.agentName ?? session.agent;
+  if (!lines)
+    return (
+      <div className="cs-not-here" data-testid="cs-ended">
+        <span>{say("endedHere")}</span>
+        <span className="cs-row-meta">{when ? say("endedBy", { agent: who, when }) : who}</span>
+        {resume}
+        {picker}
+      </div>
+    );
+  return (
+    <div className="cs-ended" data-testid="cs-ended">
+      <div className="cs-ended-head">
+        <span className="cs-row-meta" data-testid="cs-ended-by">{when ? say("endedBy", { agent: who, when }) : who}</span>
+        {resume}
+        {picking ? (
+          picker
+        ) : (
+          <button type="button" className="link-btn" data-testid="cs-ended-new" onClick={() => setPicking(true)}>
+            {say("orNewTerminal")}
+          </button>
+        )}
+      </div>
+      <div className="cs-convo" data-testid="cs-convo" aria-label={say("convoReadOnly")}>
+        {read?.cut && <p className="cs-convo-cut">{say("convoCut")}</p>}
+        {lines.map((l, i) => (
+          <div key={i} className="cs-convo-line" data-who={l.who}>
+            {l.text}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function NotHere({ session, cell, locale, picker, onTalk, say }: { session: SessionRow; cell: string; locale: string; picker: ReactNode; onTalk: () => void; say: Say }) {
   const done = session.state === "idle" || session.state === "ended" || session.state === "lost" || session.state === "error";
   // Never while the outside one may still run: two copies would share one conversation. A ticket goes on through code
   // link; a conversation without one, through its agent's own resume.
@@ -359,7 +413,8 @@ function NotHere({ session, picker, onTalk, say }: { session: SessionRow; picker
         {say("talkOn")}
       </button>
     ) : null);
-  if (!live(session) || session.where === "herdr")
+  if (!live(session)) return <Ended session={session} cell={cell} locale={locale} resume={resume} picker={picker} say={say} />;
+  if (session.where === "herdr")
     return (
       <div className="cs-not-here" data-testid="cs-ended">
         <span>{say("endedHere")}</span>
@@ -435,7 +490,7 @@ function Cell({ leaf, session, terminal, places, ready, onNewTerminal, onTalk, f
       ) : session ? (
         withMenu(
           <div className="cs-cell-empty">
-            {session.mode === "run" ? say("runMode") : <NotHere session={session} picker={<NewTerminal places={places} initial={session.worktree ?? session.cwd} ready={ready} onOpen={onNewTerminal} say={say} />} onTalk={() => onTalk(session)} say={say} />}
+            {session.mode === "run" ? say("runMode") : <NotHere session={session} cell={leaf.id} locale={look.locale} picker={<NewTerminal places={places} initial={session.worktree ?? session.cwd} ready={ready} onOpen={onNewTerminal} say={say} />} onTalk={() => onTalk(session)} say={say} />}
           </div>
         )
       ) : (
