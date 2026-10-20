@@ -359,6 +359,19 @@ app.whenReady().then(async () => {
     const manual = await appear("关掉自动分配");
     await sleep(2500);
     check("关掉自动分配后，新会话不会自己占面板", !(await inCell(manual)) && (await tjs(`document.querySelectorAll('.cs-cell-empty > .cs-new-terminal [data-testid=cs-new-terminal]').length`)) >= 1);
+    // Asked from outside — "open in terminal" on its ticket — the session comes into a cell and is selected, auto-place off or not.
+    check("代码关联认得这个终端窗口", await ctx.codeLink.terminalWindow(project.id));
+    const manualItem = ctx.items.list({ projectId: project.id }).find((i) => i.key === manual);
+    const jumped = await ctx.contributions.run("code-link.open-terminal", { projectId: project.id, itemId: manualItem.id });
+    const currentRows = () => tjs(`[...document.querySelectorAll('.cs-row[aria-current="true"]')].map((r) => r.textContent).join(' | ')`);
+    const revealed = await wait(async () => (await inCell(manual)) && (await currentRows()).includes(manual), 8000);
+    check("在终端打开：终端窗口把会话放进格子并选中它", revealed && !jumped.toast, `${JSON.stringify(jumped)} · current: ${await currentRows()}`);
+    // Let go again, and the plain terminal's cell selected as before: the steps below count the empty cells.
+    await tjs(`[...document.querySelectorAll('.cs-cell')].find((c) => c.querySelector('.cs-cell-name')?.textContent.includes(${JSON.stringify(manual)})).querySelector('.cs-cell-bar').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 20 })); true`);
+    await sleep(300);
+    await tjs(`[...document.querySelectorAll('[role=menuitem]')].find((i) => i.textContent === '断开')?.click(); true`);
+    await wait(async () => !(await inCell(manual)), 3000);
+    await tjs(`document.querySelectorAll('.cs-cell')[1].querySelector('.cs-cell-bar').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); true`);
     fs.writeFileSync(path.join(shots, "code-sessions-layouts.png"), (await tw.webContents.capturePage()).toPNG());
 
     // A session in iTerm2 (its hooks said so): tagged in the list, and its pane says where it runs and what can be done.

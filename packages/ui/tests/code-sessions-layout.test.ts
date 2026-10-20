@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { Layout } from "@tomradex/code-sessions";
-import { applyPreset, close, leaves, place, prune, resize, shape, show, split } from "../src/code-sessions/layout";
+import { applyPreset, close, leaves, place, prune, resize, reveal, shape, show, split } from "../src/code-sessions/layout";
 
 const one: Layout = { type: "leaf", id: "c1", sessionId: "s1" };
 
@@ -38,4 +38,17 @@ it("keeps a preset's shape, refills it in reading order, places new ids in the f
   expect(leaves(applied).every((l) => l.id.startsWith("n"))).toBe(true);
   expect(leaves(place(grid, "s9")).map((l) => l.sessionId)).toEqual(["s1", "s9", null]);
   expect(place(full, "s9")).toEqual(full);
+});
+
+it("brings a session into view without moving anything out: its cell, an empty one, or a new one beside", () => {
+  const two = split(one, "c1", "row", "c2").layout;
+  expect(reveal(two, "s1", null)).toEqual({ layout: two, cell: "c1" });
+  // A terminal's cell that became the session counts as showing it.
+  expect(reveal(show(two, "c2", "t1"), "s2", null, (id) => (id === "t1" ? "s2" : id)).cell).toBe("c2");
+  const filled = reveal(two, "s2", null);
+  expect(filled.cell).toBe("c2");
+  expect(leaves(filled.layout).map((l) => l.sessionId)).toEqual(["s1", "s2"]);
+  const beside = reveal(filled.layout, "s3", "c2", undefined, "c3");
+  expect(beside.cell).toBe("c3");
+  expect(leaves(beside.layout).map((l) => [l.id, l.sessionId])).toEqual([["c1", "s1"], ["c2", "s2"], ["c3", "s3"]]);
 });

@@ -85,6 +85,8 @@ export interface WindowState {
   defaultPreset: string | null;
   /** New sessions and terminals go to the first empty cell. */
   autoPlace: boolean;
+  /** A session asked to be shown, from outside the window: put in a cell and selected once; `at` tells a new ask from one done. */
+  reveal: { sessionId: string; at: number } | null;
 }
 
 /** What the window asks for. */

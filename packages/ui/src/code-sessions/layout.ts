@@ -43,6 +43,20 @@ export function place(layout: Layout, id: string): Layout {
   return empty ? show(layout, empty.id, id) : layout;
 }
 
+/**
+ * A session brought into view: the cell that already shows it (`shows` reads a cell's id as the session it shows), else
+ * the first empty cell, else a new cell beside `near`. Nothing else is moved out.
+ */
+export function reveal(layout: Layout, id: string, near: string | null, shows: (cellId: string) => string = (cellId) => cellId, newId = nextId()): { layout: Layout; cell: string } {
+  const cells = leaves(layout);
+  const holding = cells.find((l) => l.sessionId && shows(l.sessionId) === id);
+  if (holding) return { layout, cell: holding.id };
+  const empty = cells.find((l) => !l.sessionId);
+  if (empty) return { layout: show(layout, empty.id, id), cell: empty.id };
+  const beside = split(layout, (cells.find((l) => l.id === near) ?? cells[0]!).id, "row", newId);
+  return { layout: show(beside.layout, beside.created, id), cell: beside.created };
+}
+
 /** A preset's shape with fresh cell ids, refilled in reading order with what the current layout showed; what does not fit is let go. */
 export function applyPreset(current: Layout, preset: Layout, id = nextId): Layout {
   const renamed = (node: Layout): Layout => (node.type === "leaf" ? { type: "leaf", id: id(), sessionId: null } : { ...node, id: `${id()}s`, a: renamed(node.a), b: renamed(node.b) });

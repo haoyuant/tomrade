@@ -275,6 +275,27 @@ it("runs a ticket in a tab of its project's herdr workspace, follows the pane's 
   fake.attached = true;
   opened.mockClear();
 
+  // With Tomrade's Terminal window on, the jump and a continue show the session there, and herdr's own client is left alone.
+  const asked: string[] = [];
+  const shows = ctx.on("codeLink/show-session", (_projectId, sessionId) => {
+    asked.push(sessionId);
+    return true;
+  });
+  const answers = ctx.on("codeLink/terminal-window", () => true);
+  expect(await codeLink.terminalWindow(project.id)).toBe(true);
+  const focused = fake.of("pane.focus").length;
+  expect(await jump()).toEqual({});
+  expect(asked).toEqual([fresh2.ok ? fresh2.sessionId : ""]);
+  expect(fake.of("pane.focus").length).toBe(focused);
+  const continued = await ctx.contributions.run("code-link.start-terminal", { projectId: project.id, itemId: item.id });
+  // No pane to look for: the window shows it.
+  expect(continued.toast).toBe(`Continuing on ${fresh2.ok ? fresh2.branch : ""}`);
+  expect(asked.length).toBe(2);
+  shows();
+  answers();
+  expect(await codeLink.terminalWindow(project.id)).toBe(false);
+  expect((await jump()).toast).toMatch(/^Shown in herdr \(pane w1:p\d\)$/);
+
   // herdr gone, and its server does not start: the session opens in the system terminal instead, and the person is told why.
   fake.stop();
   expect(await codeLink.herdrStatus()).toBe("notRunning");

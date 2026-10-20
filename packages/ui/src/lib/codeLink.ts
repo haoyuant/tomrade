@@ -20,6 +20,20 @@ export const codeLinkKeys = {
 export const useHerdrStatus = (enabled: boolean) =>
   useQuery({ queryKey: ["codeLink", "herdrStatus"], queryFn: () => invoke("codeLink.herdrStatus"), enabled, refetchInterval: 5000 });
 
+/** Sessions started on this project open in Tomrade's own Terminal window: herdr is the terminal here and the window is on. */
+export const useTerminalWindow = (projectId: string) =>
+  useQuery({ queryKey: ["codeLink", projectId, "terminalWindow"], queryFn: () => invoke("codeLink.terminalWindow", projectId) });
+
+/**
+ * Where Start runs before the person picks: how this delivery's last session ran; else, for coding work whose agent
+ * can run in a terminal, Tomrade's own terminal when the Terminal window shows it; else how Start was last left here.
+ */
+export function defaultStartMode(input: { latest: "headless" | "terminal" | null; remembered: StartOptions["mode"] | null; terminalWindow: boolean; coding: boolean; agentInTerminal: boolean }): StartOptions["mode"] {
+  if (input.latest) return input.latest === "terminal" ? "terminal" : "run";
+  if (input.terminalWindow && input.coding && input.agentInTerminal) return "terminal";
+  return input.remembered === "terminal" ? "terminal" : "run";
+}
+
 /** How the Start dialog was left on this machine; null before anything was started here. */
 export const useStartDefaults = () =>
   useQuery({ queryKey: codeLinkKeys.startDefaults, queryFn: () => invoke("codeLink.startDefaults") });

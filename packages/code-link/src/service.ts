@@ -74,6 +74,10 @@ declare module "cordis" {
   interface Events {
     /** Links or sessions of a project changed — for main-process observers; the renderer hears codeLink.changed. */
     "codeLink/changed"(projectId: string): void;
+    /** Asked: a window inside Tomrade can show this project's herdr sessions. Its plugin answers true. */
+    "codeLink/terminal-window"(projectId: string): Promise<boolean | void> | boolean | void;
+    /** Asked: show this session's herdr terminal inside Tomrade. True once a window has. */
+    "codeLink/show-session"(projectId: string, sessionId: string): Promise<boolean | void> | boolean | void;
   }
 }
 
@@ -208,6 +212,10 @@ declare module "@tomradex/ipc" {
     /** What the Start dialog last ran with on this machine, so it opens the way it was left. */
     "codeLink.startDefaults": () => StartDefaultsView | null;
     "codeLink.herdrStatus": () => "notInstalled" | "notRunning" | "running";
+    /** Sessions started here open in Tomrade's own Terminal window: herdr is the terminal and the window is on. */
+    "codeLink.terminalWindow": (projectId: string) => boolean;
+    /** Show a session's herdr terminal in Tomrade's Terminal window; false when no window can. */
+    "codeLink.showSession": (projectId: string, sessionId: string) => boolean;
     /** How herdr installs on this machine: Homebrew's command where brew is, else only its install guide. */
     "codeLink.herdrInstall": () => HerdrInstall;
     /** Install herdr in a terminal with that command; the page never names it. */
@@ -612,6 +620,8 @@ export class CodeLink extends Service {
       ctx.ipc.handle("codeLink.setupInTerminal", (engineId, step) => ctx.codeLink.setupInTerminal(engineId, step));
       ctx.ipc.handle("codeLink.startDefaults", () => ctx.codeLink.startDefaults());
       ctx.ipc.handle("codeLink.herdrStatus", () => ctx.codeLink.herdrStatus());
+      ctx.ipc.handle("codeLink.terminalWindow", (projectId) => ctx.codeLink.terminalWindow(projectId));
+      ctx.ipc.handle("codeLink.showSession", (projectId, sessionId) => ctx.codeLink.showSession(projectId, sessionId));
       ctx.ipc.handle("codeLink.herdrInstall", () => ctx.codeLink.herdrInstall());
       ctx.ipc.handle("codeLink.installHerdr", () => ctx.codeLink.installHerdr());
     });
@@ -916,6 +926,44 @@ export class CodeLink extends Service {
     const herdr = this.ctx.get("herdr");
     if (await herdr?.server()) return "running";
     return await herdr?.installed() ? "notRunning" : "notInstalled";
+  }
+
+  /** Tomrade's own Terminal window shows this project's sessions: herdr is the terminal here and a window answers for it. */
+  async terminalWindow(projectId: string): Promise<boolean> {
+    const settings = await machineTerminalSettings(this.ctx.settings.get().codeLink, this.ctx.get("herdr"));
+    return settings.terminal === "herdr" && (await this.answered("codeLink/terminal-window", () => this.ctx.serial("codeLink/terminal-window", projectId)));
+  }
+
+  /** A session's herdr terminal, shown in Tomrade's Terminal window; false when no window can show it. */
+  showSession(projectId: string, sessionId: string): Promise<boolean> {
+    return this.answered("codeLink/show-session", () => this.ctx.serial("codeLink/show-session", projectId, sessionId));
+  }
+
+  /** A plugin's answer is a convenience: one that throws counts as no window. */
+  private async answered(name: string, ask: () => Promise<unknown>): Promise<boolean> {
+    try {
+      return (await ask()) === true;
+    } catch (error) {
+      this.ctx.logger.warn(`${name}: ${message(error)}`);
+      return false;
+    }
+  }
+
+  /** The ticket's live session brought forward in herdr itself, said in a line; null when it has no herdr pane to show. */
+  async showInHerdr(projectId: string, itemId: string): Promise<string | null> {
+    const pane = this.store.sessions(projectId, { itemId, live: true }).find((s) => s.herdrPane && s.state !== "lost")?.herdrPane;
+    const herdr = this.ctx.get("herdr");
+    if (!pane || !herdr) return null;
+    const w = this.words();
+    const item = this.ctx.items.get(projectId, itemId);
+    const shown = await herdr.show(pane, item ? `${item.key} · ${item.title}` : pane);
+    if (shown === "shown") return w("shownInHerdr", { pane });
+    // In front, but no herdr client is attached to see it: herdr's own client, in the system terminal, shows it.
+    if (shown === "noClient") {
+      const attach = await launchTerminal({ cwd: os.homedir(), command: `exec ${shellQuote(herdr.binary() ?? "herdr")}`, dir: this.sessionDir("herdr-attach") }, SYSTEM_TERMINAL);
+      return attach.launched ? w("herdrAttached", { app: process.platform === "darwin" ? SYSTEM_TERMINAL : w("systemTerminal"), pane }) : w("herdrRunToSee", { pane });
+    }
+    return null;
   }
 
   /** Homebrew's formula only where brew answers; Windows has none. */
@@ -2095,6 +2143,8 @@ export class CodeLink extends Service {
       if (!result.ok) return { toast: result.message, startDialog: mode };
       const warning = result.warnings?.join("\n");
       const started = w(result.continued ? "continuing" : "started", { on: result.branch ? w("startedOn", { branch: result.branch }) : "" });
+      // In herdr, shown in Tomrade's Terminal window when that is on.
+      if (result.mode === "terminal" && result.launched && result.pane && (await this.showSession(scope.projectId, result.sessionId))) return { toast: `${started}${warning ? `\n${warning}` : ""}` };
       if (result.mode === "terminal") return { toast: `${result.launched ? `${started}${result.pane ? w("herdrHasIt", { pane: result.pane }) : w("terminalHasIt")}` : w("runThis", { command: result.command ?? "" })}${warning ? `\n${warning}` : ""}` };
       // a run here is followed in its conversation, which opens with it
       if (result.waitingOn) return { toast: w("waitingOn", { question: result.waitingOn }), showThread: result.threadId };
@@ -2138,20 +2188,11 @@ export class CodeLink extends Service {
       group,
       run: async ({ projectId, itemId }) => {
         if (!projectId || !itemId) return { toast: this.words()("selectTicket") };
-        // The session already has a terminal, in herdr: show that one rather than open another.
-        const pane = this.store.sessions(projectId, { itemId, live: true }).find((s) => s.herdrPane && s.state !== "lost")?.herdrPane;
-        const herdr = this.ctx.get("herdr");
-        if (pane && herdr) {
-          const w = this.words();
-          const item = this.ctx.items.get(projectId, itemId);
-          const shown = await herdr.show(pane, item ? `${item.key} · ${item.title}` : pane);
-          if (shown === "shown") return { toast: w("shownInHerdr", { pane }) };
-          // In front, but no herdr client is attached to see it: herdr's own client, in the system terminal, shows it.
-          if (shown === "noClient") {
-            const attach = await launchTerminal({ cwd: os.homedir(), command: `exec ${shellQuote(herdr.binary() ?? "herdr")}`, dir: this.sessionDir("herdr-attach") }, SYSTEM_TERMINAL);
-            return { toast: attach.launched ? w("herdrAttached", { app: process.platform === "darwin" ? SYSTEM_TERMINAL : w("systemTerminal"), pane }) : w("herdrRunToSee", { pane }) };
-          }
-        }
+        // The session already has a terminal, in herdr: show that one rather than open another, in Tomrade's Terminal window when that is on.
+        const session = this.store.sessions(projectId, { itemId, live: true }).find((s) => s.herdrPane && s.state !== "lost");
+        if (session && (await this.showSession(projectId, session.id))) return {};
+        const shown = await this.showInHerdr(projectId, itemId);
+        if (shown) return { toast: shown };
         const cwd = this.worktreeOf(projectId, itemId);
         if (!cwd) return { toast: this.words()("noWorktree") };
         const settings = await machineTerminalSettings(this.ctx.settings.get().codeLink, this.ctx.get("herdr"));

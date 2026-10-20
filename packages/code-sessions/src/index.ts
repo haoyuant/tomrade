@@ -197,6 +197,8 @@ interface Open {
   detached: Set<string>;
   timer: NodeJS.Timeout;
   closed: boolean;
+  /** The latest ask to show a session, kept in every state so a window that opens late still sees it. */
+  reveal: WindowState["reveal"];
 }
 
 /**
@@ -361,7 +363,8 @@ function apply(ctx: Context, config: Config) {
       layout: isLayout(remembered) ? remembered : preset ? preset.layout : fresh(),
       presets,
       defaultPreset: preset?.id ?? null,
-      autoPlace: saved.autoPlace !== false
+      autoPlace: saved.autoPlace !== false,
+      reveal: open.get(projectId)?.reveal ?? null
     };
   };
 
@@ -530,8 +533,12 @@ function apply(ctx: Context, config: Config) {
         if (!app || process.platform !== "darwin") return;
         return void run("open", ["-a", app]).catch(() => post(win, { type: "toast", text: words()("switchFailed", { app }) }));
       }
-      case "focusHerdr":
-        return command(projectId, win, "code-link.open-terminal", m.sessionId);
+      case "focusHerdr": {
+        // herdr's own client, asked for by name: not this window, which shows the pane already.
+        const itemId = sessionOf(projectId, m.sessionId)?.itemIds[0];
+        const said = itemId ? await ctx.codeLink.showInHerdr(projectId, itemId) : null;
+        return said ? post(win, { type: "toast", text: said }) : command(projectId, win, "code-link.open-terminal", m.sessionId);
+      }
       case "openWorktree": {
         const s = sessionOf(projectId, m.sessionId);
         const where = s?.worktree ?? (s?.itemIds[0] ? ctx.codeLink.worktreeOf(projectId, s.itemIds[0]) : null);
@@ -570,16 +577,19 @@ function apply(ctx: Context, config: Config) {
     }
   };
 
-  const show = async (projectId: string) => {
+  let asks = 0;
+  const show = async (projectId: string, reveal?: string) => {
+    const asked = reveal ? { sessionId: reveal, at: ++asks } : null;
     const already = open.get(projectId);
     if (already && !already.closed) {
+      if (asked) already.reveal = asked;
       // Still opening: that call brings it up.
       if (!already.surface) return;
       already.surface.focus();
       return void already.surface.setState(await state(projectId));
     }
     const w = words();
-    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), timer: setInterval(() => void refresh(projectId), BRIDGE_POLL_MS), closed: false };
+    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), timer: setInterval(() => void refresh(projectId), BRIDGE_POLL_MS), closed: false, reveal: asked };
     win.timer.unref?.();
     open.set(projectId, win);
     try {
@@ -620,6 +630,14 @@ function apply(ctx: Context, config: Config) {
   };
 
   ctx.on("codeLink/changed", (projectId) => void refresh(projectId));
+  // Code link's starts and "open in terminal" land here while this window can show herdr's panes.
+  const showable = async () => ["ready", "notRunning"].includes((await bridge()).state);
+  ctx.on("codeLink/terminal-window", async () => (await showable()) || undefined);
+  ctx.on("codeLink/show-session", async (projectId, sessionId) => {
+    if (!sessionOf(projectId, sessionId)?.herdrPane || !(await showable())) return;
+    await show(projectId, sessionId);
+    return true;
+  });
   ctx.on("settings/changed", () => {
     for (const projectId of open.keys()) void refresh(projectId);
   });
