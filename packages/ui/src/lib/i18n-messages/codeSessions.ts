@@ -79,7 +79,13 @@ export const codeSessions = {
     endedAt: "Ended {{when}}",
     fold: "Fold the sidebar",
     unfold: "Show the sidebar",
-    projectTitle: "This window's project: {{project}}"
+    projectTitle: "This window's project: {{project}}",
+    pickHint: "Click to show it in the selected pane · {{mod}}-click to open it in a new pane",
+    leftPane: "{{name}} left the pane and keeps running",
+    undo: "Undo",
+    lockCell: "Lock this pane",
+    unlockCell: "Unlock this pane",
+    lockedHint: "Locked: what this pane shows is never replaced until you unlock or close it"
   },
   zh: {
     sessions: "会话",
@@ -160,6 +166,12 @@ export const codeSessions = {
     endedAt: "结束于 {{when}}",
     fold: "收起侧栏",
     unfold: "展开侧栏",
-    projectTitle: "这个窗口所属的项目：{{project}}"
+    projectTitle: "这个窗口所属的项目：{{project}}",
+    pickHint: "点击：在选中的面板中显示 · {{mod}} 点击：在新面板中打开",
+    leftPane: "{{name}} 已移出面板，仍在后台运行",
+    undo: "撤销",
+    lockCell: "锁定面板",
+    unlockCell: "解锁面板",
+    lockedHint: "已锁定：解锁或关闭之前，这个面板显示的内容不会被替换"
   }
 };

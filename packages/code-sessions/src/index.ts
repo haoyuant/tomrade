@@ -87,13 +87,13 @@ export function isLayout(value: unknown): value is Layout {
   if (!value || typeof value !== "object") return false;
   const v = value as Record<string, unknown>;
   if (typeof v.id !== "string") return false;
-  if (v.type === "leaf") return v.sessionId === null || typeof v.sessionId === "string";
+  if (v.type === "leaf") return (v.sessionId === null || typeof v.sessionId === "string") && (v.locked === undefined || v.locked === true);
   return v.type === "split" && (v.direction === "row" || v.direction === "column") && typeof v.ratio === "number" && isLayout(v.a) && isLayout(v.b);
 }
 
 const leafIds = (layout: Layout): string[] => (layout.type === "leaf" ? (layout.sessionId ? [layout.sessionId] : []) : [...leafIds(layout.a), ...leafIds(layout.b)]);
 
-const emptied = (layout: Layout): Layout => (layout.type === "leaf" ? { ...layout, sessionId: null } : { ...layout, a: emptied(layout.a), b: emptied(layout.b) });
+const emptied = (layout: Layout): Layout => (layout.type === "leaf" ? { type: "leaf", id: layout.id, sessionId: null } : { ...layout, a: emptied(layout.a), b: emptied(layout.b) });
 
 /** The saved state, and whether the file is there but cannot be read: then it starts over, and the window says so. */
 const readState = (file: string | undefined): { saved: Saved; broken: boolean } => {

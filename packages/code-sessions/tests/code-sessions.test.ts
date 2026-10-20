@@ -545,12 +545,12 @@ it("keeps named layouts and the auto-place switch for every window, and starts f
     await settle();
   };
 
-  // Saved under a name with its sessions left out; renamed, made the default, then deleted.
-  const grid: Layout = { type: "split", id: "g", direction: "row", ratio: 0.3, a: { type: "leaf", id: "a", sessionId: "s1" }, b: { type: "leaf", id: "b", sessionId: "t1" } };
+  // Saved under a name with its sessions and locks left out; renamed, made the default, then deleted.
+  const grid: Layout = { type: "split", id: "g", direction: "row", ratio: 0.3, a: { type: "leaf", id: "a", sessionId: "s1", locked: true }, b: { type: "leaf", id: "b", sessionId: "t1" } };
   await say({ type: "savePreset", name: "  Two  ", layout: grid });
   const saved = win.states.at(-1)!;
   expect(saved.warning).toBeNull();
-  expect(saved.presets).toEqual([{ id: expect.any(String), name: "Two", layout: { ...grid, a: { ...grid.a, sessionId: null }, b: { ...grid.b, sessionId: null } } }]);
+  expect(saved.presets).toEqual([{ id: expect.any(String), name: "Two", layout: { ...grid, a: { type: "leaf", id: "a", sessionId: null }, b: { ...grid.b, sessionId: null } } }]);
   const id = saved.presets[0]!.id;
   await say({ type: "renamePreset", id, name: "Side by side" });
   await say({ type: "renamePreset", id, name: "   " });
@@ -565,6 +565,9 @@ it("keeps named layouts and the auto-place switch for every window, and starts f
   // A layout that is not one is never kept; deleting the default preset clears it.
   await say({ type: "layout", layout: { type: "split", id: "x" } as unknown as Layout });
   expect(JSON.parse(fs.readFileSync(stateFile, "utf8")).layouts).toBeUndefined();
+  // The window's own layout keeps its locks, for the next time it opens.
+  await say({ type: "layout", layout: grid });
+  expect(JSON.parse(fs.readFileSync(stateFile, "utf8")).layouts[w.project.id]).toEqual(grid);
   await say({ type: "deletePreset", id });
   expect(win.states.at(-1)).toMatchObject({ presets: [], defaultPreset: null });
 });

@@ -72,7 +72,10 @@ const BUTTONS = ["left", "middle", "right"] as const;
  * frame repaints the viewport), clicks as mouse events, files dropped on it as their paths, and the
  * size following the cell.
  */
-export function TerminalCell({ cell, sessionId, tokens, font, labels }: { cell: string; sessionId: string; tokens: Record<string, string>; font: string; labels: { detached: (reason: string | null) => string; reattach: string; drop: string } }) {
+export function TerminalCell({ cell, sessionId, tokens, font, labels, autoFocus }: { cell: string; sessionId: string; tokens: Record<string, string>; font: string; labels: { detached: (reason: string | null) => string; reattach: string; drop: string }; autoFocus: boolean }) {
+  // Only the selected cell takes focus when it attaches: focus selects a cell, so another one attaching must not.
+  const focusOnAttach = useRef(autoFocus);
+  focusOnAttach.current = autoFocus;
   const host = useRef<HTMLDivElement>(null);
   const term = useRef<Terminal | null>(null);
   const [closed, setClosed] = useState<string | null | undefined>(undefined);
@@ -129,7 +132,7 @@ export function TerminalCell({ cell, sessionId, tokens, font, labels }: { cell: 
       }
     });
     observer.observe(el);
-    terminal.focus();
+    if (focusOnAttach.current) terminal.focus();
     return () => {
       observer.disconnect();
       el.removeEventListener("mousedown", down);

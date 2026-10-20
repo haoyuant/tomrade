@@ -144,6 +144,64 @@ app.whenReady().then(async () => {
     check("中日韩字符按双宽显示，后面的字符位置正确", cjk.includes("END") && cjk.replace(/\s+$/, "").length < 30, JSON.stringify(cjk));
     fs.writeFileSync(path.join(shots, "code-sessions-six.png"), (await win.webContents.capturePage()).toPNG());
 
+    // Focus that enters a pane without a click (Tab, a file drop, a script) selects it: the border marks where typing goes.
+    // A window without focus gets no focus events, so the step needs this app in front.
+    win.focus();
+    await sleep(300);
+    if (await js(`document.hasFocus()`)) {
+      await js(`document.querySelectorAll('.cs-cell')[3].querySelector('.xterm-helper-textarea').focus(); true`);
+      const focusSelects = await wait(async () => js(`(() => { const cell = document.querySelectorAll('.cs-cell')[3]; const rows = [...document.querySelectorAll('.cs-row[aria-current="true"]')]; return cell.hasAttribute('data-focused') && rows.length === 1 && rows[0].textContent.includes(${JSON.stringify(sessions[3].item.key)}); })()`), 3000);
+      check("键盘焦点进入面板（不点击）也会选中它：边框和侧栏当前行都跟着走", focusSelects);
+    } else console.log("INFO: skipped the focus-selects step — another app is in front, so this window gets no focus events");
+    await selectPane(3);
+
+    // Every pane full and a seventh session in the list: a pick never silently hides what a pane showed.
+    const seventhItem = ctx.items.create({ projectId: project.id, boardId: board.id, title: "Marker seven", workType: "coding", status: "doing", by: "human" });
+    const seventhPane = await ctx.herdr.launch({ cwd, label: seventhItem.key, command: "echo marker-seven", workspace: { key: project.id, label: project.name } });
+    const seventh = ctx.codeLink.store.createSession(project.id, { repoId: "check", branch: `${seventhItem.key.toLowerCase()}/check`, itemIds: [seventhItem.id], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, worktree: cwd });
+    ctx.codeLink.store.patchSession(project.id, seventh.id, { state: "running", herdrPane: seventhPane.paneId });
+    ctx.emit("codeLink/changed", project.id);
+    await wait(async () => (await js(`document.querySelectorAll('.cs-row').length`)) === 7, 8000);
+    const cellNames = () => js(`[...document.querySelectorAll('.cs-cell .cs-cell-name')].map((n) => n.textContent)`);
+    const cellShows = async (key) => (await cellNames()).some((n) => n.startsWith(`${key} `));
+    const seventhRow = `[...document.querySelectorAll('.cs-row')].find((r) => r.textContent.includes(${JSON.stringify(seventhItem.key)}))`;
+    const undoPick = async (sixShown) => {
+      await js(`document.querySelector('[data-testid=cs-toast-action]').click(); true`);
+      return wait(async () => JSON.stringify(await cellNames()) === JSON.stringify(sixShown), 3000);
+    };
+    const sixShown = await cellNames();
+    // The selected pane locked: the pick lands in another pane, says what left it, and Undo puts that back.
+    await js(`document.querySelectorAll('.cs-cell')[3].querySelector('[data-testid=cs-lock]').click(); true`);
+    const lockOn = await wait(async () => js(`(() => { const cell = document.querySelectorAll('.cs-cell')[3]; return cell.hasAttribute('data-locked') && cell.querySelector('[data-testid=cs-lock]').getAttribute('aria-pressed') === 'true'; })()`), 3000);
+    await js(`${seventhRow}.click(); true`);
+    const pickedAside = await wait(async () => cellShows(seventhItem.key), 3000);
+    const namesLocked = await cellNames();
+    const pickToast = await js(`document.querySelector('[data-testid=cs-toast]')?.textContent ?? ''`);
+    check("锁住的面板不会被侧栏点击替换：会话换进别的面板，并提示「已移出面板」可撤销", lockOn && pickedAside && namesLocked[3]?.startsWith(`${sessions[3].item.key} `) && pickToast.includes("已移出面板") && pickToast.includes("撤销"), JSON.stringify({ namesLocked, pickToast }));
+    check("撤销后被换下的会话回到原来的面板", await undoPick(sixShown), JSON.stringify(await cellNames()));
+    // A session that needs you in the selected pane: it stays, the pick goes elsewhere.
+    ctx.codeLink.store.patchSession(project.id, sessions[5].id, { state: "waiting", blocked: "merge" });
+    ctx.emit("codeLink/changed", project.id);
+    await wait(async () => js(`[...document.querySelectorAll('.cs-row[data-needs]')].some((r) => r.textContent.includes(${JSON.stringify(sessions[5].item.key)}))`), 5000);
+    await selectPane(5);
+    await js(`${seventhRow}.click(); true`);
+    const needsKept = (await wait(async () => cellShows(seventhItem.key), 3000)) && (await cellNames())[5]?.startsWith(`${sessions[5].item.key} `);
+    check("等你处理的会话不会被侧栏点击换下", needsKept, JSON.stringify(await cellNames()));
+    check("再次撤销也回到原样", await undoPick(sixShown), JSON.stringify(await cellNames()));
+    ctx.codeLink.store.patchSession(project.id, sessions[5].id, { state: "running", blocked: null });
+    ctx.emit("codeLink/changed", project.id);
+    // ⌘-click (Ctrl-click elsewhere) opens it in a new pane beside the selected one; the six stay as they were.
+    await js(`${seventhRow}.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: ${process.platform === "darwin"}, ctrlKey: ${process.platform !== "darwin"} })); true`);
+    const besideShown = await wait(async () => (await js(`document.querySelectorAll('.cs-cell').length`)) === 7 && (await cellShows(seventhItem.key)), 3000);
+    const besideOthers = (await cellNames()).filter((n) => !n.startsWith(`${seventhItem.key} `));
+    check("⌘ 点击在新面板中打开，原来的六个面板不变", besideShown && JSON.stringify(besideOthers) === JSON.stringify(sixShown), JSON.stringify(await cellNames()));
+    await js(`(() => { const cell = [...document.querySelectorAll('.cs-cell')].find((c) => c.querySelector('.cs-cell-name').textContent.startsWith(${JSON.stringify(`${seventhItem.key} `)})); [...cell.querySelectorAll('.cs-cell-tools .icon-btn')].at(-1).click(); return true; })()`);
+    await js(`document.querySelectorAll('.cs-cell')[3].querySelector('[data-testid=cs-lock]').click(); true`);
+    const sixBack = await wait(async () => (await js(`document.querySelectorAll('.cs-cell').length === 6 && !document.querySelector('.cs-cell[data-locked]')`)) && JSON.stringify(await cellNames()) === JSON.stringify(sixShown), 3000);
+    check("关掉新面板、解锁后回到原来的六个面板", sixBack, JSON.stringify(await cellNames()));
+    await wait(async () => (await js(`document.querySelectorAll('.cs-cell .xterm').length`)) === 6, 10000);
+    await selectPane(1);
+
     // Text committed the way an input method commits it, into the wide-character pane's shell.
     await js(`document.querySelectorAll('.cs-cell')[2].querySelector('.xterm-helper-textarea').focus(); true`);
     await sleep(200);
