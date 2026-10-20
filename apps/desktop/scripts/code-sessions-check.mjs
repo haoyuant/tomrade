@@ -279,7 +279,7 @@ app.whenReady().then(async () => {
     check("布局能存成预设，预设里不带会话", kept && stored.length === 1 && noSessions(stored[0].layout), JSON.stringify(stored.map((p) => p.name)));
 
     // Right-click on a pane's bar: the menu, and Detach empties that pane.
-    const emptyCells = () => tjs(`document.querySelectorAll('.cs-cell [data-testid=cs-new-terminal]').length`);
+    const emptyCells = () => tjs(`document.querySelectorAll('.cs-cell-empty > .cs-new-terminal [data-testid=cs-new-terminal]').length`);
     const emptyBefore = await emptyCells();
     await tjs(`document.querySelector('.cs-cell .cs-cell-bar').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 20 })); true`);
     const menu = await wait(async () => tjs(`[...document.querySelectorAll('[role=menuitem]')].map((i) => i.textContent).join('|')`).then((t) => t.includes("连接会话") && t.includes("新终端") && t.includes("断开")), 3000);
@@ -309,7 +309,7 @@ app.whenReady().then(async () => {
     await wait(async () => !JSON.parse(fs.readFileSync(path.join(work, "code-sessions.json"), "utf8")).autoPlace === false || JSON.parse(fs.readFileSync(path.join(work, "code-sessions.json"), "utf8")).autoPlace === false, 3000);
     const manual = await appear("关掉自动分配");
     await sleep(2500);
-    check("关掉自动分配后，新会话不会自己占面板", !(await inCell(manual)) && (await tjs(`document.querySelectorAll('.cs-cell [data-testid=cs-new-terminal]').length`)) >= 1);
+    check("关掉自动分配后，新会话不会自己占面板", !(await inCell(manual)) && (await tjs(`document.querySelectorAll('.cs-cell-empty > .cs-new-terminal [data-testid=cs-new-terminal]').length`)) >= 1);
     fs.writeFileSync(path.join(shots, "code-sessions-layouts.png"), (await tw.webContents.capturePage()).toPNG());
 
     // A session in iTerm2 (its hooks said so): tagged in the list, and its pane says where it runs and what can be done.
@@ -329,6 +329,47 @@ app.whenReady().then(async () => {
     const resumable = await wait(async () => tjs(`[...document.querySelector('[data-testid=cs-outside]')?.querySelectorAll('button') ?? []].some((b) => b.textContent === '在新终端里接着做')`), 5000);
     check("空闲后才出现「在新终端里接着做」", resumable);
     fs.writeFileSync(path.join(shots, "code-sessions-outside.png"), (await tw.webContents.capturePage()).toPNG());
+
+    // A session whose terminal is gone keeps "continue" and offers the same new-terminal picker, starting in its
+    // worktree (the project's repository and that worktree are the places now); a terminal opened there takes the cell.
+    const repoDir = path.join(work, "code", "app");
+    const wtDir = path.join(work, "code", "app-gone");
+    fs.mkdirSync(repoDir, { recursive: true });
+    const git = (...args) => execFileSync("git", ["-c", "user.email=dev@localhost", "-c", "user.name=Dev", ...args], { cwd: repoDir, stdio: "ignore" });
+    git("init", "-q", "-b", "main");
+    git("commit", "-q", "--allow-empty", "-m", "start");
+    git("worktree", "add", "-q", "-b", "gone/check", wtDir);
+    // git names the worktree by its real path (/private/var on a Mac), as code link records it.
+    const worktree = fs.realpathSync(wtDir);
+    const repo = ctx.repos.create({ projectId: project.id, remote: repoDir });
+    await ctx.repos.setCheckout(repoDir, repoDir);
+    ctx.boards.update(project.id, board.id, { repoId: repo.id });
+    const goneItem = ctx.items.create({ projectId: project.id, boardId: board.id, title: "终端已经没有了", workType: "coding", status: "doing", by: "human" });
+    const gone = ctx.codeLink.store.createSession(project.id, { repoId: repo.id, branch: "gone/check", itemIds: [goneItem.id], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, worktree });
+    ctx.codeLink.store.patchSession(project.id, gone.id, { state: "ended", endedAt: Date.now() });
+    ctx.emit("codeLink/changed", project.id);
+    const goneRow = `[...document.querySelectorAll('.cs-row')].find((r) => r.textContent.includes(${JSON.stringify(goneItem.key)}))`;
+    await wait(async () => tjs(`!!${goneRow} && document.querySelectorAll('[data-testid=cs-new-terminal-where] option').length >= 2`), 8000);
+    await tjs(`${goneRow}.click(); true`);
+    const goneCell = `document.querySelector('[data-testid=cs-ended]')`;
+    const offered = await wait(async () => tjs(`(() => { const box = ${goneCell}; return !!box && [...box.querySelectorAll('button')].some((b) => b.textContent === '在新终端里接着做') && !!box.querySelector('[data-testid=cs-new-terminal-where]') && !!box.querySelector('[data-testid=cs-new-terminal]'); })()`), 5000);
+    check("终端已经没有的会话：保留「在新终端里接着做」，也有目录和「新终端」", offered);
+    const startsIn = await tjs(`${goneCell}?.querySelector('[data-testid=cs-new-terminal-where]')?.value`);
+    check("目录默认是这个会话的 worktree", startsIn === worktree, startsIn);
+    const order = await tjs(`(() => { const box = ${goneCell}.querySelector('.cs-new-terminal'); const a = box.querySelector('select').getBoundingClientRect(); const b = box.querySelector('[data-testid=cs-new-terminal]').getBoundingClientRect(); return b.top >= a.bottom; })()`);
+    const boxed = await tjs(`(() => { const s = getComputedStyle(${goneCell}.querySelector('select')); return s.borderTopStyle !== 'none' && parseFloat(s.borderTopWidth) > 0; })()`);
+    check("目录下拉框有边框，「新终端」在它下方", order && boxed);
+    // Seven panes side by side: narrow ones keep the label and the whole dropdown inside the pane.
+    const inside = await tjs(`[...document.querySelectorAll('.cs-new-terminal-where')].map((row) => { const cell = row.closest('.cs-cell').getBoundingClientRect(); const label = row.querySelector('span').getBoundingClientRect(); const select = row.querySelector('select').getBoundingClientRect(); return label.left >= cell.left && select.right <= cell.right && label.width > 0; })`);
+    check("窄格子里「目录」和整个下拉框都在格子内", inside.length >= 2 && inside.every(Boolean), JSON.stringify(inside));
+    await tjs(`(() => { const s = ${goneCell}.querySelector('select'); s.focus(); return true; })()`);
+    const oneFrame = await tjs(`getComputedStyle(${goneCell}.querySelector('select')).boxShadow`);
+    check("选过之后只有边框变色，不再多一圈", oneFrame === "none", oneFrame);
+    fs.writeFileSync(path.join(shots, "code-sessions-ended.png"), (await tw.webContents.capturePage()).toPNG());
+    const at = await tjs(`[...document.querySelectorAll('.cs-cell')].indexOf(${goneCell}.closest('.cs-cell'))`);
+    await tjs(`${goneCell}.querySelector('[data-testid=cs-new-terminal]').click(); true`);
+    const took = await wait(async () => tjs(`(() => { const cell = document.querySelectorAll('.cs-cell')[${at}]; return !!cell?.dataset.cellTerminal && !!cell.querySelector('.xterm') && cell.querySelector('.cs-cell-name').textContent.includes(${JSON.stringify(path.basename(wtDir))}); })()`), 10000);
+    check("在那里开的新终端占了这个格子，目录就是 worktree", took);
     tw.close();
   } catch (error) {
     check("检查跑完", false, error?.stack ?? String(error));
