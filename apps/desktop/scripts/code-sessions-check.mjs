@@ -741,7 +741,19 @@ app.whenReady().then(async () => {
     const reattached = await wait(async () => tjs(`document.querySelectorAll('.cs-cell .xterm').length === ${attachedBefore} && ![...document.querySelectorAll('.cs-term-closed')].some((e) => e.offsetParent)`), 20000);
     check("格子自己重新连上，不用点「重新连接」", reattached, JSON.stringify({ before: attachedBefore, cells: await tjs(`[...document.querySelectorAll('.cs-cell')].map((c) => [c.querySelector('.cs-cell-name')?.textContent?.slice(0, 30), !!c.querySelector('.xterm'), !!c.querySelector('.cs-term-closed')?.offsetParent])`) }));
     const here = await tjs(`[...document.querySelectorAll('.cs-cell')].indexOf(document.querySelector('.cs-cell[data-cell="${goneId}"]'))`);
-    const answers = here >= 0 && (await typeInCell(tw.webContents, tjs, here, "echo back-after-restart", "back-after-restart"));
+    // A covered or minimised window draws no frames, so a terminal attached while it was hidden shows empty rows until it
+    // is in view. Then the echo is read from herdr's pane (its own line, not the command typed), and the step says so.
+    const goneTerminal = await tjs(`document.querySelector('.cs-cell[data-cell="${goneId}"]')?.dataset.cellTerminal ?? null`);
+    const gonePane = saved().find((t) => t.id === goneTerminal)?.pane;
+    let readFromPane = false;
+    const echoed = async () => {
+      if ((await tjs(`document.querySelectorAll('.cs-cell')[${here}]?.textContent ?? ''`)).includes("back-after-restart")) return true;
+      if (!gonePane || (await tjs("document.visibilityState")) !== "hidden") return false;
+      readFromPane = herdr("pane", "read", gonePane, "--source", "recent", "--lines", "20").split("\n").some((l) => l.trim() === "back-after-restart");
+      return readFromPane;
+    };
+    const answers = here >= 0 && (await typeInCell(tw.webContents, tjs, here, "echo back-after-restart", "back-after-restart", echoed));
+    if (readFromPane) console.log("INFO: the window was hidden, so its cells drew nothing; the echo after the restart was read from herdr's pane");
     check("重启后在终端里输入照常有回显", answers);
     tw.close();
   } catch (error) {
