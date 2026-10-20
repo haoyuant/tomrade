@@ -339,6 +339,16 @@ function RouteRow({ route, names, shared, onChange, onRemove }: { route: ImRoute
         )}
       </div>
       {route.allowGroups && (
+        <div className="stack-2" data-im-ticket-topics={route.id}>
+          <label className="row" style={{ gap: 6 }}>
+            <button type="button" className="switch" role="switch" aria-checked={route.ticketTopics !== false} aria-label={t("imSettings.ticketTopics")}
+              onClick={() => set({ ticketTopics: route.ticketTopics === false })} />
+            {t("imSettings.ticketTopics")}
+          </label>
+          <p className="meta-txt dense">{t("imSettings.ticketTopicsHelp")}</p>
+        </div>
+      )}
+      {route.allowGroups && (
         <div className="stack-2" data-im-group-context={route.id}>
           <label className="row" style={{ gap: 6 }}>
             <button type="button" className="switch" role="switch" aria-checked={windowed.enabled} aria-label={t("imSettings.groupContext")} onClick={() => setWindow({ enabled: !windowed.enabled })} />

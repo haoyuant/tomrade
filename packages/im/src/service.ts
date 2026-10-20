@@ -14,7 +14,7 @@ import { fromAdapter, withContext, type ContextLine } from "./context.js";
 import { prepare } from "./render.js";
 import { IM_WORDS, type ImPlainWord } from "./words.js";
 import { FILE_HANDLE, statusText, awaitingReview, codeNews, codeSeen, deliveryCard, links, proposalText, renderBlock, reviewOutcome, ticket, toolLine, type CodeLookup, type CodeSeen, type Delivered, type ItemLookup, type RenderScope } from "./rich.js";
-import { ImStore, MIGRATIONS, TABLES, type Action, type Binding, type Inbox, type Outbox, type Watch, type WindowRow } from "./store.js";
+import { ImStore, MIGRATIONS, TABLES, type Action, type Binding, type Inbox, type Outbox, type Topic, type Watch, type WindowRow } from "./store.js";
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const token = () => randomBytes(24).toString("hex");
@@ -402,7 +402,7 @@ export class Im extends Service {
     }
     if (!projectId) throw new Error("Choose a project for this conversation");
     im.routes.push({ id: `${kind}-${hash([where, Date.now()]).slice(0, 12)}`, ...where, projectId, boardId: null, allowedActors: actors,
-      allowDirectMessages: kind === "dm", allowGroups: kind === "group", groupActivation: "reply", output: "progress", desktopTurns: true });
+      allowDirectMessages: kind === "dm", allowGroups: kind === "group", groupActivation: "reply", output: "progress", desktopTurns: true, ticketTopics: true });
   }
 
   private snapshot(): ImSettings { return structuredClone(ImSettings.parse(this.home.settings.get().im)); }
@@ -665,6 +665,8 @@ export class Im extends Service {
         event.kind === "message" ? (event.activation === "dm" ? 0 : 1) : null);
       b = this.store.binding(bindingId)!;
     }
+    // The first message in a ticket's topic gives the topic a conversation of its own.
+    if (event.kind === "message") b = this.ownTopic(b);
     const press = event.kind === "action" ? this.startPress(b, event.token, event.actor.id, true) : null;
     if (press) {
       // Start pressed again before the first press is handled: that one start is all it asks for.
@@ -731,9 +733,10 @@ export class Im extends Service {
     }
     const quoted = given("quoted");
     const root = given("root");
+    const about = root ? undefined : this.topicRoot(b);
     return withContext(event.text, {
       ...(quoted ? { quoted: fromAdapter(quoted) } : kept ? { quoted: line(kept) } : {}),
-      ...(root && root.messageId !== quotedId ? { root: fromAdapter(root) } : {}),
+      ...(root && root.messageId !== quotedId ? { root: fromAdapter(root) } : about ? { root: about } : {}),
       recent
     }, this.home.settings.locale());
   }
@@ -988,7 +991,7 @@ export class Im extends Service {
   }
 
   threadBindings(projectId: string, threadId: string): ImThreadBinding[] {
-    return this.store.bindings().filter(b => b.project_id === projectId && b.thread_id === threadId && this.authorizedBinding(b)).map(b => ({
+    return this.store.bindings().filter(b => b.project_id === projectId && b.thread_id === threadId && this.authorizedBinding(b) && this.topicOf(b)?.own !== 0).map(b => ({
       id: b.id, connectionId: b.connection_id, conversationId: (JSON.parse(b.address_json) as ImAddress).conversationId,
       group: this.isGroup(b), shareNext: !!b.share_next
     }));
@@ -1099,8 +1102,8 @@ export class Im extends Service {
   }
 
   /** A new conversation the way the route opens one: its engine, options and permission mode. */
-  private openThread(route: ImRoute) {
-    const th = this.home.agent.newThread(route.projectId, route.engine, route.boardId, { surface: "assistant", ...(route.options ? { options: route.options } : {}) });
+  private openThread(route: ImRoute, title?: string) {
+    const th = this.home.agent.newThread(route.projectId, route.engine, route.boardId, { surface: "assistant", ...(title ? { title } : {}), ...(route.options ? { options: route.options } : {}) });
     if (route.permissionMode) {
       try { this.home.agent.setPermissionMode(route.projectId, th.id, route.permissionMode); } catch { /* the engine changed since the route was saved; its default applies */ }
     }
@@ -1152,6 +1155,9 @@ export class Im extends Service {
   private leaveArchived(b: Binding): Binding {
     const left = this.home.agent.store.thread(b.project_id, b.thread_id);
     if (left && !left.archived) return b;
+    // A ticket's topic goes back to holding the group's conversation; the next message there opens a new one.
+    const topic = this.topicOf(b);
+    if (topic) return topic.own ? this.release(b, topic) : b;
     const back = b.home_thread ? this.home.agent.store.thread(b.project_id, b.home_thread) : undefined;
     const target = back && !back.archived && back.surface === "assistant" ? back : this.openThread(this.settings.routes.find(r => r.id === b.route_id)!);
     const cursor = target === back ? this.home.agent.thread(b.project_id, target.id).messages.at(-1)?.seq ?? 0 : 0;
@@ -1313,8 +1319,8 @@ export class Im extends Service {
       const [, verdict, projectId, proposalId] = /^(accept|reject):([^:]+):(.+)$/.exec(value) ?? [];
       const code = this.code();
       if (!verdict || !code || projectId !== b.project_id) this.refuse(this.w("choiceGone"));
-      // Settled from here, so the change it causes is not news of a settlement elsewhere.
-      for (const w of this.store.all<Watch>("SELECT * FROM plugin_im_watch WHERE binding_id = ?", b.id)) {
+      // Settled from here, so the change it causes is not news of a settlement elsewhere; a ticket's topic hears through its group.
+      for (const w of this.store.all<Watch>("SELECT * FROM plugin_im_watch WHERE binding_id IN (?, ?)", b.id, this.topicOf(b)?.parent_id ?? b.id)) {
         const seen = JSON.parse(w.seen_json) as CodeSeen;
         if (seen.proposals.includes(proposalId)) this.store.run("UPDATE plugin_im_watch SET seen_json = ? WHERE binding_id = ? AND item_id = ?",
           JSON.stringify({ ...seen, proposals: seen.proposals.filter(id => id !== proposalId) }), w.binding_id, w.item_id);
@@ -1655,13 +1661,18 @@ export class Im extends Service {
     settle(b, result.continued ? w("continuedTicket", { key: item.key, title: item.title }) : w("startedTicket", { key: item.key, title: item.title }));
     this.watchItem(b, item.id);
     this.accept(row);
-    const follow = this.offerValue(b, "follow", actorId, JSON.stringify({ threadId: result.threadId, runId: result.runId ?? null }));
-    this.enqueue(b, `started:${row.id}`, { text: [
+    const said = [
       result.continued ? w("continuingWith", { key: item.key, engine: title }) : w("startedWith", { key: item.key, engine: title }),
       ...(result.waitingOn ? [w("waitsOnAnswer", { question: result.waitingOn })] : []),
-      ...(result.warnings ?? []).map(warning => `⚠ ${warning}`),
-      w("followHint")
-    ].join("\n"), actions: [{ label: w("followHere"), token: follow, style: "primary" }] }, reply);
+      ...(result.warnings ?? []).map(warning => `⚠ ${warning}`)
+    ];
+    // In a group with ticket topics the session shows in the ticket's topic, not here.
+    if (this.topical(b) && this.toTopic(b, item.id, result.threadId, result.runId ?? null)) {
+      this.enqueue(b, `started:${row.id}`, { text: [...said, w("followInTopic")].join("\n") }, reply);
+      return;
+    }
+    const follow = this.offerValue(b, "follow", actorId, JSON.stringify({ threadId: result.threadId, runId: result.runId ?? null }));
+    this.enqueue(b, `started:${row.id}`, { text: [...said, w("followHint")].join("\n"), actions: [{ label: w("followHere"), token: follow, style: "primary" }] }, reply);
   }
 
   /** This conversation follows a ticket's session from now on, and goes back once that session is archived. */
@@ -1821,6 +1832,8 @@ export class Im extends Service {
     const thread = runId ? this.home.agent.store.run(projectId, runId)?.threadId : undefined;
     for (const b of this.store.bindings()) {
       if (b.project_id !== projectId || !this.authorizedBinding(b)) continue;
+      // A ticket's topic hears its own ticket through the group it opened under, and only settles its cards.
+      const own = this.topicOf(b)?.item_id === itemId;
       const watched = !!this.store.get("SELECT 1 FROM plugin_im_watch WHERE binding_id = ? AND item_id = ?", b.id, itemId);
       const live = this.store.all<Action>("SELECT * FROM plugin_im_actions WHERE binding_id = ? AND question_id = 'cmd:delivery' AND retired = 0 AND value_json LIKE ?", b.id, `%:${itemId}:%`);
       const ours = !!thread && thread === b.thread_id && this.visible(b, runId);
@@ -1829,10 +1842,12 @@ export class Im extends Service {
         for (const sid of new Set(live.map(a => (JSON.parse(a.value_json!) as string).split(":")[3]))) {
           if (sid !== open?.id) this.settleDelivery(b, sid, reviewOutcome(this.w, item, sid));
         }
-        if (!open || (!watched && !ours) || this.store.get("SELECT 1 FROM plugin_im_outbox WHERE id = ?", `delivery:${b.id}:${open.id}`)) return;
+        if (own || !open || (!watched && !ours)) return;
+        const to = this.newsTo(b, item.id, true);
+        if (!to || this.store.get("SELECT 1 FROM plugin_im_outbox WHERE id = ?", `delivery:${to.id}:${open.id}`)) return;
         this.watchItem(b, item.id);
-        const choice = (verdict: "accept" | "changes") => this.offerValue(b, "delivery", b.actor_id, `${verdict}:${projectId}:${item.id}:${open.id}`);
-        this.enqueue(b, `delivery:${b.id}:${open.id}`, { ...deliveryCard(this.scope(b), item, open), actions: [
+        const choice = (verdict: "accept" | "changes") => this.offerValue(to, "delivery", to.actor_id, `${verdict}:${projectId}:${item.id}:${open.id}`);
+        this.enqueue(to, `delivery:${to.id}:${open.id}`, { ...deliveryCard(this.scope(to), item, open), actions: [
           { label: this.w("accept"), token: choice("accept"), style: "primary" },
           { label: this.w("requestChanges"), token: choice("changes") }
         ] }, { anchor: null });
@@ -1840,19 +1855,27 @@ export class Im extends Service {
     }
   }
 
-  /** A ticket moved: each conversation of its project hears where to, unless it turned that off. */
+  /**
+   * A ticket moved: each conversation of its project hears where to, unless it turned that off. A group with ticket
+   * topics hears it in the ticket's topic, opened once the ticket is worked; the topic's title follows the ticket.
+   */
   private onStatus(projectId: string, item: { id: string; key: string; title: string }, move: StatusMove) {
-    for (const b of this.store.bindings().filter(b => b.project_id === projectId && this.authorizedBinding(b) && this.notifies(b, "tickets"))) {
-      this.enqueue(b, `item-status:${b.id}:${item.id}:${move.version}`, { text: `${item.key}: ${statusText(this.w, move.from)} → ${statusText(this.w, move.to)}`,
-        elements: ticket(this.scope(b), item.key, item.title) }, { anchor: null });
+    const opens = move.to === "doing" || move.to === "verifying";
+    for (const b of this.store.bindings().filter(b => b.project_id === projectId && this.authorizedBinding(b) && this.notifies(b, "tickets") && !this.topicOf(b))) {
+      const to = this.newsTo(b, item.id, opens);
+      if (to) this.enqueue(to, `item-status:${to.id}:${item.id}:${move.version}`, { text: `${item.key}: ${statusText(this.w, move.from)} → ${statusText(this.w, move.to)}`,
+        elements: ticket(this.scope(to), item.key, item.title) }, { anchor: null });
     }
+    // Done or Cancelled closes the topic once what it was told is out; moving back opens it again.
+    this.store.run("UPDATE plugin_im_topics SET title = ?, closed = ? WHERE project_id = ? AND item_id = ?",
+      this.topicTitle({ ...item, status: move.to }), ended(move.to) ? 1 : 0, projectId, item.id);
   }
 
   /** A scheduled template ran: each conversation of its project that asked to hear about routines does. */
   private onRoutine(projectId: string, run: RoutineRun, name: string) {
     if (this.stopped || !this.store || !this.home.db.has(projectId)) return;
     const keys = run.itemIds.map(id => this.items()?.get(projectId, id)?.key).filter((k): k is string => !!k);
-    for (const b of this.store.bindings().filter(b => b.project_id === projectId && this.authorizedBinding(b) && this.notifies(b, "routines"))) {
+    for (const b of this.store.bindings().filter(b => b.project_id === projectId && this.authorizedBinding(b) && this.notifies(b, "routines") && !this.topicOf(b))) {
       const { w } = this;
       const text = !run.ok ? w("routineFailed", { name, error: run.error ?? w("unknownError") })
         : keys.length ? w("routineMade", { name, keys: keys.join(w("listSep")) })
@@ -1860,6 +1883,190 @@ export class Im extends Service {
       const open = run.threadId ? [{ type: "links" as const, links: [{ label: w("openInTomrade"), url: links.thread(projectId, run.threadId) }] }] : [];
       this.enqueue(b, `routine:${b.id}:${run.id}`, { text, ...(open.length ? { elements: open } : {}) }, { anchor: null });
     }
+  }
+
+  /** Whether this conversation opens a topic per ticket: a group's main conversation, on a platform that can, unless its route said no. */
+  private topical(b: Binding): boolean {
+    if (!this.isGroup(b) || (JSON.parse(b.address_json) as ImAddress).topicId) return false;
+    return !!this.capsOf(b)?.topics && this.settings.routes.find(r => r.id === b.route_id)?.ticketTopics !== false;
+  }
+
+  /** The ticket topic this conversation is, if it is one. */
+  private topicOf(b: Binding): Topic | undefined {
+    return this.store.get<Topic>("SELECT * FROM plugin_im_topics WHERE binding_id = ?", b.id);
+  }
+
+  /**
+   * Where news of a ticket goes from a group conversation: into the ticket's topic once it is open, nowhere while it
+   * opens (its first card shows the ticket as it then is, and the rest follows), or here as before. `opens` lets this
+   * news ask for the topic.
+   */
+  private newsTo(b: Binding, itemId: string, opens: boolean): Binding | null {
+    if (!this.topical(b)) return b;
+    const t = this.store.get<Topic>("SELECT * FROM plugin_im_topics WHERE parent_id = ? AND item_id = ?", b.id, itemId);
+    if (!t) return opens && this.openTopic(b, itemId) ? null : b;
+    if (t.state === "opening") return null;
+    const topic = t.state === "open" && t.binding_id ? this.store.binding(t.binding_id) : undefined;
+    return topic && this.authorizedBinding(topic) ? topic : b;
+  }
+
+  /** Asks for the ticket's topic, opened on the next flush; the group watches the ticket from now on. */
+  private openTopic(b: Binding, itemId: string, session?: { threadId: string; runId: string | null }): boolean {
+    const item = this.items()?.get(b.project_id, itemId);
+    if (!item) return false;
+    this.store.run(`INSERT INTO plugin_im_topics (id, parent_id, project_id, item_id, title, closed, thread_id, run_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (parent_id, item_id) DO NOTHING`, hash([b.id, itemId]), b.id, b.project_id, itemId, this.topicTitle(item), ended(item.status) ? 1 : 0,
+      session?.threadId ?? null, session?.runId ?? null, Date.now());
+    this.watchItem(b, itemId);
+    return true;
+  }
+
+  private topicTitle(item: { key: string; title: string; status: string }): string {
+    return `${item.key} · ${statusText(this.w, item.status)} · ${item.title}`;
+  }
+
+  /** What a ticket's topic is about, for a message there whose platform did not hand its first message. */
+  private topicRoot(b: Binding): ContextLine | undefined {
+    const t = this.topicOf(b);
+    const item = t && this.items()?.get(b.project_id, t.item_id);
+    return item ? { author: { id: "tomrade", name: "Tomrade", isBot: true }, text: this.w("topicOpened", { key: `${item.key} ${item.title}` }) } : undefined;
+  }
+
+  /** A ticket topic's conversation becomes `threadId`: what it was about to say still goes out, and its cards keep working. */
+  private retarget(t: Binding, threadId: string, cursor: number) {
+    this.store.db.transaction(() => {
+      this.store.run("UPDATE plugin_im_outbox SET thread_id = ? WHERE binding_id = ?", threadId, t.id);
+      this.store.run("UPDATE plugin_im_actions SET thread_id = ? WHERE binding_id = ? AND question_id LIKE 'cmd:%'", threadId, t.id);
+      this.store.run("UPDATE plugin_im_bindings SET thread_id = ?, cursor = ?, anchor = NULL WHERE id = ?", threadId, cursor, t.id);
+    });
+    this.listed.delete(t.id);
+  }
+
+  private lastSeq(projectId: string, threadId: string): number {
+    try { return this.home.agent.thread(projectId, threadId).messages.at(-1)?.seq ?? 0; } catch { return 0; }
+  }
+
+  /** A ticket topic someone writes in gets a conversation of its own, named after its ticket. */
+  private ownTopic(b: Binding): Binding {
+    const t = this.topicOf(b);
+    const route = this.settings.routes.find(r => r.id === b.route_id);
+    if (!t || t.own || !route) return b;
+    const item = this.items()?.get(b.project_id, t.item_id);
+    const th = this.openThread(route, item ? `${item.key} ${item.title}` : undefined);
+    this.retarget(b, th.id, 0);
+    this.store.run("UPDATE plugin_im_topics SET own = 1, thread_id = ?, run_id = NULL WHERE id = ?", th.id, t.id);
+    return this.store.binding(b.id)!;
+  }
+
+  /** Its conversation was archived: the topic holds the group's again, showing none of it, until someone writes there. */
+  private release(b: Binding, t: Topic): Binding {
+    const parent = this.store.binding(t.parent_id);
+    if (!parent) return b;
+    this.retarget(b, parent.thread_id, this.lastSeq(b.project_id, parent.thread_id));
+    this.store.run("UPDATE plugin_im_topics SET own = 0, thread_id = NULL, run_id = NULL WHERE id = ?", t.id);
+    return this.store.binding(b.id)!;
+  }
+
+  /** The ticket's topic shows a session started from its group: once it opens, or now. False when the ticket has no topic to show it in. */
+  private toTopic(b: Binding, itemId: string, threadId: string, runId: string | null): boolean {
+    const t = this.store.get<Topic>("SELECT * FROM plugin_im_topics WHERE parent_id = ? AND item_id = ?", b.id, itemId);
+    if (!t) return this.openTopic(b, itemId, { threadId, runId });
+    if (t.state === "failed") return false;
+    if (t.state === "opening") {
+      this.store.run("UPDATE plugin_im_topics SET thread_id = ?, run_id = ? WHERE id = ?", threadId, runId, t.id);
+      return true;
+    }
+    const topic = t.binding_id ? this.store.binding(t.binding_id) : undefined;
+    if (!topic || !this.authorizedBinding(topic)) return false;
+    // Someone is at work in the topic's own conversation: the session is followed from the group instead.
+    if (t.own && topic.thread_id !== threadId && (this.processing.has(topic.thread_id) || this.home.agent.activeRuns().some(r => r.thread.id === topic.thread_id))) return false;
+    if (topic.thread_id !== threadId) this.retarget(topic, threadId, 0);
+    this.store.run("UPDATE plugin_im_topics SET own = 1, thread_id = ?, run_id = ? WHERE id = ?", threadId, runId, t.id);
+    if (runId) this.store.run("INSERT OR IGNORE INTO plugin_im_runs (binding_id, run_id) VALUES (?, ?)", topic.id, runId);
+    return true;
+  }
+
+  /**
+   * One topic operation due on this connection: opening one, or telling the platform a topic's new title and whether
+   * it is closed, once everything queued for it is out. True when it ran one.
+   */
+  private async topicWork(c: Connection): Promise<boolean> {
+    const session = c.session!;
+    const due = this.store.all<Topic>(`SELECT t.* FROM plugin_im_topics t JOIN plugin_im_bindings p ON p.id = t.parent_id
+      WHERE p.connection_id = ? AND t.retry_at <= ? AND (t.state = 'opening' OR (t.state = 'open'
+        AND (t.synced IS NULL OR t.synced != json_array(t.title, t.closed))
+        AND NOT EXISTS (SELECT 1 FROM plugin_im_outbox o WHERE o.binding_id = t.binding_id AND o.state IN ('queued', 'sending'))))
+      ORDER BY t.created_at LIMIT 1`, c.id, Date.now());
+    const t = due[0];
+    if (!t) return false;
+    const parent = this.store.binding(t.parent_id)!;
+    const later = (e: unknown) => {
+      const retryAfter = (e as { retryAfterMs?: number } | null)?.retryAfterMs;
+      this.store.run("UPDATE plugin_im_topics SET attempts = attempts + 1, retry_at = ? WHERE id = ?",
+        Date.now() + (Number.isFinite(retryAfter) ? Math.max(0, retryAfter!) : Math.min(60_000, this.config.retryMs * 2 ** Math.min(t.attempts, 6))), t.id);
+    };
+    const retryable = (e: unknown) => (e as { disposition?: string } | null)?.disposition === "retryable";
+    if (t.state === "opening") {
+      // Its group is not let in right now: asked again later, without holding up the others.
+      if (!this.authorizedBinding(parent)) { this.store.run("UPDATE plugin_im_topics SET retry_at = ? WHERE id = ?", Date.now() + 60_000, t.id); return false; }
+      try {
+        if (!session.topics) throw new Error("Adapter opens no topics");
+        const { topicId } = await deadline(session.topics.open({ operationId: `topic:${t.id}`, address: JSON.parse(parent.address_json) as ImAddress, title: t.title }), this.config.operationTimeoutMs);
+        if (!topicId) throw new Error("Adapter returned no topic id");
+        if (this.stopped) return true;
+        this.topicOpened(parent, t, topicId);
+      } catch (e) {
+        if (this.stopped) return true;
+        // A topic that may exist already is not opened twice; its news goes to the group as before.
+        if (retryable(e) && t.attempts < 6) later(e);
+        else this.topicSettled(t.project_id, t.item_id, () => {
+          this.store.run("UPDATE plugin_im_topics SET state = 'failed' WHERE id = ?", t.id);
+          // What asked for it is told here instead, as the ticket now stands.
+          const item = this.items()?.get(t.project_id, t.item_id);
+          if (item && this.notifies(parent, "tickets")) this.enqueue(parent, `topic-failed:${t.id}`, { text: `${item.key}: ${statusText(this.w, item.status)}`,
+            elements: ticket(this.scope(parent), item.key, item.title) }, { anchor: null });
+        });
+      }
+      return true;
+    }
+    const topic = this.store.binding(t.binding_id!);
+    const synced = () => this.store.run("UPDATE plugin_im_topics SET synced = json_array(?, ?), attempts = 0 WHERE id = ?", t.title, t.closed, t.id);
+    if (!topic || !session.topics) { synced(); return true; }
+    try {
+      await deadline(session.topics.update({ address: JSON.parse(topic.address_json) as ImAddress & { topicId: string }, title: t.title, closed: !!t.closed }), this.config.operationTimeoutMs);
+      synced();
+    } catch (e) {
+      // A title or an archive is cosmetic: given up on once it cannot be sent.
+      if (retryable(e) && t.attempts < 6) later(e);
+      else synced();
+    }
+    return true;
+  }
+
+  /** The platform made the topic: it gets its conversation, its first card, and the ticket's news that waited. */
+  private topicOpened(parent: Binding, t: Topic, topicId: string) {
+    const address: ImAddress = { ...(JSON.parse(parent.address_json) as ImAddress), topicId };
+    // As `receive` names the conversation people write in there.
+    const id = hash([parent.connection_id, address, parent.route_hash]);
+    const own = !!t.thread_id && !!this.home.agent.store.thread(t.project_id, t.thread_id);
+    const threadId = own ? t.thread_id! : parent.thread_id;
+    this.topicSettled(t.project_id, t.item_id, () => {
+      this.store.run(`INSERT OR IGNORE INTO plugin_im_bindings (id, route_id, route_hash, connection_id, address_json, project_id, thread_id, actor_id, cursor, created_at, grp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`, id, parent.route_id, parent.route_hash, parent.connection_id, JSON.stringify(address), parent.project_id,
+        threadId, parent.actor_id, own ? 0 : this.lastSeq(t.project_id, threadId), Date.now());
+      if (own && t.run_id) this.store.run("INSERT OR IGNORE INTO plugin_im_runs (binding_id, run_id) VALUES (?, ?)", id, t.run_id);
+      this.store.run("UPDATE plugin_im_topics SET state = 'open', topic_id = ?, binding_id = ?, own = ?, synced = json_array(title, 0), attempts = 0 WHERE id = ?", topicId, id, own ? 1 : 0, t.id);
+      const topic = this.store.binding(id)!;
+      const item = this.items()?.get(t.project_id, t.item_id);
+      if (item) this.enqueue(topic, `topic-card:${t.id}`, { text: this.w("topicOpened", { key: item.key }), elements: ticket(this.scope(topic), item.key, item.title) }, { anchor: null });
+    });
+  }
+
+  /** A topic opened or could not be: the ticket's news that waited for it goes out, there or to the group. */
+  private topicSettled(projectId: string, itemId: string, settle: () => void) {
+    this.store.db.transaction(settle);
+    this.onCode(projectId);
+    this.onItem(projectId, itemId, null, null);
   }
 
   /** Whether this conversation hears about `kind`: its route's own choice, else the shared one. */
@@ -1916,24 +2123,34 @@ export class Im extends Service {
       const b = this.store.binding(w.binding_id);
       const item = items.get(projectId, w.item_id);
       if (!b || !item || !this.authorizedBinding(b)) continue;
+      // A ticket's topic hears its own ticket through the group it opened under.
+      if (this.topicOf(b)?.item_id === item.id) continue;
       let summary: ReturnType<CodeHost["summary"]>;
       try { summary = code.summary(projectId, item.id); } catch { continue; }
       const was = JSON.parse(w.seen_json) as CodeSeen;
       const now = codeSeen(summary);
       if (JSON.stringify(was) === JSON.stringify(now)) continue;
+      const news = codeNews(this.w, was, now, summary);
+      const tell = this.notifies(b, "code");
+      const fresh = tell ? summary.proposals.filter(p => p.kind === "propose" && !was.proposals.includes(p.id)) : [];
+      // News opens the ticket's topic; while it opens, the watch keeps what it last told, so the news follows it there.
+      const to = this.newsTo(b, item.id, tell && (news.length > 0 || fresh.length > 0));
+      if (!to) continue;
       this.store.db.transaction(() => {
         this.store.run("UPDATE plugin_im_watch SET seen_json = ? WHERE binding_id = ? AND item_id = ?", JSON.stringify(now), w.binding_id, w.item_id);
-        const news = codeNews(this.w, was, now, summary);
-        const tell = this.notifies(b, "code");
-        if (news.length && tell) this.enqueue(b, `code:${b.id}:${item.id}:${hash(now).slice(0, 16)}`, { text: news.join("\n"), elements: ticket(this.scope(b), item.key, item.title) }, { anchor: null });
-        for (const p of tell ? summary.proposals.filter(p => p.kind === "propose" && !was.proposals.includes(p.id)) : []) {
-          const choice = (verdict: "accept" | "reject") => this.offerValue(b, "proposal", b.actor_id, `${verdict}:${projectId}:${p.id}`);
-          this.enqueue(b, `proposal:${b.id}:${p.id}`, { text: proposalText(this.w, item.key, p), actions: [
+        if (news.length && tell) this.enqueue(to, `code:${to.id}:${item.id}:${hash(now).slice(0, 16)}`, { text: news.join("\n"), elements: ticket(this.scope(to), item.key, item.title) }, { anchor: null });
+        for (const p of fresh) {
+          const choice = (verdict: "accept" | "reject") => this.offerValue(to, "proposal", to.actor_id, `${verdict}:${projectId}:${p.id}`);
+          this.enqueue(to, `proposal:${to.id}:${p.id}`, { text: proposalText(this.w, item.key, p), actions: [
             { label: this.w("accept"), token: choice("accept"), style: "primary" },
             { label: this.w("notThisTime"), token: choice("reject") }
           ] }, { anchor: null });
         }
-        for (const id of was.proposals.filter(id => !now.proposals.includes(id))) this.settleProposal(b, id, this.w("handledInTomrade"));
+        for (const id of was.proposals.filter(id => !now.proposals.includes(id))) {
+          this.settleProposal(to, id, this.w("handledInTomrade"));
+          // One asked here before the topic opened.
+          if (to !== b) this.settleProposal(b, id, this.w("handledInTomrade"));
+        }
       });
     }
   }
@@ -2077,6 +2294,7 @@ export class Im extends Service {
   private async flush(c: Connection) {
     c.flushing = true;
     try {
+      if (await this.topicWork(c)) return;
       const caps = this.caps.get(c.adapterId)!;
       const session = c.session!;
       // A delayed operation holds its target's place, but does not block other conversations.
@@ -2200,6 +2418,8 @@ function activates(route: ImRoute, activation: "dm" | "mention" | "reply" | "amb
 function placeOf(connectionId: string, address: ImAddress): string {
   return hash([connectionId, address.tenantId, address.conversationId, address.topicId ?? null]);
 }
+
+const ended = (status: string) => status === "done" || status === "cancelled";
 
 /** Group replies attach to the message that asked; a direct chat needs no anchor. */
 function anchorOf(event: ImInbound): string | null {

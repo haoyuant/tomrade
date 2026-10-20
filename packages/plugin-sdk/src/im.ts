@@ -117,6 +117,16 @@ export interface ImAdapterSession {
   commands?(commands: ImCommand[]): Promise<void>;
   /** SDK 0.2.5. The bot the credentials signed in as, checked against the platform; shown so the person sees setup worked. */
   identity?: { id: string; name?: string };
+  /**
+   * SDK 0.2.19. Topics the bot opens itself, when `topics`: one per ticket
+   * being worked in a group conversation. Messages people write in one arrive
+   * with its `topicId`.
+   */
+  topics?: {
+    open(command: { operationId: string; address: ImAddress; title: string }): Promise<{ topicId: string }>;
+    /** Renames it, and closes it out of the way or opens it again. */
+    update(command: { address: ImAddress & { topicId: string }; title: string; closed: boolean }): Promise<void>;
+  };
   close(): void | Promise<void>;
 }
 
@@ -153,6 +163,8 @@ export interface ImCapabilities {
   maxFileBytes: number;
   /** SDK 0.2.5. Replies can go into a thread under the triggering message. */
   threads?: boolean;
+  /** SDK 0.2.19. The bot opens a topic per ticket in a group, through `session.topics`. */
+  topics?: boolean;
   reactions?: boolean;
   typing?: boolean;
   /** `native`: session.stream. `edit`: throttled edits of one message. `none`: only the final message. */
@@ -186,6 +198,7 @@ export const ImCapabilitiesSchema = z.object({
   maxTextLength: z.number().int().min(128),
   maxFileBytes: z.number().int().min(0),
   threads: z.boolean().optional(),
+  topics: z.boolean().optional(),
   reactions: z.boolean().optional(),
   typing: z.boolean().optional(),
   stream: z.enum(["native", "edit", "none"]).optional(),
@@ -208,6 +221,7 @@ export function resolveImCapabilities(caps: ImCapabilities): ResolvedImCapabilit
   return {
     ...parsed,
     threads: parsed.threads ?? false,
+    topics: parsed.topics ?? false,
     reactions: parsed.reactions ?? false,
     typing: parsed.typing ?? false,
     stream: parsed.stream ?? "none",
