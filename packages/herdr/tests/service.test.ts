@@ -293,6 +293,41 @@ describe.skipIf(process.platform === "win32")("herdr installed but not running",
     fake.close();
   });
 
+  it("starts the server again when it went away, once for callers at the same time, held after its limit unless asked, never stopping it", slow, async () => {
+    const fake = new FakeHerdr();
+    const cli = herdrCli("revive");
+    const { ctx, herdr } = await herdrOn(fake, { bin: cli.bin, startTimeoutMs: 60_000, reviveLimit: 1 });
+    expect(await herdr.revive()).toBe("running");
+    expect(cli.starts()).toEqual([]);
+
+    fake.stop();
+    const both = Promise.all([herdr.revive(), herdr.revive()]);
+    await until(() => cli.starts().length === 1, 60_000);
+    spawned.push(cli.starts()[0]!.pid);
+    expect(cli.starts()[0]!.socket).toBe(fake.socket);
+    fake.start();
+    expect(await both).toEqual(["started", "started"]);
+
+    // Gone again within the window: held, so a server that keeps dying is not started over and over…
+    fake.stop();
+    expect(await herdr.revive()).toBe("held");
+    expect(cli.starts().length).toBe(1);
+    // …unless the person asks.
+    const asked = herdr.revive(true);
+    await until(() => cli.starts().length === 2, 60_000);
+    spawned.push(cli.starts()[1]!.pid);
+    fake.start();
+    expect(await asked).toBe("started");
+
+    await ctx.fiber.dispose();
+    expect(cli.starts().every((start) => alive(start.pid))).toBe(true);
+    expect(fake.of("server.stop")).toEqual([]);
+    const none = await herdrOn(fake);
+    fake.stop();
+    expect(await none.herdr.revive()).toBe("notInstalled");
+    fake.close();
+  });
+
   it("gives up at once when the server does not start, and starts nothing without herdr", slow, async () => {
     const fake = new FakeHerdr();
     fake.stop();

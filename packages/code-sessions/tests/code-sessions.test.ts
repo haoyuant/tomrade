@@ -7,7 +7,7 @@ import { EventEmitter } from "node:events";
 import CodeSessions, { openSystemTerminal, sessionRows, type Layout, type WindowMessage, type WindowPost, type WindowState } from "@tomradex/code-sessions";
 import { Contributions } from "@tomradex/contributions";
 import { Settings } from "@tomradex/settings";
-import { Herdr } from "@tomradex/herdr";
+import { Herdr, HerdrError } from "@tomradex/herdr";
 import { FakeHerdr, fresh, settle } from "@tomradex/testkit";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-code-sessions-"));
@@ -452,4 +452,116 @@ it("names Windows Terminal and Git Bash, and offers no switching to them", () =>
     ["wt", "outside", "Windows Terminal", false],
     ["bash", "outside", "Git Bash", false]
   ]);
+});
+
+it("starts herdr's server again when it went away, on opening with saved terminals and when a stream ends with it, and the cells attach again", async () => {
+  let running = false;
+  const revives: boolean[] = [];
+  let answer: (result: string) => void = () => undefined;
+  const streams: { pane: string; end(reason: string | null): void }[] = [];
+  const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[]; posts: WindowPost[] }[] = [];
+
+  class FakeSurfaces extends Service {
+    static provide = "desktopSurfaces";
+    constructor(ctx: Context) {
+      super(ctx, "desktopSurfaces");
+    }
+    open(spec: (typeof opened)[number]["spec"]) {
+      const entry = { spec, states: [spec.initialState as WindowState], posts: [] as WindowPost[] };
+      opened.push(entry);
+      return { id: "s", capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus() {}, setState: (s: WindowState) => void entry.states.push(s), post: (m: WindowPost) => void entry.posts.push(m), close: () => spec.onClose() };
+    }
+  }
+  class GoneHerdr extends Service {
+    static provide = "herdr";
+    constructor(ctx: Context) {
+      super(ctx, "herdr");
+    }
+    bridge = async () => (running ? { state: "ready" as const, version: "0.9.5" } : { state: "notRunning" as const, version: "0.9.5" });
+    binary = () => "/opt/homebrew/bin/herdr";
+    server = async () => (running ? { version: "0.9.5", protocol: 22, socket: "/h.sock" } : null);
+    paneAlive = async () => (running ? true : null);
+    revive = (force = false) => {
+      revives.push(force);
+      return new Promise<string>((resolve) => {
+        answer = (result) => {
+          running = result === "started";
+          resolve(result);
+        };
+      });
+    };
+    terminal = async (pane: string) => {
+      if (!running) throw new HerdrError("notRunning", `herdr cannot stream ${pane}: notRunning`);
+      const ends = new Set<(reason: string | null) => void>();
+      streams.push({ pane, end: (reason) => ends.forEach((l) => l(reason)) });
+      return { paneId: pane, mode: "control", closed: false, onFrame: () => () => {}, onClose: (l: (reason: string | null) => void) => (ends.add(l), () => ends.delete(l)), input() {}, resize() {}, scroll() {}, mouse() {}, close() {} };
+    };
+  }
+  class NoCodeLink extends Service {
+    static provide = "codeLink";
+    constructor(ctx: Context) {
+      super(ctx, "codeLink");
+    }
+    sessionsOf = () => [];
+    links = () => [];
+    herdrInstall = async () => ({ command: "brew install herdr", guide: "https://herdr.dev/docs/install/" });
+  }
+
+  const stateFile = path.join(dir, "gone-state.json");
+  const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "gone-settings.json") }], Contributions, FakeSurfaces, GoneHerdr, NoCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile }]] });
+  const saved = { id: "t1", title: "repo", cwd: dir, pane: "w8:p1", startedAt: 1 };
+  fs.writeFileSync(stateFile, JSON.stringify({ terminals: { [w.project.id]: [saved] } }));
+  const until = async (check: () => boolean) => {
+    for (let i = 0; i < 200 && !check(); i++) await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(check()).toBe(true);
+  };
+
+  // Opened with the server gone: it is started again, and the saved terminal stays while it is.
+  await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
+  const win = opened[0]!;
+  expect(win.states[0]).toMatchObject({ bridge: { state: "notRunning" }, revive: "starting", terminals: [expect.objectContaining({ id: "t1", pane: "w8:p1" })] });
+  expect(revives).toEqual([false]);
+  win.spec.onMessage({ type: "attach", cell: "c1", sessionId: "t1", cols: 80, rows: 24 });
+  await until(() => win.posts.some((p) => p.type === "closed"));
+  expect(win.posts.at(-1)).toEqual({ type: "closed", cell: "c1", reason: "herdr's server stopped — starting it again, this terminal comes back on its own" });
+  expect(revives).toEqual([false]);
+  answer("started");
+  await until(() => win.posts.at(-1)?.type === "reattach");
+  expect(win.posts.at(-1)).toEqual({ type: "reattach", cell: "c1" });
+  await until(() => win.states.at(-1)!.bridge.state === "ready");
+  expect(win.states.at(-1)).toMatchObject({ revive: null, terminals: [expect.objectContaining({ id: "t1", pane: "w8:p1" })] });
+
+  // Attached, then the server goes away under it: started again, and the cell comes back.
+  win.spec.onMessage({ type: "attach", cell: "c1", sessionId: "t1", cols: 80, rows: 24 });
+  await until(() => streams.length === 1);
+  running = false;
+  streams[0]!.end("herdr exited");
+  await until(() => revives.length === 2);
+  expect(win.posts.at(-1)).toMatchObject({ type: "closed", cell: "c1", reason: expect.stringContaining("starting it again") });
+  answer("started");
+  await until(() => win.posts.at(-1)?.type === "reattach");
+
+  // A pane that ends while the server runs is just over: no start.
+  win.spec.onMessage({ type: "attach", cell: "c1", sessionId: "t1", cols: 80, rows: 24 });
+  await until(() => streams.length === 2);
+  streams[1]!.end("pane exited");
+  await until(() => win.posts.at(-1)?.type === "closed");
+  expect(win.posts.at(-1)).toEqual({ type: "closed", cell: "c1", reason: "pane exited" });
+  expect(revives).toHaveLength(2);
+
+  // A start that does not work says so and waits for the person's retry.
+  running = false;
+  win.spec.onMessage({ type: "refresh" });
+  await until(() => revives.length === 3);
+  answer("failed");
+  await until(() => win.states.at(-1)!.revive === "failed");
+  win.spec.onMessage({ type: "refresh" });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  expect(revives).toHaveLength(3);
+  win.spec.onMessage({ type: "startHerdr" });
+  await until(() => revives.length === 4);
+  expect(revives.at(-1)).toBe(true);
+  answer("started");
+  await until(() => win.states.at(-1)!.bridge.state === "ready" && win.states.at(-1)!.revive === null);
+  expect(JSON.parse(fs.readFileSync(stateFile, "utf8")).terminals[w.project.id]).toEqual([saved]);
 });

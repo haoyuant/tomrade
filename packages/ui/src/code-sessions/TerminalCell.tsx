@@ -92,6 +92,7 @@ export function TerminalCell({ cell, sessionId, tokens, font, labels }: { cell: 
     setClosed(undefined);
     const off = onCell(cell, (post) => {
       if (post.type === "frame") terminal.write(post.bytes);
+      else if (post.type === "reattach") setAttempt((n) => n + 1);
       else setClosed(post.reason);
     });
     send({ type: "attach", cell, sessionId, cols: terminal.cols, rows: terminal.rows });
