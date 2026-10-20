@@ -487,12 +487,6 @@ importers:
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
-      '@tomradex/engine-cursor':
-        specifier: workspace:*
-        version: link:../engine-cursor
-      '@tomradex/engine-opencode':
-        specifier: workspace:*
-        version: link:../engine-opencode
       '@tomradex/engine-pi':
         specifier: workspace:*
         version: link:../engine-pi

@@ -4,9 +4,9 @@ import { parse as parseToml } from "smol-toml";
 import type { Git } from "@tomradex/storage";
 import type { McpProjectApproval } from "@tomradex/agent";
 import type { PortClash } from "@tomradex/mcp";
-import { cursorHookScripts } from "@tomradex/engine-cursor";
-import { configuredMcpUrl } from "@tomradex/engine-opencode";
 import { outsideExtensionUrl } from "@tomradex/engine-pi";
+import { cursorHookScripts } from "./cursor-hooks.js";
+import { configuredMcpUrl } from "./opencode-files.js";
 import { anyHost, CLAUDE_LOCAL_SETTINGS, CODEX_HOOK_EVENTS, CONNECT_FILES, hasHooks, hasTomradeSection, hookCommands, namesEndpoint, OPENCODE_PLUGIN, PI_EXTENSION, type ConnectAgent } from "./connect.js";
 import { HOOK_EVENTS, stripJsonComments } from "./sessions.js";
 

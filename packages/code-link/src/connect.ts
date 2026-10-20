@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parse as parseToml } from "smol-toml";
-import { CURSOR_HOOK_POWERSHELL, CURSOR_HOOK_SCRIPT, LEGACY_CURSOR_HOOK_SCRIPT, cursorHookPowerShell, cursorHookScript, withCursorHooks } from "@tomradex/engine-cursor";
-import { opencodePlugin, withMcpEntry } from "@tomradex/engine-opencode";
 import { outsideExtension } from "@tomradex/engine-pi";
+import { CURSOR_HOOK_POWERSHELL, CURSOR_HOOK_SCRIPT, LEGACY_CURSOR_HOOK_SCRIPT, cursorHookPowerShell, cursorHookScript, withCursorHooks } from "./cursor-hooks.js";
+import { opencodePlugin, withMcpEntry } from "./opencode-files.js";
 import { HERDR_PANE_HEADER, HOOK_EVENTS, TERMINAL_HEADER, WT_HEADER, stripJsonComments } from "./sessions.js";
 import { syncPrompt, syncSteps } from "./sync.js";
 
