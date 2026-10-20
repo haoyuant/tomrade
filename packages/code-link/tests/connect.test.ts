@@ -18,7 +18,8 @@ import { Repos } from "@tomradex/repos";
 import GitHubAccount from "@tomradex/github";
 import { Settings } from "@tomradex/settings";
 import { Storage, digestState, exportState } from "@tomradex/storage";
-import { FakeGh, fresh, settle } from "@tomradex/testkit";
+import { FakeGh, FakeHerdr, fresh, settle } from "@tomradex/testkit";
+import { Herdr } from "@tomradex/herdr";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Tools } from "@tomradex/tools";
@@ -35,6 +36,14 @@ const git = (args: string[], cwd: string) => execFileSync("git", args, { cwd, en
 let n = 0;
 /** Built once with git, then copied: every spawn costs, and a fresh repository is the same bytes each time. */
 let template: { remote: string; checkout: string } | null = null;
+async function until(check: () => boolean, timeout = 3000): Promise<void> {
+  const started = Date.now();
+  while (!check()) {
+    if (Date.now() - started > timeout) throw new Error("condition did not become true");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 function codeRepo(): { remote: string; checkout: string } {
   if (!template) {
     const remote = path.join(root, "template-remote.git");
@@ -693,6 +702,37 @@ describe("outside clients, told apart by their connection", () => {
     await expect(ctx.tools.execute("claim_ticket", { key: third.key }, a)).rejects.toThrow(`this session still owns ${first.key}, which is doing`);
     items.update(project.id, first.id, { status: "verifying" }, "human");
     await expect(ctx.tools.execute("claim_ticket", { key: third.key }, a)).rejects.toThrow(`this session still owns ${first.key}, which is verifying`);
+  });
+
+  it("finds the herdr pane of a session whose hooks name none, and a resumed conversation goes on in the session it had", async () => {
+    const { codeLink, ctx, items, project, board, checkout } = await machine();
+    const fake = new FakeHerdr();
+    onTestFinished(() => fake.close());
+    await ctx.plugin(Herdr, { reconnectMs: 30, socket: fake.socket });
+    await settle();
+    const post = (payload: unknown) => fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    // Hooks committed before they sent X-Tomrade-Herdr-Pane; herdr has detected the agent's session in a pane.
+    const pane = Object.assign(fake.createPane(checkout), { agent: "claude", agent_session: { source: "herdr:claude", agent: "claude", kind: "id", value: "cli-9" } });
+    fake.createPane(checkout);
+    await post({ hook_event_name: "SessionStart", session_id: "cli-9", cwd: checkout });
+    const [hooked] = codeLink.sessionsOf(project.id);
+    await until(() => codeLink.store.session(project.id, hooked!.id)?.herdrPane === pane.pane_id);
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "Work", status: "todo", by: "human" });
+    expect(await ctx.tools.execute("claim_ticket", { key: item.key }, { by: "ai:mcp", projectId: project.id, connection: "conn-9" })).toMatchObject({ tracking: { sessionId: hooked!.id } });
+
+    // herdr's server went away with the agent; after it restarts it resumes the conversation in the same pane.
+    await post({ hook_event_name: "SessionEnd", session_id: "cli-9", cwd: checkout });
+    expect(codeLink.store.session(project.id, hooked!.id)?.state).toBe("ended");
+    await post({ hook_event_name: "SessionStart", source: "resume", session_id: "cli-9", cwd: checkout });
+    expect(codeLink.sessionsOf(project.id).map((s) => s.id)).toEqual([hooked!.id]);
+    expect(codeLink.store.session(project.id, hooked!.id)).toMatchObject({ state: "running", endedAt: null, itemIds: [item.id], herdrPane: pane.pane_id });
+
+    // A conversation whose ticket is finished starts afresh; so does one that was not resumed.
+    items.update(project.id, item.id, { status: "done" }, "human");
+    await post({ hook_event_name: "SessionEnd", session_id: "cli-9", cwd: checkout });
+    await post({ hook_event_name: "SessionStart", source: "resume", session_id: "cli-9", cwd: checkout });
+    expect(codeLink.store.session(project.id, hooked!.id)?.state).toBe("ended");
+    expect(codeLink.sessionsOf(project.id).filter((s) => s.state !== "ended").map((s) => s.itemIds)).toEqual([[]]);
   });
 
   it("gives a tokenless claim to the session whose hooks announced it, not the newest idle one", async () => {

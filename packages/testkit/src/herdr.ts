@@ -16,6 +16,10 @@ export interface FakePane {
   text: string;
   /** What runs in the foreground, for `pane.process_info`; the shell when unset. */
   foreground?: { cmdline: string; cwd: string };
+  /** The agent's own session, as herdr's detection reports it. */
+  agent_session?: { source: string; agent: string; kind: string; value: string } | null;
+  /** The title the program in the pane set, styling stripped. */
+  terminal_title_stripped?: string | null;
 }
 
 export interface FakeHerdrCall {
@@ -199,6 +203,8 @@ export class FakeHerdr {
         return paneOf(params.pane_id) ? { result: { type: "ok" } } : notFound(params.pane_id);
       case "notification.show":
         return { result: { type: "notification_show", shown: this.attached, reason: this.attached ? "shown" : "no_foreground_client" } };
+      case "pane.list":
+        return { result: { type: "pane_list", panes: [...this.panes.values()].map((pane) => ({ ...pane, focused: false, revision: 0 })) } };
       case "pane.get": {
         const pane = paneOf(params.pane_id);
         return pane ? { result: { type: "pane_info", pane: { ...pane, focused: false, revision: 0 } } } : notFound(params.pane_id);

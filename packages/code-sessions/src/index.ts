@@ -41,7 +41,7 @@ interface Saved {
   autoPlace?: boolean;
 }
 
-type SavedTerminal = Omit<TerminalRow, "sessionId" | "note"> & { pane: string };
+type SavedTerminal = Omit<TerminalRow, "sessionId" | "note" | "agentTitle"> & { pane: string };
 type StartingTerminal = Omit<SavedTerminal, "pane"> & { pane: null };
 
 const run = promisify(execFile);
@@ -231,14 +231,22 @@ function apply(ctx: Context, config: Config) {
   const savedTerminals = (projectId: string) => stateOf(config.stateFile).terminals?.[projectId] ?? [];
   const saveTerminals = (projectId: string, list: SavedTerminal[]) => save(config.stateFile, { terminals: { ...stateOf(config.stateFile).terminals, [projectId]: list } });
 
-  /** The project's terminals; one whose pane herdr no longer has is forgotten. While herdr does not answer, they all stay. */
+  /**
+   * The project's terminals; one whose pane herdr no longer has is forgotten. While herdr does not answer, they all stay.
+   * An agent herdr sees in one lends the terminal the title it gave the conversation.
+   */
   const terminals = async (projectId: string): Promise<TerminalRow[]> => {
     const herdr = ctx.get("herdr");
     const saved = savedTerminals(projectId);
-    const alive = herdr ? await Promise.all(saved.map((t) => herdr.paneAlive(t.pane).catch(() => null))) : saved.map(() => null);
-    const kept = saved.filter((_, i) => alive[i] !== false);
+    const panes = herdr && saved.length ? await herdr.panes().catch(() => null) : null;
+    const byPane = new Map((panes ?? []).map((p) => [p.paneId, p]));
+    const kept = panes ? saved.filter((t) => byPane.has(t.pane)) : saved;
     if (kept.length !== saved.length) saveTerminals(projectId, kept);
-    return [...kept, ...(pending.get(projectId)?.values() ?? [])].map((t) => ({ ...t, sessionId: null, note: null }));
+    const agentTitle = (pane: string | null) => {
+      const info = pane ? byPane.get(pane) : undefined;
+      return info?.agent ? info.title : null;
+    };
+    return [...kept, ...(pending.get(projectId)?.values() ?? [])].map((t) => ({ ...t, agentTitle: agentTitle(t.pane), sessionId: null, note: null }));
   };
 
   /**

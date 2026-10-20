@@ -123,6 +123,7 @@ function TerminalList({ terminals, active, selected, onPick, say }: { terminals:
               <span className="mono">{t.title}</span>
               {!t.pane && <span className="tag faint cs-chip">{say("starting")}</span>}
             </span>
+            {t.agentTitle && <span className="cs-row-title">{t.agentTitle}</span>}
             <span className="cs-row-meta mono">{t.cwd}</span>
           </button>
         </li>
@@ -265,7 +266,7 @@ function Cell({ leaf, session, terminal, places, ready, onNewTerminal, focused, 
   return (
     <div className="cs-cell" data-focused={focused || undefined} data-cell-terminal={terminal?.id} onMouseDownCapture={onFocus}>
       {withMenu(<div className="cs-cell-bar">
-        <span className="cs-cell-name">{session ? `${session.key ?? ""} ${session.title ?? session.branch}`.trim() : terminal ? `${terminal.title} · ${terminal.cwd}` : say("pick")}</span>
+        <span className="cs-cell-name">{session ? `${session.key ?? ""} ${session.title ?? session.branch}`.trim() : terminal ? `${terminal.agentTitle ?? terminal.title} · ${terminal.cwd}` : say("pick")}</span>
         {terminal?.note && !session && <span className="cs-cell-note" title={terminal.note}>{terminal.note}</span>}
         {terminal && !session && (
           <span className="cs-cell-actions">
