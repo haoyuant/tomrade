@@ -13,7 +13,7 @@ import { FakeHerdr, fresh, settle } from "@tomradex/testkit";
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-code-sessions-"));
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-type Session = { id: string; itemIds: string[]; branch: string; state: string; mode: "headless" | "terminal"; agent: string; herdrPane: string | null; terminal: string | null; device: string; threadId: string | null; worktree: string | null; activity: string | null; summary: string | null; blocked: unknown; startedAt: number; endedAt: number | null; lastEventAt: number | null };
+type Session = { title?: string | null; prompted?: boolean; externalId?: string | null; cwd?: string | null; id: string; itemIds: string[]; branch: string; state: string; mode: "headless" | "terminal"; agent: string; herdrPane: string | null; terminal: string | null; device: string; threadId: string | null; worktree: string | null; activity: string | null; summary: string | null; blocked: unknown; startedAt: number; endedAt: number | null; lastEventAt: number | null };
 
 const session = (over: Partial<Session> & { id: string }): Session => ({ itemIds: [], branch: "b", state: "running", mode: "terminal", agent: "claude-code", herdrPane: null, terminal: null, device: "here", threadId: null, worktree: null, activity: null, summary: null, blocked: null, startedAt: 1, endedAt: null, lastEventAt: null, ...over });
 
@@ -203,9 +203,11 @@ it("puts ended sessions in the archive, keeps one a cell shows, sends the archiv
   const sessions = [
     session({ id: "live", herdrPane: "w1:p1", startedAt: 5 }),
     session({ id: "iterm", terminal: "iTerm.app", startedAt: 4 }),
-    session({ id: "shown", state: "ended", endedAt: now - 5000, startedAt: 3 }),
-    session({ id: "old", state: "ended", endedAt: now - 30 * 24 * 3600_000, startedAt: 1 }),
-    session({ id: "lost", state: "lost", endedAt: now - 60_000, startedAt: 2, mode: "headless", threadId: "t" })
+    session({ id: "shown", state: "ended", endedAt: now - 5000, startedAt: 3, prompted: true }),
+    session({ id: "old", state: "ended", endedAt: now - 30 * 24 * 3600_000, startedAt: 1, title: "上个月的方案讨论", externalId: "old-1" }),
+    session({ id: "lost", itemIds: ["i9"], state: "lost", endedAt: now - 60_000, startedAt: 2, mode: "headless", threadId: "t" }),
+    // Started and left without a word: not kept.
+    session({ id: "empty", state: "ended", endedAt: now - 1000, startedAt: 4 })
   ];
   class FakeSurfaces extends Service {
     static provide = "desktopSurfaces";
@@ -254,6 +256,8 @@ it("puts ended sessions in the archive, keeps one a cell shows, sends the archiv
 
   await say({ type: "archive", open: true });
   expect(win.states.at(-1)!.archive.rows!.map((s) => s.id)).toEqual(["shown", "lost", "old"]);
+  // A conversation keeps its name and can be taken up again by its agent.
+  expect(win.states.at(-1)!.archive.rows!.find((s) => s.id === "old")).toMatchObject({ conversation: "上个月的方案讨论", resumable: true });
   await say({ type: "archive", open: false });
   expect(win.states.at(-1)!.archive).toEqual({ count: 3, rows: null });
 
@@ -269,7 +273,7 @@ it("puts ended sessions in the archive, keeps one a cell shows, sends the archiv
 it("never shows a state older than one already shown, so a pick from the archive keeps its cell when the archive closes", async () => {
   const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[] }[] = [];
   const now = Date.now();
-  const sessions = [session({ id: "live", herdrPane: "w1:p1", startedAt: 5 }), session({ id: "old", state: "ended", endedAt: now - 60_000, startedAt: 1 })];
+  const sessions = [session({ id: "live", herdrPane: "w1:p1", startedAt: 5 }), session({ id: "old", state: "ended", endedAt: now - 60_000, startedAt: 1, prompted: true })];
   // herdr's pane list answers when let go, so a state can be held after it read the layout.
   let held: (() => void)[] | null = null;
   class FakeSurfaces extends Service {
@@ -295,6 +299,7 @@ it("never shows a state older than one already shown, so a pick from the archive
         if (held) held.push(answer);
         else answer();
       });
+    call = async () => ({ process_info: { foreground_processes: [] } });
   }
   class FakeCodeLink extends Service {
     static provide = "codeLink";
@@ -366,6 +371,7 @@ it("keeps a terminal that finishes opening while herdr is asked for its panes, a
         if (held) held.push(answer);
         else answer();
       });
+    call = async () => ({ process_info: { foreground_processes: [] } });
     launch = () => new Promise((resolve) => (launched = () => resolve({ paneId: "w1:pB", workspaceId: "w1" })));
   }
   class FakeCodeLink extends Service {
@@ -634,6 +640,12 @@ it("shows a terminal as the code session its agent claimed, in place, and as a p
   fake.panes.get(pane.t2!)!.terminal_title_stripped = "zsh";
   expect((await now()).map((t) => [t.id, t.agentTitle])).toEqual([["t1", "选中面板与侧边栏会话联动"], ["t2", null], ["t3", null]]);
   fake.panes.get(pane.t1!)!.agent = null;
+  // A plain terminal goes by what runs in it; a shell in the foreground is nothing to name it by.
+  fake.panes.get(pane.t2!)!.foreground = { cmdline: "pnpm dev", cwd: dir };
+  fake.panes.get(pane.t3!)!.foreground = { cmdline: "-zsh", cwd: dir };
+  expect((await now()).map((t) => [t.id, t.running])).toEqual([["t1", "选中面板与侧边栏会话联动"], ["t2", "pnpm dev"], ["t3", null]]);
+  delete fake.panes.get(pane.t2!)!.foreground;
+  delete fake.panes.get(pane.t3!)!.foreground;
   // A session with no ticket in a herdr pane this window did not open goes by its conversation; one in a terminal here does not need to.
   const other = Object.assign(fake.createPane(dir), { agent: "claude", terminal_title_stripped: "整理测试" });
   sessions.push(session({ id: "loose", herdrPane: other.pane_id, startedAt: 9 }), session({ id: "inside", herdrPane: pane.t3!, startedAt: 9 }));
@@ -796,6 +808,7 @@ it("starts herdr's server again when it went away, on opening with saved termina
     binary = () => "/opt/homebrew/bin/herdr";
     server = async () => (running ? { version: "0.9.5", protocol: 22, socket: "/h.sock" } : null);
     panes = async () => (running ? [{ paneId: "w8:p1", agent: null, agentSession: null, title: null }] : null);
+    call = async () => ({ process_info: { foreground_processes: [] } });
     revive = (force = false) => {
       revives.push(force);
       return new Promise<string>((resolve) => {

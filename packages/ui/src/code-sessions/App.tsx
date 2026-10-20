@@ -175,7 +175,7 @@ function HereList({ rows, active, selected, onSession, onTerminal, say }: { rows
               ) : r.kind === "terminal" ? (
                 <>
                   <span className="cs-row-head">
-                    <span className="mono">{r.terminal.title}</span>
+                    <span className="mono">{r.terminal.running ?? r.terminal.title}</span>
                     {!r.terminal.pane && <span className="tag faint cs-chip">{say("starting")}</span>}
                   </span>
                   {r.terminal.agentTitle && <span className="cs-row-title">{r.terminal.agentTitle}</span>}
@@ -211,26 +211,46 @@ function OutsideGroup({ sessions, open, onToggle, list, say }: { sessions: Sessi
   );
 }
 
-/** The ended sessions, newest first: picking one shows it in a pane as an ended session. */
+/**
+ * The ended sessions on two shelves, newest first: ticket work, and conversations had without a ticket. Picking one
+ * shows it in a pane as an ended session.
+ */
 function ArchiveList({ rows, locale, active, selected, onPick, say }: { rows: SessionRow[] | null; locale: string; active: Set<string>; selected: Set<string>; onPick: (s: SessionRow) => void; say: Say }) {
+  const [shelf, setShelf] = useState<"tickets" | "talks">("tickets");
   if (!rows) return <p className="cs-empty">{say("archiveLoading")}</p>;
-  if (!rows.length) return <p className="cs-empty">{say("archiveEmpty")}</p>;
+  const tickets = rows.filter((s) => s.itemId);
+  const talks = rows.filter((s) => !s.itemId);
+  const shown = shelf === "tickets" ? tickets : talks;
   const when = (at: number) => new Date(at).toLocaleString(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   return (
-    <ul className="cs-list" data-testid="cs-archive-list">
-      {rows.map((s) => (
-        <li key={s.id}>
-          <button type="button" className="side-row cs-row" aria-current={selected.has(s.id) ? "true" : undefined} data-active={active.has(s.id) || undefined} onClick={() => onPick(s)}>
-            <span className="cs-row-head">
-              <span className="mono">{sessionName(s)}</span>
-              <span className="cs-row-meta">{say("endedAt", { when: when(s.endedAt!) })}</span>
-            </span>
-            {s.title && <span className="cs-row-title">{s.title}</span>}
-            <span className="cs-row-meta mono">{s.branch}</span>
-          </button>
-        </li>
-      ))}
-    </ul>
+    <>
+      <div className="seg cs-shelves" role="group" data-testid="cs-archive-shelves">
+        <button type="button" aria-pressed={shelf === "tickets"} data-testid="cs-shelf-tickets" onClick={() => setShelf("tickets")}>
+          {say("shelfTickets", { n: tickets.length })}
+        </button>
+        <button type="button" aria-pressed={shelf === "talks"} data-testid="cs-shelf-talks" onClick={() => setShelf("talks")}>
+          {say("shelfTalks", { n: talks.length })}
+        </button>
+      </div>
+      {!shown.length ? (
+        <p className="cs-empty">{say(shelf === "tickets" ? "archiveEmpty" : "talksEmpty")}</p>
+      ) : (
+        <ul className="cs-list" data-testid="cs-archive-list">
+          {shown.map((s) => (
+            <li key={s.id}>
+              <button type="button" className="side-row cs-row" aria-current={selected.has(s.id) ? "true" : undefined} data-active={active.has(s.id) || undefined} onClick={() => onPick(s)}>
+                <span className="cs-row-head">
+                  <span className={s.itemId ? "mono" : undefined}>{s.itemId ? sessionName(s) : (s.conversation ?? sessionName(s))}</span>
+                  <span className="cs-row-meta">{say("endedAt", { when: when(s.endedAt!) })}</span>
+                </span>
+                {s.itemId && s.title && <span className="cs-row-title">{s.title}</span>}
+                <span className="cs-row-meta mono">{s.itemId ? s.branch : [s.agentName ?? s.agent, s.cwd ?? s.worktree].filter(Boolean).join(" · ")}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   );
 }
 
@@ -323,14 +343,22 @@ function Layouts({ presets, defaultPreset, autoPlace, onApply, onSave, say }: { 
 }
 
 /** A session whose terminal this window cannot show: where it runs, and what can be done from here. */
-function NotHere({ session, picker, say }: { session: SessionRow; picker: ReactNode; say: Say }) {
+function NotHere({ session, picker, onTalk, say }: { session: SessionRow; picker: ReactNode; onTalk: () => void; say: Say }) {
   const done = session.state === "idle" || session.state === "ended" || session.state === "lost" || session.state === "error";
-  // Never while the outside one may still run: two copies would share one conversation.
-  const resume = done && session.where !== "elsewhere" && (
-    <button type="button" className="btn btn-secondary btn-xs" onClick={() => send({ type: "continue", sessionId: session.id })}>
-      {say("continueNew")}
-    </button>
-  );
+  // Never while the outside one may still run: two copies would share one conversation. A ticket goes on through code
+  // link; a conversation without one, through its agent's own resume.
+  const resume =
+    done &&
+    session.where !== "elsewhere" &&
+    (session.itemId ? (
+      <button type="button" className="btn btn-secondary btn-xs" onClick={() => send({ type: "continue", sessionId: session.id })}>
+        {say("continueNew")}
+      </button>
+    ) : session.resumable ? (
+      <button type="button" className="btn btn-secondary btn-xs" data-testid="cs-talk-on" onClick={onTalk}>
+        {say("talkOn")}
+      </button>
+    ) : null);
   if (!live(session) || session.where === "herdr")
     return (
       <div className="cs-not-here" data-testid="cs-ended">
@@ -356,7 +384,7 @@ function NotHere({ session, picker, say }: { session: SessionRow; picker: ReactN
   );
 }
 
-function Cell({ leaf, session, terminal, places, ready, onNewTerminal, focused, selected, only, onFocus, onSplit, onClose, onLock, menu, look, say }: { leaf: Extract<Layout, { type: "leaf" }>; session: SessionRow | undefined; terminal: TerminalRow | undefined; places: TerminalPlace[]; ready: boolean; onNewTerminal: (cwd: string) => void; focused: boolean; selected: boolean; only: boolean; onFocus: () => void; onSplit: (d: "row" | "column") => void; onClose: () => void; onLock: () => void; menu: ReactNode; look: Look; say: Say }) {
+function Cell({ leaf, session, terminal, places, ready, onNewTerminal, onTalk, focused, selected, only, onFocus, onSplit, onClose, onLock, menu, look, say }: { leaf: Extract<Layout, { type: "leaf" }>; session: SessionRow | undefined; terminal: TerminalRow | undefined; places: TerminalPlace[]; ready: boolean; onNewTerminal: (cwd: string) => void; onTalk: (s: SessionRow) => void; focused: boolean; selected: boolean; only: boolean; onFocus: () => void; onSplit: (d: "row" | "column") => void; onClose: () => void; onLock: () => void; menu: ReactNode; look: Look; say: Say }) {
   // Right-click on the bar, or on a cell with no terminal: inside a terminal it is the program's own.
   const withMenu = (node: ReactElement) => (
     <ContextMenu label={say("cellMenu")} trigger={node}>
@@ -368,7 +396,7 @@ function Cell({ leaf, session, terminal, places, ready, onNewTerminal, focused, 
   return (
     <div className="cs-cell" data-cell={leaf.id} data-focused={focused || undefined} data-locked={leaf.locked || undefined} data-cell-terminal={terminal?.id} onMouseDownCapture={onFocus} onFocusCapture={onFocus}>
       {withMenu(<div className="cs-cell-bar">
-        <span className="cs-cell-name">{session ? (session.key ? `${session.key} ${session.title ?? session.branch}`.trim() : (session.agentTitle ?? sessionName(session))) : terminal ? `${terminal.agentTitle ?? terminal.title} · ${terminal.cwd}` : say("pick")}</span>
+        <span className="cs-cell-name">{session ? (session.key ? `${session.key} ${session.title ?? session.branch}`.trim() : (session.agentTitle ?? sessionName(session))) : terminal ? `${terminal.agentTitle ?? terminal.running ?? terminal.title} · ${terminal.cwd}` : say("pick")}</span>
         {terminal?.note && !session && <span className="cs-cell-note" title={terminal.note}>{terminal.note}</span>}
         {terminal && !session && (
           <span className="cs-cell-actions">
@@ -407,7 +435,7 @@ function Cell({ leaf, session, terminal, places, ready, onNewTerminal, focused, 
       ) : session ? (
         withMenu(
           <div className="cs-cell-empty">
-            {session.mode === "run" ? say("runMode") : <NotHere session={session} picker={<NewTerminal places={places} initial={session.worktree} ready={ready} onOpen={onNewTerminal} say={say} />} say={say} />}
+            {session.mode === "run" ? say("runMode") : <NotHere session={session} picker={<NewTerminal places={places} initial={session.worktree ?? session.cwd} ready={ready} onOpen={onNewTerminal} say={say} />} onTalk={() => onTalk(session)} say={say} />}
           </div>
         )
       ) : (
@@ -674,13 +702,13 @@ export function App() {
     );
   };
   const pickTerminal = (t: TerminalRow, beside = false) => land(t.id, beside);
-  const openTerminal = (base: Layout, cell: string, cwd: string) => {
-    if (outside) return send({ type: "openOutside", cwd });
+  const openTerminal = (base: Layout, cell: string, cwd: string | null, resume?: string) => {
+    if (outside) return cwd ? send({ type: "openOutside", cwd }) : undefined;
     const terminalId = crypto.randomUUID();
     asked.current.set(terminalId, Date.now());
     change(show(base, cell, terminalId));
     setFocused(cell);
-    send({ type: "newTerminal", terminalId, cwd });
+    send({ type: "newTerminal", terminalId, cwd, ...(resume ? { resume } : {}) });
   };
   // Selected by key: the keyboard goes along, to the cell's terminal, or nowhere for a cell without one.
   const select = (cell: string) => {
@@ -730,6 +758,7 @@ export function App() {
         places={state.places}
         ready={canOpen}
         onNewTerminal={(cwd) => openTerminal(layout, node.id, cwd)}
+        onTalk={(s) => openTerminal(layout, node.id, s.cwd ?? s.worktree, s.id)}
         focused={node.id === target.id && cells.length > 1}
         selected={node.id === target.id}
         only={cells.length === 1}

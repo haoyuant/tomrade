@@ -8,6 +8,8 @@ import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/tools";
 import type { Author } from "@tomradex/domain";
 import { looksRateLimited, resetTime, type CliHookAnswer } from "@tomradex/agent";
+import type {} from "@tomradex/herdr";
+import { promptTitle, transcriptTitle } from "./titles.js";
 import { CLI_HOOK_COVERAGE } from "@tomradex/plugin-sdk";
 import { BRIDGED_BY_DSH, cliHookCall, cliHookEvent, hookReply, mergeAnswers, type HookSource } from "./cli-hooks.js";
 import { hookCommand } from "./connect.js";
@@ -53,7 +55,15 @@ interface HookPayload {
   tomrade_source?: HookSource;
   /** Not a hook at all: herdr's reading of the pane, shaped like one. */
   herdr?: boolean;
+  /** Where the agent runs, and its own record of the conversation (Claude Code names both on every hook). */
+  cwd?: string;
+  transcript_path?: string;
+  /** UserPromptSubmit: what the person said. */
+  prompt?: string;
 }
+
+/** A pane title that is just the agent's name. */
+const AGENT_NAME_TITLE = /^(claude( code)?|codex|gemini( cli)?|cursor( agent)?|opencode|hermes|workbuddy|pi)$/i;
 
 /**
  * The Claude Code hook events a session listens to. Each says something about
@@ -377,6 +387,40 @@ export class Sessions {
   }
 
   /** What a hook says about the session, recorded; and what Tomrade itself answers the agent. */
+  /**
+   * What keeps a conversation findable once it ends: its folder, its transcript, that it was spoken to, and its title —
+   * the agent's own (its transcript), else the one it set on its herdr pane, else the first thing it was asked.
+   */
+  private remember(projectId: string, session: SessionView, p: HookPayload): void {
+    const patch: { cwd?: string; transcript?: string; prompted?: boolean; title?: string } = {};
+    if (typeof p.cwd === "string" && p.cwd && p.cwd !== session.cwd) patch.cwd = p.cwd;
+    if (typeof p.transcript_path === "string" && p.transcript_path && p.transcript_path !== session.transcript) patch.transcript = p.transcript_path;
+    if (p.hook_event_name === "UserPromptSubmit") {
+      if (!session.prompted) patch.prompted = true;
+      const first = session.title ? null : promptTitle(p.prompt);
+      if (first) patch.title = first;
+    }
+    const ending = p.hook_event_name === "Stop" || p.hook_event_name === "SessionEnd";
+    const transcript = patch.transcript ?? session.transcript;
+    const own = ending && transcript ? transcriptTitle(transcript) : null;
+    if (own && own !== session.title) patch.title = own;
+    if (Object.keys(patch).length) this.store.patchSession(projectId, session.id, patch);
+    // No title of the agent's own: the one it set on its pane, while herdr still has it.
+    if (ending && !own && session.herdrPane) {
+      const pane = session.herdrPane;
+      void this.ctx
+        .get("herdr")
+        ?.panes()
+        .then((panes) => {
+          const info = panes?.find((x) => x.paneId === pane);
+          const now = this.store.session(projectId, session.id);
+          // An agent's own name on its pane says nothing about the conversation.
+          if (info?.agent && info.title && !AGENT_NAME_TITLE.test(info.title) && now && now.title !== info.title) this.store.patchSession(projectId, session.id, { title: info.title });
+        })
+        .catch(() => undefined);
+    }
+  }
+
   private observe(projectId: string, sessionId: string, p: HookPayload): CliHookAnswer {
     const session = this.store.session(projectId, sessionId);
     if (!session) return {};
@@ -388,6 +432,7 @@ export class Sessions {
     if (typeof p.session_id === "string" && p.session_id) patch.externalId = p.session_id;
     if (typeof p.herdr_pane === "string" && p.herdr_pane.trim()) patch.herdrPane = p.herdr_pane.trim();
     if (typeof p.terminal === "string" && p.terminal.trim() && p.terminal.trim() !== session.terminal) patch.terminal = p.terminal.trim().slice(0, 64);
+    if (!p.herdr) this.remember(projectId, session, p);
     const command = bashCommand(p);
     if (p.hook_event_name === "PreToolUse" && session.blocked === "credentials" && BLOCKED_COMMAND.test(command)) {
       this.touch(projectId, sessionId, { ...patch, state: "error", activity: null });

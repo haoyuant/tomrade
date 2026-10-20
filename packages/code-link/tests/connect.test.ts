@@ -735,6 +735,39 @@ describe("outside clients, told apart by their connection", () => {
     expect(codeLink.sessionsOf(project.id).filter((s) => s.state !== "ended").map((s) => s.itemIds)).toEqual([[]]);
   });
 
+  it("keeps a conversation's folder, prompt and title from its hooks, and finds an older one's title by its transcript", async () => {
+    const { codeLink, ctx, project, checkout } = await machine();
+    const post = (payload: unknown) => fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const transcript = path.join(root, `talk-${n++}.jsonl`);
+    fs.writeFileSync(transcript, "");
+    await post({ hook_event_name: "SessionStart", session_id: "talk-1", cwd: checkout, transcript_path: transcript });
+    const [talk] = codeLink.sessionsOf(project.id);
+    expect(codeLink.store.session(project.id, talk!.id)).toMatchObject({ cwd: checkout, transcript, prompted: false, title: null });
+    // Spoken to: the first thing said names it until the agent names it itself.
+    await post({ hook_event_name: "UserPromptSubmit", session_id: "talk-1", cwd: checkout, prompt: "我们来聊聊终端侧栏的设计" });
+    expect(codeLink.store.session(project.id, talk!.id)).toMatchObject({ prompted: true, title: "我们来聊聊终端侧栏的设计" });
+    fs.writeFileSync(transcript, `${JSON.stringify({ type: "ai-title", aiTitle: "终端侧栏设计" })}\n`);
+    await post({ hook_event_name: "Stop", session_id: "talk-1", cwd: checkout, transcript_path: transcript });
+    expect(codeLink.store.session(project.id, talk!.id)?.title).toBe("终端侧栏设计");
+
+    // One that ended before titles were kept: found by its agent's session id under the accounts' folders.
+    const older = codeLink.store.createSession(project.id, { repoId: talk!.repoId, branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, externalId: "old-talk" });
+    codeLink.store.patchSession(project.id, older.id, { state: "ended", endedAt: Date.now() });
+    const accounts = fs.mkdtempSync(path.join(root, "claude-"));
+    fs.mkdirSync(path.join(accounts, "projects", "-repo"), { recursive: true });
+    fs.writeFileSync(path.join(accounts, "projects", "-repo", "old-talk.jsonl"), `${JSON.stringify({ type: "ai-title", aiTitle: "上周的方案讨论" })}\n`);
+    const before = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = accounts;
+    onTestFinished(() => {
+      if (before === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+      else process.env.CLAUDE_CONFIG_DIR = before;
+    });
+    expect(codeLink.findTitles(project.id)).toBe(true);
+    expect(codeLink.store.session(project.id, older.id)).toMatchObject({ title: "上周的方案讨论", prompted: true });
+    // Looked for once.
+    expect(codeLink.findTitles(project.id)).toBe(false);
+  });
+
   it("gives a tokenless claim to the session whose hooks announced it, not the newest idle one", async () => {
     const { codeLink, ctx, items, project, board, checkout } = await machine();
     const post = (payload: unknown) => fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });

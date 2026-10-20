@@ -166,7 +166,17 @@ CREATE TABLE plugin_code_link_hooks_heard (
 `
   },
   // The terminal app an outside session runs in (TERM_PROGRAM), as its hooks report it.
-  { version: 12, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN terminal TEXT" }
+  { version: 12, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN terminal TEXT" },
+  // A conversation without a ticket stays findable: what it was called, where it ran, and whether anyone spoke to it.
+  {
+    version: 13,
+    up: `
+ALTER TABLE plugin_code_link_sessions ADD COLUMN title TEXT;
+ALTER TABLE plugin_code_link_sessions ADD COLUMN cwd TEXT;
+ALTER TABLE plugin_code_link_sessions ADD COLUMN transcript TEXT;
+ALTER TABLE plugin_code_link_sessions ADD COLUMN prompted INTEGER NOT NULL DEFAULT 0;
+`
+  }
 ];
 
 /** Durable code links travel with the project; running sessions belong to this machine. */
@@ -282,6 +292,14 @@ export interface SessionView {
   herdrPane: string | null;
   /** The terminal app its hooks run in, as `TERM_PROGRAM` names it (iTerm.app, Apple_Terminal, vscode…); null when unsaid. */
   terminal: string | null;
+  /** What the conversation is called: the agent's own title, its pane's, or the first thing it was asked. */
+  title: string | null;
+  /** The folder the agent runs in, as its hooks say. */
+  cwd: string | null;
+  /** The agent's own record of the conversation, where its hooks name one. */
+  transcript: string | null;
+  /** Someone has said something to it. */
+  prompted: boolean;
   state: SessionState;
   lastEventAt: number | null;
   lastToolAt: number | null;
@@ -369,6 +387,10 @@ interface SessionRow {
   worktree: string | null;
   herdr_pane: string | null;
   terminal: string | null;
+  title: string | null;
+  cwd: string | null;
+  transcript: string | null;
+  prompted: number | null;
   state: string;
   last_event_at: number | null;
   last_tool_at: number | null;
@@ -455,6 +477,10 @@ const toSession = (r: SessionRow): SessionView => ({
   worktree: r.worktree ?? null,
   herdrPane: r.herdr_pane ?? null,
   terminal: r.terminal ?? null,
+  title: r.title ?? null,
+  cwd: r.cwd ?? null,
+  transcript: r.transcript ?? null,
+  prompted: !!r.prompted,
   state: r.state as SessionState,
   lastEventAt: r.last_event_at,
   lastToolAt: r.last_tool_at,
@@ -508,6 +534,10 @@ export interface SessionPatch {
   worktree?: string | null;
   herdrPane?: string | null;
   terminal?: string | null;
+  title?: string | null;
+  cwd?: string | null;
+  transcript?: string | null;
+  prompted?: boolean;
   state?: SessionState;
   lastEventAt?: number | null;
   lastToolAt?: number | null;
@@ -855,6 +885,10 @@ export class CodeLinkStore {
       worktree: "worktree",
       herdrPane: "herdr_pane",
       terminal: "terminal",
+      title: "title",
+      cwd: "cwd",
+      transcript: "transcript",
+      prompted: "prompted",
       state: "state",
       lastEventAt: "last_event_at",
       lastToolAt: "last_tool_at",
@@ -870,7 +904,7 @@ export class CodeLinkStore {
       const value = patch[field];
       if (value === undefined) continue;
       sets.push(`${column} = ?`);
-      values.push(field === "itemIds" ? JSON.stringify(value) : value);
+      values.push(field === "itemIds" ? JSON.stringify(value) : field === "prompted" ? (value ? 1 : 0) : value);
     }
     if (!sets.length) return this.session(projectId, id)!;
     values.push(id);
