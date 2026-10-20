@@ -245,16 +245,19 @@ function apply(ctx: Context, config: Config) {
    */
   const terminals = async (projectId: string): Promise<TerminalRow[]> => {
     const herdr = ctx.get("herdr");
+    // Read together, before herdr is asked: a terminal that finishes opening meanwhile is in one or the other.
     const saved = savedTerminals(projectId);
+    const opening = [...(pending.get(projectId)?.values() ?? [])];
     const panes = herdr && saved.length ? await herdr.panes().catch(() => null) : null;
     const byPane = new Map((panes ?? []).map((p) => [p.paneId, p]));
-    const kept = panes ? saved.filter((t) => byPane.has(t.pane)) : saved;
-    if (kept.length !== saved.length) saveTerminals(projectId, kept);
+    const gone = new Set(panes ? saved.filter((t) => !byPane.has(t.pane)).map((t) => t.id) : []);
+    // Only those go: the list as it is now, which may have gained a terminal while herdr answered.
+    if (gone.size) saveTerminals(projectId, savedTerminals(projectId).filter((t) => !gone.has(t.id)));
     const agentTitle = (pane: string | null) => {
       const info = pane ? byPane.get(pane) : undefined;
       return info?.agent ? info.title : null;
     };
-    return [...kept, ...(pending.get(projectId)?.values() ?? [])].map((t) => ({ ...t, agentTitle: agentTitle(t.pane), sessionId: null, note: null }));
+    return [...saved.filter((t) => !gone.has(t.id)), ...opening].map((t) => ({ ...t, agentTitle: agentTitle(t.pane), sessionId: null, note: null }));
   };
 
   /**

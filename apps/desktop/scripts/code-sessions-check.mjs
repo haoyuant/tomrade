@@ -112,6 +112,7 @@ app.whenReady().then(async () => {
       const inCell = `document.activeElement?.closest('.cs-cell') === document.querySelectorAll('.cs-cell')[${i}]`;
       for (let attempt = 0; attempt < 3; attempt++) {
         // The window moves the keyboard itself when a pane is selected; type only once it is in this cell.
+        if (!(await run(`!!document.querySelectorAll('.cs-cell')[${i}]?.querySelector('.xterm-helper-textarea')`))) return false;
         await run(`document.querySelectorAll('.cs-cell')[${i}].querySelector('.xterm-helper-textarea').focus(); true`);
         await wait(async () => run(inCell), 2000);
         wc.insertText(command);
