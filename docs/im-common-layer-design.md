@@ -344,6 +344,10 @@ TOM-92 与平台子工单需要根据新目标重新确认范围。按 CONTEXT.m
 - **标题与关闭**：标题是“KEY · 状态 · 标题”，跟着状态改；Done / Cancelled 时等话题里排队的消息发完再关闭（Discord 归档），回到别的状态再打开。改标题和关闭是装饰性的，发不出去就放弃。
 - **扩展宿主**：`packages/extensions` 包装适配器会话时把 `topics` 一并转过去。
 
+## 放行即生效（TOM-441）
+
+一个项目可以分到几个会话里（状态群、聊天群、带工单话题的工作群）。每条 route 一存在（配对、「允许此群」或设置里加的）就有它会话的绑定，和第一条消息会建的那个一样，所以不用有人先说话，工单状态、代码动态、例行事务、工单话题和上下线就能到。这样的绑定先不挂 Agent 会话（`thread_id` 为空），有人在那里说话或点按钮时才开，只听通知的群不会在桌面留下空会话。允许群聊的 route 先当作群（不显示桌面发起的轮次），第一条消息再按它实际是私聊还是群纠正。上下线：私聊照共享设置，群只有它自己的 route 打开时才收到，且只发在会话主层、不发进话题。
+
 ## Discord 适配器（TOM-100）
 
 官方插件 `tomrade/discord`（tomrade-plugins 的 `packages/discord`，命名空间 `discord`；TOM-300 之前随应用内置，现在由官方目录的 starters 每台机器装一次，配置连接前什么都不做）。网络权限只声明 `discord.com`、`discord.gg`、`discordapp.com`、`discordapp.net`。只需要 Bot Token，不开特权 Intent（GUILDS、GUILD_MESSAGES、DIRECT_MESSAGES）：私信和 @ 本身带正文；没有 Message Content 时频道里的其他消息正文为空，不送公共层。

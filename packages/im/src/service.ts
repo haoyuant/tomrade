@@ -516,7 +516,7 @@ export class Im extends Service {
       if (!spec || JSON.stringify(spec.credentials) !== c.credentials || this.missing(spec).length) { this.connections.delete(c.id); void this.close(c); }
     }
     for (const id of this.pairings.keys()) if (!this.settings.connections.some(c => c.id === id)) this.pairings.delete(id);
-    if (this.store) this.pruneWindow();
+    if (this.store) { this.pruneWindow(); this.ensureBindings(); }
     this.tick();
     this.changed();
   }
@@ -549,11 +549,13 @@ export class Im extends Service {
       this.sweptAt = Date.now();
       this.store.prune(Date.now() - this.config.retentionMs);
       this.pruneWindow();
+      this.ensureBindings();
     }
     const dirty = new Set(this.dirty);
     this.dirty.clear();
     for (let b of this.store.bindings()) {
-      if (!this.authorizedBinding(b) || !this.home.db.has(b.project_id)) continue;
+      // One that only listens has no conversation to follow, and nothing waits in it.
+      if (!b.thread_id || !this.authorizedBinding(b) || !this.home.db.has(b.project_id)) continue;
       if (!this.processing.has(b.thread_id)) {
         try { b = this.leaveArchived(b); } catch { continue; }
       }
@@ -616,6 +618,36 @@ export class Im extends Service {
       ...(route.options && Object.keys(route.options).length ? [route.options] : [])]);
   }
 
+  /**
+   * Each allowed conversation has its binding from the start, the one its first message would make, so what it
+   * should hear reaches it before anyone writes there. It holds no Agent conversation (`thread_id` empty) until
+   * someone writes or presses there, so a conversation that only listens leaves no empty one on the desktop.
+   */
+  private ensureBindings() {
+    for (const route of this.settings.routes) {
+      if (!this.settings.connections.some(c => c.id === route.connectionId && c.enabled)) continue;
+      const address: ImAddress = { tenantId: route.tenantId, conversationId: route.conversationId };
+      const id = hash([route.connectionId, address, this.routeHash(route)]);
+      if (this.store.binding(id) || !this.home.projects.get(route.projectId) || !this.home.db.has(route.projectId)) continue;
+      // Taken for a group when groups are let in, so desktop turns never show there; its first message says for sure.
+      this.store.run("INSERT OR IGNORE INTO plugin_im_bindings (id, route_id, route_hash, connection_id, address_json, project_id, thread_id, actor_id, created_at, grp) VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, ?)",
+        id, route.id, this.routeHash(route), route.connectionId, JSON.stringify(address), route.projectId, route.allowedActors[0], Date.now(), route.allowGroups ? 1 : 0);
+    }
+  }
+
+  /** A conversation that only listened so far gets its Agent conversation the first time someone writes or presses there. */
+  private ownThread(b: Binding, event: ImInbound): Binding {
+    if (event.kind === "message") {
+      const grp = event.activation === "dm" ? 0 : 1;
+      if (b.grp !== grp) { this.store.run("UPDATE plugin_im_bindings SET grp = ? WHERE id = ?", grp, b.id); b = { ...b, grp }; }
+    }
+    const route = this.settings.routes.find(r => r.id === b.route_id);
+    // A ticket's topic gets one named after its ticket instead.
+    if (b.thread_id || !route || this.topicOf(b)) return b;
+    this.retarget(b, this.openThread(route).id, 0);
+    return this.store.binding(b.id)!;
+  }
+
   private authorizedBinding(b: Binding): boolean {
     const r = this.settings.routes.find(r => r.id === b.route_id);
     return !!r && this.routeHash(r) === b.route_hash && r.allowedActors.includes(b.actor_id)
@@ -665,8 +697,9 @@ export class Im extends Service {
         event.kind === "message" ? (event.activation === "dm" ? 0 : 1) : null);
       b = this.store.binding(bindingId)!;
     }
-    // The first message in a ticket's topic gives the topic a conversation of its own.
-    if (event.kind === "message") b = this.ownTopic(b);
+    b = this.ownThread(b, event);
+    // The first message in a ticket's topic gives the topic a conversation of its own; so does a press in one that holds none.
+    if (event.kind === "message" || !b.thread_id) b = this.ownTopic(b);
     const press = event.kind === "action" ? this.startPress(b, event.token, event.actor.id, true) : null;
     if (press) {
       // Start pressed again before the first press is handled: that one start is all it asks for.
@@ -1088,11 +1121,13 @@ export class Im extends Service {
     return true;
   }
 
-  /** "Online" or "going offline" in each direct chat on the connection; best effort. */
+  /** "Online" or "going offline" in each direct chat on the connection, and each group whose own route asks for it; best effort. */
   private async presence(c: Connection, online: boolean) {
     const caps = this.caps.get(c.adapterId);
     if (!caps || !c.session || c.state !== "connected") return;
-    const chats = new Map(this.store.bindings().filter(b => b.connection_id === c.id && !this.isGroup(b) && this.authorizedBinding(b) && this.notifies(b, "presence"))
+    const hears = (b: Binding) => this.isGroup(b) ? this.settings.routes.find(r => r.id === b.route_id)?.notify?.presence === true : this.notifies(b, "presence");
+    // Once per conversation, at its top level rather than in each of its threads.
+    const chats = new Map(this.store.bindings().filter(b => b.connection_id === c.id && !(JSON.parse(b.address_json) as ImAddress).topicId && this.authorizedBinding(b) && hears(b))
       .map(b => [b.address_json, JSON.parse(b.address_json) as ImAddress]));
     const { w } = this;
     const text = online ? w("online") : w("goingOffline");

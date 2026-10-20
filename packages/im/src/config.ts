@@ -34,7 +34,7 @@ export const ImSettings = z.preprocess(upgrade, z.object({
     tickets: z.boolean().default(true),
     /** Pull requests, merges and git's status proposals for the tickets a conversation saw or started. */
     code: z.boolean().default(true),
-    /** In each paired direct chat, when Tomrade comes online and goes offline on this computer. */
+    /** In each paired direct chat, when Tomrade comes online and goes offline on this computer; a group only when its own route says so. */
     presence: z.boolean().default(false),
     /** Scheduled templates as they run. */
     routines: z.boolean().default(false),
