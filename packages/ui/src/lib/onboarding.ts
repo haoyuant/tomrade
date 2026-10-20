@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useSaveSettings, useSettings } from "~/lib/queries";
 import { useToast } from "~/lib/toast";
@@ -44,4 +44,23 @@ export function useHintToast(id: string, when: boolean, message: MessageKey) {
     markSeen(id);
     toast({ body: t(message), sticky: true, actions: [{ label: t("onboarding.gotIt"), run: () => {} }] });
   }, [when, id, seen, markSeen, toast, t, message]);
+}
+
+/** Asked for by "Run onboarding again": the home shows the setup screen next, whatever is connected. */
+let setupAsked = false;
+const setupListeners = new Set<() => void>();
+const setSetupAsked = (asked: boolean) => {
+  setupAsked = asked;
+  for (const listener of setupListeners) listener();
+};
+export const askForSetupScreen = () => setSetupAsked(true);
+const takeSetupAsk = () => setSetupAsked(false);
+const onSetupAsk = (listener: () => void) => {
+  setupListeners.add(listener);
+  return () => void setupListeners.delete(listener);
+};
+
+/** Whether the setup screen was asked for, and a way to take the ask once it shows. */
+export function useSetupAsked(): [boolean, () => void] {
+  return [useSyncExternalStore(onSetupAsk, () => setupAsked), takeSetupAsk];
 }

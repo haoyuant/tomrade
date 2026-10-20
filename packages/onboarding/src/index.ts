@@ -23,8 +23,6 @@ declare module "cordis" {
 
 declare module "@tomradex/ipc" {
   interface Channels {
-    /** The sample project again, for someone who deleted it; `locale` names its language. */
-    "onboarding.createSample": (locale?: string) => Project;
     /** Onboarding from the top: every hint unseen, and the sample there — made anew when `resetSample`. */
     "onboarding.restart": (opts: { resetSample: boolean; locale?: string }) => Project;
   }
@@ -94,7 +92,6 @@ export class Onboarding extends Service {
       }
     }
     this.home.inject(["ipc"], (ctx) => {
-      ctx.ipc.handle("onboarding.createSample", (locale) => ctx.onboarding.createSample(locale));
       ctx.ipc.handle("onboarding.restart", (opts) => ctx.onboarding.restart(opts));
     });
     this.home.inject(["settings"], (ctx) => {

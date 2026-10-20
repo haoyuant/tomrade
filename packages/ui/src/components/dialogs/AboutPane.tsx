@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "~/components/icons";
 import { SectionHead, Tag } from "~/components/ui/atoms";
@@ -7,6 +8,8 @@ import { legalUrl, siteUrl } from "~/lib/legal";
 import { openExternal, reveal, type AboutInfo } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { useUpdateActions, useUpdatePrefs, useUpdatesOnScreen, useUpdateStatus, type UpdateStatus } from "~/lib/updates";
+import { RestartOnboardingDialog } from "~/components/projects/RestartOnboardingDialog";
+import { useSettingsSections } from "~/lib/queries";
 import { MyReports } from "./MyReports";
 
 /** Plain text, the way a bug report wants it: one fact per line, nothing localized. */
@@ -28,6 +31,9 @@ export function AboutPane() {
   const info = about.data;
   const date = (iso: string) => new Date(iso).toLocaleDateString(locale, { year: "numeric", month: "short", day: "numeric" });
   const site = siteUrl(locale);
+  // The onboarding plugin runs onboarding again; its settings section says it is loaded.
+  const onboarding = !!useSettingsSections(locale).data?.some((s) => s.id === "onboarding");
+  const [restart, setRestart] = useState(false);
 
   const copy = () => info && void navigator.clipboard?.writeText(details(info)).then(() => toast({ body: t("about.copied") }));
 
@@ -115,6 +121,20 @@ export function AboutPane() {
         </dl>
       ) : (
         <p className="meta-txt">{about.isError ? t("about.unavailable") : "…"}</p>
+      )}
+
+      {onboarding && (
+        <>
+          <hr className="rule" />
+          <SectionHead title={t("onboarding.sectionTitle")}>{t("onboarding.restartBody")}</SectionHead>
+          <div>
+            <button type="button" className="btn btn-secondary" data-testid="restart-onboarding" onClick={() => setRestart(true)}>
+              <Icon name="i-leaf" size={13} />
+              {t("onboarding.restartButton")}
+            </button>
+          </div>
+          <RestartOnboardingDialog open={restart} onOpenChange={setRestart} />
+        </>
       )}
 
       <hr className="rule" />
