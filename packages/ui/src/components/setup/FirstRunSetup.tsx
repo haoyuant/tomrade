@@ -6,10 +6,8 @@ import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import { useI18n } from "~/lib/i18n";
 import { useProjects, useSettings } from "~/lib/queries";
 import { findEngine } from "~/lib/agent";
-import { setupRows, useSetup } from "~/lib/setup";
-import { DetectedModels } from "./DetectedModels";
-import { LocalAgentSetup } from "./LocalAgentSetup";
-import { QuickModelSetup } from "./QuickModelSetup";
+import { useSetup } from "~/lib/setup";
+import { SetupOptions } from "./SetupOptions";
 
 /**
  * First run, before the projects: connect a model or a local agent — either
@@ -96,19 +94,17 @@ export function FirstRunSetup({ onDone }: { onDone: () => void }) {
             </div>
           ) : (
             <>
-              <DetectedModels />
-              <section className="panel stack-3">
-                <h2 className="setup-section-title">{t("setup.keyTitle")}</h2>
-                <p className="meta-txt">{t("setup.keyLede")}</p>
-                <QuickModelSetup />
-              </section>
-              {engines && setupRows(engines).length > 0 && (
-                <section className="panel stack-3">
-                  <h2 className="setup-section-title">{t("setup.cliTitle")}</h2>
-                  <p className="meta-txt">{t("setup.cliLede")}</p>
-                  <LocalAgentSetup engines={engines} onOpenSettings={(engine) => setSettings({ engine })} />
-                </section>
-              )}
+              <SetupOptions
+                engines={engines}
+                onOpenSettings={(engine) => setSettings({ engine })}
+                frame={(part) => (
+                  <section className="panel stack-3">
+                    <h2 className="setup-section-title">{part.title}</h2>
+                    <p className="meta-txt">{part.lede}</p>
+                    {part.body}
+                  </section>
+                )}
+              />
               <div className="row" style={{ gap: "var(--space-3)", alignItems: "center" }}>
                 <button type="button" className="btn btn-ghost" data-testid="setup-later" onClick={openTour}>
                   {t("setup.later")}
