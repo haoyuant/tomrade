@@ -3,8 +3,8 @@
  * agent — and can be told "later" — then opens the sample project, on its
  * first lesson the first time, and nothing else; its learning path draws as a graph, the assistant keeps a
  * setup card until one is connected, the hints show once and stay seen, and the
- * sample can be made again — in the person's language — after it is deleted,
- * and the whole of it can be run again from the home, as often as wanted.
+ * whole of it can be run again from Settings → About, as often as wanted —
+ * making the sample again, in the person's language, after it is deleted.
  * A stand-in engine that writes one ticket makes the run deterministic; the
  * local CLI agents are switched off, since this machine may have one signed in.
  *
@@ -117,7 +117,7 @@ const run = async () => {
   await $(`location.hash = '#/';true`);
   check("the home shows the sample", await wait(() => $(`!!${byText(".proj .proj-name", "Tomrade tour")}`), "sample card"));
   check("marked as the tour", (await texts(".proj .tag")).includes("Tour"));
-  check("and offers no second one while it exists", !(await has(".proj-sample")));
+  check("and keeps no onboarding button of its own", !(await has('[data-testid="restart-onboarding"]')));
   await shot("onboarding-01-home");
 
   // ── the sample, opened again ──────────────────────────────────────────
@@ -174,49 +174,41 @@ const run = async () => {
   check("a project whose tickets depend on each other points at the graph", await wait(async () => (await toasts()).some((t) => t.includes("Switch the view to Graph")), "graph hint"));
   check("seen as soon as it is shown", seen().includes("hint.graph"));
 
-  // ── deleted, and made again in the person's language ──────────────────
+  // ── onboarding again, from Settings, as often as wanted ───────────────
   ctx.projects.remove(sample.id);
   ctx.settings.set({ ...ctx.settings.get(), language: "zh" });
   await win.loadURL(base);
   await sleep(1500);
-  check("without a sample, the home offers to make one", await wait(() => has(".proj-sample"), "sample tile"));
-  await shot("onboarding-05-sample-tile");
-  await press(`document.querySelector('.proj-sample')`);
   const again = async () => ctx.projects.list().find((p) => p.sample);
-  check("it is made again, in Chinese", await wait(async () => (await again())?.name === "Tomrade 入门", "zh sample"));
-  const zh = await again();
-  check("its workstreams are named in Chinese too", ctx.boards.list(zh.id).map((b) => b.name).join("|") === "入门|示例：番茄钟 App", ctx.boards.list(zh.id).map((b) => b.name));
-  check("and the app opens it", await wait(async () => (await $(`location.hash`)).includes(zh.id), "navigated"));
-  await shot("onboarding-06-zh-sample");
-
-  // ── someone who does not want it can say so ───────────────────────────
-  ctx.projects.remove(zh.id);
-  await win.loadURL(base);
-  check("deleted again, the offer is back", await wait(() => has(".proj-sample"), "sample tile again"));
-  await press(`document.querySelector('.proj-sample-hide')`);
-  check("and its × puts it away", await wait(async () => !(await has(".proj-sample")), "tile hidden"));
-  check("for good", await wait(async () => seen().includes("sample-tile"), "seen sample-tile"));
-
-  // ── onboarding again, as often as wanted ──────────────────────────────
-  check("the home offers to run onboarding again", (await text('[data-testid="restart-onboarding"]')) === "重新开始新手引导", await text('[data-testid="restart-onboarding"]'));
+  check("without a sample, the home offers no tile to make one", (await wait(() => has(".proj-grid"), "home")) && !(await has(".proj-sample")) && !(await has('[data-testid="restart-onboarding"]')));
+  const openAbout = async () => {
+    await press(`document.querySelector('.titlebar button[aria-label="设置"]')`);
+    await wait(() => $(`!!${byText(".side-row", "关于")}`), "settings");
+    await press(byText(".side-row", "关于"));
+    return wait(() => has('[data-testid="restart-onboarding"]'), "restart button");
+  };
+  check("Settings → About offers to run onboarding again", (await openAbout()) && (await text('[data-testid="restart-onboarding"]')) === "重新开始新手引导", await text('[data-testid="restart-onboarding"]'));
+  await shot("onboarding-05-settings-restart");
   await press(`document.querySelector('[data-testid="restart-onboarding"]')`);
   check("with no sample, it says one is made again", await wait(async () => (await texts(".dlg-body .meta-txt")).includes("会重新创建示例项目。"), "restart dialog"));
   await press(`document.querySelector('[data-testid="restart-confirm"]')`);
   check("it opens on the setup screen again", await wait(() => has('[data-testid="first-run-setup"]'), "setup screen again"));
   check("with every hint unseen and the sample back", seen().length === 0 && !!(await again()));
+  const zh = await again();
+  check("made again in Chinese", zh?.name === "Tomrade 入门", zh?.name);
+  check("its workstreams are named in Chinese too", ctx.boards.list(zh.id).map((b) => b.name).join("|") === "入门|示例：番茄钟 App", ctx.boards.list(zh.id).map((b) => b.name));
   await shot("onboarding-07-restarted");
   await press(`document.querySelector('[data-testid="setup-later"]')`);
   const before = await again();
   check("Later opens the sample, on its first lesson again", await wait(async () => (await $(`location.hash`)).includes(before.id) && (await lesson())?.label?.endsWith("把这个工单拖到「已完成」"), "sample again"), await lesson());
-  await $(`location.hash = '#/';true`);
-  await wait(() => has('[data-testid="restart-onboarding"]'), "home again");
   const firstTicket = ctx.items.list({ projectId: before.id })[0];
   ctx.items.update(before.id, firstTicket.id, { status: "done" }, "human");
+  check("inside a project, Settings → About offers it too", await openAbout());
   await press(`document.querySelector('[data-testid="restart-onboarding"]')`);
   check("with a sample, it asks before putting it back as it began", await wait(() => $(`document.querySelector('[data-testid="restart-reset-sample"]')?.checked === true`), "reset checkbox"));
   await press(`document.querySelector('[data-testid="restart-confirm"]')`);
   check("and does: a fresh sample, nothing done in it", await wait(async () => { const now = await again(); return !!now && now.id !== before.id && ctx.items.list({ projectId: now.id }).every((i) => i.status !== "done"); }, "fresh sample"));
-  check("run twice, the setup screen comes again", await wait(() => has('[data-testid="first-run-setup"]'), "setup screen twice"));
+  check("run twice, the setup screen comes again, leaving the project for it", await wait(async () => (await has('[data-testid="first-run-setup"]')) && (await $(`location.hash`)) === "#/", "setup screen twice"));
 
   console.log(`screenshots in ${shots}`);
 };

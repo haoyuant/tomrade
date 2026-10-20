@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
+import { useQueries } from "@tanstack/react-query";
 import type { Board, Item, Project } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
@@ -9,16 +9,14 @@ import { Eyebrow, LiveDot, Num, Spacer, Tag } from "~/components/ui/atoms";
 import { invoke } from "~/lib/api";
 import { agoLabel } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { keys, useHubInfo, useMcpUrl, useProjects, useRestores, useSettings, useSettingsSections } from "~/lib/queries";
-import { useSeen } from "~/lib/onboarding";
-import { errorSpec, useToast } from "~/lib/toast";
+import { keys, useHubInfo, useMcpUrl, useProjects, useRestores, useSettings } from "~/lib/queries";
+import { useSeen, useSetupAsked } from "~/lib/onboarding";
 import { FirstRunSetup } from "~/components/setup/FirstRunSetup";
 import { useSetup } from "~/lib/setup";
 import { useSettingsHost } from "~/lib/settingsHost";
 import { HubSetup } from "./HubSetup";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
-import { RestartOnboardingDialog } from "./RestartOnboardingDialog";
 import { RestoreBanner, RestoreCard, useRestoredToasts } from "./RestoreCards";
 import { hits } from "~/lib/keybindings";
 
@@ -134,6 +132,13 @@ export function ProjectsScreen() {
   useEffect(() => {
     if (setup === null && state && settings.data) setSetup(!state.complete && !seen("setup-screen") ? "open" : "closed");
   }, [setup, state, seen, settings.data]);
+  // Onboarding run again, from Settings: the setup screen comes back even with something connected.
+  const [asked, takeAsk] = useSetupAsked();
+  useEffect(() => {
+    if (!asked) return;
+    takeAsk();
+    setSetup("open");
+  }, [asked, takeAsk]);
   if (hub.data && !hub.data.configured) return <HubSetup />;
   if (setup === "open")
     return (
@@ -144,26 +149,12 @@ export function ProjectsScreen() {
         }}
       />
     );
-  return <ProjectsHome onRestartOnboarding={() => setSetup("open")} />;
+  return <ProjectsHome />;
 }
 
-function ProjectsHome({ onRestartOnboarding }: { onRestartOnboarding: () => void }) {
-  const navigate = useNavigate();
-  const { t, locale } = useI18n();
-  const qc = useQueryClient();
-  const toast = useToast();
+function ProjectsHome() {
+  const { t } = useI18n();
   const projects = useProjects();
-  // The onboarding plugin is what makes the sample; its settings section says it is loaded.
-  const sections = useSettingsSections(locale);
-  const { seen, markSeen } = useSeen();
-  const sample = useMutation({
-    mutationFn: () => invoke("onboarding.createSample", locale),
-    onSuccess: (project) => {
-      void qc.invalidateQueries({ queryKey: keys.projects });
-      void navigate({ to: "/p/$projectId", params: { projectId: project.id } });
-    },
-    onError: (err) => toast(errorSpec(err))
-  });
   const mcp = useMcpUrl();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPane, setSettingsPane] = useState<string>();
@@ -172,13 +163,10 @@ function ProjectsHome({ onRestartOnboarding }: { onRestartOnboarding: () => void
     setSettingsOpen(true);
   });
   const [newOpen, setNewOpen] = useState(false);
-  const [restartOpen, setRestartOpen] = useState(false);
   /** Held by id, and looked up live: deleting the project is what closes the sheet. */
   const [configuring, setConfiguring] = useState<string | null>(null);
   const list = projects.data ?? [];
   const facts = useProjectFacts(list);
-  const onboarding = !!sections.data?.some((s) => s.id === "onboarding");
-  const offerSample = !!projects.data && !list.some((p) => p.sample) && onboarding && !seen("sample-tile");
   // Projects in the account that are not on this computer yet stand in the grid too, saying where they are.
   const restores = useRestores();
   const missing = restores.data?.entries ?? [];
@@ -242,14 +230,6 @@ function ProjectsHome({ onRestartOnboarding }: { onRestartOnboarding: () => void
                 {t("projectsScreen.leadParagraph")}
               </p>
             </div>
-            {onboarding && (
-              <>
-                <Spacer />
-                <button type="button" className="btn btn-ghost" data-testid="restart-onboarding" onClick={() => setRestartOpen(true)}>
-                  <Icon name="i-leaf" size={14} /> {t("onboarding.restartButton")}
-                </button>
-              </>
-            )}
           </div>
 
           {restores.data && <RestoreBanner summary={restores.data} />}
@@ -272,26 +252,6 @@ function ProjectsHome({ onRestartOnboarding }: { onRestartOnboarding: () => void
               <span style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-lg)", color: "inherit" }}>{t("projectsScreen.newProject")}</span>
               <span style={{ fontSize: 14, lineHeight: "var(--leading-dense)", color: "var(--meta)" }}>{t("projectsScreen.newProjectCardDesc")}</span>
             </button>
-            {offerSample && (
-              <div className="proj-cell">
-                <button type="button" className="proj-new proj-sample" disabled={sample.isPending} onClick={() => sample.mutate()}>
-                  <Icon name="i-leaf" size={20} />
-                  <span style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-lg)", color: "inherit" }}>
-                    {sample.isPending ? t("onboarding.sampleCreating") : t("onboarding.sampleTileTitle")}
-                  </span>
-                  <span style={{ fontSize: 14, lineHeight: "var(--leading-dense)", color: "var(--meta)" }}>{t("onboarding.sampleTileDesc")}</span>
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-icon proj-gear proj-sample-hide"
-                  title={t("onboarding.sampleTileHide")}
-                  aria-label={t("onboarding.sampleTileHide")}
-                  onClick={() => markSeen("sample-tile")}
-                >
-                  <Icon name="i-close" size={15} />
-                </button>
-              </div>
-            )}
           </div>
 
           <hr className="rule" />
@@ -344,7 +304,6 @@ function ProjectsHome({ onRestartOnboarding }: { onRestartOnboarding: () => void
           if (!open) setSettingsPane(undefined);
         }}
       />
-      <RestartOnboardingDialog open={restartOpen} onOpenChange={setRestartOpen} hasSample={list.some((p) => p.sample)} onRestarted={onRestartOnboarding} />
     </div>
   );
 }

@@ -1,25 +1,32 @@
 import { useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { invoke } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
-import { forgetRaisedHints } from "~/lib/onboarding";
-import { keys } from "~/lib/queries";
+import { askForSetupScreen, forgetRaisedHints } from "~/lib/onboarding";
+import { keys, useProjects } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 
 /** Onboarding from the top, as often as wanted; putting the sample back as it began is asked, since it deletes what was done there. */
-export function RestartOnboardingDialog({ open, onOpenChange, hasSample, onRestarted }: { open: boolean; onOpenChange: (open: boolean) => void; hasSample: boolean; onRestarted: () => void }) {
+export function RestartOnboardingDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { t, locale } = useI18n();
   const qc = useQueryClient();
   const toast = useToast();
+  const navigate = useNavigate();
+  const hasSample = !!useProjects().data?.some((p) => p.sample);
   const [resetSample, setResetSample] = useState(true);
   const restart = useMutation({
-    mutationFn: () => invoke("onboarding.restart", { resetSample: hasSample && resetSample, locale }),
+    mutationFn: async () => {
+      // Home first: putting the sample back deletes its folder, and it may be the project open.
+      await navigate({ to: "/" });
+      return invoke("onboarding.restart", { resetSample: hasSample && resetSample, locale });
+    },
     onSuccess: async () => {
       forgetRaisedHints();
       await Promise.all([qc.invalidateQueries({ queryKey: keys.projects }), qc.invalidateQueries({ queryKey: keys.settings })]);
       onOpenChange(false);
-      onRestarted();
+      askForSetupScreen();
     },
     onError: (err) => toast(errorSpec(err))
   });
