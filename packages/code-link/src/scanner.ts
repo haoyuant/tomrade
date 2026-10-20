@@ -1,5 +1,5 @@
 import type { Git } from "@tomradex/storage";
-import { deliveredKeys, keysInText, parseBranch } from "./keys.js";
+import { deliveredKeys, keysInText, parseBranch, subjectKey } from "./keys.js";
 import { remoteFailureDetail, remoteFailureMessage } from "./remote.js";
 
 /** Project manifests anywhere in a repository — one is enough for `scaffolded`. */
@@ -76,6 +76,8 @@ export interface MergedCommit {
   sha: string;
   at: number;
   subject: string;
+  /** The ticket the commit's subject names, when that is another one: this ticket's key came only from its body (a squash's list, a closing word). */
+  passingFor: number | null;
 }
 
 export interface ScanResult {
@@ -201,9 +203,11 @@ export async function scanRepo(git: Git, checkout: string, opts: ScanOptions): P
     for (const record of log.stdout.split(RS)) {
       const [sha, ct, subject, body] = record.replace(/^\n/, "").split(US);
       if (!sha?.trim()) continue;
+      const owner = subjectKey(subject ?? "", opts.prefix);
       for (const keyNum of deliveredKeys(subject ?? "", body ?? "", opts.prefix)) {
-        // Newest evidence wins when a full rescan contains several deliveries.
-        if (!mergedKeys.has(keyNum)) mergedKeys.set(keyNum, { sha: sha.trim(), at: Number(ct) * 1000 || 0, subject: (subject ?? "").trim() });
+        const passingFor = owner !== null && owner !== keyNum ? owner : null;
+        // Newest evidence wins when a full rescan contains several deliveries; a commit about the ticket itself beats a passing one.
+        if (!mergedKeys.has(keyNum) || (mergedKeys.get(keyNum)!.passingFor !== null && passingFor === null)) mergedKeys.set(keyNum, { sha: sha.trim(), at: Number(ct) * 1000 || 0, subject: (subject ?? "").trim(), passingFor });
       }
     }
   }

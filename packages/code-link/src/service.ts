@@ -32,7 +32,7 @@ import { SYNC_PROMPT, syncInstructions, syncPrompt, type SyncScope } from "./syn
 import { githubHttps } from "@tomradex/github";
 import { PLAYBOOKS } from "./playbooks.js";
 import { decide, type Decision, type Evidence } from "./rules.js";
-import { scanRepo, type ScanResult, type ScannedBranch } from "./scanner.js";
+import { scanRepo, type MergedCommit, type ScanResult, type ScannedBranch } from "./scanner.js";
 import { classifyRemoteFailure, probeRemote, readRemoteIdentity, type RemoteIdentity } from "./remote.js";
 import { Sessions, type SessionMoment } from "./sessions.js";
 import { CODE_WORDS, type CodeWords, type PlainCodeWord } from "./words.js";
@@ -70,6 +70,11 @@ const RESUME_WITHIN_MS = 24 * 3600_000;
 
 /** Sessions that ended this close together ended with one agent process: parallel tickets of one conversation. */
 const ENDED_TOGETHER_MS = 10_000;
+
+/** How a proposal from another ticket's merge that names this one in passing begins. */
+const LANDED_ELSEWHERE = "commits landed through ";
+
+const BEFORE_DONE: ReadonlySet<string> = new Set(["backlog", "todo", "doing", "verifying"]);
 
 /** How often a terminal session whose hooks name no herdr pane asks herdr which pane runs it. */
 const PANE_LOOK_MS = 15_000;
@@ -873,6 +878,11 @@ export class CodeLink extends Service {
     const proposal = this.store.proposal(projectId, proposalId);
     if (!proposal) throw new Error(`unknown proposal ${proposalId}`);
     if (proposal.state !== "open") return proposal;
+    // The person's word that the passing merge delivered this ticket: its link reads as merged by that commit.
+    if (accept && proposal.reason.startsWith(LANDED_ELSEWHERE) && proposal.linkId && proposal.evidenceSha) {
+      const link = this.store.links(projectId, proposal.itemId).find((l) => l.id === proposal.linkId);
+      if (link && !link.mergedSha) this.store.patchLink(projectId, link.id, { mergedSha: proposal.evidenceSha });
+    }
     if (accept && proposal.toStatus) this.ctx.items.update(projectId, proposal.itemId, { status: proposal.toStatus }, "human");
     const settled = this.store.setProposalState(projectId, proposalId, accept ? "accepted" : "rejected");
     this.notify(projectId);
@@ -1743,6 +1753,7 @@ export class CodeLink extends Service {
       }
     }
 
+    let passed = 0;
     for (const [keyNum, commit] of result.mergedKeys) {
       const item = byNum.get(keyNum);
       if (!item) continue;
@@ -1760,6 +1771,12 @@ export class CodeLink extends Service {
         continue;
       }
       const own = this.store.links(projectId, item.id).filter((l) => l.repoId === repo.id && l.delivery === active.sequence);
+      // Named only in passing by another ticket's merge: the person decides whether that delivered this one.
+      if (commit.passingFor !== null && !own.some((l) => l.prNumber !== null && l.prNumber === subjectPr(commit.subject))) {
+        passed += this.proposeLanding(projectId, repo.id, item, active.sequence, own, commit);
+        touched.add(item.id);
+        continue;
+      }
       if (own.length) {
         for (const l of own) {
           if (answered.has(l.id)) continue;
@@ -1818,7 +1835,7 @@ export class CodeLink extends Service {
     }
 
     let changed = 0;
-    let proposals = 0;
+    let proposals = passed;
     for (const itemId of touched) {
       const item = this.ctx.items.get(projectId, itemId);
       if (!item) continue;
@@ -1827,6 +1844,22 @@ export class CodeLink extends Service {
       proposals += r.proposals;
     }
     return { links, changed, proposals };
+  }
+
+  /**
+   * Another ticket's merge that names this one only in passing — its squash lists a commit of this one, or a closing
+   * word names it — proposes Done instead of closing it. The commit is kept on the ticket as a link of its own when
+   * the delivery has none, so the person sees where the work went; accepting settles that link as merged.
+   */
+  private proposeLanding(projectId: string, repoId: string, item: Item, delivery: number, own: CodeLinkView[], commit: MergedCommit): number {
+    if (item.status === "done" || item.status === "cancelled") return 0;
+    const pr = subjectPr(commit.subject);
+    const reason = `${LANDED_ELSEWHERE}${pr !== null ? `#${pr}` : commit.sha.slice(0, 7)} (${this.prefixOf(projectId)}-${commit.passingFor}), which names this ticket only in passing`;
+    if (this.store.hasRecentProposal(projectId, item.id, delivery, "propose", "done", reason, commit.sha)) return 0;
+    const link =
+      own.length === 1 ? own[0]! : own.length ? null : this.store.upsertLink(projectId, { itemId: item.id, repoId, branch: "", delivery }, { headSha: commit.sha, headAt: commit.at, lastSeenAt: Date.now(), source: "scan" });
+    this.store.addProposal(projectId, { itemId: item.id, delivery, linkId: link?.id ?? null, kind: "propose", fromStatus: item.status, toStatus: "done", reason, evidenceSha: commit.sha });
+    return 1;
   }
 
   /** What GitHub says about each unsettled pull request of a repository's current deliveries, asked once per pull request. */
@@ -2013,7 +2046,9 @@ export class CodeLink extends Service {
       proposals += 1;
     }
     // A proposal the evidence no longer supports is withdrawn, not left for someone to reject.
-    for (const p of this.store.proposalsForDelivery(projectId, item.id, delivery.sequence, "open")) if (!standing.has(signature(p.kind, p.toStatus, p.reason))) this.store.setProposalState(projectId, p.id, "stale");
+    // A passing merge's proposal stands until the ticket's own merge or the person settles it.
+    const passing = (p: ProposalView) => p.reason.startsWith(LANDED_ELSEWHERE) && !evidence.merged && BEFORE_DONE.has(this.ctx.items.get(projectId, item.id)?.status ?? "done");
+    for (const p of this.store.proposalsForDelivery(projectId, item.id, delivery.sequence, "open")) if (!standing.has(signature(p.kind, p.toStatus, p.reason)) && !passing(p)) this.store.setProposalState(projectId, p.id, "stale");
     if (evidence.merged && this.ctx.items.get(projectId, item.id)?.status === "done") this.store.finishActiveDelivery(projectId, item.id, "completed");
     return { changed, proposals };
   }
@@ -2077,6 +2112,7 @@ export class CodeLink extends Service {
             rows.push({ label: w("mergeByHand"), icon: "i-warn", state: "warn", value: w("mergeBlocked"), href: l.prUrl });
           }
           if (l.mergedSha) rows.push({ label: w("merged"), icon: "i-check", state: "ok", mono: true, value: w("mergedOn", { sha: l.mergedSha.slice(0, 7), branch: repo?.defaultBranch ?? "main" }) });
+          else if (!l.branch && l.headSha) rows.push({ label: w("landedElsewhere"), icon: "i-merge", mono: true, value: w("mergedOn", { sha: l.headSha.slice(0, 7), branch: repo?.defaultBranch ?? "main" }) });
           if (l.headAt) rows.push({ label: w("lastCommit"), icon: "i-clock", value: since(l.headAt) });
         }
         const live = sessions.find((s) => s.state !== "ended") ?? sessions[0];

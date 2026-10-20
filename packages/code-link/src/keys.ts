@@ -124,6 +124,11 @@ function leadKey(line: string, prefix: string): number | null {
   return colon < 0 ? null : (keysInText(line.slice(0, colon), prefix)[0] ?? null);
 }
 
+/** The ticket a default-branch commit is about: the key leading its subject, else the first one in it; null when it names none. */
+export function subjectKey(subject: string, prefix: string): number | null {
+  return leadKey(subject, prefix) ?? keysInText(subject, prefix)[0] ?? null;
+}
+
 /**
  * The tickets a commit on the default branch delivers: the key leading its
  * subject (or else the first key in it: `fix: … (TOM-12)`, or the branch a
@@ -137,7 +142,7 @@ export function deliveredKeys(subject: string, body: string, prefix: string): nu
   const add = (key: number | null | undefined) => {
     if (key != null && !out.includes(key)) out.push(key);
   };
-  add(leadKey(subject, prefix) ?? keysInText(subject, prefix)[0]);
+  add(subjectKey(subject, prefix));
   for (const line of body.split("\n")) {
     const item = /^\s*[*-]\s+(.*)$/.exec(line);
     if (item) add(leadKey(item[1]!, prefix));
