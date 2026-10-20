@@ -20,6 +20,7 @@ export const es: PartialMessages = {
     system: "Sistema",
     closeTitled: "Cerrar {{title}}",
     resizeGrip: "Arrastra para cambiar el tamaño · doble clic para restablecer",
+    moveSheet: "Arrastra para mover · doble clic para volver al centro",
     plainSecret: "Este equipo no tiene un llavero del sistema que Tomrade pueda usar, así que se guarda como texto sin cifrar en el archivo de configuración de Tomrade.",
     priorityAria: "Prioridad {{priority}}",
     agentWrite: "Escrito por última vez por un agente",

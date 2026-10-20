@@ -1,5 +1,5 @@
 import * as RadixDialog from "@radix-ui/react-dialog";
-import { useEffect, useLayoutEffect, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Icon } from "~/components/icons";
 import { useI18n } from "~/lib/i18n";
 import { cn } from "~/lib/utils";
@@ -15,6 +15,7 @@ export function Dialog({
   label,
   className,
   resizable,
+  movable,
   children
 }: {
   open: boolean;
@@ -23,6 +24,8 @@ export function Dialog({
   className?: string;
   /** A storage key: the sheet gets a corner grip and remembers its size. Limits are the sheet's CSS min/max. */
   resizable?: string;
+  /** The sheet moves when its header is dragged, back to the centre on a double-click. It opens centred each time. */
+  movable?: boolean;
   children: ReactNode;
 }) {
   // These dialogs open from `open` state rather than a Radix Trigger, so Radix
@@ -46,14 +49,36 @@ export function Dialog({
             sheet on the workspace row and caps its height. Forgetting it left
             dialogs sitting at the command palette's 96px top anchor. A
             `className` here only ever picks a width. */}
-        <RadixDialog.Content className={cn("palette modal", className)} aria-label={label}>
+        <RadixDialog.Content className={cn("palette modal", movable && "is-movable", className)} aria-label={label}>
           <RadixDialog.Title className="sr-only">{label}</RadixDialog.Title>
-          {children}
+          <Movable.Provider value={!!movable}>{children}</Movable.Provider>
           {resizable && <ResizeGrip storageKey={resizable} />}
         </RadixDialog.Content>
       </RadixDialog.Portal>
     </RadixDialog.Root>
   );
+}
+
+const Movable = createContext(false);
+
+/** How much of a moved sheet stays on the window sideways: enough to take hold of it again. */
+const KEEP = 96;
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+const offsetOf = (el: HTMLElement) => ({ x: parseFloat(el.style.getPropertyValue("--dlg-x")) || 0, y: parseFloat(el.style.getPropertyValue("--dlg-y")) || 0 });
+
+/**
+ * Shifts a movable sheet off its centred place. Its header stays below the title
+ * bar — that is a drag region, and would take the pointer from it — and above the
+ * window's bottom, with at least KEEP px of the sheet on the window to either side.
+ */
+function moveSheet(el: HTMLElement, to: { x: number; y: number }) {
+  const at = offsetOf(el);
+  const r = el.getBoundingClientRect();
+  const [left, top] = [r.left - at.x, r.top - at.y];
+  const head = el.querySelector(".dlg-head")?.getBoundingClientRect().height ?? 0;
+  const below = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--titlebar-h")) || 0;
+  el.style.setProperty("--dlg-x", `${Math.round(clamp(to.x, KEEP - r.width - left, window.innerWidth - KEEP - left))}px`);
+  el.style.setProperty("--dlg-y", `${Math.round(clamp(to.y, below - top, window.innerHeight - head - top))}px`);
 }
 
 const SIZE_PREFIX = "tomrade.dialogSize.";
@@ -90,6 +115,8 @@ function ResizeGrip({ storageKey }: { storageKey: string }) {
     if (!el) return;
     el.style.width = size ? `${size.w}px` : "";
     el.style.height = size ? `${size.h}px` : "";
+    // a moved sheet grows about its centre too, which can carry its header under the title bar
+    if (el.classList.contains("is-movable")) moveSheet(el, offsetOf(el));
   };
   useLayoutEffect(() => apply(readSize(storageKey)), [storageKey]);
   const start = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -119,11 +146,59 @@ function ResizeGrip({ storageKey }: { storageKey: string }) {
   return <div ref={ref} className="dlg-grip" aria-hidden="true" title={t("common.resizeGrip")} onPointerDown={start} onDoubleClick={reset} />;
 }
 
+// the header's own controls keep their clicks
+const HEAD_CONTROLS = "button, a, input, select, textarea, label, [role='button']";
+
 export function DialogHead({ title, aside, children }: { title: string; aside?: ReactNode; children?: ReactNode }) {
   const { t } = useI18n();
+  const movable = useContext(Movable);
+  const ref = useRef<HTMLDivElement>(null);
+  const sheet = () => ref.current?.closest<HTMLElement>(".palette") ?? null;
+  // a window made smaller must not leave the sheet out of reach
+  useEffect(() => {
+    if (!movable) return;
+    const keep = () => {
+      const el = sheet();
+      if (el) moveSheet(el, offsetOf(el));
+    };
+    window.addEventListener("resize", keep);
+    return () => window.removeEventListener("resize", keep);
+  }, [movable]);
+  const onHead = (e: ReactPointerEvent | ReactMouseEvent) => !(e.target as HTMLElement).closest(HEAD_CONTROLS);
+  const start = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const el = sheet();
+    if (!el || e.button !== 0 || !onHead(e)) return;
+    e.preventDefault();
+    const head = e.currentTarget;
+    head.setPointerCapture(e.pointerId);
+    const from = offsetOf(el);
+    const [x0, y0] = [e.clientX, e.clientY];
+    const move = (ev: PointerEvent) => moveSheet(el, { x: from.x + ev.clientX - x0, y: from.y + ev.clientY - y0 });
+    const end = () => {
+      head.removeEventListener("pointermove", move);
+      head.removeEventListener("pointerup", end);
+      head.removeEventListener("pointercancel", end);
+    };
+    head.addEventListener("pointermove", move);
+    head.addEventListener("pointerup", end);
+    head.addEventListener("pointercancel", end);
+  };
+  const centre = (e: ReactMouseEvent<HTMLDivElement>) => {
+    const el = sheet();
+    if (!el || !onHead(e)) return;
+    el.style.removeProperty("--dlg-x");
+    el.style.removeProperty("--dlg-y");
+  };
   return (
-    <div className="dlg-head">
-      <h2 className="dlg-title">{title}</h2>
+    <div
+      ref={ref}
+      className="dlg-head"
+      onPointerDown={movable ? start : undefined}
+      onDoubleClick={movable ? centre : undefined}
+    >
+      <h2 className="dlg-title" title={movable ? t("common.moveSheet") : undefined}>
+        {title}
+      </h2>
       {aside}
       <div className="spacer" />
       {children}

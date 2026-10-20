@@ -1743,17 +1743,22 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
 /* Settings outgrew one scroll, so its body is a menu beside a pane rather than
  * one column. The rail borrows the sidebar's rows at a narrower width: one row
  * per pane, the current one marked exactly the way a current board is.
- * It is also the one sheet you move around inside, so — alone among the
- * dialogs — it pins its height as well as its width: the pane scrolls, and the
- * box never resizes under the menu row you are clicking. */
-.palette.sheet-settings {
-  width: min(964px, calc(100vw - 64px));
-  height: min(var(--overlay-max-h), 760px);
+ * It is also the one sheet you move around inside, so it pins its height as
+ * well as its width: the pane scrolls, and the box never resizes under the menu
+ * row you are clicking — only from its corner grip, within these limits. Its
+ * header drags it aside, like a window's. */
+.palette.modal.sheet-settings {
+  width: min(964px, calc(100vw - 64px)); height: min(var(--overlay-max-h), 760px);
+  min-width: min(640px, calc(100vw - 64px)); max-width: calc(100vw - 64px);
+  min-height: min(420px, var(--overlay-max-h)); max-height: var(--overlay-max-h);
 }
 .palette.sheet-project-settings {
   width: min(900px, calc(100vw - 64px));
   height: min(var(--overlay-max-h), 700px);
 }
+/* `translate` adds to the centring `transform`; dialog.tsx sets the offsets */
+.palette.modal.is-movable { translate: var(--dlg-x, 0px) var(--dlg-y, 0px); }
+.palette.modal.is-movable .dlg-head { cursor: move; user-select: none; }
 .dlg-split { display: flex; flex: 1; min-height: 0; }
 .dlg-grip {
   position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; z-index: 3;

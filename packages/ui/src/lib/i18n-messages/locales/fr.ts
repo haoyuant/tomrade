@@ -20,6 +20,7 @@ export const fr: PartialMessages = {
     system: "Système",
     closeTitled: "Fermer {{title}}",
     resizeGrip: "Faites glisser pour redimensionner · double-cliquez pour réinitialiser",
+    moveSheet: "Faites glisser pour déplacer · double-cliquez pour recentrer",
     plainSecret: "Cet ordinateur n’a pas de trousseau système utilisable par Tomrade : cette valeur est donc enregistrée en clair dans le fichier de réglages de Tomrade.",
     priorityAria: "Priorité {{priority}}",
     agentWrite: "Dernière modification par un agent",

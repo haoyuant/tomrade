@@ -608,7 +608,7 @@ export function SettingsDialog({
       ));
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} label={t("settingsDialog.dialogLabel")} className="sheet-settings">
+    <Dialog open={open} onOpenChange={onOpenChange} label={t("settingsDialog.dialogLabel")} className="sheet-settings" resizable="settings" movable>
       <DialogHead title={t("settingsDialog.dialogLabel")} aside={<Tag tone="neutral">{t("settingsDialog.localMachine")}</Tag>} />
       <div className="dlg-split">
         <nav className="dlg-nav" aria-label={t("settingsDialog.navAriaLabel")}>

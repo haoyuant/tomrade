@@ -20,6 +20,7 @@ export const de: PartialMessages = {
     system: "System",
     closeTitled: "{{title}} schließen",
     resizeGrip: "Ziehen zum Ändern der Größe · Doppelklick zum Zurücksetzen",
+    moveSheet: "Ziehen zum Verschieben · Doppelklick zum Zentrieren",
     plainSecret: "Dieser Computer hat keinen System-Schlüsselbund, den Tomrade nutzen kann. Deshalb wird dies als Klartext in Tomrades Einstellungsdatei gespeichert.",
     priorityAria: "Priorität {{priority}}",
     agentWrite: "Zuletzt von einem Agenten geschrieben",
