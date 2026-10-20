@@ -135,7 +135,7 @@ app.whenReady().then(async () => {
         for (const type of ['focusin', 'focusout', 'keydown', 'keypress', 'keyup', 'input', 'compositionstart', 'compositionend'])
           document.addEventListener(type, (e) => window.__typing.push([type, at(e.target), e.inputType, e.data ?? e.key].filter(Boolean).join(' ')), true);
       }
-      const now = { focus: document.hasFocus(), keyboard: at(document.activeElement), selected: cells.findIndex((c) => c.dataset.focused), textarea: cells[${i}]?.querySelector('.xterm-helper-textarea')?.value ?? null, detached: cells[${i}]?.querySelector('.cs-term-closed')?.textContent ?? null, heard: window.__typing ?? [] };
+      const now = { visible: document.visibilityState, focus: document.hasFocus(), keyboard: at(document.activeElement), selected: cells.findIndex((c) => c.dataset.focused), textarea: cells[${i}]?.querySelector('.xterm-helper-textarea')?.value ?? null, detached: cells[${i}]?.querySelector('.cs-term-closed')?.textContent ?? null, heard: window.__typing ?? [] };
       window.__typing = [];
       return now;
     })()`;
@@ -158,7 +158,24 @@ app.whenReady().then(async () => {
         wc.sendInputEvent({ type: "keyDown", keyCode: "Return" });
         wc.sendInputEvent({ type: "char", keyCode: "\r" });
         wc.sendInputEvent({ type: "keyUp", keyCode: "Return" });
-        if (await wait(seen, 8000)) return true;
+        // A covered or minimised window draws no frames, so its cell shows nothing new though its terminal has it: then the
+        // echo is read from the panes core typed into (a line of its own, not the command typed), and the step says so.
+        const drawn = async () => {
+          if (await seen()) return true;
+          if ((await run("document.visibilityState")) !== "hidden") return false;
+          const typedInto = [...new Set(streams.filter((s) => s.typed.some((t) => t.at >= from)).map((s) => s.pane))];
+          const lines = (p) => {
+            try {
+              return herdr("pane", "read", p, "--source", "recent", "--lines", "20").split("\n");
+            } catch {
+              return [];
+            }
+          };
+          const echoed = typedInto.find((p) => lines(p).some((l) => l.trim() === marker));
+          if (echoed) console.log(`INFO: typing into cell ${i}: the window was hidden, so the cell drew nothing; the echo was read from herdr's pane ${echoed}`);
+          return !!echoed;
+        };
+        if (await wait(drawn, 8000)) return true;
         const after = await run(typingState(i));
         const tail = (text) => text.replace(/\s+$/, "").slice(-300);
         const shown = tail(await run(`[...(document.querySelectorAll('.cs-cell')[${i}]?.querySelectorAll('.xterm-rows > div') ?? [])].map((r) => r.textContent).join('\\n')`));
@@ -741,19 +758,7 @@ app.whenReady().then(async () => {
     const reattached = await wait(async () => tjs(`document.querySelectorAll('.cs-cell .xterm').length === ${attachedBefore} && ![...document.querySelectorAll('.cs-term-closed')].some((e) => e.offsetParent)`), 20000);
     check("格子自己重新连上，不用点「重新连接」", reattached, JSON.stringify({ before: attachedBefore, cells: await tjs(`[...document.querySelectorAll('.cs-cell')].map((c) => [c.querySelector('.cs-cell-name')?.textContent?.slice(0, 30), !!c.querySelector('.xterm'), !!c.querySelector('.cs-term-closed')?.offsetParent])`) }));
     const here = await tjs(`[...document.querySelectorAll('.cs-cell')].indexOf(document.querySelector('.cs-cell[data-cell="${goneId}"]'))`);
-    // A covered or minimised window draws no frames, so a terminal attached while it was hidden shows empty rows until it
-    // is in view. Then the echo is read from herdr's pane (its own line, not the command typed), and the step says so.
-    const goneTerminal = await tjs(`document.querySelector('.cs-cell[data-cell="${goneId}"]')?.dataset.cellTerminal ?? null`);
-    const gonePane = saved().find((t) => t.id === goneTerminal)?.pane;
-    let readFromPane = false;
-    const echoed = async () => {
-      if ((await tjs(`document.querySelectorAll('.cs-cell')[${here}]?.textContent ?? ''`)).includes("back-after-restart")) return true;
-      if (!gonePane || (await tjs("document.visibilityState")) !== "hidden") return false;
-      readFromPane = herdr("pane", "read", gonePane, "--source", "recent", "--lines", "20").split("\n").some((l) => l.trim() === "back-after-restart");
-      return readFromPane;
-    };
-    const answers = here >= 0 && (await typeInCell(tw.webContents, tjs, here, "echo back-after-restart", "back-after-restart", echoed));
-    if (readFromPane) console.log("INFO: the window was hidden, so its cells drew nothing; the echo after the restart was read from herdr's pane");
+    const answers = here >= 0 && (await typeInCell(tw.webContents, tjs, here, "echo back-after-restart", "back-after-restart"));
     check("重启后在终端里输入照常有回显", answers);
     tw.close();
   } catch (error) {
