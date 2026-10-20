@@ -299,6 +299,8 @@ export interface TurnIO {
     execute(name: string, args: unknown): Promise<unknown>;
     /** What each kit is for, by kit id (see ToolDefinition.kit). */
     kits?(): Record<string, string>;
+    /** These are all the tools the turn may use: the engine adds none of its own (the troubleshooter's scope). */
+    only?: boolean;
   };
   playbooks: { index(): PlaybookIndexEntry[]; open(id: string): string | null };
   workflows: { list(): WorkflowInfo[] };

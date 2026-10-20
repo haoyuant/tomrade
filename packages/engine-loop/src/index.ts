@@ -300,7 +300,7 @@ export function createLoopEngine(ctx: Context): Engine {
       const offered = (): ToolSpec[] => {
         if (!model.capabilities.tools) return [];
         const carried = described.filter((t) => !deferred.has(t.name) && !(nativeSearch && t.name === WEB_SEARCH)).map(spec);
-        carried.push(makeMediaSpec);
+        if (!io.tools.only) carried.push(makeMediaSpec);
         return deferred.size ? [...carried, loadToolsSpec([...deferred.values()], io.tools.kits?.())] : carried;
       };
       const whole = new Set(described.filter((t) => t.whole).map((t) => t.name));
@@ -481,7 +481,7 @@ export function createLoopEngine(ctx: Context): Engine {
                 ? { id: call.id, suspended: false, content: `Loaded ${loaded.join(", ")}: call them directly.`, invalid: false }
                 : { id: call.id, suspended: false, content: `ERROR: no kit "${String(kit)}" left to load`, isError: true, invalid: true };
             }
-            if (call.name === MAKE_MEDIA) {
+            if (call.name === MAKE_MEDIA && !io.tools.only) {
               const { kind, prompt } = call.args as { kind?: unknown; prompt?: unknown };
               if ((kind !== "image" && kind !== "audio") || typeof prompt !== "string" || !prompt.trim())
                 return { id: call.id, suspended: false, content: `ERROR: ${MAKE_MEDIA} needs kind ("image" or "audio") and a prompt`, isError: true, invalid: true };
