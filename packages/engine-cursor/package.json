@@ -4,7 +4,7 @@
   "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
-  "description": "Cursor's CLI (cursor-agent), started only in a terminal: its user-level MCP connection, the hooks a connected repository carries, and worker calls",
+  "description": "Cursor's CLI (cursor-agent), started only in a terminal: its user-level MCP connection and worker calls",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {

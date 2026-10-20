@@ -67,4 +67,3 @@ export default {
 
 export { cursorLentModel, cursorWorkerDir } from "./lend.js";
 export { cursorMcpFile, cursorMcpLink, withMcpEntry } from "./link.js";
-export { CURSOR_HOOK_COMMAND, CURSOR_HOOK_POWERSHELL, CURSOR_HOOK_SCRIPT, LEGACY_CURSOR_HOOK_SCRIPT, cursorHookPowerShell, cursorHookReader, cursorHookScript, cursorHookScripts, withCursorHooks } from "./hooks.js";
