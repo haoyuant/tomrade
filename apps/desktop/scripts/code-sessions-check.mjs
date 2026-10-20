@@ -256,6 +256,10 @@ app.whenReady().then(async () => {
     ctx.codeLink.store.patchSession(project.id, sessions[5].id, { state: "waiting", blocked: "merge" });
     ctx.emit("codeLink/changed", project.id);
     await wait(async () => js(`[...document.querySelectorAll('.cs-row[data-needs]')].some((r) => r.textContent.includes(${JSON.stringify(sessions[5].item.key)}))`), 5000);
+    const barChip = (key) => js(`(() => { const cell = [...document.querySelectorAll('.cs-cell')].find((c) => c.querySelector('.cs-cell-name')?.textContent.startsWith(${JSON.stringify(`${key} `)})); const chip = cell?.querySelector('.cs-cell-bar [data-testid=cs-state]'); return chip ? [chip.dataset.state, chip.textContent] : null; })()`);
+    const needsBar = await wait(async () => (await barChip(sessions[5].item.key))?.[0] === "needs", 3000);
+    const runningBar = await barChip(sessions[4].item.key);
+    check("每个面板的标题栏标出会话状态：需要你、运行中", needsBar && runningBar?.[1] === "运行中", JSON.stringify({ needs: await barChip(sessions[5].item.key), running: runningBar }));
     await selectPane(5);
     await js(`${seventhRow}.click(); true`);
     const needsKept = (await wait(async () => cellShows(seventhItem.key), 3000)) && (await cellNames())[5]?.startsWith(`${sessions[5].item.key} `);
