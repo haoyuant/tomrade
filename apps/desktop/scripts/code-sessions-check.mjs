@@ -108,6 +108,17 @@ app.whenReady().then(async () => {
     };
     check("侧栏列出六个会话", await wait(async () => (await js(`document.querySelectorAll('.cs-row').length`)) === 6));
     check("六个格子同时连上终端", await wait(async () => (await js(`document.querySelectorAll('.cs-cell .xterm').length`)) === 6));
+    // A pane selected: its session is the list's one current row, wherever the selection goes next; all six still read as shown.
+    const selectPane = async (i) => {
+      await js(`document.querySelectorAll('.cs-cell')[${i}].querySelector('.cs-cell-bar').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); true`);
+      return wait(async () => {
+        const rows = await js(`[...document.querySelectorAll('.cs-row[aria-current="true"]')].map((r) => r.textContent)`);
+        return rows.length === 1 && rows[0].includes(sessions[i].item.key);
+      }, 3000);
+    };
+    const followed = (await selectPane(4)) && (await selectPane(1));
+    const shownRows = await js(`document.querySelectorAll('.cs-row[data-active]').length`);
+    check("选中面板时，侧栏只把它的会话标成当前，其余显示中的会话仍有标记", followed && shownRows === 6, `current: ${await js(`[...document.querySelectorAll('.cs-row[aria-current="true"]')].map((r) => r.textContent).join(" | ")`)}, shown: ${shownRows}`);
     // On Tomrade's theme: the terminal's background is its pane's, nothing dark around light, and its ANSI colours are the theme's.
     const colours = await js(`(() => {
       const term = document.querySelector('.cs-cell .cs-term');

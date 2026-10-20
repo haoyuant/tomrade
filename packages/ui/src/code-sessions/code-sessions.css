@@ -12,6 +12,9 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-empty { margin: 0; padding: 0 var(--space-2); color: var(--meta); font-size: var(--text-sm); line-height: 1.5; }
 .cs-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
 .cs-row { flex-direction: column; align-items: stretch; gap: 2px; cursor: pointer; }
+/* Shown in a pane: a faint bar; the selected pane's row: the accent bar; one that needs you: the warning bar. */
+.cs-row[data-active] { border-left-color: color-mix(in oklab, var(--accent) 35%, transparent); }
+.cs-row[aria-current="true"] { border-left-color: var(--accent); }
 .cs-row[data-needs] { border-left-color: var(--warn); }
 .cs-row[data-ended] { opacity: 0.6; }
 .cs-row-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: var(--text-sm); }

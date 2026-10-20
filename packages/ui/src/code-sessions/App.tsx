@@ -18,6 +18,11 @@ const placeableIds = (state: WindowState): string[] => {
 
 const live = (s: SessionRow) => s.state !== "ended" && s.state !== "lost";
 
+type Leaf = Extract<Layout, { type: "leaf" }>;
+
+/** The selected cell, where a pick from the list goes: the one clicked last, else the first empty one, else the first. */
+const selectedCell = (cells: Leaf[], focused: string | null): Leaf => cells.find((c) => c.id === focused) ?? cells.find((c) => !c.sessionId) ?? cells[0]!;
+
 function Banner({ state, say }: { state: WindowState; say: Say }) {
   const b = state.bridge;
   let body: ReactNode = null;
@@ -64,13 +69,13 @@ function Banner({ state, say }: { state: WindowState; say: Say }) {
   );
 }
 
-function SessionList({ sessions, active, onPick, say }: { sessions: SessionRow[]; active: Set<string>; onPick: (s: SessionRow) => void; say: Say }) {
+function SessionList({ sessions, active, selected, onPick, say }: { sessions: SessionRow[]; active: Set<string>; selected: Set<string>; onPick: (s: SessionRow) => void; say: Say }) {
   if (!sessions.length) return <p className="cs-empty">{say("none")}</p>;
   return (
     <ul className="cs-list">
       {sessions.map((s) => (
         <li key={s.id}>
-          <button type="button" className="side-row cs-row" aria-current={active.has(s.id) ? "true" : undefined} data-active={active.has(s.id) || undefined} data-needs={s.needsYou || undefined} data-ended={!live(s) || undefined} onClick={() => onPick(s)}>
+          <button type="button" className="side-row cs-row" aria-current={selected.has(s.id) ? "true" : undefined} data-active={active.has(s.id) || undefined} data-needs={s.needsYou || undefined} data-ended={!live(s) || undefined} onClick={() => onPick(s)}>
             <span className="cs-row-head">
               <span className="mono">{s.key ?? s.branch}</span>
               <span className="tag cs-chip" data-state={s.needsYou ? "needs" : s.state}>
@@ -95,7 +100,7 @@ function SessionList({ sessions, active, onPick, say }: { sessions: SessionRow[]
   );
 }
 
-function TerminalList({ terminals, active, onPick, say }: { terminals: TerminalRow[]; active: Set<string>; onPick: (t: TerminalRow) => void; say: Say }) {
+function TerminalList({ terminals, active, selected, onPick, say }: { terminals: TerminalRow[]; active: Set<string>; selected: Set<string>; onPick: (t: TerminalRow) => void; say: Say }) {
   // One that became a code session is listed as that session.
   const plain = terminals.filter((t) => !t.sessionId);
   if (!plain.length) return null;
@@ -103,7 +108,7 @@ function TerminalList({ terminals, active, onPick, say }: { terminals: TerminalR
     <ul className="cs-list">
       {plain.map((t) => (
         <li key={t.id}>
-          <button type="button" className="side-row cs-row" data-terminal={t.id} aria-current={active.has(t.id) ? "true" : undefined} data-active={active.has(t.id) || undefined} onClick={() => onPick(t)}>
+          <button type="button" className="side-row cs-row" data-terminal={t.id} aria-current={selected.has(t.id) ? "true" : undefined} data-active={active.has(t.id) || undefined} onClick={() => onPick(t)}>
             <span className="cs-row-head">
               <span className="mono">{t.title}</span>
               {!t.pane && <span className="tag faint cs-chip">{say("starting")}</span>}
@@ -383,14 +388,24 @@ export function App() {
   const say: Say = useCallback((key, vars) => interpolate(message(locale, `codeSessions.${key}`), vars), [locale]);
   const shown: Look = look ?? { theme: "", dark: false, tokens: {}, locale };
 
+  // The selected cell's row comes into view in the list.
+  const side = useRef<HTMLElement>(null);
+  const selectedId = layout ? selectedCell(leaves(layout), focused).sessionId : null;
+  useEffect(() => {
+    side.current?.querySelector('.cs-row[aria-current="true"]')?.scrollIntoView({ block: "nearest" });
+  }, [selectedId]);
+
   if (!state || !layout) return null;
   const cells = leaves(layout);
-  const target = cells.find((c) => c.id === focused) ?? cells.find((c) => !c.sessionId) ?? cells[0]!;
+  const target = selectedCell(cells, focused);
   const byId = new Map(state.sessions.map((s) => [s.id, s]));
   const terminalsById = new Map(state.terminals.map((t) => [t.id, t]));
   // A terminal whose agent claimed a ticket shows that session in its own cell, on the pane it already has.
   const sessionIn = (id: string | null) => (id ? byId.get(terminalsById.get(id)?.sessionId ?? id) : undefined);
-  const active = new Set(cells.flatMap((c) => (c.sessionId ? [c.sessionId, terminalsById.get(c.sessionId)?.sessionId ?? c.sessionId] : [])));
+  const rowsOf = (c: Leaf) => (c.sessionId ? [c.sessionId, terminalsById.get(c.sessionId)?.sessionId ?? c.sessionId] : []);
+  // Every cell's row reads as shown; the selected cell's alone as current.
+  const active = new Set(cells.flatMap(rowsOf));
+  const selected = new Set(rowsOf(target));
   // A server that is not running is started by the launch itself.
   const ready = state.bridge.state === "ready" || state.bridge.state === "notRunning";
   // Where herdr cannot show a terminal here (Windows), a new one opens in the system terminal instead.
@@ -490,16 +505,16 @@ export function App() {
 
   return (
     <div className="cs-window">
-      <aside className="cs-side">
+      <aside ref={side} className="cs-side">
         <h2 className="cs-side-head eyebrow">{say("sessions")}</h2>
-        <SessionList sessions={state.sessions} active={active} onPick={pick} say={say} />
+        <SessionList sessions={state.sessions} active={active} selected={selected} onPick={pick} say={say} />
         <div className="cs-side-head cs-side-sub">
           <h2 className="eyebrow">{say("terminals")}</h2>
           <button type="button" className="link-btn side-add" data-testid="cs-side-new-terminal" disabled={!canOpen} onClick={newTerminal}>
             + {say("newTerminal")}
           </button>
         </div>
-        <TerminalList terminals={state.terminals} active={active} onPick={pickTerminal} say={say} />
+        <TerminalList terminals={state.terminals} active={active} selected={selected} onPick={pickTerminal} say={say} />
         <Layouts
           presets={state.presets}
           defaultPreset={state.defaultPreset}
