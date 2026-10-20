@@ -1,7 +1,7 @@
 /**
  * A first run, end to end: the app first asks to connect a model or a local
- * agent — and can be told "later" — then opens on the sample project and
- * nothing else, its learning path draws as a graph, the assistant keeps a
+ * agent — and can be told "later" — then opens the sample project, on its
+ * first lesson the first time, and nothing else; its learning path draws as a graph, the assistant keeps a
  * setup card until one is connected, the hints show once and stay seen, and the
  * sample can be made again — in the person's language — after it is deleted,
  * and the whole of it can be run again from the home, as often as wanted.
@@ -102,17 +102,29 @@ const run = async () => {
   check("a pasted key picks its provider", await wait(async () => (await texts('[data-testid="quick-model"] .chip-opt.sel'))[0] === "Anthropic" && (await texts('[data-testid="quick-model"] .meta-txt')).some((t) => t === "Looks like a key from Anthropic."), "guess"));
   await shot("onboarding-00-connect");
   await press(`document.querySelector('[data-testid="setup-later"]')`);
-  check("Set up later goes to the projects, and the screen stays away", await wait(async () => !(await has('[data-testid="first-run-setup"]')) && seen().includes("setup-screen"), "later"));
+  check("Set up later opens the sample project, and the screen stays away", await wait(async () => !(await has('[data-testid="first-run-setup"]')) && seen().includes("setup-screen") && (await $(`location.hash`)).startsWith(`#/p/${sample.id}/`), "later"));
+  const lesson = () => $(`(() => { const d = document.querySelector('aside.detail'); const r = d?.getBoundingClientRect(); return d ? { label: d.getAttribute('aria-label'), left: r.left, right: r.right, width: innerWidth } : null; })()`);
+  check("on its first lesson, open beside the board", await wait(async () => (await lesson())?.label?.endsWith("Drag this ticket to Done"), "first lesson"), await lesson());
+  const shown = await lesson();
+  check("in view without scrolling sideways", shown && shown.left >= 0 && shown.right <= shown.width, shown);
+  check("which counts as seen", seen().includes("sample-first-lesson"));
+  check("the first ticket a local agent could take points at Start", await wait(async () => (await toasts()).some((t) => t.includes("Start hands this ticket")), "start hint"));
+  check("once", seen().includes("hint.start"));
+  await $(`document.querySelectorAll('.toast .btn-ghost').forEach((b) => b.textContent.trim() === 'Got it' && b.click());true`);
+  await shot("onboarding-01-first-lesson");
 
   // ── the projects home ─────────────────────────────────────────────────
+  await $(`location.hash = '#/';true`);
   check("the home shows the sample", await wait(() => $(`!!${byText(".proj .proj-name", "Tomrade tour")}`), "sample card"));
   check("marked as the tour", (await texts(".proj .tag")).includes("Tour"));
   check("and offers no second one while it exists", !(await has(".proj-sample")));
   await shot("onboarding-01-home");
 
-  // ── the sample, opened ────────────────────────────────────────────────
+  // ── the sample, opened again ──────────────────────────────────────────
   await press(`${byText(".proj .proj-name", "Tomrade tour")}?.closest('.proj')`);
   check("it opens on its board", await wait(() => $(`!!${byText(".card-title", "Drag this ticket to Done")}`), "first tour ticket"));
+  await sleep(800);
+  check("and leaves the first lesson closed this time", !(await has("aside.detail")));
   check("with the tour and the practice backlog as workstreams", await wait(async () => {
     const rows = await texts(".side-workstreams .side-name");
     return rows.includes("Getting started") && rows.includes("Example: Pomodoro app");
@@ -146,12 +158,8 @@ const run = async () => {
   check("a new thread shows what is still missing again", await wait(() => has(".agent-setup"), "setup card in a new thread"));
   await $(`document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
 
-  // ── Start, pointed out once ───────────────────────────────────────────
+  // ── Start, pointed out once (on the first lesson, above) ──────────────
   const tour = ctx.items.list({ projectId: sample.id }).filter((i) => i.title !== "Written by the assistant");
-  await $(`location.hash = '#/p/${sample.id}/i/${tour[1].id}';true`);
-  check("a ticket a local agent could take points at Start", await wait(async () => (await toasts()).some((t) => t.includes("Start hands this ticket")), "start hint"));
-  check("once", seen().includes("hint.start"));
-  await $(`document.querySelectorAll('.toast .btn-ghost').forEach((b) => b.textContent.trim() === 'Got it' && b.click());true`);
   await $(`location.hash = '#/p/${sample.id}/i/${tour[2].id}';true`);
   await sleep(1500);
   check("and not again on the next ticket", !(await toasts()).some((t) => t.includes("Start hands this ticket")));
@@ -198,8 +206,10 @@ const run = async () => {
   check("with every hint unseen and the sample back", seen().length === 0 && !!(await again()));
   await shot("onboarding-07-restarted");
   await press(`document.querySelector('[data-testid="setup-later"]')`);
-  check("Later leads to the home with the sample", await wait(async () => (await texts(".proj .proj-name")).includes("Tomrade 入门"), "home with sample"));
   const before = await again();
+  check("Later opens the sample, on its first lesson again", await wait(async () => (await $(`location.hash`)).includes(before.id) && (await lesson())?.label?.endsWith("把这个工单拖到「已完成」"), "sample again"), await lesson());
+  await $(`location.hash = '#/';true`);
+  await wait(() => has('[data-testid="restart-onboarding"]'), "home again");
   const firstTicket = ctx.items.list({ projectId: before.id })[0];
   ctx.items.update(before.id, firstTicket.id, { status: "done" }, "human");
   await press(`document.querySelector('[data-testid="restart-onboarding"]')`);

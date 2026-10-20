@@ -280,13 +280,15 @@ export function WorkspaceProvider({
   const lastView = useRef<string | null>(null);
   const lastSaved = useRef<string | null>(null);
   useEffect(() => {
+    const arriving = lastView.current === null;
     const switched = lastView.current !== placeKey;
     const changed = lastSaved.current !== savedCanon;
     lastView.current = placeKey;
     lastSaved.current = savedCanon;
     if (switched) {
       setDraft(null);
-      select(null);
+      // Arriving there is nothing to clear, and the screen may already have opened a ticket.
+      if (!arriving) select(null);
     } else if (changed) setDraft(null);
   }, [placeKey, savedCanon]);
   const live = draft ?? saved;
