@@ -7,7 +7,7 @@ import type {} from "@tomradex/doctor";
 import type {} from "@tomradex/ipc";
 import type { Check, CheckResult } from "@tomradex/doctor";
 import { HerdrError, herdrCall, herdrSocketPath, herdrStream, type HerdrEvent } from "./client.js";
-import { openTerminal, type TerminalFrame, type TerminalMode, type TerminalMouse, type TerminalScroll, type TerminalStream } from "./terminal.js";
+import { openTerminal, type OpenedTerminal, type TerminalFrame, type TerminalMode, type TerminalMouse, type TerminalScroll, type TerminalStream } from "./terminal.js";
 import { HERDR_WORDS } from "./words.js";
 
 export { HerdrError, herdrCall, herdrSocketPath, herdrStream, type HerdrEvent } from "./client.js";
@@ -111,6 +111,8 @@ export const START_TIMEOUT_MS = 10_000;
 /** At most this many starts by `revive` within the window, so a server that keeps dying is not started over and over. */
 export const REVIVE_LIMIT = 3;
 export const REVIVE_WINDOW_MS = 5 * 60_000;
+/** The longest a pane's next control session waits for the one before it to settle, so a herdr that never answers holds nothing up. */
+export const CONTROL_SETTLE_MS = 2_000;
 
 /** How `revive` went: the server answers (already, or started now), did not come up, is held by the limit, or herdr is not here. */
 /** What herdr reads off one pane: the agent it detected there, that agent's own session id, and the title on the pane. */
@@ -188,6 +190,8 @@ export class Herdr extends Service {
   private toldStarted = false;
   /** The terminals open now, closed with the service. */
   private readonly terminals = new Set<TerminalStream>();
+  /** Each pane's latest control session until it settles: attached, refused or ended. */
+  private readonly controlling = new Map<string, Promise<void>>();
   /** A project workspace being made, shared by launches into it meanwhile. */
   private readonly making = new Map<string, Promise<void>>();
 
@@ -391,11 +395,29 @@ export class Herdr extends Service {
    * watches beside others. Refused with a HerdrError named for the bridge's state when it is not ready.
    */
   async terminal(paneId: string, opts: { mode?: TerminalMode; cols: number; rows: number }): Promise<TerminalStream> {
-    const bridge = await this.bridge();
-    const bin = this.binary();
-    if (bridge.state !== "ready" || !bin) throw new HerdrError(bridge.state, `herdr cannot stream ${paneId}: ${bridge.state}`);
-    if (this.disposed) throw new HerdrError("closed", "herdr is gone");
-    const stream = openTerminal({ bin, paneId, mode: opts.mode ?? "control", cols: opts.cols, rows: opts.rows, env: this.cliEnv() });
+    const mode = opts.mode ?? "control";
+    // A control session takes the pane from whoever holds it when it attaches, even one let go before then: one
+    // attaching after a newer one leaves the pane to nobody. So each waits for the pane's previous one to settle.
+    let settle = () => {};
+    const previous = mode === "control" ? this.controlling.get(paneId) : undefined;
+    if (mode === "control") {
+      const mine = new Promise<void>((resolve) => (settle = resolve));
+      this.controlling.set(paneId, mine);
+      void mine.then(() => this.controlling.get(paneId) === mine && this.controlling.delete(paneId));
+    }
+    let stream: OpenedTerminal;
+    try {
+      if (previous) await Promise.race([previous, new Promise((resolve) => setTimeout(resolve, CONTROL_SETTLE_MS).unref())]);
+      const bridge = await this.bridge();
+      const bin = this.binary();
+      if (bridge.state !== "ready" || !bin) throw new HerdrError(bridge.state, `herdr cannot stream ${paneId}: ${bridge.state}`);
+      if (this.disposed) throw new HerdrError("closed", "herdr is gone");
+      stream = openTerminal({ bin, paneId, mode, cols: opts.cols, rows: opts.rows, env: this.cliEnv() });
+    } catch (err) {
+      settle();
+      throw err;
+    }
+    void stream.settled.then(settle);
     this.terminals.add(stream);
     stream.onClose(() => this.terminals.delete(stream));
     return stream;

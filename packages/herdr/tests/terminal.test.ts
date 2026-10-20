@@ -13,11 +13,12 @@ afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 const frame = (seq: number, full: boolean, text: string) => JSON.stringify({ type: "terminal.frame", seq, encoding: "ansi", width: 80, height: 24, full, bytes: Buffer.from(text).toString("base64") });
 
 /**
- * A herdr CLI stand-in for terminal sessions: it notes its arguments, paints a first frame, and —
- * controlling — notes each stdin line and answers it with a frame until it is released. A pane
- * named `w9:p1` is one it does not have; observing, it paints once and waits to be ended.
+ * A herdr CLI stand-in for terminal sessions: it notes its arguments, paints a first frame (after
+ * `attachAfter` seconds, noting when it started and attached), and — controlling — notes each stdin
+ * line and answers it with a frame until it is released. A pane named `w9:p1` is one it does not
+ * have; observing, it paints once and waits to be ended.
  */
-function terminalCli(version = "0.9.5"): { bin: string; dir: string; args: () => string; stdin: () => string[] } {
+function terminalCli(version = "0.9.5", attachAfter = 0): { bin: string; dir: string; args: () => string; stdin: () => string[]; log: () => string[] } {
   const dir = fs.mkdtempSync(path.join(root, "cli-"));
   const bin = path.join(dir, "herdr");
   fs.writeFileSync(
@@ -28,6 +29,9 @@ function terminalCli(version = "0.9.5"): { bin: string; dir: string; args: () =>
       `echo "$@" > '${dir}/args'`,
       `echo "$HERDR_SOCKET_PATH" > '${dir}/socket'`,
       `[ "$4" = "w9:p1" ] && echo "herdr: pane w9:p1 not found" >&2 && exit 1`,
+      `echo start >> '${dir}/log'`,
+      attachAfter ? `sleep ${attachAfter}` : ":",
+      `echo attach >> '${dir}/log'`,
       `printf '%s\\n' '${frame(1, true, "hello")}'`,
       "printf 'not json\\n'",
       `[ "$3" = observe ] && exec sleep 60`,
@@ -47,7 +51,8 @@ function terminalCli(version = "0.9.5"): { bin: string; dir: string; args: () =>
       return "";
     }
   };
-  return { bin, dir, args: () => read("args").trim(), stdin: () => read("stdin").trim().split("\n").filter(Boolean) };
+  const lines = (name: string) => read(name).trim().split("\n").filter(Boolean);
+  return { bin, dir, args: () => read("args").trim(), stdin: () => lines("stdin"), log: () => lines("log") };
 }
 
 async function until(check: () => boolean, ms = 5000): Promise<void> {
@@ -182,6 +187,26 @@ describe.skipIf(process.platform === "win32")("herdr service terminals", () => {
       await ctx.registry.delete(Herdr);
       expect(stream.closed).toBe(true);
       await until(() => cli.stdin().some((l) => l.includes("terminal.release")));
+    } finally {
+      fake.close();
+    }
+  });
+
+  it("starts a pane's next control session once the one before has attached, so one let go early never takes the pane from it", async () => {
+    const fake = new FakeHerdr();
+    try {
+      const cli = terminalCli("0.9.5", 0.3);
+      const { herdr } = await herdrOn(fake, { bin: cli.bin });
+      // A cell attached twice in quick succession: the first is let go before herdr has attached it.
+      const first = herdr.terminal("w1:p1", { cols: 80, rows: 24 });
+      const second = herdr.terminal("w1:p1", { cols: 80, rows: 24 });
+      (await first).close();
+      const live = await second;
+      const frames: TerminalFrame[] = [];
+      live.onFrame((f) => frames.push(f));
+      await until(() => frames.length === 1);
+      expect(cli.log()).toEqual(["start", "attach", "start", "attach"]);
+      live.close();
     } finally {
       fake.close();
     }

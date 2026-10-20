@@ -68,11 +68,16 @@ export const terminalCommand = {
 /** How long a released controller has to leave before it is ended. */
 export const RELEASE_GRACE_MS = 1_000;
 
+/** A stream as it is opened: `settled` once herdr has attached or refused it, or its process has ended — closed or not. */
+export interface OpenedTerminal extends TerminalStream {
+  readonly settled: Promise<void>;
+}
+
 /**
  * `herdr terminal session <mode>` for one pane, as a stream. The child reads
  * its commands on stdin, so it ends with Tomrade: a closed stdin detaches it.
  */
-export function openTerminal(input: { bin: string; paneId: string; mode: TerminalMode; cols: number; rows: number; env?: NodeJS.ProcessEnv }): TerminalStream {
+export function openTerminal(input: { bin: string; paneId: string; mode: TerminalMode; cols: number; rows: number; env?: NodeJS.ProcessEnv }): OpenedTerminal {
   const args = ["terminal", "session", input.mode, input.paneId, ...(input.mode === "control" ? ["--takeover"] : []), "--cols", String(size(input.cols)), "--rows", String(size(input.rows))];
   const frames = new Set<(frame: TerminalFrame) => void>();
   const closes = new Set<(reason: string | null) => void>();
@@ -80,6 +85,8 @@ export function openTerminal(input: { bin: string; paneId: string; mode: Termina
   let reason: string | null = null;
   let stderr = "";
   let child: ChildProcessWithoutNullStreams | null = null;
+  let settle = () => {};
+  const settled = new Promise<void>((resolve) => (settle = resolve));
 
   const finish = (why: string | null) => {
     if (closed) return;
@@ -98,6 +105,7 @@ export function openTerminal(input: { bin: string; paneId: string; mode: Termina
     child = spawn(input.bin, args, { env: input.env ?? process.env, stdio: ["pipe", "pipe", "pipe"] });
   } catch (err) {
     queueMicrotask(() => finish(err instanceof Error ? err.message : String(err)));
+    settle();
   }
   if (child) {
     let buffer = "";
@@ -108,6 +116,7 @@ export function openTerminal(input: { bin: string; paneId: string; mode: Termina
       while ((at = buffer.indexOf("\n")) >= 0) {
         const line = parseTerminalLine(buffer.slice(0, at));
         buffer = buffer.slice(at + 1);
+        if (line) settle();
         if (line?.type === "frame") for (const listener of frames) listener(line.frame);
         else if (line?.type === "closed") finish(line.reason);
       }
@@ -115,13 +124,20 @@ export function openTerminal(input: { bin: string; paneId: string; mode: Termina
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk: string) => (stderr = (stderr + chunk).slice(-2000)));
     child.stdin.on("error", () => undefined);
-    child.once("error", (err) => finish(err.message));
-    child.once("close", () => finish(stderr.replace(/^herdr:\s*/, "").trim() || null));
+    child.once("error", (err) => {
+      finish(err.message);
+      settle();
+    });
+    child.once("close", () => {
+      finish(stderr.replace(/^herdr:\s*/, "").trim() || null);
+      settle();
+    });
   }
 
   return {
     paneId: input.paneId,
     mode: input.mode,
+    settled,
     get closed() {
       return closed;
     },

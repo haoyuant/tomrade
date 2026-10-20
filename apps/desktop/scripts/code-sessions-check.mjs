@@ -57,6 +57,24 @@ app.whenReady().then(async () => {
       patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, { id: "code-sessions", disabled: false }]]
     }));
     ctx.hub.configure(path.join(work, "hub"));
+    // Every terminal stream core opens, watched for the typing steps' failure reports: its pane, when it opened and
+    // closed, its last frame, and what was typed into it (and whether it was closed by then).
+    const streams = [];
+    const herdrService = ctx.get("herdr");
+    const openStream = herdrService.terminal.bind(herdrService);
+    herdrService.terminal = async (pane, opts) => {
+      const stream = await openStream(pane, opts);
+      const seen = { pane, opened: Date.now(), closed: null, lastFrame: null, typed: [] };
+      streams.push(seen);
+      stream.onFrame(() => (seen.lastFrame = Date.now()));
+      stream.onClose((reason) => (seen.closed = { at: Date.now(), reason }));
+      const input = stream.input;
+      stream.input = (data) => {
+        seen.typed.push({ at: Date.now(), data, closed: stream.closed });
+        input(data);
+      };
+      return stream;
+    };
     ctx.settings.set({ ...ctx.settings.get(), language: "zh", onboarding: { seen: ["*"] }, codeLink: { ...ctx.settings.get().codeLink, terminal: "herdr" } });
     const project = ctx.projects.create({ name: "代码会话检查", keyPrefix: "CSC" });
     const board = ctx.boards.list(project.id)[0];
@@ -106,21 +124,58 @@ app.whenReady().then(async () => {
       }
       return false;
     };
+    // The window as typing sees it, element@cell for where things are: whether it has the keyboard, where the keyboard
+    // is, the selected cell, what cell i's textarea holds and any "detached" it shows, and the key and input events
+    // heard since the last look.
+    const typingState = (i) => `(() => {
+      const cells = [...document.querySelectorAll('.cs-cell')];
+      const at = (el) => (!el || el === document.body ? 'none' : el.tagName.toLowerCase() + '@' + [...document.querySelectorAll('.cs-cell')].findIndex((c) => c.contains(el)));
+      if (!window.__typingHeard) {
+        window.__typingHeard = true;
+        for (const type of ['focusin', 'focusout', 'keydown', 'keypress', 'keyup', 'input', 'compositionstart', 'compositionend'])
+          document.addEventListener(type, (e) => window.__typing.push([type, at(e.target), e.inputType, e.data ?? e.key].filter(Boolean).join(' ')), true);
+      }
+      const now = { focus: document.hasFocus(), keyboard: at(document.activeElement), selected: cells.findIndex((c) => c.dataset.focused), textarea: cells[${i}]?.querySelector('.xterm-helper-textarea')?.value ?? null, detached: cells[${i}]?.querySelector('.cs-term-closed')?.textContent ?? null, heard: window.__typing ?? [] };
+      window.__typing = [];
+      return now;
+    })()`;
     // Typed into a cell's terminal until its output shows there: a shell still starting (after a restore) drops what
-    // it was sent, so a few tries, each waiting on the output rather than a fixed time.
-    const typeInCell = async (wc, run, i, command, marker, seen = async () => (await run(`document.querySelectorAll('.cs-cell')[${i}]?.textContent ?? ''`)).includes(marker)) => {
+    // it was sent, so a few tries, each waiting on the output rather than a fixed time. A failed try logs what the
+    // window saw, the streams core typed it into, and what the cell and the panes (those streams', and `pane`) held.
+    const typeInCell = async (wc, run, i, command, marker, seen = async () => (await run(`document.querySelectorAll('.cs-cell')[${i}]?.textContent ?? ''`)).includes(marker), pane = null) => {
       const inCell = `document.activeElement?.closest('.cs-cell') === document.querySelectorAll('.cs-cell')[${i}]`;
       for (let attempt = 0; attempt < 3; attempt++) {
         // The window moves the keyboard itself when a pane is selected; type only once it is in this cell.
         if (!(await run(`!!document.querySelectorAll('.cs-cell')[${i}]?.querySelector('.xterm-helper-textarea')`))) return false;
+        const from = Date.now();
+        await run(typingState(i));
         await run(`document.querySelectorAll('.cs-cell')[${i}].querySelector('.xterm-helper-textarea').focus(); true`);
         await wait(async () => run(inCell), 2000);
+        const before = await run(typingState(i));
         wc.insertText(command);
         await sleep(200);
+        const typed = await run(typingState(i));
         wc.sendInputEvent({ type: "keyDown", keyCode: "Return" });
         wc.sendInputEvent({ type: "char", keyCode: "\r" });
         wc.sendInputEvent({ type: "keyUp", keyCode: "Return" });
         if (await wait(seen, 8000)) return true;
+        const after = await run(typingState(i));
+        const tail = (text) => text.replace(/\s+$/, "").slice(-300);
+        const shown = tail(await run(`[...(document.querySelectorAll('.cs-cell')[${i}]?.querySelectorAll('.xterm-rows > div') ?? [])].map((r) => r.textContent).join('\\n')`));
+        // Core's side, in ms from the try's start: every stream of the panes this try's keys reached, or that none took them.
+        const reached = [...new Set(streams.filter((s) => s.typed.some((t) => t.at >= from)).map((s) => s.pane))];
+        const ms = (t) => (t == null ? null : t - from);
+        const core = reached.length
+          ? streams.filter((s) => reached.includes(s.pane)).map((s) => ({ pane: s.pane, opened: ms(s.opened), closed: s.closed && { at: ms(s.closed.at), reason: s.closed.reason?.split("\n")[0] }, lastFrame: ms(s.lastFrame), typed: s.typed.filter((t) => t.at >= from).map((t) => `${t.closed ? "(closed) " : ""}${t.data}`) }))
+          : "no stream took it";
+        const held = [...new Set([...reached, ...(pane ? [pane] : [])])].map((p) => {
+          try {
+            return `${p}: ${tail(herdr("pane", "read", p, "--source", "recent", "--lines", "20"))}`;
+          } catch (error) {
+            return `${p}: ${error.message.split("\n")[0]}`;
+          }
+        });
+        console.log(`INFO: typing into cell ${i}, try ${attempt + 1} of 3 — before: ${JSON.stringify(before)} · typed: ${JSON.stringify(typed)} · after Enter: ${JSON.stringify(after)} · core: ${JSON.stringify(core)} · cell: ${JSON.stringify(shown)} · pane: ${JSON.stringify(held)}`);
       }
       return false;
     };
@@ -227,7 +282,7 @@ app.whenReady().then(async () => {
     await selectPane(1);
 
     // Text committed the way an input method commits it, into the wide-character pane's shell.
-    const ime = await typeInCell(win.webContents, js, 2, "echo 输入法提交", "输入法提交", async () => herdr("pane", "read", sessions[2].pane, "--source", "recent", "--lines", "20").includes("输入法提交"));
+    const ime = await typeInCell(win.webContents, js, 2, "echo 输入法提交", "输入法提交", async () => herdr("pane", "read", sessions[2].pane, "--source", "recent", "--lines", "20").includes("输入法提交"), sessions[2].pane);
     check("像输入法那样提交的中文进到了 pane", ime);
 
     // Files dropped from outside onto a terminal: a real file goes in as its escaped path; one without a path sends nothing.
