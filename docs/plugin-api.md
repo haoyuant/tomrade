@@ -638,7 +638,7 @@ contracts:
 
 | Contract | Registry | Rows that fill it |
 |---|---|---|
-| `engine` | `ctx.agent.engine` | `engine-loop`, `engine-scripted`, `engine-claude-code`, `engine-codex`, `engine-pi`, `engine-hermes`, `engine-dsh`, `engine-workbuddy` |
+| `engine` | `ctx.agent.engine` | `engine-loop`, `engine-scripted`, `engine-claude-code`, `engine-codex`, `engine-pi`; the official plugins `tomrade/hermes`, `tomrade/dsh`, `tomrade/opencode`, `tomrade/workbuddy`, `tomrade/gemini-cli`, `tomrade/antigravity`, `tomrade/cursor` through `local-agents` |
 | `storage` | `ctx.storage.register` | `storage-git`, `storage-github` |
 | `files` | `ctx.files.register` | `files` (this machine only), `files-github` |
 | `webSearch` | `ctx.webSearch.register` | `web-search-tavily` |
@@ -901,13 +901,15 @@ HTTP MCP server in `session/new`, reopens a stored session with
 for the turn's policy — Tomrade's own tools always, the person in "ask" mode,
 a refusal for anything but reading in "read-only" and backlog turns. ACP has no
 system prompt, so a session's first message carries Tomrade's instructions.
-`engine-hermes` (`hermes acp`), `engine-dsh` (`dsh --profile acp`),
-`engine-opencode` (`opencode acp`) and `engine-workbuddy` (`codebuddy --acp`,
-also the copy inside the WorkBuddy app, run by that app's Electron binary) are
-thin descriptions on top of it. An
+The official plugins `tomrade/hermes` (`hermes acp`), `tomrade/dsh` (`dsh
+--profile acp`), `tomrade/opencode` (`opencode acp`), `tomrade/workbuddy`
+(`codebuddy --acp`, also the copy inside the WorkBuddy app, run by that app's
+Electron binary) and `tomrade/gemini-cli` (`gemini --acp`) are thin
+descriptions on top of it, handed over through `ctx.agent.localAgent` (see
+[Local agents](#local-agents)). An
 engine that runs only inside Tomrade sets `terminal: false`, and Start offers
 it no terminal session; the reverse, `terminalOnly: true`, is a CLI Tomrade only
-ever starts in a terminal (Antigravity CLI from `@tomradex/engine-terminal`, Cursor from `@tomradex/engine-cursor`):
+ever starts in a terminal (Antigravity CLI from `tomrade/antigravity`, Cursor from `tomrade/cursor`):
 Start offers it no in-app run, the panel never conducts with it, and Code
 link's command template hands it a session-only MCP config. An engine that runs
 on the model profiles set up in Tomrade (the loop, the built-in agent) sets

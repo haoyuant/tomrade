@@ -586,6 +586,29 @@ describe("the official catalog", () => {
     server.close();
   }, 60_000);
 
+  it("puts a starter that replaces a row back on as the app starts, from the app's own copy, without the network or the first check", async () => {
+    const { catalog, server, url } = await catalogServer();
+    catalog.plugins.push(plugin("tomrade/memo", [await officialPackage("1.0.0")]), plugin("tomrade/notes", [await officialPackage("1.0.0", { id: "tomrade/notes" })]));
+    const dir = await bundle(url, ["tomrade/memo", "tomrade/notes"]);
+    refuseNetwork();
+    try {
+      const { ctx, store } = await storeHost({}, "http://127.0.0.1:9", null, {
+        cloud: false,
+        config: { officialCatalog: { url, cacheFile: path.join(tmp, "never-fetched.json") }, officialBundle: { dir }, starters: [{ id: "tomrade/memo", replaces: "engine-memo" }, "tomrade/notes"] },
+        leftSwitches: {}
+      });
+      for (let i = 0; i < 100 && !store.has("tomrade/memo"); i++) await new Promise((r) => setTimeout(r, 50));
+      expect(store.info("tomrade/memo")).toMatchObject({ version: "1.0.0", tier: "official" });
+      expect(await ctx.tools.execute("memo_version", {}, { by: "human" })).toBe("1.0.0");
+      // A starter that replaces nothing waits for the first check, as before; nothing asked the network.
+      expect(store.has("tomrade/notes")).toBe(false);
+      expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+      server.close();
+    }
+  }, 60_000);
+
   it("bundles only what the app would install, and refuses to bundle a starter it cannot have", async () => {
     const { catalog, server, url } = await catalogServer();
     catalog.plugins.push(plugin("tomrade/memo", [await officialPackage("1.0.0"), { ...(await officialPackage("1.3.0")), sdkRange: "^9.0.0" }]));

@@ -12,10 +12,12 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { boot } from "../dist/boot.js";
+import { quietStarters } from "./official-agents.mjs";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-terminal-only-"));
 app.setPath("userData", work);
+quietStarters(work);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const results = [];
 const check = (name, cond, detail) => {
@@ -26,7 +28,7 @@ const check = (name, cond, detail) => {
 
 const run = async () => {
   // Only the stand-ins below: no CLI on this machine is asked anything.
-  const engines = ["engine-tomrade", "engine-loop", "engine-pi-builtin", "engine-claude-code", "engine-codex", "engine-pi", "engine-terminal", "engine-hermes", "engine-dsh", "engine-opencode", "engine-cursor", "engine-workbuddy"];
+  const engines = ["engine-tomrade", "engine-loop", "engine-pi-builtin", "engine-claude-code", "engine-codex", "engine-pi"];
   const { ctx } = await boot({ configFile: path.join(dir, "../tomrade.yml"), vars: { userData: work }, patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, ...engines.map((id) => ({ id, disabled: true }))]] });
   ctx.hub.configure(path.join(work, "hub"));
   await ctx.storage.ready;
