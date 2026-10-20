@@ -113,6 +113,14 @@ export const REVIVE_LIMIT = 3;
 export const REVIVE_WINDOW_MS = 5 * 60_000;
 
 /** How `revive` went: the server answers (already, or started now), did not come up, is held by the limit, or herdr is not here. */
+/** What herdr reads off one pane: the agent it detected there, that agent's own session id, and the title on the pane. */
+export interface HerdrPaneInfo {
+  paneId: string;
+  agent: string | null;
+  agentSession: string | null;
+  title: string | null;
+}
+
 export type HerdrRevive = "running" | "started" | "failed" | "held" | "notInstalled";
 
 export interface HerdrConfig {
@@ -520,6 +528,21 @@ export class Herdr extends Service {
     } catch (err) {
       if (!(err instanceof HerdrError)) throw err;
       return err.code === "pane_not_found" ? false : null;
+    }
+  }
+
+  /** Every pane herdr has, as it reads them; null when herdr does not answer. */
+  async panes(): Promise<HerdrPaneInfo[] | null> {
+    try {
+      const { panes } = await this.call<{ panes: Array<{ pane_id: string; agent?: string | null; agent_session?: { kind?: string; value?: string } | null; terminal_title_stripped?: string | null }> }>("pane.list");
+      return panes.map((p) => ({
+        paneId: p.pane_id,
+        agent: p.agent ?? null,
+        agentSession: p.agent_session?.kind === "id" && p.agent_session.value ? p.agent_session.value : null,
+        title: p.terminal_title_stripped?.trim() || null
+      }));
+    } catch {
+      return null;
     }
   }
 

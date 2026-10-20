@@ -398,6 +398,11 @@ it("shows a terminal as the code session its agent claimed, in place, and as a p
   }
   const pane = Object.fromEntries((await now()).map((t) => [t.id, t.pane!]));
   expect((await now()).map((t) => [t.id, t.sessionId, t.note])).toEqual([["t1", null, null], ["t2", null, null], ["t3", null, null]]);
+  // An agent herdr sees in a terminal lends it the title it gave the conversation; a shell's title is not one.
+  Object.assign(fake.panes.get(pane.t1!)!, { agent: "claude", terminal_title_stripped: "选中面板与侧边栏会话联动" });
+  fake.panes.get(pane.t2!)!.terminal_title_stripped = "zsh";
+  expect((await now()).map((t) => [t.id, t.agentTitle])).toEqual([["t1", "选中面板与侧边栏会话联动"], ["t2", null], ["t3", null]]);
+  fake.panes.get(pane.t1!)!.agent = null;
 
   // Claude Code with the repo's hooks: its session reports the pane; before the claim it holds no ticket and stays plain.
   sessions.push(session({ id: "hooked", herdrPane: pane.t1!, startedAt: 2 }));
@@ -549,7 +554,7 @@ it("starts herdr's server again when it went away, on opening with saved termina
     bridge = async () => (running ? { state: "ready" as const, version: "0.9.5" } : { state: "notRunning" as const, version: "0.9.5" });
     binary = () => "/opt/homebrew/bin/herdr";
     server = async () => (running ? { version: "0.9.5", protocol: 22, socket: "/h.sock" } : null);
-    paneAlive = async () => (running ? true : null);
+    panes = async () => (running ? [{ paneId: "w8:p1", agent: null, agentSession: null, title: null }] : null);
     revive = (force = false) => {
       revives.push(force);
       return new Promise<string>((resolve) => {

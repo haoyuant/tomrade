@@ -64,6 +64,15 @@ const agoWords = (w: CodeWords, s: number): string => {
 /** How often a repository's agent's hook events reach the database; memory has every one. */
 const HOOK_HEARD_WRITE_MS = 60_000;
 
+/** A conversation resumed this soon after its session ended goes on in that session; later, it starts a new one. */
+const RESUME_WITHIN_MS = 24 * 3600_000;
+
+/** Sessions that ended this close together ended with one agent process: parallel tickets of one conversation. */
+const ENDED_TOGETHER_MS = 10_000;
+
+/** How often a terminal session whose hooks name no herdr pane asks herdr which pane runs it. */
+const PANE_LOOK_MS = 15_000;
+
 const hasLiveSession = (sessions: SessionView[]): boolean =>
   sessions.some((s) => s.mode === "terminal" || s.state === "running" || s.state === "waiting" || s.state === "error");
 
@@ -376,6 +385,8 @@ export class CodeLink extends Service {
   private readonly inFlight = new Map<string, Promise<ScanSummary>>();
   /** Folders hooks events came from that were already looked at for a checkout: one look per folder, not per event. */
   private readonly placeLooked = new Set<string>();
+  /** When each session last asked herdr for its pane. */
+  private readonly paneLooked = new Map<string, number>();
   /** Per `projectId\0repoId`, each agent's last hook event here and when it was last written down. */
   private readonly hooksHeard = new Map<string, Map<string, { at: number; written: number }>>();
   /** Cursor's hooks, read into Claude Code's shape; it remembers each conversation's last reply for its stop. */
@@ -2249,13 +2260,15 @@ export class CodeLink extends Service {
     // Cursor's hooks post in its own names; the rest of this reads Claude Code's.
     const payload = (raw as { tomrade_agent?: unknown } | null)?.tomrade_agent === "cursor" ? this.readCursorHook(raw) : raw;
     if (!payload) return;
-    const p = payload as { hook_event_name?: string; session_id?: string; cwd?: string; transcript_path?: string; tomrade_agent?: string };
+    const p = payload as { hook_event_name?: string; session_id?: string; cwd?: string; transcript_path?: string; tomrade_agent?: string; source?: string };
     if (!p.cwd || !p.session_id) return;
     const agent = p.tomrade_agent === "codex" || p.tomrade_agent === "workbuddy" || p.tomrade_agent === "pi" || p.tomrade_agent === "hermes" || p.tomrade_agent === "opencode" || p.tomrade_agent === "cursor" ? p.tomrade_agent : "claude-code";
     // Where the transcript lives tells which of the person's Claude Code accounts ran it.
     if (agent === "claude-code" && typeof p.transcript_path === "string") this.ctx.get("agent")?.engineOf("claude-code")?.mcpLink?.sawTranscript?.(p.transcript_path);
     const cwd = path.resolve(p.cwd);
     const within = (root: string) => cwd === root || cwd.startsWith(root + path.sep);
+    // Resumed, by hand or by herdr after its server restarted: the conversation goes on in the session it had.
+    if (p.hook_event_name === "SessionStart" && p.source === "resume") this.continueEnded(agent, p.session_id);
     for (const [threadId, dir] of this.worktrees) {
       if (!within(path.resolve(dir))) continue;
       for (const projectId of this.ctx.db.openIds()) {
@@ -2307,6 +2320,63 @@ export class CodeLink extends Service {
   /** A connected repository's hook, for a session: recorded, and shown to plugins' hooks, which cannot answer it. */
   private heard(projectId: string, sessionId: string, payload: unknown): void {
     void this.sessions.hook(projectId, sessionId, payload, false).catch((err) => this.ctx.logger.warn(`a repository hook for ${sessionId}: ${message(err)}`));
+    this.findPane(projectId, sessionId, payload);
+  }
+
+  /**
+   * The newest sessions of an agent's conversation, ended within the day by its process ending, live again, ticket
+   * and all — unless one of its sessions is still live, or its tickets are finished.
+   */
+  private continueEnded(agent: string, externalId: string): void {
+    const now = Date.now();
+    const ended: { projectId: string; session: SessionView }[] = [];
+    for (const projectId of this.ctx.db.openIds()) {
+      const own = this.store.sessions(projectId).filter((s) => s.threadId === null && s.mode === "terminal" && s.agent === agent && s.externalId === externalId);
+      if (own.some((s) => s.state !== "ended" && s.state !== "lost")) return;
+      for (const session of own) {
+        if (session.state !== "ended" || !session.endedAt || now - session.endedAt > RESUME_WITHIN_MS) continue;
+        const finished = session.itemIds.some((id) => {
+          const status = this.ctx.items.get(projectId, id)?.status;
+          return status === "done" || status === "cancelled";
+        });
+        if (!finished) ended.push({ projectId, session });
+      }
+    }
+    if (!ended.length) return;
+    const last = Math.max(...ended.map((e) => e.session.endedAt!));
+    const changed = new Set<string>();
+    for (const { projectId, session } of ended) {
+      if (session.endedAt! < last - ENDED_TOGETHER_MS) continue;
+      this.store.patchSession(projectId, session.id, { state: "running", endedAt: null });
+      changed.add(projectId);
+    }
+    for (const projectId of changed) this.notify(projectId);
+  }
+
+  /**
+   * Hooks committed before they named their herdr pane say nothing of where the agent runs. herdr knows which pane
+   * holds the agent's own session, so a terminal session without a pane takes that one.
+   */
+  private findPane(projectId: string, sessionId: string, payload: unknown): void {
+    const p = payload as { session_id?: unknown; herdr_pane?: unknown; hook_event_name?: unknown };
+    if (typeof p.session_id !== "string" || !p.session_id || p.herdr_pane || p.hook_event_name === "SessionEnd") return;
+    const herdr = this.ctx.get("herdr");
+    const session = this.store.session(projectId, sessionId);
+    if (!herdr || !session || session.mode !== "terminal" || session.herdrPane) return;
+    const now = Date.now();
+    if (now - (this.paneLooked.get(sessionId) ?? 0) < PANE_LOOK_MS) return;
+    this.paneLooked.set(sessionId, now);
+    const externalId = p.session_id;
+    void herdr
+      .panes()
+      .then((panes) => {
+        const pane = panes?.find((x) => x.agentSession === externalId);
+        const current = this.store.session(projectId, sessionId);
+        if (!pane || !current || current.herdrPane || current.state === "ended" || current.state === "lost") return;
+        this.paneLooked.delete(sessionId);
+        this.sessions.touch(projectId, sessionId, { herdrPane: pane.paneId });
+      })
+      .catch((err) => this.ctx.logger.warn(`finding the herdr pane of ${sessionId}: ${message(err)}`));
   }
 
   /** A repository's hooks reached this Tomrade. Claude Code posts on every tool call, so the database hears of it once a minute at most. */

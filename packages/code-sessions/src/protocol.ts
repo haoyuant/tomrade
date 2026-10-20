@@ -36,6 +36,8 @@ export interface TerminalRow {
   /** Null while herdr is still opening it. */
   pane: string | null;
   startedAt: number;
+  /** What the agent herdr sees in it calls the conversation; null without one. */
+  agentTitle: string | null;
   /** The code session its agent claimed a ticket for: the cell shows that session, on the same pane. */
   sessionId: string | null;
   /** Why it stays a plain terminal although an agent claimed a ticket, when Tomrade cannot tell which terminal that was. */
