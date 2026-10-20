@@ -631,9 +631,9 @@ export function App() {
     const fresh = seen.current ? placeable.filter((id) => !seen.current!.has(id)) : [];
     seen.current = new Set([...(seen.current ?? []), ...placeable]);
     let placed = state.autoPlace ? fresh.reduce((acc, id) => place(acc, id, key), pruned) : pruned;
-    // Asked from outside (a start, "open in terminal"): the session in a cell, that cell selected — once it has its pane.
+    // Asked from outside (a start, "open in terminal", a ticket's earlier session): the session in a cell, that cell selected — once it has its pane, or ended, to read.
     const ask = state.reveal;
-    if (ask && ask.at !== revealed.current && state.sessions.some((s) => s.id === ask.sessionId && s.pane)) {
+    if (ask && ask.at !== revealed.current && state.sessions.some((s) => s.id === ask.sessionId && (s.pane || s.endedAt !== null))) {
       revealed.current = ask.at;
       const shown = reveal(placed, ask.sessionId, focusedNow.current, key);
       placed = shown.layout;

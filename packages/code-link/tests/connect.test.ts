@@ -858,6 +858,40 @@ describe("outside clients, told apart by their connection", () => {
     expect(await ctx.tools.execute("note_progress", { text: "on the next one" }, a)).toMatchObject({ ok: true, key: next.key });
   });
 
+  it("keeps a session on the ticket it moved on from, as history its page opens, while only the new ticket counts it as working", async () => {
+    const { codeLink, ctx, items, project, board } = await machine();
+    const first = items.create({ projectId: project.id, boardId: board.id, title: "First", status: "todo", by: "human" });
+    const next = items.create({ projectId: project.id, boardId: board.id, title: "Next", status: "todo", by: "human" });
+    const a = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-a" };
+    const { tracking } = (await ctx.tools.execute("claim_ticket", { key: first.key }, a)) as { tracking: { sessionId: string } };
+    const delivery = codeLink.store.activeDelivery(project.id, first.id)!.sequence;
+    items.update(project.id, first.id, { status: "done" }, "human");
+    codeLink.store.patchSession(project.id, tracking.sessionId, { state: "running", endedAt: null, title: "Build the first one" });
+    await ctx.tools.execute("claim_ticket", { key: next.key }, a);
+
+    expect(codeLink.store.session(project.id, tracking.sessionId)).toMatchObject({ itemIds: [next.id], worked: [{ itemId: first.id, delivery }] });
+    // Judging, holding and Continue read the current ticket only.
+    expect(codeLink.sessionsOf(project.id, first.id)).toEqual([]);
+    expect(codeLink.store.sessions(project.id, { itemId: next.id, live: true }).map((s) => s.id)).toEqual([tracking.sessionId]);
+    expect(codeLink.store.movedOn(project.id, first.id, delivery).map((s) => s.id)).toEqual([tracking.sessionId]);
+    expect(codeLink.store.movedOn(project.id, first.id, delivery + 1)).toEqual([]);
+    expect(codeLink.store.movedOn(project.id, next.id)).toEqual([]);
+
+    const section = (await ctx.contributions.sectionsFor(project.id, first.id)).find((x) => x.id === "code")!;
+    const row = section.rows!.find((r) => r.command === "code-link.open-earlier")!;
+    expect(row.value).toContain("Build the first one");
+    expect(row.value).toContain(next.key);
+    expect(section.rows!.some((r) => r.command === "code-link.start-terminal")).toBe(false);
+
+    const shown: string[] = [];
+    ctx.on("codeLink/show-session", (_projectId, sessionId) => {
+      shown.push(sessionId);
+      return true;
+    });
+    expect(await ctx.contributions.run("code-link.open-earlier", { projectId: project.id, itemId: first.id })).toEqual({});
+    expect(shown).toEqual([tracking.sessionId]);
+  });
+
   it("asks GitHub before refusing the next ticket, so a pull request merged a moment ago lets it through", async () => {
     const { codeLink, ctx, items, project, board, checkout } = await machine();
     const first = items.create({ projectId: project.id, boardId: board.id, title: "First", status: "todo", by: "human" });

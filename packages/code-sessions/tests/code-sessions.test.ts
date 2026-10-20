@@ -426,7 +426,7 @@ it("keeps a terminal that finishes opening while herdr is asked for its panes, a
 
 it("shows a session code link asks for: the window opens or comes forward with it to reveal, only while herdr can show panes", async () => {
   const opened: { spec: Record<string, unknown> & { onMessage(m: unknown): void; onClose(): void }; states: WindowState[]; posts: WindowPost[]; focused: number }[] = [];
-  const sessions = [session({ id: "s1", herdrPane: "w1:p1" }), session({ id: "s2", herdrPane: "w1:p2" }), session({ id: "s3", mode: "headless" })];
+  const sessions = [session({ id: "s1", herdrPane: "w1:p1" }), session({ id: "s2", herdrPane: "w1:p2" }), session({ id: "s3", mode: "headless" }), session({ id: "s4", state: "ended", endedAt: 5, title: "An earlier ticket" })];
   let bridge: { state: string } = { state: "ready" };
   const herdrShown: string[] = [];
 
@@ -479,6 +479,12 @@ it("shows a session code link asks for: the window opens or comes forward with i
   const second = opened[0]!.states.at(-1)!.reveal!;
   expect(second.sessionId).toBe("s2");
   expect(second.at).toBeGreaterThan(first!.at);
+  // An ended one, paneless (a ticket's earlier session): it comes along with the ask, so a cell can show its conversation.
+  expect(opened[0]!.states.at(-1)!.sessions.some((s) => s.id === "s4")).toBe(false);
+  expect(await ask("s4")).toBe(true);
+  await settle();
+  expect(opened[0]!.states.at(-1)!.reveal!.sessionId).toBe("s4");
+  expect(opened[0]!.states.at(-1)!.sessions.some((s) => s.id === "s4")).toBe(true);
   // Nothing to show here: a run without a pane, or a session it does not know, is left to code link.
   expect(await ask("s3")).toBeUndefined();
   expect(await ask("gone")).toBeUndefined();

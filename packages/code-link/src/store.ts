@@ -176,7 +176,9 @@ ALTER TABLE plugin_code_link_sessions ADD COLUMN cwd TEXT;
 ALTER TABLE plugin_code_link_sessions ADD COLUMN transcript TEXT;
 ALTER TABLE plugin_code_link_sessions ADD COLUMN prompted INTEGER NOT NULL DEFAULT 0;
 `
-  }
+  },
+  // The tickets a session worked before it moved on to the one it holds, so each keeps the conversation that did it.
+  { version: 14, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN worked_json TEXT NOT NULL DEFAULT '[]'" }
 ];
 
 /** Durable code links travel with the project; running sessions belong to this machine. */
@@ -282,6 +284,8 @@ export interface SessionView {
   delivery: number;
   branch: string;
   itemIds: string[];
+  /** Tickets it worked before moving on to the ones it holds, each with the delivery it worked. History only: nothing judges by it. */
+  worked: { itemId: string; delivery: number }[];
   mode: SessionMode;
   agent: string;
   externalId: string | null;
@@ -380,6 +384,7 @@ interface SessionRow {
   delivery: number;
   branch: string;
   item_ids_json: string;
+  worked_json: string | null;
   mode: string;
   agent: string;
   external_id: string | null;
@@ -470,6 +475,7 @@ const toSession = (r: SessionRow): SessionView => ({
   delivery: r.delivery,
   branch: r.branch,
   itemIds: JSON.parse(r.item_ids_json) as string[],
+  worked: r.worked_json ? (JSON.parse(r.worked_json) as SessionView["worked"]) : [],
   mode: r.mode as SessionMode,
   agent: r.agent,
   externalId: r.external_id,
@@ -529,6 +535,7 @@ export interface SessionPatch {
   delivery?: number;
   branch?: string;
   itemIds?: string[];
+  worked?: SessionView["worked"];
   externalId?: string | null;
   threadId?: string | null;
   worktree?: string | null;
@@ -858,6 +865,11 @@ export class CodeLinkStore {
     return rows.filter((s) => (filter.itemId ? s.itemIds.includes(filter.itemId) : true) && (filter.delivery !== undefined ? s.delivery === filter.delivery : true) && (filter.live ? s.state !== "ended" : true));
   }
 
+  /** Sessions that worked this ticket and moved on to another, newest first. */
+  movedOn(projectId: string, itemId: string, delivery?: number): SessionView[] {
+    return this.sessions(projectId).filter((s) => !s.itemIds.includes(itemId) && s.worked.some((w) => w.itemId === itemId && (delivery === undefined || w.delivery === delivery)));
+  }
+
   session(projectId: string, id: string): SessionView | null {
     const row = this.db(projectId).prepare("SELECT * FROM plugin_code_link_sessions WHERE id = ?").get(id) as SessionRow | undefined;
     return row ? toSession(row) : null;
@@ -880,6 +892,7 @@ export class CodeLinkStore {
       delivery: "delivery",
       branch: "branch",
       itemIds: "item_ids_json",
+      worked: "worked_json",
       externalId: "external_id",
       threadId: "thread_id",
       worktree: "worktree",
@@ -904,7 +917,7 @@ export class CodeLinkStore {
       const value = patch[field];
       if (value === undefined) continue;
       sets.push(`${column} = ?`);
-      values.push(field === "itemIds" ? JSON.stringify(value) : field === "prompted" ? (value ? 1 : 0) : value);
+      values.push(field === "itemIds" || field === "worked" ? JSON.stringify(value) : field === "prompted" ? (value ? 1 : 0) : value);
     }
     if (!sets.length) return this.session(projectId, id)!;
     values.push(id);

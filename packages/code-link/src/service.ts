@@ -1052,7 +1052,10 @@ export class CodeLink extends Service {
     if (!session) return;
     // A new delivery is new work: the branch merged in the last one must not be read as this one's.
     const fresh = opts.replace || (session.itemIds.includes(itemId) && session.delivery !== delivery);
+    // The tickets it leaves keep it as history: their pages still reach the conversation that worked them.
+    const left = opts.replace ? session.itemIds.filter((id) => id !== itemId).map((id) => ({ itemId: id, delivery: session.delivery })) : [];
     this.store.patchSession(projectId, sessionId, {
+      ...(left.length ? { worked: [...session.worked.filter((w) => !left.some((l) => l.itemId === w.itemId && l.delivery === w.delivery)), ...left] } : {}),
       delivery,
       itemIds: opts.replace ? [itemId] : session.itemIds.includes(itemId) ? session.itemIds : [...session.itemIds, itemId],
       ...(session.branch && !fresh ? {} : { branch }),
@@ -2076,7 +2079,9 @@ export class CodeLink extends Service {
         const delivery = this.store.currentDelivery(item.projectId, item.id);
         const open = delivery ? this.store.proposalsForDelivery(item.projectId, item.id, delivery.sequence, "open") : [];
         const sessions = this.store.sessions(item.projectId, { itemId: item.id, ...(delivery ? { delivery: delivery.sequence } : {}) });
-        if (item.workType === "general" && !links.length && !sessions.length) return null;
+        // A session that worked this delivery and went on to another ticket: its conversation is still this ticket's record.
+        const earlier = delivery ? this.store.movedOn(item.projectId, item.id, delivery.sequence)[0] : undefined;
+        if (item.workType === "general" && !links.length && !sessions.length && !earlier) return null;
         if (!delivery && !links.length && !open.length && !sessions.length) return null;
         const current = this.currentLinks(item.projectId, item.id);
         const primary = primaryOf(current);
@@ -2132,6 +2137,11 @@ export class CodeLink extends Service {
           });
           if (live.state !== "running") rows.push({ label: w("continue"), icon: "i-send", value: live.mode === "terminal" ? w("continueTerminal") : w("continueHere"), command: live.mode === "terminal" ? "code-link.start-terminal" : "code-link.start-run" });
           if (live.threadId) rows.push({ label: w("conversation"), icon: "i-panel", value: live.state === "waiting" ? w("openWaiting") : w("openInAssistant"), command: "code-link.open-thread" });
+        }
+        if (earlier) {
+          const now = earlier.itemIds[0] ? this.ctx.items.get(item.projectId, earlier.itemIds[0])?.key : undefined;
+          const value = [named(w, SESSION_STATES, earlier.state), earlier.title ?? earlier.agent, now ? w("movedOnTo", { key: now }) : null].filter(Boolean).join(" · ");
+          rows.push({ label: w("earlierSession"), icon: "i-terminal", value, command: "code-link.open-earlier" });
         }
         const worktree = this.worktreeOf(item.projectId, item.id);
         if (worktree) rows.push({ label: w("worktree"), icon: "i-folder", mono: true, value: worktree, command: "code-link.open-terminal" });
@@ -2257,6 +2267,17 @@ export class CodeLink extends Service {
         const sessions = this.store.sessions(projectId, { itemId }).filter((s) => s.threadId);
         const threadId = (sessions.find((s) => s.state !== "ended") ?? sessions[0])?.threadId ?? this.store.links(projectId, itemId).find((l) => l.threadId)?.threadId;
         return threadId ? { showThread: threadId } : { toast: this.words()("noConversation") };
+      }
+    });
+    ctx.contributions.command({
+      id: "code-link.open-earlier",
+      title: () => this.words()("cmdOpenEarlier"),
+      group,
+      run: async ({ projectId, itemId }) => {
+        if (!projectId || !itemId) return { toast: this.words()("selectTicket") };
+        const session = this.store.movedOn(projectId, itemId, this.store.currentDelivery(projectId, itemId)?.sequence)[0] ?? this.store.movedOn(projectId, itemId)[0];
+        if (!session) return { toast: this.words()("noConversation") };
+        return (await this.showSession(projectId, session.id)) ? {} : { toast: this.words()("earlierNotShown") };
       }
     });
     ctx.contributions.command({
