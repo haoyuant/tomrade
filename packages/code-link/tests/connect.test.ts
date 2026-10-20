@@ -727,12 +727,62 @@ describe("outside clients, told apart by their connection", () => {
     expect(codeLink.sessionsOf(project.id).map((s) => s.id)).toEqual([hooked!.id]);
     expect(codeLink.store.session(project.id, hooked!.id)).toMatchObject({ state: "running", endedAt: null, itemIds: [item.id], herdrPane: pane.pane_id });
 
-    // A conversation whose ticket is finished starts afresh; so does one that was not resumed.
+    // A conversation whose ticket is finished starts afresh.
     items.update(project.id, item.id, { status: "done" }, "human");
     await post({ hook_event_name: "SessionEnd", session_id: "cli-9", cwd: checkout });
     await post({ hook_event_name: "SessionStart", source: "resume", session_id: "cli-9", cwd: checkout });
     expect(codeLink.store.session(project.id, hooked!.id)?.state).toBe("ended");
     expect(codeLink.sessionsOf(project.id).filter((s) => s.state !== "ended").map((s) => s.itemIds)).toEqual([[]]);
+  });
+
+  it("keeps the session working its ticket when another process of its conversation ends in another pane (claude --continue)", async () => {
+    const { codeLink, ctx, items, project, board, checkout } = await machine();
+    const fake = new FakeHerdr();
+    onTestFinished(() => fake.close());
+    await ctx.plugin(Herdr, { reconnectMs: 30, socket: fake.socket });
+    await settle();
+    const working = fake.createPane(checkout);
+    const other = fake.createPane(checkout);
+    const post = (pane: string, payload: Record<string, unknown>) =>
+      fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json", "X-Tomrade-Herdr-Pane": pane }, body: JSON.stringify({ session_id: "cli-two", cwd: checkout, ...payload }) });
+    await post(working.pane_id, { hook_event_name: "SessionStart" });
+    const [hooked] = codeLink.sessionsOf(project.id);
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "Work", status: "todo", by: "human" });
+    const conn = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-two" };
+    expect(await ctx.tools.execute("claim_ticket", { key: item.key }, conn)).toMatchObject({ tracking: { tracked: true, sessionId: hooked!.id } });
+
+    // The person goes on with the same conversation in another pane for a moment, and leaves it.
+    await post(other.pane_id, { hook_event_name: "SessionStart", source: "resume" });
+    await post(other.pane_id, { hook_event_name: "UserPromptSubmit", prompt: "看一眼进度" });
+    await post(other.pane_id, { hook_event_name: "SessionEnd", reason: "prompt_input_exit" });
+    expect(codeLink.store.session(project.id, hooked!.id)).toMatchObject({ state: "running", endedAt: null, itemIds: [item.id], herdrPane: working.pane_id });
+    expect(await ctx.tools.execute("note_progress", { text: "still going" }, conn)).toMatchObject({ ok: true, key: item.key });
+    expect(codeLink.sessionsOf(project.id).map((s) => s.id)).toEqual([hooked!.id]);
+
+    // Its own process ending ends it.
+    await post(working.pane_id, { hook_event_name: "SessionEnd", reason: "prompt_input_exit" });
+    expect(codeLink.store.session(project.id, hooked!.id)?.state).toBe("ended");
+  });
+
+  it("brings back a session, ticket and all, when its conversation goes on after another process of it ended, for hooks that name no pane", async () => {
+    const { codeLink, ctx, items, project, board, checkout } = await machine();
+    const post = (payload: Record<string, unknown>) =>
+      fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: "cli-old", cwd: checkout, ...payload }) });
+    await post({ hook_event_name: "SessionStart" });
+    const [hooked] = codeLink.sessionsOf(project.id);
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "Work", status: "todo", by: "human" });
+    const conn = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-old" };
+    expect(await ctx.tools.execute("claim_ticket", { key: item.key }, conn)).toMatchObject({ tracking: { tracked: true, sessionId: hooked!.id } });
+
+    // Another process of the conversation ends; without a pane its end cannot be told from this one's.
+    await post({ hook_event_name: "SessionEnd", reason: "prompt_input_exit" });
+    expect(codeLink.store.session(project.id, hooked!.id)?.state).toBe("ended");
+    // This one goes on: the hook before its next call brings the session back, rather than a new one without the ticket.
+    await post({ hook_event_name: "PreToolUse", tool_name: "mcp__tomrade__note_progress", tool_input: { text: "still going" } });
+    expect(codeLink.store.session(project.id, hooked!.id)).toMatchObject({ state: "running", endedAt: null, itemIds: [item.id] });
+    expect(await ctx.tools.execute("note_progress", { text: "still going" }, conn)).toMatchObject({ ok: true, key: item.key });
+    expect(await ctx.tools.execute("note_progress", { text: "by key", key: item.key }, { ...conn, connection: "conn-after-reconnect" })).toMatchObject({ ok: true, key: item.key });
+    expect(codeLink.sessionsOf(project.id).map((s) => s.id)).toEqual([hooked!.id]);
   });
 
   it("keeps a conversation's folder, prompt and title from its hooks, and finds an older one's title by its transcript", async () => {
