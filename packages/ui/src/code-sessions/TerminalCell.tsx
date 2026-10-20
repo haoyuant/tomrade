@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
-import { onCell, send } from "./bridge";
+import { onCell, pathForFile, send } from "./bridge";
+import { droppedPaste } from "./drop";
 
 /**
  * A CSS colour as xterm takes it (#rrggbb): the page resolves var(), oklch() and color-mix(),
@@ -68,13 +69,15 @@ const BUTTONS = ["left", "middle", "right"] as const;
 /**
  * One session's terminal: herdr's frames painted into xterm, keys and pastes sent back as input,
  * the wheel and Page Up/Down as scrolls (herdr keeps the scrollback; xterm keeps none, since every
- * frame repaints the viewport), clicks as mouse events, and the size following the cell.
+ * frame repaints the viewport), clicks as mouse events, files dropped on it as their paths, and the
+ * size following the cell.
  */
-export function TerminalCell({ cell, sessionId, tokens, font, labels }: { cell: string; sessionId: string; tokens: Record<string, string>; font: string; labels: { detached: (reason: string | null) => string; reattach: string } }) {
+export function TerminalCell({ cell, sessionId, tokens, font, labels }: { cell: string; sessionId: string; tokens: Record<string, string>; font: string; labels: { detached: (reason: string | null) => string; reattach: string; drop: string } }) {
   const host = useRef<HTMLDivElement>(null);
   const term = useRef<Terminal | null>(null);
   const [closed, setClosed] = useState<string | null | undefined>(undefined);
   const [attempt, setAttempt] = useState(0);
+  const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
     const el = host.current;
@@ -150,9 +153,29 @@ export function TerminalCell({ cell, sessionId, tokens, font, labels }: { cell: 
     return () => cancelAnimationFrame(frame);
   }, [tokens]);
 
+  const takesFiles = (e: DragEvent) => e.dataTransfer.types.includes("Files");
+  const over = (e: DragEvent) => {
+    if (!takesFiles(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    setDragging(true);
+  };
+  const leave = (e: DragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+  };
+  const drop = (e: DragEvent) => {
+    if (!takesFiles(e)) return;
+    e.preventDefault();
+    setDragging(false);
+    const text = droppedPaste([...e.dataTransfer.files].map(pathForFile));
+    if (text) send({ type: "input", cell, data: text });
+    term.current?.focus();
+  };
+
   return (
-    <div className="cs-term">
+    <div className="cs-term" onDragEnter={over} onDragOver={over} onDragLeave={leave} onDrop={drop}>
       <div ref={host} className="cs-term-host" />
+      {dragging && <div className="cs-term-drop">{labels.drop}</div>}
       {closed !== undefined && (
         <div className="cs-term-closed">
           <span>{labels.detached(closed)}</span>
