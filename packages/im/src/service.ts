@@ -1987,18 +1987,20 @@ export class Im extends Service {
   }
 
   /**
-   * One topic operation due on this connection: opening one, or telling the platform a topic's new title and whether
-   * it is closed, once everything queued for it is out. True when it ran one.
+   * The topic operation due on this connection: opening one, or telling the platform a topic's new title and whether
+   * it is closed, once everything queued for it is out.
    */
-  private async topicWork(c: Connection): Promise<boolean> {
-    const session = c.session!;
-    const due = this.store.all<Topic>(`SELECT t.* FROM plugin_im_topics t JOIN plugin_im_bindings p ON p.id = t.parent_id
+  private topicDue(c: Connection): Topic | undefined {
+    return this.store.get<Topic>(`SELECT t.* FROM plugin_im_topics t JOIN plugin_im_bindings p ON p.id = t.parent_id
       WHERE p.connection_id = ? AND t.retry_at <= ? AND (t.state = 'opening' OR (t.state = 'open'
         AND (t.synced IS NULL OR t.synced != json_array(t.title, t.closed))
         AND NOT EXISTS (SELECT 1 FROM plugin_im_outbox o WHERE o.binding_id = t.binding_id AND o.state IN ('queued', 'sending'))))
       ORDER BY t.created_at LIMIT 1`, c.id, Date.now());
-    const t = due[0];
-    if (!t) return false;
+  }
+
+  /** Runs a due topic operation. False when it did not, so the flush goes on to messages. */
+  private async topicWork(c: Connection, t: Topic): Promise<boolean> {
+    const session = c.session!;
     const parent = this.store.binding(t.parent_id)!;
     const later = (e: unknown) => {
       const retryAfter = (e as { retryAfterMs?: number } | null)?.retryAfterMs;
@@ -2294,7 +2296,9 @@ export class Im extends Service {
   private async flush(c: Connection) {
     c.flushing = true;
     try {
-      if (await this.topicWork(c)) return;
+      // Messages are picked in the same tick as before: awaiting first would let a stream be settled before it starts.
+      const topic = this.topicDue(c);
+      if (topic && await this.topicWork(c, topic)) return;
       const caps = this.caps.get(c.adapterId)!;
       const session = c.session!;
       // A delayed operation holds its target's place, but does not block other conversations.
