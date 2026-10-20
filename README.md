@@ -1,160 +1,187 @@
-# Tomrade Next
+<p align="center">
+  <img src="docs/images/banner.png" alt="Tomrade: the backlog your coding agents can read and write. Local-first, Claude Code and Codex over MCP, undo any run." width="820">
+</p>
 
-**Tomrade** ("Tom" + "comrade") — a local-first backlog + knowledge workbench for solo devs and tiny teams, and a partner for your coding agents.
+<p align="center">
+  <a href="https://tomrade.com">Website</a> ·
+  <a href="https://tomrade.com/download">Download</a> ·
+  <a href="#connect-your-agents">Connect your agents</a> ·
+  <a href="#build-from-source">Build from source</a> ·
+  <a href="https://github.com/haoyuant/tomrade-plugins">Plugins</a> ·
+  <a href="README.zh-CN.md">简体中文</a>
+</p>
 
-Talk to the agent → it shapes the requirement with you → plans epics and **features sized for one PR** → writes the whole tree in one revertible run. Tomrade tracks what exists (dedup) and what's missing (gaps), and protects human work as the highest priority. Claude Code / Codex / Cursor agents read and write Tomrade over **MCP** — or take the conductor's seat themselves.
+<p align="center">
+  <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-a83c32"></a>
+  <img alt="Platforms: macOS, Windows, Linux" src="https://img.shields.io/badge/platform-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-5b4636">
+  <img alt="Status: preview" src="https://img.shields.io/badge/status-preview-d9a441">
+</p>
 
-## Product decisions (direction of record)
+# Tomrade
 
-1. **Local-first desktop.** Electron shell + React UI + in-process TypeScript backend. Each project is a folder — a text artifact — that is the truth; SQLite is a per-project **cache** of it (+FTS5), one file per project, that can be deleted and rebuilt. The desktop build uses Supabase for an optional account that syncs portable Hub metadata, with an offline outbox; without an account that metadata stays on this machine. Project storage remains local-first either way. See [`docs/supabase-hub.md`](docs/supabase-hub.md).
-2. **Full-stack TypeScript.** One language, one process, one set of types. Zod schemas shared by UI / backend / MCP tool definitions.
-3. **Human work is sacred.** Field-level `updated_by: human|ai` + optimistic version check + `human_locked` fields + **undo stack**. AI never silently overwrites human edits, and a caller that supplies `baseVersion` is refused when stale *whoever it is*. No approval gates, no changesets — AI writes apply immediately but are always reversible and always carry provenance. The one write undo cannot reach is a **permanent delete**, and it is human-only.
-4. **Everything is a plugin on a cordis context.** The database, the oplog, the repositories, the write policy, the tool registry, the LLM provider, the MCP server, the IPC channels and the UI's plugin contributions are each a plugin; every one but the write policy claims one key (`ctx.db`, `ctx.items`, `ctx.tools`, …), and the policy only listens. `apps/desktop/tomrade.yml` is the application: one row per plugin, replaceable by id. A plugin from outside the app — Community, a file, a folder, or one an agent wrote in Plugin Studio — is written against `@tomradex/plugin-sdk` and loaded behind an async, attributed, namespaced facade — see [`docs/plugin-api.md`](docs/plugin-api.md).
-5. **One agent platform, pluggable conductors.** `ctx.agent` owns what every conductor needs — threads, runs, the per-run ledger, cards, suspended workflows, run-scoped undo — and holds no opinion about what to do next. **Engines** decide that, and are plugins: `engine-loop` (a conversation model over the tool registry, guided by playbooks), `engine-scripted` (menu-driven, no model, offline), `engine-claude-code` / `engine-codex` / `engine-pi` (the user's own CLI agents, tools over MCP), and, as official plugins on one ACP conductor (`engine-acp`, `ctx.agent.localAgent`), Hermes, DeepSeek Harness, OpenCode, WorkBuddy, Gemini CLI, Antigravity CLI and Cursor. Deterministic multi-step jobs are **workflows** — typed, resumable step machines exposed as tools to every engine; invariants are **policies** on `tools/pre-execute` (an agent create without a duplicate check is refused, whoever conducts). `ctx.llm` stays the model seam: profiles (DeepSeek/Anthropic/OpenAI-compatible/local) with `conversation` and `worker` roles.
-6. **One tool registry, every surface.** A tool registered on `ctx.tools` appears in the in-app assistant's prompt and on the MCP server at once. There is no per-surface code.
-7. **MCP server is a first-class interface.** VS Code coding agents list/read/write/search tickets over MCP (`@modelcontextprotocol/sdk`, TS). This is the product's open API.
-8. **Data shaped for future sync.** UUID PKs, `updated_at` + `updated_by` + `version` per row, an append-only **oplog** whose rows are stamped with the machine that wrote them (`device`/`device_seq` name one op everywhere) and carry the fields they changed (`patch_json`). It feeds undo today and the project folder's write-through log always. A permanent delete is the single exception: it removes the purged item's own rows and leaves a tombstone.
-9. **Boards are workstreams; views are slices.** A project holds any number of **boards**, and a board is the container an issue belongs to. A **view** is a saved slice of one board. Dragging a card writes the grouped field and never the board. See [`docs/design-system.md`](docs/design-system.md).
+**Tom + comrade.** Tasks, notes and agents, in one folder you own.
 
-## Explicitly NOT doing
+Your agents work at **3 a.m.** They read your tickets, edit your notes, and now and then rewrite **everything you own**. Tomrade is the workspace built for them, with **an undo button built for you**.
 
-- No approval gates: an agent run applies immediately, and **one click reverts the whole run** (oplog rows carry the `run_id`). No changesets / three-way merge / field provenance tables.
-- No event sourcing / reactive reaction model. Plain transactional writes; policy is a synchronous waterfall in front of the commit.
-- No orchestration graphs and no per-message intent router: one engine conducts a thread; composition happens through workflows-as-tools.
-- No code evaluation in configuration. `tomrade.yml` is static YAML with `${userData}`-style substitution and nothing more.
-- No profile or bundle layering. One file plus one patch file, merged by id.
-- No renderer plugin bundles. Plugins contribute data — commands, badges, status items, sections, settings cards — and the UI draws it with its own primitives.
-- No LangGraph, no LangChain, no separate vector DB. No cloud project database or Realtime project collaboration. Supabase Auth/Postgres is limited to Hub metadata. No Docker runtime requirement. No SSR web.
+It's a local-first desktop app for solo makers and tiny teams. Run a codebase, your week, a journal or a shelf of docs from the same place. Say one sentence and the assistant drafts the whole backlog; hand a ticket to Claude Code, Codex or whichever coding agent you already use; undo any agent run in one click.
 
-## Repo layout
+<p align="center">
+  <img src="docs/images/board.png" alt="Tomrade's board: a sidebar of views and workstreams, ticket cards in Backlog and To Do columns, and the assistant panel on the right." width="900">
+</p>
 
+> [!NOTE]
+> **Preview.** Until 1.0, Tomrade is in development and testing: things change from week to week and you will hit rough edges. Your projects are plain folders on your own disk, so back up the ones that matter.
+
+## What's in the box
+
+**🗣️ From a sentence to a pull request.** Describe what you want in plain words. The assistant asks what it needs to know, drafts epics and features sized for one PR, checks them against what already exists, and points out what's missing. The whole tree lands in one run. Press **Start** on a ticket and your own Claude Code, Codex, Gemini CLI or OpenCode picks it up on its own branch.
+
+**⏪ No approval queue. Just undo.** *Approval queues? In this economy?* Agents write straight to the backlog, so nothing waits on you. Every run is grouped and attributed, and when one gets creative (renames "Fix login" to "Rewrite auth from scratch", marks all 14 tickets Urgent), one click puts all of it back. It never happened.
+
+**🤝 Comrade, not foreman.** Other tools want the work done inside them. Tomrade goes both ways: hand a ticket out with Start, or keep working in the Claude Code or Codex you've already tuned, in your own terminal, and run `/tomrade:sync` (`$tomrade-sync` in Codex) to bring the session back. Git keeps score: name `TOM-42` in a branch and the ticket follows it to Doing, Verifying and Done. Work without a ticket is fine, and nothing nags you to file one.
+
+**🖥️ The terminal, next to the board.** *Alt-Tab cardio: cancelled.* A Terminal window built on [herdr](https://herdr.dev) runs your agents in split panes, each pane tied to its ticket, each bar saying Running, Needs you or Idle. Quit Tomrade and your agents keep working.
+
+**📓 A notebook beside your backlog.** Every project carries a folder of files: Markdown with a live preview, `[[wiki links]]` and backlinks, `#tags`, full-text search, a dated journal page for today. Every save is versioned and can sync to a GitHub repo. Attach files to tickets as deliverables.
+
+**💬 Ask it anything in Tomrade.** The assistant isn't only a planner. It moves tickets, turns five journal entries into a weekly review, switches you to dark mode, draws an architecture diagram with the built-in [Archify](https://github.com/tt-a1i/archify), or helps you pick a name for your corgi. Every change lands in History, where ⌘Z takes it back.
+
+**📱 Away from your desk? Message it.** *Toilet-break productivity unlocked.* Connect a bot in Discord, Slack, Telegram, Feishu / Lark, DingTalk or WeCom and the assistant answers from your phone: same project, same tools. Tomrade talks to each chat app directly, with no server of ours in between.
+
+**📥 The backlog has a bouncer.** GitHub issues (and any source a plugin adds) wait in the project's inbox. The assistant proposes what each one is (a new ticket, a bug you already have, a duplicate) and drafts the reply. You click Confirm.
+
+**🧩 Everything is a plugin, including yours.** The database, the tool registry, the MCP server and the assistant are each a plugin you can swap out. Write your own against the Apache-2.0 SDK and ship it under any license, or describe it in Plugin Studio and let an agent write and test it; it loads only after you confirm the build. Official plugins live in [tomrade-plugins](https://github.com/haoyuant/tomrade-plugins).
+
+**🐱 Your agents have a supervisor now. It's a cat.** The desktop pet mirrors what your agent is doing: napping, thinking, LOCKED IN, staring at you until you answer its question, smug for exactly three seconds when a run succeeds, crying for three seconds when one fails so you don't have to. Not a cat person? Bring your own pet.
+
+**🍅 Lock in. Don't forget your Kegels.** A tomato in the status bar: 25 minutes of focus, 5 off. The alert can be any audio file. What you do with those 5 minutes is between you and your pelvic floor.
+
+<table>
+  <tr>
+    <td width="36%"><img src="docs/images/detail.png" alt="A ticket's detail pane: a Start button, a Lock button, status, priority, the tickets it blocks, and who changed it last."></td>
+    <td><img src="docs/images/plugins.png" alt="The Settings dialog listing Tomrade's modules and the plugin that provides each one."></td>
+  </tr>
+  <tr>
+    <td><sub>Every ticket says who changed it last, a person or an agent. Start hands it to your coding agent.</sub></td>
+    <td><sub>Every module is a plugin. Switch them on and off in Settings › Manage plugins.</sub></td>
+  </tr>
+</table>
+
+## Principles
+
+Built so agents can move fast without stepping on you.
+
+- **Your folder is the truth.** Each project is a folder of plain text you can read, diff and back up. SQLite is only a cache. *Delete the cache. It comes back. We'll wait.*
+- **Human work comes first.** Every AI write records who made it and the version it read. Fields you lock stay locked, and a write based on a stale read is refused, whoever sends it. The one write undo can't reach, a permanent delete, is human-only.
+- **One set of tools, every surface.** The in-app assistant and the agents in your editor call the same tools. Register one once and it shows up in both.
+- **Bring your own model.** DeepSeek, Anthropic, OpenAI, Gemini, Kimi, OpenRouter, any OpenAI-compatible endpoint or a local model, with more providers as [plugins](https://github.com/haoyuant/tomrade-plugins). Or let your own Claude Code or Codex conduct, on your own login.
+- **It asks before it acts.** A shell command waits for your Allow or Deny. API keys, MCP servers and command lines are never an agent's to change.
+- **Local first, account optional.** Choose "Use without an account" and everything stays on this machine. An account only syncs your preferences and project list, never project content. Project content leaves your machine only if you connect a model provider or a git remote.
+
+## Install
+
+Get the installer for your system from **[tomrade.com/download](https://tomrade.com/download)** or the [GitHub releases](https://github.com/haoyuant/tomrade/releases).
+
+| System | Installer | Notes |
+|---|---|---|
+| macOS 12+ (Apple silicon or Intel) | `.dmg` | Signed and notarized. Drag it to Applications and go. |
+| Windows 10 / 11, 64-bit | `.exe` | Not code-signed yet, so SmartScreen will clutch its pearls: **More info → Run anyway**. Smart App Control blocks unsigned apps outright; read the [download page](https://tomrade.com/download) first. |
+| Linux, x86-64 | `.AppImage` | `chmod +x` and run. Recent Ubuntu needs `libfuse2` (`libfuse2t64` on 24.04). |
+
+An installed copy checks for updates and installs one only when you say so. The interface speaks English, 简体中文, 繁體中文, 日本語, Español, Deutsch, Français and Русский.
+
+Then: create a project, tell the assistant in one sentence what you're up to, and, if you like, connect your agents.
+
+## Connect your agents
+
+Tomrade runs an MCP server at `http://127.0.0.1:19090/mcp`. It listens on 127.0.0.1 only; nothing is exposed to the network.
+
+**The easy way:** in a project, open the repository a workstream stands for and connect coding agents, either **on this machine only** or **for the team** as a pull request. Tomrade writes the config for Claude Code, Codex, Cursor, Gemini CLI, OpenCode, WorkBuddy and Pi, plus the notes that tell them how to claim a ticket and sync back. The details are in [`docs/agent-connections.md`](docs/agent-connections.md).
+
+**By hand**, for any agent that speaks Streamable HTTP MCP:
+
+```sh
+# Claude Code
+claude mcp add --transport http tomrade http://127.0.0.1:19090/mcp
 ```
-apps/desktop          Electron shell: boots the context from tomrade.yml, supplies the IPC transport, opens the window
-apps/desktop/tomrade.yml   the application — the modules it needs, then one row per plugin
 
-packages/domain       types + zod schemas + typed errors. Zero I/O, zero ctx. Everyone imports this.
-packages/db           ctx.db           a pool of SQLite caches — hub.db plus one project.db per project; core schema, plugin table registry
-packages/hub          ctx.hub          this machine: device id, and the catalog of projects and repository checkouts it knows
-packages/hub-cloud    ctx.cloudHub     Supabase accounts and Hub metadata; encrypted sessions, durable outbox and conflicts (the account is optional)
-packages/oplog        ctx.oplog        append, read, undo — per project, each row stamped with the machine that wrote it
-packages/write        —                write/pre-commit waterfall + the default policy plugins
-packages/items        ctx.items        issues, labels, relations (+ their tools and channels)
-packages/boards       ctx.boards, ctx.views
-packages/projects     ctx.projects
-packages/tools        ctx.tools        one registry, guarded execute
-packages/llm          ctx.llm          model profiles + roles; chat-with-tools + structured JSON; OpenAI-compatible & Anthropic adapters
-packages/settings     ctx.settings     file-backed; sections registered by zod schema
-packages/storage      ctx.storage      the project folder as the truth: text artifact, write-through log, publish/refresh/merge, the Hub's catalog
-packages/storage-git  —                any git URL as a remote for a project's own repository
-packages/storage-github —              GitHub: repository discovery and creation on top of storage-git
-packages/repos        ctx.repos        the code repositories workstreams stand for; this machine's checkouts; agent worktrees
-packages/files        ctx.files        the project's files beside its backlog: a versioned folder tree, backends, sync and conflicts, the versions tickets pin
-packages/files-github —                GitHub as where a project's files are shared
-packages/notes        ctx.notes        the files read as notes: wiki links, backlinks, tags, ranked full-text search, links kept on rename
-packages/agent        ctx.agent        the platform: threads, runs, ledger, cards, workflows, run undo, registries
-packages/engine-loop  —                the hybrid conversational conductor
-packages/shell        —                a bash tool for in-process engines, asked before each command, never served over MCP
-packages/web-search   ctx.webSearch    web_search and web_fetch for every engine, answered by a registered provider
-packages/web-search-tavily —           Tavily as that provider, with the person's own API key
-packages/engine-scripted —             the no-model conductor: runs registered workflows from a menu
-packages/engine-claude-code —          Claude Code as conductor (headless, MCP run bindings); engine-codex and engine-pi likewise
-packages/engine-acp —                  one conductor for agents that speak ACP, and ctx.localAgents for the agents official plugins describe (tomrade-plugins)
-packages/agent-backlog —               the backlog method: playbooks, dossier, find_similar, plan_and_apply, dedup policy
-packages/mcp          ctx.mcp          projects ctx.tools onto MCP (127.0.0.1)
-packages/mcp-client   ctx.mcpClient    external MCP servers (stdio or HTTP) whose tools join ctx.tools
-packages/ipc          ctx.ipc          the typed channel contract; the shell supplies the Electron transport
-packages/contributions ctx.contributions  declarative UI contributions
-packages/plugins      ctx.plugins      loads the composition, and manages it: state per row, modules, the guard on switching one off, installed extensions
-packages/plugin-sdk   the extension contract: definePlugin, the async PluginContext, the manifest
-packages/extensions   the host side of the contract: namespaces, attribution, callbacks held to time limits
-packages/plugin-kit   packages, digests, signed attestations, the lock file, the static analyzer
-packages/plugin-cli   tomrade-plugin: init, build, dev, test, check, pack — and the sandbox agent-written code runs in
-packages/plugin-host  the Tomrade a plugin is tested against, kept out of the CLI so the CLI carries no Tomrade code
-packages/plugin-studio ctx tools for an agent to write a plugin, which loads only at a build a person confirmed
-packages/community    ctx.community    the store: browse, read before installing, install (digest-checked), update, revoke, report, publish
-packages/testkit      boots a fresh in-memory context for tests
-packages/ui           React UI (TanStack Router + Query, Tailwind v4, Radix); consumes contributions as data
-apps/store-admin      the store's admin tool: reports, revocations, official signatures
-design/               OpenDesign prototype — the visual authority for the UI
-docs/                 plugin-api.md (the contract), design-system.md (tokens, invariants), releasing.md (installers, signing), testing.md (failure kinds, when to merge with failures)
+```toml
+# Codex: ~/.codex/config.toml
+[mcp_servers.tomrade]
+url = "http://127.0.0.1:19090/mcp"
 ```
-
-### Data model
-
-Each project's cache is its own SQLite file (`<dir>/projects/<id>/project.db`); the Hub's own file (`hub.db`) tracks which projects and repository checkouts this machine knows.
-
-```
-projects  ── boards ── views ── view_item_rank
-              │  └─ repos (remote URL = identity; checkouts live in catalog.json)
-              │
-              └─ items (board_id, key_num, status, priority, parent_id, rank,
-                        version, updated_by, human_locked)
-                   ├─ item_labels ── labels
-                   └─ item_relations   (blocks)
-oplog     append-only, spans items/boards/views; each row stamped with device + device_seq, carries the fields it changed; feeds undo and the folder's log
-plugin_migrations   one version counter per plugin namespace per file (project or hub); plugins declare their plugin_<id>_* tables (scope, project column, export)
-```
-
-Issues carry a human key (`TOM-142`) from the project's `key_prefix` and a per-project counter that never reuses a number. Epics are items with `kind: 'epic'`. Provenance (`human` / `ai` / `locked`) is derived from `updated_by` + `human_locked`, never stored.
-
-### The write path
-
-Every mutation of an item, board or view goes through `write()` in `@tomradex/write`: a synchronous `write/pre-commit` waterfall decides, the commit lands the rows and the oplog entry, and `write/committed` announces it. The guarantees — human lock, human-only purge, optimistic version — are three small policy plugins loaded by the `write-policy` row. Remove the row and the guarantees are gone; `packages/write/tests` proves it.
-
-## Connecting VS Code agents (MCP)
-
-The installed app's MCP server listens on `http://127.0.0.1:19090/mcp`; a checkout run with `pnpm dev` listens on `19091`, so both can run side by side with their own data (set `TOMRADE_MCP_PORT` to choose another). The URL is shown in settings, and the `whoami` tool says which instance and which data a client reached. If the port is taken, Tomrade listens on a free one and says so in the status bar.
 
 ```json
 {
   "mcpServers": {
-    "tomrade": {
-      "type": "http",
-      "url": "http://127.0.0.1:19090/mcp"
-    }
+    "tomrade": { "type": "http", "url": "http://127.0.0.1:19090/mcp" }
   }
 }
 ```
 
-Every registered tool is exposed as `tomrade.<name>`: `list_boards`, `list_items`, `get_item`, `create_item`, `update_item`, `change_status`, `delete_item`, `extract_tickets`, `gap_analysis` — plus whatever plugins add. Views are deliberately invisible to MCP. `delete_item` is the *reversible* delete; there is no purge tool, and the refusal lives in the write policy, not in the absence of a tool.
+Your agent gets the same tools the assistant has: `list_items`, `get_item`, `create_item`, `update_item`, `change_status`, `claim_ticket`, `link_code`, `find_similar`, `plan_and_apply`, `search_files`, … plus whatever plugins add. Its writes follow the same rules as everyone's: attributed, versioned, refused on a locked field, undoable. The `whoami` tool tells it which Tomrade it reached.
 
-AI writes are recorded as `ai:mcp` (or `ai:agent`, `ai:claude-code`, `ai:<plugin>`) in the oplog, carry the `baseVersion` the caller read — a write tool that omits it asserts the version it reads itself — and are rejected when the item is human-locked or the version is stale.
+## Build from source
 
-## Working on it
+You need Node.js (CI uses 26) and pnpm 11 (`corepack enable` picks the pinned version).
 
-```
+```sh
+git clone https://github.com/haoyuant/tomrade.git
+cd tomrade
 pnpm install
-pnpm test                                # vitest over every package, against sources
-pnpm build:backend                       # tsc -b: every plugin package and the shell, incrementally
-pnpm dev                                 # builds the backend, then Vite + Electron
-pnpm dump-config                         # boots the app headlessly and prints every module and every row's state
-pnpm --filter @tomrade/desktop test:ui   # the UI harness (needs `pnpm dev:ui` up and the backend built)
-pnpm --filter @tomrade/desktop test:plugins  # switches real rows on and off, against the shipped composition
-pnpm --filter @tomrade/desktop test:extensions   # an extension from outside the app, installed and reloaded in the real shell
-pnpm --filter @tomrade/desktop test:plugins-ui   # the Plugins pane, Plugin Studio's review dialog, both languages (needs the dev server)
-pnpm --filter @tomrade/desktop test:language-pack  # a data-only language pack loaded from a folder, chosen in Settings → Language (needs the dev server)
-pnpm --filter @tomrade/desktop test:local-cli    # finding Claude Code and Codex, choosing a CLI path, Start's way to Settings (needs the dev server)
-pnpm --filter @tomrade/desktop test:github-signin  # signing in to GitHub from a destination against a stand-in GitHub, token fallback, both languages (needs the dev server)
-pnpm --filter @tomrade/desktop package           # installers (DMG/ZIP, NSIS, AppImage); -- --dir for an unpacked app
+pnpm dev          # builds the backend, then Vite + Electron
 ```
 
-`pnpm test` ends by sorting its failures into `timeout-under-load`, `network` and `real`. [`docs/testing.md`](docs/testing.md) says what each means, what to check before blaming load, and when a pull request may merge with failures.
+A checkout run with `pnpm dev` keeps its own data and serves MCP on port **19091**, so it runs side by side with an installed Tomrade (`TOMRADE_MCP_PORT` picks another port).
 
-The backend is one TypeScript build graph: every emitting package is `composite` and lists its workspace dependencies as `references`, and the root `tsconfig.json` references them all, so `tsc -b` rebuilds only what changed. `pnpm dev` runs it before launching Electron; the runtime boot itself loads every plugin in well under a second.
+```sh
+pnpm typecheck     # tsc -b for the backend, then the UI
+pnpm test          # vitest across every package
+pnpm test:related  # only the tests that reach what you changed against origin/main
+pnpm test:ui       # the Electron UI harness (slow)
+pnpm --filter @tomrade/desktop package   # installers: DMG/ZIP, NSIS, AppImage
+```
 
-Packages compile with `moduleResolution: "Bundler"`: cordis 4's declaration files use extensionless relative imports, which `NodeNext` refuses to resolve. Relative imports in our own sources keep their `.js` extension so the emitted ESM runs unbundled under Electron and Node.
+On macOS, run the tests on Homebrew's node rather than nvm's: a notarized node can make every child process wait 30 seconds or more. [`docs/testing.md`](docs/testing.md) explains that, and what the failure kinds at the end of `pnpm test` mean.
 
-`electron . --patch my.yml` overlays rows by id — the same overlay the UI harness applies in code (`boot({ patches })`) to run MCP on a free port. A user-level `<userData>/tomrade.patch.yml` is applied automatically, which is how a plugin is installed without touching the app; it is also where the Plugins sheet writes a switch, edited in place so hand-written rows and comments survive.
+### Where to look
 
-## History
+| Path | What |
+|---|---|
+| `apps/desktop` | Electron shell; `tomrade.yml` is the application, one row per plugin |
+| `packages/ui` | React 19 renderer (TanStack Router/Query, Tailwind); strings in `src/lib/i18n-messages/` |
+| `packages/*` | the core and its plugins: items, storage, agent engines, MCP, files, notes, … |
+| [`docs/architecture.md`](docs/architecture.md) | product decisions, what we deliberately don't do, the package map, data model and write path |
+| [`docs/plugin-api.md`](docs/plugin-api.md) | the plugin contract |
+| [`CONTEXT.md`](CONTEXT.md) | the domain language: ticket, delivery, code link, sync back, … |
 
-Reboot of `tomrade` (legacy enterprise-style design: Supabase + FastAPI + TanStack Start; archived at tag `legacy-architecture-final`). The second reshaping moved the in-process backend from a barrel of classes onto a cordis context, so that the parts a third party would want to add — tools, tables, settings, channels, UI contributions — are added by plugins rather than by editing first-party files.
+## Contributing
+
+Issues and pull requests are welcome. A few house rules:
+
+- **Plugins first.** If a feature can be a plugin, make it one; the core reads contracts only.
+- **Every user-facing string goes through `t(...)`**, with both an English and a Chinese entry.
+- **Short why-comments only.** The code says what; a comment says why.
+- Run `pnpm typecheck` and `pnpm test:related` before opening a pull request.
+
+Tomrade is built with Tomrade. The maintainer's backlog lives in a Tomrade project, and the agent config checked into this repository (`.mcp.json`, `.codex/`, `.cursor/`, `.gemini/`, `CLAUDE.md`, `AGENTS.md`) points at it. Without that project on your machine the `tomrade` server simply isn't there, and your agent carries on as usual. Ticket keys in commit messages (`TOM-42: …`) are the maintainer's habit; you don't need one.
+
+## FAQ
+
+**Is it only for programmers?** No. The board, the assistant and Files work for a household, a trip, a thesis or a journal. Coding agents join in when a project has a repository and stay out of the way when it doesn't.
+
+**Where is my data?** In one plain folder per project, on your machine.
+
+**Can I turn the cat off?** Yes, in Settings, or unload the pet plugin entirely. The cat will not take it personally. Probably.
+
+**Is there a phone app?** Not yet. Until then, message the assistant from your chat app. It answers as long as Tomrade runs on your computer, which it can keep doing in the background with every window closed. Pulling an all-nighter is the computer's job, not yours.
 
 ## License
 
-Tomrade is open source under the **Apache License 2.0** ([`LICENSE`](LICENSE)) — the app, every package and the plugin SDK alike.
+[Apache License 2.0](LICENSE): the app, every package and the plugin SDK alike.
 
-- **You may** use, change and redistribute it, in production and commercially, as the license says.
-- **Plugins are yours.** A plugin may use any license, commercial ones included.
+- Use it, change it and redistribute it, at home or at work, commercially too.
+- Plugins are yours. Ship them under any license, commercial ones included.
+- The one thing it doesn't grant: the Tomrade name and logo.
 
-The license does not grant any right to the Tomrade name or logo.
+<p align="center"><sub>Ship more. Approve less. Be this cat. 🐱</sub></p>
