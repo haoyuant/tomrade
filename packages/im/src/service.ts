@@ -104,6 +104,14 @@ interface ReviewHost {
 }
 /** The part of a scheduled template's run IM tells about. */
 interface RoutineRun { id: string; ok: boolean; itemIds: string[]; threadId: string | null; error: string | null }
+/** A write that moved a ticket's status, as its oplog entry recorded it. */
+interface StatusMove { from: string; to: string; version: number }
+function statusMove(entry: { op: string; before: unknown; after: unknown }): StatusMove | null {
+  const before = entry.before as { status?: unknown } | null;
+  const after = entry.after as { status?: unknown; version?: unknown } | null;
+  if (entry.op !== "update" || typeof before?.status !== "string" || typeof after?.status !== "string" || typeof after.version !== "number") return null;
+  return before.status === after.status ? null : { from: before.status, to: after.status, version: after.version };
+}
 interface Pairing { connectionId: string; code: string; projectId: string; expiresAt: number; failures: number; claim?: ImPairingView["claim"] }
 
 declare module "cordis" {
@@ -204,7 +212,7 @@ export class Im extends Service {
     this.home.on("codeLink/changed", projectId => this.onCode(projectId));
     this.home.on("schedules/ran", (projectId, run, name) => this.onRoutine(projectId, run, name));
     // After the write that appended it has committed.
-    this.home.on("oplog/appended", (projectId, entry) => { if (entry.entity === "item") queueMicrotask(() => this.onItem(projectId, entry.entityId, entry.runId)); });
+    this.home.on("oplog/appended", (projectId, entry) => { if (entry.entity === "item") queueMicrotask(() => this.onItem(projectId, entry.entityId, entry.runId, statusMove(entry))); });
     this.home.inject(["ipc"], ctx => {
       ctx.ipc.handle("im.connections", () => this.views());
       ctx.ipc.handle("im.adapters", () => this.adapterViews());
@@ -1792,9 +1800,8 @@ export class Im extends Service {
     const code = this.code();
     let seen: CodeSeen = { pr: null, merged: false, blocked: false, proposals: [] };
     try { if (code) seen = codeSeen(code.summary(b.project_id, itemId)); } catch { return; }
-    const status = this.items()?.get(b.project_id, itemId)?.status ?? null;
-    this.store.run(`INSERT INTO plugin_im_watch (binding_id, project_id, item_id, seen_json, at, status) VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT (binding_id, item_id) DO UPDATE SET at = excluded.at, status = coalesce(status, excluded.status)`, b.id, b.project_id, itemId, JSON.stringify(seen), Date.now(), status);
+    this.store.run(`INSERT INTO plugin_im_watch (binding_id, project_id, item_id, seen_json, at) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT (binding_id, item_id) DO UPDATE SET at = excluded.at`, b.id, b.project_id, itemId, JSON.stringify(seen), Date.now());
   }
 
   /**
@@ -1803,12 +1810,12 @@ export class Im extends Service {
    * with Accept and Request changes; a card whose delivery stopped waiting
    * (reviewed elsewhere, replaced, moved on) loses its buttons and says why.
    */
-  private onItem(projectId: string, itemId: string, runId: string | null) {
+  private onItem(projectId: string, itemId: string, runId: string | null, move: StatusMove | null) {
     const host = this.reviews();
     if (this.stopped || !this.store || !host || !this.home.db.has(projectId)) return;
     let item: ReturnType<ReviewHost["get"]>;
     try { item = host.get(projectId, itemId); } catch { return; }
-    if (item) this.onStatus(projectId, item);
+    if (item && move) this.onStatus(projectId, item, move);
     if (!item?.evidence) return;
     const open = awaitingReview(item);
     const thread = runId ? this.home.agent.store.run(projectId, runId)?.threadId : undefined;
@@ -1833,14 +1840,10 @@ export class Im extends Service {
     }
   }
 
-  /** A watched ticket moved: each conversation watching it hears where to, unless it turned that off. */
-  private onStatus(projectId: string, item: { id: string; key: string; title: string; status: string; version: number }) {
-    for (const w of this.store.all<Watch>("SELECT * FROM plugin_im_watch WHERE project_id = ? AND item_id = ?", projectId, item.id)) {
-      if (w.status === item.status) continue;
-      this.store.run("UPDATE plugin_im_watch SET status = ? WHERE binding_id = ? AND item_id = ?", item.status, w.binding_id, item.id);
-      const b = this.store.binding(w.binding_id);
-      if (!w.status || !b || !this.authorizedBinding(b) || !this.notifies(b, "tickets")) continue;
-      this.enqueue(b, `item-status:${b.id}:${item.id}:${item.version}`, { text: `${item.key}: ${statusText(this.w, w.status)} → ${statusText(this.w, item.status)}`,
+  /** A ticket moved: each conversation of its project hears where to, unless it turned that off. */
+  private onStatus(projectId: string, item: { id: string; key: string; title: string }, move: StatusMove) {
+    for (const b of this.store.bindings().filter(b => b.project_id === projectId && this.authorizedBinding(b) && this.notifies(b, "tickets"))) {
+      this.enqueue(b, `item-status:${b.id}:${item.id}:${move.version}`, { text: `${item.key}: ${statusText(this.w, move.from)} → ${statusText(this.w, move.to)}`,
         elements: ticket(this.scope(b), item.key, item.title) }, { anchor: null });
     }
   }

@@ -30,7 +30,7 @@ export const ImSettings = z.preprocess(upgrade, z.object({
   identities: z.array(z.object({ connectionId: id, tenantId: id, actorId: id, name: z.string().max(256).optional(), pairedAt: z.number() })).default([]),
   /** What reaches every conversation besides its own turns, unless its route says otherwise. */
   notify: z.object({
-    /** Status changes of the tickets a conversation saw or started. */
+    /** Status changes of every ticket in the conversation's project. */
     tickets: z.boolean().default(true),
     /** Pull requests, merges and git's status proposals for those tickets. */
     code: z.boolean().default(true),

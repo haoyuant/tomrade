@@ -10,6 +10,7 @@ import {
   useImAdapters, useImAllow, useImClearContext, useImConnections, useImDeliveries, useImDiscard, useImIgnored,
   useImPairCancel, useImPairConfirm, useImPairings, useImPairStart, useImRetry, useImRevoke
 } from "~/lib/im";
+import { usePanelOpen } from "~/lib/panel";
 import { useProjects, useSaveSettings, useSettings } from "~/lib/queries";
 import { cn } from "~/lib/utils";
 
@@ -391,6 +392,9 @@ function ConnectionCard({ view, adapter, im, pairing, defaultProject, busy, onEd
 }) {
   const { t } = useI18n();
   const [confirming, setConfirming] = useState(false);
+  const [stored, setOpen] = usePanelOpen(`tomrade.im.bot.${view.id}`);
+  // A pairing under way stays in sight: its code and the claim to confirm live inside.
+  const open = stored || !!pairing;
   const spec = im.connections.find((c) => c.id === view.id);
   const name = view.label ?? view.id;
   const routes = im.routes.filter((r) => r.connectionId === view.id);
@@ -411,6 +415,9 @@ function ConnectionCard({ view, adapter, im, pairing, defaultProject, busy, onEd
           {(view.pending + view.uncertain + view.failed) > 0 && <div className="meta-txt dense">{t("imSettings.counts", { pending: view.pending, uncertain: view.uncertain, failed: view.failed })}</div>}
         </div>
         <Tag tone={view.state === "connected" ? "strong" : view.state === "unconfigured" ? "faint" : "neutral"}>{t(STATE_KEY[view.state])}</Tag>
+        <button type="button" className="icon-btn" aria-expanded={open} aria-label={t("imSettings.fold", { name })} title={t("imSettings.fold", { name })} disabled={!!pairing} onClick={() => setOpen(!stored)} data-testid="im-fold">
+          <Icon name={open ? "i-chevdown" : "i-chev"} size={14} />
+        </button>
         <button type="button" className="icon-btn" aria-label={t("imSettings.edit")} title={t("imSettings.edit")} disabled={!adapter} onClick={onEdit}>
           <Icon name="i-pen" size={14} />
         </button>
@@ -423,17 +430,19 @@ function ConnectionCard({ view, adapter, im, pairing, defaultProject, busy, onEd
         )}
         <button type="button" className="switch" role="switch" aria-checked={!!spec?.enabled} aria-label={t("imSettings.enableAria", { name })} disabled={busy} onClick={onToggle} />
       </div>
-      <div className="stack-3" style={{ paddingLeft: 24 }}>
-        <People connection={view} im={im} pairing={pairing} defaultProject={defaultProject} onError={onError} />
-        <div className="stack-2">
-          <div className="eyebrow">{t("imSettings.routes")}</div>
-          {routes.length ? routes.map((route) => (
-            <RouteRow key={route.id} route={route} names={names} shared={im.notify ?? SHARED}
-              onChange={(next) => onRoutes(im.routes.map((r) => (r.id === route.id ? next : r)))}
-              onRemove={() => onRoutes(im.routes.filter((r) => r.id !== route.id))} />
-          )) : <p className="meta-txt dense">{t("imSettings.noRoutes")}</p>}
+      {open && (
+        <div className="stack-3" style={{ paddingLeft: 24 }}>
+          <People connection={view} im={im} pairing={pairing} defaultProject={defaultProject} onError={onError} />
+          <div className="stack-2">
+            <div className="eyebrow">{t("imSettings.routes")}</div>
+            {routes.length ? routes.map((route) => (
+              <RouteRow key={route.id} route={route} names={names} shared={im.notify ?? SHARED}
+                onChange={(next) => onRoutes(im.routes.map((r) => (r.id === route.id ? next : r)))}
+                onRemove={() => onRoutes(im.routes.filter((r) => r.id !== route.id))} />
+            )) : <p className="meta-txt dense">{t("imSettings.noRoutes")}</p>}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -503,7 +512,7 @@ function Deliveries({ onError }: { onError: (e: string) => void }) {
 }
 
 /**
- * IM without JSON: bots and their credentials, pairing, the conversations
+ * IM without JSON: what conversations hear, then bots and their credentials (each folds), pairing, the conversations
  * each project answers, and what was ignored or got stuck. Configuration lives
  * in the `im` settings section; live state comes from the IM service.
  */
@@ -532,14 +541,16 @@ export function ImPane({ scopeTag }: { scopeTag?: React.ReactNode }) {
 
   return (
     <>
-      <SectionHead title={t("imSettings.label")} aside={<>{scopeTag}<Tag tone="neutral">{t("imSettings.connectedOfTotal", { connected, total: im.connections.length })}</Tag></>}>
+      <SectionHead title={t("imSettings.label")} aside={scopeTag}>
         {t("imSettings.lede")}
       </SectionHead>
-      <p className="meta-txt" data-testid="im-secret-storage" style={plaintext ? { color: "var(--warn)" } : undefined}>
-        <Icon name={plaintext ? "i-warn" : "i-lock"} size={12} style={{ display: "inline", verticalAlign: "-1px" }} /> {plaintext ? t("imSettings.plaintext") : t("imSettings.keychain")}
-      </p>
       <div className="stack-4">
-        <div className="stack-3">
+        <SharedNotify notify={im.notify ?? SHARED} busy={save.isPending} onChange={(notify) => persist({ ...im, notify })} />
+        <div className="stack-3" data-testid="im-bots">
+          <SectionHead title={t("imSettings.connections")} aside={<Tag tone="neutral">{t("imSettings.connectedOfTotal", { connected, total: im.connections.length })}</Tag>} />
+          <p className="meta-txt" data-testid="im-secret-storage" style={plaintext ? { color: "var(--warn)" } : undefined}>
+            <Icon name={plaintext ? "i-warn" : "i-lock"} size={12} style={{ display: "inline", verticalAlign: "-1px" }} /> {plaintext ? t("imSettings.plaintext") : t("imSettings.keychain")}
+          </p>
           {(views.data ?? []).map((view) =>
             editing === view.id ? (
               <ConnectionForm key={view.id} adapters={installed} initial={im.connections.find((c) => c.id === view.id)} taken={[]} plaintext={plaintext} busy={save.isPending}
@@ -567,7 +578,6 @@ export function ImPane({ scopeTag }: { scopeTag?: React.ReactNode }) {
           )}
           {error && <p className="meta-txt dense" role="alert" style={{ color: "var(--danger)" }}>{error}</p>}
         </div>
-        <SharedNotify notify={im.notify ?? SHARED} busy={save.isPending} onChange={(notify) => persist({ ...im, notify })} />
         <Ignored im={im} defaultProject={defaultProject} onError={setError} />
         <Deliveries onError={setError} />
       </div>
