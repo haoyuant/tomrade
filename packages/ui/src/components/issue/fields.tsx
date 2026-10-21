@@ -10,7 +10,7 @@ import { errorSpec, useToast } from "~/lib/toast";
 import { cn } from "~/lib/utils";
 import { useToastUndo } from "~/lib/undo";
 import { InlineEdit } from "~/components/ui/InlineEdit";
-import { isCommitKey } from "~/lib/keys";
+import { isCancelKey, isCommitKey } from "~/lib/keys";
 
 /**
  * One write path for every editable field on an issue, shared by the docked
@@ -244,7 +244,7 @@ export function LabelsField({ item, write, vocabulary }: FieldProps & { vocabula
                 e.preventDefault();
                 add(e.currentTarget.value);
               }
-              if (e.key === "Escape") {
+              if (isCancelKey(e)) {
                 // the expanded pane is a dialog; Escape belongs to this input first
                 e.stopPropagation();
                 settled.current = true;
@@ -400,7 +400,7 @@ function InlineText({
         e.currentTarget.style.height = `${e.currentTarget.scrollHeight}px`;
       }}
       onKeyDown={(e) => {
-        if (e.key === "Escape") {
+        if (isCancelKey(e)) {
           e.stopPropagation();
           discarded.current = true;
           setKept(null);
@@ -526,7 +526,7 @@ export function DepsField({ item, write, items, mode, onOpen }: FieldProps & { i
                 e.preventDefault();
                 add(e.currentTarget.value);
               }
-              if (e.key === "Escape") {
+              if (isCancelKey(e)) {
                 // the expanded pane is a dialog; Escape belongs to this input first
                 e.stopPropagation();
                 settled.current = true;

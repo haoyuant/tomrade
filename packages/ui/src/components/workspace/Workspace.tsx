@@ -38,6 +38,7 @@ import { EpicStrip } from "./EpicStrip";
 import { TitleBar, ViewHead } from "./TitleBar";
 import { ShortcutsDialog } from "~/components/dialogs/ShortcutsDialog";
 import { hitChord, isBare, type CommandId } from "~/lib/keybindings";
+import { isCancelKey } from "~/lib/keys";
 
 // Opening a ticket re-renders this screen for its detail pane; the regions beside it hold still.
 const SidebarRegion = memo(Sidebar);
@@ -300,7 +301,7 @@ export function Workspace() {
       } else if (on("shortcuts") && !anyOverlay) {
         e.preventDefault();
         setShortcutsOpen(true);
-      } else if (e.key === "Escape" && !anyOverlay && !e.defaultPrevented) {
+      } else if (isCancelKey(e) && !anyOverlay && !e.defaultPrevented) {
         // Radix and the inline composers consume Escape first; defaultPrevented
         // is how an inner layer says it already handled it
         // innermost first: an expanded detail collapses before it closes

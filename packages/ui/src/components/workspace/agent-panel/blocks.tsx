@@ -12,7 +12,7 @@ import type { RunProgress } from "~/lib/agent";
 import { offerStart } from "~/lib/codeLink";
 import { useSetupInTerminal } from "~/lib/setup";
 import { useImShareNext, useImThreadBindings } from "~/lib/im";
-import { isCommitKey, isComposing } from "~/lib/keys";
+import { isCancelKey, isCommitKey, isComposing } from "~/lib/keys";
 import { duration, retryReason, runTokensLabel, tokens } from "./format";
 
 /** The pulse that says "not stuck": what it's doing, for how long, and the tokens so far — or, loudly, that requests are failing. */
@@ -435,7 +435,7 @@ export function QueuedRow({ entry, held, canSend, onSave, onRemove, onSendNow, o
           onChange={(e) => setEditing(e.target.value)}
           onKeyDown={(e) => {
             if (isComposing(e)) return;
-            if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setEditing(null); }
+            if (isCancelKey(e)) { e.preventDefault(); e.stopPropagation(); setEditing(null); }
             else if (isCommitKey(e) && !e.shiftKey) {
               e.preventDefault();
               if (editing.trim()) onSave(editing.trim()); else onRemove();

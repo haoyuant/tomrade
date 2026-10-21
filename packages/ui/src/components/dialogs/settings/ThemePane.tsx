@@ -5,7 +5,7 @@ import { SectionHead } from "~/components/ui/atoms";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
 import { STATUS } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { isCommitKey } from "~/lib/keys";
+import { isCancelKey, isCommitKey } from "~/lib/keys";
 import type { useSaveSettings, useSettings } from "~/lib/queries";
 import { cssColorToHex, useTheme } from "~/lib/theme";
 import { useToast } from "~/lib/toast";
@@ -226,7 +226,7 @@ export function ThemePane({
       </SectionHead>
       <div className="appearance-theme-heading"><h3 className="appearance-group-title">{t("settingsDialog.themeSelectionTitle")}</h3><div className="theme-selection-row"><ThemeSwitch selectedEditor={
         selectedCustom && editingTheme === selectedCustom.id && <div className="theme-custom-controls" role="group" aria-label={t("settingsDialog.editTheme")}
-          onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); setEditingTheme(null); } }}>
+          onKeyDown={event => { if (isCancelKey(event)) { event.stopPropagation(); setEditingTheme(null); } }}>
           <ThemeIconMenu value={themeDraft.icon} onChange={icon => setThemeDraft(draft => ({ ...draft, icon }))} />
           <label className="token-theme-name"><input className="field-input" aria-label={t("settingsDialog.themeNameLabel")} value={themeDraft.name} maxLength={64}
             onChange={event => setThemeDraft(draft => ({ ...draft, name: event.target.value }))} /></label>

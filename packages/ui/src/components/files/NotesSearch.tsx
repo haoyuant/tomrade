@@ -6,7 +6,7 @@ import { useWorkspace } from "~/components/workspace/context";
 import { useI18n } from "~/lib/i18n";
 import { notesSearch, useNoteSearch, useNoteTags, useNotesSearchState } from "~/lib/notes";
 import { readableError } from "~/lib/toast";
-import { isCommitKey } from "~/lib/keys";
+import { isCancelKey, isCommitKey } from "~/lib/keys";
 
 function Marked({ text, marks }: { text: string; marks: [number, number][] }) {
   const parts: ReactNode[] = [];
@@ -76,7 +76,7 @@ export function NotesSearch() {
           aria-label={t("notes.search")}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Escape") {
+            if (isCancelKey(e)) {
               e.preventDefault();
               notesSearch.close();
             }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import { isCancelKey } from "~/lib/keys";
 import { cn } from "~/lib/utils";
 
 const FOCUSABLE = 'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
@@ -48,7 +49,7 @@ export function Popover({
       if (ref.current && !ref.current.contains(e.target as Node)) onOpenChange(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
+      if (!isCancelKey(e)) return;
       e.preventDefault();
       e.stopPropagation();
       onOpenChange(false);

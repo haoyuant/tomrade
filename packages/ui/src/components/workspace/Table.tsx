@@ -10,7 +10,7 @@ import { useIsSelected, useWorkspace, type WorkspaceValue } from "./context";
 import { EpicPriority, EpicProgressBar, EpicStatus, EpicTitle, epicProgress } from "./EpicHeader";
 import { mergePatch, seedFromFilter, toCreateInput } from "./patches";
 import { useToastUndo } from "~/lib/undo";
-import { isCommitKey } from "~/lib/keys";
+import { isCancelKey, isCommitKey } from "~/lib/keys";
 
 /** What a table shows when the view has not chosen its fields. */
 
@@ -105,7 +105,7 @@ function ComposerRow({ span }: { span: number }) {
             placeholder={t("table.composerPlaceholder")}
             aria-label={t("table.newIssue")}
             onKeyDown={(e) => {
-              if (e.key === "Escape") {
+              if (isCancelKey(e)) {
                 e.stopPropagation();
                 setEditing(false);
               }

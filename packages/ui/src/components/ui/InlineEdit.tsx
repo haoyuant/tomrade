@@ -1,5 +1,5 @@
 import { useRef, type InputHTMLAttributes } from "react";
-import { isCommitKey } from "~/lib/keys";
+import { isCancelKey, isCommitKey } from "~/lib/keys";
 
 type Props = Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "defaultValue" | "onKeyDown" | "onBlur" | "onFocus"> & {
   value: string;
@@ -32,7 +32,7 @@ export function InlineEdit({ value, allowEmpty, onSave, className, ...rest }: Pr
         settled.current = false;
       }}
       onKeyDown={(e) => {
-        if (e.key === "Escape") {
+        if (isCancelKey(e)) {
           e.stopPropagation();
           e.currentTarget.value = value;
           settled.current = true;

@@ -1,5 +1,5 @@
 import { Icon, type IconId } from "~/components/icons";
-import { isCommitKey } from "~/lib/keys";
+import { isCancelKey, isCommitKey } from "~/lib/keys";
 
 /** One inline name field, shared by the sidebar's "new …" rows. */
 export function InlineNameRow({ icon, ariaLabel, placeholder, onCommit, onCancel }: { icon: IconId; ariaLabel: string; placeholder: string; onCommit: (name: string) => void; onCancel: () => void }) {
@@ -22,7 +22,7 @@ export function InlineNameRow({ icon, ariaLabel, placeholder, onCommit, onCancel
           outline: "none"
         }}
         onKeyDown={(e) => {
-          if (e.key === "Escape") {
+          if (isCancelKey(e)) {
             e.stopPropagation();
             onCancel();
           }

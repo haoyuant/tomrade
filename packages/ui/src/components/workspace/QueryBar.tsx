@@ -7,7 +7,7 @@ import { Popover } from "~/components/ui/popover";
 import { FILTER_OP_LABEL, fieldLabel, manualSortLabel, viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { ticketSearch, useTicketSearch, useWorkspace, type WorkspaceValue } from "./context";
-import { isCommitKey } from "~/lib/keys";
+import { isCancelKey, isCommitKey } from "~/lib/keys";
 
 const FIELD_ICON: Record<string, IconId> = {
   title: "i-pen",
@@ -383,7 +383,7 @@ function SearchBox() {
           onChange={(e) => set(e.target.value)}
           onKeyDown={(e) => {
             // Escape empties the field, then leaves it — before it closes the open ticket
-            if (e.key === "Escape") {
+            if (isCancelKey(e)) {
               e.preventDefault();
               if (text) set("");
               else e.currentTarget.blur();
