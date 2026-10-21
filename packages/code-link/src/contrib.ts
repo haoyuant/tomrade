@@ -2,23 +2,22 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Context } from "cordis";
 import type { Badge, SectionRow } from "@tomradex/contributions";
-import { HERDR_INSTALL } from "./herdr-bridge.js";
+import type { HerdrBridge } from "./herdr-bridge.js";
 import { currentLinks, primaryOf } from "./scan/absorb.js";
 import type { CodeLink, ConnectMode } from "./service.js";
 import type { StartMode } from "./start.js";
 import type { CodeLinkView, ProposalView } from "./store.js";
-import { herdrFallbackNote, launchTerminal, machineTerminalSettings } from "./terminal.js";
 import type { CodeWords, PlainCodeWord } from "./words.js";
 
 // Names a word book translates; any other value reads as it is.
-export const DELIVERY_STATES = { active: "deliveryActive", completed: "deliveryCompleted", cancelled: "deliveryCancelled" } as const;
-export const PR_STATES = { open: "prOpen", merged: "prMerged", closed: "prClosed" } as const;
+const DELIVERY_STATES = { active: "deliveryActive", completed: "deliveryCompleted", cancelled: "deliveryCancelled" } as const;
+const PR_STATES = { open: "prOpen", merged: "prMerged", closed: "prClosed" } as const;
 export const SESSION_STATES = { running: "sessionRunning", waiting: "sessionWaiting", idle: "sessionIdle", error: "sessionError", ended: "sessionEnded", lost: "sessionLost" } as const;
 export const STATUSES = { backlog: "statusBacklog", todo: "statusTodo", doing: "statusDoing", verifying: "statusVerifying", done: "statusDone", cancelled: "statusCancelled" } as const;
 export const named = (w: CodeWords, keys: Record<string, PlainCodeWord>, value: string): string => (Object.hasOwn(keys, value) ? w(keys[value]!) : value);
 
 /** Relative time, from seconds ago, in the book's language. */
-export const agoWords = (w: CodeWords, s: number): string => {
+const agoWords = (w: CodeWords, s: number): string => {
   if (s < 60) return w("justNow");
   const m = Math.round(s / 60);
   if (m < 60) return w("minutesAgo", { n: m });
@@ -31,12 +30,13 @@ export interface ContribHost {
   /** The service's own context. */
   ctx: Context;
   codeLink: CodeLink;
+  herdr: HerdrBridge;
   words: () => CodeWords;
 }
 
 /** What code-link adds to the desktop: the ticket's Code section, card badges, the status line and its commands. */
 export function contribute(ctx: Context, host: ContribHost): void {
-  const { codeLink: self, ctx: home, words } = host;
+  const { codeLink: self, ctx: home, herdr, words } = host;
   ctx.contributions.section({
     id: "code",
     title: () => words()("section"),
@@ -261,9 +261,9 @@ export function contribute(ctx: Context, host: ContribHost): void {
       if (shown) return { toast: shown };
       const cwd = self.worktreeOf(projectId, itemId);
       if (!cwd) return { toast: words()("noWorktree") };
-      const settings = await machineTerminalSettings(home.settings.get().codeLink, home.get("herdr"));
-      const launch = await launchTerminal({ cwd, command: 'exec "${SHELL:-bash}"', dir: path.join(self.sessionDir("shell"), path.basename(cwd)), label: path.basename(cwd) }, settings.terminal, home.get("herdr") ?? null);
-      const fallback = herdrFallbackNote(words().locale, launch, HERDR_INSTALL);
+      const settings = await herdr.terminalSettings();
+      const launch = await herdr.launch({ cwd, command: 'exec "${SHELL:-bash}"', dir: path.join(self.sessionDir("shell"), path.basename(cwd)), label: path.basename(cwd) }, settings.terminal);
+      const fallback = herdr.fallbackNote(words().locale, launch);
       const said = launch.launched ? words()("opened", { cwd }) : `cd ${cwd}`;
       return { toast: fallback ? `${fallback}\n${said}` : said };
     }

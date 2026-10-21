@@ -11,14 +11,14 @@ import type {} from "@tomradex/repos";
 import type {} from "@tomradex/settings";
 import type { Author, Board, Item, Repo } from "@tomradex/domain";
 import { GitFolder, type Git } from "@tomradex/git";
-import { HERDR_INSTALL } from "@tomradex/herdr";
 import { listDecisions } from "./decisions.js";
 import { branchFor, titleSlug } from "./keys.js";
 import { BOOTSTRAP_LABEL, bootstrapBody, continuePrompt, firstPrompt, languageLine } from "./prompts.js";
 import { classifyRemoteFailure, probeRemote, remoteFailureDetail, remoteFailureMessage, scrubRemoteOutput } from "./remote.js";
+import type { HerdrBridge } from "./herdr-bridge.js";
 import type { SessionFiles, Sessions } from "./sessions.js";
-import type { CodeLinkStore, RepoStateView, SessionMode, SessionView } from "./store.js";
-import { RESUME_ID_FILE, TerminalSettings, fillTemplate, herdrFallbackNote, launchTerminal, machineTerminalSettings, optionFlags, shellQuote, terminalTemplate, withOptions } from "./terminal.js";
+import type { CodeLinkStore, SessionMode, SessionView } from "./store.js";
+import { RESUME_ID_FILE, TerminalSettings, fillTemplate, optionFlags, shellQuote, terminalTemplate, withOptions } from "./terminal.js";
 import { CODE_WORDS } from "./words.js";
 import { githubHttps } from "@tomradex/github";
 import { errorMessage } from "@tomradex/contracts";
@@ -101,6 +101,8 @@ export interface StartHost {
   ctx: Context;
   store: CodeLinkStore;
   sessions: Sessions;
+  /** herdr, the terminal sessions run in when it is there: every launch goes through it. */
+  herdr: HerdrBridge;
   git: Git;
   scan(projectId: string): Promise<unknown>;
   notify(projectId: string): void;
@@ -217,7 +219,7 @@ export class Starter {
 
     const agent = ctx.get("agent");
     if (!agent) return { ok: false, gate: "engine", message: "the agent plugin is not loaded" };
-    const terminalSettings = await machineTerminalSettings(ctx.settings.get().codeLink, ctx.get("herdr"));
+    const terminalSettings = await this.host.herdr.terminalSettings();
     const mode: SessionMode = opts.mode === "run" ? "headless" : "terminal";
     const surface = mode === "terminal" ? "code" : "assistant";
     // In a terminal any CLI agent with an MCP client will do: "other" is whatever the machine's command template names.
@@ -364,8 +366,8 @@ export class Starter {
     // A project's sessions share one herdr workspace, a tab each.
     const projectName = (ctx.db.for(projectId).prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name;
     const workspace = projectName ? { key: projectId, label: projectName } : undefined;
-    const launch = await launchTerminal({ cwd: where.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir, label: item.key, ...(workspace ? { workspace } : {}), ...(resume ? { resume } : {}) }, terminalSettings.terminal, ctx.get("herdr") ?? null);
-    const fallback = herdrFallbackNote(terminalWords.locale, launch, HERDR_INSTALL);
+    const launch = await this.host.herdr.launch({ cwd: where.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir, label: item.key, ...(workspace ? { workspace } : {}), ...(resume ? { resume } : {}) }, terminalSettings.terminal);
+    const fallback = this.host.herdr.fallbackNote(terminalWords.locale, launch);
     if (fallback) warnings.push(fallback);
     store.patchSession(projectId, session.id, { state: "running", lastEventAt: now, ...(launch.paneId ? { herdrPane: launch.paneId } : {}) });
     this.host.notify(projectId);
@@ -378,15 +380,14 @@ export class Starter {
    * if Tomrade restarted in between. False when the pane, the agent, or herdr is not there.
    */
   private async continueInPane(session: SessionView, engineId: string, prompt: string): Promise<boolean> {
-    const herdr = this.host.ctx.get("herdr");
     const pane = session.herdrPane;
-    if (!herdr || !pane || !(await herdr.paneAlive(pane))) return false;
+    if (!pane || !(await this.host.herdr.paneAlive(pane))) return false;
     const dir = this.host.sessionDir(session.id);
     if (!this.host.sessions.token(session.id) && !this.host.sessions.rebind(session, `ai:${engineId}` as Author, dir)) return false;
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, "prompt.md");
     fs.writeFileSync(file, prompt);
-    return herdr.prompt(pane, `Tomrade: continue this ticket — read ${file} and follow it.`);
+    return this.host.herdr.prompt(pane, `Tomrade: continue this ticket — read ${file} and follow it.`);
   }
 
   /**
@@ -491,7 +492,7 @@ export class Starter {
     const { ctx, store } = this.host;
     const agent = ctx.get("agent");
     if (!agent) return { ok: false, gate: "engine", message: "the agent plugin is not loaded" };
-    const terminalSettings = await machineTerminalSettings(ctx.settings.get().codeLink, ctx.get("herdr"));
+    const terminalSettings = await this.host.herdr.terminalSettings();
     const locale = ctx.settings.locale?.() ?? "en";
     const mode: SessionMode = opts.mode === "run" ? "headless" : "terminal";
     if (opts.mode === "terminal" && !ctx.get("mcp")?.url) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
@@ -546,10 +547,10 @@ export class Starter {
     const options = agent.optionsOf(thread, engineId);
     const command = this.command(terminalSettings, engineId, session, files, prepared.cwd, options, bin);
     const resume = this.resumeCommand(terminalSettings, engineId, files, prepared.cwd, options, bin);
-    const launch = await launchTerminal({ cwd: prepared.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir, label: item.key, ...(resume ? { resume } : {}) }, terminalSettings.terminal, ctx.get("herdr") ?? null);
+    const launch = await this.host.herdr.launch({ cwd: prepared.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir, label: item.key, ...(resume ? { resume } : {}) }, terminalSettings.terminal);
     store.patchSession(projectId, session.id, { state: "running", lastEventAt: now, ...(launch.paneId ? { herdrPane: launch.paneId } : {}) });
     this.host.notify(projectId);
-    const fallback = herdrFallbackNote(locale, launch, HERDR_INSTALL);
+    const fallback = this.host.herdr.fallbackNote(locale, launch);
     return { ...base, command, launched: launch.launched, pane: launch.paneId ?? null, ...(fallback ? { warnings: [fallback] } : {}) };
   }
 
@@ -598,8 +599,6 @@ export class Starter {
     return bootstrap;
   }
 }
-
-export type { RepoStateView };
 
 /** An agent whose connection carries no session token is told to claim the ticket before anything else, which ties the session to it. */
 function withClaimFirst(agent: Agent, engineId: string, key: string, prompt: string): string {

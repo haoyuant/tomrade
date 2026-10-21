@@ -174,8 +174,10 @@ export class RepoConnect {
     const state = this.store.repoState(projectId, repoId);
     try {
       if (await exists(base)) await this.git(["merge", "--no-edit", base], { cwd: worktree });
-      const { files, skipped } = writeConnectFiles(worktree, input, chosen, undefined, this.connectors);
+      const written = writeConnectFiles(worktree, input, chosen, undefined, this.connectors);
+      const { files } = written;
       const agents = inspectConnectFiles(worktree, mcp.urlFor(projectId)!, mcp.eventUrl!, chosen, this.connectors).agents;
+      const skipped = this.said(written.skipped, agents);
       const folder = new GitFolder(this.git, worktree);
       // A checkout on Windows records no executable bit, and elsewhere Cursor runs the script by its path.
       if (files.includes(CURSOR_HOOK_SCRIPT)) await this.git(["add", "--chmod=+x", "--", CURSOR_HOOK_SCRIPT], { cwd: worktree });
@@ -235,6 +237,12 @@ export class RepoConnect {
     }
     this.notify(projectId);
     const { agents } = await this.connection(projectId, repoId);
-    return { branch: "", agents, files, skipped, committed: false, pushed: false, url: null, local: true, message: this.words()(files.length === 1 ? "connectedLocallyOne" : "connectedLocallyMany", { n: files.length }) };
+    return { branch: "", agents, files, skipped: this.said(skipped, agents), committed: false, pushed: false, url: null, local: true, message: this.words()(files.length === 1 ? "connectedLocallyOne" : "connectedLocallyMany", { n: files.length }) };
+  }
+
+  /** A skip the app's own strings do not name, said in the person's words. */
+  private said(skipped: SkippedAgent[], agents: AgentConnectionView[]): SkippedAgent[] {
+    const w = this.words();
+    return skipped.map((skip) => (skip.reason === "no-connector" ? { ...skip, message: w("connectNoConnector", { file: skip.file, agent: agents.find((agent) => agent.id === skip.agent)?.title ?? skip.agent }) } : skip));
   }
 }

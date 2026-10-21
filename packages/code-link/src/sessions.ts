@@ -8,7 +8,6 @@ import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/tools";
 import type { Author } from "@tomradex/domain";
 import { looksRateLimited, resetTime, type CliHookAnswer } from "@tomradex/agent";
-import type {} from "@tomradex/herdr";
 import { promptTitle, transcriptTitle } from "./titles.js";
 import { CLI_HOOK_COVERAGE } from "@tomradex/plugin-sdk";
 import { BRIDGED_BY_DSH, cliHookCall, cliHookEvent, hookReply, mergeAnswers, type HookSource } from "./cli-hooks.js";
@@ -24,7 +23,7 @@ export const END_AFTER_MS = 60 * 60 * 1000;
 /** How long after a hook spoke herdr's reading of the screen is left unsaid. */
 export const HERDR_YIELD_MS = 30 * 1000;
 /** How long a PreToolUse for claim_ticket vouches for the claim that follows it. */
-export const CLAIM_HEARD_MS = 10 * 1000;
+const CLAIM_HEARD_MS = 10 * 1000;
 const CLAIM_TOOL = /(?:^|[_.:/])claim_ticket$/;
 
 /** The coding session a tool call belongs to, when it came in over a session's MCP token. */
@@ -107,6 +106,11 @@ export interface SessionsOptions {
   onWaiting?(session: SessionView, activity: string): void;
   /** The agent stopped on a usage limit, lifting at `until` when it said; returns what the session's summary should say. */
   onLimit?(session: SessionView, until: number | null): string;
+  /** herdr, through code-link's bridge: whether a pane still runs, and what it says of one. */
+  panes?: {
+    alive(pane: string): Promise<boolean | null>;
+    info(pane: string): Promise<{ agent: string | null; title: string | null } | null>;
+  };
 }
 
 export interface SessionFiles {
@@ -203,7 +207,7 @@ const showsNonzeroExit = (output: unknown): boolean => {
   return /\b(?:exit(?:ed)?(?: with)?(?: code| status)?|code)\s*[:=]?\s*[1-9]\d*\b/i.test(outputText(output));
 };
 
-export const credentialStopText = (detail: string): string =>
+const credentialStopText = (detail: string): string =>
   `Tomrade: origin is not reachable from this worktree with the credentials git has here (${detail}). Credentials are the human's to fix — do not switch accounts, edit credential helpers, or change the remote. Commit your work locally, call note_progress with one line starting 'blocked: push', and stop.`;
 
 /**
@@ -411,11 +415,9 @@ export class Sessions {
     // No title of the agent's own: the one it set on its pane, while herdr still has it.
     if (ending && !own && session.herdrPane) {
       const pane = session.herdrPane;
-      void this.ctx
-        .get("herdr")
-        ?.panes()
-        .then((panes) => {
-          const info = panes?.find((x) => x.paneId === pane);
+      void this.options.panes
+        ?.info(pane)
+        .then((info) => {
           const now = this.store.session(projectId, session.id);
           // An agent's own name on its pane says nothing about the conversation.
           if (info?.agent && info.title && !AGENT_NAME_TITLE.test(info.title) && now && now.title !== info.title) this.store.patchSession(projectId, session.id, { title: info.title });
@@ -538,9 +540,8 @@ export class Sessions {
     if (!other) return false;
     if (session.herdrPane !== other) this.store.patchSession(projectId, session.id, { herdrPane: other });
     this.said(session, `goes on in pane ${other}: another process of its conversation ended in ${pane}`);
-    void this.ctx
-      .get("herdr")
-      ?.paneAlive(other)
+    void this.options.panes
+      ?.alive(other)
       .then((alive) => {
         if (alive !== false || !this.panes.get(session.id)?.has(other)) return;
         this.panes.delete(session.id);
@@ -802,7 +803,7 @@ export default function (pi) {
  * adds Tomrade's server, with the session's token, for that run alone — and,
  * given a hooks file, dsh's own Claude Code hook bridge running it.
  */
-export function dshMcpPatch(mcpUrl: string, token: string, hooksFile?: string): string {
+function dshMcpPatch(mcpUrl: string, token: string, hooksFile?: string): string {
   return [
     "- insert:",
     "    - id: tomrade-mcp",
@@ -826,7 +827,7 @@ export function dshMcpPatch(mcpUrl: string, token: string, hooksFile?: string): 
  * run for the person and posts the events Claude's hooks would — the session
  * id first, so Continue can resume it with `--session-id`.
  */
-export function dshReport(eventUrl: string): string {
+function dshReport(eventUrl: string): string {
   return `import readline from "node:readline";
 const eventUrl = ${JSON.stringify(eventUrl)};
 const names = { bash: "Bash", read: "Read", edit: "Edit", write: "Write", grep: "Grep", glob: "Glob" };

@@ -2,15 +2,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
-import { HERDR_INSTALL, herdrInstall, type HerdrInstall, type HerdrPaneEvent } from "@tomradex/herdr";
+import { HERDR_INSTALL, herdrInstall, type HerdrInstall, type HerdrPaneEvent, type HerdrPaneInfo } from "@tomradex/herdr";
 import { named, SESSION_STATES, STATUSES } from "./contrib.js";
 import type { Sessions } from "./sessions.js";
 import type { CodeLinkStore, SessionView } from "./store.js";
-import { RESUME_ID_FILE, RESUME_SCRIPT, SYSTEM_TERMINAL, commandOk, launchTerminal, machineTerminalSettings, setupTerminal, shellQuote } from "./terminal.js";
+import { RESUME_ID_FILE, RESUME_SCRIPT, SYSTEM_TERMINAL, commandOk, herdrFallbackNote, launchTerminal, machineTerminalSettings, setupTerminal, shellQuote, type LaunchInput, type LaunchResult, type TerminalSettings } from "./terminal.js";
 import type { CodeWords } from "./words.js";
 import { errorMessage } from "@tomradex/contracts";
 
-export { HERDR_INSTALL, type HerdrInstall };
+export type { HerdrInstall };
 
 /** How often a terminal session whose hooks name no herdr pane asks herdr which pane runs it. */
 const PANE_LOOK_MS = 15_000;
@@ -36,8 +36,9 @@ export interface HerdrBridgeDeps {
 
 /**
  * Everything code-link does with herdr, the terminal workspace sessions run
- * in: its status and install, showing a session's pane, finding the pane of
- * a session, and following the panes of live sessions.
+ * in: its status and install, the terminal sessions and setup commands open
+ * in, a prompt into a session's pane, showing it, finding the pane of a
+ * session, and following the panes of live sessions.
  */
 export class HerdrBridge {
   private readonly ctx: Context;
@@ -56,8 +57,47 @@ export class HerdrBridge {
     this.sessionDir = deps.sessionDir;
   }
 
-  /** herdr's reading of the panes ticket sessions run in, as the hook events those sessions would post. */
-  follow(ctx: Context): void {
+  /** Once herdr is there: its reading of the panes ticket sessions run in, as the hook events those sessions would post. */
+  follow(home: Context): void {
+    home.inject(["herdr"], (ctx) => this.followPanes(ctx));
+  }
+
+  /** The terminal settings as this machine runs them: automatic means herdr once it is installed. */
+  terminalSettings(): Promise<TerminalSettings> {
+    return machineTerminalSettings(this.ctx.settings.get().codeLink, this.ctx.get("herdr"));
+  }
+
+  /** A session's script in that terminal; a terminal of herdr opens a pane, or the system terminal when herdr does not answer. */
+  launch(input: LaunchInput, terminal: string): Promise<LaunchResult> {
+    return launchTerminal(input, terminal, this.ctx.get("herdr") ?? null);
+  }
+
+  /** One setup command in this machine's terminal, where the person watches it. */
+  async setup(command: string, dir: string): Promise<{ launched: boolean }> {
+    return setupTerminal(command, dir, (await this.terminalSettings()).terminal, this.ctx.get("herdr") ?? null);
+  }
+
+  /** What to tell the person after a launch went elsewhere, or herdr was started for it; null otherwise. */
+  fallbackNote(locale: unknown, launch: LaunchResult): string | null {
+    return herdrFallbackNote(locale, launch, HERDR_INSTALL);
+  }
+
+  /** Whether a pane still runs; null when herdr cannot tell, or is not there. */
+  async paneAlive(pane: string): Promise<boolean | null> {
+    return (await this.ctx.get("herdr")?.paneAlive(pane)) ?? null;
+  }
+
+  /** What herdr says of one pane: the agent in it and its title; null when herdr or the pane is not there. */
+  async pane(pane: string): Promise<HerdrPaneInfo | null> {
+    return (await this.ctx.get("herdr")?.panes())?.find((x) => x.paneId === pane) ?? null;
+  }
+
+  /** Types a line into a pane; false without herdr. */
+  async prompt(pane: string, text: string): Promise<boolean> {
+    return (await this.ctx.get("herdr")?.prompt(pane, text)) ?? false;
+  }
+
+  private followPanes(ctx: Context): void {
     ctx.herdr.onPane((event) => void this.herdrEvent(ctx, event).catch((err) => this.ctx.logger.warn(`herdr event on ${event.paneId} failed: ${errorMessage(err)}`)));
     ctx.effect(() => () => {
       for (const release of this.herdrHolds.values()) release();
@@ -86,7 +126,7 @@ export class HerdrBridge {
 
   /** Tomrade's own Terminal window shows this project's sessions: herdr is the terminal here and a window answers for it. */
   async terminalWindow(projectId: string): Promise<boolean> {
-    const settings = await machineTerminalSettings(this.ctx.settings.get().codeLink, this.ctx.get("herdr"));
+    const settings = await this.terminalSettings();
     return settings.terminal === "herdr" && (await this.answered("codeLink/terminal-window", () => this.ctx.serial("codeLink/terminal-window", projectId)));
   }
 
@@ -131,8 +171,7 @@ export class HerdrBridge {
   async installHerdr(plan: HerdrInstall): Promise<{ launched: boolean; command: string }> {
     const { command } = plan;
     if (!command) throw new Error(this.words()("herdrNoInstaller"));
-    const settings = await machineTerminalSettings(this.ctx.settings.get().codeLink, this.ctx.get("herdr"));
-    const { launched } = await setupTerminal(command, path.join(this.sessionDir("setup"), "herdr"), settings.terminal, this.ctx.get("herdr") ?? null);
+    const { launched } = await this.setup(command, path.join(this.sessionDir("setup"), "herdr"));
     return { launched, command };
   }
 

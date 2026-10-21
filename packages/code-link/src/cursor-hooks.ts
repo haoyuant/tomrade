@@ -1,5 +1,5 @@
 /** The Cursor hook events Tomrade listens to, as `.cursor/hooks.json` names them. */
-export const CURSOR_HOOK_EVENTS = ["sessionStart", "beforeSubmitPrompt", "preToolUse", "postToolUse", "postToolUseFailure", "afterAgentResponse", "stop", "sessionEnd"] as const;
+const CURSOR_HOOK_EVENTS = ["sessionStart", "beforeSubmitPrompt", "preToolUse", "postToolUse", "postToolUseFailure", "afterAgentResponse", "stop", "sessionEnd"] as const;
 
 /** The POSIX script a connected repository carries; Cursor runs it from the project root. */
 export const CURSOR_HOOK_SCRIPT = ".cursor/hooks/tomrade";

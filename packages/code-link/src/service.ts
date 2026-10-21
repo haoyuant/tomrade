@@ -38,7 +38,7 @@ import { CODE_WORDS, type CodeWords } from "./words.js";
 import { Starter, type StartOptions, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
 import { findCodexRollout, findTranscript, readConversation, transcriptTitle, type ConversationLine } from "./titles.js";
-import { AUTO_TERMINAL, TerminalSettings, commandOk, exec, machineTerminalSettings, setupTerminal, terminalApps } from "./terminal.js";
+import { AUTO_TERMINAL, TerminalSettings, commandOk, exec, terminalApps } from "./terminal.js";
 import { registerTools } from "./tools.js";
 import { type CodeLinkReader, errorMessage } from "@tomradex/contracts";
 
@@ -263,6 +263,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       onChange: (projectId) => this.notify(projectId),
       onMoment: (session, moment) => this.noteMoment(session, moment),
       onWaiting: (session, activity) => this.herdr.waiting(session, activity),
+      panes: { alive: (pane) => this.herdr.paneAlive(pane), info: (pane) => this.herdr.pane(pane) },
       // A terminal session cannot be typed into: when the limit lifts the person is told, not the agent.
       onLimit: (session, until) => {
         const agent = this.ctx.get("agent");
@@ -272,17 +273,18 @@ export class CodeLink extends Service implements CodeLinkReader {
       // A pass already running still saw this session as active.
       onEnd: (session) => void this.rescan(session.projectId).catch((err) => this.ctx.logger.warn(`code scan after session ${session.id} ended failed: ${errorMessage(err)}`))
     });
+    this.herdr = new HerdrBridge({ ctx: this.ctx, store: this.store, sessions: this.sessions, words: () => this.words(), sessionDir: (id) => this.sessionDir(id) });
     this.starter = new Starter({
       ctx: this.ctx,
       store: this.store,
       sessions: this.sessions,
+      herdr: this.herdr,
       git: this.git,
       scan: (projectId) => this.scan(projectId),
       notify: (projectId) => this.notify(projectId),
       sessionDir: (id) => this.sessionDir(id),
       worktrees: this.worktrees
     });
-    this.herdr = new HerdrBridge({ ctx: this.ctx, store: this.store, sessions: this.sessions, words: () => this.words(), sessionDir: (id) => this.sessionDir(id) });
     this.connections = new Connections({
       ctx: this.ctx,
       store: this.store,
@@ -513,8 +515,8 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.herdrInstall", () => ctx.codeLink.herdrInstall());
       ctx.ipc.handle("codeLink.installHerdr", () => ctx.codeLink.installHerdr());
     });
-    this.home.inject(["contributions"], (ctx) => contribute(ctx, { ctx: this.ctx, codeLink: this, words: () => this.words() }));
-    this.home.inject(["herdr"], (ctx) => this.herdr.follow(ctx));
+    this.home.inject(["contributions"], (ctx) => contribute(ctx, { ctx: this.ctx, codeLink: this, herdr: this.herdr, words: () => this.words() }));
+    this.herdr.follow(this.home);
 
     const timer = this.config.scanMs > 0 ? setInterval(() => void this.scanOpen(), this.config.scanMs) : null;
     timer?.unref?.();
@@ -719,8 +721,7 @@ export class CodeLink extends Service implements CodeLinkReader {
     const setup = (await this.ctx.get("agent")?.engineViews())?.find((e) => e.id === engineId)?.setup;
     const command = step === "install" ? setup?.install[0] : setup?.signIn;
     if (!command) throw new Error(`${engineId} has no ${step} command`);
-    const settings = await machineTerminalSettings(this.ctx.settings.get().codeLink, this.ctx.get("herdr"));
-    const { launched } = await setupTerminal(command, path.join(this.sessionDir("setup"), engineId), settings.terminal, this.ctx.get("herdr") ?? null);
+    const { launched } = await this.herdr.setup(command, path.join(this.sessionDir("setup"), engineId));
     return { launched, command };
   }
 
@@ -1019,5 +1020,3 @@ export class CodeLink extends Service implements CodeLinkReader {
     this.home.get("ipc")?.send("codeLink.changed", projectId);
   }
 }
-
-export default CodeLink;
