@@ -282,12 +282,13 @@ export function NoteEditor({ projectId, content, paths, tags, resolve, onOpenLin
       view.current = null;
     };
     // One editor per file; the parent keys it by path.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Links that start or stop resolving as files come and go.
   useEffect(() => {
     if (note) view.current?.dispatch({ effects: marks.current.reconfigure(linkMarks((target) => !!latest.current.resolve(target, "wiki"))) });
-  }, [paths]);
+  }, [paths, note]);
 
   /** Brings the other pane to the place `from` shows: by source line where the preview marks its blocks, by proportion where it cannot. */
   const follow = (from: "edit" | "preview") => {

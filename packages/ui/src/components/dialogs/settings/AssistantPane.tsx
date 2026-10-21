@@ -436,9 +436,12 @@ function EnginePickField({ engine, pick, value, onCommit }: { engine: EngineView
   const isPreset = (v: string) => v === "" || pick.choices.some((c) => c.value === v);
   const [draft, setDraft] = useState(value);
   const [custom, setCustom] = useState(!isPreset(value));
+  // Only a new committed value re-syncs the field; a refreshed choice list leaves a draft alone.
+  const isPresetRef = useRef(isPreset);
+  isPresetRef.current = isPreset;
   useEffect(() => {
     setDraft(value);
-    setCustom(!isPreset(value));
+    setCustom(!isPresetRef.current(value));
   }, [value]);
   const commit = (next: string) => {
     setDraft(next);

@@ -60,7 +60,10 @@ export function KeybindingsPane({ settings, onSave, scopeTag }: { settings: AppS
   const { t } = useI18n();
   const toast = useToast();
   const stored = (settings.keybindings as { overrides?: Record<string, string[]> } | undefined)?.overrides ?? {};
-  const map = useMemo(() => resolveKeymap(stored), [JSON.stringify(stored)]);
+  // Keyed by content: settings arrive as a new object on every read.
+  const storedKey = JSON.stringify(stored);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const map = useMemo(() => resolveKeymap(stored), [storedKey]);
   const [recording, setRecording] = useState<Recording | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [problem, setProblem] = useState<{ id: CommandId; text: string } | null>(null);

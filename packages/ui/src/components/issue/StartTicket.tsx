@@ -170,7 +170,7 @@ function StartTicketDialog({
     if (thread && thread.engine === engineId) for (const [key, value] of Object.entries(thread.options ?? {})) if (typeof value === "string") out[key] = value;
     else if (rememberedStart && findEngine(candidates, rememberedStart.engine)?.id === engineId) for (const [key, value] of Object.entries(rememberedStart.options ?? {})) if (typeof value === "string") out[key] = value;
     return out;
-  }, [thread, engineId, rememberedStart]);
+  }, [thread, engineId, rememberedStart, candidates]);
   const pickValues = chosenPicks ?? threadPicks;
   const setPick = (key: string, value: string) => setChosenPicks({ ...pickValues, [key]: value });
   const pickTitle = (pick: EnginePick) => (pick.key === "model" || pick.key === "profile" ? t("agentPanel.modelHead") : pick.key === "effort" ? t("agentPanel.effortHead") : pick.title);

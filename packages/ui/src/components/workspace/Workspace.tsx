@@ -78,15 +78,18 @@ export function Workspace() {
   // The sample's first visit opens its first lesson — where the learning path starts — not the example backlog beside it.
   const { seen, markSeen } = useSeen();
   const firstLesson = ws.project.sample ? ws.items.find((i) => i.blocks.length > 0 && i.blockedBy.length === 0) : undefined;
+  const selectTicket = ws.select;
   useEffect(() => {
     if (!firstLesson || seen(FIRST_LESSON)) return;
     markSeen(FIRST_LESSON);
     // Narrower, opening it would close the assistant, and the setup card with it.
-    if (window.innerWidth >= THREE_PANE_FLOOR) ws.select(firstLesson.id);
-  }, [firstLesson, seen, markSeen, ws.select]);
+    if (window.innerWidth >= THREE_PANE_FLOOR) selectTicket(firstLesson.id);
+  }, [firstLesson, seen, markSeen, selectTicket]);
   const { t, tx } = useI18n();
   const undo = useUndo(ws.project.id);
   const undoWrite = useToastUndo(ws.project.id);
+  const undoWriteRef = useRef(undoWrite);
+  undoWriteRef.current = undoWrite;
   const redo = useRedo(ws.project.id);
   const createView = useCreateView(ws.project.id);
   const toast = useToast();
@@ -243,12 +246,12 @@ export function Workspace() {
       {
         onSuccess: (view) => {
           ws.openView(view.id);
-          toast({ body: <>{tx("workspace.createdViewToast", { name: <span className="num">{name}</span> })}</>, onUndo: () => undoWrite({ id: view.id, stamp: view.updatedAt }) });
+          toast({ body: <>{tx("workspace.createdViewToast", { name: <span className="num">{name}</span> })}</>, onUndo: () => undoWriteRef.current({ id: view.id, stamp: view.updatedAt }) });
         },
         onError: (err) => toast(errorSpec(err))
       }
     );
-  }, [createView, t, tx, toast, undo, ws]);
+  }, [createView, t, tx, toast, ws]);
 
   // .overlay-open is how the stylesheet demotes the chrome's primary button
   useEffect(() => {
@@ -316,7 +319,7 @@ export function Workspace() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [anyOverlay, expanded, runUndo, runRedo, ws, selectedId]);
+  }, [anyOverlay, expanded, runUndo, runRedo, ws, selectedId, setSideOpen]);
 
   return (
     <div className="app">

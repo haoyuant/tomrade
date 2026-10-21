@@ -33,6 +33,9 @@ export function EngineTryRow({ engine, command }: { engine: EngineView; command?
     }
   };
 
+  const runRef = useRef(run);
+  runRef.current = run;
+
   // A newly chosen CLI is tried as soon as it reads ready.
   const seen = useRef(command);
   const pending = useRef(false);
@@ -45,7 +48,7 @@ export function EngineTryRow({ engine, command }: { engine: EngineView; command?
   useEffect(() => {
     if (!pending.current || !engine.ok || running) return;
     pending.current = false;
-    void run();
+    void runRef.current();
   }, [engine.ok, command, running]);
 
   return (

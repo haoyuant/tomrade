@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { AppSettings } from "@tomradex/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
@@ -18,7 +18,7 @@ export function useSeen() {
   const qc = useQueryClient();
   const settings = useSettings();
   const { mutate: save } = useSaveSettings();
-  const list = (settings.data?.onboarding as { seen?: string[] } | undefined)?.seen ?? [];
+  const list = useMemo(() => (settings.data?.onboarding as { seen?: string[] } | undefined)?.seen ?? [], [settings.data]);
   const seen = useCallback((id: string) => !settings.data || list.includes(ALL) || list.includes(id), [settings.data, list]);
   const markSeen = useCallback(
     (id: string) => {

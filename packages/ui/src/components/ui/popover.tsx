@@ -34,13 +34,14 @@ export function Popover({
   useEffect(() => {
     if (!open) return;
     const opener = document.activeElement as HTMLElement | null;
+    const wrap = ref.current;
     requestAnimationFrame(() => {
       const box = surface.current;
       if (box && !box.contains(document.activeElement)) box.querySelector<HTMLElement>(FOCUSABLE)?.focus();
     });
     return () => {
       const active = document.activeElement;
-      if (!active || active === document.body || ref.current?.contains(active)) opener?.focus();
+      if (!active || active === document.body || wrap?.contains(active)) opener?.focus();
     };
   }, [open]);
   useEffect(() => {

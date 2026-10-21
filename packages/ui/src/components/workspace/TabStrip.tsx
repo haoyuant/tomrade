@@ -48,6 +48,9 @@ export function TabStrip() {
 
   // The tab a new file opens beside: the one it was opened from.
   const lastActive = useRef<string | null>(null);
+  const pinId = pin?.id;
+  const pinV = pin?.v;
+  const workstreamId = ws.workstream?.id;
   useEffect(() => {
     if (onRoutines) {
       setRoutinesTab(projectId, true);
@@ -55,15 +58,15 @@ export function TabStrip() {
       return;
     }
     if (filePath === null) {
-      rememberBacklog(projectId, ws.virtual && ws.workstream ? { kind: "workstream", id: ws.workstream.id } : { kind: "view", id: ws.view.id });
+      rememberBacklog(projectId, ws.virtual && workstreamId !== undefined ? { kind: "workstream", id: workstreamId } : { kind: "view", id: ws.view.id });
       lastActive.current = null;
       return;
     }
     const kind = kindOf(filePath);
     if (!kind) return;
-    openTab(projectId, { kind, path: filePath, ...(kind === "file" && pin ? { pin } : {}) }, lastActive.current);
+    openTab(projectId, { kind, path: filePath, ...(kind === "file" && pinId && pinV ? { pin: { id: pinId, v: pinV } } : {}) }, lastActive.current);
     lastActive.current = filePath;
-  }, [projectId, onRoutines, filePath, kindOf, pin?.id, pin?.v, ws.virtual, ws.workstream?.id, ws.view.id]);
+  }, [projectId, onRoutines, filePath, kindOf, pinId, pinV, ws.virtual, workstreamId, ws.view.id]);
 
   // A file deleted out from under its tab takes the tab with it — never the one on screen. Only a
   // fresh tree decides: a tab just renamed is not in the tree it was renamed against.

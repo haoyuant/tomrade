@@ -38,10 +38,11 @@ const keyPageFor = (host: string, presets: ProviderView[] | undefined, kinds: Mo
 /** The endpoint's own listing, refetched once typing settles: a key or address mid-edit asks nothing. */
 function useModelListing(endpoint: Pick<ModelProfile, "provider" | "baseURL" | "apiKey">, keyRequired: boolean) {
   const [settled, setSettled] = useState(endpoint);
+  const { provider: nextProvider, baseURL: nextBaseURL, apiKey: nextApiKey } = endpoint;
   useEffect(() => {
-    const timer = setTimeout(() => setSettled(endpoint), 600);
+    const timer = setTimeout(() => setSettled({ provider: nextProvider, baseURL: nextBaseURL, apiKey: nextApiKey }), 600);
     return () => clearTimeout(timer);
-  }, [endpoint.provider, endpoint.baseURL, endpoint.apiKey]);
+  }, [nextProvider, nextBaseURL, nextApiKey]);
   const { provider, baseURL, apiKey } = settled;
   return useQuery({
     queryKey: keys.llm.models(provider, baseURL, apiKey),
@@ -85,8 +86,12 @@ function ModelPickField({ draft, host, keyRequired, onChange, onPicked }: { draf
   const pick = (model: string) => onChange({ model, ...(detected(model) ?? { inputModalities: undefined, outputModalities: undefined }) });
   // A profile saved with hand-ticked media takes what the listing now says once it answers.
   const found = detected(draft.model);
+  // Read at the answer, not watched: a box ticked by hand afterwards stays ticked.
+  const latest = useRef({ draft, onChange });
+  latest.current = { draft, onChange };
   useEffect(() => {
-    if (found && !(sameModes(found.inputModalities, draft.inputModalities) && sameModes(found.outputModalities, draft.outputModalities))) onChange(found);
+    const { draft: now, onChange: change } = latest.current;
+    if (found && !(sameModes(found.inputModalities, now.inputModalities) && sameModes(found.outputModalities, now.outputModalities))) change(found);
   }, [found, draft.model]);
   const [custom, setCustom] = useState(false);
   const typed = custom || models.length === 0 || (draft.model !== "" && !models.includes(draft.model));

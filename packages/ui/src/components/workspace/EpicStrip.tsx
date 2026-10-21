@@ -20,16 +20,17 @@ export function EpicStrip() {
   const at = ws.query.filter.findIndex((c) => c.field === "epic" && c.op === "in");
   const chosen = new Set((at >= 0 ? ws.query.filter[at].values : []).filter((v): v is string => typeof v === "string"));
 
+  const epics = ws.epics;
   const { open, finished } = useMemo(() => {
-    const open: typeof ws.epics = [];
-    const finished: typeof ws.epics = [];
-    for (const epic of ws.epics) {
+    const open: typeof epics = [];
+    const finished: typeof epics = [];
+    for (const epic of epics) {
       const p = progress.get(epic.id);
       if (!p || p.total === 0) continue;
       (p.done < p.total ? open : finished).push(epic);
     }
     return { open, finished };
-  }, [ws.epics, progress]);
+  }, [epics, progress]);
 
   if (open.length + finished.length === 0) return null;
 

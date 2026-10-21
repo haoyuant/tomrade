@@ -290,17 +290,17 @@ export function WorkspaceProvider({
       // Arriving there is nothing to clear, and the screen may already have opened a ticket.
       if (!arriving) select(null);
     } else if (changed) setDraft(null);
-  }, [placeKey, savedCanon]);
+  }, [placeKey, savedCanon, select]);
   const live = draft ?? saved;
   const dirty = !!saved && !!draft && canon(draft) !== canon(saved);
 
-  const all = items.data ?? [];
+  const all = useMemo(() => items.data ?? [], [items.data]);
   const fields = fieldsQuery.data ?? (BUILTIN_FIELDS as FieldDef[]);
   const fieldById = useMemo(() => new Map(fields.map((f) => [f.id, f])), [fields]);
   const epics = useMemo(() => all.filter((i) => i.kind === "epic"), [all]);
   const epicNames = useMemo(() => new Map(epics.map((e) => [e.id, e.title])), [epics]);
-  const boardList = boards.data ?? [];
-  const labelList = labels.data ?? [];
+  const boardList = useMemo(() => boards.data ?? [], [boards.data]);
+  const labelList = useMemo(() => labels.data ?? [], [labels.data]);
 
   // `locale` is a dependency on purpose: the tables below are localized in place.
   const optionsOf = useCallback(
@@ -328,7 +328,7 @@ export function WorkspaceProvider({
           return def.options.map((o) => ({ key: o.id, name: o.name, description: o.description }));
       }
     },
-    [fieldById, epics, boardList, labelList, locale]
+    [fieldById, epics, boardList, labelList, locale, t]
   );
 
   const groupSpace = useCallback(
@@ -373,6 +373,7 @@ export function WorkspaceProvider({
   const openFile = useCallback((path: string) => void navigate({ to: "/p/$projectId/f/$", params: { projectId, _splat: path } }), [navigate, projectId]);
   const openRoutines = useCallback(() => void navigate({ to: "/p/$projectId/r", params: { projectId } }), [navigate, projectId]);
 
+  const refetchItems = items.refetch;
   const value = useMemo<WorkspaceValue | null>(() => {
     if (!project || !view || !saved || !live) return null;
     const rankMap = ranks.data ?? {};
@@ -399,7 +400,7 @@ export function WorkspaceProvider({
       );
     return {
       itemsError: items.isError ? readableError(items.error) : null,
-      retryItems: () => void items.refetch(),
+      retryItems: () => void refetchItems(),
       project,
       projects: projects.data ?? [],
       views: views.data ?? [],
@@ -483,7 +484,8 @@ export function WorkspaceProvider({
     createView,
     toast,
     items.isError,
-    items.error
+    items.error,
+    refetchItems
   ]);
 
   // Deleting the open view strands this route; the project loader knows how to
