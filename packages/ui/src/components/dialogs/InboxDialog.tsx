@@ -9,6 +9,7 @@ import { useInboxActions, useInboxEntries, useInboxSources, useInboxTriager } fr
 import { useItems } from "~/lib/queries";
 import { openExternal } from "~/lib/shell";
 import { useErrorToast, useToast } from "~/lib/toast";
+import { isCommitKey } from "~/lib/keys";
 
 const TABS: InboxListFilter[] = ["new", "activity", "accepted", "merged", "closed", "all"];
 const KINDS: InboxKind[] = ["bug", "feedback", "idea"];
@@ -349,7 +350,7 @@ function EntryDetail({ projectId, entry, source, onOpenIssue }: { projectId: str
         <div className="panel stack-3 inbox-form">
           <label className="stack-1">
             <span className="meta-txt">{t("inbox.ticketTitle")}</span>
-            <input className="input" value={title} autoFocus onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && title.trim() && accept()} />
+            <input className="input" value={title} autoFocus onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => isCommitKey(e) && title.trim() && accept()} />
           </label>
           <div className="row">
             <div className="seg quiet" role="radiogroup" aria-label={t("inbox.kindAria")}>

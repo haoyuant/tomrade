@@ -7,6 +7,7 @@ import { useI18n } from "~/lib/i18n";
 import { cliDiagnostics, engineStatus, useRecheckEngines } from "~/lib/localCli";
 import { openExternal, pickProgram } from "~/lib/shell";
 import { readableError, useToast } from "~/lib/toast";
+import { isCommitKey } from "~/lib/keys";
 
 /**
  * Inside a local agent's engine row: which CLI it runs and where that came
@@ -108,7 +109,7 @@ export function LocalCliSection({ engine, cli, command, onSaveCommand }: { engin
               setDraft(e.target.value);
               setResult(null);
             }}
-            onKeyDown={(e) => e.key === "Enter" && void checkAndSave(draft)}
+            onKeyDown={(e) => isCommitKey(e) && void checkAndSave(draft)}
           />
           <button type="button" className="btn btn-secondary" disabled={checking} onClick={() => void browse()}>
             {t("localCli.browse")}

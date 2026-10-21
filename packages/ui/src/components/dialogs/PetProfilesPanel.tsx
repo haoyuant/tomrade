@@ -9,6 +9,7 @@ import { useActivatePetProfile, useClearPetImage, useCreatePetProfile, useDelete
 import { measurePetImage, PET_IMAGE_TYPES } from "~/lib/petPlayer";
 import { readableError } from "~/lib/toast";
 import { cn } from "~/lib/utils";
+import { isCommitKey } from "~/lib/keys";
 
 const moodKey = (mood: PetMood) => `petProfiles.mood_${mood}` as MessageKey;
 const whenKey = (mood: PetMood) => `petProfiles.mood_${mood}_when` as MessageKey;
@@ -108,7 +109,7 @@ function ProfileEditor({ profile, moods, maxBytes }: { profile: PetProfileView; 
               onChange={(event) => setName(event.target.value)}
               onBlur={rename}
               onKeyDown={(event) => {
-                if (event.key === "Enter") event.currentTarget.blur();
+                if (isCommitKey(event)) event.currentTarget.blur();
               }}
             />
           </div>

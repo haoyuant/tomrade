@@ -39,6 +39,7 @@ import { readableError, useToast } from "~/lib/toast";
 import { keyLabel } from "~/lib/keybindings";
 import { PlainSecretNote } from "~/components/ui/PlainSecretNote";
 import { openSettingsPane, useSettingsSheet } from "~/lib/settingsHost";
+import { isCommitKey } from "~/lib/keys";
 
 /** Each preview re-declares the token block locally, so all built-in themes are
  *  visible at once — the clearest proof that one class swaps the lot. */
@@ -302,7 +303,7 @@ function RefreshFrequency({ value, onCommit }: { value: number; onCommit: (next:
       <input type="text" inputMode="numeric" className="field-input" value={draft}
         aria-invalid={!valid} aria-describedby={!valid ? "refresh-frequency-error" : undefined}
         onChange={event => setDraft(event.target.value)} onBlur={commit}
-        onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); commit(); } }} />
+        onKeyDown={event => { if (isCommitKey(event)) { event.preventDefault(); commit(); } }} />
       <span>{t("settingsDialog.minutesUnit")}</span>
     </span>
     {!valid && <span id="refresh-frequency-error" className="frequency-error" role="alert">{t("settingsDialog.refreshFrequencyError")}</span>}

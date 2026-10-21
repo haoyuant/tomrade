@@ -6,6 +6,7 @@ import { useWorkspace } from "~/components/workspace/context";
 import { useI18n } from "~/lib/i18n";
 import { notesSearch, useNoteSearch, useNoteTags, useNotesSearchState } from "~/lib/notes";
 import { readableError } from "~/lib/toast";
+import { isCommitKey } from "~/lib/keys";
 
 function Marked({ text, marks }: { text: string; marks: [number, number][] }) {
   const parts: ReactNode[] = [];
@@ -79,7 +80,7 @@ export function NotesSearch() {
               e.preventDefault();
               notesSearch.close();
             }
-            if (e.key === "Enter") {
+            if (isCommitKey(e)) {
               setQuery(draft);
               const first = results.data?.hits[0];
               if (first) openFile(first.path);

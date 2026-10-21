@@ -14,6 +14,7 @@ import {
 import { openExternal } from "~/lib/shell";
 import { PlainSecretNote } from "~/components/ui/PlainSecretNote";
 import { readableError, useToast } from "~/lib/toast";
+import { isCommitKey } from "~/lib/keys";
 
 /** The words of a failure, without the IPC wrapper or the class name. */
 export const message = (error: unknown): string => readableError(error);
@@ -199,7 +200,7 @@ export function ConnectionPanel({ provider, api = storageRemoteApi }: { provider
             value={secret}
             onChange={(e) => setSecret(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") submit();
+              if (isCommitKey(e)) submit();
             }}
           />
           <button type="button" className="btn btn-secondary" disabled={!secret.trim() || connect.isPending} onClick={submit}>

@@ -4,6 +4,7 @@ import { PriorityGlyph, ProvenanceMark, StatusMark, Tag } from "~/components/ui/
 import { timeAgo } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useIsSelected, useWorkspace } from "./context";
+import { isCommitKey } from "~/lib/keys";
 
 export interface CardProps {
   item: Item;
@@ -74,7 +75,7 @@ export function Card({ item, onOpen, onNudge, dragging, dragHandleRef }: CardPro
       title={t("card.keyboardHint")}
       onClick={onOpen}
       onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
+        if (isCommitKey(e) || e.key === " ") {
           e.preventDefault();
           onOpen();
           // opened from the keyboard, the reading goes on in the pane

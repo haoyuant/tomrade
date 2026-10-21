@@ -13,6 +13,7 @@ import { RulesBlock } from "./RulesBlock";
 import { StorageBlock } from "./StorageBlock";
 import { errorSpec, useToast } from "~/lib/toast";
 import { keyLabel } from "~/lib/keybindings";
+import { isCommitKey } from "~/lib/keys";
 
 type T = (key: MessageKey, vars?: Record<string, string | number>) => string;
 
@@ -414,7 +415,7 @@ function DeleteFace({
             value={typed}
             onChange={(e) => setTyped(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") destroy();
+              if (isCommitKey(e)) destroy();
             }}
           />
           <span className="meta-txt">

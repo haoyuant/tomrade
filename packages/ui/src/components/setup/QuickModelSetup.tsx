@@ -7,6 +7,7 @@ import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useInstallProvider, useModelProviders, useProviderPlugins, useProviderSignIn, useQuickSetup, useProviders } from "~/lib/setup";
 import { PlainSecretNote } from "~/components/ui/PlainSecretNote";
 import { openExternal } from "~/lib/shell";
+import { isCommitKey } from "~/lib/keys";
 
 /** Why a connection failed, in words that say what to fix. */
 export function SetupProblem({ result, provider }: { result: Extract<QuickSetupResult, { ok: false }>; provider: string }) {
@@ -180,7 +181,7 @@ export function QuickModelSetup({ onConnected }: { onConnected?: () => void }) {
                     setKey(e.target.value);
                     setResult(null);
                   }}
-                  onKeyDown={(e) => e.key === "Enter" && key.trim() && !quick.isPending && connect()}
+                  onKeyDown={(e) => isCommitKey(e) && key.trim() && !quick.isPending && connect()}
                 />
                 <button type="button" className="btn btn-primary" data-testid="quick-connect" disabled={!key.trim() || quick.isPending} aria-busy={quick.isPending} onClick={() => connect()}>
                   {quick.isPending ? t("setup.connecting") : t("setup.connect")}

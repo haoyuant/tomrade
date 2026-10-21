@@ -9,6 +9,8 @@ import { usePatchItem } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 import { cn } from "~/lib/utils";
 import { useToastUndo } from "~/lib/undo";
+import { InlineEdit } from "~/components/ui/InlineEdit";
+import { isCommitKey } from "~/lib/keys";
 
 /**
  * One write path for every editable field on an issue, shared by the docked
@@ -238,7 +240,7 @@ export function LabelsField({ item, write, vocabulary }: FieldProps & { vocabula
             aria-label={t("fields.newLabelAria")}
             placeholder={t("fields.labelPlaceholder")}
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
+              if (isCommitKey(e)) {
                 e.preventDefault();
                 add(e.currentTarget.value);
               }
@@ -405,7 +407,7 @@ export function InlineText({
           setEditing(false);
           return;
         }
-        if (e.key === "Enter" && !e.shiftKey) {
+        if (isCommitKey(e) && !e.shiftKey) {
           e.preventDefault();
           commit(e.currentTarget.value);
         }
@@ -520,7 +522,7 @@ export function DepsField({ item, write, items, mode, onOpen }: FieldProps & { i
             aria-label={t(mode === "blocks" ? "fields.newBlocksAria" : "fields.newBlockedByAria")}
             placeholder={t("fields.depPlaceholder")}
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
+              if (isCommitKey(e)) {
                 e.preventDefault();
                 add(e.currentTarget.value);
               }
@@ -558,43 +560,19 @@ export function DepsField({ item, write, items, mode, onOpen }: FieldProps & { i
   );
 }
 
-/**
- * Free text or a number, edited in place. Blur commits, Escape discards, Enter
- * commits — the same contract as `InlineText`, on one line.
- */
+/** Free text or a number, edited in place — the same contract as `InlineText`, on one line; emptying it clears the value. */
 function InlineValue({ value, kind, label, onSave }: { value: string; kind: "text" | "number"; label: string; onSave: (next: string) => void }) {
-  const discarded = useRef(false);
-  const commit = (next: string) => {
-    if (discarded.current) {
-      discarded.current = false;
-      return;
-    }
-    if (next.trim() === value) return;
-    onSave(next.trim());
-  };
   return (
-    <input
-      key={value}
+    <InlineEdit
       className={cn("fval", kind === "number" && "num")}
       type={kind === "number" ? "number" : "text"}
       step={kind === "number" ? "any" : undefined}
       inputMode={kind === "number" ? "decimal" : undefined}
       aria-label={label}
-      defaultValue={value}
+      value={value}
+      allowEmpty
       placeholder="—"
-      onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          e.stopPropagation();
-          discarded.current = true;
-          e.currentTarget.value = value;
-          e.currentTarget.blur();
-        }
-        if (e.key === "Enter") {
-          e.preventDefault();
-          e.currentTarget.blur();
-        }
-      }}
-      onBlur={(e) => commit(e.currentTarget.value)}
+      onSave={onSave}
     />
   );
 }

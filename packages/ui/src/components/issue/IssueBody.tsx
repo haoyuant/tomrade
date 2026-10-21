@@ -21,6 +21,7 @@ import { cn } from "~/lib/utils";
 import type { FieldProps } from "./fields";
 import { ImagePreview, type PreviewImage } from "./ImagePreview";
 import { hits } from "~/lib/keybindings";
+import { isCommitKey, isComposing } from "~/lib/keys";
 
 /** The Files store's binary read limit: anything larger could be saved but never shown again. */
 const ATTACHMENT_LIMIT = 8 * 1024 * 1024;
@@ -145,7 +146,7 @@ function BodyRead({ projectId, body, className, onEdit }: { projectId: string; b
         if (!window.getSelection()?.toString()) onEdit();
       }}
       onKeyDown={(e) => {
-        if (e.key === "Enter" && e.target === e.currentTarget) {
+        if (isCommitKey(e) && e.target === e.currentTarget) {
           e.preventDefault();
           onEdit();
         }
@@ -227,7 +228,7 @@ function BodyMarkdown({ projectId, text, drafts }: { projectId: string; text: st
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     const target = e.target as HTMLElement;
-    if (e.key !== "Enter" || !(target instanceof HTMLImageElement) || !target.matches("img.md-file[data-file-id][src]")) return;
+    if (!isCommitKey(e) || !(target instanceof HTMLImageElement) || !target.matches("img.md-file[data-file-id][src]")) return;
     e.preventDefault();
     e.stopPropagation();
     showPreview(target);
@@ -466,7 +467,7 @@ function BodyEditor({ item, write, className, onDone }: FieldProps & { className
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.nativeEvent.isComposing) return;
+    if (isComposing(e)) return;
     if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { RepoStateView } from "@tomradex/code-link";
 import type { Board, Repo } from "@tomradex/domain";
 import type { CheckoutView, FolderRepo } from "@tomradex/repos";
@@ -26,40 +26,8 @@ import { pickDirectory, reveal } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { AgentConnection } from "./AgentConnection";
 import { ConnectionPanel, message } from "./destination";
-
-/** Enter or blur commits, Escape restores — the one-line rename the Fields sheet uses. */
-function RenameInput({ value, ariaLabel, className, placeholder, onSave }: { value: string; ariaLabel: string; className?: string; placeholder?: string; onSave: (next: string) => void }) {
-  const settled = useRef(false);
-  const commit = (el: HTMLInputElement) => {
-    if (settled.current) return;
-    settled.current = true;
-    const next = el.value.trim();
-    if (next && next !== value) onSave(next);
-    else el.value = value;
-  };
-  return (
-    <input
-      key={value}
-      className={className ?? "input"}
-      aria-label={ariaLabel}
-      placeholder={placeholder}
-      defaultValue={value}
-      onFocus={() => {
-        settled.current = false;
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          e.stopPropagation();
-          e.currentTarget.value = value;
-          settled.current = true;
-          e.currentTarget.blur();
-        }
-        if (e.key === "Enter") commit(e.currentTarget);
-      }}
-      onBlur={(e) => commit(e.currentTarget)}
-    />
-  );
-}
+import { InlineEdit } from "~/components/ui/InlineEdit";
+import { isCommitKey } from "~/lib/keys";
 
 /** Pick a folder and add the repository in it: by its origin, or as a local repository when it has none. */
 export function useChooseRepoFolder(projectId: string) {
@@ -156,7 +124,7 @@ export function RepositoriesBlock({ projectId }: { projectId: string }) {
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") add();
+            if (isCommitKey(e)) add();
           }}
         />
         <button type="button" className="btn btn-ghost" disabled={!url.trim() || create.isPending} onClick={add}>
@@ -243,9 +211,9 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
         <span className="meta-txt num repo-remote" style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={repo.remote}>
           {repo.remote}
         </span>
-        <RenameInput
+        <InlineEdit
           value={repo.defaultBranch}
-          ariaLabel={t("repositories.branchAria", { name: repo.name })}
+          aria-label={t("repositories.branchAria", { name: repo.name })}
           className="input num repo-branch"
           onSave={(defaultBranch) => update.mutate({ id: repo.id, patch: { defaultBranch } }, { onError: fail })}
         />

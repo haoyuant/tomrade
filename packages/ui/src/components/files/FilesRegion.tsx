@@ -48,6 +48,7 @@ import { NoteEditor, type SaveState } from "./NoteEditor";
 import { stateOf, type StateView } from "./state";
 import { useNoteActions } from "./useNoteActions";
 import { hits, keyLabel } from "~/lib/keybindings";
+import { isCommitKey } from "~/lib/keys";
 
 const KIND: Record<FileConflict["kind"], MessageKey> = {
   content: "files.kindContent",
@@ -76,7 +77,7 @@ function NamePrompt({ initial = "", ariaLabel, placeholder, busy, onCommit, onCa
         disabled={busy}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter") commit();
+          if (isCommitKey(e)) commit();
           if (e.key === "Escape") {
             e.stopPropagation();
             onCancel();
@@ -813,7 +814,7 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
                   disabled={busy}
                   onFocus={(e) => e.target.select()}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") {
+                    if (isCommitKey(e)) {
                       const name = (e.target as HTMLInputElement).value.trim();
                       if (name) rename(name);
                       else setRenaming(false);

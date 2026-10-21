@@ -29,52 +29,12 @@ import {
 import { errorSpec, useToast } from "~/lib/toast";
 import { useToastUndo } from "~/lib/undo";
 import { keyLabel } from "~/lib/keybindings";
+import { InlineEdit } from "~/components/ui/InlineEdit";
+import { isCommitKey } from "~/lib/keys";
 
 const CUSTOM_TYPES: FieldType[] = ["text", "number", "date", "select", "checkbox"];
 
 const holders = (items: Item[], fieldId: string) => items.filter((i) => fieldId in i.fields).length;
-
-/**
- * Enter and blur commit, Escape restores — a one-line rename that never needs a
- * Save button. Enter commits directly rather than through blur, because an
- * unfocused window fires no focus events at all.
- */
-function RenameInput({ id, value, ariaLabel, className, placeholder, allowEmpty, onSave }: { id?: string; value: string; ariaLabel: string; className?: string; placeholder?: string; /** An emptied field is a value too (a path back to the root), not a cancelled edit. */ allowEmpty?: boolean; onSave: (next: string) => void }) {
-  const settled = useRef(false);
-  const commit = (el: HTMLInputElement) => {
-    if (settled.current) return;
-    settled.current = true;
-    const next = el.value.trim();
-    if (next !== value && (next || allowEmpty)) onSave(next);
-    else el.value = value;
-  };
-  return (
-    <input
-      key={value}
-      id={id}
-      className={className ?? "input"}
-      aria-label={ariaLabel}
-      placeholder={placeholder}
-      defaultValue={value}
-      onFocus={() => {
-        settled.current = false;
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          e.stopPropagation();
-          e.currentTarget.value = value;
-          settled.current = true;
-          e.currentTarget.blur();
-        }
-        if (e.key === "Enter") {
-          commit(e.currentTarget);
-          e.currentTarget.blur();
-        }
-      }}
-      onBlur={(e) => commit(e.currentTarget)}
-    />
-  );
-}
 
 function FieldRow({ def, count, selected, onSelect }: { def: FieldDef; count: number | null; selected?: boolean; onSelect?: () => void }) {
   const { t } = useI18n();
@@ -158,9 +118,9 @@ function FieldEditor({ projectId, def, items, onDeleted }: { projectId: string; 
       <div className="grid-2">
         <div className="field">
           <label htmlFor="fldName">{t("fieldsDialog.nameLabel")}</label>
-          <RenameInput
+          <InlineEdit
             value={def.name}
-            ariaLabel={t("fieldsDialog.nameLabel")}
+            aria-label={t("fieldsDialog.nameLabel")}
             onSave={(name) =>
               update.mutate({ id: def.id, patch: { name } }, { onSuccess: () => toast({ body: tx("fieldsDialog.renamedToast", { name: <b>{name}</b> }) }), onError: fail })
             }
@@ -179,15 +139,15 @@ function FieldEditor({ projectId, def, items, onDeleted }: { projectId: string; 
             {def.options.length === 0 && <p className="meta-txt dense">{t("fieldsDialog.noOptionsYet")}</p>}
             {def.options.map((o) => (
               <div className="fld-opt" key={o.id}>
-                <RenameInput
+                <InlineEdit
                   value={o.name}
-                  ariaLabel={t("fieldsDialog.optionNameAria")}
+                  aria-label={t("fieldsDialog.optionNameAria")}
                   className="input fld-opt-name"
                   onSave={(name) => updateOption.mutate({ fieldId: def.id, optionId: o.id, patch: { name } }, { onError: fail })}
                 />
-                <RenameInput
+                <InlineEdit
                   value={o.description ?? ""}
-                  ariaLabel={t("fieldsDialog.optionDescriptionAria")}
+                  aria-label={t("fieldsDialog.optionDescriptionAria")}
                   className="input fld-opt-desc"
                   placeholder={t("fieldsDialog.optionDescriptionPlaceholder")}
                   onSave={(description) => updateOption.mutate({ fieldId: def.id, optionId: o.id, patch: { description } }, { onError: fail })}
@@ -241,7 +201,7 @@ function FieldEditor({ projectId, def, items, onDeleted }: { projectId: string; 
                 value={newOption}
                 onChange={(e) => setNewOption(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") commitOption();
+                  if (isCommitKey(e)) commitOption();
                 }}
               />
               <button type="button" className="btn btn-ghost" disabled={!newOption.trim()} onClick={commitOption}>
@@ -419,7 +379,7 @@ function WorkstreamRow({ board, count, others, projectId, onOpenRepositories }: 
     <div className="fld-ws" data-board={board.id}>
       <div className="fld-ws-head">
         <IconPicker compact value={viewIcon(board.icon)} ariaLabel={t("fieldsDialog.workstreamIconAria")} onChange={(icon) => update.mutate({ id: board.id, patch: { icon } }, { onError: fail })} />
-        <RenameInput value={board.name} ariaLabel={t("fieldsDialog.workstreamNameAria")} className="input fld-ws-name" onSave={(name) => update.mutate({ id: board.id, patch: { name } }, { onError: fail })} />
+        <InlineEdit value={board.name} aria-label={t("fieldsDialog.workstreamNameAria")} className="input fld-ws-name" onSave={(name) => update.mutate({ id: board.id, patch: { name } }, { onError: fail })} />
         <span className="meta-txt num">{t(count === 1 ? "fieldsDialog.valuesOne" : "fieldsDialog.valuesMany", { n: count })}</span>
         <button
           type="button"
@@ -463,11 +423,11 @@ function WorkstreamRow({ board, count, others, projectId, onOpenRepositories }: 
         {repo && (
           <div className="field">
             <label htmlFor={pathId}>{t("fieldsDialog.workstreamRepoPathLabel")}</label>
-            <RenameInput
+            <InlineEdit
               id={pathId}
               value={board.repoPath}
               allowEmpty
-              ariaLabel={t("fieldsDialog.workstreamRepoPathAria")}
+              aria-label={t("fieldsDialog.workstreamRepoPathAria")}
               className="input num fld-ws-path"
               placeholder={t("fieldsDialog.workstreamRepoPathPlaceholder")}
               onSave={(repoPath) => update.mutate({ id: board.id, patch: { repoPath: cleanRepoPath(repoPath) } }, { onError: fail })}
@@ -582,7 +542,7 @@ function WorkstreamEditor({ projectId, items, focusBoardId, onOpenRepositories }
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") add();
+                if (isCommitKey(e)) add();
               }}
             />
             <button type="button" className="btn btn-ghost" disabled={!newName.trim()} onClick={add}>
@@ -753,7 +713,7 @@ export function FieldsDialog({
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") submit();
+                if (isCommitKey(e)) submit();
               }}
             />
             <select className="select" style={{ flex: 1 }} aria-label={t("fieldsDialog.newFieldTypeAria")} value={newType} onChange={(e) => setNewType(e.target.value as FieldType)}>
