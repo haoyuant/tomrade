@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, expect, it } from "vitest";
+import { afterAll, expect, it, vi } from "vitest";
 import { Service, type Context } from "cordis";
 import { EventEmitter } from "node:events";
 import CodeSessions, { continuedIn, openSystemTerminal, sessionRows, type Layout, type WindowMessage, type WindowPost, type WindowState } from "@tomradex/code-sessions";
@@ -647,19 +647,19 @@ it("opens plain terminals in herdr without code link, keeps them, closes them, a
   await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
   const win = opened[0]!;
   expect(win.states[0]!).toMatchObject({ terminals: [], places: [{ label: "tomrade", cwd: repo }], warning: null });
-  const say = async (m: WindowMessage) => {
-    win.spec.onMessage(m);
-    await settle();
-    await new Promise((r) => setTimeout(r, 50));
-  };
+  // Each step waits for the state it leads to, not a fixed time: under load the window's refresh can take longer.
+  const until = (check: () => boolean) => vi.waitUntil(check, { timeout: 20_000, interval: 10 });
+  const listed = (states: WindowState[], id: string) => states.at(-1)!.terminals.find((t) => t.id === id);
 
   // A new terminal: a plain shell in a tab of the project's workspace, nothing typed into it.
-  await say({ type: "newTerminal", terminalId: "t1", cwd: repo });
+  win.spec.onMessage({ type: "newTerminal", terminalId: "t1", cwd: repo });
+  await until(() => !!listed(win.states, "t1")?.pane);
   expect(fake.of("workspace.create")).toEqual([{ cwd: repo, label: w.project.name, focus: false }]);
   expect(fake.of("pane.send_input")).toEqual([]);
   expect(win.states.some((s) => s.terminals.some((t) => t.id === "t1" && t.pane === null))).toBe(true);
   expect(win.states.at(-1)!.terminals).toEqual([expect.objectContaining({ id: "t1", title: path.basename(repo), cwd: repo, pane: "w1:p1" })]);
-  await say({ type: "attach", cell: "c1", sessionId: "t1", cols: 80, rows: 24 });
+  win.spec.onMessage({ type: "attach", cell: "c1", sessionId: "t1", cols: 80, rows: 24 });
+  await until(() => attached.length > 0);
   expect(attached).toEqual(["w1:p1"]);
 
   // Kept: a window opened later lists it again.
@@ -671,31 +671,26 @@ it("opens plain terminals in herdr without code link, keeps them, closes them, a
   sessionsBroken = true;
   const next = opened[1]!;
   next.spec.onMessage({ type: "newTerminal", terminalId: "t2", cwd: null });
-  await settle();
-  await new Promise((r) => setTimeout(r, 50));
+  await until(() => !!listed(next.states, "t2")?.pane);
   expect(next.states.at(-1)).toMatchObject({ sessions: [], warning: expect.any(String) });
   expect(next.states.at(-1)!.terminals.map((t) => t.id)).toEqual(["t1", "t2"]);
   sessionsBroken = false;
 
   // Closed by the person: the pane ends and the terminal is forgotten. One whose pane went is forgotten too.
   next.spec.onMessage({ type: "closeTerminal", terminalId: "t1" });
-  await settle();
-  await new Promise((r) => setTimeout(r, 50));
+  await until(() => !listed(next.states, "t1"));
   expect(fake.of("pane.close")).toEqual([{ pane_id: "w1:p1" }]);
-  fake.exit(next.states.at(-1)!.terminals[0]!.pane!);
+  fake.exit(listed(next.states, "t2")!.pane!);
   next.spec.onMessage({ type: "refresh" });
-  await settle();
-  await new Promise((r) => setTimeout(r, 50));
-  expect(next.states.at(-1)!.terminals).toEqual([]);
+  await until(() => next.states.at(-1)!.terminals.length === 0);
 
   // herdr gone: the window says so, nothing is kept.
   fake.stop();
   next.spec.onMessage({ type: "newTerminal", terminalId: "t3", cwd: repo });
-  await settle();
-  await new Promise((r) => setTimeout(r, 200));
-  expect(next.posts.at(-1)).toMatchObject({ type: "toast" });
+  await until(() => next.posts.at(-1)?.type === "toast");
   expect(JSON.parse(fs.readFileSync(stateFile, "utf8")).terminals[w.project.id]).toEqual([]);
-});
+  next.spec.onClose();
+}, 30_000);
 
 it("shows how herdr reads the agent in a plain terminal as it changes, nothing for a bare shell, and lets the pane go with the window", async () => {
   const fake = new FakeHerdr();
