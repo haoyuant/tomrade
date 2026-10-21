@@ -51,7 +51,7 @@ it("lists one engine in place of its parts", async () => {
 it("offers only backlog work while the built-in pi cannot run", async () => {
   const { ctx, done } = await setup({ ok: false, need: "install", reason: "no pi" });
   try {
-    expect((await ctx.agent.engineViews())[0]).toMatchObject({ ok: true, capabilities: ["backlog"] });
+    expect((await ctx.agent.engineViews())[0]).toMatchObject({ ok: true, capabilities: ["backlog"], reason: "no pi" });
   } finally { await done(); }
 });
 

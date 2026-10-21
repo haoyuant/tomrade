@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import type { EnginePick, EngineView } from "@tomradex/agent";
 import { awaitsTry, engineHealth, engineProblem } from "../src/lib/engines";
-import { firstRunSetup, setupSeenId, setupState } from "../src/lib/setupState";
+import { builtinProblem, firstRunSetup, ownFailed, setupSeenId, setupState } from "../src/lib/setupState";
 
 const models = (over: Partial<EnginePick> = {}): EnginePick => ({ key: "model", title: "Model", choices: [{ value: "m1" }], freeText: true, ...over });
 const answered = { ok: true, ms: 10, at: 1, reply: "OK" };
@@ -88,4 +88,29 @@ it("remembers the setup screen put away per machine, not per account", () => {
   const here = { seen: seenOn(setupSeenId("here")), device: "here", waited: false };
   expect(firstRunSetup({ complete: true, checking: false }, here)).toBe("closed");
   expect(firstRunSetup({ complete: false, checking: false }, here)).toBe("closed");
+});
+
+it("falls back to the built-in agent on a tested model once every own install failed its test", () => {
+  const failedTry = { ok: false, ms: 10, at: 1, error: "model not found" };
+  const own = engine({ id: "claude-code", title: "Claude Code", setup: { install: [] }, tried: failedTry });
+  const missing = engine({ id: "codex", ok: false, need: "install", setup: { install: [] }, tried: undefined });
+  const builtin = untried({ id: "tomrade", title: "Tomrade", usesModels: true, picks: [] });
+  expect(ownFailed([own, missing, builtin]).map((e) => e.id)).toEqual(["claude-code"]);
+  // One still being checked, or one that works, is not a failure yet.
+  expect(ownFailed([own, untried({ id: "b", setup: { install: [] } })])).toEqual([]);
+  const profile = { ok: true, via: "profile" as const, title: "DeepSeek" };
+  expect(setupState([own, builtin], profile, { ok: true })).toMatchObject({ complete: true, route: "builtin" });
+  // Not before the model answered its test.
+  expect(setupState([own, builtin], profile, "pending")).toMatchObject({ complete: false, route: null });
+  expect(setupState([engine({ setup: { install: [] } }), builtin], profile, { ok: true }).route).toBe("own");
+});
+
+it("says why the built-in agent cannot take tickets on the connected model", () => {
+  const profile = { ok: true, via: "profile" as const, title: "Qwen" };
+  const chatOnly = untried({ id: "tomrade", usesModels: true, capabilities: ["backlog"], reason: "speaks an API it does not" });
+  expect(builtinProblem([chatOnly], profile)).toBe("speaks an API it does not");
+  expect(setupState([chatOnly], profile, { ok: true })).toMatchObject({ complete: true, route: null });
+  // Before a model is connected, its "connect a model" is no problem to report.
+  expect(builtinProblem([chatOnly], worker)).toBeNull();
+  expect(builtinProblem([untried({ usesModels: true, reason: "x" })], profile)).toBeNull();
 });

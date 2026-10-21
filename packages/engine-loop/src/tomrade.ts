@@ -92,7 +92,8 @@ export function createTomradeEngine(ctx: Context, config: TomradeEngineConfig): 
       const [work, ...backlogs] = await Promise.all([config.work, ...own].map((id) => runs(part(id), opts)));
       const backlog = backlogs.find((state) => state?.ok) ?? backlogs.find(Boolean);
       if (work?.ok) return { ok: true };
-      if (backlog?.ok || (await borrowable(opts))) return { ok: true, capabilities: ["backlog"] };
+      // Why tickets cannot go to the built-in pi stays said, so setup can name it.
+      if (backlog?.ok || (await borrowable(opts))) return { ok: true, capabilities: ["backlog"], ...(work?.reason ? { reason: work.reason } : {}) };
       const state = backlog ?? work ?? { ok: false, need: "service", reason: "No in-app agent is installed" };
       // With the built-in pi switched off, there is no ticket work to wait for.
       return work ? state : { ...state, capabilities: ["backlog"] };

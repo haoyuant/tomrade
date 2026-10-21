@@ -60,6 +60,7 @@
     "test:worker-source": "electron scripts/worker-source-check.mjs",
     "test:acp-engines": "electron scripts/acp-engines-check.mjs",
     "test:first-run-agent": "electron scripts/first-run-agent-check.mjs",
+    "test:builtin-fallback": "electron scripts/builtin-fallback-check.mjs",
     "test:agent-plugins": "electron scripts/agent-plugins-check.mjs",
     "test:im-audience": "electron scripts/im-audience-check.mjs",
     "test:deep-link": "electron scripts/deep-link-check.mjs",

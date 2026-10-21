@@ -8,6 +8,7 @@ import { useI18n } from "~/lib/i18n";
 import { useProjects, useSettings } from "~/lib/queries";
 import { findEngine } from "~/lib/agent";
 import { useSetup } from "~/lib/setup";
+import { builtinProblem } from "~/lib/setupState";
 import { SetupOptions } from "./SetupOptions";
 
 /**
@@ -26,6 +27,9 @@ export function FirstRunSetup({ onDone }: { onDone: () => void }) {
   // The engine the panel will open threads on: the chosen default when it can run, else the first that can.
   const assistant = state ? (findEngine(state.assistant, preferred) ?? state.assistant[0]) : undefined;
   const sample = projects.data?.find((p) => p.sample);
+  const own = state?.locals.filter((e) => !e.usesModels) ?? [];
+  // Chat works on a model the built-in agent cannot drive; tickets then have nowhere to go, and setup says why.
+  const cannot = state && engines && !state.route ? builtinProblem(engines, state.worker) : null;
   // Done either way, the tour is where a first run goes next.
   const openTour = () => {
     onDone();
@@ -74,6 +78,18 @@ export function FirstRunSetup({ onDone }: { onDone: () => void }) {
                   <li className="setup-row is-ok">
                     <Icon name="i-check" size={13} />
                     <span>{t("setup.doneStart", { names: names(state.locals) })}</span>
+                  </li>
+                )}
+                {state.route && (
+                  <li className="setup-row is-ok" data-testid="setup-route" data-route={state.route}>
+                    <Icon name="i-check" size={13} />
+                    <span>{state.route === "own" ? t("setup.doneRouteOwn", { names: names(own) }) : t("setup.doneRouteBuiltin", { model: state.worker.title ?? "" })}</span>
+                  </li>
+                )}
+                {cannot && (
+                  <li className="setup-row" data-testid="setup-builtin-cannot">
+                    <Icon name="i-warn" size={13} />
+                    <span>{t("setup.builtinCannot", { reason: cannot })}</span>
                   </li>
                 )}
                 {state.worker.title && (
