@@ -3,7 +3,7 @@ import { Icon } from "~/components/icons";
 import { SectionHead, Tag } from "~/components/ui/atoms";
 import { useI18n } from "~/lib/i18n";
 import { legalUrl, siteUrl } from "~/lib/legal";
-import { openExternal, reveal, type AboutInfo } from "~/lib/shell";
+import { openExternal, reveal, revealLabel, type AboutInfo } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { useUpdateActions, useUpdatePrefs, useUpdatesOnScreen, useUpdateStatus, type UpdateStatus } from "~/lib/updates";
 import { RestartOnboardingDialog } from "~/components/projects/RestartOnboardingDialog";
@@ -111,7 +111,7 @@ export function AboutPane() {
             <dd>
               <span className="num about-path">{info.userData}</span>
               <button type="button" className="btn btn-ghost" onClick={() => reveal(info.userData)}>
-                {t("about.reveal")}
+                {t(revealLabel())}
               </button>
               <span className="meta-txt about-note">{t("about.appDataNote")}</span>
             </dd>

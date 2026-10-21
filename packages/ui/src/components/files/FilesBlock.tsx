@@ -7,7 +7,7 @@ import { ConnectionPanel, DestinationPicker, message, type RemoteApi } from "~/c
 import { agoLabel } from "~/lib/domain";
 import { useBindFiles, useBrowseFiles, useConnectFiles, useDisconnectFiles, useDraftFiles, useFilesBackends, useFilesConnection, useFilesInfo, useFilesStatus, useSignInFiles, useSyncFiles, useUnbindFiles } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
-import { reveal } from "~/lib/shell";
+import { reveal, revealLabel } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { stateOf } from "./state";
 import { SyncPolicySettings, SyncScopeSummary } from "./SyncPolicy";
@@ -54,7 +54,7 @@ export function FilesBlock({ projectId }: { projectId: string }) {
           </span>
           {dir && (
             <button type="button" className="btn btn-ghost" onClick={() => reveal(dir)}>
-              {t("files.reveal")}
+              {t(revealLabel())}
             </button>
           )}
         </div>

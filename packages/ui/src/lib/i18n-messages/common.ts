@@ -1,6 +1,9 @@
 export const common = {
   en: {
     cancel: "Cancel",
+    revealMac: "Reveal in Finder",
+    revealWindows: "Show in File Explorer",
+    revealLinux: "Show in file manager",
     save: "Save",
     done: "Done",
     routeErrorTitle: "This screen could not be shown",
@@ -16,7 +19,7 @@ export const common = {
     closeTitled: "Close {{title}}",
     resizeGrip: "Drag to resize · double-click to reset",
     moveSheet: "Drag to move · double-click to centre",
-    plainSecret: "This computer has no system keychain Tomrade can use, so this is saved as plain text in Tomrade's settings file.",
+    plainSecret: "This computer has no system credential store Tomrade can use, so this is saved as plain text in Tomrade's settings file.",
     priorityAria: "{{priority}} priority",
     agentWrite: "Last written by an agent",
     syncWrite: "Last moved by git — a branch or merge",
@@ -38,6 +41,9 @@ export const common = {
   },
   zh: {
     cancel: "取消",
+    revealMac: "在访达中显示",
+    revealWindows: "在资源管理器中显示",
+    revealLinux: "在文件管理器中显示",
     save: "保存",
     done: "完成",
     routeErrorTitle: "这个页面没能显示出来",
@@ -53,7 +59,7 @@ export const common = {
     closeTitled: "关闭{{title}}",
     resizeGrip: "拖动调整大小 · 双击恢复默认",
     moveSheet: "拖动移动 · 双击回到中央",
-    plainSecret: "这台电脑没有 Tomrade 可用的系统钥匙串，所以它以明文保存在 Tomrade 的设置文件里。",
+    plainSecret: "这台电脑没有 Tomrade 可用的系统凭据存储，所以它以明文保存在 Tomrade 的设置文件里。",
     priorityAria: "{{priority}}优先级",
     agentWrite: "最近一次由智能体写入",
     syncWrite: "最近一次由 git 推动——分支或合并",

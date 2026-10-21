@@ -18,7 +18,7 @@ import {
   useSyncStorage,
   useUnbindStorage
 } from "~/lib/queries";
-import { pickDirectory, reveal } from "~/lib/shell";
+import { pickDirectory, reveal, revealLabel } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { ConnectionPanel, DestinationPicker, message } from "./destination";
 
@@ -124,7 +124,7 @@ export function StorageBlock({ projectId }: { projectId: string }) {
           </span>
           {dir && (
             <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => reveal(dir)}>
-              {t("storageBlock.reveal")}
+              {t(revealLabel())}
             </button>
           )}
           <button type="button" className="btn btn-ghost stg-change" disabled={busy || picking} onClick={() => void changeFolder()}>

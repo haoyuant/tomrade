@@ -1,5 +1,7 @@
 /** Shortcuts read with Mac glyphs on a Mac, and as Ctrl+Shift+… words everywhere else. */
 export const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/i.test(navigator.platform);
+/** Windows, from the same navigator.platform ("Win32"); neither this nor `isMac` means Linux. */
+export const isWindows = typeof navigator !== "undefined" && /^Win/i.test(navigator.platform);
 
 const MODIFIERS: Record<string, string> = { "⌃": "Ctrl", "⌘": "Ctrl", "⌥": "Alt", "⇧": "Shift" };
 const ORDER = ["Ctrl", "Alt", "Shift"];

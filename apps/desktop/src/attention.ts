@@ -69,11 +69,13 @@ declare module "@tomradex/ipc" {
 
 const en = DESKTOP_WORDS("en");
 const zh = DESKTOP_WORDS("zh");
+// Only macOS has a Dock to carry the count.
+const NOTIFICATIONS_DESCRIPTION = process.platform === "darwin" ? "notificationsDescription" : "notificationsDescriptionNoDock";
 
 export const NOTIFICATIONS_SECTION: SettingsSection<NotificationPrefs> = {
   id: "notifications",
   title: en("notificationsTitle"),
-  description: en("notificationsDescription"),
+  description: en(NOTIFICATIONS_DESCRIPTION),
   schema: z.object({
     enabled: z.boolean().default(true).meta({ title: en("notifyEnabledTitle") }),
     approvals: z.boolean().default(true).meta({ title: en("notifyApprovalsTitle") }).describe(en("notifyApprovalsDescription")),
@@ -91,7 +93,7 @@ export const NOTIFICATIONS_SECTION: SettingsSection<NotificationPrefs> = {
     en: { fields: { away: { options: { im: en("notifyAwayIm"), none: en("notifyAwayNone") } } } },
     zh: {
       title: zh("notificationsTitle"),
-      description: zh("notificationsDescription"),
+      description: zh(NOTIFICATIONS_DESCRIPTION),
       fields: {
         enabled: { title: zh("notifyEnabledTitle") },
         approvals: { title: zh("notifyApprovalsTitle"), description: zh("notifyApprovalsDescription") },

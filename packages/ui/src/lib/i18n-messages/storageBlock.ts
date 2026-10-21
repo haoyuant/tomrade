@@ -2,7 +2,6 @@ export const storageBlock = {
   en: {
     folderLabel: "Folder",
     noFolderYet: "No folder yet — choose the Hub folder first",
-    reveal: "Reveal",
     changeFolder: "Change…",
     choosing: "Choosing…",
     pickFolderTitle: "Choose the project's folder",
@@ -76,7 +75,6 @@ export const storageBlock = {
   zh: {
     folderLabel: "文件夹",
     noFolderYet: "尚无文件夹——请先选择主目录",
-    reveal: "在访达中显示",
     changeFolder: "更换…",
     choosing: "选择中…",
     pickFolderTitle: "选择项目文件夹",
