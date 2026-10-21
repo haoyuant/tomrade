@@ -3,6 +3,8 @@ import type { SessionRow, TerminalRow } from "@tomradex/code-sessions";
 /** A live session this window cannot show: it runs in another terminal app here, on another computer, or in the assistant panel. */
 export const away = (s: SessionRow): boolean => s.endedAt === null && s.where !== "herdr";
 
+export const live = (s: SessionRow): boolean => s.state !== "ended" && s.state !== "lost";
+
 /**
  * One row of what this window shows: a session in a herdr pane of its own, or a terminal opened here — with the
  * ticket session its agent claimed, once it has.
