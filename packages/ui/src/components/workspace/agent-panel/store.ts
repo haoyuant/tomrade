@@ -1,0 +1,1 @@
+export const STORE = { open: "tomrade.ai.open", width: "tomrade.ai.width", thread: (projectId: string) => `tomrade.agent.thread.${projectId}`, history: (projectId: string) => `tomrade.agent.history.${projectId}`, permission: (engineId: string) => `tomrade.agent.permission.${engineId}` };

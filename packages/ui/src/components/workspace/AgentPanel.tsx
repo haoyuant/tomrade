@@ -1,671 +1,41 @@
-import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { AgentSettings, Block, CardAction, CardView, ChecklistCard, EnginePick, EngineView, FindingCard, FocusRef, PendingView, RunView, ThreadMessage } from "@tomradex/agent";
-import { modelErrorKind, type Item } from "@tomradex/domain";
-import { Icon, type IconId } from "~/components/icons";
-import { Hint } from "~/components/ui/hint";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CardAction, FocusRef } from "@tomradex/agent";
+import { Icon } from "~/components/icons";
 import { PetStage } from "./PetStage";
 import { SetupCard } from "./SetupCard";
-import { AgentMedia } from "./AgentMedia";
 import { AgentAttachment, readAttachment } from "./AgentAttachment";
 import { useQuery } from "@tanstack/react-query";
 import { invoke } from "~/lib/api";
 import { Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
-import { clockLabel, PRIORITY_LABEL, timeAgo, viewIcon } from "~/lib/domain";
+import { viewIcon } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { foldSteps, startBriefId, traceState } from "~/lib/steps";
-import { conducts, findEngine, useAgentEvents, useAgentThread, useAgentThreads, useArchivedThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetOptions, useSetPermissionMode, useSetWorkstream, useUnarchiveThread, useWorkdir, type RunProgress } from "~/lib/agent";
-import { useAssistantAccessories, useBoards, useItems, useSaveSettings, useSettings } from "~/lib/queries";
+import { foldSteps, startBriefId } from "~/lib/steps";
+import { conducts, findEngine, useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetWorkstream, useWorkdir, type RunProgress } from "~/lib/agent";
+import { useAssistantAccessories, useBoards, useItems, useSettings } from "~/lib/queries";
 import { useAttention, type AttentionEntry } from "~/lib/attention";
-import { offerStart, permissionLabel as permissionName } from "~/lib/codeLink";
 import { engineStateLabel } from "~/lib/localCli";
 import { useSetupInTerminal } from "~/lib/setup";
 import { openSettingsPane } from "~/lib/settingsHost";
 import { readableError, useErrorToast, useToast } from "~/lib/toast";
 import { ReportDialog } from "~/components/dialogs/ReportDialog";
-import { ChecklistBlock, FindingBlock } from "./DoctorCards";
-import { useImShareNext, useImThreadBindings } from "~/lib/im";
 import { isCommitKey, isComposing } from "~/lib/keys";
+import { ImGroupShare, QueuedRow, WorkingLine, type Queued } from "./agent-panel/blocks";
+import { GUIDE, GuideList, slashCommand, SlashMenu, STARTERS, type SlashCommand, type SlashContext, type Starter } from "./agent-panel/commands";
+import { Composer } from "./agent-panel/Composer";
+import { STORE } from "./agent-panel/store";
+import { ThreadList, useThreadListState } from "./agent-panel/ThreadList";
+import { Transcript } from "./agent-panel/Transcript";
+import { useComposerHistory } from "./agent-panel/useComposerHistory";
+import { useEngineChoice } from "./agent-panel/useEngineChoice";
+import { useSendQueue } from "./agent-panel/useSendQueue";
+import { useSlashMenu } from "./agent-panel/useSlashMenu";
+import { useThreadSelection } from "./agent-panel/useThreadSelection";
 
 const MIN_W = 352;
 const MAX_W = 924;
 /** Until someone drags it: the former ceiling; the CSS max-width still yields to the board on narrow windows. */
 const DEFAULT_W = 616;
-const STORE = { open: "tomrade.ai.open", width: "tomrade.ai.width", thread: (projectId: string) => `tomrade.agent.thread.${projectId}`, history: (projectId: string) => `tomrade.agent.history.${projectId}`, permission: (engineId: string) => `tomrade.agent.permission.${engineId}` };
-const HISTORY_CAP = 100;
-
-/** What the person sent in this project, oldest first: ↑ in the composer walks back through it. */
-const readHistory = (projectId: string): string[] => {
-  try {
-    const list = JSON.parse(localStorage.getItem(STORE.history(projectId)) ?? "[]");
-    return Array.isArray(list) ? list.filter((x): x is string => typeof x === "string") : [];
-  } catch { return []; }
-};
-const remember = (projectId: string, text: string) => {
-  const list = readHistory(projectId);
-  if (list[list.length - 1] === text) return;
-  localStorage.setItem(STORE.history(projectId), JSON.stringify([...list, text].slice(-HISTORY_CAP)));
-};
-
-const tokens = (n: number): string => (n >= 10_000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
-
-/** A finished run's tokens, split the same way Settings → Usage adds them up. */
-const runTokensLabel = (t: Translate, run: RunView): string | null => {
-  const k = run.tokens;
-  if (!k) return null;
-  return k.cacheReadTokens + k.cacheWriteTokens > 0
-    ? t("agentPanel.tokensSplit", { input: tokens(k.inputTokens), uncached: tokens(k.uncachedInputTokens), read: tokens(k.cacheReadTokens), write: tokens(k.cacheWriteTokens), output: tokens(k.outputTokens) })
-    : t("agentPanel.tokensNew", { input: tokens(k.inputTokens), output: tokens(k.outputTokens) });
-};
-
-/** `fill` puts the prompt in the composer to finish; otherwise the prompt is sent as is. */
-type Starter = { label: MessageKey; prompt?: MessageKey; icon: IconId; fill?: boolean };
-
-/**
- * What a fresh thread can do — hints, not a route. Static on purpose so they appear with
- * the panel, no model call. Shaping an idea into a backlog is only offered to a project
- * with no tickets yet.
- */
-const STARTERS: { fresh: Starter[]; backlog: Starter[] } = {
-  fresh: [
-    { label: "agentPanel.starterIdea", prompt: "agentPanel.starterIdeaPrompt", icon: "i-leaf", fill: true },
-    { label: "agentPanel.starterTicket", prompt: "agentPanel.starterTicketPrompt", icon: "i-plus", fill: true },
-    { label: "agentPanel.starterDoc", prompt: "agentPanel.starterDocPrompt", icon: "i-pen", fill: true },
-    { label: "agentPanel.starterHelp", icon: "i-search" }
-  ],
-  backlog: [
-    { label: "agentPanel.starterNext", prompt: "agentPanel.starterNextPrompt", icon: "i-chev" },
-    { label: "agentPanel.starterGroom", prompt: "agentPanel.starterGroomPrompt", icon: "i-filter" },
-    { label: "agentPanel.starterTicket", prompt: "agentPanel.starterTicketPrompt", icon: "i-plus", fill: true },
-    { label: "agentPanel.starterDoc", prompt: "agentPanel.starterDocPrompt", icon: "i-pen", fill: true }
-  ]
-};
-
-type Translate = ReturnType<typeof useI18n>["t"];
-
-/** What a slash command may do to the panel. */
-type SlashContext = { newThread: () => void; help: () => void };
-type SlashCommand = { name: string; aliases?: string[]; hint: MessageKey; run: (c: SlashContext) => void };
-
-/** Typed as `/name` at the start of the composer; anything else starting with `/` is sent as written. */
-const SLASH_COMMANDS: SlashCommand[] = [
-  { name: "new", aliases: ["clear"], hint: "agentPanel.slashNew", run: (c) => c.newThread() },
-  { name: "help", hint: "agentPanel.slashHelp", run: (c) => c.help() }
-];
-
-/** What the composer does — one list for the guide button and /help. */
-const GUIDE: { keys: string; text: MessageKey }[] = [
-  { keys: "Enter", text: "agentPanel.guideSend" },
-  { keys: "Shift+Enter", text: "agentPanel.guideNewline" },
-  { keys: "Enter", text: "agentPanel.guideQueue" },
-  { keys: "⌘/Ctrl+Enter", text: "agentPanel.guideSteer" },
-  { keys: "Esc", text: "agentPanel.guideStop" },
-  { keys: "↑ ↓", text: "agentPanel.guideHistory" },
-  { keys: "/", text: "agentPanel.guideSlash" },
-  { keys: "/new · /clear", text: "agentPanel.guideNew" },
-  { keys: "/help", text: "agentPanel.guideHelp" },
-  { keys: "+", text: "agentPanel.guideAttach" }
-];
-
-function GuideList() {
-  const { t } = useI18n();
-  return (
-    <div className="agent-guide">
-      {GUIDE.map((g) => (
-        <div className="guide-row" key={g.text}>
-          <kbd className="num">{g.keys}</kbd>
-          <span>{t(g.text)}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-const slashCommand = (text: string): SlashCommand | undefined => {
-  const name = /^\/(\S+)$/.exec(text.trim())?.[1]?.toLowerCase();
-  return name ? SLASH_COMMANDS.find((c) => c.name === name || c.aliases?.includes(name)) : undefined;
-};
-
-const duration = (t: Translate, ms: number) => {
-  const secs = Math.max(0, Math.round(ms / 1000));
-  return secs < 60 ? t("agentPanel.secondsShort", { n: secs }) : t("agentPanel.minSecShort", { m: Math.floor(secs / 60), s: String(secs % 60).padStart(2, "0") });
-};
-
-/** Engines say why a request failed in English; the common causes read in the person's language. */
-const retryReason = (t: Translate, reason: string) => {
-  if (reason === "connection dropped") return t("agentPanel.reasonDropped");
-  const silent = /^no response in (\d+)s$/.exec(reason);
-  return silent ? t("agentPanel.reasonNoResponse", { s: silent[1] }) : reason;
-};
-
-/** The pulse that says "not stuck": what it's doing, for how long, and the tokens so far — or, loudly, that requests are failing. */
-function WorkingLine({ startedAt, progress, streaming }: { startedAt: number; progress: RunProgress | null; streaming: boolean }) {
-  const { t } = useI18n();
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const timer = setInterval(() => setTick((n) => n + 1), 1000);
-    return () => clearInterval(timer);
-  }, []);
-  const retry = progress?.retry ?? null;
-  const label = retry
-    ? retry.max ? t("agentPanel.retrying", { n: retry.attempt, max: retry.max }) : t("agentPanel.retryingOpen", { n: retry.attempt })
-    : progress?.activity ?? (streaming ? t("agentPanel.writing") : t("agentPanel.thinking"));
-  const left = retry?.delayMs !== undefined ? retry.since + retry.delayMs - Date.now() : 0;
-  return (
-    <p className={`working${retry ? " retrying" : ""}`} aria-live={retry ? "polite" : "off"}>
-      <span className="w-tick" />
-      {retry && <Icon name="i-warn" size={11} />}
-      <span className="num w-label">{label}</span>
-      {retry ? (
-        <span className="w-why">
-          {retryReason(t, retry.reason)} · {left > 0 ? t("agentPanel.retryNextIn", { s: Math.ceil(left / 1000) }) : t("agentPanel.retryWaiting")}
-        </span>
-      ) : (
-        <span className="w-dots">
-          <span />
-          <span />
-          <span />
-        </span>
-      )}
-      <span className="num w-meta">
-        {duration(t, Date.now() - startedAt)}
-        {progress?.usage ? ` · ↑${tokens(progress.usage.inputTokens)} ↓${tokens(progress.usage.outputTokens)} tok` : ""}
-      </span>
-    </p>
-  );
-}
-
-/** A stretch of failed model requests, kept in the transcript once it is over. Never folded. */
-function RetryRow({ block }: { block: Block & { type: "retry" } }) {
-  const { t } = useI18n();
-  return (
-    <p className={`retry-row${block.recovered ? "" : " failed"}`}>
-      <Icon name="i-warn" size={11} />
-      <span>{t(block.recovered ? "agentPanel.retryRecovered" : "agentPanel.retryGaveUp", { n: block.attempts, reason: retryReason(t, block.reason), time: duration(t, block.ms) })}</span>
-    </p>
-  );
-}
-
-
-const KEY_RE = /([A-Z][A-Z0-9]{1,9}-\d+)/g;
-
-/** An item key in prose: one word wide, live title on hover, the sidebar detail one click away — same as clicking the card on the board. */
-function KeyRef({ text, item, onOpenIssue }: { text: string; item: Item | undefined; onOpenIssue: (id: string) => void }) {
-  if (!item) return <span className="kref dead num">{text}</span>;
-  return (
-    <button type="button" className="kref num" title={`${item.title} · ${item.status}`} onClick={() => onOpenIssue(item.id)}>
-      {text}
-    </button>
-  );
-}
-
-/** Plain text with keys linked. Deliberately not a markdown renderer — the engines are told to write plainly. */
-function linkify(text: string, byKey: Map<string, Item>, onOpenIssue: (id: string) => void): ReactNode[] {
-  return text.split(KEY_RE).map((part, i) =>
-    i % 2 === 1 ? <KeyRef key={i} text={part} item={byKey.get(part)} onOpenIssue={onOpenIssue} /> : <Fragment key={i}>{part}</Fragment>
-  );
-}
-
-const OP_GLYPH = { created: "+", updated: "~", deleted: "–" } as const;
-
-function Trace({ block }: { block: Block & { type: "trace" } }) {
-  const { t } = useI18n();
-  const state = traceState(block);
-  const result = block.commandResult;
-  // the arguments are printed once someone opens the row, not for every folded one
-  const [open, setOpen] = useState(false);
-  return (
-    <details className={`trace-row${state.failed ? " failed" : ""}`} onToggle={(e) => setOpen(e.currentTarget.open)}>
-      <summary>
-        <Icon name={state.icon} size={11} />
-        <span className="t-tool num">{block.tool}</span>
-        <span className="t-sum">{block.summary}</span>
-        {state.label && <span>{t(state.label)}</span>}
-        {block.ms > 0 && <span className="t-ms num">{block.ms < 1000 ? `${block.ms}ms` : `${(block.ms / 1000).toFixed(1)}s`}</span>}
-      </summary>
-      {open && <>
-        <pre>{JSON.stringify(block.args, null, 2)}</pre>
-        {result && <pre>{t("agentPanel.commandExitCode", { code: result.exitCode ?? t("agentPanel.commandExitUnknown") })}{"\n"}{result.output.trim() ? result.output : t("agentPanel.commandNoOutput")}</pre>}
-      </>}
-    </details>
-  );
-}
-
-type StartOfferCard = { itemId: string; key: string; title: string; task?: string };
-
-// The assistant does not carry tickets out; it hands them to the Start dialog, where the person chooses.
-function StartOffer({ card, onOpenIssue }: { card: StartOfferCard; onOpenIssue: (id: string) => void }) {
-  const { t } = useI18n();
-  return (
-    <div className="tool-card" data-testid="start-offer">
-      <div className="tool-head">
-        <Icon name="i-plug" size={12} />
-        {card.key} {card.title}
-      </div>
-      {card.task && <p className="tool-row" data-testid="start-offer-task">{t("codeLink.startTask", { task: card.task })}</p>}
-      <p className="tool-row">{t("agentPanel.startOfferLead")}</p>
-      <div className="tool-row">
-        <button
-          type="button"
-          className="btn btn-primary btn-xs"
-          onClick={() => {
-            onOpenIssue(card.itemId);
-            offerStart(card.itemId, card.task);
-          }}
-        >
-          {t("agentPanel.startOffer", { key: card.key })}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-interface ProposalCard {
-  rootTitle?: string;
-  epics?: { title: string; body?: string; features?: { title: string; body?: string; workType?: "coding" | "general"; priority?: number }[] }[];
-  notes?: string;
-}
-
-/** The tree a plan would write, shown in full so the person can decide on the question below it. */
-function ProposalBlock({ card }: { card: ProposalCard }) {
-  const { t } = useI18n();
-  const epics = card.epics ?? [];
-  const tickets = epics.reduce((n, epic) => n + (epic.features?.length ?? 0), 0);
-  return (
-    <div className="tool-card proposal">
-      <div className="tool-head">
-        <Icon name="i-stack" size={12} />
-        {t("agentPanel.planProposal", { epics: epics.length, tickets })}
-      </div>
-      {card.rootTitle && <p className="proposal-root">{card.rootTitle}</p>}
-      {epics.map((epic, i) => (
-        <div className="proposal-epic" key={i}>
-          <p className="proposal-epic-title">{epic.title}</p>
-          {epic.body && <p className="proposal-body">{epic.body}</p>}
-          <ul className="proposal-tickets">
-            {(epic.features ?? []).map((ticket, j) => (
-              <li key={j}>
-                <span className="proposal-ticket-title">{ticket.title}</span>
-                {ticket.workType && <span className="tag faint">{t(`fields.${ticket.workType}`)}</span>}
-                {!!ticket.priority && <span className="tag faint">{PRIORITY_LABEL[ticket.priority]}</span>}
-                {ticket.body && <p className="proposal-body">{ticket.body}</p>}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
-      {card.notes && <p className="proposal-notes">{card.notes}</p>}
-    </div>
-  );
-}
-
-function CardBlock({ block }: { block: Block & { type: "card" } }) {
-  const data = block.data;
-  const rows: [string, string][] =
-    data && typeof data === "object" && !Array.isArray(data)
-      ? Object.entries(data as Record<string, unknown>)
-          .filter(([, v]) => v !== "" && v != null && !(Array.isArray(v) && v.length === 0))
-          .map(([k, v]) => [k, Array.isArray(v) ? v.map((x) => (typeof x === "object" ? JSON.stringify(x) : String(x))).join(" · ") : String(v)])
-      : [["value", JSON.stringify(data)]];
-  return (
-    <div className="tool-card">
-      <div className="tool-head">
-        <Icon name="i-stack" size={12} />
-        {block.title}
-      </div>
-      {rows.slice(0, 12).map(([k, v]) => (
-        <div className="tool-row" key={k}>
-          <span className="card-id">{k}</span>
-          <span className="t-title" title={v}>
-            {v.length > 160 ? v.slice(0, 160) + "…" : v}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/**
- * Selecting only marks; Confirm submits. Multi-select when the asker said the
- * options combine. The block stays in the transcript after it is answered,
- * dimmed — the chosen value is the user message right below it.
- */
-function Question({ block, pending, onAnswer, busy }: { block: Block & { type: "question" }; pending: PendingView | null; onAnswer: (id: string, value: string | string[]) => void; busy: boolean }) {
-  const { t } = useI18n();
-  const live = pending?.question.id === block.id;
-  const [picked, setPicked] = useState<string[]>([]);
-  const toggle = (option: string) =>
-    setPicked((prev) => (block.multiple ? (prev.includes(option) ? prev.filter((o) => o !== option) : [...prev, option]) : prev[0] === option ? [] : [option]));
-  return (
-    <div className={live ? "q-ask" : "q-ask done"}>
-      <span className="q-eyebrow">{live ? t(block.multiple ? "agentPanel.waitingPickAny" : "agentPanel.waitingPickOne") : t("agentPanel.asked")}</span>
-      <p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{block.text}</p>
-      {block.options && (
-        <div className="chips">
-          {block.options.map((option) => (
-            <button
-              key={option}
-              type="button"
-              className={picked.includes(option) ? "chip-opt sel" : "chip-opt"}
-              aria-pressed={picked.includes(option)}
-              disabled={!live || busy}
-              onClick={() => toggle(option)}
-            >
-              {option}
-            </button>
-          ))}
-        </div>
-      )}
-      {live && block.options && (
-        <div className="q-confirm">
-          <button
-            type="button"
-            className="btn btn-secondary"
-            disabled={busy || picked.length === 0}
-            onClick={() => onAnswer(block.id, block.multiple ? picked : picked[0])}
-          >
-            {block.multiple && picked.length > 0 ? t("agentPanel.confirmCount", { n: picked.length }) : t("agentPanel.confirm")}
-          </button>
-          <span className="meta-txt">{t("agentPanel.confirmNote")}</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function RunFoot({ block, run, byKey, onOpenIssue, onRevert, busy, hint }: { block: Block & { type: "changes" }; run: RunView | undefined; byKey: Map<string, Item>; onOpenIssue: (id: string) => void; onRevert: (runId: string) => void; busy: boolean; hint?: boolean }) {
-  const { t } = useI18n();
-  const meta = run ? [run.engine, run.costUsd != null ? `$${run.costUsd.toFixed(3)}` : null,
-    run.endedAt != null ? `${Math.round((run.endedAt - run.startedAt) / 1000)}s` : null,
-    runTokensLabel(t, run),
-    run.metrics?.readyMs != null ? `init ${Math.round(run.metrics.readyMs / 1000)}s` : null,
-    run.metrics?.firstTokenMs != null ? `first ${Math.round(run.metrics.firstTokenMs / 1000)}s` : null].filter(Boolean).join(" · ") : "";
-  return (
-    <div className="run-wrap">
-    <div className="run-foot">
-      {run?.reverted ? (
-        <span className="rf-note">{run.keptOnRevert > 0 ? t("agentPanel.revertedKept", { n: run.keptOnRevert }) : t("agentPanel.revertedPlain")}</span>
-      ) : (
-        <>
-          <span className="rf-note">{t(block.count === 1 ? "agentPanel.changedOne" : "agentPanel.changedMany", { n: block.count })}</span>
-          <button type="button" className="btn btn-ghost rf-btn" disabled={busy} onClick={() => onRevert(block.runId)}>
-            <Icon name="i-undo" size={12} /> {t("agentPanel.revert")}
-          </button>
-        </>
-      )}
-    </div>
-    {!!block.items?.length && (
-      <details className="rf-list">
-        <summary>{t("agentPanel.whatChanged")}</summary>
-        {block.items.map((it, i) => (
-          <div className="rf-row" key={i}>
-            <span className={`rf-op num op-${it.op}`}>{OP_GLYPH[it.op]}</span>
-            <KeyRef text={it.key} item={byKey.get(it.key)} onOpenIssue={onOpenIssue} />
-            <span className="rf-label" title={it.label}>{it.label}</span>
-          </div>
-        ))}
-      </details>
-    )}
-    {meta && <div className="rf-meta run-metrics num">{meta}</div>}
-    {hint && !run?.reverted && <Hint id="hint.revert">{t("onboarding.revertHint")}</Hint>}
-    </div>
-  );
-}
-
-function RunMetrics({ run }: { run: RunView | undefined }) {
-  const { t } = useI18n();
-  if (!run || run.endedAt == null) return null;
-  const elapsed = `${Math.max(0, Math.round((run.endedAt - run.startedAt) / 1000))}s`;
-  const usage = runTokensLabel(t, run);
-  const timings = [run.metrics?.readyMs != null ? `init ${Math.round(run.metrics.readyMs / 1000)}s` : null,
-    run.metrics?.firstTokenMs != null ? `first ${Math.round(run.metrics.firstTokenMs / 1000)}s` : null].filter(Boolean).join(" · ");
-  return <p className="meta-txt num" style={{ margin: "8px 0 0 22px" }}>{elapsed}{usage ? ` · ${usage}` : ""}{timings ? ` · ${timings}` : ""}</p>;
-}
-
-/**
- * A run that failed says what the person can do about it — the key, the
- * model's name, a moment's wait — and keeps the raw message and whatever the
- * engine knew besides under Details: folded, so a trace never floods the
- * thread, and one click from a bug report. The fix follows the engine that
- * failed: model settings for one that runs on Tomrade's models, its own sign-in
- * or settings for an agent with an account of its own. Meanwhile another ready
- * agent can take the same message, so a broken one never leaves the person stuck.
- */
-function ErrorBlock({ text, details, engine, others, onOpenSettings, onRetry, onRetryWith, onTroubleshoot }: {
-  text: string;
-  details?: string;
-  /** The engine whose turn failed, when the run says. */
-  engine?: EngineView;
-  /** Ready agents that could take the last message instead. */
-  others: EngineView[];
-  onOpenSettings: (engineId?: string) => void;
-  onRetry?: () => void;
-  onRetryWith?: (engineId: string) => void;
-  /** Opens a troubleshooting thread about this failure. */
-  onTroubleshoot?: () => void;
-}) {
-  const { t } = useI18n();
-  const [copied, setCopied] = useState(false);
-  const signIn = useSetupInTerminal();
-  const kind = modelErrorKind(text);
-  const own = !!engine && !engine.usesModels;
-  const head = kind === "other" ? null : own ? t(`agentPanel.errorAgent_${kind}` as MessageKey, { name: engine.title }) : t(`agentPanel.error_${kind}` as MessageKey);
-  const fixable = kind === "auth" || kind === "model" || kind === "quota";
-  const canSignIn = own && kind === "auth" && !!engine.setup?.signIn;
-  const folded = [head ? text : null, details].filter(Boolean).join("\n\n");
-  const copy = () => void navigator.clipboard?.writeText([text, details].filter(Boolean).join("\n\n")).then(() => {
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  });
-  const retryWith = onRetryWith && others.length > 0;
-  return (
-    <div className="ai-error" role="alert">
-      <p>{head ?? text}</p>
-      {folded && (
-        <details className="ai-error-details">
-          <summary>{t("agentPanel.errorDetails")}</summary>
-          <pre>{folded}</pre>
-          <button type="button" className="btn btn-ghost btn-xs" onClick={copy}>
-            <Icon name="i-copy" size={11} /> {copied ? t("agentPanel.errorCopied") : t("agentPanel.errorCopy")}
-          </button>
-        </details>
-      )}
-      {(fixable || onRetry || retryWith || onTroubleshoot) && (
-        <div className="row" style={{ gap: 6, marginTop: 6, flexWrap: "wrap" }}>
-          {onTroubleshoot && (
-            <button type="button" className="btn btn-ghost" onClick={onTroubleshoot}>
-              <Icon name="i-bug" size={12} /> {t("agentPanel.troubleshoot")}
-            </button>
-          )}
-          {fixable && !own && (
-            <button type="button" className="btn btn-ghost" onClick={() => onOpenSettings()}>
-              {t("agentPanel.openModelSettings")}
-            </button>
-          )}
-          {canSignIn && (
-            <button type="button" className="btn btn-ghost" disabled={signIn.isPending} onClick={() => signIn.mutate({ engineId: engine.id, step: "signIn" })}>
-              {t("agentPanel.signInAgain", { name: engine.title })}
-            </button>
-          )}
-          {fixable && own && !canSignIn && (
-            <button type="button" className="btn btn-ghost" onClick={() => onOpenSettings(engine.id)}>
-              {t("agentPanel.engineSettings", { name: engine.title })}
-            </button>
-          )}
-          {onRetry && (
-            <button type="button" className="btn btn-ghost" onClick={onRetry}>
-              {t("agentPanel.retry")}
-            </button>
-          )}
-          {retryWith && (
-            <Menu label={t("agentPanel.retryWith")} trigger={
-              <button type="button" className="btn btn-ghost">
-                {t("agentPanel.retryWith")} <Icon name="i-chevdown" size={9} />
-              </button>
-            }>
-              <MenuHead title={t("agentPanel.retryWithHead")} />
-              {others.map((e) => (
-                <MenuActionItem key={e.id} icon={<Icon name="i-send" size={13} />} name={e.title} onSelect={() => onRetryWith(e.id)} />
-              ))}
-            </Menu>
-          )}
-        </div>
-      )}
-      {signIn.data?.launched && <p className="meta-txt" style={{ marginTop: 6 }}>{t("agentPanel.signInStarted", { name: engine?.title ?? "" })}</p>}
-      {signIn.data && !signIn.data.launched && <p className="meta-txt" style={{ marginTop: 6 }}>{t("agentPanel.signInManual", { command: signIn.data.command })}</p>}
-    </div>
-  );
-}
-
-/** A message written while a run works: it goes out by itself once the run ends well. */
-type Queued = { id: string; text: string; focus: FocusRef[] };
-
-function QueuedRow({ entry, held, canSend, onSave, onRemove, onSendNow, onSteer }: { entry: Queued; held: boolean; canSend: boolean; onSave: (text: string) => void; onRemove: () => void; onSendNow: () => void; onSteer?: () => void }) {
-  const { t } = useI18n();
-  const [editing, setEditing] = useState<string | null>(null);
-  return (
-    <div className="ai-queued" data-held={held || undefined}>
-      <span className="q-state">{t(held ? "agentPanel.queuedHeld" : "agentPanel.queued")}</span>
-      {editing === null ? (
-        <p className="q-text" title={entry.text}>{entry.text}</p>
-      ) : (
-        <textarea
-          className="input q-edit"
-          aria-label={t("agentPanel.queuedEdit")}
-          autoFocus
-          rows={Math.min(4, editing.split("\n").length)}
-          value={editing}
-          onChange={(e) => setEditing(e.target.value)}
-          onKeyDown={(e) => {
-            if (isComposing(e)) return;
-            if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setEditing(null); }
-            else if (isCommitKey(e) && !e.shiftKey) {
-              e.preventDefault();
-              if (editing.trim()) onSave(editing.trim()); else onRemove();
-              setEditing(null);
-            }
-          }}
-        />
-      )}
-      <span className="q-actions">
-        {held && canSend && (
-          <button type="button" className="btn btn-ghost btn-xs" onClick={onSendNow}>{t("agentPanel.queuedSendNow")}</button>
-        )}
-        {onSteer && (
-          <button type="button" className="btn btn-ghost btn-xs" title={t("agentPanel.steerNowTitle")} onClick={onSteer}>{t("agentPanel.steerNow")}</button>
-        )}
-        <button type="button" className="btn btn-icon" title={t("agentPanel.queuedEdit")} aria-label={t("agentPanel.queuedEdit")} onClick={() => setEditing(editing === null ? entry.text : null)}>
-          <Icon name="i-pen" size={11} />
-        </button>
-        <button type="button" className="btn btn-icon" title={t("agentPanel.queuedRemove")} aria-label={t("agentPanel.queuedRemove")} onClick={onRemove}>
-          <Icon name="i-trash" size={11} />
-        </button>
-      </span>
-    </div>
-  );
-}
-
-const TranscriptRow = memo(Row);
-
-function Row(props: Parameters<typeof RowBody>[0]) {
-  const { t } = useI18n();
-  const b = props.m.block;
-  if (props.m.role !== "user" || b.type !== "text" || !b.steerId) return <RowBody {...props} />;
-  // sent into the running turn: it sits where the agent read it, and says so
-  return (
-    <div className="turn turn-user is-steer">
-      <span className="turn-rule" />
-      <span className="turn-steer">{t("agentPanel.steered")}</span>
-      <p>{b.text}</p>
-    </div>
-  );
-}
-
-/**
- * The brief that opened a ticket's session, folded: it is the machine's words,
- * long and fixed, and nobody reads it twice. The person's own messages stay
- * as they are — this is only the first line they did not write.
- */
-function StartBrief({ m }: { m: ThreadMessage }) {
-  const { t } = useI18n();
-  const text = m.block.type === "text" ? m.block.text : "";
-  return (
-    <details className="turn turn-user turn-brief">
-      <summary>{t("agentPanel.startBrief")}</summary>
-      <p>{text}</p>
-    </details>
-  );
-}
-
-function RowBody({ projectId, m, runs, cards, engines, retryEngines, pending, byKey, onOpenIssue, onAnswer, onRevert, onOpenSettings, onRetry, onRetryWith, onTroubleshoot, onCardAction, busy, hint }: { projectId: string; m: ThreadMessage; runs: Map<string, RunView>; cards: Map<string, CardView>; engines?: EngineView[]; retryEngines: EngineView[]; pending: PendingView | null; byKey: Map<string, Item>; onOpenIssue: (id: string) => void; onAnswer: (id: string, value: string | string[]) => void; onRevert: (runId: string) => void; onOpenSettings: (engineId?: string) => void; onRetry?: () => void; onRetryWith?: (engineId: string) => void; onTroubleshoot?: () => void; onCardAction: (action: CardAction, threadId: string, engineId?: string) => void; busy: boolean; hint?: boolean }) {
-  const b = m.block;
-  if (m.role === "user") {
-    const focus = b.type === "text" ? b.focus : undefined;
-    return (
-      <div className="turn turn-user">
-        <span className="turn-rule" />
-        <p>{b.type === "text" ? b.text : ""}</p>
-        {b.type === "text" && b.attachments?.map(media => <AgentMedia key={media.id} projectId={projectId} threadId={m.threadId} media={media} />)}
-        {!!focus?.length && (
-          <span className="turn-ctx num" title={focus.map((r) => r.title).join(" · ")}>
-            {focus.map((r) => r.key ?? r.title).join(" · ")}
-          </span>
-        )}
-      </div>
-    );
-  }
-  if (b.type === "note") return <p className="agent-note">{b.text}</p>;
-  const failedEngine = b.type === "error" && m.runId ? findEngine(engines, runs.get(m.runId!)?.engine) : undefined;
-  const body =
-    b.type === "text" ? (
-      <>
-        {b.text.split(/\n{2,}/).map((para, i) => <p key={i}>{linkify(para, byKey, onOpenIssue)}</p>)}
-        {m.role === "agent" && m.runId && (runs.get(m.runId)?.changes ?? 0) === 0 && <RunMetrics run={runs.get(m.runId)} />}
-      </>
-    ) : b.type === "media" ? (
-      <AgentMedia projectId={projectId} threadId={m.threadId} media={b.media} caption={b.caption} />
-    ) : b.type === "trace" ? (
-      <Trace block={b} />
-    ) : b.type === "question" ? (
-      <Question block={b} pending={pending} onAnswer={onAnswer} busy={busy && pending?.kind !== "permission"} />
-    ) : b.type === "card" && b.schema === "checklist" ? (
-      // the stream holds the card as it was first posted; the live one ticks as checks finish
-      <ChecklistBlock title={b.title} card={(cards.get(b.id)?.data ?? b.data) as ChecklistCard} />
-    ) : b.type === "card" && b.schema === "finding" ? (
-      <FindingBlock card={b.data as FindingCard} engines={retryEngines} allEngines={engines ?? []} onAction={(action, engineId) => onCardAction(action, m.threadId, engineId)} />
-    ) : b.type === "card" && b.schema === "start" ? (
-      <StartOffer card={b.data as StartOfferCard} onOpenIssue={onOpenIssue} />
-    ) : b.type === "card" && b.schema === "backlog.proposal" ? (
-      <ProposalBlock card={b.data as ProposalCard} />
-    ) : b.type === "card" ? (
-      <CardBlock block={b} />
-    ) : b.type === "changes" ? (
-      <RunFoot block={b} run={runs.get(b.runId)} byKey={byKey} onOpenIssue={onOpenIssue} onRevert={onRevert} busy={busy} hint={hint} />
-    ) : b.type === "error" ? (
-      <ErrorBlock
-        text={b.text}
-        details={b.details}
-        engine={failedEngine}
-        others={retryEngines.filter((e) => e.id !== failedEngine?.id)}
-        onOpenSettings={onOpenSettings}
-        onRetry={onRetry}
-        onRetryWith={onRetryWith}
-        onTroubleshoot={onTroubleshoot}
-      />
-    ) : b.type === "status" ? (
-      <p className="ai-pending">{b.text}</p>
-    ) : b.type === "retry" ? (
-      <RetryRow block={b} />
-    ) : null;
-  return (
-    <div className="turn turn-ai">
-      <div className="turn-mark">
-        <span className="prov-tick" style={{ height: 12 }} />
-      </div>
-      <div className="turn-body">{body}</div>
-    </div>
-  );
-}
 
 export function AgentPanel({
   open,
@@ -697,24 +67,13 @@ export function AgentPanel({
   const itemsQ = useItems(projectId);
   const boardsQ = useBoards(projectId);
   const accessories = useAssistantAccessories();
-  const [chosenThread, setChosenThread] = useState<string | null>(() => localStorage.getItem(STORE.thread(projectId)));
-  // A conversation archived while on screen (its ticket finished) stays until the person opens another or the app restarts.
-  const shown = useRef<string | null>(null);
-  const listed = chosenThread && threads.data?.some((th) => th.id === chosenThread) ? chosenThread : null;
-  const lingering = !listed && chosenThread && shown.current === chosenThread ? chosenThread : null;
-  const threadId = listed ?? lingering ?? threads.data?.[0]?.id ?? null;
-  shown.current = threadId;
-  // Whatever follows the conversation on screen — the desktop pet — is told which one this is.
-  useEffect(() => {
-    if (threadId) void invoke("agent.showing", threadId).catch(() => {});
-  }, [threadId]);
+  const { threadId, choose: chooseThread, clear: clearThread } = useThreadSelection(projectId, threads.data);
   const detail = useAgentThread(projectId, threadId);
   const engines = useEngines();
   const newThread = useNewThread(projectId);
   const archiveThread = useArchiveThread(projectId);
   const deleteThread = useDeleteThread(projectId);
   const setEngine = useSetEngine(projectId);
-  const setPermissionMode = useSetPermissionMode(projectId);
   const send = useSend(projectId);
   const answer = useAnswer(projectId);
   const cancel = useCancelRun();
@@ -732,24 +91,13 @@ export function AgentPanel({
   const [attachments, setAttachments] = useState<File[]>([]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const fileInput = useRef<HTMLInputElement>(null);
   const sending = useRef(false);
-  // Per thread, in memory: what waits for the running turn to end.
-  const [queues, setQueues] = useState<Record<string, Queued[]>>({});
-  const queue = threadId ? (queues[threadId] ?? []) : [];
-  const editQueue = (id: string, fn: (q: Queued[]) => Queued[]) => setQueues((prev) => ({ ...prev, [id]: fn(prev[id] ?? []) }));
   // The run the last send started: until the thread shows it, the run before it says nothing about whether to go on.
   const [sentRun, setSentRun] = useState<string | null>(null);
-  // The slash menu: open while the draft is `/` plus a partial name, until Esc.
-  const [slashClosed, setSlashClosed] = useState(false);
-  const [slashAt, setSlashAt] = useState(0);
+  const slash = useSlashMenu(draft);
   // /help shows the guide at the foot of the conversation it was typed in; nothing is sent
   const [helpIn, setHelpIn] = useState<string | null>(null);
-  // Where ↑/↓ stands in the history (null: not browsing) and the draft it set aside.
-  const browsing = useRef<{ at: number; stash: string } | null>(null);
-  // Sent into the running turn and not yet read by the agent; whatever the turn ends without reading joins the queue.
-  const [steering, setSteering] = useState<Record<string, Queued[]>>({});
-  const steeringNow = threadId ? (steering[threadId] ?? []) : [];
+  const history = useComposerHistory(projectId, draft, setDraft);
   // What rides along as "(viewing: …)": follow tracks the screen, pinned holds
   // a snapshot across navigation, off sends nothing. Session state on purpose —
   // the panel never unmounts inside a project, so it survives navigation.
@@ -762,13 +110,7 @@ export function AgentPanel({
   const attention = useAttention().filter((e) => e.projectId === projectId);
   const attentionOf = new Map(attention.flatMap((e) => (e.threadId ? [[e.threadId, e] as const] : [])));
   const attentionLabel = (e: AttentionEntry) => t(`agentPanel.attention_${e.kind}` as MessageKey);
-  // the list: searchable once it is long, with what is running or waiting said beside each, and the archive a click away
-  const [threadQuery, setThreadQuery] = useState("");
-  const [showArchived, setShowArchived] = useState(false);
-  const archived = useArchivedThreads(projectId, showArchived);
-  const unarchive = useUnarchiveThread(projectId);
-  const threadTerm = threadQuery.trim().toLowerCase();
-  const matchingThreads = (threads.data ?? []).filter((th) => !threadTerm || (th.title || "").toLowerCase().includes(threadTerm));
+  const threadList = useThreadListState(projectId);
   const composer = useRef<HTMLTextAreaElement>(null);
   /** Whether the transcript follows new lines: true until the person scrolls up to read, again once they come back down. */
   const following = useRef(true);
@@ -788,6 +130,11 @@ export function AgentPanel({
   useAgentEvents(projectId, threadId, onDelta, onProgress);
 
   const runningRun = detail.data?.runs.find((r) => r.status === "running");
+  const {
+    usable, defaultEngine, currentEngineId, engine, noEngineReady,
+    permissionModes, selectedPermissionMode, activePermissionMode, permissionLabel, setPermissionMode,
+    threadOptions, engineOptions, picks, pickValue, setPick, pickTitle
+  } = useEngineChoice({ projectId, threadId, detail: detail.data, engines: engines.data, settings: settings.data, runningRun });
   const busy = !!runningRun || send.isPending || answer.isPending || uploading;
   const archivedNow = !!detail.data?.thread.archived;
   // A done ticket's conversation, brought back by hand: its next message first reopens the ticket.
@@ -804,42 +151,6 @@ export function AgentPanel({
   const investigator = doctorThread ? ((detail.data?.thread.options as { investigator?: string } | null | undefined)?.investigator ?? null) : null;
   const [reportFor, setReportFor] = useState<string | null>(null);
   const byKey = useMemo(() => new Map((itemsQ.data ?? []).map((i) => [i.key, i])), [itemsQ.data]);
-  // No thread yet: the chip shows what a new thread WOULD get, and picking an
-  // engine creates the thread right there instead of doing silently nothing.
-  const agentSettings = settings.data?.agent as AgentSettings | undefined;
-  const usable = (id: string) => {
-    const found = findEngine(engines.data, id);
-    return !!found?.ok && !found.terminalOnly;
-  };
-  // The settings' engine may not run here yet — no model, say — while another does: a new thread takes the one that can answer.
-  const configuredEngine = findEngine(engines.data, agentSettings?.defaultEngine)?.id ?? agentSettings?.defaultEngine ?? "tomrade";
-  const defaultEngine = !engines.data || usable(configuredEngine) ? configuredEngine : (engines.data.find((e) => e.ok && !e.terminalOnly && e.capabilities.includes("backlog"))?.id ?? configuredEngine);
-  const currentEngineId = detail.data?.thread.engine ?? defaultEngine;
-  const engine = findEngine(engines.data, currentEngineId);
-  const permissionModes = detail.data ? engine?.permissionModes : undefined;
-  // A conversation nobody set a mode on starts in the one last picked here for this engine.
-  const storedPermission = engine ? localStorage.getItem(STORE.permission(engine.id)) : null;
-  const rememberedPermission = detail.data && !detail.data.thread.itemId && !detail.data.thread.permissionMode && permissionModes?.choices.some((c) => c.value === storedPermission) ? storedPermission! : undefined;
-  const selectedPermissionMode = detail.data?.thread.permissionMode ?? rememberedPermission ?? permissionModes?.default;
-  const activePermissionMode = runningRun ? detail.data?.activePermissionMode : undefined;
-  // Written onto the thread, so the run uses the mode the chip shows.
-  useEffect(() => {
-    if (threadId && rememberedPermission && !setPermissionMode.isPending) setPermissionMode.mutate({ threadId, mode: rememberedPermission });
-  }, [threadId, rememberedPermission]);
-  const permissionLabel = (value?: string) => {
-    const choice = permissionModes?.choices.find((c) => c.value === value);
-    return choice ? permissionName(t, choice) : value;
-  };
-  const noEngineReady = engines.data ? !engines.data.some((e) => e.ok && !e.terminalOnly && conducts(e)) : false;
-
-  // Quick picks: with a thread they are that thread's overrides (what Start chose), layered over the engine's
-  // global options — the same knobs settings edits; without one they edit the global options a new thread would get.
-  const saveSettings = useSaveSettings();
-  const setOptions = useSetOptions(projectId);
-  const globalOptions = (agentSettings?.engines?.[currentEngineId] ?? {}) as Record<string, unknown>;
-  const threadOptions = (detail.data?.thread.engine === currentEngineId ? detail.data.thread.options : null) ?? {};
-  const engineOptions = { ...globalOptions, ...threadOptions };
-
   // A thread opens on what the panel is showing — the same engine, the same knobs — rather than
   // resetting to the settings default. With no thread there is nothing to carry, so the chips' own
   // value (the default engine) is what the thread gets.
@@ -864,28 +175,6 @@ export function AgentPanel({
     setAttachmentError(null);
     setAttachments(previous => [...previous, ...files]);
   };
-  const picks = engine?.picks ?? [];
-  // Only a free-text pick keeps a value outside its choices; elsewhere that is a choice gone (a removed profile), so the default.
-  const pickValue = (pick: EnginePick) => {
-    const value = engineOptions[pick.key];
-    return typeof value === "string" && value && (pick.freeText || pick.choices.some((c) => c.value === value)) ? value : null;
-  };
-  const setPick = (key: string, value: string | null) => {
-    if (threadId) {
-      const next = { ...threadOptions } as Record<string, unknown>;
-      if (value) next[key] = value;
-      else delete next[key];
-      setOptions.mutate({ threadId, options: Object.keys(next).length ? next : null });
-      return;
-    }
-    if (!settings.data || !agentSettings) return;
-    const next = { ...globalOptions };
-    if (value) next[key] = value;
-    else delete next[key];
-    saveSettings.mutate({ ...settings.data, agent: { ...agentSettings, engines: { ...agentSettings.engines, [currentEngineId]: next } } });
-  };
-  const pickTitle = (pick: EnginePick) =>
-    pick.key === "model" || pick.key === "profile" ? t("agentPanel.modelHead") : pick.key === "effort" ? t("agentPanel.effortHead") : pick.title;
 
   useEffect(() => {
     const saved = localStorage.getItem(STORE.width);
@@ -913,14 +202,6 @@ export function AgentPanel({
     if (!active || active === document.body || panel.current?.contains(active)) composer.current?.focus();
   }, [busy]);
 
-  // the composer grows with what is typed, up to a few lines, then scrolls
-  useLayoutEffect(() => {
-    const el = composer.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 168)}px`;
-  }, [draft]);
-
   const startResize = useCallback((event: React.MouseEvent) => {
     event.preventDefault();
     const startX = event.clientX;
@@ -941,17 +222,15 @@ export function AgentPanel({
   }, []);
 
   const pickThread = (id: string) => {
-    if (threadId && id !== threadId) { setAttachments([]); setAttachmentError(null); setAskReopen(false); browsing.current = null; }
-    setChosenThread(id);
-    localStorage.setItem(STORE.thread(projectId), id);
+    if (threadId && id !== threadId) { setAttachments([]); setAttachmentError(null); setAskReopen(false); history.stopBrowsing(); }
+    chooseThread(id);
   };
   useEffect(() => {
     if (!requestedThread) return;
     setAttachments([]);
     setAttachmentError(null);
-    setChosenThread(requestedThread.id);
-    localStorage.setItem(STORE.thread(projectId), requestedThread.id);
-  }, [requestedThread, projectId]);
+    chooseThread(requestedThread.id);
+  }, [requestedThread, projectId, chooseThread]);
 
   // Snapshotted at send time: navigating away mid-run can't change what "this" meant.
   const sendFocus = ctxMode === "off" ? [] : ctxMode === "pinned" ? pinnedFocus : focus;
@@ -975,34 +254,12 @@ export function AgentPanel({
       const focusNow = queued ? queued.focus : sendFocus;
       const { runId } = await send.mutateAsync({ threadId: target, text, focus: focusNow.length ? focusNow : undefined, attachments: refs.length ? refs : undefined });
       setSentRun(runId);
-      if (!queued) { if (text) remember(projectId, text); setDraft(""); setAttachments([]); }
+      if (!queued) { if (text) history.remember(text); setDraft(""); setAttachments([]); }
       return true;
     } catch (error) { setAttachmentError(readableError(error)); return false; }
     finally { sending.current = false; setUploading(false); }
   };
 
-  /** ↑ on the first line steps back through what was sent, ↓ on the last line forward, past the newest back to the draft. */
-  const recall = (el: HTMLTextAreaElement, step: -1 | 1): boolean => {
-    if (el.selectionStart !== el.selectionEnd) return false;
-    const value = el.value;
-    if (step < 0 ? value.slice(0, el.selectionStart).includes("\n") : value.slice(el.selectionEnd).includes("\n")) return false;
-    const list = readHistory(projectId);
-    const now = browsing.current;
-    if (step < 0 && !list.length) return false;
-    if (step > 0 && !now) return false;
-    const at = now ? now.at + step : list.length - 1;
-    if (at < 0) return true;
-    const stash = now?.stash ?? draft;
-    const text = at >= list.length ? stash : list[at];
-    browsing.current = at >= list.length ? null : { at, stash };
-    setDraft(text);
-    requestAnimationFrame(() => el.setSelectionRange(text.length, text.length));
-    return true;
-  };
-
-  const slashTerm = /^\/(\S*)$/.exec(draft)?.[1]?.toLowerCase();
-  const slashMatches = slashTerm === undefined || slashClosed ? [] : SLASH_COMMANDS.filter((c) => [c.name, ...(c.aliases ?? [])].some((n) => n.startsWith(slashTerm)));
-  const slashPick = slashMatches[Math.min(slashAt, slashMatches.length - 1)];
   const slashContext: SlashContext = {
     newThread: () => {
       // a new conversation leaves a running turn behind only if the person says so
@@ -1018,60 +275,32 @@ export function AgentPanel({
     }
   };
   const runSlash = (command: SlashCommand) => {
-    setSlashAt(0);
+    slash.setAt(0);
     command.run(slashContext);
   };
 
-  const enqueue = () => {
-    const text = draft.trim();
-    if (!threadId || !text || attachments.length || blocked) return;
-    editQueue(threadId, (q) => [...q, { id: crypto.randomUUID(), text, focus: sendFocus }]);
-    remember(projectId, text);
-    setDraft("");
-  };
-  const steer = async (inThread: string, entry: Queued) => {
-    const taken = !!engine?.steers && await invoke("agent.steer", projectId, inThread, entry.id, entry.text).catch(() => false);
-    if (taken) {
-      setSteering((prev) => ({ ...prev, [inThread]: [...(prev[inThread] ?? []), entry] }));
-      editQueue(inThread, (q) => q.filter((x) => x.id !== entry.id));
-      return;
-    }
-    if (!(queues[inThread] ?? []).some((x) => x.id === entry.id)) editQueue(inThread, (q) => [...q, entry]);
-    toast({ body: t("agentPanel.steerQueued", { name: engine?.title ?? currentEngineId }) });
-  };
-  const steerDraft = () => {
-    const text = draft.trim();
-    if (!threadId || !runningRun || !text || attachments.length || blocked) return;
-    remember(projectId, text);
-    setDraft("");
-    void steer(threadId, { id: crypto.randomUUID(), text, focus: sendFocus });
-  };
-  const steeredIds = useMemo(() => new Set((detail.data?.messages ?? []).flatMap((m) => (m.block.type === "text" && m.block.steerId ? [m.block.steerId] : []))), [detail.data?.messages]);
-  useEffect(() => {
-    if (!threadId || !steeringNow.length) return;
-    const left = steeringNow.filter((s) => !steeredIds.has(s.id));
-    if (runningRun) {
-      if (left.length !== steeringNow.length) setSteering((prev) => ({ ...prev, [threadId]: left }));
-      return;
-    }
-    setSteering((prev) => ({ ...prev, [threadId]: [] }));
-    if (left.length) editQueue(threadId, (q) => [...left, ...q]);
-  }, [threadId, steeringNow, steeredIds, runningRun]);
-
-  const sendQueued = async (inThread: string, entry: Queued) => {
-    editQueue(inThread, (q) => q.filter((x) => x.id !== entry.id));
-    // a send that did not go keeps its place at the head
-    if (!(await doSend(entry.text, entry))) editQueue(inThread, (q) => [entry, ...q.filter((x) => x.id !== entry.id)]);
-  };
   // Waiting messages go on only after a turn that ended well: a stop, a failure or a question holds them.
   const runList = detail.data?.runs ?? [];
   const lastRun = runList[runList.length - 1];
   const caughtUp = !sentRun || runList.some((r) => r.id === sentRun);
   const queueHeld = !lastRun || lastRun.status !== "done" || !!pending || !!doneTicket || blocked;
-  useEffect(() => {
-    if (!threadId || !queue.length || busy || queueHeld || !caughtUp || sending.current) return;
-    void sendQueued(threadId, queue[0]);
-  }, [threadId, queue, busy, queueHeld, caughtUp]);
+  const sendQueue = useSendQueue({ projectId, threadId, engine, currentEngineId, runningRun, messages: detail.data?.messages, busy, held: queueHeld, caughtUp, sending, doSend });
+  const { queue, steeringNow } = sendQueue;
+
+  const enqueue = () => {
+    const text = draft.trim();
+    if (!threadId || !text || attachments.length || blocked) return;
+    sendQueue.editQueue(threadId, (q) => [...q, { id: crypto.randomUUID(), text, focus: sendFocus }]);
+    history.remember(text);
+    setDraft("");
+  };
+  const steerDraft = () => {
+    const text = draft.trim();
+    if (!threadId || !runningRun || !text || attachments.length || blocked) return;
+    history.remember(text);
+    setDraft("");
+    void sendQueue.steer(threadId, { id: crypto.randomUUID(), text, focus: sendFocus });
+  };
 
   const reopenAndSend = async () => {
     if (!doneTicket || !threadId || reopening) return;
@@ -1171,14 +400,18 @@ export function AgentPanel({
     () => (engines.data ?? []).filter((e) => e.ok && !e.terminalOnly && conducts(e) && (!needsCode || e.capabilities.includes("code"))),
     [engines.data, needsCode]
   );
+  const transcriptActions = useMemo(
+    () => ({ projectId, runs, cards, engines: engines.data, retryEngines, pending, byKey, busy, onOpenIssue, onAnswer: answerRow, onRevert: revertRow, onOpenSettings: settingsRow, onCardAction: cardActionRow }),
+    [projectId, runs, cards, engines.data, retryEngines, pending, byKey, busy, onOpenIssue, answerRow, revertRow, settingsRow, cardActionRow]
+  );
 
   const archiveThreadById = (id: string) => {
     if (busy) return;
-    archiveThread.mutate(id, { onSuccess: () => { if (id === threadId) setChosenThread(null); } });
+    archiveThread.mutate(id, { onSuccess: () => { if (id === threadId) clearThread(); } });
   };
   const deleteThreadById = (id: string) => {
     if (busy || !window.confirm(t("agentPanel.deleteThreadConfirm"))) return;
-    deleteThread.mutate(id, { onSuccess: () => { if (id === threadId) setChosenThread(null); } });
+    deleteThread.mutate(id, { onSuccess: () => { if (id === threadId) clearThread(); } });
   };
 
   if (!open) {
@@ -1216,86 +449,17 @@ export function AgentPanel({
           <MenuHead title={t("agentPanel.guideTitle")} />
           <GuideList />
         </Menu>
-        <Menu
-          label={t("agentPanel.threadsLabel")}
-          align="end"
-          trigger={
-            <button type="button" className="btn btn-icon" title={t("agentPanel.threadsLabel")} aria-label={t("agentPanel.threadsLabel")}>
-              <Icon name="i-stack" size={14} />
-            </button>
-          }
-        >
-          <MenuHead
-            title={t("agentPanel.threadsLabel")}
-            aside={
-              <button
-                type="button"
-                className="btn btn-icon"
-                title={t("agentPanel.newThread")}
-                aria-label={t("agentPanel.newThread")}
-                onClick={() => void openThread({ boardId }).then((th) => pickThread(th.id))}
-              >
-                <Icon name="i-plus" size={13} />
-              </button>
-            }
-          />
-          {(threads.data?.length ?? 0) > 6 && (
-            <div className="menu-search">
-              <input
-                className="input"
-                type="search"
-                aria-label={t("agentPanel.searchThreads")}
-                placeholder={t("agentPanel.searchThreads")}
-                value={threadQuery}
-                // the menu's typeahead would take the keys otherwise
-                onKeyDown={(e) => e.stopPropagation()}
-                onChange={(e) => setThreadQuery(e.target.value)}
-              />
-            </div>
-          )}
-          {threadTerm && matchingThreads.length === 0 && <p className="meta-txt dense menu-note">{t("agentPanel.noThreadsMatch")}</p>}
-          {matchingThreads.length > 30 && <p className="meta-txt dense menu-note">{t("agentPanel.moreThreads", { n: matchingThreads.length - 30 })}</p>}
-          {matchingThreads.slice(0, 30).map((th) => (
-            <MenuRadioItem
-              key={th.id}
-              checked={th.id === threadId}
-              name={th.title || t("agentPanel.newThread")}
-              chips={th.origins}
-              sub={[attentionOf.has(th.id) ? attentionLabel(attentionOf.get(th.id)!) : th.running ? t("agentPanel.threadRunning") : th.parkedUntil ? t("agentPanel.parkedUntil", { time: clockLabel(th.parkedUntil) }) : null, timeAgo(th.updatedAt)].filter(Boolean).join(" · ")}
-              onSelect={() => pickThread(th.id)}
-              actions={
-                <>
-                  <button type="button" className="btn btn-icon" title={t("agentPanel.archiveThread")} aria-label={t("agentPanel.archiveThread")} onClick={() => archiveThreadById(th.id)}>
-                    <Icon name="i-archive" size={12} />
-                  </button>
-                  <button type="button" className="btn btn-icon" title={t("agentPanel.deleteThread")} aria-label={t("agentPanel.deleteThread")} onClick={() => deleteThreadById(th.id)}>
-                    <Icon name="i-trash" size={12} />
-                  </button>
-                </>
-              }
-            />
-          ))}
-          <div className="menu-foot">
-            <MenuActionItem icon={<Icon name="i-archive" size={13} />} name={showArchived ? t("agentPanel.hideArchived") : t("agentPanel.showArchived")} keepOpen onSelect={() => setShowArchived((v) => !v)} />
-            {showArchived && (archived.data ?? []).length === 0 && <p className="meta-txt dense menu-note">{t("agentPanel.noArchived")}</p>}
-            {showArchived &&
-              (archived.data ?? []).map((th) => (
-                <MenuRadioItem
-                  key={th.id}
-                  checked={false}
-                  name={th.title || t("agentPanel.newThread")}
-                  chips={th.origins}
-                  sub={timeAgo(th.updatedAt)}
-                  onSelect={() => unarchive.mutate(th.id, { onSuccess: () => pickThread(th.id) })}
-                  actions={
-                    <button type="button" className="btn btn-icon" title={t("agentPanel.restoreThread")} aria-label={t("agentPanel.restoreThread")} onClick={() => unarchive.mutate(th.id)}>
-                      <Icon name="i-undo" size={12} />
-                    </button>
-                  }
-                />
-              ))}
-          </div>
-        </Menu>
+        <ThreadList
+          state={threadList}
+          threads={threads.data}
+          threadId={threadId}
+          attentionOf={attentionOf}
+          attentionLabel={attentionLabel}
+          onPick={pickThread}
+          onNew={() => void openThread({ boardId }).then((th) => pickThread(th.id))}
+          onArchive={archiveThreadById}
+          onDelete={deleteThreadById}
+        />
         <button type="button" className="btn btn-icon" title={t("agentPanel.collapsePanel")} aria-label={t("agentPanel.collapseAssistantAria")} onClick={() => onToggle(false)}>
           <Icon name="i-panel" size={15} />
         </button>
@@ -1333,40 +497,16 @@ export function AgentPanel({
             </div>
           </div>
         )}
-        {folded.map((entry) => "fold" in entry ? (
-          <details key={`fold-${entry.fold[0].id}`} className="trace-fold">
-            <summary>
-              <Icon name="i-chev" size={10} />
-              <span>{t("agentPanel.earlierSteps", { n: entry.fold.length })}</span>
-            </summary>
-            {entry.fold.map((m) => <TranscriptRow key={m.id} projectId={projectId} m={m} runs={runs} pending={pending} byKey={byKey} onOpenIssue={onOpenIssue} onAnswer={answerRow} onRevert={revertRow} onOpenSettings={settingsRow} engines={engines.data} retryEngines={retryEngines} onCardAction={cardActionRow} cards={cards} busy={busy} />)}
-          </details>
-        ) : entry.id === briefId ? (
-          <StartBrief key={entry.id} m={entry} />
-        ) : (m => (
-          <TranscriptRow
-            key={m.id}
-            projectId={projectId}
-            m={m}
-            runs={runs}
-            pending={pending}
-            byKey={byKey}
-            onOpenIssue={onOpenIssue}
-            onAnswer={answerRow}
-            onRevert={revertRow}
-            onOpenSettings={settingsRow}
-            engines={engines.data}
-            retryEngines={retryEngines}
-            // only the newest failure, and only while nothing runs: try the last message again
-            onRetry={m.id === lastErrorId && lastAsked && !busy ? () => void doSend(lastAsked) : undefined}
-            onRetryWith={m.id === lastErrorId && lastAsked && !busy && threadId ? (engineId) => void retryWith(engineId) : undefined}
-            onTroubleshoot={m.id === lastErrorId && canTroubleshoot && !busy ? () => actions.current.troubleshoot(m.threadId, m.runId) : undefined}
-            onCardAction={cardActionRow}
-            cards={cards}
-            busy={busy}
-            hint={m.id === lastChangesId}
-          />
-        ))(entry))}
+        <Transcript
+          actions={transcriptActions}
+          folded={folded}
+          briefId={briefId}
+          lastErrorId={lastErrorId}
+          lastChangesId={lastChangesId}
+          onRetry={lastAsked && !busy ? () => void doSend(lastAsked) : undefined}
+          onRetryWith={lastAsked && !busy && threadId ? (engineId) => void retryWith(engineId) : undefined}
+          onTroubleshoot={canTroubleshoot && !busy ? (inThread, runId) => actions.current.troubleshoot(inThread, runId) : undefined}
+        />
         {live?.text && (
           <div className="turn turn-ai">
             <div className="turn-mark">
@@ -1408,10 +548,10 @@ export function AgentPanel({
             entry={entry}
             held={!runningRun && queueHeld}
             canSend={!busy}
-            onSave={(text) => editQueue(threadId, (q) => q.map((x) => (x.id === entry.id ? { ...x, text } : x)))}
-            onRemove={() => editQueue(threadId, (q) => q.filter((x) => x.id !== entry.id))}
-            onSendNow={() => void sendQueued(threadId, entry)}
-            onSteer={runningRun && engine?.steers ? () => void steer(threadId, entry) : undefined}
+            onSave={(text) => sendQueue.editQueue(threadId, (q) => q.map((x) => (x.id === entry.id ? { ...x, text } : x)))}
+            onRemove={() => sendQueue.editQueue(threadId, (q) => q.filter((x) => x.id !== entry.id))}
+            onSendNow={() => void sendQueue.sendQueued(threadId, entry)}
+            onSteer={runningRun && engine?.steers ? () => void sendQueue.steer(threadId, entry) : undefined}
           />
         ))}
         {steeringNow.map((entry) => (
@@ -1420,86 +560,49 @@ export function AgentPanel({
             <p className="q-text" title={entry.text}>{entry.text}</p>
           </div>
         ))}
-        {slashPick && (
-          <div className="slash-menu" role="listbox" aria-label={t("agentPanel.slashMenu")}>
-            {slashMatches.map((c) => (
-              <button
-                key={c.name}
-                type="button"
-                role="option"
-                aria-selected={c === slashPick}
-                className={c === slashPick ? "slash-row is-on" : "slash-row"}
-                // keeps the keyboard in the composer
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => runSlash(c)}
-              >
-                <span className="slash-name num">/{c.name}{c.aliases?.length ? ` · /${c.aliases.join(" · /")}` : ""}</span>
-                <span className="slash-hint">{t(c.hint)}</span>
-              </button>
-            ))}
-          </div>
-        )}
+        {slash.pick && <SlashMenu matches={slash.matches} pick={slash.pick} onRun={runSlash} />}
         {threadId && <ImGroupShare projectId={projectId} threadId={threadId} />}
-        <div className="ai-composer" data-busy={busy || undefined}>
-          <input ref={fileInput} type="file" multiple accept={acceptedMedia.join(",")} style={{ display: "none" }} onChange={event => {
-            addAttachments(Array.from(event.target.files ?? [])); event.target.value = "";
-          }} />
-          <button type="button" className="btn btn-icon" aria-label={t("agentPanel.attachMedia")} title={t(acceptedMedia.length ? "agentPanel.attachMedia" : "agentPanel.unsupportedAttachment")} disabled={busy || archivedNow || !acceptedMedia.length} onClick={() => fileInput.current?.click()}>+</button>
-          {/* typing stays open while the agent works; Enter then queues the message for when the turn ends */}
-          <textarea
-            ref={composer}
-            className="ai-input"
-            rows={1}
-            placeholder={archivedNow ? t("agentPanel.archivedPlaceholder") : doneTicket ? t("agentPanel.reopenPlaceholder", { key: doneTicket.key }) : pending ? t("agentPanel.answerPlaceholder") : runningRun ? t(engine?.steers ? "agentPanel.queueOrSteerPlaceholder" : "agentPanel.queuePlaceholder") : doctorThread ? t("doctor.placeholder") : t("agentPanel.messagePlaceholder")}
-            disabled={archivedNow}
-            aria-label={t("agentPanel.messageAria")}
-            value={draft}
-            onChange={(e) => { browsing.current = null; setSlashClosed(false); setSlashAt(0); setDraft(e.target.value); }}
-            onPaste={event => { if (event.clipboardData.files.length) { event.preventDefault(); addAttachments(Array.from(event.clipboardData.files)); } }}
-            onKeyDown={(e) => {
-              if (isComposing(e)) return;
-              if (slashPick) {
-                if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-                  e.preventDefault();
-                  setSlashAt((slashMatches.indexOf(slashPick) + (e.key === "ArrowUp" ? -1 : 1) + slashMatches.length) % slashMatches.length);
-                  return;
-                }
-                if (e.key === "Tab") { e.preventDefault(); setDraft(`/${slashPick.name}`); return; }
-                if (e.key === "Escape") { e.preventDefault(); setSlashClosed(true); return; }
-                if (isCommitKey(e) && !e.shiftKey) { e.preventDefault(); runSlash(slashPick); return; }
-              }
-              if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey && recall(e.currentTarget, e.key === "ArrowUp" ? -1 : 1)) {
+        <Composer
+          composer={composer}
+          draft={draft}
+          placeholder={archivedNow ? t("agentPanel.archivedPlaceholder") : doneTicket ? t("agentPanel.reopenPlaceholder", { key: doneTicket.key }) : pending ? t("agentPanel.answerPlaceholder") : runningRun ? t(engine?.steers ? "agentPanel.queueOrSteerPlaceholder" : "agentPanel.queuePlaceholder") : doctorThread ? t("doctor.placeholder") : t("agentPanel.messagePlaceholder")}
+          archived={archivedNow}
+          busy={busy}
+          canSend={!(busy || blocked || (!draft.trim() && !attachments.length))}
+          problem={workdirProblem}
+          acceptedMedia={acceptedMedia}
+          onChange={(e) => { history.stopBrowsing(); slash.setClosed(false); slash.setAt(0); setDraft(e.target.value); }}
+          onAttach={addAttachments}
+          onKeyDown={(e) => {
+            if (isComposing(e)) return;
+            const slashPick = slash.pick;
+            if (slashPick) {
+              if (e.key === "ArrowUp" || e.key === "ArrowDown") {
                 e.preventDefault();
+                slash.setAt((slash.matches.indexOf(slashPick) + (e.key === "ArrowUp" ? -1 : 1) + slash.matches.length) % slash.matches.length);
                 return;
               }
-              // Esc stops the turn like the Stop button; what is queued stays, held
-              if (e.key === "Escape" && runningRun) { e.preventDefault(); cancel.mutate(runningRun.id); return; }
-              if (!isCommitKey(e) || e.shiftKey) return;
+              if (e.key === "Tab") { e.preventDefault(); setDraft(`/${slashPick.name}`); return; }
+              if (e.key === "Escape") { e.preventDefault(); slash.setClosed(true); return; }
+              if (isCommitKey(e) && !e.shiftKey) { e.preventDefault(); runSlash(slashPick); return; }
+            }
+            if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey && history.recall(e.currentTarget, e.key === "ArrowUp" ? -1 : 1)) {
               e.preventDefault();
-              const command = slashCommand(draft);
-              if (command) runSlash(command);
-              else if (runningRun && (e.metaKey || e.ctrlKey)) steerDraft();
-              else if (runningRun) enqueue();
-              else void doSend();
-            }}
-          />
-          {runningRun ? (
-            <button type="button" className="btn btn-icon ai-send" title={t("agentPanel.stop")} aria-label={t("agentPanel.stop")} onClick={() => cancel.mutate(runningRun.id)}>
-              <Icon name="i-stop" size={14} />
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="btn btn-icon ai-send"
-              title={workdirProblem ?? t("agentPanel.send")}
-              aria-label={t("agentPanel.send")}
-              disabled={busy || blocked || (!draft.trim() && !attachments.length)}
-              onClick={() => void doSend()}
-            >
-              <Icon name="i-send" size={14} />
-            </button>
-          )}
-        </div>
+              return;
+            }
+            // Esc stops the turn like the Stop button; what is queued stays, held
+            if (e.key === "Escape" && runningRun) { e.preventDefault(); cancel.mutate(runningRun.id); return; }
+            if (!isCommitKey(e) || e.shiftKey) return;
+            e.preventDefault();
+            const command = slashCommand(draft);
+            if (command) runSlash(command);
+            else if (runningRun && (e.metaKey || e.ctrlKey)) steerDraft();
+            else if (runningRun) enqueue();
+            else void doSend();
+          }}
+          onSend={() => void doSend()}
+          onStop={runningRun ? () => cancel.mutate(runningRun.id) : undefined}
+        />
         {!!attachments.length && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
           {attachments.map((file, index) => <AgentAttachment key={`${file.name}-${index}`} file={file} disabled={busy} remove={() => setAttachments(previous => previous.filter((_, i) => i !== index))} />)}
         </div>}
@@ -1514,7 +617,7 @@ export function AgentPanel({
         {archivedNow && threadId && (
           <p className="ai-workdir meta-txt dense" style={{ margin: "6px 0 0", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
             <span>{t("agentPanel.archivedHere")}</span>
-            <button type="button" className="btn btn-ghost" style={{ padding: "0 6px" }} disabled={unarchive.isPending} onClick={() => unarchive.mutate(threadId)}>
+            <button type="button" className="btn btn-ghost" style={{ padding: "0 6px" }} disabled={threadList.unarchive.isPending} onClick={() => threadList.unarchive.mutate(threadId)}>
               {t("agentPanel.restoreThread")}
             </button>
           </p>
@@ -1694,30 +797,3 @@ export function AgentPanel({
 }
 
 export const aiOpenKey = STORE.open;
-
-/**
- * A conversation bound to an IM group: its desktop turns stay on the desktop
- * unless the person shares the next one with the group, here.
- */
-function ImGroupShare({ projectId, threadId }: { projectId: string; threadId: string }) {
-  const { t } = useI18n();
-  const bindings = useImThreadBindings(projectId, threadId);
-  const share = useImShareNext();
-  const groups = (bindings.data ?? []).filter((b) => b.group);
-  if (!groups.length) return null;
-  return (
-    <>
-      {groups.map((g) => (
-        <div key={g.id} className="ai-queued" data-testid="im-group-share">
-          <span className="q-state">{t("agentPanel.imGroup")}</span>
-          <p className="q-text" title={g.conversationId}>
-            {g.shareNext ? t("agentPanel.imGroupSharing", { group: g.conversationId }) : t("agentPanel.imGroupPrivate", { group: g.conversationId })}
-          </p>
-          <button type="button" className="btn btn-ghost" disabled={share.isPending} onClick={() => share.mutate([g.id, !g.shareNext])}>
-            {g.shareNext ? t("common.cancel") : t("agentPanel.imGroupShare")}
-          </button>
-        </div>
-      ))}
-    </>
-  );
-}
