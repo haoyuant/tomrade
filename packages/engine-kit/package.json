@@ -4,7 +4,7 @@
   "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
-  "description": "What every local-agent engine shares: finding and starting its CLI, JSON lines, the thread runtime pool, the session and turn prompts, the user-level MCP link and the lent CLI model",
+  "description": "What every local-agent engine shares: finding and starting its CLI, JSON lines, the thread runtime pool, the JSON-RPC peer, the turn frame, the session and turn prompts, the user-level MCP link and the lent CLI model",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@tomradex/agent": "workspace:*",
+    "@tomradex/domain": "workspace:*",
     "@tomradex/llm": "workspace:*",
     "@tomradex/mcp": "workspace:*",
     "cordis": "4.0.0-rc.8"

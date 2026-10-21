@@ -64,7 +64,7 @@ Every package in this workspace, what it is for, the key it claims on the cordis
 | `llm` | Model profiles and roles behind one interface; OpenAI-compatible and Anthropic adapters. | `llm` | desktop-surface, web-search |
 | `engine-loop` | The in-app conductor: a model reasoning over the tool registry, guided by playbooks. | — | agent, llm, tools |
 | `engine-scripted` | The no-model conductor: runs registered workflows from a menu. | — | agent |
-| `engine-kit` | What every local-agent engine shares: finding and starting its CLI, JSON lines, the runtime pool, prompts, the MCP link, the lent CLI model. | — | agent, llm, mcp |
+| `engine-kit` | What every local-agent engine shares: finding and starting its CLI, JSON lines, the JSON-RPC peer, the turn frame, the pooled runtimes, prompts, the MCP link, the lent CLI model. | — | agent, llm, mcp |
 | `engine-claude-code` | Claude Code as conductor, with Tomrade's tools over MCP. | — | agent, engine-kit, llm, mcp |
 | `engine-codex` | Codex (app-server) as conductor. | — | agent, engine-kit, llm, mcp |
 | `engine-pi` | The Pi coding agent as conductor. | — | agent, code-link, engine-kit, llm, mcp |

@@ -1,7 +1,7 @@
 import type { Context } from "cordis";
 import type { Engine } from "@tomradex/agent";
 import type {} from "@tomradex/code-link";
-import { localAvailability, localCli, RuntimePool, runtimeFingerprint } from "@tomradex/engine-kit";
+import { localAvailability, localCli, pooledEngine } from "@tomradex/engine-kit";
 import type {} from "@tomradex/llm";
 import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/settings";
@@ -13,8 +13,6 @@ import { PiRuntime } from "./rpc.js";
 const EFFORTS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 export function createPiEngine(ctx: Context): Engine {
-  const pool = new RuntimePool<PiRuntime>();
-  ctx.effect(() => () => pool.close());
   const cli = localCli("pi");
   let models: string[] = [];
   return {
@@ -51,11 +49,7 @@ export function createPiEngine(ctx: Context): Engine {
     mcpLink: piMcpLink(ctx),
     // Inside pi, /login picks a provider; an API key in the environment works too. The built-in agent needs neither.
     setup: { install: ["npm install -g @earendil-works/pi-coding-agent"], signIn: "pi", signInRuns: true, docs: "https://www.npmjs.com/package/@earendil-works/pi-coding-agent" },
-    async turn(input, io) {
-      if (!ctx.mcp.url) return { stop: "error", error: "The MCP server is not running" };
-      return pool.run(`${input.projectId}:${input.threadId}`, runtimeFingerprint(input, io, ctx.mcp.url),
-        () => new PiRuntime(ctx, input), input, io);
-    }
+    turn: pooledEngine(ctx, { create: (input) => new PiRuntime(ctx, input) })
   };
 }
 

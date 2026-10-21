@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Context } from "cordis";
 import type { Engine } from "@tomradex/agent";
-import { RuntimePool, runtimeFingerprint } from "@tomradex/engine-kit";
+import { pooledEngine } from "@tomradex/engine-kit";
 import type {} from "@tomradex/llm";
 import { codexHome } from "./account.js";
 import { codexEngineInfo, migrateLegacyModel } from "./engine.js";
@@ -10,8 +10,6 @@ import { CodexRuntime } from "./app-server.js";
 import { codexLentModel } from "./lend.js";
 
 export function createCodexEngine(ctx: Context): Engine {
-  const pool = new RuntimePool<CodexRuntime>();
-  ctx.effect(() => () => pool.close());
   return {
     ...codexEngineInfo(ctx),
     // app-server takes messages mid-turn (turn/steer)
@@ -31,11 +29,7 @@ export function createCodexEngine(ctx: Context): Engine {
         return { model: value("model") ?? "default", provider: value("model_provider") ?? "default" };
       }
     },
-    async turn(input, io) {
-      if (!ctx.mcp.url) return { stop: "error", error: "The MCP server is not running" };
-      return pool.run(`${input.projectId}:${input.threadId}`, runtimeFingerprint(input, io, ctx.mcp.url),
-        () => new CodexRuntime(ctx, input), input, io);
-    }
+    turn: pooledEngine(ctx, { create: (input) => new CodexRuntime(ctx, input) })
   };
 }
 

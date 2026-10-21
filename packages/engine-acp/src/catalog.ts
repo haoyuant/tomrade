@@ -4,9 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
 import type { TurnInput } from "@tomradex/agent";
-import { spawnCli, stopCli } from "@tomradex/engine-kit";
+import { engineLocale, RpcError, spawnCli, stopCli } from "@tomradex/engine-kit";
 import type { AcpAgent, AcpOptions, Catalog } from "./agent.js";
-import { AcpConnection, AcpError } from "./connection.js";
+import { acpConnection } from "./connection.js";
 
 type Json = Record<string, any>;
 
@@ -94,11 +94,7 @@ export async function askCatalog(ctx: Context, agent: AcpAgent<any>, options: Ac
   const input = { cwd } as TurnInput;
   const launch = await agent.cli.launch(options.command);
   const child = spawnCli(launch, agent.args(input, options), { cwd, env: { ...process.env, ...agent.env?.(input, options) }, stdio: ["pipe", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
-  const conn = new AcpConnection(child, {
-    notification: () => {},
-    request: (method) => Promise.reject(new AcpError(`Tomrade does not offer ${method}`, -32601)),
-    closed: () => {}
-  }, agent.title);
+  const conn = acpConnection(child, agent.title, engineLocale(ctx)).onRequest((method) => Promise.reject(new RpcError(`Tomrade does not offer ${method}`, -32601)));
   const stop = () => {
     conn.close(new Error(`${agent.title} was only asked for its models`));
     child.stdin.end();

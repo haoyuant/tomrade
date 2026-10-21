@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import { lineSplitter, spawnCli, stopCli, type CliLaunch } from "@tomradex/engine-kit";
+import { JsonLinePeer, jsonRpc, spawnCli, stopCli, type CliLaunch } from "@tomradex/engine-kit";
 
 /** Where Codex keeps its sign-in, settings and sessions — what a terminal with this environment would use. */
 export const codexHome = (env: NodeJS.ProcessEnv = process.env): string => env.CODEX_HOME || path.join(os.homedir(), ".codex");
@@ -29,30 +29,13 @@ export function readCodexAccount(launch: CliLaunch, env: NodeJS.ProcessEnv = pro
   } catch {
     return Promise.resolve(null);
   }
-  const pending = new Map<number, (msg: Json | null) => void>();
-  let seq = 0;
-  child.stdout.on("data", lineSplitter((line) => {
-    let msg: Json;
-    try { msg = JSON.parse(line); } catch { return; }
-    if (msg.id === undefined || msg.method) return;
-    pending.get(msg.id)?.(msg.error ? null : (msg.result ?? {}));
-    pending.delete(msg.id);
-  }));
-  const settleAll = () => { for (const done of pending.values()) done(null); pending.clear(); };
-  child.on("error", settleAll);
-  child.on("close", settleAll);
-  child.stdin.on("error", settleAll);
-  child.stderr.resume();
-  const request = (method: string, params: Json) => new Promise<Json | null>((resolve) => {
-    const id = ++seq;
-    pending.set(id, resolve);
-    if (child.stdin.writable) child.stdin.write(JSON.stringify({ id, method, params }) + "\n");
-    else { pending.delete(id); resolve(null); }
-  });
+  // No request waits on its own: the whole check has one deadline.
+  const peer = new JsonLinePeer(child, { name: "Codex", dialect: jsonRpc({ empty: () => ({}) }), timeoutMs: 0 });
+  const request = (method: string, params: Json): Promise<Json | null> => peer.request(method, params).catch(() => null);
 
   const ask = async (): Promise<CodexAccount | null> => {
     if (!(await request("initialize", { clientInfo: { name: "tomrade", version: "0.0.0" } }))) return null;
-    child.stdin.write(JSON.stringify({ method: "initialized", params: {} }) + "\n");
+    peer.notify("initialized", {});
     // refreshToken false: a readiness check must not rotate the person's ChatGPT token.
     const [account, listed] = await Promise.all([request("account/read", { refreshToken: false }), request("model/list", {})]);
     if (typeof account?.requiresOpenaiAuth !== "boolean") return null;
@@ -69,7 +52,7 @@ export function readCodexAccount(launch: CliLaunch, env: NodeJS.ProcessEnv = pro
   const timeout = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), timeoutMs); });
   return Promise.race([ask().catch(() => null), timeout]).finally(() => {
     clearTimeout(timer);
-    settleAll();
+    peer.close();
     child.stdin.end();
     stopCli(child, "SIGTERM");
     // A wrapper that ignores SIGTERM must not outlive the check.

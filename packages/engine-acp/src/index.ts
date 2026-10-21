@@ -1,6 +1,6 @@
 import type { Context } from "cordis";
 import type { Engine } from "@tomradex/agent";
-import { localAvailability, RuntimePool, runtimeFingerprint } from "@tomradex/engine-kit";
+import { localAvailability, pooledEngine } from "@tomradex/engine-kit";
 import type {} from "@tomradex/mcp";
 import type { AcpAgent, AcpOptions, Catalog } from "./agent.js";
 import { askCatalog, keptCatalogs } from "./catalog.js";
@@ -13,12 +13,11 @@ import { AcpRuntime } from "./runtime.js";
  * offer is kept across restarts; with nothing kept, one short session asks.
  */
 export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAgent<O>): Engine {
-  const pool = new RuntimePool<AcpRuntime>();
-  ctx.effect(() => () => pool.close());
   const catalog: Catalog = { models: [], efforts: (agent.efforts ?? []).map((value) => ({ value })) };
   const kept = keptCatalogs(ctx);
   Object.assign(catalog, kept.read(agent.id));
   const remember = () => kept.write(agent.id, catalog);
+  const turn = pooledEngine(ctx, { create: (input) => new AcpRuntime(ctx, agent, catalog, input, remember) });
   const probe = agent.probe;
   const check = localAvailability(ctx, {
     engineId: agent.id,
@@ -74,15 +73,11 @@ export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAg
       logs: () => agent.diagnostics?.logs?.() ?? [],
       facts: () => ({ models: catalog.models.slice(0, 40).map((m) => m.value).join(",") || "unknown", ...agent.diagnostics?.facts?.(catalog) })
     },
-    async turn(input, io) {
-      if (!ctx.mcp.url) return { stop: "error", error: "The MCP server is not running" };
-      return pool.run(`${input.projectId}:${input.threadId}`, runtimeFingerprint(input, io, ctx.mcp.url),
-        () => new AcpRuntime(ctx, agent, catalog, input, remember), input, io);
-    }
+    turn
   };
 }
 
 export { PERMISSION_CHOICES, isTomradeTool, policyOf, wrappedTool, type AcpAgent, type AcpOptions, type Catalog, type Policy, type RequestUsage } from "./agent.js";
-export { AcpConnection, AcpError, AUTH_REQUIRED, type AcpPeer } from "./connection.js";
+export { acpConnection, AUTH_REQUIRED } from "./connection.js";
 export { AcpRuntime } from "./runtime.js";
 export { LocalAgents, LocalAgents as default } from "./local.js";

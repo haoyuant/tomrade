@@ -1,6 +1,6 @@
 import type { Context } from "cordis";
 import type { Engine } from "@tomradex/agent";
-import { RuntimePool, runtimeFingerprint } from "@tomradex/engine-kit";
+import { pooledEngine } from "@tomradex/engine-kit";
 import type {} from "@tomradex/llm";
 import type {} from "@tomradex/mcp";
 import { claudeCodeEngineInfo } from "./engine.js";
@@ -9,8 +9,6 @@ import { claudeCommands } from "./permissions.js";
 import { ClaudeRuntime } from "./sdk.js";
 
 export function createClaudeCodeEngine(ctx: Context): Engine {
-  const pool = new RuntimePool<ClaudeRuntime>();
-  ctx.effect(() => () => pool.close());
   return {
     ...claudeCodeEngineInfo(ctx),
     // the SDK session takes messages mid-turn through its input queue
@@ -22,11 +20,7 @@ export function createClaudeCodeEngine(ctx: Context): Engine {
       { value: "acceptEdits", label: "Accept edits" }, { value: "default", label: "Ask permissions" },
       { value: "plan", label: "Plan" }, { value: "local", label: "Local rules" }
     ] },
-    async turn(input, io) {
-      if (!ctx.mcp.url) return { stop: "error", error: "The MCP server is not running" };
-      return pool.run(`${input.projectId}:${input.threadId}`, runtimeFingerprint(input, io, ctx.mcp.url),
-        () => new ClaudeRuntime(ctx, input), input, io);
-    }
+    turn: pooledEngine(ctx, { create: (input) => new ClaudeRuntime(ctx, input) })
   };
 }
 

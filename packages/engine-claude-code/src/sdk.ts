@@ -3,8 +3,8 @@ import { randomUUID } from "node:crypto";
 import { query, type Query, type SDKMessage, type SDKUserMessage, type Options, type SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
 import type { Context } from "cordis";
 import type { TurnIO, TurnInput, TurnResult, TurnMetrics } from "@tomradex/agent";
-import { claudeMediaInput, describeFailure, looksRateLimited, resetTime, stepHint, stepSummary, withRecap } from "@tomradex/agent";
-import { bindTurn, localCli, MessageQueue, runtimeDirectory, sessionSystem, spawnCli, turnPrompt, type CliLaunch, type Runtime } from "@tomradex/engine-kit";
+import { claudeMediaInput, resetTime, stepHint, stepSummary, withRecap } from "@tomradex/agent";
+import { engineLocale, KIT_WORDS, localCli, MessageQueue, runtimeDirectory, runTurn, sessionSystem, spawnCli, STDERR_CAP, turnPrompt, type CliLaunch, type Runtime } from "@tomradex/engine-kit";
 import { lostConversation } from "./cli.js";
 import { ClaudeCodeOptions, retryReason } from "./engine.js";
 import { LiveUsage, cacheKnown, promptTokens, turnTokens, type Tokens } from "./usage.js";
@@ -58,11 +58,13 @@ export class ClaudeRuntime implements Runtime {
   private tokens: Tokens | null = null;
   private activeIO?: TurnIO;
   private stderr = "";
-  private keepStderr = (data: string) => { this.stderr = (this.stderr + data).slice(-2000); };
+  private keepStderr = (data: string) => { this.stderr = (this.stderr + data).slice(-STDERR_CAP); };
+  private kit;
 
   constructor(private ctx: Context, input: TurnInput) {
     const directory = runtimeDirectory(input);
     this.token = directory.token; this.cwd = directory.cwd;
+    this.kit = KIT_WORDS(engineLocale(ctx));
   }
 
   close(): void {
@@ -70,7 +72,7 @@ export class ClaudeRuntime implements Runtime {
     this.alive = false;
     this.queue.close();
     this.query?.close();
-    this.onFailure?.(new Error("Claude runtime closed"));
+    this.onFailure?.(new Error(this.kit("runtimeClosed", { name: "Claude" })));
   }
 
   async turn(input: TurnInput, io: TurnIO, warm: boolean): Promise<TurnResult> {
@@ -79,137 +81,143 @@ export class ClaudeRuntime implements Runtime {
     if (input.permissionMode) options.codePermissionMode = input.permissionMode === "local" ? undefined : ClaudeCodeOptions.shape.codePermissionMode.parse(input.permissionMode);
     const start = performance.now();
     const metrics: TurnMetrics = { transport: "sdk", runtime: warm ? "warm" : "cold", compactions: 0, toolCalls: 0 };
-    const binding = bindTurn(this.ctx, this.token, io, input);
-    let cancelled = io.signal.aborted;
     let interruptTimer: NodeJS.Timeout | undefined;
-    let finish!: (result: TurnResult) => void;
-    const done = new Promise<TurnResult>((resolve) => { finish = resolve; });
-    const seenTools = new Set<string>();
-    // Claude Code's own tools, from the call until their result comes back.
-    const running = new Map<string, { name: string; args: unknown; at: number }>();
-    const live = new LiveUsage();
-    // Messages sent into this turn, by the uuid they carry into the CLI's queue. One that the
-    // turn ends without reading runs as a turn of its own right after: this turn waits for it.
-    const steers = new Map<string, string>();
-    const unplaced = new Set<string>();
-    const consumed = new Set<string>();
-    let prompted = false;
-    let over = false;
-    const place = (uuids: Iterable<string>) => {
-      for (const uuid of uuids) if (unplaced.delete(uuid)) io.steered?.(steers.get(uuid)!);
-    };
-    const waiting = () => [...steers.keys()].filter((uuid) => !consumed.has(uuid));
-    io.steerTo?.(async (steer) => {
-      if (!prompted || over || cancelled || !this.alive) return false;
-      const uuid = randomUUID();
-      steers.set(uuid, steer.id); unplaced.add(uuid);
-      this.queue.push({ type: "user", message: { role: "user", content: steerPrompt(steer.text) }, parent_tool_use_id: null, session_id: this.session ?? "", uuid, priority: "next" });
-      return true;
-    });
-    // A turn can span the CLI's turns for late steers: their figures add up.
-    const sum = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, cacheKnown: false };
-    // A subscription limit arrives as a rejected rate-limit event and a reply flagged rate_limit; the result only says it failed.
-    let limit: { until: number | null; text: string | null } | null = null;
-    const abort = () => {
-      cancelled = true;
-      // A plain interrupt leaves queued messages to run afterwards; ending the process drops them (the session resumes next turn).
-      if (waiting().length) { this.close(); return; }
-      // A protocol interrupt is scoped to this turn. Kill only on timeout.
-      void this.query?.interrupt().catch(() => this.close());
-      interruptTimer ??= setTimeout(() => this.close(), 3000).unref();
-    };
-    this.onFailure = (error) => finish({ stop: cancelled ? "cancelled" : "error", error: cancelled ? undefined : String(error),
-      details: cancelled ? undefined : describeFailure({ error, stderr: this.stderr }), resume: this.session, metrics });
-    this.onMessage = (message) => {
-      // the first frame of a CLI turn names the messages it answers: a late steer is read there
-      if (message.type !== "result") { const answers = consumedBy(message); if (answers) place(answers.filter((uuid) => steers.has(uuid))); }
-      if (message.type === "system" && message.subtype === "init") {
-        this.session = message.session_id;
-        metrics.providerModel = message.model;
-        if (message.permissionMode) io.permissionMode?.(message.permissionMode);
-          metrics.readyMs ??= performance.now() - start;
-      } else if (message.type === "system" && message.subtype === "compact_boundary") {
-        metrics.compactions!++;
-      } else if (message.type === "system" && message.subtype === "api_retry") {
-        io.progress(live.retry());
-        io.retry?.({ attempt: message.attempt, max: message.max_retries, reason: retryReason(message), delayMs: message.retry_delay_ms });
-      } else if (message.type === "stream_event") {
-        // Subagent requests count too: the final figures include them.
-        const counted = live.observe(message.event as Parameters<LiveUsage["observe"]>[0], message.parent_tool_use_id);
-        if (counted) io.progress(counted);
-        const event = message.event;
-        if (!message.parent_tool_use_id && event.type === "content_block_delta" && event.delta.type === "text_delta") {
-          metrics.firstTokenMs ??= performance.now() - start;
-          io.delta(event.delta.text);
-        }
-      } else if (message.type === "rate_limit_event") {
-        const info = message.rate_limit_info;
-        if (info.status === "rejected") limit = { until: info.resetsAt ? (info.resetsAt < 1e12 ? info.resetsAt * 1000 : info.resetsAt) : limit?.until ?? null, text: limit?.text ?? null };
-      } else if (message.type === "assistant" && !message.parent_tool_use_id) {
-        if (message.error === "rate_limit") {
-          const said = message.message.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join(" ").trim();
-          limit = { until: limit?.until ?? null, text: said || limit?.text || null };
-        }
-        io.retry?.(null);
-        for (const block of message.message.content) {
-          if (block.type === "text" && block.text.trim()) io.emit({ type: "text", text: block.text.trim() });
-          if (block.type === "tool_use" && !seenTools.has(block.id)) {
-            seenTools.add(block.id); metrics.toolCalls!++;
-            // Tomrade's own tools are traced by the gateway they run through.
-            if (!block.name.startsWith("mcp__")) {
-              running.set(block.id, { name: block.name, args: block.input, at: Date.now() });
-              const hint = stepHint(block.input, 60);
-              io.activity?.(hint ? `${block.name} · ${hint}` : block.name);
+    return runTurn(io, {
+      ctx: this.ctx, token: this.token, input, metrics,
+      result: (stop, error, details) => ({ stop, ...(error ? { error } : {}), ...(details ? { details } : {}), resume: this.session, metrics }),
+      resume: () => this.session,
+      explain: String,
+      stderr: () => this.stderr,
+      thrown: () => this.close(),
+      cleanup: () => {
+        clearTimeout(interruptTimer);
+        this.onMessage = undefined; this.onFailure = undefined; this.activeIO = undefined;
+      }
+    }, async (turn) => {
+      let finish!: (result: TurnResult) => void;
+      const done = new Promise<TurnResult>((resolve) => { finish = resolve; });
+      const seenTools = new Set<string>();
+      // Claude Code's own tools, from the call until their result comes back.
+      const running = new Map<string, { name: string; args: unknown; at: number }>();
+      const live = new LiveUsage();
+      // Messages sent into this turn, by the uuid they carry into the CLI's queue. One that the
+      // turn ends without reading runs as a turn of its own right after: this turn waits for it.
+      const steers = new Map<string, string>();
+      const unplaced = new Set<string>();
+      const consumed = new Set<string>();
+      let prompted = false;
+      let over = false;
+      const place = (uuids: Iterable<string>) => {
+        for (const uuid of uuids) if (unplaced.delete(uuid)) io.steered?.(steers.get(uuid)!);
+      };
+      const waiting = () => [...steers.keys()].filter((uuid) => !consumed.has(uuid));
+      io.steerTo?.(async (steer) => {
+        if (!prompted || over || turn.cancelled || !this.alive) return false;
+        const uuid = randomUUID();
+        steers.set(uuid, steer.id); unplaced.add(uuid);
+        this.queue.push({ type: "user", message: { role: "user", content: steerPrompt(steer.text) }, parent_tool_use_id: null, session_id: this.session ?? "", uuid, priority: "next" });
+        return true;
+      });
+      // A turn can span the CLI's turns for late steers: their figures add up.
+      const sum = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, cacheKnown: false };
+      // A subscription limit arrives as a rejected rate-limit event and a reply flagged rate_limit; the result only says it failed.
+      let limit: { until: number | null; text: string | null } | null = null;
+      turn.onAbort(() => {
+        // A plain interrupt leaves queued messages to run afterwards; ending the process drops them (the session resumes next turn).
+        if (waiting().length) { this.close(); return; }
+        // A protocol interrupt is scoped to this turn. Kill only on timeout.
+        void this.query?.interrupt().catch(() => this.close());
+        interruptTimer ??= setTimeout(() => this.close(), 3000).unref();
+      });
+      this.onFailure = (error) => finish(turn.failed(String(error), { error }));
+      this.onMessage = (message) => {
+        // the first frame of a CLI turn names the messages it answers: a late steer is read there
+        if (message.type !== "result") { const answers = consumedBy(message); if (answers) place(answers.filter((uuid) => steers.has(uuid))); }
+        if (message.type === "system" && message.subtype === "init") {
+          this.session = message.session_id;
+          metrics.providerModel = message.model;
+          if (message.permissionMode) io.permissionMode?.(message.permissionMode);
+            metrics.readyMs ??= performance.now() - start;
+        } else if (message.type === "system" && message.subtype === "compact_boundary") {
+          metrics.compactions!++;
+        } else if (message.type === "system" && message.subtype === "api_retry") {
+          io.progress(live.retry());
+          io.retry?.({ attempt: message.attempt, max: message.max_retries, reason: retryReason(message), delayMs: message.retry_delay_ms });
+        } else if (message.type === "stream_event") {
+          // Subagent requests count too: the final figures include them.
+          const counted = live.observe(message.event as Parameters<LiveUsage["observe"]>[0], message.parent_tool_use_id);
+          if (counted) io.progress(counted);
+          const event = message.event;
+          if (!message.parent_tool_use_id && event.type === "content_block_delta" && event.delta.type === "text_delta") {
+            metrics.firstTokenMs ??= performance.now() - start;
+            io.delta(event.delta.text);
+          }
+        } else if (message.type === "rate_limit_event") {
+          const info = message.rate_limit_info;
+          if (info.status === "rejected") limit = { until: info.resetsAt ? (info.resetsAt < 1e12 ? info.resetsAt * 1000 : info.resetsAt) : limit?.until ?? null, text: limit?.text ?? null };
+        } else if (message.type === "assistant" && !message.parent_tool_use_id) {
+          if (message.error === "rate_limit") {
+            const said = message.message.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join(" ").trim();
+            limit = { until: limit?.until ?? null, text: said || limit?.text || null };
+          }
+          io.retry?.(null);
+          for (const block of message.message.content) {
+            if (block.type === "text" && block.text.trim()) io.emit({ type: "text", text: block.text.trim() });
+            if (block.type === "tool_use" && !seenTools.has(block.id)) {
+              seenTools.add(block.id); metrics.toolCalls!++;
+              // Tomrade's own tools are traced by the gateway they run through.
+              if (!block.name.startsWith("mcp__")) {
+                running.set(block.id, { name: block.name, args: block.input, at: Date.now() });
+                const hint = stepHint(block.input, 60);
+                io.activity?.(hint ? `${block.name} · ${hint}` : block.name);
+              }
             }
           }
+        } else if (message.type === "user" && !message.parent_tool_use_id && Array.isArray(message.message.content)) {
+          for (const block of message.message.content) {
+            const call = block.type === "tool_result" ? running.get(block.tool_use_id) : undefined;
+            if (!call || block.type !== "tool_result") continue;
+            running.delete(block.tool_use_id);
+            const ok = !block.is_error;
+            io.emit({ type: "trace", tool: call.name, args: call.args, ok, summary: stepSummary(call.args, block.content, ok), ms: Date.now() - call.at });
+          }
+          if (!running.size) io.activity?.(null);
+          // what was queued while the tools ran rides into the next request
+          if (message.message.content.some((block) => block.type === "tool_result")) place([...unplaced]);
+        } else if (message.type === "result") {
+          sum.cost += Math.max(0, message.total_cost_usd - this.cost);
+          this.cost = message.total_cost_usd;
+          this.session = message.session_id;
+          const { turn: part, cumulative } = turnTokens(message, this.tokens);
+          this.tokens = cumulative ?? this.tokens;
+          sum.input += part.input; sum.output += part.output; sum.cacheRead += part.cacheRead; sum.cacheWrite += part.cacheWrite;
+          sum.cacheKnown ||= cacheKnown(message);
+          const counted = { input: sum.input, output: sum.output, cacheRead: sum.cacheRead, cacheWrite: sum.cacheWrite };
+          const costUsd = sum.cost;
+          metrics.uncachedInputTokens = counted.input;
+          if (sum.cacheKnown) {
+            metrics.cacheReadTokens = counted.cacheRead;
+            metrics.cacheWriteTokens = counted.cacheWrite;
+          }
+          const usage = { inputTokens: promptTokens(counted), outputTokens: counted.output };
+          io.progress(usage);
+          const answered = consumedBy(message);
+          // an older CLI does not say what it read: nothing is waited for
+          for (const uuid of answered ?? steers.keys()) consumed.add(uuid);
+          place([...unplaced].filter((uuid) => consumed.has(uuid)));
+          if (!message.is_error && !turn.cancelled && waiting().length) return;
+          over = true;
+          const budget = message.subtype === "error_max_turns" || message.subtype === "error_max_budget_usd";
+          const error = message.subtype === "success" ? (message.is_error ? message.result || undefined : undefined) : message.errors.join("\n");
+          // An error that only reads as a limit is left to runTurn.
+          const limited = message.is_error && !turn.cancelled ? limit : null;
+          finish({ stop: turn.cancelled ? "cancelled" : budget ? "budget" : message.is_error ? "error" : turn.asked() ? "asked" : "end",
+            error: limited?.text ?? error, usage, costUsd, resume: this.session, metrics,
+            ...(io.resume && message.is_error && message.num_turns === 0 && lostConversation(error) ? { lostSession: true } : {}),
+            ...(message.is_error && !turn.cancelled ? { details: turn.details({ result: message }) } : {}),
+            ...(limited ? { limit: { until: limited.until ?? resetTime(limited.text ?? error) } } : {}) });
         }
-      } else if (message.type === "user" && !message.parent_tool_use_id && Array.isArray(message.message.content)) {
-        for (const block of message.message.content) {
-          const call = block.type === "tool_result" ? running.get(block.tool_use_id) : undefined;
-          if (!call || block.type !== "tool_result") continue;
-          running.delete(block.tool_use_id);
-          const ok = !block.is_error;
-          io.emit({ type: "trace", tool: call.name, args: call.args, ok, summary: stepSummary(call.args, block.content, ok), ms: Date.now() - call.at });
-        }
-        if (!running.size) io.activity?.(null);
-        // what was queued while the tools ran rides into the next request
-        if (message.message.content.some((block) => block.type === "tool_result")) place([...unplaced]);
-      } else if (message.type === "result") {
-        sum.cost += Math.max(0, message.total_cost_usd - this.cost);
-        this.cost = message.total_cost_usd;
-        this.session = message.session_id;
-        const { turn: part, cumulative } = turnTokens(message, this.tokens);
-        this.tokens = cumulative ?? this.tokens;
-        sum.input += part.input; sum.output += part.output; sum.cacheRead += part.cacheRead; sum.cacheWrite += part.cacheWrite;
-        sum.cacheKnown ||= cacheKnown(message);
-        const turn = { input: sum.input, output: sum.output, cacheRead: sum.cacheRead, cacheWrite: sum.cacheWrite };
-        const costUsd = sum.cost;
-        metrics.uncachedInputTokens = turn.input;
-        if (sum.cacheKnown) {
-          metrics.cacheReadTokens = turn.cacheRead;
-          metrics.cacheWriteTokens = turn.cacheWrite;
-        }
-        const usage = { inputTokens: promptTokens(turn), outputTokens: turn.output };
-        io.progress(usage);
-        const answered = consumedBy(message);
-        // an older CLI does not say what it read: nothing is waited for
-        for (const uuid of answered ?? steers.keys()) consumed.add(uuid);
-        place([...unplaced].filter((uuid) => consumed.has(uuid)));
-        if (!message.is_error && !cancelled && waiting().length) return;
-        over = true;
-        const budget = message.subtype === "error_max_turns" || message.subtype === "error_max_budget_usd";
-        const error = message.subtype === "success" ? (message.is_error ? message.result || undefined : undefined) : message.errors.join("\n");
-        const limited = message.is_error && !cancelled ? (limit ?? (looksRateLimited(error) ? { until: null, text: null } : null)) : null;
-        finish({ stop: cancelled ? "cancelled" : budget ? "budget" : message.is_error ? "error" : binding.asked() ? "asked" : "end",
-          error: limited?.text ?? error, usage, costUsd, resume: this.session, metrics,
-          ...(io.resume && message.is_error && message.num_turns === 0 && lostConversation(error) ? { lostSession: true } : {}),
-          ...(message.is_error && !cancelled ? { details: describeFailure({ result: message, stderr: this.stderr }) } : {}),
-          ...(limited ? { limit: { until: limited.until ?? resetTime(limited.text ?? error) } } : {}) });
-      }
-    };
-    io.signal.addEventListener("abort", abort, { once: true });
-    try {
-      if (cancelled) return { stop: "cancelled", resume: this.session, metrics };
+      };
       if (!this.query) {
         const code = input.purpose !== "backlog";
         const launch = await localCli("claude").launch(options.command);
@@ -283,21 +291,13 @@ export class ClaudeRuntime implements Runtime {
       // next turn to preserve Tomrade's existing per-run budget exactly.
       if (options.maxBudgetUsd || result.stop === "error" || result.stop === "budget") this.close();
       return result;
-    } catch (error) {
-      this.close();
-      return { stop: cancelled ? "cancelled" : "error", error: String(error), details: cancelled ? undefined : describeFailure({ error, stderr: this.stderr }), resume: this.session, metrics };
-    } finally {
-      io.signal.removeEventListener("abort", abort);
-      clearTimeout(interruptTimer);
-      this.onMessage = undefined; this.onFailure = undefined; this.activeIO = undefined;
-      await binding.release();
-    }
+    });
   }
 
   private async consume(): Promise<void> {
     try {
       for await (const message of this.query!) this.onMessage?.(message);
-      this.onFailure?.(new Error("Claude input stream ended before the runtime was closed"));
+      this.onFailure?.(new Error(this.kit("inputEnded", { name: "Claude" })));
     } catch (error) { this.onFailure?.(error); }
     finally { this.alive = false; this.queue.close(); }
   }

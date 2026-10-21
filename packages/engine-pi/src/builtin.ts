@@ -5,7 +5,7 @@ import path from "node:path";
 import type { Context } from "cordis";
 import { z } from "zod";
 import type { Engine, EngineAvailability, TurnInput } from "@tomradex/agent";
-import { bundledLaunch, describeRun, RuntimePool, runtimeFingerprint, type CliLaunch } from "@tomradex/engine-kit";
+import { bundledLaunch, describeRun, pooledEngine, type CliLaunch } from "@tomradex/engine-kit";
 import type { ModelProfile, ModelsSettings } from "@tomradex/llm";
 import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/settings";
@@ -50,8 +50,6 @@ function run(launch: CliLaunch, args: string[], env: NodeJS.ProcessEnv): Promise
  * connecting a model is enough.
  */
 export function createBuiltinPiEngine(ctx: Context, config: BuiltinPiConfig): Engine {
-  const pool = new RuntimePool<PiRuntime>();
-  ctx.effect(() => () => pool.close());
   const words = () => PI_WORDS(ctx.settings.locale?.());
   const launch = bundledLaunch({ file: config.cli, runtime: config.nodeBinary }, { platform: process.platform, env: process.env });
   const home = { PI_CODING_AGENT_DIR: config.home, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0" };
@@ -86,7 +84,7 @@ export function createBuiltinPiEngine(ctx: Context, config: BuiltinPiConfig): En
     const refused = refusedPick(input.options);
     if (refused) throw new Error(refused);
     const profile = profileOf(input.options);
-    if (!profile) throw new Error("Connect a model in Settings → Assistant — the built-in agent runs on it");
+    if (!profile) throw new Error(words()("connectModelInSettings"));
     fs.mkdirSync(config.home, { recursive: true, mode: 0o700 });
     fs.writeFileSync(path.join(config.home, "models.json"), JSON.stringify(modelsFile(profiles()), null, 2), { mode: 0o600 });
     const target = piTarget(profile, await known());
@@ -137,13 +135,11 @@ export function createBuiltinPiEngine(ctx: Context, config: BuiltinPiConfig): En
       if (!probe.ok) return { ok: false, need: "repair", reason: words()("doesNotStart", { detail: probe.detail }) };
       return { ok: true };
     },
-    async turn(input, io) {
-      if (!ctx.mcp.url) return { stop: "error", error: "The MCP server is not running" };
+    turn: pooledEngine(ctx, {
+      create: (input) => new PiRuntime(ctx, input, start),
       // A new key or model for the profile is a new process.
-      const profile = createHash("sha256").update(JSON.stringify(profileOf(input.options) ?? null)).digest("hex");
-      return pool.run(`${input.projectId}:${input.threadId}`, `${runtimeFingerprint(input, io, ctx.mcp.url)}:${profile}`,
-        () => new PiRuntime(ctx, input, start), input, io);
-    }
+      fingerprint: (input) => createHash("sha256").update(JSON.stringify(profileOf(input.options) ?? null)).digest("hex")
+    })
   };
 }
 

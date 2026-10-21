@@ -9,3 +9,6 @@ export {
 export { MCP_NAME, userMcpLink, type UserMcpConfig } from "./mcp-link.js";
 export { RuntimePool, runtimeFingerprint, runtimeDirectory, bindTurn, MessageQueue, type Runtime } from "./runtime.js";
 export { promptOf, sessionSystem, staticSystem, turnPrompt } from "./system.js";
+export { JsonLinePeer, jsonRpc, RpcError, STDERR_CAP, type PeerOptions, type RpcDialect, type RpcMessage } from "./rpc.js";
+export { pooledEngine, runTurn, type TurnFrame, type TurnSpec } from "./turn.js";
+export { engineLocale, KIT_WORDS } from "./words.js";

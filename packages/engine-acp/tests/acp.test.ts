@@ -211,7 +211,7 @@ describe("an ACP agent as an engine", () => {
     io.signal = new AbortController().signal; io.resume = cancelled.resume;
     const failed = await engine.turn(turnInput({ input: { kind: "text", text: "FAIL" } }), io);
     expect(failed).toMatchObject({ stop: "error", error: "Authentication required — run fake login, then try again", resume: cancelled.resume });
-    expect(failed.details).toMatch(/AcpError: Authentication required\ncode: -32000/);
+    expect(failed.details).toMatch(/RpcError: Authentication required\ncode: -32000/);
     const refused = await engine.turn(turnInput({ input: { kind: "text", text: "REFUSE" } }), io);
     expect(refused).toMatchObject({ stop: "error", error: "Fake refused to go on" });
     expect(refused.details).toContain('"stopReason": "refusal"');
