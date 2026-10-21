@@ -10,6 +10,7 @@ import { useIsSelected, useWorkspace, type WorkspaceValue } from "./context";
 import { EpicPriority, EpicProgressBar, EpicStatus, EpicTitle, epicProgress } from "./EpicHeader";
 import { mergePatch, seedFromFilter, toCreateInput } from "./patches";
 import { useToastUndo } from "~/lib/undo";
+import { isCommitKey } from "~/lib/keys";
 
 /** What a table shows when the view has not chosen its fields. */
 
@@ -108,7 +109,7 @@ function ComposerRow({ span }: { span: number }) {
                 e.stopPropagation();
                 setEditing(false);
               }
-              if (e.key === "Enter") submit(e.currentTarget.value);
+              if (isCommitKey(e)) submit(e.currentTarget.value);
             }}
             onBlur={(e) => {
               if (!e.currentTarget.value.trim()) setEditing(false);

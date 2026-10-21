@@ -3,6 +3,7 @@ import { Icon } from "~/components/icons";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { PlainSecretNote } from "./PlainSecretNote";
 import { pickAudio, pickDirectory } from "~/lib/shell";
+import { isCommitKey } from "~/lib/keys";
 
 /** The slice of JSON Schema the renderer draws. Anything else falls back to text. */
 export interface JsonSchema {
@@ -120,7 +121,7 @@ export function SchemaField({
     "aria-describedby": error ? errorId : undefined,
     onBlur: () => onCommit?.(value),
     onKeyDown: (e: KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "Enter") onCommit?.(value);
+      if (isCommitKey(e)) onCommit?.(value);
     }
   };
 

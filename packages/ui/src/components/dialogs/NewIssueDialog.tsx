@@ -9,6 +9,7 @@ import { useWorkspace } from "~/components/workspace/context";
 import { methodWords, ticketMethods, usePlaybooks } from "~/lib/agent";
 import { invoke } from "~/lib/api";
 import { useToastUndo } from "~/lib/undo";
+import { isCommitKey } from "~/lib/keys";
 
 /** Built-in methods keep their localized names; any other playbook shows its own title. */
 export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
@@ -159,7 +160,7 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") submit();
+              if (isCommitKey(e)) submit();
             }}
           />
         </div>

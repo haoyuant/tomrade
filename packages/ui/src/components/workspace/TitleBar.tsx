@@ -12,6 +12,7 @@ import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace, viewCount } from "./context";
 import { useToastUndo } from "~/lib/undo";
 import { keyLabel } from "~/lib/keybindings";
+import { isCommitKey } from "~/lib/keys";
 
 /**
  * Home *leaves* the project, the switcher *rebinds* it in place — two jobs, so
@@ -159,7 +160,7 @@ function ViewName({ editRequest }: { editRequest: number }) {
             discarded.current = true;
             e.currentTarget.blur();
           }
-          if (e.key === "Enter") {
+          if (isCommitKey(e)) {
             e.preventDefault();
             e.currentTarget.blur();
           }

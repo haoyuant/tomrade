@@ -8,6 +8,7 @@ import { hits } from "~/lib/keybindings";
 import { closeTabs, openTab, openTabWindow, rememberBacklog, setRoutinesTab, useTabs, type FileTab } from "~/lib/tabs";
 import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace } from "./context";
+import { isCommitKey } from "~/lib/keys";
 
 const nameOf = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 
@@ -245,7 +246,7 @@ export function TabStrip() {
               onClick={() => !dragged.current && !onRoutines && goRoutines()}
               onPointerDown={(e) => dragOut(e, () => routinesOut(true))}
               onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
+                if (isCommitKey(e) || e.key === " ") {
                   e.preventDefault();
                   if (!onRoutines) goRoutines();
                 }
@@ -297,7 +298,7 @@ export function TabStrip() {
                 onClick={() => !dragged.current && !selected && goTab(tab)}
                 onPointerDown={(e) => dragOut(e, () => tabOut(tab, true))}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
+                  if (isCommitKey(e) || e.key === " ") {
                     e.preventDefault();
                     if (!selected) goTab(tab);
                   }

@@ -6,6 +6,7 @@ import { useFilesTree } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
 import { pickFiles } from "~/lib/shell";
 import { readableError } from "~/lib/toast";
+import { isCommitKey } from "~/lib/keys";
 
 /**
  * Choose project files. What comes back are entries; the caller pins their
@@ -46,7 +47,7 @@ export function FilePickerDialog({ projectId, open, onOpenChange, title, busy, o
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && files[0]) toggle(files[0]);
+            if (isCommitKey(e) && files[0]) toggle(files[0]);
           }}
         />
         <div className="stack-1 file-picker-list" style={{ maxHeight: 320, overflowY: "auto" }}>

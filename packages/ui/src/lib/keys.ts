@@ -17,3 +17,15 @@ export function shortcut(text: string, mac = isMac): string {
     return [...ORDER.filter((m) => mods.has(m)), key === "↵" ? "Enter" : key].filter(Boolean).join("+");
   });
 }
+
+type KeyEventLike = { key: string; keyCode?: number; isComposing?: boolean; nativeEvent?: { isComposing?: boolean } };
+
+/** An IME is still composing: its Enter picks a candidate. 229 covers the keydown some engines send just after composition ends. */
+export function isComposing(e: KeyEventLike): boolean {
+  return !!(e.isComposing || e.nativeEvent?.isComposing) || e.keyCode === 229;
+}
+
+/** Enter that commits what was typed — never the Enter that confirms an IME candidate. */
+export function isCommitKey(e: KeyEventLike): boolean {
+  return e.key === "Enter" && !isComposing(e);
+}

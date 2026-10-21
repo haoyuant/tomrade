@@ -25,6 +25,7 @@ import { readableError, useErrorToast, useToast } from "~/lib/toast";
 import { ReportDialog } from "~/components/dialogs/ReportDialog";
 import { ChecklistBlock, FindingBlock } from "./DoctorCards";
 import { useImShareNext, useImThreadBindings } from "~/lib/im";
+import { isCommitKey, isComposing } from "~/lib/keys";
 
 const MIN_W = 352;
 const MAX_W = 924;
@@ -536,9 +537,9 @@ function QueuedRow({ entry, held, canSend, onSave, onRemove, onSendNow, onSteer 
           value={editing}
           onChange={(e) => setEditing(e.target.value)}
           onKeyDown={(e) => {
-            if (e.nativeEvent.isComposing) return;
+            if (isComposing(e)) return;
             if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setEditing(null); }
-            else if (e.key === "Enter" && !e.shiftKey) {
+            else if (isCommitKey(e) && !e.shiftKey) {
               e.preventDefault();
               if (editing.trim()) onSave(editing.trim()); else onRemove();
               setEditing(null);
@@ -1456,7 +1457,7 @@ export function AgentPanel({
             onChange={(e) => { browsing.current = null; setSlashClosed(false); setSlashAt(0); setDraft(e.target.value); }}
             onPaste={event => { if (event.clipboardData.files.length) { event.preventDefault(); addAttachments(Array.from(event.clipboardData.files)); } }}
             onKeyDown={(e) => {
-              if (e.nativeEvent.isComposing) return;
+              if (isComposing(e)) return;
               if (slashPick) {
                 if (e.key === "ArrowUp" || e.key === "ArrowDown") {
                   e.preventDefault();
@@ -1465,7 +1466,7 @@ export function AgentPanel({
                 }
                 if (e.key === "Tab") { e.preventDefault(); setDraft(`/${slashPick.name}`); return; }
                 if (e.key === "Escape") { e.preventDefault(); setSlashClosed(true); return; }
-                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); runSlash(slashPick); return; }
+                if (isCommitKey(e) && !e.shiftKey) { e.preventDefault(); runSlash(slashPick); return; }
               }
               if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey && recall(e.currentTarget, e.key === "ArrowUp" ? -1 : 1)) {
                 e.preventDefault();
@@ -1473,7 +1474,7 @@ export function AgentPanel({
               }
               // Esc stops the turn like the Stop button; what is queued stays, held
               if (e.key === "Escape" && runningRun) { e.preventDefault(); cancel.mutate(runningRun.id); return; }
-              if (e.key !== "Enter" || e.shiftKey) return;
+              if (!isCommitKey(e) || e.shiftKey) return;
               e.preventDefault();
               const command = slashCommand(draft);
               if (command) runSlash(command);

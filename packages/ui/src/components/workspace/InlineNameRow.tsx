@@ -1,4 +1,5 @@
 import { Icon, type IconId } from "~/components/icons";
+import { isCommitKey } from "~/lib/keys";
 
 /** One inline name field, shared by the sidebar's "new …" rows. */
 export function InlineNameRow({ icon, ariaLabel, placeholder, onCommit, onCancel }: { icon: IconId; ariaLabel: string; placeholder: string; onCommit: (name: string) => void; onCancel: () => void }) {
@@ -25,7 +26,7 @@ export function InlineNameRow({ icon, ariaLabel, placeholder, onCommit, onCancel
             e.stopPropagation();
             onCancel();
           }
-          if (e.key === "Enter") onCommit(e.currentTarget.value);
+          if (isCommitKey(e)) onCommit(e.currentTarget.value);
         }}
         onBlur={(e) => {
           if (!e.currentTarget.value.trim()) onCancel();

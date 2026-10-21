@@ -5,6 +5,7 @@ import { useI18n } from "~/lib/i18n";
 import { useConfigureHub, useHubInfo } from "~/lib/queries";
 import { pickDirectory } from "~/lib/shell";
 import { errorSpec, useToast } from "~/lib/toast";
+import { isCommitKey } from "~/lib/keys";
 
 /**
  * First run: the one question before anything else. Tomrade keeps every
@@ -64,7 +65,7 @@ export function HubSetup() {
                   value={dir}
                   onChange={(e) => setDir(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") submit();
+                    if (isCommitKey(e)) submit();
                   }}
                 />
                 <button type="button" className="btn btn-secondary" disabled={picking} onClick={() => void choose()}>

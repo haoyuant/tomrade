@@ -7,6 +7,7 @@ import { Popover } from "~/components/ui/popover";
 import { FILTER_OP_LABEL, fieldLabel, manualSortLabel, viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { ticketSearch, useTicketSearch, useWorkspace, type WorkspaceValue } from "./context";
+import { isCommitKey } from "~/lib/keys";
 
 const FIELD_ICON: Record<string, IconId> = {
   title: "i-pen",
@@ -152,7 +153,7 @@ function TypedEditor({ def, onDone }: { def: FieldDef; onDone: () => void }) {
         defaultValue={current(op)}
         autoFocus={op === "contains" || op === "gte"}
         onKeyDown={(e) => {
-          if (e.key === "Enter") {
+          if (isCommitKey(e)) {
             apply(op, e.currentTarget.value);
             onDone();
           }
@@ -386,7 +387,7 @@ function SearchBox() {
               e.preventDefault();
               if (text) set("");
               else e.currentTarget.blur();
-            } else if (e.key === "Enter" && ws.visible[0]) {
+            } else if (isCommitKey(e) && ws.visible[0]) {
               e.preventDefault();
               ws.select(ws.visible[0].id);
             }
@@ -444,7 +445,7 @@ function SaveAsNew() {
             defaultValue={t("titleBar.copyName", { name: ws.view.name })}
             onFocus={(e) => e.currentTarget.select()}
             onKeyDown={(e) => {
-              if (e.key === "Enter") commit(e.currentTarget.value);
+              if (isCommitKey(e)) commit(e.currentTarget.value);
             }}
           />
         </label>

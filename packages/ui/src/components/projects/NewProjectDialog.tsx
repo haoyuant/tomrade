@@ -7,6 +7,7 @@ import { useI18n } from "~/lib/i18n";
 import { useCreateProject, useHubInfo } from "~/lib/queries";
 import { pickDirectory } from "~/lib/shell";
 import { errorSpec, useToast } from "~/lib/toast";
+import { isCommitKey } from "~/lib/keys";
 
 /** Prefix preview mirrors keyPrefixFor() in the domain: first three letters, uppercased. */
 const previewPrefix = (name: string) => name.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3) || "ISS";
@@ -92,7 +93,7 @@ export function NewProjectDialog({ open, onOpenChange }: { open: boolean; onOpen
               setError(false);
             }}
             onKeyDown={(e) => {
-              if (e.key === "Enter") submit();
+              if (isCommitKey(e)) submit();
             }}
           />
           {error ? (

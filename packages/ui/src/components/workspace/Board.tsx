@@ -15,6 +15,7 @@ import { useWorkspace, type WorkspaceValue } from "./context";
 import { EpicPriority, EpicProgressBar, EpicStatus, EpicTitle, epicProgress, type EpicProgress } from "./EpicHeader";
 import { mergePatch, seedFromFilter, toCreateInput } from "./patches";
 import { useToastUndo } from "~/lib/undo";
+import { isCommitKey } from "~/lib/keys";
 
 /** One drop target is one lane × column pair; the lane key is "" when there are no swimlanes. Keys are ids, words or digits, never "|". */
 const SEP = "|";
@@ -85,7 +86,7 @@ function Composer({ seed, onDone }: { seed: Patch; onDone: () => void }) {
             e.stopPropagation();
             onDone();
           }
-          if (e.key === "Enter") submit(e.currentTarget.value);
+          if (isCommitKey(e)) submit(e.currentTarget.value);
         }}
         onBlur={(e) => {
           if (!e.currentTarget.value.trim()) onDone();
