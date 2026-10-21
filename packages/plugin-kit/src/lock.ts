@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { AttestationSchema } from "./sign.js";
+import { errorMessage } from "@tomradex/contracts";
 
 // An attestation this build no longer understands (a review tier that is gone) reads as none.
 const Installed = z.object({ version: z.string(), dir: z.string(), digest: z.string(), attestation: AttestationSchema.nullable().default(null).catch(null) });
@@ -39,7 +40,7 @@ export function readLock(file: string): Lock {
     return LockSchema.parse(JSON.parse(fs.readFileSync(file, "utf8")));
   } catch (error) {
     // Read at boot: the person seeing this has to know which file it is, and what in it is wrong.
-    const why = error instanceof z.ZodError ? z.prettifyError(error) : error instanceof Error ? error.message : String(error);
+    const why = error instanceof z.ZodError ? z.prettifyError(error) : errorMessage(error);
     throw new Error(`${file}: ${why}`, { cause: error });
   }
 }

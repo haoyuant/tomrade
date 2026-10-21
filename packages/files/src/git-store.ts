@@ -31,6 +31,7 @@ import {
   type WriteEntry,
   type WriteOptions
 } from "./types.js";
+import { errorMessage } from "@tomradex/contracts";
 
 export const IDS_DIR = ".tomrade-files";
 export const IDS_FILE = `${IDS_DIR}/ids.jsonl`;
@@ -224,7 +225,7 @@ export class GitFileStore implements FileStore {
     if (fresh) await this.commitAll("Files store created");
     // A first copy waits for the remote's files; an existing one shows what it has and catches up behind.
     if (remote && fresh) await this.doSync();
-    else if (remote) void this.sync().catch((error) => this.opts.warn(`sync failed: ${message(error)}`));
+    else if (remote) void this.sync().catch((error) => this.opts.warn(`sync failed: ${errorMessage(error)}`));
     this.watch();
     return this;
   }
@@ -431,7 +432,7 @@ export class GitFileStore implements FileStore {
       this.settleTimer = null;
       void this.settle("Edited outside Tomrade")
         .then((saved) => saved && this.afterChange())
-        .catch((error) => this.opts.warn(`save failed: ${message(error)}`));
+        .catch((error) => this.opts.warn(`save failed: ${errorMessage(error)}`));
     }, this.opts.settleMs ?? 1_500);
     this.settleTimer.unref?.();
   }
@@ -445,7 +446,7 @@ export class GitFileStore implements FileStore {
     if (this.pushTimer) clearTimeout(this.pushTimer);
     this.pushTimer = setTimeout(() => {
       this.pushTimer = null;
-      void this.sync().catch((error) => this.opts.warn(`sync failed: ${message(error)}`));
+      void this.sync().catch((error) => this.opts.warn(`sync failed: ${errorMessage(error)}`));
     }, this.opts.pushMs ?? 3_000);
     this.pushTimer.unref?.();
   }
@@ -1030,7 +1031,7 @@ export class GitFileStore implements FileStore {
       this.problem = null;
       this.lastSyncAt = Date.now();
     } catch (error) {
-      this.problem = { state: "error", detail: message(error) };
+      this.problem = { state: "error", detail: errorMessage(error) };
     } finally {
       this.syncing = false;
       this.opts.onChange();
@@ -1270,4 +1271,3 @@ export class GitFileStore implements FileStore {
   }
 }
 
-const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { errorMessage } from "@tomradex/contracts";
 
 export const Kind = z.enum(["project", "repo", "preference"]);
 export type Kind = z.infer<typeof Kind>;
@@ -56,7 +57,7 @@ export class CloudCache {
     } catch (error) {
       const keptAs = `${this.file}.corrupt-${stamp()}`;
       fs.renameSync(this.file, keptAs);
-      this.warn(`hub-cloud: ${this.file} could not be read (${error instanceof Error ? error.message : String(error)}); kept as ${keptAs}, starting from an empty cache`);
+      this.warn(`hub-cloud: ${this.file} could not be read (${errorMessage(error)}); kept as ${keptAs}, starting from an empty cache`);
       return null;
     }
   }

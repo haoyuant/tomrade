@@ -16,6 +16,7 @@ import { DOCTOR_WORDS, type Words } from "./words.js";
 import { CATALOG_MAX_AGE_MS, fetchCatalog, readCache } from "./catalog.js";
 import { CONCLUSION, brief, conclusionCard, investigationMessages, investigationTools, logSources, scopedTools, type Conclusion } from "./investigate.js";
 import type {} from "@tomradex/tools";
+import { errorMessage } from "@tomradex/contracts";
 
 /** What a troubleshooting thread is about: a failed turn, or nothing in particular. */
 export const Topic = z.object({
@@ -489,7 +490,7 @@ export class Doctor extends Service {
       try {
         result = await check.run(topic, signal);
       } catch (error) {
-        result = { state: "warn", line: error instanceof Error ? error.message : String(error) };
+        result = { state: "warn", line: errorMessage(error) };
       }
       set(check.id, result);
       Object.assign(facts, result.facts ?? {});
@@ -794,7 +795,7 @@ export class Doctor extends Service {
       this.remember(report);
       return { code: report.code, state: "sent" };
     } catch (error) {
-      return { code: report.code, state: "queued", reason: error instanceof Error ? error.message : String(error) };
+      return { code: report.code, state: "queued", reason: errorMessage(error) };
     }
   }
 

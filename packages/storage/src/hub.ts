@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { CatalogProject, RemoteRef } from "@tomradex/hub";
 import type { StorageStatus } from "./types.js";
+import { errorMessage } from "@tomradex/contracts";
 
 /** A Hub catalog backend. Project folder storage is independent of this port. */
 export interface HubBackend {
@@ -63,7 +64,7 @@ export function readHubManifest(dir: string): HubManifest | null {
     if (!raw || typeof raw !== "object" || [raw.projects, raw.repos, raw.removed].some((list) => list !== undefined && !Array.isArray(list))) throw new Error("not a Hub manifest");
     return sortManifest({ v: 1, projects: raw.projects ?? [], repos: raw.repos ?? [], removed: raw.removed ?? [] });
   } catch (error) {
-    throw new HubManifestUnreadableError(file, error instanceof Error ? error.message : String(error));
+    throw new HubManifestUnreadableError(file, errorMessage(error));
   }
 }
 

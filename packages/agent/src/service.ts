@@ -59,6 +59,7 @@ import { looksRateLimited, resetTime, untilLabel } from "./limits.js";
 import { describeFailure, readableError, redactSecrets } from "./failure.js";
 import { conversationRecap } from "./recap.js";
 import { NO_TOKENS, addTokens, runTokens, type TokenBreakdown } from "./tokens.js";
+import { errorMessage } from "@tomradex/contracts";
 
 /** Where a thread's engine would run, or the one reason it cannot yet. `code` is stable for the renderer to translate. */
 /** Which of these threads a plugin opened, and what to call that: thread id → label. */
@@ -301,7 +302,6 @@ interface RunCtx {
   forward: ((steer: { id: string; text: string }) => Promise<boolean>) | null;
 }
 
-const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 /** A limit that does not say when it lifts is tried again after this; a thread limited this many runs in a row is left to the person. */
 const LIMIT_RETRY_MS = 15 * 60_000;
@@ -546,7 +546,7 @@ export class Agent extends Service {
       try {
         for (const [id, label] of provider(projectId, threads)) labels.set(id, [...(labels.get(id) ?? []), label]);
       } catch (err) {
-        this.ctx.logger.warn(`thread origins failed: ${message(err)}`);
+        this.ctx.logger.warn(`thread origins failed: ${errorMessage(err)}`);
       }
     }
     return threads.map((th) => (labels.has(th.id) ? { ...th, origins: labels.get(th.id) } : th));
@@ -671,7 +671,7 @@ export class Agent extends Service {
           const state = await engine.available(fresh ? { fresh } : undefined);
           return { id: engine.id, title: engine.title, capabilities: state.capabilities ?? engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, need: state.need, cli: state.cli, ...(state.configDir ? { configDir: state.configDir } : {}), ...(this.triedWith(engine.id) ? { tried: this.triedWith(engine.id) } : {}), picks: engine.picks?.(), permissionModes: engine.permissionModes, ...(engine.terminal === false ? { terminal: false } : {}), ...(engine.terminalOnly ? { terminalOnly: true } : {}), ...(engine.usesModels ? { usesModels: true } : {}), ...(engine.steers ? { steers: true } : {}), ...(state.setup ?? engine.setup ? { setup: state.setup ?? engine.setup } : {}), ...(engine.includes ? { includes: engine.includes } : {}), ...(engine.mcpLink ? { mcpLink: true } : {}) };
         } catch (err) {
-          return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: false, reason: message(err) };
+          return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: false, reason: errorMessage(err) };
         }
       })
     );
@@ -731,7 +731,7 @@ export class Agent extends Service {
       const selected = candidates.find((entry) => entry.id === result.playbookId);
       return { ...result, source: "llm", requires: selected?.requires ?? [] };
     } catch (error) {
-      const why = budget?.aborted ? `no answer within ${opts.withinMs}ms` : opts.signal?.aborted ? "cancelled" : error instanceof Error ? error.message : String(error);
+      const why = budget?.aborted ? `no answer within ${opts.withinMs}ms` : opts.signal?.aborted ? "cancelled" : errorMessage(error);
       this.ctx.logger.warn(`playbook recommendation fell back to keywords after ${Date.now() - started}ms: ${why}`);
       return fallback();
     }
@@ -753,9 +753,9 @@ export class Agent extends Service {
     let loaded: Playbook[] = [];
     try {
       const dir = storage?.artifactDirFor ? await storage.artifactDirFor(projectId) : null;
-      if (dir) loaded = loadPlaybookDir(path.join(dir, "playbooks"), (file, err) => this.ctx.logger.warn(`playbook ${file} failed to load: ${message(err)}`));
+      if (dir) loaded = loadPlaybookDir(path.join(dir, "playbooks"), (file, err) => this.ctx.logger.warn(`playbook ${file} failed to load: ${errorMessage(err)}`));
     } catch (err) {
-      this.ctx.logger.warn(`project playbooks for ${projectId} failed to load: ${message(err)}`);
+      this.ctx.logger.warn(`project playbooks for ${projectId} failed to load: ${errorMessage(err)}`);
     }
     this.projectPlaybooks.set(projectId, new Map(loaded.map((pb) => [pb.id, pb])));
   }
@@ -949,7 +949,7 @@ export class Agent extends Service {
         reasons.push(`${engine.title} cannot run General tickets`);
         continue;
       }
-      const state: EngineAvailability = await engine.available().catch((err: unknown) => ({ ok: false, reason: err instanceof Error ? err.message : String(err) }));
+      const state: EngineAvailability = await engine.available().catch((err: unknown) => ({ ok: false, reason: errorMessage(err) }));
       if (!state.ok) reasons.push(state.reason ?? `${engine.title} is unavailable`);
       else if (state.capabilities && !state.capabilities.includes("general")) reasons.push(`${engine.title} can only chat for now — connect a model in Settings → Assistant to run tickets`);
       else return engine;
@@ -1098,7 +1098,7 @@ export class Agent extends Service {
       if (run?.status === "done" && !failure) return out({ ok: true, ...reply });
       return out({ ok: false, ...reply, error: failure?.type === "error" ? failure.text : (run?.error ?? run?.stop ?? "failed"), ...(failure?.type === "error" && failure.details ? { details: failure.details } : {}) });
     } catch (error) {
-      return out({ ok: false, error: message(error) });
+      return out({ ok: false, error: errorMessage(error) });
     } finally {
       if (!this.activeByThread.has(thread.id)) this.deleteThread(projectId, thread.id);
     }
@@ -1153,7 +1153,7 @@ export class Agent extends Service {
     } catch (err) {
       const { remote, name, branch, at } = err as { remote?: string; name?: string; branch?: string; at?: string };
       const code = name === "CheckoutUnsetError" ? "no-checkout" : name === "HubUnsetError" ? "no-hub" : name === "BranchInUseError" ? "branch-in-use" : "error";
-      return { ...none, remote: remote ?? null, branch: branch ?? null, problem: message(err), code, ...(at ? { heldAt: at } : {}) };
+      return { ...none, remote: remote ?? null, branch: branch ?? null, problem: errorMessage(err), code, ...(at ? { heldAt: at } : {}) };
     }
   }
 
@@ -1496,7 +1496,7 @@ export class Agent extends Service {
           return result;
         } catch (err) {
           const ms = Date.now() - t0;
-          const summary = message(err);
+          const summary = errorMessage(err);
           entries.push({ seq: entries.length + 1, tool: name, args, ok: false, summary, ms });
           this.store.appendLedger(thread.projectId, run.id, entries.length, name, args, false, summary, ms);
           progress({ activity: null });
@@ -1658,7 +1658,7 @@ export class Agent extends Service {
       if (rc.abort.signal.aborted) {
         result = { stop: "cancelled" };
       } else {
-        result = { stop: "error", error: message(err), details: describeFailure({ error: err }) };
+        result = { stop: "error", error: errorMessage(err), details: describeFailure({ error: err }) };
       }
     } finally {
       if (this.ctx.db.has(rc.projectId)) rc.settleRetry(result?.stop !== "error" && result?.stop !== "cancelled" && !!result);
@@ -1681,7 +1681,7 @@ export class Agent extends Service {
           canAsk = false;
         }
       } catch (err) {
-        if (!rc.abort.signal.aborted) this.ctx.logger.warn(`follow-up ${followUp.id} failed: ${message(err)}`);
+        if (!rc.abort.signal.aborted) this.ctx.logger.warn(`follow-up ${followUp.id} failed: ${errorMessage(err)}`);
       }
     }
     // A stop while a follow-up still worked ends the run as stopped, not as the turn's own ending.
@@ -1879,7 +1879,7 @@ export class Agent extends Service {
         return;
       } catch (err) {
         this.resuming.delete(threadId);
-        this.appendAndBroadcast(projectId, threadId, "system", { type: "note", text: message(err) }, null);
+        this.appendAndBroadcast(projectId, threadId, "system", { type: "note", text: errorMessage(err) }, null);
       }
     }
     this.ctx.emit("agent/limit-lifted", { ...park, resume: false }, thread);
@@ -2090,7 +2090,7 @@ export class Agent extends Service {
       fs.mkdirSync(path.dirname(target), { recursive: true });
       fs.renameSync(legacy, target);
     } catch (err) {
-      this.ctx.logger.warn(`playbooks were not moved into the Hub: ${message(err)}`);
+      this.ctx.logger.warn(`playbooks were not moved into the Hub: ${errorMessage(err)}`);
     }
   }
 
@@ -2101,7 +2101,7 @@ export class Agent extends Service {
     }
     const dir = this.userPlaybooksDir();
     if (!dir || !fs.existsSync(dir)) return;
-    const loaded = loadPlaybookDir(dir, (file, err) => this.ctx.logger.warn(`playbook ${file} failed to load: ${message(err)}`));
+    const loaded = loadPlaybookDir(dir, (file, err) => this.ctx.logger.warn(`playbook ${file} failed to load: ${errorMessage(err)}`));
     for (const playbook of loaded) {
       const variants = this.playbooks.get(playbook.id) ?? {};
       variants.user = playbook;

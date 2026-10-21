@@ -16,6 +16,7 @@ import { randomUUID } from "node:crypto";
 import { droppedPaste, readableDrops } from "./drop.js";
 import type { Layout, LayoutPreset, SessionRow, TerminalPlace, TerminalRow, WindowMessage, WindowPost, WindowState } from "./protocol.js";
 import { CODE_SESSIONS_WORDS } from "./words.js";
+import { errorMessage } from "@tomradex/contracts";
 
 export type * from "./protocol.js";
 
@@ -266,7 +267,7 @@ function apply(ctx: Context, config: Config) {
       const rows = sessionRows(ctx.codeLink, ctx.items, projectId, Date.now(), ctx.get("hub")?.deviceId);
       return { sessions: rows.map((r) => ({ ...r, agentName: agents?.engineOf(r.agent)?.title ?? null })), warning: null };
     } catch (error) {
-      ctx.logger.warn(`code sessions: listing sessions failed: ${error instanceof Error ? error.message : String(error)}`);
+      ctx.logger.warn(`code sessions: listing sessions failed: ${errorMessage(error)}`);
       return { sessions: [], warning: words()("sessionsUnreadable") };
     }
   };
@@ -363,7 +364,7 @@ function apply(ctx: Context, config: Config) {
           // A state computed alongside this one may have linked it already.
           if (!sessionOf(projectId, s.id)?.herdrPane) ctx.codeLink.store.patchSession(projectId, s.id, { herdrPane: only.pane! });
         } catch (error) {
-          ctx.logger.warn(`code sessions: could not link a claim to its terminal: ${error instanceof Error ? error.message : String(error)}`);
+          ctx.logger.warn(`code sessions: could not link a claim to its terminal: ${errorMessage(error)}`);
         }
         return out.map((t) => (t === only ? { ...t, sessionId: s.id } : t));
       }
@@ -562,7 +563,7 @@ function apply(ctx: Context, config: Config) {
         post(win, { type: "closed", cell, reason: words()("herdrRestarting") });
         return revive();
       }
-      return post(win, { type: "closed", cell, reason: error instanceof Error ? error.message : String(error) });
+      return post(win, { type: "closed", cell, reason: errorMessage(error) });
     }
     if (win.closed || win.turns.get(cell) !== mine) return stream.close();
     win.terminals.set(cell, stream);
@@ -637,7 +638,7 @@ function apply(ctx: Context, config: Config) {
         try {
           return post(win, { type: "toast", text: words()("openedOutside", { app: await openSystemTerminal(where) }) });
         } catch (error) {
-          return post(win, { type: "toast", text: words()("outsideFailed", { reason: error instanceof Error ? error.message : String(error) }) });
+          return post(win, { type: "toast", text: words()("outsideFailed", { reason: errorMessage(error) }) });
         }
       }
       case "newTerminal":
@@ -741,7 +742,7 @@ function apply(ctx: Context, config: Config) {
         return post(win, { type: "toast", text: opened.message });
       }
       case "install": {
-        const r = await ctx.codeLink.installHerdr().catch((error: unknown) => ({ launched: false, command: error instanceof Error ? error.message : String(error) }));
+        const r = await ctx.codeLink.installHerdr().catch((error: unknown) => ({ launched: false, command: errorMessage(error) }));
         return post(win, { type: "toast", text: r.launched ? words()("installing") : words()("installYourself", { command: r.command }) });
       }
       case "openGuide":
@@ -787,7 +788,7 @@ function apply(ctx: Context, config: Config) {
       clearInterval(win.timer);
       follow(win, []);
       if (open.get(projectId) === win) open.delete(projectId);
-      ctx.logger.warn(`code sessions: window did not open: ${error instanceof Error ? error.message : String(error)}`);
+      ctx.logger.warn(`code sessions: window did not open: ${errorMessage(error)}`);
       throw error;
     }
   };
@@ -806,8 +807,8 @@ function apply(ctx: Context, config: Config) {
       minHeight: 400,
       initialState,
       onMessage: (message) => void onMessage(projectId, win, message as WindowMessage).catch((error: unknown) => {
-        ctx.logger.warn(`code sessions: ${(message as { type?: string }).type ?? "message"} failed: ${error instanceof Error ? error.message : String(error)}`);
-        post(win, { type: "toast", text: error instanceof Error ? error.message : String(error) });
+        ctx.logger.warn(`code sessions: ${(message as { type?: string }).type ?? "message"} failed: ${errorMessage(error)}`);
+        post(win, { type: "toast", text: errorMessage(error) });
       }),
       onClose: () => {
         win.closed = true;

@@ -22,6 +22,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@tomradex/contracts": "workspace:*",
     "@tomradex/db": "workspace:*",
     "@tomradex/domain": "workspace:*",
     "@tomradex/files": "workspace:*",

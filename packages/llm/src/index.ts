@@ -8,6 +8,7 @@ import type { SettingsSection } from "@tomradex/settings";
 import type { WebSearchProvider } from "@tomradex/web-search";
 import { BUILTIN_PROVIDERS } from "./builtin-providers.js";
 import { sameCapabilities, type ModelCapabilities } from "./capabilities.js";
+import { errorMessage } from "@tomradex/contracts";
 export { ImagesModel } from "./images.js";
 import { LlmError, MediaRefused } from "./errors.js";
 import { assistantMessage, collect, modalityOf, userMessage, type ChatEvent, type ChatModel, type ChatRequest, type Collected, type LlmRole, type Message } from "./model.js";
@@ -86,7 +87,7 @@ export async function probe(model: ChatModel, timeoutMs = 45_000): Promise<Model
   } catch (err) {
     // the message keeps 300 characters of the body; a tier refusal names its limit further on
     const response = err instanceof LlmError ? err.response : undefined;
-    const detail = response && response.body.length > 300 ? `LLM request failed ${response.status}: ${response.body.slice(0, 2000)}` : err instanceof Error ? err.message : String(err);
+    const detail = response && response.body.length > 300 ? `LLM request failed ${response.status}: ${response.body.slice(0, 2000)}` : errorMessage(err);
     if (!(err instanceof Error && err.name === "TimeoutError")) return { ok: false, kind: modelErrorKind(detail), detail };
     // Out of time while retrying an overloaded or limited model is that answer, not an unreachable address.
     if (retried) return { ok: false, kind: modelErrorKind(retried), detail: `No answer within ${timeoutMs / 1000}s; the last try said ${retried}` };
@@ -428,7 +429,7 @@ export class Llm extends Service implements LlmService {
       this.cache.clear();
       this.refused.keepFor(this.models().profiles);
     });
-    void this.redetect().catch((err) => this.ctx.logger.warn(`model media not re-detected: ${err instanceof Error ? err.message : String(err)}`));
+    void this.redetect().catch((err) => this.ctx.logger.warn(`model media not re-detected: ${errorMessage(err)}`));
   }
 
   private models(): ModelsSettings {
@@ -548,7 +549,7 @@ export class Llm extends Service implements LlmService {
       if (typeof apiKey !== "string" || !apiKey.trim()) return { ok: false, detail: `${kind.title.en} sign-in ended without a key` };
       return { ok: true, apiKey: apiKey.trim() };
     } catch (err) {
-      return { ok: false, detail: err instanceof Error ? err.message : String(err) };
+      return { ok: false, detail: errorMessage(err) };
     }
   }
 
@@ -653,7 +654,7 @@ export class Llm extends Service implements LlmService {
       try {
         this.calls?.record({ at, source, title, purpose: request.purpose ?? null, ...spent, ok });
       } catch (err) {
-        this.ctx.logger.warn(`worker usage not recorded: ${err instanceof Error ? err.message : String(err)}`);
+        this.ctx.logger.warn(`worker usage not recorded: ${errorMessage(err)}`);
       }
     }
   }

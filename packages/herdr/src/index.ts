@@ -10,6 +10,7 @@ import type { Check, CheckResult } from "@tomradex/doctor";
 import { HerdrError, herdrCall, herdrSocketPath, herdrStream, type HerdrEvent } from "./client.js";
 import { openTerminal, type OpenedTerminal, type TerminalFrame, type TerminalMode, type TerminalMouse, type TerminalScroll, type TerminalStream } from "./terminal.js";
 import { HERDR_WORDS } from "./words.js";
+import { errorMessage } from "@tomradex/contracts";
 
 export { HerdrError, herdrCall, herdrSocketPath, herdrStream, type HerdrEvent } from "./client.js";
 export * from "./terminal.js";
@@ -353,7 +354,7 @@ export class Herdr extends Service {
       fs.mkdirSync(path.dirname(this.statePath), { recursive: true });
       fs.writeFileSync(this.statePath, JSON.stringify(next));
     } catch (err) {
-      this.ctx.logger.warn(`could not write herdr's state for Tomrade: ${err instanceof Error ? err.message : String(err)}`);
+      this.ctx.logger.warn(`could not write herdr's state for Tomrade: ${errorMessage(err)}`);
     }
   }
 
@@ -697,7 +698,7 @@ export class Herdr extends Service {
       try {
         listener(event);
       } catch (err) {
-        this.ctx.logger.warn(`a herdr listener failed: ${err instanceof Error ? err.message : String(err)}`);
+        this.ctx.logger.warn(`a herdr listener failed: ${errorMessage(err)}`);
       }
     }
   }

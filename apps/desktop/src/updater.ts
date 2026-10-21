@@ -7,6 +7,7 @@ import { z } from "zod";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/settings";
 import { cancelQuit, prepareToQuit } from "./quit.js";
+import { errorMessage } from "@tomradex/contracts";
 
 export type UpdateChannel = "stable" | "beta";
 
@@ -91,7 +92,6 @@ export interface UpdatesOptions {
 /** Long enough for any install to have quit the app; past it, the granted quit is handed back. */
 const INSTALL_GRACE_MS = 30_000;
 
-const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /**
  * The update flow the person drives: the feed is asked on a timer (or not at
@@ -171,7 +171,7 @@ export class Updates {
       else this.set({ kind: "current", latest: result.updateInfo.version });
     } catch (error) {
       // A check nobody asked for fails quietly: offline for an hour is not news.
-      if (asked && generation === this.generation && !this.fetching()) this.set({ kind: "failed", message: message(error) });
+      if (asked && generation === this.generation && !this.fetching()) this.set({ kind: "failed", message: errorMessage(error) });
     } finally {
       if (this.inflight === request) this.inflight = null;
     }
@@ -214,7 +214,7 @@ export class Updates {
 
   private fail(error: unknown): void {
     this.release();
-    if (this.fetching()) this.set({ kind: "failed", message: message(error) });
+    if (this.fetching()) this.set({ kind: "failed", message: errorMessage(error) });
   }
 
   /** An install that never quit the app: the next quit asks and flushes again. */

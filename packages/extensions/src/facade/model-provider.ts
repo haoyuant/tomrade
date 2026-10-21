@@ -3,6 +3,7 @@ import { wordsFor, type CompatibleModelOptions, type Localized, type ModelChat, 
 import type { Host } from "../host.js";
 import { within } from "../scope.js";
 import { copy } from "./shared.js";
+import { errorMessage } from "@tomradex/contracts";
 
 /** A plugin's headers as fetch takes them; anything but an object of names and values is refused. */
 export const strings = (headers: unknown): Record<string, string> => {
@@ -66,7 +67,7 @@ export const modelProvider = (host: Host, spec: ModelProviderSpec): CoreModelPro
         const listed = await host.back(spec.list.bind(spec), `${label} list`, { ms: timeoutMs })({ ...endpoint }, AbortSignal.timeout(timeoutMs));
         return listed.ok ? { ok: true, models: listed.models, capabilities: listed.capabilities ?? {} } : listed;
       } catch (error) {
-        return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+        return { ok: false, detail: errorMessage(error) };
       }
     },
     usable: (listed) => (spec.usable ? host.now(() => spec.usable!([...listed]), `${label} usable`, () => listed) : listed),
@@ -118,7 +119,7 @@ export const compatible = (host: Host, options: CompatibleModelOptions): ChatMod
             try {
               return strings(await sign({ ...request }));
             } catch (error) {
-              throw new Error(`${host.identity.id} could not set the request headers: ${error instanceof Error ? error.message : String(error)}`);
+              throw new Error(`${host.identity.id} could not set the request headers: ${errorMessage(error)}`);
             }
           }
         }

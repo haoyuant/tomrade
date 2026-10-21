@@ -21,6 +21,7 @@
     "@tomradex/agent": "workspace:*",
     "@tomradex/alerts": "workspace:*",
     "@tomradex/boards": "workspace:*",
+    "@tomradex/contracts": "workspace:*",
     "@tomradex/contributions": "workspace:*",
     "@tomradex/db": "workspace:*",
     "@tomradex/desktop-surface": "workspace:*",

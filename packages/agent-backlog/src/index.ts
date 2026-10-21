@@ -13,6 +13,7 @@ import { applyPlan, findGaps, generatePlan, planSchema, type Plan, type PlanLang
 import { PLAYBOOKS } from "./playbooks.js";
 import { findSimilar, findSimilarBatch, overlap } from "./similar.js";
 import { BACKLOG_WORDS } from "./words.js";
+import { errorMessage } from "@tomradex/contracts";
 
 export { dossierSchema, emptyDossier, readiness, renderDossier, REQUIRED_FIELDS, type Dossier } from "./dossier.js";
 export { findSimilar, findSimilarBatch, overlap, tokens } from "./similar.js";
@@ -267,7 +268,7 @@ export default {
           try {
             proposal = await proposeDependencies(ctx, model, projectId, changes, { signal: io.signal });
           } catch (err) {
-            if (!io.signal.aborted) ctx.logger.warn(`dependency review failed: ${err instanceof Error ? err.message : String(err)}`);
+            if (!io.signal.aborted) ctx.logger.warn(`dependency review failed: ${errorMessage(err)}`);
             return { done: { proposed: 0 } };
           } finally {
             io.activity(null);

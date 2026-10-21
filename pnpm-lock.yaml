@@ -68,6 +68,9 @@ importers:
       '@tomradex/community':
         specifier: workspace:*
         version: link:../../packages/community
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@tomradex/contributions':
         specifier: workspace:*
         version: link:../../packages/contributions
@@ -289,6 +292,9 @@ importers:
 
   packages/agent:
     dependencies:
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/db':
         specifier: workspace:*
         version: link:../db
@@ -344,6 +350,9 @@ importers:
       '@tomradex/boards':
         specifier: workspace:*
         version: link:../boards
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/db':
         specifier: workspace:*
         version: link:../db
@@ -385,6 +394,9 @@ importers:
 
   packages/announcements:
     dependencies:
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/contributions':
         specifier: workspace:*
         version: link:../contributions
@@ -478,6 +490,9 @@ importers:
       '@tomradex/boards':
         specifier: workspace:*
         version: link:../boards
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/contributions':
         specifier: workspace:*
         version: link:../contributions
@@ -554,6 +569,9 @@ importers:
       '@tomradex/code-link':
         specifier: workspace:*
         version: link:../code-link
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/contributions':
         specifier: workspace:*
         version: link:../contributions
@@ -597,6 +615,9 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.116.0
         version: 2.116.0
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/git':
         specifier: workspace:*
         version: link:../git
@@ -638,8 +659,24 @@ importers:
         specifier: ^6.0.0
         version: 6.0.3
 
+  packages/contracts:
+    dependencies:
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
   packages/contributions:
     dependencies:
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
@@ -704,6 +741,9 @@ importers:
       '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/contributions':
         specifier: workspace:*
         version: link:../contributions
@@ -986,6 +1026,9 @@ importers:
       '@tomradex/boards':
         specifier: workspace:*
         version: link:../boards
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/contributions':
         specifier: workspace:*
         version: link:../contributions
@@ -1050,6 +1093,9 @@ importers:
 
   packages/fields:
     dependencies:
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/db':
         specifier: workspace:*
         version: link:../db
@@ -1081,6 +1127,9 @@ importers:
       '@tomradex/boards':
         specifier: workspace:*
         version: link:../boards
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/contributions':
         specifier: workspace:*
         version: link:../contributions
@@ -1170,6 +1219,9 @@ importers:
 
   packages/github:
     dependencies:
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/git':
         specifier: workspace:*
         version: link:../git
@@ -1195,6 +1247,9 @@ importers:
 
   packages/herdr:
     dependencies:
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/doctor':
         specifier: workspace:*
         version: link:../doctor
@@ -1220,6 +1275,9 @@ importers:
 
   packages/hub:
     dependencies:
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc
@@ -1242,6 +1300,9 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.116.0
         version: 2.116.0
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/hub':
         specifier: workspace:*
         version: link:../hub
@@ -1269,6 +1330,9 @@ importers:
       '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/contributions':
         specifier: workspace:*
         version: link:../contributions
@@ -1312,6 +1376,9 @@ importers:
       '@tomradex/boards':
         specifier: workspace:*
         version: link:../boards
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/contributions':
         specifier: workspace:*
         version: link:../contributions
@@ -1349,6 +1416,9 @@ importers:
 
   packages/inbox-github:
     dependencies:
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
@@ -1455,6 +1525,9 @@ importers:
       '@tomradex/boards':
         specifier: workspace:*
         version: link:../boards
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/db':
         specifier: workspace:*
         version: link:../db
@@ -1511,6 +1584,9 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.122.0
         version: 0.122.0(zod@4.4.3)
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/db':
         specifier: workspace:*
         version: link:../db
@@ -1548,6 +1624,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
         version: 1.30.0(supports-color@8.1.1)(zod@4.4.3)
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/contributions':
         specifier: workspace:*
         version: link:../contributions
@@ -1585,6 +1664,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
         version: 1.30.0(supports-color@8.1.1)(zod@4.4.3)
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/engine-kit':
         specifier: workspace:*
         version: link:../engine-kit
@@ -1616,6 +1698,9 @@ importers:
 
   packages/notes:
     dependencies:
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/db':
         specifier: workspace:*
         version: link:../db
@@ -1656,6 +1741,9 @@ importers:
       '@tomradex/boards':
         specifier: workspace:*
         version: link:../boards
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/db':
         specifier: workspace:*
         version: link:../db
@@ -1693,6 +1781,9 @@ importers:
 
   packages/oplog:
     dependencies:
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/db':
         specifier: workspace:*
         version: link:../db
@@ -1835,6 +1926,9 @@ importers:
       '@babel/parser':
         specifier: ^7.29.8
         version: 7.29.8
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk
@@ -1870,6 +1964,9 @@ importers:
       '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/db':
         specifier: workspace:*
         version: link:../db
@@ -1907,6 +2004,9 @@ importers:
 
   packages/plugins:
     dependencies:
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/extensions':
         specifier: workspace:*
         version: link:../extensions
@@ -2018,6 +2118,9 @@ importers:
       '@tomradex/code-link':
         specifier: workspace:*
         version: link:../code-link
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/db':
         specifier: workspace:*
         version: link:../db
@@ -2052,6 +2155,9 @@ importers:
 
   packages/settings:
     dependencies:
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/db':
         specifier: workspace:*
         version: link:../db
@@ -2111,6 +2217,9 @@ importers:
 
   packages/storage:
     dependencies:
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/contributions':
         specifier: workspace:*
         version: link:../contributions

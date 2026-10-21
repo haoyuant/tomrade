@@ -8,6 +8,7 @@ import type { Sessions } from "./sessions.js";
 import type { CodeLinkStore, SessionView } from "./store.js";
 import { RESUME_ID_FILE, RESUME_SCRIPT, SYSTEM_TERMINAL, commandOk, launchTerminal, machineTerminalSettings, setupTerminal, shellQuote } from "./terminal.js";
 import type { CodeWords } from "./words.js";
+import { errorMessage } from "@tomradex/contracts";
 
 export { HERDR_INSTALL, type HerdrInstall };
 
@@ -24,7 +25,6 @@ export function lastSaid(screen: string | null): string {
   return (lines.at(-1) ?? "").replace(/^[>❯]\s*/, "").slice(0, 200);
 }
 
-const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 export interface HerdrBridgeDeps {
   ctx: Context;
@@ -58,7 +58,7 @@ export class HerdrBridge {
 
   /** herdr's reading of the panes ticket sessions run in, as the hook events those sessions would post. */
   follow(ctx: Context): void {
-    ctx.herdr.onPane((event) => void this.herdrEvent(ctx, event).catch((err) => this.ctx.logger.warn(`herdr event on ${event.paneId} failed: ${message(err)}`)));
+    ctx.herdr.onPane((event) => void this.herdrEvent(ctx, event).catch((err) => this.ctx.logger.warn(`herdr event on ${event.paneId} failed: ${errorMessage(err)}`)));
     ctx.effect(() => () => {
       for (const release of this.herdrHolds.values()) release();
       this.herdrHolds.clear();
@@ -100,7 +100,7 @@ export class HerdrBridge {
     try {
       return (await ask()) === true;
     } catch (error) {
-      this.ctx.logger.warn(`${name}: ${message(error)}`);
+      this.ctx.logger.warn(`${name}: ${errorMessage(error)}`);
       return false;
     }
   }
@@ -159,7 +159,7 @@ export class HerdrBridge {
         this.paneLooked.delete(sessionId);
         this.sessions.touch(projectId, sessionId, { herdrPane: pane.paneId });
       })
-      .catch((err) => this.ctx.logger.warn(`finding the herdr pane of ${sessionId}: ${message(err)}`));
+      .catch((err) => this.ctx.logger.warn(`finding the herdr pane of ${sessionId}: ${errorMessage(err)}`));
   }
 
   /** The panes this service follows in herdr; others (the Terminal window's) follow theirs. */

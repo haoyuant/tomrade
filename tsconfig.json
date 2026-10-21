@@ -47,6 +47,9 @@
       "path": "./packages/domain"
     },
     {
+      "path": "./packages/contracts"
+    },
+    {
       "path": "./packages/engine-kit"
     },
     {

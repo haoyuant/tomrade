@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
+import { errorMessage } from "@tomradex/contracts";
 
 /** Where a project's shareable copy is published, in provider terms. Non-secret; portable. */
 export const RemoteRef = z.object({
@@ -77,7 +78,6 @@ export interface CatalogDamage {
 }
 
 const stamp = () => new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
-const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /**
  * `catalog.json`: the machine-local list of projects and repository checkouts.
@@ -118,7 +118,7 @@ export class Catalog {
     try {
       raw = JSON.parse(text);
     } catch (error) {
-      this.keep(text, null, message(error));
+      this.keep(text, null, errorMessage(error));
       return;
     }
     const parsed = CatalogFile.safeParse(raw);

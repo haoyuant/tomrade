@@ -22,6 +22,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@tomradex/contracts": "workspace:*",
     "@anthropic-ai/sdk": "^0.122.0",
     "@tomradex/db": "workspace:*",
     "@tomradex/desktop-surface": "workspace:*",

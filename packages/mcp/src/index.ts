@@ -14,6 +14,7 @@ import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/tools";
 import { LONG_RESULT, compactList, defineTool, strictInput, type Tools } from "@tomradex/tools";
 import { MCP_WORDS, type McpWords } from "./words.js";
+import { errorMessage } from "@tomradex/contracts";
 
 export const MCP_SERVER_NAME = "tomrade";
 
@@ -125,7 +126,7 @@ function textResult(data: unknown, whole?: boolean) {
   const list = !whole && json && json.length > LONG_RESULT ? compactList(data) : null;
   return { content: list ? [block(list.note), block(list.json)] : [block(json)] };
 }
-const errorResult = (e: unknown) => ({ content: [{ type: "text" as const, text: `ERROR: ${e instanceof Error ? e.message : String(e)}` }], isError: true });
+const errorResult = (e: unknown) => ({ content: [{ type: "text" as const, text: `ERROR: ${errorMessage(e)}` }], isError: true });
 
 /**
  * Gemini CLI (0.64) reads a result whose first block is JSON as its structured
@@ -309,7 +310,7 @@ export class Mcp extends Service {
       try {
         res.json((await binding.event(withPane(req))) ?? {});
       } catch (e) {
-        res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
+        res.status(500).json({ error: errorMessage(e) });
       }
     });
 

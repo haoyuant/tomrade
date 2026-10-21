@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@tomradex/agent": "workspace:*",
+    "@tomradex/contracts": "workspace:*",
     "@tomradex/db": "workspace:*",
     "@tomradex/ipc": "workspace:*",
     "@tomradex/plugin-cli": "workspace:*",

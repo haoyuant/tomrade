@@ -6,6 +6,7 @@ import type { Author, Item, LanguageTag } from "@tomradex/domain";
 import type { LlmService } from "@tomradex/llm";
 import { overlap } from "./similar.js";
 import { BACKLOG_WORDS } from "./words.js";
+import { errorMessage } from "@tomradex/contracts";
 
 type Snapshot = Partial<Pick<Item, "id" | "key" | "title" | "kind" | "status" | "body" | "parentId" | "blocks" | "blockedBy">>;
 
@@ -200,7 +201,7 @@ export function applyDependencies(ctx: Context, projectId: string, proposal: Dep
       added += adds.length;
       removed += drops.size;
     } catch (err) {
-      failed.push({ key: item.key, reason: err instanceof Error ? err.message : String(err) });
+      failed.push({ key: item.key, reason: errorMessage(err) });
     }
   }
   return { added, removed, failed };

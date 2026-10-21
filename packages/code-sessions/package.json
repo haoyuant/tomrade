@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@tomradex/code-link": "workspace:*",
+    "@tomradex/contracts": "workspace:*",
     "@tomradex/contributions": "workspace:*",
     "@tomradex/db": "workspace:*",
     "@tomradex/desktop-surface": "workspace:*",

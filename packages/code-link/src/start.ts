@@ -21,6 +21,7 @@ import type { CodeLinkStore, RepoStateView, SessionMode, SessionView } from "./s
 import { RESUME_ID_FILE, TerminalSettings, fillTemplate, herdrFallbackNote, launchTerminal, machineTerminalSettings, optionFlags, shellQuote, terminalTemplate, withOptions } from "./terminal.js";
 import { CODE_WORDS } from "./words.js";
 import { githubHttps } from "@tomradex/github";
+import { errorMessage } from "@tomradex/contracts";
 
 export type StartMode = "run" | "terminal";
 export type StartGate = "locked" | "workstream" | "checkout" | "remote" | "readiness" | "blocked" | "engine" | "mcp" | "workdir";
@@ -563,7 +564,7 @@ export class Starter {
     if (!candidates.length) return { ok: false, reason: wanted ? `${wanted} is not a code-capable engine` : "No local coding agent is installed — add Claude Code, Codex or Pi, then try again" };
     const reasons: string[] = [];
     for (const engine of candidates) {
-      const state: EngineAvailability = await engine.available().catch((err: unknown) => ({ ok: false, reason: err instanceof Error ? err.message : String(err) }));
+      const state: EngineAvailability = await engine.available().catch((err: unknown) => ({ ok: false, reason: errorMessage(err) }));
       if (!state.ok) {
         reasons.push(`${engine.title}: ${state.reason ?? "not available"}`);
         continue;

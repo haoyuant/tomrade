@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, nativeImage, nativeTheme, Notification } from "electron";
 import { DESKTOP_WORDS } from "./words.js";
+import { errorMessage } from "@tomradex/contracts";
 
 // Before boot there are no settings to ask: the system's language.
 const words = () => DESKTOP_WORDS(app.getLocale().toLowerCase().startsWith("zh") ? "zh" : "en");
@@ -66,7 +67,7 @@ img{background:#fff;border-radius:16px;padding:6px}
  */
 export async function startFailed(error: unknown, opts: { logDir: string; retry: boolean }): Promise<boolean> {
   const w = words();
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   const reason = message.length > 800 ? `${message.slice(0, 800)}…` : message;
   // Started at login the app is not in front, and the box must still be seen.
   app.focus({ steal: true });

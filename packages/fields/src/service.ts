@@ -16,6 +16,7 @@ import {
   type FieldValue
 } from "@tomradex/domain";
 import { registerChannels, registerTools } from "./contributions.js";
+import { errorMessage } from "@tomradex/contracts";
 
 declare module "cordis" {
   interface Context {
@@ -141,7 +142,7 @@ export class Fields extends Service {
       try {
         rows = db.prepare(f.values).all() as { item_id: string; value: number | null }[];
       } catch (err) {
-        this.ctx.logger.warn(`derived field ${f.id}: ${err instanceof Error ? err.message : String(err)}`);
+        this.ctx.logger.warn(`derived field ${f.id}: ${errorMessage(err)}`);
         continue;
       }
       for (const r of rows) {

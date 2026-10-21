@@ -15,10 +15,10 @@ import { prepare } from "./render.js";
 import { IM_WORDS, type ImPlainWord } from "./words.js";
 import { FILE_HANDLE, statusText, awaitingReview, codeNews, codeSeen, deliveryCard, links, proposalText, renderBlock, reviewOutcome, ticket, toolLine, type CodeLookup, type CodeSeen, type Delivered, type ItemLookup, type RenderScope } from "./rich.js";
 import { ImStore, MIGRATIONS, TABLES, type Action, type Binding, type Inbox, type Outbox, type Topic, type Watch, type WindowRow } from "./store.js";
+import { errorMessage } from "@tomradex/contracts";
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const token = () => randomBytes(24).toString("hex");
-const errorText = (e: unknown) => e instanceof Error ? e.message : String(e);
 /** Platforms drop a typing indicator after a few seconds; refresh it while the run works. */
 const TYPING_MS = 4_000;
 const PAIR_MS = 10 * 60 * 1000;
@@ -1195,14 +1195,14 @@ export class Im extends Service {
       // No silent retries of rejected input or stale decisions.
       const row = handling;
       if (row) {
-        this.store.run("UPDATE plugin_im_inbox SET state = 'failed', error = ? WHERE id = ?", errorText(e), row.id);
+        this.store.run("UPDATE plugin_im_inbox SET state = 'failed', error = ? WHERE id = ?", errorMessage(e), row.id);
         const event = JSON.parse(row.event_json) as ImInbound;
         const anchor = anchorOf(event);
         // A Start press shown as under way, then refused, says on its card that nothing started.
         const press = event.kind === "action" ? this.startPress(b, event.token, event.actor.id, false) : null;
         if (press) this.settleStart(b, press.card, this.w("notStarted", { key: press.item.key }));
         // In a group, a refusal is for the sender only where the platform can say so privately.
-        if (this.authorizedBinding(b)) this.enqueue(b, `input-error:${row.id}`, { text: this.w("cannotProcess", { error: errorText(e) }) },
+        if (this.authorizedBinding(b)) this.enqueue(b, `input-error:${row.id}`, { text: this.w("cannotProcess", { error: errorMessage(e) }) },
           { anchor, visibleTo: anchor ? event.actor.id : null });
       }
     } finally { this.processing.delete(b.thread_id); }

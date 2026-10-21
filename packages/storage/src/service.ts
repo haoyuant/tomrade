@@ -53,6 +53,7 @@ import {
   type SyncSummary
 } from "./types.js";
 import { STORAGE_WORDS } from "./words.js";
+import { errorMessage } from "@tomradex/contracts";
 
 // "synced" with writes still waiting reads as ahead.
 const STATE_WORD: Record<SyncState, Exclude<Parameters<ReturnType<typeof STORAGE_WORDS>>[0], "unsynced">> = {
@@ -130,7 +131,6 @@ interface RemoteAsk {
   fetched: boolean;
 }
 
-const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 export const slugOf = (name: string): string =>
   name
@@ -333,7 +333,7 @@ export class Storage extends Service {
   }
 
   private warn(projectId: string, error: unknown): void {
-    this.home.logger.warn(`storage: ${projectId}: ${message(error)}`);
+    this.home.logger.warn(`storage: ${projectId}: ${errorMessage(error)}`);
   }
 
   /** The catalog's row for a project, or null when this machine does not know it. */
@@ -651,7 +651,7 @@ export class Storage extends Service {
           new Promise<never>((_, reject) => setTimeout(() => reject(new Error("no answer in 10 s")), 10_000).unref?.())
         ]);
       } catch (error) {
-        this.home.logger.warn(`storage: could not tell who can read the remote of ${projectId} — ${message(error)}`);
+        this.home.logger.warn(`storage: could not tell who can read the remote of ${projectId} — ${errorMessage(error)}`);
         return;
       }
     }
@@ -908,7 +908,7 @@ export class Storage extends Service {
         else if (entry.git === "shared" && entry.autoCommit) await this.git(dir).commit(summary, ARTIFACT_DIR);
       } catch (error) {
         // A hook or a signing key said no: the status says why, and the next reconcile tries again.
-        this.gitFailed.set(projectId, message(error));
+        this.gitFailed.set(projectId, errorMessage(error));
         this.notify(projectId);
         throw error;
       }
@@ -1003,7 +1003,7 @@ export class Storage extends Service {
     try {
       await this.git(dir).dropRemoteCredential(url);
     } catch (error) {
-      this.home.logger.warn(`storage: could not clean the remote of ${dir} — ${message(error)}`);
+      this.home.logger.warn(`storage: could not clean the remote of ${dir} — ${errorMessage(error)}`);
     }
   }
 
@@ -1024,7 +1024,7 @@ export class Storage extends Service {
     } catch (error) {
       if (error instanceof TornArtifactError) return { state: null, problem: { state: "syncing", detail: "The folder is still being written or synced" } };
       if (error instanceof ConflictMarkersError) return { state: null, problem: { state: "error", detail: error.message } };
-      return { state: null, problem: { state: "error", detail: message(error) } };
+      return { state: null, problem: { state: "error", detail: errorMessage(error) } };
     }
   }
 
@@ -1356,7 +1356,7 @@ export class Storage extends Service {
           }
         }
       } catch (error) {
-        return this.remember(projectId, { state: error instanceof GitMissingError ? "unavailable" : "error", location, detail: message(error), lastSyncAt: entry.lastSyncAt });
+        return this.remember(projectId, { state: error instanceof GitMissingError ? "unavailable" : "error", location, detail: errorMessage(error), lastSyncAt: entry.lastSyncAt });
       }
     }
 
@@ -1368,7 +1368,7 @@ export class Storage extends Service {
     try {
       localDirty = digestState(this.exportFor(projectId, entry)) !== entry.lastPublishedDigest;
     } catch (error) {
-      return this.remember(projectId, { state: "error", location, detail: message(error), lastSyncAt: entry.lastSyncAt });
+      return this.remember(projectId, { state: "error", location, detail: errorMessage(error), lastSyncAt: entry.lastSyncAt });
     }
     const folderMoved = onDisk !== null && (onDisk.manifest.snapshot?.digest ?? digestState(onDisk)) !== entry.lastPublishedDigest;
     let state: SyncState = localDirty && folderMoved ? "diverged" : localDirty ? "ahead" : folderMoved ? "behind" : transport.state;
@@ -1553,7 +1553,7 @@ export class Storage extends Service {
           if (!(await this.writeOut(projectId, "rebuild"))) why = folder.problem?.detail ?? "the folder could not be written";
         } catch (error) {
           // Git may have refused the commit after the snapshot was written; the digest below tells.
-          why = message(error);
+          why = errorMessage(error);
         }
         const current = this.mustEntry(projectId);
         if (digestState(this.exportFor(projectId, current)) !== current.lastPublishedDigest) throw new UnpublishedEditsError(projectId, why ?? "the folder could not be written");
@@ -1783,10 +1783,10 @@ export class Storage extends Service {
         if (reason === "boot") await this.clearStaleLock(entry.id);
         await this.reconcile(entry.id);
       } catch (error) {
-        this.home.logger.warn(`storage: ${entry.id} not reconciled (${reason}) — ${message(error)}`);
+        this.home.logger.warn(`storage: ${entry.id} not reconciled (${reason}) — ${errorMessage(error)}`);
       }
     }
-    if (!this.closing) await this.writeHub().catch((e) => this.home.logger.warn(`storage: hub manifest not written — ${message(e)}`));
+    if (!this.closing) await this.writeHub().catch((e) => this.home.logger.warn(`storage: hub manifest not written — ${errorMessage(e)}`));
   }
 
   /**
@@ -1810,7 +1810,7 @@ export class Storage extends Service {
     if (this.hubWriteTimer) clearTimeout(this.hubWriteTimer);
     this.hubWriteTimer = setTimeout(() => {
       this.hubWriteTimer = null;
-      void this.writeHub().catch((e) => this.home.logger.warn(`storage: hub manifest not written — ${message(e)}`));
+      void this.writeHub().catch((e) => this.home.logger.warn(`storage: hub manifest not written — ${errorMessage(e)}`));
     }, 1_000);
     this.hubWriteTimer.unref?.();
   }
@@ -1822,7 +1822,7 @@ export class Storage extends Service {
     try {
       manifest = readHubManifest(dir);
     } catch (error) {
-      problem = message(error);
+      problem = errorMessage(error);
     }
     if (problem !== this.hubUnreadable) {
       this.hubUnreadable = problem;
@@ -1939,7 +1939,7 @@ export class Storage extends Service {
       if (counts?.ahead || dirty) return { state: "ahead", location, lastSyncAt: null };
       return { state: "synced", location, lastSyncAt: null };
     } catch (error) {
-      return { state: error instanceof GitMissingError ? "unavailable" : "error", location, detail: message(error), lastSyncAt: null };
+      return { state: error instanceof GitMissingError ? "unavailable" : "error", location, detail: errorMessage(error), lastSyncAt: null };
     }
   }
 
@@ -2060,7 +2060,7 @@ export class Storage extends Service {
       .filter((entry) => entry.dir && (this.ctx.db as Db).has(entry.id))
       .map((entry) => entry.id);
     await Promise.all(
-      ids.map((id) => this.inTurn(id, () => this.writeOut(id, reason, { leaving: true })).catch((error) => this.home.logger.warn(`storage: ${id} not published — ${message(error)}`)))
+      ids.map((id) => this.inTurn(id, () => this.writeOut(id, reason, { leaving: true })).catch((error) => this.home.logger.warn(`storage: ${id} not published — ${errorMessage(error)}`)))
     );
   }
 }

@@ -16,6 +16,7 @@ import { hookCommand } from "./connect.js";
 import { classifyRemoteFailure, remoteFailureDetail } from "./remote.js";
 import { CODE_WORDS } from "./words.js";
 import type { CodeLinkStore, SessionBlock, SessionState, SessionView } from "./store.js";
+import { errorMessage } from "@tomradex/contracts";
 
 /** How long a session may be silent before it counts as idle, and how long idle before it is over. */
 export const IDLE_AFTER_MS = 10 * 60 * 1000;
@@ -383,7 +384,7 @@ export class Sessions {
     try {
       answer = (await this.ctx.serial("agent/cli-hook", call)) ?? undefined;
     } catch (error) {
-      this.ctx.logger("code-link").warn(`agent/cli-hook: ${error instanceof Error ? error.message : String(error)}`);
+      this.ctx.logger("code-link").warn(`agent/cli-hook: ${errorMessage(error)}`);
     }
     return hookReply(name, answerable ? mergeAnswers(own, answer) : own);
   }

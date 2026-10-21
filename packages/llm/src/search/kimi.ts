@@ -1,4 +1,5 @@
 import type { ReadResponse, SearchRequest, WebSearchProvider } from "@tomradex/web-search";
+import { errorMessage } from "@tomradex/contracts";
 
 /** Moonshot's API hosts; a key belongs to one of them, and both serve the search tools. */
 const MOONSHOT = /^https?:\/\/api\.moonshot\.(cn|ai)(\/|:|$)/i;
@@ -132,7 +133,7 @@ export function kimiProvider({ id, key, fetch: send = fetch, now = () => new Dat
       const settled = await Promise.allSettled(urls.map((url) => call<KimiPage>("fetch", { url }, signal)));
       settled.forEach((result, i) => {
         if (result.status === "fulfilled") out.pages.push({ url: result.value.url || urls[i]!, content: result.value.markdown ?? "" });
-        else out.failed.push({ url: urls[i]!, error: result.reason instanceof Error ? result.reason.message : String(result.reason) });
+        else out.failed.push({ url: urls[i]!, error: errorMessage(result.reason) });
       });
       return out;
     }

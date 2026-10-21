@@ -6,6 +6,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { searchPath } from "@tomradex/engine-kit";
 import type { McpServerConfig } from "./config.js";
+import { errorMessage } from "@tomradex/contracts";
 
 export interface RemoteTool {
   name: string;
@@ -28,7 +29,6 @@ interface Handlers {
 const CONNECT_TIMEOUT_MS = 30_000;
 const STDERR_KEEP = 2_000;
 
-const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 type Content = { type: string; text?: string; mimeType?: string; uri?: string; name?: string; resource?: { uri: string; text?: string } };
 
@@ -113,7 +113,7 @@ export class Connection {
   private explain(e: unknown): string {
     const t = this.config.transport;
     const code = (e as { code?: string }).code;
-    let base = message(e);
+    let base = errorMessage(e);
     if (t.type === "stdio" && code === "ENOENT") base = `command not found: ${t.command}`;
     else if (t.type === "stdio" && /Connection closed/.test(base)) base = "the server exited before it was ready";
     const tail = this.stderr.trim().split("\n").slice(-3).join("\n");

@@ -11,6 +11,7 @@ import { dataDirFor, packageDigest, readManifest, type Analysis } from "@tomrade
 import { MANIFEST_FILE, namespaceOf, riskOf, type Dictionaries, type LanguageCoverage, type Manifest, type Risk } from "@tomradex/plugin-sdk";
 import type { PluginView, Plugins } from "@tomradex/plugins";
 import { defineTool } from "@tomradex/tools";
+import { errorMessage } from "@tomradex/contracts";
 
 export const Config = z.preprocess(
   (v) => v ?? {},
@@ -79,7 +80,6 @@ const SNAPSHOTS_KEPT = 5;
 const here = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(here, "..");
 
-const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /**
  * Plugin Studio: where an agent writes a plugin for the person it works with.
@@ -517,7 +517,7 @@ export default {
     });
 
     ctx.inject(["agent"], (inner) => {
-      for (const playbook of loadPlaybookDir(path.join(packageRoot, "playbooks"), (file, err) => ctx.logger("plugin-studio").warn(`${file}: ${messageOf(err)}`))) inner.agent.playbook(playbook);
+      for (const playbook of loadPlaybookDir(path.join(packageRoot, "playbooks"), (file, err) => ctx.logger("plugin-studio").warn(`${file}: ${errorMessage(err)}`))) inner.agent.playbook(playbook);
     });
   }
 };

@@ -40,6 +40,7 @@ import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView
 import { findCodexRollout, findTranscript, readConversation, transcriptTitle, type ConversationLine } from "./titles.js";
 import { AUTO_TERMINAL, TerminalSettings, commandOk, exec, machineTerminalSettings, setupTerminal, terminalApps } from "./terminal.js";
 import { registerTools } from "./tools.js";
+import { errorMessage } from "@tomradex/contracts";
 
 export { AUTHOR, deliveryMerged, primaryOf, type ScanSummary, type UnlinkedBranch } from "./scan/absorb.js";
 export { compareUrl, MERGE_COMMAND, type MergeCheckView, type MergeLocalResult, type OpenPrResult } from "./landing.js";
@@ -153,7 +154,6 @@ export const CodeLinkConfig = z.preprocess(
 );
 export type CodeLinkConfig = z.infer<typeof CodeLinkConfig>;
 
-const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 const SETTINGS_SECTION = {
   id: "codeLink",
@@ -271,7 +271,7 @@ export class CodeLink extends Service {
         return this.limitedWords(park?.until ?? until ?? Date.now() + 15 * 60_000, park?.known ?? until !== null, false);
       },
       // A pass already running still saw this session as active.
-      onEnd: (session) => void this.rescan(session.projectId).catch((err) => this.ctx.logger.warn(`code scan after session ${session.id} ended failed: ${message(err)}`))
+      onEnd: (session) => void this.rescan(session.projectId).catch((err) => this.ctx.logger.warn(`code scan after session ${session.id} ended failed: ${errorMessage(err)}`))
     });
     this.starter = new Starter({
       ctx: this.ctx,
@@ -358,7 +358,7 @@ export class CodeLink extends Service {
     this.ctx.on("repos/checkout-set", (remote) => {
       for (const projectId of this.ctx.db.openIds()) {
         if (!this.ctx.repos.list(projectId).some((repo) => repo.remote === remote)) continue;
-        void this.rescan(projectId).catch((err) => this.ctx.logger.warn(`code scan after setting ${remote} failed: ${message(err)}`));
+        void this.rescan(projectId).catch((err) => this.ctx.logger.warn(`code scan after setting ${remote} failed: ${errorMessage(err)}`));
       }
     });
     // An earlier version wrote the helper under the Hub; repoint it before a
@@ -761,7 +761,7 @@ export class CodeLink extends Service {
     if (!name) throw new Error("a branch name is required");
     const link = this.store.upsertLink(projectId, { itemId, repoId, branch: name }, { source: "manual", lastSeenAt: Date.now() });
     this.notify(projectId);
-    void this.scan(projectId).catch((err) => this.ctx.logger.warn(`rescan after linking ${name} failed: ${message(err)}`));
+    void this.scan(projectId).catch((err) => this.ctx.logger.warn(`rescan after linking ${name} failed: ${errorMessage(err)}`));
     return link;
   }
 
@@ -890,7 +890,7 @@ export class CodeLink extends Service {
       this.unlinked(projectId).filter((u) => !(u.repoId === repoId && u.branch === name))
     );
     this.notify(projectId);
-    void this.scan(projectId).catch((err) => this.ctx.logger.warn(`rescan after adopting ${name} failed: ${message(err)}`));
+    void this.scan(projectId).catch((err) => this.ctx.logger.warn(`rescan after adopting ${name} failed: ${errorMessage(err)}`));
     return item;
   }
 

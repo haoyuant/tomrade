@@ -17,6 +17,7 @@ import { END_AFTER_MS, sessionContext } from "./sessions.js";
 import type { CodeLinkStore, CodeLinkView, SessionView } from "./store.js";
 import type { PrState } from "./rules.js";
 import type { CodeSummaryView } from "./service.js";
+import { errorMessage } from "@tomradex/contracts";
 
 /** What the tools need from the service without importing it. */
 export interface ToolHost {
@@ -404,7 +405,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         let owed = owing();
         // The agent may have merged its pull request a moment ago, long before the next timed scan: look now rather than refuse.
         if (owed?.status === "verifying" && !tokened && !args.parallel && host.store.links(projectId, owed.id).some((l) => l.prState === "open")) {
-          await host.rescan(projectId).catch((err) => ctx.logger.warn(`claim_ticket: scan before claiming ${item.key} failed: ${err instanceof Error ? err.message : String(err)}`));
+          await host.rescan(projectId).catch((err) => ctx.logger.warn(`claim_ticket: scan before claiming ${item.key} failed: ${errorMessage(err)}`));
           others = held();
           owed = owing();
         }

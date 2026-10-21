@@ -10,6 +10,7 @@
   "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
   "scripts": { "build": "tsc -b", "typecheck": "tsc -p tsconfig.json --noEmit" },
   "dependencies": {
+    "@tomradex/contracts": "workspace:*",
     "@supabase/supabase-js": "^2.116.0",
     "@tomradex/hub": "workspace:*",
     "@tomradex/ipc": "workspace:*",

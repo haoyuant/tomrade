@@ -7,6 +7,7 @@ import { sameRepository } from "@tomradex/repos";
 import { cursorHookReader } from "./cursor-hooks.js";
 import type { Sessions } from "./sessions.js";
 import type { CodeLinkStore, SessionView } from "./store.js";
+import { errorMessage } from "@tomradex/contracts";
 
 /** How often a repository's agent's hook events reach the database; memory has every one. */
 const HOOK_HEARD_WRITE_MS = 60_000;
@@ -20,7 +21,6 @@ const ENDED_TOGETHER_MS = 10_000;
 /** The agent of a session known only by its MCP connection. */
 export const MCP_AGENT = "mcp";
 
-const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 export interface ConnectionsDeps {
   ctx: Context;
@@ -284,12 +284,12 @@ export class Connections {
         return;
       }
     }
-    void this.placeFrom(cwd).catch((err) => this.ctx.logger.warn(`placing a checkout from ${cwd} failed: ${message(err)}`));
+    void this.placeFrom(cwd).catch((err) => this.ctx.logger.warn(`placing a checkout from ${cwd} failed: ${errorMessage(err)}`));
   }
 
   /** A connected repository's hook, for a session: recorded, and shown to plugins' hooks, which cannot answer it. */
   private heard(projectId: string, sessionId: string, payload: unknown): void {
-    void this.sessions.hook(projectId, sessionId, payload, false).catch((err) => this.ctx.logger.warn(`a repository hook for ${sessionId}: ${message(err)}`));
+    void this.sessions.hook(projectId, sessionId, payload, false).catch((err) => this.ctx.logger.warn(`a repository hook for ${sessionId}: ${errorMessage(err)}`));
     this.findPane(projectId, sessionId, payload);
   }
 

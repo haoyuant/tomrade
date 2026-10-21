@@ -11,6 +11,7 @@ import {
   type PluginsConfig,
   type PluginsSnapshot
 } from "./types.js";
+import { errorMessage } from "@tomradex/contracts";
 
 declare module "cordis" {
   interface Context {
@@ -45,7 +46,6 @@ const STATE: Record<number, PluginState> = { 0: "pending", 1: "pending", 2: "act
 
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /** The shape cordis records for a live service: which fiber put it there. */
 interface Impl {
@@ -86,7 +86,7 @@ export class Plugins extends Service {
     if (store) {
       const taken = new Set(config.rows.map((r) => r.id));
       for (const row of store.rows()) if (!taken.has(row.id)) config.rows.push({ ...row });
-      store.onChange = (id) => void this.reload(id).catch((error: unknown) => this.home.logger.warn(`${id}: ${messageOf(error)}`));
+      store.onChange = (id) => void this.reload(id).catch((error: unknown) => this.home.logger.warn(`${id}: ${errorMessage(error)}`));
     }
   }
 
@@ -419,7 +419,7 @@ export class Plugins extends Service {
       this.fibers.set(row.id, this.home.plugin(plugin, row.config));
     } catch (error) {
       this.errors.set(row.id, error);
-      this.home.logger.error(`${row.id}: ${messageOf(error)}`);
+      this.home.logger.error(`${row.id}: ${errorMessage(error)}`);
     }
   }
 
@@ -453,11 +453,11 @@ export class Plugins extends Service {
       try {
         base.extension = store.info(row.id);
       } catch (error) {
-        return { ...base, state: "failed", error: messageOf(error) };
+        return { ...base, state: "failed", error: errorMessage(error) };
       }
     }
     if (row.disabled) return { ...base, state: "disabled" };
-    if (error || !fiber) return { ...base, state: "failed", error: messageOf(error ?? "not loaded") };
+    if (error || !fiber) return { ...base, state: "failed", error: errorMessage(error ?? "not loaded") };
     const state = STATE[fiber.state] ?? "pending";
     const waitingFor = state === "pending" ? Object.keys(fiber.inject).filter((name) => this.home.get(name) === undefined) : undefined;
     return { ...base, state, ...(waitingFor?.length ? { waitingFor } : {}) };

@@ -3,6 +3,7 @@ import type { AgentApi, LocalAgentOptions, LocalAgentSpec, ModelRequest, ModelRe
 import type { Host } from "../host.js";
 import { localAgentOf } from "./local-agent.js";
 import { CLI_HOOK_MS, HOOK_MS, copy, type Facade } from "./shared.js";
+import { errorMessage } from "@tomradex/contracts";
 
 /** The app's conductor for local agents (`@tomradex/engine-acp`), reached by its service name. */
 interface LocalAgentsService {
@@ -24,7 +25,7 @@ const hooked = async <T>(host: Host, fn: () => Promise<T>, label: string): Promi
   try {
     return await fn();
   } catch (error) {
-    host.logger.warn(`${host.identity.id} ${label}: ${error instanceof Error ? error.message : String(error)}`);
+    host.logger.warn(`${host.identity.id} ${label}: ${errorMessage(error)}`);
     return undefined;
   }
 };
@@ -55,7 +56,7 @@ export const agentApi = ({ host }: Facade): AgentApi => {
         const run = host.back(hook, "request error hook", { ms: HOOK_MS });
         return host.disposerOf(
           host.ctx.on("agent/request-error", async (failure) => {
-            const message = failure.error instanceof Error ? failure.error.message : String(failure.error);
+            const message = errorMessage(failure.error);
             const answer = await hooked(host, () => run({ message, request: modelRequest(failure.request), attempt: failure.attempt }), "request error hook");
             if (!answer || (!answer.request && !answer.profile)) return undefined;
             return { ...(answer.request ? { request: changeOf(answer.request) } : {}), ...(typeof answer.profile === "string" ? { profile: answer.profile } : {}) };

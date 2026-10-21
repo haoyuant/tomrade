@@ -14,6 +14,7 @@ import { Cadence, localDate, nextRun } from "./cadence.js";
 import { suggestions, type Suggestion } from "./suggestions.js";
 import { TemplateInput, fillTemplate } from "./template.js";
 import { SCHEDULE_WORDS } from "./words.js";
+import { errorMessage } from "@tomradex/contracts";
 
 export interface Template extends z.output<typeof TemplateInput> {
   id: string;
@@ -178,7 +179,6 @@ interface RunRow {
 }
 
 const AUTHOR: Author = "ai:automation";
-const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 /**
  * Templates and the schedules that run them. A template is what to do — one or
@@ -408,7 +408,7 @@ export class Schedules extends Service {
       }
     } catch (err) {
       run.ok = false;
-      run.error = message(err);
+      run.error = errorMessage(err);
     }
     this.db(projectId)
       .prepare("INSERT INTO plugin_schedules_runs (id, template_id, schedule_id, at, trigger, ok, item_ids_json, thread_id, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")

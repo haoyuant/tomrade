@@ -7,6 +7,7 @@ import { MCP_SERVERS_SECTION, McpClientSettings, McpServerConfig, targetOf, tool
 import { Connection, type RemoteTool, type ServerInfo } from "./connection.js";
 import { parseClientConfig } from "./import.js";
 import { inputSchemaOf } from "./schema.js";
+import { errorMessage } from "@tomradex/contracts";
 
 export const McpClientConfig = z.preprocess(
   (value) => value ?? {},
@@ -86,7 +87,6 @@ interface Link {
   connectedAt?: number;
 }
 
-const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 function describe(serverId: string, tool: RemoteTool, exact: boolean): string {
   const lines = [tool.description?.trim() || tool.title || tool.name, `(From the MCP server "${serverId}".)`];
@@ -181,7 +181,7 @@ export class McpClient extends Service {
       await connection.open();
       return { ok: true, server: connection.server(), tools: (await connection.tools()).map((t) => t.name) };
     } catch (e) {
-      return { ok: false, error: message(e) };
+      return { ok: false, error: errorMessage(e) };
     } finally {
       await connection.close();
     }
@@ -250,7 +250,7 @@ export class McpClient extends Service {
       if (link.retired) return;
       link.connection = undefined;
       this.unregister(link);
-      this.fail(link, message(e));
+      this.fail(link, errorMessage(e));
     }
     this.notify();
   }
