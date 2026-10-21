@@ -49,7 +49,8 @@ const run = async () => {
     setup: {
       fields: [{ key: "botToken", label: { en: "Bot token", zh: "机器人令牌" }, secret: true, placeholder: "xoxb-…" }],
       steps: [{ en: "Create an app and install it to your workspace.", zh: "创建应用并安装到工作区。" }],
-      permissions: ["chat:write", "im:history"]
+      permissions: ["chat:write", "im:history"],
+      groupSteps: [{ en: "Invite the bot to a channel.", zh: "把机器人邀请进频道。" }, { en: "Run /standin setup there.", zh: "在那里运行 /standin setup。" }]
     },
     async open(_id, io) {
       opened = io.credentials;
@@ -200,6 +201,27 @@ const run = async () => {
   await press(button("Retry", "document.querySelector('[data-testid=im-deliveries]')"));
   check("retrying sends it", await replied("echo: will it arrive"));
   check("and clears the list", await waitFor(`!document.querySelector('[data-testid=im-deliveries]').textContent.includes('echo: will it arrive')`));
+
+  // ── using it in a group ──────────────────────────────────────────────
+  const guide = `document.querySelector('[data-im-connection=team] [data-testid=im-group-guide]')`;
+  check("a connected bot says how to use it in a group, in its platform's steps, then what each channel does", await waitFor(`${guide}?.textContent.includes('Run /standin setup there.')
+    && ${guide}.textContent.includes('Work channel: each ticket in Doing or Verifying gets a thread of its own')`), await $(`${guide}?.textContent`));
+  check("with only direct chats connected, it says ticket threads need a group", await waitFor(`!!document.querySelector('[data-im-connection=team] [data-testid=im-only-direct]')`));
+  await $(`${guide}?.scrollIntoView({ block: 'center' });true`);
+  await sleep(200);
+  await shot("im-group-guide.png");
+  ctx.settings.set({ ...ctx.settings.get(), im: { ...imNow(), routes: [...imNow().routes, { ...imNow().routes[0], id: "dev", conversationId: "C-dev", allowDirectMessages: false, allowGroups: true, ticketTopics: true }] } });
+  check("an allowed group is listed with what it is for", await waitFor(`document.querySelector('[data-im-connection=team] [data-testid=im-group-channels]')?.textContent === 'C-dev: work (a thread per ticket)'`),
+    await $(`document.querySelector('[data-im-connection=team] [data-testid=im-group-channels]')?.textContent`));
+  check("and the direct-chat-only hint goes", await waitFor(`!document.querySelector('[data-im-connection=team] [data-testid=im-only-direct]')`));
+  ctx.settings.set({ ...ctx.settings.get(), language: "zh" });
+  check("in Chinese too", await waitFor(`${guide}?.textContent.includes('在群聊或服务器里使用') && ${guide}.textContent.includes('在那里运行 /standin setup。')
+    && document.querySelector('[data-im-connection=team] [data-testid=im-group-channels]')?.textContent === 'C-dev：工作（每个工单一个话题）'`), await $(`${guide}?.textContent`));
+  await $(`${guide}?.scrollIntoView({ block: 'center' });true`);
+  await sleep(200);
+  await shot("im-group-guide-zh.png");
+  ctx.settings.set({ ...ctx.settings.get(), language: "en", im: { ...imNow(), routes: imNow().routes.filter((r) => r.id !== "dev") } });
+  await waitFor(`!document.querySelector('[data-im-connection=team] [data-testid=im-group-channels]') && document.body.textContent.includes('Use it in a group or server')`);
 
   // ── the status bar opens the pane ────────────────────────────────────
   await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);

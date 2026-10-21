@@ -170,6 +170,11 @@ export interface ImAdapterSetup {
   /** An app manifest to paste, e.g. Slack's. */
   manifest?: { format: "json" | "yaml"; text: string };
   docsUrl?: string;
+  /**
+   * SDK 0.2.22. How to start using the connected bot in a group or server, in order; Markdown. Settings shows them
+   * under the connection, then what each kind of channel does. Without them it shows generic steps.
+   */
+  groupSteps?: Localized[];
 }
 
 /** What the platform can do. Fields marked 0.2.5 are optional; leaving them out declares the 0.2.2 behaviour. */
