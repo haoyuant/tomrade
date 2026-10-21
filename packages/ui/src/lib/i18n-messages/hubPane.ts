@@ -5,11 +5,9 @@ export const hubPane = {
     folderLabel: "Hub folder",
     folderNote: "New projects get a folder under projects/; playbooks and your own settings live here too.",
     cloudLede: "Your account keeps the project catalog and preferences in sync. This folder holds local projects and files.",
-    cloudFolderNote: "New project folders are created under projects/. Their local paths are private to this machine.",
     reveal: "Reveal",
 
     remoteLabel: "Remote",
-    remoteNone: "Not published anywhere yet",
     remoteKindLabel: "Where it is published",
     remoteDescFallback: "Pick a kind of remote to publish the Hub to.",
     noRemoteOption: "Nowhere",
@@ -36,8 +34,6 @@ export const hubPane = {
     catalogOverwriting: "Writing…",
     catalogOverwrittenToast: "The project list is saved again",
 
-    scopeMachine: "This machine",
-    scopeUser: "Follows the Hub"
   },
   zh: {
     title: "主目录",
@@ -45,11 +41,9 @@ export const hubPane = {
     folderLabel: "主目录",
     folderNote: "新项目的文件夹放在 projects/ 下；playbook 和你自己的设置也在这里。",
     cloudLede: "账号同步项目目录和用户偏好。这个文件夹存放本机的项目与文件。",
-    cloudFolderNote: "新项目的文件夹放在 projects/ 下，本地路径仅保留在这台机器上。",
     reveal: "在访达中显示",
 
     remoteLabel: "远端",
-    remoteNone: "尚未发布到任何地方",
     remoteKindLabel: "发布到哪里",
     remoteDescFallback: "选择一种远端来发布主目录。",
     noRemoteOption: "不发布",
@@ -76,7 +70,5 @@ export const hubPane = {
     catalogOverwriting: "写入中…",
     catalogOverwrittenToast: "项目目录已恢复保存",
 
-    scopeMachine: "仅本机",
-    scopeUser: "随主目录"
   }
 };

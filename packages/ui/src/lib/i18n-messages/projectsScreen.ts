@@ -2,11 +2,6 @@ export const projectsScreen = {
   en: {
     brand: "Tomrade",
     crumbProjects: "Projects",
-    openProject: "Open a project…",
-    openFolder: "Open folder…",
-    openingFolder: "Opening…",
-    openFolderTitle: "Open a project folder",
-    openFolderButton: "Open",
     newProject: "New project",
     settingsShortcutTitle: "Settings — [[cmd:settings]]",
     settingsAria: "Settings",
@@ -37,11 +32,6 @@ export const projectsScreen = {
   zh: {
     brand: "Tomrade",
     crumbProjects: "项目",
-    openProject: "打开项目…",
-    openFolder: "打开文件夹…",
-    openingFolder: "正在打开…",
-    openFolderTitle: "打开项目文件夹",
-    openFolderButton: "打开",
     newProject: "新建项目",
     settingsShortcutTitle: "设置 — [[cmd:settings]]",
     settingsAria: "设置",

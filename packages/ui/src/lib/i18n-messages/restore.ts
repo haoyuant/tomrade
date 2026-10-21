@@ -7,7 +7,6 @@ export const restore = {
     bannerWaitingBody: "Their backups cannot be read right now. Tomrade keeps trying by itself.",
     bannerAttentionTitle: "{{n}} project(s) need you before they can come back",
     bannerAttentionBody: "Each card below says what is missing.",
-    bannerDoneBody: "{{n}} project(s) restored to this computer.",
 
     stateQueued: "Waiting to restore",
     stateRestoring: "Restoring",
@@ -80,7 +79,6 @@ export const restore = {
     bannerWaitingBody: "暂时无法读取它们的备份，Tomrade 会自动重试。",
     bannerAttentionTitle: "{{n}} 个项目需要你处理后才能恢复",
     bannerAttentionBody: "下方每张卡片写明了缺少什么。",
-    bannerDoneBody: "已有 {{n}} 个项目恢复到这台电脑。",
 
     stateQueued: "等待恢复",
     stateRestoring: "恢复中",

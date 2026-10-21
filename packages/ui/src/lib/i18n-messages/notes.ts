@@ -36,8 +36,7 @@ export const notes = {
     linkedToast: "Linked {{name}} in {{source}}",
     mentionMoved: "That mention has changed since; nothing was linked",
     paletteFiles: "Files",
-    paletteSearch: "Search notes for “{{query}}”",
-    paletteSearchEmpty: "Search notes"
+    paletteSearch: "Search notes for “{{query}}”"
   },
   zh: {
     read: "阅读",
@@ -76,7 +75,6 @@ export const notes = {
     linkedToast: "已在 {{source}} 中链接 {{name}}",
     mentionMoved: "那处提及已经变了，没有加链接",
     paletteFiles: "文件",
-    paletteSearch: "在笔记中搜索“{{query}}”",
-    paletteSearchEmpty: "搜索笔记"
+    paletteSearch: "在笔记中搜索“{{query}}”"
   }
 };

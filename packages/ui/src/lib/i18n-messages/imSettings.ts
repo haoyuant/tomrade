@@ -34,7 +34,6 @@ export const imSettings = {
     idTaken: "Another connection already uses this ID.",
     nameLabel: "Name",
     optional: "Optional",
-    required: "Required",
     steps: "In the platform's developer console",
     permissions: "Permissions to grant",
     manifest: "App manifest",
@@ -56,7 +55,6 @@ export const imSettings = {
     pairConfirm: "Confirm",
     pairReject: "Not me",
     pairWaiting: "Waiting for the code…",
-    paired: "Paired",
     revoke: "Revoke",
     noPaired: "Nobody paired yet.",
 
@@ -184,7 +182,6 @@ export const imSettings = {
     idTaken: "已有连接使用这个 ID。",
     nameLabel: "名称",
     optional: "可选",
-    required: "必填",
     steps: "在平台开发者后台",
     permissions: "需要开通的权限",
     manifest: "应用 manifest",
@@ -206,7 +203,6 @@ export const imSettings = {
     pairConfirm: "确认",
     pairReject: "不是我",
     pairWaiting: "等待配对码…",
-    paired: "已配对",
     revoke: "撤销",
     noPaired: "还没有人配对。",
 
