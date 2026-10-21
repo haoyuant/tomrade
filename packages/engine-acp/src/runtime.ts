@@ -71,7 +71,7 @@ export class AcpRuntime implements Runtime {
   private words;
   private kit;
 
-  constructor(private ctx: Context, private agent: AcpAgent<any>, private catalog: Catalog, input: TurnInput, private learned?: () => void) {
+  constructor(private ctx: Context, private agent: AcpAgent<any>, private catalog: Catalog, input: TurnInput, private learned?: () => void, private signedOut?: () => void) {
     const directory = runtimeDirectory(input);
     this.token = directory.token; this.cwd = directory.cwd;
     this.locale = engineLocale(ctx);
@@ -254,6 +254,7 @@ export class AcpRuntime implements Runtime {
   private explain(error: unknown): string {
     const message = innermost(errorMessage(error));
     if (error instanceof RpcError && (error.code === AUTH_REQUIRED || /auth|log ?in|sign ?in|credential|api key/i.test(message))) {
+      if (error.code === AUTH_REQUIRED) this.signedOut?.();
       return this.words("signInFirst", { message, how: this.agent.signIn ?? this.words("signInTo", { name: this.agent.title }) });
     }
     return message;

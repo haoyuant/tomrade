@@ -304,6 +304,9 @@ importers:
       '@tomradex/engine-acp':
         specifier: workspace:*
         version: link:../engine-acp
+      '@tomradex/engine-kit':
+        specifier: workspace:*
+        version: link:../engine-kit
       '@tomradex/ipc':
         specifier: workspace:*
         version: link:../ipc

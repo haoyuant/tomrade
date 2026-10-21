@@ -97,6 +97,13 @@ export interface ChainRun {
   outcomes: Partial<Record<ChainStepId, ChainStep>>;
 }
 
+interface ChainOptions {
+  registry?: string;
+  method?: string;
+  /** Install Tomrade's own copy rather than into the person's global folder. */
+  managed?: boolean;
+}
+
 const POLL_MS = 400;
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -134,8 +141,8 @@ export function useSetupChain(engine: EngineView, projectId?: string | null) {
   latest.current = engine;
 
   /** One agentSetup step to its end, the UI following along. */
-  const drive = async (step: "install" | "sign-in", registry?: string, managed?: boolean): Promise<EngineSetupProgress> => {
-    let progress = await invoke("agentSetup.start", engineId, step, step === "install" ? { ...(registry ? { registry } : {}), ...(managed ? { managed } : {}) } : {});
+  const drive = async (step: "install" | "sign-in", { registry, method, managed }: ChainOptions): Promise<EngineSetupProgress> => {
+    let progress = await invoke("agentSetup.start", engineId, step, step === "install" ? { ...(registry ? { registry } : {}), ...(managed ? { managed } : {}) } : method ? { method } : {});
     patch({ step, progress });
     while (progress.phase !== "done" && progress.phase !== "failed") {
       // A terminal sign-in is opened for the person once; the probe moves the step on by itself.
@@ -151,7 +158,8 @@ export function useSetupChain(engine: EngineView, projectId?: string | null) {
     return progress;
   };
 
-  const start = async (registry?: string, managed?: boolean) => {
+  const start = async (options: ChainOptions) => {
+    const managed = options.managed;
     if (state.current?.running) return;
     cancelled.current = false;
     terminalOpened.current = false;
@@ -164,7 +172,7 @@ export function useSetupChain(engine: EngineView, projectId?: string | null) {
       // once — so the chain never waits on a fresh look of every engine here.
       const steps: ("install" | "sign-in")[] = needsInstall(view) || official || managed ? ["install", "sign-in"] : needsSignIn(view) || !view.ok ? ["sign-in"] : [];
       for (const step of steps) {
-        const end = await drive(step, registry, managed);
+        const end = await drive(step, options);
         patch({ outcomes: { ...state.current?.outcomes, [step]: { id: step, state: end.phase === "done" ? "done" : "failed", progress: end } } });
         if (end.phase !== "done") return patch({ running: false, failed: true });
       }
@@ -197,17 +205,17 @@ export function useSetupChain(engine: EngineView, projectId?: string | null) {
   };
 
   const current = useRef<Promise<void> | null>(null);
-  const begin = (registry?: string, managed?: boolean) => {
-    current.current = start(registry, managed);
+  const begin = (options: ChainOptions = {}) => {
+    current.current = start(options);
   };
-  /** Starts over, stopping a run that is still going first; `registry` goes to npm for this install only. A retry keeps the copy the run was installing. */
-  const retry = async (registry?: string) => {
+  /** Starts over, stopping a run that is still going first; `registry` goes to npm for this install only, `method` picks how to sign in. A retry keeps the copy the run was installing. */
+  const retry = async (options: ChainOptions) => {
     const managed = state.current?.managed;
     if (state.current?.running) {
       cancel();
       await current.current;
     }
-    begin(registry, managed);
+    begin({ ...options, ...(managed ? { managed: true } : {}) });
   };
 
   const tried = run?.tried ?? engine.tried;
@@ -217,8 +225,9 @@ export function useSetupChain(engine: EngineView, projectId?: string | null) {
     official: !run?.running && offersOfficial(engine, tried),
     managed: !run?.running && offersManaged(engine, tried),
     start: () => begin(),
-    startManaged: () => begin(undefined, true),
-    retry: (registry?: string) => void retry(registry),
+    startManaged: () => begin({ managed: true }),
+    retry: (registry?: string) => void retry({ registry }),
+    signInWith: (method: string) => void retry({ method }),
     cancel,
     running: !!run?.running
   };

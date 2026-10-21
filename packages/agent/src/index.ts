@@ -75,6 +75,8 @@ export {
   type EngineSetup,
   type EngineSetupFailure,
   type EngineSetupProgress,
+  type EngineSignIn,
+  type EngineSignInMethod,
   type EngineSetupStep,
   type EngineSteering,
   type EngineTerminal,

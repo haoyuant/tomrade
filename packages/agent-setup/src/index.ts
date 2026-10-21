@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { Context, Service } from "cordis";
 import { z } from "zod";
-import type { Engine, EngineSetupProgress, EngineSetupStep } from "@tomradex/agent";
+import type { Engine, EngineSetupProgress, EngineSetupStep, EngineSignIn } from "@tomradex/agent";
 import type {} from "@tomradex/ipc";
 import { chosenCommand, localCli } from "@tomradex/engine-kit";
 import { installArgs, ManagedCopies, type ManagedOffer } from "./managed.js";
@@ -15,7 +15,7 @@ declare module "cordis" {
 
 declare module "@tomradex/ipc" {
   interface Channels {
-    /** Starts the step in the background (a no-op while it already runs) and answers with where it stands; `registry` is passed to npm for that install only. */
+    /** Starts the step in the background (a no-op while it already runs) and answers with where it stands; `registry` is passed to npm for that install only, `method` picks how to sign in. */
     "agentSetup.start": (engineId: string, step: EngineSetupStep, options?: SetupStartOptions) => EngineSetupProgress;
     "agentSetup.cancel": (engineId: string) => boolean;
     /** Where the engine's last-started step stands; null when none ran yet. */
@@ -31,6 +31,8 @@ declare module "@tomradex/ipc" {
 
 export interface SetupStartOptions {
   registry?: string;
+  /** One of the sign-in methods the agent offers (`progress.methods`). */
+  method?: string;
   /** Install Tomrade's own copy into its folder rather than the person's global one. */
   managed?: boolean;
 }
@@ -42,7 +44,7 @@ export const AgentSetupConfig = z.object({
   nodeBinary: z.string().default(process.execPath),
   /** The bundled npm's `bin/npm-cli.js`. */
   npmCli: z.string().optional()
-});
+}).prefault({});
 export type AgentSetupConfig = z.infer<typeof AgentSetupConfig>;
 
 interface Running {
@@ -133,7 +135,7 @@ export class AgentSetup extends Service {
       run.progress = progress;
       this.ctx.get("ipc")?.send("agentSetup.event", progress);
     };
-    const task = step === "sign-in" ? this.signIn(engine, report, abort.signal)
+    const task = step === "sign-in" ? this.signIn(engine, report, abort.signal, options.method)
       : options.managed ? this.installManaged(engine, report, abort.signal, options.registry)
       : this.install(engine, report, abort.signal, options.registry);
     task
@@ -205,7 +207,7 @@ export class AgentSetup extends Service {
     managed.begin(engineId, { ...state, version: offer.version, prefer: cli.state === "ready" && cli.source !== "managed" });
   }
 
-  private async signIn(engine: Engine, report: (p: EngineSetupProgress) => void, signal: AbortSignal): Promise<void> {
+  private async signIn(engine: Engine, report: (p: EngineSetupProgress) => void, signal: AbortSignal, method?: string): Promise<void> {
     const signInRun = engine.local?.setup?.signInRun;
     // The engine's probe over a fresh look: exactly what "ready" means everywhere else.
     const probe = async () => (await engine.available({ fresh: true })).ok;
@@ -215,6 +217,8 @@ export class AgentSetup extends Service {
     if (state.need && state.need !== "sign-in") {
       return void report({ engineId: engine.id, step: "sign-in", phase: "failed", failure: { kind: "exit", message: state.reason ?? state.need } });
     }
+    const own = engine.local?.signIn;
+    if (own) return this.signInOwn(engine, own, probe, report, signal, method);
     // The locator's own launch: a desktop app's copy or Tomrade's own copy through its runtime, the folders a fresh PATH added ahead.
     const launch = signInRun && state.cli?.path ? await localCli(state.cli.name).launch(chosenCommand(this.ctx, engine.id)) : null;
     const start = signInRun && launch
@@ -230,6 +234,29 @@ export class AgentSetup extends Service {
         }
       : null;
     await runSignIn({ engineId: engine.id, start, probe, report, signal });
+  }
+
+  /** The ways the agent itself offers, each step showing them: its own method run and watched, a terminal one left to the terminal. */
+  private async signInOwn(engine: Engine, own: EngineSignIn, probe: () => Promise<boolean>, report: (p: EngineSetupProgress) => void, signal: AbortSignal, chosen?: string): Promise<void> {
+    const methods = await own.methods(signal);
+    const runnable = methods.filter((m) => m.kind !== "other");
+    const method = runnable.find((m) => m.id === chosen) ?? runnable.find((m) => m.kind === "agent") ?? runnable[0];
+    const shown = (progress: EngineSetupProgress) => report({ ...progress, methods, ...(method ? { method: method.id } : {}) });
+    if (!method) {
+      return shown({ engineId: engine.id, step: "sign-in", phase: "failed", failure: { kind: "unsupported", message: `${engine.title} offers no way to sign in that Tomrade can start` } });
+    }
+    if (method.kind === "terminal") await own.start(method.id, { signal, onOutput: () => {} });
+    const start = method.kind === "agent"
+      ? () => {
+          const takes: ((text: string) => void)[] = [];
+          const result: Promise<SetupRunResult> = own.start(method.id, { signal, onOutput: (text) => takes.forEach((take) => take(text)) }).then(
+            () => ({ code: 0, output: "" }),
+            (error: unknown) => ({ code: null, output: "", error: { message: error instanceof Error ? error.message : String(error) } })
+          );
+          return { result, onOutput: (take: (text: string) => void) => void takes.push(take) };
+        }
+      : null;
+    await runSignIn({ engineId: engine.id, start, probe, report: shown, signal });
   }
 }
 
