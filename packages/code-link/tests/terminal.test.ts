@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { AUTO_TERMINAL, GitBashMissing, SYSTEM_TERMINAL, TerminalSettings, fillTemplate, gitBash, herdrFallbackNote, launchTerminal, machineTerminalSettings, openOnWindows, optionFlags, setupTerminal, terminalApp, terminalApps, terminalTemplate, withOptions, writeGeminiHome, type HerdrTerminal } from "@tomradex/code-link";
+import { AUTO_TERMINAL, GitBashMissing, SYSTEM_TERMINAL, TerminalSettings, fillTemplate, gitBash, herdrFallbackNote, launchTerminal, machineTerminalSettings, openOnWindows, optionFlags, setupOnWindows, setupTerminal, terminalApp, terminalApps, terminalTemplate, withOptions, writeGeminiHome, type HerdrTerminal } from "@tomradex/code-link";
 
 it("lists installed terminal apps with the special launch choices", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-terminal-apps-"));
@@ -233,6 +233,13 @@ describe("the system terminal on Windows", () => {
       ["wt.exe", "-d", "C:\\work", "C:\\Git\\bin\\bash.exe", "C:\\s\\run.command"],
       ["C:\\Git\\bin\\bash.exe", "C:\\s\\run.command"]
     ]);
+  });
+
+  it("opens a setup command in PowerShell with scripts allowed for that process alone", async () => {
+    const { tries, launch } = spawner((command) => command === "powershell.exe");
+    expect(await setupOnWindows("npm install -g @earendil-works/pi-coding-agent", launch)).toEqual({ launched: true });
+    expect(tries).toEqual([{ command: "powershell.exe", args: ["-NoExit", "-ExecutionPolicy", "Bypass", "-Command", "npm install -g @earendil-works/pi-coding-agent"], cwd: os.homedir(), detached: true }]);
+    expect(await setupOnWindows("pi", spawner(() => false).launch)).toEqual({ launched: false });
   });
 
   it("opens nothing without Git Bash, and says Git for Windows is needed", async () => {
