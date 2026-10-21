@@ -13,7 +13,7 @@ import {
   userMcpLink,
   type CliLaunch,
   type CliLocator
-} from "@tomradex/engine-claude-code";
+} from "@tomradex/engine-kit";
 import { transcriptOf } from "@tomradex/llm";
 import type {} from "@tomradex/mcp";
 import type { LocalAgentInstaller, LocalAgentIo, LocalAgentOptions, LocalAgentSpec, LocalCli, LocalCliResult, LocalCliRunOptions, McpLinkState } from "@tomradex/plugin-sdk";

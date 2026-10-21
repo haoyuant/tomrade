@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import { lineSplitter, spawnCli, stopCli, type CliLaunch } from "@tomradex/engine-claude-code";
+import { lineSplitter, spawnCli, stopCli, type CliLaunch } from "@tomradex/engine-kit";
 
 /** Where Codex keeps its sign-in, settings and sessions — what a terminal with this environment would use. */
 export const codexHome = (env: NodeJS.ProcessEnv = process.env): string => env.CODEX_HOME || path.join(os.homedir(), ".codex");

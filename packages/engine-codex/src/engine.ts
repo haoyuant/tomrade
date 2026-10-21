@@ -1,7 +1,7 @@
 import type { Context } from "cordis";
 import { z } from "zod";
 import type { Engine } from "@tomradex/agent";
-import { chosenCommand, localAvailability, localCli } from "@tomradex/engine-claude-code";
+import { chosenCommand, localAvailability, localCli } from "@tomradex/engine-kit";
 import { codexHome, readCodexAccount, type CodexAccount } from "./account.js";
 import { codexMcpLink } from "./mcp-link.js";
 import type {} from "@tomradex/mcp";

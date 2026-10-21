@@ -48,6 +48,9 @@
       "path": "../../packages/alerts"
     },
     {
+      "path": "../../packages/engine-kit"
+    },
+    {
       "path": "../../packages/engine-claude-code"
     },
     {

@@ -1,0 +1,30 @@
+{
+  "name": "@tomradex/engine-kit",
+  "private": true,
+  "license": "Apache-2.0",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "What every local-agent engine shares: finding and starting its CLI, JSON lines, the thread runtime pool, the session and turn prompts, the user-level MCP link and the lent CLI model",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomradex/agent": "workspace:*",
+    "@tomradex/llm": "workspace:*",
+    "@tomradex/mcp": "workspace:*",
+    "cordis": "4.0.0-rc.8"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^6.0.0"
+  }
+}

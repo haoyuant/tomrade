@@ -1,11 +1,10 @@
-import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import { searchPath } from "@tomradex/engine-kit";
 import type { McpServerConfig } from "./config.js";
 
 export interface RemoteTool {
@@ -30,15 +29,6 @@ const CONNECT_TIMEOUT_MS = 30_000;
 const STDERR_KEEP = 2_000;
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
-
-/** An app started from the Dock gets a bare PATH; `npx`, `uvx` and friends usually live in these. */
-function searchPath(base: string | undefined): string {
-  const dirs = (base ?? "").split(path.delimiter).filter(Boolean);
-  for (const dir of ["/opt/homebrew/bin", "/usr/local/bin", path.join(os.homedir(), ".local/bin")]) {
-    if (!dirs.includes(dir) && fs.existsSync(dir)) dirs.push(dir);
-  }
-  return dirs.join(path.delimiter);
-}
 
 type Content = { type: string; text?: string; mimeType?: string; uri?: string; name?: string; resource?: { uri: string; text?: string } };
 
@@ -70,7 +60,7 @@ export class Connection {
       const transport = new StdioClientTransport({
         command: t.command,
         args: t.args,
-        env: { ...getDefaultEnvironment(), PATH: searchPath(process.env.PATH), ...t.env },
+        env: { ...getDefaultEnvironment(), PATH: searchPath().join(path.delimiter), ...t.env },
         cwd: t.cwd,
         stderr: "pipe"
       });

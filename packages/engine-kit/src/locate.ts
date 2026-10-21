@@ -335,12 +335,16 @@ function versionDirs(root: string | undefined, inner: string, p: typeof path.pos
 
 /** Where installers and version managers put commands when PATH does not (yet) say so. */
 export async function knownDirs(host: CliHost): Promise<string[]> {
+  return installDirs(host, host.platform === "win32" ? await host.npmPrefix() : null);
+}
+
+/** `knownDirs` without asking npm for its prefix, for a lookup that cannot wait. */
+export function installDirs(host: Pick<CliHost, "env" | "home" | "platform">, prefix: string | null = null): string[] {
   const { env, home, platform } = host;
   if (platform === "win32") {
     const w = path.win32;
     const appData = envValue(env, "APPDATA") ?? w.join(home, "AppData", "Roaming");
     const local = envValue(env, "LOCALAPPDATA") ?? w.join(home, "AppData", "Local");
-    const prefix = await host.npmPrefix();
     return [
       w.join(appData, "npm"),
       ...(prefix ? [prefix] : []),
@@ -370,6 +374,22 @@ export async function knownDirs(host: CliHost): Promise<string[]> {
     ...versionDirs(p.join(home, ".local/share/fnm/node-versions"), "installation/bin", p),
     ...(platform === "darwin" ? versionDirs(p.join(home, "Library/Application Support/fnm/node-versions"), "installation/bin", p) : [])
   ];
+}
+
+/** PATH, then the install folders that exist: an app opened from the Dock or the Start menu lacks them. */
+export function searchPath(host: Pick<CliHost, "env" | "home" | "platform"> = machineHost()): string[] {
+  const norm = (dir: string) => (host.platform === "win32" ? dir.toLowerCase() : dir);
+  const dirs = splitPath(envValue(host.env, "PATH"), host.platform);
+  for (const dir of installDirs(host)) if (!dirs.some((d) => norm(d) === norm(dir)) && fs.existsSync(dir)) dirs.push(dir);
+  return dirs;
+}
+
+/** The first runnable `name` on `searchPath`, found without running it; null when there is none. */
+export function findCommand(name: string, host: Pick<CliHost, "env" | "home" | "platform"> = machineHost()): string | null {
+  const p = pathFor(host.platform);
+  const names = fileNames(name, host.platform, envValue(host.env, "PATHEXT"));
+  for (const dir of searchPath(host)) for (const n of names) if (isFile(p.join(dir, n), host.platform)) return p.join(dir, n);
+  return null;
 }
 
 /** The version a CLI printed, or why it did not answer — short enough for a settings row. */

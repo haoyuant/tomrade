@@ -20,6 +20,7 @@
   "dependencies": {
     "@tomradex/doctor": "workspace:*",
     "@tomradex/domain": "workspace:*",
+    "@tomradex/engine-kit": "workspace:*",
     "@tomradex/ipc": "workspace:*",
     "cordis": "4.0.0-rc.8"
   },

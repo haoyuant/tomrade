@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
 import { expect, it } from "vitest";
-import { localCli } from "@tomradex/engine-claude-code";
+import { localCli } from "@tomradex/engine-kit";
 import { collect, userMessage } from "@tomradex/llm";
 import { piLentModel } from "@tomradex/engine-pi";
 

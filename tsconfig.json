@@ -47,6 +47,9 @@
       "path": "./packages/domain"
     },
     {
+      "path": "./packages/engine-kit"
+    },
+    {
       "path": "./packages/engine-claude-code"
     },
     {

@@ -1,18 +1,3 @@
-import type { ChildProcess } from "node:child_process";
-import { StringDecoder } from "node:string_decoder";
-import { spawnCli, stopCli, type CliLaunch, type CliLocator } from "./locate.js";
-
-/**
- * Whether a CLI that is installed is also signed in. Only a clear "no" says
- * so: a version without the subcommand, a timeout or an answer that cannot be
- * read is taken as signed in, so the check never locks out an account it does
- * not understand (an API key in the environment, a cloud provider).
- */
-export async function signedIn(cli: CliLocator, command: string | undefined, args: string[], says: (output: string) => boolean | null): Promise<boolean> {
-  const { stdout, stderr } = await cli.run(command, args, 8000);
-  return says(`${stdout}\n${stderr}`) ?? true;
-}
-
 /** Claude Code cannot resume a session that is not under the current CLAUDE_CONFIG_DIR (moved, cleared, another folder). */
 export const lostConversation = (text: string | undefined): boolean => /no conversation found with session id/i.test(text ?? "");
 
@@ -28,62 +13,4 @@ export function claudeSignedIn(output: string): boolean | null {
   } catch {
     return null;
   }
-}
-
-export interface CliRun {
-  child: ChildProcess;
-  /** Resolves when the process exits; each stdout line is handed to onLine as parsed JSON. */
-  done: Promise<{ code: number | null; stderr: string }>;
-}
-
-/** Spawn a JSONL-speaking CLI: stdin closed, stdout parsed by line, SIGINT then SIGKILL on abort. */
-export function runJsonl(launch: CliLaunch, args: string[], opts: { cwd: string; env?: NodeJS.ProcessEnv; stdin?: string; signal: AbortSignal; onLine(event: Record<string, unknown>): void }): CliRun {
-  const child = spawnCli(launch, args, { cwd: opts.cwd, env: opts.env ?? process.env, stdio: [opts.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"] });
-  if (opts.stdin !== undefined) { child.stdin?.on("error", () => {}); child.stdin?.end(opts.stdin); }
-  let stderr = "";
-  // A CLI that cannot start still closes; its reason belongs with the exit code.
-  child.on("error", (error) => {
-    stderr = `${stderr}\n${error.message}`.slice(-4000);
-  });
-  child.stderr?.on("data", (chunk: Buffer) => {
-    stderr = (stderr + chunk.toString()).slice(-4000);
-  });
-  child.stdout?.on("data", lineSplitter((line) => {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith("{")) return;
-    try {
-      opts.onLine(JSON.parse(trimmed) as Record<string, unknown>);
-    } catch {
-      // partial or non-JSON noise between events
-    }
-  }));
-  const onAbort = () => {
-    // Windows has no SIGINT to ask nicely with; kill() there ends only the top process, not the CLI's own children.
-    if (process.platform === "win32") stopCli(child);
-    else child.kill("SIGINT");
-    setTimeout(() => stopCli(child, "SIGKILL"), 3000).unref();
-  };
-  if (opts.signal.aborted) onAbort();
-  else opts.signal.addEventListener("abort", onAbort, { once: true });
-  const done = new Promise<{ code: number | null; stderr: string }>((resolve) => {
-    child.on("close", (code) => {
-      opts.signal.removeEventListener("abort", onAbort);
-      resolve({ code, stderr });
-    });
-  });
-  return { child, done };
-}
-
-/** Splits on LF only: readline also breaks on U+2028/U+2029, which are legal inside JSON strings. */
-export function lineSplitter(onLine: (line: string) => void): (chunk: Buffer) => void {
-  const decoder = new StringDecoder("utf8");
-  let buffer = "";
-  return (chunk) => {
-    buffer += decoder.write(chunk);
-    for (let at = buffer.indexOf("\n"); at >= 0; at = buffer.indexOf("\n")) {
-      const line = buffer.slice(0, at).replace(/\r$/, "");
-      buffer = buffer.slice(at + 1);
-      if (line.trim()) onLine(line);
-    }
-  };
 }

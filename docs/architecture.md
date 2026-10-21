@@ -65,6 +65,7 @@ packages/shell        —                a bash tool for in-process engines, ask
 packages/web-search   ctx.webSearch    web_search and web_fetch for every engine, answered by a registered provider
 packages/web-search-tavily —           Tavily as that provider, with the person's own API key
 packages/engine-scripted —             the no-model conductor: runs registered workflows from a menu
+packages/engine-kit —                  what every local-agent engine shares: CLI locating and spawning, JSON lines, runtime pool, prompts, MCP link
 packages/engine-claude-code —          Claude Code as conductor (headless, MCP run bindings); engine-codex and engine-pi likewise
 packages/engine-acp —                  one conductor for agents that speak ACP, and ctx.localAgents for the agents official plugins describe (tomrade-plugins)
 packages/archify      —                Archify diagrams (architecture, workflow, sequence, data flow, lifecycle) as tools

@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { collect, userMessage, type ChatRequest } from "@tomradex/llm";
-import { cliLentModel, NotSignedIn, type CliAnswer } from "@tomradex/engine-claude-code";
+import { cliLentModel, NotSignedIn, type CliAnswer } from "@tomradex/engine-kit";
 
 /** A CLI whose answer to each call is `says()`: an answer, NotSignedIn, or another failure. */
 function cli(opts: { found?: () => boolean; recheckMs?: number } = {}) {

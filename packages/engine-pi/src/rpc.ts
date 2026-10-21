@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
 import { attachedMedia, deferredTools, describeFailure, kitLines, stepHint, stepSummary, withRecap, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
-import { bindTurn, lineSplitter, localCli, runtimeDirectory, sessionSystem, spawnCli, stopCli, turnPrompt, type CliLaunch, type Runtime } from "@tomradex/engine-claude-code";
+import { bindTurn, lineSplitter, localCli, runtimeDirectory, sessionSystem, spawnCli, stopCli, turnPrompt, type CliLaunch, type Runtime } from "@tomradex/engine-kit";
 import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/tools";
 import { bridgeSource } from "./bridge.js";

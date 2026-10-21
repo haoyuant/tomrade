@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import type { EngineNeed, EnginePick, EngineSetup, TurnInput } from "@tomradex/agent";
-import type { CliLocator, DesktopApp } from "@tomradex/engine-claude-code";
+import type { CliLocator, DesktopApp } from "@tomradex/engine-kit";
 
 /** How much the agent may do without asking, as Tomrade settles it for one turn. */
 export type Policy = "full-access" | "ask" | "read-only";

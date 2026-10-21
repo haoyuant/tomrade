@@ -5,7 +5,7 @@ import { expect, it } from "vitest";
 import { Context } from "cordis";
 import { Mcp } from "@tomradex/mcp";
 import { Tools } from "@tomradex/tools";
-import { desktopAppPaths, localAvailability, localCli } from "@tomradex/engine-claude-code";
+import { desktopAppPaths, localAvailability, localCli } from "@tomradex/engine-kit";
 
 it("knows where a desktop app may be installed on each system", () => {
   expect(desktopAppPaths({ title: "Antigravity", mac: ["Antigravity"] }, { platform: "darwin", env: {}, home: "/Users/a" }))

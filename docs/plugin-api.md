@@ -466,7 +466,7 @@ session — so planning works with a subscription and no API key. Automatic asks
 the lowest `rank` that is ready (Claude Code 10, WorkBuddy 20, Codex 30, Gemini
 CLI 40: the fastest first); an unranked one comes last. A CLI with no sign-in
 status command can build its lent model with `cliLentModel` from
-`@tomradex/engine-claude-code`: it learns the sign-in from one tiny prompt and
+`@tomradex/engine-kit`: it learns the sign-in from one tiny prompt and
 from each call, and `llm.lenders` shows it as still checking (`ready: null`)
 meanwhile. The person can also pick a lent model for the
 worker over a profile (`roles.worker: "lent:<id>"`); a picked one that is not
@@ -799,7 +799,7 @@ nothing about what may be read. `promptSections(input, io, { filesIndex: false }
 leaves it out of the per-turn text, which is what an engine asks for when its
 session prompt already carries it, a user message being paid for again every turn
 while a system prompt is cached. `sessionSystem(input, agentName)`, exported from
-`@tomradex/engine-claude-code`, is that prompt for Claude Code, Codex and Pi; `digest`
+`@tomradex/engine-kit`, is that prompt for Claude Code, Codex and Pi; `digest`
 is how a long-running session notices the index it opened with has gone stale. A
 CLI agent gets no system prompt from Tomrade at all, so `agent/prepare-brief`
 (`{ projectId, itemId, filesIndex? }`) is where the same context enters the brief
