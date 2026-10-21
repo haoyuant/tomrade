@@ -3,6 +3,7 @@ import type { EngineView } from "@tomradex/agent";
 import { useI18n } from "~/lib/i18n";
 import { setupRows } from "~/lib/setup";
 import { DetectedModels } from "./DetectedModels";
+import { GitNotice } from "./GitNotice";
 import { LocalAgentSetup } from "./LocalAgentSetup";
 import { ModelTestNotice } from "./ModelTestNotice";
 import { QuickModelSetup } from "./QuickModelSetup";
@@ -19,11 +20,11 @@ export interface SetupPart {
  * has, a key, then the local agents once any is worth a row. Where it shows
  * decides only how each part is framed.
  */
-export function SetupOptions({ engines, onOpenSettings, frame }: { engines?: EngineView[]; onOpenSettings: (engineId?: string) => void; frame: (part: SetupPart) => ReactNode }) {
+export function SetupOptions({ engines, onOpenSettings, onTroubleshoot, frame }: { engines?: EngineView[]; onOpenSettings: (engineId?: string) => void; onTroubleshoot?: (engineId: string, error?: string) => void; frame: (part: SetupPart) => ReactNode }) {
   const { t } = useI18n();
   const parts: SetupPart[] = [{ id: "key", title: t("setup.keyTitle"), lede: t("setup.keyLede"), body: <QuickModelSetup /> }];
   if (engines && setupRows(engines).length > 0)
-    parts.push({ id: "agents", title: t("setup.cliTitle"), lede: t("setup.cliLede"), body: <LocalAgentSetup engines={engines} onOpenSettings={onOpenSettings} /> });
+    parts.push({ id: "agents", title: t("setup.cliTitle"), lede: t("setup.cliLede"), body: <LocalAgentSetup engines={engines} onOpenSettings={onOpenSettings} onTroubleshoot={onTroubleshoot} /> });
   return (
     <>
       <DetectedModels />
@@ -31,6 +32,7 @@ export function SetupOptions({ engines, onOpenSettings, frame }: { engines?: Eng
       {parts.map((part) => (
         <Fragment key={part.id}>{frame(part)}</Fragment>
       ))}
+      <GitNotice />
     </>
   );
 }

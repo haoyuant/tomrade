@@ -170,6 +170,9 @@ importers:
       '@tomradex/llm':
         specifier: workspace:*
         version: link:../../packages/llm
+      '@tomradex/machine-setup':
+        specifier: workspace:*
+        version: link:../../packages/machine-setup
       '@tomradex/mcp':
         specifier: workspace:*
         version: link:../../packages/mcp
@@ -1693,6 +1696,31 @@ importers:
         specifier: ^6.0.0
         version: 6.0.3
 
+  packages/machine-setup:
+    dependencies:
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@tomradex/ipc':
+        specifier: workspace:*
+        version: link:../ipc
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
   packages/mcp:
     dependencies:
       '@modelcontextprotocol/sdk':
@@ -2648,6 +2676,9 @@ importers:
       '@tomradex/llm':
         specifier: workspace:*
         version: link:../llm
+      '@tomradex/machine-setup':
+        specifier: workspace:*
+        version: link:../machine-setup
       '@tomradex/mcp':
         specifier: workspace:*
         version: link:../mcp

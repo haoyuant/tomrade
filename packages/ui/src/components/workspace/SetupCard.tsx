@@ -8,7 +8,7 @@ import { useSetup } from "~/lib/setup";
  * model also runs the built-in agent and a signed-in agent also plans, so the
  * card goes away after the first that works — and cannot be put away before.
  */
-export function SetupCard({ onOpenSettings }: { onOpenSettings: (engineId?: string) => void }) {
+export function SetupCard({ onOpenSettings, onTroubleshoot }: { onOpenSettings: (engineId?: string) => void; onTroubleshoot?: (engineId: string, error?: string) => void }) {
   const { t } = useI18n();
   const { seen } = useSeen();
   const { engines, state } = useSetup();
@@ -23,6 +23,7 @@ export function SetupCard({ onOpenSettings }: { onOpenSettings: (engineId?: stri
       <SetupOptions
         engines={engines}
         onOpenSettings={onOpenSettings}
+        onTroubleshoot={onTroubleshoot}
         frame={(part) =>
           part.id === "key" ? (
             part.body

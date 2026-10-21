@@ -83,6 +83,10 @@ export const keys = {
     list: ["acpRegistry", "list"] as const
   },
 
+  machineSetup: {
+    git: ["machineSetup", "git"] as const
+  },
+
   llm: {
     worker: ["llm", "worker"] as const,
     workerTest: ["llm", "workerTest"] as const,
