@@ -343,6 +343,11 @@ plugins:
   # watches its sign-in — no terminal, no admin rights.
   - id: agent-setup
     name: "@tomradex/agent-setup"
+  # Agents from the ACP registry (Zed and JetBrains's curated catalog): the
+  # person adds one in Settings → Assistant, and it runs over ACP through npx,
+  # set up like an agent a plugin declares. npx distributions only.
+  - id: acp-registry
+    name: "@tomradex/acp-registry"
   # The troubleshooter: when something fails, checks what it can (the agent,
   # its sign-in, a test turn, the models), says what to do, and sends a report
   # the person has read to Tomrade's developer. Its own engine opens the

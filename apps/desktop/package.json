@@ -69,6 +69,7 @@
     "package": "node scripts/package.mjs"
   },
   "dependencies": {
+    "@tomradex/acp-registry": "workspace:*",
     "@tomradex/agent": "workspace:*",
     "@tomradex/agent-backlog": "workspace:*",
     "@tomradex/agent-setup": "workspace:*",

@@ -15,6 +15,7 @@ import { keys, usePlugins } from "~/lib/queries";
 import { useInstallProvider, useModelProviders, useProviderPlugins, useProviders } from "~/lib/setup";
 import { EngineTryRow } from "../EngineTryRow";
 import { LocalCliSection } from "../LocalCliSection";
+import { RegistryAgents } from "./RegistryAgents";
 import { McpLinkSection } from "../McpLinkSection";
 import { CUSTOM_PICK, ProfileForm, SearchRouteLine, providerOf } from "./ModelProfiles";
 import { ScopeTag } from "./ScopeTag";
@@ -209,6 +210,7 @@ export function AssistantPane({
             {t("settingsDialog.moreEnginesLink")}
           </button>
         </p>
+        <RegistryAgents />
         <div className="field">
           <div className="cfg-row">
             <span className="cfg-name">{t("settingsDialog.resumeAfterLimitLabel")}</span>

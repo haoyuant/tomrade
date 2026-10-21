@@ -53,6 +53,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.0",
+    "@tomradex/acp-registry": "workspace:*",
     "@tomradex/agent": "workspace:*",
     "@tomradex/agent-setup": "workspace:*",
     "@tomradex/boards": "workspace:*",

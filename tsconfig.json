@@ -68,6 +68,9 @@
       "path": "./packages/engine-acp"
     },
     {
+      "path": "./packages/acp-registry"
+    },
+    {
       "path": "./packages/herdr"
     },
     {
