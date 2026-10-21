@@ -1,9 +1,34 @@
 import type { EngineView } from "@tomradex/agent";
 import type { WorkerStatus } from "@tomradex/llm";
-import { engineHealth } from "./engines";
+import { engineHealth, engineProblem } from "./engines";
 
 /** An engine a ticket can be handed to: it works on this computer, not only through Tomrade's tools. */
 export const isLocalAgent = (engine: EngineView): boolean => engine.capabilities.includes("code") || engine.capabilities.includes("general");
+
+/** The in-app agent on Tomrade's own models (the built-in Pi), as against an agent the person installed. */
+const onModels = (engine: EngineView): boolean => !!engine.usesModels;
+
+/**
+ * The ways to an agent that takes tickets, in the order setup tries them: the
+ * person's own install, then the copy Tomrade installs and runs itself, then
+ * the built-in agent on a model they connect.
+ */
+export const ROUTES = ["own", "managed", "builtin"] as const;
+export type SetupRoute = (typeof ROUTES)[number];
+
+/** Agents the person installs, found here, that all failed to run — none works or is still being checked. */
+export function ownFailed(engines: EngineView[]): EngineView[] {
+  const own = engines.filter((e) => e.setup && isLocalAgent(e) && !onModels(e));
+  if (own.some((e) => engineHealth(e) !== "broken")) return [];
+  return own.filter((e) => engineProblem(e));
+}
+
+/** Why the built-in agent cannot take tickets on the connected model, in its own words; none while it can, or before a model is connected. */
+export function builtinProblem(engines: EngineView[], worker: WorkerStatus): string | null {
+  if (!worker.ok || worker.via !== "profile") return null;
+  const inApp = engines.find((e) => onModels(e) && e.reason);
+  return inApp?.reason && !(inApp.ok && isLocalAgent(inApp)) ? inApp.reason : null;
+}
 
 /** The worker profile's one-token test as the gate reads it; "pending" while it runs or is still unasked. */
 export type WorkerTested = { ok: boolean } | "pending";
@@ -27,7 +52,11 @@ export function setupState(engines: EngineView[], worker: WorkerStatus, workerTe
     !complete &&
     ((viaProfile && assistant.length > 0 && (workerTest === undefined || workerTest === "pending")) ||
       engines.some((e) => engineHealth(e) === "checking" && e.capabilities.includes("backlog")));
-  return { complete, checking, assistant, locals: working.filter(isLocalAgent), worker };
+  const locals = working.filter(isLocalAgent);
+  // The first route that works, as setup tells it; the built-in agent only once its model answered.
+  const installed = locals.filter((e) => !onModels(e));
+  const route: SetupRoute | null = installed.some((e) => e.cli?.source !== "managed") ? "own" : installed.length ? "managed" : workerReady && locals.some(onModels) ? "builtin" : null;
+  return { complete, checking, assistant, locals, worker, route };
 }
 
 /** How long the first run waits on an agent still listing its models before it decides without it. */
