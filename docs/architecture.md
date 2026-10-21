@@ -26,6 +26,8 @@ How Tomrade is put together, and the decisions it is held to. The [README](../RE
 
 ## Repo layout
 
+[`packages/README.md`](../packages/README.md) is the full package table: each package's role, its `ctx` key and what it builds on. The map below is the short version.
+
 ```
 apps/desktop          Electron shell: boots the context from tomrade.yml, supplies the IPC transport, opens the window
 apps/desktop/tomrade.yml   the application — the modules it needs, then one row per plugin

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/haoyuant/tomrade/security/advisories/new
+    about: Privately, so it can be fixed before it is public.
+  - name: An official plugin
+    url: https://github.com/haoyuant/tomrade-plugins/issues
+    about: Bugs and ideas for the plugins in tomrade-plugins go there.

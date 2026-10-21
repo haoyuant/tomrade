@@ -1,0 +1,106 @@
+# Packages
+
+Every package in this workspace, what it is for, the key it claims on the cordis context (if any), and what it builds on. `apps/desktop/tomrade.yml` decides which of them the app loads; [`docs/architecture.md`](../docs/architecture.md) explains how they fit together.
+
+**ctx** is the service a package provides, read as `ctx.<key>` by everyone else. `ipc`, `alerts` and `desktop-surface` only declare a contract; the desktop shell supplies the implementation. **Builds on** lists the package's workspace dependencies from its `package.json`, leaving out `domain`, `ipc`, `db` and `settings`, which most packages use.
+
+## Foundations
+
+| Package | Role | ctx | Builds on |
+|---|---|---|---|
+| `domain` | Shared types, zod schemas, typed errors and the backend's `defineWords`. No I/O, no context. | — | — |
+| `ipc` | The typed channel contract between the main process and the renderer. | `ipc` | — |
+| `db` | A pool of SQLite caches (`hub.db` plus one file per project), the core schema, plugin migrations. | `db` | — |
+| `hub` | This machine: its id, its Hub folder, the projects and checkouts it knows. | `hub` | — |
+| `hub-cloud` | The optional account: Hub metadata in Supabase, encrypted sessions, an offline outbox. | `cloudHub` | hub, projects, storage |
+| `settings` | File-backed settings; plugins register sections by zod schema. | `settings` | hub, oplog, tools |
+| `write` | The write protocol: the `write/pre-commit` waterfall and the default policies. | — | — |
+| `oplog` | The append-only mutation log: append, read, undo. | `oplog` | hub, write |
+| `tools` | The one tool registry, with guarded execution, for the assistant and MCP alike. | `tools` | write |
+| `contributions` | Declarative UI contributions: commands, badges, status items, detail sections. | `contributions` | items |
+| `testkit` | Boots a fresh in-memory context for tests. | — | boards, extensions, fields, hub, items, oplog, plugin-sdk, projects, write |
+
+## The backlog
+
+| Package | Role | ctx | Builds on |
+|---|---|---|---|
+| `projects` | Projects, the scope every board and issue lives in. | `projects` | hub, tools |
+| `boards` | Boards (workstreams) and the views that slice them. | `boards`, `views` | oplog, tools, write |
+| `fields` | The field registry: built-in fields plus user-defined ones. | `fields` | tools |
+| `items` | Issues, labels and relations, written through the write protocol. | `items` | boards, fields, oplog, tools, write |
+| `deps-graph` | The Dependencies graph and the "blocked" badge over `Item.blocks`. | — | plugin-sdk |
+| `inbox` | A project's inbox: feedback waits here until triaged into tickets. | `inbox` | boards, contributions, fields, items |
+| `inbox-github` | GitHub issues as an inbox source. | — | github, inbox, items, repos |
+| `inbox-tomrade` | Feedback sent from the app as an inbox source, for Tomrade's maintainers. | — | contributions, doctor, inbox |
+| `inbox-triage` | The worker model proposes a kind, duplicate and reply for each new inbox entry. | — | agent-backlog, inbox, items, llm |
+| `schedules` | Routines: a ticket from a template, or a prompt to the assistant, on a cadence. | `schedules` | agent, boards, code-link, items, tools |
+| `onboarding` | The first run's tour project, seen-hints, and the playbook that explains Tomrade. | `onboarding` | agent, boards, hub, inbox, items, projects |
+| `announcements` | Announcements published to every install, each shown once per machine. | — | contributions, plugin-sdk |
+
+## Storage, files and code
+
+| Package | Role | ctx | Builds on |
+|---|---|---|---|
+| `storage` | The project folder as the truth: its text artifact, providers, flush and refresh. | `storage` | contributions, hub, oplog, projects, write |
+| `storage-git` | Any git repository as a project's destination. | — | storage |
+| `storage-github` | GitHub as a destination: finds or creates the repository. | — | github, storage, storage-git |
+| `github` | The one GitHub account this machine uses: token, REST client, git credential helper. | `github` | storage |
+| `files` | A project's files: a versioned folder tree, backends, sync, conflicts, pinned versions. | `files` | agent, boards, contributions, hub, items, oplog, storage, tools, write |
+| `files-github` | GitHub as where a project's files are shared. | — | files, github, storage-github |
+| `notes` | Files read as notes: wiki links, backlinks, tags, full-text search, the journal. | `notes` | files, tools |
+| `repos` | The code repositories workstreams stand for, their checkouts, agent worktrees. | `repos` | boards, hub, storage, tools |
+| `code-link` | A ticket's branches, pull requests and coding sessions; status from git; Start. | `codeLink` | agent, boards, contributions, engine-pi, github, herdr, hub, items, llm, mcp, plugin-sdk, repos, storage, tools, write |
+| `herdr` | herdr on this machine: its socket, server and panes. Optional. | `herdr` | doctor |
+| `code-sessions` | The Terminal window: herdr terminals and code sessions side by side. | — | code-link, contributions, desktop-surface, herdr, items |
+
+## Agents
+
+| Package | Role | ctx | Builds on |
+|---|---|---|---|
+| `agent` | The agent platform: threads, runs, ledger, workflows, run undo, the registries. | `agent` | fields, hub, llm, oplog, tools, write |
+| `agent-backlog` | The backlog method: playbooks, dossier, `find_similar`, `plan_and_apply`, dedup policy. | — | agent, boards, items, llm, tools |
+| `llm` | Model profiles and roles behind one interface; OpenAI-compatible and Anthropic adapters. | `llm` | desktop-surface, web-search |
+| `engine-loop` | The in-app conductor: a model reasoning over the tool registry, guided by playbooks. | — | agent, llm, tools |
+| `engine-scripted` | The no-model conductor: runs registered workflows from a menu. | — | agent |
+| `engine-claude-code` | Claude Code as conductor, with Tomrade's tools over MCP. | — | agent, llm, mcp |
+| `engine-codex` | Codex (app-server) as conductor. | — | agent, engine-claude-code, llm, mcp |
+| `engine-pi` | The Pi coding agent as conductor. | — | agent, engine-claude-code, llm, mcp |
+| `engine-acp` | One conductor for agents that speak ACP; the agents official plugins describe. | `localAgents` | agent, engine-claude-code, llm, mcp, plugin-sdk |
+| `shell` | A bash tool for in-process engines, asked before each command, never served over MCP. | — | tools |
+| `web-search` | `web_search` and `web_fetch` for every engine, answered by a registered provider. | `webSearch` | tools |
+| `web-search-tavily` | Tavily as that provider, with the person's own key. | — | web-search |
+| `archify` | Archify diagrams as tools. | — | agent, files, tools |
+| `doctor` | The troubleshooter: checks what failed, says what to do, sends a report. | `doctor` | agent, contributions, llm, mcp, projects, tools |
+| `mcp` | Serves `ctx.tools` over MCP on 127.0.0.1. | `mcp` | contributions, tools |
+| `mcp-client` | External MCP servers whose tools join `ctx.tools`. | `mcpClient` | tools |
+| `im` | Chat-app transports over the agent: bindings, authorized inputs, replies. Adapters are plugins. | `im` | agent, contributions, oplog, plugin-sdk, projects |
+
+## Desktop
+
+| Package | Role | ctx | Builds on |
+|---|---|---|---|
+| `ui` | The React renderer; draws plugin contributions with its own primitives. | — | agent, announcements, fields, hub, hub-cloud, notes, repos, storage |
+| `desktop-surface` | Contract for plugin-owned auxiliary windows. | `desktopSurfaces` | — |
+| `alerts` | Contract for system notifications and sounds. | `alerts` | — |
+| `pet` | The task-state companion, in the panel or on the desktop. | `pet` | agent, contributions, desktop-surface |
+| `keybindings` | The person's rebound shortcuts. | — | — |
+
+## Plugins
+
+| Package | Role | ctx | Builds on |
+|---|---|---|---|
+| `plugin-sdk` | The extension contract: `definePlugin`, the async `PluginContext`, the manifest. | — | — |
+| `extensions` | The host side of that contract: namespaces, attribution, time-limited callbacks. | — | agent, alerts, boards, contributions, desktop-surface, fields, herdr, im, items, llm, oplog, plugin-sdk, projects, tools, web-search, write |
+| `plugins` | Loads and manages the composition: rows, modules, installed extensions. | `plugins` | extensions, plugin-kit, plugin-sdk |
+| `plugin-kit` | Package format, digests, signatures, the lock file, the static analyzer. | — | plugin-sdk |
+| `plugin-cli` | `tomrade-plugin`: init, build, dev, test, check, pack. | — | plugin-host, plugin-kit, plugin-sdk |
+| `plugin-host` | The Tomrade a plugin is tested against. | — | agent, alerts, contributions, desktop-surface, engine-acp, extensions, im, llm, testkit, tools, web-search |
+| `plugin-studio` | Tools for an agent to write a plugin, loaded only at a build a person confirmed. | — | agent, plugin-cli, plugin-kit, plugin-sdk, plugins, tools |
+| `community` | The plugin store: browse, install (digest-checked), update, revoke, report, publish. | `community` | github, hub-cloud, plugin-cli, plugin-kit, plugin-sdk, plugins |
+
+## Apps
+
+| App | Role |
+|---|---|
+| `apps/desktop` | The Electron shell: boots the context from `tomrade.yml`, supplies the IPC transport, alerts and windows, packages the installers. |
+| `apps/store-admin` | The store's admin tool (`tomrade-store`): reports, revocations, official signatures. |

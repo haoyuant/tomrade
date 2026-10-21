@@ -5,8 +5,8 @@ Local-first backlog workbench: an Electron app (`apps/desktop`) with a React UI 
 ## Layout
 
 - `apps/desktop` — Electron main process, preload, packaging, Electron-driven UI checks (`scripts/*-check.mjs`)
-- `packages/ui` — renderer: React 19, TanStack Router/Query, Tailwind; strings in `src/lib/i18n-messages/` (en + zh, hand-rolled i18n)
-- `packages/*` — core and plugins (`@tomradex/*` / `@tomrade/*`): items, storage, agent engines, files, settings, MCP, …
+- `packages/ui` — renderer: React 19, TanStack Router/Query, Tailwind; strings in `src/lib/i18n-messages/` (hand-rolled i18n, see Strings below)
+- `packages/*` — core and plugins (`@tomradex/*` / `@tomrade/*`): items, storage, agent engines, files, settings, MCP, …; `packages/README.md` lists each one's role, `ctx` key and dependencies
 
 ## Commands
 
@@ -20,10 +20,16 @@ Local-first backlog workbench: an Electron app (`apps/desktop`) with a React UI 
 ## Conventions
 
 - Build features as plugins where possible; core reads contracts only.
-- Every user-facing string goes through `t(...)` with both en and zh entries.
+- Every user-facing string is translated; see Strings below.
 - Minimal comments: short why-comments only.
 - Commit messages name the ticket key (e.g. `TOM-42: …`).
 - On a ticket, iterate with `pnpm test:related`; run the full `pnpm test` once before opening the pull request, and put that run's node and **Failures by kind** block in the PR body.
+
+## Strings
+
+- UI: every user-facing string goes through `t(...)`. Each feature file in `packages/ui/src/lib/i18n-messages/` exports `en` and `zh`; `index.ts` assembles them and types `zh: typeof en`, so en and zh are both required and a missing zh key fails `pnpm typecheck`.
+- The six other built-in locales, `i18n-messages/locales/*.ts` (de, es, fr, ja, ru, zhHant), are `PartialMessages`: a key they lack falls back to English. Add to them when you can; never required.
+- Backend: a package's words live in `src/words.ts` as `defineWords(id, { en, zh })` (`@tomradex/domain`); zh must have every key with the same `{{slots}}`. Other languages read English (or an installed language pack). Prompts for an agent stay in English.
 
 ## Tomrade
 

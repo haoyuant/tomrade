@@ -4,6 +4,12 @@
 
 On a ticket, iterate with `pnpm test:related` (only the tests that reach the files changed against `origin/main`); run the full `pnpm test` once before opening the pull request, and put that run's node and **Failures by kind** block in the PR body. See `docs/testing.md`.
 
+## Strings
+
+- UI: every user-facing string goes through `t(...)`. Each feature file in `packages/ui/src/lib/i18n-messages/` exports `en` and `zh`; `index.ts` assembles them and types `zh: typeof en`, so en and zh are both required and a missing zh key fails `pnpm typecheck`.
+- The six other built-in locales, `i18n-messages/locales/*.ts` (de, es, fr, ja, ru, zhHant), are `PartialMessages`: a key they lack falls back to English. Add to them when you can; never required.
+- Backend: a package's words live in `src/words.ts` as `defineWords(id, { en, zh })` (`@tomradex/domain`); zh must have every key with the same `{{slots}}`. Other languages read English (or an installed language pack). Prompts for an agent stay in English.
+
 ## Tomrade
 
 The backlog for this repository lives in Tomrade (project "Tomrade"), reachable as the `tomrade` MCP server (`.mcp.json` for Claude Code, `.codex/config.toml` for Codex).

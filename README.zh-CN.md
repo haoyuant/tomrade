@@ -150,14 +150,14 @@ pnpm --filter @tomrade/desktop package   # 打安装包：DMG/ZIP、NSIS、AppIm
 |---|---|
 | `apps/desktop` | Electron 外壳；`tomrade.yml` 就是整个应用，一行一个插件 |
 | `packages/ui` | React 19 渲染进程（TanStack Router/Query、Tailwind）；文案在 `src/lib/i18n-messages/` |
-| `packages/*` | 内核和各个插件：工单、存储、Agent 引擎、MCP、文件、笔记…… |
+| [`packages/*`](packages/README.md) | 内核和各个插件：工单、存储、Agent 引擎、MCP、文件、笔记……链接的表格列出每个包的作用和 `ctx` 键 |
 | [`docs/architecture.md`](docs/architecture.md) | 产品决策、刻意不做的事、完整的包地图、数据模型和写入路径（英文） |
 | [`docs/plugin-api.md`](docs/plugin-api.md) | 插件契约（英文） |
 | [`CONTEXT.md`](CONTEXT.md) | 领域术语：工单、交付、代码关联、同步回来……（英文） |
 
 ## 参与贡献
 
-欢迎提 issue 和 PR。几条规矩：
+欢迎提 issue 和 PR。环境搭建和细节见 [`CONTRIBUTING.md`](CONTRIBUTING.md)；安全漏洞请按 [`SECURITY.md`](SECURITY.md) 私下报告。几条规矩：
 
 - **能做成插件就做成插件。** 内核只读契约。
 - **所有面向用户的文案都走 `t(...)`**，中英文都要写。
