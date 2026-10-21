@@ -29,6 +29,10 @@ export function BuiltinFallback({ failed, engines }: { failed: EngineView[]; eng
         : null;
   const routes: Record<SetupRoute, { state: RouteState; label: string; detail: string | null }> = {
     own: { state: "failed", label: t("setup.routeOwn"), detail: t("setup.routeOwnFailed", { names: failed.map((e) => e.title).join(" · ") }) },
+    // Offered on each failed agent's own row; only one that comes from npm has it.
+    managed: failed.some((e) => e.setup?.installers?.some((installer) => installer.kind === "npm"))
+      ? { state: "pending", label: t("setup.routeManaged"), detail: t("setup.routeManagedOffer") }
+      : { state: "failed", label: t("setup.routeManaged"), detail: t("setup.routeManagedNone") },
     builtin: { state: builtin, label: t("setup.routeBuiltin"), detail }
   };
   const icon = (state: RouteState) =>

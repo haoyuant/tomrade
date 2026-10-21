@@ -10,10 +10,10 @@ const onModels = (engine: EngineView): boolean => !!engine.usesModels;
 
 /**
  * The ways to an agent that takes tickets, in the order setup tries them: the
- * person's own install, then the built-in agent on a model they connect. A
- * managed copy Tomrade installs itself (TOM-536) belongs between the two.
+ * person's own install, then the copy Tomrade installs and runs itself, then
+ * the built-in agent on a model they connect.
  */
-export const ROUTES = ["own", "builtin"] as const;
+export const ROUTES = ["own", "managed", "builtin"] as const;
 export type SetupRoute = (typeof ROUTES)[number];
 
 /** Agents the person installs, found here, that all failed to run — none works or is still being checked. */
@@ -54,7 +54,8 @@ export function setupState(engines: EngineView[], worker: WorkerStatus, workerTe
       engines.some((e) => engineHealth(e) === "checking" && e.capabilities.includes("backlog")));
   const locals = working.filter(isLocalAgent);
   // The first route that works, as setup tells it; the built-in agent only once its model answered.
-  const route: SetupRoute | null = locals.some((e) => !onModels(e)) ? "own" : workerReady && locals.some(onModels) ? "builtin" : null;
+  const installed = locals.filter((e) => !onModels(e));
+  const route: SetupRoute | null = installed.some((e) => e.cli?.source !== "managed") ? "own" : installed.length ? "managed" : workerReady && locals.some(onModels) ? "builtin" : null;
   return { complete, checking, assistant, locals, worker, route };
 }
 

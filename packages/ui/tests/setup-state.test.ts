@@ -103,6 +103,10 @@ it("falls back to the built-in agent on a tested model once every own install fa
   // Not before the model answered its test.
   expect(setupState([own, builtin], profile, "pending")).toMatchObject({ complete: false, route: null });
   expect(setupState([engine({ setup: { install: [] } }), builtin], profile, { ok: true }).route).toBe("own");
+  // Working only through the copy Tomrade installed itself.
+  const managed = engine({ setup: { install: [] }, cli: { state: "ready", name: "codex", path: "/data/agents/codex/1/bin/codex", source: "managed", attempts: [], searched: [] } as unknown as EngineView["cli"] });
+  expect(setupState([managed, builtin], profile, { ok: true }).route).toBe("managed");
+  expect(setupState([managed, engine({ setup: { install: [] } }), builtin], profile, { ok: true }).route).toBe("own");
 });
 
 it("says why the built-in agent cannot take tickets on the connected model", () => {

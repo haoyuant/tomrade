@@ -142,7 +142,7 @@ const run = async () => {
   check("the agent that cannot list its models fails", await wait(async () => (await health("no-models")) === "broken", "no-models broken", 300), await health("no-models"));
   check("the agent whose test message gets no reply fails", await wait(async () => (await health("no-reply")) === "broken" && (await has('[data-testid="problem-no-reply"]')), "no-reply broken", 400), await health("no-reply"));
   check("setup offers the built-in agent as the next way to start", await wait(() => has('[data-testid="builtin-fallback"]'), "fallback"));
-  check("showing the order: own install failed, then the built-in agent", (await $(`[...document.querySelectorAll('[data-testid="setup-routes"] [data-route]')].map((n) => n.dataset.route).join(",")`)) === "own,builtin" && (await route("own")) === "failed" && (await route("builtin")) === "pending");
+  check("showing the order: own install failed, then Tomrade's own copy, then the built-in agent", (await $(`[...document.querySelectorAll('[data-testid="setup-routes"] [data-route]')].map((n) => n.dataset.route).join(",")`)) === "own,managed,builtin" && (await route("own")) === "failed" && (await route("builtin")) === "pending");
   check("naming the agents that failed", /Agent One · Agent Two/.test((await text('[data-testid="setup-routes"] [data-route="own"]')) ?? ""), await text('[data-testid="setup-routes"] [data-route="own"]'));
   check("with the key form moved into that route, not offered twice", (await $(`document.querySelectorAll('[data-testid="quick-model"]').length`)) === 0);
   check("and nothing counts as set yet", !(await has('[data-testid="setup-done"]')));

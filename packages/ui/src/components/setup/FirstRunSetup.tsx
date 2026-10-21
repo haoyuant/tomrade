@@ -83,7 +83,7 @@ export function FirstRunSetup({ onDone }: { onDone: () => void }) {
                 {state.route && (
                   <li className="setup-row is-ok" data-testid="setup-route" data-route={state.route}>
                     <Icon name="i-check" size={13} />
-                    <span>{state.route === "own" ? t("setup.doneRouteOwn", { names: names(own) }) : t("setup.doneRouteBuiltin", { model: state.worker.title ?? "" })}</span>
+                    <span>{state.route === "builtin" ? t("setup.doneRouteBuiltin", { model: state.worker.title ?? "" }) : t(state.route === "managed" ? "setup.doneRouteManaged" : "setup.doneRouteOwn", { names: names(own) })}</span>
                   </li>
                 )}
                 {cannot && (
