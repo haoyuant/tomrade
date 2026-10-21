@@ -325,7 +325,7 @@ describe("connecting a repository", () => {
     const dir = path.join(root, `pi-${n++}`);
     fs.mkdirSync(dir, { recursive: true });
     const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
-    expect(writeWith(dir, input, ["pi"]).files).toEqual(["AGENTS.md"]);
+    expect(writeWith(dir, input, ["pi"])).toEqual({ files: ["AGENTS.md"], skipped: [{ agent: "pi", file: ".pi/extensions/tomrade.ts", reason: "no-connector" }] });
     writeConnectFiles(dir, input);
     expect(fs.readFileSync(path.join(dir, ".pi/extensions/tomrade.ts"), "utf8")).toBe(piConnector.write(input.mcpUrl, input.eventUrl));
     expect(writeConnectFiles(dir, input).files).toEqual([]);
@@ -541,6 +541,16 @@ describe("connecting a repository", () => {
     expect(git(["worktree", "list"], checkout).split("\n")).toHaveLength(1);
     expect(fs.existsSync(path.join(checkout, ".mcp.json"))).toBe(false);
     expect(git(["status", "--porcelain"], checkout)).toBe("");
+  });
+
+  it("says why Pi's extension was left out while Pi's engine is off", async () => {
+    const { codeLink, project, repo } = await machine();
+    // Registered again and let go: no writer for Pi, as with its engine turned off.
+    codeLink.registerConnector("pi", piConnector)();
+    codeLink.setRepoPolicy(project.id, repo.id, { connectAgents: ["claude-code", "pi"] });
+    const result = await codeLink.connect(project.id, repo.id, "local");
+    expect(result.skipped).toEqual([{ agent: "pi", file: ".pi/extensions/tomrade.ts", reason: "no-connector", message: ".pi/extensions/tomrade.ts skipped: Pi's engine writes it, and that engine is turned off. Turn it on and connect again." }]);
+    expect(result.files).not.toContain(".pi/extensions/tomrade.ts");
   });
 
   it("connects for this machine only: files in the checkout kept out of git, a tracked file untouched and its agent skipped, and sessions report with no pull request", async () => {

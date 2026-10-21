@@ -16,7 +16,8 @@ const STATE_KEY: Record<ConnectionView["state"], MessageKey> = {
   unavailable: "repositories.connection_unavailable"
 };
 const HOLDER_KEY: Record<InstanceBadge["kind"], MessageKey> = { packaged: "repositories.connectionHolder_packaged", dev: "repositories.connectionHolder_dev" };
-const SKIPPED_KEY: Record<SkipReason, MessageKey> = {
+// "no-connector" comes worded from code-link.
+const SKIPPED_KEY: Record<Exclude<SkipReason, "no-connector">, MessageKey> = {
   tracked: "repositories.agentSkipped_tracked",
   comments: "repositories.agentSkipped_comments",
   invalid: "repositories.agentSkipped_invalid",
@@ -99,7 +100,7 @@ export function AgentConnection({ projectId, repoId, hint = false }: { projectId
       </p>}
       {choose.error && <p role="alert" className="meta-txt">{readableError(choose.error)}</p>}
       {connect.data?.skipped.map((skip) => <p className="meta-txt dense cli-warn repo-agent-skipped" key={skip.agent} data-agent={skip.agent} data-reason={skip.reason}>
-        {t(SKIPPED_KEY[skip.reason], { agent: agents.find((agent) => agent.id === skip.agent)?.title ?? skip.agent, file: skip.file })}
+        {skip.reason === "no-connector" ? skip.message : t(SKIPPED_KEY[skip.reason], { agent: agents.find((agent) => agent.id === skip.agent)?.title ?? skip.agent, file: skip.file })}
       </p>)}
       {connect.data && <p role="status" className="meta-txt repo-agent-result">{connect.data.message}</p>}
       {url && <button type="button" className="btn btn-ghost repo-agent-pr" onClick={() => openExternal(url)}>{t("repositories.connectionPr")}</button>}

@@ -13,14 +13,17 @@ export type ConnectAgent = (typeof CONNECT_AGENTS)[number];
 /**
  * Why Connect left an agent out: its file has comments or trailing commas a
  * rewrite would lose, cannot be read at all, (Codex) holds hooks Tomrade
- * cannot add to without rewriting the whole file, or is tracked by git while
- * the connection is for this machine only.
+ * cannot add to without rewriting the whole file, is tracked by git while
+ * the connection is for this machine only, or (Pi) is written by an engine
+ * that is turned off.
  */
-export type SkipReason = "comments" | "invalid" | "codex-hooks" | "tracked";
+export type SkipReason = "comments" | "invalid" | "codex-hooks" | "tracked" | "no-connector";
 export interface SkippedAgent {
   agent: ConnectAgent;
   file: string;
   reason: SkipReason;
+  /** The reason in the person's words, for "no-connector": the app's own strings name the others. */
+  message?: string;
 }
 
 export interface ConnectInput {
@@ -71,7 +74,7 @@ export const NO_CONNECTORS: Connectors = () => undefined;
 export const OPENCODE_PLUGIN = ".opencode/plugins/tomrade.js";
 /** Claude Code's personal settings for one checkout: a machine-only connection keeps its hooks there. */
 export const CLAUDE_LOCAL_SETTINGS = ".claude/settings.local.json";
-export const CODEX_SYNC_SKILL = ".agents/skills/tomrade-sync/SKILL.md";
+const CODEX_SYNC_SKILL = ".agents/skills/tomrade-sync/SKILL.md";
 /** Every file a connection may write, committed or for this machine only, and the Cursor script an older Tomrade wrote. */
 export const CONNECT_FILES = [".mcp.json", ".claude/settings.json", CLAUDE_LOCAL_SETTINGS, ".codebuddy/settings.json", ".codex/config.toml", CODEX_SYNC_SKILL, PI_EXTENSION, "opencode.json", OPENCODE_PLUGIN, ".cursor/mcp.json", ".cursor/hooks.json", CURSOR_HOOK_SCRIPT, CURSOR_HOOK_POWERSHELL, LEGACY_CURSOR_HOOK_SCRIPT, ".gemini/settings.json", "CLAUDE.md", "AGENTS.md"] as const;
 
@@ -116,7 +119,7 @@ export const hookCommands = (eventUrl: string, agent?: HookAgent): string[] => [
 ];
 
 /** The same report in PowerShell, for a script that gets the payload piped in (or on stdin); it gives up after 2 s and exits 0. */
-export function powershellHook(eventUrl: string, agent: HookAgent): string {
+function powershellHook(eventUrl: string, agent: HookAgent): string {
   return [
     '$body = [Text.Encoding]::UTF8.GetBytes((@($input) -join "`n"))',
     "if (-not $body.Length -and [Console]::IsInputRedirected) { $stdin = New-Object IO.MemoryStream; [Console]::OpenStandardInput().CopyTo($stdin); $body = $stdin.ToArray() }",
@@ -399,14 +402,17 @@ export function writeConnectFiles(root: string, input: ConnectInput, agents: rea
   };
   const mcp = () => json(".mcp.json", withServer({ type: "http", url: input.mcpUrl }));
   const claudeHooks = withSessionHooks(hookCommand(input.eventUrl));
-  // Without its engine's writer (the engine is off), Pi gets the instructions alone.
+  // Without its engine's writer (the engine is off), Pi gets the instructions alone, and is told why.
   const pi = connectors("pi");
   const plans: Record<ConnectAgent, () => Write[]> = {
     "claude-code": () => [mcp(), local ? json(CLAUDE_LOCAL_SETTINGS, (text) => withApprovedServer(claudeHooks(text))) : json(".claude/settings.json", claudeHooks), ...section("CLAUDE.md")],
     codex: () => [codex(), ...section("AGENTS.md"), exact(CODEX_SYNC_SKILL, codexSyncSkill(input))],
     // WorkBuddy's CLI takes Claude Code's hook format in its own settings file.
     workbuddy: () => [mcp(), json(".codebuddy/settings.json", withSessionHooks(hookCommand(input.eventUrl, "workbuddy"))), ...section("AGENTS.md")],
-    pi: () => [...(pi ? [exact(PI_EXTENSION, pi.write(input.mcpUrl, input.eventUrl))] : []), ...section("AGENTS.md")],
+    pi: () => {
+      if (!pi) skipped.push({ agent: "pi", file: PI_EXTENSION, reason: "no-connector" });
+      return [...(pi ? [exact(PI_EXTENSION, pi.write(input.mcpUrl, input.eventUrl))] : []), ...section("AGENTS.md")];
+    },
     opencode: () => [json("opencode.json", (text) => withMcpEntry(text, input.mcpUrl)), exact(OPENCODE_PLUGIN, opencodePlugin(input.eventUrl)), ...section("AGENTS.md")],
     cursor: () => [json(".cursor/mcp.json", withServer({ url: input.mcpUrl })), json(".cursor/hooks.json", withCursorHooks), exact(CURSOR_HOOK_SCRIPT, cursorHookScript(posixHookCommand(input.eventUrl, "cursor")), 0o755), exact(CURSOR_HOOK_POWERSHELL, cursorHookPowerShell(powershellHook(input.eventUrl, "cursor"))), ...section("AGENTS.md")],
     gemini: () => [json(".gemini/settings.json", withServer({ httpUrl: input.mcpUrl }))]
