@@ -13,7 +13,9 @@ import { promisify } from "node:util";
 const BUCKET = "tomrade-downloads";
 const WRANGLER = "wrangler@4.149.0";
 const CONCURRENCY = 3;
-const ATTEMPTS = 3;
+const ATTEMPTS = 6;
+// The self-hosted Mac's line drops for a minute or two at a time: wait longer after each failure.
+const BACKOFF_MS = 20_000;
 const TIMEOUT_MS = 10 * 60_000;
 
 const TYPES = {
@@ -31,8 +33,19 @@ if (!version || files.length === 0) {
 const run = promisify(execFile);
 const wrangler = (args, timeout) => run("npx", ["--yes", WRANGLER, ...args], { timeout, maxBuffer: 16 << 20 });
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 // Once up front, so the parallel uploads don't each install it into the same npx cache.
-await wrangler(["--version"], 5 * 60_000);
+for (let attempt = 1; ; attempt++) {
+  try {
+    await wrangler(["--version"], 5 * 60_000);
+    break;
+  } catch (error) {
+    if (attempt === ATTEMPTS) throw error;
+    console.log(`wrangler: attempt ${attempt} failed; retrying`);
+    await sleep(BACKOFF_MS * attempt);
+  }
+}
 
 async function upload(file) {
   const name = basename(file);
@@ -53,7 +66,8 @@ async function upload(file) {
     } catch (error) {
       const why = error.killed ? `timed out after ${TIMEOUT_MS / 60_000} min` : String(error.stderr || error.message).trim();
       if (attempt === ATTEMPTS) throw new Error(`${name}: ${why}`);
-      console.log(`${name}: attempt ${attempt} failed (${why}); retrying`);
+      console.log(`${name}: attempt ${attempt} failed (${why}); retrying in ${(BACKOFF_MS * attempt) / 1000} s`);
+      await sleep(BACKOFF_MS * attempt);
     }
   }
 }

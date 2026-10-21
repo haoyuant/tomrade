@@ -78,8 +78,6 @@ jobs:
     needs: [keychain, draft]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
-    permissions:
-      contents: write
     env:
       # The Windows build's macOS makensis aborts on an include path of 265
       # characters or more; pnpm's folder for app-builder-lib alone is over 100.
@@ -178,6 +176,54 @@ jobs:
             xcrun stapler validate "$dmg"
           done
 
+      # For the upload job, outside the workspace so the next checkout keeps it.
+      # Every runner is on this one Mac: the files wait on its disk rather than
+      # going up to GitHub and back down as an artifact.
+      - name: Stage for upload
+        shell: bash
+        run: |
+          dir="$HOME/tomrade-release/$GITHUB_REF_NAME/${{ matrix.slug }}"
+          rm -rf "$dir" && mkdir -p "$dir"
+          shopt -s nullglob
+          files=(apps/desktop/release/*.{dmg,zip,exe,AppImage,blockmap,yml})
+          if [ ${#files[@]} -eq 0 ]; then echo "::error::No installers to stage"; exit 1; fi
+          cp "${files[@]}" "$dir/"
+          rm -f "$dir/builder-debug.yml"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: startsWith(matrix.slug, 'mac-')
+        with:
+          name: manifests-${{ matrix.slug }}
+          if-no-files-found: error
+          retention-days: 1
+          path: apps/desktop/release/*-mac.yml
+
+  # Its own job, so a dropped connection re-runs only the upload, not a build
+  # with its signing and notarization.
+  upload:
+    name: Upload ${{ matrix.name }}
+    needs: build
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: macOS arm64, slug: mac-arm64 }
+          - { name: macOS x64, slug: mac-x64 }
+          - { name: Windows x64, slug: win-x64 }
+          - { name: Linux x64, slug: linux-x64 }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: apps/desktop/scripts
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26
+
       # Straight from this Mac to download.tomrade.com/<version>/, once. Through
       # the release, every installer crossed the Mac's line three times: up to
       # GitHub, down to the site's mirror, up to R2. Nothing names these files
@@ -188,9 +234,10 @@ jobs:
         shell: bash
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then echo "::error::Secret CLOUDFLARE_API_TOKEN is not set"; exit 1; fi
+          dir="$HOME/tomrade-release/$GITHUB_REF_NAME/${{ matrix.slug }}"
           shopt -s nullglob
-          files=(apps/desktop/release/*.{dmg,zip,exe,AppImage,blockmap})
-          if [ ${#files[@]} -eq 0 ]; then echo "::error::No installers to upload"; exit 1; fi
+          files=("$dir"/*.{dmg,zip,exe,AppImage,blockmap})
+          if [ ${#files[@]} -eq 0 ]; then echo "::error::No installers in $dir: the build stages them there, on this Mac"; exit 1; fi
           node apps/desktop/scripts/upload-r2.mjs "${GITHUB_REF_NAME#v}" "${files[@]}"
 
       # Only the update manifests go on the draft: the mirror reads them from
@@ -202,21 +249,14 @@ jobs:
           GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
+          dir="$HOME/tomrade-release/$GITHUB_REF_NAME/${{ matrix.slug }}"
           shopt -s nullglob
           files=()
-          for f in apps/desktop/release/*.yml; do
-            case "$(basename "$f")" in builder-debug.yml|*-mac.yml) ;; *) files+=("$f") ;; esac
+          for f in "$dir"/*.yml; do
+            case "$(basename "$f")" in *-mac.yml) ;; *) files+=("$f") ;; esac
           done
           if [ ${#files[@]} -eq 0 ]; then echo "::error::No update manifests to upload"; exit 1; fi
           gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: startsWith(matrix.slug, 'mac-')
-        with:
-          name: manifests-${{ matrix.slug }}
-          if-no-files-found: error
-          retention-days: 1
-          path: apps/desktop/release/*-mac.yml
 
   # The plugin authors' packages on npm (scripts/npm-release.mjs): the SDK line,
   # and the app's declarations at the tag's version. Without NPM_TOKEN, a dry run.
@@ -262,7 +302,7 @@ jobs:
 
   # Once every build is on the draft. A draft without *-mac.yml had a build fail.
   release:
-    needs: build
+    needs: upload
     runs-on: [self-hosted, macOS, ARM64]
     permissions:
       contents: write
@@ -290,3 +330,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: gh release upload "$GITHUB_REF_NAME" manifests/* --clobber
+
+      # Everything is in R2 by now; a run that failed before here keeps its files for the re-run.
+      - name: Remove the staged files
+        run: rm -rf "$HOME/tomrade-release/$GITHUB_REF_NAME"
