@@ -39,7 +39,7 @@ it("turns a manifest into the spec a plugin would declare", () => {
   expect(spec.cli.name).toBe("npx");
   expect(spec.acp!.args({} as never)).toEqual(["--yes", "opencode-ai", "acp"]);
   expect(spec.acp!.env).toBeUndefined();
-  expect(spec.setup?.install).toEqual(["npm install -g opencode-ai"]);
+  expect(spec.setup?.install).toEqual([{ npm: "opencode-ai" }]);
   expect(spec.setup?.docs).toBe("https://github.com/sst/opencode");
 });
 

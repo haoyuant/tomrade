@@ -108,7 +108,7 @@ export function LocalAgentSetup({ engines, onOpenSettings, onTroubleshoot }: { e
               )}
               {status === "desktop-only" && <span className="setup-fix">{t("localCli.desktopOnlyDetail", { app: e.cli?.desktopApp ?? "", name: e.cli?.name ?? "" })}</span>}
               {/* One primary button runs the whole chain; the commands stay behind the disclosure below. */}
-              {health !== "works" && <SetupChain engine={e} />}
+              {health !== "works" && <SetupChain engine={e} onTroubleshoot={onTroubleshoot} />}
               {health !== "works" && (
                 <details className="setup-manual" data-testid={`manual-${e.id}`}>
                   <summary>{t("setup.manual")}</summary>

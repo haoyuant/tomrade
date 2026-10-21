@@ -53,7 +53,8 @@ export function specOf(added: AddedAgent): LocalAgentSpec {
     cli: { name: "npx" },
     install: "it runs through npx, which installing Node.js provides — {install}",
     setup: {
-      install: [`npm install -g ${added.package}`],
+      // The installer, not a bare command: the one-click chain runs it through the system's npm or Tomrade's bundled one (TOM-507).
+      install: [{ npm: added.package }],
       ...(added.repository ? { docs: added.repository } : {}),
       download: "https://nodejs.org/en/download"
     },
