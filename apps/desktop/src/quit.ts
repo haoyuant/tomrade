@@ -125,6 +125,24 @@ function putAway(): void {
 
 export const quitApproved = () => approved;
 
+/** How long an approved quit may take to close every window; past it, one of them called it off. */
+const CALLED_OFF_MS = 15_000;
+
+/**
+ * The quit, once approved. A window that refuses to close calls it off without
+ * a word; the windows would stay put away and every later launch be ignored
+ * as one arriving mid-quit, with nothing left to show the app is still there.
+ */
+export function finishQuit(): void {
+  const done = () => clearTimeout(timer);
+  const timer = setTimeout(() => {
+    app.off("will-quit", done);
+    cancelQuit();
+  }, CALLED_OFF_MS);
+  app.once("will-quit", done);
+  app.quit();
+}
+
 /** The windows are put away and the quit is finishing; asking for a window now would only flash one. */
 export const leaving = () => away !== null;
 
