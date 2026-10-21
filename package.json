@@ -18,6 +18,7 @@
     "test:ui": "pnpm --filter @tomrade/desktop test:ui",
     "rebuild:desktop": "pnpm --filter @tomrade/desktop exec electron-rebuild -f -w better-sqlite3",
     "build:backend": "tsc -b",
+    "i18n:check": "node scripts/i18n-check.mjs",
     "dump-config": "pnpm --filter @tomrade/desktop dump-config"
   },
   "devDependencies": {
