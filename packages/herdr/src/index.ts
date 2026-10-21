@@ -126,6 +126,22 @@ export const REVIVE_LIMIT = 3;
 export const REVIVE_WINDOW_MS = 5 * 60_000;
 /** The longest a pane's next control session waits for the one before it to settle once that one's herdr has started, so a herdr that never answers holds nothing up. */
 export const CONTROL_SETTLE_MS = 2_000;
+/** How long a reading of herdr's own clients holds: the process list is read at most this often. */
+export const CLIENTS_TTL_MS = 5_000;
+
+/**
+ * Whether `ps ax -o tty=,args=` shows a client of herdr's own: herdr on a terminal, run bare, on a named or remote
+ * session, or as `session attach` — not its server, Tomrade's control sessions, or a one-off CLI call.
+ */
+export function herdrClientIn(ps: string): boolean {
+  return ps.split("\n").some((line) => {
+    const [tty, cmd, ...args] = line.trim().split(/\s+/);
+    if (!tty || !cmd || tty === "?" || tty === "??" || path.basename(cmd) !== "herdr") return false;
+    if (!args.length) return true;
+    if (args[0] === "session") return args[1] === "attach";
+    return (args[0] === "--session" || args[0] === "--remote") && args.length === 2;
+  });
+}
 
 /** How `revive` went: the server answers (already, or started now), did not come up, is held by the limit, or herdr is not here. */
 /** What herdr reads off one pane: the agent it detected there, that agent's own session id, how it reads that agent, and the title on the pane. */
@@ -197,6 +213,8 @@ export class Herdr extends Service {
   private revived: number[] = [];
   private reviving: Promise<HerdrRevive> | null = null;
   private toldStarted = false;
+  /** The last reading of herdr's own clients, for `CLIENTS_TTL_MS`. */
+  private clientsRead: { at: number; attached: Promise<boolean> } | null = null;
   /** The terminals open now, closed with the service. */
   private readonly terminals = new Set<TerminalStream>();
   /** Each pane's latest control session until it settles: attached, refused or ended, or `CONTROL_SETTLE_MS` after its herdr started. */
@@ -244,6 +262,21 @@ export class Herdr extends Service {
         resolve(String(stdout).trim().replace(/^herdr\s+/, "") || null);
       });
     });
+  }
+
+  /**
+   * Whether a herdr client of its own runs on this machine, to show what `show` brings forward. herdr's API lists no
+   * clients, so the process list says; false where there is none to read.
+   */
+  clientAttached(): Promise<boolean> {
+    const now = Date.now();
+    if (this.clientsRead && now - this.clientsRead.at < CLIENTS_TTL_MS) return this.clientsRead.attached;
+    const attached =
+      process.platform === "win32"
+        ? Promise.resolve(false)
+        : new Promise<boolean>((resolve) => execFile("ps", ["ax", "-o", "tty=,args="], { timeout: 3000, maxBuffer: 8 << 20 }, (err, stdout) => resolve(!err && herdrClientIn(String(stdout)))));
+    this.clientsRead = { at: now, attached };
+    return attached;
   }
 
   /** The running server, or null when none answers on the socket. */

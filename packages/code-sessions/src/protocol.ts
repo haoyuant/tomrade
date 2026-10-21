@@ -91,6 +91,8 @@ export interface WindowState {
   /** The app's language, so the window speaks it even before the main window says how it looks. */
   locale: string;
   bridge: HerdrBridge;
+  /** A herdr client of its own runs on this machine: "Show in herdr" has a window to show the pane in. */
+  herdrClient: boolean;
   /** herdr's server went away under this window's terminals: being started again, or that did not work (the person can retry). */
   revive: "starting" | "failed" | null;
   /** How herdr installs here, when it is missing: the command shown on the button, or only the guide. */

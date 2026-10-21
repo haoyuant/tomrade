@@ -95,6 +95,7 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
     watch = () => () => {};
     watching = (): string[] => [];
     bridge = async () => ({ state: "ready" as const, version: "0.9.5" });
+    clientAttached = async () => false;
     terminal = async (pane: string, size: unknown) => {
       const frames = new Set<(f: unknown) => void>();
       const entry = { pane, size, sent: [] as unknown[], closed: false, frame: (text: string) => frames.forEach((l) => l({ seq: 1, width: 80, height: 24, full: true, bytes: new Uint8Array(Buffer.from(text)) })) };
@@ -267,6 +268,7 @@ it("puts ended sessions in the archive, keeps one a cell shows, sends the archiv
     watch = () => () => {};
     watching = (): string[] => [];
     bridge = async () => ({ state: "ready" as const, version: "0.9.5" });
+    clientAttached = async () => false;
     panes = async () => [];
   }
   class FakeCodeLink extends Service {
@@ -349,6 +351,7 @@ it("tells the window where the pane of an ended session a cell shows goes on, an
     watch = () => () => {};
     watching = (): string[] => [];
     bridge = async () => ({ state: "ready" as const, version: "0.9.5" });
+    clientAttached = async () => false;
     panes = async () => [];
   }
   class FakeCodeLink extends Service {
@@ -401,6 +404,7 @@ it("never shows a state older than one already shown, so a pick from the archive
     watch = () => () => {};
     watching = (): string[] => [];
     bridge = async () => ({ state: "ready" as const, version: "0.9.5" });
+    clientAttached = async () => false;
     panes = () =>
       new Promise((resolve) => {
         const answer = () => resolve([{ paneId: "w1:p9", agent: null, agentSession: null, status: "unknown" as const, title: null }]);
@@ -476,6 +480,7 @@ it("keeps a terminal that finishes opening while herdr is asked for its panes, a
     watch = () => () => {};
     watching = (): string[] => [];
     bridge = async () => ({ state: "ready" as const, version: "0.9.5" });
+    clientAttached = async () => false;
     panes = () =>
       new Promise((resolve) => {
         const answer = () => resolve(alive.map((paneId) => ({ paneId, agent: null, agentSession: null, status: "unknown" as const, title: null })));
@@ -554,6 +559,7 @@ it("shows a session code link asks for: the window opens or comes forward with i
     watch = () => () => {};
     watching = (): string[] => [];
     bridge = async () => bridge;
+    clientAttached = async () => false;
     panes = async () => [];
   }
   class FakeCodeLink extends Service {
@@ -726,9 +732,14 @@ it("shows how herdr reads the agent in a plain terminal as it changes, nothing f
   const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "settings-status.json") }], Contributions, FakeSurfaces, [Herdr, { socket: fake.socket, bin: path.join(dir, "absent"), reconnectMs: 30 }], FakeCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile: path.join(dir, "status.json") }]] });
   const herdr = w.ctx.get("herdr")!;
   herdr.bridge = async () => ({ state: "ready", version: "0.9.5" });
+  // "Show in herdr" goes with a herdr client of its own on this machine, and only then.
+  let client = true;
+  herdr.clientAttached = async () => client;
   await settle();
   await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
   const win = opened[0]!;
+  expect(win.states.at(-1)!.herdrClient).toBe(true);
+  client = false;
   win.spec.onMessage({ type: "newTerminal", terminalId: "t1", cwd: dir });
   const status = () => win.states.at(-1)!.terminals[0]?.agentStatus;
   const shows = async (want: unknown) => {
@@ -736,6 +747,7 @@ it("shows how herdr reads the agent in a plain terminal as it changes, nothing f
     return status();
   };
   expect(await shows(null)).toBeNull();
+  expect(win.states.at(-1)!.herdrClient).toBe(false);
   const pane = win.states.at(-1)!.terminals[0]!.pane!;
   expect(herdr.watching()).toEqual([pane]);
 
@@ -987,6 +999,7 @@ it("starts herdr's server again when it went away, on opening with saved termina
     watch = () => () => {};
     watching = (): string[] => [];
     bridge = async () => (running ? { state: "ready" as const, version: "0.9.5" } : { state: "notRunning" as const, version: "0.9.5" });
+    clientAttached = async () => false;
     binary = () => "/opt/homebrew/bin/herdr";
     server = async () => (running ? { version: "0.9.5", protocol: 22, socket: "/h.sock" } : null);
     panes = async () => (running ? [{ paneId: "w8:p1", agent: null, agentSession: null, status: "unknown" as const, title: null }] : null);
