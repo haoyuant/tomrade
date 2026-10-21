@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, Menu, nativeImage, Notification, shell as electronShell, Tray } from "electron";
+import { app, Menu, nativeImage, Notification, shell as electronShell, Tray, type BrowserWindow } from "electron";
 import type { Context } from "cordis";
 import { z } from "zod";
 import type {} from "@tomradex/agent";
@@ -10,6 +10,7 @@ import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/settings";
 import { BACKGROUND_FLAG, loginItem, type LoginItem, type LoginState } from "./login-item.js";
 import { hasMainWindow, showMainWindow } from "./main-window.js";
+import { leaving, quitApproved } from "./quit.js";
 import { DESKTOP_WORDS } from "./words.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -88,15 +89,28 @@ let onAway: (() => void) | null = null;
 /** Closing the last window leaves the process up. False whenever the row is switched off. */
 export const keepsRunning = (): boolean => current?.keepRunning === true;
 
-/** Called by main.ts once the last window has closed and the process stays. */
-export function wentAway(): void {
-  if (process.platform === "darwin") app.dock?.hide();
-  onAway?.();
+// Tomrade's windows and plugins' own windows; overlay surfaces never count.
+const ordinary = new Set<BrowserWindow>();
+
+/**
+ * A window reached from the Dock and Cmd-Tab opened: the app is an ordinary
+ * one again, and stays one until the last such window closes. Hiding the Dock
+ * icon on macOS hides and re-shows every window, pulling a full-screen one out
+ * of its Space.
+ */
+export function cameBack(win: BrowserWindow): void {
+  if (ordinary.has(win)) return;
+  ordinary.add(win);
+  win.once("closed", () => {
+    ordinary.delete(win);
+    if (!ordinary.size && keepsRunning() && !leaving() && !quitApproved()) wentAway();
+  });
+  if (process.platform === "darwin") void app.dock?.show();
 }
 
-/** Called by main.ts as a window opens: the app is an ordinary one again. */
-export function cameBack(): void {
-  if (process.platform === "darwin") void app.dock?.show();
+function wentAway(): void {
+  if (process.platform === "darwin") app.dock?.hide();
+  onAway?.();
 }
 
 function trayImage() {
