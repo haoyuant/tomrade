@@ -307,9 +307,21 @@ app.whenReady().then(async () => {
     check("点同组的另一个工单：面板改为显示它、侧栏当前行跟过去，终端不重连", switched && streams.length === streamsBefore, JSON.stringify({ marks: await marks(), streamsBefore, now: streams.length }));
     await js(`${rowWith(sessions[3].item.key)}.click(); true`);
     check("再点回原工单，面板和当前行都回来", await wait(async () => JSON.stringify(await marks()) === JSON.stringify(bundleMarks), 3000), JSON.stringify(await marks()));
+    // The ticket the locked pane reads as finishes while the agent goes on there: the pane stays, as the other ticket.
+    await js(`${rowWith(alongItem.key)}.click(); true`);
+    await wait(async () => (await js(`document.querySelectorAll('.cs-cell')[3].querySelector('.cs-cell-name').textContent`)).startsWith(`${alongItem.key} `), 3000);
+    await js(`document.querySelectorAll('.cs-cell')[3].querySelector('[data-testid=cs-lock]').click(); true`);
     ctx.codeLink.store.patchSession(project.id, along.id, { state: "ended", endedAt: Date.now() });
     ctx.emit("codeLink/changed", project.id);
-    await wait(async () => (await js(`document.querySelectorAll('.cs-row').length`)) === 6, 5000);
+    const cellFour = () => js(`(() => { const cell = document.querySelectorAll('.cs-cell')[3]; return { name: cell.querySelector('.cs-cell-name').textContent, terminal: !!cell.querySelector('.xterm'), ended: !!cell.querySelector('[data-testid=cs-ended]'), locked: cell.hasAttribute('data-locked') }; })()`);
+    const carried = await wait(async () => {
+      const c = await cellFour();
+      return c.name.startsWith(`${sessions[3].item.key} `) && c.terminal && !c.ended && c.locked;
+    }, 8000);
+    const carriedText = await wait(async () => (await terminalText(3)).includes("marker-four"), 5000);
+    check("面板显示的工单结束、同一 agent 还在这个面板做别的工单：格子留在面板上改显示那个工单，锁保持", carried && carriedText, JSON.stringify(await cellFour()));
+    await js(`document.querySelectorAll('.cs-cell')[3].querySelector('[data-testid=cs-lock]').click(); true`);
+    await wait(async () => (await js(`document.querySelectorAll('.cs-row').length`)) === 6 && !(await cellFour()).locked, 5000);
 
     // Every pane full and a seventh session in the list: a pick never silently hides what a pane showed.
     const seventhItem = ctx.items.create({ projectId: project.id, boardId: board.id, title: "Marker seven", workType: "coding", status: "doing", by: "human" });

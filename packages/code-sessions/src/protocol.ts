@@ -40,6 +40,8 @@ export interface SessionRow {
   startedAt: number;
   /** When it ended; null while it lives. */
   endedAt: number | null;
+  /** Ended while its pane goes on here as another of the window's rows (another ticket of the same agent): that row's id; null otherwise. */
+  continuedIn: string | null;
 }
 
 /** A plain terminal the window opened: a herdr pane of the person's, with no ticket or code-link session behind it. */

@@ -204,10 +204,22 @@ export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, it
         prUrl: prs.get(s.branch) ?? null,
         worktree: s.worktree,
         startedAt: s.startedAt,
-        endedAt: live ? null : (s.endedAt ?? s.lastEventAt ?? s.startedAt)
+        endedAt: live ? null : (s.endedAt ?? s.lastEventAt ?? s.startedAt),
+        continuedIn: null
       };
     })
     .sort((a, b) => Number(b.state !== "ended" && b.state !== "lost") - Number(a.state !== "ended" && a.state !== "lost") || Number(b.needsYou) - Number(a.needsYou) || b.startedAt - a.startedAt);
+}
+
+/**
+ * The row an ended session's pane goes on as, when it does: a terminal opened here on it, else the newest live session
+ * on it — the agent working another ticket in the same pane. Null once nothing of the window runs there.
+ */
+export function continuedIn(pane: string | null, sessions: SessionRow[], terminals: TerminalRow[]): string | null {
+  if (!pane) return null;
+  const terminal = terminals.find((t) => t.pane === pane);
+  if (terminal) return terminal.id;
+  return sessions.filter((s) => s.endedAt === null && s.pane === pane).sort((a, b) => b.startedAt - a.startedAt)[0]?.id ?? null;
 }
 
 /** One open window: its surface, and the terminals its cells show. */
@@ -435,6 +447,8 @@ function apply(ctx: Context, config: Config) {
     // Read with the layout, before anything is awaited: a state begun before a pick from the archive was saved must
     // still carry that session, or the window would drop it from the cell it was just put in.
     const archiveOpen = win?.archive ?? false;
+    const sent = await titled(shown.sessions.filter((s) => s.endedAt === null || inCells.has(s.id) || s.id === win?.reveal?.sessionId), savedTerminals(projectId));
+    const opened = await fold(projectId, shown.sessions, await terminals(projectId));
     return {
       projectId,
       projectName: projectName(projectId),
@@ -446,9 +460,10 @@ function apply(ctx: Context, config: Config) {
       askSwitch: setting !== "herdr" && setting !== "auto" && !saved.asked,
       terminal: setting,
       // An ended one asked for from outside (a ticket's earlier session) comes along, so the window can put it in a cell.
-      sessions: await titled(shown.sessions.filter((s) => s.endedAt === null || inCells.has(s.id) || s.id === win?.reveal?.sessionId), savedTerminals(projectId)),
+      // An ended one a cell shows says where its pane goes on, so the cell can follow it there.
+      sessions: sent.map((s) => (s.endedAt !== null && inCells.has(s.id) ? { ...s, continuedIn: continuedIn(sessionOf(projectId, s.id)?.herdrPane ?? null, shown.sessions, opened) } : s)),
       warning,
-      terminals: await fold(projectId, shown.sessions, await terminals(projectId)),
+      terminals: opened,
       places: await places(projectId),
       layout,
       presets,

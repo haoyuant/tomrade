@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { Layout } from "@tomradex/code-sessions";
-import { applyPreset, close, cycle, dedupe, heir, holder, landing, leaves, lock, neighbour, place, prune, resize, reveal, shape, show, split } from "../src/code-sessions/layout";
+import { applyPreset, carryOn, close, cycle, dedupe, heir, holder, landing, leaves, lock, neighbour, place, prune, resize, reveal, shape, show, split } from "../src/code-sessions/layout";
 
 const one: Layout = { type: "leaf", id: "c1", sessionId: "s1" };
 
@@ -159,4 +159,15 @@ it("never puts one herdr pane in two cells, whatever id it comes under", () => {
   expect(dedupe(layout, key)).toBe(layout);
   // A preset refills each pane once.
   expect(leaves(applyPreset(twice, one, () => "n1", key)).map((l) => l.sessionId)).toEqual(["s1"]);
+});
+
+it("hands a cell whose session ended to the row its pane goes on as, locked as it was, unless another cell shows that pane", () => {
+  // s2's ticket finished; the agent goes on in the same pane as s9.
+  const carried = new Map([["s2", "s9"]]);
+  const locked = lock(three(), "c2", true);
+  expect(shownIn(carryOn(locked, carried))).toEqual([["c1", "s1", false], ["c2", "s9", true], ["c3", "s3", false]]);
+  // Already shown elsewhere, here under the terminal it runs in: the ended session's cell stays as it is.
+  const key = (id: string) => (id === "s9" || id === "s3" ? "pane:w1:p3" : id);
+  expect(carryOn(three(), carried, key)).toEqual(three());
+  expect(carryOn(three(), new Map())).toEqual(three());
 });

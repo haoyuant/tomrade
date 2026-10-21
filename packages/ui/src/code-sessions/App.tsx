@@ -5,7 +5,7 @@ import { interpolate, message } from "~/lib/dicts";
 import { isMac } from "~/lib/keys";
 import { onCell, onLook, onShownIn, onState, onToast, send, type Look } from "./bridge";
 import { keyLabel, windowKey, type WindowKey } from "./keys";
-import { applyPreset, close, cycle, dedupe, heir, holder, landing, leaves, lock, neighbour, place, prune, resize, reveal, show, split, type Key } from "./layout";
+import { applyPreset, carryOn, close, cycle, dedupe, heir, holder, landing, leaves, lock, neighbour, place, prune, resize, reveal, show, split, type Key } from "./layout";
 import { bundles, sessionName, sidebarRows, type HereRow } from "./lists";
 import { TerminalCell } from "./TerminalCell";
 
@@ -638,6 +638,8 @@ export function App() {
     if (focused) recent.current = [...recent.current.filter((id) => id !== focused), focused];
   }, [focused]);
   const revealed = useRef(0);
+  // Ended sessions the person put in a cell to read: they stay, wherever their pane went on.
+  const toRead = useRef(new Set<string>());
   // The window's keys, taken before a terminal hears them, so they never reach the shell; what they do is read from the latest render.
   const onWindowKey = useRef<(key: WindowKey) => void>(() => undefined);
   useEffect(() => {
@@ -662,8 +664,10 @@ export function App() {
     for (const [id, at] of asked.current) if (known.has(id) || now - at > ASKED_GRACE_MS) asked.current.delete(id);
     const key = paneKey(state);
     const kept = prune(current.current ?? state.layout, new Set([...known, ...asked.current.keys()]));
+    // A ticket finished while the agent goes on in its pane: the cell follows the pane.
+    const carried = new Map(state.sessions.flatMap((s) => (s.continuedIn && !toRead.current.has(s.id) ? [[s.id, s.continuedIn] as const] : [])));
     // One pane in one cell: a cell that would show it a second time is emptied, and that is saved.
-    const pruned = dedupe(kept, key, focusedNow.current);
+    const pruned = dedupe(carryOn(kept, carried, key), key, focusedNow.current);
     const placeable = placeableIds(state);
     const fresh = seen.current ? placeable.filter((id) => !seen.current!.has(id)) : [];
     seen.current = new Set([...(seen.current ?? []), ...placeable]);
@@ -672,6 +676,7 @@ export function App() {
     const ask = state.reveal;
     if (ask && ask.at !== revealed.current && state.sessions.some((s) => s.id === ask.sessionId && (s.pane || s.endedAt !== null))) {
       revealed.current = ask.at;
+      if (state.sessions.some((s) => s.id === ask.sessionId && s.endedAt !== null)) toRead.current.add(ask.sessionId);
       const shown = reveal(placed, ask.sessionId, focusedNow.current, key);
       placed = asPicked(state, shown.layout, shown.cell, ask.sessionId, key);
       setFocused(shown.cell);
@@ -759,6 +764,7 @@ export function App() {
     });
   };
   const pick = (s: SessionRow, beside = false) => {
+    if (!live(s)) toRead.current.add(s.id);
     if (s.mode === "run" && !s.pane) return send({ type: "openThread", sessionId: s.id });
     land(s.id, beside);
   };
