@@ -170,7 +170,9 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
   useEffect(() => {
     const el = host.current;
     if (!el) return;
-    const terminal = new Terminal({ scrollback: 0, cursorBlink: false, fontFamily: font || "ui-monospace, Menlo, monospace", fontSize: 13, allowProposedApi: false, theme: terminalTheme() });
+    // A link (OSC 8) opens in the system browser; xterm's own asks with confirm() and then opens an app window.
+    const linkHandler = { activate: (_e: MouseEvent, url: string) => send({ type: "openLink", url }) };
+    const terminal = new Terminal({ scrollback: 0, cursorBlink: false, fontFamily: font || "ui-monospace, Menlo, monospace", fontSize: 13, allowProposedApi: false, theme: terminalTheme(), linkHandler });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.open(el);

@@ -175,7 +175,9 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   expect(win.posts.at(-1)).toEqual({ type: "toast", text: "continuing" });
   await say({ type: "openPr", sessionId: "s1" });
   await say({ type: "openWorktree", sessionId: "s1" });
-  expect(events).toEqual([["desktop/open-external", "https://github.com/o/r/pull/7"], ["desktop/reveal", "/work/tom-1"]]);
+  // A link clicked in a terminal goes to the system browser too.
+  await say({ type: "openLink", url: "https://example.com/docs" });
+  expect(events).toEqual([["desktop/open-external", "https://github.com/o/r/pull/7"], ["desktop/reveal", "/work/tom-1"], ["desktop/open-external", "https://example.com/docs"]]);
 
   // The layout is remembered for the project; asked once about herdr, the answer sticks.
   const layout = { type: "split" as const, id: "x", direction: "row" as const, ratio: 0.4, a: { type: "leaf" as const, id: "c1", sessionId: "s1" }, b: { type: "leaf" as const, id: "c2", sessionId: null } };

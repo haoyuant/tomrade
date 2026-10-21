@@ -731,6 +731,8 @@ function apply(ctx: Context, config: Config) {
       }
       case "openGuide":
         return void ctx.emit("desktop/open-external", (await ctx.codeLink.herdrInstall()).guide);
+      case "openLink":
+        return void ctx.emit("desktop/open-external", m.url);
       case "switchTerminal": {
         save(config.stateFile, { asked: true });
         if (m.switch) {
