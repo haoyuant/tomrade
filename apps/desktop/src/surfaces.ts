@@ -1,4 +1,4 @@
-import { app, autoUpdater, BrowserWindow, ipcMain, screen, type IpcMainEvent } from "electron";
+import { app, autoUpdater, BrowserWindow, ipcMain, screen, shell, type IpcMainEvent } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Context, Service } from "cordis";
@@ -133,6 +133,11 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
           webPreferences
         });
     win.setMenuBarVisibility(false);
+    // A page link never opens an app window: web links go to the system browser, anything else nowhere.
+    win.webContents.setWindowOpenHandler(({ url }) => {
+      if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+      return { action: "deny" };
+    });
     if (window) {
       // The title is the host's — the plugin's name in it — never the document's own <title>.
       win.on("page-title-updated", (event) => event.preventDefault());

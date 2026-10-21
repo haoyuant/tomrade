@@ -155,6 +155,8 @@ export type WindowMessage =
   | { type: "switchTo"; sessionId: string }
   | { type: "install" }
   | { type: "openGuide" }
+  /** A link clicked in a terminal: opened in the system browser. */
+  | { type: "openLink"; url: string }
   | { type: "switchTerminal"; switch: boolean }
   /** Start herdr's server again after it would not come up. */
   | { type: "startHerdr" }
