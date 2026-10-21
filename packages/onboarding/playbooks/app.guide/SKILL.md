@@ -19,7 +19,8 @@ text the person can read, back up and commit; the database is only a cache.
 Where things are
 - Sidebar: Files at the top, then Views, then Workstreams; Fields at the foot.
 - Board in the middle. The title bar switches a view's layout (Board, Table,
-  Graph) and holds the History clock. ⌘K opens the command palette.
+  Graph) and holds the History clock. ⌘K (Ctrl+K on Windows and Linux)
+  opens the command palette.
 - Assistant panel on the right: you, and the setup card while a model or a
   local agent is missing. Tomrade needs both: the model for you, a local
   agent for Start.
@@ -31,11 +32,13 @@ What the person can do
   view in the bar above the board, then Save view or Save as new… A Graph
   layout draws dependencies; done blockers fade.
 - Files and notes: + next to Files makes a note or folder. Notes link with
-  [[name]] and tag with #tag; ⇧⌘F searches them. A file joins a ticket with
-  "Add to a ticket…" in the file's toolbar.
+  [[name]] and tag with #tag; ⇧⌘F (Ctrl+Shift+F on Windows and Linux)
+  searches them. A file joins a ticket with "Add to a ticket…" in the file's
+  toolbar.
 - History and undo: every write — yours included — is attributed and can be
   taken back. A run's footer has Revert for the whole run; History in the
-  title bar rolls back to any record; ⌘Z undoes the newest.
+  title bar rolls back to any record; ⌘Z (Ctrl+Z on Windows and Linux) undoes
+  the newest.
 - Start: hands a ticket to a local coding agent (Claude Code, Codex or Pi) that
   works in the background. General tickets run in a scratch folder; coding
   tickets need the workstream linked to a repository and run on their own

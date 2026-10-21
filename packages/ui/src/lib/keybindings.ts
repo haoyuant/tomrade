@@ -1,12 +1,13 @@
 import { useSyncExternalStore } from "react";
-import { CHORD } from "@tomradex/keybindings/chord";
+import { CHORD, DEFAULT_KEYS } from "@tomradex/keybindings/chord";
 import type { MessageKey } from "./i18n";
 import { isMac } from "./keys";
 
 /**
- * Every command a key can run. The defaults live here, beside the code that
- * runs them; the person's settings hold only the commands they rebound
- * (`keybindings.overrides`, a user-scope section that travels with the Hub).
+ * Every command a key can run. Their default keys live in `@tomradex/keybindings`,
+ * where the main process quotes them too; the person's settings hold only the
+ * commands they rebound (`keybindings.overrides`, a user-scope section that
+ * travels with the Hub).
  */
 export type CommandId =
   | "palette"
@@ -44,23 +45,23 @@ export interface FixedKey {
 }
 
 export const COMMANDS: CommandSpec[] = [
-  { id: "palette", group: "anywhere", label: "shortcuts.palette", defaults: ["Mod+K"] },
-  { id: "newTicket", group: "anywhere", label: "shortcuts.newTicket", defaults: ["Mod+N", "N"] },
-  { id: "switchProject", group: "anywhere", label: "shortcuts.switchProject", defaults: ["Mod+P"] },
-  { id: "sidebar", group: "anywhere", label: "shortcuts.sidebar", defaults: ["Mod+B"] },
-  { id: "assistant", group: "anywhere", label: "shortcuts.assistant", defaults: ["Mod+J"] },
-  { id: "settings", group: "anywhere", label: "shortcuts.settings", defaults: ["Mod+,"] },
-  { id: "undo", group: "anywhere", label: "shortcuts.undo", defaults: ["Mod+Z"] },
-  { id: "redo", group: "anywhere", label: "shortcuts.redo", defaults: ["Mod+Shift+Z", "Mod+Y"] },
-  { id: "searchNotes", group: "anywhere", label: "shortcuts.searchNotes", defaults: ["Mod+Shift+F"] },
-  { id: "shortcuts", group: "anywhere", label: "shortcuts.thisSheet", defaults: ["?"] },
-  { id: "closeTab", group: "tabs", label: "shortcuts.closeTab", defaults: ["Mod+W"] },
-  { id: "nextTab", group: "tabs", label: "shortcuts.nextTab", defaults: ["Ctrl+Tab"] },
-  { id: "prevTab", group: "tabs", label: "shortcuts.prevTab", defaults: ["Ctrl+Shift+Tab"] },
-  { id: "backlogTab", group: "tabs", label: "shortcuts.backlogTab", defaults: ["Mod+1"] },
-  { id: "searchTickets", group: "board", label: "shortcuts.searchTickets", defaults: ["Mod+F", "/"] },
-  { id: "readWrite", group: "writing", label: "shortcuts.readWrite", defaults: ["Mod+E"] },
-  { id: "saveBody", group: "writing", label: "shortcuts.saveBody", defaults: ["Mod+Enter"] }
+  { id: "palette", group: "anywhere", label: "shortcuts.palette", defaults: DEFAULT_KEYS.palette },
+  { id: "newTicket", group: "anywhere", label: "shortcuts.newTicket", defaults: DEFAULT_KEYS.newTicket },
+  { id: "switchProject", group: "anywhere", label: "shortcuts.switchProject", defaults: DEFAULT_KEYS.switchProject },
+  { id: "sidebar", group: "anywhere", label: "shortcuts.sidebar", defaults: DEFAULT_KEYS.sidebar },
+  { id: "assistant", group: "anywhere", label: "shortcuts.assistant", defaults: DEFAULT_KEYS.assistant },
+  { id: "settings", group: "anywhere", label: "shortcuts.settings", defaults: DEFAULT_KEYS.settings },
+  { id: "undo", group: "anywhere", label: "shortcuts.undo", defaults: DEFAULT_KEYS.undo },
+  { id: "redo", group: "anywhere", label: "shortcuts.redo", defaults: DEFAULT_KEYS.redo },
+  { id: "searchNotes", group: "anywhere", label: "shortcuts.searchNotes", defaults: DEFAULT_KEYS.searchNotes },
+  { id: "shortcuts", group: "anywhere", label: "shortcuts.thisSheet", defaults: DEFAULT_KEYS.shortcuts },
+  { id: "closeTab", group: "tabs", label: "shortcuts.closeTab", defaults: DEFAULT_KEYS.closeTab },
+  { id: "nextTab", group: "tabs", label: "shortcuts.nextTab", defaults: DEFAULT_KEYS.nextTab },
+  { id: "prevTab", group: "tabs", label: "shortcuts.prevTab", defaults: DEFAULT_KEYS.prevTab },
+  { id: "backlogTab", group: "tabs", label: "shortcuts.backlogTab", defaults: DEFAULT_KEYS.backlogTab },
+  { id: "searchTickets", group: "board", label: "shortcuts.searchTickets", defaults: DEFAULT_KEYS.searchTickets },
+  { id: "readWrite", group: "writing", label: "shortcuts.readWrite", defaults: DEFAULT_KEYS.readWrite },
+  { id: "saveBody", group: "writing", label: "shortcuts.saveBody", defaults: DEFAULT_KEYS.saveBody }
 ];
 
 export const FIXED: FixedKey[] = [

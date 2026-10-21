@@ -1,4 +1,5 @@
 import type { SeedLocale } from "@tomradex/db";
+import { DEFAULT_KEYS } from "@tomradex/keybindings/chord";
 
 /** One ticket of the sample, keyed so the learning path can name it in either language. */
 export interface SampleTicket {
@@ -49,7 +50,23 @@ export const PATH: readonly [string, string][] = [
   ["b1", "d3"]
 ];
 
-const en: SampleWords = {
+/** The default keys the lessons teach. */
+interface LessonKeys {
+  palette: string;
+  searchNotes: string;
+  undo: string;
+}
+
+/** A chord as the shortcuts sheet writes it: "Mod+Shift+F" is ⇧⌘F on a Mac and Ctrl+Shift+F elsewhere. */
+function keyText(chord: string, platform: NodeJS.Platform = process.platform): string {
+  const mods = chord.split("+");
+  const key = mods.pop() ?? "";
+  const has = (m: string) => mods.includes(m);
+  if (platform === "darwin") return `${has("Ctrl") ? "⌃" : ""}${has("Alt") ? "⌥" : ""}${has("Shift") ? "⇧" : ""}${has("Mod") ? "⌘" : ""}${key}`;
+  return [...(has("Mod") || has("Ctrl") ? ["Ctrl"] : []), ...(has("Alt") ? ["Alt"] : []), ...(has("Shift") ? ["Shift"] : []), key].join("+");
+}
+
+const en = (keys: LessonKeys): SampleWords => ({
   name: "Tomrade tour",
   description: "A project that teaches Tomrade with its own tickets. It lives on this computer only — delete it whenever you like.",
   tour: "Getting started",
@@ -85,7 +102,7 @@ Then move this ticket to Done.`
 
 1. In the sidebar, next to **Files**, click **+** → **New note** and write a few lines.
 2. In the note's toolbar, click **Add to a ticket…** and pick this ticket.
-3. ⇧⌘F searches every note.
+3. ${keys.searchNotes} searches every note.
 
 The note now shows on this ticket.`
     },
@@ -101,10 +118,10 @@ The new view stays in the sidebar.`
     },
     {
       key: "a5",
-      title: "Find anything with ⌘K",
-      body: `The command palette is the quickest way around: ⌘K, or **Search** in the title bar.
+      title: `Find anything with ${keys.palette}`,
+      body: `The command palette is the quickest way around: ${keys.palette}, or **Search** in the title bar.
 
-1. Press ⌘K and type part of a ticket's key or title — *pomodoro* — and press Enter to open it.
+1. Press ${keys.palette} and type part of a ticket's key or title — *pomodoro* — and press Enter to open it.
 2. Type a file's name, or a command: *New ticket*, *Routines…*, *History*, a theme.
 3. Press **?** anywhere outside a text box: the **Keyboard shortcuts** sheet lists every key, and **Change keys…** rebinds them. **N** makes a new ticket.
 
@@ -158,7 +175,7 @@ Already signed in to a local agent such as Claude Code or Codex? Then this is al
       body: `Every write the assistant makes can be taken back.
 
 - **Revert** in a run's footer undoes that whole run at once.
-- **History** — the clock at the bottom, beside Undo and Redo — lists every write and rolls back to any of them. ⌘Z undoes the newest.
+- **History** — the clock at the bottom, beside Undo and Redo — lists every write and rolls back to any of them. ${keys.undo} undoes the newest.
 
 After the undo the example backlog is as it was.`
     },
@@ -279,9 +296,9 @@ This tour project never syncs — it is this computer's alone.`
       body: "It would be nice to see each finished pomodoro as an event in Google Calendar."
     }
   ]
-};
+});
 
-const zh: SampleWords = {
+const zh = (keys: LessonKeys): SampleWords => ({
   name: "Tomrade 入门",
   description: "用 Tomrade 自己的工单教你用 Tomrade。只存在这台电脑上，随时可以删掉。",
   tour: "入门",
@@ -317,7 +334,7 @@ const zh: SampleWords = {
 
 1. 在侧边栏 **文件** 旁边点 **+** → **新建笔记**，随便写几句。
 2. 在笔记的工具栏里点 **添加到工单…**，选中这个工单。
-3. ⇧⌘F 可以搜索所有笔记。
+3. ${keys.searchNotes} 可以搜索所有笔记。
 
 这篇笔记就会出现在这个工单上。`
     },
@@ -333,10 +350,10 @@ const zh: SampleWords = {
     },
     {
       key: "a5",
-      title: "用 ⌘K 找到任何东西",
-      body: `命令面板是最快的入口：按 ⌘K，或者点标题栏的 **搜索**。
+      title: `用 ${keys.palette} 找到任何东西`,
+      body: `命令面板是最快的入口：按 ${keys.palette}，或者点标题栏的 **搜索**。
 
-1. 按 ⌘K，输入工单编号或标题的一部分，比如「番茄」，回车打开。
+1. 按 ${keys.palette}，输入工单编号或标题的一部分，比如「番茄」，回车打开。
 2. 也可以输入文件名，或者命令：「新建工单」「例行事务…」「历史」、某个主题。
 3. 在输入框以外的地方按 **?**：**键盘快捷键** 列出所有按键，点 **修改按键…** 可以改。按 **N** 新建工单。
 
@@ -390,7 +407,7 @@ const zh: SampleWords = {
       body: `助手的每一次写入都可以撤回。
 
 - 点那次运行底部的 **撤销**，整次运行一起撤回。
-- **历史**——底部撤销、重做旁边的时钟——列出每一次写入，可以回滚到任意一条。⌘Z 撤销最近的一次。
+- **历史**——底部撤销、重做旁边的时钟——列出每一次写入，可以回滚到任意一条。${keys.undo} 撤销最近的一次。
 
 撤销之后，示例 backlog 会回到原样。`
     },
@@ -485,6 +502,13 @@ const zh: SampleWords = {
     { key: "f2", kind: "feedback", reporter: "阿杰", title: "长休息能不能再长一点？", body: "四轮之后休息 15 分钟不太够，希望能自己设。" },
     { key: "f3", kind: "idea", reporter: "Sam", title: "把番茄记录同步到日历", body: "如果每个完成的番茄都能在 Google 日历里显示成一个事件就好了。" }
   ]
-};
+});
 
-export const SAMPLE: Record<SeedLocale, SampleWords> = { en, zh };
+/** The sample in `locale`, its shortcuts written as `platform`'s keyboard shows them. */
+export function sampleWords(locale: SeedLocale, platform: NodeJS.Platform = process.platform): SampleWords {
+  const keys = { palette: keyText(DEFAULT_KEYS.palette[0], platform), searchNotes: keyText(DEFAULT_KEYS.searchNotes[0], platform), undo: keyText(DEFAULT_KEYS.undo[0], platform) };
+  return (locale === "zh" ? zh : en)(keys);
+}
+
+/** The sample for this machine, which seeds it. */
+export const SAMPLE: Record<SeedLocale, SampleWords> = { en: sampleWords("en"), zh: sampleWords("zh") };

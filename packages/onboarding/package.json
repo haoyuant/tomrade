@@ -27,6 +27,7 @@
     "@tomradex/inbox": "workspace:*",
     "@tomradex/ipc": "workspace:*",
     "@tomradex/items": "workspace:*",
+    "@tomradex/keybindings": "workspace:*",
     "@tomradex/projects": "workspace:*",
     "@tomradex/settings": "workspace:*",
     "cordis": "4.0.0-rc.8",

@@ -17,6 +17,7 @@
     { "path": "../inbox" },
     { "path": "../ipc" },
     { "path": "../items" },
+    { "path": "../keybindings" },
     { "path": "../projects" },
     { "path": "../settings" }
   ]

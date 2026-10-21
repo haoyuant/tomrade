@@ -16,7 +16,7 @@ import { Agent } from "@tomradex/agent";
 import { ARTIFACT_DIR, Storage, readHubManifest, readLogs } from "@tomradex/storage";
 import { Contributions } from "@tomradex/contributions";
 import { Inbox } from "@tomradex/inbox";
-import { Onboarding, PATH, SAMPLE } from "@tomradex/onboarding";
+import { Onboarding, PATH, SAMPLE, sampleWords, type SampleWords } from "@tomradex/onboarding";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-onboarding-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -65,6 +65,28 @@ describe("the sample project", () => {
     }
     expect(SAMPLE.zh.tickets.map((t) => t.key)).toEqual(SAMPLE.en.tickets.map((t) => t.key));
     expect(SAMPLE.zh.feedback.map((f) => [f.key, f.kind])).toEqual(SAMPLE.en.feedback.map((f) => [f.key, f.kind]));
+  });
+
+  it("names each shortcut the way the person's platform writes it, from the default keys", () => {
+    const text = (words: SampleWords) => words.tickets.map((t) => `${t.title}\n${t.body}`).join("\n");
+    for (const platform of ["win32", "linux"] as const) {
+      for (const locale of ["en", "zh"] as const) {
+        const words = sampleWords(locale, platform);
+        const search = words.tickets.find((t) => t.key === "a5")!;
+        expect(search.title).toContain("Ctrl+K");
+        expect(search.body).toContain("Ctrl+K");
+        expect(text(words)).toContain("Ctrl+Shift+F");
+        expect(text(words)).toContain("Ctrl+Z");
+        expect(text(words)).not.toMatch(/[⌘⇧⌥⌃]/);
+      }
+    }
+    for (const locale of ["en", "zh"] as const) {
+      const words = sampleWords(locale, "darwin");
+      expect(words.tickets.find((t) => t.key === "a5")!.title).toContain("⌘K");
+      expect(text(words)).toContain("⇧⌘F");
+      expect(text(words)).toContain("⌘Z");
+    }
+    expect(SAMPLE.en).toEqual(sampleWords("en", process.platform));
   });
 
   it("leaves the tour's feedback in the inbox to triage, from the tour as its source, once", async () => {
