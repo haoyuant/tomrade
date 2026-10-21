@@ -128,7 +128,7 @@ export function ProjectsScreen() {
   const hub = useHubInfo();
   const { seen, markSeen } = useSeen();
   const settings = useSettings();
-  const { state } = useSetup();
+  const { state } = useSetup({ autoTry: !seen("setup-screen") });
   // Held once raised, so connecting something shows what it unlocked instead of the screen vanishing.
   const [setup, setSetup] = useState<"open" | "closed" | null>(null);
   const [waited, setWaited] = useState(false);

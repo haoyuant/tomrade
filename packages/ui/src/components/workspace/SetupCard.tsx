@@ -11,11 +11,13 @@ import { useSetup } from "~/lib/setup";
 export function SetupCard({ onOpenSettings, onTroubleshoot }: { onOpenSettings: (engineId?: string) => void; onTroubleshoot?: (engineId: string, error?: string) => void }) {
   const { t } = useI18n();
   const { seen } = useSeen();
-  const { engines, state } = useSetup();
+  const { engines, state } = useSetup({ autoTry: !seen("setup-required") });
   if (!engines || !state || state.complete) return null;
   const noneReady = !engines.some((e) => e.ok);
   // Never marked: only a check's "*" puts it away, and never with nothing ready.
   if (!noneReady && seen("setup-required")) return null;
+  // An agent still answering its test message most likely works: no card until it has said.
+  if (state.checking) return null;
 
   return (
     <div className={noneReady ? "agent-empty agent-setup" : "agent-setup"} data-testid="setup-card">

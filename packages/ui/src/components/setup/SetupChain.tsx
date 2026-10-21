@@ -18,7 +18,7 @@ const FAILURE_KEYS: Record<string, MessageKey> = {
   cancelled: "setup.failCancelled"
 };
 
-function StepDetail({ step, title }: { step: ChainStep; title: string }) {
+function StepDetail({ step, title, insideApp }: { step: ChainStep; title: string; insideApp?: string }) {
   const { t } = useI18n();
   const progress = step.progress;
   if (step.state === "failed") {
@@ -28,6 +28,7 @@ function StepDetail({ step, title }: { step: ChainStep; title: string }) {
     return (
       <span className="setup-fix" role="alert" data-testid={`chain-error-${step.id}`}>
         {step.id === "test" ? t("setup.testFailed", { error: failure.message }) : known ? t(known) : t("setup.failExit", { error: failure.message })}
+        {step.id === "test" && insideApp && <> {t("setup.insideApp", { app: insideApp })}</>}
         {progress?.output && (
           <details className="eng-try-details">
             <summary>{t("setup.failOutput")}</summary>
@@ -88,7 +89,7 @@ export function SetupChain({ engine, onTroubleshoot }: { engine: EngineView; onT
       {!ready && (
         <span className="row" style={{ gap: "var(--space-2)" }}>
           <button type="button" className="btn btn-primary btn-sm" data-testid={`setup-run-${engine.id}`} disabled={chain.running} onClick={chain.start}>
-            {chain.running ? t("setup.oneClickRunning") : chain.run?.failed ? t("setup.retry") : t("setup.oneClick")}
+            {chain.running ? t("setup.oneClickRunning") : chain.official ? t("setup.installOfficial") : chain.run?.failed ? t("setup.retry") : t("setup.oneClick")}
           </button>
           {chain.running && (
             <button type="button" className="btn btn-ghost btn-xs" data-testid={`setup-cancel-${engine.id}`} onClick={chain.cancel}>
@@ -108,8 +109,8 @@ export function SetupChain({ engine, onTroubleshoot }: { engine: EngineView; onT
             <li key={step.id} data-step={step.id} data-state={step.state}>
               {icon(step)}
               <div className="setup-step-body">
-                <span>{t(STEP_LABELS[step.id], { title: engine.title })}</span>
-                <StepDetail step={step} title={engine.title} />
+                <span>{t(step.official ? "setup.stepInstallOfficial" : STEP_LABELS[step.id], { title: engine.title })}</span>
+                <StepDetail step={step} title={engine.title} insideApp={engine.cli?.insideApp} />
               </div>
             </li>
           ))}

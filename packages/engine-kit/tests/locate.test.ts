@@ -170,7 +170,7 @@ describe.skipIf(process.platform === "win32")("finding a local CLI", () => {
     const gone = { file: path.join(root, "Gone.app/cli/bin", NAME), runtime: path.join(root, "Gone.app/Electron") };
     const { host } = setup();
     const locator = new CliLocator(NAME, host, undefined, () => [gone, { file, runtime }]);
-    expect(await locator.locate()).toMatchObject({ state: "ready", path: file, source: "known", version: "2.137.1" });
+    expect(await locator.locate()).toMatchObject({ state: "ready", path: file, source: "known", version: "2.137.1", insideApp: "App" });
     const launch = await locator.launch();
     expect(launch.argv(["--acp"])).toEqual({ command: runtime, args: [file, "--acp"] });
     expect(launch.env().ELECTRON_RUN_AS_NODE).toBe("1");
@@ -181,7 +181,9 @@ describe.skipIf(process.platform === "win32")("finding a local CLI", () => {
 
     const onPath = cli(path.join(root, "bin"), 'echo "2.155.0"');
     const first = setup({ path: [path.join(root, "bin")] });
-    expect(await new CliLocator(NAME, first.host, undefined, () => [{ file, runtime }]).locate()).toMatchObject({ path: onPath, source: "path" });
+    const installed = await new CliLocator(NAME, first.host, undefined, () => [{ file, runtime }]).locate();
+    expect(installed).toMatchObject({ path: onPath, source: "path" });
+    expect(installed.insideApp).toBeUndefined();
   });
 
   it("runs an app's own launcher script as it is", async () => {

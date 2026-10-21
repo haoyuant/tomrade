@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { EngineView } from "@tomradex/agent";
+import type { AgentSettings, EngineView } from "@tomradex/agent";
 import type { Providing } from "@tomradex/community";
 import type { ProviderView } from "@tomradex/llm";
 import { useEngines } from "./agent";
-import { invoke, subscribe } from "./api";
+import { invoke, logQuietly, subscribe } from "./api";
+import { awaitsTry } from "./engines";
 import { useI18n } from "./i18n";
 import { engineStatus } from "./localCli";
 import { useStoreInstall } from "./plugins";
@@ -39,10 +40,38 @@ export function useWorkerTest() {
   return { viaProfile, test: test.data ?? null, pending: viaProfile && (test.isPending || test.isFetching), retest };
 }
 
-/** Engines and the worker, looked at again whenever settings change — a key saved anywhere shows here. */
-export function useSetup() {
+/** One automatic test message per engine, CLI and settings for the whole session, however many screens ask. */
+const autoTried = new Set<string>();
+
+/**
+ * A found and signed-in agent counts only once a test message got a reply, so
+ * setup sends that message itself. A failed one stays failed until the person
+ * retries it; a new CLI or new settings get their own.
+ */
+function useAutoTry(engines: EngineView[] | undefined, options: AgentSettings["engines"] | undefined, enabled: boolean) {
+  const qc = useQueryClient();
+  useEffect(() => {
+    if (!enabled || !engines) return;
+    for (const engine of engines) {
+      if (!awaitsTry(engine) || !(engine.capabilities.includes("backlog") || isLocalAgent(engine))) continue;
+      const key = JSON.stringify([engine.id, engine.cli?.path ?? null, options?.[engine.id] ?? null]);
+      if (autoTried.has(key)) continue;
+      autoTried.add(key);
+      void invoke("agent.tryEngine", null, engine.id)
+        .catch(logQuietly("agent.tryEngine"))
+        .finally(() => void qc.invalidateQueries({ queryKey: keys.agent.engines }));
+    }
+  }, [engines, options, enabled, qc]);
+}
+
+/**
+ * Engines and the worker, looked at again whenever settings change — a key saved anywhere shows here.
+ * `autoTry`: where setup is on screen, an agent found and signed in is sent its test message.
+ */
+export function useSetup(opts: { autoTry?: boolean } = {}) {
   const engines = useEngines();
   const settings = useSettings();
+  useAutoTry(engines.data, (settings.data?.agent as AgentSettings | undefined)?.engines, !!opts.autoTry);
   const worker = useQuery({ queryKey: keys.llm.worker, queryFn: () => invoke("llm.worker"), staleTime: 15_000 });
   const { viaProfile, test, pending } = useWorkerTest();
   const refetchEngines = engines.refetch;

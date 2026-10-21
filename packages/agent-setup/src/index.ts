@@ -96,7 +96,8 @@ export class AgentSetup extends Service {
       detect: async () => {
         const state = await engine.available({ fresh: true });
         const cli = state.cli;
-        return { ready: cli?.state === "ready", ...(cli?.version ? { version: cli.version } : {}), ...(cli?.error ?? state.reason ? { error: cli?.error ?? state.reason } : {}) };
+        // A desktop app's own copy does not count: installing puts the official CLI ahead of it.
+        return { ready: cli?.state === "ready" && !cli.insideApp, ...(cli?.version ? { version: cli.version } : {}), ...(cli?.error ?? state.reason ? { error: cli?.error ?? state.reason } : {}) };
       },
       report,
       signal

@@ -1,27 +1,36 @@
 import { expect, it } from "vitest";
 import type { EnginePick, EngineView } from "@tomradex/agent";
-import { engineHealth, engineProblem } from "../src/lib/engines";
+import { awaitsTry, engineHealth, engineProblem } from "../src/lib/engines";
 import { firstRunSetup, setupState } from "../src/lib/setupState";
 
 const models = (over: Partial<EnginePick> = {}): EnginePick => ({ key: "model", title: "Model", choices: [{ value: "m1" }], freeText: true, ...over });
-const engine = (over: Partial<EngineView> = {}): EngineView => ({ id: "agent", title: "Agent", capabilities: ["backlog", "code", "general"], ok: true, picks: [models()], ...over });
+const answered = { ok: true, ms: 10, at: 1, reply: "OK" };
+const untried = (over: Partial<EngineView> = {}): EngineView => ({ id: "agent", title: "Agent", capabilities: ["backlog", "code", "general"], ok: true, picks: [models()], ...over });
+const engine = (over: Partial<EngineView> = {}): EngineView => untried({ tried: answered, ...over });
 const worker = { ok: true, via: "lent" as const, title: "Agent" };
 
-it("counts a found agent as working once it listed its models", () => {
+it("counts a found and signed-in agent only once a test message got a reply", () => {
   expect(engineHealth(engine())).toBe("works");
-  // Agents whose model list is not live (or that have no pick) work once found and signed in.
-  expect(engineHealth(engine({ picks: [] }))).toBe("works");
-  expect(engineHealth(engine({ picks: [models({ choices: [] })] }))).toBe("works");
+  // Found, signed in and its models listed, but never tried: still being checked, not working.
+  expect(engineHealth(untried())).toBe("checking");
+  expect(awaitsTry(untried())).toBe(true);
+  expect(engineHealth(untried({ picks: [] }))).toBe("checking");
+  expect(setupState([untried()], worker)).toMatchObject({ complete: false, checking: true, assistant: [] });
+  // The built-in agent runs on Tomrade's models, and a terminal-only one cannot take a test message: their models decide.
+  expect(engineHealth(untried({ usesModels: true }))).toBe("works");
+  expect(engineHealth(untried({ terminalOnly: true }))).toBe("works");
+  expect(awaitsTry(untried({ usesModels: true }))).toBe(false);
+  expect(awaitsTry(engine())).toBe(false);
 });
 
 it("does not count an agent that was found but could not list its models", () => {
-  const broken = engine({ picks: [models({ choices: [], failed: "session/new: model not found" })] });
+  const broken = untried({ picks: [models({ choices: [], failed: "session/new: model not found" })] });
   expect(engineHealth(broken)).toBe("broken");
   expect(engineProblem(broken)).toEqual({ kind: "models", detail: "session/new: model not found" });
 });
 
 it("waits on an agent still listing its models", () => {
-  expect(engineHealth(engine({ picks: [models({ choices: [], pending: true })] }))).toBe("checking");
+  expect(engineHealth(untried({ usesModels: true, picks: [models({ choices: [], pending: true })] }))).toBe("checking");
 });
 
 it("lets a try with its current settings settle it either way", () => {
@@ -42,11 +51,11 @@ it("leaves an agent that is not ready to its own state", () => {
 it("completes setup only with a working assistant and a worker", () => {
   expect(setupState([engine()], worker)).toMatchObject({ complete: true, checking: false });
   expect(setupState([engine()], { ok: false, reason: "none" }).complete).toBe(false);
-  const broken = setupState([engine({ picks: [models({ choices: [], failed: "model not found" })] })], worker);
+  const broken = setupState([untried({ picks: [models({ choices: [], failed: "model not found" })] })], worker);
   expect(broken).toMatchObject({ complete: false, checking: false, assistant: [], locals: [] });
-  expect(setupState([engine({ picks: [models({ choices: [], pending: true })] })], worker)).toMatchObject({ complete: false, checking: true });
+  expect(setupState([untried({ picks: [models({ choices: [], pending: true })] })], worker)).toMatchObject({ complete: false, checking: true });
   // One working agent is enough, whatever the others are doing.
-  expect(setupState([engine({ id: "a", picks: [models({ choices: [], failed: "x" })] }), engine({ id: "b" })], worker)).toMatchObject({ complete: true, checking: false });
+  expect(setupState([untried({ id: "a", picks: [models({ choices: [], failed: "x" })] }), engine({ id: "b" })], worker)).toMatchObject({ complete: true, checking: false });
 });
 
 it("counts a worker profile only once its one-token test answered", () => {
