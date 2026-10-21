@@ -2,6 +2,7 @@ import { Context, Service } from "cordis";
 import type { Item } from "@tomradex/domain";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/items";
+import { errorMessage } from "@tomradex/contracts";
 
 export interface CommandScope {
   projectId?: string;
@@ -413,7 +414,7 @@ export class Contributions extends Service {
     try {
       return await fn();
     } catch (error) {
-      this.ctx.logger("contributions").warn(`${label}: ${error instanceof Error ? error.message : String(error)}`);
+      this.ctx.logger("contributions").warn(`${label}: ${errorMessage(error)}`);
       return fallback;
     }
   }

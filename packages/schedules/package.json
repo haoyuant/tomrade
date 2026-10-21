@@ -21,6 +21,7 @@
     "@tomradex/agent": "workspace:*",
     "@tomradex/boards": "workspace:*",
     "@tomradex/code-link": "workspace:*",
+    "@tomradex/contracts": "workspace:*",
     "@tomradex/db": "workspace:*",
     "@tomradex/domain": "workspace:*",
     "@tomradex/ipc": "workspace:*",

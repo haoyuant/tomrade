@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@tomradex/boards": "workspace:*",
+    "@tomradex/contracts": "workspace:*",
     "@tomradex/db": "workspace:*",
     "@tomradex/domain": "workspace:*",
     "@tomradex/git": "workspace:*",

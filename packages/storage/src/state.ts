@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { CORE_SCHEMA_VERSION, seedDefaultViews, type PluginRegistration, type Queryable } from "@tomradex/db";
 import { NewerSchemaError } from "./types.js";
+import { writeFileAtomic } from "@tomradex/contracts";
 
 /** The slice of a connection the artifact needs; a project's `ProjectDb` satisfies it. */
 export interface StateDb extends Queryable {
@@ -277,10 +278,7 @@ function writeIfChanged(file: string, body: string): boolean {
   } catch {
     // absent
   }
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, body, "utf8");
-  fs.renameSync(tmp, file);
+  writeFileAtomic(file, body);
   return true;
 }
 

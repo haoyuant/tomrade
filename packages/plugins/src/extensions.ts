@@ -23,6 +23,7 @@ import {
   type TrustTier
 } from "@tomradex/plugin-kit";
 import { PROTECTED_ROWS, type RowPatch } from "./types.js";
+import { errorMessage, writeJsonAtomic } from "@tomradex/contracts";
 
 export interface ExtensionStoreConfig {
   /** `~/Tomrade/plugins`: installed versions and each plugin's data. */
@@ -166,7 +167,7 @@ export class ExtensionStore {
       raw = JSON.parse(fs.readFileSync(this.compatibilityFile, "utf8"));
     } catch (error) {
       this.compatibilityReadOnly = true;
-      this.compatibilityProblems.push(`${COMPATIBILITY_FILE} is not JSON (${error instanceof Error ? error.message : String(error)}); no exemption applies until it is repaired by hand`);
+      this.compatibilityProblems.push(`${COMPATIBILITY_FILE} is not JSON (${errorMessage(error)}); no exemption applies until it is repaired by hand`);
       return;
     }
     if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
@@ -192,10 +193,7 @@ export class ExtensionStore {
   private writeGrants(): void {
     const out: Record<string, { tomrade: string[]; sdk: string[] }> = {};
     for (const [key, grant] of this.grants) if (grant.tomrade.size || grant.sdk.size) out[key] = { tomrade: [...grant.tomrade].sort(), sdk: [...grant.sdk].sort() };
-    fs.mkdirSync(path.dirname(this.compatibilityFile), { recursive: true });
-    const tmp = `${this.compatibilityFile}.tmp`;
-    fs.writeFileSync(tmp, `${JSON.stringify(out, null, 2)}\n`);
-    fs.renameSync(tmp, this.compatibilityFile);
+    writeJsonAtomic(this.compatibilityFile, out);
   }
 
   /** The ranges a manifest names that this Tomrade is outside, and whether this exact pair was let in. */
@@ -278,7 +276,7 @@ export class ExtensionStore {
       try {
         name = row.name === undefined ? undefined : rowName(entry.dir, row.name);
       } catch (error) {
-        return refuse(error instanceof Error ? error.message : String(error));
+        return refuse(errorMessage(error));
       }
       const patch: RowPatch = { id: row.id };
       // Only a plugin the extension supplies is its code; an app row it reconfigures stays the app's.
@@ -438,7 +436,7 @@ export class ExtensionStore {
       try {
         return readLanguagePack(entry.dir, language);
       } catch (error) {
-        throw new ExtensionRefused(`${id}: ${error instanceof Error ? error.message : String(error)}`);
+        throw new ExtensionRefused(`${id}: ${errorMessage(error)}`);
       }
     });
     const identity = identityOf(manifest, { root: entry.dir, dataDir: dataDirFor(this.config.root, id) });

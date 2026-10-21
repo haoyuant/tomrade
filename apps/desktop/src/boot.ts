@@ -8,6 +8,7 @@ import { LOCK_FILE } from "@tomradex/plugin-kit";
 import { applyPatches, interpolate, readConfig, readRows, resolvePlugin, writePatchRow, type PluginPatch } from "./loader.js";
 import { fileExporter } from "./logfile.js";
 import { nodeRuntime } from "./node-runtime.js";
+import { errorMessage } from "@tomradex/contracts";
 
 export interface BootOptions {
   configFile: string;
@@ -63,7 +64,7 @@ function compose(opts: BootOptions, vars: Record<string, string>) {
       interpolate(p.rows, vars);
       return true;
     } catch (error) {
-      dropped.push(`${p.from}: its rows were not applied — ${error instanceof Error ? error.message : String(error)}`);
+      dropped.push(`${p.from}: its rows were not applied — ${errorMessage(error)}`);
       return false;
     }
   });
@@ -96,7 +97,7 @@ export async function boot(opts: BootOptions): Promise<Booted> {
     composition = compose(opts, vars);
   } catch (error) {
     ctx.logger("boot").error(error);
-    throw new ConfigUnreadable(error instanceof Error ? error.message : String(error), { cause: error });
+    throw new ConfigUnreadable(errorMessage(error), { cause: error });
   }
   const { rows, modules, contracts, extensions, recompose, rowsFrom, dropped, leftSwitches } = composition;
   for (const reason of dropped) ctx.logger("boot").warn(reason);

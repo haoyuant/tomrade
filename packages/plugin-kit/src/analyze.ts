@@ -3,6 +3,7 @@ import path from "node:path";
 import { parse } from "@babel/parser";
 import { riskOf, type Manifest, type RiskLevel } from "@tomradex/plugin-sdk";
 import { listFiles } from "./digest.js";
+import { errorMessage } from "@tomradex/contracts";
 
 export type Severity = "info" | "warn" | "high" | "critical";
 
@@ -92,7 +93,7 @@ function analyzeScript(source: string, file: string, observed: Observed, finding
   try {
     ast = parse(source, { sourceType: "unambiguous", errorRecovery: true, allowReturnOutsideFunction: true, plugins: ["topLevelAwait"] });
   } catch (error) {
-    add("unparseable", "high", `could not be read as JavaScript: ${error instanceof Error ? error.message : String(error)}`, 1);
+    add("unparseable", "high", `could not be read as JavaScript: ${errorMessage(error)}`, 1);
     return;
   }
 

@@ -4,6 +4,7 @@ import type { Host } from "../host.js";
 import { within } from "../scope.js";
 import { CORDIS } from "../services.js";
 import type { Facade, Fn } from "./shared.js";
+import { errorMessage } from "@tomradex/contracts";
 
 const on = <K extends keyof Events>(host: Host, event: K, listener: Events[K]): Disposer => {
   const fire = host.listen(listener as Fn, `on(${event})`);
@@ -17,7 +18,7 @@ const on = <K extends keyof Events>(host: Host, event: K, listener: Events[K]): 
         return host.ctx.on("tools/result", (call, outcome) =>
           fire(
             { name: call.name, args: call.args, author: call.by, projectId: call.projectId, runId: call.run?.id } as never,
-            (outcome.ok ? { ok: true } : { ok: false, error: outcome.error instanceof Error ? outcome.error.message : String(outcome.error) }) as never
+            (outcome.ok ? { ok: true } : { ok: false, error: errorMessage(outcome.error) }) as never
           )
         );
       case "project.opened":
@@ -48,7 +49,7 @@ export const lifecycle = ({ host, ns, logger }: Facade): Pick<PluginContext, "on
           if (gone) d?.();
           else dispose = d;
         },
-        (error: unknown) => logger.warn(`when(${name}): ${error instanceof Error ? error.message : String(error)}`)
+        (error: unknown) => logger.warn(`when(${name}): ${errorMessage(error)}`)
       );
       return () => {
         gone = true;
@@ -69,7 +70,7 @@ export const lifecycle = ({ host, ns, logger }: Facade): Pick<PluginContext, "on
           if (gone) d();
           else dispose = d;
         },
-        (error: unknown) => logger.warn(`effect: ${error instanceof Error ? error.message : String(error)}`)
+        (error: unknown) => logger.warn(`effect: ${errorMessage(error)}`)
       );
       return () => {
         gone = true;

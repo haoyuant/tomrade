@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { loadPlaybookDir, type Playbook } from "@tomradex/agent";
+import { errorMessage } from "@tomradex/contracts";
 
 /**
  * The four backlog playbooks, one SKILL.md per `playbooks/<name>/` at the
@@ -7,7 +8,7 @@ import { loadPlaybookDir, type Playbook } from "@tomradex/agent";
  * touching code. `../playbooks` resolves there from `src/` and `dist/` alike.
  */
 export const PLAYBOOKS: Playbook[] = loadPlaybookDir(fileURLToPath(new URL("../playbooks", import.meta.url)), (file, err) => {
-  throw new Error(`backlog playbook ${file} failed to load: ${err instanceof Error ? err.message : String(err)}`);
+  throw new Error(`backlog playbook ${file} failed to load: ${errorMessage(err)}`);
 });
 
 if (PLAYBOOKS.length === 0) throw new Error("agent-backlog found no playbooks — the playbooks/ directory did not ship with the package");

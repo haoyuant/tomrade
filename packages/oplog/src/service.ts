@@ -6,6 +6,7 @@ import { extensionScope, writeContext } from "@tomradex/write";
 import type {} from "@tomradex/ipc";
 import { patchOf, rowToEntry, type OplogRow } from "./rows.js";
 import { applyEntry, labelOf, redoSummary, undoLast, undoRow, undoSummary, undoRun, undoVia, undoneRow, undoneRows, wasPurged } from "./undo.js";
+import { errorMessage, localeOf } from "@tomradex/contracts";
 
 declare module "cordis" {
   interface Context {
@@ -134,7 +135,7 @@ export class Oplog extends Service {
 
   /** The person's language, for the summaries ⌘Z shows; English where no settings are loaded. */
   private locale(): LanguageTag {
-    return languageTag((this.ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
+    return languageTag(localeOf(this.ctx));
   }
 
   private get device(): string {
@@ -258,7 +259,7 @@ export class Oplog extends Service {
         result.reverted += theirs.reverted;
         result.kept.push(...theirs.kept);
       } catch (error) {
-        this.home.logger.warn(`oplog: ${provider.id}.undoRun failed: ${error instanceof Error ? error.message : String(error)}`);
+        this.home.logger.warn(`oplog: ${provider.id}.undoRun failed: ${errorMessage(error)}`);
       }
     }
     return result;
@@ -367,7 +368,7 @@ export class Oplog extends Service {
       try {
         provider.forget(projectId);
       } catch (error) {
-        this.home.logger.warn(`oplog: ${provider.id}.forget failed: ${error instanceof Error ? error.message : String(error)}`);
+        this.home.logger.warn(`oplog: ${provider.id}.forget failed: ${errorMessage(error)}`);
       }
     }
   }
@@ -433,7 +434,7 @@ export class Oplog extends Service {
       try {
         steps.push(await this.step(projectId, record, direction));
       } catch (error) {
-        return { steps, stopped: error instanceof Error ? error.message : String(error) };
+        return { steps, stopped: errorMessage(error) };
       }
     }
     return { steps, stopped: null };

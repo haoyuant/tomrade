@@ -7,6 +7,7 @@ import type {} from "@tomradex/hub";
 import type {} from "@tomradex/ipc";
 import { agentAccess } from "./agent.js";
 import { mapSecrets, mapStrings, SEALED, type SecretCipher } from "./secrets.js";
+import { readJsonOr, type SettingsReader, writeJsonAtomic } from "@tomradex/contracts";
 
 export { mapSecrets, SEALED, type SecretCipher } from "./secrets.js";
 
@@ -243,22 +244,6 @@ function cardOf(section: SettingsSection, scope: SettingsScope, locale: Locale, 
   return { id: section.id, title, description, order: section.order ?? 100, scope, schema };
 }
 
-const readJson = (file: string): unknown => {
-  try {
-    return JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch {
-    return undefined;
-  }
-};
-
-const writeJson = (file: string, value: unknown, mode?: number): void => {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(value, null, 2) + "\n", "utf8");
-  if (mode !== undefined) fs.chmodSync(tmp, mode);
-  fs.renameSync(tmp, file);
-};
-
 /** A section whose schema names a password never leaves the machine, whatever it declares. */
 function holdsSecret(schema: z.ZodType): boolean {
   const visit = (v: unknown): boolean => {
@@ -269,7 +254,7 @@ function holdsSecret(schema: z.ZodType): boolean {
   return visit(z.toJSONSchema(schema));
 }
 
-export class Settings extends Service {
+export class Settings extends Service implements SettingsReader {
   static provide = "settings";
   static Config = SettingsConfig;
 
@@ -326,7 +311,7 @@ export class Settings extends Service {
   }
 
   [Service.init]() {
-    const raw = readJson(this.config.path);
+    const raw = readJsonOr<unknown>(this.config.path, undefined);
     if (isRecord(raw)) this.stored = this.open(raw);
     this.register(THEME);
     this.register(THEME_AUTOMATION);
@@ -515,7 +500,7 @@ export class Settings extends Service {
     let plain = false;
     mapSecrets(opened, (secret) => (plain ||= secret !== ""));
     try {
-      if (cipher && plain) writeJson(this.config.path, this.sealed(opened, cipher), 0o600);
+      if (cipher && plain) writeJsonAtomic(this.config.path, this.sealed(opened, cipher), { mode: 0o600 });
       else if (fs.statSync(this.config.path).mode & 0o077) fs.chmodSync(this.config.path, 0o600);
     } catch (e) {
       this.home.logger.warn(`couldn't secure ${this.config.path}: ${(e as Error).message}`);
@@ -532,7 +517,7 @@ export class Settings extends Service {
   }
 
   private persistMachine(): void {
-    writeJson(this.config.path, this.sealed(this.stored, this.secretStorage() === "keychain" ? this.config.cipher! : null), 0o600);
+    writeJsonAtomic(this.config.path, this.sealed(this.stored, this.secretStorage() === "keychain" ? this.config.cipher! : null), { mode: 0o600 });
   }
 
   /** The user-scope file as another machine may have written it, folded in: the later stamp wins per section. */
@@ -556,7 +541,7 @@ export class Settings extends Service {
   private loadUser(): void {
     this.user = { v: 1, sections: {} };
     if (!this.userFile) return;
-    const raw = readJson(this.userFile);
+    const raw = readJsonOr<unknown>(this.userFile, undefined);
     if (isRecord(raw) && isRecord(raw.sections)) {
       for (const [id, entry] of Object.entries(raw.sections)) {
         if (isRecord(entry) && typeof entry.updatedAt === "number") this.user.sections[id] = { value: entry.value, updatedAt: entry.updatedAt };
@@ -572,7 +557,7 @@ export class Settings extends Service {
       if (this.scopeOf(s) !== "user" || this.user.sections[s.id] || this.stored[s.id] === undefined) continue;
       this.user.sections[s.id] = { value: this.stored[s.id], updatedAt: Date.now() };
     }
-    writeJson(this.userFile, this.user);
+    writeJsonAtomic(this.userFile, this.user);
   }
 }
 

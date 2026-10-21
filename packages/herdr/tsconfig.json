@@ -7,7 +7,7 @@
   },
   "include": ["src"],
   "references": [
-    { "path": "../doctor" },
+    { "path": "../contracts" },
     { "path": "../domain" },
     { "path": "../engine-kit" },
     { "path": "../ipc" }

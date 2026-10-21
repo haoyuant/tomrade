@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@tomradex/contracts": "workspace:*",
     "@tomradex/contributions": "workspace:*",
     "@tomradex/domain": "workspace:*",
     "@tomradex/ipc": "workspace:*",

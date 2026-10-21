@@ -16,6 +16,7 @@ import { MIGRATIONS, NotesStore, TABLES, nameKey, type IndexBatch } from "./stor
 import { isIndexedPath, isNotePath, noteName, parseNote, resolveLink, rewriteLink, type NoteLink } from "./syntax.js";
 import { registerTools } from "./tools.js";
 import { NOTES_WORDS } from "./words.js";
+import { errorMessage } from "@tomradex/contracts";
 
 declare module "cordis" {
   interface Context {
@@ -98,7 +99,6 @@ export interface RetargetResult {
 }
 
 const sha256 = (bytes: Buffer): string => createHash("sha256").update(bytes).digest("hex");
-const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 const clipLine = (text: string): string => {
   const clean = text.replace(/\s+/g, " ").trim();
   return clean.length > 200 ? `${clean.slice(0, 200)}…` : clean;
@@ -168,7 +168,7 @@ export class Notes extends Service {
   }
 
   private warn(projectId: string, error: unknown): void {
-    this.home.logger.warn(`notes: ${projectId}: ${message(error)}`);
+    this.home.logger.warn(`notes: ${projectId}: ${errorMessage(error)}`);
   }
 
   private forget(projectId: string): void {

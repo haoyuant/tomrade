@@ -15,6 +15,7 @@ import { linkGitHub } from "./oauth.js";
 import { BUNDLE_CATALOG, OFFICIAL_CATALOG_URL, OfficialCatalog, bundledPackage, isOfficialId } from "./official.js";
 import { githubAccess, prepareRelease, type GitHubAccess } from "./publish.js";
 import { latestInstallable, planUpdate, revoked, type Revocation, type Tier, type UpdatePlan, type VersionRow } from "./rules.js";
+import { bestEffort, type CommunityReader, errorMessage } from "@tomradex/contracts";
 
 export const CommunityConfig = z.preprocess(
   (v) => v ?? {},
@@ -215,7 +216,6 @@ interface Source {
   downloaded(id: string): void;
 }
 
-const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /**
  * The store, as the app sees it: browse Tomrade's official plugins and
@@ -225,7 +225,7 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
  * is open source and its person judges it. What is installed must be the
  * exact build its source lists; an official one must carry Tomrade's signature.
  */
-export class Community extends Service {
+export class Community extends Service implements CommunityReader {
   static provide = "community";
   static inject = ["settings", "github"];
   static Config = CommunityConfig;
@@ -280,7 +280,7 @@ export class Community extends Service {
         const { url, done } = await linkGitHub(this.client);
         void done.then(
           () => this.changed(),
-          (error: unknown) => this.home.logger.warn(`GitHub link: ${message(error)}`)
+          (error: unknown) => this.home.logger.warn(`GitHub link: ${errorMessage(error)}`)
         );
         return { url };
       });
@@ -291,16 +291,16 @@ export class Community extends Service {
     // A model added later can make a provider's starter due; it goes on then, not at the next check hours away.
     this.home.on("settings/changed", (next, previous) => {
       if (JSON.stringify(next.models) === JSON.stringify(previous.models) || !this.starters().some((s) => s.hosts && this.due(s))) return;
-      void this.installStarters().catch((error: unknown) => this.home.logger.info(`starters not installed: ${message(error)}`));
+      void this.installStarters().catch((error: unknown) => this.home.logger.info(`starters not installed: ${errorMessage(error)}`));
     });
     // A starter taking the place of a row the app used to ship is back as the app starts, from what the app carries: the
     // first check is seconds away and may wait on the network, and until then that row's threads would find no engine.
     // The plugin manager is there once every row of the start has had its go.
     this.home.inject(["plugins"], (ctx) => {
       if (!this.config.officialBundle || !(ctx.get("plugins") as Plugins).extensions) return;
-      void this.installStarters({ carried: true }).catch((error: unknown) => this.home.logger.info(`carried starters not installed: ${message(error)}`));
+      void this.installStarters({ carried: true }).catch((error: unknown) => this.home.logger.info(`carried starters not installed: ${errorMessage(error)}`));
     });
-    const sweep = () => void this.sweep().catch((error: unknown) => this.home.logger.info(`community check skipped: ${message(error)}`));
+    const sweep = () => void this.sweep().catch((error: unknown) => this.home.logger.info(`community check skipped: ${errorMessage(error)}`));
     const first = setTimeout(sweep, 15_000);
     const every = setInterval(sweep, this.config.checkEveryMs);
     first.unref?.();
@@ -419,7 +419,7 @@ export class Community extends Service {
     const sources = names.map((name, i) => {
       const r = settled[i]!;
       const status = known.find((k) => k.name === name)!;
-      return r.status === "fulfilled" ? { ...status, available: true } : { ...status, available: false, error: message(r.reason) };
+      return r.status === "fulfilled" ? { ...status, available: true } : { ...status, available: false, error: errorMessage(r.reason) };
     });
     return { listings, sources };
   }
@@ -487,7 +487,7 @@ export class Community extends Service {
     } catch (error) {
       this.bundleRefused.add(bundled);
       fs.rmSync(`${file}.part`, { force: true });
-      this.home.logger.warn(`the bundled ${row.plugin_id} ${row.version} is not used: ${message(error)}`);
+      this.home.logger.warn(`the bundled ${row.plugin_id} ${row.version} is not used: ${errorMessage(error)}`);
       return false;
     } finally {
       if (dir) fs.rmSync(dir, { recursive: true, force: true });
@@ -677,7 +677,7 @@ export class Community extends Service {
           const { row, source } = opts.carried ? this.carried(id) : await this.pick(id);
           await this.installVersion(row, source, { disabled: !!replaces && this.plugins.switchedOff(replaces) });
         } catch (error) {
-          this.home.logger.info(`${id} is not installed yet: ${message(error)}`);
+          this.home.logger.info(`${id} is not installed yet: ${errorMessage(error)}`);
           continue;
         }
       }
@@ -705,12 +705,12 @@ export class Community extends Service {
         const hit = revoked(entry.id, entry.version, result);
         if (!hit) continue;
         now.set(entry.id, hit.reason);
-        if (!entry.disabled) await this.plugins.setEnabled(entry.id, false).catch(() => undefined);
+        if (!entry.disabled) await bestEffort(this.plugins.setEnabled(entry.id, false), this.home.logger, `turning off revoked ${entry.id}`);
       }
     }
     this.revokedNow = now;
     for (const plan of await this.updates().catch(() => [])) {
-      if (plan.automatic && !now.has(plan.id)) await this.installVersion(plan.to, this.sourceFor(plan.id)).catch((error: unknown) => this.home.logger.warn(`update ${plan.id}: ${message(error)}`));
+      if (plan.automatic && !now.has(plan.id)) await this.installVersion(plan.to, this.sourceFor(plan.id)).catch((error: unknown) => this.home.logger.warn(`update ${plan.id}: ${errorMessage(error)}`));
     }
     this.changed();
   }

@@ -6,6 +6,7 @@ import type {} from "@tomradex/items";
 import { remoteIdentity, serverHost, sshHostName } from "@tomradex/repos";
 import type {} from "@tomradex/settings";
 import { GITHUB_WORDS } from "./words.js";
+import { contract, errorMessage, type LandedLink, localeOf } from "@tomradex/contracts";
 
 export const name = "inbox-github";
 export const inject = ["inbox", "github", "repos", "items"];
@@ -48,13 +49,7 @@ export interface Api {
   whoami(): Promise<string>;
 }
 
-/** Code-link's record of where a ticket's code landed, read structurally so this needs no code-link. */
-export interface LandedLink {
-  repoId: string;
-  mergedSha: string | null;
-  prNumber: number | null;
-  prState: string | null;
-}
+export type { LandedLink };
 
 export interface Issue {
   number: number;
@@ -232,7 +227,7 @@ export function githubSource(deps: Deps): InboxSource {
       return await run();
     } catch (error) {
       const status = (error as { status?: number }).status;
-      if (status === 403 || status === 404) throw new Error(deps.words().noAccess(repo, error instanceof Error ? error.message : String(error)));
+      if (status === 403 || status === 404) throw new Error(deps.words().noAccess(repo, errorMessage(error)));
       throw error;
     }
   };
@@ -331,12 +326,12 @@ export function githubSource(deps: Deps): InboxSource {
           pulled += 1;
         } catch (error) {
           failure ??= error;
-          warnings.push(deps.words().repoFailed(repo, error instanceof Error ? error.message : String(error)));
+          warnings.push(deps.words().repoFailed(repo, errorMessage(error)));
         }
       }
       if (names.length && !pulled) throw failure;
       // a release check that fails is tried again next pull; it must not lose what was pulled
-      await ship(projectId, repos).catch((error: unknown) => warnings.push(deps.words().releaseFailed(error instanceof Error ? error.message : String(error))));
+      await ship(projectId, repos).catch((error: unknown) => warnings.push(deps.words().releaseFailed(errorMessage(error))));
       return { entries, activity, cursor: started - OVERLAP_MS, state: { repos: read } satisfies PullState, warnings };
     },
     async reply(entry, text) {
@@ -355,8 +350,8 @@ export function githubSource(deps: Deps): InboxSource {
 }
 
 export function apply(ctx: Context) {
-  const words = () => wordsIn((ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
-  const codeLink = () => ctx.get("codeLink") as { links(projectId: string, itemId?: string): LandedLink[] } | undefined;
+  const words = () => wordsIn(localeOf(ctx));
+  const codeLink = () => contract(ctx, "codeLink");
   ctx.inbox.source(
     githubSource({
       api: ctx.github.api,

@@ -73,6 +73,7 @@
     "@tomradex/code-link": "workspace:*",
     "@tomradex/code-sessions": "workspace:*",
     "@tomradex/community": "workspace:*",
+    "@tomradex/contracts": "workspace:*",
     "@tomradex/contributions": "workspace:*",
     "@tomradex/db": "workspace:*",
     "@tomradex/deps-graph": "workspace:*",

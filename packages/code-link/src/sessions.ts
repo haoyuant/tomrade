@@ -16,6 +16,7 @@ import { hookCommand } from "./connect.js";
 import { classifyRemoteFailure, remoteFailureDetail } from "./remote.js";
 import { CODE_WORDS } from "./words.js";
 import type { CodeLinkStore, SessionBlock, SessionState, SessionView } from "./store.js";
+import { contract, errorMessage } from "@tomradex/contracts";
 
 /** How long a session may be silent before it counts as idle, and how long idle before it is over. */
 export const IDLE_AFTER_MS = 10 * 60 * 1000;
@@ -376,14 +377,14 @@ export class Sessions {
     const session = skip ? null : this.store.session(projectId, sessionId);
     if (!event || !session) return hookReply(name, own);
     const ticketId = session.itemIds[0];
-    const ticket = ticketId ? ((this.ctx.get("items") as { get(projectId: string, id: string): { key: string } | null } | undefined)?.get(projectId, ticketId)?.key ?? null) : null;
+    const ticket = ticketId ? (contract(this.ctx, "items")?.get(projectId, ticketId)?.key ?? null) : null;
     const answerable = replies && CLI_HOOK_COVERAGE[event].answers.includes(session.agent);
     const call = cliHookCall(event, p as Record<string, unknown>, { agent: session.agent, answerable, projectId, sessionId, ticket });
     let answer: CliHookAnswer | undefined;
     try {
       answer = (await this.ctx.serial("agent/cli-hook", call)) ?? undefined;
     } catch (error) {
-      this.ctx.logger("code-link").warn(`agent/cli-hook: ${error instanceof Error ? error.message : String(error)}`);
+      this.ctx.logger("code-link").warn(`agent/cli-hook: ${errorMessage(error)}`);
     }
     return hookReply(name, answerable ? mergeAnswers(own, answer) : own);
   }

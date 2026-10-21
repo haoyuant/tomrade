@@ -4,6 +4,7 @@ import { LIMITS, PACKAGE_EXT, parseCatalog, unpackPlugin, type Attestation, type
 import { OFFICIAL_PUBLISHER, compareVersions, nameOf, namespaceOf, parseManifest } from "@tomradex/plugin-sdk";
 import type { Manifest } from "@tomradex/plugin-sdk";
 import { latestInstallable, type Revocation, type VersionRow } from "./rules.js";
+import { errorMessage, writeJsonAtomic } from "@tomradex/contracts";
 
 /** Where Tomrade's own plugins are released: github.com/haoyuant/tomrade-plugins. */
 export const OFFICIAL_CATALOG_URL = "https://github.com/haoyuant/tomrade-plugins/releases/download/catalog/catalog.json";
@@ -43,7 +44,6 @@ interface Held {
   fetchedAt: number;
 }
 
-const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /**
  * The official catalog as rows the store client already understands. Only
@@ -91,7 +91,7 @@ export class OfficialCatalog {
       this.nextFetchAt = Date.now() + this.opts.freshMs;
       this.save(raw);
     } catch (error) {
-      this.error = message(error);
+      this.error = errorMessage(error);
       // A cache from before an upgrade may lack what the new build's starters need.
       this.held ??= [this.copy(this.opts.cacheFile), this.copy(this.opts.bundleFile)].filter((h) => !!h).sort((a, b) => b.fetchedAt - a.fetchedAt)[0] ?? null;
       this.nextFetchAt = Date.now() + RETRY_MS;
@@ -101,12 +101,9 @@ export class OfficialCatalog {
   private save(raw: unknown) {
     if (!this.opts.cacheFile) return;
     try {
-      fs.mkdirSync(path.dirname(this.opts.cacheFile), { recursive: true });
-      const tmp = `${this.opts.cacheFile}.${process.pid}.tmp`;
-      fs.writeFileSync(tmp, JSON.stringify({ fetchedAt: this.held!.fetchedAt, catalog: raw }));
-      fs.renameSync(tmp, this.opts.cacheFile);
+      writeJsonAtomic(this.opts.cacheFile, { fetchedAt: this.held!.fetchedAt, catalog: raw }, { pretty: false, perProcess: true });
     } catch (error) {
-      this.opts.warn(`official catalog cache not written: ${message(error)}`);
+      this.opts.warn(`official catalog cache not written: ${errorMessage(error)}`);
     }
   }
 
@@ -239,11 +236,11 @@ export async function bundleOfficialPlugins(opts: { url: string; ids: string[]; 
         if (unpacked.digest !== row.digest) throw new Error("the package is not the build the catalog lists");
         bundled.push({ id, version: row.version, digest: row.digest! });
       } catch (error) {
-        problems.push(`${id} ${row.version}: ${message(error)}`);
+        problems.push(`${id} ${row.version}: ${errorMessage(error)}`);
       }
     }
   } catch (error) {
-    problems.push(message(error));
+    problems.push(errorMessage(error));
   }
   if (problems.length) {
     fs.rmSync(opts.dir, { recursive: true, force: true });

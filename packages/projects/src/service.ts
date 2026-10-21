@@ -9,6 +9,7 @@ import { keyPrefixFor, type CreateProjectInput, type Project, type ProjectPatch 
 import type {} from "@tomradex/ipc";
 import { defineTool } from "@tomradex/tools";
 import { splitLegacy } from "./legacy.js";
+import type { ProjectsReader } from "@tomradex/contracts";
 
 declare module "cordis" {
   interface Context {
@@ -64,7 +65,7 @@ interface ProjectRow {
  * outside the oplog, the one entity undo does not reach. The catalog says which
  * exist on this machine; each project's own file holds its row.
  */
-export class Projects extends Service {
+export class Projects extends Service implements ProjectsReader {
   static provide = "projects";
   static inject = ["db", "hub"];
   static Config = ProjectsConfig;

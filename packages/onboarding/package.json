@@ -20,6 +20,7 @@
   "dependencies": {
     "@tomradex/agent": "workspace:*",
     "@tomradex/boards": "workspace:*",
+    "@tomradex/contracts": "workspace:*",
     "@tomradex/db": "workspace:*",
     "@tomradex/domain": "workspace:*",
     "@tomradex/hub": "workspace:*",

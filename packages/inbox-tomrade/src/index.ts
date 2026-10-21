@@ -1,9 +1,9 @@
 import type { Context } from "cordis";
 import type {} from "@tomradex/contributions";
-import type {} from "@tomradex/doctor";
 import type { InboxEntry, InboxEntryInput, InboxKind, InboxSource, TriageChange } from "@tomradex/inbox";
 import type {} from "@tomradex/settings";
 import { FEEDBACK_WORDS } from "./words.js";
+import { localeOf } from "@tomradex/contracts";
 
 export const name = "inbox-tomrade";
 export const inject = ["inbox"];
@@ -66,7 +66,7 @@ export function answerFor(change: TriageChange): Record<string, string> {
 }
 
 export function apply(ctx: Context) {
-  const words = () => FEEDBACK_WORDS((ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
+  const words = () => FEEDBACK_WORDS(localeOf(ctx));
   const backend = () => ctx.get("cloudHub") as Backend | undefined;
   let maintainer: { user: string; is: boolean; at: number } | null = null;
 

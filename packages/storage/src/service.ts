@@ -53,6 +53,7 @@ import {
   type SyncSummary
 } from "./types.js";
 import { STORAGE_WORDS } from "./words.js";
+import { bestEffort, contract, errorMessage, localeOf, type StorageReader } from "@tomradex/contracts";
 
 // "synced" with writes still waiting reads as ahead.
 const STATE_WORD: Record<SyncState, Exclude<Parameters<ReturnType<typeof STORAGE_WORDS>>[0], "unsynced">> = {
@@ -130,7 +131,6 @@ interface RemoteAsk {
   fetched: boolean;
 }
 
-const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 export const slugOf = (name: string): string =>
   name
@@ -146,7 +146,7 @@ export const slugOf = (name: string): string =>
  * snapshot shortly after; a change made to the folder by anyone else is read
  * back in. Git is driven only in folders Tomrade made for a project alone.
  */
-export class Storage extends Service {
+export class Storage extends Service implements StorageReader {
   static provide = "storage";
   static inject = ["db", "hub", "oplog"];
   static Config = StorageConfig;
@@ -286,7 +286,7 @@ export class Storage extends Service {
           const where = entry.git === "dedicated" && entry.remote ? entry.remote.provider : path.basename(entry.dir);
           const waiting = ctx.storage.pending(projectId)?.count ?? 0;
           if (state === "synced" && !waiting) return where;
-          const w = STORAGE_WORDS((ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
+          const w = STORAGE_WORDS(localeOf(ctx));
           const word = w(STATE_WORD[state]);
           // How many of this machine's writes have not left it yet: the number to worry about before quitting.
           return waiting ? `${where} · ${word} · ${w("unsynced", { n: waiting })}` : `${where} · ${word}`;
@@ -333,7 +333,7 @@ export class Storage extends Service {
   }
 
   private warn(projectId: string, error: unknown): void {
-    this.home.logger.warn(`storage: ${projectId}: ${message(error)}`);
+    this.home.logger.warn(`storage: ${projectId}: ${errorMessage(error)}`);
   }
 
   /** The catalog's row for a project, or null when this machine does not know it. */
@@ -352,7 +352,7 @@ export class Storage extends Service {
   }
 
   private get mcpBase(): string | null {
-    return (this.ctx.get("mcp") as { url?: string | null } | undefined)?.url ?? null;
+    return contract(this.ctx, "mcp")?.url ?? null;
   }
 
   private mcpUrl(projectId: string): string | null {
@@ -651,7 +651,7 @@ export class Storage extends Service {
           new Promise<never>((_, reject) => setTimeout(() => reject(new Error("no answer in 10 s")), 10_000).unref?.())
         ]);
       } catch (error) {
-        this.home.logger.warn(`storage: could not tell who can read the remote of ${projectId} — ${message(error)}`);
+        this.home.logger.warn(`storage: could not tell who can read the remote of ${projectId} — ${errorMessage(error)}`);
         return;
       }
     }
@@ -908,7 +908,7 @@ export class Storage extends Service {
         else if (entry.git === "shared" && entry.autoCommit) await this.git(dir).commit(summary, ARTIFACT_DIR);
       } catch (error) {
         // A hook or a signing key said no: the status says why, and the next reconcile tries again.
-        this.gitFailed.set(projectId, message(error));
+        this.gitFailed.set(projectId, errorMessage(error));
         this.notify(projectId);
         throw error;
       }
@@ -1003,7 +1003,7 @@ export class Storage extends Service {
     try {
       await this.git(dir).dropRemoteCredential(url);
     } catch (error) {
-      this.home.logger.warn(`storage: could not clean the remote of ${dir} — ${message(error)}`);
+      this.home.logger.warn(`storage: could not clean the remote of ${dir} — ${errorMessage(error)}`);
     }
   }
 
@@ -1024,7 +1024,7 @@ export class Storage extends Service {
     } catch (error) {
       if (error instanceof TornArtifactError) return { state: null, problem: { state: "syncing", detail: "The folder is still being written or synced" } };
       if (error instanceof ConflictMarkersError) return { state: null, problem: { state: "error", detail: error.message } };
-      return { state: null, problem: { state: "error", detail: message(error) } };
+      return { state: null, problem: { state: "error", detail: errorMessage(error) } };
     }
   }
 
@@ -1356,7 +1356,7 @@ export class Storage extends Service {
           }
         }
       } catch (error) {
-        return this.remember(projectId, { state: error instanceof GitMissingError ? "unavailable" : "error", location, detail: message(error), lastSyncAt: entry.lastSyncAt });
+        return this.remember(projectId, { state: error instanceof GitMissingError ? "unavailable" : "error", location, detail: errorMessage(error), lastSyncAt: entry.lastSyncAt });
       }
     }
 
@@ -1368,7 +1368,7 @@ export class Storage extends Service {
     try {
       localDirty = digestState(this.exportFor(projectId, entry)) !== entry.lastPublishedDigest;
     } catch (error) {
-      return this.remember(projectId, { state: "error", location, detail: message(error), lastSyncAt: entry.lastSyncAt });
+      return this.remember(projectId, { state: "error", location, detail: errorMessage(error), lastSyncAt: entry.lastSyncAt });
     }
     const folderMoved = onDisk !== null && (onDisk.manifest.snapshot?.digest ?? digestState(onDisk)) !== entry.lastPublishedDigest;
     let state: SyncState = localDirty && folderMoved ? "diverged" : localDirty ? "ahead" : folderMoved ? "behind" : transport.state;
@@ -1458,7 +1458,7 @@ export class Storage extends Service {
   /** Forget the remote. The repository and its history stay; nothing remote is deleted. */
   async unbind(projectId: string): Promise<StorageInfo> {
     const entry = this.mustEntry(projectId);
-    if (entry.dir && entry.git === "dedicated") await this.git(entry.dir).removeRemote().catch(() => {});
+    if (entry.dir && entry.git === "dedicated") await bestEffort(this.git(entry.dir).removeRemote(), this.home.logger, `removing the remote of ${projectId}`);
     this.hub.catalog.patchProject(projectId, { remote: null, visibility: null, visibilityAt: null });
     this.lastState.delete(projectId);
     this.scheduleHubWrite();
@@ -1553,7 +1553,7 @@ export class Storage extends Service {
           if (!(await this.writeOut(projectId, "rebuild"))) why = folder.problem?.detail ?? "the folder could not be written";
         } catch (error) {
           // Git may have refused the commit after the snapshot was written; the digest below tells.
-          why = message(error);
+          why = errorMessage(error);
         }
         const current = this.mustEntry(projectId);
         if (digestState(this.exportFor(projectId, current)) !== current.lastPublishedDigest) throw new UnpublishedEditsError(projectId, why ?? "the folder could not be written");
@@ -1783,10 +1783,10 @@ export class Storage extends Service {
         if (reason === "boot") await this.clearStaleLock(entry.id);
         await this.reconcile(entry.id);
       } catch (error) {
-        this.home.logger.warn(`storage: ${entry.id} not reconciled (${reason}) — ${message(error)}`);
+        this.home.logger.warn(`storage: ${entry.id} not reconciled (${reason}) — ${errorMessage(error)}`);
       }
     }
-    if (!this.closing) await this.writeHub().catch((e) => this.home.logger.warn(`storage: hub manifest not written — ${message(e)}`));
+    if (!this.closing) await this.writeHub().catch((e) => this.home.logger.warn(`storage: hub manifest not written — ${errorMessage(e)}`));
   }
 
   /**
@@ -1810,7 +1810,7 @@ export class Storage extends Service {
     if (this.hubWriteTimer) clearTimeout(this.hubWriteTimer);
     this.hubWriteTimer = setTimeout(() => {
       this.hubWriteTimer = null;
-      void this.writeHub().catch((e) => this.home.logger.warn(`storage: hub manifest not written — ${message(e)}`));
+      void this.writeHub().catch((e) => this.home.logger.warn(`storage: hub manifest not written — ${errorMessage(e)}`));
     }, 1_000);
     this.hubWriteTimer.unref?.();
   }
@@ -1822,7 +1822,7 @@ export class Storage extends Service {
     try {
       manifest = readHubManifest(dir);
     } catch (error) {
-      problem = message(error);
+      problem = errorMessage(error);
     }
     if (problem !== this.hubUnreadable) {
       this.hubUnreadable = problem;
@@ -1939,7 +1939,7 @@ export class Storage extends Service {
       if (counts?.ahead || dirty) return { state: "ahead", location, lastSyncAt: null };
       return { state: "synced", location, lastSyncAt: null };
     } catch (error) {
-      return { state: error instanceof GitMissingError ? "unavailable" : "error", location, detail: message(error), lastSyncAt: null };
+      return { state: error instanceof GitMissingError ? "unavailable" : "error", location, detail: errorMessage(error), lastSyncAt: null };
     }
   }
 
@@ -1964,7 +1964,7 @@ export class Storage extends Service {
   async unbindHub(): Promise<void> {
     if (this.hubBackend) throw new Error("This Hub syncs through your account.");
     const dir = this.hub.dir;
-    if (dir) await this.git(dir).removeRemote().catch(() => {});
+    if (dir) await bestEffort(this.git(dir).removeRemote(), this.home.logger, "removing the Hub's remote");
     this.hub.patchState({ remote: null });
     this.home.get("ipc")?.send("hub.changed");
   }
@@ -2033,7 +2033,7 @@ export class Storage extends Service {
   }
 
   private mergeUserSettings(text: string): void {
-    const settings = this.home.get("settings") as { mergeUser(theirs: unknown): void } | undefined;
+    const settings = this.home.get("settings");
     if (!settings) return;
     try {
       settings.mergeUser(JSON.parse(text));
@@ -2060,7 +2060,7 @@ export class Storage extends Service {
       .filter((entry) => entry.dir && (this.ctx.db as Db).has(entry.id))
       .map((entry) => entry.id);
     await Promise.all(
-      ids.map((id) => this.inTurn(id, () => this.writeOut(id, reason, { leaving: true })).catch((error) => this.home.logger.warn(`storage: ${id} not published — ${message(error)}`)))
+      ids.map((id) => this.inTurn(id, () => this.writeOut(id, reason, { leaving: true })).catch((error) => this.home.logger.warn(`storage: ${id} not published — ${errorMessage(error)}`)))
     );
   }
 }

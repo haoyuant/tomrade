@@ -15,10 +15,10 @@ import { prepare } from "./render.js";
 import { IM_WORDS, type ImPlainWord } from "./words.js";
 import { FILE_HANDLE, statusText, awaitingReview, codeNews, codeSeen, deliveryCard, links, proposalText, renderBlock, reviewOutcome, ticket, toolLine, type CodeLookup, type CodeSeen, type Delivered, type ItemLookup, type RenderScope } from "./rich.js";
 import { ImStore, MIGRATIONS, TABLES, type Action, type Binding, type Inbox, type Outbox, type Topic, type Watch, type WindowRow } from "./store.js";
+import { bestEffort, contract, errorMessage } from "@tomradex/contracts";
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const token = () => randomBytes(24).toString("hex");
-const errorText = (e: unknown) => e instanceof Error ? e.message : String(e);
 /** Platforms drop a typing indicator after a few seconds; refresh it while the run works. */
 const TYPING_MS = 4_000;
 const PAIR_MS = 10 * 60 * 1000;
@@ -494,7 +494,7 @@ export class Im extends Service {
     const paired = this.settings.identities.filter(i => i.connectionId === c.id);
     const chats = this.settings.routes.filter(r => r.connectionId === c.id && r.allowDirectMessages && !r.allowGroups
       && paired.some(i => i.tenantId === r.tenantId && r.allowedActors.includes(i.actorId)));
-    for (const r of chats) await say({ tenantId: r.tenantId, conversationId: r.conversationId }).catch(() => {});
+    for (const r of chats) await bestEffort(say({ tenantId: r.tenantId, conversationId: r.conversationId }), this.home.logger, `telling ${r.conversationId}`);
   }
 
   /** The book in the desktop's language. */
@@ -1195,14 +1195,14 @@ export class Im extends Service {
       // No silent retries of rejected input or stale decisions.
       const row = handling;
       if (row) {
-        this.store.run("UPDATE plugin_im_inbox SET state = 'failed', error = ? WHERE id = ?", errorText(e), row.id);
+        this.store.run("UPDATE plugin_im_inbox SET state = 'failed', error = ? WHERE id = ?", errorMessage(e), row.id);
         const event = JSON.parse(row.event_json) as ImInbound;
         const anchor = anchorOf(event);
         // A Start press shown as under way, then refused, says on its card that nothing started.
         const press = event.kind === "action" ? this.startPress(b, event.token, event.actor.id, false) : null;
         if (press) this.settleStart(b, press.card, this.w("notStarted", { key: press.item.key }));
         // In a group, a refusal is for the sender only where the platform can say so privately.
-        if (this.authorizedBinding(b)) this.enqueue(b, `input-error:${row.id}`, { text: this.w("cannotProcess", { error: errorText(e) }) },
+        if (this.authorizedBinding(b)) this.enqueue(b, `input-error:${row.id}`, { text: this.w("cannotProcess", { error: errorMessage(e) }) },
           { anchor, visibleTo: anchor ? event.actor.id : null });
       }
     } finally { this.processing.delete(b.thread_id); }
@@ -1677,7 +1677,7 @@ export class Im extends Service {
 
   /** A ticket that can be started here, by id or key. */
   private startable(projectId: string, idOrKey: string): Startable | null {
-    const items = this.home.get("items") as { get(projectId: string, id: string): Startable | null; getByKey(projectId: string, key: string): Startable | null } | undefined;
+    const items = contract(this.home, "items");
     const item = items?.get(projectId, idOrKey) ?? items?.getByKey(projectId, idOrKey) ?? null;
     return item?.kind === "ticket" ? item : null;
   }
@@ -2140,14 +2140,14 @@ export class Im extends Service {
    * were off in between.
    */
   private backfillTopics() {
-    const items = this.home.get("items") as { list(filter: { projectId: string; status: string }): { id: string; updatedAt: number }[] } | undefined;
+    const items = contract(this.home, "items");
     if (!items) return;
     for (const b of this.store.bindings()) {
       if (this.topicOf(b) || !this.authorizedBinding(b) || !this.home.db.has(b.project_id)) continue;
       const on = this.topical(b) && this.notifies(b, "tickets");
       if (on === (b.topics_backfilled === 1)) continue;
       if (on) {
-        const worked = ["doing", "verifying"].flatMap(status => items.list({ projectId: b.project_id, status }))
+        const worked = (["doing", "verifying"] as const).flatMap(status => items.list({ projectId: b.project_id, status }))
           .sort((x, y) => y.updatedAt - x.updatedAt).slice(0, BACKFILL_TOPICS);
         for (const item of worked) {
           if (!this.store.get("SELECT 1 FROM plugin_im_topics WHERE parent_id = ? AND item_id = ?", b.id, item.id)) this.openTopic(b, item.id);
@@ -2657,7 +2657,7 @@ export class Im extends Service {
       if (!rows.some(r => r.thread_id === b.thread_id && r.sending_json && (JSON.parse(r.sending_json) as ImContent).files?.some(f => f.id === id))) continue;
       const version = FILE_HANDLE.exec(id);
       if (!version) return Buffer.from(this.home.agent.readMedia(b.project_id, b.thread_id, id).base64, "base64");
-      const files = this.home.get("files") as { readVersion(projectId: string, ref: { fileId: string; versionId: string }): Promise<{ body: string; encoding: "utf8" | "base64"; truncated: boolean } | null> } | undefined;
+      const files = contract(this.home, "files");
       const content = await files?.readVersion(b.project_id, { fileId: version[1], versionId: version[2] });
       // A cut-short body would arrive as a broken file; the message's link still reaches it.
       if (!content || content.truncated) throw new Error("File version is unavailable or too large to send");

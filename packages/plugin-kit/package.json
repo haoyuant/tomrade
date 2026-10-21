@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@babel/parser": "^7.29.8",
+    "@tomradex/contracts": "workspace:*",
     "@tomradex/plugin-sdk": "workspace:*",
     "tar": "^7.5.22",
     "zod": "^4.4.3"

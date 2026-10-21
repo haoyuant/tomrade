@@ -8,6 +8,7 @@
     "src"
   ],
   "references": [
+    { "path": "../contracts" },
     { "path": "../agent" },
     { "path": "../boards" },
     { "path": "../db" },

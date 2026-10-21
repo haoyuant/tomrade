@@ -12,6 +12,7 @@ import type {} from "@tomradex/items";
 import type {} from "@tomradex/projects";
 import type { SettingsSection } from "@tomradex/settings";
 import { PATH, SAMPLE, type SampleWords } from "./sample.js";
+import { errorMessage } from "@tomradex/contracts";
 
 export { PATH, SAMPLE, type SampleFeedback, type SampleTicket, type SampleWords } from "./sample.js";
 
@@ -61,7 +62,7 @@ export const ONBOARDING_SECTION: SettingsSection<OnboardingSettings> = {
 const FIRST_LESSON = "sample-first-lesson";
 
 const PLAYBOOKS = loadPlaybookDir(fileURLToPath(new URL("../playbooks", import.meta.url)), (file, err) => {
-  throw new Error(`onboarding playbook ${file} failed to load: ${err instanceof Error ? err.message : String(err)}`);
+  throw new Error(`onboarding playbook ${file} failed to load: ${errorMessage(err)}`);
 });
 
 /**
@@ -92,7 +93,7 @@ export class Onboarding extends Service {
       try {
         this.createSample(this.config.locale);
       } catch (error) {
-        this.home.logger.warn(`the sample project could not be seeded — ${error instanceof Error ? error.message : String(error)}`);
+        this.home.logger.warn(`the sample project could not be seeded — ${errorMessage(error)}`);
         this.ctx.projects.ensureDefault();
       }
     }

@@ -2,13 +2,14 @@
 
 Every package in this workspace, what it is for, the key it claims on the cordis context (if any), and what it builds on. `apps/desktop/tomrade.yml` decides which of them the app loads; [`docs/architecture.md`](../docs/architecture.md) explains how they fit together.
 
-**ctx** is the service a package provides, read as `ctx.<key>` by everyone else. `ipc`, `alerts` and `desktop-surface` only declare a contract; the desktop shell supplies the implementation. **Builds on** lists the package's workspace dependencies from its `package.json`, leaving out `domain`, `ipc`, `db` and `settings`, which most packages use.
+**ctx** is the service a package provides, read as `ctx.<key>` by everyone else. `ipc`, `alerts` and `desktop-surface` only declare a contract; the desktop shell supplies the implementation. **Builds on** lists the package's workspace dependencies from its `package.json`, leaving out `domain`, `contracts`, `ipc`, `db` and `settings`, which most packages use.
 
 ## Foundations
 
 | Package | Role | ctx | Builds on |
 |---|---|---|---|
 | `domain` | Shared types, zod schemas, typed errors and the backend's `defineWords`. No I/O, no context. | — | — |
+| `contracts` | What packages read of each other's services through `ctx.get`, named once (`contract`, `localeOf`, the troubleshooter's `Check`), and the helpers they share: `errorMessage`, `bestEffort`, atomic JSON files. Backend only, unpublished. | — | — |
 | `ipc` | The typed channel contract between the main process and the renderer. | `ipc` | — |
 | `db` | A pool of SQLite caches (`hub.db` plus one file per project), the core schema, plugin migrations. | `db` | — |
 | `hub` | This machine: its id, its Hub folder, the projects and checkouts it knows. | `hub` | — |
@@ -31,7 +32,7 @@ Every package in this workspace, what it is for, the key it claims on the cordis
 | `deps-graph` | The Dependencies graph and the "blocked" badge over `Item.blocks`. | — | plugin-sdk |
 | `inbox` | A project's inbox: feedback waits here until triaged into tickets. | `inbox` | boards, contributions, fields, items |
 | `inbox-github` | GitHub issues as an inbox source. | — | github, inbox, items, repos |
-| `inbox-tomrade` | Feedback sent from the app as an inbox source, for Tomrade's maintainers. | — | contributions, doctor, inbox |
+| `inbox-tomrade` | Feedback sent from the app as an inbox source, for Tomrade's maintainers. | — | contributions, inbox |
 | `inbox-triage` | The worker model proposes a kind, duplicate and reply for each new inbox entry. | — | agent-backlog, inbox, items, llm |
 | `schedules` | Routines: a ticket from a template, or a prompt to the assistant, on a cadence. | `schedules` | agent, boards, code-link, items, tools |
 | `onboarding` | The first run's tour project, seen-hints, and the playbook that explains Tomrade. | `onboarding` | agent, boards, hub, inbox, items, projects |
@@ -51,7 +52,7 @@ Every package in this workspace, what it is for, the key it claims on the cordis
 | `notes` | Files read as notes: wiki links, backlinks, tags, full-text search, the journal. | `notes` | files, tools |
 | `repos` | The code repositories workstreams stand for, their checkouts, agent worktrees. | `repos` | boards, git, hub, storage, tools |
 | `code-link` | A ticket's branches, pull requests and coding sessions; status from git; Start. | `codeLink` | agent, boards, contributions, git, github, herdr, hub, items, llm, mcp, plugin-sdk, repos, storage, tools, write |
-| `herdr` | herdr on this machine: its socket, server and panes. Optional. | `herdr` | doctor, engine-kit |
+| `herdr` | herdr on this machine: its socket, server and panes. Optional. | `herdr` | engine-kit |
 | `code-sessions` | The Terminal window: herdr terminals and code sessions side by side. | — | code-link, contributions, desktop-surface, herdr, items |
 
 ## Agents

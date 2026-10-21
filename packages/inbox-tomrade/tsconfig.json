@@ -12,10 +12,10 @@
   ],
   "references": [
     {
-      "path": "../contributions"
+      "path": "../contracts"
     },
     {
-      "path": "../doctor"
+      "path": "../contributions"
     },
     {
       "path": "../domain"

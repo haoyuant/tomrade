@@ -3,6 +3,7 @@ import path from "node:path";
 import { randomBytes } from "node:crypto";
 import type { ImageBox } from "@tomradex/contributions";
 import { PET_MOODS, type PetMood } from "./state.js";
+import { writeJsonAtomic } from "@tomradex/contracts";
 
 export const DEFAULT_PROFILE = "default";
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
@@ -81,11 +82,6 @@ const cleanName = (name: string): string => {
   const trimmed = name.trim().slice(0, MAX_NAME_LENGTH);
   if (!trimmed) throw new Error("A pet needs a name");
   return trimmed;
-};
-
-const writeJson = (file: string, value: unknown) => {
-  fs.writeFileSync(`${file}.tmp`, JSON.stringify(value, null, 2));
-  fs.renameSync(`${file}.tmp`, file);
 };
 
 /**
@@ -218,7 +214,7 @@ export class PetProfiles {
   }
 
   private save(profile: PetProfile): void {
-    writeJson(path.join(this.root(), profile.id, "profile.json"), profile);
+    writeJsonAtomic(path.join(this.root(), profile.id, "profile.json"), profile, { mkdir: false, newline: false });
     this.revision++;
   }
 
@@ -237,7 +233,7 @@ export class PetProfiles {
   }
 
   private writeIndex(index: { active: string }): void {
-    writeJson(path.join(this.root(), "profiles.json"), index);
+    writeJsonAtomic(path.join(this.root(), "profiles.json"), index, { mkdir: false, newline: false });
     this.revision++;
   }
 }

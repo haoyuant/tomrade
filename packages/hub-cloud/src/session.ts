@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import path from "node:path";
+import { writeFileAtomic } from "@tomradex/contracts";
 
 export interface Cipher {
   available(): boolean;
@@ -23,16 +23,13 @@ export class EncryptedSessionStorage {
     this.check();
     const data = fs.existsSync(this.file) ? JSON.parse(this.cipher.decrypt(fs.readFileSync(this.file))) : {};
     data[key] = value;
-    fs.mkdirSync(path.dirname(this.file), { recursive: true });
-    fs.writeFileSync(`${this.file}.tmp`, this.cipher.encrypt(JSON.stringify(data)), { mode: 0o600 });
-    fs.renameSync(`${this.file}.tmp`, this.file);
+    writeFileAtomic(this.file, this.cipher.encrypt(JSON.stringify(data)), { mode: 0o600 });
   }
   removeItem(key: string): void {
     if (!fs.existsSync(this.file)) return;
     this.check();
     const data = JSON.parse(this.cipher.decrypt(fs.readFileSync(this.file)));
     delete data[key];
-    fs.writeFileSync(`${this.file}.tmp`, this.cipher.encrypt(JSON.stringify(data)), { mode: 0o600 });
-    fs.renameSync(`${this.file}.tmp`, this.file);
+    writeFileAtomic(this.file, this.cipher.encrypt(JSON.stringify(data)), { mkdir: false, mode: 0o600 });
   }
 }

@@ -1,4 +1,5 @@
 import { McpServerConfig } from "./config.js";
+import { errorMessage } from "@tomradex/contracts";
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
@@ -20,7 +21,7 @@ export function parseClientConfig(text: string, taken: string[] = []): { servers
   try {
     json = JSON.parse(text);
   } catch (e) {
-    return { servers: [], errors: [`not JSON: ${e instanceof Error ? e.message : String(e)}`] };
+    return { servers: [], errors: [`not JSON: ${errorMessage(e)}`] };
   }
   const block = isRecord(json) ? (json.mcpServers ?? json.servers ?? json) : null;
   if (!isRecord(block)) return { servers: [], errors: ["expected an object of servers"] };

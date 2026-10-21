@@ -1,7 +1,7 @@
 import fs from "node:fs";
-import path from "node:path";
 import { z } from "zod";
 import type { StartMode } from "./start.js";
+import { writeJsonAtomic } from "@tomradex/contracts";
 
 /**
  * What the Start dialog last ran a ticket with: which surface, which agent and
@@ -76,10 +76,7 @@ export class StartDefaultsStore {
       updatedAt: Date.now()
     };
     try {
-      fs.mkdirSync(path.dirname(this.file), { recursive: true });
-      const tmp = `${this.file}.tmp`;
-      fs.writeFileSync(tmp, JSON.stringify(next, null, 2) + "\n", "utf8");
-      fs.renameSync(tmp, this.file);
+      writeJsonAtomic(this.file, next);
     } catch {
       // The next start simply falls back to the dialog's own defaults.
     }

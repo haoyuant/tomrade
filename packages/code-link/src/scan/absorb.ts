@@ -8,6 +8,7 @@ import { decide, type Decision, type Evidence } from "../rules.js";
 import { scanRepo, type MergedCommit, type ScanResult, type ScannedBranch } from "../scanner.js";
 import type { Sessions } from "../sessions.js";
 import type { CodeLinkStore, CodeLinkView, ProposalView, SessionView } from "../store.js";
+import { errorMessage } from "@tomradex/contracts";
 
 /** Who the scanner writes as. Evidence from git is not a person's decision, and it is not a model's either. */
 export const AUTHOR: Author = "sync:git";
@@ -42,7 +43,6 @@ export interface ScanSummary {
   skipped: { repoId: string; reason: string }[];
 }
 
-const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 /** The link the ticket is judged and shown by: an open pull request first, else the branch that moved last. */
 export function primaryOf(links: CodeLinkView[]): CodeLinkView | null {
@@ -137,7 +137,7 @@ export class GitScan {
       try {
         await this.ctx.github.migrateHelper(this.git, checkout);
       } catch (err) {
-        this.ctx.logger.warn(`credential helper migration for ${checkout} failed: ${message(err)}`);
+        this.ctx.logger.warn(`credential helper migration for ${checkout} failed: ${errorMessage(err)}`);
       }
     }
   }
@@ -162,7 +162,7 @@ export class GitScan {
       try {
         await this.scan(projectId);
       } catch (err) {
-        this.ctx.logger.warn(`code scan of ${projectId} failed: ${message(err)}`);
+        this.ctx.logger.warn(`code scan of ${projectId} failed: ${errorMessage(err)}`);
       }
     }
   }
@@ -174,7 +174,7 @@ export class GitScan {
     try {
       await this.ctx.repos.adoptOrigins(projectId);
     } catch (err) {
-      this.ctx.logger.warn(`adopting new origins in ${projectId} failed: ${message(err)}`);
+      this.ctx.logger.warn(`adopting new origins in ${projectId} failed: ${errorMessage(err)}`);
     }
     const repos = this.ctx.repos.list(projectId);
     summary.repos = repos.length;
@@ -198,7 +198,7 @@ export class GitScan {
       try {
         result = await scanRepo(this.git, placement.checkout, { defaultBranch: repo.defaultBranch, prefix, sinceSha: before?.scannedSha ?? null, fetch: this.config.fetch });
       } catch (err) {
-        summary.skipped.push({ repoId: repo.id, reason: message(err) });
+        summary.skipped.push({ repoId: repo.id, reason: errorMessage(err) });
         continue;
       }
       summary.scanned += 1;
@@ -653,7 +653,7 @@ export class GitScan {
           continue;
         } catch (err) {
           // A refused write (a policy, a stale version) is a question for a person, not a retry.
-          d = { kind: "propose", to: d.to, reason: `${d.reason} — ${message(err)}` } satisfies Decision;
+          d = { kind: "propose", to: d.to, reason: `${d.reason} — ${errorMessage(err)}` } satisfies Decision;
         }
       }
       const to = d.kind === "propose" ? d.to : null;

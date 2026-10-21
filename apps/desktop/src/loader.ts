@@ -7,6 +7,7 @@ import { adaptSdkPlugin, builtinIdentity, identityOf } from "@tomradex/extension
 import { dataDirFor } from "@tomradex/plugin-kit";
 import { MANIFEST_FILE, isSdkPlugin, parseManifest } from "@tomradex/plugin-sdk";
 import type { ContractSpec, ModuleSpec, PluginRow } from "@tomradex/plugins";
+import { errorMessage } from "@tomradex/contracts";
 
 export type { PluginRow };
 
@@ -53,7 +54,7 @@ function parseFile(file: string): unknown {
   try {
     return parse(text);
   } catch (error) {
-    throw new Error(`${file}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    throw new Error(`${file}: ${errorMessage(error)}`, { cause: error });
   }
 }
 

@@ -7,6 +7,7 @@ import type {} from "@tomradex/projects";
 import { emptyHub, type HubManifest, type HubProject, type StorageStatus } from "@tomradex/storage";
 import type { UserSettingsFile } from "@tomradex/settings";
 import { CloudCache, RecordSchema, recordKey, equal, type CloudRecord } from "./cache.js";
+import { bestEffort, type CloudHubReader, errorMessage } from "@tomradex/contracts";
 
 export interface AccountInfo {
   user: { id: string; email: string } | null;
@@ -80,7 +81,6 @@ const UserSettings = z.object({
   sections: z.record(z.string(), z.object({ value: z.json(), updatedAt: z.number() }))
 });
 const SETTINGS_KEY = "settings";
-const message = (e: unknown) => e instanceof Error ? e.message : String(e);
 // Failures carry a leading [code] the renderer translates; the rest is the fallback text.
 const failure = (e: { message: string; code?: string; name?: string }) =>
   new Error(e.code ? `[${e.code}] ${e.message}` : e.name === "AuthRetryableFetchError" ? `[network] ${e.message}` : e.message);
@@ -93,7 +93,7 @@ function credentials(email: string, password: string, min = 1) {
 const address = (email: string) => credentials(email, "-").email;
 
 /** Supabase owns Hub metadata. The immutable outbox survives failed requests and process exits. */
-export class CloudHub extends Service {
+export class CloudHub extends Service implements CloudHubReader {
   static provide = "cloudHub";
   static inject = ["hub", "storage", "settings"];
   static Config = CloudConfig;
@@ -204,7 +204,7 @@ export class CloudHub extends Service {
       }
       await this.ctx.storage.writeHub();
       this.schedule();
-    }).catch(e => { this.error = message(e); });
+    }).catch(e => { this.error = errorMessage(e); });
     const interval = setInterval(() => this.schedule(), this.config.syncMs);
     interval.unref?.();
     this.home.on("projects/created", () => this.schedule());
@@ -277,8 +277,8 @@ export class CloudHub extends Service {
     if (this.closed || this.signingOut || !this.user) return Promise.resolve();
     this.active = this.performSync().then(() => {
       // The catalog may name projects this machine has never had; bring them here.
-      if (!this.closed) void this.ctx.storage.restoreMissing().catch(e => this.home.logger.warn(`restore: ${message(e)}`));
-    }).catch(e => { this.error = message(e); }).finally(() => {
+      if (!this.closed) void this.ctx.storage.restoreMissing().catch(e => this.home.logger.warn(`restore: ${errorMessage(e)}`));
+    }).catch(e => { this.error = errorMessage(e); }).finally(() => {
       this.active = null;
       if (!this.closed) { this.ctx.settings.refreshUserStore(); this.notify(); }
     });
@@ -462,7 +462,7 @@ export class CloudHub extends Service {
       const { error } = await this.client.rpc("tomrade_delete_account");
       if (error) throw new Error(/fetch failed|failed to fetch|network|aborted|timed? ?out/i.test(error.message) ? `[network] ${error.message}` : error.message);
       // The server has already ended the session; only this machine's copy is left to drop.
-      await this.client.auth.signOut({ scope: "local" }).catch(() => undefined);
+      await bestEffort(this.client.auth.signOut({ scope: "local" }), this.home.logger, "signing out this machine's session");
       await this.config.sessionStorage.removeItem(this.sessionKey);
       this.user = null;
       this.error = null;

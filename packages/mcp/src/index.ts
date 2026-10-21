@@ -14,6 +14,7 @@ import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/tools";
 import { LONG_RESULT, compactList, defineTool, strictInput, type Tools } from "@tomradex/tools";
 import { MCP_WORDS, type McpWords } from "./words.js";
+import { contract, errorMessage, localeOf, type McpReader } from "@tomradex/contracts";
 
 export const MCP_SERVER_NAME = "tomrade";
 
@@ -125,7 +126,7 @@ function textResult(data: unknown, whole?: boolean) {
   const list = !whole && json && json.length > LONG_RESULT ? compactList(data) : null;
   return { content: list ? [block(list.note), block(list.json)] : [block(json)] };
 }
-const errorResult = (e: unknown) => ({ content: [{ type: "text" as const, text: `ERROR: ${e instanceof Error ? e.message : String(e)}` }], isError: true });
+const errorResult = (e: unknown) => ({ content: [{ type: "text" as const, text: `ERROR: ${errorMessage(e)}` }], isError: true });
 
 /**
  * Gemini CLI (0.64) reads a result whose first block is JSON as its structured
@@ -212,7 +213,7 @@ const sessionIdOf = (req: express.Request): string | undefined => {
  * token. Sessions read the registry, prompts and instructions when they open,
  * so a plugin loaded later is visible to the next one.
  */
-export class Mcp extends Service {
+export class Mcp extends Service implements McpReader {
   static provide = "mcp";
   static inject = ["tools"];
   static Config = McpConfig;
@@ -309,7 +310,7 @@ export class Mcp extends Service {
       try {
         res.json((await binding.event(withPane(req))) ?? {});
       } catch (e) {
-        res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
+        res.status(500).json({ error: errorMessage(e) });
       }
     });
 
@@ -375,7 +376,7 @@ export class Mcp extends Service {
   }
 
   private words(): McpWords {
-    return MCP_WORDS((this.ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
+    return MCP_WORDS(localeOf(this.ctx));
   }
 
   /** Who holds the clashed port, in words. */
@@ -402,8 +403,8 @@ export class Mcp extends Service {
       readOnly: true,
       execute: ({ projectId }, inv) => {
         const storage = this.ctx.get("storage") as StorageLike | undefined;
-        const hub = this.ctx.get("hub") as { catalog: { projects(): { id: string; name: string }[] } } | undefined;
-        const cloud = (this.ctx.get("cloudHub") as { info(): { user: { email: string } | null; hubId: string | null } } | undefined)?.info();
+        const hub = contract(this.ctx, "hub");
+        const cloud = contract(this.ctx, "cloudHub")?.info();
         const sync = (id: string) => storage?.syncSummary(id) ?? null;
         const scope = projectId ?? inv.projectId;
         const projects = hub?.catalog.projects() ?? [];

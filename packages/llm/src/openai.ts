@@ -1,6 +1,7 @@
 import { inputMimes, type InputModality, type OutputModality, type MediaData, type ChatEvent, type ChatModel, type ChatRequest, type StopReason } from "./model.js";
 import { LlmError, MediaRefused, NativeMediaRefused, NativeSearchRefused, mediaRefusal } from "./errors.js";
 import { fitsResponses, readResponses, replaysSearches, responsesBody, searchesOnResponses } from "./responses.js";
+import { errorMessage } from "@tomradex/contracts";
 
 export interface OpenAiConfig {
   baseURL: string;
@@ -103,7 +104,7 @@ const TRANSIENT = new Set([408, 425, 429, 500, 502, 503, 504, 529]);
 /** What a failed fetch says about itself: undici hides the socket error in `cause`. */
 export const fetchFailure = (err: unknown): string => {
   const cause = (err as { cause?: { code?: string; message?: string } })?.cause;
-  return cause?.code ?? cause?.message ?? (err instanceof Error ? err.message : String(err));
+  return cause?.code ?? cause?.message ?? errorMessage(err);
 };
 
 export const pause = (ms: number, signal?: AbortSignal): Promise<void> =>

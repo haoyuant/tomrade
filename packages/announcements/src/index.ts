@@ -6,6 +6,7 @@ import type {} from "@tomradex/ipc";
 import { satisfies } from "@tomradex/plugin-sdk";
 import type {} from "@tomradex/settings";
 import { ANNOUNCEMENT_WORDS } from "./words.js";
+import { errorMessage, localeOf } from "@tomradex/contracts";
 
 export const name = "announcements";
 export const inject = ["ipc"];
@@ -109,7 +110,7 @@ export function apply(ctx: Context, config: Config) {
     if (changed) ctx.ipc.send("announcements.changed", list());
   };
   // Offline or no Supabase: no announcements this time, nothing else held up.
-  const refresh = () => fetchNow().catch((err) => ctx.logger.warn(`announcements: ${err instanceof Error ? err.message : String(err)}`));
+  const refresh = () => fetchNow().catch((err) => ctx.logger.warn(`announcements: ${errorMessage(err)}`));
 
   ctx.ipc.handle("announcements.list", async () => {
     if (!loaded) await refresh();
@@ -123,7 +124,7 @@ export function apply(ctx: Context, config: Config) {
         fs.mkdirSync(path.dirname(config.file), { recursive: true });
         fs.writeFileSync(config.file, JSON.stringify({ seen }));
       } catch (err) {
-        ctx.logger.warn(`announcements: could not keep what was seen: ${err instanceof Error ? err.message : String(err)}`);
+        ctx.logger.warn(`announcements: could not keep what was seen: ${errorMessage(err)}`);
       }
     }
     return list();
@@ -131,7 +132,7 @@ export function apply(ctx: Context, config: Config) {
 
   // Read again whenever wanted, from the palette: the renderer's announcements surface.
   ctx.inject(["contributions"], (ctx) => {
-    const words = () => ANNOUNCEMENT_WORDS((ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
+    const words = () => ANNOUNCEMENT_WORDS(localeOf(ctx));
     ctx.contributions.command({ id: "announcements.open", title: () => words()("command"), group: () => words()("group"), run: () => ({ opens: "announcements" }) });
   });
 

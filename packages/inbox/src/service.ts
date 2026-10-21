@@ -10,6 +10,7 @@ import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/items";
 import type {} from "@tomradex/settings";
 import { INBOX_WORDS, type InboxWords } from "./words.js";
+import { bestEffort, errorMessage, localeOf } from "@tomradex/contracts";
 
 export const INBOX_KINDS = ["bug", "feedback", "idea"] as const;
 export type InboxKind = (typeof INBOX_KINDS)[number];
@@ -371,7 +372,6 @@ const TRIAGED = "('accepted', 'merged')";
 const FEEDBACK_VALUES_SQL = `SELECT item_id AS item_id, COUNT(*) AS value FROM plugin_inbox_entries WHERE item_id IS NOT NULL AND status IN ${TRIAGED} GROUP BY item_id`;
 const FEEDBACK_EXPR_SQL = `SELECT NULLIF(COUNT(*), 0) FROM plugin_inbox_entries e WHERE e.item_id = i.id AND e.status IN ${TRIAGED}`;
 
-const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 const text = (value: string | (() => string)) => (typeof value === "function" ? value() : value);
 const isKind = (k: unknown): k is InboxKind => (INBOX_KINDS as readonly unknown[]).includes(k);
 const KIND_KEYS = { bug: "kindBug", feedback: "kindFeedback", idea: "kindIdea" } as const satisfies Record<InboxKind, string>;
@@ -671,7 +671,7 @@ export class Inbox extends Service {
         const cursor = Array.isArray(pulled) ? inputs.reduce<number | null>((max, e) => (max === null || e.receivedAt > max ? e.receivedAt : max), since) : pulled.cursor;
         record(cursor, null, Array.isArray(pulled) ? state : (pulled.state ?? state), Array.isArray(pulled) ? [] : (pulled.warnings ?? []));
       } catch (error) {
-        record(prior?.cursor ?? null, message(error));
+        record(prior?.cursor ?? null, errorMessage(error));
       }
     }
     this.changed(projectId);
@@ -795,7 +795,7 @@ export class Inbox extends Service {
       const suggestion: InboxSuggestion = { ...this.checked(projectId, entry, raw, entries), by: text(def.title), at: Date.now() };
       db.prepare("UPDATE plugin_inbox_entries SET suggestion_json = ?, suggest_error = NULL, updated_at = ? WHERE id = ?").run(JSON.stringify(suggestion), Date.now(), id);
     } catch (error) {
-      db.prepare("UPDATE plugin_inbox_entries SET suggest_error = ?, updated_at = ? WHERE id = ?").run(message(error), Date.now(), id);
+      db.prepare("UPDATE plugin_inbox_entries SET suggest_error = ?, updated_at = ? WHERE id = ?").run(errorMessage(error), Date.now(), id);
       this.changed(projectId);
       throw error;
     }
@@ -826,7 +826,7 @@ export class Inbox extends Service {
       for (const id of ids) {
         const entry = this.has(projectId) ? this.get(projectId, id) : null;
         if (!entry || entry.status !== "new" || entry.suggestion) continue;
-        await this.suggest(projectId, id).catch(() => undefined);
+        await bestEffort(this.suggest(projectId, id), this.home.logger, `suggesting a triage for ${id}`);
       }
     });
     const tail: Promise<void> = run.finally(() => {
@@ -861,7 +861,7 @@ export class Inbox extends Service {
       try {
         done = await this.reply(projectId, id, answer);
       } catch (error) {
-        replyError = message(error);
+        replyError = errorMessage(error);
       }
     }
     return { entry: done, item, replyError };
@@ -871,7 +871,7 @@ export class Inbox extends Service {
     try {
       return (await def.available?.()) ?? null;
     } catch (error) {
-      return message(error);
+      return errorMessage(error);
     }
   }
 
@@ -929,7 +929,7 @@ export class Inbox extends Service {
         // a newer triage may have replaced this change meanwhile
         db.prepare("DELETE FROM plugin_inbox_outbox WHERE entry_id = ? AND change_json = ?").run(row.entry_id, row.change_json);
       } catch (error) {
-        db.prepare("UPDATE plugin_inbox_outbox SET attempts = attempts + 1, error = ? WHERE entry_id = ?").run(message(error), row.entry_id);
+        db.prepare("UPDATE plugin_inbox_outbox SET attempts = attempts + 1, error = ? WHERE entry_id = ?").run(errorMessage(error), row.entry_id);
       }
     }
   }
@@ -1057,7 +1057,7 @@ export class Inbox extends Service {
     try {
       return (await source.available?.(projectId)) ?? null;
     } catch (error) {
-      return message(error);
+      return errorMessage(error);
     }
   }
 
@@ -1066,7 +1066,7 @@ export class Inbox extends Service {
   }
 
   words(): InboxWords {
-    return INBOX_WORDS((this.home.get("settings") as { locale?: () => string } | undefined)?.locale?.());
+    return INBOX_WORDS(localeOf(this.home));
   }
 
   private changed(projectId: string): void {

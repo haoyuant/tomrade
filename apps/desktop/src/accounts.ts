@@ -5,6 +5,7 @@ import path from "node:path";
 import { z } from "zod";
 import { relaunchArgs } from "./background.js";
 import { requestSafeStart, SAFE_FLAG, SAFE_REQUEST_FILE } from "./safe-start.js";
+import { writeJsonAtomic } from "@tomradex/contracts";
 
 export interface Roots {
   userData: string;
@@ -47,9 +48,7 @@ export class AccountFolders {
   }
 
   private write(registry: Registry): void {
-    fs.mkdirSync(path.dirname(this.file), { recursive: true });
-    fs.writeFileSync(`${this.file}.tmp`, JSON.stringify(registry, null, 2) + "\n");
-    fs.renameSync(`${this.file}.tmp`, this.file);
+    writeJsonAtomic(this.file, registry);
   }
 
   /** An account's app data and its visible folder, the boot's `userData` and `hubDir`. */

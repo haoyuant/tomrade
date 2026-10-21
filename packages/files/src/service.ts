@@ -58,6 +58,7 @@ import {
   type SyncMode,
   type WriteOptions
 } from "./types.js";
+import { errorMessage, type FilesReader, localeOf } from "@tomradex/contracts";
 
 declare module "cordis" {
   interface Context {
@@ -152,7 +153,6 @@ function freeName(name: string, taken: (candidate: string) => boolean): string {
 }
 
 const unavailable = (detail: string): FilesStatus => ({ state: "unavailable", location: null, detail, lastSyncAt: null, conflicts: 0, ahead: 0, behind: 0, head: null });
-const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /**
  * `ctx.files`: the files a project keeps beside its backlog. The service owns
@@ -215,13 +215,13 @@ const clipTitle = (text: string): string | null => {
   return clean.length > TITLE_MAX ? `${clean.slice(0, TITLE_MAX)}…` : clean;
 };
 
-export class Files extends Service {
+export class Files extends Service implements FilesReader {
   static provide = "files";
   static inject = ["db", "hub", "storage", "items", "boards", "oplog"];
 
   /** The status bar's and the palette's words, in the person's language now. */
   private words() {
-    return FILES_WORDS((this.home.get("settings") as { locale?: () => string } | undefined)?.locale?.());
+    return FILES_WORDS(localeOf(this.home));
   }
   static Config = FilesConfig;
 
@@ -367,7 +367,7 @@ export class Files extends Service {
   }
 
   private warn(projectId: string, error: unknown): void {
-    this.home.logger.warn(`files: ${projectId}: ${message(error)}`);
+    this.home.logger.warn(`files: ${projectId}: ${errorMessage(error)}`);
   }
 
   private notify(projectId: string): void {
@@ -594,7 +594,7 @@ export class Files extends Service {
       return status;
     } catch (error) {
       this.lastState.set(projectId, "error");
-      return unavailable(message(error));
+      return unavailable(errorMessage(error));
     }
   }
 
@@ -1071,7 +1071,7 @@ export class Files extends Service {
         try {
           await this.store(projectId);
         } catch (recovery) {
-          this.warn(projectId, `The previous Files store could not reopen: ${message(recovery)}`);
+          this.warn(projectId, `The previous Files store could not reopen: ${errorMessage(recovery)}`);
         }
       }
       throw error;

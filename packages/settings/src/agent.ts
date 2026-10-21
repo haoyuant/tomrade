@@ -7,6 +7,7 @@ import type { RunChange, UndoProvider } from "@tomradex/oplog";
 import { defineTool, type ToolInvocation } from "@tomradex/tools";
 import type { Settings, SettingsSection } from "./index.js";
 import { mapSecrets } from "./secrets.js";
+import { errorMessage } from "@tomradex/contracts";
 
 /**
  * Tomrade's own settings as agent tools. What a section allows is its own
@@ -269,7 +270,7 @@ export function agentAccess(ctx: Context): void {
           undo(projectId, row);
           result.reverted += Object.keys(row.after).length;
         } catch (error) {
-          result.kept.push({ entity: "setting", entityId: Object.keys(row.after).join(","), label: labelOf(row), reason: error instanceof Error ? error.message : String(error) });
+          result.kept.push({ entity: "setting", entityId: Object.keys(row.after).join(","), label: labelOf(row), reason: errorMessage(error) });
         }
       }
       return result;

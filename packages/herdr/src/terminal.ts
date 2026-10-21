@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { errorMessage } from "@tomradex/contracts";
 
 /** One picture of the terminal: ANSI bytes that paint it — all of it when `full`, else only the cells that changed. */
 export interface TerminalFrame {
@@ -104,7 +105,7 @@ export function openTerminal(input: { bin: string; paneId: string; mode: Termina
   try {
     child = spawn(input.bin, args, { env: input.env ?? process.env, stdio: ["pipe", "pipe", "pipe"] });
   } catch (err) {
-    queueMicrotask(() => finish(err instanceof Error ? err.message : String(err)));
+    queueMicrotask(() => finish(errorMessage(err)));
     settle();
   }
   if (child) {

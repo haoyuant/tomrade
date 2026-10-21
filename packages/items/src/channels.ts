@@ -6,6 +6,7 @@ import type { DeliveryView } from "@tomradex/db";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/fields";
 import type { ItemQuery } from "./service.js";
+import { errorMessage } from "@tomradex/contracts";
 
 declare module "@tomradex/ipc" {
   interface Channels {
@@ -58,7 +59,7 @@ export function registerChannels(ctx: Context): void {
       return ctx.items.reviewDelivery(projectId, id, input, baseVersion);
     } catch (error) {
       // The panel shows it too; the log is where a "nothing happened" report gets answered.
-      ctx.logger.warn(`items: review of ${id} (${input.decision}) refused — ${error instanceof Error ? error.message : String(error)}`);
+      ctx.logger.warn(`items: review of ${id} (${input.decision}) refused — ${errorMessage(error)}`);
       throw error;
     }
   });

@@ -10,6 +10,7 @@ import { GitHub, GitHubError, type Repo } from "./api.js";
 import { DeviceFlow, OAuthError, type DeviceCode } from "./device.js";
 import { githubEnvironment, installGithubCredential, migrateGithubCredential, usesTomradeCredential, withGithubCredential, writeGithubHelper, writeHelperToken } from "./helper.js";
 import { SessionStore, type Cipher, type Session } from "./session.js";
+import { errorMessage } from "@tomradex/contracts";
 
 export { GitHub, GitHubError } from "./api.js";
 export type { Repo } from "./api.js";
@@ -118,7 +119,7 @@ export class GitHubAccount extends Service {
     try {
       this.helper = writeGithubHelper(this.settingsFile, this.config.nodeBinary);
     } catch (error) {
-      this.home.logger.warn(`github: credential helper not written — ${message(error)}`);
+      this.home.logger.warn(`github: credential helper not written — ${errorMessage(error)}`);
     }
     this.publishToken();
     this.home.on("settings/changed", (next, previous) => {
@@ -153,7 +154,7 @@ export class GitHubAccount extends Service {
     try {
       this.store.save(session);
     } catch (error) {
-      this.home.logger.warn(`github: sign-in not saved — ${message(error)}`);
+      this.home.logger.warn(`github: sign-in not saved — ${errorMessage(error)}`);
     }
     this.publishToken();
   }
@@ -165,7 +166,7 @@ export class GitHubAccount extends Service {
     try {
       writeHelperToken(this.settingsFile, session ? { token: session.accessToken, expiresAt: session.accessExpiresAt } : personal ? { token: personal, expiresAt: null } : null);
     } catch (error) {
-      this.home.logger.warn(`github: token for git not written — ${message(error)}`);
+      this.home.logger.warn(`github: token for git not written — ${errorMessage(error)}`);
     }
   }
 
@@ -280,7 +281,7 @@ export class GitHubAccount extends Service {
         this.keep({ ...grant, login });
       })
       .catch((error) => {
-        if (this.signingIn === attempt && !abort.signal.aborted) this.problem = error instanceof Error ? error.message : String(error);
+        if (this.signingIn === attempt && !abort.signal.aborted) this.problem = errorMessage(error);
       })
       .finally(() => {
         if (this.signingIn === attempt) this.signingIn = null;
@@ -342,6 +343,5 @@ export class GitHubAccount extends Service {
   }
 }
 
-const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 export default GitHubAccount;

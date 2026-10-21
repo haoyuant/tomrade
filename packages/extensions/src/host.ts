@@ -23,6 +23,7 @@ import { viewsApi } from "./facade/views.js";
 import { webSearchApi } from "./facade/web-search.js";
 import { scopeFor, within, withTimeout } from "./scope.js";
 import { CORDIS, type Services } from "./services.js";
+import { errorMessage } from "@tomradex/contracts";
 
 export { CLI_HOOK_MS, COMMAND_MS, HOOK_MS, RENDER_MS } from "./facade/shared.js";
 export { windowTitle } from "./facade/surfaces.js";
@@ -106,7 +107,7 @@ export class Host {
     try {
       return extensionScope.run(scopeFor(this.ns), fn);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = errorMessage(error);
       this.logger.warn(`${this.identity.id} ${label}: ${message}`);
       return failed(message);
     }
@@ -116,7 +117,7 @@ export class Host {
   listen<F extends Fn>(fn: F, label: string) {
     const wrapped = this.back(fn, label);
     return (...args: Parameters<F>) => {
-      wrapped(...args).catch((error: unknown) => this.logger.warn(`${label}: ${error instanceof Error ? error.message : String(error)}`));
+      wrapped(...args).catch((error: unknown) => this.logger.warn(`${label}: ${errorMessage(error)}`));
     };
   }
 

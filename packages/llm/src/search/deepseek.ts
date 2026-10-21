@@ -1,4 +1,5 @@
 import type { ReadResponse, SearchHit, SearchRequest, WebSearchProvider } from "@tomradex/web-search";
+import { errorMessage } from "@tomradex/contracts";
 
 const DEEPSEEK = /^https?:\/\/api\.deepseek\.com(\/|:|$)/i;
 /** DeepSeek takes a query of at most 128 characters. */
@@ -125,7 +126,7 @@ export function deepseekProvider({ id, key, fetch: send = fetch, now = () => new
       const settled = await Promise.allSettled(urls.map((url) => call<DeepSeekPage>("fetch", { url }, signal)));
       settled.forEach((result, i) => {
         if (result.status === "fulfilled") out.pages.push({ url: urls[i]!, content: result.value.content ?? "" });
-        else out.failed.push({ url: urls[i]!, error: result.reason instanceof Error ? result.reason.message : String(result.reason) });
+        else out.failed.push({ url: urls[i]!, error: errorMessage(result.reason) });
       });
       return out;
     }

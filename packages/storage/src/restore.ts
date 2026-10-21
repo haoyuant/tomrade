@@ -5,6 +5,7 @@ import { GitFolder, cleanRemote, cloneBranch, probeUrl, type Git } from "@tomrad
 import type { HubManifest, HubProject } from "./hub.js";
 import { ARTIFACT_DIR, MANIFEST, projectIdOf, readClone, type ProjectState } from "./state.js";
 import type { RemoteTarget, StorageProvider } from "./types.js";
+import { errorMessage } from "@tomradex/contracts";
 
 /**
  * Where a project the Hub names, and this machine lacks, stands. `queued`,
@@ -108,7 +109,6 @@ const sameRemote = (a: string, b: string): boolean => {
   return norm(a) === norm(b);
 };
 
-const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 const MINUTE = 60_000;
 
@@ -260,8 +260,8 @@ export class Restorer {
     try {
       return await this.attempt(e, record);
     } catch (error) {
-      this.host.warn(`restore: ${record.name} (${record.id}) — ${message(error)}`);
-      return this.settle(e, "failed", message(error));
+      this.host.warn(`restore: ${record.name} (${record.id}) — ${errorMessage(error)}`);
+      return this.settle(e, "failed", errorMessage(error));
     }
   }
 
