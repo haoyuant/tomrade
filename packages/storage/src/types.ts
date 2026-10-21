@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import type { GitCredential } from "./git.js";
+import type { GitCredential } from "@tomradex/git";
 
 /**
  * Where a project's folder stands relative to what this machine has published.

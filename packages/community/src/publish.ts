@@ -1,12 +1,9 @@
-import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { promisify } from "node:util";
+import { execGit } from "@tomradex/git";
 import { check, type CheckReport } from "@tomradex/plugin-cli";
 import { readManifest } from "@tomradex/plugin-kit";
 import { MANIFEST_FILE, nameOf, namespaceOf, publisherOf } from "@tomradex/plugin-sdk";
-
-const run = promisify(execFile);
 
 /** What publishing needs from GitHub; the app's is backed by the token in Settings → GitHub. */
 export interface GitHubAccess {
@@ -77,7 +74,7 @@ export interface Prepared {
   report: CheckReport;
 }
 
-const git = (dir: string, args: string[], env: Record<string, string> = {}) => run("git", args, { cwd: dir, env: { ...process.env, ...env }, maxBuffer: 16 * 1024 * 1024 });
+const git = (dir: string, args: string[], env: Record<string, string> = {}) => execGit("git", args, { cwd: dir, env, maxBuffer: 16 * 1024 * 1024 });
 
 /**
  * Everything before the store is told: the plugin takes the publisher's id

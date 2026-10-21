@@ -8,7 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, expect, it } from "vitest";
-import { gitRunner } from "@tomradex/storage";
+import { gitRunner } from "@tomradex/git";
 import { GitProjection } from "../src/git-sync.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-transport-"));

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { SEALED } from "@tomradex/settings";
-import { type Git } from "@tomradex/storage";
+import { type Git } from "@tomradex/git";
 
 const key = "credential.https://github.com.helper";
 const quote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;

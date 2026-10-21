@@ -10,7 +10,7 @@ import path from "node:path";
 import { afterAll, afterEach, expect, it, vi } from "vitest";
 import { fresh } from "@tomradex/testkit";
 import { Settings } from "@tomradex/settings";
-import { credentialArgs } from "@tomradex/storage";
+import { credentialArgs } from "@tomradex/git";
 import GitHubAccount from "@tomradex/github";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-github-"));

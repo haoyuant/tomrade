@@ -41,15 +41,16 @@ Every package in this workspace, what it is for, the key it claims on the cordis
 
 | Package | Role | ctx | Builds on |
 |---|---|---|---|
-| `storage` | The project folder as the truth: its text artifact, providers, flush and refresh. | `storage` | contributions, hub, oplog, projects, write |
-| `storage-git` | Any git repository as a project's destination. | — | storage |
+| `git` | Running git: the promptless environment, the command runner, one folder's helpers, remote URLs. A plain library. | — | — |
+| `storage` | The project folder as the truth: its text artifact, providers, flush and refresh. | `storage` | contributions, git, hub, oplog, projects, write |
+| `storage-git` | Any git repository as a project's destination: the storage provider for a git URL, not the library that runs git (that is `git`). | — | storage |
 | `storage-github` | GitHub as a destination: finds or creates the repository. | — | github, storage, storage-git |
-| `github` | The one GitHub account this machine uses: token, REST client, git credential helper. | `github` | storage |
-| `files` | A project's files: a versioned folder tree, backends, sync, conflicts, pinned versions. | `files` | agent, boards, contributions, hub, items, oplog, storage, tools, write |
+| `github` | The one GitHub account this machine uses: token, REST client, git credential helper. | `github` | git, storage |
+| `files` | A project's files: a versioned folder tree, backends, sync, conflicts, pinned versions. | `files` | agent, boards, contributions, git, hub, items, oplog, storage, tools, write |
 | `files-github` | GitHub as where a project's files are shared. | — | files, github, storage-github |
 | `notes` | Files read as notes: wiki links, backlinks, tags, full-text search, the journal. | `notes` | files, tools |
-| `repos` | The code repositories workstreams stand for, their checkouts, agent worktrees. | `repos` | boards, hub, storage, tools |
-| `code-link` | A ticket's branches, pull requests and coding sessions; status from git; Start. | `codeLink` | agent, boards, contributions, engine-pi, github, herdr, hub, items, llm, mcp, plugin-sdk, repos, storage, tools, write |
+| `repos` | The code repositories workstreams stand for, their checkouts, agent worktrees. | `repos` | boards, git, hub, storage, tools |
+| `code-link` | A ticket's branches, pull requests and coding sessions; status from git; Start. | `codeLink` | agent, boards, contributions, engine-pi, git, github, herdr, hub, items, llm, mcp, plugin-sdk, repos, storage, tools, write |
 | `herdr` | herdr on this machine: its socket, server and panes. Optional. | `herdr` | doctor |
 | `code-sessions` | The Terminal window: herdr terminals and code sessions side by side. | — | code-link, contributions, desktop-surface, herdr, items |
 
@@ -96,7 +97,7 @@ Every package in this workspace, what it is for, the key it claims on the cordis
 | `plugin-cli` | `tomrade-plugin`: init, build, dev, test, check, pack. | — | plugin-host, plugin-kit, plugin-sdk |
 | `plugin-host` | The Tomrade a plugin is tested against. | — | agent, alerts, contributions, desktop-surface, engine-acp, extensions, im, llm, testkit, tools, web-search |
 | `plugin-studio` | Tools for an agent to write a plugin, loaded only at a build a person confirmed. | — | agent, plugin-cli, plugin-kit, plugin-sdk, plugins, tools |
-| `community` | The plugin store: browse, install (digest-checked), update, revoke, report, publish. | `community` | github, hub-cloud, plugin-cli, plugin-kit, plugin-sdk, plugins |
+| `community` | The plugin store: browse, install (digest-checked), update, revoke, report, publish. | `community` | git, github, hub-cloud, plugin-cli, plugin-kit, plugin-sdk, plugins |
 
 ## Apps
 

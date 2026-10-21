@@ -15,7 +15,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { boot } from "../dist/boot.js";
 import { createGitBackend, GitFileStore } from "@tomradex/files";
-import { gitRunner } from "@tomradex/storage";
+import { gitRunner } from "@tomradex/git";
 
 // zod is the plugins' dependency, not the app's; borrow it from where the Files plugin resolves it.
 const { z } = await import(pathToFileURL(createRequire(import.meta.resolve("@tomradex/files")).resolve("zod")).href);

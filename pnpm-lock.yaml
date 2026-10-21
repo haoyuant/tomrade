@@ -104,6 +104,9 @@ importers:
       '@tomradex/files-github':
         specifier: workspace:*
         version: link:../../packages/files-github
+      '@tomradex/git':
+        specifier: workspace:*
+        version: link:../../packages/git
       '@tomradex/github':
         specifier: workspace:*
         version: link:../../packages/github
@@ -472,6 +475,9 @@ importers:
       '@tomradex/engine-pi':
         specifier: workspace:*
         version: link:../engine-pi
+      '@tomradex/git':
+        specifier: workspace:*
+        version: link:../git
       '@tomradex/github':
         specifier: workspace:*
         version: link:../github
@@ -579,6 +585,9 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.116.0
         version: 2.116.0
+      '@tomradex/git':
+        specifier: workspace:*
+        version: link:../git
       '@tomradex/github':
         specifier: workspace:*
         version: link:../github
@@ -1041,6 +1050,9 @@ importers:
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
+      '@tomradex/git':
+        specifier: workspace:*
+        version: link:../git
       '@tomradex/hub':
         specifier: workspace:*
         version: link:../hub
@@ -1107,8 +1119,20 @@ importers:
         specifier: ^6.0.0
         version: 6.0.3
 
+  packages/git:
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
   packages/github:
     dependencies:
+      '@tomradex/git':
+        specifier: workspace:*
+        version: link:../git
       '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
@@ -1908,6 +1932,9 @@ importers:
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
+      '@tomradex/git':
+        specifier: workspace:*
+        version: link:../git
       '@tomradex/hub':
         specifier: workspace:*
         version: link:../hub
@@ -2047,6 +2074,9 @@ importers:
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
+      '@tomradex/git':
+        specifier: workspace:*
+        version: link:../git
       '@tomradex/hub':
         specifier: workspace:*
         version: link:../hub

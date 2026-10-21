@@ -8,7 +8,8 @@ import type { Hub } from "@tomradex/hub";
 import type {} from "@tomradex/boards";
 import { InUseError, NotFoundError, type CreateRepoInput, type Repo, type RepoPatch } from "@tomradex/domain";
 import type {} from "@tomradex/ipc";
-import { GitError, GitFolder, cloneInto, gitRunner, slugOf, type Git } from "@tomradex/storage";
+import { GitError, GitFolder, cloneInto, gitRunner, type Git } from "@tomradex/git";
+import { slugOf } from "@tomradex/storage";
 import { defineTool, requireProjectId } from "@tomradex/tools";
 import { isLocalRemote, normalizeRemote, sameRepository } from "./remotes.js";
 

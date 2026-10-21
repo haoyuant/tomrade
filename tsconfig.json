@@ -131,6 +131,9 @@
       "path": "./packages/schedules"
     },
     {
+      "path": "./packages/git"
+    },
+    {
       "path": "./packages/storage"
     },
     {

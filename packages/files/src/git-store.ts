@@ -1,9 +1,8 @@
-import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { FileReference } from "@tomradex/domain";
-import { GIT_ENV, GitFolder, type Git } from "@tomradex/storage";
+import { GitFolder, execGit, type Git } from "@tomradex/git";
 import { isTextMime, looksBinary, mimeOf } from "./mime.js";
 import { DEFAULT_AGENT_POLICY, DEFAULT_SYNC_POLICY, GitProjection, blobId, contains, emptyStoredPolicy, emptySyncState, listingAt, loadJson, policyAt, readStoredPolicy, remoteDirectory, saveJson, collidesWithProject, type StoredPolicy, type SyncState, type VersionRecord } from "./git-sync.js";
 import { boundDirectory, ensureStoreId, separateWorlds } from "./scopes.js";
@@ -122,9 +121,10 @@ export function parseLedger(text: string): Ledger {
 }
 
 const execBuffer = (binary: string, args: string[], cwd: string): Promise<Buffer | null> =>
-  new Promise((resolve) => {
-    execFile(binary, args, { cwd, encoding: "buffer", maxBuffer: 64 * 1024 * 1024, env: { ...process.env, ...GIT_ENV } }, (error, stdout) => resolve(error ? null : (stdout as Buffer)));
-  });
+  execGit(binary, args, { cwd, encoding: "buffer", maxBuffer: 64 * 1024 * 1024 }).then(
+    (r) => r.stdout,
+    () => null
+  );
 
 interface StagedChange {
   status: "A" | "M" | "D" | "R" | "T";
@@ -722,10 +722,10 @@ export class GitFileStore implements FileStore {
 
   /** Exit 1 is "no match", not a failure; anything slower than this is a query not worth waiting for. */
   private grep(args: string[]): Promise<string> {
-    return new Promise((resolve) => {
-      execFile(this.opts.gitBinary, args, { cwd: this.dir, encoding: "utf8", maxBuffer: 8 * 1024 * 1024, timeout: 10_000, env: { ...process.env, ...GIT_ENV } },
-        (error, stdout) => resolve(error && !stdout ? "" : stdout));
-    });
+    return execGit(this.opts.gitBinary, args, { cwd: this.dir, maxBuffer: 8 * 1024 * 1024, timeout: 10_000 }).then(
+      (r) => r.stdout,
+      (error: { stdout?: string }) => error.stdout ?? ""
+    );
   }
 
   async read(p: string): Promise<FileContent | null> {

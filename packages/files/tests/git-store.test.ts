@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { afterAll, describe, expect, it } from "vitest";
-import { gitRunner } from "@tomradex/storage";
+import { gitRunner } from "@tomradex/git";
 import { GitFileStore, IDS_FILE, normalizeRel, parseLedger } from "@tomradex/files";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-files-"));

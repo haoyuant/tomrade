@@ -46,8 +46,9 @@ packages/projects     ctx.projects
 packages/tools        ctx.tools        one registry, guarded execute
 packages/llm          ctx.llm          model profiles + roles; chat-with-tools + structured JSON; OpenAI-compatible & Anthropic adapters
 packages/settings     ctx.settings     file-backed; sections registered by zod schema
+packages/git          —                running git: the promptless environment, the command runner, one folder's helpers, remote URLs
 packages/storage      ctx.storage      the project folder as the truth: text artifact, write-through log, publish/refresh/merge, the Hub's catalog
-packages/storage-git  —                any git URL as a remote for a project's own repository
+packages/storage-git  —                any git URL as a remote for a project's own repository (the provider, not the git library)
 packages/storage-github —              GitHub: repository discovery and creation on top of storage-git
 packages/github       ctx.github       the one GitHub account this machine uses: token, REST client, git credential helper
 packages/repos        ctx.repos        the code repositories workstreams stand for; this machine's checkouts; agent worktrees

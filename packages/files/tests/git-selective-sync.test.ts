@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { afterAll, describe, expect, it } from "vitest";
-import { gitRunner, type Git } from "@tomradex/storage";
+import { gitRunner, type Git } from "@tomradex/git";
 import { GitFileStore, type GitRemoteTarget } from "../src/git-store.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "files-selective-"));

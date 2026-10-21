@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, expect, it } from "vitest";
-import { GIT_ENV, type Git } from "@tomradex/storage";
+import { GIT_ENV, type Git } from "@tomradex/git";
 import { githubEnvironment, githubHttps, installGithubCredential, migrateGithubCredential, usesTomradeCredential, withGithubCredential } from "../src/helper.js";
 
 const exec = (command: string, args: string[], cwd: string, env: Record<string, string> = {}) =>
