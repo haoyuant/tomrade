@@ -4,58 +4,39 @@ import type {} from "@tomradex/files";
 import type { ConflictChoice, ListMode, SyncMode } from "@tomradex/files";
 import type { FileReference } from "@tomradex/domain";
 import { invoke } from "./api";
-import { invalidateWorkspace } from "./queries";
+import { invalidateWorkspace, keys } from "./queries";
 import { renameTabs } from "./tabs";
 
 /** The drag payload for moving a file or folder within the tree/table — never set for a drag out to the OS. */
 export const FILES_DRAG_MIME = "application/x-tomrade-paths";
 
-export const filesKeys = {
-  all: (projectId: string) => ["files", projectId] as const,
-  tree: (projectId: string) => ["files", projectId, "tree"] as const,
-  status: (projectId: string) => ["files", projectId, "status"] as const,
-  info: (projectId: string) => ["files", projectId, "info"] as const,
-  syncPolicy: (projectId: string) => ["files", projectId, "syncPolicy"] as const,
-  content: (projectId: string, path: string) => ["files", projectId, "read", path] as const,
-  version: (projectId: string, fileId: string, versionId: string) => ["files", projectId, "version", fileId, versionId] as const,
-  location: (projectId: string, fileId: string) => ["files", projectId, "locate", fileId] as const,
-  byId: (projectId: string, fileId: string) => ["files", projectId, "byId", fileId] as const,
-  history: (projectId: string, path: string) => ["files", projectId, "history", path] as const,
-  conflicts: (projectId: string) => ["files", projectId, "conflicts"] as const,
-  folder: (projectId: string, itemId: string) => ["files", projectId, "folderFor", itemId] as const,
-  agentPolicy: (projectId: string) => ["files", projectId, "agentPolicy"] as const,
-  agentIndex: (projectId: string) => ["files", projectId, "agentIndex"] as const,
-  backends: ["files", "backends"] as const,
-  connection: (backendId: string) => ["files", "connection", backendId] as const
-};
-
 /** Everything keyed by one project's files: the tree, the open file, its versions, the state. */
-export const invalidateFiles = (qc: QueryClient, projectId: string): void => void qc.invalidateQueries({ queryKey: filesKeys.all(projectId) });
+export const invalidateFiles = (qc: QueryClient, projectId: string): void => void qc.invalidateQueries({ queryKey: keys.files.all(projectId) });
 
-export const useFilesTree = (projectId: string) => useQuery({ queryKey: filesKeys.tree(projectId), queryFn: () => invoke("files.tree", projectId), retry: false });
+export const useFilesTree = (projectId: string) => useQuery({ queryKey: keys.files.tree(projectId), queryFn: () => invoke("files.tree", projectId), retry: false });
 
 /** Asked for on open and after an action, never polled: the main process pushes `files.changed` when anything moves. */
-export const useFilesStatus = (projectId: string) => useQuery({ queryKey: filesKeys.status(projectId), queryFn: () => invoke("files.status", projectId), retry: false, staleTime: 10_000 });
+export const useFilesStatus = (projectId: string) => useQuery({ queryKey: keys.files.status(projectId), queryFn: () => invoke("files.status", projectId), retry: false, staleTime: 10_000 });
 
-export const useFilesInfo = (projectId: string) => useQuery({ queryKey: filesKeys.info(projectId), queryFn: () => invoke("files.info", projectId), retry: false });
+export const useFilesInfo = (projectId: string) => useQuery({ queryKey: keys.files.info(projectId), queryFn: () => invoke("files.info", projectId), retry: false });
 
-export const useFilesSyncPolicy = (projectId: string) => useQuery({ queryKey: filesKeys.syncPolicy(projectId), queryFn: () => invoke("files.syncPolicy", projectId), retry: false, staleTime: 10_000 });
+export const useFilesSyncPolicy = (projectId: string) => useQuery({ queryKey: keys.files.syncPolicy(projectId), queryFn: () => invoke("files.syncPolicy", projectId), retry: false, staleTime: 10_000 });
 
 /** What the project's files tell an agent they hold, and which paths stay out of it. */
 export const useFilesAgentPolicy = (projectId: string) =>
-  useQuery({ queryKey: filesKeys.agentPolicy(projectId), queryFn: () => invoke("files.agentPolicy", projectId), retry: false, staleTime: 10_000 });
+  useQuery({ queryKey: keys.files.agentPolicy(projectId), queryFn: () => invoke("files.agentPolicy", projectId), retry: false, staleTime: 10_000 });
 
 /** Exactly what an agent is shown, so the person can read it before an agent does. */
 export const useFilesAgentIndex = (projectId: string, enabled: boolean) =>
-  useQuery({ queryKey: filesKeys.agentIndex(projectId), queryFn: () => invoke("files.agentIndex", projectId, {}), retry: false, enabled });
+  useQuery({ queryKey: keys.files.agentIndex(projectId), queryFn: () => invoke("files.agentIndex", projectId, {}), retry: false, enabled });
 
 export function useSetAgentRules(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationKey: ["files", projectId, "setAgentRules"],
+    mutationKey: keys.files.setAgentRules(projectId),
     mutationFn: ({ paths, mode }: { paths: string[]; mode: ListMode | "inherit" }) => invoke("files.setAgentRules", projectId, paths, mode),
     onSuccess: (policy) => {
-      qc.setQueryData(filesKeys.agentPolicy(projectId), policy);
+      qc.setQueryData(keys.files.agentPolicy(projectId), policy);
       invalidateFiles(qc, projectId);
     }
   });
@@ -64,22 +45,22 @@ export function useSetAgentRules(projectId: string) {
 export function useSetSyncRules(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationKey: ["files", projectId, "setSyncRules"],
+    mutationKey: keys.files.setSyncRules(projectId),
     mutationFn: ({ paths, mode }: { paths: string[]; mode: SyncMode | "inherit" }) => invoke("files.setSyncRules", projectId, paths, mode),
     onSuccess: (policy) => {
-      qc.setQueryData(filesKeys.syncPolicy(projectId), policy);
+      qc.setQueryData(keys.files.syncPolicy(projectId), policy);
       invalidateFiles(qc, projectId);
     }
   });
 }
 
 export const useFileContent = (projectId: string, path: string | null) =>
-  useQuery({ queryKey: filesKeys.content(projectId, path ?? ""), queryFn: () => invoke("files.read", projectId, path!), enabled: path !== null && path !== "", retry: false });
+  useQuery({ queryKey: keys.files.content(projectId, path ?? ""), queryFn: () => invoke("files.read", projectId, path!), enabled: path !== null && path !== "", retry: false });
 
 /** An immutable version: cached for good, since it can never change. */
 export const useFileVersion = (projectId: string, ref: FileReference | null) =>
   useQuery({
-    queryKey: filesKeys.version(projectId, ref?.fileId ?? "", ref?.versionId ?? ""),
+    queryKey: keys.files.version(projectId, ref?.fileId ?? "", ref?.versionId ?? ""),
     queryFn: () => invoke("files.readVersion", projectId, ref!),
     enabled: !!ref,
     retry: false,
@@ -87,20 +68,20 @@ export const useFileVersion = (projectId: string, ref: FileReference | null) =>
   });
 
 export const useFileLocation = (projectId: string, fileId: string | null) =>
-  useQuery({ queryKey: filesKeys.location(projectId, fileId ?? ""), queryFn: () => invoke("files.locate", projectId, fileId!), enabled: !!fileId, retry: false });
+  useQuery({ queryKey: keys.files.location(projectId, fileId ?? ""), queryFn: () => invoke("files.locate", projectId, fileId!), enabled: !!fileId, retry: false });
 
 export const useFileHistory = (projectId: string, path: string | null) =>
-  useQuery({ queryKey: filesKeys.history(projectId, path ?? ""), queryFn: () => invoke("files.history", projectId, path!), enabled: path !== null && path !== "", retry: false });
+  useQuery({ queryKey: keys.files.history(projectId, path ?? ""), queryFn: () => invoke("files.history", projectId, path!), enabled: path !== null && path !== "", retry: false });
 
 export const useFileConflicts = (projectId: string, enabled: boolean) =>
-  useQuery({ queryKey: filesKeys.conflicts(projectId), queryFn: () => invoke("files.conflicts", projectId), enabled, retry: false });
+  useQuery({ queryKey: keys.files.conflicts(projectId), queryFn: () => invoke("files.conflicts", projectId), enabled, retry: false });
 
-export const useFilesBackends = () => useQuery({ queryKey: filesKeys.backends, queryFn: () => invoke("files.backends") });
+export const useFilesBackends = () => useQuery({ queryKey: keys.files.backends, queryFn: () => invoke("files.backends") });
 
 /** Whether a backend's account is connected, and as whom. Never the secret. */
 export const useFilesConnection = (backendId: string | undefined) =>
   useQuery({
-    queryKey: filesKeys.connection(backendId ?? ""),
+    queryKey: keys.files.connection(backendId ?? ""),
     queryFn: () => invoke("files.connection", backendId!),
     enabled: !!backendId,
     retry: false,
@@ -111,7 +92,7 @@ export function useSignInFiles() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (backendId: string) => invoke("files.signIn", backendId),
-    onSuccess: (state, backendId) => qc.setQueryData(filesKeys.connection(backendId), state)
+    onSuccess: (state, backendId) => qc.setQueryData(keys.files.connection(backendId), state)
   });
 }
 
@@ -120,8 +101,8 @@ export function useConnectFiles() {
   return useMutation({
     mutationFn: (args: { providerId: string; secret: string }) => invoke("files.connect", args.providerId, args.secret),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["files"] });
-      void qc.invalidateQueries({ queryKey: ["storage"] });
+      void qc.invalidateQueries({ queryKey: keys.files.root });
+      void qc.invalidateQueries({ queryKey: keys.storage });
     }
   });
 }
@@ -131,8 +112,8 @@ export function useDisconnectFiles() {
   return useMutation({
     mutationFn: (backendId: string) => invoke("files.disconnect", backendId),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["files"] });
-      void qc.invalidateQueries({ queryKey: ["storage"] });
+      void qc.invalidateQueries({ queryKey: keys.files.root });
+      void qc.invalidateQueries({ queryKey: keys.storage });
     }
   });
 }
@@ -259,7 +240,7 @@ export function useAttachFiles(projectId: string) {
 
 /** The top-level folder a ticket's new files land in: its workstream's name. */
 export const useTicketFolder = (projectId: string, itemId: string | null) =>
-  useQuery({ queryKey: filesKeys.folder(projectId, itemId ?? ""), queryFn: () => invoke("files.folderFor", projectId, itemId!), enabled: !!itemId, retry: false, staleTime: 10_000 });
+  useQuery({ queryKey: keys.files.folder(projectId, itemId ?? ""), queryFn: () => invoke("files.folderFor", projectId, itemId!), enabled: !!itemId, retry: false, staleTime: 10_000 });
 
 /** Files from this machine into the ticket's workstream folder, pinned at once. */
 export function useImportForTicket(projectId: string) {

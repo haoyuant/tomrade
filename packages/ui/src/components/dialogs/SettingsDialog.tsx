@@ -1,6 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { agentKeys } from "~/lib/agent";
 import { Icon, type IconId } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { LanguageSwitch } from "~/components/ui/language-switch";
@@ -20,7 +19,7 @@ import { ThemePane, useThemeEditor } from "./settings/ThemePane";
 import { Eyebrow, SectionHead, Tag } from "~/components/ui/atoms";
 import { useBackgroundStatus } from "~/lib/background";
 import { useI18n } from "~/lib/i18n";
-import { useSaveSettings, useSettings, useSettingsSections, useStorageProviders } from "~/lib/queries";
+import { keys, useSaveSettings, useSettings, useSettingsSections, useStorageProviders } from "~/lib/queries";
 import { useSettingsSheet } from "~/lib/settingsHost";
 
 /** Sections the dialog lays out by hand; every other registered section gets a pane drawn from its schema. */
@@ -125,7 +124,7 @@ export function SettingsDialog({
             settings={settings.data}
             // A profile or an engine override can change what an engine's row shows (readiness, its Model
             // choices) — stale beyond useEngines' own staleTime otherwise, so a save here refreshes it right away.
-            onSave={(next) => save.mutate(next, { onSuccess: () => qc.invalidateQueries({ queryKey: agentKeys.engines }) })}
+            onSave={(next) => save.mutate(next, { onSuccess: () => qc.invalidateQueries({ queryKey: keys.agent.engines }) })}
             onFindEngines={() => go("plugins", "engine")}
             focusEngine={open ? engine : undefined}
           />

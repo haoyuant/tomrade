@@ -8,6 +8,7 @@ import { useFilesSyncPolicy, useFilesTree, useSetSyncRules } from "~/lib/files";
 import { makesPathsLocal, syncFileCounts } from "~/lib/files-sync-policy";
 import { useI18n } from "~/lib/i18n";
 import { errorSpec, useToast } from "~/lib/toast";
+import { keys } from "~/lib/queries";
 
 type Choice = SyncMode | "inherit";
 type Translate = ReturnType<typeof useI18n>["t"];
@@ -29,7 +30,7 @@ export function useSyncActions(projectId: string) {
   const { t } = useI18n();
   const policy = useFilesSyncPolicy(projectId);
   const mutation = useSetSyncRules(projectId);
-  const pending = useIsMutating({ mutationKey: ["files", projectId, "setSyncRules"] }) > 0;
+  const pending = useIsMutating({ mutationKey: keys.files.setSyncRules(projectId) }) > 0;
   const toast = useToast();
   const [review, setReview] = useState<{ paths: string[]; mode: Choice } | null>(null);
   const save = (paths: string[], mode: Choice) => {

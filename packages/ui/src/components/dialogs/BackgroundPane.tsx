@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { SectionHead } from "~/components/ui/atoms";
 import { openLoginSettings, useBackgroundStatus, useSetBackground, type BackgroundStatus } from "~/lib/background";
-import { useI18n } from "~/lib/i18n";
+import { useI18n, type MessageKey } from "~/lib/i18n";
 
 /** Whether Tomrade keeps working with its window closed, and whether that part starts at login. */
 export function BackgroundPane({ scopeTag }: { scopeTag?: ReactNode }) {
@@ -55,6 +55,12 @@ export function BackgroundPane({ scopeTag }: { scopeTag?: ReactNode }) {
   );
 }
 
+const UNAVAILABLE_KEY: Record<Extract<BackgroundStatus["login"], { kind: "unavailable" }>["reason"], MessageKey> = {
+  checkout: "background.checkout",
+  location: "background.location",
+  unsupported: "background.unsupported"
+};
+
 /** What stands between the switch and an actual start at login, and where to put it right. */
 function LoginNote({ status: s }: { status: BackgroundStatus }) {
   const { t } = useI18n();
@@ -62,7 +68,7 @@ function LoginNote({ status: s }: { status: BackgroundStatus }) {
   let text: string | null = null;
   let action = false;
   if (s.error) text = t("background.failed", { message: s.error });
-  else if (s.login.kind === "unavailable") text = t(`background.${s.login.reason}`);
+  else if (s.login.kind === "unavailable") text = t(UNAVAILABLE_KEY[s.login.reason]);
   else if (!s.keepRunning) text = t("background.needsKeepRunning");
   else if (s.startAtLogin && s.login.kind === "approval") {
     text = t("background.approval");

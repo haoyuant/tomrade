@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import type { CliCheck, EngineView, LocalCliStatus } from "@tomradex/agent";
-import { useQuery } from "@tanstack/react-query";
 import { Icon } from "~/components/icons";
 import { invoke } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
@@ -8,6 +7,7 @@ import { cliDiagnostics, engineStatus, useRecheckEngines } from "~/lib/localCli"
 import { openExternal, pickProgram } from "~/lib/shell";
 import { readableError, useToast } from "~/lib/toast";
 import { isCommitKey } from "~/lib/keys";
+import { useAbout } from "~/lib/queries";
 
 /**
  * Inside a local agent's engine row: which CLI it runs and where that came
@@ -18,7 +18,7 @@ export function LocalCliSection({ engine, cli, command, onSaveCommand }: { engin
   const { t, tx } = useI18n();
   const toast = useToast();
   const recheck = useRecheckEngines();
-  const about = useQuery({ queryKey: ["about"], queryFn: () => invoke("shell.about"), staleTime: Infinity, retry: false });
+  const about = useAbout();
   const agent = engine.setup;
   const status = engineStatus(engine);
   const windows = cli.platform === "win32";

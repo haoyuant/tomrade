@@ -1,10 +1,10 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import type { Block, EngineView, FocusRef, PendingView, RunView, ThreadMessage } from "@tomradex/agent";
-import { modelErrorKind, type Item } from "@tomradex/domain";
+import { modelErrorKind, type Item, type ModelErrorKind } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { Hint } from "~/components/ui/hint";
 import { Menu, MenuActionItem, MenuHead } from "~/components/ui/menu";
-import { PRIORITY_LABEL } from "~/lib/domain";
+import { PRIORITY_LABEL, WORK_TYPE_KEY } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { traceState } from "~/lib/steps";
 import type { RunProgress } from "~/lib/agent";
@@ -162,7 +162,7 @@ export function ProposalBlock({ card }: { card: ProposalCard }) {
             {(epic.features ?? []).map((ticket, j) => (
               <li key={j}>
                 <span className="proposal-ticket-title">{ticket.title}</span>
-                {ticket.workType && <span className="tag faint">{t(`fields.${ticket.workType}`)}</span>}
+                {ticket.workType && <span className="tag faint">{t(WORK_TYPE_KEY[ticket.workType])}</span>}
                 {!!ticket.priority && <span className="tag faint">{PRIORITY_LABEL[ticket.priority]}</span>}
                 {ticket.body && <p className="proposal-body">{ticket.body}</p>}
               </li>
@@ -307,6 +307,25 @@ export function RunMetrics({ run }: { run: RunView | undefined }) {
  * or settings for an agent with an account of its own. Meanwhile another ready
  * agent can take the same message, so a broken one never leaves the person stuck.
  */
+/** What a failed turn means, from the model service; `other` (and `slow`, which only a waiting check reports) has no words of its own. */
+const MODEL_ERROR_KEY: Partial<Record<ModelErrorKind, MessageKey>> = {
+  auth: "agentPanel.error_auth",
+  quota: "agentPanel.error_quota",
+  rate: "agentPanel.error_rate",
+  model: "agentPanel.error_model",
+  server: "agentPanel.error_server",
+  network: "agentPanel.error_network"
+};
+/** The same, for an agent that signs in on its own. */
+const AGENT_ERROR_KEY: Partial<Record<ModelErrorKind, MessageKey>> = {
+  auth: "agentPanel.errorAgent_auth",
+  quota: "agentPanel.errorAgent_quota",
+  rate: "agentPanel.errorAgent_rate",
+  model: "agentPanel.errorAgent_model",
+  server: "agentPanel.errorAgent_server",
+  network: "agentPanel.errorAgent_network"
+};
+
 export function ErrorBlock({ text, details, engine, others, onOpenSettings, onRetry, onRetryWith, onTroubleshoot }: {
   text: string;
   details?: string;
@@ -325,7 +344,8 @@ export function ErrorBlock({ text, details, engine, others, onOpenSettings, onRe
   const signIn = useSetupInTerminal();
   const kind = modelErrorKind(text);
   const own = !!engine && !engine.usesModels;
-  const head = kind === "other" ? null : own ? t(`agentPanel.errorAgent_${kind}` as MessageKey, { name: engine.title }) : t(`agentPanel.error_${kind}` as MessageKey);
+  const headKey = (own ? AGENT_ERROR_KEY : MODEL_ERROR_KEY)[kind];
+  const head = headKey ? t(headKey, own ? { name: engine.title } : undefined) : null;
   const fixable = kind === "auth" || kind === "model" || kind === "quota";
   const canSignIn = own && kind === "auth" && !!engine.setup?.signIn;
   const folded = [head ? text : null, details].filter(Boolean).join("\n\n");

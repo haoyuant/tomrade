@@ -6,8 +6,11 @@ import { Icon } from "~/components/icons";
 import { invoke } from "~/lib/api";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { readableError } from "~/lib/toast";
+import { keys } from "~/lib/queries";
 
 const KINDS: ReportKind[] = ["bug", "feedback", "idea"];
+export const REPORT_KIND_KEY: Record<ReportKind, MessageKey> = { bug: "feedback.kind_bug", feedback: "feedback.kind_feedback", idea: "feedback.kind_idea" };
+const PLACEHOLDER_KEY: Record<ReportKind, MessageKey> = { bug: "feedback.placeholder_bug", feedback: "feedback.placeholder_feedback", idea: "feedback.placeholder_idea" };
 
 /**
  * Writing in to Tomrade's developer without anything having failed: a bug, a
@@ -27,7 +30,7 @@ function FeedbackSheet({ open, onOpenChange, onTroubleshoot }: { open: boolean; 
   const typed = useDeferredValue(text.trim());
   const send = useMutation({ mutationFn: () => invoke("doctor.sendFeedback", kind, text) });
   // what goes besides the text, read from the report as it would be sent
-  const preview = useQuery({ queryKey: ["feedback-preview", kind, typed], queryFn: () => invoke("doctor.feedbackPreview", kind, typed), enabled: open && !!typed, placeholderData: (previous) => previous });
+  const preview = useQuery({ queryKey: keys.doctor.feedbackPreview(kind, typed), queryFn: () => invoke("doctor.feedbackPreview", kind, typed), enabled: open && !!typed, placeholderData: (previous) => previous });
   const app = preview.data?.app;
   const result = send.data;
 
@@ -48,7 +51,7 @@ function FeedbackSheet({ open, onOpenChange, onTroubleshoot }: { open: boolean; 
             <div className="seg quiet" role="radiogroup" aria-label={t("feedback.kindAria")} data-testid="feedback-kind">
               {KINDS.map((k) => (
                 <button key={k} type="button" role="radio" aria-checked={kind === k} aria-pressed={kind === k} onClick={() => setKind(k)}>
-                  {t(`feedback.kind_${k}` as MessageKey)}
+                  {t(REPORT_KIND_KEY[k])}
                 </button>
               ))}
             </div>
@@ -60,7 +63,7 @@ function FeedbackSheet({ open, onOpenChange, onTroubleshoot }: { open: boolean; 
                 </button>
               </p>
             )}
-            <textarea className="input report-note" rows={6} autoFocus value={text} placeholder={t(`feedback.placeholder_${kind}` as MessageKey)} aria-label={t("feedback.title")} onChange={(e) => setText(e.target.value)} />
+            <textarea className="input report-note" rows={6} autoFocus value={text} placeholder={t(PLACEHOLDER_KEY[kind])} aria-label={t("feedback.title")} onChange={(e) => setText(e.target.value)} />
             {app && <p className="meta-txt">{t("feedback.goesWith", { app: `Tomrade ${app.version} · ${app.os} · ${app.locale}` })}</p>}
             {send.error && <p className="ai-error">{readableError(send.error)}</p>}
           </>

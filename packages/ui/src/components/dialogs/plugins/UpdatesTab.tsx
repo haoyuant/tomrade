@@ -6,6 +6,7 @@ import { useI18n } from "~/lib/i18n";
 import { useRevoked, useStoreUpdate, useUpdates } from "~/lib/plugins";
 import { useToast } from "~/lib/toast";
 import { TrustTags, messageOf } from "./parts";
+import { keys } from "~/lib/queries";
 
 export function UpdatesTab() {
   const { t } = useI18n();
@@ -20,7 +21,7 @@ export function UpdatesTab() {
       <SectionHead
         title={t("plugins.tabUpdates")}
         aside={
-          <button type="button" className="btn btn-ghost" onClick={() => void qc.invalidateQueries({ queryKey: ["community"] })}>
+          <button type="button" className="btn btn-ghost" onClick={() => void qc.invalidateQueries({ queryKey: keys.community.root })}>
             <Icon name="i-sync" size={13} /> {t("plugins.checkNow")}
           </button>
         }

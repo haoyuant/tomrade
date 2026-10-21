@@ -1,9 +1,19 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import type { AttentionView } from "@tomradex/storage";
 import { Dialog, DialogBody, DialogHead } from "~/components/ui/dialog";
 import { invoke } from "~/lib/api";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { invalidateWorkspace, useItems, useStorageStatus, useSyncAttention } from "~/lib/queries";
+import { invalidateWorkspace, keys, useItems, useStorageStatus, useSyncAttention } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
+
+// Notes are read back from the project's folder, which a newer Tomrade may have written: an unknown code shows as itself.
+const CODE_KEY: Record<AttentionView["code"], MessageKey> = {
+  "done-unaccepted": "syncIssues.code_done-unaccepted",
+  "orphan-review": "syncIssues.code_orphan-review",
+  "duplicate-review": "syncIssues.code_duplicate-review",
+  "orphan-artifact": "syncIssues.code_orphan-artifact",
+  "delivery-state": "syncIssues.code_delivery-state"
+};
 
 /**
  * What a sync merged but left disagreeing with itself, one row per ticket with
@@ -20,7 +30,7 @@ export function SyncIssuesDialog({ projectId, open, onOpenChange, onOpenIssue }:
   const rows = attention.data ?? [];
   const settled = () => {
     invalidateWorkspace(qc, projectId);
-    void qc.invalidateQueries({ queryKey: ["storage", "status", projectId] });
+    void qc.invalidateQueries({ queryKey: keys.storageStatus(projectId) });
   };
   const settle = useMutation({
     mutationFn: ({ id, action }: { id: string; action: "accept" | "tidy" | "reopen" }) => {
@@ -46,7 +56,7 @@ export function SyncIssuesDialog({ projectId, open, onOpenChange, onOpenIssue }:
               <div className="inbox-main">
                 <button type="button" className="link-btn num" onClick={() => { onOpenIssue(r.itemId); onOpenChange(false); }}>{r.key}</button>
                 <span className="inbox-title">{r.title}</span>
-                <span className="meta-txt">{t(`syncIssues.code_${r.code}` as MessageKey)}</span>
+                <span className="meta-txt">{r.code in CODE_KEY ? t(CODE_KEY[r.code]) : r.code}</span>
               </div>
               <div className="inbox-actions">
                 {r.code === "done-unaccepted" ? (

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { RepoStateView } from "@tomradex/code-link";
+import type { RemoteFailure, RepoStateView } from "@tomradex/code-link";
 import type { Board, Repo } from "@tomradex/domain";
 import type { CheckoutView, FolderRepo } from "@tomradex/repos";
 import { Icon } from "~/components/icons";
@@ -137,6 +137,13 @@ export function RepositoriesBlock({ projectId }: { projectId: string }) {
     </div>
   );
 }
+
+const CAUSE_KEY: Record<RemoteFailure, MessageKey> = {
+  network: "repositories.cause_network",
+  credentials: "repositories.cause_credentials",
+  helper: "repositories.cause_helper",
+  unknown: "repositories.cause_unknown"
+};
 
 function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Repo; projectId: string; boards: Board[]; checkout: CheckoutView | null; remoteState: RepoStateView | null }) {
   const { t } = useI18n();
@@ -308,7 +315,7 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
       )}
       {checkout?.checkout && remoteState?.remote === "unreachable" && (
         <div className="stack-2 repo-remote-fix" data-testid="repo-remote-fix">
-          <p className="meta-txt dense">{t(`repositories.cause_${remoteState.remoteCause ?? "unknown"}` as MessageKey)}</p>
+          <p className="meta-txt dense">{t(CAUSE_KEY[remoteState.remoteCause ?? "unknown"])}</p>
           <div className="row">
             <button
               type="button"
@@ -423,6 +430,17 @@ function AgentMerge({ projectId, repoId, on, local }: { projectId: string; repoI
   );
 }
 
+const MERGE_WHY_KEY: Record<ReadMergeCheck["check"]["why"], MessageKey> = {
+  bypass: "repositories.mergeWhy_bypass",
+  "allow-rule": "repositories.mergeWhy_allow-rule",
+  "ask-rule": "repositories.mergeWhy_ask-rule",
+  "deny-rule": "repositories.mergeWhy_deny-rule",
+  prompts: "repositories.mergeWhy_prompts",
+  "auto-mode": "repositories.mergeWhy_auto-mode",
+  plan: "repositories.mergeWhy_plan",
+  "dont-ask": "repositories.mergeWhy_dont-ask"
+};
+
 function MergeCheckRow({ projectId, repoId, view }: { projectId: string; repoId: string; view: ReadMergeCheck }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -438,7 +456,7 @@ function MergeCheckRow({ projectId, repoId, view }: { projectId: string; repoId:
         style={{ color: state === "allowed" ? "var(--accent)" : state === "blocked" ? "var(--danger)" : "var(--meta)" }}
       />
       <span className="repo-remote-copy">
-        <span className="cfg-name">{t(`repositories.mergeWhy_${check.why}` as MessageKey, vars)}</span>
+        <span className="cfg-name">{t(MERGE_WHY_KEY[check.why], vars)}</span>
       </span>
       {check.rule && (
         <button type="button" className="btn btn-ghost" onClick={() => reveal(check.rule!.file)}>

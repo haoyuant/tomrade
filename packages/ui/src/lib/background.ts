@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {} from "@tomradex/ipc";
 import { invoke, subscribe } from "./api";
+import { keys } from "./queries/keys";
 
 type LoginState =
   | { kind: "on" }
@@ -30,21 +31,19 @@ declare module "@tomradex/ipc" {
   }
 }
 
-const KEY = ["background"] as const;
-
 /** Null in a browser tab, or when the background row is switched off. */
 export function useBackgroundStatus() {
   const qc = useQueryClient();
-  useEffect(() => subscribe("background.changed", (status) => qc.setQueryData(KEY, status)), [qc]);
+  useEffect(() => subscribe("background.changed", (status) => qc.setQueryData(keys.background, status)), [qc]);
   // Refetched on focus: the person may have just approved or switched it off in the system's settings.
-  return useQuery({ queryKey: KEY, queryFn: () => invoke("background.status").catch(() => null), refetchOnWindowFocus: true });
+  return useQuery({ queryKey: keys.background, queryFn: () => invoke("background.status").catch(() => null), refetchOnWindowFocus: true });
 }
 
 export function useSetBackground() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (patch: { keepRunning?: boolean; startAtLogin?: boolean }) => invoke("background.set", patch),
-    onSuccess: (status) => qc.setQueryData(KEY, status)
+    onSuccess: (status) => qc.setQueryData(keys.background, status)
   });
 }
 

@@ -11,8 +11,15 @@ import { readableError } from "~/lib/toast";
 import { cn } from "~/lib/utils";
 import { isCommitKey } from "~/lib/keys";
 
-const moodKey = (mood: PetMood) => `petProfiles.mood_${mood}` as MessageKey;
-const whenKey = (mood: PetMood) => `petProfiles.mood_${mood}_when` as MessageKey;
+/** Each mood's name and when it shows. */
+const MOOD_KEY: Record<PetMood, [MessageKey, MessageKey]> = {
+  idle: ["petProfiles.mood_idle", "petProfiles.mood_idle_when"],
+  thinking: ["petProfiles.mood_thinking", "petProfiles.mood_thinking_when"],
+  working: ["petProfiles.mood_working", "petProfiles.mood_working_when"],
+  waiting: ["petProfiles.mood_waiting", "petProfiles.mood_waiting_when"],
+  success: ["petProfiles.mood_success", "petProfiles.mood_success_when"],
+  error: ["petProfiles.mood_error", "petProfiles.mood_error_when"]
+};
 
 /** One state of the pet being edited: what it shows, when, and the way to change it. */
 function MoodSlot({ profile, mood, maxBytes, onError }: { profile: PetProfileView; mood: PetMood; maxBytes: number; onError: (message: string | null) => void }) {
@@ -43,13 +50,13 @@ function MoodSlot({ profile, mood, maxBytes, onError }: { profile: PetProfileVie
 
   return (
     <div className={cn("pet-slot", custom && "is-custom")} data-mood={mood}>
-      <PetCanvas className="pet-slot-preview" animation={preview.data?.[mood]} width={120} height={96} label={t(moodKey(mood))} />
+      <PetCanvas className="pet-slot-preview" animation={preview.data?.[mood]} width={120} height={96} label={t(MOOD_KEY[mood][0])} />
       <div className="pet-slot-body">
         <div className="row" style={{ gap: 6 }}>
-          <span className="pet-slot-name">{t(moodKey(mood))}</span>
+          <span className="pet-slot-name">{t(MOOD_KEY[mood][0])}</span>
           {!profile.builtIn && <Tag tone={custom ? "strong" : "faint"}>{custom ? t("petProfiles.yours") : t("petProfiles.fromBuiltIn")}</Tag>}
         </div>
-        <span className="meta-txt dense">{t(whenKey(mood))}</span>
+        <span className="meta-txt dense">{t(MOOD_KEY[mood][1])}</span>
         {!profile.builtIn && (
           <div className="row" style={{ gap: 6, marginTop: 4 }}>
             <button type="button" className="btn btn-secondary btn-xs" disabled={reading || setImage.isPending} onClick={() => input.current?.click()}>

@@ -63,11 +63,9 @@ function resolveLocale(preference: LanguagePreference, available?: readonly Loca
   return preference === "system" ? detectSystemLocale(available) : languageTag(preference);
 }
 
-const languagesKey = [...keys.settings, "languages"] as const;
-
 /** Languages installed packs add; a pack for a shipped language keeps the shipped name. */
 function useLanguages(): { options: LanguageOption[]; packs: Set<string> } {
-  const packs = useQuery({ queryKey: languagesKey, queryFn: () => invoke("settings.languages"), enabled: typeof window !== "undefined" && !!window.tomrade, staleTime: Infinity }).data;
+  const packs = useQuery({ queryKey: keys.languages, queryFn: () => invoke("settings.languages"), enabled: typeof window !== "undefined" && !!window.tomrade, staleTime: Infinity }).data;
   return useMemo(() => {
     const shipped = new Set<string>(BUILTIN_LANGUAGES.map((l) => l.tag));
     const added = (packs ?? []).filter((p) => !shipped.has(p.tag)).map(({ tag, name }) => ({ tag, name }));
@@ -108,7 +106,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const locale = resolveLocale(preference, [...languages.options.map((l) => l.tag), ...languages.packs]);
   // A pack's words come from the main process, which read them from the plugin; English shows until they arrive.
   const packTag = languages.packs.has(locale) ? locale : null;
-  const pack = useQuery({ queryKey: [...languagesKey, packTag], queryFn: () => invoke("settings.languagePack", packTag!), enabled: !!packTag, staleTime: Infinity }).data;
+  const pack = useQuery({ queryKey: keys.languagePack(packTag), queryFn: () => invoke("settings.languagePack", packTag!), enabled: !!packTag, staleTime: Infinity }).data;
   setPackMessages(packTag, pack?.tag === packTag ? (pack?.ui ?? null) : null);
   // What a pack translates is measured against this English; the main process keeps it for plugin_check.
   useEffect(() => {

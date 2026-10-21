@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import type { ImAdapterView, ImConnectionView, ImIgnoredView, ImNotifyKind, ImPairingView, ImRoute, ImSettings } from "@tomradex/im";
 import { Icon, type IconId } from "~/components/icons";
 import { FoldChevron, SectionHead, Tag } from "~/components/ui/atoms";
-import { invoke, messageOf } from "~/lib/api";
+import { messageOf } from "~/lib/api";
 import { useEngines } from "~/lib/agent";
 import { intlTag, useI18n, type MessageKey } from "~/lib/i18n";
 import {
@@ -11,7 +10,7 @@ import {
   useImPairCancel, useImPairConfirm, useImPairings, useImPairStart, useImRetry, useImRevoke
 } from "~/lib/im";
 import { usePanelOpen } from "~/lib/panel";
-import { useProjects, useSaveSettings, useSettings } from "~/lib/queries";
+import { useProjects, useSaveSettings, useSecretStorage, useSettings } from "~/lib/queries";
 import { cn } from "~/lib/utils";
 
 const ID = /^[A-Za-z0-9_-]{1,32}$/;
@@ -31,10 +30,6 @@ const REASON_KEY: Record<ImIgnoredView["reason"], MessageKey> = {
   activation: "imSettings.reasonActivation",
   bot: "imSettings.reasonBot"
 };
-
-function useSecretStorage() {
-  return useQuery({ queryKey: ["settings", "secretStorage"], queryFn: () => invoke("settings.secretStorage"), staleTime: Infinity, retry: false });
-}
 
 function ProjectSelect({ id, value, onChange }: { id?: string; value: string; onChange: (projectId: string) => void }) {
   const projects = useProjects();

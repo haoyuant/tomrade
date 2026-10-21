@@ -3,11 +3,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { isNotePath, newNotePath, resolveLink } from "@tomradex/notes/syntax";
 import { useWorkspace } from "~/components/workspace/context";
 import { invoke } from "~/lib/api";
-import { filesKeys, nameOf, useFilesTree } from "~/lib/files";
+import { nameOf, useFilesTree } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
 import { filePaths, freeNoteName, notesSearch, requestEdit, today } from "~/lib/notes";
 import { errorSpec, useToast } from "~/lib/toast";
 import type { NoteLinking } from "./FileViewer";
+import { keys } from "~/lib/queries";
 
 /** Making notes and following links, the same from the tree, the region, the palette and a note's own text. */
 export function useNoteActions() {
@@ -60,7 +61,7 @@ export function useNoteActions() {
       tag: (tag) => notesSearch.open(`#${tag}`),
       // The same cache the file screen reads, so a saved picture refreshes with everything else.
       image: async (path) => {
-        const content = await qc.fetchQuery({ queryKey: filesKeys.content(project.id, path), queryFn: () => invoke("files.read", project.id, path) }).catch(() => null);
+        const content = await qc.fetchQuery({ queryKey: keys.files.content(project.id, path), queryFn: () => invoke("files.read", project.id, path) }).catch(() => null);
         if (!content) return null;
         if (content.encoding === "base64") return content.body ? `data:${content.mime};base64,${content.body}` : null;
         return content.mime === "image/svg+xml" ? `data:image/svg+xml;utf8,${encodeURIComponent(content.body)}` : null;

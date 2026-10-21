@@ -191,6 +191,15 @@ function AllowVersionDialog({ id, title, version, misses, onClose }: { id: strin
   );
 }
 
+const HOOK_KEY: Record<CliHookEvent, MessageKey> = {
+  "session-start": "plugins.agentHook_session-start",
+  prompt: "plugins.agentHook_prompt",
+  "pre-tool": "plugins.agentHook_pre-tool",
+  "post-tool": "plugins.agentHook_post-tool",
+  stop: "plugins.agentHook_stop",
+  "session-end": "plugins.agentHook_session-end"
+};
+
 const ROW_KEY: Record<FullModeInfo["rows"][number]["change"], MessageKey> = {
   adds: "plugins.rowAdds",
   replaces: "plugins.rowReplaces",
@@ -243,7 +252,7 @@ function AgentHooks({ events }: { events: string[] }) {
           if (!reach) return [];
           return [
             <li key={event}>
-              {t(`plugins.agentHook_${event}` as MessageKey)}
+              {t(HOOK_KEY[event as CliHookEvent])}
               {!!reach.answers.length && ` · ${t("plugins.agentHookAnswers", { agents: names(reach.answers) })}`}
               {` · ${t("plugins.agentHookSees", { agents: names(reach.sees) })}`}
             </li>

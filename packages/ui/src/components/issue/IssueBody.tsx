@@ -12,7 +12,6 @@ import { Icon } from "~/components/icons";
 import { Spacer } from "~/components/ui/atoms";
 import { invoke } from "~/lib/api";
 import { editorTheme, markdownHighlight } from "~/lib/editorStyle";
-import { filesKeys } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
 import { renderMarkdown } from "~/lib/markdown";
 import { openExternal } from "~/lib/shell";
@@ -22,6 +21,7 @@ import type { FieldProps } from "./fields";
 import { ImagePreview, type PreviewImage } from "./ImagePreview";
 import { hits } from "~/lib/keybindings";
 import { isCommitKey, isComposing } from "~/lib/keys";
+import { keys } from "~/lib/queries";
 
 /** The Files store's binary read limit: anything larger could be saved but never shown again. */
 const ATTACHMENT_LIMIT = 8 * 1024 * 1024;
@@ -165,7 +165,7 @@ function BodyMarkdown({ projectId, text, drafts }: { projectId: string; text: st
   const base = useMemo(() => renderMarkdown(text, undefined, { notes: false, breaks: true }), [text]);
   const imageIds = useMemo(() => [...new Set([...base.matchAll(/<img class="md-file" data-file-id="([^"]+)"/g)].map((m) => m[1]!))], [base]);
   const images = useQueries({
-    queries: imageIds.map((id) => ({ queryKey: filesKeys.byId(projectId, id), queryFn: () => invoke("files.readById", projectId, id), retry: false, staleTime: 60_000 }))
+    queries: imageIds.map((id) => ({ queryKey: keys.files.byId(projectId, id), queryFn: () => invoke("files.readById", projectId, id), retry: false, staleTime: 60_000 }))
   });
   const sources = images.map((q) => (q.isError ? null : srcOf(q.data)));
   const loaded = images.map((q) => `${q.status}:${q.dataUpdatedAt}`).join("|");
@@ -330,7 +330,7 @@ function BodyEditor({ item, write, className, onDone }: FieldProps & { className
           const file = added[i]!;
           uploaded.current.set(d.id, file.fileId);
           // the bytes are in hand: the read view draws them without fetching back what was just written
-          qc.setQueryData<FileContent>(filesKeys.byId(latest.current.projectId, file.fileId), {
+          qc.setQueryData<FileContent>(keys.files.byId(latest.current.projectId, file.fileId), {
             path: file.path, name: file.name, fileId: file.fileId, versionId: null, mime: file.mime, size: file.size, encoding: "base64", body: d.base64, truncated: false
           });
         });

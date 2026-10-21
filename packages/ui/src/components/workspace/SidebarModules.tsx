@@ -8,7 +8,7 @@ import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import { ContextMenu, ContextMenuActionItem } from "~/components/ui/menu";
 import { invoke } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
-import { useRunCommand } from "~/lib/queries";
+import { keys, useRunCommand } from "~/lib/queries";
 import { openSettingsPane } from "~/lib/settingsHost";
 import { openExternal } from "~/lib/shell";
 import { useErrorToast, useToast } from "~/lib/toast";
@@ -140,7 +140,7 @@ export function SidebarModule({
 }
 
 export const useSidebarModules = (projectId: string) =>
-  useQuery({ queryKey: ["contributions", "sidebar", projectId], queryFn: (): Promise<SidebarModuleView[]> => invoke("contributions.sidebarModules", projectId) });
+  useQuery({ queryKey: keys.sidebarModules(projectId), queryFn: (): Promise<SidebarModuleView[]> => invoke("contributions.sidebarModules", projectId) });
 
 const iconOf = (icon: string | undefined): IconId | null => (icon && (ICON_IDS as readonly string[]).includes(icon) ? (icon as IconId) : null);
 

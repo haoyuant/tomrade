@@ -11,7 +11,7 @@ import { invoke } from "~/lib/api";
 import { detectedHere } from "~/lib/engines";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { engineStateLabel, engineStatus } from "~/lib/localCli";
-import { usePlugins } from "~/lib/queries";
+import { keys, usePlugins } from "~/lib/queries";
 import { useInstallProvider, useModelProviders, useProviderPlugins, useProviders } from "~/lib/setup";
 import { EngineTryRow } from "../EngineTryRow";
 import { LocalCliSection } from "../LocalCliSection";
@@ -262,9 +262,9 @@ export function AssistantPane({
 function WorkerRole({ models, onSave }: { models: ModelsSettings; onSave: (next: ModelsSettings) => void }) {
   const { t } = useI18n();
   // An agent's first sign-in check can take a model call; look again until each has answered.
-  const lenders = useQuery({ queryKey: ["llm", "lenders"], queryFn: () => invoke("llm.lenders"), staleTime: 15_000,
+  const lenders = useQuery({ queryKey: keys.llm.lenders, queryFn: () => invoke("llm.lenders"), staleTime: 15_000,
     refetchInterval: (query) => (query.state.data?.some((l) => l.ready === null) ? 1500 : false) }).data ?? [];
-  const worker = useQuery({ queryKey: ["llm", "worker", models.roles.worker], queryFn: () => invoke("llm.worker"), staleTime: 15_000 }).data;
+  const worker = useQuery({ queryKey: keys.llm.workerFor(models.roles.worker), queryFn: () => invoke("llm.worker"), staleTime: 15_000 }).data;
   if (models.profiles.length === 0 && lenders.length === 0) return null;
   return (
     <div className="panel stack-3" style={{ marginBottom: "var(--space-5)" }}>
@@ -311,7 +311,7 @@ function PlaybooksBlock({ agent, onSave }: { agent: AgentSettings; onSave: (next
   };
   const choose = (id: string, source: PlaybookSource) => {
     onSave({ ...agent, playbookChoices: { ...agent.playbookChoices, [id]: source } });
-    void qc.invalidateQueries({ queryKey: ["agent", "playbooks"] });
+    void qc.invalidateQueries({ queryKey: keys.agent.playbooksAll });
   };
   if (!playbooks.data?.length) return <p className="meta-txt">{t("playbooks.settingsEmpty")}</p>;
   return (

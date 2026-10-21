@@ -3,7 +3,8 @@ import type { Providing } from "@tomradex/community";
 import type { QuickSetupResult } from "@tomradex/llm";
 import { Icon } from "~/components/icons";
 import { invoke, messageOf } from "~/lib/api";
-import { useI18n, type MessageKey } from "~/lib/i18n";
+import { PROFILE_CHECK_KEY } from "~/lib/errors";
+import { useI18n } from "~/lib/i18n";
 import { useInstallProvider, useModelProviders, useProviderPlugins, useProviderSignIn, useQuickSetup, useProviders } from "~/lib/setup";
 import { PlainSecretNote } from "~/components/ui/PlainSecretNote";
 import { openExternal } from "~/lib/shell";
@@ -14,7 +15,7 @@ export function SetupProblem({ result, provider }: { result: Extract<QuickSetupR
   const { t } = useI18n();
   return (
     <div className="profile-problem" role="alert" data-testid="setup-problem">
-      <p>{result.kind === "model" ? t("setup.noModel", { provider }) : t(`settingsDialog.profileCheck_${result.kind}` as MessageKey, { host: provider, model: "" })}</p>
+      <p>{result.kind === "model" ? t("setup.noModel", { provider }) : t(PROFILE_CHECK_KEY[result.kind], { host: provider, model: "" })}</p>
       <details className="ai-error-details">
         <summary>{t("agentPanel.errorDetails")}</summary>
         <code>{result.detail}</code>

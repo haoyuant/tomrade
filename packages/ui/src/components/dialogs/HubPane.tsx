@@ -6,7 +6,7 @@ import { ConnectionPanel, DestinationPicker, message } from "~/components/projec
 import { Eyebrow, SectionHead, Tag } from "~/components/ui/atoms";
 import { SchemaField, defaultsOf, fieldsOf, type JsonSchema } from "~/components/ui/schema-form";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { useAttachAll, useBindHub, useCacheDir, useHubInfo, useHubRemote, useOverwriteCatalog, useRestores, useStorageConnection, useStorageProviders, useSyncHub, useUnbindHub } from "~/lib/queries";
+import { keys, useAttachAll, useBindHub, useCacheDir, useHubInfo, useHubRemote, useOverwriteCatalog, useRestores, useStorageConnection, useStorageProviders, useSyncHub, useUnbindHub } from "~/lib/queries";
 import { reveal } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { RestoreRow } from "~/components/projects/RestoreCards";
@@ -70,7 +70,7 @@ export function HubPane() {
 
   const retryAll = () =>
     attachAll.mutate(undefined, {
-      onSuccess: () => void qc.invalidateQueries({ queryKey: ["projects"] }),
+      onSuccess: () => void qc.invalidateQueries({ queryKey: keys.projects }),
       onError: (error) => toast({ body: message(error) })
     });
 

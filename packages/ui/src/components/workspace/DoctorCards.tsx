@@ -6,6 +6,15 @@ import { useI18n, type MessageKey } from "~/lib/i18n";
 type RowState = ChecklistCard["rows"][number]["state"];
 
 const MARK: Record<RowState, IconId> = { pending: "i-clock", running: "i-sync", ok: "i-check", warn: "i-warn", fail: "i-close", skip: "i-chev" };
+const STATE_KEY: Record<RowState, MessageKey> = {
+  pending: "doctor.state_pending",
+  running: "doctor.state_running",
+  ok: "doctor.state_ok",
+  warn: "doctor.state_warn",
+  fail: "doctor.state_fail",
+  skip: "doctor.state_skip"
+};
+const CONFIDENCE_KEY: Record<NonNullable<FindingCard["confidence"]>, MessageKey> = { high: "doctor.confidence_high", medium: "doctor.confidence_medium", low: "doctor.confidence_low" };
 
 /** A `checklist` card: each row ticks as it is checked, so a slow test turn is never a frozen screen. */
 export function ChecklistBlock({ title, card }: { title: string; card: ChecklistCard }) {
@@ -18,7 +27,7 @@ export function ChecklistBlock({ title, card }: { title: string; card: Checklist
       </div>
       {card.rows.map((row) => (
         <div className={`tool-row check-row is-${row.state}`} key={row.id}>
-          <Icon name={MARK[row.state]} size={12} className={row.state === "running" ? "is-spinning" : undefined} aria-label={t(`doctor.state_${row.state}` as MessageKey)} />
+          <Icon name={MARK[row.state]} size={12} className={row.state === "running" ? "is-spinning" : undefined} aria-label={t(STATE_KEY[row.state])} />
           <span className="check-title">{row.title}</span>
           {row.line && <span className="t-title" title={row.line}>{row.line}</span>}
         </div>
@@ -38,7 +47,7 @@ export function FindingBlock({ card, engines, allEngines, onAction }: { card: Fi
       <p className="finding-head">
         <Icon name={card.tone === "ok" ? "i-check" : "i-warn"} size={13} />
         <span>{card.headline}</span>
-        {card.confidence && <span className="tag">{t(`doctor.confidence_${card.confidence}` as MessageKey)}</span>}
+        {card.confidence && <span className="tag">{t(CONFIDENCE_KEY[card.confidence])}</span>}
       </p>
       {card.body && <p className="finding-body">{card.body}</p>}
       {card.actions.length > 0 && (

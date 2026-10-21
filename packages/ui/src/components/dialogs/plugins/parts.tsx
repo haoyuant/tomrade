@@ -35,13 +35,33 @@ export function TrustTags({ tier, risk }: { tier: TierName | null; risk?: RiskNa
   );
 }
 
-const REASONS = new Set(["full", "rows", "exec", "fs-any", "network-any", "network", "fs-project", "db", "models", "raw-database", "core-table-writes", "dynamic-code", "env", "fs", "window"]);
+// The reasons come from the catalog, which may know newer ones than this build: those are left out.
+const REASON_KEY: Partial<Record<string, MessageKey>> = {
+  full: "plugins.risk_full",
+  rows: "plugins.risk_rows",
+  exec: "plugins.risk_exec",
+  "fs-any": "plugins.risk_fs-any",
+  "network-any": "plugins.risk_network-any",
+  network: "plugins.risk_network",
+  "fs-project": "plugins.risk_fs-project",
+  db: "plugins.risk_db",
+  models: "plugins.risk_models",
+  "raw-database": "plugins.risk_raw-database",
+  "core-table-writes": "plugins.risk_core-table-writes",
+  "dynamic-code": "plugins.risk_dynamic-code",
+  env: "plugins.risk_env",
+  fs: "plugins.risk_fs",
+  window: "plugins.risk_window"
+};
 
 /** What a plugin can reach, in plain words: the risk reasons first, then the services and hosts it names. */
 export function Reach({ reasons, inject, hosts }: { reasons: string[]; inject: string[]; hosts?: string[] }) {
   const { t } = useI18n();
   // Named hosts say more than "talks to the internet"; the generic line is for when there are none.
-  const words = reasons.filter((r) => REASONS.has(r) && !(r === "network" && hosts?.length)).map((r) => t(`plugins.risk_${r}` as MessageKey));
+  const words = reasons.flatMap((r) => {
+    const key = Object.hasOwn(REASON_KEY, r) ? REASON_KEY[r] : undefined;
+    return key && !(r === "network" && hosts?.length) ? [t(key)] : [];
+  });
   return (
     <ul className="dash plug-reach">
       {words.map((w) => (

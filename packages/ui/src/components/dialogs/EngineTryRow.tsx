@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { EngineTry, EngineView } from "@tomradex/agent";
 import { useQueryClient } from "@tanstack/react-query";
-import { agentKeys } from "~/lib/agent";
 import { invoke } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
 import { readableError } from "~/lib/toast";
 import { useCurrentProject } from "./plugins/parts";
+import { keys } from "~/lib/queries";
 
 /**
  * One real turn on the engine, on request: does it answer? Readiness only
@@ -29,7 +29,7 @@ export function EngineTryRow({ engine, command }: { engine: EngineView; command?
       setLast({ ok: false, ms: 0, at: Date.now(), error: readableError(error) });
     } finally {
       setRunning(false);
-      void qc.invalidateQueries({ queryKey: agentKeys.engines });
+      void qc.invalidateQueries({ queryKey: keys.agent.engines });
     }
   };
 

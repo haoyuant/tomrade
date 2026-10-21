@@ -1,8 +1,8 @@
 import type { EngineView, LocalCliStatus } from "@tomradex/agent";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { agentKeys } from "./agent";
 import { invoke } from "./api";
 import type { MessageKey } from "./i18n";
+import { keys } from "./queries/keys";
 
 export type EngineStatus = "ready" | "missing" | "desktop-only" | "broken" | "wsl" | "sign-in" | "service" | "model" | "other";
 
@@ -66,6 +66,6 @@ export function useRecheckEngines() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => invoke("agent.engines", { fresh: true }),
-    onSuccess: (views) => qc.setQueryData(agentKeys.engines, views)
+    onSuccess: (views) => qc.setQueryData(keys.agent.engines, views)
   });
 }

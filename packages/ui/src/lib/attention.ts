@@ -3,6 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { invoke, subscribe } from "~/lib/api";
 import { isLeadWindow } from "~/lib/window-chrome";
+import type { MessageKey } from "~/lib/i18n";
+import { keys } from "~/lib/queries/keys";
 
 /** One thing an agent is waiting on the person for — the desktop shell's attention row keeps the list. */
 export interface AttentionEntry {
@@ -18,6 +20,14 @@ export interface AttentionEntry {
   since: number;
 }
 
+/** What each kind of waiting is called, wherever it is listed. */
+export const ATTENTION_KEY: Record<AttentionEntry["kind"], MessageKey> = {
+  permission: "agentPanel.attention_permission",
+  question: "agentPanel.attention_question",
+  waiting: "agentPanel.attention_waiting",
+  stuck: "agentPanel.attention_stuck"
+};
+
 declare module "@tomradex/ipc" {
   interface Channels {
     "attention.list": () => AttentionEntry[];
@@ -30,13 +40,11 @@ declare module "@tomradex/ipc" {
   }
 }
 
-const KEY = ["attention"] as const;
-
 /** Empty in a browser tab, or when the attention row is switched off. */
 export function useAttention(): AttentionEntry[] {
   const qc = useQueryClient();
-  useEffect(() => subscribe("attention.changed", (entries) => qc.setQueryData(KEY, entries)), [qc]);
-  return useQuery({ queryKey: KEY, queryFn: () => invoke("attention.list").catch(() => []), staleTime: Infinity }).data ?? [];
+  useEffect(() => subscribe("attention.changed", (entries) => qc.setQueryData(keys.attention, entries)), [qc]);
+  return useQuery({ queryKey: keys.attention, queryFn: () => invoke("attention.list").catch(() => []), staleTime: Infinity }).data ?? [];
 }
 
 // A clicked notification may name another project: it waits here until that project's shell mounts.

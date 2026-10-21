@@ -13,6 +13,15 @@ import { isCommitKey } from "~/lib/keys";
 
 const TABS: InboxListFilter[] = ["new", "activity", "accepted", "merged", "closed", "all"];
 const KINDS: InboxKind[] = ["bug", "feedback", "idea"];
+const TAB_KEY: Record<InboxListFilter, MessageKey> = {
+  new: "inbox.tab_new",
+  activity: "inbox.tab_activity",
+  accepted: "inbox.tab_accepted",
+  merged: "inbox.tab_merged",
+  closed: "inbox.tab_closed",
+  all: "inbox.tab_all"
+};
+const KIND_KEY: Record<InboxKind, MessageKey> = { bug: "inbox.kind_bug", feedback: "inbox.kind_feedback", idea: "inbox.kind_idea" };
 
 /**
  * The project's inbox: feedback and bug reports its sources brought in, each
@@ -70,7 +79,7 @@ export function InboxDialog({ projectId, open, onOpenChange, onOpenIssue }: { pr
             <div className="seg quiet inbox-tabs" role="group" aria-label={t("inbox.tabsAria")}>
               {TABS.filter((s) => s !== "activity" || !!counts.activity || tab === "activity").map((s) => (
                 <button key={s} type="button" aria-pressed={tab === s} data-tab={s} onClick={() => setTab(s)}>
-                  {t(`inbox.tab_${s}` as MessageKey)}
+                  {t(TAB_KEY[s])}
                   {!!counts[s] && <span className="side-count num">{counts[s]}</span>}
                 </button>
               ))}
@@ -96,7 +105,7 @@ export function InboxDialog({ projectId, open, onOpenChange, onOpenIssue }: { pr
                       <button type="button" className="inbox-entry" aria-current={e.id === selected} data-entry={e.externalId} onClick={() => setSelected(e.id)}>
                         <span className="inbox-entry-title">{e.title}</span>
                         <span className="inbox-entry-meta">
-                          <Tag tone={e.kind === "bug" ? "neutral" : "faint"}>{t(`inbox.kind_${e.kind}` as MessageKey)}</Tag>
+                          <Tag tone={e.kind === "bug" ? "neutral" : "faint"}>{t(KIND_KEY[e.kind])}</Tag>
                           <span className="num">{e.externalId}</span>
                           <span>{agoLabel(e.receivedAt)}</span>
                           {e.activityAt !== null && <Tag tone="strong">{t("inbox.activity")}</Tag>}
@@ -238,7 +247,7 @@ function EntryDetail({ projectId, entry, source, onOpenIssue }: { projectId: str
     <article className="inbox-detail" data-testid="inbox-detail">
       <h3 className="inbox-detail-title">{entry.title}</h3>
       <p className="inbox-detail-meta meta-txt">
-        <Tag tone={entry.kind === "bug" ? "neutral" : "faint"}>{t(`inbox.kind_${entry.kind}` as MessageKey)}</Tag>
+        <Tag tone={entry.kind === "bug" ? "neutral" : "faint"}>{t(KIND_KEY[entry.kind])}</Tag>
         <span>{t("inbox.from", { source: sourceName })}</span>
         {entry.url ? (
           <button type="button" className="link-inline num" title={t("inbox.openSource")} onClick={() => openExternal(entry.url!)}>
@@ -356,7 +365,7 @@ function EntryDetail({ projectId, entry, source, onOpenIssue }: { projectId: str
             <div className="seg quiet" role="radiogroup" aria-label={t("inbox.kindAria")}>
               {KINDS.map((k) => (
                 <button key={k} type="button" role="radio" aria-checked={kind === k} aria-pressed={kind === k} onClick={() => setKind(k)}>
-                  {t(`inbox.kind_${k}` as MessageKey)}
+                  {t(KIND_KEY[k])}
                 </button>
               ))}
             </div>
@@ -496,7 +505,7 @@ function SuggestionCard({
       ? t("inbox.suggestMerge", { key: ticket?.key ?? "…", title: ticket?.title ?? "" })
       : s.action === "duplicate"
         ? t("inbox.suggestDuplicate", { ref: main?.externalId ?? "…" })
-        : t("inbox.suggestAccept", { kind: t(`inbox.kind_${s.kind}` as MessageKey), priority: PRIORITY_LABEL[s.priority ?? 2] ?? "", title: s.title });
+        : t("inbox.suggestAccept", { kind: t(KIND_KEY[s.kind]), priority: PRIORITY_LABEL[s.priority ?? 2] ?? "", title: s.title });
   const withReply = canReply && send && !!draft.trim();
   const adopt = () =>
     actions.adopt.mutate(

@@ -4,6 +4,7 @@ import { Spacer } from "~/components/ui/atoms";
 import { invoke } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
 import { errorSpec, useToast } from "~/lib/toast";
+import { keys } from "~/lib/queries";
 
 const MAX = 8000;
 
@@ -12,7 +13,7 @@ export function RulesBlock({ projectId }: { projectId: string }) {
   const { t } = useI18n();
   const toast = useToast();
   const qc = useQueryClient();
-  const key = ["agent", "rules", projectId] as const;
+  const key = keys.agent.rules(projectId);
   const rules = useQuery({ queryKey: key, queryFn: () => invoke("agent.rules", projectId) });
   const [draft, setDraft] = useState<string | null>(null);
   const body = draft ?? rules.data?.body ?? "";
