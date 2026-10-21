@@ -1,0 +1,31 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": ["node"]
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../agent"
+    },
+    {
+      "path": "../contracts"
+    },
+    {
+      "path": "../engine-acp"
+    },
+    {
+      "path": "../ipc"
+    },
+    {
+      "path": "../plugin-sdk"
+    },
+    {
+      "path": "../settings"
+    }
+  ]
+}

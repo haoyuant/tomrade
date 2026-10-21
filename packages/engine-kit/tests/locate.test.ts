@@ -120,6 +120,14 @@ describe.skipIf(process.platform === "win32")("finding a local CLI", () => {
     expect(runs).toEqual([]);
   });
 
+  it("finds an agent installed with the borrowed npm in Tomrade's own prefix", async () => {
+    const { host, home } = setup();
+    const prefix = path.join(home, "borrowed-node/global");
+    host.env.TOMRADE_NPM_PREFIX = prefix;
+    const file = cli(path.join(prefix, "bin"), 'echo "fake-cli 0.2.0"');
+    expect(await new CliLocator(NAME, host).locate()).toMatchObject({ state: "ready", path: file, source: "known", version: "0.2.0" });
+  });
+
   it("finds the newest node of a version manager first", async () => {
     const { host, home } = setup();
     cli(path.join(home, ".nvm/versions/node/v18.20.0/bin"), 'echo "fake-cli 1.0.0"');

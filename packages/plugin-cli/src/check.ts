@@ -141,6 +141,7 @@ export async function check(dir: string, opts: SandboxOptions & { build?: boolea
       // An older Tomrade does not know the service and refuses the plugin as it installs.
       if (rec.modelProviders.length && satisfies("0.2.15", report.manifest.engines.sdk)) report.problems.push(`model providers need SDK 0.2.16; with engines.sdk "${report.manifest.engines.sdk}" an older Tomrade cannot load the plugin — use "^0.2.16"`);
       if (rec.localAgentInstallers.length && satisfies("0.2.17", report.manifest.engines.sdk)) report.problems.push(`a local agent's installer script needs SDK 0.2.18; with engines.sdk "${report.manifest.engines.sdk}" an older Tomrade cannot show it — use "^0.2.18"`);
+      if (rec.localAgentOneClick.length && satisfies("0.2.25", report.manifest.engines.sdk)) report.problems.push(`a local agent's npm installer or signInRun needs SDK 0.2.26; with engines.sdk "${report.manifest.engines.sdk}" an older Tomrade cannot run it — use "^0.2.26"`);
       if (rec.localAgents.length && satisfies("0.2.16", report.manifest.engines.sdk)) report.problems.push(`local agents need SDK 0.2.17; with engines.sdk "${report.manifest.engines.sdk}" an older Tomrade cannot load the plugin — use "^0.2.17"`);
       if (rec.stopped) report.problems.push(`apply() stopped when inspected: ${rec.stopped}`);
       report.imAdapters = rec.imContracts ?? [];

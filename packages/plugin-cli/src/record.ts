@@ -47,6 +47,8 @@ export interface Recording {
   localAgents: string[];
   /** Local agents that name an installer script, which needs SDK 0.2.18. */
   localAgentInstallers: string[];
+  /** Local agents that name an npm installer or a watched sign-in command, which need SDK 0.2.26. */
+  localAgentOneClick: string[];
   /** Registrations that do not fit their contract, in words the author can act on. */
   invalid: string[];
   /** Which IM contract each adapter is written against, from the capabilities it declares. */
@@ -57,7 +59,7 @@ export interface Recording {
   stopped: string | null;
 }
 
-export const emptyRecording = (): Recording => ({ tools: [], commands: [], badges: [], statusItems: [], sections: [], graphs: [], sidebarModules: [], playbooks: [], settings: [], surfaces: [], tables: [], imAdapters: [], webSearchProviders: [], agentHooks: [], modelProviders: [], localAgents: [], localAgentInstallers: [], invalid: [], imContracts: [], violations: [], stopped: null });
+export const emptyRecording = (): Recording => ({ tools: [], commands: [], badges: [], statusItems: [], sections: [], graphs: [], sidebarModules: [], playbooks: [], settings: [], surfaces: [], tables: [], imAdapters: [], webSearchProviders: [], agentHooks: [], modelProviders: [], localAgents: [], localAgentInstallers: [], localAgentOneClick: [], invalid: [], imContracts: [], violations: [], stopped: null });
 
 const noop = () => {};
 const DRY = "dry run: nothing is written while a plugin is inspected";
@@ -171,6 +173,7 @@ export function recordingContext(namespace: string, allowed: ServiceName[], rec:
         localAgent: (spec) => {
           rec.invalid.push(...localAgentProblems(spec as LocalAgentSpec));
           if (spec.setup?.install.some((step) => typeof step !== "string")) rec.localAgentInstallers.push(spec.id);
+          if (spec.setup?.install.some((step) => typeof step !== "string" && "npm" in step) || spec.setup?.signInRun) rec.localAgentOneClick.push(spec.id);
           return note("localAgents", spec.id, "local agent");
         } });
     },

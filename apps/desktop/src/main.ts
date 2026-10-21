@@ -5,11 +5,13 @@ import { aboutInfo } from "./about.js";
 import { AccountFolders, machineRoots, restart } from "./accounts.js";
 import { cameBack, DOCK_ICON, keepsRunning, launchMode, PREFS_FILE } from "./background.js";
 import { boot, ConfigUnreadable, type Booted } from "./boot.js";
+import { setUpBorrowedNode } from "./borrowed-node.js";
 import { deliverDeepLink, registerScheme } from "./deep-link.js";
 import { registerExtensionResolution } from "./extension-resolve.js";
 import { installAppMenu } from "./menu.js";
 import { loginItem } from "./login-item.js";
 import { askForMainWindow, provideMainWindow } from "./main-window.js";
+import { nodeRuntime } from "./node-runtime.js";
 import { finishQuit, leaveOnSignal, leaving, prepareToQuit, quitApproved } from "./quit.js";
 import { adoptShellEnv } from "./shell-env.js";
 import { offerSafeStart, saySafeStart, showSplash, startFailed } from "./startup.js";
@@ -92,6 +94,8 @@ app.whenReady().then(async () => {
   if (mode === "window" && !argv.includes("--dump-config")) splash = showSplash(iconPath);
   // Before boot: plugins spawn CLIs (MCP servers, agents, git) from the first moment.
   const shellProblem = await adoptShellEnv();
+  // After the shell's PATH, so its folders stay ahead and a system Node always wins over the borrowed one.
+  const borrowed = setUpBorrowedNode({ userData: machine.userData, npmDir: path.join(here, "../vendor/npm"), runtime: nodeRuntime() });
   // After it, so a proxy the shell sets stands.
   await followSystemProxy((url) => session.defaultSession.resolveProxy(url));
 
@@ -146,6 +150,7 @@ app.whenReady().then(async () => {
   }
   const { ctx, dump } = booted;
   if (shellProblem) ctx.logger("shell-env").warn(shellProblem);
+  if (borrowed.problem) ctx.logger("borrowed-node").warn(borrowed.problem);
 
   if (argv.includes("--dump-config")) {
     process.stdout.write(dump());

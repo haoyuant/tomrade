@@ -79,12 +79,17 @@ export const keys = {
     mediaCapabilities: (engineId: string, options: unknown, models: unknown) => ["agent-media-capabilities", engineId, options, models] as const
   },
 
+  acpRegistry: {
+    list: ["acpRegistry", "list"] as const
+  },
+
   machineSetup: {
     git: ["machineSetup", "git"] as const
   },
 
   llm: {
     worker: ["llm", "worker"] as const,
+    workerTest: ["llm", "workerTest"] as const,
     workerFor: (role: unknown) => ["llm", "worker", role] as const,
     workerUsage: ["llm", "workerUsage"] as const,
     lenders: ["llm", "lenders"] as const,
