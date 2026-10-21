@@ -8,7 +8,7 @@ import { Tools } from "@tomradex/tools";
 import { Settings } from "@tomradex/settings";
 import { Agent, type RunView } from "@tomradex/agent";
 import { Mcp } from "@tomradex/mcp";
-import engineClaudeCode, { claudeSignedIn } from "@tomradex/engine-claude-code";
+import engineClaudeCode, { claudeCodeEngineInfo, claudeSignedIn } from "@tomradex/engine-claude-code";
 
 async function settled(ctx: Context, projectId: string, runId: string, timeout = 8000): Promise<RunView> {
   const t0 = Date.now();
@@ -88,5 +88,13 @@ describe("whether Claude Code is signed in", () => {
     // Bedrock, Vertex and the like are signed in some other way; a version without the subcommand prints no JSON.
     expect(claudeSignedIn('{"loggedIn": false, "apiProvider": "bedrock"}')).toBeNull();
     expect(claudeSignedIn("error: unknown command 'auth'")).toBeNull();
+  });
+});
+
+describe("how Claude Code signs in", () => {
+  it("runs `claude auth login` itself, keeping `claude` in a terminal for a CLI without it", () => {
+    const setup = claudeCodeEngineInfo({} as Context).local?.setup;
+    expect(setup?.signInRun).toEqual({ args: ["auth", "login"] });
+    expect(setup).toMatchObject({ signIn: "claude", signInRuns: true });
   });
 });

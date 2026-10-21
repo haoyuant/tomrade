@@ -273,6 +273,8 @@ export interface SignInDeps {
 const SIGN_IN_TIMEOUT_MS = 10 * 60_000;
 
 const URL_IN_OUTPUT = /https:\/\/[^\s"'<>\])]+/;
+/** What a CLI says when it has no such subcommand: an older version than the one that signs in by itself. */
+const NO_SUCH_COMMAND = /unknown (?:sub)?command|unrecognized (?:sub)?command|no such (?:sub)?command|^\s*usage:/im;
 
 const wait = (ms: number, signal: AbortSignal) => new Promise<void>((resolve) => {
   const timer = setTimeout(done, ms);
@@ -283,7 +285,8 @@ const wait = (ms: number, signal: AbortSignal) => new Promise<void>((resolve) =>
 /**
  * Sign in as automatically as the engine allows: run its login command and
  * catch the browser address from its output, or leave the typing to a terminal —
- * either way the engine's own probe turning true is what finishes the step.
+ * also when the CLI turns out too old for that command. Either way the
+ * engine's own probe turning true is what finishes the step.
  */
 export async function runSignIn(deps: SignInDeps): Promise<EngineSetupProgress> {
   const step: EngineSetupStep = "sign-in";
@@ -315,7 +318,11 @@ export async function runSignIn(deps: SignInDeps): Promise<EngineSetupProgress> 
     // Its login command failing is the answer; exiting 0 only means the command is done, the probe decides.
     const over = ended.result;
     if (over && over.code !== 0 && !(await deps.probe())) {
-      return at({ engineId: deps.engineId, step, phase: "failed", failure: classifyFailure(over), output: tail(over.output), ...(url ? { url } : {}) });
+      if (url || !NO_SUCH_COMMAND.test(over.output)) {
+        return at({ engineId: deps.engineId, step, phase: "failed", failure: classifyFailure(over), output: tail(over.output), ...(url ? { url } : {}) });
+      }
+      ended.result = null;
+      at({ engineId: deps.engineId, step, phase: "waiting", terminal: true });
     }
     if (Date.now() > deadline) return at({ engineId: deps.engineId, step, phase: "failed", failure: { kind: "timeout", message: "sign-in was not finished in time" }, ...(url ? { url } : {}) });
     await wait(pollMs, deps.signal);

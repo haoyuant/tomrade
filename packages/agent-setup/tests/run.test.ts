@@ -273,6 +273,23 @@ describe("the sign-in step", () => {
     expect(end).toMatchObject({ phase: "failed", failure: { kind: "network" } });
   });
 
+  it("falls back to the terminal sign-in when an older CLI has no such login command", async () => {
+    const seen: EngineSetupProgress[] = [];
+    let signedIn = false;
+    const end = runSignIn({
+      engineId: "x",
+      start: () => ({ result: Promise.resolve({ code: 1, output: "error: unknown command 'auth'\nUsage: claude [options] [command] [prompt]\n" }), onOutput: () => {} }),
+      probe: async () => signedIn,
+      report: (p) => void seen.push(p),
+      signal: new AbortController().signal,
+      pollMs: 10
+    });
+    await new Promise((r) => setTimeout(r, 40));
+    expect(seen.at(-1)).toMatchObject({ phase: "waiting", terminal: true });
+    signedIn = true;
+    expect(await end).toMatchObject({ phase: "done" });
+  });
+
   it("waits on the terminal sign-in, polling the probe, and can be cancelled", async () => {
     const seen: EngineSetupProgress[] = [];
     const abort = new AbortController();
