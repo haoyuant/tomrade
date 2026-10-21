@@ -24,7 +24,7 @@ import { githubHttps } from "@tomradex/github";
 import { errorMessage } from "@tomradex/contracts";
 
 export type StartMode = "run" | "terminal";
-export type StartGate = "locked" | "workstream" | "checkout" | "remote" | "readiness" | "blocked" | "engine" | "mcp" | "workdir";
+export type StartGate = "locked" | "workstream" | "checkout" | "remote" | "readiness" | "blocked" | "engine" | "mcp" | "workdir" | "pane";
 /** Why the workdir gate found no folder, when that is known. */
 export type WorkdirCause = "no-board" | "no-board-repo" | "unknown-repo" | "no-hub" | "branch-in-use";
 
@@ -66,6 +66,8 @@ export type StartResult =
       repo?: { id: string; name: string };
       /** The engine that is not ready, when one was asked for. */
       engine?: string;
+      /** Pane gate: the herdr pane whose agent still works the ticket and did not take the prompt. */
+      pane?: string;
       /** Workdir gate: what stood in the way — the repository id a workstream still names, the branch and the worktree that has it. */
       cause?: { code: WorkdirCause; repoId?: string; branch?: string; heldAt?: string; releasable?: boolean };
     }
@@ -73,7 +75,8 @@ export type StartResult =
       ok: true;
       /** An earlier thread on this ticket was picked up rather than a new one opened. */
       continued: boolean;
-      threadId: string;
+      /** Null when the prompt went to a terminal agent that claimed the ticket itself, with no thread of Tomrade's. */
+      threadId: string | null;
       sessionId: string;
       branch: string;
       worktree: string | null;
@@ -148,6 +151,10 @@ export class Starter {
     if (!repo) return { ok: false, gate: "workstream", message: `${board.name} points at a repository this project no longer has`, ...onBoard };
     const onRepo = { ...onBoard, repo: { id: repo.id, name: repo.name }, remote: repo.remote };
     const placement = ctx.repos.checkout(repo.remote);
+    if (opts.mode === "terminal") {
+      const claimed = await this.continueClaimed(projectId, item, repo, placement.checkout);
+      if (claimed) return claimed;
+    }
     if (!placement.checkout || !fs.existsSync(placement.checkout)) {
       return { ok: false, gate: "checkout", message: `No checkout of ${repo.name} on this machine — point Tomrade at yours, or let it clone one`, ...onRepo };
     }
@@ -388,6 +395,34 @@ export class Starter {
     const file = path.join(dir, "prompt.md");
     fs.writeFileSync(file, prompt);
     return this.host.herdr.prompt(pane, `Tomrade: continue this ticket — read ${file} and follow it.`);
+  }
+
+  /**
+   * A terminal agent that claimed the ticket itself (over MCP, no thread of Tomrade's) and still runs in its herdr pane,
+   * often working other tickets there too: Continue is a prompt in that pane, never a second agent on the ticket. Null
+   * when no such pane is alive, and Start goes on as usual.
+   */
+  private async continueClaimed(projectId: string, item: Item, repo: Repo, checkout: string | null): Promise<StartResult | null> {
+    const { ctx, store } = this.host;
+    const delivery = store.currentDelivery(projectId, item.id)?.sequence;
+    const session = store.sessions(projectId, { itemId: item.id, live: true }).find((s) => s.mode === "terminal" && !s.threadId && s.herdrPane && s.state !== "lost" && (delivery === undefined || s.delivery === delivery));
+    if (!session?.herdrPane || (await this.host.herdr.paneAlive(session.herdrPane)) !== true) return null;
+    const link = store.links(projectId, item.id).find((l) => l.repoId === repo.id && l.branch === session.branch) ?? null;
+    const local = !!checkout && !(await new GitFolder(this.host.git, checkout).remoteUrl());
+    const prompt = continuePrompt(item, repo, session, link, ctx.codeLink.completionPolicy(projectId, item), local, ctx.settings.locale?.() ?? "en", store.repoState(projectId, repo.id)?.agentMerge ?? false);
+    const dir = this.host.sessionDir(session.id);
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, "prompt.md");
+    fs.writeFileSync(file, prompt);
+    if (!(await this.host.herdr.prompt(session.herdrPane, `Tomrade: continue ${item.key} — read ${file} and follow it.`))) {
+      // Its agent is there but did not take it (waiting on the person, say): a second agent is not the answer.
+      if ((await this.host.herdr.pane(session.herdrPane))?.agent) return { ok: false, gate: "pane", message: `${item.key} is still worked by the agent in herdr pane ${session.herdrPane}, which did not take the prompt — go on with it there`, pane: session.herdrPane };
+      return null;
+    }
+    store.patchSession(projectId, session.id, { blocked: null, state: "running", activity: null, lastEventAt: Date.now() });
+    this.host.notify(projectId);
+    const cwd = session.worktree ?? session.cwd ?? checkout ?? "";
+    return { ok: true, continued: true, threadId: null, sessionId: session.id, branch: session.branch, worktree: session.worktree, cwd, mode: "terminal", command: null, launched: true, pane: session.herdrPane, engine: session.agent };
   }
 
   /**

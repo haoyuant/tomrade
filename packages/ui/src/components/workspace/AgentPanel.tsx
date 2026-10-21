@@ -311,7 +311,7 @@ export function AgentPanel({
       if (!result.ok) { setAttachmentError(result.message); return; }
       following.current = true;
       setDraft(""); setAskReopen(false);
-      pickThread(result.threadId);
+      if (result.threadId) pickThread(result.threadId);
     } catch (error) { setAttachmentError(readableError(error)); }
     finally { setReopening(false); }
   };

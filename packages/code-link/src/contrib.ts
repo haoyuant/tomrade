@@ -198,6 +198,7 @@ export function contribute(ctx: Context, host: ContribHost): void {
     if (!scope.projectId || !scope.itemId) return { toast: w("selectTicket") };
     const result = await self.start(scope.projectId, scope.itemId, { mode });
     // the Start dialog says what stopped it and offers the fix; the toast is for surfaces that cannot open it
+    if (!result.ok && result.gate === "pane") return { toast: w("paneHoldsIt", { pane: result.pane ?? "" }) };
     if (!result.ok) return { toast: result.message, startDialog: mode };
     const warning = result.warnings?.join("\n");
     const started = w(result.continued ? "continuing" : "started", { on: result.branch ? w("startedOn", { branch: result.branch }) : "" });
@@ -205,8 +206,8 @@ export function contribute(ctx: Context, host: ContribHost): void {
     if (result.mode === "terminal" && result.launched && result.pane && (await self.showSession(scope.projectId, result.sessionId))) return { toast: `${started}${warning ? `\n${warning}` : ""}` };
     if (result.mode === "terminal") return { toast: `${result.launched ? `${started}${result.pane ? w("herdrHasIt", { pane: result.pane }) : w("terminalHasIt")}` : w("runThis", { command: result.command ?? "" })}${warning ? `\n${warning}` : ""}` };
     // a run here is followed in its conversation, which opens with it
-    if (result.waitingOn) return { toast: w("waitingOn", { question: result.waitingOn }), showThread: result.threadId };
-    return { toast: `${started}${warning ? `\n${warning}` : ""}`, showThread: result.threadId };
+    if (result.waitingOn) return { toast: w("waitingOn", { question: result.waitingOn }), showThread: result.threadId ?? undefined };
+    return { toast: `${started}${warning ? `\n${warning}` : ""}`, showThread: result.threadId ?? undefined };
   };
   ctx.contributions.command({ id: "code-link.start-run", title: () => words()("cmdStartRun"), group, run: startCommand("run") });
   ctx.contributions.command({ id: "code-link.start-terminal", title: () => words()("cmdStartTerminal"), group, run: startCommand("terminal") });
