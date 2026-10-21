@@ -25,7 +25,7 @@ function hex(css: string, probe: HTMLElement, pixel: CanvasRenderingContext2D): 
  * The terminal's colours from the theme on this page — the app's look once it has arrived, Tomrade's
  * default before — the ANSI palette included, so programs' colours read on light and dark themes alike.
  */
-export function terminalTheme(): ITheme {
+function terminalTheme(): ITheme {
   const probe = document.createElement("span");
   probe.style.display = "none";
   document.body.appendChild(probe);

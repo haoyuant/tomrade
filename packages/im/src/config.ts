@@ -3,7 +3,7 @@ import { z } from "zod";
 const id = z.string().min(1).max(256);
 
 /** What reaches a conversation besides its own turns. */
-export const NOTIFY_KINDS = ["tickets", "code", "presence", "routines", "attention"] as const;
+const NOTIFY_KINDS = ["tickets", "code", "presence", "routines", "attention"] as const;
 export type ImNotifyKind = typeof NOTIFY_KINDS[number];
 /** A route's own choices, before the shared ones applied; older settings stored every kind. */
 const LEGACY_NOTIFY: Partial<Record<string, boolean>> = { tickets: true, code: true, routines: false, attention: true };

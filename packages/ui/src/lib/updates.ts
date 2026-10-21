@@ -4,14 +4,14 @@ import type {} from "@tomradex/ipc";
 import { invoke, subscribe } from "./api";
 import { useSaveSettings, useSettings } from "./queries";
 
-export type UpdateChannel = "stable" | "beta";
+type UpdateChannel = "stable" | "beta";
 
 export interface UpdatePrefs {
   autoCheck: boolean;
   channel: UpdateChannel;
 }
 
-export type UpdatePhase =
+type UpdatePhase =
   | { kind: "idle" }
   | { kind: "checking" }
   | { kind: "current"; latest: string }

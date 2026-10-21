@@ -23,11 +23,14 @@ A checkout run with `pnpm dev` keeps its own data and serves MCP on port 19091, 
 
 ```sh
 pnpm typecheck      # tsc -b for the backend, then the UI
+pnpm lint           # ESLint: React hooks rules for the UI, a few TypeScript rules everywhere
 pnpm test:related   # only the tests that reach what you changed against origin/main
 pnpm test           # vitest across every package
 ```
 
 Iterate with `pnpm test:related`, and run the full `pnpm test` once before you open the pull request. It ends with a **Failures by kind** block (`real`, `network`, `timeout-under-load`); [`docs/testing.md`](docs/testing.md) says what each means. A `real` failure blocks a merge.
+
+`pnpm lint:unused` lists unused files, exports and dependencies (knip); it reports without failing, so read it when you remove or move code.
 
 `pnpm test:ui` drives the real Electron app. It is slow and has a known flaky baseline, so run it when you change the UI's behaviour, not on every change.
 

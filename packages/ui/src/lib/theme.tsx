@@ -6,7 +6,6 @@ import { useI18n, type MessageKey } from "./i18n";
 import { sendSurfaceLook } from "./surface-look";
 
 export type ResolvedTheme = BuiltInTheme;
-export { THEME_TYPOGRAPHY_NAMES, THEME_TOKEN_NAMES };
 export const BUILT_IN_THEME_OPTIONS: { value: BuiltInTheme; labelKey: MessageKey; icon: "i-sun" | "i-moon" | "i-leaf" }[] = [
   { value: "dawn", labelKey: "theme.dawn", icon: "i-sun" },
   { value: "light", labelKey: "theme.paper", icon: "i-sun" }, { value: "dark", labelKey: "theme.ink", icon: "i-moon" }, { value: "matcha", labelKey: "theme.matcha", icon: "i-leaf" }

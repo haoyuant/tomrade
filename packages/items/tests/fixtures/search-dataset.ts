@@ -7,7 +7,7 @@
  * they do in a real project. Deterministic per seed; sized by `n`.
  */
 
-export type Lang = "en" | "zh";
+type Lang = "en" | "zh";
 export type Variant = "phrase" | "reordered" | "split" | "paraphrase";
 export type Category =
   | "en-phrase"
@@ -101,7 +101,7 @@ const ZH_TOPICS: Topic[] = [
   { id: "zh-emoji-picker", lang: "zh", words: ["表情", "选择器"], phrase: "表情选择器搜索无结果", reordered: "选择器里的表情分类错位", split: ["表情面板加载慢", "选择器关闭后焦点丢失。"], paraphrase: "emoji面板找不到想要的图案" }
 ];
 
-export const TOPICS: Topic[] = [...EN_TOPICS, ...ZH_TOPICS];
+const TOPICS: Topic[] = [...EN_TOPICS, ...ZH_TOPICS];
 
 const EN_NOUNS = [
   "button", "page", "table", "dialog", "modal", "filter", "column", "header", "footer", "banner", "tooltip", "icon", "font", "spacing", "color", "layout", "scroll", "focus", "cursor", "hover", "animation", "transition", "loader", "spinner", "toast", "alert", "error", "warning", "message", "label", "input", "form", "field", "checkbox", "radio", "dropdown", "select", "menu", "tab", "panel", "card", "list", "grid", "chart", "graph", "report", "dashboard", "settings", "profile", "account", "team", "member", "role", "permission", "token", "session", "cookie", "request", "response", "endpoint", "api", "query", "mutation", "schema", "migration", "database", "index", "cache", "queue", "worker", "job", "cron", "schedule", "email", "sms", "push", "webhook", "retry", "timeout", "latency", "memory", "cpu", "disk", "log", "trace", "metric", "deploy", "release", "version", "build", "test", "lint", "ci", "docker", "config", "env", "secret", "key", "certificate", "ssl", "dns", "cdn", "storage", "bucket", "upload", "download", "import", "export", "csv", "json", "xml", "pdf", "image", "video", "audio", "file", "folder", "path", "url", "link", "redirect", "route", "router", "view", "component", "hook", "state", "store", "reducer", "action", "event", "listener", "handler", "callback", "promise", "stream", "socket", "websocket", "polling", "sync", "offline", "online", "mobile", "desktop", "tablet", "browser", "login", "logout", "signup", "dark", "mode", "avatar", "password", "reset", "notification", "badge", "keyboard", "shortcut", "rate", "limit", "invoice", "search", "drag", "drop", "calendar", "invite", "markdown", "preview", "sidebar", "collapse", "oauth", "invalidation", "timezone", "conversion", "bulk", "delete", "audit", "autosave", "draft", "emoji", "picker", "onboarding", "checklist", "UI", "db", "QA", "2FA", "ios", "id",
@@ -163,7 +163,7 @@ const ZH_CLEAN_BODIES = [
   "两台机器上都复现了,清缓存没用,服务端日志里对应请求没有异常。"
 ];
 
-export const SHORT_TOKENS = ["UI", "db", "QA", "2FA", "ios"];
+const SHORT_TOKENS = ["UI", "db", "QA", "2FA", "ios"];
 
 class Rng {
   private s: number;

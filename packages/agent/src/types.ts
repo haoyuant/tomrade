@@ -186,7 +186,7 @@ export interface WorkflowInfo {
 export type PlaybookSource = "plugin" | "user" | "project";
 
 /** Recommendations and prerequisites, never permission grants. */
-export interface PlaybookRequirements {
+interface PlaybookRequirements {
   workTypes?: ("coding" | "general")[];
   requires?: string[];
   optionalCapabilities?: string[];

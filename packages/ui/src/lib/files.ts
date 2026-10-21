@@ -161,7 +161,6 @@ export const useMoveFile = (projectId: string) =>
 export const useCopyFile = (projectId: string) => useFilesMutation(projectId, (args: { from: string; to: string }) => invoke("files.copy", projectId, args.from, args.to));
 export const useRemoveFile = (projectId: string) => useFilesMutation(projectId, (path: string) => invoke("files.remove", projectId, path));
 export const useImportFiles = (projectId: string) => useFilesMutation(projectId, (args: { dir: string; sources: string[] }) => invoke("files.import", projectId, args.dir, args.sources));
-export const useWriteFile = (projectId: string) => useFilesMutation(projectId, (args: { path: string; body: string; message?: string }) => invoke("files.write", projectId, args.path, args.body, { encoding: "utf8", message: args.message }));
 export const useResolveConflict = (projectId: string) => useFilesMutation(projectId, (args: { path: string; choice: ConflictChoice }) => invoke("files.resolve", projectId, args.path, args.choice));
 export const useResolveAllConflicts = (projectId: string) => useFilesMutation(projectId, (choice: ConflictChoice) => invoke("files.resolveAll", projectId, choice));
 
@@ -197,7 +196,7 @@ export function useFilesClipboard(projectId: string) {
 }
 
 /** "brief (copy).md", or "brief (copy 2).md" when that is taken too — never overwrites what is there. */
-export function uniqueDestPath(existing: Set<string>, dir: string, name: string): string {
+function uniqueDestPath(existing: Set<string>, dir: string, name: string): string {
   const join = (n: string) => (dir ? `${dir}/${n}` : n);
   if (!existing.has(join(name))) return join(name);
   const dot = name.lastIndexOf(".");

@@ -20,6 +20,7 @@ export function HubSetup() {
   const [dir, setDir] = useState("");
   const [picking, setPicking] = useState(false);
 
+  // prefilled once the default arrives; a folder cleared by hand stays cleared
   useEffect(() => {
     if (!dir && hub.data?.defaultDir) setDir(hub.data.defaultDir);
   }, [hub.data?.defaultDir]); // eslint-disable-line react-hooks/exhaustive-deps

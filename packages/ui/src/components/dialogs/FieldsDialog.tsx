@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Board, FieldDef, FieldType, Item } from "@tomradex/domain";
 import { Icon, type IconId } from "~/components/icons";
 import { useChooseRepoFolder } from "~/components/projects/RepositoriesBlock";
-import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
+import { Dialog, DialogBody, DialogFoot, DialogHead, useOpeningKey } from "~/components/ui/dialog";
 import { IconPicker } from "~/components/ui/icon-picker";
 import { Eyebrow, FoldChevron, FoldChevronSpace, Tag } from "~/components/ui/atoms";
 import { BOARD_GLYPHS, FIELD_TYPE_LABEL, fieldLabel, viewIcon } from "~/lib/domain";
@@ -559,9 +559,13 @@ function WorkstreamEditor({ projectId, items, focusBoardId, onOpenRepositories }
  * The project's field registry. Built-ins are listed so the whole vocabulary a
  * view can use is in one place; only custom fields — and the Workstream
  * field's options — are editable, and every edit lands live: a field is schema,
- * not a draft.
+ * not a draft. Each opening starts clean, on the field it was opened for.
  */
-export function FieldsDialog({
+export function FieldsDialog(props: Parameters<typeof FieldsSheet>[0]) {
+  return <FieldsSheet key={useOpeningKey(props.open)} {...props} />;
+}
+
+function FieldsSheet({
   projectId,
   projectName,
   open,
@@ -592,16 +596,9 @@ export function FieldsDialog({
   const fields = useFields(projectId);
   const items = useItems(projectId);
   const create = useCreateField(projectId);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialFieldId);
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState<FieldType>("text");
-
-  useEffect(() => {
-    if (!open) return;
-    setSelectedId(initialFieldId);
-    setNewName("");
-    setNewType("text");
-  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const all = fields.data ?? [];
   const builtin = all.filter((f) => f.builtin);

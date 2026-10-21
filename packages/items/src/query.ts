@@ -188,7 +188,7 @@ export interface CompiledSearch {
 export type SearchMode = "all" | "any";
 
 /** BM25 column weights: a hit in the title says more about what a ticket is than one in its body. */
-export const SEARCH_TITLE_WEIGHT = 5;
+const SEARCH_TITLE_WEIGHT = 5;
 
 /**
  * A title/body search as SQL over `items i`. Every term must appear, in either

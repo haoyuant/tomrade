@@ -4,7 +4,7 @@ import type {} from "@tomradex/ipc";
 import type { SurfaceBounds } from "@tomradex/desktop-surface";
 import { sendToWindow } from "./ipc.js";
 
-export interface WindowChrome {
+interface WindowChrome {
   /** macOS draws the traffic lights over the renderer's header while windowed. */
   trafficLights: boolean;
   /** The window app-wide prompts land in, the one the shell brings forward; the others leave them be. */
@@ -23,7 +23,7 @@ export interface WindowPlace extends SurfaceBounds {
 }
 
 /** What the preload reads off a window a tab moved into. */
-export const DETACHED_ARG = "--tomrade-window=detached";
+const DETACHED_ARG = "--tomrade-window=detached";
 
 export interface WindowOptions {
   preload: string;

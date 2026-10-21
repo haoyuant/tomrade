@@ -49,7 +49,7 @@ export function heir(layout: Layout, cell: string): string | null {
 type Box = { x: number; y: number; w: number; h: number };
 
 /** Where each cell sits, as fractions of the window. */
-export function boxes(layout: Layout, box: Box = { x: 0, y: 0, w: 1, h: 1 }): Map<string, Box> {
+function boxes(layout: Layout, box: Box = { x: 0, y: 0, w: 1, h: 1 }): Map<string, Box> {
   if (layout.type === "leaf") return new Map([[layout.id, box]]);
   const r = layout.ratio;
   const [a, b] =

@@ -56,7 +56,7 @@ function shuffled<T>(items: T[], seed: number): T[] {
 
 interface Variant { rankdir: "LR" | "TB"; nodesep: number; ranksep: number; seed: number; labels: "auto" | "reserved" }
 
-export function arrange(base: Spec, { rankdir, nodesep, ranksep, seed, labels }: Variant): Spec {
+function arrange(base: Spec, { rankdir, nodesep, ranksep, seed, labels }: Variant): Spec {
   const spec = structuredClone(base);
   const graph = new dagre.graphlib.Graph({ compound: true, multigraph: true });
   const labelWidth = (label: unknown) => textWidth(label, 12, 6.5) + 16;

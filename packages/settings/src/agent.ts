@@ -21,7 +21,7 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 /** Secrets never reach a model. */
-export const redact = (value: unknown, key = ""): unknown => mapSecrets(value, (v) => (v === "" ? v : HIDDEN), key);
+const redact = (value: unknown, key = ""): unknown => mapSecrets(value, (v) => (v === "" ? v : HIDDEN), key);
 
 /** A redacted value sent back unchanged keeps what it stood for. */
 function unredact(next: unknown, current: unknown): unknown {

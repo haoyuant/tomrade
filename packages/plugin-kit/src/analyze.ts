@@ -240,7 +240,7 @@ export function observedRisk(observed: Observed, manifest: Manifest): { level: R
 }
 
 /** A full-mode plugin is declared, not observed: what it can reach is everything the app's own modules can. Named, not refused. */
-export function fullMode(manifest: Manifest): Finding[] {
+function fullMode(manifest: Manifest): Finding[] {
   if (manifest.context !== "full") return [];
   const at = (rule: string, message: string): Finding => ({ rule, severity: "high", message, file: "tomrade-plugin.json", line: 1 });
   const out = [at("full-context", "runs with Tomrade's whole context, as the app's own modules do: every service, event and policy")];

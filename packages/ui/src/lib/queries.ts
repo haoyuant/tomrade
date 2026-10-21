@@ -171,14 +171,6 @@ export function usePatchItem(projectId: string) {
   });
 }
 
-export function useDeleteItem(projectId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => invoke("items.delete", projectId, id),
-    onSuccess: () => invalidateWorkspace(qc, projectId)
-  });
-}
-
 /** The permanent one: nothing survives it, so the caller confirms first and never offers an Undo. */
 export function usePurgeItem(projectId: string) {
   const qc = useQueryClient();
@@ -538,24 +530,6 @@ export function useDraftStorage() {
   return useMutation({ mutationFn: (args: { providerId: string; name: string }) => invoke("storage.draft", args.providerId, args.name) });
 }
 
-/** Open a folder that already holds a project; resolves to its id. */
-export function useAttachFolder() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (dir: string) => invoke("storage.attach", dir),
-    onSuccess: (projectId) => invalidateProject(qc, projectId)
-  });
-}
-
-/** Clone a published project into the Hub and open it; resolves to its id. */
-export function useAttachRemote() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (args: { providerId: string; config: Record<string, unknown> }) => invoke("storage.attachRemote", args.providerId, args.config),
-    onSuccess: (projectId) => invalidateProject(qc, projectId)
-  });
-}
-
 /* ── this machine ──────────────────────────────────────────────────────── */
 
 /** First run, or a move: name the Hub folder. Every project without a folder gets one under it. */
@@ -577,7 +551,7 @@ export function useOverwriteCatalog() {
   return useMutation({ mutationFn: () => invoke("hub.overwriteCatalog"), onSuccess: () => void qc.invalidateQueries({ queryKey: keys.hub }) });
 }
 
-export type { Board, Item, Project, View };
+export type { Board, Project, View };
 
 /* ── the Hub's own remote ─────────────────────────────────────────────── */
 

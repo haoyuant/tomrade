@@ -71,6 +71,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
       },
       focus: item ? [{ kind: "item", id: item.id, key: item.key, title: item.title }] : []
     }),
+    // rebuilt when what it names changes, not on every refetch of the item
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [openIssue, item?.id, item?.key, item?.title]
   );

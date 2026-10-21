@@ -9,7 +9,7 @@ export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 export const MAX_NAME_LENGTH = 40;
 const PROFILE_ID = /^p-[a-f0-9]{8}$/;
 
-export interface PetImage {
+interface PetImage {
   file: string;
   type: string;
   box?: ImageBox;

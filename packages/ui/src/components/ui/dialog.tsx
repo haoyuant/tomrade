@@ -1,5 +1,5 @@
 import * as RadixDialog from "@radix-ui/react-dialog";
-import { createContext, useContext, useEffect, useLayoutEffect, useRef, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Icon } from "~/components/icons";
 import { useI18n } from "~/lib/i18n";
 import { cn } from "~/lib/utils";
@@ -57,6 +57,18 @@ export function Dialog({
       </RadixDialog.Portal>
     </RadixDialog.Root>
   );
+}
+
+/**
+ * A key that moves on each opening — `open` turning true, or a new non-empty
+ * subject — so a dialog keyed by it starts every opening from fresh state. It
+ * holds still on close: the closing dialog keeps its instance, and with it the
+ * focus it hands back.
+ */
+export function useOpeningKey(opening: unknown): number {
+  const [seen, setSeen] = useState({ opening, count: 0 });
+  if (!Object.is(seen.opening, opening)) setSeen({ opening, count: opening ? seen.count + 1 : seen.count });
+  return seen.count;
 }
 
 const Movable = createContext(false);

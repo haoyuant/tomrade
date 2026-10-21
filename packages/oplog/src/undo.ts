@@ -162,7 +162,7 @@ function setRanks(db: ProjectDb, entry: OplogEntry, side: unknown): void {
 }
 
 /** Apply the inverse of one entry. Throws InUseError when a created board now owns issues. */
-export function revertEntry(db: ProjectDb, entry: OplogEntry): void {
+function revertEntry(db: ProjectDb, entry: OplogEntry): void {
   if (entry.entity === "item") {
     if (entry.op === "create") {
       removeItemRows(db, entry.entityId);
@@ -208,7 +208,7 @@ export function applyEntry(db: ProjectDb, entry: OplogEntry): void {
 }
 
 /** Park a row in the redo stack. */
-export function retire(db: ProjectDb, seq: number, at: number): void {
+function retire(db: ProjectDb, seq: number, at: number): void {
   db.prepare(`INSERT INTO oplog_undone (${UNDONE_COLUMNS}, undone_at) SELECT ${UNDONE_COLUMNS}, ? FROM oplog WHERE seq = ?`).run(at, seq);
   db.prepare("DELETE FROM oplog WHERE seq = ?").run(seq);
 }

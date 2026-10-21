@@ -6,7 +6,7 @@ import type { ResolvedImage } from "./profiles.js";
 import { PET_MOODS, type PetMood } from "./state.js";
 
 const packageDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-export const PET_ASSET_DIR = path.join(packageDir, "assets");
+const PET_ASSET_DIR = path.join(packageDir, "assets");
 export const PET_DESKTOP_URL = pathToFileURL(path.join(PET_ASSET_DIR, "desktop.html")).href;
 
 /** The built-in pet: memes cropped to their content, each keeping its own frame timings. */

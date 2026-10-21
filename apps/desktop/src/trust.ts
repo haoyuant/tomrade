@@ -3,7 +3,7 @@
  * as official with the matching private key (`tomrade-store official`). `TOMRADE_TRUSTED_KEYS` (a JSON object
  * of keyId → PEM) adds keys for a staging store or local testing.
  */
-export const OFFICIAL_KEYS: Record<string, string> = {
+const OFFICIAL_KEYS: Record<string, string> = {
   // The store key, generated 2026-09-24; the private half stays off shared machines.
   "124a919478f3571d": `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAxUxCfh3FEppZJMdusfW56dExchERcKuTZMmfHgeU1oU=

@@ -316,7 +316,7 @@ export function LockButton({ item, write, className }: FieldProps & { className?
  * Blur commits, because an edit abandoned by clicking elsewhere is still an
  * edit; Escape is the way to discard one.
  */
-export function InlineText({
+function InlineText({
   value,
   placeholder,
   ariaLabel,

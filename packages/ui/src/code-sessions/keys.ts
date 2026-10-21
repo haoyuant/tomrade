@@ -1,7 +1,7 @@
 import { isMac } from "../lib/keys";
 import { formatChord, matchesChord } from "../lib/keybindings";
 
-export type Direction = "left" | "right" | "up" | "down";
+type Direction = "left" | "right" | "up" | "down";
 export type WindowKey = "splitRight" | "splitDown" | "close" | Direction | "previous" | "next" | "fold";
 
 /**
@@ -9,7 +9,7 @@ export type WindowKey = "splitRight" | "splitDown" | "close" | Direction | "prev
  * chords and Alt+arrows, as Linux terminals use them — Ctrl alone and ⌃ on a Mac belong to the shell (Ctrl+D,
  * Ctrl+W, and Ctrl+B for tmux), so they are never taken.
  */
-export const WINDOW_KEYS: Record<"mac" | "other", Record<WindowKey, string>> = {
+const WINDOW_KEYS: Record<"mac" | "other", Record<WindowKey, string>> = {
   mac: {
     splitRight: "Mod+D",
     splitDown: "Mod+Shift+D",

@@ -10,7 +10,7 @@ export const away = (s: SessionRow): boolean => s.endedAt === null && s.where !=
 export type HereRow = { kind: "session"; id: string; session: SessionRow } | { kind: "terminal"; id: string; terminal: TerminalRow; session: SessionRow | null };
 
 /** The herdr pane a row's terminal is; null while it has none. */
-export const paneOf = (r: HereRow): string | null => (r.kind === "terminal" ? r.terminal.pane : r.session.pane);
+const paneOf = (r: HereRow): string | null => (r.kind === "terminal" ? r.terminal.pane : r.session.pane);
 
 /**
  * The sidebar: one list of what this window shows, and the live sessions it cannot. A session with no ticket is never a

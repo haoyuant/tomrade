@@ -43,7 +43,7 @@ export interface LanguageOption {
 }
 
 /** The languages the interface ships, each named in its own script. */
-export const BUILTIN_LANGUAGES: { tag: BuiltinLocale; name: string }[] = [
+const BUILTIN_LANGUAGES: { tag: BuiltinLocale; name: string }[] = [
   { tag: "en", name: "English" },
   { tag: "zh", name: "简体中文" },
   { tag: "zh-Hant", name: "繁體中文" },
@@ -55,11 +55,11 @@ export const BUILTIN_LANGUAGES: { tag: BuiltinLocale; name: string }[] = [
 ];
 
 /** The system's language among those there are — the shipped ones and any a pack added — else English. */
-export function detectSystemLocale(available: readonly Locale[] = BUILTIN_LANGUAGES.map((l) => l.tag)): Locale {
+function detectSystemLocale(available: readonly Locale[] = BUILTIN_LANGUAGES.map((l) => l.tag)): Locale {
   return pickLanguage((typeof navigator !== "undefined" && navigator.language) || "en", available) ?? "en";
 }
 
-export function resolveLocale(preference: LanguagePreference, available?: readonly Locale[]): Locale {
+function resolveLocale(preference: LanguagePreference, available?: readonly Locale[]): Locale {
   return preference === "system" ? detectSystemLocale(available) : languageTag(preference);
 }
 
@@ -144,6 +144,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
         return part ? <Fragment key={i}>{part}</Fragment> : null;
       });
     },
+    // as with t: `pack` stands for the words setPackMessages took in
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [locale, map, pack]
   );

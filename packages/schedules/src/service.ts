@@ -565,5 +565,3 @@ export function describeCadence(c: z.input<typeof Cadence>, locale: LanguageTag)
     case "hourly": return c.every === 1 ? w("cadenceHour") : w("cadenceHours", { every: c.every });
   }
 }
-
-export default Schedules;

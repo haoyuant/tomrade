@@ -122,7 +122,7 @@ function ListingRow({ listing, onOpen }: { listing: Listing; onOpen: () => void 
   );
 }
 
-export function PluginDetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
+function PluginDetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const { t } = useI18n();
   const detail = useCommunityPlugin(id);
   const [installing, setInstalling] = useState(false);

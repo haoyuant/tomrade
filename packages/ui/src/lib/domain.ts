@@ -32,16 +32,6 @@ export const STATUS: Record<ItemStatus, { label: string; mark: IconId }> = {
 
 export const STATUS_KEYS = Object.keys(STATUS) as ItemStatus[];
 
-/** One hue stepped light to dark — a status ramp is not six accents. */
-export const STATUS_FILL: Record<ItemStatus, string> = {
-  backlog: "var(--tag-bg-soft)",
-  todo: "var(--tag-bg-base)",
-  doing: "var(--accent-light)",
-  verifying: "var(--accent)",
-  done: "var(--accent-active)",
-  cancelled: "var(--meta)"
-};
-
 export const PRIORITIES: Priority[] = [0, 1, 2, 3, 4];
 export const PRIORITY_LABEL: string[] = PRIORITIES.map(() => "");
 

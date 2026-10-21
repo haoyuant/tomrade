@@ -36,7 +36,7 @@ export interface RemoteApi {
   useDraft: () => { isPending: boolean; mutate: (args: { providerId: string; name: string }, opts?: { onSuccess?: (config: unknown) => void; onError?: (error: Error) => void }) => void };
 }
 
-export const storageRemoteApi: RemoteApi = {
+const storageRemoteApi: RemoteApi = {
   useConnection: useStorageConnection,
   useConnect: useConnectStorage,
   useSignIn: useSignInStorage,
@@ -67,6 +67,7 @@ export function ConnectionPanel({ provider, api = storageRemoteApi }: { provider
   const connected = !!state.data?.connected;
 
   // A sign-in that lands while the panel waits: say so, and let every other panel asking about accounts see it.
+  // Only the pending/connected edges count; the toast and the client are not reasons to run again.
   const waiting = useRef(false);
   useEffect(() => {
     if (pending) waiting.current = true;

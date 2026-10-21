@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
+import { Dialog, DialogBody, DialogFoot, DialogHead, useOpeningKey } from "~/components/ui/dialog";
 import { Icon } from "~/components/icons";
 import { invoke } from "~/lib/api";
 import { useI18n, type MessageKey } from "~/lib/i18n";
@@ -14,17 +14,18 @@ const DEFAULTS: Include = { environment: true, checks: true, error: true, logs: 
 /**
  * What would reach Tomrade's developer, shown before it goes: every section
  * the person can untick, a note of their own, and the exact text. Nothing is
- * sent until Send; a report that can't go now waits and goes later.
+ * sent until Send; a report that can't go now waits and goes later. Each
+ * conversation reported starts clean.
  */
-export function ReportDialog({ projectId, threadId, onOpenChange }: { projectId: string; threadId: string | null; onOpenChange: (open: boolean) => void }) {
+export function ReportDialog(props: Parameters<typeof ReportSheet>[0]) {
+  return <ReportSheet key={useOpeningKey(props.threadId)} {...props} />;
+}
+
+function ReportSheet({ projectId, threadId, onOpenChange }: { projectId: string; threadId: string | null; onOpenChange: (open: boolean) => void }) {
   const { t } = useI18n();
   const [include, setInclude] = useState<Include>(DEFAULTS);
   const [note, setNote] = useState("");
   const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    setInclude(DEFAULTS);
-    setNote("");
-  }, [threadId]);
   const preview = useQuery({
     queryKey: ["doctor-report", projectId, threadId, include, note],
     queryFn: () => invoke("doctor.preview", projectId, threadId!, include, note),
@@ -32,7 +33,6 @@ export function ReportDialog({ projectId, threadId, onOpenChange }: { projectId:
     placeholderData: (previous) => previous
   });
   const send = useMutation({ mutationFn: () => invoke("doctor.send", projectId, threadId!, include, note) });
-  useEffect(() => send.reset(), [threadId]); // eslint-disable-line react-hooks/exhaustive-deps
   const text = (preview.data?.sections ?? []).map((s) => `── ${s.title} ──\n${s.text}`).join("\n\n");
   const copy = () => void navigator.clipboard?.writeText(text).then(() => {
     setCopied(true);

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {} from "@tomradex/ipc";
 import { invoke, subscribe } from "./api";
 
-export type LoginState =
+type LoginState =
   | { kind: "on" }
   | { kind: "off" }
   | { kind: "approval" }

@@ -22,7 +22,7 @@ export function overlap(a: string, b: string): number {
   return shared / Math.sqrt(ta.size * tb.size);
 }
 
-export interface SimilarMatch {
+interface SimilarMatch {
   id: string;
   key: string;
   title: string;

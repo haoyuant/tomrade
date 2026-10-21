@@ -17,7 +17,7 @@ export interface Agg {
   tokensToFirstHit: number;
 }
 
-export interface LatencyRow {
+interface LatencyRow {
   label: string;
   limit: number | null;
   queries: number;

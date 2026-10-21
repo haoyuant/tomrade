@@ -12,6 +12,7 @@ Local-first backlog workbench: an Electron app (`apps/desktop`) with a React UI 
 
 - `pnpm install` — needed once per fresh worktree
 - `pnpm typecheck` — `tsc -b` for the backend, then the UI
+- `pnpm lint` — ESLint: the React hooks rules for the UI, a few bug-catching TypeScript rules everywhere; `pnpm lint:unused` reports unused files, exports and dependencies (knip) without failing
 - `pnpm test` — vitest across packages, on a fast-spawning node (`TOMRADE_TEST_NODE`, else an adhoc-signed one such as Homebrew's; see `docs/testing.md`)
 - `pnpm test:related` — only the tests that reach the files changed against `origin/main` (committed or not); falls back to the touched packages' tests
 - `pnpm test:ui` — Electron UI regression harness (slow; has a known flaky baseline)

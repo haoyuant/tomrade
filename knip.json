@@ -1,0 +1,45 @@
+{
+  "$schema": "https://unpkg.com/knip@6.39.0/schema.json",
+  "ignoreBinaries": [
+    "reg.exe",
+    "pgrep",
+    "herdr",
+    "script"
+  ],
+  "workspaces": {
+    ".": {
+      "entry": [
+        "scripts/*.mjs"
+      ]
+    },
+    "apps/desktop": {
+      "entry": [
+        "src/{alerts,attention,background,deep-link,github,hub-cloud,ipc,settings,shell,surfaces,updater,extension-hooks}.ts",
+        "preload.cjs",
+        "surface-preload.cjs",
+        "scripts/*.{mjs,cjs}"
+      ],
+      "ignoreDependencies": [
+        "@tomradex/.+"
+      ]
+    },
+    "packages/*": {
+      "entry": [
+        "src/child.ts",
+        "tests/**/fake-*.mjs",
+        "tests/fixtures/**/src/*.ts"
+      ]
+    },
+    "packages/ui": {
+      "ignoreDependencies": [
+        "@tomradex/agent",
+        "@tomradex/domain",
+        "@tomradex/settings",
+        "@tomradex/storage"
+      ]
+    }
+  },
+  "rules": {
+    "duplicates": "off"
+  }
+}
