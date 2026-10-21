@@ -15,7 +15,6 @@
     { "path": "../domain" },
     { "path": "../items" },
     { "path": "../llm" },
-    { "path": "../settings" },
     { "path": "../tools" }
   ]
 }

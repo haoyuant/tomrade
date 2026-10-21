@@ -2,6 +2,7 @@ import type {} from "cordis";
 import type { Context } from "cordis";
 import { z } from "zod";
 import { HOUSE_RULES, deferredTools, focusSuffix, isSuspended, kitLines, promptSections, type AgentRequest, type AgentTurnInfo, type Engine, type ThreadMessage, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
+import { errorMessage, localeOf } from "@tomradex/contracts";
 import { MediaRefused, NativeMediaRefused, NativeSearchRefused, assistantMessage, collect, modalityOf, toolResultsMessage, userMessage, type InputModality, type LlmService, type Message, type OutputModality, type ToolSpec } from "@tomradex/llm";
 import { LONG_RESULT, ToolInputError, compactList, type ToolDescriptor } from "@tomradex/tools";
 import { LOOP_WORDS } from "./words.js";
@@ -96,7 +97,7 @@ function brokenJson(name: string, args: unknown): string | null {
   try {
     JSON.parse(raw);
   } catch (err) {
-    problem = err instanceof Error ? err.message : String(err);
+    problem = errorMessage(err);
     at = Number(/position (\d+)/.exec(problem)?.[1] ?? raw.length);
   }
   return `${name}: the arguments were not valid JSON (${problem}), near: …${raw.slice(Math.max(0, at - 60), at + 30)}… Send the whole call again as one valid JSON object; inside strings, escape double quotes as \\".`;
@@ -215,14 +216,12 @@ const RETRIES_PER_STEP = 2;
 /** Times plugins may keep one turn going; the step budget bounds it as well. */
 const CONTINUES_PER_TURN = 3;
 
-const messageOf = (err: unknown) => (err instanceof Error ? err.message : String(err));
-
 /** What plugins make of a step's request. A listener that throws is passed over: it never ends the turn. */
 async function shape(ctx: Context, draft: AgentRequest): Promise<AgentRequest> {
   try {
     return await ctx.waterfall("agent/request", draft, async () => draft);
   } catch (err) {
-    ctx.logger("engine-loop").warn(`agent/request: ${messageOf(err)}`);
+    ctx.logger("engine-loop").warn(`agent/request: ${errorMessage(err)}`);
     return draft;
   }
 }
@@ -232,7 +231,7 @@ async function asked<T>(ctx: Context, hook: string, ask: () => Promise<T | void>
   try {
     return (await ask()) ?? undefined;
   } catch (err) {
-    ctx.logger("engine-loop").warn(`${hook}: ${messageOf(err)}`);
+    ctx.logger("engine-loop").warn(`${hook}: ${errorMessage(err)}`);
     return undefined;
   }
 }
@@ -245,7 +244,7 @@ const profileOf = (llm: LlmService, picked: string | undefined): string | undefi
 
 export function createLoopEngine(ctx: Context): Engine {
   // what the engine itself says in the conversation, in the person's language
-  const words = () => LOOP_WORDS((ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
+  const words = () => LOOP_WORDS(localeOf(ctx));
   return {
     id: "loop",
     title: "Tomrade loop",
@@ -406,7 +405,7 @@ export function createLoopEngine(ctx: Context): Engine {
               try {
                 chat = llm.forProfile(retry.profile);
               } catch (cause) {
-                ctx.logger("engine-loop").warn(`agent/request-error named the model profile "${retry.profile}": ${messageOf(cause)}`);
+                ctx.logger("engine-loop").warn(`agent/request-error named the model profile "${retry.profile}": ${errorMessage(cause)}`);
               }
             }
             request = { ...request, ...retry.request, turn: request.turn };
@@ -490,7 +489,7 @@ export function createLoopEngine(ctx: Context): Engine {
               try {
                 return { id: call.id, suspended: false, ...(await makeMedia(kind, prompt)), invalid: false };
               } catch (err) {
-                return { id: call.id, suspended: false, content: `ERROR: ${err instanceof Error ? err.message : String(err)}`, isError: true, invalid: false };
+                return { id: call.id, suspended: false, content: `ERROR: ${errorMessage(err)}`, isError: true, invalid: false };
               }
             }
             const key = READ_TOOL.test(call.name) ? `${call.name} ${JSON.stringify(call.args)}` : null;
@@ -504,7 +503,7 @@ export function createLoopEngine(ctx: Context): Engine {
               return { id: call.id, suspended: isSuspended(result), content, invalid: false };
             } catch (err) {
               const invalid = err instanceof ToolInputError;
-              return { id: call.id, suspended: false, content: `ERROR: ${err instanceof Error ? err.message : String(err)}`, isError: true, invalid };
+              return { id: call.id, suspended: false, content: `ERROR: ${errorMessage(err)}`, isError: true, invalid };
             }
           })
         );

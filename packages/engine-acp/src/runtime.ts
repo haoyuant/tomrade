@@ -1,6 +1,7 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Context } from "cordis";
 import { attachedMedia, withRecap, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
+import { errorMessage } from "@tomradex/contracts";
 import { engineLocale, KIT_WORDS, RpcError, runtimeDirectory, runTurn, sessionSystem, spawnCli, stopCli, turnPrompt, type JsonLinePeer, type Runtime } from "@tomradex/engine-kit";
 import type {} from "@tomradex/mcp";
 import { isTomradeTool, policyOf, wrappedTool, type AcpAgent, type AcpOptions, type Catalog, type Policy, type RequestUsage } from "./agent.js";
@@ -159,8 +160,8 @@ export class AcpRuntime implements Runtime {
         this.modes.currentModeId = mode;
       } else if (option || this.modes) throw new Error(this.words("noSuchMode"));
     } catch (error) {
-      if (this.policy !== "full-access") throw new Error(this.words("noModeSwitch", { name: this.agent.title, mode, reason: messageOf(error) }));
-      io.emit({ type: "note", text: `${this.agent.title} did not switch to its "${mode}" mode (${messageOf(error)})` });
+      if (this.policy !== "full-access") throw new Error(this.words("noModeSwitch", { name: this.agent.title, mode, reason: errorMessage(error) }));
+      io.emit({ type: "note", text: `${this.agent.title} did not switch to its "${mode}" mode (${errorMessage(error)})` });
     }
   }
 
@@ -176,7 +177,7 @@ export class AcpRuntime implements Runtime {
         this.models.currentModelId = value;
       } else io.emit({ type: "note", text: `${this.agent.title} offers no ${setting} setting, so it keeps its own` });
     } catch (error) {
-      io.emit({ type: "note", text: `${this.agent.title} did not take ${setting} "${value}" (${messageOf(error)}); it keeps its own` });
+      io.emit({ type: "note", text: `${this.agent.title} did not take ${setting} "${value}" (${errorMessage(error)}); it keeps its own` });
     }
   }
 
@@ -251,7 +252,7 @@ export class AcpRuntime implements Runtime {
   }
 
   private explain(error: unknown): string {
-    const message = innermost(messageOf(error));
+    const message = innermost(errorMessage(error));
     if (error instanceof RpcError && (error.code === AUTH_REQUIRED || /auth|log ?in|sign ?in|credential|api key/i.test(message))) {
       return this.words("signInFirst", { message, how: this.agent.signIn ?? this.words("signInTo", { name: this.agent.title }) });
     }
@@ -474,7 +475,6 @@ export class AcpRuntime implements Runtime {
   }
 }
 
-const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /** A model API's error passed on as JSON, sometimes JSON in JSON (Gemini CLI): its innermost message. */
 export function innermost(message: string): string {

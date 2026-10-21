@@ -3,9 +3,9 @@ import { z } from "zod";
 import type { SettingsSection } from "@tomradex/settings";
 
 /** A server's id prefixes every tool it contributes, so it stays short and safe in a tool name. */
-export const ServerId = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,23}$/, "lowercase letters, digits, _ or -, at most 24");
+const ServerId = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,23}$/, "lowercase letters, digits, _ or -, at most 24");
 
-export const StdioTransport = z.object({
+const StdioTransport = z.object({
   type: z.literal("stdio"),
   command: z.string().trim().min(1),
   args: z.array(z.string()).default([]),
@@ -13,7 +13,7 @@ export const StdioTransport = z.object({
   cwd: z.string().optional()
 });
 
-export const HttpTransport = z.object({
+const HttpTransport = z.object({
   type: z.literal("http"),
   url: z.url({ protocol: /^https?$/ }),
   headers: z.record(z.string(), z.string()).default({})

@@ -15,7 +15,6 @@
     { "path": "../domain" },
     { "path": "../ipc" },
     { "path": "../llm" },
-    { "path": "../mcp" },
     { "path": "../projects" },
     { "path": "../settings" },
     { "path": "../tools" }

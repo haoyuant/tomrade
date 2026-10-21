@@ -1,4 +1,5 @@
 import type { Context } from "cordis";
+import { localeOf } from "@tomradex/contracts";
 import { defineWords } from "@tomradex/domain";
 
 /** What every local-agent engine says when its process or connection fails. */
@@ -32,4 +33,4 @@ export const KIT_WORDS = defineWords("engine-kit", {
 });
 
 /** The person's language, for an engine's words; English without a settings service. */
-export const engineLocale = (ctx: Context): string | undefined => (ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.();
+export const engineLocale = (ctx: Context): string | undefined => localeOf(ctx);

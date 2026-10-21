@@ -4,7 +4,7 @@ import path from "node:path";
 import { loadJson } from "./git-sync.js";
 
 /** Stores from before ids were kept are the one store their project ever had. */
-export const LEGACY_STORE_ID = "base";
+const LEGACY_STORE_ID = "base";
 const TARGET = "files-target.json";
 const ID = "files-store-id";
 

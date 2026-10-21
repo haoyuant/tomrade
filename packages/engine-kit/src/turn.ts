@@ -1,5 +1,6 @@
 import type { Context } from "cordis";
 import { describeFailure, looksRateLimited, resetTime, type Engine, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
+import { errorMessage } from "@tomradex/contracts";
 import type {} from "@tomradex/mcp";
 import { bindTurn, RuntimePool, runtimeFingerprint, type Runtime } from "./runtime.js";
 import { engineLocale, KIT_WORDS } from "./words.js";
@@ -37,7 +38,6 @@ export interface TurnSpec {
   cleanup?(): void;
 }
 
-const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /** An error that reads as a usage or rate limit stops on that limit, lifting when its words say. */
 function limited(result: TurnResult): TurnResult {
@@ -69,7 +69,7 @@ export async function runTurn(io: TurnIO, spec: TurnSpec, body: (turn: TurnFrame
     return limited(await body(turn));
   } catch (error) {
     spec.thrown?.(error);
-    return limited(turn.failed((spec.explain ?? messageOf)(error), { error }));
+    return limited(turn.failed((spec.explain ?? errorMessage)(error), { error }));
   } finally {
     io.signal.removeEventListener("abort", abort);
     spec.cleanup?.();

@@ -808,5 +808,3 @@ export class Community extends Service implements CommunityReader {
     return rows.map((v) => ({ pluginId: v.plugin_id, version: v.version, status: v.status, tier: v.tier, risk: v.risk, listedAt: v.listed_at }));
   }
 }
-
-export default Community;

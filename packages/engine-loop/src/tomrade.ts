@@ -1,6 +1,7 @@
 import type { Context } from "cordis";
 import { z } from "zod";
 import type { Engine, EngineAvailability } from "@tomradex/agent";
+import { errorMessage } from "@tomradex/contracts";
 import { LOOP_WORDS } from "./words.js";
 
 export const TomradeEngineConfig = z.object({
@@ -40,7 +41,7 @@ export function createTomradeEngine(ctx: Context, config: TomradeEngineConfig): 
     try {
       return await engine.available(opts);
     } catch (err) {
-      return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+      return { ok: false, reason: errorMessage(err) };
     }
   };
   const borrowable = async (opts?: { fresh?: boolean }): Promise<Engine | undefined> => {

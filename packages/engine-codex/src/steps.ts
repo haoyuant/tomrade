@@ -1,6 +1,5 @@
 import { stepHint, stepSummary, type Block, type RetryState } from "@tomradex/agent";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Json = any;
 
 const outputTail = (output: string): string => output.trimEnd().split("\n").slice(-30).join("\n").slice(-8000);

@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
 import type { TurnInput } from "@tomradex/agent";
+import { contract } from "@tomradex/contracts";
 import { engineLocale, RpcError, spawnCli, stopCli } from "@tomradex/engine-kit";
 import type { AcpAgent, AcpOptions, Catalog } from "./agent.js";
 import { acpConnection } from "./connection.js";
@@ -11,7 +12,7 @@ import { acpConnection } from "./connection.js";
 type Json = Record<string, any>;
 
 /** Session settings by what they are: agents name them differently but tag them with these categories. */
-export const SETTINGS = {
+const SETTINGS = {
   mode: { category: "mode", ids: ["mode"] },
   model: { category: "model", ids: ["model"] },
   effort: { category: "thought_level", ids: ["reasoning_effort", "effort", "thought_level"] }
@@ -48,7 +49,7 @@ export function advertised(config: Json[], models?: Json): Partial<Catalog> {
 
 /** Tomrade's data folder; null when it keeps nothing on disk (tests, a database in memory). */
 function dataDir(ctx: Context): string | null {
-  const dir = (ctx.get("db") as { config?: { dir?: string } } | undefined)?.config?.dir;
+  const dir = contract(ctx, "db")?.config.dir;
   return dir && dir !== ":memory:" ? dir : null;
 }
 

@@ -12,6 +12,7 @@
   ],
   "references": [
     { "path": "../agent" },
+    { "path": "../contracts" },
     { "path": "../engine-kit" },
     { "path": "../llm" },
     { "path": "../mcp" },

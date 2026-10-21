@@ -36,6 +36,11 @@ export interface CloudHubReader {
   readonly client: any;
 }
 
+export interface DbReader {
+  /** Where the caches live; ":memory:" when they live in RAM. */
+  readonly config: { readonly dir: string };
+}
+
 export interface StorageReader {
   /** The project folder's `.tomrade` directory, or null when the project has no folder here. */
   artifactDirFor(projectId: string): string | null;
@@ -135,6 +140,7 @@ export interface Contracts {
   cloudHub: CloudHubReader;
   codeLink: CodeLinkReader;
   community: CommunityReader;
+  db: DbReader;
   doctor: DoctorChecks;
   files: FilesReader;
   hub: HubReader;
