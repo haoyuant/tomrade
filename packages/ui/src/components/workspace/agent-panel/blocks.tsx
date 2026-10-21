@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import type { Block, EngineView, FocusRef, PendingView, RunView, ThreadMessage } from "@tomradex/agent";
-import { modelErrorKind, type Item, type ModelErrorKind } from "@tomradex/domain";
+import type { Item, ModelErrorKind } from "@tomradex/domain";
+import { modelErrorKind } from "@tomradex/domain/model-errors";
 import { Icon } from "~/components/icons";
 import { Hint } from "~/components/ui/hint";
 import { Menu, MenuActionItem, MenuHead } from "~/components/ui/menu";

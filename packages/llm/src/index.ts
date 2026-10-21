@@ -1,6 +1,7 @@
 import { Context, Service } from "cordis";
 import { z } from "zod";
-import { modelErrorKind, wordsLocale, type ModelErrorKind, type WordsLocale } from "@tomradex/domain";
+import { wordsLocale, type ModelErrorKind, type WordsLocale } from "@tomradex/domain";
+import { modelErrorKind } from "@tomradex/domain/model-errors";
 import type {} from "@tomradex/db";
 import type {} from "@tomradex/desktop-surface";
 import type {} from "@tomradex/ipc";

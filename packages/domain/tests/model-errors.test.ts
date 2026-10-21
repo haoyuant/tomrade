@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { modelErrorKind, modelRefusal, providerMessage } from "@tomradex/domain";
+import { modelErrorKind, modelRefusal, providerMessage } from "@tomradex/domain/model-errors";
 
 const gemini = (code: number, message: string, status: string) => `LLM request failed ${code}: ${JSON.stringify([{ error: { code, message, status } }])}`;
 

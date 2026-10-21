@@ -46,6 +46,7 @@ Every pull request runs `pnpm typecheck` and `pnpm test` in CI, forks included.
   - In the backend, a package's words live in its `src/words.ts`, written with `defineWords(id, { en, zh })`; the Chinese must have every key and the same `{{slots}}`. Prompts written for an agent are not words and stay in English.
 - **Short why-comments only.** The code says what; a comment says why.
 - **Domain words** (ticket, delivery, code link, sync back, …) mean what [`CONTEXT.md`](CONTEXT.md) says.
+- **Two package scopes, on purpose.** Packages are `@tomradex/*`, the scope published on npm; the app is `@tomrade/desktop`, whose name is a checkout's data folder. Neither gets renamed. The packages marked `"tomrade": { "publish": "sdk" }` (`domain`, `plugin-sdk`, `plugin-cli`, `plugin-host`) are the plugin SDK: what they export is public API, so keep app-only code off their main entry. [`packages/README.md`](packages/README.md) explains both and what npm gets.
 
 ## Commits and pull requests
 
