@@ -1,0 +1,30 @@
+{
+  "name": "@tomradex/agent-setup",
+  "private": true,
+  "license": "Apache-2.0",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "One-click agent setup: Tomrade installs a chosen agent's CLI in the background and watches its sign-in, no terminal needed",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomradex/agent": "workspace:*",
+    "@tomradex/engine-kit": "workspace:*",
+    "@tomradex/ipc": "workspace:*",
+    "cordis": "4.0.0-rc.8"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^6.0.0"
+  }
+}

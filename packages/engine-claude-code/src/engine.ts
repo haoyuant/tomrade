@@ -62,6 +62,12 @@ export function claudeCodeEngineInfo(ctx: Context): Omit<Engine, "turn"> {
       setup: {
         // The official installer first; npm still works and is what many already have.
         install: [process.platform === "win32" ? "irm https://claude.ai/install.ps1 | iex" : "curl -fsSL https://claude.ai/install.sh | bash", "npm install -g @anthropic-ai/claude-code"],
+        // The same order for the installs Tomrade runs itself: the official script (no admin, ~/.local), then npm — the system's, or the app's borrowed one.
+        installers: [
+          { kind: "script", url: "https://claude.ai/install.sh", shell: "sh" },
+          { kind: "script", url: "https://claude.ai/install.ps1", shell: "powershell" },
+          { kind: "npm", package: "@anthropic-ai/claude-code" }
+        ],
         signIn: "claude",
         signInRuns: true,
         docs: "https://docs.anthropic.com/en/docs/claude-code/setup",

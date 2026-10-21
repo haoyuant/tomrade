@@ -1,7 +1,7 @@
 import os from "node:os";
 import { Context, Service } from "cordis";
 import { errorMessage } from "@tomradex/contracts";
-import type { Engine, EngineMcpLink, EngineSetup, McpLinkView } from "@tomradex/agent";
+import type { Engine, EngineInstaller, EngineMcpLink, EngineSetup, McpLinkView } from "@tomradex/agent";
 import {
   chosenCommand,
   cliLentModel,
@@ -179,13 +179,25 @@ function terminalEngine(ctx: Context, spec: Written, locator: CliLocator): Engin
 
 /** An installer script as the command the app runs for the person; the plugin names only its address. */
 const installCommand = (step: string | LocalAgentInstaller): string =>
-  typeof step === "string" ? step : "script" in step ? `curl -fsSL ${step.script} | bash` : `irm ${step.powershell} | iex`;
+  typeof step === "string" ? step : "script" in step ? `curl -fsSL ${step.script} | bash` : "npm" in step ? `npm install -g ${step.npm}` : `irm ${step.powershell} | iex`;
+
+/** The declared installers as what the app can run itself; a bare command string is only for terminals. */
+const installerOf = (step: string | LocalAgentInstaller): EngineInstaller | null =>
+  typeof step === "string" ? null
+    : "script" in step ? { kind: "script", url: step.script, shell: "sh" }
+    : "npm" in step ? { kind: "npm", package: step.npm }
+    : { kind: "script", url: step.powershell, shell: "powershell" };
 
 /** The spec with its setup written out as commands, and `{install}` in the not-found words as the first of them. */
 function written(spec: Spec): Written {
   const { setup, ...rest } = spec;
   const install = (setup?.install ?? []).map(installCommand);
-  return { ...rest, install: spec.install.replace("{install}", install[0] ?? ""), ...(setup ? { setup: { ...setup, install } } : {}) };
+  const installers = (setup?.install ?? []).map(installerOf).filter((i): i is EngineInstaller => !!i);
+  return {
+    ...rest,
+    install: spec.install.replace("{install}", install[0] ?? ""),
+    ...(setup ? { setup: { ...setup, install, ...(installers.length ? { installers } : {}) } } : {})
+  };
 }
 
 /** Everything one spec stands for, on a context that has the agent and the MCP server. */

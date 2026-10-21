@@ -47,6 +47,9 @@ importers:
       '@tomradex/agent-backlog':
         specifier: workspace:*
         version: link:../../packages/agent-backlog
+      '@tomradex/agent-setup':
+        specifier: workspace:*
+        version: link:../../packages/agent-setup
       '@tomradex/alerts':
         specifier: workspace:*
         version: link:../../packages/alerts
@@ -369,6 +372,28 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/agent-setup:
+    dependencies:
+      '@tomradex/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@tomradex/engine-kit':
+        specifier: workspace:*
+        version: link:../engine-kit
+      '@tomradex/ipc':
+        specifier: workspace:*
+        version: link:../ipc
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
       typescript:
         specifier: ^6.0.0
         version: 6.0.3

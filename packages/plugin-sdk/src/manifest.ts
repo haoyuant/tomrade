@@ -3,7 +3,7 @@ import { LANGUAGE_PACK_LIMITS, LanguageEntrySchema } from "./language.js";
 import { isRange, isVersion } from "./semver.js";
 
 /** The contract this SDK describes. A plugin's `engines.sdk` range is checked against the host's. */
-export const SDK_CONTRACT = "0.2.25";
+export const SDK_CONTRACT = "0.2.26";
 
 export const PLUGIN_ID = /^[a-z0-9][a-z0-9-]{0,38}\/[a-z0-9][a-z0-9-]{0,63}$/;
 export const NAMESPACE = /^[a-z][a-z0-9_]{1,31}$/;
