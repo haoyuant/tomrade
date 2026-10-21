@@ -23,6 +23,8 @@ export interface Failure extends Classified {
 type Node = Record<string, unknown>;
 
 const TIMEOUT = /^(Test|Hook) timed out in \d+ms/;
+// A test's own wait running out: vi.waitFor / vi.waitUntil, or a polling helper's bare "timed out".
+const WAIT_TIMEOUT = /^(Timed out in (waitFor|waitUntil)!|timed out\.?)$/i;
 
 const NETWORK_CODES = new Set([
   "ENOTFOUND", "EAI_AGAIN", "EAI_FAIL", "EAI_NODATA", "EAI_NONAME",
@@ -119,6 +121,8 @@ export function classifyError(error: unknown, proxies: Set<string> = loopbackPro
   const nodes = walk(error);
   if (nodes.some(isAssertion)) return { kind: "real", reason };
   if (TIMEOUT.test(text(error))) return { kind: "timeout-under-load", reason };
+  // Only alone: a wait that carries a cause says why it failed, and that decides.
+  if (nodes.length === 1 && WAIT_TIMEOUT.test(reason)) return { kind: "timeout-under-load", reason };
   if (nodes.some((n) => isLocalServer(n, proxies))) return { kind: "real", reason };
   for (const n of nodes) {
     const line = networkLine(n);
