@@ -119,7 +119,7 @@ returns is disposed when the service goes.
 | `settings` | `register({ title, schema, defaults })` — the card is drawn from the schema — `get`, `set` |
 | `tools` | `register(defineTool(…))` (SDK 0.2.6: `kit` keeps a rarely needed tool out of each request until the model loads it; `kit(id, purpose)` says what the kit is for), `list`, `call`, `gate(check)` (throw to refuse any tool call; SDK 0.2.12: answer `{ args }` or `{ result }` — see [Policies](#policies)) |
 | `contributions` | `command`, `badge`, `statusItem`, `section`, `graph` — see [Contributions](#contributions); callbacks may be async |
-| `agent` | `playbook({ id, title, when, body, tools })`; SDK 0.2.14: `request(hook)`, `requestError(hook)`, `turnEnding(hook)` — the in-app conversation's loop, see [Hooks in the agent's loop](#hooks-in-the-agents-loop); SDK 0.2.15: `cliHook({ events, tools, agents, handle })` — the CLI agents' hooks, see [Hooks in CLI agents](#hooks-in-cli-agents); SDK 0.2.17: `localAgent(spec)`, see [Local agents](#local-agents) — SDK 0.2.23 takes `acp.terminal: { via: "link" }` in place of the deprecated `acp.terminalViaLink`, which an older plugin may still send |
+| `agent` | `playbook({ id, title, when, body, tools })`; SDK 0.2.14: `request(hook)`, `requestError(hook)`, `turnEnding(hook)` — the in-app conversation's loop, see [Hooks in the agent's loop](#hooks-in-the-agents-loop); SDK 0.2.15: `cliHook({ events, tools, agents, handle })` — the CLI agents' hooks, see [Hooks in CLI agents](#hooks-in-cli-agents); SDK 0.2.17: `localAgent(spec)`, see [Local agents](#local-agents) — SDK 0.2.23 takes `acp.terminal: { via: "link" }` in place of the deprecated `acp.terminalViaLink`, which an older plugin may still send; SDK 0.2.25 takes `setup.download` and `setup.desktop` |
 | `surfaces` | `open({ id, document, … })` — a document inside the plugin's own package, never a remote page (SDK 0.2.7: `onClose()` says the window is gone, however it went; the handle's calls then reject). SDK 0.2.11: `kind: "window"` (with `minWidth` / `minHeight`) opens a working window and needs `permissions.window`; `post(message)` sends one message to the document; see [Auxiliary desktop surfaces](#auxiliary-desktop-surfaces) |
 | `alerts` | `sounds()` (the system's, its own alert sound first), `play(sound, { volume })` — `system:<name>` or an audio file's absolute path, played by the host — and `notify({ title, body })`, a silent system notification. SDK 0.2.4 |
 | `oplog` | `recent`, `history` |
@@ -1267,7 +1267,7 @@ await ctx.agent.localAgent({
   title: "Acme",
   cli: { name: "acme", bundled: (host) => [{ file: "/Applications/Acme.app/Contents/Resources/cli/acme" }] },
   install: "install Acme ({install}) and sign in",
-  setup: { install: [{ script: "https://acme.example/install.sh" }, "npm install -g acme-cli"], signIn: "acme login", signInRuns: true },
+  setup: { install: [{ script: "https://acme.example/install.sh" }, "npm install -g acme-cli"], signIn: "acme login", signInRuns: true, download: "https://acme.example/download", desktop: { title: "Acme", shipsCli: true } },
   options: z.object({ command: z.string().default("acme"), model: z.string().optional() }),
   acp: {
     permissionModes: { default: "full-access", choices: [PERMISSION_CHOICES["full-access"], PERMISSION_CHOICES.ask] },
@@ -1306,6 +1306,13 @@ await ctx.agent.localAgent({
   `irm <url> | iex`. The app writes the command, so plugin code carries no
   download-and-run of its own (the store's checks refuse that); `{install}` in
   `install`, the words after "not found —", stands for the first command.
+- **`setup.download`** (SDK 0.2.25) is the agent's official download page,
+  opened in the system browser beside the install commands for anyone without
+  the tools they need (npm, curl): a page that offers the CLI. **`setup.desktop`** —
+  `{ title, shipsCli }` — names its desktop app and says whether installing
+  it puts the CLI where Tomrade finds it; setup screens say which, so nobody
+  installs an app that leaves the CLI out and waits for it to be found. Both
+  are optional, and an older host ignores them.
 - **`lend`** lends its sign-in to the worker for one-shot calls, ready only
   while the agent is available and signed in; throwing `NotSignedIn` marks it
   signed out until it is checked again.

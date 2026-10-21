@@ -80,7 +80,14 @@ export function codexEngineInfo(ctx: Context): Omit<Engine, "turn"> {
     },
     configDir: () => codexHome()
   });
-  const setup = { install: [NPM_INSTALL], signIn: "codex login", docs: "https://github.com/openai/codex", suggested: true };
+  const setup = {
+    install: [NPM_INSTALL],
+    signIn: "codex login",
+    docs: "https://github.com/openai/codex",
+    download: "https://learn.chatgpt.com/docs/codex/cli",
+    desktop: { title: "Codex", shipsCli: false },
+    suggested: true
+  };
   return {
     id: "codex",
     title: "Codex",

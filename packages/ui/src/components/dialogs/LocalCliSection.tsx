@@ -67,6 +67,8 @@ export function LocalCliSection({ engine, cli, command, onSaveCommand }: { engin
           ? []
           : ["install", "signIn", "verify", "recheck", "locate"];
   const install = agent?.install ?? [];
+  // "Only the desktop app" already says the app lacks the CLI.
+  const desktopNote = steps.includes("install") && status !== "desktop-only" ? agent?.desktop : undefined;
 
   return (
     <div className="cli-setup stack-3" data-testid={`cli-setup-${engine.id}`}>
@@ -161,6 +163,14 @@ export function LocalCliSection({ engine, cli, command, onSaveCommand }: { engin
                         </button>
                       </>
                     )}
+                    {agent.download && (
+                      <>
+                        {" · "}
+                        <button type="button" className="link-btn" data-testid={`download-${engine.id}`} onClick={() => openExternal(agent.download!)}>
+                          {t("localCli.download")}
+                        </button>
+                      </>
+                    )}
                   </>
                 )}
                 {step === "signIn" && agent.signIn && tx(agent.signInRuns ? "localCli.stepSignInRun" : "localCli.stepSignIn", { command: code(agent.signIn) })}
@@ -170,10 +180,11 @@ export function LocalCliSection({ engine, cli, command, onSaveCommand }: { engin
               </li>
             ))}
           </ol>
-          {windows && (
+          {(windows || desktopNote) && (
             <ul className="cli-notes">
-              <li>{t("localCli.windowsWsl")}</li>
-              {engine.id === "claude-code" && <li>{t("localCli.windowsGit")}</li>}
+              {desktopNote && <li>{t(desktopNote.shipsCli ? "localCli.desktopShipsCli" : "localCli.desktopNoCli", { app: desktopNote.title, name: cli.name })}</li>}
+              {windows && <li>{t("localCli.windowsWsl")}</li>}
+              {windows && engine.id === "claude-code" && <li>{t("localCli.windowsGit")}</li>}
             </ul>
           )}
         </div>

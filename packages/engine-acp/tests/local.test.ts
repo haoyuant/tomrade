@@ -204,6 +204,21 @@ describe("a plugin's local agent, run by the app's conductor", () => {
     await w.ctx.fiber.dispose();
   });
 
+  it("hands its download page and desktop app on to setup screens", async () => {
+    const w = await world(async (p) => {
+      await p.agent.localAgent({
+        id: "demo",
+        title: "Demo",
+        cli: { name: "tomrade-no-such-demo-cli" },
+        install: "install Demo ({install})",
+        setup: { install: ["npm install -g demo"], download: "https://demo.example/download", desktop: { title: "Demo Desktop", shipsCli: false } }
+      });
+    });
+    const engine = w.ctx.agent.engineOf("demo")!;
+    expect(engine.local!.setup).toEqual({ install: ["npm install -g demo"], download: "https://demo.example/download", desktop: { title: "Demo Desktop", shipsCli: false } });
+    await w.ctx.fiber.dispose();
+  });
+
   it("keeps an agent the app still ships, and leaves the plugin's copy off", async () => {
     const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(dir, "settings.json") }], Agent, [Mcp, { port: 0 }], Llm, LocalAgents] });
     const builtIn = { id: "demo", title: "Built-in demo", author: "ai:demo" as const, available: async () => ({ ok: true }), turn: async () => ({ stop: "end" as const }) };

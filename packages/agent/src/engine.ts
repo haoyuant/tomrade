@@ -79,6 +79,10 @@ export interface EngineSetup {
   /** Signing in starts the agent itself, which then asks (`/login`); otherwise the command signs in and returns. */
   signInRuns?: boolean;
   docs?: string;
+  /** The agent's official download page, opened in the system browser beside these commands, for those without the tools they need: one that offers the CLI. */
+  download?: string;
+  /** The agent's desktop app, when it has one: whether installing it puts the CLI where Tomrade finds it. */
+  desktop?: { title: string; shipsCli: boolean };
   /** Offered on setup screens before it is installed. */
   suggested?: boolean;
 }

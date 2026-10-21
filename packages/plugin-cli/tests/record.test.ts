@@ -66,3 +66,15 @@ it("takes an installer only as a script's https address", async () => {
     'local agent "acme_two": an installer is a script\'s https address, not "https://acme.example/i.sh | sh"'
   ]);
 });
+
+it("takes a download page only as an https address, and a desktop app only with whether it ships the CLI", async () => {
+  const rec = emptyRecording();
+  const ctx = recordingContext("acme", ["agent"], rec);
+  await ctx.agent.localAgent({ id: "acme", title: "Acme", cli: { name: "acme" }, install: "x", setup: { install: [], download: "https://acme.example/download", desktop: { title: "Acme", shipsCli: false } } });
+  expect(rec.invalid).toEqual([]);
+  await ctx.agent.localAgent({ id: "acme_two", title: "Acme", cli: { name: "acme" }, install: "x", setup: { install: [], download: "javascript:alert(1)", desktop: { title: "Acme" } as never } });
+  expect(rec.invalid).toEqual([
+    'local agent "acme_two": setup.download is a page\'s https address, not "javascript:alert(1)"',
+    'local agent "acme_two": setup.desktop needs a title and shipsCli, whether the app puts the CLI where Tomrade finds it'
+  ]);
+});

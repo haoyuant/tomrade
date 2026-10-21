@@ -51,6 +51,9 @@ export const localCli = {
     stepRecheck: "Come back here and click Check again — no restart needed.",
     stepLocate: "Still not found? {{command}} prints where it is; put that path under CLI path.",
     docs: "Install guide",
+    download: "Official download",
+    desktopShipsCli: "The {{app}} app includes {{name}}, so installing the app is enough.",
+    desktopNoCli: "The {{app}} app alone isn't enough: it doesn't include {{name}}, the command Tomrade runs. Install that as well.",
     windowsWsl: "A CLI installed inside WSL cannot be used by Tomrade on Windows.",
     windowsGit: "Claude Code on Windows needs Git for Windows installed first.",
 
@@ -110,6 +113,9 @@ export const localCli = {
     stepRecheck: "回到这里点“重新检测”，不用重启 Tomrade。",
     stepLocate: "仍检测不到：用 {{command}} 查到路径，填入“CLI 路径”。",
     docs: "安装文档",
+    download: "官方下载",
+    desktopShipsCli: "{{app}} 桌面应用自带 {{name}}，装好应用就行。",
+    desktopNoCli: "只装 {{app}} 桌面应用还不够：它不带 Tomrade 要运行的命令 {{name}}，还需要另外安装。",
     windowsWsl: "装在 WSL 中的 CLI 无法被 Windows 版 Tomrade 使用。",
     windowsGit: "Claude Code 在 Windows 上需要先安装 Git for Windows。",
 

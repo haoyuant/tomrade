@@ -68,6 +68,21 @@ export function LocalAgentSetup({ engines, onOpenSettings }: { engines: EngineVi
       {rows.map((e) => {
         const status = engineStatus(e);
         const setup = e.setup!;
+        const installing = status === "missing" || status === "desktop-only";
+        // "Only the desktop app" already says the app lacks the CLI.
+        const desktopNote = status === "missing" && setup.desktop;
+        const download = installing && (setup.download || desktopNote) && (
+          <span className="setup-fix">
+            {desktopNote && t(desktopNote.shipsCli ? "localCli.desktopShipsCli" : "localCli.desktopNoCli", { app: desktopNote.title, name: e.cli?.name ?? "" })}
+            {setup.download && (
+              <button type="button" className="link-btn setup-action" data-testid={`download-${e.id}`} onClick={() => openExternal(setup.download!)}>
+                {t("localCli.download")} →
+              </button>
+            )}
+          </span>
+        );
+        // A desktop app that brings the CLI is the easier way in, so it comes first.
+        const downloadFirst = Boolean(setup.desktop?.shipsCli);
         return (
           <li key={e.id} className={e.ok ? "setup-row is-ok" : "setup-row"} data-engine={e.id}>
             <Icon name={e.ok ? "i-check" : "i-warn"} size={13} />
@@ -76,7 +91,8 @@ export function LocalAgentSetup({ engines, onOpenSettings }: { engines: EngineVi
                 {e.title} <span className="meta-txt">· {engineStateLabel(e, t, t("settingsDialog.engineUnavailable"))}</span>
               </span>
               {status === "desktop-only" && <span className="setup-fix">{t("localCli.desktopOnlyDetail", { app: e.cli?.desktopApp ?? "", name: e.cli?.name ?? "" })}</span>}
-              {(status === "missing" || status === "desktop-only") && !setup.install[0] && setup.docs && (
+              {downloadFirst && download}
+              {installing && !setup.install[0] && setup.docs && (
                 <span className="setup-fix">
                   {t("setup.noInstaller")}
                   <button type="button" className="link-btn setup-action" data-testid={`install-guide-${e.id}`} onClick={() => openExternal(setup.docs!)}>
@@ -84,7 +100,7 @@ export function LocalAgentSetup({ engines, onOpenSettings }: { engines: EngineVi
                   </button>
                 </span>
               )}
-              {(status === "missing" || status === "desktop-only") && setup.install[0] && (
+              {installing && setup.install[0] && (
                 <span className="setup-fix">
                   <CommandLine command={setup.install[0]} />
                   <button type="button" className="btn btn-secondary btn-xs setup-action" data-testid={`install-${e.id}`} disabled={terminal.isPending} onClick={() => run(e, "install")}>
@@ -92,6 +108,7 @@ export function LocalAgentSetup({ engines, onOpenSettings }: { engines: EngineVi
                   </button>
                 </span>
               )}
+              {!downloadFirst && download}
               {status === "sign-in" && setup.signIn && (
                 <span className="setup-fix">
                   <CommandLine command={setup.signIn} />
@@ -100,7 +117,7 @@ export function LocalAgentSetup({ engines, onOpenSettings }: { engines: EngineVi
                   </button>
                 </span>
               )}
-              {!e.ok && status !== "missing" && status !== "desktop-only" && status !== "sign-in" && (
+              {!e.ok && !installing && status !== "sign-in" && (
                 <button type="button" className="link-btn setup-fix" onClick={() => onOpenSettings(e.id)}>
                   {t("localCli.configure")} →
                 </button>
