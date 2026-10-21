@@ -6,7 +6,7 @@ import { HERDR_INSTALL, herdrInstall, type HerdrInstall, type HerdrPaneEvent, ty
 import { named, SESSION_STATES, STATUSES } from "./contrib.js";
 import type { Sessions } from "./sessions.js";
 import type { CodeLinkStore, SessionView } from "./store.js";
-import { RESUME_ID_FILE, RESUME_SCRIPT, SYSTEM_TERMINAL, commandOk, herdrFallbackNote, launchTerminal, machineTerminalSettings, setupTerminal, shellQuote, type LaunchInput, type LaunchResult, type TerminalSettings } from "./terminal.js";
+import { RESUME_ID_FILE, RESUME_SCRIPT, SYSTEM_TERMINAL, commandOk, herdrFallbackNote, launchTerminal, machineTerminalSettings, setupTerminal, shellQuote, type LaunchInput, type LaunchResult, type TerminalPath, type TerminalSettings } from "./terminal.js";
 import type { CodeWords } from "./words.js";
 import { errorMessage } from "@tomradex/contracts";
 
@@ -73,8 +73,8 @@ export class HerdrBridge {
   }
 
   /** One setup command in this machine's terminal, where the person watches it. */
-  async setup(command: string, dir: string): Promise<{ launched: boolean }> {
-    return setupTerminal(command, dir, (await this.terminalSettings()).terminal, this.ctx.get("herdr") ?? null);
+  async setup(command: string, dir: string, dirs?: TerminalPath): Promise<{ launched: boolean }> {
+    return setupTerminal(command, dir, (await this.terminalSettings()).terminal, this.ctx.get("herdr") ?? null, dirs);
   }
 
   /** What to tell the person after a launch went elsewhere, or herdr was started for it; null otherwise. */

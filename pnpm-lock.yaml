@@ -421,6 +421,9 @@ importers:
       '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/engine-kit':
         specifier: workspace:*
         version: link:../engine-kit
@@ -430,6 +433,9 @@ importers:
       cordis:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@types/node':
         specifier: ^26.2.0

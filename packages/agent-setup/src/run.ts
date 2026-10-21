@@ -165,8 +165,8 @@ export interface InstallDeps {
   engineId: string;
   installers: EngineInstaller[];
   host: SetupHost;
-  /** Fresh detection, no cached "missing": is the CLI found now, and which version — or which file was found that does not run. */
-  detect(): Promise<{ ready: boolean; version?: string; path?: string; error?: string }>;
+  /** Fresh detection, no cached "missing": is the CLI found now, and which version — or which file was found that does not run, and why in a kind. */
+  detect(): Promise<{ ready: boolean; version?: string; path?: string; error?: string; kind?: EngineSetupFailure["kind"] }>;
   report(progress: EngineSetupProgress): void;
   signal: AbortSignal;
   timeoutMs?: number;
@@ -176,6 +176,8 @@ export interface InstallDeps {
   stallMs?: number;
   /** Runs one installer command; tests swap it for a fake. */
   exec?: typeof runCommand;
+  /** How each installer runs; absent, the way `installerLaunch` says. */
+  resolve?: (installer: EngineInstaller, registry?: string) => ReturnType<typeof installerLaunch>;
 }
 
 /** Ten minutes: enough for npm's cold cache on a slow line, short enough that a hang is seen today. */
@@ -224,7 +226,7 @@ export async function runInstall(deps: InstallDeps): Promise<EngineSetupProgress
       if (running) at({ engineId: deps.engineId, step, phase: "running", ...tried, startedAt, ...(output ? { output: tail(output) } : {}), ...(stalled ? { stalled } : {}) });
     };
     show();
-    const resolved = await installerLaunch(installer, deps.host, deps.registry, prefix);
+    const resolved = await (deps.resolve ?? ((it, registry) => installerLaunch(it, deps.host, registry, prefix)))(installer, deps.registry);
     if ("failure" in resolved) {
       failed = { engineId: deps.engineId, step, phase: "failed", ...tried, failure: resolved.failure };
       continue;
@@ -279,7 +281,7 @@ export async function runInstall(deps: InstallDeps): Promise<EngineSetupProgress
     // The installer said done, but a fresh look does not find a working CLI: say that, not "missing".
     failed = {
       engineId: deps.engineId, step, phase: "failed", ...tried,
-      failure: { kind: "not-on-path", message: found.error ?? "installed, but the command is not on PATH", ...(found.path ? { path: found.path } : {}) },
+      failure: { kind: found.kind ?? "not-on-path", message: found.error ?? "installed, but the command is not on PATH", ...(found.path ? { path: found.path } : {}) },
       output: tail(result.output)
     };
   }
