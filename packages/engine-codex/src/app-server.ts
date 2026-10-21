@@ -1,9 +1,8 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import readline from "node:readline";
 import type { Context } from "cordis";
 import type { TurnIO, TurnInput, TurnResult, TurnMetrics } from "@tomradex/agent";
 import { codexMediaInput, describeFailure, publishNativeImage, withRecap } from "@tomradex/agent";
-import { bindTurn, localCli, runtimeDirectory, sessionSystem, spawnCli, stopCli, turnPrompt, type Runtime } from "@tomradex/engine-claude-code";
+import { bindTurn, lineSplitter, localCli, runtimeDirectory, sessionSystem, spawnCli, stopCli, turnPrompt, type Runtime } from "@tomradex/engine-claude-code";
 import { CodexOptions, codexModel } from "./engine.js";
 import { lostSession } from "./account.js";
 import { codexRetry, codexStep } from "./steps.js";
@@ -210,12 +209,11 @@ export class CodexRuntime implements Runtime {
           "-c", 'mcp_servers.tomrade.bearer_token_env_var="TOMRADE_MCP_TOKEN"',
           "-c", 'mcp_servers.tomrade.default_tools_approval_mode="approve"'],
         { cwd: this.cwd, env: { ...process.env, ...input.env, TOMRADE_MCP_TOKEN: this.token }, stdio: ["pipe", "pipe", "pipe"] }) as ChildProcessWithoutNullStreams;
-        const reader = readline.createInterface({ input: this.child.stdout });
-        reader.on("line", (line) => { try { this.receive(line); } catch (error) { this.fail(new Error(String(error))); this.close(); } });
+        this.child.stdout.on("data", lineSplitter((line) => { try { this.receive(line); } catch (error) { this.fail(new Error(String(error))); this.close(); } }));
         this.child.stderr.on("data", (chunk) => { this.stderr = (this.stderr + chunk.toString()).slice(-2000); });
         this.child.on("error", (error) => { this.fail(error); this.close(); });
         this.child.stdin.on("error", (error) => { this.fail(error); this.close(); });
-        this.child.on("close", (code) => { reader.close(); this.fail(new Error(`Codex exited with ${code}: ${this.stderr.slice(-400)}`)); this.alive = false; });
+        this.child.on("close", (code) => { this.fail(new Error(`Codex exited with ${code}: ${this.stderr.slice(-400)}`)); this.alive = false; });
         await this.request("initialize", { clientInfo: { name: "tomrade", version: "0.0.0" } });
         this.send({ method: "initialized", params: {} });
         // Read effective local/project policy even on resume: old Tomrade

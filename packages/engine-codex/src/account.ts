@@ -1,8 +1,7 @@
 import os from "node:os";
 import path from "node:path";
-import readline from "node:readline";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import { spawnCli, stopCli, type CliLaunch } from "@tomradex/engine-claude-code";
+import { lineSplitter, spawnCli, stopCli, type CliLaunch } from "@tomradex/engine-claude-code";
 
 /** Where Codex keeps its sign-in, settings and sessions — what a terminal with this environment would use. */
 export const codexHome = (env: NodeJS.ProcessEnv = process.env): string => env.CODEX_HOME || path.join(os.homedir(), ".codex");
@@ -32,14 +31,13 @@ export function readCodexAccount(launch: CliLaunch, env: NodeJS.ProcessEnv = pro
   }
   const pending = new Map<number, (msg: Json | null) => void>();
   let seq = 0;
-  const reader = readline.createInterface({ input: child.stdout });
-  reader.on("line", (line) => {
+  child.stdout.on("data", lineSplitter((line) => {
     let msg: Json;
     try { msg = JSON.parse(line); } catch { return; }
     if (msg.id === undefined || msg.method) return;
     pending.get(msg.id)?.(msg.error ? null : (msg.result ?? {}));
     pending.delete(msg.id);
-  });
+  }));
   const settleAll = () => { for (const done of pending.values()) done(null); pending.clear(); };
   child.on("error", settleAll);
   child.on("close", settleAll);
@@ -71,7 +69,6 @@ export function readCodexAccount(launch: CliLaunch, env: NodeJS.ProcessEnv = pro
   const timeout = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), timeoutMs); });
   return Promise.race([ask().catch(() => null), timeout]).finally(() => {
     clearTimeout(timer);
-    reader.close();
     settleAll();
     child.stdin.end();
     stopCli(child, "SIGTERM");

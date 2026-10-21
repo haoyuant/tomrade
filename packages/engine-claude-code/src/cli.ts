@@ -1,5 +1,4 @@
 import type { ChildProcess } from "node:child_process";
-import readline from "node:readline";
 import { StringDecoder } from "node:string_decoder";
 import { spawnCli, stopCli, type CliLaunch, type CliLocator } from "./locate.js";
 
@@ -49,8 +48,7 @@ export function runJsonl(launch: CliLaunch, args: string[], opts: { cwd: string;
   child.stderr?.on("data", (chunk: Buffer) => {
     stderr = (stderr + chunk.toString()).slice(-4000);
   });
-  const rl = readline.createInterface({ input: child.stdout! });
-  rl.on("line", (line) => {
+  child.stdout?.on("data", lineSplitter((line) => {
     const trimmed = line.trim();
     if (!trimmed.startsWith("{")) return;
     try {
@@ -58,7 +56,7 @@ export function runJsonl(launch: CliLaunch, args: string[], opts: { cwd: string;
     } catch {
       // partial or non-JSON noise between events
     }
-  });
+  }));
   const onAbort = () => {
     // Windows has no SIGINT to ask nicely with; kill() there ends only the top process, not the CLI's own children.
     if (process.platform === "win32") stopCli(child);
