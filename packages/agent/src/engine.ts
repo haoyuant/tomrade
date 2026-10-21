@@ -111,6 +111,8 @@ export interface EngineSetupFailure {
   kind: "network" | "registry" | "permission" | "disk-full" | "unsupported" | "not-found" | "not-on-path" | "timeout" | "exit" | "cancelled";
   /** The underlying words, English or the tool's own, for the details view. */
   message: string;
+  /** The file found after an install that did not run; `message` is what running it said. */
+  path?: string;
 }
 
 /** Where one engine's setup step stands; pushed as it moves. */
@@ -121,8 +123,14 @@ export interface EngineSetupProgress {
   phase: "running" | "checking" | "waiting" | "done" | "failed";
   /** Which installer is being tried ("script", "npm", "brew"). */
   installer?: string;
-  /** The last lines of output, shown on a failure. */
+  /** The last lines of output: the latest while an installer runs, its end on a failure. */
   output?: string;
+  /** When the installer being tried started, for the screen to count the time. */
+  startedAt?: number;
+  /** The installer printed nothing new for a while: it may be stuck. */
+  stalled?: boolean;
+  /** A registry npm can be retried with (`--registry`), offered when the default one looks unreachable or slow. */
+  mirror?: string;
   failure?: EngineSetupFailure;
   /** The version detection reported once the step was done; absent when the step was already satisfied. */
   version?: string;

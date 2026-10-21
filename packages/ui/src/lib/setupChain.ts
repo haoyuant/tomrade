@@ -116,8 +116,8 @@ export function useSetupChain(engine: EngineView, projectId?: string | null) {
   latest.current = engine;
 
   /** One agentSetup step to its end, the UI following along. */
-  const drive = async (step: "install" | "sign-in"): Promise<EngineSetupProgress> => {
-    let progress = await invoke("agentSetup.start", engineId, step);
+  const drive = async (step: "install" | "sign-in", registry?: string): Promise<EngineSetupProgress> => {
+    let progress = await invoke("agentSetup.start", engineId, step, step === "install" && registry ? { registry } : {});
     patch({ step, progress });
     while (progress.phase !== "done" && progress.phase !== "failed") {
       // A terminal sign-in is opened for the person once; the probe moves the step on by itself.
@@ -133,7 +133,7 @@ export function useSetupChain(engine: EngineView, projectId?: string | null) {
     return progress;
   };
 
-  const start = async () => {
+  const start = async (registry?: string) => {
     if (state.current?.running) return;
     cancelled.current = false;
     terminalOpened.current = false;
@@ -146,7 +146,7 @@ export function useSetupChain(engine: EngineView, projectId?: string | null) {
       // once — so the chain never waits on a fresh look of every engine here.
       const steps: ("install" | "sign-in")[] = needsInstall(view) || official ? ["install", "sign-in"] : needsSignIn(view) || !view.ok ? ["sign-in"] : [];
       for (const step of steps) {
-        const end = await drive(step);
+        const end = await drive(step, registry);
         patch({ outcomes: { ...state.current?.outcomes, [step]: { id: step, state: end.phase === "done" ? "done" : "failed", progress: end } } });
         if (end.phase !== "done") return patch({ running: false, failed: true });
       }
@@ -174,5 +174,18 @@ export function useSetupChain(engine: EngineView, projectId?: string | null) {
     void invoke("agentSetup.cancel", engineId);
   };
 
-  return { run, steps: chainSteps(engine, run), official: !run?.running && offersOfficial(engine, run?.tried ?? engine.tried), start: () => void start(), cancel, running: !!run?.running };
+  const current = useRef<Promise<void> | null>(null);
+  const begin = (registry?: string) => {
+    current.current = start(registry);
+  };
+  /** Starts over, stopping a run that is still going first; `registry` goes to npm for this install only. */
+  const retry = async (registry?: string) => {
+    if (state.current?.running) {
+      cancel();
+      await current.current;
+    }
+    begin(registry);
+  };
+
+  return { run, steps: chainSteps(engine, run), official: !run?.running && offersOfficial(engine, run?.tried ?? engine.tried), start: () => begin(), retry: (registry?: string) => void retry(registry), cancel, running: !!run?.running };
 }

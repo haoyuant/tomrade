@@ -3,8 +3,9 @@
  * setup screen opens and says what is wrong, instead of being skipped because
  * the agent was found. Once the agent lists its models and answers the test
  * message setup sends it (TOM-525), the screen says it is set, and a later
- * launch goes straight to the projects. A stand-in ACP agent fails to open a
- * session ("model not found") until a flag file says it works.
+ * launch goes straight to the projects — unless it stops working and the
+ * screen was only put away on another machine (TOM-528). A stand-in ACP agent
+ * fails to open a session ("model not found") until a flag file says it works.
  *
  *   pnpm build:backend && pnpm dev:ui   then
  *   pnpm --filter @tomrade/desktop test:first-run-agent
@@ -137,12 +138,30 @@ const run = async () => {
   await shot("first-run-agent-02-fixed");
 
   // ── working: a launch with nothing seen yet goes straight to the projects ──
-  check("the screen was never put away by hand", !(ctx.settings.get().onboarding?.seen ?? []).includes("setup-screen"));
+  check("the screen was never put away by hand", !(ctx.settings.get().onboarding?.seen ?? []).some((id) => id.startsWith("setup-screen")));
   await win.webContents.reload();
   check("with a working agent, the next launch skips the screen", (await wait(() => has(".proj-grid"), "home")) && !(await has('[data-testid="first-run-setup"]')));
   await sleep(1500);
   check("and it stays skipped", !(await has('[data-testid="first-run-setup"]')));
   await shot("first-run-agent-03-skipped");
+
+  // ── reinstalled, or signed in on another computer (TOM-528): the seen list came along, nothing works here ──
+  const current = ctx.settings.get();
+  ctx.settings.set({
+    ...current,
+    onboarding: { seen: ["setup-screen", "setup-screen:another-machine"] },
+    agent: { ...current.agent, engines: { ...current.agent?.engines, "fake-agent": { command: path.join(work, "bin", "gone") } } }
+  });
+  await ctx.agent.engineViews(true);
+  await win.webContents.reload();
+  check("put away elsewhere, a launch with nothing working here opens on the checks", await wait(() => has('[data-testid="first-run-setup"]'), "first-run setup"));
+  await shot("first-run-agent-04-elsewhere");
+  await $(`document.querySelector('[data-testid="setup-later"]').click()`);
+  check("put away here, it is remembered for this machine", await wait(async () => (ctx.settings.get().onboarding?.seen ?? []).includes(`setup-screen:${ctx.hub.deviceId}`), "seen here"));
+  await $(`location.hash = "#/"`);
+  await win.webContents.reload();
+  check("the next launch goes to the projects, with the checks still on show", (await wait(async () => (await has(".proj-grid")) && (await has('[data-testid="setup-card"]')), "home with setup card")) && !(await has('[data-testid="first-run-setup"]')));
+  await shot("first-run-agent-05-card");
   console.log(`screenshots in ${shots}`);
 };
 

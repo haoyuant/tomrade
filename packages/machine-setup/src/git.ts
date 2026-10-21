@@ -7,12 +7,19 @@ export interface MachineHost {
   platform: NodeJS.Platform;
   env: Record<string, string | undefined>;
   /** Runs a command to its end, capturing its output; resolves even when it fails. */
-  run(file: string, args: string[], timeoutMs: number): Promise<RunResult>;
+  run(file: string, args: string[], timeoutMs: number, options?: RunOptions): Promise<RunResult>;
   /** Whether this file exists and can be run. */
   executable(file: string): Promise<boolean>;
   /** Makes `dir` visible to every later spawn of this process. */
   adoptPath(dir: string): void;
   wait(ms: number): Promise<void>;
+}
+
+export interface RunOptions {
+  /** Aborting kills the command, and on Windows what it started where it may. */
+  signal?: AbortSignal;
+  /** Each piece of output as it comes. */
+  onOutput?(text: string): void;
 }
 
 export interface RunResult {
@@ -33,6 +40,8 @@ export interface GitInstallProgress {
   message?: string;
   /** The command's full output, for a details fold. */
   output?: string;
+  /** Running: the newest line the installer printed. */
+  line?: string;
 }
 
 export interface GitStatus {
@@ -79,16 +88,14 @@ export async function findExecutable(host: MachineHost, names: string[], extra: 
 
 const findGit = (host: MachineHost): Promise<{ file: string; onPath: boolean } | null> => findExecutable(host, exeNames(host.platform), knownDirs(host));
 
+// winget lives in WindowsApps, which a GUI-launched app's PATH can miss.
+const findWinget = async (host: MachineHost): Promise<string | undefined> =>
+  (await findExecutable(host, ["winget.exe"], host.env.LOCALAPPDATA ? [path.join(host.env.LOCALAPPDATA, "Microsoft", "WindowsApps")] : []))?.file;
+
 /** The one-click way to a git on this platform, when it has one. */
 export async function installerFor(host: MachineHost): Promise<GitInstallerKind | undefined> {
   if (host.platform === "darwin") return "xcode-select";
-  if (host.platform === "win32") {
-    // winget lives in WindowsApps, which a GUI-launched app's PATH can miss.
-    const dirs = [...pathDirs(host.env), host.env.LOCALAPPDATA && path.join(host.env.LOCALAPPDATA, "Microsoft", "WindowsApps")];
-    for (const dir of dirs) {
-      if (dir && (await host.executable(path.join(dir, "winget.exe")))) return "winget";
-    }
-  }
+  if (host.platform === "win32" && (await findWinget(host))) return "winget";
   return undefined;
 }
 
@@ -114,6 +121,20 @@ export async function probeGit(host: MachineHost, binary = "git"): Promise<GitSt
 
 const lastLine = (output: string): string => output.trim().split("\n").at(-1)?.trim() ?? "";
 
+// Colour codes, and the control characters winget's spinner draws with.
+const TERMINAL_NOISE = /\x1b\[[0-9;?]*[A-Za-z]|[\x00-\x08\x0b-\x1f\x7f]/g;
+
+/** The newest line worth showing: progress bars redraw over `\r`, and a lone spinner frame says nothing. */
+function newestLine(output: string): string | undefined {
+  return output
+    .split(/[\r\n]/)
+    .map((line) => line.replace(TERMINAL_NOISE, "").trim())
+    .filter((line) => /[\p{L}\p{N}]/u.test(line))
+    .at(-1);
+}
+
+const OUTPUT_KEEP = 4_000;
+
 export interface GitInstallDeps {
   host: MachineHost;
   probe(): Promise<GitStatus>;
@@ -137,7 +158,16 @@ export async function runGitInstall(kind: GitInstallerKind, deps: GitInstallDeps
   };
   report({ phase: "running" });
   if (kind === "winget") {
-    const run = await host.run("winget", ["install", "--id", "Git.Git", "-e", "--source", "winget", "--accept-package-agreements", "--accept-source-agreements"], deps.timeoutMs ?? 15 * 60_000);
+    let tail = "";
+    let shown: string | undefined;
+    const onOutput = (text: string) => {
+      tail = (tail + text).slice(-OUTPUT_KEEP);
+      const line = newestLine(tail);
+      if (line && line !== shown) report({ phase: "running", line: (shown = line) });
+    };
+    const winget = (await findWinget(host)) ?? "winget";
+    const args = ["install", "--id", "Git.Git", "-e", "--source", "winget", "--accept-package-agreements", "--accept-source-agreements"];
+    const run = await host.run(winget, args, deps.timeoutMs ?? 15 * 60_000, { signal, onOutput });
     if (signal.aborted) return report({ phase: "failed", kind: "cancelled" });
     const now = await probe();
     if (now.state === "ready") return report({ phase: "done" });
@@ -157,13 +187,11 @@ export async function runGitInstall(kind: GitInstallerKind, deps: GitInstallDeps
   return report({ phase: "failed", kind: "timeout" });
 }
 
-const OUTPUT_KEEP = 4_000;
-
 export function machineHost(): MachineHost {
   return {
     platform: process.platform,
     env: process.env,
-    run: (file, args, timeoutMs) =>
+    run: (file, args, timeoutMs, options) =>
       new Promise((resolve) => {
         let output = "";
         let child: ReturnType<typeof spawn>;
@@ -175,19 +203,34 @@ export function machineHost(): MachineHost {
           return resolve({ code: null, output: "", error: error instanceof Error ? error.message : String(error) });
         }
         const take = (text: Buffer) => {
-          output = (output + text.toString()).slice(-OUTPUT_KEEP);
+          const piece = text.toString();
+          output = (output + piece).slice(-OUTPUT_KEEP);
+          options?.onOutput?.(piece);
         };
         child.stdout?.on("data", take);
         child.stderr?.on("data", take);
-        const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
+        let stopped: string | undefined;
+        const stop = (why: string) => {
+          stopped ??= why;
+          // The whole tree: killing winget alone leaves the installer it started running.
+          if (process.platform !== "win32" || !child.pid) return void child.kill("SIGKILL");
+          spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" }).on("error", () => child.kill("SIGKILL"));
+        };
+        const signal = options?.signal;
+        const onAbort = () => stop("cancelled");
+        const timer = setTimeout(() => stop("stopped by SIGKILL"), timeoutMs);
         timer.unref();
-        child.on("error", (error) => {
+        if (signal?.aborted) onAbort();
+        else signal?.addEventListener("abort", onAbort, { once: true });
+        const settle = (result: RunResult) => {
           clearTimeout(timer);
-          resolve({ code: null, output, error: error.message });
-        });
+          signal?.removeEventListener("abort", onAbort);
+          resolve(result);
+        };
+        child.on("error", (error) => settle({ code: null, output, error: error.message }));
         child.on("close", (code, sig) => {
-          clearTimeout(timer);
-          resolve({ code, output, ...(sig ? { error: `stopped by ${sig}` } : {}) });
+          const error = stopped ?? (sig ? `stopped by ${sig}` : undefined);
+          settle({ code, output, ...(error ? { error } : {}) });
         });
       }),
     executable: async (file) => {

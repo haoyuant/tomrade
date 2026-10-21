@@ -677,6 +677,9 @@ importers:
       '@tomradex/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@tomradex/git':
         specifier: workspace:*
         version: link:../git

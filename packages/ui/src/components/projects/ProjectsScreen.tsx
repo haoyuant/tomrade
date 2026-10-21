@@ -14,8 +14,9 @@ import { errorSpec, useToast } from "~/lib/toast";
 import { useSeen, useSetupAsked } from "~/lib/onboarding";
 import { FirstRunSetup } from "~/components/setup/FirstRunSetup";
 import { useSetup } from "~/lib/setup";
-import { FIRST_RUN_CHECK_MS, firstRunSetup } from "~/lib/setupState";
+import { FIRST_RUN_CHECK_MS, firstRunSetup, setupSeenId } from "~/lib/setupState";
 import { useSettingsHost } from "~/lib/settingsHost";
+import { SetupCard } from "~/components/workspace/SetupCard";
 import { HubSetup } from "./HubSetup";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
@@ -121,8 +122,9 @@ function ProjectCard({
 }
 
 /**
- * The home grid, or what has to come first: the Hub folder, then — once, and
- * only while nothing can answer yet — connecting a model or a local agent.
+ * The home grid, or what has to come first: the Hub folder, then — once on
+ * each machine, and only while nothing can answer yet — connecting a model or
+ * a local agent.
  */
 export function ProjectsScreen() {
   const hub = useHubInfo();
@@ -132,6 +134,7 @@ export function ProjectsScreen() {
   // Held once raised, so connecting something shows what it unlocked instead of the screen vanishing.
   const [setup, setSetup] = useState<"open" | "closed" | null>(null);
   const [waited, setWaited] = useState(false);
+  const device = hub.data?.deviceId;
   const checking = setup === null && !!state?.checking;
   useEffect(() => {
     if (!checking) return;
@@ -139,10 +142,10 @@ export function ProjectsScreen() {
     return () => clearTimeout(timer);
   }, [checking]);
   useEffect(() => {
-    if (setup !== null || !state || !settings.data) return;
-    const decided = firstRunSetup(state, { seen: seen("setup-screen"), waited });
+    if (setup !== null || !state || !settings.data || !device) return;
+    const decided = firstRunSetup(state, { seen, device, waited });
     if (decided) setSetup(decided);
-  }, [setup, state, seen, settings.data, waited]);
+  }, [setup, state, seen, settings.data, device, waited]);
   // Onboarding run again, from Settings: the setup screen comes back even with something connected.
   const [asked, takeAsk] = useSetupAsked();
   useEffect(() => {
@@ -155,15 +158,16 @@ export function ProjectsScreen() {
     return (
       <FirstRunSetup
         onDone={() => {
-          markSeen("setup-screen");
+          if (device) markSeen(setupSeenId(device));
           setSetup("closed");
         }}
       />
     );
-  return <ProjectsHome />;
+  // Put away here before and still not working (a reinstall keeps this machine's id): the checks wait on the home.
+  return <ProjectsHome setupCard={setup === "closed" && !!state && !state.complete && !state.checking} />;
 }
 
-function ProjectsHome() {
+function ProjectsHome({ setupCard }: { setupCard: boolean }) {
   const navigate = useNavigate();
   const { t, locale } = useI18n();
   const qc = useQueryClient();
@@ -184,6 +188,7 @@ function ProjectsHome() {
   const mcp = useMcpUrl();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPane, setSettingsPane] = useState<string>();
+  const [settingsEngine, setSettingsEngine] = useState<string>();
   useSettingsHost((pane) => {
     setSettingsPane(pane);
     setSettingsOpen(true);
@@ -258,6 +263,16 @@ function ProjectsHome() {
               </p>
             </div>
           </div>
+
+          {setupCard && (
+            <SetupCard
+              onOpenSettings={(engine) => {
+                setSettingsPane("assistant");
+                setSettingsEngine(engine);
+                setSettingsOpen(true);
+              }}
+            />
+          )}
 
           {restores.data && <RestoreBanner summary={restores.data} />}
 
@@ -346,9 +361,13 @@ function ProjectsHome() {
       <SettingsDialog
         open={settingsOpen}
         pane={settingsPane}
+        engine={settingsEngine}
         onOpenChange={(open) => {
           setSettingsOpen(open);
-          if (!open) setSettingsPane(undefined);
+          if (!open) {
+            setSettingsPane(undefined);
+            setSettingsEngine(undefined);
+          }
         }}
       />
     </div>

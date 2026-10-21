@@ -2205,7 +2205,7 @@ html.overlay-open .titlebar .btn-primary {
 /* The one-click chain: the Set up button and the step list it runs through. */
 .setup-chain { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-2); }
 .setup-steps { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: var(--text-xs); line-height: var(--leading-dense); color: var(--fg-2); }
-.setup-steps li { display: grid; grid-template-columns: 14px 1fr; gap: 6px; align-items: start; }
+.setup-steps li { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 6px; align-items: start; }
 .setup-steps li > svg { margin-top: 1px; color: var(--meta); }
 .setup-steps li[data-state="done"] > svg { color: var(--success); }
 .setup-steps li[data-state="failed"] > svg { color: var(--warn); }
@@ -2213,6 +2213,8 @@ html.overlay-open .titlebar .btn-primary {
 .setup-steps li[data-state="pending"] { color: var(--meta); }
 .setup-step-dot { width: 6px; height: 6px; margin: 4px; border-radius: 50%; background: var(--border); }
 .setup-step-body { display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+.setup-live { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 0.95em; color: var(--meta); }
+.setup-retry { display: block; }
 .setup-manual { margin-top: var(--space-2); font-size: var(--text-xs); color: var(--fg-2); }
 .setup-manual > summary { cursor: pointer; color: var(--meta); }
 .setup-manual[open] > summary { margin-bottom: var(--space-2); }

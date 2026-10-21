@@ -15,7 +15,9 @@ import { linkGitHub } from "./oauth.js";
 import { BUNDLE_CATALOG, OFFICIAL_CATALOG_URL, OfficialCatalog, bundledPackage, isOfficialId } from "./official.js";
 import { githubAccess, prepareRelease, type GitHubAccess } from "./publish.js";
 import { latestInstallable, planUpdate, revoked, type Revocation, type Tier, type UpdatePlan, type VersionRow } from "./rules.js";
-import { bestEffort, type CommunityReader, errorMessage } from "@tomradex/contracts";
+import { causeChain, reach, skippedSocksProxy } from "./net.js";
+import { COMMUNITY_WORDS } from "./words.js";
+import { bestEffort, type Check, type CheckResult, type CommunityReader, contract, type DoctorChecks, errorMessage, localeOf } from "@tomradex/contracts";
 
 export const CommunityConfig = z.preprocess(
   (v) => v ?? {},
@@ -256,7 +258,8 @@ export class Community extends Service implements CommunityReader {
       ...config.officialCatalog,
       bundleFile: config.officialBundle && path.join(config.officialBundle.dir, BUNDLE_CATALOG),
       verify: (raw, digest) => this.plugins.extensions!.verify(raw, digest),
-      warn: (text) => this.home.logger.warn(text)
+      warn: (text) => this.home.logger.warn(text),
+      locale: () => localeOf(this.home)
     });
     this.officialSource = this.officialFrom(this.official);
     this.storeSource = this.store();
@@ -288,6 +291,10 @@ export class Community extends Service implements CommunityReader {
       ctx.ipc.handle("community.publish", (dir) => this.publish(dir));
       ctx.ipc.handle("community.published", () => this.published());
     });
+    this.home.inject(["doctor"], (ctx) => {
+      const doctor = contract(ctx, "doctor");
+      return doctor?.check(this.downloadsCheck(doctor));
+    });
     // A model added later can make a provider's starter due; it goes on then, not at the next check hours away.
     this.home.on("settings/changed", (next, previous) => {
       if (JSON.stringify(next.models) === JSON.stringify(previous.models) || !this.starters().some((s) => s.hosts && this.due(s))) return;
@@ -309,6 +316,29 @@ export class Community extends Service implements CommunityReader {
       clearTimeout(first);
       clearInterval(every);
       if (this.downloadDir) fs.rmSync(this.downloadDir, { recursive: true, force: true });
+    };
+  }
+
+  /** The troubleshooter's row about downloads: the official catalog's host, and the one it sends a download on to. */
+  private downloadsCheck(doctor: DoctorChecks): Check {
+    return {
+      id: "pluginDownloads",
+      title: () => COMMUNITY_WORDS(doctor.locale())("checkDownloads"),
+      run: async (_topic, signal): Promise<CheckResult> => {
+        const locale = doctor.locale();
+        const words = COMMUNITY_WORDS(locale);
+        const socks = skippedSocksProxy();
+        const facts = socks ? { facts: { systemProxy: socks } } : {};
+        try {
+          const { response, hosts } = await reach(this.config.officialCatalog.url, { signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]) }, locale);
+          await response.body?.cancel();
+          if (!response.ok) return { state: "warn", line: words("downloadsRefused", { host: hosts.at(-1)!, status: response.status }), ...facts };
+          const reached = hosts.join(" → ");
+          return { state: "ok", line: socks ? words("downloadsReachedDirect", { hosts: reached, socks: words("socksSkipped", { proxy: socks }) }) : words("downloadsReached", { hosts: reached }), ...facts };
+        } catch (error) {
+          return { state: "fail", line: errorMessage(error), evidence: causeChain((error as Error).cause ?? error), ...facts };
+        }
+      }
     };
   }
 
@@ -463,7 +493,7 @@ export class Community extends Service implements CommunityReader {
     const file = path.join(this.downloadDir, `${row.digest}${PACKAGE_EXT}`);
     if (fs.existsSync(file)) return file;
     if (source.name === "official" && (await this.fromBundle(row, file))) return file;
-    const res = await fetch(source.packageUrl(row), { signal: AbortSignal.timeout(120_000) });
+    const { response: res } = await reach(source.packageUrl(row), { signal: AbortSignal.timeout(120_000) }, localeOf(this.home));
     if (!res.ok) throw new Error(`the package could not be downloaded (${res.status})`);
     const bytes = Buffer.from(await res.arrayBuffer());
     if (bytes.length > LIMITS.packageBytes) throw new Error("the package is larger than a plugin may be");

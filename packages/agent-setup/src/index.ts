@@ -12,8 +12,8 @@ declare module "cordis" {
 
 declare module "@tomradex/ipc" {
   interface Channels {
-    /** Starts the step in the background (a no-op while it already runs) and answers with where it stands. */
-    "agentSetup.start": (engineId: string, step: EngineSetupStep) => EngineSetupProgress;
+    /** Starts the step in the background (a no-op while it already runs) and answers with where it stands; `registry` is passed to npm for that install only. */
+    "agentSetup.start": (engineId: string, step: EngineSetupStep, options?: SetupStartOptions) => EngineSetupProgress;
     "agentSetup.cancel": (engineId: string) => boolean;
     /** Where the engine's last-started step stands; null when none ran yet. */
     "agentSetup.state": (engineId: string) => EngineSetupProgress | null;
@@ -22,6 +22,10 @@ declare module "@tomradex/ipc" {
     /** Every move of a running setup step. */
     "agentSetup.event": (progress: EngineSetupProgress) => void;
   }
+}
+
+export interface SetupStartOptions {
+  registry?: string;
 }
 
 interface Running {
@@ -47,7 +51,7 @@ export class AgentSetup extends Service {
   constructor(ctx: Context) {
     super(ctx, "agentSetup");
     ctx.inject(["ipc"], (ctx) => {
-      ctx.ipc.handle("agentSetup.start", (engineId, step) => ctx.agentSetup.start(engineId, step));
+      ctx.ipc.handle("agentSetup.start", (engineId, step, options) => ctx.agentSetup.start(engineId, step, options));
       ctx.ipc.handle("agentSetup.cancel", (engineId) => ctx.agentSetup.cancel(engineId));
       ctx.ipc.handle("agentSetup.state", (engineId) => ctx.agentSetup.state(engineId));
     });
@@ -64,7 +68,7 @@ export class AgentSetup extends Service {
     return true;
   }
 
-  start(engineId: string, step: EngineSetupStep): EngineSetupProgress {
+  start(engineId: string, step: EngineSetupStep, options: SetupStartOptions = {}): EngineSetupProgress {
     const held = this.runs.get(engineId);
     if (held?.abort && held.progress.step === step) return held.progress;
     if (held?.abort) throw new Error(`${engineId} is still busy with its ${held.progress.step} step — cancel it first`);
@@ -77,7 +81,7 @@ export class AgentSetup extends Service {
       run.progress = progress;
       this.ctx.get("ipc")?.send("agentSetup.event", progress);
     };
-    const task = step === "install" ? this.install(engine, report, abort.signal) : this.signIn(engine, report, abort.signal);
+    const task = step === "install" ? this.install(engine, report, abort.signal, options.registry) : this.signIn(engine, report, abort.signal);
     task
       .catch((error: unknown) => {
         report({ engineId, step, phase: "failed", failure: { kind: "exit", message: error instanceof Error ? error.message : String(error) } });
@@ -88,7 +92,7 @@ export class AgentSetup extends Service {
     return run.progress;
   }
 
-  private async install(engine: Engine, report: (p: EngineSetupProgress) => void, signal: AbortSignal): Promise<void> {
+  private async install(engine: Engine, report: (p: EngineSetupProgress) => void, signal: AbortSignal, registry?: string): Promise<void> {
     await runInstall({
       engineId: engine.id,
       installers: engine.local?.setup?.installers ?? [],
@@ -97,10 +101,16 @@ export class AgentSetup extends Service {
         const state = await engine.available({ fresh: true });
         const cli = state.cli;
         // A desktop app's own copy does not count: installing puts the official CLI ahead of it.
-        return { ready: cli?.state === "ready" && !cli.insideApp, ...(cli?.version ? { version: cli.version } : {}), ...(cli?.error ?? state.reason ? { error: cli?.error ?? state.reason } : {}) };
+        return {
+          ready: cli?.state === "ready" && !cli.insideApp,
+          ...(cli?.version ? { version: cli.version } : {}),
+          ...(cli?.state === "broken" && cli.path ? { path: cli.path } : {}),
+          ...(cli?.error ?? state.reason ? { error: cli?.error ?? state.reason } : {})
+        };
       },
       report,
-      signal
+      signal,
+      ...(registry ? { registry } : {})
     });
   }
 

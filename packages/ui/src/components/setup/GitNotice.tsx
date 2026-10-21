@@ -34,6 +34,17 @@ export function GitNotice() {
               </button>
             </span>
           )}
+          {/* winget's installer asks for administrator approval, and its prompt can wait unseen in the taskbar. */}
+          {busy && status.installer === "winget" && (
+            <span className="setup-fix" data-testid="git-install-admin">
+              {t("setup.gitAdminPrompt")}
+            </span>
+          )}
+          {busy && progress?.line && (
+            <span className="setup-fix" data-testid="git-install-line">
+              <code>{progress.line}</code>
+            </span>
+          )}
           {progress?.phase === "failed" && progress.kind !== "cancelled" && (
             <span className="setup-fix" role="alert" data-testid="git-install-failed">
               {progress.kind === "timeout" ? t("setup.gitInstallTimeout") : t("setup.gitInstallFailed", { error: progress.message ?? "" })}
