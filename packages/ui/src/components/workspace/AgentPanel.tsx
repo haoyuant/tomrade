@@ -19,7 +19,7 @@ import { useSetupInTerminal } from "~/lib/setup";
 import { openSettingsPane } from "~/lib/settingsHost";
 import { readableError, useErrorToast, useToast } from "~/lib/toast";
 import { ReportDialog } from "~/components/dialogs/ReportDialog";
-import { isCommitKey, isComposing } from "~/lib/keys";
+import { isCancelKey, isCommitKey, isComposing } from "~/lib/keys";
 import { ImGroupShare, QueuedRow, WorkingLine, type Queued } from "./agent-panel/blocks";
 import { GUIDE, GuideList, slashCommand, SlashMenu, STARTERS, type SlashCommand, type SlashContext, type Starter } from "./agent-panel/commands";
 import { Composer } from "./agent-panel/Composer";
@@ -583,7 +583,7 @@ export function AgentPanel({
                 return;
               }
               if (e.key === "Tab") { e.preventDefault(); setDraft(`/${slashPick.name}`); return; }
-              if (e.key === "Escape") { e.preventDefault(); slash.setClosed(true); return; }
+              if (isCancelKey(e)) { e.preventDefault(); slash.setClosed(true); return; }
               if (isCommitKey(e) && !e.shiftKey) { e.preventDefault(); runSlash(slashPick); return; }
             }
             if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey && history.recall(e.currentTarget, e.key === "ArrowUp" ? -1 : 1)) {
@@ -591,7 +591,7 @@ export function AgentPanel({
               return;
             }
             // Esc stops the turn like the Stop button; what is queued stays, held
-            if (e.key === "Escape" && runningRun) { e.preventDefault(); cancel.mutate(runningRun.id); return; }
+            if (isCancelKey(e) && runningRun) { e.preventDefault(); cancel.mutate(runningRun.id); return; }
             if (!isCommitKey(e) || e.shiftKey) return;
             e.preventDefault();
             const command = slashCommand(draft);

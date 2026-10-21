@@ -29,3 +29,8 @@ export function isComposing(e: KeyEventLike): boolean {
 export function isCommitKey(e: KeyEventLike): boolean {
   return e.key === "Enter" && !isComposing(e);
 }
+
+/** Escape that cancels an edit or closes a layer — never the Escape that dismisses an IME candidate list. */
+export function isCancelKey(e: KeyEventLike): boolean {
+  return e.key === "Escape" && !isComposing(e);
+}

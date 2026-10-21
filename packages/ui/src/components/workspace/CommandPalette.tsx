@@ -18,6 +18,7 @@ import { errorSpec, useToast } from "~/lib/toast";
 import { useSelectedId, useWorkspace, viewCount } from "./context";
 import { useOptionalAgentDock } from "~/components/chrome/ProjectShell";
 import { keyLabel } from "~/lib/keybindings";
+import { isComposing } from "~/lib/keys";
 import { openSettingsPane } from "~/lib/settingsHost";
 
 export interface PaletteActions {
@@ -145,7 +146,12 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="scrim" />
-        <RadixDialog.Content className="palette" aria-label={t("commandPalette.ariaLabel")}>
+        <RadixDialog.Content
+          className="palette"
+          aria-label={t("commandPalette.ariaLabel")}
+          // that Escape dismisses an IME candidate list, not the palette
+          onEscapeKeyDown={(e) => { if (isComposing(e)) e.preventDefault(); }}
+        >
           <RadixDialog.Title className="sr-only">{t("commandPalette.title")}</RadixDialog.Title>
           <Command loop>
             <Command.Input

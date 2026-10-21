@@ -12,7 +12,7 @@ import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace, viewCount } from "./context";
 import { useToastUndo } from "~/lib/undo";
 import { keyLabel } from "~/lib/keybindings";
-import { isCommitKey } from "~/lib/keys";
+import { isCancelKey, isCommitKey } from "~/lib/keys";
 
 /**
  * Home *leaves* the project, the switcher *rebinds* it in place — two jobs, so
@@ -155,7 +155,7 @@ function ViewName({ editRequest }: { editRequest: number }) {
         defaultValue={view.name}
         onFocus={(e) => e.currentTarget.select()}
         onKeyDown={(e) => {
-          if (e.key === "Escape") {
+          if (isCancelKey(e)) {
             e.stopPropagation();
             discarded.current = true;
             e.currentTarget.blur();

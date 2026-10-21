@@ -29,6 +29,7 @@ import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace } from "./context";
 import { useOptionalAgentDock } from "~/components/chrome/ProjectShell";
 import { keyLabel } from "~/lib/keybindings";
+import { isComposing } from "~/lib/keys";
 
 /** Title and body are the only fields a lock covers; status stays agent-writable. */
 function LockBar() {
@@ -277,9 +278,10 @@ export function DetailPane({
           <RadixDialog.Content
             className="detail expanded"
             aria-label={`${item.key} — ${item.title}`}
-            // the body editor takes Escape as "discard my edit", not "close the overlay"
+            // the body editor takes Escape as "discard my edit", not "close the overlay";
+            // an IME takes it to dismiss its candidate list
             onEscapeKeyDown={(e) => {
-              if ((e.target as Element | null)?.closest?.(".body-editor")) e.preventDefault();
+              if (isComposing(e) || (e.target as Element | null)?.closest?.(".body-editor")) e.preventDefault();
             }}
           >
             <RadixDialog.Title className="sr-only">{item.title}</RadixDialog.Title>

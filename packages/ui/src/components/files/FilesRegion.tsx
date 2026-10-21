@@ -39,7 +39,7 @@ import { FileViewer } from "./FileViewer";
 import { FolderView } from "./FolderView";
 import { stateOf } from "./state";
 import { useNoteActions } from "./useNoteActions";
-import { isCommitKey } from "~/lib/keys";
+import { isCancelKey, isCommitKey } from "~/lib/keys";
 
 /** One line under the head that takes a name: a rename, or a new folder. */
 function NamePrompt({ initial = "", ariaLabel, placeholder, busy, onCommit, onCancel }: { initial?: string; ariaLabel: string; placeholder?: string; busy: boolean; onCommit: (name: string) => void; onCancel: () => void }) {
@@ -62,7 +62,7 @@ function NamePrompt({ initial = "", ariaLabel, placeholder, busy, onCommit, onCa
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
           if (isCommitKey(e)) commit();
-          if (e.key === "Escape") {
+          if (isCancelKey(e)) {
             e.stopPropagation();
             onCancel();
           }
@@ -349,7 +349,7 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
                       if (name) rename(name);
                       else setRenaming(false);
                     }
-                    if (e.key === "Escape") setRenaming(false);
+                    if (isCancelKey(e)) setRenaming(false);
                   }}
                   onBlur={(e) => {
                     const name = e.target.value.trim();

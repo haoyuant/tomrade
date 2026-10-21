@@ -20,7 +20,7 @@ import { cn } from "~/lib/utils";
 import type { FieldProps } from "./fields";
 import { ImagePreview, type PreviewImage } from "./ImagePreview";
 import { hits } from "~/lib/keybindings";
-import { isCommitKey, isComposing } from "~/lib/keys";
+import { isCancelKey, isCommitKey, isComposing } from "~/lib/keys";
 import { keys } from "~/lib/queries";
 
 /** The Files store's binary read limit: anything larger could be saved but never shown again. */
@@ -469,7 +469,7 @@ function BodyEditor({ item, write, className, onDone }: FieldProps & { className
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (isComposing(e)) return;
-    if (e.key === "Escape") {
+    if (isCancelKey(e)) {
       e.preventDefault();
       e.stopPropagation();
       // an edit is not thrown away by one stray key: the first Escape asks, the second discards

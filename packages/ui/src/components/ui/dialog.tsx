@@ -2,6 +2,7 @@ import * as RadixDialog from "@radix-ui/react-dialog";
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Icon } from "~/components/icons";
 import { useI18n } from "~/lib/i18n";
+import { isComposing } from "~/lib/keys";
 import { cn } from "~/lib/utils";
 
 /**
@@ -49,7 +50,12 @@ export function Dialog({
             sheet on the workspace row and caps its height. Forgetting it left
             dialogs sitting at the command palette's 96px top anchor. A
             `className` here only ever picks a width. */}
-        <RadixDialog.Content className={cn("palette modal", movable && "is-movable", className)} aria-label={label}>
+        <RadixDialog.Content
+          className={cn("palette modal", movable && "is-movable", className)}
+          aria-label={label}
+          // that Escape dismisses an IME candidate list, not the sheet
+          onEscapeKeyDown={(e) => { if (isComposing(e)) e.preventDefault(); }}
+        >
           <RadixDialog.Title className="sr-only">{label}</RadixDialog.Title>
           <Movable.Provider value={!!movable}>{children}</Movable.Provider>
           {resizable && <ResizeGrip storageKey={resizable} />}
