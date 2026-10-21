@@ -8,7 +8,7 @@
  *
  *   pnpm --filter @tomradex/ui build && pnpm --filter @tomrade/desktop test:code-sessions
  */
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, clipboard } from "electron";
 import { spawn, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -275,6 +275,51 @@ app.whenReady().then(async () => {
     }, 5000);
     check("把滑块拖到顶：pane 滚到最早的输出", draggedTop, JSON.stringify({ bar: await bar(), scroll: paneScroll() }));
     fs.writeFileSync(path.join(shots, "code-sessions-scrollbar.png"), (await win.webContents.capturePage()).toPNG());
+
+    // A selection moves with the text when the pane scrolls, and a copy still takes it once it is out of view.
+    const screen = await js(`(() => {
+      const r = ${wideCell}.querySelector('.xterm-screen').getBoundingClientRect();
+      const rows = ${wideCell}.querySelectorAll('.xterm-rows > div').length;
+      return { left: Math.round(r.left), right: Math.round(r.right), top: r.top, row: r.height / rows };
+    })()`);
+    const selectionTop = () => js(`(() => { const s = ${wideCell}.querySelector('.xterm-selection div'); return s ? s.getBoundingClientRect().top : null; })()`);
+    const copied = async () => {
+      clipboard.clear();
+      win.webContents.copy();
+      await sleep(200);
+      return clipboard.readText();
+    };
+    {
+      const wc = win.webContents;
+      const y = (row) => Math.round(screen.top + (row + 0.5) * screen.row);
+      wc.sendInputEvent({ type: "mouseMove", x: screen.left + 2, y: y(10) });
+      wc.sendInputEvent({ type: "mouseDown", x: screen.left + 2, y: y(10), button: "left", clickCount: 1 });
+      for (let row = 10; row <= 12; row++) {
+        wc.sendInputEvent({ type: "mouseMove", x: screen.right - 2, y: y(row), modifiers: ["leftButtonDown"] });
+        await sleep(30);
+      }
+      wc.sendInputEvent({ type: "mouseUp", x: screen.right - 2, y: y(12), button: "left", clickCount: 1 });
+    }
+    await sleep(300);
+    const picked = await copied();
+    const pickedAt = await selectionTop();
+    const offsetBefore = paneScroll().offset_from_bottom;
+    // One notch (deltaY 120) scrolls six rows.
+    await js(`${wideCell}.querySelector('.xterm-screen').dispatchEvent(new WheelEvent('wheel', { deltaY: 120, bubbles: true, cancelable: true }))`);
+    const stepped = await wait(() => paneScroll().offset_from_bottom === offsetBefore - 6, 3000);
+    // xterm draws no selection while the window is hidden; then the copy alone tells where the selection is.
+    if (pickedAt === null) console.log("INFO: the selection was not drawn (the window is hidden); checking it by what a copy takes");
+    const moved = async () => {
+      const at = await selectionTop();
+      return pickedAt === null || (at !== null && Math.abs(at - (pickedAt - 6 * screen.row)) < 2);
+    };
+    const stayed = await wait(async () => (await moved()) && (await copied()) === picked, 3000);
+    check("滚轮一格滚六行", stepped, JSON.stringify({ before: offsetBefore, now: paneScroll() }));
+    check("选中文本后滚动，选区跟着文本走，复制的还是原来那几行", picked.split("\n").length === 3 && stayed, JSON.stringify({ picked, copied: await copied(), pickedAt, now: await selectionTop(), row: screen.row }));
+    await js(`${wideCell}.querySelector('.xterm-screen').dispatchEvent(new WheelEvent('wheel', { deltaY: 240, bubbles: true, cancelable: true }))`);
+    await wait(() => paneScroll().offset_from_bottom === offsetBefore - 18, 3000);
+    const outOfView = await wait(async () => (await selectionTop()) === null && (await copied()) === picked, 3000);
+    check("选区滚出视野后不再画在屏幕上，复制仍拿到整段", outOfView, JSON.stringify({ copied: await copied(), now: await selectionTop(), scroll: paneScroll() }));
     await ctx.herdr.scrollTo(sessions[2].pane, 0);
 
     // Focus that enters a pane without a click (Tab, a file drop, a script) selects it: the border marks where typing goes.
