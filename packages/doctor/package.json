@@ -24,7 +24,6 @@
     "@tomradex/domain": "workspace:*",
     "@tomradex/ipc": "workspace:*",
     "@tomradex/llm": "workspace:*",
-    "@tomradex/mcp": "workspace:*",
     "@tomradex/projects": "workspace:*",
     "@tomradex/settings": "workspace:*",
     "@tomradex/tools": "workspace:*",

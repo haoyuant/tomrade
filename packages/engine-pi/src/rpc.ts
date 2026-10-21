@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
 import { attachedMedia, deferredTools, kitLines, stepHint, stepSummary, withRecap, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
+import { bestEffort } from "@tomradex/contracts";
 import { engineLocale, JsonLinePeer, KIT_WORDS, localCli, runtimeDirectory, runTurn, sessionSystem, spawnCli, stopCli, turnPrompt, type CliLaunch, type RpcDialect, type Runtime } from "@tomradex/engine-kit";
 import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/tools";
@@ -41,7 +42,7 @@ export interface PiLaunch {
 }
 
 /** The person's own pi, found like any local CLI, with the model and effort the thread picked. */
-export async function ownPi(input: TurnInput): Promise<PiLaunch> {
+async function ownPi(input: TurnInput): Promise<PiLaunch> {
   const options = PiOptions.parse(input.options ?? {});
   return {
     launch: await localCli("pi").launch(options.command),
@@ -50,7 +51,7 @@ export async function ownPi(input: TurnInput): Promise<PiLaunch> {
 }
 
 /** Whether a session holds reasoning written by another model than the one pi now runs, which pi sends on as plain text. */
-export function reasonedElsewhere(messages: Json[], model: Json | undefined): boolean {
+function reasonedElsewhere(messages: Json[], model: Json | undefined): boolean {
   if (!model) return false;
   return messages.some((m) => m.role === "assistant"
     && (m.provider !== model.provider || m.model !== model.id || (!!m.api && !!model.api && m.api !== model.api))
@@ -270,7 +271,7 @@ export class PiRuntime implements Runtime {
       turn.onAbort(() => {
         if (!prompted) { this.close(); return; }
         // pi carries on with queued messages after an abort; the ones it has not read go back to the person
-        const cleared = forwarded.length ? this.request("clear_queue").catch(() => ({})) : Promise.resolve({});
+        const cleared = forwarded.length ? bestEffort(this.request("clear_queue"), this.ctx.logger("engine-pi"), "clearing pi's queue before the abort") : Promise.resolve();
         void cleared.then(() => this.request("abort")).catch(() => this.close());
         abortTimer ??= setTimeout(() => this.close(), 5000).unref();
       });

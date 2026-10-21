@@ -1,5 +1,6 @@
 import os from "node:os";
 import { Context, Service } from "cordis";
+import { errorMessage } from "@tomradex/contracts";
 import type { Engine, EngineMcpLink, EngineSetup, McpLinkView } from "@tomradex/agent";
 import {
   chosenCommand,
@@ -92,11 +93,10 @@ function cliHandle(ctx: Context, engineId: string, locator: CliLocator): LocalCl
   };
 }
 
-const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /** The plugin's link, answered as the app's are: a throw becomes the view's error. */
 function pluginLink(ctx: Context, link: Extract<NonNullable<Spec["mcpLink"]>, { status: unknown }>, io: () => LocalAgentIo<LocalAgentOptions>): EngineMcpLink {
-  const failed = (error: unknown): McpLinkView => ({ state: "unavailable", url: ctx.mcp.url, configuredUrl: null, file: null, manual: { connect: "", disconnect: "" }, error: message(error) });
+  const failed = (error: unknown): McpLinkView => ({ state: "unavailable", url: ctx.mcp.url, configuredUrl: null, file: null, manual: { connect: "", disconnect: "" }, error: errorMessage(error) });
   const ask = async (step: (io: LocalAgentIo<LocalAgentOptions>) => McpLinkState | Promise<McpLinkState>): Promise<McpLinkView> => {
     try {
       return { ...(await step(io())) };
@@ -178,7 +178,7 @@ function terminalEngine(ctx: Context, spec: Written, locator: CliLocator): Engin
 }
 
 /** An installer script as the command the app runs for the person; the plugin names only its address. */
-export const installCommand = (step: string | LocalAgentInstaller): string =>
+const installCommand = (step: string | LocalAgentInstaller): string =>
   typeof step === "string" ? step : "script" in step ? `curl -fsSL ${step.script} | bash` : `irm ${step.powershell} | iex`;
 
 /** The spec with its setup written out as commands, and `{install}` in the not-found words as the first of them. */

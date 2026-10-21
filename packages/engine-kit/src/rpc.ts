@@ -1,4 +1,5 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { errorMessage } from "@tomradex/contracts";
 import { lineSplitter } from "./cli.js";
 import { KIT_WORDS } from "./words.js";
 
@@ -70,7 +71,6 @@ export interface PeerOptions {
   locale?: string;
 }
 
-const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 const asError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
 /**
@@ -170,7 +170,7 @@ export class JsonLinePeer {
         (result) => { if (this.open) this.write(dialect.reply(id, result)); },
         (error) => {
           if (!this.open) return;
-          if (dialect.refuse && (error instanceof RpcError || this.opts.handlerFailure !== "close")) this.write(dialect.refuse(id, error instanceof RpcError ? error.code ?? -32603 : -32603, messageOf(error)));
+          if (dialect.refuse && (error instanceof RpcError || this.opts.handlerFailure !== "close")) this.write(dialect.refuse(id, error instanceof RpcError ? error.code ?? -32603 : -32603, errorMessage(error)));
           else this.close(asError(error));
         }
       );

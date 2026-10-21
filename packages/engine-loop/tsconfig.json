@@ -12,6 +12,9 @@
       "path": "../agent"
     },
     {
+      "path": "../contracts"
+    },
+    {
       "path": "../domain"
     },
     {

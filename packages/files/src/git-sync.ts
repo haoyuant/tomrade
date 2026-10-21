@@ -12,7 +12,7 @@ export interface VersionRecord {
   path: string;
 }
 
-export interface SyncConflict {
+interface SyncConflict {
   ours: string | null;
   theirs: string | null;
   base: string | null;
@@ -66,8 +66,8 @@ export const DEFAULT_SYNC_POLICY: FilesSyncPolicy = { default: "shared", rules: 
 /** Files are a knowledge source by default; the person takes individual paths back out of the index. */
 export const DEFAULT_AGENT_POLICY: FilesAgentPolicy = { default: "listed", rules: [] };
 
-export const SYNC_MODES: SyncMode[] = ["shared", "local"];
-export const LIST_MODES: ListMode[] = ["listed", "unlisted"];
+const SYNC_MODES: SyncMode[] = ["shared", "local"];
+const LIST_MODES: ListMode[] = ["listed", "unlisted"];
 
 /**
  * What `policy.json` holds, locally and on the remote. Version 1 was the sync

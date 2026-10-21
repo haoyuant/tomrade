@@ -137,11 +137,9 @@
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",
     "@types/node": "^26.2.0",
-    "concurrently": "^9.1.0",
     "cross-env": "^7.0.3",
     "electron": "^43.4.0",
     "electron-builder": "^26.15.3",
-    "typescript": "^6.0.0",
-    "wait-on": "^8.0.1"
+    "typescript": "^6.0.0"
   }
 }

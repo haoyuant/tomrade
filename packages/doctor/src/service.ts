@@ -7,6 +7,7 @@ import { z } from "zod";
 import type { CardAction, ChecklistCard, Engine, FindingCard, ThreadSummary, TurnInput, TurnIO, TurnResult } from "@tomradex/agent";
 import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/ipc";
+import type {} from "@tomradex/llm";
 import type {} from "@tomradex/projects";
 import type {} from "@tomradex/settings";
 import { BUNDLED, KnownIssue, before, matches, said, type Evidence } from "./issues.js";
@@ -652,7 +653,7 @@ export class Doctor extends Service implements DoctorChecks {
         applies: (topic) => !topic.engineId || !usesModels(topic),
         async run() {
           const words = doctor.words();
-          const url = doctor.ctx.get("mcp")?.url;
+          const url = contract(doctor.ctx, "mcp")?.url;
           return url ? { state: "ok", line: words("mcpOn", { url }) } : { state: "fail", line: words("mcpOff") };
         }
       },

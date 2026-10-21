@@ -323,5 +323,3 @@ export class McpClient extends Service {
     void connection?.close();
   }
 }
-
-export default McpClient;

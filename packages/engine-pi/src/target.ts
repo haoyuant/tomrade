@@ -51,7 +51,7 @@ function hostOf(profile: ModelProfile): string {
   }
 }
 
-export const customProvider = (profile: ModelProfile): string => `tomrade-${profile.id.replace(/[^A-Za-z0-9_-]/g, "-")}`;
+const customProvider = (profile: ModelProfile): string => `tomrade-${profile.id.replace(/[^A-Za-z0-9_-]/g, "-")}`;
 const keyVariable = (profile: ModelProfile): string => `TOMRADE_KEY_${profile.id.replace(/[^A-Za-z0-9]/g, "_").toUpperCase()}`;
 
 /**

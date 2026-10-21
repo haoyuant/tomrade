@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
 import type { EngineMcpLink } from "@tomradex/agent";
+import { readJsonOr } from "@tomradex/contracts";
 import { MCP_NAME, userMcpLink, type CliLocator } from "@tomradex/engine-kit";
 
 const defaultConfigDir = (home = os.homedir()) => path.join(home, ".claude");
@@ -41,9 +42,9 @@ export function claudeConfigDirs(env: NodeJS.ProcessEnv = process.env, home = os
   return [...new Set([own, ...usedDefault, ...[...seen].map((dir) => path.resolve(dir)), ...beside])];
 }
 
+/** The file's top-level object, {} when it is missing or holds something else; one that does not parse throws. */
 function readJson(file: string): Record<string, unknown> {
-  if (!fs.existsSync(file)) return {};
-  const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
+  const parsed = readJsonOr<unknown>(file, {}, { missingOnly: true });
   return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
 }
 

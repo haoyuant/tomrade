@@ -59,7 +59,7 @@ packages/code-sessions —                the Terminal window: herdr terminals a
 packages/files        ctx.files        the project's files beside its backlog: a versioned folder tree, backends, sync and conflicts, the versions tickets pin
 packages/files-github —                GitHub as where a project's files are shared
 packages/notes        ctx.notes        the files read as notes: wiki links, backlinks, tags, ranked full-text search, links kept on rename
-packages/schedules    —                routines: tickets from a template or a prompt to the assistant, on a cadence
+packages/schedules    ctx.schedules    routines: tickets from a template or a prompt to the assistant, on a cadence
 packages/agent        ctx.agent        the platform: threads, runs, ledger, cards, workflows, run undo, registries
 packages/engine-loop  —                the hybrid conversational conductor
 packages/shell        —                a bash tool for in-process engines, asked before each command, never served over MCP
@@ -68,21 +68,21 @@ packages/web-search-tavily —           Tavily as that provider, with the perso
 packages/engine-scripted —             the no-model conductor: runs registered workflows from a menu
 packages/engine-kit —                  what every local-agent engine shares: CLI locating and spawning, JSON lines, runtime pool, prompts, MCP link
 packages/engine-claude-code —          Claude Code as conductor (headless, MCP run bindings); engine-codex and engine-pi likewise
-packages/engine-acp —                  one conductor for agents that speak ACP, and ctx.localAgents for the agents official plugins describe (tomrade-plugins)
+packages/engine-acp ctx.localAgents   one conductor for agents that speak ACP, and the registry of the agents official plugins describe (tomrade-plugins)
 packages/archify      —                Archify diagrams (architecture, workflow, sequence, data flow, lifecycle) as tools
-packages/doctor       —                the troubleshooter: checks what failed, says what to do, sends a report the person has read
+packages/doctor       ctx.doctor       the troubleshooter: checks what failed, says what to do, sends a report the person has read
 packages/agent-backlog —               the backlog method: playbooks, dossier, find_similar, plan_and_apply, dedup policy
 packages/mcp          ctx.mcp          projects ctx.tools onto MCP (127.0.0.1)
 packages/mcp-client   ctx.mcpClient    external MCP servers (stdio or HTTP) whose tools join ctx.tools
-packages/im           —                IM transports over the agent: bindings, authorized inputs, reliable replies (adapters are plugins)
-packages/inbox        —                a project's inbox: feedback waits here until triaged into tickets
+packages/im           ctx.im           IM transports over the agent: bindings, authorized inputs, reliable replies (adapters are plugins)
+packages/inbox        ctx.inbox        a project's inbox: feedback waits here until triaged into tickets
 packages/inbox-github —                GitHub issues as an inbox source; inbox-tomrade (in-app feedback) and inbox-triage (the worker model's proposal) beside it
 packages/ipc          ctx.ipc          the typed channel contract; the shell supplies the Electron transport
 packages/contributions ctx.contributions  declarative UI contributions
 packages/desktop-surface —                host contract for plugin-owned auxiliary windows; alerts (notifications, sounds) beside it
 packages/pet          ctx.pet          the task-state companion, in the panel or on the desktop
 packages/keybindings  —                the person's rebound shortcuts
-packages/onboarding   —                the first run's tour project and seen-hints; announcements (shown once per machine) beside it
+packages/onboarding   ctx.onboarding   the first run's tour project and seen-hints; announcements (shown once per machine) beside it
 packages/plugins      ctx.plugins      loads the composition, and manages it: state per row, modules, the guard on switching one off, installed extensions
 packages/plugin-sdk   the extension contract: definePlugin, the async PluginContext, the manifest
 packages/extensions   the host side of the contract: namespaces, attribution, callbacks held to time limits

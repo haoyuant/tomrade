@@ -5,6 +5,7 @@ import path from "node:path";
 import type { Context } from "cordis";
 import type { EngineMcpLink, McpLinkView } from "@tomradex/agent";
 import type { ConnectFileWriter } from "@tomradex/code-link";
+import { errorMessage } from "@tomradex/contracts";
 import type {} from "@tomradex/mcp";
 
 /** pi's config folder: PI_CODING_AGENT_DIR, else `~/.pi/agent`. */
@@ -102,7 +103,7 @@ export function piMcpLink(ctx: Context): EngineMcpLink {
     try {
       configuredUrl = fs.existsSync(file) ? outsideExtensionUrl(fs.readFileSync(file, "utf8")) : null;
     } catch (cause) {
-      return { state: "unavailable", url, configuredUrl, file, manual, error: error ?? `Cannot read ${file}: ${cause instanceof Error ? cause.message : String(cause)}` };
+      return { state: "unavailable", url, configuredUrl, file, manual, error: error ?? `Cannot read ${file}: ${errorMessage(cause)}` };
     }
     const state = !url ? "unavailable" : configuredUrl === url ? "connected" : configuredUrl ? "stale" : "missing";
     return { state, url, configuredUrl, file, manual, ...(error ? { error } : {}) };
@@ -112,7 +113,7 @@ export function piMcpLink(ctx: Context): EngineMcpLink {
       change();
       return view();
     } catch (cause) {
-      return view(cause instanceof Error ? cause.message : String(cause));
+      return view(errorMessage(cause));
     }
   };
   return {

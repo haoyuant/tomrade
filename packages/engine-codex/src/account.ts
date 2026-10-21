@@ -1,6 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { errorMessage } from "@tomradex/contracts";
 import { JsonLinePeer, jsonRpc, spawnCli, stopCli, type CliLaunch } from "@tomradex/engine-kit";
 
 /** Where Codex keeps its sign-in, settings and sessions — what a terminal with this environment would use. */
@@ -63,4 +64,4 @@ export function readCodexAccount(launch: CliLaunch, env: NodeJS.ProcessEnv = pro
 }
 
 /** Codex cannot reopen a session whose record is not under the current CODEX_HOME (moved, cleared, or another home). */
-export const lostSession = (error: unknown): boolean => /no rollout found/i.test(error instanceof Error ? error.message : String(error));
+export const lostSession = (error: unknown): boolean => /no rollout found/i.test(errorMessage(error));

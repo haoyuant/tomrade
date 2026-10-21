@@ -13,7 +13,7 @@ import { applyPlan, findGaps, generatePlan, planSchema, type Plan, type PlanLang
 import { PLAYBOOKS } from "./playbooks.js";
 import { findSimilar, findSimilarBatch, overlap } from "./similar.js";
 import { BACKLOG_WORDS } from "./words.js";
-import { errorMessage } from "@tomradex/contracts";
+import { errorMessage, localeOf } from "@tomradex/contracts";
 
 export { dossierSchema, emptyDossier, readiness, renderDossier, REQUIRED_FIELDS, type Dossier } from "./dossier.js";
 export { findSimilar, findSimilarBatch, overlap, tokens } from "./similar.js";
@@ -66,7 +66,7 @@ export default {
         .filter((m) => m.role === "user" && m.block.type === "text").slice(-3)
         .map((m) => (m.block.type === "text" ? m.block.text : "")).join(" ");
       if (said.trim()) return /[\u3400-\u9fff]/.test(said) ? "zh" : "en";
-      return languageTag(ctx.settings.locale?.());
+      return languageTag(localeOf(ctx));
     };
     const saveDossier = (run: RunHandle, dossier: Dossier) =>
       ctx.agent.setCard(run.id, { id: "dossier", schema: "backlog.dossier", title: "Requirement dossier", data: dossier });
@@ -157,7 +157,7 @@ export default {
           const next: PlanState = { ...state, plan, writes: 1 + plan.epics.length + features };
           io.emit({ type: "card", id: "proposal", schema: "backlog.proposal", title: "Plan proposal", data: { rootTitle: state.rootTitle, ...plan } });
           // The person reads the tree before any of it is written.
-          const w = BACKLOG_WORDS(ctx.settings.locale?.());
+          const w = BACKLOG_WORDS(localeOf(ctx));
           const text = w("planAsk", { writes: count(w, next.writes, "item", "items"), epics: count(w, plan.epics.length, "epic", "epics"), tickets: count(w, features, "ticket", "tickets") });
           return { ask: { text, options: [w("planApply"), w("planCancel")] }, state: next };
         },
@@ -264,7 +264,7 @@ export default {
           const model = llm();
           if ((!changes.length && !state.full) || !model || !(await model.worker()).ok) return { done: { proposed: 0 } };
           let proposal: DependencyProposal;
-          io.activity(BACKLOG_WORDS(ctx.settings.locale?.())("checkingDependencies"));
+          io.activity(BACKLOG_WORDS(localeOf(ctx))("checkingDependencies"));
           try {
             proposal = await proposeDependencies(ctx, model, projectId, changes, { signal: io.signal });
           } catch (err) {

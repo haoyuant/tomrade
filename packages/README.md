@@ -63,7 +63,7 @@ Every package keeps `"private": true`, so `npm publish` from a source folder fai
 | `storage-github` | GitHub as a destination: finds or creates the repository. | — | github, storage, storage-git |
 | `github` | The one GitHub account this machine uses: token, REST client, git credential helper. | `github` | git, storage |
 | `files` | A project's files: a versioned folder tree, backends, sync, conflicts, pinned versions. | `files` | agent, boards, contributions, git, hub, items, oplog, storage, tools, write |
-| `files-github` | GitHub as where a project's files are shared. | — | files, github, storage-github |
+| `files-github` | GitHub as where a project's files are shared. | — | files, github |
 | `notes` | Files read as notes: wiki links, backlinks, tags, full-text search, the journal. | `notes` | files, tools |
 | `repos` | The code repositories workstreams stand for, their checkouts, agent worktrees. | `repos` | boards, git, hub, storage, tools |
 | `code-link` | A ticket's branches, pull requests and coding sessions; status from git; Start. | `codeLink` | agent, boards, contributions, git, github, herdr, hub, items, llm, mcp, plugin-sdk, repos, storage, tools, write |
@@ -88,7 +88,7 @@ Every package keeps `"private": true`, so `npm publish` from a source folder fai
 | `web-search` | `web_search` and `web_fetch` for every engine, answered by a registered provider. | `webSearch` | tools |
 | `web-search-tavily` | Tavily as that provider, with the person's own key. | — | web-search |
 | `archify` | Archify diagrams as tools. | — | agent, files, tools |
-| `doctor` | The troubleshooter: checks what failed, says what to do, sends a report. | `doctor` | agent, contributions, llm, mcp, projects, tools |
+| `doctor` | The troubleshooter: checks what failed, says what to do, sends a report. | `doctor` | agent, contributions, llm, projects, tools |
 | `mcp` | Serves `ctx.tools` over MCP on 127.0.0.1. | `mcp` | contributions, tools |
 | `mcp-client` | External MCP servers whose tools join `ctx.tools`. | `mcpClient` | engine-kit, tools |
 | `im` | Chat-app transports over the agent: bindings, authorized inputs, replies. Adapters are plugins. | `im` | agent, contributions, oplog, plugin-sdk, projects |

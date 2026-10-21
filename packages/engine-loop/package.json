@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@tomradex/agent": "workspace:*",
+    "@tomradex/contracts": "workspace:*",
     "@tomradex/domain": "workspace:*",
     "@tomradex/llm": "workspace:*",
     "@tomradex/tools": "workspace:*",

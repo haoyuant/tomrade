@@ -95,7 +95,7 @@ export type FilesConfig = z.infer<typeof FilesConfig>;
 /** The backend every project starts on: versions here, shared nowhere. */
 export const LOCAL_BACKEND = "local";
 
-export interface FilesSettings {
+interface FilesSettings {
   agentIndexTokens: number;
 }
 
@@ -103,7 +103,7 @@ export interface FilesSettings {
  * How much of an agent's context the file index may take. It buys discovery:
  * without it an agent has to go looking, and mostly does not.
  */
-export const FILES_SECTION: SettingsSection<FilesSettings> = {
+const FILES_SECTION: SettingsSection<FilesSettings> = {
   id: "files",
   title: "Files",
   description: "How much room the list of this project's files takes in an agent's prompt. Zero leaves agents to browse for themselves.",
@@ -180,7 +180,7 @@ const TITLE_BYTES = 4096;
 const TITLE_MAX = 60;
 
 /** Front matter first, then the first ATX heading. Whatever comes back is one clipped line. */
-export function readTitle(abs: string): string | null {
+function readTitle(abs: string): string | null {
   let head: string;
   try {
     const fd = fs.openSync(abs, "r");
@@ -1182,5 +1182,3 @@ export class Files extends Service implements FilesReader {
     return item;
   }
 }
-
-export default Files;

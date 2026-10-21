@@ -2064,5 +2064,3 @@ export class Storage extends Service implements StorageReader {
     );
   }
 }
-
-export default Storage;

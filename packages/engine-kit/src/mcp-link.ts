@@ -1,5 +1,6 @@
 import type { Context } from "cordis";
 import type { EngineMcpLink, McpLinkView } from "@tomradex/agent";
+import { errorMessage } from "@tomradex/contracts";
 import type {} from "@tomradex/mcp";
 import { chosenCommand } from "./availability.js";
 import type { CliLocator, CliRunResult } from "./locate.js";
@@ -40,7 +41,7 @@ export function userMcpLink(ctx: Context, config: UserMcpConfig): EngineMcpLink 
     try {
       configuredUrl = config.configuredUrl(profile);
     } catch (cause) {
-      return { state: "unavailable", url, configuredUrl, file, manual, ...where, error: error ?? `Cannot read ${file}: ${cause instanceof Error ? cause.message : String(cause)}` };
+      return { state: "unavailable", url, configuredUrl, file, manual, ...where, error: error ?? `Cannot read ${file}: ${errorMessage(cause)}` };
     }
     // A stale entry has to go before the new one is added.
     if (configuredUrl) manual.connect = `${manual.disconnect}; ${manual.connect}`;
@@ -60,7 +61,7 @@ export function userMcpLink(ctx: Context, config: UserMcpConfig): EngineMcpLink 
       const env = profile && config.profileEnv ? config.profileEnv(profile).env : undefined;
       return failure(await config.cli.run(chosenCommand(ctx, config.engineId), args, 30_000, env));
     } catch (cause) {
-      return cause instanceof Error ? cause.message : String(cause);
+      return errorMessage(cause);
     }
   };
   const pick = (profile?: string) => (profile && profiles().includes(profile) ? profile : profiles()[0]);
