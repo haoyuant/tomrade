@@ -23,6 +23,7 @@ const row = (over: Partial<SessionRow> & { id: string }): SessionRow => ({
   worktree: null,
   startedAt: 1,
   endedAt: null,
+  continuedIn: null,
   ...over
 });
 

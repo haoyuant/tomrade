@@ -5,7 +5,7 @@ import { interpolate, message } from "~/lib/dicts";
 import { isMac } from "~/lib/keys";
 import { onCell, onLook, onShownIn, onState, onToast, send, type Look } from "./bridge";
 import { keyLabel, windowKey, type WindowKey } from "./keys";
-import { applyPreset, close, cycle, dedupe, heir, holder, landing, leaves, lock, neighbour, place, prune, resize, reveal, show, split, type Key } from "./layout";
+import { applyPreset, carryOn, close, cycle, dedupe, heir, holder, landing, leaves, lock, neighbour, place, prune, resize, reveal, show, split, type Key } from "./layout";
 import { bundles, sessionName, sidebarRows, type HereRow } from "./lists";
 import { TerminalCell } from "./TerminalCell";
 
@@ -30,6 +30,10 @@ const paneKey = (state: WindowState): Key => {
 };
 
 type Leaf = Extract<Layout, { type: "leaf" }>;
+
+/** Sessions whose ticket finished while the agent goes on in their pane, to the row it goes on as; not those put in a cell to read. */
+const carriedOf = (state: WindowState, toRead: Set<string>): Map<string, string> =>
+  new Map(state.sessions.flatMap((s) => (s.continuedIn && !toRead.has(s.id) ? [[s.id, s.continuedIn] as const] : [])));
 
 /**
  * A pick or reveal that found its pane in a cell under another ticket of the same agent: the cell now reads as the one
@@ -585,7 +589,7 @@ function Split({ node, render, onRatio }: { node: Extract<Layout, { type: "split
 export function App() {
   const [state, setState] = useState<WindowState | null>(null);
   const [look, setLook] = useState<Look | null>(null);
-  const [layout, setLayout] = useState<Layout | null>(null);
+  const [laid, setLayout] = useState<Layout | null>(null);
   const [focused, setFocused] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [outsideOpen, setOutsideOpen] = useState(false);
@@ -638,6 +642,8 @@ export function App() {
     if (focused) recent.current = [...recent.current.filter((id) => id !== focused), focused];
   }, [focused]);
   const revealed = useRef(0);
+  // Ended sessions the person put in a cell to read: they stay, wherever their pane went on.
+  const toRead = useRef(new Set<string>());
   // The window's keys, taken before a terminal hears them, so they never reach the shell; what they do is read from the latest render.
   const onWindowKey = useRef<(key: WindowKey) => void>(() => undefined);
   useEffect(() => {
@@ -663,7 +669,7 @@ export function App() {
     const key = paneKey(state);
     const kept = prune(current.current ?? state.layout, new Set([...known, ...asked.current.keys()]));
     // One pane in one cell: a cell that would show it a second time is emptied, and that is saved.
-    const pruned = dedupe(kept, key, focusedNow.current);
+    const pruned = dedupe(carryOn(kept, carriedOf(state, toRead.current), key), key, focusedNow.current);
     const placeable = placeableIds(state);
     const fresh = seen.current ? placeable.filter((id) => !seen.current!.has(id)) : [];
     seen.current = new Set([...(seen.current ?? []), ...placeable]);
@@ -672,6 +678,7 @@ export function App() {
     const ask = state.reveal;
     if (ask && ask.at !== revealed.current && state.sessions.some((s) => s.id === ask.sessionId && (s.pane || s.endedAt !== null))) {
       revealed.current = ask.at;
+      if (state.sessions.some((s) => s.id === ask.sessionId && s.endedAt !== null)) toRead.current.add(ask.sessionId);
       const shown = reveal(placed, ask.sessionId, focusedNow.current, key);
       placed = asPicked(state, shown.layout, shown.cell, ask.sessionId, key);
       setFocused(shown.cell);
@@ -699,19 +706,21 @@ export function App() {
 
   // The selected cell's row comes into view in the list.
   const side = useRef<HTMLElement>(null);
-  const selectedId = layout ? selectedCell(leaves(layout), focused).sessionId : null;
+  const selectedId = laid ? selectedCell(leaves(laid), focused).sessionId : null;
   useEffect(() => {
     side.current?.querySelector('.cs-row[aria-current="true"]')?.scrollIntoView({ block: "nearest" });
   }, [selectedId]);
 
-  if (!state || !layout) return null;
+  if (!state || !laid) return null;
+  const key = paneKey(state);
+  // Drawn handed over already, before the effect saves it: a cell whose ticket just finished keeps its terminal attached.
+  const layout = carryOn(laid, carriedOf(state, toRead.current), key);
   const cells = leaves(layout);
   const target = selectedCell(cells, focused);
   // An archived session picked into a cell is in the archive's rows until the next state carries it.
   const byId = new Map([...(state.archive.rows ?? []), ...state.sessions].map((s) => [s.id, s]));
   const groups = sidebarRows(state.sessions, state.terminals);
   const terminalsById = new Map(state.terminals.map((t) => [t.id, t]));
-  const key = paneKey(state);
   // A terminal whose agent claimed a ticket shows that session in its own cell, on the pane it already has.
   const sessionIn = (id: string | null) => (id ? byId.get(terminalsById.get(id)?.sessionId ?? id) : undefined);
   const rowsOf = (c: Leaf) => (c.sessionId ? [c.sessionId, terminalsById.get(c.sessionId)?.sessionId ?? c.sessionId] : []);
@@ -759,6 +768,7 @@ export function App() {
     });
   };
   const pick = (s: SessionRow, beside = false) => {
+    if (!live(s)) toRead.current.add(s.id);
     if (s.mode === "run" && !s.pane) return send({ type: "openThread", sessionId: s.id });
     land(s.id, beside);
   };

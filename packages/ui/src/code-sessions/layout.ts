@@ -112,6 +112,15 @@ export const lock = (layout: Layout, cell: string, locked: boolean): Layout =>
 
 export const resize = (layout: Layout, splitId: string, ratio: number): Layout => map(layout, splitId, (node) => (node.type === "split" ? { ...node, ratio: Math.min(0.85, Math.max(0.15, ratio)) } : node));
 
+/**
+ * Cells whose session ended while its pane goes on as another row (`carried`: ended id → that row): each now shows that
+ * row, locked as it was — unless another cell shows that pane already.
+ */
+export const carryOn = (layout: Layout, carried: Map<string, string>, key: Key = byId): Layout =>
+  leaves(layout)
+    .filter((l) => l.sessionId && carried.has(l.sessionId))
+    .reduce((acc, l) => (holder(acc, carried.get(l.sessionId!)!, key) ? acc : map(acc, l.id, (n) => holding(n as Leaf, carried.get(l.sessionId!)!))), layout);
+
 /** Sessions that are gone from the list leave their cells empty. */
 export const prune = (layout: Layout, known: Set<string>): Layout => leaves(layout).filter((l) => l.sessionId && !known.has(l.sessionId)).reduce((acc, l) => show(acc, l.id, null), layout);
 

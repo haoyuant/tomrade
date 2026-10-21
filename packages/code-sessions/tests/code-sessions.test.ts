@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterAll, expect, it } from "vitest";
 import { Service, type Context } from "cordis";
 import { EventEmitter } from "node:events";
-import CodeSessions, { openSystemTerminal, sessionRows, type Layout, type WindowMessage, type WindowPost, type WindowState } from "@tomradex/code-sessions";
+import CodeSessions, { continuedIn, openSystemTerminal, sessionRows, type Layout, type WindowMessage, type WindowPost, type WindowState } from "@tomradex/code-sessions";
 import { Contributions } from "@tomradex/contributions";
 import { Settings } from "@tomradex/settings";
 import { Herdr, HerdrError } from "@tomradex/herdr";
@@ -304,6 +304,70 @@ it("puts ended sessions in the archive, keeps one a cell shows, sends the archiv
   win.spec.onClose();
   await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
   expect(opened[1]!.states[0]).toMatchObject({ folded: true, archive: { count: 3, rows: null } });
+});
+
+it("says where an ended session's pane goes on: a terminal opened on it first, else the newest live session there", () => {
+  const now = Date.now();
+  const rows = sessionRows({ sessionsOf: () => [session({ id: "older", itemIds: ["i2"], herdrPane: "w1:p1", startedAt: 2 }), session({ id: "newer", itemIds: ["i3"], herdrPane: "w1:p1", startedAt: 3 }), session({ id: "gone", herdrPane: "w1:p1", state: "ended", endedAt: now, startedAt: 4 })] as never, links: () => [] }, { get: () => null }, "p", now);
+  expect(rows.map((r) => r.continuedIn)).toEqual([null, null, null]);
+  expect(continuedIn("w1:p1", rows, [])).toBe("newer");
+  expect(continuedIn("w1:p1", rows, [{ id: "t1", title: "repo", cwd: "/repo", pane: "w1:p1", startedAt: 1, agentTitle: null, sessionId: "newer", note: null, running: null }])).toBe("t1");
+  expect(continuedIn("w1:p9", rows, [])).toBeNull();
+  expect(continuedIn(null, rows, [])).toBeNull();
+});
+
+it("tells the window where the pane of an ended session a cell shows goes on, and nothing for the others", async () => {
+  const opened: WindowState[][] = [];
+  const now = Date.now();
+  const sessions = [
+    session({ id: "mate", itemIds: ["i2"], herdrPane: "w1:p1", startedAt: 5 }),
+    session({ id: "merged", itemIds: ["i1"], herdrPane: "w1:p1", state: "ended", endedAt: now - 1000, startedAt: 4 }),
+    session({ id: "alone", itemIds: ["i3"], herdrPane: "w1:p5", state: "ended", endedAt: now - 1000, startedAt: 3 })
+  ];
+  class FakeSurfaces extends Service {
+    static provide = "desktopSurfaces";
+    constructor(ctx: Context) {
+      super(ctx, "desktopSurfaces");
+    }
+    open(spec: { initialState: unknown }) {
+      const states = [spec.initialState as WindowState];
+      opened.push(states);
+      return { id: "s", capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus() {}, setState: (s: WindowState) => void states.push(s), post() {}, close() {} };
+    }
+  }
+  class ReadyHerdr extends Service {
+    static provide = "herdr";
+    constructor(ctx: Context) {
+      super(ctx, "herdr");
+    }
+    onPane = () => () => {};
+    watch = () => () => {};
+    watching = (): string[] => [];
+    bridge = async () => ({ state: "ready" as const, version: "0.9.5" });
+    panes = async () => [];
+  }
+  class FakeCodeLink extends Service {
+    static provide = "codeLink";
+    constructor(ctx: Context) {
+      super(ctx, "codeLink");
+    }
+    sessionsOf = () => sessions;
+    links = () => [];
+    repositoriesOf = () => [];
+  }
+  const stateFile = path.join(dir, "carried-state.json");
+  const layout: Layout = { type: "split", id: "r", direction: "row", ratio: 0.5, a: { type: "leaf", id: "c1", sessionId: "merged" }, b: { type: "leaf", id: "c2", sessionId: "alone" } };
+  const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "carried-settings.json") }], Contributions, FakeSurfaces, ReadyHerdr, FakeCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile }]] });
+  fs.writeFileSync(stateFile, JSON.stringify({ layouts: { [w.project.id]: layout } }));
+  for (const s of sessions) s.device = w.ctx.hub.deviceId;
+  await settle();
+  await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
+  const sent = opened[0]![0]!.sessions;
+  expect(sent.map((s) => [s.id, s.pane, s.continuedIn])).toEqual([
+    ["mate", "w1:p1", null],
+    ["merged", null, "mate"],
+    ["alone", null, null]
+  ]);
 });
 
 it("never shows a state older than one already shown, so a pick from the archive keeps its cell when the archive closes", async () => {
