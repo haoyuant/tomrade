@@ -62,6 +62,7 @@
     "test:deep-link": "electron scripts/deep-link-check.mjs",
     "test:im-settings": "electron scripts/im-settings-check.mjs",
     "test:terminal-only": "electron scripts/terminal-only-check.mjs",
+    "test:second-instance": "electron scripts/second-instance-check.mjs",
     "package": "node scripts/package.mjs"
   },
   "dependencies": {

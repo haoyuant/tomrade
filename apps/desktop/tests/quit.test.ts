@@ -12,8 +12,12 @@ const fakeWindow = (visible = true) => {
   });
 };
 let windows: ReturnType<typeof fakeWindow>[] = [];
+const app = await vi.hoisted(async () => {
+  const { EventEmitter } = await import("node:events");
+  return Object.assign(new EventEmitter(), { hide: () => {}, show: () => {}, exit: () => {}, quit: vi.fn() });
+});
 vi.mock("electron", () => ({
-  app: { hide: () => {}, show: () => {}, exit: () => {} },
+  app,
   BrowserWindow: { getAllWindows: () => windows, getFocusedWindow: () => windows[0] ?? null },
   dialog: { showMessageBoxSync: (...args: unknown[]) => showMessageBoxSync(...(args as [])) }
 }));
@@ -176,5 +180,43 @@ describe("quitting over writes that have not synced", () => {
     await quit.leaveOnSignal(ctx);
     expect(flushAll).toHaveBeenCalledWith("signal");
     expect(showMessageBoxSync).not.toHaveBeenCalled();
+  });
+});
+
+describe("an approved quit", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    app.quit.mockReset();
+    app.removeAllListeners();
+    windows = [];
+  });
+
+  it("brings the windows back when something calls it off, so the next launch is not ignored as mid-quit", async () => {
+    vi.useFakeTimers();
+    const quit = await load();
+    const [main] = (windows = [fakeWindow()]);
+    expect(await quit.prepareToQuit(context().ctx)).toBe(true);
+    quit.finishQuit();
+    expect(app.quit).toHaveBeenCalledOnce();
+    expect(quit.leaving()).toBe(true);
+    // No will-quit: a window refused to close.
+    vi.advanceTimersByTime(15_000);
+    expect(quit.leaving()).toBe(false);
+    expect(quit.quitApproved()).toBe(false);
+    expect(main.visible).toBe(true);
+    expect(app.listenerCount("will-quit")).toBe(0);
+  });
+
+  it("leaves a quit that goes through alone", async () => {
+    vi.useFakeTimers();
+    const quit = await load();
+    const [main] = (windows = [fakeWindow()]);
+    await quit.prepareToQuit(context().ctx);
+    quit.finishQuit();
+    app.emit("will-quit");
+    vi.advanceTimersByTime(60_000);
+    expect(quit.leaving()).toBe(true);
+    expect(quit.quitApproved()).toBe(true);
+    expect(main.visible).toBe(false);
   });
 });

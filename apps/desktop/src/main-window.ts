@@ -6,9 +6,21 @@ import type { BrowserWindow } from "electron";
  * with the app running in the background there may be no window to find.
  */
 let opener: { open(): BrowserWindow; current(): BrowserWindow | undefined } | null = null;
+let asked = false;
 
+/** Called once the start's own window, if any, is open; a launch that came while it booted is answered now. */
 export function provideMainWindow(provider: NonNullable<typeof opener>): void {
   opener = provider;
+  if (asked) {
+    asked = false;
+    showMainWindow();
+  }
+}
+
+/** Another launch of Tomrade asks for the window. Before main.ts provides one it is kept, never dropped. */
+export function askForMainWindow(): void {
+  if (opener) showMainWindow();
+  else asked = true;
 }
 
 export const hasMainWindow = (): boolean => !!opener?.current();
@@ -22,6 +34,8 @@ export function showMainWindow(): BrowserWindow | null {
   const win = opener.current() ?? opener.open();
   if (win.isMinimized()) win.restore();
   win.show();
+  // show() alone can leave the window behind the app the launch came from, on Windows above all.
+  win.moveTop();
   win.focus();
   return win;
 }

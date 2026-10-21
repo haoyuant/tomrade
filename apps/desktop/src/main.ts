@@ -9,8 +9,8 @@ import { deliverDeepLink, registerScheme } from "./deep-link.js";
 import { registerExtensionResolution } from "./extension-resolve.js";
 import { installAppMenu } from "./menu.js";
 import { loginItem } from "./login-item.js";
-import { provideMainWindow } from "./main-window.js";
-import { leaveOnSignal, leaving, prepareToQuit, quitApproved } from "./quit.js";
+import { askForMainWindow, provideMainWindow } from "./main-window.js";
+import { finishQuit, leaveOnSignal, leaving, prepareToQuit, quitApproved } from "./quit.js";
 import { adoptShellEnv } from "./shell-env.js";
 import { offerSafeStart, saySafeStart, showSplash, startFailed } from "./startup.js";
 import { beginStart, hasOwnPlugins, SAFE_FLAG, SAFE_REQUEST_FILE, STARTING_FILE, startFinished, takeSafeRequest } from "./safe-start.js";
@@ -38,6 +38,12 @@ if (!primary) {
 
 // tomrade:// links: macOS hands them over as events, from launch on; elsewhere they arrive as arguments.
 if (primary) {
+  // From the first moment: a launch while this one still boots, or runs hidden, is answered once there is a window to show.
+  app.on("second-instance", (_event, args) => {
+    if (leaving()) return;
+    for (const arg of args) deliverDeepLink(arg);
+    askForMainWindow();
+  });
   app.on("open-url", (event, url) => {
     event.preventDefault();
     deliverDeepLink(url);
@@ -150,7 +156,7 @@ app.whenReady().then(async () => {
   app.on("before-quit", (event) => {
     if (quitApproved()) return;
     event.preventDefault();
-    void prepareToQuit(ctx).then((ok) => ok && app.quit());
+    void prepareToQuit(ctx).then((ok) => ok && finishQuit());
   });
   for (const signal of ["SIGTERM", "SIGINT"] as const) process.once(signal, () => void leaveOnSignal(ctx).finally(() => app.exit(0)));
 
@@ -179,25 +185,18 @@ app.whenReady().then(async () => {
     });
     return win;
   };
-  provideMainWindow({ open: openMain, current: () => windows.lead() });
   ctx.ipc.handle("windows.openTab", (tab) => void openMain(tab));
   // Reached only with background running on: any other last close became a quit.
   app.on("window-all-closed", () => {});
   // The start got as far as a window that loaded, or as far as it goes without one.
   if (mode === "window") openMain().webContents.once("did-finish-load", () => startFinished(startingFile));
   else startFinished(startingFile);
+  // After the start's own window, so a launch that came meanwhile brings that one forward rather than a second.
+  provideMainWindow({ open: openMain, current: () => windows.lead() });
   // After the main window is up, so there is never a moment with none.
   splash?.destroy();
   splash = null;
   registerScheme();
-  app.on("second-instance", (_event, args) => {
-    if (leaving()) return;
-    for (const arg of args) deliverDeepLink(arg);
-    const win = windows.lead() ?? openMain();
-    if (win.isMinimized()) win.restore();
-    win.show();
-    win.focus();
-  });
   app.on("activate", () => {
     if (leaving()) return;
     // Auxiliary plugin surfaces are top-level BrowserWindows too; only a real
