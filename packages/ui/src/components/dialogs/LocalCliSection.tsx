@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { CliCheck, EngineView, LocalCliStatus } from "@tomradex/agent";
 import { Icon } from "~/components/icons";
+import { SetupChain } from "~/components/setup/SetupChain";
 import { invoke } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
 import { cliDiagnostics, engineStatus, useRecheckEngines } from "~/lib/localCli";
@@ -145,8 +146,12 @@ export function LocalCliSection({ engine, cli, command, onSaveCommand }: { engin
         </span>
       </div>
 
+      {/* The one-click chain first; the hand-run commands keep working below it. */}
+      {steps.length > 0 && agent && <SetupChain engine={engine} />}
+
       {steps.length > 0 && agent && (
-        <div className="cli-guide">
+        <details className="cli-guide setup-manual">
+          <summary>{t("setup.manual")}</summary>
           <p className="cli-guide-head">{t("localCli.guideTitle", { title: engine.title })}</p>
           <ol>
             {steps.map((step) => (
@@ -187,7 +192,7 @@ export function LocalCliSection({ engine, cli, command, onSaveCommand }: { engin
               {windows && engine.id === "claude-code" && <li>{t("localCli.windowsGit")}</li>}
             </ul>
           )}
-        </div>
+        </details>
       )}
 
       <div className="row cli-actions">

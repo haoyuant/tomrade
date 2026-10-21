@@ -2202,6 +2202,20 @@ html.overlay-open .titlebar .btn-primary {
 .quick-providers { display: flex; flex-wrap: wrap; gap: 6px; }
 .setup-ok { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--success); font-size: var(--text-sm); }
 .setup-command { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+/* The one-click chain: the Set up button and the step list it runs through. */
+.setup-chain { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-2); }
+.setup-steps { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: var(--text-xs); line-height: var(--leading-dense); color: var(--fg-2); }
+.setup-steps li { display: grid; grid-template-columns: 14px 1fr; gap: 6px; align-items: start; }
+.setup-steps li > svg { margin-top: 1px; color: var(--meta); }
+.setup-steps li[data-state="done"] > svg { color: var(--success); }
+.setup-steps li[data-state="failed"] > svg { color: var(--warn); }
+.setup-steps li[data-state="active"] > svg, .setup-steps li[data-state="waiting"] > svg { color: var(--accent); }
+.setup-steps li[data-state="pending"] { color: var(--meta); }
+.setup-step-dot { width: 6px; height: 6px; margin: 4px; border-radius: 50%; background: var(--border); }
+.setup-step-body { display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+.setup-manual { margin-top: var(--space-2); font-size: var(--text-xs); color: var(--fg-2); }
+.setup-manual > summary { cursor: pointer; color: var(--meta); }
+.setup-manual[open] > summary { margin-bottom: var(--space-2); }
 .setup-command code { font-family: var(--font-mono); font-size: 0.95em; padding: 1px 6px; border-radius: var(--radius-sm); background: var(--surface-warm); overflow-wrap: anywhere; }
 .setup-section-title { margin: 0; font-family: var(--font-display); font-size: var(--text-lg); font-weight: var(--font-weight-medium); color: var(--fg); }
 .agent-setup .quick-model { padding-bottom: var(--space-3); border-bottom: 1px solid var(--border); }

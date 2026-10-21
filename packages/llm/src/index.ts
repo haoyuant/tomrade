@@ -1,3 +1,4 @@
+import path from "node:path";
 import { Context, Service } from "cordis";
 import { z } from "zod";
 import { wordsLocale, type ModelErrorKind, type WordsLocale } from "@tomradex/domain";
@@ -9,7 +10,7 @@ import type { SettingsSection } from "@tomradex/settings";
 import type { WebSearchProvider } from "@tomradex/web-search";
 import { BUILTIN_PROVIDERS } from "./builtin-providers.js";
 import { sameCapabilities, type ModelCapabilities } from "./capabilities.js";
-import { errorMessage } from "@tomradex/contracts";
+import { contract, errorMessage } from "@tomradex/contracts";
 export { ImagesModel } from "./images.js";
 import { LlmError, MediaRefused } from "./errors.js";
 import { assistantMessage, collect, modalityOf, userMessage, type ChatEvent, type ChatModel, type ChatRequest, type Collected, type LlmRole, type Message } from "./model.js";
@@ -18,6 +19,7 @@ import type { ModelProviderSpec, ModelProviderView, ProviderSignIn } from "./pro
 import { guessFrom, keyHint, pickModel, type ModelListing, type ProviderPreset, type QuickSetupResult } from "./providers.js";
 import { WORKER_CALLS_MIGRATIONS, WORKER_CALLS_TABLES, WorkerCallLog, type WorkerPurpose, type WorkerSpend, type WorkerUsageSummary } from "./worker-usage.js";
 import { REFUSED_MEDIA_MIGRATION, REFUSED_MEDIA_TABLES, RefusedMedia } from "./refused-media.js";
+import { KeptTests, testKey, type KeptTest } from "./kept-tests.js";
 import { LLM_WORDS } from "./words.js";
 
 export * from "./model.js";
@@ -177,6 +179,17 @@ export interface WorkerStatus {
   reason?: string;
 }
 
+/** A worker profile's one-token test — the agents' `tried`, for models. Remembered per profile content. */
+export interface WorkerTest {
+  ok: boolean;
+  /** Failed: why, in the provider's own words. */
+  kind?: ModelErrorKind;
+  detail?: string;
+  at: number;
+  /** The tested profile, as a setup row names it. */
+  title: string;
+}
+
 /**
  * The model seam. An engine picks its own profile per thread (falling back to
  * the first configured one); `worker` is what compound tools and workflow
@@ -197,6 +210,8 @@ export interface LlmService extends LLMProvider {
   /** Offer a model for worker calls while no profile is configured; returns the withdrawal. */
   lend(model: LentModel): () => void;
   worker(): Promise<WorkerStatus>;
+  /** The worker profile's remembered one-token test, run once when nothing is remembered; null when the worker is not a profile. */
+  workerTest(fresh?: boolean): Promise<WorkerTest | null>;
   /** Serve the profiles naming `provider.id`, and offer its presets; returns the withdrawal. */
   registerProvider(provider: ModelProviderSpec): () => void;
 }
@@ -206,6 +221,7 @@ declare module "@tomradex/ipc" {
     "llm.test": (profile: ModelProfile) => ModelTest;
     "llm.models": (endpoint: Pick<ModelProfile, "provider" | "baseURL" | "apiKey">) => ModelListing;
     "llm.worker": () => WorkerStatus;
+    "llm.workerTest": (fresh?: boolean) => WorkerTest | null;
     "llm.lenders": () => LenderView[];
     "llm.providers": () => ProviderView[];
     "llm.modelProviders": () => ModelProviderView[];
@@ -387,6 +403,8 @@ export class Llm extends Service implements LlmService {
   private lentWaiting: (() => void)[] = [];
   private calls: WorkerCallLog | null = null;
   private refused = new RefusedMedia();
+  private keptTests = new KeptTests();
+  private testingNow = new Map<string, Promise<WorkerTest>>();
 
   constructor(ctx: Context, config: LlmConfig = { builtins: true }) {
     super(ctx, "llm");
@@ -400,6 +418,7 @@ export class Llm extends Service implements LlmService {
       ctx.ipc.handle("llm.searchRoute", () => this.searchRoute());
       ctx.ipc.handle("llm.models", (endpoint) => ctx.llm.listing(endpoint));
       ctx.ipc.handle("llm.worker", () => ctx.llm.worker());
+      ctx.ipc.handle("llm.workerTest", (fresh) => ctx.llm.workerTest(fresh));
       ctx.ipc.handle("llm.lenders", () => this.lenders());
       ctx.ipc.handle("llm.providers", () => this.providers());
       ctx.ipc.handle("llm.modelProviders", () => this.modelProviders());
@@ -411,6 +430,8 @@ export class Llm extends Service implements LlmService {
       ctx.ipc.handle("llm.signIn", (provider) => this.signIn(provider));
     });
     this.ctx.inject(["db"], (ctx) => {
+      const dir = contract(ctx, "db")?.config.dir;
+      this.keptTests.attach(dir && dir !== ":memory:" ? path.join(dir, "llm-tests.json") : null);
       ctx.db.migrate("llm", [...WORKER_CALLS_MIGRATIONS, REFUSED_MEDIA_MIGRATION], { scope: "hub", tables: { ...WORKER_CALLS_TABLES, ...REFUSED_MEDIA_TABLES } });
       ctx.effect(() => {
         this.calls = new WorkerCallLog(ctx.db.hub);
@@ -473,7 +494,9 @@ export class Llm extends Service implements LlmService {
     if (!kind) return { ok: false, kind: "model", detail: this.unknown(profile.provider) };
     // an image endpoint has no one-token request; it shows its worth on the first picture
     if (!kind.chat) return { ok: true };
-    return probe(this.build(profile));
+    const result = await probe(this.build(profile));
+    this.keptTests.write(profile, { ok: result.ok, ...(result.ok ? {} : { kind: result.kind, detail: result.detail }), at: Date.now() });
+    return result;
   }
 
   /** What the endpoint lists, for the profile form's model picker. A listing-less endpoint is an empty list, not an error. */
@@ -733,6 +756,32 @@ export class Llm extends Service implements LlmService {
     return { ok: false, reason: source.reason };
   }
 
+  async workerTest(fresh = false): Promise<WorkerTest | null> {
+    const source = await this.workerSource();
+    // A lent model proved itself through its agent; with nobody, the worker row already says why.
+    if (source.kind !== "profile") return null;
+    const profile = source.profile;
+    const title = profile.title || profile.model;
+    const key = testKey(profile);
+    if (!fresh) {
+      const kept = this.keptTests.read(profile);
+      if (kept) return { ...this.testCounts(kept), title };
+      const running = this.testingNow.get(key);
+      if (running) return running;
+    }
+    const running = this.test(profile)
+      .then((result): WorkerTest => ({ ...this.testCounts(this.keptTests.read(profile) ?? { ...result, at: Date.now() }), title }))
+      .finally(() => this.testingNow.delete(key));
+    this.testingNow.set(key, running);
+    return running;
+  }
+
+  /** A rate-limited key is a working key: quick setup already saves one, and the gate agrees. */
+  private testCounts(kept: KeptTest): Omit<WorkerTest, "title"> {
+    if (!kept.ok && kept.kind === "rate") return { ok: true, at: kept.at };
+    return { ok: kept.ok, ...(kept.kind ? { kind: kept.kind } : {}), ...(kept.detail ? { detail: kept.detail } : {}), at: kept.at };
+  }
+
   private words() {
     return LLM_WORDS(this.ctx.settings.locale?.());
   }
@@ -889,6 +938,10 @@ export class FakeLlm implements LlmService {
     return schema.parse(this.respond(request.system, request.user));
   }
 
+  async workerTest(): Promise<WorkerTest | null> {
+    return { ok: true, at: 0, title: "fake" };
+  }
+
   for(): ChatModel {
     throw new LlmError("FakeLlm has no chat model; use fakeChat() in tests that run an engine");
   }
@@ -975,6 +1028,7 @@ export const fakeChat = (model: ChatModel, respond?: (system: string, user: stri
       lend: () => () => {},
       registerProvider: () => () => {},
       worker: async () => ({ ok: true, via: "profile", title: "fake" }),
+      workerTest: async () => ({ ok: true, at: 0, title: "fake" }),
       completeJson: async <T,>(schema: z.ZodType<T>, request: CompletionRequest): Promise<T> => {
         if (!respond) throw new LlmError("fakeChat was given no completeJson responder");
         return schema.parse(respond(request.system, request.user));

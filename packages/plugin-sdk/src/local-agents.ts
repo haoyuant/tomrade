@@ -46,17 +46,26 @@ export interface LocalAgentPick {
 /**
  * SDK 0.2.18. An installer script the app runs for the person: `script` (a
  * POSIX shell installer) as `curl -fsSL <url> | bash`, `powershell` as
- * `irm <url> | iex`. Plugin code names only the address.
+ * `irm <url> | iex`. SDK 0.2.26 adds `npm`, a package installed with
+ * `npm install -g` — through the app's own npm on a machine without Node.
+ * Plugin code names only the address or package; these also run as the
+ * one-click setup, in the declared order, each on the platforms it fits.
  */
-export type LocalAgentInstaller = { script: string } | { powershell: string };
+export type LocalAgentInstaller = { script: string } | { powershell: string } | { npm: string };
 
 /** How the agent is installed and signed in, for setup screens. */
 export interface LocalAgentSetup {
-  /** Install commands, the recommended one first; an installer script by its address (SDK 0.2.18). */
+  /** Install commands, the recommended one first; an installer by its address or package (SDK 0.2.18, npm 0.2.26). */
   install: (string | LocalAgentInstaller)[];
   signIn?: string;
   /** Signing in starts the agent itself, which then asks; otherwise the command signs in and returns. */
   signInRuns?: boolean;
+  /**
+   * SDK 0.2.26. A sign-in command the app runs and watches itself: it opens or
+   * prints a browser address and needs no typing; the agent counts as signed in
+   * once `probe`/`signedIn` says so. Without it, signing in takes a terminal.
+   */
+  signInRun?: { args: string[] };
   docs?: string;
   /** SDK 0.2.25. The agent's official download page, opened in the system browser beside these commands, for those without the tools they need: one that offers the CLI. */
   download?: string;

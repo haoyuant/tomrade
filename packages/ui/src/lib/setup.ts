@@ -9,7 +9,7 @@ import { useI18n } from "./i18n";
 import { engineStatus } from "./localCli";
 import { useStoreInstall } from "./plugins";
 import { keys, useSettings } from "./queries";
-import { isLocalAgent, setupState } from "./setupState";
+import { isLocalAgent, setupState, type WorkerTested } from "./setupState";
 
 /** A provider plugin installed, switched off or removed changes what the setup offers. */
 function useProvidersChanged() {
@@ -28,11 +28,23 @@ function useProvidersChanged() {
 export const setupRows = (engines: EngineView[]): EngineView[] =>
   engines.filter((e) => e.setup && isLocalAgent(e) && (e.setup.suggested || engineStatus(e) !== "missing"));
 
+/** The worker profile's remembered one-token test, and the retry that asks again. Null test while the worker is not a profile. */
+export function useWorkerTest() {
+  const qc = useQueryClient();
+  const worker = useQuery({ queryKey: keys.llm.worker, queryFn: () => invoke("llm.worker"), staleTime: 15_000 });
+  const viaProfile = worker.data?.ok === true && worker.data.via === "profile";
+  const test = useQuery({ queryKey: keys.llm.workerTest, queryFn: () => invoke("llm.workerTest"), enabled: viaProfile, staleTime: Infinity, retry: false });
+  // Through the query, not a mutation, so every watcher sees the one retest run.
+  const retest = () => void qc.fetchQuery({ queryKey: keys.llm.workerTest, queryFn: () => invoke("llm.workerTest", true) }).catch(() => {});
+  return { viaProfile, test: test.data ?? null, pending: viaProfile && (test.isPending || test.isFetching), retest };
+}
+
 /** Engines and the worker, looked at again whenever settings change — a key saved anywhere shows here. */
 export function useSetup() {
   const engines = useEngines();
   const settings = useSettings();
   const worker = useQuery({ queryKey: keys.llm.worker, queryFn: () => invoke("llm.worker"), staleTime: 15_000 });
+  const { viaProfile, test, pending } = useWorkerTest();
   const refetchEngines = engines.refetch;
   const refetchWorker = worker.refetch;
   useEffect(() => {
@@ -42,7 +54,13 @@ export function useSetup() {
   useEffect(() => {
     void refetchWorker();
   }, [engines.data, refetchWorker]);
-  const state = engines.data && worker.data ? setupState(engines.data, worker.data) : null;
+  // A profile edited anywhere is tested again: the remembered outcome is per key, model and endpoint.
+  const qc = useQueryClient();
+  useEffect(() => {
+    if (viaProfile) void qc.invalidateQueries({ queryKey: keys.llm.workerTest });
+  }, [settings.data, viaProfile, qc]);
+  const tested: WorkerTested | undefined = !viaProfile ? undefined : pending ? "pending" : test ? { ok: test.ok } : undefined;
+  const state = engines.data && worker.data ? setupState(engines.data, worker.data, tested) : null;
   return { engines: engines.data, worker: worker.data, state };
 }
 
@@ -117,6 +135,7 @@ function useRefreshSetup() {
     void qc.invalidateQueries({ queryKey: keys.settings });
     void qc.invalidateQueries({ queryKey: keys.agent.engines });
     void qc.invalidateQueries({ queryKey: keys.llm.worker });
+    void qc.invalidateQueries({ queryKey: keys.llm.workerTest });
     void qc.invalidateQueries({ queryKey: keys.llm.detected });
   }, [qc]);
 }

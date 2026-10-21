@@ -10,6 +10,7 @@
     "build": "tsc -b",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "fetch:pi": "node scripts/fetch-pi.mjs",
+    "fetch:npm": "node scripts/fetch-npm.mjs",
     "bundle:official": "node scripts/bundle-official-plugins.mjs",
     "test:ui": "electron scripts/ui-regression.mjs",
     "eval:backlog": "electron scripts/backlog-eval.mjs",
@@ -55,6 +56,7 @@
     "test:tab-windows": "electron scripts/tab-windows-check.mjs",
     "test:model-setup": "electron scripts/model-setup-check.mjs",
     "test:setup": "electron scripts/setup-check.mjs",
+    "test:setup-chain": "electron scripts/setup-chain-check.mjs",
     "test:worker-source": "electron scripts/worker-source-check.mjs",
     "test:acp-engines": "electron scripts/acp-engines-check.mjs",
     "test:first-run-agent": "electron scripts/first-run-agent-check.mjs",
@@ -67,8 +69,10 @@
     "package": "node scripts/package.mjs"
   },
   "dependencies": {
+    "@tomradex/acp-registry": "workspace:*",
     "@tomradex/agent": "workspace:*",
     "@tomradex/agent-backlog": "workspace:*",
+    "@tomradex/agent-setup": "workspace:*",
     "@tomradex/announcements": "workspace:*",
     "@tomradex/archify": "workspace:*",
     "@tomradex/boards": "workspace:*",

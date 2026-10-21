@@ -38,6 +38,9 @@ function startUi(port) {
 // The built-in agent's Pi; a no-op once fetched. Offline, the app still starts without it.
 const fetchPi = spawnSync("node", [path.join(path.dirname(fileURLToPath(import.meta.url)), "fetch-pi.mjs")], { stdio: "inherit" });
 if (fetchPi.status !== 0) console.warn("Could not fetch the built-in agent; starting without it");
+// The npm the app lends to machines without Node; same deal.
+const fetchNpm = spawnSync("node", [path.join(path.dirname(fileURLToPath(import.meta.url)), "fetch-npm.mjs")], { stdio: "inherit" });
+if (fetchNpm.status !== 0) console.warn("Could not fetch the bundled npm; starting without it");
 
 let port = firstPort;
 let ui;

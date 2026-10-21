@@ -1,6 +1,6 @@
 import type { Context } from "cordis";
 import { z } from "zod";
-import type { Engine } from "@tomradex/agent";
+import type { Engine, EngineSetup } from "@tomradex/agent";
 import { chosenCommand, localAvailability, localCli } from "@tomradex/engine-kit";
 import { codexHome, readCodexAccount, type CodexAccount } from "./account.js";
 import { codexMcpLink } from "./mcp-link.js";
@@ -82,7 +82,14 @@ export function codexEngineInfo(ctx: Context): Omit<Engine, "turn"> {
   });
   const setup = {
     install: [NPM_INSTALL],
+    // What Tomrade runs itself: npm (the system's, else the app's borrowed one), then Homebrew's cask where brew is around.
+    installers: [
+      { kind: "npm", package: "@openai/codex" },
+      { kind: "brew", name: "codex", cask: true }
+    ] satisfies EngineSetup["installers"],
     signIn: "codex login",
+    // `codex login` opens the browser itself and returns once signed in; nothing to type.
+    signInRun: { args: ["login"] },
     docs: "https://github.com/openai/codex",
     download: "https://learn.chatgpt.com/docs/codex/cli",
     desktop: { title: "Codex", shipsCli: false },

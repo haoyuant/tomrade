@@ -5,6 +5,7 @@ import { setupRows } from "~/lib/setup";
 import { DetectedModels } from "./DetectedModels";
 import { GitNotice } from "./GitNotice";
 import { LocalAgentSetup } from "./LocalAgentSetup";
+import { ModelTestNotice } from "./ModelTestNotice";
 import { QuickModelSetup } from "./QuickModelSetup";
 
 export interface SetupPart {
@@ -27,6 +28,7 @@ export function SetupOptions({ engines, onOpenSettings, onTroubleshoot, frame }:
   return (
     <>
       <DetectedModels />
+      <ModelTestNotice onOpenSettings={() => onOpenSettings()} />
       {parts.map((part) => (
         <Fragment key={part.id}>{frame(part)}</Fragment>
       ))}
