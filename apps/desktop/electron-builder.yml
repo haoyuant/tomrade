@@ -51,7 +51,8 @@ files:
   - "!**/*.tsbuildinfo"
 mac:
   category: public.app-category.productivity
-  # Built from icon.png by iconutil: electron-builder's own PNG → icns
+  # Built from icon-mac.png (the cat on the sun, a full rounded square macOS 26
+  # shows without a grey plate) by iconutil: electron-builder's own PNG → icns
   # conversion writes 16/32/64px entries macOS decodes as noise.
   icon: assets/icon.icns
   # Signed only with a Developer ID Application certificate: without this,
