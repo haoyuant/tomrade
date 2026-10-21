@@ -35,11 +35,26 @@ export interface SetupRunResult {
 }
 
 const OUTPUT_KEEP = 4000;
+/** How long the installer's group has to end after SIGTERM before SIGKILL. */
+const KILL_GRACE_MS = 3000;
+
+/** A signal to the whole process group, which is gone already once everyone in it has exited. */
+const signalGroup = (pid: number, signal: NodeJS.Signals) => {
+  try {
+    process.kill(-pid, signal);
+  } catch {
+    // ESRCH: nothing is left in it.
+  }
+};
 
 /** One command to its end, output kept, stopped by the signal or the timeout. */
 export function runCommand(launch: CliLaunch, args: string[], opts: { signal: AbortSignal; timeoutMs: number; env?: NodeJS.ProcessEnv; onOutput?(text: string): void }): Promise<SetupRunResult> {
   return new Promise((resolve) => {
-    const child = spawnCli(launch, args, { env: opts.env, stdio: ["ignore", "pipe", "pipe"] });
+    // On POSIX its own process group, so a stop reaches what it started too: `curl … | bash` and the inner bash, npm's scripts.
+    const group = process.platform !== "win32";
+    const child = spawnCli(launch, args, { env: opts.env, stdio: ["ignore", "pipe", "pipe"], detached: group });
+    // A running install does not hold the app open on quit; its close below is still awaited.
+    if (group) child.unref();
     let output = "";
     let failed: SetupRunResult["error"];
     let timedOut = false;
@@ -53,7 +68,15 @@ export function runCommand(launch: CliLaunch, args: string[], opts: { signal: Ab
     child.on("error", (error) => {
       failed = { message: error.message, code: (error as NodeJS.ErrnoException).code ?? null };
     });
-    const stop = () => stopCli(child);
+    let killing = false;
+    const stop = () => {
+      const pid = child.pid;
+      if (!group || !pid) return stopCli(child);
+      signalGroup(pid, "SIGTERM");
+      // Not cleared on close: one that ignored SIGTERM and let go of the pipes is still in the group.
+      if (!killing) setTimeout(() => signalGroup(pid, "SIGKILL"), KILL_GRACE_MS).unref();
+      killing = true;
+    };
     opts.signal.addEventListener("abort", stop, { once: true });
     const timer = setTimeout(() => { timedOut = true; stop(); }, opts.timeoutMs);
     child.on("close", (code) => {
