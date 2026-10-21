@@ -3,6 +3,7 @@ import type { EngineView } from "@tomradex/agent";
 import { useI18n } from "~/lib/i18n";
 import { setupRows } from "~/lib/setup";
 import { DetectedModels } from "./DetectedModels";
+import { GitNotice } from "./GitNotice";
 import { LocalAgentSetup } from "./LocalAgentSetup";
 import { ModelTestNotice } from "./ModelTestNotice";
 import { QuickModelSetup } from "./QuickModelSetup";
@@ -31,6 +32,7 @@ export function SetupOptions({ engines, onOpenSettings, frame }: { engines?: Eng
       {parts.map((part) => (
         <Fragment key={part.id}>{frame(part)}</Fragment>
       ))}
+      <GitNotice />
     </>
   );
 }

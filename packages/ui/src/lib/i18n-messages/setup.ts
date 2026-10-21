@@ -80,7 +80,17 @@ export const setup = {
     modelTesting: "Checking {{title}} answers…",
     modelTestFailed: "{{title}} did not answer. It does not count as connected until it does.",
     modelTestRetry: "Try again",
-    modelTestSettings: "Model settings"
+    modelTestSettings: "Model settings",
+    gitTitle: "Git",
+    gitMissing: "Not installed — Tomrade works without it, but local-file version history and repository features need it.",
+    gitBroken: "A git was found but did not answer: {{error}}",
+    gitInstall: "Install Git",
+    gitInstalling: "Installing…",
+    gitWaiting: "Waiting for the system's installer to finish — Tomrade looks again by itself.",
+    gitInstallFailed: "Git was not installed: {{error}}",
+    gitInstallTimeout: "The system's installer did not finish. Install Git from the download page instead.",
+    gitInstallOutput: "What the installer said",
+    gitDownload: "Download Git"
   },
   zh: {
     eyebrow: "开始之前",
@@ -163,6 +173,16 @@ export const setup = {
     modelTesting: "正在确认 {{title}} 能回应…",
     modelTestFailed: "{{title}} 没有回应。在它回应之前不算已连接。",
     modelTestRetry: "再试一次",
-    modelTestSettings: "模型设置"
+    modelTestSettings: "模型设置",
+    gitTitle: "Git",
+    gitMissing: "还没有安装——不装也能用 Tomrade，但本地文件的版本历史和仓库相关功能需要它。",
+    gitBroken: "找到了一个 git，但它没有正常运行：{{error}}",
+    gitInstall: "一键安装 Git",
+    gitInstalling: "正在安装…",
+    gitWaiting: "等系统安装器完成——Tomrade 会自己再检查。",
+    gitInstallFailed: "Git 没有装上：{{error}}",
+    gitInstallTimeout: "系统安装器没有完成。请改从下载页安装 Git。",
+    gitInstallOutput: "安装器的输出",
+    gitDownload: "下载 Git"
   }
 };

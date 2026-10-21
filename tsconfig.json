@@ -107,6 +107,9 @@
       "path": "./packages/llm"
     },
     {
+      "path": "./packages/machine-setup"
+    },
+    {
       "path": "./packages/notes"
     },
     {

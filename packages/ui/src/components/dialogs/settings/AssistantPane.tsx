@@ -14,6 +14,7 @@ import { engineStateLabel, engineStatus } from "~/lib/localCli";
 import { keys, usePlugins } from "~/lib/queries";
 import { useInstallProvider, useModelProviders, useProviderPlugins, useProviders } from "~/lib/setup";
 import { EngineTryRow } from "../EngineTryRow";
+import { GitNotice } from "~/components/setup/GitNotice";
 import { LocalCliSection } from "../LocalCliSection";
 import { RegistryAgents } from "./RegistryAgents";
 import { McpLinkSection } from "../McpLinkSection";
@@ -201,6 +202,7 @@ export function AssistantPane({
             </div>
           </Fold>
         )}
+        <GitNotice />
         <p className="meta-txt">{t("settingsDialog.engineListNote")}</p>
         <p className="meta-txt" data-testid="more-engines">
           {enginesOff.length

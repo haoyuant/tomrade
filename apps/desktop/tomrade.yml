@@ -348,6 +348,12 @@ plugins:
   # set up like an agent a plugin declares. npx distributions only.
   - id: acp-registry
     name: "@tomradex/acp-registry"
+  # The machine itself: finds git without popping Apple's shim dialog, and
+  # installs it with the system's own mechanism on a click where there is one
+  # (macOS Command Line Tools, winget). Setup screens and the troubleshooter
+  # read the same probe.
+  - id: machine-setup
+    name: "@tomradex/machine-setup"
   # The troubleshooter: when something fails, checks what it can (the agent,
   # its sign-in, a test turn, the models), says what to do, and sends a report
   # the person has read to Tomrade's developer. Its own engine opens the
