@@ -14,7 +14,7 @@ import { Cadence, localDate, nextRun } from "./cadence.js";
 import { suggestions, type Suggestion } from "./suggestions.js";
 import { TemplateInput, fillTemplate } from "./template.js";
 import { SCHEDULE_WORDS } from "./words.js";
-import { errorMessage } from "@tomradex/contracts";
+import { errorMessage, localeOf } from "@tomradex/contracts";
 
 export interface Template extends z.output<typeof TemplateInput> {
   id: string;
@@ -238,7 +238,7 @@ export class Schedules extends Service {
   }
 
   private locale(): LanguageTag {
-    return languageTag((this.home.get("settings") as { locale?: () => string } | undefined)?.locale?.());
+    return languageTag(localeOf(this.home));
   }
 
   private db(projectId: string) {

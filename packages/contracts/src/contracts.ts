@@ -1,4 +1,4 @@
-import type { Author, Board, Dictionaries, Item, LanguageTag, Patch, Project } from "@tomradex/domain";
+import type { Author, Board, Dictionaries, Item, LanguageTag, ListItemsFilter, Patch, Project } from "@tomradex/domain";
 
 /*
  * The slices of each other's services that packages read through `ctx.get`,
@@ -10,6 +10,7 @@ import type { Author, Board, Dictionaries, Item, LanguageTag, Patch, Project } f
 export interface ItemsReader {
   get(projectId: string, id: string): Item | null;
   getByKey(projectId: string, key: string): Item | null;
+  list(filter: ListItemsFilter): Item[];
 }
 
 export interface ItemsWriter {
@@ -72,6 +73,19 @@ export interface ReposReader {
 
 export interface FilesReader {
   dirFor(projectId: string): string | null;
+  readVersion(projectId: string, ref: { fileId: string; versionId: string }): Promise<{ body: string; encoding: "utf8" | "base64"; truncated: boolean } | null>;
+}
+
+/** Where a ticket's code landed, as code-link records it. */
+export interface LandedLink {
+  repoId: string;
+  mergedSha: string | null;
+  prNumber: number | null;
+  prState: string | null;
+}
+
+export interface CodeLinkReader {
+  links(projectId: string, itemId?: string): LandedLink[];
 }
 
 export interface CommunityReader {
@@ -119,6 +133,7 @@ export interface Contracts {
   agent: AgentReader;
   boards: BoardsReader;
   cloudHub: CloudHubReader;
+  codeLink: CodeLinkReader;
   community: CommunityReader;
   doctor: DoctorChecks;
   files: FilesReader;

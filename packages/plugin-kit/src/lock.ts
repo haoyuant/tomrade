@@ -1,8 +1,7 @@
 import fs from "node:fs";
-import path from "node:path";
 import { z } from "zod";
 import { AttestationSchema } from "./sign.js";
-import { errorMessage } from "@tomradex/contracts";
+import { errorMessage, writeJsonAtomic } from "@tomradex/contracts";
 
 // An attestation this build no longer understands (a review tier that is gone) reads as none.
 const Installed = z.object({ version: z.string(), dir: z.string(), digest: z.string(), attestation: AttestationSchema.nullable().default(null).catch(null) });
@@ -47,10 +46,7 @@ export function readLock(file: string): Lock {
 
 /** Atomic: a crash mid-write leaves the old lock, never half of a new one. */
 export function writeLock(file: string, lock: Lock): void {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, `${JSON.stringify(LockSchema.parse(lock), null, 2)}\n`);
-  fs.renameSync(tmp, file);
+  writeJsonAtomic(file, LockSchema.parse(lock), { perProcess: true });
 }
 
 /** Nothing in the store is reviewed: `community` is a publisher's own build, `official` one Tomrade signed. */

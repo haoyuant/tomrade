@@ -58,7 +58,7 @@ import {
   type SyncMode,
   type WriteOptions
 } from "./types.js";
-import { errorMessage } from "@tomradex/contracts";
+import { errorMessage, type FilesReader, localeOf } from "@tomradex/contracts";
 
 declare module "cordis" {
   interface Context {
@@ -215,13 +215,13 @@ const clipTitle = (text: string): string | null => {
   return clean.length > TITLE_MAX ? `${clean.slice(0, TITLE_MAX)}…` : clean;
 };
 
-export class Files extends Service {
+export class Files extends Service implements FilesReader {
   static provide = "files";
   static inject = ["db", "hub", "storage", "items", "boards", "oplog"];
 
   /** The status bar's and the palette's words, in the person's language now. */
   private words() {
-    return FILES_WORDS((this.home.get("settings") as { locale?: () => string } | undefined)?.locale?.());
+    return FILES_WORDS(localeOf(this.home));
   }
   static Config = FilesConfig;
 

@@ -5,6 +5,7 @@ import type { SettingsSection } from "@tomradex/settings";
 import { defineTool, type ToolInvocation } from "@tomradex/tools";
 import { DEFAULT_TIMEOUT_S, describeResult, findBash, runShell } from "./run.js";
 import { SHELL_WORDS } from "./words.js";
+import { contract, localeOf } from "@tomradex/contracts";
 
 export { OutputBuffer, describeResult, findBash, plain, runShell, type ShellResult, type ShellRun } from "./run.js";
 
@@ -76,7 +77,7 @@ const description = (approval: Approval): string =>
 /** The run's workstream folder, else the project's Files folder; null when the conversation has neither. */
 function workdir(ctx: Context, invocation: ToolInvocation): string | null {
   if (invocation.run?.cwd) return invocation.run.cwd;
-  const files = ctx.get("files") as { dirFor(projectId: string): string | null } | undefined;
+  const files = contract(ctx, "files");
   const dir = invocation.projectId ? files?.dirFor(invocation.projectId) : null;
   return dir && fs.existsSync(dir) ? dir : null;
 }
@@ -90,7 +91,7 @@ export function bashTool(ctx: Context, approval: Approval) {
     if (!cwd) throw new Error("This conversation has no folder to run in: put it on a workstream with a checkout, or give the project a folder");
     if (approval === "ask" && !handle.scratch.get(APPROVED)) {
       if (!invocation.ask) throw new Error("Nobody can be asked to approve a command here");
-      const w = SHELL_WORDS((ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
+      const w = SHELL_WORDS(localeOf(ctx));
       const [once, turn, deny] = [w("once"), w("turn"), w("deny")];
       const answer = await invocation.ask(w("question", { cwd, command }), [once, turn, deny]);
       if (answer === null) throw new Error("Not run — the run was stopped");

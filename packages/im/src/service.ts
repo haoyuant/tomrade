@@ -15,7 +15,7 @@ import { prepare } from "./render.js";
 import { IM_WORDS, type ImPlainWord } from "./words.js";
 import { FILE_HANDLE, statusText, awaitingReview, codeNews, codeSeen, deliveryCard, links, proposalText, renderBlock, reviewOutcome, ticket, toolLine, type CodeLookup, type CodeSeen, type Delivered, type ItemLookup, type RenderScope } from "./rich.js";
 import { ImStore, MIGRATIONS, TABLES, type Action, type Binding, type Inbox, type Outbox, type Topic, type Watch, type WindowRow } from "./store.js";
-import { errorMessage } from "@tomradex/contracts";
+import { contract, errorMessage } from "@tomradex/contracts";
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const token = () => randomBytes(24).toString("hex");
@@ -1677,7 +1677,7 @@ export class Im extends Service {
 
   /** A ticket that can be started here, by id or key. */
   private startable(projectId: string, idOrKey: string): Startable | null {
-    const items = this.home.get("items") as { get(projectId: string, id: string): Startable | null; getByKey(projectId: string, key: string): Startable | null } | undefined;
+    const items = contract(this.home, "items");
     const item = items?.get(projectId, idOrKey) ?? items?.getByKey(projectId, idOrKey) ?? null;
     return item?.kind === "ticket" ? item : null;
   }
@@ -2140,14 +2140,14 @@ export class Im extends Service {
    * were off in between.
    */
   private backfillTopics() {
-    const items = this.home.get("items") as { list(filter: { projectId: string; status: string }): { id: string; updatedAt: number }[] } | undefined;
+    const items = contract(this.home, "items");
     if (!items) return;
     for (const b of this.store.bindings()) {
       if (this.topicOf(b) || !this.authorizedBinding(b) || !this.home.db.has(b.project_id)) continue;
       const on = this.topical(b) && this.notifies(b, "tickets");
       if (on === (b.topics_backfilled === 1)) continue;
       if (on) {
-        const worked = ["doing", "verifying"].flatMap(status => items.list({ projectId: b.project_id, status }))
+        const worked = (["doing", "verifying"] as const).flatMap(status => items.list({ projectId: b.project_id, status }))
           .sort((x, y) => y.updatedAt - x.updatedAt).slice(0, BACKFILL_TOPICS);
         for (const item of worked) {
           if (!this.store.get("SELECT 1 FROM plugin_im_topics WHERE parent_id = ? AND item_id = ?", b.id, item.id)) this.openTopic(b, item.id);
@@ -2657,7 +2657,7 @@ export class Im extends Service {
       if (!rows.some(r => r.thread_id === b.thread_id && r.sending_json && (JSON.parse(r.sending_json) as ImContent).files?.some(f => f.id === id))) continue;
       const version = FILE_HANDLE.exec(id);
       if (!version) return Buffer.from(this.home.agent.readMedia(b.project_id, b.thread_id, id).base64, "base64");
-      const files = this.home.get("files") as { readVersion(projectId: string, ref: { fileId: string; versionId: string }): Promise<{ body: string; encoding: "utf8" | "base64"; truncated: boolean } | null> } | undefined;
+      const files = contract(this.home, "files");
       const content = await files?.readVersion(b.project_id, { fileId: version[1], versionId: version[2] });
       // A cut-short body would arrive as a broken file; the message's link still reaches it.
       if (!content || content.truncated) throw new Error("File version is unavailable or too large to send");

@@ -53,7 +53,7 @@ import {
   type SyncSummary
 } from "./types.js";
 import { STORAGE_WORDS } from "./words.js";
-import { errorMessage } from "@tomradex/contracts";
+import { contract, errorMessage, localeOf, type StorageReader } from "@tomradex/contracts";
 
 // "synced" with writes still waiting reads as ahead.
 const STATE_WORD: Record<SyncState, Exclude<Parameters<ReturnType<typeof STORAGE_WORDS>>[0], "unsynced">> = {
@@ -146,7 +146,7 @@ export const slugOf = (name: string): string =>
  * snapshot shortly after; a change made to the folder by anyone else is read
  * back in. Git is driven only in folders Tomrade made for a project alone.
  */
-export class Storage extends Service {
+export class Storage extends Service implements StorageReader {
   static provide = "storage";
   static inject = ["db", "hub", "oplog"];
   static Config = StorageConfig;
@@ -286,7 +286,7 @@ export class Storage extends Service {
           const where = entry.git === "dedicated" && entry.remote ? entry.remote.provider : path.basename(entry.dir);
           const waiting = ctx.storage.pending(projectId)?.count ?? 0;
           if (state === "synced" && !waiting) return where;
-          const w = STORAGE_WORDS((ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
+          const w = STORAGE_WORDS(localeOf(ctx));
           const word = w(STATE_WORD[state]);
           // How many of this machine's writes have not left it yet: the number to worry about before quitting.
           return waiting ? `${where} · ${word} · ${w("unsynced", { n: waiting })}` : `${where} · ${word}`;
@@ -352,7 +352,7 @@ export class Storage extends Service {
   }
 
   private get mcpBase(): string | null {
-    return (this.ctx.get("mcp") as { url?: string | null } | undefined)?.url ?? null;
+    return contract(this.ctx, "mcp")?.url ?? null;
   }
 
   private mcpUrl(projectId: string): string | null {
@@ -2033,7 +2033,7 @@ export class Storage extends Service {
   }
 
   private mergeUserSettings(text: string): void {
-    const settings = this.home.get("settings") as { mergeUser(theirs: unknown): void } | undefined;
+    const settings = this.home.get("settings");
     if (!settings) return;
     try {
       settings.mergeUser(JSON.parse(text));

@@ -19,7 +19,6 @@
   },
   "dependencies": {
     "@tomradex/contracts": "workspace:*",
-    "@tomradex/doctor": "workspace:*",
     "@tomradex/domain": "workspace:*",
     "@tomradex/engine-kit": "workspace:*",
     "@tomradex/ipc": "workspace:*",

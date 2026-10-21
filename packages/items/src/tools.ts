@@ -5,6 +5,7 @@ import { ToolInputError, defineTool, requireProjectId, type ToolInvocation } fro
 import type {} from "@tomradex/boards";
 import { addResourceSchema, reviewDeliverySchema, submitDeliverySchema } from "@tomradex/domain";
 import { ITEMS_WORDS } from "./words.js";
+import { contract, localeOf } from "@tomradex/contracts";
 
 const itemId = z.string().describe("The item's id, or its key such as TOM-12");
 const withVersion = z.object({ projectId: z.string().optional(), id: itemId, baseVersion: z.number().optional() });
@@ -99,7 +100,7 @@ export function registerTools(ctx: Context): void {
       if (!submission) throw new Error(`${item.key} has no submitted delivery to review — submit_delivery comes first`);
       if (inv.run?.ledger.find((e) => e.ok && (e.tool === "submit_delivery" || e.tool === "link_code"))) throw new Error(`review_delivery: this run delivered work, so it cannot review a delivery — the user accepts ${item.key} in its delivery panel`);
       if (inv.ask) {
-        const w = ITEMS_WORDS((ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
+        const w = ITEMS_WORDS(localeOf(ctx));
         const yes = w(decision === "accepted" ? "reviewAccept" : "reviewSendBack");
         const question = w("reviewConfirm", { key: item.key, verdict: yes, userSaid });
         if ((await inv.ask(question, [yes, w("cancel")])) !== yes) return { recorded: false, note: "The user did not confirm; nothing was recorded." };
@@ -142,7 +143,7 @@ export function registerTools(ctx: Context): void {
     let playbookId = args.playbookId;
     let workType = args.workType;
     if (playbookId === undefined && inv.by.startsWith("ai:")) {
-      const agent = ctx.get("agent") as { recommendPlaybook?: (projectId: string, input: { title: string; body?: string | null; workType?: "coding" | "general" }, opts?: { withinMs?: number; signal?: AbortSignal }) => Promise<{ playbookId: string | null; workType: "coding" | "general" }> } | undefined;
+      const agent = contract(ctx, "agent");
       if (agent?.recommendPlaybook) {
         try {
           // The agent is waiting on this call; past the budget the recommendation falls back to keywords.

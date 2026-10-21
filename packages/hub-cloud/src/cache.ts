@@ -1,8 +1,7 @@
 import fs from "node:fs";
-import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { errorMessage } from "@tomradex/contracts";
+import { errorMessage, writeJsonAtomic } from "@tomradex/contracts";
 
 export const Kind = z.enum(["project", "repo", "preference"]);
 export type Kind = z.infer<typeof Kind>;
@@ -67,9 +66,7 @@ export class CloudCache {
     this.save();
   }
   save(): void {
-    fs.mkdirSync(path.dirname(this.file), { recursive: true });
-    fs.writeFileSync(`${this.file}.tmp`, JSON.stringify(this.data, null, 2) + "\n", { mode: 0o600 });
-    fs.renameSync(`${this.file}.tmp`, this.file);
+    writeJsonAtomic(this.file, this.data, { mode: 0o600 });
   }
   bind(userId: string, hubId: string): void {
     if ((this.data.userId && this.data.userId !== userId) || (this.data.hubId && this.data.hubId !== hubId)) {

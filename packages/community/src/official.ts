@@ -4,7 +4,7 @@ import { LIMITS, PACKAGE_EXT, parseCatalog, unpackPlugin, type Attestation, type
 import { OFFICIAL_PUBLISHER, compareVersions, nameOf, namespaceOf, parseManifest } from "@tomradex/plugin-sdk";
 import type { Manifest } from "@tomradex/plugin-sdk";
 import { latestInstallable, type Revocation, type VersionRow } from "./rules.js";
-import { errorMessage } from "@tomradex/contracts";
+import { errorMessage, writeJsonAtomic } from "@tomradex/contracts";
 
 /** Where Tomrade's own plugins are released: github.com/haoyuant/tomrade-plugins. */
 export const OFFICIAL_CATALOG_URL = "https://github.com/haoyuant/tomrade-plugins/releases/download/catalog/catalog.json";
@@ -101,10 +101,7 @@ export class OfficialCatalog {
   private save(raw: unknown) {
     if (!this.opts.cacheFile) return;
     try {
-      fs.mkdirSync(path.dirname(this.opts.cacheFile), { recursive: true });
-      const tmp = `${this.opts.cacheFile}.${process.pid}.tmp`;
-      fs.writeFileSync(tmp, JSON.stringify({ fetchedAt: this.held!.fetchedAt, catalog: raw }));
-      fs.renameSync(tmp, this.opts.cacheFile);
+      writeJsonAtomic(this.opts.cacheFile, { fetchedAt: this.held!.fetchedAt, catalog: raw }, { pretty: false, perProcess: true });
     } catch (error) {
       this.opts.warn(`official catalog cache not written: ${errorMessage(error)}`);
     }

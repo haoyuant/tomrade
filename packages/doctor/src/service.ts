@@ -16,7 +16,7 @@ import { DOCTOR_WORDS, type Words } from "./words.js";
 import { CATALOG_MAX_AGE_MS, fetchCatalog, readCache } from "./catalog.js";
 import { CONCLUSION, brief, conclusionCard, investigationMessages, investigationTools, logSources, scopedTools, type Conclusion } from "./investigate.js";
 import type {} from "@tomradex/tools";
-import { errorMessage } from "@tomradex/contracts";
+import { type Check as ContractCheck, type CheckResult as ContractCheckResult, contract, type DoctorChecks, errorMessage, readJsonOr } from "@tomradex/contracts";
 
 /** What a troubleshooting thread is about: a failed turn, or nothing in particular. */
 export const Topic = z.object({
@@ -35,25 +35,10 @@ export const DoctorOptions = z.object({
   investigator: z.string().optional()
 });
 
-export interface CheckResult {
-  state: "ok" | "warn" | "fail" | "skip";
-  /** One line, in the person's language. */
-  line: string;
-  facts?: Record<string, string>;
-  /** What can be done about a warning or a failure. */
-  actions?: CardAction[];
-  /** Longer text for the report: an error's details, say. */
-  evidence?: string;
-}
+export type CheckResult = ContractCheckResult<CardAction>;
 
 /** One thing the troubleshooter looks at. Plugins add their own. */
-export interface Check {
-  id: string;
-  title(words: Words): string;
-  /** Whether it says anything about this topic; absent, it always runs. */
-  applies?(topic: Topic): boolean;
-  run(topic: Topic, signal: AbortSignal): Promise<CheckResult>;
-}
+export type Check = ContractCheck<Words, Topic, CardAction>;
 
 /** Everything one round of checks found, kept for the report. */
 export interface Diagnosis {
@@ -200,7 +185,7 @@ const newCode = (): string => {
   return `R-${[...randomBytes(6)].map((b) => alphabet[b % alphabet.length]).join("")}`;
 };
 
-export class Doctor extends Service {
+export class Doctor extends Service implements DoctorChecks {
   static provide = "doctor";
   static inject = ["agent", "settings"];
   static Config = DoctorConfig;
@@ -677,7 +662,7 @@ export class Doctor extends Service {
         applies: (topic) => !topic.engineId,
         async run() {
           const words = doctor.words();
-          const hub = doctor.ctx.get("cloudHub") as { info(): { user: unknown; status: { state: string; detail?: string }; pending: number } } | undefined;
+          const hub = contract(doctor.ctx, "cloudHub");
           if (!hub) return { state: "skip", line: words("syncOff") };
           const info = hub.info();
           if (!info.user) return { state: "warn", line: words("syncOff") };
@@ -823,13 +808,13 @@ export class Doctor extends Service {
   // ── my reports ───────────────────────────────────────────────────────
 
   private signedIn(): boolean {
-    const hub = this.ctx.get("cloudHub") as { info(): { user: unknown } } | undefined;
+    const hub = contract(this.ctx, "cloudHub");
     return !!this.fetchReports || !!hub?.info().user;
   }
 
   private async remoteReports(): Promise<RemoteReport[] | null> {
     if (this.fetchReports) return this.fetchReports();
-    const hub = this.ctx.get("cloudHub") as { client: any; info(): { user: unknown } } | undefined;
+    const hub = contract(this.ctx, "cloudHub");
     if (!hub?.info().user) return null;
     const { data, error } = await hub.client.from("tomrade_diagnostic_reports").select("code, created_at, summary, engine, status, reply, replied_at, fixed_in").order("created_at", { ascending: false }).limit(100);
     if (error) throw new Error(error.message);
@@ -837,7 +822,7 @@ export class Doctor extends Service {
   }
 
   private readJson<T>(name: string, fallback: T): T {
-    try { return JSON.parse(fs.readFileSync(path.join(this.config.dataDir, name), "utf8")) as T; } catch { return fallback; }
+    return readJsonOr(path.join(this.config.dataDir, name), fallback);
   }
 
   /** What the person last saw of each report; a newer reply or decision reads as unread. */
@@ -902,7 +887,7 @@ export class Doctor extends Service {
   /** Gone from this machine and, when signed in, from the backend too. */
   async deleteReport(code: string): Promise<void> {
     if (!/^R-[0-9A-Z]{6}$/.test(code)) throw new Error(`Not a report code: ${code}`);
-    const hub = this.ctx.get("cloudHub") as { client: any; info(): { user: unknown } } | undefined;
+    const hub = contract(this.ctx, "cloudHub");
     if (hub?.info().user) {
       const { error } = await hub.client.from("tomrade_diagnostic_reports").delete().eq("code", code);
       if (error) throw new Error(error.message);
@@ -922,7 +907,7 @@ export class Doctor extends Service {
 
   private backend(): Transport {
     return async (report) => {
-      const hub = this.ctx.get("cloudHub") as { client: { rpc(name: string, args: Record<string, unknown>): PromiseLike<{ error: { message: string } | null }> }; info(): { user: unknown } } | undefined;
+      const hub = contract(this.ctx, "cloudHub");
       if (!hub) throw new Error("no account service");
       if (!hub.info().user) throw new Error("not signed in");
       const { error } = await hub.client.rpc("tomrade_submit_diagnostic_report", {

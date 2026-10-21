@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { app } from "electron";
+import { writeFileAtomic } from "@tomradex/contracts";
 
 /** What starts the background part instead of the whole app: no window, no Dock icon. */
 export const BACKGROUND_FLAG = "--background";
@@ -141,11 +142,7 @@ export function xdgAutostart(env: NodeJS.ProcessEnv = process.env, execPath = pr
       return null;
     }
   };
-  const write = (text: string) => {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(`${file}.tmp`, text);
-    fs.renameSync(`${file}.tmp`, file);
-  };
+  const write = (text: string) => writeFileAtomic(file, text);
   return {
     state: () => autostartState(read()),
     set: (on) => (on ? write(autostartEntry(exec)) : fs.rmSync(file, { force: true })),

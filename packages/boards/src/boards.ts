@@ -5,6 +5,7 @@ import type { Oplog } from "@tomradex/oplog";
 import { itemsOf } from "./items-like.js";
 import { write } from "@tomradex/write";
 import { InUseError, NotFoundError, type Author, type Board, type BoardPatch, type CreateBoardInput } from "@tomradex/domain";
+import type { BoardsReader } from "@tomradex/contracts";
 
 declare module "cordis" {
   interface Context {
@@ -41,7 +42,7 @@ function rowToBoard(r: BoardRow): Board {
 }
 
 /** The Workstream field's options. A board owns issues (items.board_id) and nothing else. */
-export class Boards extends Service {
+export class Boards extends Service implements BoardsReader {
   static provide = "boards";
   static inject = ["db", "oplog", "items"];
 

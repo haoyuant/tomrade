@@ -1,6 +1,6 @@
 import fs from "node:fs";
-import path from "node:path";
 import type { Grant } from "./device.js";
+import { writeFileAtomic } from "@tomradex/contracts";
 
 /** The OS-backed cipher Electron supplies (safeStorage); nothing is kept in plain text without it. */
 export interface Cipher {
@@ -45,8 +45,6 @@ export class SessionStore {
       fs.rmSync(this.file!, { force: true });
       return;
     }
-    fs.mkdirSync(path.dirname(this.file!), { recursive: true });
-    fs.writeFileSync(`${this.file}.tmp`, this.cipher!.encrypt(JSON.stringify(session)), { mode: 0o600 });
-    fs.renameSync(`${this.file}.tmp`, this.file!);
+    writeFileAtomic(this.file!, this.cipher!.encrypt(JSON.stringify(session)), { mode: 0o600 });
   }
 }

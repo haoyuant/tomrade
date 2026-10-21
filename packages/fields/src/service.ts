@@ -16,7 +16,7 @@ import {
   type FieldValue
 } from "@tomradex/domain";
 import { registerChannels, registerTools } from "./contributions.js";
-import { errorMessage } from "@tomradex/contracts";
+import { errorMessage, localeOf } from "@tomradex/contracts";
 
 declare module "cordis" {
   interface Context {
@@ -111,7 +111,7 @@ export class Fields extends Service {
   }
 
   derived(): FieldDef[] {
-    const locale = wordsLocale((this.ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
+    const locale = wordsLocale(localeOf(this.ctx));
     return [...this.derivedFields.values()].map((f, n) => ({
       id: f.id,
       projectId: null,

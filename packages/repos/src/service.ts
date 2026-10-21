@@ -12,6 +12,7 @@ import { GitError, GitFolder, cloneInto, gitRunner, type Git } from "@tomradex/g
 import { slugOf } from "@tomradex/storage";
 import { defineTool, requireProjectId } from "@tomradex/tools";
 import { isLocalRemote, normalizeRemote, sameRepository } from "./remotes.js";
+import type { ReposReader } from "@tomradex/contracts";
 
 declare module "cordis" {
   interface Context {
@@ -140,7 +141,7 @@ export class BranchInUseError extends Error {
  * is this machine's alone, in the catalog. Tomrade never pushes any of them:
  * it fetches, and adds worktrees for agents to run in.
  */
-export class Repos extends Service {
+export class Repos extends Service implements ReposReader {
   static provide = "repos";
   static inject = ["db", "hub", "storage"];
   static Config = ReposConfig;

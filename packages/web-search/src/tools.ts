@@ -3,6 +3,7 @@ import { z } from "zod";
 import { defineTool, type ToolInvocation } from "@tomradex/tools";
 import type { ReadResponse, SearchHit, WebSearch } from "./index.js";
 import { WEB_SEARCH_WORDS } from "./words.js";
+import { localeOf } from "@tomradex/contracts";
 
 const EXCERPT_MAX = 1_200;
 /** What all pages of one web_fetch may take together; the loop cuts a result at 20k. */
@@ -61,7 +62,7 @@ async function searchOffers(ctx: Context): Promise<{ id: string; title: string }
 async function tellPerson(ctx: Context, invocation: ToolInvocation, settings: string | undefined): Promise<boolean> {
   const agent = ctx.get("agent") as CardPoster | undefined;
   if (!invocation.run || !agent) return false;
-  const w = WEB_SEARCH_WORDS((ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
+  const w = WEB_SEARCH_WORDS(localeOf(ctx));
   // One click when a plugin for a model they already have would do it.
   const installs = (await searchOffers(ctx)).map((p) => ({ kind: "install-plugin", pluginId: p.id, label: w("installPlugin", { title: p.title }), done: w("installed", { title: p.title }) }));
   agent.setCard(invocation.run.id, {

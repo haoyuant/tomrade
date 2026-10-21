@@ -10,7 +10,7 @@ import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/items";
 import type {} from "@tomradex/settings";
 import { INBOX_WORDS, type InboxWords } from "./words.js";
-import { errorMessage } from "@tomradex/contracts";
+import { errorMessage, localeOf } from "@tomradex/contracts";
 
 export const INBOX_KINDS = ["bug", "feedback", "idea"] as const;
 export type InboxKind = (typeof INBOX_KINDS)[number];
@@ -1066,7 +1066,7 @@ export class Inbox extends Service {
   }
 
   words(): InboxWords {
-    return INBOX_WORDS((this.home.get("settings") as { locale?: () => string } | undefined)?.locale?.());
+    return INBOX_WORDS(localeOf(this.home));
   }
 
   private changed(projectId: string): void {

@@ -12,7 +12,7 @@ import { BACKGROUND_FLAG, loginItem, type LoginItem, type LoginState } from "./l
 import { hasMainWindow, showMainWindow } from "./main-window.js";
 import { leaving, quitApproved } from "./quit.js";
 import { DESKTOP_WORDS } from "./words.js";
-import { errorMessage } from "@tomradex/contracts";
+import { errorMessage, writeJsonAtomic } from "@tomradex/contracts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -39,9 +39,7 @@ export function readPrefs(file: string): Prefs {
 
 export function writePrefs(file: string, patch: Partial<Prefs>): Prefs {
   const next = { ...readPrefs(file), ...patch };
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(`${file}.tmp`, JSON.stringify(next, null, 2) + "\n");
-  fs.renameSync(`${file}.tmp`, file);
+  writeJsonAtomic(file, next);
   return next;
 }
 

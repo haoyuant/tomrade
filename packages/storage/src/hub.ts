@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { CatalogProject, RemoteRef } from "@tomradex/hub";
 import type { StorageStatus } from "./types.js";
-import { errorMessage } from "@tomradex/contracts";
+import { errorMessage, writeFileAtomic } from "@tomradex/contracts";
 
 /** A Hub catalog backend. Project folder storage is independent of this port. */
 export interface HubBackend {
@@ -76,10 +76,7 @@ export function writeHubManifest(dir: string, manifest: HubManifest): boolean {
   } catch {
     // absent
   }
-  fs.mkdirSync(dir, { recursive: true });
-  const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, body, "utf8");
-  fs.renameSync(tmp, file);
+  writeFileAtomic(file, body);
   return true;
 }
 

@@ -7,7 +7,7 @@ import type {} from "@tomradex/projects";
 import { emptyHub, type HubManifest, type HubProject, type StorageStatus } from "@tomradex/storage";
 import type { UserSettingsFile } from "@tomradex/settings";
 import { CloudCache, RecordSchema, recordKey, equal, type CloudRecord } from "./cache.js";
-import { errorMessage } from "@tomradex/contracts";
+import { type CloudHubReader, errorMessage } from "@tomradex/contracts";
 
 export interface AccountInfo {
   user: { id: string; email: string } | null;
@@ -93,7 +93,7 @@ function credentials(email: string, password: string, min = 1) {
 const address = (email: string) => credentials(email, "-").email;
 
 /** Supabase owns Hub metadata. The immutable outbox survives failed requests and process exits. */
-export class CloudHub extends Service {
+export class CloudHub extends Service implements CloudHubReader {
   static provide = "cloudHub";
   static inject = ["hub", "storage", "settings"];
   static Config = CloudConfig;

@@ -59,7 +59,7 @@ import { looksRateLimited, resetTime, untilLabel } from "./limits.js";
 import { describeFailure, readableError, redactSecrets } from "./failure.js";
 import { conversationRecap } from "./recap.js";
 import { NO_TOKENS, addTokens, runTokens, type TokenBreakdown } from "./tokens.js";
-import { errorMessage } from "@tomradex/contracts";
+import { type AgentReader, contract, errorMessage, localeOf } from "@tomradex/contracts";
 
 /** Where a thread's engine would run, or the one reason it cannot yet. `code` is stable for the renderer to translate. */
 /** Which of these threads a plugin opened, and what to call that: thread id → label. */
@@ -340,7 +340,7 @@ function settleBy<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
   });
 }
 
-export class Agent extends Service {
+export class Agent extends Service implements AgentReader {
   static provide = "agent";
   static inject = ["db", "tools", "oplog", "settings"];
   static Config = AgentConfig;
@@ -407,7 +407,7 @@ export class Agent extends Service {
     this.ctx.on("tools/pre-execute", (call, next) => {
       if (call.name !== "review_delivery" || !call.run) return next();
       const id = String((call.args as { id?: unknown }).id ?? "");
-      const items = this.ctx.get("items") as { get(projectId: string, id: string): Item | null; getByKey(projectId: string, key: string): Item | null } | undefined;
+      const items = contract(this.ctx, "items");
       const item = items?.get(call.run.projectId, id) ?? items?.getByKey(call.run.projectId, id);
       const thread = this.store.thread(call.run.projectId, call.run.threadId);
       if (item && thread?.itemId === item.id) throw new Error(`review_delivery: this conversation works on ${item.key}, so it cannot review its delivery — the user accepts it in the delivery panel`);
@@ -428,7 +428,7 @@ export class Agent extends Service {
     });
     // An agent Tomrade did not start reads the rules when it connects; the ones it starts hear them every turn.
     this.ctx.inject(["mcp"], (ctx) => {
-      const mcp = ctx.get("mcp") as { instruct(render: (scope: { projectId?: string }) => string | null, options?: { order?: number }): () => void } | undefined;
+      const mcp = contract(ctx, "mcp");
       mcp?.instruct(({ projectId }) => {
         const rules = projectId ? this.rules(projectId) : null;
         return rules ? rulesInstructions(rules) : null;
@@ -749,7 +749,7 @@ export class Agent extends Service {
    * index — never fatal: a project without storage simply has none.
    */
   async refreshProjectPlaybooks(projectId: string): Promise<void> {
-    const storage = this.ctx.get("storage") as { artifactDirFor(projectId: string): Promise<string | null> } | undefined;
+    const storage = contract(this.ctx, "storage");
     let loaded: Playbook[] = [];
     try {
       const dir = storage?.artifactDirFor ? await storage.artifactDirFor(projectId) : null;
@@ -787,7 +787,7 @@ export class Agent extends Service {
 
   /** `<project folder>/.tomrade/rules.md`: text beside the project's playbooks and decisions, travelling with it. */
   rulesFile(projectId: string): string | null {
-    const dir = (this.ctx.get("storage") as { artifactDirFor(projectId: string): string | null } | undefined)?.artifactDirFor(projectId);
+    const dir = contract(this.ctx, "storage")?.artifactDirFor(projectId);
     return typeof dir === "string" ? path.join(dir, "rules.md") : null;
   }
 
@@ -966,7 +966,7 @@ export class Agent extends Service {
   }
 
   private async prepare(projectId: string, itemId: string, opts: GeneralStartOptions): Promise<{ preparation: GeneralPreparation; item: Item }> {
-    const items = this.ctx.get("items") as { get(projectId: string, id: string): Item | null; update(projectId: string, id: string, patch: Patch, by: "human"): Item } | undefined;
+    const items = contract(this.ctx, "items");
     const item = items?.get(projectId, itemId);
     if (!item || item.kind !== "ticket" || item.workType !== "general") throw new Error("Choose a General ticket");
     if (item.humanLocked) throw new Error("Unlock the ticket before starting an agent");
@@ -1129,9 +1129,7 @@ export class Agent extends Service {
     }
     if (!thread) return none;
     if (!thread.boardId) return { ...none, code: "no-board" };
-    const repos = this.ctx.get("repos") as
-      | { workdirFor(projectId: string, boardId: string, threadId: string, opts?: { branch?: string | null; create?: boolean }): Promise<{ cwd: string | null; worktree: string | null; branch: string; repo: { remote: string } } | null> }
-      | undefined;
+    const repos = contract(this.ctx, "repos");
     if (!repos) return { ...none, problem: "the repos plugin is not loaded", code: "no-repos" };
     try {
       // A ticket that is done, or no longer there at all, has nothing left to rebuild.
@@ -1140,7 +1138,7 @@ export class Agent extends Service {
       const create = !!opts.create && (!finished || !!opts.revive);
       const view = await repos.workdirFor(projectId, thread.boardId, threadId, { branch: thread.branch, create });
       if (!view) {
-        const board = (this.ctx.get("boards") as { get(projectId: string, id: string): { repoId: string | null } | null } | undefined)?.get(projectId, thread.boardId);
+        const board = contract(this.ctx, "boards")?.get(projectId, thread.boardId);
         return { ...none, code: board?.repoId ? "unknown-repo" : "no-board-repo" };
       }
       if (!view.cwd) {
@@ -1387,7 +1385,7 @@ export class Agent extends Service {
 
   /** The words the platform writes into a conversation, in the person's language now. */
   private words(): AgentWords {
-    return AGENT_WORDS((this.ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
+    return AGENT_WORDS(localeOf(this.ctx));
   }
 
   private makeRunCtx(run: RunView, thread: ThreadSummary, engine: Engine): RunCtx {
@@ -1567,20 +1565,20 @@ export class Agent extends Service {
   }
 
   private itemOf(projectId: string, itemId: string): Item | null {
-    return (this.ctx.get("items") as { get(projectId: string, id: string): Item | null } | undefined)?.get(projectId, itemId) ?? null;
+    return contract(this.ctx, "items")?.get(projectId, itemId) ?? null;
   }
 
   /** The ticket a code thread implements, as the engine should hear about it. */
   private ticketOf(thread: ThreadSummary): TurnInput["ticket"] {
     if (!thread.itemId) return undefined;
-    const items = this.ctx.get("items") as { get(projectId: string, id: string): Item | null } | undefined;
+    const items = contract(this.ctx, "items");
     const item = items?.get(thread.projectId, thread.itemId);
     return item ? { id: item.id, key: item.key, title: item.title, branch: thread.branch, workType: item.workType, body: item.body, waitsOn: this.waitsOn(thread.projectId, item) } : undefined;
   }
 
   /** Open dependencies are the human's call at Start; once work is under way they are what the agent is told, not a reason to stop it. */
   private waitsOn(projectId: string, item: Item): OpenDependency[] {
-    const items = this.ctx.get("items") as { get(projectId: string, id: string): Item | null } | undefined;
+    const items = contract(this.ctx, "items");
     return item.blockedBy.flatMap((id) => {
       const dependency = items?.get(projectId, id);
       return dependency && dependency.status !== "done" && dependency.status !== "cancelled" ? [{ key: dependency.key, title: dependency.title, status: dependency.status }] : [];
@@ -1599,7 +1597,7 @@ export class Agent extends Service {
       if (!rc.thread.execution && this.ticketOf(rc.thread)?.workType === "general") throw new Error("Start General work from the ticket to bind its delivery and playbook before executing");
       if (rc.thread.execution) {
         const ticket = this.ticketOf(rc.thread);
-        const items = this.ctx.get("items") as { get(projectId: string, id: string): Item | null } | undefined;
+        const items = contract(this.ctx, "items");
         const currentItem = items?.get(rc.projectId, rc.thread.itemId!);
         if (!currentItem || currentItem.humanLocked || currentItem.status === "done" || currentItem.status === "cancelled") throw new Error("The ticket is closed, missing, or human-locked");
         const active = new DeliveryStore(this.ctx.db).active(rc.projectId, rc.thread.itemId!);
@@ -1616,7 +1614,7 @@ export class Agent extends Service {
       const modes = rc.engine.permissionModes;
       const selectedMode = modes ? rc.thread.permissionMode ?? modes.default : undefined;
       if (selectedMode) rc.io.permissionMode?.(selectedMode);
-      const project = (this.ctx.get("projects") as { get(id: string): { name: string; keyPrefix: string } | null } | undefined)?.get(rc.projectId);
+      const project = contract(this.ctx, "projects")?.get(rc.projectId);
       const rules = this.rules(rc.projectId);
       const turnInput: TurnInput = {
         threadId: rc.threadId,
@@ -2077,7 +2075,7 @@ export class Agent extends Service {
    * existed, and is moved into the Hub the first time one is chosen.
    */
   private userPlaybooksDir(): string | null {
-    const hub = this.ctx.get("hub") as { dir: string | null } | undefined;
+    const hub = contract(this.ctx, "hub");
     if (hub?.dir) return path.join(hub.dir, "playbooks");
     return this.config.playbooksDir ?? null;
   }

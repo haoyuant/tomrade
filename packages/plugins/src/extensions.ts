@@ -23,7 +23,7 @@ import {
   type TrustTier
 } from "@tomradex/plugin-kit";
 import { PROTECTED_ROWS, type RowPatch } from "./types.js";
-import { errorMessage } from "@tomradex/contracts";
+import { errorMessage, writeJsonAtomic } from "@tomradex/contracts";
 
 export interface ExtensionStoreConfig {
   /** `~/Tomrade/plugins`: installed versions and each plugin's data. */
@@ -193,10 +193,7 @@ export class ExtensionStore {
   private writeGrants(): void {
     const out: Record<string, { tomrade: string[]; sdk: string[] }> = {};
     for (const [key, grant] of this.grants) if (grant.tomrade.size || grant.sdk.size) out[key] = { tomrade: [...grant.tomrade].sort(), sdk: [...grant.sdk].sort() };
-    fs.mkdirSync(path.dirname(this.compatibilityFile), { recursive: true });
-    const tmp = `${this.compatibilityFile}.tmp`;
-    fs.writeFileSync(tmp, `${JSON.stringify(out, null, 2)}\n`);
-    fs.renameSync(tmp, this.compatibilityFile);
+    writeJsonAtomic(this.compatibilityFile, out);
   }
 
   /** The ranges a manifest names that this Tomrade is outside, and whether this exact pair was let in. */

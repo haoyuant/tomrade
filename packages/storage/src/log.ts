@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { OplogEntry } from "@tomradex/domain";
 import { ARTIFACT_DIR } from "./state.js";
+import { writeFileAtomic } from "@tomradex/contracts";
 
 export const LOG_DIR = "log";
 
@@ -90,9 +91,7 @@ export function compactLog(dir: string, device: string, windowMs: number, now = 
   const ops = parseLog(fs.readFileSync(file, "utf8"));
   const kept = ops.filter((op) => now - op.at <= windowMs);
   if (kept.length === ops.length) return;
-  const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, header(device) + kept.map((l) => JSON.stringify(l)).join("\n") + (kept.length ? "\n" : ""), "utf8");
-  fs.renameSync(tmp, file);
+  writeFileAtomic(file, header(device) + kept.map((l) => JSON.stringify(l)).join("\n") + (kept.length ? "\n" : ""), { mkdir: false });
 }
 
 export const parseOpId = (id: string): { device: string; seq: number } | null => {

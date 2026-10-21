@@ -453,6 +453,9 @@ importers:
 
   packages/boards:
     dependencies:
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/db':
         specifier: workspace:*
         version: link:../db
@@ -1250,9 +1253,6 @@ importers:
       '@tomradex/contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@tomradex/doctor':
-        specifier: workspace:*
-        version: link:../doctor
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
@@ -1450,12 +1450,12 @@ importers:
 
   packages/inbox-tomrade:
     dependencies:
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/contributions':
         specifier: workspace:*
         version: link:../contributions
-      '@tomradex/doctor':
-        specifier: workspace:*
-        version: link:../doctor
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
@@ -1812,6 +1812,9 @@ importers:
       '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/contributions':
         specifier: workspace:*
         version: link:../contributions
@@ -2032,6 +2035,9 @@ importers:
 
   packages/projects:
     dependencies:
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/db':
         specifier: workspace:*
         version: link:../db
@@ -2072,6 +2078,9 @@ importers:
       '@tomradex/boards':
         specifier: workspace:*
         version: link:../boards
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/db':
         specifier: workspace:*
         version: link:../db
@@ -2192,6 +2201,9 @@ importers:
 
   packages/shell:
     dependencies:
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
@@ -2607,6 +2619,9 @@ importers:
 
   packages/web-search:
     dependencies:
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain

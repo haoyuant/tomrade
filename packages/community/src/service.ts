@@ -15,7 +15,7 @@ import { linkGitHub } from "./oauth.js";
 import { BUNDLE_CATALOG, OFFICIAL_CATALOG_URL, OfficialCatalog, bundledPackage, isOfficialId } from "./official.js";
 import { githubAccess, prepareRelease, type GitHubAccess } from "./publish.js";
 import { latestInstallable, planUpdate, revoked, type Revocation, type Tier, type UpdatePlan, type VersionRow } from "./rules.js";
-import { errorMessage } from "@tomradex/contracts";
+import { type CommunityReader, errorMessage } from "@tomradex/contracts";
 
 export const CommunityConfig = z.preprocess(
   (v) => v ?? {},
@@ -225,7 +225,7 @@ interface Source {
  * is open source and its person judges it. What is installed must be the
  * exact build its source lists; an official one must carry Tomrade's signature.
  */
-export class Community extends Service {
+export class Community extends Service implements CommunityReader {
   static provide = "community";
   static inject = ["settings", "github"];
   static Config = CommunityConfig;

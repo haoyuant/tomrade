@@ -40,14 +40,13 @@ import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView
 import { findCodexRollout, findTranscript, readConversation, transcriptTitle, type ConversationLine } from "./titles.js";
 import { AUTO_TERMINAL, TerminalSettings, commandOk, exec, machineTerminalSettings, setupTerminal, terminalApps } from "./terminal.js";
 import { registerTools } from "./tools.js";
-import { errorMessage } from "@tomradex/contracts";
+import { type CodeLinkReader, errorMessage } from "@tomradex/contracts";
 
 export { AUTHOR, deliveryMerged, primaryOf, type ScanSummary, type UnlinkedBranch } from "./scan/absorb.js";
 export { compareUrl, MERGE_COMMAND, type MergeCheckView, type MergeLocalResult, type OpenPrResult } from "./landing.js";
 export type { ConnectMode, ConnectResult } from "./connect-repo.js";
 export { MCP_AGENT } from "./connections.js";
 export { lastSaid } from "./herdr-bridge.js";
-export { ago } from "./contrib.js";
 
 declare module "cordis" {
   interface Context {
@@ -196,7 +195,7 @@ const SETTINGS_SECTION = {
  * the user does in a terminal. Nothing here rewrites a branch or touches the
  * user's checkout.
  */
-export class CodeLink extends Service {
+export class CodeLink extends Service implements CodeLinkReader {
   static provide = "codeLink";
   static inject = ["db", "items", "boards", "repos", "hub", "settings", "storage", "github"];
   static Config = CodeLinkConfig;

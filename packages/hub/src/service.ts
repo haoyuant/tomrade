@@ -6,6 +6,8 @@ import { Context, Service } from "cordis";
 import { z } from "zod";
 import type {} from "@tomradex/ipc";
 import { Catalog, RemoteRef, type CatalogDamage } from "./catalog.js";
+import type { HubReader } from "@tomradex/contracts";
+import { readJsonOr, writeJsonAtomic } from "@tomradex/contracts";
 
 declare module "cordis" {
   interface Context {
@@ -66,27 +68,12 @@ const HubState = z.object({
 });
 type HubState = z.infer<typeof HubState>;
 
-const readJson = (file: string): unknown => {
-  try {
-    return JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch {
-    return undefined;
-  }
-};
-
-const writeJson = (file: string, value: unknown): void => {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(value, null, 2) + "\n", "utf8");
-  fs.renameSync(tmp, file);
-};
-
 /**
  * This machine, as far as Tomrade is concerned: a stable device id, the Hub
  * folder where the user's own files live, and the catalog of what is here.
  * Nothing in this service is ever synced; all of it can be rebuilt.
  */
-export class Hub extends Service {
+export class Hub extends Service implements HubReader {
   static provide = "hub";
   static Config = HubConfig;
 
@@ -110,7 +97,7 @@ export class Hub extends Service {
     if (this.config.memory) {
       this.state.dir = this.config.defaultDir ?? null;
     } else if (this.config.stateFile) {
-      const parsed = HubState.safeParse(readJson(this.config.stateFile) ?? {});
+      const parsed = HubState.safeParse(readJsonOr<unknown>(this.config.stateFile, undefined) ?? {});
       if (parsed.success) this.state = parsed.data;
     }
     this.home.inject(["ipc"], (ctx) => {
@@ -178,15 +165,15 @@ export class Hub extends Service {
 
   private persist(): void {
     if (this.config.memory || !this.config.stateFile) return;
-    writeJson(this.config.stateFile, this.state);
+    writeJsonAtomic(this.config.stateFile, this.state);
   }
 
   private loadDevice(): string {
     if (this.config.memory || !this.config.deviceFile) return this.config.memory ? "test-device" : randomBytes(6).toString("hex");
-    const existing = readJson(this.config.deviceFile) as { id?: unknown } | undefined;
+    const existing = readJsonOr<{ id?: unknown } | undefined>(this.config.deviceFile, undefined);
     if (existing && typeof existing.id === "string" && existing.id) return existing.id;
     const id = randomBytes(6).toString("hex");
-    writeJson(this.config.deviceFile, { id });
+    writeJsonAtomic(this.config.deviceFile, { id });
     return id;
   }
 }

@@ -3,14 +3,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Context, Service } from "cordis";
-import type {} from "@tomradex/doctor";
 import { findCommand } from "@tomradex/engine-kit";
 import type {} from "@tomradex/ipc";
-import type { Check, CheckResult } from "@tomradex/doctor";
 import { HerdrError, herdrCall, herdrSocketPath, herdrStream, type HerdrEvent } from "./client.js";
 import { openTerminal, type OpenedTerminal, type TerminalFrame, type TerminalMode, type TerminalMouse, type TerminalScroll, type TerminalStream } from "./terminal.js";
 import { HERDR_WORDS } from "./words.js";
-import { errorMessage } from "@tomradex/contracts";
+import { type Check, type CheckResult, contract, errorMessage } from "@tomradex/contracts";
 
 export { HerdrError, herdrCall, herdrSocketPath, herdrStream, type HerdrEvent } from "./client.js";
 export * from "./terminal.js";
@@ -217,7 +215,7 @@ export class Herdr extends Service {
   }
 
   [Service.init]() {
-    this.ctx.inject(["doctor"], (ctx) => ctx.doctor.check(this.check(ctx)));
+    this.ctx.inject(["doctor"], (ctx) => contract(ctx, "doctor")?.check(this.check(ctx)));
     this.ctx.inject(["ipc"], (ctx) => this.serveTerminals(ctx));
     this.ctx.effect(() => () => {
       this.disposed = true;
@@ -820,7 +818,7 @@ export class Herdr extends Service {
       id: "herdr",
       title: () => "herdr",
       run: async (): Promise<CheckResult> => {
-        const w = HERDR_WORDS(ctx.doctor.locale());
+        const w = HERDR_WORDS(contract(ctx, "doctor")?.locale());
         const version = await this.installed();
         if (!version) return { state: "skip", line: w("notInstalled", { install: HERDR_INSTALL }) };
         // Only a live terminal needs these; everything else herdr does for Tomrade still works.

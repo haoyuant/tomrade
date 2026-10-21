@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { errorMessage } from "@tomradex/contracts";
+import { errorMessage, writeJsonAtomic } from "@tomradex/contracts";
 
 /** Where a project's shareable copy is published, in provider terms. Non-secret; portable. */
 export const RemoteRef = z.object({
@@ -157,11 +157,7 @@ export class Catalog {
 
   private save(): void {
     if (!this.file || this.damage) return;
-    fs.mkdirSync(path.dirname(this.file), { recursive: true });
-    const body = JSON.stringify({ ...this.data, projects: [...this.data.projects].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id)) }, null, 2) + "\n";
-    const tmp = `${this.file}.tmp`;
-    fs.writeFileSync(tmp, body, "utf8");
-    fs.renameSync(tmp, this.file);
+    writeJsonAtomic(this.file, { ...this.data, projects: [...this.data.projects].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id)) });
   }
 
   projects(): CatalogProject[] {

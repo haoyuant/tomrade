@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { GitFolder, cleanRemote, execGit, type Git } from "@tomradex/git";
 import type { FileListPreference, FilesAgentPolicy, FilesSyncPolicy, ListMode, PathPolicy, PathPreference, ProjectRepository, SyncMode } from "./types.js";
+import { readJsonOr, writeJsonAtomic } from "@tomradex/contracts";
 
 /** A version made portable: the pair a ticket pins, and where the file was then. Its bytes travel beside the record. */
 export interface VersionRecord {
@@ -112,18 +113,11 @@ export function validPolicy<M extends string>(value: unknown, modes: M[]): PathP
 
 /** Atomic machine-local metadata, deliberately outside the versioned tree. */
 export function saveJson(file: string, value: unknown): void {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(`${file}.tmp`, JSON.stringify(value));
-  fs.renameSync(`${file}.tmp`, file);
+  writeJsonAtomic(file, value, { pretty: false });
 }
 
 export function loadJson<T>(file: string, fallback: T): T {
-  try {
-    return JSON.parse(fs.readFileSync(file, "utf8")) as T;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return fallback;
-    throw error;
-  }
+  return readJsonOr(file, fallback, { missingOnly: true });
 }
 
 export function remoteDirectory(input = ""): string {

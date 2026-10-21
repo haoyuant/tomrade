@@ -6,7 +6,7 @@ import { extensionScope, writeContext } from "@tomradex/write";
 import type {} from "@tomradex/ipc";
 import { patchOf, rowToEntry, type OplogRow } from "./rows.js";
 import { applyEntry, labelOf, redoSummary, undoLast, undoRow, undoSummary, undoRun, undoVia, undoneRow, undoneRows, wasPurged } from "./undo.js";
-import { errorMessage } from "@tomradex/contracts";
+import { errorMessage, localeOf } from "@tomradex/contracts";
 
 declare module "cordis" {
   interface Context {
@@ -135,7 +135,7 @@ export class Oplog extends Service {
 
   /** The person's language, for the summaries ⌘Z shows; English where no settings are loaded. */
   private locale(): LanguageTag {
-    return languageTag((this.ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
+    return languageTag(localeOf(this.ctx));
   }
 
   private get device(): string {

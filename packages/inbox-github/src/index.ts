@@ -6,7 +6,7 @@ import type {} from "@tomradex/items";
 import { remoteIdentity, serverHost, sshHostName } from "@tomradex/repos";
 import type {} from "@tomradex/settings";
 import { GITHUB_WORDS } from "./words.js";
-import { errorMessage } from "@tomradex/contracts";
+import { contract, errorMessage, type LandedLink, localeOf } from "@tomradex/contracts";
 
 export const name = "inbox-github";
 export const inject = ["inbox", "github", "repos", "items"];
@@ -49,13 +49,7 @@ export interface Api {
   whoami(): Promise<string>;
 }
 
-/** Code-link's record of where a ticket's code landed, read structurally so this needs no code-link. */
-export interface LandedLink {
-  repoId: string;
-  mergedSha: string | null;
-  prNumber: number | null;
-  prState: string | null;
-}
+export type { LandedLink };
 
 export interface Issue {
   number: number;
@@ -356,8 +350,8 @@ export function githubSource(deps: Deps): InboxSource {
 }
 
 export function apply(ctx: Context) {
-  const words = () => wordsIn((ctx.get("settings") as { locale?: () => string } | undefined)?.locale?.());
-  const codeLink = () => ctx.get("codeLink") as { links(projectId: string, itemId?: string): LandedLink[] } | undefined;
+  const words = () => wordsIn(localeOf(ctx));
+  const codeLink = () => contract(ctx, "codeLink");
   ctx.inbox.source(
     githubSource({
       api: ctx.github.api,

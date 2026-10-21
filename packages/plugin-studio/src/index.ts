@@ -6,12 +6,12 @@ import { z } from "zod";
 import { loadPlaybookDir } from "@tomradex/agent";
 import type {} from "@tomradex/db";
 import type {} from "@tomradex/ipc";
-import { build, check, pack, scaffold, test, type CheckReport, type EnglishWords } from "@tomradex/plugin-cli";
+import { build, check, pack, scaffold, test, type CheckReport } from "@tomradex/plugin-cli";
 import { dataDirFor, packageDigest, readManifest, type Analysis } from "@tomradex/plugin-kit";
 import { MANIFEST_FILE, namespaceOf, riskOf, type Dictionaries, type LanguageCoverage, type Manifest, type Risk } from "@tomradex/plugin-sdk";
 import type { PluginView, Plugins } from "@tomradex/plugins";
 import { defineTool } from "@tomradex/tools";
-import { errorMessage } from "@tomradex/contracts";
+import { contract, errorMessage } from "@tomradex/contracts";
 
 export const Config = z.preprocess(
   (v) => v ?? {},
@@ -157,7 +157,7 @@ export default {
       if (!NAME.test(name)) throw new Error(`"${name}" is not a workspace name: lowercase letters, digits and dashes`);
       const dir = path.join(config.devRoot, name);
       if (fs.existsSync(path.join(dir, MANIFEST_FILE))) return dir;
-      const publisher = (ctx.get("community") as { publisherLogin?(): string | null } | undefined)?.publisherLogin?.() ?? config.publisher;
+      const publisher = contract(ctx, "community")?.publisherLogin?.() ?? config.publisher;
       scaffold(dir, { id: `${publisher}/${name}`, title, description, authoredBy: "agent" });
       watched = known();
       notify();
@@ -172,7 +172,7 @@ export default {
     };
 
     // What a language pack translates: the backend's books, and the interface's once a window has said.
-    const english = () => (ctx.get("settings") as { english?: () => EnglishWords } | undefined)?.english?.();
+    const english = () => contract(ctx, "settings")?.english?.();
     const coverageOf = (coverage: LanguageCoverage | null, source: Dictionaries | null | undefined) => {
       if (!coverage || !source) return null;
       const englishOf = (key: string) => {

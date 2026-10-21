@@ -8,7 +8,7 @@ import type { CodeLink, ConnectMode } from "./service.js";
 import type { StartMode } from "./start.js";
 import type { CodeLinkView, ProposalView } from "./store.js";
 import { herdrFallbackNote, launchTerminal, machineTerminalSettings } from "./terminal.js";
-import { CODE_WORDS, type CodeWords, type PlainCodeWord } from "./words.js";
+import type { CodeWords, PlainCodeWord } from "./words.js";
 
 // Names a word book translates; any other value reads as it is.
 export const DELIVERY_STATES = { active: "deliveryActive", completed: "deliveryCompleted", cancelled: "deliveryCancelled" } as const;
@@ -26,11 +26,6 @@ export const agoWords = (w: CodeWords, s: number): string => {
   if (h < 48) return w("hoursAgo", { n: h });
   return w("daysAgo", { n: Math.round(h / 24) });
 };
-
-/** Relative time for a status line or a section row. */
-export function ago(at: number, now = Date.now()): string {
-  return agoWords(CODE_WORDS("en"), Math.max(0, Math.round((now - at) / 1000)));
-}
 
 export interface ContribHost {
   /** The service's own context. */

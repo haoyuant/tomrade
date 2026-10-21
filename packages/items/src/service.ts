@@ -25,6 +25,7 @@ import type { Fields, StoredValue } from "@tomradex/fields";
 import { registerChannels } from "./channels.js";
 import { compileQuery, compileSearch, type SearchMode } from "./query.js";
 import { registerTools } from "./tools.js";
+import type { ItemsReader, ItemsWriter } from "@tomradex/contracts";
 
 declare module "cordis" {
   interface Context {
@@ -111,7 +112,7 @@ export interface ItemQuery {
   widen?: boolean;
 }
 
-export class Items extends Service {
+export class Items extends Service implements ItemsReader, ItemsWriter {
   get deliveries(): DeliveryStore { return new DeliveryStore(this.ctx.db); }
   private filesResolver: FilesResolver | null = null;
 
