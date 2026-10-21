@@ -85,6 +85,49 @@ export interface EngineSetup {
   desktop?: { title: string; shipsCli: boolean };
   /** Offered on setup screens before it is installed. */
   suggested?: boolean;
+  /** Installs Tomrade runs itself in the background, most reliable first; one that does not fit this machine is skipped. Absent, only the terminal commands remain. */
+  installers?: EngineInstaller[];
+  /** A sign-in command Tomrade runs and watches itself: it opens or prints a browser address and needs no typing. Without it, signing in happens in a terminal while Tomrade polls. */
+  signInRun?: { args: string[] };
+}
+
+/**
+ * One way Tomrade itself installs the CLI, no terminal and no admin rights.
+ * `npm` runs through the system npm when it answers, else the app's borrowed
+ * one; `script` is the agent's official installer for one platform family;
+ * `brew` is tried only where Homebrew is already installed.
+ */
+export type EngineInstaller =
+  | { kind: "npm"; package: string }
+  | { kind: "script"; url: string; shell: "sh" | "powershell" }
+  | { kind: "brew"; name: string; cask?: boolean };
+
+export type EngineSetupStep = "install" | "sign-in";
+
+/** Why a setup step failed, sorted into a kind a screen can word in the person's language. */
+export interface EngineSetupFailure {
+  kind: "network" | "registry" | "permission" | "disk-full" | "unsupported" | "not-found" | "not-on-path" | "timeout" | "exit" | "cancelled";
+  /** The underlying words, English or the tool's own, for the details view. */
+  message: string;
+}
+
+/** Where one engine's setup step stands; pushed as it moves. */
+export interface EngineSetupProgress {
+  engineId: string;
+  step: EngineSetupStep;
+  /** `waiting`: a sign-in that needs the person — in the browser, or in the terminal when `terminal` is set. */
+  phase: "running" | "checking" | "waiting" | "done" | "failed";
+  /** Which installer is being tried ("script", "npm", "brew"). */
+  installer?: string;
+  /** The last lines of output, shown on a failure. */
+  output?: string;
+  failure?: EngineSetupFailure;
+  /** The version detection reported once the step was done; absent when the step was already satisfied. */
+  version?: string;
+  /** The sign-in address caught from the agent's output, for the screen to open when the agent did not. */
+  url?: string;
+  /** Signing in needs the agent's own terminal session (`setup.signIn`); Tomrade keeps watching until it is signed in. */
+  terminal?: boolean;
 }
 
 /**

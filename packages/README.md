@@ -84,6 +84,7 @@ Every package keeps `"private": true`, so `npm publish` from a source folder fai
 | `engine-codex` | Codex (app-server) as conductor. | — | agent, engine-kit, llm, mcp |
 | `engine-pi` | The Pi coding agent as conductor. | — | agent, code-link, engine-kit, llm, mcp |
 | `engine-acp` | One conductor for agents that speak ACP; the agents official plugins describe. | `localAgents` | agent, engine-kit, llm, mcp, plugin-sdk |
+| `agent-setup` | One-click agent setup: installs a chosen agent's CLI in the background and watches its sign-in until it works. | `agentSetup` | agent, engine-kit |
 | `shell` | A bash tool for in-process engines, asked before each command, never served over MCP. | — | tools |
 | `web-search` | `web_search` and `web_fetch` for every engine, answered by a registered provider. | `webSearch` | tools |
 | `web-search-tavily` | Tavily as that provider, with the person's own key. | — | web-search |

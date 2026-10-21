@@ -5,7 +5,7 @@
     "publish": "sdk"
   },
   "license": "Apache-2.0",
-  "version": "0.2.25",
+  "version": "0.2.26",
   "type": "module",
   "description": "The Tomrade plugin contract: definePlugin, the async PluginContext every extension receives, and the manifest schema",
   "main": "dist/index.js",
