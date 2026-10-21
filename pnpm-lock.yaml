@@ -2560,6 +2560,9 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.3.0
         version: 4.3.3(vite@6.4.3(@types/node@26.2.0)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0))
+      '@tomradex/agent-setup':
+        specifier: workspace:*
+        version: link:../agent-setup
       '@tomradex/boards':
         specifier: workspace:*
         version: link:../boards

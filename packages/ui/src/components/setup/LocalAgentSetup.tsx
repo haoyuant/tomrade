@@ -7,6 +7,7 @@ import { engineStateLabel, engineStatus, useRecheckEngines } from "~/lib/localCl
 import { setupRows, useSetupInTerminal } from "~/lib/setup";
 import { openExternal } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
+import { SetupChain } from "./SetupChain";
 
 function CommandLine({ command }: { command: string }) {
   const { t } = useI18n();
@@ -101,31 +102,40 @@ export function LocalAgentSetup({ engines, onOpenSettings }: { engines: EngineVi
                 </span>
               )}
               {status === "desktop-only" && <span className="setup-fix">{t("localCli.desktopOnlyDetail", { app: e.cli?.desktopApp ?? "", name: e.cli?.name ?? "" })}</span>}
-              {downloadFirst && download}
-              {installing && !setup.install[0] && setup.docs && (
-                <span className="setup-fix">
-                  {t("setup.noInstaller")}
-                  <button type="button" className="link-btn setup-action" data-testid={`install-guide-${e.id}`} onClick={() => openExternal(setup.docs!)}>
-                    {t("localCli.docs")} →
-                  </button>
-                </span>
-              )}
-              {installing && setup.install[0] && (
-                <span className="setup-fix">
-                  <CommandLine command={setup.install[0]} />
-                  <button type="button" className="btn btn-secondary btn-xs setup-action" data-testid={`install-${e.id}`} disabled={terminal.isPending} onClick={() => run(e, "install")}>
-                    {t("setup.installInTerminal")}
-                  </button>
-                </span>
-              )}
-              {!downloadFirst && download}
-              {status === "sign-in" && setup.signIn && (
-                <span className="setup-fix">
-                  <CommandLine command={setup.signIn} />
-                  <button type="button" className="btn btn-secondary btn-xs setup-action" data-testid={`signin-${e.id}`} disabled={terminal.isPending} onClick={() => run(e, "signIn")}>
-                    {t("setup.signInInTerminal")}
-                  </button>
-                </span>
+              {/* One primary button runs the whole chain; the commands stay behind the disclosure below. */}
+              {health !== "works" && <SetupChain engine={e} />}
+              {health !== "works" && (
+                <details className="setup-manual" data-testid={`manual-${e.id}`}>
+                  <summary>{t("setup.manual")}</summary>
+                  <div className="stack-2">
+                    {downloadFirst && download}
+                    {installing && !setup.install[0] && setup.docs && (
+                      <span className="setup-fix">
+                        {t("setup.noInstaller")}
+                        <button type="button" className="link-btn setup-action" data-testid={`install-guide-${e.id}`} onClick={() => openExternal(setup.docs!)}>
+                          {t("localCli.docs")} →
+                        </button>
+                      </span>
+                    )}
+                    {installing && setup.install[0] && (
+                      <span className="setup-fix">
+                        <CommandLine command={setup.install[0]} />
+                        <button type="button" className="btn btn-secondary btn-xs setup-action" data-testid={`install-${e.id}`} disabled={terminal.isPending} onClick={() => run(e, "install")}>
+                          {t("setup.installInTerminal")}
+                        </button>
+                      </span>
+                    )}
+                    {!downloadFirst && download}
+                    {setup.signIn && (status === "sign-in" || installing) && (
+                      <span className="setup-fix">
+                        <CommandLine command={setup.signIn} />
+                        <button type="button" className="btn btn-secondary btn-xs setup-action" data-testid={`signin-${e.id}`} disabled={terminal.isPending} onClick={() => run(e, "signIn")}>
+                          {t("setup.signInInTerminal")}
+                        </button>
+                      </span>
+                    )}
+                  </div>
+                </details>
               )}
               {((!e.ok && !installing && status !== "sign-in") || problem) && (
                 <button type="button" className="link-btn setup-fix" onClick={() => onOpenSettings(e.id)}>

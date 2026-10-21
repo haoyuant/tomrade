@@ -107,7 +107,12 @@ export class AgentSetup extends Service {
     const signInRun = engine.local?.setup?.signInRun;
     // The engine's probe over a fresh look: exactly what "ready" means everywhere else.
     const probe = async () => (await engine.available({ fresh: true })).ok;
-    const state = await engine.available();
+    const state = await engine.available({ fresh: true });
+    if (state.ok) return void report({ engineId: engine.id, step: "sign-in", phase: "done" });
+    // What it needs is not a sign-in (a model to pick, a service down): say that instead of waiting on one.
+    if (state.need && state.need !== "sign-in") {
+      return void report({ engineId: engine.id, step: "sign-in", phase: "failed", failure: { kind: "exit", message: state.reason ?? state.need } });
+    }
     const file = state.cli?.path;
     const start = signInRun && file
       ? () => {
