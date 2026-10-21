@@ -81,7 +81,8 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
     if (owner && !prefilled.current) { prefilled.current = true; setEmail(e => e || owner); }
   }, [owner]);
   // A new step is announced by moving focus to its title.
-  useEffect(() => { if (step.kind !== "form") stepTitle.current?.focus(); }, [step.kind, step.kind === "reset" && step.sentTo]);
+  const resetSentTo = step.kind === "reset" && step.sentTo;
+  useEffect(() => { if (step.kind !== "form") stepTitle.current?.focus(); }, [step.kind, resetSentTo]);
   const explain = (e: unknown) => {
     const wait = waitOf(e);
     if (wait) return t("account.mailWait", { n: wait });

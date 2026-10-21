@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "~/lib/api";
+import { invoke, logQuietly } from "~/lib/api";
 import { STORE } from "./store";
 
 /** Which conversation the panel shows: the one last picked in this project while it is listed, else the newest. */
@@ -13,7 +13,7 @@ export function useThreadSelection(projectId: string, threads: { id: string }[] 
   shown.current = threadId;
   // Whatever follows the conversation on screen — the desktop pet — is told which one this is.
   useEffect(() => {
-    if (threadId) void invoke("agent.showing", threadId).catch(() => {});
+    if (threadId) void invoke("agent.showing", threadId).catch(logQuietly("agent.showing"));
   }, [threadId]);
   const choose = useCallback((id: string) => {
     setChosenThread(id);

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { AgentSettings, EnginePick, EngineView, RunView } from "@tomradex/agent";
 import { findEngine, conducts, useSetOptions, useSetPermissionMode, type useAgentThread } from "~/lib/agent";
 import { permissionLabel as permissionName } from "~/lib/codeLink";
@@ -35,9 +35,12 @@ export function useEngineChoice({ projectId, threadId, detail, engines, settings
   const rememberedPermission = detail && !detail.thread.itemId && !detail.thread.permissionMode && permissionModes?.choices.some((c) => c.value === storedPermission) ? storedPermission! : undefined;
   const selectedPermissionMode = detail?.thread.permissionMode ?? rememberedPermission ?? permissionModes?.default;
   const activePermissionMode = runningRun ? detail?.activePermissionMode : undefined;
-  // Written onto the thread, so the run uses the mode the chip shows.
+  // Written onto the thread, so the run uses the mode the chip shows. Read, not watched: a write settling must not send another.
+  const permissionWrite = useRef(setPermissionMode);
+  permissionWrite.current = setPermissionMode;
   useEffect(() => {
-    if (threadId && rememberedPermission && !setPermissionMode.isPending) setPermissionMode.mutate({ threadId, mode: rememberedPermission });
+    const write = permissionWrite.current;
+    if (threadId && rememberedPermission && !write.isPending) write.mutate({ threadId, mode: rememberedPermission });
   }, [threadId, rememberedPermission]);
   const permissionLabel = (value?: string) => {
     const choice = permissionModes?.choices.find((c) => c.value === value);

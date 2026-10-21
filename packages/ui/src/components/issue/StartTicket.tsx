@@ -4,7 +4,7 @@ import type { Item } from "@tomradex/domain";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { findEngine, methodWords, ticketMethods, useAgentThread, useAgentThreads, useEngines, usePlaybooks } from "~/lib/agent";
-import { invoke } from "~/lib/api";
+import { invoke, logQuietly } from "~/lib/api";
 import { defaultStartMode, onStartRequest, useHerdrStatus, useCodeDeliveries, useCodeSessions, useStartDefaults, useStartTicket, useTerminalWindow } from "~/lib/codeLink";
 import { StartGateFix, useGateWords, type StartFailure } from "./StartGateFix";
 import { useI18n } from "~/lib/i18n";
@@ -170,7 +170,7 @@ function StartTicketDialog({
     if (thread && thread.engine === engineId) for (const [key, value] of Object.entries(thread.options ?? {})) if (typeof value === "string") out[key] = value;
     else if (rememberedStart && findEngine(candidates, rememberedStart.engine)?.id === engineId) for (const [key, value] of Object.entries(rememberedStart.options ?? {})) if (typeof value === "string") out[key] = value;
     return out;
-  }, [thread, engineId, rememberedStart]);
+  }, [thread, engineId, rememberedStart, candidates]);
   const pickValues = chosenPicks ?? threadPicks;
   const setPick = (key: string, value: string) => setChosenPicks({ ...pickValues, [key]: value });
   const pickTitle = (pick: EnginePick) => (pick.key === "model" || pick.key === "profile" ? t("agentPanel.modelHead") : pick.key === "effort" ? t("agentPanel.effortHead") : pick.title);
@@ -190,7 +190,7 @@ function StartTicketDialog({
     let cancelled = false;
     void invoke("agent.recommendPlaybook", projectId, { title: item.title, body: item.body, workType: "general" })
       .then((result) => { if (!cancelled) setRecommendation(result); })
-      .catch(() => undefined)
+      .catch(logQuietly("agent.recommendPlaybook"))
       .finally(() => { if (!cancelled) setRecommending(false); });
     return () => { cancelled = true; };
   }, [general, projectId, item.title, item.body]);

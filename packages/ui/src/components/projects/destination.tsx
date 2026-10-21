@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ConnectionState, StorageProviderView } from "@tomradex/storage";
 import { Icon } from "~/components/icons";
+import { logQuietly } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
 import { keys, useBrowseStorage, useConnectStorage, useDisconnectStorage, useDraftStorage, useSignInStorage, useStorageConnection } from "~/lib/queries";
 import { openExternal } from "~/lib/shell";
@@ -87,7 +88,7 @@ export function ConnectionPanel({ provider, api = storageRemoteApi }: { provider
     );
   };
 
-  const copy = (code: string) => void navigator.clipboard?.writeText(code).catch(() => {});
+  const copy = (code: string) => void navigator.clipboard?.writeText(code).catch(logQuietly("clipboard"));
   const startSignIn = () =>
     signIn.mutate(provider.id, {
       onSuccess: (next) => {

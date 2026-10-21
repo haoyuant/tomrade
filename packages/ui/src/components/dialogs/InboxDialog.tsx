@@ -41,7 +41,7 @@ export function InboxDialog({ projectId, open, onOpenChange, onOpenIssue }: { pr
   const stirred = useInboxEntries(projectId, "activity", open);
   const counts: Partial<Record<InboxListFilter, number>> = { new: waiting.data?.length ?? 0, activity: stirred.data?.length ?? 0 };
   const actions = useInboxActions(projectId);
-  const list = entries.data ?? [];
+  const list = useMemo(() => entries.data ?? [], [entries.data]);
   const entry = list.find((e) => e.id === selected) ?? null;
   const anySource = (sources.data ?? []).some((s) => s.enabled);
 

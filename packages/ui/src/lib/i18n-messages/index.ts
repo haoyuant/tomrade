@@ -31,7 +31,6 @@ import { localCli } from "./localCli";
 import { mcpLink } from "./mcpLink";
 import { newIssueDialog } from "./newIssueDialog";
 import { newProjectDialog } from "./newProjectDialog";
-import { openProjectDialog } from "./openProjectDialog";
 import { playbooks } from "./playbooks";
 import { plugins } from "./plugins";
 import { mcpServers } from "./mcpServers";
@@ -106,7 +105,6 @@ export const en = {
   repositories: repositories.en,
   projectsScreen: projectsScreen.en,
   newProjectDialog: newProjectDialog.en,
-  openProjectDialog: openProjectDialog.en,
   projectSettingsDialog: projectSettingsDialog.en,
   storageBlock: storageBlock.en,
 
@@ -183,7 +181,6 @@ export const zh: typeof en = {
   repositories: repositories.zh,
   projectsScreen: projectsScreen.zh,
   newProjectDialog: newProjectDialog.zh,
-  openProjectDialog: openProjectDialog.zh,
   projectSettingsDialog: projectSettingsDialog.zh,
   storageBlock: storageBlock.zh,
 

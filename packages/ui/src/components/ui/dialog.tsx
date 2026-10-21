@@ -119,6 +119,14 @@ function writeSize(key: string, size: { w: number; h: number } | null) {
   }
 }
 
+function applySize(el: HTMLElement | null, size: { w: number; h: number } | null) {
+  if (!el) return;
+  el.style.width = size ? `${size.w}px` : "";
+  el.style.height = size ? `${size.h}px` : "";
+  // a moved sheet grows about its centre too, which can carry its header under the title bar
+  if (el.classList.contains("is-movable")) moveSheet(el, offsetOf(el));
+}
+
 /**
  * The sheet stays centred, so its corner moves twice as far as one edge would —
  * doubling the delta keeps it under the pointer. CSS min/max clamp whatever is
@@ -128,15 +136,8 @@ function ResizeGrip({ storageKey }: { storageKey: string }) {
   const { t } = useI18n();
   const ref = useRef<HTMLDivElement>(null);
   const sheet = () => ref.current?.parentElement ?? null;
-  const apply = (size: { w: number; h: number } | null) => {
-    const el = sheet();
-    if (!el) return;
-    el.style.width = size ? `${size.w}px` : "";
-    el.style.height = size ? `${size.h}px` : "";
-    // a moved sheet grows about its centre too, which can carry its header under the title bar
-    if (el.classList.contains("is-movable")) moveSheet(el, offsetOf(el));
-  };
-  useLayoutEffect(() => apply(readSize(storageKey)), [storageKey]);
+  const apply = (size: { w: number; h: number } | null) => applySize(sheet(), size);
+  useLayoutEffect(() => applySize(ref.current?.parentElement ?? null, readSize(storageKey)), [storageKey]);
   const start = (e: ReactPointerEvent<HTMLDivElement>) => {
     const el = sheet();
     if (!el || e.button !== 0) return;

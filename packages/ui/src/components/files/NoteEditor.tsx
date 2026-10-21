@@ -10,7 +10,7 @@ import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/sea
 import type { FileContent, SaveResult } from "@tomradex/files";
 import { decodeHref, isNotePath, linkTarget, noteName } from "@tomradex/notes/syntax";
 import { Icon } from "~/components/icons";
-import { invoke } from "~/lib/api";
+import { invoke, logQuietly } from "~/lib/api";
 import { editorTheme, markdownHighlight } from "~/lib/editorStyle";
 import { nameOf, parentOf } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
@@ -171,7 +171,7 @@ export function NoteEditor({ projectId, content, paths, tags, resolve, onOpenLin
     }
     const text = editor.state.doc.toString();
     if (conflictRef.current) {
-      if (opts.final && text !== base.current.text) await keepCopy(text).catch(() => undefined);
+      if (opts.final && text !== base.current.text) await keepCopy(text).catch(logQuietly("notes.keepCopy"));
       return;
     }
     if (text === base.current.text && !opts.force) return report("saved");
@@ -282,12 +282,13 @@ export function NoteEditor({ projectId, content, paths, tags, resolve, onOpenLin
       view.current = null;
     };
     // One editor per file; the parent keys it by path.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Links that start or stop resolving as files come and go.
   useEffect(() => {
     if (note) view.current?.dispatch({ effects: marks.current.reconfigure(linkMarks((target) => !!latest.current.resolve(target, "wiki"))) });
-  }, [paths]);
+  }, [paths, note]);
 
   /** Brings the other pane to the place `from` shows: by source line where the preview marks its blocks, by proportion where it cannot. */
   const follow = (from: "edit" | "preview") => {

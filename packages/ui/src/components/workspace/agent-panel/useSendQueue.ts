@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { EngineView, RunView, ThreadMessage } from "@tomradex/agent";
 import { invoke } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
@@ -28,11 +28,11 @@ export function useSendQueue({ projectId, threadId, engine, currentEngineId, run
   const toast = useToast();
   // Per thread, in memory: what waits for the running turn to end.
   const [queues, setQueues] = useState<Record<string, Queued[]>>({});
-  const queue = threadId ? (queues[threadId] ?? []) : [];
+  const queue = useMemo(() => (threadId ? (queues[threadId] ?? []) : []), [threadId, queues]);
   const editQueue = (id: string, fn: (q: Queued[]) => Queued[]) => setQueues((prev) => ({ ...prev, [id]: fn(prev[id] ?? []) }));
   // Sent into the running turn and not yet read by the agent; whatever the turn ends without reading joins the queue.
   const [steering, setSteering] = useState<Record<string, Queued[]>>({});
-  const steeringNow = threadId ? (steering[threadId] ?? []) : [];
+  const steeringNow = useMemo(() => (threadId ? (steering[threadId] ?? []) : []), [threadId, steering]);
 
   const steer = async (inThread: string, entry: Queued) => {
     const taken = !!engine?.steers && await invoke("agent.steer", projectId, inThread, entry.id, entry.text).catch(() => false);
@@ -61,11 +61,13 @@ export function useSendQueue({ projectId, threadId, engine, currentEngineId, run
     // a send that did not go keeps its place at the head
     if (!(await doSend(entry.text, entry))) editQueue(inThread, (q) => [entry, ...q.filter((x) => x.id !== entry.id)]);
   };
+  const sendQueuedRef = useRef(sendQueued);
+  sendQueuedRef.current = sendQueued;
   // Waiting messages go on only after a turn that ended well.
   useEffect(() => {
     if (!threadId || !queue.length || busy || held || !caughtUp || sending.current) return;
-    void sendQueued(threadId, queue[0]);
-  }, [threadId, queue, busy, held, caughtUp]);
+    void sendQueuedRef.current(threadId, queue[0]);
+  }, [threadId, queue, busy, held, caughtUp, sending]);
 
   return { queue, steeringNow, editQueue, steer, sendQueued };
 }

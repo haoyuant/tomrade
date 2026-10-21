@@ -42,9 +42,11 @@ function Markdown({ text, linking, lines }: { text: string; linking?: NoteLinkin
   const { html, wanted } = useMemo(() => withImages(base, images), [base, images]);
   const image = useRef(linking?.image);
   image.current = linking?.image;
+  // Keyed by content, so an unchanged list of paths never asks twice.
+  const wantedKey = JSON.stringify(wanted);
   useEffect(() => {
     let live = true;
-    for (const path of wanted) {
+    for (const path of JSON.parse(wantedKey) as string[]) {
       void image.current?.(path).then((src) => {
         if (live && src) setImages((prev) => ({ ...prev, [path]: src }));
       });
@@ -52,7 +54,7 @@ function Markdown({ text, linking, lines }: { text: string; linking?: NoteLinkin
     return () => {
       live = false;
     };
-  }, [wanted.join("\n")]);
+  }, [wantedKey]);
   return (
     <article
       className="md-view body-prose"

@@ -202,7 +202,7 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
     setDragOver(false);
   }, [path]);
 
-  const entries = tree.data ?? [];
+  const entries = useMemo(() => tree.data ?? [], [tree.data]);
   const entry = entries.find((e) => e.path === path) ?? null;
   const isDir = path === "" || entry?.kind === "dir";
   const dir = isDir ? path : parentOf(path);

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { FileChange, FileEntry } from "@tomradex/files";
 import { Icon } from "~/components/icons";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
@@ -42,13 +42,15 @@ function useExpanded(projectId: string, current: string | null) {
     localStorage.setItem(key, JSON.stringify([...next]));
     return next;
   };
+  const persistRef = useRef(persist);
+  persistRef.current = persist;
   useEffect(() => {
     if (!current) return;
     const parts = current.split("/");
     setOpen((prev) => {
       const next = new Set(prev);
       for (let i = 1; i < parts.length; i++) next.add(parts.slice(0, i).join("/"));
-      return next.size === prev.size ? prev : persist(next);
+      return next.size === prev.size ? prev : persistRef.current(next);
     });
   }, [current]);
   const toggle = (path: string) =>
@@ -90,7 +92,7 @@ export function FilesTree({ children: frame }: { children: (head: ReactNode, bod
   const noteActions = useNoteActions();
   const searching = useNotesSearchState().open && notesOn;
 
-  const entries = tree.data ?? [];
+  const entries = useMemo(() => tree.data ?? [], [tree.data]);
   const existing = useMemo(() => new Set(entries.map((e) => e.path)), [entries]);
   const children = useMemo(() => {
     const map = new Map<string, FileEntry[]>();

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReportView } from "@tomradex/doctor";
 import { Icon } from "~/components/icons";
 import { SectionHead, Spacer, Tag } from "~/components/ui/atoms";
-import { invoke } from "~/lib/api";
+import { invoke, logQuietly } from "~/lib/api";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useErrorToast } from "~/lib/toast";
 import { keys } from "~/lib/queries";
@@ -33,7 +33,7 @@ export function MyReports() {
   const unread = reports.data?.unread ?? 0;
   // Seen once shown; the marks stay on screen until the list is read again.
   useEffect(() => {
-    if (unread) void invoke("doctor.markRead").catch(() => {});
+    if (unread) void invoke("doctor.markRead").catch(logQuietly("doctor.markRead"));
   }, [unread]);
   const refresh = () => void qc.invalidateQueries({ queryKey: keys.doctor.reports });
   const remove = useMutation({ mutationFn: (code: string) => invoke("doctor.deleteReport", code), onSuccess: refresh, onError: reportError });

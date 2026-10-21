@@ -34,8 +34,6 @@ export const mcpServers = {
     approximateTitle: "Its input schema could not be read exactly. The model is shown the original schema and the server checks the arguments.",
     noTools: "The server lists no tools.",
 
-    formNew: "New server",
-    formEdit: "Edit {{id}}",
     idLabel: "Name",
     idHint: "Its tools are called {{example}}.",
     idInvalid: "Lowercase letters, digits, _ or -, starting with a letter or digit, 24 at most.",
@@ -105,8 +103,6 @@ export const mcpServers = {
     approximateTitle: "它的参数格式无法精确读取。模型会看到原始的参数格式，参数由服务器自己校验。",
     noTools: "这个服务器没有列出任何工具。",
 
-    formNew: "新服务器",
-    formEdit: "编辑 {{id}}",
     idLabel: "名称",
     idHint: "它的工具会叫 {{example}}。",
     idInvalid: "只能用小写字母、数字、_ 或 -，以字母或数字开头，最多 24 个字符。",

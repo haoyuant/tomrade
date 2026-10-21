@@ -47,9 +47,12 @@ export function NotesSearch() {
   const [draft, setDraft] = useState(state.query);
   const [query, setQuery] = useState(state.query);
   // Every open — the button, ⌘⇧F, a tag clicked in a note — puts its query in the field and the caret after it.
+  // Only an open does: the query typing writes back must not re-seed the field.
+  const openedQuery = useRef(state.query);
+  openedQuery.current = state.query;
   useEffect(() => {
-    setDraft(state.query);
-    setQuery(state.query);
+    setDraft(openedQuery.current);
+    setQuery(openedQuery.current);
     input.current?.focus();
     input.current?.select();
   }, [state.focus]);

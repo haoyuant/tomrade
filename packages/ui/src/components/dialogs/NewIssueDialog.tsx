@@ -7,7 +7,7 @@ import { useCreateItem } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace } from "~/components/workspace/context";
 import { methodWords, ticketMethods, usePlaybooks } from "~/lib/agent";
-import { invoke } from "~/lib/api";
+import { invoke, logQuietly } from "~/lib/api";
 import { useToastUndo } from "~/lib/undo";
 import { isCommitKey } from "~/lib/keys";
 
@@ -73,7 +73,7 @@ function NewIssueSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (o
         setTemplate(result.playbookId);
         setRecommendationKey(`${title.trim()}|${body.trim()}|${result.workType}`);
         setRecommendation({ playbookId: result.playbookId, reason: result.reason, source: result.source, requires: result.requires });
-      }).catch(() => undefined);
+      }).catch(logQuietly("agent.recommendPlaybook"));
     }, 500);
     return () => { cancelled = true; clearTimeout(timer); };
   }, [open, title, body, workType, workTypeTouched, templateTouched, recommendationKey, ws.project.id]);
