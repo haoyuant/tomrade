@@ -119,7 +119,7 @@ returns is disposed when the service goes.
 | `settings` | `register({ title, schema, defaults })` — the card is drawn from the schema — `get`, `set` |
 | `tools` | `register(defineTool(…))` (SDK 0.2.6: `kit` keeps a rarely needed tool out of each request until the model loads it; `kit(id, purpose)` says what the kit is for), `list`, `call`, `gate(check)` (throw to refuse any tool call; SDK 0.2.12: answer `{ args }` or `{ result }` — see [Policies](#policies)) |
 | `contributions` | `command`, `badge`, `statusItem`, `section`, `graph` — see [Contributions](#contributions); callbacks may be async |
-| `agent` | `playbook({ id, title, when, body, tools })`; SDK 0.2.14: `request(hook)`, `requestError(hook)`, `turnEnding(hook)` — the in-app conversation's loop, see [Hooks in the agent's loop](#hooks-in-the-agents-loop); SDK 0.2.15: `cliHook({ events, tools, agents, handle })` — the CLI agents' hooks, see [Hooks in CLI agents](#hooks-in-cli-agents) |
+| `agent` | `playbook({ id, title, when, body, tools })`; SDK 0.2.14: `request(hook)`, `requestError(hook)`, `turnEnding(hook)` — the in-app conversation's loop, see [Hooks in the agent's loop](#hooks-in-the-agents-loop); SDK 0.2.15: `cliHook({ events, tools, agents, handle })` — the CLI agents' hooks, see [Hooks in CLI agents](#hooks-in-cli-agents); SDK 0.2.17: `localAgent(spec)`, see [Local agents](#local-agents) — SDK 0.2.23 takes `acp.terminal: { via: "link" }` in place of the deprecated `acp.terminalViaLink`, which an older plugin may still send |
 | `surfaces` | `open({ id, document, … })` — a document inside the plugin's own package, never a remote page (SDK 0.2.7: `onClose()` says the window is gone, however it went; the handle's calls then reject). SDK 0.2.11: `kind: "window"` (with `minWidth` / `minHeight`) opens a working window and needs `permissions.window`; `post(message)` sends one message to the document; see [Auxiliary desktop surfaces](#auxiliary-desktop-surfaces) |
 | `alerts` | `sounds()` (the system's, its own alert sound first), `play(sound, { volume })` — `system:<name>` or an audio file's absolute path, played by the host — and `notify({ title, body })`, a silent system notification. SDK 0.2.4 |
 | `oplog` | `recent`, `history` |
@@ -669,12 +669,14 @@ no opinion about what to do next. Four registrations extend it, all effects:
 ```ts
 // An ENGINE takes turns: it reads the thread, emits blocks, calls tools.
 // `available()` says what stands in the way (`need`: install, sign-in, model…);
-// a local agent's `setup` gives its install and sign-in commands, the only
+// a local agent's `local.setup` gives its install and sign-in commands, the only
 // ones the app will run in a terminal for the person.
 ctx.agent.engine({
   id: "acme", title: "Acme", author: "ai:acme",
   available: async () => ({ ok: true }),
-  setup: { install: ["npm install -g acme-cli"], signIn: "acme login" },
+  terminal: { mode: "handoff" },
+  steering: "queue",
+  local: { setup: { install: ["npm install -g acme-cli"], signIn: "acme login" } },
   async turn(input, io) {
     const items = await io.tools.execute("list_items", { status: "backlog" });
     io.emit({ type: "text", text: `${(items as unknown[]).length} in the backlog.` });
@@ -909,12 +911,40 @@ The official plugins `tomrade/hermes` (`hermes acp`), `tomrade/dsh` (`dsh
 (`codebuddy --acp`, also the copy inside the WorkBuddy app, run by that app's
 Electron binary) and `tomrade/gemini-cli` (`gemini --acp`) are thin
 descriptions on top of it, handed over through `ctx.agent.localAgent` (see
-[Local agents](#local-agents)). An
-engine that runs only inside Tomrade sets `terminal: false`, and Start offers
-it no terminal session; the reverse, `terminalOnly: true`, is a CLI Tomrade only
-ever starts in a terminal (Antigravity CLI from `tomrade/antigravity`, Cursor from `tomrade/cursor`):
-Start offers it no in-app run, the panel never conducts with it, and Code
-link's command template hands it a session-only MCP config. An engine that runs
+[Local agents](#local-agents)).
+
+What an engine is beyond its turns is said in a few grouped options:
+
+- **`terminal: { mode, via?, claims? }`**: `mode: "none"` runs only inside
+  Tomrade, and Start offers it no terminal session; `"handoff"` (the default
+  when `terminal` is absent) can also be handed a ticket in a terminal;
+  `"only"` is a CLI Tomrade only ever starts in a terminal (Antigravity CLI
+  from `tomrade/antigravity`, Cursor from `tomrade/cursor`): Start offers it no
+  in-app run, the panel never conducts with it, and Code link's command
+  template hands it a session-only MCP config. `via: "link"` says that in a
+  terminal it reaches Tomrade only through its own user-level connection
+  (`local.mcpLink`), which Start then asks for first; `claims: true` says that
+  connection carries no session token, so the session's first act is
+  `claim_ticket`.
+- **`steering: "queue" | "forward"`**: it takes messages sent while a turn
+  runs. `queue`: Tomrade holds them and the engine takes them where its model
+  reads next (`io.takeSteers()`); `forward`: its agent keeps its own queue,
+  each is handed over through `io.steerTo(forward)` and placed in the
+  transcript when the agent reads it (`io.steered(id)`). Absent, the panel
+  queues them until the turn ends.
+- **`local: { checkCli?, setup?, picks?, mcpLink?, commands?, diagnostics? }`**:
+  the agent's own setup on this machine — whether a file is its CLI, its
+  install and sign-in commands, its quick picks, its user-level connection to
+  Tomrade, what its permission settings let through, and what the
+  troubleshooter may read.
+
+The flat members engines had before (`terminal: boolean`, `terminalOnly`,
+`terminalViaLink`, `terminalClaims`, `steers`, and `checkCli`, `setup`,
+`picks`, `mcpLink`, `commands`, `diagnostics` at the top level) are
+deprecated but still accepted: `ctx.agent.engine` maps them once, at
+registration (`steers: true` reads as `queue`; a turn's `io` offers both
+steering protocols either way), and everything after reads the grouped
+options. An engine that runs
 on the model profiles set up in Tomrade (the loop, the built-in agent) sets
 `usesModels: true`: a failed turn's key or model error then points to model
 settings, while any other engine's points to its own sign-in or settings. A binding may also carry `event(payload)`: whatever is POSTed to
@@ -984,7 +1014,7 @@ Each turn does these things in order:
   verbs, so a plugin never ships UI for them.
 
 An engine tells the troubleshooter about itself through
-`Engine.diagnostics`. Only these are read; no agent gets any other file.
+`Engine.local.diagnostics`. Only these are read; no agent gets any other file.
 
 - `logs()`: the agent's own log files, newest first. A report carries their tail.
 - `facts()`: short strings that tell one setup from another (edition, endpoint,
@@ -1244,7 +1274,7 @@ await ctx.agent.localAgent({
     args: (options) => ["acp"],
     mode: (policy) => (policy === "full-access" ? "bypass" : "default"),
     usage: "turn",
-    terminal: true                  // code link can also hand it a ticket in a terminal
+    terminal: true                  // code link can also hand it a ticket in a terminal; SDK 0.2.23: { via: "link" } when it reaches Tomrade there only through mcpLink
   },
   probe: { args: ["models"], says: (output, catalog) => null, reason: "" },
   mcpLink: { cli: { file: () => "~/.acme/mcp.json", configuredUrl: () => null, add: (url) => ["mcp", "add", "tomrade", url], remove: () => ["mcp", "remove", "tomrade"] } },
@@ -1263,7 +1293,7 @@ await ctx.agent.localAgent({
   on stdio, and the rest names its quirks (`mode` per policy, where it reports
   tokens, how a session reopens, how it takes a message mid-turn, its own words
   for a refused turn). Absent: an agent with no ACP that Tomrade starts only in
-  a terminal (`terminalOnly`), handed the ticket and heard over its user-level
+  a terminal (`terminal: { mode: "only" }`), handed the ticket and heard over its user-level
   MCP connection; `picks` are its Model and Effort picks.
 - **`mcpLink`** is the agent's own user-level connection to Tomrade, shown and
   switched in Settings → Assistant: either `{ status, connect, disconnect }`

@@ -41,11 +41,6 @@ export function claudeCodeEngineInfo(ctx: Context): Omit<Engine, "turn"> {
     author: "ai:claude-code",
     capabilities: ["backlog", "code", "general"],
     options: ClaudeCodeOptions,
-    picks: () => [
-      // aliases the CLI resolves itself, so they don't go stale with releases
-      { key: "model", title: "Model", choices: [{ value: "sonnet" }, { value: "opus" }, { value: "haiku" }], freeText: true },
-      { key: "effort", title: "Effort", choices: [{ value: "low" }, { value: "medium" }, { value: "high" }, { value: "xhigh" }, { value: "max" }] }
-    ],
     available: localAvailability(ctx, {
       engineId: "claude-code",
       title: "Claude Code",
@@ -56,15 +51,22 @@ export function claudeCodeEngineInfo(ctx: Context): Omit<Engine, "turn"> {
       signIn: { args: ["auth", "status"], says: claudeSignedIn, reason: "Claude Code is not signed in — run `claude` in a terminal and log in" },
       configDir: () => process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude")
     }),
-    checkCli: (file) => cli.check(file),
-    mcpLink: claudeMcpLink(ctx, cli),
-    setup: {
-      // The official installer first; npm still works and is what many already have.
-      install: [process.platform === "win32" ? "irm https://claude.ai/install.ps1 | iex" : "curl -fsSL https://claude.ai/install.sh | bash", "npm install -g @anthropic-ai/claude-code"],
-      signIn: "claude",
-      signInRuns: true,
-      docs: "https://docs.anthropic.com/en/docs/claude-code/setup",
-      suggested: true
+    local: {
+      picks: () => [
+        // aliases the CLI resolves itself, so they don't go stale with releases
+        { key: "model", title: "Model", choices: [{ value: "sonnet" }, { value: "opus" }, { value: "haiku" }], freeText: true },
+        { key: "effort", title: "Effort", choices: [{ value: "low" }, { value: "medium" }, { value: "high" }, { value: "xhigh" }, { value: "max" }] }
+      ],
+      checkCli: (file) => cli.check(file),
+      mcpLink: claudeMcpLink(ctx, cli),
+      setup: {
+        // The official installer first; npm still works and is what many already have.
+        install: [process.platform === "win32" ? "irm https://claude.ai/install.ps1 | iex" : "curl -fsSL https://claude.ai/install.sh | bash", "npm install -g @anthropic-ai/claude-code"],
+        signIn: "claude",
+        signInRuns: true,
+        docs: "https://docs.anthropic.com/en/docs/claude-code/setup",
+        suggested: true
+      }
     }
   };
 }

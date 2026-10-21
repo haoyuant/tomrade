@@ -31,7 +31,7 @@ async function setup() {
   await settle();
   const file = path.join(config, ".claude.json");
   const read = () => JSON.parse(fs.readFileSync(file, "utf8"));
-  return { ctx, dir, file, read, link: ctx.agent.engineOf("claude-code")!.mcpLink! };
+  return { ctx, dir, file, read, link: ctx.agent.engineOf("claude-code")!.local!.mcpLink! };
 }
 
 describe("connecting Claude Code's own sessions to Tomrade", () => {

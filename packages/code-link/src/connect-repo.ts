@@ -103,7 +103,7 @@ export class RepoConnect {
     const lastHooks = this.lastHooks(projectId, repoId);
     const heard = (agents: AgentConnectionView[]) => agents.map((agent) => (lastHooks[agent.id] ? { ...agent, lastEventAt: lastHooks[agent.id] } : agent));
     if (current.connected) {
-      const link = this.ctx.get("agent")?.engineOf("claude-code")?.mcpLink;
+      const link = this.ctx.get("agent")?.engineOf("claude-code")?.local?.mcpLink;
       const claudeApproval = link?.projectApproval?.(cwd);
       const claudeApprovals = link?.projectApprovals?.(cwd);
       return { ...base, agents: heard(current.agents), configuredUrl, state: "connected", ...(current.local ? { local: true } : {}), ...(claudeApproval ? { claudeApproval } : {}), ...(claudeApprovals ? { claudeApprovals } : {}) };

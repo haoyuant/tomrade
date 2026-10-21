@@ -21,15 +21,10 @@ export function createPiEngine(ctx: Context): Engine {
     author: "ai:pi",
     capabilities: ["backlog", "code", "general"],
     // pi queues messages sent mid-turn itself (RPC steer)
-    steers: true,
+    steering: "forward",
     options: PiOptions,
     media: () => ({ input: ["image/png", "image/jpeg", "image/webp", "image/gif"], output: [] }),
     permissionModes: PERMISSION_MODES,
-    picks: () => [
-      // Pi spans many providers; the list is whatever its credentials unlock.
-      { key: "model", title: "Model", choices: models.map((value) => ({ value })), freeText: true },
-      { key: "effort", title: "Effort", choices: EFFORTS.map((value) => ({ value })) }
-    ],
     available: localAvailability(ctx, {
       engineId: "pi",
       title: "Pi",
@@ -45,10 +40,17 @@ export function createPiEngine(ctx: Context): Engine {
         reason: "Pi has no model it can use — run `pi` and /login, or set a provider's API key"
       }
     }),
-    checkCli: (file) => cli.check(file),
-    mcpLink: piMcpLink(ctx),
-    // Inside pi, /login picks a provider; an API key in the environment works too. The built-in agent needs neither.
-    setup: { install: ["npm install -g @earendil-works/pi-coding-agent"], signIn: "pi", signInRuns: true, docs: "https://www.npmjs.com/package/@earendil-works/pi-coding-agent" },
+    local: {
+      picks: () => [
+        // Pi spans many providers; the list is whatever its credentials unlock.
+        { key: "model", title: "Model", choices: models.map((value) => ({ value })), freeText: true },
+        { key: "effort", title: "Effort", choices: EFFORTS.map((value) => ({ value })) }
+      ],
+      checkCli: (file) => cli.check(file),
+      mcpLink: piMcpLink(ctx),
+      // Inside pi, /login picks a provider; an API key in the environment works too. The built-in agent needs neither.
+      setup: { install: ["npm install -g @earendil-works/pi-coding-agent"], signIn: "pi", signInRuns: true, docs: "https://www.npmjs.com/package/@earendil-works/pi-coding-agent" }
+    },
     turn: pooledEngine(ctx, { create: (input) => new PiRuntime(ctx, input) })
   };
 }

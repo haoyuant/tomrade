@@ -104,11 +104,11 @@ describe("an ACP agent as an engine", () => {
 
     it("asks a short session of its own in the background, keeps what it offered, and stops it", async () => {
       const engine = createAcpEngine(ctx, spec());
-      expect(engine.picks!()[0]!.choices).toEqual([]);
+      expect(engine.local!.picks!()[0]!.choices).toEqual([]);
       expect((await engine.available()).ok).toBe(true);
-      expect(engine.picks!()[0]).toMatchObject({ key: "model", pending: true });
-      await until(() => engine.picks!()[0]!.choices.length > 0);
-      expect(engine.picks!()[0]).toEqual({ key: "model", title: "Model", freeText: true, choices: LISTED });
+      expect(engine.local!.picks!()[0]).toMatchObject({ key: "model", pending: true });
+      await until(() => engine.local!.picks!()[0]!.choices.length > 0);
+      expect(engine.local!.picks!()[0]).toEqual({ key: "model", title: "Model", freeText: true, choices: LISTED });
       // In Tomrade's own folder, without its tools, and never prompted.
       const [opened] = sent("session/new");
       expect(opened.params).toEqual({ cwd: path.join(dir, "acp-models"), mcpServers: [] });
@@ -124,7 +124,7 @@ describe("an ACP agent as an engine", () => {
     it("shows what was kept at once after a restart, without asking", async () => {
       fs.writeFileSync(path.join(dir, "acp-models.json"), JSON.stringify({ fake: { models: [{ value: "kept/one" }], efforts: [{ value: "high" }] } }));
       const engine = createAcpEngine(ctx, spec());
-      expect(engine.picks!()).toEqual([
+      expect(engine.local!.picks!()).toEqual([
         { key: "model", title: "Model", freeText: true, choices: [{ value: "kept/one" }] },
         { key: "effort", title: "Effort", choices: [{ value: "high" }] }
       ]);
@@ -144,9 +144,9 @@ describe("an ACP agent as an engine", () => {
       fs.writeFileSync(bin, `#!/bin/sh\n[ "$1" = --version ] && { echo 1.0.0; exit 0; }\necho run >> '${runs}'\nexit 3\n`, { mode: 0o700 });
       const engine = createAcpEngine(ctx, spec());
       expect((await engine.available()).ok).toBe(true);
-      await until(() => fs.existsSync(runs) && !engine.picks!()[0]!.pending);
+      await until(() => fs.existsSync(runs) && !engine.local!.picks!()[0]!.pending);
       await engine.available({ fresh: true });
-      expect(engine.picks!()[0]).toEqual({ key: "model", title: "Model", freeText: true, choices: [] });
+      expect(engine.local!.picks!()[0]).toEqual({ key: "model", title: "Model", freeText: true, choices: [] });
       expect(fs.readFileSync(runs, "utf8").trim().split("\n")).toHaveLength(1);
     });
   });
@@ -182,7 +182,7 @@ describe("an ACP agent as an engine", () => {
     expect(first.params.prompt[1]).toEqual({ type: "image", data: "YWJj", mimeType: "image/png" });
 
     // The model list the session offered is what the picks show next.
-    expect(engine.picks!()).toEqual([
+    expect(engine.local!.picks!()).toEqual([
       { key: "model", title: "Model", freeText: true, choices: [{ value: '["fake","small"]', label: "small" }, { value: '["fake","large"]', label: "Large · x2 credits" }] },
       { key: "effort", title: "Effort", choices: [{ value: "low", label: "Low" }, { value: "high", label: "High" }] }
     ]);
@@ -295,7 +295,7 @@ describe("an ACP agent as an engine", () => {
     expect(sent("session/set_mode").map((r) => r.params.modeId)).toEqual([]);
     expect(sent("session/set_model").map((r) => r.params.modelId)).toEqual(["openrouter:b"]);
     expect(blocks.filter((b) => b.type === "note")).toEqual([]);
-    expect(engine.picks!()[0]!.choices).toEqual([{ value: "openrouter:a", label: "a" }, { value: "openrouter:b", label: "b" }]);
+    expect(engine.local!.picks!()[0]!.choices).toEqual([{ value: "openrouter:a", label: "a" }, { value: "openrouter:b", label: "b" }]);
     // An agent whose inputTokens leaves out the cache (OpenCode) has it added back.
     const apart = await createAcpEngine(ctx, spec({ httpMcp: "always", reopen: "load", usage: "turn", cacheApart: true })).turn(input, turnIO().io);
     expect(apart.usage).toEqual({ inputTokens: 60, outputTokens: 5 });
@@ -412,7 +412,7 @@ describe("an ACP agent as an engine", () => {
 
     it("hands a message to CodeBuddy's session/steer and records it at the agent's receipt", async () => {
       const engine = createAcpEngine(ctx, spec({ steer: "method" }));
-      expect(engine.steers).toBe(true);
+      expect(engine.steering).toBe("forward");
       const { io, order, env, forward } = steering();
       const turn = engine.turn(turnInput({ input: { kind: "text", text: "STEER_TOOL" }, env }), io);
       await when(() => fs.existsSync(log) && sent("session/prompt").length > 0);
@@ -502,7 +502,7 @@ describe("an ACP agent as an engine", () => {
     });
 
     it("leaves an agent that declares no steering to the queue", () => {
-      expect(createAcpEngine(ctx, spec()).steers).toBeUndefined();
+      expect(createAcpEngine(ctx, spec()).steering).toBeUndefined();
     });
   });
 });

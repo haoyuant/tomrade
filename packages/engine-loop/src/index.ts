@@ -250,7 +250,7 @@ export function createLoopEngine(ctx: Context): Engine {
     id: "loop",
     title: "Tomrade loop",
     usesModels: true,
-    steers: true,
+    steering: "queue",
     media: options => {
       const parsed = LoopOptions.parse(options ?? {});
       const llm = ctx.get("llm");
@@ -269,21 +269,23 @@ export function createLoopEngine(ctx: Context): Engine {
       const state = llm.ready();
       return state.ok ? state : { ...state, need: "model" };
     },
-    picks: () => {
-      const llm = ctx.get("llm");
-      const profiles = llm?.profiles() ?? [];
-      const searchesWeb = (id: string) => {
-        try {
-          return !!llm?.forProfile(id).capabilities.nativeWebSearch;
-        } catch {
-          return false;
-        }
-      };
-      return [
-        // shown even with one profile, so it's clear at a glance which model the thread uses
-        ...(profiles.length > 0 ? [{ key: "profile", title: "Model", choices: profiles.map((p) => ({ value: p.id, label: p.title, ...(searchesWeb(p.id) ? { searchesWeb: true } : {}) })) }] : []),
-        { key: "effort", title: "Effort", choices: [{ value: "minimal" }, { value: "low" }, { value: "medium" }, { value: "high" }] }
-      ];
+    local: {
+      picks: () => {
+        const llm = ctx.get("llm");
+        const profiles = llm?.profiles() ?? [];
+        const searchesWeb = (id: string) => {
+          try {
+            return !!llm?.forProfile(id).capabilities.nativeWebSearch;
+          } catch {
+            return false;
+          }
+        };
+        return [
+          // shown even with one profile, so it's clear at a glance which model the thread uses
+          ...(profiles.length > 0 ? [{ key: "profile", title: "Model", choices: profiles.map((p) => ({ value: p.id, label: p.title, ...(searchesWeb(p.id) ? { searchesWeb: true } : {}) })) }] : []),
+          { key: "effort", title: "Effort", choices: [{ value: "minimal" }, { value: "low" }, { value: "medium" }, { value: "high" }] }
+        ];
+      }
     },
     async turn(input: TurnInput, io: TurnIO): Promise<TurnResult> {
       if (!io.llm) return { stop: "error", error: "no language model available" };

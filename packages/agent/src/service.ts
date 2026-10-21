@@ -19,41 +19,12 @@ import { loadPlaybookDir, missingPlaybookCapabilities, resolvePlaybook, type Pla
 import { AgentStore, MIGRATIONS, TABLES, type PendingRecord } from "./store.js";
 import { AgentMediaStore, type MediaRef, type MediaUpload, type MediaContent } from "./media.js";
 import { RULES_MAX_CHARS, generalOpener, generalPrompt, rulesInstructions } from "./prompt.js";
-import {
-  isSuspended,
-  type AgentEvent,
-  type AgentPolicy,
-  type Block,
-  type RetryState,
-  type CardView,
-  type Engine,
-  type EngineAvailability,
-  type CliCheck,
-  type McpLinkView,
-  type EngineTry,
-  type EngineView,
-  type FocusRef,
-  type GeneralExecution,
-  type OpenDependency,
-  type ParkView,
-  type PendingView,
-  type Playbook,
-  type PlaybookIndexEntry,
-  type PlaybookSource,
-  type RunView,
-  type Suspended,
-  type ThreadMessage,
-  type ThreadSummary,
-  type TurnFollowUp,
-  type TurnInput,
-  type TurnIO,
-  type TurnResult,
-  type UserInput,
-  type WorkflowIO,
-  type WorkflowSpec,
-  type ThreadSurface,
-  PANEL_SURFACES
-} from "./types.js";
+import type { AgentPolicy } from "./hooks.js";
+import type { CliCheck, Engine, EngineAvailability, EngineRegistration, EngineTry, EngineView, McpLinkView } from "./engine.js";
+import { normalizeEngine } from "./engine-shape.js";
+import { PANEL_SURFACES, type AgentEvent, type Block, type CardView, type FocusRef, type ParkView, type PendingView, type RunView, type ThreadMessage, type ThreadSummary, type ThreadSurface, type UserInput } from "./thread.js";
+import type { OpenDependency, RetryState, TurnInput, TurnIO, TurnResult } from "./turn.js";
+import { isSuspended, type GeneralExecution, type Playbook, type PlaybookIndexEntry, type PlaybookSource, type Suspended, type TurnFollowUp, type WorkflowIO, type WorkflowSpec } from "./workflow.js";
 import { AGENT_WORDS, type AgentWords } from "./words.js";
 import { looksRateLimited, resetTime, untilLabel } from "./limits.js";
 import { describeFailure, readableError, redactSecrets } from "./failure.js";
@@ -473,11 +444,11 @@ export class Agent extends Service implements AgentReader {
       ctx.ipc.handle("agent.engines", (opts) => ctx.agent.engineViews(opts?.fresh));
       ctx.ipc.handle("agent.checkCli", async (engineId, file) => {
         const engine = ctx.agent.engines.get(engineId);
-        if (!engine?.checkCli) throw new Error(`${engineId} does not run a local CLI`);
-        return engine.checkCli(file);
+        if (!engine?.local?.checkCli) throw new Error(`${engineId} does not run a local CLI`);
+        return engine.local.checkCli(file);
       });
       const mcpLink = (engineId: string) => {
-        const link = ctx.agent.engines.get(engineId)?.mcpLink;
+        const link = ctx.agent.engines.get(engineId)?.local?.mcpLink;
         if (!link) throw new Error(`${engineId} cannot be connected to Tomrade's MCP server`);
         return link;
       };
@@ -521,7 +492,8 @@ export class Agent extends Service implements AgentReader {
     return [...this.engines.values()].filter((e) => this.answering(e.id) === e.id);
   }
 
-  engine(engine: Engine): () => void {
+  engine(given: EngineRegistration): () => void {
+    const engine = normalizeEngine(given);
     if (this.engines.has(engine.id)) throw new Error(`engine "${engine.id}" is already registered`);
     return this.ctx.effect(() => {
       this.engines.set(engine.id, engine);
@@ -669,7 +641,7 @@ export class Agent extends Service implements AgentReader {
       [...this.engines.values()].filter((engine) => this.answering(engine.id) === engine.id).map(async (engine) => {
         try {
           const state = await engine.available(fresh ? { fresh } : undefined);
-          return { id: engine.id, title: engine.title, capabilities: state.capabilities ?? engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, need: state.need, cli: state.cli, ...(state.configDir ? { configDir: state.configDir } : {}), ...(this.triedWith(engine.id) ? { tried: this.triedWith(engine.id) } : {}), picks: engine.picks?.(), permissionModes: engine.permissionModes, ...(engine.terminal === false ? { terminal: false } : {}), ...(engine.terminalOnly ? { terminalOnly: true } : {}), ...(engine.usesModels ? { usesModels: true } : {}), ...(engine.steers ? { steers: true } : {}), ...(state.setup ?? engine.setup ? { setup: state.setup ?? engine.setup } : {}), ...(engine.includes ? { includes: engine.includes } : {}), ...(engine.mcpLink ? { mcpLink: true } : {}) };
+          return { id: engine.id, title: engine.title, capabilities: state.capabilities ?? engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, need: state.need, cli: state.cli, ...(state.configDir ? { configDir: state.configDir } : {}), ...(this.triedWith(engine.id) ? { tried: this.triedWith(engine.id) } : {}), picks: engine.local?.picks?.(), permissionModes: engine.permissionModes, ...(engine.terminal?.mode === "none" ? { terminal: false } : {}), ...(engine.terminal?.mode === "only" ? { terminalOnly: true } : {}), ...(engine.usesModels ? { usesModels: true } : {}), ...(engine.steering ? { steers: true } : {}), ...(state.setup ?? engine.local?.setup ? { setup: state.setup ?? engine.local?.setup } : {}), ...(engine.includes ? { includes: engine.includes } : {}), ...(engine.local?.mcpLink ? { mcpLink: true } : {}) };
         } catch (err) {
           return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: false, reason: errorMessage(err) };
         }
@@ -859,7 +831,7 @@ export class Agent extends Service implements AgentReader {
   newThread(projectId: string, engine?: string, boardId: string | null = null, opts: NewThreadOptions = {}): ThreadSummary {
     const chosen = this.answering(engine ?? this.settingsOf().defaultEngine);
     // A terminal-only agent works a ticket in a terminal; a conversation without one goes to an engine that can hold it.
-    const holds = (e: Engine | undefined) => !!e && (!e.terminalOnly || !!opts.itemId);
+    const holds = (e: Engine | undefined) => !!e && (e.terminal?.mode !== "only" || !!opts.itemId);
     const known = holds(this.engines.get(chosen));
     const engineId = known ? chosen : ([...this.engines.values()].find((e) => holds(e))?.id ?? chosen);
     const thread = this.store.createThread(projectId, engineId, opts.title ?? "", boardId, opts.itemId ?? null, opts.branch ?? null, opts.surface ?? "assistant");
@@ -1281,9 +1253,9 @@ export class Agent extends Service implements AgentReader {
     }
     if (this.activeByThread.has(threadId)) throw new Error("a run is already in progress on this thread");
     if (input.kind === "answer" && this.store.pending(projectId, threadId)?.question.id !== input.questionId) throw new Error("Invalid or expired question response");
-    const engine = this.engines.get(thread.engine) ?? [...this.engines.values()].find((e) => !e.terminalOnly);
+    const engine = this.engines.get(thread.engine) ?? [...this.engines.values()].find((e) => e.terminal?.mode !== "only");
     if (!engine) throw new Error("No engine installed — enable one in the Plugins sheet");
-    if (engine.terminalOnly) throw new Error(`${engine.title} runs only in a terminal — start the ticket "In a terminal", or pick another engine`);
+    if (engine.terminal?.mode === "only") throw new Error(`${engine.title} runs only in a terminal — start the ticket "In a terminal", or pick another engine`);
 
     const text = input.kind === "text" ? input.text : Array.isArray(input.value) ? input.value.join(", ") : input.value;
     const focus = input.kind === "text" && input.focus?.length ? input.focus : undefined;
@@ -1318,7 +1290,7 @@ export class Agent extends Service implements AgentReader {
   /** A message for the running turn: held until the engine reaches a point where the model reads it. */
   async steer(projectId: string, threadId: string, steerId: string, text: string): Promise<boolean> {
     const rc = this.activeByThread.get(threadId);
-    if (!rc || rc.projectId !== projectId || !rc.engine.steers || rc.abort.signal.aborted || !text.trim()) return false;
+    if (!rc || rc.projectId !== projectId || !rc.engine.steering || rc.abort.signal.aborted || !text.trim()) return false;
     const steer = { id: steerId, text: text.trim() };
     rc.steers.push(steer);
     if (!rc.forward) return true;

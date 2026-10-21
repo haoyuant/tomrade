@@ -9,11 +9,12 @@ import { claudeCommands } from "./permissions.js";
 import { ClaudeRuntime } from "./sdk.js";
 
 export function createClaudeCodeEngine(ctx: Context): Engine {
+  const info = claudeCodeEngineInfo(ctx);
   return {
-    ...claudeCodeEngineInfo(ctx),
+    ...info,
     // the SDK session takes messages mid-turn through its input queue
-    steers: true,
-    commands: claudeCommands,
+    steering: "forward",
+    local: { ...info.local, commands: claudeCommands },
     media: () => ({ input: ["image/png", "image/jpeg", "image/webp", "image/gif", "application/pdf"], output: [] }),
     permissionModes: { default: "bypassPermissions", choices: [
       { value: "auto", label: "Auto" }, { value: "bypassPermissions", label: "Full access" },

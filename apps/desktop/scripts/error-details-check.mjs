@@ -51,7 +51,7 @@ const run = async () => {
     title: "Refusing",
     author: "ai:refusing",
     available: async () => ({ ok: true }),
-    setup: { install: [], signIn: "refusing login" },
+    local: { setup: { install: [], signIn: "refusing login" } },
     async turn() {
       return { stop: "error", error: "Refusing stopped: Request failed with status code 401", details: describeFailure({ response: refusal, stderr: "warn: endpoint drift\n" }) };
     }

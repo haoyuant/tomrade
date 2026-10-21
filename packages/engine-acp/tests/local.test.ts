@@ -94,7 +94,7 @@ describe("a plugin's local agent, run by the app's conductor", () => {
     });
 
     const engine = w.ctx.agent.engineOf("demo")!;
-    expect(engine).toMatchObject({ id: "demo", title: "Demo", author: "ai:demo", capabilities: ["backlog", "code", "general"], terminal: true, setup: { install: ["npm i -g demo"], signIn: "demo login" } });
+    expect(engine).toMatchObject({ id: "demo", title: "Demo", author: "ai:demo", capabilities: ["backlog", "code", "general"], terminal: { mode: "handoff" }, local: { setup: { install: ["npm i -g demo"], signIn: "demo login" } } });
     expect(engine.permissionModes).toEqual({ default: "full-access", choices: [PERMISSION_CHOICES["full-access"], PERMISSION_CHOICES.ask] });
     expect(await engine.available()).toMatchObject({ ok: true });
 
@@ -110,9 +110,9 @@ describe("a plugin's local agent, run by the app's conductor", () => {
     expect(requests.filter((r) => r.spawn).map((r) => r.argv)).toContainEqual(["--acp", "--model=Large"]);
     expect(requests.find((r) => r.method === "session/set_config_option" && r.params.configId === "mode")?.params.value).toBe("bypass");
 
-    expect(await engine.mcpLink!.status()).toMatchObject({ state: "missing", url: w.ctx.mcp.url });
-    expect(await engine.mcpLink!.connect()).toMatchObject({ state: "connected", configuredUrl: w.ctx.mcp.url });
-    expect(await engine.mcpLink!.disconnect()).toMatchObject({ state: "unavailable", error: expect.stringMatching(/read-only/) });
+    expect(await engine.local!.mcpLink!.status()).toMatchObject({ state: "missing", url: w.ctx.mcp.url });
+    expect(await engine.local!.mcpLink!.connect()).toMatchObject({ state: "connected", configuredUrl: w.ctx.mcp.url });
+    expect(await engine.local!.mcpLink!.disconnect()).toMatchObject({ state: "unavailable", error: expect.stringMatching(/read-only/) });
 
     const lent = w.lent("demo")!;
     expect(lent).toMatchObject({ title: "Demo", rank: 70 });
@@ -157,16 +157,31 @@ describe("a plugin's local agent, run by the app's conductor", () => {
     w.ctx.settings.set({ ...w.ctx.settings.get(), agent: { ...w.ctx.agent.settingsOf(), engines: { demo_terminal: { command: bin, model: "fast" } } } });
 
     const engine = w.ctx.agent.engineOf("demo_terminal")!;
-    expect(engine).toMatchObject({ id: "demo_terminal", author: "ai:demo_terminal", capabilities: ["code", "general"], terminalOnly: true, terminalViaLink: true, terminalClaims: true });
+    expect(engine).toMatchObject({ id: "demo_terminal", author: "ai:demo_terminal", capabilities: ["code", "general"], terminal: { mode: "only", via: "link", claims: true } });
     expect(engine.options).toBeUndefined();
-    expect(engine.picks!()).toEqual([{ key: "model", title: "Model", choices: [], freeText: true }]);
+    expect(engine.local!.picks!()).toEqual([{ key: "model", title: "Model", choices: [], freeText: true }]);
     expect(await engine.available({ fresh: true })).toMatchObject({ ok: true });
     expect(await engine.turn({} as TurnInput, turnIO().io)).toEqual({ stop: "error", error: 'Demo Terminal runs only in a terminal — start the ticket "In a terminal"' });
-    expect(await engine.mcpLink!.status()).toMatchObject({ state: "missing", file: config, manual: { connect: `tomrade-fake-local-acp mcp add ${w.ctx.mcp.url}` } });
+    expect(await engine.local!.mcpLink!.status()).toMatchObject({ state: "missing", file: config, manual: { connect: `tomrade-fake-local-acp mcp add ${w.ctx.mcp.url}` } });
 
     let text = "";
     for await (const event of w.lent("demo_terminal")!.model.chat({ system: "", messages: [userMessage("hi")] })) if (event.type === "text") text += event.delta;
     expect(text).toBe("fast");
+    await w.ctx.fiber.dispose();
+  });
+
+  it("reads an ACP agent's terminal connection from SDK 0.2.23's terminal.via and from the flat terminalViaLink before it", async () => {
+    const acp = (terminal: NonNullable<LocalAgentSpec["acp"]>["terminal"], flat?: boolean) => ({
+      permissionModes: { default: "full-access", choices: [PERMISSION_CHOICES["full-access"]] }, args: () => ["--acp"], terminal, ...(flat ? { terminalViaLink: true } : {})
+    });
+    const w = await world(async (p) => {
+      await p.agent.localAgent({ id: "demo_link", title: "Link", cli: { name: "tomrade-no-such-link-cli" }, install: "install it", options: Options, acp: acp({ via: "link" }) });
+      await p.agent.localAgent({ id: "demo_flat", title: "Flat", cli: { name: "tomrade-no-such-flat-cli" }, install: "install it", options: Options, acp: acp(true, true) });
+      await p.agent.localAgent({ id: "demo_session", title: "Session", cli: { name: "tomrade-no-such-session-cli" }, install: "install it", options: Options, acp: acp(true) });
+    });
+    expect(w.ctx.agent.engineOf("demo_link")!.terminal).toEqual({ mode: "handoff", via: "link" });
+    expect(w.ctx.agent.engineOf("demo_flat")!.terminal).toEqual({ mode: "handoff", via: "link" });
+    expect(w.ctx.agent.engineOf("demo_session")!.terminal).toEqual({ mode: "handoff" });
     await w.ctx.fiber.dispose();
   });
 
@@ -182,7 +197,7 @@ describe("a plugin's local agent, run by the app's conductor", () => {
     });
     w.ctx.settings.set({ ...w.ctx.settings.get(), agent: { ...w.ctx.agent.settingsOf(), engines: {} } });
     const engine = w.ctx.agent.engineOf("demo")!;
-    expect(engine.setup).toEqual({ install: ["curl -fsSL https://demo.example/install.sh | bash", "irm https://demo.example/install.ps1 | iex", "npm install -g demo"], signIn: "demo login" });
+    expect(engine.local!.setup).toEqual({ install: ["curl -fsSL https://demo.example/install.sh | bash", "irm https://demo.example/install.ps1 | iex", "npm install -g demo"], signIn: "demo login" });
     const state = await engine.available({ fresh: true });
     expect(state).toMatchObject({ ok: false, need: "install" });
     expect(state.reason).toContain("install Demo (curl -fsSL https://demo.example/install.sh | bash) and sign in");

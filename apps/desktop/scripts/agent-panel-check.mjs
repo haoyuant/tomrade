@@ -54,7 +54,7 @@ const run = async () => {
     id: "steerable",
     title: "Steerable",
     author: "ai:steerable",
-    steers: true,
+    steering: "queue",
     available: async () => ({ ok: true }),
     async turn(_input, io) {
       for (let i = 0; i < 4; i++) {
@@ -70,7 +70,7 @@ const run = async () => {
     id: "deaf",
     title: "Deaf",
     author: "ai:deaf",
-    steers: true,
+    steering: "queue",
     available: async () => ({ ok: true }),
     async turn() {
       await sleep(1200);

@@ -1,4 +1,4 @@
-import type { ThreadMessage } from "./types.js";
+import type { ThreadMessage } from "./thread.js";
 
 const RECAP_CHARS = 16_000;
 

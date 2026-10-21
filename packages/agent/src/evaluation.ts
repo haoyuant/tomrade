@@ -1,5 +1,7 @@
 import { performance } from "node:perf_hooks";
-import type { Block, Engine, TurnInput, TurnIO, TurnResult } from "./types.js";
+import type { Engine } from "./engine.js";
+import type { Block } from "./thread.js";
+import type { TurnInput, TurnIO, TurnResult } from "./turn.js";
 
 /** Provider counters stay separate: cached tokens are context, not free input. */
 export interface TurnMetrics {

@@ -1,4 +1,4 @@
-import type { TurnIO, TurnInput } from "./types.js";
+import type { TurnIO, TurnInput } from "./turn.js";
 
 export function attachedMedia(input: TurnInput, io: TurnIO) {
   const refs = input.input.kind === "text" ? input.input.attachments ?? [] : [];

@@ -79,8 +79,10 @@ const run = async () => {
     author: "ai:refusing",
     capabilities: ["backlog", "code", "general"],
     available: async () => ({ ok: true }),
-    setup: { install: [], signIn: "refusing login" },
-    diagnostics: { logs: () => [agentLog], facts: () => ({ edition: "ioa" }) },
+    local: {
+      setup: { install: [], signIn: "refusing login" },
+      diagnostics: { logs: () => [agentLog], facts: () => ({ edition: "ioa" }) }
+    },
     async turn() {
       turns++;
       return { stop: "error", error: "Refusing stopped: Request failed with status code 401", details: '── answer ──\n{"statusCode":401,"model":"hy3-ioa"}' };

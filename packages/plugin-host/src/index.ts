@@ -2,7 +2,7 @@ import path from "node:path";
 import { fresh, sdk, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 import { Settings } from "@tomradex/settings";
-import { Agent, type Engine } from "@tomradex/agent";
+import { Agent, flatEngineView, type EngineRegistration } from "@tomradex/agent";
 import { Im, ImSettings } from "@tomradex/im";
 import { Contributions } from "@tomradex/contributions";
 import { WebSearch } from "@tomradex/web-search";
@@ -221,7 +221,7 @@ export async function testPlugin(input: HostTestInput): Promise<HostTestResult> 
         ...(alerts ? { alerts: { played: () => [...alerts.played], notices: () => [...alerts.notices] } } : {}),
         ...(im ? { im: {
           configure: (settings: unknown) => w.ctx.settings.set({ ...w.ctx.settings.get(), im: ImSettings.parse(settings) }),
-          engine: (engine: Engine) => w.ctx.agent.engine(engine),
+          engine: (engine: EngineRegistration) => w.ctx.agent.engine(engine),
           threads: () => w.ctx.agent.store.threads(w.project.id),
           thread: (id: string) => w.ctx.agent.thread(w.project.id, id),
           connections: () => w.ctx.im.views()
@@ -230,12 +230,10 @@ export async function testPlugin(input: HostTestInput): Promise<HostTestResult> 
           /** What the app shows of a registered agent, as plain data; null when none has the id. */
           engine: (id: string) => {
             const engine = w.ctx.agent.engineOf(id);
-            if (!engine) return null;
-            const { turn: _turn, available: _available, checkCli: _checkCli, mcpLink, picks, diagnostics: _diagnostics, options: _options, ...rest } = engine;
-            return { ...rest, picks: picks?.() ?? [], mcpLink: !!mcpLink, options: !!engine.options };
+            return engine ? flatEngineView(engine) : null;
           },
           available: (id: string, fresh = true) => w.ctx.agent.engineOf(id)!.available({ fresh }),
-          link: (id: string) => w.ctx.agent.engineOf(id)!.mcpLink!.status(),
+          link: (id: string) => w.ctx.agent.engineOf(id)!.local!.mcpLink!.status(),
           /** One worker call on the agent's lent sign-in, as Tomrade's worker would make it. */
           lend: async (id: string, prompt: string, system = "") => {
             const lent = (w.ctx.llm as unknown as { lent: LentModel[] }).lent.find((m) => m.id === id);

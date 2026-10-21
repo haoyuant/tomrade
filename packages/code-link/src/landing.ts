@@ -106,7 +106,7 @@ export class Landing {
   async allowMerge(projectId: string, repoId: string, engineId: string): Promise<MergeCheckView> {
     const engine = this.ctx.get("agent")?.codeEngines().find((e) => e.id === engineId);
     if (!engine) throw new Error(`unknown engine ${engineId}`);
-    if (!engine.commands?.allow) throw new Error(`${engine.title}'s settings cannot be changed from Tomrade — allow gh pr merge there yourself`);
+    if (!engine.local?.commands?.allow) throw new Error(`${engine.title}'s settings cannot be changed from Tomrade — allow gh pr merge there yourself`);
     return { engine: engine.id, title: engine.title, check: await this.mergeCheck(projectId, repoId, engineId, true) };
   }
 
@@ -118,10 +118,11 @@ export class Landing {
     const remembered = this.defaults.read();
     const permissionMode = remembered?.engine === engineId && remembered.permissionMode ? remembered.permissionMode : engine.permissionModes?.default;
     // Tomrade itself hands full access to the run, so no setting of the agent's can stop the command.
-    if (!engine.commands) return permissionMode === FULL_ACCESS ? { state: "allowed", why: "bypass", mode: FULL_ACCESS } : null;
+    const commands = engine.local?.commands;
+    if (!commands) return permissionMode === FULL_ACCESS ? { state: "allowed", why: "bypass", mode: FULL_ACCESS } : null;
     const placement = this.ctx.repos.checkout(repo.remote);
     const opts = { cwd: placement.checkout ?? null, worktree: !placement.runInCheckout, ...(permissionMode ? { permissionMode } : {}) };
-    return allow && engine.commands.allow ? engine.commands.allow(MERGE_COMMAND, opts) : engine.commands.check(MERGE_COMMAND, opts);
+    return allow && commands.allow ? commands.allow(MERGE_COMMAND, opts) : commands.check(MERGE_COMMAND, opts);
   }
 
   /**
