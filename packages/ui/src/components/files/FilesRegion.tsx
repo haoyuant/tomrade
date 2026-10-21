@@ -1,24 +1,20 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
-import { isNotePath } from "@tomradex/notes/syntax";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useSearch } from "@tanstack/react-router";
 import type { FileReference } from "@tomradex/domain";
-import type { ConflictChoice, FileConflict, FileContent, FileEntry, FilesStatus } from "@tomradex/files";
+import type { FileEntry } from "@tomradex/files";
 import { Icon } from "~/components/icons";
-import { SyncContextActions, SyncMark, SyncScopeSummary, SyncSelect, describeSync, useSyncActions, type SyncActions } from "./SyncPolicy";
-import { AgentContextActions, AgentMark, AgentSelect, describeListing, useAgentActions, type AgentActions } from "./AgentPolicy";
-import { Eyebrow, Spacer, Tag } from "~/components/ui/atoms";
-import { ContextMenu, ContextMenuActionItem, Menu, MenuActionItem } from "~/components/ui/menu";
+import { SyncMark, SyncSelect, describeSync, useSyncActions, type SyncActions } from "./SyncPolicy";
+import { AgentSelect, describeListing, useAgentActions, type AgentActions } from "./AgentPolicy";
+import { Spacer, Tag } from "~/components/ui/atoms";
+import { Menu, MenuActionItem } from "~/components/ui/menu";
 import { useWorkspace } from "~/components/workspace/context";
 import { agoLabel } from "~/lib/domain";
 import {
-  FILES_DRAG_MIME,
   formatSize,
   nameOf,
   parentOf,
   useCopyFile,
   useFileConflicts,
-  useFileContent,
-  useFileHistory,
   useFileLocation,
   useFilesClipboard,
   useFileVersion,
@@ -30,32 +26,20 @@ import {
   useMoveFile,
   usePasteFiles,
   useRemoveFile,
-  useResolveAllConflicts,
-  useResolveConflict,
-  useSyncFiles,
-  type FilesClipboardEntry
+  useSyncFiles
 } from "~/lib/files";
-import { useI18n, type MessageKey } from "~/lib/i18n";
+import { useI18n } from "~/lib/i18n";
 import { useRevert } from "~/lib/queries";
 import { pathForFile, pickFiles, reveal } from "~/lib/shell";
 import { errorSpec, readableError, useToast } from "~/lib/toast";
-import { takeEditRequest, useFileMode, useNoteTags, useNotesEnabled, type FileMode } from "~/lib/notes";
+import { useNotesEnabled } from "~/lib/notes";
 import { AttachToTicketDialog } from "./AttachToTicketDialog";
-import { Backlinks } from "./Backlinks";
-import { ConflictPanel } from "./ConflictPanel";
-import { FileViewer, isRenderable } from "./FileViewer";
-import { NoteEditor, type SaveState } from "./NoteEditor";
-import { stateOf, type StateView } from "./state";
+import { FileView } from "./FileView";
+import { FileViewer } from "./FileViewer";
+import { FolderView } from "./FolderView";
+import { stateOf } from "./state";
 import { useNoteActions } from "./useNoteActions";
-import { hits, keyLabel } from "~/lib/keybindings";
 import { isCommitKey } from "~/lib/keys";
-
-const KIND: Record<FileConflict["kind"], MessageKey> = {
-  content: "files.kindContent",
-  "add-add": "files.kindAddAdd",
-  "modify-delete": "files.kindModifyDelete",
-  "delete-modify": "files.kindDeleteModify"
-};
 
 /** One line under the head that takes a name: a rename, or a new folder. */
 function NamePrompt({ initial = "", ariaLabel, placeholder, busy, onCommit, onCancel }: { initial?: string; ariaLabel: string; placeholder?: string; busy: boolean; onCommit: (name: string) => void; onCancel: () => void }) {
@@ -94,80 +78,6 @@ function NamePrompt({ initial = "", ariaLabel, placeholder, busy, onCommit, onCa
   );
 }
 
-/** Where the files are shared and how they stand, on the root page; the block in project settings has the controls. */
-function SharingCard({ projectId, status, state, onOpenSharing }: { projectId: string; status: FilesStatus | undefined; state: StateView; onOpenSharing: () => void }) {
-  const { t } = useI18n();
-  return (
-    <div className="panel files-sharing-card" data-testid="files-sharing">
-      <div className="cfg-row">
-        <Icon name={state.warn ? "i-warn" : "i-plug"} size={15} style={{ color: state.warn ? "var(--danger)" : "var(--accent)" }} />
-        <span className="cfg-name num" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {status?.location ?? state.label}
-        </span>
-        {status?.lastSyncAt && <span className="meta-txt">{agoLabel(status.lastSyncAt)}</span>}
-        <Tag tone={state.tone}>{state.label}</Tag>
-        <button type="button" className="btn btn-ghost files-open-sharing" onClick={onOpenSharing}>
-          {t("files.sharing")}
-        </button>
-      </div>
-      <p className="meta-txt dense" style={{ marginTop: "var(--space-2)" }}>
-        {status?.detail ? t("files.hintWithDetail", { hint: state.hint, detail: status.detail }) : state.hint}
-      </p>
-      <SyncScopeSummary projectId={projectId} />
-    </div>
-  );
-}
-
-/** Every clash at once, each a link to its file, and the two ways to take them all. */
-function ConflictList({ projectId, conflicts }: { projectId: string; conflicts: FileConflict[] }) {
-  const { t } = useI18n();
-  const { openFile } = useWorkspace();
-  const toast = useToast();
-  const resolveAll = useResolveAllConflicts(projectId);
-  // every file at once, and synced straight away: said out loud before it happens
-  const [confirming, setConfirming] = useState<ConflictChoice | null>(null);
-  const all = (choice: ConflictChoice) => resolveAll.mutate(choice, { onSuccess: () => setConfirming(null), onError: (error) => toast(errorSpec(error)) });
-  return (
-    <div className="stack-3 files-conflict-list" data-testid="conflict-list">
-      <div className="dangerbar">
-        <Icon className="b-mark" name="i-warn" size={15} />
-        <p style={{ fontSize: 14, lineHeight: "var(--leading-dense)", color: "var(--fg-2)" }}>{conflicts.length === 1 ? t("files.conflictOne") : t("files.conflictMany", { n: conflicts.length })}</p>
-        <button type="button" className="btn btn-ghost" disabled={resolveAll.isPending} aria-expanded={confirming === "ours"} onClick={() => setConfirming("ours")}>
-          {t("files.keepAllMine")}
-        </button>
-        <button type="button" className="btn btn-ghost" disabled={resolveAll.isPending} aria-expanded={confirming === "theirs"} onClick={() => setConfirming("theirs")}>
-          {t("files.keepAllTheirs")}
-        </button>
-      </div>
-      {confirming && (
-        <div className="row files-conflict-confirm" role="alert" style={{ gap: "var(--space-2)", flexWrap: "wrap" }}>
-          <p className="meta-txt" style={{ margin: 0, flex: 1 }}>{t(confirming === "ours" ? "files.keepAllMineConfirm" : "files.keepAllTheirsConfirm", { n: conflicts.length })}</p>
-          <button type="button" className="btn btn-danger" disabled={resolveAll.isPending} onClick={() => all(confirming)}>
-            {t(confirming === "ours" ? "files.keepAllMine" : "files.keepAllTheirs")}
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={() => setConfirming(null)}>
-            {t("common.cancel")}
-          </button>
-        </div>
-      )}
-      <div className="stack-1">
-        {conflicts.map((c) => (
-          <button key={c.path} type="button" className="menu-row" data-file={c.path} onClick={() => openFile(c.path)}>
-            <span className="m-mark">
-              <Icon name="i-warn" size={13} />
-            </span>
-            <span className="m-stack">
-              <span className="m-name num">{c.path}</span>
-              <span className="m-sub">{t(KIND[c.kind])}</span>
-            </span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/** The bar that replaces the plain toolbar while rows are checked: a count, and the actions that take the whole set. */
 /**
  * Both settings for what is open, on one line: where the bytes go, and whether
  * an agent is told this exists. They are different questions, so they sit side
@@ -208,386 +118,6 @@ function EntryPolicyLine({ syncActions, agentActions, entry }: { syncActions: Sy
         )}
       </div>
     </div>
-  );
-}
-
-function SelectionBar({ count, sync, listing, onCut, onCopy, onDelete, onClear }: { count: number; sync: ReactNode; listing: ReactNode; onCut: () => void; onCopy: () => void; onDelete: () => void; onClear: () => void }) {
-  const { t } = useI18n();
-  return (
-    <div className="lockbar files-selection-bar" role="toolbar" data-testid="files-selection-bar">
-      <span className="selection-count">{t("files.selectionCount", { n: count })}</span>
-      {sync}
-      {listing}
-      <button type="button" className="btn btn-ghost sel-cut" onClick={onCut}>
-        <Icon name="i-cut" size={13} />
-        {t("files.cut")}
-      </button>
-      <button type="button" className="btn btn-ghost sel-copy" onClick={onCopy}>
-        <Icon name="i-copy" size={13} />
-        {t("files.copy")}
-      </button>
-      <button type="button" className="btn btn-ghost sel-delete" onClick={onDelete}>
-        <Icon name="i-trash" size={13} />
-        {t("files.delete")}
-      </button>
-      <button type="button" className="btn btn-icon sel-clear" data-tip={t("files.clearSelection")} aria-label={t("files.clearSelection")} onClick={onClear}>
-        <Icon name="i-close" size={12} />
-      </button>
-    </div>
-  );
-}
-
-function FolderView({
-  projectId,
-  path,
-  entries,
-  conflicts,
-  status,
-  state,
-  clipboardEntry,
-  onOpenSharing,
-  onAddFiles,
-  onDropFiles,
-  onCut,
-  onCopy,
-  onPasteInto,
-  onDeleteMany,
-  onMoveInto,
-  dragOver,
-  onDragOverChange,
-  syncActions,
-  agentActions
-}: {
-  projectId: string;
-  path: string;
-  entries: FileEntry[];
-  conflicts: FileConflict[];
-  status: FilesStatus | undefined;
-  state: StateView;
-  clipboardEntry: FilesClipboardEntry | null;
-  onOpenSharing: () => void;
-  onAddFiles: () => void;
-  onDropFiles: (dataTransfer: DataTransfer) => void;
-  onCut: (paths: string[]) => void;
-  onCopy: (paths: string[]) => void;
-  onPasteInto: (dir: string) => void;
-  onDeleteMany: (paths: string[]) => void;
-  onMoveInto: (paths: string[], dir: string) => void;
-  dragOver: boolean;
-  onDragOverChange: (over: boolean) => void;
-  syncActions: SyncActions;
-  agentActions: AgentActions;
-}) {
-  const { t } = useI18n();
-  const { openFile } = useWorkspace();
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [dropTarget, setDropTarget] = useState<string | null>(null);
-  const kids = entries.filter((e) => parentOf(e.path) === path);
-  const cutPaths = clipboardEntry?.mode === "cut" ? new Set(clipboardEntry.paths) : null;
-  const toggleSelect = (p: string) =>
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(p)) next.delete(p);
-      else next.add(p);
-      return next;
-    });
-  const selectOnly = (p: string) => setSelected((prev) => (prev.has(p) ? prev : new Set([p])));
-  const targetsFor = (p: string) => (selected.has(p) ? [...selected] : [p]);
-  const startDrag = (p: string) => (e: DragEvent) => {
-    e.dataTransfer.setData(FILES_DRAG_MIME, JSON.stringify(targetsFor(p)));
-    e.dataTransfer.effectAllowed = "move";
-  };
-  return (
-    <div
-      className={`files-main stack-4${dragOver ? " is-drag-over" : ""}`}
-      onDragOver={(e) => {
-        if (e.dataTransfer.types.includes(FILES_DRAG_MIME)) return;
-        e.preventDefault();
-        onDragOverChange(true);
-      }}
-      onDragLeave={() => onDragOverChange(false)}
-      onDrop={(e) => {
-        if (e.dataTransfer.types.includes(FILES_DRAG_MIME)) return;
-        e.preventDefault();
-        onDragOverChange(false);
-        onDropFiles(e.dataTransfer);
-      }}
-    >
-      {path === "" && conflicts.length > 0 && <ConflictList projectId={projectId} conflicts={conflicts} />}
-      {path === "" && <SharingCard projectId={projectId} status={status} state={state} onOpenSharing={onOpenSharing} />}
-      {selected.size > 0 && (
-        <SelectionBar
-          count={selected.size}
-          sync={<SyncSelect actions={syncActions} paths={[...selected]} value="" label={t("files.syncFor", { name: t("files.selectionCount", { n: selected.size }) })} />}
-          listing={<AgentSelect actions={agentActions} paths={[...selected]} value="" label={t("files.agentFor", { name: t("files.selectionCount", { n: selected.size }) })} />}
-          onCut={() => onCut([...selected])}
-          onCopy={() => onCopy([...selected])}
-          onDelete={() => onDeleteMany([...selected])}
-          onClear={() => setSelected(new Set())}
-        />
-      )}
-      {kids.length > 0 ? (
-        <table className="file-table" data-testid="file-table">
-          <thead>
-            <tr>
-              <th className="file-select-col" aria-hidden="true" />
-              <th>{t("files.nameCol")}</th>
-              <th className="num">{t("files.sizeCol")}</th>
-              <th>{t("files.modifiedCol")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {kids.map((e) => (
-              <ContextMenu
-                key={e.path}
-                label={e.name}
-                trigger={
-                  <tr
-                    className={`file-row${selected.has(e.path) ? " is-selected" : ""}${cutPaths?.has(e.path) ? " is-cut" : ""}${dropTarget === e.path ? " is-drag-over" : ""}`}
-                    data-file={e.path}
-                    draggable
-                    onDragStart={startDrag(e.path)}
-                    onMouseDown={(ev) => {
-                      if (ev.button === 2) selectOnly(e.path);
-                    }}
-                    onDragOver={
-                      e.kind === "dir"
-                        ? (ev) => {
-                            if (!ev.dataTransfer.types.includes(FILES_DRAG_MIME)) return;
-                            ev.preventDefault();
-                            ev.stopPropagation();
-                            setDropTarget(e.path);
-                          }
-                        : undefined
-                    }
-                    onDragLeave={e.kind === "dir" ? () => setDropTarget((cur) => (cur === e.path ? null : cur)) : undefined}
-                    onDrop={
-                      e.kind === "dir"
-                        ? (ev) => {
-                            const data = ev.dataTransfer.getData(FILES_DRAG_MIME);
-                            if (!data) return;
-                            ev.preventDefault();
-                            ev.stopPropagation();
-                            setDropTarget(null);
-                            try {
-                              onMoveInto(JSON.parse(data) as string[], e.path);
-                            } catch {
-                              // not a path payload
-                            }
-                          }
-                        : undefined
-                    }
-                  >
-                    <td className="file-select-col">
-                      <input type="checkbox" aria-label={t("files.selectRow", { name: e.name })} checked={selected.has(e.path)} onChange={() => toggleSelect(e.path)} />
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="file-link"
-                        onClick={(ev) => {
-                          if (ev.metaKey || ev.ctrlKey) {
-                            ev.preventDefault();
-                            toggleSelect(e.path);
-                            return;
-                          }
-                          openFile(e.path);
-                        }}
-                      >
-                        <Icon name={e.kind === "dir" ? "i-folder" : "i-file"} size={14} />
-                        <span>{e.name}</span>
-                        <SyncMark sync={e.sync} />
-                        <AgentMark listing={e.listing} />
-                        {e.change && <span className={`side-mark is-${e.change}`} title={e.change} />}
-                      </button>
-                    </td>
-                    <td className="num meta-txt">{e.kind === "dir" ? "—" : formatSize(e.size)}</td>
-                    <td className="meta-txt">{agoLabel(e.modifiedAt)}</td>
-                  </tr>
-                }
-              >
-                <ContextMenuActionItem icon={<Icon name="i-cut" size={13} />} name={t("files.cut")} onSelect={() => onCut(targetsFor(e.path))} />
-                <ContextMenuActionItem icon={<Icon name="i-copy" size={13} />} name={t("files.copy")} onSelect={() => onCopy(targetsFor(e.path))} />
-                {e.kind === "dir" && clipboardEntry && <ContextMenuActionItem icon={<Icon name="i-paste" size={13} />} name={t("files.paste")} onSelect={() => onPasteInto(e.path)} />}
-                <SyncContextActions actions={syncActions} paths={targetsFor(e.path)} entry={e} />
-                <AgentContextActions actions={agentActions} paths={targetsFor(e.path)} entry={e} />
-                <ContextMenuActionItem icon={<Icon name="i-trash" size={13} />} name={t("files.delete")} onSelect={() => onDeleteMany(targetsFor(e.path))} />
-              </ContextMenu>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <div className="files-empty">
-          <p className="meta-txt">{t("files.folderEmpty")}</p>
-          <div className="row">
-            <button type="button" className="btn btn-secondary" onClick={onAddFiles}>
-              <Icon name="i-upload" size={13} />
-              {t("files.addFiles")}
-            </button>
-            {clipboardEntry && (
-              <button type="button" className="btn btn-secondary" onClick={() => onPasteInto(path)}>
-                <Icon name="i-paste" size={13} />
-                {t("files.paste")}
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-const SAVE_LABEL: Record<SaveState, MessageKey> = { saved: "notes.saved", dirty: "notes.unsaved", saving: "notes.saving" };
-
-function FileView({ projectId, path, conflict }: { projectId: string; path: string; conflict: FileConflict | null }) {
-  const { t } = useI18n();
-  const toast = useToast();
-  const content = useFileContent(projectId, path);
-  const history = useFileHistory(projectId, path);
-  const resolve = useResolveConflict(projectId);
-  const notesOn = useNotesEnabled();
-  const actions = useNoteActions();
-  const linking = useMemo(() => actions.linking(path), [actions, path]);
-  const [preferred, setPreferred, writing] = useFileMode();
-  // A note just made, or a link just followed into nothing, opens to be written in — the way writing was last done.
-  const [requested, setRequested] = useState(() => takeEditRequest(path));
-  const [saveState, setSaveState] = useState<SaveState>("saved");
-  const [versionId, setVersionId] = useState<string | null>(null);
-  const fileId = content.data?.fileId ?? null;
-  const older = useFileVersion(projectId, versionId && fileId ? { fileId, versionId } : null);
-  const versions = history.data ?? [];
-  // The rail's own newest row, so a click compares against what is drawn, not a content fetch still in flight.
-  const latest = versions[0]?.versionId ?? content.data?.versionId ?? null;
-  const shown = versionId ? (older.data ?? null) : (content.data ?? null);
-  const editable = !versionId && !conflict && !!content.data && content.data.encoding === "utf8" && !content.data.truncated;
-  const wanted: FileMode = requested && preferred === "read" ? writing : preferred;
-  // Unsaved edits hold the editor open through a delete, a move or a sync clash, so its own save can ask what to do.
-  const held = useRef<FileContent | null>(null);
-  const holding = wanted !== "read" && !editable && saveState !== "saved" && held.current !== null;
-  const writes = (editable && wanted !== "read") || holding;
-  if (writes && editable) held.current = content.data!;
-  else if (!writes) held.current = null;
-  const editorContent = editable ? content.data! : held.current;
-  // Side by side only where the file renders as something other than its text.
-  const previewable = !!editorContent && isRenderable(editorContent);
-  const mode: FileMode = !writes ? "read" : wanted === "split" && previewable ? "split" : "edit";
-  const tags = useNoteTags(projectId, notesOn && mode !== "read");
-  const setMode = (next: FileMode) => {
-    setRequested(false);
-    setPreferred(next);
-  };
-  const backlinks = notesOn && !versionId && isNotePath(path) && content.data ? <Backlinks projectId={projectId} path={path} paths={actions.paths} /> : null;
-  useEffect(() => {
-    if (!editable) return;
-    // On a Mac, Ctrl-E is the end of the line in any text field; only ⌘E is ours — so no Ctrl leniency here.
-    const onKey = (e: KeyboardEvent) => {
-      // Not behind a dialog, and not from some other field: the editor itself is fine.
-      const field = /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement as HTMLElement | null)?.tagName ?? "");
-      if (e.defaultPrevented || field || document.documentElement.classList.contains("overlay-open")) return;
-      if (hits(e, "readWrite")) {
-        e.preventDefault();
-        setMode(mode === "read" ? writing : "read");
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
-  const choose = (choice: ConflictChoice) =>
-    resolve.mutate(
-      { path, choice },
-      {
-        onSuccess: () => toast({ body: t("files.resolvedToast", { choice: t(choice === "ours" ? "files.sideMine" : choice === "theirs" ? "files.sideTheirs" : "files.sideBoth"), name: nameOf(path) }) }),
-        onError: (error) => toast(errorSpec(error))
-      }
-    );
-  return (
-    <>
-      <div className={`files-main${mode === "split" ? " is-split" : ""}`}>
-        {conflict && !holding ? (
-          <ConflictPanel conflict={conflict} busy={resolve.isPending} onChoose={choose} />
-        ) : (
-          <>
-            {versionId && (
-              <div className="banner files-version-banner" role="status">
-                <Icon className="b-mark" name="i-clock" size={15} />
-                <span>{t("files.olderVersion", { when: agoLabel(versions.find((v) => v.versionId === versionId)?.at ?? Date.now()) })}</span>
-                <button type="button" className="btn btn-ghost" style={{ marginLeft: "auto", padding: "3px 8px" }} onClick={() => setVersionId(null)}>
-                  {t("files.backToLatest")}
-                </button>
-              </div>
-            )}
-            {(editable || holding) && (
-              <div className="row file-view-bar files-mode-bar">
-                <div className="seg quiet files-mode" role="group" aria-label={t("notes.modeAria")} data-mode={mode}>
-                  <button type="button" aria-pressed={mode === "read"} data-tip={keyLabel("readWrite")} onClick={() => setMode("read")}>
-                    <Icon className="ico" name="i-eye" size={13} />
-                    {t("notes.read")}
-                  </button>
-                  <button type="button" aria-pressed={mode === "edit"} data-tip={writing === "edit" || !previewable ? keyLabel("readWrite") : undefined} onClick={() => setMode("edit")}>
-                    <Icon className="ico" name="i-pen" size={13} />
-                    {t("notes.edit")}
-                  </button>
-                  {previewable && (
-                    <button type="button" aria-pressed={mode === "split"} data-tip={writing === "split" ? keyLabel("readWrite") : undefined} onClick={() => setMode("split")}>
-                      <Icon className="ico" name="i-split" size={13} />
-                      {t("notes.split")}
-                    </button>
-                  )}
-                </div>
-                <Spacer />
-                {mode !== "read" && (
-                  <span className="meta-txt files-save-state" data-state={saveState}>
-                    {t(SAVE_LABEL[saveState])}
-                  </span>
-                )}
-              </div>
-            )}
-            {content.isLoading || (versionId && older.isLoading) ? null : mode !== "read" && editorContent ? (
-              <NoteEditor
-                key={path}
-                projectId={projectId}
-                content={editorContent}
-                paths={actions.paths}
-                tags={(tags.data ?? []).map((tag) => tag.tag)}
-                resolve={linking.resolve}
-                onOpenLink={linking.open}
-                onState={setSaveState}
-                autoFocus={requested || preferred !== "read"}
-                preview={
-                  mode === "split"
-                    ? (text) => (
-                        <>
-                          <FileViewer content={{ ...editorContent, body: text }} linking={linking} switch={false} lines />
-                          {backlinks}
-                        </>
-                      )
-                    : undefined
-                }
-              />
-            ) : shown ? (
-              <FileViewer content={shown} linking={linking} switch={!editable} />
-            ) : (
-              <p className="meta-txt">{t("files.fileGone", { path })}</p>
-            )}
-            {mode !== "split" && backlinks}
-          </>
-        )}
-      </div>
-      <aside className="files-rail" aria-label={t("files.versions")} data-testid="files-versions">
-        <Eyebrow>{t("files.versions")}</Eyebrow>
-        {versions.length === 0 && !history.isLoading && <p className="meta-txt dense">{t("files.noVersions")}</p>}
-        <div className="version-list">
-          {versions.map((v) => (
-            <button key={v.versionId} type="button" className="version-row" data-version={v.versionId} aria-current={v.versionId === (versionId ?? latest)} onClick={() => setVersionId(v.versionId === latest ? null : v.versionId)}>
-              <span className="v-msg">{v.message}</span>
-              <span className="meta-txt">
-                {agoLabel(v.at)} · {v.author}
-              </span>
-            </button>
-          ))}
-        </div>
-      </aside>
-    </>
   );
 }
 
