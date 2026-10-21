@@ -109,6 +109,8 @@ export interface EngineSetupFailure {
   kind: "network" | "registry" | "permission" | "disk-full" | "unsupported" | "not-found" | "not-on-path" | "timeout" | "exit" | "cancelled";
   /** The underlying words, English or the tool's own, for the details view. */
   message: string;
+  /** The file found after an install that did not run; `message` is what running it said. */
+  path?: string;
 }
 
 /** Where one engine's setup step stands; pushed as it moves. */

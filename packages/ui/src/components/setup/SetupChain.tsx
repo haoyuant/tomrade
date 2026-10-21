@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { EngineView } from "@tomradex/agent";
+import type { EngineSetupFailure, EngineView } from "@tomradex/agent";
 import { useCurrentProject } from "~/components/dialogs/plugins/parts";
 import { Icon } from "~/components/icons";
 import { useI18n, type MessageKey } from "~/lib/i18n";
@@ -22,12 +22,16 @@ function StepDetail({ step, title }: { step: ChainStep; title: string }) {
   const { t } = useI18n();
   const progress = step.progress;
   if (step.state === "failed") {
-    const failure = progress?.failure ?? (step.tried ? { kind: "exit", message: step.tried.error ?? "" } : undefined);
+    const failure: EngineSetupFailure | undefined = progress?.failure ?? (step.tried ? { kind: "exit", message: step.tried.error ?? "" } : undefined);
     if (!failure) return null;
     const known = FAILURE_KEYS[failure.kind];
     return (
       <span className="setup-fix" role="alert" data-testid={`chain-error-${step.id}`}>
-        {step.id === "test" ? t("setup.testFailed", { error: failure.message }) : known ? t(known) : t("setup.failExit", { error: failure.message })}
+        {step.id === "test"
+          ? t("setup.testFailed", { error: failure.message })
+          : failure.path
+            ? t("setup.failFoundBroken", { path: failure.path, error: failure.message })
+            : known ? t(known) : t("setup.failExit", { error: failure.message })}
         {progress?.output && (
           <details className="eng-try-details">
             <summary>{t("setup.failOutput")}</summary>

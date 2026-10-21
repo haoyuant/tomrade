@@ -135,6 +135,26 @@ export function shimTarget(shim: string, text: string): string | null {
   return last ? path.win32.resolve(dir, last) : null;
 }
 
+/** Whether the shim hands its script to node: npm's `_prog` set to node or node.exe, pnpm's `node "…"` and `"…\node.exe" "…"`. */
+export function shimRunsNode(text: string): boolean {
+  return /_prog=(?:[^"\r\n]*[\\/])?node(?:\.exe)?"|\bnode(?:\.exe)?"?\s+"%(?:~dp0|dp0%)/i.test(text);
+}
+
+/** A script that starts with a `#!…node` line, as an npm bin without a .js name does. */
+export function nodeShebang(file: string): boolean {
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(file, "r");
+    const head = Buffer.alloc(128);
+    const line = head.subarray(0, fs.readSync(fd, head, 0, head.length, 0)).toString("utf8").split(/\r?\n/)[0];
+    return /^#!.*\bnode\b/.test(line);
+  } catch {
+    return false;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
 const META = /([()\][%!^"`<>&|;, *?])/g;
 
 /** One argument for `cmd /s /c "…"` reaching a batch file that hands `%*` on — the escaping cross-spawn uses. */
@@ -164,8 +184,10 @@ export function launchFor(file: string, host: Pick<CliHost, "platform" | "env">,
     const target = shimTarget(file, text);
     // yarn's global shim hands over to the package's own .cmd shim.
     if (target && isBatch(target) && depth < 3 && isFile(target, "win32")) return launchFor(target, host, [p.dirname(file), ...dirs], depth + 1);
-    const node = target && isScript(target) ? findNode(p.dirname(file), [...dirs, ...splitPath(envValue(host.env, "PATH"), "win32")], host.env) : null;
-    if (target && isFile(target, "win32") && !isScript(target) && !isBatch(target)) argv = (args) => ({ command: target, args });
+    // An npm bin need not be named .js (CodeBuddy's has no extension), and Windows cannot start a script as a program.
+    const viaNode = !!target && !isBatch(target) && (isScript(target) || shimRunsNode(text) || nodeShebang(target));
+    const node = target && viaNode ? findNode(p.dirname(file), [...dirs, ...splitPath(envValue(host.env, "PATH"), "win32")], host.env) : null;
+    if (target && isFile(target, "win32") && !viaNode && !isBatch(target)) argv = (args) => ({ command: target, args });
     else if (target && node && isFile(target, "win32")) {
       front.push(p.dirname(node));
       argv = (args) => ({ command: node, args: [target, ...args] });
