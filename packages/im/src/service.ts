@@ -26,6 +26,15 @@ const PAIR_MS = 10 * 60 * 1000;
 const BACKFILL_TOPICS = 20;
 /** Wrong codes a connection takes before its pairing code is withdrawn. */
 const PAIR_TRIES = 5;
+/** How long "Not here" keeps the bot from asking again in a group. */
+const ASK_SNOOZE_MS = 24 * 60 * 60 * 1000;
+/** What each kind of channel hears and wakes on; everything else is a route's default. */
+const GROUP_PRESETS = {
+  work: { ticketTopics: true, groupActivation: "reply", notify: { tickets: true, code: true } },
+  status: { ticketTopics: false, groupActivation: "mention", notify: { tickets: true, code: true, routines: true, presence: true } },
+  chat: { ticketTopics: false, groupActivation: "reply", notify: { tickets: false, code: false, routines: false } }
+} as const satisfies Record<string, Pick<ImRoute, "ticketTopics" | "groupActivation" | "notify">>;
+type GroupPreset = keyof typeof GROUP_PRESETS;
 
 export interface ImConnectionView {
   id: string; adapterId: string; label?: string; state: ImConnectionState | "unconfigured";
@@ -115,6 +124,15 @@ function statusMove(entry: { op: string; before: unknown; after: unknown }): Sta
   return before.status === after.status ? null : { from: before.status, to: after.status, version: after.version };
 }
 interface Pairing { connectionId: string; code: string; projectId: string; expiresAt: number; failures: number; claim?: ImPairingView["claim"] }
+/** The card asking a paired person what a group with no route is for; its buttons work once. */
+interface GroupAsk {
+  connectionId: string; address: ImAddress; actorId: string; projectId: string;
+  /** Without a select, the project was chosen with a button first. */
+  picked: boolean;
+  /** Token → what pressing it means: a preset, `no`, `project`, or `project:<id>`. */
+  tokens: Map<string, string>;
+  messageId?: string; expiresAt: number;
+}
 
 declare module "cordis" {
   interface Context { im: Im }
@@ -189,6 +207,9 @@ export class Im extends Service {
   private readonly announced = new Set<string>();
   private ignored: ImIgnoredView[] = [];
   private readonly pairings = new Map<string, Pairing>();
+  /** Per group with no route: the open card, and until when "Not here" holds. */
+  private readonly asks = new Map<string, GroupAsk>();
+  private readonly snoozed = new Map<string, number>();
   /** The settings panel and the status bar, told when connections, pairings or stuck deliveries change. */
   private readonly watchers = new Set<() => void>();
 
@@ -663,6 +684,7 @@ export class Im extends Service {
     const id = hash([c.id, event.address.tenantId, event.eventId]);
     const pair = event.kind === "message" && event.activation === "dm" && !event.actor.isBot ? /^\/pair\s+(\d{6})$/.exec(event.text.trim()) : null;
     if (pair) { this.claim(c, event, pair[1]); return { receiptId: `pair:${id}` }; }
+    if (event.kind === "action" && this.answerGroup(c, event)) return { receiptId: `ask:${id}` };
     const route = this.settings.routes.find(r => r.connectionId === c.id && r.tenantId === event.address.tenantId && r.conversationId === event.address.conversationId);
     const reason: ImIgnoredView["reason"] | null = event.actor.isBot ? "bot" : !route ? "conversation" : !route.allowedActors.includes(event.actor.id) ? "actor"
       : event.kind === "message" && !activates(route, event.activation) ? "activation" : null;
@@ -677,6 +699,7 @@ export class Im extends Service {
       this.ignored = [{ id, at: Date.now(), connectionId: c.id, tenantId: event.address.tenantId, conversationId: event.address.conversationId,
         actorId: event.actor.id, ...(event.actor.name ? { actorName: event.actor.name } : {}), group, reason },
         ...this.ignored.filter(r => !(r.connectionId === c.id && r.tenantId === event.address.tenantId && r.conversationId === event.address.conversationId && r.actorId === event.actor.id))].slice(0, 20);
+      if (reason === "conversation" && event.kind === "message" && group) this.askGroup(c, event);
       this.changed();
       return { receiptId: `ignored:${id}` };
     }
@@ -790,6 +813,101 @@ export class Im extends Service {
     pairing.claim = { ...address, actorId: event.actor.id, ...(event.actor.name ? { name: event.actor.name } : {}), at: Date.now() };
     this.tell(c, address, this.w("pairReceived"));
     this.changed();
+  }
+
+  /**
+   * A paired person addressing the bot in a group with no route gets a card asking what the channel is for,
+   * instead of silence. Anyone else is only listed as ignored, as before.
+   */
+  private askGroup(c: Connection, event: ImInbound & { kind: "message" }) {
+    const caps = this.caps.get(c.adapterId);
+    const { tenantId, conversationId } = event.address;
+    const key = JSON.stringify([c.id, tenantId, conversationId]);
+    if (!caps?.buttons || !this.settings.identities.some(i => i.connectionId === c.id && i.tenantId === tenantId && i.actorId === event.actor.id)) return;
+    if ((this.snoozed.get(key) ?? 0) > Date.now()) return;
+    const projects = this.home.projects.list().filter(p => !p.archived);
+    const projectId = this.lastProject(c.id, tenantId, event.actor.id, projects.map(p => p.id));
+    if (!projectId) return;
+    const tokens = new Map<string, string>([...Object.keys(GROUP_PRESETS), "no", "project", ...projects.map(p => `project:${p.id}`)].map(kind => [token(), kind]));
+    const ask: GroupAsk = { connectionId: c.id, address: event.address, actorId: event.actor.id, projectId, picked: projects.length < 2 || !!caps.select,
+      tokens, expiresAt: Date.now() + this.config.actionTtlMs };
+    this.asks.set(key, ask);
+    void this.showAsk(c, ask, this.askContent(ask, caps));
+  }
+
+  /** The project the person last wrote to on this connection, else the one their direct chat goes to. */
+  private lastProject(connectionId: string, tenantId: string, actorId: string, open: string[]): string | undefined {
+    const wrote = this.store.all<{ project_id: string }>(`SELECT b.project_id FROM plugin_im_inbox i JOIN plugin_im_bindings b ON b.id = i.binding_id
+      WHERE b.connection_id = ? AND json_extract(i.event_json, '$.actor.id') = ? ORDER BY i.seq DESC LIMIT 20`, connectionId, actorId).map(r => r.project_id);
+    const routed = this.settings.routes.filter(r => r.connectionId === connectionId && r.tenantId === tenantId && r.allowedActors.includes(actorId)).map(r => r.projectId).reverse();
+    return [...wrote, ...routed, ...open].find(id => open.includes(id));
+  }
+
+  private askContent(ask: GroupAsk, caps: ResolvedImCapabilities): ImContent {
+    const { w } = this;
+    const projects = this.home.projects.list().filter(p => !p.archived);
+    const tokenOf = (kind: string) => [...ask.tokens].find(([, k]) => k === kind)![0];
+    if (!ask.picked) return { text: w("groupAskProject"), actions: projects.slice(0, 8).map(p => ({ label: p.name, token: tokenOf(`project:${p.id}`) })) };
+    const project = this.home.projects.get(ask.projectId)?.name ?? ask.projectId;
+    const elements: ImElement[] = projects.length > 1 && caps.select
+      ? [{ type: "select", token: tokenOf("project"), placeholder: w("groupProject"), options: projects.slice(0, 24).map(p => ({ label: p.name, value: p.id })) }] : [];
+    return { text: w("groupAsk", { project }), ...(elements.length ? { elements } : {}), actions: [
+      { label: w("groupWork"), token: tokenOf("work"), style: "primary" },
+      { label: w("groupStatus"), token: tokenOf("status") },
+      { label: w("groupChat"), token: tokenOf("chat") },
+      { label: w("groupNotHere"), token: tokenOf("no") }
+    ] };
+  }
+
+  /** The card, sent or changed in place where the platform can; best effort like any reply outside a conversation. */
+  private async showAsk(c: Connection, ask: GroupAsk, content: ImContent) {
+    const caps = this.caps.get(c.adapterId);
+    if (!caps || !c.session || c.state !== "connected") return;
+    const replace = ask.messageId && caps.cardUpdate ? ask.messageId : undefined;
+    const [first] = prepare(content, caps, this.w);
+    try {
+      const { messageId } = await deadline(c.session.deliver({ operationId: `ask:${token()}`, address: ask.address, content: first, ...(replace ? { replaceMessageId: replace } : {}) }), this.config.operationTimeoutMs);
+      ask.messageId = messageId;
+    } catch { /* The person can @mention again for a new card. */ }
+  }
+
+  /** A press on a group card. True when the token was one, whoever pressed it. */
+  private answerGroup(c: Connection, event: ImInbound & { kind: "action" }): boolean {
+    const [key, ask] = [...this.asks].find(([, a]) => a.connectionId === c.id && a.tokens.has(event.token)) ?? [];
+    if (!key || !ask) return false;
+    if (event.actor.id !== ask.actorId || ask.expiresAt < Date.now()) return true;
+    const caps = this.caps.get(c.adapterId)!;
+    const kind = ask.tokens.get(event.token)!;
+    const value = typeof event.value === "string" ? event.value : event.value?.[0];
+    if (kind === "project" || kind.startsWith("project:")) {
+      const projectId = kind === "project" ? value : kind.slice("project:".length);
+      if (!projectId || !this.home.projects.get(projectId)) return true;
+      ask.projectId = projectId;
+      ask.picked = true;
+      void this.showAsk(c, ask, this.askContent(ask, caps));
+      return true;
+    }
+    this.asks.delete(key);
+    const project = this.home.projects.get(ask.projectId)?.name ?? ask.projectId;
+    if (kind === "no") {
+      this.snoozed.set(key, Date.now() + ASK_SNOOZE_MS);
+      void this.showAsk(c, ask, { text: this.w("groupNotNow") });
+      return true;
+    }
+    const preset = kind as GroupPreset;
+    const said = { work: this.w("groupIsWork", { project }), status: this.w("groupIsStatus", { project }), chat: this.w("groupIsChat", { project }) }[preset];
+    void this.showAsk(c, ask, { text: `${said}\n${this.w("groupChangeLater")}` });
+    const im = this.snapshot();
+    const where = { connectionId: c.id, tenantId: ask.address.tenantId, conversationId: ask.address.conversationId };
+    const paired = im.identities.filter(i => i.connectionId === c.id && i.tenantId === where.tenantId).map(i => i.actorId);
+    this.admit(im, where, [...new Set([...paired, ask.actorId])], "group", ask.projectId);
+    const i = im.routes.findIndex(r => r.connectionId === where.connectionId && r.tenantId === where.tenantId && r.conversationId === where.conversationId);
+    const { notify, ...fields } = GROUP_PRESETS[preset];
+    im.routes[i] = { ...im.routes[i], ...fields, notify: { ...notify } };
+    this.save(im);
+    this.ignored = this.ignored.filter(r => !(r.connectionId === c.id && r.tenantId === where.tenantId && r.conversationId === where.conversationId));
+    this.changed();
+    return true;
   }
 
   /** A message the person withdrew or edited on the platform. Withdrawing a waiting one keeps it from running; an edit never reruns. */
