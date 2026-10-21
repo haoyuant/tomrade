@@ -124,7 +124,7 @@ export const START_TIMEOUT_MS = 10_000;
 /** At most this many starts by `revive` within the window, so a server that keeps dying is not started over and over. */
 export const REVIVE_LIMIT = 3;
 export const REVIVE_WINDOW_MS = 5 * 60_000;
-/** The longest a pane's next control session waits for the one before it to settle, so a herdr that never answers holds nothing up. */
+/** The longest a pane's next control session waits for the one before it to settle once that one's herdr has started, so a herdr that never answers holds nothing up. */
 export const CONTROL_SETTLE_MS = 2_000;
 
 /** How `revive` went: the server answers (already, or started now), did not come up, is held by the limit, or herdr is not here. */
@@ -206,7 +206,7 @@ export class Herdr extends Service {
   private toldStarted = false;
   /** The terminals open now, closed with the service. */
   private readonly terminals = new Set<TerminalStream>();
-  /** Each pane's latest control session until it settles: attached, refused or ended. */
+  /** Each pane's latest control session until it settles: attached, refused or ended, or `CONTROL_SETTLE_MS` after its herdr started. */
   private readonly controlling = new Map<string, Promise<void>>();
   /** A project workspace being made, shared by launches into it meanwhile. */
   private readonly making = new Map<string, Promise<void>>();
@@ -423,7 +423,8 @@ export class Herdr extends Service {
     }
     let stream: OpenedTerminal;
     try {
-      if (previous) await Promise.race([previous, new Promise((resolve) => setTimeout(resolve, CONTROL_SETTLE_MS).unref())]);
+      // Its time to settle starts with its herdr: the checks before that, slow on a loaded machine, must not use it up.
+      if (previous) await previous;
       const bridge = await this.bridge();
       const bin = this.binary();
       if (bridge.state !== "ready" || !bin) throw new HerdrError(bridge.state, `herdr cannot stream ${paneId}: ${bridge.state}`);
@@ -433,7 +434,7 @@ export class Herdr extends Service {
       settle();
       throw err;
     }
-    void stream.settled.then(settle);
+    void Promise.race([stream.settled, new Promise((resolve) => setTimeout(resolve, CONTROL_SETTLE_MS).unref())]).then(settle);
     this.terminals.add(stream);
     stream.onClose(() => this.terminals.delete(stream));
     return stream;
