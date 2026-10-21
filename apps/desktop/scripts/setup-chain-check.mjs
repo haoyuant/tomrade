@@ -189,6 +189,8 @@ const run = async () => {
   // ── the screen offers one button per unready agent, commands behind a disclosure ──
   check("the first run opens on connecting an AI", await wait(() => has('[data-testid="first-run-setup"]'), "first-run setup"));
   check("an unready agent has one Set up button", await wait(() => has('[data-testid="setup-run-fake-agent"]'), "set up button"));
+  check("a missing agent from npm is also offered Tomrade's own copy", /Tomrade's own copy/.test((await text('[data-testid="setup-managed-fake-agent"]')) ?? ""), await text('[data-testid="setup-managed-fake-agent"]'));
+  check("but not one that runs only in a terminal, which no test message reaches", !(await has('[data-testid="setup-managed-bad-cli"]')));
   check("the commands moved behind a Manual setup disclosure", (await $(`document.querySelector('[data-testid="manual-fake-agent"]')?.open ?? null`)) === false);
   await $(`document.querySelector('[data-testid="manual-fake-agent"]').open = true`);
   check("opened, the disclosure still offers the command and the terminal", await wait(() => has('[data-testid="install-fake-agent"]'), "manual install command"));
@@ -224,6 +226,8 @@ const run = async () => {
   const testError = await text('[data-testid="chain-error-test"]');
   check("naming the missing model", /Model not found/.test(testError ?? ""), testError);
   check("the agent does not count as configured", !(await has('[data-testid="setup-done"]')));
+  check("its own copy failed the test, so Tomrade's own copy is offered", await has('[data-testid="setup-managed-fake-agent"]'));
+  check("and the chain says the person's own copy is the one in use", (await $(`document.querySelector('[data-testid="chain-copy-fake-agent"]')?.dataset.copy ?? null`)) === "own");
   await shot("setup-chain-05-test-failed");
 
   // ── still broken: only a second test failure hands over to the troubleshooter ──

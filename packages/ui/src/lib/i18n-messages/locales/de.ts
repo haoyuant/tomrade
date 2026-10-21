@@ -2373,6 +2373,7 @@ export const de: PartialMessages = {
     using: "Verwendet {{path}}",
     sourceManual: "von dir gewählt",
     sourceAuto: "automatisch gefunden",
+    sourceManaged: "Tomrades eigene Kopie",
     missingDetail: "{{name}} wurde weder im PATH noch in den üblichen Installationsordnern gefunden. Tomrade führt das Kommandozeilen-Tool {{name}} aus, keine gleichnamige Desktop-App.",
     desktopOnlyDetail: "Die Desktop-App {{app}} ist installiert, aber Tomrade führt ihr Kommandozeilen-Tool {{name}} aus, das in der App nicht enthalten ist. Installiere die CLI wie unten beschrieben, melde dich an und prüfe dann erneut.",
     brokenDetail: "{{path}} gefunden, startet aber nicht: {{error}}",

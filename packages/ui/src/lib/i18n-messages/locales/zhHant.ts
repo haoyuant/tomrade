@@ -2373,6 +2373,7 @@ export const zhHant: PartialMessages = {
     using: "正在使用 {{path}}",
     sourceManual: "手動指定",
     sourceAuto: "自動偵測",
+    sourceManaged: "Tomrade 自帶的副本",
     missingDetail: "在 PATH 和常見安裝位置都找不到 {{name}}。Tomrade 使用的是命令列工具 {{name}}，不是同名的桌面應用程式。",
     desktopOnlyDetail: "已經安裝了 {{app}} 桌面版，但 Tomrade 使用的是它的命令列工具 {{name}}，桌面版裡不包含。請依下面的步驟安裝命令列工具並登入，然後按「重新檢查」。",
     brokenDetail: "找到了 {{path}}，但無法執行：{{error}}",

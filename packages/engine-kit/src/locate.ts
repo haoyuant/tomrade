@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { CliAttempt, CliCheck, CliSource, LocalCliStatus } from "@tomradex/agent";
+import { managedLaunch, type ManagedCli } from "./managed.js";
 
 /**
  * Finding a local agent's CLI the way a person's terminal would, and starting
@@ -483,6 +484,13 @@ export class CliLocator {
 
   // Looking for app installs may read the registry, so a turn reuses what the last search saw.
   private apps?: Promise<BundledCli[]>;
+  private managed: ManagedCli | null = null;
+
+  /** Tomrade's own copy of this CLI, or none: tried after every other place, or right after the person's chosen path when preferred. */
+  useManaged(copy: ManagedCli | null): void {
+    this.managed = copy;
+    this.cache.clear();
+  }
 
   findBundled(bundled: BundledApps): void {
     if (bundled === this.bundled) return;
@@ -498,6 +506,8 @@ export class CliLocator {
   /** How to start `file`: through its app's runtime when it is a bundled copy, the way a terminal would otherwise. */
   private async launchOf(file: string, dirs: string[] = []): Promise<CliLaunch> {
     const same = (a: string, b: string) => (this.host.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b);
+    const own = this.managed && same(this.managed.file, file) ? managedLaunch(this.managed, this.host, dirs) : null;
+    if (own) return own;
     const copy = (await this.bundledApps()).find((cli) => same(cli.file, file));
     return copy?.runtime ? bundledLaunch({ file: copy.file, runtime: copy.runtime }, this.host) : launchFor(file, this.host, dirs);
   }
@@ -598,7 +608,8 @@ export class CliLocator {
 
     const tryAll = async (candidates: Candidate[]): Promise<CliAttempt | null> => {
       for (const c of candidates) {
-        if (tried.has(norm(c.file)) || !isFile(c.file, platform)) continue;
+        // A managed script bin runs through the runtime, so it need not be executable itself.
+        if (tried.has(norm(c.file)) || !(c.source === "managed" ? fs.existsSync(c.file) : isFile(c.file, platform))) continue;
         tried.add(norm(c.file));
         const result = describeRun(await this.host.run(await this.launchOf(c.file, extra), ["--version"], this.timeoutMs), this.timeoutMs);
         const attempt = { path: c.file, source: c.source, ok: result.ok, detail: result.detail };
@@ -618,8 +629,11 @@ export class CliLocator {
       const file = candidates.at(-1)?.file ?? manual;
       manualError = failed ? { path: failed.path, error: failed.detail } : { path: file, error: whyNot(file, platform) ?? "file not found" };
     }
+    const managed: Candidate[] = this.managed ? [{ file: this.managed.file, source: "managed" }] : [];
+    let hit = this.managed?.prefer ? await tryAll(managed) : null;
+    if (hit) return ready(hit);
     searched.push(...processPath);
-    let hit = await tryAll(this.inDirs(processPath, "path"));
+    hit = await tryAll(this.inDirs(processPath, "path"));
     if (hit) return ready(hit);
 
     let shellTimedOut: string | undefined;
@@ -645,6 +659,8 @@ export class CliLocator {
     searched.push(...bundled.map((cli) => p.dirname(cli.file)).filter((dir, i, all) => all.findIndex((d) => norm(d) === norm(dir)) === i));
     hit = await tryAll(bundled.filter((cli) => isFile(cli.runtime ?? cli.file, platform)).map((cli) => ({ file: cli.file, source: "known" as const })));
     if (hit) return ready(hit, { insideApp: appOf(hit.path) });
+    hit = await tryAll(managed);
+    if (hit) return ready(hit);
 
     const broken = attempts.find((a) => a.source !== "manual") ?? attempts[0];
     if (broken) return { status: status({ state: "broken", path: broken.path, source: broken.source, error: broken.detail, manual: manualError }), dirs: extra };
