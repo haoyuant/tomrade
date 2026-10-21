@@ -48,6 +48,19 @@ export type ImInbound = {
 /** How an adapter writes formatted text. `markdown` passes the common layer's Markdown through unchanged. */
 export type ImMarkdownDialect = "plain" | "markdown" | "slack" | "telegram-html" | "discord" | "lark" | "dingtalk" | "wecom";
 
+/** SDK 0.2.20. */
+export interface ImLink { label: Localized; url: string }
+
+/** SDK 0.2.20. Something on a connection the person has to fix, such as a permission the bot lacks. */
+export interface ImNotice {
+  /** Said once per key, until `clearNotice` withdraws it. */
+  key: string;
+  text: Localized;
+  /** The conversation it happened in hears one line; when it cannot, the paired people's direct chats do. */
+  address?: ImAddress;
+  link?: ImLink;
+}
+
 export interface ImButton {
   label: string;
   token: string;
@@ -117,6 +130,12 @@ export interface ImAdapterSession {
   commands?(commands: ImCommand[]): Promise<void>;
   /** SDK 0.2.5. The bot the credentials signed in as, checked against the platform; shown so the person sees setup worked. */
   identity?: { id: string; name?: string };
+  /**
+   * SDK 0.2.20. Links the person may need once the connection is up, such as
+   * the one that adds the bot to a server; shown on the connection and in the
+   * pairing reply. Older hosts ignore them.
+   */
+  links?: ImLink[];
   /**
    * SDK 0.2.19. Topics the bot opens itself, when `topics`: one per ticket
    * being worked in a group conversation. Messages people write in one arrive
@@ -253,6 +272,10 @@ export interface ImAdapter {
     status(state: ImConnectionState, detail?: string): void;
     /** Reads only handles explicitly included in a delivery for this connection. */
     readOutboundFile(id: string): Promise<Uint8Array>;
+    /** SDK 0.2.20, absent on older hosts. Shows a notice on the connection and tells it where it happened. */
+    notice?(notice: ImNotice): void;
+    /** SDK 0.2.20, absent on older hosts. The notice's cause is gone; the same key may be said again. */
+    clearNotice?(key: string): void;
   }): Promise<ImAdapterSession>;
 }
 
