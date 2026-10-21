@@ -1,9 +1,13 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { EngineSetupFailure, EngineSetupProgress, EngineView } from "@tomradex/agent";
 import { useCurrentProject } from "~/components/dialogs/plugins/parts";
 import { Icon } from "~/components/icons";
 import { duration } from "~/components/workspace/agent-panel/format";
+import { invoke } from "~/lib/api";
+import { formatSize } from "~/lib/files";
 import { useI18n, type MessageKey } from "~/lib/i18n";
+import { keys } from "~/lib/queries";
 import { useSetupChain, type ChainStep } from "~/lib/setupChain";
 import { openExternal } from "~/lib/shell";
 
@@ -15,6 +19,7 @@ const FAILURE_KEYS: Record<string, MessageKey> = {
   unsupported: "setup.failUnsupported",
   "not-found": "setup.failNotFound",
   "not-on-path": "setup.failNotOnPath",
+  "native-missing": "setup.failNativeMissing",
   timeout: "setup.failTimeout",
   cancelled: "setup.failCancelled"
 };
@@ -64,6 +69,7 @@ function InstallRunning({ progress, onRetry }: { progress?: EngineSetupProgress;
       ) : (
         progress?.mirror && <span className="setup-fix">{t("setup.registrySlow")}</span>
       )}
+      {progress?.prefix && <span className="setup-fix">{t("setup.installOwnFolder")}</span>}
       <MirrorRetry progress={progress} onRetry={onRetry} />
       {progress?.output && (
         <details className="eng-try-details">
@@ -97,10 +103,11 @@ function SignInMethods({ progress, onSignIn }: { progress?: EngineSetupProgress;
   );
 }
 
-function StepDetail({ step, title, insideApp, onRetry, onSignIn }: { step: ChainStep; title: string; insideApp?: string; onRetry: (registry?: string) => void; onSignIn: (method: string) => void }) {
+function StepDetail({ step, title, insideApp, terminalOnly, onRetry, onSignIn }: { step: ChainStep; title: string; insideApp?: string; terminalOnly?: boolean; onRetry: (registry?: string) => void; onSignIn: (method: string) => void }) {
   const { t } = useI18n();
   const progress = step.progress;
   const methods = step.id === "sign-in" && <SignInMethods progress={progress} onSignIn={onSignIn} />;
+  if (step.id === "terminal") return step.state === "done" ? <span className="meta-txt" data-testid="chain-terminal-ready">{t("setup.terminalReady", { title })}</span> : null;
   if (step.state === "failed") {
     const failure: EngineSetupFailure | undefined = progress?.failure ?? (step.tried ? { kind: "exit", message: step.tried.error ?? "" } : undefined);
     if (!failure) return null;
@@ -109,7 +116,7 @@ function StepDetail({ step, title, insideApp, onRetry, onSignIn }: { step: Chain
       <span className="setup-fix" role="alert" data-testid={`chain-error-${step.id}`}>
         {step.id === "test"
           ? t("setup.testFailed", { error: failure.message })
-          : failure.path
+          : failure.path && failure.kind !== "native-missing"
             ? t("setup.failFoundBroken", { path: failure.path, error: failure.message })
             : known ? t(known) : t("setup.failExit", { error: failure.message })}
         {step.id === "test" && insideApp && <> {t("setup.insideApp", { app: insideApp })}</>}
@@ -126,7 +133,14 @@ function StepDetail({ step, title, insideApp, onRetry, onSignIn }: { step: Chain
   }
   if (step.id === "test") {
     if (step.state === "active") return <span className="meta-txt">{t("setup.testing")}</span>;
-    if (step.tried?.ok) return <span className="meta-txt" data-testid="chain-reply">{t("setup.testReply", { reply: step.tried.reply ?? "" })}</span>;
+    if (step.tried?.ok) {
+      return (
+        <>
+          <span className="meta-txt" data-testid="chain-reply">{t("setup.testReply", { reply: step.tried.reply ?? "" })}</span>
+          {terminalOnly && <span className="meta-txt" data-testid="chain-terminal-ready">{t("setup.terminalReady", { title })}</span>}
+        </>
+      );
+    }
     return null;
   }
   if (step.state === "active") return step.id === "install" ? <InstallRunning progress={progress} onRetry={onRetry} /> : <span className="meta-txt">{t("setup.signingIn")}{methods}</span>;
@@ -143,23 +157,41 @@ function StepDetail({ step, title, insideApp, onRetry, onSignIn }: { step: Chain
       </span>
     );
   }
-  if (step.id === "install" && step.state === "done" && step.progress?.version) return <span className="meta-txt">{step.progress.version}</span>;
+  if (step.id === "install" && step.state === "done" && step.progress?.version) {
+    return <span className="meta-txt">{step.progress.prefix ? t("setup.installedOwnFolder", { version: step.progress.version }) : step.progress.version}</span>;
+  }
   return null;
 }
 
-const STEP_LABELS: Record<ChainStep["id"], MessageKey> = { install: "setup.stepInstall", "sign-in": "setup.stepSignIn", test: "setup.stepTest" };
+const STEP_LABELS: Record<ChainStep["id"], MessageKey> = { install: "setup.stepInstall", "sign-in": "setup.stepSignIn", test: "setup.stepTest", terminal: "setup.stepTerminal" };
+
+const stepLabel = (step: ChainStep): MessageKey => (step.managed ? "setup.stepInstallManaged" : step.official ? "setup.stepInstallOfficial" : STEP_LABELS[step.id]);
+
+/** The second way forward when the person's copy is missing or failed: Tomrade's own, with what it would download. */
+function ManagedButton({ engine, onClick }: { engine: EngineView; onClick: () => void }) {
+  const { t } = useI18n();
+  const offer = useQuery({ queryKey: keys.agentSetup.managed(engine.id), queryFn: () => invoke("agentSetup.managed", engine.id), staleTime: 10 * 60_000 });
+  const bytes = offer.data?.bytes;
+  return (
+    <button type="button" className="btn btn-ghost btn-sm" data-testid={`setup-managed-${engine.id}`} title={t("setup.installManagedHint")} onClick={onClick}>
+      {bytes ? t("setup.installManagedSize", { size: formatSize(bytes) }) : t("setup.installManaged")}
+    </button>
+  );
+}
 
 /**
  * The one primary button that makes an agent ready, and the step list it runs
  * through: install → sign in → a test message, each ticked when already
- * satisfied. Ready means the test message got a reply, nothing less.
+ * satisfied. Ready means the test message got a reply, nothing less — or, for
+ * an agent that runs only in a terminal, the check it can pass.
  */
 export function SetupChain({ engine, onTroubleshoot }: { engine: EngineView; onTroubleshoot?: (engineId: string, error?: string) => void }) {
   const { t } = useI18n();
   const projectId = useCurrentProject();
   const chain = useSetupChain(engine, projectId ?? null);
   const steps = chain.steps;
-  const ready = !chain.running && engine.tried?.ok && engine.ok;
+  // One that runs only in a terminal is ready once found and signed in, unless its one answer failed.
+  const ready = !chain.running && engine.ok && (engine.terminalOnly ? engine.tried?.ok !== false : !!engine.tried?.ok);
   const showList = chain.running || !!chain.run;
   // The troubleshooter is offered only once a retry also failed the test: the first failure stays with the chain's own fix wording.
   const running = chain.running;
@@ -171,6 +203,7 @@ export function SetupChain({ engine, onTroubleshoot }: { engine: EngineView; onT
   const lastError = chain.run?.tried?.error ?? chain.run?.progress?.failure?.message ?? engine.tried?.error;
   const icon = (step: ChainStep) =>
     step.state === "done" ? <Icon name="i-check" size={12} /> : step.state === "failed" ? <Icon name="i-warn" size={12} /> : step.state === "pending" ? <span className="setup-step-dot" /> : <Icon name="i-sync" size={12} />;
+  if (ready && !showList) return null;
   return (
     <div className="setup-chain" data-testid={`chain-${engine.id}`}>
       {!ready && (
@@ -178,6 +211,7 @@ export function SetupChain({ engine, onTroubleshoot }: { engine: EngineView; onT
           <button type="button" className="btn btn-primary btn-sm" data-testid={`setup-run-${engine.id}`} disabled={chain.running} onClick={chain.start}>
             {chain.running ? t("setup.oneClickRunning") : chain.official ? t("setup.installOfficial") : chain.run?.failed ? t("setup.retry") : t("setup.oneClick")}
           </button>
+          {chain.managed && <ManagedButton engine={engine} onClick={chain.startManaged} />}
           {chain.running && (
             <button type="button" className="btn btn-ghost btn-xs" data-testid={`setup-cancel-${engine.id}`} onClick={chain.cancel}>
               {t("setup.cancelSetup")}
@@ -196,12 +230,17 @@ export function SetupChain({ engine, onTroubleshoot }: { engine: EngineView; onT
             <li key={step.id} data-step={step.id} data-state={step.state}>
               {icon(step)}
               <div className="setup-step-body">
-                <span>{t(step.official ? "setup.stepInstallOfficial" : STEP_LABELS[step.id], { title: engine.title })}</span>
-                <StepDetail step={step} title={engine.title} insideApp={engine.cli?.insideApp} onRetry={chain.retry} onSignIn={chain.signInWith} />
+                <span>{t(stepLabel(step), { title: engine.title })}</span>
+                <StepDetail step={step} title={engine.title} insideApp={engine.cli?.insideApp} terminalOnly={engine.terminalOnly} onRetry={chain.retry} onSignIn={chain.signInWith} />
               </div>
             </li>
           ))}
         </ol>
+      )}
+      {engine.cli?.state === "ready" && !engine.cli.insideApp && engine.cli.name !== "npx" && engine.setup?.installers?.some((installer) => installer.kind === "npm") && (
+        <span className="meta-txt" data-testid={`chain-copy-${engine.id}`} data-copy={engine.cli.source === "managed" ? "managed" : "own"}>
+          {engine.cli.source === "managed" ? t("setup.usingManaged", { version: engine.cli.version ?? "" }) : t("setup.usingOwn")}
+        </span>
       )}
     </div>
   );

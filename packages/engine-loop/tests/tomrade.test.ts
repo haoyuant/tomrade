@@ -13,7 +13,7 @@ import { Settings } from "@tomradex/settings";
 import { Agent, type Engine, type EngineAvailability, type TurnInput, type TurnIO } from "@tomradex/agent";
 import tomrade from "../src/tomrade.js";
 
-async function setup(work: EngineAvailability = { ok: true }, loop: EngineAvailability = { ok: true }) {
+async function setup(work: EngineAvailability = { ok: true }, loop: EngineAvailability = { ok: true }, workModes?: Engine["permissionModes"]) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-engine-"));
   const { ctx, project } = await fresh({ plugins: [Tools, [Settings, { path: path.join(root, "settings.json") }], [Agent, { mediaDir: path.join(root, "media") }], tomrade] });
   await settle();
@@ -31,7 +31,7 @@ async function setup(work: EngineAvailability = { ok: true }, loop: EngineAvaila
     }
   });
   ctx.agent.engine(part("loop", loop));
-  ctx.agent.engine(part("pi-builtin", work));
+  ctx.agent.engine({ ...part("pi-builtin", work), ...(workModes ? { permissionModes: workModes } : {}) });
   const done = async () => {
     await ctx.fiber.dispose();
     fs.rmSync(root, { recursive: true, force: true });
@@ -51,7 +51,7 @@ it("lists one engine in place of its parts", async () => {
 it("offers only backlog work while the built-in pi cannot run", async () => {
   const { ctx, done } = await setup({ ok: false, need: "install", reason: "no pi" });
   try {
-    expect((await ctx.agent.engineViews())[0]).toMatchObject({ ok: true, capabilities: ["backlog"] });
+    expect((await ctx.agent.engineViews())[0]).toMatchObject({ ok: true, capabilities: ["backlog"], reason: "no pi" });
   } finally { await done(); }
 });
 
@@ -159,6 +159,29 @@ it("hands a backlog conversation to a signed-in local agent while no model is co
     noModel.ok = true;
     await say("anything new?");
     expect(turns.at(-1)).toMatchObject({ engine: "pi-builtin", resume: undefined });
+  } finally { await done(); }
+});
+
+it("hands a borrowed local agent no permission mode of the built-in pi's, which it would refuse", async () => {
+  const noModel: EngineAvailability = { ok: false, need: "model", reason: "no model" };
+  const modes = (values: string[]) => ({ default: values[0]!, choices: values.map((value) => ({ value, label: value })) });
+  const { ctx, project, turns, done } = await setup(noModel, noModel, modes(["full", "ask"]));
+  try {
+    ctx.agent.engine({
+      id: "claude-code", title: "Claude Code", author: "ai:claude-code", capabilities: ["backlog", "code", "general"],
+      permissionModes: modes(["default", "acceptEdits"]),
+      available: async () => ({ ok: true }),
+      async turn(input) {
+        turns.push({ engine: "claude-code", input });
+        if (input.permissionMode && !["default", "acceptEdits"].includes(input.permissionMode)) throw new Error(`Invalid option: ${input.permissionMode}`);
+        return { stop: "end" };
+      }
+    });
+    const chat = ctx.agent.newThread(project.id);
+    const { runId } = ctx.agent.send(project.id, chat.id, { kind: "text", text: "what is open?" });
+    await expect.poll(() => ctx.agent.store.run(project.id, runId)?.status).toBe("done");
+    expect(turns.at(-1)!.engine).toBe("claude-code");
+    expect(turns.at(-1)!.input).not.toHaveProperty("permissionMode");
   } finally { await done(); }
 });
 

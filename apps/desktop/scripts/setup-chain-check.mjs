@@ -3,7 +3,9 @@
  * has one Set up button that runs install → sign in → test message as a step
  * list. A scripted agent walks the four ways it can go: an install that fails
  * (network), a sign-in that waits on the browser, a test message the agent
- * cannot answer, and the full chain ending ready with the reply shown.
+ * cannot answer, and the full chain ending ready with the reply shown. Two
+ * agents that run only in a terminal end on a check they can pass: one answer
+ * from the model one lends, and found-and-signed-in for one that lends none.
  *
  *   pnpm build:backend && pnpm dev:ui   then
  *   pnpm --filter @tomrade/desktop test:setup-chain
@@ -74,6 +76,8 @@ if (process.argv.includes("login")) {
 );
 const bin = path.join(work, "bin", "fake-agent");
 fs.mkdirSync(path.dirname(bin), { recursive: true });
+// The terminal-only agents: any CLI answering --version will do, since Tomrade never drives one.
+const termBins = { "fake-term": path.join(work, "bin", "fake-term"), "fake-term-quiet": path.join(work, "bin", "fake-term-quiet") };
 
 // The fake npm: installing fake-agent writes the CLI; anything else fails the way a cut line does.
 const npmJs = path.join(work, "fake-npm.mjs");
@@ -87,6 +91,10 @@ if (pkg === "fake-agent") {
   console.error("npm http fetch GET 200 https://registry.npmjs.org/fake-agent 120ms (cache miss)");
   await new Promise((resolve) => setTimeout(resolve, 2000));
   fs.writeFileSync(${JSON.stringify(bin)}, "#!/bin/sh\\nELECTRON_RUN_AS_NODE=1 exec '${process.execPath}' '${agentJs}' \\"$@\\"\\n", { mode: 0o755 });
+  console.log("added 1 package");
+} else if (${JSON.stringify(Object.keys(termBins))}.includes(pkg)) {
+  const bins = ${JSON.stringify(termBins)};
+  fs.writeFileSync(bins[pkg], "#!/bin/sh\\nELECTRON_RUN_AS_NODE=1 exec '${process.execPath}' '${agentJs}' \\"$@\\"\\n", { mode: 0o755 });
   console.log("added 1 package");
 } else {
   console.error("npm ERR! code ENOTFOUND\\nnpm ERR! network request to https://registry.npmjs.org failed");
@@ -107,7 +115,7 @@ const run = async () => {
   ctx.hub.configure(path.join(work, "hub"));
   await ctx.storage.ready;
   const settings = ctx.settings.get();
-  ctx.settings.set({ ...settings, language: "en", agent: { ...settings.agent, engines: { ...settings.agent?.engines, "fake-agent": { command: bin } } } });
+  ctx.settings.set({ ...settings, language: "en", agent: { ...settings.agent, engines: { ...settings.agent?.engines, "fake-agent": { command: bin }, "fake-term": { command: termBins["fake-term"] }, "fake-term-quiet": { command: termBins["fake-term-quiet"] } } } });
   // Installers run through the fake npm, never the machine's.
   ctx.agentSetup.host = {
     platform: process.platform,
@@ -136,6 +144,25 @@ const run = async () => {
     setup: { install: [{ npm: "bad-cli" }], suggested: true }
   });
 
+  // Terminal-only agents (Cursor, Antigravity): no ACP, so a test message would be a turn they never take.
+  const termAsks = [];
+  ctx.localAgents.register({
+    id: "fake-term",
+    title: "Fake Terminal",
+    cli: { name: "tomrade-no-such-fake-term" },
+    install: "install Fake Terminal",
+    setup: { install: [{ npm: "fake-term" }], suggested: true },
+    // The lending's own sign-in ping is not the test; only the test is counted.
+    lend: { ask: async (request) => (request.transcript !== "ping" && termAsks.push(request.transcript), { text: "OK", inputTokens: 1, outputTokens: 1 }) }
+  });
+  ctx.localAgents.register({
+    id: "fake-term-quiet",
+    title: "Quiet Terminal",
+    cli: { name: "tomrade-no-such-fake-term-quiet" },
+    install: "install Quiet Terminal",
+    setup: { install: [{ npm: "fake-term-quiet" }], suggested: true }
+  });
+
   const win = new BrowserWindow({ width: 1280, height: 900, show: !!process.env.TOMRADE_SHOW, webPreferences: { preload: path.join(dir, "../preload.cjs"), contextIsolation: true } });
   win.webContents.on("console-message", (event) => {
     if (event.level === "error" || String(event.level) === "3") console.log(`[renderer] ${event.message} (${event.sourceId}:${event.lineNumber})`);
@@ -162,6 +189,8 @@ const run = async () => {
   // ── the screen offers one button per unready agent, commands behind a disclosure ──
   check("the first run opens on connecting an AI", await wait(() => has('[data-testid="first-run-setup"]'), "first-run setup"));
   check("an unready agent has one Set up button", await wait(() => has('[data-testid="setup-run-fake-agent"]'), "set up button"));
+  check("a missing agent from npm is also offered Tomrade's own copy", /Tomrade's own copy/.test((await text('[data-testid="setup-managed-fake-agent"]')) ?? ""), await text('[data-testid="setup-managed-fake-agent"]'));
+  check("but not one that runs only in a terminal, which no test message reaches", !(await has('[data-testid="setup-managed-bad-cli"]')));
   check("the commands moved behind a Manual setup disclosure", (await $(`document.querySelector('[data-testid="manual-fake-agent"]')?.open ?? null`)) === false);
   await $(`document.querySelector('[data-testid="manual-fake-agent"]').open = true`);
   check("opened, the disclosure still offers the command and the terminal", await wait(() => has('[data-testid="install-fake-agent"]'), "manual install command"));
@@ -197,6 +226,8 @@ const run = async () => {
   const testError = await text('[data-testid="chain-error-test"]');
   check("naming the missing model", /Model not found/.test(testError ?? ""), testError);
   check("the agent does not count as configured", !(await has('[data-testid="setup-done"]')));
+  check("its own copy failed the test, so Tomrade's own copy is offered", await has('[data-testid="setup-managed-fake-agent"]'));
+  check("and the chain says the person's own copy is the one in use", (await $(`document.querySelector('[data-testid="chain-copy-fake-agent"]')?.dataset.copy ?? null`)) === "own");
   await shot("setup-chain-05-test-failed");
 
   // ── still broken: only a second test failure hands over to the troubleshooter ──
@@ -205,6 +236,29 @@ const run = async () => {
   check("a retry that fails again offers the troubleshooter", await wait(() => has('[data-testid="chain-troubleshoot-fake-agent"]'), "troubleshoot link", 300));
   await shot("setup-chain-06-troubleshoot");
 
+  // ── a terminal-only agent that lends a model: its test is one answer from it ──
+  const health = (engine) => $(`document.querySelector('[data-engine="${engine}"]')?.dataset.health ?? null`);
+  await click('[data-testid="setup-run-fake-term"]');
+  check("a terminal-only agent's chain installs it", await wait(async () => (await stepState("fake-term", "install")) === "done", "fake-term install", 300), await stepState("fake-term", "install"));
+  check("and ends on a test its lent model answers", await wait(async () => (await stepState("fake-term", "test")) === "done", "fake-term test", 300), await stepState("fake-term", "test"));
+  check("asked once, outside any turn", termAsks.length === 1, termAsks);
+  check("with the reply shown", ((await text('[data-testid="chain-fake-term"] [data-testid="chain-reply"]')) ?? "").includes("OK"), await text('[data-testid="chain-fake-term"]'));
+  check("and the word that it runs in a terminal", await has('[data-testid="chain-fake-term"] [data-testid="chain-terminal-ready"]'));
+  check("the row is ready for terminal tickets", (await health("fake-term")) === "works" && /terminal/i.test((await text('[data-engine="fake-term"] .setup-name')) ?? ""), [await health("fake-term"), await text('[data-engine="fake-term"] .setup-name')]);
+  check("and never shows a failed test", !(await has('[data-testid="chain-fake-term"] [data-testid="chain-error-test"]')));
+  await $(`document.querySelector('[data-testid="chain-fake-term"]').scrollIntoView({ block: "center" })`);
+  await shot("setup-chain-07-terminal-lends");
+
+  // ── one that lends none: found and signed in is the check, no test message at all ──
+  await click('[data-testid="setup-run-fake-term-quiet"]');
+  check("a terminal-only agent lending nothing ends on found and signed in", await wait(async () => (await stepState("fake-term-quiet", "terminal")) === "done", "fake-term-quiet terminal", 300), await stepState("fake-term-quiet", "terminal"));
+  check("saying it runs in a terminal", await has('[data-testid="chain-fake-term-quiet"] [data-testid="chain-terminal-ready"]'));
+  check("with no test step to fail", !(await has('[data-testid="chain-fake-term-quiet"] [data-step="test"]')) && !(await has('[data-testid="chain-fake-term-quiet"] [data-testid="chain-error-test"]')));
+  check("and its row is ready", (await health("fake-term-quiet")) === "works", await health("fake-term-quiet"));
+  check("neither counts as configured: neither can chat", !(await has('[data-testid="setup-done"]')));
+  await $(`document.querySelector('[data-testid="chain-fake-term-quiet"]').scrollIntoView({ block: "center" })`);
+  await shot("setup-chain-08-terminal-found");
+
   // ── fixed: retry runs only what is left and ends ready with the reply ──
   fs.writeFileSync(stateFlag, "works");
   await click('[data-testid="setup-run-fake-agent"]');
@@ -212,7 +266,7 @@ const run = async () => {
   check("only now is Tomrade set", await wait(() => has('[data-testid="setup-done"]'), "done panel", 300));
   check("with the test reply visible", await wait(() => has('[data-testid="setup-done-reply"]'), "reply", 50), await text('[data-testid="setup-done"]'));
   check("and the reply is the agent's", ((await text('[data-testid="setup-done-reply"]')) ?? "").includes("pong"), await text('[data-testid="setup-done-reply"]'));
-  await shot("setup-chain-07-ready");
+  await shot("setup-chain-09-ready");
   console.log(`screenshots in ${shots}`);
 };
 

@@ -641,7 +641,7 @@ export class Agent extends Service implements AgentReader {
       [...this.engines.values()].filter((engine) => this.answering(engine.id) === engine.id).map(async (engine) => {
         try {
           const state = await engine.available(fresh ? { fresh } : undefined);
-          return { id: engine.id, title: engine.title, capabilities: state.capabilities ?? engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, need: state.need, cli: state.cli, ...(state.configDir ? { configDir: state.configDir } : {}), ...(this.triedWith(engine.id) ? { tried: this.triedWith(engine.id) } : {}), picks: engine.local?.picks?.(), permissionModes: engine.permissionModes, ...(engine.terminal?.mode === "none" ? { terminal: false } : {}), ...(engine.terminal?.mode === "only" ? { terminalOnly: true } : {}), ...(engine.usesModels ? { usesModels: true } : {}), ...(engine.steering ? { steers: true } : {}), ...(state.setup ?? engine.local?.setup ? { setup: state.setup ?? engine.local?.setup } : {}), ...(engine.includes ? { includes: engine.includes } : {}), ...(engine.local?.mcpLink ? { mcpLink: true } : {}) };
+          return { id: engine.id, title: engine.title, capabilities: state.capabilities ?? engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, need: state.need, cli: state.cli, ...(state.configDir ? { configDir: state.configDir } : {}), ...(this.triedWith(engine.id) ? { tried: this.triedWith(engine.id) } : {}), picks: engine.local?.picks?.(), permissionModes: engine.permissionModes, ...(engine.terminal?.mode === "none" ? { terminal: false } : {}), ...(engine.terminal?.mode === "only" ? { terminalOnly: true, ...(engine.local?.ask ? { asks: true } : {}) } : {}), ...(engine.usesModels ? { usesModels: true } : {}), ...(engine.steering ? { steers: true } : {}), ...(state.setup ?? engine.local?.setup ? { setup: state.setup ?? engine.local?.setup } : {}), ...(engine.includes ? { includes: engine.includes } : {}), ...(engine.local?.mcpLink ? { mcpLink: true } : {}) };
         } catch (err) {
           return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: false, reason: errorMessage(err) };
         }
@@ -1030,6 +1030,7 @@ export class Agent extends Service implements AgentReader {
     const settings = JSON.stringify(this.settingsOf().engines[engineId] ?? null);
     const attempt = this.runTry(projectId, engineId, signal).then((tried) => {
       this.tries.set(engineId, { settings, tried });
+      this.ctx.emit("agent/engine-tried", engineId, tried);
       return tried;
     }).finally(() => this.trying.delete(engineId));
     this.trying.set(engineId, attempt);
@@ -1045,6 +1046,18 @@ export class Agent extends Service implements AgentReader {
   private async runTry(projectId: string, engineId: string, signal?: AbortSignal): Promise<EngineTry> {
     const started = Date.now();
     const out = (rest: Omit<EngineTry, "ms" | "at">): EngineTry => ({ ...rest, ms: Date.now() - started, at: Date.now() });
+    const cut = (said: string) => (said ? { reply: said.length > 200 ? `${said.slice(0, 200)}…` : said } : {});
+    const engine = this.engines.get(engineId);
+    // A terminal-only engine never takes a turn here: one answer from its agent is the try it can pass.
+    if (engine?.terminal?.mode === "only" && engine.local?.ask) {
+      const timeout = AbortSignal.timeout(TRY_MS);
+      try {
+        const said = (await engine.local.ask(this.words()("tryAsk"), signal ? AbortSignal.any([signal, timeout]) : timeout)).trim();
+        return out({ ok: true, ...cut(said) });
+      } catch (error) {
+        return out({ ok: false, error: signal?.aborted ? "cancelled" : timeout.aborted ? this.words()("tryTimeout", { s: TRY_MS / 1000 }) : errorMessage(error) });
+      }
+    }
     const thread = this.newThread(projectId, engineId, null, { surface: "probe", title: "probe" });
     try {
       const { runId } = this.send(projectId, thread.id, { kind: "text", text: this.words()("tryAsk") });
@@ -1066,7 +1079,7 @@ export class Agent extends Service implements AgentReader {
       const messages = this.store.messages(projectId, thread.id);
       const failure = messages.find((m) => m.block.type === "error")?.block;
       const said = messages.filter((m) => m.role === "agent" && m.block.type === "text").map((m) => (m.block as { text: string }).text).join("\n").trim();
-      const reply = said ? { reply: said.length > 200 ? `${said.slice(0, 200)}…` : said } : {};
+      const reply = cut(said);
       if (run?.status === "done" && !failure) return out({ ok: true, ...reply });
       return out({ ok: false, ...reply, error: failure?.type === "error" ? failure.text : (run?.error ?? run?.stop ?? "failed"), ...(failure?.type === "error" && failure.details ? { details: failure.details } : {}) });
     } catch (error) {

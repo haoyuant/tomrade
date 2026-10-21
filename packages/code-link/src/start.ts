@@ -18,7 +18,7 @@ import { classifyRemoteFailure, probeRemote, remoteFailureDetail, remoteFailureM
 import type { HerdrBridge } from "./herdr-bridge.js";
 import type { SessionFiles, Sessions } from "./sessions.js";
 import type { CodeLinkStore, SessionMode, SessionView } from "./store.js";
-import { RESUME_ID_FILE, TerminalSettings, fillTemplate, optionFlags, shellQuote, terminalTemplate, withOptions } from "./terminal.js";
+import { RESUME_ID_FILE, TerminalSettings, bareCommand, fillTemplate, optionFlags, shellQuote, terminalPath, terminalTemplate, withOptions, type TerminalPath } from "./terminal.js";
 import { CODE_WORDS } from "./words.js";
 import { githubHttps } from "@tomradex/github";
 import { errorMessage } from "@tomradex/contracts";
@@ -363,7 +363,7 @@ export class Starter {
     }
     const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), withClaimFirst(agent, engineId, item.key, terminalPrompt));
     if (!files) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
-    const bin = await binOf(agent, engineId);
+    const { bin, path: onPath } = await binOf(agent, engineId);
     const options = agent.optionsOf(thread, engineId);
     const baseCommand = this.command(terminalSettings, engineId, session, files, where.cwd, options, bin);
     const wrapped = githubHttps(repo.remote) && await ctx.github.usesHelper(this.host.git, where.cwd);
@@ -373,7 +373,7 @@ export class Starter {
     // A project's sessions share one herdr workspace, a tab each.
     const projectName = (ctx.db.for(projectId).prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name;
     const workspace = projectName ? { key: projectId, label: projectName } : undefined;
-    const launch = await this.host.herdr.launch({ cwd: where.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir, label: item.key, ...(workspace ? { workspace } : {}), ...(resume ? { resume } : {}) }, terminalSettings.terminal);
+    const launch = await this.host.herdr.launch({ cwd: where.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir, path: onPath, label: item.key, ...(workspace ? { workspace } : {}), ...(resume ? { resume } : {}) }, terminalSettings.terminal);
     const fallback = this.host.herdr.fallbackNote(terminalWords.locale, launch);
     if (fallback) warnings.push(fallback);
     store.patchSession(projectId, session.id, { state: "running", lastEventAt: now, ...(launch.paneId ? { herdrPane: launch.paneId } : {}) });
@@ -578,11 +578,11 @@ export class Starter {
     }
     const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), generalPrompt);
     if (!files) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
-    const bin = await binOf(agent, engineId);
+    const { bin, path: onPath } = await binOf(agent, engineId);
     const options = agent.optionsOf(thread, engineId);
     const command = this.command(terminalSettings, engineId, session, files, prepared.cwd, options, bin);
     const resume = this.resumeCommand(terminalSettings, engineId, files, prepared.cwd, options, bin);
-    const launch = await this.host.herdr.launch({ cwd: prepared.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir, label: item.key, ...(resume ? { resume } : {}) }, terminalSettings.terminal);
+    const launch = await this.host.herdr.launch({ cwd: prepared.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir, path: onPath, label: item.key, ...(resume ? { resume } : {}) }, terminalSettings.terminal);
     store.patchSession(projectId, session.id, { state: "running", lastEventAt: now, ...(launch.paneId ? { herdrPane: launch.paneId } : {}) });
     this.host.notify(projectId);
     const fallback = this.host.herdr.fallbackNote(locale, launch);
@@ -642,10 +642,18 @@ function withClaimFirst(agent: Agent, engineId: string, key: string, prompt: str
   return `Before anything else, call the tomrade MCP tool claim_ticket with key "${key}": this session reaches Tomrade without a session token, and the claim ties it to this ticket.\n\n${prompt}`;
 }
 
-/** The CLI an engine located — an app's own copy included — for a template's {bin}; its id when it found none. */
-async function binOf(agent: Agent, engineId: string): Promise<string> {
+/** The CLI an engine located — an app's own copy included — for a template's {bin}, and the folders it runs with; a bare name when it found none. */
+async function binOf(agent: Agent, engineId: string): Promise<{ bin: string; path: TerminalPath }> {
   const engine = agent.codeEngines().find((e) => e.id === agent.answering(engineId));
-  return (await engine?.available().catch(() => null))?.cli?.path ?? engineId;
+  const cli = (await engine?.available().catch(() => null))?.cli;
+  const found = cli?.path && cli.state !== "missing" ? cli : null;
+  return { bin: found ? bashBin(found.path!) : (cli?.name ?? bareCommand(engineId)), path: terminalPath(found) };
+}
+
+/** On Windows, the sh shim npm writes beside a `.cmd`, as Git Bash picks by name: no cmd.exe to cut the prompt at its first line break. */
+function bashBin(file: string, platform: NodeJS.Platform = process.platform): string {
+  const shim = platform === "win32" ? file.replace(/\.cmd$/i, "") : file;
+  return shim !== file && fs.existsSync(shim) ? shim : file;
 }
 
 /** An engine that reaches Tomrade in a terminal only through its own connection, while that is not made. */

@@ -157,6 +157,34 @@ describe("the install step", () => {
     expect(end.output).toContain("EACCES");
   });
 
+  it("retries npm once in Tomrade's own folder when it cannot write the system's global one, and says so", async () => {
+    const own = "/data/borrowed-node/global";
+    const { exec, ran } = fakeExec([
+      { code: 243, output: "npm error code EACCES\nnpm error syscall mkdir\nnpm error path /usr/lib/node_modules/@x" },
+      { code: 0, output: "added 1 package" }
+    ]);
+    const { seen, deps: d } = deps({
+      installers: [NPM],
+      host: host({ env: { PATH: "/usr/bin", TOMRADE_NPM_PREFIX: own } }),
+      // the locator reads TOMRADE_NPM_PREFIX: what landed there is found
+      detect: async () => (ran.length >= 2 ? { ready: true, version: "2.0.0" } : { ready: false }),
+      exec
+    });
+    const end = await runInstall(d);
+    expect(ran).toEqual([
+      ["npm", "install", "-g", "--loglevel", "http", "@x/cli"],
+      ["npm", "install", "-g", "--loglevel", "http", "--prefix", own, "@x/cli"]
+    ]);
+    expect(end).toMatchObject({ phase: "done", installer: "npm", prefix: own, version: "2.0.0" });
+    expect(seen.filter((p) => p.phase === "running").map((p) => p.prefix)).toEqual([undefined, own]);
+
+    // once only: a second permission failure is the answer
+    const twice = fakeExec([{ code: 1, output: "npm error code EACCES" }, { code: 1, output: "npm error code EACCES" }]);
+    const again = await runInstall({ ...deps({ installers: [NPM], host: host({ env: { TOMRADE_NPM_PREFIX: own } }) }).deps, exec: twice.exec });
+    expect(twice.ran).toHaveLength(2);
+    expect(again).toMatchObject({ phase: "failed", prefix: own, failure: { kind: "permission" } });
+  });
+
   it("streams the installer's latest lines and its start time before the run ends", async () => {
     let finish: (r: SetupRunResult) => void = () => {};
     const exec: typeof runCommand = (_launch, _args, opts) => {
@@ -273,6 +301,23 @@ describe("the sign-in step", () => {
     expect(end).toMatchObject({ phase: "failed", failure: { kind: "network" } });
   });
 
+  it("falls back to the terminal sign-in when an older CLI has no such login command", async () => {
+    const seen: EngineSetupProgress[] = [];
+    let signedIn = false;
+    const end = runSignIn({
+      engineId: "x",
+      start: () => ({ result: Promise.resolve({ code: 1, output: "error: unknown command 'auth'\nUsage: claude [options] [command] [prompt]\n" }), onOutput: () => {} }),
+      probe: async () => signedIn,
+      report: (p) => void seen.push(p),
+      signal: new AbortController().signal,
+      pollMs: 10
+    });
+    await new Promise((r) => setTimeout(r, 40));
+    expect(seen.at(-1)).toMatchObject({ phase: "waiting", terminal: true });
+    signedIn = true;
+    expect(await end).toMatchObject({ phase: "done" });
+  });
+
   it("waits on the terminal sign-in, polling the probe, and can be cancelled", async () => {
     const seen: EngineSetupProgress[] = [];
     const abort = new AbortController();
@@ -298,5 +343,45 @@ describe("running one command for real", () => {
     const stopped = await hung;
     expect(stopped.code).toBeNull();
     expect(stopped.error?.killed).toBe(true);
+  });
+});
+
+/** Whether a process is still there: signal 0 checks without sending anything. */
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+describe.skipIf(process.platform === "win32")("stopping a script installer on macOS and Linux", () => {
+  // The shape of `curl … | bash`: a pipeline whose inner bash starts children of its own, each printing its pid.
+  const installer = ["-c", "sleep 60 | bash -c 'echo $$; sleep 60 & echo $!; wait' & wait"];
+  const pidsIn = (output: string) => output.split(/\s+/).filter(Boolean).map(Number);
+  const gone = async (pids: number[]) => {
+    for (let i = 0; i < 50 && pids.some(alive); i++) await new Promise((r) => setTimeout(r, 50));
+    return pids.filter(alive);
+  };
+
+  it("leaves nothing of it running once cancelled", async () => {
+    const abort = new AbortController();
+    const seen: string[] = [];
+    const run = runCommand(bareLaunch("bash"), installer, { signal: abort.signal, timeoutMs: 30_000, onOutput: (text) => void seen.push(text) });
+    while (pidsIn(seen.join("")).length < 2) await new Promise((r) => setTimeout(r, 20));
+    const pids = pidsIn(seen.join(""));
+    expect(pids.every(alive)).toBe(true);
+    abort.abort();
+    expect(await run).toMatchObject({ code: null, error: { message: "cancelled", killed: true } });
+    expect(await gone(pids)).toEqual([]);
+  });
+
+  it("leaves nothing of it running once it times out", async () => {
+    const result = await runCommand(bareLaunch("bash"), installer, { signal: new AbortController().signal, timeoutMs: 500 });
+    expect(result.error).toMatchObject({ killed: true, message: expect.stringContaining("timed out") });
+    const pids = pidsIn(result.output);
+    expect(pids).toHaveLength(2);
+    expect(await gone(pids)).toEqual([]);
   });
 });

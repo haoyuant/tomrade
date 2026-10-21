@@ -3,6 +3,7 @@ import type { Author } from "@tomradex/domain";
 import type { Message, ToolSpec } from "@tomradex/llm";
 import type { RunHandle } from "@tomradex/tools";
 import type { ParkView, RunView, ThreadSummary } from "./thread.js";
+import type { EngineTry } from "./engine.js";
 import type { TurnInput, TurnPurpose } from "./turn.js";
 
 declare module "cordis" {
@@ -18,6 +19,8 @@ declare module "cordis" {
     "agent/parked"(park: ParkView, thread: ThreadSummary): void;
     /** A parked thread's limit lifted and nobody continues it on its own: the person may. */
     "agent/limit-lifted"(park: ParkView, thread: ThreadSummary): void;
+    /** A test message on an engine (`tryEngine`) came back, answered or not. */
+    "agent/engine-tried"(engineId: string, tried: EngineTry): void;
     /** A project's rules file was written through Tomrade. */
     "agent/rules-changed"(projectId: string): void;
     /**

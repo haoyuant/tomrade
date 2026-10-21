@@ -19,9 +19,11 @@
   },
   "dependencies": {
     "@tomradex/agent": "workspace:*",
+    "@tomradex/contracts": "workspace:*",
     "@tomradex/engine-kit": "workspace:*",
     "@tomradex/ipc": "workspace:*",
-    "cordis": "4.0.0-rc.8"
+    "cordis": "4.0.0-rc.8",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

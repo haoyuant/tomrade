@@ -16,8 +16,8 @@ export type EngineCapability = "backlog" | "code" | "general";
  */
 export type EngineNeed = "install" | "repair" | "sign-in" | "model" | "service";
 
-/** Where a local CLI candidate came from, in the order they are tried. */
-export type CliSource = "manual" | "path" | "login-path" | "known";
+/** Where a local CLI candidate came from, in the order they are tried; `managed` is the copy Tomrade installed in its own folder. */
+export type CliSource = "manual" | "path" | "login-path" | "known" | "managed";
 
 export interface CliAttempt {
   path: string;
@@ -53,6 +53,8 @@ export interface LocalCliStatus {
   arch: string;
   /** The PATH the app itself runs with. */
   pathEnv: string;
+  /** Folders a new terminal has that the app's PATH lacks, put ahead of PATH for the CLI and what it starts. */
+  pathDirs?: string[];
 }
 
 export interface EngineAvailability {
@@ -108,7 +110,8 @@ export type EngineSetupStep = "install" | "sign-in";
 
 /** Why a setup step failed, sorted into a kind a screen can word in the person's language. */
 export interface EngineSetupFailure {
-  kind: "network" | "registry" | "permission" | "disk-full" | "unsupported" | "not-found" | "not-on-path" | "timeout" | "exit" | "cancelled";
+  /** `native-missing`: installed, but its bin is still the placeholder its postinstall should have replaced. */
+  kind: "network" | "registry" | "permission" | "disk-full" | "unsupported" | "not-found" | "not-on-path" | "native-missing" | "timeout" | "exit" | "cancelled";
   /** The underlying words, English or the tool's own, for the details view. */
   message: string;
   /** The file found after an install that did not run; `message` is what running it said. */
@@ -131,6 +134,8 @@ export interface EngineSetupProgress {
   stalled?: boolean;
   /** A registry npm can be retried with (`--registry`), offered when the default one looks unreachable or slow. */
   mirror?: string;
+  /** The folder npm is installing into instead of the system's global one, which it could not write: Tomrade's own (`--prefix`). */
+  prefix?: string;
   failure?: EngineSetupFailure;
   /** The version detection reported once the step was done; absent when the step was already satisfied. */
   version?: string;
@@ -286,6 +291,8 @@ export interface EngineLocal {
   mcpLink?: EngineMcpLink;
   /** It signs in through its own protocol; setup runs this in place of `setup.signInRun`. */
   signIn?: EngineSignIn;
+  /** One answer from its agent outside a turn — how a try reaches an engine that runs only in a terminal. */
+  ask?(prompt: string, signal?: AbortSignal): Promise<string>;
 }
 
 /** The flat members an engine had before they were grouped; `Agent.engine` still maps them once, at registration. */
@@ -400,6 +407,8 @@ export interface EngineView {
   permissionModes?: Engine["permissionModes"];
   terminal?: boolean;
   terminalOnly?: boolean;
+  /** Runs only in a terminal, yet answers a try through its agent (`local.ask`). */
+  asks?: boolean;
   usesModels?: boolean;
   steers?: boolean;
   setup?: EngineSetup;

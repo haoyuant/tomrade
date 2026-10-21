@@ -68,8 +68,11 @@ export function claudeCodeEngineInfo(ctx: Context): Omit<Engine, "turn"> {
           { kind: "script", url: "https://claude.ai/install.ps1", shell: "powershell" },
           { kind: "npm", package: "@anthropic-ai/claude-code" }
         ],
+        // The terminal way, for a CLI too old to have `claude auth login`.
         signIn: "claude",
         signInRuns: true,
+        // `claude auth login` opens the browser itself and returns once signed in; nothing to type.
+        signInRun: { args: ["auth", "login"] },
         docs: "https://docs.anthropic.com/en/docs/claude-code/setup",
         download: "https://code.claude.com/docs/en/setup",
         desktop: { title: "Claude", shipsCli: false },

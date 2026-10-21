@@ -37,7 +37,7 @@ export function useWorkerTest() {
   const test = useQuery({ queryKey: keys.llm.workerTest, queryFn: () => invoke("llm.workerTest"), enabled: viaProfile, staleTime: Infinity, retry: false });
   // Through the query, not a mutation, so every watcher sees the one retest run.
   const retest = () => void qc.fetchQuery({ queryKey: keys.llm.workerTest, queryFn: () => invoke("llm.workerTest", true) }).catch(() => {});
-  return { viaProfile, test: test.data ?? null, pending: viaProfile && (test.isPending || test.isFetching), retest };
+  return { worker: worker.data, viaProfile, test: test.data ?? null, pending: viaProfile && (test.isPending || test.isFetching), retest };
 }
 
 /** One automatic test message per engine, CLI and settings for the whole session, however many screens ask. */

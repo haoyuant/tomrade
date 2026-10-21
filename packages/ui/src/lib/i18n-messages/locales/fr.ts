@@ -2373,6 +2373,7 @@ export const fr: PartialMessages = {
     using: "Utilise {{path}}",
     sourceManual: "choisi par vous",
     sourceAuto: "trouvé automatiquement",
+    sourceManaged: "copie propre à Tomrade",
     missingDetail: "{{name}} est introuvable dans le PATH et dans les dossiers d’installation habituels. Tomrade exécute l’outil en ligne de commande {{name}}, pas une application de bureau du même nom.",
     desktopOnlyDetail: "L’application de bureau {{app}} est installée, mais Tomrade exécute son outil en ligne de commande {{name}}, que l’application n’inclut pas. Installez la CLI comme ci-dessous, connectez-vous, puis vérifiez à nouveau.",
     brokenDetail: "{{path}} a été trouvé, mais ne se lance pas : {{error}}",

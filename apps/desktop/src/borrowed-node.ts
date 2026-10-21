@@ -73,7 +73,8 @@ export interface BorrowedSetup extends BorrowedNode {
  * Regenerate the shims from the app's current paths, make sure the prefix
  * exists, and add both folders last to `env`'s PATH — only processes Tomrade
  * starts see them. TOMRADE_NPM_PREFIX tells the CLI locators where borrowed
- * installs land. The system npm, when there is one, sits earlier on PATH and
+ * installs land, and TOMRADE_NODE_SHIMS tells a terminal Tomrade opens where
+ * the shims are. The system npm, when there is one, sits earlier on PATH and
  * wins automatically; nothing asks which to use.
  */
 export function setUpBorrowedNode(opts: {
@@ -108,5 +109,6 @@ export function setUpBorrowedNode(opts: {
   }
   appendPath(env, [dirs.binDir, dirs.prefixBin], platform);
   env.TOMRADE_NPM_PREFIX = dirs.prefix;
+  env.TOMRADE_NODE_SHIMS = dirs.binDir;
   return { ...dirs, problem };
 }

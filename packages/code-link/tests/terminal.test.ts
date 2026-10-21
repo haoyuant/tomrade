@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { AUTO_TERMINAL, GitBashMissing, SYSTEM_TERMINAL, TerminalSettings, fillTemplate, gitBash, herdrFallbackNote, launchTerminal, machineTerminalSettings, openOnWindows, optionFlags, setupTerminal, terminalApp, terminalApps, terminalTemplate, withOptions, writeGeminiHome, type HerdrTerminal } from "@tomradex/code-link";
+import { AUTO_TERMINAL, GitBashMissing, SYSTEM_TERMINAL, TerminalSettings, bareCommand, fillTemplate, gitBash, herdrFallbackNote, launchTerminal, locatedCommand, machineTerminalSettings, openOnWindows, optionFlags, pathExport, powerShellPath, setupOnWindows, setupTerminal, terminalApp, terminalApps, terminalPath, terminalTemplate, withOptions, writeGeminiHome, type HerdrTerminal } from "@tomradex/code-link";
 
 it("lists installed terminal apps with the special launch choices", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-terminal-apps-"));
@@ -118,13 +118,13 @@ describe("terminal command options", () => {
     expect(defaults.claudeCommand).toContain("{options}");
     expect(defaults.codexCommand).toContain("{options}");
     const values = { cwd: "/w", prompt: "/s/prompt.md", mcpConfig: "/s/mcp.json", mcpUrl: "http://127.0.0.1:1/mcp", token: "t", settings: "/s/settings.json", resume: "" };
-    expect(fillTemplate(withOptions(defaults.claudeCommand, ""), values)).toBe('claude --mcp-config "/s/mcp.json" --settings "/s/settings.json" "$(cat "/s/prompt.md")"');
-    expect(fillTemplate(withOptions(defaults.claudeCommand, "--model opus"), values)).toBe('claude --model opus --mcp-config "/s/mcp.json" --settings "/s/settings.json" "$(cat "/s/prompt.md")"');
-    expect(fillTemplate(withOptions(defaults.codexCommand, "-m gpt-5"), { ...values, resume: "resume abc" })).toMatch(/^codex resume abc -m gpt-5 -c mcp_servers/);
-    expect(fillTemplate(withOptions(defaults.piCommand, "--thinking high"), { ...values, piExtension: "/s/pi-extension.ts", resume: "--session-id abc" }))
-      .toBe('pi --thinking high -e "/s/pi-extension.ts" --session-id abc "$(cat "/s/prompt.md")"');
-    expect(fillTemplate(withOptions(defaults.workbuddyCommand, "--model hy3"), { ...values, resume: "--resume abc" }))
-      .toBe('codebuddy --model hy3 --mcp-config "/s/mcp.json" --settings "/s/settings.json" --resume abc "$(cat "/s/prompt.md")"');
+    expect(fillTemplate(withOptions(defaults.claudeCommand, ""), { ...values, bin: "/u/bin/claude" })).toBe('"/u/bin/claude" --mcp-config "/s/mcp.json" --settings "/s/settings.json" "$(cat "/s/prompt.md")"');
+    expect(fillTemplate(withOptions(defaults.claudeCommand, "--model opus"), { ...values, bin: "claude" })).toBe('"claude" --model opus --mcp-config "/s/mcp.json" --settings "/s/settings.json" "$(cat "/s/prompt.md")"');
+    expect(fillTemplate(withOptions(defaults.codexCommand, "-m gpt-5"), { ...values, bin: "codex", resume: "resume abc" })).toMatch(/^"codex" resume abc -m gpt-5 -c mcp_servers/);
+    expect(fillTemplate(withOptions(defaults.piCommand, "--thinking high"), { ...values, bin: "/t/global/bin/pi", piExtension: "/s/pi-extension.ts", resume: "--session-id abc" }))
+      .toBe('"/t/global/bin/pi" --thinking high -e "/s/pi-extension.ts" --session-id abc "$(cat "/s/prompt.md")"');
+    expect(fillTemplate(withOptions(defaults.workbuddyCommand, "--model hy3"), { ...values, bin: "codebuddy", resume: "--resume abc" }))
+      .toBe('"codebuddy" --model hy3 --mcp-config "/s/mcp.json" --settings "/s/settings.json" --resume abc "$(cat "/s/prompt.md")"');
     const legacy = 'claude --mcp-config "{mcpConfig}" "$(cat "{prompt}")"';
     expect(withOptions(legacy, "--effort high")).toBe('claude --effort high --mcp-config "{mcpConfig}" "$(cat "{prompt}")"');
     expect(withOptions(legacy, "")).toBe(legacy);
@@ -160,8 +160,21 @@ describe("Gemini CLI's session home", () => {
     expect(JSON.parse(fs.readFileSync(path.join(home, ".gemini", "settings.json"), "utf8"))).toEqual({ mcpServers: { tomrade } });
   });
 
+  it("runs the CLI Tomrade located in every agent's template, and a default saved with the bare name follows it", () => {
+    const defaults = TerminalSettings.parse({});
+    for (const engine of ["claude-code", "codex", "pi", "workbuddy", "gemini", "opencode", "hermes", "dsh", "agy", "cursor"]) expect(terminalTemplate(defaults, engine)).toContain('"{bin}"');
+    const savedBare = TerminalSettings.parse({ piCommand: 'pi {options} -e "{piExtension}" {resume} "$(cat "{prompt}")"', cursorCommand: 'cursor-agent {options} {resume} "$(cat "{prompt}")"' });
+    expect(terminalTemplate(savedBare, "pi")).toBe(defaults.piCommand);
+    expect(terminalTemplate(savedBare, "cursor")).toBe(defaults.cursorCommand);
+    // a command the person changed stays theirs
+    const changed = TerminalSettings.parse({ claudeCommand: 'claude --verbose "$(cat "{prompt}")"' });
+    expect(terminalTemplate(changed, "claude-code")).toBe('claude --verbose "$(cat "{prompt}")"');
+    expect(bareCommand("workbuddy")).toBe("codebuddy");
+    expect(bareCommand("fake-code")).toBe("claude");
+  });
+
   it("moves a command saved before Gemini 0.64 onto the session home", () => {
-    expect(terminalTemplate(TerminalSettings.parse({}), "gemini")).toBe('GEMINI_CLI_HOME="{geminiHome}" gemini {options} {resume} -i "$(cat "{prompt}")"');
+    expect(terminalTemplate(TerminalSettings.parse({}), "gemini")).toBe('GEMINI_CLI_HOME="{geminiHome}" "{bin}" {options} {resume} -i "$(cat "{prompt}")"');
     const saved = TerminalSettings.parse({ geminiCommand: 'GEMINI_CLI_SYSTEM_DEFAULTS_PATH="{geminiSettings}" gemini --yolo {options} {resume} -i "$(cat "{prompt}")"' });
     expect(terminalTemplate(saved, "gemini")).toBe('GEMINI_CLI_HOME="{geminiHome}" gemini --yolo {options} {resume} -i "$(cat "{prompt}")"');
   });
@@ -235,6 +248,13 @@ describe("the system terminal on Windows", () => {
     ]);
   });
 
+  it("opens a setup command in PowerShell with scripts allowed for that process alone", async () => {
+    const { tries, launch } = spawner((command) => command === "powershell.exe");
+    expect(await setupOnWindows("npm install -g @earendil-works/pi-coding-agent", launch)).toEqual({ launched: true });
+    expect(tries).toEqual([{ command: "powershell.exe", args: ["-NoExit", "-ExecutionPolicy", "Bypass", "-Command", "npm install -g @earendil-works/pi-coding-agent"], cwd: os.homedir(), detached: true }]);
+    expect(await setupOnWindows("pi", spawner(() => false).launch)).toEqual({ launched: false });
+  });
+
   it("opens nothing without Git Bash, and says Git for Windows is needed", async () => {
     const { tries, launch } = spawner(() => true);
     await expect(openOnWindows("C:\\s\\run.command", "C:\\work", null, launch)).rejects.toBeInstanceOf(GitBashMissing);
@@ -255,5 +275,44 @@ describe("the system terminal on Windows", () => {
     expect(both).not.toContain("run the command yourself");
     opened.mockRestore();
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("a terminal on a machine without Node", () => {
+  it.skipIf(process.platform === "win32")("finds the CLI Tomrade installed, and node through Tomrade's shims, where the bare names are not on PATH", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-terminal-path-"));
+    try {
+      const prefixBin = path.join(root, "global", "bin");
+      const shims = path.join(root, "shims");
+      fs.mkdirSync(prefixBin, { recursive: true });
+      fs.mkdirSync(shims);
+      // npm's bin for a package: a script that needs `node` on PATH.
+      fs.writeFileSync(path.join(prefixBin, "pi"), "#!/usr/bin/env node\nconsole.log(`pi ran ${process.argv.slice(2).join(' ')}`);\n", { mode: 0o755 });
+      fs.writeFileSync(path.join(shims, "node"), `#!/bin/sh\nELECTRON_RUN_AS_NODE=1 exec "${process.execPath}" "$@"\n`, { mode: 0o755 });
+      const dirs = terminalPath({ path: path.join(prefixBin, "pi") }, { TOMRADE_NODE_SHIMS: shims }, "darwin");
+      expect(dirs).toEqual({ ahead: [prefixBin], behind: [shims] });
+      expect(pathExport(dirs, "darwin")).toBe(`export PATH='${prefixBin}':"$PATH":'${shims}'`);
+
+      const dir = path.join(root, "session");
+      const { script } = await launchTerminal({ cwd: root, command: locatedCommand("pi login", "pi", path.join(prefixBin, "pi"), "darwin"), dir, path: dirs }, "none");
+      const { execFileSync } = await import("node:child_process");
+      expect(execFileSync("/bin/bash", [script], { encoding: "utf8", env: { HOME: root, PATH: "/usr/bin:/bin" } }).trim()).toBe("pi ran login");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("names the located file for a sign-in, and gives PowerShell and Git Bash the same folders", () => {
+    expect(locatedCommand("opencode auth login", "opencode", "/home/m/.opencode/bin/opencode", "linux")).toBe("'/home/m/.opencode/bin/opencode' auth login");
+    expect(locatedCommand("pi", "pi", "C:\\Users\\Mira Q\\AppData\\Roaming\\npm\\pi.cmd", "win32")).toBe("& 'C:\\Users\\Mira Q\\AppData\\Roaming\\npm\\pi.cmd'");
+    // not the CLI's own name, or nothing found: the declared command as it is
+    expect(locatedCommand("npx some-agent", "some-agent", "/x/some-agent", "darwin")).toBe("npx some-agent");
+    expect(locatedCommand("pi", "pi", undefined, "darwin")).toBe("pi");
+    expect(terminalPath(null, {}, "darwin")).toEqual({ ahead: [], behind: [] });
+    expect(pathExport({ ahead: [], behind: [] }, "darwin")).toBeNull();
+
+    const win = terminalPath({ path: "C:\\Users\\mira\\AppData\\Roaming\\npm\\pi.cmd", pathDirs: ["D:\\tools"] }, { TOMRADE_NODE_SHIMS: "C:\\Users\\mira\\AppData\\Roaming\\Tomrade\\borrowed-node\\bin" }, "win32");
+    expect(pathExport(win, "win32")).toBe(`export PATH='/c/Users/mira/AppData/Roaming/npm:/d/tools':"$PATH":'/c/Users/mira/AppData/Roaming/Tomrade/borrowed-node/bin'`);
+    expect(powerShellPath(win)).toBe("$env:Path = 'C:\\Users\\mira\\AppData\\Roaming\\npm;' + 'D:\\tools;' + $env:Path + ';C:\\Users\\mira\\AppData\\Roaming\\Tomrade\\borrowed-node\\bin'");
   });
 });
