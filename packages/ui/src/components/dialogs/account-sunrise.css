@@ -43,6 +43,8 @@
   z-index: -1;
   background: radial-gradient(ellipse 65% 46% at 50% var(--poster-horizon), #edc98950, transparent 100%);
 }
+/* Held at its first frame until the cat can be drawn (AccountSunrise). */
+.account-sunrise:not(.is-ready) * { animation-play-state: paused; }
 .account-sunrise__sky { position: absolute; inset: 0 0 auto; height: var(--poster-horizon); overflow: hidden; mask-image: linear-gradient(#000 calc(100% - 24px), transparent); }
 .account-sunrise__sun {
   position: absolute;
