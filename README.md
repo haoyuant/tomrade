@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/banner.png" alt="Tomrade: tasks, notes and agents, in one folder you own. Local-first, Claude Code and Codex over MCP, undo any run." width="820">
+  <img src="docs/images/banner.png" alt="Tomrade: the cat on a red rising sun. Tasks, notes and agents, in one folder you own. Code, plans, journals and docs; any coding agent; undo any run." width="820">
 </p>
 
 <p align="center">

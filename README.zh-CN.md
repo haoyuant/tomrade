@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/banner-zh.png" alt="Tomrade：任务、笔记和 Agent，都在你自己的文件夹里。本地优先，通过 MCP 接入 Claude Code 和 Codex，一键撤销。" width="820">
+  <img src="docs/images/banner-zh.png" alt="Tomrade：红太阳前的猫。任务、笔记和 Agent，都在你自己的文件夹里。代码、待办、日记、文档；接入任意编程 Agent；一键撤销。" width="820">
 </p>
 
 <p align="center">
