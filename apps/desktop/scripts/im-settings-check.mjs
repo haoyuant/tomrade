@@ -210,10 +210,25 @@ const run = async () => {
   await $(`${guide}?.scrollIntoView({ block: 'center' });true`);
   await sleep(200);
   await shot("im-group-guide.png");
-  ctx.settings.set({ ...ctx.settings.get(), im: { ...imNow(), routes: [...imNow().routes, { ...imNow().routes[0], id: "dev", conversationId: "C-dev", allowDirectMessages: false, allowGroups: true, ticketTopics: true }] } });
+  ctx.settings.set({ ...ctx.settings.get(), im: { ...imNow(), routes: [...imNow().routes, { ...imNow().routes[0], id: "dev", kind: "group", conversationId: "C-dev", allowDirectMessages: false, allowGroups: true, ticketTopics: true }] } });
   check("an allowed group is listed with what it is for", await waitFor(`document.querySelector('[data-im-connection=team] [data-testid=im-group-channels]')?.textContent === 'C-dev: work (a thread per ticket)'`),
     await $(`document.querySelector('[data-im-connection=team] [data-testid=im-group-channels]')?.textContent`));
   check("and the direct-chat-only hint goes", await waitFor(`!document.querySelector('[data-im-connection=team] [data-testid=im-only-direct]')`));
+
+  // ── a direct chat stays one ──────────────────────────────────────────
+  const dmRoute = imNow().routes.find((r) => r.id !== "dev");
+  ctx.settings.set({ ...ctx.settings.get(), im: { ...imNow(), routes: imNow().routes.map((r) => r.id === dmRoute.id ? { ...r, allowGroups: true } : r) } });
+  const route = (rid) => `document.querySelector('[data-im-route="${rid}"]')`;
+  const switches = (rid) => `[...${route(rid)}.querySelectorAll('[role=switch]')].map((s) => s.getAttribute('aria-label'))`;
+  check("a direct chat with the group switch on is still tagged a direct chat, without the group switches", await waitFor(`${route(dmRoute.id)}?.querySelector('.tag, [class*=tag]')?.textContent === 'Direct chat'
+    && !${switches(dmRoute.id)}.includes('Group messages') && !${switches(dmRoute.id)}.includes('A thread per ticket') && !${switches(dmRoute.id)}.includes('Recent discussion window')
+    && !${route(dmRoute.id)}.querySelector('#im-route-${dmRoute.id}-activation')`), await $(`${switches(dmRoute.id)}`));
+  check("a group shows no direct-chat switches", await waitFor(`!${switches("dev")}.includes('Direct messages') && !${switches("dev")}.includes('Desktop turns in direct chat') && ${switches("dev")}.includes('A thread per ticket')`),
+    await $(`${switches("dev")}`));
+  check("and it no longer counts as a group in the guide", await $(`document.querySelector('[data-im-connection=team] [data-testid=im-group-channels]')?.textContent === 'C-dev: work (a thread per ticket)'`));
+  await $(`${route(dmRoute.id)}?.scrollIntoView({ block: 'start' });true`);
+  await sleep(200);
+  await shot("im-direct-chat-kind.png");
   ctx.settings.set({ ...ctx.settings.get(), language: "zh" });
   check("in Chinese too", await waitFor(`${guide}?.textContent.includes('在群聊或服务器里使用') && ${guide}.textContent.includes('在那里运行 /standin setup。')
     && document.querySelector('[data-im-connection=team] [data-testid=im-group-channels]')?.textContent === 'C-dev：工作（每个工单一个话题）'`), await $(`${guide}?.textContent`));

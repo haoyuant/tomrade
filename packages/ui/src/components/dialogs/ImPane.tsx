@@ -250,7 +250,7 @@ function RouteRow({ route, names, shared, onChange, onRemove }: { route: ImRoute
   return (
     <div className="panel stack-2" data-im-route={route.id}>
       <div className="row" style={{ gap: 8 }}>
-        <Tag tone="faint">{route.allowGroups && !route.allowDirectMessages ? t("imSettings.group") : t("imSettings.dm")}</Tag>
+        <Tag tone="faint">{(route.kind ?? (route.allowGroups && !route.allowDirectMessages ? "group" : "dm")) === "group" ? t("imSettings.group") : t("imSettings.dm")}</Tag>
         <span className="mono meta-txt" style={{ flex: 1 }}>{route.conversationId}</span>
         <button type="button" className="btn btn-ghost" onClick={onRemove}>{t("imSettings.removeRoute")}</button>
       </div>
@@ -288,14 +288,16 @@ function RouteRow({ route, names, shared, onChange, onRemove }: { route: ImRoute
             </select>
           </div>
         )}
-        <div className="field">
-          <label htmlFor={id("activation")}>{t("imSettings.activation")}</label>
-          <select id={id("activation")} className="input" value={route.groupActivation} disabled={!route.allowGroups} onChange={(e) => set({ groupActivation: e.target.value as ImRoute["groupActivation"] })}>
-            <option value="mention">{t("imSettings.activationMention")}</option>
-            <option value="reply">{t("imSettings.activationReply")}</option>
-            <option value="all">{t("imSettings.activationAll")}</option>
-          </select>
-        </div>
+        {route.kind !== "dm" && (
+          <div className="field">
+            <label htmlFor={id("activation")}>{t("imSettings.activation")}</label>
+            <select id={id("activation")} className="input" value={route.groupActivation} disabled={!route.allowGroups} onChange={(e) => set({ groupActivation: e.target.value as ImRoute["groupActivation"] })}>
+              <option value="mention">{t("imSettings.activationMention")}</option>
+              <option value="reply">{t("imSettings.activationReply")}</option>
+              <option value="all">{t("imSettings.activationAll")}</option>
+            </select>
+          </div>
+        )}
         <div className="field">
           <label htmlFor={id("output")}>{t("imSettings.output")}</label>
           <select id={id("output")} className="input" value={route.output} onChange={(e) => set({ output: e.target.value as ImRoute["output"] })}>
@@ -306,7 +308,9 @@ function RouteRow({ route, names, shared, onChange, onRemove }: { route: ImRoute
         </div>
       </div>
       <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
-        {([["allowDirectMessages", "imSettings.allowDirect"], ["allowGroups", "imSettings.allowGroups"], ["desktopTurns", "imSettings.desktopTurns"]] as const).map(([key, label]) => (
+        {/* A conversation whose kind is known shows only the switches that mean something there. */}
+        {([["allowDirectMessages", "imSettings.allowDirect", "dm"], ["allowGroups", "imSettings.allowGroups", "group"], ["desktopTurns", "imSettings.desktopTurns", "dm"]] as const)
+          .filter(([, , applies]) => !route.kind || route.kind === applies).map(([key, label]) => (
           <label key={key} className="row" style={{ gap: 6 }}>
             <button type="button" className="switch" role="switch" aria-checked={route[key]} aria-label={t(label)} onClick={() => set({ [key]: !route[key] })} />
             {t(label)}
@@ -333,7 +337,7 @@ function RouteRow({ route, names, shared, onChange, onRemove }: { route: ImRoute
           </>
         )}
       </div>
-      {route.allowGroups && (
+      {route.allowGroups && route.kind !== "dm" && (
         <div className="stack-2" data-im-ticket-topics={route.id}>
           <label className="row" style={{ gap: 6 }}>
             <button type="button" className="switch" role="switch" aria-checked={route.ticketTopics !== false} aria-label={t("imSettings.ticketTopics")}
@@ -343,7 +347,7 @@ function RouteRow({ route, names, shared, onChange, onRemove }: { route: ImRoute
           <p className="meta-txt dense">{t("imSettings.ticketTopicsHelp")}</p>
         </div>
       )}
-      {route.allowGroups && (
+      {route.allowGroups && route.kind !== "dm" && (
         <div className="stack-2" data-im-group-context={route.id}>
           <label className="row" style={{ gap: 6 }}>
             <button type="button" className="switch" role="switch" aria-checked={windowed.enabled} aria-label={t("imSettings.groupContext")} onClick={() => setWindow({ enabled: !windowed.enabled })} />
@@ -470,7 +474,7 @@ function roleOf(route: ImRoute): MessageKey {
 /** How to bring the connected bot into a group or server, and which channels already hear what. */
 function GroupGuide({ adapter, routes }: { adapter?: ImAdapterView; routes: ImRoute[] }) {
   const { t } = useI18n();
-  const groups = routes.filter((r) => r.allowGroups);
+  const groups = routes.filter((r) => r.allowGroups && r.kind !== "dm");
   const steps = adapter?.setup?.groupSteps?.length ? adapter.setup.groupSteps : [t("imSettings.groupStepAdd"), t("imSettings.groupStepMention")];
   return (
     <div className="stack-2" data-testid="im-group-guide">
