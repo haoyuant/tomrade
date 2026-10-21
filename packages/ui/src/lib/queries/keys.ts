@@ -85,6 +85,7 @@ export const keys = {
 
   llm: {
     worker: ["llm", "worker"] as const,
+    workerTest: ["llm", "workerTest"] as const,
     workerFor: (role: unknown) => ["llm", "worker", role] as const,
     workerUsage: ["llm", "workerUsage"] as const,
     lenders: ["llm", "lenders"] as const,

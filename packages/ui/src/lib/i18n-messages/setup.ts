@@ -76,7 +76,11 @@ export const setup = {
     failTimeout: "It took too long and was stopped.",
     failCancelled: "Cancelled.",
     failExit: "It failed: {{error}}",
-    failOutput: "What it printed"
+    failOutput: "What it printed",
+    modelTesting: "Checking {{title}} answers…",
+    modelTestFailed: "{{title}} did not answer. It does not count as connected until it does.",
+    modelTestRetry: "Try again",
+    modelTestSettings: "Model settings"
   },
   zh: {
     eyebrow: "开始之前",
@@ -155,6 +159,10 @@ export const setup = {
     failTimeout: "耗时太久，已停止。",
     failCancelled: "已取消。",
     failExit: "失败了：{{error}}",
-    failOutput: "它的输出"
+    failOutput: "它的输出",
+    modelTesting: "正在确认 {{title}} 能回应…",
+    modelTestFailed: "{{title}} 没有回应。在它回应之前不算已连接。",
+    modelTestRetry: "再试一次",
+    modelTestSettings: "模型设置"
   }
 };
