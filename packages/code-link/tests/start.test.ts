@@ -154,6 +154,51 @@ it("offers the terminal on automatic first in Settings, and keeps it unset while
   expect(ctx.settings.get().codeLink?.terminal).toBe("auto");
 });
 
+it("continues a ticket a terminal agent claimed itself as a prompt in that agent's pane, and in a new pane once it closed", { timeout: 60_000 }, async () => {
+  const { codeLink, ctx, project, repo, checkout, ticket } = await machine(codeRepo());
+  await ctx.repos.setCheckout(repo!.remote, checkout!);
+  const { Mcp } = await import("@tomradex/mcp");
+  await ctx.plugin(Mcp, { port: 0 });
+  const fake = new FakeHerdr();
+  await ctx.plugin(Herdr, { reconnectMs: 30, socket: fake.socket });
+  await settle();
+  // One agent's pane, where it claimed this ticket over MCP (no thread of Tomrade's) beside others, and handed its merge over.
+  const pane = fake.createPane(checkout!);
+  const item = ticket("Claimed in a shared pane");
+  codeLink.store.ensureActiveDelivery(project.id, item.id);
+  const claimed = codeLink.store.createSession(project.id, { repoId: repo!.id, branch: `tom-${item.keyNum}/shared`, itemIds: [item.id], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId });
+  codeLink.store.patchSession(project.id, claimed.id, { herdrPane: pane.pane_id });
+  codeLink.sessions.blockMerge(project.id, claimed.id, "CI cannot start on this repository");
+
+  // Waiting on the person there, its agent does not take a prompt: Continue says so, and starts nothing.
+  fake.setStatus(pane.pane_id, "claude", "blocked");
+  await settle();
+  const held = await ctx.contributions.run("code-link.start-terminal", { projectId: project.id, itemId: item.id });
+  expect(held.toast).toBe(`The agent in herdr pane ${pane.pane_id} still works this ticket and did not take the prompt — it may be waiting for you there. Go on with it in that pane.`);
+  expect(fake.of("tab.create")).toEqual([]);
+  expect(codeLink.store.sessions(project.id, { itemId: item.id })).toHaveLength(1);
+
+  fake.setStatus(pane.pane_id, "claude", "working");
+  await settle();
+  const again = await codeLink.start(project.id, item.id, { mode: "terminal" });
+  expect(again).toMatchObject({ ok: true, continued: true, launched: true, command: null, threadId: null, sessionId: claimed.id, pane: pane.pane_id });
+  const file = path.join(codeLink.sessionDir(claimed.id), "prompt.md");
+  expect(fake.of("agent.prompt").at(-1)).toEqual({ target: pane.pane_id, text: `Tomrade: continue ${item.key} — read ${file} and follow it.` });
+  expect(fs.readFileSync(file, "utf8")).toContain("Last note: merge blocked: CI cannot start on this repository");
+  // No second agent: no tab, no workspace, no other session on the ticket.
+  expect(fake.of("tab.create")).toEqual([]);
+  expect(fake.of("workspace.create")).toEqual([]);
+  expect(codeLink.store.sessions(project.id, { itemId: item.id }).map((s) => s.id)).toEqual([claimed.id]);
+  expect(codeLink.store.session(project.id, claimed.id)).toMatchObject({ state: "running", blocked: null });
+
+  // Its pane gone, Continue starts the ticket in a terminal of its own, as before.
+  fake.exit(pane.pane_id);
+  const fresh = await codeLink.start(project.id, item.id, { mode: "terminal" });
+  expect(fresh).toMatchObject({ ok: true, launched: true });
+  expect(fresh.ok && fresh.sessionId).not.toBe(claimed.id);
+  expect(fake.of("agent.prompt")).toHaveLength(2);
+});
+
 // Several Starts, each a worktree: well past the default timeout on a busy machine.
 it("runs a ticket in a tab of its project's herdr workspace, follows the pane's status as the session's, and continues it in the same pane", { timeout: 60_000 }, async () => {
   const world = await machine(codeRepo());

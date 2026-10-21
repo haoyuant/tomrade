@@ -232,7 +232,7 @@ function StartTicketDialog({
           if (result.mode === "run") {
             const started = result.waitingOn ? t("codeLink.waitingToast", { question: result.waitingOn }) : t(result.continued ? "codeLink.continuedToast" : "codeLink.startedToast", vars);
             toast({ body: warning ? `${started}\n${warning}` : started });
-            showThread(result.threadId);
+            if (result.threadId) showThread(result.threadId);
           } else if (result.launched) {
             herdrHint(result, herdrStatus.data);
             // In herdr: brought up in Tomrade's Terminal window when that is on, else where herdr shows it.
