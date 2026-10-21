@@ -161,7 +161,7 @@ function NotHere({ session, cell, locale, picker, onTalk }: { session: SessionRo
   );
 }
 
-export function Cell({ leaf, pane, session, terminal, places, ready, onNewTerminal, onTalk, focused, selected, only, onFocus, onSplit, onClose, onLock, menu, look }: { leaf: Extract<Layout, { type: "leaf" }>; pane: string; session: SessionRow | undefined; terminal: TerminalRow | undefined; places: TerminalPlace[]; ready: boolean; onNewTerminal: (cwd: string) => void; onTalk: (s: SessionRow) => void; focused: boolean; selected: boolean; only: boolean; onFocus: () => void; onSplit: (d: "row" | "column") => void; onClose: () => void; onLock: () => void; menu: ReactNode; look: Look }) {
+export function Cell({ leaf, pane, session, terminal, places, ready, herdrClient, onNewTerminal, onTalk, focused, selected, only, onFocus, onSplit, onClose, onLock, menu, look }: { leaf: Extract<Layout, { type: "leaf" }>; pane: string; session: SessionRow | undefined; terminal: TerminalRow | undefined; places: TerminalPlace[]; ready: boolean; herdrClient: boolean; onNewTerminal: (cwd: string) => void; onTalk: (s: SessionRow) => void; focused: boolean; selected: boolean; only: boolean; onFocus: () => void; onSplit: (d: "row" | "column") => void; onClose: () => void; onLock: () => void; menu: ReactNode; look: Look }) {
   const say = useSay();
   // Right-click on the bar, or on a cell with no terminal: inside a terminal it is the program's own.
   const withMenu = (node: ReactElement) => (
@@ -197,7 +197,11 @@ export function Cell({ leaf, pane, session, terminal, places, ready, onNewTermin
             ) : session.where === "herdr" ? (
               <>
                 <button type="button" className="link-btn" onClick={() => act("continue")}>{say("continue")}</button>
-                <button type="button" className="link-btn" onClick={() => act("focusHerdr")}>{say("focusHerdr")}</button>
+                {herdrClient && (
+                  <button type="button" className="link-btn" data-testid="cs-focus-herdr" title={say("focusHerdrHint")} onClick={() => act("focusHerdr")}>
+                    {say("focusHerdr")}
+                  </button>
+                )}
               </>
             ) : null}
             <button type="button" className="link-btn" onClick={() => act("openWorktree")}>{say("openWorktree")}</button>

@@ -332,6 +332,7 @@ export function App() {
         key={node.id}
         leaf={node}
         pane={node.sessionId ? key(node.sessionId) : ""}
+        herdrClient={state.herdrClient}
         session={sessionIn(node.sessionId)}
         terminal={node.sessionId ? terminalsById.get(node.sessionId) : undefined}
         places={state.places}

@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { Context } from "cordis";
-import { Herdr, type HerdrConfig, type HerdrPaneEvent, type HerdrScroll } from "@tomradex/herdr";
+import { Herdr, herdrClientIn, type HerdrConfig, type HerdrPaneEvent, type HerdrScroll } from "@tomradex/herdr";
 // Straight from the source: depending on testkit would close a cycle through extensions, which depends on herdr.
 import { FakeHerdr } from "../../testkit/src/herdr.js";
 
@@ -391,4 +391,15 @@ describe.skipIf(process.platform === "win32")("herdr installed but not running",
     expect(await none.herdr.installed()).toBeNull();
     fake.close();
   });
+});
+
+it("finds herdr's own clients in the process list: on a terminal, bare, on a session, or attached — not its server, control sessions or CLI calls", () => {
+  const ps = (...lines: string[]) => lines.join("\n");
+  const background = ["??       /opt/homebrew/bin/herdr server", "??       /opt/homebrew/bin/herdr terminal session control w1:p1 --takeover --cols 80 --rows 24", "ttys003  herdr pane list", "ttys003  /bin/zsh -l", "ttys004  herdr --version"];
+  expect(herdrClientIn(ps(...background))).toBe(false);
+  expect(herdrClientIn(ps(...background, "ttys001  /opt/homebrew/bin/herdr"))).toBe(true);
+  expect(herdrClientIn(ps(...background, "pts/2    herdr --session work"))).toBe(true);
+  expect(herdrClientIn(ps(...background, "ttys001  herdr session attach work"))).toBe(true);
+  // A bare herdr with no terminal is no window anyone sees.
+  expect(herdrClientIn(ps("?        /usr/local/bin/herdr"))).toBe(false);
 });

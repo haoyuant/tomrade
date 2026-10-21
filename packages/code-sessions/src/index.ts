@@ -455,6 +455,7 @@ function apply(ctx: Context, config: Config) {
       projectName: projectName(projectId),
       locale: ctx.settings.locale(),
       bridge: b,
+      herdrClient: b.state === "ready" && ((await ctx.get("herdr")?.clientAttached().catch(() => false)) ?? false),
       revive: reviving ? "starting" : reviveFailed && b.state === "notRunning" ? "failed" : null,
       install: b.state === "notInstalled" ? await ctx.codeLink.herdrInstall() : null,
       // "auto" lands in herdr once it is installed; only a terminal named otherwise keeps sessions out of it.
