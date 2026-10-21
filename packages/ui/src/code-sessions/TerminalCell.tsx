@@ -146,6 +146,94 @@ function PaneScrollbar({ scroll, onScrollTo, onWheel }: { scroll: PaneScroll | n
   );
 }
 
+type Point = [col: number, line: number];
+
+/**
+ * xterm's selection held in scrollback lines rather than screen rows, so it moves with the text when herdr
+ * scrolls (xterm keeps no scrollback, so it would stay put on the screen). The rows it covered are kept as text,
+ * so a copy still takes the part scrolled out of view. `moved` takes the scrollback line now at the top.
+ */
+function followSelection(terminal: Terminal, el: HTMLElement) {
+  let top = 0;
+  let picked: { start: Point; end: Point } | null = null;
+  let shown: { start: Point; end: Point; cutStart: boolean; cutEnd: boolean } | null = null;
+  let lines = new Map<number, string>();
+  let quiet = false;
+  let held = false;
+  const same = (a: Point, x: number, y: number) => a[0] === x && a[1] === y;
+  const show = () => {
+    if (!picked) return;
+    const rows = terminal.rows;
+    const first = picked.start[1] - top;
+    const last = picked.end[1] - top;
+    quiet = true;
+    if (last < 0 || first >= rows) {
+      terminal.clearSelection();
+      shown = { start: [-1, -1], end: [-1, -1], cutStart: true, cutEnd: true };
+    } else {
+      const start: Point = first < 0 ? [0, 0] : [picked.start[0], first];
+      const end: Point = last >= rows ? [terminal.cols, rows - 1] : [picked.end[0], last];
+      terminal.select(start[0], start[1], (end[1] - start[1]) * terminal.cols + end[0] - start[0]);
+      shown = { start, end, cutStart: first < 0, cutEnd: last >= rows };
+    }
+    quiet = false;
+  };
+  const changed = terminal.onSelectionChange(() => {
+    if (quiet) return;
+    const at = terminal.getSelectionPosition();
+    if (!at) {
+      picked = null;
+      shown = null;
+      lines = new Map();
+      return;
+    }
+    // Extending a selection whose end is out of view keeps that end where it is in the scrollback.
+    const start: Point = picked && shown?.cutStart && same(shown.start, at.start.x, at.start.y) ? picked.start : [at.start.x, at.start.y + top];
+    const end: Point = picked && shown?.cutEnd && same(shown.end, at.end.x, at.end.y) ? picked.end : [at.end.x, at.end.y + top];
+    picked = { start, end };
+    shown = null;
+    const kept = new Map([...lines].filter(([line]) => line >= start[1] && line <= end[1]));
+    // Each row as xterm's own copy takes it: only its selected columns, untouched cells trimmed.
+    for (let y = Math.max(0, start[1] - top); y <= Math.min(terminal.rows - 1, end[1] - top); y++) {
+      const line = top + y;
+      kept.set(line, terminal.buffer.active.getLine(y)?.translateToString(true, line === start[1] ? start[0] : 0, line === end[1] ? end[0] : undefined) ?? "");
+    }
+    lines = kept;
+  });
+  // While part of the selection is out of view, xterm would copy only what it shows.
+  const copy = (e: ClipboardEvent) => {
+    if (!picked || !shown || (!shown.cutStart && !shown.cutEnd) || !e.clipboardData) return;
+    const text: string[] = [];
+    for (let line = picked.start[1]; line <= picked.end[1]; line++) text.push((lines.get(line) ?? "").replace(/ /g, " "));
+    e.clipboardData.setData("text/plain", text.join("\n"));
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  };
+  // A drag in progress keeps xterm's own selection; it is read back as the drag changes it.
+  const press = (e: MouseEvent) => {
+    if (e.button === 0) held = true;
+  };
+  const release = () => {
+    held = false;
+  };
+  el.addEventListener("copy", copy, true);
+  el.addEventListener("mousedown", press, true);
+  window.addEventListener("mouseup", release);
+  return {
+    moved(next: number) {
+      if (next === top) return;
+      top = next;
+      if (!held) show();
+    },
+    dispose() {
+      changed.dispose();
+      el.removeEventListener("copy", copy, true);
+      el.removeEventListener("mousedown", press, true);
+      window.removeEventListener("mouseup", release);
+    },
+  };
+}
+
 /**
  * One session's terminal: herdr's frames painted into xterm, keys and pastes sent back as input,
  * the wheel and Page Up/Down as scrolls (herdr keeps the scrollback; xterm keeps none, since every
@@ -165,7 +253,7 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
   const [attempt, setAttempt] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [scroll, setScroll] = useState<PaneScroll | null>(null);
-  const wheel = (deltaY: number) => send({ type: "scroll", cell, direction: deltaY < 0 ? "up" : "down", lines: Math.max(1, Math.round(Math.abs(deltaY) / 40)) });
+  const wheel = (deltaY: number) => send({ type: "scroll", cell, direction: deltaY < 0 ? "up" : "down", lines: 2 * Math.max(1, Math.round(Math.abs(deltaY) / 40)) });
 
   useEffect(() => {
     const el = host.current;
@@ -184,9 +272,13 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
     }
     setClosed(undefined);
     setScroll(null);
+    const selection = followSelection(terminal, el);
     const off = onCell(cell, (post) => {
       if (post.type === "frame") terminal.write(post.bytes);
-      else if (post.type === "scrolled") setScroll({ offset: post.offset, max: post.max, rows: post.rows });
+      else if (post.type === "scrolled") {
+        setScroll({ offset: post.offset, max: post.max, rows: post.rows });
+        selection.moved(post.max - post.offset);
+      }
       else if (post.type === "reattach") setAttempt((n) => n + 1);
       else if (post.type === "closed") setClosed(post.reason);
     });
@@ -223,6 +315,7 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
     if (focusOnAttach.current) terminal.focus();
     return () => {
       observer.disconnect();
+      selection.dispose();
       el.removeEventListener("mousedown", down);
       el.removeEventListener("mouseup", up);
       input.dispose();
