@@ -42,6 +42,7 @@ describe("the borrowed node and npm", () => {
     // Last on PATH, so a system Node always wins; the prefix's bin too, so installed agents are found.
     expect(env.PATH).toBe(`/usr/bin:/bin:${setup.binDir}:${setup.prefixBin}`);
     expect(env.TOMRADE_NPM_PREFIX).toBe(setup.prefix);
+    expect(env.TOMRADE_NODE_SHIMS).toBe(setup.binDir);
     expect(fs.existsSync(setup.prefixBin)).toBe(true);
   });
 

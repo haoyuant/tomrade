@@ -358,7 +358,7 @@ it("runs a ticket in a tab of its project's herdr workspace, follows the pane's 
   const alone = ticket("Alone");
   const without = await codeLink.start(project.id, alone.id, { mode: "terminal" });
   expect(without).toMatchObject({ ok: true, launched: true, pane: null, warnings: [expect.stringContaining("brew install herdr")] });
-  expect(without.ok && without.command).toMatch(/^claude /);
+  expect(without.ok && without.command).toMatch(/^"claude" /);
   expect(opened).toHaveBeenLastCalledWith("Terminal", path.join(codeLink.sessionDir(without.ok ? without.sessionId : ""), "run.command"), expect.any(String));
   // the worktree's own terminal too
   const shell = await ctx.contributions.run("code-link.open-terminal", { projectId: project.id, itemId: alone.id });
@@ -1517,7 +1517,7 @@ describe("starting a ticket", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result).toMatchObject({ mode: "terminal", launched: false });
-    expect(result.command).toMatch(/^claude --mcp-config ".*mcp\.json" --settings ".*settings\.json" "\$\(cat ".*prompt\.md"\)"$/);
+    expect(result.command).toMatch(/^"claude" --mcp-config ".*mcp\.json" --settings ".*settings\.json" "\$\(cat ".*prompt\.md"\)"$/);
     const dir = codeLink.sessionDir(result.sessionId);
     const mcpConfig = JSON.parse(fs.readFileSync(path.join(dir, "mcp.json"), "utf8")) as { mcpServers: { tomrade: { url: string; headers: Record<string, string> } } };
     expect(mcpConfig.mcpServers.tomrade.url).toBe(ctx.mcp.urlFor(project.id));
@@ -1660,7 +1660,7 @@ describe("starting a ticket", () => {
     else process.env.GEMINI_CLI_HOME = savedHome;
     expect(gemini.ok).toBe(true);
     if (!gemini.ok) return;
-    expect(gemini.command).toMatch(/^GEMINI_CLI_HOME=".*gemini-home" gemini -m pro -i "\$\(cat ".*prompt\.md"\)"$/);
+    expect(gemini.command).toMatch(/^GEMINI_CLI_HOME=".*gemini-home" "gemini" -m pro -i "\$\(cat ".*prompt\.md"\)"$/);
     const geminiSettings = JSON.parse(fs.readFileSync(path.join(codeLink.sessionDir(gemini.sessionId), "gemini-home", ".gemini", "settings.json"), "utf8"));
     expect(geminiSettings).toEqual({ security: { auth: { selectedType: "gemini-api-key" } }, mcpServers: { tomrade: { httpUrl: ctx.mcp.urlFor(project.id), headers: { "X-Tomrade-Run": codeLink.sessions.token(gemini.sessionId) } } } });
     // a terminal-only engine takes no turn inside Tomrade
@@ -1670,7 +1670,7 @@ describe("starting a ticket", () => {
     const opencode = await codeLink.start(project.id, other.id, { mode: "terminal", engine: "opencode", options: { model: "anthropic/claude-sonnet-5" } });
     expect(opencode.ok).toBe(true);
     if (!opencode.ok) return;
-    expect(opencode.command).toMatch(/^OPENCODE_CONFIG=".*opencode\.json" opencode --model anthropic\/claude-sonnet-5 --prompt "\$\(cat ".*prompt\.md"\)"$/);
+    expect(opencode.command).toMatch(/^OPENCODE_CONFIG=".*opencode\.json" "opencode" --model anthropic\/claude-sonnet-5 --prompt "\$\(cat ".*prompt\.md"\)"$/);
     const config = JSON.parse(fs.readFileSync(path.join(codeLink.sessionDir(opencode.sessionId), "opencode.json"), "utf8"));
     expect(config.mcp.tomrade).toEqual({ type: "remote", url: ctx.mcp.urlFor(project.id), enabled: true, headers: { "X-Tomrade-Run": codeLink.sessions.token(opencode.sessionId) } });
   });
@@ -1688,7 +1688,7 @@ describe("starting a ticket", () => {
     const result = await codeLink.start(project.id, item.id, { mode: "terminal", engine: "pi", options: { effort: "high" } });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.command).toMatch(/^pi --thinking high -e ".*pi-extension\.ts" "\$\(cat ".*prompt\.md"\)"$/);
+    expect(result.command).toMatch(/^"pi" --thinking high -e ".*pi-extension\.ts" "\$\(cat ".*prompt\.md"\)"$/);
 
     // Load the extension the way pi does, against a stand-in for pi's API; its reports reach the real event endpoint.
     const source = fs.readFileSync(path.join(codeLink.sessionDir(result.sessionId), "pi-extension.ts"), "utf8");
@@ -1731,7 +1731,7 @@ describe("starting a ticket", () => {
     await settle();
     const item = ticket("WorkBuddy terminal work");
     const result = await codeLink.start(project.id, item.id, { mode: "terminal", engine: "workbuddy", options: { model: "hy3" } });
-    expect(result.ok ? result.command : result).toMatch(/^codebuddy --model hy3 --mcp-config ".*mcp\.json" --settings ".*settings\.json" "\$\(cat ".*prompt\.md"\)"$/);
+    expect(result.ok ? result.command : result).toMatch(/^"codebuddy" --model hy3 --mcp-config ".*mcp\.json" --settings ".*settings\.json" "\$\(cat ".*prompt\.md"\)"$/);
 
     const other = ticket("Inside terminal work");
     expect(await codeLink.start(project.id, other.id, { mode: "terminal", engine: "inside" }))
@@ -1759,6 +1759,8 @@ describe("starting a ticket", () => {
     if (!started.ok) throw new Error(JSON.stringify(started));
     const dir = codeLink.sessionDir(started.sessionId);
     expect(started.command).toBe(`"${bin}" --profile headless --patch "${path.join(dir, "dsh-patch.yml")}" --json - < "${path.join(dir, "prompt.md")}" | ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${path.join(dir, "dsh-report.mjs")}"`);
+    // The folder it was found in goes on the terminal's PATH ahead of the person's own, for what it starts.
+    expect(fs.readFileSync(path.join(dir, "run.command"), "utf8")).toContain(`export PATH='${path.dirname(bin)}':"$PATH"`);
     const patch = fs.readFileSync(path.join(dir, "dsh-patch.yml"), "utf8");
     expect(patch).toContain("name: '@deepseek-ai/dsh-mcp-client'");
     expect(patch).toContain(`url: "${ctx.mcp.urlFor(project.id)}"`);
@@ -1809,7 +1811,7 @@ describe("starting a ticket", () => {
     state = "connected";
     const started = await codeLink.start(project.id, item.id, { mode: "terminal", engine: "agy", options: { model: "gemini-3.6-flash" } });
     if (!started.ok) throw new Error(JSON.stringify(started));
-    expect(started.command).toMatch(/^agy --model gemini-3\.6-flash -i "\$\(cat ".*prompt\.md"\)"$/);
+    expect(started.command).toMatch(/^"agy" --model gemini-3\.6-flash -i "\$\(cat ".*prompt\.md"\)"$/);
     const prompt = fs.readFileSync(path.join(codeLink.sessionDir(started.sessionId), "prompt.md"), "utf8");
     expect(prompt.startsWith(`Before anything else, call the tomrade MCP tool claim_ticket with key "${item.key}"`)).toBe(true);
 
@@ -1860,7 +1862,7 @@ describe("starting a ticket", () => {
     state = "connected";
     const started = await codeLink.start(project.id, item.id, { mode: "terminal", engine: "cursor", options: { model: "gpt-5" } });
     if (!started.ok) throw new Error(JSON.stringify(started));
-    expect(started.command).toMatch(/^cursor-agent --model gpt-5 "\$\(cat ".*prompt\.md"\)"$/);
+    expect(started.command).toMatch(/^"cursor-agent" --model gpt-5 "\$\(cat ".*prompt\.md"\)"$/);
     const prompt = fs.readFileSync(path.join(codeLink.sessionDir(started.sessionId), "prompt.md"), "utf8");
     expect(prompt.startsWith(`Before anything else, call the tomrade MCP tool claim_ticket with key "${item.key}"`)).toBe(true);
   });
@@ -1886,7 +1888,7 @@ describe("starting a ticket", () => {
 
     state = "connected";
     const started = await codeLink.start(project.id, item.id, { mode: "terminal", engine: "hermes", options: { model: "openrouter:some/model" } });
-    expect(started.ok ? started.command : started).toMatch(/^hermes chat -m openrouter:some\/model --query-file ".*prompt\.md"$/);
+    expect(started.ok ? started.command : started).toMatch(/^"hermes" chat -m openrouter:some\/model --query-file ".*prompt\.md"$/);
   });
 
   it("keeps where a headless start was asked for on its brief", async () => {
@@ -2006,7 +2008,7 @@ describe("starting a General ticket", () => {
     expect(opened).toMatchObject({ ok: true, continued: true, mode: "terminal", threadId: run.threadId, launched: false });
     if (!opened.ok) return;
     // The headless run taught the thread the CLI's session id; the terminal continues it.
-    expect(opened.command).toMatch(/^claude --mcp-config ".*mcp\.json" --settings ".*settings\.json" --resume fake-session-1 "\$\(cat ".*prompt\.md"\)"$/);
+    expect(opened.command).toMatch(/^"claude" --mcp-config ".*mcp\.json" --settings ".*settings\.json" --resume fake-session-1 "\$\(cat ".*prompt\.md"\)"$/);
     const prompt = fs.readFileSync(path.join(codeLink.sessionDir(opened.sessionId), "prompt.md"), "utf8");
     expect(prompt).toContain(`Continue ${item.key}: Prepare the workshop`);
     expect(prompt).toContain("You are delivering");

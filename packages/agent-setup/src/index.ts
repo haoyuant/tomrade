@@ -3,7 +3,7 @@ import { Context, Service } from "cordis";
 import { z } from "zod";
 import type { Engine, EngineSetupProgress, EngineSetupStep } from "@tomradex/agent";
 import type {} from "@tomradex/ipc";
-import { launchFor, localCli } from "@tomradex/engine-kit";
+import { chosenCommand, localCli } from "@tomradex/engine-kit";
 import { installArgs, ManagedCopies, type ManagedOffer } from "./managed.js";
 import { machineSetupHost, runCommand, runInstall, runSignIn, type SetupHost, type SetupRunResult } from "./run.js";
 
@@ -215,9 +215,8 @@ export class AgentSetup extends Service {
     if (state.need && state.need !== "sign-in") {
       return void report({ engineId: engine.id, step: "sign-in", phase: "failed", failure: { kind: "exit", message: state.reason ?? state.need } });
     }
-    const file = state.cli?.path;
-    // Tomrade's own copy starts the way only its locator knows: a script through the runtime.
-    const launch = state.cli?.source === "managed" ? await localCli(state.cli.name).launch() : file ? launchFor(file, { platform: this.host.platform, env: this.host.env }) : null;
+    // The locator's own launch: a desktop app's copy or Tomrade's own copy through its runtime, the folders a fresh PATH added ahead.
+    const launch = signInRun && state.cli?.path ? await localCli(state.cli.name).launch(chosenCommand(this.ctx, engine.id)) : null;
     const start = signInRun && launch
       ? () => {
           const takes: ((text: string) => void)[] = [];

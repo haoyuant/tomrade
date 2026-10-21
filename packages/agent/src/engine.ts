@@ -53,6 +53,8 @@ export interface LocalCliStatus {
   arch: string;
   /** The PATH the app itself runs with. */
   pathEnv: string;
+  /** Folders a new terminal has that the app's PATH lacks, put ahead of PATH for the CLI and what it starts. */
+  pathDirs?: string[];
 }
 
 export interface EngineAvailability {

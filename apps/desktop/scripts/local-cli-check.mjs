@@ -237,7 +237,8 @@ const run = async () => {
   check("and offers no way to put it away", await $(`!document.querySelector('[data-testid="setup-card"] .btn-icon')`));
   await shot("local-cli-06-setup-card-nothing-ready");
   await click('[data-testid="signin-claude-code"]');
-  check("signing in runs the engine's own command in a terminal, or hands it over", await wait(async () => (await $(`[...document.querySelectorAll('.toast .toast-body')].map((n) => n.textContent)`)).some((t) => t.includes("Run this yourself: claude")), "terminal toast"));
+  // The file it found, not the bare name a terminal without that folder on PATH would miss.
+  check("signing in runs the engine's own command in a terminal, or hands it over", await wait(async () => (await $(`[...document.querySelectorAll('.toast .toast-body')].map((n) => n.textContent)`)).some((t) => t.includes(`Run this yourself: '${claude}'`)), "terminal toast"));
   await $(`[...document.querySelectorAll('[data-testid="setup-card"] .link-btn')].find((b) => b.textContent.startsWith('Set up'))?.click();true`);
   check("an agent with another problem leads to its Settings row", await wait(() => has('[data-testid="cli-setup-codex"]'), "codex row from the card"));
   await escape();
