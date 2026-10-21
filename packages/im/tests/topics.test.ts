@@ -203,6 +203,21 @@ describe("ticket topics in an IM group", () => {
     expect(w.delivered().some(d => d.address.topicId)).toBe(false);
   });
 
+  it("tries a topic that could not open again once another opens in the same group, say after a permission was granted", async () => {
+    let refuse = true;
+    let n = 0;
+    const w = await boot({ open: async () => { if (refuse) throw new ImDeliveryError("Missing Permissions", "permanent"); return { topicId: `granted-${++n}` }; } });
+    w.move("doing");
+    await w.said(new RegExp(`^${w.item.key}: Doing$`), null);
+    refuse = false;
+    const next = w.ctx.items.create({ projectId: w.project.id, boardId: w.board.id, title: "Next one", workType: "coding", status: "todo", by: "human" });
+    w.move("doing", next.id);
+    await w.said(/^This thread follows /, "granted-1");
+    await expect.poll(() => w.log.filter(l => l.kind === "open").map(l => (l as { title: string }).title)).toEqual([
+      `${w.item.key} · Doing · Fix the login page`, `${next.key} · Doing · Next one`, `${w.item.key} · Doing · Fix the login page`]);
+    await w.said(/^This thread follows /, "granted-2");
+  });
+
   /** The group's route as boot made it, changed, plus any other routes. */
   const routes = (w: Awaited<ReturnType<typeof boot>>, group: Record<string, unknown>, ...more: Record<string, unknown>[]) => {
     const base = { connectionId: "bot", tenantId: "team", projectId: w.project.id, engine: "test", allowedActors: ["owner"], allowGroups: true, groupActivation: "all" };

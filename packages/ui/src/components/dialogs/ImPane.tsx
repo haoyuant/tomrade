@@ -425,6 +425,12 @@ function ConnectionCard({ view, adapter, im, pairing, defaultProject, busy, onEd
             {name}
             <div className="meta-txt dense">{adapter?.title ?? view.adapterId}</div>
             <div className="meta-txt dense" style={view.state === "error" ? { color: "var(--danger)" } : undefined}>{detail}</div>
+            {view.links?.map((l) => <a key={l.url} className="meta-txt dense" href={l.url} target="_blank" rel="noreferrer" data-testid="im-link">{l.label}</a>)}
+            {view.notices?.map((n) => (
+              <div key={n.key} className="meta-txt dense" style={{ color: "var(--danger)" }} data-testid="im-notice">
+                {n.text}{n.link && <> · <a href={n.link.url} target="_blank" rel="noreferrer">{n.link.label}</a></>}
+              </div>
+            ))}
             {(view.pending + view.uncertain + view.failed) > 0 && <div className="meta-txt dense">{t("imSettings.counts", { pending: view.pending, uncertain: view.uncertain, failed: view.failed })}</div>}
             {!open && <div className="meta-txt dense" data-testid="im-folded-summary">{t("imSettings.foldedSummary", { routes: routes.length, people: paired.length })}</div>}
           </div>

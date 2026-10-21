@@ -8,7 +8,7 @@ import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/oplog";
 import type {} from "@tomradex/projects";
 import type {} from "@tomradex/settings";
-import { resolveImCapabilities, type ImAdapter, type ImAdapterSetup, type ImCapabilities, type Localized, type ImAdapterSession, type ImAddress, type ImCommand, type ImContent, type ImConnectionState, type ImElement, type ImInbound, type ImReaction, type ResolvedImCapabilities } from "@tomradex/plugin-sdk";
+import { resolveImCapabilities, type ImAdapter, type ImAdapterSetup, type ImCapabilities, type Localized, type ImAdapterSession, type ImAddress, type ImCommand, type ImContent, type ImConnectionState, type ImElement, type ImInbound, type ImNotice, type ImReaction, type ResolvedImCapabilities } from "@tomradex/plugin-sdk";
 import { ImConfig, ImSettings, InboundSchema, type ImConnection, type ImNotifyKind, type ImRoute } from "./config.js";
 import { fromAdapter, withContext, type ContextLine } from "./context.js";
 import { prepare } from "./render.js";
@@ -43,6 +43,10 @@ export interface ImConnectionView {
   identity?: { id: string; name?: string };
   /** Required credential fields still empty. */
   missing: string[];
+  /** What the adapter offers once connected, such as the link that adds the bot to a server. */
+  links?: { label: string; url: string }[];
+  /** What the person has to fix on this connection, newest first. */
+  notices: { key: string; text: string; link?: { label: string; url: string }; at: number }[];
 }
 /** An adapter as the settings wizard shows it, in the desktop's language. */
 export interface ImAdapterView {
@@ -89,6 +93,8 @@ interface Connection {
   state: ImConnectionState; detail?: string; retryAt: number; attempts: number;
   /** The credentials it was opened with; a change reopens it. */
   credentials: string;
+  /** What the adapter asked the person to fix, by key, until it says the cause is gone. */
+  notices: Map<string, ImNotice & { at: number }>;
 }
 /** What a start from IM settles, carried in the tokens of its card; `card` is that card's outbox id. */
 interface StartDraft { itemId: string; card: string; engine?: string; options?: Record<string, string>; permissionMode?: string; playbook?: string; allowBlocked?: boolean; releaseBranch?: boolean; task?: string }
@@ -314,10 +320,14 @@ export class Im extends Service {
         FROM plugin_im_outbox o JOIN plugin_im_bindings b ON b.id = o.binding_id WHERE b.connection_id = ?`, spec.id);
       const missing = this.missing(spec);
       const identity = c?.state === "connected" ? c.session?.identity : undefined;
+      const links = c?.state === "connected" ? this.links(c) : [];
+      const notices = [...c?.notices.values() ?? []].reverse().map(n => ({ key: n.key, text: this.word(n.text), at: n.at,
+        ...(n.link ? { link: { label: this.word(n.link.label), url: n.link.url } } : {}) }));
       return { id: spec.id, adapterId: spec.adapterId, ...(spec.label ? { label: spec.label } : {}),
         state: c?.state ?? (this.adapters.has(spec.adapterId) && !missing.length ? "offline" : "unconfigured"),
         detail: c?.detail, pending: counts?.pending ?? 0, uncertain: counts?.uncertain ?? 0, failed: counts?.failed ?? 0,
-        ...(identity ? { identity: { id: identity.id, ...(identity.name ? { name: identity.name } : {}) } } : {}), missing };
+        ...(identity ? { identity: { id: identity.id, ...(identity.name ? { name: identity.name } : {}) } } : {}), missing,
+        ...(links.length ? { links } : {}), notices };
     });
   }
 
@@ -383,7 +393,7 @@ export class Im extends Service {
     this.admit(im, { connectionId, tenantId: claim.tenantId, conversationId: claim.conversationId }, [claim.actorId], "dm", pairing.projectId);
     this.save(im);
     const c = this.connections.get(connectionId);
-    if (c) this.tell(c, { tenantId: claim.tenantId, conversationId: claim.conversationId }, this.w("paired"));
+    if (c) this.tell(c, { tenantId: claim.tenantId, conversationId: claim.conversationId }, [this.w("paired"), ...this.links(c).map(l => `${l.label}: ${l.url}`)].join("\n"));
     this.changed();
     return true;
   }
@@ -452,6 +462,39 @@ export class Im extends Service {
   }
 
   private changed() { for (const notify of this.watchers) notify(); }
+
+  /** The adapter's links for a connected session, in the desktop's language; only http(s) ones. */
+  private links(c: Connection): { label: string; url: string }[] {
+    const links = Array.isArray(c.session?.links) ? c.session.links : [];
+    return links.filter(l => typeof l?.url === "string" && /^https?:\/\//.test(l.url)).slice(0, 4).map(l => ({ label: this.word(l.label), url: l.url }));
+  }
+
+  /**
+   * Something the person has to fix, said once per key: on the connection in Settings, and as one line where it
+   * happened, or in the paired people's direct chats when it cannot be said there.
+   */
+  private notice(c: Connection, notice: ImNotice) {
+    if (typeof notice?.key !== "string" || !notice.key || c.notices.has(notice.key)) return;
+    c.notices.set(notice.key, { ...notice, at: Date.now() });
+    while (c.notices.size > 20) c.notices.delete(c.notices.keys().next().value!);
+    this.changed();
+    const text = [this.word(notice.text), ...(notice.link && /^https?:\/\//.test(notice.link.url) ? [`${this.word(notice.link.label)}: ${notice.link.url}`] : [])].join("\n");
+    void this.sayNotice(c, notice.address, text);
+  }
+
+  private async sayNotice(c: Connection, address: ImAddress | undefined, text: string) {
+    const caps = this.caps.get(c.adapterId);
+    const say = async (to: ImAddress) => {
+      if (!caps || !c.session || c.state !== "connected") throw new Error("Not connected");
+      const [content] = prepare({ text }, caps, this.w);
+      await deadline(c.session.deliver({ operationId: `notice:${token()}`, address: to, content }), this.config.operationTimeoutMs);
+    };
+    if (address) { try { return await say(address); } catch { /* Said to the paired people instead. */ } }
+    const paired = this.settings.identities.filter(i => i.connectionId === c.id);
+    const chats = this.settings.routes.filter(r => r.connectionId === c.id && r.allowDirectMessages && !r.allowGroups
+      && paired.some(i => i.tenantId === r.tenantId && r.allowedActors.includes(i.actorId)));
+    for (const r of chats) await say({ tenantId: r.tenantId, conversationId: r.conversationId }).catch(() => {});
+  }
 
   /** The book in the desktop's language. */
   private get w() { return IM_WORDS(this.home.settings.locale()); }
@@ -561,7 +604,7 @@ export class Im extends Service {
       let c = this.connections.get(spec.id);
       if (!c) {
         c = { id: spec.id, adapterId: spec.adapterId, controller: new AbortController(), opening: false, flushing: false, state: "offline", retryAt: 0, attempts: 0,
-          credentials: JSON.stringify(spec.credentials) };
+          credentials: JSON.stringify(spec.credentials), notices: new Map() };
         this.connections.set(c.id, c);
       }
       if (!c.session && !c.opening && c.retryAt <= Date.now()) void this.open(c);
@@ -612,7 +655,9 @@ export class Im extends Service {
             void this.close(c);
           }
         },
-        readOutboundFile: id => active() ? this.readFile(c, id) : Promise.reject(new Error("Connection closed"))
+        readOutboundFile: id => active() ? this.readFile(c, id) : Promise.reject(new Error("Connection closed")),
+        notice: notice => { if (active()) this.notice(c, notice); },
+        clearNotice: key => { if (active() && c.notices.delete(key)) this.changed(); }
       });
       void opening.then(session => { if (!active()) return session.close(); }).catch(() => {});
       const session = await deadline(opening, this.config.operationTimeoutMs);
@@ -2237,6 +2282,8 @@ export class Im extends Service {
         threadId, parent.actor_id, own ? 0 : this.lastSeq(t.project_id, threadId), Date.now());
       if (own && t.run_id) this.store.run("INSERT OR IGNORE INTO plugin_im_runs (binding_id, run_id) VALUES (?, ?)", id, t.run_id);
       this.store.run("UPDATE plugin_im_topics SET state = 'open', topic_id = ?, binding_id = ?, own = ?, synced = json_array(title, 0), attempts = 0 WHERE id = ?", topicId, id, own ? 1 : 0, t.id);
+      // The group can have topics again, say after a permission was granted: the tickets whose topic could not open try again.
+      this.store.run("UPDATE plugin_im_topics SET state = 'opening', attempts = 0, retry_at = 0 WHERE parent_id = ? AND state = 'failed' AND closed = 0", parent.id);
       const topic = this.store.binding(id)!;
       const item = this.items()?.get(t.project_id, t.item_id);
       if (item) this.enqueue(topic, `topic-card:${t.id}`, { text: this.w("topicOpened", { key: item.key }), elements: ticket(this.scope(topic), item.key, item.title) }, { anchor: null });

@@ -771,6 +771,7 @@ export class Host {
                   update: host.back(session.topics.update.bind(session.topics), `IM adapter ${spec.id} topic update`)
                 } } : {}),
                 ...(session.identity ? { identity: session.identity } : {}),
+                ...(session.links ? { links: session.links } : {}),
                 close: host.back(session.close.bind(session), `IM adapter ${spec.id} close`)
               };
             } }));
