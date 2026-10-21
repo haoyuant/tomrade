@@ -86,7 +86,7 @@ describe("a paired person allows a group from the group itself", () => {
     await expect.poll(() => w.delivered().length).toBe(1);
     const asked = w.card();
     await w.press(label);
-    await expect.poll(() => w.route()).toMatchObject({ projectId: w.project.id, allowGroups: true, allowedActors: ["owner"], output: "progress", ...fields });
+    await expect.poll(() => w.route()).toMatchObject({ kind: "group", projectId: w.project.id, allowGroups: true, allowedActors: ["owner"], output: "progress", ...fields });
     await expect.poll(() => w.delivered().find(d => d.content.text.startsWith(said))).toMatchObject({ replaceMessageId: "m-1" });
     expect(w.ctx.im.ignoredMessages()).toEqual([]);
 
@@ -155,7 +155,7 @@ describe("a paired person allows a group from the group itself", () => {
 
     w.ctx.items.create({ projectId: w.others[0].id, boardId: w.ctx.boards.list(w.others[0].id)[0]!.id, title: "Being worked", workType: "coding", status: "doing", by: "human" });
     expect(w.io().allow!({ actorId: "owner", address: GROUP, kind: "work", projectId: w.others[0].id })).toBe(true);
-    await expect.poll(() => w.route()).toMatchObject({ projectId: w.others[0].id, allowGroups: true, allowedActors: ["owner"], ticketTopics: true, groupActivation: "reply" });
+    await expect.poll(() => w.route()).toMatchObject({ kind: "group", projectId: w.others[0].id, allowGroups: true, allowedActors: ["owner"], ticketTopics: true, groupActivation: "reply" });
     const top = () => w.delivered().filter(d => !d.address.topicId);
     await expect.poll(() => top().map(d => d.content.text)).toEqual([`This is now the work channel for ${w.others[0].name}: each ticket being worked gets a thread here.\nChange it any time in Tomrade's IM settings.`]);
     await expect.poll(() => w.log.some(l => l.kind === "open" && l.title.includes("Being worked"))).toBe(true);
@@ -167,5 +167,42 @@ describe("a paired person allows a group from the group itself", () => {
     await new Promise(r => setTimeout(r, 50));
     expect(w.route()).toMatchObject({ groupActivation: "all", ticketTopics: true });
     expect(top()).toHaveLength(1);
+  });
+
+  it("keeps a direct chat one whatever its switches let in: no topics are asked for there", async () => {
+    const w = await boot();
+    const im = ImSettings.parse(w.ctx.settings.get().im);
+    // As pairing made it, with the group switch turned on afterwards.
+    w.ctx.settings.set({ ...w.ctx.settings.get(), im: { ...im, routes: [{ ...im.routes[0]!, id: "dm-0123456789ab", allowGroups: true, ticketTopics: true }] } });
+    expect(ImSettings.parse(w.ctx.settings.get().im).routes[0]!.kind).toBe("dm");
+    const worked = (title: string) => {
+      const item = w.ctx.items.create({ projectId: w.project.id, boardId: w.board.id, title, workType: "coding", status: "todo", by: "human" });
+      w.ctx.items.update(w.project.id, item.id, { status: "doing" }, "human");
+    };
+    worked("Being worked");
+    await new Promise(r => setTimeout(r, 200));
+    expect(w.log.filter(l => l.kind === "open")).toEqual([]);
+    await w.receive({ kind: "message", eventId: "d1", address: { tenantId: "@me", conversationId: "chat" }, actor: { id: "owner", isBot: false }, messageId: "d1", text: "hi", activation: "dm" });
+    worked("Also worked");
+    await new Promise(r => setTimeout(r, 200));
+    expect(w.log.filter(l => l.kind === "open")).toEqual([]);
+  });
+
+  it("records what each conversation is where Tomrade makes its route, and reads it from the id of one made before", async () => {
+    const w = await boot();
+    const { code } = w.ctx.im.pairStart("bot", w.project.id);
+    await w.receive({ kind: "message", eventId: "p1", address: { tenantId: "@me", conversationId: "ann-dm" }, actor: { id: "ann", isBot: false }, messageId: "p1", text: `/pair ${code}`, activation: "dm" });
+    expect(w.ctx.im.pairConfirm("bot")).toBe(true);
+    const routes = () => ImSettings.parse(w.ctx.settings.get().im).routes;
+    expect(routes().find(r => r.conversationId === "ann-dm")).toMatchObject({ kind: "dm", allowGroups: false });
+    await w.mention("stranger");
+    await expect.poll(() => w.ctx.im.ignoredMessages().length).toBe(1);
+    expect(w.ctx.im.allow({ ignoredId: w.ctx.im.ignoredMessages()[0]!.id, scope: "group", projectId: w.project.id })).toBe(true);
+    expect(routes().find(r => r.conversationId === "dev")).toMatchObject({ kind: "group" });
+    const parsed = ImSettings.parse({ connections: [{ id: "bot", adapterId: "x" }], routes: [
+      { id: "dm-aaaaaaaaaaaa", connectionId: "bot", tenantId: "t", conversationId: "a", projectId: "p", allowedActors: ["u"] },
+      { id: "group-bbbbbbbbbbbb", connectionId: "bot", tenantId: "t", conversationId: "b", projectId: "p", allowedActors: ["u"] },
+      { id: "by-hand", connectionId: "bot", tenantId: "t", conversationId: "c", projectId: "p", allowedActors: ["u"] }] });
+    expect(parsed.routes.map(r => r.kind)).toEqual(["dm", "group", undefined]);
   });
 });

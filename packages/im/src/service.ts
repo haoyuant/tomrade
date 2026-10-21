@@ -431,11 +431,11 @@ export class Im extends Service {
     const i = im.routes.findIndex(r => r.connectionId === where.connectionId && r.tenantId === where.tenantId && r.conversationId === where.conversationId);
     if (i >= 0) {
       const r = im.routes[i];
-      im.routes[i] = { ...r, allowedActors: [...new Set([...r.allowedActors, ...actors])], ...(kind === "dm" ? { allowDirectMessages: true } : { allowGroups: true }) };
+      im.routes[i] = { ...r, kind: r.kind ?? kind, allowedActors: [...new Set([...r.allowedActors, ...actors])], ...(kind === "dm" ? { allowDirectMessages: true } : { allowGroups: true }) };
       return;
     }
     if (!projectId) throw new Error("Choose a project for this conversation");
-    im.routes.push({ id: `${kind}-${hash([where, Date.now()]).slice(0, 12)}`, ...where, projectId, boardId: null, allowedActors: actors,
+    im.routes.push({ id: `${kind}-${hash([where, Date.now()]).slice(0, 12)}`, ...where, kind, projectId, boardId: null, allowedActors: actors,
       allowDirectMessages: kind === "dm", allowGroups: kind === "group", groupActivation: "reply", output: "progress", desktopTurns: true, ticketTopics: true });
   }
 
@@ -703,7 +703,7 @@ export class Im extends Service {
       if (this.store.binding(id) || !this.home.projects.get(route.projectId) || !this.home.db.has(route.projectId)) continue;
       // Taken for a group when groups are let in, so desktop turns never show there; its first message says for sure.
       this.store.run("INSERT OR IGNORE INTO plugin_im_bindings (id, route_id, route_hash, connection_id, address_json, project_id, thread_id, actor_id, created_at, grp) VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, ?)",
-        id, route.id, this.routeHash(route), route.connectionId, JSON.stringify(address), route.projectId, route.allowedActors[0], Date.now(), route.allowGroups ? 1 : 0);
+        id, route.id, this.routeHash(route), route.connectionId, JSON.stringify(address), route.projectId, route.allowedActors[0], Date.now(), (route.kind ? route.kind === "group" : route.allowGroups) ? 1 : 0);
     }
   }
 
@@ -1450,6 +1450,9 @@ export class Im extends Service {
 
   /** Whether this conversation is a group: its people see whatever the bound thread says. */
   private isGroup(b: Binding): boolean {
+    // A direct chat stays one whatever its route's switches let in.
+    const kind = this.settings.routes.find(r => r.id === b.route_id)?.kind;
+    if (kind) return kind === "group";
     if (b.grp !== null && b.grp !== undefined) return b.grp === 1;
     const last = this.store.all<Inbox>("SELECT * FROM plugin_im_inbox WHERE binding_id = ? ORDER BY seq DESC LIMIT 20", b.id)
       .map(r => JSON.parse(r.event_json) as ImInbound).find(e => e.kind === "message");

@@ -22,7 +22,14 @@ function upgrade(value: unknown): unknown {
   return { ...rest, notify: { ...(isRecord(rest.notify) ? rest.notify : {}), presence: announcePresence === true }, routes };
 }
 
-export const ImSettings = z.preprocess(upgrade, z.object({
+/** Routes Tomrade made before they recorded what their conversation is, told by the id it gave them. */
+function kinds(value: unknown): unknown {
+  if (!isRecord(value) || !Array.isArray(value.routes)) return value;
+  return { ...value, routes: value.routes.map(r => isRecord(r) && r.kind === undefined && typeof r.id === "string" && /^(dm|group)-/.test(r.id)
+    ? { ...r, kind: r.id.startsWith("dm-") ? "dm" : "group" } : r) };
+}
+
+export const ImSettings = z.preprocess(value => kinds(upgrade(value)), z.object({
   connections: z.array(z.object({ id, adapterId: id, enabled: z.boolean().default(true), label: z.string().max(80).optional(),
     /** The adapter's `setup.fields`; the whole map is sealed by the OS keychain in settings.json. */
     credentials: z.record(z.string(), z.string().max(8192)).default({}) })).default([]),
@@ -43,6 +50,8 @@ export const ImSettings = z.preprocess(upgrade, z.object({
   }).prefault({}),
   routes: z.array(z.object({
     id, connectionId: id, tenantId: id, conversationId: id,
+    /** What the conversation is, whatever its switches allow; a route without it is guessed from them. */
+    kind: z.enum(["dm", "group"]).optional(),
     projectId: id, boardId: id.nullable().default(null), engine: id.optional(),
     /** Engine option overrides for threads this route opens (model, effort…). */
     options: z.record(z.string(), z.unknown()).optional(),
