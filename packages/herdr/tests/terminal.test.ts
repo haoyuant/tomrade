@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { Context } from "cordis";
-import { BRIDGE_MIN_VERSION, Herdr, HerdrError, compareVersions, openTerminal, parseTerminalLine, terminalCommand, type HerdrConfig, type TerminalFrame } from "@tomradex/herdr";
+import { BRIDGE_MIN_VERSION, CONTROL_SETTLE_MS, Herdr, HerdrError, compareVersions, openTerminal, parseTerminalLine, terminalCommand, type HerdrConfig, type TerminalFrame } from "@tomradex/herdr";
 // Straight from the source: depending on testkit would close a cycle through extensions, which depends on herdr.
 import { FakeHerdr } from "../../testkit/src/herdr.js";
 
@@ -13,29 +13,34 @@ afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 const frame = (seq: number, full: boolean, text: string) => JSON.stringify({ type: "terminal.frame", seq, encoding: "ansi", width: 80, height: 24, full, bytes: Buffer.from(text).toString("base64") });
 
 /**
- * A herdr CLI stand-in for terminal sessions: it notes its arguments, paints a first frame (after
- * `attachAfter` seconds, noting when it started and attached, by its width), and — controlling — notes each stdin
- * line and answers it with a frame until it is released. A pane named `w9:p1` is one it does not
- * have; observing, it paints once and waits to be ended. Its first `--version` takes `slowVersion` seconds.
+ * A herdr CLI stand-in for terminal sessions: it notes its arguments, paints a first frame (noting when
+ * it started and attached, by its width), and — controlling — notes each stdin line and answers it with
+ * a frame until it is released. A pane named `w9:p1` is one it does not have; observing, it paints once
+ * and waits to be ended. With `lateAttach`, a control session 80 wide attaches only once it has been released;
+ * with `holdVersion`, its first `--version` answers only once the test writes `go` in its folder.
  */
-function terminalCli(version = "0.9.5", attachAfter = 0, slowVersion = 0): { bin: string; dir: string; args: () => string; stdin: () => string[]; log: () => string[] } {
+function terminalCli(version = "0.9.5", { lateAttach = false, holdVersion = false } = {}): { bin: string; dir: string; args: () => string; stdin: () => string[]; log: () => string[] } {
   const dir = fs.mkdtempSync(path.join(root, "cli-"));
   const bin = path.join(dir, "herdr");
   fs.writeFileSync(
     bin,
     [
       "#!/bin/sh",
-      slowVersion ? `[ "$1" = --version ] && [ ! -e '${dir}/asked' ] && touch '${dir}/asked' && sleep ${slowVersion}` : ":",
+      // Released before it attaches, it outlives the stream's grace kill, however slowly a loaded machine starts it.
+      lateAttach ? `[ "$7" = 80 ] && trap '' TERM` : ":",
+      // Waiting on the test, not a fixed sleep: under load the shell's own start eats into herdr's version-check limit.
+      holdVersion ? `[ "$1" = --version ] && [ ! -e '${dir}/asked' ] && : > '${dir}/asked' && while [ ! -e '${dir}/go' ]; do sleep 0.05; done` : ":",
       `[ "$1" = --version ] && echo "herdr ${version}" && exit 0`,
       `echo "$@" > '${dir}/args'`,
       `echo "$HERDR_SOCKET_PATH" > '${dir}/socket'`,
       `[ "$4" = "w9:p1" ] && echo "herdr: pane w9:p1 not found" >&2 && exit 1`,
       `echo "start $7" >> '${dir}/log'`,
-      attachAfter ? `sleep ${attachAfter}` : ":",
+      lateAttach ? `[ "$7" = 80 ] && IFS= read -r held` : ":",
       `echo "attach $7" >> '${dir}/log'`,
       `printf '%s\\n' '${frame(1, true, "hello")}'`,
       "printf 'not json\\n'",
       `[ "$3" = observe ] && exec sleep 60`,
+      `case "$held" in *terminal.release*) printf '%s\\n' '{"type":"terminal.closed","reason":"released"}'; exit 0;; esac`,
       "while IFS= read -r line; do",
       `  printf '%s\\n' "$line" >> '${dir}/stdin'`,
       `  case "$line" in *terminal.release*) printf '%s\\n' '{"type":"terminal.closed","reason":"released"}'; exit 0;; esac`,
@@ -56,17 +61,13 @@ function terminalCli(version = "0.9.5", attachAfter = 0, slowVersion = 0): { bin
   return { bin, dir, args: () => read("args").trim(), stdin: () => lines("stdin"), log: () => lines("log") };
 }
 
-async function until(check: () => boolean, ms = 5000): Promise<void> {
-  const deadline = Date.now() + ms;
-  while (!check()) {
-    if (Date.now() > deadline) throw new Error("timed out");
-    await new Promise((r) => setTimeout(r, 20));
-  }
-}
+// Each test here starts real processes, which a loaded machine can hold up for seconds; the wait ends before the test's limit.
+const SPAWNS = { timeout: 30_000 };
+const until = (check: () => boolean) => vi.waitUntil(check, { timeout: 20_000, interval: 20 });
 
 const text = (f: TerminalFrame) => Buffer.from(f.bytes).toString();
 
-describe("herdr terminal sessions", () => {
+describe("herdr terminal sessions", SPAWNS, () => {
   it("reads frames and the end from herdr's lines, and passes over anything else", () => {
     const full = parseTerminalLine(frame(1, true, "hi"));
     expect(full).toMatchObject({ type: "frame", frame: { seq: 1, width: 80, height: 24, full: true } });
@@ -146,7 +147,7 @@ async function herdrOn(fake: FakeHerdr, config: HerdrConfig = {}): Promise<{ ctx
   return { ctx, herdr: ctx.herdr };
 }
 
-describe.skipIf(process.platform === "win32")("herdr service terminals", () => {
+describe.skipIf(process.platform === "win32")("herdr service terminals", SPAWNS, () => {
   it("compares versions by their numbers", () => {
     expect(compareVersions("0.9.10", "0.9.2")).toBe(1);
     expect(compareVersions("0.9.2", "0.9.2-preview")).toBe(0);
@@ -196,16 +197,13 @@ describe.skipIf(process.platform === "win32")("herdr service terminals", () => {
   it("starts a pane's next control session once the one before has attached, so one let go early never takes the pane from it", async () => {
     const fake = new FakeHerdr();
     try {
-      const cli = terminalCli("0.9.5", 0.3);
+      const cli = terminalCli("0.9.5", { lateAttach: true });
       const { herdr } = await herdrOn(fake, { bin: cli.bin });
       // A cell attached twice in quick succession: the first is let go before herdr has attached it.
-      const first = herdr.terminal("w1:p1", { cols: 80, rows: 24 });
-      const second = herdr.terminal("w1:p1", { cols: 81, rows: 24 });
-      (await first).close();
-      await second;
+      const [, second] = await Promise.all([herdr.terminal("w1:p1", { cols: 80, rows: 24 }).then((s) => s.close()), herdr.terminal("w1:p1", { cols: 81, rows: 24 })]);
       await until(() => cli.log().length === 4);
       expect(cli.log()).toEqual(["start 80", "attach 80", "start 81", "attach 81"]);
-      (await second).close();
+      second.close();
     } finally {
       fake.close();
     }
@@ -214,20 +212,19 @@ describe.skipIf(process.platform === "win32")("herdr service terminals", () => {
   it("gives the session before its full settling time from when its herdr starts, however long the checks before that take", async () => {
     const fake = new FakeHerdr();
     try {
-      // The first session's checks outlast the settling time, as a loaded machine's can.
-      const cli = terminalCli("0.9.5", 0.3, 2.5);
+      const cli = terminalCli("0.9.5", { lateAttach: true, holdVersion: true });
       const { herdr } = await herdrOn(fake, { bin: cli.bin });
-      const first = herdr.terminal("w1:p1", { cols: 80, rows: 24 });
-      const second = herdr.terminal("w1:p1", { cols: 81, rows: 24 });
-      (await first).close();
-      await second;
+      const sessions = Promise.all([herdr.terminal("w1:p1", { cols: 80, rows: 24 }).then((s) => s.close()), herdr.terminal("w1:p1", { cols: 81, rows: 24 })]);
+      // The first session's checks outlast the settling time, as a loaded machine's can.
+      setTimeout(() => fs.writeFileSync(path.join(cli.dir, "go"), ""), CONTROL_SETTLE_MS + 250);
+      const [, second] = await sessions;
       await until(() => cli.log().length === 4);
       expect(cli.log()).toEqual(["start 80", "attach 80", "start 81", "attach 81"]);
-      (await second).close();
+      second.close();
     } finally {
       fake.close();
     }
-  }, 15_000);
+  });
 });
 
 describe("herdr project workspaces", () => {

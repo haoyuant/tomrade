@@ -13,9 +13,9 @@ The reporter is `packages/testkit/src/failure-kinds.ts`, listed after `default` 
 
 ## The three kinds
 
-- **`timeout-under-load`**: vitest's own limit ran out, `Test timed out in …ms` or `Hook timed out in …ms`, and nothing else about the test failed.
+- **`timeout-under-load`**: vitest's own limit ran out, `Test timed out in …ms` or `Hook timed out in …ms`, and nothing else about the test failed. So did a test's own wait, when its error carries no cause: `Timed out in waitFor!`, `Timed out in waitUntil!`, or a polling helper's bare `timed out`.
 - **`network`**: the error, or one of its causes, is the network not being there: DNS (`ENOTFOUND`, `EAI_AGAIN`, `getaddrinfo`, `Could not resolve host`, `no such host`), a refused, reset or timed-out connection (`ECONNREFUSED`, `ECONNRESET`, `connect ETIMEDOUT`, `Failed to connect to … port …`), an unreachable network, a proxy that refused or could not tunnel, and TLS or certificate failures. git, curl and `gh` output wrapped in an ordinary error counts.
-- **`real`**: everything else. An assertion is always `real`, whatever its message mentions. So is a refusal from a socket file, or from a loopback port that no `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` names: that is a server the test started, not the network. So are a poll that never matched (`Matcher did not succeed in time.`), a child process that outlived its own limit (`spawnSync … ETIMEDOUT`), and a bare `fetch failed` with no cause.
+- **`real`**: everything else. An assertion is always `real`, whatever its message mentions. So is a refusal from a socket file, or from a loopback port that no `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` names: that is a server the test started, not the network. So are a poll that never matched (`Matcher did not succeed in time.`, which carries the assertion), a wait whose error has a cause, a child process that outlived its own limit (`spawnSync … ETIMEDOUT`), and a bare `fetch failed` with no cause.
 
 When the reporter is unsure, it says `real`. A test with several errors is `real` if any of them is, then `network` (a network wait often ends in a timeout), then `timeout-under-load`.
 

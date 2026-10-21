@@ -14,10 +14,19 @@ describe("timeouts", () => {
     expect(kind({ message: "Hook timed out in 10000ms." })).toBe("timeout-under-load");
   });
 
-  it("leaves other timeouts real: a poll that never matched, a child that outlived its limit", () => {
+  it("counts a test's own wait running out as load: vi.waitFor, vi.waitUntil, a polling helper's bare \"timed out\"", () => {
+    expect(kind({ name: "Error", message: "Timed out in waitFor!" })).toBe("timeout-under-load");
+    expect(kind({ name: "Error", message: "Timed out in waitUntil!" })).toBe("timeout-under-load");
+    expect(kind({ name: "Error", message: "timed out" })).toBe("timeout-under-load");
+    expect(classifyError({ message: "timed out" }, noProxy).reason).toBe("timed out");
+  });
+
+  it("leaves other timeouts real: a poll that never matched, a wait with a cause, a child that outlived its limit", () => {
     expect(kind({ message: "Matcher did not succeed in time.", cause: assertion })).toBe("real");
+    expect(kind({ message: "timed out", cause: assertion })).toBe("real");
+    expect(kind({ message: "Timed out in waitFor!", cause: { name: "TypeError", message: "Cannot read properties of undefined (reading 'id')" } })).toBe("real");
+    expect(kind({ message: "model timed out after 30 s" })).toBe("real");
     expect(kind({ message: "spawnSync git ETIMEDOUT", code: "ETIMEDOUT", syscall: "spawnSync git" })).toBe("real");
-    expect(kind({ message: "Timed out in waitFor!" })).toBe("real");
   });
 });
 
