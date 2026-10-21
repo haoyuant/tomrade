@@ -22,6 +22,8 @@ const errorText = (e: unknown) => e instanceof Error ? e.message : String(e);
 /** Platforms drop a typing indicator after a few seconds; refresh it while the run works. */
 const TYPING_MS = 4_000;
 const PAIR_MS = 10 * 60 * 1000;
+/** Tickets already being worked that get a topic when a group starts having them; the rest get one on their next move. */
+const BACKFILL_TOPICS = 20;
 /** Wrong codes a connection takes before its pairing code is withdrawn. */
 const PAIR_TRIES = 5;
 
@@ -516,7 +518,7 @@ export class Im extends Service {
       if (!spec || JSON.stringify(spec.credentials) !== c.credentials || this.missing(spec).length) { this.connections.delete(c.id); void this.close(c); }
     }
     for (const id of this.pairings.keys()) if (!this.settings.connections.some(c => c.id === id)) this.pairings.delete(id);
-    if (this.store) { this.pruneWindow(); this.ensureBindings(); }
+    if (this.store) { this.pruneWindow(); this.ensureBindings(); this.backfillTopics(); }
     this.tick();
     this.changed();
   }
@@ -550,6 +552,7 @@ export class Im extends Service {
       this.store.prune(Date.now() - this.config.retentionMs);
       this.pruneWindow();
       this.ensureBindings();
+      this.backfillTopics();
     }
     const dirty = new Set(this.dirty);
     this.dirty.clear();
@@ -1924,6 +1927,29 @@ export class Im extends Service {
   private topical(b: Binding): boolean {
     if (!this.isGroup(b) || (JSON.parse(b.address_json) as ImAddress).topicId) return false;
     return !!this.capsOf(b)?.topics && this.settings.routes.find(r => r.id === b.route_id)?.ticketTopics !== false;
+  }
+
+  /**
+   * A group that starts having ticket topics (allowed, topics or ticket news turned on, or from before topics) opens
+   * one for each ticket already being worked, most recently changed first, as a move would; again only once they
+   * were off in between.
+   */
+  private backfillTopics() {
+    const items = this.home.get("items") as { list(filter: { projectId: string; status: string }): { id: string; updatedAt: number }[] } | undefined;
+    if (!items) return;
+    for (const b of this.store.bindings()) {
+      if (this.topicOf(b) || !this.authorizedBinding(b) || !this.home.db.has(b.project_id)) continue;
+      const on = this.topical(b) && this.notifies(b, "tickets");
+      if (on === (b.topics_backfilled === 1)) continue;
+      if (on) {
+        const worked = ["doing", "verifying"].flatMap(status => items.list({ projectId: b.project_id, status }))
+          .sort((x, y) => y.updatedAt - x.updatedAt).slice(0, BACKFILL_TOPICS);
+        for (const item of worked) {
+          if (!this.store.get("SELECT 1 FROM plugin_im_topics WHERE parent_id = ? AND item_id = ?", b.id, item.id)) this.openTopic(b, item.id);
+        }
+      }
+      this.store.run("UPDATE plugin_im_bindings SET topics_backfilled = ? WHERE id = ?", on ? 1 : 0, b.id);
+    }
   }
 
   /** The ticket topic this conversation is, if it is one. */

@@ -203,6 +203,62 @@ describe("ticket topics in an IM group", () => {
     expect(w.delivered().some(d => d.address.topicId)).toBe(false);
   });
 
+  /** The group's route as boot made it, changed, plus any other routes. */
+  const routes = (w: Awaited<ReturnType<typeof boot>>, group: Record<string, unknown>, ...more: Record<string, unknown>[]) => {
+    const base = { connectionId: "bot", tenantId: "team", projectId: w.project.id, engine: "test", allowedActors: ["owner"], allowGroups: true, groupActivation: "all" };
+    w.ctx.settings.set({ ...w.ctx.settings.get(), im: ImSettings.parse({ connections: [{ id: "bot", adapterId: "test_im" }],
+      routes: [{ ...base, id: "group", conversationId: "room", ...group }, ...more.map(r => ({ ...base, ...r }))] }) });
+  };
+  const opened = (w: Awaited<ReturnType<typeof boot>>, conversationId: string) =>
+    w.log.flatMap(l => l.kind === "open" && l.address.conversationId === conversationId ? [l.title] : []);
+  const worked = (w: Awaited<ReturnType<typeof boot>>, title: string, status: "doing" | "verifying" | "todo") =>
+    w.ctx.items.create({ projectId: w.project.id, boardId: w.board.id, title, workType: "coding", status, by: "human" });
+
+  it("opens a topic for each ticket already being worked once a group is allowed", async () => {
+    const w = await boot({ ticketTopics: false });
+    const a = worked(w, "Ship the docs", "doing");
+    const b = worked(w, "Fix the footer", "doing");
+    const c = worked(w, "Review the API", "verifying");
+    worked(w, "Plan the next one", "todo");
+    routes(w, { ticketTopics: false }, { id: "work", conversationId: "work" });
+    await expect.poll(() => opened(w, "work").sort()).toEqual([
+      `${a.key} · Doing · Ship the docs`, `${b.key} · Doing · Fix the footer`, `${c.key} · Verifying · Review the API`].sort());
+    await w.said(new RegExp(`^This thread follows ${c.key}:`));
+    expect(opened(w, "room")).toEqual([]);
+  });
+
+  it("opens them again only after topics were off in between, never twice, and not on a restart", async () => {
+    const w = await boot({ ticketTopics: false });
+    const a = worked(w, "Ship the docs", "doing");
+    await new Promise(r => setTimeout(r, 150));
+    expect(opened(w, "room")).toEqual([]);
+    routes(w, { ticketTopics: true });
+    await expect.poll(() => opened(w, "room")).toEqual([`${a.key} · Doing · Ship the docs`]);
+    routes(w, { ticketTopics: false });
+    routes(w, { ticketTopics: true });
+    // As a binding from before topics would be after the upgrade, or one starting again.
+    w.ctx.im.store.run("UPDATE plugin_im_bindings SET topics_backfilled = 0");
+    routes(w, { ticketTopics: true, output: "final" });
+    await new Promise(r => setTimeout(r, 200));
+    expect(opened(w, "room")).toHaveLength(1);
+  });
+
+  it("opens at most twenty, the most recently changed; the rest open on their next move", async () => {
+    const w = await boot({ ticketTopics: false });
+    const all = Array.from({ length: 22 }, (_, i) => worked(w, `Task ${i}`, "doing"));
+    routes(w, { ticketTopics: false }, { id: "work", conversationId: "work" });
+    await expect.poll(() => opened(w, "work")).toHaveLength(20);
+    await new Promise(r => setTimeout(r, 150));
+    expect(opened(w, "work")).toHaveLength(20);
+    const left = all.filter(i => !opened(w, "work").some(t => t.startsWith(`${i.key} `)));
+    expect(left).toHaveLength(2);
+    const at = (id: string) => w.ctx.items.get(w.project.id, id)!.updatedAt;
+    const oldestOpened = Math.min(...all.filter(i => !left.includes(i)).map(i => at(i.id)));
+    expect(Math.max(...left.map(i => at(i.id)))).toBeLessThanOrEqual(oldestOpened);
+    w.move("verifying", left[0]!.id);
+    await expect.poll(() => opened(w, "work")).toHaveLength(21);
+  });
+
   it("keeps everything at the top level where the platform opens no topics or the route turned them off", async () => {
     for (const opts of [{ topics: false }, { ticketTopics: false }]) {
       const w = await boot(opts);

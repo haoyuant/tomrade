@@ -80,6 +80,8 @@ CREATE TABLE plugin_im_topics (
 );
 CREATE INDEX idx_plugin_im_topics_binding ON plugin_im_topics(binding_id);
 CREATE INDEX idx_plugin_im_topics_item ON plugin_im_topics(project_id, item_id);
+` }, { version: 11, up: `
+ALTER TABLE plugin_im_bindings ADD COLUMN topics_backfilled INTEGER NOT NULL DEFAULT 0;
 ` }];
 export const TABLES = {
   plugin_im_bindings: { export: false }, plugin_im_inbox: { export: false },
@@ -99,6 +101,8 @@ export interface Binding {
   share_next: number;
   /** While it follows a ticket's thread, the conversation it left to start it; it goes back there once that thread is archived. */
   home_thread: string | null;
+  /** 1 once the tickets already being worked got their topics, since this group last started having them. */
+  topics_backfilled: number;
 }
 export interface Inbox {
   seq: number; id: string; message_key: string | null; binding_id: string;
