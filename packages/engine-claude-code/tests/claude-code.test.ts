@@ -8,7 +8,7 @@ import { Tools } from "@tomradex/tools";
 import { Settings } from "@tomradex/settings";
 import { Agent, type RunView } from "@tomradex/agent";
 import { Mcp } from "@tomradex/mcp";
-import engineClaudeCode, { claudeSignedIn, lineSplitter } from "@tomradex/engine-claude-code";
+import engineClaudeCode, { claudeSignedIn, lineSplitter, runJsonl } from "@tomradex/engine-claude-code";
 
 async function settled(ctx: Context, projectId: string, runId: string, timeout = 8000): Promise<RunView> {
   const t0 = Date.now();
@@ -98,4 +98,13 @@ it("splits records on LF only, across chunk boundaries", () => {
   const bytes = Buffer.from(text);
   push(bytes.subarray(0, 5)); push(bytes.subarray(5, bytes.length - 3)); push(bytes.subarray(bytes.length - 3));
   expect(lines.map((line) => JSON.parse(line))).toEqual([{ a: "x\u2028y" }, { b: "é" }]);
+});
+
+it("reads a JSON line with U+2028 in a string as one event", async () => {
+  const events: Record<string, unknown>[] = [];
+  const node = { file: process.execPath, argv: (args: string[]) => ({ command: process.execPath, args }), env: (base = process.env) => base };
+  const script = 'process.stdout.write(JSON.stringify({ text: "a\\u2028b\\u2029c" }) + "\\n")';
+  const { done } = runJsonl(node, ["-e", script], { cwd: os.tmpdir(), signal: new AbortController().signal, onLine: (event) => events.push(event) });
+  expect((await done).code).toBe(0);
+  expect(events).toEqual([{ text: "a\u2028b\u2029c" }]);
 });
