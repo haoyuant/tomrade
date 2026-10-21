@@ -272,6 +272,7 @@ export const ja: PartialMessages = {
     noticeCurrent: "現在のバージョンは {{version}} です。",
     noticeAvailableNote: "バックグラウンドでダウンロードされ、設定 → Tomrade について で進行状況を確認できます。再起動するまでインストールされません。",
     noticeReadyNote: "今すぐ再起動して完了するか、次回終了時にインストールされます。",
+    windowsInstallNote: "Windows ではインストーラーが専用のウィンドウを開き、数分かかることがあります。閉じずにお待ちください。完了すると Tomrade が再び起動します。",
     restartNow: "今すぐ再起動",
     later: "後で",
     detailsTitle: "詳細",

@@ -36,6 +36,7 @@ export const about = {
     noticeCurrent: "You have {{version}}.",
     noticeAvailableNote: "It downloads in the background, and Settings → About shows how far it has got. Nothing installs until you restart.",
     noticeReadyNote: "Restart now to finish, or it installs the next time you quit.",
+    windowsInstallNote: "On Windows the installer opens its own window and can take a few minutes. Leave it open: Tomrade starts again once it is done.",
     restartNow: "Restart now",
     later: "Later",
 
@@ -111,6 +112,7 @@ export const about = {
     noticeCurrent: "当前版本 {{version}}。",
     noticeAvailableNote: "下载在后台进行，可以在 设置 → 关于 里看进度。重启之前不会安装。",
     noticeReadyNote: "现在重启即可完成更新；不重启的话，下次退出时会自动安装。",
+    windowsInstallNote: "在 Windows 上，安装程序会打开自己的窗口，可能需要几分钟。请不要关闭它，装好后 Tomrade 会自动重新打开。",
     restartNow: "立即重启",
     later: "稍后",
 

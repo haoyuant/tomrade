@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { app, autoUpdater as squirrel } from "electron";
-import electronUpdater, { type AppUpdater } from "electron-updater";
+import electronUpdater, { type AppUpdater, type BaseUpdater } from "electron-updater";
 import type { Context } from "cordis";
 import { z } from "zod";
 import type {} from "@tomradex/ipc";
@@ -197,7 +197,7 @@ export class Updates {
     if (!(await this.opts.prepareToQuit())) return false;
     this.installing = setTimeout(() => this.release(), INSTALL_GRACE_MS);
     try {
-      // Silent on Windows, as the restart was already asked for; relaunch everywhere.
+      // Relaunch everywhere. On Windows the installer shows its window anyway (withInstallerWindow).
       this.source.quitAndInstall(true, true);
       return true;
     } catch (error) {
@@ -271,6 +271,16 @@ export function withoutInstallId(updater: AppUpdater, userData: string): boolean
   return true;
 }
 
+/**
+ * Windows: the installer removes the old copy before it writes the new one, which can take minutes
+ * (from another drive, every file is copied to %TEMP%). Run silently it looks hung, and ending it
+ * halfway leaves no Tomrade at all, so every install, the one on quit included, shows its progress.
+ */
+export function withInstallerWindow(updater: Pick<BaseUpdater, "install">): void {
+  const install = updater.install.bind(updater);
+  updater.install = (_silent, runAfter) => install(false, runAfter);
+}
+
 /** The feed is the one electron-builder wrote into the app; TOMRADE_UPDATE_URL points a check at another, a checkout included. */
 function feed(ctx: Context): AppUpdater {
   const { autoUpdater } = electronUpdater;
@@ -284,6 +294,7 @@ function feed(ctx: Context): AppUpdater {
   autoUpdater.autoDownload = false;
   // "Later" on a downloaded update means the next ordinary quit installs it.
   autoUpdater.autoInstallOnAppQuit = true;
+  if (process.platform === "win32") withInstallerWindow(autoUpdater as BaseUpdater);
   const url = process.env.TOMRADE_UPDATE_URL;
   if (url) {
     autoUpdater.forceDevUpdateConfig = !app.isPackaged;
