@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Icon } from "~/components/icons";
-import { messageOf } from "~/lib/api";
+import { logQuietly, messageOf } from "~/lib/api";
 import { domainErrorWords } from "~/lib/errors";
 import { translate, useI18n } from "~/lib/i18n";
 
@@ -132,7 +132,7 @@ function ToastRow({ toast, onDismiss }: { toast: Toast; onDismiss: () => void })
           style={{ padding: 4 }}
           title={t("toast.copy")}
           aria-label={t("toast.copy")}
-          onClick={() => void navigator.clipboard?.writeText([toast.body as string, toast.detail].filter(Boolean).join("\n\n")).catch(() => {})}
+          onClick={() => void navigator.clipboard?.writeText([toast.body as string, toast.detail].filter(Boolean).join("\n\n")).catch(logQuietly("clipboard"))}
         >
           <Icon name="i-copy" size={12} />
         </button>

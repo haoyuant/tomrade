@@ -2,7 +2,7 @@ import { createContext, Fragment, useCallback, useContext, useEffect, useLayoutE
 import { languageTag, pickLanguage, type AppSettings, type Dictionaries, type LanguagePreference } from "@tomradex/domain";
 import { keys, useSaveSettings, useSettings } from "./queries";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { invoke } from "./api";
+import { invoke, logQuietly } from "./api";
 import { interpolate, message, setPackMessages, type BuiltinLocale, type Locale, type MessageKey } from "./dicts";
 import { intlTag, setDomainLocale } from "./domain";
 import { en } from "./i18n-messages";
@@ -110,7 +110,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   setPackMessages(packTag, pack?.tag === packTag ? (pack?.ui ?? null) : null);
   // What a pack translates is measured against this English; the main process keeps it for plugin_check.
   useEffect(() => {
-    if (typeof window !== "undefined" && window.tomrade) void invoke("settings.uiEnglish", en as Dictionaries).catch(() => {});
+    if (typeof window !== "undefined" && window.tomrade) void invoke("settings.uiEnglish", en as Dictionaries).catch(logQuietly("settings.uiEnglish"));
   }, []);
   // The keymap rides on the settings this provider already reads: every label naming a key follows a rebinding.
   const overrides = (settings.data?.keybindings as { overrides?: Record<string, string[]> } | undefined)?.overrides;

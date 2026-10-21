@@ -15,3 +15,6 @@ export const subscribeDynamic = (channel: string, listener: (...args: unknown[])
 
 /** An error's own words, without the "Error invoking remote method" wrapper Electron adds. */
 export const messageOf = (error: unknown): string => (error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : String(error));
+
+/** A catch for work whose failure changes nothing the person sees: kept in the console at debug level, never shown. */
+export const logQuietly = (what: string) => (error: unknown): void => console.debug(`${what}: ${messageOf(error)}`);

@@ -1,4 +1,5 @@
 import { THEME_TOKEN_NAMES, THEME_TYPOGRAPHY_NAMES } from "@tomradex/domain";
+import { logQuietly } from "./api";
 import { cssColorToHex } from "./theme";
 
 declare module "@tomradex/ipc" {
@@ -19,5 +20,5 @@ export function sendSurfaceLook(theme: string, locale: string): void {
   const styles = getComputedStyle(document.documentElement);
   const tokens = Object.fromEntries([...THEME_TOKEN_NAMES, ...THEME_TYPOGRAPHY_NAMES].map((name) => [`--${name}`, styles.getPropertyValue(`--${name}`).trim()]).filter(([, value]) => value));
   const dark = isDark(cssColorToHex(tokens["--bg"] ?? "#ffffff"));
-  void window.tomrade.invoke("surfaces.look", { theme, dark, tokens, locale }).catch(() => undefined);
+  void window.tomrade.invoke("surfaces.look", { theme, dark, tokens, locale }).catch(logQuietly("surfaces.look"));
 }

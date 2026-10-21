@@ -1,5 +1,5 @@
 import type {} from "@tomradex/ipc";
-import { invoke } from "./api";
+import { invoke, logQuietly } from "./api";
 
 export interface AboutInfo {
   version: string;
@@ -57,11 +57,11 @@ export const pickAudio = (title?: string, buttonLabel?: string): Promise<string 
 export const pickProgram = (title?: string, buttonLabel?: string): Promise<string | null> =>
   invoke("shell.pickProgram", title, buttonLabel).catch(() => null);
 
-export const reveal = (target: string): void => void invoke("shell.reveal", target).catch(() => {});
+export const reveal = (target: string): void => void invoke("shell.reveal", target).catch(logQuietly("shell.reveal"));
 
-export const openExternal = (url: string): void => void invoke("shell.openExternal", url).catch(() => {});
+export const openExternal = (url: string): void => void invoke("shell.openExternal", url).catch(logQuietly("shell.openExternal"));
 
-export const restartApp = (opts?: { safe?: boolean }): void => void invoke("shell.restart", opts).catch(() => {});
+export const restartApp = (opts?: { safe?: boolean }): void => void invoke("shell.restart", opts).catch(logQuietly("shell.restart"));
 
 /** Null in a browser tab, or for a File the OS drag never backed with a real path. */
 export const pathForFile = (file: File): string | null => {

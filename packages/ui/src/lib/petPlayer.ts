@@ -1,4 +1,5 @@
 import type { AccessoryAnimation, ImageBox } from "@tomradex/contributions";
+import { logQuietly } from "./api";
 
 /** The image's content box fills 96% × 90% of the canvas, bottom-centred — the desktop pet uses the same fit. */
 function fit(box: ImageBox, width: number, height: number): [number, number, number, number] {
@@ -35,7 +36,7 @@ export class PetPlayer {
     this.stopCurrent = () => {
       stopped = true;
     };
-    void this.run(animation, () => stopped).catch(() => {});
+    void this.run(animation, () => stopped).catch(logQuietly("pet animation"));
   }
 
   /** Draws the same animation again, e.g. after the canvas was resized or motion preferences changed. */
