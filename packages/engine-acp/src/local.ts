@@ -203,7 +203,7 @@ function written(spec: Spec): Written {
 /** Everything one spec stands for, on a context that has the agent and the MCP server. */
 function apply(ctx: Context, given: Spec): void {
   const spec = written(given);
-  const locator = localCli(spec.cli.name, spec.cli.bundled ? { bundled: (host) => spec.cli.bundled!(host) } : {});
+  const locator = localCli(spec.cli.name, { bundled: spec.cli.bundled ? (host) => spec.cli.bundled!(host) : null });
   const cli = cliHandle(ctx, spec.id, locator);
   const optionsOf = (): LocalAgentOptions => {
     const raw = ctx.get("agent")?.settingsOf().engines[spec.id] ?? {};

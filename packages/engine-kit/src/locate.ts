@@ -417,17 +417,19 @@ interface Candidate {
 }
 
 const shared = new Map<string, CliLocator>();
+const noBundled: BundledApps = () => [];
 
 /**
  * One locator per CLI for the whole app, so the engine's views and its turns
  * share what was found. `bundled` names copies that ship inside a desktop app,
- * tried after every folder a terminal would search.
+ * tried after every folder a terminal would search; null says there are none,
+ * and leaving it out keeps whatever finder the locator has.
  */
-export function localCli(name: string, opts: { bundled?: BundledApps } = {}): CliLocator {
+export function localCli(name: string, opts: { bundled?: BundledApps | null } = {}): CliLocator {
   let locator = shared.get(name);
-  if (!locator) shared.set(name, (locator = new CliLocator(name, machineHost(), undefined, opts.bundled)));
-  // A plugin loaded again (an update) brings its own finder; the old one belongs to the code it replaced.
-  else if (opts.bundled) locator.findBundled(opts.bundled);
+  if (!locator) shared.set(name, (locator = new CliLocator(name, machineHost(), undefined, opts.bundled ?? noBundled)));
+  // A plugin loaded again (an update) brings its own finder, or none; the old one belongs to the code it replaced.
+  else if (opts.bundled !== undefined) locator.findBundled(opts.bundled ?? noBundled);
   return locator;
 }
 
@@ -445,7 +447,7 @@ export class CliLocator {
     readonly name: string,
     private host: CliHost = machineHost(),
     private timeoutMs = host.platform === "win32" ? 15_000 : 10_000,
-    private bundled: BundledApps = () => []
+    private bundled: BundledApps = noBundled
   ) {}
 
   // Looking for app installs may read the registry, so a turn reuses what the last search saw.

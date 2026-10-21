@@ -8,6 +8,7 @@ import { Llm, userMessage, type LentModel } from "@tomradex/llm";
 import { Mcp } from "@tomradex/mcp";
 import { Settings } from "@tomradex/settings";
 import { Tools } from "@tomradex/tools";
+import { localCli } from "@tomradex/engine-kit";
 import { NotSignedIn, PERMISSION_CHOICES, definePlugin, type LocalAgentSpec, type PluginContext } from "@tomradex/plugin-sdk";
 import { fresh, sdk, settle } from "@tomradex/testkit";
 import { LocalAgents } from "../src/index.js";
@@ -225,6 +226,31 @@ describe("a plugin's local agent, run by the app's conductor", () => {
     });
     const engine = w.ctx.agent.engineOf("demo")!;
     expect(engine.local!.setup).toEqual({ install: ["npm install -g demo"], download: "https://demo.example/download", desktop: { title: "Demo Desktop", shipsCli: false } });
+    await w.ctx.fiber.dispose();
+  });
+
+  it("stops using an earlier version's bundled CLI once the plugin is loaded again without one", async () => {
+    const copy = path.join(dir, "App", "cli", "tomrade-no-such-bundled-cli");
+    fs.mkdirSync(path.dirname(copy), { recursive: true });
+    fs.writeFileSync(copy, '#!/bin/sh\necho "1.0.0"\n', { mode: 0o700 });
+    const spec = (bundled: boolean): LocalAgentSpec => ({
+      id: "demo_bundled",
+      title: "Demo",
+      cli: { name: "tomrade-no-such-bundled-cli", ...(bundled ? { bundled: () => [{ file: copy }] } : {}) },
+      install: "install it"
+    });
+    const w = await world((p) => p.agent.localAgent(spec(true)));
+    expect((await w.ctx.agent.engineOf("demo_bundled")!.available({ fresh: true })).cli).toMatchObject({ state: "ready", path: copy });
+    // Asked for by name alone, as setup does, the locator keeps the finder it has.
+    expect(await localCli("tomrade-no-such-bundled-cli").locate({ fresh: true })).toMatchObject({ state: "ready", path: copy });
+    // An update in place: the old version goes, the new one comes without the finder.
+    await w.fiber.dispose();
+    const next = w.ctx.plugin(sdk(definePlugin({ inject: ["agent"], apply: (p) => p.agent.localAgent(spec(false)) }), { id: "someone/demo", namespace: "demo", origin: "extension", root: dir, dataDir: dir }));
+    await next;
+    await settle();
+    const engine = w.ctx.agent.engineOf("demo_bundled")!;
+    expect((await engine.available()).cli).toMatchObject({ state: "missing" });
+    expect((await engine.available({ fresh: true })).cli).toMatchObject({ state: "missing" });
     await w.ctx.fiber.dispose();
   });
 
