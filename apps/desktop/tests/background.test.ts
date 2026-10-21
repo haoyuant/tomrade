@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const quit = vi.hoisted(() => ({ leaving: false, approved: false }));
 const notices = vi.hoisted(() => ({ shown: 0 }));
 vi.mock("electron", () => ({
-  app: { dock: { hide: vi.fn(), show: vi.fn(async () => {}) } },
+  app: { dock: { hide: vi.fn(), show: vi.fn(async () => {}), setIcon: vi.fn() } },
   Menu: { buildFromTemplate: () => ({}) },
   nativeImage: { createFromPath: () => ({ setTemplateImage: () => {} }) },
   Notification: class {
@@ -25,7 +25,7 @@ vi.mock("../src/quit.js", () => ({ leaving: () => quit.leaving, quitApproved: ()
 
 const { app } = await import("electron");
 const { autostartEntry, autostartState, macAgent, withExec, xdgAutostart, BACKGROUND_FLAG } = await import("../src/login-item.js");
-const { background, cameBack, launchMode, readPrefs, relaunchArgs, writePrefs } = await import("../src/background.js");
+const { background, cameBack, DOCK_ICON, launchMode, readPrefs, relaunchArgs, writePrefs } = await import("../src/background.js");
 
 let dir: string;
 beforeEach(() => {
@@ -136,7 +136,7 @@ describe("macOS agent service", () => {
 describe("the Dock icon", () => {
   const platform = process.platform;
   let disposers: (() => void)[] = [];
-  const dock = app.dock as unknown as { hide: ReturnType<typeof vi.fn>; show: ReturnType<typeof vi.fn> };
+  const dock = app.dock as unknown as { hide: ReturnType<typeof vi.fn>; show: ReturnType<typeof vi.fn>; setIcon: ReturnType<typeof vi.fn> };
   const window = () => new EventEmitter() as never;
   const close = (win: never) => (win as EventEmitter).emit("closed");
   const start = (keepRunning: boolean) => {
@@ -156,6 +156,7 @@ describe("the Dock icon", () => {
     Object.defineProperty(process, "platform", { value: "darwin" });
     dock.hide.mockClear();
     dock.show.mockClear();
+    dock.setIcon.mockClear();
     notices.shown = 0;
     quit.leaving = quit.approved = false;
   });
@@ -177,11 +178,12 @@ describe("the Dock icon", () => {
     expect(notices.shown).toBe(1);
   });
 
-  it("comes back when a window opens with the app in the background", () => {
+  it("comes back when a window opens with the app in the background, with its own icon", async () => {
     start(true);
     const terminal = window();
     cameBack(terminal);
     expect(dock.show).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(dock.setIcon).toHaveBeenCalledWith(DOCK_ICON));
     cameBack(terminal);
     expect(dock.show).toHaveBeenCalledOnce();
     close(terminal);

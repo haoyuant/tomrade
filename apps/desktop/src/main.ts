@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { aboutInfo } from "./about.js";
 import { AccountFolders, machineRoots, restart } from "./accounts.js";
-import { cameBack, keepsRunning, launchMode, PREFS_FILE } from "./background.js";
+import { cameBack, DOCK_ICON, keepsRunning, launchMode, PREFS_FILE } from "./background.js";
 import { boot, ConfigUnreadable, type Booted } from "./boot.js";
 import { deliverDeepLink, registerScheme } from "./deep-link.js";
 import { registerExtensionResolution } from "./extension-resolve.js";
@@ -74,7 +74,7 @@ app.whenReady().then(async () => {
   if (mode === "hidden" && process.platform === "darwin") app.dock?.hide();
   // BrowserWindow's `icon` option is a no-op for the Dock on macOS since dev mode
   // runs Electron's own bundled app; the Dock icon has to be set explicitly.
-  if (process.platform === "darwin") app.dock?.setIcon(iconPath);
+  if (process.platform === "darwin") app.dock?.setIcon(DOCK_ICON);
   installAppMenu({ restartWithoutPlugins: () => restart({ safe: true }) });
   // The app menu's About item, which a checkout would otherwise credit to Electron.
   void aboutInfo(path.resolve(here, "../../..")).then((info) =>
