@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("electron", () => ({ app: {}, dialog: {} }));
 vi.mock("electron-updater", () => ({ default: {} }));
-import { Updates, updatesSection, type UpdateSource, type UpdateStatus } from "../src/updater.js";
+import { Updates, updatesSection, withInstallerWindow, type UpdateSource, type UpdateStatus } from "../src/updater.js";
 
 class FakeFeed extends EventEmitter {
   channel: string | null = null;
@@ -234,6 +234,18 @@ describe("updates", () => {
     expect(feed.quitAndInstall).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(30_000);
     expect(cancelQuit).toHaveBeenCalledOnce();
+  });
+
+  it("runs the Windows installer with its window, after a restart and on quit alike", () => {
+    const calls: [boolean | undefined, boolean | undefined][] = [];
+    const updater = { install: (silent?: boolean, runAfter?: boolean) => (calls.push([silent, runAfter]), true) };
+    withInstallerWindow(updater);
+    expect(updater.install(true, true)).toBe(true);
+    updater.install(true, false);
+    expect(calls).toEqual([
+      [false, true],
+      [false, false]
+    ]);
   });
 
   it("stops listening when the plugin unloads", () => {

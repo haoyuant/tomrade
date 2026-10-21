@@ -272,6 +272,7 @@ export const zhHant: PartialMessages = {
     noticeCurrent: "目前版本 {{version}}。",
     noticeAvailableNote: "下載在背景進行，可以在 設定 → 關於 裡查看進度。重新啟動之前不會安裝。",
     noticeReadyNote: "現在重新啟動即可完成更新；不重新啟動的話，下次結束時會自動安裝。",
+    windowsInstallNote: "在 Windows 上，安裝程式會開啟自己的視窗，可能需要幾分鐘。請不要關閉它，安裝完成後 Tomrade 會自動重新開啟。",
     restartNow: "立即重新啟動",
     later: "稍後",
     detailsTitle: "詳情",

@@ -272,6 +272,7 @@ export const de: PartialMessages = {
     noticeCurrent: "Du hast {{version}}.",
     noticeAvailableNote: "Es wird im Hintergrund heruntergeladen, und Einstellungen → Über zeigt den Fortschritt. Installiert wird erst beim Neustart.",
     noticeReadyNote: "Starte jetzt neu, um abzuschließen, oder es wird beim nächsten Beenden installiert.",
+    windowsInstallNote: "Unter Windows öffnet das Installationsprogramm ein eigenes Fenster und kann einige Minuten brauchen. Lass es offen: Tomrade startet neu, sobald es fertig ist.",
     restartNow: "Jetzt neu starten",
     later: "Später",
     detailsTitle: "Details",

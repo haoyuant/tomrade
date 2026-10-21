@@ -272,6 +272,7 @@ export const fr: PartialMessages = {
     noticeCurrent: "Vous avez la version {{version}}.",
     noticeAvailableNote: "Elle se télécharge en arrière-plan ; Réglages → À propos indique sa progression. Rien n’est installé avant le redémarrage.",
     noticeReadyNote: "Redémarrez maintenant pour terminer, sinon l’installation aura lieu à la prochaine fermeture.",
+    windowsInstallNote: "Sous Windows, le programme d’installation ouvre sa propre fenêtre et peut prendre quelques minutes. Laissez-la ouverte : Tomrade redémarre une fois l’installation terminée.",
     restartNow: "Redémarrer maintenant",
     later: "Plus tard",
     detailsTitle: "Détails",

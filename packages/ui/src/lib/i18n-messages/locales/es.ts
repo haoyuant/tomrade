@@ -272,6 +272,7 @@ export const es: PartialMessages = {
     noticeCurrent: "Tienes la {{version}}.",
     noticeAvailableNote: "Se descarga en segundo plano y Ajustes → Acerca de muestra el progreso. No se instala nada hasta que reinicies.",
     noticeReadyNote: "Reinicia ahora para terminar, o se instalará la próxima vez que salgas.",
+    windowsInstallNote: "En Windows, el instalador abre su propia ventana y puede tardar unos minutos. No la cierres: Tomrade se abrirá de nuevo cuando termine.",
     restartNow: "Reiniciar ahora",
     later: "Más tarde",
     detailsTitle: "Detalles",

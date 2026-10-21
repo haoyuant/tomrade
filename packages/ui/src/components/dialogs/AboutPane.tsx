@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Icon } from "~/components/icons";
 import { SectionHead, Tag } from "~/components/ui/atoms";
 import { useI18n } from "~/lib/i18n";
+import { isWindows } from "~/lib/keys";
 import { legalUrl, siteUrl } from "~/lib/legal";
 import { openExternal, reveal, revealLabel, type AboutInfo } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
@@ -236,6 +237,7 @@ function UpdatePanel({ status, site }: { status: UpdateStatus; site: string }) {
           <span style={{ width: `${phase.percent}%` }} />
         </div>
       )}
+      {phase.kind === "ready" && isWindows && <p className="meta-txt">{t("about.windowsInstallNote")}</p>}
       {phase.kind === "failed" && <p className="meta-txt about-update-error">{phase.message.split("\n")[0]}</p>}
       {prefs && (
         <div className="about-update-prefs">

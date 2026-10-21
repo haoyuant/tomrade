@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { useI18n } from "~/lib/i18n";
+import { isWindows } from "~/lib/keys";
 import { openSettingsPane } from "~/lib/settingsHost";
 import { updatesOnScreen, useUpdateActions, useUpdateStatus } from "~/lib/updates";
 import { SettingsDialog } from "./SettingsDialog";
@@ -56,6 +57,7 @@ export function UpdateNotice() {
                   {date && ` ${t("about.updateDate", { date })}`}
                 </p>
                 <p className="update-notice-note">{t(phase.kind === "ready" ? "about.noticeReadyNote" : "about.noticeAvailableNote")}</p>
+                {phase.kind === "ready" && isWindows && <p className="update-notice-note">{t("about.windowsInstallNote")}</p>}
               </div>
             </DialogBody>
             <DialogFoot>
