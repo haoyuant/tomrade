@@ -5,6 +5,7 @@ import { Context, Service } from "cordis";
 import type { DesktopSurface, DesktopSurfaceHost, DesktopSurfaceSpec, SurfaceBounds, SurfaceCapabilities, SurfaceLook } from "@tomradex/desktop-surface";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/settings";
+import { cameBack } from "./background.js";
 import { leadWindow, showMainWindow } from "./main-window.js";
 import { SurfaceBoundsStore, placeWindow } from "./surface-bounds.js";
 
@@ -139,6 +140,8 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
       return { action: "deny" };
     });
     if (window) {
+      // A plugin's own window keeps the Dock icon, as a Tomrade window does; an overlay never does.
+      cameBack(win);
       // The title is the host's — the plugin's name in it — never the document's own <title>.
       win.on("page-title-updated", (event) => event.preventDefault());
       let saving: NodeJS.Timeout | null = null;

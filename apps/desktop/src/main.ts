@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { aboutInfo } from "./about.js";
 import { AccountFolders, machineRoots, restart } from "./accounts.js";
-import { cameBack, keepsRunning, launchMode, PREFS_FILE, wentAway } from "./background.js";
+import { cameBack, keepsRunning, launchMode, PREFS_FILE } from "./background.js";
 import { boot, ConfigUnreadable, type Booted } from "./boot.js";
 import { deliverDeepLink, registerScheme } from "./deep-link.js";
 import { registerExtensionResolution } from "./extension-resolve.js";
@@ -167,8 +167,8 @@ app.whenReady().then(async () => {
     path.join(machine.userData, "window-places.json")
   );
   const openMain = (tab?: TabTarget) => {
-    cameBack();
     const win = windows.open(tab);
+    cameBack(win);
     // Closing the last Tomrade window quits, on macOS too, whatever surfaces are
     // still up; it waits on the quit so that cancelling it keeps the window.
     // With background running on it only closes, and the process stays.
@@ -176,9 +176,6 @@ app.whenReady().then(async () => {
       if (quitApproved() || keepsRunning() || windows.all().some((other) => other !== win)) return;
       event.preventDefault();
       app.quit();
-    });
-    win.on("closed", () => {
-      if (!leaving() && !quitApproved() && windows.all().length === 0) wentAway();
     });
     return win;
   };
