@@ -12,10 +12,12 @@ import { useSetupInTerminal } from "./setup";
  * The one-click chain: install (if needed) → sign in (if needed) → a test
  * message, each step run by the backend (agentSetup.*, agent.tryEngine) and
  * shown as a list. An agent counts as configured only once the test message
- * got a reply — the same `tried` state the rest of setup reads.
+ * got a reply — the same `tried` state the rest of setup reads. One that runs
+ * only in a terminal takes no turn: its test is one answer from the model it
+ * lends, or, lending none, being found and signed in ("terminal").
  */
 
-export type ChainStepId = "install" | "sign-in" | "test";
+export type ChainStepId = "install" | "sign-in" | "test" | "terminal";
 export type ChainStepState = "done" | "active" | "waiting" | "pending" | "failed";
 
 export interface ChainStep {
@@ -49,6 +51,8 @@ export const offersOfficial = (engine: EngineView, tried: EngineTry | undefined 
  */
 const offersManaged = (engine: EngineView, tried: EngineTry | undefined = engine.tried): boolean =>
   !!engine.setup?.installers?.some((installer) => installer.kind === "npm") && !engine.terminalOnly && engine.cli?.name !== "npx" && engine.cli?.source !== "managed" && (needsInstall(engine) || tried?.ok === false);
+/** Runs only in a terminal and lends no model: nothing outside a terminal can answer a test message. */
+export const untestable = (engine: EngineView): boolean => !!engine.terminalOnly && !engine.asks;
 
 /** What the chain would run for this engine now, each step ticked or still ahead. */
 export function chainSteps(engine: EngineView, run: ChainRun | null): ChainStep[] {
@@ -70,10 +74,11 @@ export function chainSteps(engine: EngineView, run: ChainRun | null): ChainStep[
     return { id, state: satisfied ? "done" : "pending" };
   };
   const install = stepState("install", !needsInstall(engine) && !official && !managed);
+  const signedIn = !needsInstall(engine) && !needsSignIn(engine) && !!engine.ok;
   return [
     managed ? { ...install, managed } : official ? { ...install, official } : install,
-    stepState("sign-in", !needsInstall(engine) && !needsSignIn(engine) && !!engine.ok),
-    stepState("test", !!engine.tried?.ok)
+    stepState("sign-in", signedIn),
+    untestable(engine) ? stepState("terminal", signedIn) : stepState("test", !!engine.tried?.ok)
   ];
 }
 
@@ -164,6 +169,10 @@ export function useSetupChain(engine: EngineView, projectId?: string | null) {
         if (end.phase !== "done") return patch({ running: false, failed: true });
       }
       if (cancelled.current) return patch({ running: false, failed: true });
+      if (untestable(view)) {
+        await qc.invalidateQueries({ queryKey: keys.agent.engines });
+        return patch({ running: false });
+      }
       patch({ step: "test", progress: undefined });
       const tried = await invoke("agent.tryEngine", projectId ?? null, engineId).catch(
         (error): EngineTry => ({ ok: false, ms: 0, at: Date.now(), error: error instanceof Error ? error.message : String(error) })

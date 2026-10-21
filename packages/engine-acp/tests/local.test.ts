@@ -168,6 +168,9 @@ describe("a plugin's local agent, run by the app's conductor", () => {
     let text = "";
     for await (const event of w.lent("demo_terminal")!.model.chat({ system: "", messages: [userMessage("hi")] })) if (event.type === "text") text += event.delta;
     expect(text).toBe("fast");
+    // Its try is that one answer, not a turn it could never take.
+    expect(await w.ctx.agent.tryEngine("no-project", "demo_terminal")).toMatchObject({ ok: true, reply: "fast" });
+    expect((await w.ctx.agent.engineViews()).find((e) => e.id === "demo_terminal")).toMatchObject({ terminalOnly: true, asks: true, tried: { ok: true } });
     await w.ctx.fiber.dispose();
   });
 

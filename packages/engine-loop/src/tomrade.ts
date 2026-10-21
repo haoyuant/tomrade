@@ -1,6 +1,6 @@
 import type { Context } from "cordis";
 import { z } from "zod";
-import type { Engine, EngineAvailability } from "@tomradex/agent";
+import type { Engine, EngineAvailability, TurnInput } from "@tomradex/agent";
 import { errorMessage } from "@tomradex/contracts";
 import { LOOP_WORDS } from "./words.js";
 
@@ -101,12 +101,15 @@ export function createTomradeEngine(ctx: Context, config: TomradeEngineConfig): 
       const { engine, borrowed } = input.purpose === "backlog" ? await backlogPart(input.options) : { engine: part(config.work), borrowed: false };
       if (!engine) return { stop: "error", error: "No in-app agent is installed for this kind of work" };
       const options = optionsFor(engine, input.options, borrowed);
-      const turnInput = { ...input, options: engine.options ? engine.options.parse(options) : options };
+      const turnInput: TurnInput = { ...input, options: engine.options ? engine.options.parse(options) : options };
       if (!borrowed) {
         // A borrowed agent's session is no use to an in-app part, which starts its own with the conversation carried in.
         const resume = io.resume?.startsWith("@") ? undefined : io.resume;
         return engine.turn(turnInput, resume === io.resume ? io : { ...io, resume });
       }
+      // The mode was picked from the work part's choices; a borrowed agent only takes one of its own.
+      const own = engine.permissionModes?.choices.some((choice) => choice.value === input.permissionMode);
+      if (!own) delete turnInput.permissionMode;
       const mark = borrowedSession(engine.id);
       const resume = io.resume?.startsWith(mark) ? io.resume.slice(mark.length) : undefined;
       if (!resume)

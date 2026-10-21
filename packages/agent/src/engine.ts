@@ -132,6 +132,8 @@ export interface EngineSetupProgress {
   stalled?: boolean;
   /** A registry npm can be retried with (`--registry`), offered when the default one looks unreachable or slow. */
   mirror?: string;
+  /** The folder npm is installing into instead of the system's global one, which it could not write: Tomrade's own (`--prefix`). */
+  prefix?: string;
   failure?: EngineSetupFailure;
   /** The version detection reported once the step was done; absent when the step was already satisfied. */
   version?: string;
@@ -263,6 +265,8 @@ export interface EngineLocal {
   /** What the engine's own configuration lets its agent run; absent when Tomrade cannot read it. */
   commands?: EngineCommands;
   mcpLink?: EngineMcpLink;
+  /** One answer from its agent outside a turn — how a try reaches an engine that runs only in a terminal. */
+  ask?(prompt: string, signal?: AbortSignal): Promise<string>;
 }
 
 /** The flat members an engine had before they were grouped; `Agent.engine` still maps them once, at registration. */
@@ -377,6 +381,8 @@ export interface EngineView {
   permissionModes?: Engine["permissionModes"];
   terminal?: boolean;
   terminalOnly?: boolean;
+  /** Runs only in a terminal, yet answers a try through its agent (`local.ask`). */
+  asks?: boolean;
   usesModels?: boolean;
   steers?: boolean;
   setup?: EngineSetup;

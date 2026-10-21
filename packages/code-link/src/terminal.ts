@@ -271,19 +271,25 @@ export async function launchTerminal(input: LaunchInput, terminal: string, herdr
  * Windows gets PowerShell, which the official installers there are written for.
  */
 export async function setupTerminal(command: string, dir: string, terminal: string, herdr: HerdrTerminal | null = null): Promise<{ launched: boolean }> {
-  if (process.platform === "win32") {
-    // Detached, PowerShell gets a console window of its own; no cmd in between to read the command's `|`.
-    return new Promise((resolve) => {
-      const child = spawn("powershell.exe", ["-NoExit", "-Command", command], { cwd: os.homedir(), detached: true, stdio: "ignore" });
-      child.once("error", () => resolve({ launched: false }));
-      child.once("spawn", () => {
-        child.unref();
-        resolve({ launched: true });
-      });
-    });
-  }
+  if (process.platform === "win32") return setupOnWindows(command);
   const { launched } = await launchTerminal({ cwd: os.homedir(), command: `${command}\necho\nexec "\${SHELL:-bash}" -l`, dir, label: "setup" }, terminal, herdr);
   return { launched };
+}
+
+/**
+ * A setup command in a PowerShell console window of its own. Detached, with no cmd in between to read the
+ * command's `|`; the policy is lifted for this process alone, since the default `Restricted` refuses the
+ * `.ps1` shim npm writes beside every `.cmd` (`npm.ps1`, `pi.ps1`, …), and PowerShell prefers the `.ps1`.
+ */
+export function setupOnWindows(command: string, launch: typeof spawn = spawn): Promise<{ launched: boolean }> {
+  return new Promise((resolve) => {
+    const child = launch("powershell.exe", ["-NoExit", "-ExecutionPolicy", "Bypass", "-Command", command], { cwd: os.homedir(), detached: true, stdio: "ignore" });
+    child.once("error", () => resolve({ launched: false }));
+    child.once("spawn", () => {
+      child.unref();
+      resolve({ launched: true });
+    });
+  });
 }
 
 export const shellQuote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
