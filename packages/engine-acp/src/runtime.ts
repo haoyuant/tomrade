@@ -1,11 +1,12 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Context } from "cordis";
-import { attachedMedia, describeFailure, withRecap, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
-import { bindTurn, runtimeDirectory, sessionSystem, spawnCli, stopCli, turnPrompt, type Runtime } from "@tomradex/engine-kit";
+import { attachedMedia, withRecap, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
+import { engineLocale, KIT_WORDS, RpcError, runtimeDirectory, runTurn, sessionSystem, spawnCli, stopCli, turnPrompt, type JsonLinePeer, type Runtime } from "@tomradex/engine-kit";
 import type {} from "@tomradex/mcp";
 import { isTomradeTool, policyOf, wrappedTool, type AcpAgent, type AcpOptions, type Catalog, type Policy, type RequestUsage } from "./agent.js";
 import { advertised, choicesOf, optionOf, type Setting } from "./catalog.js";
-import { AcpConnection, AcpError, AUTH_REQUIRED, type AcpPeer } from "./connection.js";
+import { acpConnection, AUTH_REQUIRED } from "./connection.js";
+import { ACP_WORDS } from "./words.js";
 
 type Json = Record<string, any>;
 
@@ -48,7 +49,7 @@ export class AcpRuntime implements Runtime {
   /** The files index this session was opened with, so a later turn can notice it went stale. */
   indexDigest: string | null = null;
   private child?: ChildProcessWithoutNullStreams;
-  private conn?: AcpConnection;
+  private conn?: JsonLinePeer;
   private caps: Json = {};
   private config: Json[] = [];
   private modes?: Json;
@@ -65,16 +66,22 @@ export class AcpRuntime implements Runtime {
   /** The last running totals an agent reported, to tell one turn's share. */
   private sessionUsage?: RequestUsage;
   private sessionCost?: number;
+  private locale: string | undefined;
+  private words;
+  private kit;
 
   constructor(private ctx: Context, private agent: AcpAgent<any>, private catalog: Catalog, input: TurnInput, private learned?: () => void) {
     const directory = runtimeDirectory(input);
     this.token = directory.token; this.cwd = directory.cwd;
+    this.locale = engineLocale(ctx);
+    this.words = ACP_WORDS(this.locale);
+    this.kit = KIT_WORDS(this.locale);
   }
 
   close(): void {
     if (!this.alive) return;
     this.alive = false;
-    this.conn?.close(new Error(`${this.agent.title} runtime closed`));
+    this.conn?.close(new Error(this.kit("runtimeClosed", { name: this.agent.title })));
     const child = this.child;
     if (child) {
       child.stdin.end();
@@ -83,18 +90,17 @@ export class AcpRuntime implements Runtime {
     }
   }
 
-  private peer: AcpPeer = {
-    notification: (method, params) => {
-      if (method !== "session/update" || !this.session || params.sessionId !== this.session) return;
-      const update: Json = params.update ?? {};
-      if (update.sessionUpdate === "config_option_update" && Array.isArray(update.configOptions)) this.config = update.configOptions;
-      else if (update.sessionUpdate === "current_mode_update" && this.modes) this.modes = { ...this.modes, currentModeId: update.currentModeId };
-      else this.listener?.(update);
-    },
-    request: (method, params) =>
-      method === "session/request_permission" ? this.permission(params) : Promise.reject(new AcpError(`Tomrade does not offer ${method}`, -32601)),
-    closed: () => { this.alive = false; }
-  };
+  private notification(method: string, params: Json): void {
+    if (method !== "session/update" || !this.session || params.sessionId !== this.session) return;
+    const update: Json = params.update ?? {};
+    if (update.sessionUpdate === "config_option_update" && Array.isArray(update.configOptions)) this.config = update.configOptions;
+    else if (update.sessionUpdate === "current_mode_update" && this.modes) this.modes = { ...this.modes, currentModeId: update.currentModeId };
+    else this.listener?.(update);
+  }
+
+  private request(method: string, params: Json): Promise<unknown> {
+    return method === "session/request_permission" ? this.permission(params) : Promise.reject(new RpcError(`Tomrade does not offer ${method}`, -32601));
+  }
 
   /** Tomrade's tools always run; otherwise the turn's policy answers, or the person does. */
   private async permission(params: Json): Promise<Json> {
@@ -151,9 +157,9 @@ export class AcpRuntime implements Runtime {
       } else if (this.modes?.availableModes?.some((m: Json) => m.id === mode)) {
         if (this.modes.currentModeId !== mode) await this.conn!.request("session/set_mode", { sessionId: this.session, modeId: mode });
         this.modes.currentModeId = mode;
-      } else if (option || this.modes) throw new Error("it does not offer that mode");
+      } else if (option || this.modes) throw new Error(this.words("noSuchMode"));
     } catch (error) {
-      if (this.policy !== "full-access") throw new Error(`${this.agent.title} did not switch to its "${mode}" mode: ${messageOf(error)}`);
+      if (this.policy !== "full-access") throw new Error(this.words("noModeSwitch", { name: this.agent.title, mode, reason: messageOf(error) }));
       io.emit({ type: "note", text: `${this.agent.title} did not switch to its "${mode}" mode (${messageOf(error)})` });
     }
   }
@@ -201,21 +207,24 @@ export class AcpRuntime implements Runtime {
     const reap = () => { if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM"); };
     process.once("exit", reap);
     child.once("exit", () => process.off("exit", reap));
-    const conn = (this.conn = new AcpConnection(child, this.peer, this.agent.title));
+    const conn = (this.conn = acpConnection(child, this.agent.title, this.locale)
+      .onNotification((method, params) => this.notification(method, params))
+      .onRequest((method, params) => this.request(method, params))
+      .onClose(() => { this.alive = false; }));
     const init = await conn.request("initialize", {
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
       clientInfo: { name: "tomrade", title: "Tomrade", version: "1" }
     }, 120_000);
-    if (typeof init?.protocolVersion === "number" && init.protocolVersion !== 1) throw new Error(`${this.agent.title} speaks ACP version ${init.protocolVersion}; Tomrade speaks version 1`);
+    if (typeof init?.protocolVersion === "number" && init.protocolVersion !== 1) throw new Error(this.words("otherVersion", { name: this.agent.title, version: init.protocolVersion }));
     this.caps = init?.agentCapabilities ?? {};
-    if (this.caps.mcpCapabilities?.http !== true && this.agent.httpMcp !== "always") throw new Error(`${this.agent.title} takes no MCP server over HTTP, so it cannot reach Tomrade's tools`);
+    if (this.caps.mcpCapabilities?.http !== true && this.agent.httpMcp !== "always") throw new Error(this.words("noHttpMcp", { name: this.agent.title }));
     const mcpServers = [{ type: "http", name: "tomrade", url: this.ctx.mcp.url, headers: [{ name: "X-Tomrade-Run", value: this.token }] }];
     const reopened = io.resume ? await this.reopen(io.resume, mcpServers) : null;
     if (reopened === "lost") return false;
     const session = reopened ?? (await conn.request("session/new", { cwd: this.cwd, mcpServers }, 120_000));
     this.session = reopened ? io.resume : session?.sessionId;
-    if (!this.session) throw new Error(`${this.agent.title} did not open a session`);
+    if (!this.session) throw new Error(this.words("noSession", { name: this.agent.title }));
     this.brief = !reopened;
     this.config = Array.isArray(session.configOptions) ? session.configOptions : [];
     this.modes = session.modes ?? undefined;
@@ -243,7 +252,9 @@ export class AcpRuntime implements Runtime {
 
   private explain(error: unknown): string {
     const message = innermost(messageOf(error));
-    if (error instanceof AcpError && (error.code === AUTH_REQUIRED || /auth|log ?in|sign ?in|credential|api key/i.test(message))) return `${message} — ${this.agent.signIn ?? `sign in to ${this.agent.title}`}, then try again`;
+    if (error instanceof RpcError && (error.code === AUTH_REQUIRED || /auth|log ?in|sign ?in|credential|api key/i.test(message))) {
+      return this.words("signInFirst", { message, how: this.agent.signIn ?? this.words("signInTo", { name: this.agent.title }) });
+    }
     return message;
   }
 
@@ -251,9 +262,7 @@ export class AcpRuntime implements Runtime {
     const options = this.agent.options.parse(input.options ?? {}) as AcpOptions;
     const start = performance.now();
     const metrics: TurnMetrics = { transport: "acp", runtime: warm ? "warm" : "cold", toolCalls: 0 };
-    const binding = bindTurn(this.ctx, this.token, io, input);
     this.io = io; this.policy = policyOf(input, this.agent); this.calls = new Map(); this.refused = []; this.refusedCalls = new Set();
-    let cancelled = io.signal.aborted;
     let prompted = false;
     let abortTimer: NodeJS.Timeout | undefined;
 
@@ -273,112 +282,6 @@ export class AcpRuntime implements Runtime {
     };
     const live = () => (counted ? { inputTokens: tokens.input, outputTokens: tokens.output } : context !== undefined ? { inputTokens: context } : {});
 
-    // Messages sent into this turn, until the agent reads them (TOM-111). CodeBuddy says so with a
-    // user_message_chunk carrying the id it was given. Hermes only says it queued one; it reads it
-    // before its next model request, so one acknowledged while a tool ran is read by the next
-    // output, and one acknowledged mid-reply only after a tool that reply calls.
-    const forwarded = new Map<string, string>();
-    const acknowledged: { id: string; armed: boolean }[] = [];
-    const answering: Promise<void>[] = [];
-    // `/steer` prompts Hermes has not answered yet, by message id
-    const unanswered = new Set<string>();
-    let owner: string | undefined;
-    let over = false;
-    let lastWasTool = false;
-    const steered = (id: string) => {
-      if (!forwarded.delete(id)) return;
-      flush();
-      io.steered?.(id);
-    };
-    const readArmed = () => {
-      for (const entry of acknowledged.filter((a) => a.armed)) { acknowledged.splice(acknowledged.indexOf(entry), 1); steered(entry.id); }
-    };
-    if (this.agent.steer) io.steerTo?.(async (steer) => {
-      if (!prompted || over || cancelled || !this.conn?.alive) return false;
-      const text = steerText(steer.text);
-      forwarded.set(steer.id, text);
-      try {
-        if (this.agent.steer === "method") {
-          const answer = await this.conn.request("session/steer", { sessionId: this.session, contentBlocks: [{ type: "text", text }], clientUserMessageId: steer.id, ...(owner ? { expectedRequestId: owner } : {}) });
-          if (answer?.steered === true) { owner = typeof answer.ownerRequestId === "string" ? answer.ownerRequestId : owner; return true; }
-        } else {
-          // Answered at once while the turn runs; after it, Hermes runs it as a prompt of its own, which this turn waits out.
-          unanswered.add(steer.id);
-          answering.push(this.conn.request("session/prompt", { sessionId: this.session, prompt: [{ type: "text", text: `/steer ${text}` }] }, 0)
-            .then((response) => this.account(response?.usage, add), () => {})
-            .finally(() => unanswered.delete(steer.id)));
-          return true;
-        }
-      } catch {}
-      forwarded.delete(steer.id);
-      return false;
-    });
-
-    const finishCall = (call: Call, ok: boolean) => {
-      call.done = true;
-      // Tomrade's own tools are traced by the gateway they run through.
-      if (isTomradeTool(call)) return;
-      io.emit({ type: "trace", tool: wrappedTool(call.args) ?? (call.name || call.title || "tool"), args: call.args ?? {}, ok, summary: `run by ${this.agent.title} itself`, ms: Math.round(performance.now() - call.at) });
-    };
-    const track = (update: Json) => {
-      let call = this.calls.get(update.toolCallId);
-      if (!call) {
-        flush();
-        call = { name: this.nameOf(update.toolCallId) ?? "", title: "", args: {}, at: performance.now() };
-        this.calls.set(update.toolCallId, call);
-        metrics.toolCalls!++;
-      }
-      if (update.name) call.name = update.name;
-      if (update.title) call.title = update.title;
-      if (update.kind) call.kind = update.kind;
-      if (update.rawInput !== undefined && update.rawInput !== null) call.args = update.rawInput;
-      if ((update.status === "completed" || update.status === "failed") && !call.done) finishCall(call, update.status === "completed");
-    };
-
-    this.listener = (update) => {
-      switch (update.sessionUpdate) {
-        case "user_message_chunk": {
-          const id = update.messageId ?? update._meta?.["codebuddy.ai/messageId"];
-          if (typeof id === "string" && forwarded.has(id)) steered(id);
-          break;
-        }
-        case "agent_message_chunk":
-          if (update.content?.type !== "text" || typeof update.content.text !== "string") break;
-          if (this.agent.steer === "slash" && STEER_SAID.test(update.content.text)) {
-            if (update.content.text.startsWith(STEER_QUEUED)) {
-              const preview = update.content.text.slice(STEER_QUEUED.length).replace(/\.\.\.$/, "");
-              const id = [...forwarded].find(([sent, said]) => !acknowledged.some((a) => a.id === sent) && said.startsWith(preview))?.[0];
-              if (id) acknowledged.push({ id, armed: lastWasTool });
-            }
-            break;
-          }
-          readArmed();
-          lastWasTool = false;
-          if (update.messageId && messageId && update.messageId !== messageId) flush();
-          messageId = update.messageId ?? messageId;
-          metrics.firstTokenMs ??= performance.now() - start;
-          text += update.content.text;
-          io.delta(update.content.text);
-          break;
-        case "tool_call":
-        case "tool_call_update":
-          if (typeof update.toolCallId === "string") track(update);
-          // a reply that calls a tool is followed by another model request, which reads what was queued
-          for (const entry of acknowledged) entry.armed = true;
-          lastWasTool = true;
-          break;
-        case "usage_update": {
-          if (typeof update.used === "number") context = update.used;
-          if (update.cost?.currency === "USD" && typeof update.cost.amount === "number") cost = update.cost.amount;
-          const sample = typeof this.agent.usage === "function" ? this.agent.usage(update) : null;
-          if (sample) add(sample);
-          const now = live();
-          if (now.inputTokens !== undefined) io.progress(now);
-          break;
-        }
-      }
-    };
-
     const result = (stop: TurnResult["stop"], error?: string, details?: string): TurnResult => {
       let costUsd: number | undefined;
       if (cost !== undefined) { costUsd = cost - (this.sessionCost ?? 0); this.sessionCost = cost; }
@@ -395,27 +298,137 @@ export class AcpRuntime implements Runtime {
       };
     };
 
-    const abort = () => {
-      cancelled = true;
-      // An agent may go on with a message it queued once the turn is cancelled; ending it drops them (the session reopens next turn).
-      if (!prompted || forwarded.size) { this.close(); return; }
-      this.conn?.notify("session/cancel", { sessionId: this.session });
-      abortTimer ??= setTimeout(() => this.close(), 5000).unref();
-    };
-    io.signal.addEventListener("abort", abort, { once: true });
-    try {
-      if (cancelled) return { stop: "cancelled", resume: this.session, metrics };
+    return runTurn(io, {
+      ctx: this.ctx, token: this.token, input, metrics, result,
+      resume: () => this.session,
+      explain: (error) => this.explain(error),
+      stderr: () => this.conn?.stderrTail,
+      thrown: () => { flush(); this.close(); },
+      cleanup: () => { clearTimeout(abortTimer); this.listener = undefined; this.io = undefined; }
+    }, async (turn) => {
+      // Messages sent into this turn, until the agent reads them (TOM-111). CodeBuddy says so with a
+      // user_message_chunk carrying the id it was given. Hermes only says it queued one; it reads it
+      // before its next model request, so one acknowledged while a tool ran is read by the next
+      // output, and one acknowledged mid-reply only after a tool that reply calls.
+      const forwarded = new Map<string, string>();
+      const acknowledged: { id: string; armed: boolean }[] = [];
+      const answering: Promise<void>[] = [];
+      // `/steer` prompts Hermes has not answered yet, by message id
+      const unanswered = new Set<string>();
+      let owner: string | undefined;
+      let over = false;
+      let lastWasTool = false;
+      const steered = (id: string) => {
+        if (!forwarded.delete(id)) return;
+        flush();
+        io.steered?.(id);
+      };
+      const readArmed = () => {
+        for (const entry of acknowledged.filter((a) => a.armed)) { acknowledged.splice(acknowledged.indexOf(entry), 1); steered(entry.id); }
+      };
+      if (this.agent.steer) io.steerTo?.(async (steer) => {
+        if (!prompted || over || turn.cancelled || !this.conn?.alive) return false;
+        const text = steerText(steer.text);
+        forwarded.set(steer.id, text);
+        try {
+          if (this.agent.steer === "method") {
+            const answer = await this.conn.request("session/steer", { sessionId: this.session, contentBlocks: [{ type: "text", text }], clientUserMessageId: steer.id, ...(owner ? { expectedRequestId: owner } : {}) });
+            if (answer?.steered === true) { owner = typeof answer.ownerRequestId === "string" ? answer.ownerRequestId : owner; return true; }
+          } else {
+            // Answered at once while the turn runs; after it, Hermes runs it as a prompt of its own, which this turn waits out.
+            unanswered.add(steer.id);
+            answering.push(this.conn.request("session/prompt", { sessionId: this.session, prompt: [{ type: "text", text: `/steer ${text}` }] }, 0)
+              .then((response) => this.account(response?.usage, add), () => {})
+              .finally(() => unanswered.delete(steer.id)));
+            return true;
+          }
+        } catch {}
+        forwarded.delete(steer.id);
+        return false;
+      });
+
+      const finishCall = (call: Call, ok: boolean) => {
+        call.done = true;
+        // Tomrade's own tools are traced by the gateway they run through.
+        if (isTomradeTool(call)) return;
+        io.emit({ type: "trace", tool: wrappedTool(call.args) ?? (call.name || call.title || "tool"), args: call.args ?? {}, ok, summary: `run by ${this.agent.title} itself`, ms: Math.round(performance.now() - call.at) });
+      };
+      const track = (update: Json) => {
+        let call = this.calls.get(update.toolCallId);
+        if (!call) {
+          flush();
+          call = { name: this.nameOf(update.toolCallId) ?? "", title: "", args: {}, at: performance.now() };
+          this.calls.set(update.toolCallId, call);
+          metrics.toolCalls!++;
+        }
+        if (update.name) call.name = update.name;
+        if (update.title) call.title = update.title;
+        if (update.kind) call.kind = update.kind;
+        if (update.rawInput !== undefined && update.rawInput !== null) call.args = update.rawInput;
+        if ((update.status === "completed" || update.status === "failed") && !call.done) finishCall(call, update.status === "completed");
+      };
+
+      this.listener = (update) => {
+        switch (update.sessionUpdate) {
+          case "user_message_chunk": {
+            const id = update.messageId ?? update._meta?.["codebuddy.ai/messageId"];
+            if (typeof id === "string" && forwarded.has(id)) steered(id);
+            break;
+          }
+          case "agent_message_chunk":
+            if (update.content?.type !== "text" || typeof update.content.text !== "string") break;
+            if (this.agent.steer === "slash" && STEER_SAID.test(update.content.text)) {
+              if (update.content.text.startsWith(STEER_QUEUED)) {
+                const preview = update.content.text.slice(STEER_QUEUED.length).replace(/\.\.\.$/, "");
+                const id = [...forwarded].find(([sent, said]) => !acknowledged.some((a) => a.id === sent) && said.startsWith(preview))?.[0];
+                if (id) acknowledged.push({ id, armed: lastWasTool });
+              }
+              break;
+            }
+            readArmed();
+            lastWasTool = false;
+            if (update.messageId && messageId && update.messageId !== messageId) flush();
+            messageId = update.messageId ?? messageId;
+            metrics.firstTokenMs ??= performance.now() - start;
+            text += update.content.text;
+            io.delta(update.content.text);
+            break;
+          case "tool_call":
+          case "tool_call_update":
+            if (typeof update.toolCallId === "string") track(update);
+            // a reply that calls a tool is followed by another model request, which reads what was queued
+            for (const entry of acknowledged) entry.armed = true;
+            lastWasTool = true;
+            break;
+          case "usage_update": {
+            if (typeof update.used === "number") context = update.used;
+            if (update.cost?.currency === "USD" && typeof update.cost.amount === "number") cost = update.cost.amount;
+            const sample = typeof this.agent.usage === "function" ? this.agent.usage(update) : null;
+            if (sample) add(sample);
+            const now = live();
+            if (now.inputTokens !== undefined) io.progress(now);
+            break;
+          }
+        }
+      };
+
+      turn.onAbort(() => {
+        // An agent may go on with a message it queued once the turn is cancelled; ending it drops them (the session reopens next turn).
+        if (!prompted || forwarded.size) { this.close(); return; }
+        this.conn?.notify("session/cancel", { sessionId: this.session });
+        abortTimer ??= setTimeout(() => this.close(), 5000).unref();
+      });
       if (!this.conn && !(await this.open(input, io, options))) {
         this.close();
-        return { stop: "error", error: `${this.agent.title} no longer has session ${io.resume}`, lostSession: true, metrics };
+        return { stop: "error", error: this.kit("lostSession", { name: this.agent.title, session: io.resume ?? "" }), lostSession: true, metrics };
       }
       metrics.readyMs = performance.now() - start;
-      if (cancelled) return result("cancelled");
+      if (turn.cancelled) return result("cancelled");
       const blocks = this.prompt(input, io);
       prompted = true;
       const response = await this.conn!.request("session/prompt", { sessionId: this.session, prompt: blocks }, 0);
       // a /steer Hermes never acknowledged arrived after the turn: it runs as a prompt of its own, part of this turn
-      if (!cancelled && answering.length) {
+      if (!turn.cancelled && answering.length) {
         for (const id of [...unanswered]) if (!acknowledged.some((a) => a.id === id)) steered(id);
         await Promise.all(answering);
       }
@@ -424,32 +437,23 @@ export class AcpRuntime implements Runtime {
       readArmed();
       flush();
       // Hermes never reports a call's end; a turn that finished ran every call nobody refused.
-      if (!cancelled) for (const [id, call] of this.calls) if (!call.done) finishCall(call, !this.refusedCalls.has(id));
+      if (!turn.cancelled) for (const [id, call] of this.calls) if (!call.done) finishCall(call, !this.refusedCalls.has(id));
       this.account(response?.usage, add);
       const stop = response?.stopReason;
-      if (cancelled) return result("cancelled");
+      if (turn.cancelled) return result("cancelled");
       if (stop === "cancelled") {
         // Nobody cancelled: the agent gave up on the turn, as CodeBuddy does when a tool is refused.
         if (this.refused.length) io.emit({ type: "note", text: `${this.agent.title} stopped after ${[...new Set(this.refused)].join(", ")} was refused` });
-        return result(binding.asked() ? "asked" : "end");
+        return result(turn.asked() ? "asked" : "end");
       }
-      if (stop === "max_tokens") return result("error", "The model reached its output limit before it finished");
-      if (stop === "max_turn_requests") return result("budget", `${this.agent.title} reached its limit of model requests for one turn`);
+      if (stop === "max_tokens") return result("error", this.kit("outputLimit"));
+      if (stop === "max_turn_requests") return result("budget", this.words("requestLimit", { name: this.agent.title }));
       if (stop === "refusal") {
         const said = this.agent.failure?.(response);
-        return result("error", said ? `${this.agent.title} stopped: ${said}` : `${this.agent.title} refused to go on`, describeFailure({ response, stderr: this.conn?.stderrTail }));
+        return turn.failed(said ? this.words("stopped", { name: this.agent.title, reason: said }) : this.words("refusedToGoOn", { name: this.agent.title }), { response });
       }
-      return result(binding.asked() ? "asked" : "end");
-    } catch (error) {
-      flush();
-      const stderr = this.conn?.stderrTail;
-      this.close();
-      return result(cancelled ? "cancelled" : "error", cancelled ? undefined : this.explain(error), cancelled ? undefined : describeFailure({ error, stderr }));
-    } finally {
-      io.signal.removeEventListener("abort", abort); clearTimeout(abortTimer);
-      this.listener = undefined; this.io = undefined;
-      await binding.release();
-    }
+      return result(turn.asked() ? "asked" : "end");
+    });
   }
 
   /** A prompt's own usage: this turn's, or the session's running total less what was already counted. */

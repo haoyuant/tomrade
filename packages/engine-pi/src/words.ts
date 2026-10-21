@@ -10,7 +10,10 @@ export const PI_WORDS = defineWords("engine-pi", {
     noMcp: "The MCP server is not running — enable the mcp plugin",
     noToolModels: "The connected models cannot call tools themselves — the built-in agent needs one that can",
     connectModel: "Connect a model — the built-in agent runs on it",
-    doesNotStart: "The built-in agent does not start: {{detail}}"
+    doesNotStart: "The built-in agent does not start: {{detail}}",
+    connectModelInSettings: "Connect a model in Settings → Assistant — the built-in agent runs on it",
+    reportedError: "Pi reported an error",
+    notStarted: "Pi did not start the turn ({{disposition}})"
   },
   zh: {
     title: "内置智能体",
@@ -21,6 +24,9 @@ export const PI_WORDS = defineWords("engine-pi", {
     noMcp: "MCP 服务没有运行——请启用 mcp 插件",
     noToolModels: "已连接的模型不能自己调用工具，内置智能体需要一个能调用工具的模型",
     connectModel: "先连接一个模型——内置智能体用它工作",
-    doesNotStart: "内置智能体启动失败：{{detail}}"
+    doesNotStart: "内置智能体启动失败：{{detail}}",
+    connectModelInSettings: "请在 设置 → 助手 中连接一个模型——内置智能体用它工作",
+    reportedError: "Pi 报告了一个错误",
+    notStarted: "Pi 没有开始这一轮（{{disposition}}）"
   }
 });

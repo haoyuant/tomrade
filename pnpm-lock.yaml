@@ -800,6 +800,9 @@ importers:
       '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@tomradex/engine-kit':
         specifier: workspace:*
         version: link:../engine-kit
@@ -917,6 +920,9 @@ importers:
       '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@tomradex/llm':
         specifier: workspace:*
         version: link:../llm
