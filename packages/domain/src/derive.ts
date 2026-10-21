@@ -1,7 +1,7 @@
 import type { Author, Item, Provenance } from "./types.js";
 
 export const isAi = (by: Author | string): boolean => by.startsWith("ai:");
-export const isSync = (by: Author | string): boolean => by.startsWith("sync:");
+const isSync = (by: Author | string): boolean => by.startsWith("sync:");
 
 /** Derived, never stored: a locked item reads as locked whoever wrote it last. */
 export function provenanceOf(item: Pick<Item, "humanLocked" | "updatedBy">): Provenance {

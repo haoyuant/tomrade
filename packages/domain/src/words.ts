@@ -32,7 +32,7 @@ export interface Speak<E extends Record<string, string>> {
 
 export type WordBook<E extends Record<string, string>> = (locale: unknown) => Speak<E>;
 
-export const fillSlots = (template: string, vars?: Record<string, string | number>): string =>
+const fillSlots = (template: string, vars?: Record<string, string | number>): string =>
   vars ? template.replace(/\{\{(\w+)\}\}/g, (_, name: string) => String(vars[name] ?? "")) : template;
 
 /** Every book's English, by id: what a language pack translates. */

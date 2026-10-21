@@ -47,7 +47,7 @@ export interface ViewQuery {
   graph: string | null;
 }
 
-export const EMPTY_QUERY: ViewQuery = { filter: [], columnBy: "status", columns: [], groupBy: null, sortBy: [], fields: [], wip: {}, graph: null };
+const EMPTY_QUERY: ViewQuery = { filter: [], columnBy: "status", columns: [], groupBy: null, sortBy: [], fields: [], wip: {}, graph: null };
 
 /** Fill a partially stored query so every consumer sees the full shape. */
 export const normalizeQuery = (q: Partial<ViewQuery> | null | undefined): ViewQuery => ({ ...EMPTY_QUERY, ...(q ?? {}), wip: { ...(q?.wip ?? {}) } });
@@ -78,7 +78,7 @@ export function dayBound(value: FieldValue | null | undefined, op: "gte" | "lte"
   return op === "lte" ? t + DAY - 1 : t;
 }
 
-export function matchesClause(item: Item, clause: FilterClause): boolean {
+function matchesClause(item: Item, clause: FilterClause): boolean {
   const raw = fieldValueOf(item, clause.field);
   const values = Array.isArray(raw) ? raw : raw === null ? [] : [raw];
   switch (clause.op) {
@@ -151,7 +151,7 @@ export function matchesSearch(item: Item, terms: string[]): boolean {
 }
 
 /** A comparable for one sort key: numbers for numeric fields, strings otherwise, null when empty. */
-export function sortKeyOf(item: Item, fieldId: string, ctx: QueryContext): number | string | null {
+function sortKeyOf(item: Item, fieldId: string, ctx: QueryContext): number | string | null {
   const raw = fieldValueOf(item, fieldId);
   if (raw === null || Array.isArray(raw)) return null;
   const def = ctx.defs.get(fieldId);

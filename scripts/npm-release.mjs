@@ -6,7 +6,9 @@
  * plugin against, bundled). On the app's version line, every other package of
  * the app as a full-mode plugin imports it: its declarations only, since
  * Tomrade hands the plugin its own copies at run time. All Apache-2.0, like the
- * rest of the repository. Staged under build/npm/ and packed there.
+ * rest of the repository. Staged under build/npm/ and packed there. The SDK
+ * line is the packages whose package.json says "tomrade": { "publish": "sdk" };
+ * packages/README.md lists both lines.
  *
  *   node scripts/npm-release.mjs              stage and pack
  *   node scripts/npm-release.mjs --verify     …and typecheck a full-mode plugin against the packs, outside the checkout
@@ -29,6 +31,21 @@ const dryRun = process.argv.includes("--dry-run");
 const verify = process.argv.includes("--verify");
 const run = (cmd, args, cwd = root) => execFileSync(cmd, args, { cwd, stdio: "inherit" });
 const json = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
+
+// A package joins the SDK line by saying so in its own package.json ("tomrade": { "publish": "sdk" }); each is staged by hand below.
+const SDK_LINE = new Set(
+  fs
+    .readdirSync(path.join(root, "packages"))
+    .map((dir) => path.join(root, "packages", dir, "package.json"))
+    .filter((file) => fs.existsSync(file))
+    .map(json)
+    .filter((pkg) => pkg.tomrade?.publish === "sdk")
+    .map((pkg) => pkg.name)
+);
+const STAGED = ["@tomradex/domain", "@tomradex/plugin-sdk", "@tomradex/plugin-host", "@tomradex/plugin-cli"];
+if (STAGED.length !== SDK_LINE.size || STAGED.some((name) => !SDK_LINE.has(name))) {
+  throw new Error(`package.json marks ${[...SDK_LINE].sort().join(", ")} for the SDK line, but this script stages ${STAGED.join(", ")}`);
+}
 
 const sdk = json(path.join(root, "packages/plugin-sdk/package.json"));
 const VERSION = sdk.version;
@@ -106,6 +123,9 @@ const sdkDir = stage(
   }
 );
 
+// npm's domain exports its main entry alone; an in-repo subpath (@tomradex/domain/model-errors) is bundled in, where `external` would leave every subpath out.
+const domainEntryOnly = { name: "domain-entry-only", setup: (build) => build.onResolve({ filter: /^@tomradex\/domain$/ }, (args) => ({ path: args.path, external: true })) };
+
 // The host a plugin is tested against is Tomrade's own code, bundled. What a plugin
 // shares with it, and what is native, stays a dependency so there is one copy of each.
 const hostSource = path.join(root, "packages/plugin-host");
@@ -119,7 +139,8 @@ await esbuild.build({
   platform: "node",
   format: "esm",
   target: "node22",
-  external: ["cordis", "zod", "zod/*", "@tomradex/plugin-sdk", "@tomradex/domain", "better-sqlite3"],
+  external: ["cordis", "zod", "zod/*", "@tomradex/plugin-sdk", "better-sqlite3"],
+  plugins: [domainEntryOnly],
   banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" },
   logLevel: "warning"
 });
@@ -159,7 +180,8 @@ await esbuild.build({
   platform: "node",
   format: "esm",
   target: "node22",
-  external: ["cordis", "zod", "zod/*", "@tomradex/plugin-sdk", "@tomradex/domain", "@tomradex/plugin-host", "esbuild", ...Object.keys(thirdParty)],
+  external: ["cordis", "zod", "zod/*", "@tomradex/plugin-sdk", "@tomradex/plugin-host", "esbuild", ...Object.keys(thirdParty)],
+  plugins: [domainEntryOnly],
   banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" },
   logLevel: "warning"
 });
@@ -194,7 +216,6 @@ const { collectAppExports, APP_EXPORTS_FILE } = await import(pathToFileURL(path.
 fs.writeFileSync(path.join(cliDir, "dist", APP_EXPORTS_FILE), `${JSON.stringify(await collectAppExports(root, APP_VERSION), null, 2)}\n`);
 
 // The app's own packages, declarations only, all at the app's version as dsh's move together.
-const SDK_LINE = new Set(["@tomradex/domain", "@tomradex/plugin-sdk", "@tomradex/plugin-cli", "@tomradex/plugin-host"]);
 // Types every package leans on stay dependencies; the rest are optional peers, so a types install builds nothing native.
 const KEPT = new Set(["cordis", "zod"]);
 const typesOut = path.join(out, "types");

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { modelRefusal, providerMessage, type ModelErrorKind } from "@tomradex/domain";
+import type { ModelErrorKind } from "@tomradex/domain";
+import { modelRefusal, providerMessage } from "@tomradex/domain/model-errors";
 import type { ModelProfile, ModelProviderView, ProviderView } from "@tomradex/llm";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PlainSecretNote } from "~/components/ui/PlainSecretNote";

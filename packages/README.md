@@ -2,14 +2,29 @@
 
 Every package in this workspace, what it is for, the key it claims on the cordis context (if any), and what it builds on. `apps/desktop/tomrade.yml` decides which of them the app loads; [`docs/architecture.md`](../docs/architecture.md) explains how they fit together.
 
+## Two scopes
+
+Packages are `@tomradex/*`; the app alone is `@tomrade/desktop`. That is deliberate, not a half-done rename:
+
+- `@tomradex` is the scope on npm. The plugin SDK and its companions are published there, and so are the declarations full-mode plugins compile against, so renaming any of them breaks every plugin that installs them.
+- `@tomrade/desktop` is the app and is never published. Electron names a checkout's data folder after it (`~/Library/Application Support/@tomrade/desktop` on macOS; the installed app uses its product name, `Tomrade`), so renaming it would move a checkout's data folder and its keychain key. `apps/desktop/electron-builder.yml` says the same.
+
+## What npm gets
+
+Every package keeps `"private": true`, so `npm publish` from a source folder fails. `scripts/npm-release.mjs` publishes instead: it stages a separate manifest for each package under `build/npm/`, with `workspace:*` dependencies pinned, versions set and, for the CLI and its host, the code bundled. `docs/releasing.md` says when it runs.
+
+- **SDK line**: `domain`, `plugin-sdk`, `plugin-cli` and `plugin-host`, at the SDK's version. Each says so in its own `package.json` with `"tomrade": { "publish": "sdk" }`, and the release script reads that mark, stopping if it disagrees with what the script stages. What `domain` and `plugin-sdk` export is public API: plugins compile against it, and full-mode plugins run against the app's own copy, so a release that removes a name says so in its notes. Code only the app uses goes behind a subpath the published manifest leaves out, as `@tomradex/domain/model-errors` does.
+- **Declarations only**: every other `@tomradex` package with `exports`, which is all of the ones below except `ui`, at the app's version. Full-mode plugins compile against these types; the running Tomrade supplies the code.
+- **Not published**: `ui` and `apps/*`.
+
 **ctx** is the service a package provides, read as `ctx.<key>` by everyone else. `ipc`, `alerts` and `desktop-surface` only declare a contract; the desktop shell supplies the implementation. **Builds on** lists the package's workspace dependencies from its `package.json`, leaving out `domain`, `contracts`, `ipc`, `db` and `settings`, which most packages use.
 
 ## Foundations
 
 | Package | Role | ctx | Builds on |
 |---|---|---|---|
-| `domain` | Shared types, zod schemas, typed errors and the backend's `defineWords`. No I/O, no context. | — | — |
-| `contracts` | What packages read of each other's services through `ctx.get`, named once (`contract`, `localeOf`, the troubleshooter's `Check`), and the helpers they share: `errorMessage`, `bestEffort`, atomic JSON files. Backend only, unpublished. | — | — |
+| `domain` | Shared types, zod schemas, typed errors and the backend's `defineWords`. No I/O, no context. SDK line on npm. | — | — |
+| `contracts` | What packages read of each other's services through `ctx.get`, named once (`contract`, `localeOf`, the troubleshooter's `Check`), and the helpers they share: `errorMessage`, `bestEffort`, atomic JSON files. Backend only. | — | — |
 | `ipc` | The typed channel contract between the main process and the renderer. | `ipc` | — |
 | `db` | A pool of SQLite caches (`hub.db` plus one file per project), the core schema, plugin migrations. | `db` | — |
 | `hub` | This machine: its id, its Hub folder, the projects and checkouts it knows. | `hub` | — |
@@ -82,7 +97,7 @@ Every package in this workspace, what it is for, the key it claims on the cordis
 
 | Package | Role | ctx | Builds on |
 |---|---|---|---|
-| `ui` | The React renderer; draws plugin contributions with its own primitives. | — | agent, announcements, fields, hub, hub-cloud, notes, repos, storage |
+| `ui` | The React renderer; draws plugin contributions with its own primitives. Not published. | — | agent, announcements, fields, hub, hub-cloud, notes, repos, storage |
 | `desktop-surface` | Contract for plugin-owned auxiliary windows. | `desktopSurfaces` | — |
 | `alerts` | Contract for system notifications and sounds. | `alerts` | — |
 | `pet` | The task-state companion, in the panel or on the desktop. | `pet` | agent, contributions, desktop-surface |
@@ -92,12 +107,12 @@ Every package in this workspace, what it is for, the key it claims on the cordis
 
 | Package | Role | ctx | Builds on |
 |---|---|---|---|
-| `plugin-sdk` | The extension contract: `definePlugin`, the async `PluginContext`, the manifest. | — | — |
+| `plugin-sdk` | The extension contract: `definePlugin`, the async `PluginContext`, the manifest. SDK line on npm. | — | — |
 | `extensions` | The host side of that contract: namespaces, attribution, time-limited callbacks. | — | agent, alerts, boards, contributions, desktop-surface, fields, herdr, im, items, llm, oplog, plugin-sdk, projects, tools, web-search, write |
 | `plugins` | Loads and manages the composition: rows, modules, installed extensions. | `plugins` | extensions, plugin-kit, plugin-sdk |
 | `plugin-kit` | Package format, digests, signatures, the lock file, the static analyzer. | — | plugin-sdk |
-| `plugin-cli` | `tomrade-plugin`: init, build, dev, test, check, pack. | — | plugin-host, plugin-kit, plugin-sdk |
-| `plugin-host` | The Tomrade a plugin is tested against. | — | agent, alerts, contributions, desktop-surface, engine-acp, extensions, im, llm, testkit, tools, web-search |
+| `plugin-cli` | `tomrade-plugin`: init, build, dev, test, check, pack. SDK line on npm. | — | plugin-host, plugin-kit, plugin-sdk |
+| `plugin-host` | The Tomrade a plugin is tested against. SDK line on npm. | — | agent, alerts, contributions, desktop-surface, engine-acp, extensions, im, llm, testkit, tools, web-search |
 | `plugin-studio` | Tools for an agent to write a plugin, loaded only at a build a person confirmed. | — | agent, plugin-cli, plugin-kit, plugin-sdk, plugins, tools |
 | `community` | The plugin store: browse, install (digest-checked), update, revoke, report, publish. | `community` | git, github, hub-cloud, plugin-cli, plugin-kit, plugin-sdk, plugins |
 
