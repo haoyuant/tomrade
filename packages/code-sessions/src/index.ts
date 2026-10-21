@@ -187,7 +187,7 @@ export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, it
         title: item?.title ?? null,
         branch: s.branch,
         state: s.state,
-        needsYou: s.state === "waiting" && !!s.blocked,
+        needsYou: live && !!s.blocked,
         activity: s.activity ?? s.summary,
         mode: s.mode === "headless" ? "run" : "terminal",
         agent: s.agent,

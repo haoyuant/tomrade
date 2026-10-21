@@ -34,6 +34,11 @@ it("lists live sessions first, needs-you before the rest, then every ended one w
   expect(rows[2]).toMatchObject({ pane: null, state: "ended" });
 });
 
+it("reads a session blocked on its merge as needing the person, and one that errored as stopped", () => {
+  const rows = sessionRows({ sessionsOf: () => [session({ id: "merge", state: "error", blocked: "merge", summary: "merge blocked: CI", startedAt: 2 }), session({ id: "crash", state: "error", startedAt: 3 })] as never, links: () => [] }, { get: () => null }, "p", Date.now());
+  expect(rows.map((r) => [r.id, r.needsYou, r.state])).toEqual([["merge", true, "error"], ["crash", false, "error"]]);
+});
+
 it("says where a session's terminal is: herdr here, another app here by name, another computer, or Tomrade", () => {
   const sessions = [
     session({ id: "herdr", herdrPane: "w1:p1", startedAt: 6 }),

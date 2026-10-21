@@ -990,6 +990,28 @@ describe("code link", () => {
     expect(codeLink.proposals(project.id, item.id)).toHaveLength(1);
   });
 
+  it("reads a blocked merge as waiting for the person with its reason, and a real error as stuck", async () => {
+    const { codeLink, ctx, project, repo, ticket } = await machine(codeRepo());
+    const blocked = ticket("Blocked merge", "verifying");
+    const broken = ticket("Broken run", "doing");
+    const start = (itemId: string, branch: string) => codeLink.store.createSession(project.id, { repoId: repo.id, branch, itemIds: [itemId], mode: "terminal", agent: "mcp", threadId: null, device: ctx.hub.deviceId });
+    codeLink.store.ensureActiveDelivery(project.id, blocked.id);
+    codeLink.store.ensureActiveDelivery(project.id, broken.id);
+    const waits = start(blocked.id, `tom-${blocked.keyNum}/b`);
+    const fails = start(broken.id, `tom-${broken.keyNum}/x`);
+    codeLink.sessions.blockMerge(project.id, waits.id, "CI cannot start on this repository");
+    codeLink.sessions.touch(project.id, fails.id, { state: "error", summary: "stopped: crashed" });
+
+    const badges = await ctx.contributions.badgesFor(project.id);
+    expect(badges[blocked.id]).toContainEqual({ id: "waiting", label: "waiting", tone: "strong", title: "merge blocked: CI cannot start on this repository" });
+    expect(badges[blocked.id]?.some((b) => b.id === "stuck")).toBeFalsy();
+    expect(badges[broken.id]).toContainEqual({ id: "stuck", label: "stuck", tone: "strong", title: "stopped: crashed" });
+    expect((await ctx.contributions.statusItems({ projectId: project.id })).find((s) => s.id === "code-link")!.text).toMatch(/2 sessions · 1 waiting for you · 1 stuck/);
+    const row = (itemId: string) => (async () => (await ctx.contributions.sectionsFor(project.id, itemId)).find((s) => s.id === "code")!.rows.find((r) => r.label === "Session")!)();
+    expect(await row(blocked.id)).toMatchObject({ state: "waiting", value: expect.stringMatching(/^waiting for you · .*merge blocked: CI cannot start on this repository/) });
+    expect(await row(broken.id)).toMatchObject({ state: "warn", value: expect.stringMatching(/^error · .*stopped: crashed/) });
+  });
+
   it("lists branches that name a ticket the project does not have, and accepts a branch linked by hand", async () => {
     const { codeLink, ctx, project, repo, checkout, ticket } = await machine(codeRepo());
     commitOn(checkout, "tom-999/orphan", "o.ts", "o");
@@ -1078,7 +1100,7 @@ describe("code link", () => {
       const { codeLink, ctx, items, project, other, item, branch, asked, answer } = await elsewhere("Merged elsewhere");
       const session = codeLink.store.createSession(project.id, { repoId: other.id, branch, itemIds: [item.id], mode: "terminal", agent: "mcp", threadId: null, device: ctx.hub.deviceId });
       codeLink.sessions.blockMerge(project.id, session.id, "in this repository the person merges");
-      expect((await ctx.contributions.badgesFor(project.id))[item.id]).toContainEqual({ id: "stuck", label: "stuck", tone: "strong", title: expect.stringContaining("elsewhere has no checkout on this machine") });
+      expect((await ctx.contributions.badgesFor(project.id))[item.id]).toContainEqual({ id: "waiting", label: "waiting", tone: "strong", title: expect.stringContaining("elsewhere has no checkout on this machine") });
 
       answer({ merged: true, state: "closed", mergeSha: "abc123", base: "main" });
       await codeLink.scan(project.id);
@@ -1086,7 +1108,7 @@ describe("code link", () => {
       expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ mergedSha: "abc123", prState: "merged" });
       expect(items.get(project.id, item.id)!.status).toBe("done");
       expect(codeLink.store.session(project.id, session.id)?.state).toBe("ended");
-      expect((await ctx.contributions.badgesFor(project.id))[item.id]?.some((b) => b.id === "stuck")).toBeFalsy();
+      expect((await ctx.contributions.badgesFor(project.id))[item.id]?.some((b) => b.id === "waiting")).toBeFalsy();
       await codeLink.scan(project.id);
       expect(asked).toHaveLength(1);
     });

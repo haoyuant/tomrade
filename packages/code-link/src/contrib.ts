@@ -92,14 +92,16 @@ export function contribute(ctx: Context, host: ContribHost): void {
       if (live) {
         const where = live.herdrPane ? w("inHerdr") : live.mode === "terminal" ? w("inTerminal") : w("runByTomrade");
         const when = since(live.lastEventAt ?? live.startedAt);
-        const state = ({ running: "live", waiting: "waiting", idle: "idle", error: "warn", ended: "ended", lost: "lost" } as const)[live.state];
+        // A blocked session waits on the person, with the reason it gave.
+        const shownState = live.blocked && live.state === "error" ? "waiting" : live.state;
+        const state = ({ running: "live", waiting: "waiting", idle: "idle", error: "warn", ended: "ended", lost: "lost" } as const)[shownState];
         // What it is doing beats what it last said; an error is what it last said.
         const doing = live.state === "error" ? (live.summary ?? w("stopped")) : (live.activity ?? live.summary ?? "");
         rows.push({
           label: w("session"),
           icon: live.mode === "terminal" ? "i-terminal" : "i-plug",
           state,
-          value: `${named(w, SESSION_STATES, live.state)} · ${where}${doing ? ` · ${doing}` : ""} · ${w("lastSignal", { when })}`,
+          value: `${named(w, SESSION_STATES, shownState)} · ${where}${doing ? ` · ${doing}` : ""} · ${w("lastSignal", { when })}`,
           // a session in a herdr pane is a click away
           ...(live.herdrPane && live.state !== "ended" ? { command: "code-link.open-terminal" } : {})
         });
@@ -132,17 +134,18 @@ export function contribute(ctx: Context, host: ContribHost): void {
       for (const l of self.store.links(projectId)) (byItem.get(l.itemId) ?? byItem.set(l.itemId, []).get(l.itemId)!).push(l);
       const flags = new Map<string, ProposalView>();
       for (const p of self.store.proposals(projectId)) if (p.kind === "flag" && !flags.has(p.itemId)) flags.set(p.itemId, p);
-      const waiting = new Set<string>();
+      const waiting = new Map<string, string>();
       const stuck = new Map<string, string>();
       for (const s of self.store.sessions(projectId, { live: true })) {
         for (const id of s.itemIds) {
           if (self.store.currentDelivery(projectId, id)?.sequence !== s.delivery) continue;
-          if (s.state === "waiting") waiting.add(id);
+          if (s.state === "waiting") waiting.set(id, w("badgeWaitingTitle"));
           if (s.state !== "error") continue;
           const summary = s.summary ?? w("stopped");
           const repo = s.blocked === "merge" ? home.repos.get(projectId, s.repoId) : null;
           const checkout = repo ? home.repos.checkout(repo.remote).checkout : null;
-          stuck.set(id, repo && !(checkout && fs.existsSync(checkout)) ? `${summary}\n${w("mergeUnseen", { repo: repo.name })}` : summary);
+          // A blocked merge or push waits on the person; it is not the agent failing.
+          (s.blocked ? waiting : stuck).set(id, repo && !(checkout && fs.existsSync(checkout)) ? `${summary}\n${w("mergeUnseen", { repo: repo.name })}` : summary);
         }
       }
       const out: Record<string, Badge[]> = {};
@@ -153,7 +156,7 @@ export function contribute(ctx: Context, host: ContribHost): void {
         const flag = flags.get(item.id);
         if (!links.length && !flag && !waiting.has(item.id) && !stuck.has(item.id)) continue;
         const badges: Badge[] = [];
-        if (waiting.has(item.id)) badges.push({ id: "waiting", label: w("badgeWaiting"), tone: "strong", title: w("badgeWaitingTitle") });
+        if (waiting.has(item.id)) badges.push({ id: "waiting", label: w("badgeWaiting"), tone: "strong", title: waiting.get(item.id) });
         if (stuck.has(item.id)) badges.push({ id: "stuck", label: w("badgeStuck"), tone: "strong", title: stuck.get(item.id) });
         if (flag) badges.push({ id: "mismatch", label: w("badgeMismatch"), tone: "strong", title: flag.reason });
         const primary = primaryOf(links);
@@ -175,8 +178,8 @@ export function contribute(ctx: Context, host: ContribHost): void {
       const at = self.lastScanAt(projectId);
       const parts: string[] = [];
       const live = self.store.sessions(projectId, { live: true }).filter((s) => s.state !== "lost");
-      const waiting = live.filter((s) => s.state === "waiting").length;
-      const stuck = live.filter((s) => s.state === "error").length;
+      const waiting = live.filter((s) => s.state === "waiting" || s.blocked).length;
+      const stuck = live.filter((s) => s.state === "error" && !s.blocked).length;
       if (live.length) parts.push([w(live.length === 1 ? "sessionsOne" : "sessionsMany", { n: live.length }), waiting ? w("waitingCount", { n: waiting }) : "", stuck ? w("stuckCount", { n: stuck }) : ""].filter(Boolean).join(" · "));
       const unlinked = self.unlinked(projectId).length;
       const open = self.store.proposals(projectId).length;
