@@ -145,9 +145,29 @@ describe("an ACP agent as an engine", () => {
       const engine = createAcpEngine(ctx, spec());
       expect((await engine.available()).ok).toBe(true);
       await until(() => fs.existsSync(runs) && !engine.local!.picks!()[0]!.pending);
-      await engine.available({ fresh: true });
+      await engine.available();
       expect(engine.local!.picks!()[0]).toEqual({ key: "model", title: "Model", freeText: true, choices: [] });
       expect(fs.readFileSync(runs, "utf8").trim().split("\n")).toHaveLength(1);
+      expect(fs.existsSync(path.join(dir, "acp-models.json"))).toBe(false);
+    });
+
+    it("asks again once the person rechecks, say after signing in, and again on the next start when nothing was learned", async () => {
+      const runs = path.join(dir, "runs");
+      fs.writeFileSync(bin, `#!/bin/sh\n[ "$1" = --version ] && { echo 1.0.0; exit 0; }\necho run >> '${runs}'\nexit 3\n`, { mode: 0o700 });
+      const engine = createAcpEngine(ctx, spec());
+      await engine.available();
+      await until(() => fs.existsSync(runs) && !engine.local!.picks!()[0]!.pending);
+      // Signed in now: Recheck asks at once, and the list comes.
+      fs.writeFileSync(bin, `#!/bin/sh\nexec '${process.execPath}' '${path.resolve("packages/engine-acp/tests/fake-acp.mjs")}' "$@"\n`, { mode: 0o700 });
+      await engine.available({ fresh: true });
+      await until(() => engine.local!.picks!()[0]!.choices.length > 0);
+      expect(engine.local!.picks!()[0]!.choices).toEqual(LISTED);
+      // An empty list kept from an earlier start does not stand in for one: the next start asks.
+      fs.writeFileSync(path.join(dir, "acp-models.json"), JSON.stringify({ fake: { models: [], efforts: [{ value: "high" }] } }));
+      const next = createAcpEngine(ctx, spec());
+      await next.available();
+      await until(() => next.local!.picks!()[0]!.choices.length > 0);
+      expect(next.local!.picks!()[0]!.choices).toEqual(LISTED);
     });
   });
 

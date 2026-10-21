@@ -908,8 +908,8 @@ a refusal for anything but reading in "read-only" and backlog turns. ACP has no
 system prompt, so a session's first message carries Tomrade's instructions.
 The official plugins `tomrade/hermes` (`hermes acp`), `tomrade/dsh` (`dsh
 --profile acp`), `tomrade/opencode` (`opencode acp`), `tomrade/workbuddy`
-(`codebuddy --acp`, also the copy inside the WorkBuddy app, run by that app's
-Electron binary) and `tomrade/gemini-cli` (`gemini --acp`) are thin
+(`codebuddy --acp`; the CodeBuddy CLI itself, since the copy inside the
+WorkBuddy app gets no models on its own) and `tomrade/gemini-cli` (`gemini --acp`) are thin
 descriptions on top of it, handed over through `ctx.agent.localAgent` (see
 [Local agents](#local-agents)).
 

@@ -104,7 +104,7 @@ const run = async () => {
   await mode("Run here");
   await wait(async () => (await options()).length === 3, "three agents");
   const here = await options();
-  check("Run here offers all three, Hermes with its state", here.join("|") === "Hermes — Found, but won't run|DeepSeek Harness|WorkBuddy", here);
+  check("Run here offers all three, Hermes with its state", here.join("|") === "Hermes — Found, but won't run|DeepSeek Harness|CodeBuddy (WorkBuddy)", here);
   check("the first ready one is chosen", (await $(`document.querySelector('#stEngine').value`)) === "dsh");
   check("dsh's efforts are a pick", (await $(`[...document.querySelectorAll('#stPick-effort option')].map((o) => o.value).join()`)) === ",off,low,high,max");
   await $(`(() => { const s = document.querySelector('#stEngine'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'workbuddy'); s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
@@ -112,7 +112,7 @@ const run = async () => {
   await shot("acp-engines-01-start-here");
 
   await mode("Open in terminal");
-  check("a terminal is offered to all three, Hermes with its state", await wait(async () => (await options()).join("|") === "Hermes — Found, but won't run|DeepSeek Harness|WorkBuddy", "terminal agents"), await options());
+  check("a terminal is offered to all three, Hermes with its state", await wait(async () => (await options()).join("|") === "Hermes — Found, but won't run|DeepSeek Harness|CodeBuddy (WorkBuddy)", "terminal agents"), await options());
   await shot("acp-engines-02-start-terminal");
 
   // ── Settings, from the agent that is not ready ────────────────────────

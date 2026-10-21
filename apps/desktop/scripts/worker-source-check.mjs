@@ -96,7 +96,7 @@ const run = async () => {
   check("the agents show while their sign-in checks still run", shown > 0 && shown < 3000, shown);
   check("the worker picker offers Automatic, the profile and each agent, fastest first", JSON.stringify(options.map((o) => o[0])) === JSON.stringify(["", "p1", "lent:claude-code", "lent:workbuddy", "lent:gemini"]), options);
   check("and names the agent as signed in here", options[2]?.[1] === "Claude Code (signed in on this computer)", options[2]);
-  check("and a signed-out WorkBuddy as not ready", options[3]?.[1] === "WorkBuddy (not ready)" && options[4]?.[1] === "Gemini CLI (signed in on this computer)", options.slice(3));
+  check("and a signed-out WorkBuddy as not ready", options[3]?.[1] === "CodeBuddy (WorkBuddy) (not ready)" && options[4]?.[1] === "Gemini CLI (signed in on this computer)", options.slice(3));
 
   await $(`(() => { const s = document.querySelector('#role-worker'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'lent:claude-code'); s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
   await sleep(800);
@@ -123,12 +123,12 @@ const run = async () => {
   // ── Automatic with no key: the next signed-in agent ──────────────────
   ctx.settings.set({ ...ctx.settings.get(), models: { profiles: [], roles: { worker: "" } } });
   const echo = z.object({ args: z.array(z.string()) });
-  check("Claude Code signed out, Automatic asks the WorkBuddy that has signed in since", (await ctx.llm.worker()).title === "WorkBuddy", await ctx.llm.worker());
+  check("Claude Code signed out, Automatic asks the WorkBuddy that has signed in since", (await ctx.llm.worker()).title === "CodeBuddy (WorkBuddy)", await ctx.llm.worker());
   const viaWorkBuddy = await ctx.llm.completeJson(echo, { system: "echo", user: "five" }).catch((e) => String(e));
   check("which answers bare", viaWorkBuddy?.args?.includes("--strict-mcp-config"), viaWorkBuddy);
   fs.writeFileSync(codebuddy.log + ".signed-out", "");
   const signedOut = await ctx.llm.completeJson(echo, { system: "echo", user: "six" }).then(() => "answered", (e) => String(e));
-  check("a call after WorkBuddy signs out says how to sign in", /WorkBuddy is not signed in/.test(signedOut), signedOut);
+  check("a call after WorkBuddy signs out says how to sign in", /CodeBuddy is not signed in/.test(signedOut), signedOut);
   check("and Automatic moves on to Gemini CLI", (await ctx.llm.worker()).title === "Gemini CLI", await ctx.llm.worker());
   const viaGemini = await ctx.llm.completeJson(echo, { system: "echo", user: "seven" }).catch((e) => String(e));
   check("which answers bare", viaGemini?.args?.includes("--allowed-mcp-server-names"), viaGemini);
