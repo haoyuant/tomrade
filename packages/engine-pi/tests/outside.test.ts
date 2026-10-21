@@ -87,7 +87,7 @@ describe("connecting pi's own sessions to Tomrade", () => {
     process.env.PI_CODING_AGENT_DIR = path.join(dir, "agent");
     const { ctx } = await fresh({ plugins: [Tools, [Settings, { path: path.join(dir, "settings.json") }], Agent, [Mcp, { port: 0 }], enginePi] });
     await settle();
-    return { ctx, file: piUserExtension(), link: ctx.agent.engineOf("pi")!.mcpLink! };
+    return { ctx, file: piUserExtension(), link: ctx.agent.engineOf("pi")!.local!.mcpLink! };
   }
 
   it("writes, keeps, updates and removes the user-level extension", async () => {

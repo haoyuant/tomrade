@@ -64,7 +64,7 @@ const run = async () => {
     check(`${id} reports how its CLI was looked for`, !!view?.cli && Array.isArray(view.cli.attempts) && view.cli.searched.length > 0, view?.cli);
     if (view?.cli?.state === "ready") check(`${id}: a CLI that runs comes with its path and version`, !!view.cli.path && !!view.cli.version, view.cli);
   }
-  const bogus = await ctx.agent.engines.get("codex").checkCli(path.join(work, "nope"));
+  const bogus = await ctx.agent.engines.get("codex").local.checkCli(path.join(work, "nope"));
   check("a path that is not there is refused with the reason", !bogus.ok && bogus.error === "file not found", bogus);
 
   // Both agents runnable but signed out: Start has no agent ready to offer.

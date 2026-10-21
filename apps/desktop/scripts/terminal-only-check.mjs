@@ -39,12 +39,12 @@ const run = async () => {
   ctx.agent.engine({ id: "echo", title: "Echo", author: "ai:test", available: async () => ({ ok: true }),
     async turn(_input, io) { turns.echo++; io.emit({ type: "text", text: "echo answered" }); return { stop: "end" }; } });
   // Signed in and ready, but it can only run in a terminal.
-  ctx.agent.engine({ id: "termy", title: "Termy", author: "ai:termy", capabilities: ["code", "general"], terminalOnly: true, available: async () => ({ ok: true }),
+  ctx.agent.engine({ id: "termy", title: "Termy", author: "ai:termy", capabilities: ["code", "general"], terminal: { mode: "only" }, available: async () => ({ ok: true }),
     async turn() { turns.termy++; return { stop: "error", error: "Termy runs only in a terminal" }; } });
   const settings = ctx.settings.get();
   // A settings file that names it as the default must not hand it a conversation.
   ctx.settings.set({ ...settings, language: "en", onboarding: { seen: ["*"] }, agent: { ...settings.agent, defaultEngine: "termy" } });
-  const terminalOnly = ctx.agent.allEngines().filter((e) => e.terminalOnly).map((e) => e.id);
+  const terminalOnly = ctx.agent.allEngines().filter((e) => e.terminal?.mode === "only").map((e) => e.id);
 
   const win = new BrowserWindow({ width: 1400, height: 1000, show: !!process.env.TOMRADE_SHOW, webPreferences: { preload: path.join(dir, "../preload.cjs"), contextIsolation: true } });
   await win.loadURL(`${process.env.TOMRADE_DEV_URL ?? "http://127.0.0.1:5173/"}#/p/${project.id}`);

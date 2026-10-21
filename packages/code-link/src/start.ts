@@ -558,9 +558,9 @@ export class Starter {
     const wanted = asked && agent.answering(asked);
     const inside = terminal && wanted ? insideOnly(agent, wanted) : null;
     if (inside) return { ok: false, reason: inside };
-    const only = !terminal && wanted ? agent.codeEngines().find((e) => e.id === wanted && e.terminalOnly) : undefined;
+    const only = !terminal && wanted ? agent.codeEngines().find((e) => e.id === wanted && e.terminal?.mode === "only") : undefined;
     if (only) return { ok: false, reason: `${only.title} runs only in a terminal — choose In a terminal` };
-    const candidates = agent.codeEngines().filter((e) => (!wanted || e.id === wanted) && (!terminal || e.terminal !== false) && (terminal || !e.terminalOnly));
+    const candidates = agent.codeEngines().filter((e) => (!wanted || e.id === wanted) && (!terminal || e.terminal?.mode !== "none") && (terminal || e.terminal?.mode !== "only"));
     if (!candidates.length) return { ok: false, reason: wanted ? `${wanted} is not a code-capable engine` : "No local coding agent is installed — add Claude Code, Codex or Pi, then try again" };
     const reasons: string[] = [];
     for (const engine of candidates) {
@@ -604,7 +604,7 @@ export type { RepoStateView };
 /** An agent whose connection carries no session token is told to claim the ticket before anything else, which ties the session to it. */
 function withClaimFirst(agent: Agent, engineId: string, key: string, prompt: string): string {
   const engine = agent.codeEngines().find((e) => e.id === agent.answering(engineId));
-  if (!engine?.terminalClaims) return prompt;
+  if (!engine?.terminal?.claims) return prompt;
   return `Before anything else, call the tomrade MCP tool claim_ticket with key "${key}": this session reaches Tomrade without a session token, and the claim ties it to this ticket.\n\n${prompt}`;
 }
 
@@ -616,13 +616,13 @@ async function binOf(agent: Agent, engineId: string): Promise<string> {
 
 /** An engine that reaches Tomrade in a terminal only through its own connection, while that is not made. */
 async function linkFirst(engine: Engine, locale: string | undefined): Promise<string | null> {
-  if (!engine.terminalViaLink) return null;
-  const state = (await engine.mcpLink?.status().catch(() => null))?.state;
+  if (engine.terminal?.via !== "link") return null;
+  const state = (await engine.local?.mcpLink?.status().catch(() => null))?.state;
   return state === "connected" ? null : CODE_WORDS(locale)("linkFirst", { title: engine.title });
 }
 
 /** Why an engine cannot be handed a ticket in a terminal, or null when it can. */
 function insideOnly(agent: Agent, engineId: string): string | null {
   const engine = agent.codeEngines().find((e) => e.id === agent.answering(engineId));
-  return engine?.terminal === false ? `${engine.title} runs only inside Tomrade — choose Run here, or set up another CLI agent under Settings → Code link` : null;
+  return engine?.terminal?.mode === "none" ? `${engine.title} runs only inside Tomrade — choose Run here, or set up another CLI agent under Settings → Code link` : null;
 }

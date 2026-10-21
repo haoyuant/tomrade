@@ -46,7 +46,7 @@ export const localAgentOf = (host: Host, spec: LocalAgentSpec<LocalAgentOptions>
       ...(acp.steer ? { steer: acp.steer } : {}),
       ...(acp.efforts ? { efforts: [...acp.efforts] } : {}),
       ...(acp.failure ? { failure: (response: Record<string, any>) => now(() => acp.failure!(response), "failure", undefined) } : {}),
-      ...(acp.terminal ? { terminal: true } : {}),
+      ...(acp.terminal ? { terminal: typeof acp.terminal === "object" ? copy(acp.terminal) : true } : {}),
       ...(acp.terminalViaLink ? { terminalViaLink: true } : {})
     } } : {}),
     ...(spec.picks ? { picks: copy(spec.picks) } : {}),

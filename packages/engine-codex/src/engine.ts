@@ -87,13 +87,6 @@ export function codexEngineInfo(ctx: Context): Omit<Engine, "turn"> {
     author: "ai:codex",
     capabilities: ["backlog", "code", "general"],
     options: CodexOptions,
-    picks: () => [
-      // Codex CLI resolves its authenticated account's current default. Model
-      // ids change and differ between ChatGPT and API accounts, so custom ids
-      // remain possible without shipping presets that become invalid.
-      { key: "model", title: "Model", choices: models.get(modelsKey(cli.manualOf(chosenCommand(ctx, "codex")))) ?? [], freeText: true },
-      { key: "effort", title: "Effort", choices: [{ value: "minimal" }, { value: "low" }, { value: "medium" }, { value: "high" }] }
-    ],
     available: async (opts) => {
       const state = await available(opts);
       if (state.need !== "install") return state;
@@ -101,8 +94,17 @@ export function codexEngineInfo(ctx: Context): Omit<Engine, "turn"> {
       const [npm, brew] = await Promise.all([localCli("npm").locate({ fresh: opts?.fresh }), process.platform === "darwin" ? localCli("brew").locate({ fresh: opts?.fresh }) : null]);
       return { ...state, setup: { ...setup, install: codexInstall({ npm: npm.state === "ready", brew: brew?.state === "ready" }) } };
     },
-    checkCli: (file) => cli.check(file),
-    mcpLink: codexMcpLink(ctx, cli),
-    setup
+    local: {
+      picks: () => [
+        // Codex CLI resolves its authenticated account's current default. Model
+        // ids change and differ between ChatGPT and API accounts, so custom ids
+        // remain possible without shipping presets that become invalid.
+        { key: "model", title: "Model", choices: models.get(modelsKey(cli.manualOf(chosenCommand(ctx, "codex")))) ?? [], freeText: true },
+        { key: "effort", title: "Effort", choices: [{ value: "minimal" }, { value: "low" }, { value: "medium" }, { value: "high" }] }
+      ],
+      checkCli: (file) => cli.check(file),
+      mcpLink: codexMcpLink(ctx, cli),
+      setup
+    }
   };
 }

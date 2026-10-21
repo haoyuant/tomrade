@@ -1,5 +1,7 @@
 import { linkedFileIds } from "@tomradex/domain";
-import type { FocusRef, GeneralExecution, OpenDependency, TurnInput, TurnIO } from "./types.js";
+import type { FocusRef } from "./thread.js";
+import type { OpenDependency, TurnInput, TurnIO } from "./turn.js";
+import type { GeneralExecution } from "./workflow.js";
 
 /**
  * The house rules every model-driven engine puts in its system prompt. One

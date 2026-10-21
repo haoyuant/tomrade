@@ -90,13 +90,13 @@ const run = async () => {
   const after = ctx.settings.get().agent;
   check("the person's settings for every agent are as they were", JSON.stringify(after.engines) === JSON.stringify(engines), after.engines);
   check("and Hermes is still the default", after.defaultEngine === "hermes", after.defaultEngine);
-  check("Hermes' kept model list is its pick before any session", JSON.stringify(ctx.agent.engineOf("hermes").picks()[0].choices) === JSON.stringify(kept.hermes.models), ctx.agent.engineOf("hermes").picks());
+  check("Hermes' kept model list is its pick before any session", JSON.stringify(ctx.agent.engineOf("hermes").local.picks()[0].choices) === JSON.stringify(kept.hermes.models), ctx.agent.engineOf("hermes").local.picks());
   check("the thread from before still belongs to Hermes", ctx.agent.store.thread(project.id, thread.id)?.engine === "hermes");
   check("WorkBuddy's settings schema is the one Settings draws", !!ctx.agent.engineOf("workbuddy").options?.safeParse(engines.workbuddy).success);
 
   // A connection made before the upgrade reads as connected, with nothing to redo.
   fs.writeFileSync(path.join(hermesHome, "config.yaml"), `mcp_servers:\n  tomrade:\n    url: ${ctx.mcp.url}\n`);
-  check("Hermes' existing connection reads as connected", (await ctx.agent.engineOf("hermes").mcpLink.status()).state === "connected");
+  check("Hermes' existing connection reads as connected", (await ctx.agent.engineOf("hermes").local.mcpLink.status()).state === "connected");
   check("the patch file is as the person left it", fs.readFileSync(patchFile, "utf8") === "plugins:\n  - id: engine-terminal\n    disabled: true\n");
   // Each is written down once its install is through, a moment after its engine registers.
   const startersFile = path.join(work, "official-starters.json");

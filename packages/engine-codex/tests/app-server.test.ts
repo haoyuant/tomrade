@@ -96,7 +96,7 @@ it("steers a running turn with turn/steer and records the message where Codex ad
   const ctx = new Context();
   await ctx.plugin(Tools); await ctx.plugin(Mcp, { port: 0 });
   const engine = createCodexEngine(ctx);
-  expect(engine.steers).toBe(true);
+  expect(engine.steering).toBe("forward");
   const input: TurnInput = { threadId: "thread", projectId: "project", purpose: "backlog", cwd: dir, input: { kind: "text", text: "STEER_TAKE" }, messages: [], cards: [], brief: null, pending: null,
     options: { command: bin }, env: { TOMRADE_TEST_LOG: log } };
   const order: string[] = [];

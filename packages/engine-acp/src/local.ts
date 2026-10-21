@@ -111,6 +111,9 @@ function pluginLink(ctx: Context, link: Extract<NonNullable<Spec["mcpLink"]>, { 
   };
 }
 
+/** In a terminal it reaches Tomrade through its own connection: `terminal: { via: "link" }`, or the flat `terminalViaLink` of SDK 0.2.22 and before. */
+const viaLink = (acp: NonNullable<Spec["acp"]>) => (typeof acp.terminal === "object" ? acp.terminal.via === "link" : !!acp.terminalViaLink);
+
 function acpAgentOf(spec: Written, locator: CliLocator): AcpAgent<AcpOptions> {
   const acp = spec.acp!;
   const options = spec.options as unknown as AcpAgent<AcpOptions>["options"];
@@ -130,8 +133,7 @@ function acpAgentOf(spec: Written, locator: CliLocator): AcpAgent<AcpOptions> {
     ...(acp.usage ? { usage: acp.usage } : {}),
     ...(acp.cacheApart ? { cacheApart: true } : {}),
     ...(acp.steer ? { steer: acp.steer } : {}),
-    ...(acp.terminal ? { terminal: true } : {}),
-    ...(acp.terminalViaLink ? { terminalViaLink: true } : {}),
+    ...(acp.terminal ? { terminal: { ...(viaLink(acp) ? { via: "link" as const } : {}) } } : {}),
     ...(spec.setup ? { setup: spec.setup } : {}),
     ...(acp.efforts ? { efforts: acp.efforts } : {}),
     ...(acp.failure ? { failure: acp.failure } : {}),
@@ -152,12 +154,8 @@ function terminalEngine(ctx: Context, spec: Written, locator: CliLocator): Engin
     title: spec.title,
     author: `ai:${spec.id}`,
     capabilities: ["code", "general"],
-    terminalOnly: true,
-    terminalViaLink: true,
-    terminalClaims: true,
-    ...(spec.setup ? { setup: spec.setup } : {}),
+    terminal: { mode: "only", via: "link", claims: true },
     ...(spec.options ? { options: spec.options as Engine["options"] } : {}),
-    picks: () => (spec.picks ?? []).map((pick) => ({ ...pick, choices: pick.choices.map((choice) => ({ ...choice })) })),
     available: localAvailability(ctx, {
       engineId: spec.id,
       title: spec.title,
@@ -167,8 +165,12 @@ function terminalEngine(ctx: Context, spec: Written, locator: CliLocator): Engin
         : spec.signedIn ? { signIn: { ask: async () => spec.signedIn!.ask(), reason: spec.signedIn.reason } } : {}),
       ...(spec.cli.desktopApp ? { desktopApp: spec.cli.desktopApp } : {})
     }),
-    checkCli: (file) => locator.check(file),
-    ...(spec.diagnostics ? { diagnostics: { logs: () => spec.diagnostics?.logs?.() ?? [], facts: () => spec.diagnostics?.facts?.(empty) ?? {} } } : {}),
+    local: {
+      ...(spec.setup ? { setup: spec.setup } : {}),
+      picks: () => (spec.picks ?? []).map((pick) => ({ ...pick, choices: pick.choices.map((choice) => ({ ...choice })) })),
+      checkCli: (file) => locator.check(file),
+      ...(spec.diagnostics ? { diagnostics: { logs: () => spec.diagnostics?.logs?.() ?? [], facts: () => spec.diagnostics?.facts?.(empty) ?? {} } } : {})
+    },
     async turn() {
       return { stop: "error", error: `${spec.title} runs only in a terminal — start the ticket "In a terminal"` };
     }
@@ -204,10 +206,8 @@ function apply(ctx: Context, given: Spec): void {
     : "cli" in link
       ? userMcpLink(ctx, { engineId: spec.id, cli: locator, file: () => link.cli.file(), configuredUrl: () => link.cli.configuredUrl(), add: (url) => link.cli.add(url), remove: () => link.cli.remove() })
       : pluginLink(ctx, link, io);
-  const engine: Engine = {
-    ...(spec.acp ? createAcpEngine(ctx, acpAgentOf(spec, locator)) : terminalEngine(ctx, spec, locator)),
-    ...(mcpLink ? { mcpLink } : {})
-  };
+  const base = spec.acp ? createAcpEngine(ctx, acpAgentOf(spec, locator)) : terminalEngine(ctx, spec, locator);
+  const engine: Engine = { ...base, local: { ...base.local, ...(mcpLink ? { mcpLink } : {}) } };
   ctx.agent.engine(engine);
   const lend = spec.lend;
   if (!lend) return;

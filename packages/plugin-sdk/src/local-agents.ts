@@ -212,9 +212,12 @@ export interface LocalAgentAcp<O> {
   efforts?: string[];
   /** The agent's own words for a turn it ended on "refusal". */
   failure?(response: Record<string, any>): string | undefined;
-  /** Its CLI can also be handed a ticket in a terminal. */
-  terminal?: boolean;
-  /** In a terminal it reaches Tomrade only through its user-level connection (`mcpLink`). */
+  /**
+   * Its CLI can also be handed a ticket in a terminal. SDK 0.2.23: `{ via: "link" }` says it reaches Tomrade
+   * there only through its user-level connection (`mcpLink`); absent `via` is `"session"`.
+   */
+  terminal?: boolean | { via?: "session" | "link" };
+  /** @deprecated since SDK 0.2.23: `terminal: { via: "link" }`. Still read, for plugins built before it. */
   terminalViaLink?: boolean;
 }
 

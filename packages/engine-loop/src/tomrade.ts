@@ -72,18 +72,21 @@ export function createTomradeEngine(ctx: Context, config: TomradeEngineConfig): 
     author: "ai:agent",
     capabilities: ["backlog", "code", "general"],
     includes: [...new Set([...own, config.work])],
-    terminal: false,
+    terminal: { mode: "none" },
     usesModels: true,
-    steers: true,
+    // Its parts steer by their own protocol; a turn's io offers both.
+    steering: "queue",
     options: TomradeOptions,
     get permissionModes() {
       return part(config.work)?.permissionModes;
     },
-    get diagnostics() {
-      return part(config.work)?.diagnostics;
+    local: {
+      get diagnostics() {
+        return part(config.work)?.local?.diagnostics;
+      },
+      picks: () => either()?.local?.picks?.() ?? []
     },
     media: (options) => either()?.media?.(options) ?? { input: [], output: [] },
-    picks: () => either()?.picks?.() ?? [],
     async available(opts): Promise<EngineAvailability> {
       const [work, ...backlogs] = await Promise.all([config.work, ...own].map((id) => runs(part(id), opts)));
       const backlog = backlogs.find((state) => state?.ok) ?? backlogs.find(Boolean);

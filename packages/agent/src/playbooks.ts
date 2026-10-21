@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
-import type { Playbook, PlaybookIndexEntry, PlaybookSource } from "./types.js";
+import type { Playbook, PlaybookIndexEntry, PlaybookSource } from "./workflow.js";
 
 const requirementsSchema = z.object({
   workTypes: z.array(z.enum(["coding", "general"])).optional(),

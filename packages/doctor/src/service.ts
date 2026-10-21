@@ -338,7 +338,7 @@ export class Doctor extends Service implements DoctorChecks {
       get title() { return doctor.words()("engineTitle"); },
       author: "ai:doctor",
       capabilities: [],
-      terminal: false,
+      terminal: { mode: "none" },
       options: DoctorOptions,
       available: async () => ({ ok: true }),
       async turn(input, io) {
@@ -377,7 +377,7 @@ export class Doctor extends Service implements DoctorChecks {
 
   /** Agents that could look into it: ready, able to hold a conversation, and not the one that failed. */
   async investigators(topic: Topic): Promise<string[]> {
-    const engines = this.ctx.agent.allEngines().filter((e) => e.id !== ENGINE_ID && e.id !== (topic.engineId && this.ctx.agent.answering(topic.engineId)) && !e.terminalOnly && (e.capabilities ?? ["backlog"]).includes("backlog"));
+    const engines = this.ctx.agent.allEngines().filter((e) => e.id !== ENGINE_ID && e.id !== (topic.engineId && this.ctx.agent.answering(topic.engineId)) && e.terminal?.mode !== "only" && (e.capabilities ?? ["backlog"]).includes("backlog"));
     const states = await Promise.all(engines.map(async (e) => ({ id: e.id, ok: (await e.available().catch(() => null))?.ok === true })));
     return states.filter((s) => s.ok).map((s) => s.id);
   }
@@ -519,7 +519,7 @@ export class Doctor extends Service implements DoctorChecks {
 
   private async engineFacts(engineId: string): Promise<Record<string, string>> {
     try {
-      const facts = await this.ctx.agent.engineOf(engineId)?.diagnostics?.facts?.();
+      const facts = await this.ctx.agent.engineOf(engineId)?.local?.diagnostics?.facts?.();
       return Object.fromEntries(Object.entries(facts ?? {}).map(([k, v]) => [`${engineId}.${k}`, String(v)]).concat(Object.entries(facts ?? {}).map(([k, v]) => [k, String(v)])));
     } catch {
       return {};
@@ -576,7 +576,7 @@ export class Doctor extends Service implements DoctorChecks {
 
   /** The failing engine; with no topic, every agent the person has installed — a missing one is not a problem. */
   private async engineIdsFor(topic: Topic): Promise<string[]> {
-    const engines = this.ctx.agent.allEngines().filter((e) => !e.usesModels && !e.terminalOnly && (e.capabilities ?? ["backlog"]).length > 0);
+    const engines = this.ctx.agent.allEngines().filter((e) => !e.usesModels && e.terminal?.mode !== "only" && (e.capabilities ?? ["backlog"]).length > 0);
     if (topic.engineId) return engines.some((e) => e.id === topic.engineId) ? [topic.engineId] : [];
     const states = await Promise.all(engines.map(async (e) => ({ e, state: await e.available().catch(() => null) })));
     return states.filter(({ state }) => state && (state.ok || (state.cli && state.cli.state !== "missing"))).map(({ e }) => e.id);
@@ -601,8 +601,8 @@ export class Doctor extends Service implements DoctorChecks {
         };
         if (state.ok) return { state: "ok", line: cli?.path ? `${words("engineReady")} · ${(cli.version ? words("cliFoundVersion", { path: cli.path, version: cli.version }) : words("cliFound", { path: cli.path }))}` : words("engineReady"), facts };
         const actions: CardAction[] =
-          state.need === "install" && (state.setup ?? engine.setup)?.install.length ? [{ kind: "install", engineId: id, label: words("actionInstall", { engine: engine.title }) }]
-          : state.need === "sign-in" && engine.setup?.signIn ? [{ kind: "sign-in", engineId: id, label: words("actionSignIn", { engine: engine.title }) }]
+          state.need === "install" && (state.setup ?? engine.local?.setup)?.install.length ? [{ kind: "install", engineId: id, label: words("actionInstall", { engine: engine.title }) }]
+          : state.need === "sign-in" && engine.local?.setup?.signIn ? [{ kind: "sign-in", engineId: id, label: words("actionSignIn", { engine: engine.title }) }]
           : state.need === "model" ? [{ kind: "settings", label: words("actionModelSettings") }]
           : [{ kind: "settings", engineId: id, label: words("actionSettings", { engine: engine.title }) }];
         const tried = cli?.attempts?.map((a) => `${a.path} (${a.source}): ${a.ok ? "ok" : "failed"} — ${a.detail}`).join("\n");

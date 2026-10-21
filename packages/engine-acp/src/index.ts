@@ -54,24 +54,25 @@ export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAg
     options: agent.options,
     media: () => ({ input: ["image/png", "image/jpeg", "image/webp", "image/gif"], output: [] }),
     permissionModes: agent.permissionModes,
-    terminal: agent.terminal ?? false,
-    ...(agent.terminalViaLink ? { terminalViaLink: true } : {}),
-    ...(agent.steer ? { steers: true } : {}),
-    ...(agent.setup ? { setup: agent.setup } : {}),
-    picks: () => [
-      // What the agent can use depends on its own sign-in; the list is what its last session offered.
-      { key: "model", title: "Model", choices: catalog.models, freeText: true, ...(asking && !catalog.models.length ? { pending: true } : {}) },
-      ...(catalog.efforts.length ? [{ key: "effort", title: "Effort", choices: catalog.efforts }] : [])
-    ],
+    terminal: agent.terminal ? { mode: "handoff", ...agent.terminal } : { mode: "none" },
+    ...(agent.steer ? { steering: "forward" as const } : {}),
     async available(opts) {
       const state = await check(opts);
       if (state.ok) ask();
       return state;
     },
-    checkCli: (file) => agent.cli.check(file),
-    diagnostics: {
-      logs: () => agent.diagnostics?.logs?.() ?? [],
-      facts: () => ({ models: catalog.models.slice(0, 40).map((m) => m.value).join(",") || "unknown", ...agent.diagnostics?.facts?.(catalog) })
+    local: {
+      ...(agent.setup ? { setup: agent.setup } : {}),
+      picks: () => [
+        // What the agent can use depends on its own sign-in; the list is what its last session offered.
+        { key: "model", title: "Model", choices: catalog.models, freeText: true, ...(asking && !catalog.models.length ? { pending: true } : {}) },
+        ...(catalog.efforts.length ? [{ key: "effort", title: "Effort", choices: catalog.efforts }] : [])
+      ],
+      checkCli: (file) => agent.cli.check(file),
+      diagnostics: {
+        logs: () => agent.diagnostics?.logs?.() ?? [],
+        facts: () => ({ models: catalog.models.slice(0, 40).map((m) => m.value).join(",") || "unknown", ...agent.diagnostics?.facts?.(catalog) })
+      }
     },
     turn
   };

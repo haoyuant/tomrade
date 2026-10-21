@@ -531,7 +531,7 @@ export class Im extends Service {
     return [
       this.w("helpHead", { project, engine: engine?.title ?? thread.engine }),
       ...this.commands().map(c => `/${c.name}${c.args ? ` ${c.args}` : ""} — ${c.description}`),
-      engine?.steers ? this.w("helpSteers") : this.w("helpNoSteer")
+      engine?.steering ? this.w("helpSteers") : this.w("helpNoSteer")
     ].join("\n");
   }
 
@@ -1117,14 +1117,14 @@ export class Im extends Service {
         const steer = /^\/steer\s+([\s\S]+)$/.exec(text)?.[1].trim() ?? (!row.input_json && steering(event) ? text : null);
         if (steer !== null && running) {
           const engine = this.home.agent.engineOf(running.thread.engine);
-          if (engine?.steers && await this.home.agent.steer(b.project_id, b.thread_id, `im:${row.id}`, steer)) {
+          if (engine?.steering && await this.home.agent.steer(b.project_id, b.thread_id, `im:${row.id}`, steer)) {
             this.react(b, event.messageId, "received");
             if (!this.capsOf(b)?.reactions) this.enqueue(b, `steered:${row.id}`, { text: this.w("steered") }, reply);
             this.accept(row); return;
           }
           // Not taken: it waits for the turn to end like any message, and says so.
           this.store.run("UPDATE plugin_im_inbox SET input_json = ? WHERE id = ?", JSON.stringify({ kind: "text", text: steer }), row.id);
-          this.enqueue(b, `steer-queued:${row.id}`, { text: engine?.steers
+          this.enqueue(b, `steer-queued:${row.id}`, { text: engine?.steering
             ? this.w("steerBusy") : this.w("steerUnsupported") }, reply);
           return;
         }
@@ -1539,7 +1539,7 @@ export class Im extends Service {
       await this.choose(b, row, actor, "mode", arg.trim(), reply); return true;
     }
     // model, effort: the engine's own picks.
-    const pick = engine?.picks?.().find(p => p.key === name);
+    const pick = engine?.local?.picks?.().find(p => p.key === name);
     if (!pick) this.refuse(name === "model" ? this.w("noModelChoice") : this.w("noEffortChoice"));
     if (!arg) {
       const current = thread.options?.[name];
@@ -1660,7 +1660,7 @@ export class Im extends Service {
       this.home.agent.setPermissionMode(b.project_id, b.thread_id, choice.value);
       done(this.w("modeSet", { mode: choice.label, when })); return;
     }
-    const pick = this.home.agent.engineOf(thread.engine)?.picks?.().find(p => p.key === kind);
+    const pick = this.home.agent.engineOf(thread.engine)?.local?.picks?.().find(p => p.key === kind);
     if (!pick) this.refuse(this.w("choiceGone"));
     const { [kind]: _old, ...rest } = thread.options ?? {};
     let options: Record<string, unknown> = rest;

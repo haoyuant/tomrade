@@ -30,7 +30,7 @@ it("puts Tomrade in CODEX_HOME's config.toml, updates an old address and takes i
   const { ctx } = await fresh({ plugins: [Tools, [Settings, { path: settingsPath }], Agent, [Mcp, { port: 0 }], engineCodex] });
   await settle();
   try {
-    const link = ctx.agent.engineOf("codex")!.mcpLink!;
+    const link = ctx.agent.engineOf("codex")!.local!.mcpLink!;
     const url = ctx.mcp.url!;
     const stale = await link.status();
     expect(stale).toMatchObject({ state: "stale", url, configuredUrl: "http://127.0.0.1:1/mcp", file });

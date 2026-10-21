@@ -120,7 +120,7 @@ export class Connections {
     const agent = this.ctx.get("agent");
     const taken = new Set([...this.connections.values()].filter((c) => c.projectId === projectId).flatMap((c) => c.sessionIds));
     return this.store.sessions(projectId, { live: true }).find((s) => s.mode === "terminal" && s.threadId !== null && s.itemIds.includes(itemId) && !taken.has(s.id)
-      && !!agent?.engineOf(s.agent)?.terminalClaims) ?? null;
+      && !!agent?.engineOf(s.agent)?.terminal?.claims) ?? null;
   }
 
   /** The live session an outside client's connection last claimed for, if any: the one its calls without a key mean. */
@@ -233,7 +233,7 @@ export class Connections {
     if (!p.cwd || !p.session_id) return;
     const agent = p.tomrade_agent === "codex" || p.tomrade_agent === "workbuddy" || p.tomrade_agent === "pi" || p.tomrade_agent === "hermes" || p.tomrade_agent === "opencode" || p.tomrade_agent === "cursor" ? p.tomrade_agent : "claude-code";
     // Where the transcript lives tells which of the person's Claude Code accounts ran it.
-    if (agent === "claude-code" && typeof p.transcript_path === "string") this.ctx.get("agent")?.engineOf("claude-code")?.mcpLink?.sawTranscript?.(p.transcript_path);
+    if (agent === "claude-code" && typeof p.transcript_path === "string") this.ctx.get("agent")?.engineOf("claude-code")?.local?.mcpLink?.sawTranscript?.(p.transcript_path);
     const cwd = path.resolve(p.cwd);
     const within = (root: string) => cwd === root || cwd.startsWith(root + path.sep);
     // Resumed, by hand or by herdr after its server restarted, or still going after another process of it ended

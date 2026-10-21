@@ -102,7 +102,7 @@ export async function logSources(ctx: Context, logDir: string | undefined, engin
   if (logDir) for (const file of newestFiles(logDir, (n) => n.endsWith(".log"), 2)) out.push({ id: `tomrade/${path.basename(file)}`, file });
   const engine = engineId ? ctx.agent.engineOf(engineId) : undefined;
   let files: string[] = [];
-  try { files = (await engine?.diagnostics?.logs?.()) ?? []; } catch {}
+  try { files = (await engine?.local?.diagnostics?.logs?.()) ?? []; } catch {}
   for (const file of files.slice(0, 3)) out.push({ id: `${engineId}/${path.basename(file)}`, file });
   return out;
 }

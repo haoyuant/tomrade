@@ -221,7 +221,7 @@ it("hands a message sent mid-turn to pi's own queue, records it where pi reads i
   const ctx = new Context();
   await ctx.plugin(Tools); await ctx.plugin(Mcp, { port: 0 });
   const engine = createPiEngine(ctx);
-  expect(engine.steers).toBe(true);
+  expect(engine.steering).toBe("forward");
   const input: TurnInput = { threadId: "thread", projectId: "project", purpose: "backlog", cwd: dir, input: { kind: "text", text: "STEER_TAKE" }, messages: [], cards: [], brief: null, pending: null,
     options: { command: bin, model: "fake/fixed-model" }, env: { TOMRADE_TEST_LOG: log } };
   const order: string[] = [];

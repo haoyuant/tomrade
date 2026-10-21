@@ -1,5 +1,6 @@
 import type { ToolDescriptor } from "@tomradex/tools";
-import type { ThreadMessage, TurnPurpose } from "./types.js";
+import type { ThreadMessage } from "./thread.js";
+import type { TurnPurpose } from "./turn.js";
 
 /** Kits a conversation carries from its first request: a coding session needs its ticket's tools; the rest wait until asked for. */
 export function carriedKits(purpose: TurnPurpose): string[] {

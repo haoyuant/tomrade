@@ -137,7 +137,7 @@ describe("web search in the loop", () => {
     for (const nativeWebSearch of [true, false]) {
       const model: ChatModel = { capabilities: { tools: true, streaming: true, json: true, nativeWebSearch }, async *chat() {} };
       const { ctx } = await fresh({ plugins: [fakeChat(model)] });
-      const pick = createLoopEngine(ctx).picks?.().find((p) => p.key === "profile");
+      const pick = createLoopEngine(ctx).local?.picks?.().find((p) => p.key === "profile");
       expect(pick?.choices[0].searchesWeb).toBe(nativeWebSearch ? true : undefined);
       await ctx.fiber.dispose();
     }

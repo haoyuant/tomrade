@@ -101,21 +101,23 @@ export function createBuiltinPiEngine(ctx: Context, config: BuiltinPiConfig): En
     author: "ai:pi",
     capabilities: ["backlog", "code", "general"],
     // Its key reaches pi only through Tomrade's environment, so there is no session to hand to a terminal.
-    terminal: false,
+    terminal: { mode: "none" },
     usesModels: true,
-    steers: true,
+    steering: "forward",
     options: BuiltinPiOptions,
     media: (options) => {
       const profile = profileOf(options);
       return { input: (profile?.inputModalities?.includes("image") ?? profile?.provider === "anthropic") ? IMAGES : [], output: [] };
     },
     permissionModes: PERMISSION_MODES,
-    picks: () => {
-      const all = profiles();
-      return [
-        ...(all.length ? [{ key: "profile", title: "Model", choices: all.map((p) => ({ value: p.id, label: p.title || p.model })) }] : []),
-        { key: "effort", title: "Effort", choices: EFFORTS.map((value) => ({ value })) }
-      ];
+    local: {
+      picks: () => {
+        const all = profiles();
+        return [
+          ...(all.length ? [{ key: "profile", title: "Model", choices: all.map((p) => ({ value: p.id, label: p.title || p.model })) }] : []),
+          { key: "effort", title: "Effort", choices: EFFORTS.map((value) => ({ value })) }
+        ];
+      }
     },
     async available(opts): Promise<EngineAvailability> {
       if (!fs.existsSync(config.cli)) return { ok: false, need: "install", reason: words()("notBundled") };

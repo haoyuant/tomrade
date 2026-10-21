@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { Db, ProjectDb } from "@tomradex/db";
 import type { Author } from "@tomradex/domain";
-import type { Block, CardView, GeneralExecution, ParkView, PendingView, RunStatus, RunView, ThreadMessage, ThreadSummary, ThreadSurface } from "./types.js";
+import type { Block, CardView, ParkView, PendingView, RunStatus, RunView, ThreadMessage, ThreadSummary, ThreadSurface } from "./thread.js";
+import type { GeneralExecution } from "./workflow.js";
 import { runTokens } from "./tokens.js";
 
 const SURFACES: ThreadSurface[] = ["assistant", "code", "doctor", "probe"];
