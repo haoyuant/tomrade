@@ -93,6 +93,7 @@ export const files = {
     save: "Save",
     sharing: "Sharing…",
     attachToTicket: "Add to a ticket…",
+    attachNeedsGit: "Adding files to tickets needs git, which is not installed on this computer",
     attachTitle: "Add {{name}} to a ticket",
     attachFilter: "Find a ticket…",
     attachAsMaterial: "As material",
@@ -156,6 +157,7 @@ export const files = {
 
     stateLocalLabel: "This machine",
     stateLocalHint: "Every save is a version, kept beside the project's folder. Choose where to share them in Sharing.",
+    stateLocalPlainHint: "The files are kept in the project's folder as they are.",
     stateSyncedLabel: "In step",
     stateSyncedHint: "Shared files are in step with the remote; local-only files stay here.",
     stateAheadLabel: "Not pushed yet",
@@ -285,6 +287,7 @@ export const files = {
     save: "保存",
     sharing: "共享设置…",
     attachToTicket: "添加到工单…",
+    attachNeedsGit: "把文件添加到工单需要 git，这台电脑还没有安装",
     attachTitle: "把 {{name}} 添加到工单",
     attachFilter: "查找工单…",
     attachAsMaterial: "作为材料",
@@ -348,6 +351,7 @@ export const files = {
 
     stateLocalLabel: "仅本机",
     stateLocalHint: "每次保存都是一个版本，存放在项目文件夹旁边。到「共享」里选择共享位置。",
+    stateLocalPlainHint: "文件原样保存在项目文件夹里。",
     stateSyncedLabel: "已同步",
     stateSyncedHint: "共享文件已与远端同步；仅本机文件留在这里。",
     stateAheadLabel: "尚未推送",

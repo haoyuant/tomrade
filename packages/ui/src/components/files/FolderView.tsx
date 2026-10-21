@@ -10,7 +10,7 @@ import { agoLabel } from "~/lib/domain";
 import { FILES_DRAG_MIME, formatSize, parentOf, useResolveAllConflicts, type FilesClipboardEntry } from "~/lib/files";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { errorSpec, useToast } from "~/lib/toast";
-import type { StateView } from "./state";
+import { hintOf, type StateView } from "./state";
 
 const KIND: Record<FileConflict["kind"], MessageKey> = {
   content: "files.kindContent",
@@ -36,7 +36,7 @@ function SharingCard({ projectId, status, state, onOpenSharing }: { projectId: s
         </button>
       </div>
       <p className="meta-txt dense" style={{ marginTop: "var(--space-2)" }}>
-        {status?.detail ? t("files.hintWithDetail", { hint: state.hint, detail: status.detail }) : state.hint}
+        {status?.detail ? t("files.hintWithDetail", { hint: hintOf(t, state, status), detail: status.detail }) : state.hint}
       </p>
       <SyncScopeSummary projectId={projectId} />
     </div>

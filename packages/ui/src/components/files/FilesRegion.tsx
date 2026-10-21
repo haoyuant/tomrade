@@ -416,7 +416,7 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
               <button type="button" className="btn btn-icon files-copy" data-tip={t("files.copy")} data-tip-side="bottom" aria-label={t("files.copy")} onClick={() => clipboard.copy([path])}>
                 <Icon name="i-copy" size={14} />
               </button>
-              <button type="button" className="btn btn-icon" data-tip={t("files.attachToTicket")} data-tip-side="bottom" aria-label={t("files.attachToTicket")} onClick={() => setAttaching(true)}>
+              <button type="button" className="btn btn-icon" data-tip={t(status.data?.versionless ? "files.attachNeedsGit" : "files.attachToTicket")} data-tip-side="bottom" aria-label={t("files.attachToTicket")} disabled={!!status.data?.versionless} onClick={() => setAttaching(true)}>
                 <Icon name="i-tag" size={14} />
               </button>
             </>

@@ -23,7 +23,8 @@ import { createGitBackend } from "./git-backend.js";
 import { BINARY_LIMIT, GitFileStore, normalizeRel } from "./git-store.js";
 import { DEFAULT_AGENT_POLICY, collidesWithProject, listingAt, remoteDirectory } from "./git-sync.js";
 import { buildAgentIndex, type AgentIndex } from "./agent-index.js";
-import { gitRunner } from "@tomradex/git";
+import { GitMissingError, execGit, gitRunner } from "@tomradex/git";
+import { FolderFileStore } from "./folder-store.js";
 import { FilesArchive, boundDirectory, storeId } from "./scopes.js";
 import { MIGRATIONS, OpsStore, RemoteStore, TABLES, type FileOpKind, type FileOpRow, type RemoteRow } from "./store.js";
 import { mimeOf } from "./mime.js";
@@ -151,6 +152,8 @@ function freeName(name: string, taken: (candidate: string) => boolean): string {
   const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
   for (let n = 2; ; n++) if (!taken(`${stem} ${n}${ext}`)) return `${stem} ${n}${ext}`;
 }
+
+const gitInstalled = (binary: string): Promise<boolean> => execGit(binary, ["--version"]).then(() => true, () => false);
 
 const unavailable = (detail: string): FilesStatus => ({ state: "unavailable", location: null, detail, lastSyncAt: null, conflicts: 0, ahead: 0, behind: 0, head: null });
 
@@ -533,7 +536,10 @@ export class Files extends Service implements FilesReader {
       });
     } catch (error) {
       undo?.();
-      throw error;
+      if (!(error instanceof GitMissingError)) throw error;
+      // No git here: the folder still works as it is, and versions and sharing wait for git.
+      if (backend) this.warn(projectId, `git is not installed; sharing through "${chosen.id}" waits for it`);
+      store = new FolderFileStore(dir, { detail: this.words()(backend ? "noGitShared" : "noGit"), onChange: () => this.notify(projectId) });
     }
     const raced = this.open.get(projectId);
     if (raced) {
@@ -1014,6 +1020,8 @@ export class Files extends Service implements FilesReader {
   }
 
   async sync(projectId: string): Promise<FilesStatus> {
+    // Git installed since the folder was opened without it: the same folder becomes a git store.
+    if (this.open.get(projectId)?.store instanceof FolderFileStore && (await gitInstalled(this.config.gitBinary))) await this.reopen(projectId, true);
     const status = await (await this.store(projectId)).sync();
     this.lastState.set(projectId, status.state);
     this.home.emit("files/synced", projectId, status);
@@ -1113,6 +1121,12 @@ export class Files extends Service implements FilesReader {
     return byKey;
   }
 
+  /** A ticket links a file by id and version; a folder without git has neither, and pretending would break the link once git arrives. */
+  private needVersions(store: FileStore): FileStore {
+    if (store instanceof FolderFileStore) throw new Error(this.words()("needsGit"));
+    return store;
+  }
+
   /** `path` inside the ticket's workstream folder. */
   pathFor(projectId: string, itemId: string, p: string): string {
     const rel = normalizeRel(p);
@@ -1123,6 +1137,7 @@ export class Files extends Service implements FilesReader {
   /** Bring files from this machine into the ticket's workstream folder and pin them in one go. */
   async importFor(projectId: string, itemId: string, input: { sources: string[]; role: "input" | "output" }): Promise<Item> {
     const folder = this.folderFor(projectId, itemId);
+    this.needVersions(await this.store(projectId));
     const added = (await this.importFiles(projectId, folder, input.sources)).filter((e) => e.kind === "file");
     if (!added.length) throw new Error("Choose at least one file");
     return this.attachMany(projectId, itemId, { paths: added.map((e) => e.path), role: input.role });
@@ -1138,7 +1153,7 @@ export class Files extends Service implements FilesReader {
     const item = this.ctx.items.get(projectId, itemId);
     if (!item) throw new NotFoundError(itemId);
     const folder = `${this.folderFor(projectId, itemId)}/attachments/${folderName(item.key)}`;
-    const store = await this.store(projectId);
+    const store = this.needVersions(await this.store(projectId));
     const chosen = new Set<string>();
     const entries = files.map((file) => {
       const body = Buffer.from(file.base64, "base64");
@@ -1166,7 +1181,7 @@ export class Files extends Service implements FilesReader {
 
   /** Settle once and add every chosen file to the ticket in one item write. */
   async attachMany(projectId: string, itemId: string, input: { paths: string[]; role: "input" | "output"; names?: Record<string, string> }): Promise<Item> {
-    const store = await this.store(projectId);
+    const store = this.needVersions(await this.store(projectId));
     const paths = [...new Set(input.paths.map(normalizeRel))];
     if (!paths.length || paths.some(rel => !rel)) throw new Error("Choose at least one file");
     await store.settle(paths.length === 1 ? `Saved ${paths[0]}` : `Saved ${paths.length} files`);

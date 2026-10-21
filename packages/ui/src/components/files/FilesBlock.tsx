@@ -9,7 +9,7 @@ import { useBindFiles, useBrowseFiles, useConnectFiles, useDisconnectFiles, useD
 import { useI18n } from "~/lib/i18n";
 import { reveal, revealLabel } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
-import { stateOf } from "./state";
+import { hintOf, stateOf } from "./state";
 import { SyncPolicySettings, SyncScopeSummary } from "./SyncPolicy";
 import { AgentPolicySettings } from "./AgentPolicy";
 
@@ -76,7 +76,7 @@ export function FilesBlock({ projectId }: { projectId: string }) {
           <Tag tone={state.tone}>{state.label}</Tag>
         </div>
         <p className="meta-txt dense" style={{ marginTop: "var(--space-2)" }}>
-          {status.data?.detail ? t("files.hintWithDetail", { hint: state.hint, detail: status.data.detail }) : state.hint}
+          {status.data?.detail ? t("files.hintWithDetail", { hint: hintOf(t, state, status.data), detail: status.data.detail }) : state.hint}
         </p>
         <div className="row" style={{ gap: "var(--space-2)", marginTop: "var(--space-3)", flexWrap: "wrap" }}>
           <button type="button" className="btn btn-secondary files-sync" disabled={sync.isPending || !dir} onClick={syncNow}>
