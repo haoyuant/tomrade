@@ -16,6 +16,15 @@ export interface SetupHost {
   answers(command: string): Promise<boolean>;
   /** How `npm` runs on this machine: the first one that answers, the borrowed shims included (they sit last on PATH). */
   npm(): Promise<CliLaunch | null>;
+  /** How fast npm's configured registry answers (`npm ping`); absent, no check runs. */
+  pingRegistry?(npm: CliLaunch, signal: AbortSignal): Promise<RegistryPing>;
+}
+
+export interface RegistryPing {
+  /** The registry npm is configured with, as it named it. */
+  registry?: string;
+  /** Its round trip; null when it did not answer in time. */
+  ms: number | null;
 }
 
 export interface SetupRunResult {
@@ -70,8 +79,16 @@ export const machineSetupHost = (): SetupHost => ({
   npm: async () => {
     const cli = localCli("npm");
     return (await cli.locate()).state === "ready" ? cli.launch() : null;
+  },
+  pingRegistry: async (npm, signal) => {
+    const result = await runCommand(npm, ["ping"], { signal, timeoutMs: PING_TIMEOUT_MS });
+    const registry = /PING\s+(\S+)/.exec(result.output)?.[1];
+    const pong = /PONG\s+(\d+)\s*ms/.exec(result.output)?.[1];
+    return { ...(registry ? { registry } : {}), ms: result.code === 0 && pong ? Number(pong) : null };
   }
 });
+
+const PING_TIMEOUT_MS = 10_000;
 
 /** The installers this machine can run, in the declared order; the rest are left out. */
 export async function applicableInstallers(installers: EngineInstaller[], host: SetupHost): Promise<EngineInstaller[]> {
@@ -85,11 +102,12 @@ export async function applicableInstallers(installers: EngineInstaller[], host: 
 }
 
 /** How one installer runs, or why it cannot here. */
-export async function installerLaunch(installer: EngineInstaller, host: SetupHost): Promise<{ launch: CliLaunch; args: string[] } | { failure: EngineSetupFailure }> {
+export async function installerLaunch(installer: EngineInstaller, host: SetupHost, registry?: string): Promise<{ launch: CliLaunch; args: string[] } | { failure: EngineSetupFailure }> {
   if (installer.kind === "npm") {
     const npm = await host.npm();
     if (!npm) return { failure: { kind: "not-found", message: "npm was not found — install Node.js, or update Tomrade, which brings its own" } };
-    return { launch: npm, args: ["install", "-g", installer.package] };
+    // Piped, npm prints nothing until it ends; at `http` it prints a line per fetch, which is what shows it moving.
+    return { launch: npm, args: ["install", "-g", "--loglevel", "http", ...(registry ? ["--registry", registry] : []), installer.package] };
   }
   if (installer.kind === "script") {
     return host.platform === "win32"
@@ -101,7 +119,9 @@ export async function installerLaunch(installer: EngineInstaller, host: SetupHos
 
 /** The concrete kind of a failure, read from the tool's own words. */
 export function classifyFailure(result: SetupRunResult): EngineSetupFailure {
-  const text = `${result.error?.code ?? ""} ${result.error?.message ?? ""} ${result.output}`;
+  // npm's lines for fetches that worked name the registry, which says nothing about why it failed.
+  const output = result.output.replace(/^npm http (?:fetch \S+ [23]\d\d|cache) .*$/gm, "");
+  const text = `${result.error?.code ?? ""} ${result.error?.message ?? ""} ${output}`;
   const message = result.error?.message && result.code === null ? result.error.message : `exited with code ${result.code ?? "?"}`;
   const kind: EngineSetupFailure["kind"] =
     result.error?.message === "cancelled" ? "cancelled"
@@ -127,34 +147,99 @@ export interface InstallDeps {
   report(progress: EngineSetupProgress): void;
   signal: AbortSignal;
   timeoutMs?: number;
+  /** A registry for npm, for this install only (`--registry`): the person's npm config is never changed. */
+  registry?: string;
+  /** Silence this long reads as stalled. */
+  stallMs?: number;
   /** Runs one installer command; tests swap it for a fake. */
   exec?: typeof runCommand;
 }
 
 /** Ten minutes: enough for npm's cold cache on a slow line, short enough that a hang is seen today. */
 const INSTALL_TIMEOUT_MS = 10 * 60_000;
+/** npm prints a line per fetch, so a minute without one is worth saying. */
+const STALL_MS = 60_000;
+const SLOW_PING_MS = 3000;
+/** A mirror of npmjs that is reachable where npmjs is slow or blocked, mainland China among them. */
+export const NPM_MIRROR = "https://registry.npmmirror.com";
+const NPMJS = /^https?:\/\/registry\.npmjs\.org\/?$/;
+const MIRROR_KINDS: EngineSetupFailure["kind"][] = ["network", "registry", "timeout"];
 
 /** Install with the first applicable installer that works, then confirm detection sees the CLI. */
 export async function runInstall(deps: InstallDeps): Promise<EngineSetupProgress> {
   const step: EngineSetupStep = "install";
-  const at = (progress: EngineSetupProgress) => (deps.report(progress), progress);
+  // Offered once npmjs looks unreachable or slow; not when the person's npm uses another registry, nor on a run that already has one.
+  let mirror: string | undefined;
+  let mirrorFits = !deps.registry;
+  const offerMirror = () => {
+    if (mirrorFits) mirror = NPM_MIRROR;
+  };
+  const at = (progress: EngineSetupProgress) => {
+    const shown = mirror && progress.phase !== "done" ? { ...progress, mirror } : progress;
+    deps.report(shown);
+    return shown;
+  };
   const already = await deps.detect();
   if (already.ready) return at({ engineId: deps.engineId, step, phase: "done", ...(already.version ? { version: already.version } : {}) });
-  const applicable = await applicableInstallers(deps.installers, deps.host);
+  // The registry means something to npm only, so a retry on one runs just the npm installers.
+  const applicable = (await applicableInstallers(deps.installers, deps.host)).filter((installer) => !deps.registry || installer.kind === "npm");
   if (!applicable.length) return at({ engineId: deps.engineId, step, phase: "failed", failure: { kind: "unsupported", message: "no installer fits this machine" } });
   let failed: EngineSetupProgress | null = null;
   for (const installer of applicable) {
     if (deps.signal.aborted) break;
     const name = installer.kind;
-    at({ engineId: deps.engineId, step, phase: "running", installer: name });
-    const resolved = await installerLaunch(installer, deps.host);
+    const startedAt = Date.now();
+    let output = "";
+    let stalled = false;
+    let running = true;
+    const show = () => {
+      if (running) at({ engineId: deps.engineId, step, phase: "running", installer: name, startedAt, ...(output ? { output: tail(output) } : {}), ...(stalled ? { stalled } : {}) });
+    };
+    show();
+    const resolved = await installerLaunch(installer, deps.host, deps.registry);
     if ("failure" in resolved) {
       failed = { engineId: deps.engineId, step, phase: "failed", installer: name, failure: resolved.failure };
       continue;
     }
-    const result = await (deps.exec ?? runCommand)(resolved.launch, resolved.args, { signal: deps.signal, timeoutMs: deps.timeoutMs ?? INSTALL_TIMEOUT_MS, env: deps.host.env });
+    const npm = installer.kind === "npm";
+    let silence: ReturnType<typeof setTimeout> | undefined;
+    const listen = () => {
+      clearTimeout(silence);
+      silence = setTimeout(() => {
+        stalled = true;
+        if (npm) offerMirror();
+        show();
+      }, deps.stallMs ?? STALL_MS);
+    };
+    listen();
+    const ping = new AbortController();
+    if (npm && mirrorFits && deps.host.pingRegistry) {
+      void deps.host.pingRegistry(resolved.launch, ping.signal).then((answer) => {
+        if (ping.signal.aborted) return;
+        if (answer.registry && !NPMJS.test(answer.registry)) mirrorFits = false;
+        else if (answer.ms === null || answer.ms > SLOW_PING_MS) {
+          offerMirror();
+          show();
+        }
+      }, () => {});
+    }
+    const result = await (deps.exec ?? runCommand)(resolved.launch, resolved.args, {
+      signal: deps.signal,
+      timeoutMs: deps.timeoutMs ?? INSTALL_TIMEOUT_MS,
+      env: deps.host.env,
+      onOutput: (text) => {
+        output = (output + text).slice(-OUTPUT_KEEP);
+        stalled = false;
+        listen();
+        show();
+      }
+    });
+    running = false;
+    clearTimeout(silence);
+    ping.abort();
     if (result.code !== 0) {
       const failure = classifyFailure(result);
+      if (npm && MIRROR_KINDS.includes(failure.kind)) offerMirror();
       failed = { engineId: deps.engineId, step, phase: "failed", installer: name, failure, output: tail(result.output) };
       if (failure.kind === "cancelled") break;
       continue;
