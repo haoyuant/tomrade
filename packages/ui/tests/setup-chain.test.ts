@@ -31,3 +31,11 @@ it("only retries when the CLI is not a desktop app's copy, has no install, or ha
   expect(offersOfficial(engine({ tried: undefined }))).toBe(false);
   expect(chainSteps(engine({ cli: cli() }), null)[0]).toEqual({ id: "install", state: "done" });
 });
+
+it("ends a terminal-only agent's chain with a check it can pass", () => {
+  const terminal = engine({ cli: cli(), capabilities: ["code", "general"], terminalOnly: true, tried: undefined });
+  // Lending a model, its test is one answer from that model; lending none, being found and signed in is the check.
+  expect(chainSteps({ ...terminal, asks: true }, null).map((s) => s.id)).toEqual(["install", "sign-in", "test"]);
+  expect(chainSteps(terminal, null).at(-1)).toEqual({ id: "terminal", state: "done" });
+  expect(chainSteps({ ...terminal, ok: false, need: "sign-in" }, null).at(-1)).toEqual({ id: "terminal", state: "pending" });
+});

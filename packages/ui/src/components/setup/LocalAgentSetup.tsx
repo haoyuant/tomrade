@@ -88,7 +88,11 @@ export function LocalAgentSetup({ engines, onOpenSettings, onTroubleshoot }: { e
         // Found and signed in, but not yet shown to run: say so, and what its agent said.
         const health = engineHealth(e);
         const problem = engineProblem(e);
-        const label = e.ok && health === "checking" ? t("localCli.stateChecking") : e.ok && health === "broken" ? t("localCli.stateNotRunning") : engineStateLabel(e, t, t("settingsDialog.engineUnavailable"));
+        const label =
+          e.ok && health === "checking" ? t("localCli.stateChecking")
+          : e.ok && health === "broken" ? t("localCli.stateNotRunning")
+          : health === "works" && e.terminalOnly ? t("localCli.stateTerminalReady")
+          : engineStateLabel(e, t, t("settingsDialog.engineUnavailable"));
         return (
           <li key={e.id} className={health === "works" ? "setup-row is-ok" : "setup-row"} data-engine={e.id} data-health={health}>
             <Icon name={health === "works" ? "i-check" : health === "checking" ? "i-sync" : "i-warn"} size={13} />
@@ -108,8 +112,9 @@ export function LocalAgentSetup({ engines, onOpenSettings, onTroubleshoot }: { e
                 </span>
               )}
               {status === "desktop-only" && <span className="setup-fix">{t("localCli.desktopOnlyDetail", { app: e.cli?.desktopApp ?? "", name: e.cli?.name ?? "" })}</span>}
-              {/* One primary button runs the whole chain; the commands stay behind the disclosure below. */}
-              {health !== "works" && <SetupChain engine={e} onTroubleshoot={onTroubleshoot} />}
+              {/* One primary button runs the whole chain; the commands stay behind the disclosure below.
+                  A terminal-only agent counts once signed in, so its chain stays to finish its own check. */}
+              {(health !== "works" || e.terminalOnly) && <SetupChain engine={e} onTroubleshoot={onTroubleshoot} />}
               {health !== "works" && (
                 <details className="setup-manual" data-testid={`manual-${e.id}`}>
                   <summary>{t("setup.manual")}</summary>

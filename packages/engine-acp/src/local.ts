@@ -218,10 +218,12 @@ function apply(ctx: Context, given: Spec): void {
     : "cli" in link
       ? userMcpLink(ctx, { engineId: spec.id, cli: locator, file: () => link.cli.file(), configuredUrl: () => link.cli.configuredUrl(), add: (url) => link.cli.add(url), remove: () => link.cli.remove() })
       : pluginLink(ctx, link, io);
-  const base = spec.acp ? createAcpEngine(ctx, acpAgentOf(spec, locator)) : terminalEngine(ctx, spec, locator);
-  const engine: Engine = { ...base, local: { ...base.local, ...(mcpLink ? { mcpLink } : {}) } };
-  ctx.agent.engine(engine);
   const lend = spec.lend;
+  const base = spec.acp ? createAcpEngine(ctx, acpAgentOf(spec, locator)) : terminalEngine(ctx, spec, locator);
+  // Without ACP a try cannot be a turn; the one-line answer it lends with stands in.
+  const ask = !spec.acp && lend ? async (prompt: string, signal?: AbortSignal) => (await lend.ask({ system: "", transcript: prompt }, { ...io(), ...(signal ? { signal } : {}) })).text : undefined;
+  const engine: Engine = { ...base, local: { ...base.local, ...(mcpLink ? { mcpLink } : {}), ...(ask ? { ask } : {}) } };
+  ctx.agent.engine(engine);
   if (!lend) return;
   const lent = cliLentModel({
     id: spec.id,
