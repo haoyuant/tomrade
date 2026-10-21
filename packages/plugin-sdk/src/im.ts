@@ -276,6 +276,15 @@ export interface ImAdapter {
     notice?(notice: ImNotice): void;
     /** SDK 0.2.20, absent on older hosts. The notice's cause is gone; the same key may be said again. */
     clearNotice?(key: string): void;
+    /** SDK 0.2.21, absent on older hosts. The projects a person paired on this connection may give a conversation, the one they used last first; none for anyone else. */
+    projects?(actorId: string): { id: string; name: string }[];
+    /**
+     * SDK 0.2.21, absent on older hosts. For an adapter's own setup: a paired person makes a group conversation a
+     * work channel (a thread per ticket), a status channel (news only) or a chat channel of the project, as the card
+     * in a group with no route does, and the conversation is told. One already allowed is left as it is. False when
+     * they may not.
+     */
+    allow?(request: { actorId: string; address: ImAddress; kind: "work" | "status" | "chat"; projectId: string }): boolean;
   }): Promise<ImAdapterSession>;
 }
 
