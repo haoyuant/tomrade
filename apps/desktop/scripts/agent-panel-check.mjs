@@ -421,7 +421,7 @@ const run = async () => {
   await sleep(400);
   const guide = await $(`[...document.querySelectorAll('.menu .guide-row')].map((r) => r.textContent)`);
   await shot("guide.png");
-  check("the guide button lists what the composer does", guide.length === 10 && ["Shift+Enter", "⌘/Ctrl+Enter", "Esc", "↑ ↓", "/new · /clear", "/help"].every((k) => guide.some((g) => g.startsWith(k))) && guide.some((g) => /steer/.test(g)) && guide.some((g) => /queue the message/.test(g)), guide);
+  check("the guide button lists what the composer does", guide.length === 10 && ["Shift+Enter", process.platform === "darwin" ? "⌘↵" : "Ctrl+Enter", "Esc", "↑ ↓", "/new · /clear", "/help"].every((k) => guide.some((g) => g.startsWith(k))) && guide.some((g) => /steer/.test(g)) && guide.some((g) => /queue the message/.test(g)), guide);
   await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
   await sleep(300);
   const helpThread = ctx.agent.store.threads(alpha.id)[0].id;

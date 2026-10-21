@@ -30,7 +30,7 @@ import {
 } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
 import { useRevert } from "~/lib/queries";
-import { pathForFile, pickFiles, reveal } from "~/lib/shell";
+import { pathForFile, pickFiles, reveal, revealLabel } from "~/lib/shell";
 import { errorSpec, readableError, useToast } from "~/lib/toast";
 import { useNotesEnabled } from "~/lib/notes";
 import { AttachToTicketDialog } from "./AttachToTicketDialog";
@@ -422,7 +422,7 @@ export function FilesRegion({ path, onOpenSharing }: { path: string; onOpenShari
             </>
           )}
           {absPath && (
-            <button type="button" className="btn btn-icon" data-tip={t("files.reveal")} data-tip-side="bottom" aria-label={t("files.reveal")} onClick={() => reveal(absPath)}>
+            <button type="button" className="btn btn-icon" data-tip={t(revealLabel())} data-tip-side="bottom" aria-label={t(revealLabel())} onClick={() => reveal(absPath)}>
               <Icon name="i-folder" size={14} />
             </button>
           )}

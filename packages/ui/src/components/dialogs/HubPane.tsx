@@ -7,7 +7,7 @@ import { Eyebrow, SectionHead, Tag } from "~/components/ui/atoms";
 import { SchemaField, defaultsOf, fieldsOf, type JsonSchema } from "~/components/ui/schema-form";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { keys, useAttachAll, useBindHub, useCacheDir, useHubInfo, useHubRemote, useOverwriteCatalog, useRestores, useStorageConnection, useStorageProviders, useSyncHub, useUnbindHub } from "~/lib/queries";
-import { reveal } from "~/lib/shell";
+import { reveal, revealLabel } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { RestoreRow } from "~/components/projects/RestoreCards";
 import { AccountPanel } from "./AccountPanel";
@@ -105,7 +105,7 @@ export function HubPane() {
             <input id="hubDir" className="input num" style={{ flex: 1 }} readOnly value={folder ?? ""} />
             {folder && (
               <button type="button" className="btn btn-ghost" onClick={() => reveal(folder)}>
-                {t("hubPane.reveal")}
+                {t(revealLabel())}
               </button>
             )}
           </div>

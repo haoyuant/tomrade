@@ -3,8 +3,8 @@ export const imSettings = {
     label: "IM",
     lede: "Talk to a project's assistant from Feishu, Slack, Telegram and other chats. Connect a bot, pair yourself from a direct message, then choose which conversations reach which project. Group replies share project information with everyone in that group.",
     connectedOfTotal: "{{connected}} of {{total}} connected",
-    keychain: "Credentials are encrypted by this system's keychain.",
-    plaintext: "This system has no keychain: credentials are saved as plain text in settings.json.",
+    keychain: "Credentials are encrypted by this system's credential store.",
+    plaintext: "This system has no credential store: credentials are saved as plain text in settings.json.",
     noAdapters: "No IM platform is installed. Install a platform plugin (Feishu, Slack, Telegram…) under Plugins first.",
 
     connections: "Connected bots",
@@ -151,8 +151,8 @@ export const imSettings = {
     label: "IM",
     lede: "在飞书、Slack、Telegram 等聊天工具里和项目助手对话。先连接机器人，再私聊机器人完成配对，然后选择哪些会话进入哪个项目。群聊回复会向群里所有人公开项目信息。",
     connectedOfTotal: "已连接 {{connected}} / {{total}}",
-    keychain: "凭据已由系统钥匙串加密保存。",
-    plaintext: "此系统没有可用的钥匙串：凭据会以明文保存在 settings.json 中。",
+    keychain: "凭据已由系统凭据存储加密保存。",
+    plaintext: "此系统没有可用的凭据存储：凭据会以明文保存在 settings.json 中。",
     noAdapters: "还没有安装 IM 平台。请先在“插件”中安装平台插件（飞书、Slack、Telegram 等）。",
 
     connections: "接入的机器人",

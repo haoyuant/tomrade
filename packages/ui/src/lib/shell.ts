@@ -1,5 +1,7 @@
 import type {} from "@tomradex/ipc";
 import { invoke, logQuietly } from "./api";
+import type { MessageKey } from "./dicts";
+import { isMac, isWindows } from "./keys";
 
 export interface AboutInfo {
   version: string;
@@ -58,6 +60,10 @@ export const pickProgram = (title?: string, buttonLabel?: string): Promise<strin
   invoke("shell.pickProgram", title, buttonLabel).catch(() => null);
 
 export const reveal = (target: string): void => void invoke("shell.reveal", target).catch(logQuietly("shell.reveal"));
+
+/** The words for `reveal`, naming this platform's file manager: Finder, File Explorer, or just the file manager on Linux. */
+export const revealLabel = (mac = isMac, windows = isWindows): MessageKey =>
+  mac ? "common.revealMac" : windows ? "common.revealWindows" : "common.revealLinux";
 
 export const openExternal = (url: string): void => void invoke("shell.openExternal", url).catch(logQuietly("shell.openExternal"));
 

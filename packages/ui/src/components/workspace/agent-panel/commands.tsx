@@ -1,5 +1,6 @@
 import type { IconId } from "~/components/icons";
 import { useI18n, type MessageKey } from "~/lib/i18n";
+import { shortcut } from "~/lib/keys";
 
 /** `fill` puts the prompt in the composer to finish; otherwise the prompt is sent as is. */
 export type Starter = { label: MessageKey; prompt?: MessageKey; icon: IconId; fill?: boolean };
@@ -39,7 +40,7 @@ export const GUIDE: { keys: string; text: MessageKey }[] = [
   { keys: "Enter", text: "agentPanel.guideSend" },
   { keys: "Shift+Enter", text: "agentPanel.guideNewline" },
   { keys: "Enter", text: "agentPanel.guideQueue" },
-  { keys: "⌘/Ctrl+Enter", text: "agentPanel.guideSteer" },
+  { keys: shortcut("⌘↵"), text: "agentPanel.guideSteer" },
   { keys: "Esc", text: "agentPanel.guideStop" },
   { keys: "↑ ↓", text: "agentPanel.guideHistory" },
   { keys: "/", text: "agentPanel.guideSlash" },
