@@ -16,8 +16,8 @@ export type EngineCapability = "backlog" | "code" | "general";
  */
 export type EngineNeed = "install" | "repair" | "sign-in" | "model" | "service";
 
-/** Where a local CLI candidate came from, in the order they are tried. */
-export type CliSource = "manual" | "path" | "login-path" | "known";
+/** Where a local CLI candidate came from, in the order they are tried; `managed` is the copy Tomrade installed in its own folder. */
+export type CliSource = "manual" | "path" | "login-path" | "known" | "managed";
 
 export interface CliAttempt {
   path: string;
@@ -110,7 +110,8 @@ export type EngineSetupStep = "install" | "sign-in";
 
 /** Why a setup step failed, sorted into a kind a screen can word in the person's language. */
 export interface EngineSetupFailure {
-  kind: "network" | "registry" | "permission" | "disk-full" | "unsupported" | "not-found" | "not-on-path" | "timeout" | "exit" | "cancelled";
+  /** `native-missing`: installed, but its bin is still the placeholder its postinstall should have replaced. */
+  kind: "network" | "registry" | "permission" | "disk-full" | "unsupported" | "not-found" | "not-on-path" | "native-missing" | "timeout" | "exit" | "cancelled";
   /** The underlying words, English or the tool's own, for the details view. */
   message: string;
   /** The file found after an install that did not run; `message` is what running it said. */

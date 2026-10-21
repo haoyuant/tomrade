@@ -2373,6 +2373,7 @@ export const ja: PartialMessages = {
     using: "{{path}} を使用中",
     sourceManual: "手動で指定",
     sourceAuto: "自動検出",
+    sourceManaged: "Tomrade 専用のコピー",
     missingDetail: "{{name}} が PATH や一般的なインストールフォルダに見つかりませんでした。Tomrade が実行するのは {{name}} のコマンドラインツールで、同名のデスクトップアプリではありません。",
     desktopOnlyDetail: "{{app}} のデスクトップアプリはインストールされていますが、Tomrade が実行するのはアプリに含まれないコマンドラインツール {{name}} です。以下のとおり CLI をインストールしてサインインし、再確認してください。",
     brokenDetail: "{{path}} が見つかりましたが、実行できません: {{error}}",

@@ -1030,6 +1030,7 @@ export class Agent extends Service implements AgentReader {
     const settings = JSON.stringify(this.settingsOf().engines[engineId] ?? null);
     const attempt = this.runTry(projectId, engineId, signal).then((tried) => {
       this.tries.set(engineId, { settings, tried });
+      this.ctx.emit("agent/engine-tried", engineId, tried);
       return tried;
     }).finally(() => this.trying.delete(engineId));
     this.trying.set(engineId, attempt);

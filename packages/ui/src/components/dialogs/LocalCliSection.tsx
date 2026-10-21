@@ -76,7 +76,7 @@ export function LocalCliSection({ engine, cli, command, onSaveCommand }: { engin
       <div className="cli-state meta-txt" data-state={cli.state}>
         {cli.state === "ready" && cli.path && (
           <p>
-            {tx("localCli.using", { path: <span className="mono">{cli.path}</span> })} · {t(cli.source === "manual" ? "localCli.sourceManual" : "localCli.sourceAuto")}
+            {tx("localCli.using", { path: <span className="mono">{cli.path}</span> })} · {t(cli.source === "manual" ? "localCli.sourceManual" : cli.source === "managed" ? "localCli.sourceManaged" : "localCli.sourceAuto")}
             {cli.version ? ` · ${cli.version}` : ""}
           </p>
         )}

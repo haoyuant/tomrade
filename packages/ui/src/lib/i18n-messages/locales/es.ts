@@ -2373,6 +2373,7 @@ export const es: PartialMessages = {
     using: "Usando {{path}}",
     sourceManual: "elegido por ti",
     sourceAuto: "encontrado automáticamente",
+    sourceManaged: "copia propia de Tomrade",
     missingDetail: "No se encontró {{name}} en el PATH ni en las carpetas de instalación habituales. Tomrade ejecuta la herramienta de línea de comandos {{name}}, no una app de escritorio con el mismo nombre.",
     desktopOnlyDetail: "La app de escritorio {{app}} está instalada, pero Tomrade ejecuta su herramienta de línea de comandos {{name}}, que la app no incluye. Instala la CLI como se indica abajo, inicia sesión y vuelve a comprobarlo.",
     brokenDetail: "Se encontró {{path}}, pero no se ejecuta: {{error}}",

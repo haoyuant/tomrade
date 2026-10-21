@@ -57,6 +57,7 @@
     "test:model-setup": "electron scripts/model-setup-check.mjs",
     "test:setup": "electron scripts/setup-check.mjs",
     "test:setup-chain": "electron scripts/setup-chain-check.mjs",
+    "test:managed-agents": "electron scripts/managed-agents-check.mjs",
     "test:worker-source": "electron scripts/worker-source-check.mjs",
     "test:acp-engines": "electron scripts/acp-engines-check.mjs",
     "test:first-run-agent": "electron scripts/first-run-agent-check.mjs",
