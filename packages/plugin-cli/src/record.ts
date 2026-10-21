@@ -273,6 +273,10 @@ function localAgentProblems(spec: LocalAgentSpec): string[] {
   if (spec.lend && typeof spec.lend.ask !== "function") out.push(`${label}: lend needs ask(request, io)`);
   for (const step of spec.setup?.install ?? []) {
     if (typeof step === "string") continue;
+    if ("npm" in step) {
+      if (typeof step.npm !== "string" || !/^(@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*$/.test(step.npm)) out.push(`${label}: an npm installer is a package's name, not ${JSON.stringify(step.npm)}`);
+      continue;
+    }
     const url = "script" in step ? step.script : (step as { powershell?: unknown }).powershell;
     if (typeof url !== "string" || !/^https:\/\/[^\s'"|;&`$]+$/.test(url)) out.push(`${label}: an installer is a script's https address, not ${JSON.stringify(url ?? step)}`);
   }
