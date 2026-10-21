@@ -57,6 +57,8 @@ export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAg
     terminal: agent.terminal ? { mode: "handoff", ...agent.terminal } : { mode: "none" },
     ...(agent.steer ? { steering: "forward" as const } : {}),
     async available(opts) {
+      // A recheck is the person's own: once they have installed or signed in, the list is asked for again at once.
+      if (opts?.fresh) failedAt = 0;
       const state = await check(opts);
       if (state.ok) ask();
       return state;
