@@ -89,7 +89,7 @@ const ITEMS = [
 
 export function seedDesignProject({ dbFor, projects, boards, views, items, fields, gitRepos }) {
   const project = projects.create({
-    name: "Tomrade Next",
+    name: "Tomrade",
     description: "Local-first backlog and knowledge workbench. Electron shell, in-process TypeScript backend, MCP server for coding agents.",
     keyPrefix: "TOM"
   });
@@ -108,7 +108,7 @@ export function seedDesignProject({ dbFor, projects, boards, views, items, field
   // project; where it is checked out is this machine's, and starts unset.
   let repo = null;
   if (gitRepos) {
-    repo = gitRepos.create({ projectId: project.id, remote: "git@github.com:acme/tomrade-next.git", defaultBranch: "main" });
+    repo = gitRepos.create({ projectId: project.id, remote: "git@github.com:acme/tomrade.git", defaultBranch: "main" });
     boards.update(project.id, boardIds.get("bd-ui"), { repoId: repo.id, repoPath: "packages/ui" });
   }
 

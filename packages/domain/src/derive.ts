@@ -9,7 +9,7 @@ export function provenanceOf(item: Pick<Item, "humanLocked" | "updatedBy">): Pro
   return isAi(item.updatedBy) ? "ai" : isSync(item.updatedBy) ? "sync" : "human";
 }
 
-/** 'Tomrade Next' -> 'TOM'. Falls back to a generic prefix for nameless input. */
+/** 'Tomrade Desktop' -> 'TOM'. Falls back to a generic prefix for nameless input. */
 export function keyPrefixFor(name: string): string {
   const letters = name.toUpperCase().replace(/[^A-Z]/g, "");
   return letters.slice(0, 3) || "ISS";

@@ -1,5 +1,7 @@
 # Archify and conversation media
 
+> **Historical.** A design or implementation note from an earlier stage, kept for context; the code and the docs one level up are the current truth.
+
 ## Usage
 
 The desktop configuration enables `@tomradex/archify`. Ask the loop or a local

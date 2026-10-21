@@ -77,7 +77,7 @@ describe("projects", () => {
   });
 
   it("derives a key prefix from the project name", () => {
-    expect(keyPrefixFor("Tomrade Next")).toBe("TOM");
+    expect(keyPrefixFor("Tomrade Desktop")).toBe("TOM");
     expect(keyPrefixFor("42")).toBe("ISS");
   });
 

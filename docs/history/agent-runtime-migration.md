@@ -1,5 +1,7 @@
 # Agent runtime migration and A/B evaluation
 
+> **Historical.** A design or implementation note from an earlier stage, kept for context; the code and the docs one level up are the current truth.
+
 Every Claude Code turn runs through the Claude Agent SDK and every Codex turn
 through Codex app-server. The per-turn headless CLIs (`claude -p`,
 `codex exec`) are gone; a `transport` left in saved settings or a thread's

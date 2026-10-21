@@ -52,7 +52,7 @@ it("settles a turn's policy, and knows Tomrade's own tools under any agent's nam
   expect(isTomradeTool({ title: "DeferExecuteTool", args: { toolName: "mcp__tomrade__list_items", params: {} } })).toBe(true);
   expect(isTomradeTool({ name: "Bash", title: "Run npm test" })).toBe(false);
   // A title or a path that merely says tomrade is not Tomrade's tool.
-  expect(isTomradeTool({ title: "write_file: /Users/a/Projects/tomrade-next/notes.md", kind: "edit" })).toBe(false);
+  expect(isTomradeTool({ title: "write_file: /Users/a/Projects/tomrade/notes.md", kind: "edit" })).toBe(false);
   expect(isTomradeTool({ title: "rm -rf ~/tomrade", kind: "execute" })).toBe(false);
   expect(isTomradeTool({ title: "mcp__tomrade__x; rm -rf /", kind: "execute" })).toBe(false);
   expect(isTomradeTool({ title: "mcp__tomrade__list_items", kind: "execute" })).toBe(false);
@@ -272,8 +272,8 @@ describe("an ACP agent as an engine", () => {
       return { asked, traces: blocks.filter((b) => b.type === "trace") };
     };
     const allowedEdit = await silent("Allow edit");
-    expect(allowedEdit.asked).toEqual(["Fake: write: /work/tomrade-next/notes.md\n{\n  \"path\": \"notes.md\"\n}"]);
-    expect(allowedEdit.traces).toEqual([expect.objectContaining({ tool: "write: /work/tomrade-next/notes.md", ok: true })]);
+    expect(allowedEdit.asked).toEqual(["Fake: write: /work/tomrade/notes.md\n{\n  \"path\": \"notes.md\"\n}"]);
+    expect(allowedEdit.traces).toEqual([expect.objectContaining({ tool: "write: /work/tomrade/notes.md", ok: true })]);
     expect((await silent("Deny")).traces).toEqual([expect.objectContaining({ ok: false })]);
 
     fs.writeFileSync(log, "");

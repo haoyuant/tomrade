@@ -1,4 +1,4 @@
-# Tomrade Next — Design
+# Tomrade — Design
 
 Living design spec for the prototype screens in this folder. Last verified against the
 build on 2026-08-26.
