@@ -340,9 +340,15 @@ plugins:
     title: Pi
     implements: [engine]
   # One-click agent setup: installs a chosen agent's CLI in the background and
-  # watches its sign-in — no terminal, no admin rights.
+  # watches its sign-in — no terminal, no admin rights. Where the person's own
+  # copy is missing or fails its test, Tomrade installs its own under agentsDir
+  # with the bundled npm and runs it on its own runtime.
   - id: agent-setup
     name: "@tomradex/agent-setup"
+    config:
+      agentsDir: "${userData}/agents"
+      nodeBinary: "${nodeRuntime}"
+      npmCli: "${appDir}/vendor/npm/bin/npm-cli.js"
   # Agents from the ACP registry (Zed and JetBrains's curated catalog): the
   # person adds one in Settings → Assistant, and it runs over ACP through npx,
   # set up like an agent a plugin declares. npx distributions only.

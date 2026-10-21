@@ -83,6 +83,9 @@ export const keys = {
     list: ["acpRegistry", "list"] as const
   },
 
+  agentSetup: {
+    managed: (engineId: string) => ["agentSetup", "managed", engineId] as const
+  },
   machineSetup: {
     git: ["machineSetup", "git"] as const
   },
