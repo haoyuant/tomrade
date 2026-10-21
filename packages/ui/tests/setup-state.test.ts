@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import type { EnginePick, EngineView } from "@tomradex/agent";
 import { engineHealth, engineProblem } from "../src/lib/engines";
-import { firstRunSetup, setupState } from "../src/lib/setupState";
+import { firstRunSetup, setupSeenId, setupState } from "../src/lib/setupState";
 
 const models = (over: Partial<EnginePick> = {}): EnginePick => ({ key: "model", title: "Model", choices: [{ value: "m1" }], freeText: true, ...over });
 const engine = (over: Partial<EngineView> = {}): EngineView => ({ id: "agent", title: "Agent", capabilities: ["backlog", "code", "general"], ok: true, picks: [models()], ...over });
@@ -61,12 +61,22 @@ it("counts a worker profile only once its one-token test answered", () => {
 });
 
 it("opens the first-run setup for an agent that was found but cannot run, and skips it for one that works", () => {
-  const notSeen = { seen: false, waited: false };
+  const notSeen = { seen: () => false, device: "here", waited: false };
   expect(firstRunSetup({ complete: false, checking: false }, notSeen)).toBe("open");
   expect(firstRunSetup({ complete: true, checking: false }, notSeen)).toBe("closed");
-  // Dealt with once, it does not come back by itself.
-  expect(firstRunSetup({ complete: false, checking: false }, { seen: true, waited: false })).toBe("closed");
   // An agent still listing its models gets a moment before the screen decides.
   expect(firstRunSetup({ complete: false, checking: true }, notSeen)).toBeNull();
-  expect(firstRunSetup({ complete: false, checking: true }, { seen: false, waited: true })).toBe("open");
+  expect(firstRunSetup({ complete: false, checking: true }, { ...notSeen, waited: true })).toBe("open");
+});
+
+it("remembers the setup screen put away per machine, not per account", () => {
+  const seenOn = (...ids: string[]) => (id: string) => ids.includes(id);
+  // Put away on another computer, or by a version that did not say where: this one still checks.
+  const elsewhere = { seen: seenOn(setupSeenId("other"), "setup-screen"), device: "here", waited: false };
+  expect(firstRunSetup({ complete: false, checking: false }, elsewhere)).toBe("open");
+  expect(firstRunSetup({ complete: true, checking: false }, elsewhere)).toBe("closed");
+  // Dealt with here, it does not come back by itself.
+  const here = { seen: seenOn(setupSeenId("here")), device: "here", waited: false };
+  expect(firstRunSetup({ complete: true, checking: false }, here)).toBe("closed");
+  expect(firstRunSetup({ complete: false, checking: false }, here)).toBe("closed");
 });

@@ -135,6 +135,26 @@ export function shimTarget(shim: string, text: string): string | null {
   return last ? path.win32.resolve(dir, last) : null;
 }
 
+/** Whether the shim hands its script to node: npm's `_prog` set to node or node.exe, pnpm's `node "…"` and `"…\node.exe" "…"`. */
+export function shimRunsNode(text: string): boolean {
+  return /_prog=(?:[^"\r\n]*[\\/])?node(?:\.exe)?"|\bnode(?:\.exe)?"?\s+"%(?:~dp0|dp0%)/i.test(text);
+}
+
+/** A script that starts with a `#!…node` line, as an npm bin without a .js name does. */
+export function nodeShebang(file: string): boolean {
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(file, "r");
+    const head = Buffer.alloc(128);
+    const line = head.subarray(0, fs.readSync(fd, head, 0, head.length, 0)).toString("utf8").split(/\r?\n/)[0];
+    return /^#!.*\bnode\b/.test(line);
+  } catch {
+    return false;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
 const META = /([()\][%!^"`<>&|;, *?])/g;
 
 /** One argument for `cmd /s /c "…"` reaching a batch file that hands `%*` on — the escaping cross-spawn uses. */
@@ -164,8 +184,10 @@ export function launchFor(file: string, host: Pick<CliHost, "platform" | "env">,
     const target = shimTarget(file, text);
     // yarn's global shim hands over to the package's own .cmd shim.
     if (target && isBatch(target) && depth < 3 && isFile(target, "win32")) return launchFor(target, host, [p.dirname(file), ...dirs], depth + 1);
-    const node = target && isScript(target) ? findNode(p.dirname(file), [...dirs, ...splitPath(envValue(host.env, "PATH"), "win32")], host.env) : null;
-    if (target && isFile(target, "win32") && !isScript(target) && !isBatch(target)) argv = (args) => ({ command: target, args });
+    // An npm bin need not be named .js (CodeBuddy's has no extension), and Windows cannot start a script as a program.
+    const viaNode = !!target && !isBatch(target) && (isScript(target) || shimRunsNode(text) || nodeShebang(target));
+    const node = target && viaNode ? findNode(p.dirname(file), [...dirs, ...splitPath(envValue(host.env, "PATH"), "win32")], host.env) : null;
+    if (target && isFile(target, "win32") && !viaNode && !isBatch(target)) argv = (args) => ({ command: target, args });
     else if (target && node && isFile(target, "win32")) {
       front.push(p.dirname(node));
       argv = (args) => ({ command: node, args: [target, ...args] });
@@ -417,17 +439,19 @@ interface Candidate {
 }
 
 const shared = new Map<string, CliLocator>();
+const noBundled: BundledApps = () => [];
 
 /**
  * One locator per CLI for the whole app, so the engine's views and its turns
  * share what was found. `bundled` names copies that ship inside a desktop app,
- * tried after every folder a terminal would search.
+ * tried after every folder a terminal would search; null says there are none,
+ * and leaving it out keeps whatever finder the locator has.
  */
-export function localCli(name: string, opts: { bundled?: BundledApps } = {}): CliLocator {
+export function localCli(name: string, opts: { bundled?: BundledApps | null } = {}): CliLocator {
   let locator = shared.get(name);
-  if (!locator) shared.set(name, (locator = new CliLocator(name, machineHost(), undefined, opts.bundled)));
-  // A plugin loaded again (an update) brings its own finder; the old one belongs to the code it replaced.
-  else if (opts.bundled) locator.findBundled(opts.bundled);
+  if (!locator) shared.set(name, (locator = new CliLocator(name, machineHost(), undefined, opts.bundled ?? noBundled)));
+  // A plugin loaded again (an update) brings its own finder, or none; the old one belongs to the code it replaced.
+  else if (opts.bundled !== undefined) locator.findBundled(opts.bundled ?? noBundled);
   return locator;
 }
 
@@ -445,7 +469,7 @@ export class CliLocator {
     readonly name: string,
     private host: CliHost = machineHost(),
     private timeoutMs = host.platform === "win32" ? 15_000 : 10_000,
-    private bundled: BundledApps = () => []
+    private bundled: BundledApps = noBundled
   ) {}
 
   // Looking for app installs may read the registry, so a turn reuses what the last search saw.

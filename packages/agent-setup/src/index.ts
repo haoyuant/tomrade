@@ -100,7 +100,12 @@ export class AgentSetup extends Service {
       detect: async () => {
         const state = await engine.available({ fresh: true });
         const cli = state.cli;
-        return { ready: cli?.state === "ready", ...(cli?.version ? { version: cli.version } : {}), ...(cli?.error ?? state.reason ? { error: cli?.error ?? state.reason } : {}) };
+        return {
+          ready: cli?.state === "ready",
+          ...(cli?.version ? { version: cli.version } : {}),
+          ...(cli?.state === "broken" && cli.path ? { path: cli.path } : {}),
+          ...(cli?.error ?? state.reason ? { error: cli?.error ?? state.reason } : {})
+        };
       },
       report,
       signal,

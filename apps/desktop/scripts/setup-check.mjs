@@ -124,7 +124,7 @@ const run = async () => {
   check("and points at the sample project next", (await text('[data-testid="setup-open-tour"]')) === "Open the sample project" && (await has('[data-testid="setup-continue"]')));
   await shot("setup-03-done");
   await click('[data-testid="setup-open-tour"]');
-  check("which opens on its board, and the screen stays away for good", await wait(async () => (await texts(".card-title")).includes("Drag this ticket to Done") && (ctx.settings.get().onboarding?.seen ?? []).includes("setup-screen"), "sample board"));
+  check("which opens on its board, and the screen stays away for good", await wait(async () => (await texts(".card-title")).includes("Drag this ticket to Done") && (ctx.settings.get().onboarding?.seen ?? []).includes(`setup-screen:${ctx.hub.deviceId}`), "sample board"));
   check("with no setup card in the assistant", await wait(() => has(".ai-input"), "assistant panel") && !(await has(".agent-setup")));
   await shot("setup-04-sample");
 

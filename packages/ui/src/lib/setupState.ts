@@ -34,11 +34,21 @@ export function setupState(engines: EngineView[], worker: WorkerStatus, workerTe
 export const FIRST_RUN_CHECK_MS = 20_000;
 
 /**
- * Whether the first run opens the setup screen: only while nothing works yet,
- * never once it was dealt with, and not before an agent still listing its
- * models has had a moment to answer. Null: not decided yet.
+ * The setup screen put away on this machine. Per device, though the seen list
+ * travels with the account: one put away on another computer, or the plain
+ * "setup-screen" older versions wrote, does not vouch for this one.
  */
-export function firstRunSetup(state: { complete: boolean; checking: boolean }, opts: { seen: boolean; waited: boolean }): "open" | "closed" | null {
-  if (opts.seen || state.complete) return "closed";
+export const setupSeenId = (device: string) => `setup-screen:${device}`;
+
+/**
+ * Whether the first run opens the setup screen: only while nothing works yet,
+ * never once it was dealt with on this machine, and not before an agent still
+ * listing its models has had a moment to answer. Null: not decided yet.
+ */
+export function firstRunSetup(
+  state: { complete: boolean; checking: boolean },
+  opts: { seen: (id: string) => boolean; device: string; waited: boolean }
+): "open" | "closed" | null {
+  if (state.complete || opts.seen(setupSeenId(opts.device))) return "closed";
   return state.checking && !opts.waited ? null : "open";
 }
