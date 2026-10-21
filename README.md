@@ -150,14 +150,14 @@ On macOS, run the tests on Homebrew's node rather than nvm's: a notarized node c
 |---|---|
 | `apps/desktop` | Electron shell; `tomrade.yml` is the application, one row per plugin |
 | `packages/ui` | React 19 renderer (TanStack Router/Query, Tailwind); strings in `src/lib/i18n-messages/` |
-| `packages/*` | the core and its plugins: items, storage, agent engines, MCP, files, notes, … |
+| [`packages/*`](packages/README.md) | the core and its plugins: items, storage, agent engines, MCP, files, notes, … The linked table gives each one's role and `ctx` key |
 | [`docs/architecture.md`](docs/architecture.md) | product decisions, what we deliberately don't do, the package map, data model and write path |
 | [`docs/plugin-api.md`](docs/plugin-api.md) | the plugin contract |
 | [`CONTEXT.md`](CONTEXT.md) | the domain language: ticket, delivery, code link, sync back, … |
 
 ## Contributing
 
-Issues and pull requests are welcome. A few house rules:
+Issues and pull requests are welcome. [`CONTRIBUTING.md`](CONTRIBUTING.md) has the setup and the details; report a vulnerability privately as [`SECURITY.md`](SECURITY.md) says. A few house rules:
 
 - **Plugins first.** If a feature can be a plugin, make it one; the core reads contracts only.
 - **Every user-facing string goes through `t(...)`**, with both an English and a Chinese entry.

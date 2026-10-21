@@ -1,0 +1,36 @@
+name: Bug report
+description: Something in Tomrade doesn't work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. A security problem goes through [a private report](https://github.com/haoyuant/tomrade/security/advisories/new), not here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got instead. Screenshots help.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a project with …
+        2. Press …
+        3. See …
+  - type: textarea
+    id: about
+    attributes:
+      label: Version and system
+      description: In Tomrade, open Settings › About and press **Copy details**, then paste here.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Anything else
+      description: Error messages, the agent or model provider involved, plugins you installed.
