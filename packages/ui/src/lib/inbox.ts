@@ -2,13 +2,7 @@ import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AcceptOptions, AdoptOptions, CloseReason, InboxListFilter } from "@tomradex/inbox";
 import { invoke, subscribe } from "./api";
-
-const keys = {
-  all: (projectId: string) => ["inbox", projectId] as const,
-  entries: (projectId: string, status: InboxListFilter) => ["inbox", projectId, "entries", status] as const,
-  sources: (projectId: string) => ["inbox", projectId, "sources"] as const,
-  triager: (projectId: string) => ["inbox", projectId, "triager"] as const
-};
+import { keys } from "./queries/keys";
 
 /** A pull, a triage or another window's change refetches the lot, and the sidebar's count with it. */
 function useLive(projectId: string) {
@@ -17,8 +11,8 @@ function useLive(projectId: string) {
     () =>
       subscribe("inbox.changed", (id) => {
         if (id !== projectId) return;
-        void qc.invalidateQueries({ queryKey: keys.all(projectId) });
-        void qc.invalidateQueries({ queryKey: ["contributions", "sidebar", projectId] });
+        void qc.invalidateQueries({ queryKey: keys.inbox.all(projectId) });
+        void qc.invalidateQueries({ queryKey: keys.sidebarModules(projectId) });
       }),
     [projectId, qc]
   );
@@ -27,24 +21,24 @@ function useLive(projectId: string) {
 /** Errors (the plugin is off) come back as a failed query, not an empty list. */
 export function useInboxEntries(projectId: string, status: InboxListFilter, enabled = true) {
   useLive(projectId);
-  return useQuery({ queryKey: keys.entries(projectId, status), queryFn: () => invoke("inbox.list", projectId, status), retry: false, enabled });
+  return useQuery({ queryKey: keys.inbox.entries(projectId, status), queryFn: () => invoke("inbox.list", projectId, status), retry: false, enabled });
 }
 
 export function useInboxSources(projectId: string, enabled = true) {
   useLive(projectId);
-  return useQuery({ queryKey: keys.sources(projectId), queryFn: () => invoke("inbox.sources", projectId), retry: false, enabled });
+  return useQuery({ queryKey: keys.inbox.sources(projectId), queryFn: () => invoke("inbox.sources", projectId), retry: false, enabled });
 }
 
 /** Who suggests triage here, if anyone, and whether it can now; null when no triager is installed. */
 export function useInboxTriager(projectId: string, enabled = true) {
-  return useQuery({ queryKey: keys.triager(projectId), queryFn: () => invoke("inbox.triager"), retry: false, enabled });
+  return useQuery({ queryKey: keys.inbox.triager(projectId), queryFn: () => invoke("inbox.triager"), retry: false, enabled });
 }
 
 export function useInboxActions(projectId: string) {
   const qc = useQueryClient();
   const done = () => {
-    void qc.invalidateQueries({ queryKey: keys.all(projectId) });
-    void qc.invalidateQueries({ queryKey: ["contributions", "sidebar", projectId] });
+    void qc.invalidateQueries({ queryKey: keys.inbox.all(projectId) });
+    void qc.invalidateQueries({ queryKey: keys.sidebarModules(projectId) });
   };
   return {
     refresh: useMutation({ mutationFn: () => invoke("inbox.refresh", projectId), onSuccess: done }),

@@ -1,4 +1,17 @@
+import type { ModelErrorKind } from "@tomradex/domain";
 import type { MessageKey } from "./i18n";
+
+/** A failed model check, said with the host and model it tried. */
+export const PROFILE_CHECK_KEY: Record<ModelErrorKind, MessageKey> = {
+  auth: "settingsDialog.profileCheck_auth",
+  quota: "settingsDialog.profileCheck_quota",
+  rate: "settingsDialog.profileCheck_rate",
+  model: "settingsDialog.profileCheck_model",
+  server: "settingsDialog.profileCheck_server",
+  network: "settingsDialog.profileCheck_network",
+  slow: "settingsDialog.profileCheck_slow",
+  other: "settingsDialog.profileCheck_other"
+};
 
 /**
  * The domain's typed refusals cross IPC as "<Class>: <English with ids in it>";

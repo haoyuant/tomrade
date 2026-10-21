@@ -4,40 +4,33 @@ import type { Cadence, ScheduleInput, TemplateInput } from "@tomradex/schedules"
 import { invoke, subscribe } from "./api";
 import { intlTag } from "./domain";
 import { say, type MessageKey } from "./dicts";
-
-const keys = {
-  all: (projectId: string) => ["schedules", projectId] as const,
-  templates: (projectId: string) => ["schedules", projectId, "templates"] as const,
-  schedules: (projectId: string) => ["schedules", projectId, "list"] as const,
-  runs: (projectId: string, templateId: string) => ["schedules", projectId, "runs", templateId] as const,
-  suggestions: (locale: string) => ["schedules", "suggestions", locale] as const
-};
+import { keys } from "./queries/keys";
 
 /** Anything a template, a schedule or a run changes refetches the lot: they are few. */
 function useLive(projectId: string) {
   const qc = useQueryClient();
-  useEffect(() => subscribe("schedules.changed", (id) => id === projectId && void qc.invalidateQueries({ queryKey: keys.all(projectId) })), [projectId, qc]);
+  useEffect(() => subscribe("schedules.changed", (id) => id === projectId && void qc.invalidateQueries({ queryKey: keys.schedules.all(projectId) })), [projectId, qc]);
 }
 
 /** Errors (the plugin is off) come back as a failed query, not an empty list. */
 export function useTemplates(projectId: string) {
   useLive(projectId);
-  return useQuery({ queryKey: keys.templates(projectId), queryFn: () => invoke("schedules.templates", projectId), retry: false });
+  return useQuery({ queryKey: keys.schedules.templates(projectId), queryFn: () => invoke("schedules.templates", projectId), retry: false });
 }
 
 export function useSchedules(projectId: string) {
   useLive(projectId);
-  return useQuery({ queryKey: keys.schedules(projectId), queryFn: () => invoke("schedules.list", projectId), retry: false });
+  return useQuery({ queryKey: keys.schedules.list(projectId), queryFn: () => invoke("schedules.list", projectId), retry: false });
 }
 
 export const useTemplateRuns = (projectId: string, templateId: string | null) =>
-  useQuery({ queryKey: keys.runs(projectId, templateId ?? ""), queryFn: () => invoke("schedules.runs", projectId, templateId!, 5), enabled: !!templateId });
+  useQuery({ queryKey: keys.schedules.runs(projectId, templateId ?? ""), queryFn: () => invoke("schedules.runs", projectId, templateId!, 5), enabled: !!templateId });
 
-export const useSuggestions = (locale: string) => useQuery({ queryKey: keys.suggestions(locale), queryFn: () => invoke("schedules.suggestions"), staleTime: Infinity, retry: false });
+export const useSuggestions = (locale: string) => useQuery({ queryKey: keys.schedules.suggestions(locale), queryFn: () => invoke("schedules.suggestions"), staleTime: Infinity, retry: false });
 
 export function useTemplateActions(projectId: string) {
   const qc = useQueryClient();
-  const done = () => void qc.invalidateQueries({ queryKey: keys.all(projectId) });
+  const done = () => void qc.invalidateQueries({ queryKey: keys.schedules.all(projectId) });
   return {
     create: useMutation({ mutationFn: (input: TemplateInput) => invoke("schedules.createTemplate", projectId, input), onSuccess: done }),
     update: useMutation({ mutationFn: ({ id, input }: { id: string; input: TemplateInput }) => invoke("schedules.updateTemplate", projectId, id, input), onSuccess: done }),

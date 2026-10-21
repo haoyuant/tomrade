@@ -3,34 +3,33 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {} from "@tomradex/im";
 import type { ImAllowRequest } from "@tomradex/im";
 import { invoke, subscribe } from "./api";
-
-const KEY = ["im"] as const;
+import { keys } from "./queries/keys";
 
 /** Every IM query refetches on the main process's `im.changed`, so the panel follows connections and pairings live. */
 function useLive() {
   const qc = useQueryClient();
-  useEffect(() => subscribe("im.changed", () => void qc.invalidateQueries({ queryKey: KEY })), [qc]);
+  useEffect(() => subscribe("im.changed", () => void qc.invalidateQueries({ queryKey: keys.im.root })), [qc]);
 }
 
 export function useImConnections() {
   useLive();
-  return useQuery({ queryKey: [...KEY, "connections"], queryFn: () => invoke("im.connections") });
+  return useQuery({ queryKey: keys.im.connections, queryFn: () => invoke("im.connections") });
 }
-export const useImAdapters = () => useQuery({ queryKey: [...KEY, "adapters"], queryFn: () => invoke("im.adapters") });
-export const useImIgnored = () => useQuery({ queryKey: [...KEY, "ignored"], queryFn: () => invoke("im.ignored") });
-export const useImDeliveries = () => useQuery({ queryKey: [...KEY, "deliveries"], queryFn: () => invoke("im.deliveries") });
-export const useImPairings = () => useQuery({ queryKey: [...KEY, "pairings"], queryFn: () => invoke("im.pairings") });
+export const useImAdapters = () => useQuery({ queryKey: keys.im.adapters, queryFn: () => invoke("im.adapters") });
+export const useImIgnored = () => useQuery({ queryKey: keys.im.ignored, queryFn: () => invoke("im.ignored") });
+export const useImDeliveries = () => useQuery({ queryKey: keys.im.deliveries, queryFn: () => invoke("im.deliveries") });
+export const useImPairings = () => useQuery({ queryKey: keys.im.pairings, queryFn: () => invoke("im.pairings") });
 
 /** The IM conversations a thread is bound to; empty where IM isn't running (a browser tab). */
 export function useImThreadBindings(projectId: string, threadId: string | null) {
   useLive();
-  return useQuery({ queryKey: [...KEY, "threadBindings", projectId, threadId], enabled: !!threadId,
+  return useQuery({ queryKey: keys.im.threadBindings(projectId, threadId), enabled: !!threadId,
     queryFn: () => invoke("im.threadBindings", projectId, threadId!).catch(() => []) });
 }
 
 function useImMutation<A extends unknown[], R>(fn: (...args: A) => Promise<R>) {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: (args: A) => fn(...args), onSettled: () => qc.invalidateQueries({ queryKey: KEY }) });
+  return useMutation({ mutationFn: (args: A) => fn(...args), onSettled: () => qc.invalidateQueries({ queryKey: keys.im.root }) });
 }
 
 export const useImPairStart = () => useImMutation((connectionId: string, projectId: string) => invoke("im.pairStart", connectionId, projectId));

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNod
 import type { Board, FieldDef, FieldValue, Item, ItemStatus, Patch, Priority } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { PriorityGlyph, StatusMark } from "~/components/ui/atoms";
-import { PRIORITIES, PRIORITY_LABEL, STATUS, STATUS_KEYS, isTicket, usd } from "~/lib/domain";
+import { PRIORITIES, PRIORITY_LABEL, STATUS, STATUS_KEYS, WORK_TYPE_KEY, isTicket, usd } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useDoneGuard } from "~/lib/doneGuard";
 import { usePatchItem } from "~/lib/queries";
@@ -120,7 +120,7 @@ export function WorkTypeField({ item, write }: FieldProps) {
     options={[{ value: "coding", name: t("fields.coding") }, { value: "general", name: t("fields.general") }]}
     onPick={value => {
       if ((value !== "coding" && value !== "general") || value === item.workType) return;
-      write(item, { workType: value }, t("fields.setWorkTypeToast", { key: item.key, type: t(`fields.${value}`) }));
+      write(item, { workType: value }, t("fields.setWorkTypeToast", { key: item.key, type: t(WORK_TYPE_KEY[value]) }));
     }} />;
 }
 

@@ -8,19 +8,11 @@ import { invalidateWorkspace, keys, useSaveSettings, useSettings } from "./queri
 import { useToast } from "./toast";
 import { useErrorToast } from "~/lib/toast";
 
-export const agentKeys = {
-  threads: (projectId: string) => ["agent", "threads", projectId] as const,
-  thread: (projectId: string, threadId: string) => ["agent", "thread", projectId, threadId] as const,
-  engines: ["agent", "engines"] as const,
-  playbooks: (projectId?: string) => ["agent", "playbooks", projectId ?? ""] as const,
-  workdir: (projectId: string, threadId: string) => ["agent", "workdir", projectId, threadId] as const
-};
-
-export const useAgentThreads = (projectId: string) => useQuery({ queryKey: agentKeys.threads(projectId), queryFn: () => invoke("agent.threads", projectId) });
+export const useAgentThreads = (projectId: string) => useQuery({ queryKey: keys.agent.threads(projectId), queryFn: () => invoke("agent.threads", projectId) });
 
 /** Put-away conversations, fetched only while the list asks for them. */
 export const useArchivedThreads = (projectId: string, enabled: boolean) =>
-  useQuery({ queryKey: [...agentKeys.threads(projectId), "archived"], queryFn: () => invoke("agent.archivedThreads", projectId), enabled });
+  useQuery({ queryKey: keys.agent.archivedThreads(projectId), queryFn: () => invoke("agent.archivedThreads", projectId), enabled });
 
 export function useUnarchiveThread(projectId: string) {
   const qc = useQueryClient();
@@ -29,8 +21,8 @@ export function useUnarchiveThread(projectId: string) {
     onError: report,
     mutationFn: (threadId: string) => invoke("agent.unarchiveThread", projectId, threadId),
     onSuccess: (_ok, threadId) => {
-      void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) });
-      void qc.invalidateQueries({ queryKey: agentKeys.thread(projectId, threadId) });
+      void qc.invalidateQueries({ queryKey: keys.agent.threads(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.agent.thread(projectId, threadId) });
     }
   });
 }
@@ -38,7 +30,7 @@ export function useUnarchiveThread(projectId: string) {
 // Events only patch the thread on screen, so a cached one missed whatever its run did meanwhile
 // (even finishing, which left the panel "working" for good): always refetch when it comes back into view.
 export const useAgentThread = (projectId: string, threadId: string | null) =>
-  useQuery({ queryKey: agentKeys.thread(projectId, threadId ?? ""), queryFn: () => invoke("agent.thread", projectId, threadId!), enabled: !!threadId, staleTime: 0 });
+  useQuery({ queryKey: keys.agent.thread(projectId, threadId ?? ""), queryFn: () => invoke("agent.thread", projectId, threadId!), enabled: !!threadId, staleTime: 0 });
 
 /**
  * The playbooks a ticket of this work type can run as its method — the built-in
@@ -65,7 +57,7 @@ export const methodWords = (t: (key: MessageKey) => string, id: string, entry?: 
 };
 
 // While an engine is still asking its agent for its models, look again shortly.
-export const useEngines = () => useQuery({ queryKey: agentKeys.engines, queryFn: () => invoke("agent.engines"), staleTime: 15_000,
+export const useEngines = () => useQuery({ queryKey: keys.agent.engines, queryFn: () => invoke("agent.engines"), staleTime: 15_000,
   refetchInterval: (query) => (query.state.data?.some((engine) => engine.picks?.some((pick) => pick.pending)) ? 3000 : false) });
 
 /** The engine answering for an id a thread, run or setting holds — itself, or the engine that took it in. */
@@ -76,7 +68,7 @@ export const findEngine = (engines: EngineView[] | undefined, id: string | null 
 export const conducts = (engine: Pick<EngineView, "capabilities">): boolean => engine.capabilities.length > 0;
 
 export const usePlaybooks = (projectId?: string) =>
-  useQuery({ queryKey: agentKeys.playbooks(projectId), queryFn: () => invoke("agent.playbooks", projectId), staleTime: 15_000 });
+  useQuery({ queryKey: keys.agent.playbooks(projectId), queryFn: () => invoke("agent.playbooks", projectId), staleTime: 15_000 });
 
 const EMPTY_AGENT_SETTINGS: AgentSettings = { defaultEngine: "tomrade", confirmWritesOver: 0, resumeAfterLimit: true, maxRunMinutes: 15, engines: {}, playbookChoices: {} };
 
@@ -107,7 +99,7 @@ export function usePlaybookConflictNotice(projectId: string): void {
     const record = (id: string, source: PlaybookSource) =>
       save.mutate(
         { ...app, agent: { ...agent, playbookChoices: { ...agent.playbookChoices, [id]: source } } },
-        { onSuccess: () => qc.invalidateQueries({ queryKey: ["agent", "playbooks"] }) }
+        { onSuccess: () => qc.invalidateQueries({ queryKey: keys.agent.playbooksAll }) }
       );
     for (const entry of entries) {
       if (!entry.shadows.length || agent.playbookChoices?.[entry.id] || noticed.current.has(entry.id)) continue;
@@ -128,7 +120,7 @@ export function useNewThread(projectId: string) {
   return useMutation({
     mutationFn: (args: { engine?: string; boardId?: string | null; options?: Record<string, unknown> | null } = {}) =>
       invoke("agent.newThread", projectId, args.engine, args.boardId ?? null, { options: args.options }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) })
+    onSuccess: () => void qc.invalidateQueries({ queryKey: keys.agent.threads(projectId) })
   });
 }
 
@@ -140,9 +132,9 @@ export function useSetWorkstream(projectId: string) {
     onError: report,
     mutationFn: (args: { threadId: string; boardId: string | null }) => invoke("agent.setWorkstream", projectId, args.threadId, args.boardId),
     onSuccess: (_thread, args) => {
-      void qc.invalidateQueries({ queryKey: agentKeys.thread(projectId, args.threadId) });
-      void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) });
-      void qc.invalidateQueries({ queryKey: agentKeys.workdir(projectId, args.threadId) });
+      void qc.invalidateQueries({ queryKey: keys.agent.thread(projectId, args.threadId) });
+      void qc.invalidateQueries({ queryKey: keys.agent.threads(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.agent.workdir(projectId, args.threadId) });
     }
   });
 }
@@ -150,7 +142,7 @@ export function useSetWorkstream(projectId: string) {
 export function useArchiveThread(projectId: string) {
   const qc = useQueryClient();
   const report = useErrorToast();
-  return useMutation({ onError: report, mutationFn: (threadId: string) => invoke("agent.archiveThread", projectId, threadId), onSuccess: () => void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) }) });
+  return useMutation({ onError: report, mutationFn: (threadId: string) => invoke("agent.archiveThread", projectId, threadId), onSuccess: () => void qc.invalidateQueries({ queryKey: keys.agent.threads(projectId) }) });
 }
 
 export function useDeleteThread(projectId: string) {
@@ -160,16 +152,16 @@ export function useDeleteThread(projectId: string) {
     onError: report,
     mutationFn: (threadId: string) => invoke("agent.deleteThread", projectId, threadId),
     onSuccess: (_deleted, threadId) => {
-      qc.setQueryData(agentKeys.threads(projectId), (threads: { id: string }[] | undefined) => threads?.filter((thread) => thread.id !== threadId));
-      qc.removeQueries({ queryKey: agentKeys.thread(projectId, threadId) });
-      void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) });
+      qc.setQueryData(keys.agent.threads(projectId), (threads: { id: string }[] | undefined) => threads?.filter((thread) => thread.id !== threadId));
+      qc.removeQueries({ queryKey: keys.agent.thread(projectId, threadId) });
+      void qc.invalidateQueries({ queryKey: keys.agent.threads(projectId) });
     }
   });
 }
 
 /** Where the thread's engine would run, or why it cannot yet (no checkout of the workstream's repository here). */
 export const useWorkdir = (projectId: string, threadId: string | null, enabled = true) =>
-  useQuery({ queryKey: agentKeys.workdir(projectId, threadId ?? ""), queryFn: () => invoke("agent.workdir", projectId, threadId!), enabled: !!threadId && enabled, retry: false, staleTime: 5_000 });
+  useQuery({ queryKey: keys.agent.workdir(projectId, threadId ?? ""), queryFn: () => invoke("agent.workdir", projectId, threadId!), enabled: !!threadId && enabled, retry: false, staleTime: 5_000 });
 
 export function useSetEngine(projectId: string) {
   const report = useErrorToast();
@@ -178,8 +170,8 @@ export function useSetEngine(projectId: string) {
     onError: report,
     mutationFn: (args: { threadId: string; engineId: string }) => invoke("agent.setEngine", projectId, args.threadId, args.engineId),
     onSuccess: (_thread, args) => {
-      void qc.invalidateQueries({ queryKey: agentKeys.thread(projectId, args.threadId) });
-      void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.agent.thread(projectId, args.threadId) });
+      void qc.invalidateQueries({ queryKey: keys.agent.threads(projectId) });
     }
   });
 }
@@ -192,8 +184,8 @@ export function useSetOptions(projectId: string) {
     onError: report,
     mutationFn: (args: { threadId: string; options: Record<string, unknown> | null }) => invoke("agent.setOptions", projectId, args.threadId, args.options),
     onSuccess: (_thread, args) => {
-      void qc.invalidateQueries({ queryKey: agentKeys.thread(projectId, args.threadId) });
-      void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.agent.thread(projectId, args.threadId) });
+      void qc.invalidateQueries({ queryKey: keys.agent.threads(projectId) });
     }
   });
 }
@@ -205,8 +197,8 @@ export function useSetPermissionMode(projectId: string) {
     onError: report,
     mutationFn: (args: { threadId: string; mode: string }) => invoke("agent.setPermissionMode", projectId, args.threadId, args.mode),
     onSuccess: (_thread, args) => {
-      void qc.invalidateQueries({ queryKey: agentKeys.thread(projectId, args.threadId) });
-      void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.agent.thread(projectId, args.threadId) });
+      void qc.invalidateQueries({ queryKey: keys.agent.threads(projectId) });
     }
   });
 }
@@ -230,7 +222,7 @@ export function useRevertRun(projectId: string, threadId: string | null) {
     onError: report,
     mutationFn: (runId: string) => invoke("agent.revert", projectId, runId),
     onSuccess: () => {
-      if (threadId) void qc.invalidateQueries({ queryKey: agentKeys.thread(projectId, threadId) });
+      if (threadId) void qc.invalidateQueries({ queryKey: keys.agent.thread(projectId, threadId) });
       invalidateWorkspace(qc, projectId);
     }
   });
@@ -261,12 +253,12 @@ export function useAgentEvents(
     return subscribe("agent.event", (eventThreadId: string, event: AgentEvent) => {
       if (eventThreadId !== threadId) {
         // another conversation's list entry changes when a run starts or ends, or a message lands — not per streamed word
-        if (event.type === "run" || event.type === "done" || event.type === "message") void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) });
+        if (event.type === "run" || event.type === "done" || event.type === "message") void qc.invalidateQueries({ queryKey: keys.agent.threads(projectId) });
         // a ticket's spend is read with its items
         if (event.type === "done" && event.run.costUsd) void qc.invalidateQueries({ queryKey: keys.items(projectId) });
         return;
       }
-      const key = agentKeys.thread(projectId, threadId);
+      const key = keys.agent.thread(projectId, threadId);
       const patch = (fn: (detail: ThreadDetail) => ThreadDetail) => qc.setQueryData<ThreadDetail>(key, (d) => (d ? fn(d) : d));
       switch (event.type) {
         case "permission-mode":
@@ -291,13 +283,13 @@ export function useAgentEvents(
         case "run":
           patch((d) => ({ ...d, runs: [...d.runs.filter((r) => r.id !== event.run.id), event.run] }));
           // the thread list says which conversations are running
-          void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId), exact: true });
+          void qc.invalidateQueries({ queryKey: keys.agent.threads(projectId), exact: true });
           break;
         case "done":
           onDelta(event.run.id, null);
           onProgress(null);
           void qc.invalidateQueries({ queryKey: key });
-          void qc.invalidateQueries({ queryKey: agentKeys.threads(projectId) });
+          void qc.invalidateQueries({ queryKey: keys.agent.threads(projectId) });
           if (event.run.changes > 0) invalidateWorkspace(qc, projectId);
           else if (event.run.costUsd) void qc.invalidateQueries({ queryKey: keys.items(projectId) });
           break;

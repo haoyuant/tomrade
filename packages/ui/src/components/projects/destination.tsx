@@ -3,14 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { ConnectionState, StorageProviderView } from "@tomradex/storage";
 import { Icon } from "~/components/icons";
 import { useI18n } from "~/lib/i18n";
-import {
-  useBrowseStorage,
-  useConnectStorage,
-  useDisconnectStorage,
-  useDraftStorage,
-  useSignInStorage,
-  useStorageConnection
-} from "~/lib/queries";
+import { keys, useBrowseStorage, useConnectStorage, useDisconnectStorage, useDraftStorage, useSignInStorage, useStorageConnection } from "~/lib/queries";
 import { openExternal } from "~/lib/shell";
 import { PlainSecretNote } from "~/components/ui/PlainSecretNote";
 import { readableError, useToast } from "~/lib/toast";
@@ -74,7 +67,7 @@ export function ConnectionPanel({ provider, api = storageRemoteApi }: { provider
     else if (waiting.current) {
       waiting.current = false;
       if (connected) toast({ body: t("destination.connectedToast", { label: state.data?.label ?? "" }) });
-      for (const key of ["storage", "files", "codeLink"]) void qc.invalidateQueries({ queryKey: [key] });
+      for (const key of [keys.storage, keys.files.root, keys.codeLink.root]) void qc.invalidateQueries({ queryKey: key });
     }
   }, [pending, connected]); // eslint-disable-line react-hooks/exhaustive-deps
 

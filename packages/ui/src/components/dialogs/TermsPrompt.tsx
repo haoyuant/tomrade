@@ -5,6 +5,7 @@ import { invoke } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
 import { legalUrl } from "~/lib/legal";
 import { openExternal } from "~/lib/shell";
+import { keys } from "~/lib/queries";
 
 /**
  * Asks a signed-in account that hasn't agreed to the current Terms of Service and
@@ -15,7 +16,7 @@ export function TermsPrompt() {
   const { t, locale } = useI18n();
   const account = useAccount();
   const qc = useQueryClient();
-  const refresh = () => qc.invalidateQueries({ queryKey: ["account"] });
+  const refresh = () => qc.invalidateQueries({ queryKey: keys.account });
   const accept = useMutation({ mutationFn: () => invoke("account.acceptTerms"), onSuccess: refresh });
   const signOut = useMutation({ mutationFn: () => invoke("account.signOut"), onSettled: refresh });
   const info = account.data;

@@ -9,11 +9,11 @@ import { invoke } from "~/lib/api";
 import { Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
 import { viewIcon } from "~/lib/domain";
-import { useI18n, type MessageKey } from "~/lib/i18n";
+import { useI18n } from "~/lib/i18n";
 import { foldSteps, startBriefId } from "~/lib/steps";
 import { conducts, findEngine, useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetWorkstream, useWorkdir, type RunProgress } from "~/lib/agent";
-import { useAssistantAccessories, useBoards, useItems, useSettings } from "~/lib/queries";
-import { useAttention, type AttentionEntry } from "~/lib/attention";
+import { keys, useAssistantAccessories, useBoards, useItems, useSettings } from "~/lib/queries";
+import { ATTENTION_KEY, useAttention, type AttentionEntry } from "~/lib/attention";
 import { engineStateLabel } from "~/lib/localCli";
 import { useSetupInTerminal } from "~/lib/setup";
 import { openSettingsPane } from "~/lib/settingsHost";
@@ -109,7 +109,7 @@ export function AgentPanel({
   // what agents in this project wait on the person for: a count on the rail, a word in the thread list
   const attention = useAttention().filter((e) => e.projectId === projectId);
   const attentionOf = new Map(attention.flatMap((e) => (e.threadId ? [[e.threadId, e] as const] : [])));
-  const attentionLabel = (e: AttentionEntry) => t(`agentPanel.attention_${e.kind}` as MessageKey);
+  const attentionLabel = (e: AttentionEntry) => t(ATTENTION_KEY[e.kind]);
   const threadList = useThreadListState(projectId);
   const composer = useRef<HTMLTextAreaElement>(null);
   /** Whether the transcript follows new lines: true until the person scrolls up to read, again once they come back down. */
@@ -162,7 +162,7 @@ export function AgentPanel({
     else void openThread({ boardId: next }).then((th) => pickThread(th.id));
   };
   const mediaCapabilities = useQuery({
-    queryKey: ["agent-media-capabilities", currentEngineId, engineOptions, settings.data?.models],
+    queryKey: keys.agent.mediaCapabilities(currentEngineId, engineOptions, settings.data?.models),
     queryFn: () => invoke("agent.mediaCapabilities", currentEngineId, engineOptions),
     retry: false
   });

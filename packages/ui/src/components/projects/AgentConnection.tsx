@@ -1,9 +1,27 @@
 import { useState } from "react";
+import type { ConnectionView, SkipReason } from "@tomradex/code-link";
+import type { InstanceBadge } from "@tomradex/mcp";
 import { useChooseConnectAgents, useConnectRepository, useRepositoryConnection } from "~/lib/codeLink";
 import { agoLabel } from "~/lib/domain";
-import { useI18n } from "~/lib/i18n";
+import { useI18n, type MessageKey } from "~/lib/i18n";
 import { openExternal } from "~/lib/shell";
 import { readableError } from "~/lib/toast";
+
+const STATE_KEY: Record<ConnectionView["state"], MessageKey> = {
+  unconnected: "repositories.connection_unconnected",
+  connected: "repositories.connection_connected",
+  pending: "repositories.connection_pending",
+  "other-instance": "repositories.connection_other-instance",
+  "no-checkout": "repositories.connection_no-checkout",
+  unavailable: "repositories.connection_unavailable"
+};
+const HOLDER_KEY: Record<InstanceBadge["kind"], MessageKey> = { packaged: "repositories.connectionHolder_packaged", dev: "repositories.connectionHolder_dev" };
+const SKIPPED_KEY: Record<SkipReason, MessageKey> = {
+  tracked: "repositories.agentSkipped_tracked",
+  comments: "repositories.agentSkipped_comments",
+  invalid: "repositories.agentSkipped_invalid",
+  "codex-hooks": "repositories.agentSkipped_codex-hooks"
+};
 
 /** Shared by the repository row and the workstream's quiet setup hint. */
 export function AgentConnection({ projectId, repoId, hint = false }: { projectId: string; repoId: string; hint?: boolean }) {
@@ -23,7 +41,7 @@ export function AgentConnection({ projectId, repoId, hint = false }: { projectId
   const unapproved = approvals.filter((a) => a.state !== "approved");
   // A taken port leaves this Tomrade on one that changes at every restart; Connect refuses to write it.
   const held = view?.clash?.heldBy;
-  const clash = view?.clash && t("repositories.connectionPortClash", { port: view.clash.port, holder: held ? t(`repositories.connectionHolder_${held.kind}`, { version: held.version, pid: held.pid }) : t("repositories.connectionHolderUnknown") });
+  const clash = view?.clash && t("repositories.connectionPortClash", { port: view.clash.port, holder: held ? t(HOLDER_KEY[held.kind], { version: held.version, pid: held.pid }) : t("repositories.connectionHolderUnknown") });
   // The live view, so a changed choice shows at once; the last chosen agent cannot be unchecked.
   const agents = view?.agents ?? connect.data?.agents ?? [];
   const chosen = agents.filter((agent) => agent.chosen).map((agent) => agent.id);
@@ -34,7 +52,7 @@ export function AgentConnection({ projectId, repoId, hint = false }: { projectId
   return (
     <div className="stack-2 repo-agent-connection" data-testid="repo-agent-connection" data-state={state} data-local={view?.local || undefined} style={{ marginTop: "var(--space-3)" }}>
       <div className="row">
-        <strong className="cfg-name">{connected && view?.local ? t("repositories.connectionLocal") : state ? t(`repositories.connection_${state}`) : t("repositories.connectionChecking")}</strong>
+        <strong className="cfg-name">{connected && view?.local ? t("repositories.connectionLocal") : state ? t(STATE_KEY[state]) : t("repositories.connectionChecking")}</strong>
         {hint && <button type="button" className="btn btn-ghost" onClick={() => { localStorage.setItem(hintKey, "dismissed"); dismiss(true); }}>{t("repositories.connectionDismiss")}</button>}
       </div>
       {view?.mcpUrl && <p className="meta-txt dense" style={{ overflowWrap: "anywhere" }}>{t(view.instance === "packaged" ? "repositories.connectionPackaged" : "repositories.connectionDevelopment")} · {view.mcpUrl}</p>}
@@ -81,7 +99,7 @@ export function AgentConnection({ projectId, repoId, hint = false }: { projectId
       </p>}
       {choose.error && <p role="alert" className="meta-txt">{readableError(choose.error)}</p>}
       {connect.data?.skipped.map((skip) => <p className="meta-txt dense cli-warn repo-agent-skipped" key={skip.agent} data-agent={skip.agent} data-reason={skip.reason}>
-        {t(`repositories.agentSkipped_${skip.reason}`, { agent: agents.find((agent) => agent.id === skip.agent)?.title ?? skip.agent, file: skip.file })}
+        {t(SKIPPED_KEY[skip.reason], { agent: agents.find((agent) => agent.id === skip.agent)?.title ?? skip.agent, file: skip.file })}
       </p>)}
       {connect.data && <p role="status" className="meta-txt repo-agent-result">{connect.data.message}</p>}
       {url && <button type="button" className="btn btn-ghost repo-agent-pr" onClick={() => openExternal(url)}>{t("repositories.connectionPr")}</button>}

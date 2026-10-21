@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {} from "@tomradex/ipc";
 import { invoke, subscribe } from "./api";
-import { useSaveSettings, useSettings } from "./queries";
+import { keys, useSaveSettings, useSettings } from "./queries";
 
 type UpdateChannel = "stable" | "beta";
 
@@ -42,8 +42,6 @@ declare module "@tomradex/ipc" {
   }
 }
 
-const KEY = ["updates"] as const;
-
 let panes = 0;
 
 /** Mounted by whatever shows the update state in full, so the notice keeps quiet while it is on screen. */
@@ -61,14 +59,14 @@ export const updatesOnScreen = () => panes > 0;
 /** Null in a browser tab, or when the updater row is switched off. */
 export function useUpdateStatus() {
   const qc = useQueryClient();
-  useEffect(() => subscribe("updates.changed", (status) => qc.setQueryData(KEY, status)), [qc]);
+  useEffect(() => subscribe("updates.changed", (status) => qc.setQueryData(keys.updates, status)), [qc]);
   // Not cached for good: a row switched back on has no broadcast to announce it.
-  return useQuery({ queryKey: KEY, queryFn: () => invoke("updates.status").catch(() => null) });
+  return useQuery({ queryKey: keys.updates, queryFn: () => invoke("updates.status").catch(() => null) });
 }
 
 export function useUpdateActions() {
   const qc = useQueryClient();
-  const settle = (status: UpdateStatus) => qc.setQueryData(KEY, status);
+  const settle = (status: UpdateStatus) => qc.setQueryData(keys.updates, status);
   return {
     check: useMutation({ mutationFn: () => invoke("updates.check"), onSuccess: settle }),
     download: useMutation({ mutationFn: () => invoke("updates.download"), onSuccess: settle }),

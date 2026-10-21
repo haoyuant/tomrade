@@ -7,6 +7,7 @@ import { useI18n } from "~/lib/i18n";
 import { invalidateFiles } from "~/lib/files";
 import { readableError } from "~/lib/toast";
 import { Dialog, DialogHead, DialogBody } from "~/components/ui/dialog";
+import { keys } from "~/lib/queries";
 
 export function AgentMedia({ projectId, threadId, media, caption }: { projectId: string; threadId: string; media: MediaRef; caption?: string }) {
   const { t } = useI18n();
@@ -14,7 +15,7 @@ export function AgentMedia({ projectId, threadId, media, caption }: { projectId:
   const [url, setUrl] = useState<string>();
   const [expanded, setExpanded] = useState(false);
   const content = useQuery({
-    queryKey: ["agent-media", projectId, threadId, media.id],
+    queryKey: keys.agent.media(projectId, threadId, media.id),
     queryFn: () => invoke("agent.media.read", projectId, threadId, media.id),
     staleTime: Infinity, retry: false
   });

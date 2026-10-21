@@ -3,9 +3,9 @@ import type { Item, OplogEntry } from "@tomradex/domain";
 import { ICON_IDS, Icon, type IconId } from "~/components/icons";
 import { LiveDot, Num, Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuStackItem } from "~/components/ui/menu";
-import { useAttention, useOpenAttention } from "~/lib/attention";
+import { ATTENTION_KEY, useAttention, useOpenAttention } from "~/lib/attention";
 import { agoLabel, authorLabel, timeAgo } from "~/lib/domain";
-import { useI18n, type MessageKey } from "~/lib/i18n";
+import { useI18n } from "~/lib/i18n";
 import { useMcpUrl, useOplog, useProjects, useRunCommand, useStatusItems } from "~/lib/queries";
 import { useErrorToast, useToast } from "~/lib/toast";
 import { useOptionalAgentDock } from "./ProjectShell";
@@ -88,7 +88,7 @@ function NeedsYou({ projectId }: { projectId?: string }) {
         .map((e) => (
           <MenuStackItem
             key={e.key}
-            name={[e.itemKey, e.who ?? t("agentPanel.assistantLabel"), t(`agentPanel.attention_${e.kind}` as MessageKey)].filter(Boolean).join(" · ")}
+            name={[e.itemKey, e.who ?? t("agentPanel.assistantLabel"), t(ATTENTION_KEY[e.kind])].filter(Boolean).join(" · ")}
             sub={[e.projectId !== projectId ? projectName(e.projectId) : null, e.text, waited(e.since)].filter(Boolean).join(" · ")}
             onSelect={() => open(e)}
           />

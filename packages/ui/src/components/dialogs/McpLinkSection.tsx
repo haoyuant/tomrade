@@ -1,8 +1,9 @@
 import type { EngineView, McpLinkView } from "@tomradex/agent";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "~/lib/api";
-import { useI18n } from "~/lib/i18n";
+import { useI18n, type MessageKey } from "~/lib/i18n";
 import { readableError } from "~/lib/toast";
+import { keys } from "~/lib/queries";
 
 /**
  * Inside a local agent's engine row: whether sessions the person starts in a
@@ -13,7 +14,7 @@ import { readableError } from "~/lib/toast";
 export function McpLinkSection({ engine }: { engine: EngineView }) {
   const { t } = useI18n();
   const qc = useQueryClient();
-  const key = ["agent", "mcpLink", engine.id];
+  const key = keys.agent.mcpLink(engine.id);
   const status = useQuery({ queryKey: key, queryFn: () => invoke("agent.mcpLink", engine.id) });
   const change = useMutation({
     mutationFn: ({ connect, profile }: { connect: boolean; profile?: string }) => invoke(connect ? "agent.linkMcp" : "agent.unlinkMcp", engine.id, profile),
@@ -45,6 +46,9 @@ export function McpLinkSection({ engine }: { engine: EngineView }) {
   );
 }
 
+// `stale` names the address it found, so it is said apart.
+const STATE_KEY: Record<Exclude<McpLinkView["state"], "stale">, MessageKey> = { connected: "mcpLink.connected", missing: "mcpLink.missing", unavailable: "mcpLink.unavailable" };
+
 function McpLinkRow({ engine, view, named, busy, working, onChange }: { engine: EngineView; view: McpLinkView; named: boolean; busy: boolean; working: boolean; onChange: (connect: boolean) => void }) {
   const { t, tx } = useI18n();
   const title = engine.title;
@@ -56,7 +60,7 @@ function McpLinkRow({ engine, view, named, busy, working, onChange }: { engine: 
     <div className="stack-2 mcp-link-profile" data-profile={view.profile} data-state={view.state}>
       {named && profile && <strong className="cfg-name mono">{profile}</strong>}
       <p className="meta-txt">
-        {view.state === "stale" ? t("mcpLink.stale", { title, url: view.configuredUrl ?? "" }) : t(`mcpLink.${view.state}`, { title })}
+        {view.state === "stale" ? t("mcpLink.stale", { title, url: view.configuredUrl ?? "" }) : t(STATE_KEY[view.state], { title })}
       </p>
       {view.file && view.state !== "missing" && <p className="meta-txt dense">{tx("mcpLink.file", { path: <span className="mono">{view.file}</span> })}</p>}
       {view.state !== "connected" && view.state !== "unavailable" && <p className="meta-txt dense">{t("mcpLink.cost", { title })}</p>}

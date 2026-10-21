@@ -6,7 +6,7 @@ import { FilePickerDialog } from "~/components/files/FilePickerDialog";
 import { Icon } from "~/components/icons";
 import { invoke } from "~/lib/api";
 import { useAttachFiles, useImportForTicket, useTicketFolder } from "~/lib/files";
-import { invalidateWorkspace } from "~/lib/queries";
+import { invalidateWorkspace, keys } from "~/lib/queries";
 import { errorSpec, readableError, useToast } from "~/lib/toast";
 import { useI18n } from "~/lib/i18n";
 
@@ -32,7 +32,7 @@ export function DeliveryPanel({ item }: { item: Item }) {
   const attach = useAttachFiles(item.projectId);
   const importFor = useImportForTicket(item.projectId);
   const landing = useTicketFolder(item.projectId, picking ? item.id : null);
-  const deliveries = useQuery({ queryKey: ["deliveries", item.projectId, item.id, item.version], queryFn: () => invoke("items.deliveries", item.projectId, item.id) });
+  const deliveries = useQuery({ queryKey: keys.deliveries(item.projectId, item.id, item.version), queryFn: () => invoke("items.deliveries", item.projectId, item.id) });
   const current = deliveries.data?.find(d => d.state === "active") ?? deliveries.data?.at(-1);
   const evidence = item.evidence;
   const outputs = evidence.resources.filter(r => r.role === "output" && r.deliveryId === current?.id);
@@ -48,7 +48,7 @@ export function DeliveryPanel({ item }: { item: Item }) {
     },
     onSuccess: () => { setReport(""); setComment(""); setSelected(null); },
     onError: error => toast(errorSpec(error)),
-    onSettled: () => { invalidateWorkspace(qc, item.projectId); void qc.invalidateQueries({ queryKey: ["deliveries", item.projectId, item.id] }); }
+    onSettled: () => { invalidateWorkspace(qc, item.projectId); void qc.invalidateQueries({ queryKey: keys.deliveriesAll(item.projectId, item.id) }); }
   });
   if (item.kind !== "ticket") return null;
   return <section className="detail-sect stack-3" data-testid="delivery-panel" aria-label={t("fields.delivery")}>

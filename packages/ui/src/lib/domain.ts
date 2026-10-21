@@ -1,4 +1,4 @@
-import type { BuiltinFieldId, FieldDef, FieldType, FilterOp, Item, ItemStatus, Layout, OplogEntry, Priority, Provenance } from "@tomradex/domain";
+import type { BuiltinFieldId, FieldDef, FieldType, FilterOp, Item, ItemStatus, Layout, OplogEntry, Priority, Provenance, WorkType } from "@tomradex/domain";
 import { ICON_IDS, type IconId } from "~/components/icons";
 import { say, type Locale, type MessageKey } from "./dicts";
 
@@ -38,19 +38,20 @@ export const PRIORITY_LABEL: string[] = PRIORITIES.map(() => "");
 export const PROVENANCE: Record<Provenance, string> = { ai: "", human: "", sync: "", locked: "" };
 
 /** The glyphs a workstream or a view may carry in the sidebar. */
-export const BOARD_GLYPHS: [IconId, string][] = [
-  ["i-panel", ""],
-  ["i-stack", ""],
-  ["i-plug", ""],
-  ["i-monitor", ""],
-  ["i-board", ""],
-  ["i-filter", ""],
-  ["i-bug", ""],
-  ["i-bars", ""],
-  ["i-graph", ""],
-  ["i-clock", ""],
-  ["i-tag", ""]
+const GLYPHS: [IconId, MessageKey][] = [
+  ["i-panel", "domain.glyph0"],
+  ["i-stack", "domain.glyph1"],
+  ["i-plug", "domain.glyph2"],
+  ["i-monitor", "domain.glyph3"],
+  ["i-board", "domain.glyph4"],
+  ["i-filter", "domain.glyph5"],
+  ["i-bug", "domain.glyph6"],
+  ["i-bars", "domain.glyph7"],
+  ["i-graph", "domain.glyph8"],
+  ["i-clock", "domain.glyph9"],
+  ["i-tag", "domain.glyph10"]
 ];
+export const BOARD_GLYPHS: [IconId, string][] = GLYPHS.map(([icon]) => [icon, ""]);
 
 /** Built-in field names, localized in place like the tables above. */
 export const FIELD_LABEL: Record<BuiltinFieldId, string> = { title: "", status: "", workType: "", priority: "", epic: "", labels: "", board: "", updated: "", key: "", provenance: "" };
@@ -71,6 +72,40 @@ export const LAYOUT_LABEL: Record<Layout, { label: string; icon: IconId }> = {
 };
 
 export const FILTER_OP_LABEL: Record<FilterOp, string> = { in: "", "not-in": "", contains: "", gte: "", lte: "" };
+export const WORK_TYPE_KEY: Record<WorkType, MessageKey> = { coding: "fields.coding", general: "fields.general" };
+
+const STATUS_KEY: Record<ItemStatus, MessageKey> = {
+  backlog: "domain.status_backlog",
+  todo: "domain.status_todo",
+  doing: "domain.status_doing",
+  verifying: "domain.status_verifying",
+  done: "domain.status_done",
+  cancelled: "domain.status_cancelled"
+};
+const PRIORITY_KEY: Record<Priority, MessageKey> = { 0: "domain.priority0", 1: "domain.priority1", 2: "domain.priority2", 3: "domain.priority3", 4: "domain.priority4" };
+const PROVENANCE_KEY: Record<Provenance, MessageKey> = { ai: "domain.provenance_ai", human: "domain.provenance_human", sync: "domain.provenance_sync", locked: "domain.provenance_locked" };
+const FIELD_KEY: Record<BuiltinFieldId, MessageKey> = {
+  title: "domain.field_title",
+  status: "domain.field_status",
+  workType: "domain.field_workType",
+  priority: "domain.field_priority",
+  epic: "domain.field_epic",
+  labels: "domain.field_labels",
+  board: "domain.field_board",
+  updated: "domain.field_updated",
+  key: "domain.field_key",
+  provenance: "domain.field_provenance"
+};
+const FIELD_TYPE_KEY: Record<FieldType, MessageKey> = {
+  text: "domain.fieldType_text",
+  number: "domain.fieldType_number",
+  date: "domain.fieldType_date",
+  select: "domain.fieldType_select",
+  checkbox: "domain.fieldType_checkbox",
+  labels: "domain.fieldType_labels",
+  item: "domain.fieldType_item"
+};
+const LAYOUT_KEY: Record<Layout, MessageKey> = { board: "domain.layout_board", table: "domain.layout_table", graph: "domain.layout_graph" };
 const FILTER_OP_KEY = { in: "domain.filterOp_in", "not-in": "domain.filterOp_notIn", contains: "domain.filterOp_contains", gte: "domain.filterOp_gte", lte: "domain.filterOp_lte" } as const satisfies Record<FilterOp, MessageKey>;
 
 /**
@@ -97,13 +132,13 @@ export const manualSortLabel = (): string => word("domain.manualSort");
 /** Called once per render from `I18nProvider`; see the file-level comment above. */
 export function setDomainLocale(locale: Locale): void {
   currentLocale = locale;
-  for (const k of STATUS_KEYS) STATUS[k].label = word(`domain.status_${k}`);
-  for (const p of PRIORITIES) PRIORITY_LABEL[p] = word(`domain.priority${p}`);
-  for (const p of Object.keys(PROVENANCE) as Provenance[]) PROVENANCE[p] = word(`domain.provenance_${p}`);
-  for (let i = 0; i < BOARD_GLYPHS.length; i++) BOARD_GLYPHS[i][1] = word(`domain.glyph${i}` as MessageKey);
-  for (const f of Object.keys(FIELD_LABEL) as BuiltinFieldId[]) FIELD_LABEL[f] = word(`domain.field_${f}`);
-  for (const ty of Object.keys(FIELD_TYPE_LABEL) as FieldType[]) FIELD_TYPE_LABEL[ty] = word(`domain.fieldType_${ty}`);
-  for (const l of Object.keys(LAYOUT_LABEL) as Layout[]) LAYOUT_LABEL[l].label = word(`domain.layout_${l}`);
+  for (const k of STATUS_KEYS) STATUS[k].label = word(STATUS_KEY[k]);
+  for (const p of PRIORITIES) PRIORITY_LABEL[p] = word(PRIORITY_KEY[p]);
+  for (const p of Object.keys(PROVENANCE) as Provenance[]) PROVENANCE[p] = word(PROVENANCE_KEY[p]);
+  GLYPHS.forEach(([, key], i) => (BOARD_GLYPHS[i][1] = word(key)));
+  for (const f of Object.keys(FIELD_LABEL) as BuiltinFieldId[]) FIELD_LABEL[f] = word(FIELD_KEY[f]);
+  for (const ty of Object.keys(FIELD_TYPE_LABEL) as FieldType[]) FIELD_TYPE_LABEL[ty] = word(FIELD_TYPE_KEY[ty]);
+  for (const l of Object.keys(LAYOUT_LABEL) as Layout[]) LAYOUT_LABEL[l].label = word(LAYOUT_KEY[l]);
   for (const op of Object.keys(FILTER_OP_LABEL) as FilterOp[]) FILTER_OP_LABEL[op] = word(FILTER_OP_KEY[op]);
 }
 // English until the provider names the language showing.
@@ -168,9 +203,22 @@ export function authorLabel(by: string): string {
   return by.startsWith("ai:") ? by.slice(3) : by;
 }
 
-const FIELD_WORDS = ["title", "body", "status", "priority", "boardId", "parentId", "rank", "keyNum", "name"] as const;
-const fieldWord = (field: string): string =>
-  (FIELD_WORDS as readonly string[]).includes(field) ? word(`ledger.field_${field as (typeof FIELD_WORDS)[number]}`) : field;
+// A history record may name any column; only these have words, the rest show as written.
+const FIELD_WORDS: Partial<Record<string, MessageKey>> = {
+  title: "ledger.field_title",
+  body: "ledger.field_body",
+  status: "ledger.field_status",
+  priority: "ledger.field_priority",
+  boardId: "ledger.field_boardId",
+  parentId: "ledger.field_parentId",
+  rank: "ledger.field_rank",
+  keyNum: "ledger.field_keyNum",
+  name: "ledger.field_name"
+};
+const fieldWord = (field: string): string => {
+  const key = Object.hasOwn(FIELD_WORDS, field) ? FIELD_WORDS[field] : undefined;
+  return key ? word(key) : field;
+};
 
 const valueWord = (value: unknown): string => {
   if (value === null || value === undefined) return "—";

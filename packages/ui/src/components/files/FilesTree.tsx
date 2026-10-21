@@ -6,7 +6,7 @@ import { ContextMenu, ContextMenuActionItem, Menu, MenuActionItem } from "~/comp
 import { InlineNameRow } from "~/components/workspace/InlineNameRow";
 import { useWorkspace } from "~/components/workspace/context";
 import { FILES_DRAG_MIME, parentOf, useFilesClipboard, useFilesStatus, useFilesTree, useImportFiles, useMakeFolder, usePasteFiles, useRemoveFile } from "~/lib/files";
-import { useI18n } from "~/lib/i18n";
+import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useRevert } from "~/lib/queries";
 import { pathForFile, pickFiles } from "~/lib/shell";
 import { errorSpec, useToast } from "~/lib/toast";
@@ -18,6 +18,13 @@ import { SyncContextActions, SyncMark, useSyncActions } from "./SyncPolicy";
 import { AgentContextActions, AgentMark, useAgentActions } from "./AgentPolicy";
 
 const CHANGE_LETTER: Record<FileChange, string> = { added: "A", modified: "M", deleted: "D", renamed: "R", conflicted: "!" };
+const CHANGE_KEY: Record<FileChange, MessageKey> = {
+  added: "files.change_added",
+  modified: "files.change_modified",
+  deleted: "files.change_deleted",
+  renamed: "files.change_renamed",
+  conflicted: "files.change_conflicted"
+};
 
 const expandedKey = (projectId: string) => `tomrade.files.expanded.${projectId}`;
 
@@ -272,7 +279,7 @@ export function FilesTree({ children: frame }: { children: (head: ReactNode, bod
                 <AgentMark listing={entry.listing} />
                 {entry.change && (
                   // a letter as well as a colour, and a name for anyone not seeing either
-                  <span className={`side-change is-${entry.change}`} title={t(`files.change_${entry.change}`)} aria-label={t(`files.change_${entry.change}`)}>
+                  <span className={`side-change is-${entry.change}`} title={t(CHANGE_KEY[entry.change])} aria-label={t(CHANGE_KEY[entry.change])}>
                     {CHANGE_LETTER[entry.change]}
                   </span>
                 )}

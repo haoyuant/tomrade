@@ -3,26 +3,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {} from "@tomradex/code-link";
 import type { ConnectAgent, ConnectMode, MergeCheckView, RepoPolicyPatch, StartOptions } from "@tomradex/code-link";
 import { invoke } from "./api";
-import { invalidateWorkspace } from "./queries";
-
-const codeLinkKeys = {
-  links: (projectId: string, itemId?: string) => ["codeLink", projectId, "links", itemId ?? ""] as const,
-  sessions: (projectId: string, itemId?: string) => ["codeLink", projectId, "sessions", itemId ?? ""] as const,
-  repos: (projectId: string) => ["codeLink", projectId, "repos"] as const,
-  mergeChecks: (projectId: string, repoId: string) => ["codeLink", projectId, "mergeChecks", repoId] as const,
-  remoteIdentity: (remote: string) => ["codeLink", "remoteIdentity", remote] as const,
-  proposals: (projectId: string, itemId?: string) => ["codeLink", projectId, "proposals", itemId ?? ""] as const,
-  unlinked: (projectId: string) => ["codeLink", projectId, "unlinked"] as const,
-  worktree: (projectId: string, itemId: string) => ["codeLink", projectId, "worktree", itemId] as const,
-  startDefaults: ["codeLink", "startDefaults"] as const
-};
+import { invalidateWorkspace, keys } from "./queries";
 
 export const useHerdrStatus = (enabled: boolean) =>
-  useQuery({ queryKey: ["codeLink", "herdrStatus"], queryFn: () => invoke("codeLink.herdrStatus"), enabled, refetchInterval: 5000 });
+  useQuery({ queryKey: keys.codeLink.herdrStatus, queryFn: () => invoke("codeLink.herdrStatus"), enabled, refetchInterval: 5000 });
 
 /** Sessions started on this project open in Tomrade's own Terminal window: herdr is the terminal here and the window is on. */
 export const useTerminalWindow = (projectId: string) =>
-  useQuery({ queryKey: ["codeLink", projectId, "terminalWindow"], queryFn: () => invoke("codeLink.terminalWindow", projectId) });
+  useQuery({ queryKey: keys.codeLink.terminalWindow(projectId), queryFn: () => invoke("codeLink.terminalWindow", projectId) });
 
 /**
  * Where Start runs before the person picks: how this delivery's last session ran; else, for coding work whose agent
@@ -36,31 +24,31 @@ export function defaultStartMode(input: { latest: "headless" | "terminal" | null
 
 /** How the Start dialog was left on this machine; null before anything was started here. */
 export const useStartDefaults = () =>
-  useQuery({ queryKey: codeLinkKeys.startDefaults, queryFn: () => invoke("codeLink.startDefaults") });
+  useQuery({ queryKey: keys.codeLink.startDefaults, queryFn: () => invoke("codeLink.startDefaults") });
 
 export const useCodeDeliveries = (projectId: string, itemId: string) =>
-  useQuery({ queryKey: ["codeLink", projectId, "deliveries", itemId], queryFn: () => invoke("codeLink.deliveries", projectId, itemId) });
+  useQuery({ queryKey: keys.codeLink.deliveries(projectId, itemId), queryFn: () => invoke("codeLink.deliveries", projectId, itemId) });
 
 export const useCodeSessions = (projectId: string, itemId?: string) =>
-  useQuery({ queryKey: codeLinkKeys.sessions(projectId, itemId), queryFn: () => invoke("codeLink.sessions", projectId, itemId) });
+  useQuery({ queryKey: keys.codeLink.sessions(projectId, itemId), queryFn: () => invoke("codeLink.sessions", projectId, itemId) });
 
 /** Readiness and policy per repository, as the last scan on any machine left them. */
-export const useRepoStates = (projectId: string) => useQuery({ queryKey: codeLinkKeys.repos(projectId), queryFn: () => invoke("codeLink.repos", projectId) });
+export const useRepoStates = (projectId: string) => useQuery({ queryKey: keys.codeLink.repos(projectId), queryFn: () => invoke("codeLink.repos", projectId) });
 
 /** Live credential identity for a checkout. The server returns only the parsed login. */
 export const useRemoteIdentity = (remote: string, enabled: boolean) =>
-  useQuery({ queryKey: codeLinkKeys.remoteIdentity(remote), queryFn: () => invoke("codeLink.remoteIdentity", remote), enabled });
+  useQuery({ queryKey: keys.codeLink.remoteIdentity(remote), queryFn: () => invoke("codeLink.remoteIdentity", remote), enabled });
 
 export const useGithubCredentialAccount = (projectId: string, repoId: string, enabled: boolean) =>
-  useQuery({ queryKey: ["codeLink", projectId, "githubCredentialAccount", repoId], queryFn: () => invoke("codeLink.githubCredentialAccount", projectId, repoId), enabled });
+  useQuery({ queryKey: keys.codeLink.githubCredentialAccount(projectId, repoId), queryFn: () => invoke("codeLink.githubCredentialAccount", projectId, repoId), enabled });
 
 export function useGithubCredential(projectId: string, remote: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (repoId: string) => invoke("codeLink.useGithubCredential", projectId, repoId),
     onSettled: () => {
-      void qc.invalidateQueries({ queryKey: ["codeLink", projectId] });
-      void qc.invalidateQueries({ queryKey: codeLinkKeys.remoteIdentity(remote) });
+      void qc.invalidateQueries({ queryKey: keys.codeLink.all(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.codeLink.remoteIdentity(remote) });
       invalidateWorkspace(qc, projectId);
     }
   });
@@ -72,30 +60,30 @@ export function useRecheckRemote(projectId: string, remote: string) {
   return useMutation({
     mutationFn: (repoId: string) => invoke("codeLink.recheckRemote", projectId, repoId),
     onSettled: () => {
-      void qc.invalidateQueries({ queryKey: ["codeLink", projectId] });
-      void qc.invalidateQueries({ queryKey: codeLinkKeys.remoteIdentity(remote) });
+      void qc.invalidateQueries({ queryKey: keys.codeLink.all(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.codeLink.remoteIdentity(remote) });
       invalidateWorkspace(qc, projectId);
     }
   });
 }
 
 export const useProposals = (projectId: string, itemId?: string) =>
-  useQuery({ queryKey: codeLinkKeys.proposals(projectId, itemId), queryFn: () => invoke("codeLink.proposals", projectId, itemId) });
+  useQuery({ queryKey: keys.codeLink.proposals(projectId, itemId), queryFn: () => invoke("codeLink.proposals", projectId, itemId) });
 
-export const useUnlinkedBranches = (projectId: string) => useQuery({ queryKey: codeLinkKeys.unlinked(projectId), queryFn: () => invoke("codeLink.unlinked", projectId) });
+export const useUnlinkedBranches = (projectId: string) => useQuery({ queryKey: keys.codeLink.unlinked(projectId), queryFn: () => invoke("codeLink.unlinked", projectId) });
 
 /** Start or continue a ticket with a local agent, coding or General. The result carries either a gate to clear or the thread to show. */
 export function useSetRepoPolicy(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ repoId, patch }: { repoId: string; patch: RepoPolicyPatch }) => invoke("codeLink.setRepoPolicy", projectId, repoId, patch),
-    onSettled: () => void qc.invalidateQueries({ queryKey: codeLinkKeys.repos(projectId) })
+    onSettled: () => void qc.invalidateQueries({ queryKey: keys.codeLink.repos(projectId) })
   });
 }
 
 /** Whether each installed coding agent's own settings let it run gh pr merge in this repository. */
 export const useMergeChecks = (projectId: string, repoId: string, enabled: boolean) =>
-  useQuery({ queryKey: codeLinkKeys.mergeChecks(projectId, repoId), queryFn: () => invoke("codeLink.mergeChecks", projectId, repoId), enabled });
+  useQuery({ queryKey: keys.codeLink.mergeChecks(projectId, repoId), queryFn: () => invoke("codeLink.mergeChecks", projectId, repoId), enabled });
 
 export type ReadMergeCheck = MergeCheckView & { check: NonNullable<MergeCheckView["check"]> };
 
@@ -108,7 +96,7 @@ export function useAllowMerge(projectId: string, repoId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (engineId: string) => invoke("codeLink.allowMerge", projectId, repoId, engineId),
-    onSettled: () => void qc.invalidateQueries({ queryKey: codeLinkKeys.mergeChecks(projectId, repoId) })
+    onSettled: () => void qc.invalidateQueries({ queryKey: keys.codeLink.mergeChecks(projectId, repoId) })
   });
 }
 
@@ -117,10 +105,10 @@ export function useStartTicket(projectId: string) {
   return useMutation({
     mutationFn: ({ itemId, ...opts }: StartOptions & { itemId: string }) => invoke("codeLink.start", projectId, itemId, opts),
     onSettled: () => {
-      void qc.invalidateQueries({ queryKey: ["codeLink", projectId] });
-      void qc.invalidateQueries({ queryKey: ["agent", "threads", projectId] });
+      void qc.invalidateQueries({ queryKey: keys.codeLink.all(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.agent.threads(projectId) });
       // The start remembered how it ran on this machine; the next dialog opens the same way.
-      void qc.invalidateQueries({ queryKey: codeLinkKeys.startDefaults });
+      void qc.invalidateQueries({ queryKey: keys.codeLink.startDefaults });
       invalidateWorkspace(qc, projectId);
     }
   });
@@ -131,7 +119,7 @@ export function useResolveProposal(projectId: string) {
   return useMutation({
     mutationFn: (args: { proposalId: string; accept: boolean }) => invoke("codeLink.resolve", projectId, args.proposalId, args.accept),
     onSettled: () => {
-      void qc.invalidateQueries({ queryKey: ["codeLink", projectId] });
+      void qc.invalidateQueries({ queryKey: keys.codeLink.all(projectId) });
       invalidateWorkspace(qc, projectId);
     }
   });
@@ -143,7 +131,7 @@ export function useAdoptBranch(projectId: string) {
   return useMutation({
     mutationFn: (args: { repoId: string; branch: string }) => invoke("codeLink.adoptBranch", projectId, args.repoId, args.branch),
     onSettled: () => {
-      void qc.invalidateQueries({ queryKey: ["codeLink", projectId] });
+      void qc.invalidateQueries({ queryKey: keys.codeLink.all(projectId) });
       invalidateWorkspace(qc, projectId);
     }
   });
@@ -154,7 +142,7 @@ export function useRescan(projectId: string) {
   return useMutation({
     mutationFn: () => invoke("codeLink.rescan", projectId),
     onSettled: () => {
-      void qc.invalidateQueries({ queryKey: ["codeLink", projectId] });
+      void qc.invalidateQueries({ queryKey: keys.codeLink.all(projectId) });
       invalidateWorkspace(qc, projectId);
     }
   });
@@ -232,14 +220,14 @@ export function offerStart(itemId: string, task?: string): void {
 }
 
 export const useRepositoryConnection = (projectId: string, repoId: string) =>
-  useQuery({ queryKey: ["codeLink", projectId, "connection", repoId], queryFn: () => invoke("codeLink.connection", projectId, repoId), refetchInterval: 10_000 });
+  useQuery({ queryKey: keys.codeLink.connection(projectId, repoId), queryFn: () => invoke("codeLink.connection", projectId, repoId), refetchInterval: 10_000 });
 
 /** For the team through a branch and pull request, or for this machine only: files in the checkout that git ignores. */
 export function useConnectRepository(projectId: string, repoId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (mode: ConnectMode = "team") => invoke("codeLink.connect", projectId, repoId, mode),
-    onSettled: () => void qc.invalidateQueries({ queryKey: ["codeLink", projectId, "connection", repoId] })
+    onSettled: () => void qc.invalidateQueries({ queryKey: keys.codeLink.connection(projectId, repoId) })
   });
 }
 
@@ -248,6 +236,6 @@ export function useChooseConnectAgents(projectId: string, repoId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (connectAgents: ConnectAgent[]) => invoke("codeLink.setRepoPolicy", projectId, repoId, { connectAgents }),
-    onSettled: () => void qc.invalidateQueries({ queryKey: ["codeLink", projectId, "connection", repoId] })
+    onSettled: () => void qc.invalidateQueries({ queryKey: keys.codeLink.connection(projectId, repoId) })
   });
 }

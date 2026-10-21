@@ -275,6 +275,13 @@ function InstallConfirmDialog(props: { id: string; title: string; publisher: str
 }
 
 const REASONS = ["malware", "broken", "misleading", "license", "other"] as const;
+const REASON_KEY: Record<(typeof REASONS)[number], MessageKey> = {
+  malware: "plugins.reason_malware",
+  broken: "plugins.reason_broken",
+  misleading: "plugins.reason_misleading",
+  license: "plugins.reason_license",
+  other: "plugins.reason_other"
+};
 
 function ReportDialog({ id, title, version, onClose }: { id: string; title: string; version: string | null; onClose: () => void }) {
   const { t } = useI18n();
@@ -297,7 +304,7 @@ function ReportDialog({ id, title, version, onClose }: { id: string; title: stri
               <select id="rpReason" className="select" value={reason} onChange={(e) => setReason(e.target.value as (typeof REASONS)[number])}>
                 {REASONS.map((r) => (
                   <option key={r} value={r}>
-                    {t(`plugins.reason_${r}` as MessageKey)}
+                    {t(REASON_KEY[r])}
                   </option>
                 ))}
               </select>

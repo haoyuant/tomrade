@@ -6,6 +6,7 @@ import { ContextMenuActionItem } from "~/components/ui/menu";
 import { useFilesAgentIndex, useFilesAgentPolicy, useSetAgentRules } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
 import { errorSpec, useToast } from "~/lib/toast";
+import { keys } from "~/lib/queries";
 
 type Choice = ListMode | "inherit";
 type Translate = ReturnType<typeof useI18n>["t"];
@@ -27,7 +28,7 @@ export function useAgentActions(projectId: string) {
   const { t } = useI18n();
   const policy = useFilesAgentPolicy(projectId);
   const mutation = useSetAgentRules(projectId);
-  const pending = useIsMutating({ mutationKey: ["files", projectId, "setAgentRules"] }) > 0;
+  const pending = useIsMutating({ mutationKey: keys.files.setAgentRules(projectId) }) > 0;
   const toast = useToast();
   const change = (paths: string[], mode: Choice) => {
     if (pending || !policy.data || !paths.length) return;

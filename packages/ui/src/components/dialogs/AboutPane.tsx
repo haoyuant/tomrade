@@ -1,15 +1,13 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Icon } from "~/components/icons";
 import { SectionHead, Tag } from "~/components/ui/atoms";
-import { invoke } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
 import { legalUrl, siteUrl } from "~/lib/legal";
 import { openExternal, reveal, type AboutInfo } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { useUpdateActions, useUpdatePrefs, useUpdatesOnScreen, useUpdateStatus, type UpdateStatus } from "~/lib/updates";
 import { RestartOnboardingDialog } from "~/components/projects/RestartOnboardingDialog";
-import { useSettingsSections } from "~/lib/queries";
+import { useAbout, useSettingsSections } from "~/lib/queries";
 import { MyReports } from "./MyReports";
 
 /** Plain text, the way a bug report wants it: one fact per line, nothing localized. */
@@ -26,7 +24,7 @@ function details(info: AboutInfo): string {
 export function AboutPane() {
   const { t, locale } = useI18n();
   const toast = useToast();
-  const about = useQuery({ queryKey: ["about"], queryFn: () => invoke("shell.about"), staleTime: Infinity, retry: false });
+  const about = useAbout();
   const updates = useUpdateStatus();
   const info = about.data;
   const date = (iso: string) => new Date(iso).toLocaleDateString(locale, { year: "numeric", month: "short", day: "numeric" });

@@ -5,9 +5,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PlainSecretNote } from "~/components/ui/PlainSecretNote";
 import { invoke } from "~/lib/api";
 import { intlTag, useI18n, type MessageKey } from "~/lib/i18n";
+import { PROFILE_CHECK_KEY } from "~/lib/errors";
 import { openSettingsPane } from "~/lib/settingsHost";
 import { useModelProviders, useProviderSignIn, useProviders } from "~/lib/setup";
 import { openExternal } from "~/lib/shell";
+import { keys } from "~/lib/queries";
 
 const PROVIDER_TITLES: Record<string, MessageKey> = {
   "openai-compatible": "settingsDialog.providerOpenaiCompatible",
@@ -41,7 +43,7 @@ function useModelListing(endpoint: Pick<ModelProfile, "provider" | "baseURL" | "
   }, [endpoint.provider, endpoint.baseURL, endpoint.apiKey]);
   const { provider, baseURL, apiKey } = settled;
   return useQuery({
-    queryKey: ["llm.models", provider, baseURL ?? "", apiKey],
+    queryKey: keys.llm.models(provider, baseURL, apiKey),
     queryFn: () => invoke("llm.models", { provider, baseURL, apiKey }),
     enabled: !keyRequired || apiKey.trim().length > 0,
     staleTime: 5 * 60_000,
@@ -50,21 +52,20 @@ function useModelListing(endpoint: Pick<ModelProfile, "provider" | "baseURL" | "
 }
 
 // Listings do not say what a key's tier may use: a model the check refused leaves that key's picker until restart.
-const REFUSED_MODELS = ["llm", "refusedModels"] as const;
 type RefusedModels = Record<string, string[]>;
 const endpointOf = (p: Pick<ModelProfile, "provider" | "baseURL" | "apiKey">) => JSON.stringify([p.provider, p.baseURL ?? "", p.apiKey.trim()]);
 /** Kept in the query cache, never collected or refetched away, so it outlives the dialog as the module Map did. */
 function useRefusedModels() {
   const qc = useQueryClient();
   const all = useQuery<RefusedModels>({
-    queryKey: REFUSED_MODELS,
-    queryFn: () => qc.getQueryData<RefusedModels>(REFUSED_MODELS) ?? {},
+    queryKey: keys.llm.refusedModels,
+    queryFn: () => qc.getQueryData<RefusedModels>(keys.llm.refusedModels) ?? {},
     initialData: {},
     staleTime: Infinity,
     gcTime: Infinity
   }).data;
   const refuse = (p: ModelProfile) =>
-    qc.setQueryData<RefusedModels>(REFUSED_MODELS, (prev = {}) => ({ ...prev, [endpointOf(p)]: [...new Set([...(prev[endpointOf(p)] ?? []), p.model])] }));
+    qc.setQueryData<RefusedModels>(keys.llm.refusedModels, (prev = {}) => ({ ...prev, [endpointOf(p)]: [...new Set([...(prev[endpointOf(p)] ?? []), p.model])] }));
   return { refusedFor: (p: Pick<ModelProfile, "provider" | "baseURL" | "apiKey">) => new Set(all[endpointOf(p)]), refuse };
 }
 
@@ -143,7 +144,7 @@ function ModelPickField({ draft, host, keyRequired, onChange, onPicked }: { draf
 export function SearchRouteLine({ profiles }: { profiles: ModelProfile[] }) {
   const { t, locale } = useI18n();
   // asked again whenever a profile changes: a key can bring or take a search service
-  const { data: route } = useQuery({ queryKey: ["llm", "searchRoute", JSON.stringify(profiles)], queryFn: () => invoke("llm.searchRoute"), staleTime: 15_000 });
+  const { data: route } = useQuery({ queryKey: keys.llm.searchRoute(JSON.stringify(profiles)), queryFn: () => invoke("llm.searchRoute"), staleTime: 15_000 });
   if (!route) return null;
   const models = new Intl.ListFormat(intlTag(locale), { type: "conjunction" }).format(route.native);
   const everyone = route.native.length >= profiles.length;
@@ -167,6 +168,15 @@ export function SearchRouteLine({ profiles }: { profiles: ModelProfile[] }) {
   );
 }
 
+// Detection may name a medium this build has no word for; it then shows as itself.
+const MEDIA_KEY: Partial<Record<string, MessageKey>> = {
+  text: "settingsDialog.modelMedia_text",
+  image: "settingsDialog.modelMedia_image",
+  pdf: "settingsDialog.modelMedia_pdf",
+  audio: "settingsDialog.modelMedia_audio",
+  video: "settingsDialog.modelMedia_video"
+};
+
 /** What the model reads and makes, as Tomrade detected it: read-only, so nobody ticks media from memory. */
 function ModelMediaLine({ draft, host, defaultInput }: { draft: ModelProfile; host: string; defaultInput: string[] }) {
   const { t, locale } = useI18n();
@@ -174,8 +184,12 @@ function ModelMediaLine({ draft, host, defaultInput }: { draft: ModelProfile; ho
   // the adapters' own defaults when nothing was detected
   const input = draft.inputModalities ?? defaultInput;
   const output = draft.outputModalities ?? [];
-  const reads = t("settingsDialog.modelMediaReads", { list: list(["text", ...input].map((m) => t(`settingsDialog.modelMedia_${m}` as MessageKey))) });
-  const makes = output.length ? ` ${t("settingsDialog.modelMediaMakes", { list: list(output.map((m) => t(`settingsDialog.modelMedia_${m}` as MessageKey))) })}` : "";
+  const medium = (m: string) => {
+    const key = Object.hasOwn(MEDIA_KEY, m) ? MEDIA_KEY[m] : undefined;
+    return key ? t(key) : m;
+  };
+  const reads = t("settingsDialog.modelMediaReads", { list: list(["text", ...input].map(medium)) });
+  const makes = output.length ? ` ${t("settingsDialog.modelMediaMakes", { list: list(output.map(medium)) })}` : "";
   return (
     <div className="field">
       <label htmlFor="pfMedia">{t("settingsDialog.modelMediaLabel")}</label>
@@ -294,7 +308,7 @@ export function ProfileForm({ profile, onSave, onCancel }: { profile: ModelProfi
       {kind.chat && <ModelMediaLine draft={draft} host={host || t("settingsDialog.theEndpoint")} defaultInput={kind.defaultInput} />}
       {problem && (
         <div className="profile-problem" role="alert">
-          <p>{t(refusal === "method" ? "settingsDialog.profileCheck_modelMethod" : refusal === "tier" ? "settingsDialog.profileCheck_modelTier" : (`settingsDialog.profileCheck_${problem.kind}` as MessageKey), { host: host || t("settingsDialog.theEndpoint"), model: draft.model })}</p>
+          <p>{t(refusal === "method" ? "settingsDialog.profileCheck_modelMethod" : refusal === "tier" ? "settingsDialog.profileCheck_modelTier" : PROFILE_CHECK_KEY[problem.kind], { host: host || t("settingsDialog.theEndpoint"), model: draft.model })}</p>
           {said && <p className="meta-txt">{t("settingsDialog.profileCheckSaid", { host: host || t("settingsDialog.theEndpoint"), message: said })}</p>}
           <details className="ai-error-details">
             <summary>{t("agentPanel.errorDetails")}</summary>

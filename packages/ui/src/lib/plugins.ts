@@ -3,22 +3,7 @@ import type {} from "@tomradex/community";
 import type {} from "@tomradex/plugin-studio";
 import type { PluginsSnapshot } from "@tomradex/plugins";
 import { invoke } from "./api";
-import { invalidateProject } from "./queries";
-
-const keys = {
-  plugins: ["plugins"] as const,
-  community: ["community"] as const,
-  browse: (text: string, sort: string, officialOnly: boolean) => ["community", "browse", text, sort, officialOnly] as const,
-  plugin: (id: string) => ["community", "plugin", id] as const,
-  updates: ["community", "updates"] as const,
-  revoked: ["community", "revoked"] as const,
-  account: ["community", "account"] as const,
-  published: ["community", "published"] as const,
-  inspect: (id: string, version: string) => ["community", "inspect", id, version] as const,
-  studio: ["studio"] as const,
-  review: (name: string) => ["studio", "review", name] as const,
-  snapshots: (name: string) => ["studio", "snapshots", name] as const
-};
+import { invalidateProject, keys } from "./queries";
 
 /** A snapshot answered by a mutation replaces the list at once, and what the plugins drew is refetched. */
 function useSnapshotMutation<A>(fn: (args: A) => Promise<PluginsSnapshot>) {
@@ -27,10 +12,10 @@ function useSnapshotMutation<A>(fn: (args: A) => Promise<PluginsSnapshot>) {
     mutationFn: fn,
     onSuccess: (snapshot) => {
       qc.setQueryData(keys.plugins, snapshot);
-      void qc.invalidateQueries({ queryKey: ["contributions"] });
-      void qc.invalidateQueries({ queryKey: ["settings", "sections"] });
-      void qc.invalidateQueries({ queryKey: keys.community });
-      void qc.invalidateQueries({ queryKey: keys.studio });
+      void qc.invalidateQueries({ queryKey: keys.contributions });
+      void qc.invalidateQueries({ queryKey: keys.settingsSections });
+      void qc.invalidateQueries({ queryKey: keys.community.root });
+      void qc.invalidateQueries({ queryKey: keys.studio.root });
     }
   });
 }
@@ -58,18 +43,18 @@ export function useUndoVia(projectId: string | undefined) {
 
 /** Official and Community in one search; each source says on its own whether it answered. */
 export const useBrowse = (text: string, sort: "downloads" | "updated" | "title", officialOnly: boolean) =>
-  useQuery({ queryKey: keys.browse(text, sort, officialOnly), queryFn: () => invoke("community.browse", { text, sort, officialOnly }), retry: false, staleTime: 60_000 });
-export const useCommunityPlugin = (id: string | null) => useQuery({ queryKey: keys.plugin(id ?? ""), queryFn: () => invoke("community.plugin", id!), enabled: !!id, retry: false });
-export const useUpdates = () => useQuery({ queryKey: keys.updates, queryFn: () => invoke("community.updates"), retry: false });
-export const useRevoked = () => useQuery({ queryKey: keys.revoked, queryFn: () => invoke("community.revoked") });
-export const useCommunityAccount = () => useQuery({ queryKey: keys.account, queryFn: () => invoke("community.account"), retry: false });
-export const usePublished = (enabled: boolean) => useQuery({ queryKey: keys.published, queryFn: () => invoke("community.published"), enabled, retry: false });
+  useQuery({ queryKey: keys.community.browse(text, sort, officialOnly), queryFn: () => invoke("community.browse", { text, sort, officialOnly }), retry: false, staleTime: 60_000 });
+export const useCommunityPlugin = (id: string | null) => useQuery({ queryKey: keys.community.plugin(id ?? ""), queryFn: () => invoke("community.plugin", id!), enabled: !!id, retry: false });
+export const useUpdates = () => useQuery({ queryKey: keys.community.updates, queryFn: () => invoke("community.updates"), retry: false });
+export const useRevoked = () => useQuery({ queryKey: keys.community.revoked, queryFn: () => invoke("community.revoked") });
+export const useCommunityAccount = () => useQuery({ queryKey: keys.community.account, queryFn: () => invoke("community.account"), retry: false });
+export const usePublished = (enabled: boolean) => useQuery({ queryKey: keys.community.published, queryFn: () => invoke("community.published"), enabled, retry: false });
 /** Downloads the package and reads it here; the install that follows reuses the download. */
-export const useInspect = (id: string, version: string) => useQuery({ queryKey: keys.inspect(id, version), queryFn: () => invoke("community.inspect", id, version), retry: false, staleTime: 300_000 });
+export const useInspect = (id: string, version: string) => useQuery({ queryKey: keys.community.inspect(id, version), queryFn: () => invoke("community.inspect", id, version), retry: false, staleTime: 300_000 });
 
 function useCommunityMutation<A, R>(fn: (args: A) => Promise<R>) {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: fn, onSuccess: () => void qc.invalidateQueries({ queryKey: keys.community }) });
+  return useMutation({ mutationFn: fn, onSuccess: () => void qc.invalidateQueries({ queryKey: keys.community.root }) });
 }
 
 export const useReport = () => useCommunityMutation((a: { id: string; version: string | null; reason: string; details: string }) => invoke("community.report", a.id, a.version, a.reason, a.details));
@@ -77,18 +62,18 @@ export const useLinkGitHub = () => useCommunityMutation(() => invoke("community.
 export const useBecomePublisher = () => useCommunityMutation(() => invoke("community.becomePublisher"));
 export const usePublish = () => useCommunityMutation((dir: string) => invoke("community.publish", dir));
 
-export const useWorkspaces = () => useQuery({ queryKey: keys.studio, queryFn: () => invoke("studio.list") });
-export const useBuildReview = (name: string | null) => useQuery({ queryKey: keys.review(name ?? ""), queryFn: () => invoke("studio.review", name!), enabled: !!name, staleTime: 0 });
-export const useSnapshots = (name: string | null) => useQuery({ queryKey: keys.snapshots(name ?? ""), queryFn: () => invoke("studio.snapshots", name!), enabled: !!name });
+export const useWorkspaces = () => useQuery({ queryKey: keys.studio.root, queryFn: () => invoke("studio.list") });
+export const useBuildReview = (name: string | null) => useQuery({ queryKey: keys.studio.review(name ?? ""), queryFn: () => invoke("studio.review", name!), enabled: !!name, staleTime: 0 });
+export const useSnapshots = (name: string | null) => useQuery({ queryKey: keys.studio.snapshots(name ?? ""), queryFn: () => invoke("studio.snapshots", name!), enabled: !!name });
 
 function useStudioMutation<A, R>(fn: (args: A) => Promise<R>) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: fn,
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: keys.studio });
+      void qc.invalidateQueries({ queryKey: keys.studio.root });
       void qc.invalidateQueries({ queryKey: keys.plugins });
-      void qc.invalidateQueries({ queryKey: ["contributions"] });
+      void qc.invalidateQueries({ queryKey: keys.contributions });
     }
   });
 }

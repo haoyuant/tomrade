@@ -5,9 +5,17 @@ import { Icon } from "~/components/icons";
 import { invoke } from "~/lib/api";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { readableError } from "~/lib/toast";
+import { keys } from "~/lib/queries";
 
 type Include = { environment: boolean; checks: boolean; error: boolean; logs: boolean; conversation: boolean };
 const SECTIONS: (keyof Include)[] = ["error", "checks", "environment", "logs", "conversation"];
+const SECTION_KEY: Record<keyof Include, MessageKey> = {
+  error: "doctor.section_error",
+  checks: "doctor.section_checks",
+  environment: "doctor.section_environment",
+  logs: "doctor.section_logs",
+  conversation: "doctor.section_conversation"
+};
 // The failed conversation may hold the person's own work: it goes only when ticked.
 const DEFAULTS: Include = { environment: true, checks: true, error: true, logs: true, conversation: false };
 
@@ -27,7 +35,7 @@ function ReportSheet({ projectId, threadId, onOpenChange }: { projectId: string;
   const [note, setNote] = useState("");
   const [copied, setCopied] = useState(false);
   const preview = useQuery({
-    queryKey: ["doctor-report", projectId, threadId, include, note],
+    queryKey: keys.doctor.report(projectId, threadId, include, note),
     queryFn: () => invoke("doctor.preview", projectId, threadId!, include, note),
     enabled: !!threadId,
     placeholderData: (previous) => previous
@@ -58,7 +66,7 @@ function ReportSheet({ projectId, threadId, onOpenChange }: { projectId: string;
               {SECTIONS.map((id) => (
                 <label key={id} className="row" style={{ gap: 6 }}>
                   <input type="checkbox" checked={include[id]} onChange={(e) => setInclude({ ...include, [id]: e.target.checked })} />
-                  <span>{t(`doctor.section_${id}` as MessageKey)}</span>
+                  <span>{t(SECTION_KEY[id])}</span>
                   {id === "conversation" && <span className="meta-txt">{t("doctor.conversationHint")}</span>}
                 </label>
               ))}

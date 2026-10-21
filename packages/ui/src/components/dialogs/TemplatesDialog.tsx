@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Cadence, Schedule, Suggestion, Template, TemplateInput, TicketSpec } from "@tomradex/schedules";
+import type { Cadence, RunTrigger, Schedule, Suggestion, Template, TemplateInput, TicketSpec } from "@tomradex/schedules";
 import { Icon } from "~/components/icons";
 import { Eyebrow, SectionHead, Spacer, Tag } from "~/components/ui/atoms";
 import { Dialog, DialogBody, DialogHead } from "~/components/ui/dialog";
@@ -76,6 +76,7 @@ export function RoutineDialog({
 
 const GROUPS = ["everyday", "work", "coding"] as const;
 const GROUP_WORD: Record<(typeof GROUPS)[number], MessageKey> = { everyday: "templates.groupEveryday", work: "templates.groupWork", coding: "templates.groupCoding" };
+const TRIGGER_WORD: Record<RunTrigger, MessageKey> = { manual: "templates.trigger_manual", schedule: "templates.trigger_schedule", "catch-up": "templates.trigger_catch-up" };
 
 export function SuggestionsPane({ projectId, templates, onOpen }: { projectId: string; templates: Template[]; onOpen: (id: string) => void }) {
   const { t, locale } = useI18n();
@@ -498,7 +499,7 @@ function RunsBlock({ projectId, templateId, onOpenIssue, onOpenThread }: { proje
       {!list.length && <p className="meta-txt">{t("templates.never")}</p>}
       {list.map((r) => (
         <p key={r.id} className={r.ok ? "meta-txt dense" : "meta-txt dense template-failed"}>
-          {agoLabel(r.at)} · {t(`templates.trigger_${r.trigger}` as MessageKey)}
+          {agoLabel(r.at)} · {t(TRIGGER_WORD[r.trigger])}
           {!r.ok && ` · ${r.error ?? ""}`}
           {r.itemIds.length > 0 && (
             <>

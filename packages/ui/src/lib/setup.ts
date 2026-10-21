@@ -3,21 +3,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { EngineView } from "@tomradex/agent";
 import type { Providing } from "@tomradex/community";
 import type { ProviderView, WorkerStatus } from "@tomradex/llm";
-import { agentKeys, useEngines } from "./agent";
+import { useEngines } from "./agent";
 import { invoke, subscribe } from "./api";
 import { useI18n } from "./i18n";
 import { engineStatus } from "./localCli";
 import { useStoreInstall } from "./plugins";
 import { keys, useSettings } from "./queries";
-
-const setupKeys = {
-  worker: ["llm", "worker"] as const,
-  providers: (locale: string) => ["llm", "providers", locale] as const,
-  modelProviders: (locale: string) => ["llm", "modelProviders", locale] as const,
-  detected: ["llm", "detected"] as const,
-  // under "community", so an install anywhere refetches it
-  providing: ["community", "providing", "modelProviders"] as const
-};
 
 /** A provider plugin installed, switched off or removed changes what the setup offers. */
 function useProvidersChanged() {
@@ -25,8 +16,8 @@ function useProvidersChanged() {
   useEffect(
     () =>
       subscribe("llm.providersChanged", () => {
-        void qc.invalidateQueries({ queryKey: ["llm", "providers"] });
-        void qc.invalidateQueries({ queryKey: ["llm", "modelProviders"] });
+        void qc.invalidateQueries({ queryKey: keys.llm.providersAll });
+        void qc.invalidateQueries({ queryKey: keys.llm.modelProvidersAll });
       }),
     [qc]
   );
@@ -53,7 +44,7 @@ function setupState(engines: EngineView[], worker: WorkerStatus) {
 export function useSetup() {
   const engines = useEngines();
   const settings = useSettings();
-  const worker = useQuery({ queryKey: setupKeys.worker, queryFn: () => invoke("llm.worker"), staleTime: 15_000 });
+  const worker = useQuery({ queryKey: keys.llm.worker, queryFn: () => invoke("llm.worker"), staleTime: 15_000 });
   const refetchEngines = engines.refetch;
   const refetchWorker = worker.refetch;
   useEffect(() => {
@@ -70,19 +61,19 @@ export function useSetup() {
 export const useProviders = () => {
   const { locale } = useI18n();
   useProvidersChanged();
-  return useQuery({ queryKey: setupKeys.providers(locale), queryFn: () => invoke("llm.providers"), staleTime: Infinity });
+  return useQuery({ queryKey: keys.llm.providers(locale), queryFn: () => invoke("llm.providers"), staleTime: Infinity });
 };
 
 /** The model providers profiles can name, as the profile form draws them. */
 export const useModelProviders = () => {
   const { locale } = useI18n();
   useProvidersChanged();
-  return useQuery({ queryKey: setupKeys.modelProviders(locale), queryFn: () => invoke("llm.modelProviders"), staleTime: Infinity });
+  return useQuery({ queryKey: keys.llm.modelProviders(locale), queryFn: () => invoke("llm.modelProviders"), staleTime: Infinity });
 };
 
 /** Official plugins that bring a model provider, not installed: offered beside the presets. None when the catalog cannot be read. */
 export const useProviderPlugins = () =>
-  useQuery({ queryKey: setupKeys.providing, queryFn: () => invoke("community.providing", "modelProviders"), staleTime: 5 * 60_000, retry: false });
+  useQuery({ queryKey: keys.community.providingModels, queryFn: () => invoke("community.providing", "modelProviders"), staleTime: 5 * 60_000, retry: false });
 
 /** How long an installed provider plugin has to offer its presets before the setup says it did not. */
 const PROVIDER_READY_MS = 15_000;
@@ -129,16 +120,16 @@ export function useInstallProvider(onReady: (preset: ProviderView) => void) {
 /** Runs a provider's own sign-in in the browser; resolves to the key it ends in. */
 export const useProviderSignIn = () => useMutation({ mutationFn: (provider: string) => invoke("llm.signIn", provider) });
 
-export const useDetected = () => useQuery({ queryKey: setupKeys.detected, queryFn: () => invoke("llm.detect"), staleTime: 30_000 });
+export const useDetected = () => useQuery({ queryKey: keys.llm.detected, queryFn: () => invoke("llm.detect"), staleTime: 30_000 });
 
 /** After a model or agent is connected: settings, engines, the worker and what is left to detect. */
 function useRefreshSetup() {
   const qc = useQueryClient();
   return useCallback(() => {
     void qc.invalidateQueries({ queryKey: keys.settings });
-    void qc.invalidateQueries({ queryKey: agentKeys.engines });
-    void qc.invalidateQueries({ queryKey: setupKeys.worker });
-    void qc.invalidateQueries({ queryKey: setupKeys.detected });
+    void qc.invalidateQueries({ queryKey: keys.agent.engines });
+    void qc.invalidateQueries({ queryKey: keys.llm.worker });
+    void qc.invalidateQueries({ queryKey: keys.llm.detected });
   }, [qc]);
 }
 

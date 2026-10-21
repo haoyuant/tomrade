@@ -5,6 +5,7 @@ import { Eyebrow, SectionHead } from "~/components/ui/atoms";
 import { invoke } from "~/lib/api";
 import { usd } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
+import { keys } from "~/lib/queries";
 
 function UsageTable({ rows }: { rows: EngineUsage[] }) {
   const { t } = useI18n();
@@ -87,8 +88,8 @@ function WorkerTable({ rows }: { rows: WorkerUsage[] }) {
 /** Runs, tokens and spend per engine — Tomrade's own record, read fresh each time the pane opens. */
 export function UsagePane() {
   const { t } = useI18n();
-  const usage = useQuery({ queryKey: ["agent", "usage"], queryFn: () => invoke("agent.usage"), staleTime: 0 });
-  const worker = useQuery({ queryKey: ["llm", "workerUsage"], queryFn: () => invoke("llm.workerUsage"), staleTime: 0 });
+  const usage = useQuery({ queryKey: keys.agent.usage, queryFn: () => invoke("agent.usage"), staleTime: 0 });
+  const worker = useQuery({ queryKey: keys.llm.workerUsage, queryFn: () => invoke("llm.workerUsage"), staleTime: 0 });
   return (
     <>
       <SectionHead title={t("usage.title")}>{t("usage.lede")}</SectionHead>

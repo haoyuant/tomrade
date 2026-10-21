@@ -5,9 +5,8 @@ import { Icon } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { Num, Tag } from "~/components/ui/atoms";
 import { invoke } from "~/lib/api";
-import { filesKeys } from "~/lib/files";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { usePurgeItem } from "~/lib/queries";
+import { keys, usePurgeItem } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 import { keyLabel } from "~/lib/keybindings";
 
@@ -84,7 +83,7 @@ export function DeleteIssueDialog({
   const lost = item ? consequences(item, items, t) : [];
   // Files keeps its own history, so these are offered rather than taken: left alone unless ticked.
   const attachments = useQuery({
-    queryKey: [...filesKeys.all(projectId), "attachmentsOf", item?.id ?? ""],
+    queryKey: keys.files.attachmentsOf(projectId, item?.id ?? ""),
     queryFn: () => attachmentFolders(projectId, item!),
     enabled: !!item,
     retry: false

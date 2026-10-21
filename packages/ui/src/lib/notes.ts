@@ -4,14 +4,7 @@ import type {} from "@tomradex/notes";
 import type { FileEntry } from "@tomradex/files";
 import { isNotePath } from "@tomradex/notes/syntax";
 import { invoke } from "./api";
-import { usePlugins } from "./queries";
-
-const notesKeys = {
-  all: (projectId: string) => ["notes", projectId] as const,
-  search: (projectId: string, query: string) => ["notes", projectId, "search", query] as const,
-  links: (projectId: string, path: string) => ["notes", projectId, "links", path] as const,
-  tags: (projectId: string) => ["notes", projectId, "tags"] as const
-};
+import { keys, usePlugins } from "./queries";
 
 /** Whether a plugin fills the Notes module; without one the screens leave out search, backlinks and the journal. */
 export function useNotesEnabled(): boolean {
@@ -21,7 +14,7 @@ export function useNotesEnabled(): boolean {
 
 export const useNoteSearch = (projectId: string, query: string, enabled: boolean) =>
   useQuery({
-    queryKey: notesKeys.search(projectId, query.trim()),
+    queryKey: keys.notes.search(projectId, query.trim()),
     queryFn: () => invoke("notes.search", projectId, { query: query.trim(), limit: 50 }),
     enabled: enabled && query.trim().length > 0,
     placeholderData: keepPreviousData,
@@ -29,10 +22,10 @@ export const useNoteSearch = (projectId: string, query: string, enabled: boolean
   });
 
 export const useNoteLinks = (projectId: string, path: string, enabled: boolean) =>
-  useQuery({ queryKey: notesKeys.links(projectId, path), queryFn: () => invoke("notes.links", projectId, path), enabled, retry: false });
+  useQuery({ queryKey: keys.notes.links(projectId, path), queryFn: () => invoke("notes.links", projectId, path), enabled, retry: false });
 
 export const useNoteTags = (projectId: string, enabled: boolean) =>
-  useQuery({ queryKey: notesKeys.tags(projectId), queryFn: () => invoke("notes.tags", projectId), enabled, retry: false, staleTime: 30_000 });
+  useQuery({ queryKey: keys.notes.tags(projectId), queryFn: () => invoke("notes.tags", projectId), enabled, retry: false, staleTime: 30_000 });
 
 /** The person's calendar day, not UTC's: a journal written at 1 a.m. belongs to the day they are living. */
 export function today(): string {

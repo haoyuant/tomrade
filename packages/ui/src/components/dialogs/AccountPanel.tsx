@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAccount } from "~/lib/account";
 import { invoke, messageOf } from "~/lib/api";
-import { useHubInfo } from "~/lib/queries";
-import { useI18n } from "~/lib/i18n";
+import { keys, useHubInfo } from "~/lib/queries";
+import { useI18n, type MessageKey } from "~/lib/i18n";
 import { legalUrl } from "~/lib/legal";
 import { openExternal } from "~/lib/shell";
 import { AccountSunrise } from "./AccountSunrise";
@@ -12,12 +12,24 @@ const MIN_PASSWORD = 8;
 /** Supabase sends one address at most one email a minute. */
 const MAIL_INTERVAL = 60;
 
-/** Failures the main process tags with a [code] this panel says in the reader's language. */
-const ERROR_CODES = [
-  "invalid_credentials", "email_not_confirmed", "user_already_exists", "email_exists", "weak_password", "email_address_invalid", "over_request_rate_limit",
-  "over_email_send_rate_limit", "email_address_not_authorized", "signup_disabled", "network", "other_account", "terms_required"
-] as const;
-const isErrorCode = (code: string): code is (typeof ERROR_CODES)[number] => (ERROR_CODES as readonly string[]).includes(code);
+/** Failures the main process tags with a [code] this panel says in the reader's language; any other code keeps the server's words. */
+const ERROR_KEY = {
+  invalid_credentials: "account.error_invalid_credentials",
+  email_not_confirmed: "account.error_email_not_confirmed",
+  user_already_exists: "account.error_user_already_exists",
+  email_exists: "account.error_email_exists",
+  weak_password: "account.error_weak_password",
+  email_address_invalid: "account.error_email_address_invalid",
+  over_request_rate_limit: "account.error_over_request_rate_limit",
+  over_email_send_rate_limit: "account.error_over_email_send_rate_limit",
+  email_address_not_authorized: "account.error_email_address_not_authorized",
+  signup_disabled: "account.error_signup_disabled",
+  network: "account.error_network",
+  other_account: "account.error_other_account",
+  terms_required: "account.error_terms_required"
+} as const satisfies Record<string, MessageKey>;
+const errorKey = (code: string): MessageKey | undefined => (Object.hasOwn(ERROR_KEY, code) ? ERROR_KEY[code as keyof typeof ERROR_KEY] : undefined);
+const LEGAL_KEY: Record<"terms" | "privacy", MessageKey> = { terms: "account.terms", privacy: "account.privacy" };
 
 type Problem = { field: "email" | "password" | "terms"; text: string };
 /** Signed out, the panel is the sign-in form, a wait for the confirmation email, or a password reset request. */
@@ -43,7 +55,7 @@ function useCooldown() {
 export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
   const { locale, t, tx } = useI18n();
   const legalLink = (doc: "terms" | "privacy") =>
-    <button type="button" className="link-btn" onClick={() => openExternal(legalUrl(doc, locale))}>{t(`account.${doc}`)}</button>;
+    <button type="button" className="link-btn" onClick={() => openExternal(legalUrl(doc, locale))}>{t(LEGAL_KEY[doc])}</button>;
   const account = useAccount();
   const qc = useQueryClient();
   const [email, setEmail] = useState("");
@@ -75,7 +87,8 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
     if (wait) return t("account.mailWait", { n: wait });
     const text = messageOf(e);
     const code = codeOf(e);
-    return code ? (isErrorCode(code) ? t(`account.error_${code}`, { min: MIN_PASSWORD }) : text.slice(code.length + 3)) : text;
+    const key = code ? errorKey(code) : undefined;
+    return code ? (key ? t(key, { min: MIN_PASSWORD }) : text.slice(code.length + 3)) : text;
   };
   /** `quiet` keeps what the panel says and swallows failures: the retry when the window comes back. */
   const run = async (action: () => Promise<unknown>, quiet = false) => {
@@ -91,7 +104,7 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
     }
     finally {
       setPassword(""); setBusy(false);
-      await Promise.all([qc.invalidateQueries({ queryKey: ["account"] }), qc.invalidateQueries({ queryKey: ["settings"] }), qc.invalidateQueries({ queryKey: ["storage", "hub"] })]);
+      await Promise.all([qc.invalidateQueries({ queryKey: keys.account }), qc.invalidateQueries({ queryKey: keys.settings }), qc.invalidateQueries({ queryKey: keys.hubRemote })]);
     }
   };
   const signIn = (address: string, secret: string, from: "form" | "confirm" | "return") => run(async () => {
@@ -148,7 +161,7 @@ export function AccountPanel({ entrance = false }: { entrance?: boolean }) {
   </div>;
   const resendLabel = cooldown.left ? t("account.resendIn", { n: cooldown.left }) : t("account.resend");
   // Never waits on the server or on another action: local use stays one click away.
-  const continueLocally = () => void invoke("account.useLocally").then(info => qc.setQueryData(["account"], info), e => setNotice(explain(e)));
+  const continueLocally = () => void invoke("account.useLocally").then(info => qc.setQueryData(keys.account, info), e => setNotice(explain(e)));
   return <div className="panel stack-3" aria-busy={busy || switchingTo !== null}>
     {!entrance ? <>
       <h2 className="sec-title">{t("account.title")}</h2>

@@ -1,12 +1,24 @@
 import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { ReportView } from "@tomradex/doctor";
 import { Icon } from "~/components/icons";
 import { SectionHead, Spacer, Tag } from "~/components/ui/atoms";
 import { invoke } from "~/lib/api";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useErrorToast } from "~/lib/toast";
+import { keys } from "~/lib/queries";
+import { REPORT_KIND_KEY } from "./FeedbackDialog";
 
-const KEY = ["doctor-reports"] as const;
+// The developer's side sets the status, so one this build has no words for shows as itself.
+const STATUS_KEY: Record<ReportView["status"], MessageKey> = {
+  queued: "about.reportStatus_queued",
+  sent: "about.reportStatus_sent",
+  new: "about.reportStatus_new",
+  triaged: "about.reportStatus_triaged",
+  fixed: "about.reportStatus_fixed",
+  wontfix: "about.reportStatus_wontfix",
+  duplicate: "about.reportStatus_duplicate"
+};
 
 /**
  * The troubleshooting reports this person sent: still waiting to go, sent,
@@ -17,13 +29,13 @@ export function MyReports() {
   const { t, locale } = useI18n();
   const qc = useQueryClient();
   const reportError = useErrorToast();
-  const reports = useQuery({ queryKey: KEY, queryFn: () => invoke("doctor.reports"), retry: false });
+  const reports = useQuery({ queryKey: keys.doctor.reports, queryFn: () => invoke("doctor.reports"), retry: false });
   const unread = reports.data?.unread ?? 0;
   // Seen once shown; the marks stay on screen until the list is read again.
   useEffect(() => {
     if (unread) void invoke("doctor.markRead").catch(() => {});
   }, [unread]);
-  const refresh = () => void qc.invalidateQueries({ queryKey: KEY });
+  const refresh = () => void qc.invalidateQueries({ queryKey: keys.doctor.reports });
   const remove = useMutation({ mutationFn: (code: string) => invoke("doctor.deleteReport", code), onSuccess: refresh, onError: reportError });
   const flush = useMutation({ mutationFn: () => invoke("doctor.flush"), onSuccess: refresh, onError: reportError });
   if (!reports.data) return null;
@@ -53,8 +65,8 @@ export function MyReports() {
             <div className={`my-report${r.unread ? " is-new" : ""}`} key={r.code} data-code={r.code}>
               <div className="row" style={{ gap: 6 }}>
                 <span className="num">{r.code}</span>
-                <Tag tone={r.status === "fixed" ? "strong" : r.status === "queued" ? "faint" : "neutral"}>{t(`about.reportStatus_${r.status}` as MessageKey)}</Tag>
-                {r.kind && r.kind !== "bug" && <Tag tone="faint">{t(`feedback.kind_${r.kind}` as MessageKey)}</Tag>}
+                <Tag tone={r.status === "fixed" ? "strong" : r.status === "queued" ? "faint" : "neutral"}>{r.status in STATUS_KEY ? t(STATUS_KEY[r.status]) : r.status}</Tag>
+                {r.kind && r.kind !== "bug" && <Tag tone="faint">{t(REPORT_KIND_KEY[r.kind])}</Tag>}
                 {r.unread && <Tag tone="strong">{t("about.reportNew")}</Tag>}
                 <span className="meta-txt">{date(r.createdAt)}</span>
                 <Spacer />
