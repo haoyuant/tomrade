@@ -122,8 +122,8 @@ export interface InstallDeps {
   engineId: string;
   installers: EngineInstaller[];
   host: SetupHost;
-  /** Fresh detection, no cached "missing": is the CLI found now, and which version. */
-  detect(): Promise<{ ready: boolean; version?: string; error?: string }>;
+  /** Fresh detection, no cached "missing": is the CLI found now, and which version — or which file was found that does not run. */
+  detect(): Promise<{ ready: boolean; version?: string; path?: string; error?: string }>;
   report(progress: EngineSetupProgress): void;
   signal: AbortSignal;
   timeoutMs?: number;
@@ -165,7 +165,7 @@ export async function runInstall(deps: InstallDeps): Promise<EngineSetupProgress
     // The installer said done, but a fresh look does not find a working CLI: say that, not "missing".
     failed = {
       engineId: deps.engineId, step, phase: "failed", installer: name,
-      failure: { kind: "not-on-path", message: found.error ?? "installed, but the command is not on PATH" },
+      failure: { kind: "not-on-path", message: found.error ?? "installed, but the command is not on PATH", ...(found.path ? { path: found.path } : {}) },
       output: tail(result.output)
     };
   }

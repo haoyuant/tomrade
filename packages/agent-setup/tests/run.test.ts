@@ -132,6 +132,15 @@ describe("the install step", () => {
     const end = await runInstall(d);
     expect(end.phase).toBe("failed");
     expect(end.failure).toMatchObject({ kind: "not-on-path", message: "not found" });
+    expect(end.failure).not.toHaveProperty("path");
+  });
+
+  it("names the file it found and what running it said when the installed CLI does not run", async () => {
+    const { exec } = fakeExec([{ code: 0, output: "done" }]);
+    const file = "C:\\Users\\a\\AppData\\Roaming\\npm\\codebuddy.cmd";
+    const { deps: d } = deps({ installers: [NPM], exec, detect: async () => ({ ready: false, path: file, error: "UNKNOWN: spawn UNKNOWN" }) });
+    const end = await runInstall(d);
+    expect(end.failure).toEqual({ kind: "not-on-path", message: "UNKNOWN: spawn UNKNOWN", path: file });
   });
 
   it("keeps the failure's output tail and kind when nothing worked", async () => {

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CliLocator,
   cmdArgument,
@@ -11,8 +11,10 @@ import {
   findCommand,
   launchFor,
   machineHost,
+  nodeShebang,
   parseRegInstalls,
   parseRegPath,
+  shimRunsNode,
   shimTarget,
   searchPath,
   ShellTimeout,
@@ -221,6 +223,56 @@ describe("starting a CLI on Windows", () => {
     const yarn = `@"%~dp0\\..\\Data\\global\\node_modules\\.bin\\codex.cmd" %*\r\n`;
     expect(shimTarget("C:\\Users\\a\\AppData\\Local\\Yarn\\bin\\codex.cmd", yarn)).toBe("C:\\Users\\a\\AppData\\Local\\Yarn\\Data\\global\\node_modules\\.bin\\codex.cmd");
     expect(shimTarget("C:\\tools\\codex.bat", "@echo off\r\ncodex-real.exe %*\r\n")).toBeNull();
+  });
+
+  describe("a shim whose script node runs", () => {
+    afterEach(() => vi.restoreAllMocks());
+    const npmDir = "C:\\Users\\a\\AppData\\Roaming\\npm";
+    const node = "C:\\Program Files\\nodejs\\node.exe";
+    const npmShim = (script: string) => `@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\nSETLOCAL\r\nCALL :find_dp0\r\n\r\nIF EXIST "%dp0%\\node.exe" (\r\n  SET "_prog=%dp0%\\node.exe"\r\n) ELSE (\r\n  SET "_prog=node"\r\n  SET PATHEXT=%PATHEXT:;.JS;=;%\r\n)\r\n\r\nendLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\${script}" %*\r\n`;
+    // A Windows disk on a machine that is not Windows: these files exist, every other path does not.
+    function disk(files: Record<string, string>) {
+      vi.spyOn(fs, "readFileSync").mockImplementation(((file: string) => {
+        if (file in files) return files[file];
+        throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+      }) as typeof fs.readFileSync);
+      vi.spyOn(fs, "statSync").mockImplementation(((file: string) => {
+        if (file in files) return { isFile: () => true };
+        throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+      }) as typeof fs.statSync);
+    }
+    const host = { platform: "win32" as const, env: { Path: `C:\\Windows;C:\\Program Files\\nodejs` } };
+
+    it("starts npm's shim for an extensionless bin as node + that script", () => {
+      const script = `${npmDir}\\node_modules\\@tencent-ai\\codebuddy-code\\bin\\codebuddy`;
+      disk({ [`${npmDir}\\codebuddy.cmd`]: npmShim("node_modules\\@tencent-ai\\codebuddy-code\\bin\\codebuddy"), [script]: "#!/usr/bin/env node\n", [node]: "" });
+      const launch = launchFor(`${npmDir}\\codebuddy.cmd`, host);
+      expect(launch.argv(["--version"])).toEqual({ command: node, args: [script, "--version"] });
+      expect(launch.env().Path).toBe(`${npmDir};C:\\Program Files\\nodejs;C:\\Windows`);
+    });
+
+    it("still starts a .js bin through node and a native one as itself", () => {
+      const codex = `${npmDir}\\node_modules\\@openai\\codex\\bin\\codex.js`;
+      const native = `${npmDir}\\node_modules\\x\\x.exe`;
+      disk({ [`${npmDir}\\codex.cmd`]: npmShim("node_modules\\@openai\\codex\\bin\\codex.js"), [codex]: "", [node]: "", [`${npmDir}\\x.cmd`]: `@"%~dp0\\node_modules\\x\\x.exe" %*\r\n`, [native]: "" });
+      expect(launchFor(`${npmDir}\\codex.cmd`, host).argv([])).toEqual({ command: node, args: [codex] });
+      expect(launchFor(`${npmDir}\\x.cmd`, host).argv(["-v"])).toEqual({ command: native, args: ["-v"] });
+    });
+  });
+
+  it("knows which shims and scripts node runs", () => {
+    const pnpm = `@SETLOCAL\r\n@IF EXIST "%~dp0\\node.exe" (\r\n  "%~dp0\\node.exe"  "%~dp0\\global\\5\\node_modules\\x\\bin\\x" %*\r\n) ELSE (\r\n  node  "%~dp0\\global\\5\\node_modules\\x\\bin\\x" %*\r\n)\r\n`;
+    expect(shimRunsNode(pnpm)).toBe(true);
+    expect(shimRunsNode(`@SETLOCAL\r\nnode  "%~dp0\\global\\x\\bin\\x" %*\r\n`)).toBe(true);
+    // A shebang naming another program sets _prog to it; yarn hands over to a .cmd.
+    expect(shimRunsNode(`SET "_prog=sh"\r\n"%_prog%"  "%dp0%\\node_modules\\x\\bin\\x" %*\r\n`)).toBe(false);
+    expect(shimRunsNode(`@"%~dp0\\..\\Data\\global\\node_modules\\.bin\\codex.cmd" %*\r\n`)).toBe(false);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-shebang-"));
+    const write = (name: string, body: string) => (fs.writeFileSync(path.join(dir, name), body), path.join(dir, name));
+    expect(nodeShebang(write("a", "#!/usr/bin/env node\nrequire('x')\n"))).toBe(true);
+    expect(nodeShebang(write("b", "#!/usr/bin/env -S node --no-warnings\r\n"))).toBe(true);
+    expect(nodeShebang(write("c", "#!/bin/sh\nexec node x\n"))).toBe(false);
+    expect(nodeShebang(path.join(dir, "missing"))).toBe(false);
   });
 
   it("escapes arguments for cmd.exe the way a %* shim reads them back", () => {
