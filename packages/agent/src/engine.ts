@@ -264,6 +264,8 @@ export interface EngineLocal {
   /** What the engine's own configuration lets its agent run; absent when Tomrade cannot read it. */
   commands?: EngineCommands;
   mcpLink?: EngineMcpLink;
+  /** One answer from its agent outside a turn — how a try reaches an engine that runs only in a terminal. */
+  ask?(prompt: string, signal?: AbortSignal): Promise<string>;
 }
 
 /** The flat members an engine had before they were grouped; `Agent.engine` still maps them once, at registration. */
@@ -378,6 +380,8 @@ export interface EngineView {
   permissionModes?: Engine["permissionModes"];
   terminal?: boolean;
   terminalOnly?: boolean;
+  /** Runs only in a terminal, yet answers a try through its agent (`local.ask`). */
+  asks?: boolean;
   usesModels?: boolean;
   steers?: boolean;
   setup?: EngineSetup;

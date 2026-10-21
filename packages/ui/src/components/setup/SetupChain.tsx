@@ -76,9 +76,10 @@ function InstallRunning({ progress, onRetry }: { progress?: EngineSetupProgress;
   );
 }
 
-function StepDetail({ step, title, insideApp, onRetry }: { step: ChainStep; title: string; insideApp?: string; onRetry: (registry?: string) => void }) {
+function StepDetail({ step, title, insideApp, terminalOnly, onRetry }: { step: ChainStep; title: string; insideApp?: string; terminalOnly?: boolean; onRetry: (registry?: string) => void }) {
   const { t } = useI18n();
   const progress = step.progress;
+  if (step.id === "terminal") return step.state === "done" ? <span className="meta-txt" data-testid="chain-terminal-ready">{t("setup.terminalReady", { title })}</span> : null;
   if (step.state === "failed") {
     const failure: EngineSetupFailure | undefined = progress?.failure ?? (step.tried ? { kind: "exit", message: step.tried.error ?? "" } : undefined);
     if (!failure) return null;
@@ -103,7 +104,14 @@ function StepDetail({ step, title, insideApp, onRetry }: { step: ChainStep; titl
   }
   if (step.id === "test") {
     if (step.state === "active") return <span className="meta-txt">{t("setup.testing")}</span>;
-    if (step.tried?.ok) return <span className="meta-txt" data-testid="chain-reply">{t("setup.testReply", { reply: step.tried.reply ?? "" })}</span>;
+    if (step.tried?.ok) {
+      return (
+        <>
+          <span className="meta-txt" data-testid="chain-reply">{t("setup.testReply", { reply: step.tried.reply ?? "" })}</span>
+          {terminalOnly && <span className="meta-txt" data-testid="chain-terminal-ready">{t("setup.terminalReady", { title })}</span>}
+        </>
+      );
+    }
     return null;
   }
   if (step.state === "active") return step.id === "install" ? <InstallRunning progress={progress} onRetry={onRetry} /> : <span className="meta-txt">{t("setup.signingIn")}</span>;
@@ -125,19 +133,21 @@ function StepDetail({ step, title, insideApp, onRetry }: { step: ChainStep; titl
   return null;
 }
 
-const STEP_LABELS: Record<ChainStep["id"], MessageKey> = { install: "setup.stepInstall", "sign-in": "setup.stepSignIn", test: "setup.stepTest" };
+const STEP_LABELS: Record<ChainStep["id"], MessageKey> = { install: "setup.stepInstall", "sign-in": "setup.stepSignIn", test: "setup.stepTest", terminal: "setup.stepTerminal" };
 
 /**
  * The one primary button that makes an agent ready, and the step list it runs
  * through: install → sign in → a test message, each ticked when already
- * satisfied. Ready means the test message got a reply, nothing less.
+ * satisfied. Ready means the test message got a reply, nothing less — or, for
+ * an agent that runs only in a terminal, the check it can pass.
  */
 export function SetupChain({ engine, onTroubleshoot }: { engine: EngineView; onTroubleshoot?: (engineId: string, error?: string) => void }) {
   const { t } = useI18n();
   const projectId = useCurrentProject();
   const chain = useSetupChain(engine, projectId ?? null);
   const steps = chain.steps;
-  const ready = !chain.running && engine.tried?.ok && engine.ok;
+  // One that runs only in a terminal is ready once found and signed in, unless its one answer failed.
+  const ready = !chain.running && engine.ok && (engine.terminalOnly ? engine.tried?.ok !== false : !!engine.tried?.ok);
   const showList = chain.running || !!chain.run;
   // The troubleshooter is offered only once a retry also failed the test: the first failure stays with the chain's own fix wording.
   const running = chain.running;
@@ -149,6 +159,7 @@ export function SetupChain({ engine, onTroubleshoot }: { engine: EngineView; onT
   const lastError = chain.run?.tried?.error ?? chain.run?.progress?.failure?.message ?? engine.tried?.error;
   const icon = (step: ChainStep) =>
     step.state === "done" ? <Icon name="i-check" size={12} /> : step.state === "failed" ? <Icon name="i-warn" size={12} /> : step.state === "pending" ? <span className="setup-step-dot" /> : <Icon name="i-sync" size={12} />;
+  if (ready && !showList) return null;
   return (
     <div className="setup-chain" data-testid={`chain-${engine.id}`}>
       {!ready && (
@@ -175,7 +186,7 @@ export function SetupChain({ engine, onTroubleshoot }: { engine: EngineView; onT
               {icon(step)}
               <div className="setup-step-body">
                 <span>{t(step.official ? "setup.stepInstallOfficial" : STEP_LABELS[step.id], { title: engine.title })}</span>
-                <StepDetail step={step} title={engine.title} insideApp={engine.cli?.insideApp} onRetry={chain.retry} />
+                <StepDetail step={step} title={engine.title} insideApp={engine.cli?.insideApp} terminalOnly={engine.terminalOnly} onRetry={chain.retry} />
               </div>
             </li>
           ))}
