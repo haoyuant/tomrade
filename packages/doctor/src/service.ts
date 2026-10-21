@@ -151,7 +151,7 @@ declare module "cordis" {
 
 declare module "@tomradex/ipc" {
   interface Channels {
-    "doctor.start": (projectId: string, from?: { threadId: string; runId?: string } | null) => { threadId: string };
+    "doctor.start": (projectId: string, from?: { threadId?: string; runId?: string; engineId?: string; error?: string } | null) => { threadId: string };
     "doctor.preview": (projectId: string, threadId: string, include?: Partial<ReportInclude>, note?: string) => Report;
     "doctor.send": (projectId: string, threadId: string, include?: Partial<ReportInclude>, note?: string) => SendResult;
     "doctor.investigate": (projectId: string, threadId: string, engineId: string) => void;
@@ -295,9 +295,13 @@ export class Doctor extends Service implements DoctorChecks {
 
   // ── starting ─────────────────────────────────────────────────────────
 
-  /** A troubleshooting thread, about a failed turn or nothing in particular, already checking. */
-  start(projectId: string, from: { threadId: string; runId?: string } | null): ThreadSummary {
-    const topic = from ? this.topicOf(projectId, from.threadId, from.runId) : {};
+  /** A troubleshooting thread: about a failed turn, an engine setup hands over, or nothing in particular — already checking. */
+  start(projectId: string, from: { threadId?: string; runId?: string; engineId?: string; error?: string } | null): ThreadSummary {
+    const topic: Topic = from?.threadId
+      ? this.topicOf(projectId, from.threadId, from.runId)
+      : from
+        ? { ...(from.engineId ? { engineId: from.engineId } : {}), ...(from.error ? { error: from.error } : {}) }
+        : {};
     const words = this.words();
     const engine = topic.engineId ? this.ctx.agent.engineOf(topic.engineId) : undefined;
     const what = engine?.title ?? topic.engineId;
@@ -600,7 +604,21 @@ export class Doctor extends Service implements DoctorChecks {
           ...(cli?.version ? { [`${id}.version`]: cli.version } : {}),
           ...(cli?.source ? { [`${id}.source`]: cli.source } : {})
         };
-        if (state.ok) return { state: "ok", line: cli?.path ? `${words("engineReady")} · ${(cli.version ? words("cliFoundVersion", { path: cli.path, version: cli.version }) : words("cliFound", { path: cli.path }))}` : words("engineReady"), facts };
+        if (state.ok) {
+          const found = cli?.path ? `${words("engineReady")} · ${(cli.version ? words("cliFoundVersion", { path: cli.path, version: cli.version }) : words("cliFound", { path: cli.path }))}` : words("engineReady");
+          // Found and signed in is not yet working: the remembered test message settles it (TOM-503).
+          const tried = doctor.ctx.agent.triedWith(id);
+          if (tried && !tried.ok) {
+            return {
+              state: "warn",
+              line: words("engineTriedFailed", { detail: (tried.error ?? "").slice(0, 160) }),
+              facts: { ...facts, [`${id}.tried`]: "failed" },
+              actions: [{ kind: "settings", engineId: id, label: words("actionSettings", { engine: engine.title }) }],
+              ...(tried.error ? { evidence: tried.error } : {})
+            };
+          }
+          return { state: "ok", line: tried?.ok ? `${found} · ${words("engineAnswered")}` : found, facts: { ...facts, ...(tried?.ok ? { [`${id}.tried`]: "ok" } : {}) } };
+        }
         const actions: CardAction[] =
           state.need === "install" && (state.setup ?? engine.local?.setup)?.install.length ? [{ kind: "install", engineId: id, label: words("actionInstall", { engine: engine.title }) }]
           : state.need === "sign-in" && engine.local?.setup?.signIn ? [{ kind: "sign-in", engineId: id, label: words("actionSignIn", { engine: engine.title }) }]

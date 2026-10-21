@@ -176,6 +176,39 @@ describe("the troubleshooter", () => {
     const models = checklist.rows.find((r) => r.id === "models");
     expect(models?.state).toBe("warn");
   });
+  it("takes an engine and its error from setup as the topic, and the row carries the last test message", async () => {
+    const { ctx, project } = await boot();
+    // The remembered test message (TOM-503): the fake turn errors, so the try fails.
+    const tried = await ctx.agent.tryEngine(project.id, "acme");
+    expect(tried.ok).toBe(false);
+    const thread = ctx.doctor.start(project.id, { engineId: "acme", error: tried.error ?? "" });
+    expect(thread.title).toContain("Acme");
+    await settled(ctx, project.id, ctx.agent.store.runs(project.id, thread.id)[0]!.id, 15_000);
+    expect(ctx.doctor.latest(thread.id)?.topic).toMatchObject({ engineId: "acme", error: expect.stringContaining("401") });
+    const checklist = cardsOf(ctx, project.id, thread.id).find((c) => c.schema === "checklist")!.data as ChecklistCard;
+    const row = checklist.rows.find((r) => r.id === "engine:acme");
+    expect(row).toMatchObject({ state: "warn", line: expect.stringContaining("test message failed") });
+  });
+
+  it("says a ready agent answered its test message once it did", async () => {
+    const { ctx, project } = await boot();
+    ctx.agent.engine({
+      id: "fine",
+      title: "Fine",
+      author: "ai:fine",
+      available: async () => ({ ok: true }),
+      async turn(_input, io) {
+        io.emit({ type: "text", text: "pong" });
+        return { stop: "end" };
+      }
+    });
+    await ctx.agent.tryEngine(project.id, "fine");
+    const thread = ctx.doctor.start(project.id, null);
+    await settled(ctx, project.id, ctx.agent.store.runs(project.id, thread.id)[0]!.id, 15_000);
+    const checklist = cardsOf(ctx, project.id, thread.id).find((c) => c.schema === "checklist")!.data as ChecklistCard;
+    expect(checklist.rows.find((r) => r.id === "engine:fine")).toMatchObject({ state: "ok", line: expect.stringContaining("answered a test message") });
+  });
+
   it("reads the account's sync status, an object, into its row and facts", async () => {
     const { ctx, project } = await boot();
     ctx.provide("cloudHub", { info: () => ({ user: { id: "u", email: "a@b.co" }, status: { state: "error", location: "a@b.co", lastSyncAt: null, detail: "fetch failed" }, pending: 2 }) } as never);

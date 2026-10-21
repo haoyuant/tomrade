@@ -3,6 +3,7 @@ import { z } from "zod";
 import { contract } from "@tomradex/contracts";
 import type {} from "@tomradex/ipc";
 import { machineHost, probeGit, runGitInstall, type GitInstallProgress, type GitStatus, type MachineHost } from "./git.js";
+import { probeNpm } from "./npm.js";
 import { MACHINE_WORDS } from "./words.js";
 
 declare module "cordis" {
@@ -62,6 +63,17 @@ export class MachineSetup extends Service {
       const doctor = contract(ctx, "doctor");
       if (!doctor) return;
       doctor.check({
+        id: "npm",
+        title: () => MACHINE_WORDS(doctor.locale())("checkNpm"),
+        run: async () => {
+          const words = MACHINE_WORDS(doctor.locale());
+          const npm = await probeNpm(ctx.machineSetup.host);
+          if (npm.state === "ready") return { state: "ok", line: words("npmFound", { version: npm.version ?? "" }), facts: { npm: npm.path ?? "" } };
+          if (npm.state === "missing") return { state: "warn", line: words("npmMissing") };
+          return { state: "fail", line: words("npmBroken", { path: npm.path ?? "npm", error: npm.error ?? "" }), ...(npm.error ? { evidence: npm.error } : {}) };
+        }
+      });
+      doctor.check({
         id: "git",
         title: () => MACHINE_WORDS(doctor.locale())("checkGit"),
         run: async () => {
@@ -112,5 +124,6 @@ export class MachineSetup extends Service {
 }
 
 export default MachineSetup;
-export { installerFor, machineHost, probeGit, runGitInstall } from "./git.js";
+export { findExecutable, installerFor, machineHost, probeGit, runGitInstall } from "./git.js";
 export type { GitInstallDeps, GitInstallProgress, GitInstallerKind, GitStatus, MachineHost, RunResult } from "./git.js";
+export { probeNpm, type NpmStatus } from "./npm.js";

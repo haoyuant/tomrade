@@ -34,7 +34,7 @@ function CommandLine({ command }: { command: string }) {
  * install or sign-in it still needs as a command to copy or run in a terminal.
  * Coming back to the window looks again, past the probe cache.
  */
-export function LocalAgentSetup({ engines, onOpenSettings }: { engines: EngineView[]; onOpenSettings: (engineId?: string) => void }) {
+export function LocalAgentSetup({ engines, onOpenSettings, onTroubleshoot }: { engines: EngineView[]; onOpenSettings: (engineId?: string) => void; onTroubleshoot?: (engineId: string, error?: string) => void }) {
   const { t } = useI18n();
   const toast = useToast();
   const recheck = useRecheckEngines();
@@ -99,6 +99,11 @@ export function LocalAgentSetup({ engines, onOpenSettings }: { engines: EngineVi
               {problem && (
                 <span className="setup-fix" data-testid={`problem-${e.id}`}>
                   {t(problem.kind === "models" ? "setup.problemModels" : "setup.problemTried", { detail: problem.detail })}
+                  {onTroubleshoot && (
+                    <button type="button" className="link-btn setup-action" data-testid={`troubleshoot-${e.id}`} onClick={() => onTroubleshoot(e.id, problem.detail)}>
+                      {t("setup.troubleshoot")} →
+                    </button>
+                  )}
                 </span>
               )}
               {status === "desktop-only" && <span className="setup-fix">{t("localCli.desktopOnlyDetail", { app: e.cli?.desktopApp ?? "", name: e.cli?.name ?? "" })}</span>}

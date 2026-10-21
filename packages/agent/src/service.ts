@@ -1037,7 +1037,7 @@ export class Agent extends Service implements AgentReader {
   }
 
   /** The last try, while the engine's settings are the ones it ran with. */
-  private triedWith(engineId: string): EngineTry | undefined {
+  triedWith(engineId: string): EngineTry | undefined {
     const last = this.tries.get(engineId);
     return last && last.settings === JSON.stringify(this.settingsOf().engines[engineId] ?? null) ? last.tried : undefined;
   }

@@ -358,6 +358,9 @@ export function AgentPanel({
   const canTroubleshoot = !!engines.data?.some((e) => e.id === "doctor") && !doctorThread;
   const troubleshoot = (failedThread: string, runId: string | null) =>
     void invoke("doctor.start", projectId, { threadId: failedThread, ...(runId ? { runId } : {}) }).then(({ threadId: id }) => pickThread(id), reportError);
+  // Setup's failing agent rows hand the engine and its test error straight to the troubleshooter.
+  const troubleshootEngine = (engineId: string, error?: string) =>
+    void invoke("doctor.start", projectId, { engineId, ...(error ? { error } : {}) }).then(({ threadId: id }) => pickThread(id), reportError);
   // What a finding's buttons do: the backend worded them, the verbs are the panel's.
   const cardAction = async (action: CardAction, inThread: string, engineId?: string) => {
     try {
@@ -476,7 +479,7 @@ export function AgentPanel({
           following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
         }}
       >
-        {(noEngineReady || (empty && !detail.data?.thread.itemId)) && <SetupCard onOpenSettings={onOpenSettings} />}
+        {(noEngineReady || (empty && !detail.data?.thread.itemId)) && <SetupCard onOpenSettings={onOpenSettings} onTroubleshoot={canTroubleshoot ? troubleshootEngine : undefined} />}
         {empty && !noEngineReady && (
           <div className="turn turn-ai">
             <div className="turn-mark">
