@@ -3,7 +3,7 @@ import { wordsFor, type CompatibleModelOptions, type Localized, type ModelChat, 
 import type { Host } from "../host.js";
 import { within } from "../scope.js";
 import { copy } from "./shared.js";
-import { errorMessage } from "@tomradex/contracts";
+import { bestEffort, errorMessage } from "@tomradex/contracts";
 
 /** A plugin's headers as fetch takes them; anything but an object of names and values is refused. */
 export const strings = (headers: unknown): Record<string, string> => {
@@ -26,7 +26,7 @@ async function* pulled<T>(host: Host, open: () => AsyncIterable<T>): AsyncGenera
     }
   } finally {
     // A turn cut short (aborted, or the caller stopped reading) lets the plugin clean up.
-    if (!done) await within(host.ns, () => it.return?.()).catch(() => {});
+    if (!done) await bestEffort(within(host.ns, () => it.return?.()), host.logger, "closing a model stream cut short");
   }
 }
 

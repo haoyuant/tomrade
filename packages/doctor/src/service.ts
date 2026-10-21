@@ -16,7 +16,7 @@ import { DOCTOR_WORDS, type Words } from "./words.js";
 import { CATALOG_MAX_AGE_MS, fetchCatalog, readCache } from "./catalog.js";
 import { CONCLUSION, brief, conclusionCard, investigationMessages, investigationTools, logSources, scopedTools, type Conclusion } from "./investigate.js";
 import type {} from "@tomradex/tools";
-import { type Check as ContractCheck, type CheckResult as ContractCheckResult, contract, type DoctorChecks, errorMessage, readJsonOr } from "@tomradex/contracts";
+import { bestEffort, type Check as ContractCheck, type CheckResult as ContractCheckResult, contract, type DoctorChecks, errorMessage, readJsonOr } from "@tomradex/contracts";
 
 /** What a troubleshooting thread is about: a failed turn, or nothing in particular. */
 export const Topic = z.object({
@@ -862,7 +862,7 @@ export class Doctor extends Service implements DoctorChecks {
   }
 
   async refreshReports(): Promise<void> {
-    if (this.signedIn()) await this.reports().catch(() => {});
+    if (this.signedIn()) await bestEffort(this.reports(), this.ctx.logger, "refreshing my reports");
   }
 
   private setUnread(n: number): void {

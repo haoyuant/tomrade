@@ -59,7 +59,7 @@ import { looksRateLimited, resetTime, untilLabel } from "./limits.js";
 import { describeFailure, readableError, redactSecrets } from "./failure.js";
 import { conversationRecap } from "./recap.js";
 import { NO_TOKENS, addTokens, runTokens, type TokenBreakdown } from "./tokens.js";
-import { type AgentReader, contract, errorMessage, localeOf } from "@tomradex/contracts";
+import { type AgentReader, bestEffort, contract, errorMessage, localeOf } from "@tomradex/contracts";
 
 /** Where a thread's engine would run, or the one reason it cannot yet. `code` is stable for the renderer to translate. */
 /** Which of these threads a plugin opened, and what to call that: thread id → label. */
@@ -699,7 +699,7 @@ export class Agent extends Service implements AgentReader {
     const budget = opts.withinMs !== undefined ? AbortSignal.timeout(opts.withinMs) : undefined;
     const signal = budget && opts.signal ? AbortSignal.any([budget, opts.signal]) : budget ?? opts.signal;
     // The refresh can wait on storage; a budgeted caller goes with the playbooks already loaded.
-    await settleBy(this.refreshProjectPlaybooks(projectId), signal).catch(() => undefined);
+    await bestEffort(settleBy(this.refreshProjectPlaybooks(projectId), signal), this.ctx.logger, `refreshing the playbooks of ${projectId}`);
     // A built-in playbook that names no work type steers the assistant (app.guide, studio.build-plugin); it is no method for a ticket.
     const candidates = this.playbookIndex(projectId).filter((entry) => !entry.id.startsWith("backlog.") && (entry.workTypes?.length ? !input.workType || entry.workTypes.includes(input.workType) : entry.source !== "plugin"));
     const words = this.words();

@@ -53,7 +53,7 @@ import {
   type SyncSummary
 } from "./types.js";
 import { STORAGE_WORDS } from "./words.js";
-import { contract, errorMessage, localeOf, type StorageReader } from "@tomradex/contracts";
+import { bestEffort, contract, errorMessage, localeOf, type StorageReader } from "@tomradex/contracts";
 
 // "synced" with writes still waiting reads as ahead.
 const STATE_WORD: Record<SyncState, Exclude<Parameters<ReturnType<typeof STORAGE_WORDS>>[0], "unsynced">> = {
@@ -1458,7 +1458,7 @@ export class Storage extends Service implements StorageReader {
   /** Forget the remote. The repository and its history stay; nothing remote is deleted. */
   async unbind(projectId: string): Promise<StorageInfo> {
     const entry = this.mustEntry(projectId);
-    if (entry.dir && entry.git === "dedicated") await this.git(entry.dir).removeRemote().catch(() => {});
+    if (entry.dir && entry.git === "dedicated") await bestEffort(this.git(entry.dir).removeRemote(), this.home.logger, `removing the remote of ${projectId}`);
     this.hub.catalog.patchProject(projectId, { remote: null, visibility: null, visibilityAt: null });
     this.lastState.delete(projectId);
     this.scheduleHubWrite();
@@ -1964,7 +1964,7 @@ export class Storage extends Service implements StorageReader {
   async unbindHub(): Promise<void> {
     if (this.hubBackend) throw new Error("This Hub syncs through your account.");
     const dir = this.hub.dir;
-    if (dir) await this.git(dir).removeRemote().catch(() => {});
+    if (dir) await bestEffort(this.git(dir).removeRemote(), this.home.logger, "removing the Hub's remote");
     this.hub.patchState({ remote: null });
     this.home.get("ipc")?.send("hub.changed");
   }

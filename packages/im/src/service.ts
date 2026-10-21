@@ -15,7 +15,7 @@ import { prepare } from "./render.js";
 import { IM_WORDS, type ImPlainWord } from "./words.js";
 import { FILE_HANDLE, statusText, awaitingReview, codeNews, codeSeen, deliveryCard, links, proposalText, renderBlock, reviewOutcome, ticket, toolLine, type CodeLookup, type CodeSeen, type Delivered, type ItemLookup, type RenderScope } from "./rich.js";
 import { ImStore, MIGRATIONS, TABLES, type Action, type Binding, type Inbox, type Outbox, type Topic, type Watch, type WindowRow } from "./store.js";
-import { contract, errorMessage } from "@tomradex/contracts";
+import { bestEffort, contract, errorMessage } from "@tomradex/contracts";
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const token = () => randomBytes(24).toString("hex");
@@ -494,7 +494,7 @@ export class Im extends Service {
     const paired = this.settings.identities.filter(i => i.connectionId === c.id);
     const chats = this.settings.routes.filter(r => r.connectionId === c.id && r.allowDirectMessages && !r.allowGroups
       && paired.some(i => i.tenantId === r.tenantId && r.allowedActors.includes(i.actorId)));
-    for (const r of chats) await say({ tenantId: r.tenantId, conversationId: r.conversationId }).catch(() => {});
+    for (const r of chats) await bestEffort(say({ tenantId: r.tenantId, conversationId: r.conversationId }), this.home.logger, `telling ${r.conversationId}`);
   }
 
   /** The book in the desktop's language. */

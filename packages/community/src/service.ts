@@ -15,7 +15,7 @@ import { linkGitHub } from "./oauth.js";
 import { BUNDLE_CATALOG, OFFICIAL_CATALOG_URL, OfficialCatalog, bundledPackage, isOfficialId } from "./official.js";
 import { githubAccess, prepareRelease, type GitHubAccess } from "./publish.js";
 import { latestInstallable, planUpdate, revoked, type Revocation, type Tier, type UpdatePlan, type VersionRow } from "./rules.js";
-import { type CommunityReader, errorMessage } from "@tomradex/contracts";
+import { bestEffort, type CommunityReader, errorMessage } from "@tomradex/contracts";
 
 export const CommunityConfig = z.preprocess(
   (v) => v ?? {},
@@ -705,7 +705,7 @@ export class Community extends Service implements CommunityReader {
         const hit = revoked(entry.id, entry.version, result);
         if (!hit) continue;
         now.set(entry.id, hit.reason);
-        if (!entry.disabled) await this.plugins.setEnabled(entry.id, false).catch(() => undefined);
+        if (!entry.disabled) await bestEffort(this.plugins.setEnabled(entry.id, false), this.home.logger, `turning off revoked ${entry.id}`);
       }
     }
     this.revokedNow = now;

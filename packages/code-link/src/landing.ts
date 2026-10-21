@@ -9,6 +9,7 @@ import type { StartDefaultsStore } from "./defaults.js";
 import type { CodeLinkStore, CodeLinkView } from "./store.js";
 import { commandOk, exec } from "./terminal.js";
 import { currentLinks, primaryOf, type ScanSummary } from "./scan/absorb.js";
+import { bestEffort } from "@tomradex/contracts";
 
 export interface OpenPrResult {
   pushed: boolean;
@@ -219,7 +220,7 @@ export class Landing {
       const created = await this.git(["push", "-q", "origin", `HEAD:refs/heads/${repo.defaultBranch}`], { cwd, ok: true });
       if (created.code === 0) {
         this.store.patchLink(projectId, link.id, { lastSeenAt: Date.now() });
-        void this.scan(projectId).catch(() => {});
+        void bestEffort(this.scan(projectId), this.ctx.logger, `code scan of ${projectId} after the push`);
         return { pushed: true, url: null, created: false, message: `${repo.name} had no ${repo.defaultBranch} yet — ${link.branch} became it, so this ticket counts as merged` };
       }
     }

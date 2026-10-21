@@ -7,7 +7,7 @@ import type {} from "@tomradex/projects";
 import { emptyHub, type HubManifest, type HubProject, type StorageStatus } from "@tomradex/storage";
 import type { UserSettingsFile } from "@tomradex/settings";
 import { CloudCache, RecordSchema, recordKey, equal, type CloudRecord } from "./cache.js";
-import { type CloudHubReader, errorMessage } from "@tomradex/contracts";
+import { bestEffort, type CloudHubReader, errorMessage } from "@tomradex/contracts";
 
 export interface AccountInfo {
   user: { id: string; email: string } | null;
@@ -462,7 +462,7 @@ export class CloudHub extends Service implements CloudHubReader {
       const { error } = await this.client.rpc("tomrade_delete_account");
       if (error) throw new Error(/fetch failed|failed to fetch|network|aborted|timed? ?out/i.test(error.message) ? `[network] ${error.message}` : error.message);
       // The server has already ended the session; only this machine's copy is left to drop.
-      await this.client.auth.signOut({ scope: "local" }).catch(() => undefined);
+      await bestEffort(this.client.auth.signOut({ scope: "local" }), this.home.logger, "signing out this machine's session");
       await this.config.sessionStorage.removeItem(this.sessionKey);
       this.user = null;
       this.error = null;

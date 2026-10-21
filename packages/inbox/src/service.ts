@@ -10,7 +10,7 @@ import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/items";
 import type {} from "@tomradex/settings";
 import { INBOX_WORDS, type InboxWords } from "./words.js";
-import { errorMessage, localeOf } from "@tomradex/contracts";
+import { bestEffort, errorMessage, localeOf } from "@tomradex/contracts";
 
 export const INBOX_KINDS = ["bug", "feedback", "idea"] as const;
 export type InboxKind = (typeof INBOX_KINDS)[number];
@@ -826,7 +826,7 @@ export class Inbox extends Service {
       for (const id of ids) {
         const entry = this.has(projectId) ? this.get(projectId, id) : null;
         if (!entry || entry.status !== "new" || entry.suggestion) continue;
-        await this.suggest(projectId, id).catch(() => undefined);
+        await bestEffort(this.suggest(projectId, id), this.home.logger, `suggesting a triage for ${id}`);
       }
     });
     const tail: Promise<void> = run.finally(() => {
