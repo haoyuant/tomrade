@@ -14,6 +14,7 @@ import { errorSpec, useToast } from "~/lib/toast";
 import { useSeen, useSetupAsked } from "~/lib/onboarding";
 import { FirstRunSetup } from "~/components/setup/FirstRunSetup";
 import { useSetup } from "~/lib/setup";
+import { FIRST_RUN_CHECK_MS, firstRunSetup } from "~/lib/setupState";
 import { useSettingsHost } from "~/lib/settingsHost";
 import { HubSetup } from "./HubSetup";
 import { NewProjectDialog } from "./NewProjectDialog";
@@ -130,9 +131,18 @@ export function ProjectsScreen() {
   const { state } = useSetup();
   // Held once raised, so connecting something shows what it unlocked instead of the screen vanishing.
   const [setup, setSetup] = useState<"open" | "closed" | null>(null);
+  const [waited, setWaited] = useState(false);
+  const checking = setup === null && !!state?.checking;
   useEffect(() => {
-    if (setup === null && state && settings.data) setSetup(!state.complete && !seen("setup-screen") ? "open" : "closed");
-  }, [setup, state, seen, settings.data]);
+    if (!checking) return;
+    const timer = setTimeout(() => setWaited(true), FIRST_RUN_CHECK_MS);
+    return () => clearTimeout(timer);
+  }, [checking]);
+  useEffect(() => {
+    if (setup !== null || !state || !settings.data) return;
+    const decided = firstRunSetup(state, { seen: seen("setup-screen"), waited });
+    if (decided) setSetup(decided);
+  }, [setup, state, seen, settings.data, waited]);
   // Onboarding run again, from Settings: the setup screen comes back even with something connected.
   const [asked, takeAsk] = useSetupAsked();
   useEffect(() => {
