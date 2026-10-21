@@ -52,7 +52,7 @@ export interface ImConnectionView {
 export interface ImAdapterView {
   id: string; title: string; capabilities: ImCapabilities;
   setup: { fields: { key: string; label: string; secret: boolean; optional: boolean; placeholder?: string; help?: string }[];
-    steps: string[]; permissions: string[]; manifest?: ImAdapterSetup["manifest"]; docsUrl?: string } | null;
+    steps: string[]; permissions: string[]; manifest?: ImAdapterSetup["manifest"]; docsUrl?: string; groupSteps: string[] } | null;
 }
 /** A message that was not let in. Never its text. */
 export interface ImIgnoredView {
@@ -337,7 +337,8 @@ export class Im extends Service {
         fields: a.setup.fields.map(f => ({ key: f.key, label: this.word(f.label), secret: !!f.secret, optional: !!f.optional,
           ...(f.placeholder ? { placeholder: f.placeholder } : {}), ...(f.help ? { help: this.word(f.help) } : {}) })),
         steps: a.setup.steps.map(step => this.word(step)), permissions: a.setup.permissions ?? [],
-        ...(a.setup.manifest ? { manifest: a.setup.manifest } : {}), ...(a.setup.docsUrl ? { docsUrl: a.setup.docsUrl } : {})
+        ...(a.setup.manifest ? { manifest: a.setup.manifest } : {}), ...(a.setup.docsUrl ? { docsUrl: a.setup.docsUrl } : {}),
+        groupSteps: (Array.isArray(a.setup.groupSteps) ? a.setup.groupSteps : []).map(step => this.word(step))
       } : null }));
   }
 

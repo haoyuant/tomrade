@@ -451,6 +451,7 @@ function ConnectionCard({ view, adapter, im, pairing, defaultProject, busy, onEd
       {open && (
         <div className="stack-3 fold-row-body">
           <People connection={view} im={im} pairing={pairing} defaultProject={defaultProject} onError={onError} />
+          {view.state === "connected" && <GroupGuide adapter={adapter} routes={routes} />}
           <div className="stack-2">
             <div className="eyebrow">{t("imSettings.routes")}</div>
             {routes.length ? routes.map((route) => (
@@ -460,6 +461,41 @@ function ConnectionCard({ view, adapter, im, pairing, defaultProject, busy, onEd
             )) : <p className="meta-txt dense">{t("imSettings.noRoutes")}</p>}
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/** What a group or server channel is for, by the preset its route most resembles. */
+function roleOf(route: ImRoute): MessageKey {
+  if (route.ticketTopics !== false) return "imSettings.roleWork";
+  return route.notify?.tickets === false ? "imSettings.roleChat" : "imSettings.roleStatus";
+}
+
+/** How to bring the connected bot into a group or server, and which channels already hear what. */
+function GroupGuide({ adapter, routes }: { adapter?: ImAdapterView; routes: ImRoute[] }) {
+  const { t } = useI18n();
+  const groups = routes.filter((r) => r.allowGroups);
+  const steps = adapter?.setup?.groupSteps?.length ? adapter.setup.groupSteps : [t("imSettings.groupStepAdd"), t("imSettings.groupStepMention")];
+  return (
+    <div className="stack-2" data-testid="im-group-guide">
+      <div className="eyebrow">{t("imSettings.groupGuide")}</div>
+      {routes.length > 0 && !groups.length && <p className="meta-txt dense" data-testid="im-only-direct">{t("imSettings.onlyDirect")}</p>}
+      <ol className="meta-txt" style={{ margin: 0, paddingLeft: 18, whiteSpace: "pre-wrap", listStyle: "decimal" }}>
+        {steps.map((step, i) => <li key={i}>{step}</li>)}
+        <li>
+          {t("imSettings.groupStepAfter")}
+          <ul style={{ margin: 0, paddingLeft: 18, listStyle: "disc" }}>
+            <li>{t("imSettings.afterWork")}</li>
+            <li>{t("imSettings.afterStatus")}</li>
+            <li>{t("imSettings.afterChat")}</li>
+          </ul>
+        </li>
+      </ol>
+      {groups.length > 0 && (
+        <ul className="meta-txt dense" style={{ margin: 0, paddingLeft: 18, listStyle: "disc" }} data-testid="im-group-channels">
+          {groups.map((r) => <li key={r.id}>{t("imSettings.groupChannel", { conversation: r.conversationId, role: t(roleOf(r)) })}</li>)}
+        </ul>
       )}
     </div>
   );
