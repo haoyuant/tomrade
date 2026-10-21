@@ -54,6 +54,12 @@ export function FirstRunSetup({ onDone }: { onDone: () => void }) {
                   <Icon name="i-check" size={13} />
                   <span>{t("setup.doneAssistant", { names: assistant?.title ?? "" })}</span>
                 </li>
+                {assistant?.tried?.reply && (
+                  <li className="setup-row is-ok" data-testid="setup-done-reply">
+                    <Icon name="i-check" size={13} />
+                    <span>{t("setup.doneReply", { reply: assistant.tried.reply })}</span>
+                  </li>
+                )}
                 {state.locals.length > 0 && (
                   <li className="setup-row is-ok">
                     <Icon name="i-check" size={13} />
