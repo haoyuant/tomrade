@@ -39,6 +39,7 @@ export const DESKTOP_WORDS = defineWords("desktop", {
     trayQuit: "Quit Tomrade",
     menuBar: "menu bar",
     systemTray: "system tray",
+    loginNotTaken: "it did not register Tomrade to start at login",
     stillRunning: "Tomrade is still running",
     stillRunningBody: "The MCP server, routines and sync keep working. Open or quit Tomrade from its {{where}} icon.",
     // notifications
@@ -100,6 +101,7 @@ export const DESKTOP_WORDS = defineWords("desktop", {
     trayQuit: "退出 Tomrade",
     menuBar: "菜单栏",
     systemTray: "系统托盘",
+    loginNotTaken: "它没有登记让 Tomrade 在登录时启动",
     stillRunning: "Tomrade 仍在后台运行",
     stillRunningBody: "MCP 服务、例行任务和同步会继续工作。可以从{{where}}图标打开或退出 Tomrade。",
     assistant: "助手",

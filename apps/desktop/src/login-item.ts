@@ -38,15 +38,18 @@ export interface LoginItem {
 /** Darwin 22 is macOS 13, the first with SMAppService. */
 const modernMac = () => Number(os.release().split(".")[0]) >= 22;
 
-function macAgent(): LoginItem {
+/** Where the app bundle carries the agent's plist. */
+const agentPlist = (execPath = process.execPath) => path.join(path.dirname(path.dirname(execPath)), "Library", "LaunchAgents", MAC_AGENT_PLIST);
+
+export function macAgent(plist = agentPlist()): LoginItem {
   const service = { type: "agentService", serviceName: MAC_AGENT_PLIST } as const;
   const item: LoginItem = {
     state() {
       const status = app.getLoginItemSettings(service).status;
       if (status === "enabled") return { kind: "on" };
       if (status === "requires-approval") return { kind: "approval" };
-      // The plist is missing from the bundle: a build made without it.
-      if (status === "not-found") return { kind: "unavailable", reason: "unsupported" };
+      // macOS says not-found before the first registration too; only a bundle without the plist cannot start at login.
+      if (status === "not-found" && !fs.existsSync(plist)) return { kind: "unavailable", reason: "unsupported" };
       return { kind: "off" };
     },
     set(on) {

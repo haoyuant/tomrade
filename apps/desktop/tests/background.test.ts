@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("electron", () => ({ app: {}, Menu: {}, nativeImage: {}, Notification: {}, shell: {}, Tray: class {} }));
 
-const { autostartEntry, autostartState, withExec, xdgAutostart, BACKGROUND_FLAG } = await import("../src/login-item.js");
+const { app } = await import("electron");
+const { autostartEntry, autostartState, macAgent, withExec, xdgAutostart, BACKGROUND_FLAG } = await import("../src/login-item.js");
 const { launchMode, readPrefs, relaunchArgs, writePrefs } = await import("../src/background.js");
 
 let dir: string;
@@ -95,5 +96,21 @@ describe("XDG autostart", () => {
     item.set(false);
     expect(fs.existsSync(file)).toBe(false);
     expect(item.state()).toEqual({ kind: "off" });
+  });
+});
+
+describe("macOS agent service", () => {
+  const reports = (status: string) => Object.assign(app, { getLoginItemSettings: () => ({ status }) });
+
+  it("reads a never-registered agent as off while the bundle carries its plist", () => {
+    const plist = path.join(dir, "com.tomrade.desktop.background.plist");
+    fs.writeFileSync(plist, "<plist/>");
+    reports("not-found");
+    expect(macAgent(plist).state()).toEqual({ kind: "off" });
+  });
+
+  it("says start at login is unsupported only when the plist is missing", () => {
+    reports("not-found");
+    expect(macAgent(path.join(dir, "missing.plist")).state()).toEqual({ kind: "unavailable", reason: "unsupported" });
   });
 });

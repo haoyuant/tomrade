@@ -137,6 +137,8 @@ export const background = {
     const register = (on: boolean): boolean => {
       try {
         login.set(on);
+        // Electron only logs a registration the system refuses; what the system kept is the answer.
+        if (on && login.state().kind === "off") throw new Error(words()("loginNotTaken"));
         return true;
       } catch (e) {
         // A system that refuses is said in the pane, never thrown at the person.
