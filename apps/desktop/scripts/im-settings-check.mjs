@@ -125,6 +125,8 @@ const run = async () => {
   await shot("im-connected.png");
 
   // ── pair yourself ────────────────────────────────────────────────────
+  check("pairing waits behind Add a person", !(await $(`!!document.querySelector('[data-testid=im-pair-start]')`)) && await press(`document.querySelector('[data-testid=im-pair-add]')`));
+  await waitFor(`!!document.querySelector('[data-testid=im-pair-start]')`);
   await press(`document.querySelector('[data-testid=im-pair-start]')`);
   await waitFor(`!!document.querySelector('[data-testid=im-pair-code]')`);
   const code = (await $(`document.querySelector('[data-testid=im-pair-code] .mono').textContent`)).replace("/pair ", "").trim();
@@ -136,6 +138,8 @@ const run = async () => {
   await press(`document.querySelector('[data-testid=im-pair-confirm]')`);
   check("confirming lists them as paired", await waitFor(`document.querySelector('[data-testid=im-people]')?.textContent.includes('U-owner') && !!${button("Revoke")}`));
   check("and connects their direct chat to the project", await waitFor(`!!document.querySelector('[data-im-route]')`));
+  check("a conversation is one line, saying where it goes, until opened", await waitFor(`document.querySelector('[data-im-route] [data-testid=im-route-summary]')?.textContent === 'Alpha · Project default'
+    && !document.querySelector('[data-im-route] [id$=-project]')`), await $(`document.querySelector('[data-im-route]')?.textContent`));
 
   // ── the pane's order, and a bot folds ────────────────────────────────
   check("what conversations hear comes before the bots",
@@ -162,6 +166,11 @@ const run = async () => {
   // ── what conversations hear ──────────────────────────────────────────
   const imNow = () => ctx.settings.get().im;
   const until = async (cond, ms = 4000) => { for (let waited = 0; waited < ms && !cond(); waited += 100) await sleep(100); return cond(); };
+  check("what every conversation hears is one line until opened", await waitFor(`document.querySelector('[data-testid=im-notify-summary]')?.textContent.startsWith('On: ') && !document.querySelector('[data-im-notify-kind]')`),
+    await $(`document.querySelector('[data-testid=im-notify-summary]')?.textContent`));
+  await press(`document.querySelector('[data-testid=im-notify-fold]')`);
+  await press(`document.querySelector('[data-im-route] [data-testid=im-route-fold]')`);
+  check("opening a conversation shows its settings", await waitFor(`!!document.querySelector('[data-im-route] [id$=-project]')`));
   check("a new conversation follows what every conversation hears", imNow().routes[0]?.notify === undefined && await waitFor(`document.querySelector('[data-im-notify] [role=switch]')?.getAttribute('aria-checked') === 'true'`), imNow().routes[0]);
   await press(`document.querySelector('[data-im-notify-kind=routines] [role=switch]')`);
   check("one switch turns a kind on for every conversation", await until(() => imNow().notify.routines === true), imNow().notify);
@@ -210,7 +219,7 @@ const run = async () => {
   await $(`${guide}?.scrollIntoView({ block: 'center' });true`);
   await sleep(200);
   await shot("im-group-guide.png");
-  ctx.settings.set({ ...ctx.settings.get(), im: { ...imNow(), routes: [...imNow().routes, { ...imNow().routes[0], id: "dev", kind: "group", conversationId: "C-dev", allowDirectMessages: false, allowGroups: true, ticketTopics: true }] } });
+  ctx.settings.set({ ...ctx.settings.get(), im: { ...imNow(), routes: [...imNow().routes, { ...imNow().routes[0], id: "dev", kind: "group", conversationId: "C-dev", allowDirectMessages: false, allowGroups: true, ticketTopics: true, groupActivation: "reply", notify: { tickets: true, code: true } }] } });
   check("an allowed group is listed with what it is for", await waitFor(`document.querySelector('[data-im-connection=team] [data-testid=im-group-channels]')?.textContent === 'C-dev: work (a thread per ticket)'`),
     await $(`document.querySelector('[data-im-connection=team] [data-testid=im-group-channels]')?.textContent`));
   check("and the direct-chat-only hint goes", await waitFor(`!document.querySelector('[data-im-connection=team] [data-testid=im-only-direct]')`));
@@ -223,19 +232,55 @@ const run = async () => {
   check("a direct chat with the group switch on is still tagged a direct chat, without the group switches", await waitFor(`${route(dmRoute.id)}?.querySelector('.tag, [class*=tag]')?.textContent === 'Direct chat'
     && !${switches(dmRoute.id)}.includes('Group messages') && !${switches(dmRoute.id)}.includes('A thread per ticket') && !${switches(dmRoute.id)}.includes('Recent discussion window')
     && !${route(dmRoute.id)}.querySelector('#im-route-${dmRoute.id}-activation')`), await $(`${switches(dmRoute.id)}`));
-  check("a group shows no direct-chat switches", await waitFor(`!${switches("dev")}.includes('Direct messages') && !${switches("dev")}.includes('Desktop turns in direct chat') && ${switches("dev")}.includes('A thread per ticket')`),
+  check("a group is one line saying what it is for", await waitFor(`${route("dev")}?.querySelector('[data-testid=im-route-summary]')?.textContent === 'work (a thread per ticket) · Alpha · 1 allowed'`),
+    await $(`${route("dev")}?.querySelector('[data-testid=im-route-summary]')?.textContent`));
+  await press(`${route("dev")}.querySelector('[data-testid=im-route-fold]')`);
+  const purpose = `document.querySelector('#im-route-dev-purpose')`;
+  check("opened, a group is set by what it is for, without the direct-chat switches or the ones its purpose stands for", await waitFor(`${purpose}?.value === 'work'
+    && !${switches("dev")}.includes('Direct messages') && !${switches("dev")}.includes('Desktop turns in direct chat') && !${switches("dev")}.includes('A thread per ticket') && !${switches("dev")}.includes('Group messages')`),
     await $(`${switches("dev")}`));
+  const select = (value) => $(`(() => { const s = ${purpose}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(value)}); s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+  const dev = () => imNow().routes.find((r) => r.id === "dev");
+  const PRESETS = { status: { ticketTopics: false, groupActivation: "mention", notify: { tickets: true, code: true, routines: true, presence: true } },
+    chat: { ticketTopics: false, groupActivation: "reply", notify: { tickets: false, code: false, routines: false } },
+    work: { ticketTopics: true, groupActivation: "reply", notify: { tickets: true, code: true } } };
+  for (const [value, fields] of Object.entries(PRESETS)) {
+    await select(value);
+    check(`choosing ${value} sets the route as that preset`, await until(() => JSON.stringify({ ticketTopics: dev()?.ticketTopics, groupActivation: dev()?.groupActivation, notify: dev()?.notify }) === JSON.stringify(fields)), dev());
+  }
+  await select("custom");
+  check("Custom shows the switches the purposes stand for", await waitFor(`${switches("dev")}.includes('A thread per ticket') && !!document.querySelector('#im-route-dev-activation') && !!${route("dev")}.querySelector('[data-im-notify]')`),
+    await $(`${switches("dev")}`));
+  await press(`${route("dev")}.querySelector('[data-testid=im-route-on]')`);
+  check("one switch lets a conversation in or out", await until(() => dev()?.allowGroups === false) && await waitFor(`${route("dev")}.querySelector('.cfg-row').classList.contains('off')`), dev());
+  await press(`${route("dev")}.querySelector('[data-testid=im-route-on]')`);
+  await until(() => dev()?.allowGroups === true);
   check("and it no longer counts as a group in the guide", await $(`document.querySelector('[data-im-connection=team] [data-testid=im-group-channels]')?.textContent === 'C-dev: work (a thread per ticket)'`));
   await $(`${route(dmRoute.id)}?.scrollIntoView({ block: 'start' });true`);
   await sleep(200);
   await shot("im-direct-chat-kind.png");
   ctx.settings.set({ ...ctx.settings.get(), language: "zh" });
+  // With a group in place the guide waits folded.
+  check("once there is a group, the guide waits folded", await waitFor(`${guide}?.querySelector('[data-testid=im-group-guide-fold]')?.getAttribute('aria-expanded') === 'false'`));
+  await press(`${guide}.querySelector('[data-testid=im-group-guide-fold]')`);
   check("in Chinese too", await waitFor(`${guide}?.textContent.includes('在群聊或服务器里使用') && ${guide}.textContent.includes('在那里运行 /standin setup。')
     && document.querySelector('[data-im-connection=team] [data-testid=im-group-channels]')?.textContent === 'C-dev：工作（每个工单一个话题）'`), await $(`${guide}?.textContent`));
   await $(`${guide}?.scrollIntoView({ block: 'center' });true`);
   await sleep(200);
   await shot("im-group-guide-zh.png");
-  ctx.settings.set({ ...ctx.settings.get(), language: "en", im: { ...imNow(), routes: imNow().routes.filter((r) => r.id !== "dev") } });
+  // The whole pane folded, as it opens: one line per conversation.
+  const compact = async (name) => {
+    await press(`${guide}.querySelector('[data-testid=im-group-guide-fold][aria-expanded=true]')`);
+    for (const rid of [dmRoute.id, "dev"]) await press(`${route(rid)}.querySelector('[data-testid=im-route-fold][aria-expanded=true]')`);
+    await $(`document.querySelector('[data-im-connection=team]')?.scrollIntoView({ block: 'start' });true`);
+    await sleep(300);
+    await shot(name);
+  };
+  await compact("im-compact-zh.png");
+  ctx.settings.set({ ...ctx.settings.get(), language: "en" });
+  await waitFor(`document.body.textContent.includes('Use it in a group or server')`);
+  await compact("im-compact.png");
+  ctx.settings.set({ ...ctx.settings.get(), im: { ...imNow(), routes: imNow().routes.filter((r) => r.id !== "dev") } });
   await waitFor(`!document.querySelector('[data-im-connection=team] [data-testid=im-group-channels]') && document.body.textContent.includes('Use it in a group or server')`);
 
   // ── the status bar opens the pane ────────────────────────────────────
