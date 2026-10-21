@@ -101,6 +101,7 @@
     "@tomradex/items": "workspace:*",
     "@tomradex/keybindings": "workspace:*",
     "@tomradex/llm": "workspace:*",
+    "@tomradex/machine-setup": "workspace:*",
     "@tomradex/mcp": "workspace:*",
     "@tomradex/mcp-client": "workspace:*",
     "@tomradex/onboarding": "workspace:*",

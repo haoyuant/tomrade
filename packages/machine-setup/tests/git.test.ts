@@ -1,0 +1,176 @@
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+import { probeGit, runGitInstall, type GitInstallProgress, type GitStatus, type MachineHost, type RunResult } from "../src/git.js";
+
+interface FakeMachine {
+  platform?: NodeJS.Platform;
+  env?: Record<string, string | undefined>;
+  /** Executable files on the fake disk. */
+  files?: string[];
+  /** Answers by "<file> <args...>"; a function sees each call. */
+  runs?: Record<string, RunResult | (() => RunResult)>;
+}
+
+function fakeHost(machine: FakeMachine): MachineHost & { adopted: string[]; ran: string[] } {
+  const files = new Set(machine.files ?? []);
+  const adopted: string[] = [];
+  const ran: string[] = [];
+  return {
+    platform: machine.platform ?? "linux",
+    env: machine.env ?? {},
+    adopted,
+    ran,
+    async run(file, args) {
+      const key = [file, ...args].join(" ");
+      ran.push(key);
+      const answer = machine.runs?.[key];
+      if (!answer) return { code: null, output: "", error: `spawn ${file} ENOENT` };
+      return typeof answer === "function" ? answer() : answer;
+    },
+    executable: async (file) => files.has(file),
+    adoptPath: (dir) => void adopted.push(dir),
+    wait: async () => {}
+  };
+}
+
+const bin = (...parts: string[]) => path.join(...parts);
+
+describe("probeGit", () => {
+  it("finds a git on PATH and reads its version", async () => {
+    const host = fakeHost({
+      env: { PATH: "/usr/bin" },
+      files: [bin("/usr/bin", "git")],
+      runs: { [`${bin("/usr/bin", "git")} --version`]: { code: 0, output: "git version 2.44.0\n" } }
+    });
+    expect(await probeGit(host)).toEqual({ state: "ready", path: bin("/usr/bin", "git"), version: "2.44.0" });
+  });
+
+  it("is missing when nothing on PATH or the known folders has git", async () => {
+    const host = fakeHost({ env: { PATH: "/usr/bin" } });
+    expect((await probeGit(host)).state).toBe("missing");
+  });
+
+  it("never runs Apple's shim without the Command Line Tools, and offers xcode-select", async () => {
+    const host = fakeHost({
+      platform: "darwin",
+      env: { PATH: "/usr/bin" },
+      files: ["/usr/bin/git"],
+      runs: { "/usr/bin/xcode-select -p": { code: 2, output: "xcode-select: error: unable to get active developer directory\n" } }
+    });
+    expect(await probeGit(host)).toEqual({ state: "missing", installer: "xcode-select" });
+    expect(host.ran).not.toContain("/usr/bin/git --version");
+  });
+
+  it("runs the shim once the Command Line Tools answer", async () => {
+    const host = fakeHost({
+      platform: "darwin",
+      env: { PATH: "/usr/bin" },
+      files: ["/usr/bin/git"],
+      runs: {
+        "/usr/bin/xcode-select -p": { code: 0, output: "/Library/Developer/CommandLineTools\n" },
+        "/usr/bin/git --version": { code: 0, output: "git version 2.39.5 (Apple Git-154)\n" }
+      }
+    });
+    expect(await probeGit(host)).toMatchObject({ state: "ready", version: "2.39.5", installer: "xcode-select" });
+  });
+
+  it("reports a found git that does not answer, with its words", async () => {
+    const host = fakeHost({
+      env: { PATH: "/usr/bin" },
+      files: [bin("/usr/bin", "git")],
+      runs: { [`${bin("/usr/bin", "git")} --version`]: { code: 127, output: "error: libpcre missing\n" } }
+    });
+    expect(await probeGit(host)).toMatchObject({ state: "broken", error: "error: libpcre missing" });
+  });
+
+  it("finds git in an installer's folder off PATH and adopts that folder", async () => {
+    const file = bin("C:\\Program Files", "Git", "cmd", "git.exe");
+    const host = fakeHost({
+      platform: "win32",
+      env: { PATH: bin("C:\\Windows"), ProgramFiles: "C:\\Program Files" },
+      files: [file],
+      runs: { [`${file} --version`]: { code: 0, output: "git version 2.44.0.windows.1\n" } }
+    });
+    expect(await probeGit(host)).toMatchObject({ state: "ready", version: "2.44.0.windows.1" });
+    expect(host.adopted).toEqual([path.dirname(file)]);
+  });
+
+  it("offers winget only when it is there", async () => {
+    const winget = bin("C:\\Users\\t\\AppData\\Local", "Microsoft", "WindowsApps", "winget.exe");
+    const with_ = fakeHost({ platform: "win32", env: { LOCALAPPDATA: "C:\\Users\\t\\AppData\\Local" }, files: [winget] });
+    expect((await probeGit(with_)).installer).toBe("winget");
+    const without = fakeHost({ platform: "win32", env: { LOCALAPPDATA: "C:\\Users\\t\\AppData\\Local" } });
+    expect((await probeGit(without)).installer).toBeUndefined();
+  });
+
+  it("takes a configured binary at its word", async () => {
+    const host = fakeHost({ runs: { "/opt/git/bin/git --version": { code: 0, output: "git version 2.50.0\n" } } });
+    expect(await probeGit(host, "/opt/git/bin/git")).toMatchObject({ state: "ready", version: "2.50.0" });
+  });
+});
+
+function installDeps(host: MachineHost, answers: GitStatus[]) {
+  const seen: GitInstallProgress[] = [];
+  const probes = [...answers];
+  return {
+    seen,
+    deps: {
+      host,
+      probe: async () => probes.length > 1 ? probes.shift()! : probes[0]!,
+      report: (p: GitInstallProgress) => void seen.push(p),
+      signal: new AbortController().signal,
+      pollMs: 0,
+      timeoutMs: 1_000
+    }
+  };
+}
+
+describe("runGitInstall", () => {
+  it("opens the macOS dialog, waits, and ends once git answers", async () => {
+    const host = fakeHost({ platform: "darwin", runs: { "/usr/bin/xcode-select --install": { code: 0, output: "install requested\n" } } });
+    const { deps, seen } = installDeps(host, [{ state: "missing" }, { state: "missing" }, { state: "ready", version: "2.39.5" }]);
+    expect(await runGitInstall("xcode-select", deps)).toEqual({ phase: "done" });
+    expect(seen.map((p) => p.phase)).toEqual(["running", "waiting", "done"]);
+  });
+
+  it("hands over what xcode-select said when it refuses", async () => {
+    const host = fakeHost({ platform: "darwin", runs: { "/usr/bin/xcode-select --install": { code: 1, output: "xcode-select: error: command line tools are already installed\n" } } });
+    const { deps } = installDeps(host, [{ state: "missing" }]);
+    const end = await runGitInstall("xcode-select", deps);
+    expect(end).toMatchObject({ phase: "failed", kind: "exit", message: "xcode-select: error: command line tools are already installed" });
+  });
+
+  it("gives up waiting after the time runs out", async () => {
+    const host = fakeHost({ platform: "darwin", runs: { "/usr/bin/xcode-select --install": { code: 0, output: "" } } });
+    const { deps } = installDeps(host, [{ state: "missing" }]);
+    deps.timeoutMs = 1;
+    expect((await runGitInstall("xcode-select", deps)).kind).toBe("timeout");
+  });
+
+  it("stops when cancelled", async () => {
+    const host = fakeHost({ platform: "darwin", runs: { "/usr/bin/xcode-select --install": { code: 0, output: "" } } });
+    const { deps } = installDeps(host, [{ state: "missing" }]);
+    const abort = new AbortController();
+    deps.signal = abort.signal;
+    abort.abort();
+    expect((await runGitInstall("xcode-select", deps)).kind).toBe("cancelled");
+  });
+
+  it("runs winget to its end and checks git answers", async () => {
+    const host = fakeHost({
+      platform: "win32",
+      runs: { "winget install --id Git.Git -e --source winget --accept-package-agreements --accept-source-agreements": { code: 0, output: "Successfully installed\n" } }
+    });
+    const { deps } = installDeps(host, [{ state: "ready", version: "2.44.0" }]);
+    expect(await runGitInstall("winget", deps)).toEqual({ phase: "done" });
+  });
+
+  it("shows winget's own words when the install fails", async () => {
+    const host = fakeHost({
+      platform: "win32",
+      runs: { "winget install --id Git.Git -e --source winget --accept-package-agreements --accept-source-agreements": { code: 1, output: "No package found matching input criteria.\n" } }
+    });
+    const { deps } = installDeps(host, [{ state: "missing" }]);
+    expect(await runGitInstall("winget", deps)).toMatchObject({ phase: "failed", message: "No package found matching input criteria." });
+  });
+});
