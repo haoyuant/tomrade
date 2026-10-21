@@ -102,12 +102,12 @@ export async function applicableInstallers(installers: EngineInstaller[], host: 
 }
 
 /** How one installer runs, or why it cannot here. */
-export async function installerLaunch(installer: EngineInstaller, host: SetupHost, registry?: string): Promise<{ launch: CliLaunch; args: string[] } | { failure: EngineSetupFailure }> {
+export async function installerLaunch(installer: EngineInstaller, host: SetupHost, registry?: string, prefix?: string): Promise<{ launch: CliLaunch; args: string[] } | { failure: EngineSetupFailure }> {
   if (installer.kind === "npm") {
     const npm = await host.npm();
     if (!npm) return { failure: { kind: "not-found", message: "npm was not found — install Node.js, or update Tomrade, which brings its own" } };
     // Piped, npm prints nothing until it ends; at `http` it prints a line per fetch, which is what shows it moving.
-    return { launch: npm, args: ["install", "-g", "--loglevel", "http", ...(registry ? ["--registry", registry] : []), installer.package] };
+    return { launch: npm, args: ["install", "-g", "--loglevel", "http", ...(registry ? ["--registry", registry] : []), ...(prefix ? ["--prefix", prefix] : []), installer.package] };
   }
   if (installer.kind === "script") {
     return host.platform === "win32"
@@ -185,20 +185,25 @@ export async function runInstall(deps: InstallDeps): Promise<EngineSetupProgress
   const applicable = (await applicableInstallers(deps.installers, deps.host)).filter((installer) => !deps.registry || installer.kind === "npm");
   if (!applicable.length) return at({ engineId: deps.engineId, step, phase: "failed", failure: { kind: "unsupported", message: "no installer fits this machine" } });
   let failed: EngineSetupProgress | null = null;
-  for (const installer of applicable) {
+  // Where the system npm's global folder is root-owned (distro Node, the macOS .pkg), Tomrade's own prefix takes the install; the locators look there too.
+  const ownPrefix = deps.host.env.TOMRADE_NPM_PREFIX;
+  const attempts: { installer: EngineInstaller; prefix?: string }[] = applicable.map((installer) => ({ installer }));
+  for (let i = 0; i < attempts.length; i++) {
     if (deps.signal.aborted) break;
+    const { installer, prefix } = attempts[i]!;
     const name = installer.kind;
+    const tried = prefix ? { installer: name, prefix } : { installer: name };
     const startedAt = Date.now();
     let output = "";
     let stalled = false;
     let running = true;
     const show = () => {
-      if (running) at({ engineId: deps.engineId, step, phase: "running", installer: name, startedAt, ...(output ? { output: tail(output) } : {}), ...(stalled ? { stalled } : {}) });
+      if (running) at({ engineId: deps.engineId, step, phase: "running", ...tried, startedAt, ...(output ? { output: tail(output) } : {}), ...(stalled ? { stalled } : {}) });
     };
     show();
-    const resolved = await installerLaunch(installer, deps.host, deps.registry);
+    const resolved = await installerLaunch(installer, deps.host, deps.registry, prefix);
     if ("failure" in resolved) {
-      failed = { engineId: deps.engineId, step, phase: "failed", installer: name, failure: resolved.failure };
+      failed = { engineId: deps.engineId, step, phase: "failed", ...tried, failure: resolved.failure };
       continue;
     }
     const npm = installer.kind === "npm";
@@ -240,16 +245,17 @@ export async function runInstall(deps: InstallDeps): Promise<EngineSetupProgress
     if (result.code !== 0) {
       const failure = classifyFailure(result);
       if (npm && MIRROR_KINDS.includes(failure.kind)) offerMirror();
-      failed = { engineId: deps.engineId, step, phase: "failed", installer: name, failure, output: tail(result.output) };
+      failed = { engineId: deps.engineId, step, phase: "failed", ...tried, failure, output: tail(result.output) };
       if (failure.kind === "cancelled") break;
+      if (npm && failure.kind === "permission" && ownPrefix && !prefix) attempts.splice(i + 1, 0, { installer, prefix: ownPrefix });
       continue;
     }
-    at({ engineId: deps.engineId, step, phase: "checking", installer: name });
+    at({ engineId: deps.engineId, step, phase: "checking", ...tried });
     const found = await deps.detect();
-    if (found.ready) return at({ engineId: deps.engineId, step, phase: "done", installer: name, ...(found.version ? { version: found.version } : {}) });
+    if (found.ready) return at({ engineId: deps.engineId, step, phase: "done", ...tried, ...(found.version ? { version: found.version } : {}) });
     // The installer said done, but a fresh look does not find a working CLI: say that, not "missing".
     failed = {
-      engineId: deps.engineId, step, phase: "failed", installer: name,
+      engineId: deps.engineId, step, phase: "failed", ...tried,
       failure: { kind: "not-on-path", message: found.error ?? "installed, but the command is not on PATH", ...(found.path ? { path: found.path } : {}) },
       output: tail(result.output)
     };

@@ -64,6 +64,7 @@ function InstallRunning({ progress, onRetry }: { progress?: EngineSetupProgress;
       ) : (
         progress?.mirror && <span className="setup-fix">{t("setup.registrySlow")}</span>
       )}
+      {progress?.prefix && <span className="setup-fix">{t("setup.installOwnFolder")}</span>}
       <MirrorRetry progress={progress} onRetry={onRetry} />
       {progress?.output && (
         <details className="eng-try-details">
@@ -118,7 +119,9 @@ function StepDetail({ step, title, insideApp, onRetry }: { step: ChainStep; titl
       </span>
     );
   }
-  if (step.id === "install" && step.state === "done" && step.progress?.version) return <span className="meta-txt">{step.progress.version}</span>;
+  if (step.id === "install" && step.state === "done" && step.progress?.version) {
+    return <span className="meta-txt">{step.progress.prefix ? t("setup.installedOwnFolder", { version: step.progress.version }) : step.progress.version}</span>;
+  }
   return null;
 }
 

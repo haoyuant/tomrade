@@ -131,6 +131,8 @@ export interface EngineSetupProgress {
   stalled?: boolean;
   /** A registry npm can be retried with (`--registry`), offered when the default one looks unreachable or slow. */
   mirror?: string;
+  /** The folder npm is installing into instead of the system's global one, which it could not write: Tomrade's own (`--prefix`). */
+  prefix?: string;
   failure?: EngineSetupFailure;
   /** The version detection reported once the step was done; absent when the step was already satisfied. */
   version?: string;
