@@ -11,6 +11,7 @@ import type {} from "@tomradex/settings";
 import { resolveImCapabilities, type ImAdapter, type ImAdapterSetup, type ImCapabilities, type Localized, type ImAdapterSession, type ImAddress, type ImCommand, type ImContent, type ImConnectionState, type ImElement, type ImInbound, type ImNotice, type ImReaction, type ResolvedImCapabilities } from "@tomradex/plugin-sdk";
 import { ImConfig, ImSettings, InboundSchema, type ImConnection, type ImNotifyKind, type ImRoute } from "./config.js";
 import { fromAdapter, withContext, type ContextLine } from "./context.js";
+import { GROUP_PRESETS, type GroupPreset } from "./presets.js";
 import { prepare } from "./render.js";
 import { IM_WORDS, type ImPlainWord } from "./words.js";
 import { FILE_HANDLE, statusText, awaitingReview, codeNews, codeSeen, deliveryCard, links, proposalText, renderBlock, reviewOutcome, ticket, toolLine, type CodeLookup, type CodeSeen, type Delivered, type ItemLookup, type RenderScope } from "./rich.js";
@@ -28,13 +29,6 @@ const BACKFILL_TOPICS = 20;
 const PAIR_TRIES = 5;
 /** How long "Not here" keeps the bot from asking again in a group. */
 const ASK_SNOOZE_MS = 24 * 60 * 60 * 1000;
-/** What each kind of channel hears and wakes on; everything else is a route's default. */
-const GROUP_PRESETS = {
-  work: { ticketTopics: true, groupActivation: "reply", notify: { tickets: true, code: true } },
-  status: { ticketTopics: false, groupActivation: "mention", notify: { tickets: true, code: true, routines: true, presence: true } },
-  chat: { ticketTopics: false, groupActivation: "reply", notify: { tickets: false, code: false, routines: false } }
-} as const satisfies Record<string, Pick<ImRoute, "ticketTopics" | "groupActivation" | "notify">>;
-type GroupPreset = keyof typeof GROUP_PRESETS;
 
 export interface ImConnectionView {
   id: string; adapterId: string; label?: string; state: ImConnectionState | "unconfigured";
