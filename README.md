@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/banner.png" alt="Tomrade: the backlog your coding agents can read and write. Local-first, Claude Code and Codex over MCP, undo any run." width="820">
+  <img src="docs/images/banner.png" alt="Tomrade: tasks, notes and agents, in one folder you own. Local-first, Claude Code and Codex over MCP, undo any run." width="820">
 </p>
 
 <p align="center">
@@ -21,9 +21,9 @@
 
 **Tom + comrade.** Tasks, notes and agents, in one folder you own.
 
-Your agents work at **3 a.m.** They read your tickets, edit your notes, and now and then rewrite **everything you own**. Tomrade is the workspace built for them, with **an undo button built for you**.
+Your agents work at **3 a.m.** They read your tickets, edit your notes, and now and then rewrite **everything you own.** Tomrade is the workspace built for them, with **an undo button built for you.**
 
-It's a local-first desktop app for solo makers and tiny teams. Run a codebase, your week, a journal or a shelf of docs from the same place. Say one sentence and the assistant drafts the whole backlog; hand a ticket to Claude Code, Codex or whichever coding agent you already use; undo any agent run in one click.
+It's a local-first workspace for solo makers and tiny teams. Run a codebase, your week, a journal or a shelf of docs from the same app. Say one sentence and the assistant drafts the whole backlog; hand a ticket to Claude Code, Codex or whichever coding agent you use; undo any agent run in one click.
 
 <p align="center">
   <img src="docs/images/board.png" alt="Tomrade's board: a sidebar of views and workstreams, ticket cards in Backlog and To Do columns, and the assistant panel on the right." width="900">
@@ -32,29 +32,85 @@ It's a local-first desktop app for solo makers and tiny teams. Run a codebase, y
 > [!NOTE]
 > **Preview.** Until 1.0, Tomrade is in development and testing: things change from week to week and you will hit rough edges. Your projects are plain folders on your own disk, so back up the ones that matter.
 
+## Not just for code
+
+Every project is a board plus a folder of files. Connect it to a repository, or fill it with nothing but your week.
+
+- **Ship software.** Talk a feature into tickets sized for one pull request, then let Claude Code or Codex build each one on its own branch.
+- **Run your week.** Errands, chores and plans on a board or a table. Brain-dump to the assistant and it sorts the mess into tasks.
+- **Keep a journal.** Today's note opens a dated page in your Journal folder. Tag the days and link them with `[[wiki links]]`.
+- **Write docs.** Markdown with a live preview, backlinks and full-text search. Every save is versioned and can sync to a GitHub repo.
+
 ## What's in the box
 
-**🗣️ From a sentence to a pull request.** Describe what you want in plain words. The assistant asks what it needs to know, drafts epics and features sized for one PR, checks them against what already exists, and points out what's missing. The whole tree lands in one run. Press **Start** on a ticket and your own Claude Code, Codex, Gemini CLI or OpenCode picks it up on its own branch.
+**🗣️ From a sentence to a pull request.** Talk, plan, apply, build. Describe what you want in plain words and the assistant asks what it needs to know. It drafts epics and features sized for one PR, checks them against what already exists, and points out what's missing. The whole tree lands in one run. Press **Start** on a ticket and your own Claude Code, Codex, Gemini CLI or OpenCode picks it up on its own branch, reading and updating the ticket as it works. *Approval queue: none. Vibes: immaculate.*
 
-**⏪ No approval queue. Just undo.** *Approval queues? In this economy?* Agents write straight to the backlog, so nothing waits on you. Every run is grouped and attributed, and when one gets creative (renames "Fix login" to "Rewrite auth from scratch", marks all 14 tickets Urgent), one click puts all of it back. It never happened.
+**⏪ No approval queue. Just undo.** *Approval queues? In this economy?* Agents write straight to the backlog, so nothing waits on you. Every run is grouped and attributed, and when one gets creative (renames "Fix login" to "Rewrite auth from scratch", marks all 14 tickets Urgent), a single click puts all of it back. It never happened. History shows who changed what, run by run.
 
-**🤝 Comrade, not foreman.** Other tools want the work done inside them. Tomrade goes both ways: hand a ticket out with Start, or keep working in the Claude Code or Codex you've already tuned, in your own terminal, and run `/tomrade:sync` (`$tomrade-sync` in Codex) to bring the session back. Git keeps score: name `TOM-42` in a branch and the ticket follows it to Doing, Verifying and Done. Work without a ticket is fine, and nothing nags you to file one.
+**🖥️ The terminal, right next to the board.** *Alt-Tab cardio: cancelled.* Run Claude Code, Codex or a plain shell in Tomrade's own Terminal window, one click from the backlog.
 
-**🖥️ The terminal, next to the board.** *Alt-Tab cardio: cancelled.* A Terminal window built on [herdr](https://herdr.dev) runs your agents in split panes, each pane tied to its ticket, each bar saying Running, Needs you or Idle. Quit Tomrade and your agents keep working.
+- **Split it your way:** `⌘D` to the right, `⇧⌘D` down. Save a layout you like and open every new window with it.
+- **Sessions connect on their own.** Start a ticket and it opens in a pane; when an agent in a plain terminal claims a ticket, that pane becomes its session.
+- **See who needs you.** Each pane's bar says Running, Needs you or Idle, and Continue nudges a session on without leaving the window.
+- **Nothing gets lost.** Quit Tomrade and your agents keep working; restart herdr and the layout comes back, every agent resuming its conversation.
 
-**📓 A notebook beside your backlog.** Every project carries a folder of files: Markdown with a live preview, `[[wiki links]]` and backlinks, `#tags`, full-text search, a dated journal page for today. Every save is versioned and can sync to a GitHub repo. Attach files to tickets as deliverables.
+The window is built on [herdr](https://herdr.dev), the open-source agent multiplexer. On Windows herdr can't attach directly yet, so a ticket you start runs in the assistant panel, in herdr's own client or in Windows Terminal, and its status still comes back to the board.
 
-**💬 Ask it anything in Tomrade.** The assistant isn't only a planner. It moves tickets, turns five journal entries into a weekly review, switches you to dark mode, draws an architecture diagram with the built-in [Archify](https://github.com/tt-a1i/archify), or helps you pick a name for your corgi. Every change lands in History, where ⌘Z takes it back.
+**📓 A notebook that lives next to your board.** Each project carries a folder of files: Markdown, HTML, images, anything. `[[Wiki links]]` and backlinks that follow a rename, `#tags`, full-text search across every file, and today's journal page in one click. Read, Edit or Split, with the preview scrolling in step. Every save is versioned and can sync to a GitHub repo. Attach files to tickets as deliverables, and let agents search your notes.
 
-**📱 Away from your desk? Message it.** *Toilet-break productivity unlocked.* Connect a bot in Discord, Slack, Telegram, Feishu / Lark, DingTalk or WeCom and the assistant answers from your phone: same project, same tools. Tomrade talks to each chat app directly, with no server of ours in between.
+**💬 Ask it about anything in Tomrade.** It isn't only a backlog planner. *"Put the checkout tickets in To Do"* moves four tickets. *"Turn this week's journal into a weekly review"* reads five entries and saves one, linked back to each day. *"Switch to dark mode, and put the cat on my desktop."* Done. And when there's nothing to do, it's happy to just talk: Biscuit or Mochi for the corgi? *No tools. No changes. Just vibes.* Every change it makes is attributed and lands in History, where ⌘Z takes it back: tickets, files and settings alike.
 
-**📥 The backlog has a bouncer.** GitHub issues (and any source a plugin adds) wait in the project's inbox. The assistant proposes what each one is (a new ticket, a bug you already have, a duplicate) and drafts the reply. You click Confirm.
+<img src="docs/images/im.webp" alt="A Discord chat on a phone: a question to the Tomrade bot, the tools it calls, and its answer." width="220" align="right">
 
-**🧩 Everything is a plugin, including yours.** The database, the tool registry, the MCP server and the assistant are each a plugin you can swap out. Write your own against the Apache-2.0 SDK and ship it under any license, or describe it in Plugin Studio and let an agent write and test it; it loads only after you confirm the build. Official plugins live in [tomrade-plugins](https://github.com/haoyuant/tomrade-plugins).
+**📱 Away from your desk? Message it.** *Toilet-break productivity unlocked.* Connect a bot in Discord, Slack, Telegram, Feishu / Lark, DingTalk or WeCom, and the assistant answers in direct messages and @mentions: the same project, the same tools, from your phone.
 
-**🐱 Your agents have a supervisor now. It's a cat.** The desktop pet mirrors what your agent is doing: napping, thinking, LOCKED IN, staring at you until you answer its question, smug for exactly three seconds when a run succeeds, crying for three seconds when one fails so you don't have to. Not a cat person? Bring your own pet.
+- Message it like anyone else. 👀 means it's on it.
+- The tools it calls tick off as it works.
+- When it needs your call, you get buttons and menus.
+- `/new`, `/stop` and `/status` run its sessions.
 
-**🍅 Lock in. Don't forget your Kegels.** A tomato in the status bar: 25 minutes of focus, 5 off. The alert can be any audio file. What you do with those 5 minutes is between you and your pelvic floor.
+Tomrade on your computer talks to each chat app directly, with no server of ours in between. Bot credentials stay encrypted on that computer. Using something else? An IM is a plugin: write an adapter, or have an agent build one in Plugin Studio.
+
+<br clear="right">
+
+**📥 The backlog has a bouncer now.** Feedback waits at the door, not in your backlog. GitHub issues (and any source a plugin adds, like your support mail or a feedback form) land in the project's inbox first. The assistant proposes what each one is (a new ticket, a bug you already have, or a duplicate) and drafts the reply. You click Confirm. A repeat is counted on its ticket, so you can see what people keep running into, and whoever wrote hears back where they wrote.
+
+**🤝 Comrade, not foreman.** Work where you like; Tomrade keeps track. Other tools want the work done inside them, or only ever hand it out. Tomrade goes both ways: press Start to hand a ticket out, or keep working in the Claude Code or Codex you've already tuned, in your own terminal, and run `/tomrade:sync` (`$tomrade-sync` in Codex) to bring the session back. Git keeps score: name `TOM-42` in a branch or a commit and the ticket follows it to Doing, Verifying and Done. Never required: work with no ticket stays yours, and nothing asks you to file one first.
+
+**✏️ Draw it in one sentence.** [Archify](https://github.com/tt-a1i/archify) comes built in. Ask the assistant, Claude Code or Codex for an architecture, workflow, sequence, data-flow or lifecycle diagram, and it lands in the conversation as a live page you can pan, zoom, trace and present. Every render is checked for overlapping boxes, crossed wires and clipped labels, and the diagram keeps its JSON source, so a follow-up edits it instead of starting over.
+
+<p align="center">
+  <a href="https://tomrade.com/diagrams/workflow/"><img src="docs/images/archify.png" alt="Workflow diagram in four lanes: one sentence goes to the assistant, which creates a backlog; you press Start, Claude Code or Codex opens a pull request, and the ticket is Done once it merges. A safety-net lane holds Undo run and Write refused." width="820"></a><br>
+  <sub>"Draw how a ticket gets from one sentence to a merged PR." Rendered by the Archify that ships with Tomrade. <a href="https://tomrade.com/diagrams/workflow/">Open it live</a>.</sub>
+</p>
+
+**🧰 Also in the box.** Each one is a plugin; switch any of them off in Settings › Manage plugins.
+
+- **Dependency graph:** see what blocks what, with a badge on every ticket still waiting on unfinished work.
+- **Code link:** each ticket knows its branches, worktrees and pull requests. Its status follows git.
+- **MCP client:** connect any MCP server over stdio or HTTP. Its tools join the built-in ones, for the assistant and every agent.
+- **Files on GitHub:** share a project's files through a GitHub repository, found or created for you.
+- **Scripted engine:** a menu of workflows that runs with no model at all. Offline, keyless, repeatable.
+- **Plugin Studio:** describe the plugin you want. An agent writes and tests it, and it loads only after you confirm the build.
+
+**🧩 Everything is a plugin, including yours.** The database, the tool registry, the MCP server and the assistant are each a plugin you can swap out. Write your own against the Apache-2.0 SDK and ship it under any license, or ask an agent to write one for you in Plugin Studio. Register a tool once and it appears in the assistant and on the MCP server. Official plugins live in [tomrade-plugins](https://github.com/haoyuant/tomrade-plugins).
+
+**🍅 Lock in. Don't forget your Kegels.** *Your pelvic floor is calling.* A tomato lives in the status bar: 25 minutes of focus, 5 off, and a long break every fourth round. A desktop widget floats over every window and lets clicks through; your boss walks by and sees a clock. The alert can be any audio file. We recommend recording yourself saying "Kegels." Too comfy to click? Tell the assistant "start a pomodoro" and it presses the button. *Disclaimer: the timer reminds you to take a break. The clenching is on you.*
+
+**🐱 Your agents have a supervisor now. It's a cat.** The pet lives on your desktop and mirrors what your agent is doing, so one glance tells you whether it needs you. No tab-switching, no notification spam. Several agents at once? It shows the one that needs you most.
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/pet/idle.webp" alt="The cat asleep." width="120"><br><sub><b>zzz</b><br>Off the clock</sub></td>
+    <td align="center"><img src="docs/images/pet/thinking.webp" alt="The cat thinking." width="120"><br><sub><b>???</b><br>Thinking…</sub></td>
+    <td align="center"><img src="docs/images/pet/working.webp" alt="The cat typing furiously." width="120"><br><sub><b>LOCKED IN</b><br>Galaxy-brain mode</sub></td>
+    <td align="center"><img src="docs/images/pet/waiting.webp" alt="The cat staring at you." width="120"><br><sub><b>ANSWER ME!</b><br>Look in my eyes</sub></td>
+    <td align="center"><img src="docs/images/pet/success.webp" alt="The cat looking smug." width="120"><br><sub><b>EZ</b><br>Insufferable</sub></td>
+    <td align="center"><img src="docs/images/pet/error.webp" alt="The cat crying." width="120"><br><sub><b>EMOTIONAL DAMAGE</b><br>Something broke</sub></td>
+  </tr>
+</table>
+
+Not a cat person? Bring your own pet: in Settings › Pet, give each mood its own GIF, WebP, PNG or JPEG. Moods you skip keep Nini, the built-in cat.
 
 <table>
   <tr>
@@ -72,15 +128,16 @@ It's a local-first desktop app for solo makers and tiny teams. Run a codebase, y
 Built so agents can move fast without stepping on you.
 
 - **Your folder is the truth.** Each project is a folder of plain text you can read, diff and back up. SQLite is only a cache. *Delete the cache. It comes back. We'll wait.*
-- **Human work comes first.** Every AI write records who made it and the version it read. Fields you lock stay locked, and a write based on a stale read is refused, whoever sends it. The one write undo can't reach, a permanent delete, is human-only.
-- **One set of tools, every surface.** The in-app assistant and the agents in your editor call the same tools. Register one once and it shows up in both.
+- **Human work comes first.** Every AI write is attributed and versioned. Fields you lock stay locked, and a write based on a stale read is refused, whoever sends it. The one write undo can't reach, a permanent delete, is human-only.
+- **One set of tools, every surface.** The in-app assistant and the agents in your editor call the same tools. Add one once and it shows up everywhere.
 - **Bring your own model.** DeepSeek, Anthropic, OpenAI, Gemini, Kimi, OpenRouter, any OpenAI-compatible endpoint or a local model, with more providers as [plugins](https://github.com/haoyuant/tomrade-plugins). Or let your own Claude Code or Codex conduct, on your own login.
-- **It asks before it acts.** A shell command waits for your Allow or Deny. API keys, MCP servers and command lines are never an agent's to change.
+- **It asks before it acts.** A shell command waits for your Allow once, Allow for this turn or Deny. A coding agent runs with the permissions you pick when you press Start. API keys, MCP servers and command lines are never an agent's to change.
+- **Boards, tables and graphs.** Workstreams, custom fields and saved views. Keyboard-first, with a palette for everything.
 - **Local first, account optional.** Choose "Use without an account" and everything stays on this machine. An account only syncs your preferences and project list, never project content. Project content leaves your machine only if you connect a model provider or a git remote.
 
 ## Install
 
-Get the installer for your system from **[tomrade.com/download](https://tomrade.com/download)** or the [GitHub releases](https://github.com/haoyuant/tomrade/releases).
+Free to use, on macOS, Windows and Linux. Get the installer for your system from **[tomrade.com/download](https://tomrade.com/download)** or the [GitHub releases](https://github.com/haoyuant/tomrade/releases).
 
 | System | Installer | Notes |
 |---|---|---|
@@ -90,13 +147,17 @@ Get the installer for your system from **[tomrade.com/download](https://tomrade.
 
 An installed copy checks for updates and installs one only when you say so. The interface speaks English, 简体中文, 繁體中文, 日本語, Español, Deutsch, Français and Русский.
 
-Then: create a project, tell the assistant in one sentence what you're up to, and, if you like, connect your agents.
+Then:
+
+1. Sign in, or choose "Use without an account".
+2. Create a project and tell the assistant, in one sentence, what you're up to.
+3. Optionally, connect your agents.
 
 ## Connect your agents
 
 Tomrade runs an MCP server at `http://127.0.0.1:19090/mcp`. It listens on 127.0.0.1 only; nothing is exposed to the network.
 
-**The easy way:** in a project, open the repository a workstream stands for and connect coding agents, either **on this machine only** or **for the team** as a pull request. Tomrade writes the config for Claude Code, Codex, Cursor, Gemini CLI, OpenCode, WorkBuddy and Pi, plus the notes that tell them how to claim a ticket and sync back. The details are in [`docs/agent-connections.md`](docs/agent-connections.md).
+**The easy way:** connect a repository once. In a project, open the repository a workstream stands for and connect coding agents, either **on this machine only** or **for the team** as a pull request with the MCP config and agent notes, so every agent that works in it finds Tomrade. Tomrade writes the config for Claude Code, Codex, Cursor, Gemini CLI, OpenCode, WorkBuddy and Pi, plus the notes that tell them how to claim a ticket and sync back. The details are in [`docs/agent-connections.md`](docs/agent-connections.md).
 
 **By hand**, for any agent that speaks Streamable HTTP MCP:
 
@@ -166,19 +227,25 @@ Issues and pull requests are welcome. [`CONTRIBUTING.md`](CONTRIBUTING.md) has t
 
 Tomrade is built with Tomrade. The maintainer's backlog lives in a Tomrade project, and the agent config checked into this repository (`.mcp.json`, `.codex/`, `.cursor/`, `.gemini/`, `CLAUDE.md`, `AGENTS.md`) points at it. Without that project on your machine the `tomrade` server simply isn't there, and your agent carries on as usual. Ticket keys in commit messages (`TOM-42: …`) are the maintainer's habit; you don't need one.
 
+Built with help: [the people who shaped Tomrade](https://tomrade.com/thanks/) with their ideas, their testing and their patience with early builds.
+
 ## FAQ
 
-**Is it only for programmers?** No. The board, the assistant and Files work for a household, a trip, a thesis or a journal. Coding agents join in when a project has a repository and stay out of the way when it doesn't.
+**Is it only for programmers?** No. The board, the assistant and Files work for any project: a household, a trip, a thesis, a journal. Coding agents join in when a project has a repository and stay out of the way when it doesn't.
 
 **Where is my data?** In one plain folder per project, on your machine.
 
-**Can I turn the cat off?** Yes, in Settings, or unload the pet plugin entirely. The cat will not take it personally. Probably.
+**Do I need an account?** No. Choose "Use without an account" and everything stays on this machine. Signing in only keeps your preferences and project list in sync across computers; tickets, files and code stay in your project folders.
 
-**Is there a phone app?** Not yet. Until then, message the assistant from your chat app. It answers as long as Tomrade runs on your computer, which it can keep doing in the background with every window closed. Pulling an all-nighter is the computer's job, not yours.
+**Can I turn the cat off?** Yes, in Settings. You can also swap it for a pet of your own, or unload the pet plugin entirely. The cat will not take it personally. Probably.
+
+**Is there a phone app?** It's on the way. Can't wait? Message the assistant from Discord, Slack, Telegram, Feishu, DingTalk or WeCom today. It answers as long as Tomrade runs on your computer, which it can keep doing in the background with every window closed. Pulling an all-nighter is the computer's job, not yours.
+
+**Will the pomodoro remind me to do my Kegels?** Officially, it only reminds you to take a break. Unofficially, the alert can be any audio file you like. You know what to do.
 
 ## License
 
-[Apache License 2.0](LICENSE): the app, every package and the plugin SDK alike.
+Free to use. [Apache License 2.0](LICENSE): the app, every package and the plugin SDK alike.
 
 - Use it, change it and redistribute it, at home or at work, commercially too.
 - Plugins are yours. Ship them under any license, commercial ones included.
