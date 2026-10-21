@@ -5,6 +5,7 @@ import {
   bareLaunch,
   classifyFailure,
   installerLaunch,
+  NPM_MIRROR,
   runCommand,
   runInstall,
   runSignIn,
@@ -38,7 +39,7 @@ describe("which installers fit this machine", () => {
 describe("how one installer runs", () => {
   it("runs npm install -g through the npm the machine answers with, and fails concretely without one", async () => {
     const launch = await installerLaunch(NPM, host());
-    expect("launch" in launch && launch.args).toEqual(["install", "-g", "@x/cli"]);
+    expect("launch" in launch && launch.args).toEqual(["install", "-g", "--loglevel", "http", "@x/cli"]);
     const missing = await installerLaunch(NPM, host({ npm: async () => null }));
     expect("failure" in missing && missing.failure.kind).toBe("not-found");
   });
@@ -65,6 +66,8 @@ describe("what a failure is called", () => {
     expect(of("", null, { message: "timed out after 600s", killed: true })).toBe("timeout");
     expect(of("", null, { message: "cancelled", killed: true })).toBe("cancelled");
     expect(of("something else")).toBe("exit");
+    // npm's lines for fetches that worked name the registry; they do not make a permission failure a registry one
+    expect(of("npm http fetch GET 200 https://registry.npmjs.org/@x%2fcli 300ms (cache miss)\nnpm http cache @x/cli@https://registry.npmjs.org/x.tgz 1ms (cache hit)\nnpm error code EACCES")).toBe("permission");
   });
 });
 
@@ -122,7 +125,7 @@ describe("the install step", () => {
     };
     const end = await runInstall(d);
     expect(end).toMatchObject({ phase: "done", installer: "npm", version: "2.0.0" });
-    expect(ran).toEqual([["bash", "-c", "curl -fsSL https://x.dev/install.sh | bash"], ["npm", "install", "-g", "@x/cli"]]);
+    expect(ran).toEqual([["bash", "-c", "curl -fsSL https://x.dev/install.sh | bash"], ["npm", "install", "-g", "--loglevel", "http", "@x/cli"]]);
     expect(seen.map((p) => `${p.phase}${p.installer ? `:${p.installer}` : ""}`)).toEqual(["running:script", "running:npm", "checking:npm", "done:npm"]);
   });
 
@@ -152,6 +155,71 @@ describe("the install step", () => {
     const end = await runInstall(d);
     expect(end).toMatchObject({ phase: "failed", installer: "npm", failure: { kind: "permission" } });
     expect(end.output).toContain("EACCES");
+  });
+
+  it("streams the installer's latest lines and its start time before the run ends", async () => {
+    let finish: (r: SetupRunResult) => void = () => {};
+    const exec: typeof runCommand = (_launch, _args, opts) => {
+      opts.onOutput?.("npm http fetch GET 200 https://registry.npmjs.org/@x%2fcli 300ms (cache miss)\n");
+      return new Promise((resolve) => { finish = resolve; });
+    };
+    const { seen, deps: d } = deps({ installers: [NPM], exec });
+    const end = runInstall(d);
+    await new Promise((r) => setTimeout(r, 10));
+    const live = seen.at(-1);
+    expect(live).toMatchObject({ phase: "running", installer: "npm", output: expect.stringContaining("npm http fetch GET 200") });
+    expect(live?.startedAt).toBeTypeOf("number");
+    finish({ code: 1, output: "npm error code EACCES" });
+    expect(await end).toMatchObject({ phase: "failed" });
+  });
+
+  it("says a silent run looks stalled, offers the mirror, and clears it once output comes", async () => {
+    let speak: (text: string) => void = () => {};
+    let finish: (r: SetupRunResult) => void = () => {};
+    const exec: typeof runCommand = (_launch, _args, opts) => {
+      speak = (text) => opts.onOutput?.(text);
+      return new Promise((resolve) => { finish = resolve; });
+    };
+    const { seen, deps: d } = deps({ installers: [NPM], exec, stallMs: 20 });
+    const end = runInstall(d);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(seen.at(-1)).toMatchObject({ phase: "running", stalled: true, mirror: NPM_MIRROR });
+    speak("npm http fetch GET 200 https://registry.npmjs.org/x 9000ms\n");
+    expect(seen.at(-1)?.stalled).toBeUndefined();
+    finish({ code: 0, output: "" });
+    await end;
+  });
+
+  it("retries with the mirror by adding --registry to npm and nothing else, and offers no mirror again", async () => {
+    const plain = fakeExec([{ code: 1, output: "npm error code ETIMEDOUT" }]);
+    const first = await runInstall({ ...deps({ installers: [NPM] }).deps, exec: plain.exec });
+    expect(first).toMatchObject({ phase: "failed", failure: { kind: "network" }, mirror: NPM_MIRROR });
+    const viaMirror = fakeExec([{ code: 1, output: "npm error code ETIMEDOUT" }]);
+    const second = await runInstall({ ...deps({ installers: [NPM] }).deps, exec: viaMirror.exec, registry: first.mirror });
+    const [ran] = viaMirror.ran;
+    const flag = ran!.indexOf("--registry");
+    expect(ran![flag + 1]).toBe(NPM_MIRROR);
+    expect(ran!.filter((_, i) => i !== flag && i !== flag + 1)).toEqual(plain.ran[0]);
+    expect(second.mirror).toBeUndefined();
+    // the registry is npm's only: a retry on it leaves the script installer out
+    const onlyNpm = fakeExec([]);
+    await runInstall({ ...deps({}).deps, exec: onlyNpm.exec, registry: NPM_MIRROR });
+    expect(onlyNpm.ran.map((r) => r[0])).toEqual(["npm"]);
+  });
+
+  it("offers the mirror when npmjs answers the ping slowly, and never when npm uses another registry", async () => {
+    let finish: (r: SetupRunResult) => void = () => {};
+    const waiting: typeof runCommand = () => new Promise((resolve) => { finish = resolve; });
+    const slow = deps({ installers: [NPM], exec: waiting, host: host({ pingRegistry: async () => ({ registry: "https://registry.npmjs.org/", ms: null }) }) });
+    const end = runInstall(slow.deps);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(slow.seen.at(-1)).toMatchObject({ phase: "running", mirror: NPM_MIRROR });
+    finish({ code: 0, output: "" });
+    await end;
+
+    const exec: typeof runCommand = async () => (await new Promise((r) => setTimeout(r, 10)), { code: 1, output: "npm error code ETIMEDOUT" });
+    const own = deps({ installers: [NPM], exec, host: host({ pingRegistry: async () => ({ registry: "https://npm.example.corp/", ms: 9000 }) }) });
+    expect((await runInstall(own.deps)).mirror).toBeUndefined();
   });
 
   it("reports unsupported when no installer fits", async () => {

@@ -77,11 +77,15 @@ fs.mkdirSync(path.dirname(bin), { recursive: true });
 
 // The fake npm: installing fake-agent writes the CLI; anything else fails the way a cut line does.
 const npmJs = path.join(work, "fake-npm.mjs");
+const npmRuns = path.join(work, "npm-runs");
 fs.writeFileSync(
   npmJs,
   `import fs from "node:fs";
 const pkg = process.argv.at(-1);
+fs.appendFileSync(${JSON.stringify(npmRuns)}, process.argv.slice(2).join(" ") + "\\n");
 if (pkg === "fake-agent") {
+  console.error("npm http fetch GET 200 https://registry.npmjs.org/fake-agent 120ms (cache miss)");
+  await new Promise((resolve) => setTimeout(resolve, 2000));
   fs.writeFileSync(${JSON.stringify(bin)}, "#!/bin/sh\\nELECTRON_RUN_AS_NODE=1 exec '${process.execPath}' '${agentJs}' \\"$@\\"\\n", { mode: 0o755 });
   console.log("added 1 package");
 } else {
@@ -168,14 +172,23 @@ const run = async () => {
   check("a failed install shows the step failed", await wait(async () => (await stepState("bad-cli", "install")) === "failed", "bad-cli install failed"), await stepState("bad-cli", "install"));
   const badError = await text('[data-testid="chain-error-install"]');
   check("and says the network was the problem", /network/i.test(badError ?? ""), badError);
+  check("offering a retry through a reachable registry", await has('[data-testid="chain-error-install"] [data-testid="chain-retry-mirror"]'));
+  await $(`document.querySelector('[data-testid="chain-bad-cli"]').scrollIntoView({ block: "center" })`);
   await shot("setup-chain-02-install-failed");
+  await click('[data-testid="chain-bad-cli"] [data-testid="chain-retry-mirror"]');
+  const lastNpm = () => fs.readFileSync(npmRuns, "utf8").trim().split("\n").at(-1);
+  check("the mirror retry runs npm again with --registry only", await wait(() => lastNpm() === "install -g --loglevel http --registry https://registry.npmmirror.com bad-cli", "mirror run"), lastNpm());
+  check("and fails again without offering the mirror twice", await wait(async () => (await stepState("bad-cli", "install")) === "failed" && !(await has('[data-testid="chain-bad-cli"] [data-testid="chain-retry-mirror"]')), "mirror run failed"));
 
   // ── the good agent: install runs, sign-in waits on the browser ─────────
   await click('[data-testid="setup-run-fake-agent"]');
+  check("the running install shows npm's latest line", await wait(async () => /npm http fetch GET 200/.test((await text('[data-testid="chain-live-line"]')) ?? ""), "live line"));
+  await $(`document.querySelector('[data-testid="chain-fake-agent"]').scrollIntoView({ block: "center" })`);
+  await shot("setup-chain-03-installing");
   check("the install step finishes", await wait(async () => (await stepState("fake-agent", "install")) === "done", "install done"), await stepState("fake-agent", "install"));
   check("the sign-in step waits", await wait(async () => (await stepState("fake-agent", "sign-in")) === "waiting", "sign-in waiting"), await stepState("fake-agent", "sign-in"));
   check("with the address it caught from the agent", await wait(() => has('[data-testid="chain-signin-link"]'), "sign-in link"));
-  await shot("setup-chain-03-signin-waiting");
+  await shot("setup-chain-04-signin-waiting");
 
   // ── signed in, but the agent cannot answer: the test message fails ─────
   fs.writeFileSync(signinFlag, "in");
@@ -184,13 +197,13 @@ const run = async () => {
   const testError = await text('[data-testid="chain-error-test"]');
   check("naming the missing model", /Model not found/.test(testError ?? ""), testError);
   check("the agent does not count as configured", !(await has('[data-testid="setup-done"]')));
-  await shot("setup-chain-04-test-failed");
+  await shot("setup-chain-05-test-failed");
 
   // ── still broken: only a second test failure hands over to the troubleshooter ──
   check("one failure does not yet offer the troubleshooter", !(await has('[data-testid="chain-troubleshoot-fake-agent"]')));
   await click('[data-testid="setup-run-fake-agent"]');
   check("a retry that fails again offers the troubleshooter", await wait(() => has('[data-testid="chain-troubleshoot-fake-agent"]'), "troubleshoot link", 300));
-  await shot("setup-chain-05-troubleshoot");
+  await shot("setup-chain-06-troubleshoot");
 
   // ── fixed: retry runs only what is left and ends ready with the reply ──
   fs.writeFileSync(stateFlag, "works");
@@ -199,7 +212,7 @@ const run = async () => {
   check("only now is Tomrade set", await wait(() => has('[data-testid="setup-done"]'), "done panel", 300));
   check("with the test reply visible", await wait(() => has('[data-testid="setup-done-reply"]'), "reply", 50), await text('[data-testid="setup-done"]'));
   check("and the reply is the agent's", ((await text('[data-testid="setup-done-reply"]')) ?? "").includes("pong"), await text('[data-testid="setup-done-reply"]'));
-  await shot("setup-chain-06-ready");
+  await shot("setup-chain-07-ready");
   console.log(`screenshots in ${shots}`);
 };
 

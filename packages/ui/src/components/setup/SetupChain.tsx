@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import type { EngineSetupFailure, EngineView } from "@tomradex/agent";
+import type { EngineSetupFailure, EngineSetupProgress, EngineView } from "@tomradex/agent";
 import { useCurrentProject } from "~/components/dialogs/plugins/parts";
 import { Icon } from "~/components/icons";
+import { duration } from "~/components/workspace/agent-panel/format";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useSetupChain, type ChainStep } from "~/lib/setupChain";
 import { openExternal } from "~/lib/shell";
@@ -18,7 +19,63 @@ const FAILURE_KEYS: Record<string, MessageKey> = {
   cancelled: "setup.failCancelled"
 };
 
-function StepDetail({ step, title }: { step: ChainStep; title: string }) {
+const registryName = (url: string) => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+};
+
+function MirrorRetry({ progress, onRetry }: { progress?: EngineSetupProgress; onRetry: (registry?: string) => void }) {
+  const { t } = useI18n();
+  const mirror = progress?.mirror;
+  if (!mirror) return null;
+  return (
+    <button type="button" className="link-btn setup-action setup-retry" data-testid="chain-retry-mirror" onClick={() => onRetry(mirror)}>
+      {t("setup.retryMirror", { registry: registryName(mirror) })} →
+    </button>
+  );
+}
+
+/** A running install: the time it has taken, npm's latest line, and a word when it goes quiet. */
+function InstallRunning({ progress, onRetry }: { progress?: EngineSetupProgress; onRetry: (registry?: string) => void }) {
+  const { t } = useI18n();
+  const [, setTick] = useState(0);
+  const startedAt = progress?.startedAt;
+  useEffect(() => {
+    if (!startedAt) return;
+    const timer = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(timer);
+  }, [startedAt]);
+  if (progress?.phase === "checking") return <span className="meta-txt">{t("setup.installChecking")}</span>;
+  const latest = progress?.output?.split("\n").at(-1);
+  return (
+    <span className="meta-txt">
+      {startedAt ? t("setup.installingFor", { elapsed: duration(t, Date.now() - startedAt) }) : t("setup.installing")}
+      {latest && <code className="setup-live" data-testid="chain-live-line">{latest}</code>}
+      {progress?.stalled ? (
+        <span className="setup-fix" role="status" data-testid="chain-stalled">
+          {t("setup.installStalled")}
+          <button type="button" className="link-btn setup-action setup-retry" onClick={() => onRetry()}>
+            {t("setup.retry")} →
+          </button>
+        </span>
+      ) : (
+        progress?.mirror && <span className="setup-fix">{t("setup.registrySlow")}</span>
+      )}
+      <MirrorRetry progress={progress} onRetry={onRetry} />
+      {progress?.output && (
+        <details className="eng-try-details">
+          <summary>{t("setup.failOutput")}</summary>
+          <pre>{progress.output}</pre>
+        </details>
+      )}
+    </span>
+  );
+}
+
+function StepDetail({ step, title, onRetry }: { step: ChainStep; title: string; onRetry: (registry?: string) => void }) {
   const { t } = useI18n();
   const progress = step.progress;
   if (step.state === "failed") {
@@ -32,6 +89,7 @@ function StepDetail({ step, title }: { step: ChainStep; title: string }) {
           : failure.path
             ? t("setup.failFoundBroken", { path: failure.path, error: failure.message })
             : known ? t(known) : t("setup.failExit", { error: failure.message })}
+        {step.id === "install" && <MirrorRetry progress={progress} onRetry={onRetry} />}
         {progress?.output && (
           <details className="eng-try-details">
             <summary>{t("setup.failOutput")}</summary>
@@ -46,7 +104,7 @@ function StepDetail({ step, title }: { step: ChainStep; title: string }) {
     if (step.tried?.ok) return <span className="meta-txt" data-testid="chain-reply">{t("setup.testReply", { reply: step.tried.reply ?? "" })}</span>;
     return null;
   }
-  if (step.state === "active") return <span className="meta-txt">{step.id === "install" ? t(progress?.phase === "checking" ? "setup.installChecking" : "setup.installing") : t("setup.signingIn")}</span>;
+  if (step.state === "active") return step.id === "install" ? <InstallRunning progress={progress} onRetry={onRetry} /> : <span className="meta-txt">{t("setup.signingIn")}</span>;
   if (step.state === "waiting") {
     return (
       <span className="meta-txt">
@@ -113,7 +171,7 @@ export function SetupChain({ engine, onTroubleshoot }: { engine: EngineView; onT
               {icon(step)}
               <div className="setup-step-body">
                 <span>{t(STEP_LABELS[step.id], { title: engine.title })}</span>
-                <StepDetail step={step} title={engine.title} />
+                <StepDetail step={step} title={engine.title} onRetry={chain.retry} />
               </div>
             </li>
           ))}
