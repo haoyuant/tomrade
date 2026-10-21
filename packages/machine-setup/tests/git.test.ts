@@ -1,14 +1,14 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { probeGit, runGitInstall, type GitInstallProgress, type GitStatus, type MachineHost, type RunResult } from "../src/git.js";
+import { machineHost, probeGit, runGitInstall, type GitInstallProgress, type GitStatus, type MachineHost, type RunOptions, type RunResult } from "../src/git.js";
 
 interface FakeMachine {
   platform?: NodeJS.Platform;
   env?: Record<string, string | undefined>;
   /** Executable files on the fake disk. */
   files?: string[];
-  /** Answers by "<file> <args...>"; a function sees each call. */
-  runs?: Record<string, RunResult | (() => RunResult)>;
+  /** Answers by "<file> <args...>"; a function sees each call, with its options. */
+  runs?: Record<string, RunResult | ((options?: RunOptions) => RunResult | Promise<RunResult>)>;
 }
 
 function fakeHost(machine: FakeMachine): MachineHost & { adopted: string[]; ran: string[] } {
@@ -20,12 +20,12 @@ function fakeHost(machine: FakeMachine): MachineHost & { adopted: string[]; ran:
     env: machine.env ?? {},
     adopted,
     ran,
-    async run(file, args) {
+    async run(file, args, _timeoutMs, options) {
       const key = [file, ...args].join(" ");
       ran.push(key);
       const answer = machine.runs?.[key];
       if (!answer) return { code: null, output: "", error: `spawn ${file} ENOENT` };
-      return typeof answer === "function" ? answer() : answer;
+      return typeof answer === "function" ? answer(options) : answer;
     },
     executable: async (file) => files.has(file),
     adoptPath: (dir) => void adopted.push(dir),
@@ -172,5 +172,84 @@ describe("runGitInstall", () => {
     });
     const { deps } = installDeps(host, [{ state: "missing" }]);
     expect(await runGitInstall("winget", deps)).toMatchObject({ phase: "failed", message: "No package found matching input criteria." });
+  });
+
+  const WINGET_ARGS = "install --id Git.Git -e --source winget --accept-package-agreements --accept-source-agreements";
+
+  it("runs the winget it found, not whatever the bare name resolves to", async () => {
+    const winget = bin("C:\\Users\\t\\AppData\\Local", "Microsoft", "WindowsApps", "winget.exe");
+    const host = fakeHost({
+      platform: "win32",
+      env: { LOCALAPPDATA: "C:\\Users\\t\\AppData\\Local" },
+      files: [winget],
+      runs: { [`${winget} ${WINGET_ARGS}`]: { code: 0, output: "Successfully installed\n" } }
+    });
+    const { deps } = installDeps(host, [{ state: "ready", version: "2.44.0" }]);
+    expect(await runGitInstall("winget", deps)).toEqual({ phase: "done" });
+    expect(host.ran).toEqual([`${winget} ${WINGET_ARGS}`]);
+  });
+
+  it("shows winget's newest line while it runs, without its progress bars' redraws or spinner", async () => {
+    let finish!: () => void;
+    const host = fakeHost({
+      platform: "win32",
+      runs: {
+        [`winget ${WINGET_ARGS}`]: async (options) => {
+          options?.onOutput?.("Found Git [Git.Git] Version 2.55.0\r\n");
+          options?.onOutput?.("\x1b[2K  -\b\\\b|\b/");
+          options?.onOutput?.("\r  ██████▒▒▒▒▒▒  20.0 MB / 66.0 MB\r  ████████████  66.0 MB / 66.0 MB\r\n");
+          options?.onOutput?.("Starting package install...\r\n  -\b\\");
+          await new Promise<void>((resolve) => (finish = resolve));
+          return { code: 0, output: "" };
+        }
+      }
+    });
+    const { deps, seen } = installDeps(host, [{ state: "ready" }]);
+    const end = runGitInstall("winget", deps);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(seen.map((p) => p.line)).toEqual([undefined, "Found Git [Git.Git] Version 2.55.0", "████████████  66.0 MB / 66.0 MB", "Starting package install..."]);
+    expect(seen.every((p) => p.phase === "running")).toBe(true);
+    finish();
+    expect(await end).toEqual({ phase: "done" });
+  });
+
+  it("stops winget when cancelled, and ends as cancelled rather than failed", async () => {
+    let stopped = false;
+    const host = fakeHost({
+      platform: "win32",
+      runs: {
+        [`winget ${WINGET_ARGS}`]: (options) =>
+          new Promise((resolve) =>
+            options?.signal?.addEventListener("abort", () => {
+              stopped = true;
+              resolve({ code: 1, output: "", error: "cancelled" });
+            })
+          )
+      }
+    });
+    const { deps } = installDeps(host, [{ state: "missing" }]);
+    const abort = new AbortController();
+    deps.signal = abort.signal;
+    const end = runGitInstall("winget", deps);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    abort.abort();
+    expect(await end).toEqual({ phase: "failed", kind: "cancelled" });
+    expect(stopped).toBe(true);
+  });
+});
+
+describe("machineHost", () => {
+  it("streams a command's output as it comes and kills it on abort", async () => {
+    const abort = new AbortController();
+    const pieces: string[] = [];
+    const result = await machineHost().run(process.execPath, ["-e", "console.log('working'); setInterval(() => {}, 1000)"], 30_000, {
+      signal: abort.signal,
+      onOutput: (text) => {
+        pieces.push(text);
+        abort.abort();
+      }
+    });
+    expect(pieces.join("")).toContain("working");
+    expect(result).toMatchObject({ error: "cancelled" });
   });
 });
