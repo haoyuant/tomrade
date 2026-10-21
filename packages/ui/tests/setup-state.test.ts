@@ -49,6 +49,17 @@ it("completes setup only with a working assistant and a worker", () => {
   expect(setupState([engine({ id: "a", picks: [models({ choices: [], failed: "x" })] }), engine({ id: "b" })], worker)).toMatchObject({ complete: true, checking: false });
 });
 
+it("counts a worker profile only once its one-token test answered", () => {
+  const viaProfile = { ok: true, via: "profile" as const, title: "DeepSeek" };
+  // Unasked or still answering: the screen waits rather than deciding.
+  expect(setupState([engine()], viaProfile)).toMatchObject({ complete: false, checking: true });
+  expect(setupState([engine()], viaProfile, "pending")).toMatchObject({ complete: false, checking: true });
+  expect(setupState([engine()], viaProfile, { ok: false })).toMatchObject({ complete: false, checking: false });
+  expect(setupState([engine()], viaProfile, { ok: true })).toMatchObject({ complete: true, checking: false });
+  // A lent model proved itself through its agent: no test is asked of it.
+  expect(setupState([engine()], worker)).toMatchObject({ complete: true, checking: false });
+});
+
 it("opens the first-run setup for an agent that was found but cannot run, and skips it for one that works", () => {
   const notSeen = { seen: false, waited: false };
   expect(firstRunSetup({ complete: false, checking: false }, notSeen)).toBe("open");
