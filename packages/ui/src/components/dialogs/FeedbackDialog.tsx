@@ -1,7 +1,7 @@
-import { useDeferredValue, useEffect, useState } from "react";
+import { useDeferredValue, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { ReportKind } from "@tomradex/doctor";
-import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
+import { Dialog, DialogBody, DialogFoot, DialogHead, useOpeningKey } from "~/components/ui/dialog";
 import { Icon } from "~/components/icons";
 import { invoke } from "~/lib/api";
 import { useI18n, type MessageKey } from "~/lib/i18n";
@@ -14,19 +14,18 @@ const KINDS: ReportKind[] = ["bug", "feedback", "idea"];
  * piece of feedback, an idea. It goes the way a troubleshooting report goes —
  * kept on this machine until it is sent, answered under My reports — and
  * carries nothing but what was written and the app's version and system.
+ * Each opening starts clean.
  */
-export function FeedbackDialog({ open, onOpenChange, onTroubleshoot }: { open: boolean; onOpenChange: (open: boolean) => void; onTroubleshoot: () => void }) {
+export function FeedbackDialog(props: Parameters<typeof FeedbackSheet>[0]) {
+  return <FeedbackSheet key={useOpeningKey(props.open)} {...props} />;
+}
+
+function FeedbackSheet({ open, onOpenChange, onTroubleshoot }: { open: boolean; onOpenChange: (open: boolean) => void; onTroubleshoot: () => void }) {
   const { t } = useI18n();
   const [kind, setKind] = useState<ReportKind>("feedback");
   const [text, setText] = useState("");
   const typed = useDeferredValue(text.trim());
   const send = useMutation({ mutationFn: () => invoke("doctor.sendFeedback", kind, text) });
-  useEffect(() => {
-    if (!open) return;
-    setKind("feedback");
-    setText("");
-    send.reset();
-  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   // what goes besides the text, read from the report as it would be sent
   const preview = useQuery({ queryKey: ["feedback-preview", kind, typed], queryFn: () => invoke("doctor.feedbackPreview", kind, typed), enabled: open && !!typed, placeholderData: (previous) => previous });
   const app = preview.data?.app;

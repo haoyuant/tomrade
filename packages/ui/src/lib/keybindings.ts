@@ -104,7 +104,7 @@ interface Chord {
 
 const MOD_ORDER = ["Mod", "Ctrl", "Alt", "Shift"] as const;
 
-export function parseChord(chord: string): Chord {
+function parseChord(chord: string): Chord {
   const parts = chord.split("+");
   // "Mod++" is not a thing we write, but a "+" key would be "Shift+="; the last part is always the key.
   const key = parts.pop() ?? "";
@@ -123,7 +123,7 @@ const isSymbol = (key: string) => key.length === 1 && !/[A-Z0-9]/.test(key);
  * from the physical key when the typed character is not one — ⌥ on a Mac
  * turns K into ˚, and a Cyrillic layout gives no Latin letter at all.
  */
-export function eventKey(e: Pick<KeyboardEvent, "key" | "code">): string {
+function eventKey(e: Pick<KeyboardEvent, "key" | "code">): string {
   const k = e.key;
   if (/^[a-zA-Z0-9]$/.test(k)) return k.toUpperCase();
   if (/^Key[A-Z]$/.test(e.code)) return e.code.slice(3);
@@ -235,8 +235,6 @@ export function announceKeymap(): void {
   for (const l of listeners) l();
 }
 
-export const keymap = (): Keymap => current;
-
 /** The chord of this command the event is, under the person's keys; null when none. */
 export const hitChord = (e: KeyEventLike, id: CommandId, opts?: { lenientCtrl?: boolean }): string | null =>
   current[id].find((chord) => matchesChord(e, chord, opts)) ?? null;
@@ -266,15 +264,9 @@ export function keyLabel(id: CommandId): string {
   return chord ? formatChord(chord) : "";
 }
 
-/** The first chord on a command, written for this platform; "" when it has none. */
-export function useKeyLabel(id: CommandId): string {
-  const chord = useKeymap()[id][0];
-  return chord ? formatChord(chord) : "";
-}
-
 /* ─── export / import ────────────────────────────────────────────────── */
 
-export const EXPORT_KIND = "tomrade.keybindings";
+const EXPORT_KIND = "tomrade.keybindings";
 
 export interface KeybindingsFile {
   kind: typeof EXPORT_KIND;

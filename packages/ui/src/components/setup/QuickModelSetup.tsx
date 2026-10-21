@@ -24,7 +24,7 @@ export function SetupProblem({ result, provider }: { result: Extract<QuickSetupR
 }
 
 /** An official plugin that brings a provider, installed in one click. */
-export function ProviderPluginOffer({ plugin, offer }: { plugin: Providing; offer: ReturnType<typeof useInstallProvider> }) {
+function ProviderPluginOffer({ plugin, offer }: { plugin: Providing; offer: ReturnType<typeof useInstallProvider> }) {
   const { t } = useI18n();
   const busy = offer.busy === plugin.id;
   return (

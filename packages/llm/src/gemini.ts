@@ -44,7 +44,7 @@ const contentOf = (block: Message["content"][number]): Record<string, unknown> |
  * The conversation as Interactions steps. A reply Gemini wrote goes back as the steps it streamed,
  * thoughts and signatures included, as stateless requests must; anyone else's as plain output and calls.
  */
-export function toSteps(request: ChatRequest): Step[] {
+function toSteps(request: ChatRequest): Step[] {
   const out: Step[] = [];
   const names = new Map<string, string>();
   for (const message of request.messages) {
@@ -71,7 +71,7 @@ export function toSteps(request: ChatRequest): Step[] {
   return out;
 }
 
-export function interactionBody(model: string, request: ChatRequest, search: boolean): Record<string, unknown> {
+function interactionBody(model: string, request: ChatRequest, search: boolean): Record<string, unknown> {
   const tools: Record<string, unknown>[] = (request.tools ?? []).map((t) => ({ type: "function", name: t.name, description: t.description, parameters: t.inputSchema }));
   if (search) tools.push({ type: "google_search" });
   const choice = request.toolChoice;
@@ -110,7 +110,7 @@ interface StreamEvent {
  * ends, the cited pages listed after the answer, and the steps themselves as native data so the
  * next request of the turn carries them back.
  */
-export async function* readInteraction(data: AsyncIterable<string>): AsyncGenerator<ChatEvent> {
+async function* readInteraction(data: AsyncIterable<string>): AsyncGenerator<ChatEvent> {
   const steps = new Map<number, Step>();
   const args = new Map<number, string>();
   const sources = new Map<string, string>();

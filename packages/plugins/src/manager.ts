@@ -538,5 +538,3 @@ export class Plugins extends Service {
     return ids.flatMap((id) => byId.get(id) ?? []);
   }
 }
-
-export default Plugins;

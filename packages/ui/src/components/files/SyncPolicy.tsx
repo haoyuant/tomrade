@@ -126,19 +126,6 @@ export function SyncSelect({ actions, paths, value, label, root = false }: { act
   );
 }
 
-/** The current folder's or file's own setting, in one line above its content. */
-export function SyncLine({ actions, entry }: { actions: SyncActions; entry: FileEntry }) {
-  const { t } = useI18n();
-  if (!entry.sync) return null;
-  return (
-    <div className="row files-sync-line" style={{ gap: "var(--space-2)", alignItems: "center", padding: "0 var(--space-3) var(--space-2)" }}>
-      <SyncMark sync={entry.sync} />
-      <span className="meta-txt">{describeSync(t, entry.sync)}</span>
-      <SyncSelect actions={actions} paths={[entry.path]} value={entry.sync.source === "explicit" ? entry.sync.mode : "inherit"} label={t("files.syncFor", { name: entry.name })} />
-    </div>
-  );
-}
-
 /** Only the choices that would change something: no "Shared" for what is shared, no "Inherit" without a rule to drop. */
 export function SyncContextActions({ actions, paths, entry }: { actions: SyncActions; paths: string[]; entry?: FileEntry }) {
   const { t } = useI18n();

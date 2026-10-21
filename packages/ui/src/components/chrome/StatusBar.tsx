@@ -47,6 +47,7 @@ function useCountdown(until: number | undefined, onDue: () => void): string | nu
     return () => clearInterval(timer);
   }, [until]);
   const left = until === undefined ? null : Math.max(0, Math.ceil((until - now) / 1000));
+  // once, on reaching zero: onDue is a new function every render
   useEffect(() => {
     if (left === 0) onDue();
   }, [left === 0]); // eslint-disable-line react-hooks/exhaustive-deps

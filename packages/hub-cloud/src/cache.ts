@@ -9,7 +9,7 @@ export const RecordSchema = z.object({
   kind: Kind, key: z.string().min(1), value: z.json().nullable(), version: z.number().int().nonnegative()
 });
 export type CloudRecord = z.infer<typeof RecordSchema>;
-export const MutationSchema = RecordSchema.omit({ version: true }).extend({
+const MutationSchema = RecordSchema.omit({ version: true }).extend({
   id: z.uuid(), base_version: z.number().int().nonnegative()
 });
 export type Mutation = z.infer<typeof MutationSchema>;

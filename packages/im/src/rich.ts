@@ -46,7 +46,7 @@ function codeOf(scope: RenderScope, itemId: string): CodeSummary | null {
 }
 
 /** The primary branch and pull request, and the session at work, as card fields; the pull request's page as a link. */
-export function codeFields(w: ImSpeak, code: CodeSummary | null): { fields: { label: string; value: string }[]; links: { label: string; url: string }[] } {
+function codeFields(w: ImSpeak, code: CodeSummary | null): { fields: { label: string; value: string }[]; links: { label: string; url: string }[] } {
   const primary = code?.links[0];
   const fields: { label: string; value: string }[] = [];
   const urls: { label: string; url: string }[] = [];
@@ -183,7 +183,7 @@ function card(scope: RenderScope, block: Extract<Block, { type: "card" }>): ImCo
 }
 
 /** A file the turn saved with write_file, by the version the tool returned. */
-export function savedFile(block: Extract<Block, { type: "trace" }>): { path: string; fileId: string; versionId: string; size: number } | null {
+function savedFile(block: Extract<Block, { type: "trace" }>): { path: string; fileId: string; versionId: string; size: number } | null {
   if (block.tool !== "write_file" || !block.ok) return null;
   const ids = /"fileId":"([^"]+)","versionId":"([^"]+)"/.exec(block.summary);
   // The saved path (a ticket's files land in its workstream folder), unless the summary cut it short.

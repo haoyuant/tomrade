@@ -46,7 +46,7 @@ export function writeHelperToken(settings: string, grant: { token: string; expir
   else writeHelper(tokenFile(settings), JSON.stringify(grant), 0o600);
 }
 
-export const credentialCommand = (settings: string): string => `!${quote(helperPath(settings))}`;
+const credentialCommand = (settings: string): string => `!${quote(helperPath(settings))}`;
 
 export const withGithubCredential = (settings: string, command: string): string => `${quote(helperPath(settings))} run bash -c ${quote(command)}`;
 

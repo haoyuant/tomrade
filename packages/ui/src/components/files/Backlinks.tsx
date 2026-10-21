@@ -11,7 +11,7 @@ import { useNoteLinks } from "~/lib/notes";
 import { errorSpec, useToast } from "~/lib/toast";
 
 /** The first unlinked mention of `name` on a line, as a link to `target`; the words as written stay as the alias when they differ. */
-export function linkMention(body: string, line: number, name: string, target: string): string | null {
+function linkMention(body: string, line: number, name: string, target: string): string | null {
   const lines = body.split("\n");
   const text = lines[line - 1];
   if (text === undefined) return null;

@@ -114,7 +114,7 @@ export function applyPlan(
   return { rootKey, created, skipped };
 }
 
-export const gapSchema = z.object({
+const gapSchema = z.object({
   missing: z.array(z.object({ title: z.string().min(1), body: z.string().optional().nullable(), reason: z.string() }))
 });
 

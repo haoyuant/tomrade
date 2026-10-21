@@ -34,7 +34,7 @@ export function defaultsOf(schema: JsonSchema): Record<string, unknown> {
 }
 
 /** "claudeCommand" → "Claude command": a field its plugin gave no title still reads as words. */
-export function humanize(name: string): string {
+function humanize(name: string): string {
   const words = name.replace(/[_-]+/g, " ").replace(/([a-z0-9])([A-Z])/g, "$1 $2").trim().toLowerCase();
   return words.charAt(0).toUpperCase() + words.slice(1);
 }

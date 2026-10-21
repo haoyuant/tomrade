@@ -6,7 +6,7 @@ import { isNotePath } from "@tomradex/notes/syntax";
 import { invoke } from "./api";
 import { usePlugins } from "./queries";
 
-export const notesKeys = {
+const notesKeys = {
   all: (projectId: string) => ["notes", projectId] as const,
   search: (projectId: string, query: string) => ["notes", projectId, "search", query] as const,
   links: (projectId: string, path: string) => ["notes", projectId, "links", path] as const,
@@ -42,8 +42,6 @@ export function today(): string {
 
 /** The store's file paths, for link resolution and completion. */
 export const filePaths = (entries: FileEntry[] | undefined): string[] => (entries ?? []).filter((e) => e.kind === "file").map((e) => e.path);
-
-export const notePaths = (entries: FileEntry[] | undefined): string[] => filePaths(entries).filter(isNotePath);
 
 /** `Untitled.md`, then `Untitled 1.md`…: the first name not taken in `dir`. */
 export function freeNoteName(dir: string, base: string, taken: Set<string>): string {

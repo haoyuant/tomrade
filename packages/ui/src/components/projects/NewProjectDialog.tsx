@@ -13,7 +13,7 @@ import { isCommitKey } from "~/lib/keys";
 const previewPrefix = (name: string) => name.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3) || "ISS";
 
 /** Mirrors the storage layer's slug: lowercase, runs of anything else become one dash. */
-export const slugOf = (name: string) =>
+const slugOf = (name: string) =>
   name
     .normalize("NFKD")
     .toLowerCase()

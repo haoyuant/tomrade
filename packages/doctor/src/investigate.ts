@@ -8,7 +8,7 @@ import { errorLines, newestFiles, scrub, tail } from "./evidence.js";
 import type { Diagnosis } from "./service.js";
 
 /** What the investigating agent may call: it reads, looks up, asks and concludes — never changes the setup or the work. */
-export const INVESTIGATION_TOOLS = new Set(["doctor_read_log", "doctor_check_again", "doctor_conclude", "ask_user", "web_search", "web_fetch"]);
+const INVESTIGATION_TOOLS = new Set(["doctor_read_log", "doctor_check_again", "doctor_conclude", "ask_user", "web_search", "web_fetch"]);
 
 export const CONCLUSION = "doctor/conclusion";
 

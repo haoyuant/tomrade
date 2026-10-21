@@ -73,7 +73,7 @@ function keysOf(ctx: Context, projectId: string, snapshots: (Snapshot | null)[])
 const edgeSchema = z.object({ prerequisite: z.string(), dependent: z.string(), reason: z.string().catch("") });
 export const dependencyReviewSchema = z.object({ add: z.array(edgeSchema).catch([]), remove: z.array(edgeSchema).catch([]) });
 
-export interface DependencyEdit {
+interface DependencyEdit {
   from: string;
   to: string;
   fromId: string;

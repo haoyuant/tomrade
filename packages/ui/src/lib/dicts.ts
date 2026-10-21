@@ -16,7 +16,7 @@ export type MessageKey = {
 }[keyof Messages];
 
 /** English and Simplified Chinese are complete; the rest may miss a string, which then shows in English. */
-export const DICTS: Record<BuiltinLocale, PartialMessages> = { en, zh, "zh-Hant": zhHant, ja, es, de, fr, ru };
+const DICTS: Record<BuiltinLocale, PartialMessages> = { en, zh, "zh-Hant": zhHant, ja, es, de, fr, ru };
 
 export const isBuiltinLocale = (locale: string): locale is BuiltinLocale => Object.hasOwn(DICTS, locale);
 

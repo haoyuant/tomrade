@@ -9,8 +9,8 @@ export function scrub(text: string, home = os.homedir()): string {
   return out.replace(/\b([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*@([A-Za-z0-9-]+\.)+[A-Za-z]{2,}\b/g, "$1…@…");
 }
 
-export const TAIL_LINES = 120;
-export const TAIL_CHARS = 24_000;
+const TAIL_LINES = 120;
+const TAIL_CHARS = 24_000;
 
 /** The end of a log file, scrubbed: the last lines, never more than a few dozen KB. */
 export function tail(file: string, lines = TAIL_LINES, chars = TAIL_CHARS): string | null {

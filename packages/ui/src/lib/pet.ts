@@ -29,7 +29,7 @@ export function useAccessoryState(accessory: AssistantAccessory, threadId: strin
   return query;
 }
 
-export const petKeys = {
+const petKeys = {
   profiles: ["pet", "profiles"] as const,
   preview: (profileId: string) => ["pet", "preview", profileId] as const
 };

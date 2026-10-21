@@ -238,7 +238,7 @@ export function recordingContext(namespace: string, allowed: ServiceName[], rec:
 }
 
 /** What a model provider lacks that Tomrade needs to list, check and build its models. */
-export function providerProblems(spec: ModelProviderSpec): string[] {
+function providerProblems(spec: ModelProviderSpec): string[] {
   const label = `model provider "${spec.id}"`;
   const out: string[] = [];
   if (!spec.title) out.push(`${label} has no title`);
@@ -254,7 +254,7 @@ export function providerProblems(spec: ModelProviderSpec): string[] {
 }
 
 /** What a local agent lacks that Tomrade needs to find, run and connect it. */
-export function localAgentProblems(spec: LocalAgentSpec): string[] {
+function localAgentProblems(spec: LocalAgentSpec): string[] {
   const label = `local agent "${spec.id}"`;
   const out: string[] = [];
   if (!spec.title) out.push(`${label} has no title`);

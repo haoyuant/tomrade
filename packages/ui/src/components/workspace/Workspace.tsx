@@ -165,6 +165,7 @@ export function Workspace() {
       boardId: ws.workstream?.id ?? null,
       onOpenRepositories: () => setProjectSettings("repositories")
     }),
+    // rebuilt when what it names changes, not on every refetch or render
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [ws.select, selected?.id, selected?.key, selected?.title, ws.view.id, ws.view.name, ws.workstream?.id, ws.filePath, ws.routines]
   );

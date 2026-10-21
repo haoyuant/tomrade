@@ -4,7 +4,7 @@ import type {} from "@tomradex/mcp-client";
 import type { McpServerView } from "@tomradex/mcp-client";
 import { invoke, subscribe } from "./api";
 
-export const mcpClientKeys = { servers: ["mcpClient", "servers"] as const };
+const mcpClientKeys = { servers: ["mcpClient", "servers"] as const };
 
 /** Live: the main process broadcasts every connection change, so nothing polls. */
 export function useMcpServers() {

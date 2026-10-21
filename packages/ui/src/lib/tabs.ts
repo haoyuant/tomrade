@@ -90,8 +90,6 @@ export function useTabs(projectId: string): TabsState {
   );
 }
 
-export const tabsOf = read;
-
 /** The Backlog tab now shows this view or workstream. */
 export function rememberBacklog(projectId: string, place: BacklogPlace): void {
   const state = read(projectId);

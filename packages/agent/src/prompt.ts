@@ -110,7 +110,7 @@ const clip = (text: string, max: number): string => (text.length > max ? text.sl
  * and the house rules, then join these with blank lines.
  */
 /** What the main conversation can do with the code, and where that code is, so a limit is named instead of mistaken for an empty folder. */
-export function mainConversationSection(repositories: TurnInput["repositories"]): string {
+function mainConversationSection(repositories: TurnInput["repositories"]): string {
   const where = repositories?.length
     ? "Workstream repositories:\n" + repositories.map((r) => `- ${r.workstream}: ${r.name} ${r.path ? `at ${r.path} (default branch ${r.defaultBranch})` : "— no checkout on this machine, so it cannot be read here"}`).join("\n")
     : "No workstream has a repository linked yet.";

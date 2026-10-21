@@ -117,7 +117,7 @@ function Canvas() {
         selected: item.id === selectedId
       }))
     );
-  }, [shown, placed, editable, selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [shown, placed, editable, selectedId, setNodes]);
 
   const flowEdges = useMemo<Edge[]>(
     () =>

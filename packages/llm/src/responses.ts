@@ -27,7 +27,7 @@ export const fitsResponses = (request: ChatRequest): boolean =>
  * The conversation as Responses input items. Reasoning is not sent back, as on chat/completions; a
  * function call goes without an item id, so no model asks for the reasoning that came with it.
  */
-export function toResponsesInput(request: ChatRequest, replay = false): Record<string, unknown>[] {
+function toResponsesInput(request: ChatRequest, replay = false): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = [];
   for (const message of request.messages) {
     if (message.role === "user") {

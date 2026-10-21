@@ -7,7 +7,7 @@ import { app } from "electron";
 export const BACKGROUND_FLAG = "--background";
 
 /** The LaunchAgent the macOS build carries in Contents/Library/LaunchAgents (assets/launch-agent). */
-export const MAC_AGENT_PLIST = "com.tomrade.desktop.background.plist";
+const MAC_AGENT_PLIST = "com.tomrade.desktop.background.plist";
 
 /**
  * The system's word on starting at login, which outranks ours: the person can

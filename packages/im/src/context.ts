@@ -2,7 +2,7 @@ import type { LanguageTag } from "@tomradex/domain";
 import type { ImContextMessage } from "@tomradex/plugin-sdk";
 import { IM_WORDS } from "./words.js";
 
-export interface ContextAuthor { id: string; name?: string; isBot: boolean }
+interface ContextAuthor { id: string; name?: string; isBot: boolean }
 export interface ContextLine { author: ContextAuthor; text: string }
 export interface GroupContext {
   quoted?: ContextLine;

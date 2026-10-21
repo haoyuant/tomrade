@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import type { ItemStatus, Priority, WorkType } from "@tomradex/domain";
-import { Dialog, DialogClose } from "~/components/ui/dialog";
+import { Dialog, DialogClose, useOpeningKey } from "~/components/ui/dialog";
 import { PRIORITIES, PRIORITY_LABEL, STATUS, STATUS_KEYS } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useCreateItem } from "~/lib/queries";
@@ -11,8 +11,16 @@ import { invoke } from "~/lib/api";
 import { useToastUndo } from "~/lib/undo";
 import { isCommitKey } from "~/lib/keys";
 
-/** Built-in methods keep their localized names; any other playbook shows its own title. */
-export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+/**
+ * Built-in methods keep their localized names; any other playbook shows its own title.
+ * Each opening starts clean, seeded from whatever the view is showing now rather
+ * than from whatever it showed when the workspace mounted.
+ */
+export function NewIssueDialog(props: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  return <NewIssueSheet key={useOpeningKey(props.open)} {...props} />;
+}
+
+function NewIssueSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { t, tx } = useI18n();
   const ws = useWorkspace();
   const create = useCreateItem(ws.project.id);
@@ -41,7 +49,7 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   const workstreams = ws.boards;
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
-  const [template, setTemplate] = useState("task.assist");
+  const [template, setTemplate] = useState(defaults().workType === "general" ? "task.assist" : "");
   const [workType, setWorkType] = useState<WorkType>(defaults().workType);
   const [boardId, setBoardId] = useState(defaults().boardId);
   const [status, setStatus] = useState<ItemStatus>(defaults().status);
@@ -53,25 +61,6 @@ export function NewIssueDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   const [recommendation, setRecommendation] = useState<{ playbookId: string; reason: string; source: string; requires: string[] } | null>(null);
 
   const statusOptions = columnStatuses;
-
-  // The sheet outlives its own open/close, so it reseeds from whatever the view
-  // is showing now rather than from whatever it showed when the workspace mounted.
-  useEffect(() => {
-    if (!open) return;
-    const d = defaults();
-    setTitle("");
-    setBody("");
-    setTemplate(d.workType === "general" ? "task.assist" : "");
-    setWorkType(d.workType);
-    setBoardId(d.boardId);
-    setStatus(d.status);
-    setPriority(d.priority);
-    setParentId(d.parentId);
-    setTemplateTouched(false);
-    setWorkTypeTouched(false);
-    setRecommendation(null);
-    setRecommendationKey("");
-  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const key = `${title.trim()}|${body.trim()}|${workType}`;

@@ -457,6 +457,7 @@ function BodyEditor({ item, write, className, onDone }: FieldProps & { className
         if (!mounted.current && !done.current && dirty()) void commitRef.current({ leaving: true });
       }, 0);
     };
+    // mount and unmount only: what it saves comes through refs
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

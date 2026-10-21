@@ -122,9 +122,11 @@ function PluginPane({ section, stored, onSave, children }: { section: SettingsSe
   const [advancedOpen, setAdvancedOpen] = useState(false);
   // A field still being put right keeps what was typed; otherwise the pane follows the stored value.
   const unsettled = Object.keys(problems).length > 0;
-  useEffect(() => {
+  const [seen, setSeen] = useState(stored);
+  if (!Object.is(seen, stored)) {
+    setSeen(stored);
     if (!unsettled) setValue(stored);
-  }, [stored]); // eslint-disable-line react-hooks/exhaustive-deps
+  }
   const schema = section.schema as JsonSchema;
   const fields = fieldsOf(schema);
   const basic = fields?.filter(([, field]) => !field.advanced) ?? [];

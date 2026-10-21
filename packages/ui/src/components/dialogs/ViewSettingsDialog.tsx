@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { EMPTY_KEY, LAYOUTS, groupKeyOf, type Layout } from "@tomradex/domain";
 import { Icon, type IconId } from "~/components/icons";
-import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
+import { Dialog, DialogBody, DialogFoot, DialogHead, useOpeningKey } from "~/components/ui/dialog";
 import { IconPicker } from "~/components/ui/icon-picker";
 import { Eyebrow, Tag } from "~/components/ui/atoms";
 import { BOARD_GLYPHS, DEFAULT_SHOWN_FIELDS, LAYOUT_LABEL, fieldLabel, viewIcon } from "~/lib/domain";
@@ -14,9 +14,14 @@ import { useWorkspace } from "~/components/workspace/context";
  * The view's configuration: what it is called, how it draws, which fields it
  * shows, and — on a board — which columns and their WIP caps. Saving writes the
  * saved view directly; the live draft's filter, grouping and sort come along so
- * nothing on screen is lost, and the draft rebinds to what was saved.
+ * nothing on screen is lost, and the draft rebinds to what was saved. Each
+ * opening starts from the view as it is now.
  */
-export function ViewSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function ViewSettingsDialog(props: Parameters<typeof ViewSettingsSheet>[0]) {
+  return <ViewSettingsSheet key={useOpeningKey(props.open)} {...props} />;
+}
+
+function ViewSettingsSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { t, tx } = useI18n();
   const ws = useWorkspace();
   const update = useUpdateView(ws.project.id);
@@ -29,17 +34,6 @@ export function ViewSettingsDialog({ open, onOpenChange }: { open: boolean; onOp
   const [columns, setColumns] = useState<string[]>(ws.query.columns);
   const [wip, setWip] = useState<Record<string, number>>(ws.query.wip);
   const [graph, setGraph] = useState<string | null>(ws.query.graph);
-
-  useEffect(() => {
-    if (!open) return;
-    setName(ws.view.name);
-    setIcon(viewIcon(ws.view.icon));
-    setLayout(ws.layout);
-    setFields(ws.query.fields);
-    setColumns(ws.query.columns);
-    setWip(ws.query.wip);
-    setGraph(ws.query.graph);
-  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const columnBy = ws.query.columnBy ?? "status";
   const columnDef = ws.fieldById.get(columnBy);

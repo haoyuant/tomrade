@@ -5,7 +5,7 @@ import type { ConnectAgent, ConnectMode, MergeCheckView, RepoPolicyPatch, StartO
 import { invoke } from "./api";
 import { invalidateWorkspace } from "./queries";
 
-export const codeLinkKeys = {
+const codeLinkKeys = {
   links: (projectId: string, itemId?: string) => ["codeLink", projectId, "links", itemId ?? ""] as const,
   sessions: (projectId: string, itemId?: string) => ["codeLink", projectId, "sessions", itemId ?? ""] as const,
   repos: (projectId: string) => ["codeLink", projectId, "repos"] as const,
@@ -37,9 +37,6 @@ export function defaultStartMode(input: { latest: "headless" | "terminal" | null
 /** How the Start dialog was left on this machine; null before anything was started here. */
 export const useStartDefaults = () =>
   useQuery({ queryKey: codeLinkKeys.startDefaults, queryFn: () => invoke("codeLink.startDefaults") });
-
-export const useCodeLinks = (projectId: string, itemId?: string) =>
-  useQuery({ queryKey: codeLinkKeys.links(projectId, itemId), queryFn: () => invoke("codeLink.links", projectId, itemId) });
 
 export const useCodeDeliveries = (projectId: string, itemId: string) =>
   useQuery({ queryKey: ["codeLink", projectId, "deliveries", itemId], queryFn: () => invoke("codeLink.deliveries", projectId, itemId) });

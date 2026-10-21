@@ -33,7 +33,7 @@ function useProvidersChanged() {
 }
 
 /** An engine a ticket can be handed to: it works on this computer, not only through Tomrade's tools. */
-export const isLocalAgent = (engine: EngineView): boolean => engine.capabilities.includes("code") || engine.capabilities.includes("general");
+const isLocalAgent = (engine: EngineView): boolean => engine.capabilities.includes("code") || engine.capabilities.includes("general");
 
 /** The local agents worth a setup row: the suggested ones, and any other found on this computer. */
 export const setupRows = (engines: EngineView[]): EngineView[] =>
@@ -44,7 +44,7 @@ export const setupRows = (engines: EngineView[]): EngineView[] =>
  * enough: a model also runs the built-in agent, and a local agent lends its
  * model for planning — so one step sets up both.
  */
-export function setupState(engines: EngineView[], worker: WorkerStatus) {
+function setupState(engines: EngineView[], worker: WorkerStatus) {
   const assistant = engines.filter((e) => e.ok && e.capabilities.includes("backlog"));
   return { complete: worker.ok && assistant.length > 0, assistant, locals: engines.filter((e) => e.ok && isLocalAgent(e)), worker };
 }

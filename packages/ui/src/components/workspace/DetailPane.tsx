@@ -44,7 +44,7 @@ function LockBar() {
 }
 
 /** Derived from the oplog itself, so it can never drift from the data it describes. */
-export function Ledger({ projectId, itemId }: { projectId: string; itemId: string }) {
+function Ledger({ projectId, itemId }: { projectId: string; itemId: string }) {
   const { t, tx } = useI18n();
   const history = useHistory(projectId, itemId);
   const rows = history.data ?? [];
@@ -163,7 +163,7 @@ export function LedgerRow({ entry }: { entry: OplogEntry }) {
   );
 }
 
-export function FieldStrip({ item, write }: { item: Item; write: IssueWrite }) {
+function FieldStrip({ item, write }: { item: Item; write: IssueWrite }) {
   const { t } = useI18n();
   const { project, epics, boards, labels, items, select } = useWorkspace();
   const fields = useFields(project.id);
