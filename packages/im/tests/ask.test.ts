@@ -15,7 +15,7 @@ afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanups.splic
 
 const GROUP: ImAddress = { tenantId: "team", conversationId: "dev" };
 
-/** A connection with the owner paired in their direct chat, and a group nobody allowed yet. */
+/** A connection with the owner paired in their direct chat, and a group nobody allowed yet; direct chats are a tenant of their own, as on Discord. */
 async function boot(opts: { select?: boolean; projects?: number } = {}) {
   const dir = mkdtempSync(path.join(os.tmpdir(), "tomrade-im-ask-"));
   const log: ({ kind: "deliver"; d: ImDelivery } | { kind: "open"; address: ImAddress; title: string })[] = [];
@@ -35,8 +35,8 @@ async function boot(opts: { select?: boolean; projects?: number } = {}) {
   world.ctx.plugin(sdk(definePlugin({ inject: ["im"], async apply(ctx) { await ctx.im.register(adapter); } }), { id: "test/im", namespace: "test", origin: "extension" }));
   const others = Array.from({ length: (opts.projects ?? 1) - 1 }, (_, i) => world.ctx.projects.create({ name: `Other ${i + 1}` }));
   world.ctx.settings.set({ ...world.ctx.settings.get(), im: ImSettings.parse({ connections: [{ id: "bot", adapterId: "test_im" }],
-    identities: [{ connectionId: "bot", tenantId: "team", actorId: "owner", name: "Owner", pairedAt: 1 }],
-    routes: [{ id: "dm", connectionId: "bot", tenantId: "team", conversationId: "chat", projectId: world.project.id, engine: "test", allowedActors: ["owner"] }] }) });
+    identities: [{ connectionId: "bot", tenantId: "@me", actorId: "owner", name: "Owner", pairedAt: 1 }],
+    routes: [{ id: "dm", connectionId: "bot", tenantId: "@me", conversationId: "chat", projectId: world.project.id, engine: "test", allowedActors: ["owner"] }] }) });
   await expect.poll(() => ios.has("bot")).toBe(true);
   let n = 0;
   const receive = (e: ImInbound) => ios.get("bot")!.receive(e);
@@ -52,7 +52,8 @@ async function boot(opts: { select?: boolean; projects?: number } = {}) {
     return receive({ kind: "action", eventId: `e${++n}`, address: GROUP, actor: { id: "owner", isBot: false }, token: select.token, value });
   };
   const route = () => world.ctx.settings.get().im && ImSettings.parse(world.ctx.settings.get().im).routes.find(r => r.conversationId === GROUP.conversationId);
-  return { ...world, log, delivered, card, mention, press, choose, route, others, receive };
+  const io = () => ios.get("bot")!;
+  return { ...world, log, delivered, card, mention, press, choose, route, others, receive, io };
 }
 
 describe("a paired person allows a group from the group itself", () => {
@@ -142,5 +143,29 @@ describe("a paired person allows a group from the group itself", () => {
     await w.mention();
     await expect.poll(() => w.delivered().length).toBe(sent + 1);
     expect(w.card().content.actions).toHaveLength(4);
+  });
+
+  it("lets an adapter's own setup allow a conversation with a preset, once, for the paired person only", async () => {
+    const w = await boot({ projects: 2 });
+    expect(w.io().projects!("stranger")).toEqual([]);
+    expect(w.io().projects!("owner").map(p => p.id)).toEqual([w.project.id, w.others[0].id]);
+    expect(w.io().allow!({ actorId: "stranger", address: GROUP, kind: "work", projectId: w.project.id })).toBe(false);
+    expect(w.io().allow!({ actorId: "owner", address: GROUP, kind: "work", projectId: "nope" })).toBe(false);
+    expect(w.route()).toBeUndefined();
+
+    w.ctx.items.create({ projectId: w.others[0].id, boardId: w.ctx.boards.list(w.others[0].id)[0]!.id, title: "Being worked", workType: "coding", status: "doing", by: "human" });
+    expect(w.io().allow!({ actorId: "owner", address: GROUP, kind: "work", projectId: w.others[0].id })).toBe(true);
+    await expect.poll(() => w.route()).toMatchObject({ projectId: w.others[0].id, allowGroups: true, allowedActors: ["owner"], ticketTopics: true, groupActivation: "reply" });
+    const top = () => w.delivered().filter(d => !d.address.topicId);
+    await expect.poll(() => top().map(d => d.content.text)).toEqual([`This is now the work channel for ${w.others[0].name}: each ticket being worked gets a thread here.\nChange it any time in Tomrade's IM settings.`]);
+    await expect.poll(() => w.log.some(l => l.kind === "open" && l.title.includes("Being worked"))).toBe(true);
+
+    // Run again: the route as the person left it, and nothing said.
+    const edited = { ...w.route()!, groupActivation: "all" as const };
+    w.ctx.settings.set({ ...w.ctx.settings.get(), im: { ...ImSettings.parse(w.ctx.settings.get().im), routes: [...ImSettings.parse(w.ctx.settings.get().im).routes.filter(r => r.id !== edited.id), edited] } });
+    expect(w.io().allow!({ actorId: "owner", address: GROUP, kind: "status", projectId: w.others[0].id })).toBe(true);
+    await new Promise(r => setTimeout(r, 50));
+    expect(w.route()).toMatchObject({ groupActivation: "all", ticketTopics: true });
+    expect(top()).toHaveLength(1);
   });
 });

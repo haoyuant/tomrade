@@ -657,6 +657,8 @@ export class Im extends Service {
         },
         readOutboundFile: id => active() ? this.readFile(c, id) : Promise.reject(new Error("Connection closed")),
         notice: notice => { if (active()) this.notice(c, notice); },
+        projects: actorId => active() ? this.projectsFor(c, actorId) : [],
+        allow: request => active() && this.allowFor(c, request),
         clearNotice: key => { if (active() && c.notices.delete(key)) this.changed(); }
       });
       void opening.then(session => { if (!active()) return session.close(); }).catch(() => {});
@@ -868,10 +870,10 @@ export class Im extends Service {
     const caps = this.caps.get(c.adapterId);
     const { tenantId, conversationId } = event.address;
     const key = JSON.stringify([c.id, tenantId, conversationId]);
-    if (!caps?.buttons || !this.settings.identities.some(i => i.connectionId === c.id && i.tenantId === tenantId && i.actorId === event.actor.id)) return;
+    if (!caps?.buttons || !this.pairedOn(c.id, event.actor.id)) return;
     if ((this.snoozed.get(key) ?? 0) > Date.now()) return;
     const projects = this.home.projects.list().filter(p => !p.archived);
-    const projectId = this.lastProject(c.id, tenantId, event.actor.id, projects.map(p => p.id));
+    const projectId = this.lastProject(c.id, event.actor.id, projects.map(p => p.id))[0];
     if (!projectId) return;
     const tokens = new Map<string, string>([...Object.keys(GROUP_PRESETS), "no", "project", ...projects.map(p => `project:${p.id}`)].map(kind => [token(), kind]));
     const ask: GroupAsk = { connectionId: c.id, address: event.address, actorId: event.actor.id, projectId, picked: projects.length < 2 || !!caps.select,
@@ -880,12 +882,17 @@ export class Im extends Service {
     void this.showAsk(c, ask, this.askContent(ask, caps));
   }
 
-  /** The project the person last wrote to on this connection, else the one their direct chat goes to. */
-  private lastProject(connectionId: string, tenantId: string, actorId: string, open: string[]): string | undefined {
+  /** Paired on the connection, wherever they write: a platform may give direct chats a tenant of their own. */
+  private pairedOn(connectionId: string, actorId: string): boolean {
+    return this.settings.identities.some(i => i.connectionId === connectionId && i.actorId === actorId);
+  }
+
+  /** `open` projects, the one the person last wrote to on this connection first, then the ones their conversations go to. */
+  private lastProject(connectionId: string, actorId: string, open: string[]): string[] {
     const wrote = this.store.all<{ project_id: string }>(`SELECT b.project_id FROM plugin_im_inbox i JOIN plugin_im_bindings b ON b.id = i.binding_id
       WHERE b.connection_id = ? AND json_extract(i.event_json, '$.actor.id') = ? ORDER BY i.seq DESC LIMIT 20`, connectionId, actorId).map(r => r.project_id);
-    const routed = this.settings.routes.filter(r => r.connectionId === connectionId && r.tenantId === tenantId && r.allowedActors.includes(actorId)).map(r => r.projectId).reverse();
-    return [...wrote, ...routed, ...open].find(id => open.includes(id));
+    const routed = this.settings.routes.filter(r => r.connectionId === connectionId && r.allowedActors.includes(actorId)).map(r => r.projectId).reverse();
+    return [...new Set([...wrote, ...routed, ...open])].filter(id => open.includes(id));
   }
 
   private askContent(ask: GroupAsk, caps: ResolvedImCapabilities): ImContent {
@@ -940,18 +947,52 @@ export class Im extends Service {
       return true;
     }
     const preset = kind as GroupPreset;
+    void this.showAsk(c, ask, { text: this.presetSaid(preset, project) });
+    this.usePreset(c.id, ask.address, ask.actorId, ask.projectId, preset);
+    return true;
+  }
+
+  private presetSaid(preset: GroupPreset, project: string): string {
     const said = { work: this.w("groupIsWork", { project }), status: this.w("groupIsStatus", { project }), chat: this.w("groupIsChat", { project }) }[preset];
-    void this.showAsk(c, ask, { text: `${said}\n${this.w("groupChangeLater")}` });
+    return `${said}\n${this.w("groupChangeLater")}`;
+  }
+
+  /** The group's route with the preset, the paired people let in; a route it already has only lets them in. True when it made the route. */
+  private usePreset(connectionId: string, address: ImAddress, actorId: string, projectId: string, preset: GroupPreset): boolean {
     const im = this.snapshot();
-    const where = { connectionId: c.id, tenantId: ask.address.tenantId, conversationId: ask.address.conversationId };
-    const paired = im.identities.filter(i => i.connectionId === c.id && i.tenantId === where.tenantId).map(i => i.actorId);
-    this.admit(im, where, [...new Set([...paired, ask.actorId])], "group", ask.projectId);
-    const i = im.routes.findIndex(r => r.connectionId === where.connectionId && r.tenantId === where.tenantId && r.conversationId === where.conversationId);
-    const { notify, ...fields } = GROUP_PRESETS[preset];
-    im.routes[i] = { ...im.routes[i], ...fields, notify: { ...notify } };
+    const where = { connectionId, tenantId: address.tenantId, conversationId: address.conversationId };
+    const paired = im.identities.filter(i => i.connectionId === connectionId).map(i => i.actorId);
+    const had = im.routes.some(r => r.connectionId === where.connectionId && r.tenantId === where.tenantId && r.conversationId === where.conversationId);
+    this.admit(im, where, [...new Set([...paired, actorId])], "group", projectId);
+    if (!had) {
+      const i = im.routes.findIndex(r => r.connectionId === where.connectionId && r.tenantId === where.tenantId && r.conversationId === where.conversationId);
+      const { notify, ...fields } = GROUP_PRESETS[preset];
+      im.routes[i] = { ...im.routes[i], ...fields, notify: { ...notify } };
+    }
     this.save(im);
-    this.ignored = this.ignored.filter(r => !(r.connectionId === c.id && r.tenantId === where.tenantId && r.conversationId === where.conversationId));
+    this.ignored = this.ignored.filter(r => !(r.connectionId === connectionId && r.tenantId === where.tenantId && r.conversationId === where.conversationId));
     this.changed();
+    return !had;
+  }
+
+  /** The projects a person paired on this connection may give a conversation, the one they used last first; none for anyone else. */
+  private projectsFor(c: Connection, actorId: unknown): { id: string; name: string }[] {
+    if (typeof actorId !== "string" || !this.pairedOn(c.id, actorId)) return [];
+    const projects = this.home.projects.list().filter(p => !p.archived);
+    return this.lastProject(c.id, actorId, projects.map(p => p.id)).map(id => ({ id, name: projects.find(p => p.id === id)!.name }));
+  }
+
+  /**
+   * An adapter's own setup made a conversation for a paired person: it becomes a channel of that kind, saying so there.
+   * One already allowed is left as it is.
+   */
+  private allowFor(c: Connection, request: { actorId: string; address: ImAddress; kind: string; projectId: string }): boolean {
+    const preset = request?.kind as GroupPreset;
+    if (!request?.address || !Object.hasOwn(GROUP_PRESETS, preset) || !this.projectsFor(c, request.actorId).some(p => p.id === request.projectId)) return false;
+    const address = { tenantId: String(request.address.tenantId), conversationId: String(request.address.conversationId) };
+    if (this.usePreset(c.id, address, request.actorId, request.projectId, preset)) {
+      this.tell(c, address, this.presetSaid(preset, this.home.projects.get(request.projectId)?.name ?? request.projectId));
+    }
     return true;
   }
 
