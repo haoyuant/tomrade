@@ -19,6 +19,7 @@ const run = (cmd, args, cwd = root) =>
 
 run("pnpm", ["build:backend"]);
 run("node", [path.join(here, "fetch-pi.mjs")]);
+run("node", [path.join(here, "fetch-npm.mjs")]);
 run("node", [path.join(here, "bundle-official-plugins.mjs")]);
 run("pnpm", ["--filter", "@tomradex/ui", "build"]);
 fs.rmSync(path.join(desktop, "ui"), { recursive: true, force: true });

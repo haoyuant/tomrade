@@ -20,7 +20,7 @@ packages/*/tests/.tmp-*/
 build/npm/
 apps/desktop/ui/
 apps/desktop/release/
-# The built-in agent's Pi, fetched by apps/desktop/scripts/fetch-pi.mjs
+# The built-in agent's Pi and the lent npm, fetched by apps/desktop/scripts/fetch-*.mjs
 apps/desktop/vendor/
 # The official starters the app carries, fetched by apps/desktop/scripts/bundle-official-plugins.mjs
 apps/desktop/official-plugins/

@@ -354,7 +354,9 @@ export function installDirs(host: Pick<CliHost, "env" | "home" | "platform">, pr
       ...(envValue(env, "NVM_SYMLINK") ? [envValue(env, "NVM_SYMLINK")!] : []),
       // Claude Code's own installer.
       w.join(home, ".local", "bin"),
-      w.join(home, ".bun", "bin")
+      w.join(home, ".bun", "bin"),
+      // Tomrade's own prefix, where agents installed with the borrowed npm land (the desktop app sets it; npm on Windows puts commands in the prefix itself).
+      ...(envValue(env, "TOMRADE_NPM_PREFIX") ? [envValue(env, "TOMRADE_NPM_PREFIX")!] : [])
     ];
   }
   const p = path.posix;
@@ -372,7 +374,9 @@ export function installDirs(host: Pick<CliHost, "env" | "home" | "platform">, pr
     ...versionDirs(p.join(env.NVM_DIR ?? p.join(home, ".nvm"), "versions/node"), "bin", p),
     ...versionDirs(env.FNM_DIR ? p.join(env.FNM_DIR, "node-versions") : undefined, "installation/bin", p),
     ...versionDirs(p.join(home, ".local/share/fnm/node-versions"), "installation/bin", p),
-    ...(platform === "darwin" ? versionDirs(p.join(home, "Library/Application Support/fnm/node-versions"), "installation/bin", p) : [])
+    ...(platform === "darwin" ? versionDirs(p.join(home, "Library/Application Support/fnm/node-versions"), "installation/bin", p) : []),
+    // Tomrade's own prefix, where agents installed with the borrowed npm land (the desktop app sets it) — last, like the shims on PATH.
+    ...(env.TOMRADE_NPM_PREFIX ? [p.join(env.TOMRADE_NPM_PREFIX, "bin")] : [])
   ];
 }
 

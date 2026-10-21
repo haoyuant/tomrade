@@ -10,6 +10,7 @@
     "build": "tsc -b",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "fetch:pi": "node scripts/fetch-pi.mjs",
+    "fetch:npm": "node scripts/fetch-npm.mjs",
     "bundle:official": "node scripts/bundle-official-plugins.mjs",
     "test:ui": "electron scripts/ui-regression.mjs",
     "eval:backlog": "electron scripts/backlog-eval.mjs",
