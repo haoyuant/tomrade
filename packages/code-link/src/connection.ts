@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parse as parseToml } from "smol-toml";
-import type { Git } from "@tomradex/storage";
+import type { Git } from "@tomradex/git";
 import type { McpProjectApproval } from "@tomradex/agent";
 import type { PortClash } from "@tomradex/mcp";
 import { outsideExtensionUrl } from "@tomradex/engine-pi";

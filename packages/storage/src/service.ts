@@ -11,7 +11,7 @@ import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/projects";
 import type {} from "@tomradex/write";
 import type {} from "./channels.js";
-import { GitFolder, GitMissingError, clearStaleIndexLock, cleanRemote, gitRunner, type Git, type GitCredential } from "./git.js";
+import { GitFolder, GitMissingError, clearStaleIndexLock, cleanRemote, gitRunner, type Git, type GitCredential } from "@tomradex/git";
 import { HUB_MANIFEST, emptyHub, hubProjectOf, mergeHubManifests, readHubManifest, writeHubManifest, type HubManifest, type HubBackend } from "./hub.js";
 import { LOG_DIR, appendLog, compactLog, parseLog, parseOpId, readLogs, toLine, type DeviceLog, type LogLine } from "./log.js";
 import { CORE_RULES, evidenceAttention, mergeStates, type Attention, type ConflictNote, type LogOp, type MergeState, type Renumbered, type TableRule } from "./merge.js";

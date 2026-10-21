@@ -10,7 +10,7 @@ import type {} from "@tomradex/items";
 import type {} from "@tomradex/repos";
 import type {} from "@tomradex/settings";
 import type { Author, Board, Item, Repo } from "@tomradex/domain";
-import { GitFolder, type Git } from "@tomradex/storage";
+import { GitFolder, type Git } from "@tomradex/git";
 import { HERDR_INSTALL } from "@tomradex/herdr";
 import { listDecisions } from "./decisions.js";
 import { branchFor, titleSlug } from "./keys.js";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Git } from "@tomradex/storage";
+import type { Git } from "@tomradex/git";
 import { classifyRemoteFailure, readRemoteIdentity, remoteFailureDetail, remoteFailureMessage } from "@tomradex/code-link";
 
 describe("remote reachability", () => {

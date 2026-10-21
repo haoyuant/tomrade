@@ -1,4 +1,4 @@
-import type { Git } from "@tomradex/storage";
+import type { Git } from "@tomradex/git";
 import { deliveredKeys, keysInText, parseBranch, subjectKey } from "./keys.js";
 import { remoteFailureDetail, remoteFailureMessage } from "./remote.js";
 

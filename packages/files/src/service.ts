@@ -23,7 +23,7 @@ import { createGitBackend } from "./git-backend.js";
 import { BINARY_LIMIT, GitFileStore, normalizeRel } from "./git-store.js";
 import { DEFAULT_AGENT_POLICY, collidesWithProject, listingAt, remoteDirectory } from "./git-sync.js";
 import { buildAgentIndex, type AgentIndex } from "./agent-index.js";
-import { gitRunner } from "@tomradex/storage";
+import { gitRunner } from "@tomradex/git";
 import { FilesArchive, boundDirectory, storeId } from "./scopes.js";
 import { MIGRATIONS, OpsStore, RemoteStore, TABLES, type FileOpKind, type FileOpRow, type RemoteRow } from "./store.js";
 import { mimeOf } from "./mime.js";

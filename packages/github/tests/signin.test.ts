@@ -13,7 +13,7 @@ import path from "node:path";
 import { afterAll, expect, it } from "vitest";
 import { fresh, settle } from "@tomradex/testkit";
 import { Settings } from "@tomradex/settings";
-import { credentialArgs } from "@tomradex/storage";
+import { credentialArgs } from "@tomradex/git";
 import GitHubAccount, { type Cipher } from "@tomradex/github";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-signin-"));

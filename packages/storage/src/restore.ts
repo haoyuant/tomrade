@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { RemoteRef } from "@tomradex/hub";
-import { GitFolder, cleanRemote, cloneBranch, probeUrl, type Git } from "./git.js";
+import { GitFolder, cleanRemote, cloneBranch, probeUrl, type Git } from "@tomradex/git";
 import type { HubManifest, HubProject } from "./hub.js";
 import { ARTIFACT_DIR, MANIFEST, projectIdOf, readClone, type ProjectState } from "./state.js";
 import type { RemoteTarget, StorageProvider } from "./types.js";

@@ -1,4 +1,4 @@
-import { gitRunner, type GitCredential } from "@tomradex/storage";
+import { gitRunner, type GitCredential } from "@tomradex/git";
 import { GitFileStore, type GitRemoteTarget } from "./git-store.js";
 import type { FilesBackend, FilesConnection } from "./types.js";
 

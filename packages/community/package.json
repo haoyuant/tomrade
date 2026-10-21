@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
+    "@tomradex/git": "workspace:*",
     "@tomradex/github": "workspace:*",
     "@tomradex/hub-cloud": "workspace:*",
     "@tomradex/ipc": "workspace:*",

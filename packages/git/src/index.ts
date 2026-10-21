@@ -2,9 +2,25 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
-const exec = (binary: string, args: string[], options: Parameters<typeof execFile>[2], stdin?: string): Promise<{ stdout: string | Buffer; stderr: string | Buffer }> =>
-  new Promise((resolve, reject) => {
-    const child = execFile(binary, args, options, (error, stdout, stderr) => {
+export interface ExecGitOptions {
+  cwd?: string;
+  /** Laid over the process's environment and GIT_ENV. */
+  env?: Record<string, string>;
+  maxBuffer?: number;
+  timeout?: number;
+  stdin?: string;
+}
+
+/**
+ * One git command, never prompting. A failure rejects with execFile's error
+ * carrying `stdout` and `stderr`; `encoding: "buffer"` keeps the output as bytes.
+ */
+export function execGit(binary: string, args: string[], opts: ExecGitOptions & { encoding: "buffer" }): Promise<{ stdout: Buffer; stderr: Buffer }>;
+export function execGit(binary: string, args: string[], opts?: ExecGitOptions & { encoding?: "utf8" }): Promise<{ stdout: string; stderr: string }>;
+export function execGit(binary: string, args: string[], opts: ExecGitOptions & { encoding?: "buffer" | "utf8" } = {}): Promise<{ stdout: string | Buffer; stderr: string | Buffer }> {
+  const { env, stdin, encoding = "utf8", ...rest } = opts;
+  return new Promise((resolve, reject) => {
+    const child = execFile(binary, args, { ...rest, encoding, env: { ...process.env, ...GIT_ENV, ...env } }, (error, stdout, stderr) => {
       if (error) {
         Object.assign(error, { stdout, stderr });
         reject(error);
@@ -12,6 +28,7 @@ const exec = (binary: string, args: string[], options: Parameters<typeof execFil
     });
     if (stdin !== undefined) child.stdin?.end(stdin);
   });
+}
 
 export class GitMissingError extends Error {
   constructor(public readonly binary: string) {
@@ -84,8 +101,8 @@ export function gitRunner(binary: string, defaultCwd?: string, credentials?: () 
     const argv = [...credentialArgs(credentials?.() ?? []), ...args];
     for (let attempt = 0; ; attempt++) {
       try {
-        const { stdout, stderr } = await exec(binary, argv, { cwd, env: { ...process.env, ...GIT_ENV }, maxBuffer: 16 * 1024 * 1024 }, opts.stdin);
-        return { stdout: stdout.toString(), stderr: stderr.toString(), code: 0 };
+        const { stdout, stderr } = await execGit(binary, argv, { cwd, maxBuffer: 16 * 1024 * 1024, stdin: opts.stdin });
+        return { stdout, stderr, code: 0 };
       } catch (error) {
         const e = error as { code?: number | string | null; signal?: string | null; stderr?: string | Buffer; stdout?: string | Buffer };
         if (e.code === "ENOENT") throw new GitMissingError(binary);

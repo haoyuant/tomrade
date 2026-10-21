@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { GIT_ENV, cleanRemote, type Git } from "@tomradex/storage";
+import { GIT_ENV, cleanRemote, type Git } from "@tomradex/git";
 
 export type RemoteFailure = "credentials" | "network" | "helper" | "unknown";
 

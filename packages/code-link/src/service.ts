@@ -21,7 +21,7 @@ import { normalizeRemote, sameRepository } from "@tomradex/repos";
 import type {} from "@tomradex/settings";
 import type {} from "@tomradex/write";
 import type { Author, Item, Repo } from "@tomradex/domain";
-import { GitFolder, gitRunner, type Git } from "@tomradex/storage";
+import { GitFolder, gitRunner, type Git } from "@tomradex/git";
 import { CURSOR_HOOK_SCRIPT, cursorHookReader } from "./cursor-hooks.js";
 import { keysInText, parseBranch, subjectPr } from "./keys.js";
 import { githubPull, readPull, type ForgePull } from "./forge.js";

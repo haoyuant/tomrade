@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { cleanRemote } from "@tomradex/storage";
+import { cleanRemote } from "@tomradex/git";
 
 /** Two spellings of one repository read the same: no credential, no trailing `.git`, no trailing slash. */
 export const normalizeRemote = (remote: string): string => cleanRemote(remote.trim()).replace(/\/+$/, "").replace(/\.git$/, "");

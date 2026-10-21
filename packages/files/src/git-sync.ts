@@ -1,8 +1,7 @@
-import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { GIT_ENV, GitFolder, cleanRemote, type Git } from "@tomradex/storage";
+import { GitFolder, cleanRemote, execGit, type Git } from "@tomradex/git";
 import type { FileListPreference, FilesAgentPolicy, FilesSyncPolicy, ListMode, PathPolicy, PathPreference, ProjectRepository, SyncMode } from "./types.js";
 
 /** A version made portable: the pair a ticket pins, and where the file was then. Its bytes travel beside the record. */
@@ -260,9 +259,7 @@ export class GitProjection {
   async read(rel: string): Promise<Buffer | null> {
     const entry = this.entries.get(this.prefix + rel);
     if (!entry) return null;
-    return new Promise((resolve, reject) =>
-      execFile(this.binary, ["cat-file", "blob", entry.oid], { cwd: this.dir, encoding: "buffer", maxBuffer: 128 * 1024 * 1024, env: { ...process.env, ...GIT_ENV } }, (error, stdout) => (error ? reject(error) : resolve(stdout as Buffer)))
-    );
+    return (await execGit(this.binary, ["cat-file", "blob", entry.oid], { cwd: this.dir, encoding: "buffer", maxBuffer: 128 * 1024 * 1024 })).stdout;
   }
 
   /** Put bytes at a path, or remove it with null. Bytes the remote already has there cost nothing. */
