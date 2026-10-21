@@ -105,7 +105,7 @@ const run = async () => {
   check("a pasted key picks its provider", await wait(async () => (await texts('[data-testid="quick-model"] .chip-opt.sel'))[0] === "Anthropic" && (await texts('[data-testid="quick-model"] .meta-txt')).some((t) => t === "Looks like a key from Anthropic."), "guess"));
   await shot("onboarding-00-connect");
   await press(`document.querySelector('[data-testid="setup-later"]')`);
-  check("Set up later opens the sample project, and the screen stays away", await wait(async () => !(await has('[data-testid="first-run-setup"]')) && seen().includes("setup-screen") && (await $(`location.hash`)).startsWith(`#/p/${sample.id}/`), "later"));
+  check("Set up later opens the sample project, and the screen stays away", await wait(async () => !(await has('[data-testid="first-run-setup"]')) && seen().includes(`setup-screen:${ctx.hub.deviceId}`) && (await $(`location.hash`)).startsWith(`#/p/${sample.id}/`), "later"));
   const lesson = () => $(`(() => { const d = document.querySelector('aside.detail'); const r = d?.getBoundingClientRect(); return d ? { label: d.getAttribute('aria-label'), left: r.left, right: r.right, width: innerWidth } : null; })()`);
   check("on its first lesson, open beside the board", await wait(async () => (await lesson())?.label?.endsWith("Drag this ticket to Done"), "first lesson"), await lesson());
   const shown = await lesson();
