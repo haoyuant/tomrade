@@ -31,6 +31,10 @@ const paneKey = (state: WindowState): Key => {
 
 type Leaf = Extract<Layout, { type: "leaf" }>;
 
+/** Sessions whose ticket finished while the agent goes on in their pane, to the row it goes on as; not those put in a cell to read. */
+const carriedOf = (state: WindowState, toRead: Set<string>): Map<string, string> =>
+  new Map(state.sessions.flatMap((s) => (s.continuedIn && !toRead.has(s.id) ? [[s.id, s.continuedIn] as const] : [])));
+
 /**
  * A pick or reveal that found its pane in a cell under another ticket of the same agent: the cell now reads as the one
  * picked. A terminal and the session its agent claimed are one row, and the cell keeps the id it has.
@@ -585,7 +589,7 @@ function Split({ node, render, onRatio }: { node: Extract<Layout, { type: "split
 export function App() {
   const [state, setState] = useState<WindowState | null>(null);
   const [look, setLook] = useState<Look | null>(null);
-  const [layout, setLayout] = useState<Layout | null>(null);
+  const [laid, setLayout] = useState<Layout | null>(null);
   const [focused, setFocused] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [outsideOpen, setOutsideOpen] = useState(false);
@@ -664,10 +668,8 @@ export function App() {
     for (const [id, at] of asked.current) if (known.has(id) || now - at > ASKED_GRACE_MS) asked.current.delete(id);
     const key = paneKey(state);
     const kept = prune(current.current ?? state.layout, new Set([...known, ...asked.current.keys()]));
-    // A ticket finished while the agent goes on in its pane: the cell follows the pane.
-    const carried = new Map(state.sessions.flatMap((s) => (s.continuedIn && !toRead.current.has(s.id) ? [[s.id, s.continuedIn] as const] : [])));
     // One pane in one cell: a cell that would show it a second time is emptied, and that is saved.
-    const pruned = dedupe(carryOn(kept, carried, key), key, focusedNow.current);
+    const pruned = dedupe(carryOn(kept, carriedOf(state, toRead.current), key), key, focusedNow.current);
     const placeable = placeableIds(state);
     const fresh = seen.current ? placeable.filter((id) => !seen.current!.has(id)) : [];
     seen.current = new Set([...(seen.current ?? []), ...placeable]);
@@ -704,19 +706,21 @@ export function App() {
 
   // The selected cell's row comes into view in the list.
   const side = useRef<HTMLElement>(null);
-  const selectedId = layout ? selectedCell(leaves(layout), focused).sessionId : null;
+  const selectedId = laid ? selectedCell(leaves(laid), focused).sessionId : null;
   useEffect(() => {
     side.current?.querySelector('.cs-row[aria-current="true"]')?.scrollIntoView({ block: "nearest" });
   }, [selectedId]);
 
-  if (!state || !layout) return null;
+  if (!state || !laid) return null;
+  const key = paneKey(state);
+  // Drawn handed over already, before the effect saves it: a cell whose ticket just finished keeps its terminal attached.
+  const layout = carryOn(laid, carriedOf(state, toRead.current), key);
   const cells = leaves(layout);
   const target = selectedCell(cells, focused);
   // An archived session picked into a cell is in the archive's rows until the next state carries it.
   const byId = new Map([...(state.archive.rows ?? []), ...state.sessions].map((s) => [s.id, s]));
   const groups = sidebarRows(state.sessions, state.terminals);
   const terminalsById = new Map(state.terminals.map((t) => [t.id, t]));
-  const key = paneKey(state);
   // A terminal whose agent claimed a ticket shows that session in its own cell, on the pane it already has.
   const sessionIn = (id: string | null) => (id ? byId.get(terminalsById.get(id)?.sessionId ?? id) : undefined);
   const rowsOf = (c: Leaf) => (c.sessionId ? [c.sessionId, terminalsById.get(c.sessionId)?.sessionId ?? c.sessionId] : []);
