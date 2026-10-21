@@ -24,6 +24,7 @@ export const imApi = ({ host }: Facade): ImApi => ({
         } } : {}),
         ...(session.identity ? { identity: session.identity } : {}),
         ...(session.links ? { links: session.links } : {}),
+        ...(session.describe ? { describe: host.back(session.describe.bind(session), `IM adapter ${spec.id} describe`) } : {}),
         close: host.back(session.close.bind(session), `IM adapter ${spec.id} close`)
       };
     } }));

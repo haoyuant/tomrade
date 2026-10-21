@@ -52,6 +52,8 @@ export const ImSettings = z.preprocess(value => kinds(upgrade(value)), z.object(
     id, connectionId: id, tenantId: id, conversationId: id,
     /** What the conversation is, whatever its switches allow; a route without it is guessed from them. */
     kind: z.enum(["dm", "group"]).optional(),
+    /** The conversation's name as the platform shows it, kept for Settings; the id stands without one. */
+    label: z.string().max(100).optional(),
     projectId: id, boardId: id.nullable().default(null), engine: id.optional(),
     /** Engine option overrides for threads this route opens (model, effort…). */
     options: z.record(z.string(), z.unknown()).optional(),
