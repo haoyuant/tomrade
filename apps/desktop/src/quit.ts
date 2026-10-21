@@ -5,7 +5,6 @@ import type {} from "@tomradex/code-link";
 import type {} from "@tomradex/db";
 import type {} from "@tomradex/storage";
 import { DESKTOP_WORDS } from "./words.js";
-import { bestEffort } from "@tomradex/contracts";
 
 let approved = false;
 let pending: Promise<boolean> | null = null;
@@ -55,7 +54,7 @@ async function ask(ctx: Context): Promise<boolean> {
   putAway();
   const storage = ctx.get("storage");
   if (!storage) return true;
-  await within(bestEffort(storage.flushAll("quit"), ctx.logger("quit"), "flushing on quit"), FLUSH_MS);
+  await within(storage.flushAll("quit").catch(() => undefined), FLUSH_MS);
   return settleUnsynced(ctx);
 }
 
@@ -103,7 +102,7 @@ async function settleUnsynced(ctx: Context): Promise<boolean> {
     }
     if (process.platform === "darwin") app.hide();
     // A full publish this time: it may fetch and merge, which a quit's own flush never does.
-    await within(Promise.all(left.map((p) => bestEffort(storage.publish(p.projectId, "quit"), ctx.logger("quit"), `publishing ${p.projectId} on quit`))), WAIT_MS);
+    await within(Promise.all(left.map((p) => storage.publish(p.projectId, "quit").catch(() => undefined))), WAIT_MS);
   }
 }
 
@@ -113,7 +112,7 @@ async function settleUnsynced(ctx: Context): Promise<boolean> {
  */
 export async function leaveOnSignal(ctx: Context): Promise<void> {
   const storage = ctx.get("storage");
-  if (storage) await within(bestEffort(storage.flushAll("signal"), ctx.logger("quit"), "flushing on a signal"), FLUSH_MS);
+  if (storage) await within(storage.flushAll("signal").catch(() => undefined), FLUSH_MS);
 }
 
 function putAway(): void {

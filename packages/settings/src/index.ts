@@ -7,8 +7,7 @@ import type {} from "@tomradex/hub";
 import type {} from "@tomradex/ipc";
 import { agentAccess } from "./agent.js";
 import { mapSecrets, mapStrings, SEALED, type SecretCipher } from "./secrets.js";
-import type { SettingsReader } from "@tomradex/contracts";
-import { readJsonOr, writeJsonAtomic } from "@tomradex/contracts";
+import { readJsonOr, type SettingsReader, writeJsonAtomic } from "@tomradex/contracts";
 
 export { mapSecrets, SEALED, type SecretCipher } from "./secrets.js";
 

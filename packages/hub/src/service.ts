@@ -6,8 +6,7 @@ import { Context, Service } from "cordis";
 import { z } from "zod";
 import type {} from "@tomradex/ipc";
 import { Catalog, RemoteRef, type CatalogDamage } from "./catalog.js";
-import type { HubReader } from "@tomradex/contracts";
-import { readJsonOr, writeJsonAtomic } from "@tomradex/contracts";
+import { type HubReader, readJsonOr, writeJsonAtomic } from "@tomradex/contracts";
 
 declare module "cordis" {
   interface Context {
