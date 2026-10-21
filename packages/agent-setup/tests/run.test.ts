@@ -157,6 +157,34 @@ describe("the install step", () => {
     expect(end.output).toContain("EACCES");
   });
 
+  it("retries npm once in Tomrade's own folder when it cannot write the system's global one, and says so", async () => {
+    const own = "/data/borrowed-node/global";
+    const { exec, ran } = fakeExec([
+      { code: 243, output: "npm error code EACCES\nnpm error syscall mkdir\nnpm error path /usr/lib/node_modules/@x" },
+      { code: 0, output: "added 1 package" }
+    ]);
+    const { seen, deps: d } = deps({
+      installers: [NPM],
+      host: host({ env: { PATH: "/usr/bin", TOMRADE_NPM_PREFIX: own } }),
+      // the locator reads TOMRADE_NPM_PREFIX: what landed there is found
+      detect: async () => (ran.length >= 2 ? { ready: true, version: "2.0.0" } : { ready: false }),
+      exec
+    });
+    const end = await runInstall(d);
+    expect(ran).toEqual([
+      ["npm", "install", "-g", "--loglevel", "http", "@x/cli"],
+      ["npm", "install", "-g", "--loglevel", "http", "--prefix", own, "@x/cli"]
+    ]);
+    expect(end).toMatchObject({ phase: "done", installer: "npm", prefix: own, version: "2.0.0" });
+    expect(seen.filter((p) => p.phase === "running").map((p) => p.prefix)).toEqual([undefined, own]);
+
+    // once only: a second permission failure is the answer
+    const twice = fakeExec([{ code: 1, output: "npm error code EACCES" }, { code: 1, output: "npm error code EACCES" }]);
+    const again = await runInstall({ ...deps({ installers: [NPM], host: host({ env: { TOMRADE_NPM_PREFIX: own } }) }).deps, exec: twice.exec });
+    expect(twice.ran).toHaveLength(2);
+    expect(again).toMatchObject({ phase: "failed", prefix: own, failure: { kind: "permission" } });
+  });
+
   it("streams the installer's latest lines and its start time before the run ends", async () => {
     let finish: (r: SetupRunResult) => void = () => {};
     const exec: typeof runCommand = (_launch, _args, opts) => {
