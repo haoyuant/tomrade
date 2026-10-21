@@ -4,6 +4,7 @@ import { errorMessage } from "@tomradex/contracts";
 import { localAvailability, pooledEngine } from "@tomradex/engine-kit";
 import type {} from "@tomradex/mcp";
 import type { AcpAgent, AcpOptions, Catalog } from "./agent.js";
+import { AcpSignIn } from "./auth.js";
 import { askCatalog, keptCatalogs } from "./catalog.js";
 import { AcpRuntime } from "./runtime.js";
 
@@ -18,7 +19,8 @@ export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAg
   const kept = keptCatalogs(ctx);
   Object.assign(catalog, kept.read(agent.id));
   const remember = () => kept.write(agent.id, catalog);
-  const turn = pooledEngine(ctx, { create: (input) => new AcpRuntime(ctx, agent, catalog, input, remember) });
+  const auth = agent.acpAuth ? new AcpSignIn(ctx, agent) : null;
+  const turn = pooledEngine(ctx, { create: (input) => new AcpRuntime(ctx, agent, catalog, input, remember, auth ? () => auth.signedOut() : undefined) });
   const probe = agent.probe;
   const check = localAvailability(ctx, {
     engineId: agent.id,
@@ -26,7 +28,8 @@ export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAg
     cli: agent.cli,
     install: agent.install,
     ...(agent.desktopApp ? { desktopApp: agent.desktopApp } : {}),
-    ...(probe ? { signIn: { args: probe.args, says: (output: string) => probe.says(output, catalog), reason: probe.reason, need: probe.need } }
+    ...(auth ? { signIn: { ask: () => auth.signedIn(), reason: `${agent.title} is not signed in` } }
+      : probe ? { signIn: { args: probe.args, says: (output: string) => probe.says(output, catalog), reason: probe.reason, need: probe.need } }
       : agent.signedIn ? { signIn: { ask: async () => agent.signedIn!.ask(), reason: agent.signedIn.reason } } : {})
   });
   const quit = new AbortController();
@@ -65,10 +68,15 @@ export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAg
     ...(agent.steer ? { steering: "forward" as const } : {}),
     async available(opts) {
       // A recheck is the person's own: once they have installed or signed in, the list is asked for again at once.
-      if (opts?.fresh) failedAt = 0;
+      if (opts?.fresh) {
+        failedAt = 0;
+        auth?.recheck();
+      }
       const state = await check(opts);
       if (state.ok) ask();
-      return state;
+      // Its terminal sign-in is the command the agent itself lists, known only once it was asked.
+      const signIn = auth && state.need === "sign-in" && agent.setup ? await auth.terminalCommand() : undefined;
+      return signIn ? { ...state, setup: { ...agent.setup!, signIn } } : state;
     },
     local: {
       ...(agent.setup ? { setup: agent.setup } : {}),
@@ -79,6 +87,7 @@ export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAg
         ...(catalog.efforts.length ? [{ key: "effort", title: "Effort", choices: catalog.efforts }] : [])
       ],
       checkCli: (file) => agent.cli.check(file),
+      ...(auth ? { signIn: auth } : {}),
       diagnostics: {
         logs: () => agent.diagnostics?.logs?.() ?? [],
         facts: () => ({ models: catalog.models.slice(0, 40).map((m) => m.value).join(",") || "unknown", ...agent.diagnostics?.facts?.(catalog) })
@@ -89,6 +98,7 @@ export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAg
 }
 
 export { PERMISSION_CHOICES, isTomradeTool, policyOf, wrappedTool, type AcpAgent, type AcpOptions, type Catalog, type Policy, type RequestUsage } from "./agent.js";
+export { AcpSignIn, authMethodsOf, commandLine, type AcpAuthMethod } from "./auth.js";
 export { acpConnection, AUTH_REQUIRED } from "./connection.js";
 export { AcpRuntime } from "./runtime.js";
-export { LocalAgents, LocalAgents as default } from "./local.js";
+export { LocalAgents, LocalAgents as default, type OwnAgent } from "./local.js";

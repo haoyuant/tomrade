@@ -87,6 +87,8 @@ export interface AcpAgent<O extends AcpOptions = AcpOptions> {
   probe?: { args: string[]; says(output: string, catalog: Catalog): boolean | null; reason: string; need?: EngineNeed };
   /** Whether it is signed in, read without running it (its own settings); null: no clear answer, taken as yes. */
   signedIn?: { ask(): boolean | null | Promise<boolean | null>; reason: string };
+  /** It signs in the ACP way — the `authMethods` its `initialize` lists — and is signed in once a session opens without `auth_required`. */
+  acpAuth?: boolean;
   /** The agent's own logs and setup facts, for the troubleshooter; the models it offers are added to the facts. */
   diagnostics?: { logs?(): string[]; facts?(catalog: Catalog): Record<string, string> };
   /** Its desktop app, named when the app is installed without the CLI. */

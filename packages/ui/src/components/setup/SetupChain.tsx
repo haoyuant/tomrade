@@ -75,9 +75,32 @@ function InstallRunning({ progress, onRetry }: { progress?: EngineSetupProgress;
   );
 }
 
-function StepDetail({ step, title, insideApp, onRetry }: { step: ChainStep; title: string; insideApp?: string; onRetry: (registry?: string) => void }) {
+/** The ways the agent itself offers to sign in: the one running, the others to switch to, and what only a person can do. */
+function SignInMethods({ progress, onSignIn }: { progress?: EngineSetupProgress; onSignIn: (method: string) => void }) {
+  const { t } = useI18n();
+  const methods = progress?.methods ?? [];
+  if (!methods.length) return null;
+  const current = methods.find((m) => m.id === progress?.method);
+  return (
+    <span className="setup-methods" data-testid="chain-signin-methods">
+      {current && <span className="meta-txt">{t("setup.signInWith", { method: current.name })}</span>}
+      {methods.filter((m) => m !== current).map((m) =>
+        m.kind === "other" ? (
+          <span key={m.id} className="meta-txt">{t("setup.signInByHand", { method: m.description ? `${m.name} — ${m.description}` : m.name })}</span>
+        ) : (
+          <button key={m.id} type="button" className="link-btn setup-action" data-testid={`chain-signin-method-${m.id}`} onClick={() => onSignIn(m.id)}>
+            {t("setup.signInInstead", { method: m.name })} →
+          </button>
+        )
+      )}
+    </span>
+  );
+}
+
+function StepDetail({ step, title, insideApp, onRetry, onSignIn }: { step: ChainStep; title: string; insideApp?: string; onRetry: (registry?: string) => void; onSignIn: (method: string) => void }) {
   const { t } = useI18n();
   const progress = step.progress;
+  const methods = step.id === "sign-in" && <SignInMethods progress={progress} onSignIn={onSignIn} />;
   if (step.state === "failed") {
     const failure: EngineSetupFailure | undefined = progress?.failure ?? (step.tried ? { kind: "exit", message: step.tried.error ?? "" } : undefined);
     if (!failure) return null;
@@ -91,6 +114,7 @@ function StepDetail({ step, title, insideApp, onRetry }: { step: ChainStep; titl
             : known ? t(known) : t("setup.failExit", { error: failure.message })}
         {step.id === "test" && insideApp && <> {t("setup.insideApp", { app: insideApp })}</>}
         {step.id === "install" && <MirrorRetry progress={progress} onRetry={onRetry} />}
+        {methods}
         {progress?.output && (
           <details className="eng-try-details">
             <summary>{t("setup.failOutput")}</summary>
@@ -105,7 +129,7 @@ function StepDetail({ step, title, insideApp, onRetry }: { step: ChainStep; titl
     if (step.tried?.ok) return <span className="meta-txt" data-testid="chain-reply">{t("setup.testReply", { reply: step.tried.reply ?? "" })}</span>;
     return null;
   }
-  if (step.state === "active") return step.id === "install" ? <InstallRunning progress={progress} onRetry={onRetry} /> : <span className="meta-txt">{t("setup.signingIn")}</span>;
+  if (step.state === "active") return step.id === "install" ? <InstallRunning progress={progress} onRetry={onRetry} /> : <span className="meta-txt">{t("setup.signingIn")}{methods}</span>;
   if (step.state === "waiting") {
     return (
       <span className="meta-txt">
@@ -115,6 +139,7 @@ function StepDetail({ step, title, insideApp, onRetry }: { step: ChainStep; titl
             {t("setup.openSignIn", { title })} →
           </button>
         )}
+        {methods}
       </span>
     );
   }
@@ -172,7 +197,7 @@ export function SetupChain({ engine, onTroubleshoot }: { engine: EngineView; onT
               {icon(step)}
               <div className="setup-step-body">
                 <span>{t(step.official ? "setup.stepInstallOfficial" : STEP_LABELS[step.id], { title: engine.title })}</span>
-                <StepDetail step={step} title={engine.title} insideApp={engine.cli?.insideApp} onRetry={chain.retry} />
+                <StepDetail step={step} title={engine.title} insideApp={engine.cli?.insideApp} onRetry={chain.retry} onSignIn={chain.signInWith} />
               </div>
             </li>
           ))}

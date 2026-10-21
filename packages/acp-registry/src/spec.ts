@@ -42,27 +42,28 @@ const options: z.ZodType<LocalAgentOptions> = z.object({
 
 /**
  * A registry manifest as a local-agent spec, the same shape a plugin would
- * declare: launched over ACP through `npx` (unpinned, so a global install
- * decides the version), installed with `npm install -g`, signed in the way the
- * agent itself asks — the registry only lists agents that support that.
+ * declare: launched over ACP through `npx` at the version the registry pins,
+ * installed first with `npm install -g` (where npx then finds it), signed in
+ * the way the agent itself lists — the registry only lists agents that do.
  */
 export function specOf(added: AddedAgent): LocalAgentSpec {
   return {
     id: `registry:${added.id}`,
     title: added.name,
     cli: { name: "npx" },
-    install: "it runs through npx, which installing Node.js provides — {install}",
+    install: "{install} — npm comes with Node.js, or with Tomrade itself",
     setup: {
       // The installer, not a bare command: the one-click chain runs it through the system's npm or Tomrade's bundled one (TOM-507).
       install: [{ npm: added.package }],
       ...(added.repository ? { docs: added.repository } : {}),
       download: "https://nodejs.org/en/download"
     },
-    signIn: `run \`npx ${added.package}\` in a terminal and sign in there`,
+    signIn: `sign in to ${added.name} from its setup in Settings`,
     options,
     acp: {
       permissionModes: { default: "ask", choices: [PERMISSION_CHOICES["full-access"], PERMISSION_CHOICES.ask, PERMISSION_CHOICES["read-only"]] },
-      args: () => ["--yes", added.package, ...added.args],
+      // Installed, the pinned version needs no registry: npx reads what it knows first.
+      args: () => ["--yes", "--prefer-offline", added.package, ...added.args],
       ...(Object.keys(added.env).length ? { env: () => ({ ...added.env }) } : {})
     }
   };

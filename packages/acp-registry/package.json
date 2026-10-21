@@ -21,6 +21,7 @@
     "@tomradex/agent": "workspace:*",
     "@tomradex/contracts": "workspace:*",
     "@tomradex/engine-acp": "workspace:*",
+    "@tomradex/engine-kit": "workspace:*",
     "@tomradex/ipc": "workspace:*",
     "@tomradex/plugin-sdk": "workspace:*",
     "@tomradex/settings": "workspace:*",

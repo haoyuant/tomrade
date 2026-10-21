@@ -138,6 +138,28 @@ export interface EngineSetupProgress {
   url?: string;
   /** Signing in needs the agent's own terminal session (`setup.signIn`); Tomrade keeps watching until it is signed in. */
   terminal?: boolean;
+  /** The ways the agent itself offers to sign in (`local.signIn`), and the one this step runs. */
+  methods?: EngineSignInMethod[];
+  method?: string;
+}
+
+/** One way an agent offers to sign in, read from the agent itself. */
+export interface EngineSignInMethod {
+  id: string;
+  name: string;
+  description?: string;
+  /** `agent`: Tomrade asks and the agent signs in itself (a browser); `terminal`: the person runs it in a terminal; `other`: what the description says, by hand. */
+  kind: "agent" | "terminal" | "other";
+}
+
+/** Signing in through the agent's own protocol (ACP's `authMethods`), not a command of its CLI. */
+export interface EngineSignIn {
+  methods(signal: AbortSignal): Promise<EngineSignInMethod[]>;
+  /**
+   * An `agent` method runs until the agent says it is done, its output passed along; it throws with the
+   * agent's words when it fails. A `terminal` one is only picked: it becomes `setup.signIn`, which the person runs.
+   */
+  start(methodId: string, opts: { signal: AbortSignal; onOutput(text: string): void }): Promise<void>;
 }
 
 /**
@@ -262,6 +284,8 @@ export interface EngineLocal {
   /** What the engine's own configuration lets its agent run; absent when Tomrade cannot read it. */
   commands?: EngineCommands;
   mcpLink?: EngineMcpLink;
+  /** It signs in through its own protocol; setup runs this in place of `setup.signInRun`. */
+  signIn?: EngineSignIn;
 }
 
 /** The flat members an engine had before they were grouped; `Agent.engine` still maps them once, at registration. */

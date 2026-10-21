@@ -19,6 +19,9 @@
       "path": "../engine-acp"
     },
     {
+      "path": "../engine-kit"
+    },
+    {
       "path": "../ipc"
     },
     {

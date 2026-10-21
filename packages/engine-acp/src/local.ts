@@ -28,6 +28,11 @@ declare module "cordis" {
 }
 
 type Spec = LocalAgentSpec<LocalAgentOptions>;
+/** What only the app's own registrations give: a locator of their own, and signing in the ACP way. */
+export interface OwnAgent {
+  cli?: CliLocator;
+  acpAuth?: boolean;
+}
 /** A spec whose setup the app has written out as the commands it runs. */
 type Written = Omit<Spec, "setup"> & { setup?: EngineSetup };
 
@@ -114,7 +119,7 @@ function pluginLink(ctx: Context, link: Extract<NonNullable<Spec["mcpLink"]>, { 
 /** In a terminal it reaches Tomrade through its own connection: `terminal: { via: "link" }`, or the flat `terminalViaLink` of SDK 0.2.22 and before. */
 const viaLink = (acp: NonNullable<Spec["acp"]>) => (typeof acp.terminal === "object" ? acp.terminal.via === "link" : !!acp.terminalViaLink);
 
-function acpAgentOf(spec: Written, locator: CliLocator): AcpAgent<AcpOptions> {
+function acpAgentOf(spec: Written, locator: CliLocator, own: OwnAgent): AcpAgent<AcpOptions> {
   const acp = spec.acp!;
   const options = spec.options as unknown as AcpAgent<AcpOptions>["options"];
   return {
@@ -140,6 +145,7 @@ function acpAgentOf(spec: Written, locator: CliLocator): AcpAgent<AcpOptions> {
     ...(spec.signIn ? { signIn: spec.signIn } : {}),
     ...(spec.probe ? { probe: spec.probe } : {}),
     ...(spec.signedIn ? { signedIn: spec.signedIn } : {}),
+    ...(own.acpAuth ? { acpAuth: true } : {}),
     ...(spec.diagnostics ? { diagnostics: spec.diagnostics } : {}),
     ...(spec.cli.desktopApp ? { desktopApp: spec.cli.desktopApp } : {})
   };
@@ -201,9 +207,9 @@ function written(spec: Spec): Written {
 }
 
 /** Everything one spec stands for, on a context that has the agent and the MCP server. */
-function apply(ctx: Context, given: Spec): void {
+function apply(ctx: Context, given: Spec, own: OwnAgent): void {
   const spec = written(given);
-  const locator = localCli(spec.cli.name, { bundled: spec.cli.bundled ? (host) => spec.cli.bundled!(host) : null });
+  const locator = own.cli ?? localCli(spec.cli.name, { bundled: spec.cli.bundled ? (host) => spec.cli.bundled!(host) : null });
   const cli = cliHandle(ctx, spec.id, locator);
   const optionsOf = (): LocalAgentOptions => {
     const raw = ctx.get("agent")?.settingsOf().engines[spec.id] ?? {};
@@ -218,7 +224,7 @@ function apply(ctx: Context, given: Spec): void {
     : "cli" in link
       ? userMcpLink(ctx, { engineId: spec.id, cli: locator, file: () => link.cli.file(), configuredUrl: () => link.cli.configuredUrl(), add: (url) => link.cli.add(url), remove: () => link.cli.remove() })
       : pluginLink(ctx, link, io);
-  const base = spec.acp ? createAcpEngine(ctx, acpAgentOf(spec, locator)) : terminalEngine(ctx, spec, locator);
+  const base = spec.acp ? createAcpEngine(ctx, acpAgentOf(spec, locator, own)) : terminalEngine(ctx, spec, locator);
   const engine: Engine = { ...base, local: { ...base.local, ...(mcpLink ? { mcpLink } : {}) } };
   ctx.agent.engine(engine);
   const lend = spec.lend;
@@ -255,7 +261,7 @@ export class LocalAgents extends Service {
   }
 
   /** Goes with the plugin that registered it, or when the answer is called. */
-  register(spec: Spec): () => void {
+  register(spec: Spec, own: OwnAgent = {}): () => void {
     if (spec.acp && !spec.options) throw new Error(`local agent "${spec.id}" talks ACP but has no options schema (its settings, with \`command\`)`);
     const fork = this.ctx.plugin({
       name: `local-agent:${spec.id}`,
@@ -266,7 +272,7 @@ export class LocalAgents extends Service {
           ctx.logger("local-agents").warn(`${spec.title} is built into this Tomrade, so the plugin's "${spec.id}" stays off`);
           return;
         }
-        apply(ctx, spec);
+        apply(ctx, spec, own);
       }
     });
     return () => void fork.dispose();
