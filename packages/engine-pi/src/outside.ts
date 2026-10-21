@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
 import type { EngineMcpLink, McpLinkView } from "@tomradex/agent";
+import type { ConnectFileWriter } from "@tomradex/code-link";
 import type {} from "@tomradex/mcp";
 
 /** pi's config folder: PI_CODING_AGENT_DIR, else `~/.pi/agent`. */
@@ -74,6 +75,9 @@ export function outsideExtensionUrl(source: string): string | null {
     return null;
   }
 }
+
+/** A repository's `.pi/extensions/tomrade.ts` for code-link's Connect, which takes it through its connector registry. */
+export const piConnector: ConnectFileWriter = { write: outsideExtension, url: outsideExtensionUrl };
 
 /**
  * Pi's own sessions reach Tomrade through the user-level extension above,

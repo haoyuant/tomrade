@@ -1,12 +1,13 @@
 import type { Context } from "cordis";
 import type { Engine } from "@tomradex/agent";
+import type {} from "@tomradex/code-link";
 import { localAvailability, localCli, RuntimePool, runtimeFingerprint } from "@tomradex/engine-kit";
 import type {} from "@tomradex/llm";
 import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/settings";
 import { piLentModel } from "./lend.js";
 import { listedModels, PERMISSION_MODES, PiOptions, piSignedIn } from "./options.js";
-import { piMcpLink } from "./outside.js";
+import { piConnector, piMcpLink } from "./outside.js";
 import { PiRuntime } from "./rpc.js";
 
 const EFFORTS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -65,6 +66,8 @@ export default {
     const engine = createPiEngine(ctx);
     ctx.agent.engine(engine);
     ctx.inject(["llm"], (ctx) => ctx.effect(() => ctx.llm.lend(piLentModel(ctx, { cli: localCli("pi"), found: async () => (await engine.available()).ok }))));
+    // Connecting a repository writes Pi's project extension with this engine's writer, whenever code-link comes up.
+    ctx.inject(["codeLink"], (ctx) => ctx.effect(() => ctx.codeLink.registerConnector("pi", piConnector)));
   }
 };
 
@@ -73,4 +76,4 @@ export { default as builtinPi, BuiltinPiConfig, BuiltinPiOptions, createBuiltinP
 export { modelsFile, piTarget, type PiTarget } from "./target.js";
 export { bridgeSource } from "./bridge.js";
 export { piLentModel } from "./lend.js";
-export { outsideExtension, outsideExtensionUrl, piAgentDir, piMcpLink, piUserExtension } from "./outside.js";
+export { outsideExtension, outsideExtensionUrl, piAgentDir, piConnector, piMcpLink, piUserExtension } from "./outside.js";

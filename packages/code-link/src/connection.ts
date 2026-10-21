@@ -4,10 +4,9 @@ import { parse as parseToml } from "smol-toml";
 import type { Git } from "@tomradex/git";
 import type { McpProjectApproval } from "@tomradex/agent";
 import type { PortClash } from "@tomradex/mcp";
-import { outsideExtensionUrl } from "@tomradex/engine-pi";
 import { cursorHookScripts } from "./cursor-hooks.js";
 import { configuredMcpUrl } from "./opencode-files.js";
-import { anyHost, CLAUDE_LOCAL_SETTINGS, CODEX_HOOK_EVENTS, CONNECT_FILES, hasHooks, hasTomradeSection, hookCommands, namesEndpoint, OPENCODE_PLUGIN, PI_EXTENSION, type ConnectAgent } from "./connect.js";
+import { anyHost, CLAUDE_LOCAL_SETTINGS, CODEX_HOOK_EVENTS, CONNECT_FILES, hasHooks, hasTomradeSection, hookCommands, namesEndpoint, OPENCODE_PLUGIN, NO_CONNECTORS, PI_EXTENSION, type ConnectAgent, type Connectors } from "./connect.js";
 import { HOOK_EVENTS, stripJsonComments } from "./sessions.js";
 
 export interface AgentConnectionView {
@@ -58,7 +57,7 @@ function opencodeUrl(text: string | undefined): string | null {
   try { return configuredMcpUrl(stripJsonComments(text || "{}")); } catch { return null; }
 }
 
-function inspect(files: Record<string, string>, mcpUrl: string, eventUrl: string, chosen: readonly ConnectAgent[]) {
+function inspect(files: Record<string, string>, mcpUrl: string, eventUrl: string, chosen: readonly ConnectAgent[], connectors: Connectors) {
   const mcp = json(files[".mcp.json"]);
   const settings = json(files[".claude/settings.json"]);
   const localSettings = json(files[CLAUDE_LOCAL_SETTINGS]);
@@ -67,7 +66,7 @@ function inspect(files: Record<string, string>, mcpUrl: string, eventUrl: string
   const urls = {
     mcp: asUrl(serverUrl(mcp)),
     codex: asUrl(object(object(codex.mcp_servers).tomrade).url),
-    pi: outsideExtensionUrl(files[PI_EXTENSION] ?? ""),
+    pi: connectors("pi")?.url(files[PI_EXTENSION] ?? "") ?? null,
     opencode: opencodeUrl(files["opencode.json"]),
     cursor: asUrl(serverUrl(json(files[".cursor/mcp.json"]))),
     gemini: asUrl(serverUrl(json(files[".gemini/settings.json"]), "httpUrl"))
@@ -90,11 +89,11 @@ function inspect(files: Record<string, string>, mcpUrl: string, eventUrl: string
   return { agents, configuredUrl, sameProject: sameProject(configuredUrl, mcpUrl), connected: counted.length > 0 && counted.every((agent) => agent.tools) && counted.filter((agent) => HOOKED.has(agent.id)).every((agent) => agent.tracking === "hooks") };
 }
 
-export function inspectConnectFiles(root: string, mcpUrl: string, eventUrl: string, chosen: readonly ConnectAgent[]) {
+export function inspectConnectFiles(root: string, mcpUrl: string, eventUrl: string, chosen: readonly ConnectAgent[], connectors: Connectors = NO_CONNECTORS) {
   const files = Object.fromEntries(FILES.map((file) => {
     try { return [file, fs.readFileSync(path.join(root, file), "utf8")]; } catch { return [file, ""]; }
   }));
-  return inspect(files, mcpUrl, eventUrl, chosen);
+  return inspect(files, mcpUrl, eventUrl, chosen, connectors);
 }
 
 /** Every connection file `ref` holds, read by one `git cat-file --batch`; one it lacks is absent from the map. */
@@ -123,7 +122,7 @@ async function committedFiles(git: Git, cwd: string, ref: string): Promise<Map<s
  * files — plus the files a machine-only connection keeps untracked in the
  * checkout. `local` says the committed files alone would not connect it.
  */
-export async function inspectConnection(git: Git, cwd: string, ref: string, mcpUrl: string, eventUrl: string, chosen: readonly ConnectAgent[]) {
+export async function inspectConnection(git: Git, cwd: string, ref: string, mcpUrl: string, eventUrl: string, chosen: readonly ConnectAgent[], connectors: Connectors = NO_CONNECTORS) {
   const listed = await git(["ls-files", "-z", "--", ...FILES], { cwd, ok: true });
   const tracked = new Set(listed.code === 0 ? listed.stdout.split("\0").filter(Boolean) : FILES);
   const found = await committedFiles(git, cwd, ref);
@@ -134,7 +133,7 @@ export async function inspectConnection(git: Git, cwd: string, ref: string, mcpU
     if (found.has(file) || tracked.has(file)) continue;
     try { untracked[file] = fs.readFileSync(path.join(cwd, file), "utf8"); } catch { /* Not there: nothing local for it. */ }
   }
-  const whole = inspect({ ...committed, ...untracked }, mcpUrl, eventUrl, chosen);
-  const local = whole.connected && !inspect(committed, mcpUrl, eventUrl, chosen).connected;
+  const whole = inspect({ ...committed, ...untracked }, mcpUrl, eventUrl, chosen, connectors);
+  const local = whole.connected && !inspect(committed, mcpUrl, eventUrl, chosen, connectors).connected;
   return { ...whole, local };
 }

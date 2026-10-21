@@ -2,12 +2,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { Service, type Context } from "cordis";
 import { Agent } from "@tomradex/agent";
 import { Mcp } from "@tomradex/mcp";
 import { Settings } from "@tomradex/settings";
 import { fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
-import enginePi, { outsideExtension, outsideExtensionUrl, piUserExtension } from "@tomradex/engine-pi";
+import type { ConnectFileWriter } from "@tomradex/code-link";
+import enginePi, { outsideExtension, outsideExtensionUrl, piConnector, piUserExtension } from "@tomradex/engine-pi";
 
 const saved = process.env.PI_CODING_AGENT_DIR;
 afterEach(() => {
@@ -120,5 +122,30 @@ describe("connecting pi's own sessions to Tomrade", () => {
     await link.disconnect();
     expect(fs.readFileSync(file, "utf8")).toBe("export default function () {}\n");
     await ctx.fiber.dispose();
+  });
+});
+
+describe("the project extension a connected repository carries", () => {
+  it.each([["before", true], ["after", false]])("is code-link's to write once code-link comes up %s the engine", async (_when, first) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-pi-connect-"));
+    const writers = new Map<string, ConnectFileWriter>();
+    class FakeCodeLink extends Service {
+      static provide = "codeLink";
+      constructor(ctx: Context) {
+        super(ctx, "codeLink");
+      }
+      registerConnector(agent: string, writer: ConnectFileWriter) {
+        writers.set(agent, writer);
+        return () => writers.delete(agent);
+      }
+    }
+    const { ctx } = await fresh({ plugins: [Tools, [Settings, { path: path.join(dir, "settings.json") }], Agent, [Mcp, { port: 0 }], ...(first ? [FakeCodeLink, enginePi] : [enginePi, FakeCodeLink])] });
+    await settle();
+    expect(writers.get("pi")).toBe(piConnector);
+    const mcpUrl = "http://127.0.0.1:19090/mcp/p1";
+    expect(piConnector.write(mcpUrl, "http://127.0.0.1:19090/sessions/event")).toBe(outsideExtension(mcpUrl, "http://127.0.0.1:19090/sessions/event"));
+    expect(piConnector.url(piConnector.write(mcpUrl, "http://127.0.0.1:19090/sessions/event"))).toBe(mcpUrl);
+    await ctx.fiber.dispose();
+    expect(writers.has("pi")).toBe(false);
   });
 });
