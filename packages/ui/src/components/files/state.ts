@@ -1,4 +1,4 @@
-import type { FilesSyncState } from "@tomradex/files";
+import type { FilesStatus, FilesSyncState } from "@tomradex/files";
 import type { MessageKey } from "~/lib/i18n";
 
 export interface StateView {
@@ -20,6 +20,9 @@ export function stateOf(t: (key: MessageKey) => string): Record<FilesSyncState, 
     syncing: { label: t("files.stateSyncingLabel"), tone: "neutral", hint: t("files.stateSyncingHint") },
     offline: { label: t("files.stateOfflineLabel"), tone: "strong", hint: t("files.stateOfflineHint"), warn: true },
     error: { label: t("files.stateErrorLabel"), tone: "strong", hint: t("files.stateErrorHint"), warn: true },
-    unavailable: { label: t("files.stateUnavailableLabel"), tone: "strong", hint: t("files.stateUnavailableHint"), warn: true }
+    unavailable: { label: t("files.stateUnavailableLabel"), tone: "strong", hint: t("files.unavailable"), warn: true }
   };
 }
+
+/** A folder kept without git saves no versions, so the local state's promise of them does not hold. */
+export const hintOf = (t: (key: MessageKey) => string, view: StateView, status: FilesStatus | undefined): string => (status?.versionless ? t("files.stateLocalPlainHint") : view.hint);

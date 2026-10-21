@@ -383,7 +383,7 @@ export function FilesTree({ children: frame }: { children: (head: ReactNode, bod
         {!entries.length && !creating && !creatingNote && !tree.isLoading && (
           <div className="side-files-empty-placeholder">
             <Icon className="ico" name="i-upload" size={14} />
-            <span className="side-name">{unavailable ? t("files.stateUnavailableHint") : t("files.dropHint")}</span>
+            <span className="side-name">{unavailable ? t("files.unavailable") : t("files.dropHint")}</span>
           </div>
         )}
       </div>

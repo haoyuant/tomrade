@@ -16,6 +16,8 @@ export interface FilesStatus {
   behind: number;
   /** The latest version, null until something has been saved. */
   head: string | null;
+  /** True for a store that keeps no versions — no git on this machine: no history, undo, ticket pins or sharing. */
+  versionless?: boolean;
 }
 
 export type FileChange = "added" | "modified" | "deleted" | "renamed" | "conflicted";

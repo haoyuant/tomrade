@@ -39,8 +39,8 @@ const KEEP = ".keep";
 const TEXT_LIMIT = 2 * 1024 * 1024;
 /** The most of a binary file a read hands back; anything a ticket body links must fit. */
 export const BINARY_LIMIT = 8 * 1024 * 1024;
-const TREE_LIMIT = 20_000;
-const sha256 = (bytes: Buffer): string => createHash("sha256").update(bytes).digest("hex");
+export const TREE_LIMIT = 20_000;
+export const sha256 = (bytes: Buffer): string => createHash("sha256").update(bytes).digest("hex");
 const UNMERGED = new Set(["DD", "AU", "UD", "UA", "DU", "AA", "UU"]);
 const DIRECTORY_CHANGED = "Remote directory changed: open a new local store and retain this store for version references";
 
@@ -119,6 +119,17 @@ export function parseLedger(text: string): Ledger {
   const byPath = new Map<string, string>();
   for (const [id, { path: p }] of [...byId].sort((a, b) => a[1].at - b[1].at)) if (p !== null) byPath.set(p, id);
   return { byId, byPath };
+}
+
+export function contentOf(rel: string, bytes: Buffer, fileId: string | null, versionId: string | null): FileContent {
+  const mime = mimeOf(rel);
+  const base = { path: rel, name: rel.split("/").pop() ?? rel, fileId, versionId, size: bytes.length, hash: sha256(bytes) };
+  if (isTextMime(mime) && !looksBinary(bytes)) {
+    const truncated = bytes.length > TEXT_LIMIT;
+    return { ...base, mime, encoding: "utf8", body: (truncated ? bytes.subarray(0, TEXT_LIMIT) : bytes).toString("utf8"), truncated };
+  }
+  const truncated = bytes.length > BINARY_LIMIT;
+  return { ...base, mime: isTextMime(mime) ? "application/octet-stream" : mime, encoding: "base64", body: truncated ? "" : bytes.toString("base64"), truncated };
 }
 
 const execBuffer = (binary: string, args: string[], cwd: string): Promise<Buffer | null> =>
@@ -610,17 +621,6 @@ export class GitFileStore implements FileStore {
     return execBuffer(this.opts.gitBinary, ["show", spec], this.dir);
   }
 
-  private contentOf(rel: string, bytes: Buffer, fileId: string | null, versionId: string | null): FileContent {
-    const mime = mimeOf(rel);
-    const base = { path: rel, name: rel.split("/").pop() ?? rel, fileId, versionId, size: bytes.length, hash: sha256(bytes) };
-    if (isTextMime(mime) && !looksBinary(bytes)) {
-      const truncated = bytes.length > TEXT_LIMIT;
-      return { ...base, mime, encoding: "utf8", body: (truncated ? bytes.subarray(0, TEXT_LIMIT) : bytes).toString("utf8"), truncated };
-    }
-    const truncated = bytes.length > BINARY_LIMIT;
-    return { ...base, mime: isTextMime(mime) ? "application/octet-stream" : mime, encoding: "base64", body: truncated ? "" : bytes.toString("base64"), truncated };
-  }
-
   // ── reads ───────────────────────────────────────────────────────────────────
 
   private entryOf(rel: string, isDir: boolean, stat: fs.Stats, ledger: Ledger, changes: Map<string, FileChange>): FileEntry {
@@ -740,7 +740,7 @@ export class GitFileStore implements FileStore {
       return null;
     }
     const pending = (await this.statusMap()).get(rel);
-    return this.contentOf(rel, bytes, this.readLedger().byPath.get(rel) ?? null, pending ? null : await this.versionOf(rel));
+    return contentOf(rel, bytes, this.readLedger().byPath.get(rel) ?? null, pending ? null : await this.versionOf(rel));
   }
 
   private async commitOf(versionId: string): Promise<string | null> {
@@ -764,12 +764,12 @@ export class GitFileStore implements FileStore {
     const record = this.record(ref);
     if (record) {
       const bytes = await this.versionBytes(record);
-      return bytes ? this.contentOf(record.path, bytes, ref.fileId, ref.versionId) : null;
+      return bytes ? contentOf(record.path, bytes, ref.fileId, ref.versionId) : null;
     }
     const p = await this.pathAt(ref);
     if (!p) return null;
     const bytes = await this.showBuffer(`${ref.versionId}:${p}`);
-    return bytes ? this.contentOf(p, bytes, ref.fileId, ref.versionId) : null;
+    return bytes ? contentOf(p, bytes, ref.fileId, ref.versionId) : null;
   }
 
   async resolveVersion(ref: FileReference): Promise<FileReference | null> {
