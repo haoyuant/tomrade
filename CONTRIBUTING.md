@@ -39,7 +39,7 @@ Every pull request runs `pnpm typecheck` and `pnpm test` in CI, forks included.
 - **Every user-facing string is translated, in English and Chinese.**
   - In the UI, a string goes through `t(...)`. Each feature file in `packages/ui/src/lib/i18n-messages/` exports `en` and `zh`, and `index.ts` types the Chinese as `zh: typeof en`, so a missing Chinese string fails `pnpm typecheck`.
   - The other built-in languages (`i18n-messages/locales/`: de, es, fr, ja, ru, zhHant) are partial: any string they lack shows in English. Adding to them is welcome, not required.
-    `pnpm i18n:check` shows what each one lacks and which translations went stale because the English changed. After you translate or fix strings in a locale, run `pnpm i18n:check --update <locale>` so it records the English they now come from.
+    `pnpm i18n:check` shows what each one lacks, and which translations went stale because their English changed in a later commit; updating a translation makes it current again.
   - In the backend, a package's words live in its `src/words.ts`, written with `defineWords(id, { en, zh })`; the Chinese must have every key and the same `{{slots}}`. Prompts written for an agent are not words and stay in English.
 - **Short why-comments only.** The code says what; a comment says why.
 - **Domain words** (ticket, delivery, code link, sync back, …) mean what [`CONTEXT.md`](CONTEXT.md) says.

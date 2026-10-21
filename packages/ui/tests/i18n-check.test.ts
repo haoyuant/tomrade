@@ -1,23 +1,43 @@
 import { describe, expect, it } from "vitest";
-import { byNamespace, checkLocales, recordHashes, sourceHash } from "../../../scripts/i18n-check.mjs";
-
-const en = { common: { save: "Save", cancel: "Cancel", close: "Close" }, about: { title: "About Tomrade" } };
+import { byNamespace, checkLocales, keyLines, parseBlame } from "../../../scripts/i18n-check.mjs";
 
 describe("pnpm i18n:check", () => {
-  it("counts a translation current once its English is recorded, and stale when the English changes", () => {
+  it("lists missing keys, and stale ones only among the translated", () => {
+    const en = { common: { save: "Save", cancel: "Cancel", close: "Close" }, about: { title: "About Tomrade" } };
     const de = { common: { save: "Speichern", cancel: "Abbrechen" } };
-    const hashes = { de: recordHashes(en, de) };
-    expect(checkLocales(en, { de }, hashes).de).toEqual({ missing: ["common.close", "about.title"], stale: [], unrecorded: [] });
-
-    const changed = { ...en, common: { ...en.common, save: "Save all" } };
-    expect(checkLocales(changed, { de }, hashes).de.stale).toEqual(["common.save"]);
+    expect(checkLocales(en, { de }).de).toEqual({ missing: ["common.close", "about.title"], stale: [] });
+    expect(checkLocales(en, { de }, { de: new Set(["common.save", "about.title"]) }).de.stale).toEqual(["common.save"]);
   });
 
-  it("reports a translation with no English on record, and drops records for keys no longer translated", () => {
-    const fr = { common: { save: "Enregistrer" }, about: { title: "À propos de Tomrade" } };
-    const hashes = { fr: { common: { save: sourceHash("Save"), cancel: sourceHash("Cancel") } } };
-    expect(checkLocales(en, { fr }, hashes).fr.unrecorded).toEqual(["about.title"]);
-    expect(recordHashes(en, fr)).toEqual({ about: { title: sourceHash("About Tomrade") }, common: { save: sourceHash("Save") } });
+  it("finds the lines of each message, by path from the const that holds it", () => {
+    const source = [
+      "/** About: { not: a key } */",
+      "export const about = {",
+      "  en: {",
+      '    label: "About", // a: comment',
+      "    long:",
+      '      "Spans {{n}} lines, with a: colon and a } brace",',
+      "    \"quoted-key\": 'x'",
+      "  },",
+      "  zh: { label: `关于` }",
+      "};"
+    ].join("\n");
+    expect([...keyLines(source)]).toEqual([
+      ["about.en.label", [4, 4]],
+      ["about.en.long", [5, 6]],
+      ["about.en.quoted-key", [7, 7]],
+      ["about.zh.label", [9, 9]]
+    ]);
+    expect(keyLines('import type { PartialMessages } from "../index";\nexport const de: PartialMessages = {\n  common: {\n    save: "Speichern"\n  }\n};').get("de.common.save")).toEqual([4, 4]);
+  });
+
+  it("reads each line's commit and time from git blame, an uncommitted line being the newest", () => {
+    const sha = "a".repeat(40);
+    const porcelain = [`${sha} 1 1 1`, "committer-time 100", "\tline one", `${"0".repeat(40)} 2 2 1`, "committer-time 200", "\tline two", ""].join("\n");
+    expect(parseBlame(porcelain).slice(1)).toEqual([
+      { commit: sha, time: 100 },
+      { commit: null, time: Infinity }
+    ]);
   });
 
   it("groups keys by namespace, most first", () => {

@@ -8,7 +8,7 @@ On a ticket, iterate with `pnpm test:related` (only the tests that reach the fil
 
 - UI: every user-facing string goes through `t(...)`. Each feature file in `packages/ui/src/lib/i18n-messages/` exports `en` and `zh`; `index.ts` assembles them and types `zh: typeof en`, so en and zh are both required and a missing zh key fails `pnpm typecheck`.
 - The six other built-in locales, `i18n-messages/locales/*.ts` (de, es, fr, ja, ru, zhHant), are `PartialMessages`: a key they lack falls back to English. Add to them when you can; never required.
-- `pnpm i18n:check` warns (never fails) about what each of those locales lacks and which translations are stale because their English changed (`--keys` lists every key). After translating or fixing a locale, `pnpm i18n:check --update <locale>` records the English it now comes from in `locales/source-hashes.json`.
+- `pnpm i18n:check` warns (never fails) about what each of those locales lacks and which translations are stale: git blame shows their English changed in a later commit (`--keys` lists every key). Updating a translation's line makes it current again.
 - Backend: a package's words live in `src/words.ts` as `defineWords(id, { en, zh })` (`@tomradex/domain`); zh must have every key with the same `{{slots}}`. Other languages read English (or an installed language pack). Prompts for an agent stay in English.
 
 ## Tomrade
