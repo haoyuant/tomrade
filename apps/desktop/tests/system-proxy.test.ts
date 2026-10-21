@@ -9,13 +9,30 @@ afterEach(() => {
 
 describe("the system proxy", () => {
   it("reads Chromium's answer as a proxy URL, or none to go direct", () => {
-    expect(proxyUrlOf("PROXY 127.0.0.1:7900")).toBe("http://127.0.0.1:7900");
-    expect(proxyUrlOf("PROXY 127.0.0.1:7900; DIRECT")).toBe("http://127.0.0.1:7900");
-    expect(proxyUrlOf("HTTPS proxy.corp:443")).toBe("https://proxy.corp:443");
-    expect(proxyUrlOf("SOCKS5 127.0.0.1:7891; PROXY 127.0.0.1:7890")).toBe("http://127.0.0.1:7890");
-    expect(proxyUrlOf("SOCKS5 127.0.0.1:7891")).toBeNull();
-    expect(proxyUrlOf("DIRECT")).toBeNull();
-    expect(proxyUrlOf("")).toBeNull();
+    const url = (rules: string) => proxyUrlOf(rules).url;
+    expect(url("PROXY 127.0.0.1:7900")).toBe("http://127.0.0.1:7900");
+    expect(url("PROXY 127.0.0.1:7900; DIRECT")).toBe("http://127.0.0.1:7900");
+    expect(url("HTTPS proxy.corp:443")).toBe("https://proxy.corp:443");
+    expect(proxyUrlOf("SOCKS5 127.0.0.1:7891; PROXY 127.0.0.1:7890")).toEqual({ url: "http://127.0.0.1:7890", socks: null });
+    expect(url("DIRECT")).toBeNull();
+    expect(url("")).toBeNull();
+  });
+
+  it("names a SOCKS proxy it cannot follow, so a failed download can say so", async () => {
+    expect(proxyUrlOf("SOCKS5 127.0.0.1:7891")).toEqual({ url: null, socks: "socks5://127.0.0.1:7891" });
+    expect(proxyUrlOf("SOCKS 127.0.0.1:1080; DIRECT")).toEqual({ url: null, socks: "socks://127.0.0.1:1080" });
+
+    vi.useFakeTimers();
+    vi.spyOn(http, "setGlobalProxyFromEnv").mockReturnValue(() => {});
+    let answer = "SOCKS5 127.0.0.1:7891";
+    const env: NodeJS.ProcessEnv = {};
+    const stop = await followSystemProxy(async () => answer, env);
+    expect(env).toEqual({ TOMRADE_SOCKS_PROXY: "socks5://127.0.0.1:7891" });
+    answer = "PROXY 127.0.0.1:7890";
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(env.TOMRADE_SOCKS_PROXY).toBeUndefined();
+    expect(env.HTTPS_PROXY).toBe("http://127.0.0.1:7890");
+    stop();
   });
 
   it("is followed, changes are picked up, and the local network never goes through it", async () => {

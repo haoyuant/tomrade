@@ -3,7 +3,9 @@ import path from "node:path";
 import { LIMITS, PACKAGE_EXT, parseCatalog, unpackPlugin, type Attestation, type Catalog, type CatalogPlugin } from "@tomradex/plugin-kit";
 import { OFFICIAL_PUBLISHER, compareVersions, nameOf, namespaceOf, parseManifest } from "@tomradex/plugin-sdk";
 import type { Manifest } from "@tomradex/plugin-sdk";
+import type { LanguageTag } from "@tomradex/domain";
 import { latestInstallable, type Revocation, type VersionRow } from "./rules.js";
+import { reach } from "./net.js";
 import { errorMessage, writeJsonAtomic } from "@tomradex/contracts";
 
 /** Where Tomrade's own plugins are released: github.com/haoyuant/tomrade-plugins. */
@@ -37,6 +39,8 @@ export interface OfficialCatalogOptions {
   /** Whether this build believes an attestation for a digest. */
   verify(raw: unknown, digest: string): Attestation | null;
   warn(message: string): void;
+  /** The language a failure is told in; absent, English. */
+  locale?(): LanguageTag | undefined;
 }
 
 interface Held {
@@ -79,7 +83,7 @@ export class OfficialCatalog {
 
   private async fetch(): Promise<void> {
     try {
-      const res = await fetch(this.opts.url, { signal: AbortSignal.timeout(30_000), headers: { accept: "application/json" } });
+      const { response: res } = await reach(this.opts.url, { signal: AbortSignal.timeout(30_000), headers: { accept: "application/json" } }, this.opts.locale?.());
       if (!res.ok) throw new Error(`the official catalog did not answer (${res.status})`);
       const text = await res.text();
       if (text.length > CATALOG_BYTES) throw new Error("the official catalog is larger than it may be");
@@ -226,7 +230,7 @@ export async function bundleOfficialPlugins(opts: { url: string; ids: string[]; 
       }
       const file = bundledPackage(opts.dir, row.digest!);
       try {
-        const res = await fetch(row.package_path!, { signal: AbortSignal.timeout(120_000) });
+        const { response: res } = await reach(row.package_path!, { signal: AbortSignal.timeout(120_000) });
         if (!res.ok) throw new Error(`the package could not be downloaded (${res.status})`);
         const bytes = Buffer.from(await res.arrayBuffer());
         if (bytes.length > LIMITS.packageBytes) throw new Error("the package is larger than a plugin may be");
