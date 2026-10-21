@@ -50,7 +50,7 @@ Every package keeps `"private": true`, so `npm publish` from a source folder fai
 | `inbox-tomrade` | Feedback sent from the app as an inbox source, for Tomrade's maintainers. | — | contributions, inbox |
 | `inbox-triage` | The worker model proposes a kind, duplicate and reply for each new inbox entry. | — | agent-backlog, inbox, items, llm |
 | `schedules` | Routines: a ticket from a template, or a prompt to the assistant, on a cadence. | `schedules` | agent, boards, code-link, items, tools |
-| `onboarding` | The first run's tour project, seen-hints, and the playbook that explains Tomrade. | `onboarding` | agent, boards, hub, inbox, items, projects |
+| `onboarding` | The first run's tour project, seen-hints, and the playbook that explains Tomrade. | `onboarding` | agent, boards, hub, inbox, items, keybindings, projects |
 | `announcements` | Announcements published to every install, each shown once per machine. | — | contributions, plugin-sdk |
 
 ## Storage, files and code
@@ -101,7 +101,7 @@ Every package keeps `"private": true`, so `npm publish` from a source folder fai
 | `desktop-surface` | Contract for plugin-owned auxiliary windows. | `desktopSurfaces` | — |
 | `alerts` | Contract for system notifications and sounds. | `alerts` | — |
 | `pet` | The task-state companion, in the panel or on the desktop. | `pet` | agent, contributions, desktop-surface |
-| `keybindings` | The person's rebound shortcuts. | — | — |
+| `keybindings` | The default shortcuts and the person's rebound ones. | — | — |
 
 ## Plugins
 

@@ -14,7 +14,7 @@ import type { SettingsSection } from "@tomradex/settings";
 import { PATH, SAMPLE, type SampleWords } from "./sample.js";
 import { errorMessage } from "@tomradex/contracts";
 
-export { PATH, SAMPLE, type SampleFeedback, type SampleTicket, type SampleWords } from "./sample.js";
+export { PATH, SAMPLE, sampleWords, type SampleFeedback, type SampleTicket, type SampleWords } from "./sample.js";
 
 declare module "cordis" {
   interface Context {
