@@ -939,7 +939,7 @@ export const de: PartialMessages = {
     unsupported: "Dieses Bild kann nicht verwendet werden. Wähle eine GIF-, WebP-, APNG-, PNG-, JPEG- oder AVIF-Datei.",
     tooBig: "Bilder dürfen höchstens {{mb}} MB groß sein.",
     mood_idle: "Untätig",
-    mood_idle_when: "In dieser Unterhaltung lief noch kein Zug.",
+    mood_idle_when: "In dieser Unterhaltung lief noch kein Zug, oder ein Erfolg wurde 30 Sekunden lang gezeigt.",
     mood_thinking: "Denkt nach",
     mood_thinking_when: "Ein Zug hat begonnen, und noch ist nichts zurückgekommen.",
     mood_working: "Arbeitet",
@@ -947,7 +947,7 @@ export const de: PartialMessages = {
     mood_waiting: "Wartet auf dich",
     mood_waiting_when: "Der Assistent hat dich etwas gefragt oder braucht deine Erlaubnis.",
     mood_success: "Fertig",
-    mood_success_when: "Der Zug ist beendet. Bleibt, bis der nächste Zug beginnt.",
+    mood_success_when: "Der Zug ist beendet. Wird 30 Sekunden gezeigt, dann ruht das Haustier.",
     mood_error: "Fehler",
     mood_error_when: "Der Zug ist fehlgeschlagen. Bleibt, bis der nächste Zug beginnt."
   },

@@ -939,7 +939,7 @@ export const zhHant: PartialMessages = {
     unsupported: "這張圖片無法使用，請選擇 GIF、WebP、APNG、PNG、JPEG 或 AVIF 檔案。",
     tooBig: "圖片不能超過 {{mb}} MB。",
     mood_idle: "閒置",
-    mood_idle_when: "這個對話裡還沒有跑過任何一輪時。",
+    mood_idle_when: "這個對話裡還沒有跑過任何一輪，或成功狀態已顯示滿 30 秒時。",
     mood_thinking: "思考",
     mood_thinking_when: "一輪對話剛開始，還沒有任何輸出時。",
     mood_working: "工作中",
@@ -947,7 +947,7 @@ export const zhHant: PartialMessages = {
     mood_waiting: "等你回答",
     mood_waiting_when: "助手向你提問或需要你授權時。",
     mood_success: "完成",
-    mood_success_when: "這一輪順利結束，一直顯示到下一輪開始。",
+    mood_success_when: "這一輪順利結束，顯示 30 秒後回到待機。",
     mood_error: "出錯",
     mood_error_when: "這一輪出錯結束，一直顯示到下一輪開始。"
   },
