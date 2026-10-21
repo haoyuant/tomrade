@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { EngineView } from "@tomradex/agent";
 import { useCurrentProject } from "~/components/dialogs/plugins/parts";
 import { Icon } from "~/components/icons";
@@ -65,13 +66,21 @@ const STEP_LABELS: Record<ChainStep["id"], MessageKey> = { install: "setup.stepI
  * through: install → sign in → a test message, each ticked when already
  * satisfied. Ready means the test message got a reply, nothing less.
  */
-export function SetupChain({ engine }: { engine: EngineView }) {
+export function SetupChain({ engine, onTroubleshoot }: { engine: EngineView; onTroubleshoot?: (engineId: string, error?: string) => void }) {
   const { t } = useI18n();
   const projectId = useCurrentProject();
   const chain = useSetupChain(engine, projectId ?? null);
   const steps = chain.steps;
   const ready = !chain.running && engine.tried?.ok && engine.ok;
   const showList = chain.running || !!chain.run;
+  // The troubleshooter is offered only once a retry also failed the test: the first failure stays with the chain's own fix wording.
+  const running = chain.running;
+  const testFailed = !!chain.run?.failed && chain.run.step === "test";
+  const [failures, setFailures] = useState(0);
+  useEffect(() => {
+    if (!running && testFailed) setFailures((n) => n + 1);
+  }, [running, testFailed]);
+  const lastError = chain.run?.tried?.error ?? chain.run?.progress?.failure?.message ?? engine.tried?.error;
   const icon = (step: ChainStep) =>
     step.state === "done" ? <Icon name="i-check" size={12} /> : step.state === "failed" ? <Icon name="i-warn" size={12} /> : step.state === "pending" ? <span className="setup-step-dot" /> : <Icon name="i-sync" size={12} />;
   return (
@@ -84,6 +93,11 @@ export function SetupChain({ engine }: { engine: EngineView }) {
           {chain.running && (
             <button type="button" className="btn btn-ghost btn-xs" data-testid={`setup-cancel-${engine.id}`} onClick={chain.cancel}>
               {t("setup.cancelSetup")}
+            </button>
+          )}
+          {onTroubleshoot && !chain.running && failures >= 2 && (
+            <button type="button" className="link-btn" data-testid={`chain-troubleshoot-${engine.id}`} onClick={() => onTroubleshoot(engine.id, lastError)}>
+              {t("setup.troubleshoot")} →
             </button>
           )}
         </span>

@@ -186,6 +186,12 @@ const run = async () => {
   check("the agent does not count as configured", !(await has('[data-testid="setup-done"]')));
   await shot("setup-chain-04-test-failed");
 
+  // ── still broken: only a second test failure hands over to the troubleshooter ──
+  check("one failure does not yet offer the troubleshooter", !(await has('[data-testid="chain-troubleshoot-fake-agent"]')));
+  await click('[data-testid="setup-run-fake-agent"]');
+  check("a retry that fails again offers the troubleshooter", await wait(() => has('[data-testid="chain-troubleshoot-fake-agent"]'), "troubleshoot link", 300));
+  await shot("setup-chain-05-troubleshoot");
+
   // ── fixed: retry runs only what is left and ends ready with the reply ──
   fs.writeFileSync(stateFlag, "works");
   await click('[data-testid="setup-run-fake-agent"]');
@@ -193,7 +199,7 @@ const run = async () => {
   check("only now is Tomrade set", await wait(() => has('[data-testid="setup-done"]'), "done panel", 300));
   check("with the test reply visible", await wait(() => has('[data-testid="setup-done-reply"]'), "reply", 50), await text('[data-testid="setup-done"]'));
   check("and the reply is the agent's", ((await text('[data-testid="setup-done-reply"]')) ?? "").includes("pong"), await text('[data-testid="setup-done-reply"]'));
-  await shot("setup-chain-05-ready");
+  await shot("setup-chain-06-ready");
   console.log(`screenshots in ${shots}`);
 };
 

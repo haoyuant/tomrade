@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
 import { Icon } from "~/components/icons";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
+import { invoke, logQuietly } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
 import { useProjects, useSettings } from "~/lib/queries";
 import { findEngine } from "~/lib/agent";
@@ -30,6 +31,15 @@ export function FirstRunSetup({ onDone }: { onDone: () => void }) {
     onDone();
     if (sample) void navigate({ to: "/p/$projectId", params: { projectId: sample.id } });
   };
+  // A chain that keeps failing hands over to the troubleshooter, whose thread lives in the sample project; the panel shows the newest thread.
+  const troubleshoot =
+    sample && engines?.some((e) => e.id === "doctor")
+      ? (engineId: string, error?: string) =>
+          void invoke("doctor.start", sample.id, { engineId, ...(error ? { error } : {}) }).then(() => {
+            onDone();
+            void navigate({ to: "/p/$projectId", params: { projectId: sample.id } });
+          }, logQuietly("doctor.start"))
+      : undefined;
 
   return (
     <div className="app first-run" data-testid="first-run-setup">
@@ -103,6 +113,7 @@ export function FirstRunSetup({ onDone }: { onDone: () => void }) {
               <SetupOptions
                 engines={engines}
                 onOpenSettings={(engine) => setSettings({ engine })}
+                onTroubleshoot={troubleshoot}
                 frame={(part) => (
                   <section className="panel stack-3">
                     <h2 className="setup-section-title">{part.title}</h2>
