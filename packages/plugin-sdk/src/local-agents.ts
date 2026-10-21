@@ -58,6 +58,10 @@ export interface LocalAgentSetup {
   /** Signing in starts the agent itself, which then asks; otherwise the command signs in and returns. */
   signInRuns?: boolean;
   docs?: string;
+  /** SDK 0.2.25. The agent's official download page, opened in the system browser beside these commands, for those without the tools they need: one that offers the CLI. */
+  download?: string;
+  /** SDK 0.2.25. The agent's desktop app, when it has one: whether installing it puts the CLI where Tomrade finds it. Setup screens say so either way. */
+  desktop?: { title: string; shipsCli: boolean };
   suggested?: boolean;
 }
 

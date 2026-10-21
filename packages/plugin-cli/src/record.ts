@@ -273,5 +273,8 @@ function localAgentProblems(spec: LocalAgentSpec): string[] {
     const url = "script" in step ? step.script : (step as { powershell?: unknown }).powershell;
     if (typeof url !== "string" || !/^https:\/\/[^\s'"|;&`$]+$/.test(url)) out.push(`${label}: an installer is a script's https address, not ${JSON.stringify(url ?? step)}`);
   }
+  const { download, desktop } = spec.setup ?? {};
+  if (download !== undefined && (typeof download !== "string" || !/^https:\/\/\S+$/.test(download))) out.push(`${label}: setup.download is a page's https address, not ${JSON.stringify(download)}`);
+  if (desktop !== undefined && (typeof desktop?.title !== "string" || !desktop.title || typeof desktop.shipsCli !== "boolean")) out.push(`${label}: setup.desktop needs a title and shipsCli, whether the app puts the CLI where Tomrade finds it`);
   return out;
 }

@@ -65,6 +65,8 @@ export function claudeCodeEngineInfo(ctx: Context): Omit<Engine, "turn"> {
         signIn: "claude",
         signInRuns: true,
         docs: "https://docs.anthropic.com/en/docs/claude-code/setup",
+        download: "https://code.claude.com/docs/en/setup",
+        desktop: { title: "Claude", shipsCli: false },
         suggested: true
       }
     }

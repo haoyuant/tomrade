@@ -49,7 +49,7 @@ export function createPiEngine(ctx: Context): Engine {
       checkCli: (file) => cli.check(file),
       mcpLink: piMcpLink(ctx),
       // Inside pi, /login picks a provider; an API key in the environment works too. The built-in agent needs neither.
-      setup: { install: ["npm install -g @earendil-works/pi-coding-agent"], signIn: "pi", signInRuns: true, docs: "https://www.npmjs.com/package/@earendil-works/pi-coding-agent" }
+      setup: { install: ["npm install -g @earendil-works/pi-coding-agent"], signIn: "pi", signInRuns: true, docs: "https://www.npmjs.com/package/@earendil-works/pi-coding-agent", download: "https://pi.dev" }
     },
     turn: pooledEngine(ctx, { create: (input) => new PiRuntime(ctx, input) })
   };
