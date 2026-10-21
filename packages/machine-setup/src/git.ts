@@ -61,13 +61,14 @@ function knownDirs(host: MachineHost): string[] {
   return ["/usr/local/bin"];
 }
 
-async function findGit(host: MachineHost): Promise<{ file: string; onPath: boolean } | null> {
+/** The first of `names` that is there, from PATH then `extra` folders — a GUI-launched app's PATH misses the installers'. */
+export async function findExecutable(host: MachineHost, names: string[], extra: string[]): Promise<{ file: string; onPath: boolean } | null> {
   for (const { dirs, onPath } of [
     { dirs: pathDirs(host.env), onPath: true },
-    { dirs: knownDirs(host), onPath: false }
+    { dirs: extra, onPath: false }
   ]) {
     for (const dir of dirs) {
-      for (const name of exeNames(host.platform)) {
+      for (const name of names) {
         const file = path.join(dir, name);
         if (await host.executable(file)) return { file, onPath };
       }
@@ -75,6 +76,8 @@ async function findGit(host: MachineHost): Promise<{ file: string; onPath: boole
   }
   return null;
 }
+
+const findGit = (host: MachineHost): Promise<{ file: string; onPath: boolean } | null> => findExecutable(host, exeNames(host.platform), knownDirs(host));
 
 /** The one-click way to a git on this platform, when it has one. */
 export async function installerFor(host: MachineHost): Promise<GitInstallerKind | undefined> {
@@ -164,8 +167,10 @@ export function machineHost(): MachineHost {
       new Promise((resolve) => {
         let output = "";
         let child: ReturnType<typeof spawn>;
+        // Windows batch files (npm.cmd) only run through a shell since Node's spawn hardening.
+        const batch = process.platform === "win32" && /\.(cmd|bat)$/i.test(file);
         try {
-          child = spawn(file, args, { stdio: ["ignore", "pipe", "pipe"], env: process.env });
+          child = spawn(batch ? `"${file}"` : file, args, { stdio: ["ignore", "pipe", "pipe"], env: process.env, ...(batch ? { shell: true } : {}) });
         } catch (error) {
           return resolve({ code: null, output: "", error: error instanceof Error ? error.message : String(error) });
         }
