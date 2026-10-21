@@ -3,8 +3,9 @@
  * agent — and can be told "later" — then opens the sample project, on its
  * first lesson the first time, and nothing else; its learning path draws as a graph, the assistant keeps a
  * setup card until one is connected, the hints show once and stay seen, and the
- * whole of it can be run again from Settings → About, as often as wanted —
- * making the sample again, in the person's language, after it is deleted.
+ * sample can be made again from the home — in the person's language, on its
+ * first lesson — after it is deleted, and the whole of it can be run again
+ * from Settings → About, as often as wanted.
  * A stand-in engine that writes one ticket makes the run deterministic; the
  * local CLI agents are switched off, since this machine may have one signed in.
  *
@@ -176,13 +177,34 @@ const run = async () => {
   check("a project whose tickets depend on each other points at the graph", await wait(async () => (await toasts()).some((t) => t.includes("Switch the view to Graph")), "graph hint"));
   check("seen as soon as it is shown", seen().includes("hint.graph"));
 
-  // ── onboarding again, from Settings, as often as wanted ───────────────
+  // ── deleted, and made again from the home in the person's language ────
   ctx.projects.remove(sample.id);
   ctx.settings.set({ ...ctx.settings.get(), language: "zh" });
   await win.loadURL(base);
   await sleep(1500);
   const again = async () => ctx.projects.list().find((p) => p.sample);
-  check("without a sample, the home offers no tile to make one", (await wait(() => has(".proj-grid"), "home")) && !(await has(".proj-sample")) && !(await has('[data-testid="restart-onboarding"]')));
+  check("without a sample, the home offers to make one", await wait(() => has(".proj-sample"), "sample tile"));
+  check("and keeps no onboarding button beside it", !(await has('[data-testid="restart-onboarding"]')));
+  await shot("onboarding-05-sample-tile");
+  await press(`document.querySelector('.proj-sample')`);
+  check("it is made again, in Chinese", await wait(async () => (await again())?.name === "Tomrade 入门", "zh sample"));
+  const tiled = await again();
+  check("its workstreams are named in Chinese too", ctx.boards.list(tiled.id).map((b) => b.name).join("|") === "入门|示例：番茄钟 App", ctx.boards.list(tiled.id).map((b) => b.name));
+  check("and the app opens it on its first lesson", await wait(async () => (await $(`location.hash`)).includes(tiled.id) && (await lesson())?.label?.endsWith("把这个工单拖到「已完成」"), "sample tile opens lesson"), await lesson());
+  check("leaving the other hints seen", seen().includes("hint.graph") && !seen().includes("sample-tile"), seen());
+  await shot("onboarding-06-zh-sample");
+
+  // ── someone who does not want it can say so ───────────────────────────
+  ctx.projects.remove(tiled.id);
+  await win.loadURL(base);
+  check("deleted again, the offer is back", await wait(() => has(".proj-sample"), "sample tile again"));
+  await press(`document.querySelector('.proj-sample-hide')`);
+  check("and its × puts it away", await wait(async () => !(await has(".proj-sample")), "tile hidden"));
+  check("for good", await wait(async () => seen().includes("sample-tile"), "seen sample-tile"));
+  await win.loadURL(base);
+  check("even after a reload", (await wait(() => has(".proj-grid"), "home")) && !(await has(".proj-sample")));
+
+  // ── onboarding again, from Settings, as often as wanted ───────────────
   const openAbout = async () => {
     await press(`document.querySelector('.titlebar button[aria-label="设置"]')`);
     await wait(() => $(`!!${byText(".side-row", "关于")}`), "settings");

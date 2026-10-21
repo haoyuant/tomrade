@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useQueries } from "@tanstack/react-query";
+import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
 import type { Board, Item, Project } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
@@ -9,7 +9,8 @@ import { Eyebrow, LiveDot, Num, Spacer, Tag } from "~/components/ui/atoms";
 import { invoke } from "~/lib/api";
 import { agoLabel } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { keys, useHubInfo, useMcpUrl, useProjects, useRestores, useSettings } from "~/lib/queries";
+import { keys, useHubInfo, useMcpUrl, useProjects, useRestores, useSettings, useSettingsSections } from "~/lib/queries";
+import { errorSpec, useToast } from "~/lib/toast";
 import { useSeen, useSetupAsked } from "~/lib/onboarding";
 import { FirstRunSetup } from "~/components/setup/FirstRunSetup";
 import { useSetup } from "~/lib/setup";
@@ -153,8 +154,23 @@ export function ProjectsScreen() {
 }
 
 function ProjectsHome() {
-  const { t } = useI18n();
+  const navigate = useNavigate();
+  const { t, locale } = useI18n();
+  const qc = useQueryClient();
+  const toast = useToast();
   const projects = useProjects();
+  // The onboarding plugin is what makes the sample; its settings section says it is loaded.
+  const sections = useSettingsSections(locale);
+  const { seen, markSeen } = useSeen();
+  const sample = useMutation({
+    mutationFn: () => invoke("onboarding.createSample", locale),
+    onSuccess: async (project) => {
+      // Settings too: the sample's first lesson counts as unseen again, and must before it opens.
+      await Promise.all([qc.invalidateQueries({ queryKey: keys.projects }), qc.invalidateQueries({ queryKey: keys.settings })]);
+      void navigate({ to: "/p/$projectId", params: { projectId: project.id } });
+    },
+    onError: (err) => toast(errorSpec(err))
+  });
   const mcp = useMcpUrl();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPane, setSettingsPane] = useState<string>();
@@ -167,6 +183,7 @@ function ProjectsHome() {
   const [configuring, setConfiguring] = useState<string | null>(null);
   const list = projects.data ?? [];
   const facts = useProjectFacts(list);
+  const offerSample = !!projects.data && !list.some((p) => p.sample) && !!sections.data?.some((s) => s.id === "onboarding") && !seen("sample-tile");
   // Projects in the account that are not on this computer yet stand in the grid too, saying where they are.
   const restores = useRestores();
   const missing = restores.data?.entries ?? [];
@@ -252,6 +269,26 @@ function ProjectsHome() {
               <span style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-lg)", color: "inherit" }}>{t("projectsScreen.newProject")}</span>
               <span style={{ fontSize: 14, lineHeight: "var(--leading-dense)", color: "var(--meta)" }}>{t("projectsScreen.newProjectCardDesc")}</span>
             </button>
+            {offerSample && (
+              <div className="proj-cell">
+                <button type="button" className="proj-new proj-sample" disabled={sample.isPending} onClick={() => sample.mutate()}>
+                  <Icon name="i-leaf" size={20} />
+                  <span style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-lg)", color: "inherit" }}>
+                    {sample.isPending ? t("onboarding.sampleCreating") : t("onboarding.sampleTileTitle")}
+                  </span>
+                  <span style={{ fontSize: 14, lineHeight: "var(--leading-dense)", color: "var(--meta)" }}>{t("onboarding.sampleTileDesc")}</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-icon proj-gear proj-sample-hide"
+                  title={t("onboarding.sampleTileHide")}
+                  aria-label={t("onboarding.sampleTileHide")}
+                  onClick={() => markSeen("sample-tile")}
+                >
+                  <Icon name="i-close" size={15} />
+                </button>
+              </div>
+            )}
           </div>
 
           <hr className="rule" />

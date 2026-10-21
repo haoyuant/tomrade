@@ -129,6 +129,21 @@ describe("the sample project", () => {
     expect(ctx.projects.list()).toEqual([expect.objectContaining({ id: again.id, name: SAMPLE.zh.name, sample: true })]);
   });
 
+  it("comes back from the home's tile once, opening on its first lesson again, with the other hints still seen", async () => {
+    const { ctx, project } = await fresh({ firstRun: "none", plugins: [[Settings, { path: path.join(tmp("again-settings"), "settings.json") }], Onboarding] });
+    await settle();
+    ctx.settings.set({ ...ctx.settings.get(), onboarding: { seen: ["setup-screen", "sample-first-lesson", "hint.revert"] } });
+    expect(ctx.onboarding.sampleAgain("zh").id).toBe(project.id);
+    expect(ctx.settings.get().onboarding).toEqual({ seen: ["setup-screen", "sample-first-lesson", "hint.revert"] });
+
+    ctx.projects.remove(project.id);
+    const again = ctx.onboarding.sampleAgain("zh");
+    expect(again).toEqual(expect.objectContaining({ name: SAMPLE.zh.name, sample: true }));
+    expect(ctx.onboarding.sampleAgain("zh").id).toBe(again.id);
+    expect(ctx.projects.list().map((p) => p.id)).toEqual([again.id]);
+    expect(ctx.settings.get().onboarding).toEqual({ seen: ["setup-screen", "hint.revert"] });
+  });
+
   it("gets its folder with the seed in the snapshot and none of it in the log, and stays out of the account's catalog", async () => {
     const hubDir = tmp("hub");
     const { ctx, project, hub, items, board } = await fresh({ hubDir, firstRun: "none", plugins: [[Storage, QUIET], Onboarding] });
