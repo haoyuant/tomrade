@@ -53,6 +53,8 @@ export interface ImIgnoredView {
   id: string; at: number; connectionId: string; tenantId: string; conversationId: string;
   actorId: string; actorName?: string; group: boolean;
   reason: "actor" | "conversation" | "activation" | "bot";
+  /** The conversation's name, once the adapter said it. */
+  conversationName?: string;
 }
 export interface ImPairingView {
   connectionId: string; code: string; projectId: string; expiresAt: number;
@@ -89,6 +91,9 @@ interface Connection {
   credentials: string;
   /** What the adapter asked the person to fix, by key, until it says the cause is gone. */
   notices: Map<string, ImNotice & { at: number }>;
+  /** Routes whose conversation's name was asked for since this session opened; a rename shows on the next. */
+  described: Set<string>;
+  naming?: boolean;
 }
 /** What a start from IM settles, carried in the tokens of its card; `card` is that card's outbox id. */
 interface StartDraft { itemId: string; card: string; engine?: string; options?: Record<string, string>; permissionMode?: string; playbook?: string; allowBlocked?: boolean; releaseBranch?: boolean; task?: string }
@@ -599,11 +604,12 @@ export class Im extends Service {
       let c = this.connections.get(spec.id);
       if (!c) {
         c = { id: spec.id, adapterId: spec.adapterId, controller: new AbortController(), opening: false, flushing: false, state: "offline", retryAt: 0, attempts: 0,
-          credentials: JSON.stringify(spec.credentials), notices: new Map() };
+          credentials: JSON.stringify(spec.credentials), notices: new Map(), described: new Set() };
         this.connections.set(c.id, c);
       }
       if (!c.session && !c.opening && c.retryAt <= Date.now()) void this.open(c);
       if (c.session && c.state === "connected" && !c.flushing) void this.flush(c);
+      if (c.session && c.state === "connected" && !c.naming) void this.nameRoutes(c);
     }
     const sweep = Date.now() - this.sweptAt >= this.config.sweepMs;
     if (sweep) {
@@ -660,6 +666,7 @@ export class Im extends Service {
       const session = await deadline(opening, this.config.operationTimeoutMs);
       if (!active()) return;
       c.session = session;
+      c.described = new Set();
       c.state = "connected";
       c.detail = undefined;
       c.attempts = 0;
@@ -742,6 +749,7 @@ export class Im extends Service {
         actorId: event.actor.id, ...(event.actor.name ? { actorName: event.actor.name } : {}), group, reason },
         ...this.ignored.filter(r => !(r.connectionId === c.id && r.tenantId === event.address.tenantId && r.conversationId === event.address.conversationId && r.actorId === event.actor.id))].slice(0, 20);
       if (reason === "conversation" && event.kind === "message" && group) this.askGroup(c, event);
+      if (group) void this.nameIgnored(c, this.ignored[0]!);
       this.changed();
       return { receiptId: `ignored:${id}` };
     }
@@ -953,17 +961,18 @@ export class Im extends Service {
   }
 
   /** The group's route with the preset, the paired people let in; a route it already has only lets them in. True when it made the route. */
-  private usePreset(connectionId: string, address: ImAddress, actorId: string, projectId: string, preset: GroupPreset): boolean {
+  private usePreset(connectionId: string, address: ImAddress, actorId: string, projectId: string, preset: GroupPreset, name?: string): boolean {
     const im = this.snapshot();
     const where = { connectionId, tenantId: address.tenantId, conversationId: address.conversationId };
     const paired = im.identities.filter(i => i.connectionId === connectionId).map(i => i.actorId);
     const had = im.routes.some(r => r.connectionId === where.connectionId && r.tenantId === where.tenantId && r.conversationId === where.conversationId);
     this.admit(im, where, [...new Set([...paired, actorId])], "group", projectId);
+    const i = im.routes.findIndex(r => r.connectionId === where.connectionId && r.tenantId === where.tenantId && r.conversationId === where.conversationId);
     if (!had) {
-      const i = im.routes.findIndex(r => r.connectionId === where.connectionId && r.tenantId === where.tenantId && r.conversationId === where.conversationId);
       const { notify, ...fields } = GROUP_PRESETS[preset];
       im.routes[i] = { ...im.routes[i], ...fields, notify: { ...notify } };
     }
+    if (name && !im.routes[i].label) im.routes[i] = { ...im.routes[i], label: name };
     this.save(im);
     this.ignored = this.ignored.filter(r => !(r.connectionId === connectionId && r.tenantId === where.tenantId && r.conversationId === where.conversationId));
     this.changed();
@@ -981,14 +990,58 @@ export class Im extends Service {
    * An adapter's own setup made a conversation for a paired person: it becomes a channel of that kind, saying so there.
    * One already allowed is left as it is.
    */
-  private allowFor(c: Connection, request: { actorId: string; address: ImAddress; kind: string; projectId: string }): boolean {
+  private allowFor(c: Connection, request: { actorId: string; address: ImAddress; kind: string; projectId: string; name?: string }): boolean {
     const preset = request?.kind as GroupPreset;
     if (!request?.address || !Object.hasOwn(GROUP_PRESETS, preset) || !this.projectsFor(c, request.actorId).some(p => p.id === request.projectId)) return false;
     const address = { tenantId: String(request.address.tenantId), conversationId: String(request.address.conversationId) };
-    if (this.usePreset(c.id, address, request.actorId, request.projectId, preset)) {
+    const name = typeof request.name === "string" ? request.name.trim().slice(0, 100) : undefined;
+    if (this.usePreset(c.id, address, request.actorId, request.projectId, preset, name)) {
       this.tell(c, address, this.presetSaid(preset, this.home.projects.get(request.projectId)?.name ?? request.projectId));
     }
     return true;
+  }
+
+  /**
+   * Each route's conversation by its name, asked of the adapter once per session so a rename shows after the next
+   * connect; settings are written only when a name changed. Settings show a paired person's own name before it.
+   */
+  private async nameRoutes(c: Connection) {
+    const session = c.session;
+    if (!session?.describe) return;
+    const due = this.settings.routes.filter(r => r.connectionId === c.id && !c.described.has(r.id));
+    if (!due.length) return;
+    c.naming = true;
+    const names = new Map<string, string>();
+    try {
+      for (const r of due) {
+        c.described.add(r.id);
+        const name = await this.nameOf(c, session, { tenantId: r.tenantId, conversationId: r.conversationId });
+        if (name && name !== r.label) names.set(r.id, name);
+      }
+    } finally { c.naming = false; }
+    if (!names.size || !this.current(c)) return;
+    const im = this.snapshot();
+    im.routes = im.routes.map(r => names.has(r.id) ? { ...r, label: names.get(r.id) } : r);
+    this.save(im);
+  }
+
+  /** An ignored group message's conversation by its name, so Settings says where it was. */
+  private async nameIgnored(c: Connection, row: ImIgnoredView) {
+    const session = c.session;
+    if (!session?.describe || row.conversationName) return;
+    const name = await this.nameOf(c, session, { tenantId: row.tenantId, conversationId: row.conversationId });
+    if (!name) return;
+    for (const r of this.ignored) if (r.connectionId === row.connectionId && r.tenantId === row.tenantId && r.conversationId === row.conversationId) r.conversationName = name;
+    this.changed();
+  }
+
+  /** What the adapter calls a conversation; nothing when it cannot say, and the id stands. */
+  private async nameOf(c: Connection, session: ImAdapterSession, address: ImAddress): Promise<string | undefined> {
+    try {
+      const got = await deadline(session.describe!(address), this.config.operationTimeoutMs);
+      const name = typeof got?.name === "string" ? got.name.trim().slice(0, 100) : "";
+      return name && this.current(c) ? name : undefined;
+    } catch { return undefined; }
   }
 
   /** A message the person withdrew or edited on the platform. Withdrawing a waiting one keeps it from running; an edit never reruns. */

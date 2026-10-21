@@ -137,6 +137,11 @@ export interface ImAdapterSession {
    */
   links?: ImLink[];
   /**
+   * SDK 0.2.24. A conversation's name as the platform shows it (`#tomrade-work`, a group's title), for Settings to
+   * show instead of its id; null when it has none or the bot may not see it. Older hosts never ask.
+   */
+  describe?(address: ImAddress): Promise<{ name?: string } | null>;
+  /**
    * SDK 0.2.19. Topics the bot opens itself, when `topics`: one per ticket
    * being worked in a group conversation. Messages people write in one arrive
    * with its `topicId`.
@@ -289,7 +294,7 @@ export interface ImAdapter {
      * in a group with no route does, and the conversation is told. One already allowed is left as it is. False when
      * they may not.
      */
-    allow?(request: { actorId: string; address: ImAddress; kind: "work" | "status" | "chat"; projectId: string }): boolean;
+    allow?(request: { actorId: string; address: ImAddress; kind: "work" | "status" | "chat"; projectId: string; /** SDK 0.2.24. The conversation's name, when the adapter knows it. */ name?: string }): boolean;
   }): Promise<ImAdapterSession>;
 }
 

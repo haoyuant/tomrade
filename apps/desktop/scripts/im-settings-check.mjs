@@ -58,6 +58,7 @@ const run = async () => {
       receive = io.receive;
       return {
         identity: { id: "B01", name: "@tomrade-bot" },
+        describe: async (a) => (a.conversationId === "C-dev" ? { name: "#dev-room" } : a.conversationId === "D-owner" ? { name: "owner-dm" } : null),
         deliver: async (d) => {
           if (failing) throw Object.assign(new Error("timeout"), { disposition: "uncertain" });
           sent.push(d);
@@ -220,7 +221,7 @@ const run = async () => {
   await sleep(200);
   await shot("im-group-guide.png");
   ctx.settings.set({ ...ctx.settings.get(), im: { ...imNow(), routes: [...imNow().routes, { ...imNow().routes[0], id: "dev", kind: "group", conversationId: "C-dev", allowDirectMessages: false, allowGroups: true, ticketTopics: true, groupActivation: "reply", notify: { tickets: true, code: true } }] } });
-  check("an allowed group is listed with what it is for", await waitFor(`document.querySelector('[data-im-connection=team] [data-testid=im-group-channels]')?.textContent === 'C-dev: work (a thread per ticket)'`),
+  check("an allowed group is listed with what it is for", await waitFor(`document.querySelector('[data-im-connection=team] [data-testid=im-group-channels]')?.textContent === '#dev-room: work (a thread per ticket)'`),
     await $(`document.querySelector('[data-im-connection=team] [data-testid=im-group-channels]')?.textContent`));
   check("and the direct-chat-only hint goes", await waitFor(`!document.querySelector('[data-im-connection=team] [data-testid=im-only-direct]')`));
 
@@ -232,6 +233,10 @@ const run = async () => {
   check("a direct chat with the group switch on is still tagged a direct chat, without the group switches", await waitFor(`${route(dmRoute.id)}?.querySelector('.tag, [class*=tag]')?.textContent === 'Direct chat'
     && !${switches(dmRoute.id)}.includes('Group messages') && !${switches(dmRoute.id)}.includes('A thread per ticket') && !${switches(dmRoute.id)}.includes('Recent discussion window')
     && !${route(dmRoute.id)}.querySelector('#im-route-${dmRoute.id}-activation')`), await $(`${switches(dmRoute.id)}`));
+  check("a group goes by its name, the id a tooltip, and a direct chat by the person in it", await waitFor(`${route("dev")}?.querySelector('[data-testid=im-route-name]')?.textContent === '#dev-room'
+    && ${route("dev")}.querySelector('[data-testid=im-route-name]').title === 'C-dev'
+    && ${route(dmRoute.id)}?.querySelector('[data-testid=im-route-name]')?.textContent === 'Owner' && ${route(dmRoute.id)}.querySelector('[data-testid=im-route-name]').title === 'D-owner'`),
+    await $(`[...document.querySelectorAll('[data-testid=im-route-name]')].map((n) => [n.textContent, n.title])`));
   check("a group is one line saying what it is for", await waitFor(`${route("dev")}?.querySelector('[data-testid=im-route-summary]')?.textContent === 'work (a thread per ticket) · Alpha · 1 allowed'`),
     await $(`${route("dev")}?.querySelector('[data-testid=im-route-summary]')?.textContent`));
   await press(`${route("dev")}.querySelector('[data-testid=im-route-fold]')`);
@@ -255,7 +260,7 @@ const run = async () => {
   check("one switch lets a conversation in or out", await until(() => dev()?.allowGroups === false) && await waitFor(`${route("dev")}.querySelector('.cfg-row').classList.contains('off')`), dev());
   await press(`${route("dev")}.querySelector('[data-testid=im-route-on]')`);
   await until(() => dev()?.allowGroups === true);
-  check("and it no longer counts as a group in the guide", await $(`document.querySelector('[data-im-connection=team] [data-testid=im-group-channels]')?.textContent === 'C-dev: work (a thread per ticket)'`));
+  check("and it no longer counts as a group in the guide", await $(`document.querySelector('[data-im-connection=team] [data-testid=im-group-channels]')?.textContent === '#dev-room: work (a thread per ticket)'`));
   await $(`${route(dmRoute.id)}?.scrollIntoView({ block: 'start' });true`);
   await sleep(200);
   await shot("im-direct-chat-kind.png");
@@ -264,7 +269,7 @@ const run = async () => {
   check("once there is a group, the guide waits folded", await waitFor(`${guide}?.querySelector('[data-testid=im-group-guide-fold]')?.getAttribute('aria-expanded') === 'false'`));
   await press(`${guide}.querySelector('[data-testid=im-group-guide-fold]')`);
   check("in Chinese too", await waitFor(`${guide}?.textContent.includes('在群聊或服务器里使用') && ${guide}.textContent.includes('在那里运行 /standin setup。')
-    && document.querySelector('[data-im-connection=team] [data-testid=im-group-channels]')?.textContent === 'C-dev：工作（每个工单一个话题）'`), await $(`${guide}?.textContent`));
+    && document.querySelector('[data-im-connection=team] [data-testid=im-group-channels]')?.textContent === '#dev-room：工作（每个工单一个话题）'`), await $(`${guide}?.textContent`));
   await $(`${guide}?.scrollIntoView({ block: 'center' });true`);
   await sleep(200);
   await shot("im-group-guide-zh.png");

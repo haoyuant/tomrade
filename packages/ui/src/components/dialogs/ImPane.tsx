@@ -290,19 +290,22 @@ function RouteRow({ route, names, shared, onChange, onRemove }: { route: ImRoute
   const switches = ([["allowDirectMessages", "imSettings.allowDirect", "dm"], ["allowGroups", "imSettings.allowGroups", "group"], ["desktopTurns", "imSettings.desktopTurns", "dm"]] as const)
     .filter(([key, , applies]) => (!route.kind || route.kind === applies) && key !== enabledKey);
   const detailed = route.kind !== "group" || !preset;
+  // A direct chat goes by the person in it, a group by the name the platform gave it; the id stays a tooltip.
+  const named = (route.kind === "dm" ? names.get(route.allowedActors[0] ?? "") : undefined) ?? route.label;
+  const shown = named ?? route.conversationId;
   return (
     <div className="stack-2" data-im-route={route.id}>
       <div className="fold-row">
-        <FoldChevron open={open} label={t(open ? "imSettings.foldBot" : "imSettings.unfoldBot", { name: route.conversationId })} onToggle={() => setOpen(!open)} testId="im-route-fold" />
+        <FoldChevron open={open} label={t(open ? "imSettings.foldBot" : "imSettings.unfoldBot", { name: shown })} onToggle={() => setOpen(!open)} testId="im-route-fold" />
         <div className={cn("cfg-row", !on && "off")}>
           <Tag tone="faint">{group ? t("imSettings.group") : t("imSettings.dm")}</Tag>
           <div className="cfg-name">
-            <span className="mono">{route.conversationId}</span>
+            <span className={cn(!named && "mono")} title={route.conversationId} data-testid="im-route-name">{shown}</span>
             <div className="meta-txt dense" data-testid="im-route-summary">{summary.filter(Boolean).join(" · ")}</div>
           </div>
           <button type="button" className="btn btn-ghost" onClick={onRemove}>{t("imSettings.removeRoute")}</button>
           {enabledKey && (
-            <button type="button" className="switch" role="switch" aria-checked={on} aria-label={t("imSettings.routeEnabled", { name: route.conversationId })}
+            <button type="button" className="switch" role="switch" aria-checked={on} aria-label={t("imSettings.routeEnabled", { name: shown })}
               onClick={() => set({ [enabledKey]: !on })} data-testid="im-route-on" />
           )}
         </div>
@@ -569,7 +572,7 @@ function GroupGuide({ adapter, routes }: { adapter?: ImAdapterView; routes: ImRo
           </ol>
           {groups.length > 0 && (
             <ul className="meta-txt dense" style={{ margin: 0, paddingLeft: 18, listStyle: "disc" }} data-testid="im-group-channels">
-              {groups.map((r) => <li key={r.id}>{t("imSettings.groupChannel", { conversation: r.conversationId, role: t(roleOf(r)) })}</li>)}
+              {groups.map((r) => <li key={r.id}>{t("imSettings.groupChannel", { conversation: r.label ?? r.conversationId, role: t(roleOf(r)) })}</li>)}
             </ul>
           )}
         </div>
@@ -603,7 +606,7 @@ function Ignored({ im, defaultProject, onError }: { im: ImSettings; defaultProje
           <span className="meta-txt mono">{time(row.at)}</span>
           <div className="cfg-name">
             {row.actorName ? `${row.actorName} · ` : ""}<span className="mono">{row.actorId}</span>
-            <div className="meta-txt dense">{row.group ? t("imSettings.group") : t("imSettings.dm")} · <span className="mono">{row.conversationId}</span> · {t(REASON_KEY[row.reason])}</div>
+            <div className="meta-txt dense">{row.group ? t("imSettings.group") : t("imSettings.dm")} · {row.conversationName ? <span title={row.conversationId}>{row.conversationName}</span> : <span className="mono">{row.conversationId}</span>} · {t(REASON_KEY[row.reason])}</div>
           </div>
           {row.reason !== "bot" && (
             <>
