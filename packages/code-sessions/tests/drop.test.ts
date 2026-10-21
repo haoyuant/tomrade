@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, expect, it } from "vitest";
-import { droppedPaste, heldForDrop, readableDrops, shellEscape } from "../src/drop.js";
+import { droppedPaste, heldForDrop, PRIVATE_COPY_MAX, privateFolders, readableDrops, shellEscape } from "../src/drop.js";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-drop-"));
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -46,4 +46,29 @@ it("copies what only Tomrade may read where the terminal can, under its own name
   expect([own, none]).toEqual([elsewhere, ""]);
   // One that cannot be copied is typed as it is.
   expect(gone).toBe(path.join(held, "gone.png"));
+});
+
+it("knows macOS's private folders from the home folder, and none off macOS", () => {
+  expect(privateFolders("/Users/me")).toEqual(["/Users/me/Downloads", "/Users/me/Desktop", "/Users/me/Documents", "/Users/me/Library/Mobile Documents", "/Volumes"]);
+  expect(privateFolders(null)).toEqual([]);
+});
+
+it("copies a file dropped from a private folder, but not a folder, a file over the limit or one elsewhere", async () => {
+  const home = path.join(dir, "home");
+  const downloads = path.join(home, "Downloads");
+  fs.mkdirSync(path.join(downloads, "shots"), { recursive: true });
+  fs.writeFileSync(path.join(downloads, "IMG_1638.png"), "png");
+  fs.writeFileSync(path.join(downloads, "shots", "a.png"), "a");
+  fs.writeFileSync(path.join(downloads, "big.mov"), "");
+  fs.truncateSync(path.join(downloads, "big.mov"), PRIVATE_COPY_MAX + 1);
+  fs.mkdirSync(path.join(home, "repo"), { recursive: true });
+  fs.writeFileSync(path.join(home, "repo", "own.png"), "own");
+  const into = path.join(dir, "private-drops");
+
+  const dropped = [path.join(downloads, "IMG_1638.png"), path.join(downloads, "shots"), path.join(downloads, "big.mov"), path.join(home, "repo", "own.png"), path.join(downloads, "gone.png")];
+  const [shot, folder, big, own, gone] = await readableDrops(dropped, into, path.join(dir, "T"), privateFolders(home));
+  expect(path.basename(shot!)).toBe("IMG_1638.png");
+  expect(path.dirname(path.dirname(shot!))).toBe(into);
+  expect(fs.readFileSync(shot!, "utf8")).toBe("png");
+  expect([folder, big, own, gone]).toEqual(dropped.slice(1));
 });
