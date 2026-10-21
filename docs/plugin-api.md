@@ -893,7 +893,10 @@ engine like any other: it gets the tools over MCP with a per-run token
 (`ctx.mcp.bindRun`), so the ledger, the policies and the revert apply to it
 unchanged. Pi has no MCP flag, so `engine-pi` (and a terminal pi session) loads a
 generated session-only extension that registers the server instead; the user's
-own `mcp.json` is never written. Agents that speak ACP (the Agent Client
+own `mcp.json` is never written. A repository's committed `.pi/extensions/tomrade.ts`
+comes from the same engine: `engine-pi` hands Connect its writer with
+`ctx.codeLink.registerConnector("pi", { write(mcpUrl, eventUrl), url(text) })`,
+read when Connect runs, so code-link imports no engine. Agents that speak ACP (the Agent Client
 Protocol) share one conductor, `@tomradex/engine-acp`: `createAcpEngine(ctx,
 agent)` spawns the agent's ACP server on stdio, hands it Tomrade's tools as an
 HTTP MCP server in `session/new`, reopens a stored session with

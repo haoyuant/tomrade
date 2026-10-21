@@ -11,7 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, onTestFinished, vi } from "vitest";
 import { Agent } from "@tomradex/agent";
-import { CodeLink, hookCommand, posixHookCommand, writeConnectFiles } from "@tomradex/code-link";
+import { CodeLink, hookCommand, posixHookCommand, writeConnectFiles as writeWith, type ConnectAgent, type ConnectFileWriter, type ConnectInput, type LocalConnect } from "@tomradex/code-link";
 import { Contributions } from "@tomradex/contributions";
 import { Mcp } from "@tomradex/mcp";
 import { Repos } from "@tomradex/repos";
@@ -23,6 +23,16 @@ import { Herdr } from "@tomradex/herdr";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Tools } from "@tomradex/tools";
+
+/** Pi's engine registers the real writer (see engine-pi); this one names the same endpoints the same way. */
+const piConnector: ConnectFileWriter = {
+  write: (mcpUrl, eventUrl) => `// pi extension\nconst server = ${JSON.stringify({ url: mcpUrl })};\nconst eventUrl = ${JSON.stringify(eventUrl)};\n`,
+  url: (text) => {
+    const line = /^const server = (\{.*\});$/m.exec(text)?.[1];
+    return line ? (JSON.parse(line) as { url: string }).url : null;
+  }
+};
+const writeConnectFiles = (root: string, input: ConnectInput, agents?: readonly ConnectAgent[], local?: LocalConnect) => writeWith(root, input, agents, local, () => piConnector);
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-code-connect-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -94,6 +104,7 @@ async function machine() {
   await bag.ctx.repos.setCheckout(repo.remote, repo.checkout);
   // GitHub is never asked from a test; one that needs its answer sets its own.
   bag.ctx.codeLink.pulls = async () => null;
+  bag.ctx.codeLink.registerConnector("pi", piConnector);
   return { ...bag, codeLink: bag.ctx.codeLink, repo: row, checkout: repo.checkout, remote: repo.remote };
 }
 
@@ -310,15 +321,13 @@ describe("connecting a repository", () => {
     expect(await codeLink.connection(project.id, repo.id)).toMatchObject({ state: "other-instance", configuredUrl: otherUrl });
   });
 
-  it("gives Pi a project extension that reaches this project and reports to Tomrade", () => {
+  it("gives Pi the project extension its engine writes, and only the instructions while no engine has registered one", () => {
     const dir = path.join(root, `pi-${n++}`);
     fs.mkdirSync(dir, { recursive: true });
     const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
+    expect(writeWith(dir, input, ["pi"]).files).toEqual(["AGENTS.md"]);
     writeConnectFiles(dir, input);
-    const source = fs.readFileSync(path.join(dir, ".pi/extensions/tomrade.ts"), "utf8");
-    expect(source).toContain(`const server = {"url":"${input.mcpUrl}"`);
-    expect(source).toContain(`const eventUrl = "${input.eventUrl}";`);
-    expect(source).toContain('"x-tomrade-agent": "pi"');
+    expect(fs.readFileSync(path.join(dir, ".pi/extensions/tomrade.ts"), "utf8")).toBe(piConnector.write(input.mcpUrl, input.eventUrl));
     expect(writeConnectFiles(dir, input).files).toEqual([]);
     expect(writeConnectFiles(dir, { ...input, mcpUrl: "http://127.0.0.1:19091/mcp/p1", eventUrl: "http://127.0.0.1:19091/sessions/event" }).files).toContain(".pi/extensions/tomrade.ts");
   });

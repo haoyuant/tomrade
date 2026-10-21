@@ -4,83 +4,49 @@ import path from "node:path";
 import { Context, Service } from "cordis";
 import { z } from "zod";
 import type {} from "@tomradex/agent";
-import type { CommandCheck, ThreadSummary } from "@tomradex/agent";
+import type { ThreadSummary } from "@tomradex/agent";
 import { untilLabel } from "@tomradex/agent";
 import type {} from "@tomradex/boards";
 import type {} from "@tomradex/contributions";
-import type { Badge, SectionRow } from "@tomradex/contributions";
 import type {} from "@tomradex/db";
 import type {} from "@tomradex/hub";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/items";
-import type {} from "@tomradex/herdr";
-import { HERDR_INSTALL, herdrInstall, type HerdrInstall, type HerdrPaneEvent } from "@tomradex/herdr";
 import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/repos";
-import { normalizeRemote, sameRepository } from "@tomradex/repos";
+import { normalizeRemote } from "@tomradex/repos";
 import type {} from "@tomradex/settings";
 import type {} from "@tomradex/write";
-import type { Author, Item, Repo } from "@tomradex/domain";
+import type { Item } from "@tomradex/domain";
 import { GitFolder, gitRunner, type Git } from "@tomradex/git";
-import { CURSOR_HOOK_SCRIPT, cursorHookReader } from "./cursor-hooks.js";
-import { keysInText, parseBranch, subjectPr } from "./keys.js";
-import { githubPull, readPull, type ForgePull } from "./forge.js";
-import { inspectConnection, inspectConnectFiles, type AgentConnectionView, type ConnectionView } from "./connection.js";
-import { CONNECT_AGENTS, CONNECT_FILES, writeConnectFiles, type ConnectAgent, type SkippedAgent } from "./connect.js";
+import { readPull, type ForgePull } from "./forge.js";
+import type { ConnectionView } from "./connection.js";
+import { CONNECT_AGENTS, type ConnectFileWriter, type ConnectorAgent } from "./connect.js";
+import { RepoConnect, type ConnectMode, type ConnectResult } from "./connect-repo.js";
+import { Connections } from "./connections.js";
+import { contribute } from "./contrib.js";
 import { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
+import { HerdrBridge, type HerdrInstall } from "./herdr-bridge.js";
+import { Landing, type MergeCheckView, type MergeLocalResult, type OpenPrResult } from "./landing.js";
 import { SYNC_PROMPT, syncInstructions, syncPrompt, type SyncScope } from "./sync.js";
 import { githubHttps } from "@tomradex/github";
 import { PLAYBOOKS } from "./playbooks.js";
-import { decide, type Decision, type Evidence } from "./rules.js";
-import { scanRepo, type MergedCommit, type ScanResult, type ScannedBranch } from "./scanner.js";
 import { classifyRemoteFailure, probeRemote, readRemoteIdentity, type RemoteIdentity } from "./remote.js";
+import { currentLinks, deliveryMerged, GitScan, LANDED_ELSEWHERE, primaryOf, type ScanSummary, type UnlinkedBranch } from "./scan/absorb.js";
 import { Sessions, type SessionMoment } from "./sessions.js";
-import { CODE_WORDS, type CodeWords, type PlainCodeWord } from "./words.js";
-import { Starter, type StartMode, type StartOptions, type StartResult } from "./start.js";
+import { CODE_WORDS, type CodeWords } from "./words.js";
+import { Starter, type StartOptions, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
 import { findCodexRollout, findTranscript, readConversation, transcriptTitle, type ConversationLine } from "./titles.js";
-import { AUTO_TERMINAL, RESUME_ID_FILE, RESUME_SCRIPT, SYSTEM_TERMINAL, TerminalSettings, commandOk, exec, herdrFallbackNote, launchTerminal, machineTerminalSettings, setupTerminal, shellQuote, terminalApps } from "./terminal.js";
+import { AUTO_TERMINAL, TerminalSettings, commandOk, exec, machineTerminalSettings, setupTerminal, terminalApps } from "./terminal.js";
 import { registerTools } from "./tools.js";
 
-/** Who the scanner writes as. Evidence from git is not a person's decision, and it is not a model's either. */
-export const AUTHOR: Author = "sync:git";
-
-// Names a word book translates; any other value reads as it is.
-const DELIVERY_STATES = { active: "deliveryActive", completed: "deliveryCompleted", cancelled: "deliveryCancelled" } as const;
-const PR_STATES = { open: "prOpen", merged: "prMerged", closed: "prClosed" } as const;
-const SESSION_STATES = { running: "sessionRunning", waiting: "sessionWaiting", idle: "sessionIdle", error: "sessionError", ended: "sessionEnded", lost: "sessionLost" } as const;
-const STATUSES = { backlog: "statusBacklog", todo: "statusTodo", doing: "statusDoing", verifying: "statusVerifying", done: "statusDone", cancelled: "statusCancelled" } as const;
-const named = (w: CodeWords, keys: Record<string, PlainCodeWord>, value: string): string => (Object.hasOwn(keys, value) ? w(keys[value]!) : value);
-
-/** Relative time, from seconds ago, in the book's language. */
-const agoWords = (w: CodeWords, s: number): string => {
-  if (s < 60) return w("justNow");
-  const m = Math.round(s / 60);
-  if (m < 60) return w("minutesAgo", { n: m });
-  const h = Math.round(m / 60);
-  if (h < 48) return w("hoursAgo", { n: h });
-  return w("daysAgo", { n: Math.round(h / 24) });
-};
-
-/** How often a repository's agent's hook events reach the database; memory has every one. */
-const HOOK_HEARD_WRITE_MS = 60_000;
-
-/** A conversation resumed this soon after its session ended goes on in that session; later, it starts a new one. */
-const RESUME_WITHIN_MS = 24 * 3600_000;
-
-/** Sessions that ended this close together ended with one agent process: parallel tickets of one conversation. */
-const ENDED_TOGETHER_MS = 10_000;
-
-/** How a proposal from another ticket's merge that names this one in passing begins. */
-const LANDED_ELSEWHERE = "commits landed through ";
-
-const BEFORE_DONE: ReadonlySet<string> = new Set(["backlog", "todo", "doing", "verifying"]);
-
-/** How often a terminal session whose hooks name no herdr pane asks herdr which pane runs it. */
-const PANE_LOOK_MS = 15_000;
-
-const hasLiveSession = (sessions: SessionView[]): boolean =>
-  sessions.some((s) => s.mode === "terminal" || s.state === "running" || s.state === "waiting" || s.state === "error");
+export { AUTHOR, deliveryMerged, primaryOf, type ScanSummary, type UnlinkedBranch } from "./scan/absorb.js";
+export { compareUrl, MERGE_COMMAND, type MergeCheckView, type MergeLocalResult, type OpenPrResult } from "./landing.js";
+export type { ConnectMode, ConnectResult } from "./connect-repo.js";
+export { MCP_AGENT } from "./connections.js";
+export { lastSaid } from "./herdr-bridge.js";
+export { ago } from "./contrib.js";
 
 declare module "cordis" {
   interface Context {
@@ -94,43 +60,6 @@ declare module "cordis" {
     /** Asked: show this session's herdr terminal inside Tomrade. True once a window has. */
     "codeLink/show-session"(projectId: string, sessionId: string): Promise<boolean | void> | boolean | void;
   }
-}
-
-/** A branch that names a ticket the project does not have, or a ticket in another project. */
-export interface UnlinkedBranch {
-  repoId: string;
-  repoName: string;
-  branch: string;
-  keyNum: number | null;
-  sha: string;
-  committedAt: number;
-}
-
-export interface ScanSummary {
-  repos: number;
-  scanned: number;
-  offline: number;
-  links: number;
-  /** Tickets whose status the evidence moved. */
-  changed: number;
-  /** Proposals and flags raised. */
-  proposals: number;
-  skipped: { repoId: string; reason: string }[];
-}
-
-export interface OpenPrResult {
-  pushed: boolean;
-  /** The pull request's URL when one was created or found; otherwise a compare page to open one by hand, or null. */
-  url: string | null;
-  created: boolean;
-  message: string;
-}
-
-export interface MergeLocalResult {
-  merged: boolean;
-  /** The default branch's head after the merge; null when nothing was merged. */
-  sha: string | null;
-  message: string;
 }
 
 /** A ticket's current delivery: its code, primary link first, the session working on it, and what git proposes. */
@@ -152,39 +81,6 @@ export interface CodeSummaryView {
 }
 
 export type RepoPolicyPatch =Pick<RepoStatePatch, "branchTemplate" | "autoDone" | "agentPush" | "agentMerge" | "readiness" | "connectAgents">;
-
-/** The command an agent merges with when the repository lets it. */
-export const MERGE_COMMAND = "gh pr merge";
-
-/** The permission mode engines share for a run that asks nothing and is sandboxed nowhere. */
-const FULL_ACCESS = "full-access";
-
-/** Whether one local coding agent's own settings let it merge; `check` is null when Tomrade cannot read them. */
-export interface MergeCheckView {
-  engine: string;
-  title: string;
-  check: CommandCheck | null;
-}
-
-/** For everyone who clones the repository (a branch and pull request), or for this machine only (untracked files in the checkout). */
-export type ConnectMode = "team" | "local";
-
-export interface ConnectResult {
-  agents: AgentConnectionView[];
-  /** The connection branch; empty for this machine only. */
-  branch: string;
-  /** Files written or changed, relative to the repository root. */
-  files: string[];
-  /** Chosen agents left out because a file of theirs could not be changed safely. */
-  skipped: SkippedAgent[];
-  committed: boolean;
-  pushed: boolean;
-  /** The pull request, or the compare page to open one from; null when nothing could be pushed. */
-  url: string | null;
-  /** Written into the checkout and kept out of git, nothing committed. */
-  local?: boolean;
-  message: string;
-}
 
 declare module "@tomradex/ipc" {
   interface Channels {
@@ -258,61 +154,6 @@ export const CodeLinkConfig = z.preprocess(
 export type CodeLinkConfig = z.infer<typeof CodeLinkConfig>;
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
-/** git's last word on a failure, which is the one that says why. */
-const lastLine = (text: string | undefined) => (text ?? "").trim().split("\n").pop() ?? "";
-
-/** Relative time for a status line or a section row. */
-export function ago(at: number, now = Date.now()): string {
-  return agoWords(CODE_WORDS("en"), Math.max(0, Math.round((now - at) / 1000)));
-}
-
-/** The link the ticket is judged and shown by: an open pull request first, else the branch that moved last. */
-export function primaryOf(links: CodeLinkView[]): CodeLinkView | null {
-  if (!links.length) return null;
-  return [...links].sort((a, b) => {
-    const open = Number(b.prState === "open") - Number(a.prState === "open");
-    if (open) return open;
-    const pr = Number(b.prNumber !== null) - Number(a.prNumber !== null);
-    if (pr) return pr;
-    const branch = Number(!!b.branch) - Number(!!a.branch);
-    if (branch) return branch;
-    return (b.headAt ?? 0) - (a.headAt ?? 0);
-  })[0]!;
-}
-
-const isMerged = (l: CodeLinkView): boolean => !!l.mergedSha || l.prState === "merged";
-/** Left behind, not waiting: a pull request closed unmerged, or a bare branch with nothing on it. */
-const isAbandoned = (l: CodeLinkView): boolean =>
-  !l.mergedSha && (l.prState === "closed" || (l.prNumber === null && !l.prUrl && !l.prState && l.ahead === 0));
-
-/** A delivery is merged once something merged and every other link merged too or was abandoned. */
-export function deliveryMerged(links: CodeLinkView[]): boolean {
-  return links.some(isMerged) && links.every((l) => isMerged(l) || isAbandoned(l));
-}
-
-const signature = (kind: string, to: string | null, reason: string): string => `${kind}|${to ?? ""}|${reason}`;
-
-/** A merge commit shows in the scan itself; a fast-forward only as the head this link last saw ahead of the default branch now sitting inside it. */
-const landed = (b: ScannedBranch, was: CodeLinkView | undefined): boolean => b.merged || (b.contained && !!was && was.headSha === b.sha && was.ahead > 0);
-
-/** A GitHub remote's compare page for a branch, or null for another host. */
-export function compareUrl(remote: string, defaultBranch: string, branch: string): string | null {
-  const m = /github\.com[/:]([^/]+)\/([^/]+?)(?:\.git)?$/.exec(remote);
-  return m ? `https://github.com/${m[1]}/${m[2]}/compare/${encodeURIComponent(defaultBranch)}...${encodeURIComponent(branch)}?expand=1` : null;
-}
-
-/** The agent of a session known only by its MCP connection. */
-export const MCP_AGENT = "mcp";
-
-/** The name herdr knows an engine's CLI by. */
-const herdrAgentOf = (engine: string): string => ({ "claude-code": "claude", workbuddy: "codebuddy", gemini: "gemini", cursor: "cursor-agent", dsh: "dsh" } as Record<string, string>)[engine] ?? engine;
-
-/** The last line of a pane that says something — not the input box, a rule, or a shortcut hint — for a summary. */
-export function lastSaid(screen: string | null): string {
-  if (!screen) return "";
-  const lines = screen.split("\n").map((line) => line.replace(/[\u2500-\u257f]/g, " ").trim()).filter((line) => line && !/^[>❯$%#│|?]+$/.test(line) && !/^\? for shortcuts|^esc to interrupt|^\d+ tokens?\b|^ctrl\+/i.test(line));
-  return (lines.at(-1) ?? "").replace(/^[>❯]\s*/, "").slice(0, 200);
-}
 
 const SETTINGS_SECTION = {
   id: "codeLink",
@@ -386,26 +227,17 @@ export class CodeLink extends Service {
   private readonly home: Context;
   private readonly git: Git;
   private starter!: Starter;
-  private readonly unlinkedByProject = new Map<string, UnlinkedBranch[]>();
-  private readonly scannedAt = new Map<string, number>();
-  private readonly inFlight = new Map<string, Promise<ScanSummary>>();
-  /** Folders hooks events came from that were already looked at for a checkout: one look per folder, not per event. */
-  private readonly placeLooked = new Set<string>();
+  private scans!: GitScan;
+  private landing!: Landing;
+  private connections!: Connections;
+  private repoConnect!: RepoConnect;
+  private herdr!: HerdrBridge;
+  /** The engines' connection-file writers; Connect reads them when it runs, so load order does not matter. */
+  private readonly connectors = new Map<ConnectorAgent, ConnectFileWriter>();
   /** Ended sessions already looked for a transcript title. */
   private readonly titlesLooked = new Set<string>();
-  /** When each session last asked herdr for its pane. */
-  private readonly paneLooked = new Map<string, number>();
-  /** Per `projectId\0repoId`, each agent's last hook event here and when it was last written down. */
-  private readonly hooksHeard = new Map<string, Map<string, { at: number; written: number }>>();
-  /** Cursor's hooks, read into Claude Code's shape; it remembers each conversation's last reply for its stop. */
-  private readonly readCursorHook = cursorHookReader();
   /** Machine-local: each thread's worktree, for the section and the terminal. */
   private readonly worktrees = new Map<string, string>();
-  /**
-   * Which sessions each outside client's MCP connection claimed for — several when it works tickets in parallel —
-   * and the one a call without a key means; in memory, so a restart asks the client to name its ticket again.
-   */
-  private readonly connections = new Map<string, { projectId: string; sessionIds: string[]; current: string }>();
   /** Threads with a run going, so a question raised mid-run finds its session: agent events name only the thread. */
   private readonly running = new Map<string, ThreadSummary>();
   /** What the Start dialog last ran with on this machine (see `defaults.ts`). */
@@ -431,13 +263,7 @@ export class CodeLink extends Service {
       dirOf: (id) => this.sessionDir(id),
       onChange: (projectId) => this.notify(projectId),
       onMoment: (session, moment) => this.noteMoment(session, moment),
-      // In a herdr pane the person may be at the terminal: herdr tells them there too (the desktop keeps the count, not the toast).
-      onWaiting: (session, activity) => {
-        if (!session.herdrPane) return;
-        const key = session.itemIds[0] ? this.ctx.items.get(session.projectId, session.itemIds[0])?.key : undefined;
-        const who = key ?? this.ctx.get("agent")?.codeEngines().find((e) => e.id === session.agent)?.title ?? session.agent;
-        void this.ctx.get("herdr")?.notify(this.words()("herdrNeedsYou", { what: who }), activity, "request");
-      },
+      onWaiting: (session, activity) => this.herdr.waiting(session, activity),
       // A terminal session cannot be typed into: when the limit lifts the person is told, not the agent.
       onLimit: (session, until) => {
         const agent = this.ctx.get("agent");
@@ -456,6 +282,50 @@ export class CodeLink extends Service {
       notify: (projectId) => this.notify(projectId),
       sessionDir: (id) => this.sessionDir(id),
       worktrees: this.worktrees
+    });
+    this.herdr = new HerdrBridge({ ctx: this.ctx, store: this.store, sessions: this.sessions, words: () => this.words(), sessionDir: (id) => this.sessionDir(id) });
+    this.connections = new Connections({
+      ctx: this.ctx,
+      store: this.store,
+      sessions: this.sessions,
+      git: this.git,
+      worktrees: this.worktrees,
+      sessionDir: (id) => this.sessionDir(id),
+      notify: (projectId) => this.notify(projectId),
+      findPane: (projectId, sessionId, payload) => this.herdr.findPane(projectId, sessionId, payload)
+    });
+    this.scans = new GitScan({
+      ctx: this.ctx,
+      store: this.store,
+      sessions: this.sessions,
+      git: this.git,
+      config: this.config,
+      pulls: (repo, number, cwd) => this.pulls(repo, number, cwd),
+      notify: (projectId) => this.notify(projectId),
+      prefixOf: (projectId) => this.prefixOf(projectId),
+      archiveCompletedSessions: (projectId) => this.archiveCompletedSessions(projectId),
+      superseded: (projectId, session) => this.connections.superseded(projectId, session)
+    });
+    this.landing = new Landing({
+      ctx: this.ctx,
+      store: this.store,
+      git: this.git,
+      defaults: this.defaults,
+      words: () => this.words(),
+      notify: (projectId) => this.notify(projectId),
+      reevaluate: (projectId, itemId, repoId) => this.reevaluate(projectId, itemId, repoId),
+      scan: (projectId) => this.scan(projectId),
+      worktreeOf: (projectId, itemId) => this.worktreeOf(projectId, itemId)
+    });
+    this.repoConnect = new RepoConnect({
+      ctx: this.ctx,
+      store: this.store,
+      git: this.git,
+      words: () => this.words(),
+      notify: (projectId) => this.notify(projectId),
+      prefixOf: (projectId) => this.prefixOf(projectId),
+      lastHooks: (projectId, repoId) => this.connections.lastHooks(projectId, repoId),
+      connectors: (agent) => this.connectors.get(agent)
     });
     this.ctx.settings.register(SETTINGS_SECTION);
     this.ctx.on("write/pre-commit", (intent, next) => {
@@ -494,7 +364,7 @@ export class CodeLink extends Service {
     // An earlier version wrote the helper under the Hub; repoint it before a
     // session can fall back to the wrong global account.
     this.home.inject(["repos"], () => {
-      for (const projectId of this.ctx.db.openIds()) void this.migrateCredentialHelpers(projectId);
+      for (const projectId of this.ctx.db.openIds()) void this.scans.migrateCredentialHelpers(projectId);
     });
 
     this.home.inject(["tools"], (ctx) =>
@@ -523,8 +393,8 @@ export class CodeLink extends Service {
     );
     this.home.inject(["mcp"], (ctx) => {
       // Hooks a repository commits carry no token; the cwd and session id in the payload say whose they are.
-      ctx.mcp.onEvent((payload) => this.externalEvent(payload));
-      ctx.on("mcp/closed", (connection) => this.disconnected(connection));
+      ctx.mcp.onEvent((payload) => this.connections.externalEvent(payload));
+      ctx.on("mcp/closed", (connection) => this.connections.disconnected(connection));
       ctx.mcp.prompt({
         name: SYNC_PROMPT,
         title: "Sync with Tomrade",
@@ -644,19 +514,8 @@ export class CodeLink extends Service {
       ctx.ipc.handle("codeLink.herdrInstall", () => ctx.codeLink.herdrInstall());
       ctx.ipc.handle("codeLink.installHerdr", () => ctx.codeLink.installHerdr());
     });
-    this.home.inject(["contributions"], (ctx) => this.contribute(ctx));
-    // herdr's reading of the panes ticket sessions run in, as the hook events those sessions would post.
-    this.home.inject(["herdr"], (ctx) => {
-      ctx.herdr.onPane((event) => void this.herdrEvent(ctx, event).catch((err) => this.ctx.logger.warn(`herdr event on ${event.paneId} failed: ${message(err)}`)));
-      ctx.effect(() => () => {
-        for (const release of this.herdrHolds.values()) release();
-        this.herdrHolds.clear();
-      });
-      this.watchPanes(ctx);
-      ctx.on("codeLink/changed", () => this.watchPanes(ctx));
-      // a ticket moved (by a person, a scan, a merge) shows on its workspace too
-      ctx.on("write/committed", (intent) => { if (intent.entity === "item") this.watchPanes(ctx); });
-    });
+    this.home.inject(["contributions"], (ctx) => contribute(ctx, { ctx: this.ctx, codeLink: this, words: () => this.words() }));
+    this.home.inject(["herdr"], (ctx) => this.herdr.follow(ctx));
 
     const timer = this.config.scanMs > 0 ? setInterval(() => void this.scanOpen(), this.config.scanMs) : null;
     timer?.unref?.();
@@ -685,8 +544,7 @@ export class CodeLink extends Service {
   }
 
   private currentLinks(projectId: string, itemId: string): CodeLinkView[] {
-    const delivery = this.store.currentDelivery(projectId, itemId);
-    return delivery ? this.store.links(projectId, itemId).filter((link) => link.delivery === delivery.sequence) : [];
+    return currentLinks(this.store, projectId, itemId);
   }
 
   proposals(projectId: string, itemId?: string): ProposalView[] {
@@ -722,7 +580,7 @@ export class CodeLink extends Service {
   }
 
   unlinked(projectId: string): UnlinkedBranch[] {
-    return this.unlinkedByProject.get(projectId) ?? [];
+    return this.scans.unlinkedByProject.get(projectId) ?? [];
   }
 
   repoStates(projectId: string): RepoStateView[] {
@@ -770,12 +628,12 @@ export class CodeLink extends Service {
     const repo = this.ctx.repos.get(projectId, repoId);
     const checkout = repo ? this.ctx.repos.checkout(repo.remote).checkout : null;
     if (!repo || !checkout || !fs.existsSync(checkout)) throw new Error("Choose this repository's checkout first.");
-    await this.migrateCredentialHelpers(projectId);
+    await this.scans.migrateCredentialHelpers(projectId);
     return this.probeAndRecord(projectId, repoId, checkout, repo.defaultBranch);
   }
 
   private async probeAndRecord(projectId: string, repoId: string, checkout: string, branch: string): Promise<RepoStateView> {
-    await this.inFlight.get(projectId);
+    await this.scans.inFlight.get(projectId);
     const probe = await probeRemote(this.git, checkout, branch);
     const reachable = probe.state !== "offline";
     const state = this.store.upsertRepoState(projectId, repoId, {
@@ -853,7 +711,7 @@ export class CodeLink extends Service {
   }
 
   lastScanAt(projectId: string): number | null {
-    return this.scannedAt.get(projectId) ?? null;
+    return this.scans.scannedAt.get(projectId) ?? null;
   }
 
   /** This machine's worktree for the ticket's most recent thread, if one was started here. */
@@ -916,55 +774,12 @@ export class CodeLink extends Service {
     return state;
   }
 
-  /** The agents a repository is connected for: the person's choice, else the ones installed here, else every one. */
-  private async connectAgents(projectId: string, repoId: string): Promise<ConnectAgent[]> {
-    const chosen = this.store.repoState(projectId, repoId)?.connectAgents;
-    if (chosen?.length) return chosen;
-    const agent = this.ctx.get("agent");
-    const found = await Promise.all(CONNECT_AGENTS.map(async (id) => {
-      const state = await agent?.engineOf(id)?.available().catch(() => null);
-      // Installed is enough: the repository's files do not need it signed in here.
-      return state?.ok || state?.cli?.state === "ready" ? [id] : [];
-    }));
-    const detected = found.flat();
-    // A Tomrade that finds none of them cannot tell which the team uses.
-    return detected.length ? detected : [...CONNECT_AGENTS];
+  mergeChecks(projectId: string, repoId: string): Promise<MergeCheckView[]> {
+    return this.landing.mergeChecks(projectId, repoId);
   }
 
-  /**
-   * Read, not run: each installed coding agent's own permission settings for
-   * gh pr merge, under the mode a headless run here would use.
-   */
-  async mergeChecks(projectId: string, repoId: string): Promise<MergeCheckView[]> {
-    const agent = this.ctx.get("agent");
-    if (!agent) return [];
-    const views: MergeCheckView[] = [];
-    for (const engine of agent.codeEngines()) {
-      if (!(await engine.available().catch(() => ({ ok: false }))).ok) continue;
-      views.push({ engine: engine.id, title: engine.title, check: await this.mergeCheck(projectId, repoId, engine.id, false) });
-    }
-    return views;
-  }
-
-  async allowMerge(projectId: string, repoId: string, engineId: string): Promise<MergeCheckView> {
-    const engine = this.ctx.get("agent")?.codeEngines().find((e) => e.id === engineId);
-    if (!engine) throw new Error(`unknown engine ${engineId}`);
-    if (!engine.commands?.allow) throw new Error(`${engine.title}'s settings cannot be changed from Tomrade — allow gh pr merge there yourself`);
-    return { engine: engine.id, title: engine.title, check: await this.mergeCheck(projectId, repoId, engineId, true) };
-  }
-
-  private async mergeCheck(projectId: string, repoId: string, engineId: string, allow: boolean): Promise<CommandCheck | null> {
-    const repo = this.ctx.repos.get(projectId, repoId);
-    if (!repo) throw new Error(`unknown repository ${repoId}`);
-    const engine = this.ctx.get("agent")?.codeEngines().find((e) => e.id === engineId);
-    if (!engine) return null;
-    const remembered = this.defaults.read();
-    const permissionMode = remembered?.engine === engineId && remembered.permissionMode ? remembered.permissionMode : engine.permissionModes?.default;
-    // Tomrade itself hands full access to the run, so no setting of the agent's can stop the command.
-    if (!engine.commands) return permissionMode === FULL_ACCESS ? { state: "allowed", why: "bypass", mode: FULL_ACCESS } : null;
-    const placement = this.ctx.repos.checkout(repo.remote);
-    const opts = { cwd: placement.checkout ?? null, worktree: !placement.runInCheckout, ...(permissionMode ? { permissionMode } : {}) };
-    return allow && engine.commands.allow ? engine.commands.allow(MERGE_COMMAND, opts) : engine.commands.check(MERGE_COMMAND, opts);
+  allowMerge(projectId: string, repoId: string, engineId: string): Promise<MergeCheckView> {
+    return this.landing.allowMerge(projectId, repoId, engineId);
   }
 
   /** Start or continue a ticket with a local agent — headless here or in the user's terminal, coding or General. See `Starter` for the gates. */
@@ -976,63 +791,30 @@ export class CodeLink extends Service {
     return result;
   }
 
-  /** Machine-local readiness; it informs Start without gating it. */
-  async herdrStatus(): Promise<"notInstalled" | "notRunning" | "running"> {
-    const herdr = this.ctx.get("herdr");
-    if (await herdr?.server()) return "running";
-    return await herdr?.installed() ? "notRunning" : "notInstalled";
+  // ── herdr ──────────────────────────────────────────────────────────────────
+
+  herdrStatus(): Promise<"notInstalled" | "notRunning" | "running"> {
+    return this.herdr.herdrStatus();
   }
 
-  /** Tomrade's own Terminal window shows this project's sessions: herdr is the terminal here and a window answers for it. */
-  async terminalWindow(projectId: string): Promise<boolean> {
-    const settings = await machineTerminalSettings(this.ctx.settings.get().codeLink, this.ctx.get("herdr"));
-    return settings.terminal === "herdr" && (await this.answered("codeLink/terminal-window", () => this.ctx.serial("codeLink/terminal-window", projectId)));
+  terminalWindow(projectId: string): Promise<boolean> {
+    return this.herdr.terminalWindow(projectId);
   }
 
-  /** A session's herdr terminal, shown in Tomrade's Terminal window; false when no window can show it. */
   showSession(projectId: string, sessionId: string): Promise<boolean> {
-    return this.answered("codeLink/show-session", () => this.ctx.serial("codeLink/show-session", projectId, sessionId));
+    return this.herdr.showSession(projectId, sessionId);
   }
 
-  /** A plugin's answer is a convenience: one that throws counts as no window. */
-  private async answered(name: string, ask: () => Promise<unknown>): Promise<boolean> {
-    try {
-      return (await ask()) === true;
-    } catch (error) {
-      this.ctx.logger.warn(`${name}: ${message(error)}`);
-      return false;
-    }
+  showInHerdr(projectId: string, itemId: string): Promise<string | null> {
+    return this.herdr.showInHerdr(projectId, itemId);
   }
 
-  /** The ticket's live session brought forward in herdr itself, said in a line; null when it has no herdr pane to show. */
-  async showInHerdr(projectId: string, itemId: string): Promise<string | null> {
-    const pane = this.store.sessions(projectId, { itemId, live: true }).find((s) => s.herdrPane && s.state !== "lost")?.herdrPane;
-    const herdr = this.ctx.get("herdr");
-    if (!pane || !herdr) return null;
-    const w = this.words();
-    const item = this.ctx.items.get(projectId, itemId);
-    const shown = await herdr.show(pane, item ? `${item.key} · ${item.title}` : pane);
-    if (shown === "shown") return w("shownInHerdr", { pane });
-    // In front, but no herdr client is attached to see it: herdr's own client, in the system terminal, shows it.
-    if (shown === "noClient") {
-      const attach = await launchTerminal({ cwd: os.homedir(), command: `exec ${shellQuote(herdr.binary() ?? "herdr")}`, dir: this.sessionDir("herdr-attach") }, SYSTEM_TERMINAL);
-      return attach.launched ? w("herdrAttached", { app: process.platform === "darwin" ? SYSTEM_TERMINAL : w("systemTerminal"), pane }) : w("herdrRunToSee", { pane });
-    }
-    return null;
+  herdrInstall(): Promise<HerdrInstall> {
+    return this.herdr.herdrInstall();
   }
 
-  /** Homebrew's formula only where brew answers; Windows has none. */
-  async herdrInstall(): Promise<HerdrInstall> {
-    return herdrInstall({ brew: process.platform !== "win32" && (await commandOk("brew")) });
-  }
-
-  /** Runs only on a person's click, in a terminal they watch, like an engine's install. */
   async installHerdr(): Promise<{ launched: boolean; command: string }> {
-    const { command } = await this.herdrInstall();
-    if (!command) throw new Error(this.words()("herdrNoInstaller"));
-    const settings = await machineTerminalSettings(this.ctx.settings.get().codeLink, this.ctx.get("herdr"));
-    const { launched } = await setupTerminal(command, path.join(this.sessionDir("setup"), "herdr"), settings.terminal, this.ctx.get("herdr") ?? null);
-    return { launched, command };
+    return this.herdr.installHerdr(await this.herdrInstall());
   }
 
   /** What the Start dialog last ran with on this machine; null when nothing usable is remembered. */
@@ -1040,156 +822,50 @@ export class CodeLink extends Service {
     return this.defaults.read();
   }
 
-  /** Bind again the tokens of this machine's live terminal sessions — the ones a restart would otherwise have orphaned. Returns how many. */
+  // ── outside sessions and their connections ─────────────────────────────────
+
   rebindSessions(projectId: string): number {
-    let n = 0;
-    for (const s of this.store.sessions(projectId, { live: true })) {
-      if (s.mode !== "terminal" || s.device !== this.ctx.hub.deviceId || !s.threadId) continue;
-      if (this.sessions.rebind(s, `ai:${s.agent}` as Author, this.sessionDir(s.id))) n += 1;
-    }
-    return n;
+    return this.connections.rebindSessions(projectId);
   }
 
-  /** A session took a ticket on — its first, another beside it, or (`replace`) the next once the last is finished. */
   attach(projectId: string, sessionId: string, itemId: string, branch: string, delivery: number, opts: { replace?: boolean } = {}): void {
-    const session = this.store.session(projectId, sessionId);
-    if (!session) return;
-    // A new delivery is new work: the branch merged in the last one must not be read as this one's.
-    const fresh = opts.replace || (session.itemIds.includes(itemId) && session.delivery !== delivery);
-    // The tickets it leaves keep it as history: their pages still reach the conversation that worked them.
-    const left = opts.replace ? session.itemIds.filter((id) => id !== itemId).map((id) => ({ itemId: id, delivery: session.delivery })) : [];
-    this.store.patchSession(projectId, sessionId, {
-      ...(left.length ? { worked: [...session.worked.filter((w) => !left.some((l) => l.itemId === w.itemId && l.delivery === w.delivery)), ...left] } : {}),
-      delivery,
-      itemIds: opts.replace ? [itemId] : session.itemIds.includes(itemId) ? session.itemIds : [...session.itemIds, itemId],
-      ...(session.branch && !fresh ? {} : { branch }),
-      ...(session.state === "ended" ? {} : { state: "running" as const }),
-      lastEventAt: Date.now()
-    });
-    this.notify(projectId);
+    this.connections.attach(projectId, sessionId, itemId, branch, delivery, opts);
   }
 
-  /**
-   * The hooks session a tokenless claim comes from: the one whose PreToolUse just
-   * announced this claim; failing that, a guess — the latest live one on that
-   * repository that holds no ticket and no client's connection yet.
-   * The guess never takes one that already holds a ticket — that is another terminal's.
-   */
   externalSession(projectId: string, repoId: string, key?: string): SessionView | null {
-    const asked = key ? this.sessions.claimer(projectId, key) : null;
-    const asking = asked ? this.store.session(projectId, asked) : null;
-    if (asking && asking.repoId === repoId && asking.threadId === null && asking.endedAt === null && asking.state !== "ended" && asking.state !== "lost") return asking;
-    const taken = new Set([...this.connections.values()].filter((c) => c.projectId === projectId).flatMap((c) => c.sessionIds));
-    return this.store.sessions(projectId, { live: true }).find((s) => s.repoId === repoId && s.threadId === null && s.state !== "lost" && !s.itemIds.length && !taken.has(s.id)) ?? null;
+    return this.connections.externalSession(projectId, repoId, key);
   }
 
-  /** A terminal session Start made for this ticket with an agent that reaches Tomrade without its token, which no connection has joined yet. */
   awaitingClaim(projectId: string, itemId: string): SessionView | null {
-    const agent = this.ctx.get("agent");
-    const taken = new Set([...this.connections.values()].filter((c) => c.projectId === projectId).flatMap((c) => c.sessionIds));
-    return this.store.sessions(projectId, { live: true }).find((s) => s.mode === "terminal" && s.threadId !== null && s.itemIds.includes(itemId) && !taken.has(s.id)
-      && !!agent?.engineOf(s.agent)?.terminalClaims) ?? null;
+    return this.connections.awaitingClaim(projectId, itemId);
   }
 
-  /** The live session an outside client's connection last claimed for, if any: the one its calls without a key mean. */
   connected(projectId: string, connection: string): SessionView | null {
-    const sessions = this.connectedSessions(projectId, connection);
-    return sessions.find((s) => s.id === this.connections.get(connection)?.current) ?? null;
+    return this.connections.connected(projectId, connection);
   }
 
-  /** Every live session an outside client's connection claimed for; the ones that ended are let go. */
   connectedSessions(projectId: string, connection: string): SessionView[] {
-    const bound = this.connections.get(connection);
-    if (!bound || bound.projectId !== projectId) return [];
-    const live = bound.sessionIds.map((id) => this.store.session(projectId, id)).filter((s): s is SessionView => !!s && s.endedAt === null && s.state !== "ended" && s.state !== "lost");
-    if (!live.length) this.connections.delete(connection);
-    else if (live.length !== bound.sessionIds.length) {
-      const ids = live.map((s) => s.id);
-      this.connections.set(connection, { projectId, sessionIds: ids, current: ids.includes(bound.current) ? bound.current : ids[ids.length - 1] });
-    }
-    return live;
+    return this.connections.connectedSessions(projectId, connection);
   }
 
-  /**
-   * From now on this connection's calls without a key belong to the session; a connection it had before is let go.
-   * The connection keeps the other sessions it works tickets in, except the one it is `leaving` for this one.
-   */
   bindConnection(projectId: string, connection: string, sessionId: string, leaving?: string): void {
-    for (const [other, bound] of this.connections) {
-      if (other === connection || !bound.sessionIds.includes(sessionId)) continue;
-      const rest = bound.sessionIds.filter((id) => id !== sessionId);
-      if (!rest.length) this.connections.delete(other);
-      else this.connections.set(other, { ...bound, sessionIds: rest, current: bound.current === sessionId ? rest[rest.length - 1] : bound.current });
-    }
-    const held = this.connections.get(connection);
-    const kept = held?.projectId === projectId ? held.sessionIds.filter((id) => id !== sessionId && id !== leaving) : [];
-    this.connections.set(connection, { projectId, sessionIds: [...kept, sessionId], current: sessionId });
+    this.connections.bindConnection(projectId, connection, sessionId, leaving);
   }
 
   boundAnywhere(sessionId: string): boolean {
-    return [...this.connections.values()].some((c) => c.sessionIds.includes(sessionId));
+    return this.connections.boundAnywhere(sessionId);
   }
 
-  /**
-   * A session for a client that reports no hooks — Cursor, Gemini CLI, any MCP
-   * client: followed only through its connection, so its notes and merge
-   * hand-offs still reach the ticket. It ends when the connection closes.
-   */
   connectionSession(projectId: string, repoId: string | null, worktree: string | null = null): SessionView {
-    return this.store.createSession(projectId, { repoId: repoId ?? "", branch: "", itemIds: [], mode: "terminal", agent: MCP_AGENT, threadId: null, device: this.ctx.hub.deviceId, worktree });
+    return this.connections.connectionSession(projectId, repoId, worktree);
   }
 
-  /**
-   * An outside agent that handed its ticket's merge to the person goes on to the next ticket as a
-   * new session with the same identity, so its hooks and calls follow the new one (the newest is
-   * matched first). The one it leaves keeps the ticket and the merge waiting on the person.
-   */
   successor(projectId: string, from: SessionView, repoId: string | null, worktree: string | null = null): SessionView {
-    return this.store.createSession(projectId, { repoId: repoId ?? from.repoId, branch: "", itemIds: [], mode: from.mode, agent: from.agent, threadId: null, device: this.ctx.hub.deviceId, externalId: from.externalId, worktree });
+    return this.connections.successor(projectId, from, repoId, worktree);
   }
 
-  /**
-   * A claim taken back: the session drops the ticket. One made only for claims — a client known by its
-   * connection alone, or a parallel successor — ends once it holds nothing, so the agent's hooks reach its
-   * other session again; the agent's own hooks session stays, free for its next claim.
-   */
   letGo(projectId: string, connection: string, sessionId: string, itemId: string): void {
-    const session = this.store.session(projectId, sessionId);
-    if (!session) return;
-    const rest = session.itemIds.filter((id) => id !== itemId);
-    const forClaims = session.agent === MCP_AGENT
-      || (!!session.externalId && this.store.sessions(projectId, { live: true }).some((s) => s.id !== session.id && s.agent === session.agent && s.externalId === session.externalId && s.startedAt <= session.startedAt));
-    this.store.patchSession(projectId, sessionId, { itemIds: rest, ...(rest.length ? {} : { branch: "" }) });
-    if (!rest.length && forClaims) {
-      this.sessions.end(projectId, sessionId, "ended", true, "its claim was let go and it holds nothing");
-      const bound = this.connections.get(connection);
-      const kept = bound?.sessionIds.filter((id) => id !== sessionId) ?? [];
-      if (!bound || !kept.length) this.connections.delete(connection);
-      else this.connections.set(connection, { projectId, sessionIds: kept, current: bound.current === sessionId ? kept[kept.length - 1] : bound.current });
-    }
-    this.notify(projectId);
-  }
-
-  /**
-   * A session another one took over from: nothing reaches it any more, so once its merge lands it is over.
-   * Two sessions of one agent working in worktrees of their own run side by side; neither took over from the other.
-   */
-  private superseded(projectId: string, s: SessionView): boolean {
-    if (s.threadId !== null) return false;
-    const apart = (o: SessionView) => !!s.worktree && !!o.worktree && s.worktree !== o.worktree;
-    if (s.externalId) return this.store.sessions(projectId, { live: true }).some((o) => o.id !== s.id && o.agent === s.agent && o.externalId === s.externalId && o.startedAt >= s.startedAt && !apart(o));
-    return s.agent === MCP_AGENT && !this.boundAnywhere(s.id);
-  }
-
-  private disconnected(connection: string): void {
-    const bound = this.connections.get(connection);
-    if (!bound) return;
-    this.connections.delete(connection);
-    // A hooks session ends when its agent says so; one known only by its connection ends with it.
-    for (const id of bound.sessionIds) {
-      const session = this.store.session(bound.projectId, id);
-      if (session?.agent === MCP_AGENT && !this.boundAnywhere(session.id)) this.sessions.end(bound.projectId, session.id, "ended", false, "its MCP connection closed");
-    }
+    this.connections.letGo(projectId, connection, sessionId, itemId);
   }
 
   /** A branch that names no ticket becomes one, linked from the start. */
@@ -1209,7 +885,7 @@ export class CodeLink extends Service {
         .trim() || name;
     const item = this.ctx.items.create({ projectId, boardId: board.id, title: words.charAt(0).toUpperCase() + words.slice(1), status: "todo", by: "human" });
     this.store.upsertLink(projectId, { itemId: item.id, repoId, branch: name }, { source: "manual", lastSeenAt: Date.now() });
-    this.unlinkedByProject.set(
+    this.scans.unlinkedByProject.set(
       projectId,
       this.unlinked(projectId).filter((u) => !(u.repoId === repoId && u.branch === name))
     );
@@ -1218,762 +894,67 @@ export class CodeLink extends Service {
     return item;
   }
 
-  async connection(projectId: string, repoId: string): Promise<ConnectionView> {
-    const repo = this.ctx.repos.get(projectId, repoId);
-    if (!repo) throw new Error(`unknown repository ${repoId}`);
-    const mcp = this.ctx.get("mcp");
-    const mcpUrl = mcp?.urlFor(projectId) ?? null;
-    const branch = "tomrade/connect";
-    const base = { mcpUrl, configuredUrl: null, instance: mcp?.badge().kind ?? "dev", branch, url: null, agents: [] as AgentConnectionView[], ...(mcp?.clash ? { clash: mcp.clash } : {}) } as const;
-    if (!mcpUrl || !mcp?.eventUrl) return { ...base, state: "unavailable" };
-    const cwd = this.ctx.repos.checkout(repo.remote).checkout;
-    if (!cwd || !fs.existsSync(cwd)) return { ...base, state: "no-checkout" };
-    const exists = async (ref: string) => (await this.git(["rev-parse", "--verify", "--quiet", ref], { cwd, ok: true })).code === 0;
-    const local = `refs/heads/${repo.defaultBranch}`;
-    const remote = `refs/remotes/origin/${repo.defaultBranch}`;
-    const hasLocal = await exists(local);
-    const hasRemote = await exists(remote);
-    // Prefer local work that is ahead; otherwise use the latest fetched default branch.
-    const ref = hasLocal && (!hasRemote || (await this.git(["merge-base", "--is-ancestor", remote, local], { cwd, ok: true })).code === 0) ? local : remote;
-    const chosen = await this.connectAgents(projectId, repoId);
-    const current = await inspectConnection(this.git, cwd, ref, mcpUrl, mcp.eventUrl, chosen);
-    const configuredUrl = current.configuredUrl;
-    const lastHooks = this.lastHooks(projectId, repoId);
-    const heard = (agents: AgentConnectionView[]) => agents.map((agent) => (lastHooks[agent.id] ? { ...agent, lastEventAt: lastHooks[agent.id] } : agent));
-    if (current.connected) {
-      const link = this.ctx.get("agent")?.engineOf("claude-code")?.mcpLink;
-      const claudeApproval = link?.projectApproval?.(cwd);
-      const claudeApprovals = link?.projectApprovals?.(cwd);
-      return { ...base, agents: heard(current.agents), configuredUrl, state: "connected", ...(current.local ? { local: true } : {}), ...(claudeApproval ? { claudeApproval } : {}), ...(claudeApprovals ? { claudeApprovals } : {}) };
-    }
-    for (const pendingRef of [`refs/heads/${branch}`, `refs/remotes/origin/${branch}`]) {
-      if (!(await exists(pendingRef))) continue;
-      if ((await this.git(["merge-base", "--is-ancestor", pendingRef, ref], { cwd, ok: true })).code === 0) continue;
-      const pending = await inspectConnection(this.git, cwd, pendingRef, mcpUrl, mcp.eventUrl, chosen);
-      if (pending.connected) return { ...base, agents: heard(pending.agents), configuredUrl, state: "pending", url: compareUrl(repo.remote, repo.defaultBranch, branch) };
-    }
-    // Another project id is another instance's repository; the same project on another port is only incomplete here.
-    return { ...base, agents: heard(current.agents), configuredUrl, state: configuredUrl && !current.sameProject ? "other-instance" : "unconnected" };
-  }
+  // ── connecting a repository ────────────────────────────────────────────────
 
   /**
-   * Connect a repository to Tomrade for everyone who clones it: Claude and
-   * Codex MCP config, agent instruction files, and Claude lifecycle hooks —
-   * written in a worktree on a branch of their own and offered as a pull
-   * request, never into the user's checkout. For this machine only (`local`),
-   * the same files go into the checkout untracked and listed in
-   * `.git/info/exclude`: nothing to push, merge or pull.
+   * An engine's writer for its agent's connection file (Pi's extension), so
+   * Connect writes and reads that file without code-link importing the engine.
+   * Returns the unregistering function.
    */
-  async connect(projectId: string, repoId: string, mode: ConnectMode = "team"): Promise<ConnectResult> {
-    const repo = this.ctx.repos.get(projectId, repoId);
-    if (!repo) throw new Error(`unknown repository ${repoId}`);
-    const mcp = this.ctx.get("mcp");
-    if (!mcp?.url) throw new Error("the MCP server is not running — enable the mcp plugin");
-    // A port taken at startup is replaced by a random one; written down, it would point nowhere after the next restart.
-    if (mcp.clash) throw new Error(this.words()("connectPortClash", { port: mcp.clash.port, holder: mcp.holderText() }));
-    const placement = this.ctx.repos.checkout(repo.remote);
-    if (!placement.checkout || !fs.existsSync(placement.checkout)) throw new Error(`no checkout of ${repo.name} on this machine`);
-
-    const branch = "tomrade/connect";
-    const w = this.words();
-    await new GitFolder(this.git, placement.checkout).fetch(repo.defaultBranch);
-    const chosen = await this.connectAgents(projectId, repoId);
-    // What it was connected for stays the choice, whatever is installed here later.
-    if (!this.store.repoState(projectId, repoId)?.connectAgents) this.store.upsertRepoState(projectId, repoId, { connectAgents: chosen });
-    const connection = await this.connection(projectId, repoId);
-    const input = {
-      projectName: (this.ctx.db.for(projectId).prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name ?? "Tomrade project",
-      mcpUrl: mcp.urlFor(projectId)!,
-      eventUrl: mcp.eventUrl!,
-      prefix: this.prefixOf(projectId),
-      branchTemplate: this.store.repoState(projectId, repoId)?.branchTemplate ?? "{key}/{slug}"
+  registerConnector(agent: ConnectorAgent, writer: ConnectFileWriter): () => void {
+    this.connectors.set(agent, writer);
+    return () => {
+      if (this.connectors.get(agent) === writer) this.connectors.delete(agent);
     };
-    if (mode === "local") {
-      if (connection.state === "connected") return { branch: "", agents: connection.agents, files: [], skipped: [], committed: false, pushed: false, url: null, local: true, message: w("connected") };
-      return this.connectLocally(projectId, repoId, placement.checkout, input, chosen);
-    }
-    // A connection this machine alone holds does not stand in for the team's.
-    if (connection.state === "connected" && !connection.local) {
-      return { branch, agents: connection.agents, files: [], skipped: [], committed: false, pushed: false, url: null, message: w("connected") };
-    }
-    const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-connect-"));
-    const worktree = path.join(temporary, "repo");
-    const exists = async (ref: string) => (await this.git(["rev-parse", "--verify", "--quiet", ref], { cwd: placement.checkout!, ok: true })).code === 0;
-    const base = await exists(`refs/remotes/origin/${repo.defaultBranch}`) ? `origin/${repo.defaultBranch}` : repo.defaultBranch;
-    try {
-      if (await exists(`refs/heads/${branch}`)) await this.git(["worktree", "add", worktree, branch], { cwd: placement.checkout });
-      else if (await exists(`refs/remotes/origin/${branch}`)) await this.git(["worktree", "add", "-b", branch, worktree, `origin/${branch}`], { cwd: placement.checkout });
-      else if (await exists(base)) await this.git(["worktree", "add", "-b", branch, worktree, base], { cwd: placement.checkout });
-      else await this.git(["worktree", "add", "--orphan", "-b", branch, worktree], { cwd: placement.checkout });
-    } catch (error) {
-      fs.rmSync(temporary, { recursive: true, force: true });
-      throw error;
-    }
-    const state = this.store.repoState(projectId, repoId);
-    try {
-      if (await exists(base)) await this.git(["merge", "--no-edit", base], { cwd: worktree });
-      const { files, skipped } = writeConnectFiles(worktree, input, chosen);
-      const agents = inspectConnectFiles(worktree, mcp.urlFor(projectId)!, mcp.eventUrl!, chosen).agents;
-      const folder = new GitFolder(this.git, worktree);
-      // A checkout on Windows records no executable bit, and elsewhere Cursor runs the script by its path.
-      if (files.includes(CURSOR_HOOK_SCRIPT)) await this.git(["add", "--chmod=+x", "--", CURSOR_HOOK_SCRIPT], { cwd: worktree });
-      const committed = files.length > 0 && (await folder.commit("Connect this repository to Tomrade\n\nProject MCP config lets Claude Code, Codex and WorkBuddy discover Tomrade, a project extension does it for Pi and opencode.json with a plugin for OpenCode, agent instructions describe the ticket conventions, and their hooks report session lifecycle back."));
-
-      if (!(await folder.remoteUrl())) return { branch, agents, files, skipped, committed, pushed: false, url: null, message: w("connectLocal", { branch, base: repo.defaultBranch }) };
-      if (state && !state.agentPush) return { branch, agents, files, skipped, committed, pushed: false, url: null, message: w("connectPushOff", { branch }) };
-      const pushed = (await this.git(["push", "-q", "-u", "origin", `HEAD:refs/heads/${branch}`], { cwd: worktree, ok: true })).code === 0;
-      if (!pushed) return { branch, agents, files, skipped, committed, pushed: false, url: null, message: w("connectPushFailed", { branch }) };
-      let url: string | null = null;
-      let created = false;
-      if (await commandOk("gh")) {
-        const env = await this.ctx.github.environment(this.git, worktree);
-        try {
-          url = (await exec("gh", ["pr", "create", "--head", branch, "--base", repo.defaultBranch, "--title", "Connect this repository to Tomrade", "--body", `Adds ${files.join(", ")} to connect agent tools and Claude Code/Codex/WorkBuddy/Pi/OpenCode lifecycle reports. Review Codex hooks with /hooks after merging.`], worktree, env)).trim().split("\n").pop() ?? null;
-          created = !!url;
-        } catch {
-          try {
-            url = (await exec("gh", ["pr", "view", branch, "--json", "url", "-q", ".url"], worktree, env)).trim() || null;
-          } catch {
-            url = null;
-          }
-        }
-      }
-      url ??= compareUrl(repo.remote, repo.defaultBranch, branch);
-      this.notify(projectId);
-      return { branch, agents, files, skipped, committed, pushed, url, message: created ? w("connectOpened") : w("connectPushed", { branch }) };
-    } finally {
-      await this.git(["worktree", "remove", "--force", worktree], { cwd: placement.checkout, ok: true });
-      fs.rmSync(temporary, { recursive: true, force: true });
-      this.notify(projectId);
-    }
   }
 
-  /**
-   * The chosen agents' files, written into the checkout and kept out of git
-   * through `.git/info/exclude`: a tracked file is never changed (its agent
-   * is skipped and says so), and the team's CLAUDE.md / AGENTS.md stay as
-   * they are — the agents get the rules from the MCP server.
-   */
-  private async connectLocally(projectId: string, repoId: string, checkout: string, input: Parameters<typeof writeConnectFiles>[1], chosen: ConnectAgent[]): Promise<ConnectResult> {
-    const listed = await this.git(["ls-files", "-z", "--", ...CONNECT_FILES], { cwd: checkout, ok: true });
-    const tracked = new Set(listed.code === 0 ? listed.stdout.split("\0").filter(Boolean) : CONNECT_FILES);
-    const { files, skipped } = writeConnectFiles(checkout, input, chosen, { tracked });
-    // Only what git does not ignore already; the exclude file is this clone's own, never committed.
-    const exposed: string[] = [];
-    for (const file of files) {
-      if ((await this.git(["check-ignore", "-q", "--", file], { cwd: checkout, ok: true })).code !== 0) exposed.push(file);
-    }
-    if (exposed.length) {
-      const where = (await this.git(["rev-parse", "--git-path", "info/exclude"], { cwd: checkout, ok: true })).stdout.trim();
-      const exclude = path.isAbsolute(where) ? where : path.join(checkout, where);
-      fs.mkdirSync(path.dirname(exclude), { recursive: true });
-      const existing = fs.existsSync(exclude) ? fs.readFileSync(exclude, "utf8") : "";
-      const lines = ["# Tomrade: agent connection files for this machine only", ...exposed.map((file) => `/${file}`)];
-      fs.writeFileSync(exclude, `${existing.replace(/\s*$/, "")}${existing.trim() ? "\n\n" : ""}${lines.join("\n")}\n`);
-    }
-    this.notify(projectId);
-    const { agents } = await this.connection(projectId, repoId);
-    return { branch: "", agents, files, skipped, committed: false, pushed: false, url: null, local: true, message: this.words()(files.length === 1 ? "connectedLocallyOne" : "connectedLocallyMany", { n: files.length }) };
+  connection(projectId: string, repoId: string): Promise<ConnectionView> {
+    return this.repoConnect.connection(projectId, repoId);
   }
 
-  /**
-   * In a repository with no remote, merge the ticket's branch into the default
-   * branch here and record that merge as the link's evidence, whatever its
-   * message says. Only where nothing can be lost: the default branch checked out
-   * with a clean tree, or not checked out at all (a temporary worktree). A
-   * conflict is aborted. `agent`: asked by an agent, which needs agent merging on.
-   */
-  async mergeLocal(projectId: string, itemId: string, opts: { agent?: boolean } = {}): Promise<MergeLocalResult> {
-    const w = this.words();
-    const no = (message: string): MergeLocalResult => ({ merged: false, sha: null, message });
-    const item = this.ctx.items.get(projectId, itemId);
-    if (!item) throw new Error(`unknown item ${itemId}`);
-    const open = this.currentLinks(projectId, itemId).filter((l) => l.branch && !l.mergedSha);
-    if (!open.length) return no(w("mergeNoBranch", { key: item.key }));
-    if (open.length > 1) return no(w("mergeMany", { key: item.key }));
-    const link = open[0]!;
-    const repo = this.ctx.repos.get(projectId, link.repoId);
-    if (!repo) return no(w("mergeNoBranch", { key: item.key }));
-    const base = repo.defaultBranch;
-    if (link.branch === base) return no(w("mergeNoBranch", { key: item.key }));
-    const checkout = this.ctx.repos.checkout(repo.remote).checkout;
-    if (!checkout || !fs.existsSync(checkout)) return no(w("mergeNoCheckout", { repo: repo.name }));
-    if (await new GitFolder(this.git, checkout).remoteUrl()) return no(w("mergeHasRemote", { repo: repo.name }));
-    if (opts.agent && !this.store.repoState(projectId, repo.id)?.agentMerge) return no(w("mergeAgentOff", { repo: repo.name }));
-
-    const list = await this.git(["worktree", "list", "--porcelain"], { cwd: checkout, ok: true });
-    const holder = list.stdout.split("\n\n").map((block) => ({ path: /^worktree (.+)$/m.exec(block)?.[1], branch: /^branch (.+)$/m.exec(block)?.[1] })).find((b) => b.branch === `refs/heads/${base}`)?.path;
-    let cwd = holder;
-    let temporary: string | null = null;
-    if (cwd) {
-      const dirty = await this.git(["status", "--porcelain", "--untracked-files=no"], { cwd, ok: true });
-      if (dirty.code !== 0 || dirty.stdout.trim()) return no(w("mergeDirty", { base, where: cwd }));
-    } else {
-      temporary = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-merge-"));
-      cwd = path.join(temporary, "repo");
-      const added = await this.git(["worktree", "add", "-q", cwd, base], { cwd: checkout, ok: true });
-      if (added.code !== 0) {
-        fs.rmSync(temporary, { recursive: true, force: true });
-        return no(w("mergeFailed", { error: lastLine(added.stderr) }));
-      }
-    }
-    try {
-      const head = async () => (await this.git(["rev-parse", "HEAD"], { cwd: cwd! })).stdout.trim();
-      let message: string;
-      if ((await this.git(["merge-base", "--is-ancestor", link.branch, "HEAD"], { cwd, ok: true })).code === 0) {
-        message = w("mergeAlready", { branch: link.branch, base });
-      } else {
-        // The subject leads with the key, so the commit also reads as this ticket's on any later scan.
-        const merged = await this.git(["merge", "--no-ff", "-m", `${item.key}: ${item.title}`, "-m", `Merge branch '${link.branch}'`, link.branch], { cwd, ok: true });
-        if (merged.code !== 0) {
-          const conflicted = (await this.git(["diff", "--name-only", "--diff-filter=U"], { cwd, ok: true })).stdout.trim().split("\n").filter(Boolean);
-          await this.git(["merge", "--abort"], { cwd, ok: true });
-          return no(conflicted.length ? w("mergeConflict", { branch: link.branch, base, files: conflicted.join(", ") }) : w("mergeFailed", { error: lastLine(merged.stderr || merged.stdout) }));
-        }
-        message = "";
-      }
-      const sha = await head();
-      this.store.patchLink(projectId, link.id, { mergedSha: sha, ahead: 0 });
-      this.reevaluate(projectId, itemId, repo.id);
-      this.notify(projectId);
-      return { merged: true, sha, message: message || w("mergeDone", { branch: link.branch, base, sha: sha.slice(0, 7) }) };
-    } finally {
-      if (temporary) {
-        await this.git(["worktree", "remove", "--force", cwd!], { cwd: checkout, ok: true });
-        fs.rmSync(temporary, { recursive: true, force: true });
-      }
-    }
+  connect(projectId: string, repoId: string, mode: ConnectMode = "team"): Promise<ConnectResult> {
+    return this.repoConnect.connect(projectId, repoId, mode);
   }
 
-  /** Push the ticket's branch from its Tomrade worktree and open a pull request. Never from the user's own checkout, never the default branch. */
-  async openPr(projectId: string, itemId: string): Promise<OpenPrResult> {
-    const item = this.ctx.items.get(projectId, itemId);
-    if (!item) throw new Error(`unknown item ${itemId}`);
-    const links = this.currentLinks(projectId, itemId).filter((l) => l.branch);
-    const link = primaryOf(links);
-    if (!link) return { pushed: false, url: null, created: false, message: `${item.key} has no branch yet` };
-    const repo = this.ctx.repos.get(projectId, link.repoId);
-    if (!repo) return { pushed: false, url: null, created: false, message: "the repository row is gone" };
-    const state = this.store.repoState(projectId, repo.id);
-    if (state && !state.agentPush) return { pushed: false, url: compareUrl(repo.remote, repo.defaultBranch, link.branch), created: false, message: `pushing from Tomrade is off for ${repo.name} — push ${link.branch} yourself` };
-    if (link.branch === repo.defaultBranch) return { pushed: false, url: null, created: false, message: "never the default branch" };
-    const cwd = this.worktreeOf(projectId, itemId);
-    if (!cwd) return { pushed: false, url: compareUrl(repo.remote, repo.defaultBranch, link.branch), created: false, message: `no Tomrade worktree for ${link.branch} on this machine — push it from where you work` };
-    if (!(await new GitFolder(this.git, cwd).remoteUrl())) return { pushed: false, url: null, created: false, message: `${repo.name} has no remote — merge ${link.branch} into ${repo.defaultBranch} in your checkout instead` };
+  // ── landing ────────────────────────────────────────────────────────────────
 
-    const pushed = await this.git(["push", "-q", "-u", "origin", `HEAD:refs/heads/${link.branch}`], { cwd, ok: true });
-    if (pushed.code !== 0) return { pushed: false, url: null, created: false, message: `git push failed — check your credentials for ${repo.remote}` };
+  mergeLocal(projectId: string, itemId: string, opts: { agent?: boolean } = {}): Promise<MergeLocalResult> {
+    return this.landing.mergeLocal(projectId, itemId, opts);
+  }
 
-    // An empty repository has no default branch to open a pull request against:
-    // the bootstrap's branch becomes it. Creating a branch from nothing is not
-    // rewriting one, and it is what the bootstrap ticket exists to do.
-    const remoteDefault = await this.git(["ls-remote", "--exit-code", "--heads", "origin", repo.defaultBranch], { cwd, ok: true });
-    if (remoteDefault.code === 2) {
-      const created = await this.git(["push", "-q", "origin", `HEAD:refs/heads/${repo.defaultBranch}`], { cwd, ok: true });
-      if (created.code === 0) {
-        this.store.patchLink(projectId, link.id, { lastSeenAt: Date.now() });
-        void this.scan(projectId).catch(() => {});
-        return { pushed: true, url: null, created: false, message: `${repo.name} had no ${repo.defaultBranch} yet — ${link.branch} became it, so this ticket counts as merged` };
-      }
-    }
-
-    let url: string | null = null;
-    let created = false;
-    if (await commandOk("gh")) {
-      const env = await this.ctx.github.environment(this.git, cwd);
-      try {
-        const out = await exec("gh", ["pr", "create", "--head", link.branch, "--base", repo.defaultBranch, "--title", `${item.key}: ${item.title}`, "--body", `${item.body ?? ""}\n\nRefs ${item.key}`.trim()], cwd, env);
-        url = out.trim().split("\n").pop() ?? null;
-        created = !!url;
-      } catch {
-        // Already open, most likely: find it rather than fail.
-        try {
-          url = (await exec("gh", ["pr", "view", link.branch, "--json", "url", "-q", ".url"], cwd, env)).trim() || null;
-        } catch {
-          url = null;
-        }
-      }
-    }
-    if (url) {
-      const number = Number(/\/pull\/(\d+)/.exec(url)?.[1]) || null;
-      this.store.patchLink(projectId, link.id, { prUrl: url, prNumber: number, prState: "open", lastSeenAt: Date.now() });
-      this.reevaluate(projectId, itemId, repo.id);
-      return { pushed: true, url, created, message: created ? `opened ${url}` : `pull request already open: ${url}` };
-    }
-    const compare = compareUrl(repo.remote, repo.defaultBranch, link.branch);
-    this.notify(projectId);
-    return { pushed: true, url: compare, created: false, message: compare ? "branch pushed — open the pull request from the compare page" : "branch pushed — open the pull request on your forge" };
+  openPr(projectId: string, itemId: string): Promise<OpenPrResult> {
+    return this.landing.openPr(projectId, itemId);
   }
 
   // ── the scan ───────────────────────────────────────────────────────────────
 
-  /** Repoint every checkout still naming a Hub helper at the userData one. Idempotent, so a later scan catches one that appears late. */
-  private async migrateCredentialHelpers(projectId: string): Promise<void> {
-    for (const repo of this.ctx.repos.list(projectId)) {
-      const checkout = this.ctx.repos.checkout(repo.remote).checkout;
-      if (!checkout || !fs.existsSync(checkout)) continue;
-      try {
-        await this.ctx.github.migrateHelper(this.git, checkout);
-      } catch (err) {
-        this.ctx.logger.warn(`credential helper migration for ${checkout} failed: ${message(err)}`);
-      }
-    }
-  }
-
   /** One scan per project at a time; a second caller gets the running one. */
   scan(projectId: string): Promise<ScanSummary> {
-    const running = this.inFlight.get(projectId);
-    if (running) return running;
-    const job = this.doScan(projectId).finally(() => this.inFlight.delete(projectId));
-    this.inFlight.set(projectId, job);
-    return job;
+    return this.scans.scan(projectId);
   }
 
-  /** A pass that sees a change made just now: it waits out a running pass, which may have started before the change. */
   private rescan(projectId: string): Promise<ScanSummary> {
-    const running = this.inFlight.get(projectId);
-    return (running ? running.catch(() => undefined) : Promise.resolve()).then(() => this.scan(projectId));
+    return this.scans.rescan(projectId);
   }
 
-  async scanOpen(): Promise<void> {
-    for (const projectId of this.ctx.db.openIds()) {
-      try {
-        await this.scan(projectId);
-      } catch (err) {
-        this.ctx.logger.warn(`code scan of ${projectId} failed: ${message(err)}`);
-      }
-    }
+  scanOpen(): Promise<void> {
+    return this.scans.scanOpen();
   }
 
-  private async doScan(projectId: string): Promise<ScanSummary> {
-    this.archiveCompletedSessions(projectId);
-    const summary: ScanSummary = { repos: 0, scanned: 0, offline: 0, links: 0, changed: 0, proposals: 0, skipped: [] };
-    const prefix = this.prefixOf(projectId);
-    try {
-      await this.ctx.repos.adoptOrigins(projectId);
-    } catch (err) {
-      this.ctx.logger.warn(`adopting new origins in ${projectId} failed: ${message(err)}`);
-    }
-    const repos = this.ctx.repos.list(projectId);
-    summary.repos = repos.length;
-    const unlinked: UnlinkedBranch[] = [];
-    const now = Date.now();
-    await this.migrateCredentialHelpers(projectId);
-    for (const repo of repos) {
-      const placement = this.ctx.repos.checkout(repo.remote);
-      if (!placement.checkout || !fs.existsSync(placement.checkout)) {
-        summary.skipped.push({ repoId: repo.id, reason: "no checkout on this machine" });
-        if (!this.store.repoState(projectId, repo.id)) this.store.upsertRepoState(projectId, repo.id, {});
-        // Nothing here can be read from git, but GitHub can still say what became of its pull requests.
-        const outcome = await this.settlePulls(projectId, repo);
-        this.releaseMerged(projectId, repo.id);
-        summary.changed += outcome.changed;
-        summary.proposals += outcome.proposals;
-        continue;
-      }
-      const before = this.store.repoState(projectId, repo.id);
-      let result: ScanResult;
-      try {
-        result = await scanRepo(this.git, placement.checkout, { defaultBranch: repo.defaultBranch, prefix, sinceSha: before?.scannedSha ?? null, fetch: this.config.fetch });
-      } catch (err) {
-        summary.skipped.push({ repoId: repo.id, reason: message(err) });
-        continue;
-      }
-      summary.scanned += 1;
-      if (result.offline) summary.offline += 1;
-      this.store.upsertRepoState(projectId, repo.id, {
-        readiness: result.readiness,
-        remote: result.remote,
-        remoteDetail: result.remote === "unreachable" ? result.remoteDetail : null,
-        remoteAt: result.remote === "ok" ? now : (before?.remoteAt ?? null),
-        hasBrief: result.hasBrief,
-        manifests: result.manifests,
-        summary: result.summary,
-        scannedSha: result.defaultSha,
-        defaultSha: result.defaultSha,
-        scannedAt: now
-      });
-      if (result.remote === "ok") {
-        for (const session of this.store.sessions(projectId, { live: true })) {
-          if (session.repoId === repo.id && session.blocked === "credentials") this.store.patchSession(projectId, session.id, { blocked: null, state: "idle", activity: null });
-        }
-      }
-      const outcome = await this.absorb(projectId, repo, result, before?.autoDone ?? true, now, unlinked);
-      this.releaseMerged(projectId, repo.id);
-      summary.links += outcome.links;
-      summary.changed += outcome.changed;
-      summary.proposals += outcome.proposals;
-    }
-    for (const item of this.ctx.items.list({ projectId })) this.closeEmptyScannedDelivery(projectId, item, now);
-    this.unlinkedByProject.set(projectId, unlinked);
-    this.scannedAt.set(projectId, now);
-    this.notify(projectId);
-    return summary;
-  }
-
-  /** Turn one repository's scan into links, then judge every ticket the repository touches. */
-  private async absorb(projectId: string, repo: Repo, result: ScanResult, autoDone: boolean, now: number, unlinked: UnlinkedBranch[]): Promise<{ links: number; changed: number; proposals: number }> {
-    const items = this.ctx.items.list({ projectId });
-    const byNum = new Map(items.map((i) => [i.keyNum, i]));
-    const previous = new Map(this.store.linksForRepo(projectId, repo.id).map((l) => [l.id, l]));
-    const seen = new Set<string>();
-    const touched = new Set<string>(previous.size ? [...previous.values()].map((l) => l.itemId) : []);
-    let links = 0;
-
-    for (const b of result.branches) {
-      for (const keyNum of b.keyNums) {
-        const item = byNum.get(keyNum);
-        if (!item) {
-          unlinked.push({ repoId: repo.id, repoName: repo.name, branch: b.name, keyNum, sha: b.sha, committedAt: b.committedAt });
-          continue;
-        }
-        const sameBranch = [...previous.values()].filter((link) => link.itemId === item.id && link.branch === b.name).sort((a, z) => z.delivery - a.delivery);
-        const active = this.store.activeDelivery(projectId, item.id);
-        const current = active ? sameBranch.find((link) => link.delivery === active.sequence) : undefined;
-        const unchangedHistory = !current ? sameBranch.find((link) => link.headSha === b.sha) : undefined;
-        const target = current ?? unchangedHistory;
-        // A recreated branch is not a request to reopen a closed ticket.
-        if (!target && (item.status === "done" || item.status === "cancelled")) continue;
-        const merged = landed(b, target);
-        const link = target
-          ? this.store.patchLink(projectId, target.id, {
-              headSha: b.sha,
-              headAt: b.committedAt,
-              ahead: b.ahead,
-              behind: b.behind,
-              mergedSha: merged ? (target.mergedSha ?? result.defaultSha) : undefined,
-              lastSeenAt: now
-            })
-          : this.store.upsertLink(
-              projectId,
-              { itemId: item.id, repoId: repo.id, branch: b.name },
-              { headSha: b.sha, headAt: b.committedAt, ahead: b.ahead, behind: b.behind, mergedSha: merged ? result.defaultSha : undefined, lastSeenAt: now }
-            );
-        if (merged && link.prState === "open") this.store.patchLink(projectId, link.id, { prState: "merged" });
-        if (link.delivery === this.store.activeDelivery(projectId, item.id)?.sequence) seen.add(link.id);
-        touched.add(item.id);
-        links += 1;
-        // A branch with commits is a session's heartbeat too.
-        for (const s of this.store.sessions(projectId, { itemId: item.id, delivery: link.delivery, live: true })) if (s.branch === b.name && (s.lastCommitAt ?? 0) < b.committedAt) this.store.patchSession(projectId, s.id, { lastCommitAt: b.committedAt });
-      }
-    }
-
-    // A branch the scan once linked for a mention (another ticket's branch, a commit naming this one in passing)
-    // is not this ticket's work; left in, its unmerged commits hold "every link merged" open for good.
-    for (const l of previous.values()) {
-      if (seen.has(l.id) || l.source !== "scan" || !l.branch || l.mergedSha || l.prNumber !== null || l.prUrl || l.prState || l.threadId) continue;
-      const b = result.branches.find((x) => x.name === l.branch);
-      const item = this.ctx.items.get(projectId, l.itemId);
-      if (!b || b.ahead === 0 || !item || b.keyNums.includes(item.keyNum)) continue;
-      if (l.delivery !== this.store.activeDelivery(projectId, item.id)?.sequence) continue;
-      if (this.store.sessions(projectId, { itemId: item.id, delivery: l.delivery }).some((session) => session.branch === l.branch)) continue;
-      this.store.removeLink(projectId, l.id);
-      touched.add(item.id);
-    }
-
-    // A branch linked by hand under a name the template does not know is still one of ours.
-    for (const l of previous.values()) {
-      if (l.source !== "manual" || seen.has(l.id) || !l.branch) continue;
-      const b = result.branches.find((x) => x.name === l.branch);
-      if (!b) continue;
-      const merged = landed(b, l);
-      this.store.patchLink(projectId, l.id, { headSha: b.sha, headAt: b.committedAt, ahead: b.ahead, behind: b.behind, mergedSha: merged ? result.defaultSha : undefined, ...(merged && l.prState === "open" ? { prState: "merged" } : {}), lastSeenAt: now });
-      seen.add(l.id);
-    }
-
-    // A branch deleted after its merge, or one whose ticket commits landed through
-    // another branch, never reads as merged above: settle it from the commits it
-    // last pointed at, which stay in the clone after a prune.
-    if (result.defaultSha) {
-      const prefix = this.prefixOf(projectId);
-      const cwd = this.ctx.repos.checkout(repo.remote).checkout!;
-      for (const l of previous.values()) {
-        if (seen.has(l.id) || l.mergedSha || !l.branch || !l.headSha || l.ahead === 0) continue;
-        const item = this.ctx.items.get(projectId, l.itemId);
-        if (!item || l.delivery !== this.store.activeDelivery(projectId, item.id)?.sequence) continue;
-        const sha = result.branches.find((b) => b.name === l.branch)?.sha ?? l.headSha;
-        const log = await this.git(["log", "--format=%s%x1f%b%x1e", `${result.defaultSha}..${sha}`], { cwd, ok: true });
-        if (log.code !== 0) continue;
-        // A branch named for the ticket is all its work; one found by commit keys owes only the commits naming it.
-        const pending = parseBranch(l.branch, prefix) === item.keyNum ? !!log.stdout.trim() : keysInText(log.stdout, prefix).includes(item.keyNum);
-        if (pending) continue;
-        this.store.patchLink(projectId, l.id, { mergedSha: result.defaultSha, ...(l.prState === "open" ? { prState: "merged" as const } : {}) });
-        touched.add(item.id);
-      }
-    }
-
-    // A branch the scan saw with nothing of its own (renamed away, cut and dropped) and gone since was
-    // never part of the work; left in, it would hold the delivery's "every link merged" open for good.
-    // Only beside another link, and never one an agent, a session or a pull request named.
-    if (!result.offline) {
-      for (const l of previous.values()) {
-        if (seen.has(l.id) || l.source !== "scan" || !l.branch || l.ahead > 0 || l.mergedSha || l.prNumber !== null || l.prUrl || l.prState || l.threadId) continue;
-        if (result.branches.some((b) => b.name === l.branch)) continue;
-        const item = this.ctx.items.get(projectId, l.itemId);
-        if (!item || l.delivery !== this.store.activeDelivery(projectId, item.id)?.sequence) continue;
-        if (!this.store.links(projectId, item.id).some((o) => o.id !== l.id && o.delivery === l.delivery)) continue;
-        this.store.removeLink(projectId, l.id);
-        touched.add(item.id);
-      }
-      // A claim's suggested branch left beside the pull request the work went into, from before link_code dropped it.
-      for (const l of this.store.linksForRepo(projectId, repo.id)) {
-        if (l.source !== "mcp" || !l.branch || (l.prNumber === null && !l.prUrl)) continue;
-        if (l.delivery !== this.store.activeDelivery(projectId, l.itemId)?.sequence) continue;
-        if (this.dropSuggested(projectId, l.itemId, repo.id, l.branch, (name) => result.branches.some((b) => b.name === name))) touched.add(l.itemId);
-      }
-      // A claim's suggested branch in this repository, never created, once the work showed up in another one.
-      for (const l of this.store.linksForRepo(projectId, repo.id)) {
-        if (l.source !== "mcp" || !l.branch || l.headSha || l.ahead > 0 || l.mergedSha || l.prNumber !== null || l.prUrl || l.prState || l.threadId) continue;
-        if (result.branches.some((b) => b.name === l.branch)) continue;
-        if (l.delivery !== this.store.activeDelivery(projectId, l.itemId)?.sequence) continue;
-        const real = this.store.links(projectId, l.itemId).some((o) => o.id !== l.id && o.delivery === l.delivery && (!!o.headSha || o.prNumber !== null || !!o.prUrl));
-        if (!real) continue;
-        this.store.removeLink(projectId, l.id);
-        touched.add(l.itemId);
-      }
-    }
-
-    for (const item of items) this.closeEmptyScannedDelivery(projectId, item, now, repo.id);
-
-    // A link's pull request is settled by what GitHub says about it; the commit-message rules
-    // below are for links it cannot answer for (no pull request, not GitHub, no account, offline).
-    const answered = new Set<string>();
-    if (result.defaultRef) {
-      const cwd = this.ctx.repos.checkout(repo.remote).checkout!;
-      for (const { link: l, item, pull } of await this.askPulls(projectId, repo, cwd)) {
-        if (pull.merged && pull.mergeSha) {
-          // Merged into the default branch, or into another branch that has not reached it yet.
-          const landed = await this.git(["merge-base", "--is-ancestor", pull.mergeSha, result.defaultRef], { cwd, ok: true });
-          if (landed.code > 1) continue; // the merge commit is not here yet: the local rules decide
-          answered.add(l.id);
-          if (landed.code === 0) {
-            this.store.patchLink(projectId, l.id, { mergedSha: pull.mergeSha, prState: "merged" });
-            touched.add(item.id);
-          }
-        } else {
-          answered.add(l.id);
-          if (pull.state === "closed") {
-            this.store.patchLink(projectId, l.id, { prState: "closed" });
-            touched.add(item.id);
-          }
-        }
-      }
-    }
-
-    let passed = 0;
-    for (const [keyNum, commit] of result.mergedKeys) {
-      const item = byNum.get(keyNum);
-      if (!item) continue;
-      let active = this.store.activeDelivery(projectId, item.id);
-      if (!active && item.status !== "done" && item.status !== "cancelled") active = this.store.ensureActiveDelivery(projectId, item.id, commit.at);
-      if (!active) continue;
-      const base = active.bases[repo.id];
-      if (base && active.sequence > 1) {
-        const cwd = this.ctx.repos.checkout(repo.remote).checkout!;
-        const ancestor = await this.git(["merge-base", "--is-ancestor", commit.sha, base], { cwd, ok: true });
-        if (ancestor.code !== 1) continue;
-      } else if (active.sequence > 1) {
-        // Without a known starting ref, require branch/PR evidence instead of
-        // assigning a historical ticket mention to a reopened delivery.
-        continue;
-      }
-      const own = this.store.links(projectId, item.id).filter((l) => l.repoId === repo.id && l.delivery === active.sequence);
-      // Named only in passing by another ticket's merge: the person decides whether that delivered this one.
-      if (commit.passingFor !== null && !own.some((l) => l.prNumber !== null && l.prNumber === subjectPr(commit.subject))) {
-        passed += this.proposeLanding(projectId, repo.id, item, active.sequence, own, commit);
-        touched.add(item.id);
-        continue;
-      }
-      if (own.length) {
-        for (const l of own) {
-          if (answered.has(l.id)) continue;
-          // A ticket mention in a squash commit cannot identify which of
-          // several branches was merged. Multi-link deliveries require
-          // branch ancestry or explicit PR evidence for each link.
-          if (own.length > 1 && (l.prNumber === null || l.prNumber !== subjectPr(commit.subject))) continue;
-          if (!l.mergedSha || l.prState === "open") {
-            this.store.patchLink(projectId, l.id, { ...(!l.mergedSha ? { mergedSha: commit.sha } : {}), ...(l.prState === "open" ? { prState: "merged" as const } : {}) });
-          }
-        }
-      } else {
-        this.store.upsertLink(projectId, { itemId: item.id, repoId: repo.id, branch: "", delivery: active.sequence }, { headSha: commit.sha, headAt: commit.at, mergedSha: commit.sha, lastSeenAt: now, source: "scan" });
-      }
-      touched.add(item.id);
-    }
-
-    // Without GitHub's answer: a squash merge never makes the branch an ancestor of the default
-    // branch, and a scan that read its commit before the links settled will not read it again,
-    // so look for the pull request's own commit, `… (#N)`, wherever it is.
-    if (result.defaultRef) {
-      const cwd = this.ctx.repos.checkout(repo.remote).checkout!;
-      for (const l of this.store.linksForRepo(projectId, repo.id)) {
-        if (l.prNumber === null || l.mergedSha || l.prState === "closed" || answered.has(l.id)) continue;
-        const item = this.ctx.items.get(projectId, l.itemId);
-        if (!item || l.delivery !== this.store.activeDelivery(projectId, item.id)?.sequence) continue;
-        const log = await this.git(["log", "--format=%H%x1f%s", "-n", "20", "--fixed-strings", `--grep=#${l.prNumber}`, result.defaultRef], { cwd, ok: true });
-        if (log.code !== 0) continue;
-        const sha = log.stdout.split("\n").map((line) => line.split("\x1f")).find(([, subject]) => subjectPr(subject ?? "") === l.prNumber)?.[0];
-        if (!sha) continue;
-        this.store.patchLink(projectId, l.id, { mergedSha: sha, prState: "merged" });
-        touched.add(item.id);
-      }
-    }
-
-    // A branch carrying the commits of a sibling whose pull request was squash-merged never reads as merged
-    // above: those commits never reach the default branch. With nothing past the merged head, it landed too.
-    if (result.defaultRef) {
-      const cwd = this.ctx.repos.checkout(repo.remote).checkout!;
-      for (const l of this.store.linksForRepo(projectId, repo.id)) {
-        if (l.mergedSha || !l.branch || !l.headSha || l.ahead === 0 || l.prNumber !== null || l.prUrl || l.prState) continue;
-        if (l.delivery !== this.store.activeDelivery(projectId, l.itemId)?.sequence) continue;
-        const sha = result.branches.find((b) => b.name === l.branch)?.sha ?? l.headSha;
-        const siblings = this.store.links(projectId, l.itemId).filter((o) => o.id !== l.id && o.repoId === repo.id && o.delivery === l.delivery && o.mergedSha && o.headSha);
-        let carrier: CodeLinkView | undefined;
-        for (const o of siblings) {
-          if (o.headSha === sha || (await this.git(["merge-base", "--is-ancestor", sha, o.headSha!], { cwd, ok: true })).code === 0) {
-            carrier = o;
-            break;
-          }
-        }
-        if (!carrier) continue;
-        this.store.patchLink(projectId, l.id, { mergedSha: carrier.mergedSha });
-        touched.add(l.itemId);
-      }
-    }
-
-    let changed = 0;
-    let proposals = passed;
-    for (const itemId of touched) {
-      const item = this.ctx.items.get(projectId, itemId);
-      if (!item) continue;
-      const r = this.judge(projectId, item, repo.id, previous, seen, autoDone);
-      changed += r.changed;
-      proposals += r.proposals;
-    }
-    return { links, changed, proposals };
-  }
-
-  /**
-   * Another ticket's merge that names this one only in passing — its squash lists a commit of this one, or a closing
-   * word names it — proposes Done instead of closing it. The commit is kept on the ticket as a link of its own when
-   * the delivery has none, so the person sees where the work went; accepting settles that link as merged.
-   */
-  private proposeLanding(projectId: string, repoId: string, item: Item, delivery: number, own: CodeLinkView[], commit: MergedCommit): number {
-    if (item.status === "done" || item.status === "cancelled") return 0;
-    const pr = subjectPr(commit.subject);
-    const reason = `${LANDED_ELSEWHERE}${pr !== null ? `#${pr}` : commit.sha.slice(0, 7)} (${this.prefixOf(projectId)}-${commit.passingFor}), which names this ticket only in passing`;
-    if (this.store.hasRecentProposal(projectId, item.id, delivery, "propose", "done", reason, commit.sha)) return 0;
-    const link =
-      own.length === 1 ? own[0]! : own.length ? null : this.store.upsertLink(projectId, { itemId: item.id, repoId, branch: "", delivery }, { headSha: commit.sha, headAt: commit.at, lastSeenAt: Date.now(), source: "scan" });
-    this.store.addProposal(projectId, { itemId: item.id, delivery, linkId: link?.id ?? null, kind: "propose", fromStatus: item.status, toStatus: "done", reason, evidenceSha: commit.sha });
-    return 1;
-  }
-
-  /** What GitHub says about each unsettled pull request of a repository's current deliveries, asked once per pull request. */
-  private async askPulls(projectId: string, repo: Repo, cwd: string | null): Promise<{ link: CodeLinkView; item: Item; pull: ForgePull }[]> {
-    const asked = new Map<string, Promise<ForgePull | null>>();
-    const out: { link: CodeLinkView; item: Item; pull: ForgePull }[] = [];
-    for (const link of this.store.linksForRepo(projectId, repo.id)) {
-      if (link.mergedSha || link.prState === "closed" || (link.prNumber === null && !link.prUrl)) continue;
-      const item = this.ctx.items.get(projectId, link.itemId);
-      if (!item || link.delivery !== this.store.activeDelivery(projectId, item.id)?.sequence) continue;
-      const ref = await githubPull(link.prUrl, link.prNumber, repo.remote);
-      if (!ref) continue;
-      const key = `${ref.repo}#${ref.number}`;
-      if (!asked.has(key)) asked.set(key, this.pulls(ref.repo, ref.number, cwd));
-      const pull = await asked.get(key)!;
-      if (pull) out.push({ link, item, pull });
-    }
-    return out;
-  }
-
-  /**
-   * A repository with no checkout here: GitHub alone settles its pull requests. Without the
-   * default branch to look in, a merge counts only when GitHub says it went into that branch.
-   */
-  private async settlePulls(projectId: string, repo: Repo): Promise<{ changed: number; proposals: number }> {
-    const touched = new Set<string>();
-    for (const { link, item, pull } of await this.askPulls(projectId, repo, null)) {
-      if (pull.merged && pull.mergeSha && pull.base === repo.defaultBranch) this.store.patchLink(projectId, link.id, { mergedSha: pull.mergeSha, prState: "merged" });
-      else if (!pull.merged && pull.state === "closed") this.store.patchLink(projectId, link.id, { prState: "closed" });
-      else continue;
-      touched.add(item.id);
-    }
-    let changed = 0;
-    let proposals = 0;
-    const autoDone = this.store.repoState(projectId, repo.id)?.autoDone ?? true;
-    for (const itemId of touched) {
-      const item = this.ctx.items.get(projectId, itemId);
-      if (!item) continue;
-      const r = this.judge(projectId, item, repo.id, new Map(), new Set(), autoDone);
-      changed += r.changed;
-      proposals += r.proposals;
-    }
-    return { changed, proposals };
-  }
-
-  /** A merge the agent was refused is over once someone merged it. */
-  private releaseMerged(projectId: string, repoId: string): void {
-    for (const session of this.store.sessions(projectId, { live: true })) {
-      if (session.repoId !== repoId || session.blocked !== "merge") continue;
-      const links = session.itemIds.flatMap((id) => this.currentLinks(projectId, id)).filter((l) => l.repoId === repoId);
-      if (!deliveryMerged(links)) continue;
-      if (this.superseded(projectId, session)) this.sessions.end(projectId, session.id, "ended", true, "another session took over from it");
-      else this.store.patchSession(projectId, session.id, { blocked: null, state: "idle", activity: null });
-    }
-  }
-
-  private closeEmptyScannedDelivery(projectId: string, item: Item, now: number, repoId?: string): void {
-    if (item.status !== "done" && item.status !== "cancelled") return;
-    const active = this.store.activeDelivery(projectId, item.id);
-    if (!active) return;
-    const links = this.store.links(projectId, item.id).filter(link => link.delivery === active.sequence);
-    // Cross-repository attempts must wait until every repository has been scanned.
-    if (repoId && links.some(link => link.repoId !== repoId)) return;
-    if (!links.length || links.some(link => link.source !== "scan" || link.ahead > 0 || link.mergedSha || link.prNumber !== null || link.prUrl || link.prState || link.threadId)) return;
-    if (this.store.sessions(projectId, { itemId: item.id, delivery: active.sequence }).length) return;
-    if (item.evidence.resources.some(resource => resource.role === "output" && resource.deliveryId === active.id) || item.evidence.submissions.some(submission => submission.deliveryId === active.id)) return;
-    // Keep the accidental attempt as cancelled history; it has no delivery evidence.
-    this.store.finishActiveDelivery(projectId, item.id, "cancelled", now);
-    for (const proposal of this.store.proposalsForDelivery(projectId, item.id, active.sequence, "open")) this.store.setProposalState(projectId, proposal.id, "stale");
-  }
-
-  /** Re-judge one ticket in one repository after a link changed by tool or by hand, taking every branch as present. */
   reevaluate(projectId: string, itemId: string, repoId: string): void {
-    const item = this.ctx.items.get(projectId, itemId);
-    if (!item) return;
-    const links = this.store.links(projectId, itemId).filter((l) => l.repoId === repoId);
-    const seen = new Set(links.filter((l) => l.branch).map((l) => l.id));
-    this.judge(projectId, item, repoId, new Map(links.map((l) => [l.id, l])), seen, this.store.repoState(projectId, repoId)?.autoDone ?? true);
-    this.notify(projectId);
+    this.scans.reevaluate(projectId, itemId, repoId);
   }
 
-  /**
-   * The branch a claim suggested, once the work is linked on `branch` instead: nothing on it (no commit, no pull
-   * request, never seen by a scan), yet it would hold the delivery's "every link merged" open for good. It goes,
-   * and the sessions on it move to `branch`. A suggested branch with anything on it is real work and stays.
-   */
-  dropSuggested(projectId: string, itemId: string, repoId: string, branch: string, present: (name: string) => boolean = () => false): boolean {
-    const delivery = this.store.activeDelivery(projectId, itemId);
-    if (!delivery || !branch) return false;
-    const empty = this.store
-      .links(projectId, itemId)
-      .filter((l) => l.repoId === repoId && l.delivery === delivery.sequence && l.branch && l.branch !== branch && l.source === "mcp")
-      .filter((l) => !l.headSha && l.ahead === 0 && !l.mergedSha && l.prNumber === null && !l.prUrl && !l.prState && !l.threadId && !present(l.branch));
-    for (const l of empty) {
-      this.store.removeLink(projectId, l.id);
-      for (const s of this.store.sessions(projectId, { itemId, delivery: delivery.sequence })) if (s.branch === l.branch) this.store.patchSession(projectId, s.id, { branch });
-    }
-    return empty.length > 0;
+  dropSuggested(projectId: string, itemId: string, repoId: string, branch: string, present?: (name: string) => boolean): boolean {
+    return this.scans.dropSuggested(projectId, itemId, repoId, branch, present);
   }
 
-  /** Without a remote there is no pull request: a session's scoped hand-over is the request for review. */
   handOver(projectId: string, itemId: string, repoId: string): void {
-    if (this.store.repoState(projectId, repoId)?.remote !== "none") return;
-    const item = this.ctx.items.get(projectId, itemId);
-    if (!item || item.humanLocked || !["backlog", "todo", "doing"].includes(item.status)) return;
-    this.ctx.items.update(projectId, itemId, { status: "verifying" }, AUTHOR);
-    this.notify(projectId);
+    this.scans.handOver(projectId, itemId, repoId);
+  }
+
+  completionPolicy(projectId: string, item: Item): "merge" | "human" {
+    return this.scans.completionPolicy(projectId, item);
   }
 
   /** Each workstream's repository and its folder on this machine — what a main conversation reads the code from. */
@@ -1988,79 +969,7 @@ export class CodeLink extends Service {
     });
   }
 
-  /** Apply the sync matrix to one ticket in one repository. */
-  completionPolicy(projectId: string, item: Item): "merge" | "human" {
-    if (item.workType === "general") return "human";
-    const active = this.store.activeDelivery(projectId, item.id);
-    if (item.evidence.resources.some(r => r.role === "output" && r.deliveryId === active?.id) || item.evidence.submissions.some(s => s.deliveryId === active?.id)) return "human";
-    const links = this.currentLinks(projectId, item.id);
-    const defaultRepo = this.ctx.boards.get(projectId, item.boardId)?.repoId;
-    const repos = links.length ? links.map(l => l.repoId) : defaultRepo ? [defaultRepo] : [];
-    return repos.length && repos.every(id => this.store.repoState(projectId, id)?.autoDone ?? true) ? "merge" : "human";
-  }
-
-  private judge(projectId: string, item: Item, repoId: string, previous: Map<string, CodeLinkView>, seen: Set<string>, autoDone: boolean): { changed: number; proposals: number } {
-    if (item.workType === "general") return { changed: 0, proposals: 0 };
-    const delivery = this.store.activeDelivery(projectId, item.id);
-    if (!delivery) return { changed: 0, proposals: 0 };
-    autoDone = autoDone && this.completionPolicy(projectId, item) === "merge";
-    const links = this.store.links(projectId, item.id).filter((l) => l.repoId === repoId && l.delivery === delivery.sequence);
-    if (!links.length) return { changed: 0, proposals: 0 };
-    const present = links.filter((l) => l.branch && seen.has(l.id));
-    const primary = primaryOf(links);
-    const working = hasLiveSession(this.store.sessions(projectId, { itemId: item.id, delivery: delivery.sequence, live: true }));
-    const evidence: Evidence = {
-      branch: present.length > 0,
-      ahead: present.reduce((max, l) => Math.max(max, l.ahead), 0),
-      merged: deliveryMerged(this.currentLinks(projectId, item.id)),
-      working,
-      pr: primary?.prState ?? null,
-      movedAfterDone:
-        item.status === "done" &&
-        present.some((l) => {
-          const was = previous.get(l.id);
-          return !!was?.headSha && was.headSha !== l.headSha && !l.mergedSha;
-        })
-    };
-    const evidenceSha = primary?.mergedSha ?? primary?.headSha ?? null;
-    let changed = 0;
-    let proposals = 0;
-    let status = item.status;
-    // A previous scan may have written Done just before an unmerged terminal
-    // session was rebound after an app restart. Once the live process is visible
-    // again, undo that sync-only transition. Definitive merge evidence still wins.
-    if (evidence.working && !evidence.merged && status === "done" && item.updatedBy === AUTHOR) {
-      this.ctx.items.update(projectId, item.id, { status: "doing" }, AUTHOR);
-      status = "doing";
-      changed += 1;
-    }
-    const standing = new Set<string>();
-    for (let d of decide(status, evidence, { autoDone, humanLocked: item.humanLocked })) {
-      if (d.kind === "auto") {
-        try {
-          this.ctx.items.update(projectId, item.id, { status: d.to }, AUTHOR);
-          changed += 1;
-          continue;
-        } catch (err) {
-          // A refused write (a policy, a stale version) is a question for a person, not a retry.
-          d = { kind: "propose", to: d.to, reason: `${d.reason} — ${message(err)}` } satisfies Decision;
-        }
-      }
-      const to = d.kind === "propose" ? d.to : null;
-      standing.add(signature(d.kind, to, d.reason));
-      if (this.store.hasRecentProposal(projectId, item.id, delivery.sequence, d.kind, to, d.reason, evidenceSha)) continue;
-      this.store.addProposal(projectId, { itemId: item.id, delivery: delivery.sequence, linkId: primary?.id ?? null, kind: d.kind, fromStatus: item.status, toStatus: to, reason: d.reason, evidenceSha });
-      proposals += 1;
-    }
-    // A proposal the evidence no longer supports is withdrawn, not left for someone to reject.
-    // A passing merge's proposal stands until the ticket's own merge or the person settles it.
-    const passing = (p: ProposalView) => p.reason.startsWith(LANDED_ELSEWHERE) && !evidence.merged && BEFORE_DONE.has(this.ctx.items.get(projectId, item.id)?.status ?? "done");
-    for (const p of this.store.proposalsForDelivery(projectId, item.id, delivery.sequence, "open")) if (!standing.has(signature(p.kind, p.toStatus, p.reason)) && !passing(p)) this.store.setProposalState(projectId, p.id, "stale");
-    if (evidence.merged && this.ctx.items.get(projectId, item.id)?.status === "done") this.store.finishActiveDelivery(projectId, item.id, "completed");
-    return { changed, proposals };
-  }
-
-  // ── contributions ──────────────────────────────────────────────────────────
+  // ── words ──────────────────────────────────────────────────────────────────
 
   /** The words the backend writes for the person, in their language at the moment they are written. */
   private limitedWords(until: number, known: boolean, resumes: boolean): string {
@@ -2072,454 +981,7 @@ export class CodeLink extends Service {
     return CODE_WORDS(this.ctx.settings.locale?.());
   }
 
-  private contribute(ctx: Context): void {
-    ctx.contributions.section({
-      id: "code",
-      title: () => this.words()("section"),
-      render: (item) => {
-        const w = this.words();
-        const since = (at: number) => agoWords(w, Math.max(0, Math.round((Date.now() - at) / 1000)));
-        const links = this.store.links(item.projectId, item.id);
-        const delivery = this.store.currentDelivery(item.projectId, item.id);
-        const open = delivery ? this.store.proposalsForDelivery(item.projectId, item.id, delivery.sequence, "open") : [];
-        const sessions = this.store.sessions(item.projectId, { itemId: item.id, ...(delivery ? { delivery: delivery.sequence } : {}) });
-        // A session that worked this delivery and went on to another ticket: its conversation is still this ticket's record.
-        const earlier = delivery ? this.store.movedOn(item.projectId, item.id, delivery.sequence)[0] : undefined;
-        if (item.workType === "general" && !links.length && !sessions.length && !earlier) return null;
-        if (!delivery && !links.length && !open.length && !sessions.length) return null;
-        const current = this.currentLinks(item.projectId, item.id);
-        const primary = primaryOf(current);
-        const ordered = primary ? [primary, ...current.filter((l) => l.id !== primary.id), ...links.filter((l) => l.delivery !== primary.delivery).reverse()] : [...links].reverse();
-        const deliveries = this.store.deliveries(item.projectId, item.id);
-        const deliveryBySequence = new Map(deliveries.map((entry) => [entry.sequence, entry]));
-        const rows: SectionRow[] = [];
-        if (delivery && !current.length) rows.push({ label: w("delivery"), icon: "i-merge", state: "live", value: `#${delivery.sequence} · ${named(w, DELIVERY_STATES, delivery.state)}` });
-        let shownDelivery: number | null = null;
-        for (const l of ordered) {
-          if (deliveries.length > 1 && shownDelivery !== l.delivery) {
-            const entry = deliveryBySequence.get(l.delivery);
-            rows.push({ label: w("delivery"), icon: "i-merge", state: entry?.state === "active" ? "live" : entry?.state === "completed" ? "ok" : "ended", value: `#${l.delivery} · ${entry ? named(w, DELIVERY_STATES, entry.state) : w("historical")}` });
-            shownDelivery = l.delivery;
-          }
-          const repo = this.ctx.repos.get(item.projectId, l.repoId);
-          const name = repo?.name ?? w("repository");
-          if (l.branch) rows.push({ label: w("branch"), icon: "i-branch", mono: true, value: `${l.branch} · ${name}${l.ahead || l.behind ? ` · +${l.ahead} −${l.behind}` : ""}` });
-          if (l.prNumber !== null || l.prUrl) {
-            rows.push({
-              label: w("pullRequest"),
-              icon: "i-merge",
-              state: l.prState === "merged" ? "ok" : l.prState === "closed" ? "ended" : l.prState === "open" ? "live" : undefined,
-              value: `${l.prNumber !== null ? `#${l.prNumber}` : w("openIt")}${l.prState ? ` · ${named(w, PR_STATES, l.prState)}` : ""}`,
-              href: l.prUrl ?? undefined
-            });
-          } else if (l.branch && !l.mergedSha && l.ahead > 0 && this.store.repoState(item.projectId, l.repoId)?.remote === "none") {
-            rows.push({ label: w("pullRequest"), icon: "i-merge", value: w("mergeLocal", { base: repo?.defaultBranch ?? "main" }), command: "code-link.merge-local" });
-          } else if (l.branch && !l.mergedSha && l.ahead > 0 && this.worktreeOf(item.projectId, item.id)) {
-            rows.push({ label: w("pullRequest"), icon: "i-merge", value: w("openPr"), command: "code-link.open-pr" });
-          }
-          if (l.prState === "open" && l.prUrl && sessions.some((s) => s.blocked === "merge" && s.state !== "ended")) {
-            rows.push({ label: w("mergeByHand"), icon: "i-warn", state: "warn", value: w("mergeBlocked"), href: l.prUrl });
-          }
-          if (l.mergedSha) rows.push({ label: w("merged"), icon: "i-check", state: "ok", mono: true, value: w("mergedOn", { sha: l.mergedSha.slice(0, 7), branch: repo?.defaultBranch ?? "main" }) });
-          else if (!l.branch && l.headSha) rows.push({ label: w("landedElsewhere"), icon: "i-merge", mono: true, value: w("mergedOn", { sha: l.headSha.slice(0, 7), branch: repo?.defaultBranch ?? "main" }) });
-          if (l.headAt) rows.push({ label: w("lastCommit"), icon: "i-clock", value: since(l.headAt) });
-        }
-        const live = sessions.find((s) => s.state !== "ended") ?? sessions[0];
-        if (live) {
-          const where = live.herdrPane ? w("inHerdr") : live.mode === "terminal" ? w("inTerminal") : w("runByTomrade");
-          const when = since(live.lastEventAt ?? live.startedAt);
-          const state = ({ running: "live", waiting: "waiting", idle: "idle", error: "warn", ended: "ended", lost: "lost" } as const)[live.state];
-          // What it is doing beats what it last said; an error is what it last said.
-          const doing = live.state === "error" ? (live.summary ?? w("stopped")) : (live.activity ?? live.summary ?? "");
-          rows.push({
-            label: w("session"),
-            icon: live.mode === "terminal" ? "i-terminal" : "i-plug",
-            state,
-            value: `${named(w, SESSION_STATES, live.state)} · ${where}${doing ? ` · ${doing}` : ""} · ${w("lastSignal", { when })}`,
-            // a session in a herdr pane is a click away
-            ...(live.herdrPane && live.state !== "ended" ? { command: "code-link.open-terminal" } : {})
-          });
-          if (live.state !== "running") rows.push({ label: w("continue"), icon: "i-send", value: live.mode === "terminal" ? w("continueTerminal") : w("continueHere"), command: live.mode === "terminal" ? "code-link.start-terminal" : "code-link.start-run" });
-          if (live.threadId) rows.push({ label: w("conversation"), icon: "i-panel", value: live.state === "waiting" ? w("openWaiting") : w("openInAssistant"), command: "code-link.open-thread" });
-        }
-        if (earlier) {
-          const now = earlier.itemIds[0] ? this.ctx.items.get(item.projectId, earlier.itemIds[0])?.key : undefined;
-          const value = [named(w, SESSION_STATES, earlier.state), earlier.title ?? earlier.agent, now ? w("movedOnTo", { key: now }) : null].filter(Boolean).join(" · ");
-          rows.push({ label: w("earlierSession"), icon: "i-terminal", value, command: "code-link.open-earlier" });
-        }
-        const worktree = this.worktreeOf(item.projectId, item.id);
-        if (worktree) rows.push({ label: w("worktree"), icon: "i-folder", mono: true, value: worktree, command: "code-link.open-terminal" });
-        else if (live?.worktree && live.state !== "ended") rows.push({ label: w("worktree"), icon: "i-folder", mono: true, value: live.worktree });
-        const proposal = open.find((p) => p.kind === "propose");
-        if (proposal) {
-          rows.push({ label: w("proposal"), icon: "i-warn", state: "warn", value: w("accept", { status: named(w, STATUSES, proposal.toStatus ?? "") }), command: "code-link.accept-proposal" });
-          rows.push({ label: w("dismiss"), icon: "i-close", value: w("notThisTime"), command: "code-link.reject-proposal" });
-        }
-        const text = open.map((p) => (p.kind === "flag" ? `⚠ ${p.reason}` : `→ ${named(w, STATUSES, p.toStatus ?? "")}: ${p.reason}`)).join("\n");
-        return { rows, text: text || undefined };
-      }
-    });
-
-    ctx.contributions.badge({
-      id: "code-link",
-      compute: (items, { projectId }) => {
-        const w = this.words();
-        const byItem = new Map<string, CodeLinkView[]>();
-        for (const l of this.store.links(projectId)) (byItem.get(l.itemId) ?? byItem.set(l.itemId, []).get(l.itemId)!).push(l);
-        const flags = new Map<string, ProposalView>();
-        for (const p of this.store.proposals(projectId)) if (p.kind === "flag" && !flags.has(p.itemId)) flags.set(p.itemId, p);
-        const waiting = new Set<string>();
-        const stuck = new Map<string, string>();
-        for (const s of this.store.sessions(projectId, { live: true })) {
-          for (const id of s.itemIds) {
-            if (this.store.currentDelivery(projectId, id)?.sequence !== s.delivery) continue;
-            if (s.state === "waiting") waiting.add(id);
-            if (s.state !== "error") continue;
-            const summary = s.summary ?? w("stopped");
-            const repo = s.blocked === "merge" ? this.ctx.repos.get(projectId, s.repoId) : null;
-            const checkout = repo ? this.ctx.repos.checkout(repo.remote).checkout : null;
-            stuck.set(id, repo && !(checkout && fs.existsSync(checkout)) ? `${summary}\n${w("mergeUnseen", { repo: repo.name })}` : summary);
-          }
-        }
-        const out: Record<string, Badge[]> = {};
-        for (const item of items) {
-          const allLinks = byItem.get(item.id) ?? [];
-          const delivery = this.store.currentDelivery(projectId, item.id);
-          const links = delivery ? allLinks.filter((link) => link.delivery === delivery.sequence) : [];
-          const flag = flags.get(item.id);
-          if (!links.length && !flag && !waiting.has(item.id) && !stuck.has(item.id)) continue;
-          const badges: Badge[] = [];
-          if (waiting.has(item.id)) badges.push({ id: "waiting", label: w("badgeWaiting"), tone: "strong", title: w("badgeWaitingTitle") });
-          if (stuck.has(item.id)) badges.push({ id: "stuck", label: w("badgeStuck"), tone: "strong", title: stuck.get(item.id) });
-          if (flag) badges.push({ id: "mismatch", label: w("badgeMismatch"), tone: "strong", title: flag.reason });
-          const primary = primaryOf(links);
-          if (primary?.prState === "open") badges.push({ id: "pr", label: primary.prNumber !== null ? `PR #${primary.prNumber}` : "PR", tone: "strong", title: primary.prUrl ?? undefined });
-          else if (links.some((l) => l.mergedSha)) badges.push({ id: "merged", label: w("badgeMerged"), tone: "faint" });
-          else if (primary?.branch) badges.push({ id: "branch", label: w("badgeBranch"), tone: "neutral", title: primary.branch });
-          if (badges.length) out[item.id] = badges;
-        }
-        return out;
-      }
-    });
-
-    ctx.contributions.statusItem({
-      id: "code-link",
-      opens: "code-inbox",
-      text: ({ projectId }) => {
-        if (!projectId) return null;
-        const w = this.words();
-        const at = this.scannedAt.get(projectId);
-        const parts: string[] = [];
-        const live = this.store.sessions(projectId, { live: true }).filter((s) => s.state !== "lost");
-        const waiting = live.filter((s) => s.state === "waiting").length;
-        const stuck = live.filter((s) => s.state === "error").length;
-        if (live.length) parts.push([w(live.length === 1 ? "sessionsOne" : "sessionsMany", { n: live.length }), waiting ? w("waitingCount", { n: waiting }) : "", stuck ? w("stuckCount", { n: stuck }) : ""].filter(Boolean).join(" · "));
-        const unlinked = this.unlinked(projectId).length;
-        const open = this.store.proposals(projectId).length;
-        const unreachable = this.store.repoStates(projectId).filter((repo) => repo.remote === "unreachable").length;
-        if (unlinked) parts.push(w("unlinked", { n: unlinked }));
-        if (open) parts.push(w("toConfirm", { n: open }));
-        if (unreachable) parts.push(w("unreachable", { n: unreachable }));
-        if (!parts.length && !at) return null;
-        return w("statusLine", { parts: parts.join(" · ") || w("inSync"), scanned: at ? w("statusScanned", { when: agoWords(w, Math.max(0, Math.round((Date.now() - at) / 1000))) }) : "" });
-      }
-    });
-
-    const group = () => this.words()("group");
-    const startCommand = (mode: StartMode) => async (scope: { projectId?: string; itemId?: string | null }) => {
-      const w = this.words();
-      if (!scope.projectId || !scope.itemId) return { toast: w("selectTicket") };
-      const result = await this.start(scope.projectId, scope.itemId, { mode });
-      // the Start dialog says what stopped it and offers the fix; the toast is for surfaces that cannot open it
-      if (!result.ok) return { toast: result.message, startDialog: mode };
-      const warning = result.warnings?.join("\n");
-      const started = w(result.continued ? "continuing" : "started", { on: result.branch ? w("startedOn", { branch: result.branch }) : "" });
-      // In herdr, shown in Tomrade's Terminal window when that is on.
-      if (result.mode === "terminal" && result.launched && result.pane && (await this.showSession(scope.projectId, result.sessionId))) return { toast: `${started}${warning ? `\n${warning}` : ""}` };
-      if (result.mode === "terminal") return { toast: `${result.launched ? `${started}${result.pane ? w("herdrHasIt", { pane: result.pane }) : w("terminalHasIt")}` : w("runThis", { command: result.command ?? "" })}${warning ? `\n${warning}` : ""}` };
-      // a run here is followed in its conversation, which opens with it
-      if (result.waitingOn) return { toast: w("waitingOn", { question: result.waitingOn }), showThread: result.threadId };
-      return { toast: `${started}${warning ? `\n${warning}` : ""}`, showThread: result.threadId };
-    };
-    ctx.contributions.command({ id: "code-link.start-run", title: () => this.words()("cmdStartRun"), group, run: startCommand("run") });
-    ctx.contributions.command({ id: "code-link.start-terminal", title: () => this.words()("cmdStartTerminal"), group, run: startCommand("terminal") });
-    ctx.contributions.command({
-      id: "code-link.open-pr",
-      title: () => this.words()("cmdOpenPr"),
-      group,
-      run: async ({ projectId, itemId }) => {
-        if (!projectId || !itemId) return { toast: this.words()("selectTicket") };
-        const r = await this.openPr(projectId, itemId);
-        return { toast: r.message };
-      }
-    });
-    ctx.contributions.command({
-      id: "code-link.merge-local",
-      title: () => this.words()("cmdMergeLocal"),
-      group,
-      run: async ({ projectId, itemId }) => {
-        if (!projectId || !itemId) return { toast: this.words()("selectTicket") };
-        return { toast: (await this.mergeLocal(projectId, itemId)).message };
-      }
-    });
-    ctx.contributions.command({
-      id: "code-link.open-thread",
-      title: () => this.words()("cmdOpenThread"),
-      group,
-      run: ({ projectId, itemId }) => {
-        if (!projectId || !itemId) return { toast: this.words()("selectTicket") };
-        const sessions = this.store.sessions(projectId, { itemId }).filter((s) => s.threadId);
-        const threadId = (sessions.find((s) => s.state !== "ended") ?? sessions[0])?.threadId ?? this.store.links(projectId, itemId).find((l) => l.threadId)?.threadId;
-        return threadId ? { showThread: threadId } : { toast: this.words()("noConversation") };
-      }
-    });
-    ctx.contributions.command({
-      id: "code-link.open-earlier",
-      title: () => this.words()("cmdOpenEarlier"),
-      group,
-      run: async ({ projectId, itemId }) => {
-        if (!projectId || !itemId) return { toast: this.words()("selectTicket") };
-        const session = this.store.movedOn(projectId, itemId, this.store.currentDelivery(projectId, itemId)?.sequence)[0] ?? this.store.movedOn(projectId, itemId)[0];
-        if (!session) return { toast: this.words()("noConversation") };
-        return (await this.showSession(projectId, session.id)) ? {} : { toast: this.words()("earlierNotShown") };
-      }
-    });
-    ctx.contributions.command({
-      id: "code-link.open-terminal",
-      title: () => this.words()("cmdOpenTerminal"),
-      group,
-      run: async ({ projectId, itemId }) => {
-        if (!projectId || !itemId) return { toast: this.words()("selectTicket") };
-        // The session already has a terminal, in herdr: show that one rather than open another, in Tomrade's Terminal window when that is on.
-        const session = this.store.sessions(projectId, { itemId, live: true }).find((s) => s.herdrPane && s.state !== "lost");
-        if (session && (await this.showSession(projectId, session.id))) return {};
-        const shown = await this.showInHerdr(projectId, itemId);
-        if (shown) return { toast: shown };
-        const cwd = this.worktreeOf(projectId, itemId);
-        if (!cwd) return { toast: this.words()("noWorktree") };
-        const settings = await machineTerminalSettings(this.ctx.settings.get().codeLink, this.ctx.get("herdr"));
-        const launch = await launchTerminal({ cwd, command: 'exec "${SHELL:-bash}"', dir: path.join(this.sessionDir("shell"), path.basename(cwd)), label: path.basename(cwd) }, settings.terminal, this.ctx.get("herdr") ?? null);
-        const fallback = herdrFallbackNote(this.words().locale, launch, HERDR_INSTALL);
-        const said = launch.launched ? this.words()("opened", { cwd }) : `cd ${cwd}`;
-        return { toast: fallback ? `${fallback}\n${said}` : said };
-      }
-    });
-    const settle = (accept: boolean) => (scope: { projectId?: string; itemId?: string | null }) => {
-      const w = this.words();
-      if (!scope.projectId || !scope.itemId) return { toast: w("selectTicket") };
-      const proposal = this.store.proposals(scope.projectId, scope.itemId, "open").find((p) => p.kind === "propose");
-      if (!proposal) return { toast: w("nothingProposed") };
-      this.resolve(scope.projectId, proposal.id, accept);
-      return { toast: accept ? w("movedTo", { status: named(w, STATUSES, proposal.toStatus ?? "") }) : w("dismissed") };
-    };
-    ctx.contributions.command({ id: "code-link.accept-proposal", title: () => this.words()("cmdAccept"), group, run: settle(true) });
-    ctx.contributions.command({ id: "code-link.reject-proposal", title: () => this.words()("cmdReject"), group, run: settle(false) });
-    const connectCommand = (id: string, title: () => string, mode: ConnectMode) => ctx.contributions.command({
-      id,
-      title,
-      group,
-      run: async ({ projectId, itemId }) => {
-        if (!projectId) return { toast: this.words()("openProject") };
-        const item = itemId ? this.ctx.items.get(projectId, itemId) : null;
-        const fromItem = item ? this.ctx.boards.get(projectId, item.boardId)?.repoId : null;
-        const repos = this.ctx.repos.list(projectId);
-        const repoId = fromItem ?? (repos.length === 1 ? repos[0]!.id : null);
-        if (!repoId) return { toast: this.words()("pickWorkstream") };
-        const r = await this.connect(projectId, repoId, mode);
-        return { toast: r.message };
-      }
-    });
-    connectCommand("code-link.connect-local", () => this.words()("cmdConnectLocal"), "local");
-    connectCommand("code-link.connect", () => this.words()("cmdConnect"), "team");
-    ctx.contributions.command({
-      id: "code-link.rescan",
-      title: () => this.words()("cmdRescan"),
-      group,
-      run: async ({ projectId }) => {
-        if (!projectId) return { toast: this.words()("openProject") };
-        const s = await this.scan(projectId);
-        const w = this.words();
-        return { toast: w("scanned", { scanned: s.scanned, repos: s.repos, changed: s.changed, proposals: s.proposals, skipped: s.skipped.length ? w("scannedSkipped", { n: s.skipped.length }) : "" }) };
-      }
-    });
-  }
-
   // ── helpers ────────────────────────────────────────────────────────────────
-
-  /** A hook fired without a token: match it to a session by where the agent runs — a Tomrade worktree, or someone's checkout. */
-  private externalEvent(raw: unknown): void {
-    // Cursor's hooks post in its own names; the rest of this reads Claude Code's.
-    const payload = (raw as { tomrade_agent?: unknown } | null)?.tomrade_agent === "cursor" ? this.readCursorHook(raw) : raw;
-    if (!payload) return;
-    const p = payload as { hook_event_name?: string; session_id?: string; cwd?: string; transcript_path?: string; tomrade_agent?: string; source?: string };
-    if (!p.cwd || !p.session_id) return;
-    const agent = p.tomrade_agent === "codex" || p.tomrade_agent === "workbuddy" || p.tomrade_agent === "pi" || p.tomrade_agent === "hermes" || p.tomrade_agent === "opencode" || p.tomrade_agent === "cursor" ? p.tomrade_agent : "claude-code";
-    // Where the transcript lives tells which of the person's Claude Code accounts ran it.
-    if (agent === "claude-code" && typeof p.transcript_path === "string") this.ctx.get("agent")?.engineOf("claude-code")?.mcpLink?.sawTranscript?.(p.transcript_path);
-    const cwd = path.resolve(p.cwd);
-    const within = (root: string) => cwd === root || cwd.startsWith(root + path.sep);
-    // Resumed, by hand or by herdr after its server restarted, or still going after another process of it ended
-    // (`claude --continue` elsewhere): the conversation goes on in the session it had.
-    if (p.hook_event_name !== "SessionEnd") this.continueEnded(agent, p.session_id);
-    for (const [threadId, dir] of this.worktrees) {
-      if (!within(path.resolve(dir))) continue;
-      for (const projectId of this.ctx.db.openIds()) {
-        const session = this.store.sessions(projectId, { live: true }).find((s) => s.threadId === threadId);
-        if (session) {
-          this.heardHook(projectId, session.repoId, agent);
-          this.heard(projectId, session.id, payload);
-          return;
-        }
-      }
-      return;
-    }
-    const mine = (projectId: string) => this.store.sessions(projectId, { live: true }).filter((s) => s.threadId === null && s.agent === agent && s.externalId === p.session_id);
-    // The agent itself is gone: every session it had, parallel or not, ends with it.
-    const deliver = (projectId: string, sessions: SessionView[]) => {
-      for (const s of p.hook_event_name === "SessionEnd" ? sessions : sessions.slice(0, 1)) this.heard(projectId, s.id, payload);
-    };
-    // One agent working tickets in parallel, each in a worktree it named: an event from inside one is that session's.
-    for (const projectId of this.ctx.db.openIds()) {
-      const all = mine(projectId);
-      const placed = all.filter((s) => s.worktree && within(path.resolve(s.worktree))).sort((a, b) => b.worktree!.length - a.worktree!.length)[0];
-      if (placed) {
-        this.heardHook(projectId, placed.repoId, agent);
-        deliver(projectId, [placed, ...all.filter((s) => s.id !== placed.id)]);
-        return;
-      }
-    }
-    for (const projectId of this.ctx.db.openIds()) {
-      for (const repo of this.ctx.repos.list(projectId)) {
-        const checkout = this.ctx.repos.checkout(repo.remote).checkout;
-        if (!checkout || !within(path.resolve(checkout))) continue;
-        this.heardHook(projectId, repo.id, agent);
-        // Anywhere else in the checkout, the newest of its sessions there.
-        const known = mine(projectId).filter((s) => s.repoId === repo.id);
-        if (known.length) {
-          deliver(projectId, known);
-          return;
-        }
-        // The end of a session never heard of is nothing to record.
-        if (p.hook_event_name === "SessionEnd") return;
-        const created = this.store.createSession(projectId, { repoId: repo.id, branch: "", itemIds: [], mode: "terminal", agent, threadId: null, device: this.ctx.hub.deviceId, externalId: p.session_id ?? null });
-        this.heard(projectId, created.id, payload);
-        return;
-      }
-    }
-    void this.placeFrom(cwd).catch((err) => this.ctx.logger.warn(`placing a checkout from ${cwd} failed: ${message(err)}`));
-  }
-
-  /** A connected repository's hook, for a session: recorded, and shown to plugins' hooks, which cannot answer it. */
-  private heard(projectId: string, sessionId: string, payload: unknown): void {
-    void this.sessions.hook(projectId, sessionId, payload, false).catch((err) => this.ctx.logger.warn(`a repository hook for ${sessionId}: ${message(err)}`));
-    this.findPane(projectId, sessionId, payload);
-  }
-
-  /**
-   * The newest sessions of an agent's conversation, ended within the day by its process ending, live again, ticket
-   * and all — unless one of its sessions is still live, or its tickets are finished.
-   */
-  private continueEnded(agent: string, externalId: string): void {
-    const now = Date.now();
-    const ended: { projectId: string; session: SessionView }[] = [];
-    const ownOf = (s: SessionView) => s.threadId === null && s.mode === "terminal" && s.agent === agent && s.externalId === externalId;
-    // Asked on every hook: the live ones first, and the ended ones only when none is.
-    if (this.ctx.db.openIds().some((projectId) => this.store.sessions(projectId, { live: true }).some((s) => ownOf(s) && s.state !== "lost"))) return;
-    for (const projectId of this.ctx.db.openIds()) {
-      const own = this.store.sessions(projectId).filter(ownOf);
-      if (own.some((s) => s.state !== "ended" && s.state !== "lost")) return;
-      for (const session of own) {
-        if (session.state !== "ended" || !session.endedAt || now - session.endedAt > RESUME_WITHIN_MS) continue;
-        const finished = session.itemIds.some((id) => {
-          const status = this.ctx.items.get(projectId, id)?.status;
-          return status === "done" || status === "cancelled";
-        });
-        if (!finished) ended.push({ projectId, session });
-      }
-    }
-    if (!ended.length) return;
-    const last = Math.max(...ended.map((e) => e.session.endedAt!));
-    const changed = new Set<string>();
-    for (const { projectId, session } of ended) {
-      if (session.endedAt! < last - ENDED_TOGETHER_MS) continue;
-      this.store.patchSession(projectId, session.id, { state: "running", endedAt: null });
-      this.ctx.logger.info(`session ${session.id} (${agent} ${externalId}) lives again: its conversation goes on`);
-      changed.add(projectId);
-    }
-    for (const projectId of changed) this.notify(projectId);
-  }
-
-  /**
-   * Hooks committed before they named their herdr pane say nothing of where the agent runs. herdr knows which pane
-   * holds the agent's own session, so a terminal session without a pane takes that one.
-   */
-  private findPane(projectId: string, sessionId: string, payload: unknown): void {
-    const p = payload as { session_id?: unknown; herdr_pane?: unknown; hook_event_name?: unknown };
-    if (typeof p.session_id !== "string" || !p.session_id || p.herdr_pane || p.hook_event_name === "SessionEnd") return;
-    const herdr = this.ctx.get("herdr");
-    const session = this.store.session(projectId, sessionId);
-    if (!herdr || !session || session.mode !== "terminal" || session.herdrPane) return;
-    const now = Date.now();
-    if (now - (this.paneLooked.get(sessionId) ?? 0) < PANE_LOOK_MS) return;
-    this.paneLooked.set(sessionId, now);
-    const externalId = p.session_id;
-    void herdr
-      .panes()
-      .then((panes) => {
-        const pane = panes?.find((x) => x.agentSession === externalId);
-        const current = this.store.session(projectId, sessionId);
-        if (!pane || !current || current.herdrPane || current.state === "ended" || current.state === "lost") return;
-        this.paneLooked.delete(sessionId);
-        this.sessions.touch(projectId, sessionId, { herdrPane: pane.paneId });
-      })
-      .catch((err) => this.ctx.logger.warn(`finding the herdr pane of ${sessionId}: ${message(err)}`));
-  }
-
-  /** A repository's hooks reached this Tomrade. Claude Code posts on every tool call, so the database hears of it once a minute at most. */
-  private heardHook(projectId: string, repoId: string, agent: string): void {
-    const key = `${projectId}\0${repoId}`;
-    const byAgent = this.hooksHeard.get(key) ?? new Map<string, { at: number; written: number }>();
-    this.hooksHeard.set(key, byAgent);
-    const at = Date.now();
-    const seen = byAgent.get(agent);
-    if (seen && at - seen.written < HOOK_HEARD_WRITE_MS) {
-      seen.at = at;
-      return;
-    }
-    this.store.noteHookHeard(projectId, repoId, agent, at);
-    byAgent.set(agent, { at, written: at });
-  }
-
-  /** Each agent's last hook event from the repository on this machine: memory where it is newer than the database. */
-  private lastHooks(projectId: string, repoId: string): Record<string, number> {
-    const last = this.store.hooksHeard(projectId, repoId);
-    for (const [agent, { at }] of this.hooksHeard.get(`${projectId}\0${repoId}`) ?? []) last[agent] = Math.max(last[agent] ?? 0, at);
-    return last;
-  }
-
-  /**
-   * A coding session in a checkout, or a worktree of one, of a project repository this machine has
-   * no checkout of: that checkout's main working tree is the repository's checkout from now on.
-   */
-  private async placeFrom(cwd: string): Promise<void> {
-    if (this.placeLooked.has(cwd)) return;
-    this.placeLooked.add(cwd);
-    const common = await this.git(["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd, ok: true });
-    const gitDir = common.code === 0 ? common.stdout.trim() : "";
-    // A bare repository, or a git dir kept apart from its working tree, has no main working tree to name.
-    if (path.basename(gitDir) !== ".git") return;
-    const top = path.dirname(gitDir);
-    const origin = await this.git(["remote", "get-url", "origin"], { cwd: top, ok: true });
-    if (origin.code !== 0 || !origin.stdout.trim()) return;
-    for (const projectId of this.ctx.db.openIds()) {
-      for (const repo of this.ctx.repos.list(projectId)) {
-        const placed = this.ctx.repos.checkout(repo.remote).checkout;
-        if (placed && fs.existsSync(placed)) continue;
-        if (!(await sameRepository(origin.stdout.trim(), repo.remote))) continue;
-        await this.ctx.repos.setCheckout(repo.remote, top);
-      }
-    }
-  }
 
   private sessionOf(thread: ThreadSummary): SessionView | null {
     return this.store.sessions(thread.projectId, { live: true }).find((s) => s.threadId === thread.id) ?? null;
@@ -2535,82 +997,6 @@ export class CodeLink extends Service {
     const text = moment.kind === "said" ? `${who}: ${moment.text}` : moment.kind === "failed" ? `${who} stopped: ${moment.text}` : `${who} session ended${moment.text ? ` (${moment.text})` : ""}.`;
     const message = agent.store.appendMessage(session.projectId, session.threadId, "system", { type: "note", text }, null);
     this.home.get("ipc")?.send("agent.event", session.threadId, { type: "message", message });
-  }
-
-  /** The panes this service follows in herdr; others (the Terminal window's) follow theirs. */
-  private readonly herdrHolds = new Map<string, () => void>();
-
-  /** What herdr was last told about each session with a pane, so it is told only what changed. */
-  private readonly herdrTold = new Map<string, { tokens?: string; resume?: string }>();
-
-  /**
-   * Every live session with a pane is followed in herdr, and herdr is kept told about it: the
-   * ticket and where it stands on the pane, and — once the hooks have said the agent's own
-   * session id — how to bring the session back, connected, after a restart of herdr's own. A
-   * session that ended is let go, and its pane cleared.
-   */
-  private watchPanes(ctx: Context): void {
-    const wanted = new Set<string>();
-    const seen = new Set<string>();
-    const w = this.words();
-    for (const projectId of this.ctx.db.openIds()) {
-      for (const s of this.store.sessions(projectId)) {
-        if (!s.herdrPane) continue;
-        const live = s.state !== "ended" && s.state !== "lost";
-        const told = this.herdrTold.get(s.id) ?? {};
-        if (live) {
-          wanted.add(s.herdrPane);
-          seen.add(s.id);
-          const item = s.itemIds[0] ? this.ctx.items.get(projectId, s.itemIds[0]) : undefined;
-          const tokens = { ticket: item?.key ?? null, status: item ? named(w, STATUSES, item.status) : null, session: named(w, SESSION_STATES, s.state) };
-          const wanting = JSON.stringify(tokens);
-          if (told.tokens !== wanting) {
-            this.herdrTold.set(s.id, { ...told, tokens: wanting });
-            void ctx.herdr.reportMetadata(s.herdrPane, tokens).then((ok) => { if (!ok) this.herdrTold.set(s.id, { ...(this.herdrTold.get(s.id) ?? {}), tokens: undefined }); });
-          }
-          const script = path.join(this.sessionDir(s.id), RESUME_SCRIPT);
-          if (s.externalId && told.resume !== s.externalId && fs.existsSync(script)) {
-            this.herdrTold.set(s.id, { ...(this.herdrTold.get(s.id) ?? {}), resume: s.externalId });
-            fs.writeFileSync(path.join(this.sessionDir(s.id), RESUME_ID_FILE), s.externalId);
-            void ctx.herdr.reportSession(s.herdrPane, herdrAgentOf(s.agent), s.externalId, ["bash", script]).then((ok) => { if (!ok) this.herdrTold.set(s.id, { ...(this.herdrTold.get(s.id) ?? {}), resume: undefined }); });
-          }
-        } else if (told.tokens) {
-          this.herdrTold.delete(s.id);
-          void ctx.herdr.reportMetadata(s.herdrPane, { ticket: null, status: null, session: null });
-        }
-      }
-    }
-    for (const id of this.herdrTold.keys()) if (!seen.has(id)) this.herdrTold.delete(id);
-    for (const [paneId, release] of this.herdrHolds) {
-      if (wanted.has(paneId)) continue;
-      release();
-      this.herdrHolds.delete(paneId);
-    }
-    // A pane herdr stopped following (it said the pane was gone) is followed afresh while a session still wants it.
-    const watching = new Set(ctx.herdr.watching());
-    for (const paneId of wanted) if (!this.herdrHolds.has(paneId) || !watching.has(paneId)) this.herdrHolds.set(paneId, ctx.herdr.watch(paneId));
-  }
-
-  /**
-   * What herdr reads on a session's pane, said the way the session's hooks would say it: working
-   * is a tool starting, blocked a permission asked, done a stop with the screen's last line for
-   * what was said, the pane going the session's end. Idle and unknown say nothing; a hook that
-   * spoke a moment ago is believed over the screen (see Sessions.event).
-   */
-  private async herdrEvent(ctx: Context, event: HerdrPaneEvent): Promise<void> {
-    for (const projectId of this.ctx.db.openIds()) {
-      const session = this.store.sessions(projectId, { live: true }).find((s) => s.herdrPane === event.paneId && s.state !== "lost");
-      if (!session) continue;
-      if (event.kind === "exited") {
-        this.sessions.event(projectId, session.id, { hook_event_name: "SessionEnd", reason: "pane closed", herdr: true, herdr_pane: event.paneId });
-        return;
-      }
-      const name = event.status === "working" ? "PreToolUse" : event.status === "blocked" ? "PermissionRequest" : event.status === "done" ? "Stop" : null;
-      if (!name) return;
-      const said = name === "Stop" ? lastSaid(await ctx.herdr.readTail(event.paneId)) : "";
-      this.sessions.event(projectId, session.id, { hook_event_name: name, herdr: true, ...(said ? { last_assistant_message: said } : {}) });
-      return;
-    }
   }
 
   /** Per-session files (mcp.json, hooks settings, the prompt, the launch script) live in the Hub where the user can see them. */

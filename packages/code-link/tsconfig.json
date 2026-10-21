@@ -12,7 +12,6 @@
     { "path": "../contributions" },
     { "path": "../db" },
     { "path": "../domain" },
-    { "path": "../engine-pi" },
     { "path": "../git" },
     { "path": "../github" },
     { "path": "../herdr" },

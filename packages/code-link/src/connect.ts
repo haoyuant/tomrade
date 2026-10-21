@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parse as parseToml } from "smol-toml";
-import { outsideExtension } from "@tomradex/engine-pi";
 import { CURSOR_HOOK_POWERSHELL, CURSOR_HOOK_SCRIPT, LEGACY_CURSOR_HOOK_SCRIPT, cursorHookPowerShell, cursorHookScript, withCursorHooks } from "./cursor-hooks.js";
 import { opencodePlugin, withMcpEntry } from "./opencode-files.js";
 import { HERDR_PANE_HEADER, HOOK_EVENTS, TERMINAL_HEADER, WT_HEADER, stripJsonComments } from "./sessions.js";
@@ -50,6 +49,24 @@ export type HookAgent = "codex" | "workbuddy" | "cursor";
 
 /** Pi has no command hooks: a project extension registers the server and reports instead. */
 export const PI_EXTENSION = ".pi/extensions/tomrade.ts";
+
+/**
+ * A file Connect lays down for an agent whose engine knows its format best:
+ * the engine registers it (`ctx.codeLink.registerConnector`) and code-link
+ * imports no engine. Its path stays here, in CONNECT_FILES.
+ */
+export interface ConnectFileWriter {
+  /** The file's text for this project's MCP endpoint and the hooks' event endpoint. */
+  write(mcpUrl: string, eventUrl: string): string;
+  /** The MCP endpoint a written file names, or null when it names none. */
+  url(text: string): string | null;
+}
+
+/** The agents whose connection file an engine writes: Pi's, at PI_EXTENSION. */
+export type ConnectorAgent = "pi";
+/** The writer registered for an agent, read when Connect runs. */
+export type Connectors = (agent: ConnectorAgent) => ConnectFileWriter | undefined;
+export const NO_CONNECTORS: Connectors = () => undefined;
 /** OpenCode loads a project plugin from here by itself. */
 export const OPENCODE_PLUGIN = ".opencode/plugins/tomrade.js";
 /** Claude Code's personal settings for one checkout: a machine-only connection keeps its hooks there. */
@@ -349,7 +366,7 @@ export interface LocalConnect {
  * `.claude/settings.local.json`, no instruction section, and no change to a
  * file git tracks — that agent is skipped and says so.
  */
-export function writeConnectFiles(root: string, input: ConnectInput, agents: readonly ConnectAgent[] = CONNECT_AGENTS, local?: LocalConnect): { files: string[]; skipped: SkippedAgent[] } {
+export function writeConnectFiles(root: string, input: ConnectInput, agents: readonly ConnectAgent[] = CONNECT_AGENTS, local?: LocalConnect, connectors: Connectors = NO_CONNECTORS): { files: string[]; skipped: SkippedAgent[] } {
   interface Write { name: string; text: string | null; mode?: number }
   const read = (name: string) => {
     const file = path.join(root, name);
@@ -382,12 +399,14 @@ export function writeConnectFiles(root: string, input: ConnectInput, agents: rea
   };
   const mcp = () => json(".mcp.json", withServer({ type: "http", url: input.mcpUrl }));
   const claudeHooks = withSessionHooks(hookCommand(input.eventUrl));
+  // Without its engine's writer (the engine is off), Pi gets the instructions alone.
+  const pi = connectors("pi");
   const plans: Record<ConnectAgent, () => Write[]> = {
     "claude-code": () => [mcp(), local ? json(CLAUDE_LOCAL_SETTINGS, (text) => withApprovedServer(claudeHooks(text))) : json(".claude/settings.json", claudeHooks), ...section("CLAUDE.md")],
     codex: () => [codex(), ...section("AGENTS.md"), exact(CODEX_SYNC_SKILL, codexSyncSkill(input))],
     // WorkBuddy's CLI takes Claude Code's hook format in its own settings file.
     workbuddy: () => [mcp(), json(".codebuddy/settings.json", withSessionHooks(hookCommand(input.eventUrl, "workbuddy"))), ...section("AGENTS.md")],
-    pi: () => [exact(PI_EXTENSION, outsideExtension(input.mcpUrl, input.eventUrl)), ...section("AGENTS.md")],
+    pi: () => [...(pi ? [exact(PI_EXTENSION, pi.write(input.mcpUrl, input.eventUrl))] : []), ...section("AGENTS.md")],
     opencode: () => [json("opencode.json", (text) => withMcpEntry(text, input.mcpUrl)), exact(OPENCODE_PLUGIN, opencodePlugin(input.eventUrl)), ...section("AGENTS.md")],
     cursor: () => [json(".cursor/mcp.json", withServer({ url: input.mcpUrl })), json(".cursor/hooks.json", withCursorHooks), exact(CURSOR_HOOK_SCRIPT, cursorHookScript(posixHookCommand(input.eventUrl, "cursor")), 0o755), exact(CURSOR_HOOK_POWERSHELL, cursorHookPowerShell(powershellHook(input.eventUrl, "cursor"))), ...section("AGENTS.md")],
     gemini: () => [json(".gemini/settings.json", withServer({ httpUrl: input.mcpUrl }))]

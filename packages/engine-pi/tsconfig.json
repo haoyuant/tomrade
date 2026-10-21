@@ -12,6 +12,7 @@
   ],
   "references": [
     { "path": "../agent" },
+    { "path": "../code-link" },
     { "path": "../domain" },
     { "path": "../engine-kit" },
     { "path": "../llm" },

@@ -50,7 +50,7 @@ Every package in this workspace, what it is for, the key it claims on the cordis
 | `files-github` | GitHub as where a project's files are shared. | — | files, github, storage-github |
 | `notes` | Files read as notes: wiki links, backlinks, tags, full-text search, the journal. | `notes` | files, tools |
 | `repos` | The code repositories workstreams stand for, their checkouts, agent worktrees. | `repos` | boards, git, hub, storage, tools |
-| `code-link` | A ticket's branches, pull requests and coding sessions; status from git; Start. | `codeLink` | agent, boards, contributions, engine-pi, git, github, herdr, hub, items, llm, mcp, plugin-sdk, repos, storage, tools, write |
+| `code-link` | A ticket's branches, pull requests and coding sessions; status from git; Start. | `codeLink` | agent, boards, contributions, git, github, herdr, hub, items, llm, mcp, plugin-sdk, repos, storage, tools, write |
 | `herdr` | herdr on this machine: its socket, server and panes. Optional. | `herdr` | doctor, engine-kit |
 | `code-sessions` | The Terminal window: herdr terminals and code sessions side by side. | — | code-link, contributions, desktop-surface, herdr, items |
 
@@ -66,7 +66,7 @@ Every package in this workspace, what it is for, the key it claims on the cordis
 | `engine-kit` | What every local-agent engine shares: finding and starting its CLI, JSON lines, the runtime pool, prompts, the MCP link, the lent CLI model. | — | agent, llm, mcp |
 | `engine-claude-code` | Claude Code as conductor, with Tomrade's tools over MCP. | — | agent, engine-kit, llm, mcp |
 | `engine-codex` | Codex (app-server) as conductor. | — | agent, engine-kit, llm, mcp |
-| `engine-pi` | The Pi coding agent as conductor. | — | agent, engine-kit, llm, mcp |
+| `engine-pi` | The Pi coding agent as conductor. | — | agent, code-link, engine-kit, llm, mcp |
 | `engine-acp` | One conductor for agents that speak ACP; the agents official plugins describe. | `localAgents` | agent, engine-kit, llm, mcp, plugin-sdk |
 | `shell` | A bash tool for in-process engines, asked before each command, never served over MCP. | — | tools |
 | `web-search` | `web_search` and `web_fetch` for every engine, answered by a registered provider. | `webSearch` | tools |
