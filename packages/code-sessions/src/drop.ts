@@ -27,15 +27,35 @@ const bare = (p: string) => path.resolve(p).replace(/^\/private(?=\/var\/)/, "")
  */
 export const heldForDrop = (file: string, tmp = os.tmpdir()): boolean => bare(file).startsWith(`${bare(tmp)}/TemporaryItems/`);
 
+// A file in one of these may be copied whole at drop time; a bigger one keeps its path.
+export const PRIVATE_COPY_MAX = 100 * 1024 * 1024;
+
+/**
+ * The folders macOS keeps to the apps the person allowed and to the app a file from them was dropped on (Tomrade).
+ * A terminal's programs count as whichever app started herdr, often neither. None off macOS.
+ */
+export function privateFolders(home: string | null = process.platform === "darwin" ? os.homedir() : null): string[] {
+  if (!home) return [];
+  return [...["Downloads", "Desktop", "Documents", "Library/Mobile Documents"].map((d) => bare(path.join(home, d))), "/Volumes"];
+}
+
+const inside = (file: string, folders: readonly string[]) => folders.some((d) => bare(file).startsWith(`${d}/`));
+
 /**
  * The dropped paths as a terminal's programs can read them: each file held for Tomrade alone is copied, under
- * its own name, into a new folder in `into`; one that cannot be copied keeps its own path.
+ * its own name, into a new folder in `into` — anything held for a drop, and from a private folder a file up to
+ * PRIVATE_COPY_MAX. One that cannot be copied, and a folder or bigger file from a private folder, keeps its own path.
  */
-export async function readableDrops(paths: readonly string[], into: string, tmp = os.tmpdir()): Promise<string[]> {
+export async function readableDrops(paths: readonly string[], into: string, tmp = os.tmpdir(), folders = privateFolders()): Promise<string[]> {
   return Promise.all(
     paths.map(async (file) => {
-      if (!file || !heldForDrop(file, tmp)) return file;
+      if (!file) return file;
       try {
+        if (!heldForDrop(file, tmp)) {
+          if (!inside(file, folders)) return file;
+          const stat = await fs.stat(file);
+          if (!stat.isFile() || stat.size > PRIVATE_COPY_MAX) return file;
+        }
         await fs.mkdir(into, { recursive: true });
         const copy = path.join(await fs.mkdtemp(path.join(into, "drop-")), path.basename(file));
         await fs.cp(file, copy, { recursive: true });
