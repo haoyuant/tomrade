@@ -317,3 +317,43 @@ describe("running one command for real", () => {
     expect(stopped.error?.killed).toBe(true);
   });
 });
+
+/** Whether a process is still there: signal 0 checks without sending anything. */
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+describe.skipIf(process.platform === "win32")("stopping a script installer on macOS and Linux", () => {
+  // The shape of `curl … | bash`: a pipeline whose inner bash starts children of its own, each printing its pid.
+  const installer = ["-c", "sleep 60 | bash -c 'echo $$; sleep 60 & echo $!; wait' & wait"];
+  const pidsIn = (output: string) => output.split(/\s+/).filter(Boolean).map(Number);
+  const gone = async (pids: number[]) => {
+    for (let i = 0; i < 50 && pids.some(alive); i++) await new Promise((r) => setTimeout(r, 50));
+    return pids.filter(alive);
+  };
+
+  it("leaves nothing of it running once cancelled", async () => {
+    const abort = new AbortController();
+    const seen: string[] = [];
+    const run = runCommand(bareLaunch("bash"), installer, { signal: abort.signal, timeoutMs: 30_000, onOutput: (text) => void seen.push(text) });
+    while (pidsIn(seen.join("")).length < 2) await new Promise((r) => setTimeout(r, 20));
+    const pids = pidsIn(seen.join(""));
+    expect(pids.every(alive)).toBe(true);
+    abort.abort();
+    expect(await run).toMatchObject({ code: null, error: { message: "cancelled", killed: true } });
+    expect(await gone(pids)).toEqual([]);
+  });
+
+  it("leaves nothing of it running once it times out", async () => {
+    const result = await runCommand(bareLaunch("bash"), installer, { signal: new AbortController().signal, timeoutMs: 500 });
+    expect(result.error).toMatchObject({ killed: true, message: expect.stringContaining("timed out") });
+    const pids = pidsIn(result.output);
+    expect(pids).toHaveLength(2);
+    expect(await gone(pids)).toEqual([]);
+  });
+});
