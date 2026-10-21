@@ -67,6 +67,16 @@ it("takes an installer only as a script's https address", async () => {
   ]);
 });
 
+it("takes an npm installer only as a package's name", async () => {
+  const rec = emptyRecording();
+  const ctx = recordingContext("acme", ["agent"], rec);
+  await ctx.agent.localAgent({ id: "acme", title: "Acme", cli: { name: "acme" }, install: "x", setup: { install: [{ npm: "@acme/cli" }, { npm: "acme-cli" }] } });
+  expect(rec.invalid).toEqual([]);
+  expect(rec.localAgentOneClick).toEqual(["acme"]);
+  await ctx.agent.localAgent({ id: "acme_two", title: "Acme", cli: { name: "acme" }, install: "x", setup: { install: [{ npm: "acme; rm -rf ~" }] } });
+  expect(rec.invalid).toEqual(['local agent "acme_two": an npm installer is a package\'s name, not "acme; rm -rf ~"']);
+});
+
 it("takes a download page only as an https address, and a desktop app only with whether it ships the CLI", async () => {
   const rec = emptyRecording();
   const ctx = recordingContext("acme", ["agent"], rec);
