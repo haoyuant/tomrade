@@ -38,7 +38,7 @@ import { CODE_WORDS, type CodeWords } from "./words.js";
 import { Starter, type StartOptions, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
 import { findCodexRollout, findTranscript, readConversation, transcriptTitle, type ConversationLine } from "./titles.js";
-import { AUTO_TERMINAL, TerminalSettings, commandOk, exec, terminalApps } from "./terminal.js";
+import { AUTO_TERMINAL, TerminalSettings, commandOk, exec, locatedCommand, terminalApps, terminalPath } from "./terminal.js";
 import { registerTools } from "./tools.js";
 import { type CodeLinkReader, errorMessage } from "@tomradex/contracts";
 
@@ -157,7 +157,7 @@ export type CodeLinkConfig = z.infer<typeof CodeLinkConfig>;
 const SETTINGS_SECTION = {
   id: "codeLink",
   title: "Code link",
-  description: "Which terminal opens a ticket, and how Claude Code, Codex or Pi is invoked in it. {prompt}, {mcpConfig}, {mcpUrl}, {settings}, {piExtension}, {resume}, {options} (the model and effort chosen at Start) and {cwd} are filled in.",
+  description: "Which terminal opens a ticket, and how Claude Code, Codex or Pi is invoked in it. {bin} (the CLI Tomrade found), {prompt}, {mcpConfig}, {mcpUrl}, {settings}, {piExtension}, {resume}, {options} (the model and effort chosen at Start) and {cwd} are filled in.",
   schema: TerminalSettings,
   defaults: TerminalSettings.parse({}),
   choices: () => ({ terminal: [AUTO_TERMINAL, ...terminalApps()] }),
@@ -166,7 +166,7 @@ const SETTINGS_SECTION = {
     en: { fields: { terminal: { options: { [AUTO_TERMINAL]: CODE_WORDS("en")("terminalAuto") } } } },
     zh: {
       title: "代码关联",
-      description: "用哪个终端打开工单，以及在终端里怎样调用 Claude Code、Codex 或 Pi。命令里的 {prompt}、{mcpConfig}、{mcpUrl}、{settings}、{piExtension}、{resume}、{options}（开始时选的模型和推理强度）和 {cwd} 会自动填入。",
+      description: "用哪个终端打开工单，以及在终端里怎样调用 Claude Code、Codex 或 Pi。命令里的 {bin}（Tomrade 找到的命令行工具）、{prompt}、{mcpConfig}、{mcpUrl}、{settings}、{piExtension}、{resume}、{options}（开始时选的模型和推理强度）和 {cwd} 会自动填入。",
       fields: {
         terminal: { title: "终端应用", description: `${CODE_WORDS("zh")("terminalAutoHelp")}${CODE_WORDS("zh")("terminalHelp")}`, options: { [AUTO_TERMINAL]: CODE_WORDS("zh")("terminalAuto") } },
         claudeCommand: { title: "Claude Code 命令" },
@@ -718,10 +718,15 @@ export class CodeLink extends Service implements CodeLinkReader {
   /** This machine's worktree for the ticket's most recent thread, if one was started here. */
   /** Only a command an engine declares can be run this way; the page names the engine and the step, never the command. */
   async setupInTerminal(engineId: string, step: "install" | "signIn"): Promise<{ launched: boolean; command: string }> {
-    const setup = (await this.ctx.get("agent")?.engineViews())?.find((e) => e.id === engineId)?.setup;
-    const command = step === "install" ? setup?.install[0] : setup?.signIn;
-    if (!command) throw new Error(`${engineId} has no ${step} command`);
-    const { launched } = await this.herdr.setup(command, path.join(this.sessionDir("setup"), engineId));
+    const agent = this.ctx.get("agent");
+    const setup = (await agent?.engineViews())?.find((e) => e.id === engineId)?.setup;
+    const declared = step === "install" ? setup?.install[0] : setup?.signIn;
+    if (!declared) throw new Error(`${engineId} has no ${step} command`);
+    // Signing in runs the CLI Tomrade found, wherever that was: a terminal without Node or Tomrade's folders finds no bare name.
+    const found = step === "signIn" ? (await agent?.engineOf(engineId)?.available().catch(() => null))?.cli : undefined;
+    const cli = found?.state === "ready" ? found : undefined;
+    const command = cli ? locatedCommand(declared, cli.name, cli.path) : declared;
+    const { launched } = await this.herdr.setup(command, path.join(this.sessionDir("setup"), engineId), terminalPath(cli));
     return { launched, command };
   }
 

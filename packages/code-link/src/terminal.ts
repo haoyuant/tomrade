@@ -11,21 +11,21 @@ export const AUTO_TERMINAL = "auto";
 /** Machine settings: which terminal opens, and how each coding agent is invoked in it. */
 export const TerminalSettings = z.object({
   terminal: z.string().default(AUTO_TERMINAL).meta({ title: "Terminal app" }).describe(`${CODE_WORDS("en")("terminalAutoHelp")} ${CODE_WORDS("en")("terminalHelp")}`),
-  claudeCommand: z.string().default('claude {options} --mcp-config "{mcpConfig}" --settings "{settings}" {resume} "$(cat "{prompt}")"').meta({ title: "Claude Code command", advanced: true }),
-  codexCommand: z.string().default('codex {resume} {options} -c mcp_servers.tomrade.url="{mcpUrl}" -c mcp_servers.tomrade.bearer_token_env_var="TOMRADE_MCP_TOKEN" "$(cat "{prompt}")"').meta({ title: "Codex command", advanced: true }),
-  piCommand: z.string().default('pi {options} -e "{piExtension}" {resume} "$(cat "{prompt}")"').meta({ title: "Pi command", advanced: true }).describe("Pi takes no MCP flag; {piExtension} is a session-only extension that registers the server and reports like Claude's hooks."),
+  claudeCommand: z.string().default('"{bin}" {options} --mcp-config "{mcpConfig}" --settings "{settings}" {resume} "$(cat "{prompt}")"').meta({ title: "Claude Code command", advanced: true }),
+  codexCommand: z.string().default('"{bin}" {resume} {options} -c mcp_servers.tomrade.url="{mcpUrl}" -c mcp_servers.tomrade.bearer_token_env_var="TOMRADE_MCP_TOKEN" "$(cat "{prompt}")"').meta({ title: "Codex command", advanced: true }),
+  piCommand: z.string().default('"{bin}" {options} -e "{piExtension}" {resume} "$(cat "{prompt}")"').meta({ title: "Pi command", advanced: true }).describe("Pi takes no MCP flag; {piExtension} is a session-only extension that registers the server and reports like Claude's hooks."),
   /** WorkBuddy's CLI takes Claude Code's flags and posts Claude-shaped hooks. */
-  workbuddyCommand: z.string().default('codebuddy {options} --mcp-config "{mcpConfig}" --settings "{settings}" {resume} "$(cat "{prompt}")"').meta({ title: "WorkBuddy command", advanced: true }),
+  workbuddyCommand: z.string().default('"{bin}" {options} --mcp-config "{mcpConfig}" --settings "{settings}" {resume} "$(cat "{prompt}")"').meta({ title: "WorkBuddy command", advanced: true }),
   /** Gemini CLI runs from a session home: the person's own ~/.gemini, with Tomrade's server added to its settings. */
-  geminiCommand: z.string().default('GEMINI_CLI_HOME="{geminiHome}" gemini {options} {resume} -i "$(cat "{prompt}")"').meta({ title: "Gemini CLI command", advanced: true }).describe("{geminiHome} is a Gemini home for this session alone: your own ~/.gemini (sign-in, extensions, history) with Tomrade's server added to a copy of its settings. Your own files are not changed."),
-  opencodeCommand: z.string().default('OPENCODE_CONFIG="{opencodeConfig}" opencode {options} {resume} --prompt "$(cat "{prompt}")"').meta({ title: "OpenCode command", advanced: true }),
+  geminiCommand: z.string().default('GEMINI_CLI_HOME="{geminiHome}" "{bin}" {options} {resume} -i "$(cat "{prompt}")"').meta({ title: "Gemini CLI command", advanced: true }).describe("{geminiHome} is a Gemini home for this session alone: your own ~/.gemini (sign-in, extensions, history) with Tomrade's server added to a copy of its settings. Your own files are not changed."),
+  opencodeCommand: z.string().default('OPENCODE_CONFIG="{opencodeConfig}" "{bin}" {options} {resume} --prompt "$(cat "{prompt}")"').meta({ title: "OpenCode command", advanced: true }),
   /** No interactive terminal of its own: one headless run, shown and reported through {dshReporter}, resumed by session id. */
   dshCommand: z.string().default('"{bin}" --profile headless --patch "{dshPatch}" --json {resume} - < "{prompt}" | ELECTRON_RUN_AS_NODE=1 "{node}" "{dshReporter}"').meta({ title: "DeepSeek Harness command", advanced: true }).describe("DeepSeek Harness has no interactive terminal: the ticket runs as one headless run, shown through {dshReporter} and resumed with --session-id. {bin} is the dsh Tomrade found, the desktop app's own included; {dshPatch} adds Tomrade's server for this run."),
   /** Antigravity's CLI reads Tomrade's server from its own config; the ticket's prompt asks it to claim first. */
-  agyCommand: z.string().default('agy {options} {resume} -i "$(cat "{prompt}")"').meta({ title: "Antigravity CLI command", advanced: true }).describe("agy takes no MCP flag: it reaches Tomrade through its own user-level tomrade server (connect it under Antigravity CLI in Settings), and claims the ticket first."),
+  agyCommand: z.string().default('"{bin}" {options} {resume} -i "$(cat "{prompt}")"').meta({ title: "Antigravity CLI command", advanced: true }).describe("agy takes no MCP flag: it reaches Tomrade through its own user-level tomrade server (connect it under Antigravity CLI in Settings), and claims the ticket first."),
   /** Cursor's CLI reads Tomrade's server from ~/.cursor/mcp.json; the ticket's prompt asks it to claim first. */
-  cursorCommand: z.string().default('cursor-agent {options} {resume} "$(cat "{prompt}")"').meta({ title: "Cursor command", advanced: true }).describe("cursor-agent takes no MCP flag: it reaches Tomrade through its own user-level tomrade server (connect it under Cursor in Settings), and claims the ticket first."),
-  hermesCommand: z.string().default('hermes chat {options} {resume} --query-file "{prompt}"').meta({ title: "Hermes command", advanced: true }).describe("Hermes takes no MCP flag: it reads its tomrade server from its own config.yaml, the header naming the $TOMRADE_MCP_TOKEN this terminal exports. Connect it under Hermes in Settings first."),
+  cursorCommand: z.string().default('"{bin}" {options} {resume} "$(cat "{prompt}")"').meta({ title: "Cursor command", advanced: true }).describe("cursor-agent takes no MCP flag: it reaches Tomrade through its own user-level tomrade server (connect it under Cursor in Settings), and claims the ticket first."),
+  hermesCommand: z.string().default('"{bin}" chat {options} {resume} --query-file "{prompt}"').meta({ title: "Hermes command", advanced: true }).describe("Hermes takes no MCP flag: it reads its tomrade server from its own config.yaml, the header naming the $TOMRADE_MCP_TOKEN this terminal exports. Connect it under Hermes in Settings first."),
   otherCommand: z.string().default("").meta({ title: "Other agent command", advanced: true }).describe("Any other CLI agent with an MCP client — Gemini CLI, OpenCode, aider… Empty means none is set up. {mcpUrl}, {token} (also in $TOMRADE_MCP_TOKEN), {prompt}, {resume} (the bare session id) are filled in.")
 });
 export type TerminalSettings = z.infer<typeof TerminalSettings>;
@@ -62,22 +62,37 @@ export function terminalApps(roots = ["/Applications", path.join(os.homedir(), "
   return [...found].sort((a, b) => a.localeCompare(b)).concat("herdr", "none");
 }
 
+/** Each engine's template setting, and the bare command its default ran before it named the located CLI. */
+const TEMPLATES: Record<string, { key: keyof TerminalSettings; bare?: string }> = {
+  "claude-code": { key: "claudeCommand", bare: "claude" },
+  codex: { key: "codexCommand", bare: "codex" },
+  pi: { key: "piCommand", bare: "pi" },
+  workbuddy: { key: "workbuddyCommand", bare: "codebuddy" },
+  gemini: { key: "geminiCommand", bare: "gemini" },
+  opencode: { key: "opencodeCommand", bare: "opencode" },
+  hermes: { key: "hermesCommand", bare: "hermes" },
+  dsh: { key: "dshCommand", bare: "dsh" },
+  agy: { key: "agyCommand", bare: "agy" },
+  cursor: { key: "cursorCommand", bare: "cursor-agent" },
+  other: { key: "otherCommand" }
+};
+
 /** The command template a terminal session starts an engine with; Claude Code's flags are the common ground. */
 export function terminalTemplate(settings: TerminalSettings, engine: string): string {
-  switch (engine) {
-    case "codex": return settings.codexCommand;
-    case "pi": return settings.piCommand;
-    case "workbuddy": return settings.workbuddyCommand;
-    // A template saved before Gemini 0.64 ignored a system defaults file root does not own.
-    case "gemini": return settings.geminiCommand.replace(/GEMINI_CLI_SYSTEM_DEFAULTS_PATH=("?)\{geminiSettings\}\1/, 'GEMINI_CLI_HOME="{geminiHome}"');
-    case "opencode": return settings.opencodeCommand;
-    case "hermes": return settings.hermesCommand;
-    case "dsh": return settings.dshCommand;
-    case "agy": return settings.agyCommand;
-    case "cursor": return settings.cursorCommand;
-    case "other": return settings.otherCommand;
-    default: return settings.claudeCommand;
-  }
+  const { key, bare } = TEMPLATES[engine] ?? TEMPLATES["claude-code"]!;
+  let template = settings[key];
+  // A template saved before Gemini 0.64 ignored a system defaults file root does not own.
+  if (key === "geminiCommand") template = template.replace(/GEMINI_CLI_SYSTEM_DEFAULTS_PATH=("?)\{geminiSettings\}\1/, 'GEMINI_CLI_HOME="{geminiHome}"');
+  // A default saved as it was, with the bare name a terminal without Tomrade's folders cannot find, is today's default.
+  const now = DEFAULT_TEMPLATES[key];
+  return bare && template === now.replace('"{bin}"', bare) ? now : template;
+}
+
+const DEFAULT_TEMPLATES = TerminalSettings.parse({});
+
+/** The command name an engine's template runs when Tomrade found no CLI for its {bin}. */
+export function bareCommand(engine: string): string {
+  return (TEMPLATES[engine] ?? TEMPLATES["claude-code"]!).bare ?? engine;
 }
 
 export interface LaunchInput {
@@ -85,6 +100,8 @@ export interface LaunchInput {
   command: string;
   /** Environment the script exports before the command. */
   env?: Record<string, string>;
+  /** Folders the script puts on PATH around the terminal's own. */
+  path?: TerminalPath;
   /** Where the script is written: the session's folder. */
   dir: string;
   /** What herdr labels the session's tab (or its own workspace): the ticket's key. */
@@ -132,6 +149,41 @@ export class GitBashMissing extends Error {
   constructor() {
     super("Git Bash is not installed");
   }
+}
+
+/**
+ * Where a terminal finds a CLI the way Tomrade runs it: the CLI's own folder and those a fresh PATH added ahead of
+ * the terminal's PATH, Tomrade's node shims behind it, so a Node of the person's own still wins. With no CLI
+ * found, only the shims: node and npm for a terminal install on a machine without Node.
+ */
+export interface TerminalPath {
+  ahead: string[];
+  behind: string[];
+}
+
+export function terminalPath(cli: { path?: string; pathDirs?: string[] } | null | undefined, env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): TerminalPath {
+  const p = platform === "win32" ? path.win32 : path.posix;
+  return { ahead: cli?.path ? [p.dirname(cli.path), ...(cli.pathDirs ?? [])] : [], behind: env.TOMRADE_NODE_SHIMS ? [env.TOMRADE_NODE_SHIMS] : [] };
+}
+
+/** The script's PATH line, or null with nothing to add; Git Bash on Windows names `C:\x` as `/c/x`. */
+export function pathExport(dirs: TerminalPath, platform: NodeJS.Platform = process.platform): string | null {
+  if (!dirs.ahead.length && !dirs.behind.length) return null;
+  const unix = (dir: string) => (platform === "win32" ? dir.replace(/^([A-Za-z]):[\\/]*/, (_, drive: string) => `/${drive.toLowerCase()}/`).replace(/\\/g, "/") : dir);
+  const part = (list: string[]) => (list.length ? [shellQuote(list.map(unix).join(":"))] : []);
+  return `export PATH=${[...part(dirs.ahead), '"$PATH"', ...part(dirs.behind)].join(":")}`;
+}
+
+/** PowerShell's form of the PATH line, for the setup console on Windows. */
+export function powerShellPath(dirs: TerminalPath): string {
+  return `$env:Path = ${[...dirs.ahead.map((dir) => psQuote(`${dir};`)), "$env:Path", ...dirs.behind.map((dir) => psQuote(`;${dir}`))].join(" + ")}`;
+}
+
+/** A setup command that starts with the CLI's bare name, run as the file Tomrade located instead. */
+export function locatedCommand(command: string, name: string, file: string | undefined, platform: NodeJS.Platform = process.platform): string {
+  const [first, ...rest] = command.split(" ");
+  if (!file || first !== name) return command;
+  return [platform === "win32" ? `& ${psQuote(file)}` : shellQuote(file), ...rest].join(" ");
 }
 
 /**
@@ -239,6 +291,8 @@ export async function launchTerminal(input: LaunchInput, terminal: string, herdr
   fs.mkdirSync(input.dir, { recursive: true });
   const script = path.join(input.dir, "run.command");
   const exports = Object.entries(input.env ?? {}).map(([k, v]) => `export ${k}=${shellQuote(v)}`);
+  const onPath = input.path && pathExport(input.path);
+  if (onPath) exports.push(onPath);
   // The script's own pid is the session's heartbeat: the shell outlives the agent
   // it runs by a moment and dies with the window, so "is the pid alive" answers
   // "is the session alive" whether or not a hook got to say so.
@@ -270,9 +324,9 @@ export async function launchTerminal(input: LaunchInput, terminal: string, herdr
  * questions: a new shell afterwards picks up a PATH the install just changed.
  * Windows gets PowerShell, which the official installers there are written for.
  */
-export async function setupTerminal(command: string, dir: string, terminal: string, herdr: HerdrTerminal | null = null): Promise<{ launched: boolean }> {
-  if (process.platform === "win32") return setupOnWindows(command);
-  const { launched } = await launchTerminal({ cwd: os.homedir(), command: `${command}\necho\nexec "\${SHELL:-bash}" -l`, dir, label: "setup" }, terminal, herdr);
+export async function setupTerminal(command: string, dir: string, terminal: string, herdr: HerdrTerminal | null = null, dirs?: TerminalPath): Promise<{ launched: boolean }> {
+  if (process.platform === "win32") return setupOnWindows(dirs && (dirs.ahead.length || dirs.behind.length) ? `${powerShellPath(dirs)}; ${command}` : command);
+  const { launched } = await launchTerminal({ cwd: os.homedir(), command: `${command}\necho\nexec "\${SHELL:-bash}" -l`, dir, label: "setup", ...(dirs ? { path: dirs } : {}) }, terminal, herdr);
   return { launched };
 }
 
@@ -293,6 +347,8 @@ export function setupOnWindows(command: string, launch: typeof spawn = spawn): P
 }
 
 export const shellQuote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
+
+const psQuote = (s: string): string => `'${s.replace(/'/g, "''")}'`;
 
 const run = (cmd: string, args: string[], cwd?: string, env?: Record<string, string>) =>
   new Promise<string>((resolve, reject) => {

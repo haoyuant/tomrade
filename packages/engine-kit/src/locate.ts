@@ -608,7 +608,7 @@ export class CliLocator {
       return null;
     };
     const ready = (hit: CliAttempt, fields: Partial<LocalCliStatus> = {}) =>
-      ({ status: status({ state: "ready", path: hit.path, source: hit.source, version: hit.detail, manual: manualError, ...fields }), dirs: extra });
+      ({ status: status({ state: "ready", path: hit.path, source: hit.source, version: hit.detail, manual: manualError, ...(extra.length ? { pathDirs: extra } : {}), ...fields }), dirs: extra });
 
     if (manual) {
       const candidates = this.manualCandidates(manual);

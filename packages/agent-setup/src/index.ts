@@ -1,7 +1,7 @@
 import { Context, Service } from "cordis";
 import type { Engine, EngineSetupProgress, EngineSetupStep } from "@tomradex/agent";
 import type {} from "@tomradex/ipc";
-import { launchFor } from "@tomradex/engine-kit";
+import { chosenCommand, localCli } from "@tomradex/engine-kit";
 import { machineSetupHost, runCommand, runInstall, runSignIn, type SetupHost, type SetupRunResult } from "./run.js";
 
 declare module "cordis" {
@@ -124,11 +124,12 @@ export class AgentSetup extends Service {
     if (state.need && state.need !== "sign-in") {
       return void report({ engineId: engine.id, step: "sign-in", phase: "failed", failure: { kind: "exit", message: state.reason ?? state.need } });
     }
-    const file = state.cli?.path;
-    const start = signInRun && file
+    // The locator's own launch: a desktop app's copy through its runtime, the folders a fresh PATH added ahead.
+    const launch = signInRun && state.cli?.path ? await localCli(state.cli.name).launch(chosenCommand(this.ctx, engine.id)) : null;
+    const start = signInRun && launch
       ? () => {
           const takes: ((text: string) => void)[] = [];
-          const result: Promise<SetupRunResult> = runCommand(launchFor(file, { platform: this.host.platform, env: this.host.env }), signInRun.args, {
+          const result: Promise<SetupRunResult> = runCommand(launch, signInRun.args, {
             signal,
             timeoutMs: 10 * 60_000,
             env: this.host.env,

@@ -60,7 +60,8 @@ export function LocalAgentSetup({ engines, onOpenSettings, onTroubleshoot }: { e
   const run = (engine: EngineView, step: "install" | "signIn") => {
     const command = (step === "install" ? engine.setup?.install[0] : engine.setup?.signIn) ?? "";
     terminal.mutate({ engineId: engine.id, step }, {
-      onSuccess: ({ launched }) => toast({ body: launched ? t("setup.terminalOpened") : t("setup.terminalNotOpened", { command }) }),
+      // The command as it ran: the file Tomrade found, which a terminal without its folder on PATH needs.
+      onSuccess: (started) => toast({ body: started.launched ? t("setup.terminalOpened") : t("setup.terminalNotOpened", { command: started.command }) }),
       onError: () => toast({ body: t("setup.terminalNotOpened", { command }) })
     });
   };
