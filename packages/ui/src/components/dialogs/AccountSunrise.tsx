@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import "./account-sunrise.css";
 
 /* Poster-style 红太阳: a red sun behind the logo and golden rays that start at a ring
@@ -36,7 +37,16 @@ const RAY_MASK = `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http
 
 /** Full-window scenery. The sky clips the sun as it rises over the horizon. */
 export function AccountSunrise() {
-  return <div className="account-sunrise" aria-hidden="true">
+  const cat = useRef<HTMLImageElement>(null);
+  const [ready, setReady] = useState(false);
+  // The entrance is timed from its start, and the red sun follows the cat: started before a slow
+  // load or decode of the cat, the sun would come up alone. A cat that never loads still lets it play.
+  useEffect(() => {
+    let live = true;
+    cat.current?.decode().catch(() => {}).finally(() => { if (live) setReady(true); });
+    return () => { live = false; };
+  }, []);
+  return <div className={ready ? "account-sunrise is-ready" : "account-sunrise"} aria-hidden="true">
     <div className="account-sunrise__sky">
       <div className="account-sunrise__sun">
         <div className="account-sunrise__glow" />
@@ -73,7 +83,7 @@ export function AccountSunrise() {
           <circle r="116" fill="none" stroke="#c4553a" strokeOpacity=".6" strokeWidth="2" />
           <circle r="110" fill="url(#account-sun-disk)" opacity=".9" />
         </svg>
-        <img src={`${import.meta.env.BASE_URL}logo.png`} alt="" draggable={false} />
+        <img ref={cat} src={`${import.meta.env.BASE_URL}logo.png`} alt="" draggable={false} />
       </div>
     </div>
     <svg className="account-sunrise__sea" viewBox="0 0 1000 150" preserveAspectRatio="none">
