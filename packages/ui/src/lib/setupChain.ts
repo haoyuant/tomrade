@@ -21,6 +21,8 @@ export type ChainStepState = "done" | "active" | "waiting" | "pending" | "failed
 export interface ChainStep {
   id: ChainStepId;
   state: ChainStepState;
+  /** The install step puts in the official CLI, in place of a desktop app's copy that did not answer. */
+  official?: boolean;
   /** The backend's progress while the step runs or after it failed. */
   progress?: EngineSetupProgress;
   /** The test step's outcome. */
@@ -30,8 +32,17 @@ export interface ChainStep {
 export const needsInstall = (engine: EngineView): boolean => ["missing", "desktop-only", "broken"].includes(engineStatus(engine));
 export const needsSignIn = (engine: EngineView): boolean => engineStatus(engine) === "sign-in";
 
+/**
+ * The test failed on the copy inside a desktop app, which serves that app and
+ * not Tomrade: the way forward is the official CLI, found ahead of that copy
+ * once installed — not only another try.
+ */
+export const offersOfficial = (engine: EngineView, tried: EngineTry | undefined = engine.tried): boolean =>
+  !!engine.cli?.insideApp && !!engine.setup?.install.length && tried?.ok === false;
+
 /** What the chain would run for this engine now, each step ticked or still ahead. */
 export function chainSteps(engine: EngineView, run: ChainRun | null): ChainStep[] {
+  const official = !!run?.official || offersOfficial(engine, run?.tried ?? engine.tried);
   const stepState = (id: ChainStepId, satisfied: boolean): ChainStep => {
     // A step that ran keeps its outcome; one still running shows where it is; the rest tick off the engine's state.
     const past = run?.outcomes[id];
@@ -47,8 +58,9 @@ export function chainSteps(engine: EngineView, run: ChainRun | null): ChainStep[
     }
     return { id, state: satisfied ? "done" : "pending" };
   };
+  const install = stepState("install", !needsInstall(engine) && !official);
   return [
-    stepState("install", !needsInstall(engine)),
+    official ? { ...install, official } : install,
     stepState("sign-in", !needsInstall(engine) && !needsSignIn(engine) && !!engine.ok),
     stepState("test", !!engine.tried?.ok)
   ];
@@ -61,6 +73,8 @@ export interface ChainRun {
   progress?: EngineSetupProgress;
   tried?: EngineTry;
   failed?: boolean;
+  /** This run installs the official CLI over a desktop app's copy. */
+  official?: boolean;
   /** Each finished step's outcome, kept for the list after the run. */
   outcomes: Partial<Record<ChainStepId, ChainStep>>;
 }
@@ -123,13 +137,14 @@ export function useSetupChain(engine: EngineView, projectId?: string | null) {
     if (state.current?.running) return;
     cancelled.current = false;
     terminalOpened.current = false;
-    state.current = { running: true, outcomes: {} };
+    const view = latest.current;
+    const official = offersOfficial(view, state.current?.tried ?? view.tried);
+    state.current = { running: true, outcomes: {}, ...(official ? { official } : {}) };
     setRun(state.current);
     try {
       // The backend runs each step only as far as needed — one already satisfied comes back done at
       // once — so the chain never waits on a fresh look of every engine here.
-      const view = latest.current;
-      const steps: ("install" | "sign-in")[] = needsInstall(view) ? ["install", "sign-in"] : needsSignIn(view) || !view.ok ? ["sign-in"] : [];
+      const steps: ("install" | "sign-in")[] = needsInstall(view) || official ? ["install", "sign-in"] : needsSignIn(view) || !view.ok ? ["sign-in"] : [];
       for (const step of steps) {
         const end = await drive(step, registry);
         patch({ outcomes: { ...state.current?.outcomes, [step]: { id: step, state: end.phase === "done" ? "done" : "failed", progress: end } } });
@@ -172,5 +187,5 @@ export function useSetupChain(engine: EngineView, projectId?: string | null) {
     begin(registry);
   };
 
-  return { run, steps: chainSteps(engine, run), start: () => begin(), retry: (registry?: string) => void retry(registry), cancel, running: !!run?.running };
+  return { run, steps: chainSteps(engine, run), official: !run?.running && offersOfficial(engine, run?.tried ?? engine.tried), start: () => begin(), retry: (registry?: string) => void retry(registry), cancel, running: !!run?.running };
 }

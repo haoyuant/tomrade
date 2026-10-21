@@ -438,6 +438,15 @@ interface Candidate {
   source: CliSource;
 }
 
+/** The desktop app a bundled copy ships in, as its folder names it: `Name.app` on macOS, the folder holding `resources` elsewhere. */
+function appOf(file: string): string {
+  const parts = file.split(/[\\/]+/).filter(Boolean);
+  const bundle = parts.find((part) => part.endsWith(".app"));
+  if (bundle) return bundle.slice(0, -".app".length);
+  const resources = parts.findIndex((part) => part.toLowerCase() === "resources");
+  return parts[resources > 0 ? resources - 1 : parts.length - 2] ?? file;
+}
+
 const shared = new Map<string, CliLocator>();
 const noBundled: BundledApps = () => [];
 
@@ -598,8 +607,8 @@ export class CliLocator {
       }
       return null;
     };
-    const ready = (hit: CliAttempt) =>
-      ({ status: status({ state: "ready", path: hit.path, source: hit.source, version: hit.detail, manual: manualError }), dirs: extra });
+    const ready = (hit: CliAttempt, fields: Partial<LocalCliStatus> = {}) =>
+      ({ status: status({ state: "ready", path: hit.path, source: hit.source, version: hit.detail, manual: manualError, ...fields }), dirs: extra });
 
     if (manual) {
       const candidates = this.manualCandidates(manual);
@@ -635,7 +644,7 @@ export class CliLocator {
     const bundled = await this.bundledApps(true);
     searched.push(...bundled.map((cli) => p.dirname(cli.file)).filter((dir, i, all) => all.findIndex((d) => norm(d) === norm(dir)) === i));
     hit = await tryAll(bundled.filter((cli) => isFile(cli.runtime ?? cli.file, platform)).map((cli) => ({ file: cli.file, source: "known" as const })));
-    if (hit) return ready(hit);
+    if (hit) return ready(hit, { insideApp: appOf(hit.path) });
 
     const broken = attempts.find((a) => a.source !== "manual") ?? attempts[0];
     if (broken) return { status: status({ state: "broken", path: broken.path, source: broken.source, error: broken.detail, manual: manualError }), dirs: extra };

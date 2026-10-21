@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
-import type { EngineAvailability, EngineNeed } from "@tomradex/agent";
+import type { EngineAvailability, EngineNeed, LocalCliStatus } from "@tomradex/agent";
 import type {} from "@tomradex/mcp";
 import { signedIn } from "./cli.js";
 import { cliReason, type CliLocator } from "./locate.js";
@@ -46,6 +46,15 @@ export function desktopAppPaths(app: DesktopApp, host: { platform: NodeJS.Platfo
   return extra;
 }
 
+/** A found CLI that lies in the agent's desktop app is that app's own copy: named by the app's title. */
+function inside(found: LocalCliStatus, app: DesktopApp | undefined): LocalCliStatus {
+  if (found.state !== "ready" || !found.path || !app) return found;
+  const p = found.platform === "win32" ? path.win32 : path.posix;
+  const norm = (file: string) => (found.platform === "win32" ? p.normalize(file).toLowerCase() : p.normalize(file));
+  const held = desktopAppPaths(app).some((dir) => norm(found.path!).startsWith(norm(dir) + p.sep));
+  return held ? { ...found, insideApp: app.title } : found;
+}
+
 /** The CLI path the person chose in Settings, if any. */
 export function chosenCommand(ctx: Context, engineId: string): string | undefined {
   const options = ctx.get("agent")?.settingsOf().engines[engineId] as { command?: unknown } | undefined;
@@ -66,7 +75,7 @@ export function localAvailability(ctx: Context, engine: LocalEngine): (opts?: { 
     const found = await engine.cli.locate({ manual, fresh: opts?.fresh });
     // The app people install first rarely brings the CLI; say so rather than only "not found".
     const app = found.state === "missing" && engine.desktopApp && desktopAppPaths(engine.desktopApp).some((dir) => fs.existsSync(dir)) ? engine.desktopApp.title : null;
-    const cli = app ? { ...found, desktopApp: app } : found;
+    const cli = app ? { ...found, desktopApp: app } : inside(found, engine.desktopApp);
     const state: EngineAvailability =
       cli.state !== "ready"
         ? { ok: false, reason: app ? `${engine.title}: the ${app} app is installed, but not its command-line tool ${cli.name}, which Tomrade runs — ${engine.install}` : cliReason(engine.title, cli, engine.install), need: cli.state === "missing" ? "install" : "repair", cli }

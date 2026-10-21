@@ -190,6 +190,29 @@ describe("the troubleshooter", () => {
     expect(row).toMatchObject({ state: "warn", line: expect.stringContaining("test message failed") });
   });
 
+  it("says a failing CLI is a desktop app's own copy, and offers the official one", async () => {
+    const { ctx, project } = await boot();
+    const file = "/Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/bin/codebuddy";
+    ctx.agent.engine({
+      id: "buddy",
+      title: "CodeBuddy",
+      author: "ai:buddy",
+      available: async () => ({ ok: true, cli: { state: "ready", path: file, version: "2.1", source: "known", insideApp: "WorkBuddy", attempts: [], searched: [], platform: "darwin", arch: "arm64", pathEnv: "" } }),
+      setup: { install: ["npm install -g @tencent-ai/codebuddy-code"] },
+      async turn() {
+        return { stop: "error", error: "session/new: internal error" };
+      }
+    });
+    expect((await ctx.agent.tryEngine(project.id, "buddy")).ok).toBe(false);
+    const thread = ctx.doctor.start(project.id, { engineId: "buddy" });
+    await settled(ctx, project.id, ctx.agent.store.runs(project.id, thread.id)[0]!.id, 15_000);
+    const row = (cardsOf(ctx, project.id, thread.id).find((c) => c.schema === "checklist")!.data as ChecklistCard).rows.find((r) => r.id === "engine:buddy");
+    expect(row).toMatchObject({ state: "warn", line: expect.stringContaining("the copy inside WorkBuddy, which Tomrade cannot use on its own") });
+    const findings = ctx.agent.store.messages(project.id, thread.id).flatMap((m) => (m.block.type === "card" && m.block.schema === "finding" ? [m.block.data as FindingCard] : []));
+    const finding = findings.find((f) => f.headline.includes("WorkBuddy"));
+    expect(finding?.actions[0]).toMatchObject({ kind: "install", engineId: "buddy" });
+  });
+
   it("says a ready agent answered its test message once it did", async () => {
     const { ctx, project } = await boot();
     ctx.agent.engine({

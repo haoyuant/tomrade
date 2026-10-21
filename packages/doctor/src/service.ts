@@ -609,11 +609,18 @@ export class Doctor extends Service implements DoctorChecks {
           // Found and signed in is not yet working: the remembered test message settles it (TOM-503).
           const tried = doctor.ctx.agent.triedWith(id);
           if (tried && !tried.ok) {
+            const detail = (tried.error ?? "").slice(0, 160);
+            // A desktop app's own copy that fails is fixed by the official CLI, which is then found ahead of it.
+            const app = cli?.insideApp;
+            const install = app && (state.setup ?? engine.local?.setup)?.install.length;
             return {
               state: "warn",
-              line: words("engineTriedFailed", { detail: (tried.error ?? "").slice(0, 160) }),
-              facts: { ...facts, [`${id}.tried`]: "failed" },
-              actions: [{ kind: "settings", engineId: id, label: words("actionSettings", { engine: engine.title }) }],
+              line: app ? words("engineTriedInsideApp", { detail, app }) : words("engineTriedFailed", { detail }),
+              facts: { ...facts, [`${id}.tried`]: "failed", ...(app ? { [`${id}.insideApp`]: app } : {}) },
+              actions: [
+                ...(install ? [{ kind: "install" as const, engineId: id, label: words("actionInstall", { engine: engine.title }) }] : []),
+                { kind: "settings", engineId: id, label: words("actionSettings", { engine: engine.title }) }
+              ],
               ...(tried.error ? { evidence: tried.error } : {})
             };
           }

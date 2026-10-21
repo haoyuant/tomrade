@@ -1,11 +1,11 @@
 /**
  * A first run with a local agent that is found but cannot run (TOM-503): the
  * setup screen opens and says what is wrong, instead of being skipped because
- * the agent was found. Once the agent lists its models, the screen says it is
- * set, and a later launch goes straight to the projects — unless it stops
- * working and the screen was only put away on another machine (TOM-528). A
- * stand-in ACP agent fails to open a session ("model not found") until a flag
- * file says it works.
+ * the agent was found. Once the agent lists its models and answers the test
+ * message setup sends it (TOM-525), the screen says it is set, and a later
+ * launch goes straight to the projects — unless it stops working and the
+ * screen was only put away on another machine (TOM-528). A stand-in ACP agent
+ * fails to open a session ("model not found") until a flag file says it works.
  *
  *   pnpm build:backend && pnpm dev:ui   then
  *   pnpm --filter @tomrade/desktop test:first-run-agent
@@ -46,10 +46,13 @@ process.stdin.on("data", (chunk) => {
   buffer += chunk;
   for (let at = buffer.indexOf("\\n"); at >= 0; at = buffer.indexOf("\\n")) {
     const m = JSON.parse(buffer.slice(0, at)); buffer = buffer.slice(at + 1);
-    if (m.method === "initialize") send({ id: m.id, result: { protocolVersion: 1, agentCapabilities: {}, authMethods: [] } });
+    if (m.method === "initialize") send({ id: m.id, result: { protocolVersion: 1, agentCapabilities: { mcpCapabilities: { http: true } }, authMethods: [] } });
     else if (m.method === "session/new") {
       if (fs.readFileSync(${JSON.stringify(flag)}, "utf8").trim() !== "works") send({ id: m.id, error: { code: -32603, message: "Model not found: default-model" } });
       else send({ id: m.id, result: { sessionId: "s1", configOptions: [{ id: "model", category: "model", type: "select", currentValue: "fast", options: [{ value: "fast", name: "Fast" }, { value: "deep", name: "Deep" }] }] } });
+    } else if (m.method === "session/prompt") {
+      send({ method: "session/update", params: { sessionId: m.params.sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "pong" } } } });
+      send({ id: m.id, result: { stopReason: "end_turn" } });
     } else if (m.id !== undefined) send({ id: m.id, error: { code: -32601, message: "not here" } });
   }
 });
@@ -130,7 +133,7 @@ const run = async () => {
   // ── fixed: looking again finds it working, and the screen says so ─────
   fs.writeFileSync(flag, "works");
   await $(`document.querySelector('[data-testid="setup-recheck"]').click()`);
-  check("once it lists its models, the screen says Tomrade is set", await wait(() => has('[data-testid="setup-done"]'), "done panel", 300), await text(row));
+  check("once it lists its models and answers its test message, the screen says Tomrade is set", await wait(() => has('[data-testid="setup-done"]'), "done panel", 300), await text(row));
   check("with the agent as the assistant", ((await text('[data-testid="setup-done"]')) ?? "").includes("Assistant: Fake Agent"), await text('[data-testid="setup-done"]'));
   await shot("first-run-agent-02-fixed");
 

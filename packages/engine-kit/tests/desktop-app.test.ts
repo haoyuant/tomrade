@@ -6,6 +6,7 @@ import { Context } from "cordis";
 import { Mcp } from "@tomradex/mcp";
 import { Tools } from "@tomradex/tools";
 import { desktopAppPaths, localAvailability, localCli } from "@tomradex/engine-kit";
+import { CliLocator, machineHost } from "../src/locate.js";
 
 it("knows where a desktop app may be installed on each system", () => {
   expect(desktopAppPaths({ title: "Antigravity", mac: ["Antigravity"] }, { platform: "darwin", env: {}, home: "/Users/a" }))
@@ -29,5 +30,20 @@ it("says the desktop app is there but not its CLI, and only then", async () => {
     const withApp = await engine([app])({ fresh: true });
     expect(withApp).toMatchObject({ ok: false, need: "install", cli: { state: "missing", desktopApp: "Antigravity" } });
     expect(withApp.reason).toBe("Antigravity CLI: the Antigravity app is installed, but not its command-line tool tomrade-no-such-cli-xyz, which Tomrade runs — install it");
+  } finally { await ctx.fiber.dispose(); }
+}, 60_000);
+
+it.skipIf(process.platform === "win32")("names the desktop app whose own copy of the CLI it found", async () => {
+  const ctx = new Context();
+  await ctx.plugin(Tools); await ctx.plugin(Mcp, { port: 0 });
+  try {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-desktop-app-"));
+    const bin = path.join(dir, "WorkBuddy.app", "Contents", "bin");
+    fs.mkdirSync(bin, { recursive: true });
+    fs.writeFileSync(path.join(bin, "tomrade-bundled-cli"), '#!/bin/sh\necho "1.0.0"\n', { mode: 0o755 });
+    const host = { ...machineHost(), env: { PATH: `${bin}:/usr/bin:/bin` }, freshPath: async () => [] };
+    const engine = (paths: string[]) => localAvailability(ctx, { engineId: "wb", title: "WorkBuddy", cli: new CliLocator("tomrade-bundled-cli", host), install: "install it", desktopApp: { title: "WorkBuddy", paths } });
+    expect((await engine([path.join(dir, "WorkBuddy.app")])({ fresh: true })).cli).toMatchObject({ state: "ready", insideApp: "WorkBuddy" });
+    expect((await engine([path.join(dir, "Other.app")])({ fresh: true })).cli?.insideApp).toBeUndefined();
   } finally { await ctx.fiber.dispose(); }
 }, 60_000);

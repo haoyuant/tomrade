@@ -18,7 +18,7 @@ import { SetupOptions } from "./SetupOptions";
 export function FirstRunSetup({ onDone }: { onDone: () => void }) {
   const { t } = useI18n();
   const navigate = useNavigate();
-  const { engines, state } = useSetup();
+  const { engines, state } = useSetup({ autoTry: true });
   const projects = useProjects();
   const preferred = (useSettings().data?.agent as { defaultEngine?: string } | undefined)?.defaultEngine;
   const [settings, setSettings] = useState<{ engine?: string } | null>(null);

@@ -99,6 +99,7 @@ export function LocalAgentSetup({ engines, onOpenSettings, onTroubleshoot }: { e
               {problem && (
                 <span className="setup-fix" data-testid={`problem-${e.id}`}>
                   {t(problem.kind === "models" ? "setup.problemModels" : "setup.problemTried", { detail: problem.detail })}
+                  {problem.kind === "tried" && e.cli?.insideApp && <> {t("setup.insideApp", { app: e.cli.insideApp })}</>}
                   {onTroubleshoot && (
                     <button type="button" className="link-btn setup-action" data-testid={`troubleshoot-${e.id}`} onClick={() => onTroubleshoot(e.id, problem.detail)}>
                       {t("setup.troubleshoot")} →
