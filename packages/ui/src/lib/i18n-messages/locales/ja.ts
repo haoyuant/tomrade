@@ -939,7 +939,7 @@ export const ja: PartialMessages = {
     unsupported: "この画像は使用できません。GIF、WebP、APNG、PNG、JPEG、AVIF のファイルを選択してください。",
     tooBig: "画像は {{mb}} MB までです。",
     mood_idle: "待機",
-    mood_idle_when: "この会話でまだターンが実行されていないとき。",
+    mood_idle_when: "この会話でまだターンが実行されていないとき、または成功が30秒表示されたあと。",
     mood_thinking: "思考中",
     mood_thinking_when: "ターンが始まり、まだ何も返ってきていないとき。",
     mood_working: "作業中",
@@ -947,7 +947,7 @@ export const ja: PartialMessages = {
     mood_waiting: "あなたの応答待ち",
     mood_waiting_when: "アシスタントが質問したか、許可を求めているとき。",
     mood_success: "完了",
-    mood_success_when: "ターンが完了したとき。次のターンが始まるまで表示されます。",
+    mood_success_when: "ターンが完了したとき。30秒表示したあと待機に戻ります。",
     mood_error: "エラー",
     mood_error_when: "ターンが失敗したとき。次のターンが始まるまで表示されます。"
   },

@@ -939,7 +939,7 @@ export const es: PartialMessages = {
     unsupported: "Esa imagen no se puede usar. Elige un archivo GIF, WebP, APNG, PNG, JPEG o AVIF.",
     tooBig: "Las imágenes pueden ocupar como máximo {{mb}} MB.",
     mood_idle: "Inactiva",
-    mood_idle_when: "Aún no se ha ejecutado ningún turno en esta conversación.",
+    mood_idle_when: "Aún no se ha ejecutado ningún turno en esta conversación, o un éxito ya se mostró 30 segundos.",
     mood_thinking: "Pensando",
     mood_thinking_when: "Ha empezado un turno y aún no ha llegado nada.",
     mood_working: "Trabajando",
@@ -947,7 +947,7 @@ export const es: PartialMessages = {
     mood_waiting: "Esperándote",
     mood_waiting_when: "El asistente te preguntó algo o necesita tu permiso.",
     mood_success: "Hecho",
-    mood_success_when: "El turno terminó. Se mantiene hasta que empieza el siguiente turno.",
+    mood_success_when: "El turno terminó. Se muestra 30 segundos y luego la mascota descansa.",
     mood_error: "Error",
     mood_error_when: "El turno falló. Se mantiene hasta que empieza el siguiente turno."
   },

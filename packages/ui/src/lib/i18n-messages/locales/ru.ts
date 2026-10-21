@@ -947,7 +947,7 @@ export const ru: PartialMessages = {
     unsupported: "Это изображение нельзя использовать. Выберите файл GIF, WebP, APNG, PNG, JPEG или AVIF.",
     tooBig: "Размер изображения — не более {{mb}} МБ.",
     mood_idle: "Ожидание",
-    mood_idle_when: "В этом разговоре ещё не было ни одной реплики.",
+    mood_idle_when: "В этом разговоре ещё не было ни одной реплики, или успех уже показан 30 секунд.",
     mood_thinking: "Думает",
     mood_thinking_when: "Реплика началась, но ответа ещё нет.",
     mood_working: "Работает",
@@ -955,7 +955,7 @@ export const ru: PartialMessages = {
     mood_waiting: "Ждёт вас",
     mood_waiting_when: "Ассистент задал вам вопрос или ждёт вашего разрешения.",
     mood_success: "Готово",
-    mood_success_when: "Реплика завершена. Сохраняется до начала следующей.",
+    mood_success_when: "Реплика завершена. Показывается 30 секунд, затем питомец отдыхает.",
     mood_error: "Ошибка",
     mood_error_when: "Реплика завершилась с ошибкой. Сохраняется до начала следующей."
   },

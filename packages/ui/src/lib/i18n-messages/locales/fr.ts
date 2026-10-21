@@ -939,7 +939,7 @@ export const fr: PartialMessages = {
     unsupported: "Cette image ne peut pas être utilisée. Choisissez un fichier GIF, WebP, APNG, PNG, JPEG ou AVIF.",
     tooBig: "Les images ne doivent pas dépasser {{mb}} Mo.",
     mood_idle: "Inactif",
-    mood_idle_when: "Aucun tour n'a encore été lancé dans cette conversation.",
+    mood_idle_when: "Aucun tour n'a encore été lancé dans cette conversation, ou un succès a été affiché 30 secondes.",
     mood_thinking: "Réflexion",
     mood_thinking_when: "Un tour a commencé et rien n'est encore revenu.",
     mood_working: "Au travail",
@@ -947,7 +947,7 @@ export const fr: PartialMessages = {
     mood_waiting: "Vous attend",
     mood_waiting_when: "L'assistant vous a posé une question ou a besoin de votre autorisation.",
     mood_success: "Terminé",
-    mood_success_when: "Le tour est terminé. Reste affiché jusqu'au début du tour suivant.",
+    mood_success_when: "Le tour est terminé. Affiché 30 secondes, puis l'animal se repose.",
     mood_error: "Erreur",
     mood_error_when: "Le tour a échoué. Reste affiché jusqu'au début du tour suivant."
   },

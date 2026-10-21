@@ -26,7 +26,7 @@ export const petProfiles = {
     tooBig: "Images can be at most {{mb}} MB.",
 
     mood_idle: "Idle",
-    mood_idle_when: "No turn has run in this conversation yet.",
+    mood_idle_when: "No turn has run in this conversation yet, or a success has been shown for 30 seconds.",
     mood_thinking: "Thinking",
     mood_thinking_when: "A turn has started and nothing has come back yet.",
     mood_working: "Working",
@@ -34,7 +34,7 @@ export const petProfiles = {
     mood_waiting: "Waiting for you",
     mood_waiting_when: "The assistant asked you something or needs your permission.",
     mood_success: "Done",
-    mood_success_when: "The turn finished. Stays until the next turn starts.",
+    mood_success_when: "The turn finished. Shows for 30 seconds, then the pet rests.",
     mood_error: "Error",
     mood_error_when: "The turn failed. Stays until the next turn starts."
   },
@@ -65,7 +65,7 @@ export const petProfiles = {
     tooBig: "图片不能超过 {{mb}} MB。",
 
     mood_idle: "空闲",
-    mood_idle_when: "这个对话里还没有跑过任何一轮时。",
+    mood_idle_when: "这个对话里还没有跑过任何一轮，或成功状态已显示满 30 秒时。",
     mood_thinking: "思考",
     mood_thinking_when: "一轮对话刚开始，还没有任何输出时。",
     mood_working: "工作中",
@@ -73,7 +73,7 @@ export const petProfiles = {
     mood_waiting: "等你回答",
     mood_waiting_when: "助手向你提问或需要你授权时。",
     mood_success: "完成",
-    mood_success_when: "这一轮顺利结束，一直显示到下一轮开始。",
+    mood_success_when: "这一轮顺利结束，显示 30 秒后回到待机。",
     mood_error: "出错",
     mood_error_when: "这一轮出错结束，一直显示到下一轮开始。"
   }

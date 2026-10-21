@@ -7,7 +7,7 @@ import type { AccessoryAnimation } from "@tomradex/contributions";
 import type {} from "@tomradex/ipc";
 import { BUILT_IN_IMAGES, dataAnimation, embeddedAccessory, fileAnimation, PET_DESKTOP_URL } from "./manifest.js";
 import { PetProfiles, type PetImageUpload, type PetProfileView, type PetProfilesView, type ResolvedImage } from "./profiles.js";
-import { emptyPetModel, moodForThread, PET_MOODS, reducePetModel, type PetModel, type PetMood } from "./state.js";
+import { emptyPetModel, moodForThread, PET_MOODS, reducePetModel, restPetThread, SUCCESS_REST_MS, type PetModel, type PetMood } from "./state.js";
 import { PET_WORDS } from "./words.js";
 
 export * from "./state.js";
@@ -128,6 +128,8 @@ export class Pet extends Service {
   private followed: string | null = null;
   /** Where the user last dragged the desktop pet; a reopened window (new size, setting change) returns there. */
   private position: { x: number; y: number } | null = null;
+  /** Per thread, the timer that rests a shown success at idle. */
+  private rests = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(ctx: Context, config: PetConfig) {
     super(ctx, "pet");
@@ -224,12 +226,25 @@ export class Pet extends Service {
   }
 
   private consume(threadId: string, event: AgentEvent): void {
-    const next = reducePetModel(this.model, threadId, event);
-    if (next === this.model) return;
+    if (!this.apply(threadId, reducePetModel(this.model, threadId, event))) return;
+    clearTimeout(this.rests.get(threadId));
+    this.rests.delete(threadId);
+    // A success shows for a while, then the pet rests; tears stay until the thread's next run.
+    const thread = this.model.threads[threadId];
+    if (thread?.mood === "success") {
+      this.rests.set(threadId, setTimeout(() => {
+        this.rests.delete(threadId);
+        this.apply(threadId, restPetThread(this.model, threadId, thread.runId));
+      }, SUCCESS_REST_MS));
+    }
+  }
+
+  private apply(threadId: string, next: PetModel): boolean {
+    if (next === this.model) return false;
     this.model = next;
-    // A finished turn's outcome — pleased or in tears — stays until the thread's next run.
     this.sendChanged(threadId);
     if (threadId === this.followed) this.pushSurfaceState();
+    return true;
   }
 
   private reconcile(): void {
@@ -312,6 +327,8 @@ export class Pet extends Service {
   }
 
   private deactivate(): void {
+    for (const timer of this.rests.values()) clearTimeout(timer);
+    this.rests.clear();
     this.removeAccessory();
     this.closeSurface();
   }

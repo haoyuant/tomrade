@@ -121,12 +121,19 @@ describe("pet plugin lifecycle", () => {
     expect(ipc.handlers.has("pet.state")).toBe(true);
     ctx.emit("agent/event", "thread", { type: "run", run: run("running") });
     expect(ipc.handlers.get("pet.state")?.("thread")).toMatchObject({ mood: "thinking" });
-    // A finished turn's outcome stays until the thread runs again, a success as much as a failure.
+    // A success shows for 30 seconds and then rests at idle; a failure stays until the thread runs again.
     vi.useFakeTimers();
     ctx.emit("agent/event", "thread", { type: "done", run: run("done") });
-    vi.advanceTimersByTime(60_000);
+    vi.advanceTimersByTime(29_999);
     expect(ctx.pet.state("thread").mood).toBe("success");
+    ipc.sent.length = 0;
+    vi.advanceTimersByTime(1);
+    expect(ctx.pet.state("thread").mood).toBe("idle");
+    expect(ipc.sent).toEqual(["pet.changed"]);
+    // A turn that starts before the rest is not overruled by the earlier success's timer.
+    ctx.emit("agent/event", "thread", { type: "done", run: run("done") });
     ctx.emit("agent/event", "thread", { type: "run", run: run("running") });
+    vi.advanceTimersByTime(60_000);
     expect(ctx.pet.state("thread").mood).toBe("thinking");
     ctx.emit("agent/event", "thread", { type: "done", run: run("error") });
     vi.advanceTimersByTime(60_000);

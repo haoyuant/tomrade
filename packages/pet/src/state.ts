@@ -74,5 +74,16 @@ export function reducePetModel(model: PetModel, threadId: string, event: AgentEv
   return { sequence, threads: { ...model.threads, [threadId]: { mood, runId, busy, sequence } } };
 }
 
+/** How long a finished turn's success shows before the pet goes back to idle; an error stays until the next turn. */
+export const SUCCESS_REST_MS = 30_000;
+
+/** The success of `runId` gives way to idle; anything that happened since keeps its own mood. */
+export function restPetThread(model: PetModel, threadId: string, runId: string | null): PetModel {
+  const thread = model.threads[threadId];
+  if (!thread || thread.mood !== "success" || thread.runId !== runId) return model;
+  const sequence = model.sequence + 1;
+  return { sequence, threads: { ...model.threads, [threadId]: { ...thread, mood: "idle", sequence } } };
+}
+
 export const moodForThread = (model: PetModel, threadId: string | null): PetMood =>
   (threadId ? model.threads[threadId]?.mood : undefined) ?? "idle";

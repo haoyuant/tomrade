@@ -9,12 +9,13 @@ desktop window.
 The plugin listens to the typed main-process `agent/event` stream. Every turn
 is a new run, `thinking` until its first output (a text delta, emitted block,
 card or tool call) and `working` from then until it ends; a pending question or
-an `asked` run is `waiting`; a turn that ends shows `success` or `error` for 3
-seconds and then rests at `idle` — the pet reflects the turn, not the whole
-thread; cancellation is `idle` at once. Both the embedded stage and the desktop pet
-show the thread the assistant panel is showing — the panel reports it through
-`agent.showing` — so an old thread still waiting for an answer never holds the
-pet; leaving the project keeps the last one.
+an `asked` run is `waiting`; a turn that ends shows `success` for 30 seconds and
+then rests at `idle`, while `error` stays until the thread's next turn — the
+pet reflects the turn, not the whole thread; cancellation is `idle` at once.
+Both the embedded stage and the desktop pet show the thread the assistant panel
+is showing — the panel reports it through `agent.showing` — so an old thread
+still waiting for an answer never holds the pet; leaving the project keeps the
+last one.
 
 The desktop pet stays where it is put: dragging its opaque pixels moves the
 window, and a window reopened for a new size or setting returns to the last
