@@ -3,9 +3,8 @@ import path from "node:path";
 import type { Context } from "cordis";
 import { z } from "zod";
 import type { Engine } from "@tomradex/agent";
-import { localAvailability } from "./availability.js";
+import { localAvailability, localCli } from "@tomradex/engine-kit";
 import { claudeSignedIn } from "./cli.js";
-import { localCli } from "./locate.js";
 import { claudeMcpLink } from "./mcp-link.js";
 
 // Unknown keys are dropped, so a saved `transport` from older versions is ignored.

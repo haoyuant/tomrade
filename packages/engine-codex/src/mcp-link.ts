@@ -3,7 +3,7 @@ import path from "node:path";
 import type { Context } from "cordis";
 import { parse as parseToml } from "smol-toml";
 import type { EngineMcpLink } from "@tomradex/agent";
-import { MCP_NAME, userMcpLink, type CliLocator } from "@tomradex/engine-claude-code";
+import { MCP_NAME, userMcpLink, type CliLocator } from "@tomradex/engine-kit";
 import { codexHome } from "./account.js";
 
 export const codexUserFile = (): string => path.join(codexHome(), "config.toml");

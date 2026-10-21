@@ -9,6 +9,7 @@
   "references": [
     { "path": "../doctor" },
     { "path": "../domain" },
+    { "path": "../engine-kit" },
     { "path": "../ipc" }
   ]
 }

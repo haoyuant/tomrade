@@ -5,7 +5,7 @@ import path from "node:path";
 import type { Context } from "cordis";
 import { z } from "zod";
 import type { Engine, EngineAvailability, TurnInput } from "@tomradex/agent";
-import { bundledLaunch, describeRun, RuntimePool, runtimeFingerprint, type CliLaunch } from "@tomradex/engine-claude-code";
+import { bundledLaunch, describeRun, RuntimePool, runtimeFingerprint, type CliLaunch } from "@tomradex/engine-kit";
 import type { ModelProfile, ModelsSettings } from "@tomradex/llm";
 import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/settings";

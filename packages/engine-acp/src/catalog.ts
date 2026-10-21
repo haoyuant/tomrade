@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
 import type { TurnInput } from "@tomradex/agent";
-import { spawnCli, stopCli } from "@tomradex/engine-claude-code";
+import { spawnCli, stopCli } from "@tomradex/engine-kit";
 import type { AcpAgent, AcpOptions, Catalog } from "./agent.js";
 import { AcpConnection, AcpError } from "./connection.js";
 

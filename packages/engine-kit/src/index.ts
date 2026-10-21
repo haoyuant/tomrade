@@ -1,0 +1,11 @@
+export { localAvailability, chosenCommand, desktopAppPaths, type DesktopApp } from "./availability.js";
+export { lineSplitter, runJsonl, signedIn, type CliRun } from "./cli.js";
+export { cliLentModel, NotSignedIn, SIGN_IN_RECHECK_MS, type CliAnswer } from "./lend-cli.js";
+export {
+  CliLocator, localCli, launchFor, bundledLaunch, spawnCli, stopCli, cliReason, describeRun, fileNames, shimTarget, cmdArgument, cmdLine, parseRegPath, expandWindowsVars, splitPath, knownDirs,
+  installDirs, searchPath, findCommand,
+  type BundledCli, type CliHost, type CliLaunch, type CliRunResult
+} from "./locate.js";
+export { MCP_NAME, userMcpLink, type UserMcpConfig } from "./mcp-link.js";
+export { RuntimePool, runtimeFingerprint, runtimeDirectory, bindTurn, MessageQueue, type Runtime } from "./runtime.js";
+export { promptOf, sessionSystem, staticSystem, turnPrompt } from "./system.js";

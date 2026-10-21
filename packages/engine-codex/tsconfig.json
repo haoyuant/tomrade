@@ -12,7 +12,7 @@
   ],
   "references": [
     { "path": "../agent" },
-    { "path": "../engine-claude-code" },
+    { "path": "../engine-kit" },
     { "path": "../llm" },
     { "path": "../mcp" },
     { "path": "../settings" }

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Context } from "cordis";
 import type { Engine } from "@tomradex/agent";
-import { RuntimePool, runtimeFingerprint } from "@tomradex/engine-claude-code";
+import { RuntimePool, runtimeFingerprint } from "@tomradex/engine-kit";
 import type {} from "@tomradex/llm";
 import { codexHome } from "./account.js";
 import { codexEngineInfo, migrateLegacyModel } from "./engine.js";

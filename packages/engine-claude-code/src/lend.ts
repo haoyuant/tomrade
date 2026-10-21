@@ -3,10 +3,8 @@ import os from "node:os";
 import { query, type Options, type Query, type SDKResultMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Context } from "cordis";
 import { transcriptOf, type ChatEvent, type ChatModel, type ChatRequest, type LentModel } from "@tomradex/llm";
-import { chosenCommand } from "./availability.js";
+import { chosenCommand, localCli, MessageQueue, type CliLaunch } from "@tomradex/engine-kit";
 import { ClaudeCodeOptions } from "./engine.js";
-import { localCli, type CliLaunch } from "./locate.js";
-import { MessageQueue } from "./runtime.js";
 import { sdkLaunch } from "./sdk.js";
 
 /** A kept session that answered nothing for this long exits; the next call starts one again. */

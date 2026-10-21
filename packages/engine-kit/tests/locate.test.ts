@@ -8,11 +8,13 @@ import {
   cmdLine,
   expandWindowsVars,
   fileNames,
+  findCommand,
   launchFor,
   machineHost,
   parseRegInstalls,
   parseRegPath,
   shimTarget,
+  searchPath,
   ShellTimeout,
   type CliHost
 } from "../src/locate.js";
@@ -104,6 +106,18 @@ describe.skipIf(process.platform === "win32")("finding a local CLI", () => {
     const { host, home } = setup();
     const file = cli(path.join(home, ".local/bin"), 'echo "fake-cli 0.1.0"');
     expect(await new CliLocator(NAME, host).locate()).toMatchObject({ state: "ready", path: file, source: "known" });
+  });
+
+  it("finds a command on PATH or in an installer's folder without running it", () => {
+    const { host, home, runs } = setup();
+    expect(findCommand(NAME, host)).toBeNull();
+    expect(searchPath(host)).not.toContain(path.join(home, ".local/bin"));
+    const file = cli(path.join(home, ".local/bin"), "exit 1");
+    expect(searchPath(host)).toContain(path.join(home, ".local/bin"));
+    expect(findCommand(NAME, host)).toBe(file);
+    const first = cli(path.join(home, "first"), "exit 1");
+    expect(findCommand(NAME, { ...host, env: { ...host.env, PATH: `${path.join(home, "first")}:${host.env.PATH}` } })).toBe(first);
+    expect(runs).toEqual([]);
   });
 
   it("finds the newest node of a version manager first", async () => {

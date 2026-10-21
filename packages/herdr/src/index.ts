@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { Context, Service } from "cordis";
 import type {} from "@tomradex/doctor";
+import { findCommand } from "@tomradex/engine-kit";
 import type {} from "@tomradex/ipc";
 import type { Check, CheckResult } from "@tomradex/doctor";
 import { HerdrError, herdrCall, herdrSocketPath, herdrStream, type HerdrEvent } from "./client.js";
@@ -170,13 +171,6 @@ interface HerdrUp {
 const STATUSES = new Set<string>(["idle", "working", "blocked", "done", "unknown"]);
 const statusOf = (value: unknown): HerdrStatus => (typeof value === "string" && STATUSES.has(value) ? (value as HerdrStatus) : "unknown");
 
-/** PATH with the folders herdr installs into: an app opened from the Dock whose login shell could not be read lacks them. */
-function herdrSearchPath(base: string | undefined): string {
-  const dirs = (base ?? "").split(path.delimiter).filter(Boolean);
-  for (const dir of ["/opt/homebrew/bin", "/usr/local/bin", path.join(os.homedir(), ".local/bin")]) if (!dirs.includes(dir)) dirs.push(dir);
-  return dirs.join(path.delimiter);
-}
-
 /**
  * herdr on this machine — the terminal workspace manager coding agents run
  * in. Tomrade does not bundle it: when it is installed, a ticket can run in
@@ -236,21 +230,9 @@ export class Herdr extends Service {
     return this.socket ?? herdrSocketPath();
   }
 
-  /** Where the herdr CLI is — the first on that search path — or null when this machine has none. */
+  /** Where the herdr CLI is — the first on PATH or in the folders installers use — or null when this machine has none. */
   binary(): string | null {
-    if (this.bin) return this.bin;
-    const search = process.platform === "win32" ? process.env.PATH : herdrSearchPath(process.env.PATH);
-    const name = process.platform === "win32" ? "herdr.exe" : "herdr";
-    for (const dir of (search ?? "").split(path.delimiter).filter(Boolean)) {
-      const file = path.join(dir, name);
-      try {
-        fs.accessSync(file, fs.constants.X_OK);
-        if (fs.statSync(file).isFile()) return file;
-      } catch {
-        // not in this folder
-      }
-    }
-    return null;
+    return this.bin || findCommand("herdr");
   }
 
   /** The herdr CLI's version, or null when herdr is not installed. */

@@ -51,7 +51,7 @@ Every package in this workspace, what it is for, the key it claims on the cordis
 | `notes` | Files read as notes: wiki links, backlinks, tags, full-text search, the journal. | `notes` | files, tools |
 | `repos` | The code repositories workstreams stand for, their checkouts, agent worktrees. | `repos` | boards, git, hub, storage, tools |
 | `code-link` | A ticket's branches, pull requests and coding sessions; status from git; Start. | `codeLink` | agent, boards, contributions, engine-pi, git, github, herdr, hub, items, llm, mcp, plugin-sdk, repos, storage, tools, write |
-| `herdr` | herdr on this machine: its socket, server and panes. Optional. | `herdr` | doctor |
+| `herdr` | herdr on this machine: its socket, server and panes. Optional. | `herdr` | doctor, engine-kit |
 | `code-sessions` | The Terminal window: herdr terminals and code sessions side by side. | — | code-link, contributions, desktop-surface, herdr, items |
 
 ## Agents
@@ -63,17 +63,18 @@ Every package in this workspace, what it is for, the key it claims on the cordis
 | `llm` | Model profiles and roles behind one interface; OpenAI-compatible and Anthropic adapters. | `llm` | desktop-surface, web-search |
 | `engine-loop` | The in-app conductor: a model reasoning over the tool registry, guided by playbooks. | — | agent, llm, tools |
 | `engine-scripted` | The no-model conductor: runs registered workflows from a menu. | — | agent |
-| `engine-claude-code` | Claude Code as conductor, with Tomrade's tools over MCP. | — | agent, llm, mcp |
-| `engine-codex` | Codex (app-server) as conductor. | — | agent, engine-claude-code, llm, mcp |
-| `engine-pi` | The Pi coding agent as conductor. | — | agent, engine-claude-code, llm, mcp |
-| `engine-acp` | One conductor for agents that speak ACP; the agents official plugins describe. | `localAgents` | agent, engine-claude-code, llm, mcp, plugin-sdk |
+| `engine-kit` | What every local-agent engine shares: finding and starting its CLI, JSON lines, the runtime pool, prompts, the MCP link, the lent CLI model. | — | agent, llm, mcp |
+| `engine-claude-code` | Claude Code as conductor, with Tomrade's tools over MCP. | — | agent, engine-kit, llm, mcp |
+| `engine-codex` | Codex (app-server) as conductor. | — | agent, engine-kit, llm, mcp |
+| `engine-pi` | The Pi coding agent as conductor. | — | agent, engine-kit, llm, mcp |
+| `engine-acp` | One conductor for agents that speak ACP; the agents official plugins describe. | `localAgents` | agent, engine-kit, llm, mcp, plugin-sdk |
 | `shell` | A bash tool for in-process engines, asked before each command, never served over MCP. | — | tools |
 | `web-search` | `web_search` and `web_fetch` for every engine, answered by a registered provider. | `webSearch` | tools |
 | `web-search-tavily` | Tavily as that provider, with the person's own key. | — | web-search |
 | `archify` | Archify diagrams as tools. | — | agent, files, tools |
 | `doctor` | The troubleshooter: checks what failed, says what to do, sends a report. | `doctor` | agent, contributions, llm, mcp, projects, tools |
 | `mcp` | Serves `ctx.tools` over MCP on 127.0.0.1. | `mcp` | contributions, tools |
-| `mcp-client` | External MCP servers whose tools join `ctx.tools`. | `mcpClient` | tools |
+| `mcp-client` | External MCP servers whose tools join `ctx.tools`. | `mcpClient` | engine-kit, tools |
 | `im` | Chat-app transports over the agent: bindings, authorized inputs, replies. Adapters are plugins. | `im` | agent, contributions, oplog, plugin-sdk, projects |
 
 ## Desktop

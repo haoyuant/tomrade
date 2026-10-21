@@ -1,5 +1,5 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import { lineSplitter } from "@tomradex/engine-claude-code";
+import { lineSplitter } from "@tomradex/engine-kit";
 
 type Json = Record<string, any>;
 

@@ -1,11 +1,12 @@
 import type { Context } from "cordis";
 import type { Engine } from "@tomradex/agent";
+import { RuntimePool, runtimeFingerprint } from "@tomradex/engine-kit";
 import type {} from "@tomradex/llm";
+import type {} from "@tomradex/mcp";
 import { claudeCodeEngineInfo } from "./engine.js";
 import { claudeLentModel } from "./lend.js";
 import { claudeCommands } from "./permissions.js";
 import { ClaudeRuntime } from "./sdk.js";
-import { RuntimePool, runtimeFingerprint } from "./runtime.js";
 
 export function createClaudeCodeEngine(ctx: Context): Engine {
   const pool = new RuntimePool<ClaudeRuntime>();
@@ -44,15 +45,7 @@ export default {
 };
 
 export { ClaudeCodeOptions, claudeCodeEngineInfo, retryReason } from "./engine.js";
-export { claudeSignedIn, lineSplitter, runJsonl, signedIn } from "./cli.js";
-export { localAvailability, chosenCommand, desktopAppPaths, type DesktopApp } from "./availability.js";
+export { claudeSignedIn } from "./cli.js";
 export { claudeLentModel, LENT_IDLE_MS } from "./lend.js";
-export { cliLentModel, NotSignedIn, SIGN_IN_RECHECK_MS, type CliAnswer } from "./lend-cli.js";
-export { MCP_NAME, claudeConfigDirOf, claudeConfigDirs, claudeMcpLink, claudeProfileEnv, claudeProjectServerApproval, claudeUserFile, userMcpLink, type UserMcpConfig } from "./mcp-link.js";
+export { claudeConfigDirOf, claudeConfigDirs, claudeMcpLink, claudeProfileEnv, claudeProjectServerApproval, claudeUserFile } from "./mcp-link.js";
 export { bashRuleMatches, claudeCommands, userSettingsFile } from "./permissions.js";
-export {
-  CliLocator, localCli, launchFor, bundledLaunch, spawnCli, stopCli, cliReason, describeRun, fileNames, shimTarget, cmdArgument, cmdLine, parseRegPath, expandWindowsVars, splitPath, knownDirs,
-  type BundledCli, type CliHost, type CliLaunch, type CliRunResult
-} from "./locate.js";
-export { promptOf, sessionSystem, staticSystem, turnPrompt } from "./system.js";
-export { RuntimePool, runtimeFingerprint, runtimeDirectory, bindTurn, type Runtime } from "./runtime.js";

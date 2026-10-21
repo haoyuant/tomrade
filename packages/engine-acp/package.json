@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@tomradex/agent": "workspace:*",
-    "@tomradex/engine-claude-code": "workspace:*",
+    "@tomradex/engine-kit": "workspace:*",
     "@tomradex/llm": "workspace:*",
     "@tomradex/mcp": "workspace:*",
     "@tomradex/plugin-sdk": "workspace:*",

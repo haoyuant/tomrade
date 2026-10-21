@@ -6,7 +6,7 @@ import { Context } from "cordis";
 import { z } from "zod";
 import { Tools } from "@tomradex/tools";
 import { Mcp } from "@tomradex/mcp";
-import { localCli } from "@tomradex/engine-claude-code";
+import { localCli } from "@tomradex/engine-kit";
 import type { Block, Engine, TurnIO, TurnInput } from "@tomradex/agent";
 import { createAcpEngine, isTomradeTool, PERMISSION_CHOICES, policyOf, type AcpAgent } from "../src/index.js";
 import { innermost, resolveChoice } from "../src/runtime.js";

@@ -1,6 +1,6 @@
 import type { Context } from "cordis";
 import type { Engine } from "@tomradex/agent";
-import { localAvailability, RuntimePool, runtimeFingerprint } from "@tomradex/engine-claude-code";
+import { localAvailability, RuntimePool, runtimeFingerprint } from "@tomradex/engine-kit";
 import type {} from "@tomradex/mcp";
 import type { AcpAgent, AcpOptions, Catalog } from "./agent.js";
 import { askCatalog, keptCatalogs } from "./catalog.js";

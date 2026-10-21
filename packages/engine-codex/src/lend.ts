@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
-import { chosenCommand, localCli, runJsonl } from "@tomradex/engine-claude-code";
+import { chosenCommand, localCli, runJsonl } from "@tomradex/engine-kit";
 import { transcriptOf, type ChatEvent, type ChatModel, type LentModel } from "@tomradex/llm";
 import { CodexOptions, codexModel } from "./engine.js";
 
