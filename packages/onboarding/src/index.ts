@@ -23,6 +23,8 @@ declare module "cordis" {
 
 declare module "@tomradex/ipc" {
   interface Channels {
+    /** The sample project again, for someone who deleted it; `locale` names its language. */
+    "onboarding.createSample": (locale?: string) => Project;
     /** Onboarding from the top: every hint unseen, and the sample there — made anew when `resetSample`. */
     "onboarding.restart": (opts: { resetSample: boolean; locale?: string }) => Project;
   }
@@ -54,6 +56,9 @@ export const ONBOARDING_SECTION: SettingsSection<OnboardingSettings> = {
   order: 90,
   scope: "user"
 };
+
+/** Seen once the sample has opened on its first lesson; the UI's Workspace marks it. */
+const FIRST_LESSON = "sample-first-lesson";
 
 const PLAYBOOKS = loadPlaybookDir(fileURLToPath(new URL("../playbooks", import.meta.url)), (file, err) => {
   throw new Error(`onboarding playbook ${file} failed to load: ${err instanceof Error ? err.message : String(err)}`);
@@ -92,6 +97,7 @@ export class Onboarding extends Service {
       }
     }
     this.home.inject(["ipc"], (ctx) => {
+      ctx.ipc.handle("onboarding.createSample", (locale) => ctx.onboarding.sampleAgain(locale));
       ctx.ipc.handle("onboarding.restart", (opts) => ctx.onboarding.restart(opts));
     });
     this.home.inject(["settings"], (ctx) => {
@@ -119,6 +125,22 @@ export class Onboarding extends Service {
     if (inbox) this.deliverFeedback(inbox);
     // Read back: the catalog marked it the sample after the row was made.
     return this.ctx.projects.get(created.id) ?? created;
+  }
+
+  /**
+   * The sample again, from the home's tile, without the rest of onboarding:
+   * it opens on its first lesson, as a new one did. One that is already there
+   * is the one returned, so a second press makes no second sample.
+   */
+  sampleAgain(locale?: string): Project {
+    const existing = this.ctx.projects.list().find((p) => p.sample);
+    if (existing) return existing;
+    const settings = this.ctx.get("settings");
+    if (settings) {
+      const seen = (settings.get().onboarding as Partial<OnboardingSettings> | undefined)?.seen ?? [];
+      if (seen.includes(FIRST_LESSON)) settings.set({ ...settings.get(), onboarding: { seen: seen.filter((id) => id !== FIRST_LESSON) } });
+    }
+    return this.createSample(locale ?? this.config.locale);
   }
 
   /**
