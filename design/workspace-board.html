@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Sprint 12 · Tomrade Next</title>
+<title>Sprint 12 · Tomrade</title>
 <style>
 /* ═══════════════════════════════════════════════════════════════════════
  * Tomrade — "The Ledger"  ·  kami (紙 / 纸) bound to a desktop app shell
@@ -1063,7 +1063,7 @@ ul.dash li::before { content: "\2013"; position: absolute; left: 0; color: var(-
               aria-haspopup="menu" aria-expanded="false" aria-controls="projMenu"
               title="Switch project — ⌘P" style="padding:4px 8px">
         <svg class="ico" width="15" height="15"><use href="#i-stack"/></svg>
-        <span id="projName">Tomrade Next</span>
+        <span id="projName">Tomrade</span>
         <svg class="chev" width="13" height="13"><use href="#i-chevdown"/></svg>
       </button>
       <div class="menu wide" id="projMenu" role="menu" aria-labelledby="projSwitch"
@@ -1452,7 +1452,7 @@ ul.dash li::before { content: "\2013"; position: absolute; left: 0; color: var(-
     </div>
     <div class="panel">
       <div class="field"><label for="stDb">Database file</label>
-        <input class="input num" id="stDb" value="~/Library/Application Support/Tomrade/tomrade-next.sqlite" />
+        <input class="input num" id="stDb" value="~/Library/Application Support/Tomrade/tomrade.sqlite" />
         <span class="meta-txt">Local-first. Back it up by copying the file.</span></div>
     </div>
   </div>
@@ -1522,7 +1522,7 @@ ul.dash li::before { content: "\2013"; position: absolute; left: 0; color: var(-
     <button class="btn btn-ghost no-drag" id="projBack" data-od-id="back-to-workspace"
             style="padding:4px 8px" title="Back to the board — Esc">
       <svg width="14" height="14"><use href="#i-back"/></svg>
-      <span id="projBackName">Tomrade Next</span>
+      <span id="projBackName">Tomrade</span>
     </button>
     <span class="crumb-sep">/</span>
     <span class="crumb-title">Projects</span>
@@ -1585,7 +1585,7 @@ ul.dash li::before { content: "\2013"; position: absolute; left: 0; color: var(-
     <span class="status-item"><span class="live-dot"></span> MCP <span class="num">127.0.0.1:19090</span></span>
     <span class="status-item">2 projects on this machine</span>
     <div class="spacer"></div>
-    <span class="status-item meta-txt">Tomrade Next · local-first</span>
+    <span class="status-item meta-txt">Tomrade · local-first</span>
   </footer>
 </div>
 
@@ -1632,7 +1632,7 @@ document.addEventListener("click", function (ev) {
 
 <script>
 /* ═══ data ════════════════════════════════════════════════════════════
-   Every issue below is real tomrade-next work drawn from the repo and
+   Every issue below is real Tomrade work drawn from the repo and
    from prototype-plan.md. Nothing here is invented filler. */
 
 const STATUS = {
@@ -2996,7 +2996,7 @@ $("#bsSave").onclick = () => {
    the home button beside the switcher. The sidebar stays what it is: the
    boards inside THIS project. */
 const PROJECTS = [
-  { id: "p-next", name: "Tomrade Next", live: true, db: "tomrade-next.sqlite",
+  { id: "p-next", name: "Tomrade", live: true, db: "tomrade.sqlite",
     desc: "Local-first backlog and knowledge workbench. Electron shell, in-process TypeScript backend, MCP server for coding agents." },
   { id: "p-legacy", name: "Tomrade Legacy", live: false, db: "tomrade-legacy.sqlite",
     tag: "legacy-architecture-final",

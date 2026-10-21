@@ -1,4 +1,4 @@
-project_id = "tomrade-next"
+project_id = "tomrade"
 
 [db]
 major_version = 17

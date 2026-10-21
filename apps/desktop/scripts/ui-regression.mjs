@@ -957,7 +957,7 @@ const run = async () => {
   check("and waits for an explicit folder before offering clone", (await $(`!!document.querySelector('#psRepos .repo-clone')`)) === false);
   await shot("15-project-repositories");
   // A checkout is believed only when the folder's own origin is that repository.
-  const checkoutDir = path.join(WORK, "checkouts", "tomrade-next");
+  const checkoutDir = path.join(WORK, "checkouts", "tomrade");
   fs.mkdirSync(checkoutDir, { recursive: true });
   execSync(`git init -q && git remote add origin ${sampleRepo.remote}`, { cwd: checkoutDir, stdio: "ignore" });
   let refused = null;
@@ -1538,7 +1538,7 @@ const run = async () => {
   check("the folder keeps a database out on purpose", fs.readFileSync(path.join(projectDir, ".tomrade", ".gitignore"), "utf8").includes("*.db"));
   check("every write reaches the folder's log", fs.readdirSync(path.join(projectDir, ".tomrade", "log")).some((f) => f.endsWith(".jsonl")));
 
-  await press(gearFor("Tomrade Next"));
+  await press(gearFor("Tomrade"));
   await sleep(900);
   check("the sheet names the project's folder", (await $(`document.querySelector('.stg-dir')?.textContent`)) === projectDir);
   check("a folder of its own says so", (await $(`document.querySelector('.stg-origin')?.textContent`) ?? "").includes("A folder of its own"));

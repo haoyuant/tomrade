@@ -1,5 +1,7 @@
 # General work implementation
 
+> **Historical.** A design or implementation note from an earlier stage, kept for context; the code and the docs one level up are the current truth.
+
 User-approved scope: one Ticket model, independent `kind` (ticket/epic) and
 `workType` (coding/general); shared Delivery lifecycle, artifacts and review;
 general agent execution without Git prerequisites; playbooks chosen by task

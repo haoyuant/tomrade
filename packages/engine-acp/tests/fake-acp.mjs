@@ -176,8 +176,8 @@ async function prompt(id, p) {
   if (text.includes('REFUSE')) return send({ id, result: { stopReason: 'refusal' } });
   if (text.includes('SILENT')) {
     // As Hermes does: a call starts and is asked about, and its end is never reported.
-    update(sid, { sessionUpdate: 'tool_call', toolCallId: 't3', title: 'write: /work/tomrade-next/notes.md', kind: 'edit', rawInput: { path: 'notes.md' } });
-    await ask('session/request_permission', { sessionId: sid, toolCall: { toolCallId: 't3', title: 'write: /work/tomrade-next/notes.md', kind: 'edit' }, options: [
+    update(sid, { sessionUpdate: 'tool_call', toolCallId: 't3', title: 'write: /work/tomrade/notes.md', kind: 'edit', rawInput: { path: 'notes.md' } });
+    await ask('session/request_permission', { sessionId: sid, toolCall: { toolCallId: 't3', title: 'write: /work/tomrade/notes.md', kind: 'edit' }, options: [
       { optionId: 'yes', name: 'Allow edit', kind: 'allow_once' }, { optionId: 'no', name: 'Deny', kind: 'reject_once' }] });
     update(sid, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'done' } });
     return send({ id, result: { stopReason: 'end_turn' } });

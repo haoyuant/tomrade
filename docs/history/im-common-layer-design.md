@@ -1,5 +1,7 @@
 # IM 公共层插件设计
 
+> **Historical.** A design or implementation note from an earlier stage, kept for context; the code and the docs one level up are the current truth.
+
 日期：2026-10-14（实现状态更新于 2026-10-15）。关联：TOM-94。状态：公共层与 SDK 契约已实现，见文末“实现状态”；尚无真实平台适配器。
 
 用户已确认新的产品方向：IM 可以驱动完整 Agent 会话，包括闲聊、需求讨论、工单操作、执行和文档生成。TOM-94 已通过 Tomrade MCP 标为 Doing。现有 TOM-92、TOM-94 和 TOM-95～100 的正文仍是“只建 Backlog 工单”的旧范围，本设计不代表这些实现验收已经通过。

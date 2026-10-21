@@ -1,5 +1,7 @@
 # Memory
 
+> **Historical.** A design or implementation note from an earlier stage, kept for context; the code and the docs one level up are the current truth.
+
 > **Status: proposal, not started (TOM-68).** A design draft from 2026-09-18 for
 > feature work that has not begun. Nothing here is built yet; names and shapes
 > may change once implementation starts.

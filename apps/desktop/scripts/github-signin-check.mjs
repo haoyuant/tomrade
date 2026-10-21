@@ -110,7 +110,7 @@ const run = async () => {
     }
     return false;
   };
-  const gear = `[...document.querySelectorAll('.proj-cell')].find(c => c.querySelector('.proj-name')?.textContent === 'Tomrade Next')?.querySelector('.proj-gear')`;
+  const gear = `[...document.querySelectorAll('.proj-cell')].find(c => c.querySelector('.proj-name')?.textContent === 'Tomrade')?.querySelector('.proj-gear')`;
   const openStorage = async () => {
     await press(gear);
     await sleep(900);
