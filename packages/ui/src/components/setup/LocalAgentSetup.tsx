@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { EngineView } from "@tomradex/agent";
 import { Icon } from "~/components/icons";
 import { useI18n } from "~/lib/i18n";
+import { engineHealth, engineProblem } from "~/lib/engines";
 import { engineStateLabel, engineStatus, useRecheckEngines } from "~/lib/localCli";
 import { setupRows, useSetupInTerminal } from "~/lib/setup";
 import { openExternal } from "~/lib/shell";
@@ -38,7 +39,7 @@ export function LocalAgentSetup({ engines, onOpenSettings }: { engines: EngineVi
   const recheck = useRecheckEngines();
   const terminal = useSetupInTerminal();
   const rows = setupRows(engines);
-  const waiting = rows.some((e) => !e.ok);
+  const waiting = rows.some((e) => engineHealth(e) !== "works");
 
   const lastLook = useRef(0);
   const look = recheck.mutate;
@@ -83,13 +84,22 @@ export function LocalAgentSetup({ engines, onOpenSettings }: { engines: EngineVi
         );
         // A desktop app that brings the CLI is the easier way in, so it comes first.
         const downloadFirst = Boolean(setup.desktop?.shipsCli);
+        // Found and signed in, but not yet shown to run: say so, and what its agent said.
+        const health = engineHealth(e);
+        const problem = engineProblem(e);
+        const label = e.ok && health === "checking" ? t("localCli.stateChecking") : e.ok && health === "broken" ? t("localCli.stateNotRunning") : engineStateLabel(e, t, t("settingsDialog.engineUnavailable"));
         return (
-          <li key={e.id} className={e.ok ? "setup-row is-ok" : "setup-row"} data-engine={e.id}>
-            <Icon name={e.ok ? "i-check" : "i-warn"} size={13} />
+          <li key={e.id} className={health === "works" ? "setup-row is-ok" : "setup-row"} data-engine={e.id} data-health={health}>
+            <Icon name={health === "works" ? "i-check" : health === "checking" ? "i-sync" : "i-warn"} size={13} />
             <div>
               <span className="setup-name">
-                {e.title} <span className="meta-txt">· {engineStateLabel(e, t, t("settingsDialog.engineUnavailable"))}</span>
+                {e.title} <span className="meta-txt">· {label}</span>
               </span>
+              {problem && (
+                <span className="setup-fix" data-testid={`problem-${e.id}`}>
+                  {t(problem.kind === "models" ? "setup.problemModels" : "setup.problemTried", { detail: problem.detail })}
+                </span>
+              )}
               {status === "desktop-only" && <span className="setup-fix">{t("localCli.desktopOnlyDetail", { app: e.cli?.desktopApp ?? "", name: e.cli?.name ?? "" })}</span>}
               {downloadFirst && download}
               {installing && !setup.install[0] && setup.docs && (
@@ -117,7 +127,7 @@ export function LocalAgentSetup({ engines, onOpenSettings }: { engines: EngineVi
                   </button>
                 </span>
               )}
-              {!e.ok && !installing && status !== "sign-in" && (
+              {((!e.ok && !installing && status !== "sign-in") || problem) && (
                 <button type="button" className="link-btn setup-fix" onClick={() => onOpenSettings(e.id)}>
                   {t("localCli.configure")} →
                 </button>

@@ -2,13 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { EngineView } from "@tomradex/agent";
 import type { Providing } from "@tomradex/community";
-import type { ProviderView, WorkerStatus } from "@tomradex/llm";
+import type { ProviderView } from "@tomradex/llm";
 import { useEngines } from "./agent";
 import { invoke, subscribe } from "./api";
 import { useI18n } from "./i18n";
 import { engineStatus } from "./localCli";
 import { useStoreInstall } from "./plugins";
 import { keys, useSettings } from "./queries";
+import { isLocalAgent, setupState } from "./setupState";
 
 /** A provider plugin installed, switched off or removed changes what the setup offers. */
 function useProvidersChanged() {
@@ -23,22 +24,9 @@ function useProvidersChanged() {
   );
 }
 
-/** An engine a ticket can be handed to: it works on this computer, not only through Tomrade's tools. */
-const isLocalAgent = (engine: EngineView): boolean => engine.capabilities.includes("code") || engine.capabilities.includes("general");
-
 /** The local agents worth a setup row: the suggested ones, and any other found on this computer. */
 export const setupRows = (engines: EngineView[]): EngineView[] =>
   engines.filter((e) => e.setup && isLocalAgent(e) && (e.setup.suggested || engineStatus(e) !== "missing"));
-
-/**
- * Whether Tomrade can work yet. Either a model or a signed-in local agent is
- * enough: a model also runs the built-in agent, and a local agent lends its
- * model for planning — so one step sets up both.
- */
-function setupState(engines: EngineView[], worker: WorkerStatus) {
-  const assistant = engines.filter((e) => e.ok && e.capabilities.includes("backlog"));
-  return { complete: worker.ok && assistant.length > 0, assistant, locals: engines.filter((e) => e.ok && isLocalAgent(e)), worker };
-}
 
 /** Engines and the worker, looked at again whenever settings change — a key saved anywhere shows here. */
 export function useSetup() {

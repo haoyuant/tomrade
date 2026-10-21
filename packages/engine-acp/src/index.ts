@@ -1,5 +1,6 @@
 import type { Context } from "cordis";
 import type { Engine } from "@tomradex/agent";
+import { errorMessage } from "@tomradex/contracts";
 import { localAvailability, pooledEngine } from "@tomradex/engine-kit";
 import type {} from "@tomradex/mcp";
 import type { AcpAgent, AcpOptions, Catalog } from "./agent.js";
@@ -32,6 +33,8 @@ export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAg
   ctx.effect(() => () => quit.abort());
   let asking = false;
   let failedAt = 0;
+  // Why the agent could not open a session to say what it offers: it cannot run a turn either.
+  let failure: string | null = null;
   // In the background, once at a time, and not again for a while after a failure.
   const ask = () => {
     if (catalog.models.length || asking || quit.signal.aborted || Date.now() - failedAt < 10 * 60_000) return;
@@ -39,11 +42,15 @@ export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAg
     void Promise.resolve()
       .then(() => askCatalog(ctx, agent, agent.options.parse(ctx.get("agent")?.settingsOf().engines[agent.id] ?? {}), quit.signal))
       .then((offered) => {
+        failure = null;
         if (!offered.models) { failedAt = Date.now(); return; }
         if (catalog.models.length) return;
         Object.assign(catalog, offered);
         remember();
-      }, () => { failedAt = Date.now(); })
+      }, (error) => {
+        failedAt = Date.now();
+        failure = errorMessage(error);
+      })
       .finally(() => { asking = false; });
   };
   return {
@@ -67,7 +74,8 @@ export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAg
       ...(agent.setup ? { setup: agent.setup } : {}),
       picks: () => [
         // What the agent can use depends on its own sign-in; the list is what its last session offered.
-        { key: "model", title: "Model", choices: catalog.models, freeText: true, ...(asking && !catalog.models.length ? { pending: true } : {}) },
+        { key: "model", title: "Model", choices: catalog.models, freeText: true, ...(asking && !catalog.models.length ? { pending: true } : {}),
+          ...(!asking && !catalog.models.length && failure ? { failed: failure } : {}) },
         ...(catalog.efforts.length ? [{ key: "effort", title: "Effort", choices: catalog.efforts }] : [])
       ],
       checkCli: (file) => agent.cli.check(file),

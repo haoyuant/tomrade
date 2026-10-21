@@ -293,6 +293,8 @@ export interface EnginePick {
   freeText?: boolean;
   /** The engine is still asking its agent for the choices; ask again shortly. */
   pending?: boolean;
+  /** The engine asked its agent for the choices and the agent could not answer: why. On the model pick, it cannot run a turn yet. */
+  failed?: string;
 }
 
 /** One real turn on an engine, asked for by the person: does it answer? */
