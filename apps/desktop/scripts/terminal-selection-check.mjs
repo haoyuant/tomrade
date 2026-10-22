@@ -69,6 +69,16 @@ app.whenReady().then(async () => {
     if (chinese !== "文选区") throw new Error(`Wide-character fixture: ${chinese}`);
     await js("paintRows(['Header', '', '', '中文选区和滚动', '', '', '', '', '', '', '', 'Footer'])");
     await check("partial columns use terminal cells, including wide characters", `term.getSelection() === ${JSON.stringify(chinese)} && term.getSelectionPosition()?.start.y === 3 && copy() === ${JSON.stringify(chinese)}`);
+    await js("paintRows(Array.from({length: 12}, (_, i) => 'shell line ' + (40 + i)))");
+    const shellPicked = await select(0, 4, 5, 4);
+    await js("paintRows(Array.from({length: 12}, (_, i) => 'shell line ' + (38 + i)))");
+    await check("shell scroll keeps a common word anchored to its original row", `term.getSelectionPosition()?.start.y === 6 && copy() === ${JSON.stringify(shellPicked)}`);
+    await js("paintRows(Array.from({length: 12}, (_, i) => 'shell line ' + (60 + i)))");
+    await check("repeated words alone remain ambiguous offscreen", `!term.hasSelection() && copy() === ${JSON.stringify(shellPicked)}`);
+    await js("paintRows(Array.from({length: 12}, (_, i) => 'shell line ' + (40 + i)))");
+    await check("scroll back restores the short shell selection", `term.getSelectionPosition()?.start.y === 4 && term.getSelection() === ${JSON.stringify(shellPicked)}`);
+    await js("paintRows(['', '', 'shell changed outside the selection', '', '', '', '', '', '', '', '', ''])");
+    await check("unique selected text still follows when unselected context changes", `term.getSelectionPosition()?.start.y === 2 && copy() === ${JSON.stringify(shellPicked)}`);
     await js("follower.dispose()");
   } catch (error) {
     console.error(error);
