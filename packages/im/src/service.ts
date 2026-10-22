@@ -2314,8 +2314,8 @@ export class Im extends Service {
       ORDER BY t.created_at LIMIT 1`, c.id, Date.now());
   }
 
-  /** Runs a due topic operation. False when it did not, so the flush goes on to messages. */
-  private async topicWork(c: Connection, t: Topic): Promise<boolean> {
+  /** Runs a due topic operation; the flush then goes on to messages, whichever way it went. */
+  private async topicWork(c: Connection, t: Topic): Promise<void> {
     const session = c.session!;
     const parent = this.store.binding(t.parent_id)!;
     const later = (e: unknown) => {
@@ -2326,15 +2326,15 @@ export class Im extends Service {
     const retryable = (e: unknown) => (e as { disposition?: string } | null)?.disposition === "retryable";
     if (t.state === "opening") {
       // Its group is not let in right now: asked again later, without holding up the others.
-      if (!this.authorizedBinding(parent)) { this.store.run("UPDATE plugin_im_topics SET retry_at = ? WHERE id = ?", Date.now() + 60_000, t.id); return false; }
+      if (!this.authorizedBinding(parent)) { this.store.run("UPDATE plugin_im_topics SET retry_at = ? WHERE id = ?", Date.now() + 60_000, t.id); return; }
       try {
         if (!session.topics) throw new Error("Adapter opens no topics");
         const { topicId } = await deadline(session.topics.open({ operationId: `topic:${t.id}`, address: JSON.parse(parent.address_json) as ImAddress, title: t.title }), this.config.operationTimeoutMs);
         if (!topicId) throw new Error("Adapter returned no topic id");
-        if (this.stopped) return true;
+        if (this.stopped) return;
         this.topicOpened(parent, t, topicId);
       } catch (e) {
-        if (this.stopped) return true;
+        if (this.stopped) return;
         // A topic that may exist already is not opened twice; its news goes to the group as before.
         if (retryable(e) && t.attempts < 6) later(e);
         else this.topicSettled(t.project_id, t.item_id, () => {
@@ -2345,11 +2345,12 @@ export class Im extends Service {
             elements: ticket(this.scope(parent), item.key, item.title) }, { anchor: null });
         });
       }
-      return true;
+      return;
     }
     const topic = this.store.binding(t.binding_id!);
-    const synced = () => this.store.run("UPDATE plugin_im_topics SET synced = json_array(?, ?), attempts = 0 WHERE id = ?", t.title, t.closed, t.id);
-    if (!topic || !session.topics) { synced(); return true; }
+    // `closed` is bound as a REAL from JavaScript; the cast keeps it written as the INTEGER `topicDue` compares with.
+    const synced = () => this.store.run("UPDATE plugin_im_topics SET synced = json_array(?, CAST(? AS INTEGER)), attempts = 0 WHERE id = ?", t.title, t.closed, t.id);
+    if (!topic || !session.topics) { synced(); return; }
     try {
       await deadline(session.topics.update({ address: JSON.parse(topic.address_json) as ImAddress & { topicId: string }, title: t.title, closed: !!t.closed }), this.config.operationTimeoutMs);
       synced();
@@ -2358,7 +2359,6 @@ export class Im extends Service {
       if (retryable(e) && t.attempts < 6) later(e);
       else synced();
     }
-    return true;
   }
 
   /** The platform made the topic: it gets its conversation, its first card, and the ticket's news that waited. */
@@ -2615,8 +2615,9 @@ export class Im extends Service {
     c.flushing = true;
     try {
       // Messages are picked in the same tick as before: awaiting first would let a stream be settled before it starts.
+      // A topic operation never holds them back: one that cannot settle would otherwise silence the connection.
       const topic = this.topicDue(c);
-      if (topic && await this.topicWork(c, topic)) return;
+      if (topic) await this.topicWork(c, topic);
       const caps = this.caps.get(c.adapterId)!;
       const session = c.session!;
       // A delayed operation holds its target's place, but does not block other conversations.

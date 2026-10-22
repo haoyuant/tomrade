@@ -129,6 +129,36 @@ describe("ticket topics in an IM group", () => {
     expect(w.log.filter(l => l.kind === "open")).toHaveLength(1);
   });
 
+  it("tells a closed topic once, and still delivers replies after it", async () => {
+    const w = await boot();
+    w.move("doing");
+    await w.said(/^This thread follows /, "topic-1");
+    w.move("done");
+    await expect.poll(() => w.log.find(l => l.kind === "update" && l.closed)).toBeDefined();
+    // What was told compares equal to the row's columns, so the topic stops being due.
+    await expect.poll(() => w.ctx.im.store.get<{ same: number }>("SELECT synced = json_array(title, closed) AS same FROM plugin_im_topics")?.same).toBe(1);
+    await new Promise(r => setTimeout(r, 200));
+    expect(w.log.filter(l => l.kind === "update")).toHaveLength(1);
+    await w.receive(say("again", "still there?"));
+    await w.said(/^re:still there\?$/);
+  });
+
+  it("keeps delivering replies while a topic never settles", async () => {
+    const w = await boot();
+    w.move("doing");
+    await w.said(/^This thread follows /, "topic-1");
+    // The ticket keeps changing while the bot tells the platform, so the topic is due again right after every sync.
+    const changing = setInterval(() => {
+      try { w.ctx.im.store.run("UPDATE plugin_im_topics SET title = title || ' ·'"); } catch { /* torn down already */ }
+    }, 5);
+    try {
+      w.move("done");
+      await expect.poll(() => w.log.filter(l => l.kind === "update").length).toBeGreaterThan(2);
+      await w.receive(say("later", "anyone there?"));
+      await w.said(/^re:anyone there\?$/);
+    } finally { clearInterval(changing); }
+  });
+
   it("keeps a ticket that is not being worked to one line at the top level, and other tickets' moves out of a ticket's topic", async () => {
     const w = await boot();
     w.move("doing");
