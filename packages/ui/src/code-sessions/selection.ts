@@ -14,6 +14,7 @@ export function followSelection(terminal: SelectionTerminal, el: HTMLElement) {
   let picked: { start: Point; end: Point } | null = null;
   let shown: { start: Point; end: Point; cutStart: boolean; cutEnd: boolean } | null = null;
   let lines = new Map<number, string>();
+  let context = new Map<number, string>();
   let quiet = false;
   let held = false;
   const same = (a: Point, x: number, y: number) => a[0] === x && a[1] === y;
@@ -41,6 +42,7 @@ export function followSelection(terminal: SelectionTerminal, el: HTMLElement) {
       picked = null;
       shown = null;
       lines.clear();
+      context.clear();
       return;
     }
     const start: Point = picked && shown?.cutStart && same(shown.start, at.start.x, at.start.y) ? picked.start : [at.start.x, at.start.y + top];
@@ -48,8 +50,10 @@ export function followSelection(terminal: SelectionTerminal, el: HTMLElement) {
     picked = { start, end };
     shown = null;
     const kept = new Map([...lines].filter(([line]) => line >= start[1] && line <= end[1]));
+    context = new Map([...context].filter(([line]) => line >= start[1] && line <= end[1]));
     for (let y = Math.max(0, start[1] - top); y <= Math.min(terminal.rows - 1, end[1] - top); y++) {
       const line = top + y;
+      context.set(line, terminal.buffer.active.getLine(y)?.translateToString(true) ?? "");
       kept.set(line, terminal.buffer.active.getLine(y)?.translateToString(true, line === start[1] ? start[0] : 0, line === end[1] ? end[0] : undefined) ?? "");
     }
     lines = kept;
@@ -61,9 +65,11 @@ export function followSelection(terminal: SelectionTerminal, el: HTMLElement) {
     // rather than selecting unrelated text. Keep the snapshot so scrolling back can find it again.
     let best: { top: number; first: number; last: number } | null = null;
     let score = 0;
+    let contextScore = 0;
     let tied = false;
     for (let candidate = picked.start[1] - terminal.rows + 1; candidate <= picked.end[1]; candidate++) {
       let matched = 0;
+      let contextMatched = 0;
       let first = 0;
       for (const [line, text] of lines) {
         const y = line - candidate;
@@ -71,13 +77,17 @@ export function followSelection(terminal: SelectionTerminal, el: HTMLElement) {
         const actual = terminal.buffer.active.getLine(y)?.translateToString(true, line === picked.start[1] ? picked.start[0] : 0, line === picked.end[1] ? picked.end[0] : undefined) ?? "";
         // Fixed TUI headers and footers can occlude either end inside the viewport. Only draw
         // the contiguous matching run, never over those controls or newly inserted text.
-        if (actual !== text) { matched = 0; first = line + 1; continue; }
+        if (actual !== text) { matched = 0; contextMatched = 0; first = line + 1; continue; }
         if (!matched) first = line;
         if (!text.trim()) continue;
         matched++;
-        if (matched < score) continue;
-        if (matched === score) tied = true;
-        else { best = { top: candidate, first, last: line }; score = matched; tied = false; }
+        // A short selection (a word in shell output, for example) can match many rows.
+        // Use the rest of its original row to break ties, without requiring that unselected
+        // text stays unchanged or including it in the clipboard snapshot.
+        if (terminal.buffer.active.getLine(y)?.translateToString(true) === context.get(line)) contextMatched++;
+        if (matched < score || (matched === score && contextMatched < contextScore)) continue;
+        if (matched === score && contextMatched === contextScore) tied = true;
+        else { best = { top: candidate, first, last: line }; score = matched; contextScore = contextMatched; tied = false; }
       }
     }
     if (best === null || tied) hide();
@@ -96,7 +106,7 @@ export function followSelection(terminal: SelectionTerminal, el: HTMLElement) {
   const press = (e: MouseEvent) => {
     if (e.button !== 0) return;
     held = true;
-    if (!e.shiftKey) { picked = null; shown = null; lines.clear(); }
+    if (!e.shiftKey) { picked = null; shown = null; lines.clear(); context.clear(); }
   };
   const release = () => { held = false; };
   el.addEventListener("copy", copy, true);
