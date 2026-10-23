@@ -152,7 +152,8 @@ describe("a plugin's local agent, run by the app's conductor", () => {
             remove: () => ["mcp", "remove"]
           }
         },
-        lend: { ask: async (_request, io) => ({ text: String(io.options.model), inputTokens: 1, outputTokens: 1 }) }
+        // The try asks for OK; any other call answers with the model it runs, which names it.
+        lend: { ask: async (request, io) => ({ text: request.transcript.includes("OK") ? "OK" : String(io.options.model), inputTokens: 1, outputTokens: 1 }) }
       });
     });
     w.ctx.settings.set({ ...w.ctx.settings.get(), agent: { ...w.ctx.agent.settingsOf(), engines: { demo_terminal: { command: bin, model: "fast" } } } });
@@ -169,7 +170,7 @@ describe("a plugin's local agent, run by the app's conductor", () => {
     for await (const event of w.lent("demo_terminal")!.model.chat({ system: "", messages: [userMessage("hi")] })) if (event.type === "text") text += event.delta;
     expect(text).toBe("fast");
     // Its try is that one answer, not a turn it could never take.
-    expect(await w.ctx.agent.tryEngine("no-project", "demo_terminal")).toMatchObject({ ok: true, reply: "fast" });
+    expect(await w.ctx.agent.tryEngine("no-project", "demo_terminal")).toMatchObject({ ok: true, reply: "OK" });
     expect((await w.ctx.agent.engineViews()).find((e) => e.id === "demo_terminal")).toMatchObject({ terminalOnly: true, asks: true, tried: { ok: true } });
     await w.ctx.fiber.dispose();
   });

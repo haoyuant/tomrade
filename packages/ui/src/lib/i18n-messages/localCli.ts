@@ -11,6 +11,8 @@ export const localCli = {
     stateModel: "No model connected",
     stateChecking: "Checking its models…",
     stateNotRunning: "Found, but can't run yet",
+    stateTestFailed: "Test failed — {{error}}",
+    stateNoReply: "no reply",
     stateTerminalReady: "Ready · runs in a terminal",
 
     using: "Using {{path}}",
@@ -77,6 +79,8 @@ export const localCli = {
     stateModel: "未连接模型",
     stateChecking: "正在获取它的模型列表…",
     stateNotRunning: "已找到，但还不能运行",
+    stateTestFailed: "消息测试失败——{{error}}",
+    stateNoReply: "没有回复",
     stateTerminalReady: "就绪 · 在终端里运行",
 
     using: "正在使用 {{path}}",

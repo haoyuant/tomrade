@@ -51,7 +51,7 @@ process.stdin.on("data", (chunk) => {
       if (fs.readFileSync(${JSON.stringify(flag)}, "utf8").trim() !== "works") send({ id: m.id, error: { code: -32603, message: "Model not found: default-model" } });
       else send({ id: m.id, result: { sessionId: "s1", configOptions: [{ id: "model", category: "model", type: "select", currentValue: "fast", options: [{ value: "fast", name: "Fast" }, { value: "deep", name: "Deep" }] }] } });
     } else if (m.method === "session/prompt") {
-      send({ method: "session/update", params: { sessionId: m.params.sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "pong" } } } });
+      send({ method: "session/update", params: { sessionId: m.params.sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "OK" } } } });
       send({ id: m.id, result: { stopReason: "end_turn" } });
     } else if (m.id !== undefined) send({ id: m.id, error: { code: -32601, message: "not here" } });
   }

@@ -1,6 +1,7 @@
 import type { EngineView, LocalCliStatus } from "@tomradex/agent";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "./api";
+import { failedTry } from "./engines";
 import type { MessageKey } from "./i18n";
 import { keys } from "./queries/keys";
 
@@ -32,10 +33,18 @@ const STATE_KEYS: Record<Exclude<EngineStatus, "ready" | "other">, MessageKey> =
 /** One short phrase for an engine's state, in the person's language — fits a select option or a row's end. */
 export function engineStateLabel(engine: EngineView, t: (key: MessageKey, vars?: Record<string, string | number>) => string, unavailable: string): string {
   const status = engineStatus(engine);
-  if (status === "ready") return engine.cli?.version ? t("localCli.stateReadyVersion", { version: engine.cli.version }) : t("localCli.stateReady");
+  if (status === "ready") {
+    // Found and signed in is not ready: the test message with these settings must have answered.
+    const failed = failedTry(engine);
+    if (failed) return t("localCli.stateTestFailed", { error: brief(failed.error ?? t("localCli.stateNoReply")) });
+    return engine.cli?.version ? t("localCli.stateReadyVersion", { version: engine.cli.version }) : t("localCli.stateReady");
+  }
   if (status === "other") return engine.reason ?? unavailable;
   return t(STATE_KEYS[status]);
 }
+
+/** An error long enough to break a row, cut where it still names the failure. */
+const brief = (text: string): string => (text.length > 80 ? `${text.slice(0, 80)}…` : text);
 
 /** Plain text for a bug report: what was looked at, in what order, and what each answered. */
 export function cliDiagnostics(engine: EngineView, cli: LocalCliStatus, appVersion?: string): string {

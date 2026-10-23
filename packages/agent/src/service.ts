@@ -279,6 +279,16 @@ const LIMIT_RETRY_MS = 15 * 60_000;
 const LIMIT_TRIES = 3;
 /** How long a try waits for an answer. */
 const TRY_MS = 90_000;
+/**
+ * The try asks for one word, so that word opening a short answer is what it
+ * looks for. Text alone is no proof: an agent whose provider refused the request
+ * ends its turn normally and puts the failure where a reply would go (Hermes'
+ * "Bedrock didn't answer", Pi's quota error), and a turn can end without saying
+ * anything at all. A real answer may add a sentence, but not a whole trace.
+ */
+const TRY_ANSWER = /^(?:\*\*|__|`|"|')?\s*ok(?:ay)?\b/i;
+const TRY_ANSWER_MAX = 120;
+const answeredTry = (said: string): boolean => said.trim().length <= TRY_ANSWER_MAX && TRY_ANSWER.test(said.trim());
 /** Limits lift on the provider's clock, not this one. */
 const LIMIT_SLACK_MS = 30_000;
 
@@ -1053,7 +1063,9 @@ export class Agent extends Service implements AgentReader {
       const timeout = AbortSignal.timeout(TRY_MS);
       try {
         const said = (await engine.local.ask(this.words()("tryAsk"), signal ? AbortSignal.any([signal, timeout]) : timeout)).trim();
-        return out({ ok: true, ...cut(said) });
+        return answeredTry(said)
+          ? out({ ok: true, ...cut(said) })
+          : out({ ok: false, ...cut(said), error: said ? (said.length > 500 ? `${said.slice(0, 500)}…` : said) : this.words()("tryNoReply") });
       } catch (error) {
         return out({ ok: false, error: signal?.aborted ? "cancelled" : timeout.aborted ? this.words()("tryTimeout", { s: TRY_MS / 1000 }) : errorMessage(error) });
       }
@@ -1080,7 +1092,13 @@ export class Agent extends Service implements AgentReader {
       const failure = messages.find((m) => m.block.type === "error")?.block;
       const said = messages.filter((m) => m.role === "agent" && m.block.type === "text").map((m) => (m.block as { text: string }).text).join("\n").trim();
       const reply = cut(said);
-      if (run?.status === "done" && !failure) return out({ ok: true, ...reply });
+      // A turn that ended normally still has to answer the test: an empty one, or one
+      // whose only text is its provider's failure, is not a working agent.
+      if (run?.status === "done" && !failure) {
+        return answeredTry(said)
+          ? out({ ok: true, ...reply })
+          : out({ ok: false, ...reply, error: said ? (said.length > 500 ? `${said.slice(0, 500)}…` : said) : this.words()("tryNoReply") });
+      }
       return out({ ok: false, ...reply, error: failure?.type === "error" ? failure.text : (run?.error ?? run?.stop ?? "failed"), ...(failure?.type === "error" && failure.details ? { details: failure.details } : {}) });
     } catch (error) {
       return out({ ok: false, error: errorMessage(error) });
