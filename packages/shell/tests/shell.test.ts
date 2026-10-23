@@ -13,7 +13,7 @@ import { Settings } from "@tomradex/settings";
 import { Agent } from "@tomradex/agent";
 import { fakeChat, type ChatEvent, type ChatModel, type ChatRequest } from "@tomradex/llm";
 import loop from "@tomradex/engine-loop";
-import shell, { SHELL_SECTION, plain, runShell } from "@tomradex/shell";
+import shell, { SHELL_SECTION, findBash, orphanSweep, plain, runShell } from "@tomradex/shell";
 
 const bash = "/bin/bash";
 const alive = (pid: number) => {
@@ -24,6 +24,34 @@ const alive = (pid: number) => {
     return false;
   }
 };
+
+describe("findBash", () => {
+  const on = (...files: string[]) => (file: string) => files.includes(file);
+
+  it("finds Git Bash in its install folder, beside a git on PATH, or on PATH — never WSL's", () => {
+    const env = { ProgramFiles: "C:\\Program Files", USERPROFILE: "C:\\Users\\a", Path: "C:\\WINDOWS\\system32;D:\\Git\\cmd;C:\\tools\\msys\\usr\\bin" };
+    expect(findBash("win32", env, on("C:\\Program Files\\Git\\bin\\bash.exe", "D:\\Git\\bin\\bash.exe"))).toBe("C:\\Program Files\\Git\\bin\\bash.exe");
+    expect(findBash("win32", env, on("C:\\Users\\a\\scoop\\apps\\git\\current\\bin\\bash.exe"))).toBe("C:\\Users\\a\\scoop\\apps\\git\\current\\bin\\bash.exe");
+    expect(findBash("win32", env, on("D:\\Git\\cmd\\git.exe", "D:\\Git\\bin\\bash.exe"))).toBe("D:\\Git\\bin\\bash.exe");
+    expect(findBash("win32", env, on("C:\\WINDOWS\\system32\\bash.exe", "C:\\tools\\msys\\usr\\bin\\bash.exe"))).toBe("C:\\tools\\msys\\usr\\bin\\bash.exe");
+    expect(findBash("win32", { Path: "C:\\Windows\\System32" }, on("C:\\Windows\\System32\\bash.exe"))).toBeNull();
+  });
+
+  it("looks on PATH when bash is not in a usual place (NixOS, Guix)", () => {
+    expect(findBash("linux", { PATH: "/run/current-system/sw/bin:/usr/sbin" }, on("/run/current-system/sw/bin/bash"))).toBe("/run/current-system/sw/bin/bash");
+    expect(findBash("linux", { PATH: "/usr/bin" }, on("/bin/bash", "/usr/bin/bash"))).toBe("/bin/bash");
+    expect(findBash("linux", {}, on())).toBeNull();
+  });
+});
+
+describe("orphanSweep", () => {
+  it("walks the dead root's children born after it, and spares the root's pid", () => {
+    const script = orphanSweep(4242, 1_700_000_000_000);
+    expect(script).toContain("$tree.Add(4242)");
+    expect(script).toContain("FromUnixTimeMilliseconds(1699999999000)");
+    expect(script).toContain("Select-Object -Skip 1");
+  });
+});
 
 describe.skipIf(process.platform === "win32")("runShell", () => {
   const cwd = fs.realpathSync(os.tmpdir());

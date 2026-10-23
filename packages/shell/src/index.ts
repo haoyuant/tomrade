@@ -7,7 +7,7 @@ import { DEFAULT_TIMEOUT_S, describeResult, findBash, runShell } from "./run.js"
 import { SHELL_WORDS } from "./words.js";
 import { contract, localeOf } from "@tomradex/contracts";
 
-export { OutputBuffer, describeResult, findBash, plain, runShell, type ShellResult, type ShellRun } from "./run.js";
+export { OutputBuffer, describeResult, findBash, orphanSweep, plain, runShell, type ShellResult, type ShellRun } from "./run.js";
 
 export type Approval = "ask" | "auto" | "off";
 
@@ -133,7 +133,8 @@ export default {
       unregister?.();
       unregister = null;
       current = approval;
-      if (approval !== "off") unregister = ctx.tools.register(bashTool(ctx, approval));
+      // Without a bash the tool could only fail, so the model is not offered it.
+      if (approval !== "off" && findBash()) unregister = ctx.tools.register(bashTool(ctx, approval));
     };
     sync();
     ctx.on("settings/changed", sync);

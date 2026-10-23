@@ -10,7 +10,7 @@ import { fresh } from "@tomradex/testkit";
 import { Settings } from "@tomradex/settings";
 import { Tools, defineTool } from "@tomradex/tools";
 import { Mcp } from "@tomradex/mcp";
-import { McpClient, TOOL_NAME_MAX, inputSchemaOf, parseClientConfig, toolName } from "@tomradex/mcp-client";
+import { McpClient, TOOL_NAME_MAX, inputSchemaOf, parseClientConfig, stdioEnv, toolName } from "@tomradex/mcp-client";
 
 const FIXTURE = fileURLToPath(new URL("./fixtures/stdio-server.mjs", import.meta.url));
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-mcp-client-"));
@@ -255,6 +255,15 @@ describe("a stdio server", () => {
     expect(ctx.tools.has("fx__echo")).toBe(true);
     await plugin.dispose();
     expect(ctx.tools.list().some((t) => t.name.startsWith("fx__"))).toBe(false);
+  });
+});
+
+describe("stdioEnv", () => {
+  it("gives a Windows server what npm's .cmd shims need, and nothing more elsewhere", () => {
+    const env = { PATHEXT: ".COM;.EXE;.CMD", ComSpec: "C:\\Windows\\system32\\cmd.exe", WINDIR: "C:\\Windows", SECRET: "x" };
+    expect(stdioEnv("win32", env)).toMatchObject({ PATHEXT: ".COM;.EXE;.CMD", ComSpec: "C:\\Windows\\system32\\cmd.exe", windir: "C:\\Windows" });
+    expect(stdioEnv("win32", env)).not.toHaveProperty("SECRET");
+    expect(stdioEnv("darwin", env)).not.toHaveProperty("PATHEXT");
   });
 });
 
