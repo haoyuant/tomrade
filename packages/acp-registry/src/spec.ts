@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { PERMISSION_CHOICES, type LocalAgentOptions, type LocalAgentSpec } from "@tomradex/plugin-sdk";
+import type { NpxPackage } from "./installed.js";
 import type { RegistryAgent } from "./registry.js";
 
 /**
@@ -46,7 +47,7 @@ const options: z.ZodType<LocalAgentOptions> = z.object({
  * installed first with `npm install -g` (where npx then finds it), signed in
  * the way the agent itself lists — the registry only lists agents that do.
  */
-export function specOf(added: AddedAgent): LocalAgentSpec {
+export function specOf(added: AddedAgent, cli?: Pick<NpxPackage, "prefix">): LocalAgentSpec {
   return {
     id: `registry:${added.id}`,
     title: added.name,
@@ -64,7 +65,8 @@ export function specOf(added: AddedAgent): LocalAgentSpec {
       permissionModes: { default: "ask", choices: [PERMISSION_CHOICES["full-access"], PERMISSION_CHOICES.ask, PERMISSION_CHOICES["read-only"]] },
       // Installed, the pinned version needs no registry: npx reads what it knows first.
       args: () => ["--yes", "--prefer-offline", added.package, ...added.args],
-      ...(Object.keys(added.env).length ? { env: () => ({ ...added.env }) } : {})
+      // A copy under Tomrade's own prefix is npx's global folder only when npm is told that prefix.
+      ...(Object.keys(added.env).length || cli ? { env: () => ({ ...added.env, ...(cli?.prefix ? { NPM_CONFIG_PREFIX: cli.prefix } : {}) }) } : {})
     }
   };
 }

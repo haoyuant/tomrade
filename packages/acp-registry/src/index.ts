@@ -126,7 +126,8 @@ export class AcpRegistry extends Service {
     }
     for (const [id, agent] of want) {
       if (this.registered.has(id)) continue;
-      const dispose = this.ctx.localAgents.register(specOf(agent), { cli: new NpxPackage(agent.package), acpAuth: true });
+      const cli = new NpxPackage(agent.package);
+      const dispose = this.ctx.localAgents.register(specOf(agent, cli), { cli, acpAuth: true });
       this.registered.set(id, { manifest: JSON.stringify(agent), dispose });
     }
   }
