@@ -121,6 +121,13 @@ describe("an ACP agent as an engine", () => {
       expect(JSON.parse(fs.readFileSync(path.join(dir, "acp-models.json"), "utf8")).fake.models).toEqual(LISTED);
     });
 
+    it("puts its own machine-wide picks before the model and effort", () => {
+      const region = { key: "region", title: "Version", global: true, choices: [{ value: "china" }, { value: "international" }] };
+      const engine = createAcpEngine(ctx, spec({ picks: [region] }));
+      expect(engine.local!.picks!()[0]).toEqual(region);
+      expect(engine.local!.picks!()[1]).toMatchObject({ key: "model" });
+    });
+
     it("shows what was kept at once after a restart, without asking", async () => {
       fs.writeFileSync(path.join(dir, "acp-models.json"), JSON.stringify({ fake: { models: [{ value: "kept/one" }], efforts: [{ value: "high" }] } }));
       const engine = createAcpEngine(ctx, spec());
