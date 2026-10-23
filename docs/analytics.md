@@ -40,8 +40,8 @@ more than 60 batches an hour for one anonymous id is `429`.
 The region is inferred at ingest from the edge's country header
 (`cf-ipcountry`, `x-vercel-ip-country` or `x-tomrade-country`) and reduced to
 `cn`, `apac`, `eu`, `na` or `other` inside the function. The analytics tables do
-not store the country or plaintext IP. Configure the edge and hosting logs to exclude them too; the SQL migration does not control
-provider logging.
+not store the country or plaintext IP. Configure the edge and hosting logs to
+exclude them too; the SQL migration does not control provider logging.
 
 ## Retention
 
@@ -111,8 +111,8 @@ The aggregator runs in each region on its own detail and writes the three
 aggregate tables there. The dashboard reads both projects with service-role
 keys and adds the rows by `day` × `region` × `feature_id`; no detail row is
 copied across, and no `anon_id` is returned in the report summaries. The
-actor-daily table used locally for distinct counts does contain IDs and stays
-in its own region. Distinct-actor
+actor-daily table behind distinct counts does contain IDs and stays in its own
+region. Distinct-actor
 metrics are added region by region; someone who used Tomrade on both sides in
 one period is counted once per region, the price of never joining identifiers
 across the border.
