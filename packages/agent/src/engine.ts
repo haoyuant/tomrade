@@ -389,6 +389,8 @@ export interface EnginePick {
   pending?: boolean;
   /** The engine asked its agent for the choices and the agent could not answer: why. On the model pick, it cannot run a turn yet. */
   failed?: string;
+  /** A machine-wide knob, not a conversation's: settings, the panel and setup write it for every thread; Start keeps the saved value. */
+  global?: boolean;
 }
 
 /** One real turn on an engine, asked for by the person: does it answer? */

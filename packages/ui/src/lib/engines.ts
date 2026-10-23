@@ -1,4 +1,29 @@
-import type { EngineTry, EngineView } from "@tomradex/agent";
+import type { EnginePick, EngineTry, EngineView } from "@tomradex/agent";
+import type { MessageKey } from "./i18n";
+
+/** What a translated message reads as: useI18n().t, for helpers outside a render. */
+export type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
+
+/** The CodeBuddy edition pick: a machine-wide knob, named and worded here so every surface agrees. */
+const REGION_LABELS: Record<string, MessageKey> = {
+  auto: "agentPanel.regionAuto",
+  china: "agentPanel.regionChina",
+  international: "agentPanel.regionInternational"
+};
+
+/** A pick's heading: the localized names for the two original knobs and the edition; a plugin's own title otherwise. */
+export function pickTitleOf(t: Translate, pick: EnginePick): string {
+  if (pick.key === "model" || pick.key === "profile") return t("agentPanel.modelHead");
+  if (pick.key === "effort") return t("agentPanel.effortHead");
+  if (pick.key === "region") return t("agentPanel.regionHead");
+  return pick.title;
+}
+
+/** A choice's label: the edition's choices carry stable values, so their words come from the interface, not the plugin. */
+export function pickChoiceName(t: Translate, pick: EnginePick, choice: { value: string; label?: string; searchesWeb?: boolean }): string {
+  const known = pick.key === "region" ? REGION_LABELS[choice.value] : undefined;
+  return known ? t(known) : (choice.label ?? choice.value);
+}
 
 /**
  * Whether this machine has the engine at all. An in-app engine is here by

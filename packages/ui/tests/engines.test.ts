@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
-import type { EngineTry, EngineView, LocalCliStatus } from "@tomradex/agent";
-import { detectedHere, failedTry } from "../src/lib/engines";
+import type { EnginePick, EngineTry, EngineView, LocalCliStatus } from "@tomradex/agent";
+import { detectedHere, failedTry, pickChoiceName, pickTitleOf } from "../src/lib/engines";
+import { agentPanel } from "../src/lib/i18n-messages/agentPanel";
 import { localCli } from "../src/lib/i18n-messages/localCli";
 import { engineStateLabel } from "../src/lib/localCli";
 
@@ -11,6 +12,17 @@ const t = (key: string, vars: Record<string, string | number> = {}): string => {
   const text = (localCli.en as Record<string, string>)[key.replace(/^localCli\./, "")] ?? key;
   return text.replace(/{{(\w+)}}/g, (_match, name: string) => String(vars[name] ?? ""));
 };
+
+const words = (key: string): string => (agentPanel.en as Record<string, string>)[key.replace(/^agentPanel\./, "")] ?? key;
+
+it("words the CodeBuddy edition pick for the interface, not the plugin", () => {
+  const pick: EnginePick = { key: "region", title: "Version", choices: [] };
+  expect(pickTitleOf(words, pick)).toBe("Version");
+  expect(pickChoiceName(words, pick, { value: "china", label: "China edition" })).toBe("China edition");
+  expect(pickChoiceName(words, pick, { value: "international", label: "International" })).toBe("International");
+  // Another plugin's pick keeps its own words.
+  expect(pickChoiceName(words, { key: "profile", title: "Profile", choices: [] }, { value: "work", label: "Work" })).toBe("Work");
+});
 
 it("lists an engine whose CLI is on this machine, whatever state it is in", () => {
   expect(detectedHere({ ok: true, cli: cli({ state: "ready" }) })).toBe(true);

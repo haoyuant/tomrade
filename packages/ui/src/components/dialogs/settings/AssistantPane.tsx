@@ -8,7 +8,7 @@ import { Icon } from "~/components/icons";
 import { ProviderInstallProblem } from "~/components/setup/QuickModelSetup";
 import { Fold, FoldChevron, FoldChevronSpace, SectionHead, Tag } from "~/components/ui/atoms";
 import { invoke } from "~/lib/api";
-import { detectedHere, failedTry } from "~/lib/engines";
+import { detectedHere, failedTry, pickChoiceName, pickTitleOf } from "~/lib/engines";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { engineStateLabel, engineStatus } from "~/lib/localCli";
 import { keys, usePlugins } from "~/lib/queries";
@@ -460,7 +460,7 @@ function EnginePickField({ engine, pick, value, onCommit }: { engine: EngineView
     setCustom(false);
     commit(v);
   };
-  const title = pick.key === "model" || pick.key === "profile" ? t("settingsDialog.modelLabel") : pick.key === "effort" ? t("settingsDialog.effortLabel") : pick.title;
+  const title = pickTitleOf(t, pick);
   const id = `engPick-${engine.id}-${pick.key}`;
   return (
     <div className="field">
@@ -469,7 +469,7 @@ function EnginePickField({ engine, pick, value, onCommit }: { engine: EngineView
         <option value="">{t("settingsDialog.pickDefaultOption")}</option>
         {pick.choices.map((c) => (
           <option key={c.value} value={c.value}>
-            {c.searchesWeb ? t("settingsDialog.pickSearchesWeb", { label: c.label ?? c.value }) : (c.label ?? c.value)}
+            {c.searchesWeb ? t("settingsDialog.pickSearchesWeb", { label: pickChoiceName(t, pick, c) }) : pickChoiceName(t, pick, c)}
           </option>
         ))}
         {pick.freeText && <option value={CUSTOM_PICK}>{t("settingsDialog.pickCustomOption")}</option>}
