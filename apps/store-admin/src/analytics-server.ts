@@ -1,12 +1,21 @@
+import { readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { endpoints, filters, loadDashboard, type DashboardData, type Filters } from "./analytics-data.js";
 import { renderDashboard } from "./analytics-page.js";
+
+/** The page's only scripts, served from this package so the page needs no network beyond loopback. */
+const assets: Record<string, () => string> = {
+  "/assets/echarts.min.js": () => createRequire(import.meta.url).resolve("echarts/dist/echarts.min.js"),
+  "/assets/dashboard.js": () => fileURLToPath(new URL("./analytics-client.js", import.meta.url))
+};
 
 export function dashboardServer(load: (f: Filters) => Promise<DashboardData>): Server {
   return createServer(async (req, res) => {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+    res.setHeader("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
     res.setHeader("X-Content-Type-Options", "nosniff");
     // Reject DNS rebinding and cross-origin requests to the local admin service.
     const host = `127.0.0.1:${(res.socket?.address() as { port: number }).port}`;
@@ -14,6 +23,15 @@ export function dashboardServer(load: (f: Filters) => Promise<DashboardData>): S
       res.writeHead(403); res.end(); return;
     }
     const url = new URL(req.url ?? "/", `http://${host}`);
+    const asset = req.method === "GET" ? assets[url.pathname] : undefined;
+    if (asset) {
+      try {
+        const body = await readFile(asset());
+        res.setHeader("Content-Type", "text/javascript; charset=utf-8");
+        res.end(body);
+      } catch { res.writeHead(404); res.end(); }
+      return;
+    }
     if (req.method !== "GET" || url.pathname !== "/") { res.writeHead(404); res.end(); return; }
     let f: Filters;
     try { f = filters(url.searchParams); }

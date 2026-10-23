@@ -50,11 +50,16 @@ describe("internal analytics dashboard", () => {
   });
   it("renders both metrics, daily active IDs, selection, retention and translated empty states", () => {
     const html = renderDashboard(f, sample());
-    for (const text of ["Daily overview", "Active minutes", "Uses", "Next-day retention", "backlog.board", "2026-10-22", "50%", "<svg"]) expect(html).toContain(text);
+    for (const text of ["Daily overview", "Active minutes", "Uses", "Next-day retention", "backlog.board", "2026-10-22", "50%", 'id="chart-overview"', "/assets/dashboard.js"]) expect(html).toContain(text);
+    const payload = JSON.parse(/<script type="application\/json" id="dashboard-data">(.*?)<\/script>/s.exec(html)![1]!);
+    expect(payload).toMatchObject({ from: "2026-09-24", to: "2026-10-23", feature: "backlog.board", retention: [{ day: "2026-10-20", mature: true }] });
+    expect(payload.days[0]).not.toHaveProperty("region");
     expect(renderDashboard(f, mergeReports([]))).toContain("No usage data");
     expect(renderDashboard({ ...f, lang: "zh" }, undefined, "failed")).toContain("无法加载使用数据");
     const malicious = sample(); malicious.report.features[0]!.feature_id = '<script>alert("x")</script>';
-    expect(renderDashboard(f, malicious)).not.toContain('<script>');
+    const escaped = renderDashboard(f, malicious);
+    expect(escaped).not.toContain('<script>');
+    expect(escaped).not.toContain("</script>alert");
     const pending = sample(); pending.report.retention[0]!.day = "2026-10-22";
     expect(renderDashboard(f, pending)).toContain("Pending");
   });
@@ -71,6 +76,12 @@ describe("internal analytics dashboard", () => {
       req.on("error", reject); req.end();
     });
     expect(foreignHost).toBe(403);
+    expect(response.headers.get("content-security-policy")).toContain("script-src 'self'");
+    const echarts = await fetch(`${url}/assets/echarts.min.js`);
+    expect(echarts.status).toBe(200);
+    expect(echarts.headers.get("content-type")).toContain("text/javascript");
+    expect((await fetch(`${url}/assets/../package.json`)).status).toBe(404);
+    expect((await fetch(`${url}/assets/other.js`)).status).toBe(404);
     expect((await fetch(`${url}/?days=400`)).status).toBe(400);
     expect(calls).toBe(1);
     const failed = await start(async () => { throw new Error("upstream secret key"); });
