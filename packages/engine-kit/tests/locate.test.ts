@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  archiveFolder,
   CliLocator,
   cmdArgument,
   cmdLine,
@@ -120,6 +121,16 @@ describe.skipIf(process.platform === "win32")("finding a local CLI", () => {
     const first = cli(path.join(home, "first"), "exit 1");
     expect(findCommand(NAME, { ...host, env: { ...host.env, PATH: `${path.join(home, "first")}:${host.env.PATH}` } })).toBe(first);
     expect(runs).toEqual([]);
+  });
+
+  it("finds an agent unpacked from an archive installer in Tomrade's own agents folder, newest release first", async () => {
+    const { host, home } = setup();
+    const agents = path.join(home, "agents");
+    host.env.TOMRADE_AGENTS_DIR = agents;
+    cli(path.join(agents, "agy", "agy-acp-server-1.3.0-macos-arm64", "bin"), 'echo "fake-cli 1.3.0"');
+    const newer = cli(path.join(agents, "agy", "agy-acp-server-1.4.1-macos-arm64", "bin"), 'echo "fake-cli 1.4.1"');
+    expect(archiveFolder("agy", "https://dl.google.com/agy-extensions/releases/macos/agy-acp-server-1.4.1-macos-arm64.zip")).toBe(path.join("agy", "agy-acp-server-1.4.1-macos-arm64", "bin"));
+    expect(await new CliLocator(NAME, host).locate()).toMatchObject({ state: "ready", path: newer, source: "known", version: "1.4.1" });
   });
 
   it("finds an agent installed with the borrowed npm in Tomrade's own prefix", async () => {

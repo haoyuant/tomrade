@@ -95,7 +95,7 @@ app.whenReady().then(async () => {
   // Before boot: plugins spawn CLIs (MCP servers, agents, git) from the first moment.
   const shellProblem = await adoptShellEnv();
   // After the shell's PATH, so its folders stay ahead and a system Node always wins over the borrowed one.
-  const borrowed = setUpBorrowedNode({ userData: machine.userData, npmDir: path.join(here, "../vendor/npm"), runtime: nodeRuntime() });
+  const borrowed = setUpBorrowedNode({ userData: machine.userData, npmDir: path.join(here, "../vendor/npm"), runtime: nodeRuntime(), agentsDir: path.join(machine.userData, "agents") });
   // After it, so a proxy the shell sets stands.
   await followSystemProxy((url) => session.defaultSession.resolveProxy(url));
 

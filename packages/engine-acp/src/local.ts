@@ -183,16 +183,21 @@ function terminalEngine(ctx: Context, spec: Written, locator: CliLocator): Engin
   };
 }
 
+/** How an archive installer reads as a command: the app downloads and unpacks it itself. */
+const archiveCommand = (step: { url: string; file: string; platform: { os: string; arch: string } }): string =>
+  `download ${step.url} and unpack ${step.file} for ${step.platform.os}/${step.platform.arch}`;
+
 /** An installer script as the command the app runs for the person; the plugin names only its address. */
 const installCommand = (step: string | LocalAgentInstaller): string =>
-  typeof step === "string" ? step : "script" in step ? `curl -fsSL ${step.script} | bash` : "npm" in step ? `npm install -g ${step.npm}` : `irm ${step.powershell} | iex`;
+  typeof step === "string" ? step : "script" in step ? `curl -fsSL ${step.script} | bash` : "npm" in step ? `npm install -g ${step.npm}` : "powershell" in step ? `irm ${step.powershell} | iex` : archiveCommand(step.archive);
 
 /** The declared installers as what the app can run itself; a bare command string is only for terminals. */
 const installerOf = (step: string | LocalAgentInstaller): EngineInstaller | null =>
   typeof step === "string" ? null
     : "script" in step ? { kind: "script", url: step.script, shell: "sh" }
     : "npm" in step ? { kind: "npm", package: step.npm }
-    : { kind: "script", url: step.powershell, shell: "powershell" };
+    : "powershell" in step ? { kind: "script", url: step.powershell, shell: "powershell" }
+    : { kind: "archive", url: step.archive.url, file: step.archive.file, platform: step.archive.platform };
 
 /** The spec with its setup written out as commands, and `{install}` in the not-found words as the first of them. */
 function written(spec: Spec): Written {

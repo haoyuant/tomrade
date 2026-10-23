@@ -3,7 +3,7 @@ import { Context, Service } from "cordis";
 import { z } from "zod";
 import type { Engine, EngineSetupProgress, EngineSetupStep, EngineSignIn } from "@tomradex/agent";
 import type {} from "@tomradex/ipc";
-import { chosenCommand, localCli } from "@tomradex/engine-kit";
+import { archiveFolder, chosenCommand, localCli } from "@tomradex/engine-kit";
 import { installArgs, ManagedCopies, type ManagedOffer } from "./managed.js";
 import { machineSetupHost, runCommand, runInstall, runSignIn, type SetupHost, type SetupRunResult } from "./run.js";
 
@@ -153,6 +153,11 @@ export class AgentSetup extends Service {
       engineId: engine.id,
       installers: engine.local?.setup?.installers ?? [],
       host: this.host,
+      // An archive lands in a folder of Tomrade's own that the locator already reads; one it still misses becomes the engine's command, so no one edits Settings.
+      adopt: async (file) => {
+        const agent = this.ctx.agent.settingsOf();
+        this.ctx.settings.set({ ...this.ctx.settings.get(), agent: { ...agent, engines: { ...agent.engines, [engine.id]: { ...(agent.engines[engine.id] ?? {}), command: file } } } });
+      },
       detect: async () => {
         const state = await engine.available({ fresh: true });
         const cli = state.cli;
@@ -261,6 +266,7 @@ export class AgentSetup extends Service {
 }
 
 export default AgentSetup;
-export { applicableInstallers, classifyFailure, installerLaunch, machineSetupHost, runCommand, runInstall, runSignIn } from "./run.js";
+export { applicableInstallers, classifyFailure, installerLaunch, machineSetupHost, runArchive, runCommand, runInstall, runSignIn } from "./run.js";
+export { ArchiveError, archiveDir, listZip, unpackArchive, type ArchiveTarget } from "./archive.js";
 export { ManagedCopies, type ManagedConfig, type ManagedOffer, type ManagedState } from "./managed.js";
-export type { InstallDeps, SetupHost, SetupRunResult, SignInDeps } from "./run.js";
+export type { ArchiveResponse, InstallDeps, SetupHost, SetupRunResult, SignInDeps } from "./run.js";

@@ -77,6 +77,23 @@ it("takes an npm installer only as a package's name", async () => {
   expect(rec.invalid).toEqual(['local agent "acme_two": an npm installer is a package\'s name, not "acme; rm -rf ~"']);
 });
 
+it("takes an archive installer only as an https zip, with the file inside it and the platform it fits", async () => {
+  const rec = emptyRecording();
+  const ctx = recordingContext("acme", ["agent"], rec);
+  await ctx.agent.localAgent({ id: "acme", title: "Acme", cli: { name: "acme" }, install: "x", setup: { install: [{ archive: { url: "https://acme.example/acme-1.4.1-macos-arm64.zip", file: "acme_server.par", platform: { os: "darwin", arch: "arm64" } } }] } });
+  expect(rec.invalid).toEqual([]);
+  expect(rec.localAgentInstallers).toEqual(["acme"]);
+  expect(rec.localAgentOneClick).toEqual(["acme"]);
+  expect(rec.localAgentArchives).toEqual(["acme"]);
+  await ctx.agent.localAgent({ id: "acme_two", title: "Acme", cli: { name: "acme" }, install: "x", setup: { install: [{ archive: { url: "http://acme.example/acme.zip", file: "", platform: { os: "beos", arch: "mips" } } as never }] } });
+  expect(rec.invalid).toEqual([
+    'local agent "acme_two": an archive installer is a zip\'s https address, not "http://acme.example/acme.zip"',
+    'local agent "acme_two": an archive installer names the file to unpack, not ""',
+    'local agent "acme_two": an archive installer\'s platform is { os: one of darwin, win32, linux, arch: one of x64, arm64, ia32, arm }, not {"os":"beos","arch":"mips"}'
+  ]);
+  expect(rec.localAgentArchives).toEqual(["acme", "acme_two"]);
+});
+
 it("takes a download page only as an https address, and a desktop app only with whether it ships the CLI", async () => {
   const rec = emptyRecording();
   const ctx = recordingContext("acme", ["agent"], rec);
