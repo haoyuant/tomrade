@@ -35,6 +35,7 @@ export const keys = {
   account: ["account"] as const,
   announcements: ["announcements"] as const,
   attention: ["attention"] as const,
+  pushStatus: ["attention", "pushStatus"] as const,
   background: ["background"] as const,
   appIcon: ["appIcon"] as const,
   updates: ["updates"] as const,

@@ -6,6 +6,7 @@ export const settingsDialog = {
     groupApp: "App",
     groupPlugins: "Plugins",
     manageLabel: "Manage plugins",
+    pushFailed: "The last phone push ({{channel}}) failed: {{reason}}",
 
     appearanceLabel: "Appearance",
     appearanceLede:
@@ -231,6 +232,7 @@ export const settingsDialog = {
     groupApp: "应用",
     groupPlugins: "插件",
     manageLabel: "管理插件",
+    pushFailed: "最近一次手机推送（{{channel}}）没有成功：{{reason}}",
 
     appearanceLabel: "外观",
     appearanceLede: "选择四款内置主题，或创建自己的配色。默认主题「曙光」以暖纸色搭配朱红色点缀。",

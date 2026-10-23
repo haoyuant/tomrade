@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 vi.mock("electron", () => ({ app: {}, BrowserWindow: {}, Notification: {} }));
-import { NOTIFICATIONS_SECTION, remindAway, Teller, type AttentionEntry, type AttentionNote, type NotificationPrefs } from "../src/attention.js";
+import { NOTIFICATIONS_SECTION, phonePushRequest, pushTargets, remindAway, Teller, type AttentionEntry, type AttentionNote, type NotificationPrefs } from "../src/attention.js";
 import { DESKTOP_WORDS } from "../src/words.js";
 
 const WORDS = DESKTOP_WORDS("en");
@@ -123,6 +123,31 @@ it("says a conversation can go on once its usage limit lifts, unless waits are s
   state.prefs = { ...state.prefs, waiting: false };
   teller.lifted(entry);
   expect(told.map((n) => [n.title, n.body])).toEqual([["TOM-9 · Claude Code can go on", "The usage limit has lifted."]]);
+});
+
+it("puts the ticket and how long it waited on a phone, and the agent's words only when asked", () => {
+  const note: AttentionNote = { title: "TOM-12 · Claude Code needs your approval", body: "Run the deploy?", entry: entry("thread:t1", "permission", { itemKey: "TOM-12" }) };
+  const prefs: NotificationPrefs = { ...NOTIFICATIONS_SECTION.defaults, away: "push", pushNtfyCredential: "https://ntfy.sh/x" };
+  expect(phonePushRequest(prefs, note, "Fix the login redirect", 3 * 60_000, WORDS)).toEqual({
+    title: "TOM-12 · Claude Code needs your approval",
+    body: "Fix the login redirect\nWaited 3 min"
+  });
+  // The message passes through a service Tomrade does not run: what the agent said is opt-in.
+  expect(phonePushRequest(prefs, note, null, 40_000, WORDS)?.body).toBe("Waited 40s");
+  expect(phonePushRequest({ ...prefs, pushSummary: true }, note, null, 40_000, WORDS)?.body).toContain("Run the deploy?");
+  // A run that finished did not wait: nothing to say about a duration.
+  expect(phonePushRequest(prefs, { ...note, event: "finished" }, "Fix it", 1_000, WORDS)?.body).toBe("Fix it");
+});
+
+it("pushes only where the person chose that, and only to the addresses they gave", () => {
+  const note: AttentionNote = { title: "TOM-12 · Claude Code needs your approval", body: "Run the deploy?", entry: entry("thread:t1", "permission") };
+  const im: NotificationPrefs = { ...NOTIFICATIONS_SECTION.defaults, away: "im", pushBarkCredential: "https://api.day.app/key" };
+  expect(phonePushRequest(im, note, "Fix it", 60_000, WORDS)).toBeNull();
+  expect(phonePushRequest({ ...im, away: "push", pushBarkCredential: "" }, note, "Fix it", 60_000, WORDS)).toBeNull();
+  expect(pushTargets({ ...im, away: "push", pushBarkCredential: "https://api.day.app/key", pushFeishuCredential: "https://open.feishu.cn/hook" })).toEqual([
+    { channel: "bark", url: "https://api.day.app/key" },
+    { channel: "feishu", url: "https://open.feishu.cn/hook" }
+  ]);
 });
 
 it("reminds in IM only when that is where the person chose to be reminded", () => {
