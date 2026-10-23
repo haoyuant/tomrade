@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { AUTO_TERMINAL, GitBashMissing, SYSTEM_TERMINAL, TerminalSettings, bareCommand, fillTemplate, gitBash, herdrFallbackNote, launchTerminal, locatedCommand, machineTerminalSettings, openOnLinux, openOnWindows, optionFlags, pathExport, powerShellPath, setupOnWindows, setupTerminal, terminalApp, terminalApps, terminalPath, terminalTemplate, withOptions, writeGeminiHome, type HerdrTerminal } from "@tomradex/code-link";
+import { AUTO_TERMINAL, GitBashMissing, fitsCommandLine, promptAsArgument, SYSTEM_TERMINAL, TerminalSettings, bareCommand, fillTemplate, gitBash, herdrFallbackNote, launchTerminal, locatedCommand, machineTerminalSettings, openOnLinux, openOnWindows, optionFlags, pathExport, powerShellPath, setupOnWindows, setupTerminal, terminalApp, terminalApps, terminalPath, terminalTemplate, withOptions, writeGeminiHome, type HerdrTerminal } from "@tomradex/code-link";
 
 it("lists installed terminal apps with the special launch choices", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-terminal-apps-"));
@@ -359,5 +359,28 @@ describe("a terminal on a machine without Node", () => {
     const win = terminalPath({ path: "C:\\Users\\mira\\AppData\\Roaming\\npm\\pi.cmd", pathDirs: ["D:\\tools"] }, { TOMRADE_NODE_SHIMS: "C:\\Users\\mira\\AppData\\Roaming\\Tomrade\\borrowed-node\\bin" }, "win32");
     expect(pathExport(win, "win32")).toBe(`export PATH='/c/Users/mira/AppData/Roaming/npm:/d/tools':"$PATH":'/c/Users/mira/AppData/Roaming/Tomrade/borrowed-node/bin'`);
     expect(powerShellPath(win)).toBe("$env:Path = 'C:\\Users\\mira\\AppData\\Roaming\\npm;' + 'D:\\tools;' + $env:Path + ';C:\\Users\\mira\\AppData\\Roaming\\Tomrade\\borrowed-node\\bin'");
+  });
+});
+
+describe("a prompt on the command line", () => {
+  it("counts bytes per argument on Linux, bytes in all on macOS, and UTF-16 units of the whole line on Windows", () => {
+    const rest = '"claude" --mcp-config "/tmp/mcp.json"';
+    // Linux: one argument of 128 KiB is refused however little else there is; 3-byte characters count as 3.
+    expect(fitsCommandLine(["x".repeat(120_000), rest], "linux")).toBe(true);
+    expect(fitsCommandLine(["x".repeat(131_072), rest], "linux")).toBe(false);
+    expect(fitsCommandLine(["中".repeat(44_000), rest], "linux")).toBe(false);
+    // macOS: up to about 1 MiB, with room left for the environment.
+    expect(fitsCommandLine(["x".repeat(600_000), rest], "darwin")).toBe(true);
+    expect(fitsCommandLine(["x".repeat(900_000), rest], "darwin")).toBe(false);
+    // Windows: the whole line in UTF-16 units, where a CJK character is one and an escaped quote two.
+    expect(fitsCommandLine(["中".repeat(30_000), rest], "win32")).toBe(true);
+    expect(fitsCommandLine(["x".repeat(32_000), rest], "win32")).toBe(false);
+    expect(fitsCommandLine(['"'.repeat(16_000), rest], "win32")).toBe(false);
+  });
+
+  it("knows a template that passes the prompt's text from one that reads its file", () => {
+    for (const key of ["claudeCommand", "codexCommand", "geminiCommand", "opencodeCommand", "cursorCommand"] as const) expect(promptAsArgument(TerminalSettings.parse({})[key])).toBe(true);
+    expect(promptAsArgument("aider --message \"$(<{prompt})\"")).toBe(true);
+    for (const key of ["hermesCommand", "dshCommand"] as const) expect(promptAsArgument(TerminalSettings.parse({})[key])).toBe(false);
   });
 });

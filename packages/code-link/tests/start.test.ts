@@ -1633,6 +1633,17 @@ describe("starting a ticket", () => {
     codeLink.sessions.sweep(project.id);
     expect(codeLink.sessionsOf(project.id, item.id)[0]).toMatchObject({ id: again.sessionId, state: "ended" });
     expect(ctx.agent.store.messages(project.id, result.threadId)).toEqual([]);
+
+    // A prompt past any platform's command line is not handed over as an argument; its file stays to paste from.
+    const long = ticket("Long brief");
+    const huge = "x".repeat(2 * 1024 * 1024);
+    const refused = await codeLink.start(project.id, long.id, { mode: "terminal", message: huge });
+    expect(refused).toMatchObject({ ok: false, gate: "prompt", message: expect.stringContaining("too long for this computer's command line") });
+    const saved = /saved in (\S+prompt\.md)/.exec(refused.ok ? "" : refused.message)?.[1];
+    expect(fs.readFileSync(saved!, "utf8")).toContain(huge);
+    // A template that reads the file takes it.
+    ctx.settings.set({ ...ctx.settings.get(), codeLink: { terminal: "none", claudeCommand: '"{bin}" --query-file "{prompt}"' } });
+    expect(await codeLink.start(project.id, long.id, { mode: "terminal", message: huge })).toMatchObject({ ok: true, command: expect.stringMatching(/--query-file ".*prompt\.md"$/) });
   });
 
   it("starts Gemini CLI and OpenCode only in a terminal, each with its own session-only MCP config", async () => {
