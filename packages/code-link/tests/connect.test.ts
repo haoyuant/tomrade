@@ -572,6 +572,11 @@ describe("connecting a repository", () => {
     await expect(codeLink.connect(project.id, repo.id)).rejects.toThrow("port 19090 is held by the installed Tomrade 1.2.3 (pid 4242)");
     ctx.settings.set({ ...ctx.settings.get(), language: "zh" });
     await expect(codeLink.connect(project.id, repo.id)).rejects.toThrow("19090 端口被正式版 1.2.3（进程 4242）占用");
+    // A port Windows reserves: no one to quit, only another port.
+    ctx.mcp.clash = { port: 19090, heldBy: null, reserved: true };
+    await expect(codeLink.connect(project.id, repo.id)).rejects.toThrow("Windows 保留了 19090 端口");
+    ctx.settings.set({ ...ctx.settings.get(), language: "en" });
+    await expect(codeLink.connect(project.id, repo.id)).rejects.toThrow(/Windows reserves port 19090 .*TOMRADE_MCP_PORT to a port outside the reserved ranges/);
     expect(git(["branch", "--list", "tomrade/connect"], checkout)).toBe("");
     expect(git(["ls-remote", "--heads", remote, "tomrade/connect"], checkout)).toBe("");
     expect(git(["worktree", "list"], checkout).split("\n")).toHaveLength(1);

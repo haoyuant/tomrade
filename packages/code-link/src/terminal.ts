@@ -35,17 +35,55 @@ export type TerminalSettings = z.infer<typeof TerminalSettings>;
  * at again each time — herdr once it is installed, the system terminal until
  * then — and one the person picked stays as it is.
  */
-export async function machineTerminalSettings(stored: unknown, herdr: Pick<HerdrTerminal, "installed"> | null | undefined): Promise<TerminalSettings> {
+export async function machineTerminalSettings(stored: unknown, herdr: Pick<HerdrTerminal, "installed"> | null | undefined, platform: NodeJS.Platform = process.platform): Promise<TerminalSettings> {
   const settings = TerminalSettings.parse(stored ?? {});
   if (settings.terminal !== AUTO_TERMINAL) return settings;
-  return { ...settings, terminal: (await herdr?.installed()) ? "herdr" : SYSTEM_TERMINAL };
+  // herdr has no Windows build and its bridge refuses Windows.
+  return { ...settings, terminal: platform !== "win32" && (await herdr?.installed()) ? "herdr" : SYSTEM_TERMINAL };
 }
 
 const TERMINAL_APPS = new Set(["terminal", "iterm", "iterm2", "warp", "ghostty", "alacritty", "kitty", "wezterm", "hyper", "tabby", "rio", "wave"]);
 
-/** Installed macOS terminal bundles that `open -a` can launch. */
-export function terminalApps(roots = ["/Applications", path.join(os.homedir(), "Applications"), "/System/Applications"], platform = process.platform): string[] {
-  if (platform !== "darwin") return ["herdr", "none"];
+/**
+ * Linux emulators Tomrade knows, each with what it runs a program after: x-terminal-emulator and gnome-terminal
+ * are the default chain, the rest are picked by name.
+ */
+const LINUX_TERMINALS: Record<string, string[]> = {
+  "x-terminal-emulator": ["-e"],
+  "gnome-terminal": ["--"],
+  konsole: ["-e"],
+  "xfce4-terminal": ["-x"],
+  kitty: [],
+  alacritty: ["-e"],
+  wezterm: ["start", "--"]
+};
+
+/** The arguments that make a Linux emulator run `bash script`; one Tomrade does not know gets the common `-e`. */
+function linuxArgs(terminal: string, script: string): string[] {
+  return [...(LINUX_TERMINALS[path.posix.basename(terminal)] ?? ["-e"]), "bash", script];
+}
+
+/** The Linux emulators on PATH, and $TERMINAL where it names one that is there. */
+function linuxTerminals(env: NodeJS.ProcessEnv = process.env, runnable: (file: string) => boolean = isExecutable): string[] {
+  const dirs = (env.PATH ?? "").split(":").filter(Boolean);
+  const there = (name: string) => (name.includes("/") ? runnable(name) : dirs.some((dir) => runnable(path.posix.join(dir, name))));
+  const own = env.TERMINAL?.trim();
+  return [...new Set([...(own ? [own] : []), ...Object.keys(LINUX_TERMINALS)])].filter(there);
+}
+
+function isExecutable(file: string): boolean {
+  try {
+    fs.accessSync(file, fs.constants.X_OK);
+    return fs.statSync(file).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** The terminal choices on this machine: installed macOS bundles that `open -a` can launch, the Linux emulators found, then herdr (not on Windows) and none. */
+export function terminalApps(roots = ["/Applications", path.join(os.homedir(), "Applications"), "/System/Applications"], platform = process.platform, env: NodeJS.ProcessEnv = process.env): string[] {
+  if (platform === "win32") return ["none"];
+  if (platform !== "darwin") return [...linuxTerminals(env), "herdr", "none"];
   const found = new Set<string>();
   const scan = (dir: string, depth: number) => {
     let entries: fs.Dirent[];
@@ -139,10 +177,28 @@ export interface LaunchResult {
 /** Where a herdr launch goes when herdr does not answer; off macOS the platform's own emulator is used whatever the name. */
 export const SYSTEM_TERMINAL = "Terminal";
 
-/** Git Bash where Git for Windows installs it (the shell plugin's findBash looks in the same places); WSL's bash.exe sees another filesystem, so a bare `bash` on PATH never counts. */
+/**
+ * Git Bash where Git for Windows and Scoop install it, else beside the git on PATH (`cmd\git.exe` → `bin\bash.exe`),
+ * else a bash.exe on PATH. WSL's bash.exe (System32, the WindowsApps alias) sees another filesystem, so it never counts.
+ */
 export function gitBash(env: NodeJS.ProcessEnv = process.env, exists: (file: string) => boolean = fs.existsSync): string | null {
-  const roots = [env.ProgramFiles, env["ProgramFiles(x86)"], env.LOCALAPPDATA && path.win32.join(env.LOCALAPPDATA, "Programs")];
-  return roots.filter((dir): dir is string => !!dir).map((dir) => path.win32.join(dir, "Git", "bin", "bash.exe")).find(exists) ?? null;
+  const w = path.win32;
+  const scoop = env.SCOOP ?? (env.USERPROFILE && w.join(env.USERPROFILE, "scoop"));
+  const roots = [env.ProgramFiles, env["ProgramFiles(x86)"], env.LOCALAPPDATA && w.join(env.LOCALAPPDATA, "Programs")].filter((dir): dir is string => !!dir).map((dir) => w.join(dir, "Git"));
+  if (scoop) roots.push(w.join(scoop, "apps", "git", "current"));
+  const installed = roots.map((dir) => w.join(dir, "bin", "bash.exe")).find(exists);
+  if (installed) return installed;
+  const pathValue = Object.entries(env).find(([key]) => key.toUpperCase() === "PATH")?.[1] ?? "";
+  const dirs = pathValue.split(";").map((dir) => dir.trim().replace(/^"(.*)"$/, "$1")).filter(Boolean);
+  const exts = (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").map((ext) => ext.trim()).filter(Boolean);
+  for (const dir of dirs) {
+    if (!exts.some((ext) => exists(w.join(dir, `git${ext.toLowerCase()}`)))) continue;
+    // cmd and bin sit beside bin; mingw64\bin and usr\bin one level deeper.
+    const beside = [w.join(dir, "..", "bin", "bash.exe"), w.join(dir, "..", "..", "bin", "bash.exe")].find(exists);
+    if (beside) return beside;
+  }
+  const wsl = (dir: string) => /\\(system32|sysnative)$|\\windowsapps$/i.test(w.normalize(dir).replace(/\\+$/, ""));
+  return dirs.filter((dir) => !wsl(dir)).map((dir) => w.join(dir, "bash.exe")).find(exists) ?? null;
 }
 
 /** Thrown when Windows has no Git Bash to run a session's script. */
@@ -204,11 +260,12 @@ export function openOnWindows(script: string, cwd: string, bash: string | null =
  * A script on Linux: detached, since most emulators stay in the foreground until their window closes; the script
  * as its own argument, as several emulators read one `-e` string as a program name. Resolves with the app it opened.
  */
-export function openOnLinux(script: string, cwd: string, launch: typeof spawn = spawn): Promise<string> {
-  return startDetached(launch, "x-terminal-emulator", ["-e", "bash", script], cwd).then(
-    () => "x-terminal-emulator",
-    () => startDetached(launch, "gnome-terminal", ["--", "bash", script], cwd).then(() => "gnome-terminal")
-  );
+export function openOnLinux(script: string, cwd: string, launch: typeof spawn = spawn, terminal: string = SYSTEM_TERMINAL): Promise<string> {
+  const chain = ["x-terminal-emulator", "gnome-terminal"];
+  // One picked by name goes first; the default chain still catches it when it cannot start.
+  if (terminal !== SYSTEM_TERMINAL && !chain.includes(terminal)) chain.unshift(terminal);
+  else if (terminal === "gnome-terminal") chain.reverse();
+  return chain.reduce<Promise<string>>((tried, app) => tried.catch(() => startDetached(launch, app, linuxArgs(app, script), cwd).then(() => app)), Promise.reject(new Error("no terminal")));
 }
 
 /** Resolves once the app has started, without waiting for it to exit; rejects when it cannot start. */
@@ -228,7 +285,7 @@ export const terminalApp = {
   async open(terminal: string, script: string, cwd: string = os.homedir()): Promise<void> {
     if (process.platform === "darwin") await run("open", ["-a", terminal, script]);
     else if (process.platform === "win32") await openOnWindows(script, cwd);
-    else await openOnLinux(script, cwd);
+    else await openOnLinux(script, cwd, spawn, terminal);
   }
 };
 
@@ -309,8 +366,12 @@ export async function launchTerminal(input: LaunchInput, terminal: string, herdr
   const pidFile = path.join(input.dir, "pid");
   // Git Bash's $$ is an MSYS pid that process.kill cannot see; /proc/$$/winpid is the Windows one.
   const writePid = platform === "win32" ? `{ cat /proc/$$/winpid 2>/dev/null || echo $$; } > ${shellQuote(pidFile)}` : `echo $$ > ${shellQuote(pidFile)}`;
-  const wrap = (command: string) => ["#!/bin/bash", `cd ${shellQuote(input.cwd)} || exit 1`, writePid, `trap 'rm -f ${shellQuote(pidFile)}' EXIT`, ...exports, command, ""].join("\n");
-  fs.writeFileSync(script, wrap(input.command), { mode: 0o755 });
+  // Windows Terminal and Linux emulators close the window with its shell; a shell of the person's own keeps it open
+  // to read, the pid file gone first as the EXIT trap would have, since exec skips the trap.
+  const keepOpen = `rm -f ${shellQuote(pidFile)}\nexec "\${SHELL:-bash}"`;
+  const wrap = (command: string, stay = false) => ["#!/bin/bash", `cd ${shellQuote(input.cwd)} || exit 1`, writePid, `trap 'rm -f ${shellQuote(pidFile)}' EXIT`, ...exports, command, ...(stay ? [keepOpen] : []), ""].join("\n");
+  const systemWindow = (app: string) => platform !== "darwin" && app !== "none" && app !== "herdr";
+  fs.writeFileSync(script, wrap(input.command, systemWindow(terminal)), { mode: 0o755 });
   // The same wrapper around the resume: the pid file and the token come back with the session.
   if (input.resume) fs.writeFileSync(path.join(input.dir, RESUME_SCRIPT), wrap(input.resume), { mode: 0o755 });
   if (terminal === "none") return { script, launched: false };
@@ -321,6 +382,7 @@ export async function launchTerminal(input: LaunchInput, terminal: string, herdr
     if (pane) return { script, launched: true, paneId: pane.paneId, ...(pane.startedServer ? { herdrStarted: pane.startedServer } : {}) };
     herdrMissing = (await herdr?.installed()) ? "notRunning" : "notInstalled";
     terminal = SYSTEM_TERMINAL;
+    if (systemWindow(terminal)) fs.writeFileSync(script, wrap(input.command, true), { mode: 0o755 });
   }
   const missing = herdrMissing ? { herdrMissing } : {};
   try {
