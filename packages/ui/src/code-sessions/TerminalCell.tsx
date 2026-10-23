@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent } from "react";
 import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import type { WindowPost } from "@tomradex/code-sessions";
 import { onCell, pathForFile, send } from "./bridge";
@@ -171,11 +172,16 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
   useEffect(() => {
     const el = host.current;
     if (!el) return;
-    // A link (OSC 8) opens in the system browser; xterm's own asks with confirm() and then opens an app window.
-    const linkHandler = { activate: (_e: MouseEvent, url: string) => send({ type: "openLink", url }) };
+    // Both plain URLs and OSC 8 links use the system browser rather than an app window.
+    const linkHandler = {
+      activate: (_e: MouseEvent, url: string) => {
+        if (!terminal.hasSelection()) send({ type: "openLink", url });
+      }
+    };
     const terminal = new Terminal({ scrollback: 0, cursorBlink: false, fontFamily: font || "ui-monospace, Menlo, monospace", fontSize: 13, allowProposedApi: false, theme: terminalTheme(), linkHandler });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
+    terminal.loadAddon(new WebLinksAddon(linkHandler.activate));
     terminal.open(el);
     term.current = terminal;
     try {
