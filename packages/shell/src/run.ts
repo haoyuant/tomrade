@@ -7,15 +7,31 @@ const HEAD_CAP = 4000;
 const TAIL_CAP = 12000;
 const KILL_GRACE_MS = 2000;
 
-/** The bash this machine has; on Windows only Git Bash counts, since WSL's bash.exe sees another filesystem. */
-export function findBash(): string | null {
-  const candidates =
-    process.platform === "win32"
-      ? [process.env.ProgramFiles, process.env["ProgramFiles(x86)"], process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, "Programs")]
-          .filter((dir): dir is string => !!dir)
-          .map((dir) => path.join(dir, "Git", "bin", "bash.exe"))
-      : ["/bin/bash", "/usr/bin/bash", "/usr/local/bin/bash"];
-  return candidates.find((p) => fs.existsSync(p)) ?? null;
+/**
+ * The bash this machine has: a usual install place, else PATH. On Windows only Git Bash counts — found
+ * beside a git on PATH (Scoop, another drive) or as bash.exe on PATH — never WSL's launcher, which sees another filesystem.
+ */
+export function findBash(
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+  exists: (file: string) => boolean = fs.existsSync
+): string | null {
+  const win = platform === "win32";
+  const p = win ? path.win32 : path.posix;
+  // Windows env names are case-insensitive ("Path"), while a plain object here is not.
+  const get = (name: string) => (win ? Object.entries(env).find(([k]) => k.toLowerCase() === name.toLowerCase())?.[1] : env[name]);
+  const dirs = (get("PATH") ?? "").split(win ? ";" : ":").filter(Boolean);
+  if (!win) return ["/bin/bash", "/usr/bin/bash", "/usr/local/bin/bash", ...dirs.map((d) => p.join(d, "bash"))].find(exists) ?? null;
+  const fixed = [get("ProgramFiles"), get("ProgramFiles(x86)"), get("LOCALAPPDATA") && p.join(get("LOCALAPPDATA")!, "Programs")]
+    .filter((dir): dir is string => !!dir)
+    .map((dir) => p.join(dir, "Git", "bin", "bash.exe"));
+  const scoop = get("SCOOP") ?? (get("USERPROFILE") && p.join(get("USERPROFILE")!, "scoop"));
+  if (scoop) fixed.push(p.join(scoop, "apps", "git", "current", "bin", "bash.exe"));
+  // git.exe sits in Git\cmd or Git\mingw64\bin; bash.exe in Git\bin.
+  const besideGit = dirs.filter((d) => exists(p.join(d, "git.exe"))).flatMap((d) => [p.join(d, "..", "bin", "bash.exe"), p.join(d, "..", "..", "bin", "bash.exe")]);
+  const wsl = (file: string) => /\\(system32|windowsapps)\\bash\.exe$/i.test(file);
+  const onPath = dirs.map((d) => p.join(d, "bash.exe")).filter((f) => !wsl(f));
+  return [...fixed, ...besideGit, ...onPath].find(exists) ?? null;
 }
 
 // CSI and OSC sequences: colors, cursor moves, hyperlinks.
@@ -52,6 +68,21 @@ export class OutputBuffer {
   }
 }
 
+/**
+ * PowerShell that stops what a dead process left behind on Windows: taskkill /T cannot walk from a root that
+ * already exited, but its children still name it as their parent. Only processes born after it started count,
+ * so a recycled pid's own children are spared; the root's pid itself is never touched, since it may be reused.
+ */
+export function orphanSweep(rootPid: number, startedAtMs: number): string {
+  return [
+    "$all = @(Get-CimInstance Win32_Process)",
+    `$since = [DateTimeOffset]::FromUnixTimeMilliseconds(${Math.floor(startedAtMs) - 1000}).UtcDateTime`,
+    `$tree = [System.Collections.Generic.List[uint32]]::new(); $tree.Add(${rootPid})`,
+    "for ($i = 0; $i -lt $tree.Count; $i++) { foreach ($p in $all) { if ($p.ParentProcessId -eq $tree[$i] -and $p.CreationDate.ToUniversalTime() -ge $since -and -not $tree.Contains($p.ProcessId)) { $tree.Add($p.ProcessId) } } }",
+    "$tree | Select-Object -Skip 1 | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }"
+  ].join("\n");
+}
+
 export interface ShellResult {
   exitCode: number | null;
   output: string;
@@ -78,6 +109,7 @@ export function runShell(command: string, run: ShellRun): Promise<ShellResult> {
     if (run.signal?.aborted) return resolve({ exitCode: null, output: "", timedOut: false, cancelled: true });
     const out = new OutputBuffer();
     const decoder = { stdout: new TextDecoder(), stderr: new TextDecoder() };
+    const startedAt = Date.now();
     const child = spawn(run.bash, ["-c", command], {
       cwd: run.cwd,
       env: { ...process.env, ...run.env, GIT_TERMINAL_PROMPT: "0", GIT_PAGER: "cat", PAGER: "cat", TERM: "dumb", NO_COLOR: "1" },
@@ -91,8 +123,10 @@ export function runShell(command: string, run: ShellRun): Promise<ShellResult> {
     const kill = (signal: NodeJS.Signals) => {
       if (child.pid === undefined) return;
       try {
-        if (process.platform === "win32") spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true });
-        else process.kill(-child.pid, signal);
+        // Once bash has exited its pid may belong to someone else; what it left behind is the sweep's.
+        if (process.platform === "win32") {
+          if (child.exitCode === null && child.signalCode === null) spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true });
+        } else process.kill(-child.pid, signal);
       } catch {
         // already gone
       }
@@ -118,6 +152,8 @@ export function runShell(command: string, run: ShellRun): Promise<ShellResult> {
       clearTimeout(timer);
       run.signal?.removeEventListener("abort", onAbort);
       kill("SIGKILL");
+      if (process.platform === "win32" && child.pid !== undefined)
+        spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", orphanSweep(child.pid, startedAt)], { windowsHide: true, stdio: "ignore" }).on("error", () => {});
       child.stdout!.destroy();
       child.stderr!.destroy();
       resolve({ exitCode, output: plain(out.text()), timedOut, cancelled });

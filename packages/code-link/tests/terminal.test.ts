@@ -16,6 +16,26 @@ it("lists installed terminal apps with the special launch choices", () => {
   }
 });
 
+it("offers no herdr on Windows, which herdr does not run on", () => {
+  expect(terminalApps([], "win32")).toEqual(["none"]);
+});
+
+it.skipIf(process.platform === "win32")("lists the Linux emulators on PATH, $TERMINAL first", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-linux-terminals-"));
+  try {
+    const bin = path.join(root, "bin");
+    fs.mkdirSync(bin);
+    for (const name of ["kitty", "gnome-terminal", "foot"]) fs.writeFileSync(path.join(bin, name), "#!/bin/sh\n", { mode: 0o755 });
+    fs.writeFileSync(path.join(bin, "konsole"), "not runnable", { mode: 0o644 });
+    expect(terminalApps([], "linux", { PATH: `${path.join(root, "missing")}:${bin}`, TERMINAL: "foot" })).toEqual(["foot", "gnome-terminal", "kitty", "herdr", "none"]);
+    expect(terminalApps([], "linux", { PATH: bin, TERMINAL: path.join(bin, "foot") })).toEqual([path.join(bin, "foot"), "gnome-terminal", "kitty", "herdr", "none"]);
+    // a $TERMINAL that is not there is not offered
+    expect(terminalApps([], "linux", { PATH: bin, TERMINAL: "st" })).toEqual(["gnome-terminal", "kitty", "herdr", "none"]);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 describe("a terminal of herdr", () => {
   it("defaults to automatic and preserves a saved terminal choice", () => {
     expect(TerminalSettings.parse({}).terminal).toBe(AUTO_TERMINAL);
@@ -213,6 +233,11 @@ describe("an unset terminal", () => {
     expect(SYSTEM_TERMINAL).toBe("Terminal");
   });
 
+  it("is the system terminal on Windows, herdr installed or not", async () => {
+    expect((await machineTerminalSettings(undefined, herdrThat("0.9.5"), "win32")).terminal).toBe(SYSTEM_TERMINAL);
+    expect((await machineTerminalSettings(undefined, herdrThat("0.9.5"), "linux")).terminal).toBe("herdr");
+  });
+
   it("follows herdr once it is installed later, with nothing saved in between", async () => {
     let version: string | null = null;
     const herdr = { installed: async () => version };
@@ -239,12 +264,26 @@ describe("the system terminal on Windows", () => {
     return { tries, launch };
   };
 
-  it("finds Git Bash where Git for Windows installs it, never a bash on PATH", () => {
+  it("finds Git Bash where Git for Windows installs it, never WSL's bash on PATH", () => {
     const user = "C:\\Users\\mira\\AppData\\Local\\Programs\\Git\\bin\\bash.exe";
     expect(gitBash(ENV, (file) => file === "C:\\Program Files\\Git\\bin\\bash.exe")).toBe("C:\\Program Files\\Git\\bin\\bash.exe");
     expect(gitBash(ENV, (file) => file === user)).toBe(user);
     expect(gitBash({ ...ENV, PATH: "C:\\Windows\\System32" }, (file) => file === "C:\\Windows\\System32\\bash.exe")).toBeNull();
+    const alias = "C:\\Users\\mira\\AppData\\Local\\Microsoft\\WindowsApps";
+    expect(gitBash({ Path: `C:\\WINDOWS\\system32\\;${alias}` }, (file) => file.endsWith("bash.exe"))).toBeNull();
     expect(gitBash({}, () => true)).toBeNull();
+  });
+
+  it("finds Git Bash from Scoop, and beside the git or as the bash.exe on PATH", () => {
+    const scoop = "C:\\Users\\mira\\scoop\\apps\\git\\current\\bin\\bash.exe";
+    expect(gitBash({ ...ENV, USERPROFILE: "C:\\Users\\mira" }, (file) => file === scoop)).toBe(scoop);
+    expect(gitBash({ SCOOP: "D:\\scoop" }, (file) => file === "D:\\scoop\\apps\\git\\current\\bin\\bash.exe")).toBe("D:\\scoop\\apps\\git\\current\\bin\\bash.exe");
+    // Git on another drive: cmd\git.exe on PATH, bin\bash.exe beside it; PATHEXT names the kinds, Path any case.
+    const files = new Set(["D:\\Tools\\Git\\cmd\\git.exe", "D:\\Tools\\Git\\bin\\bash.exe", "C:\\Windows\\System32\\bash.exe"]);
+    expect(gitBash({ ...ENV, Path: "C:\\Windows\\System32;\"D:\\Tools\\Git\\cmd\"", PATHEXT: ".COM;.EXE" }, (file) => files.has(file))).toBe("D:\\Tools\\Git\\bin\\bash.exe");
+    expect(gitBash({ PATH: "E:\\Git\\mingw64\\bin" }, (file) => file === "E:\\Git\\mingw64\\bin\\git.exe" || file === "E:\\Git\\bin\\bash.exe")).toBe("E:\\Git\\bin\\bash.exe");
+    // A bash.exe on PATH that is not WSL's, such as Scoop's shim.
+    expect(gitBash({ PATH: "C:\\Windows\\System32;C:\\Users\\mira\\scoop\\shims" }, (file) => file.endsWith("bash.exe"))).toBe("C:\\Users\\mira\\scoop\\shims\\bash.exe");
   });
 
   it("runs the script with Git Bash in Windows Terminal, in the session's folder", async () => {
@@ -320,6 +359,62 @@ describe("the system terminal on Linux", () => {
       ["gnome-terminal", "--", "bash", "/s/run.command"]
     ]);
     await expect(openOnLinux("/s/run.command", "/work", spawner(() => false).launch)).rejects.toThrow("gnome-terminal ENOENT");
+  });
+
+  it("opens the emulator picked by name with its own flag, and the default chain when it cannot start", async () => {
+    const args = async (terminal: string) => {
+      const { tries, launch } = spawner(() => true);
+      expect(await openOnLinux("/s/run.command", "/work", launch, terminal)).toBe(terminal);
+      return tries.map((t) => [t.command, ...t.args]);
+    };
+    expect(await args("kitty")).toEqual([["kitty", "bash", "/s/run.command"]]);
+    expect(await args("konsole")).toEqual([["konsole", "-e", "bash", "/s/run.command"]]);
+    expect(await args("xfce4-terminal")).toEqual([["xfce4-terminal", "-x", "bash", "/s/run.command"]]);
+    expect(await args("alacritty")).toEqual([["alacritty", "-e", "bash", "/s/run.command"]]);
+    expect(await args("wezterm")).toEqual([["wezterm", "start", "--", "bash", "/s/run.command"]]);
+    expect(await args("gnome-terminal")).toEqual([["gnome-terminal", "--", "bash", "/s/run.command"]]);
+    // $TERMINAL as a path: flags by its name; one Tomrade does not know gets -e
+    expect(await args("/opt/kitty/bin/kitty")).toEqual([["/opt/kitty/bin/kitty", "bash", "/s/run.command"]]);
+    expect(await args("foot")).toEqual([["foot", "-e", "bash", "/s/run.command"]]);
+    const { tries, launch } = spawner((command) => command === "x-terminal-emulator");
+    expect(await openOnLinux("/s/run.command", "/work", launch, "kitty")).toBe("x-terminal-emulator");
+    expect(tries.map((t) => t.command)).toEqual(["kitty", "x-terminal-emulator"]);
+  });
+
+  it.skipIf(process.platform === "win32")("keeps the window open after the agent, its pid file gone as when the script ends", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-keep-open-"));
+    const opened = vi.spyOn(terminalApp, "open").mockResolvedValue();
+    try {
+      const script = path.join(dir, "run.command");
+      const pidFile = path.join(dir, "pid");
+      const tail = `rm -f '${pidFile}'\nexec "\${SHELL:-bash}"\n`;
+      await launchTerminal({ cwd: dir, command: "echo agent", dir, resume: "echo again" }, SYSTEM_TERMINAL, null, "linux");
+      expect(fs.readFileSync(script, "utf8").endsWith(`echo agent\n${tail}`)).toBe(true);
+      // herdr's resume runs in a pane that stays anyway
+      expect(fs.readFileSync(path.join(dir, "resume.command"), "utf8")).not.toContain("exec");
+      // the shell that stays: the agent's pid file already gone, so the session is not kept alive by it
+      const shell = path.join(dir, "shell");
+      fs.writeFileSync(shell, `#!/bin/sh\ntest -e '${pidFile}' && echo pid-left || echo pid-gone\n`, { mode: 0o755 });
+      const { execFileSync } = await import("node:child_process");
+      expect(execFileSync("/bin/bash", [script], { encoding: "utf8", env: { PATH: "/usr/bin:/bin", SHELL: shell } }).trim().split("\n")).toEqual(["agent", "pid-gone"]);
+
+      await launchTerminal({ cwd: dir, command: "echo agent", dir }, SYSTEM_TERMINAL, null, "win32");
+      expect(fs.readFileSync(script, "utf8")).toContain(tail);
+      // macOS Terminal keeps its window; herdr's pane and "none" keep the shell they ran it from
+      for (const [terminal, platform] of [[SYSTEM_TERMINAL, "darwin"], ["none", "linux"]] as const) {
+        await launchTerminal({ cwd: dir, command: "echo agent", dir }, terminal, null, platform);
+        expect(fs.readFileSync(script, "utf8")).not.toContain("exec");
+      }
+      const herdr: HerdrTerminal = { launch: async () => ({ paneId: "w1:p1" }), installed: async () => "0.9.5" };
+      await launchTerminal({ cwd: dir, command: "echo agent", dir }, "herdr", herdr, "linux");
+      expect(fs.readFileSync(script, "utf8")).not.toContain("exec");
+      // herdr not answering: the system terminal's window gets the tail
+      await launchTerminal({ cwd: dir, command: "echo agent", dir }, "herdr", { launch: async () => null, installed: async () => null }, "linux");
+      expect(fs.readFileSync(script, "utf8")).toContain(tail);
+    } finally {
+      opened.mockRestore();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

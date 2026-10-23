@@ -1,6 +1,12 @@
+import { spawn } from "node:child_process";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { machineHost, probeGit, runGitInstall, type GitInstallProgress, type GitStatus, type MachineHost, type RunOptions, type RunResult } from "../src/git.js";
+
+vi.mock("node:child_process", async (actual) => {
+  const real = await actual<typeof import("node:child_process")>();
+  return { ...real, spawn: vi.fn(real.spawn) };
+});
 
 interface FakeMachine {
   platform?: NodeJS.Platform;
@@ -251,5 +257,7 @@ describe("machineHost", () => {
     });
     expect(pieces.join("")).toContain("working");
     expect(result).toMatchObject({ error: "cancelled" });
+    // No console window flashes up on Windows from the GUI app.
+    expect(vi.mocked(spawn).mock.calls[0]![2]).toMatchObject({ windowsHide: true });
   });
 });

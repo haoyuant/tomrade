@@ -151,7 +151,7 @@ export class RepoConnect {
     const mcp = this.ctx.get("mcp");
     if (!mcp?.url) throw new Error("the MCP server is not running — enable the mcp plugin");
     // A port taken at startup is replaced by a random one; written down, it would point nowhere after the next restart.
-    if (mcp.clash) throw new Error(this.words()("connectPortClash", { port: mcp.clash.port, holder: mcp.holderText() }));
+    if (mcp.clash) throw new Error(mcp.clash.reserved ? this.words()("connectPortReserved", { port: mcp.clash.port }) : this.words()("connectPortClash", { port: mcp.clash.port, holder: mcp.holderText() }));
     const placement = this.ctx.repos.checkout(repo.remote);
     if (!placement.checkout || !fs.existsSync(placement.checkout)) throw new Error(`no checkout of ${repo.name} on this machine`);
 

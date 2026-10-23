@@ -198,7 +198,7 @@ export function machineHost(): MachineHost {
         // Windows batch files (npm.cmd) only run through a shell since Node's spawn hardening.
         const batch = process.platform === "win32" && /\.(cmd|bat)$/i.test(file);
         try {
-          child = spawn(batch ? `"${file}"` : file, args, { stdio: ["ignore", "pipe", "pipe"], env: process.env, ...(batch ? { shell: true } : {}) });
+          child = spawn(batch ? `"${file}"` : file, args, { stdio: ["ignore", "pipe", "pipe"], env: process.env, windowsHide: true, ...(batch ? { shell: true } : {}) });
         } catch (error) {
           return resolve({ code: null, output: "", error: error instanceof Error ? error.message : String(error) });
         }
