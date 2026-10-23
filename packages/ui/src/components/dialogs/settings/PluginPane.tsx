@@ -102,8 +102,11 @@ const FIELD_EXTRAS: Record<string, { options?: Record<string, MessageKey>; below
   "codeLink.terminal": { options: { herdr: "codeLink.herdrOption" }, below: () => <HerdrRecommendation /> }
 };
 
+import { AnalyticsIdentity } from "./AnalyticsIdentity";
+
 /** What a plugin's pane shows beyond its schema, for the plugins whose settings are more than fields. */
 export const PANE_EXTRAS: Record<string, () => ReactNode> = {
   pet: () => <PetProfilesPanel />,
-  notifications: () => <PushStatus />
+  notifications: () => <PushStatus />,
+  analytics: () => <AnalyticsIdentity />
 };

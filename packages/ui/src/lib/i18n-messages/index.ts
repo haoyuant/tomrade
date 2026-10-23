@@ -1,4 +1,5 @@
 import { about } from "./about";
+import { analytics } from "./analytics";
 import { announcements } from "./announcements";
 import { legal } from "./legal";
 import { usage } from "./usage";
@@ -73,6 +74,7 @@ export const en = {
   language: language.en,
   settingsDialog: settingsDialog.en,
   about: about.en,
+  analytics: analytics.en,
   announcements: announcements.en,
   legal: legal.en,
   usage: usage.en,
@@ -216,7 +218,8 @@ export const zh: typeof en = {
   domain: domain.zh,
   ledger: ledger.zh,
   cadence: cadence.zh,
-  account: account.zh
+  account: account.zh,
+  analytics: analytics.zh
 };
 
 /** A translation beyond en and zh: any string it lacks shows in English. */

@@ -107,6 +107,7 @@ describe("preparing to quit", () => {
     const { ctx, flushAll } = context({ runs: 1, flush: () => new Promise<void>((resolve) => (finish = resolve)) });
     const first = quit.prepareToQuit(ctx);
     const second = quit.prepareToQuit(ctx);
+    await vi.waitFor(() => expect(flushAll).toHaveBeenCalledOnce());
     finish();
     expect(await Promise.all([first, second])).toEqual([true, true]);
     expect(showMessageBoxSync).toHaveBeenCalledOnce();

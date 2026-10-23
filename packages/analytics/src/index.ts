@@ -11,6 +11,8 @@ import type { AnalyticsEvent } from "./events.js";
 import { parseEvent, SCHEMA_VERSION } from "./events.js";
 import { EventQueue } from "./queue.js";
 import { Tracker, type HostSignals, type SessionDraft, type SessionSnapshot } from "./tracker.js";
+import { Uploader, retryDelay, type UploadConfig } from "./upload.js";
+import { FLUSH_BATCH, FLUSH_MS, MAX_BATCH_EVENTS } from "./constants.js";
 import { ANALYTICS_WORDS } from "./words.js";
 
 export * from "./features.js";
@@ -19,6 +21,7 @@ export * from "./events.js";
 export { AnonIdentity, deriveAnonId, newSecret, type IdentityInfo } from "./anon.js";
 export { EventQueue } from "./queue.js";
 export { Tracker, type HostSignals, type SessionDraft, type SessionSnapshot } from "./tracker.js";
+export { Uploader, endpointFor, retryDelay, split, type SendResult, type UploadConfig } from "./upload.js";
 
 export type Platform = "macos" | "windows" | "linux";
 
@@ -54,7 +57,6 @@ export const ANALYTICS_SECTION: SettingsSection<AnalyticsSettings> = {
     enabled: z.boolean().default(true).meta({ title: en("enabledTitle") }).describe(en("enabledDescription"))
   }),
   defaults: { enabled: true },
-  // Below the account and notifications, above the technical panes.
   order: 20,
   scope: "user",
   agent: "none",
@@ -75,15 +77,17 @@ export interface AnalyticsConfig {
   upload?: UploadConfig;
 }
 
-export interface UploadConfig {
-  url: string;
-  key: string;
-  /** `auto` lets the deployment route; `global`/`cn` pin a region for a test or an enterprise proxy. */
-  endpoint?: "auto" | "global" | "cn";
-  fetch?: typeof fetch;
-  /** Injected in tests so retries do not wait. */
-  delay?: (ms: number) => Promise<void>;
+interface UploadState {
+  /** Attempts since the last accepted batch. */
+  failures: number;
+  /** No attempt before this moment; survives a restart. */
+  nextAt: number;
+  /** The id the queued events were collected under; a change is a rotation. */
+  lastAnonId: string | null;
+  lastSentAt: number | null;
 }
+
+const UPLOAD_STATE: UploadState = { failures: 0, nextAt: 0, lastAnonId: null, lastSentAt: null };
 
 declare module "cordis" {
   interface Context {
@@ -108,9 +112,9 @@ declare module "@tomradex/ipc" {
 }
 
 /**
- * Collection, the local queue and the anonymous identity. It never blocks the
- * interface: a failure to read a file or to send a batch is logged, and the
- * next tick carries on.
+ * Collection, the local queue, the anonymous identity and the batch upload. It
+ * never blocks the interface: a failure to read a file or to send a batch is
+ * logged, and the next tick carries on.
  */
 export class Analytics extends Service {
   static provide = "analytics";
@@ -118,22 +122,31 @@ export class Analytics extends Service {
   static Config = z.object({
     dir: z.string().min(1),
     client: z.string().min(1),
-    host: z.custom<HostSignals>((value) => !!value && typeof (value as HostSignals).isFocused === "function")
+    host: z.custom<HostSignals>((value) => !!value && typeof (value as HostSignals).isFocused === "function"),
+    upload: z.custom<UploadConfig>((value) => !!value && typeof (value as UploadConfig).url === "string").optional()
   });
 
   private readonly identity: AnonIdentity;
   private readonly queue: EventQueue;
   private readonly snapshotFile: string;
+  private readonly uploadFile: string;
   private readonly tracker: Tracker;
+  private readonly uploader: Uploader | null;
   private stopTracker: (() => void) | null = null;
+  private stopUploads: (() => void) | null = null;
+  private abort: AbortController | null = null;
+  private flushing = false;
   private active = false;
-  private lastSentAt: number | null = null;
+  private uploadState: UploadState;
 
   constructor(ctx: Context, private readonly config: AnalyticsConfig) {
     super(ctx, "analytics");
     this.identity = new AnonIdentity(config.dir);
     this.queue = new EventQueue(path.join(config.dir, "queue.jsonl"));
     this.snapshotFile = path.join(config.dir, "session.json");
+    this.uploadFile = path.join(config.dir, "upload.json");
+    this.uploadState = this.readUploadState();
+    this.uploader = config.upload ? new Uploader(config.upload) : null;
     this.tracker = new Tracker(
       config.host,
       {
@@ -157,10 +170,11 @@ export class Analytics extends Service {
       if (before !== after) this.toggle(after);
     });
 
-    if (this.enabled()) this.begin();
+    if (this.enabled()) void this.begin();
     return () => this.stop();
   }
 
+  /** Where the data stands, for the settings card. */
   state(): AnalyticsState {
     let info: IdentityInfo | null = null;
     try {
@@ -173,9 +187,24 @@ export class Analytics extends Service {
       anonId: info?.anonId ?? null,
       rotatesAt: info?.rotatesAt ?? null,
       queued: this.queue.size,
-      lastSentAt: this.lastSentAt,
+      lastSentAt: this.uploadState.lastSentAt,
       endpoint: this.config.upload?.endpoint ?? "auto"
     };
+  }
+
+  /** Sends now, for a test or a shutdown; the switch and the backoff still apply. */
+  flushNow(ignoreBackoff = false): Promise<boolean> {
+    return this.flush(0, ignoreBackoff);
+  }
+
+  /** Ends the open session and gives the queue the few seconds a quit can spare. */
+  async shutdown(): Promise<void> {
+    this.tracker.quit();
+    this.stopTracker?.();
+    this.stopTracker = null;
+    this.stopUploads?.();
+    this.stopUploads = null;
+    await this.flush(2_500);
   }
 
   private enabled(): boolean {
@@ -183,7 +212,7 @@ export class Analytics extends Service {
     return (section ?? ANALYTICS_SECTION.defaults).enabled;
   }
 
-  private begin(): void {
+  private async begin(): Promise<void> {
     if (this.active) return;
     this.active = true;
     try {
@@ -197,26 +226,60 @@ export class Analytics extends Service {
     } catch {
       // An unreadable queue file was reset by the queue itself.
     }
+    await this.maybeRotate();
     this.recoverCrash();
-    this.record({ event: "app.start" }, Date.now(), { first_run: Date.now() - this.identity.info().installedAt < 24 * 60 * 60_000 });
+    this.record({ event: "app.start", feature_id: null }, Date.now(), { first_run: Date.now() - this.identity.info().installedAt < 24 * 60 * 60_000 });
     this.stopTracker = this.tracker.start();
+    this.startUploads();
+  }
+
+  /**
+   * A year has passed since the id was made: send what the old id collected
+   * while that is still possible, then let the new one take over. A failed
+   * send drops the old queue rather than putting two ids in one batch.
+   */
+  private async maybeRotate(): Promise<void> {
+    const current = this.identity.current();
+    if (!this.uploadState.lastAnonId || this.uploadState.lastAnonId === current) {
+      this.uploadState.lastAnonId = current;
+      this.saveUploadState();
+      return;
+    }
+    if (this.queue.size > 0 && !(await this.flush(10_000, true))) this.queue.clear();
+    this.uploadState.lastAnonId = current;
+    this.saveUploadState();
+  }
+
+  private startUploads(): void {
+    if (!this.uploader || this.stopUploads) return;
+    const timer = setInterval(() => void this.flush(), FLUSH_MS);
+    timer.unref?.();
+    this.stopUploads = () => clearInterval(timer);
   }
 
   private stop(): void {
     this.tracker.quit();
     this.stopTracker?.();
     this.stopTracker = null;
+    this.stopUploads?.();
+    this.stopUploads = null;
     this.active = false;
   }
 
-  /** Off: nothing is collected, nothing waits, and the secret that derived the id is gone. */
+  /** Off: nothing is collected, nothing waits, nothing is in flight, and the secret is gone. */
   private discard(): void {
+    this.abort?.abort();
+    this.abort = null;
     this.tracker.discard();
     this.stopTracker?.();
     this.stopTracker = null;
+    this.stopUploads?.();
+    this.stopUploads = null;
     this.active = false;
     this.queue.clear();
     this.identity.clear();
+    this.uploadState = { ...UPLOAD_STATE, lastAnonId: null };
+    this.saveUploadState();
     try {
       fs.rmSync(this.snapshotFile, { force: true });
     } catch {
@@ -233,7 +296,7 @@ export class Analytics extends Service {
       } catch {
         // begin() below reports what it can; without a secret there is nothing to send under.
       }
-      this.begin();
+      void this.begin();
     } else {
       this.discard();
     }
@@ -248,6 +311,7 @@ export class Analytics extends Service {
 
   private resetId(): AnalyticsState {
     if (this.enabled()) {
+      this.abort?.abort();
       try {
         this.identity.reset();
         this.tracker.forgetOpens();
@@ -256,6 +320,14 @@ export class Analytics extends Service {
       }
     }
     this.queue.clear();
+    let lastAnonId: string | null = null;
+    try {
+      lastAnonId = this.enabled() ? this.identity.current() : null;
+    } catch {
+      // No secret yet; the next start fills it in.
+    }
+    this.uploadState = { ...this.uploadState, lastAnonId, failures: 0, nextAt: 0 };
+    this.saveUploadState();
     return this.state();
   }
 
@@ -284,7 +356,9 @@ export class Analytics extends Service {
       this.queue.push(event);
     } catch (error) {
       this.ctx.logger.warn(`analytics: could not queue an event: ${String(error)}`);
+      return;
     }
+    if (this.queue.size >= FLUSH_BATCH) void this.flush();
   }
 
   private recordSession(draft: SessionDraft): void {
@@ -299,6 +373,87 @@ export class Analytics extends Service {
       segments: draft.segments,
       end_reason: draft.endReason
     }, draft.startedAt);
+    // A use that just ended is the natural moment to send what has piled up.
+    void this.flush();
+  }
+
+  /**
+   * Sends the oldest batch. False when the batch was not taken and remains
+   * queued. With `withinMs` set, nothing outlives that wait: the request is
+   * aborted and the queue keeps the events for next time.
+   */
+  private async flush(withinMs = 0, ignoreBackoff = false): Promise<boolean> {
+    if (!this.uploader || !this.active || !this.enabled() || this.flushing) return false;
+    const now = Date.now();
+    if (!ignoreBackoff && now < this.uploadState.nextAt) return false;
+    this.queue.prune(now);
+    const events = this.queue.peek(MAX_BATCH_EVENTS);
+    if (!events.length) return true;
+
+    this.flushing = true;
+    const controller = new AbortController();
+    this.abort = controller;
+    const work = this.uploader.sendAll(events, controller.signal);
+    let result: Awaited<typeof work>;
+    if (withinMs > 0) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), withinMs);
+      });
+      const raced = await Promise.race([work, timeout]);
+      clearTimeout(timer);
+      if (raced === null) {
+        controller.abort();
+        this.flushing = false;
+        this.abort = null;
+        return false;
+      }
+      result = raced;
+    } else {
+      result = await work;
+    }
+    this.flushing = false;
+    this.abort = null;
+
+    if (result.sent.size) {
+      this.queue.remove(result.sent);
+      this.uploadState.lastSentAt = Date.now();
+    }
+    if (result.retry) {
+      this.uploadState.failures += 1;
+      this.uploadState.nextAt = Date.now() + (result.retryAfterMs ?? retryDelay(this.uploadState.failures));
+    } else {
+      this.uploadState.failures = 0;
+      this.uploadState.nextAt = 0;
+    }
+    this.saveUploadState();
+    this.ctx.ipc.send("analytics.changed", this.state());
+    return result.sent.size > 0 || !result.retry;
+  }
+
+  private readUploadState(): UploadState {
+    try {
+      const raw = JSON.parse(fs.readFileSync(this.uploadFile, "utf8")) as Partial<UploadState>;
+      return {
+        failures: typeof raw.failures === "number" ? raw.failures : 0,
+        nextAt: typeof raw.nextAt === "number" ? raw.nextAt : 0,
+        lastAnonId: typeof raw.lastAnonId === "string" ? raw.lastAnonId : null,
+        lastSentAt: typeof raw.lastSentAt === "number" ? raw.lastSentAt : null
+      };
+    } catch {
+      return { ...UPLOAD_STATE };
+    }
+  }
+
+  private saveUploadState(): void {
+    try {
+      fs.mkdirSync(this.config.dir, { recursive: true, mode: 0o700 });
+      const tmp = `${this.uploadFile}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(this.uploadState));
+      fs.renameSync(tmp, this.uploadFile);
+    } catch {
+      // The next attempt is decided in memory; a lost file only skips a backoff once.
+    }
   }
 
   private saveSnapshot(snapshot: SessionSnapshot): void {
