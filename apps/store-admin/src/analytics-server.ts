@@ -1,0 +1,35 @@
+import { createServer, type Server } from "node:http";
+import { endpoints, filters, loadDashboard, type DashboardData, type Filters } from "./analytics-data.js";
+import { renderDashboard } from "./analytics-page.js";
+
+export function dashboardServer(load: (f: Filters) => Promise<DashboardData>): Server {
+  return createServer(async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    // Reject DNS rebinding and cross-origin requests to the local admin service.
+    const host = `127.0.0.1:${(res.socket?.address() as { port: number }).port}`;
+    if (req.headers.host !== host || (req.headers.origin && req.headers.origin !== `http://${host}`) || req.headers["sec-fetch-site"] === "cross-site") {
+      res.writeHead(403); res.end(); return;
+    }
+    const url = new URL(req.url ?? "/", `http://${host}`);
+    if (req.method !== "GET" || url.pathname !== "/") { res.writeHead(404); res.end(); return; }
+    let f: Filters;
+    try { f = filters(url.searchParams); }
+    catch { res.writeHead(400); res.end(renderDashboard(filters(new URLSearchParams()), undefined, "invalid")); return; }
+    try { res.end(renderDashboard(f, await load(f))); }
+    catch { res.writeHead(502); res.end(renderDashboard(f, undefined, "failed")); }
+  });
+}
+export async function serveAnalytics(port = 19100): Promise<void> {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid analytics port");
+  const sources = endpoints(process.env);
+  const server = dashboardServer((f) => loadDashboard(sources, f));
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", resolve);
+  });
+  console.log(`http://127.0.0.1:${port}`);
+  await new Promise<void>((resolve) => server.once("close", resolve));
+}

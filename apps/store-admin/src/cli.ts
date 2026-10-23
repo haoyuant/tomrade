@@ -4,6 +4,7 @@ import path from "node:path";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { attest, generateSigningKey } from "@tomradex/plugin-kit";
 import { isRange, satisfies } from "@tomradex/plugin-sdk";
+import { serveAnalytics } from "./analytics-server.js";
 import { mcpClient } from "./mcp.js";
 
 const [command = "help", ...rest] = process.argv.slice(2);
@@ -34,6 +35,7 @@ const ref = (text: string | undefined) => {
 const usage = `tomrade-store <command>
 
   keygen [--out dir]              make the store's signing key; put the public key in apps/desktop/src/trust.ts
+  analytics [--port 19100]        local internal usage dashboard
   reports                         open plugin reports
   diag [--all]                    troubleshooting reports people sent, grouped by fingerprint (new ones; --all for every status)
   diag R-XXXXXX                   one troubleshooting report, as its sender read it
@@ -52,6 +54,10 @@ const usage = `tomrade-store <command>
 
 async function main(): Promise<number> {
   switch (command) {
+    case "analytics": {
+      await serveAnalytics(Number(flag("port") ?? 19100));
+      return 0;
+    }
     case "keygen": {
       const key = generateSigningKey();
       const out = flag("out") ?? ".";

@@ -45,8 +45,8 @@ async function ingest(events: unknown[], region: string) {
 }
 
 beforeAll(async () => {
-  await db.exec("create role anon; create role authenticated;");
-  for (const name of ["202610230001_analytics.sql", "202610230002_analytics_region_scope.sql", "202610230003_analytics_aggregate.sql"]) {
+  await db.exec("create role anon; create role authenticated; create role service_role;");
+  for (const name of ["202610230001_analytics.sql", "202610230002_analytics_region_scope.sql", "202610230003_analytics_aggregate.sql", "202610230004_analytics_feature_days.sql"]) {
     await db.exec(migration(name));
   }
 }, 60_000);
@@ -172,6 +172,35 @@ describe("aggregation", () => {
       [day(DAY1), day(DAY2)]
     );
     expect(us.rows[0]!.report.totals).toEqual({ duration_ms: 215_000, sessions: 4, uses: 5, aai: 3 });
+  });
+
+  it("answers the dashboard's feature-by-day series, filtered by region", async () => {
+    const all = await db.query<{ result: { days: { day: string; region: string; feature_id: string; duration_ms: number; sessions: number; uses: number }[] } }>(
+      "select public.tomrade_analytics_feature_days($1::date, $2::date) as result",
+      [day(DAY1), day(DAY2)]
+    );
+    expect(all.rows[0]!.result.days).toContainEqual({ day: day(DAY1), region: "na", feature_id: "backlog.board", duration_ms: 65000, sessions: 2, uses: 1 });
+    expect(all.rows[0]!.result.days).toContainEqual({ day: day(DAY1), region: "apac", feature_id: "backlog.table", duration_ms: 0, sessions: 0, uses: 1 });
+    const na = await db.query<{ result: { days: { region: string }[] } }>(
+      "select public.tomrade_analytics_feature_days($1::date, $2::date, 'na') as result",
+      [day(DAY1), day(DAY2)]
+    );
+    expect(na.rows[0]!.result.days.every((row) => row.region === "na")).toBe(true);
+    expect(na.rows[0]!.result.days).toHaveLength(5);
+  });
+
+  it("allows only the service role to read dashboard aggregates", async () => {
+    await db.exec("set role anon");
+    try {
+      await expect(db.query("select public.tomrade_analytics_feature_days($1::date, $2::date)", [day(DAY1), day(DAY2)])).rejects.toThrow(/permission denied/);
+      await expect(db.query("select public.tomrade_analytics_report($1::date, $2::date)", [day(DAY1), day(DAY2)])).rejects.toThrow(/permission denied/);
+    } finally { await db.exec("reset role"); }
+    await db.exec("set role service_role");
+    try {
+      const result = await db.query("select public.tomrade_analytics_feature_days($1::date, $2::date)", [day(DAY1), day(DAY2)]);
+      expect(result.rows).toHaveLength(1);
+      await db.query("select public.tomrade_analytics_report($1::date, $2::date)", [day(DAY1), day(DAY2)]);
+    } finally { await db.exec("reset role"); }
   });
 
   it("refuses a range it cannot answer", async () => {
