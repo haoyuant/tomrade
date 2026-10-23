@@ -121,11 +121,14 @@ describe("an ACP agent as an engine", () => {
       expect(JSON.parse(fs.readFileSync(path.join(dir, "acp-models.json"), "utf8")).fake.models).toEqual(LISTED);
     });
 
-    it("puts its own machine-wide picks before the model and effort", () => {
+    it("puts its own machine-wide picks before the model and effort, without duplicating the session's", () => {
       const region = { key: "region", title: "Version", global: true, choices: [{ value: "china" }, { value: "international" }] };
-      const engine = createAcpEngine(ctx, spec({ picks: [region] }));
+      const declared = { key: "model", title: "Model", choices: [], freeText: true };
+      const engine = createAcpEngine(ctx, spec({ picks: [region, declared] }));
       expect(engine.local!.picks!()[0]).toEqual(region);
-      expect(engine.local!.picks!()[1]).toMatchObject({ key: "model" });
+      // The declared model pick is a terminal/lent knob; the session's own is the one shown.
+      expect(engine.local!.picks!().filter((pick) => pick.key === "model")).toHaveLength(1);
+      expect(engine.local!.picks!()[1]).toMatchObject({ key: "model", freeText: true, choices: [] });
     });
 
     it("shows what was kept at once after a restart, without asking", async () => {
