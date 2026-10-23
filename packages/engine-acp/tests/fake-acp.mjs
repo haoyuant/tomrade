@@ -121,6 +121,11 @@ async function prompt(id, p) {
   const usage = (input, output, hit) => ({ sessionUpdate: 'usage_update', used: input, size: 1000, cost: { amount: 0.25 * sessions.get(sid).turns, currency: 'USD' },
     _meta: { usage: { prompt_tokens: input, completion_tokens: output, prompt_cache_hit_tokens: hit } } });
   sessions.get(sid).turns++;
+  // Hermes 0.21.7: the provider fails, the turn still ends normally, and the report is the only reply.
+  if (process.env.FAKE_REPLY === 'bedrock') {
+    update(sid, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: "AWS Bedrock didn't answer after 3 attempts — it looks temporarily unavailable. Wait a minute and send /retry, or switch models with /model." } });
+    return send({ id, result: { stopReason: 'end_turn' } });
+  }
   if (text.includes('WAIT_FOREVER')) { waiting = id; running = 'run-' + id; return; }
   if (text.startsWith('FRESH ')) {
     await sleep(200);
