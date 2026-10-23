@@ -69,17 +69,34 @@ export class RepoConnect {
   async connectAgents(projectId: string, repoId: string): Promise<ConnectAgent[]> {
     const chosen = this.store.repoState(projectId, repoId)?.connectAgents;
     if (chosen?.length) return chosen;
+    const detected = await this.detectInstalled();
+    // A Tomrade that finds none of them cannot tell which the team uses.
+    return detected.length ? detected : this.knownAgents();
+  }
+
+  /**
+   * What a repository is set up for without anyone asking: the person's choice,
+   * else only the agents this machine has. Nobody gets files for an agent they
+   * do not run, and a machine that recognises none writes nothing.
+   */
+  async installedAgents(projectId: string, repoId: string): Promise<ConnectAgent[]> {
+    const chosen = this.store.repoState(projectId, repoId)?.connectAgents;
+    return chosen?.length ? chosen : this.detectInstalled();
+  }
+
+  /** Every agent a repository can be connected for, a plugin agent that registered a connector included. */
+  private knownAgents(): ConnectAgent[] {
+    return [...CONNECT_AGENTS, ...(this.connectors.agents?.() ?? []).filter((id) => !(CONNECT_AGENTS as readonly string[]).includes(id))];
+  }
+
+  private async detectInstalled(): Promise<ConnectAgent[]> {
     const agent = this.ctx.get("agent");
-    // A plugin agent whose engine registered a connector is one more the repository can be connected for.
-    const all: ConnectAgent[] = [...CONNECT_AGENTS, ...(this.connectors.agents?.() ?? []).filter((id) => !(CONNECT_AGENTS as readonly string[]).includes(id))];
-    const found = await Promise.all(all.map(async (id) => {
+    const found = await Promise.all(this.knownAgents().map(async (id) => {
       const state = await agent?.engineOf(id)?.available().catch(() => null);
       // Installed is enough: the repository's files do not need it signed in here.
       return state?.ok || state?.cli?.state === "ready" ? [id] : [];
     }));
-    const detected = found.flat();
-    // A Tomrade that finds none of them cannot tell which the team uses.
-    return detected.length ? detected : all;
+    return found.flat();
   }
 
   async connection(projectId: string, repoId: string): Promise<ConnectionView> {
@@ -145,13 +162,7 @@ export class RepoConnect {
     // What it was connected for stays the choice, whatever is installed here later.
     if (!this.store.repoState(projectId, repoId)?.connectAgents) this.store.upsertRepoState(projectId, repoId, { connectAgents: chosen });
     const connection = await this.connection(projectId, repoId);
-    const input = {
-      projectName: (this.ctx.db.for(projectId).prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name ?? "Tomrade project",
-      mcpUrl: mcp.urlFor(projectId)!,
-      eventUrl: mcp.eventUrl!,
-      prefix: this.prefixOf(projectId),
-      branchTemplate: this.store.repoState(projectId, repoId)?.branchTemplate ?? "{key}/{slug}"
-    };
+    const input = this.inputFor(projectId, repoId, mcp.urlFor(projectId)!, mcp.eventUrl!);
     if (mode === "local") {
       // Local files are cheap and never leave the machine: running again is what brings an earlier connection the
       // files a newer Tomrade writes (its rule section in CLAUDE.md / AGENTS.md, a new agent's settings).
@@ -182,6 +193,8 @@ export class RepoConnect {
       const agents = inspectConnectFiles(worktree, mcp.urlFor(projectId)!, mcp.eventUrl!, chosen, this.connectors).agents;
       const skipped = this.said(written.skipped, agents);
       const folder = new GitFolder(this.git, worktree);
+      // A machine-only connection keeps these files out of git in this clone; the team's connection commits them anyway.
+      if (files.length) await this.git(["add", "-f", "--", ...files], { cwd: worktree });
       // A checkout on Windows records no executable bit, and elsewhere Cursor runs the script by its path.
       if (files.includes(CURSOR_HOOK_SCRIPT)) await this.git(["add", "--chmod=+x", "--", CURSOR_HOOK_SCRIPT], { cwd: worktree });
       const committed = files.length > 0 && (await folder.commit("Connect this repository to Tomrade\n\nProject MCP config lets Claude Code, Codex and WorkBuddy discover Tomrade, a project extension does it for Pi and opencode.json with a plugin for OpenCode, agent instructions describe the ticket conventions, and their hooks report session lifecycle back."));
@@ -216,13 +229,37 @@ export class RepoConnect {
   }
 
   /**
-   * The chosen agents' files, written into the checkout and kept out of git
-   * through `.git/info/exclude`: a tracked file is never changed (its agent
-   * is skipped and says so), and the team's tracked CLAUDE.md / AGENTS.md stay
-   * as they are — an untracked one, or none, carries the section so the agent
-   * reads the rules without the team seeing them.
+   * The files a repository is still missing, for this machine alone: no branch,
+   * no pull request, nothing tracked. Called when a checkout appears, a project
+   * opens and an agent becomes available, so an installed agent reports its
+   * sessions without anyone pressing Connect.
    */
-  private async connectLocally(projectId: string, repoId: string, checkout: string, input: ConnectInput, chosen: ConnectAgent[]): Promise<ConnectResult> {
+  async ensureLocal(projectId: string, repoId: string, agents: readonly ConnectAgent[]): Promise<{ files: string[] } | null> {
+    if (!agents.length) return null;
+    const repo = this.ctx.repos.get(projectId, repoId);
+    if (!repo) return null;
+    const mcp = this.ctx.get("mcp");
+    // A port taken at startup changes address at every restart: a file naming it would point nowhere.
+    if (!mcp?.url || !mcp.eventUrl || mcp.clash) return null;
+    const checkout = this.ctx.repos.checkout(repo.remote).checkout;
+    if (!checkout || !fs.existsSync(checkout)) return null;
+    const input = this.inputFor(projectId, repoId, mcp.urlFor(projectId)!, mcp.eventUrl);
+    return { files: (await this.writeLocal(checkout, input, [...agents])).files };
+  }
+
+  /** The project's words and endpoints, as every connection file names them. */
+  private inputFor(projectId: string, repoId: string, mcpUrl: string, eventUrl: string): ConnectInput {
+    return {
+      projectName: (this.ctx.db.for(projectId).prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name ?? "Tomrade project",
+      mcpUrl,
+      eventUrl,
+      prefix: this.prefixOf(projectId),
+      branchTemplate: this.store.repoState(projectId, repoId)?.branchTemplate ?? "{key}/{slug}"
+    };
+  }
+
+  /** Writes for this machine only: a tracked file is never changed, and what git would see is kept out through `info/exclude`. */
+  private async writeLocal(checkout: string, input: ConnectInput, chosen: ConnectAgent[]): Promise<{ files: string[]; skipped: SkippedAgent[] }> {
     const list = connectFiles(this.connectors);
     const listed = await this.git(["ls-files", "-z", "--", ...list], { cwd: checkout, ok: true });
     const tracked = new Set(listed.code === 0 ? listed.stdout.split("\0").filter(Boolean) : list);
@@ -240,6 +277,18 @@ export class RepoConnect {
       const lines = ["# Tomrade: agent connection files for this machine only", ...exposed.map((file) => `/${file}`)];
       fs.writeFileSync(exclude, `${existing.replace(/\s*$/, "")}${existing.trim() ? "\n\n" : ""}${lines.join("\n")}\n`);
     }
+    return { files, skipped };
+  }
+
+  /**
+   * The chosen agents' files, written into the checkout and kept out of git
+   * through `.git/info/exclude`: a tracked file is never changed (its agent
+   * is skipped and says so), and the team's tracked CLAUDE.md / AGENTS.md stay
+   * as they are — an untracked one, or none, carries the section so the agent
+   * reads the rules without the team seeing them.
+   */
+  private async connectLocally(projectId: string, repoId: string, checkout: string, input: ConnectInput, chosen: ConnectAgent[]): Promise<ConnectResult> {
+    const { files, skipped } = await this.writeLocal(checkout, input, chosen);
     this.notify(projectId);
     const { agents } = await this.connection(projectId, repoId);
     return { branch: "", agents, files, skipped: this.said(skipped, agents), committed: false, pushed: false, url: null, local: true, message: this.words()(files.length === 1 ? "connectedLocallyOne" : "connectedLocallyMany", { n: files.length }) };

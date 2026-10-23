@@ -20,8 +20,8 @@ import type {} from "@tomradex/write";
 import type { Item } from "@tomradex/domain";
 import { GitFolder, gitRunner, type Git } from "@tomradex/git";
 import { readPull, type ForgePull } from "./forge.js";
-import type { ConnectionView } from "./connection.js";
-import { CONNECT_AGENTS, type ConnectFileWriter, type ConnectorAgent } from "./connect.js";
+import { agentsNeedingFiles, type ConnectionView } from "./connection.js";
+import { CONNECT_AGENTS, type ConnectFileWriter, type ConnectorAgent, type Connectors } from "./connect.js";
 import { RepoConnect, type ConnectMode, type ConnectResult } from "./connect-repo.js";
 import { Connections, MCP_AGENT } from "./connections.js";
 import { contribute } from "./contrib.js";
@@ -230,6 +230,10 @@ export class CodeLink extends Service implements CodeLinkReader {
   private landing!: Landing;
   private connections!: Connections;
   private repoConnect!: RepoConnect;
+  /** Repositories whose files are being filled in right now, so two triggers do not write at once. */
+  private readonly autoConnecting = new Set<string>();
+  /** Coalesces the engines' arrivals into one pass over the projects' repositories. */
+  private autoConnectTimer: NodeJS.Timeout | null = null;
   private herdr!: HerdrBridge;
   /** The engines' connection-file writers; Connect reads them when it runs, so load order does not matter. */
   private readonly connectors = new Map<ConnectorAgent, ConnectFileWriter>();
@@ -326,7 +330,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       notify: (projectId) => this.notify(projectId),
       prefixOf: (projectId) => this.prefixOf(projectId),
       lastHooks: (projectId, repoId) => this.connections.lastHooks(projectId, repoId),
-      connectors: Object.assign((agent: ConnectorAgent) => this.connectors.get(agent), { agents: () => [...this.connectors.keys()] })
+      connectors: this.connectorSet()
     });
     this.ctx.settings.register(SETTINGS_SECTION);
     this.ctx.on("write/pre-commit", (intent, next) => {
@@ -355,11 +359,16 @@ export class CodeLink extends Service implements CodeLinkReader {
     });
     // A headless session cannot have survived a restart; say so, and let the ticket offer Continue.
     for (const projectId of this.ctx.db.openIds()) this.sessions.reconcile(projectId);
-    this.ctx.on("db/opened", (projectId) => this.sessions.reconcile(projectId));
+    this.ctx.on("db/opened", (projectId) => {
+      this.sessions.reconcile(projectId);
+      void this.autoConnectProject(projectId);
+    });
     this.ctx.on("repos/checkout-set", (remote) => {
       for (const projectId of this.ctx.db.openIds()) {
-        if (!this.ctx.repos.list(projectId).some((repo) => repo.remote === remote)) continue;
+        const repo = this.ctx.repos.list(projectId).find((row) => row.remote === remote);
+        if (!repo) continue;
         void this.rescan(projectId).catch((err) => this.ctx.logger.warn(`code scan after setting ${remote} failed: ${errorMessage(err)}`));
+        void this.autoConnectRepo(projectId, repo.id);
       }
     });
     // An earlier version wrote the helper under the Hub; repoint it before a
@@ -419,7 +428,10 @@ export class CodeLink extends Service implements CodeLinkReader {
       // Every engine that can carry Tomrade in its own configuration gets it without a person pressing Connect,
       // whether it was registered before this plugin or after it: the engine's own file, never anyone else's.
       const connect = (engine: Engine) => {
-        void this.autoConnect(engine).catch((err) => this.ctx.logger.warn(`connecting ${engine.id} to Tomrade failed: ${errorMessage(err)}`));
+        void this.autoConnect(engine)
+          // An agent that has just become usable is one more the repositories can be set up for.
+          .then(() => this.scheduleAutoConnectRepos())
+          .catch((err) => this.ctx.logger.warn(`connecting ${engine.id} to Tomrade failed: ${errorMessage(err)}`));
       };
       for (const engine of ctx.agent.codeEngines()) connect(engine);
       ctx.on("agent/engine-added", connect);
@@ -428,6 +440,11 @@ export class CodeLink extends Service implements CodeLinkReader {
         const engine = tried.ok ? ctx.agent.engineOf(engineId) : null;
         if (engine) connect(engine);
       });
+    });
+    // A restart leaves the repositories as they were: an agent's hooks reach Tomrade from its next session, not from the
+    // next person who presses Connect.
+    this.home.inject(["agent", "repos", "mcp"], () => {
+      for (const projectId of this.ctx.db.openIds()) void this.autoConnectProject(projectId);
     });
     this.ctx.on("write/committed", (intent) => {
       if (intent.entity !== "item" || intent.op !== "update") return;
@@ -553,6 +570,7 @@ export class CodeLink extends Service implements CodeLinkReader {
     return () => {
       if (timer) clearInterval(timer);
       if (sweeper) clearInterval(sweeper);
+      if (this.autoConnectTimer) clearTimeout(this.autoConnectTimer);
     };
   }
 
@@ -961,6 +979,51 @@ export class CodeLink extends Service implements CodeLinkReader {
     if (next.state !== "connected") {
       this.ctx.logger.warn(`connecting ${engine.title} to Tomrade left it ${next.state}${next.error ? `: ${next.error}` : ""}`);
     }
+  }
+
+  /**
+   * An agent works the same whether its files were written by hand or not: fill
+   * in what the repository is missing for this machine, nothing tracked, no
+   * branch. What Connect would already call complete is left untouched.
+   */
+  private async autoConnectRepo(projectId: string, repoId: string): Promise<void> {
+    const key = `${projectId}\0${repoId}`;
+    if (this.autoConnecting.has(key)) return;
+    this.autoConnecting.add(key);
+    try {
+      // Only an agent this machine has: nobody gets files for one they do not run, and a machine that recognises none writes nothing.
+      const installed = await this.repoConnect.installedAgents(projectId, repoId);
+      if (!installed.length) return;
+      const view = await this.repoConnect.connection(projectId, repoId);
+      // A pending branch is the person's to merge; a repository Tomrade cannot reach is not ours to write.
+      if (view.state !== "connected" && view.state !== "unconnected" && view.state !== "other-instance") return;
+      const missing = agentsNeedingFiles(view.agents.filter((agent) => installed.includes(agent.id)), this.connectorSet());
+      if (!missing.length) return;
+      await this.repoConnect.ensureLocal(projectId, repoId, missing);
+    } catch (err) {
+      this.ctx.logger.warn(`auto-connecting ${repoId} to Tomrade failed: ${errorMessage(err)}`);
+    } finally {
+      this.autoConnecting.delete(key);
+    }
+  }
+
+  private async autoConnectProject(projectId: string): Promise<void> {
+    for (const repo of this.ctx.repos.list(projectId)) await this.autoConnectRepo(projectId, repo.id);
+  }
+
+  /** The engines arrive together at startup: one pass over every repository, a moment later, not one per engine. */
+  private scheduleAutoConnectRepos(): void {
+    if (this.autoConnectTimer) return;
+    this.autoConnectTimer = setTimeout(() => {
+      this.autoConnectTimer = null;
+      for (const projectId of this.ctx.db.openIds()) void this.autoConnectProject(projectId);
+    }, 300);
+    this.autoConnectTimer.unref?.();
+  }
+
+  /** The engine-registered connection writers, as Connect reads them. */
+  private connectorSet(): Connectors {
+    return Object.assign((agent: ConnectorAgent) => this.connectors.get(agent), { agents: () => [...this.connectors.keys()] });
   }
 
   /**

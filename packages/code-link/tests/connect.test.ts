@@ -9,8 +9,9 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { Context } from "cordis";
 import { afterAll, describe, expect, it, onTestFinished, vi } from "vitest";
-import { Agent } from "@tomradex/agent";
+import { Agent, type Engine } from "@tomradex/agent";
 import { CodeLink, hookCommand, posixHookCommand, writeConnectFiles as writeWith, type ConnectAgent, type ConnectFileWriter, type ConnectInput, type LocalConnect } from "@tomradex/code-link";
 import { Contributions } from "@tomradex/contributions";
 import { Mcp } from "@tomradex/mcp";
@@ -81,6 +82,20 @@ function codeRepo(): { remote: string; checkout: string } {
   fs.cpSync(template.checkout, checkout, { recursive: true });
   git(["remote", "set-url", "origin", remote], checkout);
   return { remote, checkout };
+}
+
+/** An engine this machine has installed: what auto-connecting looks for, and nothing else. */
+function installed(id: string): Engine {
+  return {
+    id,
+    title: id,
+    author: `ai:${id}`,
+    capabilities: ["code"],
+    available: async () => ({ ok: true }),
+    async turn() {
+      return { stop: "end" };
+    }
+  };
 }
 
 async function machine() {
@@ -672,6 +687,35 @@ describe("connecting a repository", () => {
     expect(git(["ls-tree", "origin/tomrade/connect", "--", ".cursor/hooks/tomrade"], checkout)).toMatch(/^100755 /);
     expect(fs.existsSync(path.join(checkout, ".mcp.json"))).toBe(false);
     expect(git(["status", "--porcelain"], checkout)).toBe("");
+  });
+
+  it("fills in an installed agent's hooks as soon as it and the checkout are both known, with nobody pressing Connect", async () => {
+    const { ctx, project, repo, checkout } = await machine();
+    // No coding agent is installed here yet, so the checkout alone writes nothing.
+    await settle();
+    expect(fs.existsSync(path.join(checkout, ".codebuddy/settings.json"))).toBe(false);
+    await ctx.plugin({ name: "fake-workbuddy", inject: ["agent"], apply: (c: Context) => void c.agent.engine(installed("workbuddy")) });
+    const file = path.join(checkout, ".codebuddy/settings.json");
+    await vi.waitFor(() => expect(fs.existsSync(file)).toBe(true), { timeout: 5000 });
+    const command = (JSON.parse(fs.readFileSync(file, "utf8")) as { hooks: Record<string, { hooks: { command: string }[] }[]> }).hooks.PreToolUse![0]!.hooks[0]!.command;
+    expect(command).toContain("/sessions/event");
+    expect(command).toContain("X-Tomrade-Agent: workbuddy");
+    // A file for this machine only: git does not see it, and nothing else in the checkout changed.
+    const exclude = path.join(checkout, ".git/info/exclude");
+    await vi.waitFor(() => expect(fs.readFileSync(exclude, "utf8")).toContain("/.codebuddy/settings.json"), { timeout: 5000 });
+    expect(git(["status", "--porcelain"], checkout)).toBe("");
+    expect(project.id).toBeTruthy();
+    expect(repo.remote).toBeTruthy();
+  });
+
+  it("commits a file a machine-only connection had excluded, once the team's connection is asked for", async () => {
+    const { codeLink, ctx, project, repo, checkout } = await machine();
+    await ctx.plugin({ name: "fake-workbuddy-team", inject: ["agent"], apply: (c: Context) => void c.agent.engine(installed("workbuddy")) });
+    await vi.waitFor(() => expect(fs.existsSync(path.join(checkout, ".codebuddy/settings.json"))).toBe(true), { timeout: 5000 });
+    const result = await codeLink.connect(project.id, repo.id);
+    expect(result.files).toContain(".codebuddy/settings.json");
+    git(["fetch", "-q", "origin"], checkout);
+    expect(git(["show", "origin/tomrade/connect:.codebuddy/settings.json"], checkout)).toContain("/sessions/event");
   });
 
   it("opens the pull request with gh, and leaves the branch pushed when gh is rate-limited or offline", async () => {

@@ -43,6 +43,23 @@ export interface ConnectionView {
 
 /** Agents whose committed hooks a connected repository carries; a connector that declares `tracks` joins them. */
 const HOOKED = new Set<string>(["claude-code", "codex", "workbuddy", "pi", "opencode", "cursor"]);
+
+/** The agents that report their sessions through hooks: the built-in ones, and a plugin agent whose connector says it tracks. */
+function hookedAgents(connectors: Connectors): Set<string> {
+  const hooked = new Set<string>(HOOKED);
+  for (const id of connectors.agents?.() ?? []) if (connectors(id)?.tracks) hooked.add(id);
+  return hooked;
+}
+
+/**
+ * The chosen agents a repository still needs files for: no MCP entry reaching
+ * this Tomrade, or no hooks where that agent reports its sessions. An agent
+ * with nothing to report (Gemini CLI) is finished once its server is there.
+ */
+export function agentsNeedingFiles(agents: readonly AgentConnectionView[], connectors: Connectors = NO_CONNECTORS): ConnectAgent[] {
+  const hooked = hookedAgents(connectors);
+  return agents.filter((agent) => agent.chosen && (!agent.tools || (hooked.has(agent.id) && agent.tracking !== "hooks"))).map((agent) => agent.id);
+}
 const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 function json(text: string | undefined): Record<string, unknown> {
   try { return object(JSON.parse(stripJsonComments(text ?? ""))); } catch { return {}; }
@@ -98,8 +115,7 @@ function inspect(files: Record<string, string>, mcpUrl: string, eventUrl: string
     agents.push({ id, title, tools: url !== null && sameProject(url, mcpUrl), tracking: tracks ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false });
   }
   const views = agents.map((agent): AgentConnectionView => ({ ...agent, chosen: chosen.includes(agent.id) }));
-  const hooked = new Set(HOOKED);
-  for (const id of connectors.agents?.() ?? []) if (connectors(id)?.tracks) hooked.add(id);
+  const hooked = hookedAgents(connectors);
   const counted = views.filter((agent) => agent.chosen);
   return { agents: views, configuredUrl, sameProject: sameProject(configuredUrl, mcpUrl), connected: counted.length > 0 && counted.every((agent) => agent.tools) && counted.filter((agent) => hooked.has(agent.id)).every((agent) => agent.tracking === "hooks") };
 }
