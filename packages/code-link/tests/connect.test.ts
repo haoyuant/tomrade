@@ -723,6 +723,32 @@ describe("an agent's own connection", () => {
   });
 });
 
+describe("a ticket an agent files for itself", () => {
+  const start = (ctx: Awaited<ReturnType<typeof machine>>["ctx"], cwd: string, id: string) =>
+    fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hook_event_name: "SessionStart", session_id: id, cwd }) });
+
+  it("joins the one terminal session that holds nothing, so the sidebar names it and its calls land there", async () => {
+    const { ctx, codeLink, project, checkout } = await machine();
+    await start(ctx, checkout, "cli-1");
+    const [session] = codeLink.sessionsOf(project.id);
+    const inv = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-a" };
+    const filed = (await ctx.tools.execute("create_item", { title: "Write the README" }, inv)) as { id: string; key: string };
+    // The row reads the ticket's key and title from the session's ticket, so the sidebar shows them at once.
+    expect(codeLink.sessionsOf(project.id, filed.id).map((s) => s.id)).toEqual([session!.id]);
+    expect(await ctx.tools.execute("note_progress", { key: filed.key, text: "written" }, inv)).toMatchObject({ ok: true });
+  });
+
+  it("leaves two free sessions alone: nothing says whose ticket it is, and the agent's own claim decides", async () => {
+    const { ctx, codeLink, project, checkout } = await machine();
+    await start(ctx, checkout, "cli-1");
+    await start(ctx, checkout, "cli-2");
+    expect(codeLink.sessionsOf(project.id)).toHaveLength(2);
+    const inv = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-a" };
+    const filed = (await ctx.tools.execute("create_item", { title: "Write the README" }, inv)) as { id: string };
+    expect(codeLink.sessionsOf(project.id, filed.id)).toEqual([]);
+  });
+});
+
 describe("untracked terminal sessions", () => {
   it.each(["en", "zh"] as const)("explains missing tracking and recovery in %s", async (language) => {
     const { ctx, items, project, board, codeLink } = await machine();

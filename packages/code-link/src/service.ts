@@ -23,7 +23,7 @@ import { readPull, type ForgePull } from "./forge.js";
 import type { ConnectionView } from "./connection.js";
 import { CONNECT_AGENTS, type ConnectFileWriter, type ConnectorAgent } from "./connect.js";
 import { RepoConnect, type ConnectMode, type ConnectResult } from "./connect-repo.js";
-import { Connections } from "./connections.js";
+import { Connections, MCP_AGENT } from "./connections.js";
 import { contribute } from "./contrib.js";
 import { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
 import { HerdrBridge, type HerdrInstall } from "./herdr-bridge.js";
@@ -368,8 +368,15 @@ export class CodeLink extends Service implements CodeLinkReader {
       for (const projectId of this.ctx.db.openIds()) void this.scans.migrateCredentialHelpers(projectId);
     });
 
-    this.home.inject(["tools"], (ctx) =>
-      registerTools(ctx, {
+    this.home.inject(["tools"], (ctx) => {
+      // A ticket an agent files while it holds none is the one it works: the terminal it speaks from takes it, so
+      // the sidebar names the ticket at once and the calls that name it later reach that session.
+      ctx.on("tools/result", (call, outcome) => {
+        if (call.name !== "create_item" || !outcome.ok || call.by !== `ai:${MCP_AGENT}` || !call.projectId) return;
+        const id = (outcome.result as { id?: unknown } | null)?.id;
+        if (typeof id === "string") this.filed(call.projectId, id);
+      });
+      return registerTools(ctx, {
         store: this.store,
         reevaluate: (projectId, itemId, repoId) => this.reevaluate(projectId, itemId, repoId),
         handOver: (projectId, itemId, repoId) => this.handOver(projectId, itemId, repoId),
@@ -390,8 +397,8 @@ export class CodeLink extends Service implements CodeLinkReader {
         notify: (projectId) => this.notify(projectId),
         summary: (projectId, itemId) => this.summary(projectId, itemId),
         mergeLocal: (projectId, itemId, opts) => this.mergeLocal(projectId, itemId, opts)
-      })
-    );
+      });
+    });
     this.home.inject(["mcp"], (ctx) => {
       // Hooks a repository commits carry no token; the cwd and session id in the payload say whose they are.
       ctx.mcp.onEvent((payload) => this.connections.externalEvent(payload));
@@ -852,6 +859,22 @@ export class CodeLink extends Service implements CodeLinkReader {
 
   attach(projectId: string, sessionId: string, itemId: string, branch: string, delivery: number, opts: { replace?: boolean } = {}): void {
     this.connections.attach(projectId, sessionId, itemId, branch, delivery, opts);
+  }
+
+  /**
+   * A ticket an agent filed from its own terminal, before any claim: the one live session that holds nothing and
+   * stands on that repository takes it. Exactly one — with two, nothing says whose the ticket is, and the agent's
+   * own claim decides; a session already working a ticket filed a follow-up, not its next one.
+   */
+  private filed(projectId: string, itemId: string): void {
+    const item = this.ctx.items.get(projectId, itemId);
+    const repoId = item ? this.ctx.boards.get(projectId, item.boardId)?.repoId : null;
+    if (!item || !repoId) return;
+    const free = this.store.sessions(projectId, { live: true }).filter((s) =>
+      s.mode === "terminal" && s.agent !== MCP_AGENT && s.threadId === null && s.repoId === repoId && s.endedAt === null && s.state !== "lost" && !s.itemIds.length);
+    if (free.length !== 1) return;
+    const session = free[0]!;
+    this.attach(projectId, session.id, item.id, "", this.store.ensureActiveDelivery(projectId, item.id, item.updatedAt).sequence);
   }
 
   externalSession(projectId: string, repoId: string, key?: string): SessionView | null {
