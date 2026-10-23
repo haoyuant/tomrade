@@ -11,10 +11,12 @@ import {
   fileNames,
   findCommand,
   launchFor,
+  loginEnvPath,
   machineHost,
   nodeShebang,
   parseRegInstalls,
   parseRegPath,
+  regPathArgs,
   shimRunsNode,
   shimTarget,
   searchPath,
@@ -311,6 +313,18 @@ describe("starting a CLI on Windows", () => {
     expect(expandWindowsVars(value, { userprofile: "C:\\Users\\a", APPDATA: "C:\\Users\\a\\AppData\\Roaming" })).toBe("C:\\Users\\a\\.local\\bin;C:\\Users\\a\\AppData\\Roaming\\npm");
     expect(expandWindowsVars("%NOPE%\\bin", {})).toBe("%NOPE%\\bin");
     expect(parseRegPath("ERROR: The system was unable to find the specified registry key or value.")).toBeNull();
+  });
+
+  it("reads the registry PATH in UTF-8, the key quoted for cmd.exe", () => {
+    expect(regPathArgs("HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment")).toEqual([
+      "/d", "/s", "/c", '"chcp 65001 >nul & reg query "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment" /v Path"'
+    ]);
+  });
+
+  it("reads the login shell's PATH from env output, as fish prints it too", () => {
+    const out = "Welcome to fish\nPATH=/nope\n__M__\nHOME=/h\nPATH=/opt/homebrew/bin:/usr/bin\nSHELL=/opt/homebrew/bin/fish\n";
+    expect(loginEnvPath(out, "__M__")).toBe("/opt/homebrew/bin:/usr/bin");
+    expect(loginEnvPath("no mark", "__M__")).toBeUndefined();
   });
 
   it("reads where an app was installed from the uninstall entries in the registry", () => {

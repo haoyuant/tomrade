@@ -1,6 +1,6 @@
 import type { Context } from "cordis";
 import type { EngineSignIn, EngineSignInMethod, TurnInput } from "@tomradex/agent";
-import { RpcError } from "@tomradex/engine-kit";
+import { RpcError, type CliLaunch } from "@tomradex/engine-kit";
 import type { AcpAgent, AcpOptions } from "./agent.js";
 import { CLIENT_INFO, oneShot } from "./catalog.js";
 import { AUTH_REQUIRED } from "./connection.js";
@@ -60,6 +60,17 @@ export function commandLine(argv: string[], env: Record<string, string>, platfor
   const vars = Object.entries(env);
   if (platform === "win32") return [...vars.map(([key, value]) => `$env:${key}=${powershellWord(value)};`), "&", ...argv.map(powershellWord)].join(" ");
   return [...vars.map(([key, value]) => `${key}=${posixWord(value)}`), ...argv.map(posixWord)].join(" ");
+}
+
+/**
+ * The program a terminal runs for a launch: a script bin through the runtime it
+ * runs on (Windows would open a `.js` in Script Host), but a `.cmd` itself, not
+ * the cmd.exe line that starts it from Node.
+ */
+export function terminalArgv(launch: CliLaunch, args: string[]): { argv: string[]; env: Record<string, string> } {
+  const spec = launch.argv(args);
+  const asNode = launch.env({}).ELECTRON_RUN_AS_NODE;
+  return { argv: spec.verbatim ? [launch.file, ...args] : [spec.command, ...spec.args], env: asNode ? { ELECTRON_RUN_AS_NODE: asNode } : {} };
 }
 
 /** It lists terminal methods only to a client that says it can run them. */
@@ -159,6 +170,7 @@ export class AcpSignIn implements EngineSignIn {
     const options = this.options();
     const input = { cwd: process.cwd() } as TurnInput;
     const launch = await this.agent.cli.launch(options.command);
-    return commandLine([launch.file, ...this.agent.args(input, options), ...method.args], { ...this.agent.env?.(input, options), ...method.env });
+    const run = terminalArgv(launch, [...this.agent.args(input, options), ...method.args]);
+    return commandLine(run.argv, { ...run.env, ...this.agent.env?.(input, options), ...method.env });
   }
 }

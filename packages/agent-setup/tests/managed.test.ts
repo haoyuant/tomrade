@@ -93,6 +93,15 @@ describe("the install command and its environment", () => {
     expect(shim).toContain('exec "/app/Tomrade Helper" "$@"');
     if (process.platform !== "win32") expect(fs.statSync(path.join(dir, "node", "node")).mode & 0o111).toBeTruthy();
   });
+
+  it("writes node.cmd and, for Git Bash, an sh `node` beside it on Windows", () => {
+    const dir = temp();
+    new ManagedCopies({ dir, runtime: "C:\\Program Files\\Tomrade\\Tomrade.exe" }, "win32", () => {}).start();
+    expect(fs.readFileSync(path.join(dir, "node", "node.cmd"), "utf8")).toContain('"C:\\Program Files\\Tomrade\\Tomrade.exe" %*');
+    const sh = fs.readFileSync(path.join(dir, "node", "node"), "utf8");
+    expect(sh).toContain("export ELECTRON_RUN_AS_NODE=1");
+    expect(sh).toContain('exec "C:/Program Files/Tomrade/Tomrade.exe" "$@"');
+  });
 });
 
 describe("the size shown before installing", () => {

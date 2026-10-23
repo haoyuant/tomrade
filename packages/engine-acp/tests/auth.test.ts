@@ -1,4 +1,6 @@
 import { expect, it } from "vitest";
+import { bundledLaunch, launchFor } from "@tomradex/engine-kit";
+import { terminalArgv } from "../src/auth.js";
 import { authMethodsOf, commandLine } from "../src/index.js";
 
 it("reads the sign-in methods an agent lists, in each form agents use", () => {
@@ -24,4 +26,12 @@ it("reads the sign-in methods an agent lists, in each form agents use", () => {
 it("writes a terminal method as the person's shell reads it", () => {
   expect(commandLine(["/opt/a b/npx", "--yes", "pkg@1.0.0", "--login"], { LOGIN: "it's" }, "darwin")).toBe(`LOGIN='it'\\''s' '/opt/a b/npx' --yes pkg@1.0.0 --login`);
   expect(commandLine(["C:\\npm\\npx.cmd", "--yes", "pkg@1.0.0"], { LOGIN: "1" }, "win32")).toBe(`$env:LOGIN='1'; & 'C:\\npm\\npx.cmd' '--yes' 'pkg@1.0.0'`);
+});
+
+it("signs in through the runtime a script bin runs on, and through a .cmd itself", () => {
+  const bundled = bundledLaunch({ file: "/app/agents/cli.js", runtime: "/app/Tomrade" }, { platform: "darwin", env: {} });
+  expect(terminalArgv(bundled, ["--login"])).toEqual({ argv: ["/app/Tomrade", "/app/agents/cli.js", "--login"], env: { ELECTRON_RUN_AS_NODE: "1" } });
+  expect(terminalArgv(launchFor("/usr/local/bin/agent", { platform: "darwin", env: {} }), ["--login"])).toEqual({ argv: ["/usr/local/bin/agent", "--login"], env: {} });
+  const cmd = { file: "C:\\npm\\npx.cmd", argv: (args: string[]) => ({ command: "cmd.exe", args: ["/d", "/s", "/c", `"x ${args.join(" ")}"`], verbatim: true }), env: (base = {}) => base };
+  expect(terminalArgv(cmd, ["--yes"])).toEqual({ argv: ["C:\\npm\\npx.cmd", "--yes"], env: {} });
 });

@@ -1,4 +1,4 @@
-import { execFile, spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
+import { execFile, spawn, spawnSync, type ChildProcess, type SpawnOptions } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -98,6 +98,17 @@ export function expandWindowsVars(value: string, env: NodeJS.ProcessEnv): string
 export function parseRegPath(output: string): string | null {
   const match = /^\s*Path\s+REG_(?:EXPAND_)?SZ\s+(.*)$/im.exec(output);
   return match ? match[1].trim() : null;
+}
+
+/** cmd.exe's arguments for `reg query <key> /v Path` in UTF-8 (reg.exe writes the console's code page, garbling D:\软件); run them verbatim. */
+export function regPathArgs(key: string): string[] {
+  return ["/d", "/s", "/c", `"chcp 65001 >nul & reg query "${key}" /v Path"`];
+}
+
+/** PATH out of `env` output after the mark: the one form every shell prints alike (fish space-joins `"$PATH"`). */
+export function loginEnvPath(stdout: string, mark: string): string | undefined {
+  const body = stdout.split(mark)[1];
+  return body?.split(/\r?\n/).find((line) => line.startsWith("PATH="))?.slice(5);
 }
 
 /**
@@ -251,6 +262,13 @@ export function stopCli(child: ChildProcess, signal: NodeJS.Signals = "SIGTERM")
   child.kill(signal);
 }
 
+/** stopCli for a `process.on("exit")` handler, where nothing asynchronous runs: taskkill waits, so the tree is gone before Tomrade is. */
+export function stopCliNow(child: ChildProcess, signal: NodeJS.Signals = "SIGTERM"): void {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  if (process.platform === "win32" && child.pid && !spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" }).error) return;
+  child.kill(signal);
+}
+
 function runOnce(launch: CliLaunch, args: string[], timeoutMs: number): Promise<CliRunResult> {
   const spec = launch.argv(args);
   return new Promise((resolve) => {
@@ -275,10 +293,9 @@ function readLoginPath(env: NodeJS.ProcessEnv): Promise<string[]> {
   const shell = env.SHELL || os.userInfo().shell || "/bin/sh";
   return new Promise((resolve, reject) => {
     // An interactive zsh or bash ignores SIGTERM: an rc file waiting for input would outlast the timeout forever.
-    execFile(shell, ["-ilc", `printf '%s' "${MARK}$PATH${MARK}"`], { env, timeout: 10_000, killSignal: "SIGKILL" }, (error, stdout) => {
+    execFile(shell, ["-ilc", `echo ${MARK}; env`], { env, timeout: 10_000, killSignal: "SIGKILL" }, (error, stdout) => {
       if (error?.killed) return reject(new ShellTimeout(shell));
-      const body = error ? undefined : String(stdout).split(MARK)[1];
-      resolve(splitPath(body, process.platform));
+      resolve(splitPath(error ? undefined : loginEnvPath(String(stdout), MARK), process.platform));
     });
   });
 }
@@ -286,7 +303,7 @@ function readLoginPath(env: NodeJS.ProcessEnv): Promise<string[]> {
 function readRegistryPath(env: NodeJS.ProcessEnv): Promise<string[]> {
   const query = (key: string) =>
     new Promise<string | null>((resolve) => {
-      execFile("reg.exe", ["query", key, "/v", "Path"], { windowsHide: true, timeout: 5000 }, (error, stdout) => resolve(error ? null : parseRegPath(String(stdout))));
+      execFile(envValue(env, "ComSpec") ?? "cmd.exe", regPathArgs(key), { windowsHide: true, windowsVerbatimArguments: true, timeout: 5000 }, (error, stdout) => resolve(error ? null : parseRegPath(String(stdout))));
     });
   // Windows builds a new process's PATH as the machine's, then the user's.
   return Promise.all([query("HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment"), query("HKCU\\Environment")]).then((values) =>

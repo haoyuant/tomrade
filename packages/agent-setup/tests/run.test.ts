@@ -34,6 +34,16 @@ describe("which installers fit this machine", () => {
     // brew only on macOS, even when something named brew answers
     expect(await applicableInstallers([BREW], host({ platform: "linux", answers: async () => true }))).toEqual([]);
   });
+
+  it("offers an x64 archive on arm64 Windows and macOS only when there is no native one", async () => {
+    const archive = (os: NodeJS.Platform, arch: string): EngineInstaller => ({ kind: "archive", url: `https://x.dev/${os}-${arch}.zip`, file: "x", platform: { os, arch } });
+    const [winX64, winArm, macX64, linuxX64] = [archive("win32", "x64"), archive("win32", "arm64"), archive("darwin", "x64"), archive("linux", "x64")];
+    expect(await applicableInstallers([winX64, NPM], host({ platform: "win32", arch: "arm64" }))).toEqual([winX64, NPM]);
+    expect(await applicableInstallers([winX64, winArm], host({ platform: "win32", arch: "arm64" }))).toEqual([winArm]);
+    expect(await applicableInstallers([macX64], host({ platform: "darwin", arch: "arm64" }))).toEqual([macX64]);
+    expect(await applicableInstallers([linuxX64], host({ platform: "linux", arch: "arm64" }))).toEqual([]);
+    expect(await applicableInstallers([winArm], host({ platform: "win32", arch: "x64" }))).toEqual([]);
+  });
 });
 
 describe("how one installer runs", () => {

@@ -134,10 +134,14 @@ const PING_TIMEOUT_MS = 10_000;
 /** The installers this machine can run, in the declared order; the rest are left out. */
 export async function applicableInstallers(installers: EngineInstaller[], host: SetupHost): Promise<EngineInstaller[]> {
   const kept: EngineInstaller[] = [];
+  const arch = host.arch ?? process.arch;
+  const native = installers.some((installer) => installer.kind === "archive" && installer.platform.os === host.platform && installer.platform.arch === arch);
+  // Windows and macOS on arm64 run x64 programs too; a native archive still wins.
+  const runs = !native && arch === "arm64" && (host.platform === "win32" || host.platform === "darwin") ? ["arm64", "x64"] : [arch];
   for (const installer of installers) {
     if (installer.kind === "script" && (installer.shell === "powershell") !== (host.platform === "win32")) continue;
     if (installer.kind === "brew" && (host.platform !== "darwin" || !(await host.answers("brew")))) continue;
-    if (installer.kind === "archive" && (installer.platform.os !== host.platform || installer.platform.arch !== (host.arch ?? process.arch))) continue;
+    if (installer.kind === "archive" && (installer.platform.os !== host.platform || !runs.includes(installer.platform.arch))) continue;
     kept.push(installer);
   }
   return kept;
