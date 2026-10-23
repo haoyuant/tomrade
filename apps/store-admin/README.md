@@ -38,3 +38,33 @@ tomrade-store announce withdraw <id>                    # machines that showed i
 Known issues people can fix themselves belong in the site's `known-issues.json` (`{ "version": 1, "issues": [...] }`, the `KnownIssue` shape in `@tomradex/doctor`). Every Tomrade reads it within six hours, so no release is needed.
 
 Every command but `keygen` needs `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
+
+## Internal usage dashboard
+
+Apply analytics migrations `202610230001` through `202610230004` to each
+analytics database and schedule aggregation as described in
+[analytics operations](../../docs/analytics.md). Migration 004 grants only the
+report RPCs to `service_role`; public and signed-in clients cannot read them.
+
+```sh
+pnpm --filter @tomradex/store-admin build
+# Supply these through your shell/secret manager, never through the page:
+# SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (international)
+# SUPABASE_URL_CN, SUPABASE_SERVICE_ROLE_KEY_CN (optional mainland deployment)
+node apps/store-admin/dist/cli.js analytics --port 19100
+```
+
+Open `http://127.0.0.1:19100`. The server binds only to loopback, checks the
+Host/Origin, sends no CORS allowance, and does not expose keys or raw events.
+Keep this operator tool on a trusted machine; do not publish it or proxy it to
+a public address. For remote operation use an SSH local port forward with the
+same local and remote port. Stop it with Ctrl+C.
+
+The page defaults to 30 UTC days, with 7/30/90-day and region filters, English
+and Chinese labels, usage/minutes ranking, feature daily charts, daily active
+anonymous IDs and D+1 retention. Use **Apply / refresh** to reload. Both regions
+must answer successfully: an unavailable configured source shows an error,
+not an apparently complete partial total. Queries time out after 15 seconds.
+Only numeric report aggregates cross deployments; identifiers never do.
+Cross-deployment active counts are sums, not globally deduplicated people.
+Missing days are gaps; current-day and not-yet-observed retention are labeled.
