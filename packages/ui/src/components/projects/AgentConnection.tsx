@@ -42,7 +42,7 @@ export function AgentConnection({ projectId, repoId, hint = false }: { projectId
   const unapproved = approvals.filter((a) => a.state !== "approved");
   // A taken port leaves this Tomrade on one that changes at every restart; Connect refuses to write it.
   const held = view?.clash?.heldBy;
-  const clash = view?.clash && t("repositories.connectionPortClash", { port: view.clash.port, holder: held ? t(HOLDER_KEY[held.kind], { version: held.version, pid: held.pid }) : t("repositories.connectionHolderUnknown") });
+  const clash = view?.clash && (view.clash.reserved ? t("repositories.connectionPortReserved", { port: view.clash.port }) : t("repositories.connectionPortClash", { port: view.clash.port, holder: held ? t(HOLDER_KEY[held.kind], { version: held.version, pid: held.pid }) : t("repositories.connectionHolderUnknown") }));
   // The live view, so a changed choice shows at once; the last chosen agent cannot be unchecked.
   const agents = view?.agents ?? connect.data?.agents ?? [];
   const chosen = agents.filter((agent) => agent.chosen).map((agent) => agent.id);
