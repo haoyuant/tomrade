@@ -230,7 +230,7 @@ function SettingsFace({ project, onClose, onRequestDelete, section }: { project:
     {
       id: "storage",
       label: t("projectSettingsDialog.storageLabel"),
-      icon: "i-folder",
+      icon: "i-sync",
       render: () => <><SectionHead title={t("projectSettingsDialog.storageLabel")}>{t("projectSettingsDialog.storageLede")}</SectionHead><StorageBlock projectId={project.id} /></>
     },
     {
