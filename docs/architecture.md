@@ -22,7 +22,7 @@ How Tomrade is put together, and the decisions it is held to. The [README](../RE
 - No code evaluation in configuration. `tomrade.yml` is static YAML with `${userData}`-style substitution and nothing more.
 - No profile or bundle layering. One file plus one patch file, merged by id.
 - No renderer plugin bundles. Plugins contribute data — commands, badges, status items, sections, settings cards — and the UI draws it with its own primitives.
-- No LangGraph, no LangChain, no separate vector DB. No cloud project database or Realtime project collaboration. Supabase Auth/Postgres is limited to Hub metadata. No Docker runtime requirement. No SSR web.
+- No LangGraph, no LangChain, no separate vector DB. No cloud project database or Realtime project collaboration. Supabase Auth/Postgres holds Hub metadata and separate usage-analytics tables; analytics never joins account or project records. No Docker runtime requirement. No SSR web.
 
 ## Repo layout
 
@@ -119,6 +119,40 @@ Issues carry a human key (`TOM-142`) from the project's `key_prefix` and a per-p
 ### The write path
 
 Every mutation of an item, board or view goes through `write()` in `@tomradex/write`: a synchronous `write/pre-commit` waterfall decides, the commit lands the rows and the oplog entry, and `write/committed` announces it. The guarantees — human lock, human-only purge, optimistic version — are three small policy plugins loaded by the `write-policy` row. Remove the row and the guarantees are gone; `packages/write/tests` proves it.
+
+## Usage statistics and anonymity
+
+The user-facing policy is [Data use and privacy](data-privacy.md)
+([简体中文](data-privacy.zh-CN.md)); README and Settings link to these same
+language variants. Operational details live in [analytics.md](analytics.md).
+
+`packages/analytics` owns the feature registry, strict event schemas, timer,
+local queue and uploader. The renderer sends predefined feature IDs/actions;
+Electron supplies window focus, idle and lock/suspend signals. Timing pauses
+after 60 seconds idle and excludes background time. No project content, text,
+paths, code or account identifiers belong in the event schema. The receiver
+rejects undeclared fields.
+
+A local random secret derives the anonymous ID sent with events; the secret
+never leaves `userData/analytics`. IDs rotate every 365 days or on reset.
+Repeated events under one ID support activity/retention counts, without an
+account mapping or a hardware fingerprint. Turning statistics off stops
+collection/uploads, cancels retries, clears the queue and removes the secret.
+Reset/off does not delete events already accepted by the cloud.
+
+Batches normally flush every 15 minutes or at 200 queued events, and on exit.
+The local queue is bounded to 7 days, 20,000 events or 20 MB. The cloud retains
+180 days of daily rows containing anonymous IDs; event partitions are dropped
+only when their entire month is older than 180 days. Feature/action totals
+without IDs remain for 25 months. Cleanup requires the scheduled database job.
+Analytics stays outside project storage, oplog and Hub synchronization.
+
+Separate mainland/international endpoints and database scope guards keep detail
+on its own side when deployed and configured. The internal dashboard combines
+numeric aggregates only; it never transfers or joins identifiers across those
+deployments. Regional routing, logging exclusions, backup expiry and the
+mainland consent/default decision are deployment responsibilities, not a
+consequence of building this repository. The current settings default is on.
 
 ## The MCP surface
 

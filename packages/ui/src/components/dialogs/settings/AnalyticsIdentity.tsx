@@ -3,6 +3,7 @@ import type { AnalyticsState } from "@tomradex/analytics";
 import { invoke, logQuietly } from "~/lib/api";
 import { agoLabel } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
+import { openExternal } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 
 /**
@@ -10,7 +11,7 @@ import { useToast } from "~/lib/toast";
  * ask for its data to be deleted, and the button that starts over.
  */
 export function AnalyticsIdentity() {
-  const { t, tx } = useI18n();
+  const { t, tx, locale } = useI18n();
   const toast = useToast();
   const [state, setState] = useState<AnalyticsState | null>(null);
 
@@ -24,8 +25,9 @@ export function AnalyticsIdentity() {
     };
   }, []);
 
-  if (!state) return null;
-  if (!state.enabled) return <p className="hint">{t("analytics.off")}</p>;
+  const privacy = <button type="button" className="link-inline" onClick={() => openExternal(`https://github.com/haoyuant/tomrade/blob/main/docs/data-privacy${locale.startsWith("zh") ? ".zh-CN" : ""}.md`)}>{t("analytics.privacy")}</button>;
+  if (!state) return privacy;
+  if (!state.enabled) return <div className="stack-2"><p className="hint">{t("analytics.off")}</p>{privacy}</div>;
 
   const reset = () => {
     void invoke("analytics.resetId")
@@ -38,6 +40,7 @@ export function AnalyticsIdentity() {
 
   return (
     <div className="stack-2" style={{ marginTop: "var(--space-3)" }}>
+      {privacy}
       <span className="eyebrow">{t("analytics.identifier")}</span>
       <code className="mono" style={{ userSelect: "all" }}>{state.anonId}</code>
       <p className="hint">{t("analytics.identifierNote")}</p>
