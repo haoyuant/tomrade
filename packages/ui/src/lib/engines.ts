@@ -1,4 +1,4 @@
-import type { EngineView } from "@tomradex/agent";
+import type { EngineTry, EngineView } from "@tomradex/agent";
 
 /**
  * Whether this machine has the engine at all. An in-app engine is here by
@@ -34,6 +34,9 @@ export function engineHealth(engine: HealthOf): EngineHealth {
 
 /** Found and signed in, never tried: only a test message tells whether it works. */
 export const awaitsTry = (engine: HealthOf): boolean => engine.ok && !engine.tried && triable(engine) && !modelPick(engine)?.failed;
+
+/** The last try with the engine's current settings, when it came back without a real reply. */
+export const failedTry = (engine: Pick<EngineView, "tried">): EngineTry | undefined => (engine.tried && !engine.tried.ok ? engine.tried : undefined);
 
 /** What keeps an engine that says it is ready from running, in its agent's words; none when nothing is known to. */
 export function engineProblem(engine: HealthOf): { kind: "tried" | "models"; detail: string } | null {

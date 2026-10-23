@@ -221,7 +221,7 @@ describe("the troubleshooter", () => {
       author: "ai:fine",
       available: async () => ({ ok: true }),
       async turn(_input, io) {
-        io.emit({ type: "text", text: "pong" });
+        io.emit({ type: "text", text: "OK" });
         return { stop: "end" };
       }
     });

@@ -88,6 +88,28 @@ it("tries an engine for real, keeps the answer while its settings stay, and leav
   } finally { await done(); }
 });
 
+it("passes a try only when the agent answers the word the test asks for", async () => {
+  const { ctx, project, done } = await setup();
+  try {
+    // What the agent says instead of the answer: nothing, or its provider's failure as ordinary text.
+    let said = "";
+    ctx.agent.engine({ id: "mute", title: "Mute", author: "ai:mute", available: async () => ({ ok: true }),
+      turn: async (_input, io) => {
+        if (said) io.emit({ type: "text", text: said });
+        return { stop: "end" };
+      } });
+    const silent = await ctx.agent.tryEngine(project.id, "mute");
+    expect(silent).toMatchObject({ ok: false, error: "the agent ended its turn without a reply" });
+    expect(silent.reply).toBeUndefined();
+
+    said = "AWS Bedrock didn't answer after 3 attempts — it looks temporarily unavailable. Wait a minute and send /retry, or switch models with /model.";
+    expect(await ctx.agent.tryEngine(project.id, "mute")).toMatchObject({ ok: false, error: said, reply: expect.stringContaining("AWS Bedrock") });
+
+    said = "OK, ready when you are.";
+    expect(await ctx.agent.tryEngine(project.id, "mute")).toMatchObject({ ok: true, reply: said });
+  } finally { await done(); }
+});
+
 it("recaps text the person and the agent said, newest first to survive, without the message being answered", () => {
   const at = (role: "user" | "agent" | "system", text: string, seq: number) => ({ id: String(seq), threadId: "t", seq, role, block: { type: "text" as const, text }, runId: null, at: seq });
   const long = "x".repeat(20_000);

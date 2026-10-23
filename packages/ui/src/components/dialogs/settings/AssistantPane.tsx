@@ -8,7 +8,7 @@ import { Icon } from "~/components/icons";
 import { ProviderInstallProblem } from "~/components/setup/QuickModelSetup";
 import { Fold, FoldChevron, FoldChevronSpace, SectionHead, Tag } from "~/components/ui/atoms";
 import { invoke } from "~/lib/api";
-import { detectedHere } from "~/lib/engines";
+import { detectedHere, failedTry } from "~/lib/engines";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { engineStateLabel, engineStatus } from "~/lib/localCli";
 import { keys, usePlugins } from "~/lib/queries";
@@ -378,6 +378,7 @@ function EngineRow({
   const hasBody = hasPicks || !!engine.cli || canTry;
   const toggle = () => hasBody && setOpen((o) => !o);
   const status = engineStatus(engine);
+  const failed = failedTry(engine);
   return (
     <div className="eng-row" ref={row} data-engine={engine.id}>
       <div className={`eng-head${hasBody ? " eng-head-toggle" : ""}`} onClick={toggle}>
@@ -388,8 +389,8 @@ function EngineRow({
           <span>{engine.title}</span>
           {engine.terminalOnly && <span className="meta-txt">{t("settingsDialog.terminalOnly")}</span>}
         </label>
-        <span className={`meta-txt eng-state${status === "ready" || status === "other" ? "" : " is-warn"}`} title={engine.ok ? undefined : engine.reason}>
-          {engine.cli ? engineStateLabel(engine, t, t("settingsDialog.engineUnavailable")) : engine.ok ? t("settingsDialog.engineReady") : (engine.reason ?? t("settingsDialog.engineUnavailable"))}
+        <span className={`meta-txt eng-state${status === "ready" || status === "other" ? "" : " is-warn"}${failed ? " is-warn" : ""}`} title={failed?.error ?? (engine.ok ? undefined : engine.reason)}>
+          {engine.cli || failed ? engineStateLabel(engine, t, t("settingsDialog.engineUnavailable")) : engine.ok ? t("settingsDialog.engineReady") : (engine.reason ?? t("settingsDialog.engineUnavailable"))}
         </span>
       </div>
       {/* Folded or not: a signed-in agent missing from chat and Start would otherwise look broken. */}
