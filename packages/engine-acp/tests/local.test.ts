@@ -289,6 +289,27 @@ describe("a plugin's local agent, run by the app's conductor", () => {
     await w.ctx.fiber.dispose();
   });
 
+  it("fails a try whose only reply is the ACP agent reporting its own provider's failure", { timeout: 20_000 }, async () => {
+    // Hermes 0.21.7 ends its turn with "end_turn" and puts the provider's failure where the
+    // answer would go, so that text is the only evidence the try has.
+    const down = path.join(dir, "fake-acp-down");
+    fs.writeFileSync(down, `#!/bin/sh\nFAKE_REPLY=bedrock exec '${process.execPath}' '${path.resolve("packages/engine-acp/tests/fake-acp.mjs")}' "$@"\n`, { mode: 0o700 });
+    const w = await world((p) => p.agent.localAgent({
+      id: "demo_down",
+      title: "Demo Down",
+      cli: { name: "tomrade-fake-local-acp" },
+      install: "install the demo agent",
+      options: Options,
+      acp: { permissionModes: { default: "full-access", choices: [PERMISSION_CHOICES["full-access"]] }, args: () => ["--acp"] }
+    }));
+    w.ctx.settings.set({ ...w.ctx.settings.get(), agent: { ...w.ctx.agent.settingsOf(), engines: { demo_down: { command: down } } } });
+
+    const tried = await w.ctx.agent.tryEngine(w.project.id, "demo_down");
+    expect(tried).toMatchObject({ ok: false, error: expect.stringMatching(/Bedrock didn't answer/) });
+    expect(tried.reply).toMatch(/Bedrock didn't answer/);
+    await w.ctx.fiber.dispose();
+  });
+
   it("keeps an agent the app still ships, and leaves the plugin's copy off", async () => {
     const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(dir, "settings.json") }], Agent, [Mcp, { port: 0 }], Llm, LocalAgents] });
     const builtIn = { id: "demo", title: "Built-in demo", author: "ai:demo" as const, available: async () => ({ ok: true }), turn: async () => ({ stop: "end" as const }) };
