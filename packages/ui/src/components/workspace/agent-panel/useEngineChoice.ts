@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { AgentSettings, EnginePick, EngineView, RunView } from "@tomradex/agent";
 import { findEngine, conducts, useSetOptions, useSetPermissionMode, type useAgentThread } from "~/lib/agent";
+import { pickTitleOf } from "~/lib/engines";
 import { permissionLabel as permissionName } from "~/lib/codeLink";
 import { useI18n } from "~/lib/i18n";
 import { useSaveSettings, type useSettings } from "~/lib/queries";
@@ -62,7 +63,9 @@ export function useEngineChoice({ projectId, threadId, detail, engines, settings
     return typeof value === "string" && value && (pick.freeText || pick.choices.some((c) => c.value === value)) ? value : null;
   };
   const setPick = (key: string, value: string | null) => {
-    if (threadId) {
+    // A machine-wide knob belongs to the settings even when a thread is open: the CLI reads it for every session.
+    const machineWide = picks.find((pick) => pick.key === key)?.global;
+    if (threadId && !machineWide) {
       const next = { ...threadOptions } as Record<string, unknown>;
       if (value) next[key] = value;
       else delete next[key];
@@ -75,8 +78,7 @@ export function useEngineChoice({ projectId, threadId, detail, engines, settings
     else delete next[key];
     saveSettings.mutate({ ...settings, agent: { ...agentSettings, engines: { ...agentSettings.engines, [currentEngineId]: next } } });
   };
-  const pickTitle = (pick: EnginePick) =>
-    pick.key === "model" || pick.key === "profile" ? t("agentPanel.modelHead") : pick.key === "effort" ? t("agentPanel.effortHead") : pick.title;
+  const pickTitle = (pick: EnginePick) => pickTitleOf(t, pick);
 
   return {
     usable, defaultEngine, currentEngineId, engine, noEngineReady,

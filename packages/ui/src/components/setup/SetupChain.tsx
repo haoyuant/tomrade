@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { EngineSetupFailure, EngineSetupProgress, EngineView } from "@tomradex/agent";
+import type { AgentSettings, EngineSetupFailure, EngineSetupProgress, EngineView } from "@tomradex/agent";
 import { useCurrentProject } from "~/components/dialogs/plugins/parts";
 import { Icon } from "~/components/icons";
 import { duration } from "~/components/workspace/agent-panel/format";
 import { invoke } from "~/lib/api";
+import { pickChoiceName, pickTitleOf } from "~/lib/engines";
 import { formatSize } from "~/lib/files";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { keys } from "~/lib/queries";
+import { keys, useSaveSettings, useSettings } from "~/lib/queries";
 import { useSetupChain, type ChainStep } from "~/lib/setupChain";
 import { openExternal } from "~/lib/shell";
 
@@ -180,6 +181,46 @@ function ManagedButton({ engine, onClick }: { engine: EngineView; onClick: () =>
 }
 
 /**
+ * The machine-wide pick an agent needs settled before it signs in — today the
+ * CodeBuddy edition. Empty is the agent's own default, so choosing nothing
+ * leaves the setup exactly as it was.
+ */
+function EditionPick({ engine, disabled }: { engine: EngineView; disabled: boolean }) {
+  const { t } = useI18n();
+  const settings = useSettings();
+  const save = useSaveSettings();
+  const pick = engine.picks?.find((candidate) => candidate.global);
+  const agent = settings.data?.agent as AgentSettings | undefined;
+  if (!pick || !agent) return null;
+  const options = (agent.engines[engine.id] ?? {}) as Record<string, unknown>;
+  const value = typeof options[pick.key] === "string" ? (options[pick.key] as string) : "";
+  const choose = (next: string) => {
+    if (!settings.data) return;
+    const nextOptions = { ...options };
+    if (next) nextOptions[pick.key] = next;
+    else delete nextOptions[pick.key];
+    save.mutate({ ...settings.data, agent: { ...agent, engines: { ...agent.engines, [engine.id]: nextOptions } } });
+  };
+  return (
+    <label className="setup-edition" title={t("setup.regionNote")}>
+      <span className="meta-txt">{pickTitleOf(t, pick)}</span>
+      <select
+        className="select"
+        value={value}
+        disabled={disabled || save.isPending}
+        data-testid={`setup-region-${engine.id}`}
+        onChange={(event) => choose(event.target.value)}
+      >
+        <option value="">{pickChoiceName(t, pick, { value: "auto" })}</option>
+        {pick.choices.map((choice) => (
+          <option key={choice.value} value={choice.value}>{pickChoiceName(t, pick, choice)}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+/**
  * The one primary button that makes an agent ready, and the step list it runs
  * through: install → sign in → a test message, each ticked when already
  * satisfied. Ready means the test message got a reply, nothing less — or, for
@@ -208,6 +249,7 @@ export function SetupChain({ engine, onTroubleshoot }: { engine: EngineView; onT
     <div className="setup-chain" data-testid={`chain-${engine.id}`}>
       {!ready && (
         <span className="row" style={{ gap: "var(--space-2)" }}>
+          <EditionPick engine={engine} disabled={chain.running} />
           <button type="button" className="btn btn-primary btn-sm" data-testid={`setup-run-${engine.id}`} disabled={chain.running} onClick={chain.start}>
             {chain.running ? t("setup.oneClickRunning") : chain.official ? t("setup.installOfficial") : chain.run?.failed ? t("setup.retry") : t("setup.oneClick")}
           </button>

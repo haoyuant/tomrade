@@ -7,7 +7,7 @@ import { fresh, settle } from "@tomradex/testkit";
 import { Tools } from "@tomradex/tools";
 import { Settings } from "@tomradex/settings";
 import { Agent, PANEL_SURFACES, type CardView, type ChecklistCard, type FindingCard, type RunView } from "@tomradex/agent";
-import { Doctor, KnownIssue, before, fingerprint, matches, parseCatalog, scrub, type RemoteReport, type Report } from "@tomradex/doctor";
+import { BUNDLED, Doctor, KnownIssue, before, fingerprint, matches, parseCatalog, scrub, type RemoteReport, type Report } from "@tomradex/doctor";
 
 const tmp = (name: string) => fs.mkdtempSync(path.join(os.tmpdir(), `tomrade-doctor-${name}-`));
 
@@ -59,6 +59,20 @@ describe("known issues", () => {
     expect(matches(issue, { engineId: "acme", texts: ["model hy3-ioa refused"], facts: {}, version: "0.6.0" })).toBe(true);
     expect(matches(issue, { engineId: "other", texts: ["model hy3-ioa refused"], facts: { edition: "ioa" }, version: "0.6.0" })).toBe(false);
     expect(matches(issue, { engineId: "acme", texts: ["timeout"], facts: { edition: "public" }, version: "0.6.0" })).toBe(false);
+  });
+
+  it("tell the China edition from iOA, and only hint at the version when the edition is not iOA", () => {
+    const ids = (texts: string[], facts: Record<string, string>) =>
+      BUNDLED.filter((known) => matches(known, { engineId: "workbuddy", texts, facts, version: "0.6.0" })).map((known) => known.id);
+    // The China edition's alternate origin is not evidence of iOA.
+    expect(ids(["request to copilot.tencent.com"], { edition: "china" })).toEqual([]);
+    expect(ids(["request to copilot.tencent.com"], { edition: "public" })).toEqual([]);
+    expect(ids([], { edition: "ioa" })).toEqual(["workbuddy-ioa-edition"]);
+    expect(ids(["model hy3-ioa refused"], {})).toEqual(["workbuddy-ioa-edition"]);
+    // A precise mismatch phrase, but never for iOA, which has the answer above.
+    expect(ids(["endpoint mismatch"], { edition: "china" })).toEqual(["workbuddy-region-mismatch"]);
+    expect(ids(["endpoint mismatch"], { edition: "ioa" })).toEqual(["workbuddy-ioa-edition"]);
+    expect(ids(["timeout"], { edition: "china" })).toEqual([]);
   });
 
   it("stop matching from the release that fixed them", () => {

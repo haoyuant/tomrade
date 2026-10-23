@@ -34,6 +34,8 @@ export interface AcpAgent<O extends AcpOptions = AcpOptions> {
   id: string;
   title: string;
   cli: CliLocator;
+  /** Picks it declares itself, before the model and effort its sessions offer. */
+  picks?: EnginePick[];
   /** The English tail of "not found — …". */
   install: string;
   options: z.ZodType<O>;

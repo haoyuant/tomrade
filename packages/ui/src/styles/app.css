@@ -2371,6 +2371,9 @@ html.overlay-open .titlebar .btn-primary {
 .setup-command { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 /* The one-click chain: the Set up button and the step list it runs through. */
 .setup-chain { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-2); }
+/* The edition a CodeBuddy account belongs to, settled before the one-click run signs in. */
+.setup-edition { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--meta); }
+.setup-edition select { width: auto; padding: 2px 6px; font-size: var(--text-xs); }
 .setup-steps { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: var(--text-xs); line-height: var(--leading-dense); color: var(--fg-2); }
 .setup-steps li { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 6px; align-items: start; }
 .setup-steps li > svg { margin-top: 1px; color: var(--meta); }

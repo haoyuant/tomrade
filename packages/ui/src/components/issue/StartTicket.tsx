@@ -159,7 +159,8 @@ function StartTicketDialog({
         ? remembered
         : (candidates.find((engine) => engine.ok) ?? candidates[0])?.id ?? (otherAllowed ? "other" : "");
   const engine = candidates.find((candidate) => candidate.id === engineId);
-  const picks = engineId === "other" ? [] : (engine?.picks ?? []);
+  // Machine-wide knobs (the CodeBuddy edition) are already in settings; a start takes them from there.
+  const picks = engineId === "other" ? [] : (engine?.picks ?? []).filter((pick) => !pick.global);
   const globalOptions = (agentSettings?.engines?.[engineId] ?? {}) as Record<string, unknown>;
   const globalValue = (key: string) => (typeof globalOptions[key] === "string" && globalOptions[key] ? (globalOptions[key] as string) : "");
 

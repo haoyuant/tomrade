@@ -41,6 +41,8 @@ export interface LocalAgentPick {
   choices: LocalAgentChoice[];
   /** Choices are suggestions only: settings may hold any string. */
   freeText?: boolean;
+  /** A machine-wide knob, not a conversation's: settings, the panel and setup write it for every thread. */
+  global?: boolean;
 }
 
 /**
@@ -276,7 +278,7 @@ export interface LocalAgentSpec<O extends LocalAgentOptions = LocalAgentOptions>
   /** The agent's own logs and setup facts, for the troubleshooter. */
   diagnostics?: { logs?(): string[]; facts?(catalog: LocalAgentCatalog): Record<string, string> };
   acp?: LocalAgentAcp<O>;
-  /** A terminal-only agent's picks (an ACP agent's come from its sessions). */
+  /** Picks the agent declares itself: a terminal agent's list, or machine-wide knobs an ACP agent puts before the model/effort its sessions offer. */
   picks?: LocalAgentPick[];
   mcpLink?: LocalAgentMcpLink<O>;
   /** Its sign-in lent to Tomrade's worker for one-shot calls, in Automatic order by `rank` (lowest first). */
