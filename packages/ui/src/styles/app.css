@@ -1898,6 +1898,23 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
 .appearance-theme-heading, .theme-automation-row { display: grid; justify-items: start; gap: var(--space-3); min-width: 0; }
 .appearance-group-title { margin: 0; color: var(--fg); font-family: var(--font-display); font-size: var(--text-md); line-height: var(--leading-tight); font-weight: var(--font-weight-medium); }
 .appearance-theme-heading .theme-switch, .theme-automation-row .theme-switch { max-width: 100%; width: fit-content; }
+
+/* ─── app icon · the image the Dock wears ──
+ * Both choices are the real 1024px app icons, shown at Dock size; the
+ * transparent logo sits on the raised surface so its outline stays visible. */
+.app-icon-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: var(--space-3); max-width: 560px; }
+.app-icon-choice {
+  display: grid; grid-template-columns: 72px minmax(0, 1fr); grid-template-rows: auto auto;
+  align-items: center; gap: 2px var(--space-3); padding: var(--space-3); text-align: left;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); cursor: pointer;
+}
+.app-icon-choice:hover { border-color: var(--border-input); }
+.app-icon-choice[aria-checked="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--tag-bg-faint); }
+.app-icon-choice:disabled { cursor: default; opacity: .7; }
+.app-icon-frame { grid-row: 1 / span 2; display: grid; place-items: center; width: 72px; height: 72px; border-radius: var(--radius-md); background: var(--surface-warm); }
+.app-icon-frame img { width: 64px; height: 64px; object-fit: contain; display: block; }
+.app-icon-name { font-family: var(--font-display); font-size: var(--text-sm); color: var(--fg); }
+.app-icon-note { font-size: var(--text-xs); color: var(--muted); line-height: var(--leading-body); }
 .automation-detail { min-width: 0; padding: var(--space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); }
 .schedule-config { display: grid; gap: var(--space-2); }
 .automation-detail-head { display: flex; justify-content: space-between; align-items: end; gap: var(--space-5); padding-bottom: var(--space-3); margin-bottom: var(--space-2); border-bottom: 1px solid var(--border-soft); }

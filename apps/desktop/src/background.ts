@@ -8,6 +8,7 @@ import type {} from "@tomradex/agent";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/settings";
+import { appIconPath, currentAppIcon } from "./app-icon.js";
 import { BACKGROUND_FLAG, loginItem, type LoginItem, type LoginState } from "./login-item.js";
 import { hasMainWindow, showMainWindow } from "./main-window.js";
 import { leaving, quitApproved } from "./quit.js";
@@ -15,9 +16,6 @@ import { DESKTOP_WORDS } from "./words.js";
 import { errorMessage, writeJsonAtomic } from "@tomradex/contracts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-
-/** The Dock's icon: the cat on the sun, a full rounded square that macOS 26 shows without its grey plate. */
-export const DOCK_ICON = path.join(here, "../assets/icon-mac.png");
 
 /** Beside the machine's app data, not an account's: starting at login belongs to the machine, and to every account on it. */
 export const PREFS_FILE = "background.json";
@@ -108,7 +106,7 @@ export function cameBack(win: BrowserWindow): void {
     if (!ordinary.size && keepsRunning() && !leaving() && !quitApproved()) wentAway();
   });
   // A Dock shown again draws the bundle's icon, dropping the one set at startup (dev runs Electron's bundle).
-  if (process.platform === "darwin") void app.dock?.show().then(() => app.dock?.setIcon(DOCK_ICON));
+  if (process.platform === "darwin") void app.dock?.show().then(() => app.dock?.setIcon(appIconPath(currentAppIcon())));
 }
 
 function wentAway(): void {
