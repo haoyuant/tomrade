@@ -43,6 +43,17 @@ function textOf(content: Content[] | undefined): string {
     .join("\n");
 }
 
+/** The SDK's safe inherited variables, plus what Windows needs to run npm's .cmd shims (npx), which the SDK leaves out. */
+export function stdioEnv(platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const out = getDefaultEnvironment();
+  if (platform !== "win32") return out;
+  for (const key of ["PATHEXT", "ComSpec", "windir"]) {
+    const value = env[key] ?? Object.entries(env).find(([k]) => k.toLowerCase() === key.toLowerCase())?.[1];
+    if (value !== undefined) out[key] = value;
+  }
+  return out;
+}
+
 /** One live connection to one server. Each attempt gets a fresh `Client`: a client that failed to connect is not reused. */
 export class Connection {
   private client: Client | null = null;
@@ -60,7 +71,7 @@ export class Connection {
       const transport = new StdioClientTransport({
         command: t.command,
         args: t.args,
-        env: { ...getDefaultEnvironment(), PATH: searchPath().join(path.delimiter), ...t.env },
+        env: { ...stdioEnv(), PATH: searchPath().join(path.delimiter), ...t.env },
         cwd: t.cwd,
         stderr: "pipe"
       });

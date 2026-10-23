@@ -98,6 +98,12 @@ describe("evidence", () => {
     expect(out).toContain("~/x");
   });
 
+  it("finds a Windows home in escaped, forward-slash and other-case spellings", () => {
+    const log = 'C:\\Users\\Alice\\a {"p":"C:\\\\Users\\\\Alice\\\\b"} C:/Users/Alice/c c:\\users\\alice\\d';
+    expect(scrub(log, "C:\\Users\\Alice", "win32")).toBe('~\\a {"p":"~\\\\b"} ~/c ~\\d');
+    expect(scrub("C:/Users/Alice/x", "C:\\Users\\Alice", "darwin")).toBe("C:/Users/Alice/x");
+  });
+
   it("fingerprints the same failure alike across people", () => {
     expect(fingerprint("acme", "timeout after 30123 ms at /Users/a/x")).toBe(fingerprint("acme", "timeout after 999 ms at /home/b/y"));
     expect(fingerprint("acme", "timeout")).not.toBe(fingerprint("acme", "401"));

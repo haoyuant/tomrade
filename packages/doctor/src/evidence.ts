@@ -3,9 +3,15 @@ import os from "node:os";
 import { redactSecrets } from "@tomradex/agent";
 
 /** Keys, the home folder's name and email addresses never leave the machine in a report. */
-export function scrub(text: string, home = os.homedir()): string {
+export function scrub(text: string, home = os.homedir(), platform: NodeJS.Platform = process.platform): string {
   let out = redactSecrets(text);
-  if (home && home.length > 1) out = out.split(home).join("~");
+  if (home && home.length > 1) {
+    if (platform === "win32") {
+      // Logs hold C:\Users\Name, JSON's C:\\Users\\Name and C:/Users/Name, in any case.
+      const parts = home.split(/[\\/]+/).filter(Boolean).map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+      out = out.replace(new RegExp(parts.join("(?:\\\\{1,2}|/)"), "gi"), "~");
+    } else out = out.split(home).join("~");
+  }
   return out.replace(/\b([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*@([A-Za-z0-9-]+\.)+[A-Za-z]{2,}\b/g, "$1…@…");
 }
 
