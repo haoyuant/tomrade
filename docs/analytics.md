@@ -1,5 +1,8 @@
 # Usage analytics in the cloud
 
+User-facing explanation: [Data use and privacy](data-privacy.md) /
+[数据使用与隐私说明](data-privacy.zh-CN.md).
+
 Tomrade's anonymous usage data lives in the account Supabase project but in
 tables and functions of its own: nothing here joins the Hub catalog, and no
 column can name a person, a project, a file or a path.
@@ -36,8 +39,9 @@ more than 60 batches an hour for one anonymous id is `429`.
 
 The region is inferred at ingest from the edge's country header
 (`cf-ipcountry`, `x-vercel-ip-country` or `x-tomrade-country`) and reduced to
-`cn`, `apac`, `eu`, `na` or `other` inside the function. The country and the
-IP are not written anywhere and do not appear in logs.
+`cn`, `apac`, `eu`, `na` or `other` inside the function. The analytics tables do
+not store the country or plaintext IP. Configure the edge and hosting logs to exclude them too; the SQL migration does not control
+provider logging.
 
 ## Retention
 
@@ -51,12 +55,15 @@ select cron.schedule('tomrade-analytics-retention', '17 3 * * *',
 
 The function is idempotent and reports what it removed. It only drops a month
 once that whole month is older than 180 days, so a partition still holding a
-row inside the retention window is never taken. Detail older than 180 days is
-gone; the aggregated tables keep 25 months and contain no `anon_id`.
+row inside the retention window is never taken. An event can therefore remain
+beyond 180 days until its entire month expires.
+Daily actor rows are kept for 180 days; feature/action aggregates keep 25 months
+and contain no `anon_id`.
 
 ## One contract, two deployments
 
-Mainland and international detail are stored separately: the mainland project
+With regional hosting, routing and scope guards configured, mainland and
+international detail are stored separately: the mainland project
 holds `region = 'cn'` only, the international one holds every other bucket.
 Both run the same migrations, so a row has the same shape and the same
 meaning wherever it landed, and the dashboard can add the two aggregate sets
@@ -103,16 +110,18 @@ upload.
 The aggregator runs in each region on its own detail and writes the three
 aggregate tables there. The dashboard reads both projects with service-role
 keys and adds the rows by `day` × `region` × `feature_id`; no detail row is
-copied across, and no `anon_id` exists in any aggregate. Distinct-actor
+copied across, and no `anon_id` is returned in the report summaries. The
+actor-daily table used locally for distinct counts does contain IDs and stays
+in its own region. Distinct-actor
 metrics are added region by region; someone who used Tomrade on both sides in
 one period is counted once per region, the price of never joining identifiers
 across the border.
 
 ## Aggregation and the report
 
-`tomrade_analytics_aggregate(from, to)` rewrites `usage_actor_daily`,
-`usage_feature_daily` and `usage_action_daily` for the days named. It deletes
-those days first, so re-running a range is both the retry and the way a late
+`tomrade_analytics_aggregate(from, to)` rewrites `tomrade_analytics_actor_daily`,
+`tomrade_analytics_feature_daily` and `tomrade_analytics_action_daily` for the
+days named. It deletes those days first, so re-running a range is both the retry and the way a late
 event is folded in exactly once. The metric definitions live in this function
 and in the dashboard's labels; no screen derives its own.
 

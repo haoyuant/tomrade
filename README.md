@@ -133,7 +133,20 @@ Built so agents can move fast without stepping on you.
 - **Bring your own model.** DeepSeek, Anthropic, OpenAI, Gemini, Kimi, OpenRouter, any OpenAI-compatible endpoint or a local model, with more providers as [plugins](https://github.com/haoyuant/tomrade-plugins). Or let your own Claude Code or Codex conduct, on your own login.
 - **It asks before it acts.** A shell command waits for your Allow once, Allow for this turn or Deny. A coding agent runs with the permissions you pick when you press Start. API keys, MCP servers and command lines are never an agent's to change.
 - **Boards, tables and graphs.** Workstreams, custom fields and saved views. Keyboard-first, with a palette for everything.
-- **Local first, account optional.** Choose "Use without an account" and everything stays on this machine. An account only syncs your preferences and project list, never project content. Project content leaves your machine only if you connect a model provider or a git remote.
+- **Local first, account optional.** Choose "Use without an account" to keep preferences and the project list on this machine. Usage statistics have their own switch in Settings. An account only syncs your preferences and project list, never project content. Project content leaves your machine only if you connect a model provider or a git remote.
+
+## How we use data
+
+Usage statistics help us understand feature use and active time. They contain
+predefined feature actions, a random rotating identifier, app/platform and
+format versions, and a broad region—not project or ticket content, notes,
+chats, code, file names, paths, email or account IDs. Analytics is separate
+from account sign-in and project sync.
+
+You can turn it off at any time in **Settings → Data & privacy → Anonymous
+usage statistics**. This stops collection and uploads, clears unsent events
+and deletes the local identity secret. Read [Data use and privacy](docs/data-privacy.md)
+for the fields, retention, reset behavior and regional deployment conditions.
 
 ## Install
 
@@ -235,7 +248,7 @@ Built with help: [the people who shaped Tomrade](https://tomrade.com/thanks/) wi
 
 **Where is my data?** In one plain folder per project, on your machine.
 
-**Do I need an account?** No. Choose "Use without an account" and everything stays on this machine. Signing in only keeps your preferences and project list in sync across computers; tickets, files and code stay in your project folders.
+**Do I need an account?** No. Choose "Use without an account" to keep preferences and the project list on this machine. Usage statistics have their own switch in Settings. Signing in only keeps your preferences and project list in sync across computers; tickets, files and code stay in your project folders.
 
 **Can I turn the cat off?** Yes, in Settings. You can also swap it for a pet of your own, or unload the pet plugin entirely. The cat will not take it personally. Probably.
 

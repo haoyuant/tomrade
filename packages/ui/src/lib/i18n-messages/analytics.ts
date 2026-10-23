@@ -1,19 +1,21 @@
 export const analytics = {
   en: {
+    privacy: "Data use and privacy",
     identifier: "Anonymous identifier",
-    identifierNote: "It is not an account and cannot be used to sign in. Quote it if you ask for its data to be deleted.",
+    identifierNote: "It is not an account and cannot be used to sign in. Copy it before resetting or switching statistics off if you want to request deletion through a private support channel.",
     reset: "Reset identifier",
-    resetNote: "A new identifier is made and anything not yet sent is discarded. It cannot be joined to the old one.",
+    resetNote: "Creates a new identifier and discards unsent events. Already uploaded events remain until their retention period ends.",
     queued: "{{n}} waiting to be sent",
     sent: "Last sent {{when}}",
     neverSent: "Nothing sent yet",
     off: "Statistics are off. Nothing is collected or sent."
   },
   zh: {
+    privacy: "数据使用与隐私说明",
     identifier: "匿名标识",
-    identifierNote: "它不是账号，不能用于登录。如需删除它对应的数据，请提供这个标识。",
+    identifierNote: "它不是账号，不能用于登录。如需通过私密支持渠道申请删除数据，请在重置或关闭统计前复制此标识。",
     reset: "重置匿名标识",
-    resetNote: "会生成新的标识，并丢弃尚未发送的数据；它无法与旧标识关联。",
+    resetNote: "生成新标识并丢弃待发事件。已上报的事件仍按保留期限清理。",
     queued: "{{n}} 条待上报",
     sent: "上次上报：{{when}}",
     neverSent: "尚未上报过",
