@@ -1,4 +1,5 @@
-import { app, BrowserWindow, dialog, nativeImage, nativeTheme, Notification } from "electron";
+import fs from "node:fs";
+import { app, BrowserWindow, dialog, nativeTheme, Notification } from "electron";
 import { DESKTOP_WORDS } from "./words.js";
 import { errorMessage } from "@tomradex/contracts";
 
@@ -35,8 +36,14 @@ export function saySafeStart(): void {
  */
 export function showSplash(icon: string): BrowserWindow {
   const dark = nativeTheme.shouldUseDarkColors;
-  const image = nativeImage.createFromPath(icon);
-  const logo = image.isEmpty() ? "" : `<img src="${image.resize({ width: 128 }).toDataURL()}" width="64" height="64" alt="">`;
+  // The file's own bytes, base64: decoding the icon in the main process drew no
+  // logo on Windows, only its white plate.
+  let logo = "";
+  try {
+    logo = `<img src="data:image/png;base64,${fs.readFileSync(icon).toString("base64")}" width="64" height="64" alt="">`;
+  } catch {
+    // No icon to draw; the window still says what it is doing.
+  }
   const html = `<!doctype html><meta charset="utf-8"><title>Tomrade</title><style>
 html,body{height:100%;margin:0}
 body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;font:13px system-ui,-apple-system,"Segoe UI",sans-serif;color:${dark ? "#e8e8e8" : "#1f1f1f"};cursor:default;user-select:none;-webkit-app-region:drag}
