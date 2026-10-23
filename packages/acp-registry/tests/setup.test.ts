@@ -16,7 +16,7 @@ import { Mcp } from "@tomradex/mcp";
 import { Settings } from "@tomradex/settings";
 import { Tools } from "@tomradex/tools";
 import { fresh } from "@tomradex/testkit";
-import AcpRegistry from "@tomradex/acp-registry";
+import AcpRegistry, { addedOf, NpxPackage, RegistryAgent, specOf } from "@tomradex/acp-registry";
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-registry-setup-"));
@@ -153,3 +153,28 @@ it("leaves a terminal method to the terminal and notices when it is done; a turn
   expect(await (engine.local!.signIn as AcpSignIn).signedIn()).toBe(false);
   await w.ctx.fiber.dispose();
 }, 60_000);
+
+it("finds a copy npm put under Tomrade's own prefix, and points npx there", async () => {
+  const own = path.join(dir, "own");
+  fs.rmSync(root, { recursive: true, force: true });
+  process.env.TOMRADE_NPM_PREFIX = own;
+  try {
+    const cli = new NpxPackage("fake-agent@3.0.0");
+    const spec = specOf(addedOf(RegistryAgent.parse(entry("3.0.0"))), cli);
+    expect(await cli.locate({ fresh: true })).toMatchObject({ state: "missing" });
+
+    const pkg = path.join(own, process.platform === "win32" ? "" : "lib", "node_modules", "fake-agent");
+    fs.mkdirSync(pkg, { recursive: true });
+    fs.writeFileSync(path.join(pkg, "package.json"), JSON.stringify({ name: "fake-agent", version: "3.0.0" }));
+    expect(await cli.locate({ fresh: true })).toMatchObject({ state: "ready", path: pkg, version: "3.0.0" });
+    expect(spec.acp!.env!({})).toEqual({ NPM_CONFIG_PREFIX: own });
+
+    // In npm's own global folder it needs no prefix.
+    fs.mkdirSync(path.join(root, "fake-agent"), { recursive: true });
+    fs.writeFileSync(path.join(root, "fake-agent", "package.json"), JSON.stringify({ name: "fake-agent", version: "3.0.0" }));
+    expect(await cli.locate({ fresh: true })).toMatchObject({ state: "ready", path: path.join(root, "fake-agent") });
+    expect(spec.acp!.env!({})).toEqual({});
+  } finally {
+    delete process.env.TOMRADE_NPM_PREFIX;
+  }
+});

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { LocalCliStatus } from "@tomradex/agent";
-import { CliLocator, localCli, type CliHost } from "@tomradex/engine-kit";
+import { CliLocator, localCli, machineHost, type CliHost } from "@tomradex/engine-kit";
 
 /** `@scope/name@1.2.3` as its name and version; no version: any one installed will do. */
 export function packageOf(spec: string): { name: string; version?: string } {
@@ -11,20 +11,22 @@ export function packageOf(spec: string): { name: string; version?: string } {
 
 /**
  * npx, counted as found only once the pinned package is installed globally
- * with the npm Tomrade uses. npx then runs that copy at once and offline (it
+ * with the npm Tomrade uses, or under Tomrade's own npm prefix. npx then runs that copy at once and offline (it
  * looks in npm's global folder before its own cache), so a first turn never
  * downloads the package inside its time limit. The status names the package,
  * its folder and its version; launching is npx's.
  */
 export class NpxPackage extends CliLocator {
   private root: { at: number; dir: string | null } | null = null;
+  /** Tomrade's own npm prefix when the package was found there (a refused `npm i -g` lands it there): npx is pointed at it. */
+  prefix: string | null = null;
 
   constructor(
     readonly pkg: string,
-    host?: CliHost,
+    private machine: CliHost = machineHost(),
     private npm: Pick<CliLocator, "run"> = localCli("npm")
   ) {
-    super("npx", host);
+    super("npx", machine);
   }
 
   /** npm's global folder, as that npm says; asked again on a fresh look. */
@@ -40,15 +42,24 @@ export class NpxPackage extends CliLocator {
     const npx = await super.locate(opts);
     if (npx.state !== "ready") return npx;
     const { name, version } = packageOf(this.pkg);
-    const root = await this.globalRoot(opts.fresh);
-    const dir = root ? path.join(root, ...name.split("/")) : null;
-    let installed: string | undefined;
-    try {
-      if (dir) installed = String((JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8")) as { version?: unknown }).version ?? "");
-    } catch {
-      installed = undefined;
+    const own = this.machine.env.TOMRADE_NPM_PREFIX;
+    const p = this.machine.platform === "win32" ? path.win32 : path.posix;
+    // npm keeps global packages in `<prefix>/lib/node_modules`, on Windows in `<prefix>/node_modules`.
+    const ownRoot = own ? (this.machine.platform === "win32" ? p.join(own, "node_modules") : p.join(own, "lib", "node_modules")) : null;
+    for (const root of [await this.globalRoot(opts.fresh), ownRoot]) {
+      if (!root) continue;
+      const dir = p.join(root, ...name.split("/"));
+      let installed: string;
+      try {
+        installed = String((JSON.parse(fs.readFileSync(p.join(dir, "package.json"), "utf8")) as { version?: unknown }).version ?? "");
+      } catch {
+        continue;
+      }
+      if (version && installed !== version) continue;
+      this.prefix = root === ownRoot ? own! : null;
+      return { ...npx, name: this.pkg, path: dir, version: installed };
     }
-    if (installed !== undefined && (!version || installed === version)) return { ...npx, name: this.pkg, path: dir!, version: installed };
+    this.prefix = null;
     const { path: _path, version: _version, source: _source, ...rest } = npx;
     return { ...rest, name: this.pkg, state: "missing" };
   }
