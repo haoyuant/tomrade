@@ -103,16 +103,48 @@ export class Connections {
 
   /**
    * The hooks session a tokenless claim comes from: the one whose PreToolUse just
-   * announced this claim; failing that, a guess — the latest live one on that
-   * repository that holds no ticket and no client's connection yet.
+   * announced this claim; failing that, a guess — the live one on that repository
+   * that holds no ticket and no client's connection yet, the row its hooks reached
+   * last when one conversation left several behind.
    * The guess never takes one that already holds a ticket — that is another terminal's.
    */
   externalSession(projectId: string, repoId: string, key?: string): SessionView | null {
+    const live = (s: SessionView | null | undefined): s is SessionView => !!s && s.repoId === repoId && s.threadId === null && s.endedAt === null && s.state !== "ended" && s.state !== "lost";
     const asked = key ? this.sessions.claimer(projectId, key) : null;
     const asking = asked ? this.store.session(projectId, asked) : null;
-    if (asking && asking.repoId === repoId && asking.threadId === null && asking.endedAt === null && asking.state !== "ended" && asking.state !== "lost") return asking;
+    if (live(asking)) return asking;
     const taken = new Set([...this.connections.values()].filter((c) => c.projectId === projectId).flatMap((c) => c.sessionIds));
-    return this.store.sessions(projectId, { live: true }).find((s) => s.repoId === repoId && s.threadId === null && s.state !== "lost" && !s.itemIds.length && !taken.has(s.id)) ?? null;
+    const free = this.store.sessions(projectId, { live: true }).find((s) => s.repoId === repoId && s.threadId === null && s.state !== "lost" && !s.itemIds.length && !taken.has(s.id));
+    return free ?? null;
+  }
+
+  /**
+   * Of one conversation's live rows, the one its hooks reached last: a CLI that came back under the same id can leave
+   * the earlier row behind, and that row is not where the agent is talking from now. Rows of another conversation
+   * (a different id, or none) are left exactly as they are.
+   */
+  freshest(projectId: string, session: SessionView): SessionView {
+    if (!session.externalId) return session;
+    const siblings = this.store
+      .sessions(projectId, { live: true })
+      .filter((s) => s.externalId === session.externalId && s.agent === session.agent && s.repoId === session.repoId && s.state !== "lost" && s.threadId === null);
+    return siblings.reduce((best, s) => ((s.lastEventAt ?? s.startedAt) > (best.lastEventAt ?? best.startedAt) ? s : best), session);
+  }
+
+  /**
+   * The row a client works from now, when its connection was bound to an older one of the same conversation that still
+   * holds work: the newest live row of that conversation holding nothing. The agent's own restarts leave the old row
+   * behind; a claim for another ticket is the new row's, not the old one's.
+   */
+  freeSibling(projectId: string, session: SessionView): SessionView | null {
+    if (!session.externalId) return null;
+    const bound = session.lastEventAt ?? session.startedAt;
+    return this.store
+      .sessions(projectId, { live: true })
+      .filter((s) => s.id !== session.id && s.externalId === session.externalId && s.agent === session.agent && s.repoId === session.repoId
+        && s.threadId === null && s.state !== "lost" && s.endedAt === null && !s.itemIds.length)
+      .sort((a, b) => (b.lastEventAt ?? b.startedAt) - (a.lastEventAt ?? a.startedAt))
+      .find((s) => (s.lastEventAt ?? s.startedAt) >= bound) ?? null;
   }
 
   /** A terminal session Start made for this ticket with an agent that reaches Tomrade without its token, which no connection has joined yet. */

@@ -95,6 +95,8 @@ export interface ToolCall {
   by: Author;
   projectId?: string;
   run?: RunHandle;
+  /** The outside client's connection the call came over, when it came from one: that agent process's MCP session. */
+  connection?: string;
 }
 
 export type ToolOutcome = { ok: true; result: unknown } | { ok: false; error: unknown };
@@ -303,7 +305,7 @@ export class Tools extends Service {
     if (!tool) throw new UnknownToolError(name);
     const parsed = strictInput(tool.input).safeParse(rawArgs ?? {});
     if (!parsed.success) throw new ToolInputError(name, parsed.error.issues);
-    const call: ToolCall = { name, args: parsed.data, by: invocation.by, projectId: invocation.projectId, run: invocation.run };
+    const call: ToolCall = { name, args: parsed.data, by: invocation.by, projectId: invocation.projectId, run: invocation.run, ...(invocation.connection ? { connection: invocation.connection } : {}) };
     try {
       const gated = () =>
         this.ctx.waterfall("tools/pre-execute", call, async () => {

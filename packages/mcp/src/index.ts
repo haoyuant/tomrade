@@ -478,6 +478,8 @@ export class Mcp extends Service implements McpReader {
   private session(token?: string, projectId?: string): McpServer {
     const scope: McpScope = projectId ? { projectId } : {};
     const ordered = [...this.instructions].sort((a, b) => a[1] - b[1]).map(([render]) => render);
+    // Whole instructions for an outside client and for a repository's `/mcp/<projectId>` entry, which carries no
+    // run token either; only a run Tomrade started has its brief, and hears the rules from the prompt every turn.
     const instructions = token ? "" : ordered.map((render) => paragraph(render, scope)).filter(Boolean).join("\n\n");
     const server = new McpServer({ name: MCP_SERVER_NAME, version: this.config.instance.version }, instructions ? { instructions } : undefined);
     const tools = this.tools;

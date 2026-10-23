@@ -609,7 +609,9 @@ describe("connecting a repository", () => {
     expect(view).toMatchObject({ state: "connected", local: true, configuredUrl: ctx.mcp.urlFor(project.id) });
     expect(view.agents.find((agent) => agent.id === "claude-code")).toMatchObject({ tools: true, tracking: "hooks", instructions: false });
     expect(view.agents.find((agent) => agent.id === "codex")).toMatchObject({ tools: true, tracking: "hooks" });
-    expect(await codeLink.connect(project.id, repo.id, "local")).toMatchObject({ files: [], local: true, message: "Connected" });
+    // Connecting again is how an earlier connection gains the files a newer Tomrade writes; nothing changes in git.
+    expect(await codeLink.connect(project.id, repo.id, "local")).toMatchObject({ local: true, branch: "", committed: false, pushed: false });
+    expect(git(["status", "--porcelain"], checkout)).toBe("");
     // A Codex session in the checkout reports through the excluded hooks, with no pull request anywhere.
     await fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json", "X-Tomrade-Agent": "codex" }, body: JSON.stringify({ hook_event_name: "SessionStart", session_id: "codex-1", cwd: checkout }) });
     expect(codeLink.sessionsOf(project.id)).toEqual([expect.objectContaining({ agent: "codex", externalId: "codex-1", repoId: repo.id, state: "running" })]);
@@ -725,12 +727,15 @@ describe("an agent's own connection", () => {
 });
 
 describe("a ticket an agent files for itself", () => {
-  const start = (ctx: Awaited<ReturnType<typeof machine>>["ctx"], cwd: string, id: string) =>
-    fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hook_event_name: "SessionStart", session_id: id, cwd }) });
+  // A hook is posted and those it creates are waited for: the same conversation may have rows already.
+  const start = async (ctx: Awaited<ReturnType<typeof machine>>["ctx"], projectId: string, cwd: string, id: string, rows = 1) => {
+    await fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hook_event_name: "SessionStart", session_id: id, cwd }) });
+    await until(() => ctx.codeLink.sessionsOf(projectId).length >= rows);
+  };
 
   it("joins the one terminal session that holds nothing, so the sidebar names it and its calls land there", async () => {
     const { ctx, codeLink, project, checkout } = await machine();
-    await start(ctx, checkout, "cli-1");
+    await start(ctx, project.id, checkout, "cli-1");
     const [session] = codeLink.sessionsOf(project.id);
     const inv = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-a" };
     const filed = (await ctx.tools.execute("create_item", { title: "Write the README" }, inv)) as { id: string; key: string };
@@ -741,12 +746,35 @@ describe("a ticket an agent files for itself", () => {
 
   it("leaves two free sessions alone: nothing says whose ticket it is, and the agent's own claim decides", async () => {
     const { ctx, codeLink, project, checkout } = await machine();
-    await start(ctx, checkout, "cli-1");
-    await start(ctx, checkout, "cli-2");
+    await start(ctx, project.id, checkout, "cli-1");
+    await start(ctx, project.id, checkout, "cli-2");
     expect(codeLink.sessionsOf(project.id)).toHaveLength(2);
     const inv = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-a" };
     const filed = (await ctx.tools.execute("create_item", { title: "Write the README" }, inv)) as { id: string };
     expect(codeLink.sessionsOf(project.id, filed.id)).toEqual([]);
+  });
+
+  it("claims the row its conversation opened last, not the one the connection was bound to before", async () => {
+    const { ctx, codeLink, project, board, items, checkout } = await machine();
+    const post = (payload: unknown) => fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    await post({ hook_event_name: "SessionStart", session_id: "cli-1", cwd: checkout });
+    await until(() => codeLink.sessionsOf(project.id).length === 1);
+    const older = codeLink.sessionsOf(project.id)[0]!;
+    const first = items.create({ projectId: project.id, boardId: board.id, title: "Earlier work", by: "human" });
+    const inv = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-a" };
+    // The connection is bound to that row; then the CLI comes back under the same id in a new row — what a restart
+    // leaves behind — and Start's row for the next ticket is the one the person is looking at.
+    expect(await ctx.tools.execute("claim_ticket", { key: first.key }, inv)).toMatchObject({ tracking: { sessionId: older.id } });
+    codeLink.store.createSession(project.id, { repoId: older.repoId, branch: "", itemIds: [], mode: "terminal", agent: older.agent, threadId: null, device: older.device, externalId: "cli-1" });
+    const newer = codeLink.sessionsOf(project.id).find((s) => s.id !== older.id)!;
+    const second = items.create({ projectId: project.id, boardId: board.id, title: "New work", by: "human" });
+    const claimed = (await ctx.tools.execute("claim_ticket", { key: second.key }, inv)) as { tracking: { tracked: boolean; sessionId: string } };
+    expect(claimed.tracking).toMatchObject({ tracked: true, sessionId: newer.id });
+    // The older row keeps the ticket it had: nothing was taken from it, the new claim simply went to the new row.
+    expect(codeLink.sessionsOf(project.id, first.id).map((s) => s.id)).toEqual([older.id]);
+    // And the calls that name it land there, not on the row it left behind.
+    expect(await ctx.tools.execute("note_progress", { key: second.key, text: "started" }, inv)).toMatchObject({ ok: true });
+    expect(codeLink.sessionsOf(project.id, second.id).map((s) => [s.id, s.summary])).toEqual([[newer.id, "started"]]);
   });
 });
 

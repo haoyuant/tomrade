@@ -153,7 +153,8 @@ export class RepoConnect {
       branchTemplate: this.store.repoState(projectId, repoId)?.branchTemplate ?? "{key}/{slug}"
     };
     if (mode === "local") {
-      if (connection.state === "connected") return { branch: "", agents: connection.agents, files: [], skipped: [], committed: false, pushed: false, url: null, local: true, message: w("connected") };
+      // Local files are cheap and never leave the machine: running again is what brings an earlier connection the
+      // files a newer Tomrade writes (its rule section in CLAUDE.md / AGENTS.md, a new agent's settings).
       return this.connectLocally(projectId, repoId, placement.checkout, input, chosen);
     }
     // A connection this machine alone holds does not stand in for the team's.

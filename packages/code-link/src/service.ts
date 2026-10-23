@@ -387,6 +387,7 @@ export class CodeLink extends Service implements CodeLinkReader {
         externalSession: (projectId, repoId, key) => this.externalSession(projectId, repoId, key),
         awaitingClaim: (projectId, itemId) => this.awaitingClaim(projectId, itemId),
         connected: (projectId, connection) => this.connected(projectId, connection),
+        freeSibling: (projectId, session) => this.connections.freeSibling(projectId, session),
         connectedSessions: (projectId, connection) => this.connectedSessions(projectId, connection),
         bindConnection: (projectId, connection, sessionId, leaving) => this.bindConnection(projectId, connection, sessionId, leaving),
         bound: (sessionId) => this.boundAnywhere(sessionId),
@@ -872,9 +873,11 @@ export class CodeLink extends Service implements CodeLinkReader {
     if (!item || !repoId) return;
     const free = this.store.sessions(projectId, { live: true }).filter((s) =>
       s.mode === "terminal" && s.agent !== MCP_AGENT && s.threadId === null && s.repoId === repoId && s.endedAt === null && s.state !== "lost" && !s.itemIds.length);
-    if (free.length !== 1) return;
-    const session = free[0]!;
-    this.attach(projectId, session.id, item.id, "", this.store.ensureActiveDelivery(projectId, item.id, item.updatedAt).sequence);
+    // One conversation may have left several rows behind; two conversations never share a ticket. Only the first is
+    // a ticket's, and of its rows the one its hooks reached last — not the earlier one a restart left standing.
+    if (new Set(free.map((s) => s.externalId ?? s.id)).size !== 1) return;
+    const latest = free.reduce((best, s) => ((s.lastEventAt ?? s.startedAt) > (best.lastEventAt ?? best.startedAt) ? s : best), free[0]!);
+    this.attach(projectId, this.connections.freshest(projectId, latest).id, item.id, "", this.store.ensureActiveDelivery(projectId, item.id, item.updatedAt).sequence);
   }
 
   externalSession(projectId: string, repoId: string, key?: string): SessionView | null {
