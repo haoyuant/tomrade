@@ -107,3 +107,34 @@ copied across, and no `anon_id` exists in any aggregate. Distinct-actor
 metrics are added region by region; someone who used Tomrade on both sides in
 one period is counted once per region, the price of never joining identifiers
 across the border.
+
+## Aggregation and the report
+
+`tomrade_analytics_aggregate(from, to)` rewrites `usage_actor_daily`,
+`usage_feature_daily` and `usage_action_daily` for the days named. It deletes
+those days first, so re-running a range is both the retry and the way a late
+event is folded in exactly once. The metric definitions live in this function
+and in the dashboard's labels; no screen derives its own.
+
+```sql
+-- Hourly: the last three days, including one that is not over.
+select cron.schedule('tomrade-analytics-hourly', '7 * * * *',
+                      $$select public.tomrade_analytics_aggregate(current_date - 2, current_date)$$);
+-- Nightly: the last 35 days, after the last timezone has closed its day.
+select cron.schedule('tomrade-analytics-nightly', '23 2 * * *',
+                      $$select public.tomrade_analytics_aggregate(current_date - 34, current_date)$$);
+```
+
+A failed run is safe to repeat; if the scheduler gives up, run the same
+`select` by hand for the range it missed. The job reports what it wrote.
+
+`tomrade_analytics_report(from, to, region)` answers one JSON document for the
+dashboard: `totals` (`duration_ms`, `sessions`, `uses`, `aai`), `daily`,
+`features`, `actions` and `retention` (D+1, D+7 and D+30 for each cohort first
+seen in the range), plus `latest` — the newest `received_at` in the range, so
+the page can say the data is behind. A day with no data is absent from
+`daily`, never a zero. The three tables are keyed by day first, so a 7-, 30- or
+90-day report is one indexed range scan per table.
+
+The dashboard adds the two deployments' reports: totals and daily rows are
+sums, and distinct-actor counts are added region by region.
