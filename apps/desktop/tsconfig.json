@@ -156,6 +156,9 @@
       "path": "../../packages/announcements"
     },
     {
+      "path": "../../packages/analytics"
+    },
+    {
       "path": "../../packages/inbox-github"
     },
     {

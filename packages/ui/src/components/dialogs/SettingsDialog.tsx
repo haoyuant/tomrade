@@ -20,6 +20,7 @@ import { ThemePane, useThemeEditor } from "./settings/ThemePane";
 import { Eyebrow, SectionHead, Tag } from "~/components/ui/atoms";
 import { useBackgroundStatus } from "~/lib/background";
 import { useI18n } from "~/lib/i18n";
+import { reportAction } from "~/lib/analytics";
 import { keys, useSaveSettings, useSettings, useSettingsSections, useStorageProviders } from "~/lib/queries";
 import { useSettingsSheet } from "~/lib/settingsHost";
 
@@ -67,6 +68,7 @@ export function SettingsDialog({
   // The palette sends you straight to a pane; ⌘, leaves you on the last one.
   useEffect(() => {
     if (open && pane) go(pane);
+    if (open) reportAction("settings", "open", pane || "appearance");
   }, [open, pane]);
   useSettingsSheet(open, go);
   // A destination's account is asked for where it is used — in a project's own

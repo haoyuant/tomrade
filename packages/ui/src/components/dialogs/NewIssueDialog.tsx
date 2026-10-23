@@ -10,6 +10,7 @@ import { methodWords, ticketMethods, usePlaybooks } from "~/lib/agent";
 import { invoke, logQuietly } from "~/lib/api";
 import { useToastUndo } from "~/lib/undo";
 import { isCommitKey } from "~/lib/keys";
+import { reportAction } from "~/lib/analytics";
 
 /**
  * Built-in methods keep their localized names; any other playbook shows its own title.
@@ -88,6 +89,7 @@ function NewIssueSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (o
       { title: trimmed, body: body.trim() || null, playbookId: template || null, boardId, workType, status, priority, parentId: parentId || null, labels: pinned("labels").slice(0, 1) },
       {
         onSuccess: (item) => {
+          reportAction("backlog.create", "create", "form");
           onOpenChange(false);
           setTitle("");
           toast({ body: <>{tx("newIssueDialog.createdToast", { key: <span className="num">{item.key}</span> })}</>, onUndo: () => undoWrite({ id: item.id, stamp: item.version }) });

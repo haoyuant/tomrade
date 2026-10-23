@@ -21,6 +21,7 @@ import { useI18n } from "~/lib/i18n";
 import { usePlaybookConflictNotice } from "~/lib/agent";
 import { usePanelOpen } from "~/lib/panel";
 import { useSettingsHost } from "~/lib/settingsHost";
+import { Surface } from "~/lib/analytics";
 import { useCreateView, useRedo, useRunCommand, useUndo } from "~/lib/queries";
 import { errorSpec, useToast, useToastDismiss } from "~/lib/toast";
 import { useHintToast, useSeen } from "~/lib/onboarding";
@@ -337,10 +338,15 @@ export function Workspace() {
         <div className="main-col">
           <TabStrip />
           {ws.filePath !== null ? (
-            <FilesRegion path={ws.filePath} onOpenSharing={() => setProjectSettings("files")} />
+            <Surface feature="files.browse">
+              <FilesRegion path={ws.filePath} onOpenSharing={() => setProjectSettings("files")} />
+            </Surface>
           ) : ws.routines ? (
-            <RoutinesRegion projectId={ws.project.id} onOpenIssue={ws.select} onOpenThread={showThread} />
+            <Surface feature="routines.list">
+              <RoutinesRegion projectId={ws.project.id} onOpenIssue={ws.select} onOpenThread={showThread} />
+            </Surface>
           ) : (
+            <Surface feature={ws.layout === "graph" ? "backlog.graph" : ws.layout === "table" ? "backlog.table" : "backlog.board"}>
             <section className="board-region" data-layout={ws.layout}>
               <ViewHeadRegion onOpenViewSettings={openViewSettings} onOpenFields={openFieldsList} onEditWorkstream={editWorkstream} />
               <QueryBarRegion />
@@ -364,10 +370,12 @@ export function Workspace() {
                 </>
               )}
             </section>
+            </Surface>
           )}
         </div>
 
         {selected && (
+          <Surface feature="backlog.issue">
           <DetailPane
             item={selected}
             expanded={expanded}
@@ -379,6 +387,7 @@ export function Workspace() {
             onDelete={() => setDeleting(selected.id)}
             onOpenRepositories={openProjectSettings}
           />
+          </Surface>
         )}
       </div>
 

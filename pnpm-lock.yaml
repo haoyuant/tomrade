@@ -56,6 +56,9 @@ importers:
       '@tomradex/alerts':
         specifier: workspace:*
         version: link:../../packages/alerts
+      '@tomradex/analytics':
+        specifier: workspace:*
+        version: link:../../packages/analytics
       '@tomradex/announcements':
         specifier: workspace:*
         version: link:../../packages/announcements
@@ -453,6 +456,34 @@ importers:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8
     devDependencies:
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/analytics:
+    dependencies:
+      '@tomradex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@tomradex/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@tomradex/ipc':
+        specifier: workspace:*
+        version: link:../ipc
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
+      cordis:
+        specifier: 4.0.0-rc.8
+        version: 4.0.0-rc.8
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
       typescript:
         specifier: ^6.0.0
         version: 6.0.3
@@ -2576,6 +2607,9 @@ importers:
       '@tomradex/agent':
         specifier: workspace:*
         version: link:../agent
+      '@tomradex/analytics':
+        specifier: workspace:*
+        version: link:../analytics
       '@tomradex/announcements':
         specifier: workspace:*
         version: link:../announcements

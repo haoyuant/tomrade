@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { reportAction } from "~/lib/analytics";
 import type { InboxEntry, InboxKind, InboxListFilter, InboxSourceView, InboxSuggestion, InboxTriagerView } from "@tomradex/inbox";
 import { Icon } from "~/components/icons";
 import { Dialog, DialogBody, DialogHead } from "~/components/ui/dialog";
@@ -44,6 +45,9 @@ export function InboxDialog({ projectId, open, onOpenChange, onOpenIssue }: { pr
   const list = useMemo(() => entries.data ?? [], [entries.data]);
   const entry = list.find((e) => e.id === selected) ?? null;
   const anySource = (sources.data ?? []).some((s) => s.enabled);
+  useEffect(() => {
+    if (open) reportAction("inbox.triage", "open");
+  }, [open]);
 
   // the first entry is open on arrival, and the next one after the open one is triaged away
   useEffect(() => {
