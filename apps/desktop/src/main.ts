@@ -2,8 +2,9 @@ import { app, BrowserWindow, session } from "electron";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { aboutInfo } from "./about.js";
+import { APP_ICON_FILE, appIconPath, readAppIcon, wearAppIcon } from "./app-icon.js";
 import { AccountFolders, machineRoots, restart } from "./accounts.js";
-import { cameBack, DOCK_ICON, keepsRunning, launchMode, PREFS_FILE } from "./background.js";
+import { cameBack, keepsRunning, launchMode, PREFS_FILE } from "./background.js";
 import { boot, ConfigUnreadable, type Booted } from "./boot.js";
 import { setUpBorrowedNode } from "./borrowed-node.js";
 import { deliverDeepLink, registerScheme } from "./deep-link.js";
@@ -61,6 +62,8 @@ let splash: BrowserWindow | null = null;
 app.whenReady().then(async () => {
   if (!primary) return;
   const machine = machineRoots();
+  // The icon chosen in Settings, read before boot so the Dock wears it from the start.
+  const appIcon = readAppIcon(path.join(machine.userData, APP_ICON_FILE));
   // At login, or a restart that left with no window: the background part only.
   const mode = launchMode(argv, path.join(machine.userData, PREFS_FILE), loginItem());
   if (mode === "stale") {
@@ -76,7 +79,7 @@ app.whenReady().then(async () => {
   if (mode === "hidden" && process.platform === "darwin") app.dock?.hide();
   // BrowserWindow's `icon` option is a no-op for the Dock on macOS since dev mode
   // runs Electron's own bundled app; the Dock icon has to be set explicitly.
-  if (process.platform === "darwin") app.dock?.setIcon(DOCK_ICON);
+  wearAppIcon(appIcon);
   installAppMenu({ restartWithoutPlugins: () => restart({ safe: true }) });
   // The app menu's About item, which a checkout would otherwise credit to Electron.
   void aboutInfo(path.resolve(here, "../../..")).then((info) =>
@@ -91,7 +94,7 @@ app.whenReady().then(async () => {
   );
 
   // Until the main window opens; a start at login has nobody waiting for one.
-  if (mode === "window" && !argv.includes("--dump-config")) splash = showSplash(iconPath);
+  if (mode === "window" && !argv.includes("--dump-config")) splash = showSplash(appIconPath(appIcon));
   // Before boot: plugins spawn CLIs (MCP servers, agents, git) from the first moment.
   const shellProblem = await adoptShellEnv();
   // After the shell's PATH, so its folders stay ahead and a system Node always wins over the borrowed one.

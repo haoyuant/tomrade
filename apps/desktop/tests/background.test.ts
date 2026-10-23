@@ -25,7 +25,8 @@ vi.mock("../src/quit.js", () => ({ leaving: () => quit.leaving, quitApproved: ()
 
 const { app } = await import("electron");
 const { autostartEntry, autostartState, macAgent, withExec, xdgAutostart, BACKGROUND_FLAG } = await import("../src/login-item.js");
-const { background, cameBack, DOCK_ICON, launchMode, readPrefs, relaunchArgs, writePrefs } = await import("../src/background.js");
+const { background, cameBack, launchMode, readPrefs, relaunchArgs, writePrefs } = await import("../src/background.js");
+const { appIconPath, currentAppIcon, wearAppIcon } = await import("../src/app-icon.js");
 
 let dir: string;
 beforeEach(() => {
@@ -154,6 +155,7 @@ describe("the Dock icon", () => {
 
   beforeEach(() => {
     Object.defineProperty(process, "platform", { value: "darwin" });
+    wearAppIcon("transparent");
     dock.hide.mockClear();
     dock.show.mockClear();
     dock.setIcon.mockClear();
@@ -178,12 +180,15 @@ describe("the Dock icon", () => {
     expect(notices.shown).toBe(1);
   });
 
-  it("comes back when a window opens with the app in the background, with its own icon", async () => {
+  it("comes back when a window opens with the app in the background, with the chosen icon", async () => {
+    wearAppIcon("sun");
+    dock.setIcon.mockClear();
     start(true);
     const terminal = window();
     cameBack(terminal);
     expect(dock.show).toHaveBeenCalledOnce();
-    await vi.waitFor(() => expect(dock.setIcon).toHaveBeenCalledWith(DOCK_ICON));
+    await vi.waitFor(() => expect(dock.setIcon).toHaveBeenCalledWith(appIconPath(currentAppIcon())));
+    expect(dock.setIcon).toHaveBeenCalledWith(appIconPath("sun"));
     cameBack(terminal);
     expect(dock.show).toHaveBeenCalledOnce();
     close(terminal);

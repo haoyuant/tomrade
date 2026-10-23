@@ -462,6 +462,12 @@ plugins:
     name: ./dist/background.js
     config:
       file: "${machineData}/background.json"
+  # The icon Tomrade wears in the Dock: the transparent logo by default, or the
+  # cat on the dawn sun. Read by main.ts before boot, so it shows from the start.
+  - id: app-icon
+    name: ./dist/app-icon.js
+    config:
+      file: "${machineData}/app-icon.json"
   # Says when an agent waits on the person: a count on the Dock, a taskbar
   # flash, and a notification while Tomrade is in the background.
   - id: attention

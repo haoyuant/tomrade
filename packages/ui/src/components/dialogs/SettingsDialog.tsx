@@ -15,6 +15,7 @@ import { AgentAccessSection } from "./settings/AgentAccessSection";
 import { AssistantPane } from "./settings/AssistantPane";
 import { PANE_EXTRAS, PluginPane } from "./settings/PluginPane";
 import { ScopeTag } from "./settings/ScopeTag";
+import { AppIconSection } from "./settings/AppIconSection";
 import { ThemePane, useThemeEditor } from "./settings/ThemePane";
 import { Eyebrow, SectionHead, Tag } from "~/components/ui/atoms";
 import { useBackgroundStatus } from "~/lib/background";
@@ -81,7 +82,12 @@ export function SettingsDialog({
       label: t("settingsDialog.appearanceLabel"),
       icon: "i-sun",
       group: "app",
-      render: () => <ThemePane scope={scopeOf("theme")} settings={settings} save={save} editor={themeEditor} />
+      render: () => (
+        <>
+          <ThemePane scope={scopeOf("theme")} settings={settings} save={save} editor={themeEditor} />
+          <AppIconSection />
+        </>
+      )
     },
     {
       id: "language",
