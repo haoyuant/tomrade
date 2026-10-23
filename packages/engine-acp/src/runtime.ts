@@ -2,7 +2,7 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Context } from "cordis";
 import { attachedMedia, withRecap, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
 import { errorMessage } from "@tomradex/contracts";
-import { engineLocale, KIT_WORDS, RpcError, runtimeDirectory, runTurn, sessionSystem, spawnCli, stopCli, turnPrompt, type JsonLinePeer, type Runtime } from "@tomradex/engine-kit";
+import { engineLocale, KIT_WORDS, RpcError, runtimeDirectory, runTurn, sessionSystem, spawnCli, stopCli, stopCliNow, turnPrompt, type JsonLinePeer, type Runtime } from "@tomradex/engine-kit";
 import type {} from "@tomradex/mcp";
 import { isTomradeTool, policyOf, wrappedTool, type AcpAgent, type AcpOptions, type Catalog, type Policy, type RequestUsage } from "./agent.js";
 import { advertised, choicesOf, optionOf, type Setting } from "./catalog.js";
@@ -205,7 +205,7 @@ export class AcpRuntime implements Runtime {
     }) as ChildProcessWithoutNullStreams;
     this.child = child;
     // CodeBuddy outlives a closed stdin; Tomrade quits without closing its runtimes, so it takes the agent down itself.
-    const reap = () => { if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM"); };
+    const reap = () => stopCliNow(child);
     process.once("exit", reap);
     child.once("exit", () => process.off("exit", reap));
     const conn = (this.conn = acpConnection(child, this.agent.title, this.locale)

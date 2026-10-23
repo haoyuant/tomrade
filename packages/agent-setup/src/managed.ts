@@ -104,10 +104,12 @@ function installEnv(base: NodeJS.ProcessEnv, opts: { nodeDir: string; electron?:
 }
 
 /** The `node` that runs Tomrade's runtime, for install scripts and an agent's tools. */
-function nodeShim(runtime: string, platform: NodeJS.Platform): { name: string; content: string } {
-  return platform === "win32"
-    ? { name: "node.cmd", content: ["@echo off", "rem Written by Tomrade at every start. Do not edit.", "set ELECTRON_RUN_AS_NODE=1", `"${runtime}" %*`, ""].join("\r\n") }
-    : { name: "node", content: ["#!/bin/sh", "# Written by Tomrade at every start. Do not edit.", "export ELECTRON_RUN_AS_NODE=1", `exec "${runtime}" "$@"`, ""].join("\n") };
+function nodeShims(runtime: string, platform: NodeJS.Platform): { name: string; content: string }[] {
+  const sh = (file: string) => ({ name: "node", content: ["#!/bin/sh", "# Written by Tomrade at every start. Do not edit.", "export ELECTRON_RUN_AS_NODE=1", `exec "${file}" "$@"`, ""].join("\n") });
+  if (platform !== "win32") return [sh(runtime)];
+  // Git Bash (Claude Code's shell on Windows) finds `node` or node.exe, never node.cmd.
+  const cmd = { name: "node.cmd", content: ["@echo off", "rem Written by Tomrade at every start. Do not edit.", "set ELECTRON_RUN_AS_NODE=1", `"${runtime}" %*`, ""].join("\r\n") };
+  return [cmd, sh(runtime.replace(/\\/g, "/"))];
 }
 
 /** The package's bin named as the engine's command, under an install prefix, as an absolute file; a placeholder gives way to the package's own entry. */
@@ -159,8 +161,7 @@ export class ManagedCopies {
 
   /** Writes the `node` shim for the runtime's current path — an update moves the app — and points every locator at its copy. */
   start(): void {
-    const shim = nodeShim(this.config.runtime, this.platform);
-    writeFileAtomic(path.join(this.nodeDir, shim.name), shim.content, this.platform === "win32" ? {} : { mode: 0o755 });
+    for (const shim of nodeShims(this.config.runtime, this.platform)) writeFileAtomic(path.join(this.nodeDir, shim.name), shim.content, this.platform === "win32" ? {} : { mode: 0o755 });
     let ids: string[] = [];
     try {
       ids = fs.readdirSync(this.config.dir);
