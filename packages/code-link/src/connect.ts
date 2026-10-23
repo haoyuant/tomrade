@@ -221,7 +221,7 @@ export function tomradeSection(input: ConnectInput, options: { fetchRules?: bool
     "",
     "### Before changing this repository",
     "",
-    "When the person asks for a change and this session holds no ticket, ask once — one short question — whether to file a ticket for it and work on its branch. If they say yes, `create_item` for it (or `claim_ticket` when they name a key), then do the work on the branch it returns; every commit message names the key. If they say no, or it is a typo, a question, or something they clearly want now, work as usual and do not ask again in this session.",
+    "When the person asks for a change and this session holds no ticket, file one with `create_item` and claim it with `claim_ticket` (when they name a key, claim that), then do the work on the branch the claim returns; every commit message names the key. Do not ask first: the person can change or drop the ticket, and the sidebar shows what this session works on from the moment it claims. A typo or a question needs no ticket.",
     "",
     `### When the work is a ticket (the user or the branch names a key such as \`${example}\`) and the \`tomrade\` server is available`,
     "",

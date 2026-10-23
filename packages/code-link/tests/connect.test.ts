@@ -595,7 +595,7 @@ describe("connecting a repository", () => {
     expect(fs.readFileSync(path.join(checkout, ".cursor/mcp.json"), "utf8")).not.toContain("tomrade");
     // The team's CLAUDE.md is tracked, so it stays theirs; AGENTS.md is new, untracked and excluded, so the agent reads the rules.
     expect(fs.readFileSync(path.join(checkout, "CLAUDE.md"), "utf8")).not.toContain("Tomrade");
-    expect(fs.readFileSync(path.join(checkout, "AGENTS.md"), "utf8")).toContain("ask once");
+    expect(fs.readFileSync(path.join(checkout, "AGENTS.md"), "utf8")).toContain("file one with `create_item`");
     expect(fs.existsSync(path.join(checkout, ".claude/settings.json"))).toBe(false);
     expect(git(["branch", "--list", "tomrade/connect"], checkout)).toBe("");
     // Claude Code loads the server without asking, and its hooks post from its personal settings file.
@@ -1782,7 +1782,7 @@ describe("syncing a session back", () => {
       expect(text).toContain(`project "${project.name}" (ticket keys look like ${project.keyPrefix}-42)`);
       expect(text).toContain("Work that matches no ticket stays unmatched");
       expect(text).toContain("never mark a code ticket done yourself");
-      expect(client.getInstructions()).toContain("ask once whether to file a ticket and work its branch");
+      expect(client.getInstructions()).toContain("do not ask first");
     } finally {
       await client.close();
     }
@@ -1812,7 +1812,7 @@ describe("syncing a session back", () => {
       const instructions = client.getInstructions()!;
       expect(instructions.startsWith("Project rules")).toBe(true);
       expect(instructions).toContain("- Write tickets in Chinese\n- Never touch billing");
-      expect(instructions.indexOf("Never touch billing")).toBeLessThan(instructions.indexOf("ask once whether to file a ticket"));
+      expect(instructions.indexOf("Never touch billing")).toBeLessThan(instructions.indexOf("do not ask first"));
       const read = await client.callTool({ name: "get_project_rules", arguments: {} });
       expect(JSON.parse((read.content as { text: string }[])[0]!.text)).toEqual({ rules: "- Write tickets in Chinese\n- Never touch billing" });
     } finally {
