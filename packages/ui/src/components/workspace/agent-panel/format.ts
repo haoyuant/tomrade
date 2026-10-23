@@ -1,7 +1,13 @@
 import type { RunView } from "@tomradex/agent";
 import type { useI18n } from "~/lib/i18n";
 
-export const tokens = (n: number): string => (n >= 10_000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+/** Token counts a person can skim: 962, 1.2k, 12k, 999k, then 1.0M — never "1000k". */
+export const tokens = (n: number): string => {
+  if (n < 1_000) return String(n);
+  if (n < 9_950) return `${(n / 1_000).toFixed(1)}k`;
+  if (n < 999_500) return `${Math.round(n / 1_000)}k`;
+  return `${(n / 1_000_000).toFixed(1)}M`;
+};
 
 /** A finished run's tokens, split the same way Settings → Usage adds them up. */
 export const runTokensLabel = (t: Translate, run: RunView): string | null => {
