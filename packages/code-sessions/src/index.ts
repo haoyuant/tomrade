@@ -34,6 +34,10 @@ export const RECENTLY_ENDED_MS = 24 * 60 * 60 * 1000;
 export const BRIDGE_POLL_MS = 10_000;
 /** The most typing a cell holds while its terminal attaches. */
 export const HELD_INPUT_MAX = 64 * 1024;
+/** How long a cell's frames wait to go to the window as one: a busy pane paints more often than a screen shows. */
+const FRAME_BATCH_MS = 16;
+/** A batch past this goes at once, so a pane painting without pause cannot grow it without end. */
+const FRAME_BATCH_MAX = 256 * 1024;
 
 interface Saved {
   asked?: boolean;
@@ -243,6 +247,19 @@ interface Open {
   states: { begun: number; shown: number };
   /** The panes of its terminals followed in herdr, so an agent's status there shows as it changes. */
   follows: Map<string, () => void>;
+  /** Frames waiting to go to the window, one batch per cell. */
+  frames: Map<string, PendingFrames>;
+}
+
+/** Frames of one cell while its batch is open: the ANSI bytes in order, and the frame that began it. */
+interface PendingFrames {
+  bytes: Uint8Array[];
+  size: number;
+  seq: number;
+  width: number;
+  height: number;
+  full: boolean;
+  timer: NodeJS.Timeout;
 }
 
 /**
@@ -507,8 +524,76 @@ function apply(ctx: Context, config: Config) {
     await Promise.all([...open.keys()].map((projectId) => refresh(projectId)));
   };
 
-  const post = (win: Open, message: WindowPost) => {
+  const send = (win: Open, message: WindowPost) => {
     if (!win.closed) win.surface.post(message);
+  };
+
+  /**
+   * A batch on its way: its bytes joined in the order the pane painted them, under the first frame's
+   * paint (`full`) and the last frame's place. Nothing between the two is dropped, so the screen the
+   * window ends up with is the one the pane painted.
+   */
+  const flushFrames = (win: Open, cell: string) => {
+    const pending = win.frames.get(cell);
+    if (!pending) return;
+    win.frames.delete(cell);
+    clearTimeout(pending.timer);
+    if (!pending.size) return;
+    send(win, {
+      type: "frame",
+      cell,
+      seq: pending.seq,
+      width: pending.width,
+      height: pending.height,
+      full: pending.full,
+      bytes: pending.bytes.length === 1 ? pending.bytes[0]! : Buffer.concat(pending.bytes, pending.size)
+    });
+  };
+
+  /** Everything waiting goes, in cell order, before a message that is not a frame. */
+  const flushFramesOf = (win: Open) => {
+    for (const cell of [...win.frames.keys()]) flushFrames(win, cell);
+  };
+
+  /** A cell's batch is let go without being drawn: its stream is going, and a new one paints afresh. */
+  const dropFrames = (win: Open, cell: string) => {
+    const pending = win.frames.get(cell);
+    if (!pending) return;
+    win.frames.delete(cell);
+    clearTimeout(pending.timer);
+  };
+
+  const dropFramesOf = (win: Open) => {
+    for (const cell of [...win.frames.keys()]) dropFrames(win, cell);
+  };
+
+  const post = (win: Open, message: WindowPost) => {
+    if (win.closed) return;
+    // Whatever else the window hears comes after the bytes already painted, never before them.
+    if (message.type !== "frame") flushFramesOf(win);
+    send(win, message);
+  };
+
+  /**
+   * One frame joins its cell's batch. A pane can paint faster than a screen shows — a burst of frames
+   * becomes one message, its bytes unchanged and in order.
+   */
+  const pushFrame = (win: Open, cell: string, frame: { seq: number; width: number; height: number; full: boolean; bytes: Uint8Array }) => {
+    if (win.closed || !frame.bytes.length) return;
+    const pending = win.frames.get(cell);
+    // Another size paints a screen the open batch no longer fits: what waits goes first.
+    if (pending && (pending.width !== frame.width || pending.height !== frame.height)) flushFrames(win, cell);
+    const batch = win.frames.get(cell);
+    if (!batch) {
+      const timer = setTimeout(() => flushFrames(win, cell), FRAME_BATCH_MS);
+      timer.unref?.();
+      win.frames.set(cell, { bytes: [frame.bytes], size: frame.bytes.length, seq: frame.seq, width: frame.width, height: frame.height, full: frame.full, timer });
+      return;
+    }
+    batch.bytes.push(frame.bytes);
+    batch.size += frame.bytes.length;
+    batch.seq = frame.seq;
+    if (batch.size >= FRAME_BATCH_MAX) flushFrames(win, cell);
   };
 
   const sessionOf = (projectId: string, id: string) => ctx.codeLink.sessionsOf(projectId).find((s) => s.id === id);
@@ -522,6 +607,8 @@ function apply(ctx: Context, config: Config) {
   const detach = (win: Open, cell: string) => {
     turn(win, cell);
     win.detached.delete(cell);
+    // Its stream is going: what it painted and has not sent belongs to a screen that is being replaced.
+    dropFrames(win, cell);
     const stream = win.terminals.get(cell);
     win.terminals.delete(cell);
     stream?.close();
@@ -573,7 +660,7 @@ function apply(ctx: Context, config: Config) {
     win.held.delete(cell);
     if (held?.text) stream.input(held.text);
     if (held?.over) post(win, { type: "toast", text: words()("notSent") });
-    stream.onFrame((f) => post(win, { type: "frame", cell, seq: f.seq, width: f.width, height: f.height, full: f.full, bytes: f.bytes }));
+    stream.onFrame((f) => pushFrame(win, cell, f));
     stream.onClose(herdr.onScroll(pane, (s) => win.terminals.get(cell) === stream && post(win, { type: "scrolled", cell, ...s })));
     stream.onClose((reason) => {
       if (win.terminals.get(cell) !== stream) return;
@@ -778,7 +865,7 @@ function apply(ctx: Context, config: Config) {
       return refresh(projectId);
     }
     const w = words();
-    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), held: new Map(), timer: setInterval(() => void refresh(projectId), BRIDGE_POLL_MS), closed: false, reveal: asked, archive: false, states: { begun: 0, shown: 0 }, follows: new Map() };
+    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), held: new Map(), timer: setInterval(() => void refresh(projectId), BRIDGE_POLL_MS), closed: false, reveal: asked, archive: false, states: { begun: 0, shown: 0 }, follows: new Map(), frames: new Map() };
     win.timer.unref?.();
     open.set(projectId, win);
     try {
@@ -814,6 +901,7 @@ function apply(ctx: Context, config: Config) {
       onClose: () => {
         win.closed = true;
         clearInterval(win.timer);
+        dropFramesOf(win);
         follow(win, []);
         for (const cell of [...win.terminals.keys()]) detach(win, cell);
         if (open.get(projectId) === win) open.delete(projectId);

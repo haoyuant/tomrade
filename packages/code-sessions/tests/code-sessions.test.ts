@@ -98,7 +98,7 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
     clientAttached = async () => false;
     terminal = async (pane: string, size: unknown) => {
       const frames = new Set<(f: unknown) => void>();
-      const entry = { pane, size, sent: [] as unknown[], closed: false, frame: (text: string) => frames.forEach((l) => l({ seq: 1, width: 80, height: 24, full: true, bytes: new Uint8Array(Buffer.from(text)) })) };
+      const entry = { pane, size, sent: [] as unknown[], closed: false, frame: (text: string, at: { width?: number; height?: number; full?: boolean } = {}) => frames.forEach((l) => l({ seq: 1, width: at.width ?? 80, height: at.height ?? 24, full: at.full ?? true, bytes: new Uint8Array(Buffer.from(text)) })) };
       streams.push(entry);
       return { paneId: pane, mode: "control", closed: false, onFrame: (l: (f: unknown) => void) => (frames.add(l), () => frames.delete(l)), onClose: () => () => {}, input: (d: unknown) => entry.sent.push(["input", d]), resize: (c: number, r: number) => entry.sent.push(["resize", c, r]), scroll: (s: unknown) => entry.sent.push(["scroll", s]), mouse: (m: unknown) => entry.sent.push(["mouse", m]), close: () => void (entry.closed = true) };
     };
@@ -143,6 +143,8 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
     win.spec.onMessage(m);
     await settle();
   };
+  // A batch goes 16ms after its first frame, and this waits past it.
+  const batched = () => new Promise<void>((resolve) => setTimeout(resolve, 40));
   // An attach that a newer one overtakes lets its stream go; what was typed meanwhile reaches the one that stays.
   win.spec.onMessage({ type: "attach", cell: "c1", sessionId: "s1", cols: 100, rows: 30 });
   win.spec.onMessage({ type: "attach", cell: "c1", sessionId: "s1", cols: 120, rows: 40 });
@@ -153,14 +155,32 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   expect(streams[1]!.sent).toEqual([["input", "输入法\r"]]);
   streams[1]!.sent.length = 0;
   const live = streams[1]!;
-  live.frame("hello");
-  expect(win.posts.at(-1)).toMatchObject({ type: "frame", cell: "c1", full: true });
+  // A burst reaches the window as one message: the bytes joined in order, nothing dropped.
+  live.frame("hel");
+  live.frame("lo");
+  await batched();
+  const drawn = win.posts.filter((p) => p.type === "frame");
+  expect(drawn).toHaveLength(1);
+  expect(drawn[0]).toMatchObject({ type: "frame", cell: "c1", seq: 1, width: 80, height: 24, full: true });
+  expect(Buffer.from(drawn[0]!.bytes).toString()).toBe("hello");
+  // Another size paints another screen: what waited goes first, under the paint it started with.
+  live.frame("x", { width: 100, full: false });
+  live.frame("y", { width: 100, full: false });
+  await batched();
+  expect(win.posts.filter((p) => p.type === "frame").map((p) => [p.width, p.full, Buffer.from(p.bytes).toString()])).toEqual([
+    [80, true, "hello"],
+    [100, false, "xy"]
+  ]);
   await say({ type: "input", cell: "c1", data: "ls\r" });
   await say({ type: "resize", cell: "c1", cols: 90, rows: 20 });
   await say({ type: "scroll", cell: "c1", direction: "up", lines: 3 });
   expect(live.sent).toEqual([["input", "ls\r"], ["resize", 90, 20], ["scroll", { type: "scroll", cell: "c1", direction: "up", lines: 3 }]]);
   // The pane's place in its scrollback reaches the cell's scrollbar; dragging it moves the pane.
+  // A frame still waiting goes before it: the window draws what was painted before what is said about it.
+  live.frame("tail", { full: false });
   scrolls.get("w1:p1")!({ offset: 3, max: 278, rows: 20 });
+  expect(win.posts.at(-2)).toMatchObject({ type: "frame", cell: "c1", full: false });
+  expect(Buffer.from((win.posts.at(-2) as { bytes: Uint8Array }).bytes).toString()).toBe("tail");
   expect(win.posts.at(-1)).toEqual({ type: "scrolled", cell: "c1", offset: 3, max: 278, rows: 20 });
   await say({ type: "scrollTo", cell: "c1", offset: 120 });
   await say({ type: "scrollTo", cell: "nowhere", offset: 1 });
