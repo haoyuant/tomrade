@@ -288,7 +288,7 @@ export function withOptions(template: string, flags: string): string {
  * not answer opens the system terminal instead. A terminal of "none" writes
  * the script and stops, for a person to run it themselves.
  */
-export async function launchTerminal(input: LaunchInput, terminal: string, herdr: HerdrTerminal | null = null): Promise<LaunchResult> {
+export async function launchTerminal(input: LaunchInput, terminal: string, herdr: HerdrTerminal | null = null, platform: NodeJS.Platform = process.platform): Promise<LaunchResult> {
   fs.mkdirSync(input.dir, { recursive: true });
   const script = path.join(input.dir, "run.command");
   const exports = Object.entries(input.env ?? {}).map(([k, v]) => `export ${k}=${shellQuote(v)}`);
@@ -298,7 +298,9 @@ export async function launchTerminal(input: LaunchInput, terminal: string, herdr
   // it runs by a moment and dies with the window, so "is the pid alive" answers
   // "is the session alive" whether or not a hook got to say so.
   const pidFile = path.join(input.dir, "pid");
-  const wrap = (command: string) => ["#!/bin/bash", `cd ${shellQuote(input.cwd)} || exit 1`, `echo $$ > ${shellQuote(pidFile)}`, `trap 'rm -f ${shellQuote(pidFile)}' EXIT`, ...exports, command, ""].join("\n");
+  // Git Bash's $$ is an MSYS pid that process.kill cannot see; /proc/$$/winpid is the Windows one.
+  const writePid = platform === "win32" ? `{ cat /proc/$$/winpid 2>/dev/null || echo $$; } > ${shellQuote(pidFile)}` : `echo $$ > ${shellQuote(pidFile)}`;
+  const wrap = (command: string) => ["#!/bin/bash", `cd ${shellQuote(input.cwd)} || exit 1`, writePid, `trap 'rm -f ${shellQuote(pidFile)}' EXIT`, ...exports, command, ""].join("\n");
   fs.writeFileSync(script, wrap(input.command), { mode: 0o755 });
   // The same wrapper around the resume: the pid file and the token come back with the session.
   if (input.resume) fs.writeFileSync(path.join(input.dir, RESUME_SCRIPT), wrap(input.resume), { mode: 0o755 });

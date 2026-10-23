@@ -40,6 +40,20 @@ describe("a terminal of herdr", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it("leaves the Windows pid of the script's shell on Windows, where Git Bash's $$ is an MSYS pid", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-win-pid-"));
+    const pidFile = `'${path.join(dir, "pid")}'`;
+    await launchTerminal({ cwd: "/work/tom-9", command: "claude", dir, resume: "claude --resume x" }, "none", null, "win32");
+    for (const name of ["run.command", "resume.command"]) {
+      const written = fs.readFileSync(path.join(dir, name), "utf8");
+      expect(written).toContain(`{ cat /proc/$$/winpid 2>/dev/null || echo $$; } > ${pidFile}\n`);
+      expect(written).not.toContain(`echo $$ > ${pidFile}`);
+    }
+    await launchTerminal({ cwd: "/work/tom-9", command: "claude", dir }, "none", null, "darwin");
+    expect(fs.readFileSync(path.join(dir, "run.command"), "utf8")).toContain(`\necho $$ > ${pidFile}\n`);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it("without herdr opens the script in the system terminal, and says why", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-herdr-fallback-"));
     const opened = vi.spyOn(terminalApp, "open").mockResolvedValue();
