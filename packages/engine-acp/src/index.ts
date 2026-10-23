@@ -81,8 +81,8 @@ export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAg
     local: {
       ...(agent.setup ? { setup: agent.setup } : {}),
       picks: () => [
-        // Its own knobs first (a machine-wide one like the CodeBuddy edition), then what its sessions offer.
-        ...(agent.picks ?? []),
+        // Machine-wide knobs it declares (the CodeBuddy edition) first; the session's own model/effort stay its own.
+        ...(agent.picks ?? []).filter((pick) => pick.global),
         // What the agent can use depends on its own sign-in; the list is what its last session offered.
         { key: "model", title: "Model", choices: catalog.models, freeText: true, ...(asking && !catalog.models.length ? { pending: true } : {}),
           ...(!asking && !catalog.models.length && failure ? { failed: failure } : {}) },
