@@ -30,6 +30,7 @@ const count = async (table: string) => (await db.query<{ n: number }>(`select co
 beforeAll(async () => {
   await db.exec("create role anon; create role authenticated;");
   await db.exec(migration("202610230001_analytics.sql"));
+  await db.exec(migration("202610230002_analytics_region_scope.sql"));
 }, 60_000);
 
 afterAll(async () => {
@@ -126,6 +127,21 @@ describe("analytics ingest", () => {
     await expect(db.query("select * from public.tomrade_analytics_event")).rejects.toThrow();
     await expect(db.query("insert into public.tomrade_analytics_event(event_id, schema, registry, event, anon_id, install_seq, ts, client, platform, region) values (gen_random_uuid(), 1, 1, 'app.start', $1, 1, now(), '0.1.0', 'macos', 'other')", [ANON])).rejects.toThrow();
     await db.exec("reset role");
+  });
+
+  it("keeps each deployment's detail on its side", async () => {
+    const cn = { ...base(), event_id: randomUUID(), event: "feature.activate", feature_id: "backlog.board", action: "open", dim: null };
+    const us = { ...base(), install_seq: 2, event_id: randomUUID(), event: "feature.activate", feature_id: "backlog.board", action: "open", dim: null };
+
+    await db.exec("set tomrade.analytics_scope = 'global'");
+    await expect(ingest(batch([cn]), { "cf-ipcountry": "CN" })).rejects.toThrow(/does not accept cn/);
+    expect((await ingest(batch([us]), { "cf-ipcountry": "US" })).rows[0]!.result.accepted).toBe(1);
+
+    await db.exec("set tomrade.analytics_scope = 'cn'");
+    const fr = { ...base(), install_seq: 3, event_id: randomUUID(), event: "feature.activate", feature_id: "backlog.board", action: "open", dim: null };
+    await expect(ingest(batch([fr]), { "cf-ipcountry": "FR" })).rejects.toThrow(/does not accept eu/);
+    expect((await ingest(batch([{ ...cn, event_id: randomUUID(), install_seq: 4 }]), { "cf-ipcountry": "CN" })).rows[0]!.result.accepted).toBe(1);
+    await db.exec("reset all");
   });
 
   it("drops only whole event partitions past 180 days and aggregates past 25 months", async () => {
