@@ -11,6 +11,7 @@ import type {} from "@tomradex/repos";
 import type {} from "@tomradex/settings";
 import type { Author, Board, Item, Repo } from "@tomradex/domain";
 import { GitFolder, type Git } from "@tomradex/git";
+import { fitsCommandLine, promptAsArgument } from "./command-line.js";
 import { listDecisions } from "./decisions.js";
 import { branchFor, titleSlug } from "./keys.js";
 import { BOOTSTRAP_LABEL, bootstrapBody, continuePrompt, firstPrompt, languageLine } from "./prompts.js";
@@ -24,7 +25,7 @@ import { githubHttps } from "@tomradex/github";
 import { errorMessage } from "@tomradex/contracts";
 
 export type StartMode = "run" | "terminal";
-export type StartGate = "locked" | "workstream" | "checkout" | "remote" | "readiness" | "blocked" | "engine" | "mcp" | "workdir" | "pane";
+export type StartGate = "locked" | "workstream" | "checkout" | "remote" | "readiness" | "blocked" | "engine" | "mcp" | "workdir" | "pane" | "prompt";
 /** Why the workdir gate found no folder, when that is known. */
 export type WorkdirCause = "no-board" | "no-board-repo" | "unknown-repo" | "no-hub" | "branch-in-use";
 
@@ -366,6 +367,8 @@ export class Starter {
     const { bin, path: onPath } = await binOf(agent, engineId);
     const options = agent.optionsOf(thread, engineId);
     const baseCommand = this.command(terminalSettings, engineId, session, files, where.cwd, options, bin);
+    const tooLong = this.promptTooLong(terminalSettings, engineId, session, files, baseCommand, terminalWords.locale);
+    if (tooLong) return tooLong;
     const wrapped = githubHttps(repo.remote) && await ctx.github.usesHelper(this.host.git, where.cwd);
     const command = wrapped ? ctx.github.wrap(baseCommand) : baseCommand;
     const baseResume = this.resumeCommand(terminalSettings, engineId, files, where.cwd, options, bin);
@@ -496,6 +499,16 @@ export class Starter {
     });
   }
 
+  /**
+   * A prompt the engine's template passes as one argument, past what this platform's command line holds: refused
+   * before anything opens, the prompt file left for the person to paste from.
+   */
+  private promptTooLong(settings: TerminalSettings, engineId: string, session: SessionView, files: SessionFiles, command: string, locale: string | undefined): StartResult | null {
+    if (!promptAsArgument(this.template(settings, engineId)) || fitsCommandLine([fs.readFileSync(files.prompt, "utf8"), command])) return null;
+    this.host.sessions.release(session.id);
+    return { ok: false, gate: "prompt", message: CODE_WORDS(locale)("promptTooLong", { file: files.prompt }) };
+  }
+
   /** No folder for the run: said with its cause, so a screen can point at the one thing that fixes it. */
   private workdirGate(
     projectId: string,
@@ -588,6 +601,8 @@ export class Starter {
     const { bin, path: onPath } = await binOf(agent, engineId);
     const options = agent.optionsOf(thread, engineId);
     const command = this.command(terminalSettings, engineId, session, files, prepared.cwd, options, bin);
+    const tooLong = this.promptTooLong(terminalSettings, engineId, session, files, command, locale);
+    if (tooLong) return tooLong;
     const resume = this.resumeCommand(terminalSettings, engineId, files, prepared.cwd, options, bin);
     const launch = await this.host.herdr.launch({ cwd: prepared.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir, path: onPath, label: item.key, ...(resume ? { resume } : {}) }, terminalSettings.terminal);
     store.patchSession(projectId, session.id, { state: "running", lastEventAt: now, ...(launch.paneId ? { herdrPane: launch.paneId } : {}) });
