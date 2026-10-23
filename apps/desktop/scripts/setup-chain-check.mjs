@@ -34,7 +34,7 @@ const check = (name, cond, detail) => {
 };
 
 // The scripted agent: not installed until the fake npm writes it; signed in once the flag says so;
-// answers a prompt with "pong" only while its state flag says it works.
+// answers a prompt with "OK" only while its state flag says it works.
 const signinFlag = path.join(work, "signin-state");
 const stateFlag = path.join(work, "agent-state");
 fs.writeFileSync(signinFlag, "out");
@@ -65,7 +65,7 @@ if (process.argv.includes("login")) {
         if (fs.readFileSync(${JSON.stringify(stateFlag)}, "utf8").trim() !== "works") send({ id: m.id, error: { code: -32603, message: "Model not found: default-model" } });
         else send({ id: m.id, result: { sessionId: "s1", configOptions: [{ id: "model", category: "model", type: "select", currentValue: "fast", options: [{ value: "fast", name: "Fast" }] }] } });
       } else if (m.method === "session/prompt") {
-        send({ method: "session/update", params: { sessionId: m.params.sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "pong" } } } });
+        send({ method: "session/update", params: { sessionId: m.params.sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "OK" } } } });
         send({ id: m.id, result: { stopReason: "end_turn" } });
       } else if (m.id !== undefined) send({ id: m.id, error: { code: -32601, message: "not here" } });
     }
@@ -133,7 +133,7 @@ const run = async () => {
     signedIn: { ask: () => (signedIn() ? true : false), reason: "Fake Agent is not signed in — run `fake-agent login`" },
     options: z.object({ command: z.string().optional() }),
     acp: { permissionModes: { default: "ask", choices: [{ value: "ask", label: "Ask" }] }, args: () => ["--acp"] },
-    lend: { ask: async () => ({ text: "pong", inputTokens: 1, outputTokens: 1 }) }
+    lend: { ask: async () => ({ text: "OK", inputTokens: 1, outputTokens: 1 }) }
   });
   // A second agent whose install can only fail: the registry is unreachable.
   ctx.localAgents.register({
@@ -265,7 +265,7 @@ const run = async () => {
   check("the retry skips install and sign-in", await wait(async () => (await stepState("fake-agent", "test")) === "active" || (await stepState("fake-agent", "test")) === "done", "test running", 300));
   check("only now is Tomrade set", await wait(() => has('[data-testid="setup-done"]'), "done panel", 300));
   check("with the test reply visible", await wait(() => has('[data-testid="setup-done-reply"]'), "reply", 50), await text('[data-testid="setup-done"]'));
-  check("and the reply is the agent's", ((await text('[data-testid="setup-done-reply"]')) ?? "").includes("pong"), await text('[data-testid="setup-done-reply"]'));
+  check("and the reply is the agent's", ((await text('[data-testid="setup-done-reply"]')) ?? "").includes("OK"), await text('[data-testid="setup-done-reply"]'));
   await shot("setup-chain-09-ready");
   console.log(`screenshots in ${shots}`);
 };
