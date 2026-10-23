@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterAll, expect, it, vi } from "vitest";
 import { Service, type Context } from "cordis";
 import { EventEmitter } from "node:events";
@@ -123,7 +124,7 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "settings.json") }], Contributions, FakeSurfaces, FakeHerdr, FakeCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile }]] });
   const ticket = w.ctx.items.create({ projectId: w.project.id, boardId: w.board.id, title: "Window work", workType: "coding", status: "doing", by: "human" });
   sessions[0]!.itemIds = [ticket.id];
-  for (const name of ["desktop/open", "desktop/open-external", "desktop/reveal"] as const) w.ctx.on(name, (arg: unknown) => void events.push([name, arg]));
+  for (const name of ["desktop/open", "desktop/open-external", "desktop/reveal", "desktop/open-path"] as const) w.ctx.on(name, (arg: unknown) => void events.push([name, arg]));
   w.ctx.contributions.command({ id: "code-link.start-terminal", title: "Start", run: (scope) => (commands.push(["start", scope]), { toast: "continuing" }) });
   w.ctx.settings.set({ ...w.ctx.settings.get(), codeLink: { ...(w.ctx.settings.get().codeLink as object), terminal: "iTerm" } });
   await settle();
@@ -204,6 +205,22 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   // A link clicked in a terminal goes to the system browser too.
   await say({ type: "openLink", url: "https://example.com/docs" });
   expect(events).toEqual([["desktop/open-external", "https://github.com/o/r/pull/7"], ["desktop/reveal", "/work/tom-1"], ["desktop/open-external", "https://example.com/docs"]]);
+
+  events.length = 0;
+  const report = path.join(os.tmpdir(), "report draft.pdf");
+  const source = path.join(os.tmpdir(), "source.ts");
+  await say({ type: "openLink", url: pathToFileURL(report).href });
+  await say({ type: "openLink", url: `${source}:12:3` });
+  await say({ type: "openLink", url: "~/report.pdf" });
+  await say({ type: "openLink", url: "file://[invalid/report.pdf" });
+  await say({ type: "openLink", url: "file:///tmp/bad%ZZ" });
+  await say({ type: "openLink", url: "javascript:alert(1)" });
+  await say({ type: "openLink", url: "relative/path.pdf" });
+  expect(events).toEqual([
+    ["desktop/open-path", report],
+    ["desktop/open-path", source],
+    ["desktop/open-path", path.join(os.homedir(), "report.pdf")]
+  ]);
 
   // The layout is remembered for the project; asked once about herdr, the answer sticks.
   const layout = { type: "split" as const, id: "x", direction: "row" as const, ratio: 0.4, a: { type: "leaf" as const, id: "c1", sessionId: "s1" }, b: { type: "leaf" as const, id: "c2", sessionId: null } };

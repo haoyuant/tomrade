@@ -87,5 +87,7 @@ declare module "cordis" {
     "desktop/open-external"(url: string): void;
     /** A folder or file shown in Finder or Explorer. */
     "desktop/reveal"(target: string): void;
+    /** Open a local path in its system default application. */
+    "desktop/open-path"(target: string): void;
   }
 }

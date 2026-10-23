@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 import type { Context } from "cordis";
 import { z } from "zod";
 import type {} from "@tomradex/db";
@@ -835,8 +836,20 @@ function apply(ctx: Context, config: Config) {
       }
       case "openGuide":
         return void ctx.emit("desktop/open-external", (await ctx.codeLink.herdrInstall()).guide);
-      case "openLink":
-        return void ctx.emit("desktop/open-external", m.url);
+      case "openLink": {
+        if (/^https?:\/\//i.test(m.url)) return void ctx.emit("desktop/open-external", m.url);
+        let target = m.url;
+        try {
+          if (/^file:/i.test(target)) target = fileURLToPath(target);
+        } catch {
+          return;
+        }
+        if (target.startsWith("~/")) target = path.join(os.homedir(), target.slice(2));
+        // Source references often carry a line and column; the system app opens the file itself.
+        target = target.replace(/:\d+(?::\d+)?$/, "");
+        if (path.isAbsolute(target)) ctx.emit("desktop/open-path", target);
+        return;
+      }
       case "switchTerminal": {
         save(config.stateFile, { asked: true });
         if (m.switch) {
