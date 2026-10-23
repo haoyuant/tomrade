@@ -96,6 +96,10 @@ it("counts a profile another check already tested, without asking again", async 
   const ctx = await llm([profile()]);
   // quick setup and the profile form both end in llm.test, which seeds the memory
   expect(await ctx.llm.test(profile())).toEqual({ ok: true });
+  expect(ctx.llm.tested(profile())).toMatchObject({ ok: true });
+  // nothing was asked of another model, or of this one after its key changed
+  expect(ctx.llm.tested(profile({ model: "m-2" }))).toBeNull();
+  expect(ctx.llm.tested(profile({ apiKey: "other" }))).toBeNull();
   expect(await ctx.llm.workerTest()).toMatchObject({ ok: true });
   expect(answered).toBe(1);
 });

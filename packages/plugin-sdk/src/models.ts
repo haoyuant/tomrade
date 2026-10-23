@@ -109,6 +109,12 @@ export interface ModelSignIn {
   run(helpers: { open(url: string): void; signal: AbortSignal }): Promise<{ apiKey: string }>;
 }
 
+/**
+ * SDK 0.2.28. The wire a provider's chat endpoint speaks, when it is a plain one
+ * another client can drive too. The built-in agent speaks these three.
+ */
+export type ModelWire = "openai-completions" | "anthropic-messages" | "google-generative-ai";
+
 /** SDK 0.2.16. One way to talk to models, as the app's own providers are: what a profile's `provider` names. */
 export interface ModelProviderSpec {
   /** Namespaced like every id a plugin registers; profiles store it. */
@@ -120,6 +126,14 @@ export interface ModelProviderSpec {
   baseURL: { default: string; editable?: boolean };
   /** False for an endpoint that only makes images. Default true. */
   chat?: boolean;
+  /**
+   * SDK 0.2.28. The plain wire its chat endpoint speaks: then Tomrade's built-in
+   * agent (pi) runs this provider's profiles too — on `baseURL.default`, with the
+   * key only in that process's environment. Leave it out when requests need
+   * headers or a body of your own, or the endpoint is not plain OpenAI, Anthropic
+   * or Gemini; only Tomrade's own adapters reach it then.
+   */
+  wire?: ModelWire;
   presets?: ModelPresetSpec[];
   /** Doubles as the key check when a profile is saved. */
   list(endpoint: { baseURL?: string; apiKey: string }, signal: AbortSignal): Maybe<ModelListing>;

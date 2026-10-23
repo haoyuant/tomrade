@@ -18,6 +18,13 @@ export interface ProviderProfile {
 export type ModelListResult = { ok: true; models: string[] | null; capabilities: Record<string, ModelCapabilities> } | { ok: false; status?: number; detail: string };
 
 /**
+ * The wire a provider's chat endpoint speaks, when it is a plain one another
+ * client can drive too. The built-in agent (pi) speaks these three; a provider
+ * that says which it speaks lets its profiles run there as well.
+ */
+export type ModelWire = "openai-completions" | "anthropic-messages" | "google-generative-ai";
+
+/**
  * One way to talk to models: what a profile's `provider` names. Core builds,
  * lists and checks a profile only through its provider, so adding one needs
  * nothing from core. A provider applies its own default address.
@@ -33,6 +40,13 @@ export interface ModelProviderSpec {
   baseURL: { default: string; editable: boolean };
   /** False for an endpoint that only makes images: no conversation check on save, no prompt tools, no media detection. */
   chat: boolean;
+  /**
+   * The wire its chat endpoint speaks, when it is a plain OpenAI, Anthropic or
+   * Gemini one: then the built-in agent may run this provider's profiles too,
+   * from `baseURL.default` with the key only in its environment. Absent: only
+   * Tomrade's own adapters reach it.
+   */
+  wire?: ModelWire;
   /** The well-known services it serves, for quick setup and the profile form. */
   presets: Omit<ProviderPreset, "provider">[];
   /** The models the endpoint lists (null: it has no listing); doubles as the key check. */
@@ -61,6 +75,8 @@ export interface ModelProviderView {
   baseURL: { default: string; editable: boolean };
   chat: boolean;
   defaultInput: InputModality[];
+  /** The plain wire its endpoint speaks, for the built-in agent; absent when it speaks an API of its own. */
+  wire?: ModelWire;
   /** The sign-in button's words, when it has one. */
   signIn?: string;
 }

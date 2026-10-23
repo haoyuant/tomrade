@@ -29,7 +29,8 @@ export { GeminiModel, type GeminiConfig } from "./gemini.js";
 export { openRouterSignIn, type OpenRouterSignIn } from "./openrouter-auth.js";
 export { deepseekKey, deepseekProvider, type DeepSeekKey } from "./search/deepseek.js";
 export { kimiKey, kimiProvider, type KimiKey } from "./search/kimi.js";
-export type { ModelListResult, ModelProviderSpec, ModelProviderView, ProviderProfile, ProviderSignIn } from "./provider.js";
+export type { ModelListResult, ModelProviderSpec, ModelProviderView, ModelWire, ProviderProfile, ProviderSignIn } from "./provider.js";
+export type { KeptTest } from "./kept-tests.js";
 export { LlmError, MediaRefused, NativeMediaRefused, NativeSearchRefused, type LlmErrorResponse } from "./errors.js";
 export { OpenAiCompatible, type OpenAiConfig } from "./openai.js";
 export { AnthropicModel, type AnthropicConfig } from "./anthropic.js";
@@ -205,6 +206,8 @@ export interface LlmService extends LLMProvider {
   profiles(): { id: string; title: string }[];
   /** Ask the profile's endpoint for one token — a wrong key or address shows when it is saved, not in the first conversation. */
   test(profile: ModelProfile): Promise<ModelTest>;
+  /** The outcome kept for this profile's last test, while its provider, address, key and model are the ones tested: null when it never answered one. */
+  tested(profile: Pick<ModelProfile, "provider" | "baseURL" | "apiKey" | "model">): KeptTest | null;
   /** The models an endpoint lists that a profile of its kind can use. */
   listing(endpoint: Pick<ModelProfile, "provider" | "baseURL" | "apiKey">): Promise<ModelListing>;
   /** Offer a model for worker calls while no profile is configured; returns the withdrawal. */
@@ -214,6 +217,8 @@ export interface LlmService extends LLMProvider {
   workerTest(fresh?: boolean): Promise<WorkerTest | null>;
   /** Serve the profiles naming `provider.id`, and offer its presets; returns the withdrawal. */
   registerProvider(provider: ModelProviderSpec): () => void;
+  /** The providers a profile can name, plugins' included, with the plain wire each declared. */
+  modelProviders(): ModelProviderView[];
 }
 
 declare module "@tomradex/ipc" {
@@ -499,6 +504,10 @@ export class Llm extends Service implements LlmService {
     return result;
   }
 
+  tested(profile: Pick<ModelProfile, "provider" | "baseURL" | "apiKey" | "model">): KeptTest | null {
+    return this.keptTests.read(profile) ?? null;
+  }
+
   /** What the endpoint lists, for the profile form's model picker. A listing-less endpoint is an empty list, not an error. */
   async listing(endpoint: Pick<ModelProfile, "provider" | "baseURL" | "apiKey">): Promise<ModelListing> {
     const kind = this.kinds.get(endpoint.provider);
@@ -605,7 +614,7 @@ export class Llm extends Service implements LlmService {
   modelProviders(): ModelProviderView[] {
     const locale = wordsLocale(this.words().locale);
     return this.ranked().map((k) => ({
-      id: k.id, title: k.title[locale], keyRequired: k.keyRequired, baseURL: k.baseURL, chat: k.chat, defaultInput: k.defaultInput, ...(signInOf(k) ? { signIn: signInOf(k)!.title[locale] } : {})
+      id: k.id, title: k.title[locale], keyRequired: k.keyRequired, baseURL: k.baseURL, chat: k.chat, defaultInput: k.defaultInput, ...(k.wire ? { wire: k.wire } : {}), ...(signInOf(k) ? { signIn: signInOf(k)!.title[locale] } : {})
     }));
   }
 
@@ -950,6 +959,14 @@ export class FakeLlm implements LlmService {
     throw new LlmError("FakeLlm has no chat model; use fakeChat() in tests that run an engine");
   }
 
+  tested(): KeptTest | null {
+    return { ok: true, at: 0 };
+  }
+
+  modelProviders(): ModelProviderView[] {
+    return [];
+  }
+
   async test(): Promise<ModelTest> {
     return { ok: true };
   }
@@ -1024,6 +1041,8 @@ export const fakeChat = (model: ChatModel, respond?: (system: string, user: stri
       profiles: () => [{ id: "fake", title: "fake" }],
       ready: () => ({ ok: true, profile: { id: "fake", title: "fake", provider: "fake", model: "fake" } }),
       test: async () => ({ ok: true }),
+      tested: () => ({ ok: true, at: 0 }),
+      modelProviders: () => [],
       listing: async () => ({ ok: true, models: ["fake"], capabilities: {} }),
       lend: () => () => {},
       registerProvider: () => () => {},

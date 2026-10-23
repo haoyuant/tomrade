@@ -10,6 +10,7 @@ import { Agent } from "@tomradex/agent";
 import { Llm, type ModelProfile } from "@tomradex/llm";
 import { Mcp } from "@tomradex/mcp";
 import { builtinPi, modelsFile, piTarget } from "@tomradex/engine-pi";
+import { usableProfile } from "../src/target.js";
 
 const profile = (patch: Partial<ModelProfile>): ModelProfile => ({ id: "p1", title: "", provider: "openai-compatible", apiKey: "sk-secret", model: "m", ...patch });
 
@@ -47,6 +48,74 @@ it("writes models.json with keys named by variable, never the key itself", () =>
   expect(file.providers["tomrade-acme"]).toBeUndefined();
 });
 
+/** An endpoint that answers any chat request, so a profile can pass its one-token test without the network. */
+async function endpoint(): Promise<{ baseURL: string; close(): void }> {
+  const server = http.createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.end('data: {"choices":[{"delta":{"content":"OK"}}]}\n\ndata: [DONE]\n\n');
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as { port: number }).port;
+  return { baseURL: `http://127.0.0.1:${port}/v1`, close: () => server.close() };
+}
+
+it("writes models.json for a provider plugin that declared a plain wire, and nothing for one that did not", () => {
+  const kinds = new Map([["acme", { api: "anthropic-messages" as const, base: "https://api.acme.example" }]]);
+  const acme = profile({ provider: "acme", model: "acme-large", baseURL: "", apiKey: "acme-key" });
+  expect(usableProfile(acme, kinds)).toBe(true);
+  expect(modelsFile([acme], kinds).providers["tomrade-p1"]).toEqual({
+    baseUrl: "https://api.acme.example",
+    api: "anthropic-messages",
+    apiKey: "$TOMRADE_KEY_P1",
+    models: [{ id: "acme-large", name: "acme-large", input: ["text"] }]
+  });
+  // Its API is its own: Tomrade's adapters reach it, pi must not guess an address for its key.
+  expect(usableProfile(acme)).toBe(false);
+  expect(modelsFile([acme]).providers).toEqual({});
+});
+
+/** A provider a plugin registered: one whose endpoint answers, and one that refuses the key. */
+function register(ctx: Awaited<ReturnType<typeof boot>>["ctx"], id: string, baseURL: string, answer: "ok" | "refuse") {
+  ctx.llm.registerProvider({
+    id, title: { en: id, zh: id }, keyRequired: true, baseURL: { default: baseURL, editable: true }, chat: true,
+    wire: "openai-completions", presets: [], list: async () => ({ ok: true, models: [], capabilities: {} }),
+    usable: (listed) => listed, defaultInput: [], capabilities: () => undefined,
+    build: () => ({
+      capabilities: { tools: true, streaming: true, json: false },
+      async *chat() {
+        if (answer === "refuse") throw new Error("401 invalid api key");
+        yield { type: "text", delta: "OK" } as const;
+        yield { type: "stop", reason: "end" } as const;
+      }
+    })
+  });
+}
+
+it("runs on a provider plugin's profile once its model passed the test, and says why when it did not", async () => {
+  const stub = await endpoint();
+  try {
+    const { ctx, engine, useModel } = await boot(fs.existsSync(bundled) ? bundled : process.execPath);
+    register(ctx, "acme", stub.baseURL, "ok");
+    register(ctx, "bad", stub.baseURL, "refuse");
+    const test = async (provider: string) => {
+      useModel({ provider, baseURL: stub.baseURL, apiKey: "acme-key", model: "acme-large" });
+      return ctx.llm.test(ctx.settings.get().models.profiles[0]);
+    };
+
+    useModel({ provider: "acme", baseURL: stub.baseURL, apiKey: "acme-key", model: "acme-large" });
+    expect(await engine()).toMatchObject({ ok: false, need: "model", reason: expect.stringContaining("Test the model") });
+    expect(await test("acme")).toEqual({ ok: true });
+    expect(await engine()).toMatchObject({ ok: true });
+
+    // A tested failure is the reason, in the provider's own words.
+    await test("bad");
+    expect(await engine()).toMatchObject({ ok: false, need: "model", reason: expect.stringContaining("invalid api key") });
+  } finally { stub.close(); }
+});
+
 async function boot(cli: string) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-pi-builtin-"));
   const booted = await fresh({ plugins: [Tools, [Settings, { path: path.join(home, "settings.json") }], Llm, Agent, [Mcp, { port: 0 }], [builtinPi, { cli, home: path.join(home, "pi") }]] });
@@ -68,17 +137,23 @@ it("asks for nothing but a model", async () => {
 
 it("leaves a model that renders tools into the prompt to the loop, saying why", async () => {
   const { ctx, engine, useModel } = await boot(fs.existsSync(bundled) ? bundled : process.execPath);
-  useModel({ promptTools: true });
-  expect(await engine()).toMatchObject({ ok: false, need: "model", reason: expect.stringContaining("cannot call tools") });
-  ctx.settings.set({ ...ctx.settings.get(), models: { profiles: [profile({ id: "local", title: "Local", promptTools: true }), profile({ id: "cloud" })], roles: { worker: "" } } });
-  const pi = ctx.agent.engineOf("pi-builtin")!;
-  // Picked for a thread, it is refused rather than swapped for the model pi can run.
-  expect(await pi.available({ options: { profile: "local" } })).toMatchObject({ ok: false, need: "model", reason: expect.stringContaining('"Local"') });
-  expect(modelsFile(ctx.settings.get().models.profiles).providers).not.toHaveProperty("tomrade-local");
-  if (fs.existsSync(bundled)) {
-    expect(await pi.available({ options: { profile: "cloud" } })).toMatchObject({ ok: true });
-    expect(await pi.available()).toMatchObject({ ok: true });
-  }
+  const stub = await endpoint();
+  try {
+    useModel({ promptTools: true, baseURL: stub.baseURL });
+    expect(await engine()).toMatchObject({ ok: false, need: "model", reason: expect.stringContaining("cannot call tools") });
+    ctx.settings.set({ ...ctx.settings.get(), models: { profiles: [profile({ id: "local", title: "Local", promptTools: true, baseURL: stub.baseURL }), profile({ id: "cloud", baseURL: stub.baseURL })], roles: { worker: "" } } });
+    const pi = ctx.agent.engineOf("pi-builtin")!;
+    // Picked for a thread, it is refused rather than swapped for the model pi can run.
+    expect(await pi.available({ options: { profile: "local" } })).toMatchObject({ ok: false, need: "model", reason: expect.stringContaining('"Local"') });
+    expect(modelsFile(ctx.settings.get().models.profiles).providers).not.toHaveProperty("tomrade-local");
+    if (fs.existsSync(bundled)) {
+      // A profile counts once its own test answered, not because its address looks right.
+      expect(await pi.available({ options: { profile: "cloud" } })).toMatchObject({ ok: false, need: "model", reason: expect.stringContaining("Test the model") });
+      expect(await ctx.llm.test(ctx.settings.get().models.profiles[1])).toEqual({ ok: true });
+      expect(await pi.available({ options: { profile: "cloud" } })).toMatchObject({ ok: true });
+      expect(await pi.available()).toMatchObject({ ok: true });
+    }
+  } finally { stub.close(); }
 });
 
 it("leaves a model on a provider whose API pi does not speak to the loop, saying why", async () => {
@@ -124,6 +199,8 @@ describe.skipIf(!fs.existsSync(bundled))("bundled pi", () => {
     try {
       const { ctx, items, project, board, home, engine, useModel } = await boot(bundled);
       useModel({ baseURL: `http://127.0.0.1:${port}/v1`, apiKey: "sk-secret", model: "fake-model" });
+      expect(await ctx.llm.test(ctx.settings.get().models.profiles[0])).toEqual({ ok: true });
+      seen.length = 0;
       expect(await engine()).toMatchObject({ ok: true });
       items.create({ projectId: project.id, boardId: board.id, title: "Ship the water reminder", by: "human" });
 

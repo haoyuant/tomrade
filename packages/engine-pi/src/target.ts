@@ -1,4 +1,4 @@
-import type { ModelProfile } from "@tomradex/llm";
+import type { ModelProfile, ModelWire } from "@tomradex/llm";
 
 /** Endpoints pi has a provider for, and the variable that provider reads its key from. */
 const KNOWN: Record<string, { provider: string; env: string }> = {
@@ -21,7 +21,7 @@ const DEFAULT_BASE: Record<string, string> = {
   openrouter: "https://openrouter.ai/api/v1"
 };
 // pi's API for each provider it can drive. Any other (a plugin's) talks a wire of its own, and its key must not go to an address pi guesses.
-const PI_API: Record<string, string> = {
+const PI_API: Record<string, ModelWire> = {
   "openai-compatible": "openai-completions",
   openai: "openai-completions",
   deepseek: "openai-completions",
@@ -31,8 +31,20 @@ const PI_API: Record<string, string> = {
   gemini: "google-generative-ai"
 };
 
-/** Whether pi has an API for the profile's provider. */
-export const piSpeaks = (provider: string): boolean => Object.hasOwn(PI_API, provider);
+/** What the built-in agent needs of a provider a plugin registered: the plain wire it declared, and where its endpoint is. */
+export interface PiKind {
+  api: ModelWire;
+  base: string;
+}
+export type PiProviders = ReadonlyMap<string, PiKind>;
+const NONE: PiProviders = new Map();
+
+/** The pi API for a provider: pi's own for the app's providers, the declared wire for a plugin's. */
+export const piApi = (provider: string, providers: PiProviders = NONE): ModelWire | undefined =>
+  (Object.hasOwn(PI_API, provider) ? PI_API[provider] : undefined) ?? providers.get(provider)?.api;
+
+/** Whether pi has an API for the profile's provider, of its own or declared by the plugin. */
+export const piSpeaks = (provider: string, providers: PiProviders = NONE): boolean => piApi(provider, providers) !== undefined;
 
 /** Every known provider's variable, so one listing shows the whole catalog. */
 export const CATALOG_ENV: Record<string, string> = Object.fromEntries(Object.values(KNOWN).map(({ env }) => [env, "catalog"]));
@@ -43,9 +55,13 @@ export interface PiTarget {
   env: Record<string, string>;
 }
 
-function hostOf(profile: ModelProfile): string {
+/** Where a profile talks: its own address, the app's default for the provider, or the plugin's. */
+const baseOf = (profile: ModelProfile, providers: PiProviders): string =>
+  profile.baseURL || DEFAULT_BASE[profile.provider] || providers.get(profile.provider)?.base || "https://api.deepseek.com";
+
+function hostOf(profile: ModelProfile, providers: PiProviders): string {
   try {
-    return new URL(profile.baseURL || DEFAULT_BASE[profile.provider] || "https://api.deepseek.com").host;
+    return new URL(baseOf(profile, providers)).host;
   } catch {
     return "";
   }
@@ -58,16 +74,16 @@ const keyVariable = (profile: ModelProfile): string => `TOMRADE_KEY_${profile.id
  * Profiles pi can talk to: a chat endpoint it has an API for, and a model that calls tools itself —
  * pi has no way to render tools into the prompt, which the loop does for `promptTools`.
  */
-export const usableProfile = (profile: ModelProfile): boolean =>
-  piSpeaks(profile.provider) && (profile.provider !== "anthropic" || !!profile.apiKey) && !profile.promptTools;
+export const usableProfile = (profile: ModelProfile, providers: PiProviders = NONE): boolean =>
+  piSpeaks(profile.provider, providers) && (profile.provider !== "anthropic" || !!profile.apiKey) && !profile.promptTools;
 
 /**
  * A known endpoint whose model pi's catalog lists runs as that provider, so pi
  * keeps what it knows about the model (context, thinking, images); anything
  * else runs as a provider of its own from models.json.
  */
-export function piTarget(profile: ModelProfile, catalog: ReadonlySet<string>): PiTarget {
-  const known = KNOWN[hostOf(profile)];
+export function piTarget(profile: ModelProfile, catalog: ReadonlySet<string>, providers: PiProviders = NONE): PiTarget {
+  const known = KNOWN[hostOf(profile, providers)];
   if (known && catalog.has(`${known.provider}/${profile.model}`)) {
     return { model: `${known.provider}/${profile.model}`, env: profile.apiKey ? { [known.env]: profile.apiKey } : {} };
   }
@@ -79,13 +95,13 @@ export function piTarget(profile: ModelProfile, catalog: ReadonlySet<string>): P
  * is never written to disk. A local endpoint gets a stand-in key, which pi
  * needs before it lists a model.
  */
-export function modelsFile(profiles: ModelProfile[]): { providers: Record<string, unknown> } {
+export function modelsFile(profiles: ModelProfile[], kinds: PiProviders = NONE): { providers: Record<string, unknown> } {
   const providers: Record<string, unknown> = {};
-  for (const profile of profiles.filter(usableProfile)) {
+  for (const profile of profiles.filter((p) => usableProfile(p, kinds))) {
     const images = profile.inputModalities?.includes("image") ?? profile.provider === "anthropic";
     providers[customProvider(profile)] = {
-      baseUrl: profile.baseURL || DEFAULT_BASE[profile.provider] || "https://api.deepseek.com",
-      api: PI_API[profile.provider],
+      baseUrl: baseOf(profile, kinds),
+      api: piApi(profile.provider, kinds),
       apiKey: profile.apiKey ? `$${keyVariable(profile)}` : "none",
       models: [{ id: profile.model, name: profile.title || profile.model, input: images ? ["text", "image"] : ["text"] }]
     };

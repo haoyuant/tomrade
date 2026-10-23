@@ -48,6 +48,7 @@ export const modelProvider = (host: Host, spec: ModelProviderSpec): CoreModelPro
     keyRequired: spec.keyRequired ?? true,
     baseURL: { default: spec.baseURL.default, editable: spec.baseURL.editable ?? true },
     chat: spec.chat ?? true,
+    ...(spec.wire ? { wire: spec.wire } : {}),
     presets: (spec.presets ?? []).map((p) => ({
       id: p.id,
       title: p.title,

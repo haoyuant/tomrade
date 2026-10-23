@@ -358,6 +358,7 @@ describe("the extension host", () => {
               id: "demo",
               title: { en: "Demo AI", zh: "演示 AI" },
               baseURL: { default: "https://api.demo.example/v1", editable: false },
+              wire: "openai-completions",
               presets: [{ id: "demo", title: "Demo AI", keyShapes: [/^demo-/], prefer: [/^demo-large/], hint: { en: "Demo's own models", zh: "演示自家的模型" } }],
               list: (endpoint) => (endpoint.apiKey === "demo-key" ? { ok: true, models: ["demo-small", "demo-large-2", "demo-embed"] } : { ok: false, status: 401, detail: "401 invalid api key" }),
               usable: (listed) => listed.filter((m) => !m.includes("embed")),
@@ -379,7 +380,7 @@ describe("the extension host", () => {
     await fiber;
     await settle();
     expect(llm.providers()).toContainEqual(expect.objectContaining({ id: "demo", title: "Demo AI", provider: "demo", hint: "Demo's own models" }));
-    expect(llm.modelProviders()).toContainEqual({ id: "demo", title: "Demo AI", keyRequired: true, baseURL: { default: "https://api.demo.example/v1", editable: false }, chat: true, defaultInput: [], signIn: "Sign in with Demo" });
+    expect(llm.modelProviders()).toContainEqual({ id: "demo", title: "Demo AI", keyRequired: true, baseURL: { default: "https://api.demo.example/v1", editable: false }, chat: true, defaultInput: [], wire: "openai-completions", signIn: "Sign in with Demo" });
     expect(await llm.listing({ provider: "demo", apiKey: "demo-key" })).toEqual({ ok: true, models: ["demo-small", "demo-large-2"], capabilities: {} });
     expect(await llm.listing({ provider: "demo", apiKey: "nope" })).toMatchObject({ ok: false, kind: "auth" });
 
