@@ -11,7 +11,7 @@ import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/settings";
 import { listedModels, PERMISSION_MODES } from "./options.js";
 import { PiRuntime, type PiLaunch } from "./rpc.js";
-import { CATALOG_ENV, modelsFile, piSpeaks, piTarget, usableProfile } from "./target.js";
+import { CATALOG_ENV, modelsFile, piApi, piTarget, usableProfile, type PiProviders } from "./target.js";
 import { PI_WORDS } from "./words.js";
 
 const EFFORTS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -54,7 +54,9 @@ export function createBuiltinPiEngine(ctx: Context, config: BuiltinPiConfig): En
   const launch = bundledLaunch({ file: config.cli, runtime: config.nodeBinary }, { platform: process.platform, env: process.env });
   const home = { PI_CODING_AGENT_DIR: config.home, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0" };
   const connected = (): ModelProfile[] => (ctx.settings.get().models as ModelsSettings | undefined)?.profiles ?? [];
-  const profiles = (): ModelProfile[] => connected().filter(usableProfile);
+  // A plugin that declares the wire its endpoint speaks lets its profiles run here too.
+  const kinds = (): PiProviders => new Map((ctx.get("llm")?.modelProviders() ?? []).flatMap((p) => (p.wire ? [[p.id, { api: p.wire, base: p.baseURL.default }] as const] : [])));
+  const profiles = (): ModelProfile[] => connected().filter((p) => usableProfile(p, kinds()));
   // A thread that picked a model pi cannot drive is not answered on another one.
   const refusedPick = (options: unknown): string | null => {
     const chosen = BuiltinPiOptions.safeParse(options ?? {}).data?.profile;
@@ -62,7 +64,7 @@ export function createBuiltinPiEngine(ctx: Context, config: BuiltinPiConfig): En
     if (!picked) return null;
     const name = picked.title || picked.model;
     if (picked.promptTools) return words()("refusedPick", { name });
-    return piSpeaks(picked.provider) ? null : words()("foreignPick", { name });
+    return piApi(picked.provider, kinds()) ? null : words()("foreignPick", { name });
   };
   const profileOf = (options: unknown): ModelProfile | undefined => {
     const all = profiles();
@@ -86,8 +88,8 @@ export function createBuiltinPiEngine(ctx: Context, config: BuiltinPiConfig): En
     const profile = profileOf(input.options);
     if (!profile) throw new Error(words()("connectModelInSettings"));
     fs.mkdirSync(config.home, { recursive: true, mode: 0o700 });
-    fs.writeFileSync(path.join(config.home, "models.json"), JSON.stringify(modelsFile(profiles()), null, 2), { mode: 0o600 });
-    const target = piTarget(profile, await known());
+    fs.writeFileSync(path.join(config.home, "models.json"), JSON.stringify(modelsFile(profiles(), kinds()), null, 2), { mode: 0o600 });
+    const target = piTarget(profile, await known(), kinds());
     const effort = BuiltinPiOptions.parse(input.options ?? {}).effort;
     // pi reads the person's ~/.agents/skills whatever its config folder; those are theirs, not Tomrade's agent's.
     return { launch, env: { ...home, ...target.env }, args: ["--model", target.model, ...(effort ? ["--thinking", effort] : []), "--no-skills"] };
@@ -124,7 +126,7 @@ export function createBuiltinPiEngine(ctx: Context, config: BuiltinPiConfig): En
       if (!ctx.get("mcp")?.url) return { ok: false, need: "service", reason: words()("noMcp") };
       if (!profiles().length) {
         const promptOnly = connected().some((p) => p.promptTools);
-        const foreign = connected().some((p) => !piSpeaks(p.provider));
+        const foreign = connected().some((p) => !piApi(p.provider, kinds()));
         return {
           ok: false,
           need: "model",
@@ -133,6 +135,12 @@ export function createBuiltinPiEngine(ctx: Context, config: BuiltinPiConfig): En
       }
       const refused = refusedPick(opts?.options);
       if (refused) return { ok: false, need: "model", reason: refused };
+      // Ready means a model that answered, not one whose address merely looks right.
+      const profile = profileOf(opts?.options);
+      const name = profile ? profile.title || profile.model : "";
+      const tested = profile ? ctx.get("llm")?.tested(profile) ?? null : null;
+      if (!tested) return { ok: false, need: "model", reason: words()("testModel", { name }) };
+      if (!tested.ok) return { ok: false, need: "model", reason: words()("testFailed", { name, detail: tested.detail ?? tested.kind ?? "" }) };
       const probe = await starts(opts?.fresh);
       if (!probe.ok) return { ok: false, need: "repair", reason: words()("doesNotStart", { detail: probe.detail }) };
       return { ok: true };
