@@ -47,11 +47,11 @@ analytics database and schedule aggregation as described in
 report RPCs to `service_role`; public and signed-in clients cannot read them.
 
 ```sh
-pnpm --filter @tomradex/store-admin build
 # Supply these through your shell/secret manager, never through the page:
 # SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (international)
 # SUPABASE_URL_CN, SUPABASE_SERVICE_ROLE_KEY_CN (optional mainland deployment)
-node apps/store-admin/dist/cli.js analytics --port 19100
+pnpm analytics                # builds, then serves on 19100
+pnpm analytics --port 19200   # another port
 ```
 
 Open `http://127.0.0.1:19100`. The server binds only to loopback, checks the

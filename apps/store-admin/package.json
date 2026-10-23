@@ -10,7 +10,8 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "analytics": "tsc -b && node dist/cli.js analytics"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
