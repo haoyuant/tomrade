@@ -4,6 +4,7 @@ import type { FocusRef } from "@tomradex/agent";
 import { AgentPanel, aiOpenKey } from "~/components/workspace/AgentPanel";
 import { onOpenRequest, takeOpenRequest } from "~/lib/attention";
 import { usePanelOpen } from "~/lib/panel";
+import { Surface } from "~/lib/analytics";
 import { hits } from "~/lib/keybindings";
 
 /**
@@ -129,6 +130,7 @@ export function ProjectShell() {
         <div className="shell-main">
           <Outlet />
         </div>
+        <Surface feature="agent.chat" onMount={false}>
         <AgentPanel
           key={projectId}
           open={aiOpen}
@@ -141,6 +143,7 @@ export function ProjectShell() {
           onOpenRepositories={openRepositories}
           onOpenIssue={openIssue}
         />
+        </Surface>
       </div>
     </Ctx.Provider>
   );

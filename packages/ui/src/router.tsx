@@ -19,6 +19,7 @@ import { RouteError } from "~/components/chrome/RouteError";
 import { AttentionOpener } from "~/lib/attention";
 import { DoneGuardProvider } from "~/lib/doneGuard";
 import { useLeadWindow } from "~/lib/window-chrome";
+import { Surface } from "~/lib/analytics";
 
 /** Notices that ask once for the whole app: the leading window shows them, the others stay quiet. */
 function LeadOnly({ children }: { children: ReactNode }) {
@@ -47,7 +48,15 @@ const rootRoute = createRootRoute({
   )
 });
 
-const indexRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", component: ProjectsScreen });
+const indexRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/",
+  component: () => (
+    <Surface feature="project.list">
+      <ProjectsScreen />
+    </Surface>
+  )
+});
 
 /** Everything inside a project shares one shell — the assistant panel mounts once, above the screens. */
 const projectShellRoute = createRoute({
@@ -132,7 +141,11 @@ const issueRoute = createRoute({
   path: "i/$itemId",
   component: function IssueRoute() {
     const { projectId, itemId } = issueRoute.useParams();
-    return <IssueScreen projectId={projectId} itemId={itemId} />;
+    return (
+      <Surface feature="backlog.issue">
+        <IssueScreen projectId={projectId} itemId={itemId} />
+      </Surface>
+    );
   }
 });
 

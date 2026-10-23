@@ -2,6 +2,7 @@
 
 import type { Invoke, Subscribe } from "@tomradex/ipc";
 import type {} from "@tomradex/agent";
+import type {} from "@tomradex/analytics";
 import type {} from "@tomradex/boards";
 import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/db";

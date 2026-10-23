@@ -175,6 +175,14 @@ plugins:
     name: "@tomradex/storage"
   # Announcements Tomrade publishes to every install, read through the account
   # client above whether or not anyone is signed in; each one pops up once.
+  # Anonymous feature usage: how often each feature is used and for how long,
+  # with a random identifier kept on this machine. Never project content,
+  # file names or paths; the switch in Settings → Data & privacy stops it all.
+  - id: analytics
+    name: ./dist/analytics.js
+    config:
+      dir: "${userData}/analytics"
+      client: "${appVersion}"
   - id: announcements
     name: "@tomradex/announcements"
     config:
