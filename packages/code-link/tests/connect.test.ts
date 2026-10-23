@@ -26,11 +26,14 @@ import { Tools } from "@tomradex/tools";
 
 /** Pi's engine registers the real writer (see engine-pi); this one names the same endpoints the same way. */
 const piConnector: ConnectFileWriter = {
+  file: ".pi/extensions/tomrade.ts",
+  title: "Pi",
   write: (mcpUrl, eventUrl) => `// pi extension\nconst server = ${JSON.stringify({ url: mcpUrl })};\nconst eventUrl = ${JSON.stringify(eventUrl)};\n`,
   url: (text) => {
     const line = /^const server = (\{.*\});$/m.exec(text)?.[1];
     return line ? (JSON.parse(line) as { url: string }).url : null;
-  }
+  },
+  tracks: (text, eventUrl) => text.includes(eventUrl)
 };
 const writeConnectFiles = (root: string, input: ConnectInput, agents?: readonly ConnectAgent[], local?: LocalConnect) => writeWith(root, input, agents, local, () => piConnector);
 
@@ -109,6 +112,24 @@ async function machine() {
 }
 
 describe("connecting a repository", () => {
+  it("writes a plugin agent's own file when its engine registers a connector", () => {
+    const dir = path.join(root, `plugin-${n++}`);
+    const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
+    const writer: ConnectFileWriter = {
+      file: ".acme/tomrade.json",
+      title: "Acme",
+      write: (mcpUrl, eventUrl) => JSON.stringify({ mcpUrl, eventUrl }),
+      url: (text) => (JSON.parse(text) as { mcpUrl: string }).mcpUrl,
+      tracks: () => true
+    };
+    const connectors = Object.assign((agent: string) => (agent === "acme" ? writer : undefined), { agents: () => ["acme"] });
+    const { files, skipped } = writeWith(dir, input, ["acme"], undefined, connectors);
+    expect(files.sort()).toEqual([".acme/tomrade.json", "AGENTS.md"]);
+    expect(skipped).toEqual([]);
+    expect(fs.readFileSync(path.join(dir, ".acme/tomrade.json"), "utf8")).toContain(input.mcpUrl);
+    expect(fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8")).toContain('claim_ticket("APP-42")');
+  });
+
   it("writes agent configuration without disturbing what is there", () => {
     const dir = path.join(root, `files-${n++}`);
     fs.mkdirSync(path.join(dir, ".claude"), { recursive: true });
@@ -665,6 +686,43 @@ describe("connecting a repository", () => {
   });
 });
 
+describe("an agent's own connection", () => {
+  /** A stand-in agent whose user-level configuration is the only way it reaches Tomrade (Cursor, Antigravity, Hermes). */
+  const agent = (ctx: Awaited<ReturnType<typeof machine>>["ctx"], state: { value: "unavailable" | "missing" | "connected"; connects: number }) => {
+    const view = () => ({ state: state.value, url: ctx.mcp.url, configuredUrl: state.value === "connected" ? ctx.mcp.url : null, file: "/home/dev/.agent.json", manual: { connect: "connect", disconnect: "disconnect" } });
+    return {
+      available: async () => ({ ok: true }),
+      turn: async () => ({ stop: "end" as const }),
+      mcpLink: {
+        status: async () => view(),
+        connect: async () => { state.connects += 1; state.value = "connected"; return view(); },
+        disconnect: async () => view()
+      }
+    };
+  };
+
+  it("is made as soon as the engine registers, without anyone pressing Connect", async () => {
+    const { ctx } = await machine();
+    const state = { value: "missing" as const, connects: 0 };
+    ctx.agent.engine({ id: "linked-agent", title: "Linked Agent", author: "ai:linked-agent", capabilities: ["code"], ...agent(ctx, state) });
+    await until(() => state.connects === 1);
+    expect(state.value).toBe("connected");
+  });
+
+  it("is made once a test message says the agent works, when its first attempt was too early", async () => {
+    const { ctx } = await machine();
+    const state: { value: "unavailable" | "missing" | "connected"; connects: number } = { value: "unavailable", connects: 0 };
+    ctx.agent.engine({ id: "late-agent", title: "Late Agent", author: "ai:late-agent", capabilities: ["code"], ...agent(ctx, state) });
+    await settle();
+    expect(state.connects).toBe(0);
+    // The MCP server is up now and a test message came back: link it.
+    state.value = "missing";
+    ctx.emit("agent/engine-tried", "late-agent", { ok: true, ms: 12, at: Date.now() });
+    await until(() => state.connects === 1);
+    expect(state.value).toBe("connected");
+  });
+});
+
 describe("untracked terminal sessions", () => {
   it.each(["en", "zh"] as const)("explains missing tracking and recovery in %s", async (language) => {
     const { ctx, items, project, board, codeLink } = await machine();
@@ -818,6 +876,14 @@ describe("outside clients, told apart by their connection", () => {
     fs.writeFileSync(transcript, `${JSON.stringify({ type: "ai-title", aiTitle: "终端侧栏设计" })}\n`);
     await post({ hook_event_name: "Stop", session_id: "talk-1", cwd: checkout, transcript_path: transcript });
     expect(codeLink.store.session(project.id, talk!.id)?.title).toBe("终端侧栏设计");
+
+    // An agent that names the conversation itself, before any transcript exists (OpenCode, Pi).
+    await post({ hook_event_name: "SessionStart", session_id: "talk-named", cwd: checkout });
+    const named = codeLink.sessionsOf(project.id).find((s) => s.externalId === "talk-named")!;
+    await post({ hook_event_name: "TitleUpdate", session_id: "talk-named", cwd: checkout, title: "OpenCode 的标题" });
+    expect(codeLink.store.session(project.id, named.id)?.title).toBe("OpenCode 的标题");
+    await post({ hook_event_name: "UserPromptSubmit", session_id: "talk-named", cwd: checkout, prompt: "一段很长的话", title: "agent 自己起的名字" });
+    expect(codeLink.store.session(project.id, named.id)?.title).toBe("agent 自己起的名字");
 
     // One that ended before titles were kept: found by its agent's session id under the accounts' folders.
     const older = codeLink.store.createSession(project.id, { repoId: talk!.repoId, branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, externalId: "old-talk" });

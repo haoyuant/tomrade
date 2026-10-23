@@ -36,7 +36,8 @@ describe("Cursor's hooks", () => {
     // As cursor-agent 2026.10.16 sends them, trimmed.
     const base = { conversation_id: "c1", generation_id: "g1", session_id: "c1", workspace_roots: ["/repo"], cursor_version: "2026.10.16-e3cb207" };
     const at = { session_id: "c1", cwd: "/repo", tomrade_agent: "cursor" };
-    expect(read({ ...base, hook_event_name: "beforeSubmitPrompt", prompt: "go" })).toEqual({ ...at, hook_event_name: "UserPromptSubmit" });
+    expect(read({ ...base, hook_event_name: "beforeSubmitPrompt", prompt: "go" })).toEqual({ ...at, hook_event_name: "UserPromptSubmit", prompt: "go" });
+    expect(read({ ...base, hook_event_name: "beforeSubmitPrompt" })).toEqual({ ...at, hook_event_name: "UserPromptSubmit" });
     expect(read({ ...base, hook_event_name: "sessionStart" })).toEqual({ ...at, hook_event_name: "SessionStart" });
     // the herdr pane the event endpoint added from the hook's header comes along
     expect(read({ ...base, hook_event_name: "sessionStart", herdr_pane: "w1:p1" })).toEqual({ ...at, herdr_pane: "w1:p1", hook_event_name: "SessionStart" });

@@ -6,7 +6,7 @@ import type { McpProjectApproval } from "@tomradex/agent";
 import type { PortClash } from "@tomradex/mcp";
 import { cursorHookScripts } from "./cursor-hooks.js";
 import { configuredMcpUrl } from "./opencode-files.js";
-import { anyHost, CLAUDE_LOCAL_SETTINGS, CODEX_HOOK_EVENTS, CONNECT_FILES, hasHooks, hasTomradeSection, hookCommands, namesEndpoint, OPENCODE_PLUGIN, NO_CONNECTORS, PI_EXTENSION, type ConnectAgent, type Connectors } from "./connect.js";
+import { anyHost, CLAUDE_LOCAL_SETTINGS, CODEX_HOOK_EVENTS, connectFiles, hasHooks, hasTomradeSection, hookCommands, namesEndpoint, OPENCODE_PLUGIN, NO_CONNECTORS, PI_EXTENSION, type ConnectAgent, type Connectors } from "./connect.js";
 import { HOOK_EVENTS, stripJsonComments } from "./sessions.js";
 
 export interface AgentConnectionView {
@@ -41,9 +41,8 @@ export interface ConnectionView {
   clash?: PortClash;
 }
 
-const FILES: readonly string[] = CONNECT_FILES;
-/** Agents whose committed hooks a connected repository carries. */
-const HOOKED = new Set<AgentConnectionView["id"]>(["claude-code", "codex", "workbuddy", "pi", "opencode", "cursor"]);
+/** Agents whose committed hooks a connected repository carries; a connector that declares `tracks` joins them. */
+const HOOKED = new Set<string>(["claude-code", "codex", "workbuddy", "pi", "opencode", "cursor"]);
 const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 function json(text: string | undefined): Record<string, unknown> {
   try { return object(JSON.parse(stripJsonComments(text ?? ""))); } catch { return {}; }
@@ -71,12 +70,11 @@ function inspect(files: Record<string, string>, mcpUrl: string, eventUrl: string
     cursor: asUrl(serverUrl(json(files[".cursor/mcp.json"]))),
     gemini: asUrl(serverUrl(json(files[".gemini/settings.json"]), "httpUrl"))
   };
-  const configuredUrl = urls.mcp ?? urls.codex ?? urls.pi ?? urls.opencode ?? urls.cursor ?? urls.gemini;
   const claudeHooks = hasHooks(settings, HOOK_EVENTS, hookCommands(eventUrl), true) || hasHooks(localSettings, HOOK_EVENTS, hookCommands(eventUrl), true);
   // Each script the hooks run posts here as Cursor: the sh one names the header as curl does, the PowerShell one as a table.
   const cursorScripts = cursorHookScripts(stripJsonComments(files[".cursor/hooks.json"] ?? ""));
   const cursorHooks = cursorScripts.length > 0 && cursorScripts.every((file) => namesEndpoint(files[file], eventUrl) && /X-Tomrade-Agent(?::|' =) '?cursor\b/.test(files[file] ?? ""));
-  const agents = ([
+  const agents: Omit<AgentConnectionView, "chosen">[] = [
     { id: "claude-code", title: "Claude Code", tools: sameProject(urls.mcp, mcpUrl), tracking: claudeHooks ? "hooks" : "none", instructions: hasTomradeSection(files["CLAUDE.md"]), reviewHooks: false },
     { id: "codex", title: "Codex", tools: sameProject(urls.codex, mcpUrl), tracking: object(codex.features).hooks !== false && hasHooks(codex, CODEX_HOOK_EVENTS, hookCommands(eventUrl, "codex"), true) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: true },
     { id: "workbuddy", title: "WorkBuddy", tools: sameProject(urls.mcp, mcpUrl), tracking: hasHooks(json(files[".codebuddy/settings.json"]), HOOK_EVENTS, hookCommands(eventUrl, "workbuddy"), true) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false },
@@ -84,27 +82,44 @@ function inspect(files: Record<string, string>, mcpUrl: string, eventUrl: string
     { id: "opencode", title: "OpenCode", tools: sameProject(urls.opencode, mcpUrl), tracking: namesEndpoint(files[OPENCODE_PLUGIN], eventUrl) ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false },
     { id: "cursor", title: "Cursor", tools: sameProject(urls.cursor, mcpUrl), tracking: cursorHooks ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false },
     { id: "gemini", title: "Gemini CLI", tools: sameProject(urls.gemini, mcpUrl), tracking: "none", instructions: false, reviewHooks: false }
-  ] satisfies Omit<AgentConnectionView, "chosen">[]).map((agent): AgentConnectionView => ({ ...agent, chosen: chosen.includes(agent.id) }));
-  const counted = agents.filter((agent) => agent.chosen);
-  return { agents, configuredUrl, sameProject: sameProject(configuredUrl, mcpUrl), connected: counted.length > 0 && counted.every((agent) => agent.tools) && counted.filter((agent) => HOOKED.has(agent.id)).every((agent) => agent.tracking === "hooks") };
+  ];
+  // Each connector's file names its own endpoint, read the same way; one whose file is absent still gets a row,
+  // so a chosen agent cannot count as connected on the others' word.
+  const plugin = (connectors.agents?.() ?? []).flatMap((id) => {
+    const writer = connectors(id);
+    if (!writer || agents.some((agent) => agent.id === id)) return [];
+    const text = files[writer.file] ?? "";
+    const url = writer.url(text);
+    const tracks = url !== null && (writer.tracks ? writer.tracks(text, eventUrl) : namesEndpoint(text, eventUrl));
+    return [{ id, url, tracks: !!tracks, title: writer.title ?? id }];
+  });
+  const configuredUrl = urls.mcp ?? urls.codex ?? urls.pi ?? urls.opencode ?? urls.cursor ?? urls.gemini ?? plugin.find((p) => p.url)?.url ?? null;
+  for (const { id, url, tracks, title } of plugin) {
+    agents.push({ id, title, tools: url !== null && sameProject(url, mcpUrl), tracking: tracks ? "hooks" : "none", instructions: hasTomradeSection(files["AGENTS.md"]), reviewHooks: false });
+  }
+  const views = agents.map((agent): AgentConnectionView => ({ ...agent, chosen: chosen.includes(agent.id) }));
+  const hooked = new Set(HOOKED);
+  for (const id of connectors.agents?.() ?? []) if (connectors(id)?.tracks) hooked.add(id);
+  const counted = views.filter((agent) => agent.chosen);
+  return { agents: views, configuredUrl, sameProject: sameProject(configuredUrl, mcpUrl), connected: counted.length > 0 && counted.every((agent) => agent.tools) && counted.filter((agent) => hooked.has(agent.id)).every((agent) => agent.tracking === "hooks") };
 }
 
 export function inspectConnectFiles(root: string, mcpUrl: string, eventUrl: string, chosen: readonly ConnectAgent[], connectors: Connectors = NO_CONNECTORS) {
-  const files = Object.fromEntries(FILES.map((file) => {
+  const files = Object.fromEntries(connectFiles(connectors).map((file) => {
     try { return [file, fs.readFileSync(path.join(root, file), "utf8")]; } catch { return [file, ""]; }
   }));
   return inspect(files, mcpUrl, eventUrl, chosen, connectors);
 }
 
 /** Every connection file `ref` holds, read by one `git cat-file --batch`; one it lacks is absent from the map. */
-async function committedFiles(git: Git, cwd: string, ref: string): Promise<Map<string, string>> {
-  const result = await git(["cat-file", "--batch"], { cwd, ok: true, stdin: FILES.map((file) => `${ref}:${file}\n`).join("") });
+async function committedFiles(git: Git, cwd: string, ref: string, list: readonly string[]): Promise<Map<string, string>> {
+  const result = await git(["cat-file", "--batch"], { cwd, ok: true, stdin: list.map((file) => `${ref}:${file}\n`).join("") });
   const files = new Map<string, string>();
   if (result.code !== 0) return files;
   // Each answer is "<sha> <type> <size>\n<content>\n", or "<input> missing\n"; sizes count bytes.
   const out = Buffer.from(result.stdout, "utf8");
   let at = 0;
-  for (const file of FILES) {
+  for (const file of list) {
     const end = out.indexOf(10, at);
     if (end === -1) break;
     const header = out.subarray(at, end).toString("utf8").split(" ");
@@ -123,12 +138,13 @@ async function committedFiles(git: Git, cwd: string, ref: string): Promise<Map<s
  * checkout. `local` says the committed files alone would not connect it.
  */
 export async function inspectConnection(git: Git, cwd: string, ref: string, mcpUrl: string, eventUrl: string, chosen: readonly ConnectAgent[], connectors: Connectors = NO_CONNECTORS) {
-  const listed = await git(["ls-files", "-z", "--", ...FILES], { cwd, ok: true });
-  const tracked = new Set(listed.code === 0 ? listed.stdout.split("\0").filter(Boolean) : FILES);
-  const found = await committedFiles(git, cwd, ref);
+  const list = connectFiles(connectors);
+  const listed = await git(["ls-files", "-z", "--", ...list], { cwd, ok: true });
+  const tracked = new Set(listed.code === 0 ? listed.stdout.split("\0").filter(Boolean) : list);
+  const found = await committedFiles(git, cwd, ref, list);
   const committed: Record<string, string> = {};
   const untracked: Record<string, string> = {};
-  for (const file of FILES) {
+  for (const file of list) {
     committed[file] = found.get(file) ?? "";
     if (found.has(file) || tracked.has(file)) continue;
     try { untracked[file] = fs.readFileSync(path.join(cwd, file), "utf8"); } catch { /* Not there: nothing local for it. */ }

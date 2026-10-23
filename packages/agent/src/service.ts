@@ -498,6 +498,7 @@ export class Agent extends Service implements AgentReader {
     return this.ctx.effect(() => {
       this.engines.set(engine.id, engine);
       if (engine.usesModels) this.forgetRemovedProfiles();
+      this.ctx.emit("agent/engine-added", engine);
       return () => this.engines.delete(engine.id);
     }, `agent.engine(${engine.id})`);
   }

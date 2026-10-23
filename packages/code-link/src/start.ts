@@ -470,15 +470,22 @@ export class Starter {
    * for an engine whose command has no place for a resume.
    */
   private resumeCommand(settings: TerminalSettings, engineId: string, files: SessionFiles, cwd: string, options: unknown, bin: string): string | null {
-    if (settings.terminal !== "herdr" || !terminalTemplate(settings, engineId).includes("{resume}")) return null;
+    if (settings.terminal !== "herdr" || !this.template(settings, engineId).includes("{resume}")) return null;
     const prompt = path.join(files.dir, "resume-prompt.md");
     fs.writeFileSync(prompt, "Tomrade: herdr restarted and brought this session back. Carry on where you left off; Tomrade's tools and hooks are connected again.\n");
     return this.command(settings, engineId, { externalId: `"$(cat ${shellQuote(path.join(files.dir, RESUME_ID_FILE))})"` }, { ...files, prompt }, cwd, options, bin);
   }
 
+  /** The engine's own terminal template, else the one its engine ID names in the machine settings. */
+  private template(settings: TerminalSettings, engineId: string): string {
+    const agent = this.host.ctx.get("agent");
+    const declared = agent?.codeEngines().find((engine) => engine.id === agent.answering(engineId))?.terminal?.command;
+    return terminalTemplate(settings, engineId, declared);
+  }
+
   /** The terminal command for a session: the engine's template, the knobs picked at Start, and the CLI's own session to resume. */
   private command(settings: TerminalSettings, engineId: string, session: { externalId: string | null }, files: SessionFiles, cwd: string, options: unknown, bin: string): string {
-    const template = terminalTemplate(settings, engineId);
+    const template = this.template(settings, engineId);
     const id = session.externalId;
     const resume = id ? (engineId === "codex" ? `resume ${id}` : engineId === "pi" ? `--session-id ${id}` : engineId === "gemini" ? `-r ${id}` : engineId === "opencode" ? `--session ${id}` : engineId === "dsh" ? `--session-id ${id}` : engineId === "agy" ? `--conversation ${id}` : engineId === "other" ? id : `--resume ${id}`) : "";
     return fillTemplate(withOptions(template, optionFlags(engineId, options)), {
@@ -635,11 +642,22 @@ export class Starter {
   }
 }
 
-/** An agent whose connection carries no session token is told to claim the ticket before anything else, which ties the session to it. */
+/**
+ * Every terminal agent is told to claim the ticket before anything else: one
+ * whose connection carries no session token needs the claim to be tied to this
+ * session, and one Tomrade started still claims so its ticket and sidebar are
+ * on the ticket from the first move, as Claude Code's instructions have it.
+ */
 function withClaimFirst(agent: Agent, engineId: string, key: string, prompt: string): string {
   const engine = agent.codeEngines().find((e) => e.id === agent.answering(engineId));
-  if (!engine?.terminal?.claims) return prompt;
-  return `Before anything else, call the tomrade MCP tool claim_ticket with key "${key}": this session reaches Tomrade without a session token, and the claim ties it to this ticket.\n\n${prompt}`;
+  if (engine?.terminal?.mode === "none") return prompt;
+  const why = engine?.terminal?.claims
+    ? "this session reaches Tomrade without a session token, and the claim ties it to this ticket"
+    : "the claim keeps this session and its sidebar on the ticket";
+  const claim = `Before anything else, call the tomrade MCP tool claim_ticket with key "${key}": ${why}.`;
+  // After the opening line, which names the ticket and makes the better conversation title.
+  const [first, ...rest] = prompt.split("\n");
+  return `${first}\n\n${claim}\n${rest.join("\n")}`;
 }
 
 /** The CLI an engine located — an app's own copy included — for a template's {bin}, and the folders it runs with; a bare name when it found none. */
@@ -656,11 +674,19 @@ function bashBin(file: string, platform: NodeJS.Platform = process.platform): st
   return shim !== file && fs.existsSync(shim) ? shim : file;
 }
 
-/** An engine that reaches Tomrade in a terminal only through its own connection, while that is not made. */
+/**
+ * An engine that reaches Tomrade in a terminal only through its own
+ * connection: if that is not made, make it now — Tomrade's address is known,
+ * and the file is its own entry — rather than send the person to Settings.
+ */
 async function linkFirst(engine: Engine, locale: string | undefined): Promise<string | null> {
   if (engine.terminal?.via !== "link") return null;
-  const state = (await engine.local?.mcpLink?.status().catch(() => null))?.state;
-  return state === "connected" ? null : CODE_WORDS(locale)("linkFirst", { title: engine.title });
+  const link = engine.local?.mcpLink;
+  if (!link) return CODE_WORDS(locale)("linkFirst", { title: engine.title });
+  const made = (state: string | undefined) => state === "connected";
+  if (made((await link.status().catch(() => null))?.state)) return null;
+  if (made((await link.connect().catch(() => null))?.state)) return null;
+  return CODE_WORDS(locale)("linkFirst", { title: engine.title });
 }
 
 /** Why an engine cannot be handed a ticket in a terminal, or null when it can. */

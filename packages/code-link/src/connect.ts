@@ -6,9 +6,9 @@ import { opencodePlugin, withMcpEntry } from "./opencode-files.js";
 import { HERDR_PANE_HEADER, HOOK_EVENTS, TERMINAL_HEADER, WT_HEADER, stripJsonComments } from "./sessions.js";
 import { syncPrompt, syncSteps } from "./sync.js";
 
-/** The agents a repository can be connected for, in the order they are shown. */
+/** The agents a repository is connected for, in the order they are shown; a plugin agent may add its own. */
 export const CONNECT_AGENTS = ["claude-code", "codex", "workbuddy", "pi", "opencode", "cursor", "gemini"] as const;
-export type ConnectAgent = (typeof CONNECT_AGENTS)[number];
+export type ConnectAgent = string;
 
 /**
  * Why Connect left an agent out: its file has comments or trailing commas a
@@ -56,20 +56,26 @@ export const PI_EXTENSION = ".pi/extensions/tomrade.ts";
 /**
  * A file Connect lays down for an agent whose engine knows its format best:
  * the engine registers it (`ctx.codeLink.registerConnector`) and code-link
- * imports no engine. Its path stays here, in CONNECT_FILES.
+ * imports no engine. The writer names the file, its agent and how to read it.
  */
 export interface ConnectFileWriter {
+  /** The file, relative to the repository root. */
+  file: string;
+  /** The agent's name in the connection view; its id when absent. */
+  title?: string;
   /** The file's text for this project's MCP endpoint and the hooks' event endpoint. */
   write(mcpUrl: string, eventUrl: string): string;
   /** The MCP endpoint a written file names, or null when it names none. */
   url(text: string): string | null;
+  /** Whether the written file reports lifecycle events to `eventUrl`; named endpoints count when absent. */
+  tracks?(text: string, eventUrl: string): boolean;
 }
 
-/** The agents whose connection file an engine writes: Pi's, at PI_EXTENSION. */
-export type ConnectorAgent = "pi";
-/** The writer registered for an agent, read when Connect runs. */
-export type Connectors = (agent: ConnectorAgent) => ConnectFileWriter | undefined;
-export const NO_CONNECTORS: Connectors = () => undefined;
+/** The agents whose connection file an engine writes; any plugin agent may register one. */
+export type ConnectorAgent = string;
+/** The writer registered for an agent, read when Connect runs; `agents` lists every one registered. */
+export type Connectors = ((agent: ConnectorAgent) => ConnectFileWriter | undefined) & { agents?: () => readonly ConnectorAgent[] };
+export const NO_CONNECTORS: Connectors = Object.assign(() => undefined, { agents: () => [] as const });
 /** OpenCode loads a project plugin from here by itself. */
 export const OPENCODE_PLUGIN = ".opencode/plugins/tomrade.js";
 /** Claude Code's personal settings for one checkout: a machine-only connection keeps its hooks there. */
@@ -77,6 +83,15 @@ export const CLAUDE_LOCAL_SETTINGS = ".claude/settings.local.json";
 const CODEX_SYNC_SKILL = ".agents/skills/tomrade-sync/SKILL.md";
 /** Every file a connection may write, committed or for this machine only, and the Cursor script an older Tomrade wrote. */
 export const CONNECT_FILES = [".mcp.json", ".claude/settings.json", CLAUDE_LOCAL_SETTINGS, ".codebuddy/settings.json", ".codex/config.toml", CODEX_SYNC_SKILL, PI_EXTENSION, "opencode.json", OPENCODE_PLUGIN, ".cursor/mcp.json", ".cursor/hooks.json", CURSOR_HOOK_SCRIPT, CURSOR_HOOK_POWERSHELL, LEGACY_CURSOR_HOOK_SCRIPT, ".gemini/settings.json", "CLAUDE.md", "AGENTS.md"] as const;
+
+/** The same list plus the file of every connector an engine registered: what a connection may read, write and track. */
+export function connectFiles(connectors: Connectors = NO_CONNECTORS): string[] {
+  const extra = (connectors.agents?.() ?? []).flatMap((agent) => {
+    const file = connectors(agent)?.file;
+    return file && !(CONNECT_FILES as readonly string[]).includes(file) ? [file] : [];
+  });
+  return [...CONNECT_FILES, ...extra];
+}
 
 /**
  * The committed hook's command, read alike by every shell these agents run
@@ -404,7 +419,7 @@ export function writeConnectFiles(root: string, input: ConnectInput, agents: rea
   const claudeHooks = withSessionHooks(hookCommand(input.eventUrl));
   // Without its engine's writer (the engine is off), Pi gets the instructions alone, and is told why.
   const pi = connectors("pi");
-  const plans: Record<ConnectAgent, () => Write[]> = {
+  const plans: Record<string, () => Write[]> = {
     "claude-code": () => [mcp(), local ? json(CLAUDE_LOCAL_SETTINGS, (text) => withApprovedServer(claudeHooks(text))) : json(".claude/settings.json", claudeHooks), ...section("CLAUDE.md")],
     codex: () => [codex(), ...section("AGENTS.md"), exact(CODEX_SYNC_SKILL, codexSyncSkill(input))],
     // WorkBuddy's CLI takes Claude Code's hook format in its own settings file.
@@ -417,12 +432,23 @@ export function writeConnectFiles(root: string, input: ConnectInput, agents: rea
     cursor: () => [json(".cursor/mcp.json", withServer({ url: input.mcpUrl })), json(".cursor/hooks.json", withCursorHooks), exact(CURSOR_HOOK_SCRIPT, cursorHookScript(posixHookCommand(input.eventUrl, "cursor")), 0o755), exact(CURSOR_HOOK_POWERSHELL, cursorHookPowerShell(powershellHook(input.eventUrl, "cursor"))), ...section("AGENTS.md")],
     gemini: () => [json(".gemini/settings.json", withServer({ httpUrl: input.mcpUrl }))]
   };
+  // A plugin agent's own file: its engine registered the writer, so Connect needs no knowledge of its format.
+  const planFor = (agent: ConnectAgent): Write[] => {
+    const plan = plans[agent];
+    if (plan) return plan();
+    const writer = connectors(agent);
+    if (!writer) {
+      skipped.push({ agent, file: agent, reason: "no-connector" });
+      return [];
+    }
+    return [exact(writer.file, writer.write(input.mcpUrl, input.eventUrl)), ...section("AGENTS.md")];
+  };
 
   // Every file an agent needs is worked out before anything is written, so one it cannot have leaves that agent out whole.
   const writes = new Map<string, Write>();
-  for (const agent of CONNECT_AGENTS.filter((id) => agents.includes(id))) {
+  for (const agent of agents) {
     try {
-      for (const write of plans[agent]()) {
+      for (const write of planFor(agent)) {
         if (write.text !== null && local?.tracked.has(write.name)) throw new Unwritable(write.name, "tracked");
         writes.set(write.name, write);
       }

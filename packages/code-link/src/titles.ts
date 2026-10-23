@@ -59,19 +59,60 @@ export function promptTitle(prompt: unknown): string | null {
   return line.length > PROMPT_TITLE ? `${line.slice(0, PROMPT_TITLE - 1)}…` : line;
 }
 
+/** The first thing the person said in a Codex rollout, as a title. */
+export function codexTitle(file: string): string | null {
+  let fd: number;
+  try {
+    fd = fs.openSync(file, "r");
+  } catch {
+    return null;
+  }
+  try {
+    for (const line of read(fd, 0, CHUNK).split("\n")) {
+      if (!line.includes('"user"')) continue;
+      try {
+        const o = JSON.parse(line) as Record<string, unknown>;
+        if (o.type !== "response_item") continue;
+        const p = (o.payload ?? {}) as { type?: string; role?: string; content?: { type?: string; text?: string }[] };
+        if (p.type !== "message" || p.role !== "user") continue;
+        const text = (p.content ?? []).find((part) => typeof part.text === "string" && part.text.trim())?.text;
+        const title = promptTitle(text);
+        if (title) return title;
+      } catch {
+        // a line cut by the chunk's edge
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/**
+ * The title an agent's own record calls its conversation: Claude Code and
+ * agents that write its transcript format, else Codex's first user message.
+ */
+export function transcriptTitleFor(agent: string, file: string): string | null {
+  return agent === "codex" ? codexTitle(file) : transcriptTitle(file);
+}
+
 /**
  * Where an older Claude Code session's transcript is, found by its session id under the accounts' project folders:
- * `CLAUDE_CONFIG_DIR`, `~/.claude`, and `~/.claude-*`.
+ * `CLAUDE_CONFIG_DIR`, `~/.claude`, and `~/.claude-*`; CodeBuddy keeps the same layout under its own folders.
  */
 export function findTranscript(sessionId: string, home = os.homedir(), env: NodeJS.ProcessEnv = process.env): string | null {
   if (!/^[\w-]+$/.test(sessionId)) return null;
   const roots = new Set<string>();
-  if (env.CLAUDE_CONFIG_DIR) roots.add(env.CLAUDE_CONFIG_DIR);
-  roots.add(path.join(home, ".claude"));
-  try {
-    for (const name of fs.readdirSync(home)) if (name.startsWith(".claude-")) roots.add(path.join(home, name));
-  } catch {
-    // no home to look in
+  for (const [variable, dir] of [["CLAUDE_CONFIG_DIR", ".claude"], ["CODEBUDDY_CONFIG_DIR", ".codebuddy"]] as const) {
+    if (env[variable]) roots.add(env[variable]);
+    roots.add(path.join(home, dir));
+    try {
+      for (const name of fs.readdirSync(home)) if (name.startsWith(`${dir}-`)) roots.add(path.join(home, name));
+    } catch {
+      // no home to look in
+    }
   }
   for (const root of roots) {
     let projects: string[];
@@ -164,7 +205,7 @@ function codexLines(o: Record<string, unknown>): ConversationLine[] {
  * tool call. Only the record's tail is read; `cut` says the start was left out. Null for agents Tomrade cannot read.
  */
 export function readConversation(agent: string, file: string): { lines: ConversationLine[]; cut: boolean } | null {
-  const reader = agent === "claude-code" ? claudeLines : agent === "codex" ? codexLines : null;
+  const reader = agent === "claude-code" || agent === "workbuddy" ? claudeLines : agent === "codex" ? codexLines : null;
   if (!reader) return null;
   let fd: number;
   try {

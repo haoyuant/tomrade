@@ -897,8 +897,12 @@ unchanged. Pi has no MCP flag, so `engine-pi` (and a terminal pi session) loads 
 generated session-only extension that registers the server instead; the user's
 own `mcp.json` is never written. A repository's committed `.pi/extensions/tomrade.ts`
 comes from the same engine: `engine-pi` hands Connect its writer with
-`ctx.codeLink.registerConnector("pi", { write(mcpUrl, eventUrl), url(text) })`,
-read when Connect runs, so code-link imports no engine. Agents that speak ACP (the Agent Client
+`ctx.codeLink.registerConnector("pi", { file, title, write(mcpUrl, eventUrl), url(text), tracks(text, eventUrl) })`,
+read when Connect runs, so code-link imports no engine. `file` is the path the
+connection writes, `title` how the agent is listed, and `tracks` whether the
+file reports lifecycle events (without it, a file naming the event endpoint
+counts). Any plugin engine may register one: Connect then offers it alongside
+the built-in agents, writes its file, and reads it back the same way. Agents that speak ACP (the Agent Client
 Protocol) share one conductor, `@tomradex/engine-acp`: `createAcpEngine(ctx,
 agent)` spawns the agent's ACP server on stdio, hands it Tomrade's tools as an
 HTTP MCP server in `session/new`, reopens a stored session with
@@ -915,17 +919,22 @@ descriptions on top of it, handed over through `ctx.agent.localAgent` (see
 
 What an engine is beyond its turns is said in a few grouped options:
 
-- **`terminal: { mode, via?, claims? }`**: `mode: "none"` runs only inside
-  Tomrade, and Start offers it no terminal session; `"handoff"` (the default
-  when `terminal` is absent) can also be handed a ticket in a terminal;
+- **`terminal: { mode, via?, claims?, command? }`**: `mode: "none"` runs only
+  inside Tomrade, and Start offers it no terminal session; `"handoff"` (the
+  default when `terminal` is absent) can also be handed a ticket in a terminal;
   `"only"` is a CLI Tomrade only ever starts in a terminal (Antigravity CLI
   from `tomrade/antigravity`, Cursor from `tomrade/cursor`): Start offers it no
   in-app run, the panel never conducts with it, and Code link's command
   template hands it a session-only MCP config. `via: "link"` says that in a
   terminal it reaches Tomrade only through its own user-level connection
-  (`local.mcpLink`), which Start then asks for first; `claims: true` says that
-  connection carries no session token, so the session's first act is
-  `claim_ticket`.
+  (`local.mcpLink`), which Start makes first if it is not made yet; `claims:
+  true` says that connection carries no session token, so the claim is what
+  ties the session to its ticket. Every terminal session's prompt asks it to `claim_ticket` first,
+  the ticket line above it so the first thing said still names the work;
+  `command` is its own command template (`{bin}`, `{options}`, `{prompt}`,
+  `{resume}`, `{mcpConfig}`, `{mcpUrl}`, `{token}`, `{settings}`,
+  `{piExtension}`, `{dshPatch}`, `{dshReporter}`), for a CLI that does not take
+  Claude Code's flags.
 - **`steering: "queue" | "forward"`**: it takes messages sent while a turn
   runs. `queue`: Tomrade holds them and the engine takes them where its model
   reads next (`io.takeSteers()`); `forward`: its agent keeps its own queue,
@@ -1299,7 +1308,11 @@ await ctx.agent.localAgent({
   switched in Settings → Assistant: either `{ status, connect, disconnect }`
   the plugin manages (each answers the link's state), or `{ cli: { file,
   configuredUrl, add, remove } }`, run through the agent's own `mcp add` /
-  `mcp remove`.
+  `mcp remove`. Tomrade writes it by itself once the agent is installed and its
+  MCP server is up — a missing or stale link is reconnected, a connected one is
+  left alone — and Start makes it before handing a ticket to a `via: "link"`
+  engine, so a person never has to press Connect first. Settings keeps the
+  button for a link Tomrade could not write, and for disconnecting.
 - **`setup.install`** lists install commands, the recommended one first. An
   installer script is named by its address (SDK 0.2.18): `{ script: url }`
   runs as `curl -fsSL <url> | bash`, `{ powershell: url }` as

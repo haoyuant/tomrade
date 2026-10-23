@@ -1689,6 +1689,10 @@ describe("starting a ticket", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.command).toMatch(/^"pi" --thinking high -e ".*pi-extension\.ts" "\$\(cat ".*prompt\.md"\)"$/);
+    // A token-bound session is told to claim too, after the line that names the ticket.
+    const prompt = fs.readFileSync(path.join(codeLink.sessionDir(result.sessionId), "prompt.md"), "utf8");
+    expect(prompt.split("\n")[0]).toContain(item.key);
+    expect(prompt).toContain(`Before anything else, call the tomrade MCP tool claim_ticket with key "${item.key}"`);
 
     // Load the extension the way pi does, against a stand-in for pi's API; its reports reach the real event endpoint.
     const source = fs.readFileSync(path.join(codeLink.sessionDir(result.sessionId), "pi-extension.ts"), "utf8");
@@ -1703,6 +1707,11 @@ describe("starting a ticket", () => {
     const session = () => codeLink.sessionsOf(project.id, item.id)[0];
     await on.session_start!({ type: "session_start", reason: "startup" }, { sessionManager: { getSessionId: () => "pi-abc" } });
     expect(session()).toMatchObject({ state: "running", externalId: "pi-abc", mode: "terminal" });
+    // The sidebar's title follows what was asked, then what pi calls the conversation.
+    await on.agent_start!({ prompt: "先跑测试" });
+    await vi.waitFor(() => expect(session().title).toBe("先跑测试"));
+    await on.session_start!({ type: "session_start", reason: "resume" }, { sessionManager: { getSessionId: () => "pi-abc", getSessionName: () => "Pi 的标题" } });
+    await vi.waitFor(() => expect(session().title).toBe("Pi 的标题"));
     expect(await on.tool_call!({ toolName: "bash", input: { command: "flutter create ." } })).toBeUndefined();
     expect(session()).toMatchObject({ state: "running", activity: "Bash · flutter create ." });
     await on.tool_result!({ toolName: "bash", input: { command: "flutter create ." }, content: [{ type: "text", text: "ok" }], isError: false });
@@ -1758,7 +1767,7 @@ describe("starting a ticket", () => {
     const started = await codeLink.start(project.id, item.id, { mode: "terminal", engine: "dsh" });
     if (!started.ok) throw new Error(JSON.stringify(started));
     const dir = codeLink.sessionDir(started.sessionId);
-    expect(started.command).toBe(`"${bin}" --profile headless --patch "${path.join(dir, "dsh-patch.yml")}" --json - < "${path.join(dir, "prompt.md")}" | ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${path.join(dir, "dsh-report.mjs")}"`);
+    expect(started.command).toBe(`"${bin}" --profile headless --patch "${path.join(dir, "dsh-patch.yml")}" --json - < "${path.join(dir, "prompt.md")}" | TOMRADE_PROMPT_FILE="${path.join(dir, "prompt.md")}" ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${path.join(dir, "dsh-report.mjs")}"`);
     // The folder it was found in goes on the terminal's PATH ahead of the person's own, for what it starts.
     expect(fs.readFileSync(path.join(dir, "run.command"), "utf8")).toContain(`export PATH='${path.dirname(bin)}':"$PATH"`);
     const patch = fs.readFileSync(path.join(dir, "dsh-patch.yml"), "utf8");
@@ -1813,12 +1822,33 @@ describe("starting a ticket", () => {
     if (!started.ok) throw new Error(JSON.stringify(started));
     expect(started.command).toMatch(/^"agy" --model gemini-3\.6-flash -i "\$\(cat ".*prompt\.md"\)"$/);
     const prompt = fs.readFileSync(path.join(codeLink.sessionDir(started.sessionId), "prompt.md"), "utf8");
-    expect(prompt.startsWith(`Before anything else, call the tomrade MCP tool claim_ticket with key "${item.key}"`)).toBe(true);
+    expect(prompt.split("\n")[0]).toContain(item.key);
+    expect(prompt).toContain(`Before anything else, call the tomrade MCP tool claim_ticket with key "${item.key}"`);
 
     // Its calls carry no token; the claim over its connection is its first act, and it lands on Start's session.
     const claimed = await ctx.tools.execute("claim_ticket", { key: item.key }, { by: "ai:mcp", projectId: project.id, connection: "agy-conn" }) as { tracking: { tracked: boolean; sessionId: string } };
     expect(claimed.tracking).toMatchObject({ tracked: true, sessionId: started.sessionId });
     expect(codeLink.sessionsOf(project.id, item.id).map((s) => s.id)).toEqual([started.sessionId]);
+  });
+
+  it("makes a terminal agent's own MCP link itself, so Start never sends the person to Settings first", async () => {
+    const world = await machine(codeRepo());
+    const { codeLink, ctx, project, repo, checkout, ticket } = world;
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    ctx.settings.set({ ...ctx.settings.get(), codeLink: { terminal: "none" } });
+    let state: "connected" | "missing" = "missing";
+    let connects = 0;
+    const view = () => ({ state, url: null, configuredUrl: null, file: null, manual: { connect: "", disconnect: "" } });
+    await ctx.plugin({ name: "fake-agy-auto", inject: ["agent"], apply: (c: Context) => {
+      c.agent.engine({ ...fakeCodeEngine([]), id: "agy", title: "Antigravity CLI", author: "ai:agy", capabilities: ["code", "general"], terminalOnly: true, terminalViaLink: true, terminalClaims: true,
+        mcpLink: { status: async () => view(), connect: async () => { connects++; state = "connected"; return view(); }, disconnect: async () => view() } });
+    } });
+    const { Mcp } = await import("@tomradex/mcp");
+    await ctx.plugin(Mcp, { port: 0 });
+    // Its link is written as soon as Tomrade's server and the engine are both up — nobody pressed Connect.
+    await vi.waitFor(() => expect(connects).toBe(1));
+    const started = await codeLink.start(project.id, ticket("Antigravity auto link").id, { mode: "terminal", engine: "agy" });
+    expect(started.ok).toBe(true);
   });
 
   it("passes over an engine that can only chat when none is named, and says why when it is named", async () => {
@@ -1864,7 +1894,8 @@ describe("starting a ticket", () => {
     if (!started.ok) throw new Error(JSON.stringify(started));
     expect(started.command).toMatch(/^"cursor-agent" --model gpt-5 "\$\(cat ".*prompt\.md"\)"$/);
     const prompt = fs.readFileSync(path.join(codeLink.sessionDir(started.sessionId), "prompt.md"), "utf8");
-    expect(prompt.startsWith(`Before anything else, call the tomrade MCP tool claim_ticket with key "${item.key}"`)).toBe(true);
+    expect(prompt.split("\n")[0]).toContain(item.key);
+    expect(prompt).toContain(`Before anything else, call the tomrade MCP tool claim_ticket with key "${item.key}"`);
   });
 
   it("starts Hermes in a terminal once its own sessions reach Tomrade, and asks for that first", async () => {

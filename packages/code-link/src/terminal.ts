@@ -20,7 +20,7 @@ export const TerminalSettings = z.object({
   geminiCommand: z.string().default('GEMINI_CLI_HOME="{geminiHome}" "{bin}" {options} {resume} -i "$(cat "{prompt}")"').meta({ title: "Gemini CLI command", advanced: true }).describe("{geminiHome} is a Gemini home for this session alone: your own ~/.gemini (sign-in, extensions, history) with Tomrade's server added to a copy of its settings. Your own files are not changed."),
   opencodeCommand: z.string().default('OPENCODE_CONFIG="{opencodeConfig}" "{bin}" {options} {resume} --prompt "$(cat "{prompt}")"').meta({ title: "OpenCode command", advanced: true }),
   /** No interactive terminal of its own: one headless run, shown and reported through {dshReporter}, resumed by session id. */
-  dshCommand: z.string().default('"{bin}" --profile headless --patch "{dshPatch}" --json {resume} - < "{prompt}" | ELECTRON_RUN_AS_NODE=1 "{node}" "{dshReporter}"').meta({ title: "DeepSeek Harness command", advanced: true }).describe("DeepSeek Harness has no interactive terminal: the ticket runs as one headless run, shown through {dshReporter} and resumed with --session-id. {bin} is the dsh Tomrade found, the desktop app's own included; {dshPatch} adds Tomrade's server for this run."),
+  dshCommand: z.string().default('"{bin}" --profile headless --patch "{dshPatch}" --json {resume} - < "{prompt}" | TOMRADE_PROMPT_FILE="{prompt}" ELECTRON_RUN_AS_NODE=1 "{node}" "{dshReporter}"').meta({ title: "DeepSeek Harness command", advanced: true }).describe("DeepSeek Harness has no interactive terminal: the ticket runs as one headless run, shown through {dshReporter} and resumed with --session-id. {bin} is the dsh Tomrade found, the desktop app's own included; {dshPatch} adds Tomrade's server for this run."),
   /** Antigravity's CLI reads Tomrade's server from its own config; the ticket's prompt asks it to claim first. */
   agyCommand: z.string().default('"{bin}" {options} {resume} -i "$(cat "{prompt}")"').meta({ title: "Antigravity CLI command", advanced: true }).describe("agy takes no MCP flag: it reaches Tomrade through its own user-level tomrade server (connect it under Antigravity CLI in Settings), and claims the ticket first."),
   /** Cursor's CLI reads Tomrade's server from ~/.cursor/mcp.json; the ticket's prompt asks it to claim first. */
@@ -77,8 +77,9 @@ const TEMPLATES: Record<string, { key: keyof TerminalSettings; bare?: string }> 
   other: { key: "otherCommand" }
 };
 
-/** The command template a terminal session starts an engine with; Claude Code's flags are the common ground. */
-export function terminalTemplate(settings: TerminalSettings, engine: string): string {
+/** The command template a terminal session starts an engine with: the engine's own, else the setting's, Claude Code's flags as the common ground. */
+export function terminalTemplate(settings: TerminalSettings, engine: string, declared?: string): string {
+  if (declared?.trim()) return declared.trim();
   const { key, bare } = TEMPLATES[engine] ?? TEMPLATES["claude-code"]!;
   let template = settings[key];
   // A template saved before Gemini 0.64 ignored a system defaults file root does not own.

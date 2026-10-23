@@ -81,6 +81,8 @@ interface CursorPayload {
   tool_input?: Record<string, unknown>;
   tool_output?: unknown;
   error_message?: string;
+  /** `beforeSubmitPrompt`: what the person asked. */
+  prompt?: string;
   text?: string;
   status?: string;
   reason?: string;
@@ -133,7 +135,9 @@ export function cursorHookReader(): (payload: unknown) => Record<string, unknown
         return { ...base, hook_event_name: "PostToolUseFailure", ...tool, tool_error: p.error_message ?? "" };
       default: {
         const name = EVENTS[p.hook_event_name];
-        return name ? { ...base, hook_event_name: name, ...tool } : null;
+        if (!name) return null;
+        const prompt = name === "UserPromptSubmit" && typeof p.prompt === "string" && p.prompt.trim() ? { prompt: p.prompt } : {};
+        return { ...base, hook_event_name: name, ...tool, ...prompt };
       }
     }
   };

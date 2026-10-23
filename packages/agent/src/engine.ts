@@ -270,6 +270,13 @@ export interface EngineTerminal {
   via?: "session" | "link";
   /** That connection carries no session token, so the session's first act is claim_ticket, which joins it to the session Start made. */
   claims?: boolean;
+  /**
+   * The command that starts it in a terminal, when its CLI does not take
+   * Claude Code's flags: the same `{bin}`, `{options}`, `{prompt}`, `{resume}`,
+   * `{mcpConfig}`, `{mcpUrl}`, `{token}`, `{settings}`, `{piExtension}`,
+   * `{dshPatch}` and `{dshReporter}` placeholders.
+   */
+  command?: string;
 }
 
 /**

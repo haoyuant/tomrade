@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
-import { findCodexRollout, findTranscript, promptTitle, readConversation, resumeCommand, transcriptTitle } from "@tomradex/code-link";
+import { codexTitle, findCodexRollout, findTranscript, promptTitle, readConversation, resumeCommand, transcriptTitle, transcriptTitleFor } from "@tomradex/code-link";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "titles-"));
 const line = (o: unknown) => `${JSON.stringify(o)}\n`;
@@ -21,6 +21,11 @@ it("reads a conversation's title from its transcript: the tail first, then the h
   fs.writeFileSync(path.join(dir, "none.jsonl"), filler(100));
   expect(transcriptTitle(path.join(dir, "none.jsonl"))).toBeNull();
   expect(transcriptTitle(path.join(dir, "missing.jsonl"))).toBeNull();
+  // CodeBuddy writes the same transcript format; its own title lines count too.
+  const codebuddy = path.join(dir, "codebuddy.jsonl");
+  fs.writeFileSync(codebuddy, line({ type: "ai-title", aiTitle: "CodeBuddy 的标题" }));
+  expect(transcriptTitleFor("workbuddy", codebuddy)).toBe("CodeBuddy 的标题");
+  expect(transcriptTitleFor("claude-code", codebuddy)).toBe("CodeBuddy 的标题");
 });
 
 it("makes a title of a first prompt, finds an older session's transcript by its id, and resumes only agents that can", () => {
@@ -34,6 +39,11 @@ it("makes a title of a first prompt, finds an older session's transcript by its 
   fs.mkdirSync(where, { recursive: true });
   fs.writeFileSync(path.join(where, "abc-123.jsonl"), "");
   expect(findTranscript("abc-123", home, {})).toBe(path.join(where, "abc-123.jsonl"));
+  // CodeBuddy keeps its transcripts the same way under its own folder.
+  const codebuddy = path.join(home, ".codebuddy", "projects", "-repo");
+  fs.mkdirSync(codebuddy, { recursive: true });
+  fs.writeFileSync(path.join(codebuddy, "cb-1.jsonl"), "");
+  expect(findTranscript("cb-1", home, {})).toBe(path.join(codebuddy, "cb-1.jsonl"));
   expect(findTranscript("nope", home, {})).toBeNull();
   expect(findTranscript("../etc", home, {})).toBeNull();
 
@@ -84,6 +94,9 @@ it("reads a conversation read-only from Claude Code's transcript and Codex's rol
     { who: "tool", text: "shell · ls -la" },
     { who: "agent", text: "可以。" }
   ]);
+  expect(codexTitle(codex)).toBe("能恢复历史版本吗");
+  expect(transcriptTitleFor("codex", codex)).toBe("能恢复历史版本吗");
+  expect(readConversation("workbuddy", claude)).toEqual(readConversation("claude-code", claude));
   // A long record: only its tail, and it says the start was left out.
   const long = path.join(dir, "long-talk.jsonl");
   fs.writeFileSync(long, `${JSON.stringify({ type: "user", message: { content: "最早的一句" } })}\n${"x".repeat(3 * 1024 * 1024)}\n${JSON.stringify({ type: "user", message: { content: "最后一句" } })}\n`);

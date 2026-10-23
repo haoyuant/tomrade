@@ -104,7 +104,7 @@ describe("terminal command options", () => {
     expect(optionFlags("dsh", { model: "deepseek-v4-pro" })).toBe("");
     expect(optionFlags("agy", { model: "gemini-3.6-flash", effort: "high" })).toBe("--model gemini-3.6-flash --effort high");
     expect(optionFlags("cursor", { model: "gpt-5", effort: "high" })).toBe("--model gpt-5");
-    expect(TerminalSettings.parse({}).dshCommand).toBe('"{bin}" --profile headless --patch "{dshPatch}" --json {resume} - < "{prompt}" | ELECTRON_RUN_AS_NODE=1 "{node}" "{dshReporter}"');
+    expect(TerminalSettings.parse({}).dshCommand).toBe('"{bin}" --profile headless --patch "{dshPatch}" --json {resume} - < "{prompt}" | TOMRADE_PROMPT_FILE="{prompt}" ELECTRON_RUN_AS_NODE=1 "{node}" "{dshReporter}"');
     expect(optionFlags("claude-code", { effort: "high" })).toBe("--effort high");
     expect(optionFlags("claude-code", { model: "  " })).toBe("");
     expect(optionFlags("other", { model: "x" })).toBe("");
