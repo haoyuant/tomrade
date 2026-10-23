@@ -42,12 +42,19 @@ app.whenReady().then(async () => {
       ["HTTPS", "https://example.com/docs?q=1&lang=zh#start", "https://example.com/docs?q=1&lang=zh#start"],
       ["localhost HTTP", "http://localhost:5173/callback?code=test", "http://localhost:5173/callback?code=test"],
       ["OSC 8", "\x1b]8;;https://example.com/hidden\x1b\\open docs\x1b]8;;\x1b\\", "https://example.com/hidden"],
+      ["file URL", "file:///tmp/report%20draft.pdf", "file:///tmp/report%20draft.pdf"],
+      ["OSC 8 file", "\x1b]8;;file:///tmp/report%20draft.pdf\x1b\\open file\x1b]8;;\x1b\\", "file:///tmp/report%20draft.pdf"],
+      ["absolute path", "/tmp/report.pdf", "/tmp/report.pdf"],
+      ["quoted path", '\"/tmp/report draft.pdf\"', "/tmp/report draft.pdf"],
+      ["path with line", "/tmp/report.ts:12:3", "/tmp/report.ts:12:3"],
+      ["wide prefix", "中文 /tmp/report.pdf", "/tmp/report.pdf"],
+      ["wrapped file URL", "file:///tmp/" + "a".repeat(box.cols) + ".pdf", "file:///tmp/" + "a".repeat(box.cols) + ".pdf"],
       ["wrapped URL", "https://example.com/" + "a".repeat(box.cols), "https://example.com/" + "a".repeat(box.cols)]
     ];
     for (const [label, text, url] of fixtures) {
       await paint("\x1b[2J\x1b[H" + text);
       await js("sent.length = 0");
-      await click(3, label === "wrapped URL" ? 1 : 0);
+      await click(label === "wide prefix" ? 8 : 3, label.startsWith("wrapped") ? 1 : 0);
       assert.deepEqual(await js("sent.filter(m => m.type === 'openLink')"), [{type:"openLink", url}], label);
       console.log("PASS", label);
     }

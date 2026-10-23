@@ -103,6 +103,9 @@ export const shell = {
     ctx.ipc.handle("shell.openExternal", openExternal);
     // The same for main-process features, such as a plugin's window that has no renderer channel of its own.
     ctx.on("desktop/open-external", openExternal);
+    ctx.on("desktop/open-path", (target) => {
+      if (path.isAbsolute(target)) void electronShell.openPath(target);
+    });
     ctx.on("desktop/reveal", (target) => electronShell.showItemInFolder(target));
 
     ctx.ipc.handle("shell.about", () => aboutInfo(repoRoot));

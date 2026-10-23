@@ -6,6 +6,7 @@ import "@xterm/xterm/css/xterm.css";
 import type { WindowPost } from "@tomradex/code-sessions";
 import { onCell, pathForFile, send } from "./bridge";
 import { followSelection } from "./selection";
+import { fileLinks } from "./fileLinks";
 
 /** Where a pane's view is in herdr's scrollback, in rows. */
 type PaneScroll = Omit<Extract<WindowPost, { type: "scrolled" }>, "type" | "cell">;
@@ -174,6 +175,7 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
     if (!el) return;
     // Both plain URLs and OSC 8 links use the system browser rather than an app window.
     const linkHandler = {
+      allowNonHttpProtocols: true,
       activate: (_e: MouseEvent, url: string) => {
         if (!terminal.hasSelection()) send({ type: "openLink", url });
       }
@@ -183,6 +185,7 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
     terminal.loadAddon(fit);
     terminal.loadAddon(new WebLinksAddon(linkHandler.activate));
     terminal.open(el);
+    const localLinks = fileLinks(terminal, linkHandler.activate);
     term.current = terminal;
     try {
       fit.fit();
@@ -234,6 +237,7 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
     return () => {
       observer.disconnect();
       selection.dispose();
+      localLinks.dispose();
       el.removeEventListener("mousedown", down);
       el.removeEventListener("mouseup", up);
       input.dispose();
