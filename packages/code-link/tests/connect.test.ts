@@ -1171,6 +1171,38 @@ describe("outside clients, told apart by their connection", () => {
     expect(items.get(project.id, item.id)!.status).toBe("done");
   });
 
+  it("waits on another repository's uncommitted work after one repository merged, and links its pull request to the same delivery", async () => {
+    const { codeLink, ctx, items, project, board, checkout } = await machine();
+    const plugins = ctx.repos.create({ projectId: project.id, remote: "git@github.com:acme/plugins.git" });
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "Spans two repositories", status: "doing", by: "human" });
+    const branch = `tom-${item.keyNum}/both`;
+    const human = { by: "human" as const, projectId: project.id };
+    // Work under way here, nothing committed yet; a helper worktree's branch with nothing on it beside it.
+    git(["checkout", "-q", "-b", branch, "main"], checkout);
+    fs.writeFileSync(path.join(checkout, "half.ts"), "second half\n");
+    git(["branch", `${branch}-a`, "main"], checkout);
+    await codeLink.scan(project.id);
+
+    await ctx.tools.execute("link_code", { key: item.key, branch, prUrl: "https://github.com/acme/plugins/pull/8" }, human);
+    await ctx.tools.execute("link_code", { key: item.key, branch, prUrl: "https://github.com/acme/plugins/pull/8", prState: "merged" }, human);
+    await codeLink.scan(project.id);
+    expect(items.get(project.id, item.id)?.status).toBe("verifying");
+    expect(codeLink.links(project.id, item.id).find((l) => l.repoId === plugins.id)?.prState).toBe("merged");
+
+    git(["add", "-A"], checkout);
+    git(["commit", "-q", "-m", `${item.key}: second half`], checkout);
+    git(["push", "-q", "origin", branch], checkout);
+    await codeLink.scan(project.id);
+    expect(await ctx.tools.execute("link_code", { key: item.key, branch, prUrl: "https://github.com/acme/app/pull/9" }, human)).toMatchObject({ status: "verifying", prState: "open" });
+    expect(codeLink.proposals(project.id, item.id).filter((p) => p.reason.includes("reopen"))).toEqual([]);
+
+    git(["checkout", "-q", "main"], checkout);
+    git(["merge", "-q", "--no-ff", "-m", `Merge ${branch}`, branch], checkout);
+    git(["push", "-q", "origin", "main"], checkout);
+    await codeLink.scan(project.id);
+    expect(items.get(project.id, item.id)?.status).toBe("done");
+  });
+
   it("follows a client with no hooks through its connection until it closes", async () => {
     const { codeLink, ctx, items, project, board, repo } = await machine();
     const item = items.create({ projectId: project.id, boardId: board.id, title: "Cursor work", status: "todo", by: "human" });
