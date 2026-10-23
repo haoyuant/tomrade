@@ -6,7 +6,10 @@ import { AnonIdentity, base32, deriveAnonId, newSecret } from "../src/anon.js";
 import { AnalyticsEvent, Batch, checkSemantics, parseEvent } from "../src/events.js";
 import { FEATURES, FEATURE_REGISTRY_VERSION, dimAllowed, featureById, isCounted, featureIds, registrySnapshot } from "../src/features.js";
 import { EventQueue } from "../src/queue.js";
+import { Uploader, endpointFor, retryDelay } from "../src/upload.js";
 import { Tracker, type HostSignals, type SessionDraft } from "../src/tracker.js";
+import { Context } from "cordis";
+import { Analytics } from "../src/index.js";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-analytics-"));
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -314,6 +317,98 @@ describe("session timing", () => {
   });
 });
 
+
+describe("upload", () => {
+  const event = (n: number) => ({
+    schema: 1 as const,
+    registry: 1,
+    event: "feature.activate" as const,
+    event_id: `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`,
+    anon_id: "k3m4q2v7x5b6n4r6t2y3wzq4sc",
+    install_seq: n,
+    ts: 1_792_747_832_000,
+    client: "0.2.0",
+    platform: "macos" as const,
+    feature_id: "backlog.board",
+    action: "open",
+    dim: null
+  });
+
+  const answer = (status: number, body: unknown = {}, headers: Record<string, string> = {}) =>
+    new Response(status === 202 || status === 200 ? JSON.stringify(body) : JSON.stringify(body), { status, headers });
+
+  it("posts the batch's three fields to the project's ingest function", async () => {
+    let seen: { url: string; init: RequestInit } | null = null;
+    const uploader = new Uploader({
+      url: "https://example.supabase.co",
+      key: "sb_publishable_x",
+      fetch: async (url, init) => {
+        seen = { url: String(url), init: init! };
+        return answer(202, { accepted: 1, duplicates: 0, rejected: 0 });
+      }
+    });
+    const result = await uploader.send([event(1)]);
+    expect(result.kind).toBe("ok");
+    expect(seen!.url).toBe("https://example.supabase.co/rest/v1/rpc/tomrade_ingest_analytics");
+    expect(seen!.init.headers).toMatchObject({ apikey: "sb_publishable_x", "X-Tomrade-Analytics": "1" });
+    const body = JSON.parse(String(seen!.init.body)) as { p_batch: Record<string, unknown> };
+    expect(Object.keys(body.p_batch).sort()).toEqual(["batch_id", "events", "sent_at"]);
+    const wire = body.p_batch.events as Record<string, unknown>[];
+    expect(wire[0]).toEqual(event(1));
+    expect(Object.keys(wire[0]!).sort()).toEqual(
+      ["action", "anon_id", "client", "dim", "event", "event_id", "feature_id", "install_seq", "platform", "registry", "schema", "ts"]
+    );
+  });
+
+  it("drops a batch the server will never accept, and splits one that is too large", async () => {
+    const statuses = [400, 413, 202];
+    const uploader = new Uploader({
+      url: "https://example.supabase.co",
+      key: "k",
+      fetch: async () => answer(statuses.shift() ?? 202, { accepted: 1 })
+    });
+    expect((await uploader.send([event(1)])).kind).toBe("drop");
+    const result = await uploader.sendAll([event(1), event(2)]);
+    expect(result.retry).toBe(false);
+    expect(result.sent.size).toBe(2);
+  });
+
+  it("keeps the queue when the network is down or the server is busy", async () => {
+    const down = new Uploader({ url: "https://example.supabase.co", key: "k", fetch: async () => { throw new Error("ENOTFOUND"); } });
+    const offline = await down.sendAll([event(1)]);
+    expect(offline.retry).toBe(true);
+    expect(offline.sent.size).toBe(0);
+
+    const busy = new Uploader({
+      url: "https://example.supabase.co",
+      key: "k",
+      fetch: async () => answer(429, {}, { "retry-after": "120" })
+    });
+    const limited = await busy.sendAll([event(1)]);
+    expect(limited.retry).toBe(true);
+    expect(limited.retryAfterMs).toBe(120_000);
+  });
+
+  it("waits longer after each failure, around six hours at the end", () => {
+    const random = () => 0.5;
+    expect(retryDelay(1, random)).toBe(60_000);
+    expect(retryDelay(2, random)).toBe(300_000);
+    expect(retryDelay(3, random)).toBe(900_000);
+    expect(retryDelay(4, random)).toBe(3_600_000);
+    expect(retryDelay(5, random)).toBe(21_600_000);
+    expect(retryDelay(99, random)).toBe(21_600_000);
+    expect(retryDelay(1, () => 0)).toBe(48_000);
+    expect(retryDelay(1, () => 1)).toBe(72_000);
+  });
+
+  it("selects the region-pinned endpoint only when told to", () => {
+    const config = { url: "https://global.example", key: "k", cnUrl: "https://cn.example", globalUrl: "https://g.example" };
+    expect(endpointFor({ ...config, endpoint: "auto" })).toBe("https://global.example/rest/v1/rpc/tomrade_ingest_analytics");
+    expect(endpointFor({ ...config, endpoint: "global" })).toBe("https://g.example/rest/v1/rpc/tomrade_ingest_analytics");
+    expect(endpointFor({ ...config, endpoint: "cn" })).toBe("https://cn.example/rest/v1/rpc/tomrade_ingest_analytics");
+  });
+});
+
 describe("queue", () => {
   const event = (n: number, ts = 1_792_747_832_000) => ({
     schema: 1 as const,
@@ -351,5 +446,81 @@ describe("queue", () => {
     queue.push(event(2, Date.now()));
     queue.prune();
     expect(queue.all().map((e) => e.install_seq)).toEqual([2]);
+  });
+});
+
+describe("the service's switch", () => {
+  const silentHost: HostSignals = { isFocused: () => true, idleMs: () => 0, on: () => () => {} };
+
+  async function harness(fetchImpl: typeof fetch) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-analytics-svc-"));
+    const store: { analytics: { enabled: boolean } } = { analytics: { enabled: true } };
+    const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    const calls: string[] = [];
+    const ctx = new Context();
+    (ctx as unknown as { provide(name: string, value: unknown): void }).provide("settings", {
+      get: () => store,
+      set: (next: typeof store) => {
+        const previous = { analytics: { ...store.analytics } };
+        store.analytics = next.analytics;
+        ctx.emit("settings/changed", store, previous);
+      },
+      register: () => () => {}
+    });
+    (ctx as unknown as { provide(name: string, value: unknown): void }).provide("ipc", {
+      handle: (name: string, handler: (...args: unknown[]) => unknown) => {
+        handlers.set(name, handler);
+        return () => {};
+      },
+      send: () => {}
+    });
+    await ctx.plugin(Analytics, {
+      dir: root,
+      client: "0.2.0",
+      host: silentHost,
+      upload: {
+        url: "https://example.supabase.co",
+        key: "k",
+        fetch: async (url, init) => {
+          calls.push(String(url));
+          return fetchImpl(url, init);
+        }
+      }
+    });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const analytics = (ctx as unknown as { analytics: Analytics }).analytics;
+    return { root, ctx, analytics, handlers, calls };
+  }
+
+  it("sends what it collected, then stops for good when switched off", async () => {
+    let status = 202;
+    const h = await harness(async () => new Response(JSON.stringify({ accepted: 1, duplicates: 0, rejected: 0 }), { status }));
+    const activate = h.handlers.get("analytics.activate")!;
+    activate("settings", "open");
+    expect(h.calls.length).toBe(0);
+    await h.analytics.flushNow();
+    expect(h.calls.length).toBe(1);
+    expect(h.analytics.state().queued).toBe(0);
+
+    status = 500;
+    activate("settings", "change", "theme");
+    await h.analytics.flushNow();
+    expect(h.analytics.state().queued).toBe(1);
+    // The network comes back: the same event goes, and only once.
+    status = 202;
+    await h.analytics.flushNow(true);
+    expect(h.analytics.state().queued).toBe(0);
+    expect(h.calls.length).toBe(3);
+    activate("settings", "change", "theme");
+    expect(h.analytics.state().queued).toBe(1);
+
+    const setEnabled = h.handlers.get("analytics.setEnabled") as (value: boolean) => { enabled: boolean; queued: number; anonId: string | null };
+    expect(setEnabled(false)).toMatchObject({ enabled: false, queued: 0, anonId: null });
+    expect(fs.existsSync(path.join(h.root, "secret"))).toBe(false);
+    const before = h.calls.length;
+    activate("settings", "open");
+    await h.analytics.flushNow(true);
+    expect(h.calls.length).toBe(before);
+    fs.rmSync(h.root, { recursive: true, force: true });
   });
 });

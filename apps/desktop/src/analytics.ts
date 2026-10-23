@@ -1,6 +1,7 @@
 import { app, BrowserWindow, powerMonitor } from "electron";
 import type { Context } from "cordis";
 import { Analytics, type AnalyticsConfig, type HostSignals } from "@tomradex/analytics";
+import { DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_PUBLISHABLE_KEY } from "./hub-cloud.js";
 
 /**
  * The Electron half of analytics: only here can the app see window focus, the
@@ -32,6 +33,20 @@ const host: HostSignals = {
   }
 };
 
+const endpoint = (value: string | undefined): "auto" | "global" | "cn" =>
+  value === "cn" || value === "global" ? value : "auto";
+
 export default function analytics(ctx: Context, config: Omit<AnalyticsConfig, "host">) {
-  ctx.plugin(Analytics, { ...config, host });
+  // The account project's edge, with the same public key: analytics tables are
+  // separate and the ingest function is granted to the anonymous role. A
+  // deployment pins regions with the two URLs; an ordinary build does not
+  // expose the choice.
+  const upload = {
+    url: process.env.TOMRADE_ANALYTICS_URL ?? DEFAULT_SUPABASE_URL,
+    key: process.env.TOMRADE_ANALYTICS_KEY ?? DEFAULT_SUPABASE_PUBLISHABLE_KEY,
+    endpoint: endpoint(process.env.TOMRADE_ANALYTICS_ENDPOINT),
+    cnUrl: process.env.TOMRADE_ANALYTICS_URL_CN,
+    globalUrl: process.env.TOMRADE_ANALYTICS_URL_GLOBAL
+  };
+  ctx.plugin(Analytics, { ...config, host, upload });
 }
