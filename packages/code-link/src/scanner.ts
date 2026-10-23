@@ -232,3 +232,18 @@ export async function scanRepo(git: Git, checkout: string, opts: ScanOptions): P
 
   return { offline, remote, remoteDetail, defaultRef, defaultSha, branches, mergedKeys, readiness, hasBrief, manifests, sources, summary };
 }
+
+/** Ticket branches checked out in a worktree with changes not yet committed: work under way, though nothing is ahead of the default branch. */
+export async function uncommittedBranches(git: Git, checkout: string, prefix: string): Promise<Set<string>> {
+  const out = new Set<string>();
+  const list = await git(["worktree", "list", "--porcelain"], { cwd: checkout, ok: true });
+  if (list.code !== 0) return out;
+  for (const entry of list.stdout.split("\n\n")) {
+    const dir = /^worktree (.+)$/m.exec(entry)?.[1];
+    const branch = /^branch refs\/heads\/(.+)$/m.exec(entry)?.[1];
+    if (!dir || !branch || parseBranch(branch, prefix) === null) continue;
+    const status = await git(["status", "--porcelain"], { cwd: dir, ok: true });
+    if (status.code === 0 && status.stdout.trim()) out.add(branch);
+  }
+  return out;
+}

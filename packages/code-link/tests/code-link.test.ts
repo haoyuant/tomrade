@@ -292,6 +292,9 @@ describe("code link", () => {
     expect(deliveryMerged([merged, link({ prNumber: 3, prState: "open" })])).toBe(false);
     expect(deliveryMerged([link({ prNumber: 1, prState: "closed" }), link({})])).toBe(false);
     expect(deliveryMerged([])).toBe(false);
+    const underway = (l: CodeLinkView) => l.branch === "busy";
+    expect(deliveryMerged([{ ...merged, repoId: "a" }, link({ repoId: "b", branch: "busy" })], underway)).toBe(false);
+    expect(deliveryMerged([{ ...merged, repoId: "a" }, link({ repoId: "a", branch: "busy" })], underway)).toBe(true);
   });
   describe("a claim's suggested branch in a repository the work never touched", () => {
     async function claimed(title: string) {

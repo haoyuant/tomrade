@@ -5,7 +5,7 @@ import type { Git } from "@tomradex/git";
 import { keysInText, parseBranch, subjectPr } from "../keys.js";
 import { githubPull, type ForgePull } from "../forge.js";
 import { decide, type Decision, type Evidence } from "../rules.js";
-import { scanRepo, type MergedCommit, type ScanResult, type ScannedBranch } from "../scanner.js";
+import { scanRepo, uncommittedBranches, type MergedCommit, type ScanResult, type ScannedBranch } from "../scanner.js";
 import type { Sessions } from "../sessions.js";
 import type { CodeLinkStore, CodeLinkView, ProposalView, SessionView } from "../store.js";
 import { errorMessage } from "@tomradex/contracts";
@@ -63,9 +63,14 @@ const isMerged = (l: CodeLinkView): boolean => !!l.mergedSha || l.prState === "m
 const isAbandoned = (l: CodeLinkView): boolean =>
   !l.mergedSha && (l.prState === "closed" || (l.prNumber === null && !l.prUrl && !l.prState && l.ahead === 0));
 
-/** A delivery is merged once something merged and every other link merged too or was abandoned. */
-export function deliveryMerged(links: CodeLinkView[]): boolean {
-  return links.some(isMerged) && links.every((l) => isMerged(l) || isAbandoned(l));
+/**
+ * A delivery is merged once something merged and every other link merged too or was abandoned. A branch with
+ * uncommitted work (`underway`) is not abandoned while nothing in its repository has merged: that repository's
+ * part has yet to land.
+ */
+export function deliveryMerged(links: CodeLinkView[], underway: (link: CodeLinkView) => boolean = () => false): boolean {
+  const landed = new Set(links.filter(isMerged).map((l) => l.repoId));
+  return landed.size > 0 && links.every((l) => isMerged(l) || (isAbandoned(l) && (landed.has(l.repoId) || !underway(l))));
 }
 
 const signature = (kind: string, to: string | null, reason: string): string => `${kind}|${to ?? ""}|${reason}`;
@@ -101,6 +106,8 @@ export class GitScan {
   readonly unlinkedByProject = new Map<string, UnlinkedBranch[]>();
   readonly scannedAt = new Map<string, number>();
   readonly inFlight = new Map<string, Promise<ScanSummary>>();
+  /** Per repository, the ticket branches with uncommitted changes in a worktree, as the last scan saw them. */
+  private readonly uncommitted = new Map<string, Set<string>>();
   private readonly ctx: Context;
   private readonly store: CodeLinkStore;
   private readonly sessions: Sessions;
@@ -128,6 +135,8 @@ export class GitScan {
   private currentLinks(projectId: string, itemId: string): CodeLinkView[] {
     return currentLinks(this.store, projectId, itemId);
   }
+
+  private readonly underway = (link: CodeLinkView): boolean => !!link.branch && !!this.uncommitted.get(link.repoId)?.has(link.branch);
 
   /** Repoint every checkout still naming a Hub helper at the userData one. Idempotent, so a later scan catches one that appears late. */
   async migrateCredentialHelpers(projectId: string): Promise<void> {
@@ -181,6 +190,12 @@ export class GitScan {
     const unlinked: UnlinkedBranch[] = [];
     const now = Date.now();
     await this.migrateCredentialHelpers(projectId);
+    // Read before any repository is judged: one repository's merge waits on another's uncommitted work.
+    for (const repo of repos) {
+      const checkout = this.ctx.repos.checkout(repo.remote).checkout;
+      if (checkout && fs.existsSync(checkout)) this.uncommitted.set(repo.id, await uncommittedBranches(this.git, checkout, prefix));
+      else this.uncommitted.delete(repo.id);
+    }
     for (const repo of repos) {
       const placement = this.ctx.repos.checkout(repo.remote);
       if (!placement.checkout || !fs.existsSync(placement.checkout)) {
@@ -539,7 +554,7 @@ export class GitScan {
     for (const session of this.store.sessions(projectId, { live: true })) {
       if (session.repoId !== repoId || session.blocked !== "merge") continue;
       const links = session.itemIds.flatMap((id) => this.currentLinks(projectId, id)).filter((l) => l.repoId === repoId);
-      if (!deliveryMerged(links)) continue;
+      if (!deliveryMerged(links, this.underway)) continue;
       if (this.superseded(projectId, session)) this.sessions.end(projectId, session.id, "ended", true, "another session took over from it");
       else this.store.patchSession(projectId, session.id, { blocked: null, state: "idle", activity: null });
     }
@@ -622,7 +637,7 @@ export class GitScan {
     const evidence: Evidence = {
       branch: present.length > 0,
       ahead: present.reduce((max, l) => Math.max(max, l.ahead), 0),
-      merged: deliveryMerged(this.currentLinks(projectId, item.id)),
+      merged: deliveryMerged(this.currentLinks(projectId, item.id), this.underway),
       working,
       pr: primary?.prState ?? null,
       movedAfterDone:
