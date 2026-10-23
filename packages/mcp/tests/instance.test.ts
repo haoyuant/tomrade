@@ -3,9 +3,10 @@
  * able to tell which one it reaches, and whether what it wrote has left it.
  */
 import fs from "node:fs";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { fresh, settle } from "@tomradex/testkit";
@@ -77,6 +78,31 @@ describe("which Tomrade answers", () => {
     } finally {
       await second.ctx.fiber.dispose();
       await first.ctx.fiber.dispose();
+    }
+  });
+  it("takes a free port when Windows reserves its own (EACCES), and says so", async () => {
+    const reservedPort = 50_999;
+    const listen = net.Server.prototype.listen;
+    const spy = vi.spyOn(net.Server.prototype, "listen").mockImplementation(function (this: net.Server, ...args: Parameters<typeof listen>) {
+      if (args[0] !== reservedPort) return listen.apply(this, args);
+      process.nextTick(() => this.emit("error", Object.assign(new Error(`listen EACCES: permission denied 127.0.0.1:${reservedPort}`), { code: "EACCES" })));
+      return this;
+    });
+    const { ctx } = await fresh({ plugins: [Tools, [Mcp, { port: String(reservedPort), instance: { kind: "dev" } }]] });
+    await settle();
+    spy.mockRestore();
+    try {
+      expect(Number(new URL(ctx.mcp.url!).port)).not.toBe(reservedPort);
+      expect(ctx.mcp.clash).toEqual({ port: reservedPort, heldBy: null, reserved: true });
+      expect(ctx.mcp.holderText()).toBe("a range Windows reserves");
+      const client = await connect(ctx.mcp.url!);
+      try {
+        expect(client.getInstructions()).toContain(`Port ${reservedPort} is reserved by Windows, so this instance listens on another.`);
+      } finally {
+        await client.close();
+      }
+    } finally {
+      await ctx.fiber.dispose();
     }
   });
 });
