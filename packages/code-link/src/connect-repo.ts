@@ -217,8 +217,9 @@ export class RepoConnect {
   /**
    * The chosen agents' files, written into the checkout and kept out of git
    * through `.git/info/exclude`: a tracked file is never changed (its agent
-   * is skipped and says so), and the team's CLAUDE.md / AGENTS.md stay as
-   * they are — the agents get the rules from the MCP server.
+   * is skipped and says so), and the team's tracked CLAUDE.md / AGENTS.md stay
+   * as they are — an untracked one, or none, carries the section so the agent
+   * reads the rules without the team seeing them.
    */
   private async connectLocally(projectId: string, repoId: string, checkout: string, input: ConnectInput, chosen: ConnectAgent[]): Promise<ConnectResult> {
     const list = connectFiles(this.connectors);

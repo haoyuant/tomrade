@@ -216,8 +216,12 @@ export function tomradeSection(input: ConnectInput, options: { fetchRules?: bool
     "Claude Code, Codex, WorkBuddy and Cursor report session lifecycle through repository hooks, Pi through that extension and OpenCode through `.opencode/plugins/tomrade.js`. In Codex, trust the project and review the new hooks with `/hooks`, then start a new session; older Codex versions without hooks must be upgraded. Pi loads the extension once you trust the project. No `notify` setting is changed.",
     "Cursor uses `.cursor/mcp.json`, and `.cursor/hooks.json` runs `.cursor/hooks/tomrade` (`.cursor/hooks/tomrade.ps1` on Windows). Gemini CLI uses `.gemini/settings.json` and does not report its lifecycle, but once it calls `claim_ticket` Tomrade follows the session through its MCP connection: later calls on that connection need no key. Use `note_progress` only when the claim's result says `tracking.tracked` is true.",
     `For other MCP-capable agents, add a Streamable HTTP server named \`tomrade\` with URL ${input.mcpUrl} in that agent's own settings. No configuration is generated for other tools; reading AGENTS.md alone supplies instructions, not MCP tools or session tracking.`,
-    "Not every session works on a ticket, and not every ticket involves code. Work without a ticket is fine: never ask for one before starting, and never invent one.",
+    "Not every session works on a ticket, and not every ticket involves code: never invent one. Work without a ticket is fine.",
     ...(options.fetchRules ? ["When the `tomrade` MCP server is available, call its tool `get_project_rules` before your first reply in every session and follow what it returns throughout: the person keeps rules there for every agent in this project."] : []),
+    "",
+    "### Before changing this repository",
+    "",
+    "When the person asks for a change and this session holds no ticket, ask once — one short question — whether to file a ticket for it and work on its branch. If they say yes, `create_item` for it (or `claim_ticket` when they name a key), then do the work on the branch it returns; every commit message names the key. If they say no, or it is a typo, a question, or something they clearly want now, work as usual and do not ask again in this session.",
     "",
     `### When the work is a ticket (the user or the branch names a key such as \`${example}\`) and the \`tomrade\` server is available`,
     "",
@@ -381,8 +385,9 @@ export interface LocalConnect {
  *
  * For this machine only (`local`), the same files go into the checkout
  * itself: Claude Code's hooks and its approval of the `.mcp.json` server in
- * `.claude/settings.local.json`, no instruction section, and no change to a
- * file git tracks — that agent is skipped and says so.
+ * `.claude/settings.local.json`, the instruction section in CLAUDE.md and
+ * AGENTS.md only where git does not track them, and no change to a file git
+ * tracks — that agent is skipped and says so.
  */
 export function writeConnectFiles(root: string, input: ConnectInput, agents: readonly ConnectAgent[] = CONNECT_AGENTS, local?: LocalConnect, connectors: Connectors = NO_CONNECTORS): { files: string[]; skipped: SkippedAgent[] } {
   interface Write { name: string; text: string | null; mode?: number }
@@ -393,7 +398,9 @@ export function writeConnectFiles(root: string, input: ConnectInput, agents: rea
   const exact = (name: string, text: string, mode?: number): Write => ({ name, text: read(name) === text ? null : text, ...(mode ? { mode } : {}) });
   const json = (name: string, change: (json: string) => string): Write => ({ name, text: nextJson(root, name, change) });
   const section = (name: "CLAUDE.md" | "AGENTS.md"): Write[] => {
-    if (local) return [];
+    // This machine only: a file git does not track is ours to write, so the agent reads the rules; one the team
+    // tracks stays the team's, and the MCP server's instructions speak instead.
+    if (local?.tracked.has(name)) return [];
     const existing = read(name) ?? "";
     const body = withTomradeSection(existing, input.projectName, tomradeSection(input, { fetchRules: name === "AGENTS.md" }));
     return [{ name, text: body === existing ? null : body }];
