@@ -11,7 +11,7 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "analytics": "tsc -b && node dist/cli.js analytics"
+    "analytics": "tsc -b && node --env-file-if-exists=../../.env dist/cli.js analytics"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
