@@ -53,3 +53,57 @@ The function is idempotent and reports what it removed. It only drops a month
 once that whole month is older than 180 days, so a partition still holding a
 row inside the retention window is never taken. Detail older than 180 days is
 gone; the aggregated tables keep 25 months and contain no `anon_id`.
+
+## One contract, two deployments
+
+Mainland and international detail are stored separately: the mainland project
+holds `region = 'cn'` only, the international one holds every other bucket.
+Both run the same migrations, so a row has the same shape and the same
+meaning wherever it landed, and the dashboard can add the two aggregate sets
+together without a translation step.
+
+Each deployment names its side once:
+
+```sql
+-- the mainland project
+alter database postgres set tomrade.analytics_scope = 'cn';
+-- the international project
+alter database postgres set tomrade.analytics_scope = 'global';
+```
+
+The scope guard refuses a row that belongs on the other side with
+`421 Unprocessable Content` (PostgREST's `PT421`); the client treats that as a
+configuration error, drops the batch and never retries it across a border.
+With the setting unset, both sides are accepted, which is right for a test or a
+single-deployment install.
+
+Point each build at its endpoint. An ordinary build leaves the choice on
+`auto` and posts to the project's routing edge; a regional build sets:
+
+| Variable | Value |
+| --- | --- |
+| `TOMRADE_ANALYTICS_ENDPOINT` | `cn` or `global` |
+| `TOMRADE_ANALYTICS_URL_CN` | the mainland project's URL |
+| `TOMRADE_ANALYTICS_URL_GLOBAL` | the international project's URL |
+| `TOMRADE_ANALYTICS_KEY` | that project's publishable key |
+
+The key is the public publishable key: RLS and the ingest function's own
+validation are the boundary, so the key may ship in the build. Never ship a
+service-role key.
+
+## When the endpoint is down
+
+The client keeps the batch in its local queue and retries with backoff. If the
+endpoint is unreachable for longer than the queue's seven days, the oldest
+events expire; the person sees nothing and no part of Tomrade waits on an
+upload.
+
+## The dashboard across both
+
+The aggregator runs in each region on its own detail and writes the three
+aggregate tables there. The dashboard reads both projects with service-role
+keys and adds the rows by `day` × `region` × `feature_id`; no detail row is
+copied across, and no `anon_id` exists in any aggregate. Distinct-actor
+metrics are added region by region; someone who used Tomrade on both sides in
+one period is counted once per region, the price of never joining identifiers
+across the border.
