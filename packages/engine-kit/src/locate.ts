@@ -361,6 +361,45 @@ export async function knownDirs(host: CliHost): Promise<string[]> {
   return installDirs(host, host.platform === "win32" ? await host.npmPrefix() : null);
 }
 
+/**
+ * Where an archive installer (SDK 0.2.27) unpacks an agent's file: under
+ * Tomrade's own agents folder (TOMRADE_AGENTS_DIR, the desktop app's
+ * `${userData}/agents`, beside its own npm copies), one folder per engine and
+ * version, `bin` inside. The locators read the same variable, so what lands
+ * there is found without anyone editing Settings.
+ */
+export function archiveFolder(engineId: string, url: string): string {
+  return path.join(engineId.replace(/[^\w.-]/g, "_"), path.posix.basename(new URL(url).pathname).replace(/\.zip$/i, ""), "bin");
+}
+
+/** Every `<agents>/<engine>/<release>/bin` under the app's agents folder, newest release first. */
+function archiveVersionDirs(root: string | undefined, p: typeof path.win32 | typeof path.posix): string[] {
+  if (!root) return [];
+  let engines: string[] = [];
+  try {
+    engines = fs.readdirSync(root);
+  } catch {
+    return [];
+  }
+  const dirs: string[] = [];
+  for (const engine of engines) {
+    let releases: string[] = [];
+    try {
+      releases = fs.readdirSync(p.join(root, engine));
+    } catch {
+      continue;
+    }
+    // A release is named after the archive, so a newer one sorts first by the numbers in its name.
+    const parsed = releases.map((name) => ({ name, key: (name.match(/\d+/g) ?? []).map(Number) }));
+    parsed.sort((a, b) => {
+      for (let i = 0; i < Math.max(a.key.length, b.key.length); i++) if ((a.key[i] ?? -1) !== (b.key[i] ?? -1)) return (b.key[i] ?? -1) - (a.key[i] ?? -1);
+      return 0;
+    });
+    dirs.push(...parsed.map(({ name }) => p.join(root, engine, name, "bin")));
+  }
+  return dirs;
+}
+
 /** `knownDirs` without asking npm for its prefix, for a lookup that cannot wait. */
 export function installDirs(host: Pick<CliHost, "env" | "home" | "platform">, prefix: string | null = null): string[] {
   const { env, home, platform } = host;
@@ -379,7 +418,9 @@ export function installDirs(host: Pick<CliHost, "env" | "home" | "platform">, pr
       w.join(home, ".local", "bin"),
       w.join(home, ".bun", "bin"),
       // Tomrade's own prefix, where agents installed with the borrowed npm land (the desktop app sets it; npm on Windows puts commands in the prefix itself).
-      ...(envValue(env, "TOMRADE_NPM_PREFIX") ? [envValue(env, "TOMRADE_NPM_PREFIX")!] : [])
+      ...(envValue(env, "TOMRADE_NPM_PREFIX") ? [envValue(env, "TOMRADE_NPM_PREFIX")!] : []),
+      // Agents unpacked from an archive installer (SDK 0.2.27) and Tomrade's own copies, newest version first.
+      ...archiveVersionDirs(envValue(env, "TOMRADE_AGENTS_DIR"), w)
     ];
   }
   const p = path.posix;
@@ -399,7 +440,9 @@ export function installDirs(host: Pick<CliHost, "env" | "home" | "platform">, pr
     ...versionDirs(p.join(home, ".local/share/fnm/node-versions"), "installation/bin", p),
     ...(platform === "darwin" ? versionDirs(p.join(home, "Library/Application Support/fnm/node-versions"), "installation/bin", p) : []),
     // Tomrade's own prefix, where agents installed with the borrowed npm land (the desktop app sets it) — last, like the shims on PATH.
-    ...(env.TOMRADE_NPM_PREFIX ? [p.join(env.TOMRADE_NPM_PREFIX, "bin")] : [])
+    ...(env.TOMRADE_NPM_PREFIX ? [p.join(env.TOMRADE_NPM_PREFIX, "bin")] : []),
+    // Agents unpacked from an archive installer (SDK 0.2.27) and Tomrade's own copies, newest version first.
+    ...archiveVersionDirs(env.TOMRADE_AGENTS_DIR, p)
   ];
 }
 

@@ -1,5 +1,7 @@
 import type { EngineInstaller, EngineSetupFailure, EngineSetupProgress, EngineSetupStep } from "@tomradex/agent";
-import { localCli, spawnCli, stopCli, type CliLaunch } from "@tomradex/engine-kit";
+import path from "node:path";
+import { archiveFolder, localCli, spawnCli, stopCli, type CliLaunch } from "@tomradex/engine-kit";
+import { ArchiveError, unpackArchive } from "./archive.js";
 
 /**
  * Running one setup step the way the person would, but watched: an install in
@@ -11,6 +13,8 @@ import { localCli, spawnCli, stopCli, type CliLaunch } from "@tomradex/engine-ki
 /** What the runner needs from the machine; tests swap it for a fake one. */
 export interface SetupHost {
   platform: NodeJS.Platform;
+  /** `process.arch` names it; an archive installer declares the one its zip fits. */
+  arch?: string;
   env: NodeJS.ProcessEnv;
   /** Whether this command answers `--version` from PATH — is Homebrew here, does the system npm run. */
   answers(command: string): Promise<boolean>;
@@ -18,6 +22,17 @@ export interface SetupHost {
   npm(): Promise<CliLaunch | null>;
   /** How fast npm's configured registry answers (`npm ping`); absent, no check runs. */
   pingRegistry?(npm: CliLaunch, signal: AbortSignal): Promise<RegistryPing>;
+  /** Fetches an archive installer's zip; the server's answer, no status check. Absent, `fetch`. */
+  download?(url: string, signal: AbortSignal): Promise<ArchiveResponse>;
+  /** Where an archive installer unpacks, under Tomrade's own data folder: one per engine and version. */
+  archiveDir?(engineId: string, url: string): string;
+}
+
+/** The part of a download an archive install reads. */
+export interface ArchiveResponse {
+  ok: boolean;
+  status: number;
+  arrayBuffer(): Promise<ArrayBuffer>;
 }
 
 export interface RegistryPing {
@@ -95,7 +110,10 @@ export const bareLaunch = (command: string, env: NodeJS.ProcessEnv = process.env
 
 export const machineSetupHost = (): SetupHost => ({
   platform: process.platform,
+  arch: process.arch,
   env: process.env,
+  // Its `bin` folders are read by the locators too, so the unpacked file is found without anyone editing Settings.
+  ...(process.env.TOMRADE_AGENTS_DIR ? { archiveDir: (engineId: string, url: string) => path.join(process.env.TOMRADE_AGENTS_DIR!, archiveFolder(engineId, url)) } : {}),
   answers: async (command) => (await localCli(command).locate()).state === "ready",
   // The locator probes each candidate with --version: a system npm that is present but broken is passed
   // over for the next one on PATH — the app's borrowed shims, which sit last (TOM-507).
@@ -119,9 +137,26 @@ export async function applicableInstallers(installers: EngineInstaller[], host: 
   for (const installer of installers) {
     if (installer.kind === "script" && (installer.shell === "powershell") !== (host.platform === "win32")) continue;
     if (installer.kind === "brew" && (host.platform !== "darwin" || !(await host.answers("brew")))) continue;
+    if (installer.kind === "archive" && (installer.platform.os !== host.platform || installer.platform.arch !== (host.arch ?? process.arch))) continue;
     kept.push(installer);
   }
   return kept;
+}
+
+/**
+ * Why an archive could not be used, in words a person can act on: what
+ * failed (the download, the archive, the file inside it), at which address.
+ */
+export function archiveFailure(error: unknown, url: string): EngineSetupFailure {
+  if (error instanceof ArchiveError) return { kind: error.kind, message: `${error.message} (${url})` };
+  const words = error instanceof Error ? error.message : String(error);
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  const kind: EngineSetupFailure["kind"] =
+    code === "ENOSPC" ? "disk-full"
+    : code === "EACCES" || code === "EPERM" ? "permission"
+    : /ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ECONNREFUSED|ECONNRESET|ERR_SOCKET|getaddrinfo|fetch failed|network|proxy/i.test(`${code ?? ""} ${words}`) ? "network"
+    : "exit";
+  return { kind, message: `could not download ${url}: ${words} — check your connection or proxy, then retry` };
 }
 
 /** How one installer runs, or why it cannot here. */
@@ -137,7 +172,38 @@ export async function installerLaunch(installer: EngineInstaller, host: SetupHos
       ? { launch: bareLaunch("powershell.exe", host.env), args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", `irm ${installer.url} | iex`] }
       : { launch: bareLaunch("bash", host.env), args: ["-c", `curl -fsSL ${installer.url} | bash`] };
   }
+  if (installer.kind === "archive") return { failure: { kind: "unsupported", message: `Tomrade downloads and unpacks ${installer.url} itself; there is no command to run` } };
   return { launch: bareLaunch("brew", host.env), args: ["install", ...(installer.cask ? ["--cask"] : []), installer.name] };
+}
+
+/**
+ * An archive installer run without Node, npm or a shell: download the zip for
+ * this machine, unpack the one file the plugin names under Tomrade's own data
+ * folder, and say where it landed — the engine finds it there by itself.
+ */
+export async function runArchive(installer: Extract<EngineInstaller, { kind: "archive" }>, deps: { engineId: string; host: SetupHost; signal: AbortSignal; say?(line: string): void }): Promise<{ file: string; say(line: string): void } | { failure: EngineSetupFailure }> {
+  const url = installer.url;
+  const { host, signal } = deps;
+  const say = deps.say ?? (() => {});
+  if (!host.archiveDir) return { failure: { kind: "unsupported", message: `Tomrade has no folder of its own to unpack ${installer.file} into (${url})` } };
+  say(`Downloading ${url}`);
+  let bytes: Buffer;
+  try {
+    const answer = await (host.download ?? ((at: string, stop: AbortSignal) => fetch(at, { signal: stop })))(url, signal);
+    if (!answer.ok) return { failure: { kind: answer.status === 403 || answer.status === 404 ? "not-found" : "network", message: `the server answered ${answer.status} for ${url} — the release may have moved; check the agent's download page` } };
+    bytes = Buffer.from(await answer.arrayBuffer());
+  } catch (error) {
+    if (signal.aborted) return { failure: { kind: "cancelled", message: "cancelled" } };
+    return { failure: archiveFailure(error, url) };
+  }
+  say(`Downloaded ${Math.max(1, Math.round(bytes.length / 1024))} KB — unpacking ${installer.file}`);
+  try {
+    const landed = unpackArchive(bytes, installer.file, { dir: host.archiveDir(deps.engineId, url), file: installer.file }, host.platform);
+    say(`Unpacked to ${landed.file}`);
+    return { file: landed.file, say };
+  } catch (error) {
+    return { failure: archiveFailure(error, url) };
+  }
 }
 
 /** The concrete kind of a failure, read from the tool's own words. */
@@ -176,8 +242,12 @@ export interface InstallDeps {
   stallMs?: number;
   /** Runs one installer command; tests swap it for a fake. */
   exec?: typeof runCommand;
-  /** How each installer runs; absent, the way `installerLaunch` says. */
+  /** How each installer runs; absent, the way `installerLaunch` says. Not asked for an archive, which `runArchive` unpacks. */
   resolve?: (installer: EngineInstaller, registry?: string) => ReturnType<typeof installerLaunch>;
+  /** Unpacks an archive installer; tests swap it for a fake. Absent, `runArchive`. */
+  unpack?: typeof runArchive;
+  /** An unpacked file that was not found by the engine's own lookup becomes its `command`; absent, never. */
+  adopt?(file: string): Promise<void>;
 }
 
 /** Ten minutes: enough for npm's cold cache on a slow line, short enough that a hang is seen today. */
@@ -221,11 +291,43 @@ export async function runInstall(deps: InstallDeps): Promise<EngineSetupProgress
     const startedAt = Date.now();
     let output = "";
     let stalled = false;
-    let running = true;
+    // The lines report after a completion too, so the next progress carries what the unpack said.
     const show = () => {
-      if (running) at({ engineId: deps.engineId, step, phase: "running", ...tried, startedAt, ...(output ? { output: tail(output) } : {}), ...(stalled ? { stalled } : {}) });
+      at({ engineId: deps.engineId, step, phase: "running", ...tried, startedAt, ...(output ? { output: tail(output) } : {}), ...(stalled ? { stalled } : {}) });
     };
     show();
+    if (installer.kind === "archive") {
+      // No command and no PATH: the zip is downloaded and unpacked where the engine's own lookup finds it.
+      const unpacked = await (deps.unpack ?? runArchive)(installer, {
+        engineId: deps.engineId,
+        host: deps.host,
+        signal: deps.signal,
+        say: (line) => {
+          output = (output + `${line}\n`).slice(-OUTPUT_KEEP);
+          show();
+        }
+      });
+      if ("failure" in unpacked) {
+        failed = { engineId: deps.engineId, step, phase: "failed", ...tried, failure: unpacked.failure, ...(output ? { output: tail(output) } : {}) };
+        if (unpacked.failure.kind === "cancelled") break;
+        continue;
+      }
+      at({ engineId: deps.engineId, step, phase: "checking", ...tried, ...(output ? { output: tail(output) } : {}) });
+      const unpackedFound = await deps.detect();
+      const atUnpacked = { engineId: deps.engineId, step, ...tried, ...(output ? { output: tail(output) } : {}) };
+      if (unpackedFound.ready) return at({ ...atUnpacked, phase: "done", ...(unpackedFound.version ? { version: unpackedFound.version } : {}) });
+      // The engine may have been given the unpacked path as its command: write it there, once, so the next look starts from it.
+      if (unpackedFound.path) {
+        unpacked.say(`It did not run yet — Settings → ${deps.engineId} → command is now ${unpackedFound.path}`);
+        await deps.adopt?.(unpacked.file);
+      }
+      failed = {
+        ...atUnpacked, phase: "failed",
+        failure: { kind: unpackedFound.kind ?? "not-on-path", message: unpackedFound.error ?? `unpacked ${unpacked.file}, but the command is not on PATH`, ...(unpackedFound.path ? { path: unpackedFound.path } : {}) },
+        ...(output ? { output: tail(output) } : {})
+      };
+      continue;
+    }
     const resolved = await (deps.resolve ?? ((it, registry) => installerLaunch(it, deps.host, registry, prefix)))(installer, deps.registry);
     if ("failure" in resolved) {
       failed = { engineId: deps.engineId, step, phase: "failed", ...tried, failure: resolved.failure };
@@ -264,7 +366,6 @@ export async function runInstall(deps: InstallDeps): Promise<EngineSetupProgress
         show();
       }
     });
-    running = false;
     clearTimeout(silence);
     ping.abort();
     if (result.code !== 0) {

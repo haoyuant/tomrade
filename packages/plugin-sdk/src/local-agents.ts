@@ -44,18 +44,31 @@ export interface LocalAgentPick {
 }
 
 /**
- * SDK 0.2.18. An installer script the app runs for the person: `script` (a
- * POSIX shell installer) as `curl -fsSL <url> | bash`, `powershell` as
+ * SDK 0.2.18. An installer the app runs for the person: `script` (a POSIX
+ * shell installer) as `curl -fsSL <url> | bash`, `powershell` as
  * `irm <url> | iex`. SDK 0.2.26 adds `npm`, a package installed with
  * `npm install -g` — through the app's own npm on a machine without Node.
- * Plugin code names only the address or package; these also run as the
- * one-click setup, in the declared order, each on the platforms it fits.
+ * SDK 0.2.27 adds `archive`, for an agent that ships standalone binaries in a
+ * zip: the app downloads it and unpacks `file` itself, no Node, npm or shell
+ * installer needed, into a folder of its own; the unpacked file's path becomes
+ * what `options.command` finds. Plugin code names only the address or file;
+ * these also run as the one-click setup, in the declared order, each on the
+ * platforms it fits.
  */
-export type LocalAgentInstaller = { script: string } | { powershell: string } | { npm: string };
+export type LocalAgentInstaller =
+  | { script: string }
+  | { powershell: string }
+  | { npm: string }
+  | { archive: { url: string; file: string; platform: { os: LocalAgentInstallerOs; arch: LocalAgentInstallerArch } } };
+
+/** SDK 0.2.27. The operating systems an `archive` installer's zip fits, as `process.platform` names them. */
+export type LocalAgentInstallerOs = "darwin" | "win32" | "linux";
+/** SDK 0.2.27. The processors an `archive` installer's zip fits, as `process.arch` names them. */
+export type LocalAgentInstallerArch = "x64" | "arm64" | "ia32" | "arm";
 
 /** How the agent is installed and signed in, for setup screens. */
 export interface LocalAgentSetup {
-  /** Install commands, the recommended one first; an installer by its address or package (SDK 0.2.18, npm 0.2.26). */
+  /** Install commands, the recommended one first; an installer by its address or package (SDK 0.2.18, npm 0.2.26, archive 0.2.27). */
   install: (string | LocalAgentInstaller)[];
   signIn?: string;
   /** Signing in starts the agent itself, which then asks; otherwise the command signs in and returns. */

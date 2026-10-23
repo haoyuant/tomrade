@@ -119,7 +119,7 @@ returns is disposed when the service goes.
 | `settings` | `register({ title, schema, defaults })` — the card is drawn from the schema — `get`, `set` |
 | `tools` | `register(defineTool(…))` (SDK 0.2.6: `kit` keeps a rarely needed tool out of each request until the model loads it; `kit(id, purpose)` says what the kit is for), `list`, `call`, `gate(check)` (throw to refuse any tool call; SDK 0.2.12: answer `{ args }` or `{ result }` — see [Policies](#policies)) |
 | `contributions` | `command`, `badge`, `statusItem`, `section`, `graph` — see [Contributions](#contributions); callbacks may be async |
-| `agent` | `playbook({ id, title, when, body, tools })`; SDK 0.2.14: `request(hook)`, `requestError(hook)`, `turnEnding(hook)` — the in-app conversation's loop, see [Hooks in the agent's loop](#hooks-in-the-agents-loop); SDK 0.2.15: `cliHook({ events, tools, agents, handle })` — the CLI agents' hooks, see [Hooks in CLI agents](#hooks-in-cli-agents); SDK 0.2.17: `localAgent(spec)`, see [Local agents](#local-agents) — SDK 0.2.23 takes `acp.terminal: { via: "link" }` in place of the deprecated `acp.terminalViaLink`, which an older plugin may still send; SDK 0.2.25 takes `setup.download` and `setup.desktop`; SDK 0.2.26 takes `{ npm: package }` installers and `setup.signInRun`, which the app runs itself as one-click setup |
+| `agent` | `playbook({ id, title, when, body, tools })`; SDK 0.2.14: `request(hook)`, `requestError(hook)`, `turnEnding(hook)` — the in-app conversation's loop, see [Hooks in the agent's loop](#hooks-in-the-agents-loop); SDK 0.2.15: `cliHook({ events, tools, agents, handle })` — the CLI agents' hooks, see [Hooks in CLI agents](#hooks-in-cli-agents); SDK 0.2.17: `localAgent(spec)`, see [Local agents](#local-agents) — SDK 0.2.23 takes `acp.terminal: { via: "link" }` in place of the deprecated `acp.terminalViaLink`, which an older plugin may still send; SDK 0.2.25 takes `setup.download` and `setup.desktop`; SDK 0.2.26 takes `{ npm: package }` installers and `setup.signInRun`, which the app runs itself as one-click setup; SDK 0.2.27 takes `{ archive: { url, file, platform } }` installers, a zip the app downloads and unpacks itself |
 | `surfaces` | `open({ id, document, … })` — a document inside the plugin's own package, never a remote page (SDK 0.2.7: `onClose()` says the window is gone, however it went; the handle's calls then reject). SDK 0.2.11: `kind: "window"` (with `minWidth` / `minHeight`) opens a working window and needs `permissions.window`; `post(message)` sends one message to the document; see [Auxiliary desktop surfaces](#auxiliary-desktop-surfaces) |
 | `alerts` | `sounds()` (the system's, its own alert sound first), `play(sound, { volume })` — `system:<name>` or an audio file's absolute path, played by the host — and `notify({ title, body })`, a silent system notification. SDK 0.2.4 |
 | `oplog` | `recent`, `history` |
@@ -1317,12 +1317,22 @@ await ctx.agent.localAgent({
   installer script is named by its address (SDK 0.2.18): `{ script: url }`
   runs as `curl -fsSL <url> | bash`, `{ powershell: url }` as
   `irm <url> | iex`; `{ npm: package }` (SDK 0.2.26) as
-  `npm install -g <package>`. The app writes the command, so plugin code carries no
-  download-and-run of its own (the store's checks refuse that); `{install}` in
-  `install`, the words after "not found —", stands for the first command.
+  `npm install -g <package>`; `{ archive: { url, file, platform } }` (SDK 0.2.27)
+  is not a command at all: the app downloads the zip at `url` and unpacks the
+  one `file` the plugin names, for the machine whose `platform` (`{ os, arch }`,
+  as `process.platform` and `process.arch` name them: `darwin`/`win32`/`linux`,
+  `x64`/`arm64`) it fits — no Node, npm, curl or shell installer. The file
+  lands under the app's own agents folder, never a system path, and Tomrade
+  finds it there by itself; only if its lookup still misses it does the app
+  write the unpacked path into the engine's `command`. Declare one archive per
+  platform, each before or after the others by preference. The app writes the
+  command, so plugin code carries no download-and-run of its own (the store's
+  checks refuse that); `{install}` in `install`, the words after "not found —",
+  stands for the first command.
   The non-string entries also run as the one-click setup Tomrade drives itself
   (SDK 0.2.26), in the declared order, each on the platforms it fits — npm
-  through the app's own npm on a machine without Node.
+  through the app's own npm on a machine without Node, an archive through the
+  app's own download and unpack.
 - **`setup.signInRun`** (SDK 0.2.26) — `{ args }` — is a sign-in command the
   app runs and watches itself: it opens or prints a browser address and needs
   no typing, and the agent counts as signed in once `probe`/`signedIn` says

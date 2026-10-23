@@ -3,7 +3,7 @@ export { lineSplitter, runJsonl, signedIn, type CliRun } from "./cli.js";
 export { cliLentModel, NotSignedIn, SIGN_IN_RECHECK_MS, type CliAnswer } from "./lend-cli.js";
 export {
   CliLocator, localCli, launchFor, bundledLaunch, spawnCli, stopCli, cliReason, describeRun, fileNames, shimTarget, cmdArgument, cmdLine, parseRegPath, expandWindowsVars, splitPath, knownDirs,
-  installDirs, searchPath, findCommand, machineHost,
+  installDirs, searchPath, findCommand, machineHost, archiveFolder,
   type BundledCli, type CliHost, type CliLaunch, type CliRunResult
 } from "./locate.js";
 export { binKind, managedLaunch, type BinKind, type ManagedCli } from "./managed.js";

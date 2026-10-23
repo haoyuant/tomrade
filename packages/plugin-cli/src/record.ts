@@ -5,6 +5,7 @@ import {
   ownsId,
   type AgentApi,
   type ImApi,
+  type LocalAgentInstaller,
   type LocalAgentSpec,
   type BoardsApi,
   type ContributionsApi,
@@ -47,8 +48,10 @@ export interface Recording {
   localAgents: string[];
   /** Local agents that name an installer script, which needs SDK 0.2.18. */
   localAgentInstallers: string[];
-  /** Local agents that name an npm installer or a watched sign-in command, which need SDK 0.2.26. */
+  /** Local agents that name an npm installer, an archive installer or a watched sign-in command, which need SDK 0.2.26, or 0.2.27 for an archive. */
   localAgentOneClick: string[];
+  /** Local agents that name a zip the app downloads and unpacks, which needs SDK 0.2.27. */
+  localAgentArchives: string[];
   /** Registrations that do not fit their contract, in words the author can act on. */
   invalid: string[];
   /** Which IM contract each adapter is written against, from the capabilities it declares. */
@@ -59,10 +62,15 @@ export interface Recording {
   stopped: string | null;
 }
 
-export const emptyRecording = (): Recording => ({ tools: [], commands: [], badges: [], statusItems: [], sections: [], graphs: [], sidebarModules: [], playbooks: [], settings: [], surfaces: [], tables: [], imAdapters: [], webSearchProviders: [], agentHooks: [], modelProviders: [], localAgents: [], localAgentInstallers: [], localAgentOneClick: [], invalid: [], imContracts: [], violations: [], stopped: null });
+export const emptyRecording = (): Recording => ({ tools: [], commands: [], badges: [], statusItems: [], sections: [], graphs: [], sidebarModules: [], playbooks: [], settings: [], surfaces: [], tables: [], imAdapters: [], webSearchProviders: [], agentHooks: [], modelProviders: [], localAgents: [], localAgentInstallers: [], localAgentOneClick: [], localAgentArchives: [], invalid: [], imContracts: [], violations: [], stopped: null });
 
 const noop = () => {};
 const DRY = "dry run: nothing is written while a plugin is inspected";
+
+/** The platforms an `archive` installer's zip may fit (SDK 0.2.27). */
+type LocalAgentInstallerArchive = Extract<LocalAgentInstaller, { archive: unknown }>["archive"];
+const ARCHIVE_OS: LocalAgentInstallerArchive["platform"]["os"][] = ["darwin", "win32", "linux"];
+const ARCHIVE_ARCH: LocalAgentInstallerArchive["platform"]["arch"][] = ["x64", "arm64", "ia32", "arm"];
 
 /**
  * A PluginContext that answers every read with nothing, refuses every write,
@@ -173,7 +181,8 @@ export function recordingContext(namespace: string, allowed: ServiceName[], rec:
         localAgent: (spec) => {
           rec.invalid.push(...localAgentProblems(spec as LocalAgentSpec));
           if (spec.setup?.install.some((step) => typeof step !== "string")) rec.localAgentInstallers.push(spec.id);
-          if (spec.setup?.install.some((step) => typeof step !== "string" && "npm" in step) || spec.setup?.signInRun) rec.localAgentOneClick.push(spec.id);
+          if (spec.setup?.install.some((step) => typeof step !== "string" && ("npm" in step || "archive" in step)) || spec.setup?.signInRun) rec.localAgentOneClick.push(spec.id);
+          if (spec.setup?.install.some((step) => typeof step !== "string" && "archive" in step)) rec.localAgentArchives.push(spec.id);
           return note("localAgents", spec.id, "local agent");
         } });
     },
@@ -275,6 +284,15 @@ function localAgentProblems(spec: LocalAgentSpec): string[] {
     if (typeof step === "string") continue;
     if ("npm" in step) {
       if (typeof step.npm !== "string" || !/^(@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*$/.test(step.npm)) out.push(`${label}: an npm installer is a package's name, not ${JSON.stringify(step.npm)}`);
+      continue;
+    }
+    // SDK 0.2.27: a zip the app downloads and unpacks itself, on the one platform it fits.
+    if ("archive" in step) {
+      const archive = step.archive as Partial<LocalAgentInstallerArchive> | undefined;
+      if (typeof archive?.url !== "string" || !/^https:\/\/[^\s'"|;&`$]+$/.test(archive.url)) out.push(`${label}: an archive installer is a zip's https address, not ${JSON.stringify(archive?.url ?? step)}`);
+      if (typeof archive?.file !== "string" || !archive.file.trim()) out.push(`${label}: an archive installer names the file to unpack, not ${JSON.stringify(archive?.file)}`);
+      const platform = archive?.platform;
+      if (!platform || !ARCHIVE_OS.includes(platform.os) || !ARCHIVE_ARCH.includes(platform.arch)) out.push(`${label}: an archive installer's platform is { os: one of ${ARCHIVE_OS.join(", ")}, arch: one of ${ARCHIVE_ARCH.join(", ")} }, not ${JSON.stringify(platform)}`);
       continue;
     }
     const url = "script" in step ? step.script : (step as { powershell?: unknown }).powershell;

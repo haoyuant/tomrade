@@ -73,9 +73,11 @@ export interface BorrowedSetup extends BorrowedNode {
  * Regenerate the shims from the app's current paths, make sure the prefix
  * exists, and add both folders last to `env`'s PATH — only processes Tomrade
  * starts see them. TOMRADE_NPM_PREFIX tells the CLI locators where borrowed
- * installs land, and TOMRADE_NODE_SHIMS tells a terminal Tomrade opens where
- * the shims are. The system npm, when there is one, sits earlier on PATH and
- * wins automatically; nothing asks which to use.
+ * installs land, TOMRADE_AGENTS_DIR where agents unpacked from an archive
+ * installer (SDK 0.2.27) and the app's own copies do, and TOMRADE_NODE_SHIMS
+ * tells a terminal Tomrade opens where the shims are. The system npm, when
+ * there is one, sits earlier on PATH and wins automatically; nothing asks
+ * which to use.
  */
 export function setUpBorrowedNode(opts: {
   userData: string;
@@ -83,6 +85,8 @@ export function setUpBorrowedNode(opts: {
   npmDir: string;
   /** The binary that runs as Node — the Helper on macOS (node-runtime.ts). */
   runtime: string;
+  /** The app's own folder for agents (`userData/agents`), read by setup. */
+  agentsDir?: string;
   platform?: NodeJS.Platform;
   env?: NodeJS.ProcessEnv;
 }): BorrowedSetup {
@@ -110,5 +114,7 @@ export function setUpBorrowedNode(opts: {
   appendPath(env, [dirs.binDir, dirs.prefixBin], platform);
   env.TOMRADE_NPM_PREFIX = dirs.prefix;
   env.TOMRADE_NODE_SHIMS = dirs.binDir;
+  // Archive installers unpack under the same folder the app's own agent copies live in; the locators read it from here.
+  if (opts.agentsDir) env.TOMRADE_AGENTS_DIR = opts.agentsDir;
   return { ...dirs, problem };
 }

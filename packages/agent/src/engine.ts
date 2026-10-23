@@ -99,12 +99,15 @@ export interface EngineSetup {
  * One way Tomrade itself installs the CLI, no terminal and no admin rights.
  * `npm` runs through the system npm when it answers, else the app's borrowed
  * one; `script` is the agent's official installer for one platform family;
- * `brew` is tried only where Homebrew is already installed.
+ * `brew` is tried only where Homebrew is already installed; `archive` (SDK
+ * 0.2.27) is a zip Tomrade downloads and unpacks itself, for an agent that
+ * ships standalone binaries.
  */
 export type EngineInstaller =
   | { kind: "npm"; package: string }
   | { kind: "script"; url: string; shell: "sh" | "powershell" }
-  | { kind: "brew"; name: string; cask?: boolean };
+  | { kind: "brew"; name: string; cask?: boolean }
+  | { kind: "archive"; url: string; file: string; platform: { os: NodeJS.Platform; arch: string } };
 
 export type EngineSetupStep = "install" | "sign-in";
 
@@ -124,7 +127,7 @@ export interface EngineSetupProgress {
   step: EngineSetupStep;
   /** `waiting`: a sign-in that needs the person — in the browser, or in the terminal when `terminal` is set. */
   phase: "running" | "checking" | "waiting" | "done" | "failed";
-  /** Which installer is being tried ("script", "npm", "brew"). */
+  /** Which installer is being tried ("script", "npm", "brew", "archive"). */
   installer?: string;
   /** The last lines of output: the latest while an installer runs, its end on a failure. */
   output?: string;

@@ -218,6 +218,37 @@ describe("a plugin's local agent, run by the app's conductor", () => {
     await w.ctx.fiber.dispose();
   });
 
+  it("writes an archive installer out as the download and unpack the app runs itself", async () => {
+    const w = await world(async (p) => {
+      await p.agent.localAgent({
+        id: "demo",
+        title: "Demo",
+        cli: { name: "tomrade-no-such-demo-cli" },
+        install: "install Demo ({install})",
+        setup: {
+          install: [
+            { archive: { url: "https://demo.example/demo-server-1.4.1-macos-arm64.zip", file: "demo_server.par", platform: { os: "darwin", arch: "arm64" } } },
+            { archive: { url: "https://demo.example/demo-server-1.4.1-windows-x64.zip", file: "demo_server.exe", platform: { os: "win32", arch: "x64" } } }
+          ]
+        }
+      });
+    });
+    const engine = w.ctx.agent.engineOf("demo")!;
+    expect(engine.local!.setup).toEqual({
+      install: [
+        "download https://demo.example/demo-server-1.4.1-macos-arm64.zip and unpack demo_server.par for darwin/arm64",
+        "download https://demo.example/demo-server-1.4.1-windows-x64.zip and unpack demo_server.exe for win32/x64"
+      ],
+      installers: [
+        { kind: "archive", url: "https://demo.example/demo-server-1.4.1-macos-arm64.zip", file: "demo_server.par", platform: { os: "darwin", arch: "arm64" } },
+        { kind: "archive", url: "https://demo.example/demo-server-1.4.1-windows-x64.zip", file: "demo_server.exe", platform: { os: "win32", arch: "x64" } }
+      ]
+    });
+    // The words after "not found —": the first command, so a person without it in a terminal still sees what the app would run.
+    expect(engine.local!.setup!.install[0]).toContain("download https://demo.example/demo-server-1.4.1-macos-arm64.zip");
+    await w.ctx.fiber.dispose();
+  });
+
   it("hands its download page and desktop app on to setup screens", async () => {
     const w = await world(async (p) => {
       await p.agent.localAgent({
