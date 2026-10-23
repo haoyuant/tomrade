@@ -15,7 +15,8 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
     "@tomradex/plugin-kit": "workspace:*",
-    "@tomradex/plugin-sdk": "workspace:*"
+    "@tomradex/plugin-sdk": "workspace:*",
+    "echarts": "^6.1.0"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

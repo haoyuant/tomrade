@@ -61,8 +61,12 @@ a public address. For remote operation use an SSH local port forward with the
 same local and remote port. Stop it with Ctrl+C.
 
 The page defaults to 30 UTC days, with 7/30/90-day and region filters, English
-and Chinese labels, usage/minutes ranking, feature daily charts, daily active
-anonymous IDs and D+1 retention. Use **Apply / refresh** to reload. Both regions
+and Chinese labels, headline cards, a daily overview, usage/minutes ranking, a
+per-feature daily trend, D+1 retention and the full feature table; it follows
+the system's light or dark theme. Charts are drawn by ECharts, which the server
+hands out from this package under `/assets/` (the page loads nothing from the
+network); the tables carry the same numbers without scripts. Use **Refresh** to
+reload. Both regions
 must answer successfully: an unavailable configured source shows an error,
 not an apparently complete partial total. Queries time out after 15 seconds.
 Only numeric report aggregates cross deployments; identifiers never do.
