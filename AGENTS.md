@@ -17,7 +17,11 @@ The backlog for this repository lives in Tomrade (project "Tomrade"), reachable 
 Claude Code and Codex report session lifecycle through repository hooks. In Codex, trust the project and review the new hooks with `/hooks`, then start a new session; older Codex versions without hooks must be upgraded. No `notify` setting is changed.
 Cursor uses `.cursor/mcp.json`; Gemini CLI uses `.gemini/settings.json`. Neither reports its lifecycle, but once it calls `claim_ticket` Tomrade follows the session through its MCP connection: later calls on that connection need no key. Use `note_progress` only when the claim's result says `tracking.tracked` is true.
 For other MCP-capable agents, add a Streamable HTTP server named `tomrade` with URL http://127.0.0.1:19090/mcp/014ce729-9739-41b5-a148-8d73f7825928 in that agent's own settings. No configuration is generated for other tools; reading AGENTS.md alone supplies instructions, not MCP tools or session tracking.
-Not every session works on a ticket, and not every ticket involves code. Work without a ticket is fine: never ask for one before starting, and never invent one.
+Not every session works on a ticket, and not every ticket involves code: never invent one. Work without a ticket is fine.
+
+### Before changing this repository
+
+When the person asks for a change and this session holds no ticket, file one with `create_item` and claim it with `claim_ticket` (when they name a key, claim that), then do the work on the branch the claim returns; every commit message names the key. Do not ask first: the person can change or drop the ticket, and the sidebar shows what this session works on from the moment it claims. A typo or a question needs no ticket.
 Before your first reply in every session, call the `tomrade` MCP tool `get_project_rules` and follow what it returns throughout: the person keeps rules there for every agent in this project.
 
 ### When the work is a ticket (the user or the branch names a key such as `TOM-42`)

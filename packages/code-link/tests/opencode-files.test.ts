@@ -24,9 +24,10 @@ describe("the reporting plugin", () => {
   it("reports a session as OpenCode with its folder, in Claude Code's event names", async () => {
     const { hooks, posted, again, restore } = await load();
     try {
-      await hooks.event!({ event: { type: "session.created", properties: { sessionID: "ses_1", info: { id: "ses_1" } } } });
+      await hooks.event!({ event: { type: "session.created", properties: { sessionID: "ses_1", info: { id: "ses_1", title: "OpenCode 标题" } } } });
+      await hooks.event!({ event: { type: "message.updated", properties: { sessionID: "ses_1", info: { id: "msg_1", role: "user", parts: [{ type: "text", text: "改一下侧栏" }] } } } });
       await hooks.event!({ event: { type: "message.updated", properties: { sessionID: "ses_1", info: { id: "msg_1", role: "user" } } } });
-      await hooks.event!({ event: { type: "message.updated", properties: { sessionID: "ses_1", info: { id: "msg_1", role: "user" } } } });
+      await hooks.event!({ event: { type: "session.updated", properties: { sessionID: "ses_1", info: { id: "ses_1", title: "改好的标题" } } } });
       await hooks["tool.execute.before"]!({ tool: "bash", sessionID: "ses_1", callID: "c1" }, { args: { command: "ls" } });
       await hooks["tool.execute.after"]!({ tool: "bash", sessionID: "ses_1", callID: "c1", args: { command: "ls" } }, { title: "ls", output: "a\n" });
       await hooks.event!({ event: { type: "session.idle", properties: { sessionID: "ses_1" } } });
@@ -35,13 +36,18 @@ describe("the reporting plugin", () => {
       expect(posted.map((p) => [p.url, p.agent, p.body.hook_event_name, p.body.session_id, p.body.cwd])).toEqual([
         ["http://127.0.0.1:19090/sessions/event", "opencode", "SessionStart", "ses_1", "/work/app"],
         ["http://127.0.0.1:19090/sessions/event", "opencode", "UserPromptSubmit", "ses_1", "/work/app"],
+        ["http://127.0.0.1:19090/sessions/event", "opencode", "TitleUpdate", "ses_1", "/work/app"],
         ["http://127.0.0.1:19090/sessions/event", "opencode", "PreToolUse", "ses_1", "/work/app"],
         ["http://127.0.0.1:19090/sessions/event", "opencode", "PostToolUse", "ses_1", "/work/app"],
         ["http://127.0.0.1:19090/sessions/event", "opencode", "Stop", "ses_1", "/work/app"],
         ["http://127.0.0.1:19090/sessions/event", "opencode", "StopFailure", "ses_1", "/work/app"]
       ]);
-      expect(posted[2]!.body).toMatchObject({ tool_name: "Bash", tool_input: { command: "ls" } });
-      expect(posted[5]!.body).toMatchObject({ error_message: "rate limited" });
+      // What it calls the conversation, and what was asked, so the sidebar has a title either way.
+      expect(posted[0]!.body).toMatchObject({ title: "OpenCode 标题" });
+      expect(posted[1]!.body).toMatchObject({ prompt: "改一下侧栏" });
+      expect(posted[2]!.body).toMatchObject({ title: "改好的标题" });
+      expect(posted[3]!.body).toMatchObject({ tool_name: "Bash", tool_input: { command: "ls" } });
+      expect(posted[6]!.body).toMatchObject({ error_message: "rate limited" });
       // A second copy (the repository's, beside the global one) does nothing.
       expect(await again()).toEqual({});
     } finally {

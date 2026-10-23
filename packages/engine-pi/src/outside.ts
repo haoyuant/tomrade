@@ -31,6 +31,19 @@ const names = { bash: "Bash", read: "Read", edit: "Edit", write: "Write", grep: 
 const textOf = (content) => (content ?? []).filter((part) => part.type === "text").map((part) => part.text).join("\\n");
 const loaded = Symbol.for("tomrade.pi.outside");
 const pane = { ...(process.env.HERDR_PANE_ID ? { herdr_pane: process.env.HERDR_PANE_ID } : {}), ...(process.env.TERM_PROGRAM || process.env.WT_SESSION ? { terminal: process.env.TERM_PROGRAM || "WindowsTerminal" } : {}) };
+const titleOf = (ctx) => {
+  const manager = ctx?.sessionManager;
+  const title = manager?.getSessionName?.() ?? manager?.getSessionTitle?.() ?? manager?.getTitle?.();
+  return typeof title === "string" && title.trim() ? title : undefined;
+};
+const promptOf = (event, ctx) => {
+  const direct = event?.prompt ?? event?.message;
+  if (typeof direct === "string" && direct.trim()) return direct;
+  const messages = event?.messages ?? ctx?.sessionManager?.getMessages?.() ?? [];
+  const last = [...messages].reverse().find((message) => message?.role === "user");
+  const text = typeof last?.content === "string" ? last.content : textOf(last?.content);
+  return typeof text === "string" && text.trim() ? text : undefined;
+};
 
 export default function (pi) {
   // A session Tomrade started registers its own server, with its token.
@@ -44,19 +57,25 @@ export default function (pi) {
   pi.on("session_start", (_event, ctx) => {
     sessionId = ctx.sessionManager.getSessionId();
     cwd = ctx.cwd;
-    post({ hook_event_name: "SessionStart" });
+    const title = titleOf(ctx);
+    post({ hook_event_name: "SessionStart", ...(title ? { title } : {}) });
   });
-  pi.on("agent_start", () => post({ hook_event_name: "UserPromptSubmit" }));
+  pi.on("agent_start", (event, ctx) => {
+    const prompt = promptOf(event, ctx);
+    const title = titleOf(ctx);
+    post({ hook_event_name: "UserPromptSubmit", ...(prompt ? { prompt } : {}), ...(title ? { title } : {}) });
+  });
   pi.on("tool_call", (event) => post({ hook_event_name: "PreToolUse", tool_name: names[event.toolName] ?? event.toolName, tool_input: event.input }));
   pi.on("tool_result", (event) => {
     const text = textOf(event.content);
     post({ hook_event_name: event.isError ? "PostToolUseFailure" : "PostToolUse", tool_name: names[event.toolName] ?? event.toolName,
       tool_input: event.input, ...(event.isError ? { tool_error: text } : { tool_output: text }) });
   });
-  pi.on("agent_end", (event) => {
+  pi.on("agent_end", (event, ctx) => {
     const last = [...event.messages].reverse().find((message) => message.role === "assistant");
-    if (last?.stopReason === "error") post({ hook_event_name: "StopFailure", error_message: last.errorMessage });
-    else if (last) post({ hook_event_name: "Stop", last_assistant_message: textOf(last.content) });
+    const title = titleOf(ctx);
+    if (last?.stopReason === "error") post({ hook_event_name: "StopFailure", error_message: last.errorMessage, ...(title ? { title } : {}) });
+    else if (last) post({ hook_event_name: "Stop", last_assistant_message: textOf(last.content), ...(title ? { title } : {}) });
   });
   pi.on("session_shutdown", (event) => {
     if (event.reason === "quit") post({ hook_event_name: "SessionEnd", reason: "exit" });
@@ -78,7 +97,13 @@ export function outsideExtensionUrl(source: string): string | null {
 }
 
 /** A repository's `.pi/extensions/tomrade.ts` for code-link's Connect, which takes it through its connector registry. */
-export const piConnector: ConnectFileWriter = { write: outsideExtension, url: outsideExtensionUrl };
+export const piConnector: ConnectFileWriter = {
+  file: ".pi/extensions/tomrade.ts",
+  title: "Pi",
+  write: outsideExtension,
+  url: outsideExtensionUrl,
+  tracks: (text, eventUrl) => text.includes(eventUrl)
+};
 
 /**
  * Pi's own sessions reach Tomrade through the user-level extension above,

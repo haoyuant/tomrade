@@ -4,7 +4,7 @@ import path from "node:path";
 import { Context, Service } from "cordis";
 import { z } from "zod";
 import type {} from "@tomradex/agent";
-import type { ThreadSummary } from "@tomradex/agent";
+import type { Engine, ThreadSummary } from "@tomradex/agent";
 import { untilLabel } from "@tomradex/agent";
 import type {} from "@tomradex/boards";
 import type {} from "@tomradex/contributions";
@@ -23,7 +23,7 @@ import { readPull, type ForgePull } from "./forge.js";
 import type { ConnectionView } from "./connection.js";
 import { CONNECT_AGENTS, type ConnectFileWriter, type ConnectorAgent } from "./connect.js";
 import { RepoConnect, type ConnectMode, type ConnectResult } from "./connect-repo.js";
-import { Connections } from "./connections.js";
+import { Connections, MCP_AGENT } from "./connections.js";
 import { contribute } from "./contrib.js";
 import { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
 import { HerdrBridge, type HerdrInstall } from "./herdr-bridge.js";
@@ -37,7 +37,7 @@ import { Sessions, type SessionMoment } from "./sessions.js";
 import { CODE_WORDS, type CodeWords } from "./words.js";
 import { Starter, type StartOptions, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
-import { findCodexRollout, findTranscript, readConversation, transcriptTitle, type ConversationLine } from "./titles.js";
+import { findCodexRollout, findTranscript, readConversation, transcriptTitleFor, type ConversationLine } from "./titles.js";
 import { AUTO_TERMINAL, TerminalSettings, commandOk, exec, locatedCommand, terminalApps, terminalPath } from "./terminal.js";
 import { registerTools } from "./tools.js";
 import { type CodeLinkReader, errorMessage } from "@tomradex/contracts";
@@ -326,7 +326,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       notify: (projectId) => this.notify(projectId),
       prefixOf: (projectId) => this.prefixOf(projectId),
       lastHooks: (projectId, repoId) => this.connections.lastHooks(projectId, repoId),
-      connectors: (agent) => this.connectors.get(agent)
+      connectors: Object.assign((agent: ConnectorAgent) => this.connectors.get(agent), { agents: () => [...this.connectors.keys()] })
     });
     this.ctx.settings.register(SETTINGS_SECTION);
     this.ctx.on("write/pre-commit", (intent, next) => {
@@ -368,8 +368,15 @@ export class CodeLink extends Service implements CodeLinkReader {
       for (const projectId of this.ctx.db.openIds()) void this.scans.migrateCredentialHelpers(projectId);
     });
 
-    this.home.inject(["tools"], (ctx) =>
-      registerTools(ctx, {
+    this.home.inject(["tools"], (ctx) => {
+      // A ticket an agent files while it holds none is the one it works: the terminal it speaks from takes it, so
+      // the sidebar names the ticket at once and the calls that name it later reach that session.
+      ctx.on("tools/result", (call, outcome) => {
+        if (call.name !== "create_item" || !outcome.ok || call.by !== `ai:${MCP_AGENT}` || !call.projectId) return;
+        const id = (outcome.result as { id?: unknown } | null)?.id;
+        if (typeof id === "string") this.filed(call.projectId, id);
+      });
+      return registerTools(ctx, {
         store: this.store,
         reevaluate: (projectId, itemId, repoId) => this.reevaluate(projectId, itemId, repoId),
         handOver: (projectId, itemId, repoId) => this.handOver(projectId, itemId, repoId),
@@ -380,6 +387,7 @@ export class CodeLink extends Service implements CodeLinkReader {
         externalSession: (projectId, repoId, key) => this.externalSession(projectId, repoId, key),
         awaitingClaim: (projectId, itemId) => this.awaitingClaim(projectId, itemId),
         connected: (projectId, connection) => this.connected(projectId, connection),
+        freeSibling: (projectId, session) => this.connections.freeSibling(projectId, session),
         connectedSessions: (projectId, connection) => this.connectedSessions(projectId, connection),
         bindConnection: (projectId, connection, sessionId, leaving) => this.bindConnection(projectId, connection, sessionId, leaving),
         bound: (sessionId) => this.boundAnywhere(sessionId),
@@ -390,8 +398,8 @@ export class CodeLink extends Service implements CodeLinkReader {
         notify: (projectId) => this.notify(projectId),
         summary: (projectId, itemId) => this.summary(projectId, itemId),
         mergeLocal: (projectId, itemId, opts) => this.mergeLocal(projectId, itemId, opts)
-      })
-    );
+      });
+    });
     this.home.inject(["mcp"], (ctx) => {
       // Hooks a repository commits carry no token; the cwd and session id in the payload say whose they are.
       ctx.mcp.onEvent((payload) => this.connections.externalEvent(payload));
@@ -406,6 +414,20 @@ export class CodeLink extends Service implements CodeLinkReader {
       // Terminals the user still has open from before a restart keep calling with their tokens; bind those again.
       for (const projectId of this.ctx.db.openIds()) this.rebindSessions(projectId);
       ctx.on("db/opened", (projectId) => this.rebindSessions(projectId));
+    });
+    this.home.inject(["agent", "mcp"], (ctx) => {
+      // Every engine that can carry Tomrade in its own configuration gets it without a person pressing Connect,
+      // whether it was registered before this plugin or after it: the engine's own file, never anyone else's.
+      const connect = (engine: Engine) => {
+        void this.autoConnect(engine).catch((err) => this.ctx.logger.warn(`connecting ${engine.id} to Tomrade failed: ${errorMessage(err)}`));
+      };
+      for (const engine of ctx.agent.codeEngines()) connect(engine);
+      ctx.on("agent/engine-added", connect);
+      // A test message that came back is the agent working here: link it then too, in case its first attempt was too early.
+      ctx.on("agent/engine-tried", (engineId, tried) => {
+        const engine = tried.ok ? ctx.agent.engineOf(engineId) : null;
+        if (engine) connect(engine);
+      });
     });
     this.ctx.on("write/committed", (intent) => {
       if (intent.entity !== "item" || intent.op !== "update") return;
@@ -652,17 +674,19 @@ export class CodeLink extends Service implements CodeLinkReader {
   }
 
   /**
-   * Conversations that ended before Tomrade kept their titles: a Claude Code one finds its transcript by the agent's
-   * session id, and keeps the title once found. Each session is looked for once.
+   * Conversations that ended before Tomrade kept their titles: a Claude Code
+   * or CodeBuddy one finds its transcript by the agent's session id, a Codex
+   * one its rollout, and keeps the title once found. Each session is looked
+   * for once.
    */
   findTitles(projectId: string): boolean {
     let found = false;
     for (const s of this.store.sessions(projectId)) {
-      if (s.title || s.itemIds.length || s.agent !== "claude-code" || !s.externalId || s.state !== "ended" && s.state !== "lost") continue;
+      if (s.title || s.itemIds.length || !["claude-code", "workbuddy", "codex"].includes(s.agent) || !s.externalId || s.state !== "ended" && s.state !== "lost") continue;
       if (this.titlesLooked.has(s.id)) continue;
       this.titlesLooked.add(s.id);
-      const transcript = s.transcript ?? findTranscript(s.externalId);
-      const title = transcript ? transcriptTitle(transcript) : null;
+      const transcript = s.transcript ?? (s.agent === "codex" ? findCodexRollout(s.externalId) : findTranscript(s.externalId));
+      const title = transcript ? transcriptTitleFor(s.agent, transcript) : null;
       if (!title) continue;
       this.store.patchSession(projectId, s.id, { title, transcript, prompted: true });
       found = true;
@@ -674,7 +698,7 @@ export class CodeLink extends Service implements CodeLinkReader {
   conversation(projectId: string, sessionId: string): { lines: ConversationLine[]; cut: boolean } | null {
     const s = this.store.session(projectId, sessionId);
     if (!s?.externalId) return null;
-    const file = s.agent === "claude-code" ? (s.transcript ?? findTranscript(s.externalId)) : s.agent === "codex" ? findCodexRollout(s.externalId) : null;
+    const file = s.agent === "claude-code" || s.agent === "workbuddy" ? (s.transcript ?? findTranscript(s.externalId)) : s.agent === "codex" ? findCodexRollout(s.externalId) : null;
     return file ? readConversation(s.agent, file) : null;
   }
 
@@ -772,8 +796,9 @@ export class CodeLink extends Service implements CodeLinkReader {
 
   setRepoPolicy(projectId: string, repoId: string, patch: RepoPolicyPatch): RepoStateView {
     if (!this.ctx.repos.get(projectId, repoId)) throw new Error(`unknown repository ${repoId}`);
-    // Known agents only, in their usual order; choosing none goes back to the ones found here.
-    const connectAgents = patch.connectAgents?.length ? CONNECT_AGENTS.filter((id) => patch.connectAgents!.includes(id)) : patch.connectAgents && null;
+    // Known agents only, in their usual order — a plugin's own included; choosing none goes back to the ones found here.
+    const known = [...CONNECT_AGENTS, ...this.connectors.keys()].filter((id, at, all) => all.indexOf(id) === at);
+    const connectAgents = patch.connectAgents?.length ? known.filter((id) => patch.connectAgents!.includes(id)) : patch.connectAgents && null;
     const state = this.store.upsertRepoState(projectId, repoId, { ...patch, connectAgents });
     this.notify(projectId);
     return state;
@@ -835,6 +860,24 @@ export class CodeLink extends Service implements CodeLinkReader {
 
   attach(projectId: string, sessionId: string, itemId: string, branch: string, delivery: number, opts: { replace?: boolean } = {}): void {
     this.connections.attach(projectId, sessionId, itemId, branch, delivery, opts);
+  }
+
+  /**
+   * A ticket an agent filed from its own terminal, before any claim: the one live session that holds nothing and
+   * stands on that repository takes it. Exactly one — with two, nothing says whose the ticket is, and the agent's
+   * own claim decides; a session already working a ticket filed a follow-up, not its next one.
+   */
+  private filed(projectId: string, itemId: string): void {
+    const item = this.ctx.items.get(projectId, itemId);
+    const repoId = item ? this.ctx.boards.get(projectId, item.boardId)?.repoId : null;
+    if (!item || !repoId) return;
+    const free = this.store.sessions(projectId, { live: true }).filter((s) =>
+      s.mode === "terminal" && s.agent !== MCP_AGENT && s.threadId === null && s.repoId === repoId && s.endedAt === null && s.state !== "lost" && !s.itemIds.length);
+    // One conversation may have left several rows behind; two conversations never share a ticket. Only the first is
+    // a ticket's, and of its rows the one its hooks reached last — not the earlier one a restart left standing.
+    if (new Set(free.map((s) => s.externalId ?? s.id)).size !== 1) return;
+    const latest = free.reduce((best, s) => ((s.lastEventAt ?? s.startedAt) > (best.lastEventAt ?? best.startedAt) ? s : best), free[0]!);
+    this.attach(projectId, this.connections.freshest(projectId, latest).id, item.id, "", this.store.ensureActiveDelivery(projectId, item.id, item.updatedAt).sequence);
   }
 
   externalSession(projectId: string, repoId: string, key?: string): SessionView | null {
@@ -900,6 +943,25 @@ export class CodeLink extends Service implements CodeLinkReader {
   }
 
   // ── connecting a repository ────────────────────────────────────────────────
+
+  /**
+   * An agent that can carry Tomrade in its own configuration gets it without a
+   * person pressing Connect: a missing or stale link is written again, and a
+   * connected one is left alone. Only installed agents are touched; a failure
+   * is logged and the settings section still offers the manual way.
+   */
+  private async autoConnect(engine: Engine): Promise<void> {
+    const link = engine.local?.mcpLink;
+    if (!link) return;
+    const state = await link.status();
+    if (state.state === "connected" || state.state === "unavailable") return;
+    const available = await engine.available().catch(() => null);
+    if (available?.cli?.state === "missing") return;
+    const next = await link.connect();
+    if (next.state !== "connected") {
+      this.ctx.logger.warn(`connecting ${engine.title} to Tomrade left it ${next.state}${next.error ? `: ${next.error}` : ""}`);
+    }
+  }
 
   /**
    * An engine's writer for its agent's connection file (Pi's extension), so

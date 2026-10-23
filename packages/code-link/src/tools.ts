@@ -42,6 +42,8 @@ export interface ToolHost {
   awaitingClaim(projectId: string, itemId: string): SessionView | null;
   /** The session an outside client's connection last claimed for: the one its calls without a key mean. */
   connected(projectId: string, connection: string): SessionView | null;
+  /** A newer live row of the same conversation that holds nothing, when the connection was bound to an older one. */
+  freeSibling(projectId: string, session: SessionView): SessionView | null;
   /** Every live session an outside client's connection claimed for, one per ticket it works in parallel. */
   connectedSessions(projectId: string, connection: string): SessionView[];
   /** The connection's calls without a key mean this session from now on; it keeps its other sessions except `leaving`. */
@@ -382,7 +384,10 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         const again = !tokened && inv.connection ? (host.connectedSessions(projectId, inv.connection).find((s) => s.itemIds.includes(item.id)) ?? null) : null;
         // An agent that reaches Tomrade without its session's token (agy) claims as its first act: that joins the terminal session Start made for this ticket.
         const started = !tokened && !again && !connected && inv.connection ? host.awaitingClaim(projectId, item.id) : null;
-        let session = tokened ?? again ?? connected ?? started ?? (repoId ? host.externalSession(projectId, repoId, item.key) : null);
+        // A connection outlives the agent's restarts. When the same conversation has since opened a newer row that holds
+        // nothing — Start made one for this very ticket — that row is where the agent works, not the one bound before.
+        const moved = connected && !connected.itemIds.includes(item.id) ? host.freeSibling(projectId, connected) : null;
+        let session = tokened ?? again ?? moved ?? connected ?? started ?? (repoId ? host.externalSession(projectId, repoId, item.key) : null);
         // Another session on this ticket is someone's work in progress: say who and change nothing, unless told to take it over.
         const own = new Set([...(session ? [session.id] : []), ...(!tokened && inv.connection ? host.connectedSessions(projectId, inv.connection).map((s) => s.id) : [])]);
         const holders = workingOn(projectId, item.id).filter((s) => !own.has(s.id));

@@ -8,7 +8,7 @@ import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/tools";
 import type { Author } from "@tomradex/domain";
 import { looksRateLimited, resetTime, type CliHookAnswer } from "@tomradex/agent";
-import { promptTitle, transcriptTitle } from "./titles.js";
+import { promptTitle, transcriptTitleFor } from "./titles.js";
 import { CLI_HOOK_COVERAGE } from "@tomradex/plugin-sdk";
 import { BRIDGED_BY_DSH, cliHookCall, cliHookEvent, hookReply, mergeAnswers, type HookSource } from "./cli-hooks.js";
 import { hookCommand } from "./connect.js";
@@ -60,10 +60,12 @@ interface HookPayload {
   transcript_path?: string;
   /** UserPromptSubmit: what the person said. */
   prompt?: string;
+  /** What the agent itself calls the conversation, for agents that know a title before a transcript exists. */
+  title?: string;
 }
 
 /** A pane title that is just the agent's name. */
-const AGENT_NAME_TITLE = /^(claude( code)?|codex|gemini( cli)?|cursor( agent)?|opencode|hermes|workbuddy|pi)$/i;
+const AGENT_NAME_TITLE = /^(claude( code)?|codex|gemini( cli)?|cursor( agent)?|opencode|hermes|workbuddy|codebuddy|pi|dsh|deepseek( harness)?|antigravity|agy)$/i;
 
 /**
  * The Claude Code hook events a session listens to. Each says something about
@@ -402,18 +404,22 @@ export class Sessions {
     const patch: { cwd?: string; transcript?: string; prompted?: boolean; title?: string } = {};
     if (typeof p.cwd === "string" && p.cwd && p.cwd !== session.cwd) patch.cwd = p.cwd;
     if (typeof p.transcript_path === "string" && p.transcript_path && p.transcript_path !== session.transcript) patch.transcript = p.transcript_path;
+    // An agent that names its conversation itself is the best source there is — unless it only says its own name.
+    const said = typeof p.title === "string" ? p.title.trim() : "";
+    const named = said && !AGENT_NAME_TITLE.test(said) ? said : null;
+    if (named && named !== session.title) patch.title = named;
     if (p.hook_event_name === "UserPromptSubmit") {
       if (!session.prompted) patch.prompted = true;
-      const first = session.title ? null : promptTitle(p.prompt);
+      const first = !session.title && !patch.title ? promptTitle(p.prompt) : null;
       if (first) patch.title = first;
     }
     const ending = p.hook_event_name === "Stop" || p.hook_event_name === "SessionEnd";
     const transcript = patch.transcript ?? session.transcript;
-    const own = ending && transcript ? transcriptTitle(transcript) : null;
+    const own = !named && ending && transcript ? transcriptTitleFor(session.agent, transcript) : null;
     if (own && own !== session.title) patch.title = own;
     if (Object.keys(patch).length) this.store.patchSession(projectId, session.id, patch);
     // No title of the agent's own: the one it set on its pane, while herdr still has it.
-    if (ending && !own && session.herdrPane) {
+    if (ending && !named && !own && session.herdrPane) {
       const pane = session.herdrPane;
       void this.options.panes
         ?.info(pane)
@@ -763,18 +769,38 @@ const eventUrl = ${JSON.stringify(eventUrl)};
 const names = { bash: "Bash", read: "Read", edit: "Edit", write: "Write", grep: "Grep", find: "Glob", ls: "LS" };
 const textOf = (content) => (content ?? []).filter((part) => part.type === "text").map((part) => part.text).join("\\n");
 const pane = { ...(process.env.HERDR_PANE_ID ? { herdr_pane: process.env.HERDR_PANE_ID } : {}), ...(process.env.TERM_PROGRAM || process.env.WT_SESSION ? { terminal: process.env.TERM_PROGRAM || "WindowsTerminal" } : {}) };
+const titleOf = (ctx) => {
+  const manager = ctx?.sessionManager;
+  const title = manager?.getSessionName?.() ?? manager?.getSessionTitle?.() ?? manager?.getTitle?.();
+  return typeof title === "string" && title.trim() ? title : undefined;
+};
+const promptOf = (event, ctx) => {
+  const direct = event?.prompt ?? event?.message;
+  if (typeof direct === "string" && direct.trim()) return direct;
+  const messages = event?.messages ?? ctx?.sessionManager?.getMessages?.() ?? [];
+  const last = [...messages].reverse().find((message) => message?.role === "user");
+  const text = typeof last?.content === "string" ? last.content : textOf(last?.content);
+  return typeof text === "string" && text.trim() ? text : undefined;
+};
 
 export default function (pi) {
   pi.registerMcpServer("tomrade", server);
   let sessionId;
+  let cwd;
   const post = (payload) => fetch(eventUrl, { method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ session_id: sessionId, ...pane, ...payload }), signal: AbortSignal.timeout(5000) })
+    body: JSON.stringify({ session_id: sessionId, cwd, ...pane, ...payload }), signal: AbortSignal.timeout(5000) })
     .then((response) => response.json()).catch(() => ({}));
   pi.on("session_start", async (_event, ctx) => {
     sessionId = ctx.sessionManager.getSessionId();
-    await post({ hook_event_name: "SessionStart" });
+    cwd = ctx.cwd;
+    const title = titleOf(ctx);
+    await post({ hook_event_name: "SessionStart", ...(title ? { title } : {}) });
   });
-  pi.on("agent_start", () => { void post({ hook_event_name: "UserPromptSubmit" }); });
+  pi.on("agent_start", (event, ctx) => {
+    const prompt = promptOf(event, ctx);
+    const title = titleOf(ctx);
+    void post({ hook_event_name: "UserPromptSubmit", ...(prompt ? { prompt } : {}), ...(title ? { title } : {}) });
+  });
   pi.on("tool_call", async (event) => {
     const reply = await post({ hook_event_name: "PreToolUse", tool_name: names[event.toolName] ?? event.toolName, tool_input: event.input });
     const decision = reply.hookSpecificOutput;
@@ -786,10 +812,11 @@ export default function (pi) {
       tool_input: event.input, ...(event.isError ? { tool_error: text } : { tool_output: text }) });
     if (reply.additionalContext) return { content: [...event.content, { type: "text", text: reply.additionalContext }] };
   });
-  pi.on("agent_end", (event) => {
+  pi.on("agent_end", (event, ctx) => {
     const last = [...event.messages].reverse().find((message) => message.role === "assistant");
-    if (last?.stopReason === "error") void post({ hook_event_name: "StopFailure", error_message: last.errorMessage });
-    else if (last) void post({ hook_event_name: "Stop", last_assistant_message: textOf(last.content) });
+    const title = titleOf(ctx);
+    if (last?.stopReason === "error") void post({ hook_event_name: "StopFailure", error_message: last.errorMessage, ...(title ? { title } : {}) });
+    else if (last) void post({ hook_event_name: "Stop", last_assistant_message: textOf(last.content), ...(title ? { title } : {}) });
   });
   pi.on("session_shutdown", async (event) => {
     if (event.reason === "quit") await post({ hook_event_name: "SessionEnd", reason: "exit" });
@@ -828,14 +855,16 @@ function dshMcpPatch(mcpUrl: string, token: string, hooksFile?: string): string 
  * id first, so Continue can resume it with `--session-id`.
  */
 function dshReport(eventUrl: string): string {
-  return `import readline from "node:readline";
+  return `import fs from "node:fs";
+import readline from "node:readline";
 const eventUrl = ${JSON.stringify(eventUrl)};
 const names = { bash: "Bash", read: "Read", edit: "Edit", write: "Write", grep: "Grep", glob: "Glob" };
+const prompt = process.env.TOMRADE_PROMPT_FILE ? fs.readFileSync(process.env.TOMRADE_PROMPT_FILE, "utf8") : undefined;
 let sessionId;
 const sent = [];
 const pane = { ...(process.env.HERDR_PANE_ID ? { herdr_pane: process.env.HERDR_PANE_ID } : {}), ...(process.env.TERM_PROGRAM || process.env.WT_SESSION ? { terminal: process.env.TERM_PROGRAM || "WindowsTerminal" } : {}) };
 const post = (payload) => { sent.push(fetch(eventUrl, { method: "POST", headers: { "content-type": "application/json" },
-  body: JSON.stringify({ session_id: sessionId, ...pane, ...payload, tomrade_source: "dsh-report" }), signal: AbortSignal.timeout(5000) }).catch(() => {})); };
+  body: JSON.stringify({ session_id: sessionId, cwd: process.cwd(), ...pane, ...payload, tomrade_source: "dsh-report" }), signal: AbortSignal.timeout(5000) }).catch(() => {})); };
 const brief = (input) => { const text = typeof input === "string" ? input : JSON.stringify(input ?? {}); return text.length > 120 ? text.slice(0, 117) + "..." : text; };
 const lines = readline.createInterface({ input: process.stdin });
 lines.on("line", (line) => {
@@ -845,7 +874,7 @@ lines.on("line", (line) => {
     sessionId = event.sessionId;
     console.log("DeepSeek Harness session " + sessionId);
     post({ hook_event_name: "SessionStart" });
-    post({ hook_event_name: "UserPromptSubmit" });
+    post({ hook_event_name: "UserPromptSubmit", ...(prompt ? { prompt } : {}) });
   } else if (event.type === "tool_call") {
     console.log("> " + event.tool + " " + brief(event.input?.command ?? event.input));
     post({ hook_event_name: "PreToolUse", tool_name: names[event.tool] ?? event.tool, tool_input: event.input ?? {} });

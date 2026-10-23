@@ -26,11 +26,14 @@ import { Tools } from "@tomradex/tools";
 
 /** Pi's engine registers the real writer (see engine-pi); this one names the same endpoints the same way. */
 const piConnector: ConnectFileWriter = {
+  file: ".pi/extensions/tomrade.ts",
+  title: "Pi",
   write: (mcpUrl, eventUrl) => `// pi extension\nconst server = ${JSON.stringify({ url: mcpUrl })};\nconst eventUrl = ${JSON.stringify(eventUrl)};\n`,
   url: (text) => {
     const line = /^const server = (\{.*\});$/m.exec(text)?.[1];
     return line ? (JSON.parse(line) as { url: string }).url : null;
-  }
+  },
+  tracks: (text, eventUrl) => text.includes(eventUrl)
 };
 const writeConnectFiles = (root: string, input: ConnectInput, agents?: readonly ConnectAgent[], local?: LocalConnect) => writeWith(root, input, agents, local, () => piConnector);
 
@@ -109,6 +112,24 @@ async function machine() {
 }
 
 describe("connecting a repository", () => {
+  it("writes a plugin agent's own file when its engine registers a connector", () => {
+    const dir = path.join(root, `plugin-${n++}`);
+    const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
+    const writer: ConnectFileWriter = {
+      file: ".acme/tomrade.json",
+      title: "Acme",
+      write: (mcpUrl, eventUrl) => JSON.stringify({ mcpUrl, eventUrl }),
+      url: (text) => (JSON.parse(text) as { mcpUrl: string }).mcpUrl,
+      tracks: () => true
+    };
+    const connectors = Object.assign((agent: string) => (agent === "acme" ? writer : undefined), { agents: () => ["acme"] });
+    const { files, skipped } = writeWith(dir, input, ["acme"], undefined, connectors);
+    expect(files.sort()).toEqual([".acme/tomrade.json", "AGENTS.md"]);
+    expect(skipped).toEqual([]);
+    expect(fs.readFileSync(path.join(dir, ".acme/tomrade.json"), "utf8")).toContain(input.mcpUrl);
+    expect(fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8")).toContain('claim_ticket("APP-42")');
+  });
+
   it("writes agent configuration without disturbing what is there", () => {
     const dir = path.join(root, `files-${n++}`);
     fs.mkdirSync(path.join(dir, ".claude"), { recursive: true });
@@ -563,7 +584,7 @@ describe("connecting a repository", () => {
     codeLink.setRepoPolicy(project.id, repo.id, { connectAgents: ["claude-code", "codex", "cursor"] });
     const result = await codeLink.connect(project.id, repo.id, "local");
     expect(result).toMatchObject({ local: true, committed: false, pushed: false, url: null, branch: "" });
-    expect(result.files.sort()).toEqual([".agents/skills/tomrade-sync/SKILL.md", ".claude/settings.local.json", ".codex/config.toml", ".mcp.json"]);
+    expect(result.files.sort()).toEqual([".agents/skills/tomrade-sync/SKILL.md", ".claude/settings.local.json", ".codex/config.toml", ".mcp.json", "AGENTS.md"]);
     expect(result.skipped).toEqual([{ agent: "cursor", file: ".cursor/mcp.json", reason: "tracked" }]);
     expect(result.message).toContain("this machine only");
     // Nothing for git to see: the files are excluded in this clone; the tracked one, the instructions and the team's settings file are untouched.
@@ -572,8 +593,9 @@ describe("connecting a repository", () => {
     // Ignored either by Tomrade's exclude or already by this machine's global git excludes (Claude Code adds one when it writes the file).
     expect(git(["check-ignore", ".claude/settings.local.json"], checkout)).toBe(".claude/settings.local.json");
     expect(fs.readFileSync(path.join(checkout, ".cursor/mcp.json"), "utf8")).not.toContain("tomrade");
+    // The team's CLAUDE.md is tracked, so it stays theirs; AGENTS.md is new, untracked and excluded, so the agent reads the rules.
     expect(fs.readFileSync(path.join(checkout, "CLAUDE.md"), "utf8")).not.toContain("Tomrade");
-    expect(fs.existsSync(path.join(checkout, "AGENTS.md"))).toBe(false);
+    expect(fs.readFileSync(path.join(checkout, "AGENTS.md"), "utf8")).toContain("file one with `create_item`");
     expect(fs.existsSync(path.join(checkout, ".claude/settings.json"))).toBe(false);
     expect(git(["branch", "--list", "tomrade/connect"], checkout)).toBe("");
     // Claude Code loads the server without asking, and its hooks post from its personal settings file.
@@ -587,7 +609,9 @@ describe("connecting a repository", () => {
     expect(view).toMatchObject({ state: "connected", local: true, configuredUrl: ctx.mcp.urlFor(project.id) });
     expect(view.agents.find((agent) => agent.id === "claude-code")).toMatchObject({ tools: true, tracking: "hooks", instructions: false });
     expect(view.agents.find((agent) => agent.id === "codex")).toMatchObject({ tools: true, tracking: "hooks" });
-    expect(await codeLink.connect(project.id, repo.id, "local")).toMatchObject({ files: [], local: true, message: "Connected" });
+    // Connecting again is how an earlier connection gains the files a newer Tomrade writes; nothing changes in git.
+    expect(await codeLink.connect(project.id, repo.id, "local")).toMatchObject({ local: true, branch: "", committed: false, pushed: false });
+    expect(git(["status", "--porcelain"], checkout)).toBe("");
     // A Codex session in the checkout reports through the excluded hooks, with no pull request anywhere.
     await fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json", "X-Tomrade-Agent": "codex" }, body: JSON.stringify({ hook_event_name: "SessionStart", session_id: "codex-1", cwd: checkout }) });
     expect(codeLink.sessionsOf(project.id)).toEqual([expect.objectContaining({ agent: "codex", externalId: "codex-1", repoId: repo.id, state: "running" })]);
@@ -662,6 +686,95 @@ describe("connecting a repository", () => {
     // A remote GitHub does not host has no compare page either.
     expect(await codeLink.connect(project.id, repo.id)).toMatchObject({ pushed: true, url: null, message: expect.stringContaining("tomrade/connect pushed") });
     expect(gh.calls.slice(-2).map((call) => call.slice(0, 2).join(" "))).toEqual(["pr create", "pr view"]);
+  });
+});
+
+describe("an agent's own connection", () => {
+  /** A stand-in agent whose user-level configuration is the only way it reaches Tomrade (Cursor, Antigravity, Hermes). */
+  const agent = (ctx: Awaited<ReturnType<typeof machine>>["ctx"], state: { value: "unavailable" | "missing" | "connected"; connects: number }) => {
+    const view = () => ({ state: state.value, url: ctx.mcp.url, configuredUrl: state.value === "connected" ? ctx.mcp.url : null, file: "/home/dev/.agent.json", manual: { connect: "connect", disconnect: "disconnect" } });
+    return {
+      available: async () => ({ ok: true }),
+      turn: async () => ({ stop: "end" as const }),
+      mcpLink: {
+        status: async () => view(),
+        connect: async () => { state.connects += 1; state.value = "connected"; return view(); },
+        disconnect: async () => view()
+      }
+    };
+  };
+
+  it("is made as soon as the engine registers, without anyone pressing Connect", async () => {
+    const { ctx } = await machine();
+    const state = { value: "missing" as const, connects: 0 };
+    ctx.agent.engine({ id: "linked-agent", title: "Linked Agent", author: "ai:linked-agent", capabilities: ["code"], ...agent(ctx, state) });
+    await until(() => state.connects === 1);
+    expect(state.value).toBe("connected");
+  });
+
+  it("is made once a test message says the agent works, when its first attempt was too early", async () => {
+    const { ctx } = await machine();
+    const state: { value: "unavailable" | "missing" | "connected"; connects: number } = { value: "unavailable", connects: 0 };
+    ctx.agent.engine({ id: "late-agent", title: "Late Agent", author: "ai:late-agent", capabilities: ["code"], ...agent(ctx, state) });
+    await settle();
+    expect(state.connects).toBe(0);
+    // The MCP server is up now and a test message came back: link it.
+    state.value = "missing";
+    ctx.emit("agent/engine-tried", "late-agent", { ok: true, ms: 12, at: Date.now() });
+    await until(() => state.connects === 1);
+    expect(state.value).toBe("connected");
+  });
+});
+
+describe("a ticket an agent files for itself", () => {
+  // A hook is posted and those it creates are waited for: the same conversation may have rows already.
+  const start = async (ctx: Awaited<ReturnType<typeof machine>>["ctx"], projectId: string, cwd: string, id: string, rows = 1) => {
+    await fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hook_event_name: "SessionStart", session_id: id, cwd }) });
+    await until(() => ctx.codeLink.sessionsOf(projectId).length >= rows);
+  };
+
+  it("joins the one terminal session that holds nothing, so the sidebar names it and its calls land there", async () => {
+    const { ctx, codeLink, project, checkout } = await machine();
+    await start(ctx, project.id, checkout, "cli-1");
+    const [session] = codeLink.sessionsOf(project.id);
+    const inv = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-a" };
+    const filed = (await ctx.tools.execute("create_item", { title: "Write the README" }, inv)) as { id: string; key: string };
+    // The row reads the ticket's key and title from the session's ticket, so the sidebar shows them at once.
+    expect(codeLink.sessionsOf(project.id, filed.id).map((s) => s.id)).toEqual([session!.id]);
+    expect(await ctx.tools.execute("note_progress", { key: filed.key, text: "written" }, inv)).toMatchObject({ ok: true });
+  });
+
+  it("leaves two free sessions alone: nothing says whose ticket it is, and the agent's own claim decides", async () => {
+    const { ctx, codeLink, project, checkout } = await machine();
+    await start(ctx, project.id, checkout, "cli-1");
+    await start(ctx, project.id, checkout, "cli-2");
+    expect(codeLink.sessionsOf(project.id)).toHaveLength(2);
+    const inv = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-a" };
+    const filed = (await ctx.tools.execute("create_item", { title: "Write the README" }, inv)) as { id: string };
+    expect(codeLink.sessionsOf(project.id, filed.id)).toEqual([]);
+  });
+
+  it("claims the row its conversation opened last, not the one the connection was bound to before", async () => {
+    const { ctx, codeLink, project, board, items, checkout } = await machine();
+    const post = (payload: unknown) => fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    await post({ hook_event_name: "SessionStart", session_id: "cli-1", cwd: checkout });
+    await until(() => codeLink.sessionsOf(project.id).length === 1);
+    const older = codeLink.sessionsOf(project.id)[0]!;
+    const first = items.create({ projectId: project.id, boardId: board.id, title: "Earlier work", by: "human" });
+    const inv = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-a" };
+    // The connection is bound to that row; then the CLI comes back under the same id in a new row — what a restart
+    // leaves behind — and Start's row for the next ticket is the one the person is looking at.
+    expect(await ctx.tools.execute("claim_ticket", { key: first.key }, inv)).toMatchObject({ tracking: { sessionId: older.id } });
+    codeLink.store.createSession(project.id, { repoId: older.repoId, branch: "", itemIds: [], mode: "terminal", agent: older.agent, threadId: null, device: older.device, externalId: "cli-1" });
+    const newer = codeLink.sessionsOf(project.id).find((s) => s.id !== older.id)!;
+    const second = items.create({ projectId: project.id, boardId: board.id, title: "New work", by: "human" });
+    const claimed = (await ctx.tools.execute("claim_ticket", { key: second.key }, inv)) as { tracking: { tracked: boolean; sessionId: string } };
+    expect(claimed.tracking).toMatchObject({ tracked: true, sessionId: newer.id });
+    // The older row keeps the ticket it had: nothing was taken from it, the new claim simply went to the new row.
+    expect(codeLink.sessionsOf(project.id, first.id).map((s) => s.id)).toEqual([older.id]);
+    // And the calls that name it land there, not on the row it left behind.
+    expect(await ctx.tools.execute("note_progress", { key: second.key, text: "started" }, inv)).toMatchObject({ ok: true });
+    expect(codeLink.sessionsOf(project.id, second.id).map((s) => [s.id, s.summary])).toEqual([[newer.id, "started"]]);
   });
 });
 
@@ -818,6 +931,14 @@ describe("outside clients, told apart by their connection", () => {
     fs.writeFileSync(transcript, `${JSON.stringify({ type: "ai-title", aiTitle: "终端侧栏设计" })}\n`);
     await post({ hook_event_name: "Stop", session_id: "talk-1", cwd: checkout, transcript_path: transcript });
     expect(codeLink.store.session(project.id, talk!.id)?.title).toBe("终端侧栏设计");
+
+    // An agent that names the conversation itself, before any transcript exists (OpenCode, Pi).
+    await post({ hook_event_name: "SessionStart", session_id: "talk-named", cwd: checkout });
+    const named = codeLink.sessionsOf(project.id).find((s) => s.externalId === "talk-named")!;
+    await post({ hook_event_name: "TitleUpdate", session_id: "talk-named", cwd: checkout, title: "OpenCode 的标题" });
+    expect(codeLink.store.session(project.id, named.id)?.title).toBe("OpenCode 的标题");
+    await post({ hook_event_name: "UserPromptSubmit", session_id: "talk-named", cwd: checkout, prompt: "一段很长的话", title: "agent 自己起的名字" });
+    expect(codeLink.store.session(project.id, named.id)?.title).toBe("agent 自己起的名字");
 
     // One that ended before titles were kept: found by its agent's session id under the accounts' folders.
     const older = codeLink.store.createSession(project.id, { repoId: talk!.repoId, branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, externalId: "old-talk" });
@@ -1661,7 +1782,7 @@ describe("syncing a session back", () => {
       expect(text).toContain(`project "${project.name}" (ticket keys look like ${project.keyPrefix}-42)`);
       expect(text).toContain("Work that matches no ticket stays unmatched");
       expect(text).toContain("never mark a code ticket done yourself");
-      expect(client.getInstructions()).toContain("never ask the user to open a ticket before working");
+      expect(client.getInstructions()).toContain("do not ask first");
     } finally {
       await client.close();
     }
@@ -1691,7 +1812,7 @@ describe("syncing a session back", () => {
       const instructions = client.getInstructions()!;
       expect(instructions.startsWith("Project rules")).toBe(true);
       expect(instructions).toContain("- Write tickets in Chinese\n- Never touch billing");
-      expect(instructions.indexOf("Never touch billing")).toBeLessThan(instructions.indexOf("never ask the user to open a ticket"));
+      expect(instructions.indexOf("Never touch billing")).toBeLessThan(instructions.indexOf("do not ask first"));
       const read = await client.callTool({ name: "get_project_rules", arguments: {} });
       expect(JSON.parse((read.content as { text: string }[])[0]!.text)).toEqual({ rules: "- Write tickets in Chinese\n- Never touch billing" });
     } finally {

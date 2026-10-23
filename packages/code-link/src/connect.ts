@@ -6,9 +6,9 @@ import { opencodePlugin, withMcpEntry } from "./opencode-files.js";
 import { HERDR_PANE_HEADER, HOOK_EVENTS, TERMINAL_HEADER, WT_HEADER, stripJsonComments } from "./sessions.js";
 import { syncPrompt, syncSteps } from "./sync.js";
 
-/** The agents a repository can be connected for, in the order they are shown. */
+/** The agents a repository is connected for, in the order they are shown; a plugin agent may add its own. */
 export const CONNECT_AGENTS = ["claude-code", "codex", "workbuddy", "pi", "opencode", "cursor", "gemini"] as const;
-export type ConnectAgent = (typeof CONNECT_AGENTS)[number];
+export type ConnectAgent = string;
 
 /**
  * Why Connect left an agent out: its file has comments or trailing commas a
@@ -56,20 +56,26 @@ export const PI_EXTENSION = ".pi/extensions/tomrade.ts";
 /**
  * A file Connect lays down for an agent whose engine knows its format best:
  * the engine registers it (`ctx.codeLink.registerConnector`) and code-link
- * imports no engine. Its path stays here, in CONNECT_FILES.
+ * imports no engine. The writer names the file, its agent and how to read it.
  */
 export interface ConnectFileWriter {
+  /** The file, relative to the repository root. */
+  file: string;
+  /** The agent's name in the connection view; its id when absent. */
+  title?: string;
   /** The file's text for this project's MCP endpoint and the hooks' event endpoint. */
   write(mcpUrl: string, eventUrl: string): string;
   /** The MCP endpoint a written file names, or null when it names none. */
   url(text: string): string | null;
+  /** Whether the written file reports lifecycle events to `eventUrl`; named endpoints count when absent. */
+  tracks?(text: string, eventUrl: string): boolean;
 }
 
-/** The agents whose connection file an engine writes: Pi's, at PI_EXTENSION. */
-export type ConnectorAgent = "pi";
-/** The writer registered for an agent, read when Connect runs. */
-export type Connectors = (agent: ConnectorAgent) => ConnectFileWriter | undefined;
-export const NO_CONNECTORS: Connectors = () => undefined;
+/** The agents whose connection file an engine writes; any plugin agent may register one. */
+export type ConnectorAgent = string;
+/** The writer registered for an agent, read when Connect runs; `agents` lists every one registered. */
+export type Connectors = ((agent: ConnectorAgent) => ConnectFileWriter | undefined) & { agents?: () => readonly ConnectorAgent[] };
+export const NO_CONNECTORS: Connectors = Object.assign(() => undefined, { agents: () => [] as const });
 /** OpenCode loads a project plugin from here by itself. */
 export const OPENCODE_PLUGIN = ".opencode/plugins/tomrade.js";
 /** Claude Code's personal settings for one checkout: a machine-only connection keeps its hooks there. */
@@ -77,6 +83,15 @@ export const CLAUDE_LOCAL_SETTINGS = ".claude/settings.local.json";
 const CODEX_SYNC_SKILL = ".agents/skills/tomrade-sync/SKILL.md";
 /** Every file a connection may write, committed or for this machine only, and the Cursor script an older Tomrade wrote. */
 export const CONNECT_FILES = [".mcp.json", ".claude/settings.json", CLAUDE_LOCAL_SETTINGS, ".codebuddy/settings.json", ".codex/config.toml", CODEX_SYNC_SKILL, PI_EXTENSION, "opencode.json", OPENCODE_PLUGIN, ".cursor/mcp.json", ".cursor/hooks.json", CURSOR_HOOK_SCRIPT, CURSOR_HOOK_POWERSHELL, LEGACY_CURSOR_HOOK_SCRIPT, ".gemini/settings.json", "CLAUDE.md", "AGENTS.md"] as const;
+
+/** The same list plus the file of every connector an engine registered: what a connection may read, write and track. */
+export function connectFiles(connectors: Connectors = NO_CONNECTORS): string[] {
+  const extra = (connectors.agents?.() ?? []).flatMap((agent) => {
+    const file = connectors(agent)?.file;
+    return file && !(CONNECT_FILES as readonly string[]).includes(file) ? [file] : [];
+  });
+  return [...CONNECT_FILES, ...extra];
+}
 
 /**
  * The committed hook's command, read alike by every shell these agents run
@@ -201,8 +216,12 @@ export function tomradeSection(input: ConnectInput, options: { fetchRules?: bool
     "Claude Code, Codex, WorkBuddy and Cursor report session lifecycle through repository hooks, Pi through that extension and OpenCode through `.opencode/plugins/tomrade.js`. In Codex, trust the project and review the new hooks with `/hooks`, then start a new session; older Codex versions without hooks must be upgraded. Pi loads the extension once you trust the project. No `notify` setting is changed.",
     "Cursor uses `.cursor/mcp.json`, and `.cursor/hooks.json` runs `.cursor/hooks/tomrade` (`.cursor/hooks/tomrade.ps1` on Windows). Gemini CLI uses `.gemini/settings.json` and does not report its lifecycle, but once it calls `claim_ticket` Tomrade follows the session through its MCP connection: later calls on that connection need no key. Use `note_progress` only when the claim's result says `tracking.tracked` is true.",
     `For other MCP-capable agents, add a Streamable HTTP server named \`tomrade\` with URL ${input.mcpUrl} in that agent's own settings. No configuration is generated for other tools; reading AGENTS.md alone supplies instructions, not MCP tools or session tracking.`,
-    "Not every session works on a ticket, and not every ticket involves code. Work without a ticket is fine: never ask for one before starting, and never invent one.",
+    "Not every session works on a ticket, and not every ticket involves code: never invent one. Work without a ticket is fine.",
     ...(options.fetchRules ? ["When the `tomrade` MCP server is available, call its tool `get_project_rules` before your first reply in every session and follow what it returns throughout: the person keeps rules there for every agent in this project."] : []),
+    "",
+    "### Before changing this repository",
+    "",
+    "When the person asks for a change and this session holds no ticket, file one with `create_item` and claim it with `claim_ticket` (when they name a key, claim that), then do the work on the branch the claim returns; every commit message names the key. Do not ask first: the person can change or drop the ticket, and the sidebar shows what this session works on from the moment it claims. A typo or a question needs no ticket.",
     "",
     `### When the work is a ticket (the user or the branch names a key such as \`${example}\`) and the \`tomrade\` server is available`,
     "",
@@ -366,8 +385,9 @@ export interface LocalConnect {
  *
  * For this machine only (`local`), the same files go into the checkout
  * itself: Claude Code's hooks and its approval of the `.mcp.json` server in
- * `.claude/settings.local.json`, no instruction section, and no change to a
- * file git tracks — that agent is skipped and says so.
+ * `.claude/settings.local.json`, the instruction section in CLAUDE.md and
+ * AGENTS.md only where git does not track them, and no change to a file git
+ * tracks — that agent is skipped and says so.
  */
 export function writeConnectFiles(root: string, input: ConnectInput, agents: readonly ConnectAgent[] = CONNECT_AGENTS, local?: LocalConnect, connectors: Connectors = NO_CONNECTORS): { files: string[]; skipped: SkippedAgent[] } {
   interface Write { name: string; text: string | null; mode?: number }
@@ -378,7 +398,9 @@ export function writeConnectFiles(root: string, input: ConnectInput, agents: rea
   const exact = (name: string, text: string, mode?: number): Write => ({ name, text: read(name) === text ? null : text, ...(mode ? { mode } : {}) });
   const json = (name: string, change: (json: string) => string): Write => ({ name, text: nextJson(root, name, change) });
   const section = (name: "CLAUDE.md" | "AGENTS.md"): Write[] => {
-    if (local) return [];
+    // This machine only: a file git does not track is ours to write, so the agent reads the rules; one the team
+    // tracks stays the team's, and the MCP server's instructions speak instead.
+    if (local?.tracked.has(name)) return [];
     const existing = read(name) ?? "";
     const body = withTomradeSection(existing, input.projectName, tomradeSection(input, { fetchRules: name === "AGENTS.md" }));
     return [{ name, text: body === existing ? null : body }];
@@ -404,7 +426,7 @@ export function writeConnectFiles(root: string, input: ConnectInput, agents: rea
   const claudeHooks = withSessionHooks(hookCommand(input.eventUrl));
   // Without its engine's writer (the engine is off), Pi gets the instructions alone, and is told why.
   const pi = connectors("pi");
-  const plans: Record<ConnectAgent, () => Write[]> = {
+  const plans: Record<string, () => Write[]> = {
     "claude-code": () => [mcp(), local ? json(CLAUDE_LOCAL_SETTINGS, (text) => withApprovedServer(claudeHooks(text))) : json(".claude/settings.json", claudeHooks), ...section("CLAUDE.md")],
     codex: () => [codex(), ...section("AGENTS.md"), exact(CODEX_SYNC_SKILL, codexSyncSkill(input))],
     // WorkBuddy's CLI takes Claude Code's hook format in its own settings file.
@@ -417,12 +439,23 @@ export function writeConnectFiles(root: string, input: ConnectInput, agents: rea
     cursor: () => [json(".cursor/mcp.json", withServer({ url: input.mcpUrl })), json(".cursor/hooks.json", withCursorHooks), exact(CURSOR_HOOK_SCRIPT, cursorHookScript(posixHookCommand(input.eventUrl, "cursor")), 0o755), exact(CURSOR_HOOK_POWERSHELL, cursorHookPowerShell(powershellHook(input.eventUrl, "cursor"))), ...section("AGENTS.md")],
     gemini: () => [json(".gemini/settings.json", withServer({ httpUrl: input.mcpUrl }))]
   };
+  // A plugin agent's own file: its engine registered the writer, so Connect needs no knowledge of its format.
+  const planFor = (agent: ConnectAgent): Write[] => {
+    const plan = plans[agent];
+    if (plan) return plan();
+    const writer = connectors(agent);
+    if (!writer) {
+      skipped.push({ agent, file: agent, reason: "no-connector" });
+      return [];
+    }
+    return [exact(writer.file, writer.write(input.mcpUrl, input.eventUrl)), ...section("AGENTS.md")];
+  };
 
   // Every file an agent needs is worked out before anything is written, so one it cannot have leaves that agent out whole.
   const writes = new Map<string, Write>();
-  for (const agent of CONNECT_AGENTS.filter((id) => agents.includes(id))) {
+  for (const agent of agents) {
     try {
-      for (const write of plans[agent]()) {
+      for (const write of planFor(agent)) {
         if (write.text !== null && local?.tracked.has(write.name)) throw new Unwritable(write.name, "tracked");
         writes.set(write.name, write);
       }

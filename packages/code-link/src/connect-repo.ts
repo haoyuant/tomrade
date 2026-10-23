@@ -5,7 +5,7 @@ import type { Context } from "cordis";
 import { GitFolder, type Git } from "@tomradex/git";
 import { CURSOR_HOOK_SCRIPT } from "./cursor-hooks.js";
 import { inspectConnection, inspectConnectFiles, type AgentConnectionView, type ConnectionView } from "./connection.js";
-import { CONNECT_AGENTS, CONNECT_FILES, writeConnectFiles, type ConnectAgent, type ConnectInput, type Connectors, type SkippedAgent } from "./connect.js";
+import { CONNECT_AGENTS, connectFiles, writeConnectFiles, type ConnectAgent, type ConnectInput, type Connectors, type SkippedAgent } from "./connect.js";
 import { compareUrl } from "./landing.js";
 import type { CodeLinkStore } from "./store.js";
 import { commandOk, exec } from "./terminal.js";
@@ -70,14 +70,16 @@ export class RepoConnect {
     const chosen = this.store.repoState(projectId, repoId)?.connectAgents;
     if (chosen?.length) return chosen;
     const agent = this.ctx.get("agent");
-    const found = await Promise.all(CONNECT_AGENTS.map(async (id) => {
+    // A plugin agent whose engine registered a connector is one more the repository can be connected for.
+    const all: ConnectAgent[] = [...CONNECT_AGENTS, ...(this.connectors.agents?.() ?? []).filter((id) => !(CONNECT_AGENTS as readonly string[]).includes(id))];
+    const found = await Promise.all(all.map(async (id) => {
       const state = await agent?.engineOf(id)?.available().catch(() => null);
       // Installed is enough: the repository's files do not need it signed in here.
       return state?.ok || state?.cli?.state === "ready" ? [id] : [];
     }));
     const detected = found.flat();
     // A Tomrade that finds none of them cannot tell which the team uses.
-    return detected.length ? detected : [...CONNECT_AGENTS];
+    return detected.length ? detected : all;
   }
 
   async connection(projectId: string, repoId: string): Promise<ConnectionView> {
@@ -151,7 +153,8 @@ export class RepoConnect {
       branchTemplate: this.store.repoState(projectId, repoId)?.branchTemplate ?? "{key}/{slug}"
     };
     if (mode === "local") {
-      if (connection.state === "connected") return { branch: "", agents: connection.agents, files: [], skipped: [], committed: false, pushed: false, url: null, local: true, message: w("connected") };
+      // Local files are cheap and never leave the machine: running again is what brings an earlier connection the
+      // files a newer Tomrade writes (its rule section in CLAUDE.md / AGENTS.md, a new agent's settings).
       return this.connectLocally(projectId, repoId, placement.checkout, input, chosen);
     }
     // A connection this machine alone holds does not stand in for the team's.
@@ -215,12 +218,14 @@ export class RepoConnect {
   /**
    * The chosen agents' files, written into the checkout and kept out of git
    * through `.git/info/exclude`: a tracked file is never changed (its agent
-   * is skipped and says so), and the team's CLAUDE.md / AGENTS.md stay as
-   * they are — the agents get the rules from the MCP server.
+   * is skipped and says so), and the team's tracked CLAUDE.md / AGENTS.md stay
+   * as they are — an untracked one, or none, carries the section so the agent
+   * reads the rules without the team seeing them.
    */
   private async connectLocally(projectId: string, repoId: string, checkout: string, input: ConnectInput, chosen: ConnectAgent[]): Promise<ConnectResult> {
-    const listed = await this.git(["ls-files", "-z", "--", ...CONNECT_FILES], { cwd: checkout, ok: true });
-    const tracked = new Set(listed.code === 0 ? listed.stdout.split("\0").filter(Boolean) : CONNECT_FILES);
+    const list = connectFiles(this.connectors);
+    const listed = await this.git(["ls-files", "-z", "--", ...list], { cwd: checkout, ok: true });
+    const tracked = new Set(listed.code === 0 ? listed.stdout.split("\0").filter(Boolean) : list);
     const { files, skipped } = writeConnectFiles(checkout, input, chosen, { tracked }, this.connectors);
     // Only what git does not ignore already; the exclude file is this clone's own, never committed.
     const exposed: string[] = [];

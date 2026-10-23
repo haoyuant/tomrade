@@ -1408,7 +1408,7 @@ export const ru: PartialMessages = {
     connectionHolder_packaged: "установленный Tomrade {{version}} (pid {{pid}})",
     connectionHolder_dev: "Tomrade для разработки {{version}} (pid {{pid}})",
     connectionHolderUnknown: "другая программа",
-    connectionLocalFiles: "Только этот компьютер: файлы выбранных агентов записываются в вашу рабочую копию и исключаются из Git через .git/info/exclude — ничего не нужно отправлять, сливать или подтягивать. Хуки Claude Code и его одобрение сервера записываются в .claude/settings.local.json; CLAUDE.md / AGENTS.md и файлы, которые репозиторий уже отслеживает, не затрагиваются.",
+    connectionLocalFiles: "Только этот компьютер: файлы выбранных агентов записываются в вашу рабочую копию и исключаются из Git через .git/info/exclude — ничего не нужно отправлять, сливать или подтягивать. Хуки Claude Code и его одобрение сервера записываются в .claude/settings.local.json; CLAUDE.md / AGENTS.md получают раздел с правилами, если репозиторий их ещё не отслеживает, а отслеживаемые файлы не меняются никогда.",
     connectionFiles: "Для команды: ветка tomrade/connect / pull request с .mcp.json, хуками Claude в .claude/settings.json, хуками WorkBuddy в .codebuddy/settings.json, расширением Pi в .pi/extensions/tomrade.ts, opencode.json и .opencode/plugins/tomrade.js для OpenCode, разделом Tomrade в CLAUDE.md / AGENTS.md, хуками и конфигурацией Codex, .cursor/mcp.json и хуками Cursor в .cursor/hooks.json вместе с .cursor/hooks/tomrade и .cursor/hooks/tomrade.ps1, а также .gemini/settings.json.",
     connectionWorking: "Подключение…",
     connectionActionLocal: "Подключить только на этом компьютере",

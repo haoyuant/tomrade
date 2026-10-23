@@ -23,6 +23,8 @@ export function opencodePlugin(eventUrl: string): string {
 const eventUrl = ${JSON.stringify(eventUrl)};
 const names = { bash: "Bash", read: "Read", edit: "Edit", write: "Write", grep: "Grep", glob: "Glob", list: "LS" };
 const loaded = Symbol.for("tomrade.opencode");
+const textOf = (parts) => Array.isArray(parts) ? parts.filter((part) => part?.type === "text").map((part) => part.text).join("\\n") : typeof parts === "string" ? parts : "";
+const promptOf = (p) => textOf(p?.parts) || textOf(p?.info?.parts) || textOf(p?.info?.content) || (typeof p?.info?.text === "string" ? p.info.text : "");
 
 export const TomradePlugin = async ({ directory }) => {
   if (globalThis[loaded]) return {};
@@ -37,10 +39,12 @@ export const TomradePlugin = async ({ directory }) => {
     event: async ({ event }) => {
       const p = event.properties ?? {};
       const session_id = p.sessionID ?? p.info?.id;
-      if (event.type === "session.created") post({ hook_event_name: "SessionStart", session_id });
+      if (event.type === "session.created") post({ hook_event_name: "SessionStart", session_id, ...(p.info?.title ? { title: p.info.title } : {}) });
+      else if (event.type === "session.updated" && p.info?.title) post({ hook_event_name: "TitleUpdate", session_id, title: p.info.title });
       else if (event.type === "message.updated" && p.info?.role === "user" && !prompts.has(p.info.id)) {
         prompts.add(p.info.id);
-        post({ hook_event_name: "UserPromptSubmit", session_id });
+        const prompt = promptOf(p);
+        post({ hook_event_name: "UserPromptSubmit", session_id, ...(prompt ? { prompt } : {}) });
       } else if (event.type === "session.idle") post({ hook_event_name: "Stop", session_id });
       else if (event.type === "session.error") post({ hook_event_name: "StopFailure", session_id, error_message: p.error?.data?.message ?? p.error?.name });
       else if (event.type === "session.deleted") post({ hook_event_name: "SessionEnd", session_id, reason: "exit" });
