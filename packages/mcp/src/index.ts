@@ -66,6 +66,8 @@ export interface PortClash {
   port: number;
   /** The Tomrade holding it, when it answered; null for anything else. */
   heldBy: InstanceBadge | null;
+  /** Windows keeps it in a reserved range (Hyper-V, WSL, Docker): nothing holds it, nothing can listen there. */
+  reserved?: true;
 }
 
 interface SyncSummaryLike {
@@ -93,7 +95,8 @@ async function askHolder(host: string, port: number): Promise<InstanceBadge | nu
 
 const listen = (app: express.Express, port: number, host: string) =>
   new Promise<HttpServer>((resolve, reject) => {
-    const srv = app.listen(port, host, () => resolve(srv));
+    // Express 5 (the SDK's app) hands a listen error to this callback instead of throwing it.
+    const srv = app.listen(port, host, (error?: Error) => (error ? reject(error) : resolve(srv)));
     srv.on("error", reject);
   });
 
@@ -319,6 +322,7 @@ export class Mcp extends Service implements McpReader {
     });
 
     // A port another process holds shows as EADDRINUSE, or as a server that "listens" with no address.
+    let reserved = false;
     const bind = async (port: number): Promise<{ server: HttpServer; port: number } | null> => {
       try {
         const server = await listen(app, port, this.config.host);
@@ -327,7 +331,13 @@ export class Mcp extends Service implements McpReader {
         server.close();
         return null;
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "EADDRINUSE") return null;
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === "EADDRINUSE") return null;
+        // Windows refuses a port inside an excluded range (Hyper-V, WSL, Docker) with EACCES.
+        if (code === "EACCES") {
+          reserved = true;
+          return null;
+        }
         throw error;
       }
     };
@@ -335,7 +345,7 @@ export class Mcp extends Service implements McpReader {
     if (!bound && this.config.port !== 0) {
       // Another Tomrade (the installed app beside a checkout) holds it. Failing here would take every
       // engine that waits on MCP down with it; a free port keeps this instance whole, and the clash is shown.
-      this.clash = { port: this.config.port, heldBy: await askHolder(this.config.host, this.config.port) };
+      this.clash = reserved ? { port: this.config.port, heldBy: null, reserved: true } : { port: this.config.port, heldBy: await askHolder(this.config.host, this.config.port) };
       bound = await bind(0);
     }
     if (!bound) throw new Error(`MCP could not bind ${this.config.host}:${this.config.port}`);
@@ -356,7 +366,7 @@ export class Mcp extends Service implements McpReader {
           const port = new URL(this.url).port;
           return w("portClash", { port, clashPort: this.clash.port, holder: this.holderText(w) });
         },
-        title: () => this.words()("portClashTitle")
+        title: () => this.words()(this.clash?.reserved ? "portReservedTitle" : "portClashTitle")
       });
     });
     // After the project's rules, which must lead (a client may keep only the start), before everything else.
@@ -381,6 +391,7 @@ export class Mcp extends Service implements McpReader {
 
   /** Who holds the clashed port, in words. */
   holderText(w: McpWords = this.words()): string {
+    if (this.clash?.reserved) return w("holderReserved");
     const held = this.clash?.heldBy;
     if (!held) return w("holderUnknown");
     return w("holder", { kind: w(held.kind === "packaged" ? "holderPackaged" : "holderDev"), version: held.version, pid: held.pid });
@@ -389,7 +400,11 @@ export class Mcp extends Service implements McpReader {
   /** The first thing a client reads: which Tomrade, and which data, it is talking to. */
   private introduction(): string {
     const { kind, version, dataDir } = this.config.instance;
-    const clash = this.clash ? ` Port ${this.clash.port} is held by ${this.holderText(MCP_WORDS("en"))}, which has its own data.` : "";
+    const clash = !this.clash
+      ? ""
+      : this.clash.reserved
+        ? ` Port ${this.clash.port} is reserved by Windows, so this instance listens on another.`
+        : ` Port ${this.clash.port} is held by ${this.holderText(MCP_WORDS("en"))}, which has its own data.`;
     return `This is Tomrade ${kind === "packaged" ? "(installed app)" : "(development build)"} ${version}, pid ${process.pid}${dataDir ? `, data in ${dataDir}` : ""}.${clash} Another Tomrade on this machine keeps separate data; call whoami when unsure which one you reach or whether your writes have synced.`;
   }
 
