@@ -108,10 +108,19 @@ const run = async () => {
   check("four headline numbers lead the pane", kpis.length === 4 && kpis[0][1] === "$1.75" && kpis[2][1] === "3", kpis);
   check("a token bar and a spend bar per day of the range", (await $(`document.querySelectorAll('[data-testid="usage-pane"] .usage-plot .usage-col').length`)) === 14, await $(`document.querySelectorAll('[data-testid="usage-pane"] .usage-plot .usage-col').length`));
   check("the engine's share is drawn on both measures", (await $(`document.querySelectorAll('[data-testid="usage-pane"] .usage-share-seg').length`)) === 2, await $(`document.querySelectorAll('[data-testid="usage-pane"] .usage-share-seg').length`));
+  const swatches = await $(`[...document.querySelectorAll('[data-testid="usage-pane"] .usage-chart-card .usage-legend .usage-swatch')].map((s) => getComputedStyle(s).backgroundColor)`);
+  check("the four token swatches name four different colours", new Set(swatches).size === 4, swatches);
+  const shareLefts = await $(`[...document.querySelectorAll('[data-testid="usage-pane"] .usage-share')].map((b) => Math.round(b.getBoundingClientRect().left))`);
+  check("both share bars start on the same line", shareLefts.length === 2 && shareLefts[0] === shareLefts[1], shareLefts);
   // 30 days is one click away, and every zero day is still drawn.
   await press(`document.querySelector('[data-days="30"]')`);
   await sleep(900);
   check("the range switch reshapes the charts", (await $(`document.querySelectorAll('[data-testid="usage-pane"] .usage-plot .usage-col').length`)) === 60, await $(`document.querySelectorAll('[data-testid="usage-pane"] .usage-plot .usage-col').length`));
+  const monthLabels = await $(`[...document.querySelectorAll('[data-testid="usage-pane"] .usage-chart-card .usage-labels span')].map((s) => s.textContent).filter((s) => s)`);
+  check("month labels stay whole dates, not clipped initials", monthLabels.every((l) => l.length >= 4), monthLabels);
+  await $(`document.querySelector('[data-testid="usage-pane"]')?.scrollIntoView({ block: 'start' });true`);
+  await sleep(400);
+  await shot("usage-05-month");
   await press(`document.querySelector('[data-days="7"]')`);
   await sleep(700);
   await $(`document.querySelector('[data-testid="usage-pane"] .usage-shares')?.scrollIntoView({ block: 'center' });true`);

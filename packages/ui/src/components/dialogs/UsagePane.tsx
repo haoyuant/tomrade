@@ -14,7 +14,10 @@ const RANGES = [
   { days: 30, label: "usage.rangeMonth" as MessageKey }
 ];
 
-const CHART_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)", "var(--chart-6)"];
+const CHART_COLORS = [
+  "var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)",
+  "var(--chart-6)", "var(--chart-7)", "var(--chart-8)", "var(--chart-9)", "var(--chart-10)"
+];
 
 const number = (n: number): string => n.toLocaleString();
 
@@ -32,7 +35,11 @@ const dateLabel = (at: number, locale: string): string => new Date(at).toLocaleD
 
 const percent = (rate: number | null): string => (rate === null ? "—" : `${Math.round(rate * 100)}%`);
 
-const showDayLabel = (index: number, count: number): boolean => count <= 7 || index === 0 || index === count - 1 || index % 7 === 0;
+const showDayLabel = (index: number, count: number): boolean => {
+  if (count <= 7) return true;
+  // Longer ranges name every seventh day; the label is allowed to overflow its column so it stays a date.
+  return index === 0 || index % 7 === 0;
+};
 
 function Kpi({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
@@ -44,11 +51,11 @@ function Kpi({ label, value, sub }: { label: string; value: string; sub: string 
   );
 }
 
-function ChartHead({ title, note }: { title: string; note?: string }) {
+function ChartHead({ title, peak }: { title: string; peak?: string }) {
   return (
     <div className="usage-chart-head">
       <span className="usage-chart-title">{title}</span>
-      {note && <span className="usage-chart-note">{note}</span>}
+      {peak && <span className="usage-peak">{peak}</span>}
     </div>
   );
 }
@@ -57,9 +64,10 @@ function ChartHead({ title, note }: { title: string; note?: string }) {
 function TokenChart({ days }: { days: UsageDay[] }) {
   const { t, locale } = useI18n();
   const max = Math.max(1, ...days.map((d) => d.inputTokens + d.outputTokens));
+  const hasRuns = days.some((d) => d.inputTokens + d.outputTokens > 0);
   return (
-    <figure className="usage-figure" role="img" aria-label={t("usage.chartTokens")}>
-      {days.some((d) => d.inputTokens + d.outputTokens > 0) && <div className="usage-scale">{t("usage.chartPeak", { value: compact(max) })}</div>}
+    <section className="usage-chart-card" aria-label={t("usage.chartTokens")}>
+      <ChartHead title={t("usage.chartTokens")} peak={hasRuns ? t("usage.chartPeak", { value: compact(max) }) : undefined} />
       <div className={days.length === 1 ? "usage-plot is-single" : "usage-plot"}>
         {days.map((d) => {
           const total = d.inputTokens + d.outputTokens;
@@ -87,13 +95,16 @@ function TokenChart({ days }: { days: UsageDay[] }) {
           <span key={d.date}>{showDayLabel(i, days.length) ? dateLabel(d.at, locale) : ""}</span>
         ))}
       </div>
-      <div className="usage-legend">
-        <span className="usage-legend-item"><i className="usage-swatch tok-new" />{t("usage.legendNew")}</span>
-        <span className="usage-legend-item"><i className="usage-swatch tok-read" />{t("usage.legendCacheRead")}</span>
-        <span className="usage-legend-item"><i className="usage-swatch tok-write" />{t("usage.legendCacheWrite")}</span>
-        <span className="usage-legend-item"><i className="usage-swatch tok-out" />{t("usage.legendOutput")}</span>
+      <div className="usage-chart-foot">
+        <div className="usage-legend">
+          <span className="usage-legend-item"><i className="usage-swatch tok-new" />{t("usage.legendNew")}</span>
+          <span className="usage-legend-item"><i className="usage-swatch tok-read" />{t("usage.legendCacheRead")}</span>
+          <span className="usage-legend-item"><i className="usage-swatch tok-write" />{t("usage.legendCacheWrite")}</span>
+          <span className="usage-legend-item"><i className="usage-swatch tok-out" />{t("usage.legendOutput")}</span>
+        </div>
+        <p className="usage-chart-note">{t("usage.chartTokensNote")}</p>
       </div>
-    </figure>
+    </section>
   );
 }
 
@@ -103,31 +114,38 @@ function SpendChart({ days }: { days: UsageDay[] }) {
   const max = Math.max(1e-9, ...days.map((d) => d.costUsd ?? 0));
   const unknown = days.reduce((sum, d) => sum + d.costUnknownRuns, 0);
   const reported = days.some((d) => d.costKnownRuns > 0);
-  if (!reported && !unknown) return <p className="meta-txt">{t("usage.chartSpendNone")}</p>;
   return (
-    <figure className="usage-figure" role="img" aria-label={t("usage.chartSpend")}>
-      {reported && <div className="usage-scale">{t("usage.chartPeak", { value: usd(max) })}</div>}
-      <div className={days.length === 1 ? "usage-plot is-single" : "usage-plot"}>
-        {days.map((d) => {
-          const cost = d.costUsd ?? 0;
-          const title = d.costUsd === null
-            ? t("usage.chartSpendUnknownTip", { n: d.costUnknownRuns })
-            : `${dateLabel(d.at, locale)} · ${usd(cost)}${d.costUnknownRuns > 0 ? ` · ${t("usage.chartSpendUnknownTip", { n: d.costUnknownRuns })}` : ""}`;
-          return (
-            <div key={d.date} className={`usage-col${cost > 0 ? "" : " is-empty"}`} data-date={d.date} title={title}>
-              {cost > 0 && <span className="usage-seg spend" style={{ height: `${(cost / max) * 100}%` }} />}
-              {d.costUnknownRuns > 0 && <i className="usage-flag" />}
-            </div>
-          );
-        })}
-      </div>
-      <div className="usage-labels" style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}>
-        {days.map((d, i) => (
-          <span key={d.date}>{showDayLabel(i, days.length) ? dateLabel(d.at, locale) : ""}</span>
-        ))}
-      </div>
-      <p className="usage-chart-note">{unknown > 0 ? t("usage.chartSpendNote", { unknown }) : t("usage.chartSpendNoteClean")}</p>
-    </figure>
+    <section className="usage-chart-card" aria-label={t("usage.chartSpend")}>
+      <ChartHead title={t("usage.chartSpend")} peak={reported ? t("usage.chartPeak", { value: usd(max) }) : undefined} />
+      {reported || unknown ? (
+        <>
+          <div className={days.length === 1 ? "usage-plot is-single" : "usage-plot"}>
+            {days.map((d) => {
+              const cost = d.costUsd ?? 0;
+              const title = d.costUsd === null
+                ? t("usage.chartSpendUnknownTip", { n: d.costUnknownRuns })
+                : `${dateLabel(d.at, locale)} · ${usd(cost)}${d.costUnknownRuns > 0 ? ` · ${t("usage.chartSpendUnknownTip", { n: d.costUnknownRuns })}` : ""}`;
+              return (
+                <div key={d.date} className={`usage-col${cost > 0 ? "" : " is-empty"}`} data-date={d.date} title={title}>
+                  {cost > 0 && <span className="usage-seg spend" style={{ height: `${(cost / max) * 100}%` }} />}
+                  {d.costUnknownRuns > 0 && <i className="usage-flag" />}
+                </div>
+              );
+            })}
+          </div>
+          <div className="usage-labels" style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}>
+            {days.map((d, i) => (
+              <span key={d.date}>{showDayLabel(i, days.length) ? dateLabel(d.at, locale) : ""}</span>
+            ))}
+          </div>
+          <div className="usage-chart-foot">
+            <p className="usage-chart-note">{unknown > 0 ? t("usage.chartSpendNote", { unknown }) : t("usage.chartSpendNoteClean")}</p>
+          </div>
+        </>
+      ) : (
+        <p className="usage-chart-note">{t("usage.chartSpendNone")}</p>
+      )}
+    </section>
   );
 }
 
@@ -138,28 +156,35 @@ function EngineShares({ engines }: { engines: EngineUsage[] }) {
   const tokenTotal = engines.reduce((sum, e) => sum + e.inputTokens + e.outputTokens, 0);
   const spendTotal = engines.reduce((sum, e) => sum + (e.costUsd ?? 0), 0);
   const share = (value: number, total: number) => (total > 0 ? (value / total) * 100 : 0);
-  const bar = (label: string, value: (e: EngineUsage) => number, total: number) => (
-    <div className="usage-share-row">
-      <span className="usage-share-label">{label}</span>
-      {total > 0 ? (
-        <div className="usage-share">
-          {engines.map((e, i) => {
-            const pct = share(value(e), total);
-            return pct > 0 ? <span key={e.engine} className="usage-share-seg" style={{ width: `${pct}%`, background: CHART_COLORS[i % CHART_COLORS.length] }} title={`${e.title} · ${Math.round(pct)}%`} /> : null;
-          })}
-        </div>
-      ) : (
-        <p className="meta-txt">{t("usage.chartShareNone")}</p>
-      )}
-    </div>
+  const color = (index: number) => CHART_COLORS[index % CHART_COLORS.length];
+  const bar = (value: (e: EngineUsage) => number, total: number) => (
+    total > 0 ? (
+      <div className="usage-share">
+        {engines.map((e, i) => {
+          const pct = share(value(e), total);
+          return pct > 0 ? <span key={e.engine} className="usage-share-seg" style={{ width: `${pct}%`, background: color(i) }} title={`${e.title} · ${Math.round(pct)}%`} /> : null;
+        })}
+      </div>
+    ) : <p className="meta-txt">{t("usage.chartShareNone")}</p>
   );
   return (
     <div className="usage-shares">
-      {bar(t("usage.chartShareTokens"), (e) => e.inputTokens + e.outputTokens, tokenTotal)}
-      {bar(t("usage.chartShareSpend"), (e) => e.costUsd ?? 0, spendTotal)}
-      <div className="usage-legend">
+      <span className="usage-share-label">{t("usage.chartShareTokens")}</span>
+      {bar((e) => e.inputTokens + e.outputTokens, tokenTotal)}
+      <span className="usage-share-label">{t("usage.chartShareSpend")}</span>
+      {bar((e) => e.costUsd ?? 0, spendTotal)}
+      <div className="usage-engine-legend">
         {engines.map((e, i) => (
-          <span key={e.engine} className="usage-legend-item"><i className="usage-swatch" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />{e.title}</span>
+          <span key={e.engine} className="usage-engine-key">
+            <i className="usage-swatch" style={{ background: color(i) }} />
+            <span className="usage-engine-name" title={e.title}>{e.title}</span>
+            <span className="usage-engine-values">
+              {t("usage.engineShareValues", {
+                token: Math.round(share(e.inputTokens + e.outputTokens, tokenTotal)),
+                spend: Math.round(share(e.costUsd ?? 0, spendTotal))
+              })}
+            </span>
+          </span>
         ))}
       </div>
     </div>
@@ -231,9 +256,10 @@ const PURPOSES: Record<string, MessageKey> = {
 function WorkerCallsChart({ days }: { days: WorkerUsageDay[] }) {
   const { t, locale } = useI18n();
   const max = Math.max(1, ...days.map((d) => d.calls));
+  const hasCalls = days.some((d) => d.calls > 0);
   return (
-    <figure className="usage-figure" role="img" aria-label={t("usage.workerChartCalls")}>
-      {days.some((d) => d.calls > 0) && <div className="usage-scale">{t("usage.chartPeak", { value: max })}</div>}
+    <section className="usage-chart-card" aria-label={t("usage.workerChartCalls")}>
+      <ChartHead title={t("usage.workerChartCalls")} peak={hasCalls ? t("usage.chartPeak", { value: max }) : undefined} />
       <div className={days.length === 1 ? "usage-plot is-single" : "usage-plot"}>
         {days.map((d) => {
           const ok = d.calls - d.failed;
@@ -250,27 +276,39 @@ function WorkerCallsChart({ days }: { days: WorkerUsageDay[] }) {
           <span key={d.date}>{showDayLabel(i, days.length) ? dateLabel(d.at, locale) : ""}</span>
         ))}
       </div>
-    </figure>
+      <div className="usage-chart-foot">
+        <p className="usage-chart-note">{t("usage.workerChartCallsNote")}</p>
+      </div>
+    </section>
   );
 }
 
 function WorkerPurposes({ rows }: { rows: WorkerPurposeUsage[] }) {
   const { t } = useI18n();
   const max = Math.max(1, ...rows.map((r) => r.calls));
-  if (!rows.length) return <p className="meta-txt">{t("usage.workerNone")}</p>;
   return (
-    <div className="usage-purposes">
-      {rows.map((r) => (
-        <div key={r.purpose ?? "other"} className="usage-purpose-row" data-purpose={r.purpose ?? ""}>
-          <span className="usage-purpose-name">{r.purpose && PURPOSES[r.purpose] ? t(PURPOSES[r.purpose]) : t("usage.purposeOther")}</span>
-          <div className="usage-purpose-track">
-            <span className="usage-purpose-fill" style={{ width: `${((r.calls - r.failed) / max) * 100}%` }} />
-            <span className="usage-purpose-fail" style={{ width: `${(r.failed / max) * 100}%` }} />
-          </div>
-          <span className="usage-purpose-count num">{number(r.calls)}</span>
+    <section className="usage-chart-card" aria-label={t("usage.workerChartPurpose")}>
+      <ChartHead title={t("usage.workerChartPurpose")} />
+      {rows.length ? (
+        <div className="usage-purposes">
+          {rows.map((r) => (
+            <div key={r.purpose ?? "other"} className="usage-purpose-row" data-purpose={r.purpose ?? ""}>
+              <span className="usage-purpose-name">{r.purpose && PURPOSES[r.purpose] ? t(PURPOSES[r.purpose]) : t("usage.purposeOther")}</span>
+              <div className="usage-purpose-track">
+                <span className="usage-purpose-fill" style={{ width: `${((r.calls - r.failed) / max) * 100}%` }} />
+                <span className="usage-purpose-fail" style={{ width: `${(r.failed / max) * 100}%` }} />
+              </div>
+              <span className="usage-purpose-count num">{number(r.calls)}</span>
+            </div>
+          ))}
         </div>
-      ))}
-    </div>
+      ) : (
+        <p className="meta-txt">{t("usage.workerNone")}</p>
+      )}
+      <div className="usage-chart-foot">
+        <p className="usage-chart-note">{t("usage.workerChartPurposeNote")}</p>
+      </div>
+    </section>
   );
 }
 
@@ -331,21 +369,15 @@ function WorkerSection({ days }: { days: number }) {
   return (
     <>
       <SectionHead title={t("usage.workerTitle")}>{t("usage.workerLede")}</SectionHead>
-      <div className="panel stack-3" data-testid="worker-usage">
+      <div className="panel usage-dashboard" data-testid="worker-usage">
         {worker.isLoading && <p className="meta-txt">{t("usage.loading")}</p>}
         {worker.isError && <p className="meta-txt">{t("usage.unavailable")}</p>}
         {range && (range.totals.calls === 0 ? <p className="meta-txt">{t("usage.workerNone")}</p> : (
           <>
             <WorkerTotals totals={range.totals} />
             <div className="usage-chart-grid">
-              <div>
-                <ChartHead title={t("usage.workerChartCalls")} note={t("usage.workerChartCallsNote")} />
-                <WorkerCallsChart days={range.days} />
-              </div>
-              <div>
-                <ChartHead title={t("usage.workerChartPurpose")} note={t("usage.workerChartPurposeNote")} />
-                <WorkerPurposes rows={range.purposes} />
-              </div>
+              <WorkerCallsChart days={range.days} />
+              <WorkerPurposes rows={range.purposes} />
             </div>
             <details className="usage-more" open>
               <summary>{t("usage.workerTable")}</summary>
@@ -381,7 +413,7 @@ export function UsagePane() {
       >
         {t("usage.lede")}
       </SectionHead>
-      <div className="panel stack-3" data-testid="usage-pane">
+      <div className="panel usage-dashboard" data-testid="usage-pane">
         {usage.isLoading && <p className="meta-txt">{t("usage.loading")}</p>}
         {usage.isError && <p className="meta-txt">{t("usage.unavailable")}</p>}
         {range && totals && (totals.runs === 0 ? <p className="meta-txt">{t("usage.none")}</p> : (
@@ -409,25 +441,21 @@ export function UsagePane() {
               />
             </div>
             <div className="usage-chart-grid">
-              <div>
-                <ChartHead title={t("usage.chartTokens")} note={t("usage.chartTokensNote")} />
-                <TokenChart days={range.days} />
-              </div>
-              <div>
-                <ChartHead title={t("usage.chartSpend")} />
-                <SpendChart days={range.days} />
-              </div>
+              <TokenChart days={range.days} />
+              <SpendChart days={range.days} />
             </div>
-            <div>
-              <ChartHead title={t("usage.engineTable")} />
+            <section className="usage-section">
+              <div className="usage-section-head"><span className="usage-section-title">{t("usage.engineTable")}</span></div>
               <EngineShares engines={range.engines} />
-            </div>
+            </section>
             <details className="usage-more" open>
               <summary>{t("usage.allNumbers")}</summary>
               <UsageTable rows={range.engines} totals={totals} />
             </details>
-            <p className="meta-txt">{t("usage.notCounted")}</p>
-            <p className="meta-txt">{t("usage.ticketNote")}</p>
+            <div className="usage-notes">
+              <p className="meta-txt">{t("usage.notCounted")}</p>
+              <p className="meta-txt">{t("usage.ticketNote")}</p>
+            </div>
           </>
         ))}
       </div>
