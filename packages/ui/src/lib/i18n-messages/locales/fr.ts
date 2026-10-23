@@ -1266,7 +1266,7 @@ export const fr: PartialMessages = {
     title: "Où Tomrade doit-il conserver vos projets ?",
     lede: "Tomrade conserve chaque projet dans un dossier visible — du texte que vous pouvez lire, sauvegarder et commiter. Choisissez où placer ces dossiers.",
     folderLabel: "Dossier des projets",
-    folderNote: "Pas dans Documents : macOS peut confier ce dossier à iCloud et évincer des fichiers.",
+    folderNote: "Pas dans un dossier synchronisé par un lecteur cloud (iCloud Drive, OneDrive) : il peut décharger des fichiers et laisser des espaces réservés.",
     bulletProjects: "Chaque projet a son propre dossier sous {{path}}, ou ailleurs si vous le choisissez plus tard",
     bulletCache: "La base de données utilisée par Tomrade n’est qu’un cache ; elle peut toujours être reconstruite à partir des dossiers",
     bulletMove: "Vous pourrez le déplacer plus tard dans les Paramètres",

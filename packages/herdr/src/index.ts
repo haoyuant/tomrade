@@ -853,7 +853,7 @@ export class Herdr extends Service {
       run: async (): Promise<CheckResult> => {
         const w = HERDR_WORDS(contract(ctx, "doctor")?.locale());
         const version = await this.installed();
-        if (!version) return { state: "skip", line: w("notInstalled", { install: HERDR_INSTALL }) };
+        if (!version) return { state: "skip", line: w("notInstalled") };
         // Only a live terminal needs these; everything else herdr does for Tomrade still works.
         if (compareVersions(version, BRIDGE_MIN_VERSION) < 0) return { state: "warn", line: w("tooOld", { version, need: BRIDGE_MIN_VERSION, fix: this.upgradeCommand() }), facts: { herdr: version } };
         const server = await this.server();

@@ -67,11 +67,11 @@ describe("a terminal of herdr", () => {
     expect(failed).toEqual({ script, launched: false, herdrMissing: "notRunning" });
 
     const app = process.platform === "darwin" ? "Terminal" : "the system terminal";
-    expect(herdrFallbackNote("en", notRunning, "brew install herdr")).toBe(`herdr is not running, so this opened in ${app} instead. Start herdr by running \`herdr\` in a terminal.`);
-    expect(herdrFallbackNote("en", { script, launched: true, herdrMissing: "notInstalled" }, "brew install herdr")).toContain("brew install herdr");
-    expect(herdrFallbackNote("en", failed, "brew install herdr")).toContain("run the command yourself");
-    expect(herdrFallbackNote("zh", notRunning, "brew install herdr")).toContain("herdr 没有在运行");
-    expect(herdrFallbackNote("en", { script, launched: true, paneId: "w1:p1" }, "brew install herdr")).toBeNull();
+    expect(herdrFallbackNote("en", notRunning)).toBe(`herdr is not running, so this opened in ${app} instead. Start herdr by running \`herdr\` in a terminal.`);
+    expect(herdrFallbackNote("en", { script, launched: true, herdrMissing: "notInstalled" })).toContain("install guide");
+    expect(herdrFallbackNote("en", failed)).toContain("run the command yourself");
+    expect(herdrFallbackNote("zh", notRunning)).toContain("herdr 没有在运行");
+    expect(herdrFallbackNote("en", { script, launched: true, paneId: "w1:p1" })).toBeNull();
     opened.mockRestore();
     fs.rmSync(dir, { recursive: true, force: true });
   });
@@ -83,11 +83,11 @@ describe("a terminal of herdr", () => {
     const herdr: HerdrTerminal = { launch: async () => ({ paneId: "w1:p1", startedServer: starts.shift() }), installed: async () => "0.9.5" };
     const first = await launchTerminal({ cwd: "/work", command: "claude", dir }, "herdr", herdr);
     expect(first).toEqual({ script: path.join(dir, "run.command"), launched: true, paneId: "w1:p1", herdrStarted: "first" });
-    expect(herdrFallbackNote("en", first, "brew install herdr")).toBe("herdr is running in the background now. Run `herdr` in a terminal to see its panes.");
-    expect(herdrFallbackNote("zh", first, "brew install herdr")).toContain("herdr 已在后台运行");
+    expect(herdrFallbackNote("en", first)).toBe("herdr is running in the background now. Run `herdr` in a terminal to see its panes.");
+    expect(herdrFallbackNote("zh", first)).toContain("herdr 已在后台运行");
     const again = await launchTerminal({ cwd: "/work", command: "claude", dir }, "herdr", herdr);
     expect(again.herdrStarted).toBe("again");
-    expect(herdrFallbackNote("en", again, "brew install herdr")).toBeNull();
+    expect(herdrFallbackNote("en", again)).toBeNull();
     expect(opened).not.toHaveBeenCalled();
     opened.mockRestore();
     fs.rmSync(dir, { recursive: true, force: true });
@@ -266,10 +266,10 @@ describe("the system terminal on Windows", () => {
     const launched = await launchTerminal({ cwd: "/work/tom-9", command: "claude", dir }, SYSTEM_TERMINAL);
     expect(launched).toEqual({ script, launched: false, gitBashMissing: true });
     expect(opened).toHaveBeenCalledWith(SYSTEM_TERMINAL, script, "/work/tom-9");
-    expect(herdrFallbackNote("en", launched, "brew install herdr")).toContain("Git for Windows");
-    expect(herdrFallbackNote("zh", launched, "brew install herdr")).toContain("Git for Windows");
+    expect(herdrFallbackNote("en", launched)).toContain("Git for Windows");
+    expect(herdrFallbackNote("zh", launched)).toContain("Git for Windows");
     // herdr missing too: the herdr note, then why nothing opened
-    const both = herdrFallbackNote("en", { ...launched, herdrMissing: "notInstalled" }, "brew install herdr")!;
+    const both = herdrFallbackNote("en", { ...launched, herdrMissing: "notInstalled" })!;
     expect(both).toContain("herdr is not installed");
     expect(both).toContain("needs Git Bash");
     expect(both).not.toContain("run the command yourself");

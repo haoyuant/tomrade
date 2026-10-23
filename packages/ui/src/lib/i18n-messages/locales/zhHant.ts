@@ -1266,7 +1266,7 @@ export const zhHant: PartialMessages = {
     title: "Tomrade 應該把你的專案放在哪裡？",
     lede: "Tomrade 把每個專案儲存為一個看得見的資料夾——可以閱讀、備份、commit 的文字。選擇這些資料夾的位置。",
     folderLabel: "專案資料夾",
-    folderNote: "不要放在「文件」裡：macOS 可能把它交給 iCloud 並移除本機檔案。",
+    folderNote: "不要放在雲端硬碟（iCloud Drive、OneDrive）同步的資料夾裡：它可能把檔案卸載，只留下佔位符。",
     bulletProjects: "每個專案在 {{path}} 下有自己的資料夾，之後也可以放到別處",
     bulletCache: "Tomrade 工作用的資料庫只是快取，隨時可以從資料夾重建",
     bulletMove: "之後可以在設定裡移動它",

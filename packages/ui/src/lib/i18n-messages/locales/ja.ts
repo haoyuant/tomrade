@@ -1266,7 +1266,7 @@ export const ja: PartialMessages = {
     title: "Tomrade はプロジェクトをどこに保存しますか？",
     lede: "Tomrade はすべてのプロジェクトを目に見えるフォルダーとして保存します。読めて、バックアップでき、コミットできるテキストです。フォルダーの保存場所を選んでください。",
     folderLabel: "プロジェクトフォルダー",
-    folderNote: "書類（Documents）フォルダー内は避けてください。macOS がそのフォルダーを iCloud に移し、ファイルを削除することがあります。",
+    folderNote: "クラウドドライブ（iCloud Drive、OneDrive）が同期するフォルダーは避けてください。ファイルが退避され、プレースホルダーだけが残ることがあります。",
     bulletProjects: "各プロジェクトは {{path}} の下に専用フォルダーを持ちます。後で別の場所も選べます",
     bulletCache: "Tomrade が使うデータベースはキャッシュにすぎず、いつでもフォルダーから再構築できます",
     bulletMove: "後から設定で移動できます",

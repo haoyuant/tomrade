@@ -357,7 +357,7 @@ it("runs a ticket in a tab of its project's herdr workspace, follows the pane's 
   ctx.settings.set({ ...ctx.settings.get(), codeLink: { ...ctx.settings.get().codeLink, terminal: "herdr" } });
   const alone = ticket("Alone");
   const without = await codeLink.start(project.id, alone.id, { mode: "terminal" });
-  expect(without).toMatchObject({ ok: true, launched: true, pane: null, warnings: [expect.stringContaining("brew install herdr")] });
+  expect(without).toMatchObject({ ok: true, launched: true, pane: null, warnings: [expect.stringContaining("install guide")] });
   expect(without.ok && without.command).toMatch(/^"claude" /);
   expect(opened).toHaveBeenLastCalledWith("Terminal", path.join(codeLink.sessionDir(without.ok ? without.sessionId : ""), "run.command"), expect.any(String));
   // the worktree's own terminal too

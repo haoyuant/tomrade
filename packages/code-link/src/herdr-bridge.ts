@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
-import { HERDR_INSTALL, herdrInstall, type HerdrInstall, type HerdrPaneEvent, type HerdrPaneInfo } from "@tomradex/herdr";
+import { herdrInstall, type HerdrInstall, type HerdrPaneEvent, type HerdrPaneInfo } from "@tomradex/herdr";
 import { named, SESSION_STATES, STATUSES } from "./contrib.js";
 import type { Sessions } from "./sessions.js";
 import type { CodeLinkStore, SessionView } from "./store.js";
@@ -79,7 +79,7 @@ export class HerdrBridge {
 
   /** What to tell the person after a launch went elsewhere, or herdr was started for it; null otherwise. */
   fallbackNote(locale: unknown, launch: LaunchResult): string | null {
-    return herdrFallbackNote(locale, launch, HERDR_INSTALL);
+    return herdrFallbackNote(locale, launch);
   }
 
   /** Whether a pane still runs; null when herdr cannot tell, or is not there. */

@@ -1266,7 +1266,7 @@ export const es: PartialMessages = {
     title: "¿Dónde debería guardar Tomrade tus proyectos?",
     lede: "Tomrade guarda cada proyecto como una carpeta que puedes ver: texto que puedes leer, respaldar y confirmar en git. Elige dónde van esas carpetas.",
     folderLabel: "Carpeta de proyectos",
-    folderNote: "No dentro de Documentos: macOS puede ceder esa carpeta a iCloud y desalojar archivos.",
+    folderNote: "No dentro de una carpeta que sincronice un disco en la nube (iCloud Drive, OneDrive): puede descargar archivos y dejar marcadores de posición.",
     bulletProjects: "Cada proyecto tiene su propia carpeta dentro de {{path}}, o en cualquier otro lugar que elijas más adelante",
     bulletCache: "La base de datos con la que trabaja Tomrade es solo una caché; siempre se puede reconstruir a partir de las carpetas",
     bulletMove: "Puedes moverla más adelante en Ajustes",

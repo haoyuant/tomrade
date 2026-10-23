@@ -224,13 +224,13 @@ export const terminalApp = {
 };
 
 /** What to tell the person after a launch: that it went elsewhere, that Windows has no Git Bash to run it, or — once — that Tomrade started herdr in the background. Null otherwise. */
-export function herdrFallbackNote(locale: unknown, launch: LaunchResult, install: string): string | null {
+export function herdrFallbackNote(locale: unknown, launch: LaunchResult): string | null {
   const w = CODE_WORDS(locale);
   if (launch.herdrStarted === "first") return w("herdrStartedInBackground");
   const noBash = launch.gitBashMissing ? w("gitBashMissing") : null;
   if (!launch.herdrMissing) return noBash;
   const app = process.platform === "darwin" ? SYSTEM_TERMINAL : w("systemTerminal");
-  const note = launch.herdrMissing === "notInstalled" ? w("herdrNotInstalledFallback", { app, install }) : w("herdrNotRunningFallback", { app });
+  const note = launch.herdrMissing === "notInstalled" ? w("herdrNotInstalledFallback", { app }) : w("herdrNotRunningFallback", { app });
   return launch.launched ? note : `${note} ${noBash ?? w("fallbackDidNotOpen", { app })}`;
 }
 
