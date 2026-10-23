@@ -97,13 +97,30 @@ const run = async () => {
   await sleep(600);
   await press(`[...document.querySelectorAll('.dlg-nav button')].find((b) => b.textContent?.trim() === 'Usage')`);
   await sleep(800);
+  await sleep(400);
   await shot("usage-02-settings-usage");
   const usage = await $(`[...document.querySelectorAll('[data-testid="usage-pane"] tr[data-engine="spender"]')].map((r) => [...r.querySelectorAll('td')].map((d) => d.textContent))`);
-  check("Usage lists the engine for today and the week", usage.length === 2, usage);
-  check("with its runs, tokens and spend", JSON.stringify(usage[0]) === JSON.stringify(["Spender", "3", "6,000", "6,000", "0", "0", "900", "$1.75"]), usage[0]);
+  check("Usage lists the engine once, over the chosen range", usage.length === 1, usage);
+  check("with its runs, tokens and spend", usage[0]?.[0] === "Spender" && usage[0]?.[1] === "3" && usage[0]?.[2].startsWith("6,000") && usage[0]?.[3] === "read 0 · write 0" && usage[0]?.[4] === "900" && usage[0]?.[5] === "0%" && usage[0]?.[7]?.startsWith("$1.75"), usage[0]);
+
+  // The dashboard itself: four KPIs, a bar per local day in both charts, and a share bar.
+  const kpis = await $(`[...document.querySelectorAll('[data-testid="usage-pane"] .usage-kpi')].map((k) => [k.querySelector('.eyebrow')?.textContent, k.querySelector('.usage-kpi-value')?.textContent])`);
+  check("four headline numbers lead the pane", kpis.length === 4 && kpis[0][1] === "$1.75" && kpis[2][1] === "3", kpis);
+  check("a token bar and a spend bar per day of the range", (await $(`document.querySelectorAll('[data-testid="usage-pane"] .usage-plot .usage-col').length`)) === 14, await $(`document.querySelectorAll('[data-testid="usage-pane"] .usage-plot .usage-col').length`));
+  check("the engine's share is drawn on both measures", (await $(`document.querySelectorAll('[data-testid="usage-pane"] .usage-share-seg').length`)) === 2, await $(`document.querySelectorAll('[data-testid="usage-pane"] .usage-share-seg').length`));
+  // 30 days is one click away, and every zero day is still drawn.
+  await press(`document.querySelector('[data-days="30"]')`);
+  await sleep(900);
+  check("the range switch reshapes the charts", (await $(`document.querySelectorAll('[data-testid="usage-pane"] .usage-plot .usage-col').length`)) === 60, await $(`document.querySelectorAll('[data-testid="usage-pane"] .usage-plot .usage-col').length`));
+  await press(`document.querySelector('[data-days="7"]')`);
+  await sleep(700);
+  await $(`document.querySelector('[data-testid="usage-pane"] .usage-shares')?.scrollIntoView({ block: 'center' });true`);
+  await sleep(400);
+  await shot("usage-04-engine-share");
   const worker = await $(`[...document.querySelectorAll('[data-testid="worker-usage"] tr[data-source="lent:fake-cli"]')].map((r) => [...r.querySelectorAll('td')].map((d) => d.textContent))`);
-  check("worker calls are listed apart, today and for the week", worker.length === 4, worker);
-  check("by who answered and what for, with calls and tokens", JSON.stringify(worker.slice(0, 2)) === JSON.stringify([["Fake CLI", "Duplicate check", "2", "0", "30,000", "28,000", "80"], ["Fake CLI", "Planning", "1", "0", "15,000", "14,000", "40"]]), worker);
+  check("worker calls are listed apart by who answered and what for", worker.length === 2, worker);
+  check("with calls, tokens and cache hit", worker[0]?.slice(0, 6).join("|") === "Fake CLI|Duplicate check|2|30,000|28,000|80" && worker[1]?.slice(0, 6).join("|") === "Fake CLI|Planning|1|15,000|14,000|40", worker);
+  check("the purposes are drawn as bars", (await $(`document.querySelectorAll('[data-testid="worker-usage"] .usage-purpose-row').length`)) === 2, await $(`document.querySelectorAll('[data-testid="worker-usage"] .usage-purpose-row').length`));
   await $(`document.querySelector('[data-testid="worker-usage"]')?.scrollIntoView();true`);
   await sleep(300);
   await shot("usage-03-worker-calls");

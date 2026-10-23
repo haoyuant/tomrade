@@ -17,7 +17,7 @@ import { assistantMessage, collect, modalityOf, userMessage, type ChatEvent, typ
 import { withPromptTools } from "./prompt-tools.js";
 import type { ModelProviderSpec, ModelProviderView, ProviderSignIn } from "./provider.js";
 import { guessFrom, keyHint, pickModel, type ModelListing, type ProviderPreset, type QuickSetupResult } from "./providers.js";
-import { WORKER_CALLS_MIGRATIONS, WORKER_CALLS_TABLES, WorkerCallLog, type WorkerPurpose, type WorkerSpend, type WorkerUsageSummary } from "./worker-usage.js";
+import { WORKER_CALLS_MIGRATIONS, WORKER_CALLS_TABLES, WorkerCallLog, emptyWorkerUsageSummary, type WorkerPurpose, type WorkerSpend, type WorkerUsageSummary } from "./worker-usage.js";
 import { REFUSED_MEDIA_MIGRATION, REFUSED_MEDIA_TABLES, RefusedMedia } from "./refused-media.js";
 import { KeptTests, testKey, type KeptTest } from "./kept-tests.js";
 import { LLM_WORDS } from "./words.js";
@@ -36,7 +36,7 @@ export { OpenAiCompatible, type OpenAiConfig } from "./openai.js";
 export { AnthropicModel, type AnthropicConfig } from "./anthropic.js";
 export type { ModelCapabilities } from "./capabilities.js";
 export { withPromptTools } from "./prompt-tools.js";
-export type { WorkerPurpose, WorkerSpend, WorkerUsage, WorkerUsageSummary } from "./worker-usage.js";
+export type { WorkerDuration, WorkerPurpose, WorkerPurposeUsage, WorkerSpend, WorkerUsage, WorkerUsageDay, WorkerUsageReport, WorkerUsageSummary, WorkerUsageTotals } from "./worker-usage.js";
 
 export interface CompletionRequest {
   system: string;
@@ -234,7 +234,7 @@ declare module "@tomradex/ipc" {
     "llm.detect": () => DetectedModel[];
     "llm.quickSetup": (input: { preset: string; apiKey?: string }) => QuickSetupResult;
     "llm.adopt": (id: string) => QuickSetupResult;
-    "llm.workerUsage": () => WorkerUsageSummary;
+    "llm.workerUsage": (days?: number) => WorkerUsageSummary;
     "llm.searchRoute": () => SearchRoute;
     /** Runs the provider's own sign-in, in the person's browser. */
     "llm.signIn": (provider: string) => SignInResult;
@@ -431,7 +431,7 @@ export class Llm extends Service implements LlmService {
       ctx.ipc.handle("llm.detect", () => this.detect());
       ctx.ipc.handle("llm.quickSetup", (input) => this.quickSetup(input));
       ctx.ipc.handle("llm.adopt", (id) => this.adopt(id));
-      ctx.ipc.handle("llm.workerUsage", () => this.workerUsage());
+      ctx.ipc.handle("llm.workerUsage", (days?: number) => this.workerUsage(Date.now(), typeof days === "number" ? days : 7));
       ctx.ipc.handle("llm.signIn", (provider) => this.signIn(provider));
     });
     this.ctx.inject(["db"], (ctx) => {
@@ -669,9 +669,9 @@ export class Llm extends Service implements LlmService {
     return this.tallied(`profile:${profile.id}`, profile.title || profile.model, request, (spent) => completeJson(this.for("worker"), schema, request, label, spent));
   }
 
-  /** What worker calls spent today and over the last week, by source and purpose. */
-  workerUsage(now = Date.now()): WorkerUsageSummary {
-    return this.calls?.summary(now) ?? { today: [], week: [] };
+  /** What worker calls spent today, over the last week and across the pane's range, by source and purpose. */
+  workerUsage(now = Date.now(), days = 7): WorkerUsageSummary {
+    return this.calls?.summary(now, days) ?? emptyWorkerUsageSummary(now, days);
   }
 
   /** One worker call, its tokens kept for the Usage pane. Keeping them never fails the call. */
@@ -685,7 +685,7 @@ export class Llm extends Service implements LlmService {
       return out;
     } finally {
       try {
-        this.calls?.record({ at, source, title, purpose: request.purpose ?? null, ...spent, ok });
+        this.calls?.record({ at, source, title, purpose: request.purpose ?? null, ...spent, ok, durationMs: Date.now() - at });
       } catch (err) {
         this.ctx.logger.warn(`worker usage not recorded: ${errorMessage(err)}`);
       }

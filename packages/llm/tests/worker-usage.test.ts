@@ -45,12 +45,20 @@ it("keeps each call's tokens by source and purpose, a repair round included, and
   await ctx.llm.completeJson(schema, { system: "s", user: "u", purpose: "similar" });
   await expect(ctx.llm.completeJson(schema, { system: "s", user: "u", purpose: "plan" })).rejects.toThrow(/schema validation/);
 
-  const { today, week } = llm.workerUsage();
-  expect(today).toEqual([
-    { source: "lent:codex", title: "Codex", purpose: "similar", calls: 2, failed: 0, inputTokens: 45_000, cacheReadTokens: 42_000, outputTokens: 60 },
+  const { today, week, range } = llm.workerUsage();
+  expect(today).toMatchObject([
+    { source: "lent:codex", title: "Codex", purpose: "similar", calls: 2, failed: 0, inputTokens: 45_000, cacheReadTokens: 42_000, outputTokens: 60, cacheHitRate: 42_000 / 45_000 },
     { source: "lent:codex", title: "Codex", purpose: "plan", calls: 1, failed: 1, inputTokens: 30_000, cacheReadTokens: 28_000, outputTokens: 40 }
   ]);
-  expect(week).toEqual(today);
+  // Every call was timed: the pane can show how long a worker waits on it.
+  expect(today.map((r) => r.duration?.samples)).toEqual([2, 1]);
+  expect(week).toMatchObject(today);
+  // The range is seven local days, zeros included, and its totals are the calls themselves.
+  expect(range.days).toHaveLength(7);
+  const now = new Date();
+  expect(range.days.at(-1)!.date).toBe(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`);
+  expect(range.totals).toMatchObject({ calls: 3, failed: 1, inputTokens: 75_000, cacheReadTokens: 70_000, outputTokens: 100 });
+  expect(range.purposes.map((p) => [p.purpose, p.calls])).toEqual([["similar", 2], ["plan", 1]]);
   // numbers only: nothing of what was asked or answered
   expect(JSON.stringify(ctx.db.hub.prepare("SELECT * FROM plugin_llm_worker_calls").all())).not.toMatch(/secret|"n"/);
 });
@@ -62,7 +70,7 @@ it("names a profile by its title, and counts yesterday's calls in the week only"
   await ctx.llm.completeJson(schema, { system: "s", user: "u", purpose: "dependencies" });
   const tomorrow = Date.now() + 86_400_000;
   expect(llm.workerUsage(tomorrow).today).toEqual([]);
-  expect(llm.workerUsage(tomorrow).week).toEqual([{ source: "profile:ds", title: "DeepSeek", purpose: "dependencies", calls: 1, failed: 0, inputTokens: 900, cacheReadTokens: 512, outputTokens: 7 }]);
+  expect(llm.workerUsage(tomorrow).week).toMatchObject([{ source: "profile:ds", title: "DeepSeek", purpose: "dependencies", calls: 1, failed: 0, inputTokens: 900, cacheReadTokens: 512, outputTokens: 7 }]);
 });
 
 it("answers the call when its numbers cannot be kept", async () => {
