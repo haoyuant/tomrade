@@ -127,6 +127,7 @@ function acpAgentOf(spec: Written, locator: CliLocator, own: OwnAgent): AcpAgent
     title: spec.title,
     cli: locator,
     install: spec.install,
+    ...(spec.picks ? { picks: spec.picks } : {}),
     options,
     permissionModes: acp.permissionModes,
     args: (_input, opts) => acp.args(opts),
