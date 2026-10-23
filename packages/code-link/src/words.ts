@@ -7,7 +7,7 @@ import { defineWords, type Slots, type Speak } from "@tomradex/domain";
  */
 export const CODE_WORDS = defineWords("code-link", {
   en: {
-    terminalHelp: '1. Install herdr with `brew install herdr`. 2. Open a terminal and run `herdr` to start it. With herdr selected, tickets run in its workspace; Tomrade follows the pane’s status and last output, lets you Continue, and jumps back to the pane. If herdr is unavailable, the session opens in the system terminal instead. Choose another installed terminal app, or "none" to only prepare the script.',
+    terminalHelp: '1. Install herdr the way its install guide says. 2. Open a terminal and run `herdr` to start it. With herdr selected, tickets run in its workspace; Tomrade follows the pane’s status and last output, lets you Continue, and jumps back to the pane. If herdr is unavailable, the session opens in the system terminal instead. Choose another terminal app where there is one, or "none" to only prepare the script.',
     untrackedSession: "This session is not tracked by Tomrade: no session token or repository hook event was received. Progress notes and session status are unavailable. In Tomrade, run “Connect repository to coding agents” for this workstream, commit and merge the generated .mcp.json, .claude/settings.json, .codebuddy/settings.json, .codex/config.toml, .pi/extensions/tomrade.ts, opencode.json, .opencode/plugins/tomrade.js, .cursor/hooks.json, .cursor/hooks/tomrade and .cursor/hooks/tomrade.ps1 — or “Connect on this machine only”, which writes them into the checkout kept out of git — (in Codex, also review its hooks with /hooks), then start a new session. Any MCP client is followed through its connection once it calls claim_ticket.",
     connected: "Connected",
     terminalAuto: "Automatic: herdr if installed, else the system terminal",
@@ -117,7 +117,7 @@ export const CODE_WORDS = defineWords("code-link", {
     terminalHasIt: " — your terminal has it",
     herdrHasIt: " — herdr has it, pane {{pane}}",
     herdrNeedsYou: "{{what}} needs you",
-    herdrNotInstalledFallback: "herdr is not installed, so this opened in {{app}} instead. Install herdr with `{{install}}`.",
+    herdrNotInstalledFallback: "herdr is not installed, so this opened in {{app}} instead. Install it the way its install guide says.",
     herdrNotRunningFallback: "herdr is not running, so this opened in {{app}} instead. Start herdr by running `herdr` in a terminal.",
     herdrStartedInBackground: "herdr is running in the background now. Run `herdr` in a terminal to see its panes.",
     herdrAttached: "Opened herdr in {{app}}, at pane {{pane}}",
@@ -125,7 +125,7 @@ export const CODE_WORDS = defineWords("code-link", {
     fallbackDidNotOpen: "{{app}} did not open either: run the command yourself.",
     systemTerminal: "the system terminal",
     gitBashMissing: "Running an agent in a terminal on Windows needs Git Bash, which comes with Git for Windows (https://git-scm.com/download/win). Install it, then try again.",
-    herdrNoInstaller: "Homebrew is not on this computer: install herdr the way its install guide says.",
+    herdrNoInstaller: "This computer has no herdr installer Tomrade can run: install it the way its install guide says.",
     runThis: "Run this in a terminal:\n{{command}}",
     waitingOn: "It is waiting for your answer: {{question}}",
     noConversation: "This ticket has no conversation yet — start it first",
@@ -159,7 +159,7 @@ export const CODE_WORDS = defineWords("code-link", {
     filedFrom: "Filed from {{key}}'s coding session."
   },
   zh: {
-    terminalHelp: '1. 运行 `brew install herdr` 安装。2. 打开一个终端，运行 `herdr` 启动它。选 herdr 后，工单在 herdr 的 workspace 里运行；Tomrade 跟进这个 pane 的状态和最后输出，支持继续（Continue）和跳回 pane。herdr 不可用时，改在系统终端里打开。也可以选择其他已安装的终端应用，或选 none 只准备脚本。',
+    terminalHelp: '1. 按 herdr 的安装文档安装。2. 打开一个终端，运行 `herdr` 启动它。选 herdr 后，工单在 herdr 的 workspace 里运行；Tomrade 跟进这个 pane 的状态和最后输出，支持继续（Continue）和跳回 pane。herdr 不可用时，改在系统终端里打开。系统里有别的终端应用也可以选，或选 none 只准备脚本。',
     untrackedSession: "当前会话未被 Tomrade 跟踪：没有收到会话令牌或仓库 hooks 事件，进度备注和会话状态不可用。请在 Tomrade 中对该工作流运行「把仓库连接到编码智能体」，提交并合并生成的 .mcp.json、.claude/settings.json、.codebuddy/settings.json、.codex/config.toml、.pi/extensions/tomrade.ts、opencode.json、.opencode/plugins/tomrade.js、.cursor/hooks.json、.cursor/hooks/tomrade 和 .cursor/hooks/tomrade.ps1——或选「仅连接本机」，把它们写进本机仓库目录并不纳入 git——（Codex 还需用 /hooks 审阅其中的 hooks），再新开会话。任何 MCP 客户端调用 claim_ticket 后，都会按它的连接被跟踪。",
     connected: "已连接",
     terminalAuto: "自动：装了 herdr 用 herdr，否则用系统终端",
@@ -269,7 +269,7 @@ export const CODE_WORDS = defineWords("code-link", {
     terminalHasIt: "——已交给你的终端",
     herdrHasIt: "——已交给 herdr，pane {{pane}}",
     herdrNeedsYou: "{{what}} 需要你",
-    herdrNotInstalledFallback: "herdr 未安装，已改在 {{app}} 里打开。可用 `{{install}}` 安装 herdr。",
+    herdrNotInstalledFallback: "herdr 未安装，已改在 {{app}} 里打开。请按它的安装文档安装。",
     herdrNotRunningFallback: "herdr 没有在运行，已改在 {{app}} 里打开。在终端里运行 `herdr` 即可启动它。",
     herdrStartedInBackground: "herdr 已在后台运行。在终端里运行 `herdr` 即可看到它的 pane。",
     herdrAttached: "已在 {{app}} 里打开 herdr，切到 pane {{pane}}",
@@ -277,7 +277,7 @@ export const CODE_WORDS = defineWords("code-link", {
     fallbackDidNotOpen: "{{app}} 也没能打开：请自己运行这条命令。",
     systemTerminal: "系统终端",
     gitBashMissing: "在 Windows 上用终端运行 Agent 需要 Git Bash，它随 Git for Windows 一起安装（https://git-scm.com/download/win）。装好后再试一次。",
-    herdrNoInstaller: "这台电脑上没有 Homebrew：请按 herdr 安装文档里的方式安装。",
+    herdrNoInstaller: "这台电脑上没有 Tomrade 能运行的 herdr 安装方式：请按它的安装文档安装。",
     runThis: "在终端里运行：\n{{command}}",
     waitingOn: "它在等你回答：{{question}}",
     noConversation: "这个工单还没有对话——先开始它",

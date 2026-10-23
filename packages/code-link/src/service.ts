@@ -127,7 +127,7 @@ declare module "@tomradex/ipc" {
     "codeLink.terminalWindow": (projectId: string) => boolean;
     /** Show a session's herdr terminal in Tomrade's Terminal window; false when no window can. */
     "codeLink.showSession": (projectId: string, sessionId: string) => boolean;
-    /** How herdr installs on this machine: Homebrew's command where brew is, else only its install guide. */
+    /** How herdr installs on this machine: Homebrew's command where brew is, herdr's own installer on macOS and Linux, else only its install guide. */
     "codeLink.herdrInstall": () => HerdrInstall;
     /** Install herdr in a terminal with that command; the page never names it. */
     "codeLink.installHerdr": () => { launched: boolean; command: string };

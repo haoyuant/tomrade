@@ -82,8 +82,9 @@ declare module "@tomradex/ipc" {
 
 const en = DESKTOP_WORDS("en");
 const zh = DESKTOP_WORDS("zh");
-// Only macOS has a Dock to carry the count.
-const NOTIFICATIONS_DESCRIPTION = process.platform === "darwin" ? "notificationsDescription" : "notificationsDescriptionNoDock";
+// macOS carries the count in the Dock, Linux in its launcher; Windows has neither — its code path only flashes the taskbar.
+const NOTIFICATIONS_DESCRIPTION =
+  process.platform === "darwin" ? "notificationsDescription" : process.platform === "win32" ? "notificationsDescriptionNoBadge" : "notificationsDescriptionNoDock";
 
 export const NOTIFICATIONS_SECTION: SettingsSection<NotificationPrefs> = {
   id: "notifications",
