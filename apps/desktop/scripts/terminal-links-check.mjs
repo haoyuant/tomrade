@@ -47,6 +47,7 @@ app.whenReady().then(async () => {
       ["absolute path", "/tmp/report.pdf", "/tmp/report.pdf"],
       ["quoted path", '\"/tmp/report draft.pdf\"', "/tmp/report draft.pdf"],
       ["path with line", "/tmp/report.ts:12:3", "/tmp/report.ts:12:3"],
+      ["Chinese filename", "/tmp/中文报告.pdf", "/tmp/中文报告.pdf"],
       ["wide prefix", "中文 /tmp/report.pdf", "/tmp/report.pdf"],
       ["wrapped file URL", "file:///tmp/" + "a".repeat(box.cols) + ".pdf", "file:///tmp/" + "a".repeat(box.cols) + ".pdf"],
       ["wrapped URL", "https://example.com/" + "a".repeat(box.cols), "https://example.com/" + "a".repeat(box.cols)]
