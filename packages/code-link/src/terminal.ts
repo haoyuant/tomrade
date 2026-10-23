@@ -193,19 +193,34 @@ export function locatedCommand(command: string, name: string, file: string | und
  */
 export function openOnWindows(script: string, cwd: string, bash: string | null = gitBash(), launch: typeof spawn = spawn): Promise<string> {
   if (!bash) return Promise.reject(new GitBashMissing());
-  const start = (command: string, args: string[]) =>
-    new Promise<void>((resolve, reject) => {
-      const child = launch(command, args, { cwd, detached: true, stdio: "ignore", windowsHide: false });
-      child.once("error", reject);
-      child.once("spawn", () => {
-        child.unref();
-        resolve();
-      });
-    });
+  const start = (command: string, args: string[]) => startDetached(launch, command, args, cwd);
   return start("wt.exe", ["-d", cwd, bash, script]).then(
     () => "Windows Terminal",
     () => start(bash, [script]).then(() => "Git Bash")
   );
+}
+
+/**
+ * A script on Linux: detached, since most emulators stay in the foreground until their window closes; the script
+ * as its own argument, as several emulators read one `-e` string as a program name. Resolves with the app it opened.
+ */
+export function openOnLinux(script: string, cwd: string, launch: typeof spawn = spawn): Promise<string> {
+  return startDetached(launch, "x-terminal-emulator", ["-e", "bash", script], cwd).then(
+    () => "x-terminal-emulator",
+    () => startDetached(launch, "gnome-terminal", ["--", "bash", script], cwd).then(() => "gnome-terminal")
+  );
+}
+
+/** Resolves once the app has started, without waiting for it to exit; rejects when it cannot start. */
+function startDetached(launch: typeof spawn, command: string, args: string[], cwd: string): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const child = launch(command, args, { cwd, detached: true, stdio: "ignore", windowsHide: false });
+    child.once("error", reject);
+    child.once("spawn", () => {
+      child.unref();
+      resolve();
+    });
+  });
 }
 
 /** Hands a script to a terminal app; an object so tests can stand in for the app. */
@@ -213,13 +228,7 @@ export const terminalApp = {
   async open(terminal: string, script: string, cwd: string = os.homedir()): Promise<void> {
     if (process.platform === "darwin") await run("open", ["-a", terminal, script]);
     else if (process.platform === "win32") await openOnWindows(script, cwd);
-    else {
-      try {
-        await run("x-terminal-emulator", ["-e", `bash ${shellQuote(script)}`]);
-      } catch {
-        await run("gnome-terminal", ["--", "bash", script]);
-      }
-    }
+    else await openOnLinux(script, cwd);
   }
 };
 
