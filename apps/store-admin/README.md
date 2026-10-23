@@ -47,7 +47,8 @@ analytics database and schedule aggregation as described in
 report RPCs to `service_role`; public and signed-in clients cannot read them.
 
 ```sh
-# Supply these through your shell/secret manager, never through the page:
+# Supply these through your shell, a secret manager or the repository's
+# gitignored .env (read when present; the shell wins), never through the page:
 # SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (international)
 # SUPABASE_URL_CN, SUPABASE_SERVICE_ROLE_KEY_CN (optional mainland deployment)
 pnpm analytics                # builds, then serves on 19100
