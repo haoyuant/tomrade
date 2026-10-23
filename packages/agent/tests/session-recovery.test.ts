@@ -88,7 +88,7 @@ it("tries an engine for real, keeps the answer while its settings stay, and leav
   } finally { await done(); }
 });
 
-it("passes a try only when the agent answers the word the test asks for", async () => {
+it("passes a try when the agent answers it, and fails it when the turn only carries a refusal", async () => {
   const { ctx, project, done } = await setup();
   try {
     // What the agent says instead of the answer: nothing, or its provider's failure as ordinary text.
@@ -98,15 +98,32 @@ it("passes a try only when the agent answers the word the test asks for", async 
         if (said) io.emit({ type: "text", text: said });
         return { stop: "end" };
       } });
-    const silent = await ctx.agent.tryEngine(project.id, "mute");
+    const tried = (text: string) => { said = text; return ctx.agent.tryEngine(project.id, "mute"); };
+
+    const silent = await tried("");
     expect(silent).toMatchObject({ ok: false, error: "the agent ended its turn without a reply" });
     expect(silent.reply).toBeUndefined();
 
-    said = "AWS Bedrock didn't answer after 3 attempts — it looks temporarily unavailable. Wait a minute and send /retry, or switch models with /model.";
-    expect(await ctx.agent.tryEngine(project.id, "mute")).toMatchObject({ ok: false, error: said, reply: expect.stringContaining("AWS Bedrock") });
+    // A working agent answers in its own words: a greeting, another language, a code
+    // block, a paragraph, or the asked-for word followed by a passing mention of a
+    // failure. None of these is a refusal, and none may be blocked.
+    for (const answer of [
+      "Sure, OK.",
+      "好的",
+      "```OK```",
+      "An error message is only what the program prints when something goes wrong; the one you saw came from the cache, so the request itself was fine and this agent is answering normally.",
+      "OK — the provider reported an error earlier, but I'm answering now.",
+    ]) expect(await tried(answer)).toMatchObject({ ok: true, reply: answer });
 
-    said = "OK, ready when you are.";
-    expect(await ctx.agent.tryEngine(project.id, "mute")).toMatchObject({ ok: true, reply: said });
+    // A turn that ended normally with the provider's refusal where a reply goes is not
+    // an answer, whatever the engine calls the turn.
+    for (const refusal of [
+      "AWS Bedrock didn't answer after 3 attempts — it looks temporarily unavailable. Wait a minute and send /retry, or switch models with /model.",
+      "400 internal error",
+      "You have no credits remaining. Add credits in the provider's dashboard.",
+      "HTTP 200 OK",
+      "Error: model not found",
+    ]) expect(await tried(refusal)).toMatchObject({ ok: false, error: refusal, reply: refusal });
   } finally { await done(); }
 });
 

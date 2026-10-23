@@ -280,15 +280,32 @@ const LIMIT_TRIES = 3;
 /** How long a try waits for an answer. */
 const TRY_MS = 90_000;
 /**
- * The try asks for one word, so that word opening a short answer is what it
- * looks for. Text alone is no proof: an agent whose provider refused the request
- * ends its turn normally and puts the failure where a reply would go (Hermes'
- * "Bedrock didn't answer", Pi's quota error), and a turn can end without saying
- * anything at all. A real answer may add a sentence, but not a whole trace.
+ * The try asks for one word, and a reply that opens with it is proof the model
+ * answered — even when it goes on to mention a failure.
  */
 const TRY_ANSWER = /^(?:\*\*|__|`|"|')?\s*ok(?:ay)?\b/i;
-const TRY_ANSWER_MAX = 120;
-const answeredTry = (said: string): boolean => said.trim().length <= TRY_ANSWER_MAX && TRY_ANSWER.test(said.trim());
+/**
+ * Text where a reply would go is no proof on its own: an agent whose provider
+ * refused the request ends its turn normally and puts the failure there (Hermes'
+ * "Bedrock didn't answer", Pi's quota error, an HTTP status line). These are the
+ * shapes such a report takes — a status line, a refusal opening the turn, or a
+ * phrase only a failure uses — and they are read only in a short turn, so an
+ * answer long enough to be an answer is never mistaken for one.
+ */
+const TRY_REFUSAL = [
+  /^HTTP(?:\/\d(?:\.\d)?)?\s+\d{3}\b/i,
+  /^[45]\d\d\b[^\n]{0,40}\b(?:error|bad request|unauthorized|forbidden|not found|too many|unavailable|gateway|timeout|internal)\b/i,
+  /^\W*(?:(?:api|internal|provider|network|request|server|auth(?:entication)?)\s+)?(?:error|failed|failure|exception|unauthorized|forbidden|denied)\b/i,
+  /^[^\n]{0,40}\b(?:did(?:n['’]t| not) answer|no answer|temporarily unavailable|service unavailable|internal server error|bad gateway|rate limit|too many requests|insufficient[_ ]quota|quota exceeded|exceeded your (?:current )?quota|no (?:api )?credits|credit balance|invalid[_ ]api[_ ]key|incorrect api key|model[_ ]not[_ ]found|no such model|timed out|overloaded)\b/i,
+];
+const TRY_REFUSAL_MAX = 400;
+/** Whether the agent answered the test, rather than ending its turn on a refusal. */
+const answeredTry = (said: string): boolean => {
+  const text = said.trim();
+  if (!text) return false;
+  if (TRY_ANSWER.test(text)) return true;
+  return text.length > TRY_REFUSAL_MAX || !TRY_REFUSAL.some((pattern) => pattern.test(text));
+};
 /** Limits lift on the provider's clock, not this one. */
 const LIMIT_SLACK_MS = 30_000;
 
