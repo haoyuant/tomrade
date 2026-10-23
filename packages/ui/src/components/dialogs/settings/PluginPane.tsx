@@ -6,6 +6,7 @@ import { SchemaField, fieldsOf, problemOf, type JsonSchema } from "~/components/
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { readableError } from "~/lib/toast";
 import { PetProfilesPanel } from "../PetProfilesPanel";
+import { PushStatus } from "./PushStatus";
 import { ScopeTag } from "./ScopeTag";
 
 /**
@@ -103,5 +104,6 @@ const FIELD_EXTRAS: Record<string, { options?: Record<string, MessageKey>; below
 
 /** What a plugin's pane shows beyond its schema, for the plugins whose settings are more than fields. */
 export const PANE_EXTRAS: Record<string, () => ReactNode> = {
-  pet: () => <PetProfilesPanel />
+  pet: () => <PetProfilesPanel />,
+  notifications: () => <PushStatus />
 };

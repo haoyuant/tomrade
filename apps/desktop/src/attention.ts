@@ -7,6 +7,7 @@ import type {} from "@tomradex/code-link";
 import type {} from "@tomradex/ipc";
 import type { ImReminder } from "@tomradex/im";
 import { showMainWindow, whenLoaded } from "./main-window.js";
+import { PhonePush, type FetchLike, type PushFailure, type PushRequest, type PushTarget } from "./push.js";
 import { DESKTOP_WORDS, type DesktopWords } from "./words.js";
 
 /** One thing an agent is waiting on the person for. */
@@ -33,6 +34,8 @@ export interface AttentionNote {
   title: string;
   body: string;
   entry: AttentionEntry;
+  /** What made it: a phone says how long something waited only where waiting is what happened. */
+  event?: AttentionEntry["kind"] | "finished" | "lifted";
 }
 
 export interface NotificationPrefs {
@@ -43,9 +46,17 @@ export interface NotificationPrefs {
   finished: boolean;
   /**
    * Where else the same notice reaches the person while they are away from the computer — one place, never two.
-   * Phone push (TOM-93) joins as another value here.
+   * `push` reaches a phone through every address configured below.
    */
-  away: "im" | "none";
+  away: "im" | "push" | "none";
+  /** ntfy's topic address, as the person copied it; the topic is the secret. */
+  pushNtfyCredential: string;
+  /** Bark's device address, as the app shows it. */
+  pushBarkCredential: string;
+  /** A Feishu group bot's webhook. */
+  pushFeishuCredential: string;
+  /** What the agent last said, on top of the ticket's title: off unless the person asks for it. */
+  pushSummary: boolean;
 }
 
 declare module "cordis" {
@@ -59,6 +70,8 @@ declare module "@tomradex/ipc" {
   interface Channels {
     /** Everything an agent waits on the person for, across open projects. */
     "attention.list": () => AttentionEntry[];
+    /** The last phone push that did not get through, for the settings pane. */
+    "attention.pushStatus": () => PushFailure | null;
   }
   interface Broadcasts {
     "attention.changed": (entries: AttentionEntry[]) => void;
@@ -82,15 +95,19 @@ export const NOTIFICATIONS_SECTION: SettingsSection<NotificationPrefs> = {
     waiting: z.boolean().default(true).meta({ title: en("notifyWaitingTitle") }).describe(en("notifyWaitingDescription")),
     stopped: z.boolean().default(true).meta({ title: en("notifyStoppedTitle") }).describe(en("notifyStoppedDescription")),
     finished: z.boolean().default(true).meta({ title: en("notifyFinishedTitle") }).describe(en("notifyFinishedDescription")),
-    away: z.enum(["im", "none"]).default("im").meta({ title: en("notifyAwayTitle") })
-      .describe(en("notifyAwayDescription"))
+    away: z.enum(["im", "push", "none"]).default("im").meta({ title: en("notifyAwayTitle") })
+      .describe(en("notifyAwayDescription")),
+    pushNtfyCredential: z.string().default("").meta({ title: en("notifyPushNtfyTitle") }).describe(en("notifyPushNtfyDescription")),
+    pushBarkCredential: z.string().default("").meta({ title: en("notifyPushBarkTitle") }).describe(en("notifyPushBarkDescription")),
+    pushFeishuCredential: z.string().default("").meta({ title: en("notifyPushFeishuTitle") }).describe(en("notifyPushFeishuDescription")),
+    pushSummary: z.boolean().default(false).meta({ title: en("notifyPushSummaryTitle") }).describe(en("notifyPushSummaryDescription"))
   }),
-  defaults: { enabled: true, approvals: true, waiting: true, stopped: true, finished: true, away: "im" },
+  defaults: { enabled: true, approvals: true, waiting: true, stopped: true, finished: true, away: "im", pushNtfyCredential: "", pushBarkCredential: "", pushFeishuCredential: "", pushSummary: false },
   order: 15,
   scope: "user",
   agent: "write",
   words: {
-    en: { fields: { away: { options: { im: en("notifyAwayIm"), none: en("notifyAwayNone") } } } },
+    en: { fields: { away: { options: { im: en("notifyAwayIm"), push: en("notifyAwayPush"), none: en("notifyAwayNone") } } } },
     zh: {
       title: zh("notificationsTitle"),
       description: zh(NOTIFICATIONS_DESCRIPTION),
@@ -100,7 +117,11 @@ export const NOTIFICATIONS_SECTION: SettingsSection<NotificationPrefs> = {
         waiting: { title: zh("notifyWaitingTitle"), description: zh("notifyWaitingDescription") },
         stopped: { title: zh("notifyStoppedTitle"), description: zh("notifyStoppedDescription") },
         finished: { title: zh("notifyFinishedTitle"), description: zh("notifyFinishedDescription") },
-        away: { title: zh("notifyAwayTitle"), description: zh("notifyAwayDescription"), options: { im: zh("notifyAwayIm"), none: zh("notifyAwayNone") } }
+        away: { title: zh("notifyAwayTitle"), description: zh("notifyAwayDescription"), options: { im: zh("notifyAwayIm"), push: zh("notifyAwayPush"), none: zh("notifyAwayNone") } },
+        pushNtfyCredential: { title: zh("notifyPushNtfyTitle"), description: zh("notifyPushNtfyDescription") },
+        pushBarkCredential: { title: zh("notifyPushBarkTitle"), description: zh("notifyPushBarkDescription") },
+        pushFeishuCredential: { title: zh("notifyPushFeishuTitle"), description: zh("notifyPushFeishuDescription") },
+        pushSummary: { title: zh("notifyPushSummaryTitle"), description: zh("notifyPushSummaryDescription") }
       }
     }
   }
@@ -182,14 +203,14 @@ export class Teller {
     if (!entry.itemId && (run.endedAt ?? now) - run.startedAt < this.options.finishedAfterMs) return;
     const prefs = this.options.prefs();
     if (!prefs.enabled || !prefs.finished || this.options.focused()) return;
-    this.options.tell({ title: this.titleOf(entry.itemKey, "finished", entry.who), body: clip(last) ?? "", entry: { ...entry, kind: "waiting", since: now } });
+    this.options.tell({ title: this.titleOf(entry.itemKey, "finished", entry.who), body: clip(last) ?? "", entry: { ...entry, kind: "waiting", since: now }, event: "finished" });
   }
 
   /** A usage limit lifted on a conversation nobody continues on its own: the person may now. */
   lifted(entry: Omit<AttentionEntry, "kind" | "since">): void {
     const prefs = this.options.prefs();
     if (!prefs.enabled || !prefs.waiting || this.options.focused()) return;
-    this.options.tell({ title: this.titleOf(entry.itemKey, "lifted", entry.who), body: this.options.words()("liftedBody"), entry: { ...entry, kind: "waiting", since: Date.now() } });
+    this.options.tell({ title: this.titleOf(entry.itemKey, "lifted", entry.who), body: this.options.words()("liftedBody"), entry: { ...entry, kind: "waiting", since: Date.now() }, event: "lifted" });
   }
 
   dispose(): void {
@@ -202,7 +223,7 @@ export class Teller {
     const prefs = this.options.prefs();
     const on = entry.kind === "permission" || entry.kind === "question" ? prefs.approvals : entry.kind === "waiting" ? prefs.waiting : prefs.stopped;
     if (!prefs.enabled || !on || this.options.focused()) return;
-    this.options.tell({ title: this.titleOf(entry.itemKey, entry.kind, entry.who), body: entry.text ?? "", entry });
+    this.options.tell({ title: this.titleOf(entry.itemKey, entry.kind, entry.who), body: entry.text ?? "", entry, event: entry.kind });
   }
 
   private titleOf(itemKey: string | null, key: AttentionEntry["kind"] | "finished" | "lifted", who: string | null): string {
@@ -217,6 +238,31 @@ export interface ImRemindable { remind(n: ImReminder): boolean }
 export function remindAway(prefs: NotificationPrefs, note: AttentionNote, im: ImRemindable | undefined): void {
   if (prefs.away !== "im") return;
   im?.remind({ projectId: note.entry.projectId, threadId: note.entry.threadId, kind: note.entry.kind, title: note.title, body: note.body });
+}
+
+/**
+ * What a phone gets: the ticket key and the event on the first line, the ticket's
+ * own title and how long it waited under it. The agent's words only when asked —
+ * the message passes through a service Tomrade does not run.
+ */
+export function phonePushRequest(prefs: NotificationPrefs, note: AttentionNote, subject: string | null, waitedMs: number, words: DesktopWords): PushRequest | null {
+  if (prefs.away !== "push" || !pushTargets(prefs).length) return null;
+  const n = Math.max(1, Math.round(waitedMs / 1000));
+  const duration = n < 60 ? words("pushSeconds", { n }) : n < 3600 ? words("pushMinutes", { n: Math.round(n / 60) }) : words("pushHours", { n: Math.round(n / 3600) });
+  const waited = note.event === "finished" || note.event === "lifted" ? null : words("pushWaited", { duration });
+  return {
+    title: note.title,
+    body: [subject, waited, prefs.pushSummary ? note.body : null].filter(Boolean).join("\n")
+  };
+}
+
+/** Every address the person gave, in the order a failure is reported. */
+export function pushTargets(prefs: NotificationPrefs): PushTarget[] {
+  return [
+    prefs.pushNtfyCredential && ({ channel: "ntfy", url: prefs.pushNtfyCredential } as const),
+    prefs.pushBarkCredential && ({ channel: "bark", url: prefs.pushBarkCredential } as const),
+    prefs.pushFeishuCredential && ({ channel: "feishu", url: prefs.pushFeishuCredential } as const)
+  ].filter((target): target is PushTarget => !!target);
 }
 
 /**
@@ -240,6 +286,8 @@ export const attention = {
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     const words = () => DESKTOP_WORDS(ctx.settings.locale());
+    const prefsOf = (): NotificationPrefs => ({ ...NOTIFICATIONS_SECTION.defaults, ...(ctx.settings.get().notifications as Partial<NotificationPrefs> | undefined) });
+    const phone = new PhonePush({ fetch: globalThis.fetch as unknown as FetchLike });
     const engineTitle = (id: string) => ctx.agent.codeEngines().find((e) => e.id === id)?.title ?? id;
     const itemKeyOf = (projectId: string, itemId: string | null) => (itemId ? ctx.get("items")?.get(projectId, itemId)?.key ?? null : null);
 
@@ -287,15 +335,26 @@ export const attention = {
     const teller = new Teller({
       waitingDelayMs: config.waitingDelayMs ?? 15_000,
       finishedAfterMs: config.finishedAfterMs ?? 30_000,
-      prefs: () => ({ ...NOTIFICATIONS_SECTION.defaults, ...(ctx.settings.get().notifications as Partial<NotificationPrefs> | undefined) }),
+      prefs: prefsOf,
       focused: () => !!BrowserWindow.getFocusedWindow(),
       words,
       tell: (note) => {
         ctx.emit("attention/notified", note);
         try {
-          remindAway({ ...NOTIFICATIONS_SECTION.defaults, ...(ctx.settings.get().notifications as Partial<NotificationPrefs> | undefined) }, note, ctx.get("im") as ImRemindable | undefined);
+          remindAway(prefsOf(), note, ctx.get("im") as ImRemindable | undefined);
         } catch (e) {
           ctx.logger.warn(`couldn't remind in IM: ${(e as Error).message}`);
+        }
+        const away = prefsOf();
+        const subject = note.entry.itemId ? ctx.get("items")?.get(note.entry.projectId, note.entry.itemId)?.title ?? null : null;
+        const toPhone = phonePushRequest(away, note, subject, Date.now() - note.entry.since, words());
+        if (toPhone) {
+          void phone
+            .send(pushTargets(away), toPhone)
+            .then((failure) => {
+              if (failure) ctx.logger.warn(`couldn't push to ${failure.channel}: ${failure.error}`);
+            })
+            .catch((e) => ctx.logger.warn(`couldn't push: ${(e as Error).message}`));
         }
         if (!shows || !Notification.isSupported() || note.entry.toldIn) return;
         if (process.platform === "win32") for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed() && win.isFocusable()) win.flashFrame(true);
@@ -328,6 +387,7 @@ export const attention = {
     };
 
     ctx.ipc.handle("attention.list", () => entries);
+    ctx.ipc.handle("attention.pushStatus", () => phone.lastFailure());
     ctx.on("agent/event", (_threadId, event) => {
       if (event.type === "pending" || event.type === "done") schedule();
     });

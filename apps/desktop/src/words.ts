@@ -64,9 +64,22 @@ export const DESKTOP_WORDS = defineWords("desktop", {
     notifyFinishedTitle: "Finished",
     notifyFinishedDescription: "A ticket's run, or any run over 30 seconds, finished in the background.",
     notifyAwayTitle: "While you're away, also remind me in",
-    notifyAwayDescription: "Approvals, questions and failures go to your paired IM direct chat, with buttons to answer there. Only one place is reminded.",
+    notifyAwayDescription: "Approvals, questions and failures go to your paired IM direct chat, where you can answer them, or to your phone through the addresses below. Only one place is reminded.",
     notifyAwayIm: "IM direct chat",
-    notifyAwayNone: "Nowhere else"
+    notifyAwayPush: "My phone",
+    notifyAwayNone: "Nowhere else",
+    notifyPushNtfyTitle: "ntfy topic address",
+    notifyPushNtfyDescription: "For example https://ntfy.sh/my-topic. Every notice is posted there.",
+    notifyPushBarkTitle: "Bark address (iPhone)",
+    notifyPushBarkDescription: "For example https://api.day.app/your-key.",
+    notifyPushFeishuTitle: "Feishu bot webhook",
+    notifyPushFeishuDescription: "The webhook URL of a group bot in Feishu.",
+    notifyPushSummaryTitle: "Include what the agent said",
+    notifyPushSummaryDescription: "Off by default: a phone notice carries the ticket key, its title, the event and how long it waited — never code or the conversation.",
+    pushWaited: "Waited {{duration}}",
+    pushSeconds: "{{n}}s",
+    pushMinutes: "{{n}} min",
+    pushHours: "{{n}} h"
   },
   zh: {
     quit: "退出",
@@ -126,9 +139,22 @@ export const DESKTOP_WORDS = defineWords("desktop", {
     notifyFinishedTitle: "完成",
     notifyFinishedDescription: "工单的运行，或者超过 30 秒的运行，在后台完成。",
     notifyAwayTitle: "不在电脑前时，还提醒到",
-    notifyAwayDescription: "批准、提问和出错会发到你已配对的 IM 私聊，可以直接点按钮处理。只提醒一处。",
+    notifyAwayDescription: "批准、提问和出错会发到你已配对的 IM 私聊（可以直接在那里处理），或者按下面的地址推到手机。只提醒一处。",
     notifyAwayIm: "IM 私聊",
-    notifyAwayNone: "不额外提醒"
+    notifyAwayPush: "手机",
+    notifyAwayNone: "不额外提醒",
+    notifyPushNtfyTitle: "ntfy 主题地址",
+    notifyPushNtfyDescription: "例如 https://ntfy.sh/my-topic。每条提醒都会发到那里。",
+    notifyPushBarkTitle: "Bark 地址（iPhone）",
+    notifyPushBarkDescription: "例如 https://api.day.app/你的key。",
+    notifyPushFeishuTitle: "飞书机器人 webhook",
+    notifyPushFeishuDescription: "飞书群机器人的 webhook 地址。",
+    notifyPushSummaryTitle: "带上代理说的话",
+    notifyPushSummaryDescription: "默认不带：手机提醒只有工单号、标题、事件和等了多久，不含代码和对话内容。",
+    pushWaited: "等了 {{duration}}",
+    pushSeconds: "{{n}} 秒",
+    pushMinutes: "{{n}} 分钟",
+    pushHours: "{{n}} 小时"
   }
 });
 
