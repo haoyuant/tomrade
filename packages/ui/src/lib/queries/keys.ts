@@ -75,7 +75,7 @@ export const keys = {
     workdir: (projectId: string, threadId: string) => ["agent", "workdir", projectId, threadId] as const,
     rules: (projectId: string) => ["agent", "rules", projectId] as const,
     mcpLink: (engineId: string) => ["agent", "mcpLink", engineId] as const,
-    usage: ["agent", "usage"] as const,
+    usage: (days: number) => ["agent", "usage", days] as const,
     media: (projectId: string, threadId: string, mediaId: string) => ["agent-media", projectId, threadId, mediaId] as const,
     /** The engine's options and the model settings decide what it reads, so both are part of the key. */
     mediaCapabilities: (engineId: string, options: unknown, models: unknown) => ["agent-media-capabilities", engineId, options, models] as const
@@ -96,7 +96,7 @@ export const keys = {
     worker: ["llm", "worker"] as const,
     workerTest: ["llm", "workerTest"] as const,
     workerFor: (role: unknown) => ["llm", "worker", role] as const,
-    workerUsage: ["llm", "workerUsage"] as const,
+    workerUsage: (days: number) => ["llm", "workerUsage", days] as const,
     lenders: ["llm", "lenders"] as const,
     providersAll: ["llm", "providers"] as const,
     providers: (locale: string) => ["llm", "providers", locale] as const,

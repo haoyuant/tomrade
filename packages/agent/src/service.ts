@@ -29,7 +29,7 @@ import { AGENT_WORDS, type AgentWords } from "./words.js";
 import { looksRateLimited, resetTime, untilLabel } from "./limits.js";
 import { describeFailure, readableError, redactSecrets } from "./failure.js";
 import { conversationRecap } from "./recap.js";
-import { NO_TOKENS, addTokens, runTokens, type TokenBreakdown } from "./tokens.js";
+import { usageSummary, windowStart, type EngineUsage, type UsageRun, type UsageSummary } from "./usage.js";
 import { type AgentReader, bestEffort, contract, errorMessage, localeOf } from "@tomradex/contracts";
 
 /** Where a thread's engine would run, or the one reason it cannot yet. `code` is stable for the renderer to translate. */
@@ -67,21 +67,7 @@ const recommendationSchema = z.object({
   reason: z.string().min(1)
 });
 
-/** What one engine's finished runs added up to over a stretch of time, across every open project. */
-export interface EngineUsage extends TokenBreakdown {
-  engine: string;
-  title: string;
-  runs: number;
-  /** Null when none of the runs said what it cost (Codex, the loop): tokens are all there is. */
-  costUsd: number | null;
-}
-
-export interface UsageSummary {
-  /** Since local midnight. */
-  today: EngineUsage[];
-  /** The last seven days, today included. */
-  week: EngineUsage[];
-}
+export type { EngineUsage, UsageSummary };
 
 /** A ticket's spend: every run of every thread started from it. Both must agree — the board sorts on one, SQL on the other. */
 const COST_VALUES_SQL = "SELECT t.item_id AS item_id, SUM(r.cost_usd) AS value FROM plugin_agent_runs r JOIN plugin_agent_threads t ON t.id = r.thread_id WHERE t.item_id IS NOT NULL AND r.cost_usd IS NOT NULL GROUP BY t.item_id";
@@ -161,7 +147,7 @@ declare module "@tomradex/ipc" {
     "agent.takeoverGeneral": (projectId: string, itemId: string) => { stopped: number };
     "agent.threads": (projectId: string) => ThreadSummary[];
     "agent.thread": (projectId: string, threadId: string) => ThreadDetail;
-    "agent.usage": () => UsageSummary;
+    "agent.usage": (days?: number) => UsageSummary;
     /** The project's rules for every agent, as the person wrote them; empty when there are none. */
     "agent.rules": (projectId: string) => { body: string; file: string | null };
     "agent.setRules": (projectId: string, body: string) => { body: string; file: string | null };
@@ -440,7 +426,7 @@ export class Agent extends Service implements AgentReader {
         return ctx.agent.withOrigins(projectId, ctx.agent.store.threads(projectId, PANEL_SURFACES)).map((th) => (running.has(th.id) || parked.has(th.id) ? { ...th, ...(running.has(th.id) ? { running: true } : {}), ...(parked.has(th.id) ? { parkedUntil: parked.get(th.id) } : {}) } : th));
       });
       ctx.ipc.handle("agent.thread", (projectId, threadId) => ctx.agent.thread(projectId, threadId));
-      ctx.ipc.handle("agent.usage", () => ctx.agent.usage());
+      ctx.ipc.handle("agent.usage", (days?: number) => ctx.agent.usage(Date.now(), typeof days === "number" ? days : 7));
       ctx.ipc.handle("agent.rules", (projectId) => ({ body: ctx.agent.rules(projectId) ?? "", file: ctx.agent.rulesFile(projectId) }));
       ctx.ipc.handle("agent.setRules", (projectId, body) => {
         ctx.agent.setRules(projectId, body);
@@ -760,29 +746,33 @@ export class Agent extends Service implements AgentReader {
     this.projectPlaybooks.set(projectId, new Map(loaded.map((pb) => [pb.id, pb])));
   }
 
-  /** Runs and their tokens and spend, per engine, today and over the last week — what Tomrade itself recorded, nothing asked of a provider. */
-  usage(now = Date.now()): UsageSummary {
-    const midnight = new Date(now);
-    midnight.setHours(0, 0, 0, 0);
-    const today = midnight.getTime();
-    const week = today - 6 * 86_400_000;
+  /**
+   * Runs and their tokens, spend, failures and durations — what Tomrade itself
+   * recorded, nothing asked of a provider. `days` is how many local days the
+   * pane's range covers; today and the last week are always returned too.
+   */
+  usage(now = Date.now(), days = 7): UsageSummary {
     const titles = new Map([...this.engines.values()].map((e) => [e.id, e.title]));
-    const sum = (since: number): EngineUsage[] => {
-      const by = new Map<string, EngineUsage>();
-      for (const projectId of this.ctx.db.openIds()) {
-        const rows = this.ctx.db
-          .for(projectId)
-          .prepare("SELECT engine, usage_json, metrics_json, cost_usd FROM plugin_agent_runs WHERE started_at >= ?")
-          .all(since) as { engine: string; usage_json: string | null; metrics_json: string | null; cost_usd: number | null }[];
-        for (const r of rows) {
-          const was = by.get(r.engine) ?? { engine: r.engine, title: titles.get(r.engine) ?? r.engine, runs: 0, ...NO_TOKENS, costUsd: null };
-          const tokens = runTokens(r.usage_json ? JSON.parse(r.usage_json) : null, r.metrics_json ? JSON.parse(r.metrics_json) : null);
-          by.set(r.engine, { ...was, ...addTokens(was, tokens), runs: was.runs + 1, costUsd: r.cost_usd === null ? was.costUsd : (was.costUsd ?? 0) + r.cost_usd });
-        }
+    const since = Math.min(windowStart(now, 7), windowStart(now, days));
+    const runs: UsageRun[] = [];
+    for (const projectId of this.ctx.db.openIds()) {
+      const rows = this.ctx.db
+        .for(projectId)
+        .prepare("SELECT engine, status, started_at, ended_at, usage_json, metrics_json, cost_usd FROM plugin_agent_runs WHERE started_at >= ? AND status <> 'running' ORDER BY started_at")
+        .all(since) as { engine: string; status: UsageRun["status"]; started_at: number; ended_at: number | null; usage_json: string | null; metrics_json: string | null; cost_usd: number | null }[];
+      for (const r of rows) {
+        runs.push({
+          engine: r.engine,
+          status: r.status,
+          startedAt: r.started_at,
+          endedAt: r.ended_at,
+          usage: r.usage_json ? JSON.parse(r.usage_json) : null,
+          metrics: r.metrics_json ? JSON.parse(r.metrics_json) : null,
+          costUsd: r.cost_usd
+        });
       }
-      return [...by.values()].sort((a, b) => (b.costUsd ?? 0) - (a.costUsd ?? 0) || b.runs - a.runs);
-    };
-    return { today: sum(today), week: sum(week) };
+    }
+    return usageSummary(runs, { days, now, titles });
   }
 
   /** `<project folder>/.tomrade/rules.md`: text beside the project's playbooks and decisions, travelling with it. */

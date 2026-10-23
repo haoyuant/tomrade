@@ -12,7 +12,7 @@ it("adds up runs per engine for today and the week, and a ticket's spend as its 
   ctx.agent.engine({ id: "spend", title: "Spender", author: "ai:test", available: async () => ({ ok: true }),
     async turn() {
       const costUsd = costs[n++];
-      return { stop: "end", costUsd, usage: { inputTokens: 1000, outputTokens: 100 } };
+      return { stop: "end", costUsd, usage: { inputTokens: 1000, outputTokens: 100 }, metrics: { transport: "rpc", runtime: "warm", providerModel: "spend-model" } };
     } });
   ctx.agent.engine({ id: "free", title: "Tokens only", author: "ai:test", available: async () => ({ ok: true }),
     async turn() {
@@ -72,7 +72,27 @@ it("adds up runs per engine for today and the week, and a ticket's spend as its 
     expect(usage.week[0].costUsd).toBeCloseTo(0.35);
     expect(usage.week[0].title).toBe("Spender");
     expect(usage.week[2].costUsd).toBeNull();
-    expect(usage.today).toEqual(usage.week);
+    expect(usage.today).toMatchObject(usage.week);
+
+    // The pane's own range: every local day present, including empty ones, and the old run still inside 30 days.
+    const report = ctx.agent.usage(Date.now(), 30).range;
+    expect(report.days).toHaveLength(30);
+    expect(report.days.reduce((sum, d) => sum + d.runs, 0)).toBe(7);
+    expect(report.days.reduce((sum, d) => sum + (d.costUsd ?? 0), 0)).toBe(0.75);
+    expect(report.totals).toMatchObject({ runs: 7, failedRuns: 0, costKnownRuns: 4, costUnknownRuns: 3 });
+    expect(report.totals.duration?.samples).toBe(7);
+    expect(report.engines.find((e) => e.engine === "spend")).toMatchObject({ runs: 4, costUsd: 0.75, costKnownRuns: 4, costUnknownRuns: 0 });
+    // Money adds in micro-dollars: 0.2 + 0.05 + 0.1 + 0.4 is exactly 0.75, not 0.7500000000000001.
+    expect(report.engines.find((e) => e.engine === "spend")!.costUsd).toBe(0.75);
+    expect(report.engines.find((e) => e.engine === "cached")).toMatchObject({ cacheHitRate: 0.85, runs: 2 });
+    expect(report.engines.find((e) => e.engine === "free")).toMatchObject({ costUsd: null, costKnownRuns: 0, costUnknownRuns: 1 });
+    // The provider model the engine actually served with, kept apart inside the engine.
+    expect(report.engines.find((e) => e.engine === "spend")!.models).toMatchObject([{ model: "spend-model", runs: 4, costUsd: 0.75 }]);
+
+    // A one-day range still ends today and knows where the week starts.
+    const oneDay = ctx.agent.usage(Date.now(), 1).range;
+    expect(oneDay.days).toHaveLength(1);
+    expect(oneDay.totals.runs).toBe(6);
   } finally {
     await ctx.fiber.dispose();
   }
