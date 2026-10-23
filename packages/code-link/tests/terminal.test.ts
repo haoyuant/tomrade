@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { AUTO_TERMINAL, GitBashMissing, SYSTEM_TERMINAL, TerminalSettings, bareCommand, fillTemplate, gitBash, herdrFallbackNote, launchTerminal, locatedCommand, machineTerminalSettings, openOnWindows, optionFlags, pathExport, powerShellPath, setupOnWindows, setupTerminal, terminalApp, terminalApps, terminalPath, terminalTemplate, withOptions, writeGeminiHome, type HerdrTerminal } from "@tomradex/code-link";
+import { AUTO_TERMINAL, GitBashMissing, SYSTEM_TERMINAL, TerminalSettings, bareCommand, fillTemplate, gitBash, herdrFallbackNote, launchTerminal, locatedCommand, machineTerminalSettings, openOnLinux, openOnWindows, optionFlags, pathExport, powerShellPath, setupOnWindows, setupTerminal, terminalApp, terminalApps, terminalPath, terminalTemplate, withOptions, writeGeminiHome, type HerdrTerminal } from "@tomradex/code-link";
 
 it("lists installed terminal apps with the special launch choices", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-terminal-apps-"));
@@ -289,6 +289,37 @@ describe("the system terminal on Windows", () => {
     expect(both).not.toContain("run the command yourself");
     opened.mockRestore();
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("the system terminal on Linux", () => {
+  /** A spawn that starts what `works` names and fails the rest, never exiting, as an emulator holds its window. */
+  const spawner = (works: (command: string) => boolean) => {
+    const tries: { command: string; args: string[]; cwd?: string; detached?: boolean }[] = [];
+    const launch = ((command: string, args: string[], options: { cwd?: string; detached?: boolean }) => {
+      tries.push({ command, args, cwd: options.cwd, detached: options.detached });
+      const child = new EventEmitter() as EventEmitter & { unref(): void };
+      child.unref = () => {};
+      queueMicrotask(() => (works(command) ? child.emit("spawn") : child.emit("error", new Error(`spawn ${command} ENOENT`))));
+      return child;
+    }) as unknown as typeof spawn;
+    return { tries, launch };
+  };
+
+  it("opens the script detached, as its own argument, without waiting for the window to close", async () => {
+    const { tries, launch } = spawner(() => true);
+    expect(await openOnLinux("/s/it's/run.command", "/work/tom-9", launch)).toBe("x-terminal-emulator");
+    expect(tries).toEqual([{ command: "x-terminal-emulator", args: ["-e", "bash", "/s/it's/run.command"], cwd: "/work/tom-9", detached: true }]);
+  });
+
+  it("falls back to gnome-terminal when x-terminal-emulator cannot start, and fails when neither can", async () => {
+    const { tries, launch } = spawner((command) => command === "gnome-terminal");
+    expect(await openOnLinux("/s/run.command", "/work", launch)).toBe("gnome-terminal");
+    expect(tries.map((t) => [t.command, ...t.args])).toEqual([
+      ["x-terminal-emulator", "-e", "bash", "/s/run.command"],
+      ["gnome-terminal", "--", "bash", "/s/run.command"]
+    ]);
+    await expect(openOnLinux("/s/run.command", "/work", spawner(() => false).launch)).rejects.toThrow("gnome-terminal ENOENT");
   });
 });
 
