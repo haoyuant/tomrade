@@ -48,7 +48,7 @@ export interface TurnInput {
   env?: Record<string, string>;
   workdir?: { remote: string; branch: string; worktree: string | null };
   /** The project's workstream repositories and where they are on this machine (null: no checkout here), for a main conversation to read. */
-  repositories?: { workstream: string; name: string; path: string | null; defaultBranch: string }[];
+  repositories?: { workstream: string; name: string; path: string | null; defaultBranch: string; readiness?: "empty" | "scaffolded" | "unknown"; hasBrief?: boolean }[];
 }
 
 /** A model request failed and the engine is trying again; `attempt` counts the retries so far. */

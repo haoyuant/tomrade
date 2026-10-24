@@ -17,7 +17,7 @@ import type {} from "@tomradex/repos";
 import { normalizeRemote } from "@tomradex/repos";
 import type {} from "@tomradex/settings";
 import type {} from "@tomradex/write";
-import type { Item } from "@tomradex/domain";
+import { repoSubfolder, type Item } from "@tomradex/domain";
 import { GitFolder, gitRunner, type Git } from "@tomradex/git";
 import { readPull, type ForgePull } from "./forge.js";
 import { agentsNeedingFiles, type ConnectionView } from "./connection.js";
@@ -26,8 +26,10 @@ import { RepoConnect, type ConnectMode, type ConnectResult } from "./connect-rep
 import { Connections, MCP_AGENT } from "./connections.js";
 import { contribute } from "./contrib.js";
 import { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
+import { FollowOnStore, type FollowOn } from "./follow-ons.js";
 import { HerdrBridge, type HerdrInstall } from "./herdr-bridge.js";
 import { Landing, type MergeCheckView, type MergeLocalResult, type OpenPrResult } from "./landing.js";
+import { Orientation } from "./orientation.js";
 import { SYNC_PROMPT, syncInstructions, syncPrompt, type SyncScope } from "./sync.js";
 import { githubHttps } from "@tomradex/github";
 import { PLAYBOOKS } from "./playbooks.js";
@@ -36,7 +38,7 @@ import { currentLinks, deliveryMerged, GitScan, LANDED_ELSEWHERE, primaryOf, typ
 import { Sessions, type SessionMoment } from "./sessions.js";
 import { CODE_WORDS, type CodeWords } from "./words.js";
 import { Starter, type StartOptions, type StartResult } from "./start.js";
-import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
+import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type Readiness, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
 import { findCodexRollout, findTranscript, readConversation, transcriptTitleFor, type ConversationLine } from "./titles.js";
 import { AUTO_TERMINAL, TerminalSettings, commandOk, exec, locatedCommand, terminalApps, terminalPath } from "./terminal.js";
 import { registerTools } from "./tools.js";
@@ -226,6 +228,8 @@ export class CodeLink extends Service implements CodeLinkReader {
   private readonly home: Context;
   private readonly git: Git;
   private starter!: Starter;
+  private orientation!: Orientation;
+  private followOnStore!: FollowOnStore;
   private scans!: GitScan;
   private landing!: Landing;
   private connections!: Connections;
@@ -254,6 +258,7 @@ export class CodeLink extends Service implements CodeLinkReader {
     this.home = ctx;
     this.git = gitRunner(config.gitBinary);
     this.defaults = new StartDefaultsStore(config.defaultsPath ?? null);
+    this.followOnStore = new FollowOnStore(config.defaultsPath ? path.join(path.dirname(config.defaultsPath), "code-link-follow-ons.json") : null);
   }
 
   [Service.init]() {
@@ -311,6 +316,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       archiveCompletedSessions: (projectId) => this.archiveCompletedSessions(projectId),
       superseded: (projectId, session) => this.connections.superseded(projectId, session)
     });
+    this.orientation = new Orientation({ ctx: this.ctx, store: this.store, starter: this.starter, words: () => this.words() });
     this.landing = new Landing({
       ctx: this.ctx,
       store: this.store,
@@ -451,6 +457,9 @@ export class CodeLink extends Service implements CodeLinkReader {
       const before = intent.before as Item | null;
       const after = intent.after as Item | null;
       if (!before || !after || before.status === after.status) return;
+      if (after.status === "done" || after.status === "cancelled") this.followOnStore.drop(intent.projectId, intent.id);
+      // Each is taken before it starts, so a ticket follows once; the start runs after this write has settled.
+      if (after.status === "done") for (const followOn of this.followOnStore.take(intent.projectId, intent.id)) void Promise.resolve().then(() => this.startFollowOn(followOn, after));
       if (after.status === "done") this.archiveCompletedSessions(intent.projectId);
       const open = new Set(["backlog", "todo", "doing", "verifying"]);
       if ((before.status === "done" || before.status === "cancelled") && open.has(after.status)) {
@@ -832,11 +841,37 @@ export class CodeLink extends Service implements CodeLinkReader {
 
   /** Start or continue a ticket with a local agent — headless here or in the user's terminal, coding or General. See `Starter` for the gates. */
   async start(projectId: string, itemId: string, opts: StartOptions): Promise<StartResult> {
-    const result = await this.starter.start(projectId, itemId, opts);
+    const { then, ...rest } = opts;
+    const result = await this.starter.start(projectId, itemId, rest);
     // Only what actually started is remembered, with the engine it settled on: a gate the user had to
     // clear leaves the memory as it was, and an engine the caller left to Tomrade is not lost.
-    if (result.ok) this.defaults.write({ mode: opts.mode, engine: result.engine, options: opts.options, permissionMode: opts.permissionMode, playbook: opts.playbook });
+    if (result.ok) this.defaults.write({ mode: rest.mode, engine: result.engine, options: rest.options, permissionMode: rest.permissionMode, playbook: rest.playbook });
+    // The ticket this one was started ahead of follows it with the same choices once it lands.
+    if (result.ok && then && then !== itemId && this.ctx.items.get(projectId, then)) {
+      this.followOnStore.add({ projectId, itemId: then, afterItemId: itemId, options: { mode: rest.mode, engine: result.engine, options: rest.options, permissionMode: rest.permissionMode, playbook: rest.playbook }, at: Date.now() });
+    }
     return result;
+  }
+
+  /** Tickets waiting to start by themselves once another lands. */
+  followOns(): FollowOn[] {
+    return this.followOnStore.list();
+  }
+
+  private async startFollowOn(followOn: FollowOn, landed: Item): Promise<void> {
+    const item = this.ctx.items.get(followOn.projectId, followOn.itemId);
+    if (!item || item.status === "done" || item.status === "cancelled") return;
+    try {
+      const result = await this.start(followOn.projectId, followOn.itemId, followOn.options);
+      if (!result.ok) {
+        this.ctx.logger.warn(`${item.key} did not start after ${landed.key} landed: ${result.message}`);
+        return;
+      }
+      const agent = this.ctx.get("agent");
+      if (result.threadId && agent) agent.store.appendMessage(followOn.projectId, result.threadId, "system", { type: "note", text: this.words()("followOnStarted", { key: item.key, after: landed.key }) }, null);
+    } catch (err) {
+      this.ctx.logger.warn(`${item.key} did not start after ${landed.key} landed: ${errorMessage(err)}`);
+    }
   }
 
   // ── herdr ──────────────────────────────────────────────────────────────────
@@ -1060,15 +1095,31 @@ export class CodeLink extends Service implements CodeLinkReader {
 
   /** One scan per project at a time; a second caller gets the running one. */
   scan(projectId: string): Promise<ScanSummary> {
-    return this.scans.scan(projectId);
+    return this.scans.scan(projectId).then((summary) => this.oriented(projectId, summary));
   }
 
   private rescan(projectId: string): Promise<ScanSummary> {
-    return this.scans.rescan(projectId);
+    return this.scans.rescan(projectId).then((summary) => this.oriented(projectId, summary));
   }
 
-  scanOpen(): Promise<void> {
-    return this.scans.scanOpen();
+  async scanOpen(): Promise<void> {
+    for (const projectId of this.ctx.db.openIds()) {
+      try {
+        await this.scan(projectId);
+      } catch (err) {
+        this.ctx.logger.warn(`code scan of ${projectId} failed: ${errorMessage(err)}`);
+      }
+    }
+  }
+
+  /** A scan that found a project in a repository the project knows nothing about yet has it read; the scan's result is not changed by it. */
+  private async oriented(projectId: string, summary: ScanSummary): Promise<ScanSummary> {
+    try {
+      await this.orientation.sweep(projectId);
+    } catch (err) {
+      this.ctx.logger.warn(`orientation in ${projectId} failed: ${errorMessage(err)}`);
+    }
+    return summary;
   }
 
   reevaluate(projectId: string, itemId: string, repoId: string): void {
@@ -1088,14 +1139,17 @@ export class CodeLink extends Service implements CodeLinkReader {
   }
 
   /** Each workstream's repository and its folder on this machine — what a main conversation reads the code from. */
-  repositoriesOf(projectId: string): { workstream: string; name: string; path: string | null; defaultBranch: string }[] {
+  repositoriesOf(projectId: string): { workstream: string; name: string; path: string | null; defaultBranch: string; readiness: Readiness; hasBrief: boolean }[] {
     return this.ctx.boards.list(projectId).flatMap((board) => {
       const repo = board.repoId ? this.ctx.repos.get(projectId, board.repoId) : null;
       if (!repo) return [];
       const checkout = this.ctx.repos.checkout(repo.remote).checkout;
-      const subdir = board.repoPath.replace(/^\/+|\/+$/g, "");
-      const folder = checkout && fs.existsSync(checkout) ? (subdir ? path.join(checkout, subdir) : checkout) : null;
-      return [{ workstream: board.name, name: repo.name, path: folder, defaultBranch: repo.defaultBranch }];
+      // A folder outside the checkout is no folder to read from.
+      const subdir = checkout ? repoSubfolder(board.repoPath, checkout) : null;
+      const folder = checkout && subdir !== null && fs.existsSync(checkout) ? (subdir ? path.join(checkout, subdir) : checkout) : null;
+      // What the last scan made of it: a conversation plans against an empty repository differently from a full one.
+      const state = this.store.repoState(projectId, repo.id);
+      return [{ workstream: board.name, name: repo.name, path: folder, defaultBranch: repo.defaultBranch, readiness: state?.readiness ?? "unknown", hasBrief: state?.hasBrief ?? false }];
     });
   }
 
