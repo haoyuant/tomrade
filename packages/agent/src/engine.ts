@@ -391,6 +391,8 @@ export interface EnginePick {
   failed?: string;
   /** A machine-wide knob, not a conversation's: settings, the panel and setup write it for every thread; Start keeps the saved value. */
   global?: boolean;
+  /** What the engine runs with when nothing is chosen (its own setting), where it is known: shown beside "Default". */
+  fallback?: string;
 }
 
 /** One real turn on an engine, asked for by the person: does it answer? */

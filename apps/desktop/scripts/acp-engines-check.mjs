@@ -69,7 +69,8 @@ const run = async () => {
   check("WorkBuddy and dsh are ready with the CLI they found", view("workbuddy")?.ok && view("workbuddy").cli.path === codebuddy && view("dsh")?.ok, [view("workbuddy"), view("dsh")]);
   // A view names `terminal` only for an engine that cannot take one.
   check("each can also be handed a ticket in a terminal", ["hermes", "dsh", "workbuddy"].every((id) => view(id).terminal !== false), ["hermes", "dsh", "workbuddy"].map((id) => view(id).terminal));
-  check("WorkBuddy's models come from its help before any session", view("workbuddy").picks[0].choices.map((c) => c.value).join() === "default-model,hy3,gpt-5.5", view("workbuddy").picks);
+  // Its edition pick comes first, so the model pick is found by key.
+  check("WorkBuddy's models come from its help before any session", view("workbuddy").picks.find((p) => p.key === "model")?.choices.map((c) => c.value).join() === "default-model,hy3,gpt-5.5", view("workbuddy").picks);
   check("dsh offers its reasoning efforts", view("dsh").picks[1]?.choices.map((c) => c.value).join() === "off,low,high,max", view("dsh").picks);
 
   const win = new BrowserWindow({ width: 1440, height: 960, show: !!process.env.TOMRADE_SHOW, webPreferences: { preload: path.join(dir, "../preload.cjs"), contextIsolation: true } });
@@ -108,7 +109,8 @@ const run = async () => {
   check("the first ready one is chosen", (await $(`document.querySelector('#stEngine').value`)) === "dsh");
   check("dsh's efforts are a pick", (await $(`[...document.querySelectorAll('#stPick-effort option')].map((o) => o.value).join()`)) === ",off,low,high,max");
   await $(`(() => { const s = document.querySelector('#stEngine'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'workbuddy'); s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
-  check("WorkBuddy's models are offered as you type", await wait(async () => (await $(`[...document.querySelectorAll('#stPick-model-list option')].map((o) => o.value).join()`)) === "default-model,hy3,gpt-5.5", "model list"));
+  // The select lists them before "Default" and after; "Custom…" takes any other id.
+  check("WorkBuddy's models are offered in the list", await wait(async () => (await $(`[...document.querySelectorAll('#stPick-model option')].map((o) => o.value).filter((v) => v && !v.startsWith('\\0')).join()`)) === "default-model,hy3,gpt-5.5", "model list"));
   await shot("acp-engines-01-start-here");
 
   await mode("Open in terminal");
