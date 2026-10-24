@@ -9,6 +9,8 @@ import type {} from "@tomradex/ipc";
 import { aboutInfo, type AboutInfo } from "./about.js";
 import { restart } from "./accounts.js";
 
+const RUNNABLE = /\.(app|command|tool|sh|bash|zsh|csh|fish|pkg|mpkg|dmg|scpt|scptd|workflow|terminal|jar|exe|msi|bat|cmd|com|ps1|vbs|js|lnk|url|webloc|desktop|appimage|run)$/i;
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
 declare module "@tomradex/ipc" {
@@ -25,6 +27,8 @@ declare module "@tomradex/ipc" {
     "shell.reveal": (target: string) => void;
     /** Open a link in the real browser — the renderer must never navigate away from the app. */
     "shell.openExternal": (url: string) => void;
+    /** Open a local file or folder with its default app; false when there is nothing there. */
+    "shell.openPath": (target: string) => boolean;
     /** Which build this is and what it runs on, for the About pane. */
     "shell.about": () => AboutInfo;
     /** Native save dialog, then the text written there — an exported settings file. The chosen path, or null when cancelled. */
@@ -103,6 +107,14 @@ export const shell = {
     ctx.ipc.handle("shell.openExternal", openExternal);
     // The same for main-process features, such as a plugin's window that has no renderer channel of its own.
     ctx.on("desktop/open-external", openExternal);
+    ctx.ipc.handle("shell.openPath", async (target) => {
+      const file = target.startsWith("~/") ? path.join(app.getPath("home"), target.slice(2)) : target;
+      if (!path.isAbsolute(file) || !(await fs.stat(file).catch(() => null))) return false;
+      // A path in a conversation is the model's words: show a program in its folder, never run it.
+      if (RUNNABLE.test(file)) electronShell.showItemInFolder(file);
+      else await electronShell.openPath(file);
+      return true;
+    });
     ctx.on("desktop/open-path", (target) => {
       if (path.isAbsolute(target)) void electronShell.openPath(target);
     });
