@@ -46,7 +46,7 @@ export interface WorkdirStatus {
    * Why there is no folder. no-board, no-board-repo and unknown-repo come with no `problem`: a conversation
    * on a workstream without a repository runs fine without one, and only a Start needs to say so.
    */
-  code: "no-checkout" | "no-repos" | "no-board" | "no-board-repo" | "unknown-repo" | "no-hub" | "branch-in-use" | "finished" | "error" | null;
+  code: "no-checkout" | "no-repos" | "no-board" | "no-board-repo" | "unknown-repo" | "no-hub" | "branch-in-use" | "folder-outside" | "finished" | "error" | null;
   /** branch-in-use: the other worktree that has the branch. */
   heldAt?: string;
 }
@@ -1161,7 +1161,7 @@ export class Agent extends Service implements AgentReader {
       return { cwd: view.cwd, remote: view.repo.remote, branch: view.branch, worktree: view.worktree, problem: null, code: null };
     } catch (err) {
       const { remote, name, branch, at } = err as { remote?: string; name?: string; branch?: string; at?: string };
-      const code = name === "CheckoutUnsetError" ? "no-checkout" : name === "HubUnsetError" ? "no-hub" : name === "BranchInUseError" ? "branch-in-use" : "error";
+      const code = name === "CheckoutUnsetError" ? "no-checkout" : name === "HubUnsetError" ? "no-hub" : name === "BranchInUseError" ? "branch-in-use" : name === "RepoPathOutsideError" ? "folder-outside" : "error";
       return { ...none, remote: remote ?? null, branch: branch ?? null, problem: errorMessage(err), code, ...(at ? { heldAt: at } : {}) };
     }
   }
