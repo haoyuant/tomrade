@@ -178,7 +178,9 @@ ALTER TABLE plugin_code_link_sessions ADD COLUMN prompted INTEGER NOT NULL DEFAU
 `
   },
   // The tickets a session worked before it moved on to the one it holds, so each keeps the conversation that did it.
-  { version: 14, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN worked_json TEXT NOT NULL DEFAULT '[]'" }
+  { version: 14, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN worked_json TEXT NOT NULL DEFAULT '[]'" },
+  // The person's word that an outside session changes code without a ticket (work_without_ticket), in their words.
+  { version: 15, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN without_ticket TEXT" }
 ];
 
 /** Durable code links travel with the project; running sessions belong to this machine. */
@@ -304,6 +306,8 @@ export interface SessionView {
   transcript: string | null;
   /** Someone has said something to it. */
   prompted: boolean;
+  /** The person said this session changes code without a ticket (their words); null until they do, and once it claims one. */
+  withoutTicket: string | null;
   state: SessionState;
   lastEventAt: number | null;
   lastToolAt: number | null;
@@ -396,6 +400,7 @@ interface SessionRow {
   cwd: string | null;
   transcript: string | null;
   prompted: number | null;
+  without_ticket: string | null;
   state: string;
   last_event_at: number | null;
   last_tool_at: number | null;
@@ -487,6 +492,7 @@ const toSession = (r: SessionRow): SessionView => ({
   cwd: r.cwd ?? null,
   transcript: r.transcript ?? null,
   prompted: !!r.prompted,
+  withoutTicket: r.without_ticket ?? null,
   state: r.state as SessionState,
   lastEventAt: r.last_event_at,
   lastToolAt: r.last_tool_at,
@@ -545,6 +551,7 @@ export interface SessionPatch {
   cwd?: string | null;
   transcript?: string | null;
   prompted?: boolean;
+  withoutTicket?: string | null;
   state?: SessionState;
   lastEventAt?: number | null;
   lastToolAt?: number | null;
@@ -902,6 +909,7 @@ export class CodeLinkStore {
       cwd: "cwd",
       transcript: "transcript",
       prompted: "prompted",
+      withoutTicket: "without_ticket",
       state: "state",
       lastEventAt: "last_event_at",
       lastToolAt: "last_tool_at",

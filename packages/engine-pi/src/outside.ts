@@ -65,7 +65,14 @@ export default function (pi) {
     const title = titleOf(ctx);
     post({ hook_event_name: "UserPromptSubmit", ...(prompt ? { prompt } : {}), ...(title ? { title } : {}) });
   });
-  pi.on("tool_call", (event) => post({ hook_event_name: "PreToolUse", tool_name: names[event.toolName] ?? event.toolName, tool_input: event.input }));
+  // Tomrade may refuse a tool (a code change before the session claimed a ticket); its reply says why.
+  pi.on("tool_call", async (event) => {
+    const reply = await fetch(eventUrl, { method: "POST", headers: { "content-type": "application/json", "x-tomrade-agent": "pi" },
+      body: JSON.stringify({ session_id: sessionId, cwd, ...pane, hook_event_name: "PreToolUse", tool_name: names[event.toolName] ?? event.toolName, tool_input: event.input }), signal: AbortSignal.timeout(2000) })
+      .then((response) => response.json()).catch(() => ({}));
+    const decision = reply?.hookSpecificOutput;
+    if (decision?.permissionDecision === "deny") return { block: true, reason: decision.permissionDecisionReason };
+  });
   pi.on("tool_result", (event) => {
     const text = textOf(event.content);
     post({ hook_event_name: event.isError ? "PostToolUseFailure" : "PostToolUse", tool_name: names[event.toolName] ?? event.toolName,

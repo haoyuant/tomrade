@@ -36,14 +36,14 @@ Local-first backlog workbench: an Electron app (`apps/desktop`) with a React UI 
 ## Tomrade
 
 The backlog for this repository lives in Tomrade (project "Tomrade"), reachable as the `tomrade` MCP server (`.mcp.json` for Claude Code, `.codex/config.toml` for Codex).
-Claude Code and Codex report session lifecycle through repository hooks. In Codex, trust the project and review the new hooks with `/hooks`, then start a new session; older Codex versions without hooks must be upgraded. No `notify` setting is changed.
+Claude Code and Codex report session lifecycle through repository hooks. The hooks also carry Tomrade's answer: a code change made before this session claimed a ticket, or recorded the person's word to go without one, is refused with the way on. In Codex, trust the project and review the new hooks with `/hooks`, then start a new session; older Codex versions without hooks must be upgraded. No `notify` setting is changed.
 Cursor uses `.cursor/mcp.json`; Gemini CLI uses `.gemini/settings.json`. Neither reports its lifecycle, but once it calls `claim_ticket` Tomrade follows the session through its MCP connection: later calls on that connection need no key. Use `note_progress` only when the claim's result says `tracking.tracked` is true.
 For other MCP-capable agents, add a Streamable HTTP server named `tomrade` with URL http://127.0.0.1:19090/mcp/014ce729-9739-41b5-a148-8d73f7825928 in that agent's own settings. No configuration is generated for other tools; reading AGENTS.md alone supplies instructions, not MCP tools or session tracking.
 Not every session works on a ticket, and not every ticket involves code: never invent one. Work without a ticket is fine.
 
 ### Before changing this repository
 
-When the person asks for a change and this session holds no ticket, file one with `create_item` and claim it with `claim_ticket` (when they name a key, claim that), then do the work on the branch the claim returns; every commit message names the key. Do not ask first: the person can change or drop the ticket, and the sidebar shows what this session works on from the moment it claims. A typo or a question needs no ticket.
+Before changing code here, look where you are: the checkout's branch, and whether this session holds a ticket. A session that holds a ticket goes on with it turn after turn; when the checkout is already on a ticket's branch (its name carries a key) and the request continues that work, `claim_ticket` that key once and go on there — no new ticket or branch per request. A new piece of work the person asked for gets a ticket of its own — `create_item` (or the key they named), then `claim_ticket` — and is made on the branch the claim returns, every commit message naming the key; do not ask first for that: the person can change or drop the ticket, and the sidebar shows what this session works on from the moment it claims. When it is unclear a ticket is wanted (a tiny fix, an experiment, something they may want kept out of the backlog), ask them first; if they want it done here without one, call `work_without_ticket` with their words and go on. Never edit or commit on the default branch, or on another ticket's branch, without one of these. Reading, searching, explaining and answering questions need nothing.
 
 ### When the work is a ticket (the user or the branch names a key such as `TOM-42`)
 

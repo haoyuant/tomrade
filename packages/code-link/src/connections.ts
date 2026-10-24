@@ -94,6 +94,8 @@ export class Connections {
       ...(left.length ? { worked: [...session.worked.filter((w) => !left.some((l) => l.itemId === w.itemId && l.delivery === w.delivery)), ...left] } : {}),
       delivery,
       itemIds: opts.replace ? [itemId] : session.itemIds.includes(itemId) ? session.itemIds : [...session.itemIds, itemId],
+      // On a ticket now: the person's word to go without one is spent.
+      ...(session.withoutTicket ? { withoutTicket: null } : {}),
       ...(session.branch && !fresh ? {} : { branch }),
       ...(session.state === "ended" ? {} : { state: "running" as const }),
       lastEventAt: Date.now()
@@ -256,13 +258,16 @@ export class Connections {
     }
   }
 
-  /** A hook fired without a token: match it to a session by where the agent runs — a Tomrade worktree, or someone's checkout. */
-  externalEvent(raw: unknown): void {
+  /**
+   * A hook fired without a token: match it to a session by where the agent runs — a Tomrade worktree, or someone's
+   * checkout — and answer it, for the agents whose hooks leave the answer on stdout.
+   */
+  async externalEvent(raw: unknown): Promise<Record<string, unknown> | undefined> {
     // Cursor's hooks post in its own names; the rest of this reads Claude Code's.
     const payload = (raw as { tomrade_agent?: unknown } | null)?.tomrade_agent === "cursor" ? this.readCursorHook(raw) : raw;
-    if (!payload) return;
+    if (!payload) return undefined;
     const p = payload as { hook_event_name?: string; session_id?: string; cwd?: string; transcript_path?: string; tomrade_agent?: string; source?: string };
-    if (!p.cwd || !p.session_id) return;
+    if (!p.cwd || !p.session_id) return undefined;
     const agent = p.tomrade_agent === "codex" || p.tomrade_agent === "workbuddy" || p.tomrade_agent === "pi" || p.tomrade_agent === "hermes" || p.tomrade_agent === "opencode" || p.tomrade_agent === "cursor" ? p.tomrade_agent : "claude-code";
     // Where the transcript lives tells which of the person's Claude Code accounts ran it.
     if (agent === "claude-code" && typeof p.transcript_path === "string") this.ctx.get("agent")?.engineOf("claude-code")?.local?.mcpLink?.sawTranscript?.(p.transcript_path);
@@ -277,16 +282,16 @@ export class Connections {
         const session = this.store.sessions(projectId, { live: true }).find((s) => s.threadId === threadId);
         if (session) {
           this.heardHook(projectId, session.repoId, agent);
-          this.heard(projectId, session.id, payload);
-          return;
+          return this.heard(projectId, session.id, payload);
         }
       }
-      return;
+      return undefined;
     }
     const mine = (projectId: string) => this.store.sessions(projectId, { live: true }).filter((s) => s.threadId === null && s.agent === agent && s.externalId === p.session_id);
     // The agent itself is gone: every session it had, parallel or not, ends with it.
-    const deliver = (projectId: string, sessions: SessionView[]) => {
-      for (const s of p.hook_event_name === "SessionEnd" ? sessions : sessions.slice(0, 1)) this.heard(projectId, s.id, payload);
+    const deliver = async (projectId: string, sessions: SessionView[]) => {
+      const replies = await Promise.all((p.hook_event_name === "SessionEnd" ? sessions : sessions.slice(0, 1)).map((s) => this.heard(projectId, s.id, payload)));
+      return replies[0];
     };
     // One agent working tickets in parallel, each in a worktree it named: an event from inside one is that session's.
     for (const projectId of this.ctx.db.openIds()) {
@@ -294,8 +299,7 @@ export class Connections {
       const placed = all.filter((s) => s.worktree && within(path.resolve(s.worktree))).sort((a, b) => b.worktree!.length - a.worktree!.length)[0];
       if (placed) {
         this.heardHook(projectId, placed.repoId, agent);
-        deliver(projectId, [placed, ...all.filter((s) => s.id !== placed.id)]);
-        return;
+        return deliver(projectId, [placed, ...all.filter((s) => s.id !== placed.id)]);
       }
     }
     for (const projectId of this.ctx.db.openIds()) {
@@ -305,24 +309,28 @@ export class Connections {
         this.heardHook(projectId, repo.id, agent);
         // Anywhere else in the checkout, the newest of its sessions there.
         const known = mine(projectId).filter((s) => s.repoId === repo.id);
-        if (known.length) {
-          deliver(projectId, known);
-          return;
-        }
+        if (known.length) return deliver(projectId, known);
         // The end of a session never heard of is nothing to record.
-        if (p.hook_event_name === "SessionEnd") return;
+        if (p.hook_event_name === "SessionEnd") return undefined;
         const created = this.store.createSession(projectId, { repoId: repo.id, branch: "", itemIds: [], mode: "terminal", agent, threadId: null, device: this.ctx.hub.deviceId, externalId: p.session_id ?? null });
-        this.heard(projectId, created.id, payload);
-        return;
+        return this.heard(projectId, created.id, payload);
       }
     }
     void this.placeFrom(cwd).catch((err) => this.ctx.logger.warn(`placing a checkout from ${cwd} failed: ${errorMessage(err)}`));
+    return undefined;
   }
 
-  /** A connected repository's hook, for a session: recorded, and shown to plugins' hooks, which cannot answer it. */
-  private heard(projectId: string, sessionId: string, payload: unknown): void {
-    void this.sessions.hook(projectId, sessionId, payload, false).catch((err) => this.ctx.logger.warn(`a repository hook for ${sessionId}: ${errorMessage(err)}`));
+  /**
+   * A connected repository's hook, for a session: recorded, shown to plugins' hooks, and answered — unless the session
+   * also reports through its token, which answers it; the repository's copy of that hook is only heard.
+   */
+  private async heard(projectId: string, sessionId: string, payload: unknown): Promise<Record<string, unknown>> {
+    const reply = this.sessions.hook(projectId, sessionId, payload, !this.sessions.tokened(sessionId)).catch((err) => {
+      this.ctx.logger.warn(`a repository hook for ${sessionId}: ${errorMessage(err)}`);
+      return {};
+    });
     this.findPane(projectId, sessionId, payload);
+    return reply;
   }
 
   /**
