@@ -24,6 +24,7 @@
     "postinstall": "electron-rebuild -f -w better-sqlite3",
     "test:files": "electron scripts/files-check.mjs",
     "test:notes": "electron scripts/notes-check.mjs",
+    "test:archived-thread": "electron scripts/archived-thread-check.mjs",
     "test:agent-panel": "electron scripts/agent-panel-check.mjs",
     "test:error-details": "electron scripts/error-details-check.mjs",
     "test:load-error": "electron scripts/load-error-check.mjs",
