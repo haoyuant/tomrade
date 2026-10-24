@@ -9,7 +9,8 @@ const PLUGIN_MARK = "Written by Tomrade";
  * connect, so this one carries the session's token too.
  */
 function opencodeMcpEntry(url: string): Record<string, unknown> {
-  return { type: "remote", url, enabled: true, headers: { "X-Tomrade-Run": "{env:TOMRADE_MCP_TOKEN}" } };
+  // The pane header names where the session runs, from the variable Tomrade's terminal sets; empty elsewhere.
+  return { type: "remote", url, enabled: true, headers: { "X-Tomrade-Run": "{env:TOMRADE_MCP_TOKEN}", "X-Tomrade-Herdr-Pane": "{env:HERDR_PANE_ID}" } };
 }
 
 /**

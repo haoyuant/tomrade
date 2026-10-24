@@ -117,11 +117,13 @@ export function hookCommand(eventUrl: string, agent?: HookAgent, options: { repl
 /**
  * The POSIX-only command: Cursor's script runs it under sh, and an older
  * Tomrade committed it as the hook itself — `pane: false` from before hooks
- * named their herdr pane — which still counts as connected.
+ * named their herdr pane — which still counts as connected. `reply` leaves
+ * Tomrade's answer on stdout for Cursor to read, in Cursor's own fields;
+ * with Tomrade down, curl says nothing and Cursor goes on.
  */
-export function posixHookCommand(eventUrl: string, agent?: HookAgent, options: { pane?: boolean; terminal?: boolean; wt?: boolean } = {}): string {
+export function posixHookCommand(eventUrl: string, agent?: HookAgent, options: { pane?: boolean; terminal?: boolean; wt?: boolean; reply?: boolean } = {}): string {
   const url = eventUrl.replace(/'/g, "'\\''");
-  return `curl -s -m 2 -X POST -H 'Content-Type: application/json'${options.pane === false ? "" : ` ${HERDR_PANE_HEADER}`}${options.pane === false || options.terminal === false ? "" : ` ${TERMINAL_HEADER}`}${options.pane === false || options.terminal === false || options.wt === false ? "" : ` ${WT_HEADER}`}${agent ? ` -H 'X-Tomrade-Agent: ${agent}'` : ""} --data-binary @- '${url}' >/dev/null 2>&1 || true`;
+  return `curl -s -m 2 -X POST -H 'Content-Type: application/json'${options.pane === false ? "" : ` ${HERDR_PANE_HEADER}`}${options.pane === false || options.terminal === false ? "" : ` ${TERMINAL_HEADER}`}${options.pane === false || options.terminal === false || options.wt === false ? "" : ` ${WT_HEADER}`}${agent ? ` -H 'X-Tomrade-Agent: ${agent}'` : ""} --data-binary @- '${url}' ${options.reply ? "2>/dev/null" : ">/dev/null 2>&1"} || true`;
 }
 
 /** Every command of ours a hook may carry: today's, the one from before hooks carried an answer back, the ones from before hooks named their terminal or Windows Terminal, and the POSIX ones an older Tomrade committed. */
@@ -136,15 +138,16 @@ export const hookCommands = (eventUrl: string, agent?: HookAgent): string[] => [
   posixHookCommand(eventUrl, agent, { pane: false })
 ];
 
-/** The same report in PowerShell, for a script that gets the payload piped in (or on stdin); it gives up after 2 s and exits 0. */
-function powershellHook(eventUrl: string, agent: HookAgent): string {
+/** The same report in PowerShell, for a script that gets the payload piped in (or on stdin); it gives up after 2 s and exits 0. `reply` writes Tomrade's answer to stdout. */
+function powershellHook(eventUrl: string, agent: HookAgent, options: { reply?: boolean } = {}): string {
+  const request = `Invoke-WebRequest -UseBasicParsing -Method Post -Uri '${eventUrl.replace(/'/g, "''")}' -TimeoutSec 2 -ContentType 'application/json' -Headers $headers -Body $body -ErrorAction Stop`;
   return [
     '$body = [Text.Encoding]::UTF8.GetBytes((@($input) -join "`n"))',
     "if (-not $body.Length -and [Console]::IsInputRedirected) { $stdin = New-Object IO.MemoryStream; [Console]::OpenStandardInput().CopyTo($stdin); $body = $stdin.ToArray() }",
     `$headers = @{ 'X-Tomrade-Agent' = '${agent}' }`,
     "if ($env:HERDR_PANE_ID) { $headers['X-Tomrade-Herdr-Pane'] = $env:HERDR_PANE_ID }",
     "if ($env:TERM_PROGRAM) { $headers['X-Tomrade-Terminal'] = $env:TERM_PROGRAM } elseif ($env:WT_SESSION) { $headers['X-Tomrade-WT'] = $env:WT_SESSION }",
-    `try { Invoke-WebRequest -UseBasicParsing -Method Post -Uri '${eventUrl.replace(/'/g, "''")}' -TimeoutSec 2 -ContentType 'application/json' -Headers $headers -Body $body -ErrorAction Stop | Out-Null } catch { }`,
+    options.reply ? `try { $response = ${request}; [Console]::Out.Write([string]$response.Content) } catch { }` : `try { ${request} | Out-Null } catch { }`,
     "exit 0"
   ].join("\n");
 }
@@ -216,7 +219,7 @@ export function tomradeSection(input: ConnectInput, options: { fetchRules?: bool
     "",
     `The backlog for this repository lives in Tomrade (project "${input.projectName}"), reachable as the \`tomrade\` MCP server (\`.mcp.json\` for Claude Code and WorkBuddy, \`.codex/config.toml\` for Codex, \`.pi/extensions/tomrade.ts\` for Pi, \`opencode.json\` for OpenCode).`,
     "This section applies only when the `tomrade` MCP server is available in your session. Tomrade runs on one developer's machine; without it (no such server, or its tools fail to connect) everything below is void: work as usual, never try to reach Tomrade another way, and never mention tickets you cannot read.",
-    "Claude Code, Codex, WorkBuddy and Cursor report session lifecycle through repository hooks, Pi through that extension and OpenCode through `.opencode/plugins/tomrade.js`. The hooks also carry Tomrade's answer: a code change made before this session claimed a ticket, or recorded the person's word to go without one, is refused with the way on. In Codex, trust the project and review the new hooks with `/hooks`, then start a new session; older Codex versions without hooks must be upgraded. Pi loads the extension once you trust the project. No `notify` setting is changed.",
+    "Claude Code, Codex, WorkBuddy and Cursor report session lifecycle through repository hooks, Pi through that extension and OpenCode through `.opencode/plugins/tomrade.js`. The hooks also carry Tomrade's answer (Cursor's in its own fields): a code change made before this session claimed a ticket, or recorded the person's word to go without one, is refused with the way on. In Codex, trust the project and review the new hooks with `/hooks`, then start a new session; older Codex versions without hooks must be upgraded. Pi loads the extension once you trust the project. No `notify` setting is changed.",
     "Cursor uses `.cursor/mcp.json`, and `.cursor/hooks.json` runs `.cursor/hooks/tomrade` (`.cursor/hooks/tomrade.ps1` on Windows). Gemini CLI uses `.gemini/settings.json` and does not report its lifecycle, but once it calls `claim_ticket` Tomrade follows the session through its MCP connection: later calls on that connection need no key. Use `note_progress` only when the claim's result says `tracking.tracked` is true.",
     `For other MCP-capable agents, add a Streamable HTTP server named \`tomrade\` with URL ${input.mcpUrl} in that agent's own settings. No configuration is generated for other tools; reading AGENTS.md alone supplies instructions, not MCP tools or session tracking.`,
     "Not every session works on a ticket, and not every ticket involves code: never invent one. Work without a ticket is fine.",
@@ -279,9 +282,20 @@ function withTomradeSection(existing: string, projectName: string, section: stri
   return existing ? `${existing.replace(/\s*$/, "")}\n\n${section}` : `# ${projectName}\n\n${section}`;
 }
 
-/** Preserve unrelated Codex config while owning one clearly marked MCP table. */
+/**
+ * The header that names the herdr pane an agent was started in, from the
+ * variable Tomrade's terminal sets, in each agent's own spelling of a
+ * variable: unset outside Tomrade's terminal, it arrives empty or as written,
+ * and Tomrade reads either as no pane.
+ */
+export const PANE_HEADER = "X-Tomrade-Herdr-Pane";
+const PANE_VARIABLE = "HERDR_PANE_ID";
+/** Claude Code's `.mcp.json` and Gemini CLI's settings expand `${VAR}`; Cursor's mcp.json `${env:VAR}`. */
+export const paneHeaders = (spelling: "${VAR}" | "${env:VAR}" = "${VAR}"): Record<string, string> => ({ [PANE_HEADER]: spelling === "${env:VAR}" ? `\${env:${PANE_VARIABLE}}` : `\${${PANE_VARIABLE}}` });
+
+/** Preserve unrelated Codex config while owning one clearly marked MCP table; `env_http_headers` names the pane from the variable. */
 function withCodexMcp(existing: string, url: string): string {
-  const block = `${CODEX_START}\n[mcp_servers.tomrade]\nurl = ${JSON.stringify(url)}\n${CODEX_END}`;
+  const block = `${CODEX_START}\n[mcp_servers.tomrade]\nurl = ${JSON.stringify(url)}\nenv_http_headers = { ${JSON.stringify(PANE_HEADER)} = ${JSON.stringify(PANE_VARIABLE)} }\n${CODEX_END}`;
   const marked = new RegExp(`${CODEX_START.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[\\s\\S]*?${CODEX_END.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`);
   if (marked.test(existing)) return existing.replace(marked, block);
 
@@ -316,9 +330,11 @@ const sameJson = (a: string, b: string) => JSON.stringify(JSON.parse(a)) === JSO
 /**
  * A JSON config's next text, or null when it already says what it should. One
  * with comments or trailing commas is read but never rewritten, which would
- * drop them, and one that is no JSON object is left as it is.
+ * drop them, and one that is no JSON object is left as it is. `satisfied`
+ * says when such a file is close enough to leave alone, short of the exact
+ * text the change would write.
  */
-function nextJson(root: string, name: string, change: (json: string) => string): string | null {
+function nextJson(root: string, name: string, change: (json: string) => string, satisfied?: (json: string) => boolean): string | null {
   const file = path.join(root, name);
   const text = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
   if (!text.trim()) return change("");
@@ -328,13 +344,19 @@ function nextJson(root: string, name: string, change: (json: string) => string):
   }
   const loose = stripJsonComments(text);
   if (!isJsonObject(loose)) throw new Unwritable(name, "invalid");
-  if (sameJson(change(loose), loose)) return null;
+  if (sameJson(change(loose), loose) || satisfied?.(loose)) return null;
   throw new Unwritable(name, "comments");
 }
 
 const withServer = (server: Record<string, unknown>) => (json: string) => {
   const config = object(json ? JSON.parse(json) : {});
   return JSON.stringify({ ...config, mcpServers: { ...object(config.mcpServers), tomrade: server } }, null, 2) + "\n";
+};
+
+/** A config that already names the server at this address, with or without the pane header, is connected; one with comments is left as it is. */
+const namesServer = (url: string) => (json: string) => {
+  const server = object(object(object(JSON.parse(json)).mcpServers).tomrade);
+  return server.url === url || server.httpUrl === url;
 };
 
 /** One lifecycle hook per event after the person's own, replacing any Tomrade hook from before. */
@@ -399,7 +421,7 @@ export function writeConnectFiles(root: string, input: ConnectInput, agents: rea
     return fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null;
   };
   const exact = (name: string, text: string, mode?: number): Write => ({ name, text: read(name) === text ? null : text, ...(mode ? { mode } : {}) });
-  const json = (name: string, change: (json: string) => string): Write => ({ name, text: nextJson(root, name, change) });
+  const json = (name: string, change: (json: string) => string, satisfied?: (json: string) => boolean): Write => ({ name, text: nextJson(root, name, change, satisfied) });
   const section = (name: "CLAUDE.md" | "AGENTS.md"): Write[] => {
     // This machine only: a file git does not track is ours to write, so the agent reads the rules; one the team
     // tracks stays the team's, and the MCP server's instructions speak instead.
@@ -425,8 +447,8 @@ export function writeConnectFiles(root: string, input: ConnectInput, agents: rea
     const next = text ?? withMcp;
     return { name, text: next === existing ? null : next };
   };
-  const mcp = () => json(".mcp.json", withServer({ type: "http", url: input.mcpUrl }));
-  // The agents that act on a hook's answer get it on stdout; Cursor's script below swallows it, as its permission hooks read only their own shape.
+  const mcp = () => json(".mcp.json", withServer({ type: "http", url: input.mcpUrl, headers: paneHeaders() }), namesServer(input.mcpUrl));
+  // The agents that act on a hook's answer get it on stdout; Cursor's scripts below do too, and Tomrade answers them in Cursor's own fields.
   const claudeHooks = withSessionHooks(hookCommand(input.eventUrl, undefined, { reply: true }));
   // Without its engine's writer (the engine is off), Pi gets the instructions alone, and is told why.
   const pi = connectors("pi");
@@ -440,8 +462,8 @@ export function writeConnectFiles(root: string, input: ConnectInput, agents: rea
       return [...(pi ? [exact(PI_EXTENSION, pi.write(input.mcpUrl, input.eventUrl))] : []), ...section("AGENTS.md")];
     },
     opencode: () => [json("opencode.json", (text) => withMcpEntry(text, input.mcpUrl)), exact(OPENCODE_PLUGIN, opencodePlugin(input.eventUrl)), ...section("AGENTS.md")],
-    cursor: () => [json(".cursor/mcp.json", withServer({ url: input.mcpUrl })), json(".cursor/hooks.json", withCursorHooks), exact(CURSOR_HOOK_SCRIPT, cursorHookScript(posixHookCommand(input.eventUrl, "cursor")), 0o755), exact(CURSOR_HOOK_POWERSHELL, cursorHookPowerShell(powershellHook(input.eventUrl, "cursor"))), ...section("AGENTS.md")],
-    gemini: () => [json(".gemini/settings.json", withServer({ httpUrl: input.mcpUrl }))]
+    cursor: () => [json(".cursor/mcp.json", withServer({ url: input.mcpUrl, headers: paneHeaders("${env:VAR}") }), namesServer(input.mcpUrl)), json(".cursor/hooks.json", withCursorHooks), exact(CURSOR_HOOK_SCRIPT, cursorHookScript(posixHookCommand(input.eventUrl, "cursor", { reply: true })), 0o755), exact(CURSOR_HOOK_POWERSHELL, cursorHookPowerShell(powershellHook(input.eventUrl, "cursor", { reply: true }))), ...section("AGENTS.md")],
+    gemini: () => [json(".gemini/settings.json", withServer({ httpUrl: input.mcpUrl, headers: paneHeaders() }), namesServer(input.mcpUrl))]
   };
   // A plugin agent's own file: its engine registered the writer, so Connect needs no knowledge of its format.
   const planFor = (agent: ConnectAgent): Write[] => {

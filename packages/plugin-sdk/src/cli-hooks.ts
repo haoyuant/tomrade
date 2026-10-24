@@ -7,13 +7,14 @@ export const CLI_HOOK_EVENTS: readonly CliHookEvent[] = ["session-start", "promp
 const REPORTING = ["claude-code", "workbuddy", "dsh", "pi", "codex", "cursor", "opencode", "hermes"] as const;
 
 // Codex reads Claude Code's hook output (PreToolUse deny and context, SessionStart/UserPromptSubmit/PostToolUse
-// context, Stop block); OpenCode's and Pi's extensions block a tool on a deny and read nothing else.
+// context, Stop block); OpenCode's and Pi's extensions block a tool on a deny and read nothing else; Cursor gets
+// the answer rewritten into its own fields (a denied tool, context at start and after tools, a follow-up on stop).
 const ANSWERS: Record<CliHookEvent, readonly string[]> = {
-  "session-start": ["claude-code", "workbuddy", "dsh", "codex"],
+  "session-start": ["claude-code", "workbuddy", "dsh", "codex", "cursor"],
   prompt: ["claude-code", "workbuddy", "dsh", "codex"],
-  "pre-tool": ["claude-code", "workbuddy", "dsh", "pi", "codex", "opencode"],
-  "post-tool": ["claude-code", "workbuddy", "dsh", "pi", "codex"],
-  stop: ["claude-code", "workbuddy", "dsh", "codex"],
+  "pre-tool": ["claude-code", "workbuddy", "dsh", "pi", "codex", "opencode", "cursor"],
+  "post-tool": ["claude-code", "workbuddy", "dsh", "pi", "codex", "cursor"],
+  stop: ["claude-code", "workbuddy", "dsh", "codex", "cursor"],
   "session-end": []
 };
 
@@ -21,8 +22,8 @@ const ANSWERS: Record<CliHookEvent, readonly string[]> = {
  * Which agents a CLI hook reaches. `answers`: the agent acts on the answer —
  * in a session Tomrade started, or in a connected repository whose hooks
  * leave Tomrade's reply on stdout. `sees`: the hook hears the event, and its
- * answer goes nowhere (Cursor's script swallows it, Hermes reports only).
- * Gemini CLI and Antigravity report no hooks at all.
+ * answer goes nowhere (Hermes reports only). Gemini CLI and Antigravity
+ * report no hooks at all.
  */
 const reach = (event: CliHookEvent) => ({ answers: ANSWERS[event], sees: REPORTING.filter((agent) => !ANSWERS[event].includes(agent)) });
 
