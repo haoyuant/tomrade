@@ -82,3 +82,23 @@ describe("code-link delivery migration", () => {
     db.close();
   });
 });
+
+describe("the repository's merge policy", () => {
+  it("reads the old agent-merge switch as the agent policy, and keeps the switch in step with the policy", async () => {
+    const { ctx, db, project } = await fresh();
+    ctx.db.migrate("code_link", MIGRATIONS, { tables: TABLES });
+    const store = new CodeLinkStore(ctx.db);
+    db.prepare("INSERT INTO plugin_code_link_repos (repo_id, project_id, readiness, agent_merge, updated_at) VALUES ('old-on', ?, 'scaffolded', 1, 1), ('old-off', ?, 'scaffolded', 0, 1)").run(project.id, project.id);
+    expect(store.repoState(project.id, "old-on")).toMatchObject({ mergePolicy: "agent", agentMerge: true });
+    expect(store.repoState(project.id, "old-off")).toMatchObject({ mergePolicy: "human", agentMerge: false });
+    expect(store.upsertRepoState(project.id, "old-on", { mergePolicy: "ask" })).toMatchObject({ mergePolicy: "ask", agentMerge: false });
+    expect(store.repoState(project.id, "old-on")).toMatchObject({ mergePolicy: "ask", agentMerge: false });
+    // The switch still works for callers that only know it.
+    expect(store.upsertRepoState(project.id, "old-on", { agentMerge: true })).toMatchObject({ mergePolicy: "agent", agentMerge: true });
+    expect(store.upsertRepoState(project.id, "old-on", { agentMerge: false })).toMatchObject({ mergePolicy: "human", agentMerge: false });
+    // A patch about something else leaves the policy alone.
+    store.upsertRepoState(project.id, "old-on", { mergePolicy: "ask" });
+    expect(store.upsertRepoState(project.id, "old-on", { autoDone: false })).toMatchObject({ mergePolicy: "ask", autoDone: false });
+    await ctx.fiber.dispose();
+  });
+});

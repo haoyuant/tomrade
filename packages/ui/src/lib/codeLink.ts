@@ -1,7 +1,7 @@
 import type { MessageKey } from "~/lib/i18n";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {} from "@tomradex/code-link";
-import type { ConnectAgent, ConnectMode, MergeCheckView, RepoPolicyPatch, StartOptions } from "@tomradex/code-link";
+import type { ConnectAgent, ConnectMode, MergeCheckView, RepoPolicyPatch, StartBatchRequest, StartOptions } from "@tomradex/code-link";
 import { invoke } from "./api";
 import { invalidateWorkspace, keys } from "./queries";
 
@@ -109,6 +109,32 @@ export function useStartTicket(projectId: string) {
       void qc.invalidateQueries({ queryKey: keys.agent.threads(projectId) });
       // The start remembered how it ran on this machine; the next dialog opens the same way.
       void qc.invalidateQueries({ queryKey: keys.codeLink.startDefaults });
+      invalidateWorkspace(qc, projectId);
+    }
+  });
+}
+
+/** Several tickets at once from a conversation's card, with the configuration picked there. */
+export function useStartTickets(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (request: StartBatchRequest) => invoke("codeLink.startTickets", projectId, request),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: keys.codeLink.all(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.agent.threads(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.codeLink.startDefaults });
+      invalidateWorkspace(qc, projectId);
+    }
+  });
+}
+
+/** The person's word on a delivered ticket: its pull request through gh, or its branch here without a remote. */
+export function useMergeTicket(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (itemId: string) => invoke("codeLink.merge", projectId, itemId),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: keys.codeLink.all(projectId) });
       invalidateWorkspace(qc, projectId);
     }
   });

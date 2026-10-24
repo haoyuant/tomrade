@@ -50,6 +50,8 @@ export interface StartOptions {
   message?: string;
   /** Headless runs only: where the person asked for the start (an IM conversation), kept on the brief as its provenance. */
   source?: Record<string, string>;
+  /** Headless runs only: the conversation (thread) that asked for the work, where its delivery is reported back. */
+  requestedBy?: string;
 }
 
 export type StartResult =
@@ -329,9 +331,12 @@ export class Starter {
         agent: engineId,
         threadId: thread.id,
         device: ctx.hub.deviceId,
-        externalId
+        externalId,
+        ...(opts.requestedBy ? { requestedBy: opts.requestedBy } : {})
       });
     if (continued && (session.blocked || session.state === "error")) store.patchSession(projectId, session.id, { blocked: null, state: "idle", activity: null });
+    // A continued session answers to whoever asked last.
+    if (live && opts.requestedBy && live.requestedBy !== opts.requestedBy) store.patchSession(projectId, session.id, { requestedBy: opts.requestedBy });
     const artifactDir = ctx.get("storage")?.artifactDirFor(projectId) ?? null;
     const decisions = artifactDir ? listDecisions(artifactDir) : [];
     const completionPolicy = ctx.codeLink.completionPolicy(projectId, item);

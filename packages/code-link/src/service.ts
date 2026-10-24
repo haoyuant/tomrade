@@ -32,10 +32,10 @@ import { SYNC_PROMPT, syncInstructions, syncPrompt, type SyncScope } from "./syn
 import { githubHttps } from "@tomradex/github";
 import { PLAYBOOKS } from "./playbooks.js";
 import { classifyRemoteFailure, probeRemote, readRemoteIdentity, type RemoteIdentity } from "./remote.js";
-import { currentLinks, deliveryMerged, GitScan, LANDED_ELSEWHERE, primaryOf, type ScanSummary, type UnlinkedBranch } from "./scan/absorb.js";
+import { AUTHOR, currentLinks, deliveryMerged, GitScan, LANDED_ELSEWHERE, primaryOf, type ScanSummary, type UnlinkedBranch } from "./scan/absorb.js";
 import { Sessions, type SessionMoment } from "./sessions.js";
 import { CODE_WORDS, type CodeWords } from "./words.js";
-import { Starter, type StartOptions, type StartResult } from "./start.js";
+import { Starter, type StartGate, type StartOptions, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
 import { findCodexRollout, findTranscript, readConversation, transcriptTitleFor, type ConversationLine } from "./titles.js";
 import { AUTO_TERMINAL, TerminalSettings, commandOk, exec, locatedCommand, terminalApps, terminalPath } from "./terminal.js";
@@ -43,7 +43,7 @@ import { registerTools } from "./tools.js";
 import { type CodeLinkReader, errorMessage } from "@tomradex/contracts";
 
 export { AUTHOR, deliveryMerged, primaryOf, type ScanSummary, type UnlinkedBranch } from "./scan/absorb.js";
-export { compareUrl, MERGE_COMMAND, type MergeCheckView, type MergeLocalResult, type OpenPrResult } from "./landing.js";
+export { compareUrl, MERGE_COMMAND, type MergeCheckView, type MergeLocalResult, type MergeResult, type OpenPrResult } from "./landing.js";
 export type { ConnectMode, ConnectResult } from "./connect-repo.js";
 export { MCP_AGENT } from "./connections.js";
 export { lastSaid } from "./herdr-bridge.js";
@@ -80,7 +80,65 @@ export interface CodeSummaryView {
   proposals: Pick<ProposalView, "id" | "kind" | "toStatus" | "reason">[];
 }
 
-export type RepoPolicyPatch =Pick<RepoStatePatch, "branchTemplate" | "autoDone" | "agentPush" | "agentMerge" | "readiness" | "connectAgents">;
+export type RepoPolicyPatch = Pick<RepoStatePatch, "branchTemplate" | "autoDone" | "agentPush" | "agentMerge" | "mergePolicy" | "readiness" | "connectAgents">;
+
+/** Several tickets started headless at once from a conversation, with one configuration — the assistant's own engine, or the one the person picked on the card. */
+export interface StartBatchRequest {
+  itemIds: string[];
+  /** The conversation that asked: where each ticket's delivery is reported back. */
+  requestedBy: string;
+  engine?: string;
+  options?: Record<string, unknown>;
+  permissionMode?: string;
+  /** What each session is to do first, when that is not the ticket's work as written. */
+  task?: string;
+  allowBlocked?: boolean;
+  /** The card in that conversation that asked for the configuration; it shows the outcome once started. */
+  cardId?: string;
+}
+
+/** One ticket of a batch start: started, or stopped at a gate with the one thing that clears it. */
+export interface StartBatchEntry {
+  itemId: string;
+  key: string;
+  title: string;
+  ok: boolean;
+  threadId?: string | null;
+  branch?: string;
+  engine?: string;
+  continued?: boolean;
+  gate?: StartGate;
+  blockers?: string[];
+  message?: string;
+}
+
+/** The card a conversation shows for tickets it was asked to start: the person's pick when the assistant could not settle it, then what came of each. */
+export interface StartBatchCard {
+  tickets: { itemId: string; key: string; title: string }[];
+  task?: string;
+  /** Why the assistant's own engine could not run them, when the person is asked to pick one. */
+  reason?: string;
+  /** Present once started. */
+  results?: StartBatchEntry[];
+}
+
+/** The card a conversation shows once a ticket it asked for is delivered under the "ask" policy. */
+export interface MergeCard {
+  itemId: string;
+  key: string;
+  title: string;
+  repo: string;
+  branch: string;
+  base: string;
+  prUrl: string | null;
+  state: "offered" | "merged" | "refused";
+  message?: string;
+}
+
+/** How tickets asked for in a conversation run: the assistant's own engine, what the Start dialog last ran with, or the person's pick. */
+export type StartConfig =
+  | { choose: false; engine: string; options?: Record<string, unknown>; permissionMode?: string; from: "conversation" | "remembered" }
+  | { choose: true; reason: string };
 
 declare module "@tomradex/ipc" {
   interface Channels {
@@ -110,6 +168,10 @@ declare module "@tomradex/ipc" {
     "codeLink.openPr": (projectId: string, itemId: string) => OpenPrResult;
     /** A repository with no remote: merge the ticket's branch into the default branch on this machine. */
     "codeLink.mergeLocal": (projectId: string, itemId: string) => MergeLocalResult;
+    /** Land the ticket's delivery on the person's word: the pull request through gh, or the branch here without a remote. */
+    "codeLink.merge": (projectId: string, itemId: string) => MergeLocalResult;
+    /** Start several tickets headless from a conversation, with one configuration. */
+    "codeLink.startTickets": (projectId: string, request: StartBatchRequest) => StartBatchEntry[];
     /** Where this machine's worktree for the ticket is, if it has one. */
     "codeLink.worktree": (projectId: string, itemId: string) => string | null;
     /** A branch nobody's ticket names becomes a ticket, linked to it. */
@@ -406,7 +468,10 @@ export class CodeLink extends Service implements CodeLinkReader {
         rescan: (projectId) => this.rescan(projectId),
         notify: (projectId) => this.notify(projectId),
         summary: (projectId, itemId) => this.summary(projectId, itemId),
-        mergeLocal: (projectId, itemId, opts) => this.mergeLocal(projectId, itemId, opts)
+        mergeLocal: (projectId, itemId, opts) => this.mergeLocal(projectId, itemId, opts),
+        merge: (projectId, itemId) => this.merge(projectId, itemId),
+        startConfigFor: (projectId, threadId) => this.startConfigFor(projectId, threadId),
+        startTickets: (projectId, request) => this.startTickets(projectId, request)
       });
     });
     this.home.inject(["mcp"], (ctx) => {
@@ -452,6 +517,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       const after = intent.after as Item | null;
       if (!before || !after || before.status === after.status) return;
       if (after.status === "done") this.archiveCompletedSessions(intent.projectId);
+      if (after.status === "verifying") this.offerMerge(intent.projectId, after);
       const open = new Set(["backlog", "todo", "doing", "verifying"]);
       if ((before.status === "done" || before.status === "cancelled") && open.has(after.status)) {
         this.store.ensureActiveDelivery(intent.projectId, intent.id, after.updatedAt);
@@ -542,6 +608,8 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.sessions", (projectId, itemId) => ctx.codeLink.sessionsOf(projectId, itemId));
       ctx.ipc.handle("codeLink.openPr", (projectId, itemId) => ctx.codeLink.openPr(projectId, itemId));
       ctx.ipc.handle("codeLink.mergeLocal", (projectId, itemId) => ctx.codeLink.mergeLocal(projectId, itemId));
+      ctx.ipc.handle("codeLink.merge", (projectId, itemId) => ctx.codeLink.merge(projectId, itemId));
+      ctx.ipc.handle("codeLink.startTickets", (projectId, request) => ctx.codeLink.startTickets(projectId, request));
       ctx.ipc.handle("codeLink.worktree", (projectId, itemId) => ctx.codeLink.worktreeOf(projectId, itemId));
       ctx.ipc.handle("codeLink.adoptBranch", (projectId, repoId, branch) => ctx.codeLink.adoptBranch(projectId, repoId, branch));
       ctx.ipc.handle("codeLink.connection", (projectId, repoId) => ctx.codeLink.connection(projectId, repoId));
@@ -1050,6 +1118,139 @@ export class CodeLink extends Service implements CodeLinkReader {
 
   mergeLocal(projectId: string, itemId: string, opts: { agent?: boolean } = {}): Promise<MergeLocalResult> {
     return this.landing.mergeLocal(projectId, itemId, opts);
+  }
+
+  /** The person said to merge: land the delivery, and tell the conversation that asked for the work how it went. */
+  async merge(projectId: string, itemId: string): Promise<MergeLocalResult> {
+    const result = await this.landing.merge(projectId, itemId);
+    const item = this.ctx.items.get(projectId, itemId);
+    if (item) this.reportMerge(projectId, item, result.merged ? "merged" : "refused", result.message);
+    return result;
+  }
+
+  /** The card id a ticket's delivery is reported on in the conversation that asked for it: one per delivery. */
+  private mergeCardId(itemId: string, delivery: number): string {
+    return `merge-${itemId}-${delivery}`;
+  }
+
+  /** The conversation that asked for the ticket's current delivery, when a session of it was started from one. */
+  private requesterOf(projectId: string, itemId: string): { threadId: string; delivery: number } | null {
+    const delivery = this.store.activeDelivery(projectId, itemId) ?? this.store.currentDelivery(projectId, itemId);
+    if (!delivery) return null;
+    const session = this.store
+      .sessions(projectId, { itemId, delivery: delivery.sequence })
+      .filter((s) => !!s.requestedBy)
+      .sort((a, b) => b.startedAt - a.startedAt)[0];
+    return session?.requestedBy ? { threadId: session.requestedBy, delivery: delivery.sequence } : null;
+  }
+
+  /** What a merge card says about the ticket's delivery right now: its repository, branch and pull request. */
+  private mergeCard(projectId: string, item: Item, state: MergeCard["state"], message?: string): MergeCard | null {
+    const link = primaryOf(this.currentLinks(projectId, item.id).filter((l) => l.branch));
+    const repo = link ? this.ctx.repos.get(projectId, link.repoId) : null;
+    if (!link || !repo) return null;
+    return { itemId: item.id, key: item.key, title: item.title, repo: repo.name, branch: link.branch, base: repo.defaultBranch, prUrl: link.prUrl ?? null, state, ...(message ? { message } : {}) };
+  }
+
+  /**
+   * A ticket asked for in a conversation reached Verifying: under the "ask" policy that conversation
+   * gets the merge to decide, as a card with the pull request or branch and a Merge button.
+   */
+  private offerMerge(projectId: string, item: Item): void {
+    const agent = this.ctx.get("agent");
+    const asked = this.requesterOf(projectId, item.id);
+    if (!agent || !asked) return;
+    const card = this.mergeCard(projectId, item, "offered");
+    if (!card) return;
+    const link = primaryOf(this.currentLinks(projectId, item.id).filter((l) => l.branch));
+    const policy = link ? this.store.repoState(projectId, link.repoId)?.mergePolicy : undefined;
+    if (policy !== "ask") return;
+    // Without a remote the branch is the delivery; with one, the pull request is — a bare pushed branch is not ready yet.
+    if (!card.prUrl && this.store.repoState(projectId, link!.repoId)?.remote !== "none") return;
+    const id = this.mergeCardId(item.id, asked.delivery);
+    if (agent.store.cards(projectId, asked.threadId).some((c) => c.id === id)) return;
+    try {
+      agent.postCard(projectId, asked.threadId, { id, schema: "merge", title: `${item.key} ${item.title}`, data: card }, AUTHOR);
+    } catch (err) {
+      this.ctx.logger.warn(`merge offer for ${item.key} not posted: ${errorMessage(err)}`);
+    }
+  }
+
+  /** The merge card in the asking conversation shows how the merge went; without one, nothing to tell. */
+  private reportMerge(projectId: string, item: Item, state: "merged" | "refused", message: string): void {
+    const agent = this.ctx.get("agent");
+    const asked = this.requesterOf(projectId, item.id);
+    if (!agent || !asked) return;
+    const id = this.mergeCardId(item.id, asked.delivery);
+    if (!agent.store.cards(projectId, asked.threadId).some((c) => c.id === id)) return;
+    const card = this.mergeCard(projectId, item, state, message);
+    if (card) agent.postCard(projectId, asked.threadId, { id, schema: "merge", title: `${item.key} ${item.title}`, data: card }, AUTHOR);
+  }
+
+  /**
+   * How tickets asked for in a conversation run: with the conversation's own engine when it can code right
+   * now, else as the Start dialog last ran — and when neither, the person picks on a card.
+   */
+  async startConfigFor(projectId: string, threadId: string): Promise<StartConfig> {
+    const agent = this.ctx.get("agent");
+    if (!agent) return { choose: true, reason: "the agent plugin is not loaded" };
+    const thread = agent.store.thread(projectId, threadId);
+    const reasons: string[] = [];
+    if (thread) {
+      const own = await this.starter.pickEngine(agent, thread.engine, false);
+      if (own.ok) return { choose: false, engine: own.engine.id, ...(thread.options ? { options: thread.options } : {}), ...(thread.permissionMode ? { permissionMode: thread.permissionMode } : {}), from: "conversation" };
+      reasons.push(own.reason);
+    }
+    const remembered = this.defaults.read();
+    if (remembered?.engine && remembered.engine !== "other") {
+      const picked = await this.starter.pickEngine(agent, remembered.engine, false);
+      if (picked.ok) return { choose: false, engine: picked.engine.id, ...(remembered.options ? { options: remembered.options } : {}), ...(remembered.permissionMode ? { permissionMode: remembered.permissionMode } : {}), from: "remembered" };
+      reasons.push(picked.reason);
+    }
+    return { choose: true, reason: reasons.filter((r, at, all) => all.indexOf(r) === at).join(" · ") || "no coding agent is ready" };
+  }
+
+  /** Start each ticket headless with the one configuration, one after another, and show the outcome on the asking card when there is one. */
+  async startTickets(projectId: string, request: StartBatchRequest): Promise<StartBatchEntry[]> {
+    const results: StartBatchEntry[] = [];
+    const seen = new Set<string>();
+    for (const itemId of request.itemIds) {
+      if (seen.has(itemId)) continue;
+      seen.add(itemId);
+      const item = this.ctx.items.get(projectId, itemId);
+      if (!item) {
+        results.push({ itemId, key: itemId, title: "", ok: false, message: `unknown item ${itemId}` });
+        continue;
+      }
+      const opts: StartOptions = {
+        mode: "run",
+        ...(request.engine ? { engine: request.engine } : {}),
+        ...(request.options ? { options: request.options } : {}),
+        ...(request.permissionMode ? { permissionMode: request.permissionMode } : {}),
+        ...(request.allowBlocked ? { allowBlocked: true } : {}),
+        ...(request.task?.trim() ? { message: request.task.trim() } : {}),
+        requestedBy: request.requestedBy
+      };
+      try {
+        const started = await this.start(projectId, item.id, opts);
+        if (started.ok) results.push({ itemId: item.id, key: item.key, title: item.title, ok: true, threadId: started.threadId, branch: started.branch, engine: started.engine, continued: started.continued, ...(started.waitingOn ? { message: started.waitingOn } : {}) });
+        else results.push({ itemId: item.id, key: item.key, title: item.title, ok: false, gate: started.gate, message: started.message, ...(started.blockers ? { blockers: started.blockers } : {}) });
+      } catch (err) {
+        results.push({ itemId: item.id, key: item.key, title: item.title, ok: false, message: errorMessage(err) });
+      }
+    }
+    const agent = this.ctx.get("agent");
+    if (agent && request.cardId) {
+      const before = agent.store.cards(projectId, request.requestedBy).find((c) => c.id === request.cardId);
+      const data = (before?.data ?? {}) as Partial<StartBatchCard>;
+      const tickets = data.tickets ?? results.map((r) => ({ itemId: r.itemId, key: r.key, title: r.title }));
+      try {
+        agent.postCard(projectId, request.requestedBy, { id: request.cardId, schema: "start-batch", title: before?.title ?? tickets.map((t) => t.key).join(", "), data: { ...data, tickets, results } satisfies StartBatchCard }, AUTHOR);
+      } catch (err) {
+        this.ctx.logger.warn(`start card not updated: ${errorMessage(err)}`);
+      }
+    }
+    return results;
   }
 
   openPr(projectId: string, itemId: string): Promise<OpenPrResult> {

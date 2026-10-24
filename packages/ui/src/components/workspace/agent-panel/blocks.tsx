@@ -9,7 +9,10 @@ import { PRIORITY_LABEL, WORK_TYPE_KEY } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { traceState } from "~/lib/steps";
 import type { RunProgress } from "~/lib/agent";
-import { offerStart } from "~/lib/codeLink";
+import { offerStart, permissionLabel, useMergeTicket, useStartTickets } from "~/lib/codeLink";
+import { useEngines } from "~/lib/agent";
+import { openExternal } from "~/lib/shell";
+import type { MergeCard, StartBatchCard } from "@tomradex/code-link";
 import { useSetupInTerminal } from "~/lib/setup";
 import { useImShareNext, useImThreadBindings } from "~/lib/im";
 import { isCancelKey, isCommitKey, isComposing } from "~/lib/keys";
@@ -133,6 +136,126 @@ export function StartOffer({ card, onOpenIssue }: { card: StartOfferCard; onOpen
           {t("agentPanel.startOffer", { key: card.key })}
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Tickets the assistant was asked to start. Until they run, the person picks the agent here — the
+ * conversation's own could not code — and starts them all at once; then each ticket says how it went.
+ */
+export function StartBatchBlock({ card, cardId, projectId, threadId, onOpenIssue }: { card: StartBatchCard; cardId: string; projectId: string; threadId: string; onOpenIssue: (id: string) => void }) {
+  const { t } = useI18n();
+  const engines = useEngines();
+  const start = useStartTickets(projectId);
+  const ready = (engines.data ?? []).filter((engine) => engine.ok && engine.capabilities.includes("code") && !engine.terminalOnly);
+  const [chosenEngine, setChosenEngine] = useState<string | null>(null);
+  const [chosenPermission, setChosenPermission] = useState<string | null>(null);
+  const engine = ready.find((e) => e.id === chosenEngine) ?? ready[0];
+  const permissionModes = engine?.permissionModes;
+  const permissionMode = permissionModes ? (chosenPermission && permissionModes.choices.some((c) => c.value === chosenPermission) ? chosenPermission : permissionModes.default) : undefined;
+  const n = card.tickets.length;
+  return (
+    <div className="tool-card" data-testid="start-batch">
+      <div className="tool-head">
+        <Icon name="i-plug" size={12} />
+        {card.results ? t(n === 1 ? "agentPanel.startBatchDoneOne" : "agentPanel.startBatchDone", { n }) : t(n === 1 ? "agentPanel.startBatchPickOne" : "agentPanel.startBatchPick", { n })}
+      </div>
+      {card.task && <p className="tool-row" data-testid="start-batch-task">{t("codeLink.startTask", { task: card.task })}</p>}
+      <ul className="tool-row start-batch-list">
+        {card.tickets.map((ticket) => {
+          const result = card.results?.find((r) => r.itemId === ticket.itemId);
+          return (
+            <li key={ticket.itemId} data-testid="start-batch-ticket" data-state={result ? (result.ok ? "started" : "stopped") : "pending"}>
+              <button type="button" className="kref num" onClick={() => onOpenIssue(ticket.itemId)}>{ticket.key}</button> {ticket.title}
+              {result && (
+                <span className="meta-txt dense start-batch-result">
+                  {result.ok
+                    ? result.message
+                      ? t("agentPanel.startBatchWaiting", { question: result.message })
+                      : t(result.continued ? "agentPanel.startBatchContinued" : "agentPanel.startBatchStarted", { engine: findEngineTitle(engines.data, result.engine), branch: result.branch ?? "" })
+                    : result.message ?? t("agentPanel.startBatchStopped")}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {!card.results && (
+        <>
+          {card.reason && <p className="tool-row meta-txt dense">{t("agentPanel.startBatchWhy", { reason: card.reason })}</p>}
+          {ready.length === 0 ? (
+            <p className="tool-row meta-txt dense" data-testid="start-batch-none">{t("agentPanel.startBatchNoEngine")}</p>
+          ) : (
+            <div className="tool-row start-batch-pick">
+              <label className="meta-txt" htmlFor={`sb-engine-${cardId}`}>{t("agentPanel.startBatchEngine")}</label>
+              <select id={`sb-engine-${cardId}`} className="select" value={engine?.id ?? ""} disabled={start.isPending} onChange={(event) => { setChosenEngine(event.target.value); setChosenPermission(null); }}>
+                {ready.map((e) => <option key={e.id} value={e.id}>{e.title}</option>)}
+              </select>
+              {permissionModes && (
+                <>
+                  <label className="meta-txt" htmlFor={`sb-perm-${cardId}`}>{t("agentPanel.startBatchPermission")}</label>
+                  <select id={`sb-perm-${cardId}`} className="select" value={permissionMode} disabled={start.isPending} onChange={(event) => setChosenPermission(event.target.value)}>
+                    {permissionModes.choices.map((choice) => <option key={choice.value} value={choice.value}>{permissionLabel(t, choice)}</option>)}
+                  </select>
+                </>
+              )}
+              <button
+                type="button"
+                className="btn btn-primary btn-xs"
+                disabled={start.isPending || !engine}
+                data-testid="start-batch-go"
+                onClick={() => engine && start.mutate({ itemIds: card.tickets.map((ticket) => ticket.itemId), requestedBy: threadId, engine: engine.id, ...(permissionMode ? { permissionMode } : {}), ...(card.task ? { task: card.task } : {}), cardId })}
+              >
+                {start.isPending ? t("agentPanel.startBatchStarting") : t(n === 1 ? "agentPanel.startBatchGoOne" : "agentPanel.startBatchGo", { n })}
+              </button>
+            </div>
+          )}
+          {start.error && <p className="tool-row meta-txt dense" data-testid="start-batch-error">{String((start.error as Error).message ?? start.error)}</p>}
+        </>
+      )}
+    </div>
+  );
+}
+
+const findEngineTitle = (engines: EngineView[] | undefined, id: string | undefined): string => engines?.find((e) => e.id === id || e.includes?.includes(id ?? ""))?.title ?? id ?? "";
+
+/** A ticket asked for here is delivered: the pull request or branch, and the merge for the person to say. */
+export function MergeBlock({ card, projectId, onOpenIssue }: { card: MergeCard; projectId: string; onOpenIssue: (id: string) => void }) {
+  const { t } = useI18n();
+  const merge = useMergeTicket(projectId);
+  const [pending, setPending] = useState(false);
+  const busy = merge.isPending || (pending && card.state === "offered");
+  return (
+    <div className="tool-card" data-testid="merge-offer" data-state={card.state}>
+      <div className="tool-head">
+        <Icon name="i-merge" size={12} />
+        <button type="button" className="kref num" onClick={() => onOpenIssue(card.itemId)}>{card.key}</button> {card.title}
+      </div>
+      <p className="tool-row">
+        {card.prUrl ? (
+          <a href={card.prUrl} onClick={(event) => { event.preventDefault(); openExternal(card.prUrl!); }}>{card.prUrl.replace(/^https?:\/\/(www\.)?/, "")}</a>
+        ) : (
+          <span className="num">{t("agentPanel.mergeBranch", { branch: card.branch, base: card.base, repo: card.repo })}</span>
+        )}
+      </p>
+      {card.state === "offered" && <p className="tool-row meta-txt dense">{t("agentPanel.mergeLead")}</p>}
+      {card.state === "merged" && <p className="tool-row meta-txt dense" data-testid="merge-done">{card.message ?? t("agentPanel.mergeMerged")}</p>}
+      {card.state === "refused" && <p className="tool-row meta-txt dense" data-testid="merge-refused">{t("agentPanel.mergeRefused", { message: card.message ?? "" })}</p>}
+      {card.state !== "merged" && (
+        <div className="tool-row">
+          <button
+            type="button"
+            className="btn btn-primary btn-xs"
+            disabled={busy}
+            data-testid="merge-go"
+            onClick={() => { setPending(true); merge.mutate(card.itemId, { onSettled: () => setPending(false) }); }}
+          >
+            {busy ? t("agentPanel.merging") : t(card.state === "refused" ? "agentPanel.mergeAgain" : "agentPanel.mergeButton")}
+          </button>
+        </div>
+      )}
+      {merge.error && <p className="tool-row meta-txt dense">{String((merge.error as Error).message ?? merge.error)}</p>}
     </div>
   );
 }

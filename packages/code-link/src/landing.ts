@@ -9,7 +9,7 @@ import type { StartDefaultsStore } from "./defaults.js";
 import type { CodeLinkStore, CodeLinkView } from "./store.js";
 import { commandOk, exec } from "./terminal.js";
 import { currentLinks, primaryOf, type ScanSummary } from "./scan/absorb.js";
-import { bestEffort } from "@tomradex/contracts";
+import { bestEffort, errorMessage } from "@tomradex/contracts";
 
 export interface OpenPrResult {
   pushed: boolean;
@@ -21,10 +21,13 @@ export interface OpenPrResult {
 
 export interface MergeLocalResult {
   merged: boolean;
-  /** The default branch's head after the merge; null when nothing was merged. */
+  /** The default branch's head after the merge; null when nothing was merged, or when GitHub did it and the scan reads it later. */
   sha: string | null;
   message: string;
 }
+
+/** One merge from Tomrade, whichever way it went: the branch here without a remote, or the pull request on GitHub. */
+export type MergeResult = MergeLocalResult;
 
 /** The command an agent merges with when the repository lets it. */
 export const MERGE_COMMAND = "gh pr merge";
@@ -192,6 +195,57 @@ export class Landing {
         fs.rmSync(temporary, { recursive: true, force: true });
       }
     }
+  }
+
+  /**
+   * Land the ticket's current delivery on the person's word: the branch into the default branch here
+   * when the repository has no remote, else its open pull request through gh. Never past what
+   * GitHub allows: a refused merge comes back as its message, for the person to settle.
+   */
+  async merge(projectId: string, itemId: string): Promise<MergeResult> {
+    const item = this.ctx.items.get(projectId, itemId);
+    if (!item) throw new Error(`unknown item ${itemId}`);
+    const links = this.currentLinks(projectId, itemId).filter((l) => l.branch && !l.mergedSha && l.prState !== "merged");
+    const link = primaryOf(links);
+    const repo = link ? this.ctx.repos.get(projectId, link.repoId) : null;
+    if (link && repo && this.store.repoState(projectId, repo.id)?.remote === "none") return this.mergeLocal(projectId, itemId);
+    return this.mergePr(projectId, itemId);
+  }
+
+  /** Merge the ticket's open pull request with gh, by the first method the repository allows: squash, then merge commit, then rebase. */
+  async mergePr(projectId: string, itemId: string): Promise<MergeResult> {
+    const w = this.words();
+    const no = (message: string): MergeResult => ({ merged: false, sha: null, message });
+    const item = this.ctx.items.get(projectId, itemId);
+    if (!item) throw new Error(`unknown item ${itemId}`);
+    const open = this.currentLinks(projectId, itemId).filter((l) => l.branch && !l.mergedSha && l.prState !== "merged");
+    if (!open.length) return no(w("mergeNoBranch", { key: item.key }));
+    const link = open.find((l) => l.prUrl && l.prState === "open") ?? null;
+    if (!link?.prUrl) return no(w("mergeNoPr", { key: item.key }));
+    const repo = this.ctx.repos.get(projectId, link.repoId);
+    if (!repo) return no(w("mergeNoBranch", { key: item.key }));
+    const cwd = this.worktreeOf(projectId, itemId) ?? this.ctx.repos.checkout(repo.remote).checkout;
+    if (!cwd || !fs.existsSync(cwd)) return no(w("mergeNoCheckout", { repo: repo.name }));
+    if (!(await commandOk("gh"))) return no(w("mergeNoGh"));
+    const env = await this.ctx.github.environment(this.git, cwd);
+    let method = "--squash";
+    try {
+      const allowed = JSON.parse(await exec("gh", ["repo", "view", "--json", "squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed"], cwd, env)) as Record<string, boolean>;
+      method = allowed.squashMergeAllowed ? "--squash" : allowed.mergeCommitAllowed ? "--merge" : allowed.rebaseMergeAllowed ? "--rebase" : "--squash";
+    } catch {
+      // The repository's settings could not be read: squash is what the brief tells agents to use.
+    }
+    try {
+      await exec("gh", ["pr", "merge", link.prUrl, method], cwd, env);
+    } catch (err) {
+      return no(w("mergePrRefused", { pr: link.prUrl, error: lastLine(errorMessage(err)) || errorMessage(err) }));
+    }
+    this.store.patchLink(projectId, link.id, { prState: "merged", lastSeenAt: Date.now() });
+    this.reevaluate(projectId, itemId, repo.id);
+    this.notify(projectId);
+    // The merge commit and the default branch's new head are read from git, not guessed.
+    void bestEffort(this.scan(projectId), this.ctx.logger, `code scan of ${projectId} after merging ${item.key}`);
+    return { merged: true, sha: null, message: w("mergePrDone", { pr: link.prUrl, base: repo.defaultBranch }) };
   }
 
   /** Push the ticket's branch from its Tomrade worktree and open a pull request. Never from the user's own checkout, never the default branch. */
