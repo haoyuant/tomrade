@@ -436,6 +436,8 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         // A client with no hooks is still followed, through its connection.
         if (!session && inv.connection) session = host.connectionSession(projectId, repoId, worktree);
         if (session && !tokened && worktree && session.worktree !== worktree) session = host.store.patchSession(projectId, session.id, { worktree });
+        // The client's MCP headers name the pane it runs in: the sidebar's terminal row is this session's from now on, hooks or none.
+        if (session && !tokened && inv.pane && !session.herdrPane) session = host.store.patchSession(projectId, session.id, { herdrPane: inv.pane, ...(inv.terminal && !session.terminal ? { terminal: inv.terminal } : {}) });
         if (session && !tokened && inv.connection) host.bindConnection(projectId, inv.connection, session.id, leaving);
         const delivery = host.store.ensureActiveDelivery(projectId, item.id, item.updatedAt);
         const existing = repoId ? host.store.links(projectId, item.id).find((l) => l.repoId === repoId && l.delivery === delivery.sequence && l.branch) : null;

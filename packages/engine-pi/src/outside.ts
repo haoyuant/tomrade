@@ -26,6 +26,8 @@ export function outsideExtension(mcpUrl: string, eventUrl: string): string {
   const server = { url: mcpUrl, exposure: "direct", timeout: 600, description: "Tomrade: this project's backlog, tickets, files and workflows" };
   return `// Written by Tomrade: connects pi sessions you start yourself. Delete this file to disconnect.
 const server = ${JSON.stringify(server)};
+// The pane header names where the session runs, from the variable Tomrade's terminal sets, so its claim lands on that pane.
+const placed = process.env.HERDR_PANE_ID ? { ...server, headers: { "X-Tomrade-Herdr-Pane": process.env.HERDR_PANE_ID } } : server;
 const eventUrl = ${JSON.stringify(eventUrl)};
 const names = { bash: "Bash", read: "Read", edit: "Edit", write: "Write", grep: "Grep", find: "Glob", ls: "LS" };
 const textOf = (content) => (content ?? []).filter((part) => part.type === "text").map((part) => part.text).join("\\n");
@@ -49,7 +51,7 @@ export default function (pi) {
   // A session Tomrade started registers its own server, with its token.
   if (process.env.TOMRADE_MCP_TOKEN || globalThis[loaded]) return;
   globalThis[loaded] = true;
-  try { pi.registerMcpServer("tomrade", server); } catch {}
+  try { pi.registerMcpServer("tomrade", placed); } catch {}
   let sessionId;
   let cwd;
   const post = (payload) => { void fetch(eventUrl, { method: "POST", headers: { "content-type": "application/json", "x-tomrade-agent": "pi" },

@@ -52,6 +52,10 @@ export interface ToolInvocation {
    * whichever agent it is. Absent for calls made inside this process.
    */
   connection?: string;
+  /** The herdr pane the outside client runs in, when its MCP request headers name one (`X-Tomrade-Herdr-Pane`). */
+  pane?: string;
+  /** The terminal app it runs in, as its headers name it (`X-Tomrade-Terminal`, or Windows Terminal by its session header). */
+  terminal?: string;
   /** The folders an outside client says it works in (its MCP roots), as absolute paths. Absent when the client declares none. */
   roots?(): Promise<string[]>;
   /** Ask the person behind the call to pick one of `options`; null when the call was cancelled. Absent when nobody can be asked. */

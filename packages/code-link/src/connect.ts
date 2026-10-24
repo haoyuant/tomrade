@@ -276,9 +276,20 @@ function withTomradeSection(existing: string, projectName: string, section: stri
   return existing ? `${existing.replace(/\s*$/, "")}\n\n${section}` : `# ${projectName}\n\n${section}`;
 }
 
-/** Preserve unrelated Codex config while owning one clearly marked MCP table. */
+/**
+ * The header that names the herdr pane an agent was started in, from the
+ * variable Tomrade's terminal sets, in each agent's own spelling of a
+ * variable: unset outside Tomrade's terminal, it arrives empty or as written,
+ * and Tomrade reads either as no pane.
+ */
+export const PANE_HEADER = "X-Tomrade-Herdr-Pane";
+const PANE_VARIABLE = "HERDR_PANE_ID";
+/** Claude Code's `.mcp.json` and Gemini CLI's settings expand `${VAR}`; Cursor's mcp.json `${env:VAR}`. */
+export const paneHeaders = (spelling: "${VAR}" | "${env:VAR}" = "${VAR}"): Record<string, string> => ({ [PANE_HEADER]: spelling === "${env:VAR}" ? `\${env:${PANE_VARIABLE}}` : `\${${PANE_VARIABLE}}` });
+
+/** Preserve unrelated Codex config while owning one clearly marked MCP table; `env_http_headers` names the pane from the variable. */
 function withCodexMcp(existing: string, url: string): string {
-  const block = `${CODEX_START}\n[mcp_servers.tomrade]\nurl = ${JSON.stringify(url)}\n${CODEX_END}`;
+  const block = `${CODEX_START}\n[mcp_servers.tomrade]\nurl = ${JSON.stringify(url)}\nenv_http_headers = { ${JSON.stringify(PANE_HEADER)} = ${JSON.stringify(PANE_VARIABLE)} }\n${CODEX_END}`;
   const marked = new RegExp(`${CODEX_START.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[\\s\\S]*?${CODEX_END.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`);
   if (marked.test(existing)) return existing.replace(marked, block);
 
@@ -313,9 +324,11 @@ const sameJson = (a: string, b: string) => JSON.stringify(JSON.parse(a)) === JSO
 /**
  * A JSON config's next text, or null when it already says what it should. One
  * with comments or trailing commas is read but never rewritten, which would
- * drop them, and one that is no JSON object is left as it is.
+ * drop them, and one that is no JSON object is left as it is. `satisfied`
+ * says when such a file is close enough to leave alone, short of the exact
+ * text the change would write.
  */
-function nextJson(root: string, name: string, change: (json: string) => string): string | null {
+function nextJson(root: string, name: string, change: (json: string) => string, satisfied?: (json: string) => boolean): string | null {
   const file = path.join(root, name);
   const text = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
   if (!text.trim()) return change("");
@@ -325,13 +338,19 @@ function nextJson(root: string, name: string, change: (json: string) => string):
   }
   const loose = stripJsonComments(text);
   if (!isJsonObject(loose)) throw new Unwritable(name, "invalid");
-  if (sameJson(change(loose), loose)) return null;
+  if (sameJson(change(loose), loose) || satisfied?.(loose)) return null;
   throw new Unwritable(name, "comments");
 }
 
 const withServer = (server: Record<string, unknown>) => (json: string) => {
   const config = object(json ? JSON.parse(json) : {});
   return JSON.stringify({ ...config, mcpServers: { ...object(config.mcpServers), tomrade: server } }, null, 2) + "\n";
+};
+
+/** A config that already names the server at this address, with or without the pane header, is connected; one with comments is left as it is. */
+const namesServer = (url: string) => (json: string) => {
+  const server = object(object(object(JSON.parse(json)).mcpServers).tomrade);
+  return server.url === url || server.httpUrl === url;
 };
 
 /** One lifecycle hook per event after the person's own, replacing any Tomrade hook from before. */
@@ -396,7 +415,7 @@ export function writeConnectFiles(root: string, input: ConnectInput, agents: rea
     return fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null;
   };
   const exact = (name: string, text: string, mode?: number): Write => ({ name, text: read(name) === text ? null : text, ...(mode ? { mode } : {}) });
-  const json = (name: string, change: (json: string) => string): Write => ({ name, text: nextJson(root, name, change) });
+  const json = (name: string, change: (json: string) => string, satisfied?: (json: string) => boolean): Write => ({ name, text: nextJson(root, name, change, satisfied) });
   const section = (name: "CLAUDE.md" | "AGENTS.md"): Write[] => {
     // This machine only: a file git does not track is ours to write, so the agent reads the rules; one the team
     // tracks stays the team's, and the MCP server's instructions speak instead.
@@ -422,7 +441,7 @@ export function writeConnectFiles(root: string, input: ConnectInput, agents: rea
     const next = text ?? withMcp;
     return { name, text: next === existing ? null : next };
   };
-  const mcp = () => json(".mcp.json", withServer({ type: "http", url: input.mcpUrl }));
+  const mcp = () => json(".mcp.json", withServer({ type: "http", url: input.mcpUrl, headers: paneHeaders() }), namesServer(input.mcpUrl));
   const claudeHooks = withSessionHooks(hookCommand(input.eventUrl));
   // Without its engine's writer (the engine is off), Pi gets the instructions alone, and is told why.
   const pi = connectors("pi");
@@ -436,8 +455,8 @@ export function writeConnectFiles(root: string, input: ConnectInput, agents: rea
       return [...(pi ? [exact(PI_EXTENSION, pi.write(input.mcpUrl, input.eventUrl))] : []), ...section("AGENTS.md")];
     },
     opencode: () => [json("opencode.json", (text) => withMcpEntry(text, input.mcpUrl)), exact(OPENCODE_PLUGIN, opencodePlugin(input.eventUrl)), ...section("AGENTS.md")],
-    cursor: () => [json(".cursor/mcp.json", withServer({ url: input.mcpUrl })), json(".cursor/hooks.json", withCursorHooks), exact(CURSOR_HOOK_SCRIPT, cursorHookScript(posixHookCommand(input.eventUrl, "cursor")), 0o755), exact(CURSOR_HOOK_POWERSHELL, cursorHookPowerShell(powershellHook(input.eventUrl, "cursor"))), ...section("AGENTS.md")],
-    gemini: () => [json(".gemini/settings.json", withServer({ httpUrl: input.mcpUrl }))]
+    cursor: () => [json(".cursor/mcp.json", withServer({ url: input.mcpUrl, headers: paneHeaders("${env:VAR}") }), namesServer(input.mcpUrl)), json(".cursor/hooks.json", withCursorHooks), exact(CURSOR_HOOK_SCRIPT, cursorHookScript(posixHookCommand(input.eventUrl, "cursor")), 0o755), exact(CURSOR_HOOK_POWERSHELL, cursorHookPowerShell(powershellHook(input.eventUrl, "cursor"))), ...section("AGENTS.md")],
+    gemini: () => [json(".gemini/settings.json", withServer({ httpUrl: input.mcpUrl, headers: paneHeaders() }), namesServer(input.mcpUrl))]
   };
   // A plugin agent's own file: its engine registered the writer, so Connect needs no knowledge of its format.
   const planFor = (agent: ConnectAgent): Write[] => {
