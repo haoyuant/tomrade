@@ -168,7 +168,12 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
   const [attempt, setAttempt] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [scroll, setScroll] = useState<PaneScroll | null>(null);
-  const wheel = (deltaY: number) => send({ type: "scroll", cell, direction: deltaY < 0 ? "up" : "down", lines: 2 * Math.max(1, Math.round(Math.abs(deltaY) / 40)) });
+  // Mouse-reporting apps such as Codex ignore wheels at the default (0,0) header.
+  // The overlay scrollbar sits outside the grid, so its wheels target the body centre.
+  const wheel = (deltaY: number, position = { column: Math.floor((term.current?.cols ?? 1) / 2), row: Math.floor((term.current?.rows ?? 1) / 2) }) => {
+    if (deltaY === 0) return;
+    send({ type: "scroll", cell, direction: deltaY < 0 ? "up" : "down", lines: 2 * Math.max(1, Math.round(Math.abs(deltaY) / 40)), ...position });
+  };
 
   useEffect(() => {
     const el = host.current;
@@ -207,15 +212,15 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
     const input = terminal.onData((data) => send({ type: "input", cell, data }));
     const sized = terminal.onResize(({ cols, rows }) => send({ type: "resize", cell, cols, rows }));
     terminal.attachCustomWheelEventHandler((e) => {
-      wheel(e.deltaY);
+      wheel(e.deltaY, at(e));
       return false;
     });
     terminal.attachCustomKeyEventHandler((e) => {
       if (e.type !== "keydown" || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || (e.key !== "PageUp" && e.key !== "PageDown")) return true;
-      send({ type: "scroll", cell, direction: e.key === "PageUp" ? "up" : "down", lines: Math.max(1, terminal.rows - 1) });
+      send({ type: "scroll", cell, source: "page_key", direction: e.key === "PageUp" ? "up" : "down", lines: Math.max(1, terminal.rows - 1) });
       return false;
     });
-    // Clicks at a cell, for apps that asked for the mouse; herdr drops them for the rest.
+    // Pointer coordinates in terminal cells, clamped to the grid for mouse-reporting apps.
     const at = (e: MouseEvent) => {
       const box = (el.querySelector(".xterm-screen") ?? el).getBoundingClientRect();
       return { column: Math.min(terminal.cols - 1, Math.max(0, Math.floor(((e.clientX - box.left) / box.width) * terminal.cols))), row: Math.min(terminal.rows - 1, Math.max(0, Math.floor(((e.clientY - box.top) / box.height) * terminal.rows))) };

@@ -13,7 +13,7 @@ export interface TerminalFrame {
 /** `control` owns input and size (taking them from any other owner); `observe` only watches, alongside others. */
 export type TerminalMode = "control" | "observe";
 
-export type TerminalScroll = { direction: "up" | "down"; lines: number; column?: number; row?: number; modifiers?: number };
+export type TerminalScroll = { source?: "wheel" | "page_key"; direction: "up" | "down"; lines: number; column?: number; row?: number; modifiers?: number };
 export type TerminalMouse = { action: "down" | "up" | "drag" | "move"; button?: "left" | "middle" | "right" | "none"; column: number; row: number; modifiers?: number };
 
 /** A live terminal of a herdr pane. Calls on a closed stream, or on an observer, are dropped. */
@@ -61,7 +61,7 @@ const size = (n: number) => Math.max(1, Math.min(0xffff, Math.round(n) || 1));
 export const terminalCommand = {
   input: (data: string | Uint8Array) => (typeof data === "string" ? { type: "terminal.input", text: data } : { type: "terminal.input", bytes: Buffer.from(data).toString("base64") }),
   resize: (cols: number, rows: number) => ({ type: "terminal.resize", cols: size(cols), rows: size(rows) }),
-  scroll: (s: TerminalScroll) => ({ type: "terminal.scroll", direction: s.direction, lines: size(s.lines), ...(s.column === undefined ? {} : { column: s.column }), ...(s.row === undefined ? {} : { row: s.row }), modifiers: s.modifiers ?? 0 }),
+  scroll: (s: TerminalScroll) => ({ type: "terminal.scroll", direction: s.direction, lines: size(s.lines), ...(s.source === undefined ? {} : { source: s.source }), ...(s.column === undefined ? {} : { column: s.column }), ...(s.row === undefined ? {} : { row: s.row }), modifiers: s.modifiers ?? 0 }),
   mouse: (m: TerminalMouse) => ({ type: "terminal.mouse", action: m.action, button: m.button ?? "left", column: m.column, row: m.row, modifiers: m.modifiers ?? 0 }),
   release: () => ({ type: "terminal.release" })
 };
