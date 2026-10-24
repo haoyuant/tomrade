@@ -286,7 +286,7 @@ describe("connecting a repository", () => {
     // Its MCP server still goes in, between Tomrade's markers; nothing of the person's is rewritten.
     const text = fs.readFileSync(file, "utf8");
     expect(text.startsWith(own.trimEnd())).toBe(true);
-    expect(text).toContain('# BEGIN TOMRADE MCP\n[mcp_servers.tomrade]\nurl = "http://127.0.0.1:19090/mcp/p1"\n# END TOMRADE MCP');
+    expect(text).toContain('# BEGIN TOMRADE MCP\n[mcp_servers.tomrade]\nurl = "http://127.0.0.1:19090/mcp/p1"\nenv_http_headers = { "X-Tomrade-Herdr-Pane" = "HERDR_PANE_ID" }\n# END TOMRADE MCP');
     expect(text).not.toContain("X-Tomrade-Agent");
     expect(parseToml(text)).toMatchObject({ hooks: { SessionStart: [{ hooks: [{ command: "echo custom" }] }] } });
     expect(writeConnectFiles(dir, input, ["codex"]).files).toEqual([]);
@@ -375,7 +375,7 @@ describe("connecting a repository", () => {
     const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
     expect(writeConnectFiles(dir, input).files).toEqual(expect.arrayContaining(["opencode.json", ".opencode/plugins/tomrade.js"]));
     expect(JSON.parse(fs.readFileSync(path.join(dir, "opencode.json"), "utf8"))).toEqual({ $schema: "https://opencode.ai/config.json", model: "deepseek/deepseek-flash",
-      mcp: { tomrade: { type: "remote", url: input.mcpUrl, enabled: true, headers: { "X-Tomrade-Run": "{env:TOMRADE_MCP_TOKEN}" } } } });
+      mcp: { tomrade: { type: "remote", url: input.mcpUrl, enabled: true, headers: { "X-Tomrade-Run": "{env:TOMRADE_MCP_TOKEN}", "X-Tomrade-Herdr-Pane": "{env:HERDR_PANE_ID}" } } } });
     const plugin = fs.readFileSync(path.join(dir, ".opencode/plugins/tomrade.js"), "utf8");
     expect(plugin).toContain(`const eventUrl = "${input.eventUrl}";`);
     expect(plugin).toContain('"x-tomrade-agent": "opencode"');
@@ -873,6 +873,31 @@ describe("an outside session before it claims", () => {
     await post("cli-2", { hook_event_name: "PreToolUse", tool_name: "mcp__tomrade__claim_ticket", tool_input: { key: second.key } });
     const two = (await ctx.tools.execute("claim_ticket", { key: second.key }, { by: "ai:mcp", projectId: project.id, connection: "conn-2" })) as { sharedCheckout?: { tickets: string[] }[] };
     expect(two.sharedCheckout?.map((s) => s.tickets)).toEqual([[first.key]]);
+  });
+});
+
+describe("an MCP client that names its pane", () => {
+  it("writes the pane header into every agent's server entry, and a claim over such a connection lands on that pane", async () => {
+    const { ctx, codeLink, items, project, board, checkout } = await machine();
+    const input = { projectName: project.name, mcpUrl: ctx.mcp.urlFor(project.id)!, eventUrl: ctx.mcp.eventUrl!, prefix: "TOM", branchTemplate: "{key}/{slug}" };
+    writeConnectFiles(checkout, input);
+    const read = (name: string) => JSON.parse(fs.readFileSync(path.join(checkout, name), "utf8")) as { mcpServers: Record<string, { headers?: Record<string, string> }> };
+    expect(read(".mcp.json").mcpServers.tomrade!.headers).toEqual({ "X-Tomrade-Herdr-Pane": "${HERDR_PANE_ID}" });
+    expect(read(".gemini/settings.json").mcpServers.tomrade!.headers).toEqual({ "X-Tomrade-Herdr-Pane": "${HERDR_PANE_ID}" });
+    expect(read(".cursor/mcp.json").mcpServers.tomrade!.headers).toEqual({ "X-Tomrade-Herdr-Pane": "${env:HERDR_PANE_ID}" });
+    expect(fs.readFileSync(path.join(checkout, ".codex/config.toml"), "utf8")).toContain('env_http_headers = { "X-Tomrade-Herdr-Pane" = "HERDR_PANE_ID" }');
+    // Gemini CLI has no hooks: its claim is followed through its connection, and the pane its headers named is the session's.
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "Gemini work", by: "human" });
+    const inv = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-gemini", pane: "w2:p4", terminal: "Apple_Terminal" };
+    const claimed = (await ctx.tools.execute("claim_ticket", { key: item.key }, inv)) as { tracking: { tracked: boolean; sessionId: string } };
+    expect(claimed.tracking.tracked).toBe(true);
+    expect(codeLink.store.session(project.id, claimed.tracking.sessionId)).toMatchObject({ agent: "mcp", herdrPane: "w2:p4", terminal: "Apple_Terminal", itemIds: [item.id] });
+    // A session whose hooks already placed it keeps its own pane.
+    await fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json", "X-Tomrade-Herdr-Pane": "w2:p9" }, body: JSON.stringify({ hook_event_name: "SessionStart", session_id: "cli-h", cwd: checkout }) });
+    await until(() => codeLink.sessionsOf(project.id).length === 2);
+    const other = items.create({ projectId: project.id, boardId: board.id, title: "Hooked work", by: "human" });
+    const hooked = (await ctx.tools.execute("claim_ticket", { key: other.key }, { by: "ai:mcp", projectId: project.id, connection: "conn-h", pane: "w2:p1" })) as { tracking: { sessionId: string } };
+    expect(codeLink.store.session(project.id, hooked.tracking.sessionId)).toMatchObject({ herdrPane: "w2:p9" });
   });
 });
 

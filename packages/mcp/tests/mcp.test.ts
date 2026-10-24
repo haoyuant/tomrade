@@ -96,6 +96,30 @@ describe("the MCP surface", () => {
       expect(closed).toEqual([seen[0]]);
     } finally { await a.close(); await b.close(); await ctx.fiber.dispose(); }
   });
+  it("hands a tool the pane and terminal a client's headers name, and nothing for a header sent as written", async () => {
+    const { ctx } = await fresh({ plugins: [Tools, [Mcp, { port: 0 }]] });
+    await settle();
+    const seen: { pane?: string; terminal?: string }[] = [];
+    ctx.tools.register(defineTool({ name: "where", title: "Where", description: "test", input: z.object({}), execute: (_args, inv) => (seen.push({ pane: inv.pane, terminal: inv.terminal }), "ok") }));
+    const connect = async (headers: Record<string, string>) => {
+      const client = new Client({ name: "c", version: "0" });
+      await client.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.url!), { requestInit: { headers } }));
+      await client.callTool({ name: "where", arguments: {} });
+      await client.close();
+    };
+    try {
+      await connect({ "X-Tomrade-Herdr-Pane": "w1:p3", "X-Tomrade-Terminal": "iTerm.app" });
+      await connect({ "X-Tomrade-Herdr-Pane": "w1:p4", "X-Tomrade-WT": "6a3f" });
+      // Outside Tomrade's terminal the variable is unset: the header is empty, or the agent sends it as written.
+      await connect({ "X-Tomrade-Herdr-Pane": "" });
+      await connect({ "X-Tomrade-Herdr-Pane": "${HERDR_PANE_ID}" });
+      await connect({ "X-Tomrade-Herdr-Pane": "${env:HERDR_PANE_ID}" });
+      await connect({ "X-Tomrade-Herdr-Pane": "{env:HERDR_PANE_ID}" });
+      await connect({});
+      expect(seen).toEqual([{ pane: "w1:p3", terminal: "iTerm.app" }, { pane: "w1:p4", terminal: "WindowsTerminal" }, {}, {}, {}, {}, {}]);
+    } finally { await ctx.fiber.dispose(); }
+  });
+
   it("hands a tool the folders a client declares as its roots, and nothing when it declares none", async () => {
     const { ctx } = await fresh({ plugins: [Tools, [Mcp, { port: 0 }]] });
     await settle();
