@@ -29,18 +29,29 @@ export function saySafeStart(): void {
   new Notification({ title: w("startedSafe"), body: w("startedSafeBody"), silent: true }).show();
 }
 
+/** How long the start waits for its splash to paint before getting on without it. */
+const PAINT_WAIT_MS = 2000;
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
 /**
  * A small window from the first moment. Reading the login shell can take
  * seconds, the plugins load after it, and the main window opens only then:
  * until it does the person would otherwise see nothing, and launch again to no effect.
+ *
+ * It waits for its own page: the boot work behind it keeps the renderer from painting
+ * for seconds, and until then the window holds nothing but its background colour.
  */
-export function showSplash(icon: string): BrowserWindow {
+export async function showSplash(icon: string): Promise<BrowserWindow> {
   const dark = nativeTheme.shouldUseDarkColors;
   // The file's own bytes, base64: decoding the icon in the main process drew no
   // logo on Windows, only its white plate.
   let logo = "";
   try {
-    logo = `<img src="data:image/png;base64,${fs.readFileSync(icon).toString("base64")}" width="64" height="64" alt="">`;
+    const bytes = fs.readFileSync(icon);
+    // Read empty, or not a PNG at all: an img with nothing to draw is the white plate again.
+    if (bytes.length > PNG.length && bytes.subarray(0, PNG.length).equals(PNG)) {
+      logo = `<img src="data:image/png;base64,${bytes.toString("base64")}" width="64" height="64" alt="">`;
+    }
   } catch {
     // No icon to draw; the window still says what it is doing.
   }
@@ -63,7 +74,10 @@ img{background:#fff;border-radius:16px;padding:6px}
     backgroundColor: dark ? "#1e1e1e" : "#ffffff",
     webPreferences: { javascript: false, sandbox: true }
   });
-  void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  await Promise.race([
+    win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).catch(() => undefined),
+    new Promise((done) => setTimeout(done, PAINT_WAIT_MS))
+  ]);
   return win;
 }
 
