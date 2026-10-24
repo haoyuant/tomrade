@@ -1,4 +1,5 @@
 import type { ChatEvent, ChatRequest, StopReason } from "./model.js";
+import { systemText } from "./model.js";
 import { LlmError } from "./errors.js";
 
 const OPENAI = /^https?:\/\/api\.openai\.com(\/|$)/i;
@@ -53,7 +54,7 @@ export function responsesBody(model: string, request: ChatRequest, replay = fals
   const choice = request.toolChoice;
   return {
     model,
-    instructions: request.system,
+    instructions: systemText(request),
     input: toResponsesInput(request, replay),
     stream: true,
     store: false,

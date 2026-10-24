@@ -8,6 +8,7 @@ import { invoke, logQuietly } from "~/lib/api";
 import { defaultStartMode, onStartRequest, useHerdrStatus, useCodeDeliveries, useCodeSessions, useStartDefaults, useStartTicket, useTerminalWindow } from "~/lib/codeLink";
 import { StartGateFix, useGateWords, type StartFailure } from "./StartGateFix";
 import { useI18n } from "~/lib/i18n";
+import { pickFallbackName } from "~/lib/engines";
 import { engineStateLabel } from "~/lib/localCli";
 import { useHintToast } from "~/lib/onboarding";
 import { STATUS } from "~/lib/domain";
@@ -18,6 +19,7 @@ import { Icon } from "~/components/icons";
 import { useAgentDock } from "~/components/chrome/ProjectShell";
 import { useHerdrHint } from "~/components/setup/HerdrRecommend";
 import { Dialog, DialogBody, DialogClose, DialogFoot, DialogHead } from "~/components/ui/dialog";
+import { PickSelect } from "~/components/ui/pick-select";
 import { isFullAccess, permissionHint, permissionLabel } from "~/lib/codeLink";
 
 interface StartTicketProps {
@@ -215,12 +217,15 @@ function StartTicketDialog({
   const ready = engineId === "other" ? true : !!engine?.ok;
   const busy = start.isPending || takeover.isPending;
 
-  const submit = (allowBlocked = waitsOn.length > 0, releaseBranch = false) => {
+  // `first`: another ticket (a bootstrap) is started with these choices instead, and this one follows it once it lands.
+  const submit = (allowBlocked = waitsOn.length > 0, releaseBranch = false, first?: { itemId: string; key: string }) => {
     setError(null);
     const options: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(pickValues)) if (value) options[key] = value;
     start.mutate(
-      { itemId: item.id, mode, engine: engineId, options, ...(general ? { playbook } : {}), ...(permissionMode ? { permissionMode } : {}), ...(allowBlocked ? { allowBlocked } : {}), ...(releaseBranch ? { releaseBranch } : {}), ...(task ? { message: task } : {}) },
+      first
+        ? { itemId: first.itemId, mode, engine: engineId, options, ...(permissionMode ? { permissionMode } : {}), then: item.id }
+        : { itemId: item.id, mode, engine: engineId, options, ...(general ? { playbook } : {}), ...(permissionMode ? { permissionMode } : {}), ...(allowBlocked ? { allowBlocked } : {}), ...(releaseBranch ? { releaseBranch } : {}), ...(task ? { message: task } : {}) },
       {
         onSuccess: (result) => {
           if (!result.ok) {
@@ -228,6 +233,11 @@ function StartTicketDialog({
             return;
           }
           onClose();
+          if (first) {
+            toast({ body: t("codeLink.bootstrapFirstToast", { bootstrap: first.key, key: item.key }) });
+            if (result.mode === "run" && result.threadId) showThread(result.threadId);
+            return;
+          }
           const vars = { key: item.key, branch: result.branch };
           const warning = result.warnings?.join("\n");
           if (result.mode === "run") {
@@ -313,30 +323,24 @@ function StartTicketDialog({
           </Field>
 
           {picks.length > 0 && (
-            <div className="row" style={{ alignItems: "flex-start", gap: "var(--space-3)" }}>
-              {picks.map((pick) => {
-                const id = `stPick-${pick.key}`;
-                const value = pickValues[pick.key] ?? "";
-                const fallback = globalValue(pick.key);
-                const defaultLabel = fallback ? `${t("codeLink.defaultOption")} (${pick.choices.find((c) => c.value === fallback)?.label ?? fallback})` : t("codeLink.defaultOption");
-                return (
-                  <div className="field" style={{ flex: 1 }} key={pick.key}>
-                    <label htmlFor={id}>{pickTitle(pick)}</label>
-                    {pick.freeText ? (
-                      <>
-                        <input id={id} className="input" list={`${id}-list`} value={value} placeholder={fallback || t("codeLink.modelPlaceholder")} disabled={busy} onChange={(event) => setPick(pick.key, event.target.value)} />
-                        <datalist id={`${id}-list`}>{pick.choices.map((choice) => <option key={choice.value} value={choice.value}>{choice.label ?? choice.value}</option>)}</datalist>
-                      </>
-                    ) : (
-                      <select id={id} className="select" value={value} disabled={busy} onChange={(event) => setPick(pick.key, event.target.value)}>
-                        <option value="">{defaultLabel}</option>
-                        {pick.choices.map((choice) => <option key={choice.value} value={choice.value}>{choice.label ?? choice.value}</option>)}
-                        {value && !pick.choices.some((choice) => choice.value === value) && <option value={value}>{value}</option>}
-                      </select>
-                    )}
-                  </div>
-                );
-              })}
+            <div className="field-group">
+              <div className="row" style={{ alignItems: "flex-start", gap: "var(--space-3)" }}>
+                {picks.map((pick) => {
+                  const id = `stPick-${pick.key}`;
+                  const value = pickValues[pick.key] ?? "";
+                  // "Default" is no choice of this start's: what Settings holds for the engine, else the engine's own, where it has said.
+                  const saved = globalValue(pick.key);
+                  const stands = saved ? (pick.choices.find((c) => c.value === saved)?.label ?? saved) : pickFallbackName(t, pick);
+                  const defaultLabel = stands ? t("agentPanel.pickDefaultKnown", { value: stands }) : t("codeLink.defaultOption");
+                  return (
+                    <div className="field" style={{ flex: 1 }} key={`${engineId}-${pick.key}`}>
+                      <label htmlFor={id}>{pickTitle(pick)}</label>
+                      <PickSelect id={id} pick={pick} value={value} onChange={(next) => setPick(pick.key, next)} defaultLabel={defaultLabel} disabled={busy} />
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="meta-txt" data-testid="start-picks-hint">{t("codeLink.picksHint", { engine: engine?.title ?? "" })}</p>
             </div>
           )}
 
@@ -417,6 +421,10 @@ function StartTicketDialog({
                         onOpenRepositories={onOpenRepositories}
                         onOpenIssue={onOpenIssue}
                         onOpenEngine={(id) => openSettings(id ?? engineId)}
+                        onStartFirst={(key) => {
+                          const first = items.data?.find((other) => other.key === key);
+                          if (first) submit(false, false, { itemId: first.id, key });
+                        }}
                       />
                     </>
                   );

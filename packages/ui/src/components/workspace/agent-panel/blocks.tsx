@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import type { Block, EngineView, FocusRef, PendingView, RunView, ThreadMessage } from "@tomradex/agent";
 import type { Item, ModelErrorKind } from "@tomradex/domain";
 import { modelErrorKind } from "@tomradex/domain/model-errors";
@@ -9,10 +10,16 @@ import { PRIORITY_LABEL, WORK_TYPE_KEY } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { traceState } from "~/lib/steps";
 import type { RunProgress } from "~/lib/agent";
-import { offerStart } from "~/lib/codeLink";
+import { offerStart, permissionLabel, useMergeTicket, useResolveMerge, useStartTickets } from "~/lib/codeLink";
+import { useEngines } from "~/lib/agent";
+import { useAgentDock } from "~/components/chrome/ProjectShell";
+import type { MergeCard, StartBatchCard } from "@tomradex/code-link";
 import { useSetupInTerminal } from "~/lib/setup";
 import { useImShareNext, useImThreadBindings } from "~/lib/im";
 import { isCancelKey, isCommitKey, isComposing } from "~/lib/keys";
+import { useFilesInfo } from "~/lib/files";
+import { openExternal, openPath } from "~/lib/shell";
+import { useToast } from "~/lib/toast";
 import { duration, retryReason, runTokensLabel, tokens } from "./format";
 
 /** The pulse that says "not stuck": what it's doing, for how long, and the tokens so far — or, loudly, that requests are failing. */
@@ -76,11 +83,95 @@ function KeyRef({ text, item, onOpenIssue }: { text: string; item: Item | undefi
   );
 }
 
-/** Plain text with keys linked. Deliberately not a markdown renderer — the engines are told to write plainly. */
-export function linkify(text: string, byKey: Map<string, Item>, onOpenIssue: (id: string) => void): ReactNode[] {
-  return text.split(KEY_RE).map((part, i) =>
-    i % 2 === 1 ? <KeyRef key={i} text={part} item={byKey.get(part)} onOpenIssue={onOpenIssue} /> : <Fragment key={i}>{part}</Fragment>
+// A markdown link, a path quoted in backticks, a web or file URL, or a bare absolute path — in that order of preference.
+const LINK_RE = /\[([^\]\n]+)\]\(((?:https?|file):\/\/[^\s)]+|~?\/[^\s)]+|[A-Za-z]:\\[^\s)]+)\)|`((?:~\/|\/|[A-Za-z]:\\)[^`\n]+)`|((?:https?|file):\/\/[^\s<>"'`\u3000-\u303f\uff01-\uff0f\uff1a-\uff20]+)|((?<![\w/:.~-])(?:~\/|\/)[\w.@%+-]+(?:\/[\w.@%+-]+)+\/?|(?<![\w])[A-Za-z]:\\[^\s<>"'`\u3000-\u303f\uff01-\uff0f\uff1a-\uff20]+)/g;
+// A bare slash path counts only where it looks like a file on disk, not a route such as /api/v1.
+const ON_DISK = /^(?:~\/|\/(?:Users|home|Volumes|tmp|private|opt|var|mnt)\/|[A-Za-z]:\\)|\.\w{1,8}\/?$/;
+
+/** Sentence punctuation after a bare link belongs to the sentence; a closing bracket only when the link never opened one. */
+function trimTrailing(raw: string): string {
+  let end = raw.length;
+  while (end > 0) {
+    const ch = raw[end - 1];
+    if (".,;:!?'\"。，；：！？、》」』".includes(ch)) end--;
+    else if (ch === ")" && raw.slice(0, end).split("(").length <= raw.slice(0, end).split(")").length - 1) end--;
+    else if ((ch === "]" || ch === "）") && !raw.slice(0, end - 1).includes(ch === "]" ? "[" : "（")) end--;
+    else break;
+  }
+  return raw.slice(0, end);
+}
+
+/** A local path from a `file://` URL, or the path as written. */
+function localPath(target: string): string {
+  if (!/^file:\/\//i.test(target)) return target;
+  try {
+    const pathname = decodeURIComponent(new URL(target).pathname);
+    return /^\/[A-Za-z]:\//.test(pathname) ? pathname.slice(1) : pathname;
+  } catch {
+    return target;
+  }
+}
+
+function WebLink({ url, label }: { url: string; label: string }) {
+  const { t } = useI18n();
+  return (
+    <a className="tlink" href={url} title={t("agentPanel.openLink", { target: url })} onClick={(e) => { e.preventDefault(); openExternal(url); }}>
+      {label}
+    </a>
   );
+}
+
+/** A file in the project's Files opens in Tomrade's own viewer; anything else on disk opens with the system's app. */
+function PathLink({ projectId, target, label }: { projectId: string; target: string; label: string }) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const navigate = useNavigate();
+  const files = useFilesInfo(projectId);
+  const open = async () => {
+    const dir = files.data?.dir?.replace(/[\\/]+$/, "");
+    const inside = dir && (target.startsWith(dir + "/") || target.startsWith(dir + "\\")) ? target.slice(dir.length + 1).replace(/\\/g, "/").replace(/\/$/, "") : null;
+    if (inside) return void navigate({ to: "/p/$projectId/f/$", params: { projectId, _splat: inside } });
+    if (!(await openPath(target))) toast({ body: t("agentPanel.pathMissing", { target }) });
+  };
+  return (
+    <a className="tlink" href={target} title={t("agentPanel.openPath", { target })} onClick={(e) => { e.preventDefault(); void open(); }}>
+      {label}
+    </a>
+  );
+}
+
+function keyed(text: string, byKey: Map<string, Item>, onOpenIssue: (id: string) => void, at: number): ReactNode[] {
+  return text.split(KEY_RE).map((part, i) =>
+    i % 2 === 1 ? <KeyRef key={`${at}-${i}`} text={part} item={byKey.get(part)} onOpenIssue={onOpenIssue} /> : <Fragment key={`${at}-${i}`}>{part}</Fragment>
+  );
+}
+
+/** Plain text with keys, links and paths live. Deliberately not a markdown renderer — the engines are told to write plainly. */
+export function linkify(text: string, byKey: Map<string, Item>, onOpenIssue: (id: string) => void, projectId: string): ReactNode[] {
+  const out: ReactNode[] = [];
+  let last = 0;
+  for (const m of text.matchAll(LINK_RE)) {
+    const [whole, mdLabel, mdTarget, quoted, url, bare] = m;
+    const start = m.index;
+    let raw = whole;
+    let target: string;
+    let label: string;
+    if (mdTarget !== undefined) { target = mdTarget; label = mdLabel; }
+    else if (quoted !== undefined) { target = quoted; label = whole; }
+    else {
+      raw = trimTrailing(url ?? bare);
+      if (bare !== undefined && !ON_DISK.test(raw)) continue;
+      target = raw;
+      label = raw;
+    }
+    if (start > last) out.push(...keyed(text.slice(last, start), byKey, onOpenIssue, last));
+    out.push(/^https?:/i.test(target)
+      ? <WebLink key={`l${start}`} url={target} label={label} />
+      : <PathLink key={`l${start}`} projectId={projectId} target={localPath(target)} label={label} />);
+    last = start + raw.length;
+  }
+  if (last < text.length) out.push(...keyed(text.slice(last), byKey, onOpenIssue, last));
+  return out;
 }
 
 const OP_GLYPH = { created: "+", updated: "~", deleted: "–" } as const;
@@ -133,6 +224,166 @@ export function StartOffer({ card, onOpenIssue }: { card: StartOfferCard; onOpen
           {t("agentPanel.startOffer", { key: card.key })}
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Tickets the assistant was asked to start. Until they run, the person either confirms the start
+ * (a ticket just filed from their request) or picks the agent here (the conversation's own could
+ * not code) and starts them all at once; then each ticket says how it went and opens its session.
+ */
+export function StartBatchBlock({ card, cardId, projectId, threadId, onOpenIssue }: { card: StartBatchCard; cardId: string; projectId: string; threadId: string; onOpenIssue: (id: string) => void }) {
+  const { t } = useI18n();
+  const engines = useEngines();
+  const { showThread } = useAgentDock();
+  const start = useStartTickets(projectId);
+  const ready = (engines.data ?? []).filter((engine) => engine.ok && engine.capabilities.includes("code") && !engine.terminalOnly);
+  const [chosenEngine, setChosenEngine] = useState<string | null>(null);
+  const [chosenPermission, setChosenPermission] = useState<string | null>(null);
+  const settled = card.config ?? null;
+  const picking = !card.results && !settled;
+  const engine = ready.find((e) => e.id === chosenEngine) ?? ready[0];
+  const permissionModes = engine?.permissionModes;
+  const permissionMode = permissionModes ? (chosenPermission && permissionModes.choices.some((c) => c.value === chosenPermission) ? chosenPermission : permissionModes.default) : undefined;
+  const n = card.tickets.length;
+  const head = card.results
+    ? t(n === 1 ? "agentPanel.startBatchDoneOne" : "agentPanel.startBatchDone", { n })
+    : settled
+      ? t(n === 1 ? "agentPanel.startBatchConfirmOne" : "agentPanel.startBatchConfirm", { n })
+      : t(n === 1 ? "agentPanel.startBatchPickOne" : "agentPanel.startBatchPick", { n });
+  const go = (config: { engine: string; options?: Record<string, unknown>; permissionMode?: string }) =>
+    start.mutate({ itemIds: card.tickets.map((ticket) => ticket.itemId), requestedBy: threadId, ...config, ...(card.task ? { task: card.task } : {}), cardId });
+  return (
+    <div className="tool-card" data-testid="start-batch" data-state={card.results ? "started" : settled ? "confirm" : "pick"}>
+      <div className="tool-head">
+        <Icon name="i-plug" size={12} />
+        {head}
+      </div>
+      {card.task && <p className="tool-row" data-testid="start-batch-task">{t("codeLink.startTask", { task: card.task })}</p>}
+      <ul className="tool-row start-batch-list">
+        {card.tickets.map((ticket) => {
+          const result = card.results?.find((r) => r.itemId === ticket.itemId);
+          return (
+            <li key={ticket.itemId} data-testid="start-batch-ticket" data-state={result ? (result.ok ? "started" : "stopped") : "pending"}>
+              <button type="button" className="kref num" onClick={() => onOpenIssue(ticket.itemId)}>{ticket.key}</button> {ticket.title}
+              {result && (
+                <span className="meta-txt dense start-batch-result">
+                  {result.ok
+                    ? result.message
+                      ? t("agentPanel.startBatchWaiting", { question: result.message })
+                      : t(result.continued ? "agentPanel.startBatchContinued" : "agentPanel.startBatchStarted", { engine: findEngineTitle(engines.data, result.engine), branch: result.branch ?? "" })
+                    : result.message ?? t("agentPanel.startBatchStopped")}
+                  {result.ok && result.threadId && (
+                    <>
+                      {" · "}
+                      <button type="button" className="link-btn" data-testid="start-batch-open" onClick={() => showThread(result.threadId!)}>{t("agentPanel.startBatchOpen")}</button>
+                    </>
+                  )}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {settled && !card.results && (
+        <div className="tool-row start-batch-pick">
+          <span className="meta-txt dense">{t("agentPanel.startBatchWith", { engine: findEngineTitle(engines.data, settled.engine) })}</span>
+          <button type="button" className="btn btn-primary btn-xs" disabled={start.isPending} data-testid="start-batch-go" onClick={() => go(settled)}>
+            {start.isPending ? t("agentPanel.startBatchStarting") : t(n === 1 ? "agentPanel.startBatchGoOne" : "agentPanel.startBatchGo", { n })}
+          </button>
+        </div>
+      )}
+      {picking && (
+        <>
+          {card.reason && <p className="tool-row meta-txt dense">{t("agentPanel.startBatchWhy", { reason: card.reason })}</p>}
+          {ready.length === 0 ? (
+            <p className="tool-row meta-txt dense" data-testid="start-batch-none">{t("agentPanel.startBatchNoEngine")}</p>
+          ) : (
+            <div className="tool-row start-batch-pick">
+              <span className="start-batch-field">
+                <label className="meta-txt" htmlFor={`sb-engine-${cardId}`}>{t("agentPanel.startBatchEngine")}</label>
+                <select id={`sb-engine-${cardId}`} className="select" value={engine?.id ?? ""} disabled={start.isPending} onChange={(event) => { setChosenEngine(event.target.value); setChosenPermission(null); }}>
+                  {ready.map((e) => <option key={e.id} value={e.id}>{e.title}</option>)}
+                </select>
+              </span>
+              {permissionModes && (
+                <span className="start-batch-field">
+                  <label className="meta-txt" htmlFor={`sb-perm-${cardId}`}>{t("agentPanel.startBatchPermission")}</label>
+                  <select id={`sb-perm-${cardId}`} className="select" value={permissionMode} disabled={start.isPending} onChange={(event) => setChosenPermission(event.target.value)}>
+                    {permissionModes.choices.map((choice) => <option key={choice.value} value={choice.value}>{permissionLabel(t, choice)}</option>)}
+                  </select>
+                </span>
+              )}
+              <button
+                type="button"
+                className="btn btn-primary btn-xs"
+                disabled={start.isPending || !engine}
+                data-testid="start-batch-go"
+                onClick={() => engine && go({ engine: engine.id, ...(permissionMode ? { permissionMode } : {}) })}
+              >
+                {start.isPending ? t("agentPanel.startBatchStarting") : t(n === 1 ? "agentPanel.startBatchGoOne" : "agentPanel.startBatchGo", { n })}
+              </button>
+            </div>
+          )}
+        </>
+      )}
+      {!card.results && start.error && <p className="tool-row meta-txt dense" data-testid="start-batch-error">{String((start.error as Error).message ?? start.error)}</p>}
+    </div>
+  );
+}
+
+const findEngineTitle = (engines: EngineView[] | undefined, id: string | undefined): string => engines?.find((e) => e.id === id || e.includes?.includes(id ?? ""))?.title ?? id ?? "";
+
+/** A ticket asked for here is delivered: the pull request or branch, and the merge for the person to say — or to hand back to the session when it conflicts. */
+export function MergeBlock({ card, projectId, threadId, onOpenIssue }: { card: MergeCard; projectId: string; threadId: string; onOpenIssue: (id: string) => void }) {
+  const { t } = useI18n();
+  const merge = useMergeTicket(projectId);
+  const resolve = useResolveMerge(projectId);
+  const [pending, setPending] = useState(false);
+  const busy = merge.isPending || resolve.isPending || (pending && card.state === "offered");
+  const conflict = card.state === "refused" && card.cause === "conflict";
+  return (
+    <div className="tool-card" data-testid="merge-offer" data-state={card.state}>
+      <div className="tool-head">
+        <Icon name="i-merge" size={12} />
+        <button type="button" className="kref num" onClick={() => onOpenIssue(card.itemId)}>{card.key}</button> {card.title}
+      </div>
+      <p className="tool-row">
+        {card.prUrl ? (
+          <a href={card.prUrl} onClick={(event) => { event.preventDefault(); openExternal(card.prUrl!); }}>{card.prUrl.replace(/^https?:\/\/(www\.)?/, "")}</a>
+        ) : (
+          <span className="num">{t("agentPanel.mergeBranch", { branch: card.branch, base: card.base, repo: card.repo })}</span>
+        )}
+      </p>
+      {card.state === "offered" && <p className="tool-row meta-txt dense">{t("agentPanel.mergeLead")}</p>}
+      {card.state === "merged" && <p className="tool-row meta-txt dense" data-testid="merge-done">{card.message ?? t("agentPanel.mergeMerged")}</p>}
+      {card.state === "resolving" && <p className="tool-row meta-txt dense" data-testid="merge-resolving">{t("agentPanel.mergeResolving")}</p>}
+      {card.state === "refused" && (
+        <p className="tool-row meta-txt dense" data-testid="merge-refused">
+          {t("agentPanel.mergeRefused", { message: card.message ?? "" })}
+          {card.cause === "dirty" && ` ${t("agentPanel.mergeDirtyHint")}`}
+        </p>
+      )}
+      {(card.state === "offered" || card.state === "refused") && (
+        <div className="tool-row">
+          <button
+            type="button"
+            className={conflict ? "btn btn-xs" : "btn btn-primary btn-xs"}
+            disabled={busy}
+            data-testid="merge-go"
+            onClick={() => { setPending(true); merge.mutate(card.itemId, { onSettled: () => setPending(false) }); }}
+          >
+            {busy && !resolve.isPending ? t("agentPanel.merging") : t(card.state === "refused" ? "agentPanel.mergeAgain" : "agentPanel.mergeButton")}
+          </button>
+          {conflict && (
+            <button type="button" className="btn btn-primary btn-xs" disabled={busy} data-testid="merge-resolve" onClick={() => resolve.mutate({ itemId: card.itemId, requestedBy: threadId })}>
+              {resolve.isPending ? t("agentPanel.startBatchStarting") : t("agentPanel.mergeResolve")}
+            </button>
+          )}
+        </div>
+      )}
+      {(merge.error || resolve.error) && <p className="tool-row meta-txt dense">{String(((merge.error ?? resolve.error) as Error).message ?? merge.error ?? resolve.error)}</p>}
     </div>
   );
 }

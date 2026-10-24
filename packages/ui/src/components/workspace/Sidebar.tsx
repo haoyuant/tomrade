@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { DragDropProvider } from "@dnd-kit/react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { move } from "@dnd-kit/helpers";
-import type { Board, Repo, View } from "@tomradex/domain";
+import { repoPathLabel, type Board, type Repo, type View } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import { Hint } from "~/components/ui/hint";
@@ -11,7 +11,8 @@ import { InlineNameRow } from "./InlineNameRow";
 import { BUILTIN_MODULES, PluginModuleBody, PluginModuleHead, SidebarModule, useSidebarLayout, useSidebarModules } from "./SidebarModules";
 import { viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { useCreateBoard, useCreateView, useRepos, useUpdateView } from "~/lib/queries";
+import { normalizeRemote } from "~/lib/remotes";
+import { useCreateBoard, useCreateView, useRepoCheckouts, useRepos, useUpdateView } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace, viewCount } from "./context";
 import { useToastUndo } from "~/lib/undo";
@@ -152,7 +153,8 @@ function WorkstreamRow({ board, repo, onEdit }: { board: Board; repo: Repo | nul
   const { owned, openWorkstream, virtual, workstream } = useWorkspace();
   const current = virtual && workstream?.id === board.id;
   const count = owned.filter((i) => i.boardId === board.id).length;
-  const path = board.repoPath.replace(/^\/+|\/+$/g, "");
+  const checkouts = useRepoCheckouts();
+  const path = repoPathLabel(board.repoPath, repo ? ((checkouts.data ?? []).find((c) => c.remote === normalizeRemote(repo.remote))?.checkout ?? null) : null);
   return (
     <div className="side-ws-container">
       <button

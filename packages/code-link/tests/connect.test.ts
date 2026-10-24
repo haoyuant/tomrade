@@ -430,8 +430,8 @@ describe("connecting a repository", () => {
     for (const [file, agent] of [[".claude/settings.json", undefined], [".codebuddy/settings.json", "workbuddy"], [".codex/config.toml", "codex"]] as const) {
       const quoted = (command: string) => JSON.stringify(command).slice(1, -1);
       const text = fs.readFileSync(path.join(checkout, file), "utf8");
-      expect(text).toContain(quoted(hookCommand(input.eventUrl, agent)));
-      fs.writeFileSync(path.join(checkout, file), text.split(quoted(hookCommand(input.eventUrl, agent))).join(quoted(posixHookCommand(input.eventUrl, agent, { pane }))));
+      expect(text).toContain(quoted(hookCommand(input.eventUrl, agent, { reply: true })));
+      fs.writeFileSync(path.join(checkout, file), text.split(quoted(hookCommand(input.eventUrl, agent, { reply: true }))).join(quoted(posixHookCommand(input.eventUrl, agent, { pane }))));
     }
     fs.rmSync(path.join(checkout, ".cursor/hooks"), { recursive: true });
     fs.mkdirSync(path.join(checkout, ".cursor/hooks"));
@@ -445,7 +445,7 @@ describe("connecting a repository", () => {
     for (const id of ["claude-code", "codex", "workbuddy", "cursor"]) expect(view.agents.find((agent) => agent.id === id)).toMatchObject({ tools: true, tracking: "hooks" });
     // Connecting again moves them all to today's commands, Cursor's onto its pair of scripts.
     writeConnectFiles(checkout, input);
-    expect(fs.readFileSync(path.join(checkout, ".claude/settings.json"), "utf8")).toContain(JSON.stringify(hookCommand(input.eventUrl)).slice(1, -1));
+    expect(fs.readFileSync(path.join(checkout, ".claude/settings.json"), "utf8")).toContain(JSON.stringify(hookCommand(input.eventUrl, undefined, { reply: true })).slice(1, -1));
     expect(fs.readFileSync(path.join(checkout, ".codex/config.toml"), "utf8")).not.toContain(JSON.stringify(posixHookCommand(input.eventUrl, "codex", { pane })).slice(1, -1));
     expect(fs.readFileSync(cursorHooks, "utf8")).not.toContain("tomrade.sh");
     expect(fs.existsSync(path.join(checkout, ".cursor/hooks/tomrade.ps1"))).toBe(true);
@@ -459,7 +459,7 @@ describe("connecting a repository", () => {
       const quoted = (command: string) => JSON.stringify(command).slice(1, -1);
       const text = fs.readFileSync(path.join(checkout, file), "utf8");
       expect(text).toContain("X-Tomrade-Terminal: $TERM_PROGRAM");
-      fs.writeFileSync(path.join(checkout, file), text.split(quoted(hookCommand(input.eventUrl, agent))).join(quoted(hookCommand(input.eventUrl, agent, older))));
+      fs.writeFileSync(path.join(checkout, file), text.split(quoted(hookCommand(input.eventUrl, agent, { reply: true }))).join(quoted(hookCommand(input.eventUrl, agent, older))));
     }
     git(["add", "-A"], checkout);
     git(["commit", "-q", "-m", "connected before terminals"], checkout);
@@ -615,7 +615,7 @@ describe("connecting a repository", () => {
     expect(fs.readFileSync(path.join(checkout, ".cursor/mcp.json"), "utf8")).not.toContain("tomrade");
     // The team's CLAUDE.md is tracked, so it stays theirs; AGENTS.md is new, untracked and excluded, so the agent reads the rules.
     expect(fs.readFileSync(path.join(checkout, "CLAUDE.md"), "utf8")).not.toContain("Tomrade");
-    expect(fs.readFileSync(path.join(checkout, "AGENTS.md"), "utf8")).toContain("file one with `create_item`");
+    expect(fs.readFileSync(path.join(checkout, "AGENTS.md"), "utf8")).toContain("call `work_without_ticket` with their words");
     expect(fs.existsSync(path.join(checkout, ".claude/settings.json"))).toBe(false);
     expect(git(["branch", "--list", "tomrade/connect"], checkout)).toBe("");
     // Claude Code loads the server without asking, and its hooks post from its personal settings file.
@@ -824,6 +824,55 @@ describe("a ticket an agent files for itself", () => {
     // And the calls that name it land there, not on the row it left behind.
     expect(await ctx.tools.execute("note_progress", { key: second.key, text: "started" }, inv)).toMatchObject({ ok: true });
     expect(codeLink.sessionsOf(project.id, second.id).map((s) => [s.id, s.summary])).toEqual([[newer.id, "started"]]);
+  });
+});
+
+describe("an outside session before it claims", () => {
+  it("hears at start that it holds no ticket, is held at its first code change, and goes on after a claim or the person's word", async () => {
+    const { ctx, codeLink, items, project, board, checkout } = await machine();
+    const post = async (payload: Record<string, unknown>) =>
+      (await fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json", "X-Tomrade-Agent": "codex" }, body: JSON.stringify({ session_id: "cx-1", cwd: checkout, ...payload }) })).json() as Promise<Record<string, unknown>>;
+    expect(await post({ hook_event_name: "SessionStart" })).toMatchObject({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: expect.stringContaining("holds no ticket") } });
+    await until(() => codeLink.sessionsOf(project.id).length === 1);
+    // Reading is free; the first edit, and a commit, are held with both ways on in the reason.
+    expect(await post({ hook_event_name: "PreToolUse", tool_name: "Read", tool_input: { file_path: path.join(checkout, "README.md") } })).toEqual({});
+    const held = (await post({ hook_event_name: "PreToolUse", tool_name: "apply_patch", tool_input: { patch: "*** Begin Patch" } })) as { hookSpecificOutput: { permissionDecision: string; permissionDecisionReason: string } };
+    expect(held.hookSpecificOutput).toMatchObject({ hookEventName: "PreToolUse", permissionDecision: "deny" });
+    expect(held.hookSpecificOutput.permissionDecisionReason).toContain("claim_ticket");
+    expect(held.hookSpecificOutput.permissionDecisionReason).toContain("work_without_ticket");
+    expect(await post({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "git commit -am x" } })).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
+    // A file outside the checkout is not the repository's code.
+    expect(await post({ hook_event_name: "PreToolUse", tool_name: "Write", tool_input: { file_path: path.join(os.tmpdir(), "scratch.txt") } })).toEqual({});
+    // The person's word: the call, announced by the hook before it, lands on this session and lets it go on.
+    await post({ hook_event_name: "PreToolUse", tool_name: "mcp__tomrade__work_without_ticket", tool_input: { reason: "just try it here" } });
+    const inv = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-x" };
+    expect(await ctx.tools.execute("work_without_ticket", { reason: "just try it here" }, inv)).toMatchObject({ recorded: true });
+    expect(codeLink.sessionsOf(project.id)[0]).toMatchObject({ withoutTicket: "just try it here" });
+    expect(await post({ hook_event_name: "PreToolUse", tool_name: "Edit", tool_input: { file_path: path.join(checkout, "README.md") } })).toEqual({});
+    // A claim takes the word back: the session is on a ticket now, and says nothing more at start.
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "Real work", by: "human" });
+    expect(await ctx.tools.execute("claim_ticket", { key: item.key }, inv)).toMatchObject({ tracking: { tracked: true } });
+    expect(codeLink.sessionsOf(project.id)[0]).toMatchObject({ withoutTicket: null, itemIds: [item.id] });
+    expect(await post({ hook_event_name: "PreToolUse", tool_name: "Edit", tool_input: { file_path: path.join(checkout, "README.md") } })).toEqual({});
+    expect(await post({ hook_event_name: "SessionStart" })).toEqual({});
+  });
+
+  it("names the other live session in the same folder when a ticket is claimed there", async () => {
+    const { ctx, codeLink, items, project, board, checkout } = await machine();
+    const post = (id: string, payload: Record<string, unknown>) =>
+      fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: id, cwd: checkout, ...payload }) });
+    await post("cli-1", { hook_event_name: "SessionStart" });
+    await post("cli-2", { hook_event_name: "SessionStart" });
+    await until(() => codeLink.sessionsOf(project.id).length === 2);
+    const first = items.create({ projectId: project.id, boardId: board.id, title: "First", by: "human" });
+    const second = items.create({ projectId: project.id, boardId: board.id, title: "Second", by: "human" });
+    await post("cli-1", { hook_event_name: "PreToolUse", tool_name: "mcp__tomrade__claim_ticket", tool_input: { key: first.key } });
+    const one = (await ctx.tools.execute("claim_ticket", { key: first.key }, { by: "ai:mcp", projectId: project.id, connection: "conn-1" })) as { sharedCheckout?: unknown[]; conventions: string[] };
+    expect(one.sharedCheckout).toHaveLength(1);
+    expect(one.conventions[0]).toContain("git worktree add");
+    await post("cli-2", { hook_event_name: "PreToolUse", tool_name: "mcp__tomrade__claim_ticket", tool_input: { key: second.key } });
+    const two = (await ctx.tools.execute("claim_ticket", { key: second.key }, { by: "ai:mcp", projectId: project.id, connection: "conn-2" })) as { sharedCheckout?: { tickets: string[] }[] };
+    expect(two.sharedCheckout?.map((s) => s.tickets)).toEqual([[first.key]]);
   });
 });
 
@@ -1738,6 +1787,26 @@ describe("a developer's own Cursor session", () => {
     await post({ hook_event_name: "sessionEnd", reason: "completed", final_status: "completed" });
     expect(codeLink.sessionsOf(project.id)[0].state).toBe("ended");
   });
+
+  it("hears Tomrade's answer in its own fields: held at its first change without a ticket, let through on a claim, and always told a decision", async () => {
+    const { codeLink, ctx, items, project, board, checkout } = await machine();
+    const post = async (payload: Record<string, unknown>) =>
+      (await fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "content-type": "application/json", "x-tomrade-agent": "cursor" },
+        body: JSON.stringify({ conversation_id: "conv-2", session_id: "conv-2", cursor_version: "2026.10.16-e3cb207", workspace_roots: [checkout], ...payload }) })).json() as Promise<Record<string, unknown>>;
+    expect(await post({ hook_event_name: "sessionStart" })).toEqual({ additional_context: expect.stringContaining("holds no ticket") });
+    await until(() => codeLink.sessionsOf(project.id).length === 1);
+    expect(await post({ hook_event_name: "preToolUse", tool_name: "Read", tool_input: { file_path: path.join(checkout, "README.md") } })).toEqual({ permission: "allow" });
+    const held = await post({ hook_event_name: "preToolUse", tool_name: "Write", tool_input: { file_path: path.join(checkout, "README.md") } });
+    expect(held).toMatchObject({ permission: "deny", agent_message: expect.stringContaining("work_without_ticket"), user_message: expect.any(String) });
+    expect(await post({ hook_event_name: "preToolUse", tool_name: "Shell", tool_input: { command: "git commit -am x" } })).toMatchObject({ permission: "deny" });
+    // An event Cursor reads no answer on, and one from nowhere Tomrade knows, both get an empty object — never a stray field.
+    expect(await post({ hook_event_name: "afterAgentResponse", text: "Working." })).toEqual({});
+    expect(await post({ hook_event_name: "preToolUse", workspace_roots: [os.tmpdir()], tool_name: "Write", tool_input: { file_path: path.join(os.tmpdir(), "x") } })).toEqual({ permission: "allow" });
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "Cursor change", by: "human" });
+    expect(await ctx.tools.execute("claim_ticket", { key: item.key }, { by: "ai:mcp", projectId: project.id, connection: "conn-cursor" })).toMatchObject({ tracking: { tracked: true } });
+    expect(await post({ hook_event_name: "preToolUse", tool_name: "Write", tool_input: { file_path: path.join(checkout, "README.md") } })).toEqual({ permission: "allow" });
+    expect(await post({ hook_event_name: "sessionStart" })).toEqual({});
+  });
 });
 
 describe("a developer's own Claude Code session", () => {
@@ -1888,7 +1957,8 @@ describe("syncing a session back", () => {
       expect(text).toContain(`project "${project.name}" (ticket keys look like ${project.keyPrefix}-42)`);
       expect(text).toContain("Work that matches no ticket stays unmatched");
       expect(text).toContain("never mark a code ticket done yourself");
-      expect(client.getInstructions()).toContain("do not ask first");
+      expect(client.getInstructions()).toContain("ask them first");
+      expect(client.getInstructions()).toContain("claim_ticket that key once");
     } finally {
       await client.close();
     }
@@ -1918,7 +1988,7 @@ describe("syncing a session back", () => {
       const instructions = client.getInstructions()!;
       expect(instructions.startsWith("Project rules")).toBe(true);
       expect(instructions).toContain("- Write tickets in Chinese\n- Never touch billing");
-      expect(instructions.indexOf("Never touch billing")).toBeLessThan(instructions.indexOf("do not ask first"));
+      expect(instructions.indexOf("Never touch billing")).toBeLessThan(instructions.indexOf("Before changing code"));
       const read = await client.callTool({ name: "get_project_rules", arguments: {} });
       expect(JSON.parse((read.content as { text: string }[])[0]!.text)).toEqual({ rules: "- Write tickets in Chinese\n- Never touch billing" });
     } finally {

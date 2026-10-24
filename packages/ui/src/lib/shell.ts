@@ -32,6 +32,7 @@ declare module "@tomradex/ipc" {
     "shell.pickProgram": (title?: string, buttonLabel?: string) => string | null;
     "shell.reveal": (target: string) => void;
     "shell.openExternal": (url: string) => void;
+    "shell.openPath": (target: string) => boolean;
     "shell.about": () => AboutInfo;
     /** Native save dialog, then the text written there. The chosen path, or null when cancelled. */
     "shell.saveTextFile": (opts: { title?: string; defaultName: string; text: string }) => string | null;
@@ -66,6 +67,9 @@ export const revealLabel = (mac = isMac, windows = isWindows): MessageKey =>
   mac ? "common.revealMac" : windows ? "common.revealWindows" : "common.revealLinux";
 
 export const openExternal = (url: string): void => void invoke("shell.openExternal", url).catch(logQuietly("shell.openExternal"));
+
+/** False when nothing is at that path, or there is no shell (a browser tab). */
+export const openPath = (target: string): Promise<boolean> => invoke("shell.openPath", target).catch(() => false);
 
 export const restartApp = (opts?: { safe?: boolean }): void => void invoke("shell.restart", opts).catch(logQuietly("shell.restart"));
 

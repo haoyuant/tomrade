@@ -14,7 +14,7 @@ import { foldSteps, startBriefId } from "~/lib/steps";
 import { conducts, findEngine, useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetWorkstream, useWorkdir, type RunProgress } from "~/lib/agent";
 import { keys, useAssistantAccessories, useBoards, useItems, useSettings } from "~/lib/queries";
 import { ATTENTION_KEY, useAttention, type AttentionEntry } from "~/lib/attention";
-import { pickChoiceName } from "~/lib/engines";
+import { pickChoiceName, pickFallbackName } from "~/lib/engines";
 import { engineStateLabel } from "~/lib/localCli";
 import { useSetupInTerminal } from "~/lib/setup";
 import { openSettingsPane } from "~/lib/settingsHost";
@@ -784,7 +784,7 @@ export function AgentPanel({
                 }
               >
                 <MenuHead title={pickTitle(pick)} />
-                <MenuRadioItem checked={!current} name={t("agentPanel.pickDefault")} onSelect={() => setPick(pick.key, null)} />
+                <MenuRadioItem checked={!current} name={t("agentPanel.pickDefault")} chips={pickFallbackName(t, pick) ? [pickFallbackName(t, pick)!] : undefined} onSelect={() => setPick(pick.key, null)} />
                 {pick.choices.map((c) => (
                   <MenuRadioItem key={c.value} checked={c.value === current} name={pickChoiceName(t, pick, c)} chips={c.searchesWeb ? [t("agentPanel.searchesWeb")] : undefined} onSelect={() => setPick(pick.key, c.value)} />
                 ))}
