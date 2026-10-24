@@ -1,6 +1,6 @@
 import { AgentConnection } from "../projects/AgentConnection";
 import { useEffect, useRef, useState } from "react";
-import type { Board, Item } from "@tomradex/domain";
+import { isMachinePath, repoPathLabel, repoSubfolder, type Board, type Item } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { useChooseRepoFolder } from "~/components/projects/RepositoriesBlock";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
@@ -24,9 +24,6 @@ import { useToastUndo } from "~/lib/undo";
 import { keyLabel } from "~/lib/keybindings";
 import { InlineEdit } from "~/components/ui/InlineEdit";
 import { isCommitKey } from "~/lib/keys";
-
-/** A repository path as the backend reads it: no leading or trailing slashes, '' for the root. */
-const cleanRepoPath = (p: string) => p.trim().replace(/^[\/\\]+|[\/\\]+$/g, "");
 
 /**
  * One workstream as a small card: the head names it, the code line picks the
@@ -117,7 +114,7 @@ function WorkstreamRow({ board, count, others, projectId, onOpenRepositories }: 
 
   const repo = (repos.data ?? []).find((r) => r.id === board.repoId) ?? null;
   const checkout = repo ? ((checkouts.data ?? []).find((c) => c.remote === normalizeRemote(repo.remote))?.checkout ?? null) : null;
-  const subdir = cleanRepoPath(board.repoPath);
+  const subdir = repoPathLabel(board.repoPath, checkout);
   const repoSelectId = `wsRepo-${board.id}`;
   const pathId = `wsPath-${board.id}`;
 
@@ -202,12 +199,17 @@ function WorkstreamRow({ board, count, others, projectId, onOpenRepositories }: 
             <label htmlFor={pathId}>{t("fieldsDialog.workstreamRepoPathLabel")}</label>
             <InlineEdit
               id={pathId}
-              value={board.repoPath}
+              value={subdir}
               allowEmpty
               aria-label={t("fieldsDialog.workstreamRepoPathAria")}
               className="input num fld-ws-path"
               placeholder={t("fieldsDialog.workstreamRepoPathPlaceholder")}
-              onSave={(repoPath) => update.mutate({ id: board.id, patch: { repoPath: cleanRepoPath(repoPath) } }, { onError: fail })}
+              onSave={(repoPath) => {
+                // A pasted machine path means the folder it names in the checkout, when it is in there.
+                const folder = checkout ? repoSubfolder(repoPath, checkout) : isMachinePath(repoPath) ? null : repoPathLabel(repoPath);
+                if (folder === null) return toast({ tone: "error", body: t("fieldsDialog.workstreamRepoPathOutside", { folder: repoPath.trim(), checkout: checkout ?? "" }) });
+                update.mutate({ id: board.id, patch: { repoPath: folder } }, { onError: fail });
+              }}
             />
           </div>
         )}

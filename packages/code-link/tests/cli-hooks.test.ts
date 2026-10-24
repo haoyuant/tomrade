@@ -32,7 +32,7 @@ async function world(plugins: unknown[] = []) {
   const w = await fresh({ plugins: [Tools, [Settings, { path: path.join(tmp, `settings-${Math.random()}.json`) }], [Agent, { mediaDir: path.join(tmp, "media") }], fakeMcp, ...(plugins as never[])] });
   w.ctx.db.migrate("code_link", MIGRATIONS, { tables: TABLES });
   const store = new CodeLinkStore(w.ctx.db);
-  const sessions = new Sessions(w.ctx, store, { dirOf: (id) => path.join(tmp, id), onChange: () => {} });
+  const sessions = new Sessions(w.ctx, store, { dirOf: (id) => path.join(tmp, id), onChange: () => {}, prefixOf: () => "TOM" });
   const ticket = w.items.create({ projectId: w.project.id, boardId: w.board.id, title: "Ship it", by: "human" });
   const session = (agent: string, bound: boolean) => {
     const s = store.createSession(w.project.id, { repoId: "repo", branch: "tom-1/ship", itemIds: [ticket.id], mode: "terminal", agent, threadId: null, device: "here" });
@@ -68,6 +68,34 @@ describe("CLI agents' hooks", () => {
     // Tomrade's own refusal is never a plugin's to lift; context sits beside its own.
     expect(mergeAnswers({ deny: "credentials" }, { context: "x" })).toEqual({ deny: "credentials" });
     expect(mergeAnswers({ context: "mine" }, { context: "theirs", deny: "no" })).toEqual({ deny: "no", context: "mine\n\ntheirs" });
+  });
+
+  it("hold an outside session's first code change until it claims a ticket or records the person's word, and say so at its start", async () => {
+    const { sessions, store, project, session } = await world();
+    const outside = store.createSession(project.id, { repoId: "repo", branch: "", itemIds: [], mode: "terminal", agent: "codex", threadId: null, device: "here", externalId: "cx-1" });
+    const hook = (payload: Record<string, unknown>) => sessions.hook(project.id, outside.id, { session_id: "cx-1", cwd: "/work/app", ...payload }, true);
+    expect(await hook({ hook_event_name: "SessionStart" })).toMatchObject({ additionalContext: expect.stringContaining("holds no ticket") });
+    expect(await hook({ hook_event_name: "PreToolUse", tool_name: "Read", tool_input: { file_path: "/work/app/a.ts" } })).toEqual({});
+    const held = await hook({ hook_event_name: "PreToolUse", tool_name: "Edit", tool_input: { file_path: "/work/app/a.ts" } });
+    expect(held).toMatchObject({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: expect.stringContaining("work_without_ticket") } });
+    expect(await hook({ hook_event_name: "PreToolUse", tool_name: "apply_patch", tool_input: {} })).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
+    expect(await hook({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "git commit -m x" } })).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
+    expect(await hook({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "git status" } })).toEqual({});
+    // A file outside the folder the agent runs in is not this repository's code.
+    expect(await hook({ hook_event_name: "PreToolUse", tool_name: "Write", tool_input: { file_path: "/tmp/notes.md" } })).toEqual({});
+    // A checkout already on a ticket's branch: the way on is to claim that ticket, not to file another.
+    const onBranch = path.join(tmp, "on-branch");
+    fs.mkdirSync(path.join(onBranch, ".git"), { recursive: true });
+    fs.writeFileSync(path.join(onBranch, ".git/HEAD"), "ref: refs/heads/tom-9/fix-it\n");
+    const there = await sessions.hook(project.id, outside.id, { session_id: "cx-1", cwd: onBranch, hook_event_name: "PreToolUse", tool_name: "Edit", tool_input: { file_path: path.join(onBranch, "a.ts") } }, true);
+    expect(there).toMatchObject({ hookSpecificOutput: { permissionDecisionReason: expect.stringContaining('claim_ticket("TOM-9")') } });
+    expect(await sessions.hook(project.id, outside.id, { session_id: "cx-1", cwd: onBranch, hook_event_name: "SessionStart" }, true)).toMatchObject({ additionalContext: expect.stringContaining("names TOM-9") });
+    store.patchSession(project.id, outside.id, { withoutTicket: "just here" });
+    expect(await hook({ hook_event_name: "PreToolUse", tool_name: "Edit", tool_input: { file_path: "/work/app/a.ts" } })).toEqual({});
+    expect(await hook({ hook_event_name: "SessionStart" })).toEqual({});
+    // A session Tomrade started has its ticket: nothing to hold.
+    const own = session("claude-code", true);
+    expect(await sessions.hook(project.id, own.id, { hook_event_name: "PreToolUse", session_id: "c1", cwd: "/w", tool_name: "Edit", tool_input: { file_path: "/w/a.ts" } }, true)).toEqual({});
   });
 
   it("in a session Tomrade started, reach plugins and carry back an answer the agent acts on", async () => {

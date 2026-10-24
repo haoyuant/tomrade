@@ -39,6 +39,7 @@ const PLAN_SYSTEM = [
   "- Each ticket has one independently deliverable and reviewable outcome. Coding tickets should fit one pull request; general tickets do not require Git, a file, or an agent. Assign workType coding or general to every ticket.",
   "- Titles: imperative, under 80 characters. Bodies: 1–3 sentences of intent, lean.",
   "- Do NOT invent requirements the input does not state; note genuine gaps in `notes` instead.",
+  "- The PROJECT section says what the code already is and does. Never propose work for a capability it names, and never assume one is missing because no ticket mentions it: the backlog lists work, not what exists.",
   "- Build coding tickets on the tech stack the requirement records. Never choose a stack yourself: when none is recorded, keep ticket titles stack-neutral and say so in `notes`.",
   "- Do not re-propose work the existing backlog already covers.",
   "- priority, when you give one, is an integer: 0 none, 1 low, 2 medium, 3 high, 4 urgent.",
@@ -49,10 +50,21 @@ const PLAN_SYSTEM = [
 export type PlanLanguage = LanguageTag;
 const languageNameOf = (language: PlanLanguage): string => (language === "zh" ? "Simplified Chinese (简体中文)" : languageName(language));
 
-export async function generatePlan(llm: LlmService | null, requirement: string, existing: Item[], language: PlanLanguage = "en"): Promise<Plan> {
+/**
+ * What the code already is and does, as the agent-maintained project brief
+ * records it. Planners read only the backlog otherwise, and a backlog lists
+ * work, not what exists: without this they invent prerequisites the code has.
+ */
+export const projectSection = (brief: string | null | undefined): string[] =>
+  brief?.trim()
+    ? ["PROJECT (what the code already is and does):", brief.trim().slice(0, 6000), ""]
+    : ["PROJECT: no brief is recorded yet — nothing is known about what the code already does, so assume no capability is missing.", ""];
+
+export async function generatePlan(llm: LlmService | null, requirement: string, existing: Item[], language: PlanLanguage = "en", brief: string | null = null): Promise<Plan> {
   if (!llm) throw new LlmError("planning needs a worker model — configure one in Settings → Assistant");
   const system = `${PLAN_SYSTEM}\n- Write every title, body and note in ${languageNameOf(language)}, the person's language, whatever language the requirement is written in. JSON keys and workType values stay in English.`;
   const user = [
+    ...projectSection(brief),
     "REQUIREMENT:",
     requirement,
     "",
@@ -122,13 +134,14 @@ const GAP_SYSTEM = [
   "You are a product gap analyst.",
   "Given a stated requirement and the existing backlog, list the missing backlog items needed to fully satisfy the requirement.",
   "- Only items that are genuinely absent. Each has an independently reviewable outcome; only coding work is sized for one pull request. Include required document, design, media, and human work.",
+  "- The PROJECT section says what the code already is and does. A capability it names is not missing, and one no ticket mentions is not missing either: the backlog lists work, not what exists.",
   "- Reason: one sentence explaining the gap.",
   '- Return JSON: {"missing": [{"title", "body"?, "reason"}]}'
 ].join("\n");
 
-export async function findGaps(llm: LlmService | null, requirement: string, existing: Item[]): Promise<{ title: string; body: string | null; reason: string }[]> {
+export async function findGaps(llm: LlmService | null, requirement: string, existing: Item[], brief: string | null = null): Promise<{ title: string; body: string | null; reason: string }[]> {
   if (!llm) throw new LlmError("gap analysis needs a worker model — configure one in Settings → Assistant");
-  const user = ["REQUIREMENT:", requirement, "", "EXISTING BACKLOG:", ...existing.slice(0, 300).map((i) => `- [${i.key}] ${i.title}${i.body ? " — " + i.body.slice(0, 100) : ""}`)].join("\n");
+  const user = [...projectSection(brief), "REQUIREMENT:", requirement, "", "EXISTING BACKLOG:", ...existing.slice(0, 300).map((i) => `- [${i.key}] ${i.title}${i.body ? " — " + i.body.slice(0, 100) : ""}`)].join("\n");
   const out = await llm.completeJson(gapSchema, { system: GAP_SYSTEM, user, purpose: "gaps" });
   return out.missing.map((m) => ({ title: m.title, body: m.body ?? null, reason: m.reason }));
 }

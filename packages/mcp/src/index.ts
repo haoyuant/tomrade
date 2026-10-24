@@ -191,11 +191,23 @@ const paragraph = (render: (scope: McpScope) => string | null, scope: McpScope):
 };
 
 /** A hook that ran in a herdr pane names it in a header, and its terminal app in another; the payload carries them on as `herdr_pane` and `terminal`. */
+/** A header value an agent sent as written because the variable it names was unset: `${HERDR_PANE_ID}`, `${env:HERDR_PANE_ID}`, `{env:HERDR_PANE_ID}`, `$HERDR_PANE_ID`. */
+const UNEXPANDED = /^(?:\$\{[^}]*\}|\{env:[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*)$/;
+const headerValue = (req: express.Request, name: string): string | undefined => {
+  const value = req.get(name)?.trim();
+  return value && !UNEXPANDED.test(value) ? value : undefined;
+};
+
+/** Where the client runs, as its request headers say: the herdr pane, and the terminal app (Windows Terminal names itself only by its session id). */
+const placeOf = (req: express.Request): { pane?: string; terminal?: string } => {
+  const pane = headerValue(req, "X-Tomrade-Herdr-Pane");
+  const terminal = headerValue(req, "X-Tomrade-Terminal") || (headerValue(req, "X-Tomrade-WT") ? "WindowsTerminal" : undefined);
+  return { ...(pane ? { pane } : {}), ...(terminal ? { terminal } : {}) };
+};
+
 const withPane = (req: express.Request): Record<string, unknown> => {
   const body = (req.body && typeof req.body === "object" ? req.body : {}) as Record<string, unknown>;
-  const pane = req.get("X-Tomrade-Herdr-Pane")?.trim();
-  // Windows Terminal names itself only by its session id.
-  const terminal = req.get("X-Tomrade-Terminal")?.trim() || (req.get("X-Tomrade-WT")?.trim() ? "WindowsTerminal" : undefined);
+  const { pane, terminal } = placeOf(req);
   // An agent that reports twice says which of Tomrade's posts this is (dsh: its hook bridge).
   const source = req.get("X-Tomrade-Source")?.trim();
   return { ...body, ...(pane ? { herdr_pane: pane } : {}), ...(terminal ? { terminal } : {}), ...(source === "dsh-hooks" ? { tomrade_source: source } : {}) };
@@ -228,7 +240,13 @@ export class Mcp extends Service implements McpReader {
   /** Captured from the injected context: HTTP callbacks run after Cordis's injection frame has closed. */
   private tools: Tools | null = null;
   private bindings = new Map<string, RunBinding>();
-  private eventListeners = new Set<(payload: unknown) => void>();
+  /** Hear a tokenless hook; the first answer with anything in it goes back to the agent. */
+  private eventListeners = new Set<(payload: unknown) => unknown>();
+  /**
+   * Where each outside client's connection runs, from the headers its first request carried: an agent's MCP
+   * config can name the herdr pane it was started in, so its claim lands on that pane without hooks.
+   */
+  private places = new Map<string, { pane?: string; terminal?: string }>();
   private prompts = new Map<string, McpPrompt>();
   private instructions = new Map<(scope: McpScope) => string | null, number>();
 
@@ -243,6 +261,7 @@ export class Mcp extends Service implements McpReader {
     this.tools = this.ctx.get("tools") ?? null;
     if (!this.tools) throw new Error("the MCP server needs the tools plugin");
     const transports = new Map<string, StreamableHTTPServerTransport>();
+    const places = this.places;
     const app = createMcpExpressApp();
 
     // `/mcp/<projectId>` binds every call in the session to one project, so a
@@ -264,14 +283,20 @@ export class Mcp extends Service implements McpReader {
       // Keep the identity, not a closure over the first turn's ledger. An idle
       // or revoked runtime must never fall back to the unbound MCP gateway.
       const server = this.session(token, projectId);
+      const place = placeOf(req);
       const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (sid) => {
           transports.set(sid, transport);
+          if (place.pane || place.terminal) places.set(sid, place);
         }
       });
       transport.onclose = () => {
-        for (const [sid, t] of transports) if (t === transport) transports.delete(sid);
+        for (const [sid, t] of transports) {
+          if (t !== transport) continue;
+          transports.delete(sid);
+          places.delete(sid);
+        }
         if (transport.sessionId) this.ctx.emit("mcp/closed", transport.sessionId);
         void server.close();
       };
@@ -292,18 +317,24 @@ export class Mcp extends Service implements McpReader {
     app.get("/mcp/:projectId", attached);
     app.delete("/mcp/:projectId", attached);
     // Hooks committed into a repository carry no token: whoever listens sorts
-    // them out by the cwd and session id in the payload.
-    app.post("/sessions/event", (req, res) => {
+    // them out by the cwd and session id in the payload. The hook leaves the
+    // answer on stdout for agents that read one (a denied tool, context to
+    // add); an empty object says nothing, in every agent's reading.
+    app.post("/sessions/event", async (req, res) => {
       const agent = req.get("X-Tomrade-Agent");
       const body = withPane(req);
-      for (const listener of this.eventListeners) {
-        try {
-          listener(agent === "codex" || agent === "workbuddy" || agent === "pi" || agent === "hermes" || agent === "opencode" || agent === "cursor" ? { ...body, tomrade_agent: agent } : body);
-        } catch {
-          // one listener's failure is not another's
-        }
-      }
-      res.json({ ok: true });
+      const payload = agent === "codex" || agent === "workbuddy" || agent === "pi" || agent === "hermes" || agent === "opencode" || agent === "cursor" ? { ...body, tomrade_agent: agent } : body;
+      const answers = await Promise.all(
+        [...this.eventListeners].map(async (listener) => {
+          try {
+            return await listener(payload);
+          } catch {
+            return undefined; // one listener's failure is not another's
+          }
+        })
+      );
+      const answer = answers.find((a) => !!a && typeof a === "object" && Object.keys(a).length > 0);
+      res.json(answer ?? {});
     });
     // A coding agent's hooks (SessionStart, Stop, Notification…) post here with
     // the session's token; the binding that owns the token hears them.
@@ -449,8 +480,8 @@ export class Mcp extends Service implements McpReader {
     return this.url ? `${this.url.replace(/\/mcp$/, "")}/sessions/event` : null;
   }
 
-  /** Hear tokenless hook events. Reversible: the listener goes with the plugin that registered it. */
-  onEvent(listener: (payload: unknown) => void): () => void {
+  /** Hear tokenless hook events, and answer them (the first answer with anything in it is the agent's). Reversible: the listener goes with the plugin that registered it. */
+  onEvent(listener: (payload: unknown) => unknown): () => void {
     return this.ctx.effect(() => {
       this.eventListeners.add(listener);
       return () => this.eventListeners.delete(listener);
@@ -520,7 +551,7 @@ export class Mcp extends Service implements McpReader {
             ? async () => (await server.server.listRoots(undefined, { signal: extra.signal })).roots.map((r) => fileURLToPath(r.uri))
             : undefined;
           const result = textResult(
-            await tools.execute(tool.name, args, { by: "ai:mcp", projectId, signal: extra.signal, ...(extra.sessionId ? { connection: extra.sessionId } : {}), ...(roots ? { roots } : {}) }),
+            await tools.execute(tool.name, args, { by: "ai:mcp", projectId, signal: extra.signal, ...(extra.sessionId ? { connection: extra.sessionId, ...this.places.get(extra.sessionId) } : {}), ...(roots ? { roots } : {}) }),
             tool.whole
           );
           // Only after a call that wrote: the agent learns whether the write is still on this instance alone.

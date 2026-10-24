@@ -9,7 +9,8 @@ const PLUGIN_MARK = "Written by Tomrade";
  * connect, so this one carries the session's token too.
  */
 function opencodeMcpEntry(url: string): Record<string, unknown> {
-  return { type: "remote", url, enabled: true, headers: { "X-Tomrade-Run": "{env:TOMRADE_MCP_TOKEN}" } };
+  // The pane header names where the session runs, from the variable Tomrade's terminal sets; empty elsewhere.
+  return { type: "remote", url, enabled: true, headers: { "X-Tomrade-Run": "{env:TOMRADE_MCP_TOKEN}", "X-Tomrade-Herdr-Pane": "{env:HERDR_PANE_ID}" } };
 }
 
 /**
@@ -33,8 +34,9 @@ export const TomradePlugin = async ({ directory }) => {
   const url = token ? eventUrl.replace("/sessions/event", "/sessions/" + token + "/event") : eventUrl;
   const prompts = new Set();
   const pane = { ...(process.env.HERDR_PANE_ID ? { herdr_pane: process.env.HERDR_PANE_ID } : {}), ...(process.env.TERM_PROGRAM || process.env.WT_SESSION ? { terminal: process.env.TERM_PROGRAM || "WindowsTerminal" } : {}) };
-  const post = (payload) => { void fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-tomrade-agent": "opencode" },
-    body: JSON.stringify({ cwd: directory, ...pane, ...payload }), signal: AbortSignal.timeout(2000) }).catch(() => {}); };
+  const ask = (payload) => fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-tomrade-agent": "opencode" },
+    body: JSON.stringify({ cwd: directory, ...pane, ...payload }), signal: AbortSignal.timeout(2000) }).then((response) => response.json()).catch(() => ({}));
+  const post = (payload) => { void ask(payload); };
   return {
     event: async ({ event }) => {
       const p = event.properties ?? {};
@@ -49,7 +51,12 @@ export const TomradePlugin = async ({ directory }) => {
       else if (event.type === "session.error") post({ hook_event_name: "StopFailure", session_id, error_message: p.error?.data?.message ?? p.error?.name });
       else if (event.type === "session.deleted") post({ hook_event_name: "SessionEnd", session_id, reason: "exit" });
     },
-    "tool.execute.before": async (input, output) => post({ hook_event_name: "PreToolUse", session_id: input.sessionID, tool_name: names[input.tool] ?? input.tool, tool_input: output?.args ?? {} }),
+    // Tomrade may refuse a tool (a code change before the session claimed a ticket): the reason reaches the agent as the tool's error.
+    "tool.execute.before": async (input, output) => {
+      const reply = await ask({ hook_event_name: "PreToolUse", session_id: input.sessionID, tool_name: names[input.tool] ?? input.tool, tool_input: output?.args ?? {} });
+      const decision = reply?.hookSpecificOutput;
+      if (decision?.permissionDecision === "deny") throw new Error(decision.permissionDecisionReason || "Tomrade refused this tool call");
+    },
     "tool.execute.after": async (input, output) => post({ hook_event_name: "PostToolUse", session_id: input.sessionID, tool_name: names[input.tool] ?? input.tool, tool_input: input.args ?? {}, tool_output: String(output?.output ?? "").slice(0, 2000) })
   };
 };

@@ -37,6 +37,7 @@ export function useGateWords() {
         if (cause?.code === "no-board-repo") return { lead: t("codeLink.gateWorkstream", { board }) };
         if (cause?.code === "unknown-repo") return { lead: t("codeLink.gateWorkdirUnknownRepo", { board, repo: cause.repoId ?? "?" }) };
         if (cause?.code === "no-hub") return { lead: t("codeLink.gateWorkdirNoHub") };
+        if (cause?.code === "folder-outside") return { lead: t("codeLink.gateWorkdirFolderOutside", { board, folder: cause.folder ?? "", checkout: cause.checkout ?? "" }) };
         if (cause?.code === "branch-in-use" && cause.branch && cause.heldAt) return { lead: t(cause.releasable ? "codeLink.gateWorkdirBranchReleasable" : "codeLink.gateWorkdirBranchInUse", { branch: cause.branch, at: cause.heldAt }) };
         return { lead: t("codeLink.gateWorkdir"), detail: f.message };
       }
@@ -63,7 +64,8 @@ export function StartGateFix({
   onLeave,
   onOpenRepositories,
   onOpenIssue,
-  onOpenEngine
+  onOpenEngine,
+  onStartFirst
 }: {
   projectId: string;
   itemId: string;
@@ -75,6 +77,8 @@ export function StartGateFix({
   onOpenRepositories?: () => void;
   onOpenIssue?: (idOrKey: string) => void;
   onOpenEngine: (engineId?: string) => void;
+  /** Start the ticket that stands in the way (a bootstrap) with this dialog's choices; this ticket follows it. */
+  onStartFirst?: (key: string) => void;
 }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -240,11 +244,18 @@ export function StartGateFix({
         </div>
       );
     case "readiness":
-      return failure.bootstrapKey && onOpenIssue ? (
-        <div className="gate-fix">
-          <button type="button" className="btn btn-primary" onClick={leave(() => onOpenIssue(failure.bootstrapKey!))}>
-            {t("codeLink.gateOpenBootstrap", { key: failure.bootstrapKey })}
-          </button>
+      return failure.bootstrapKey && (onStartFirst || onOpenIssue) ? (
+        <div className="gate-fix" data-testid="gate-fix-readiness">
+          {onStartFirst && (
+            <button type="button" className="btn btn-primary" onClick={() => onStartFirst(failure.bootstrapKey!)}>
+              {t("codeLink.gateStartBootstrapFirst", { key: failure.bootstrapKey })}
+            </button>
+          )}
+          {onOpenIssue && (
+            <button type="button" className={onStartFirst ? "btn btn-ghost" : "btn btn-primary"} onClick={leave(() => onOpenIssue(failure.bootstrapKey!))}>
+              {t("codeLink.gateOpenBootstrap", { key: failure.bootstrapKey })}
+            </button>
+          )}
         </div>
       ) : null;
     default:

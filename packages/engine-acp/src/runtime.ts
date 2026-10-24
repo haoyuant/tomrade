@@ -145,11 +145,16 @@ export class AcpRuntime implements Runtime {
     else option.currentValue = value;
   }
 
-  /** What the session advertised feeds the picks the next time they are drawn. */
-  private learn(): void {
-    const offered = advertised(this.config, this.models);
-    if (!offered.models && !offered.efforts) return;
+  /**
+   * What the session advertised feeds the picks the next time they are drawn. Its current values are
+   * the agent's own defaults only where Tomrade chose nothing: a knob set from a thread stays out.
+   */
+  private learn(chosen: { model?: string; effort?: string }): void {
+    const { defaults, ...offered } = advertised(this.config, this.models);
+    const own = { ...(defaults?.model && !chosen.model ? { model: defaults.model } : {}), ...(defaults?.effort && !chosen.effort ? { effort: defaults.effort } : {}) };
+    if (!offered.models && !offered.efforts && !Object.keys(own).length) return;
     Object.assign(this.catalog, offered);
+    if (Object.keys(own).length) this.catalog.defaults = { ...this.catalog.defaults, ...own };
     this.learned?.();
   }
 
@@ -234,7 +239,7 @@ export class AcpRuntime implements Runtime {
     this.config = Array.isArray(session.configOptions) ? session.configOptions : [];
     this.modes = session.modes ?? undefined;
     this.models = session.models ?? undefined;
-    this.learn();
+    this.learn(options);
     this.indexDigest = input.filesIndex?.digest ?? null;
     const mode = this.agent.mode?.(this.policy);
     if (mode) await this.setMode(mode, io);

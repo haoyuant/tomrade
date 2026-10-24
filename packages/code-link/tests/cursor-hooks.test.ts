@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CURSOR_HOOK_COMMAND, CURSOR_HOOK_POWERSHELL, CURSOR_HOOK_SCRIPT, LEGACY_CURSOR_HOOK_SCRIPT, cursorHookPowerShell, cursorHookReader, cursorHookScript, cursorHookScripts, withCursorHooks } from "../src/cursor-hooks.js";
+import { CURSOR_HOOK_COMMAND, CURSOR_HOOK_POWERSHELL, CURSOR_HOOK_SCRIPT, LEGACY_CURSOR_HOOK_SCRIPT, cursorHookPowerShell, cursorHookReader, cursorHookReply, cursorHookScript, cursorHookScripts, withCursorHooks } from "../src/cursor-hooks.js";
 
 describe("Cursor's hooks", () => {
   it("go into .cursor/hooks.json beside the person's own, once", () => {
@@ -51,5 +51,21 @@ describe("Cursor's hooks", () => {
     expect(read({ ...base, hook_event_name: "sessionEnd", reason: "completed" })).toEqual({ ...at, hook_event_name: "SessionEnd", reason: "completed" });
     expect(read({ ...base, hook_event_name: "beforeReadFile" })).toBeNull();
     expect(read({ hook_event_name: "stop" })).toBeNull();
+  });
+
+  it("are answered in Cursor's own fields, and a permission hook always hears a decision", () => {
+    const deny = { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "no ticket yet" } };
+    expect(cursorHookReply("preToolUse", deny)).toEqual({ permission: "deny", user_message: "no ticket yet", agent_message: "no ticket yet" });
+    expect(cursorHookReply("preToolUse", {})).toEqual({ permission: "allow" });
+    expect(cursorHookReply("preToolUse", undefined)).toEqual({ permission: "allow" });
+    const context = { additionalContext: "you hold no ticket", hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: "you hold no ticket" } };
+    expect(cursorHookReply("sessionStart", context)).toEqual({ additional_context: "you hold no ticket" });
+    expect(cursorHookReply("postToolUse", { hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: "the build is green" } })).toEqual({ additional_context: "the build is green" });
+    expect(cursorHookReply("stop", { decision: "block", reason: "run the tests first" })).toEqual({ followup_message: "run the tests first" });
+    // Nothing to say, and events that read no answer, get an empty object — which every one of them reads as nothing.
+    expect(cursorHookReply("sessionStart", {})).toEqual({});
+    expect(cursorHookReply("stop", {})).toEqual({});
+    expect(cursorHookReply("beforeSubmitPrompt", context)).toEqual({});
+    expect(cursorHookReply("sessionEnd", deny)).toEqual({});
   });
 });

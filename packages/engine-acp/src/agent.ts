@@ -23,6 +23,8 @@ export interface RequestUsage {
 export interface Catalog {
   models: EnginePick["choices"];
   efforts: EnginePick["choices"];
+  /** What a session runs with when Tomrade picks nothing: the agent's own setting, so the picks can say what "default" is. */
+  defaults?: { model?: string; effort?: string };
 }
 
 /**

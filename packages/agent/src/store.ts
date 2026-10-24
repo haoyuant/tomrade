@@ -140,7 +140,9 @@ CREATE TABLE IF NOT EXISTS plugin_agent_briefs (
   { version: 14, up: `CREATE TABLE plugin_agent_inputs (
     request_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, fingerprint TEXT NOT NULL,
     run_id TEXT NOT NULL, source_json TEXT, created_at INTEGER NOT NULL
-  )` }
+  )` },
+  // The brief one step back: a careless rewrite is undone, not lost.
+  { version: 15, up: "ALTER TABLE plugin_agent_briefs ADD COLUMN previous_body TEXT" }
 ];
 
 interface ThreadRow {
@@ -586,13 +588,29 @@ export class AgentStore {
   }
 
   brief(projectId: string): string | null {
-    return (this.db(projectId).prepare("SELECT body FROM plugin_agent_briefs WHERE project_id = ?").get(projectId) as { body: string } | undefined)?.body ?? null;
+    return this.briefView(projectId)?.body ?? null;
   }
 
+  briefView(projectId: string): { body: string; updatedAt: number; previous: string | null } | null {
+    const row = this.db(projectId).prepare("SELECT body, updated_at, previous_body FROM plugin_agent_briefs WHERE project_id = ?").get(projectId) as { body: string; updated_at: number; previous_body: string | null } | undefined;
+    return row ? { body: row.body, updatedAt: row.updated_at, previous: row.previous_body } : null;
+  }
+
+  /** The body it replaces is kept as the previous one; writing the same text again keeps nothing new. */
   setBrief(projectId: string, body: string): void {
     this.db(projectId)
-      .prepare("INSERT INTO plugin_agent_briefs (project_id, body, updated_at) VALUES (?, ?, ?) ON CONFLICT(project_id) DO UPDATE SET body = excluded.body, updated_at = excluded.updated_at")
+      .prepare(
+        "INSERT INTO plugin_agent_briefs (project_id, body, updated_at, previous_body) VALUES (?, ?, ?, NULL) ON CONFLICT(project_id) DO UPDATE SET previous_body = CASE WHEN plugin_agent_briefs.body = excluded.body THEN plugin_agent_briefs.previous_body ELSE plugin_agent_briefs.body END, body = excluded.body, updated_at = excluded.updated_at"
+      )
       .run(projectId, body, Date.now());
+  }
+
+  /** The previous body back as the current one; what it replaces becomes the previous. False when there is none. */
+  restoreBrief(projectId: string): boolean {
+    const view = this.briefView(projectId);
+    if (!view || view.previous === null) return false;
+    this.db(projectId).prepare("UPDATE plugin_agent_briefs SET body = ?, previous_body = ?, updated_at = ? WHERE project_id = ?").run(view.previous, view.body, Date.now(), projectId);
+    return true;
   }
 
   changesOf(projectId: string, runId: string): number {

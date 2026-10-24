@@ -42,6 +42,17 @@ function toMessages(request: ChatRequest): { role: "user" | "assistant"; content
     .filter((m) => m.content.length > 0);
 }
 
+/** The last message's last block carries a cache breakpoint: everything before it is the prefix the next request reuses. */
+function markedLast(messages: unknown[]): unknown[] {
+  const last = messages[messages.length - 1] as { role: string; content: unknown } | undefined;
+  if (!last || !Array.isArray(last.content) || last.content.length === 0) return messages;
+  const content = [...(last.content as Record<string, unknown>[])];
+  const block = content[content.length - 1]!;
+  if (block.type !== "text" && block.type !== "tool_result" && block.type !== "tool_use" && block.type !== "image" && block.type !== "document") return messages;
+  content[content.length - 1] = { ...block, cache_control: { type: "ephemeral" } };
+  return [...messages.slice(0, -1), { ...last, content }];
+}
+
 const FIRST_PARTY = /^https?:\/\/api\.anthropic\.com(\/|$)/i;
 /** Dynamic filtering needs Opus or Sonnet 4.6 or later; other models get the basic search. */
 const FILTERING = /^claude-(opus|sonnet)-(4-[6-9]|[5-9])/;
@@ -89,9 +100,10 @@ export class AnthropicModel implements ChatModel {
         model: this.config.model,
         max_tokens: request.maxTokens ?? 16000,
         stream: true,
-        // The stable prefix ends at the system block; the conversation varies after it.
-        system: [{ type: "text", text: request.system, cache_control: { type: "ephemeral" } }],
-        messages: messages as Anthropic.MessageParam[],
+        // The cached prefix is the stable system text; what changes between turns follows it uncached,
+        // and the last message is marked too, so the conversation so far is read from the cache next turn.
+        system: [{ type: "text", text: request.system, cache_control: { type: "ephemeral" } }, ...(request.systemTail ? [{ type: "text" as const, text: request.systemTail }] : [])],
+        messages: markedLast(messages) as Anthropic.MessageParam[],
         ...(tools.length
           ? {
               tools: tools as Anthropic.ToolUnion[],

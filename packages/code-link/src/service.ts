@@ -17,7 +17,7 @@ import type {} from "@tomradex/repos";
 import { normalizeRemote } from "@tomradex/repos";
 import type {} from "@tomradex/settings";
 import type {} from "@tomradex/write";
-import type { Item } from "@tomradex/domain";
+import { repoSubfolder, type Item } from "@tomradex/domain";
 import { GitFolder, gitRunner, type Git } from "@tomradex/git";
 import { readPull, type ForgePull } from "./forge.js";
 import { agentsNeedingFiles, type ConnectionView } from "./connection.js";
@@ -26,24 +26,26 @@ import { RepoConnect, type ConnectMode, type ConnectResult } from "./connect-rep
 import { Connections, MCP_AGENT } from "./connections.js";
 import { contribute } from "./contrib.js";
 import { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
+import { FollowOnStore, type FollowOn } from "./follow-ons.js";
 import { HerdrBridge, type HerdrInstall } from "./herdr-bridge.js";
-import { Landing, type MergeCheckView, type MergeLocalResult, type OpenPrResult } from "./landing.js";
+import { Landing, type MergeCause, type MergeCheckView, type MergeLocalResult, type OpenPrResult } from "./landing.js";
+import { Orientation } from "./orientation.js";
 import { SYNC_PROMPT, syncInstructions, syncPrompt, type SyncScope } from "./sync.js";
 import { githubHttps } from "@tomradex/github";
 import { PLAYBOOKS } from "./playbooks.js";
 import { classifyRemoteFailure, probeRemote, readRemoteIdentity, type RemoteIdentity } from "./remote.js";
-import { currentLinks, deliveryMerged, GitScan, LANDED_ELSEWHERE, primaryOf, type ScanSummary, type UnlinkedBranch } from "./scan/absorb.js";
+import { AUTHOR, currentLinks, deliveryMerged, GitScan, LANDED_ELSEWHERE, primaryOf, type ScanSummary, type UnlinkedBranch } from "./scan/absorb.js";
 import { Sessions, type SessionMoment } from "./sessions.js";
 import { CODE_WORDS, type CodeWords } from "./words.js";
-import { Starter, type StartOptions, type StartResult } from "./start.js";
-import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
+import { Starter, type StartGate, type StartOptions, type StartResult } from "./start.js";
+import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type Readiness, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
 import { findCodexRollout, findTranscript, readConversation, transcriptTitleFor, type ConversationLine } from "./titles.js";
 import { AUTO_TERMINAL, TerminalSettings, commandOk, exec, locatedCommand, terminalApps, terminalPath } from "./terminal.js";
 import { registerTools } from "./tools.js";
 import { type CodeLinkReader, errorMessage } from "@tomradex/contracts";
 
 export { AUTHOR, deliveryMerged, primaryOf, type ScanSummary, type UnlinkedBranch } from "./scan/absorb.js";
-export { compareUrl, MERGE_COMMAND, type MergeCheckView, type MergeLocalResult, type OpenPrResult } from "./landing.js";
+export { compareUrl, MERGE_COMMAND, type MergeCause, type MergeCheckView, type MergeLocalResult, type MergeResult, type OpenPrResult } from "./landing.js";
 export type { ConnectMode, ConnectResult } from "./connect-repo.js";
 export { MCP_AGENT } from "./connections.js";
 export { lastSaid } from "./herdr-bridge.js";
@@ -80,7 +82,72 @@ export interface CodeSummaryView {
   proposals: Pick<ProposalView, "id" | "kind" | "toStatus" | "reason">[];
 }
 
-export type RepoPolicyPatch =Pick<RepoStatePatch, "branchTemplate" | "autoDone" | "agentPush" | "agentMerge" | "readiness" | "connectAgents">;
+export type RepoPolicyPatch = Pick<RepoStatePatch, "branchTemplate" | "autoDone" | "agentPush" | "agentMerge" | "mergePolicy" | "readiness" | "connectAgents">;
+
+/** Several tickets started headless at once from a conversation, with one configuration — the assistant's own engine, or the one the person picked on the card. */
+export interface StartBatchRequest {
+  itemIds: string[];
+  /** The conversation that asked: where each ticket's delivery is reported back. */
+  requestedBy: string;
+  engine?: string;
+  options?: Record<string, unknown>;
+  permissionMode?: string;
+  /** What each session is to do first, when that is not the ticket's work as written. */
+  task?: string;
+  allowBlocked?: boolean;
+  /** The person said to merge once delivered: Tomrade merges without asking again. */
+  autoMerge?: boolean;
+  /** The card in that conversation that asked for the configuration; it shows the outcome once started. */
+  cardId?: string;
+}
+
+/** One ticket of a batch start: started, or stopped at a gate with the one thing that clears it. */
+export interface StartBatchEntry {
+  itemId: string;
+  key: string;
+  title: string;
+  ok: boolean;
+  threadId?: string | null;
+  branch?: string;
+  engine?: string;
+  continued?: boolean;
+  gate?: StartGate;
+  blockers?: string[];
+  message?: string;
+}
+
+/** The card a conversation shows for tickets it was asked to start: the person's pick when the assistant could not settle it, then what came of each. */
+export interface StartBatchCard {
+  tickets: { itemId: string; key: string; title: string }[];
+  task?: string;
+  /** Why the assistant's own engine could not run them, when the person is asked to pick one. */
+  reason?: string;
+  /** The configuration settled for them, when the person is only asked whether to start. */
+  config?: { engine: string; options?: Record<string, unknown>; permissionMode?: string };
+  /** Present once started. */
+  results?: StartBatchEntry[];
+}
+
+/** The card a conversation shows once a ticket it asked for is delivered under the "ask" policy. */
+export interface MergeCard {
+  itemId: string;
+  key: string;
+  title: string;
+  repo: string;
+  branch: string;
+  base: string;
+  prUrl: string | null;
+  /** `resolving`: the ticket's session was sent back to clear what stood in the way; the card is offered again once it hands over. */
+  state: "offered" | "merged" | "refused" | "resolving";
+  message?: string;
+  /** Why it was refused, when it was. */
+  cause?: MergeCause;
+}
+
+/** How tickets asked for in a conversation run: the assistant's own engine, what the Start dialog last ran with, or the person's pick. */
+export type StartConfig =
+  | { choose: false; engine: string; options?: Record<string, unknown>; permissionMode?: string; from: "conversation" | "remembered" }
+  | { choose: true; reason: string };
 
 declare module "@tomradex/ipc" {
   interface Channels {
@@ -110,6 +177,12 @@ declare module "@tomradex/ipc" {
     "codeLink.openPr": (projectId: string, itemId: string) => OpenPrResult;
     /** A repository with no remote: merge the ticket's branch into the default branch on this machine. */
     "codeLink.mergeLocal": (projectId: string, itemId: string) => MergeLocalResult;
+    /** Land the ticket's delivery on the person's word: the pull request through gh, or the branch here without a remote. */
+    "codeLink.merge": (projectId: string, itemId: string) => MergeLocalResult;
+    /** Start several tickets headless from a conversation, with one configuration. */
+    "codeLink.startTickets": (projectId: string, request: StartBatchRequest) => StartBatchEntry[];
+    /** A merge refused for a conflict: the ticket's session is sent back to bring its branch up to date, from this conversation. */
+    "codeLink.resolveMerge": (projectId: string, itemId: string, requestedBy: string) => StartBatchEntry;
     /** Where this machine's worktree for the ticket is, if it has one. */
     "codeLink.worktree": (projectId: string, itemId: string) => string | null;
     /** A branch nobody's ticket names becomes a ticket, linked to it. */
@@ -226,6 +299,8 @@ export class CodeLink extends Service implements CodeLinkReader {
   private readonly home: Context;
   private readonly git: Git;
   private starter!: Starter;
+  private orientation!: Orientation;
+  private followOnStore!: FollowOnStore;
   private scans!: GitScan;
   private landing!: Landing;
   private connections!: Connections;
@@ -254,6 +329,7 @@ export class CodeLink extends Service implements CodeLinkReader {
     this.home = ctx;
     this.git = gitRunner(config.gitBinary);
     this.defaults = new StartDefaultsStore(config.defaultsPath ?? null);
+    this.followOnStore = new FollowOnStore(config.defaultsPath ? path.join(path.dirname(config.defaultsPath), "code-link-follow-ons.json") : null);
   }
 
   [Service.init]() {
@@ -265,6 +341,7 @@ export class CodeLink extends Service implements CodeLinkReader {
     this.sessions = new Sessions(this.ctx, this.store, {
       dirOf: (id) => this.sessionDir(id),
       onChange: (projectId) => this.notify(projectId),
+      prefixOf: (projectId) => this.prefixOf(projectId),
       onMoment: (session, moment) => this.noteMoment(session, moment),
       onWaiting: (session, activity) => this.herdr.waiting(session, activity),
       panes: { alive: (pane) => this.herdr.paneAlive(pane), info: (pane) => this.herdr.pane(pane) },
@@ -311,6 +388,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       archiveCompletedSessions: (projectId) => this.archiveCompletedSessions(projectId),
       superseded: (projectId, session) => this.connections.superseded(projectId, session)
     });
+    this.orientation = new Orientation({ ctx: this.ctx, store: this.store, starter: this.starter, words: () => this.words() });
     this.landing = new Landing({
       ctx: this.ctx,
       store: this.store,
@@ -394,6 +472,10 @@ export class CodeLink extends Service implements CodeLinkReader {
         blockMerge: (projectId, sessionId, reason) => this.sessions.blockMerge(projectId, sessionId, reason),
         attach: (projectId, sessionId, itemId, branch, delivery, opts) => this.attach(projectId, sessionId, itemId, branch, delivery, opts),
         externalSession: (projectId, repoId, key) => this.externalSession(projectId, repoId, key),
+        excusing: (projectId) => {
+          const id = this.sessions.excuser(projectId);
+          return id ? this.store.session(projectId, id) : null;
+        },
         awaitingClaim: (projectId, itemId) => this.awaitingClaim(projectId, itemId),
         connected: (projectId, connection) => this.connected(projectId, connection),
         freeSibling: (projectId, session) => this.connections.freeSibling(projectId, session),
@@ -406,7 +488,11 @@ export class CodeLink extends Service implements CodeLinkReader {
         rescan: (projectId) => this.rescan(projectId),
         notify: (projectId) => this.notify(projectId),
         summary: (projectId, itemId) => this.summary(projectId, itemId),
-        mergeLocal: (projectId, itemId, opts) => this.mergeLocal(projectId, itemId, opts)
+        mergeLocal: (projectId, itemId, opts) => this.mergeLocal(projectId, itemId, opts),
+        merge: (projectId, itemId) => this.merge(projectId, itemId),
+        startConfigFor: (projectId, threadId) => this.startConfigFor(projectId, threadId),
+        startTickets: (projectId, request) => this.startTickets(projectId, request),
+        resolveMerge: (projectId, itemId, requestedBy) => this.resolveMerge(projectId, itemId, requestedBy)
       });
     });
     this.home.inject(["mcp"], (ctx) => {
@@ -451,7 +537,11 @@ export class CodeLink extends Service implements CodeLinkReader {
       const before = intent.before as Item | null;
       const after = intent.after as Item | null;
       if (!before || !after || before.status === after.status) return;
+      if (after.status === "done" || after.status === "cancelled") this.followOnStore.drop(intent.projectId, intent.id);
+      // Each is taken before it starts, so a ticket follows once; the start runs after this write has settled.
+      if (after.status === "done") for (const followOn of this.followOnStore.take(intent.projectId, intent.id)) void Promise.resolve().then(() => this.startFollowOn(followOn, after));
       if (after.status === "done") this.archiveCompletedSessions(intent.projectId);
+      if (after.status === "verifying") this.offerMerge(intent.projectId, after);
       const open = new Set(["backlog", "todo", "doing", "verifying"]);
       if ((before.status === "done" || before.status === "cancelled") && open.has(after.status)) {
         this.store.ensureActiveDelivery(intent.projectId, intent.id, after.updatedAt);
@@ -542,6 +632,9 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.sessions", (projectId, itemId) => ctx.codeLink.sessionsOf(projectId, itemId));
       ctx.ipc.handle("codeLink.openPr", (projectId, itemId) => ctx.codeLink.openPr(projectId, itemId));
       ctx.ipc.handle("codeLink.mergeLocal", (projectId, itemId) => ctx.codeLink.mergeLocal(projectId, itemId));
+      ctx.ipc.handle("codeLink.merge", (projectId, itemId) => ctx.codeLink.merge(projectId, itemId));
+      ctx.ipc.handle("codeLink.startTickets", (projectId, request) => ctx.codeLink.startTickets(projectId, request));
+      ctx.ipc.handle("codeLink.resolveMerge", (projectId, itemId, requestedBy) => ctx.codeLink.resolveMerge(projectId, itemId, requestedBy));
       ctx.ipc.handle("codeLink.worktree", (projectId, itemId) => ctx.codeLink.worktreeOf(projectId, itemId));
       ctx.ipc.handle("codeLink.adoptBranch", (projectId, repoId, branch) => ctx.codeLink.adoptBranch(projectId, repoId, branch));
       ctx.ipc.handle("codeLink.connection", (projectId, repoId) => ctx.codeLink.connection(projectId, repoId));
@@ -832,11 +925,37 @@ export class CodeLink extends Service implements CodeLinkReader {
 
   /** Start or continue a ticket with a local agent — headless here or in the user's terminal, coding or General. See `Starter` for the gates. */
   async start(projectId: string, itemId: string, opts: StartOptions): Promise<StartResult> {
-    const result = await this.starter.start(projectId, itemId, opts);
+    const { then, ...rest } = opts;
+    const result = await this.starter.start(projectId, itemId, rest);
     // Only what actually started is remembered, with the engine it settled on: a gate the user had to
     // clear leaves the memory as it was, and an engine the caller left to Tomrade is not lost.
-    if (result.ok) this.defaults.write({ mode: opts.mode, engine: result.engine, options: opts.options, permissionMode: opts.permissionMode, playbook: opts.playbook });
+    if (result.ok) this.defaults.write({ mode: rest.mode, engine: result.engine, options: rest.options, permissionMode: rest.permissionMode, playbook: rest.playbook });
+    // The ticket this one was started ahead of follows it with the same choices once it lands.
+    if (result.ok && then && then !== itemId && this.ctx.items.get(projectId, then)) {
+      this.followOnStore.add({ projectId, itemId: then, afterItemId: itemId, options: { mode: rest.mode, engine: result.engine, options: rest.options, permissionMode: rest.permissionMode, playbook: rest.playbook }, at: Date.now() });
+    }
     return result;
+  }
+
+  /** Tickets waiting to start by themselves once another lands. */
+  followOns(): FollowOn[] {
+    return this.followOnStore.list();
+  }
+
+  private async startFollowOn(followOn: FollowOn, landed: Item): Promise<void> {
+    const item = this.ctx.items.get(followOn.projectId, followOn.itemId);
+    if (!item || item.status === "done" || item.status === "cancelled") return;
+    try {
+      const result = await this.start(followOn.projectId, followOn.itemId, followOn.options);
+      if (!result.ok) {
+        this.ctx.logger.warn(`${item.key} did not start after ${landed.key} landed: ${result.message}`);
+        return;
+      }
+      const agent = this.ctx.get("agent");
+      if (result.threadId && agent) agent.store.appendMessage(followOn.projectId, result.threadId, "system", { type: "note", text: this.words()("followOnStarted", { key: item.key, after: landed.key }) }, null);
+    } catch (err) {
+      this.ctx.logger.warn(`${item.key} did not start after ${landed.key} landed: ${errorMessage(err)}`);
+    }
   }
 
   // ── herdr ──────────────────────────────────────────────────────────────────
@@ -1052,6 +1171,185 @@ export class CodeLink extends Service implements CodeLinkReader {
     return this.landing.mergeLocal(projectId, itemId, opts);
   }
 
+  /** The person said to merge: land the delivery, and tell the conversation that asked for the work how it went. */
+  async merge(projectId: string, itemId: string): Promise<MergeLocalResult> {
+    const result = await this.landing.merge(projectId, itemId);
+    const item = this.ctx.items.get(projectId, itemId);
+    if (item) this.reportMerge(projectId, item, result.merged ? "merged" : "refused", result.message, result.cause);
+    return result;
+  }
+
+  /** The card id a ticket's delivery is reported on in the conversation that asked for it: one per delivery. */
+  private mergeCardId(itemId: string, delivery: number): string {
+    return `merge-${itemId}-${delivery}`;
+  }
+
+  /**
+   * Where the ticket's current delivery is talked about: the conversation that asked for it, and the
+   * conversation of the session here that delivered it — both get the merge to decide, so it is found
+   * from either side. Empty when no conversation in Tomrade had a part in it.
+   */
+  private mergeThreadsOf(projectId: string, itemId: string): { threadIds: string[]; delivery: number } | null {
+    const delivery = this.store.activeDelivery(projectId, itemId) ?? this.store.currentDelivery(projectId, itemId);
+    if (!delivery) return null;
+    const sessions = this.store.sessions(projectId, { itemId, delivery: delivery.sequence }).sort((a, b) => b.startedAt - a.startedAt);
+    const threadIds: string[] = [];
+    for (const id of [sessions.find((s) => s.requestedBy)?.requestedBy, ...sessions.filter((s) => s.mode === "headless" && s.threadId).map((s) => s.threadId)]) if (id && !threadIds.includes(id)) threadIds.push(id);
+    return threadIds.length ? { threadIds, delivery: delivery.sequence } : null;
+  }
+
+  /** What a merge card says about the ticket's delivery right now: its repository, branch and pull request. */
+  private mergeCard(projectId: string, item: Item, state: MergeCard["state"], message?: string, cause?: MergeCause): MergeCard | null {
+    const link = primaryOf(this.currentLinks(projectId, item.id).filter((l) => l.branch));
+    const repo = link ? this.ctx.repos.get(projectId, link.repoId) : null;
+    if (!link || !repo) return null;
+    return { itemId: item.id, key: item.key, title: item.title, repo: repo.name, branch: link.branch, base: repo.defaultBranch, prUrl: link.prUrl ?? null, state, ...(message ? { message } : {}), ...(cause ? { cause } : {}) };
+  }
+
+  /** Put the same merge card in every conversation on the delivery; `onlyExisting` updates the ones that have it rather than posting to all. */
+  private placeMergeCard(projectId: string, item: Item, talked: { threadIds: string[]; delivery: number }, card: MergeCard, onlyExisting: boolean): void {
+    const agent = this.ctx.get("agent");
+    if (!agent) return;
+    const id = this.mergeCardId(item.id, talked.delivery);
+    for (const threadId of talked.threadIds) {
+      const had = agent.store.cards(projectId, threadId).find((c) => c.id === id);
+      if (onlyExisting && !had) continue;
+      // A fresh offer goes once; a card already offered is left alone, one past that is offered again.
+      if (!onlyExisting && had && (had.data as MergeCard).state === card.state) continue;
+      try {
+        agent.postCard(projectId, threadId, { id, schema: "merge", title: `${item.key} ${item.title}`, data: card }, AUTHOR);
+      } catch (err) {
+        this.ctx.logger.warn(`merge card for ${item.key} not posted: ${errorMessage(err)}`);
+      }
+    }
+  }
+
+  /**
+   * A ticket asked for in a conversation reached Verifying: under the "ask" policy that conversation
+   * gets the merge to decide, as a card with the pull request or branch and a Merge button.
+   */
+  private offerMerge(projectId: string, item: Item): void {
+    const agent = this.ctx.get("agent");
+    const talked = this.mergeThreadsOf(projectId, item.id);
+    if (!agent || !talked) return;
+    const card = this.mergeCard(projectId, item, "offered");
+    if (!card) return;
+    const link = primaryOf(this.currentLinks(projectId, item.id).filter((l) => l.branch));
+    const policy = link ? this.store.repoState(projectId, link.repoId)?.mergePolicy : undefined;
+    if (policy !== "ask") return;
+    // Without a remote the branch is the delivery; with one, the pull request is — a bare pushed branch is not ready yet.
+    if (!card.prUrl && this.store.repoState(projectId, link!.repoId)?.remote !== "none") return;
+    this.placeMergeCard(projectId, item, talked, card, false);
+    // The person said, when asking for the work, to merge it once in: no question, the card reports the outcome.
+    const wanted = this.store.sessions(projectId, { itemId: item.id, delivery: talked.delivery }).some((s) => s.autoMerge);
+    if (wanted) void this.merge(projectId, item.id).catch((err) => this.ctx.logger.warn(`auto-merge of ${item.key} failed: ${errorMessage(err)}`));
+  }
+
+  /** Every merge card on the delivery shows how the merge went; a conversation without one is not told. */
+  private reportMerge(projectId: string, item: Item, state: "merged" | "refused", message: string, cause?: MergeCause): void {
+    const talked = this.mergeThreadsOf(projectId, item.id);
+    const card = talked && this.mergeCard(projectId, item, state, message, cause);
+    if (talked && card) this.placeMergeCard(projectId, item, talked, card, true);
+  }
+
+  /**
+   * A merge that a conflict stood in the way of: the ticket's own session is sent back, from the conversation,
+   * to bring its branch up to date and hand over again — the card then offers the merge once more. Sent with
+   * the merge wish the session had, so a merge the person asked for up front still happens by itself.
+   */
+  async resolveMerge(projectId: string, itemId: string, requestedBy: string): Promise<StartBatchEntry> {
+    const item = this.ctx.items.get(projectId, itemId);
+    if (!item) throw new Error(`unknown item ${itemId}`);
+    const link = primaryOf(this.currentLinks(projectId, itemId).filter((l) => l.branch));
+    const repo = link ? this.ctx.repos.get(projectId, link.repoId) : null;
+    if (!link || !repo) throw new Error(`${item.key} has no branch to bring up to date`);
+    const delivery = this.store.activeDelivery(projectId, itemId);
+    const sessions = delivery ? this.store.sessions(projectId, { itemId, delivery: delivery.sequence }).sort((a, b) => b.startedAt - a.startedAt) : [];
+    const last = sessions.find((s) => s.mode === "headless") ?? sessions[0] ?? null;
+    const local = this.store.repoState(projectId, repo.id)?.remote === "none";
+    const task = local
+      ? `${link.branch} no longer merges into ${repo.defaultBranch}: merge ${repo.defaultBranch} into your branch, resolve every conflict, run the tests, commit, then call link_code with scopeChecked: true again.`
+      : `${link.prUrl ?? link.branch} no longer merges into ${repo.defaultBranch}: merge origin/${repo.defaultBranch} into your branch, resolve every conflict, run the tests, push, then call link_code with scopeChecked: true again.`;
+    // Back to Doing, so the next hand-over is a transition the merge offer hears.
+    if (item.status === "verifying") this.ctx.items.update(projectId, itemId, { status: "doing" }, "human");
+    const talked = this.mergeThreadsOf(projectId, itemId);
+    const resolving = talked && this.mergeCard(projectId, item, "resolving");
+    if (talked && resolving) this.placeMergeCard(projectId, item, talked, resolving, true);
+    const [entry] = await this.startTickets(projectId, { itemIds: [itemId], requestedBy, task, ...(last?.agent && last.agent !== "other" ? { engine: last.agent } : {}), ...(last?.autoMerge ? { autoMerge: true } : {}) });
+    if (!entry!.ok) {
+      const refused = talked && this.mergeCard(projectId, item, "refused", entry!.message ?? `${item.key} could not be started`, "refused");
+      if (talked && refused) this.placeMergeCard(projectId, item, talked, refused, true);
+    }
+    return entry!;
+  }
+
+  /**
+   * How tickets asked for in a conversation run: with the conversation's own engine when it can code right
+   * now, else as the Start dialog last ran — and when neither, the person picks on a card.
+   */
+  async startConfigFor(projectId: string, threadId: string): Promise<StartConfig> {
+    const agent = this.ctx.get("agent");
+    if (!agent) return { choose: true, reason: "the agent plugin is not loaded" };
+    const thread = agent.store.thread(projectId, threadId);
+    const reasons: string[] = [];
+    if (thread) {
+      const own = await this.starter.pickEngine(agent, thread.engine, false);
+      if (own.ok) return { choose: false, engine: own.engine.id, ...(thread.options ? { options: thread.options } : {}), ...(thread.permissionMode ? { permissionMode: thread.permissionMode } : {}), from: "conversation" };
+      reasons.push(own.reason);
+    }
+    const remembered = this.defaults.read();
+    if (remembered?.engine && remembered.engine !== "other") {
+      const picked = await this.starter.pickEngine(agent, remembered.engine, false);
+      if (picked.ok) return { choose: false, engine: picked.engine.id, ...(remembered.options ? { options: remembered.options } : {}), ...(remembered.permissionMode ? { permissionMode: remembered.permissionMode } : {}), from: "remembered" };
+      reasons.push(picked.reason);
+    }
+    return { choose: true, reason: reasons.filter((r, at, all) => all.indexOf(r) === at).join(" · ") || "no coding agent is ready" };
+  }
+
+  /** Start each ticket headless with the one configuration, one after another, and show the outcome on the asking card when there is one. */
+  async startTickets(projectId: string, request: StartBatchRequest): Promise<StartBatchEntry[]> {
+    const results: StartBatchEntry[] = [];
+    const seen = new Set<string>();
+    for (const itemId of request.itemIds) {
+      if (seen.has(itemId)) continue;
+      seen.add(itemId);
+      const item = this.ctx.items.get(projectId, itemId);
+      if (!item) {
+        results.push({ itemId, key: itemId, title: "", ok: false, message: `unknown item ${itemId}` });
+        continue;
+      }
+      const opts: StartOptions = {
+        mode: "run",
+        ...(request.engine ? { engine: request.engine } : {}),
+        ...(request.options ? { options: request.options } : {}),
+        ...(request.permissionMode ? { permissionMode: request.permissionMode } : {}),
+        ...(request.allowBlocked ? { allowBlocked: true } : {}),
+        ...(request.task?.trim() ? { message: request.task.trim() } : {}),
+        ...(request.autoMerge ? { autoMerge: true } : {}),
+        requestedBy: request.requestedBy
+      };
+      try {
+        const started = await this.start(projectId, item.id, opts);
+        if (started.ok) results.push({ itemId: item.id, key: item.key, title: item.title, ok: true, threadId: started.threadId, branch: started.branch, engine: started.engine, continued: started.continued, ...(started.waitingOn ? { message: started.waitingOn } : {}) });
+        else results.push({ itemId: item.id, key: item.key, title: item.title, ok: false, gate: started.gate, message: started.message, ...(started.blockers ? { blockers: started.blockers } : {}) });
+      } catch (err) {
+        results.push({ itemId: item.id, key: item.key, title: item.title, ok: false, message: errorMessage(err) });
+      }
+    }
+    const agent = this.ctx.get("agent");
+    if (agent && request.cardId) {
+      const before = agent.store.cards(projectId, request.requestedBy).find((c) => c.id === request.cardId);
+      const data = (before?.data ?? {}) as Partial<StartBatchCard>;
+      const tickets = data.tickets ?? results.map((r) => ({ itemId: r.itemId, key: r.key, title: r.title }));
+      try {
+        agent.postCard(projectId, request.requestedBy, { id: request.cardId, schema: "start-batch", title: before?.title ?? tickets.map((t) => t.key).join(", "), data: { ...data, tickets, results } satisfies StartBatchCard }, AUTHOR);
+      } catch (err) {
+        this.ctx.logger.warn(`start card not updated: ${errorMessage(err)}`);
+      }
+    }
+    return results;
+  }
+
   openPr(projectId: string, itemId: string): Promise<OpenPrResult> {
     return this.landing.openPr(projectId, itemId);
   }
@@ -1060,15 +1358,31 @@ export class CodeLink extends Service implements CodeLinkReader {
 
   /** One scan per project at a time; a second caller gets the running one. */
   scan(projectId: string): Promise<ScanSummary> {
-    return this.scans.scan(projectId);
+    return this.scans.scan(projectId).then((summary) => this.oriented(projectId, summary));
   }
 
   private rescan(projectId: string): Promise<ScanSummary> {
-    return this.scans.rescan(projectId);
+    return this.scans.rescan(projectId).then((summary) => this.oriented(projectId, summary));
   }
 
-  scanOpen(): Promise<void> {
-    return this.scans.scanOpen();
+  async scanOpen(): Promise<void> {
+    for (const projectId of this.ctx.db.openIds()) {
+      try {
+        await this.scan(projectId);
+      } catch (err) {
+        this.ctx.logger.warn(`code scan of ${projectId} failed: ${errorMessage(err)}`);
+      }
+    }
+  }
+
+  /** A scan that found a project in a repository the project knows nothing about yet has it read; the scan's result is not changed by it. */
+  private async oriented(projectId: string, summary: ScanSummary): Promise<ScanSummary> {
+    try {
+      await this.orientation.sweep(projectId);
+    } catch (err) {
+      this.ctx.logger.warn(`orientation in ${projectId} failed: ${errorMessage(err)}`);
+    }
+    return summary;
   }
 
   reevaluate(projectId: string, itemId: string, repoId: string): void {
@@ -1088,14 +1402,17 @@ export class CodeLink extends Service implements CodeLinkReader {
   }
 
   /** Each workstream's repository and its folder on this machine — what a main conversation reads the code from. */
-  repositoriesOf(projectId: string): { workstream: string; name: string; path: string | null; defaultBranch: string }[] {
+  repositoriesOf(projectId: string): { workstream: string; name: string; path: string | null; defaultBranch: string; readiness: Readiness; hasBrief: boolean }[] {
     return this.ctx.boards.list(projectId).flatMap((board) => {
       const repo = board.repoId ? this.ctx.repos.get(projectId, board.repoId) : null;
       if (!repo) return [];
       const checkout = this.ctx.repos.checkout(repo.remote).checkout;
-      const subdir = board.repoPath.replace(/^\/+|\/+$/g, "");
-      const folder = checkout && fs.existsSync(checkout) ? (subdir ? path.join(checkout, subdir) : checkout) : null;
-      return [{ workstream: board.name, name: repo.name, path: folder, defaultBranch: repo.defaultBranch }];
+      // A folder outside the checkout is no folder to read from.
+      const subdir = checkout ? repoSubfolder(board.repoPath, checkout) : null;
+      const folder = checkout && subdir !== null && fs.existsSync(checkout) ? (subdir ? path.join(checkout, subdir) : checkout) : null;
+      // What the last scan made of it: a conversation plans against an empty repository differently from a full one.
+      const state = this.store.repoState(projectId, repo.id);
+      return [{ workstream: board.name, name: repo.name, path: folder, defaultBranch: repo.defaultBranch, readiness: state?.readiness ?? "unknown", hasBrief: state?.hasBrief ?? false }];
     });
   }
 

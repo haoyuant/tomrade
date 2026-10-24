@@ -38,7 +38,9 @@ export function syncPrompt(scope: SyncScope | null): string {
 export function syncInstructions(scope: SyncScope | null): string {
   return [
     `This server is ${where(scope)}.`,
-    "Not every session works on a ticket and not every ticket involves code: never invent one. When the user asks for a change and this session holds no ticket, file one with create_item, claim it with claim_ticket, and work on the branch the claim returns; do not ask first.",
+    "Not every session works on a ticket and not every ticket involves code: never invent one.",
+    // Short: Claude Code keeps 2048 characters of a server's instructions, and the project's rules come first.
+    "Before changing code in a repository of this project, look where you are: the checkout's branch, and whether this session holds a ticket. A session on a ticket goes on with it turn after turn; a checkout already on a ticket's branch (its name carries a key) means claim_ticket that key once and continue there — no new ticket per request. New work the person asks for gets a ticket of its own — create_item (or the key they named), then claim_ticket — on the branch the claim returns, without asking; when unsure a ticket is wanted (a tiny fix, an experiment), ask them first; on their word to go without one, call work_without_ticket and go on. Never edit or commit on the default branch or another ticket's branch without one of these; reading and explaining need nothing.",
     "When the user names a ticket to work on, claim_ticket marks it Doing and names the branch.",
     "When the user asks to sync with Tomrade (in Claude Code: /tomrade:sync), gather what the session did, match it to tickets by key or by search, show what you will write, then link code (link_code), move status (change_status), and file follow-ups (create_item).",
     "When a meaningful piece of work looks like it belongs to a ticket, you may offer once to sync it back; drop it if the user declines."

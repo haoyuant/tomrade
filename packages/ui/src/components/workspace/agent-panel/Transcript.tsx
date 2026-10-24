@@ -7,7 +7,8 @@ import { useI18n } from "~/lib/i18n";
 import type { foldSteps } from "~/lib/steps";
 import { AgentMedia } from "../AgentMedia";
 import { ChecklistBlock, FindingBlock } from "../DoctorCards";
-import { CardBlock, ErrorBlock, linkify, ProposalBlock, Question, RetryRow, RunFoot, RunMetrics, StartBrief, StartOffer, Trace, type ProposalCard, type StartOfferCard } from "./blocks";
+import { CardBlock, ErrorBlock, linkify, MergeBlock, ProposalBlock, Question, RetryRow, RunFoot, RunMetrics, StartBatchBlock, StartBrief, StartOffer, Trace, type ProposalCard, type StartOfferCard } from "./blocks";
+import type { MergeCard, StartBatchCard } from "@tomradex/code-link";
 
 /** What every row reads besides its own message; the handlers keep their identity, so a streamed reply re-renders only its own line. */
 export interface TranscriptActionsValue {
@@ -128,6 +129,11 @@ function RowBody({ m, onRetry, onRetryWith, onTroubleshoot, hint }: { m: ThreadM
       <FindingBlock card={b.data as FindingCard} engines={retryEngines} allEngines={engines ?? []} onAction={(action, engineId) => onCardAction(action, m.threadId, engineId)} />
     ) : b.type === "card" && b.schema === "start" ? (
       <StartOffer card={b.data as StartOfferCard} onOpenIssue={onOpenIssue} />
+    ) : b.type === "card" && b.schema === "start-batch" ? (
+      // the live card carries what came of each ticket once started
+      <StartBatchBlock card={(cards.get(b.id)?.data ?? b.data) as StartBatchCard} cardId={b.id} projectId={projectId} threadId={m.threadId} onOpenIssue={onOpenIssue} />
+    ) : b.type === "card" && b.schema === "merge" ? (
+      <MergeBlock card={(cards.get(b.id)?.data ?? b.data) as MergeCard} projectId={projectId} threadId={m.threadId} onOpenIssue={onOpenIssue} />
     ) : b.type === "card" && b.schema === "backlog.proposal" ? (
       <ProposalBlock card={b.data as ProposalCard} />
     ) : b.type === "card" ? (
