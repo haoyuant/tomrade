@@ -488,12 +488,13 @@ describe("starting a ticket", () => {
     const input = (purpose: "backlog" | "code") => ({ threadId: "t", projectId: project.id, purpose, input: { kind: "text", text: "hi" }, messages: [], cards: [], brief: null, pending: null, options: {} }) as TurnInput;
     const before = input("backlog");
     await ctx.parallel("agent/prepare-turn", before);
-    expect(before.repositories).toEqual([{ workstream: board.name, name: repo!.name, path: null, defaultBranch: "main" }]);
+    expect(before.repositories).toEqual([{ workstream: board.name, name: repo!.name, path: null, defaultBranch: "main", readiness: "unknown", hasBrief: false }]);
 
     await ctx.repos.setCheckout(repo!.remote, world.checkout!);
+    await world.codeLink.scan(project.id);
     const after = input("backlog");
     await ctx.parallel("agent/prepare-turn", after);
-    expect(after.repositories).toEqual([{ workstream: board.name, name: repo!.name, path: path.join(world.checkout!, "mobile-app"), defaultBranch: "main" }]);
+    expect(after.repositories).toEqual([{ workstream: board.name, name: repo!.name, path: path.join(world.checkout!, "mobile-app"), defaultBranch: "main", readiness: "scaffolded", hasBrief: false }]);
     const code = input("code");
     await ctx.parallel("agent/prepare-turn", code);
     expect(code.repositories).toBeUndefined();

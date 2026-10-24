@@ -37,7 +37,7 @@ import { currentLinks, deliveryMerged, GitScan, LANDED_ELSEWHERE, primaryOf, typ
 import { Sessions, type SessionMoment } from "./sessions.js";
 import { CODE_WORDS, type CodeWords } from "./words.js";
 import { Starter, type StartOptions, type StartResult } from "./start.js";
-import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
+import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type Readiness, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
 import { findCodexRollout, findTranscript, readConversation, transcriptTitleFor, type ConversationLine } from "./titles.js";
 import { AUTO_TERMINAL, TerminalSettings, commandOk, exec, locatedCommand, terminalApps, terminalPath } from "./terminal.js";
 import { registerTools } from "./tools.js";
@@ -1107,7 +1107,7 @@ export class CodeLink extends Service implements CodeLinkReader {
   }
 
   /** Each workstream's repository and its folder on this machine — what a main conversation reads the code from. */
-  repositoriesOf(projectId: string): { workstream: string; name: string; path: string | null; defaultBranch: string }[] {
+  repositoriesOf(projectId: string): { workstream: string; name: string; path: string | null; defaultBranch: string; readiness: Readiness; hasBrief: boolean }[] {
     return this.ctx.boards.list(projectId).flatMap((board) => {
       const repo = board.repoId ? this.ctx.repos.get(projectId, board.repoId) : null;
       if (!repo) return [];
@@ -1115,7 +1115,9 @@ export class CodeLink extends Service implements CodeLinkReader {
       // A folder outside the checkout is no folder to read from.
       const subdir = checkout ? repoSubfolder(board.repoPath, checkout) : null;
       const folder = checkout && subdir !== null && fs.existsSync(checkout) ? (subdir ? path.join(checkout, subdir) : checkout) : null;
-      return [{ workstream: board.name, name: repo.name, path: folder, defaultBranch: repo.defaultBranch }];
+      // What the last scan made of it: a conversation plans against an empty repository differently from a full one.
+      const state = this.store.repoState(projectId, repo.id);
+      return [{ workstream: board.name, name: repo.name, path: folder, defaultBranch: repo.defaultBranch, readiness: state?.readiness ?? "unknown", hasBrief: state?.hasBrief ?? false }];
     });
   }
 
