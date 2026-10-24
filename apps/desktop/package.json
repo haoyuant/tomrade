@@ -41,7 +41,7 @@
     "test:public-repo": "electron scripts/public-repo-check.mjs",
     "test:extensions": "electron scripts/extensions-check.mjs",
     "test:plugins-ui": "electron scripts/plugins-ui-check.mjs",
-    "test:code-sessions": "electron scripts/terminal-selection-check.mjs && electron scripts/terminal-links-check.mjs && electron scripts/code-sessions-check.mjs",
+    "test:code-sessions": "electron scripts/terminal-scroll-check.mjs && electron scripts/terminal-selection-check.mjs && electron scripts/terminal-links-check.mjs && electron scripts/code-sessions-check.mjs",
     "test:language-pack": "electron scripts/language-pack-check.mjs",
     "test:local-cli": "electron scripts/local-cli-check.mjs",
     "test:perf": "electron scripts/perf-check.mjs",

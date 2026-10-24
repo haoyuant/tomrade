@@ -84,6 +84,8 @@ describe("herdr terminal sessions", SPAWNS, () => {
     expect(terminalCommand.input(new Uint8Array([27, 91, 65]))).toEqual({ type: "terminal.input", bytes: "G1tB" });
     expect(terminalCommand.resize(120.4, 0)).toEqual({ type: "terminal.resize", cols: 120, rows: 1 });
     expect(terminalCommand.scroll({ direction: "up", lines: 3 })).toEqual({ type: "terminal.scroll", direction: "up", lines: 3, modifiers: 0 });
+    expect(terminalCommand.scroll({ direction: "up", lines: 23, source: "page_key" })).toEqual({ type: "terminal.scroll", direction: "up", lines: 23, source: "page_key", modifiers: 0 });
+    expect(terminalCommand.scroll({ direction: "down", lines: 6, column: 20, row: 8 })).toEqual({ type: "terminal.scroll", direction: "down", lines: 6, column: 20, row: 8, modifiers: 0 });
     expect(terminalCommand.mouse({ action: "down", column: 4, row: 2 })).toEqual({ type: "terminal.mouse", action: "down", button: "left", column: 4, row: 2, modifiers: 0 });
     expect(terminalCommand.release()).toEqual({ type: "terminal.release" });
   });
