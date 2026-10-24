@@ -4,7 +4,7 @@ import { query, type Query, type SDKMessage, type SDKUserMessage, type Options, 
 import type { Context } from "cordis";
 import type { TurnIO, TurnInput, TurnResult, TurnMetrics } from "@tomradex/agent";
 import { claudeMediaInput, resetTime, stepHint, stepSummary, withRecap } from "@tomradex/agent";
-import { engineLocale, KIT_WORDS, localCli, MessageQueue, runtimeDirectory, runTurn, sessionSystem, spawnCli, STDERR_CAP, turnPrompt, type CliLaunch, type Runtime } from "@tomradex/engine-kit";
+import { engineLocale, KIT_WORDS, localCli, MessageQueue, MODE_ALLOWS, OpenAsks, runtimeDirectory, runTurn, sessionSystem, spawnCli, STDERR_CAP, turnPrompt, type CliLaunch, type Runtime } from "@tomradex/engine-kit";
 import { lostConversation } from "./cli.js";
 import { ClaudeCodeOptions, retryReason } from "./engine.js";
 import { LiveUsage, cacheKnown, promptTokens, turnTokens, type Tokens } from "./usage.js";
@@ -28,6 +28,9 @@ export function sdkLaunch(launch: CliLaunch, onStderr?: (data: string) => void):
     }
   };
 }
+
+/** The tools acceptEdits lets through without asking. */
+const EDITS = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit"]);
 
 /** A steer goes into the CLI's queue as written, plus a word for when it lands after the reply was finished. */
 const steerPrompt = (text: string) =>
@@ -57,6 +60,9 @@ export class ClaudeRuntime implements Runtime {
   /** Cumulative counters from the last result; the SDK reports running totals, so a turn is the difference. */
   private tokens: Tokens | null = null;
   private activeIO?: TurnIO;
+  /** The mode the session works under, as last set or reported. */
+  private mode?: ClaudeCodeOptions["codePermissionMode"];
+  private asks = new OpenAsks();
   private stderr = "";
   private keepStderr = (data: string) => { this.stderr = (this.stderr + data).slice(-STDERR_CAP); };
   private kit;
@@ -111,6 +117,15 @@ export class ClaudeRuntime implements Runtime {
         for (const uuid of uuids) if (unplaced.delete(uuid)) io.steered?.(steers.get(uuid)!);
       };
       const waiting = () => [...steers.keys()].filter((uuid) => !consumed.has(uuid));
+      io.modeTo?.(async (mode) => {
+        // "local" is the user's own settings, which a running session cannot reread
+        const next = mode === "local" ? undefined : ClaudeCodeOptions.shape.codePermissionMode.safeParse(mode).data;
+        if (!next || !this.query || over || !this.alive) return false;
+        await this.query.setPermissionMode(next);
+        this.mode = next;
+        this.asks.settle();
+        return true;
+      });
       io.steerTo?.(async (steer) => {
         if (!prompted || over || turn.cancelled || !this.alive) return false;
         const uuid = randomUUID();
@@ -136,7 +151,7 @@ export class ClaudeRuntime implements Runtime {
         if (message.type === "system" && message.subtype === "init") {
           this.session = message.session_id;
           metrics.providerModel = message.model;
-          if (message.permissionMode) io.permissionMode?.(message.permissionMode);
+          if (message.permissionMode) { this.mode = ClaudeCodeOptions.shape.codePermissionMode.safeParse(message.permissionMode).data ?? this.mode; io.permissionMode?.(message.permissionMode); }
             metrics.readyMs ??= performance.now() - start;
         } else if (message.type === "system" && message.subtype === "compact_boundary") {
           metrics.compactions!++;
@@ -259,17 +274,20 @@ export class ClaudeRuntime implements Runtime {
             }] }]
           },
           canUseTool: async (tool, args, request) => {
-            const answer = await this.activeIO?.requestPermission?.(
+            const io = this.activeIO;
+            const answer = io ? await this.asks.ask(io,
               `${request.title ?? tool}\n${request.description ?? request.decisionReason ?? "Permission requested by Claude Code"}\n${JSON.stringify(args, null, 2)}`,
-              ["Allow once", "Deny"], request.signal);
-            return answer === "Allow once" && !request.signal.aborted && !this.activeIO?.signal.aborted ? { behavior: "allow", updatedInput: args } : { behavior: "deny", message: "Permission was denied or cancelled by the user" };
+              ["Allow once", "Deny"], () => this.mode === "bypassPermissions" || (this.mode === "acceptEdits" && EDITS.has(tool)), request.signal) : null;
+            return (answer === "Allow once" || answer === MODE_ALLOWS) && !request.signal.aborted && !io?.signal.aborted ? { behavior: "allow", updatedInput: args } : { behavior: "deny", message: "Permission was denied or cancelled by the user" };
           },
           permissionMode: options.codePermissionMode,
-          allowDangerouslySkipPermissions: options.codePermissionMode === "bypassPermissions",
+          // only lets the session be switched to bypassPermissions later in a turn; the mode above is what it starts in
+          allowDangerouslySkipPermissions: true,
           maxTurns: code ? options.codeMaxTurns : options.maxTurns,
           maxBudgetUsd: options.maxBudgetUsd
         };
         this.query = query({ prompt: this.queue, options: sdkOptions });
+        this.mode = options.codePermissionMode;
         this.fresh = !io.resume;
         this.indexDigest = input.filesIndex?.digest ?? null;
         void this.consume();

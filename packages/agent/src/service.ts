@@ -276,6 +276,8 @@ interface RunCtx {
   steers: { id: string; text: string }[];
   /** Where the engine's agent takes them instead, when it queues them itself. */
   forward: ((steer: { id: string; text: string }) => Promise<boolean>) | null;
+  /** How the running engine takes a mode picked mid-turn (`io.modeTo`). */
+  mode: ((mode: string) => Promise<boolean>) | null;
 }
 
 
@@ -678,7 +680,7 @@ export class Agent extends Service implements AgentReader {
       [...this.engines.values()].filter((engine) => this.answering(engine.id) === engine.id).map(async (engine) => {
         try {
           const state = await engine.available(fresh ? { fresh } : undefined);
-          return { id: engine.id, title: engine.title, capabilities: state.capabilities ?? engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, need: state.need, cli: state.cli, ...(state.configDir ? { configDir: state.configDir } : {}), ...(this.triedWith(engine.id) ? { tried: this.triedWith(engine.id) } : {}), picks: engine.local?.picks?.(), permissionModes: engine.permissionModes, ...(engine.terminal?.mode === "none" ? { terminal: false } : {}), ...(engine.terminal?.mode === "only" ? { terminalOnly: true, ...(engine.local?.ask ? { asks: true } : {}) } : {}), ...(engine.usesModels ? { usesModels: true } : {}), ...(engine.steering ? { steers: true } : {}), ...(state.setup ?? engine.local?.setup ? { setup: state.setup ?? engine.local?.setup } : {}), ...(engine.includes ? { includes: engine.includes } : {}), ...(engine.local?.mcpLink ? { mcpLink: true } : {}) };
+          return { id: engine.id, title: engine.title, capabilities: state.capabilities ?? engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, need: state.need, cli: state.cli, ...(state.configDir ? { configDir: state.configDir } : {}), ...(this.triedWith(engine.id) ? { tried: this.triedWith(engine.id) } : {}), picks: engine.local?.picks?.(), permissionModes: engine.permissionModes, ...(engine.liveModes ? { liveModes: true } : {}), ...(engine.terminal?.mode === "none" ? { terminal: false } : {}), ...(engine.terminal?.mode === "only" ? { terminalOnly: true, ...(engine.local?.ask ? { asks: true } : {}) } : {}), ...(engine.usesModels ? { usesModels: true } : {}), ...(engine.steering ? { steers: true } : {}), ...(state.setup ?? engine.local?.setup ? { setup: state.setup ?? engine.local?.setup } : {}), ...(engine.includes ? { includes: engine.includes } : {}), ...(engine.local?.mcpLink ? { mcpLink: true } : {}) };
         } catch (err) {
           return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: false, reason: errorMessage(err) };
         }
@@ -1195,6 +1197,13 @@ export class Agent extends Service implements AgentReader {
     const choices = this.engines.get(thread.engine)?.permissionModes?.choices;
     if (!choices?.some((choice) => choice.value === mode)) throw new Error("Unsupported permission mode");
     this.store.touchThread(projectId, threadId, { permissionMode: mode });
+    // a running turn takes it now when its engine can; the active mode it reports clears the "next turn" note
+    const rc = this.activeByThread.get(threadId);
+    if (rc?.mode && rc.io.run.scratch.get("permissionMode") !== mode) {
+      void rc.mode(mode).then((took) => { if (took && this.activeByThread.get(threadId) === rc) rc.io.permissionMode?.(mode); }, (error) => {
+        rc.io.emit({ type: "note", text: `The ${mode} mode could not reach the running turn (${errorMessage(error)}); it applies from the next turn` });
+      });
+    }
     return this.store.thread(projectId, threadId)!;
   }
 
@@ -1636,6 +1645,7 @@ export class Agent extends Service implements AgentReader {
         return taken.map((s) => s.text);
       },
       steerTo: (forward) => { rc.forward = forward; },
+      modeTo: (apply) => { rc.mode = apply; },
       steered: (id) => {
         const at = steers.findIndex((s) => s.id === id);
         if (at < 0) return;
@@ -1643,7 +1653,7 @@ export class Agent extends Service implements AgentReader {
         this.appendAndBroadcast(thread.projectId, thread.id, "user", { type: "text", text: s.text, steerId: s.id }, run.id);
       }
     };
-    const rc: RunCtx = { run, thread, threadId: thread.id, projectId: thread.projectId, engine, abort, handle, entries, io, wio: { emit, tools, llm, run: handle, signal: abort.signal, activity: (label) => io.activity?.(label) }, partial, clock, settleRetry, steers, forward: null };
+    const rc: RunCtx = { run, thread, threadId: thread.id, projectId: thread.projectId, engine, abort, handle, entries, io, wio: { emit, tools, llm, run: handle, signal: abort.signal, activity: (label) => io.activity?.(label) }, partial, clock, settleRetry, steers, forward: null, mode: null };
     return rc;
   }
 

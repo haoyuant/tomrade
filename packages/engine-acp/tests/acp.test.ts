@@ -271,6 +271,25 @@ describe("an ACP agent as an engine", () => {
     expect(crashed.error).toMatch(/Fake exited with 3/);
   });
 
+  it("takes a mode picked mid-turn: the request waiting for the person is allowed once the mode is Full access", async () => {
+    const engine = createAcpEngine(ctx, spec());
+    expect(engine.liveModes).toBe(true);
+    const { io, blocks } = turnIO();
+    let apply: ((mode: string) => Promise<boolean>) | undefined;
+    io.modeTo = (fn) => { apply = fn; };
+    const took: boolean[] = [];
+    // the person never answers: only the mode settles it
+    io.requestPermission = (_text, _options, signal) => {
+      void apply!("full-access").then((ok) => took.push(ok));
+      return new Promise((resolve) => signal?.addEventListener("abort", () => resolve(null), { once: true }));
+    };
+    const result = await engine.turn(turnInput({ input: { kind: "text", text: "TOOL" }, permissionMode: "ask" }), io);
+    expect(result.stop, result.error).toBe("end");
+    expect(took).toEqual([true]);
+    expect(blocks.filter((b) => b.type === "trace")).toEqual([expect.objectContaining({ tool: "Bash", ok: true })]);
+    expect(blocks).toContainEqual({ type: "note", text: expect.stringContaining("Allowed without asking") });
+  });
+
   it("says the agent's own words for a refusal, with its whole answer under details", async () => {
     const engine = createAcpEngine(ctx, spec({ failure: (response) => response._meta?.reason }));
     const { io } = turnIO();

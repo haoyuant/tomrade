@@ -64,6 +64,8 @@ export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAg
     options: agent.options,
     media: () => ({ input: ["image/png", "image/jpeg", "image/webp", "image/gif"], output: [] }),
     permissionModes: agent.permissionModes,
+    // Tomrade answers the agent's permission requests, so a mode picked mid-turn holds from its next request
+    liveModes: true,
     terminal: agent.terminal ? { mode: "handoff", ...agent.terminal } : { mode: "none" },
     ...(agent.steer ? { steering: "forward" as const } : {}),
     async available(opts) {

@@ -138,8 +138,25 @@ it("keeps one process across turns, resumes its session id, and answers permissi
       expect(blocks).toContainEqual({ type: "text", text: said });
       expect(blocks).toContainEqual(expect.objectContaining({ type: "trace", tool: "bash", ok: choice === "Allow once" }));
     }
+    // Full access picked while the gate's question waits: the question is settled for the person, the process stays
+    expect(engine.liveModes).toBe(true);
+    let apply: ((mode: string) => Promise<boolean>) | undefined;
+    const took: boolean[] = [];
+    io.modeTo = (fn) => { apply = fn; };
+    io.requestPermission = (_text, _options, signal) => {
+      void apply!("full-access").then((ok) => took.push(ok));
+      // the switch can settle the question before this returns
+      return new Promise((resolve) => signal?.aborted ? resolve(null) : signal?.addEventListener("abort", () => resolve(null), { once: true }));
+    };
+    blocks.length = 0;
+    const raised = await engine.turn(input, io);
+    expect(raised.stop, raised.error).toBe("end");
+    expect(took).toEqual([true]);
+    expect(blocks).toContainEqual({ type: "text", text: "ran it" });
+    expect(blocks).toContainEqual({ type: "note", text: expect.stringContaining("Allowed without asking") });
+    delete io.modeTo;
     const answers = requests().filter((r) => r.type === "extension_ui_response");
-    expect(answers.map((r) => r.confirmed ?? (r.cancelled ? "cancelled" : undefined))).toEqual([true, false, "cancelled"]);
+    expect(answers.map((r) => r.confirmed ?? (r.cancelled ? "cancelled" : undefined))).toEqual([true, false, "cancelled", true]);
     const asking = requests().filter((r) => r.spawn).at(-1);
     expect(asking.argv).toEqual(expect.arrayContaining(["--session-id", one.resume]));
     expect(asking.argv).not.toContain("--tools");

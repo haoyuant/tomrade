@@ -67,6 +67,11 @@ export interface TurnIO {
     publish(upload: import("./media.js").MediaUpload, caption?: string): import("./media.js").MediaRef;
   };
   permissionMode?(mode: string): void;
+  /**
+   * For an engine with `liveModes`: `apply` gets each permission mode the person picks while this turn runs and
+   * resolves whether the agent now works under it. One it does not take applies from the next turn.
+   */
+  modeTo?(apply: (mode: string) => Promise<boolean>): void;
   /** Pause this live run for a human response. Null means cancelled, never approval. */
   requestPermission?(text: string, options: string[], signal?: AbortSignal): Promise<string | null>;
   /** Persist + broadcast one finished block. Text streams through delta() first. */

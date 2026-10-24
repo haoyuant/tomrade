@@ -62,6 +62,37 @@ it("stores modes per coding thread and applies a change on the next turn without
   } finally { await ctx.fiber.dispose(); }
 });
 
+it("hands a mode picked mid-turn to an engine that switches live, and shows it as the run's mode once taken", async () => {
+  const { ctx, project } = await fresh({ plugins: [Tools, [Settings, { path: `/tmp/tomrade-live-modes-${Date.now()}.json` }], Agent] });
+  await settle();
+  const applied: string[] = [];
+  ctx.agent.engine({ id: "live-modes", title: "Live modes", author: "ai:test", available: async () => ({ ok: true }), liveModes: true,
+    permissionModes: { default: "ask", choices: [{ value: "ask", label: "Ask" }, { value: "full", label: "Full" }, { value: "local", label: "Local" }] },
+    async turn(_input, io) {
+      const settled = new AbortController();
+      // "local" stays for the next turn; anything else settles the waiting question
+      io.modeTo!(async (mode) => { applied.push(mode); if (mode === "local") return false; settled.abort(); return true; });
+      await io.requestPermission!("Continue?", ["Allow once", "Deny"], settled.signal);
+      await new Promise<void>((resolve) => io.signal.addEventListener("abort", () => resolve(), { once: true }));
+      return { stop: "cancelled" };
+    } });
+  try {
+    expect((await ctx.agent.engineViews()).find((engine) => engine.id === "live-modes")?.liveModes).toBe(true);
+    const thread = ctx.agent.newThread(project.id, "live-modes", null, { itemId: "ticket" });
+    const { runId } = ctx.agent.send(project.id, thread.id, { kind: "text", text: "go" });
+    await expect.poll(() => ctx.agent.thread(project.id, thread.id).pending?.kind).toBe("permission");
+    ctx.agent.setPermissionMode(project.id, thread.id, "local");
+    await expect.poll(() => applied).toEqual(["local"]);
+    expect(ctx.agent.thread(project.id, thread.id)).toMatchObject({ activePermissionMode: "ask", thread: { permissionMode: "local" } });
+    ctx.agent.setPermissionMode(project.id, thread.id, "full");
+    await expect.poll(() => ctx.agent.thread(project.id, thread.id).activePermissionMode).toBe("full");
+    expect(applied).toEqual(["local", "full"]);
+    expect(ctx.agent.thread(project.id, thread.id).pending).toBeNull();
+    ctx.agent.cancel(runId);
+    await expect.poll(() => ctx.agent.store.run(project.id, runId)?.status).not.toBe("running");
+  } finally { await ctx.fiber.dispose(); }
+});
+
 it("starts the main conversation in the engine's default, and lets the person change it there too", async () => {
   const { ctx, project } = await fresh({ plugins: [Tools, [Settings, { path: `/tmp/tomrade-main-modes-${Date.now()}.json` }], Agent] });
   await settle();
