@@ -50,6 +50,8 @@ export interface StartOptions {
   message?: string;
   /** Headless runs only: where the person asked for the start (an IM conversation), kept on the brief as its provenance. */
   source?: Record<string, string>;
+  /** The ticket to start with these same choices once this one is done: the one this bootstrap was started ahead of. */
+  then?: string;
 }
 
 export type StartResult =

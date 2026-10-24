@@ -834,6 +834,70 @@ describe("starting a ticket", () => {
     expect(ctx.items.get(project.id, item.id)!.status).toBe("done");
   });
 
+  describe("a bootstrap started ahead of the ticket that needs it", () => {
+    /** A repository with nothing in it, a workstream on it, and a feature ticket whose Start stops at the readiness gate. */
+    async function emptyRepository() {
+      const folder = path.join(root, `unborn-${n++}`);
+      fs.mkdirSync(folder);
+      git(["init", "-q", "-b", "main"], folder);
+      git(["config", "user.email", "dev@localhost"], folder);
+      git(["config", "user.name", "Dev"], folder);
+      const world = await machine(null);
+      const { codeLink, ctx, project, board, ticket } = world;
+      const { repo } = await ctx.repos.addFromFolder(project.id, folder);
+      world.boards.update(project.id, board.id, { repoId: repo.id });
+      const feature = ticket("Welcome page");
+      const gate = await codeLink.start(project.id, feature.id, { mode: "run", engine: "fake-code", options: { model: "m1" } });
+      expect(gate).toMatchObject({ ok: false, gate: "readiness" });
+      const bootstrap = ctx.items.list({ projectId: project.id }).find((i) => !gate.ok && i.key === gate.bootstrapKey)!;
+      return { ...world, feature, bootstrap };
+    }
+
+    it("starts the bootstrap with the ticket's choices, remembers the ticket, and starts it by itself once the bootstrap is done", async () => {
+      const { codeLink, ctx, agent, project, turns, feature, bootstrap } = await emptyRepository();
+      const started = await codeLink.start(project.id, bootstrap.id, { mode: "run", engine: "fake-code", options: { model: "m1" }, then: feature.id });
+      expect(started).toMatchObject({ ok: true });
+      expect(codeLink.followOns()).toEqual([expect.objectContaining({ projectId: project.id, itemId: feature.id, afterItemId: bootstrap.id, options: { mode: "run", engine: "fake-code", options: { model: "m1" } } })]);
+      // Started again while the bootstrap is still open, the ticket is remembered once.
+      await codeLink.start(project.id, bootstrap.id, { mode: "run", engine: "fake-code", options: { model: "m1" }, then: feature.id });
+      expect(codeLink.followOns()).toHaveLength(1);
+      await untilRunsSettle(agent);
+      expect(turns.length).toBeGreaterThan(0);
+      expect(turns.every((turn) => turn.ticket?.key === bootstrap.key)).toBe(true);
+      expect(ctx.items.get(project.id, feature.id)!.status).toBe("todo");
+
+      ctx.items.update(project.id, bootstrap.id, { status: "done" }, "human");
+      await until(() => turns.some((turn) => turn.ticket?.key === feature.key));
+      await untilRunsSettle(agent);
+      expect(codeLink.followOns()).toEqual([]);
+      const run = turns.find((turn) => turn.ticket?.key === feature.key)!;
+      expect(run.options).toMatchObject({ model: "m1" });
+      expect(ctx.items.get(project.id, feature.id)!.status).toBe("doing");
+      const thread = agent.store.threads(project.id, null).find((t) => t.itemId === feature.id)!;
+      const notes = agent.store.messages(project.id, thread.id).filter((m) => m.role === "system").map((m) => JSON.stringify(m.block));
+      expect(notes.some((note) => note.includes(`${bootstrap.key} landed`))).toBe(true);
+      // Done is done once: nothing starts again.
+      ctx.items.update(project.id, bootstrap.id, { status: "verifying" }, "human");
+      ctx.items.update(project.id, bootstrap.id, { status: "done" }, "human");
+      await untilRunsSettle(agent);
+      expect(turns.filter((turn) => turn.ticket?.key === feature.key)).toHaveLength(1);
+    }, 30_000);
+
+    it("forgets the ticket when it is cancelled before the bootstrap lands, and survives a restart of the store", async () => {
+      const { codeLink, ctx, agent, project, turns, feature, bootstrap, hubDir } = await emptyRepository();
+      await codeLink.start(project.id, bootstrap.id, { mode: "run", engine: "fake-code", then: feature.id });
+      await untilRunsSettle(agent);
+      // Beside the Start defaults, as a file this machine keeps.
+      const file = path.join(hubDir, "code-link-follow-ons.json");
+      expect(JSON.parse(fs.readFileSync(file, "utf8"))).toEqual([expect.objectContaining({ itemId: feature.id, afterItemId: bootstrap.id })]);
+      ctx.items.update(project.id, feature.id, { status: "cancelled" }, "human");
+      expect(codeLink.followOns()).toEqual([]);
+      ctx.items.update(project.id, bootstrap.id, { status: "done" }, "human");
+      await untilRunsSettle(agent);
+      expect(turns.map((turn) => turn.ticket?.key)).toEqual([bootstrap.key]);
+    }, 30_000);
+  });
+
   describe("merging from Tomrade in a repository with no remote", () => {
     /** A local repository, a ticket worked to Verifying on its branch, and that branch's worktree removed. */
     async function handed(title: string, opts: { agentMerge?: boolean } = {}) {

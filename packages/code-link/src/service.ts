@@ -26,6 +26,7 @@ import { RepoConnect, type ConnectMode, type ConnectResult } from "./connect-rep
 import { Connections, MCP_AGENT } from "./connections.js";
 import { contribute } from "./contrib.js";
 import { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
+import { FollowOnStore, type FollowOn } from "./follow-ons.js";
 import { HerdrBridge, type HerdrInstall } from "./herdr-bridge.js";
 import { Landing, type MergeCheckView, type MergeLocalResult, type OpenPrResult } from "./landing.js";
 import { SYNC_PROMPT, syncInstructions, syncPrompt, type SyncScope } from "./sync.js";
@@ -226,6 +227,7 @@ export class CodeLink extends Service implements CodeLinkReader {
   private readonly home: Context;
   private readonly git: Git;
   private starter!: Starter;
+  private followOnStore!: FollowOnStore;
   private scans!: GitScan;
   private landing!: Landing;
   private connections!: Connections;
@@ -254,6 +256,7 @@ export class CodeLink extends Service implements CodeLinkReader {
     this.home = ctx;
     this.git = gitRunner(config.gitBinary);
     this.defaults = new StartDefaultsStore(config.defaultsPath ?? null);
+    this.followOnStore = new FollowOnStore(config.defaultsPath ? path.join(path.dirname(config.defaultsPath), "code-link-follow-ons.json") : null);
   }
 
   [Service.init]() {
@@ -451,6 +454,9 @@ export class CodeLink extends Service implements CodeLinkReader {
       const before = intent.before as Item | null;
       const after = intent.after as Item | null;
       if (!before || !after || before.status === after.status) return;
+      if (after.status === "done" || after.status === "cancelled") this.followOnStore.drop(intent.projectId, intent.id);
+      // Each is taken before it starts, so a ticket follows once; the start runs after this write has settled.
+      if (after.status === "done") for (const followOn of this.followOnStore.take(intent.projectId, intent.id)) void Promise.resolve().then(() => this.startFollowOn(followOn, after));
       if (after.status === "done") this.archiveCompletedSessions(intent.projectId);
       const open = new Set(["backlog", "todo", "doing", "verifying"]);
       if ((before.status === "done" || before.status === "cancelled") && open.has(after.status)) {
@@ -832,11 +838,37 @@ export class CodeLink extends Service implements CodeLinkReader {
 
   /** Start or continue a ticket with a local agent — headless here or in the user's terminal, coding or General. See `Starter` for the gates. */
   async start(projectId: string, itemId: string, opts: StartOptions): Promise<StartResult> {
-    const result = await this.starter.start(projectId, itemId, opts);
+    const { then, ...rest } = opts;
+    const result = await this.starter.start(projectId, itemId, rest);
     // Only what actually started is remembered, with the engine it settled on: a gate the user had to
     // clear leaves the memory as it was, and an engine the caller left to Tomrade is not lost.
-    if (result.ok) this.defaults.write({ mode: opts.mode, engine: result.engine, options: opts.options, permissionMode: opts.permissionMode, playbook: opts.playbook });
+    if (result.ok) this.defaults.write({ mode: rest.mode, engine: result.engine, options: rest.options, permissionMode: rest.permissionMode, playbook: rest.playbook });
+    // The ticket this one was started ahead of follows it with the same choices once it lands.
+    if (result.ok && then && then !== itemId && this.ctx.items.get(projectId, then)) {
+      this.followOnStore.add({ projectId, itemId: then, afterItemId: itemId, options: { mode: rest.mode, engine: result.engine, options: rest.options, permissionMode: rest.permissionMode, playbook: rest.playbook }, at: Date.now() });
+    }
     return result;
+  }
+
+  /** Tickets waiting to start by themselves once another lands. */
+  followOns(): FollowOn[] {
+    return this.followOnStore.list();
+  }
+
+  private async startFollowOn(followOn: FollowOn, landed: Item): Promise<void> {
+    const item = this.ctx.items.get(followOn.projectId, followOn.itemId);
+    if (!item || item.status === "done" || item.status === "cancelled") return;
+    try {
+      const result = await this.start(followOn.projectId, followOn.itemId, followOn.options);
+      if (!result.ok) {
+        this.ctx.logger.warn(`${item.key} did not start after ${landed.key} landed: ${result.message}`);
+        return;
+      }
+      const agent = this.ctx.get("agent");
+      if (result.threadId && agent) agent.store.appendMessage(followOn.projectId, result.threadId, "system", { type: "note", text: this.words()("followOnStarted", { key: item.key, after: landed.key }) }, null);
+    } catch (err) {
+      this.ctx.logger.warn(`${item.key} did not start after ${landed.key} landed: ${errorMessage(err)}`);
+    }
   }
 
   // ── herdr ──────────────────────────────────────────────────────────────────
