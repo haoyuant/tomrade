@@ -100,6 +100,25 @@ async function machine(repo: { remote: string; checkout: string }) {
 }
 
 describe("code link", () => {
+  it("offers every project checkout for terminals, including repos with no workstream", async () => {
+    const world = await machine(codeRepo());
+    try {
+      const second = codeRepo();
+      const repo = world.ctx.repos.create({ projectId: world.project.id, remote: second.remote, name: "zz-plugins" });
+      await world.ctx.repos.setCheckout(repo.remote, second.checkout);
+      world.boards.update(world.project.id, world.board.id, { repoPath: "src" });
+      fs.mkdirSync(path.join(world.checkout, "src"));
+      world.ctx.repos.create({ projectId: world.project.id, remote: "https://github.com/acme/unavailable" });
+      expect(world.codeLink.repositoryFoldersOf(world.project.id)).toEqual([
+        { name: world.repo.name, path: world.checkout },
+        { name: "zz-plugins", path: second.checkout },
+        { name: world.repo.name, path: path.join(world.checkout, "src") }
+      ]);
+    } finally {
+      await world.ctx.fiber.dispose();
+    }
+  });
+
   it("honors a human completion policy in any linked repository", async () => {
     const { codeLink, ctx, project, checkout, ticket, items } = await machine(codeRepo());
     try {

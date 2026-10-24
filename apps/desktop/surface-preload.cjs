@@ -25,6 +25,7 @@ const listen = (channel) => (listener) => {
 // look and native hit tests.
 contextBridge.exposeInMainWorld("tomradeSurface", {
   onState: listen(STATE_CHANNEL),
+  pickDirectory: (title, buttonLabel) => ipcRenderer.invoke("tomrade:shell.pickDirectory", title, buttonLabel),
   /** Messages the plugin posts, one by one and in order. */
   onMessage: listen(PUSH_CHANNEL),
   /** The theme's CSS variables, dark or not, and the language: now, and on every change. */
