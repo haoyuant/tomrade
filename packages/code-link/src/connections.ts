@@ -4,7 +4,7 @@ import type { Context } from "cordis";
 import type { Author } from "@tomradex/domain";
 import type { Git } from "@tomradex/git";
 import { sameRepository } from "@tomradex/repos";
-import { cursorHookReader } from "./cursor-hooks.js";
+import { cursorHookReader, cursorHookReply } from "./cursor-hooks.js";
 import type { Sessions } from "./sessions.js";
 import type { CodeLinkStore, SessionView } from "./store.js";
 import { errorMessage } from "@tomradex/contracts";
@@ -263,8 +263,15 @@ export class Connections {
    * checkout — and answer it, for the agents whose hooks leave the answer on stdout.
    */
   async externalEvent(raw: unknown): Promise<Record<string, unknown> | undefined> {
-    // Cursor's hooks post in its own names; the rest of this reads Claude Code's.
-    const payload = (raw as { tomrade_agent?: unknown } | null)?.tomrade_agent === "cursor" ? this.readCursorHook(raw) : raw;
+    if ((raw as { tomrade_agent?: unknown } | null)?.tomrade_agent !== "cursor") return this.heardEvent(raw);
+    // Cursor's hooks post in its own names and read answers in its own fields — always, since a permission hook
+    // given anything else blocks the tool; the rest of this reads and writes Claude Code's.
+    const event = String((raw as { hook_event_name?: unknown }).hook_event_name ?? "");
+    const payload = this.readCursorHook(raw);
+    return cursorHookReply(event, payload ? await this.heardEvent(payload) : undefined);
+  }
+
+  private async heardEvent(payload: unknown): Promise<Record<string, unknown> | undefined> {
     if (!payload) return undefined;
     const p = payload as { hook_event_name?: string; session_id?: string; cwd?: string; transcript_path?: string; tomrade_agent?: string; source?: string };
     if (!p.cwd || !p.session_id) return undefined;

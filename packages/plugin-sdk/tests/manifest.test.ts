@@ -30,7 +30,7 @@ it("takes a full-mode plugin that names its Tomrade versions, labels it high ris
 });
 
 it("says which agents a CLI hook reaches: every agent that reports hooks, the ones that act on an answer among them", () => {
-  expect(CLI_HOOK_COVERAGE["pre-tool"]).toEqual({ answers: ["claude-code", "workbuddy", "dsh", "pi", "codex", "opencode"], sees: ["cursor", "hermes"] });
+  expect(CLI_HOOK_COVERAGE["pre-tool"]).toEqual({ answers: ["claude-code", "workbuddy", "dsh", "pi", "codex", "opencode", "cursor"], sees: ["hermes"] });
   expect(CLI_HOOK_COVERAGE.stop.answers).not.toContain("pi");
   expect(CLI_HOOK_COVERAGE["session-end"].answers).toEqual([]);
   for (const reach of Object.values(CLI_HOOK_COVERAGE)) expect([...reach.answers, ...reach.sees].sort()).toEqual(["claude-code", "codex", "cursor", "dsh", "hermes", "opencode", "pi", "workbuddy"]);
