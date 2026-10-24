@@ -37,6 +37,7 @@ export { Sessions, HERDR_PANE_HEADER, HERDR_YIELD_MS, TERMINAL_HEADER, WT_HEADER
 export { fitsCommandLine, promptAsArgument } from "./command-line.js";
 export { AUTO_TERMINAL, GitBashMissing, SYSTEM_TERMINAL, TerminalSettings, bareCommand, fillTemplate, gitBash, herdrFallbackNote, launchTerminal, locatedCommand, machineTerminalSettings, openOnLinux, openOnWindows, optionFlags, pathExport, powerShellPath, setupOnWindows, setupTerminal, terminalApp, terminalApps, terminalPath, terminalTemplate, withOptions, type HerdrTerminal, type LaunchResult, type TerminalPath } from "./terminal.js";
 export { BOOTSTRAP_LABEL, continuePrompt, firstPrompt, languageLine } from "./prompts.js";
+export { orientationPrompt, scanBrief } from "./orientation.js";
 export { PLAYBOOKS } from "./playbooks.js";
 export { CodeLink as default } from "./service.js";
 

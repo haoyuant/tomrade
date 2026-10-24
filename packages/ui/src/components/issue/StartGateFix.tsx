@@ -37,6 +37,7 @@ export function useGateWords() {
         if (cause?.code === "no-board-repo") return { lead: t("codeLink.gateWorkstream", { board }) };
         if (cause?.code === "unknown-repo") return { lead: t("codeLink.gateWorkdirUnknownRepo", { board, repo: cause.repoId ?? "?" }) };
         if (cause?.code === "no-hub") return { lead: t("codeLink.gateWorkdirNoHub") };
+        if (cause?.code === "folder-outside") return { lead: t("codeLink.gateWorkdirFolderOutside", { board, folder: cause.folder ?? "", checkout: cause.checkout ?? "" }) };
         if (cause?.code === "branch-in-use" && cause.branch && cause.heldAt) return { lead: t(cause.releasable ? "codeLink.gateWorkdirBranchReleasable" : "codeLink.gateWorkdirBranchInUse", { branch: cause.branch, at: cause.heldAt }) };
         return { lead: t("codeLink.gateWorkdir"), detail: f.message };
       }

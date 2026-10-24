@@ -9,7 +9,7 @@ import type {} from "@tomradex/hub";
 import type {} from "@tomradex/items";
 import type {} from "@tomradex/repos";
 import type {} from "@tomradex/settings";
-import type { Author, Board, Item, Repo } from "@tomradex/domain";
+import { normalizeRepoPath, repoSubfolder, type Author, type Board, type Item, type Repo } from "@tomradex/domain";
 import { GitFolder, type Git } from "@tomradex/git";
 import { fitsCommandLine, promptAsArgument } from "./command-line.js";
 import { listDecisions } from "./decisions.js";
@@ -27,7 +27,7 @@ import { errorMessage } from "@tomradex/contracts";
 export type StartMode = "run" | "terminal";
 export type StartGate = "locked" | "workstream" | "checkout" | "remote" | "readiness" | "blocked" | "engine" | "mcp" | "workdir" | "pane" | "prompt";
 /** Why the workdir gate found no folder, when that is known. */
-export type WorkdirCause = "no-board" | "no-board-repo" | "unknown-repo" | "no-hub" | "branch-in-use";
+export type WorkdirCause = "no-board" | "no-board-repo" | "unknown-repo" | "no-hub" | "branch-in-use" | "folder-outside";
 
 /** What the Start dialog settles: where the work runs, who runs it, and with which knobs. */
 export interface StartOptions {
@@ -71,8 +71,8 @@ export type StartResult =
       engine?: string;
       /** Pane gate: the herdr pane whose agent still works the ticket and did not take the prompt. */
       pane?: string;
-      /** Workdir gate: what stood in the way — the repository id a workstream still names, the branch and the worktree that has it. */
-      cause?: { code: WorkdirCause; repoId?: string; branch?: string; heldAt?: string; releasable?: boolean };
+      /** Workdir gate: what stood in the way — the repository id a workstream still names, the branch and the worktree that has it, the folder that lies outside the checkout. */
+      cause?: { code: WorkdirCause; repoId?: string; branch?: string; heldAt?: string; releasable?: boolean; folder?: string; checkout?: string };
     }
   | {
       ok: true;
@@ -339,7 +339,7 @@ export class Starter {
     const completionPolicy = ctx.codeLink.completionPolicy(projectId, item);
     const basePrompt = continued
       ? continuePrompt(item, repo, live ?? store.sessions(projectId, { itemId: item.id })[0] ?? null, link, completionPolicy, local, ctx.settings.locale?.() ?? "en", state?.agentMerge ?? false)
-      : firstPrompt({ item, repo, state, branch, blockers, bootstrap: bootstrapping, mcpUrl: ctx.get("mcp")?.urlFor(projectId) ?? null, decisions, subdir: board.repoPath.replace(/^\/+|\/+$/g, ""), completionPolicy, local, locale: ctx.settings.locale?.() ?? "en" });
+      : firstPrompt({ item, repo, state, branch, blockers, bootstrap: bootstrapping, mcpUrl: ctx.get("mcp")?.urlFor(projectId) ?? null, decisions, subdir: repoSubfolder(board.repoPath, placement.checkout) ?? normalizeRepoPath(board.repoPath), completionPolicy, local, locale: ctx.settings.locale?.() ?? "en" });
     const briefed = warnings.length ? `${basePrompt}\n\n${warnings.join("\n")}` : basePrompt;
     const prompt = opts.message?.trim() ? `${briefed}\n\n${opts.message.trim()}` : briefed;
     // An in-app run hears the rules with every turn; a terminal agent only ever reads this file.
@@ -534,6 +534,10 @@ export class Starter {
         return { ok: false, gate: "workdir", message: where.problem ?? "no Hub folder is chosen on this machine", cause: { code: "no-hub" }, ...onRepo };
       case "branch-in-use":
         return { ok: false, gate: "workdir", message: where.problem ?? "the branch is checked out in another worktree", cause: { code: "branch-in-use", ...(where.branch ? { branch: where.branch } : {}), ...(where.heldAt ? { heldAt: where.heldAt } : {}), releasable: !!where.releasable }, ...onRepo };
+      case "folder-outside": {
+        const checkout = onRepo.remote ? this.host.ctx.repos.checkout(onRepo.remote).checkout : null;
+        return { ok: false, gate: "workdir", message: where.problem ?? "the workstream's folder lies outside the checkout", cause: { code: "folder-outside", folder: normalizeRepoPath(board?.repoPath ?? ""), ...(checkout ? { checkout } : {}) }, ...onRepo, ...onBoard };
+      }
       default:
         return { ok: false, gate: "workdir", message: where.problem ?? "no working folder for this conversation", ...onRepo };
     }

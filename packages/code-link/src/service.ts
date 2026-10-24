@@ -17,7 +17,7 @@ import type {} from "@tomradex/repos";
 import { normalizeRemote } from "@tomradex/repos";
 import type {} from "@tomradex/settings";
 import type {} from "@tomradex/write";
-import type { Item } from "@tomradex/domain";
+import { repoSubfolder, type Item } from "@tomradex/domain";
 import { GitFolder, gitRunner, type Git } from "@tomradex/git";
 import { readPull, type ForgePull } from "./forge.js";
 import { agentsNeedingFiles, type ConnectionView } from "./connection.js";
@@ -29,6 +29,7 @@ import { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
 import { FollowOnStore, type FollowOn } from "./follow-ons.js";
 import { HerdrBridge, type HerdrInstall } from "./herdr-bridge.js";
 import { Landing, type MergeCheckView, type MergeLocalResult, type OpenPrResult } from "./landing.js";
+import { Orientation } from "./orientation.js";
 import { SYNC_PROMPT, syncInstructions, syncPrompt, type SyncScope } from "./sync.js";
 import { githubHttps } from "@tomradex/github";
 import { PLAYBOOKS } from "./playbooks.js";
@@ -37,7 +38,7 @@ import { currentLinks, deliveryMerged, GitScan, LANDED_ELSEWHERE, primaryOf, typ
 import { Sessions, type SessionMoment } from "./sessions.js";
 import { CODE_WORDS, type CodeWords } from "./words.js";
 import { Starter, type StartOptions, type StartResult } from "./start.js";
-import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
+import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type Readiness, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
 import { findCodexRollout, findTranscript, readConversation, transcriptTitleFor, type ConversationLine } from "./titles.js";
 import { AUTO_TERMINAL, TerminalSettings, commandOk, exec, locatedCommand, terminalApps, terminalPath } from "./terminal.js";
 import { registerTools } from "./tools.js";
@@ -227,6 +228,7 @@ export class CodeLink extends Service implements CodeLinkReader {
   private readonly home: Context;
   private readonly git: Git;
   private starter!: Starter;
+  private orientation!: Orientation;
   private followOnStore!: FollowOnStore;
   private scans!: GitScan;
   private landing!: Landing;
@@ -314,6 +316,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       archiveCompletedSessions: (projectId) => this.archiveCompletedSessions(projectId),
       superseded: (projectId, session) => this.connections.superseded(projectId, session)
     });
+    this.orientation = new Orientation({ ctx: this.ctx, store: this.store, starter: this.starter, words: () => this.words() });
     this.landing = new Landing({
       ctx: this.ctx,
       store: this.store,
@@ -1092,15 +1095,31 @@ export class CodeLink extends Service implements CodeLinkReader {
 
   /** One scan per project at a time; a second caller gets the running one. */
   scan(projectId: string): Promise<ScanSummary> {
-    return this.scans.scan(projectId);
+    return this.scans.scan(projectId).then((summary) => this.oriented(projectId, summary));
   }
 
   private rescan(projectId: string): Promise<ScanSummary> {
-    return this.scans.rescan(projectId);
+    return this.scans.rescan(projectId).then((summary) => this.oriented(projectId, summary));
   }
 
-  scanOpen(): Promise<void> {
-    return this.scans.scanOpen();
+  async scanOpen(): Promise<void> {
+    for (const projectId of this.ctx.db.openIds()) {
+      try {
+        await this.scan(projectId);
+      } catch (err) {
+        this.ctx.logger.warn(`code scan of ${projectId} failed: ${errorMessage(err)}`);
+      }
+    }
+  }
+
+  /** A scan that found a project in a repository the project knows nothing about yet has it read; the scan's result is not changed by it. */
+  private async oriented(projectId: string, summary: ScanSummary): Promise<ScanSummary> {
+    try {
+      await this.orientation.sweep(projectId);
+    } catch (err) {
+      this.ctx.logger.warn(`orientation in ${projectId} failed: ${errorMessage(err)}`);
+    }
+    return summary;
   }
 
   reevaluate(projectId: string, itemId: string, repoId: string): void {
@@ -1120,14 +1139,17 @@ export class CodeLink extends Service implements CodeLinkReader {
   }
 
   /** Each workstream's repository and its folder on this machine — what a main conversation reads the code from. */
-  repositoriesOf(projectId: string): { workstream: string; name: string; path: string | null; defaultBranch: string }[] {
+  repositoriesOf(projectId: string): { workstream: string; name: string; path: string | null; defaultBranch: string; readiness: Readiness; hasBrief: boolean }[] {
     return this.ctx.boards.list(projectId).flatMap((board) => {
       const repo = board.repoId ? this.ctx.repos.get(projectId, board.repoId) : null;
       if (!repo) return [];
       const checkout = this.ctx.repos.checkout(repo.remote).checkout;
-      const subdir = board.repoPath.replace(/^\/+|\/+$/g, "");
-      const folder = checkout && fs.existsSync(checkout) ? (subdir ? path.join(checkout, subdir) : checkout) : null;
-      return [{ workstream: board.name, name: repo.name, path: folder, defaultBranch: repo.defaultBranch }];
+      // A folder outside the checkout is no folder to read from.
+      const subdir = checkout ? repoSubfolder(board.repoPath, checkout) : null;
+      const folder = checkout && subdir !== null && fs.existsSync(checkout) ? (subdir ? path.join(checkout, subdir) : checkout) : null;
+      // What the last scan made of it: a conversation plans against an empty repository differently from a full one.
+      const state = this.store.repoState(projectId, repo.id);
+      return [{ workstream: board.name, name: repo.name, path: folder, defaultBranch: repo.defaultBranch, readiness: state?.readiness ?? "unknown", hasBrief: state?.hasBrief ?? false }];
     });
   }
 

@@ -92,6 +92,12 @@ function fakeCodeEngine(turns: TurnInput[]): Engine {
     available: async () => ({ ok: true }),
     async turn(input, io) {
       turns.push(input);
+      // An orientation pass: the agent reads and writes the brief, nothing else.
+      if (input.purpose === "backlog" && input.input.kind === "text" && input.input.text.startsWith("Orientation:")) {
+        await io.tools.execute("update_project_brief", { body: "Shop: products are pulled from the supplier feed, never edited here." });
+        io.emit({ type: "text", text: "brief written" });
+        return { stop: "end", resume: "fake-session-o" };
+      }
       if (input.cwd && input.purpose === "code") {
         fs.writeFileSync(path.join(input.cwd, `work-${turns.length}.ts`), "export {};\n");
         git(["add", "-A"], input.cwd);
@@ -103,7 +109,7 @@ function fakeCodeEngine(turns: TurnInput[]): Engine {
   };
 }
 
-async function machine(repo: { remote: string; checkout: string } | null, opts: { gitBinary?: string; defaultsPath?: string; llm?: (system: string, user: string) => unknown } = {}) {
+async function machine(repo: { remote: string; checkout: string } | null, opts: { gitBinary?: string; defaultsPath?: string; llm?: (system: string, user: string) => unknown; codeEngine?: false; brief?: false } = {}) {
   const hubDir = path.join(root, `hub-${n++}`);
   fs.mkdirSync(hubDir, { recursive: true });
   const turns: TurnInput[] = [];
@@ -117,13 +123,15 @@ async function machine(repo: { remote: string; checkout: string } | null, opts: 
       [Repos, { gitBinary: opts.gitBinary ?? "git" }],
       Contributions,
       Agent,
-      enginePlugin,
+      ...(opts.codeEngine === false ? [] : [enginePlugin]),
       ...(opts.llm ? [fakeLlm(opts.llm)] : []),
       [CodeLink, { scanMs: 0, gitBinary: opts.gitBinary ?? "git", defaultsPath: opts.defaultsPath ?? path.join(hubDir, "code-link.json") }]
     ]
   });
   await settle();
   await bag.ctx.storage.ready;
+  // A project that already knows its code: no orientation starts under a test about something else.
+  if (opts.brief !== false) bag.ctx.agent.store.setBrief(bag.project.id, "Test project: the brief is written.");
   let row = null as ReturnType<typeof bag.ctx.repos.create> | null;
   if (repo) {
     row = bag.ctx.repos.create({ projectId: bag.project.id, remote: repo.remote });
@@ -480,12 +488,13 @@ describe("starting a ticket", () => {
     const input = (purpose: "backlog" | "code") => ({ threadId: "t", projectId: project.id, purpose, input: { kind: "text", text: "hi" }, messages: [], cards: [], brief: null, pending: null, options: {} }) as TurnInput;
     const before = input("backlog");
     await ctx.parallel("agent/prepare-turn", before);
-    expect(before.repositories).toEqual([{ workstream: board.name, name: repo!.name, path: null, defaultBranch: "main" }]);
+    expect(before.repositories).toEqual([{ workstream: board.name, name: repo!.name, path: null, defaultBranch: "main", readiness: "unknown", hasBrief: false }]);
 
     await ctx.repos.setCheckout(repo!.remote, world.checkout!);
+    await world.codeLink.scan(project.id);
     const after = input("backlog");
     await ctx.parallel("agent/prepare-turn", after);
-    expect(after.repositories).toEqual([{ workstream: board.name, name: repo!.name, path: path.join(world.checkout!, "mobile-app"), defaultBranch: "main" }]);
+    expect(after.repositories).toEqual([{ workstream: board.name, name: repo!.name, path: path.join(world.checkout!, "mobile-app"), defaultBranch: "main", readiness: "scaffolded", hasBrief: false }]);
     const code = input("code");
     await ctx.parallel("agent/prepare-turn", code);
     expect(code.repositories).toBeUndefined();
@@ -832,6 +841,71 @@ describe("starting a ticket", () => {
     git(["merge", "-q", "--no-ff", "-m", `Merge ${item.key}`, result.branch], folder);
     await codeLink.scan(project.id);
     expect(ctx.items.get(project.id, item.id)!.status).toBe("done");
+  });
+
+  describe("orientation: a project's first look at a repository it was pointed at", () => {
+    it("has a coding agent read the repository in a worktree and write the project brief, once", async () => {
+      const folder = localRepo();
+      const world = await machine(null, { brief: false });
+      const { codeLink, ctx, agent, project, board, turns } = world;
+      const { repo } = await ctx.repos.addFromFolder(project.id, folder);
+      // Nothing is read for a repository no workstream names: the agent would have nowhere to work.
+      await codeLink.scan(project.id);
+      expect(agent.store.threads(project.id)).toEqual([]);
+
+      world.boards.update(project.id, board.id, { repoId: repo.id });
+      await codeLink.scan(project.id);
+      await until(() => !!agent.brief(project.id));
+      expect(agent.brief(project.id)).toContain("pulled from the supplier feed");
+      const threads = agent.store.threads(project.id);
+      expect(threads.map((t) => t.title)).toEqual([`Orientation · ${path.basename(folder)}`]);
+      expect(threads[0].boardId).toBe(board.id);
+      const orientation = turns.find((t) => t.purpose === "backlog")!;
+      expect(orientation.input).toMatchObject({ kind: "text", text: expect.stringContaining("Read CLAUDE.md or AGENTS.md, README, the manifests (package.json)") });
+      expect(orientation.input).toMatchObject({ text: expect.stringContaining("update_project_brief") });
+      // In a worktree of its own, never in the person's folder.
+      expect(orientation.cwd).toBeTruthy();
+      expect(orientation.cwd).not.toBe(folder);
+      expect(fs.existsSync(path.join(orientation.cwd!, "package.json"))).toBe(true);
+
+      await codeLink.scan(project.id);
+      expect(agent.store.threads(project.id)).toHaveLength(1);
+      expect(turns.filter((t) => t.purpose === "backlog")).toHaveLength(1);
+    }, 20_000);
+
+    it("writes the brief from the repository's own documents when no coding agent is installed", async () => {
+      const folder = localRepo();
+      fs.writeFileSync(path.join(folder, "README.md"), "# Shop\n\nA storefront whose products come from the supplier feed.\n");
+      fs.writeFileSync(path.join(folder, "CLAUDE.md"), "Vue 3, pnpm test.\n");
+      const world = await machine(null, { codeEngine: false, brief: false });
+      const { codeLink, ctx, agent, project, board } = world;
+      const { repo } = await ctx.repos.addFromFolder(project.id, folder);
+      world.boards.update(project.id, board.id, { repoId: repo.id });
+      await codeLink.scan(project.id);
+      const brief = agent.brief(project.id)!;
+      expect(brief).toContain("not by an agent that read the code");
+      expect(brief).toContain("Manifests: package.json.");
+      expect(brief).toContain("## CLAUDE.md\nVue 3, pnpm test.");
+      expect(brief).toContain("## README.md\n# Shop");
+      expect(agent.store.threads(project.id)).toEqual([]);
+    }, 20_000);
+
+    it("starts nothing for a repository with no project in it, or a project whose brief is already written", async () => {
+      const empty = await machine(codeRepo({ manifest: false }), { brief: false });
+      await empty.ctx.repos.setCheckout(empty.repo!.remote, empty.checkout!);
+      await empty.codeLink.scan(empty.project.id);
+      expect(empty.codeLink.repoStates(empty.project.id)[0]).toMatchObject({ readiness: "empty" });
+      expect(empty.agent.brief(empty.project.id)).toBeNull();
+      expect(empty.agent.store.threads(empty.project.id)).toEqual([]);
+
+      const known = await machine(codeRepo());
+      known.agent.store.setBrief(known.project.id, "Already known.");
+      await known.ctx.repos.setCheckout(known.repo!.remote, known.checkout!);
+      await known.codeLink.scan(known.project.id);
+      expect(known.agent.brief(known.project.id)).toBe("Already known.");
+      expect(known.agent.store.threads(known.project.id)).toEqual([]);
+      expect(known.turns).toEqual([]);
+    }, 20_000);
   });
 
   describe("a bootstrap started ahead of the ticket that needs it", () => {
