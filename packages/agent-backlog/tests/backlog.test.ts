@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { emptyDossier, overlap, readiness, renderDossier } from "@tomradex/agent-backlog";
-import { findSimilar, planSchema, proposeDependencies, PLAYBOOKS, REVIEW_TIMEOUT_MS } from "@tomradex/agent-backlog";
+import { findGaps, findSimilar, generatePlan, planSchema, proposeDependencies, PLAYBOOKS, REVIEW_TIMEOUT_MS } from "@tomradex/agent-backlog";
 import { completeJson, FakeLlm, type ChatModel, type CompletionRequest, type LlmService } from "@tomradex/llm";
 import { fresh } from "@tomradex/testkit";
 import type { Item } from "@tomradex/domain";
@@ -113,6 +113,44 @@ describe("proposeDependencies", () => {
     const proposal = await proposeDependencies(ctx, llm, project.id, []);
     expect(proposal.add.map((e) => `${e.from}>${e.to}`)).toEqual([`${importer.key}>${view.key}`]);
     expect(proposal.remove).toEqual([]);
+  });
+});
+
+describe("what the planners know about the code", () => {
+  const brief = "Shop: a Vue storefront. Products are pulled from the supplier feed every hour, never edited here.";
+  const capture = (answer: unknown) => {
+    const seen: { system: string; user: string }[] = [];
+    return { seen, llm: new FakeLlm((system, user) => (seen.push({ system, user }), answer)) };
+  };
+
+  it("hands the project brief to the plan and the gap analysis, and says what it is", async () => {
+    const plan = capture({ epics: [] });
+    await generatePlan(plan.llm, "Compare prices of same-name products", [item("Price history")], "en", brief);
+    expect(plan.seen[0].user).toMatch(/^PROJECT \(what the code already is and does\):\nShop: a Vue storefront/);
+    expect(plan.seen[0].user.indexOf("PROJECT")).toBeLessThan(plan.seen[0].user.indexOf("REQUIREMENT:"));
+    expect(plan.seen[0].system).toContain("Never propose work for a capability it names");
+
+    const gaps = capture({ missing: [] });
+    await findGaps(gaps.llm, "Compare prices", [], brief);
+    expect(gaps.seen[0].user).toContain("never edited here");
+    expect(gaps.seen[0].system).toContain("A capability it names is not missing");
+  });
+
+  it("says when no brief is recorded instead of leaving the planners to guess", async () => {
+    const plan = capture({ epics: [] });
+    await generatePlan(plan.llm, "Anything", [], "en", null);
+    expect(plan.seen[0].user).toMatch(/^PROJECT: no brief is recorded yet/);
+    const gaps = capture({ missing: [] });
+    await findGaps(gaps.llm, "Anything", [], "   ");
+    expect(gaps.seen[0].user).toMatch(/^PROJECT: no brief is recorded yet/);
+  });
+
+  it("gives the dependency review the brief too", async () => {
+    const { ctx, project } = await fresh();
+    const review = capture({ add: [], remove: [] });
+    await proposeDependencies(ctx, review.llm, project.id, [], { brief });
+    expect(review.seen[0].user).toMatch(/^PROJECT \(what the code already is and does\):[\s\S]*\nCHANGES:/);
+    expect(review.seen[0].system).toContain("never waits on a capability the code already has");
   });
 });
 
