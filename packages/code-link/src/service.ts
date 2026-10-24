@@ -17,7 +17,7 @@ import type {} from "@tomradex/repos";
 import { normalizeRemote } from "@tomradex/repos";
 import type {} from "@tomradex/settings";
 import type {} from "@tomradex/write";
-import type { Item } from "@tomradex/domain";
+import { repoSubfolder, type Item } from "@tomradex/domain";
 import { GitFolder, gitRunner, type Git } from "@tomradex/git";
 import { readPull, type ForgePull } from "./forge.js";
 import { agentsNeedingFiles, type ConnectionView } from "./connection.js";
@@ -1112,8 +1112,9 @@ export class CodeLink extends Service implements CodeLinkReader {
       const repo = board.repoId ? this.ctx.repos.get(projectId, board.repoId) : null;
       if (!repo) return [];
       const checkout = this.ctx.repos.checkout(repo.remote).checkout;
-      const subdir = board.repoPath.replace(/^\/+|\/+$/g, "");
-      const folder = checkout && fs.existsSync(checkout) ? (subdir ? path.join(checkout, subdir) : checkout) : null;
+      // A folder outside the checkout is no folder to read from.
+      const subdir = checkout ? repoSubfolder(board.repoPath, checkout) : null;
+      const folder = checkout && subdir !== null && fs.existsSync(checkout) ? (subdir ? path.join(checkout, subdir) : checkout) : null;
       return [{ workstream: board.name, name: repo.name, path: folder, defaultBranch: repo.defaultBranch }];
     });
   }

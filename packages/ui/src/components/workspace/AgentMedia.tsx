@@ -14,6 +14,7 @@ export function AgentMedia({ projectId, threadId, media, caption }: { projectId:
   const qc = useQueryClient();
   const [url, setUrl] = useState<string>();
   const [expanded, setExpanded] = useState(false);
+  const [fit, setFit] = useState(false);
   const content = useQuery({
     queryKey: keys.agent.media(projectId, threadId, media.id),
     queryFn: () => invoke("agent.media.read", projectId, threadId, media.id),
@@ -45,30 +46,39 @@ export function AgentMedia({ projectId, threadId, media, caption }: { projectId:
     : undefined;
   // A separate sandbox origin permits viewer controls without access to Tomrade or network.
   const isolatedHtml = html === undefined ? undefined : `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none';">${html}`;
+  const label = caption ?? media.name;
+  const isImage = media.mime.startsWith("image/");
+  const isPdf = media.mime === "application/pdf";
+  const open = () => { setFit(false); setExpanded(true); };
   return <figure style={{ margin: "8px 0", minWidth: 0 }}>
     {content.isError && <p role="alert">{readableError(content.error)}</p>}
-    {url && (media.mime.startsWith("image/") ? <img src={url} alt={caption ?? media.name} style={{ maxWidth: "100%", borderRadius: 8 }} />
-      : isolatedHtml !== undefined ? <iframe title={caption ?? media.name} srcDoc={isolatedHtml} sandbox="allow-scripts allow-downloads" style={{ width: "100%", height: 360, border: "1px solid var(--border)", borderRadius: 8 }} />
+    {url && (isImage ? <button type="button" className="media-thumb" title={t("agentPanel.viewOriginal")} onClick={open}><img src={url} alt={label} /></button>
+      // the frame only shows the first page; the button over it opens the whole document
+      : isPdf ? <button type="button" className="media-thumb is-doc" title={t("agentPanel.viewOriginal")} onClick={open}><iframe title={label} src={`${url}#toolbar=0&navpanes=0&view=FitH`} tabIndex={-1} /></button>
+      : isolatedHtml !== undefined ? <iframe title={label} srcDoc={isolatedHtml} sandbox="allow-scripts allow-downloads" style={{ width: "100%", height: 360, border: "1px solid var(--border)", borderRadius: 8 }} />
       : media.mime.startsWith("audio/") ? <audio controls src={url} style={{ width: "100%" }} />
       : media.mime.startsWith("video/") ? <video controls src={url} style={{ maxWidth: "100%" }} />
       : <p>{media.name}</p>)}
     <figcaption style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-      <span>{caption ?? media.name}</span>
+      <span>{label}</span>
       {url && <a href={url} download={media.name}>{t("agentPanel.downloadMedia")}</a>}
-      {url && <button type="button" className="btn btn-ghost" onClick={() => setExpanded(true)}>{t("agentPanel.expandMedia")}</button>}
+      {url && <button type="button" className="btn btn-ghost" onClick={open}>{t("agentPanel.expandMedia")}</button>}
       <button type="button" className="btn btn-ghost" disabled={!content.data || save.isPending || save.isSuccess} onClick={() => save.mutate()}>
         {t(save.isSuccess ? "agentPanel.mediaSaved" : "agentPanel.saveMedia")}
       </button>
     </figcaption>
     {save.isError && <p role="alert">{readableError(save.error)}</p>}
-    <Dialog open={expanded} onOpenChange={setExpanded} label={caption ?? media.name} className="sheet-settings">
-      <DialogHead title={caption ?? media.name} />
-      <DialogBody>
-        {isolatedHtml !== undefined ? <iframe title={caption ?? media.name} srcDoc={isolatedHtml} sandbox="allow-scripts allow-downloads" style={{ width: "100%", height: "70vh", border: 0 }} />
-          : media.mime.startsWith("image/") ? <img src={url} alt={caption ?? media.name} style={{ width: "100%", maxHeight: "70vh", objectFit: "contain" }} />
+    <Dialog open={expanded} onOpenChange={setExpanded} label={label} className={isImage || isPdf ? "sheet-image" : "sheet-settings"}>
+      <DialogHead title={label} />
+      {isImage ? <div className="media-stage">
+        {/* original size first, scrolled when it is bigger than the window; a click fits it */}
+        <img src={url} alt={label} className={fit ? "is-fit" : undefined} title={t(fit ? "agentPanel.actualSize" : "agentPanel.fitToWindow")} onClick={() => setFit(!fit)} />
+      </div> : isPdf ? <iframe title={label} src={url} className="media-doc-full" />
+      : <DialogBody>
+        {isolatedHtml !== undefined ? <iframe title={label} srcDoc={isolatedHtml} sandbox="allow-scripts allow-downloads" style={{ width: "100%", height: "70vh", border: 0 }} />
           : media.mime.startsWith("video/") ? <video controls src={url} style={{ width: "100%", maxHeight: "70vh" }} />
           : media.mime.startsWith("audio/") ? <audio controls src={url} /> : <a href={url} download={media.name}>{t("agentPanel.downloadMedia")}</a>}
-      </DialogBody>
+      </DialogBody>}
     </Dialog>
   </figure>;
 }
