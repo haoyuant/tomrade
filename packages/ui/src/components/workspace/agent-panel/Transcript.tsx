@@ -133,7 +133,7 @@ function RowBody({ m, onRetry, onRetryWith, onTroubleshoot, hint }: { m: ThreadM
       // the live card carries what came of each ticket once started
       <StartBatchBlock card={(cards.get(b.id)?.data ?? b.data) as StartBatchCard} cardId={b.id} projectId={projectId} threadId={m.threadId} onOpenIssue={onOpenIssue} />
     ) : b.type === "card" && b.schema === "merge" ? (
-      <MergeBlock card={(cards.get(b.id)?.data ?? b.data) as MergeCard} projectId={projectId} onOpenIssue={onOpenIssue} />
+      <MergeBlock card={(cards.get(b.id)?.data ?? b.data) as MergeCard} projectId={projectId} threadId={m.threadId} onOpenIssue={onOpenIssue} />
     ) : b.type === "card" && b.schema === "backlog.proposal" ? (
       <ProposalBlock card={b.data as ProposalCard} />
     ) : b.type === "card" ? (

@@ -2122,6 +2122,12 @@ describe("starting tickets from a conversation", () => {
       available: async () => ({ ok: true }),
       async turn(input, io) {
         if (input.cwd && input.purpose === "code") {
+          // Sent back for a conflict, it brings the branch up to date and hands over again, as the brief says.
+          if (input.input.kind === "text" && /no longer merges/.test(input.input.text)) {
+            git(["merge", "-q", "-X", "ours", "main"], input.cwd);
+            await io.tools.execute("link_code", { scopeChecked: true });
+            return { stop: "end" };
+          }
           fs.writeFileSync(path.join(input.cwd, `${input.ticket?.key ?? "TOM-0"}.ts`), "export {};\n");
           git(["add", "-A"], input.cwd);
           git(["commit", "-q", "-m", `${input.ticket?.key ?? "TOM-0"}: work`], input.cwd);
@@ -2141,11 +2147,16 @@ describe("starting tickets from a conversation", () => {
     expect(codeLink.repoStates(project.id).find((s) => s.repoId === repo.id)).toMatchObject({ mergePolicy: "ask", agentMerge: false });
     const a = ticket("First thing");
     const b = ticket("Second thing");
+    const c = ticket("Third thing");
     const outcomes: unknown[] = [];
     agent.engine(
       chatty(
         "chatty",
-        (text, io) => (text.startsWith("merge") ? io.tools.execute("merge_ticket", { key: a.key }) : io.tools.execute("start_ticket", { keys: [a.key, b.key, "TOM-999"] })),
+        (text, io) =>
+          text.startsWith("merge") ? io.tools.execute("merge_ticket", { key: a.key })
+          : text.startsWith("resolve") ? io.tools.execute("resolve_merge", { key: b.key })
+          : text.startsWith("auto") ? io.tools.execute("start_ticket", { keys: [c.key], autoMerge: true })
+          : io.tools.execute("start_ticket", { keys: [a.key, b.key, "TOM-999"] }),
         outcomes
       )
     );
@@ -2179,6 +2190,8 @@ describe("starting tickets from a conversation", () => {
     expect(ctx.items.get(project.id, a.id)!.status).toBe("verifying");
     const offered = agent.store.cards(project.id, thread.id).find((c) => c.schema === "merge");
     expect(offered).toMatchObject({ id: `merge-${a.id}-1`, data: { itemId: a.id, key: a.key, state: "offered", prUrl: null, base: "main", branch: sessionA.branch } });
+    // The session's own conversation gets the same card, so the merge is found from either side.
+    expect(agent.store.cards(project.id, sessionA.threadId!).find((c) => c.schema === "merge")).toMatchObject({ id: `merge-${a.id}-1`, data: { key: a.key, state: "offered" } });
     expect(agent.thread(project.id, thread.id).messages.filter((m) => m.block.type === "card" && m.block.schema === "merge")).toHaveLength(1);
     const before = git(["rev-parse", "main"], folder);
 
@@ -2189,6 +2202,7 @@ describe("starting tickets from a conversation", () => {
     expect(git(["rev-parse", "main"], folder)).not.toBe(before);
     expect(ctx.items.get(project.id, a.id)!.status).toBe("done");
     expect(agent.store.cards(project.id, thread.id).find((c) => c.id === `merge-${a.id}-1`)?.data).toMatchObject({ state: "merged", message: expect.stringContaining("Merged") });
+    expect(agent.store.cards(project.id, sessionA.threadId!).find((c) => c.id === `merge-${a.id}-1`)?.data).toMatchObject({ state: "merged" });
     // Still the one card: an update, not a second message.
     expect(agent.thread(project.id, thread.id).messages.filter((m) => m.block.type === "card" && m.block.schema === "merge")).toHaveLength(1);
 
@@ -2199,9 +2213,57 @@ describe("starting tickets from a conversation", () => {
     fs.writeFileSync(path.join(folder, `${b.key}.ts`), "export const clash = 1;\n");
     git(["add", "-A"], folder);
     git(["commit", "-q", "-m", "clash on main"], folder);
-    expect(await codeLink.merge(project.id, b.id)).toMatchObject({ merged: false, message: expect.stringContaining("conflicts with main") });
-    expect(agent.store.cards(project.id, thread.id).find((c) => c.id === `merge-${b.id}-1`)?.data).toMatchObject({ state: "refused", message: expect.stringContaining("conflicts with main") });
+    expect(await codeLink.merge(project.id, b.id)).toMatchObject({ merged: false, cause: "conflict", message: expect.stringContaining("conflicts with main") });
+    expect(agent.store.cards(project.id, thread.id).find((c) => c.id === `merge-${b.id}-1`)?.data).toMatchObject({ state: "refused", cause: "conflict", message: expect.stringContaining("conflicts with main") });
     expect(ctx.items.get(project.id, b.id)!.status).toBe("verifying");
+
+    // "resolve it" in the conversation: the session is sent back, brings the branch up to date, hands over, and the merge is offered again.
+    const resolve = agent.send(project.id, thread.id, { kind: "text", text: "resolve it" });
+    await expect.poll(() => agent.store.run(project.id, resolve.runId)?.status).toBe("done");
+    expect(outcomes.at(-1)).toMatchObject({ key: b.key, started: true, engine: "chatty" });
+    await untilRunsSettle(agent);
+    expect(ctx.items.get(project.id, b.id)!.status).toBe("verifying");
+    const again = agent.store.cards(project.id, thread.id).find((c) => c.id === `merge-${b.id}-1`)?.data;
+    expect(again).toMatchObject({ state: "offered" });
+    expect(await codeLink.merge(project.id, b.id)).toMatchObject({ merged: true });
+    expect(ctx.items.get(project.id, b.id)!.status).toBe("done");
+    expect(agent.thread(project.id, thread.id).messages.filter((m) => m.block.type === "card" && m.block.schema === "merge")).toHaveLength(2);
+
+    // Asked up front to merge once done: no question, the card reports the merge.
+    const auto = agent.send(project.id, thread.id, { kind: "text", text: `auto ${c.key}` });
+    await expect.poll(() => agent.store.run(project.id, auto.runId)?.status).toBe("done");
+    expect(outcomes.at(-1)).toMatchObject({ started: [{ key: c.key }] });
+    await untilRunsSettle(agent);
+    expect(codeLink.sessionsOf(project.id, c.id)[0]).toMatchObject({ autoMerge: true });
+    const sessionC = codeLink.sessionsOf(project.id, c.id)[0]!;
+    await sessionContext.run({ projectId: project.id, sessionId: sessionC.id }, () => ctx.tools.execute("link_code", { scopeChecked: true }, { by: "ai:chatty", projectId: project.id }));
+    await expect.poll(() => ctx.items.get(project.id, c.id)!.status).toBe("done");
+    expect(agent.store.cards(project.id, thread.id).find((c2) => c2.id === `merge-${c.id}-1`)?.data).toMatchObject({ state: "merged" });
+  });
+
+  it("asks on a card before starting a ticket the assistant just filed, and starts it from that card with the settled configuration", { timeout: 30_000 }, async () => {
+    const { codeLink, ctx, agent, project, repo, checkout, ticket } = await machine(codeRepo());
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    const filed = ticket("Sparks follow the pointer");
+    const outcomes: unknown[] = [];
+    agent.engine(chatty("asker", (_text, io) => io.tools.execute("start_ticket", { keys: [filed.key], confirm: true }), outcomes));
+    const thread = agent.newThread(project.id, "asker");
+    const run = agent.send(project.id, thread.id, { kind: "text", text: "add sparks that follow the pointer" });
+    await expect.poll(() => agent.store.run(project.id, run.runId)?.status).toBe("done");
+    expect(outcomes[0]).toMatchObject({ started: [], note: expect.stringContaining("asks the user whether to start") });
+    expect(codeLink.sessionsOf(project.id, filed.id)).toEqual([]);
+    expect(ctx.items.get(project.id, filed.id)!.status).toBe("todo");
+    const card = agent.store.cards(project.id, thread.id).find((c) => c.schema === "start-batch")!;
+    expect(card.data).toMatchObject({ tickets: [{ key: filed.key }], config: { engine: "asker" } });
+    expect(card.data).not.toHaveProperty("reason");
+    expect(card.data).not.toHaveProperty("results");
+    // The person says yes on the card: it runs with the conversation's own engine.
+    const config = (card.data as { config: { engine: string } }).config;
+    const results = await codeLink.startTickets(project.id, { itemIds: [filed.id], requestedBy: thread.id, ...config, cardId: card.id });
+    expect(results).toEqual([expect.objectContaining({ key: filed.key, ok: true, engine: "asker" })]);
+    await untilRunsSettle(agent);
+    expect(agent.store.cards(project.id, thread.id).find((c) => c.id === card.id)?.data).toMatchObject({ config: { engine: "asker" }, results: [{ key: filed.key, ok: true, threadId: expect.any(String) }] });
+    expect(ctx.items.get(project.id, filed.id)!.status).toBe("doing");
   });
 
   it("asks the person to pick the agent on a card when the conversation's engine cannot code, starts from that card, and remembers the pick", { timeout: 30_000 }, async () => {

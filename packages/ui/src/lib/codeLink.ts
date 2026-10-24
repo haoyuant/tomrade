@@ -140,6 +140,19 @@ export function useMergeTicket(projectId: string) {
   });
 }
 
+/** A merge refused for a conflict: the ticket's session is sent back to bring its branch up to date, from this conversation. */
+export function useResolveMerge(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { itemId: string; requestedBy: string }) => invoke("codeLink.resolveMerge", projectId, args.itemId, args.requestedBy),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: keys.codeLink.all(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.agent.threads(projectId) });
+      invalidateWorkspace(qc, projectId);
+    }
+  });
+}
+
 export function useResolveProposal(projectId: string) {
   const qc = useQueryClient();
   return useMutation({

@@ -67,6 +67,12 @@ const run = async () => {
     async turn(input, io) {
       if (input.cwd && input.purpose === "code") {
         await sleep(1500);
+        if (input.input.kind === "text" && /no longer merges/.test(input.input.text)) {
+          git(["merge", "-q", "-X", "ours", "main"], input.cwd);
+          await io.tools.execute("link_code", { scopeChecked: true });
+          io.emit({ type: "text", text: "Brought the branch up to date and handed it over again." });
+          return { stop: "end" };
+        }
         fs.writeFileSync(path.join(input.cwd, `${input.ticket?.key ?? "DM-0"}.ts`), "export {};\n");
         git(["add", "-A"], input.cwd);
         git(["commit", "-q", "-m", `${input.ticket?.key ?? "DM-0"}: work`], input.cwd);
@@ -170,6 +176,7 @@ const run = async () => {
   check("and says which engine runs them, on which branch", both?.tickets.every((t) => /Chatty/.test(t.text) && /dm-\d+\//.test(t.text)), cards);
   const told = said.find((r) => r.started?.length === 2);
   check("the tool told the assistant what started", !!told && told.started.every((s) => s.engine === "chatty"), said);
+  check("each started ticket offers to open its session", (await $(`(() => { const all = document.querySelectorAll('[data-testid="start-batch"]'); return all[all.length - 1]?.querySelectorAll('[data-testid="start-batch-open"]').length; })()`)) === 2);
   await shot("03-started.png");
   const sessions = ctx.codeLink.sessionsOf(project.id);
   check("each ticket runs in a headless session that remembers the conversation", sessions.length === 3 && sessions.every((s) => s.mode === "headless" && s.requestedBy), sessions.map((s) => ({ mode: s.mode, requestedBy: s.requestedBy })));
@@ -194,6 +201,29 @@ const run = async () => {
   check("saying \"merge\" in the conversation merges the other through merge_ticket", said.at(-1)?.merged === true && ctx.items.get(project.id, two.id).status === "done", said.at(-1));
   check("no second merge card: the one card was updated", (await $(`document.querySelectorAll('[data-testid="merge-offer"]').length`)) === 3);
   await shot("05-merged.png");
+
+  // ── a merge that conflicts is handed back to the session, from the card ──
+  const cardOf = (key) => `[...document.querySelectorAll('[data-testid="merge-offer"]')].find((c) => c.textContent.includes(${JSON.stringify(key)}))`;
+  fs.writeFileSync(path.join(folder, `${three.key}.ts`), "export const clash = 1;\n");
+  git(["add", "-A"], folder);
+  git(["commit", "-q", "-m", "clash on main"], folder);
+  await press(`${cardOf(three.key)}?.querySelector('[data-testid="merge-go"]')`);
+  await until(`${cardOf(three.key)}?.dataset.state === 'refused'`);
+  check("a conflicting merge is refused on the card, with what to do", await $(`(() => { const c = ${cardOf(three.key)}; return c?.dataset.state === 'refused' && /conflicts with main/.test(c.textContent) && !!c.querySelector('[data-testid="merge-resolve"]'); })()`));
+  await $(`${cardOf(three.key)}?.scrollIntoView({ block: 'center' });true`);
+  await sleep(300);
+  await shot("07-merge-conflict.png");
+  await press(`${cardOf(three.key)}?.querySelector('[data-testid="merge-resolve"]')`);
+  await until(`${cardOf(three.key)}?.dataset.state === 'resolving'`);
+  check("the session is sent back and the card says so", (await $(`${cardOf(three.key)}?.dataset.state`)) === "resolving");
+  await until(`${cardOf(three.key)}?.dataset.state === 'offered'`, 30_000);
+  check("once it hands over again, the merge is offered again", (await $(`${cardOf(three.key)}?.dataset.state`)) === "offered");
+  await press(`${cardOf(three.key)}?.querySelector('[data-testid="merge-go"]')`);
+  await until(`${cardOf(three.key)}?.dataset.state === 'merged'`);
+  check("and now it merges", (await $(`${cardOf(three.key)}?.dataset.state`)) === "merged" && ctx.items.get(project.id, three.id).status === "done", ctx.items.get(project.id, three.id).status);
+  await $(`${cardOf(three.key)}?.scrollIntoView({ block: 'center' });true`);
+  await sleep(300);
+  await shot("08-merge-resolved.png");
 
   // ── the merge policy, under the project's repositories ───────────────
   await press(`document.querySelector('.rail-project-settings') ?? document.querySelector('.side-project-settings')`);

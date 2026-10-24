@@ -52,6 +52,8 @@ export interface StartOptions {
   source?: Record<string, string>;
   /** Headless runs only: the conversation (thread) that asked for the work, where its delivery is reported back. */
   requestedBy?: string;
+  /** Headless runs only: the person said to merge the delivery once it is in, so Tomrade does not ask again. */
+  autoMerge?: boolean;
 }
 
 export type StartResult =
@@ -332,11 +334,12 @@ export class Starter {
         threadId: thread.id,
         device: ctx.hub.deviceId,
         externalId,
-        ...(opts.requestedBy ? { requestedBy: opts.requestedBy } : {})
+        ...(opts.requestedBy ? { requestedBy: opts.requestedBy } : {}),
+        ...(opts.autoMerge ? { autoMerge: true } : {})
       });
     if (continued && (session.blocked || session.state === "error")) store.patchSession(projectId, session.id, { blocked: null, state: "idle", activity: null });
-    // A continued session answers to whoever asked last.
-    if (live && opts.requestedBy && live.requestedBy !== opts.requestedBy) store.patchSession(projectId, session.id, { requestedBy: opts.requestedBy });
+    // A continued session answers to whoever asked last, and merges by itself only if asked to this time.
+    if (live && opts.requestedBy && (live.requestedBy !== opts.requestedBy || live.autoMerge !== !!opts.autoMerge)) store.patchSession(projectId, session.id, { requestedBy: opts.requestedBy, autoMerge: !!opts.autoMerge });
     const artifactDir = ctx.get("storage")?.artifactDirFor(projectId) ?? null;
     const decisions = artifactDir ? listDecisions(artifactDir) : [];
     const completionPolicy = ctx.codeLink.completionPolicy(projectId, item);

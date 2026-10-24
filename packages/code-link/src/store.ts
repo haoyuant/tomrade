@@ -186,7 +186,9 @@ ALTER TABLE plugin_code_link_sessions ADD COLUMN prompted INTEGER NOT NULL DEFAU
 ALTER TABLE plugin_code_link_repos ADD COLUMN merge_policy TEXT;
 ALTER TABLE plugin_code_link_sessions ADD COLUMN requested_by TEXT;
 `
-  }
+  },
+  // The person said in the conversation to merge once done: Tomrade merges the delivery without asking again.
+  { version: 16, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN auto_merge INTEGER NOT NULL DEFAULT 0" }
 ];
 
 /** Durable code links travel with the project; running sessions belong to this machine. */
@@ -232,7 +234,7 @@ import type { DeliveryState, DeliveryView } from "@tomradex/db";
 /** A stop only the person can clear: origin's credentials, or a pull request the agent was not let merge. */
 export type SessionBlock = "credentials" | "merge";
 
-/** Who merges a ticket's delivered branch: the person, Tomrade once the person says yes in the conversation that asked for the work, or the agent itself. */
+/** Who merges a ticket's delivered branch: Tomrade once the person says yes in the conversation (the default), the person alone, or the agent itself. */
 export type MergePolicy = "human" | "ask" | "agent";
 
 export type Readiness = "unknown" | "empty" | "scaffolded";
@@ -327,6 +329,8 @@ export interface SessionView {
   blocked: SessionBlock | null;
   /** The conversation (thread) that asked Tomrade to start this session, when one did: where its delivery is reported back. */
   requestedBy: string | null;
+  /** The person said, when asking for the work, to merge it once delivered. */
+  autoMerge: boolean;
   device: string;
   startedAt: number;
   endedAt: number | null;
@@ -419,6 +423,7 @@ interface SessionRow {
   activity: string | null;
   blocked: string | null;
   requested_by: string | null;
+  auto_merge: number | null;
   device: string;
   started_at: number;
   ended_at: number | null;
@@ -486,9 +491,9 @@ const toProposal = (r: ProposalRow): ProposalView => ({
 });
 
 const MERGE_POLICIES: ReadonlySet<string> = new Set<MergePolicy>(["human", "ask", "agent"]);
-/** A row from before the policy column answers through its switch. */
+/** A row from before the policy column answers through its switch: on is the agent's, off is asking, the default. */
 const mergePolicyOf = (r: Pick<RepoRow, "merge_policy" | "agent_merge">): MergePolicy =>
-  r.merge_policy && MERGE_POLICIES.has(r.merge_policy) ? (r.merge_policy as MergePolicy) : r.agent_merge === 1 ? "agent" : "human";
+  r.merge_policy && MERGE_POLICIES.has(r.merge_policy) ? (r.merge_policy as MergePolicy) : r.agent_merge === 1 ? "agent" : "ask";
 
 const toSession = (r: SessionRow): SessionView => ({
   id: r.id,
@@ -517,6 +522,7 @@ const toSession = (r: SessionRow): SessionView => ({
   activity: r.activity ?? null,
   blocked: (r.blocked as SessionBlock | null) ?? null,
   requestedBy: r.requested_by ?? null,
+  autoMerge: r.auto_merge === 1,
   device: r.device,
   startedAt: r.started_at,
   endedAt: r.ended_at
@@ -578,6 +584,7 @@ export interface SessionPatch {
   activity?: string | null;
   blocked?: SessionBlock | null;
   requestedBy?: string | null;
+  autoMerge?: boolean;
   endedAt?: number | null;
 }
 
@@ -760,7 +767,7 @@ export class CodeLinkStore {
     const now = Date.now();
     const remote = patch.remote ?? existing?.remote ?? "unknown";
     const remoteDetail = patch.remoteDetail === undefined ? (existing?.remoteDetail ?? null) : patch.remoteDetail;
-    const mergePolicy: MergePolicy = patch.mergePolicy ?? (patch.agentMerge === undefined ? (existing?.mergePolicy ?? "human") : patch.agentMerge ? "agent" : "human");
+    const mergePolicy: MergePolicy = patch.mergePolicy ?? (patch.agentMerge === undefined ? (existing?.mergePolicy ?? "ask") : patch.agentMerge ? "agent" : "ask");
     const next: RepoStateView = {
       repoId,
       projectId,
@@ -904,15 +911,15 @@ export class CodeLinkStore {
     return row ? toSession(row) : null;
   }
 
-  createSession(projectId: string, input: { id?: string; repoId: string; delivery?: number; branch: string; itemIds: string[]; mode: SessionMode; agent: string; threadId: string | null; device: string; externalId?: string | null; worktree?: string | null; requestedBy?: string | null }): SessionView {
+  createSession(projectId: string, input: { id?: string; repoId: string; delivery?: number; branch: string; itemIds: string[]; mode: SessionMode; agent: string; threadId: string | null; device: string; externalId?: string | null; worktree?: string | null; requestedBy?: string | null; autoMerge?: boolean }): SessionView {
     const id = input.id ?? randomUUID();
     const now = Date.now();
     this.db(projectId)
       .prepare(
-        `INSERT INTO plugin_code_link_sessions (id, project_id, repo_id, delivery, branch, item_ids_json, mode, agent, external_id, thread_id, worktree, requested_by, state, last_event_at, device, started_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)`
+        `INSERT INTO plugin_code_link_sessions (id, project_id, repo_id, delivery, branch, item_ids_json, mode, agent, external_id, thread_id, worktree, requested_by, auto_merge, state, last_event_at, device, started_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)`
       )
-      .run(id, projectId, input.repoId, input.delivery ?? 1, input.branch, JSON.stringify(input.itemIds), input.mode, input.agent, input.externalId ?? null, input.threadId, input.worktree ?? null, input.requestedBy ?? null, now, input.device, now);
+      .run(id, projectId, input.repoId, input.delivery ?? 1, input.branch, JSON.stringify(input.itemIds), input.mode, input.agent, input.externalId ?? null, input.threadId, input.worktree ?? null, input.requestedBy ?? null, input.autoMerge ? 1 : 0, now, input.device, now);
     return this.session(projectId, id)!;
   }
 
@@ -939,6 +946,7 @@ export class CodeLinkStore {
       activity: "activity",
       blocked: "blocked",
       requestedBy: "requested_by",
+      autoMerge: "auto_merge",
       endedAt: "ended_at"
     };
     const sets: string[] = [];
@@ -947,7 +955,7 @@ export class CodeLinkStore {
       const value = patch[field];
       if (value === undefined) continue;
       sets.push(`${column} = ?`);
-      values.push(field === "itemIds" || field === "worked" ? JSON.stringify(value) : field === "prompted" ? (value ? 1 : 0) : value);
+      values.push(field === "itemIds" || field === "worked" ? JSON.stringify(value) : field === "prompted" || field === "autoMerge" ? (value ? 1 : 0) : value);
     }
     if (!sets.length) return this.session(projectId, id)!;
     values.push(id);
