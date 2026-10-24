@@ -64,6 +64,9 @@ export function generalBrief(ticket: { key: string; title: string; body?: string
 /** Past this a rules file is cut, so a long one cannot crowd out the work. */
 export const RULES_MAX_CHARS = 8000;
 
+/** The project brief rides in every run's prompt: this keeps it to roughly 1,500 tokens. */
+export const BRIEF_MAX_CHARS = 6000;
+
 /** Claude Code keeps 2048 characters of a server's instructions; longer rules go by tool instead. */
 export const RULES_INSTRUCTIONS_MAX = 1200;
 

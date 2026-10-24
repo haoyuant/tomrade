@@ -10,6 +10,7 @@ import { useBoards, useItems, useLabels, useRemoveProject, useStorageInfo, useUp
 import { FilesBlock } from "~/components/files/FilesBlock";
 import { RepositoriesBlock } from "./RepositoriesBlock";
 import { RulesBlock } from "./RulesBlock";
+import { BriefBlock } from "./BriefBlock";
 import { StorageBlock } from "./StorageBlock";
 import { errorSpec, useToast } from "~/lib/toast";
 import { keyLabel } from "~/lib/keybindings";
@@ -136,7 +137,7 @@ export function ProjectSettingsDialog({
   );
 }
 
-type ProjectSettingsPane = "overview" | "rules" | "storage" | "repositories" | "files" | "lifecycle";
+type ProjectSettingsPane = "overview" | "rules" | "brief" | "storage" | "repositories" | "files" | "lifecycle";
 
 interface ProjectPane {
   id: ProjectSettingsPane;
@@ -226,6 +227,12 @@ function SettingsFace({ project, onClose, onRequestDelete, section }: { project:
       label: t("projectRules.label"),
       icon: "i-pen",
       render: () => <><SectionHead title={t("projectRules.label")}>{t("projectRules.lede")}</SectionHead><RulesBlock projectId={project.id} /></>
+    },
+    {
+      id: "brief",
+      label: t("projectBrief.label"),
+      icon: "i-file",
+      render: () => <><SectionHead title={t("projectBrief.label")}>{t("projectBrief.lede")}</SectionHead><BriefBlock projectId={project.id} /></>
     },
     {
       id: "storage",
