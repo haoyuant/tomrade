@@ -1751,6 +1751,13 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 .tool-head { display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--meta); letter-spacing: var(--tracking-label); margin-bottom: var(--space-2); }
 .tool-row { display: flex; align-items: center; gap: var(--space-2); padding: 5px 0; border-top: 1px solid var(--border-soft); font-size: 14px; }
 .tool-row:first-of-type { border-top: 0; }
+/* tickets started from the conversation, and a delivery's merge offered there */
+.start-batch-list { display: grid; gap: 4px; list-style: none; margin: 0; padding: 5px 0; }
+.start-batch-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.start-batch-result { flex-basis: 100%; }
+.start-batch-pick { flex-wrap: wrap; }
+.start-batch-pick .select { max-width: 14rem; }
+.start-batch-field { display: inline-flex; align-items: center; gap: 6px; }
 /* the troubleshooter's checklist and findings */
 .check-row .check-title { flex: none; color: var(--fg); }
 .check-row .t-title { color: var(--meta); font-size: var(--text-sm); }
@@ -1845,6 +1852,7 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 .cfg-row.off { background: transparent; border-style: dashed; }
 .cfg-row .cfg-name { flex: 1; min-width: 0; font-family: var(--font-display); font-size: 14px; color: var(--fg); }
 .cfg-row.off .cfg-name { color: var(--meta); }
+.cfg-row .repo-merge-policy { flex: 0 1 auto; width: auto; max-width: 18rem; }
 /* A row that folds, as everywhere in Tomrade: the chevron sits left of it, outside its card, and what unfolds lines up with the card. */
 .fold-row { display: flex; align-items: center; gap: var(--space-2); }
 .fold-row > .cfg-row { flex: 1; min-width: 0; }

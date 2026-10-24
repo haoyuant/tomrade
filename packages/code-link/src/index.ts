@@ -1,6 +1,6 @@
 import type {} from "cordis";
 
-export { CodeLink, CodeLinkConfig, AUTHOR, MCP_AGENT, compareUrl, deliveryMerged, lastSaid, primaryOf, type CodeSummaryView, type ConnectMode, type ConnectResult, type OpenPrResult, type MergeCheckView, MERGE_COMMAND, type RepoPolicyPatch, type ScanSummary, type UnlinkedBranch } from "./service.js";
+export { CodeLink, CodeLinkConfig, AUTHOR, MCP_AGENT, compareUrl, deliveryMerged, lastSaid, primaryOf, type CodeSummaryView, type ConnectMode, type ConnectResult, type OpenPrResult, type MergeCheckView, type MergeLocalResult, type MergeResult, MERGE_COMMAND, type MergeCard, type RepoPolicyPatch, type ScanSummary, type StartBatchCard, type StartBatchEntry, type StartBatchRequest, type StartConfig, type UnlinkedBranch } from "./service.js";
 export { CLAUDE_LOCAL_SETTINGS, CONNECT_AGENTS, CONNECT_FILES, codexSyncSkill, hookCommand, hookCommands, posixHookCommand, tomradeSection, writeConnectFiles, type ConnectAgent, type ConnectFileWriter, type ConnectInput, type ConnectorAgent, type Connectors, type LocalConnect, type SkippedAgent, type SkipReason } from "./connect.js";
 export { SYNC_PROMPT, syncInstructions, syncPrompt, syncSteps, type SyncScope } from "./sync.js";
 export { covered, decisionsDir, listDecisions, recordDecision, type Decision as DecisionNote, type DecisionInput, type DecisionStatus } from "./decisions.js";
@@ -13,6 +13,7 @@ export {
   type DeliveryView,
   type LinkPatch,
   type LinkSource,
+  type MergePolicy,
   type ProposalKind,
   type ProposalState,
   type ProposalView,
