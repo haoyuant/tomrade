@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import type { Block, EngineView, FocusRef, PendingView, RunView, ThreadMessage } from "@tomradex/agent";
 import type { Item, ModelErrorKind } from "@tomradex/domain";
 import { modelErrorKind } from "@tomradex/domain/model-errors";
@@ -17,6 +18,9 @@ import type { MergeCard, StartBatchCard } from "@tomradex/code-link";
 import { useSetupInTerminal } from "~/lib/setup";
 import { useImShareNext, useImThreadBindings } from "~/lib/im";
 import { isCancelKey, isCommitKey, isComposing } from "~/lib/keys";
+import { useFilesInfo } from "~/lib/files";
+import { openExternal, openPath } from "~/lib/shell";
+import { useToast } from "~/lib/toast";
 import { duration, retryReason, runTokensLabel, tokens } from "./format";
 
 /** The pulse that says "not stuck": what it's doing, for how long, and the tokens so far — or, loudly, that requests are failing. */
@@ -80,11 +84,95 @@ function KeyRef({ text, item, onOpenIssue }: { text: string; item: Item | undefi
   );
 }
 
-/** Plain text with keys linked. Deliberately not a markdown renderer — the engines are told to write plainly. */
-export function linkify(text: string, byKey: Map<string, Item>, onOpenIssue: (id: string) => void): ReactNode[] {
-  return text.split(KEY_RE).map((part, i) =>
-    i % 2 === 1 ? <KeyRef key={i} text={part} item={byKey.get(part)} onOpenIssue={onOpenIssue} /> : <Fragment key={i}>{part}</Fragment>
+// A markdown link, a path quoted in backticks, a web or file URL, or a bare absolute path — in that order of preference.
+const LINK_RE = /\[([^\]\n]+)\]\(((?:https?|file):\/\/[^\s)]+|~?\/[^\s)]+|[A-Za-z]:\\[^\s)]+)\)|`((?:~\/|\/|[A-Za-z]:\\)[^`\n]+)`|((?:https?|file):\/\/[^\s<>"'`\u3000-\u303f\uff01-\uff0f\uff1a-\uff20]+)|((?<![\w/:.~-])(?:~\/|\/)[\w.@%+-]+(?:\/[\w.@%+-]+)+\/?|(?<![\w])[A-Za-z]:\\[^\s<>"'`\u3000-\u303f\uff01-\uff0f\uff1a-\uff20]+)/g;
+// A bare slash path counts only where it looks like a file on disk, not a route such as /api/v1.
+const ON_DISK = /^(?:~\/|\/(?:Users|home|Volumes|tmp|private|opt|var|mnt)\/|[A-Za-z]:\\)|\.\w{1,8}\/?$/;
+
+/** Sentence punctuation after a bare link belongs to the sentence; a closing bracket only when the link never opened one. */
+function trimTrailing(raw: string): string {
+  let end = raw.length;
+  while (end > 0) {
+    const ch = raw[end - 1];
+    if (".,;:!?'\"。，；：！？、》」』".includes(ch)) end--;
+    else if (ch === ")" && raw.slice(0, end).split("(").length <= raw.slice(0, end).split(")").length - 1) end--;
+    else if ((ch === "]" || ch === "）") && !raw.slice(0, end - 1).includes(ch === "]" ? "[" : "（")) end--;
+    else break;
+  }
+  return raw.slice(0, end);
+}
+
+/** A local path from a `file://` URL, or the path as written. */
+function localPath(target: string): string {
+  if (!/^file:\/\//i.test(target)) return target;
+  try {
+    const pathname = decodeURIComponent(new URL(target).pathname);
+    return /^\/[A-Za-z]:\//.test(pathname) ? pathname.slice(1) : pathname;
+  } catch {
+    return target;
+  }
+}
+
+function WebLink({ url, label }: { url: string; label: string }) {
+  const { t } = useI18n();
+  return (
+    <a className="tlink" href={url} title={t("agentPanel.openLink", { target: url })} onClick={(e) => { e.preventDefault(); openExternal(url); }}>
+      {label}
+    </a>
   );
+}
+
+/** A file in the project's Files opens in Tomrade's own viewer; anything else on disk opens with the system's app. */
+function PathLink({ projectId, target, label }: { projectId: string; target: string; label: string }) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const navigate = useNavigate();
+  const files = useFilesInfo(projectId);
+  const open = async () => {
+    const dir = files.data?.dir?.replace(/[\\/]+$/, "");
+    const inside = dir && (target.startsWith(dir + "/") || target.startsWith(dir + "\\")) ? target.slice(dir.length + 1).replace(/\\/g, "/").replace(/\/$/, "") : null;
+    if (inside) return void navigate({ to: "/p/$projectId/f/$", params: { projectId, _splat: inside } });
+    if (!(await openPath(target))) toast({ body: t("agentPanel.pathMissing", { target }) });
+  };
+  return (
+    <a className="tlink" href={target} title={t("agentPanel.openPath", { target })} onClick={(e) => { e.preventDefault(); void open(); }}>
+      {label}
+    </a>
+  );
+}
+
+function keyed(text: string, byKey: Map<string, Item>, onOpenIssue: (id: string) => void, at: number): ReactNode[] {
+  return text.split(KEY_RE).map((part, i) =>
+    i % 2 === 1 ? <KeyRef key={`${at}-${i}`} text={part} item={byKey.get(part)} onOpenIssue={onOpenIssue} /> : <Fragment key={`${at}-${i}`}>{part}</Fragment>
+  );
+}
+
+/** Plain text with keys, links and paths live. Deliberately not a markdown renderer — the engines are told to write plainly. */
+export function linkify(text: string, byKey: Map<string, Item>, onOpenIssue: (id: string) => void, projectId: string): ReactNode[] {
+  const out: ReactNode[] = [];
+  let last = 0;
+  for (const m of text.matchAll(LINK_RE)) {
+    const [whole, mdLabel, mdTarget, quoted, url, bare] = m;
+    const start = m.index;
+    let raw = whole;
+    let target: string;
+    let label: string;
+    if (mdTarget !== undefined) { target = mdTarget; label = mdLabel; }
+    else if (quoted !== undefined) { target = quoted; label = whole; }
+    else {
+      raw = trimTrailing(url ?? bare);
+      if (bare !== undefined && !ON_DISK.test(raw)) continue;
+      target = raw;
+      label = raw;
+    }
+    if (start > last) out.push(...keyed(text.slice(last, start), byKey, onOpenIssue, last));
+    out.push(/^https?:/i.test(target)
+      ? <WebLink key={`l${start}`} url={target} label={label} />
+      : <PathLink key={`l${start}`} projectId={projectId} target={localPath(target)} label={label} />);
+    last = start + raw.length;
+  }
+  if (last < text.length) out.push(...keyed(text.slice(last), byKey, onOpenIssue, last));
+  return out;
 }
 
 const OP_GLYPH = { created: "+", updated: "~", deleted: "–" } as const;

@@ -42,8 +42,8 @@ export function useChooseRepoFolder(projectId: string) {
     if (!dir) return null;
     try {
       const added = await add.mutateAsync(dir);
-      const key = added.existing ? "repositories.checkoutSetToast" : added.local ? "repositories.addedLocalToast" : "repositories.addedToast";
-      toast({ body: t(key, { name: added.repo.name, dir: added.view.checkout ?? dir }) });
+      const key = added.initialised ? "repositories.initialisedToast" : added.committed ? "repositories.committedToast" : added.existing ? "repositories.checkoutSetToast" : added.local ? "repositories.addedLocalToast" : "repositories.addedToast";
+      toast({ body: t(key, { name: added.repo.name, dir: added.view.checkout ?? dir, n: added.committed }) });
       return added;
     } catch (error) {
       toast({ body: message(error) });

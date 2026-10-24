@@ -1,5 +1,5 @@
 import type { ChatEvent, ChatModel, ChatRequest, ContentBlock, Message, ToolSpec } from "./model.js";
-import { collect } from "./model.js";
+import { collect, systemText } from "./model.js";
 
 const FENCE = /```tool_call\s*\n([\s\S]*?)\n```/;
 
@@ -41,7 +41,7 @@ export function withPromptTools(model: ChatModel): ChatModel {
       const flattened: Message[] = request.messages.map((m) => ({ role: m.role, content: m.content.map(asText) }));
       // Retries pass straight through; the rest is read whole before the fence can be parsed.
       const events: ChatEvent[] = [];
-      for await (const event of model.chat({ ...request, system: request.system + renderTools(request.tools), messages: flattened, tools: undefined }, signal)) {
+      for await (const event of model.chat({ ...request, system: systemText(request) + renderTools(request.tools), systemTail: undefined, messages: flattened, tools: undefined }, signal)) {
         if (event.type === "retry") yield event;
         else events.push(event);
       }

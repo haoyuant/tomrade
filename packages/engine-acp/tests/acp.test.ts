@@ -108,7 +108,9 @@ describe("an ACP agent as an engine", () => {
       expect((await engine.available()).ok).toBe(true);
       expect(engine.local!.picks!()[0]).toMatchObject({ key: "model", pending: true });
       await until(() => engine.local!.picks!()[0]!.choices.length > 0);
-      expect(engine.local!.picks!()[0]).toEqual({ key: "model", title: "Model", freeText: true, choices: LISTED });
+      // …and what it runs with when Tomrade picks nothing, so "Default" can say so.
+      expect(engine.local!.picks!()[0]).toEqual({ key: "model", title: "Model", freeText: true, choices: LISTED, fallback: '["fake","small"]' });
+      expect(engine.local!.picks!()[1]).toMatchObject({ key: "effort", fallback: "high" });
       // In Tomrade's own folder, without its tools, and never prompted.
       const [opened] = sent("session/new");
       expect(opened.params).toEqual({ cwd: path.join(dir, "acp-models"), mcpServers: [] });
@@ -118,7 +120,7 @@ describe("an ACP agent as an engine", () => {
       // Once known, nothing asks again.
       await engine.available({ fresh: true });
       expect(requests().filter((r) => r.spawn)).toHaveLength(1);
-      expect(JSON.parse(fs.readFileSync(path.join(dir, "acp-models.json"), "utf8")).fake.models).toEqual(LISTED);
+      expect(JSON.parse(fs.readFileSync(path.join(dir, "acp-models.json"), "utf8")).fake).toMatchObject({ models: LISTED, defaults: { model: '["fake","small"]', effort: "high" } });
     });
 
     it("puts its own machine-wide picks before the model and effort, without duplicating the session's", () => {
@@ -191,7 +193,7 @@ describe("an ACP agent as an engine", () => {
       fs.writeFileSync(bin, real, { mode: 0o700 });
       await engine.available({ fresh: true });
       await until(() => engine.local!.picks!()[0]!.choices.length > 0);
-      expect(engine.local!.picks!()[0]).toEqual({ key: "model", title: "Model", freeText: true, choices: LISTED });
+      expect(engine.local!.picks!()[0]).toEqual({ key: "model", title: "Model", freeText: true, choices: LISTED, fallback: '["fake","small"]' });
     });
   });
 

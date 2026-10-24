@@ -113,7 +113,7 @@ function RowBody({ m, onRetry, onRetryWith, onTroubleshoot, hint }: { m: ThreadM
   const body =
     b.type === "text" ? (
       <>
-        {b.text.split(/\n{2,}/).map((para, i) => <p key={i}>{linkify(para, byKey, onOpenIssue)}</p>)}
+        {b.text.split(/\n{2,}/).map((para, i) => <p key={i}>{linkify(para, byKey, onOpenIssue, projectId)}</p>)}
         {m.role === "agent" && m.runId && (runs.get(m.runId)?.changes ?? 0) === 0 && <RunMetrics run={runs.get(m.runId)} />}
       </>
     ) : b.type === "media" ? (

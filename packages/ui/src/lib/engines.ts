@@ -19,6 +19,13 @@ export function pickTitleOf(t: Translate, pick: EnginePick): string {
   return pick.title;
 }
 
+/** What a pick runs with when nothing is chosen, by its choice's name where it is one; undefined when the engine has not said. */
+export function pickFallbackName(t: Translate, pick: EnginePick): string | undefined {
+  if (!pick.fallback) return undefined;
+  const choice = pick.choices.find((c) => c.value === pick.fallback);
+  return choice ? pickChoiceName(t, pick, choice) : pick.fallback;
+}
+
 /** A choice's label: the edition's choices carry stable values, so their words come from the interface, not the plugin. */
 export function pickChoiceName(t: Translate, pick: EnginePick, choice: { value: string; label?: string; searchesWeb?: boolean }): string {
   const known = pick.key === "region" ? REGION_LABELS[choice.value] : undefined;

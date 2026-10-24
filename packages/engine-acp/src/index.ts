@@ -85,8 +85,8 @@ export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAg
         ...(agent.picks ?? []).filter((pick) => pick.global),
         // What the agent can use depends on its own sign-in; the list is what its last session offered.
         { key: "model", title: "Model", choices: catalog.models, freeText: true, ...(asking && !catalog.models.length ? { pending: true } : {}),
-          ...(!asking && !catalog.models.length && failure ? { failed: failure } : {}) },
-        ...(catalog.efforts.length ? [{ key: "effort", title: "Effort", choices: catalog.efforts }] : [])
+          ...(!asking && !catalog.models.length && failure ? { failed: failure } : {}), ...(catalog.defaults?.model ? { fallback: catalog.defaults.model } : {}) },
+        ...(catalog.efforts.length ? [{ key: "effort", title: "Effort", choices: catalog.efforts, ...(catalog.defaults?.effort ? { fallback: catalog.defaults.effort } : {}) }] : [])
       ],
       checkCli: (file) => agent.cli.check(file),
       ...(auth ? { signIn: auth } : {}),

@@ -65,6 +65,9 @@ export function generalBrief(ticket: { key: string; title: string; body?: string
 /** Past this a rules file is cut, so a long one cannot crowd out the work. */
 export const RULES_MAX_CHARS = 8000;
 
+/** The project brief rides in every run's prompt: this keeps it to roughly 1,500 tokens. */
+export const BRIEF_MAX_CHARS = 6000;
+
 /** Claude Code keeps 2048 characters of a server's instructions; longer rules go by tool instead. */
 export const RULES_INSTRUCTIONS_MAX = 1200;
 
@@ -114,49 +117,77 @@ const clip = (text: string, max: number): string => (text.length > max ? text.sl
  */
 /** What the main conversation can do with the code, and where that code is, so a limit is named instead of mistaken for an empty folder. */
 function mainConversationSection(repositories: TurnInput["repositories"]): string {
+  const standing = (r: NonNullable<TurnInput["repositories"]>[number]): string =>
+    r.readiness === "empty"
+      ? " — EMPTY: no project in it yet. Its first code ticket cannot start until a bootstrap ticket (stack, scaffold, CLAUDE.md), which Tomrade files at Start, has merged. Say so when you create the first code ticket there, and settle the stack with the user now (ask_user: language and framework, package manager, tests) and record it with record_decision, so the bootstrap runs without questions."
+      : r.readiness === "scaffolded" && r.hasBrief === false
+        ? " — has code but no CLAUDE.md yet: the first ticket there adds one."
+        : "";
   const where = repositories?.length
-    ? "Workstream repositories:\n" + repositories.map((r) => `- ${r.workstream}: ${r.name} ${r.path ? `at ${r.path} (default branch ${r.defaultBranch})` : "— no checkout on this machine, so it cannot be read here"}`).join("\n")
+    ? "Workstream repositories:\n" + repositories.map((r) => `- ${r.workstream}: ${r.name} ${r.path ? `at ${r.path} (default branch ${r.defaultBranch})` : "— no checkout on this machine, so it cannot be read here"}${standing(r)}`).join("\n")
     : "No workstream has a repository linked yet.";
   return (
     "This is the project's main conversation, not a ticket's worktree. Read the repositories below freely to answer about the code, but never change them here: code work goes through a ticket. " +
     "Anything else on this machine you may do as the permission mode the user picked for this conversation allows — the user is asked when it requires. Tomrade's tools all work, Files included (write_file saves a document there). " +
     "When something is refused, denied or out of reach, say plainly what and why, and the way to get it done. " +
     "Never answer that you have no tools, and never conclude that a folder is empty or work is missing because you could not look at it — say what you could not read and why.\n" +
+    "Before saying the project lacks a capability, that a feature needs a prerequisite, or planning code work, read the repository first: CLAUDE.md or AGENTS.md, README, and the module concerned. The backlog lists work, never what the code already does, so nothing is missing just because no ticket mentions it. " +
+    "What you learn about the product that will stay true — what it is, its stack, where its data comes from, what is managed here and what is fetched from elsewhere — goes into update_project_brief, whether it came from the code or from the user, so every later conversation and the planners start from it; a correction from the user replaces what the brief said.\n" +
     where
   );
 }
 
+/**
+ * The sections in two groups. `stable` reads the same from one turn of a
+ * conversation to the next — the project, its rules and brief, the playbooks,
+ * the repositories, the ticket — so a provider's prompt cache keeps it;
+ * `volatile` is what a turn changes: the conversation's media, its cards, the
+ * question a workflow waits on, the files index. Nothing in `stable` carries a
+ * timestamp or a run id.
+ */
+export function promptParts(input: TurnInput, io: TurnIO, opts: { playbooks?: boolean; filesIndex?: boolean } = {}): { stable: string[]; volatile: string[] } {
+  const parts = promptSectionsOf(input, io, opts);
+  return { stable: parts.filter((p) => p.stable).map((p) => p.text), volatile: parts.filter((p) => !p.stable).map((p) => p.text) };
+}
+
 export function promptSections(input: TurnInput, io: TurnIO, opts: { playbooks?: boolean; filesIndex?: boolean } = {}): string[] {
-  const parts: string[] = [];
+  const { stable, volatile } = promptParts(input, io, opts);
+  return [...stable, ...volatile];
+}
+
+function promptSectionsOf(input: TurnInput, io: TurnIO, opts: { playbooks?: boolean; filesIndex?: boolean }): { text: string; stable: boolean }[] {
+  const parts: { text: string; stable: boolean }[] = [];
+  const stable = (text: string) => parts.push({ text, stable: true });
+  const volatile = (text: string) => parts.push({ text, stable: false });
   if (input.project) {
-    parts.push(
+    stable(
       `This conversation belongs to the project "${input.project.name}" (its keys look like ${input.project.keyPrefix}-1). Every tool works in it and only in it, so leave projectId out of tool calls; an empty backlog means the project is new, not that you are in the wrong place. Other projects are out of reach: if the user means one, tell them to open it.`
     );
   }
-  if (input.rules) parts.push(rulesSection(input.rules));
+  if (input.rules) stable(rulesSection(input.rules));
   const media = input.messages.filter(m => m.block.type === "media").slice(-8);
-  if (media.length) parts.push("Conversation media (use read_media_source for an editable diagram source):\n" + media.map(m => {
+  if (media.length) volatile("Conversation media (use read_media_source for an editable diagram source):\n" + media.map(m => {
     if (m.block.type !== "media") return "";
     return `${m.block.media.name}: ${m.block.media.id}${m.block.media.source ? `; source JSON ID: ${m.block.media.source.id}` : ""}`;
   }).join("\n"));
-  if (input.purpose === "backlog") parts.push(mainConversationSection(input.repositories));
-  if (input.purpose !== "backlog") parts.push("Use display_media to show generated images, HTML, audio, video or PDF from your working directory directly in the conversation. A filesystem path in prose does not display media.");
+  if (input.purpose === "backlog") stable(mainConversationSection(input.repositories));
+  if (input.purpose !== "backlog") stable("Use display_media to show generated images, HTML, audio, video or PDF from your working directory directly in the conversation. A filesystem path in prose does not display media.");
   if (opts.playbooks !== false) {
     const index = io.playbooks.index();
     if (index.length) {
-      parts.push(
+      stable(
         "Playbooks — methodology for multi-step jobs. When one matches, call open_playbook(id) and follow it; switch when the job turns out to be a different shape:\n" +
           index.map((p) => `- ${p.id} — ${p.when}`).join("\n")
       );
     }
   }
   if (input.ticket && input.purpose === "general") {
-    parts.push(generalBrief(input.ticket, input.cwd));
-    if (input.execution) parts.push(playbookSection(input.execution.playbook));
+    stable(generalBrief(input.ticket, input.cwd));
+    if (input.execution) stable(playbookSection(input.execution.playbook));
   }
   if (input.ticket && input.purpose === "code") {
     const t = input.ticket;
-    parts.push(
+    stable(
       `You are implementing ticket ${t.key} — "${t.title}"${t.branch ? ` on branch ${t.branch}` : ""}${input.cwd ? ` in ${input.cwd}` : ""}.\n` +
         `Code conventions: stay on this branch and never commit to the default branch; every commit message names ${t.key}; ` +
         `read the repository's CLAUDE.md or AGENTS.md before writing; when you push and open a pull request, call link_code with its URL; ` +
@@ -164,12 +195,13 @@ export function promptSections(input: TurnInput, io: TurnIO, opts: { playbooks?:
         (t.waitsOn?.length ? `\n${waitsOnLine(t.waitsOn)}` : "")
     );
   }
-  if (input.brief) parts.push("Project brief:\n" + input.brief);
+  if (input.brief) stable("Project brief:\n" + input.brief);
+  else if (input.purpose === "backlog") stable("No project brief is recorded yet: nothing is known about what the code already does until you read it.");
   // An engine that carries the index in its session prompt asks for it to be left out here, so it is not paid for twice.
-  if (input.filesIndex && opts.filesIndex !== false) parts.push(input.filesIndex.markdown);
-  for (const card of input.cards) parts.push(`Card "${card.title}" (${card.id}):\n` + clip(JSON.stringify(card.data), 3000));
+  if (input.filesIndex && opts.filesIndex !== false) volatile(input.filesIndex.markdown);
+  for (const card of input.cards) volatile(`Card "${card.title}" (${card.id}):\n` + clip(JSON.stringify(card.data), 3000));
   if (input.pending) {
-    parts.push(
+    volatile(
       `A workflow is waiting on: "${input.pending.question.text}"${input.pending.question.options ? " — options: " + input.pending.question.options.join(" / ") : ""}. ` +
         "If the user's message answers it, call resume_workflow with the answer (an answer that points elsewhere, like \"keep what the dossier says\", means that value). If it is an instruction or moves on, call cancel_workflow first, then do what they asked — never feed an instruction in as the answer."
     );

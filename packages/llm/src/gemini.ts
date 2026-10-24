@@ -1,4 +1,4 @@
-import { inputMimes, type ChatEvent, type ChatModel, type ChatRequest, type InputModality, type Message, type StopReason } from "./model.js";
+import { inputMimes, systemText, type ChatEvent, type ChatModel, type ChatRequest, type InputModality, type Message, type StopReason } from "./model.js";
 import { LlmError, NativeSearchRefused } from "./errors.js";
 import { fetchFailure, pause, sseData } from "./openai.js";
 
@@ -85,7 +85,7 @@ function interactionBody(model: string, request: ChatRequest, search: boolean): 
     model: bareModel(model),
     store: false,
     stream: true,
-    ...(request.system ? { system_instruction: request.system } : {}),
+    ...(request.system ? { system_instruction: systemText(request) } : {}),
     input: toSteps(request),
     ...(tools.length ? { tools } : {}),
     ...(Object.keys(config).length ? { generation_config: config } : {}),
