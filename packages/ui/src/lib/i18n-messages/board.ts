@@ -1,5 +1,6 @@
 export const board = {
   en: {
+    scrollRight: "Scroll right to see more columns",
     emptyFiltered: "Nothing in {{label}} matches these filters.",
     emptySearch: "Nothing in {{label}} matches “{{query}}”.",
     emptyPlain: "Nothing in {{label}}. Drag a card here or add below.",
@@ -17,6 +18,7 @@ export const board = {
     alreadyLast: "{{key}} is already in the last column"
   },
   zh: {
+    scrollRight: "向右滚动，查看更多状态",
     emptyFiltered: "「{{label}}」中没有符合这些筛选条件的工单。",
     emptySearch: "「{{label}}」中没有匹配「{{query}}」的工单。",
     emptyPlain: "「{{label}}」中还没有工单。拖一张卡片过来，或在下方新建。",
