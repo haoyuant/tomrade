@@ -25,6 +25,16 @@ describe("workstream tools", () => {
     expect(boards.get(project.id, created.id)?.name).toBe("Docs");
   });
 
+  it("stores repoPath as a folder in the repository and refuses a path on this machine", async () => {
+    const { run, boards, project } = await withTools();
+    const created = (await run("create_workstream", { name: "Web", repoPath: "apps\\web\\" })) as { id: string; repoPath: string };
+    expect(created.repoPath).toBe("apps/web");
+    expect(((await run("update_workstream", { id: created.id, patch: { repoPath: "packages//ui/" } })) as { repoPath: string }).repoPath).toBe("packages/ui");
+    await expect(run("create_workstream", { name: "Goods", repoPath: "D:\\codexApp\\goods-list" })).rejects.toThrow(/relative to its root/);
+    await expect(run("update_workstream", { id: created.id, patch: { repoPath: "\\\\nas\\code\\app" } })).rejects.toThrow(/not a path on this machine/);
+    expect(boards.get(project.id, created.id)?.repoPath).toBe("packages/ui");
+  });
+
   it("remove refuses a workstream that holds issues unless told where they go", async () => {
     const { run, boards, items, board, project } = await withTools();
     const docs = (await run("create_workstream", { name: "Docs" })) as { id: string };
