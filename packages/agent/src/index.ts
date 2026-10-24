@@ -12,7 +12,7 @@ export { describeFailure, readableError, redactSecrets, DETAILS_MAX_CHARS } from
 export { conversationRecap, withRecap } from "./recap.js";
 export { resultLine, stepHint, stepSummary } from "./steps.js";
 export { parseBrief, renderBrief, withSection, briefTooLong, type BriefSection } from "./brief.js";
-export { BRIEF_MAX_CHARS, HOUSE_RULES, RULES_INSTRUCTIONS_MAX, RULES_MAX_CHARS, rulesInstructions, rulesSection, attachmentsLine, focusSuffix, generalBrief, generalOpener, generalPrompt, playbookSection, promptSections, waitsOnLine } from "./prompt.js";
+export { BRIEF_MAX_CHARS, HOUSE_RULES, RULES_INSTRUCTIONS_MAX, RULES_MAX_CHARS, rulesInstructions, rulesSection, attachmentsLine, focusSuffix, generalBrief, generalOpener, generalPrompt, playbookSection, promptParts, promptSections, waitsOnLine } from "./prompt.js";
 export { evaluateTurn, summarizeEvaluation, type TurnMetrics, type EvaluationObservation } from "./evaluation.js";
 export { NO_TOKENS, addTokens, runTokens, type TokenBreakdown } from "./tokens.js";
 export { carriedKits, deferredTools, kitLines } from "./kits.js";

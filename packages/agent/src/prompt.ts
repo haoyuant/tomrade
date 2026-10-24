@@ -136,37 +136,57 @@ function mainConversationSection(repositories: TurnInput["repositories"]): strin
   );
 }
 
+/**
+ * The sections in two groups. `stable` reads the same from one turn of a
+ * conversation to the next — the project, its rules and brief, the playbooks,
+ * the repositories, the ticket — so a provider's prompt cache keeps it;
+ * `volatile` is what a turn changes: the conversation's media, its cards, the
+ * question a workflow waits on, the files index. Nothing in `stable` carries a
+ * timestamp or a run id.
+ */
+export function promptParts(input: TurnInput, io: TurnIO, opts: { playbooks?: boolean; filesIndex?: boolean } = {}): { stable: string[]; volatile: string[] } {
+  const parts = promptSectionsOf(input, io, opts);
+  return { stable: parts.filter((p) => p.stable).map((p) => p.text), volatile: parts.filter((p) => !p.stable).map((p) => p.text) };
+}
+
 export function promptSections(input: TurnInput, io: TurnIO, opts: { playbooks?: boolean; filesIndex?: boolean } = {}): string[] {
-  const parts: string[] = [];
+  const { stable, volatile } = promptParts(input, io, opts);
+  return [...stable, ...volatile];
+}
+
+function promptSectionsOf(input: TurnInput, io: TurnIO, opts: { playbooks?: boolean; filesIndex?: boolean }): { text: string; stable: boolean }[] {
+  const parts: { text: string; stable: boolean }[] = [];
+  const stable = (text: string) => parts.push({ text, stable: true });
+  const volatile = (text: string) => parts.push({ text, stable: false });
   if (input.project) {
-    parts.push(
+    stable(
       `This conversation belongs to the project "${input.project.name}" (its keys look like ${input.project.keyPrefix}-1). Every tool works in it and only in it, so leave projectId out of tool calls; an empty backlog means the project is new, not that you are in the wrong place. Other projects are out of reach: if the user means one, tell them to open it.`
     );
   }
-  if (input.rules) parts.push(rulesSection(input.rules));
+  if (input.rules) stable(rulesSection(input.rules));
   const media = input.messages.filter(m => m.block.type === "media").slice(-8);
-  if (media.length) parts.push("Conversation media (use read_media_source for an editable diagram source):\n" + media.map(m => {
+  if (media.length) volatile("Conversation media (use read_media_source for an editable diagram source):\n" + media.map(m => {
     if (m.block.type !== "media") return "";
     return `${m.block.media.name}: ${m.block.media.id}${m.block.media.source ? `; source JSON ID: ${m.block.media.source.id}` : ""}`;
   }).join("\n"));
-  if (input.purpose === "backlog") parts.push(mainConversationSection(input.repositories));
-  if (input.purpose !== "backlog") parts.push("Use display_media to show generated images, HTML, audio, video or PDF from your working directory directly in the conversation. A filesystem path in prose does not display media.");
+  if (input.purpose === "backlog") stable(mainConversationSection(input.repositories));
+  if (input.purpose !== "backlog") stable("Use display_media to show generated images, HTML, audio, video or PDF from your working directory directly in the conversation. A filesystem path in prose does not display media.");
   if (opts.playbooks !== false) {
     const index = io.playbooks.index();
     if (index.length) {
-      parts.push(
+      stable(
         "Playbooks — methodology for multi-step jobs. When one matches, call open_playbook(id) and follow it; switch when the job turns out to be a different shape:\n" +
           index.map((p) => `- ${p.id} — ${p.when}`).join("\n")
       );
     }
   }
   if (input.ticket && input.purpose === "general") {
-    parts.push(generalBrief(input.ticket, input.cwd));
-    if (input.execution) parts.push(playbookSection(input.execution.playbook));
+    stable(generalBrief(input.ticket, input.cwd));
+    if (input.execution) stable(playbookSection(input.execution.playbook));
   }
   if (input.ticket && input.purpose === "code") {
     const t = input.ticket;
-    parts.push(
+    stable(
       `You are implementing ticket ${t.key} — "${t.title}"${t.branch ? ` on branch ${t.branch}` : ""}${input.cwd ? ` in ${input.cwd}` : ""}.\n` +
         `Code conventions: stay on this branch and never commit to the default branch; every commit message names ${t.key}; ` +
         `read the repository's CLAUDE.md or AGENTS.md before writing; when you push and open a pull request, call link_code with its URL; ` +
@@ -174,13 +194,13 @@ export function promptSections(input: TurnInput, io: TurnIO, opts: { playbooks?:
         (t.waitsOn?.length ? `\n${waitsOnLine(t.waitsOn)}` : "")
     );
   }
-  if (input.brief) parts.push("Project brief:\n" + input.brief);
-  else if (input.purpose === "backlog") parts.push("No project brief is recorded yet: nothing is known about what the code already does until you read it.");
+  if (input.brief) stable("Project brief:\n" + input.brief);
+  else if (input.purpose === "backlog") stable("No project brief is recorded yet: nothing is known about what the code already does until you read it.");
   // An engine that carries the index in its session prompt asks for it to be left out here, so it is not paid for twice.
-  if (input.filesIndex && opts.filesIndex !== false) parts.push(input.filesIndex.markdown);
-  for (const card of input.cards) parts.push(`Card "${card.title}" (${card.id}):\n` + clip(JSON.stringify(card.data), 3000));
+  if (input.filesIndex && opts.filesIndex !== false) volatile(input.filesIndex.markdown);
+  for (const card of input.cards) volatile(`Card "${card.title}" (${card.id}):\n` + clip(JSON.stringify(card.data), 3000));
   if (input.pending) {
-    parts.push(
+    volatile(
       `A workflow is waiting on: "${input.pending.question.text}"${input.pending.question.options ? " — options: " + input.pending.question.options.join(" / ") : ""}. ` +
         "If the user's message answers it, call resume_workflow with the answer (an answer that points elsewhere, like \"keep what the dossier says\", means that value). If it is an instruction or moves on, call cancel_workflow first, then do what they asked — never feed an instruction in as the answer."
     );
