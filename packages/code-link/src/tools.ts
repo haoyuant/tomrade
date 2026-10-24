@@ -39,6 +39,8 @@ export interface ToolHost {
   attach(projectId: string, sessionId: string, itemId: string, branch: string, delivery: number, opts?: { replace?: boolean }): void;
   /** The hooks session a tokenless claim of `key` comes from: the one whose hooks announced it, else a guess (live on that repository, holding no ticket and no client's connection). */
   externalSession(projectId: string, repoId: string, key?: string): SessionView | null;
+  /** The hooks session whose hooks just announced a work_without_ticket call, if one did. */
+  excusing(projectId: string): SessionView | null;
   /** A terminal session Start made for this ticket with an agent that reaches Tomrade without its token, no connection has joined yet. */
   awaitingClaim(projectId: string, itemId: string): SessionView | null;
   /** The session an outside client's connection last claimed for: the one its calls without a key mean. */
@@ -557,6 +559,13 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         if (!session && inv.connection) session = host.connectionSession(projectId, repoId, worktree);
         if (session && !tokened && worktree && session.worktree !== worktree) session = host.store.patchSession(projectId, session.id, { worktree });
         if (session && !tokened && inv.connection) host.bindConnection(projectId, inv.connection, session.id, leaving);
+        // Another live session in the same folder changes the same files: say so, and point at a worktree.
+        const here = session ? [session.worktree, session.cwd].filter((folder): folder is string => !!folder).map((folder) => path.resolve(folder)) : [];
+        const sharing = session && here.length
+          ? host.store.sessions(projectId, { live: true }).filter((s) =>
+              s.id !== session!.id && s.state !== "lost" && s.endedAt === null && Date.now() - (s.lastEventAt ?? s.startedAt) < END_AFTER_MS
+              && [s.worktree, s.cwd].some((folder) => !!folder && here.includes(path.resolve(folder))))
+          : [];
         const delivery = host.store.ensureActiveDelivery(projectId, item.id, item.updatedAt);
         const existing = repoId ? host.store.links(projectId, item.id).find((l) => l.repoId === repoId && l.delivery === delivery.sequence && l.branch) : null;
         // An external session starts with no branch of its own; the template names one.
@@ -580,7 +589,15 @@ export function registerTools(ctx: Context, host: ToolHost): void {
           repository: repo ? { name: repo.name, remote: repo.remote, defaultBranch: repo.defaultBranch, readiness: state?.readiness ?? "unknown", hasBrief: state?.hasBrief ?? false } : null,
           tracking: session ? { tracked: true, sessionId: session.id } : { tracked: false, message: untracked() },
           blockedBy: blockers.map((b) => ({ key: b.key, title: b.title, status: b.status })),
+          ...(sharing.length
+            ? { sharedCheckout: sharing.map((s) => ({ ...holderView(s), tickets: s.itemIds.map((id) => ctx.items.get(projectId, id)?.key).filter((k): k is string => !!k) })) }
+            : {}),
           conventions: [
+            ...(sharing.length
+              ? [
+                  `${sharing.length === 1 ? "another live session works" : `${sharing.length} other live sessions work`} in this same folder (sharedCheckout): do not change files here beside ${sharing.length === 1 ? "it" : "them"} — make a worktree for ${branch} (git worktree add <folder> -b ${branch} ${repo?.defaultBranch ?? "the default branch"}) and work there, telling the person, or ask them which session goes on`
+                ]
+              : []),
             `this session owns only ${item.key}; implement only its stated outcome and acceptance criteria`,
             "neighboring tickets are context, not extra implementation work; leave their code for separate sessions",
             "before pushing, review the full diff and remove anything this ticket does not require",
@@ -602,6 +619,42 @@ export function registerTools(ctx: Context, host: ToolHost): void {
             local && !state?.agentMerge ? `the person merges your branch into ${repo?.defaultBranch ?? "the default branch"}` : mergeLine(!!state?.agentMerge, local).replace(/^- /, ""),
             ...(session ? ["call note_progress with one line at milestones"] : [untracked()])
           ]
+        };
+      }
+    })
+  );
+
+  ctx.tools.register(
+    defineTool({
+      name: "work_without_ticket",
+      kit: "code",
+      title: "Go on without a ticket, on the person's word",
+      description:
+        "Only after the person said this change needs no ticket (\"just do it here\", a throwaway experiment, something kept out of the backlog): records their choice on this session, so Tomrade stops holding its code changes for a claim and shows it as working without a ticket. Pass what they said. Not for a session Tomrade started; claim_ticket later takes it back.",
+      input: z.object({ reason: z.string().min(1).max(280).describe("What the person said, in a few words"), projectId: z.string().optional() }),
+      execute: (args, inv) => {
+        const projectId = requireProjectId("work_without_ticket", args.projectId, inv);
+        const bound = sessionContext.getStore();
+        if (bound && bound.projectId === projectId && host.store.session(projectId, bound.sessionId)) {
+          throw new Error("work_without_ticket: a session Tomrade started works its own ticket — there is nothing to go without");
+        }
+        // The session this connection claimed for; else the hooks session that announced this call; else a free hooks
+        // session on one of the project's repositories; else one followed through the connection alone.
+        const connected = inv.connection ? host.connected(projectId, inv.connection) : null;
+        const free = () => ctx.repos.list(projectId).map((repo) => host.externalSession(projectId, repo.id)).find((s): s is SessionView => !!s) ?? null;
+        const session = connected ?? host.excusing(projectId) ?? free() ?? (inv.connection ? host.connectionSession(projectId, null) : null);
+        if (!session) return { recorded: false, message: untracked() };
+        if (session.itemIds.length) {
+          const keys = session.itemIds.map((id) => ctx.items.get(projectId, id)?.key).filter(Boolean).join(", ");
+          return { recorded: false, message: `this session holds ${keys}: its changes belong on that ticket's branch. If the person wants work outside it, release_ticket first.` };
+        }
+        host.store.patchSession(projectId, session.id, { withoutTicket: args.reason.trim() });
+        if (inv.connection) host.bindConnection(projectId, inv.connection, session.id);
+        host.notify(projectId);
+        return {
+          recorded: true,
+          sessionId: session.id,
+          note: "this session changes code without a ticket on the person's word; keep to what they asked, and offer once to sync back when the work turns out to be more than that (claim_ticket takes a ticket on at any time)"
         };
       }
     })

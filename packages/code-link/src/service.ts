@@ -341,6 +341,7 @@ export class CodeLink extends Service implements CodeLinkReader {
     this.sessions = new Sessions(this.ctx, this.store, {
       dirOf: (id) => this.sessionDir(id),
       onChange: (projectId) => this.notify(projectId),
+      prefixOf: (projectId) => this.prefixOf(projectId),
       onMoment: (session, moment) => this.noteMoment(session, moment),
       onWaiting: (session, activity) => this.herdr.waiting(session, activity),
       panes: { alive: (pane) => this.herdr.paneAlive(pane), info: (pane) => this.herdr.pane(pane) },
@@ -471,6 +472,10 @@ export class CodeLink extends Service implements CodeLinkReader {
         blockMerge: (projectId, sessionId, reason) => this.sessions.blockMerge(projectId, sessionId, reason),
         attach: (projectId, sessionId, itemId, branch, delivery, opts) => this.attach(projectId, sessionId, itemId, branch, delivery, opts),
         externalSession: (projectId, repoId, key) => this.externalSession(projectId, repoId, key),
+        excusing: (projectId) => {
+          const id = this.sessions.excuser(projectId);
+          return id ? this.store.session(projectId, id) : null;
+        },
         awaitingClaim: (projectId, itemId) => this.awaitingClaim(projectId, itemId),
         connected: (projectId, connection) => this.connected(projectId, connection),
         freeSibling: (projectId, session) => this.connections.freeSibling(projectId, session),
