@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { RemoteFailure, RepoStateView } from "@tomradex/code-link";
+import type { MergePolicy, RemoteFailure, RepoStateView } from "@tomradex/code-link";
 import type { Board, Repo } from "@tomradex/domain";
 import type { CheckoutView, FolderRepo } from "@tomradex/repos";
 import { Icon } from "~/components/icons";
@@ -385,36 +385,40 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
       )}
       {checkout?.checkout && <p className="meta-txt dense">{t("repositories.runInCheckoutNote")}</p>}
       <AgentConnection projectId={projectId} repoId={repo.id} />
-      <AgentMerge projectId={projectId} repoId={repo.id} on={remoteState?.agentMerge ?? false} local={remoteState?.remote === "none"} />
+      <AgentMerge projectId={projectId} repoId={repo.id} policy={remoteState?.mergePolicy ?? "human"} local={remoteState?.remote === "none"} />
     </div>
   );
 }
 
-/** The repository's merge policy, and what each agent's own settings say about it — with the one rule that would let it. */
-function AgentMerge({ projectId, repoId, on, local }: { projectId: string; repoId: string; on: boolean; local: boolean }) {
+const MERGE_POLICIES: MergePolicy[] = ["human", "ask", "agent"];
+
+/** Who merges a delivered ticket, and — when the agent does — what each agent's own settings say about it, with the one rule that would let it. */
+function AgentMerge({ projectId, repoId, policy: current, local }: { projectId: string; repoId: string; policy: MergePolicy; local: boolean }) {
   const { t, locale } = useI18n();
   const policy = useSetRepoPolicy(projectId);
+  const on = current === "agent";
   // With no remote the agent merges through Tomrade's own tool, which its shell rules don't gate.
   const checks = useMergeChecks(projectId, repoId, on && !local);
-  const label = t(local ? "repositories.agentMergeLocal" : "repositories.agentMerge");
+  const label = t("repositories.mergePolicy");
   const toast = useToast();
   const { known, unknown } = splitMergeChecks(checks.data ?? []);
+  const note: MessageKey = current === "agent" ? (local ? "repositories.agentMergeLocalNote" : "repositories.agentMergeNote") : current === "ask" ? (local ? "repositories.mergePolicyAskLocalNote" : "repositories.mergePolicyAskNote") : "repositories.mergePolicyHumanNote";
   return (
     <>
       <div className="cfg-row" style={{ marginTop: 0 }}>
-        <Icon name="i-merge" size={14} style={{ color: on ? "var(--accent)" : "var(--meta)" }} />
+        <Icon name="i-merge" size={14} style={{ color: current === "human" ? "var(--meta)" : "var(--accent)" }} />
         <span className="cfg-name">{label}</span>
-        <button
-          type="button"
-          className="switch repo-agent-merge"
-          role="switch"
-          aria-checked={on}
+        <select
+          className="select repo-merge-policy"
           aria-label={label}
+          value={current}
           disabled={policy.isPending}
-          onClick={() => policy.mutate({ repoId, patch: { agentMerge: !on } }, { onError: (error) => toast({ body: message(error) }) })}
-        />
+          onChange={(event) => policy.mutate({ repoId, patch: { mergePolicy: event.target.value as MergePolicy } }, { onError: (error) => toast({ body: message(error) }) })}
+        >
+          {MERGE_POLICIES.map((value) => <option key={value} value={value}>{t(`repositories.mergePolicy_${value}` as MessageKey)}</option>)}
+        </select>
       </div>
-      <p className="meta-txt dense">{t(local ? "repositories.agentMergeLocalNote" : "repositories.agentMergeNote")}</p>
+      <p className="meta-txt dense">{t(note)}</p>
       {on && checks.isLoading && <p className="meta-txt dense repo-merge-checking">{t("repositories.mergeChecking")}</p>}
       {on && checks.data?.length === 0 && <p className="meta-txt dense">{t("repositories.mergeNoEngines")}</p>}
       {on && known.map((view) => <MergeCheckRow key={view.engine} projectId={projectId} repoId={repoId} view={view} />)}

@@ -8,6 +8,7 @@ import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/tools";
 import type { Author } from "@tomradex/domain";
 import { looksRateLimited, resetTime, type CliHookAnswer } from "@tomradex/agent";
+import { parseBranch } from "./keys.js";
 import { promptTitle, transcriptTitleFor } from "./titles.js";
 import { CLI_HOOK_COVERAGE } from "@tomradex/plugin-sdk";
 import { BRIDGED_BY_DSH, cliHookCall, cliHookEvent, hookReply, mergeAnswers, type HookSource } from "./cli-hooks.js";
@@ -22,9 +23,14 @@ export const IDLE_AFTER_MS = 10 * 60 * 1000;
 export const END_AFTER_MS = 60 * 60 * 1000;
 /** How long after a hook spoke herdr's reading of the screen is left unsaid. */
 export const HERDR_YIELD_MS = 30 * 1000;
-/** How long a PreToolUse for claim_ticket vouches for the claim that follows it. */
+/** How long a PreToolUse for claim_ticket (or work_without_ticket) vouches for the call that follows it. */
 const CLAIM_HEARD_MS = 10 * 1000;
 const CLAIM_TOOL = /(?:^|[_.:/])claim_ticket$/;
+const NO_TICKET_TOOL = /(?:^|[_.:/])work_without_ticket$/;
+/** The tools that change files, under every agent's names; the shell tools; and the shell commands that write git history. */
+const WRITE_TOOL = /^(?:Edit|Write|MultiEdit|NotebookEdit|apply_patch|edit_file|write_file|create_file|str_replace_editor|str_replace_based_edit_tool)$/i;
+const SHELL_TOOL = /^(?:Bash|Shell|exec|exec_command|run_command|run_terminal_cmd|terminal)$/i;
+const GIT_WRITE = /\bgit\s+(?:commit|push|merge|rebase|cherry-pick|revert|am|apply)\b/;
 
 /** The coding session a tool call belongs to, when it came in over a session's MCP token. */
 export const sessionContext = new AsyncLocalStorage<{ projectId: string; sessionId: string }>();
@@ -108,6 +114,8 @@ export interface SessionsOptions {
   onWaiting?(session: SessionView, activity: string): void;
   /** The agent stopped on a usage limit, lifting at `until` when it said; returns what the session's summary should say. */
   onLimit?(session: SessionView, until: number | null): string;
+  /** The project's ticket key prefix (TOM), to read the ticket a branch names. */
+  prefixOf?(projectId: string): string;
   /** herdr, through code-link's bridge: whether a pane still runs, and what it says of one. */
   panes?: {
     alive(pane: string): Promise<boolean | null>;
@@ -190,6 +198,70 @@ const OUT_OF_SCOPE_TOOLS = new Set([
 
 const bashCommand = (p: HookPayload): string => (p.tool_name === "Bash" && typeof p.tool_input?.command === "string" ? p.tool_input.command : "");
 
+/** What a shell tool runs, whichever agent's name the tool goes by. */
+const shellCommand = (p: HookPayload): string => {
+  if (!p.tool_name || !SHELL_TOOL.test(p.tool_name)) return "";
+  for (const key of ["command", "cmd", "input"]) {
+    const value = p.tool_input?.[key];
+    if (typeof value === "string") return value;
+    if (Array.isArray(value)) return value.map(String).join(" ");
+  }
+  return "";
+};
+
+/** The file a tool changes, where its input names one. */
+const fileOf = (input: Record<string, unknown> | undefined): string => {
+  for (const key of ["file_path", "path", "filePath", "notebook_path"]) {
+    const value = input?.[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+};
+
+const within = (file: string, root: string): boolean => file === root || file.startsWith(root.endsWith(path.sep) ? root : root + path.sep);
+
+/** The branch a checkout (or a worktree) is on, read from .git without running git; null when it cannot be told. */
+export function branchAt(dir: string): string | null {
+  try {
+    let at = path.resolve(dir);
+    for (;;) {
+      const dotGit = path.join(at, ".git");
+      if (fs.existsSync(dotGit)) {
+        const gitDir = fs.statSync(dotGit).isDirectory() ? dotGit : path.resolve(at, /^gitdir:\s*(.+)$/m.exec(fs.readFileSync(dotGit, "utf8"))?.[1]?.trim() ?? "");
+        const head = fs.readFileSync(path.join(gitDir, "HEAD"), "utf8").trim();
+        return /^ref:\s*refs\/heads\/(.+)$/.exec(head)?.[1] ?? null;
+      }
+      const up = path.dirname(at);
+      if (up === at) return null;
+      at = up;
+    }
+  } catch {
+    return null;
+  }
+}
+
+/** Where an outside session stands: its folder's name, the branch its checkout is on, and the ticket that branch names, if any. */
+export interface Standing {
+  repo: string;
+  branch: string | null;
+  key: string | null;
+}
+
+const WAYS_ON =
+  "Decide first: a new piece of work the person asked for gets a ticket of its own — create_item (or the key they named), then claim_ticket — and goes on the branch the claim returns; when it is unclear a ticket is wanted (a tiny fix, an experiment, something they may want kept out of the backlog), ask the person; if they want it done here without one, call work_without_ticket with their words, then go on. Never edit or commit on the default branch, or on another ticket's branch, without one of these; reading, searching and explaining need nothing.";
+
+/** What an outside session is told at its first code change without a ticket: the ticket its branch already names, else the ways on. */
+export const noTicketText = (at: Standing): string =>
+  `Tomrade: this session holds no ticket, so it does not change code in ${at.repo} yet.${
+    at.key ? ` The checkout is on branch ${at.branch}, which names ${at.key}: if this goes on with that work, call claim_ticket("${at.key}") and continue there.` : at.branch ? ` The checkout is on branch ${at.branch}.` : ""
+  } ${WAYS_ON}`;
+
+/** What an outside session hears as it starts in a project repository, so the choice is made before the first change, not at it. */
+export const openingText = (at: Standing): string =>
+  `Tomrade follows this session in ${at.repo}; it holds no ticket${at.branch ? `, and the checkout is on branch ${at.branch}` : ""}.${
+    at.key ? ` That branch names ${at.key}: to go on with that work, claim_ticket("${at.key}") once and continue there — no new ticket or branch per request.` : ""
+  } Before changing code here: a new piece of work the person asked for gets a ticket (create_item, then claim_ticket, and the work goes on its branch); when unsure a ticket is wanted, ask them; on their word to go without one, call work_without_ticket. Reading and explaining need nothing.`;
+
 const outputText = (output: unknown): string => {
   if (typeof output === "string") return output;
   if (!output || typeof output !== "object") return String(output ?? "");
@@ -224,6 +296,8 @@ export class Sessions {
   private readonly heardAt = new Map<string, number>();
   /** A claim_ticket each session's hooks announced, waiting for the call itself. */
   private readonly claiming = new Map<string, { projectId: string; key: string; at: number }>();
+  /** A work_without_ticket each session's hooks announced, the same way. */
+  private readonly excusing = new Map<string, { projectId: string; at: number }>();
   /** The herdr panes each session's hooks spoke from and did not end in, the latest last: one conversation can run in two. */
   private readonly panes = new Map<string, Set<string>>();
 
@@ -348,6 +422,48 @@ export class Sessions {
     this.options.onMoment?.(this.store.session(projectId, sessionId) ?? session, { kind: "failed", text: summary });
   }
 
+  /** Whether the session reports through a token of its own: one Tomrade started, or bound again after a restart. */
+  tokened(sessionId: string): boolean {
+    return this.live.has(sessionId);
+  }
+
+  /** The session whose hooks just announced a work_without_ticket call, if one did; the announcement is used up. */
+  excuser(projectId: string): string | null {
+    let best: { sessionId: string; at: number } | null = null;
+    for (const [sessionId, c] of this.excusing) {
+      if (Date.now() - c.at > CLAIM_HEARD_MS) this.excusing.delete(sessionId);
+      else if (c.projectId === projectId && (!best || c.at > best.at)) best = { sessionId, at: c.at };
+    }
+    if (best) this.excusing.delete(best.sessionId);
+    return best?.sessionId ?? null;
+  }
+
+  /**
+   * An outside session in a project repository changes code only on a ticket it claimed, or on the person's word
+   * (work_without_ticket): an edit or a commit before either is refused, with the two ways on. A session Tomrade
+   * started has its ticket; a file outside the folder the agent runs in (scratch, a home config) is not this
+   * repository's code.
+   */
+  private ticketGate(session: SessionView, p: HookPayload): string | null {
+    if (session.threadId !== null || session.itemIds.length || session.withoutTicket || !session.repoId) return null;
+    const command = shellCommand(p);
+    if (!(p.tool_name && WRITE_TOOL.test(p.tool_name)) && !(command && GIT_WRITE.test(command))) return null;
+    const target = fileOf(p.tool_input);
+    const cwd = typeof p.cwd === "string" && p.cwd ? p.cwd : session.cwd;
+    const roots = [cwd, session.worktree].filter((root): root is string => !!root).map((root) => path.resolve(root));
+    if (target && path.isAbsolute(target) && roots.length && !roots.some((root) => within(path.resolve(target), root))) return null;
+    return noTicketText(this.standing(session, p));
+  }
+
+  /** Where an outside session stands, read only when there is something to say: the folder, its branch, the ticket the branch names. */
+  private standing(session: SessionView, p: HookPayload): Standing {
+    const cwd = typeof p.cwd === "string" && p.cwd ? p.cwd : session.cwd;
+    const branch = cwd ? branchAt(cwd) : null;
+    const prefix = this.options.prefixOf?.(session.projectId);
+    const number = branch && prefix ? parseBranch(branch, prefix) : null;
+    return { repo: path.basename(cwd ?? "") || "this repository", branch, key: number === null ? null : `${prefix}-${number}` };
+  }
+
   /** The session whose hooks just announced a claim of this ticket, if one did; the announcement is used up. */
   claimer(projectId: string, key: string): string | null {
     const wanted = key.trim().toUpperCase();
@@ -467,18 +583,25 @@ export class Sessions {
       return { context: "Tomrade: the merge was refused and the person has been handed it. Do not try to merge another way — stop here." };
     }
     let moment: SessionMoment | null = null;
+    let deny: string | null = null;
+    let context: string | null = null;
     switch (p.hook_event_name) {
       case "SessionStart":
       case "UserPromptSubmit":
         Object.assign(patch, { state: "running", activity: null });
         // the person went on by hand: a limit it waited for is no longer anyone's to announce
         if (session.threadId) this.ctx.get("agent")?.unpark(projectId, session.threadId);
+        if (p.hook_event_name === "SessionStart" && session.threadId === null && session.repoId && !session.itemIds.length && !session.withoutTicket) {
+          context = openingText(this.standing(session, p));
+        }
         break;
       case "PreToolUse":
         Object.assign(patch, { state: "running", activity: p.tool_name ? describeTool(p.tool_name, p.tool_input) : null });
         if (p.tool_name && CLAIM_TOOL.test(p.tool_name) && typeof p.tool_input?.key === "string") {
           this.claiming.set(sessionId, { projectId, key: p.tool_input.key.trim().toUpperCase(), at: Date.now() });
         }
+        if (p.tool_name && NO_TICKET_TOOL.test(p.tool_name)) this.excusing.set(sessionId, { projectId, at: Date.now() });
+        deny = this.ticketGate(session, p);
         break;
       case "PostToolUse":
         Object.assign(patch, { state: "running", tool: true, activity: null });
@@ -531,7 +654,7 @@ export class Sessions {
       const ended = this.store.session(projectId, sessionId);
       if (ended) this.options.onEnd?.(ended);
     }
-    return {};
+    return deny ? { deny } : context ? { context } : {};
   }
 
   /**

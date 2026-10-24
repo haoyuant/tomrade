@@ -6,20 +6,23 @@ export const CLI_HOOK_EVENTS: readonly CliHookEvent[] = ["session-start", "promp
 /** The agents whose hooks reach Tomrade at all: in sessions it starts, or in repositories it connects. */
 const REPORTING = ["claude-code", "workbuddy", "dsh", "pi", "codex", "cursor", "opencode", "hermes"] as const;
 
+// Codex reads Claude Code's hook output (PreToolUse deny and context, SessionStart/UserPromptSubmit/PostToolUse
+// context, Stop block); OpenCode's and Pi's extensions block a tool on a deny and read nothing else.
 const ANSWERS: Record<CliHookEvent, readonly string[]> = {
-  "session-start": ["claude-code", "workbuddy", "dsh"],
-  prompt: ["claude-code", "workbuddy", "dsh"],
-  "pre-tool": ["claude-code", "workbuddy", "dsh", "pi"],
-  "post-tool": ["claude-code", "workbuddy", "dsh", "pi"],
-  stop: ["claude-code", "workbuddy", "dsh"],
+  "session-start": ["claude-code", "workbuddy", "dsh", "codex"],
+  prompt: ["claude-code", "workbuddy", "dsh", "codex"],
+  "pre-tool": ["claude-code", "workbuddy", "dsh", "pi", "codex", "opencode"],
+  "post-tool": ["claude-code", "workbuddy", "dsh", "pi", "codex"],
+  stop: ["claude-code", "workbuddy", "dsh", "codex"],
   "session-end": []
 };
 
 /**
- * Which agents a CLI hook reaches. `answers`: in a session Tomrade started, the
- * agent acts on the answer. `sees`: the hook hears the event — a connected
- * repository's, or one the agent cannot be answered on — and its answer goes
- * nowhere. Gemini CLI and Antigravity report no hooks at all.
+ * Which agents a CLI hook reaches. `answers`: the agent acts on the answer —
+ * in a session Tomrade started, or in a connected repository whose hooks
+ * leave Tomrade's reply on stdout. `sees`: the hook hears the event, and its
+ * answer goes nowhere (Cursor's script swallows it, Hermes reports only).
+ * Gemini CLI and Antigravity report no hooks at all.
  */
 const reach = (event: CliHookEvent) => ({ answers: ANSWERS[event], sees: REPORTING.filter((agent) => !ANSWERS[event].includes(agent)) });
 

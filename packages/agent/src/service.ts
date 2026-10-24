@@ -11,7 +11,7 @@ import type {} from "@tomradex/fields";
 import type {} from "@tomradex/oplog";
 import type {} from "@tomradex/ipc";
 import { writeContext } from "@tomradex/write";
-import { languageName, type Item, type Patch, type UndoRunResult } from "@tomradex/domain";
+import { languageName, type Author, type Item, type Patch, type UndoRunResult } from "@tomradex/domain";
 import type { LlmService } from "@tomradex/llm";
 import type { SettingsSection } from "@tomradex/settings";
 import { defineTool, requireProjectId, type RunHandle, type LedgerEntry } from "@tomradex/tools";
@@ -1964,6 +1964,19 @@ export class Agent extends Service implements AgentReader {
       }
     }
     this.ctx.emit("agent/limit-lifted", { ...park, resume: false }, thread);
+  }
+
+  /**
+   * A card into a conversation from outside any run: Tomrade itself reporting back there — a delivery
+   * ready to merge, tickets it started. A card id seen before updates that card in place, as `setCard` does.
+   */
+  postCard(projectId: string, threadId: string, card: { id: string; schema: string; title: string; data: unknown }, by: Author | "human" = "human"): CardView {
+    if (!this.store.thread(projectId, threadId)) throw new Error(`unknown thread ${threadId}`);
+    const before = this.store.cards(projectId, threadId).find((c) => c.id === card.id);
+    const view = this.store.setCard(projectId, threadId, card, by);
+    if (!before) this.appendAndBroadcast(projectId, threadId, "agent", { type: "card", id: card.id, schema: card.schema, title: card.title, data: card.data }, null);
+    this.broadcast(threadId, { type: "card", card: view });
+    return view;
   }
 
   private appendAndBroadcast(projectId: string, threadId: string, role: ThreadMessage["role"], block: Block, runId: string | null): ThreadMessage {
