@@ -255,11 +255,55 @@ describe("repositories", () => {
     expect(await repos.adoptOrigins(project.id)).toEqual([]);
   });
 
+  it("initialises git in a plain folder and commits what is there, keeping dependency folders out", async () => {
+    const { repos, boards, project, board } = await machine();
+    const plain = path.join(root, `plain-${n++}`);
+    fs.mkdirSync(path.join(plain, "node_modules", "left-pad"), { recursive: true });
+    fs.writeFileSync(path.join(plain, "node_modules", "left-pad", "index.js"), "module.exports = 1;\n");
+    fs.writeFileSync(path.join(plain, "package.json"), '{ "name": "shop" }\n');
+    fs.writeFileSync(path.join(plain, "index.ts"), "export {};\n");
+
+    const added = await repos.addFromFolder(project.id, plain);
+    expect(added).toMatchObject({ local: true, existing: false, initialised: true, committed: 2, repo: { remote: plain, name: path.basename(plain), defaultBranch: "main" } });
+    expect(git(["rev-list", "--count", "main"], plain)).toBe("1");
+    expect(git(["ls-files"], plain).split("\n").sort()).toEqual(["index.ts", "package.json"]);
+    expect(git(["status", "--porcelain"], plain)).toBe("");
+    expect(fs.existsSync(path.join(plain, ".gitignore"))).toBe(false);
+
+    // The repository stands: a ticket's worktree starts from that first commit.
+    boards.update(project.id, board.id, { repoId: added.repo.id });
+    const view = (await repos.workdirFor(project.id, board.id, "t-plain", { branch: "TOM-1/first" }))!;
+    expect(fs.existsSync(path.join(view.cwd!, "package.json"))).toBe(true);
+    expect((await repos.addFromFolder(project.id, plain))).toMatchObject({ existing: true, initialised: false, committed: 0 });
+
+    const empty = path.join(root, `empty-${n++}`);
+    fs.mkdirSync(empty);
+    expect(await repos.addFromFolder(project.id, empty)).toMatchObject({ local: true, initialised: true, committed: 0 });
+    expect(git(["rev-parse", "--is-inside-work-tree"], empty)).toBe("true");
+  });
+
+  it("gives a repository with no commit its first one from the working tree, as its .gitignore says", async () => {
+    const { repos, project } = await machine();
+    const folder = path.join(root, `unborn-${n++}`);
+    fs.mkdirSync(folder);
+    git(["init", "-q", "-b", "trunk"], folder);
+    fs.writeFileSync(path.join(folder, ".gitignore"), "dist/\n");
+    fs.mkdirSync(path.join(folder, "dist"));
+    fs.writeFileSync(path.join(folder, "dist", "bundle.js"), "");
+    fs.mkdirSync(path.join(folder, "node_modules"));
+    fs.writeFileSync(path.join(folder, "node_modules", "x.js"), "");
+    fs.writeFileSync(path.join(folder, "pyproject.toml"), "[project]\nname = 'shop'\n");
+
+    const added = await repos.addFromFolder(project.id, folder);
+    expect(added).toMatchObject({ local: true, initialised: false, committed: 3, repo: { defaultBranch: "trunk" } });
+    expect(git(["ls-files"], folder).split("\n").sort()).toEqual([".gitignore", "node_modules/x.js", "pyproject.toml"]);
+    expect(git(["log", "-1", "--format=%s", "trunk"], folder)).toBe(`Import ${path.basename(folder)} into Tomrade`);
+  });
+
   it("refuses a folder that is not a repository root, and offers no clone of a local repository it cannot reach", async () => {
     const { repos, project } = await machine();
     const plain = path.join(root, `plain-${n++}`);
     fs.mkdirSync(plain);
-    await expect(repos.addFromFolder(project.id, plain)).rejects.toThrow(/not a git repository yet/);
     await expect(repos.addFromFolder(project.id, path.join(root, "nowhere"))).rejects.toThrow(/not an existing folder/);
     const code = codeRepo();
     await expect(repos.addFromFolder(project.id, path.join(code.checkout, "packages"))).rejects.toThrow(/is inside the repository at/);

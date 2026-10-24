@@ -36,6 +36,9 @@ export type CheckoutSelection =
   | { state: "ready"; view: CheckoutView }
   | { state: "clone"; remote: string; parent: string; dir: string; /** Set when the chosen folder is a checkout of another repository. */ origin?: string };
 
+/** What no project wants committed, kept out of an imported folder that has no .gitignore of its own. */
+const IMPORT_EXCLUDES = ["node_modules/", ".venv/", "venv/", "__pycache__/", ".DS_Store", ".env"];
+
 /** A folder the user chose as one of the project's repositories. */
 export interface FolderRepo {
   repo: Repo;
@@ -44,6 +47,10 @@ export interface FolderRepo {
   local: boolean;
   /** The project already had this repository; the folder became its checkout. */
   existing: boolean;
+  /** The folder was not a repository: Tomrade ran git init in it. */
+  initialised: boolean;
+  /** Files committed because the repository had no commit yet; 0 when it already had one. */
+  committed: number;
 }
 
 export interface WorkdirView {
@@ -237,15 +244,22 @@ export class Repos extends Service implements ReposReader {
    * A folder chosen as a repository. Its origin, when it has one, is the
    * identity, and a row already naming it under any spelling is reused. With
    * no origin the folder itself is the repository, local to this machine until
-   * it gains one (see adoptOrigins). The folder is only read.
+   * it gains one (see adoptOrigins). A folder that is not a repository yet
+   * becomes one here, and a repository with nothing committed gets its first
+   * commit: worktrees, scans and merges all need a default branch to stand on.
    */
   async addFromFolder(projectId: string, rawDir: string): Promise<FolderRepo> {
     const dir = path.resolve(rawDir);
     if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) throw new Error(`${dir} is not an existing folder`);
     const g = new GitFolder(this.runGit, dir);
-    const top = await g.toplevel();
-    if (!top) throw new Error(`${dir} is not a git repository yet — run git init there and commit what should be kept, then choose it again`);
+    let top = await g.toplevel();
+    const initialised = !top;
+    if (!top) {
+      await g.init("main");
+      top = fs.realpathSync(dir);
+    }
     if (top !== fs.realpathSync(dir)) throw new Error(`${dir} is inside the repository at ${top} — choose that folder, then point the workstream at the subfolder`);
+    const committed = await this.commitUnborn(g);
     const origin = await g.remoteUrl();
     let known: Repo | undefined;
     for (const row of this.list(projectId)) {
@@ -259,7 +273,29 @@ export class Repos extends Service implements ReposReader {
     this.hub.catalog.setRepo(key, { checkout: dir });
     this.notify();
     this.home.emit("repos/checkout-set", key);
-    return { repo, view: this.checkout(key), local: !origin, existing: !!known };
+    return { repo, view: this.checkout(key), local: !origin, existing: !!known, initialised, committed };
+  }
+
+  /**
+   * A repository with no commit has no branch to scan, branch from or merge
+   * into. What its working tree holds becomes the first commit, as the user's
+   * .gitignore says; a folder without one still keeps dependency and cache
+   * folders out, through .git/info/exclude so no file of theirs is written.
+   */
+  private async commitUnborn(g: GitFolder): Promise<number> {
+    const run = (args: string[]) => this.runGit(args, { cwd: g.dir, ok: true });
+    if ((await run(["rev-parse", "--verify", "--quiet", "HEAD"])).code === 0) return 0;
+    if (!fs.existsSync(path.join(g.dir, ".gitignore"))) {
+      const info = path.join(g.dir, ".git", "info");
+      fs.mkdirSync(info, { recursive: true });
+      fs.appendFileSync(path.join(info, "exclude"), `\n# Added by Tomrade: the folder had no .gitignore when it was imported\n${IMPORT_EXCLUDES.join("\n")}\n`);
+    }
+    await run(["add", "-A"]);
+    const staged = (await run(["diff", "--cached", "--name-only"])).stdout.split("\n").filter((line) => line.trim()).length;
+    if (!staged) return 0;
+    await g.ensureIdentity();
+    await this.runGit(["commit", "-q", "-m", `Import ${path.basename(g.dir)} into Tomrade`], { cwd: g.dir });
+    return staged;
   }
 
   /** Where a folder's branches start: origin's HEAD, else main or master, else whatever is checked out. */
