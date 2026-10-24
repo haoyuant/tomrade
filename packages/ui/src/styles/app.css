@@ -1176,6 +1176,46 @@ strong { font-weight: var(--font-weight-medium); }
 .template-days button { min-width: 44px; }
 .template-failed { color: var(--danger); }
 .input:focus, .textarea:focus, .select:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+/* A select's list is the design's own menu, not the OS's: the same box on every
+ * platform, opened below the field unless it would not fit, scrolling once it
+ * is taller than a menu. Chromium 135+ (Electron 36+) lets a select opt in;
+ * anywhere older keeps the OS list. */
+@supports (appearance: base-select) {
+  .select, select.input {
+    appearance: base-select;
+    display: flex; align-items: center; gap: var(--space-2);
+    cursor: default;
+  }
+  .select:open, select.input:open { border-color: var(--accent); box-shadow: var(--focus-ring); }
+  .select::picker-icon, select.input::picker-icon {
+    content: ""; width: 12px; height: 12px; margin-left: auto; flex-shrink: 0;
+    background: currentColor; color: var(--meta);
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+    transition: transform var(--motion-fast) var(--ease-standard);
+  }
+  .select:open::picker-icon, select.input:open::picker-icon { transform: rotate(180deg); }
+  .select::picker(select), select.input::picker(select) {
+    appearance: base-select;
+    box-sizing: border-box; min-width: anchor-size(width); max-height: 324px; overflow-y: auto;
+    margin: 6px 0; padding: var(--space-2);
+    background: var(--surface); color: var(--fg); border: 1px solid var(--border);
+    border-radius: var(--radius-md); box-shadow: var(--elev-raised);
+    scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+    position-try-order: normal;
+  }
+  .select option, select.input option {
+    display: flex; align-items: center; gap: var(--space-2);
+    padding: 6px var(--space-2); border-radius: var(--radius-sm);
+    font-family: var(--font-display); font-size: 14px; line-height: 1.4; color: var(--fg-2);
+    transition: background-color var(--motion-fast) var(--ease-standard);
+  }
+  .select option:hover, select.input option:hover,
+  .select option:focus-visible, select.input option:focus-visible { background: var(--surface-warm); color: var(--fg); outline: none; }
+  .select option:checked, select.input option:checked { color: var(--fg); }
+  .select option:disabled, select.input option:disabled { opacity: 0.45; }
+  .select option::checkmark, select.input option::checkmark { order: -1; width: 13px; flex-shrink: 0; text-align: center; color: var(--accent); }
+  .select option:not(:checked)::checkmark, select.input option:not(:checked)::checkmark { color: transparent; }
+}
 .textarea { resize: vertical; min-height: 72px; line-height: var(--leading-body); font-size: var(--text-base); }
 .field { display: flex; flex-direction: column; gap: 5px; }
 .field > label { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: var(--tracking-eyebrow); color: var(--meta); }
