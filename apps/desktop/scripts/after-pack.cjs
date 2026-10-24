@@ -3,12 +3,33 @@
 // --cpu=x64), and the Mac's own beside Windows' or Linux's for the cross-built
 // apps. Each app keeps only its own esbuild.
 //
+// better-sqlite3 brings a prebuilt binary for every platform and SQLite's
+// sources to compile one; each app keeps only the binary it loads.
+//
 // None keeps the agent SDK's Claude Code (~190 MB, musl builds included): the
 // engine always passes the person's own CLI as pathToClaudeCodeExecutable, and
 // the SDK reads its bundled copy only without one.
 const fs = require("node:fs");
 const path = require("node:path");
 const { Arch } = require("electron-builder");
+
+/**
+ * Leave better-sqlite3 only what an app on `platform`/`arch` loads: its own prebuilt binary (lib/binding.js picks
+ * `<platform>-<arch>.node`), not the other platforms' nor what compiles one. The AppImage needs glibc, so a
+ * Linux app never loads the musl builds. A universal Mac app keeps both Mac arches.
+ */
+function pruneSqlite(modules, platform, arch) {
+  const dir = path.join(modules, "better-sqlite3");
+  if (!fs.existsSync(dir)) return;
+  const keep = new Set((arch === "universal" ? ["x64", "arm64"] : [arch]).map((cpu) => `${platform}-${cpu}.node`));
+  const prebuilds = path.join(dir, "prebuilds");
+  const missing = [...keep].filter((name) => !fs.existsSync(path.join(prebuilds, name)));
+  // without its binary the app could not open a database: fail the build, not the first start
+  if (missing.length) throw new Error(`better-sqlite3 has no prebuilt ${missing.join(", ")}`);
+  for (const name of fs.readdirSync(prebuilds)) if (!keep.has(name)) fs.rmSync(path.join(prebuilds, name), { force: true });
+  for (const name of ["deps", "src", "build", "binding.gyp"]) fs.rmSync(path.join(dir, name), { recursive: true, force: true });
+}
+exports.pruneSqlite = pruneSqlite;
 
 exports.default = async ({ electronPlatformName, arch, appOutDir, packager }) => {
   const own = Arch[arch];
@@ -25,6 +46,7 @@ exports.default = async ({ electronPlatformName, arch, appOutDir, packager }) =>
     }
   };
   prune("@anthropic-ai", (name) => name.startsWith("claude-agent-sdk-"));
+  pruneSqlite(modules, electronPlatformName, own);
   prune("@esbuild", (name) => {
     const [, os, cpu] = name.match(/^([a-z0-9]+)-([a-z0-9]+)$/) ?? [];
     return os && (os !== electronPlatformName || cpu !== own);
