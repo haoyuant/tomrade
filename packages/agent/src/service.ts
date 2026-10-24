@@ -19,6 +19,7 @@ import { loadPlaybookDir, missingPlaybookCapabilities, resolvePlaybook, type Pla
 import { AgentStore, MIGRATIONS, TABLES, type PendingRecord } from "./store.js";
 import { AgentMediaStore, type MediaRef, type MediaUpload, type MediaContent } from "./media.js";
 import { RULES_MAX_CHARS, generalOpener, generalPrompt, rulesInstructions, BRIEF_MAX_CHARS } from "./prompt.js";
+import { COMPACT_SYSTEM, briefTooLong, parseBrief, withSection } from "./brief.js";
 import type { AgentPolicy } from "./hooks.js";
 import type { CliCheck, Engine, EngineAvailability, EngineRegistration, EngineTry, EngineView, McpLinkView } from "./engine.js";
 import { normalizeEngine } from "./engine-shape.js";
@@ -116,7 +117,12 @@ export interface BriefView {
   updatedAt: number | null;
   /** Characters the brief is kept under. */
   max: number;
+  /** The body before the last write, to go back to; null when there is none. */
+  previous: string | null;
 }
+
+/** One write to the brief: the whole text, or one `## Heading` section replaced, added or removed. */
+export type BriefPatch = { body: string } | { section: string; text: string } | { section: string; remove: true };
 
 export interface NewThreadOptions {
   itemId?: string | null;
@@ -162,6 +168,8 @@ declare module "@tomradex/ipc" {
     /** The agent-maintained project brief every run reads; empty when none is written yet. */
     "agent.brief": (projectId: string) => BriefView;
     "agent.setBrief": (projectId: string, body: string) => BriefView;
+    "agent.restoreBrief": (projectId: string) => BriefView;
+    "agent.compactBrief": (projectId: string) => Promise<BriefView>;
     "agent.newThread": (projectId: string, engine?: string, boardId?: string | null, opts?: NewThreadOptions) => ThreadSummary;
     /** Put the thread on a workstream (its repository is where a code engine runs), or back on the whole project. */
     "agent.setWorkstream": (projectId: string, threadId: string, boardId: string | null) => ThreadSummary;
@@ -445,6 +453,8 @@ export class Agent extends Service implements AgentReader {
       });
       ctx.ipc.handle("agent.brief", (projectId) => ctx.agent.briefView(projectId));
       ctx.ipc.handle("agent.setBrief", (projectId, body) => ctx.agent.setBrief(projectId, body));
+      ctx.ipc.handle("agent.restoreBrief", (projectId) => ctx.agent.restoreBrief(projectId));
+      ctx.ipc.handle("agent.compactBrief", (projectId) => ctx.agent.compactBrief(projectId));
       ctx.ipc.handle("agent.newThread", (projectId, engine, boardId, opts) => ctx.agent.newThread(projectId, engine, boardId ?? null, opts ?? {}));
       ctx.ipc.handle("agent.startGeneral", (projectId, itemId, opts) => ctx.agent.startGeneral(projectId, itemId, opts));
       ctx.ipc.handle("agent.takeoverGeneral", (projectId, itemId) => ctx.agent.takeoverGeneral(projectId, itemId));
@@ -1410,14 +1420,49 @@ export class Agent extends Service implements AgentReader {
   /** The brief as the settings screen shows it: the text, when it changed, and how much room it has. */
   briefView(projectId: string): BriefView {
     const view = this.store.briefView(projectId);
-    return { body: view?.body ?? "", updatedAt: view?.updatedAt ?? null, max: BRIEF_MAX_CHARS };
+    return { body: view?.body ?? "", updatedAt: view?.updatedAt ?? null, max: BRIEF_MAX_CHARS, previous: view?.previous ?? null };
   }
 
   /** The person's own words replace the agents': kept under the cap every run pays for. */
   setBrief(projectId: string, body: string): BriefView {
-    const text = body.replace(/\r\n/g, "\n").trim();
-    if (text.length > BRIEF_MAX_CHARS) throw new Error(`The project brief is kept under ${BRIEF_MAX_CHARS} characters — every run reads it; shorten it first (${text.length} now)`);
+    return this.patchBrief(projectId, { body });
+  }
+
+  /** One write, whole or by section, refused over the cap with the size and what to do — never cut. */
+  patchBrief(projectId: string, patch: BriefPatch): BriefView {
+    const current = this.store.brief(projectId) ?? "";
+    const next = "body" in patch ? patch.body : withSection(current, patch.section, "remove" in patch ? null : patch.text);
+    const text = next.replace(/\r\n/g, "\n").trim();
+    if (text.length > BRIEF_MAX_CHARS) throw new Error(briefTooLong(text.length));
     this.store.setBrief(projectId, text);
+    return this.briefView(projectId);
+  }
+
+  /** One step back. */
+  restoreBrief(projectId: string): BriefView {
+    if (!this.store.restoreBrief(projectId)) throw new Error("There is no earlier brief to go back to");
+    return this.briefView(projectId);
+  }
+
+  /** The brief rewritten shorter by the worker model, facts kept; the long one stays as the previous version. */
+  async compactBrief(projectId: string): Promise<BriefView> {
+    const llm = (this.ctx.get("llm") as LlmService | undefined) ?? null;
+    if (!llm) throw new Error("Compacting the brief needs a worker model — configure one in Settings → Assistant, or shorten it by hand");
+    const current = this.store.brief(projectId) ?? "";
+    if (!current.trim()) return this.briefView(projectId);
+    const target = Math.floor(BRIEF_MAX_CHARS * 0.7);
+    let compacted = "";
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const out = await llm.completeJson(z.object({ brief: z.string() }), {
+        system: COMPACT_SYSTEM,
+        user: `Keep it under ${attempt === 0 ? target : Math.floor(target * 0.7)} characters.\n\nBRIEF (${current.length} characters):\n${current}`,
+        purpose: "brief"
+      });
+      compacted = out.brief.replace(/\r\n/g, "\n").trim();
+      if (compacted.length <= BRIEF_MAX_CHARS) break;
+    }
+    if (!compacted || compacted.length > BRIEF_MAX_CHARS) throw new Error(`The worker could not bring the brief under ${BRIEF_MAX_CHARS} characters (${compacted.length || current.length}); shorten it by hand`);
+    this.store.setBrief(projectId, compacted);
     return this.briefView(projectId);
   }
 
@@ -2025,11 +2070,20 @@ export class Agent extends Service implements AgentReader {
       defineTool({
         name: "update_project_brief",
         title: "Update the project brief",
-        description: "Rewrite the agent-maintained project memory: what this product is, its conventions, its main epics. Injected into every future run.",
-        input: z.object({ body: z.string() }),
-        execute: ({ body }, inv) => {
-          this.store.setBrief(requireProjectId("update_project_brief", undefined, inv), body);
-          return { ok: true };
+        description:
+          "Update the agent-maintained project memory every future run reads: what this product is, its stack and commands, where its data comes from, its vocabulary and conventions. Prefer one section: pass {section: \"## heading without the ##\", text} to replace or add that section and leave the rest as it is, {section, remove: true} to drop one, or {body} to rewrite the whole brief. It is kept under a size cap: a write over it is refused with the size, not cut, and {compact: true} has the worker model rewrite it shorter.",
+        input: z.object({ body: z.string().optional(), section: z.string().min(1).optional(), text: z.string().optional(), remove: z.boolean().optional(), compact: z.boolean().optional() }),
+        execute: async ({ body, section, text, remove, compact }, inv) => {
+          const projectId = requireProjectId("update_project_brief", undefined, inv);
+          const view = compact
+            ? await this.compactBrief(projectId)
+            : section
+              ? this.patchBrief(projectId, remove ? { section, remove: true } : { section, text: text ?? "" })
+              : body !== undefined
+                ? this.patchBrief(projectId, { body })
+                : null;
+          if (!view) throw new Error("update_project_brief: pass body, or section with text (or remove: true), or compact: true");
+          return { ok: true, size: view.body.length, max: view.max, sections: parseBrief(view.body).sections.map((s) => s.heading) };
         }
       })
     );

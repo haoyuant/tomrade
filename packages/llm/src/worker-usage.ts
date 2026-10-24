@@ -1,7 +1,7 @@
 import type { ProjectDb } from "@tomradex/db";
 
 /** What a worker call was for; the Usage pane names each one. */
-export type WorkerPurpose = "plan" | "gaps" | "similar" | "dependencies" | "inbox" | "playbook" | "branch";
+export type WorkerPurpose = "plan" | "gaps" | "similar" | "dependencies" | "inbox" | "playbook" | "branch" | "brief";
 
 /** Tokens a worker call spent, every round of it (a repair round included). */
 export interface WorkerSpend {
