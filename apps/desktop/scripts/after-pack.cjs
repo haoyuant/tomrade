@@ -6,6 +6,10 @@
 // better-sqlite3 brings a prebuilt binary for every platform and SQLite's
 // sources to compile one; each app keeps only the binary it loads.
 //
+// Nor does it keep what only a build or an editor reads: TypeScript sources and
+// declarations, examples and tests, readmes and changelogs, node-addon-api's
+// headers, or esbuild's CLI copy of its binary.
+//
 // None keeps the agent SDK's Claude Code (~190 MB, musl builds included): the
 // engine always passes the person's own CLI as pathToClaudeCodeExecutable, and
 // the SDK reads its bundled copy only without one.
@@ -31,6 +35,38 @@ function pruneSqlite(modules, platform, arch) {
 }
 exports.pruneSqlite = pruneSqlite;
 
+const TS_SOURCE = /\.(?:ts|tsx|mts|cts)$/;
+const DECLARATION = /\.d\.(?:ts|mts|cts)$/;
+const NOTES = /^(?:readme|changelog|history)(?:\.(?:md|markdown|txt))?$/i;
+const SAMPLES = new Set(["examples", "__tests__"]);
+
+/**
+ * Drop from node_modules what no running app reads. Tomrade's own packages keep their non-TS files (playbooks are
+ * Markdown); the plugin SDK keeps its declarations, which Plugin Studio hands the agent (contract.d.ts).
+ */
+function pruneUnused(modules) {
+  for (const gone of ["node-addon-api", "esbuild/bin/esbuild"]) fs.rmSync(path.join(modules, gone), { recursive: true, force: true });
+  const walk = (dir, rel) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      const at = rel ? `${rel}/${entry.name}` : entry.name;
+      const own = at.startsWith("@tomradex/");
+      if (entry.isDirectory()) {
+        if (!own && SAMPLES.has(entry.name)) fs.rmSync(full, { recursive: true, force: true });
+        else {
+          walk(full, at);
+          if (!fs.readdirSync(full).length) fs.rmdirSync(full);
+        }
+      } else if (
+        DECLARATION.test(entry.name) ? !at.startsWith("@tomradex/plugin-sdk/")
+          : TS_SOURCE.test(entry.name) || (own ? at.split("/").length === 3 && entry.name === "tsconfig.json" : NOTES.test(entry.name))
+      ) fs.rmSync(full, { force: true });
+    }
+  };
+  walk(modules, "");
+}
+exports.pruneUnused = pruneUnused;
+
 exports.default = async ({ electronPlatformName, arch, appOutDir, packager }) => {
   const own = Arch[arch];
   const resources =
@@ -51,12 +87,7 @@ exports.default = async ({ electronPlatformName, arch, appOutDir, packager }) =>
     const [, os, cpu] = name.match(/^([a-z0-9]+)-([a-z0-9]+)$/) ?? [];
     return os && (os !== electronPlatformName || cpu !== own);
   });
-  // esbuild's install copied the build machine's binary over its CLI. Windows
-  // runs @esbuild/win32-x64's esbuild.exe and never reads it.
-  if (electronPlatformName !== "win32") {
-    fs.copyFileSync(
-      path.join(modules, `@esbuild/${electronPlatformName}-${own}/bin/esbuild`),
-      path.join(modules, "esbuild/bin/esbuild"),
-    );
-  }
+  // esbuild's install copied the build machine's binary over its CLI; its API
+  // runs @esbuild/<platform>'s and nothing runs the CLI, so pruneUnused drops it.
+  pruneUnused(modules);
 };
