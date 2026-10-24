@@ -13,7 +13,6 @@ import type { RunProgress } from "~/lib/agent";
 import { offerStart, permissionLabel, useMergeTicket, useResolveMerge, useStartTickets } from "~/lib/codeLink";
 import { useEngines } from "~/lib/agent";
 import { useAgentDock } from "~/components/chrome/ProjectShell";
-import { openExternal } from "~/lib/shell";
 import type { MergeCard, StartBatchCard } from "@tomradex/code-link";
 import { useSetupInTerminal } from "~/lib/setup";
 import { useImShareNext, useImThreadBindings } from "~/lib/im";
