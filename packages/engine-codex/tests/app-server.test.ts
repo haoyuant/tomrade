@@ -73,8 +73,20 @@ it("uses one process for two turns, attributes counters per turn, and interrupts
       expect(result.stop, result.error).toBe("end");
       io.resume = result.resume;
     }
+    // Full access picked while the person has not answered: Tomrade approves it; a stricter mode waits for the next turn
+    let apply: ((mode: string) => Promise<boolean>) | undefined;
+    const took: boolean[] = [];
+    io.modeTo = (fn) => { apply = fn; };
+    io.requestPermission = (_text, _options, signal) => {
+      void apply!("read-only").then((ok) => took.push(ok)).then(() => apply!("full-access")).then((ok) => took.push(ok));
+      return new Promise((resolve) => signal?.addEventListener("abort", () => resolve(null), { once: true }));
+    };
+    const raised = await engine.turn(input, io);
+    expect(raised.stop, raised.error).toBe("end");
+    expect(took).toEqual([false, true]);
+    io.resume = raised.resume; delete io.modeTo;
     const all = fs.readFileSync(log, "utf8").trim().split("\n").map((s) => JSON.parse(s));
-    expect(all.filter((r) => r.id === "permission-request").map((r) => r.result.decision)).toEqual(["accept", "decline", "decline"]);
+    expect(all.filter((r) => r.id === "permission-request").map((r) => r.result.decision)).toEqual(["accept", "decline", "decline", "accept"]);
     const resumed = all.find((r) => r.method === "thread/resume");
     expect(resumed.params.approvalPolicy).toBe("on-request");
     expect(resumed.params.sandbox).toBe("workspace-write");

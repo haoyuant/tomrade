@@ -251,6 +251,8 @@ export interface Engine {
   options?: z.ZodType<unknown>;
   /** `default` is what a session starts in until the person picks another mode. */
   permissionModes?: { default: string; choices: { value: string; label: string }[] };
+  /** A mode picked while a turn runs can reach it in that turn (`io.modeTo`); absent, it waits for the next turn. */
+  liveModes?: boolean;
   /** Whether a ticket can be handed to its CLI in a terminal. Absent: `{ mode: "handoff" }`. */
   terminal?: EngineTerminal;
   /** True: it runs on the model profiles set up in Tomrade, so a key or model error is fixed there — not in its own sign-in. */
@@ -417,6 +419,7 @@ export interface EngineView {
   tried?: EngineTry;
   picks?: EnginePick[];
   permissionModes?: Engine["permissionModes"];
+  liveModes?: boolean;
   terminal?: boolean;
   terminalOnly?: boolean;
   /** Runs only in a terminal, yet answers a try through its agent (`local.ask`). */

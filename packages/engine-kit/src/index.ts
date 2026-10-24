@@ -6,6 +6,7 @@ export {
   installDirs, searchPath, findCommand, machineHost, archiveFolder,
   type BundledCli, type CliHost, type CliLaunch, type CliRunResult
 } from "./locate.js";
+export { MODE_ALLOWS, OpenAsks } from "./asks.js";
 export { binKind, managedLaunch, type BinKind, type ManagedCli } from "./managed.js";
 export { MCP_NAME, userMcpLink, type UserMcpConfig } from "./mcp-link.js";
 export { RuntimePool, runtimeFingerprint, runtimeDirectory, bindTurn, MessageQueue, type Runtime } from "./runtime.js";

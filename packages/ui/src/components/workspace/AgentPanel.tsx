@@ -756,7 +756,7 @@ export function AgentPanel({
               <MenuHead title={t("agentPanel.permissions")} />
               {permissionModes.choices.map((choice) => (
                 <MenuRadioItem key={choice.value} checked={choice.value === selectedPermissionMode} name={choice.label}
-                  sub={runningRun ? t("agentPanel.modeNextTurn") : undefined}
+                  sub={runningRun && !engine?.liveModes ? t("agentPanel.modeNextTurn") : undefined}
                   onSelect={() => {
                     if (!threadId) return;
                     setPermissionMode.mutate({ threadId, mode: choice.value });

@@ -81,6 +81,9 @@ export function createTomradeEngine(ctx: Context, config: TomradeEngineConfig): 
     get permissionModes() {
       return part(config.work)?.permissionModes;
     },
+    get liveModes() {
+      return part(config.work)?.liveModes;
+    },
     local: {
       get diagnostics() {
         return part(config.work)?.local?.diagnostics;
@@ -118,7 +121,9 @@ export function createTomradeEngine(ctx: Context, config: TomradeEngineConfig): 
           type: "note",
           text: words()("holding", { engine: engine.title })
         });
-      const result = await engine.turn(turnInput, { ...io, resume });
+      // a mode picked mid-turn reaches it only when it is one of its own
+      const modeTo = io.modeTo && ((apply: (mode: string) => Promise<boolean>) => io.modeTo!((mode) => engine.permissionModes?.choices.some((choice) => choice.value === mode) ? apply(mode) : Promise.resolve(false)));
+      const result = await engine.turn(turnInput, { ...io, resume, ...(modeTo ? { modeTo } : {}) });
       return result.resume ? { ...result, resume: mark + result.resume } : result;
     }
   };

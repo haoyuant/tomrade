@@ -6,10 +6,10 @@ import path from "node:path";
 import type { Context } from "cordis";
 import { attachedMedia, deferredTools, kitLines, stepHint, stepSummary, withRecap, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
 import { bestEffort } from "@tomradex/contracts";
-import { engineLocale, JsonLinePeer, KIT_WORDS, localCli, runtimeDirectory, runTurn, sessionSystem, spawnCli, stopCli, turnPrompt, type CliLaunch, type RpcDialect, type Runtime } from "@tomradex/engine-kit";
+import { engineLocale, JsonLinePeer, KIT_WORDS, localCli, MODE_ALLOWS, OpenAsks, runtimeDirectory, runTurn, sessionSystem, spawnCli, stopCli, turnPrompt, type CliLaunch, type RpcDialect, type Runtime } from "@tomradex/engine-kit";
 import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/tools";
-import { bridgeSource } from "./bridge.js";
+import { bridgeSource, GATE_TITLE } from "./bridge.js";
 import { PiOptions, toolSelection } from "./options.js";
 import { PI_WORDS } from "./words.js";
 
@@ -76,6 +76,10 @@ export class PiRuntime implements Runtime {
   private onEvent?: (event: Json) => void;
   private onFailure?: (error: Error) => void;
   private activeIO?: TurnIO;
+  /** The mode the process was started in, and the one the running turn works under. */
+  private spawnedMode?: string;
+  private mode?: string;
+  private asks = new OpenAsks();
   private locale: string | undefined;
   private kit;
   private words;
@@ -120,7 +124,12 @@ export class PiRuntime implements Runtime {
     const io = this.activeIO;
     const choices: string[] = request.method === "confirm" ? ["Allow once", "Deny"] : request.method === "select" ? request.options ?? [] : [];
     const text = [request.title, request.message].filter(Boolean).join("\n");
-    const answer = io && choices.length && !io.signal.aborted ? await io.requestPermission?.(text, choices, io.signal) ?? null : null;
+    // the bridge's own gate follows the mode the turn works under now, which may have changed since it started
+    const gate = request.method === "confirm" && typeof request.title === "string" && request.title.startsWith(GATE_TITLE);
+    if (gate && this.mode === "full-access") return { confirmed: true };
+    if (gate && this.mode === "read-only") return { confirmed: false };
+    const answer = io && choices.length && !io.signal.aborted ? await this.asks.ask(io, text, choices, () => gate && this.mode === "full-access", io.signal) : null;
+    if (answer === MODE_ALLOWS) return { confirmed: true };
     return answer === null || io?.signal.aborted ? { cancelled: true }
       : request.method === "confirm" ? { confirmed: answer === "Allow once" } : { value: answer };
   }
@@ -130,6 +139,7 @@ export class PiRuntime implements Runtime {
     const bridge = path.join(this.dir, "tomrade.ts");
     const system = path.join(this.dir, "system.md");
     const approval = input.permissionMode === "ask";
+    this.spawnedMode = input.permissionMode;
     const listed = io.tools.describe();
     const shown = new Set(listed.map((t) => t.name));
     const deferred = deferredTools(listed, input.purpose, input.messages);
@@ -153,6 +163,7 @@ export class PiRuntime implements Runtime {
 
   async turn(input: TurnInput, io: TurnIO, warm: boolean): Promise<TurnResult> {
     this.activeIO = io;
+    this.mode = input.permissionMode;
     const start = performance.now();
     const metrics: TurnMetrics = { transport: "rpc", runtime: warm ? "warm" : "cold", toolCalls: 0, compactions: 0 };
     const total = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
@@ -187,6 +198,14 @@ export class PiRuntime implements Runtime {
       // Messages sent into this turn that pi has queued and not yet put before the model.
       const forwarded: { id: string; text: string }[] = [];
       let settled = false;
+      io.modeTo?.(async (mode) => {
+        // Only a process started under "ask" has the gate a mode can steer: a full-access one has no gate, and a
+        // read-only one lacks the tools to widen to. Those take the mode from the next turn.
+        if (settled || !this.alive || this.spawnedMode !== "ask") return false;
+        this.mode = mode;
+        this.asks.settle();
+        return true;
+      });
       io.steerTo?.(async (steer) => {
         if (!prompted || settled || turn.cancelled || !this.alive) return false;
         // known before the request: pi may put it before the model before it answers

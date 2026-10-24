@@ -14,6 +14,8 @@ export function createClaudeCodeEngine(ctx: Context): Engine {
     ...info,
     // the SDK session takes messages mid-turn through its input queue
     steering: "forward",
+    // the SDK session switches its permission mode mid-turn
+    liveModes: true,
     local: { ...info.local, commands: claudeCommands },
     media: () => ({ input: ["image/png", "image/jpeg", "image/webp", "image/gif", "application/pdf"], output: [] }),
     permissionModes: { default: "bypassPermissions", choices: [

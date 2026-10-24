@@ -1,6 +1,9 @@
 /** Built-ins that only look; the "ask" gate lets them through without a prompt. */
 const READ_ONLY = ["read", "grep", "find", "ls", "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource", "tool_search"];
 
+/** How the "ask" gate titles its question, so Tomrade can tell it from another extension's. */
+export const GATE_TITLE = "Pi wants to use ";
+
 export interface BridgeOptions {
   url: string;
   token: string;
@@ -43,7 +46,7 @@ export default function (pi) {
   pi.on("tool_call", async (event, ctx) => {
     if (event.toolName.startsWith("mcp__tomrade__") || readOnly.has(event.toolName)) return;
     if (pi.getAllTools().find((tool) => tool.name === event.toolName)?.annotations?.readOnlyHint === true) return;
-    if (await ctx.ui.confirm("Pi wants to use " + event.toolName, JSON.stringify(event.input, null, 2))) return;
+    if (await ctx.ui.confirm(${JSON.stringify(GATE_TITLE)} + event.toolName, JSON.stringify(event.input, null, 2))) return;
     return { block: true, reason: "The user did not approve " + event.toolName };
   });
 }

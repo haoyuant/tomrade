@@ -111,6 +111,8 @@ export function createBuiltinPiEngine(ctx: Context, config: BuiltinPiConfig): En
       const profile = profileOf(options);
       return { input: (profile?.inputModalities?.includes("image") ?? profile?.provider === "anthropic") ? IMAGES : [], output: [] };
     },
+    // a turn started under "ask" can be raised or narrowed while it runs
+    liveModes: true,
     permissionModes: PERMISSION_MODES,
     local: {
       picks: () => {

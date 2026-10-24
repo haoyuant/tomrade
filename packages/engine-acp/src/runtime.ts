@@ -2,7 +2,7 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Context } from "cordis";
 import { attachedMedia, withRecap, type TurnIO, type TurnInput, type TurnMetrics, type TurnResult } from "@tomradex/agent";
 import { errorMessage } from "@tomradex/contracts";
-import { engineLocale, KIT_WORDS, RpcError, runtimeDirectory, runTurn, sessionSystem, spawnCli, stopCli, stopCliNow, turnPrompt, type JsonLinePeer, type Runtime } from "@tomradex/engine-kit";
+import { engineLocale, KIT_WORDS, MODE_ALLOWS, OpenAsks, RpcError, runtimeDirectory, runTurn, sessionSystem, spawnCli, stopCli, stopCliNow, turnPrompt, type JsonLinePeer, type Runtime } from "@tomradex/engine-kit";
 import type {} from "@tomradex/mcp";
 import { isTomradeTool, policyOf, wrappedTool, type AcpAgent, type AcpOptions, type Catalog, type Policy, type RequestUsage } from "./agent.js";
 import { advertised, choicesOf, optionOf, type Setting } from "./catalog.js";
@@ -59,6 +59,7 @@ export class AcpRuntime implements Runtime {
   private brief = false;
   private io?: TurnIO;
   private policy: Policy = "full-access";
+  private asks = new OpenAsks();
   private calls = new Map<string, Call>();
   /** What Tomrade or the person refused this turn, by label and by call; some agents end the turn on a refusal. */
   private refused: string[] = [];
@@ -121,8 +122,11 @@ export class AcpRuntime implements Runtime {
     if (isTomradeTool(call) || this.policy === "full-access") return answer(pick("allow_once", "allow_always"));
     if (this.policy === "read-only") return LOOKS.has(call.kind ?? "") ? answer(pick("allow_once", "allow_always")) : refuse();
     const details = call.args === undefined ? "" : `\n${JSON.stringify(call.args, null, 2).slice(0, 2000)}`;
-    const said = await io.requestPermission?.(`${this.agent.title}: ${label}${details}`, options.map((option) => option.name), io.signal) ?? null;
+    const looks = LOOKS.has(call.kind ?? "");
+    const said = await this.asks.ask(io, `${this.agent.title}: ${label}${details}`, options.map((option) => option.name),
+      () => this.policy === "full-access" || (this.policy === "read-only" && looks), io.signal);
     if (io.signal.aborted) return answer();
+    if (said === MODE_ALLOWS) return answer(pick("allow_once", "allow_always"));
     const chosen = said === null ? undefined : options.find((option) => option.name === said);
     return chosen && !chosen.kind?.startsWith("reject") ? answer(chosen) : refuse();
   }
@@ -328,6 +332,20 @@ export class AcpRuntime implements Runtime {
       const readArmed = () => {
         for (const entry of acknowledged.filter((a) => a.armed)) { acknowledged.splice(acknowledged.indexOf(entry), 1); steered(entry.id); }
       };
+      io.modeTo?.(async (mode) => {
+        if (over || this.io !== io || !this.conn?.alive) return false;
+        const before = this.policy;
+        this.policy = policyOf({ purpose: input.purpose, permissionMode: mode }, this.agent);
+        try {
+          const own = this.agent.mode?.(this.policy);
+          if (own) await this.setMode(own, io);
+        } catch (error) {
+          this.policy = before;
+          throw error;
+        }
+        this.asks.settle();
+        return true;
+      });
       if (this.agent.steer) io.steerTo?.(async (steer) => {
         if (!prompted || over || turn.cancelled || !this.conn?.alive) return false;
         const text = steerText(steer.text);

@@ -2,7 +2,7 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Context } from "cordis";
 import type { TurnIO, TurnInput, TurnResult, TurnMetrics } from "@tomradex/agent";
 import { codexMediaInput, publishNativeImage, withRecap } from "@tomradex/agent";
-import { engineLocale, JsonLinePeer, jsonRpc, KIT_WORDS, localCli, RpcError, runtimeDirectory, runTurn, sessionSystem, spawnCli, stopCli, turnPrompt, type Runtime } from "@tomradex/engine-kit";
+import { engineLocale, JsonLinePeer, jsonRpc, KIT_WORDS, localCli, MODE_ALLOWS, OpenAsks, RpcError, runtimeDirectory, runTurn, sessionSystem, spawnCli, stopCli, turnPrompt, type Runtime } from "@tomradex/engine-kit";
 import { CodexOptions, codexModel } from "./engine.js";
 import { lostSession } from "./account.js";
 import { codexRetry, codexStep } from "./steps.js";
@@ -26,6 +26,9 @@ export class CodexRuntime implements Runtime {
   private failure?: (error: Error) => void;
   private totals?: Counters;
   private activeIO?: TurnIO;
+  /** Full access picked for the running turn, or the one it started in. */
+  private fullAccess = false;
+  private asks = new OpenAsks();
   private locale: string | undefined;
   private kit;
 
@@ -59,15 +62,17 @@ export class CodexRuntime implements Runtime {
     const active = io && !io.signal.aborted && (!params.threadId || params.threadId === this.session);
     const command = method === "item/commandExecution/requestApproval";
     const file = method === "item/fileChange/requestApproval";
+    // Raised to Full access during the turn: Codex keeps the turn's approval policy, so Tomrade approves what it still asks.
+    const allows = () => this.fullAccess;
     if (command || file) {
-      const answer = active ? await io.requestPermission?.(
+      const answer = !active ? null : allows() ? MODE_ALLOWS : await this.asks.ask(io,
         `${command ? "Command" : "File changes"} permission\n${JSON.stringify(params, null, 2)}`,
-        ["Allow once", "Deny"], io.signal) : null;
-      return { decision: answer === "Allow once" && !io?.signal.aborted ? "accept" : "decline" };
+        ["Allow once", "Deny"], allows, io.signal);
+      return { decision: (answer === "Allow once" || answer === MODE_ALLOWS) && !io?.signal.aborted ? "accept" : "decline" };
     }
     if (method === "item/permissions/requestApproval") {
-      const answer = active ? await io.requestPermission?.(`Additional permissions\n${JSON.stringify(params, null, 2)}`, ["Allow for this turn", "Deny"], io.signal) : null;
-      return { permissions: answer === "Allow for this turn" && !io?.signal.aborted ? params.permissions : {}, scope: "turn" };
+      const answer = !active ? null : allows() ? MODE_ALLOWS : await this.asks.ask(io, `Additional permissions\n${JSON.stringify(params, null, 2)}`, ["Allow for this turn", "Deny"], allows, io.signal);
+      return { permissions: (answer === "Allow for this turn" || answer === MODE_ALLOWS) && !io?.signal.aborted ? params.permissions : {}, scope: "turn" };
     }
     if (method === "mcpServer/elicitation/request") return { action: "cancel", content: null };
     throw new RpcError("Unsupported interactive request", -32601);
@@ -114,6 +119,16 @@ export class CodexRuntime implements Runtime {
       // Messages sent into this turn with turn/steer, until Codex adds them to the conversation.
       const forwarded = new Map<string, string>();
       let over = false;
+      this.fullAccess = input.permissionMode === "full-access";
+      io.modeTo?.(async (mode) => {
+        if (over || !this.alive) return false;
+        // The session's sandbox and approval policy hold for this turn: Full access can be granted by approving what
+        // it asks, and going back to the mode it started in undoes that; anything else waits for the next turn.
+        if (mode !== "full-access" && mode !== input.permissionMode) return false;
+        this.fullAccess = mode === "full-access";
+        this.asks.settle();
+        return true;
+      });
       io.steerTo?.(async (steer) => {
         if (!turnId || over || turn.cancelled || !this.alive) return false;
         // known before the request: Codex may add it to the conversation before it answers

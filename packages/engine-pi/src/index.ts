@@ -24,6 +24,8 @@ export function createPiEngine(ctx: Context): Engine {
     steering: "forward",
     options: PiOptions,
     media: () => ({ input: ["image/png", "image/jpeg", "image/webp", "image/gif"], output: [] }),
+    // a turn started under "ask" can be raised or narrowed while it runs
+    liveModes: true,
     permissionModes: PERMISSION_MODES,
     available: localAvailability(ctx, {
       engineId: "pi",

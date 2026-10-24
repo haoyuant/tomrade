@@ -59,7 +59,8 @@ it.each(["code", "backlog"] as const)("exposes the full tool set and the person'
         turn.permissionMode = mode;
         await engine.turn(turn, io);
         expect(capture.options!.permissionMode).toBe(mode === "local" ? undefined : mode);
-        expect(capture.options!.allowDangerouslySkipPermissions).toBe(mode === "bypassPermissions");
+        // set for every mode, so a turn can be raised to bypassPermissions while it runs
+        expect(capture.options!.allowDangerouslySkipPermissions).toBe(true);
       }
     }
 
