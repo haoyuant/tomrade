@@ -113,8 +113,14 @@ const clip = (text: string, max: number): string => (text.length > max ? text.sl
  */
 /** What the main conversation can do with the code, and where that code is, so a limit is named instead of mistaken for an empty folder. */
 function mainConversationSection(repositories: TurnInput["repositories"]): string {
+  const standing = (r: NonNullable<TurnInput["repositories"]>[number]): string =>
+    r.readiness === "empty"
+      ? " — EMPTY: no project in it yet. Its first code ticket cannot start until a bootstrap ticket (stack, scaffold, CLAUDE.md), which Tomrade files at Start, has merged. Say so when you create the first code ticket there, and settle the stack with the user now (ask_user: language and framework, package manager, tests) and record it with record_decision, so the bootstrap runs without questions."
+      : r.readiness === "scaffolded" && r.hasBrief === false
+        ? " — has code but no CLAUDE.md yet: the first ticket there adds one."
+        : "";
   const where = repositories?.length
-    ? "Workstream repositories:\n" + repositories.map((r) => `- ${r.workstream}: ${r.name} ${r.path ? `at ${r.path} (default branch ${r.defaultBranch})` : "— no checkout on this machine, so it cannot be read here"}`).join("\n")
+    ? "Workstream repositories:\n" + repositories.map((r) => `- ${r.workstream}: ${r.name} ${r.path ? `at ${r.path} (default branch ${r.defaultBranch})` : "— no checkout on this machine, so it cannot be read here"}${standing(r)}`).join("\n")
     : "No workstream has a repository linked yet.";
   return (
     "This is the project's main conversation, not a ticket's worktree. Read the repositories below freely to answer about the code, but never change them here: code work goes through a ticket. " +
