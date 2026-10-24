@@ -84,7 +84,10 @@ export interface AgentTurnInfo {
 
 /** One model request as an in-app engine is about to send it. */
 export interface AgentRequest {
+  /** Stable from turn to turn: what a provider caches. */
   system: string;
+  /** What changes between turns, sent after the cached part. */
+  systemTail?: string;
   tools: ToolSpec[];
   messages: Message[];
   turn: AgentTurnInfo;

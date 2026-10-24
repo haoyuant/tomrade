@@ -92,6 +92,12 @@ function fakeCodeEngine(turns: TurnInput[]): Engine {
     available: async () => ({ ok: true }),
     async turn(input, io) {
       turns.push(input);
+      // An orientation pass: the agent reads and writes the brief, nothing else.
+      if (input.purpose === "backlog" && input.input.kind === "text" && input.input.text.startsWith("Orientation:")) {
+        await io.tools.execute("update_project_brief", { body: "Shop: products are pulled from the supplier feed, never edited here." });
+        io.emit({ type: "text", text: "brief written" });
+        return { stop: "end", resume: "fake-session-o" };
+      }
       if (input.cwd && input.purpose === "code") {
         fs.writeFileSync(path.join(input.cwd, `work-${turns.length}.ts`), "export {};\n");
         git(["add", "-A"], input.cwd);
@@ -103,7 +109,7 @@ function fakeCodeEngine(turns: TurnInput[]): Engine {
   };
 }
 
-async function machine(repo: { remote: string; checkout: string } | null, opts: { gitBinary?: string; defaultsPath?: string; llm?: (system: string, user: string) => unknown } = {}) {
+async function machine(repo: { remote: string; checkout: string } | null, opts: { gitBinary?: string; defaultsPath?: string; llm?: (system: string, user: string) => unknown; codeEngine?: false; brief?: false } = {}) {
   const hubDir = path.join(root, `hub-${n++}`);
   fs.mkdirSync(hubDir, { recursive: true });
   const turns: TurnInput[] = [];
@@ -117,13 +123,15 @@ async function machine(repo: { remote: string; checkout: string } | null, opts: 
       [Repos, { gitBinary: opts.gitBinary ?? "git" }],
       Contributions,
       Agent,
-      enginePlugin,
+      ...(opts.codeEngine === false ? [] : [enginePlugin]),
       ...(opts.llm ? [fakeLlm(opts.llm)] : []),
       [CodeLink, { scanMs: 0, gitBinary: opts.gitBinary ?? "git", defaultsPath: opts.defaultsPath ?? path.join(hubDir, "code-link.json") }]
     ]
   });
   await settle();
   await bag.ctx.storage.ready;
+  // A project that already knows its code: no orientation starts under a test about something else.
+  if (opts.brief !== false) bag.ctx.agent.store.setBrief(bag.project.id, "Test project: the brief is written.");
   let row = null as ReturnType<typeof bag.ctx.repos.create> | null;
   if (repo) {
     row = bag.ctx.repos.create({ projectId: bag.project.id, remote: repo.remote });
@@ -480,12 +488,13 @@ describe("starting a ticket", () => {
     const input = (purpose: "backlog" | "code") => ({ threadId: "t", projectId: project.id, purpose, input: { kind: "text", text: "hi" }, messages: [], cards: [], brief: null, pending: null, options: {} }) as TurnInput;
     const before = input("backlog");
     await ctx.parallel("agent/prepare-turn", before);
-    expect(before.repositories).toEqual([{ workstream: board.name, name: repo!.name, path: null, defaultBranch: "main" }]);
+    expect(before.repositories).toEqual([{ workstream: board.name, name: repo!.name, path: null, defaultBranch: "main", readiness: "unknown", hasBrief: false }]);
 
     await ctx.repos.setCheckout(repo!.remote, world.checkout!);
+    await world.codeLink.scan(project.id);
     const after = input("backlog");
     await ctx.parallel("agent/prepare-turn", after);
-    expect(after.repositories).toEqual([{ workstream: board.name, name: repo!.name, path: path.join(world.checkout!, "mobile-app"), defaultBranch: "main" }]);
+    expect(after.repositories).toEqual([{ workstream: board.name, name: repo!.name, path: path.join(world.checkout!, "mobile-app"), defaultBranch: "main", readiness: "scaffolded", hasBrief: false }]);
     const code = input("code");
     await ctx.parallel("agent/prepare-turn", code);
     expect(code.repositories).toBeUndefined();
@@ -832,6 +841,135 @@ describe("starting a ticket", () => {
     git(["merge", "-q", "--no-ff", "-m", `Merge ${item.key}`, result.branch], folder);
     await codeLink.scan(project.id);
     expect(ctx.items.get(project.id, item.id)!.status).toBe("done");
+  });
+
+  describe("orientation: a project's first look at a repository it was pointed at", () => {
+    it("has a coding agent read the repository in a worktree and write the project brief, once", async () => {
+      const folder = localRepo();
+      const world = await machine(null, { brief: false });
+      const { codeLink, ctx, agent, project, board, turns } = world;
+      const { repo } = await ctx.repos.addFromFolder(project.id, folder);
+      // Nothing is read for a repository no workstream names: the agent would have nowhere to work.
+      await codeLink.scan(project.id);
+      expect(agent.store.threads(project.id)).toEqual([]);
+
+      world.boards.update(project.id, board.id, { repoId: repo.id });
+      await codeLink.scan(project.id);
+      await until(() => !!agent.brief(project.id));
+      expect(agent.brief(project.id)).toContain("pulled from the supplier feed");
+      const threads = agent.store.threads(project.id);
+      expect(threads.map((t) => t.title)).toEqual([`Orientation · ${path.basename(folder)}`]);
+      expect(threads[0].boardId).toBe(board.id);
+      const orientation = turns.find((t) => t.purpose === "backlog")!;
+      expect(orientation.input).toMatchObject({ kind: "text", text: expect.stringContaining("Read CLAUDE.md or AGENTS.md, README, the manifests (package.json)") });
+      expect(orientation.input).toMatchObject({ text: expect.stringContaining("update_project_brief") });
+      // In a worktree of its own, never in the person's folder.
+      expect(orientation.cwd).toBeTruthy();
+      expect(orientation.cwd).not.toBe(folder);
+      expect(fs.existsSync(path.join(orientation.cwd!, "package.json"))).toBe(true);
+
+      await codeLink.scan(project.id);
+      expect(agent.store.threads(project.id)).toHaveLength(1);
+      expect(turns.filter((t) => t.purpose === "backlog")).toHaveLength(1);
+    }, 20_000);
+
+    it("writes the brief from the repository's own documents when no coding agent is installed", async () => {
+      const folder = localRepo();
+      fs.writeFileSync(path.join(folder, "README.md"), "# Shop\n\nA storefront whose products come from the supplier feed.\n");
+      fs.writeFileSync(path.join(folder, "CLAUDE.md"), "Vue 3, pnpm test.\n");
+      const world = await machine(null, { codeEngine: false, brief: false });
+      const { codeLink, ctx, agent, project, board } = world;
+      const { repo } = await ctx.repos.addFromFolder(project.id, folder);
+      world.boards.update(project.id, board.id, { repoId: repo.id });
+      await codeLink.scan(project.id);
+      const brief = agent.brief(project.id)!;
+      expect(brief).toContain("not by an agent that read the code");
+      expect(brief).toContain("Manifests: package.json.");
+      expect(brief).toContain("## CLAUDE.md\nVue 3, pnpm test.");
+      expect(brief).toContain("## README.md\n# Shop");
+      expect(agent.store.threads(project.id)).toEqual([]);
+    }, 20_000);
+
+    it("starts nothing for a repository with no project in it, or a project whose brief is already written", async () => {
+      const empty = await machine(codeRepo({ manifest: false }), { brief: false });
+      await empty.ctx.repos.setCheckout(empty.repo!.remote, empty.checkout!);
+      await empty.codeLink.scan(empty.project.id);
+      expect(empty.codeLink.repoStates(empty.project.id)[0]).toMatchObject({ readiness: "empty" });
+      expect(empty.agent.brief(empty.project.id)).toBeNull();
+      expect(empty.agent.store.threads(empty.project.id)).toEqual([]);
+
+      const known = await machine(codeRepo());
+      known.agent.store.setBrief(known.project.id, "Already known.");
+      await known.ctx.repos.setCheckout(known.repo!.remote, known.checkout!);
+      await known.codeLink.scan(known.project.id);
+      expect(known.agent.brief(known.project.id)).toBe("Already known.");
+      expect(known.agent.store.threads(known.project.id)).toEqual([]);
+      expect(known.turns).toEqual([]);
+    }, 20_000);
+  });
+
+  describe("a bootstrap started ahead of the ticket that needs it", () => {
+    /** A repository with nothing in it, a workstream on it, and a feature ticket whose Start stops at the readiness gate. */
+    async function emptyRepository() {
+      const folder = path.join(root, `unborn-${n++}`);
+      fs.mkdirSync(folder);
+      git(["init", "-q", "-b", "main"], folder);
+      git(["config", "user.email", "dev@localhost"], folder);
+      git(["config", "user.name", "Dev"], folder);
+      const world = await machine(null);
+      const { codeLink, ctx, project, board, ticket } = world;
+      const { repo } = await ctx.repos.addFromFolder(project.id, folder);
+      world.boards.update(project.id, board.id, { repoId: repo.id });
+      const feature = ticket("Welcome page");
+      const gate = await codeLink.start(project.id, feature.id, { mode: "run", engine: "fake-code", options: { model: "m1" } });
+      expect(gate).toMatchObject({ ok: false, gate: "readiness" });
+      const bootstrap = ctx.items.list({ projectId: project.id }).find((i) => !gate.ok && i.key === gate.bootstrapKey)!;
+      return { ...world, feature, bootstrap };
+    }
+
+    it("starts the bootstrap with the ticket's choices, remembers the ticket, and starts it by itself once the bootstrap is done", async () => {
+      const { codeLink, ctx, agent, project, turns, feature, bootstrap } = await emptyRepository();
+      const started = await codeLink.start(project.id, bootstrap.id, { mode: "run", engine: "fake-code", options: { model: "m1" }, then: feature.id });
+      expect(started).toMatchObject({ ok: true });
+      expect(codeLink.followOns()).toEqual([expect.objectContaining({ projectId: project.id, itemId: feature.id, afterItemId: bootstrap.id, options: { mode: "run", engine: "fake-code", options: { model: "m1" } } })]);
+      // Started again while the bootstrap is still open, the ticket is remembered once.
+      await codeLink.start(project.id, bootstrap.id, { mode: "run", engine: "fake-code", options: { model: "m1" }, then: feature.id });
+      expect(codeLink.followOns()).toHaveLength(1);
+      await untilRunsSettle(agent);
+      expect(turns.length).toBeGreaterThan(0);
+      expect(turns.every((turn) => turn.ticket?.key === bootstrap.key)).toBe(true);
+      expect(ctx.items.get(project.id, feature.id)!.status).toBe("todo");
+
+      ctx.items.update(project.id, bootstrap.id, { status: "done" }, "human");
+      await until(() => turns.some((turn) => turn.ticket?.key === feature.key));
+      await untilRunsSettle(agent);
+      expect(codeLink.followOns()).toEqual([]);
+      const run = turns.find((turn) => turn.ticket?.key === feature.key)!;
+      expect(run.options).toMatchObject({ model: "m1" });
+      expect(ctx.items.get(project.id, feature.id)!.status).toBe("doing");
+      const thread = agent.store.threads(project.id, null).find((t) => t.itemId === feature.id)!;
+      const notes = agent.store.messages(project.id, thread.id).filter((m) => m.role === "system").map((m) => JSON.stringify(m.block));
+      expect(notes.some((note) => note.includes(`${bootstrap.key} landed`))).toBe(true);
+      // Done is done once: nothing starts again.
+      ctx.items.update(project.id, bootstrap.id, { status: "verifying" }, "human");
+      ctx.items.update(project.id, bootstrap.id, { status: "done" }, "human");
+      await untilRunsSettle(agent);
+      expect(turns.filter((turn) => turn.ticket?.key === feature.key)).toHaveLength(1);
+    }, 30_000);
+
+    it("forgets the ticket when it is cancelled before the bootstrap lands, and survives a restart of the store", async () => {
+      const { codeLink, ctx, agent, project, turns, feature, bootstrap, hubDir } = await emptyRepository();
+      await codeLink.start(project.id, bootstrap.id, { mode: "run", engine: "fake-code", then: feature.id });
+      await untilRunsSettle(agent);
+      // Beside the Start defaults, as a file this machine keeps.
+      const file = path.join(hubDir, "code-link-follow-ons.json");
+      expect(JSON.parse(fs.readFileSync(file, "utf8"))).toEqual([expect.objectContaining({ itemId: feature.id, afterItemId: bootstrap.id })]);
+      ctx.items.update(project.id, feature.id, { status: "cancelled" }, "human");
+      expect(codeLink.followOns()).toEqual([]);
+      ctx.items.update(project.id, bootstrap.id, { status: "done" }, "human");
+      await untilRunsSettle(agent);
+      expect(turns.map((turn) => turn.ticket?.key)).toEqual([bootstrap.key]);
+    }, 30_000);
   });
 
   describe("merging from Tomrade in a repository with no remote", () => {
@@ -1362,7 +1500,7 @@ describe("starting a ticket", () => {
     // A session Tomrade started stays with its one ticket, finished or not.
     const other = ticket("Something else");
     await expect(inSession("claim_ticket", { key: other.key })).rejects.toThrow(`this session already owns ${item.key}`);
-    await expect(inSession("claim_ticket", { key: other.key, parallel: true })).rejects.toThrow(`cannot claim ${other.key} in parallel — offer_start ${other.key}`);
+    await expect(inSession("claim_ticket", { key: other.key, parallel: true })).rejects.toThrow(`cannot claim ${other.key} in parallel — start_ticket ${other.key}`);
     expect(codeLink.sessionsOf(project.id, other.id)).toEqual([]);
     await untilRunsSettle(agent);
   });
@@ -2109,4 +2247,215 @@ it("lets the assistant offer Start as a card instead of doing the work itself", 
   } finally {
     await ctx.fiber.dispose();
   }
+});
+
+describe("starting tickets from a conversation", () => {
+  /** A conversation engine that can code: asked in chat, it starts tickets; on a ticket, it commits like the fake coding agent. */
+  function chatty(id: string, say: (text: string, io: Parameters<Engine["turn"]>[1]) => Promise<unknown>, outcomes: unknown[]): Engine {
+    return {
+      id,
+      title: id,
+      author: `ai:${id}`,
+      capabilities: ["backlog", "code", "general"],
+      available: async () => ({ ok: true }),
+      async turn(input, io) {
+        if (input.cwd && input.purpose === "code") {
+          // Sent back for a conflict, it brings the branch up to date and hands over again, as the brief says.
+          if (input.input.kind === "text" && /no longer merges/.test(input.input.text)) {
+            git(["merge", "-q", "-X", "ours", "main"], input.cwd);
+            await io.tools.execute("link_code", { scopeChecked: true });
+            return { stop: "end" };
+          }
+          fs.writeFileSync(path.join(input.cwd, `${input.ticket?.key ?? "TOM-0"}.ts`), "export {};\n");
+          git(["add", "-A"], input.cwd);
+          git(["commit", "-q", "-m", `${input.ticket?.key ?? "TOM-0"}: work`], input.cwd);
+        } else if (input.input.kind === "text") outcomes.push(await say(input.input.text, io).catch((err: Error) => err.message));
+        return { stop: "end" };
+      }
+    };
+  }
+
+  it("starts every ticket named with the conversation's own engine, offers each delivery's merge there under the ask policy, and merges on the person's word", { timeout: 30_000 }, async () => {
+    const folder = localRepo();
+    const world = await machine(null);
+    const { codeLink, ctx, agent, project, board, ticket } = world;
+    const { repo } = await ctx.repos.addFromFolder(project.id, folder);
+    world.boards.update(project.id, board.id, { repoId: repo.id });
+    codeLink.setRepoPolicy(project.id, repo.id, { mergePolicy: "ask" });
+    expect(codeLink.repoStates(project.id).find((s) => s.repoId === repo.id)).toMatchObject({ mergePolicy: "ask", agentMerge: false });
+    const a = ticket("First thing");
+    const b = ticket("Second thing");
+    const c = ticket("Third thing");
+    const outcomes: unknown[] = [];
+    agent.engine(
+      chatty(
+        "chatty",
+        (text, io) =>
+          text.startsWith("merge") ? io.tools.execute("merge_ticket", { key: a.key })
+          : text.startsWith("resolve") ? io.tools.execute("resolve_merge", { key: b.key })
+          : text.startsWith("auto") ? io.tools.execute("start_ticket", { keys: [c.key], autoMerge: true })
+          : io.tools.execute("start_ticket", { keys: [a.key, b.key, "TOM-999"] }),
+        outcomes
+      )
+    );
+    expect(ctx.tools.served("run").map((t) => t.name)).toEqual(expect.arrayContaining(["start_ticket", "merge_ticket"]));
+    expect(ctx.tools.served().map((t) => t.name)).not.toContain("start_ticket");
+
+    const thread = agent.newThread(project.id, "chatty");
+    const run = agent.send(project.id, thread.id, { kind: "text", text: `do ${a.key} and ${b.key}` });
+    await expect.poll(() => agent.store.run(project.id, run.runId)?.status).toBe("done");
+    expect(outcomes[0]).toMatchObject({
+      started: [
+        { key: a.key, engine: "chatty", continued: false },
+        { key: b.key, engine: "chatty", continued: false }
+      ],
+      problems: ["no ticket TOM-999 in this project"]
+    });
+    await untilRunsSettle(agent);
+    // Each ticket runs in a session of its own that remembers which conversation asked.
+    const sessions = codeLink.store.sessions(project.id).filter((s) => s.requestedBy === thread.id);
+    expect(sessions.map((s) => s.itemIds[0]).sort()).toEqual([a.id, b.id].sort());
+    expect(sessions.map((s) => s.mode)).toEqual(["headless", "headless"]);
+    expect(ctx.items.get(project.id, a.id)!.status).toBe("doing");
+    expect(ctx.items.get(project.id, b.id)!.status).toBe("doing");
+    const started = agent.store.cards(project.id, thread.id).find((c) => c.schema === "start-batch");
+    expect(started?.data).toMatchObject({ tickets: [{ key: a.key }, { key: b.key }], results: [{ key: a.key, ok: true, engine: "chatty" }, { key: b.key, ok: true }] });
+    expect(agent.store.cards(project.id, thread.id).filter((c) => c.schema === "merge")).toEqual([]);
+
+    // a's session hands its branch over: Verifying, and the conversation that asked gets the merge to decide.
+    const sessionA = sessions.find((s) => s.itemIds.includes(a.id))!;
+    await sessionContext.run({ projectId: project.id, sessionId: sessionA.id }, () => ctx.tools.execute("link_code", { scopeChecked: true }, { by: "ai:chatty", projectId: project.id }));
+    expect(ctx.items.get(project.id, a.id)!.status).toBe("verifying");
+    const offered = agent.store.cards(project.id, thread.id).find((c) => c.schema === "merge");
+    expect(offered).toMatchObject({ id: `merge-${a.id}-1`, data: { itemId: a.id, key: a.key, state: "offered", prUrl: null, base: "main", branch: sessionA.branch } });
+    // The session's own conversation gets the same card, so the merge is found from either side.
+    expect(agent.store.cards(project.id, sessionA.threadId!).find((c) => c.schema === "merge")).toMatchObject({ id: `merge-${a.id}-1`, data: { key: a.key, state: "offered" } });
+    expect(agent.thread(project.id, thread.id).messages.filter((m) => m.block.type === "card" && m.block.schema === "merge")).toHaveLength(1);
+    const before = git(["rev-parse", "main"], folder);
+
+    // "merge it" in the conversation: the tool merges, the card says so, the ticket is done.
+    const merge = agent.send(project.id, thread.id, { kind: "text", text: "merge it" });
+    await expect.poll(() => agent.store.run(project.id, merge.runId)?.status).toBe("done");
+    expect(outcomes[1]).toMatchObject({ key: a.key, merged: true });
+    expect(git(["rev-parse", "main"], folder)).not.toBe(before);
+    expect(ctx.items.get(project.id, a.id)!.status).toBe("done");
+    expect(agent.store.cards(project.id, thread.id).find((c) => c.id === `merge-${a.id}-1`)?.data).toMatchObject({ state: "merged", message: expect.stringContaining("Merged") });
+    expect(agent.store.cards(project.id, sessionA.threadId!).find((c) => c.id === `merge-${a.id}-1`)?.data).toMatchObject({ state: "merged" });
+    // Still the one card: an update, not a second message.
+    expect(agent.thread(project.id, thread.id).messages.filter((m) => m.block.type === "card" && m.block.schema === "merge")).toHaveLength(1);
+
+    // b is handed over too, and merged from the card's button (the IPC path); a conflict is reported on the card, not hidden.
+    const sessionB = sessions.find((s) => s.itemIds.includes(b.id))!;
+    await sessionContext.run({ projectId: project.id, sessionId: sessionB.id }, () => ctx.tools.execute("link_code", { scopeChecked: true }, { by: "ai:chatty", projectId: project.id }));
+    expect(agent.store.cards(project.id, thread.id).find((c) => c.id === `merge-${b.id}-1`)?.data).toMatchObject({ key: b.key, state: "offered" });
+    fs.writeFileSync(path.join(folder, `${b.key}.ts`), "export const clash = 1;\n");
+    git(["add", "-A"], folder);
+    git(["commit", "-q", "-m", "clash on main"], folder);
+    expect(await codeLink.merge(project.id, b.id)).toMatchObject({ merged: false, cause: "conflict", message: expect.stringContaining("conflicts with main") });
+    expect(agent.store.cards(project.id, thread.id).find((c) => c.id === `merge-${b.id}-1`)?.data).toMatchObject({ state: "refused", cause: "conflict", message: expect.stringContaining("conflicts with main") });
+    expect(ctx.items.get(project.id, b.id)!.status).toBe("verifying");
+
+    // "resolve it" in the conversation: the session is sent back, brings the branch up to date, hands over, and the merge is offered again.
+    const resolve = agent.send(project.id, thread.id, { kind: "text", text: "resolve it" });
+    await expect.poll(() => agent.store.run(project.id, resolve.runId)?.status).toBe("done");
+    expect(outcomes.at(-1)).toMatchObject({ key: b.key, started: true, engine: "chatty" });
+    await untilRunsSettle(agent);
+    expect(ctx.items.get(project.id, b.id)!.status).toBe("verifying");
+    const again = agent.store.cards(project.id, thread.id).find((c) => c.id === `merge-${b.id}-1`)?.data;
+    expect(again).toMatchObject({ state: "offered" });
+    expect(await codeLink.merge(project.id, b.id)).toMatchObject({ merged: true });
+    expect(ctx.items.get(project.id, b.id)!.status).toBe("done");
+    expect(agent.thread(project.id, thread.id).messages.filter((m) => m.block.type === "card" && m.block.schema === "merge")).toHaveLength(2);
+
+    // Asked up front to merge once done: no question, the card reports the merge.
+    const auto = agent.send(project.id, thread.id, { kind: "text", text: `auto ${c.key}` });
+    await expect.poll(() => agent.store.run(project.id, auto.runId)?.status).toBe("done");
+    expect(outcomes.at(-1)).toMatchObject({ started: [{ key: c.key }] });
+    await untilRunsSettle(agent);
+    expect(codeLink.sessionsOf(project.id, c.id)[0]).toMatchObject({ autoMerge: true });
+    const sessionC = codeLink.sessionsOf(project.id, c.id)[0]!;
+    await sessionContext.run({ projectId: project.id, sessionId: sessionC.id }, () => ctx.tools.execute("link_code", { scopeChecked: true }, { by: "ai:chatty", projectId: project.id }));
+    await expect.poll(() => ctx.items.get(project.id, c.id)!.status).toBe("done");
+    expect(agent.store.cards(project.id, thread.id).find((c2) => c2.id === `merge-${c.id}-1`)?.data).toMatchObject({ state: "merged" });
+  });
+
+  it("asks on a card before starting a ticket the assistant just filed, and starts it from that card with the settled configuration", { timeout: 30_000 }, async () => {
+    const { codeLink, ctx, agent, project, repo, checkout, ticket } = await machine(codeRepo());
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    const filed = ticket("Sparks follow the pointer");
+    const outcomes: unknown[] = [];
+    agent.engine(chatty("asker", (_text, io) => io.tools.execute("start_ticket", { keys: [filed.key], confirm: true }), outcomes));
+    const thread = agent.newThread(project.id, "asker");
+    const run = agent.send(project.id, thread.id, { kind: "text", text: "add sparks that follow the pointer" });
+    await expect.poll(() => agent.store.run(project.id, run.runId)?.status).toBe("done");
+    expect(outcomes[0]).toMatchObject({ started: [], note: expect.stringContaining("asks the user whether to start") });
+    expect(codeLink.sessionsOf(project.id, filed.id)).toEqual([]);
+    expect(ctx.items.get(project.id, filed.id)!.status).toBe("todo");
+    const card = agent.store.cards(project.id, thread.id).find((c) => c.schema === "start-batch")!;
+    expect(card.data).toMatchObject({ tickets: [{ key: filed.key }], config: { engine: "asker" } });
+    expect(card.data).not.toHaveProperty("reason");
+    expect(card.data).not.toHaveProperty("results");
+    // The person says yes on the card: it runs with the conversation's own engine.
+    const config = (card.data as { config: { engine: string } }).config;
+    const results = await codeLink.startTickets(project.id, { itemIds: [filed.id], requestedBy: thread.id, ...config, cardId: card.id });
+    expect(results).toEqual([expect.objectContaining({ key: filed.key, ok: true, engine: "asker" })]);
+    await untilRunsSettle(agent);
+    expect(agent.store.cards(project.id, thread.id).find((c) => c.id === card.id)?.data).toMatchObject({ config: { engine: "asker" }, results: [{ key: filed.key, ok: true, threadId: expect.any(String) }] });
+    expect(ctx.items.get(project.id, filed.id)!.status).toBe("doing");
+  });
+
+  it("asks the person to pick the agent on a card when the conversation's engine cannot code, starts from that card, and remembers the pick", { timeout: 30_000 }, async () => {
+    const { codeLink, ctx, agent, project, repo, checkout, ticket, turns } = await machine(codeRepo());
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    const item = ticket("Fix the login form");
+    const outcomes: unknown[] = [];
+    agent.engine({
+      id: "talker",
+      title: "Talker",
+      author: "ai:talker",
+      available: async () => ({ ok: true }),
+      async turn(_input, io) {
+        outcomes.push(await io.tools.execute("start_ticket", { keys: [item.key], task: "do it carefully" }).catch((err: Error) => err.message));
+        return { stop: "end" };
+      }
+    });
+    const thread = agent.newThread(project.id, "talker");
+    const run = agent.send(project.id, thread.id, { kind: "text", text: "fix the login form" });
+    await expect.poll(() => agent.store.run(project.id, run.runId)?.status).toBe("done");
+    expect(outcomes[0]).toMatchObject({ started: [], note: expect.stringContaining("pick the agent") });
+    expect(codeLink.sessionsOf(project.id, item.id)).toEqual([]);
+    expect(ctx.items.get(project.id, item.id)!.status).toBe("todo");
+    const card = agent.store.cards(project.id, thread.id).find((c) => c.schema === "start-batch")!;
+    expect(card.data).toMatchObject({ tickets: [{ itemId: item.id, key: item.key }], task: "do it carefully", reason: expect.stringContaining("not a code-capable engine") });
+    expect((card.data as { results?: unknown }).results).toBeUndefined();
+
+    // The person picks the fake coding agent on the card.
+    const results = await codeLink.startTickets(project.id, { itemIds: [item.id], requestedBy: thread.id, engine: "fake-code", task: "do it carefully", cardId: card.id });
+    expect(results).toEqual([expect.objectContaining({ itemId: item.id, key: item.key, ok: true, engine: "fake-code", continued: false })]);
+    await untilRunsSettle(agent);
+    expect(agent.store.cards(project.id, thread.id).find((c) => c.id === card.id)?.data).toMatchObject({ tickets: [{ key: item.key }], task: "do it carefully", results: [{ key: item.key, ok: true, engine: "fake-code" }] });
+    expect(codeLink.sessionsOf(project.id, item.id)).toEqual([expect.objectContaining({ mode: "headless", agent: "fake-code", requestedBy: thread.id })]);
+    const brief = turns.find((t) => t.purpose === "code")!;
+    expect(brief.input.kind === "text" && brief.input.text).toContain("do it carefully");
+
+    // Remembered: the next conversation that cannot code starts with it straight away, no card to pick on.
+    expect(codeLink.startDefaults()).toMatchObject({ mode: "run", engine: "fake-code" });
+    const other = ticket("Another thing");
+    agent.engine({
+      id: "talker-2",
+      title: "Talker 2",
+      author: "ai:talker-2",
+      available: async () => ({ ok: true }),
+      async turn(_input, io) {
+        outcomes.push(await io.tools.execute("start_ticket", { keys: [other.key] }).catch((err: Error) => err.message));
+        return { stop: "end" };
+      }
+    });
+    const second = agent.newThread(project.id, "talker-2");
+    const again = agent.send(project.id, second.id, { kind: "text", text: "do the other thing" });
+    await expect.poll(() => agent.store.run(project.id, again.runId)?.status).toBe("done");
+    expect(outcomes[1]).toMatchObject({ started: [{ key: other.key, engine: "fake-code" }] });
+    await untilRunsSettle(agent);
+    expect(codeLink.sessionsOf(project.id, other.id)).toEqual([expect.objectContaining({ agent: "fake-code", requestedBy: second.id })]);
+  });
 });

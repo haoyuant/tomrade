@@ -16,7 +16,8 @@ import { mergeLine } from "./prompts.js";
 import { END_AFTER_MS, sessionContext } from "./sessions.js";
 import type { CodeLinkStore, CodeLinkView, SessionView } from "./store.js";
 import type { PrState } from "./rules.js";
-import type { CodeSummaryView } from "./service.js";
+import type { CodeSummaryView, StartBatchCard, StartBatchEntry, StartBatchRequest, StartConfig } from "./service.js";
+import type { MergeLocalResult } from "./landing.js";
 import { errorMessage } from "@tomradex/contracts";
 
 /** What the tools need from the service without importing it. */
@@ -64,6 +65,14 @@ export interface ToolHost {
   summary(projectId: string, itemId: string): CodeSummaryView;
   /** A repository with no remote: merge the ticket's branch into the default branch here. */
   mergeLocal(projectId: string, itemId: string, opts: { agent: boolean }): Promise<{ merged: boolean; sha: string | null; message: string }>;
+  /** On the person's word: the ticket's pull request through gh, or its branch here without a remote. */
+  merge(projectId: string, itemId: string): Promise<MergeLocalResult>;
+  /** How tickets asked for in this conversation run, or that the person has to pick. */
+  startConfigFor(projectId: string, threadId: string): Promise<StartConfig>;
+  /** Start several tickets headless with one configuration. */
+  startTickets(projectId: string, request: StartBatchRequest): Promise<StartBatchEntry[]>;
+  /** A merge refused for a conflict: the ticket's session is sent back to bring its branch up to date. */
+  resolveMerge(projectId: string, itemId: string, requestedBy: string): Promise<StartBatchEntry>;
 }
 
 /** The ticket, repository and branch a call is about: named by key, or implied by the session or the run's thread. */
@@ -253,10 +262,121 @@ export function registerTools(ctx: Context, host: ToolHost): void {
 
   ctx.tools.register(
     defineTool({
+      name: "start_ticket",
+      title: "Start tickets from this conversation",
+      description:
+        "You do not change code or carry out tickets yourself: this starts a coding session on each ticket, on its own branch in its own worktree, and returns at once — the sessions run on while the conversation goes on. When the user names tickets to be done (one or several), call this once with every key. When you have just filed a ticket for what the user asked, pass confirm: true instead: a card then asks the user whether to start it, and you end your turn. The sessions run with your own engine when it can code; else with what the Start dialog last ran; else the result says a card asks the user to pick the agent, and you end your turn. A ticket that waits on open tickets is not started unless allowBlocked is true: say which it waits on and ask (ask_user) whether to start anyway.",
+      input: z.object({
+        keys: z.array(z.string().min(1)).min(1).max(20).describe("Ticket keys, e.g. [\"TOM-42\", \"TOM-43\"]"),
+        confirm: z.boolean().optional().describe("Ask first: the card shows a Start button instead of starting now — for a ticket you just filed from the user's request"),
+        autoMerge: z.boolean().optional().describe("Only when the user said to merge once done: Tomrade merges each delivery by itself instead of asking in the conversation"),
+        task: z
+          .string()
+          .max(500)
+          .optional()
+          .describe("What each session is to do first, when that is not the ticket's work as written — e.g. \"PR #73 conflicts with main: merge origin/main, resolve the conflicts, run the tests, push, then merge it\""),
+        allowBlocked: z.boolean().optional().describe("Start tickets that wait on open ones too; each session is told what is still open"),
+        projectId: z.string().optional()
+      }),
+      // A conversation in Tomrade starts tickets; an outside client has its own terminal for that.
+      mcp: "run",
+      execute: async (args, inv) => {
+        const projectId = requireProjectId("start_ticket", args.projectId, inv);
+        const agent = ctx.get("agent");
+        if (!inv.run || !agent) throw new Error("start_ticket: only a conversation in Tomrade can start tickets");
+        const items: Item[] = [];
+        const problems: string[] = [];
+        for (const key of args.keys) {
+          const item = ctx.items.getByKey(projectId, key.toUpperCase());
+          if (!item) problems.push(`no ticket ${key} in this project`);
+          else if (item.kind !== "ticket") problems.push(`${item.key} is an epic — start its tickets`);
+          else if (item.status === "done" || item.status === "cancelled") problems.push(`${item.key} is ${item.status} — reopen it first`);
+          else if (!items.some((i) => i.id === item.id)) items.push(item);
+        }
+        if (!items.length) throw new Error(`start_ticket: ${problems.join("; ")}`);
+        const task = args.task?.trim();
+        const config = await host.startConfigFor(projectId, inv.run.threadId);
+        const keys = items.map((i) => i.key).join(", ");
+        if (config.choose) {
+          const card: StartBatchCard = { tickets: items.map((i) => ({ itemId: i.id, key: i.key, title: i.title })), ...(task ? { task } : {}), reason: config.reason };
+          agent.setCard(inv.run.id, { id: `start-batch-${inv.run.id}`, schema: "start-batch", title: keys, data: card });
+          return { started: [], ...(problems.length ? { problems } : {}), note: `No coding agent is ready for this conversation (${config.reason}). A card in the conversation lets the user pick the agent and start ${keys}. End your turn.` };
+        }
+        if (args.confirm) {
+          const settled = { engine: config.engine, ...(config.options ? { options: config.options } : {}), ...(config.permissionMode ? { permissionMode: config.permissionMode } : {}) };
+          const card: StartBatchCard = { tickets: items.map((i) => ({ itemId: i.id, key: i.key, title: i.title })), ...(task ? { task } : {}), config: settled };
+          agent.setCard(inv.run.id, { id: `start-batch-${inv.run.id}`, schema: "start-batch", title: keys, data: card });
+          return { started: [], ...(problems.length ? { problems } : {}), note: `A card in the conversation asks the user whether to start ${keys}; nothing runs until they say so. Say what the ticket is about in a line and end your turn.` };
+        }
+        const results = await host.startTickets(projectId, { itemIds: items.map((i) => i.id), requestedBy: inv.run.threadId, engine: config.engine, ...(config.options ? { options: config.options } : {}), ...(config.permissionMode ? { permissionMode: config.permissionMode } : {}), ...(task ? { task } : {}), ...(args.allowBlocked ? { allowBlocked: true } : {}), ...(args.autoMerge ? { autoMerge: true } : {}) });
+        const card: StartBatchCard = { tickets: items.map((i) => ({ itemId: i.id, key: i.key, title: i.title })), ...(task ? { task } : {}), results };
+        agent.setCard(inv.run.id, { id: `start-batch-${inv.run.id}`, schema: "start-batch", title: items.map((i) => i.key).join(", "), data: card });
+        const started = results.filter((r) => r.ok);
+        const stopped = results.filter((r) => !r.ok);
+        return {
+          started: started.map((r) => ({ key: r.key, branch: r.branch, engine: r.engine, continued: r.continued ?? false, ...(r.message ? { waitingOn: r.message } : {}) })),
+          ...(stopped.length ? { notStarted: stopped.map((r) => ({ key: r.key, gate: r.gate, message: r.message, ...(r.blockers ? { waitsOn: r.blockers } : {}) })) } : {}),
+          ...(problems.length ? { problems } : {}),
+          note: started.length
+            ? `${started.map((r) => r.key).join(", ")} ${started.length === 1 ? "runs" : "run"} in ${started.length === 1 ? "a session" : "sessions"} of ${started.length === 1 ? "its" : "their"} own now; the user is told on a card. Say briefly what was started${stopped.length ? " and what was not, and why" : ""}, then end your turn.`
+            : "Nothing started. Say why, in the user's words, and where a gate names a fix, offer it."
+        };
+      }
+    })
+  );
+
+  ctx.tools.register(
+    defineTool({
+      name: "merge_ticket",
+      title: "Merge a delivered ticket on the user's word",
+      description:
+        "When the user says to merge a ticket that is Verifying (its pull request is open, or its branch is handed over in a repository with no remote), call this: Tomrade merges the pull request with gh by the method the repository allows, or the branch into the default branch here. Only on the user's say-so, never on your own. A refused merge comes back as its message; tell the user and stop.",
+      input: z.object({ key: z.string().min(1).describe("Ticket key, e.g. TOM-42"), projectId: z.string().optional() }),
+      mcp: "run",
+      execute: async (args, inv) => {
+        const projectId = requireProjectId("merge_ticket", args.projectId, inv);
+        if (!inv.run) throw new Error("merge_ticket: only a conversation in Tomrade can merge on the user's word");
+        const item = ctx.items.getByKey(projectId, args.key.toUpperCase());
+        if (!item) throw new Error(`merge_ticket: no ticket ${args.key} in this project`);
+        const result = await host.merge(projectId, item.id);
+        const next =
+          result.merged ? undefined
+          : result.cause === "conflict" ? "the branch conflicts with the default branch: ask the user (ask_user) whether the ticket's session should bring it up to date, and if so call resolve_merge — Tomrade offers the merge again once it hands over"
+          : result.cause === "dirty" ? "the person's checkout has uncommitted changes on the default branch: tell them to commit or stash there, then call merge_ticket again when they say so"
+          : result.cause === "no-pr" ? "there is no open pull request yet: the session pushes and opens one; once it has, merge_ticket again"
+          : "tell the user why it did not merge and stop; the person settles it";
+        return { key: item.key, ...result, ...(next ? { next } : {}) };
+      }
+    })
+  );
+
+  ctx.tools.register(
+    defineTool({
+      name: "resolve_merge",
+      title: "Send the ticket's session back to clear a conflicting merge",
+      description:
+        "After merge_ticket was refused for a conflict and the user agreed: the ticket's coding session is continued with the task of merging the default branch into its branch, resolving the conflicts, testing and handing over again. Tomrade then offers the merge again in the conversation (or merges by itself, when the user asked for that up front). Returns at once.",
+      input: z.object({ key: z.string().min(1).describe("Ticket key, e.g. TOM-42"), projectId: z.string().optional() }),
+      mcp: "run",
+      execute: async (args, inv) => {
+        const projectId = requireProjectId("resolve_merge", args.projectId, inv);
+        if (!inv.run) throw new Error("resolve_merge: only a conversation in Tomrade can send a session back");
+        const item = ctx.items.getByKey(projectId, args.key.toUpperCase());
+        if (!item) throw new Error(`resolve_merge: no ticket ${args.key} in this project`);
+        const entry = await host.resolveMerge(projectId, item.id, inv.run.threadId);
+        return entry.ok
+          ? { key: item.key, started: true, branch: entry.branch, engine: entry.engine, note: "The session is bringing its branch up to date; the conversation hears when it hands over. End your turn." }
+          : { key: item.key, started: false, gate: entry.gate, message: entry.message, note: "Nothing started: say why, and where a gate names a fix, offer it." };
+      }
+    })
+  );
+
+  ctx.tools.register(
+    defineTool({
       name: "offer_start",
       title: "Offer to start a ticket",
       description:
-        "You do not change code or carry out tickets yourself. When the user wants a ticket implemented (code changed, a document written, any ticket's work done), make sure a ticket describes it — create one if needed — then call this: the user gets a Start button that opens the Start dialog, where they pick the agent, where it works and its permissions. Then end your turn.",
+        "Put a Start button for a ticket in the conversation, for the user to open the Start dialog and pick the agent, where it works and its permissions themselves. Use start_ticket to start tickets; call this only when the user wants to choose the configuration themselves or to run the ticket in a terminal. Then end your turn.",
       input: z.object({
         key: z.string().describe("Ticket key, e.g. TOM-42"),
         task: z
@@ -378,7 +498,7 @@ export function registerTools(ctx: Context, host: ToolHost): void {
 
         const bound = sessionContext.getStore();
         const tokened = bound && bound.projectId === projectId ? host.store.session(projectId, bound.sessionId) : null;
-        if (tokened && args.parallel) throw new Error(`claim_ticket: a session Tomrade started works one ticket in its own worktree, so it cannot claim ${item.key} in parallel — offer_start ${item.key} to start it in a session of its own`);
+        if (tokened && args.parallel) throw new Error(`claim_ticket: a session Tomrade started works one ticket in its own worktree, so it cannot claim ${item.key} in parallel — start_ticket ${item.key} to start it in a session of its own`);
         const worktree = !tokened && args.worktree?.trim() ? path.resolve(args.worktree.trim()) : null;
         // Without a token the claim belongs to the client's connection: the session it claimed before, else a hooks session nobody holds.
         // One it already works this ticket in, alongside others, is that one again.

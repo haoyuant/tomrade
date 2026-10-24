@@ -8,7 +8,7 @@ import { Icon } from "~/components/icons";
 import { ProviderInstallProblem } from "~/components/setup/QuickModelSetup";
 import { Fold, FoldChevron, FoldChevronSpace, SectionHead, Tag } from "~/components/ui/atoms";
 import { invoke } from "~/lib/api";
-import { detectedHere, failedTry, pickChoiceName, pickTitleOf } from "~/lib/engines";
+import { detectedHere, failedTry, pickFallbackName, pickTitleOf } from "~/lib/engines";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { engineStateLabel, engineStatus } from "~/lib/localCli";
 import { keys, usePlugins } from "~/lib/queries";
@@ -18,7 +18,8 @@ import { GitNotice } from "~/components/setup/GitNotice";
 import { LocalCliSection } from "../LocalCliSection";
 import { RegistryAgents } from "./RegistryAgents";
 import { McpLinkSection } from "../McpLinkSection";
-import { CUSTOM_PICK, ProfileForm, SearchRouteLine, providerOf } from "./ModelProfiles";
+import { ProfileForm, SearchRouteLine, providerOf } from "./ModelProfiles";
+import { PickSelect } from "~/components/ui/pick-select";
 import { ScopeTag } from "./ScopeTag";
 
 // The app's own presets keep their translated names; a provider's other presets show the title it gives.
@@ -432,55 +433,17 @@ function EngineRow({
 }
 
 
-/** One engine quick-pick knob, drawn as a select. A native `<input list>` datalist filters its
- *  suggestions to those matching the current text, which hid the other presets once one was
- *  already chosen — so a free-text pick instead gets a "Custom…" entry that reveals a plain
- *  text input, keeping every preset reachable while any value the CLI knows still works. */
+/** One engine quick-pick knob: the shared select, its "Default" naming what the engine runs with on its own once it has said. */
 function EnginePickField({ engine, pick, value, onCommit }: { engine: EngineView; pick: EnginePick; value: string; onCommit: (value: string) => void }) {
   const { t } = useI18n();
-  const isPreset = (v: string) => v === "" || pick.choices.some((c) => c.value === v);
-  const [draft, setDraft] = useState(value);
-  const [custom, setCustom] = useState(!isPreset(value));
-  // Only a new committed value re-syncs the field; a refreshed choice list leaves a draft alone.
-  const isPresetRef = useRef(isPreset);
-  isPresetRef.current = isPreset;
-  useEffect(() => {
-    setDraft(value);
-    setCustom(!isPresetRef.current(value));
-  }, [value]);
-  const commit = (next: string) => {
-    setDraft(next);
-    onCommit(next);
-  };
-  const onSelect = (v: string) => {
-    if (v === CUSTOM_PICK) {
-      setCustom(true);
-      return;
-    }
-    setCustom(false);
-    commit(v);
-  };
-  const title = pickTitleOf(t, pick);
   const id = `engPick-${engine.id}-${pick.key}`;
+  const stands = pickFallbackName(t, pick);
   return (
     <div className="field">
-      <label htmlFor={id}>{title}</label>
-      <select id={id} className="input" value={custom ? CUSTOM_PICK : draft} onChange={(e) => onSelect(e.target.value)}>
-        <option value="">{t("settingsDialog.pickDefaultOption")}</option>
-        {pick.choices.map((c) => (
-          <option key={c.value} value={c.value}>
-            {c.searchesWeb ? t("settingsDialog.pickSearchesWeb", { label: pickChoiceName(t, pick, c) }) : pickChoiceName(t, pick, c)}
-          </option>
-        ))}
-        {pick.freeText && <option value={CUSTOM_PICK}>{t("settingsDialog.pickCustomOption")}</option>}
-      </select>
+      <label htmlFor={id}>{pickTitleOf(t, pick)}</label>
+      <PickSelect id={id} pick={pick} value={value} onChange={onCommit} className="input" defaultLabel={stands ? t("agentPanel.pickDefaultKnown", { value: stands }) : t("settingsDialog.pickDefaultOption")} />
       {pick.key === "profile" && <span className="meta-txt">{t("settingsDialog.engineProfileNote")}</span>}
-      {pick.freeText && (
-        <>
-          {custom && <input id={`${id}-custom`} className="input num" value={draft} onChange={(e) => commit(e.target.value)} />}
-          <span className="meta-txt">{t("settingsDialog.engineModelNote")}</span>
-        </>
-      )}
+      {pick.freeText && <span className="meta-txt">{t("settingsDialog.engineModelNote")}</span>}
     </div>
   );
 }

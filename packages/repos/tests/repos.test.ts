@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { InUseError } from "@tomradex/domain";
-import { Repos, CheckoutUnsetError, normalizeRemote, sameRepository } from "@tomradex/repos";
+import { Repos, CheckoutUnsetError, RepoPathOutsideError, normalizeRemote, sameRepository } from "@tomradex/repos";
 import { Storage } from "@tomradex/storage";
 import { fresh, settle } from "@tomradex/testkit";
 
@@ -173,6 +173,35 @@ describe("repositories", () => {
     expect(fs.existsSync(view.worktree!)).toBe(false);
   });
 
+  it("reads the workstream's folder as a folder in the repository, however it was spelled", async () => {
+    const { repos, boards, project, board } = await machine();
+    const code = codeRepo();
+    const repo = repos.create({ projectId: project.id, remote: code.remote });
+    await repos.setCheckout(code.remote, code.checkout);
+    repos.setRunInCheckout(code.remote, true);
+
+    // A Windows spelling of a sub-folder is stored and read with forward slashes.
+    expect(boards.update(project.id, board.id, { repoId: repo.id, repoPath: "packages\\ui\\" }).repoPath).toBe("packages/ui");
+    expect((await repos.workdirFor(project.id, board.id, "t1"))!.cwd).toBe(path.join(code.checkout, "packages", "ui"));
+
+    // The checkout's own path, as a Windows user pasted it, is the repository root; a folder under it is that folder.
+    boards.update(project.id, board.id, { repoPath: code.checkout });
+    expect((await repos.workdirFor(project.id, board.id, "t1"))!.cwd).toBe(code.checkout);
+    boards.update(project.id, board.id, { repoPath: path.join(code.checkout, "packages", "ui") });
+    expect((await repos.workdirFor(project.id, board.id, "t1"))!.cwd).toBe(path.join(code.checkout, "packages", "ui"));
+
+    // A place on this machine outside the checkout is refused with the fix, not joined under the Hub.
+    boards.update(project.id, board.id, { repoPath: "D:\\codexApp\\goods-list" });
+    await expect(repos.workdirFor(project.id, board.id, "t1")).rejects.toThrow(RepoPathOutsideError);
+    repos.setRunInCheckout(code.remote, false);
+    await expect(repos.workdirFor(project.id, board.id, "t1")).rejects.toThrow(/not inside the checkout/);
+
+    // A folder the checkout lacks is named, with where it was looked for.
+    repos.setRunInCheckout(code.remote, true);
+    boards.update(project.id, board.id, { repoPath: "apps/web" });
+    await expect(repos.workdirFor(project.id, board.id, "t1")).rejects.toThrow(/folder apps\/web does not exist in/);
+  });
+
   it("adds the repository in a chosen folder by its origin, reusing a row that spells it differently", async () => {
     const { repos, project, hub } = await machine();
     const known = repos.create({ projectId: project.id, remote: "https://github.com/acme/app" });
@@ -226,11 +255,55 @@ describe("repositories", () => {
     expect(await repos.adoptOrigins(project.id)).toEqual([]);
   });
 
+  it("initialises git in a plain folder and commits what is there, keeping dependency folders out", async () => {
+    const { repos, boards, project, board } = await machine();
+    const plain = path.join(root, `plain-${n++}`);
+    fs.mkdirSync(path.join(plain, "node_modules", "left-pad"), { recursive: true });
+    fs.writeFileSync(path.join(plain, "node_modules", "left-pad", "index.js"), "module.exports = 1;\n");
+    fs.writeFileSync(path.join(plain, "package.json"), '{ "name": "shop" }\n');
+    fs.writeFileSync(path.join(plain, "index.ts"), "export {};\n");
+
+    const added = await repos.addFromFolder(project.id, plain);
+    expect(added).toMatchObject({ local: true, existing: false, initialised: true, committed: 2, repo: { remote: plain, name: path.basename(plain), defaultBranch: "main" } });
+    expect(git(["rev-list", "--count", "main"], plain)).toBe("1");
+    expect(git(["ls-files"], plain).split("\n").sort()).toEqual(["index.ts", "package.json"]);
+    expect(git(["status", "--porcelain"], plain)).toBe("");
+    expect(fs.existsSync(path.join(plain, ".gitignore"))).toBe(false);
+
+    // The repository stands: a ticket's worktree starts from that first commit.
+    boards.update(project.id, board.id, { repoId: added.repo.id });
+    const view = (await repos.workdirFor(project.id, board.id, "t-plain", { branch: "TOM-1/first" }))!;
+    expect(fs.existsSync(path.join(view.cwd!, "package.json"))).toBe(true);
+    expect((await repos.addFromFolder(project.id, plain))).toMatchObject({ existing: true, initialised: false, committed: 0 });
+
+    const empty = path.join(root, `empty-${n++}`);
+    fs.mkdirSync(empty);
+    expect(await repos.addFromFolder(project.id, empty)).toMatchObject({ local: true, initialised: true, committed: 0 });
+    expect(git(["rev-parse", "--is-inside-work-tree"], empty)).toBe("true");
+  });
+
+  it("gives a repository with no commit its first one from the working tree, as its .gitignore says", async () => {
+    const { repos, project } = await machine();
+    const folder = path.join(root, `unborn-${n++}`);
+    fs.mkdirSync(folder);
+    git(["init", "-q", "-b", "trunk"], folder);
+    fs.writeFileSync(path.join(folder, ".gitignore"), "dist/\n");
+    fs.mkdirSync(path.join(folder, "dist"));
+    fs.writeFileSync(path.join(folder, "dist", "bundle.js"), "");
+    fs.mkdirSync(path.join(folder, "node_modules"));
+    fs.writeFileSync(path.join(folder, "node_modules", "x.js"), "");
+    fs.writeFileSync(path.join(folder, "pyproject.toml"), "[project]\nname = 'shop'\n");
+
+    const added = await repos.addFromFolder(project.id, folder);
+    expect(added).toMatchObject({ local: true, initialised: false, committed: 3, repo: { defaultBranch: "trunk" } });
+    expect(git(["ls-files"], folder).split("\n").sort()).toEqual([".gitignore", "node_modules/x.js", "pyproject.toml"]);
+    expect(git(["log", "-1", "--format=%s", "trunk"], folder)).toBe(`Import ${path.basename(folder)} into Tomrade`);
+  });
+
   it("refuses a folder that is not a repository root, and offers no clone of a local repository it cannot reach", async () => {
     const { repos, project } = await machine();
     const plain = path.join(root, `plain-${n++}`);
     fs.mkdirSync(plain);
-    await expect(repos.addFromFolder(project.id, plain)).rejects.toThrow(/not a git repository yet/);
     await expect(repos.addFromFolder(project.id, path.join(root, "nowhere"))).rejects.toThrow(/not an existing folder/);
     const code = codeRepo();
     await expect(repos.addFromFolder(project.id, path.join(code.checkout, "packages"))).rejects.toThrow(/is inside the repository at/);

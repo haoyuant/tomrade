@@ -34,16 +34,23 @@ const labelOf = (value: string, name?: string, description?: string | null): str
   return base;
 };
 
-/** The models and efforts a session offers, through its config options or the older `models` field; empty when it offers none. */
+/**
+ * The models and efforts a session offers, through its config options or the older `models` field; empty when it offers none.
+ * `defaults` is what the session opened with — the agent's own choice as long as Tomrade has not set one, so the caller
+ * keeps only the knobs it left alone.
+ */
 export function advertised(config: Json[], models?: Json): Partial<Catalog> {
   const model = optionOf(config, "model");
   const listed = model
     ? choicesOf(model).map((choice) => ({ value: String(choice.value), label: labelOf(String(choice.value), choice.name, choice.description) }))
     : (models?.availableModels ?? []).map((m: Json) => ({ value: String(m.modelId), label: labelOf(String(m.modelId), m.name, m.description) }));
   const effort = optionOf(config, "effort");
+  const current = (value: unknown): string | undefined => (typeof value === "string" || typeof value === "number") && String(value) ? String(value) : undefined;
+  const defaults = { model: current(model ? model.currentValue : models?.currentModelId), effort: current(effort?.currentValue) };
   return {
     ...(listed.length ? { models: listed } : {}),
-    ...(effort ? { efforts: choicesOf(effort).map((choice) => ({ value: String(choice.value), label: labelOf(String(choice.value), choice.name) })) } : {})
+    ...(effort ? { efforts: choicesOf(effort).map((choice) => ({ value: String(choice.value), label: labelOf(String(choice.value), choice.name) })) } : {}),
+    ...(defaults.model || defaults.effort ? { defaults: { ...(defaults.model ? { model: defaults.model } : {}), ...(defaults.effort ? { effort: defaults.effort } : {}) } } : {})
   };
 }
 
@@ -75,7 +82,7 @@ export function keptCatalogs(ctx: Context) {
       const at = file();
       if (!at) return;
       try {
-        fs.writeFileSync(at, `${JSON.stringify({ ...all(at), [id]: { models: catalog.models, efforts: catalog.efforts } }, null, 2)}\n`);
+        fs.writeFileSync(at, `${JSON.stringify({ ...all(at), [id]: { models: catalog.models, efforts: catalog.efforts, ...(catalog.defaults ? { defaults: catalog.defaults } : {}) } }, null, 2)}\n`);
       } catch {
         // Only the next restart's picks miss it.
       }

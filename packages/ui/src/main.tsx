@@ -14,6 +14,7 @@ import type {} from "@tomradex/plugin-studio";
 import { invalidateProject, invalidateWorkspace, keys } from "./lib/queries/index.js";
 import { isLeadWindow, watchWindowChrome } from "./lib/window-chrome.js";
 import { openSettingsPane } from "./lib/settingsHost.js";
+import { letOpenSelectsScroll } from "./lib/select-wheel.js";
 import "./styles/app.css";
 import "./styles/layouts.css";
 
@@ -24,6 +25,9 @@ const queryClient = new QueryClient({
 
 // The header's left gutter tracks the traffic lights, which live outside React.
 watchWindowChrome();
+
+// A sheet's scroll lock would otherwise swallow the wheel over an open select's list.
+letOpenSelectsScroll();
 
 // A plugin loading or unloading changes what the palette, cards and status bar show.
 if (window.tomrade) {

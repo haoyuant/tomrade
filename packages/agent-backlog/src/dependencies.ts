@@ -1,5 +1,6 @@
 import type { Context } from "cordis";
 import { z } from "zod";
+import { projectSection } from "./plan.js";
 import type {} from "@tomradex/db";
 import type {} from "@tomradex/items";
 import type { Author, Item, LanguageTag } from "@tomradex/domain";
@@ -94,6 +95,7 @@ const REVIEW_SYSTEM = [
   "- a cancelled or deleted ticket's dependencies carried over to the ticket that replaces it, when one does;",
   "- dependencies that a changed goal made wrong.",
   "Add one only when the dependent truly cannot be finished without the prerequisite. Being related, sharing an epic or a preferred order is not enough, and when any one of several tickets would do (one data source is enough to build a view), depend on none of them. Return empty lists when nothing qualifies.",
+  "The PROJECT section says what the code already is and does: a ticket never waits on a capability the code already has, and nothing is a prerequisite only because the backlog does not mention it.",
   "Use only keys from the backlog list. Each reason is one short sentence, in the language of the tickets, saying what the dependent needs from the prerequisite.",
   'Return JSON: {"add": [{"prerequisite": "KEY", "dependent": "KEY", "reason": "..."}], "remove": [{"prerequisite": "KEY", "dependent": "KEY", "reason": "..."}]}'
 ].join("\n");
@@ -103,7 +105,7 @@ const LIMIT = 80;
 export const REVIEW_TIMEOUT_MS = 30_000;
 
 /** The worker's judgement on these changes, cut down to edits that can actually be applied. */
-export async function proposeDependencies(ctx: Context, llm: LlmService, projectId: string, changes: TicketChange[], opts: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<DependencyProposal> {
+export async function proposeDependencies(ctx: Context, llm: LlmService, projectId: string, changes: TicketChange[], opts: { signal?: AbortSignal; timeoutMs?: number; brief?: string | null } = {}): Promise<DependencyProposal> {
   const items = ctx.items.list({ projectId });
   const byId = new Map(items.map((i) => [i.id, i]));
   const tickets = items.filter((i) => i.kind === "ticket");
@@ -122,6 +124,7 @@ export async function proposeDependencies(ctx: Context, llm: LlmService, project
   };
   const edges = (c: TicketChange) => [c.blocks.length ? `it blocked ${c.blocks.join(", ")}` : "", c.blockedBy.length ? `it was blocked by ${c.blockedBy.join(", ")}` : ""].filter(Boolean).join("; ");
   const user = [
+    ...projectSection(opts.brief),
     "CHANGES:",
     ...(changes.length
       ? changes.map((c) => `- ${c.what.join(", ")}: ${c.key} "${c.title}"${edges(c) ? ` (${edges(c)})` : ""}`)
