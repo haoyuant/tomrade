@@ -103,6 +103,35 @@ const EVENTS: Record<string, string> = {
 const TOOLS: Record<string, string> = { Shell: "Bash" };
 
 /**
+ * Tomrade's answer, from Claude Code's hook output into the fields Cursor
+ * (cursor-agent 2026.10) reads for the event it posted: a denied tool as
+ * `permission: "deny"` with the reason for the agent and the person, context
+ * as `additional_context`, a continued turn as `followup_message`. A
+ * permission hook that reads nothing it knows blocks the tool, so
+ * `preToolUse` always answers `allow` when there is nothing to say; the
+ * other events get `{}`, which every one of them reads as nothing.
+ */
+export function cursorHookReply(event: string, reply: Record<string, unknown> | undefined): Record<string, unknown> {
+  const specific = (reply?.hookSpecificOutput ?? {}) as { permissionDecision?: unknown; permissionDecisionReason?: unknown; additionalContext?: unknown };
+  const context = typeof reply?.additionalContext === "string" ? reply.additionalContext : typeof specific.additionalContext === "string" ? specific.additionalContext : "";
+  switch (event) {
+    case "preToolUse": {
+      if (specific.permissionDecision !== "deny") return { permission: "allow" };
+      const reason = typeof specific.permissionDecisionReason === "string" && specific.permissionDecisionReason ? specific.permissionDecisionReason : "Tomrade refused this tool call";
+      return { permission: "deny", user_message: reason, agent_message: reason };
+    }
+    case "sessionStart":
+    case "postToolUse":
+    case "postToolUseFailure":
+      return context ? { additional_context: context } : {};
+    case "stop":
+      return reply?.decision === "block" && typeof reply.reason === "string" && reply.reason ? { followup_message: reply.reason } : {};
+    default:
+      return {};
+  }
+}
+
+/**
  * Turns Cursor's hook payloads (cursor-agent 2026.10) into the Claude Code
  * shape Tomrade's sessions read. Cursor's `stop` carries no text, so the
  * last `afterAgentResponse` of each conversation is kept for it.

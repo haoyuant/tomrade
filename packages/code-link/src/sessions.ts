@@ -28,7 +28,7 @@ const CLAIM_HEARD_MS = 10 * 1000;
 const CLAIM_TOOL = /(?:^|[_.:/])claim_ticket$/;
 const NO_TICKET_TOOL = /(?:^|[_.:/])work_without_ticket$/;
 /** The tools that change files, under every agent's names; the shell tools; and the shell commands that write git history. */
-const WRITE_TOOL = /^(?:Edit|Write|MultiEdit|NotebookEdit|apply_patch|edit_file|write_file|create_file|str_replace_editor|str_replace_based_edit_tool)$/i;
+const WRITE_TOOL = /^(?:Edit|Write|MultiEdit|NotebookEdit|StrReplace|Delete|apply_patch|edit_file|write_file|create_file|str_replace_editor|str_replace_based_edit_tool)$/i;
 const SHELL_TOOL = /^(?:Bash|Shell|exec|exec_command|run_command|run_terminal_cmd|terminal)$/i;
 const GIT_WRITE = /\bgit\s+(?:commit|push|merge|rebase|cherry-pick|revert|am|apply)\b/;
 

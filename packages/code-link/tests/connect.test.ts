@@ -1762,6 +1762,26 @@ describe("a developer's own Cursor session", () => {
     await post({ hook_event_name: "sessionEnd", reason: "completed", final_status: "completed" });
     expect(codeLink.sessionsOf(project.id)[0].state).toBe("ended");
   });
+
+  it("hears Tomrade's answer in its own fields: held at its first change without a ticket, let through on a claim, and always told a decision", async () => {
+    const { codeLink, ctx, items, project, board, checkout } = await machine();
+    const post = async (payload: Record<string, unknown>) =>
+      (await fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "content-type": "application/json", "x-tomrade-agent": "cursor" },
+        body: JSON.stringify({ conversation_id: "conv-2", session_id: "conv-2", cursor_version: "2026.10.16-e3cb207", workspace_roots: [checkout], ...payload }) })).json() as Promise<Record<string, unknown>>;
+    expect(await post({ hook_event_name: "sessionStart" })).toEqual({ additional_context: expect.stringContaining("holds no ticket") });
+    await until(() => codeLink.sessionsOf(project.id).length === 1);
+    expect(await post({ hook_event_name: "preToolUse", tool_name: "Read", tool_input: { file_path: path.join(checkout, "README.md") } })).toEqual({ permission: "allow" });
+    const held = await post({ hook_event_name: "preToolUse", tool_name: "Write", tool_input: { file_path: path.join(checkout, "README.md") } });
+    expect(held).toMatchObject({ permission: "deny", agent_message: expect.stringContaining("work_without_ticket"), user_message: expect.any(String) });
+    expect(await post({ hook_event_name: "preToolUse", tool_name: "Shell", tool_input: { command: "git commit -am x" } })).toMatchObject({ permission: "deny" });
+    // An event Cursor reads no answer on, and one from nowhere Tomrade knows, both get an empty object — never a stray field.
+    expect(await post({ hook_event_name: "afterAgentResponse", text: "Working." })).toEqual({});
+    expect(await post({ hook_event_name: "preToolUse", workspace_roots: [os.tmpdir()], tool_name: "Write", tool_input: { file_path: path.join(os.tmpdir(), "x") } })).toEqual({ permission: "allow" });
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "Cursor change", by: "human" });
+    expect(await ctx.tools.execute("claim_ticket", { key: item.key }, { by: "ai:mcp", projectId: project.id, connection: "conn-cursor" })).toMatchObject({ tracking: { tracked: true } });
+    expect(await post({ hook_event_name: "preToolUse", tool_name: "Write", tool_input: { file_path: path.join(checkout, "README.md") } })).toEqual({ permission: "allow" });
+    expect(await post({ hook_event_name: "sessionStart" })).toEqual({});
+  });
 });
 
 describe("a developer's own Claude Code session", () => {

@@ -133,8 +133,12 @@ describe("Cursor's hook scripts", () => {
     try {
       writeConnectFiles(dir, input(tomrade.url), ["cursor"]);
       const sent = await run(path.join(dir, ".cursor/hooks/tomrade"), [], { cwd: dir, stdin: payload });
-      expect(sent).toMatchObject({ code: 0, stdout: "", stderr: "" });
+      // Tomrade's answer stays on stdout for Cursor; with Tomrade down there is none, and Cursor goes on.
+      expect(sent).toMatchObject({ code: 0, stdout: REPLY, stderr: "" });
       expect(tomrade.heard.map((heard) => [heard.body, heard.headers["x-tomrade-agent"]])).toEqual([[payload, "cursor"]]);
+      const gone = fs.mkdtempSync(path.join(root, "cursor-down-"));
+      writeConnectFiles(gone, input(tomrade.down), ["cursor"]);
+      expect(await run(path.join(gone, ".cursor/hooks/tomrade"), [], { cwd: gone, stdin: payload })).toMatchObject({ code: 0, stdout: "", stderr: "" });
     } finally {
       tomrade.close();
     }
@@ -149,7 +153,8 @@ describe("Cursor's hook scripts", () => {
       // cursor-agent 2026.10.16 on Windows: the payload from a file, piped through $input.
       const wrapper = "Get-Content -LiteralPath 'payload.json' -Raw -Encoding UTF8 | & { $input | & '.cursor/hooks/tomrade.ps1' }";
       const sent = await run(powershell!, ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", wrapper], { cwd: dir, pane: "w1-2" });
-      expect(sent).toMatchObject({ code: 0, stdout: "", stderr: "" });
+      expect(sent).toMatchObject({ code: 0, stderr: "" });
+      expect(sent.stdout.trim()).toBe(REPLY);
       expect(tomrade.heard).toHaveLength(1);
       expect(tomrade.heard[0]!.body).toBe(payload);
       expect(tomrade.heard[0]!.headers).toMatchObject({ "content-type": "application/json", "x-tomrade-agent": "cursor", "x-tomrade-herdr-pane": "w1-2" });
