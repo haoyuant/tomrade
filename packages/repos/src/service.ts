@@ -6,7 +6,7 @@ import { z } from "zod";
 import type { Db, ProjectDb } from "@tomradex/db";
 import type { Hub } from "@tomradex/hub";
 import type {} from "@tomradex/boards";
-import { InUseError, NotFoundError, type CreateRepoInput, type Repo, type RepoPatch } from "@tomradex/domain";
+import { InUseError, NotFoundError, repoSubfolder, type CreateRepoInput, type Repo, type RepoPatch } from "@tomradex/domain";
 import type {} from "@tomradex/ipc";
 import { GitError, GitFolder, cloneInto, gitRunner, type Git } from "@tomradex/git";
 import { slugOf } from "@tomradex/storage";
@@ -132,6 +132,17 @@ export class HubUnsetError extends Error {
 }
 
 /** git keeps a branch in one worktree at a time, and another worktree already has this one. */
+/** The workstream's folder is a place on this machine outside the checkout: only a folder in the repository can be run in. */
+export class RepoPathOutsideError extends Error {
+  constructor(
+    public readonly repoPath: string,
+    public readonly checkout: string
+  ) {
+    super(`The workstream's folder ${repoPath} is not inside the checkout ${checkout} — in the workstream's settings, make it a folder in the repository (for example apps/web), or empty for the root`);
+    this.name = "RepoPathOutsideError";
+  }
+}
+
 export class BranchInUseError extends Error {
   constructor(
     public readonly branch: string,
@@ -460,11 +471,13 @@ export class Repos extends Service implements ReposReader {
     if (!repo) return null;
     const placement = this.checkout(repo.remote);
     if (!placement.checkout || !fs.existsSync(placement.checkout)) throw new CheckoutUnsetError(repo.remote);
-    const sub = board.repo_path.replace(/^\/+/, "");
+    // Stored with forward slashes, relative to the repository; an absolute path from before that rule still resolves here.
+    const sub = repoSubfolder(board.repo_path, placement.checkout);
+    if (sub === null) throw new RepoPathOutsideError(board.repo_path, placement.checkout);
     if (placement.runInCheckout) {
       const cwd = path.join(placement.checkout, sub);
       // The user's own checkout is never written, not even an empty folder.
-      if (!fs.existsSync(cwd)) throw new Error(`${sub || "the repository root"} does not exist in ${placement.checkout} — the workstream's folder has to be there before an agent runs in it`);
+      if (!fs.existsSync(cwd)) throw new Error(`The workstream's folder ${sub} does not exist in ${placement.checkout} — create it there, or change the folder in the workstream's settings, before an agent runs in it`);
       return { repo, cwd, worktree: null, checkout: placement.checkout, branch: repo.defaultBranch };
     }
     const hubDir = this.hub.dir;

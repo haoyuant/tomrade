@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { InUseError } from "@tomradex/domain";
-import { Repos, CheckoutUnsetError, normalizeRemote, sameRepository } from "@tomradex/repos";
+import { Repos, CheckoutUnsetError, RepoPathOutsideError, normalizeRemote, sameRepository } from "@tomradex/repos";
 import { Storage } from "@tomradex/storage";
 import { fresh, settle } from "@tomradex/testkit";
 
@@ -171,6 +171,35 @@ describe("repositories", () => {
 
     await repos.removeWorktree(view);
     expect(fs.existsSync(view.worktree!)).toBe(false);
+  });
+
+  it("reads the workstream's folder as a folder in the repository, however it was spelled", async () => {
+    const { repos, boards, project, board } = await machine();
+    const code = codeRepo();
+    const repo = repos.create({ projectId: project.id, remote: code.remote });
+    await repos.setCheckout(code.remote, code.checkout);
+    repos.setRunInCheckout(code.remote, true);
+
+    // A Windows spelling of a sub-folder is stored and read with forward slashes.
+    expect(boards.update(project.id, board.id, { repoId: repo.id, repoPath: "packages\\ui\\" }).repoPath).toBe("packages/ui");
+    expect((await repos.workdirFor(project.id, board.id, "t1"))!.cwd).toBe(path.join(code.checkout, "packages", "ui"));
+
+    // The checkout's own path, as a Windows user pasted it, is the repository root; a folder under it is that folder.
+    boards.update(project.id, board.id, { repoPath: code.checkout });
+    expect((await repos.workdirFor(project.id, board.id, "t1"))!.cwd).toBe(code.checkout);
+    boards.update(project.id, board.id, { repoPath: path.join(code.checkout, "packages", "ui") });
+    expect((await repos.workdirFor(project.id, board.id, "t1"))!.cwd).toBe(path.join(code.checkout, "packages", "ui"));
+
+    // A place on this machine outside the checkout is refused with the fix, not joined under the Hub.
+    boards.update(project.id, board.id, { repoPath: "D:\\codexApp\\goods-list" });
+    await expect(repos.workdirFor(project.id, board.id, "t1")).rejects.toThrow(RepoPathOutsideError);
+    repos.setRunInCheckout(code.remote, false);
+    await expect(repos.workdirFor(project.id, board.id, "t1")).rejects.toThrow(/not inside the checkout/);
+
+    // A folder the checkout lacks is named, with where it was looked for.
+    repos.setRunInCheckout(code.remote, true);
+    boards.update(project.id, board.id, { repoPath: "apps/web" });
+    await expect(repos.workdirFor(project.id, board.id, "t1")).rejects.toThrow(/folder apps\/web does not exist in/);
   });
 
   it("adds the repository in a chosen folder by its origin, reusing a row that spells it differently", async () => {
