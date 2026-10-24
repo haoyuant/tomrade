@@ -586,7 +586,12 @@ export class AgentStore {
   }
 
   brief(projectId: string): string | null {
-    return (this.db(projectId).prepare("SELECT body FROM plugin_agent_briefs WHERE project_id = ?").get(projectId) as { body: string } | undefined)?.body ?? null;
+    return this.briefView(projectId)?.body ?? null;
+  }
+
+  briefView(projectId: string): { body: string; updatedAt: number } | null {
+    const row = this.db(projectId).prepare("SELECT body, updated_at FROM plugin_agent_briefs WHERE project_id = ?").get(projectId) as { body: string; updated_at: number } | undefined;
+    return row ? { body: row.body, updatedAt: row.updated_at } : null;
   }
 
   setBrief(projectId: string, body: string): void {

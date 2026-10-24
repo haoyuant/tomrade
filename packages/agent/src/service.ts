@@ -18,7 +18,7 @@ import { defineTool, requireProjectId, type RunHandle, type LedgerEntry } from "
 import { loadPlaybookDir, missingPlaybookCapabilities, resolvePlaybook, type PlaybookVariants } from "./playbooks.js";
 import { AgentStore, MIGRATIONS, TABLES, type PendingRecord } from "./store.js";
 import { AgentMediaStore, type MediaRef, type MediaUpload, type MediaContent } from "./media.js";
-import { RULES_MAX_CHARS, generalOpener, generalPrompt, rulesInstructions } from "./prompt.js";
+import { RULES_MAX_CHARS, generalOpener, generalPrompt, rulesInstructions, BRIEF_MAX_CHARS } from "./prompt.js";
 import type { AgentPolicy } from "./hooks.js";
 import type { CliCheck, Engine, EngineAvailability, EngineRegistration, EngineTry, EngineView, McpLinkView } from "./engine.js";
 import { normalizeEngine } from "./engine-shape.js";
@@ -110,6 +110,14 @@ export interface GeneralPreparation {
 }
 
 /** What a new thread may be about beyond its workstream: the ticket it implements and the branch it works on. */
+/** The project brief, for the settings screen. */
+export interface BriefView {
+  body: string;
+  updatedAt: number | null;
+  /** Characters the brief is kept under. */
+  max: number;
+}
+
 export interface NewThreadOptions {
   itemId?: string | null;
   branch?: string | null;
@@ -151,6 +159,9 @@ declare module "@tomradex/ipc" {
     /** The project's rules for every agent, as the person wrote them; empty when there are none. */
     "agent.rules": (projectId: string) => { body: string; file: string | null };
     "agent.setRules": (projectId: string, body: string) => { body: string; file: string | null };
+    /** The agent-maintained project brief every run reads; empty when none is written yet. */
+    "agent.brief": (projectId: string) => BriefView;
+    "agent.setBrief": (projectId: string, body: string) => BriefView;
     "agent.newThread": (projectId: string, engine?: string, boardId?: string | null, opts?: NewThreadOptions) => ThreadSummary;
     /** Put the thread on a workstream (its repository is where a code engine runs), or back on the whole project. */
     "agent.setWorkstream": (projectId: string, threadId: string, boardId: string | null) => ThreadSummary;
@@ -432,6 +443,8 @@ export class Agent extends Service implements AgentReader {
         ctx.agent.setRules(projectId, body);
         return { body: ctx.agent.rules(projectId) ?? "", file: ctx.agent.rulesFile(projectId) };
       });
+      ctx.ipc.handle("agent.brief", (projectId) => ctx.agent.briefView(projectId));
+      ctx.ipc.handle("agent.setBrief", (projectId, body) => ctx.agent.setBrief(projectId, body));
       ctx.ipc.handle("agent.newThread", (projectId, engine, boardId, opts) => ctx.agent.newThread(projectId, engine, boardId ?? null, opts ?? {}));
       ctx.ipc.handle("agent.startGeneral", (projectId, itemId, opts) => ctx.agent.startGeneral(projectId, itemId, opts));
       ctx.ipc.handle("agent.takeoverGeneral", (projectId, itemId) => ctx.agent.takeoverGeneral(projectId, itemId));
@@ -1392,6 +1405,20 @@ export class Agent extends Service implements AgentReader {
 
   brief(projectId: string): string | null {
     return this.store.brief(projectId);
+  }
+
+  /** The brief as the settings screen shows it: the text, when it changed, and how much room it has. */
+  briefView(projectId: string): BriefView {
+    const view = this.store.briefView(projectId);
+    return { body: view?.body ?? "", updatedAt: view?.updatedAt ?? null, max: BRIEF_MAX_CHARS };
+  }
+
+  /** The person's own words replace the agents': kept under the cap every run pays for. */
+  setBrief(projectId: string, body: string): BriefView {
+    const text = body.replace(/\r\n/g, "\n").trim();
+    if (text.length > BRIEF_MAX_CHARS) throw new Error(`The project brief is kept under ${BRIEF_MAX_CHARS} characters — every run reads it; shorten it first (${text.length} now)`);
+    this.store.setBrief(projectId, text);
+    return this.briefView(projectId);
   }
 
   /** The words the platform writes into a conversation, in the person's language now. */

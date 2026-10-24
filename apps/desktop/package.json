@@ -50,6 +50,7 @@
     "test:repo-setup": "electron scripts/repo-setup-check.mjs",
     "test:usage": "electron scripts/usage-check.mjs",
     "test:rules": "electron scripts/rules-check.mjs",
+    "test:brief": "electron scripts/brief-check.mjs",
     "test:schedules": "electron scripts/schedules-check.mjs",
     "test:search": "electron scripts/search-check.mjs",
     "test:backlog-sidebar": "electron scripts/backlog-sidebar-check.mjs",
