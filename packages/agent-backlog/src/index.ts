@@ -17,7 +17,7 @@ import { errorMessage, localeOf } from "@tomradex/contracts";
 
 export { dossierSchema, emptyDossier, readiness, renderDossier, REQUIRED_FIELDS, type Dossier } from "./dossier.js";
 export { findSimilar, findSimilarBatch, overlap, tokens } from "./similar.js";
-export { applyPlan, findGaps, generatePlan, planSchema, type ApplyOutcome, type Plan, type PlanLanguage } from "./plan.js";
+export { applyPlan, findGaps, generatePlan, planSchema, projectSection, type ApplyOutcome, type Plan, type PlanLanguage } from "./plan.js";
 export { applyDependencies, dependencyReviewSchema, proposeDependencies, REVIEW_TIMEOUT_MS, ticketChanges, type DependencyProposal, type TicketChange } from "./dependencies.js";
 export { PLAYBOOKS } from "./playbooks.js";
 
@@ -102,7 +102,7 @@ export default {
         title: "Find gaps",
         description: "Compare a stated requirement against the existing backlog and list what is still missing to satisfy it.",
         input: z.object({ requirement: z.string().min(1) }),
-        execute: ({ requirement }, inv) => findGaps(llm(), requirement, existingOf(inv.projectId))
+        execute: ({ requirement }, inv) => findGaps(llm(), requirement, existingOf(inv.projectId), inv.projectId ? ctx.agent.brief(inv.projectId) : null)
       })
     );
 
@@ -152,7 +152,7 @@ export default {
             return APPLY.some((word) => answerText(answer).startsWith(word)) ? { next: "apply", state } : { done: { cancelled: true, reason: "the user declined the plan" } };
           }
           const existing = existingOf(io.run.projectId);
-          const plan = await generatePlan(io.llm, state.requirement, existing, languageOf(io.run));
+          const plan = await generatePlan(io.llm, state.requirement, existing, languageOf(io.run), ctx.agent.brief(io.run.projectId));
           const features = plan.epics.reduce((n, e) => n + e.features.length, 0);
           const next: PlanState = { ...state, plan, writes: 1 + plan.epics.length + features };
           io.emit({ type: "card", id: "proposal", schema: "backlog.proposal", title: "Plan proposal", data: { rootTitle: state.rootTitle, ...plan } });
@@ -206,7 +206,7 @@ export default {
           if (answer === undefined) return { ask: { text: "Dossier complete. Plan the backlog and write it now?", options: ["Go", "Stop"] }, state };
           if (answerText(answer) !== "Go") return { done: { dossier: state.dossier, applied: false } };
           const requirement = renderDossier(state.dossier);
-          const plan = await generatePlan(io.llm, requirement, existingOf(io.run.projectId), languageOf(io.run));
+          const plan = await generatePlan(io.llm, requirement, existingOf(io.run.projectId), languageOf(io.run), ctx.agent.brief(io.run.projectId));
           const outcome = applyPlan(ctx, {
             projectId: io.run.projectId,
             author: io.run.author,
@@ -266,7 +266,7 @@ export default {
           let proposal: DependencyProposal;
           io.activity(BACKLOG_WORDS(localeOf(ctx))("checkingDependencies"));
           try {
-            proposal = await proposeDependencies(ctx, model, projectId, changes, { signal: io.signal });
+            proposal = await proposeDependencies(ctx, model, projectId, changes, { signal: io.signal, brief: ctx.agent.brief(projectId) });
           } catch (err) {
             if (!io.signal.aborted) ctx.logger.warn(`dependency review failed: ${errorMessage(err)}`);
             return { done: { proposed: 0 } };

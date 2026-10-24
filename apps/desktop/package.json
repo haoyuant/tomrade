@@ -17,6 +17,7 @@
     "test:onboarding": "electron scripts/onboarding-check.mjs",
     "test:plugins": "electron scripts/plugins-check.mjs",
     "test:media": "electron scripts/media-check.mjs",
+    "test:assistant-links": "electron scripts/assistant-media-links-check.mjs",
     "dev": "pnpm -w run build:backend && node scripts/dev.mjs",
     "dev:ui": "pnpm --filter @tomradex/ui dev",
     "start": "cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
