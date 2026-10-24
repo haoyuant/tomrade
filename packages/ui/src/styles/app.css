@@ -1717,6 +1717,7 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 .start-batch-result { flex-basis: 100%; }
 .start-batch-pick { flex-wrap: wrap; }
 .start-batch-pick .select { max-width: 14rem; }
+.start-batch-field { display: inline-flex; align-items: center; gap: 6px; }
 /* the troubleshooter's checklist and findings */
 .check-row .check-title { flex: none; color: var(--fg); }
 .check-row .t-title { color: var(--meta); font-size: var(--text-sm); }
@@ -1811,6 +1812,7 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 .cfg-row.off { background: transparent; border-style: dashed; }
 .cfg-row .cfg-name { flex: 1; min-width: 0; font-family: var(--font-display); font-size: 14px; color: var(--fg); }
 .cfg-row.off .cfg-name { color: var(--meta); }
+.cfg-row .repo-merge-policy { flex: 0 1 auto; width: auto; max-width: 18rem; }
 /* A row that folds, as everywhere in Tomrade: the chevron sits left of it, outside its card, and what unfolds lines up with the card. */
 .fold-row { display: flex; align-items: center; gap: var(--space-2); }
 .fold-row > .cfg-row { flex: 1; min-width: 0; }

@@ -188,17 +188,19 @@ export function StartBatchBlock({ card, cardId, projectId, threadId, onOpenIssue
             <p className="tool-row meta-txt dense" data-testid="start-batch-none">{t("agentPanel.startBatchNoEngine")}</p>
           ) : (
             <div className="tool-row start-batch-pick">
-              <label className="meta-txt" htmlFor={`sb-engine-${cardId}`}>{t("agentPanel.startBatchEngine")}</label>
-              <select id={`sb-engine-${cardId}`} className="select" value={engine?.id ?? ""} disabled={start.isPending} onChange={(event) => { setChosenEngine(event.target.value); setChosenPermission(null); }}>
-                {ready.map((e) => <option key={e.id} value={e.id}>{e.title}</option>)}
-              </select>
+              <span className="start-batch-field">
+                <label className="meta-txt" htmlFor={`sb-engine-${cardId}`}>{t("agentPanel.startBatchEngine")}</label>
+                <select id={`sb-engine-${cardId}`} className="select" value={engine?.id ?? ""} disabled={start.isPending} onChange={(event) => { setChosenEngine(event.target.value); setChosenPermission(null); }}>
+                  {ready.map((e) => <option key={e.id} value={e.id}>{e.title}</option>)}
+                </select>
+              </span>
               {permissionModes && (
-                <>
+                <span className="start-batch-field">
                   <label className="meta-txt" htmlFor={`sb-perm-${cardId}`}>{t("agentPanel.startBatchPermission")}</label>
                   <select id={`sb-perm-${cardId}`} className="select" value={permissionMode} disabled={start.isPending} onChange={(event) => setChosenPermission(event.target.value)}>
                     {permissionModes.choices.map((choice) => <option key={choice.value} value={choice.value}>{permissionLabel(t, choice)}</option>)}
                   </select>
-                </>
+                </span>
               )}
               <button
                 type="button"
