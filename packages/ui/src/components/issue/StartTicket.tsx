@@ -217,12 +217,15 @@ function StartTicketDialog({
   const ready = engineId === "other" ? true : !!engine?.ok;
   const busy = start.isPending || takeover.isPending;
 
-  const submit = (allowBlocked = waitsOn.length > 0, releaseBranch = false) => {
+  // `first`: another ticket (a bootstrap) is started with these choices instead, and this one follows it once it lands.
+  const submit = (allowBlocked = waitsOn.length > 0, releaseBranch = false, first?: { itemId: string; key: string }) => {
     setError(null);
     const options: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(pickValues)) if (value) options[key] = value;
     start.mutate(
-      { itemId: item.id, mode, engine: engineId, options, ...(general ? { playbook } : {}), ...(permissionMode ? { permissionMode } : {}), ...(allowBlocked ? { allowBlocked } : {}), ...(releaseBranch ? { releaseBranch } : {}), ...(task ? { message: task } : {}) },
+      first
+        ? { itemId: first.itemId, mode, engine: engineId, options, ...(permissionMode ? { permissionMode } : {}), then: item.id }
+        : { itemId: item.id, mode, engine: engineId, options, ...(general ? { playbook } : {}), ...(permissionMode ? { permissionMode } : {}), ...(allowBlocked ? { allowBlocked } : {}), ...(releaseBranch ? { releaseBranch } : {}), ...(task ? { message: task } : {}) },
       {
         onSuccess: (result) => {
           if (!result.ok) {
@@ -230,6 +233,11 @@ function StartTicketDialog({
             return;
           }
           onClose();
+          if (first) {
+            toast({ body: t("codeLink.bootstrapFirstToast", { bootstrap: first.key, key: item.key }) });
+            if (result.mode === "run" && result.threadId) showThread(result.threadId);
+            return;
+          }
           const vars = { key: item.key, branch: result.branch };
           const warning = result.warnings?.join("\n");
           if (result.mode === "run") {
@@ -413,6 +421,10 @@ function StartTicketDialog({
                         onOpenRepositories={onOpenRepositories}
                         onOpenIssue={onOpenIssue}
                         onOpenEngine={(id) => openSettings(id ?? engineId)}
+                        onStartFirst={(key) => {
+                          const first = items.data?.find((other) => other.key === key);
+                          if (first) submit(false, false, { itemId: first.id, key });
+                        }}
                       />
                     </>
                   );

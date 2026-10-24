@@ -1,7 +1,7 @@
 import type {} from "cordis";
 import type { Context } from "cordis";
 import { z } from "zod";
-import { HOUSE_RULES, deferredTools, focusSuffix, isSuspended, kitLines, promptSections, type AgentRequest, type AgentTurnInfo, type Engine, type ThreadMessage, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
+import { HOUSE_RULES, deferredTools, focusSuffix, isSuspended, kitLines, promptParts, type AgentRequest, type AgentTurnInfo, type Engine, type ThreadMessage, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
 import { errorMessage, localeOf } from "@tomradex/contracts";
 import { MediaRefused, NativeMediaRefused, NativeSearchRefused, assistantMessage, collect, modalityOf, toolResultsMessage, userMessage, type InputModality, type LlmService, type Message, type OutputModality, type ToolSpec } from "@tomradex/llm";
 import { LONG_RESULT, ToolInputError, compactList, type ToolDescriptor } from "@tomradex/tools";
@@ -208,8 +208,11 @@ export const steering = (texts: string[], afterReply = false) => ({
     (afterReply ? "\n(Your reply above is already on the user's screen. Answer only what this adds or changes; do not repeat it.)" : "")
 });
 
-const system = (input: TurnInput, io: TurnIO, options: LoopOptions): string =>
-  [IDENTITY, ...promptSections(input, io, { playbooks: options.guidance === "auto" })].join("\n\n");
+/** The system prompt in two parts: the stable one a provider caches, and what this turn changes after it. */
+const system = (input: TurnInput, io: TurnIO, options: LoopOptions): { system: string; systemTail?: string } => {
+  const { stable, volatile } = promptParts(input, io, { playbooks: options.guidance === "auto" });
+  return { system: [IDENTITY, ...stable].join("\n\n"), ...(volatile.length ? { systemTail: volatile.join("\n\n") } : {}) };
+};
 
 /** Times one step is sent again on plugins' answers to a failed request. */
 const RETRIES_PER_STEP = 2;
@@ -359,7 +362,7 @@ export function createLoopEngine(ctx: Context): Engine {
           // A remembered answer may be one just dropped; the model must be free to ask again.
           memo.clear();
         // Plugins see each step's request before it is sent, and what they hand back is what goes.
-        let request = await shape(ctx, { system: system(input, io, options), tools: offered(), messages: [...messages], turn: about(step) });
+        let request = await shape(ctx, { ...system(input, io, options), tools: offered(), messages: [...messages], turn: about(step) });
         let chat = model;
         let collected;
         let again = false;
@@ -369,6 +372,7 @@ export function createLoopEngine(ctx: Context): Engine {
               chat.chat(
                 {
                   system: request.system,
+                  ...(request.systemTail ? { systemTail: request.systemTail } : {}),
                   messages: request.messages,
                   tools: request.tools,
                   toolChoice: invalidStreak >= 2 ? "none" : undefined,

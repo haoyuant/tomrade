@@ -1,4 +1,4 @@
-import { inputMimes, type InputModality, type OutputModality, type MediaData, type ChatEvent, type ChatModel, type ChatRequest, type StopReason } from "./model.js";
+import { inputMimes, systemText, type InputModality, type OutputModality, type MediaData, type ChatEvent, type ChatModel, type ChatRequest, type StopReason } from "./model.js";
 import { LlmError, MediaRefused, NativeMediaRefused, NativeSearchRefused, mediaRefusal } from "./errors.js";
 import { fitsResponses, readResponses, replaysSearches, responsesBody, searchesOnResponses } from "./responses.js";
 import { errorMessage } from "@tomradex/contracts";
@@ -35,7 +35,7 @@ interface OpenAiMessage {
 }
 
 function toMessages(request: ChatRequest): OpenAiMessage[] {
-  const out: OpenAiMessage[] = [{ role: "system", content: request.system }];
+  const out: OpenAiMessage[] = [{ role: "system", content: systemText(request) }];
   for (const message of request.messages) {
     if (message.role === "user") {
       // Tool results must directly follow the assistant turn that asked for them.
