@@ -12,7 +12,7 @@ it("shows the brief with its time and cap, takes the person's words under the ca
   const f = await fresh({ plugins: [Tools, [Settings, { path: path.join(dir, "settings.json") }], Agent] });
   await settle();
   const { ctx, project } = f;
-  expect(ctx.agent.briefView(project.id)).toEqual({ body: "", updatedAt: null, max: BRIEF_MAX_CHARS });
+  expect(ctx.agent.briefView(project.id)).toEqual({ body: "", updatedAt: null, max: BRIEF_MAX_CHARS, previous: null });
 
   const saved = ctx.agent.setBrief(project.id, "Shop: products are pulled from the supplier feed.\r\n\n");
   expect(saved).toMatchObject({ body: "Shop: products are pulled from the supplier feed.", max: BRIEF_MAX_CHARS });

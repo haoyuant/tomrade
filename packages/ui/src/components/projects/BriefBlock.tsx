@@ -27,6 +27,25 @@ export function BriefBlock({ projectId }: { projectId: string }) {
     onError: (err) => toast(errorSpec(err))
   });
   const dirty = draft !== null && draft.trim() !== (brief.data?.body ?? "");
+  const restore = useMutation({
+    mutationFn: () => invoke("agent.restoreBrief", projectId),
+    onSuccess: (saved) => {
+      qc.setQueryData(key, saved);
+      setDraft(null);
+      toast({ body: t("projectBrief.restored") });
+    },
+    onError: (err) => toast(errorSpec(err))
+  });
+  const compact = useMutation({
+    mutationFn: () => invoke("agent.compactBrief", projectId),
+    onSuccess: (saved) => {
+      qc.setQueryData(key, saved);
+      setDraft(null);
+      toast({ body: t("projectBrief.compacted", { n: saved.body.length }) });
+    },
+    onError: (err) => toast(errorSpec(err))
+  });
+  const busy = save.isPending || restore.isPending || compact.isPending;
   return (
     <div className="project-settings-section stack-3">
       <textarea
@@ -49,7 +68,16 @@ export function BriefBlock({ projectId }: { projectId: string }) {
           {t("projectBrief.save")}
         </button>
       </div>
-      <p className="meta-txt dense" data-testid="project-brief-updated">{brief.data?.updatedAt ? t("projectBrief.updated", { when: agoLabel(brief.data.updatedAt) }) : t("projectBrief.never")}</p>
+      <div className="row" style={{ gap: "var(--space-2)" }}>
+        <p className="meta-txt dense" data-testid="project-brief-updated" style={{ margin: 0 }}>{brief.data?.updatedAt ? t("projectBrief.updated", { when: agoLabel(brief.data.updatedAt) }) : t("projectBrief.never")}</p>
+        <Spacer />
+        <button type="button" className="btn btn-ghost" data-testid="restore-brief" disabled={busy || dirty || !brief.data?.previous} onClick={() => restore.mutate()}>
+          {t("projectBrief.restore")}
+        </button>
+        <button type="button" className="btn btn-ghost" data-testid="compact-brief" disabled={busy || dirty || !brief.data?.body} onClick={() => compact.mutate()}>
+          {compact.isPending ? t("projectBrief.compacting") : t("projectBrief.compact")}
+        </button>
+      </div>
     </div>
   );
 }
