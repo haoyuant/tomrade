@@ -64,6 +64,9 @@ export function generalBrief(ticket: { key: string; title: string; body?: string
 /** Past this a rules file is cut, so a long one cannot crowd out the work. */
 export const RULES_MAX_CHARS = 8000;
 
+/** The project brief rides in every run's prompt: this keeps it to roughly 1,500 tokens. */
+export const BRIEF_MAX_CHARS = 6000;
+
 /** Claude Code keeps 2048 characters of a server's instructions; longer rules go by tool instead. */
 export const RULES_INSTRUCTIONS_MAX = 1200;
 
@@ -113,14 +116,22 @@ const clip = (text: string, max: number): string => (text.length > max ? text.sl
  */
 /** What the main conversation can do with the code, and where that code is, so a limit is named instead of mistaken for an empty folder. */
 function mainConversationSection(repositories: TurnInput["repositories"]): string {
+  const standing = (r: NonNullable<TurnInput["repositories"]>[number]): string =>
+    r.readiness === "empty"
+      ? " — EMPTY: no project in it yet. Its first code ticket cannot start until a bootstrap ticket (stack, scaffold, CLAUDE.md), which Tomrade files at Start, has merged. Say so when you create the first code ticket there, and settle the stack with the user now (ask_user: language and framework, package manager, tests) and record it with record_decision, so the bootstrap runs without questions."
+      : r.readiness === "scaffolded" && r.hasBrief === false
+        ? " — has code but no CLAUDE.md yet: the first ticket there adds one."
+        : "";
   const where = repositories?.length
-    ? "Workstream repositories:\n" + repositories.map((r) => `- ${r.workstream}: ${r.name} ${r.path ? `at ${r.path} (default branch ${r.defaultBranch})` : "— no checkout on this machine, so it cannot be read here"}`).join("\n")
+    ? "Workstream repositories:\n" + repositories.map((r) => `- ${r.workstream}: ${r.name} ${r.path ? `at ${r.path} (default branch ${r.defaultBranch})` : "— no checkout on this machine, so it cannot be read here"}${standing(r)}`).join("\n")
     : "No workstream has a repository linked yet.";
   return (
     "This is the project's main conversation, not a ticket's worktree. Read the repositories below freely to answer about the code, but never change them here: code work goes through a ticket. " +
     "Anything else on this machine you may do as the permission mode the user picked for this conversation allows — the user is asked when it requires. Tomrade's tools all work, Files included (write_file saves a document there). " +
     "When something is refused, denied or out of reach, say plainly what and why, and the way to get it done. " +
     "Never answer that you have no tools, and never conclude that a folder is empty or work is missing because you could not look at it — say what you could not read and why.\n" +
+    "Before saying the project lacks a capability, that a feature needs a prerequisite, or planning code work, read the repository first: CLAUDE.md or AGENTS.md, README, and the module concerned. The backlog lists work, never what the code already does, so nothing is missing just because no ticket mentions it. " +
+    "What you learn about the product that will stay true — what it is, its stack, where its data comes from, what is managed here and what is fetched from elsewhere — goes into update_project_brief, whether it came from the code or from the user, so every later conversation and the planners start from it; a correction from the user replaces what the brief said.\n" +
     where
   );
 }
@@ -184,6 +195,7 @@ function promptSectionsOf(input: TurnInput, io: TurnIO, opts: { playbooks?: bool
     );
   }
   if (input.brief) stable("Project brief:\n" + input.brief);
+  else if (input.purpose === "backlog") stable("No project brief is recorded yet: nothing is known about what the code already does until you read it.");
   // An engine that carries the index in its session prompt asks for it to be left out here, so it is not paid for twice.
   if (input.filesIndex && opts.filesIndex !== false) volatile(input.filesIndex.markdown);
   for (const card of input.cards) volatile(`Card "${card.title}" (${card.id}):\n` + clip(JSON.stringify(card.data), 3000));

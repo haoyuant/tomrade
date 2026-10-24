@@ -166,15 +166,6 @@ export class GitScan {
     return (running ? running.catch(() => undefined) : Promise.resolve()).then(() => this.scan(projectId));
   }
 
-  async scanOpen(): Promise<void> {
-    for (const projectId of this.ctx.db.openIds()) {
-      try {
-        await this.scan(projectId);
-      } catch (err) {
-        this.ctx.logger.warn(`code scan of ${projectId} failed: ${errorMessage(err)}`);
-      }
-    }
-  }
 
   private async doScan(projectId: string): Promise<ScanSummary> {
     this.archiveCompletedSessions(projectId);

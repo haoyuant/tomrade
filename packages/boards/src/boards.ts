@@ -4,7 +4,7 @@ import type { Db, ProjectDb } from "@tomradex/db";
 import type { Oplog } from "@tomradex/oplog";
 import { itemsOf } from "./items-like.js";
 import { write } from "@tomradex/write";
-import { InUseError, NotFoundError, type Author, type Board, type BoardPatch, type CreateBoardInput } from "@tomradex/domain";
+import { InUseError, NotFoundError, normalizeRepoPath, type Author, type Board, type BoardPatch, type CreateBoardInput } from "@tomradex/domain";
 import type { BoardsReader } from "@tomradex/contracts";
 
 declare module "cordis" {
@@ -88,7 +88,7 @@ export class Boards extends Service implements BoardsReader {
       note: input.note ?? null,
       rank: nextRank,
       repoId: input.repoId ?? null,
-      repoPath: input.repoPath ?? "",
+      repoPath: normalizeRepoPath(input.repoPath ?? ""),
       createdAt: now,
       updatedAt: now
     };
@@ -108,7 +108,7 @@ export class Boards extends Service implements BoardsReader {
     const existing = this.get(projectId, id);
     if (!existing) throw new NotFoundError(id);
     const db = this.db(projectId);
-    const next: Board = { ...existing, ...patch, updatedAt: Date.now() };
+    const next: Board = { ...existing, ...patch, ...(patch.repoPath !== undefined ? { repoPath: normalizeRepoPath(patch.repoPath) } : {}), updatedAt: Date.now() };
     return write(this.ctx, { projectId, entity: "board", op: "update", id, by, before: existing, after: next, patch }, () =>
       db.transaction(() => {
         db.prepare("UPDATE boards SET name = ?, icon = ?, note = ?, rank = ?, repo_id = ?, repo_path = ?, updated_at = ? WHERE id = ?").run(next.name, next.icon, next.note, next.rank, next.repoId, next.repoPath, next.updatedAt, id);

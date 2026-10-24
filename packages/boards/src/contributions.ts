@@ -1,6 +1,6 @@
 import type { Context } from "cordis";
 import { z } from "zod";
-import type { Board, BoardPatch, CreateBoardInput, CreateViewInput, View, ViewPatch } from "@tomradex/domain";
+import { isMachinePath, type Board, type BoardPatch, type CreateBoardInput, type CreateViewInput, type View, type ViewPatch } from "@tomradex/domain";
 import { defineTool, requireProjectId } from "@tomradex/tools";
 import type {} from "@tomradex/ipc";
 import { itemsOf } from "./items-like.js";
@@ -24,6 +24,14 @@ declare module "@tomradex/ipc" {
 
 const glyph = z.string().optional();
 
+/** An agent that passes the checkout's own path is told what the field is, instead of a folder nothing can run in. */
+function relativeRepoPath(repoPath: string | undefined): string | undefined {
+  if (repoPath !== undefined && isMachinePath(repoPath)) {
+    throw new Error(`repoPath is the folder inside the repository, relative to its root (for example apps/web, or empty for the root) — not a path on this machine such as ${repoPath.trim()}`);
+  }
+  return repoPath;
+}
+
 /** Views stay invisible to agents: a tool queries fields, never a saved way of looking at them. Workstreams are a field's options, so they are fully editable. */
 export function registerTools(ctx: Context): void {
   ctx.tools.register(
@@ -41,9 +49,9 @@ export function registerTools(ctx: Context): void {
     defineTool({
       name: "create_workstream",
       title: "Create a workstream",
-      description: "Add a workstream to a project. `repoId` (from list_repos) and `repoPath` name the code repository it stands for, if any. Logged and undoable.",
+      description: "Add a workstream to a project. `repoId` (from list_repos) names the code repository it stands for, if any; `repoPath` is the folder inside that repository, relative to its root (`apps/web`; empty or omitted for the root) — never a path on this machine. Logged and undoable.",
       input: z.object({ projectId: z.string().optional(), name: z.string().min(1), icon: glyph, note: z.string().nullable().optional(), repoId: z.string().nullable().optional(), repoPath: z.string().optional() }),
-      execute: ({ projectId, ...rest }, inv) => ctx.boards.create({ ...rest, projectId: requireProjectId("create_workstream", projectId, inv) }, inv.by)
+      execute: ({ projectId, ...rest }, inv) => ctx.boards.create({ ...rest, repoPath: relativeRepoPath(rest.repoPath), projectId: requireProjectId("create_workstream", projectId, inv) }, inv.by)
     })
   );
 
@@ -51,13 +59,13 @@ export function registerTools(ctx: Context): void {
     defineTool({
       name: "update_workstream",
       title: "Rename or describe a workstream",
-      description: "Change a workstream's name, icon, note, or the repository it stands for (repoId from list_repos, repoPath inside it). Logged and undoable.",
+      description: "Change a workstream's name, icon, note, or the repository it stands for (repoId from list_repos; repoPath the folder inside it, relative to the repository root, empty for the root). Logged and undoable.",
       input: z.object({
         projectId: z.string().optional(),
         id: z.string(),
         patch: z.object({ name: z.string().min(1).optional(), icon: glyph, note: z.string().nullable().optional(), repoId: z.string().nullable().optional(), repoPath: z.string().optional() })
       }),
-      execute: ({ projectId, id, patch }, inv) => ctx.boards.update(requireProjectId("update_workstream", projectId, inv), id, patch, inv.by)
+      execute: ({ projectId, id, patch }, inv) => ctx.boards.update(requireProjectId("update_workstream", projectId, inv), id, { ...patch, ...(patch.repoPath !== undefined ? { repoPath: relativeRepoPath(patch.repoPath) } : {}) }, inv.by)
     })
   );
 

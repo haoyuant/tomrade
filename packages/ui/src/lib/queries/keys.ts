@@ -74,6 +74,7 @@ export const keys = {
     workdirAll: ["agent", "workdir"] as const,
     workdir: (projectId: string, threadId: string) => ["agent", "workdir", projectId, threadId] as const,
     rules: (projectId: string) => ["agent", "rules", projectId] as const,
+    brief: (projectId: string) => ["agent", "brief", projectId] as const,
     mcpLink: (engineId: string) => ["agent", "mcpLink", engineId] as const,
     usage: (days: number) => ["agent", "usage", days] as const,
     media: (projectId: string, threadId: string, mediaId: string) => ["agent-media", projectId, threadId, mediaId] as const,
