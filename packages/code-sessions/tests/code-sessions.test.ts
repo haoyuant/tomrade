@@ -316,6 +316,7 @@ it("puts ended sessions in the archive, keeps one a cell shows, sends the archiv
     sessionsOf = () => sessions;
     links = () => [];
     repositoriesOf = () => [];
+    repositoryFoldersOf = this.repositoriesOf;
   }
   const stateFile = path.join(dir, "archive-state.json");
   const shown: Layout = { type: "split", id: "r", direction: "row", ratio: 0.5, a: { type: "leaf", id: "c1", sessionId: "live" }, b: { type: "leaf", id: "c2", sessionId: "shown" } };
@@ -399,6 +400,7 @@ it("tells the window where the pane of an ended session a cell shows goes on, an
     sessionsOf = () => sessions;
     links = () => [];
     repositoriesOf = () => [];
+    repositoryFoldersOf = this.repositoriesOf;
   }
   const stateFile = path.join(dir, "carried-state.json");
   const layout: Layout = { type: "split", id: "r", direction: "row", ratio: 0.5, a: { type: "leaf", id: "c1", sessionId: "merged" }, b: { type: "leaf", id: "c2", sessionId: "alone" } };
@@ -458,6 +460,7 @@ it("never shows a state older than one already shown, so a pick from the archive
     sessionsOf = () => sessions;
     links = () => [];
     repositoriesOf = () => [];
+    repositoryFoldersOf = this.repositoriesOf;
   }
   const stateFile = path.join(dir, "stale-state.json");
   const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "stale-settings.json") }], Contributions, FakeSurfaces, HeldHerdr, FakeCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile }]] });
@@ -535,6 +538,7 @@ it("keeps a terminal that finishes opening while herdr is asked for its panes, a
     sessionsOf = () => [];
     links = () => [];
     repositoriesOf = () => [];
+    repositoryFoldersOf = this.repositoriesOf;
   }
   const stateFile = path.join(dir, "opening-state.json");
   const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "opening-settings.json") }], Contributions, FakeSurfaces, HeldHerdr, FakeCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile }]] });
@@ -679,6 +683,7 @@ it("opens plain terminals in herdr without code link, keeps them, closes them, a
     };
     links = () => [];
     repositoriesOf = () => [{ workstream: "Main", name: "tomrade", path: repo, defaultBranch: "main" }];
+    repositoryFoldersOf = this.repositoriesOf;
     herdrInstall = async () => ({ command: null, guide: "" });
   }
 
@@ -763,6 +768,7 @@ it("shows how herdr reads the agent in a plain terminal as it changes, nothing f
     sessionsOf = () => [];
     links = () => [];
     repositoriesOf = () => [];
+    repositoryFoldersOf = this.repositoriesOf;
     herdrInstall = async () => ({ command: null, guide: "" });
   }
 
@@ -835,6 +841,7 @@ it("shows a terminal as the code session its agent claimed, in place, and as a p
     sessionsOf = () => sessions;
     links = () => [];
     repositoriesOf = () => [];
+    repositoryFoldersOf = this.repositoriesOf;
     herdrInstall = async () => ({ command: null, guide: "" });
     store = {
       patchSession: (_projectId: string, id: string, patch: { herdrPane?: string }) => {
@@ -938,6 +945,7 @@ it("keeps named layouts and the auto-place switch for every window, and starts f
     sessionsOf = () => [];
     links = () => [];
     repositoriesOf = () => [];
+    repositoryFoldersOf = this.repositoriesOf;
     herdrInstall = async () => ({ command: null, guide: "" });
   }
   const stateFile = path.join(dir, "presets.json");

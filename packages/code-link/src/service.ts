@@ -1099,6 +1099,16 @@ export class CodeLink extends Service implements CodeLinkReader {
     });
   }
 
+  /** Project checkouts first, then any workstream subfolders, for a terminal's directory picker. */
+  repositoryFoldersOf(projectId: string): { name: string; path: string }[] {
+    const roots = this.ctx.repos.list(projectId).flatMap((repo) => {
+      const folder = this.ctx.repos.checkout(repo.remote).checkout;
+      return folder && fs.existsSync(folder) ? [{ name: repo.name, path: folder }] : [];
+    });
+    const folders = [...roots, ...this.repositoriesOf(projectId).flatMap((repo) => repo.path ? [{ name: repo.name, path: repo.path }] : [])];
+    return folders.filter((folder, i) => folders.findIndex((other) => path.resolve(other.path) === path.resolve(folder.path)) === i);
+  }
+
   // ── words ──────────────────────────────────────────────────────────────────
 
   /** The words the backend writes for the person, in their language at the moment they are written. */

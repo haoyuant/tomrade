@@ -5,6 +5,7 @@ import { onCell, send, type Look } from "./bridge";
 import { keyLabel } from "./keys";
 import { live, sessionName } from "./lists";
 import { useSay } from "./say";
+import { NewTerminal } from "./NewTerminal";
 import { TerminalCell } from "./TerminalCell";
 
 /** The app's lock glyph; open, the shackle lifts off one side. */
@@ -35,30 +36,6 @@ function AgentChip({ status }: { status: NonNullable<TerminalRow["agentStatus"]>
     <span className="tag cs-chip" data-testid="cs-state" data-state={state}>
       {say(state === "needs" ? "needsYou" : state)}
     </span>
-  );
-}
-
-/** A cell's way to a new terminal, the same wherever it shows: the folder it starts in, then the button below. */
-function NewTerminal({ places, initial, ready, onOpen }: { places: TerminalPlace[]; initial?: string | null; ready: boolean; onOpen: (cwd: string) => void }) {
-  const say = useSay();
-  const [cwd, setCwd] = useState(initial ?? places[0]?.cwd ?? "");
-  const where = places.some((p) => p.cwd === cwd) ? cwd : (places[0]?.cwd ?? "");
-  return (
-    <div className="cs-new-terminal">
-      <label className="cs-new-terminal-where">
-        <span>{say("startIn")}</span>
-        <select className="select" data-testid="cs-new-terminal-where" value={where} disabled={!places.length} onChange={(e) => setCwd(e.target.value)}>
-          {places.map((p) => (
-            <option key={p.cwd} value={p.cwd} title={p.cwd}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <button type="button" className="btn btn-secondary btn-xs" data-testid="cs-new-terminal" disabled={!ready || !where} onClick={() => onOpen(where)}>
-        {say("newTerminal")}
-      </button>
-    </div>
   );
 }
 

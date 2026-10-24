@@ -395,14 +395,20 @@ function apply(ctx: Context, config: Config) {
   const places = async (projectId: string): Promise<TerminalPlace[]> => {
     let repos: { name: string; path: string | null }[] = [];
     try {
-      repos = ctx.codeLink.repositoriesOf(projectId);
+      repos = ctx.codeLink.repositoryFoldersOf(projectId);
     } catch {
       // No repository to read: the home folder will do.
     }
     const found: TerminalPlace[] = [];
     for (const repo of repos) {
       if (!repo.path || found.some((p) => p.cwd === repo.path)) continue;
-      found.push({ label: repo.name, cwd: repo.path }, ...(await worktreesOf(repo.path)));
+      found.push({ label: repo.name, cwd: repo.path });
+    }
+    for (const repo of repos) {
+      if (!repo.path) continue;
+      for (const place of await worktreesOf(repo.path)) {
+        if (!found.some((p) => p.cwd === place.cwd)) found.push(place);
+      }
     }
     return found.length ? found : [{ label: "~", cwd: os.homedir() }];
   };
