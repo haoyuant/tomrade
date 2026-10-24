@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { LAYOUTS, type Layout } from "@tomradex/domain";
+import { LAYOUTS, repoPathLabel, type Layout } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { Kbd, Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuLinkItem, MenuRadioItem } from "~/components/ui/menu";
 import { FIELD_LABEL, LAYOUT_LABEL, viewIcon } from "~/lib/domain";
 import { useRepoStates } from "~/lib/codeLink";
 import { useI18n } from "~/lib/i18n";
-import { useRemoveView, useRepos, useUpdateView } from "~/lib/queries";
+import { normalizeRemote } from "~/lib/remotes";
+import { useRemoveView, useRepoCheckouts, useRepos, useUpdateView } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace, viewCount } from "./context";
 import { useToastUndo } from "~/lib/undo";
@@ -183,7 +184,8 @@ export function ViewHead({ onOpenViewSettings, onOpenFields, onEditWorkstream }:
   const { t, tx } = useI18n();
   const repos = useRepos(ws.project.id);
   const wsRepo = ws.workstream?.repoId ? (repos.data ?? []).find((r) => r.id === ws.workstream!.repoId) ?? null : null;
-  const wsPath = ws.workstream?.repoPath.replace(/^\/+|\/+$/g, "") ?? "";
+  const checkouts = useRepoCheckouts();
+  const wsPath = ws.workstream ? repoPathLabel(ws.workstream.repoPath, wsRepo ? ((checkouts.data ?? []).find((c) => c.remote === normalizeRemote(wsRepo.remote))?.checkout ?? null) : null) : "";
   // A workstream page says what its repository is ready for: empty repositories bootstrap first.
   const repoStates = useRepoStates(ws.project.id);
   const readiness = ws.workstream?.repoId ? (repoStates.data ?? []).find((r) => r.repoId === ws.workstream!.repoId) ?? null : null;

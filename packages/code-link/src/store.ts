@@ -179,8 +179,18 @@ ALTER TABLE plugin_code_link_sessions ADD COLUMN prompted INTEGER NOT NULL DEFAU
   },
   // The tickets a session worked before it moved on to the one it holds, so each keeps the conversation that did it.
   { version: 14, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN worked_json TEXT NOT NULL DEFAULT '[]'" },
+  // Who merges a delivered ticket (the person, Tomrade after asking, or the agent itself), and which conversation asked for a session's start.
+  {
+    version: 15,
+    up: `
+ALTER TABLE plugin_code_link_repos ADD COLUMN merge_policy TEXT;
+ALTER TABLE plugin_code_link_sessions ADD COLUMN requested_by TEXT;
+`
+  },
+  // The person said in the conversation to merge once done: Tomrade merges the delivery without asking again.
+  { version: 16, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN auto_merge INTEGER NOT NULL DEFAULT 0" },
   // The person's word that an outside session changes code without a ticket (work_without_ticket), in their words.
-  { version: 15, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN without_ticket TEXT" }
+  { version: 17, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN without_ticket TEXT" }
 ];
 
 /** Durable code links travel with the project; running sessions belong to this machine. */
@@ -226,6 +236,9 @@ import type { DeliveryState, DeliveryView } from "@tomradex/db";
 /** A stop only the person can clear: origin's credentials, or a pull request the agent was not let merge. */
 export type SessionBlock = "credentials" | "merge";
 
+/** Who merges a ticket's delivered branch: Tomrade once the person says yes in the conversation (the default), the person alone, or the agent itself. */
+export type MergePolicy = "human" | "ask" | "agent";
+
 export type Readiness = "unknown" | "empty" | "scaffolded";
 /** `none`: the checkout has no origin, so nothing is fetched or pushed. */
 export type RemoteState = "ok" | "unreachable" | "unknown" | "none";
@@ -248,7 +261,8 @@ export interface RepoStateView {
   branchTemplate: string;
   autoDone: boolean;
   agentPush: boolean;
-  /** Agents merge their own pull requests once checks pass; off, the person merges. */
+  mergePolicy: MergePolicy;
+  /** `mergePolicy === "agent"`: agents merge their own pull requests once checks pass. */
   agentMerge: boolean;
   /** The coding agents Connect writes for and "connected" is judged by; null until chosen. */
   connectAgents: ConnectAgent[] | null;
@@ -317,6 +331,10 @@ export interface SessionView {
   /** What it is doing this moment, from its last hook; null between tools. */
   activity: string | null;
   blocked: SessionBlock | null;
+  /** The conversation (thread) that asked Tomrade to start this session, when one did: where its delivery is reported back. */
+  requestedBy: string | null;
+  /** The person said, when asking for the work, to merge it once delivered. */
+  autoMerge: boolean;
   device: string;
   startedAt: number;
   endedAt: number | null;
@@ -360,6 +378,7 @@ interface RepoRow {
   auto_done: number;
   agent_push: number;
   agent_merge: number;
+  merge_policy: string | null;
   connect_agents_json: string | null;
   scanned_at: number | null;
   updated_at: number;
@@ -408,6 +427,8 @@ interface SessionRow {
   summary: string | null;
   activity: string | null;
   blocked: string | null;
+  requested_by: string | null;
+  auto_merge: number | null;
   device: string;
   started_at: number;
   ended_at: number | null;
@@ -451,7 +472,8 @@ const toRepo = (r: RepoRow): RepoStateView => ({
   branchTemplate: r.branch_template,
   autoDone: r.auto_done === 1,
   agentPush: r.agent_push === 1,
-  agentMerge: r.agent_merge === 1,
+  mergePolicy: mergePolicyOf(r),
+  agentMerge: mergePolicyOf(r) === "agent",
   connectAgents: r.connect_agents_json ? (JSON.parse(r.connect_agents_json) as ConnectAgent[]) : null,
   scannedAt: r.scanned_at,
   updatedAt: r.updated_at
@@ -472,6 +494,11 @@ const toProposal = (r: ProposalRow): ProposalView => ({
   createdAt: r.created_at,
   resolvedAt: r.resolved_at
 });
+
+const MERGE_POLICIES: ReadonlySet<string> = new Set<MergePolicy>(["human", "ask", "agent"]);
+/** A row from before the policy column answers through its switch: on is the agent's, off is asking, the default. */
+const mergePolicyOf = (r: Pick<RepoRow, "merge_policy" | "agent_merge">): MergePolicy =>
+  r.merge_policy && MERGE_POLICIES.has(r.merge_policy) ? (r.merge_policy as MergePolicy) : r.agent_merge === 1 ? "agent" : "ask";
 
 const toSession = (r: SessionRow): SessionView => ({
   id: r.id,
@@ -500,6 +527,8 @@ const toSession = (r: SessionRow): SessionView => ({
   summary: r.summary,
   activity: r.activity ?? null,
   blocked: (r.blocked as SessionBlock | null) ?? null,
+  requestedBy: r.requested_by ?? null,
+  autoMerge: r.auto_merge === 1,
   device: r.device,
   startedAt: r.started_at,
   endedAt: r.ended_at
@@ -532,6 +561,8 @@ export interface RepoStatePatch {
   branchTemplate?: string;
   autoDone?: boolean;
   agentPush?: boolean;
+  mergePolicy?: MergePolicy;
+  /** The old switch: on is the agent policy, off the person's. `mergePolicy` wins when both are given. */
   agentMerge?: boolean;
   connectAgents?: ConnectAgent[] | null;
   scannedAt?: number | null;
@@ -559,6 +590,8 @@ export interface SessionPatch {
   summary?: string | null;
   activity?: string | null;
   blocked?: SessionBlock | null;
+  requestedBy?: string | null;
+  autoMerge?: boolean;
   endedAt?: number | null;
 }
 
@@ -741,6 +774,7 @@ export class CodeLinkStore {
     const now = Date.now();
     const remote = patch.remote ?? existing?.remote ?? "unknown";
     const remoteDetail = patch.remoteDetail === undefined ? (existing?.remoteDetail ?? null) : patch.remoteDetail;
+    const mergePolicy: MergePolicy = patch.mergePolicy ?? (patch.agentMerge === undefined ? (existing?.mergePolicy ?? "ask") : patch.agentMerge ? "agent" : "ask");
     const next: RepoStateView = {
       repoId,
       projectId,
@@ -757,20 +791,21 @@ export class CodeLinkStore {
       branchTemplate: patch.branchTemplate ?? existing?.branchTemplate ?? DEFAULT_BRANCH_TEMPLATE,
       autoDone: patch.autoDone ?? existing?.autoDone ?? true,
       agentPush: patch.agentPush ?? existing?.agentPush ?? true,
-      agentMerge: patch.agentMerge ?? existing?.agentMerge ?? false,
+      mergePolicy,
+      agentMerge: mergePolicy === "agent",
       connectAgents: patch.connectAgents === undefined ? (existing?.connectAgents ?? null) : patch.connectAgents,
       scannedAt: patch.scannedAt === undefined ? (existing?.scannedAt ?? null) : patch.scannedAt,
       updatedAt: now
     };
     this.db(projectId)
       .prepare(
-        `INSERT INTO plugin_code_link_repos (repo_id, project_id, readiness, remote, remote_detail, remote_at, has_brief, manifests_json, summary, scanned_sha, default_sha, branch_template, auto_done, agent_push, agent_merge, connect_agents_json, scanned_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO plugin_code_link_repos (repo_id, project_id, readiness, remote, remote_detail, remote_at, has_brief, manifests_json, summary, scanned_sha, default_sha, branch_template, auto_done, agent_push, agent_merge, merge_policy, connect_agents_json, scanned_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(repo_id) DO UPDATE SET
            readiness = excluded.readiness, remote = excluded.remote, remote_detail = excluded.remote_detail, remote_at = excluded.remote_at,
            has_brief = excluded.has_brief, manifests_json = excluded.manifests_json, summary = excluded.summary,
            scanned_sha = excluded.scanned_sha, default_sha = excluded.default_sha, branch_template = excluded.branch_template,
-           auto_done = excluded.auto_done, agent_push = excluded.agent_push, agent_merge = excluded.agent_merge, connect_agents_json = excluded.connect_agents_json, scanned_at = excluded.scanned_at, updated_at = excluded.updated_at`
+           auto_done = excluded.auto_done, agent_push = excluded.agent_push, agent_merge = excluded.agent_merge, merge_policy = excluded.merge_policy, connect_agents_json = excluded.connect_agents_json, scanned_at = excluded.scanned_at, updated_at = excluded.updated_at`
       )
       .run(
         repoId,
@@ -788,6 +823,7 @@ export class CodeLinkStore {
         next.autoDone ? 1 : 0,
         next.agentPush ? 1 : 0,
         next.agentMerge ? 1 : 0,
+        next.mergePolicy,
         next.connectAgents ? JSON.stringify(next.connectAgents) : null,
         next.scannedAt,
         now
@@ -882,15 +918,15 @@ export class CodeLinkStore {
     return row ? toSession(row) : null;
   }
 
-  createSession(projectId: string, input: { id?: string; repoId: string; delivery?: number; branch: string; itemIds: string[]; mode: SessionMode; agent: string; threadId: string | null; device: string; externalId?: string | null; worktree?: string | null }): SessionView {
+  createSession(projectId: string, input: { id?: string; repoId: string; delivery?: number; branch: string; itemIds: string[]; mode: SessionMode; agent: string; threadId: string | null; device: string; externalId?: string | null; worktree?: string | null; requestedBy?: string | null; autoMerge?: boolean }): SessionView {
     const id = input.id ?? randomUUID();
     const now = Date.now();
     this.db(projectId)
       .prepare(
-        `INSERT INTO plugin_code_link_sessions (id, project_id, repo_id, delivery, branch, item_ids_json, mode, agent, external_id, thread_id, worktree, state, last_event_at, device, started_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)`
+        `INSERT INTO plugin_code_link_sessions (id, project_id, repo_id, delivery, branch, item_ids_json, mode, agent, external_id, thread_id, worktree, requested_by, auto_merge, state, last_event_at, device, started_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)`
       )
-      .run(id, projectId, input.repoId, input.delivery ?? 1, input.branch, JSON.stringify(input.itemIds), input.mode, input.agent, input.externalId ?? null, input.threadId, input.worktree ?? null, now, input.device, now);
+      .run(id, projectId, input.repoId, input.delivery ?? 1, input.branch, JSON.stringify(input.itemIds), input.mode, input.agent, input.externalId ?? null, input.threadId, input.worktree ?? null, input.requestedBy ?? null, input.autoMerge ? 1 : 0, now, input.device, now);
     return this.session(projectId, id)!;
   }
 
@@ -917,6 +953,8 @@ export class CodeLinkStore {
       summary: "summary",
       activity: "activity",
       blocked: "blocked",
+      requestedBy: "requested_by",
+      autoMerge: "auto_merge",
       endedAt: "ended_at"
     };
     const sets: string[] = [];
@@ -925,7 +963,7 @@ export class CodeLinkStore {
       const value = patch[field];
       if (value === undefined) continue;
       sets.push(`${column} = ?`);
-      values.push(field === "itemIds" || field === "worked" ? JSON.stringify(value) : field === "prompted" ? (value ? 1 : 0) : value);
+      values.push(field === "itemIds" || field === "worked" ? JSON.stringify(value) : field === "prompted" || field === "autoMerge" ? (value ? 1 : 0) : value);
     }
     if (!sets.length) return this.session(projectId, id)!;
     values.push(id);

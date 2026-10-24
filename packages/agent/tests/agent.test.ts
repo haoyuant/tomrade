@@ -390,7 +390,8 @@ describe("a waiting workflow on a model engine", () => {
   it("lets the model judge a typed reply instead of feeding it to the waiting question", async () => {
     const systems: string[] = [];
     const script = (req: ChatRequest, step: number): FakeTurn => {
-      systems.push(req.system ?? "");
+      // The pending question rides in the volatile tail, after the cached system text.
+      systems.push([req.system ?? "", req.systemTail ?? ""].join("\n\n"));
       if (step === 0) return { toolCalls: [{ name: "name_the_project", args: {} }] };
       if (step === 1) return { toolCalls: [{ name: "cancel_workflow", args: {} }] };
       return { text: "Skipping the name; planning instead." };
@@ -528,7 +529,8 @@ describe("a conversation's project", () => {
     const results: string[] = [];
     let other = "";
     const script = (req: ChatRequest, step: number): FakeTurn => {
-      systems.push(req.system ?? "");
+      // The pending question rides in the volatile tail, after the cached system text.
+      systems.push([req.system ?? "", req.systemTail ?? ""].join("\n\n"));
       if (step > 0) results.push(JSON.stringify(req.messages.at(-1)));
       if (step === 0) return { toolCalls: [{ name: "list_projects", args: {} }, { name: "list_items", args: {} }] };
       if (step === 1) return { toolCalls: [{ name: "list_items", args: { projectId: other } }] };

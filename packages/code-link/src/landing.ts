@@ -9,7 +9,7 @@ import type { StartDefaultsStore } from "./defaults.js";
 import type { CodeLinkStore, CodeLinkView } from "./store.js";
 import { commandOk, exec } from "./terminal.js";
 import { currentLinks, primaryOf, type ScanSummary } from "./scan/absorb.js";
-import { bestEffort } from "@tomradex/contracts";
+import { bestEffort, errorMessage } from "@tomradex/contracts";
 
 export interface OpenPrResult {
   pushed: boolean;
@@ -19,12 +19,20 @@ export interface OpenPrResult {
   message: string;
 }
 
+/** Why a merge did not go through: what the person (or the agent) can do about it hangs on this. */
+export type MergeCause = "conflict" | "dirty" | "no-branch" | "no-pr" | "no-checkout" | "no-gh" | "refused" | "policy";
+
 export interface MergeLocalResult {
   merged: boolean;
-  /** The default branch's head after the merge; null when nothing was merged. */
+  /** The default branch's head after the merge; null when nothing was merged, or when GitHub did it and the scan reads it later. */
   sha: string | null;
   message: string;
+  /** Present when nothing was merged. */
+  cause?: MergeCause;
 }
+
+/** One merge from Tomrade, whichever way it went: the branch here without a remote, or the pull request on GitHub. */
+export type MergeResult = MergeLocalResult;
 
 /** The command an agent merges with when the repository lets it. */
 export const MERGE_COMMAND = "gh pr merge";
@@ -134,21 +142,21 @@ export class Landing {
    */
   async mergeLocal(projectId: string, itemId: string, opts: { agent?: boolean } = {}): Promise<MergeLocalResult> {
     const w = this.words();
-    const no = (message: string): MergeLocalResult => ({ merged: false, sha: null, message });
+    const no = (message: string, cause: MergeCause): MergeLocalResult => ({ merged: false, sha: null, message, cause });
     const item = this.ctx.items.get(projectId, itemId);
     if (!item) throw new Error(`unknown item ${itemId}`);
     const open = this.currentLinks(projectId, itemId).filter((l) => l.branch && !l.mergedSha);
-    if (!open.length) return no(w("mergeNoBranch", { key: item.key }));
-    if (open.length > 1) return no(w("mergeMany", { key: item.key }));
+    if (!open.length) return no(w("mergeNoBranch", { key: item.key }), "no-branch");
+    if (open.length > 1) return no(w("mergeMany", { key: item.key }), "no-branch");
     const link = open[0]!;
     const repo = this.ctx.repos.get(projectId, link.repoId);
-    if (!repo) return no(w("mergeNoBranch", { key: item.key }));
+    if (!repo) return no(w("mergeNoBranch", { key: item.key }), "no-branch");
     const base = repo.defaultBranch;
-    if (link.branch === base) return no(w("mergeNoBranch", { key: item.key }));
+    if (link.branch === base) return no(w("mergeNoBranch", { key: item.key }), "no-branch");
     const checkout = this.ctx.repos.checkout(repo.remote).checkout;
-    if (!checkout || !fs.existsSync(checkout)) return no(w("mergeNoCheckout", { repo: repo.name }));
-    if (await new GitFolder(this.git, checkout).remoteUrl()) return no(w("mergeHasRemote", { repo: repo.name }));
-    if (opts.agent && !this.store.repoState(projectId, repo.id)?.agentMerge) return no(w("mergeAgentOff", { repo: repo.name }));
+    if (!checkout || !fs.existsSync(checkout)) return no(w("mergeNoCheckout", { repo: repo.name }), "no-checkout");
+    if (await new GitFolder(this.git, checkout).remoteUrl()) return no(w("mergeHasRemote", { repo: repo.name }), "no-pr");
+    if (opts.agent && !this.store.repoState(projectId, repo.id)?.agentMerge) return no(w("mergeAgentOff", { repo: repo.name }), "policy");
 
     const list = await this.git(["worktree", "list", "--porcelain"], { cwd: checkout, ok: true });
     const holder = list.stdout.split("\n\n").map((block) => ({ path: /^worktree (.+)$/m.exec(block)?.[1], branch: /^branch (.+)$/m.exec(block)?.[1] })).find((b) => b.branch === `refs/heads/${base}`)?.path;
@@ -156,14 +164,14 @@ export class Landing {
     let temporary: string | null = null;
     if (cwd) {
       const dirty = await this.git(["status", "--porcelain", "--untracked-files=no"], { cwd, ok: true });
-      if (dirty.code !== 0 || dirty.stdout.trim()) return no(w("mergeDirty", { base, where: cwd }));
+      if (dirty.code !== 0 || dirty.stdout.trim()) return no(w("mergeDirty", { base, where: cwd }), "dirty");
     } else {
       temporary = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-merge-"));
       cwd = path.join(temporary, "repo");
       const added = await this.git(["worktree", "add", "-q", cwd, base], { cwd: checkout, ok: true });
       if (added.code !== 0) {
         fs.rmSync(temporary, { recursive: true, force: true });
-        return no(w("mergeFailed", { error: lastLine(added.stderr) }));
+        return no(w("mergeFailed", { error: lastLine(added.stderr) }), "refused");
       }
     }
     try {
@@ -177,7 +185,7 @@ export class Landing {
         if (merged.code !== 0) {
           const conflicted = (await this.git(["diff", "--name-only", "--diff-filter=U"], { cwd, ok: true })).stdout.trim().split("\n").filter(Boolean);
           await this.git(["merge", "--abort"], { cwd, ok: true });
-          return no(conflicted.length ? w("mergeConflict", { branch: link.branch, base, files: conflicted.join(", ") }) : w("mergeFailed", { error: lastLine(merged.stderr || merged.stdout) }));
+          return no(conflicted.length ? w("mergeConflict", { branch: link.branch, base, files: conflicted.join(", ") }) : w("mergeFailed", { error: lastLine(merged.stderr || merged.stdout) }), conflicted.length ? "conflict" : "refused");
         }
         message = "";
       }
@@ -192,6 +200,59 @@ export class Landing {
         fs.rmSync(temporary, { recursive: true, force: true });
       }
     }
+  }
+
+  /**
+   * Land the ticket's current delivery on the person's word: the branch into the default branch here
+   * when the repository has no remote, else its open pull request through gh. Never past what
+   * GitHub allows: a refused merge comes back as its message, for the person to settle.
+   */
+  async merge(projectId: string, itemId: string): Promise<MergeResult> {
+    const item = this.ctx.items.get(projectId, itemId);
+    if (!item) throw new Error(`unknown item ${itemId}`);
+    const links = this.currentLinks(projectId, itemId).filter((l) => l.branch && !l.mergedSha && l.prState !== "merged");
+    const link = primaryOf(links);
+    const repo = link ? this.ctx.repos.get(projectId, link.repoId) : null;
+    if (link && repo && this.store.repoState(projectId, repo.id)?.remote === "none") return this.mergeLocal(projectId, itemId);
+    return this.mergePr(projectId, itemId);
+  }
+
+  /** Merge the ticket's open pull request with gh, by the first method the repository allows: squash, then merge commit, then rebase. */
+  async mergePr(projectId: string, itemId: string): Promise<MergeResult> {
+    const w = this.words();
+    const no = (message: string, cause: MergeCause): MergeResult => ({ merged: false, sha: null, message, cause });
+    const item = this.ctx.items.get(projectId, itemId);
+    if (!item) throw new Error(`unknown item ${itemId}`);
+    const open = this.currentLinks(projectId, itemId).filter((l) => l.branch && !l.mergedSha && l.prState !== "merged");
+    if (!open.length) return no(w("mergeNoBranch", { key: item.key }), "no-branch");
+    const link = open.find((l) => l.prUrl && l.prState === "open") ?? null;
+    if (!link?.prUrl) return no(w("mergeNoPr", { key: item.key }), "no-pr");
+    const repo = this.ctx.repos.get(projectId, link.repoId);
+    if (!repo) return no(w("mergeNoBranch", { key: item.key }), "no-branch");
+    const cwd = this.worktreeOf(projectId, itemId) ?? this.ctx.repos.checkout(repo.remote).checkout;
+    if (!cwd || !fs.existsSync(cwd)) return no(w("mergeNoCheckout", { repo: repo.name }), "no-checkout");
+    if (!(await commandOk("gh"))) return no(w("mergeNoGh"), "no-gh");
+    const env = await this.ctx.github.environment(this.git, cwd);
+    let method = "--squash";
+    try {
+      const allowed = JSON.parse(await exec("gh", ["repo", "view", "--json", "squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed"], cwd, env)) as Record<string, boolean>;
+      method = allowed.squashMergeAllowed ? "--squash" : allowed.mergeCommitAllowed ? "--merge" : allowed.rebaseMergeAllowed ? "--rebase" : "--squash";
+    } catch {
+      // The repository's settings could not be read: squash is what the brief tells agents to use.
+    }
+    try {
+      await exec("gh", ["pr", "merge", link.prUrl, method], cwd, env);
+    } catch (err) {
+      const error = lastLine(errorMessage(err)) || errorMessage(err);
+      // GitHub names a conflict as "not mergeable"; everything else (checks, protection, reviews) stays with the person.
+      return no(w("mergePrRefused", { pr: link.prUrl, error }), /not mergeable|conflict/i.test(error) ? "conflict" : "refused");
+    }
+    this.store.patchLink(projectId, link.id, { prState: "merged", lastSeenAt: Date.now() });
+    this.reevaluate(projectId, itemId, repo.id);
+    this.notify(projectId);
+    // The merge commit and the default branch's new head are read from git, not guessed.
+    void bestEffort(this.scan(projectId), this.ctx.logger, `code scan of ${projectId} after merging ${item.key}`);
+    return { merged: true, sha: null, message: w("mergePrDone", { pr: link.prUrl, base: repo.defaultBranch }) };
   }
 
   /** Push the ticket's branch from its Tomrade worktree and open a pull request. Never from the user's own checkout, never the default branch. */
