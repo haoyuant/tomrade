@@ -33,7 +33,10 @@ export interface ToolSpec {
 }
 
 export interface ChatRequest {
+  /** The stable system text: identical from one turn of a conversation to the next, so a provider can cache it. */
   system: string;
+  /** System text that changes between turns (cards, a pending question, the files index). A provider with cache blocks sends it after the cached one; the others append it to `system`. */
+  systemTail?: string;
   messages: Message[];
   tools?: ToolSpec[];
   toolChoice?: "auto" | "none" | { name: string };
@@ -138,3 +141,6 @@ export function toolResultsMessage(results: { id: string; content: string; isErr
 }
 
 export type { z };
+
+/** The whole system text, for a provider that takes one string. */
+export const systemText = (request: Pick<ChatRequest, "system" | "systemTail">): string => (request.systemTail ? `${request.system}\n\n${request.systemTail}` : request.system);
