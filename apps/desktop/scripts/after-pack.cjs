@@ -40,6 +40,22 @@ const DECLARATION = /\.d\.(?:ts|mts|cts)$/;
 const NOTES = /^(?:readme|changelog|history)(?:\.(?:md|markdown|txt))?$/i;
 const SAMPLES = new Set(["examples", "__tests__"]);
 
+/** The splash draws its logo from these, one for each icon the app may wear. */
+const ICON_FILES = ["icon.png", "icon-mac.png"];
+
+/**
+ * Both icons have to reach the packaged app: one missing there leaves the splash with
+ * nothing to draw, which the person meets as a white plate. Fail the build, not the first start.
+ */
+function requireIcons(resources) {
+  const missing = ICON_FILES.filter((name) => {
+    const file = path.join(resources, "app/assets", name);
+    return !fs.existsSync(file) || fs.statSync(file).size === 0;
+  });
+  if (missing.length) throw new Error(`the packaged app carries no ${missing.join(", ")}`);
+}
+exports.requireIcons = requireIcons;
+
 /**
  * Drop from node_modules what no running app reads. Tomrade's own packages keep their non-TS files (playbooks are
  * Markdown); the plugin SDK keeps its declarations, which Plugin Studio hands the agent (contract.d.ts).
@@ -74,6 +90,7 @@ exports.default = async ({ electronPlatformName, arch, appOutDir, packager }) =>
       ? path.join(appOutDir, `${packager.appInfo.productFilename}.app`, "Contents/Resources")
       : path.join(appOutDir, "resources");
   const modules = path.join(resources, "app/node_modules");
+  requireIcons(resources);
   const prune = (scope, drop) => {
     const dir = path.join(modules, scope);
     if (!fs.existsSync(dir)) return;

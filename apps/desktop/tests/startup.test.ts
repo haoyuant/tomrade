@@ -33,19 +33,28 @@ beforeEach(() => {
 afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
 describe("showSplash", () => {
-  it("draws the icon from the file's own bytes", () => {
+  it("draws the icon from the file's own bytes", async () => {
     const png = Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
       "base64"
     );
     const file = path.join(dir, "icon.png");
     fs.writeFileSync(file, png);
-    showSplash(file);
+    await showSplash(file);
     expect(page(loaded[0])).toContain(`src="data:image/png;base64,${png.toString("base64")}"`);
   });
 
-  it("still opens, saying what it is doing, with no icon to read", () => {
-    showSplash(path.join(dir, "missing.png"));
+  it("still opens, saying what it is doing, with no icon to read", async () => {
+    await showSplash(path.join(dir, "missing.png"));
+    const html = page(loaded[0]);
+    expect(html).not.toContain("<img");
+    expect(html).toContain("Starting Tomrade");
+  });
+
+  it("draws no image, and so no plate, when the icon's bytes are not a picture", async () => {
+    const file = path.join(dir, "icon.png");
+    fs.writeFileSync(file, "");
+    await showSplash(file);
     const html = page(loaded[0]);
     expect(html).not.toContain("<img");
     expect(html).toContain("Starting Tomrade");

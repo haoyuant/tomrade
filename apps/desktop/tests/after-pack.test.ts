@@ -4,9 +4,10 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { afterEach, describe, expect, it } from "vitest";
 
-const { pruneSqlite, pruneUnused } = createRequire(import.meta.url)("../scripts/after-pack.cjs") as {
+const { pruneSqlite, pruneUnused, requireIcons } = createRequire(import.meta.url)("../scripts/after-pack.cjs") as {
   pruneSqlite: (modules: string, platform: string, arch: string) => void;
   pruneUnused: (modules: string) => void;
+  requireIcons: (resources: string) => void;
 };
 
 const PREBUILDS = ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64", "linuxmusl-arm64", "linuxmusl-x64", "win32-arm64", "win32-x64"];
@@ -29,6 +30,31 @@ const left = (root: string) => fs.readdirSync(path.join(root, "better-sqlite3"))
 const prebuilds = (root: string) => fs.readdirSync(path.join(root, "better-sqlite3/prebuilds")).sort();
 
 afterEach(() => { for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true }); });
+
+describe("the icons the splash draws", () => {
+  /** A packaged app's resources folder, with the icons an app carries — or not. */
+  function resources(withIcons: string[]): string {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-after-pack-"));
+    dirs.push(root);
+    for (const name of withIcons) {
+      const file = path.join(root, "app/assets", name);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    }
+    return root;
+  }
+
+  it("passes an app carrying both", () => {
+    expect(() => requireIcons(resources(["icon.png", "icon-mac.png"]))).not.toThrow();
+  });
+
+  it("fails the build when one is missing, or is empty", () => {
+    expect(() => requireIcons(resources(["icon.png"]))).toThrow(/no icon-mac\.png/);
+    const empty = resources(["icon.png", "icon-mac.png"]);
+    fs.writeFileSync(path.join(empty, "app/assets/icon.png"), "");
+    expect(() => requireIcons(empty)).toThrow(/no icon\.png/);
+  });
+});
 
 describe("better-sqlite3 in a packaged app", () => {
   it.each([

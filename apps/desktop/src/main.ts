@@ -94,7 +94,7 @@ app.whenReady().then(async () => {
   );
 
   // Until the main window opens; a start at login has nobody waiting for one.
-  if (mode === "window" && !argv.includes("--dump-config")) splash = showSplash(appIconPath(appIcon));
+  if (mode === "window" && !argv.includes("--dump-config")) splash = await showSplash(appIconPath(appIcon));
   // Before boot: plugins spawn CLIs (MCP servers, agents, git) from the first moment.
   const shellProblem = await adoptShellEnv();
   // After the shell's PATH, so its folders stay ahead and a system Node always wins over the borrowed one.
