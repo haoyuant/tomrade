@@ -10,6 +10,9 @@
 // declarations, examples and tests, readmes and changelogs, node-addon-api's
 // headers, or esbuild's CLI copy of its binary.
 //
+// electron-builder leaves every .d.ts out of node_modules, the plugin SDK's
+// too; Plugin Studio hands the agent its contract.d.ts, so it is copied back.
+//
 // None keeps the agent SDK's Claude Code (~190 MB, musl builds included): the
 // engine always passes the person's own CLI as pathToClaudeCodeExecutable, and
 // the SDK reads its bundled copy only without one.
@@ -56,6 +59,21 @@ function requireIcons(resources) {
 }
 exports.requireIcons = requireIcons;
 
+/** The plugin SDK as the workspace built it, which electron-builder copied without its declarations. */
+const SDK_SOURCE = path.join(__dirname, "../node_modules/@tomradex/plugin-sdk");
+
+/**
+ * Copy the plugin SDK's declarations into the packaged app. Without contract.d.ts, Plugin Studio's plugin_reference
+ * answers "(not built)": fail the build, not the agent.
+ */
+function restoreSdkDeclarations(modules, source = SDK_SOURCE) {
+  const from = path.join(source, "dist");
+  if (!fs.existsSync(path.join(from, "contract.d.ts"))) throw new Error(`the plugin SDK has no dist/contract.d.ts in ${source}`);
+  const to = path.join(modules, "@tomradex/plugin-sdk/dist");
+  for (const name of fs.readdirSync(from)) if (DECLARATION.test(name)) fs.copyFileSync(path.join(from, name), path.join(to, name));
+}
+exports.restoreSdkDeclarations = restoreSdkDeclarations;
+
 /**
  * Drop from node_modules what no running app reads. Tomrade's own packages keep their non-TS files (playbooks are
  * Markdown); the plugin SDK keeps its declarations, which Plugin Studio hands the agent (contract.d.ts).
@@ -100,6 +118,7 @@ exports.default = async ({ electronPlatformName, arch, appOutDir, packager }) =>
   };
   prune("@anthropic-ai", (name) => name.startsWith("claude-agent-sdk-"));
   pruneSqlite(modules, electronPlatformName, own);
+  restoreSdkDeclarations(modules);
   prune("@esbuild", (name) => {
     const [, os, cpu] = name.match(/^([a-z0-9]+)-([a-z0-9]+)$/) ?? [];
     return os && (os !== electronPlatformName || cpu !== own);
