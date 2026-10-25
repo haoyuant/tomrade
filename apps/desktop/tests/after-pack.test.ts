@@ -4,10 +4,11 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { afterEach, describe, expect, it } from "vitest";
 
-const { pruneSqlite, pruneUnused, requireIcons } = createRequire(import.meta.url)("../scripts/after-pack.cjs") as {
+const { pruneSqlite, pruneUnused, requireIcons, restoreSdkDeclarations } = createRequire(import.meta.url)("../scripts/after-pack.cjs") as {
   pruneSqlite: (modules: string, platform: string, arch: string) => void;
   pruneUnused: (modules: string) => void;
   requireIcons: (resources: string) => void;
+  restoreSdkDeclarations: (modules: string, source?: string) => void;
 };
 
 const PREBUILDS = ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64", "linuxmusl-arm64", "linuxmusl-x64", "win32-arm64", "win32-x64"];
@@ -53,6 +54,33 @@ describe("the icons the splash draws", () => {
     const empty = resources(["icon.png", "icon-mac.png"]);
     fs.writeFileSync(path.join(empty, "app/assets/icon.png"), "");
     expect(() => requireIcons(empty)).toThrow(/no icon\.png/);
+  });
+});
+
+describe("the plugin SDK's declarations", () => {
+  /** The packaged plugin SDK as electron-builder copies it: no declarations. */
+  function packaged(): string {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-after-pack-"));
+    dirs.push(root);
+    fs.mkdirSync(path.join(root, "@tomradex/plugin-sdk/dist"), { recursive: true });
+    fs.writeFileSync(path.join(root, "@tomradex/plugin-sdk/dist/contract.js"), "");
+    return root;
+  }
+
+  it("copies the workspace's into the app, contract.d.ts among them", () => {
+    const root = packaged();
+    restoreSdkDeclarations(root);
+    const dist = path.join(root, "@tomradex/plugin-sdk/dist");
+    expect(fs.readFileSync(path.join(dist, "contract.d.ts"), "utf8")).toMatch(/export interface PluginContext\b/);
+    expect(fs.readdirSync(dist)).toEqual(expect.arrayContaining(["contract.js", "contract.d.ts", "index.d.ts"]));
+    expect(fs.readdirSync(dist).filter((name) => name.endsWith(".map"))).toEqual([]);
+  });
+
+  it("fails the build when the SDK was built without them", () => {
+    const source = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-after-pack-"));
+    dirs.push(source);
+    fs.mkdirSync(path.join(source, "dist"));
+    expect(() => restoreSdkDeclarations(packaged(), source)).toThrow(/no dist\/contract\.d\.ts/);
   });
 });
 
