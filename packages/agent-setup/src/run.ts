@@ -33,6 +33,9 @@ export interface ArchiveResponse {
   ok: boolean;
   status: number;
   arrayBuffer(): Promise<ArrayBuffer>;
+  /** Read as it arrives, so the bytes received can be shown; absent, the whole answer at once. */
+  body?: ReadableStream<Uint8Array> | null;
+  headers?: { get(name: string): string | null };
 }
 
 export interface RegistryPing {
@@ -185,7 +188,41 @@ export async function installerLaunch(installer: EngineInstaller, host: SetupHos
  * this machine, unpack the one file the plugin names under Tomrade's own data
  * folder, and say where it landed — the engine finds it there by itself.
  */
-export async function runArchive(installer: Extract<EngineInstaller, { kind: "archive" }>, deps: { engineId: string; host: SetupHost; signal: AbortSignal; say?(line: string): void }): Promise<{ file: string; say(line: string): void } | { failure: EngineSetupFailure }> {
+export interface ArchiveDeps {
+  engineId: string;
+  host: SetupHost;
+  signal: AbortSignal;
+  say?(line: string): void;
+  /** Bytes received so far, and the whole size when the server said. */
+  received?(received: number, size?: number): void;
+  /** Called once the download is in and unpacking starts. */
+  unpacking?(): void;
+}
+
+/** The whole answer, reported chunk by chunk as it arrives when it can be read that way. */
+async function readAll(answer: ArchiveResponse, report: (received: number, size?: number) => void): Promise<Buffer> {
+  const declared = Number(answer.headers?.get("content-length"));
+  const size = Number.isFinite(declared) && declared > 0 ? declared : undefined;
+  if (!answer.body) {
+    const bytes = Buffer.from(await answer.arrayBuffer());
+    report(bytes.length, size);
+    return bytes;
+  }
+  const reader = answer.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  report(0, size);
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    received += value.length;
+    report(received, size);
+  }
+  return Buffer.concat(chunks);
+}
+
+export async function runArchive(installer: Extract<EngineInstaller, { kind: "archive" }>, deps: ArchiveDeps): Promise<{ file: string; say(line: string): void } | { failure: EngineSetupFailure }> {
   const url = installer.url;
   const { host, signal } = deps;
   const say = deps.say ?? (() => {});
@@ -195,11 +232,12 @@ export async function runArchive(installer: Extract<EngineInstaller, { kind: "ar
   try {
     const answer = await (host.download ?? ((at: string, stop: AbortSignal) => fetch(at, { signal: stop })))(url, signal);
     if (!answer.ok) return { failure: { kind: answer.status === 403 || answer.status === 404 ? "not-found" : "network", message: `the server answered ${answer.status} for ${url} — the release may have moved; check the agent's download page` } };
-    bytes = Buffer.from(await answer.arrayBuffer());
+    bytes = await readAll(answer, (received, size) => deps.received?.(received, size));
   } catch (error) {
     if (signal.aborted) return { failure: { kind: "cancelled", message: "cancelled" } };
     return { failure: archiveFailure(error, url) };
   }
+  deps.unpacking?.();
   say(`Downloaded ${Math.max(1, Math.round(bytes.length / 1024))} KB — unpacking ${installer.file}`);
   try {
     const landed = unpackArchive(bytes, installer.file, { dir: host.archiveDir(deps.engineId, url), file: installer.file }, host.platform);
@@ -231,6 +269,66 @@ export function classifyFailure(result: SetupRunResult): EngineSetupFailure {
 
 const tail = (output: string) => output.split(/\r?\n/).filter((line) => line.trim()).slice(-12).join("\n");
 
+type SetupStage = NonNullable<EngineSetupProgress["stage"]>;
+
+/** npm at `--loglevel http`: a line per metadata or package fetch, cached or not. */
+const NPM_FETCH = /^npm http (?:fetch \S+ \d{3}|cache) (\S+)/;
+
+/**
+ * What one line of an installer's output says it is doing, only where it says
+ * so plainly: npm's fetch lines, and the words official scripts and Homebrew
+ * print before downloading, unpacking and putting the command in place.
+ */
+export function stageOf(installer: EngineInstaller["kind"], line: string): SetupStage | null {
+  if (installer === "npm") {
+    const fetched = NPM_FETCH.exec(line)?.[1];
+    if (!fetched) return null;
+    return /\.tgz(?:$|\?)/.test(fetched) ? "fetch" : "resolve";
+  }
+  if (/\b(?:downloading|fetching)\b/i.test(line)) return "download";
+  if (/\b(?:extracting|unpacking|unzipping|decompressing|pouring)\b/i.test(line)) return "unpack";
+  if (/\b(?:linking|symlinking|setting up|installing (?:to|into)|moving app|successfully installed)\b/i.test(line)) return "link";
+  return null;
+}
+
+/** How often a moving step is pushed to the screens at most: often enough to look live, not once per line. */
+const PACE_MS = 300;
+
+/** What a screen words differently: a change in it is pushed at once, the rest (output, bytes, counts) folds into the next push. */
+const shapeOf = (p: EngineSetupProgress) =>
+  [p.step, p.phase, p.installer, p.attempt, p.prefix, p.stage, p.stalled, p.mirror, p.url, p.terminal, p.method].join("|");
+
+/**
+ * Progress pushed at most once per `ms`: a new phase, installer or stage goes
+ * out at once, and the moves within one are folded into the latest, sent when
+ * the interval is up — so a chatty installer never floods the screens and a
+ * quiet one is never held back.
+ */
+export function paced(send: (progress: EngineSetupProgress) => void, ms = PACE_MS): (progress: EngineSetupProgress) => void {
+  let last = -Infinity;
+  let shape = "";
+  let pending: EngineSetupProgress | null = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const flush = () => {
+    clearTimeout(timer);
+    timer = undefined;
+    if (!pending) return;
+    const next = pending;
+    pending = null;
+    last = Date.now();
+    send(next);
+  };
+  return (progress) => {
+    const next = shapeOf(progress);
+    const changed = next !== shape;
+    shape = next;
+    pending = progress;
+    const ended = progress.phase === "done" || progress.phase === "failed";
+    if (changed || ended || Date.now() - last >= ms) return flush();
+    timer ??= setTimeout(flush, ms - (Date.now() - last));
+  };
+}
+
 export interface InstallDeps {
   engineId: string;
   installers: EngineInstaller[];
@@ -256,8 +354,12 @@ export interface InstallDeps {
 
 /** Ten minutes: enough for npm's cold cache on a slow line, short enough that a hang is seen today. */
 const INSTALL_TIMEOUT_MS = 10 * 60_000;
-/** npm prints a line per fetch, so a minute without one is worth saying. */
-const STALL_MS = 60_000;
+/**
+ * Two minutes without a line or a byte: npm prints a line per fetch only once
+ * it is in, and official scripts download their binary silently, so a big one
+ * on a slow line is quiet that long. The screen says it is quiet well before.
+ */
+const STALL_MS = 120_000;
 const SLOW_PING_MS = 3000;
 /** A mirror of npmjs that is reachable where npmjs is slow or blocked, mainland China among them. */
 export const NPM_MIRROR = "https://registry.npmmirror.com";
@@ -291,26 +393,74 @@ export async function runInstall(deps: InstallDeps): Promise<EngineSetupProgress
     if (deps.signal.aborted) break;
     const { installer, prefix } = attempts[i]!;
     const name = installer.kind;
-    const tried = prefix ? { installer: name, prefix } : { installer: name };
+    // The one before gave way: the screen says whether it failed or did not fit here.
+    const previous: EngineSetupProgress["previous"] = failed?.installer && failed.failure ? { installer: failed.installer, kind: failed.failure.kind } : undefined;
+    const tried: Pick<EngineSetupProgress, "installer" | "prefix" | "attempt" | "attempts" | "previous"> = { installer: name, ...(prefix ? { prefix } : {}), attempt: i + 1, attempts: attempts.length, ...(previous ? { previous } : {}) };
     const startedAt = Date.now();
     let output = "";
+    let partial = "";
     let stalled = false;
+    let stage: SetupStage | undefined;
+    let packages = 0;
+    let bytes: { received: number; size?: number } | undefined;
+    let lastOutputAt: number | undefined;
     // The lines report after a completion too, so the next progress carries what the unpack said.
     const show = () => {
-      at({ engineId: deps.engineId, step, phase: "running", ...tried, startedAt, ...(output ? { output: tail(output) } : {}), ...(stalled ? { stalled } : {}) });
+      at({
+        engineId: deps.engineId, step, phase: "running", ...tried, startedAt,
+        ...(stage ? { stage } : {}), ...(packages ? { packages } : {}), ...bytes, ...(lastOutputAt ? { lastOutputAt } : {}),
+        ...(output ? { output: tail(output) } : {}), ...(stalled ? { stalled } : {})
+      });
+    };
+    const npm = installer.kind === "npm";
+    let silence: ReturnType<typeof setTimeout> | undefined;
+    const listen = () => {
+      clearTimeout(silence);
+      silence = setTimeout(() => {
+        stalled = true;
+        if (npm) offerMirror();
+        show();
+      }, deps.stallMs ?? STALL_MS);
+    };
+    const heard = () => {
+      lastOutputAt = Date.now();
+      stalled = false;
+      listen();
+    };
+    // Output kept, and each finished line read for the stage it names.
+    const take = (text: string) => {
+      output = (output + text).slice(-OUTPUT_KEEP);
+      const lines = (partial + text).split(/\r\n|\r|\n/);
+      partial = lines.pop() ?? "";
+      for (const line of lines) {
+        const named = stageOf(name, line);
+        if (named) stage = named;
+        if (named === "fetch") packages++;
+      }
+      heard();
+      show();
     };
     show();
+    listen();
     if (installer.kind === "archive") {
       // No command and no PATH: the zip is downloaded and unpacked where the engine's own lookup finds it.
       const unpacked = await (deps.unpack ?? runArchive)(installer, {
         engineId: deps.engineId,
         host: deps.host,
         signal: deps.signal,
-        say: (line) => {
-          output = (output + `${line}\n`).slice(-OUTPUT_KEEP);
+        say: (line) => take(`${line}\n`),
+        received: (received, size) => {
+          stage = "download";
+          bytes = size ? { received, size } : { received };
+          heard();
+          show();
+        },
+        unpacking: () => {
+          stage = "unpack";
           show();
         }
       });
+      clearTimeout(silence);
       if ("failure" in unpacked) {
         failed = { engineId: deps.engineId, step, phase: "failed", ...tried, failure: unpacked.failure, ...(output ? { output: tail(output) } : {}) };
         if (unpacked.failure.kind === "cancelled") break;
@@ -334,20 +484,10 @@ export async function runInstall(deps: InstallDeps): Promise<EngineSetupProgress
     }
     const resolved = await (deps.resolve ?? ((it, registry) => installerLaunch(it, deps.host, registry, prefix)))(installer, deps.registry);
     if ("failure" in resolved) {
+      clearTimeout(silence);
       failed = { engineId: deps.engineId, step, phase: "failed", ...tried, failure: resolved.failure };
       continue;
     }
-    const npm = installer.kind === "npm";
-    let silence: ReturnType<typeof setTimeout> | undefined;
-    const listen = () => {
-      clearTimeout(silence);
-      silence = setTimeout(() => {
-        stalled = true;
-        if (npm) offerMirror();
-        show();
-      }, deps.stallMs ?? STALL_MS);
-    };
-    listen();
     const ping = new AbortController();
     if (npm && mirrorFits && deps.host.pingRegistry) {
       void deps.host.pingRegistry(resolved.launch, ping.signal).then((answer) => {
@@ -363,12 +503,7 @@ export async function runInstall(deps: InstallDeps): Promise<EngineSetupProgress
       signal: deps.signal,
       timeoutMs: deps.timeoutMs ?? INSTALL_TIMEOUT_MS,
       env: deps.host.env,
-      onOutput: (text) => {
-        output = (output + text).slice(-OUTPUT_KEEP);
-        stalled = false;
-        listen();
-        show();
-      }
+      onOutput: take
     });
     clearTimeout(silence);
     ping.abort();
@@ -429,24 +564,31 @@ export async function runSignIn(deps: SignInDeps): Promise<EngineSetupProgress> 
   const at = (progress: EngineSetupProgress) => (deps.report(progress), progress);
   // What the person already has is reused: signed in means nothing to do.
   if (await deps.probe()) return at({ engineId: deps.engineId, step, phase: "done" });
-  const deadline = Date.now() + (deps.timeoutMs ?? SIGN_IN_TIMEOUT_MS);
+  const startedAt = Date.now();
+  const deadline = startedAt + (deps.timeoutMs ?? SIGN_IN_TIMEOUT_MS);
   const pollMs = deps.pollMs ?? 3000;
   let url: string | undefined;
   // In a box: assigned from the command's own promise, which flow analysis cannot see.
   const ended: { result: SetupRunResult | null } = { result: null };
   const run = deps.start?.();
   if (run) {
-    at({ engineId: deps.engineId, step, phase: "running" });
+    let phase: EngineSetupProgress["phase"] = "running";
+    let output = "";
+    // What the login command prints shows too, so the screen has its latest line while the person signs in.
+    const show = () => at({ engineId: deps.engineId, step, phase, startedAt, ...(url ? { url } : {}), ...(output ? { output: tail(output) } : {}) });
+    at({ engineId: deps.engineId, step, phase, startedAt });
     run.onOutput((text) => {
+      output = (output + text).slice(-OUTPUT_KEEP);
       const seen = URL_IN_OUTPUT.exec(text)?.[0];
       if (seen && !url) {
         url = seen;
-        at({ engineId: deps.engineId, step, phase: "waiting", url });
+        phase = "waiting";
       }
+      show();
     });
     void run.result.then((result) => { ended.result = result; });
   } else {
-    at({ engineId: deps.engineId, step, phase: "waiting", terminal: true });
+    at({ engineId: deps.engineId, step, phase: "waiting", terminal: true, startedAt });
   }
   for (;;) {
     if (await deps.probe()) return at({ engineId: deps.engineId, step, phase: "done", ...(url ? { url } : {}) });
@@ -458,7 +600,7 @@ export async function runSignIn(deps: SignInDeps): Promise<EngineSetupProgress> 
         return at({ engineId: deps.engineId, step, phase: "failed", failure: classifyFailure(over), output: tail(over.output), ...(url ? { url } : {}) });
       }
       ended.result = null;
-      at({ engineId: deps.engineId, step, phase: "waiting", terminal: true });
+      at({ engineId: deps.engineId, step, phase: "waiting", terminal: true, startedAt });
     }
     if (Date.now() > deadline) return at({ engineId: deps.engineId, step, phase: "failed", failure: { kind: "timeout", message: "sign-in was not finished in time" }, ...(url ? { url } : {}) });
     await wait(pollMs, deps.signal);

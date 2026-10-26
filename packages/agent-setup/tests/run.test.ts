@@ -6,9 +6,11 @@ import {
   classifyFailure,
   installerLaunch,
   NPM_MIRROR,
+  paced,
   runCommand,
   runInstall,
   runSignIn,
+  stageOf,
   type SetupHost,
   type SetupRunResult
 } from "../src/run.js";
@@ -267,6 +269,89 @@ describe("the install step", () => {
   });
 });
 
+describe("what a moving install says", () => {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  type Push = { at: number; progress: EngineSetupProgress };
+  /** Pushes of the same phase, installer and stage come at most once per pace. */
+  const expectPaced = (pushes: Push[], ms: number) => {
+    const same = (a: EngineSetupProgress, b: EngineSetupProgress) => a.phase === b.phase && a.installer === b.installer && a.stage === b.stage;
+    for (let i = 1; i < pushes.length; i++) {
+      if (same(pushes[i]!.progress, pushes[i - 1]!.progress)) expect(pushes[i]!.at - pushes[i - 1]!.at).toBeGreaterThanOrEqual(ms - 5);
+    }
+  };
+
+  it("reads npm's and the scripts' own words for the stage they are at", () => {
+    expect(stageOf("npm", "npm http fetch GET 200 https://registry.npmjs.org/@x%2fcli 300ms (cache miss)")).toBe("resolve");
+    expect(stageOf("npm", "npm http fetch GET 200 https://registry.npmmirror.com/@x/cli/-/cli-1.0.0.tgz 900ms (cache miss)")).toBe("fetch");
+    expect(stageOf("npm", "npm http cache @x/cli@https://registry.npmjs.org/@x/cli/-/cli-1.0.0.tgz 1ms (cache hit)")).toBe("fetch");
+    expect(stageOf("npm", "npm warn deprecated glob@7.2.3")).toBeNull();
+    expect(stageOf("brew", "==> Downloading https://ghcr.io/v2/homebrew/core/x/blobs/sha256:abc")).toBe("download");
+    expect(stageOf("brew", "==> Pouring x--1.0.arm64_sonoma.bottle.tar.gz")).toBe("unpack");
+    expect(stageOf("script", "Setting up Claude Code...")).toBe("link");
+    expect(stageOf("script", "✔ Claude Code successfully installed!")).toBe("link");
+    expect(stageOf("script", "Version: 2.0.0")).toBeNull();
+  });
+
+  it("says which installer of how many runs, why the last gave way, and npm's stages and packages — at a pace", async () => {
+    const pushes: Push[] = [];
+    let installed = false;
+    let lines = 0;
+    const exec: typeof runCommand = async (launch, _args, opts) => {
+      if (launch.file === "bash") return { code: 1, output: "curl: (6) Could not resolve host: x.dev" };
+      const say = (line: string) => (lines++, opts.onOutput?.(`${line}\n`));
+      say("npm http fetch GET 200 https://registry.npmjs.org/@x%2fcli 120ms (cache miss)");
+      await sleep(150);
+      for (const n of [1, 2, 3]) {
+        // A burst between fetches: output, not a stage of its own.
+        for (let k = 0; k < 20; k++) say(`npm warn deprecated dep-${n}-${k}@1.0.0`);
+        say(`npm http fetch GET 200 https://registry.npmjs.org/@x/cli/-/dep-${n}-1.0.0.tgz 300ms (cache miss)`);
+        await sleep(150);
+      }
+      installed = true;
+      return { code: 0, output: "added 3 packages in 1s" };
+    };
+    const end = await runInstall({
+      engineId: "x",
+      installers: [SH, NPM],
+      host: host(),
+      detect: async () => (installed ? { ready: true, version: "2.0.0" } : { ready: false }),
+      report: paced((progress) => void pushes.push({ at: Date.now(), progress }), 100),
+      signal: new AbortController().signal,
+      exec
+    });
+    expect(end).toMatchObject({ phase: "done", installer: "npm", attempt: 2, attempts: 2 });
+    const script = pushes.map((p) => p.progress).filter((p) => p.installer === "script" && p.phase === "running");
+    expect(script[0]).toMatchObject({ attempt: 1, attempts: 2 });
+    expect(script[0]?.previous).toBeUndefined();
+    const npm = pushes.map((p) => p.progress).filter((p) => p.installer === "npm" && p.phase === "running");
+    expect(npm[0]).toMatchObject({ attempt: 2, attempts: 2, previous: { installer: "script", kind: "network" } });
+    expect(npm.map((p) => p.stage).filter((stage, i, all) => i === 0 || stage !== all[i - 1])).toEqual([undefined, "resolve", "fetch"]);
+    const counts = npm.map((p) => p.packages ?? 0);
+    expect(counts).toEqual([...counts].sort((a, b) => a - b));
+    expect(counts.at(-1)).toBe(3);
+    expect(npm.at(-1)?.lastOutputAt).toBeTypeOf("number");
+    // Every line was output; only a handful of pushes carried it.
+    expect(lines).toBe(64);
+    expect(pushes.length).toBeLessThan(16);
+    expectPaced(pushes, 100);
+  });
+
+  it("pushes at once what the screen words differently, folds the rest into the latest, and never holds back the end", async () => {
+    const sent: EngineSetupProgress[] = [];
+    const push = paced((progress) => void sent.push(progress), 1000);
+    const base: EngineSetupProgress = { engineId: "x", step: "install", phase: "running", installer: "npm" };
+    push({ ...base, output: "1" });
+    push({ ...base, output: "2" });
+    push({ ...base, output: "3" });
+    push({ ...base, stage: "fetch", output: "4" });
+    push({ ...base, stage: "fetch", output: "5" });
+    push({ ...base, phase: "done" });
+    expect(sent.map((p) => p.output ?? p.phase)).toEqual(["1", "4", "done"]);
+    await sleep(1100);
+    expect(sent).toHaveLength(3);
+  });
+});
+
 describe("the sign-in step", () => {
   it("is done at once when the person is already signed in", async () => {
     const seen: EngineSetupProgress[] = [];
@@ -297,6 +382,9 @@ describe("the sign-in step", () => {
     settle({ code: 0, output: "" });
     expect(await end).toMatchObject({ phase: "done", url: "https://auth.example.com/device?code=abc" });
     expect(seen.some((p) => p.phase === "waiting" && p.url)).toBe(true);
+    // the wait is timed from its start, and what the command printed shows beside it
+    expect(seen.find((p) => p.url)).toMatchObject({ startedAt: seen[0]!.startedAt, output: expect.stringContaining("Open this link to sign in") });
+    expect(seen[0]?.startedAt).toBeTypeOf("number");
   });
 
   it("fails with the command's own words when login exits badly and the probe stays false", async () => {
