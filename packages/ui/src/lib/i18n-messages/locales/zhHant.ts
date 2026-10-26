@@ -3065,6 +3065,8 @@ export const zhHant: PartialMessages = {
     convoInput: "輸入",
     convoOutput: "輸出",
     convoNoOutput: "記錄裡沒有它的輸出。",
+    recordSaved: "對話已存在本機，CLI 清理後也能看",
+    recordSavedEnd: "本機只存了對話的最後一部分",
     orNewTerminal: "或開一個新終端機…",
     convoReadOnly: "當時的對話（唯讀）",
     archiveLoading: "正在讀取…",

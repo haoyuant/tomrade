@@ -3064,6 +3064,8 @@ export const de: PartialMessages = {
     convoInput: "Eingabe",
     convoOutput: "Ausgabe",
     convoNoOutput: "Die Ausgabe steht nicht im Protokoll.",
+    recordSaved: "Die Unterhaltung ist auf diesem Rechner gespeichert",
+    recordSavedEnd: "Nur das Ende der Unterhaltung ist auf diesem Rechner gespeichert",
     orNewTerminal: "Oder ein neues Terminal öffnen …",
     convoReadOnly: "Die Unterhaltung, schreibgeschützt",
     archiveLoading: "Wird geladen …",

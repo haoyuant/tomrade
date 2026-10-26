@@ -3064,6 +3064,8 @@ export const es: PartialMessages = {
     convoInput: "Entrada",
     convoOutput: "Salida",
     convoNoOutput: "Su salida no está en el registro.",
+    recordSaved: "Su conversación está guardada en este equipo",
+    recordSavedEnd: "Solo el final de su conversación está guardado en este equipo",
     orNewTerminal: "O abre una terminal nueva…",
     convoReadOnly: "La conversación, de solo lectura",
     archiveLoading: "Cargando…",

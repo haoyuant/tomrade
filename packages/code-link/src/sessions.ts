@@ -111,6 +111,8 @@ export interface SessionsOptions {
   onMoment?(session: SessionView, moment: SessionMoment): void;
   /** The process is over; code evidence may have changed while it was still counted as active. */
   onEnd?(session: SessionView): void;
+  /** The session ended, however it ended — also when no scan follows (`end` called quiet). */
+  onEnded?(session: SessionView): void;
   /** The session just turned to the person for something — an approval, an answer — and says what. */
   onWaiting?(session: SessionView, activity: string): void;
   /** The agent stopped on a usage limit, lifting at `until` when it said; returns what the session's summary should say. */
@@ -653,6 +655,7 @@ export class Sessions {
       this.release(sessionId);
       this.panes.delete(sessionId);
       const ended = this.store.session(projectId, sessionId);
+      if (ended) this.options.onEnded?.(ended);
       if (ended) this.options.onEnd?.(ended);
     }
     return deny ? { deny } : context ? { context } : {};
@@ -719,6 +722,7 @@ export class Sessions {
     this.release(sessionId);
     this.panes.delete(sessionId);
     this.options.onChange(projectId);
+    if (state === "ended") this.options.onEnded?.(this.store.session(projectId, sessionId)!);
     if (state === "ended" && !quiet) this.options.onEnd?.(this.store.session(projectId, sessionId)!);
   }
 
@@ -774,7 +778,10 @@ export class Sessions {
       }
     }
     if (changed) this.options.onChange(projectId);
-    for (const session of ended) this.options.onEnd?.(session);
+    for (const session of ended) {
+      this.options.onEnded?.(session);
+      this.options.onEnd?.(session);
+    }
   }
 
   /** After a restart no headless process is left; the row says so, and the ticket still offers Continue. */

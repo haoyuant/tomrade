@@ -42,6 +42,8 @@ export interface SessionRow {
   endedAt: number | null;
   /** Ended while its pane goes on here as another of the window's rows (another ticket of the same agent): that row's id; null otherwise. */
   continuedIn: string | null;
+  /** A ticket session's conversation was saved on this machine as it ended: all of it, or only its end. */
+  recordSaved: "whole" | "end" | null;
 }
 
 /** A plain terminal the window opened: a herdr pane of the person's, with no ticket or code-link session behind it. */

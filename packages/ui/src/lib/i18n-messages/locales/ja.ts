@@ -3064,6 +3064,8 @@ export const ja: PartialMessages = {
     convoInput: "入力",
     convoOutput: "出力",
     convoNoOutput: "記録にその出力はありません。",
+    recordSaved: "会話はこのマシンに保存されています",
+    recordSavedEnd: "会話の最後の部分だけがこのマシンに保存されています",
     orNewTerminal: "または新しいターミナルを開く…",
     convoReadOnly: "会話（読み取り専用）",
     archiveLoading: "読み込み中…",

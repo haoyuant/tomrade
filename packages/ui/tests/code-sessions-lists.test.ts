@@ -24,6 +24,7 @@ const row = (over: Partial<SessionRow> & { id: string }): SessionRow => ({
   startedAt: 1,
   endedAt: null,
   continuedIn: null,
+  recordSaved: null,
   ...over
 });
 

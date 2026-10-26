@@ -3177,6 +3177,8 @@ export const ru: PartialMessages = {
     convoInput: "Ввод",
     convoOutput: "Вывод",
     convoNoOutput: "Его вывода в записи нет.",
+    recordSaved: "Разговор сохранён на этом компьютере",
+    recordSavedEnd: "На этом компьютере сохранён только конец разговора",
     orNewTerminal: "Или откройте новый терминал…",
     convoReadOnly: "Разговор, только для чтения",
     archiveLoading: "Загрузка…",
