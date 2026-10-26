@@ -607,6 +607,9 @@ importers:
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
+      '@tomradex/engine-kit':
+        specifier: workspace:*
+        version: link:../engine-kit
       '@tomradex/git':
         specifier: workspace:*
         version: link:../git

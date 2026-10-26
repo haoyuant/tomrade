@@ -24,6 +24,7 @@
     "@tomradex/contributions": "workspace:*",
     "@tomradex/db": "workspace:*",
     "@tomradex/domain": "workspace:*",
+    "@tomradex/engine-kit": "workspace:*",
     "@tomradex/git": "workspace:*",
     "@tomradex/github": "workspace:*",
     "@tomradex/herdr": "workspace:*",

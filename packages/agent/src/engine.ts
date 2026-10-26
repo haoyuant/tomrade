@@ -324,6 +324,33 @@ export interface EngineLocal {
   signIn?: EngineSignIn;
   /** One answer from its agent outside a turn — how a try reaches an engine that runs only in a terminal. */
   ask?(prompt: string, signal?: AbortSignal): Promise<string>;
+  /** How Tomrade reads its CLI's own record of a session; absent, an ended session shows no conversation. */
+  record?: EngineRecord;
+}
+
+/** One line of a session's record as a conversation: what the person said, what the agent answered, a tool call. */
+export interface RecordLine {
+  who: "person" | "agent" | "tool";
+  text: string;
+}
+
+/** A session's conversation as read from its record; `cut` when only the record's end was read. */
+export interface RecordRead {
+  lines: RecordLine[];
+  cut: boolean;
+}
+
+/**
+ * The agent's own record of its sessions, read as asked and never written:
+ * where one session's is, what it said, and what it calls the conversation.
+ */
+export interface EngineRecord {
+  /** Where its CLI keeps that session's record on this machine; null when it is not there. */
+  find(sessionId: string, opts: { cwd: string | null }): string | null;
+  /** The record as conversation lines, the agent's machinery left out; null when it cannot be read. */
+  read(file: string): RecordRead | null;
+  /** What the record calls the conversation; null without a name. */
+  title?(file: string): string | null;
 }
 
 /** The flat members an engine had before they were grouped; `Agent.engine` still maps them once, at registration. */

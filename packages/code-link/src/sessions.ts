@@ -9,7 +9,8 @@ import type {} from "@tomradex/tools";
 import type { Author } from "@tomradex/domain";
 import { looksRateLimited, resetTime, type CliHookAnswer } from "@tomradex/agent";
 import { parseBranch } from "./keys.js";
-import { promptTitle, transcriptTitleFor } from "./titles.js";
+import { promptTitle } from "@tomradex/engine-kit";
+import { recordOf } from "./titles.js";
 import { CLI_HOOK_COVERAGE } from "@tomradex/plugin-sdk";
 import { BRIDGED_BY_DSH, cliHookCall, cliHookEvent, hookReply, mergeAnswers, type HookSource } from "./cli-hooks.js";
 import { hookCommand } from "./connect.js";
@@ -531,7 +532,7 @@ export class Sessions {
     }
     const ending = p.hook_event_name === "Stop" || p.hook_event_name === "SessionEnd";
     const transcript = patch.transcript ?? session.transcript;
-    const own = !named && ending && transcript ? transcriptTitleFor(session.agent, transcript) : null;
+    const own = !named && ending && transcript ? (recordOf(this.ctx, session.agent)?.title?.(transcript) ?? null) : null;
     if (own && own !== session.title) patch.title = own;
     if (Object.keys(patch).length) this.store.patchSession(projectId, session.id, patch);
     // No title of the agent's own: the one it set on its pane, while herdr still has it.

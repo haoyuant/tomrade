@@ -13,6 +13,7 @@
     { "path": "../contributions" },
     { "path": "../db" },
     { "path": "../domain" },
+    { "path": "../engine-kit" },
     { "path": "../git" },
     { "path": "../github" },
     { "path": "../herdr" },

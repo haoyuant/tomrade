@@ -72,6 +72,7 @@ export {
   type EngineMcpLink,
   type EngineNeed,
   type EnginePick,
+  type EngineRecord,
   type EngineStepLimit,
   type EngineInstaller,
   type EngineRegistration,
@@ -88,7 +89,9 @@ export {
   type FlatEngineMembers,
   type LocalCliStatus,
   type McpLinkView,
-  type McpProjectApproval
+  type McpProjectApproval,
+  type RecordLine,
+  type RecordRead
 } from "./engine.js";
 export {
   type AgentPolicy,

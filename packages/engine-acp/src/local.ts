@@ -234,7 +234,7 @@ function apply(ctx: Context, given: Spec, own: OwnAgent): void {
   const base = spec.acp ? createAcpEngine(ctx, acpAgentOf(spec, locator, own)) : terminalEngine(ctx, spec, locator);
   // Without ACP a try cannot be a turn; the one-line answer it lends with stands in.
   const ask = !spec.acp && lend ? async (prompt: string, signal?: AbortSignal) => (await lend.ask({ system: "", transcript: prompt }, { ...io(), ...(signal ? { signal } : {}) })).text : undefined;
-  const engine: Engine = { ...base, local: { ...base.local, ...(mcpLink ? { mcpLink } : {}), ...(ask ? { ask } : {}) } };
+  const engine: Engine = { ...base, local: { ...base.local, ...(mcpLink ? { mcpLink } : {}), ...(ask ? { ask } : {}), ...(spec.record ? { record: spec.record } : {}) } };
   ctx.agent.engine(engine);
   if (!lend) return;
   const lent = cliLentModel({

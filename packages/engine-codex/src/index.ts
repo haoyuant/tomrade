@@ -8,6 +8,7 @@ import { codexHome } from "./account.js";
 import { codexEngineInfo, migrateLegacyModel } from "./engine.js";
 import { CodexRuntime } from "./app-server.js";
 import { codexLentModel } from "./lend.js";
+import { codexRecord } from "./record.js";
 
 export function createCodexEngine(ctx: Context): Engine {
   const info = codexEngineInfo(ctx);
@@ -33,7 +34,8 @@ export function createCodexEngine(ctx: Context): Engine {
           const value = (key: string) => new RegExp(`^${key}\\s*=\\s*"([^"]*)"`, "m").exec(config)?.[1];
           return { model: value("model") ?? "default", provider: value("model_provider") ?? "default" };
         }
-      }
+      },
+      record: codexRecord
     },
     turn: pooledEngine(ctx, { create: (input) => new CodexRuntime(ctx, input) })
   };
@@ -52,3 +54,4 @@ export { CodexOptions, codexCanRun, codexEngineInfo, codexInstall, codexModel, c
 export { codexHome, readCodexAccount, type CodexAccount } from "./account.js";
 export { codexLentModel } from "./lend.js";
 export { codexMcpLink, codexUserFile } from "./mcp-link.js";
+export { codexRecord, codexRolloutTitle, findCodexRollout } from "./record.js";

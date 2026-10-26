@@ -1,6 +1,6 @@
 import type { Context } from "cordis";
 import type { Engine } from "@tomradex/agent";
-import { pooledEngine } from "@tomradex/engine-kit";
+import { claudeRecord, pooledEngine } from "@tomradex/engine-kit";
 import type {} from "@tomradex/llm";
 import type {} from "@tomradex/mcp";
 import { claudeCodeEngineInfo } from "./engine.js";
@@ -16,7 +16,7 @@ export function createClaudeCodeEngine(ctx: Context): Engine {
     steering: "forward",
     // the SDK session switches its permission mode mid-turn
     liveModes: true,
-    local: { ...info.local, commands: claudeCommands },
+    local: { ...info.local, commands: claudeCommands, record: claudeRecord({ variable: "CLAUDE_CONFIG_DIR", dir: ".claude" }) },
     media: () => ({ input: ["image/png", "image/jpeg", "image/webp", "image/gif", "application/pdf"], output: [] }),
     permissionModes: { default: "bypassPermissions", choices: [
       { value: "auto", label: "Auto" }, { value: "bypassPermissions", label: "Full access" },
