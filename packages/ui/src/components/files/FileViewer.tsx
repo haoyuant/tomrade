@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FileContent } from "@tomradex/files";
 import { Spacer } from "~/components/ui/atoms";
-import { formatSize } from "~/lib/files";
+import { formatSize, isRenderable } from "~/lib/files";
 import { useI18n } from "~/lib/i18n";
 import { decodeHref } from "@tomradex/notes/syntax";
 import { renderMarkdown, type LinkResolver } from "~/lib/markdown";
@@ -74,10 +74,6 @@ function Markdown({ text, linking, lines }: { text: string; linking?: NoteLinkin
     />
   );
 }
-
-/** Whether a file has a rendered form apart from its text: what a preview beside the editor can show. */
-export const isRenderable = (content: FileContent): boolean =>
-  content.encoding === "utf8" && (content.mime === "text/markdown" || content.mime === "text/html" || content.mime === "image/svg+xml");
 
 /**
  * Reads a file the way its kind asks: markdown rendered with its links live,

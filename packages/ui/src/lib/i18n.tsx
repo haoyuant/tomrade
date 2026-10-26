@@ -3,7 +3,7 @@ import { languageTag, pickLanguage, type AppSettings, type Dictionaries, type La
 import { keys, useSaveSettings, useSettings } from "./queries";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke, logQuietly } from "./api";
-import { interpolate, message, setPackMessages, type BuiltinLocale, type Locale, type MessageKey } from "./dicts";
+import { interpolate, loadLocale, message, setPackMessages, useLocaleWords, type BuiltinLocale, type Locale, type MessageKey } from "./dicts";
 import { intlTag, setDomainLocale } from "./domain";
 import { en } from "./i18n-messages";
 
@@ -59,6 +59,9 @@ function detectSystemLocale(available: readonly Locale[] = BUILTIN_LANGUAGES.map
   return pickLanguage((typeof navigator !== "undefined" && navigator.language) || "en", available) ?? "en";
 }
 
+// The language most windows open in, asked for while the settings are still on their way.
+loadLocale(detectSystemLocale()).catch(() => {});
+
 function resolveLocale(preference: LanguagePreference, available?: readonly Locale[]): Locale {
   return preference === "system" ? detectSystemLocale(available) : languageTag(preference);
 }
@@ -108,6 +111,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const packTag = languages.packs.has(locale) ? locale : null;
   const pack = useQuery({ queryKey: keys.languagePack(packTag), queryFn: () => invoke("settings.languagePack", packTag!), enabled: !!packTag, staleTime: Infinity }).data;
   setPackMessages(packTag, pack?.tag === packTag ? (pack?.ui ?? null) : null);
+  // A shipped language other than English and Simplified Chinese arrives on first use: a new t once it has.
+  const words = useLocaleWords(locale);
   // What a pack translates is measured against this English; the main process keeps it for plugin_check.
   useEffect(() => {
     if (typeof window !== "undefined" && window.tomrade) void invoke("settings.uiEnglish", en as Dictionaries).catch(logQuietly("settings.uiEnglish"));
@@ -129,7 +134,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   // `pack` stands for the words setPackMessages took in: a new t once they arrive.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const t = useCallback((key: MessageKey, vars?: Record<string, string | number>) => interpolate(lookup(locale, key, map), vars), [locale, map, pack]);
+  const t = useCallback((key: MessageKey, vars?: Record<string, string | number>) => interpolate(lookup(locale, key, map), vars), [locale, map, pack, words]);
 
   const tx = useCallback(
     (key: MessageKey, vars?: Record<string, ReactNode>): ReactNode => {
@@ -144,7 +149,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     },
     // as with t: `pack` stands for the words setPackMessages took in
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [locale, map, pack]
+    [locale, map, pack, words]
   );
 
   const setPreference = useCallback(

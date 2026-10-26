@@ -35,7 +35,7 @@ import { errorSpec, readableError, useToast } from "~/lib/toast";
 import { useNotesEnabled } from "~/lib/notes";
 import { AttachToTicketDialog } from "./AttachToTicketDialog";
 import { FileView } from "./FileView";
-import { FileViewer } from "./FileViewer";
+import { FileViewer } from "~/components/onDemand";
 import { FolderView } from "./FolderView";
 import { stateOf } from "./state";
 import { useNoteActions } from "./useNoteActions";

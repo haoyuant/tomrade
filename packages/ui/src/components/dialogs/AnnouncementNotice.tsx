@@ -1,9 +1,8 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import { AnnouncementBody } from "~/components/onDemand";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
-import { useAnnouncements, useMarkAnnouncementSeen, type Announcement } from "~/lib/announcements";
+import { announcementDate, useAnnouncements, useMarkAnnouncementSeen, type Announcement } from "~/lib/announcements";
 import { useI18n } from "~/lib/i18n";
-import { renderMarkdown } from "~/lib/markdown";
-import { openExternal } from "~/lib/shell";
 
 function useOwnLanguage(): Announcement[] {
   const { locale } = useI18n();
@@ -13,29 +12,6 @@ function useOwnLanguage(): Announcement[] {
 function Tag({ announcement }: { announcement: Announcement }) {
   const { t } = useI18n();
   return announcement.level === "important" ? <span className="announcement-tag is-important">{t("announcements.important")}</span> : null;
-}
-
-const formatDate = (iso: string, locale: string) => new Date(iso).toLocaleDateString(locale, { year: "numeric", month: "short", day: "numeric" });
-
-function AnnouncementBody({ announcement }: { announcement: Announcement }) {
-  const { locale } = useI18n();
-  const html = useMemo(() => renderMarkdown(announcement.body, undefined, { notes: false, breaks: true }), [announcement.body]);
-  return (
-    <>
-      <article
-        className="md-view body-prose"
-        dangerouslySetInnerHTML={{ __html: html }}
-        onClick={(e) => {
-          const anchor = (e.target as HTMLElement).closest("a");
-          if (!anchor) return;
-          e.preventDefault();
-          const href = anchor.getAttribute("href") ?? "";
-          if (/^https?:\/\//i.test(href)) openExternal(href);
-        }}
-      />
-      <p className="meta-txt announcement-date">{formatDate(announcement.startsAt, locale)}</p>
-    </>
-  );
 }
 
 /** Each announcement Tomrade published pops up once, oldest first; closing it in any way counts as read. */
@@ -108,7 +84,7 @@ export function AnnouncementsDialog({ open, onOpenChange }: { open: boolean; onO
                     <button type="button" className={a.seen ? "announcement-row" : "announcement-row is-unread"} onClick={() => read(a)}>
                       <span className="announcement-row-title">{a.title}</span>
                       <Tag announcement={a} />
-                      <span className="meta-txt">{formatDate(a.startsAt, locale)}</span>
+                      <span className="meta-txt">{announcementDate(a.startsAt, locale)}</span>
                     </button>
                   </li>
                 ))}

@@ -7,6 +7,24 @@ import { describe, expect, it } from "vitest";
 import { ConflictError, DependencyCycleError, HumanLockedError, NotFoundError, PurgeNotPermittedError, provenanceOf } from "@tomradex/domain";
 import { fresh } from "@tomradex/testkit";
 
+describe("items (counts)", () => {
+  it("counts a project's items, the open ones and the last write as the list would", async () => {
+    const { items, board, project } = await fresh();
+    expect(items.counts(project.id)).toEqual({ total: 0, open: 0, lastWrite: null });
+    items.create({ projectId: project.id, boardId: board.id, title: "Open", status: "doing", by: "human" });
+    items.create({ projectId: project.id, boardId: board.id, title: "Shipped", status: "done", by: "human" });
+    items.create({ projectId: project.id, boardId: board.id, title: "Dropped", status: "cancelled", by: "human" });
+    items.create({ projectId: project.id, boardId: board.id, title: "Epic", kind: "epic", by: "human" });
+    const all = items.list({ projectId: project.id });
+    expect(items.counts(project.id)).toEqual({
+      total: all.length,
+      open: all.filter((i) => i.status !== "done" && i.status !== "cancelled").length,
+      lastWrite: Math.max(...all.map((i) => i.updatedAt))
+    });
+    expect(items.counts(project.id)).toMatchObject({ total: 4, open: 2 });
+  });
+});
+
 describe("items (write path)", () => {
   it("defaults a new ticket's work type to whether its workstream has a repository", async () => {
     const { items, boards, board, project } = await fresh();

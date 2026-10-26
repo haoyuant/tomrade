@@ -4,14 +4,14 @@ import type { ConflictChoice, FileConflict, FileContent } from "@tomradex/files"
 import { Icon } from "~/components/icons";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import { agoLabel } from "~/lib/domain";
-import { nameOf, useFileContent, useFileHistory, useFileVersion, useResolveConflict } from "~/lib/files";
+import { isRenderable, nameOf, useFileContent, useFileHistory, useFileVersion, useResolveConflict } from "~/lib/files";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { errorSpec, useToast } from "~/lib/toast";
 import { takeEditRequest, useFileMode, useNoteTags, useNotesEnabled, type FileMode } from "~/lib/notes";
 import { Backlinks } from "./Backlinks";
 import { ConflictPanel } from "./ConflictPanel";
-import { FileViewer, isRenderable } from "./FileViewer";
-import { NoteEditor, type SaveState } from "./NoteEditor";
+import { FileViewer, NoteEditor } from "~/components/onDemand";
+import type { SaveState } from "./NoteEditor";
 import { useNoteActions } from "./useNoteActions";
 import { hits, keyLabel } from "~/lib/keybindings";
 

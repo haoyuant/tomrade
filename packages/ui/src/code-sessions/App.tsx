@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Layout, SessionRow, TerminalRow, WindowState } from "@tomradex/code-sessions";
 import { ContextMenuActionItem, ContextMenuSub } from "~/components/ui/menu";
+import { useLocaleWords } from "~/lib/dicts";
 import { onLook, onShownIn, onState, onToast, send, type Look } from "./bridge";
 import { Cell } from "./Cell";
 import { keyLabel, windowKey, type WindowKey } from "./keys";
@@ -149,7 +150,10 @@ export function App() {
     return () => window.removeEventListener("keydown", down, true);
   }, []);
 
-  const say = useMemo(() => sayIn(locale), [locale]);
+  // Its words, once a language shipped on demand has arrived.
+  const words = useLocaleWords(locale);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const say = useMemo(() => sayIn(locale), [locale, words]);
   // The plugin would not stream a pane into a second cell: that cell empties, and the one showing it is selected.
   useEffect(
     () =>

@@ -12,6 +12,8 @@ export const keys = {
   boards: (projectId: string) => ["boards", projectId] as const,
   views: (projectId: string) => ["views", projectId] as const,
   items: (projectId: string) => ["items", projectId] as const,
+  /** Under `items`, so whatever asks the list again asks the counts too. */
+  itemCounts: (projectId: string) => ["items", projectId, "counts"] as const,
   labels: (projectId: string) => ["labels", projectId] as const,
   fields: (projectId: string) => ["fields", projectId] as const,
   ranksAll: ["ranks"] as const,

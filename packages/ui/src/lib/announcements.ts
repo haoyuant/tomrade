@@ -6,6 +6,9 @@ import { keys } from "./queries/keys";
 
 export type { Announcement };
 
+/** When an announcement starts, as its list row and its page both say it. */
+export const announcementDate = (iso: string, locale: string) => new Date(iso).toLocaleDateString(locale, { year: "numeric", month: "short", day: "numeric" });
+
 /** Empty in a browser tab, or when the announcements row is switched off. */
 export function useAnnouncements() {
   const qc = useQueryClient();

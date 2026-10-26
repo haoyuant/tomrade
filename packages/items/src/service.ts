@@ -101,6 +101,13 @@ function toSqlParams(item: Item): Record<string, unknown> {
 /** The stored shape read back as a value: a number if one is there, the text otherwise. */
 const valueOfRow = (r: { num: number | null; text: string | null }): FieldValue => (r.num !== null ? r.num : (r.text as string));
 
+/** How many items a project has, how many are still open (neither done nor cancelled), and when one was last written. */
+export interface ItemCounts {
+  total: number;
+  open: number;
+  lastWrite: number | null;
+}
+
 export interface ItemQuery {
   projectId: string;
   filter?: FilterClause[];
@@ -259,6 +266,14 @@ export class Items extends Service implements ItemsReader, ItemsWriter {
 
   private get fields(): Fields {
     return this.ctx.fields;
+  }
+
+  /** A project's ticket numbers as its card on the projects screen shows them, counted in SQL rather than read row by row. */
+  counts(projectId: string): ItemCounts {
+    const row = this.db(projectId)
+      .prepare("SELECT COUNT(*) AS total, COALESCE(SUM(status NOT IN ('done', 'cancelled')), 0) AS open, MAX(updated_at) AS lastWrite FROM items")
+      .get() as ItemCounts;
+    return { total: row.total, open: row.open, lastWrite: row.lastWrite ?? null };
   }
 
   /** Without a project the list is the union over every open project, for surfaces that span them. */

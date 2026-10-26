@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type {} from "@tomradex/files";
-import type { ConflictChoice, ListMode, SyncMode } from "@tomradex/files";
+import type { ConflictChoice, FileContent, ListMode, SyncMode } from "@tomradex/files";
 import type { FileReference } from "@tomradex/domain";
 import { invoke } from "./api";
 import { invalidateWorkspace, keys } from "./queries";
@@ -253,6 +253,10 @@ export function useImportForTicket(projectId: string) {
     }
   });
 }
+
+/** Whether a file has a rendered form apart from its text: what a preview beside the editor can show. */
+export const isRenderable = (content: FileContent): boolean =>
+  content.encoding === "utf8" && (content.mime === "text/markdown" || content.mime === "text/html" || content.mime === "image/svg+xml");
 
 export const formatSize = (bytes: number): string => (bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`);
 

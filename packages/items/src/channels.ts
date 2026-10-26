@@ -5,7 +5,7 @@ import type { addResourceSchema, submitDeliverySchema, reviewDeliverySchema } fr
 import type { DeliveryView } from "@tomradex/db";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/fields";
-import type { ItemQuery } from "./service.js";
+import type { ItemCounts, ItemQuery } from "./service.js";
 import { errorMessage } from "@tomradex/contracts";
 
 declare module "@tomradex/ipc" {
@@ -17,6 +17,7 @@ declare module "@tomradex/ipc" {
     /** Settle delivery evidence a sync left inconsistent: accept the latest submission, or drop dangling references. */
     "items.settleEvidence": (projectId: string, id: string, action: "accept" | "tidy", baseVersion: number) => Item;
     "items.list": (filter?: ListItemsFilter) => Item[];
+    "items.counts": (projectId: string) => ItemCounts;
     "items.query": (query: ItemQuery) => Item[];
     "items.get": (projectId: string, id: string) => Item | null;
     "items.create": (input: Omit<CreateItemInput, "by">) => Item;
@@ -65,6 +66,7 @@ export function registerChannels(ctx: Context): void {
   });
   ctx.ipc.handle("items.settleEvidence", (projectId, id, action, baseVersion) => ctx.items.settleEvidence(projectId, id, action, baseVersion));
   ctx.ipc.handle("items.list", (filter = {}) => withDerived(ctx, ctx.items.list(filter)));
+  ctx.ipc.handle("items.counts", (projectId) => ctx.items.counts(projectId));
   ctx.ipc.handle("items.query", (query) => withDerived(ctx, ctx.items.query(query)));
   ctx.ipc.handle("items.get", (projectId, id) => one(ctx.items.get(projectId, id)));
   ctx.ipc.handle("items.create", (input) => one(ctx.items.create({ ...input, by: "human" }))!);
