@@ -35,37 +35,34 @@
 !macroend
 
 ; The install section runs with SetDetailsPrint none, so on its own it never says what it is doing.
-; Each step below names itself above the progress bar and in the details list.
+; Each step below names itself above the progress bar.
 
-; English for every installer language that has no words of its own here.
+; Chinese for SimpChinese, English for every other language the installer carries. Set only for the
+; languages it loaded (customHeader comes after them): any other would be a warning, and so an error.
 !macro tomradeLangString NAME EN ZH
-  LangString ${NAME} 1033 "${EN}"
-  LangString ${NAME} 2052 "${ZH}"
-  !insertmacro tomradeLangStringIn ${NAME} "${EN}" 1031 1036 3082 1028 1041 1042 1040 1043 1030 1053 1044 1035
-  !insertmacro tomradeLangStringIn ${NAME} "${EN}" 1049 2070 1046 1045 1058 1029 1051 1038 1025 1055 1054 1066
+  !insertmacro tomradeLangStringFor ${NAME} "${ZH}" SIMPCHINESE
+  !insertmacro tomradeLangStringIn ${NAME} "${EN}" ENGLISH GERMAN FRENCH SPANISHINTERNATIONAL TRADCHINESE JAPANESE KOREAN ITALIAN DUTCH
+  !insertmacro tomradeLangStringIn ${NAME} "${EN}" DANISH SWEDISH NORWEGIAN FINNISH RUSSIAN PORTUGUESE PORTUGUESEBR POLISH UKRAINIAN
+  !insertmacro tomradeLangStringIn ${NAME} "${EN}" CZECH SLOVAK HUNGARIAN ARABIC TURKISH THAI VIETNAMESE "" ""
 !macroend
 
-!macro tomradeLangStringIn NAME TEXT L1 L2 L3 L4 L5 L6 L7 L8 L9 L10 L11 L12
-  LangString ${NAME} ${L1} "${TEXT}"
-  LangString ${NAME} ${L2} "${TEXT}"
-  LangString ${NAME} ${L3} "${TEXT}"
-  LangString ${NAME} ${L4} "${TEXT}"
-  LangString ${NAME} ${L5} "${TEXT}"
-  LangString ${NAME} ${L6} "${TEXT}"
-  LangString ${NAME} ${L7} "${TEXT}"
-  LangString ${NAME} ${L8} "${TEXT}"
-  LangString ${NAME} ${L9} "${TEXT}"
-  LangString ${NAME} ${L10} "${TEXT}"
-  LangString ${NAME} ${L11} "${TEXT}"
-  LangString ${NAME} ${L12} "${TEXT}"
+!macro tomradeLangStringIn NAME TEXT L1 L2 L3 L4 L5 L6 L7 L8 L9
+  !insertmacro tomradeLangStringFor ${NAME} "${TEXT}" "${L1}"
+  !insertmacro tomradeLangStringFor ${NAME} "${TEXT}" "${L2}"
+  !insertmacro tomradeLangStringFor ${NAME} "${TEXT}" "${L3}"
+  !insertmacro tomradeLangStringFor ${NAME} "${TEXT}" "${L4}"
+  !insertmacro tomradeLangStringFor ${NAME} "${TEXT}" "${L5}"
+  !insertmacro tomradeLangStringFor ${NAME} "${TEXT}" "${L6}"
+  !insertmacro tomradeLangStringFor ${NAME} "${TEXT}" "${L7}"
+  !insertmacro tomradeLangStringFor ${NAME} "${TEXT}" "${L8}"
+  !insertmacro tomradeLangStringFor ${NAME} "${TEXT}" "${L9}"
 !macroend
 
-!insertmacro tomradeLangString tomradeStepClosing "Making sure ${PRODUCT_NAME} is closed..." "正在确认 ${PRODUCT_NAME} 已关闭…"
-!insertmacro tomradeLangString tomradeStepRemoving "Removing the previous version (this can take a few minutes)..." "正在移除旧版本（可能需要几分钟）…"
-!insertmacro tomradeLangString tomradeStepUnpacking "Unpacking files..." "正在解压文件…"
-!insertmacro tomradeLangString tomradeStepCopying "Copying files to the install folder..." "正在把文件复制到安装目录…"
-!insertmacro tomradeLangString tomradeStepShortcuts "Creating shortcuts..." "正在创建快捷方式…"
-!insertmacro tomradeLangString tomradeStepDone "Done" "完成"
+!macro tomradeLangStringFor NAME TEXT LANG
+  !ifdef LANG_${LANG}
+    LangString ${NAME} ${LANG_${LANG}} "${TEXT}"
+  !endif
+!macroend
 
 !macro tomradeStep TEXT
   SetDetailsPrint both
@@ -74,6 +71,13 @@
 !macroend
 
 !macro customHeader
+  !insertmacro tomradeLangString tomradeStepClosing "Making sure ${PRODUCT_NAME} is closed..." "正在确认 ${PRODUCT_NAME} 已关闭…"
+  !insertmacro tomradeLangString tomradeStepRemoving "Removing the previous version (this can take a few minutes)..." "正在移除旧版本（可能需要几分钟）…"
+  !insertmacro tomradeLangString tomradeStepUnpacking "Unpacking files..." "正在解压文件…"
+  !insertmacro tomradeLangString tomradeStepCopying "Copying files to the install folder..." "正在把文件复制到安装目录…"
+  !insertmacro tomradeLangString tomradeStepShortcuts "Creating shortcuts..." "正在创建快捷方式…"
+  !insertmacro tomradeLangString tomradeStepDone "Done" "完成"
+
   !ifndef BUILD_UNINSTALLER
     Var tomradeUnpacked
     Var tomradeBar
