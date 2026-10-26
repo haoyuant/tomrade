@@ -139,6 +139,11 @@ function packageRootOf(file: string): string | null {
   }
 }
 
+/** What cordis can start: a function (a class is one), or an object with `apply()`. */
+export function isPlugin(value: unknown): value is Plugin {
+  return typeof value === "function" || (isRecord(value) && typeof value.apply === "function");
+}
+
 /**
  * A bare name is a package; anything path-like is resolved against the config
  * file's directory. A row written with the plugin SDK is loaded behind the
@@ -162,7 +167,7 @@ export async function resolvePlugin(row: Pick<PluginRow, "id" | "name">, baseDir
     }
     return adaptSdkPlugin(candidate, builtinIdentity(row.id, root));
   }
-  if (typeof candidate !== "function" && !(isRecord(candidate) && typeof candidate.apply === "function")) {
+  if (!isPlugin(candidate)) {
     throw new Error(`${name} does not export a plugin (a function, a class, or an object with apply())`);
   }
   return candidate as Plugin;
