@@ -10,18 +10,61 @@ import { followSelection } from "./selection";
 import { fileLinks } from "./fileLinks";
 import { modifiedEnter } from "./keys";
 
+/** A pane out of sight this long gives its context back; scrolling past it and back keeps it. */
+const WEBGL_RELEASE_MS = 2_000;
+/** After the browser takes a context back (it keeps only so many), when to ask again, and how often. */
+const WEBGL_RETRY_MS = 3_000;
+const WEBGL_RETRIES = 3;
+
 /**
  * Draws on the GPU: every cell shares the window's one thread, and the DOM renderer restyles each row on every paint.
- * Without WebGL, or once the browser takes a context back (it keeps only so many), the DOM renderer carries on.
+ * The browser keeps only so many contexts, so a pane out of sight (folded, scrolled away) gives its own back for the
+ * ones on screen, and one the browser took is asked for again rather than left on the DOM renderer for good. A
+ * minimized window keeps them: Chromium already frees its surfaces. Without WebGL2 the DOM renderer carries on.
  */
-function drawWithWebgl(terminal: Terminal): void {
-  try {
-    const webgl = new WebglAddon();
-    webgl.onContextLoss(() => webgl.dispose());
-    terminal.loadAddon(webgl);
-  } catch {
-    // no WebGL2 here
-  }
+function drawWithWebgl(terminal: Terminal, el: HTMLElement): { dispose: () => void } {
+  let webgl: WebglAddon | null = null;
+  let onScreen = false;
+  let unavailable = false;
+  let losses = 0;
+  let release: ReturnType<typeof setTimeout> | undefined;
+  let retry: ReturnType<typeof setTimeout> | undefined;
+  const drop = () => {
+    webgl?.dispose();
+    webgl = null;
+  };
+  const take = () => {
+    if (webgl || unavailable || !onScreen) return;
+    try {
+      const addon = new WebglAddon();
+      addon.onContextLoss(() => {
+        if (webgl === addon) drop();
+        if (++losses <= WEBGL_RETRIES) retry = setTimeout(take, WEBGL_RETRY_MS * losses);
+      });
+      terminal.loadAddon(addon);
+      webgl = addon;
+    } catch {
+      unavailable = true; // no WebGL2 here
+    }
+  };
+  const sight = new IntersectionObserver((entries) => {
+    onScreen = entries.at(-1)?.isIntersecting ?? onScreen;
+    clearTimeout(release);
+    if (onScreen) {
+      // Back in sight: a context the browser took meanwhile may be asked for anew.
+      losses = 0;
+      take();
+    } else if (webgl) release = setTimeout(drop, WEBGL_RELEASE_MS);
+  });
+  sight.observe(el);
+  return {
+    dispose: () => {
+      sight.disconnect();
+      clearTimeout(release);
+      clearTimeout(retry);
+      drop();
+    }
+  };
 }
 
 /** Where a pane's view is in herdr's scrollback, in rows. */
@@ -206,7 +249,7 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
     terminal.loadAddon(fit);
     terminal.loadAddon(new WebLinksAddon(linkHandler.activate));
     terminal.open(el);
-    drawWithWebgl(terminal);
+    const gpu = drawWithWebgl(terminal, el);
     const localLinks = fileLinks(terminal, linkHandler.activate);
     term.current = terminal;
     try {
@@ -275,6 +318,7 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
       sized.dispose();
       off();
       send({ type: "detach", cell });
+      gpu.dispose();
       terminal.dispose();
       term.current = null;
     };
