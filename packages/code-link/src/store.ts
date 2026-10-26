@@ -635,6 +635,14 @@ export class CodeLinkStore {
     return this.activeDelivery(projectId, itemId) ?? this.deliveries(projectId, itemId).at(-1) ?? null;
   }
 
+  /** `currentDelivery` of every ticket that has one, in one read: for a pass over a whole board. */
+  currentDeliveries(projectId: string): Map<string, DeliveryView> {
+    const out = new Map<string, DeliveryView>();
+    // Listed by ticket, then sequence: the last one stands unless an active one came before it.
+    for (const d of this.deliveries(projectId)) if (out.get(d.itemId)?.state !== "active") out.set(d.itemId, d);
+    return out;
+  }
+
   ensureActiveDelivery(projectId: string, itemId: string, at = Date.now()): DeliveryView {
     return new DeliveryStore(this.pool).ensure(projectId, itemId, at, Object.fromEntries(this.repoStates(projectId).map(repo => [repo.repoId, repo.defaultSha])));
   }

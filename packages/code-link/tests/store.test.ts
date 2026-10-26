@@ -41,6 +41,26 @@ describe("code-link delivery migration", () => {
     expect(store.links(project.id, item.id)[0]).toMatchObject({ delivery: 1, mergedSha: "old" });
   });
 
+  it("reads every ticket's current delivery at once as it reads each one alone", async () => {
+    const { ctx, db, items, project, board } = await fresh();
+    ctx.db.migrate("code_link", MIGRATIONS, { tables: TABLES });
+    const store = new CodeLinkStore(ctx.db);
+    const done = items.create({ projectId: project.id, boardId: board.id, title: "Done twice", by: "human" });
+    const reopened = items.create({ projectId: project.id, boardId: board.id, title: "Reopened", by: "human" });
+    const none = items.create({ projectId: project.id, boardId: board.id, title: "Never started", by: "human" });
+    const insert = db.prepare("INSERT INTO deliveries (id, project_id, item_id, sequence, state, started_at, completed_at, updated_at, bases_json) VALUES (?, ?, ?, ?, ?, 1, NULL, 1, '{}')");
+    insert.run("d1", project.id, done.id, 1, "completed");
+    insert.run("d2", project.id, done.id, 2, "cancelled");
+    // An active delivery stands even when a later one is on record.
+    insert.run("r1", project.id, reopened.id, 1, "active");
+    insert.run("r2", project.id, reopened.id, 2, "completed");
+    const all = store.currentDeliveries(project.id);
+    for (const item of [done, reopened, none]) expect(all.get(item.id) ?? null).toEqual(store.currentDelivery(project.id, item.id));
+    expect(all.get(reopened.id)?.id).toBe("r1");
+    expect(all.get(done.id)?.id).toBe("d2");
+    await ctx.fiber.dispose();
+  });
+
   it("keeps the herdr pane a session's hooks report", async () => {
     const { ctx, project } = await fresh();
     ctx.db.migrate("code_link", MIGRATIONS, { tables: TABLES });

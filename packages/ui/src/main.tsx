@@ -11,7 +11,7 @@ import type {} from "@tomradex/files";
 import type {} from "@tomradex/notes";
 import type {} from "@tomradex/community";
 import type {} from "@tomradex/plugin-studio";
-import { invalidateProject, invalidateWorkspace, keys } from "./lib/queries/index.js";
+import { invalidateContributions, invalidateProject, invalidateWorkspace, keys } from "./lib/queries/index.js";
 import { isLeadWindow, watchWindowChrome } from "./lib/window-chrome.js";
 import { openSettingsPane } from "./lib/settingsHost.js";
 import { letOpenSelectsScroll } from "./lib/select-wheel.js";
@@ -37,9 +37,17 @@ if (window.tomrade) {
   });
   subscribe("contributions.changed", () => void queryClient.invalidateQueries({ queryKey: keys.contributions }));
   // An agent, or another machine, changed a setting: the theme and language follow at once.
-  subscribe("settings.changed", (next) => queryClient.setQueryData(keys.settings, next));
+  subscribe("settings.changed", (next) => {
+    const before = queryClient.getQueryData<typeof next>(keys.settings);
+    queryClient.setQueryData(keys.settings, next);
+    // Plugins' words come in the person's language.
+    if (before?.language !== next.language) void queryClient.invalidateQueries({ queryKey: keys.contributions });
+  });
   // A language pack came or went: Settings → Language lists it, and "system" may now pick it.
-  subscribe("settings.languagesChanged", () => void queryClient.invalidateQueries({ queryKey: keys.languages }));
+  subscribe("settings.languagesChanged", () => {
+    void queryClient.invalidateQueries({ queryKey: keys.languages });
+    void queryClient.invalidateQueries({ queryKey: keys.contributions });
+  });
   // A plugin's desktop surface asked for its section; the shell has already brought the leading window forward.
   subscribe("settings.show", (id) => void (isLeadWindow() && openSettingsPane(id)));
   // Switched from another window, or from the manager in this one.
@@ -93,7 +101,7 @@ if (window.tomrade) {
     // A finished ticket's conversations may have just been archived.
     void queryClient.invalidateQueries({ queryKey: keys.agent.threads(projectId) });
     void queryClient.invalidateQueries({ queryKey: keys.agent.threadAll(projectId) });
-    void queryClient.invalidateQueries({ queryKey: keys.contributions });
+    invalidateContributions(queryClient, projectId);
     // Derived fields may read its tables.
     void queryClient.invalidateQueries({ queryKey: keys.items(projectId) });
     // Its exported tables travel with the project.
