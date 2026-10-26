@@ -244,14 +244,21 @@ function cardOf(section: SettingsSection, scope: SettingsScope, locale: Locale, 
   return { id: section.id, title, description, order: section.order ?? 100, scope, schema };
 }
 
+/** Every read of settings asks this of every section, and a schema never changes once made. */
+const secretSchemas = new WeakMap<z.ZodType, boolean>();
+
 /** A section whose schema names a password never leaves the machine, whatever it declares. */
 function holdsSecret(schema: z.ZodType): boolean {
+  const known = secretSchemas.get(schema);
+  if (known !== undefined) return known;
   const visit = (v: unknown): boolean => {
     if (!v || typeof v !== "object") return false;
     if (isRecord(v) && v.format === "password") return true;
     return Object.values(v).some(visit);
   };
-  return visit(z.toJSONSchema(schema));
+  const secret = visit(z.toJSONSchema(schema));
+  secretSchemas.set(schema, secret);
+  return secret;
 }
 
 export class Settings extends Service implements SettingsReader {

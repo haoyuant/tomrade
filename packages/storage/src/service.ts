@@ -20,6 +20,7 @@ import { Restorer, fetchProject, type Adoption, type RestoreEntry, type RestoreS
 import {
   ARTIFACT_DIR,
   ConflictMarkersError,
+  artifactStamp,
   DEFAULT_LOG_WINDOW_DAYS,
   TornArtifactError,
   digestState,
@@ -184,6 +185,8 @@ export class Storage extends Service implements StorageReader {
   private attentionByProject = new Map<string, Attention[]>();
   /** Folders whose files do not match their manifest: since when, and whether the person has been told. */
   private torn = new Map<string, { since: number; told: boolean }>();
+  /** A folder's digest as status last read it, kept while its files are the ones it read. */
+  private folderSeen = new Map<string, { stamp: string; verify: boolean; digest: string | null }>();
   /** The last reason a project's folder was not read or written, so the log says it once rather than on every try. */
   private gaveUpWhy = new Map<string, string>();
   private closing = false;
@@ -766,6 +769,12 @@ export class Storage extends Service implements StorageReader {
     });
   }
 
+  /** The digest of what this machine would write now; the export already carries it, so it is not hashed twice. */
+  private localDigest(projectId: string, entry: CatalogProject): string {
+    const state = this.exportFor(projectId, entry);
+    return state.manifest.snapshot?.digest ?? digestState(state);
+  }
+
   /**
    * A plugin that is not loaded — not yet, early in a launch, or switched off —
    * cannot say what its tables hold, and its silence is not a deletion: the
@@ -1043,6 +1052,24 @@ export class Storage extends Service implements StorageReader {
   }
 
   /**
+   * The folder's digest for status, which asks on every change to the project: read and verified
+   * again only once a file there changed. A problem is never kept, so a torn folder is judged anew.
+   */
+  private folderDigest(dir: string, verify: boolean): { digest: string | null; problem?: { state: SyncState; detail: string } } {
+    const stamp = artifactStamp(dir);
+    const seen = this.folderSeen.get(dir);
+    if (seen && seen.stamp === stamp && seen.verify === verify) return { digest: seen.digest };
+    const { state, problem } = this.readFolder(dir, verify);
+    if (problem) {
+      this.folderSeen.delete(dir);
+      return { digest: null, problem };
+    }
+    const digest = state ? (state.manifest.snapshot?.digest ?? digestState(state)) : null;
+    this.folderSeen.set(dir, { stamp, verify, digest });
+    return { digest };
+  }
+
+  /**
    * Files that do not match their manifest are usually still arriving. Ones
    * that go on not matching are something else — a checkout that rewrote
    * them, a hand edit — and sync stands still on both sides until someone
@@ -1122,7 +1149,7 @@ export class Storage extends Service implements StorageReader {
     if (projectIdOf(state) !== projectId) throw new ForeignProjectError(projectId, projectIdOf(state));
     const onDisk = state.manifest.snapshot?.digest ?? digestState(state);
     if (onDisk === entry.lastPublishedDigest) return;
-    const local = digestState(this.exportFor(projectId, entry));
+    const local = this.localDigest(projectId, entry);
     if (local === entry.lastPublishedDigest) this.importInto(projectId, entry, state);
     else {
       this.mergeWith(projectId, entry, this.loadPublished(projectId), state, readLogs(entry.dir));
@@ -1411,17 +1438,17 @@ export class Storage extends Service implements StorageReader {
       }
     }
 
-    const { state: onDisk, problem } = this.readFolder(entry.dir, this.verifies(projectId));
+    const { digest: onDisk, problem } = this.folderDigest(entry.dir, this.verifies(projectId));
     if (problem) return this.remember(projectId, { ...problem, location, lastSyncAt: entry.lastSyncAt });
     const failed = this.gitFailed.get(projectId);
     if (failed) return this.remember(projectId, { state: "error", location, detail: failed, lastSyncAt: entry.lastSyncAt });
     let localDirty = false;
     try {
-      localDirty = digestState(this.exportFor(projectId, entry)) !== entry.lastPublishedDigest;
+      localDirty = this.localDigest(projectId, entry) !== entry.lastPublishedDigest;
     } catch (error) {
       return this.remember(projectId, { state: "error", location, detail: errorMessage(error), lastSyncAt: entry.lastSyncAt });
     }
-    const folderMoved = onDisk !== null && (onDisk.manifest.snapshot?.digest ?? digestState(onDisk)) !== entry.lastPublishedDigest;
+    const folderMoved = onDisk !== null && onDisk !== entry.lastPublishedDigest;
     let state: SyncState = localDirty && folderMoved ? "diverged" : localDirty ? "ahead" : folderMoved ? "behind" : transport.state;
     if (transport.state === "diverged" || (transport.state === "behind" && state === "ahead") || (transport.state === "ahead" && state === "behind")) state = "diverged";
     return this.remember(projectId, { state, location, detail: transport.detail, lastSyncAt: entry.lastSyncAt });
@@ -1607,7 +1634,7 @@ export class Storage extends Service implements StorageReader {
           why = errorMessage(error);
         }
         const current = this.mustEntry(projectId);
-        if (digestState(this.exportFor(projectId, current)) !== current.lastPublishedDigest) throw new UnpublishedEditsError(projectId, why ?? "the folder could not be written");
+        if (this.localDigest(projectId, current) !== current.lastPublishedDigest) throw new UnpublishedEditsError(projectId, why ?? "the folder could not be written");
       }
       const state = readArtifact(dir, { verify: this.verifies(projectId) });
       if (!state) throw new Error("The project's folder holds no snapshot to rebuild from");

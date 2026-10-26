@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { afterAll, expect, it, vi } from "vitest";
 import { Service, type Context } from "cordis";
 import { EventEmitter } from "node:events";
-import CodeSessions, { continuedIn, openSystemTerminal, sessionRows, type Layout, type WindowMessage, type WindowPost, type WindowState } from "@tomradex/code-sessions";
+import CodeSessions, { continuedIn, needingYou, openSystemTerminal, sessionRows, type Layout, type WindowMessage, type WindowPost, type WindowState } from "@tomradex/code-sessions";
 import { Contributions } from "@tomradex/contributions";
 import { Settings } from "@tomradex/settings";
 import { Herdr, HerdrError } from "@tomradex/herdr";
@@ -38,6 +38,21 @@ it("lists live sessions first, needs-you before the rest, then every ended one w
 it("reads a session blocked on its merge as needing the person, and one that errored as stopped", () => {
   const rows = sessionRows({ sessionsOf: () => [session({ id: "merge", state: "error", blocked: "merge", summary: "merge blocked: CI", startedAt: 2 }), session({ id: "crash", state: "error", startedAt: 3 })] as never, links: () => [] }, { get: () => null }, "p", Date.now());
   expect(rows.map((r) => [r.id, r.needsYou, r.state])).toEqual([["merge", true, "error"], ["crash", false, "error"]]);
+});
+
+it("counts the sessions that need the person as their rows do, and reads each ticket once however many sessions name it", () => {
+  const sessions = [
+    session({ id: "asks", itemIds: ["i1"], state: "waiting", blocked: { kind: "permission" }, startedAt: 4 }),
+    session({ id: "merge", itemIds: ["i1"], state: "error", blocked: "merge", startedAt: 3 }),
+    session({ id: "gone", itemIds: ["i1"], state: "ended", blocked: "merge", startedAt: 2 }),
+    session({ id: "busy", itemIds: ["i2"], startedAt: 1 })
+  ];
+  const codeLink = { sessionsOf: () => sessions as never, links: () => [] };
+  const asked: string[] = [];
+  const rows = sessionRows(codeLink, { get: (_p, id) => (asked.push(id), { key: id, title: id }) }, "p");
+  expect(needingYou(codeLink, "p")).toBe(rows.filter((r) => r.needsYou).length);
+  expect(needingYou(codeLink, "p")).toBe(2);
+  expect(asked).toEqual(["i1", "i2"]);
 });
 
 it("says where a session's terminal is: herdr here, another app here by name, another computer, or Tomrade", () => {

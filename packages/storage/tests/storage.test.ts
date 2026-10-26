@@ -208,6 +208,9 @@ describe("ctx.storage", () => {
     const a = await machine();
     const item = a.items.create({ title: "From A", projectId: a.project.id, boardId: a.board.id, by: "human" });
     await a.storage.publish(a.project.id);
+    // Status keeps the folder's digest while its files stay as they were; the copy below must still be seen.
+    expect((await a.storage.statusFor(a.project.id)).state).toBe("synced");
+    expect((await a.storage.statusFor(a.project.id)).state).toBe("synced");
 
     const b = await machine();
     const bDir = path.join(b.hubDir, "projects", "copy");
