@@ -94,10 +94,12 @@ function register(ctx: Awaited<ReturnType<typeof boot>>["ctx"], id: string, base
   });
 }
 
-it("runs on a provider plugin's profile once its model passed the test, and says why when it did not", async () => {
+const bundled = path.resolve("apps/desktop/vendor/pi/dist/bundle/cli.js");
+
+it.skipIf(!fs.existsSync(bundled))("runs on a provider plugin's profile once its model passed the test, and says why when it did not", async () => {
   const stub = await endpoint();
   try {
-    const { ctx, engine, useModel } = await boot(fs.existsSync(bundled) ? bundled : process.execPath);
+    const { ctx, engine, useModel } = await boot(bundled);
     register(ctx, "acme", stub.baseURL, "ok");
     register(ctx, "bad", stub.baseURL, "refuse");
     const test = async (provider: string) => {
@@ -164,8 +166,6 @@ it("leaves a model on a provider whose API pi does not speak to the loop, saying
   const pi = ctx.agent.engineOf("pi-builtin")!;
   expect(await pi.available({ options: { profile: "acme" } })).toMatchObject({ ok: false, need: "model", reason: expect.stringContaining('"Acme"') });
 });
-
-const bundled = path.resolve("apps/desktop/vendor/pi/dist/bundle/cli.js");
 
 /** The real bundled pi against a stand-in chat-completions endpoint: one Tomrade tool call, then an answer. */
 describe.skipIf(!fs.existsSync(bundled))("bundled pi", () => {
