@@ -18,6 +18,7 @@ import { useSetupInTerminal } from "~/lib/setup";
 import { useImShareNext, useImThreadBindings } from "~/lib/im";
 import { isCancelKey, isCommitKey, isComposing } from "~/lib/keys";
 import { useFilesInfo } from "~/lib/files";
+import { useItems } from "~/lib/queries/items";
 import { openExternal, openPath } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { duration, retryReason, runTokensLabel, tokens } from "./format";
@@ -201,14 +202,21 @@ export function Trace({ block }: { block: Block & { type: "trace" } }) {
 
 export type StartOfferCard = { itemId: string; key: string; title: string; task?: string };
 
+/** A card keeps the key it was posted with; a sync that renumbered the item since moves it, so the label is read by id. */
+function useKeyOf(projectId: string): (itemId: string, posted: string) => string {
+  const items = useItems(projectId);
+  return (itemId, posted) => items.data?.find((item) => item.id === itemId)?.key ?? posted;
+}
+
 // The assistant does not carry tickets out; it hands them to the Start dialog, where the person chooses.
-export function StartOffer({ card, onOpenIssue }: { card: StartOfferCard; onOpenIssue: (id: string) => void }) {
+export function StartOffer({ card, projectId, onOpenIssue }: { card: StartOfferCard; projectId: string; onOpenIssue: (id: string) => void }) {
   const { t } = useI18n();
+  const key = useKeyOf(projectId)(card.itemId, card.key);
   return (
     <div className="tool-card" data-testid="start-offer">
       <div className="tool-head">
         <Icon name="i-plug" size={12} />
-        {card.key} {card.title}
+        {key} {card.title}
       </div>
       {card.task && <p className="tool-row" data-testid="start-offer-task">{t("codeLink.startTask", { task: card.task })}</p>}
       <p className="tool-row">{t("agentPanel.startOfferLead")}</p>
@@ -221,7 +229,7 @@ export function StartOffer({ card, onOpenIssue }: { card: StartOfferCard; onOpen
             offerStart(card.itemId, card.task);
           }}
         >
-          {t("agentPanel.startOffer", { key: card.key })}
+          {t("agentPanel.startOffer", { key })}
         </button>
       </div>
     </div>
@@ -238,6 +246,7 @@ export function StartBatchBlock({ card, cardId, projectId, threadId, onOpenIssue
   const engines = useEngines();
   const { showThread } = useAgentDock();
   const start = useStartTickets(projectId);
+  const keyOf = useKeyOf(projectId);
   const ready = (engines.data ?? []).filter((engine) => engine.ok && engine.capabilities.includes("code") && !engine.terminalOnly);
   const [chosenEngine, setChosenEngine] = useState<string | null>(null);
   const [chosenPermission, setChosenPermission] = useState<string | null>(null);
@@ -266,7 +275,7 @@ export function StartBatchBlock({ card, cardId, projectId, threadId, onOpenIssue
           const result = card.results?.find((r) => r.itemId === ticket.itemId);
           return (
             <li key={ticket.itemId} data-testid="start-batch-ticket" data-state={result ? (result.ok ? "started" : "stopped") : "pending"}>
-              <button type="button" className="kref num" onClick={() => onOpenIssue(ticket.itemId)}>{ticket.key}</button> {ticket.title}
+              <button type="button" className="kref num" onClick={() => onOpenIssue(ticket.itemId)}>{keyOf(ticket.itemId, ticket.key)}</button> {ticket.title}
               {result && (
                 <span className="meta-txt dense start-batch-result">
                   {result.ok
@@ -340,6 +349,7 @@ export function MergeBlock({ card, projectId, threadId, onOpenIssue }: { card: M
   const { t } = useI18n();
   const merge = useMergeTicket(projectId);
   const resolve = useResolveMerge(projectId);
+  const keyOf = useKeyOf(projectId);
   const [pending, setPending] = useState(false);
   const busy = merge.isPending || resolve.isPending || (pending && card.state === "offered");
   const conflict = card.state === "refused" && card.cause === "conflict";
@@ -347,7 +357,7 @@ export function MergeBlock({ card, projectId, threadId, onOpenIssue }: { card: M
     <div className="tool-card" data-testid="merge-offer" data-state={card.state}>
       <div className="tool-head">
         <Icon name="i-merge" size={12} />
-        <button type="button" className="kref num" onClick={() => onOpenIssue(card.itemId)}>{card.key}</button> {card.title}
+        <button type="button" className="kref num" onClick={() => onOpenIssue(card.itemId)}>{keyOf(card.itemId, card.key)}</button> {card.title}
       </div>
       <p className="tool-row">
         {card.prUrl ? (

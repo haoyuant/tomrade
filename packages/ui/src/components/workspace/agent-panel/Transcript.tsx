@@ -142,7 +142,7 @@ function RowBody({ m, onRetry, onRetryWith, onTroubleshoot, hint }: { m: ThreadM
     ) : b.type === "card" && b.schema === "finding" ? (
       <FindingBlock card={b.data as FindingCard} engines={retryEngines} allEngines={engines ?? []} onAction={(action, engineId) => onCardAction(action, m.threadId, engineId)} />
     ) : b.type === "card" && b.schema === "start" ? (
-      <StartOffer card={b.data as StartOfferCard} onOpenIssue={onOpenIssue} />
+      <StartOffer card={b.data as StartOfferCard} projectId={projectId} onOpenIssue={onOpenIssue} />
     ) : b.type === "card" && b.schema === "start-batch" ? (
       // the live card carries what came of each ticket once started
       <StartBatchBlock card={(cards.get(b.id)?.data ?? b.data) as StartBatchCard} cardId={b.id} projectId={projectId} threadId={m.threadId} onOpenIssue={onOpenIssue} />
