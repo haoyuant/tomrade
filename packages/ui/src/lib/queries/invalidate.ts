@@ -9,7 +9,18 @@ export function invalidateWorkspace(qc: QueryClient, projectId: string): void {
   void qc.invalidateQueries({ queryKey: keys.timeline(projectId) });
   void qc.invalidateQueries({ queryKey: keys.syncAttention(projectId) });
   void qc.invalidateQueries({ queryKey: keys.historyAll(projectId) });
-  void qc.invalidateQueries({ queryKey: keys.contributions });
+  invalidateContributions(qc, projectId);
+}
+
+/**
+ * What plugins show about one project's tickets. The palette's commands, the graph
+ * list and the assistant's accessories do not read tickets; a plugin or the
+ * language changing them comes as its own broadcast.
+ */
+export function invalidateContributions(qc: QueryClient, projectId: string): void {
+  for (const key of [keys.badges(projectId), keys.sidebarModules(projectId), keys.sectionsAll(projectId), keys.graphEdgesAll(projectId), keys.statusItems(projectId), keys.statusItems()]) {
+    void qc.invalidateQueries({ queryKey: key });
+  }
 }
 
 /**

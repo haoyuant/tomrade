@@ -134,11 +134,12 @@ export function contribute(ctx: Context, host: ContribHost): void {
       for (const l of self.store.links(projectId)) (byItem.get(l.itemId) ?? byItem.set(l.itemId, []).get(l.itemId)!).push(l);
       const flags = new Map<string, ProposalView>();
       for (const p of self.store.proposals(projectId)) if (p.kind === "flag" && !flags.has(p.itemId)) flags.set(p.itemId, p);
+      const current = self.store.currentDeliveries(projectId);
       const waiting = new Map<string, string>();
       const stuck = new Map<string, string>();
       for (const s of self.store.sessions(projectId, { live: true })) {
         for (const id of s.itemIds) {
-          if (self.store.currentDelivery(projectId, id)?.sequence !== s.delivery) continue;
+          if (current.get(id)?.sequence !== s.delivery) continue;
           if (s.state === "waiting") waiting.set(id, w("badgeWaitingTitle"));
           if (s.state !== "error") continue;
           const summary = s.summary ?? w("stopped");
@@ -151,7 +152,7 @@ export function contribute(ctx: Context, host: ContribHost): void {
       const out: Record<string, Badge[]> = {};
       for (const item of items) {
         const allLinks = byItem.get(item.id) ?? [];
-        const delivery = self.store.currentDelivery(projectId, item.id);
+        const delivery = current.get(item.id);
         const links = delivery ? allLinks.filter((link) => link.delivery === delivery.sequence) : [];
         const flag = flags.get(item.id);
         if (!links.length && !flag && !waiting.has(item.id) && !stuck.has(item.id)) continue;
