@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { findEngine, methodWords, ticketMethods, useAgentThread, useAgentThreads, useEngines, usePlaybooks } from "~/lib/agent";
 import { invoke, logQuietly } from "~/lib/api";
-import { defaultStartMode, onStartRequest, useHerdrStatus, useCodeDeliveries, useCodeSessions, useStartDefaults, useStartTicket, useTerminalWindow } from "~/lib/codeLink";
+import { defaultStartMode, onStartRequest, startProgress, useHerdrStatus, useCodeDeliveries, useCodeSessions, useStartDefaults, useStartTicket, useTerminalWindow, type StartStep } from "~/lib/codeLink";
 import { StartGateFix, useGateWords, type StartFailure } from "./StartGateFix";
 import { useI18n } from "~/lib/i18n";
 import { pickFallbackName } from "~/lib/engines";
@@ -403,6 +403,8 @@ function StartTicketDialog({
             </div>
           )}
 
+          {start.isPending && <StartProgressNote mode={mode} general={general} branch={latest?.branch || null} />}
+
           {error && (
             <div role="alert" className="start-problem" data-testid="start-error">
               {error.failure ? (
@@ -460,11 +462,49 @@ function StartTicketDialog({
           </button>
         ) : (
           <button type="button" className="btn btn-primary" data-testid="start-confirm" disabled={busy || !engineId || !ready} onClick={() => submit()}>
-            {start.isPending ? t("codeLink.starting") : t(continuing ? "codeLink.continueAction" : waitsOn.length ? "codeLink.startAnyway" : "codeLink.startAction")}
+            {start.isPending ? <><Icon name="i-sync" size={13} className="is-spinning" /> {t("codeLink.starting")}</> : t(continuing ? "codeLink.continueAction" : waitsOn.length ? "codeLink.startAnyway" : "codeLink.startAction")}
           </button>
         )}
       </DialogFoot>
     </Dialog>
+  );
+}
+
+/** What a pending Start is doing, so a long first worktree does not read as a hang. Mounted per attempt: the clock starts with it. */
+function StartProgressNote({ mode, general, branch }: { mode: StartOptions["mode"]; general: boolean; branch: string | null }) {
+  const { t } = useI18n();
+  const [since] = useState(() => Date.now());
+  const [now, setNow] = useState(since);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(timer);
+  }, []);
+  const progress = startProgress(now - since, { mode, general });
+  const label = (step: StartStep) =>
+    step === "worktree" ? t("codeLink.startStepWorktree")
+    : step === "branch" ? (branch ? t("codeLink.startStepBranch", { branch }) : t("codeLink.startStepBranchAny"))
+    : step === "mcp" ? t("codeLink.startStepMcp")
+    : step === "terminal" ? t("codeLink.startStepTerminal")
+    : t("codeLink.startStepAgent");
+  return (
+    <div className="start-progress" role="status" aria-live="polite" data-testid="start-progress" data-step={progress.steps[progress.current]}>
+      <div className="start-progress-head">
+        <Icon name="i-sync" size={15} className="is-spinning" />
+        <span className="start-progress-step" data-testid="start-progress-step">{label(progress.steps[progress.current])}…</span>
+        <span className="spacer" />
+        <span className="meta-txt num">
+          {t("codeLink.startStepCount", { n: String(progress.current + 1), total: String(progress.steps.length) })} · {t("codeLink.startElapsed", { seconds: String(Math.floor((now - since) / 1000)) })}
+        </span>
+      </div>
+      <div className="start-progress-bar" aria-hidden><span /></div>
+      <ol className="start-progress-steps">
+        {progress.steps.map((step, index) => (
+          <li key={step} data-state={index < progress.current ? "done" : index === progress.current ? "current" : "next"}>{label(step)}</li>
+        ))}
+      </ol>
+      {progress.slow && <p className="meta-txt" data-testid="start-progress-slow">{t("codeLink.startSlow")}</p>}
+      {progress.stalled && <p className="meta-txt" data-testid="start-progress-stalled">{t("codeLink.startStalled")}</p>}
+    </div>
   );
 }
 
