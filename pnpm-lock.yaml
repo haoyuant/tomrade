@@ -2380,6 +2380,9 @@ importers:
 
   packages/storage:
     dependencies:
+      '@tomradex/alerts':
+        specifier: workspace:*
+        version: link:../alerts
       '@tomradex/contracts':
         specifier: workspace:*
         version: link:../contracts

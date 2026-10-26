@@ -1,10 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { OplogEntry } from "@tomradex/domain";
-import { ARTIFACT_DIR } from "./state.js";
+import { ARTIFACT_DIR, LOG_DIR } from "./state.js";
 import { writeFileAtomic } from "@tomradex/contracts";
 
-export const LOG_DIR = "log";
+export { LOG_DIR };
 
 /** One op as the folder's log carries it: the identity, the moment, the author, the change. Never a snapshot. */
 export interface LogLine {

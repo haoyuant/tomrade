@@ -129,6 +129,50 @@ describe("a dedicated repository", () => {
     expect(JSON.parse(git(["show", "main:.tomrade/state/items.jsonl"], remote))).toMatchObject({ title: "Theirs", status: "done" });
   });
 
+  it("goes on reading, merging and pushing where git checks files out with core.autocrlf=true", async () => {
+    const a = await machine("crlf");
+    const remote = bareRemote();
+    const item = a.items.create({ title: "Mine", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    await a.storage.bind(a.project.id, "git", { remote, branch: "main" });
+    git(["config", "core.autocrlf", "true"], a.dir);
+    const itemsFile = path.join(a.dir, ARTIFACT_DIR, "state", "items.jsonl");
+    const theirEdit = (title: string, keepRule: boolean) =>
+      teammateEdits(remote, (work) => {
+        const state = readArtifact(work)!;
+        state.tables.items.find((r) => r.id === item.id)!.title = title;
+        state.manifest.snapshot!.digest = digestState(state);
+        writeArtifact(work, state);
+        const attributes = path.join(work, ARTIFACT_DIR, ".gitattributes");
+        if (!keepRule) fs.writeFileSync(attributes, fs.readFileSync(attributes, "utf8").split("\n").filter((l) => !l.includes("eol=lf")).join("\n"));
+      });
+
+    // A folder from before the eol rule, pulled by hand: git leaves its files CRLF here.
+    theirEdit("Theirs", false);
+    git(["fetch", "-q", "origin"], a.dir);
+    git(["merge", "-q", "--ff-only", "origin/main"], a.dir);
+    fs.rmSync(path.join(a.dir, ARTIFACT_DIR, "state"), { recursive: true });
+    fs.rmSync(path.join(a.dir, ARTIFACT_DIR, "project.json"));
+    git(["checkout", "--", ".tomrade"], a.dir);
+    expect(fs.readFileSync(itemsFile, "utf8")).toContain("\r\n");
+    expect((await a.storage.statusFor(a.project.id)).state).toBe("behind");
+
+    const ours = a.items.create({ title: "Ours", projectId: a.project.id, boardId: a.board.id, by: "human" });
+    expect((await a.storage.sync(a.project.id)).state).toBe("synced");
+    expect(a.items.get(a.project.id, item.id)?.title).toBe("Theirs");
+    expect(a.items.get(a.project.id, ours.id)?.title).toBe("Ours");
+    expect(fs.readFileSync(itemsFile, "utf8")).not.toContain("\r");
+    expect(git(["show", "main:.tomrade/.gitattributes"], remote)).toContain("*.jsonl text eol=lf");
+    expect(git(["show", "main:.tomrade/state/items.jsonl"], remote)).toContain('"title":"Ours"');
+    expect(git(["status", "--porcelain"], a.dir)).toBe("");
+
+    // With the rule in the repository, Tomrade's own fast-forward checks the files out LF and takes them in.
+    theirEdit("Theirs again", true);
+    expect((await a.storage.sync(a.project.id)).state).toBe("synced");
+    expect(a.items.get(a.project.id, item.id)?.title).toBe("Theirs again");
+    expect(fs.readFileSync(itemsFile, "utf8")).not.toContain("\r");
+    expect(readArtifact(a.dir)!.manifest.snapshot!.digest).toBe(git(["show", "main:.tomrade/project.json"], remote).match(/"digest": "(\w+)"/)![1]);
+  });
+
   it("on quit pushes only its own commits, in one try, and never waits on the remote's news", async () => {
     const a = await machine("quit");
     const remote = bareRemote();

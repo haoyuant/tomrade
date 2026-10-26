@@ -14,6 +14,7 @@ export const ARTIFACT_DIR = ".tomrade";
 export const MANIFEST = "project.json";
 const STATE_DIR = "state";
 const PLUGINS_DIR = "plugins";
+export const LOG_DIR = "log";
 export const DOCS_DIR = "docs";
 const GITIGNORE = ".gitignore";
 const GITATTRIBUTES = ".gitattributes";
@@ -227,6 +228,10 @@ function supportFiles(opts: { mcpUrl?: string | null }): Map<string, string> {
       "state/*.jsonl merge=union",
       "log/*.jsonl merge=union",
       "plugins/**/*.jsonl merge=union",
+      "# LF on every machine: the manifest's digest covers these bytes, and core.autocrlf=true would check them out as CRLF.",
+      "*.jsonl text eol=lf",
+      "*.json text eol=lf",
+      "*.md text eol=lf",
       ""
     ].join("\n")
   );
@@ -317,6 +322,31 @@ export function writeArtifact(dir: string, state: ProjectState, opts: { mcpUrl?:
   return changed;
 }
 
+const lf = (text: string): string => text.replace(/\r\n/g, "\n");
+
+/**
+ * Put back LF where a checkout turned the artifact or a log into CRLF; the
+ * snapshot is rewritten only when its data changes, so this is what brings an
+ * unchanged folder back. Returns true when any file changed.
+ */
+export function restoreLf(dir: string): boolean {
+  const base = path.join(dir, ARTIFACT_DIR);
+  const files = [path.join(base, MANIFEST), ...[STATE_DIR, PLUGINS_DIR, LOG_DIR].flatMap((sub) => listFiles(path.join(base, sub)).filter((f) => f.endsWith(".jsonl")))];
+  let changed = false;
+  for (const file of files) {
+    let body: string;
+    try {
+      body = fs.readFileSync(file, "utf8");
+    } catch {
+      continue;
+    }
+    if (!body.includes("\r\n")) continue;
+    writeFileAtomic(file, lf(body), { mkdir: false });
+    changed = true;
+  }
+  return changed;
+}
+
 export const hasArtifact = (dir: string): boolean => fs.existsSync(path.join(dir, ARTIFACT_DIR, MANIFEST));
 
 export class TornArtifactError extends Error {
@@ -341,9 +371,11 @@ export type ArtifactFiles = Map<string, string>;
 /**
  * Parse an artifact from its files. A v2 manifest carries a digest of its
  * state files; a mismatch means a sync is mid-flight and the caller retries
- * rather than importing half a snapshot.
+ * rather than importing half a snapshot. CRLF reads as LF: the digest was
+ * taken over LF, and a checkout with core.autocrlf=true changes only that.
  */
-export function parseArtifact(files: ArtifactFiles, where: string, opts: { verify?: boolean } = {}): ProjectState | null {
+export function parseArtifact(raw: ArtifactFiles, where: string, opts: { verify?: boolean } = {}): ProjectState | null {
+  const files: ArtifactFiles = new Map([...raw].map(([rel, body]) => [rel, lf(body)]));
   const manifestRel = path.join(ARTIFACT_DIR, MANIFEST);
   const manifestText = files.get(manifestRel);
   if (manifestText === undefined) return null;
