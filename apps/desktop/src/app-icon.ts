@@ -92,3 +92,4 @@ export const appIcon = {
   }
 };
 
+export default appIcon;
