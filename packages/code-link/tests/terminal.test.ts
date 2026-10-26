@@ -291,7 +291,7 @@ describe("an unset terminal", () => {
 
   it("follows herdr once it is installed later, with nothing saved in between", async () => {
     let version: string | null = null;
-    const herdr = { installed: async () => version };
+    const herdr = { kind: "herdr" as const, installed: async () => version };
     const stored = { terminal: AUTO_TERMINAL, claudeCommand: "claude" };
     expect(await machineTerminalSettings(stored, herdr)).toMatchObject({ terminal: SYSTEM_TERMINAL, claudeCommand: "claude" });
     version = "0.9.5";
