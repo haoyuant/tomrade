@@ -847,7 +847,7 @@ app.whenReady().then(async () => {
     // terminal by its agent's resume, in the folder it ran in.
     const talk = ctx.codeLink.store.createSession(project.id, { repoId: repo.id, branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, externalId: "talk-check-1" });
     const talkFile = path.join(work, "talk-check-1.jsonl");
-    fs.writeFileSync(talkFile, [{ type: "user", message: { content: "侧栏该怎么分组？" } }, { type: "assistant", message: { content: [{ type: "text", text: "分成「这个窗口里」和「在其他地方」两组。" }, { type: "tool_use", name: "Bash", input: { description: "Show the sidebar code" } }] } }].map((o) => JSON.stringify(o)).join("\n"));
+    fs.writeFileSync(talkFile, [{ type: "user", message: { content: "侧栏该怎么分组？" } }, { type: "assistant", message: { content: [{ type: "text", text: "分成「这个窗口里」和「在其他地方」两组。" }, { type: "tool_use", id: "u1", name: "Bash", input: { command: "rg -n Sidebar", description: "Show the sidebar code" } }] } }, { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "u1", content: "Sidebar.tsx:15" }] } }].map((o) => JSON.stringify(o)).join("\n"));
     ctx.codeLink.store.patchSession(project.id, talk.id, { title: "终端侧栏设计讨论", prompted: true, cwd: repoDir, transcript: talkFile, state: "ended", endedAt: Date.now() });
     ctx.emit("codeLink/changed", project.id);
     await tjs(`document.querySelector('[data-testid=cs-archive]').click(); true`);
@@ -862,6 +862,10 @@ app.whenReady().then(async () => {
     // Its cell says who worked it and shows the conversation, read-only, under the way to go on.
     const readBack = await wait(async () => tjs(`(() => { const by = document.querySelector('[data-testid=cs-ended-by]')?.textContent ?? ''; const lines = [...document.querySelectorAll('[data-testid=cs-convo] .cs-convo-line')].map((l) => [l.dataset.who, l.textContent]); return by.startsWith('Claude Code') && JSON.stringify(lines) === JSON.stringify([["person", "侧栏该怎么分组？"], ["agent", "分成「这个窗口里」和「在其他地方」两组。"], ["tool", "Bash · Show the sidebar code"]]); })()`), 5000);
     check("结束的对话格子里写着是 Claude Code 做的，并只读显示当时的对话", readBack, JSON.stringify(await tjs(`document.querySelector('[data-testid=cs-ended]')?.textContent?.slice(0, 200)`)));
+    // A tool call folds open to what it ran and what came back.
+    await tjs(`document.querySelector('[data-testid=cs-convo] button.cs-convo-line')?.click(); true`);
+    const toolOpened = await wait(async () => tjs(`(() => { const d = document.querySelector('[data-testid=cs-convo-detail]')?.textContent ?? ''; return d.includes('$ rg -n Sidebar') && d.includes('Sidebar.tsx:15'); })()`), 5000);
+    check("点开工具调用，看到它跑的命令和输出", toolOpened);
     fs.writeFileSync(path.join(shots, "code-sessions-convo.png"), (await tw.webContents.capturePage()).toPNG());
     const panesBefore = new Set(JSON.parse(herdr("pane", "list")).result.panes.map((p) => p.pane_id));
     await tjs(`document.querySelector('[data-testid=cs-talk-on]')?.click(); true`);

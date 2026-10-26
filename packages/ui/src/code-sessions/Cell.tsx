@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from "react";
-import type { Layout, SessionRow, TerminalPlace, TerminalRow } from "@tomradex/code-sessions";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
+import type { ConversationLine, Layout, SessionRow, TerminalPlace, TerminalRow } from "@tomradex/code-sessions";
+import { FoldChevron } from "~/components/ui/atoms";
 import { ContextMenu } from "~/components/ui/menu";
+import { logQuietly } from "~/lib/api";
 import { onCell, send, type Look } from "./bridge";
 import { keyLabel } from "./keys";
 import { live, sessionName } from "./lists";
@@ -39,25 +41,109 @@ function AgentChip({ status }: { status: NonNullable<TerminalRow["agentStatus"]>
   );
 }
 
-/** A session whose terminal this window cannot show: where it runs, and what can be done from here. */
-type Line = { who: "person" | "agent" | "tool"; text: string };
+type Line = ConversationLine & { key: number };
+
+/** Lines as the view keeps them, each with a key that stays when earlier ones go in on top. */
+const keyed = (lines: ConversationLine[] | null, from: number): Line[] | null => lines?.map((l, i) => ({ ...l, key: from + i })) ?? null;
+
+/** One line of a conversation read back; a tool call folds open to its whole input and output. */
+function ConvoLine({ line, open, onToggle }: { line: Line; open: boolean; onToggle: () => void }) {
+  const say = useSay();
+  const [copied, setCopied] = useState(false);
+  const detail = line.detail;
+  const copy = () => {
+    const text = detail ? [line.text, detail.input, detail.output].filter(Boolean).join("\n\n") : line.text;
+    void navigator.clipboard?.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }, logQuietly("clipboard"));
+  };
+  return (
+    <div className="cs-convo-item" data-who={line.who}>
+      {detail ? (
+        <div className="cs-convo-tool">
+          <FoldChevron open={open} onToggle={onToggle} />
+          <button type="button" className="cs-convo-line" data-who="tool" aria-expanded={open} onClick={onToggle}>
+            {line.text}
+          </button>
+        </div>
+      ) : (
+        <div className="cs-convo-line" data-who={line.who}>
+          {line.text}
+        </div>
+      )}
+      <button type="button" className="link-btn cs-convo-copy" onClick={copy}>
+        {say(copied ? "convoCopied" : "convoCopy")}
+      </button>
+      {detail && open && (
+        <div className="cs-convo-detail" data-testid="cs-convo-detail">
+          <span className="cs-row-meta">{say("convoInput")}</span>
+          <pre>{detail.input}</pre>
+          <span className="cs-row-meta">{say("convoOutput")}</span>
+          {detail.output !== undefined ? <pre>{detail.output}</pre> : <span className="cs-row-meta">{say("convoNoOutput")}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /**
  * An ended session's cell: which agent worked it and when it ended, the way to go on, and its conversation read-only
- * from the agent's own record — or, without one, just the way to go on.
+ * from the agent's own record — or, without one, just the way to go on. It opens at the end; scrolling to the top
+ * reads what came before, a stretch at a time.
  */
 function Ended({ session, cell, locale, resume, picker }: { session: SessionRow; cell: string; locale: string; resume: ReactNode; picker: ReactNode }) {
   const say = useSay();
-  const [read, setRead] = useState<{ lines: Line[] | null; cut: boolean } | null>(null);
+  const [read, setRead] = useState<{ lines: Line[] | null; cut: boolean; start: number | null } | null>(null);
+  const [earlier, setEarlier] = useState(false);
+  const [open, setOpen] = useState<ReadonlySet<number>>(() => new Set());
   const [picking, setPicking] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  // The view's height before earlier lines went in on top, so what was in view stays there; -1 opens at the end.
+  const kept = useRef<number | null>(null);
   useEffect(() => {
     setRead(null);
+    setEarlier(false);
+    setOpen(new Set());
+    kept.current = -1;
     const off = onCell(cell, (post) => {
-      if (post.type === "conversation" && post.sessionId === session.id) setRead({ lines: post.lines, cut: post.cut });
+      if (post.type !== "conversation" || post.sessionId !== session.id) return;
+      if (post.before === null) {
+        kept.current = -1;
+        setRead({ lines: keyed(post.lines, 0), cut: post.cut, start: post.start });
+        return;
+      }
+      setEarlier(false);
+      kept.current = box.current?.scrollHeight ?? null;
+      setRead((now) => {
+        if (!now?.lines || now.start !== post.before || !post.lines) return now;
+        return { lines: [...keyed(post.lines, (now.lines[0]?.key ?? 0) - post.lines.length)!, ...now.lines], cut: post.cut, start: post.start };
+      });
     });
     send({ type: "conversation", cell, sessionId: session.id });
     return off;
   }, [cell, session.id]);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el || kept.current === null) return;
+    if (kept.current === -1) {
+      el.scrollTop = el.scrollHeight;
+      // Lines off screen are laid out at a guessed height until seen; once they are, the end has moved.
+      requestAnimationFrame(() => (el.scrollTop = el.scrollHeight));
+    } else el.scrollTop += el.scrollHeight - kept.current;
+    kept.current = null;
+  }, [read]);
+  const readEarlier = () => {
+    if (earlier || !read?.cut || read.start === null) return;
+    setEarlier(true);
+    send({ type: "conversation", cell, sessionId: session.id, before: read.start });
+  };
+  const toggle = (key: number) =>
+    setOpen((now) => {
+      const next = new Set(now);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
   const lines = read?.lines?.length ? read.lines : null;
   const when = session.endedAt ? new Date(session.endedAt).toLocaleString(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : null;
   const who = session.agentName ?? session.agent;
@@ -83,12 +169,16 @@ function Ended({ session, cell, locale, resume, picker }: { session: SessionRow;
           </button>
         )}
       </div>
-      <div className="cs-convo" data-testid="cs-convo" aria-label={say("convoReadOnly")}>
-        {read?.cut && <p className="cs-convo-cut">{say("convoCut")}</p>}
-        {lines.map((l, i) => (
-          <div key={i} className="cs-convo-line" data-who={l.who}>
-            {l.text}
-          </div>
+      <div className="cs-convo" data-testid="cs-convo" aria-label={say("convoReadOnly")} ref={box} onScroll={(e) => e.currentTarget.scrollTop < 80 && readEarlier()}>
+        {read?.cut ? (
+          <button type="button" className="link-btn cs-convo-top" data-testid="cs-convo-earlier" disabled={earlier} onClick={readEarlier}>
+            {say(earlier ? "convoReading" : "convoEarlier")}
+          </button>
+        ) : (
+          <p className="cs-convo-top">{say("convoStart")}</p>
+        )}
+        {lines.map((l) => (
+          <ConvoLine key={l.key} line={l} open={open.has(l.key)} onToggle={() => toggle(l.key)} />
         ))}
       </div>
     </div>

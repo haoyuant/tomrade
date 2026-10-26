@@ -742,8 +742,9 @@ function apply(ctx: Context, config: Config) {
       case "newTerminal":
         return newTerminal(projectId, win, m.terminalId, m.cwd, m.resume);
       case "conversation": {
-        const read = ctx.codeLink.conversation?.(projectId, m.sessionId) ?? null;
-        return post(win, { type: "conversation", cell: m.cell, sessionId: m.sessionId, lines: read?.lines ?? null, cut: read?.cut ?? false });
+        const before = typeof m.before === "number" && Number.isSafeInteger(m.before) && m.before >= 0 ? m.before : undefined;
+        const read = ctx.codeLink.conversation?.(projectId, m.sessionId, before) ?? null;
+        return post(win, { type: "conversation", cell: m.cell, sessionId: m.sessionId, lines: read?.lines ?? null, cut: read?.cut ?? false, start: read?.cut ? (read.start ?? null) : null, before: before ?? null });
       }
       case "closeTerminal":
         return closeTerminal(projectId, win, m.terminalId);

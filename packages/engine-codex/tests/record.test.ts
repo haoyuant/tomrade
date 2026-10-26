@@ -13,7 +13,10 @@ it("reads a conversation read-only from Codex's rollout, names it by the first p
       { type: "response_item", payload: { type: "message", role: "developer", content: [{ type: "input_text", text: "rules" }] } },
       { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "<environment_context>…" }] } },
       { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "能恢复历史版本吗" }] } },
-      { type: "response_item", payload: { type: "function_call", name: "shell", arguments: JSON.stringify({ command: ["ls", "-la"] }) } },
+      { type: "response_item", payload: { type: "function_call", name: "shell", call_id: "c1", arguments: JSON.stringify({ command: ["ls", "-la"] }) } },
+      { type: "response_item", payload: { type: "function_call_output", call_id: "c1", output: JSON.stringify({ output: "a.ts\nb.ts", metadata: { exit_code: 0 } }) } },
+      { type: "response_item", payload: { type: "custom_tool_call", name: "exec", call_id: "c2", input: "\nconst r = await tools.exec_command({cmd: \"pwd\"});\nreturn r;" } },
+      { type: "response_item", payload: { type: "custom_tool_call_output", call_id: "c2", output: [{ type: "input_text", text: "Script completed" }, { type: "input_text", text: "/repo" }] } },
       { type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "可以。" }] } }
     ]
       .map((o) => JSON.stringify(o))
@@ -21,7 +24,9 @@ it("reads a conversation read-only from Codex's rollout, names it by the first p
   );
   expect(codexRecord.read(rollout)?.lines).toEqual([
     { who: "person", text: "能恢复历史版本吗" },
-    { who: "tool", text: "shell · ls -la" },
+    { who: "tool", text: "shell · ls -la", detail: { input: "$ ls -la", output: "a.ts\nb.ts" } },
+    // Newer Codex: a free-form call, named by its first line.
+    { who: "tool", text: "exec · const r = await tools.exec_command({cmd: \"pwd\"});", detail: { input: "\nconst r = await tools.exec_command({cmd: \"pwd\"});\nreturn r;", output: "Script completed\n/repo" } },
     { who: "agent", text: "可以。" }
   ]);
   expect(codexRolloutTitle(rollout)).toBe("能恢复历史版本吗");

@@ -6,8 +6,17 @@ import type { EngineRecord, RecordLine, RecordRead } from "@tomradex/agent";
 /** How much of a transcript is read from each end for its title: titles repeat through it, so the tail nearly always has one. */
 const TITLE_CHUNK = 256 * 1024;
 
-/** How much of a conversation's record is read, from its end. */
-const CONVERSATION_TAIL = 2 * 1024 * 1024;
+/** How much of a conversation's record one read takes, from its end or before an earlier read's start. */
+const CONVERSATION_PAGE = 2 * 1024 * 1024;
+
+/** How far past a stretch its calls' results are looked for: a result is written right after its call. */
+const RESULT_LOOKAHEAD = 512 * 1024;
+
+/** The longest line a read keeps whole; one longer is left out. */
+const LINE_MAX = 16 * 1024 * 1024;
+
+/** How much of a tool call's input or output a line carries. */
+const DETAIL_TEXT = 20_000;
 
 /** How long a title from the first prompt may be. */
 const PROMPT_TITLE = 60;
@@ -45,8 +54,48 @@ export function promptTitle(prompt: unknown): string | null {
   return line.length > PROMPT_TITLE ? `${line.slice(0, PROMPT_TITLE - 1)}…` : line;
 }
 
-/** A JSONL record's tail as conversation lines, each entry turned by `linesOf`; null when the file cannot be read. */
-export function readJsonlRecord(file: string, linesOf: (entry: Record<string, unknown>) => RecordLine[]): RecordRead | null {
+export const clipDetail = (text: string) => (text.length > DETAIL_TEXT ? `${text.slice(0, DETAIL_TEXT)}…` : text);
+
+/** A line of a record being read: a tool call carries `call`, the id its result is filed under. */
+export type RecordCallLine = RecordLine & { call?: string };
+
+/** How one agent's JSONL record reads: each entry's lines, and the tool results it holds. */
+export interface JsonlReader {
+  lines(entry: Record<string, unknown>): RecordCallLine[];
+  results?(entry: Record<string, unknown>): { call: string; output: string }[];
+}
+
+/** Where the line holding byte `pos` begins: just after the newline before it, 0, or `pos` itself past `LINE_MAX`. */
+function lineStart(fd: number, pos: number): number {
+  const chunk = Buffer.alloc(64 * 1024);
+  let end = pos;
+  while (end > 0 && pos - end < LINE_MAX) {
+    const from = Math.max(0, end - chunk.length);
+    const n = fs.readSync(fd, chunk, 0, end - from, from);
+    const at = chunk.subarray(0, n).lastIndexOf(0x0a);
+    if (at >= 0) return from + at + 1;
+    end = from;
+  }
+  return end === 0 ? 0 : pos;
+}
+
+const entriesOf = (text: string): Record<string, unknown>[] =>
+  text.split("\n").flatMap((row) => {
+    if (!row.trim()) return [];
+    try {
+      return [JSON.parse(row) as Record<string, unknown>];
+    } catch {
+      // a line still being written, or one cut at a read's edge
+      return [];
+    }
+  });
+
+/**
+ * A stretch of a JSONL record as conversation lines: its end, or what came `before` an earlier read's start, in whole
+ * lines. Each tool call gets the output filed under its id, from the stretch or just past it. Null when the file
+ * cannot be read.
+ */
+export function readJsonlRecord(file: string, reader: JsonlReader, opts?: { before?: number }): RecordRead | null {
   let fd: number;
   try {
     fd = fs.openSync(file, "r");
@@ -55,20 +104,25 @@ export function readJsonlRecord(file: string, linesOf: (entry: Record<string, un
   }
   try {
     const size = fs.fstatSync(fd).size;
-    const start = Math.max(0, size - CONVERSATION_TAIL);
-    const text = readAt(fd, start, size - start);
-    // From the middle of a file the first line is a piece of one.
-    const rows = (start > 0 ? text.slice(text.indexOf("\n") + 1) : text).split("\n");
+    const end = Math.min(size, Math.max(0, opts?.before ?? size));
+    const start = end > 0 ? lineStart(fd, Math.max(0, end - CONVERSATION_PAGE)) : 0;
     const lines: RecordLine[] = [];
-    for (const row of rows) {
-      if (!row.trim()) continue;
-      try {
-        lines.push(...linesOf(JSON.parse(row) as Record<string, unknown>));
-      } catch {
-        // a line still being written
+    const calls = new Map<string, RecordLine>();
+    const fileResults = (entry: Record<string, unknown>) => {
+      for (const r of reader.results?.(entry) ?? []) {
+        const line = calls.get(r.call);
+        if (line?.detail) line.detail.output = clipDetail(r.output);
       }
+    };
+    for (const entry of entriesOf(readAt(fd, start, end - start))) {
+      for (const { call, ...line } of reader.lines(entry)) {
+        lines.push(line);
+        if (call) calls.set(call, line);
+      }
+      fileResults(entry);
     }
-    return { lines, cut: start > 0 };
+    if (end < size && calls.size) for (const entry of entriesOf(readAt(fd, end, Math.min(size - end, RESULT_LOOKAHEAD)))) fileResults(entry);
+    return { lines, cut: start > 0, start };
   } catch {
     return null;
   } finally {
@@ -113,8 +167,30 @@ export function claudeTranscriptTitle(file: string): string | null {
   }
 }
 
+/** Text blocks as one text, as tool results write them: a string, or a list of blocks of which text ones count. */
+export function blocksText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((b: { type?: string; text?: unknown }) => (typeof b?.text === "string" ? b.text : b?.type === "image" ? "[image]" : ""))
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** A Claude Code tool call's input as a person reads it: a command as typed, an edit as removed and added lines. */
+function claudeInput(input: unknown): string {
+  const i = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+  const text = (v: unknown) => (typeof v === "string" ? v : "");
+  const edit = (old: unknown, now: unknown) => [...text(old).split("\n").map((l) => `- ${l}`), ...text(now).split("\n").map((l) => `+ ${l}`)].join("\n");
+  if (typeof i.command === "string") return `$ ${i.command}`;
+  if (typeof i.file_path === "string" && "old_string" in i) return `${i.file_path}\n${edit(i.old_string, i.new_string)}`;
+  if (typeof i.file_path === "string" && Array.isArray(i.edits)) return [i.file_path, ...i.edits.map((e: Record<string, unknown>) => edit(e.old_string, e.new_string))].join("\n");
+  if (typeof i.file_path === "string" && typeof i.content === "string") return `${i.file_path}\n${i.content}`;
+  return JSON.stringify(input ?? {}, null, 2);
+}
+
 /** One entry of a Claude Code transcript as conversation lines; sidechains and injected context are left out. */
-export function claudeTranscriptLines(o: Record<string, unknown>): RecordLine[] {
+function claudeTranscriptLines(o: Record<string, unknown>): RecordCallLine[] {
   if (o.isMeta || o.isSidechain) return [];
   const message = o.message as { content?: unknown } | undefined;
   const content = message?.content;
@@ -124,14 +200,25 @@ export function claudeTranscriptLines(o: Record<string, unknown>): RecordLine[] 
     return content.flatMap((b: { type?: string; text?: string }) => (b.type === "text" && b.text && !isMachinery(b.text) ? [{ who: "person" as const, text: clipLine(b.text.trim()) }] : []));
   }
   if (o.type === "assistant" && Array.isArray(content)) {
-    return content.flatMap((b: { type?: string; text?: string; name?: string; input?: unknown }): RecordLine[] => {
+    return content.flatMap((b: { type?: string; text?: string; name?: string; input?: unknown; id?: unknown }): RecordCallLine[] => {
       if (b.type === "text" && b.text?.trim()) return [{ who: "agent", text: clipLine(b.text.trim()) }];
-      if (b.type === "tool_use" && b.name) return [{ who: "tool", text: toolLine(b.name, b.input) }];
+      if (b.type === "tool_use" && b.name) return [{ who: "tool", text: toolLine(b.name, b.input), detail: { input: clipDetail(claudeInput(b.input)) }, ...(typeof b.id === "string" ? { call: b.id } : {}) }];
       return [];
     });
   }
   return [];
 }
+
+/** The tool results one Claude Code transcript entry holds, by the call each answers. */
+function claudeTranscriptResults(o: Record<string, unknown>): { call: string; output: string }[] {
+  const content = (o.message as { content?: unknown } | undefined)?.content;
+  if (o.type !== "user" || !Array.isArray(content)) return [];
+  return content.flatMap((b: { type?: string; tool_use_id?: unknown; content?: unknown }) =>
+    b.type === "tool_result" && typeof b.tool_use_id === "string" ? [{ call: b.tool_use_id, output: blocksText(b.content) }] : []
+  );
+}
+
+const CLAUDE_TRANSCRIPT: JsonlReader = { lines: claudeTranscriptLines, results: claudeTranscriptResults };
 
 /** Where a CLI writing Claude Code's transcripts keeps its config: the variable that moves it, and its folder in the home. */
 export interface ClaudeFolders {
@@ -172,7 +259,7 @@ export function findClaudeTranscript(sessionId: string, folders: ClaudeFolders, 
 export function claudeRecord(folders: ClaudeFolders): EngineRecord {
   return {
     find: (sessionId) => findClaudeTranscript(sessionId, folders),
-    read: (file) => readJsonlRecord(file, claudeTranscriptLines),
+    read: (file, opts) => readJsonlRecord(file, CLAUDE_TRANSCRIPT, opts),
     title: claudeTranscriptTitle
   };
 }

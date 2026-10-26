@@ -67,15 +67,76 @@ it("reads a conversation read-only from Claude Code's transcript, leaving the ma
   );
   expect(claude.read(talk)).toEqual({
     cut: false,
+    start: 0,
     lines: [
       { who: "person", text: "侧栏该怎么分组？" },
       { who: "agent", text: "我建议分成两组。" },
-      { who: "tool", text: "Bash · Show recent commits" }
+      { who: "tool", text: "Bash · Show recent commits", detail: { input: "$ git log -3" } }
     ]
   });
-  // A long record: only its tail, and it says the start was left out.
-  const long = path.join(dir, "long-talk.jsonl");
-  fs.writeFileSync(long, `${JSON.stringify({ type: "user", message: { content: "最早的一句" } })}\n${"x".repeat(3 * 1024 * 1024)}\n${JSON.stringify({ type: "user", message: { content: "最后一句" } })}\n`);
-  expect(claude.read(long)).toEqual({ cut: true, lines: [{ who: "person", text: "最后一句" }] });
   expect(claude.read(path.join(dir, "absent.jsonl"))).toBeNull();
+});
+
+it("gives each tool call its whole input and the output filed under its id, an edit as removed and added lines", () => {
+  const talk = path.join(dir, "tools.jsonl");
+  fs.writeFileSync(
+    talk,
+    [
+      { type: "assistant", message: { content: [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "pnpm test", description: "Run tests" } }, { type: "tool_use", id: "t2", name: "Edit", input: { file_path: "/a.ts", old_string: "one\ntwo", new_string: "three" } }] } },
+      { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1", content: "41 passed" }] } },
+      { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t2", content: [{ type: "text", text: "updated" }, { type: "image", source: {} }] }] } },
+      { type: "assistant", message: { content: [{ type: "tool_use", id: "t3", name: "Read", input: { file_path: "/b.ts", limit: 10 } }] } }
+    ]
+      .map((o) => JSON.stringify(o))
+      .join("\n")
+  );
+  expect(claude.read(talk)?.lines).toEqual([
+    { who: "tool", text: "Bash · Run tests", detail: { input: "$ pnpm test", output: "41 passed" } },
+    { who: "tool", text: "Edit · /a.ts", detail: { input: "/a.ts\n- one\n- two\n+ three", output: "updated\n[image]" } },
+    // No result yet: the input alone.
+    { who: "tool", text: "Read · /b.ts", detail: { input: JSON.stringify({ file_path: "/b.ts", limit: 10 }, null, 2) } }
+  ]);
+  // A huge output is shortened.
+  fs.writeFileSync(talk, [{ type: "assistant", message: { content: [{ type: "tool_use", id: "big", name: "Bash", input: { command: "cat log" } }] } }, { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "big", content: "y".repeat(50_000) }] } }].map((o) => JSON.stringify(o)).join("\n"));
+  expect(claude.read(talk)?.lines[0]?.detail?.output).toHaveLength(20_001);
+});
+
+it("reads a long record a stretch at a time, back to its first line, each line once and whole", () => {
+  const long = path.join(dir, "long-talk.jsonl");
+  const said = (i: number) => line({ type: "user", message: { content: `第 ${i} 句 ${"字".repeat(2000)}` } });
+  // About 7 MB of multi-byte lines, a 3 MB one among them, and a call whose result sits past its stretch's end.
+  let text = "";
+  for (let i = 0; i < 600; i++) text += said(i);
+  text += line({ type: "user", message: { content: `大的一句 ${"x".repeat(3 * 1024 * 1024)}` } });
+  for (let i = 600; i < 800; i++) text += said(i);
+  text += line({ type: "assistant", message: { content: [{ type: "tool_use", id: "edge", name: "Bash", input: { command: "ls" } }] } });
+  const tail = 2 * 1024 * 1024 - 10;
+  const resultAt = Buffer.byteLength(text);
+  text += line({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "edge", content: "a.ts" }] } });
+  text += line({ type: "user", message: { content: `最后一句 ${"z".repeat(tail)}` } });
+  fs.writeFileSync(long, text);
+
+  const seen: string[] = [];
+  let read = claude.read(long);
+  let reads = 1;
+  const edge = () => seen.find((t) => t.startsWith("Bash"));
+  seen.unshift(...read!.lines.map((l) => l.text.slice(0, 12)));
+  expect(read!.cut).toBe(true);
+  while (read!.cut) {
+    read = claude.read(long, { before: read!.start! });
+    reads++;
+    seen.unshift(...read!.lines.map((l) => (l.who === "tool" ? `${l.text}:${l.detail?.output}` : l.text.slice(0, 12))));
+  }
+  expect(reads).toBeGreaterThan(2);
+  expect(read!.start).toBe(0);
+  expect(seen[0]).toBe("第 0 句 字字字字字字");
+  expect(seen.filter((t) => t.startsWith("第 ")).length).toBe(800);
+  expect(seen.filter((t) => t.startsWith("大的一句")).length).toBe(1);
+  expect(seen.at(-1)).toBe("最后一句 zzzzzzz");
+  expect(edge()).toBe("Bash · ls:a.ts");
+  // A stretch that ends right before a call's result still finds it, just past its end.
+  expect(claude.read(long, { before: resultAt })?.lines.at(-1)).toEqual({ who: "tool", text: "Bash · ls", detail: { input: "$ ls", output: "a.ts" } });
+  // Asking past the end, or before the start, reads nothing wrong.
+  expect(claude.read(long, { before: 0 })).toEqual({ lines: [], cut: false, start: 0 });
+  expect(claude.read(long, { before: text.length * 10 })?.lines.at(-1)?.text.startsWith("最后一句")).toBe(true);
 });

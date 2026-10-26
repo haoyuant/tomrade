@@ -65,6 +65,13 @@ export interface TerminalRow {
 }
 
 /** A folder a new terminal can start in: the project's repository, or one of its worktrees. */
+/** One line of a conversation read back: what the person said, what the agent answered, a tool call with its input and output. */
+export interface ConversationLine {
+  who: "person" | "agent" | "tool";
+  text: string;
+  detail?: { input: string; output?: string };
+}
+
 export interface TerminalPlace {
   label: string;
   cwd: string;
@@ -127,8 +134,8 @@ export interface WindowState {
 export type WindowMessage =
   | { type: "attach"; cell: string; sessionId: string; cols: number; rows: number }
   /** The window names the new terminal's id, so its cell shows it before herdr has opened it. */
-  /** The ended session a cell shows: its conversation, read from its agent's own record. */
-  | { type: "conversation"; cell: string; sessionId: string }
+  /** The ended session a cell shows: its conversation, read from its agent's own record; `before` an earlier read's `start`, what came before it. */
+  | { type: "conversation"; cell: string; sessionId: string; before?: number }
   /** `resume`: a conversation's session, taken up again in the new terminal by its agent. */
   | { type: "newTerminal"; terminalId: string; cwd: string | null; resume?: string }
   | { type: "closeTerminal"; terminalId: string }
@@ -177,8 +184,11 @@ export type WindowPost =
   | ({ type: "scrolled"; cell: string } & TerminalScrollPosition)
   /** herdr's server is back: attach the cell's pane again. */
   | { type: "reattach"; cell: string }
-  /** A session's conversation, read-only; `lines` null when its agent's record cannot be read. */
-  | { type: "conversation"; cell: string; sessionId: string; lines: { who: "person" | "agent" | "tool"; text: string }[] | null; cut: boolean }
+  /**
+   * A session's conversation, read-only; `lines` null when its agent's record cannot be read. `before` echoes the
+   * request; `start`, while `cut`, is what to ask before for the stretch that came earlier.
+   */
+  | { type: "conversation"; cell: string; sessionId: string; lines: ConversationLine[] | null; cut: boolean; start: number | null; before: number | null }
   /** The pane the cell asked for streams in `other` already: one pane, one cell. */
   | { type: "shownIn"; cell: string; other: string }
   | { type: "toast"; text: string };
