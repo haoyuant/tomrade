@@ -22,7 +22,8 @@ import {
   type TerminalStream
 } from "@tomradex/contracts";
 import { hostCall, hostStream, openTerminal } from "./client.js";
-import { pipePath, PtyHostError, type PaneInfo } from "./protocol.js";
+import { strippedTitle } from "./agents.js";
+import { pipePath, PtyHostError, type PaneInfo, type ProcessInfo } from "./protocol.js";
 import { defaultShell } from "./shell.js";
 import { PTY_HOST_WORDS } from "./words.js";
 
@@ -295,18 +296,28 @@ export class PtyHost extends Service implements TerminalProvider {
     }
   }
 
-  /** The host reads no agents: a pane goes by the title its program set. */
+  /** The agent the host sees in each pane, by its processes; an agent's title without the glyph it leads with. */
   async panes(): Promise<TerminalPaneInfo[] | null> {
     try {
       const { panes } = await this.call<{ panes: PaneInfo[] }>("pane.list");
-      return panes.map((p) => ({ paneId: p.pane_id, agent: null, agentSession: null, status: "unknown", title: p.title }));
+      return panes.map((p) => {
+        const agent = p.agent ?? null;
+        return { paneId: p.pane_id, agent, agentSession: null, status: (agent && p.agent_status) || "unknown", title: agent ? strippedTitle(p.title) : p.title };
+      });
     } catch {
       return null;
     }
   }
 
-  async processes(): Promise<TerminalProcess[]> {
-    return [];
+  /** What runs under a pane's root, nearest first; none from a host older than that, or one that cannot tell. */
+  async processes(paneId: string): Promise<TerminalProcess[]> {
+    try {
+      const { process_info } = await this.call<{ process_info: ProcessInfo }>("pane.process_info", { pane_id: paneId });
+      return process_info.foreground_processes.map((p) => ({ cmdline: p.cmdline }));
+    } catch (err) {
+      if (!(err instanceof PtyHostError)) throw err;
+      return [];
+    }
   }
 
   /** Typed into the pane, then Enter a moment later, as a person would. */

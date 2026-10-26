@@ -66,8 +66,8 @@ const within = (dir: string, root: string) => {
   return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
 };
 
-/** A login or interactive shell, as a foreground command's first word. */
-const SHELL = /^-?(?:.*\/)?(zsh|bash|fish|sh|dash|ksh|tcsh|nu|login)$/;
+/** A login or interactive shell, as a foreground command's first word (Windows' among them). */
+const SHELL = /^-?(?:.*\/)?(zsh|bash|fish|sh|dash|ksh|tcsh|nu|login|pwsh|powershell|cmd)$/;
 
 /** Where a pane's agent runs, when one does: the backend sees it, or the foreground command names one. Null otherwise. */
 async function agentIn(terminals: TerminalProvider, seen: TerminalPaneInfo | undefined, pane: string, cwd: string): Promise<string | null> {

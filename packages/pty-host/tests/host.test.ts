@@ -8,6 +8,8 @@ import { PtyHost } from "@tomradex/pty-host";
 import { hostCall, hostStream, openTerminal } from "../src/client.js";
 import { Host, serve, type HostOptions } from "../src/host.js";
 import type { Pane, Pty } from "../src/pane.js";
+import type { ProcessRow } from "../src/agents.js";
+import type { PaneInfo } from "../src/protocol.js";
 
 /** A pseudo-terminal the test plays the program of: what it prints, and what it was sent. */
 class FakePty implements Pty {
@@ -264,6 +266,75 @@ describe("the host", () => {
   });
 });
 
+describe("what runs in the host's panes", () => {
+  const table = (...extra: ProcessRow[]): ProcessRow[] => [
+    { pid: 4242, ppid: 1, created: 100, name: "pwsh.exe", cmdline: "pwsh -NoLogo" },
+    { pid: 5000, ppid: 4242, created: 200, name: "claude.exe", cmdline: '"C:\\Users\\me\\.local\\bin\\claude.exe" --continue' },
+    ...extra
+  ];
+  const timing = { minMs: 0, staleMs: 60_000, soonMs: 0 };
+
+  it("names the agent under a pane, reads Claude's spinner as working, and lists what runs there", async () => {
+    const scan = vi.fn(async () => table({ pid: 5001, ppid: 5000, created: 300, name: "git.exe", cmdline: "git status" }));
+    const { host, pipe } = await hostOn({ scan, scanTiming: timing });
+    const { pane_id } = await hostCall<{ pane_id: string }>(pipe, "pane.launch", { cwd: os.tmpdir() });
+    await host.settled();
+    FakePty.last!.print("\x1b]0;⠂ Fixing the parser\x07");
+    await vi.waitFor(async () => expect((await hostCall<{ pane: PaneInfo }>(pipe, "pane.get", { pane_id })).pane).toMatchObject({ agent: "claude", agent_status: "working", title: "⠂ Fixing the parser" }));
+    expect(await hostCall(pipe, "pane.process_info", { pane_id })).toEqual({
+      process_info: { foreground_processes: [{ pid: 5000, name: "claude.exe", cmdline: "claude --continue" }, { pid: 5001, name: "git.exe", cmdline: "git status" }] }
+    });
+  });
+
+  it("reads nothing while no pane is open, and a pane opening or retitling has the table read again soon", async () => {
+    const scan = vi.fn(async () => table());
+    const { host, pipe } = await hostOn({ scan, scanTiming: timing });
+    await hostCall(pipe, "pane.list");
+    await host.settled();
+    expect(scan).not.toHaveBeenCalled();
+    await hostCall(pipe, "pane.launch", { cwd: os.tmpdir() });
+    await host.settled();
+    expect(scan).toHaveBeenCalledTimes(1);
+    FakePty.last!.print("\x1b]0;a title\x07");
+    await vi.waitFor(() => expect(scan).toHaveBeenCalledTimes(2));
+  });
+
+  it("answers from the table it has while a slow scan runs, runs one scan at a time, and keeps the table when one fails", async () => {
+    let release: (rows: ProcessRow[]) => void = () => undefined;
+    let fail: (err: Error) => void = () => undefined;
+    const scan = vi.fn(() => new Promise<ProcessRow[]>((resolve, reject) => ((release = resolve), (fail = reject))));
+    const { host, pipe } = await hostOn({ scan, scanTiming: { minMs: 0, staleMs: 0, soonMs: 0 } });
+    const { pane_id } = await hostCall<{ pane_id: string }>(pipe, "pane.launch", { cwd: os.tmpdir() });
+    await vi.waitFor(() => expect(scan).toHaveBeenCalledTimes(1));
+    // The scan has not answered: the reply comes at once, with no agent yet, and starts no second scan.
+    expect((await hostCall<{ panes: PaneInfo[] }>(pipe, "pane.list")).panes[0]).toMatchObject({ pane_id, agent: null, agent_status: "unknown" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(scan).toHaveBeenCalledTimes(1);
+    release(table());
+    await host.settled();
+    // A table read this very millisecond is not yet older than "at once".
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect((await hostCall<{ panes: PaneInfo[] }>(pipe, "pane.list")).panes[0]!.agent).toBe("claude");
+    // Stale at once: that read asked for another scan, which fails and leaves the table as it was.
+    await vi.waitFor(() => expect(scan).toHaveBeenCalledTimes(2));
+    fail(new Error("powershell went away"));
+    await host.settled();
+    expect((await hostCall<{ pane: PaneInfo }>(pipe, "pane.get", { pane_id })).pane.agent).toBe("claude");
+  });
+
+  it("keeps scans apart by the minimum interval", async () => {
+    const scan = vi.fn(async () => table());
+    const { host, pipe } = await hostOn({ scan, scanTiming: { minMs: 60_000, staleMs: 0, soonMs: 0 } });
+    await hostCall(pipe, "pane.launch", { cwd: os.tmpdir() });
+    await vi.waitFor(() => expect(scan).toHaveBeenCalledTimes(1));
+    await hostCall(pipe, "pane.list");
+    await hostCall(pipe, "pane.list");
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(scan).toHaveBeenCalledTimes(1);
+    await host.shutdown();
+  });
+});
+
 describe("ctx.terminals over the host", () => {
   async function service(pipe: string): Promise<PtyHost> {
     const ctx = new Context();
@@ -325,6 +396,30 @@ describe("ctx.terminals over the host", () => {
     expect(await terminals.serverGone()).toBe(true);
     // No host, no terminals: a close has nothing left to end.
     expect(await terminals.closePane("p1-1")).toBe(true);
+  });
+
+  it("gives the agent the host sees, with its working state and its title without the spinner, and what runs in the pane", async () => {
+    const scan = async (): Promise<ProcessRow[]> => [
+      { pid: 4242, ppid: 1, created: 1, name: "pwsh.exe", cmdline: "pwsh" },
+      { pid: 4300, ppid: 4242, created: 2, name: "node.exe", cmdline: "node C:\\npm\\node_modules\\@anthropic-ai\\claude-code\\cli.js" }
+    ];
+    const { host, pipe } = await hostOn({ scan, scanTiming: { minMs: 0, staleMs: 60_000, soonMs: 0 } });
+    const terminals = await service(pipe);
+    const { paneId } = (await terminals.launch({ cwd: os.tmpdir() }))!;
+    await host.settled();
+    FakePty.last!.print("\x1b]0;⠂ Fixing the parser\x07");
+    await vi.waitFor(async () => expect(await terminals.panes()).toEqual([{ paneId, agent: "claude", agentSession: null, status: "working", title: "Fixing the parser" }]));
+    expect(await terminals.processes(paneId)).toEqual([{ cmdline: "node C:\\npm\\node_modules\\@anthropic-ai\\claude-code\\cli.js" }]);
+    expect(await terminals.processes("p0-9")).toEqual([]);
+  });
+
+  it("reads a host that names no agents, as an older one, as before", async () => {
+    const { pipe } = await hostOn();
+    const terminals = await service(pipe);
+    const { paneId } = (await terminals.launch({ cwd: os.tmpdir() }))!;
+    FakePty.last!.print("\x1b]0;⠂ my title\x07");
+    await vi.waitFor(async () => expect(await terminals.panes()).toEqual([{ paneId, agent: null, agentSession: null, status: "unknown", title: "⠂ my title" }]));
+    expect(await terminals.processes(paneId)).toEqual([]);
   });
 
   it("is ready only where the ConPTY runtime is", async () => {
