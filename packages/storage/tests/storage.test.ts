@@ -9,7 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import type { Context } from "cordis";
+import { Service, type Context } from "cordis";
 import { z } from "zod";
 import { fresh, settle } from "@tomradex/testkit";
 import {
@@ -423,6 +423,81 @@ describe("ctx.storage", () => {
     });
     expect(await storage.publish(project.id)).toMatchObject({ state: "error" });
     expect(filesOf()).toEqual(pulled);
+  });
+
+  it("reads a folder a checkout turned into CRLF, and the next write puts LF back", async () => {
+    const { storage, items, board, project, dir } = await machine();
+    const item = items.create({ title: "Published", projectId: project.id, boardId: board.id, by: "human" });
+    await storage.publish(project.id);
+    const artifact = path.join(dir, ARTIFACT_DIR);
+    const texts = () => (fs.readdirSync(artifact, { recursive: true }) as string[]).filter((rel) => /\.jsonl?$/.test(rel)).map((rel) => path.join(artifact, rel));
+    // What git does with core.autocrlf=true and no eol rule.
+    for (const file of texts()) fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace(/\n/g, "\r\n"));
+    expect(fs.readFileSync(path.join(artifact, "state", "items.jsonl"), "utf8")).toContain("\r\n");
+
+    const back = readArtifact(dir)!;
+    expect(back.tables.items.map((r) => r.title)).toEqual(["Published"]);
+    expect(digestState(back)).toBe(back.manifest.snapshot!.digest);
+    expect((await storage.statusFor(project.id)).state).toBe("synced");
+
+    // Nothing changed, and still the write leaves every file LF, with the rule that keeps it so.
+    expect((await storage.publish(project.id)).state).toBe("synced");
+    for (const file of texts()) expect(fs.readFileSync(file, "utf8")).not.toContain("\r");
+    expect(read(dir, ".gitattributes")).toMatch(/^\*\.jsonl text eol=lf$/m);
+    items.update(project.id, item.id, { title: "Edited" }, "human");
+    expect((await storage.publish(project.id)).state).toBe("synced");
+    expect(readArtifact(dir)!.tables.items.map((r) => r.title)).toEqual(["Edited"]);
+  });
+
+  it("reads a folder that goes on not matching its manifest as syncing at first, then as an error it logs and tells the person once", async () => {
+    const notices: { title: string; body?: string }[] = [];
+    class Alerts extends Service {
+      static provide = "alerts";
+      constructor(ctx: Context) {
+        super(ctx, "alerts");
+      }
+      sounds() {
+        return [];
+      }
+      async play() {}
+      notify(notice: { title: string; body?: string }) {
+        notices.push(notice);
+      }
+    }
+    const { ctx, storage, items, board, project, dir } = await machine({ storage: { tornErrorMs: 1_000 } });
+    await ctx.plugin(Alerts);
+    await settle();
+    const said: string[] = [];
+    ctx.logger.exporter({ export: (m: { type: string; args: unknown[] }) => void said.push(`${m.type} ${String(m.args[0])}`) } as never);
+    items.create({ title: "Published", projectId: project.id, boardId: board.id, by: "human" });
+    await storage.publish(project.id);
+    const itemsFile = path.join(dir, ARTIFACT_DIR, "state", "items.jsonl");
+    const rows = fs.readFileSync(itemsFile, "utf8");
+    fs.appendFileSync(itemsFile, '{"id":"x"}\n');
+
+    // A moment's mismatch is a sync still arriving: nothing is written, the log says why, nobody is alarmed.
+    items.create({ title: "Ours", projectId: project.id, boardId: board.id, by: "human" });
+    expect(await storage.publish(project.id)).toMatchObject({ state: "syncing" });
+    expect(said.some((l) => l.startsWith("info") && l.includes("folder not written: syncing"))).toBe(true);
+    expect(notices).toEqual([]);
+
+    await sleep(1_100);
+    expect(await storage.statusFor(project.id)).toMatchObject({ state: "error", detail: expect.stringContaining("project.json") });
+    expect(storage.cachedState(project.id)).toBe("error");
+    expect(notices).toEqual([{ title: "Default Project has stopped syncing", body: expect.stringContaining("git checkout -- .tomrade") }]);
+    expect(said.filter((l) => l.startsWith("warn") && l.includes("have not matched their manifest"))).toHaveLength(1);
+    // Told once, however often it is asked; the writes it skips are logged as warnings now.
+    expect(await storage.publish(project.id)).toMatchObject({ state: "error" });
+    await storage.refresh(project.id);
+    expect(notices).toHaveLength(1);
+    expect(said.some((l) => l.startsWith("warn") && l.includes("folder not written: error"))).toBe(true);
+
+    // Matching again, the write goes through; a later mismatch starts over as a sync arriving.
+    fs.writeFileSync(itemsFile, rows);
+    expect((await storage.publish(project.id)).state).toBe("synced");
+    expect(readArtifact(dir)!.tables.items.map((r) => r.title).sort()).toEqual(["Ours", "Published"]);
+    fs.appendFileSync(itemsFile, '{"id":"y"}\n');
+    expect((await storage.statusFor(project.id)).state).toBe("syncing");
   });
 
   it("never opens one project over another's folder", async () => {

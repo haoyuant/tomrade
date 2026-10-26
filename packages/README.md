@@ -59,7 +59,7 @@ Every package keeps `"private": true`, so `npm publish` from a source folder fai
 | Package | Role | ctx | Builds on |
 |---|---|---|---|
 | `git` | Running git: the promptless environment, the command runner, one folder's helpers, remote URLs. A plain library. | — | — |
-| `storage` | The project folder as the truth: its text artifact, providers, flush and refresh. | `storage` | contributions, git, hub, oplog, projects, write |
+| `storage` | The project folder as the truth: its text artifact, providers, flush and refresh. | `storage` | alerts, contributions, git, hub, oplog, projects, write |
 | `storage-git` | Any git repository as a project's destination: the storage provider for a git URL, not the library that runs git (that is `git`). | — | storage |
 | `storage-github` | GitHub as a destination: finds or creates the repository. | — | github, storage, storage-git |
 | `github` | The one GitHub account this machine uses: token, REST client, git credential helper. | `github` | git, storage |

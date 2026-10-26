@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { Db, ProjectDb } from "@tomradex/db";
 import type { CatalogProject, Hub, RemoteRef } from "@tomradex/hub";
 import type {} from "@tomradex/settings";
+import type {} from "@tomradex/alerts";
 import type { Oplog } from "@tomradex/oplog";
 import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/ipc";
@@ -31,6 +32,7 @@ import {
   projectIdOf,
   readArtifact,
   refreshSupportFiles,
+  restoreLf,
   serializeState,
   writeArtifact,
   type ProjectState
@@ -56,7 +58,7 @@ import { STORAGE_WORDS } from "./words.js";
 import { bestEffort, contract, errorMessage, localeOf, type StorageReader } from "@tomradex/contracts";
 
 // "synced" with writes still waiting reads as ahead.
-const STATE_WORD: Record<SyncState, Exclude<Parameters<ReturnType<typeof STORAGE_WORDS>>[0], "unsynced">> = {
+const STATE_WORD: Record<SyncState, Extract<Parameters<ReturnType<typeof STORAGE_WORDS>>[0], `state${string}`>> = {
   local: "stateLocal",
   synced: "stateAhead",
   ahead: "stateAhead",
@@ -105,7 +107,9 @@ export const StorageConfig = z.preprocess(
     /** How long the remote's answer stands for a status read; it doubles while nothing moves, up to five minutes. */
     remoteFreshMs: z.number().int().min(0).default(30_000),
     /** After the remote could not be reached, the first wait before asking again; it doubles each time, up to ten minutes. */
-    remoteRetryMs: z.number().int().min(0).default(15_000)
+    remoteRetryMs: z.number().int().min(0).default(15_000),
+    /** How long a folder may disagree with its manifest and still read as mid-sync; past it, the status is an error and the person is told once. */
+    tornErrorMs: z.number().int().min(0).default(600_000)
   })
 );
 export type StorageConfig = z.infer<typeof StorageConfig>;
@@ -178,6 +182,10 @@ export class Storage extends Service implements StorageReader {
   /** Projects removed on purpose on this machine; the Hub's catalog must not bring them back. */
   private tombstones = new Map<string, number>();
   private attentionByProject = new Map<string, Attention[]>();
+  /** Folders whose files do not match their manifest: since when, and whether the person has been told. */
+  private torn = new Map<string, { since: number; told: boolean }>();
+  /** The last reason a project's folder was not read or written, so the log says it once rather than on every try. */
+  private gaveUpWhy = new Map<string, string>();
   private closing = false;
   private hubBackend: HubBackend | null = null;
   private restorer!: Restorer;
@@ -874,13 +882,15 @@ export class Storage extends Service implements StorageReader {
     // another machine would take our snapshot for its own work undone.
     if (hasArtifact(dir) && reason !== "merge") {
       const { state: onDisk, problem } = this.readFolder(dir, this.verifies(projectId));
-      if (problem) return false;
+      if (problem) return this.gaveUp(projectId, "not written", problem);
       if (onDisk && (onDisk.manifest.snapshot?.digest ?? digestState(onDisk)) !== first.lastPublishedDigest) {
         await this.refreshInTurn(projectId);
         // A pull during the refresh may have brought in what this build cannot read.
-        if (hasArtifact(dir) && this.readFolder(dir, this.verifies(projectId)).problem) return false;
+        const after = hasArtifact(dir) ? this.readFolder(dir, this.verifies(projectId)).problem : undefined;
+        if (after) return this.gaveUp(projectId, "not written", after);
       }
     }
+    this.gaveUpWhy.delete(projectId);
     // A quit never waits on the network; it goes by the last answer.
     if (!opts.leaving) await this.checkVisibility(projectId);
     const entry = this.mustEntry(projectId);
@@ -899,6 +909,7 @@ export class Storage extends Service implements StorageReader {
       } else {
         refreshSupportFiles(dir, { mcpUrl: this.mcpUrl(projectId) });
       }
+      restoreLf(dir);
       const counts = Object.entries(state.tables).filter(([, rows]) => rows.length);
       const summary = `tomrade: ${reason} — ${counts.map(([t, rows]) => `${rows.length} ${t}`).join(", ") || "empty project"}`;
       // The folder is where the project is shared unless a remote is; then only a push counts.
@@ -1020,12 +1031,51 @@ export class Storage extends Service implements StorageReader {
   /** Read the folder; a torn or conflicted artifact is reported as a status, not thrown. */
   private readFolder(dir: string, verify = true): { state: ProjectState | null; problem?: { state: SyncState; detail: string } } {
     try {
-      return { state: readArtifact(dir, { verify }) };
+      const state = readArtifact(dir, { verify });
+      this.torn.delete(dir);
+      return { state };
     } catch (error) {
-      if (error instanceof TornArtifactError) return { state: null, problem: { state: "syncing", detail: "The folder is still being written or synced" } };
+      if (error instanceof TornArtifactError) return { state: null, problem: this.tornProblem(dir) };
+      this.torn.delete(dir);
       if (error instanceof ConflictMarkersError) return { state: null, problem: { state: "error", detail: error.message } };
       return { state: null, problem: { state: "error", detail: errorMessage(error) } };
     }
+  }
+
+  /**
+   * Files that do not match their manifest are usually still arriving. Ones
+   * that go on not matching are something else — a checkout that rewrote
+   * them, a hand edit — and sync stands still on both sides until someone
+   * acts, so past `tornErrorMs` it is an error and the person hears it once.
+   */
+  private tornProblem(dir: string): { state: SyncState; detail: string } {
+    const now = Date.now();
+    let seen = this.torn.get(dir);
+    if (!seen) this.torn.set(dir, (seen = { since: now, told: false }));
+    if (now - seen.since < this.config.tornErrorMs) return { state: "syncing", detail: "The folder is still being written or synced" };
+    const minutes = Math.max(1, Math.round((now - seen.since) / 60_000));
+    const w = STORAGE_WORDS(localeOf(this.home));
+    const detail = w("tornDetail", { minutes, dir });
+    if (!seen.told) {
+      seen.told = true;
+      const entry = this.hub.catalog.projects().find((e) => e.dir === dir);
+      this.home.logger.warn(`storage: ${entry?.id ?? dir}: the files in ${dir} have not matched their manifest for ${minutes} min; nothing is read from or written to the folder until they do`);
+      this.home.get("alerts")?.notify({ title: w("tornTitle", { name: entry?.name ?? path.basename(dir) }), body: detail });
+      if (entry) this.notify(entry.id);
+    }
+    return { state: "error", detail };
+  }
+
+  /** A folder left alone because it does not read: said in the log once per reason, never silently. */
+  private gaveUp(projectId: string, what: string, problem: { state: SyncState; detail: string }): false {
+    const why = `${what}: ${problem.state} — ${problem.detail}`;
+    if (this.gaveUpWhy.get(projectId) !== why) {
+      this.gaveUpWhy.set(projectId, why);
+      const line = `storage: ${projectId}: folder ${why}`;
+      if (problem.state === "error") this.home.logger.warn(line);
+      else this.home.logger.info(line);
+    }
+    return false;
   }
 
   private importForeignLogs(projectId: string, dir: string): number {
@@ -1066,7 +1116,8 @@ export class Storage extends Service implements StorageReader {
   private absorbFolder(projectId: string): void {
     const entry = this.mustEntry(projectId);
     if (!entry.dir) return;
-    const { state } = this.readFolder(entry.dir, this.verifies(projectId));
+    const { state, problem } = this.readFolder(entry.dir, this.verifies(projectId));
+    if (problem) this.gaveUp(projectId, "not read", problem);
     if (!state) return;
     if (projectIdOf(state) !== projectId) throw new ForeignProjectError(projectId, projectIdOf(state));
     const onDisk = state.manifest.snapshot?.digest ?? digestState(state);
