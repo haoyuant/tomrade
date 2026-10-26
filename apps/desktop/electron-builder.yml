@@ -31,8 +31,10 @@ publish:
 generateUpdatesFilesForAllChannels: true
 # Off on purpose: Plugin Studio runs agent-written code in a Node child with the
 # permission model on, and that child — and esbuild's native binary — must be
-# real files it can be allowed to read.
+# real files it can be allowed to read. Windows packs one anyway (win.asar).
 asar: false
+# scripts/after-pack.cjs repacks app.asar after pruning, so a hash taken before it would be stale.
+disableAsarIntegrity: true
 npmRebuild: false
 afterPack: scripts/after-pack.cjs
 files:
@@ -81,6 +83,11 @@ dmg:
 win:
   icon: assets/icon.png
   target: nsis
+  # The NSIS installer writes each file twice (to a temp folder, then into
+  # place) and the virus scanner reads every one: thousands of small files made
+  # an install take minutes. scripts/after-pack.cjs keeps real files only for
+  # what must be one (its UNPACKED).
+  asar: true
 linux:
   icon: assets/icon.png
   # Otherwise derived from the package name, @tomrade/desktop.

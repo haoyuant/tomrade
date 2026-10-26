@@ -4,13 +4,17 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { afterEach, describe, expect, it } from "vitest";
 
-const { pruneConpty, pruneSqlite, pruneUnused, requireIcons, restoreSdkDeclarations } = createRequire(import.meta.url)("../scripts/after-pack.cjs") as {
+const require = createRequire(import.meta.url);
+const { packAsar, pruneConpty, pruneSqlite, pruneUnused, requireIcons, restoreSdkDeclarations, unpackAsar } = require("../scripts/after-pack.cjs") as {
+  packAsar: (resources: string) => Promise<void>;
   pruneConpty: (modules: string, platform: string, arch: string) => void;
   pruneSqlite: (modules: string, platform: string, arch: string) => void;
   pruneUnused: (modules: string) => void;
   requireIcons: (resources: string) => void;
   restoreSdkDeclarations: (modules: string, source?: string) => void;
+  unpackAsar: (resources: string) => void;
 };
+const asar = require("@electron/asar") as typeof import("@electron/asar");
 
 const PREBUILDS = ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64", "linuxmusl-arm64", "linuxmusl-x64", "win32-arm64", "win32-x64"];
 const dirs: string[] = [];
@@ -221,5 +225,62 @@ describe("what no running app reads", () => {
     // folders the sources left empty go too
     expect(fs.existsSync(path.join(root, "zod/src"))).toBe(false);
     expect(fs.existsSync(path.join(root, "esbuild/bin"))).toBe(false);
+  });
+});
+
+describe("the Windows app's app.asar", () => {
+  const files = (root: string): string[] => fs.readdirSync(root, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => path.relative(root, path.join(entry.parentPath, entry.name)).split(path.sep).join("/"))
+    .sort();
+  const APP = [
+    "package.json", "dist/main.js", "ui/index.html", "assets/icon.png", "official-plugins/catalog.json",
+    "vendor/npm/bin/npm-cli.js", "vendor/pi/dist/bundle/cli.js",
+    "node_modules/zod/index.js", "node_modules/@tomradex/plugin-cli/dist/child.js",
+    "node_modules/better-sqlite3/lib/index.js", "node_modules/better-sqlite3/prebuilds/win32-x64.node",
+    "node_modules/@esbuild/win32-x64/esbuild.exe", "node_modules/esbuild/lib/main.js",
+    "node_modules/node-pty/lib/index.js", "node_modules/node-pty/prebuilds/win32-x64/conpty/OpenConsole.exe",
+    "node_modules/@xterm/headless/lib-headless/xterm-headless.js", "node_modules/@tomradex/pty-host/dist/main.js",
+    "node_modules/@tomradex/pty-host-other/dist/index.js", "node_modules/foo/assets/x.png", "node_modules/foo/vendor/y.js"
+  ];
+
+  /** A resources folder holding the pruned app as files. */
+  function resources(): string {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-after-pack-"));
+    dirs.push(root);
+    for (const rel of APP) {
+      fs.mkdirSync(path.dirname(path.join(root, "app", rel)), { recursive: true });
+      fs.writeFileSync(path.join(root, "app", rel), rel);
+    }
+    return root;
+  }
+
+  it("packs the app, keeping as files only what another program starts or reads by path", async () => {
+    const root = resources();
+    await packAsar(root);
+    expect(fs.readdirSync(root).sort()).toEqual(["app.asar", "app.asar.unpacked"]);
+    expect(files(path.join(root, "app.asar.unpacked"))).toEqual([
+      "assets/icon.png",
+      "node_modules/@esbuild/win32-x64/esbuild.exe",
+      "node_modules/@tomradex/pty-host/dist/main.js",
+      "node_modules/@xterm/headless/lib-headless/xterm-headless.js",
+      "node_modules/better-sqlite3/lib/index.js",
+      "node_modules/better-sqlite3/prebuilds/win32-x64.node",
+      "node_modules/node-pty/lib/index.js",
+      "node_modules/node-pty/prebuilds/win32-x64/conpty/OpenConsole.exe",
+      "official-plugins/catalog.json",
+      "vendor/npm/bin/npm-cli.js",
+      "vendor/pi/dist/bundle/cli.js"
+    ]);
+    expect(asar.extractFile(path.join(root, "app.asar"), path.join("node_modules", "@tomradex", "plugin-cli", "dist", "child.js")).toString()).toBe("node_modules/@tomradex/plugin-cli/dist/child.js");
+  });
+
+  it("comes back out as the same files, for the pruning", async () => {
+    const root = resources();
+    await packAsar(root);
+    unpackAsar(root);
+    expect(fs.readdirSync(root)).toEqual(["app"]);
+    expect(files(path.join(root, "app"))).toEqual([...APP].sort());
+    expect(fs.readFileSync(path.join(root, "app/vendor/pi/dist/bundle/cli.js"), "utf8")).toBe("vendor/pi/dist/bundle/cli.js");
   });
 });

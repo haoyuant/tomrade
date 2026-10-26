@@ -165,7 +165,9 @@ export class PtyHost extends Service implements TerminalProvider {
   private async startHost(): Promise<{ started: boolean } | null> {
     if (this.disposed || !(await this.installed())) return null;
     if (await this.server()) return { started: false };
-    const entry = fileURLToPath(new URL("./main.js", import.meta.url));
+    // In the Windows app's app.asar, from its unpacked copy: a host that outlives the app keeps no hold on app.asar,
+    // which an update replaces, and node-pty starts its helpers from real folders.
+    const entry = fileURLToPath(new URL("./main.js", import.meta.url)).replace(/([\\/])app\.asar(?=[\\/])/, "$1app.asar.unpacked");
     let failed = false;
     try {
       // Detached and unreferenced: the terminals outlive the app by design, so quitting never stops the host.
