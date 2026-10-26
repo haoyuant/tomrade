@@ -8,6 +8,8 @@ allowBuilds:
   # Squirrel.Windows only; the Windows build is NSIS.
   electron-winstaller: false
   esbuild: true
+  # Loaded from the prebuilds it ships (N-API, no rebuild per Electron); never compiled.
+  node-pty: false
 
 # @electron/rebuild transitively depends on @electron/node-gyp (git-hosted).
 blockExoticSubdeps: false

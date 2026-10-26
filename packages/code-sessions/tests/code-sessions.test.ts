@@ -88,9 +88,10 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
     }
   }
   class FakeHerdr extends Service {
-    static provide = "herdr";
+    static provide = "terminals";
+    readonly kind = "herdr" as const;
     constructor(ctx: Context) {
-      super(ctx, "herdr");
+      super(ctx, "terminals");
     }
     onPane = () => () => {};
     watch = () => () => {};
@@ -297,9 +298,10 @@ it("puts ended sessions in the archive, keeps one a cell shows, sends the archiv
     }
   }
   class ReadyHerdr extends Service {
-    static provide = "herdr";
+    static provide = "terminals";
+    readonly kind = "herdr" as const;
     constructor(ctx: Context) {
-      super(ctx, "herdr");
+      super(ctx, "terminals");
     }
     onPane = () => () => {};
     watch = () => () => {};
@@ -381,9 +383,10 @@ it("tells the window where the pane of an ended session a cell shows goes on, an
     }
   }
   class ReadyHerdr extends Service {
-    static provide = "herdr";
+    static provide = "terminals";
+    readonly kind = "herdr" as const;
     constructor(ctx: Context) {
-      super(ctx, "herdr");
+      super(ctx, "terminals");
     }
     onPane = () => () => {};
     watch = () => () => {};
@@ -435,9 +438,10 @@ it("never shows a state older than one already shown, so a pick from the archive
     }
   }
   class HeldHerdr extends Service {
-    static provide = "herdr";
+    static provide = "terminals";
+    readonly kind = "herdr" as const;
     constructor(ctx: Context) {
-      super(ctx, "herdr");
+      super(ctx, "terminals");
     }
     onPane = () => () => {};
     watch = () => () => {};
@@ -450,7 +454,7 @@ it("never shows a state older than one already shown, so a pick from the archive
         if (held) held.push(answer);
         else answer();
       });
-    call = async () => ({ process_info: { foreground_processes: [] } });
+    processes = async () => [];
   }
   class FakeCodeLink extends Service {
     static provide = "codeLink";
@@ -512,9 +516,10 @@ it("keeps a terminal that finishes opening while herdr is asked for its panes, a
     }
   }
   class HeldHerdr extends Service {
-    static provide = "herdr";
+    static provide = "terminals";
+    readonly kind = "herdr" as const;
     constructor(ctx: Context) {
-      super(ctx, "herdr");
+      super(ctx, "terminals");
     }
     onPane = () => () => {};
     watch = () => () => {};
@@ -527,7 +532,7 @@ it("keeps a terminal that finishes opening while herdr is asked for its panes, a
         if (held) held.push(answer);
         else answer();
       });
-    call = async () => ({ process_info: { foreground_processes: [] } });
+    processes = async () => [];
     launch = () => new Promise((resolve) => (launched = () => resolve({ paneId: "w1:pB", workspaceId: "w1" })));
   }
   class FakeCodeLink extends Service {
@@ -592,9 +597,10 @@ it("shows a session code link asks for: the window opens or comes forward with i
     }
   }
   class FakeHerdr extends Service {
-    static provide = "herdr";
+    static provide = "terminals";
+    readonly kind = "herdr" as const;
     constructor(ctx: Context) {
-      super(ctx, "herdr");
+      super(ctx, "terminals");
     }
     onPane = () => () => {};
     watch = () => () => {};
@@ -1036,9 +1042,10 @@ it("starts herdr's server again when it went away, on opening with saved termina
     }
   }
   class GoneHerdr extends Service {
-    static provide = "herdr";
+    static provide = "terminals";
+    readonly kind = "herdr" as const;
     constructor(ctx: Context) {
-      super(ctx, "herdr");
+      super(ctx, "terminals");
     }
     onPane = () => () => {};
     watch = () => () => {};
@@ -1047,8 +1054,9 @@ it("starts herdr's server again when it went away, on opening with saved termina
     clientAttached = async () => false;
     binary = () => "/opt/homebrew/bin/herdr";
     server = async () => (running ? { version: "0.9.5", protocol: 22, socket: "/h.sock" } : null);
+    serverGone = async () => !running;
     panes = async () => (running ? [{ paneId: "w8:p1", agent: null, agentSession: null, status: "unknown" as const, title: null }] : null);
-    call = async () => ({ process_info: { foreground_processes: [] } });
+    processes = async () => [];
     revive = (force = false) => {
       revives.push(force);
       return new Promise<string>((resolve) => {

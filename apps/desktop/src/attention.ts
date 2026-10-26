@@ -305,7 +305,8 @@ export const attention = {
               key, projectId, threadId: s.threadId, itemId, itemKey: itemKeyOf(projectId, itemId),
               kind: s.state === "error" ? "stuck" : "waiting",
               who: engineTitle(s.agent), text: clip(s.activity ?? s.summary),
-              ...(s.herdrPane ? { toldIn: "herdr" as const } : {})
+              // herdr says so in its own window; Tomrade's own terminal host does not.
+              ...(s.herdrPane && ctx.get("terminals")?.kind === "herdr" ? { toldIn: "herdr" as const } : {})
             });
           }
         }

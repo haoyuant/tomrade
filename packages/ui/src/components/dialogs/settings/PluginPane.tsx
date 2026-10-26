@@ -1,9 +1,10 @@
 import { Fragment, useState, type ReactNode } from "react";
 import type { SettingsSectionView } from "@tomradex/settings";
-import { HerdrRecommendation } from "~/components/setup/HerdrRecommend";
+import { BuiltinTerminalNote, HerdrRecommendation } from "~/components/setup/HerdrRecommend";
 import { Fold, SectionHead } from "~/components/ui/atoms";
 import { SchemaField, fieldsOf, problemOf, type JsonSchema } from "~/components/ui/schema-form";
 import { useI18n, type MessageKey } from "~/lib/i18n";
+import { isWindows } from "~/lib/keys";
 import { readableError } from "~/lib/toast";
 import { PetProfilesPanel } from "../PetProfilesPanel";
 import { PushStatus } from "./PushStatus";
@@ -99,7 +100,8 @@ export function PluginPane({ section, stored, onSave, children }: { section: Set
 
 /** What one plugin field shows beyond its schema: words for some of its options, and a line under it. */
 const FIELD_EXTRAS: Record<string, { options?: Record<string, MessageKey>; below?: () => ReactNode }> = {
-  "codeLink.terminal": { options: { herdr: "codeLink.herdrOption" }, below: () => <HerdrRecommendation /> }
+  // On Windows the choice is Tomrade's own terminal; herdr does not run there.
+  "codeLink.terminal": { options: { herdr: "codeLink.herdrOption", builtin: "codeLink.builtinOption" }, below: () => (isWindows ? <BuiltinTerminalNote /> : <HerdrRecommendation />) }
 };
 
 import { AnalyticsIdentity } from "./AnalyticsIdentity";

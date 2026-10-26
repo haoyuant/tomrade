@@ -20,6 +20,12 @@ function useInstallHerdr() {
     );
 }
 
+/** Under Settings' terminal picker on Windows: what Tomrade's own terminal does. */
+export function BuiltinTerminalNote() {
+  const { t } = useI18n();
+  return <div className="meta-txt" data-testid="builtin-terminal-note">{t("codeLink.builtinPitch")}</div>;
+}
+
 /** Under Settings' terminal picker: why herdr, and a way to get it while it is missing. */
 export function HerdrRecommendation() {
   const { t } = useI18n();

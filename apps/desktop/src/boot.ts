@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { stringify } from "yaml";
 import { ExtensionStore, Plugins, type PluginRow } from "@tomradex/plugins";
 import { LOCK_FILE } from "@tomradex/plugin-kit";
-import { applyPatches, interpolate, readConfig, readRows, resolvePlugin, writePatchRow, type PluginPatch } from "./loader.js";
+import { applyPatches, forPlatform, interpolate, readConfig, readRows, resolvePlugin, writePatchRow, type PluginPatch } from "./loader.js";
 import { fileExporter } from "./logfile.js";
 import { nodeRuntime } from "./node-runtime.js";
 import { errorMessage } from "@tomradex/contracts";
@@ -69,7 +69,7 @@ function compose(opts: BootOptions, vars: Record<string, string>) {
     }
   });
   const recompose = (without: ReadonlySet<string>) =>
-    interpolate(applyPatches(base, [...fromPackages.filter((p) => !without.has(p.from)).map((p) => p.rows), ...fromFiles, ...(opts.patches ?? [])]), vars);
+    interpolate(forPlatform(applyPatches(base, [...fromPackages.filter((p) => !without.has(p.from)).map((p) => p.rows), ...fromFiles, ...(opts.patches ?? [])])), vars);
   const rows = recompose(new Set());
   // applyPatches drops the switch of a row the app stopped shipping; a plugin that takes that row's place still reads it.
   const leftSwitches = Object.fromEntries(fromFiles.flat().flatMap((r) => (typeof r.disabled === "boolean" && !rows.some((row) => row.id === r.id) ? [[r.id, r.disabled]] : [])));

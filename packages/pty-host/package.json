@@ -1,0 +1,31 @@
+{
+  "name": "@tomradex/pty-host",
+  "private": true,
+  "license": "Apache-2.0",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "ctx.terminals on native Windows: live terminals from a detached pty host Tomrade runs itself (node-pty over ConPTY), behind the same contract herdr fills on macOS and Linux.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tomradex/contracts": "workspace:*",
+    "@tomradex/domain": "workspace:*",
+    "@xterm/headless": "5.5.0",
+    "cordis": "4.0.0-rc.8",
+    "node-pty": "1.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^6.0.0"
+  }
+}

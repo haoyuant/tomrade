@@ -127,6 +127,7 @@
     "@tomradex/plugin-studio": "workspace:*",
     "@tomradex/plugins": "workspace:*",
     "@tomradex/projects": "workspace:*",
+    "@tomradex/pty-host": "workspace:*",
     "@tomradex/repos": "workspace:*",
     "@tomradex/settings": "workspace:*",
     "@tomradex/schedules": "workspace:*",

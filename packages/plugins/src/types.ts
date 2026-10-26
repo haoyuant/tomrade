@@ -13,6 +13,8 @@ export interface PluginRow {
   implements?: string[];
   /** The full-mode extension whose rows put this row's plugin here: its writes carry that extension's namespace. */
   from?: string;
+  /** The platforms (`process.platform`) the row loads on; absent, every one. Elsewhere the row is not there at all. */
+  platforms?: string[];
 }
 
 /** A row as a patch file or a full-mode extension writes it: the fields it changes on the row with its id. */

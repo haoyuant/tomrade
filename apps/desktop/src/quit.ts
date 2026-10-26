@@ -38,9 +38,10 @@ async function ask(ctx: Context): Promise<boolean> {
   if (active.length) {
     const code = active.filter((a) => a.thread.itemId).length;
     const w = DESKTOP_WORDS(ctx.get("settings")?.locale?.());
-    // A ticket session in a herdr pane is herdr's process, not this one's: it goes on, and herdr can bring it back.
+    // A ticket session in a pane is the terminal backend's process, not this one's: it goes on (herdr can also bring it back).
     const inHerdr = sessionsInHerdr(ctx);
-    const kept = inHerdr ? w(inHerdr === 1 ? "keptInHerdrOne" : "keptInHerdrMany", { n: inHerdr }) : "";
+    const own = ctx.get("terminals")?.kind === "builtin";
+    const kept = inHerdr ? w(own ? (inHerdr === 1 ? "keptInTerminalOne" : "keptInTerminalMany") : inHerdr === 1 ? "keptInHerdrOne" : "keptInHerdrMany", { n: inHerdr }) : "";
     const choice = dialog.showMessageBoxSync({
       type: "warning",
       buttons: [w("quit"), w("cancel")],
@@ -61,7 +62,7 @@ async function ask(ctx: Context): Promise<boolean> {
   return settleUnsynced(ctx);
 }
 
-/** Live ticket sessions running in herdr panes, across open projects. */
+/** Live ticket sessions running in panes (herdr's, or the pty host's), across open projects. */
 function sessionsInHerdr(ctx: Context): number {
   const codeLink = ctx.get("codeLink");
   if (!codeLink) return 0;

@@ -54,8 +54,9 @@ packages/storage-github —              GitHub: repository discovery and creati
 packages/github       ctx.github       the one GitHub account this machine uses: token, REST client, git credential helper
 packages/repos        ctx.repos        the code repositories workstreams stand for; this machine's checkouts; agent worktrees
 packages/code-link    ctx.codeLink     a ticket's branches, worktrees, pull requests and coding sessions; status from git; the Start button
-packages/herdr        ctx.herdr        herdr on this machine: its socket and panes (optional)
-packages/code-sessions —                the Terminal window: herdr terminals and code sessions side by side, with live status
+packages/herdr        ctx.herdr        herdr on this machine: its socket and panes (optional); ctx.terminals off Windows
+packages/pty-host     ctx.terminals    Windows only: a detached pty host (node-pty over ConPTY) in herdr's shapes
+packages/code-sessions —                the Terminal window: terminals (ctx.terminals) and code sessions side by side, with live status
 packages/files        ctx.files        the project's files beside its backlog: a versioned folder tree, backends, sync and conflicts, the versions tickets pin
 packages/files-github —                GitHub as where a project's files are shared
 packages/notes        ctx.notes        the files read as notes: wiki links, backlinks, tags, ranked full-text search, links kept on rename

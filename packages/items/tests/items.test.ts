@@ -67,6 +67,16 @@ describe("items (write path)", () => {
     expect(items.getByKey(project.id, "TOM-1")?.id).toBe(a.id);
   });
 
+  it("hands out a free key when the counter is behind the items it holds", async () => {
+    const { items, board, project, db } = await fresh();
+    const a = items.create({ projectId: project.id, title: "A", boardId: board.id, by: "human" });
+    const b = items.create({ projectId: project.id, title: "B", boardId: board.id, by: "human" });
+    db.prepare("UPDATE projects SET next_key_num = 1 WHERE id = ?").run(project.id);
+    const c = items.create({ projectId: project.id, title: "C", boardId: board.id, by: "human" });
+    const d = items.create({ projectId: project.id, title: "D", boardId: board.id, by: "human" });
+    expect([a.key, b.key, c.key, d.key]).toEqual(["TOM-1", "TOM-2", "TOM-3", "TOM-4"]);
+  });
+
   it("lists with filters (status/kind/parent/board/label)", async () => {
     const { items, boards, board, project } = await fresh();
     const other = boards.create({ projectId: project.id, name: "Other" });

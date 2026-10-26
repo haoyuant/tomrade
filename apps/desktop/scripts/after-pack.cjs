@@ -4,7 +4,8 @@
 // apps. Each app keeps only its own esbuild.
 //
 // better-sqlite3 brings a prebuilt binary for every platform and SQLite's
-// sources to compile one; each app keeps only the binary it loads.
+// sources to compile one; each app keeps only the binary it loads. node-pty
+// (the built-in terminal) is the same, and only the Windows app keeps it.
 //
 // Nor does it keep what only a build or an editor reads: TypeScript sources and
 // declarations, examples and tests, readmes and changelogs, node-addon-api's
@@ -42,6 +43,41 @@ function pruneSqlite(modules, platform, arch) {
   for (const name of ["deps", "src", "build", "binding.gyp"]) fs.rmSync(path.join(dir, name), { recursive: true, force: true });
 }
 exports.pruneSqlite = pruneSqlite;
+
+/** What node-pty loads over ConPTY with useConptyDll, beside its lib: the rest is winpty, debug symbols and sources. */
+const CONPTY_FILES = ["conpty.node", "conpty_console_list.node", "conpty/OpenConsole.exe", "conpty/conpty.dll"];
+
+/**
+ * The built-in terminal is Windows' alone: other apps carry none of it. A Windows app keeps node-pty's lib and its
+ * own arch's ConPTY runtime, not winpty, the .pdb files, other platforms' prebuilds or the sources.
+ */
+function pruneConpty(modules, platform, arch) {
+  const dir = path.join(modules, "node-pty");
+  if (platform !== "win32") {
+    for (const gone of ["node-pty", "@xterm/headless", "@tomradex/pty-host"]) fs.rmSync(path.join(modules, gone), { recursive: true, force: true });
+    return;
+  }
+  const prebuilds = path.join(dir, "prebuilds");
+  const own = path.join(prebuilds, `win32-${arch}`);
+  const missing = CONPTY_FILES.filter((file) => !fs.existsSync(path.join(own, file)));
+  // without it no terminal opens in the Terminal window: fail the build, not the first terminal
+  if (missing.length) throw new Error(`node-pty has no prebuilt win32-${arch} ${missing.join(", ")}`);
+  for (const name of fs.readdirSync(prebuilds)) if (name !== `win32-${arch}`) fs.rmSync(path.join(prebuilds, name), { recursive: true, force: true });
+  const keep = new Set(CONPTY_FILES.map((file) => path.normalize(file)));
+  const walk = (at, rel) => {
+    for (const entry of fs.readdirSync(at, { withFileTypes: true })) {
+      const full = path.join(at, entry.name);
+      const name = rel ? path.join(rel, entry.name) : entry.name;
+      if (entry.isDirectory()) walk(full, name);
+      else if (!keep.has(name)) fs.rmSync(full, { force: true });
+    }
+  };
+  walk(own, "");
+  // node_modules: its own node-addon-api, headers only a build reads.
+  for (const name of ["deps", "src", "third_party", "scripts", "typings", "build", "binding.gyp", "node_modules"]) fs.rmSync(path.join(dir, name), { recursive: true, force: true });
+  for (const name of fs.readdirSync(path.join(dir, "lib"))) if (/\.test\.js$/.test(name)) fs.rmSync(path.join(dir, "lib", name), { force: true });
+}
+exports.pruneConpty = pruneConpty;
 
 const TS_SOURCE = /\.(?:ts|tsx|mts|cts)$/;
 const DECLARATION = /\.d\.(?:ts|mts|cts)$/;
@@ -109,9 +145,11 @@ exports.pruneUnused = pruneUnused;
 /**
  * What stays real files beside app.asar, in app.asar.unpacked: what another program starts or reads by path (Pi and
  * npm, run by the app's binary as Node and by cmd; esbuild's binary; the icons the system shows), the native SQLite
- * addon, and the official plugins.
+ * addon, the official plugins, and the pty host with all it loads (node-pty and its ConPTY runtime, xterm's headless
+ * terminal), which outlives the app and so holds no part of app.asar.
  */
-const UNPACKED = "{vendor,official-plugins,assets,node_modules/@esbuild,node_modules/better-sqlite3}";
+const UNPACKED =
+  "{vendor,official-plugins,assets,node_modules/@esbuild,node_modules/better-sqlite3,node_modules/node-pty,node_modules/@xterm/headless,node_modules/@tomradex/pty-host}";
 
 /** electron-builder's app.asar, back into resources/app to be pruned like an app that has none. */
 function unpackAsar(resources) {
@@ -149,6 +187,7 @@ exports.default = async ({ electronPlatformName, arch, appOutDir, packager }) =>
   };
   prune("@anthropic-ai", (name) => name.startsWith("claude-agent-sdk-"));
   pruneSqlite(modules, electronPlatformName, own);
+  pruneConpty(modules, electronPlatformName, own);
   restoreSdkDeclarations(modules);
   prune("@esbuild", (name) => {
     const [, os, cpu] = name.match(/^([a-z0-9]+)-([a-z0-9]+)$/) ?? [];
