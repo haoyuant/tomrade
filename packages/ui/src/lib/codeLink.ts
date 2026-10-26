@@ -22,6 +22,31 @@ export function defaultStartMode(input: { latest: "headless" | "terminal" | null
   return input.remembered === "terminal" ? "terminal" : "run";
 }
 
+export type StartStep = "worktree" | "branch" | "mcp" | "agent" | "terminal";
+export interface StartProgress {
+  steps: StartStep[];
+  /** Index into steps of the one the wait is shown on. */
+  current: number;
+  /** Past ~10 s: say a first worktree or a large repository is slow, not stuck. */
+  slow: boolean;
+  /** Past ~60 s: say where to look. */
+  stalled: boolean;
+}
+
+const STEP_MS = 2500;
+
+/**
+ * What a pending Start is shown doing. codeLink.start is one IPC call that reports nothing until it returns,
+ * so the step is a guess from the time elapsed, in the order the backend works; the last one holds until it answers.
+ */
+export function startProgress(elapsedMs: number, input: { mode: StartOptions["mode"]; general: boolean }): StartProgress {
+  const launch: StartStep = input.mode === "terminal" ? "terminal" : "agent";
+  // General work runs in a plain folder: no worktree, no branch.
+  const steps: StartStep[] = input.general ? ["mcp", launch] : ["worktree", "branch", "mcp", launch];
+  const current = Math.min(Math.max(0, Math.floor(elapsedMs / STEP_MS)), steps.length - 1);
+  return { steps, current, slow: elapsedMs >= 10_000, stalled: elapsedMs >= 60_000 };
+}
+
 /** How the Start dialog was left on this machine; null before anything was started here. */
 export const useStartDefaults = () =>
   useQuery({ queryKey: keys.codeLink.startDefaults, queryFn: () => invoke("codeLink.startDefaults") });
