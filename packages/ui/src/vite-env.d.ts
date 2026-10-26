@@ -23,6 +23,8 @@ export interface WindowChrome {
 declare module "@tomradex/ipc" {
   interface Broadcasts {
     "window.chrome": (state: WindowChrome) => void;
+    /** The system woke, the screen unlocked or the window came back from minimized. */
+    "window.wake": () => void;
   }
 }
 
