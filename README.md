@@ -156,7 +156,7 @@ Free to use, on macOS, Windows and Linux. Get the installer for your system from
 |---|---|---|
 | macOS 12+ (Apple silicon or Intel) | `.dmg` | Signed and notarized. Drag it to Applications and go. |
 | Windows 10 / 11, 64-bit | `.exe` | Not code-signed yet, so SmartScreen will clutch its pearls: **More info → Run anyway**. Smart App Control blocks unsigned apps outright; read the [download page](https://tomrade.com/download) first. |
-| Linux, x86-64 | `.AppImage` | `chmod +x` and run. Recent Ubuntu needs `libfuse2` (`libfuse2t64` on 24.04). |
+| Linux, x86-64 | `.AppImage` | `chmod +x` and run. No `libfuse2` needed; where FUSE is missing altogether, run it with `--appimage-extract-and-run`. |
 
 An installed copy checks for updates and installs one only when you say so. The interface speaks English, 简体中文, 繁體中文, 日本語, Español, Deutsch, Français and Русский.
 

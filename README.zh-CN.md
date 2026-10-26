@@ -153,7 +153,7 @@
 |---|---|---|
 | macOS 12+（Apple 芯片或 Intel） | `.dmg` | 已签名并经过 Apple 公证，拖进「应用程序」即可。 |
 | Windows 10 / 11，64 位 | `.exe` | 暂时还没有代码签名，SmartScreen 会大惊小怪：点 **更多信息 → 仍要运行**。Windows 11 的智能应用控制会直接拦下未签名应用，安装前请先看[下载页](https://tomrade.com/zh/download)的说明。 |
-| Linux，x86-64 | `.AppImage` | `chmod +x` 后运行。较新的 Ubuntu 需要先装 `libfuse2`（24.04 上是 `libfuse2t64`）。 |
+| Linux，x86-64 | `.AppImage` | `chmod +x` 后运行。不用装 `libfuse2`；系统完全没有 FUSE 时，加 `--appimage-extract-and-run` 运行。 |
 
 装好的 Tomrade 会检查更新，你同意了才安装。界面支持 English、简体中文、繁體中文、日本語、Español、Deutsch、Français 和 Русский。
 
