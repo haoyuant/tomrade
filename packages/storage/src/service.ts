@@ -187,6 +187,8 @@ export class Storage extends Service implements StorageReader {
   private torn = new Map<string, { since: number; told: boolean }>();
   /** A folder's digest as status last read it, kept while its files are the ones it read. */
   private folderSeen = new Map<string, { stamp: string; verify: boolean; digest: string | null }>();
+  /** The local digest as status last computed it, kept while the cache file and what decides the export are unchanged. */
+  private digestSeen = new Map<string, { db: ProjectDb; key: string; digest: string }>();
   /** The last reason a project's folder was not read or written, so the log says it once rather than on every try. */
   private gaveUpWhy = new Map<string, string>();
   private closing = false;
@@ -773,6 +775,31 @@ export class Storage extends Service implements StorageReader {
   private localDigest(projectId: string, entry: CatalogProject): string {
     const state = this.exportFor(projectId, entry);
     return state.manifest.snapshot?.digest ?? digestState(state);
+  }
+
+  /**
+   * The local digest for status, which is asked on every change anywhere in the project. SQLite's
+   * own counters say whether the file moved: a row this connection wrote, a commit by any other,
+   * a schema change. Tables carried for a plugin that is not loaded come from elsewhere, so then
+   * nothing is kept.
+   */
+  private statusDigest(projectId: string, entry: CatalogProject): string {
+    const db = this.db(projectId);
+    const registrations = (this.ctx.db as Db).registrations("project");
+    if (Object.keys(this.unregistered(projectId, new Set(registrations.map((r) => r.namespace)))).length) return this.localDigest(projectId, entry);
+    const counters = db.prepare("SELECT total_changes() AS changes, (SELECT data_version FROM pragma_data_version) AS version, (SELECT schema_version FROM pragma_schema_version) AS schema").get();
+    const key = JSON.stringify([
+      counters,
+      this.allowedExports(entry.exports, entry.visibility),
+      entry.git,
+      entry.withheld,
+      registrations.map((r) => [r.namespace, r.scope, r.tables])
+    ]);
+    const seen = this.digestSeen.get(projectId);
+    if (seen && seen.db === db && seen.key === key) return seen.digest;
+    const digest = this.localDigest(projectId, entry);
+    this.digestSeen.set(projectId, { db, key, digest });
+    return digest;
   }
 
   /**
@@ -1444,7 +1471,7 @@ export class Storage extends Service implements StorageReader {
     if (failed) return this.remember(projectId, { state: "error", location, detail: failed, lastSyncAt: entry.lastSyncAt });
     let localDirty = false;
     try {
-      localDirty = this.localDigest(projectId, entry) !== entry.lastPublishedDigest;
+      localDirty = this.statusDigest(projectId, entry) !== entry.lastPublishedDigest;
     } catch (error) {
       return this.remember(projectId, { state: "error", location, detail: errorMessage(error), lastSyncAt: entry.lastSyncAt });
     }
@@ -1830,6 +1857,7 @@ export class Storage extends Service implements StorageReader {
     this.lastState.delete(projectId);
     this.publishedMem.delete(projectId);
     this.gitFailed.delete(projectId);
+    this.digestSeen.delete(projectId);
   }
 
   /** Bring one project's folder and cache in step, whichever moved. */

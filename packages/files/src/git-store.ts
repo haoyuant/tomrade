@@ -993,10 +993,12 @@ export class GitFileStore implements FileStore {
    * them, so a local commit landing beside either is safe.
    */
   private async doSync(): Promise<void> {
+    // Without a remote a sync only saves, at once: worth telling only when it saved or failed.
+    let told = !!this.opts.remote;
     this.syncing = true;
-    this.opts.onChange();
+    if (told) this.opts.onChange();
     try {
-      await this.locked(() => this.commitAll("Saved"));
+      if (await this.locked(() => this.commitAll("Saved"))) told = true;
       if (!this.opts.remote) return;
       const remote = await this.opts.remote();
       this.branch = remote.branch || "main";
@@ -1032,9 +1034,10 @@ export class GitFileStore implements FileStore {
       this.lastSyncAt = Date.now();
     } catch (error) {
       this.problem = { state: "error", detail: errorMessage(error) };
+      told = true;
     } finally {
       this.syncing = false;
-      this.opts.onChange();
+      if (told) this.opts.onChange();
     }
   }
 
