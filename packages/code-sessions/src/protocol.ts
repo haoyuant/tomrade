@@ -42,6 +42,8 @@ export interface SessionRow {
   endedAt: number | null;
   /** Ended while its pane goes on here as another of the window's rows (another ticket of the same agent): that row's id; null otherwise. */
   continuedIn: string | null;
+  /** The herdr pane it ran in, kept once it ended (`pane` is only while it lives); null outside herdr. */
+  ranIn: string | null;
   /** A ticket session's conversation was saved on this machine as it ended: all of it, or only its end. */
   recordSaved: "whole" | "end" | null;
 }
@@ -128,6 +130,8 @@ export interface WindowState {
   reveal: { sessionId: string; at: number } | null;
   /** Ended sessions, put away: how many, and the rows themselves only while the window has the archive open, newest first. */
   archive: { count: number; rows: SessionRow[] | null };
+  /** By a pane this window shows: the sessions that ended in it before, oldest first. */
+  history: Record<string, SessionRow[]>;
   /** The sidebar folded to a strip, as this project's window was left. */
   folded: boolean;
 }
@@ -150,6 +154,8 @@ export type WindowMessage =
   | { type: "autoPlace"; on: boolean }
   /** The archive opened or closed: its rows come with the state while it is open. */
   | { type: "archive"; open: boolean }
+  /** Which archived conversations said this: answered with `archiveFound`. */
+  | { type: "archiveSearch"; query: string }
   | { type: "fold"; folded: boolean }
   | { type: "detach"; cell: string }
   | { type: "input"; cell: string; data: string }
@@ -193,4 +199,6 @@ export type WindowPost =
   | { type: "conversation"; cell: string; sessionId: string; lines: ConversationLine[] | null; cut: boolean; start: number | null; before: number | null }
   /** The pane the cell asked for streams in `other` already: one pane, one cell. */
   | { type: "shownIn"; cell: string; other: string }
-  | { type: "toast"; text: string };
+  | { type: "toast"; text: string }
+  /** The archived sessions whose conversation says the query, from what their agents recorded. */
+  | { type: "archiveFound"; query: string; ids: string[] };

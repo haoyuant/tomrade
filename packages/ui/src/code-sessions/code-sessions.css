@@ -38,6 +38,11 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-bundle[data-shown] { border-color: color-mix(in oklab, var(--accent) 22%, var(--border-soft)); }
 .cs-bundle[data-selected] { border-color: color-mix(in oklab, var(--accent) 45%, var(--border-soft)); }
 .cs-bundle-head { padding: 0 var(--space-2) 0 12px; font-size: var(--text-xs); color: var(--meta); }
+/* A pane that ran sessions before: its chevron left of the row, the earlier sessions under it. */
+.cs-fold-row { gap: 2px; }
+.cs-fold-row > .cs-row, .cs-fold-row > .cs-bundle-head { flex: 1; min-width: 0; }
+.cs-timeline { margin: 1px 0 3px; padding-left: calc(22px + 2px); }
+.cs-archive-search { margin: 0 var(--space-2) var(--space-2); width: calc(100% - 2 * var(--space-2)); box-sizing: border-box; }
 .cs-row[data-ended] { opacity: 0.6; }
 .cs-row-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: var(--text-sm); }
 .cs-row-title { font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

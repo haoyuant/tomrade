@@ -374,6 +374,86 @@ it("puts ended sessions in the archive, keeps one a cell shows, sends the archiv
   expect(opened[1]!.states[0]).toMatchObject({ folded: true, archive: { count: 3, rows: null } });
 });
 
+it("keeps what ran in each pane the window shows before what it shows now, and finds archived conversations by what was said", async () => {
+  const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[]; posts: WindowPost[] }[] = [];
+  const now = Date.now();
+  const sessions = [
+    session({ id: "now", agent: "codex", herdrPane: "w1:p1", startedAt: 30 }),
+    // Claude Code first, then Codex, in the same pane; and one that ended in a pane no longer shown.
+    session({ id: "before", itemIds: ["i1"], herdrPane: "w1:p1", state: "ended", endedAt: now - 5000, startedAt: 20, prompted: true }),
+    session({ id: "first", herdrPane: "w1:p1", state: "ended", endedAt: now - 9000, startedAt: 10, prompted: true, title: "最早的一段" }),
+    session({ id: "gone", herdrPane: "w9:p9", state: "ended", endedAt: now - 1000, startedAt: 5, prompted: true }),
+    session({ id: "quiet", herdrPane: "w1:p1", state: "ended", endedAt: now - 2000, startedAt: 25 })
+  ];
+  const said: Record<string, string[]> = { before: ["把侧栏分成两组"], first: ["随便聊聊"], gone: ["侧栏的分组再想想"] };
+  let reads = 0;
+  class FakeSurfaces extends Service {
+    static provide = "desktopSurfaces";
+    constructor(ctx: Context) {
+      super(ctx, "desktopSurfaces");
+    }
+    open(spec: (typeof opened)[number]["spec"]) {
+      const entry = { spec, states: [spec.initialState as WindowState], posts: [] as WindowPost[] };
+      opened.push(entry);
+      return { id: "s", capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus() {}, setState: (st: WindowState) => void entry.states.push(st), post: (m: WindowPost) => void entry.posts.push(m), close: () => spec.onClose() };
+    }
+  }
+  class ReadyHerdr extends Service {
+    static provide = "terminals";
+    readonly kind = "herdr" as const;
+    constructor(ctx: Context) {
+      super(ctx, "terminals");
+    }
+    onPane = () => () => {};
+    watch = () => () => {};
+    watching = (): string[] => [];
+    bridge = async () => ({ state: "ready" as const, version: "0.9.5" });
+    clientAttached = async () => false;
+    panes = async () => [];
+  }
+  class FakeCodeLink extends Service {
+    static provide = "codeLink";
+    constructor(ctx: Context) {
+      super(ctx, "codeLink");
+    }
+    sessionsOf = () => sessions;
+    links = () => [];
+    repositoriesOf = () => [];
+    repositoryFoldersOf = this.repositoriesOf;
+    conversation = (_projectId: string, id: string) => {
+      reads++;
+      return said[id] ? { lines: said[id].map((text) => ({ who: "person" as const, text })), cut: false } : null;
+    };
+  }
+  const stateFile = path.join(dir, "history-state.json");
+  const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "history-settings.json") }], Contributions, FakeSurfaces, ReadyHerdr, FakeCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile }]] });
+  fs.writeFileSync(stateFile, JSON.stringify({ layouts: { [w.project.id]: { type: "leaf", id: "c1", sessionId: "now" } } }));
+  for (const s of sessions) s.device = w.ctx.hub.deviceId;
+  await settle();
+  await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
+  const win = opened[0]!;
+  const say = async (m: WindowMessage) => {
+    win.spec.onMessage(m);
+    await settle();
+  };
+  // The pane Codex runs in now ran Claude Code before: those, oldest first; nothing for a pane the window does not show, nor a start nobody spoke to.
+  expect(Object.keys(win.states.at(-1)!.history)).toEqual(["w1:p1"]);
+  expect(win.states.at(-1)!.history["w1:p1"]!.map((r) => [r.id, r.ranIn, r.pane])).toEqual([["first", "w1:p1", null], ["before", "w1:p1", null]]);
+
+  await say({ type: "archiveSearch", query: "侧栏" });
+  await vi.waitFor(() => expect(win.posts.some((p) => p.type === "archiveFound")).toBe(true));
+  expect(win.posts.filter((p) => p.type === "archiveFound")).toEqual([{ type: "archiveFound", query: "侧栏", ids: ["gone", "before"] }]);
+  // What each said is read once: a second search reads nothing again.
+  const read = reads;
+  await say({ type: "archiveSearch", query: "随便" });
+  await vi.waitFor(() => expect(win.posts.filter((p) => p.type === "archiveFound")).toHaveLength(2));
+  expect(win.posts.at(-1)).toEqual({ type: "archiveFound", query: "随便", ids: ["first"] });
+  expect(reads).toBe(read);
+  // An empty search asks nothing.
+  await say({ type: "archiveSearch", query: "  " });
+  expect(win.posts.filter((p) => p.type === "archiveFound")).toHaveLength(2);
+});
+
 it("says where an ended session's pane goes on: a terminal opened on it first, else the newest live session there", () => {
   const now = Date.now();
   const rows = sessionRows({ sessionsOf: () => [session({ id: "older", itemIds: ["i2"], herdrPane: "w1:p1", startedAt: 2 }), session({ id: "newer", itemIds: ["i3"], herdrPane: "w1:p1", startedAt: 3 }), session({ id: "gone", herdrPane: "w1:p1", state: "ended", endedAt: now, startedAt: 4 })] as never, links: () => [] }, { get: () => null }, "p", now);

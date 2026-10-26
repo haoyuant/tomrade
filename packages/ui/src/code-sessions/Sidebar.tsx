@@ -1,10 +1,11 @@
-import { useState, type ReactNode, type Ref } from "react";
+import { useEffect, useState, type ReactNode, type Ref } from "react";
 import type { LayoutPreset, SessionRow, TerminalRow, WindowState } from "@tomradex/code-sessions";
 import { isMac } from "~/lib/keys";
-import { send } from "./bridge";
+import { FoldChevron, FoldChevronSpace } from "~/components/ui/atoms";
+import { onArchiveFound, send } from "./bridge";
 import { keyLabel } from "./keys";
 import type { Key } from "./layout";
-import { bundles, live, sessionName, sidebarRows, type HereRow } from "./lists";
+import { bundles, live, matchesArchive, paneOf, sessionName, sidebarRows, type HereRow } from "./lists";
 import { StateChip } from "./Cell";
 import { useSay } from "./say";
 
@@ -53,21 +54,68 @@ function SessionList({ sessions, active, selected, onPick }: { sessions: Session
   );
 }
 
+/** What ran in a pane before what it shows now, oldest first: each opens in a pane as an ended session. */
+function PaneTimeline({ past, locale, selected, onPick }: { past: SessionRow[]; locale: string; selected: Set<string>; onPick: (s: SessionRow, beside: boolean) => void }) {
+  const say = useSay();
+  const day = (at: number) => new Date(at).toLocaleString(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const hour = (at: number) => new Date(at).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
+  return (
+    <ol className="cs-list cs-timeline fold-row-body" data-testid="cs-timeline" aria-label={say("paneEarlier")}>
+      {past.map((s) => (
+        <li key={s.id}>
+          <button type="button" className="side-row cs-row" data-ended aria-current={selected.has(s.id) ? "true" : undefined} title={say("pickHint", { mod: MOD })} onClick={(e) => onPick(s, besideClick(e))}>
+            <span className="cs-row-head">
+              <span className={s.key ? "mono" : undefined}>{s.key ?? s.conversation ?? sessionName(s)}</span>
+              <span className="cs-row-meta">{s.agentName ?? s.agent}</span>
+            </span>
+            {s.key && s.title && <span className="cs-row-title">{s.title}</span>}
+            <span className="cs-row-meta">{`${day(s.startedAt)}–${s.endedAt ? hour(s.endedAt) : ""}`}</span>
+          </button>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 /**
  * What this window shows, one row each: a session in a pane of its own, or a terminal opened here — read as the ticket
  * its agent claimed, else as what the agent calls the conversation, else as its folder. The tickets one agent works in
  * one pane come as a bundle; the ones its cell does not show are marked as on that pane, apart from the one it does.
  */
-function HereList({ rows, active, selected, shownPanes, selectedPane, pane, onSession, onTerminal }: { rows: HereRow[]; active: Set<string>; selected: Set<string>; shownPanes: Set<string>; selectedPane: string | null; pane: Key; onSession: (s: SessionRow, beside: boolean) => void; onTerminal: (t: TerminalRow, beside: boolean) => void }) {
+function HereList({ rows, history, locale, active, selected, shownPanes, selectedPane, pane, onSession, onTerminal }: { rows: HereRow[]; history: WindowState["history"]; locale: string; active: Set<string>; selected: Set<string>; shownPanes: Set<string>; selectedPane: string | null; pane: Key; onSession: (s: SessionRow, beside: boolean) => void; onTerminal: (t: TerminalRow, beside: boolean) => void }) {
   const say = useSay();
+  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(() => new Set());
   if (!rows.length) return <p className="cs-empty">{say("none")}</p>;
+  // A pane that ran sessions before folds open to them; once one does, every row keeps the chevron's room, so they line up.
+  const pastOf = (r: HereRow) => {
+    const at = paneOf(r);
+    return at ? (history[at] ?? []) : [];
+  };
+  const folds = rows.some((r) => pastOf(r).length > 0);
+  const toggle = (at: string) =>
+    setUnfolded((now) => {
+      const next = new Set(now);
+      if (!next.delete(at)) next.add(at);
+      return next;
+    });
+  const chevron = (r: HereRow) => {
+    const at = paneOf(r);
+    const past = pastOf(r);
+    if (!folds) return null;
+    if (!at || !past.length) return <FoldChevronSpace />;
+    return <FoldChevron open={unfolded.has(at)} label={say("paneEarlierCount", { n: past.length })} testId="cs-pane-history" onToggle={() => toggle(at)} />;
+  };
+  const timeline = (r: HereRow) => {
+    const at = paneOf(r);
+    return at && unfolded.has(at) && pastOf(r).length ? <PaneTimeline past={pastOf(r)} locale={locale} selected={selected} onPick={onSession} /> : null;
+  };
   const has = (set: Set<string>, r: HereRow) => set.has(r.id) || (!!r.session && set.has(r.session.id));
-  const item = (r: HereRow) => {
+  /** `lead`: the row speaks for its pane (alone on it), so the pane's history folds from it. */
+  const item = (r: HereRow, lead = true) => {
     const s = r.session;
     const current = has(selected, r);
     const bound = current || has(active, r) ? undefined : pane(r.id) === selectedPane ? "selected" : shownPanes.has(pane(r.id)) ? "shown" : undefined;
-    return (
-      <li key={r.id}>
+    const button = (
         <button
           type="button"
           className="side-row cs-row"
@@ -92,6 +140,15 @@ function HereList({ rows, active, selected, shownPanes, selectedPane, pane, onSe
             </>
           ) : null}
         </button>
+    );
+    if (!lead || !folds) return <li key={r.id}>{button}</li>;
+    return (
+      <li key={r.id}>
+        <div className="fold-row cs-fold-row">
+          {chevron(r)}
+          {button}
+        </div>
+        {timeline(r)}
       </li>
     );
   };
@@ -102,10 +159,20 @@ function HereList({ rows, active, selected, shownPanes, selectedPane, pane, onSe
         const at = pane(group[0]!.id);
         return (
           <li key={`bundle:${at}`} className="cs-bundle" data-testid="cs-bundle" data-shown={shownPanes.has(at) || undefined} data-selected={at === selectedPane || undefined}>
-            <span className="cs-bundle-head" title={say("samePaneHint")}>
-              {say("samePane", { n: group.length })}
-            </span>
-            <ul className="cs-list">{group.map(item)}</ul>
+            {folds ? (
+              <span className="fold-row cs-fold-row">
+                {chevron(group[0]!)}
+                <span className="cs-bundle-head" title={say("samePaneHint")}>
+                  {say("samePane", { n: group.length })}
+                </span>
+              </span>
+            ) : (
+              <span className="cs-bundle-head" title={say("samePaneHint")}>
+                {say("samePane", { n: group.length })}
+              </span>
+            )}
+            {timeline(group[0]!)}
+            <ul className="cs-list">{group.map((r) => item(r, false))}</ul>
           </li>
         );
       })}
@@ -142,13 +209,25 @@ function OutsideGroup({ sessions, open, onToggle, list }: { sessions: SessionRow
 function ArchiveList({ rows, locale, active, selected, onPick }: { rows: SessionRow[] | null; locale: string; active: Set<string>; selected: Set<string>; onPick: (s: SessionRow) => void }) {
   const say = useSay();
   const [shelf, setShelf] = useState<"tickets" | "talks">("tickets");
+  const [query, setQuery] = useState("");
+  // What was said is searched in the agents' records, a moment after the typing stops; the rest is matched here.
+  const [said, setSaid] = useState<{ query: string; ids: Set<string> }>({ query: "", ids: new Set() });
+  useEffect(() => onArchiveFound((post) => setSaid({ query: post.query, ids: new Set(post.ids) })), []);
+  useEffect(() => {
+    if (!query.trim()) return;
+    const timer = setTimeout(() => send({ type: "archiveSearch", query }), 300);
+    return () => clearTimeout(timer);
+  }, [query]);
   if (!rows) return <p className="cs-empty">{say("archiveLoading")}</p>;
-  const tickets = rows.filter((s) => s.itemId);
-  const talks = rows.filter((s) => !s.itemId);
+  const saidIt = (s: SessionRow) => said.query === query && said.ids.has(s.id);
+  const found = query.trim() ? rows.filter((s) => matchesArchive(s, query) || saidIt(s)) : rows;
+  const tickets = found.filter((s) => s.itemId);
+  const talks = found.filter((s) => !s.itemId);
   const shown = shelf === "tickets" ? tickets : talks;
   const when = (at: number) => new Date(at).toLocaleString(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   return (
     <>
+      <input type="search" className="input cs-archive-search" data-testid="cs-archive-search" aria-label={say("archiveSearch")} placeholder={say("archiveSearch")} value={query} onChange={(e) => setQuery(e.target.value)} />
       <div className="seg cs-shelves" role="group" data-testid="cs-archive-shelves">
         <button type="button" aria-pressed={shelf === "tickets"} data-testid="cs-shelf-tickets" onClick={() => setShelf("tickets")}>
           {say("shelfTickets", { n: tickets.length })}
@@ -158,7 +237,7 @@ function ArchiveList({ rows, locale, active, selected, onPick }: { rows: Session
         </button>
       </div>
       {!shown.length ? (
-        <p className="cs-empty">{say(shelf === "tickets" ? "archiveEmpty" : "talksEmpty")}</p>
+        <p className="cs-empty">{query.trim() ? say("archiveNoMatch") : say(shelf === "tickets" ? "archiveEmpty" : "talksEmpty")}</p>
       ) : (
         <ul className="cs-list" data-testid="cs-archive-list">
           {shown.map((s) => (
@@ -170,6 +249,11 @@ function ArchiveList({ rows, locale, active, selected, onPick }: { rows: Session
                 </span>
                 {s.itemId && s.title && <span className="cs-row-title">{s.title}</span>}
                 <span className="cs-row-meta mono">{s.itemId ? s.branch : [s.agentName ?? s.agent, s.cwd ?? s.worktree].filter(Boolean).join(" · ")}</span>
+                {query.trim() && !matchesArchive(s, query) && saidIt(s) && (
+                  <span className="cs-row-meta" data-testid="cs-archive-said">
+                    {say("archiveSaid")}
+                  </span>
+                )}
               </button>
             </li>
           ))}
@@ -321,7 +405,7 @@ export function Sidebar({ ref, state, locale, folded, onFold, active, selected, 
                   + {say("newTerminal")}
                 </button>
               </div>
-              {(groups.here.length > 0 || !groups.away.length) && <HereList rows={groups.here} active={active} selected={selected} shownPanes={shownPanes} selectedPane={selectedPane} pane={pane} onSession={onPick} onTerminal={onTerminal} />}
+              {(groups.here.length > 0 || !groups.away.length) && <HereList rows={groups.here} history={state.history} locale={locale} active={active} selected={selected} shownPanes={shownPanes} selectedPane={selectedPane} pane={pane} onSession={onPick} onTerminal={onTerminal} />}
               <OutsideGroup sessions={groups.away} open={outsideOpen} onToggle={() => setOutsideOpen((o) => !o)} list={<SessionList sessions={groups.away} active={active} selected={selected} onPick={onPick} />} />
               <Layouts
                 presets={state.presets}
