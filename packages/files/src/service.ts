@@ -236,6 +236,8 @@ export class Files extends Service implements FilesReader {
   private readonly open = new Map<string, { backend: string; store: FileStore; configKey: string }>();
   private readonly opening = new Map<string, Promise<FileStore>>();
   private readonly lastState = new Map<string, FilesSyncState>();
+  /** How often each project's files were said to change, so a sync knows whether its store said anything. */
+  private readonly told = new Map<string, number>();
   /** Titles cost a read each; a file that has not changed has not retitled itself. */
   private readonly titles = new Map<string, { stamp: string; title: string | null }>();
   private remotes!: RemoteStore;
@@ -374,6 +376,7 @@ export class Files extends Service implements FilesReader {
   }
 
   private notify(projectId: string): void {
+    this.told.set(projectId, (this.told.get(projectId) ?? 0) + 1);
     this.home.get("ipc")?.send("files.changed", projectId);
     this.home.emit("files/changed", projectId);
   }
@@ -1023,11 +1026,12 @@ export class Files extends Service implements FilesReader {
     // Git installed since the folder was opened without it: the same folder becomes a git store.
     if (this.open.get(projectId)?.store instanceof FolderFileStore && (await gitInstalled(this.config.gitBinary))) await this.reopen(projectId, true);
     const before = this.lastState.get(projectId);
+    const toldBefore = this.told.get(projectId) ?? 0;
     const status = await (await this.store(projectId)).sync();
     this.lastState.set(projectId, status.state);
     this.home.emit("files/synced", projectId, status);
-    // The store tells of what its sync changed; the minute's sweep over quiet projects says nothing.
-    if (status.state !== before) this.notify(projectId);
+    // Said once more once the sync settles, unless it was the minute's sweep over a quiet project.
+    if (status.state !== before || (this.told.get(projectId) ?? 0) !== toldBefore) this.notify(projectId);
     return status;
   }
 
