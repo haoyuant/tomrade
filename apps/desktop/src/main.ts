@@ -7,7 +7,8 @@ import { AccountFolders, machineRoots, restart } from "./accounts.js";
 import { cameBack, keepsRunning, launchMode, PREFS_FILE } from "./background.js";
 import { boot, ConfigUnreadable, type Booted } from "./boot.js";
 import { setUpBorrowedNode } from "./borrowed-node.js";
-import { deliverDeepLink, registerScheme } from "./deep-link.js";
+import { deliverDeepLink, registerScheme, SCHEME } from "./deep-link.js";
+import { installDesktopEntry } from "./desktop-entry.js";
 import { registerExtensionResolution } from "./extension-resolve.js";
 import { installAppMenu } from "./menu.js";
 import { loginItem } from "./login-item.js";
@@ -83,6 +84,14 @@ app.whenReady().then(async () => {
   // BrowserWindow's `icon` option is a no-op for the Dock on macOS since dev mode
   // runs Electron's own bundled app; the Dock icon has to be set explicitly.
   wearAppIcon(appIcon);
+  // Linux desktops take the windows' icon, and tomrade: links their handler, from this entry; an AppImage installs none.
+  if (process.platform === "linux" && app.isPackaged) {
+    try {
+      installDesktopEntry(SCHEME, iconPath);
+    } catch (error) {
+      console.error("Could not write the desktop entry:", error);
+    }
+  }
   installAppMenu({ restartWithoutPlugins: () => restart({ safe: true }) });
   // The app menu's About item, which a checkout would otherwise credit to Electron.
   void aboutInfo(path.resolve(here, "../../..")).then((info) =>

@@ -9,6 +9,9 @@ productName: Tomrade
 # move a checkout's data folder and its keychain key.
 extraMetadata:
   productName: Tomrade
+  # Linux: the window app id, matched to the desktop entry src/desktop-entry.ts writes (DESKTOP_NAME).
+  # A checkout keeps Electron's own, so it never takes over the installed app's entry.
+  desktopName: tomrade.desktop
 copyright: Copyright © Tomrade
 # tomrade:// links (an IM reply's "Open in Tomrade") start or bring forward the app: src/deep-link.ts.
 protocols:
@@ -92,6 +95,8 @@ linux:
   icon: assets/icon.png
   # Otherwise derived from the package name, @tomrade/desktop.
   executableName: tomrade
+  # The entry inside the AppImage takes desktopName's name, so AppImage integrators install one that matches the windows.
+  syncDesktopName: true
   target: AppImage
   category: Office
 nsis:
