@@ -7,6 +7,7 @@ export const DESKTOP_WORDS = defineWords("desktop", {
     cancel: "Cancel",
     // starting
     starting: "Starting Tomrade…",
+    keyringWaiting: "Waiting for your keyring. Answer the system's keyring dialog to go on.",
     startFailed: "Tomrade could not start",
     startLog: "The log is in {{dir}}",
     startWithoutHint: "You can start this once without your plugin switches (tomrade.patch.yml) and the plugins you installed. Nothing in them is changed or removed.",
@@ -88,6 +89,7 @@ export const DESKTOP_WORDS = defineWords("desktop", {
     quit: "退出",
     cancel: "取消",
     starting: "Tomrade 正在启动…",
+    keyringWaiting: "正在等待系统钥匙串。请先在系统的钥匙串对话框里完成操作。",
     startFailed: "Tomrade 无法启动",
     startLog: "日志在 {{dir}}",
     startWithoutHint: "可以这一次先不加载你的插件开关（tomrade.patch.yml）和你安装的插件来启动。它们都不会被修改或删除。",
