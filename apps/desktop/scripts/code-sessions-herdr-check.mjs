@@ -30,6 +30,14 @@ app.setPath("userData", work);
 app.commandLine.appendSwitch("disable-gpu");
 app.on("window-all-closed", () => {});
 
+/**
+ * The window drives on while other windows cover it, as it does for a person looking at it: covered, Chromium would
+ * pause its animation frames, and a step waiting on one (the keyboard following a selected pane) would never see it.
+ */
+const awake = (w) => {
+  w?.webContents.setBackgroundThrottling(false);
+  return w;
+};
 const results = [];
 // What the person's agents name as Tomrade before this run, to find unchanged at its end.
 const linksBefore = agentLinks();
@@ -118,6 +126,7 @@ app.whenReady().then(async () => {
       if (!win) await sleep(100);
     }
     check("窗口打开，标题以项目名开头", win?.getTitle() === `${project.name} — 终端`, win?.getTitle());
+    awake(win);
     win.setBounds({ x: 40, y: 40, width: 1680, height: 1000 });
     const js = (code) => win.webContents.executeJavaScript(code, true);
     const terminalText = (i) => js(`(() => { const cell = document.querySelectorAll('.cs-cell')[${i}]; return cell ? [...cell.querySelectorAll('.xterm-rows > div')].map((r) => r.textContent).join('\\n') : ''; })()`);
@@ -590,7 +599,7 @@ app.whenReady().then(async () => {
     // A plain terminal from the list's button: every cell is taken, so it opens in a new one beside them.
     await ctx.contributions.run("code-sessions.open", { projectId: project.id });
     await wait(async () => sessionsWindow()?.isVisible() ?? false, 10000);
-    let tw = sessionsWindow();
+    let tw = awake(sessionsWindow());
     let tjs = (code) => tw.webContents.executeJavaScript(code, true);
     await wait(async () => (await tjs(`document.querySelectorAll('.cs-cell .xterm').length`)) === 6);
     await tjs(`document.querySelector('[data-testid=cs-side-new-terminal]').click(); true`);
@@ -652,7 +661,7 @@ app.whenReady().then(async () => {
     await sleep(500);
     await ctx.contributions.run("code-sessions.open", { projectId: project.id });
     await wait(async () => sessionsWindow()?.isVisible() ?? false, 10000);
-    tw = sessionsWindow();
+    tw = awake(sessionsWindow());
     tjs = (code) => tw.webContents.executeJavaScript(code, true);
     // Something new on the pane, not an old line the reopened cell's viewport may no longer hold: the cell streams it.
     herdr("pane", "send-text", plainPane, "echo reopened-ok");
