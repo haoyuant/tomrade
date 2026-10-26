@@ -3,16 +3,13 @@ packages:
   - packages/*
 
 allowBuilds:
-  better-sqlite3: true
+  # Both load the prebuilds they ship (N-API, no rebuild per Electron); never compiled.
+  better-sqlite3: false
   electron: true
   # Squirrel.Windows only; the Windows build is NSIS.
   electron-winstaller: false
   esbuild: true
-  # Loaded from the prebuilds it ships (N-API, no rebuild per Electron); never compiled.
   node-pty: false
-
-# @electron/rebuild transitively depends on @electron/node-gyp (git-hosted).
-blockExoticSubdeps: false
 
 # The editor's parsers ride on caret ranges; hold them at releases that have
 # been out a while rather than whatever shipped this week.
