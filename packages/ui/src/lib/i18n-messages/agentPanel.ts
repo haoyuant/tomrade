@@ -43,6 +43,7 @@ export const agentPanel = {
     reasonDropped: "connection dropped",
     reasonNoResponse: "no response in {{s}}s",
     earlierSteps: "{{n}} earlier steps",
+    stepLimitSettings: "Change the step limit",
     startBrief: "Session brief · what the agent started from",
 
     waitingPickAny: "Waiting on you · pick any",
@@ -270,6 +271,7 @@ export const agentPanel = {
     reasonDropped: "连接断开",
     reasonNoResponse: "{{s}}秒无响应",
     earlierSteps: "前面 {{n}} 步",
+    stepLimitSettings: "调整步数上限",
     startBrief: "会话上下文 · Agent 开始时读到的内容",
 
     waitingPickAny: "等待你的选择 · 可多选",

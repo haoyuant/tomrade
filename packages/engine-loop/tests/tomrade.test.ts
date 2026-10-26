@@ -13,7 +13,7 @@ import { Settings } from "@tomradex/settings";
 import { Agent, type Engine, type EngineAvailability, type TurnInput, type TurnIO } from "@tomradex/agent";
 import tomrade from "../src/tomrade.js";
 
-async function setup(work: EngineAvailability = { ok: true }, loop: EngineAvailability = { ok: true }, workModes?: Engine["permissionModes"]) {
+async function setup(work: EngineAvailability = { ok: true }, loop: EngineAvailability = { ok: true }, workModes?: Engine["permissionModes"], loopLimit?: Engine["stepLimit"]) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-engine-"));
   const { ctx, project } = await fresh({ plugins: [Tools, [Settings, { path: path.join(root, "settings.json") }], [Agent, { mediaDir: path.join(root, "media") }], tomrade] });
   await settle();
@@ -30,7 +30,7 @@ async function setup(work: EngineAvailability = { ok: true }, loop: EngineAvaila
       return { stop: "end", resume: `${id}-session` };
     }
   });
-  ctx.agent.engine(part("loop", loop));
+  ctx.agent.engine({ ...part("loop", loop), ...(loopLimit ? { stepLimit: loopLimit } : {}) });
   ctx.agent.engine({ ...part("pi-builtin", work), ...(workModes ? { permissionModes: workModes } : {}) });
   const done = async () => {
     await ctx.fiber.dispose();
@@ -104,6 +104,19 @@ it("takes the model and effort picked for a part as its own, once", async () => 
     await ctx.fiber.dispose();
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+it("offers the loop's step limit as its own, and hands the number set for Tomrade to the loop", async () => {
+  const stepLimit = { key: "maxSteps", min: 1, max: 64, default: 24 };
+  const { ctx, project, turns, done } = await setup({ ok: false, need: "install", reason: "no pi" }, { ok: true }, undefined, stepLimit);
+  try {
+    expect((await ctx.agent.engineViews())[0]).toMatchObject({ id: "tomrade", stepLimit });
+    ctx.settings.set({ ...ctx.settings.get(), agent: { ...ctx.agent.settingsOf(), engines: { tomrade: { maxSteps: 50 } } } });
+    const chat = ctx.agent.newThread(project.id);
+    const run = ctx.agent.send(project.id, chat.id, { kind: "text", text: "what is open?" });
+    await expect.poll(() => ctx.agent.store.run(project.id, run.runId)?.status).toBe("done");
+    expect(turns.at(-1)).toMatchObject({ engine: "loop", input: { options: { maxSteps: 50 } } });
+  } finally { await done(); }
 });
 
 it("claims no ticket work with the built-in pi switched off, ready or not", async () => {
