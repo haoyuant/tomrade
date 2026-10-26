@@ -437,6 +437,17 @@ export function artifactFilesOf(dir: string): ArtifactFiles {
   return files;
 }
 
+/** The same files' identity, size and time as the folder has them: equal stamps, equal files, without reading one. */
+export function artifactStamp(dir: string): string {
+  const files = [path.join(dir, ARTIFACT_DIR, MANIFEST), ...[STATE_DIR, PLUGINS_DIR].flatMap((sub) => listFiles(path.join(dir, ARTIFACT_DIR, sub)).filter((f) => f.endsWith(".jsonl")))];
+  return files
+    .map((file) => {
+      const stat = fs.statSync(file, { throwIfNoEntry: false });
+      return stat ? `${file}\0${stat.ino}\0${stat.size}\0${stat.mtimeMs}` : `${file}\0-`;
+    })
+    .join("\n");
+}
+
 export function readArtifact(dir: string, opts: { verify?: boolean } = {}): ProjectState | null {
   return parseArtifact(artifactFilesOf(dir), dir, opts);
 }

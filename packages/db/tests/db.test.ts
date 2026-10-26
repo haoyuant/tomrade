@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { afterAll, describe, expect, it } from "vitest";
-import { migrateCore } from "@tomradex/db";
+import { ProjectDb, migrateCore } from "@tomradex/db";
 import { fresh } from "@tomradex/testkit";
 
 const LEGACY_SQL = `
@@ -290,5 +290,26 @@ describe("plugin migrations", () => {
     expect(ctx.db.hub.prepare("SELECT COUNT(*) AS n FROM plugin_usage_days").get()).toEqual({ n: 1 });
     expect(() => db.prepare("SELECT 1 FROM plugin_usage_days").get()).toThrow(/no such table/);
     expect(() => ctx.db.migrate("other", [{ version: 1, up: "CREATE TABLE plugin_other_t (id TEXT)" }], { scope: "hub", tables: { plugin_other_t: { project: "id", export: false } } })).toThrow(/hub tables belong to no project/);
+  });
+});
+
+describe("ProjectDb", () => {
+  it("compiles each statement once, keeps a bounded number, and lets them go when the file closes", () => {
+    const db = new ProjectDb("p", ":memory:");
+    db.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)");
+    const insert = db.prepare("INSERT INTO t (name) VALUES (?)");
+    expect(db.prepare("INSERT INTO t (name) VALUES (?)")).toBe(insert);
+    insert.run("a");
+    db.prepare("INSERT INTO t (name) VALUES (?)").run("b");
+    expect(db.prepare("SELECT name FROM t ORDER BY id").all()).toEqual([{ name: "a" }, { name: "b" }]);
+    // SQL built per call grows the cache; the oldest statements leave it, the ones still used stay.
+    for (let n = 0; n < 600; n++) {
+      db.prepare(`SELECT ${n} AS n`).get();
+      db.prepare("SELECT name FROM t ORDER BY id");
+    }
+    expect(db.prepare("SELECT name FROM t ORDER BY id").all()).toHaveLength(2);
+    expect(db.prepare("INSERT INTO t (name) VALUES (?)")).not.toBe(insert);
+    db.close();
+    expect(db.isOpen).toBe(false);
   });
 });

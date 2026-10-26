@@ -174,15 +174,28 @@ export function openSystemTerminal(cwd: string, platform: NodeJS.Platform = proc
   );
 }
 
+const isLive = (s: { state: string }) => s.state !== "ended" && s.state !== "lost";
+
+/** How many of a project's sessions wait on the person: the sidebar's count, without building every row. */
+export function needingYou(codeLink: Pick<CodeLink, "sessionsOf">, projectId: string): number {
+  return codeLink.sessionsOf(projectId).filter((s) => isLive(s) && !!s.blocked).length;
+}
+
 /** A project's code sessions, live ones first and needs-you before the rest, then every ended one code link keeps. */
 export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, items: { get(projectId: string, id: string): { key: string; title: string } | null | undefined }, projectId: string, now = Date.now(), device?: string, platform: NodeJS.Platform = process.platform): SessionRow[] {
   const prs = new Map(codeLink.links(projectId).filter((l) => l.prUrl).map((l) => [l.branch, l.prUrl]));
+  // Code link keeps every ended session, and many of them name the same ticket.
+  const known = new Map<string, { key: string; title: string } | null | undefined>();
+  const itemOf = (id: string) => {
+    if (!known.has(id)) known.set(id, items.get(projectId, id));
+    return known.get(id);
+  };
   return codeLink
     .sessionsOf(projectId)
     .map((s): SessionRow => {
       const itemId = s.itemIds[0] ?? null;
-      const item = itemId ? items.get(projectId, itemId) : null;
-      const live = s.state !== "ended" && s.state !== "lost";
+      const item = itemId ? itemOf(itemId) : null;
+      const live = isLive(s);
       const app = s.terminal ? TERMINAL_APPS[s.terminal] : undefined;
       const where = s.mode === "headless" ? "tomrade" : device && s.device && s.device !== device ? "elsewhere" : s.herdrPane ? "herdr" : "outside";
       return {
@@ -975,7 +988,7 @@ function apply(ctx: Context, config: Config) {
     title: () => words()("sidebar"),
     icon: "i-terminal",
     command: "code-sessions.open",
-    count: ({ projectId }) => sessionRows(ctx.codeLink, ctx.items, projectId).filter((s) => s.needsYou).length || null
+    count: ({ projectId }) => needingYou(ctx.codeLink, projectId) || null
   });
 
   ctx.effect(() => () => {
