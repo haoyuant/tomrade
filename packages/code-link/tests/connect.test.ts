@@ -1084,6 +1084,35 @@ describe("outside clients, told apart by their connection", () => {
     expect(codeLink.findTitles(project.id)).toBe(false);
   });
 
+  it("saves a ticket session's conversation on this machine as it ends, and reads it back once the agent's own is gone", async () => {
+    const { codeLink, ctx, items, project, board, checkout, repo } = await machine();
+    ctx.agent.engine({ ...installed("claude-code"), available: async () => ({ ok: false }), local: { record: claudeRecord({ variable: "CLAUDE_CONFIG_DIR", dir: ".claude" }) } });
+    const post = (payload: unknown) => fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const item = items.create({ projectId: project.id, boardId: board.id, title: "Snapshot work", by: "human" });
+    const transcript = path.join(root, `snap-${n++}.jsonl`);
+    fs.writeFileSync(transcript, `${JSON.stringify({ type: "user", message: { content: "把侧栏改成两组" } })}\n`);
+    const ticketSession = codeLink.store.createSession(project.id, { repoId: repo.id, branch: "tom-1/x", itemIds: [item.id], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, externalId: "snap-1" });
+    codeLink.store.patchSession(project.id, ticketSession.id, { transcript, cwd: checkout });
+    await post({ hook_event_name: "SessionEnd", session_id: "snap-1", cwd: checkout, transcript_path: transcript, reason: "exit" });
+    await vi.waitFor(() => expect(codeLink.store.session(project.id, ticketSession.id)?.recordSavedAt).not.toBeNull());
+    expect(codeLink.store.session(project.id, ticketSession.id)).toMatchObject({ state: "ended", recordCut: false });
+    // The agent cleans its records up: the archive still shows the conversation.
+    fs.rmSync(transcript);
+    expect(codeLink.conversation(project.id, ticketSession.id)?.lines).toEqual([{ who: "person", text: "把侧栏改成两组" }]);
+
+    // A conversation without a ticket keeps only the pointer.
+    const talkFile = path.join(root, `snap-${n++}.jsonl`);
+    fs.writeFileSync(talkFile, `${JSON.stringify({ type: "user", message: { content: "随便聊聊" } })}\n`);
+    const talk = codeLink.store.createSession(project.id, { repoId: repo.id, branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, externalId: "talk-2" });
+    codeLink.store.patchSession(project.id, talk.id, { transcript: talkFile, cwd: checkout });
+    await post({ hook_event_name: "SessionEnd", session_id: "talk-2", cwd: checkout, transcript_path: talkFile, reason: "exit" });
+    await settle();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(codeLink.store.session(project.id, talk.id)).toMatchObject({ state: "ended", recordSavedAt: null });
+    fs.rmSync(talkFile);
+    expect(codeLink.conversation(project.id, talk.id)).toBeNull();
+  });
+
   it("gives a tokenless claim to the session whose hooks announced it, not the newest idle one", async () => {
     const { codeLink, ctx, items, project, board, checkout } = await machine();
     const post = (payload: unknown) => fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });

@@ -39,6 +39,7 @@ import { Sessions, type SessionMoment } from "./sessions.js";
 import { CODE_WORDS, type CodeWords } from "./words.js";
 import { Starter, type StartGate, type StartOptions, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type Readiness, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
+import { readSnapshot, saveSnapshot, snapshotFile } from "./snapshots.js";
 import { recordOf } from "./titles.js";
 import { AUTO_TERMINAL, TerminalSettings, commandOk, exec, locatedCommand, terminalApps, terminalPath } from "./terminal.js";
 import { registerTools } from "./tools.js";
@@ -357,7 +358,8 @@ export class CodeLink extends Service implements CodeLinkReader {
         return this.limitedWords(park?.until ?? until ?? Date.now() + 15 * 60_000, park?.known ?? until !== null, false);
       },
       // A pass already running still saw this session as active.
-      onEnd: (session) => void this.rescan(session.projectId).catch((err) => this.ctx.logger.warn(`code scan after session ${session.id} ended failed: ${errorMessage(err)}`))
+      onEnd: (session) => void this.rescan(session.projectId).catch((err) => this.ctx.logger.warn(`code scan after session ${session.id} ended failed: ${errorMessage(err)}`)),
+      onEnded: (session) => void this.saveRecord(session)
     });
     this.herdr = new HerdrBridge({ ctx: this.ctx, store: this.store, sessions: this.sessions, words: () => this.words(), sessionDir: (id) => this.sessionDir(id) });
     this.starter = new Starter({
@@ -822,10 +824,38 @@ export class CodeLink extends Service implements CodeLinkReader {
    */
   conversation(projectId: string, sessionId: string, before?: number): RecordRead | null {
     const s = this.store.session(projectId, sessionId);
-    const record = s?.externalId ? recordOf(this.ctx, s.agent) : null;
-    if (!s?.externalId || !record) return null;
-    const file = s.transcript ?? record.find(s.externalId, { cwd: s.cwd ?? null });
-    return file ? record.read(file, before === undefined ? undefined : { before }) : null;
+    if (!s?.externalId) return null;
+    const record = recordOf(this.ctx, s.agent);
+    const file = record ? (s.transcript ?? record.find(s.externalId, { cwd: s.cwd ?? null })) : null;
+    const read = record && file ? record.read(file, before === undefined ? undefined : { before }) : null;
+    if (read || !s.recordSavedAt) return read;
+    // The agent's own record is gone (its CLI cleans old ones up) or unreadable here: what was saved when it ended.
+    const saved = snapshotFile(this.recordsDir(), s.agent, s.externalId);
+    return saved ? readSnapshot(saved, before) : null;
+  }
+
+  /**
+   * A ticket session's conversation, saved on this machine as it ends, so it reads back after its agent cleans its
+   * own records up. Never synced and never a delivery's file; a failure is only logged.
+   */
+  private async saveRecord(session: SessionView): Promise<void> {
+    if (!session.itemIds.length || !session.externalId) return;
+    try {
+      // After the hook that ended it has its answer.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const record = recordOf(this.ctx, session.agent);
+      const file = record ? (session.transcript ?? record.find(session.externalId, { cwd: session.cwd ?? null })) : null;
+      const to = snapshotFile(this.recordsDir(), session.agent, session.externalId);
+      if (!record || !file || !to) return;
+      const saved = await saveSnapshot(to, session.agent, record, file);
+      if (saved) this.store.patchSession(session.projectId, session.id, { recordSavedAt: Date.now(), recordCut: saved.cut });
+    } catch (err) {
+      this.ctx.logger.warn(`saving session ${session.id}'s conversation failed: ${errorMessage(err)}`);
+    }
+  }
+
+  private recordsDir(): string {
+    return path.join(this.ctx.hub.dir ?? path.join(os.tmpdir(), "tomrade"), "sessions", "records");
   }
 
   sessionsOf(projectId: string, itemId?: string): SessionView[] {

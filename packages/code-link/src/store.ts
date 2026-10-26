@@ -190,7 +190,15 @@ ALTER TABLE plugin_code_link_sessions ADD COLUMN requested_by TEXT;
   // The person said in the conversation to merge once done: Tomrade merges the delivery without asking again.
   { version: 16, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN auto_merge INTEGER NOT NULL DEFAULT 0" },
   // The person's word that an outside session changes code without a ticket (work_without_ticket), in their words.
-  { version: 17, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN without_ticket TEXT" }
+  { version: 17, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN without_ticket TEXT" },
+  // When a ticket session's conversation was last saved on this machine, and whether only its end fit.
+  {
+    version: 18,
+    up: `
+ALTER TABLE plugin_code_link_sessions ADD COLUMN record_saved_at INTEGER;
+ALTER TABLE plugin_code_link_sessions ADD COLUMN record_cut INTEGER NOT NULL DEFAULT 0;
+`
+  }
 ];
 
 /** Durable code links travel with the project; running sessions belong to this machine. */
@@ -322,6 +330,10 @@ export interface SessionView {
   prompted: boolean;
   /** The person said this session changes code without a ticket (their words); null until they do, and once it claims one. */
   withoutTicket: string | null;
+  /** When its conversation was last saved on this machine (a ticket's, once it ended); null when it was not. */
+  recordSavedAt: number | null;
+  /** Only the end of its conversation fit in what was saved. */
+  recordCut: boolean;
   state: SessionState;
   lastEventAt: number | null;
   lastToolAt: number | null;
@@ -420,6 +432,8 @@ interface SessionRow {
   transcript: string | null;
   prompted: number | null;
   without_ticket: string | null;
+  record_saved_at: number | null;
+  record_cut: number | null;
   state: string;
   last_event_at: number | null;
   last_tool_at: number | null;
@@ -520,6 +534,8 @@ const toSession = (r: SessionRow): SessionView => ({
   transcript: r.transcript ?? null,
   prompted: !!r.prompted,
   withoutTicket: r.without_ticket ?? null,
+  recordSavedAt: r.record_saved_at ?? null,
+  recordCut: r.record_cut === 1,
   state: r.state as SessionState,
   lastEventAt: r.last_event_at,
   lastToolAt: r.last_tool_at,
@@ -583,6 +599,8 @@ export interface SessionPatch {
   transcript?: string | null;
   prompted?: boolean;
   withoutTicket?: string | null;
+  recordSavedAt?: number | null;
+  recordCut?: boolean;
   state?: SessionState;
   lastEventAt?: number | null;
   lastToolAt?: number | null;
@@ -946,6 +964,8 @@ export class CodeLinkStore {
       transcript: "transcript",
       prompted: "prompted",
       withoutTicket: "without_ticket",
+      recordSavedAt: "record_saved_at",
+      recordCut: "record_cut",
       state: "state",
       lastEventAt: "last_event_at",
       lastToolAt: "last_tool_at",
@@ -963,7 +983,7 @@ export class CodeLinkStore {
       const value = patch[field];
       if (value === undefined) continue;
       sets.push(`${column} = ?`);
-      values.push(field === "itemIds" || field === "worked" ? JSON.stringify(value) : field === "prompted" || field === "autoMerge" ? (value ? 1 : 0) : value);
+      values.push(field === "itemIds" || field === "worked" ? JSON.stringify(value) : field === "prompted" || field === "autoMerge" || field === "recordCut" ? (value ? 1 : 0) : value);
     }
     if (!sets.length) return this.session(projectId, id)!;
     values.push(id);

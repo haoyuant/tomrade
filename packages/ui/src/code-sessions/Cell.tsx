@@ -160,6 +160,11 @@ function Ended({ session, cell, locale, resume, picker }: { session: SessionRow;
     <div className="cs-ended" data-testid="cs-ended">
       <div className="cs-ended-head">
         <span className="cs-row-meta" data-testid="cs-ended-by">{when ? say("endedBy", { agent: who, when }) : who}</span>
+        {session.recordSaved && (
+          <span className="cs-row-meta" data-testid="cs-record-saved">
+            {say(session.recordSaved === "end" ? "recordSavedEnd" : "recordSaved")}
+          </span>
+        )}
         {resume}
         {picking ? (
           picker

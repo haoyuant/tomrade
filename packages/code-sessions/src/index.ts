@@ -211,7 +211,8 @@ export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, it
         worktree: s.worktree,
         startedAt: s.startedAt,
         endedAt: live ? null : (s.endedAt ?? s.lastEventAt ?? s.startedAt),
-        continuedIn: null
+        continuedIn: null,
+        recordSaved: s.recordSavedAt ? (s.recordCut ? "end" : "whole") : null
       };
     })
     .sort((a, b) => Number(b.state !== "ended" && b.state !== "lost") - Number(a.state !== "ended" && a.state !== "lost") || Number(b.needsYou) - Number(a.needsYou) || b.startedAt - a.startedAt);
