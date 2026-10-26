@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { killTree, spawnConpty } from "./conpty.js";
+import { killTree, scanProcesses, spawnConpty } from "./conpty.js";
 import { Host, serve } from "./host.js";
 import { PROTOCOL } from "./protocol.js";
 import { defaultShell } from "./shell.js";
@@ -36,6 +36,7 @@ const host = new Host({
   spawn: spawnConpty,
   shell: () => defaultShell(process.env),
   killTree,
+  scan: () => scanProcesses(),
   version,
   idleMs,
   log,

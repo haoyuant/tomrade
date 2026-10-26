@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import os from "node:os";
-import type { TerminalFrame, TerminalMode, TerminalMouse, TerminalScroll } from "@tomradex/contracts";
+import type { TerminalFrame, TerminalMode, TerminalMouse, TerminalScroll, TerminalStatus } from "@tomradex/contracts";
 
 /*
  * What Tomrade and its pty host say to each other over a named pipe, in herdr's
@@ -61,6 +61,14 @@ export interface PaneInfo {
   cwd: string;
   pid: number;
   scroll: { offset_from_bottom: number; max_offset_from_bottom: number; viewport_rows: number };
+  /** The coding agent the host sees running in the pane; absent from a host older than that. */
+  agent?: string | null;
+  agent_status?: TerminalStatus;
+}
+
+/** What `pane.process_info` gives, in herdr's shape: the pane's processes, nearest first. */
+export interface ProcessInfo {
+  foreground_processes: { pid: number; name: string; cmdline: string }[];
 }
 
 export interface LaunchParams {

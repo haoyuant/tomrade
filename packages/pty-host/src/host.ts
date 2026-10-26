@@ -1,5 +1,6 @@
 import net from "node:net";
-import { clampSize, frameLine, line, lineReader, PROTOCOL, type AttachParams, type LaunchParams, type Request, type TerminalCommand } from "./protocol.js";
+import { agentIn, descendants, shortCommand, titleStatus, type ProcessRow } from "./agents.js";
+import { clampSize, frameLine, line, lineReader, PROTOCOL, type AttachParams, type LaunchParams, type PaneInfo, type ProcessInfo, type Request, type TerminalCommand } from "./protocol.js";
 import { Pane, type Attachment, type Pty, type ScrollState } from "./pane.js";
 
 /** Starts a program on a pseudo-terminal. */
@@ -19,7 +20,21 @@ export interface HostOptions {
   scrollback?: number;
   /** How long typed text waits before its Enter, so a program that reads a fast burst as a paste still takes the Enter as one. */
   enterDelayMs?: number;
+  /** Reads the machine's process table, for what runs in each pane; without it the host names no agent. */
+  scan?: () => Promise<ProcessRow[]>;
+  scanTiming?: Partial<ScanTiming>;
 }
+
+export interface ScanTiming {
+  /** Scans are at least this far apart. */
+  minMs: number;
+  /** A read finding the table older than this has it read again, answering from the old one meanwhile. */
+  staleMs: number;
+  /** How soon after a pane opens or its title changes the table is read again. */
+  soonMs: number;
+}
+
+export const SCAN_TIMING: ScanTiming = { minMs: 3_000, staleMs: 5_000, soonMs: 1_000 };
 
 type Subscription = { type: string; pane_id?: string };
 
@@ -43,9 +58,71 @@ export class Host {
   private next = 0;
   private readonly prefix = `p${Date.now().toString(36)}`;
   private idle: NodeJS.Timeout | null = null;
+  private table: { rows: ProcessRow[]; at: number } | null = null;
+  private scanning: Promise<void> | null = null;
+  private lastScan = 0;
+  private soon: NodeJS.Timeout | null = null;
+  private readonly timing: ScanTiming;
 
   constructor(private readonly opts: HostOptions) {
+    this.timing = { ...SCAN_TIMING, ...opts.scanTiming };
     this.armIdle();
+  }
+
+  /** One scan at a time, never one while no pane is open; a scan that fails keeps the table there was. */
+  private rescan(): Promise<void> {
+    if (!this.opts.scan || !this.panes.size) return Promise.resolve();
+    this.scanning ??= (async () => {
+      this.lastScan = Date.now();
+      try {
+        this.table = { rows: await this.opts.scan!(), at: Date.now() };
+      } catch (err) {
+        this.opts.log?.(`reading the process table failed: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        this.scanning = null;
+      }
+    })();
+    return this.scanning;
+  }
+
+  /** A read of what runs in the panes: a table gone stale is read again behind it. */
+  private touchTable(): void {
+    if (!this.table || Date.now() - this.table.at > this.timing.staleMs) this.scanSoon(0);
+  }
+
+  /** A scan a moment from now (once the last one is far enough behind); calls meanwhile share it. */
+  private scanSoon(delay = this.timing.soonMs): void {
+    if (!this.opts.scan || this.soon) return;
+    const wait = Math.max(delay, this.lastScan + this.timing.minMs - Date.now());
+    this.soon = setTimeout(() => {
+      this.soon = null;
+      void this.rescan();
+    }, wait);
+    this.soon.unref?.();
+  }
+
+  /** Waits for the scan running now or about to; for tests. */
+  async settled(): Promise<void> {
+    while (this.soon || this.scanning) {
+      if (this.scanning) await this.scanning;
+      else await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  }
+
+  private processesOf(pane: Pane): { root: ProcessRow | undefined; below: ProcessRow[] } {
+    const rows = this.table?.rows ?? [];
+    return { root: rows.find((r) => r.pid === pane.pid), below: descendants(rows, pane.pid) };
+  }
+
+  /** A pane as `pane.get` and `pane.list` give it, with the agent the process table shows in it. */
+  private info(pane: Pane): PaneInfo {
+    const { root, below } = this.processesOf(pane);
+    const agent = agentIn(root, below);
+    return { ...pane.info(), agent, agent_status: titleStatus(agent, pane.title) };
+  }
+
+  private processInfo(pane: Pane): ProcessInfo {
+    return { foreground_processes: this.processesOf(pane).below.map((r) => ({ pid: r.pid, name: r.name, cmdline: shortCommand(r) })) };
   }
 
   private armIdle(): void {
@@ -107,9 +184,14 @@ export class Host {
       case "pane.launch":
         return { pane_id: this.launch(params as unknown as LaunchParams).id };
       case "pane.get":
-        return { pane: this.pane(params).info() };
+        this.touchTable();
+        return { pane: this.info(this.pane(params)) };
       case "pane.list":
-        return { panes: [...this.panes.values()].map((p) => p.info()) };
+        this.touchTable();
+        return { panes: [...this.panes.values()].map((p) => this.info(p)) };
+      case "pane.process_info":
+        this.touchTable();
+        return { process_info: this.processInfo(this.pane(params)) };
       case "pane.close": {
         const pane = this.panes.get(String(params.pane_id ?? ""));
         if (pane) await this.close(pane);
@@ -142,9 +224,10 @@ export class Host {
     // The hooks of an agent started in the pane send this, so its session folds into the pane (herdr's variable, which they already read).
     const env = { ...(params.env ?? {}), HERDR_PANE_ID: id };
     const pty = this.opts.spawn(file, args, { cwd: params.cwd, env, cols, rows });
-    const pane = new Pane(id, pty, params.cwd, params.label ?? null, cols, rows, { onScroll: (p, s) => this.scrolled(p, s), onExit: (p) => this.exited(p) }, this.opts.scrollback);
+    const pane = new Pane(id, pty, params.cwd, params.label ?? null, cols, rows, { onScroll: (p, s) => this.scrolled(p, s), onExit: (p) => this.exited(p), onTitle: () => this.scanSoon() }, this.opts.scrollback);
     this.panes.set(id, pane);
     this.armIdle();
+    this.scanSoon();
     if (params.command) pane.input(`${params.command}\r`);
     this.opts.log?.(`pane ${id}: ${file} ${args.join(" ")} (pid ${pty.pid})`);
     return pane;
@@ -240,6 +323,8 @@ export class Host {
   async shutdown(): Promise<void> {
     await Promise.all([...this.panes.values()].map((p) => this.close(p)));
     if (this.idle) clearTimeout(this.idle);
+    if (this.soon) clearTimeout(this.soon);
+    this.soon = null;
   }
 }
 

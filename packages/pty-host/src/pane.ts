@@ -67,7 +67,7 @@ export class Pane {
     readonly label: string | null,
     cols: number,
     rows: number,
-    private readonly hooks: { onScroll(pane: Pane, scroll: ScrollState): void; onExit(pane: Pane): void },
+    private readonly hooks: { onScroll(pane: Pane, scroll: ScrollState): void; onExit(pane: Pane): void; onTitle?(pane: Pane): void },
     scrollback = SCROLLBACK
   ) {
     this.term = new Terminal({ cols: clampSize(cols), rows: clampSize(rows), scrollback, allowProposedApi: true });
@@ -91,7 +91,12 @@ export class Pane {
       this.sgrMouse = false;
       return false;
     });
-    this.term.onTitleChange((title) => (this.title = title.trim() || null));
+    this.term.onTitleChange((title) => {
+      const next = title.trim() || null;
+      if (next === this.title) return;
+      this.title = next;
+      hooks.onTitle?.(this);
+    });
     // Its answers to the program's queries (device attributes, cursor position) go back to the program.
     this.term.onData((data) => !this.exited && this.pty.write(data));
     pty.onData((data) => {

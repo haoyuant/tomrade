@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { hostCall, openTerminal } from "../src/client.js";
-import { killTree, spawnConpty } from "../src/conpty.js";
+import { killTree, scanProcesses, spawnConpty } from "../src/conpty.js";
 import { Host, serve } from "../src/host.js";
 import { conptyRuntime } from "../src/index.js";
 
@@ -30,7 +30,7 @@ afterEach(async () => {
 });
 
 async function realHost() {
-  const host = new Host({ spawn: spawnConpty, shell: () => ({ file: "cmd.exe", args: [] }), killTree, version: "test", idleMs: 60_000, onIdle: () => undefined });
+  const host = new Host({ spawn: spawnConpty, shell: () => ({ file: "cmd.exe", args: [] }), killTree, scan: () => scanProcesses(), scanTiming: { minMs: 0, staleMs: 0, soonMs: 0 }, version: "test", idleMs: 60_000, onIdle: () => undefined });
   hosts.push(host);
   const pipe = `\\\\.\\pipe\\tomrade-pty-conpty-${process.pid}-${hosts.length}`;
   servers.push(await serve(host, pipe));
@@ -63,6 +63,16 @@ describe.skipIf(!conpty)("panes on ConPTY", () => {
     await vi.waitFor(() => expect([alive(root), alive(child)]).toEqual([false, false]), { timeout: 10_000 });
     pane.stream.close();
   }, 30_000);
+
+  it("lists what runs under a pane from Windows' process table", async () => {
+    const { pipe } = await realHost();
+    const { pane_id } = await hostCall<{ pane_id: string }>(pipe, "pane.launch", { cwd: os.tmpdir(), command: "ping -n 60 127.0.0.1", env: { ...process.env } as Record<string, string> });
+    await vi.waitFor(async () => {
+      const { process_info } = await hostCall<{ process_info: { foreground_processes: { name: string; cmdline: string }[] } }>(pipe, "pane.process_info", { pane_id });
+      expect(process_info.foreground_processes).toContainEqual(expect.objectContaining({ cmdline: "ping -n 60 127.0.0.1" }));
+    }, { timeout: 20_000, interval: 500 });
+    await hostCall(pipe, "pane.close", { pane_id }, 15_000);
+  }, 40_000);
 
   it.skipIf(!bash)("runs a session's bash script through Git Bash, which sees its pane", async () => {
     const { pipe } = await realHost();
