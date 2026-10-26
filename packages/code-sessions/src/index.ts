@@ -154,6 +154,8 @@ const TERMINAL_APPS: Record<string, { name: string; app?: string }> = {
 /**
  * Where a new terminal opens when herdr cannot show one in a pane (native Windows): Windows Terminal in
  * the folder, or a PowerShell window there when it is not installed. Resolves with the app it opened.
+ * That window allows scripts for itself alone: npm's `.ps1` shims (`pnpm.ps1`, …) win over the `.cmd`, and the
+ * default policy refuses them.
  */
 export function openSystemTerminal(cwd: string, platform: NodeJS.Platform = process.platform, launch: typeof spawn = spawn): Promise<string> {
   if (platform !== "win32") return Promise.reject(new Error(`no system terminal fallback on ${platform}`));
@@ -168,7 +170,7 @@ export function openSystemTerminal(cwd: string, platform: NodeJS.Platform = proc
     });
   return start("wt.exe", ["-d", cwd]).then(
     () => "Windows Terminal",
-    () => start("powershell.exe", ["-NoExit"]).then(() => "PowerShell")
+    () => start("powershell.exe", ["-NoExit", "-ExecutionPolicy", "Bypass"]).then(() => "PowerShell")
   );
 }
 

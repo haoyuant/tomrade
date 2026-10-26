@@ -1010,7 +1010,7 @@ it("opens the system terminal where herdr cannot show one: Windows Terminal in t
   expect(calls).toEqual([["wt.exe", ["-d", "C:\\work"], expect.objectContaining({ cwd: "C:\\work", detached: true })]]);
   calls.length = 0;
   expect(await openSystemTerminal("C:\\work", "win32", launcher(["wt.exe"]))).toBe("PowerShell");
-  expect(calls.map((c) => [c[0], c[2].cwd])).toEqual([["wt.exe", "C:\\work"], ["powershell.exe", "C:\\work"]]);
+  expect(calls.map((c) => [c[0], c[1], c[2].cwd])).toEqual([["wt.exe", ["-d", "C:\\work"], "C:\\work"], ["powershell.exe", ["-NoExit", "-ExecutionPolicy", "Bypass"], "C:\\work"]]);
   calls.length = 0;
   await expect(openSystemTerminal("/work", "darwin", launcher([]))).rejects.toThrow("no system terminal fallback");
   expect(calls).toEqual([]);
