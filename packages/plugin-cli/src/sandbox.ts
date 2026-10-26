@@ -84,7 +84,10 @@ export async function runSandboxed(mode: "inspect" | "test", dir: string, opts: 
   const child = childFile();
   if (!fs.existsSync(child)) throw new Error(`${child} is missing; build @tomradex/plugin-cli first`);
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-sandbox-")));
-  const reads = [...new Set([pluginDir, tmp, hostRoot()])];
+  const root = hostRoot();
+  // In an app packed into app.asar (the Windows app) the root is that archive, a file, which grants nothing under
+  // it; the files it keeps unpacked (SQLite's addon) are beside it. One wildcard grants both.
+  const reads = [...new Set([pluginDir, tmp, root.endsWith(".asar") ? `${root}*` : root])];
   const payload = {
     mode,
     dir: pluginDir,

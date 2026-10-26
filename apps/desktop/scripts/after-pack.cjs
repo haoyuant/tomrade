@@ -16,8 +16,13 @@
 // None keeps the agent SDK's Claude Code (~190 MB, musl builds included): the
 // engine always passes the person's own CLI as pathToClaudeCodeExecutable, and
 // the SDK reads its bundled copy only without one.
+//
+// Where electron-builder packed an app.asar (Windows: electron-builder.yml),
+// it comes back out into resources/app for all of the above and goes in again
+// with our own choice of what stays real files.
 const fs = require("node:fs");
 const path = require("node:path");
+const asar = require("@electron/asar");
 const { Arch } = require("electron-builder");
 
 /**
@@ -101,6 +106,30 @@ function pruneUnused(modules) {
 }
 exports.pruneUnused = pruneUnused;
 
+/**
+ * What stays real files beside app.asar, in app.asar.unpacked: what another program starts or reads by path (Pi and
+ * npm, run by the app's binary as Node and by cmd; esbuild's binary; the icons the system shows), the native SQLite
+ * addon, and the official plugins.
+ */
+const UNPACKED = "{vendor,official-plugins,assets,node_modules/@esbuild,node_modules/better-sqlite3}";
+
+/** electron-builder's app.asar, back into resources/app to be pruned like an app that has none. */
+function unpackAsar(resources) {
+  const archive = path.join(resources, "app.asar");
+  asar.extractAll(archive, path.join(resources, "app"));
+  fs.rmSync(archive, { force: true });
+  fs.rmSync(`${archive}.unpacked`, { recursive: true, force: true });
+}
+exports.unpackAsar = unpackAsar;
+
+/** resources/app into resources/app.asar, which Electron loads in its place, with UNPACKED beside it. */
+async function packAsar(resources) {
+  const app = path.join(resources, "app");
+  await asar.createPackageWithOptions(app, path.join(resources, "app.asar"), { unpackDir: UNPACKED });
+  fs.rmSync(app, { recursive: true, force: true });
+}
+exports.packAsar = packAsar;
+
 exports.default = async ({ electronPlatformName, arch, appOutDir, packager }) => {
   const own = Arch[arch];
   const resources =
@@ -108,6 +137,8 @@ exports.default = async ({ electronPlatformName, arch, appOutDir, packager }) =>
       ? path.join(appOutDir, `${packager.appInfo.productFilename}.app`, "Contents/Resources")
       : path.join(appOutDir, "resources");
   const modules = path.join(resources, "app/node_modules");
+  const packed = fs.existsSync(path.join(resources, "app.asar"));
+  if (packed) unpackAsar(resources);
   requireIcons(resources);
   const prune = (scope, drop) => {
     const dir = path.join(modules, scope);
@@ -126,4 +157,5 @@ exports.default = async ({ electronPlatformName, arch, appOutDir, packager }) =>
   // esbuild's install copied the build machine's binary over its CLI; its API
   // runs @esbuild/<platform>'s and nothing runs the CLI, so pruneUnused drops it.
   pruneUnused(modules);
+  if (packed) await packAsar(resources);
 };

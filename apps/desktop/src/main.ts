@@ -26,6 +26,9 @@ const argv = process.argv.slice(1);
 const patchFlag = argv.indexOf("--patch");
 
 const iconPath = path.join(here, "../assets/icon.png");
+// The Windows app is packed into app.asar, its vendor/ and official-plugins/ kept as files in app.asar.unpacked:
+// npm and Pi are started by path, by cmd and by the app's own binary, which see only real folders.
+const appDir = path.resolve(here, "..").replace(/app\.asar$/, "app.asar.unpacked");
 
 // A second checkout can run beside the real one without sharing — or migrating — its database.
 if (process.env.TOMRADE_USER_DATA) app.setPath("userData", path.resolve(process.env.TOMRADE_USER_DATA));
@@ -98,7 +101,7 @@ app.whenReady().then(async () => {
   // Before boot: plugins spawn CLIs (MCP servers, agents, git) from the first moment.
   const shellProblem = await adoptShellEnv();
   // After the shell's PATH, so its folders stay ahead and a system Node always wins over the borrowed one.
-  const borrowed = setUpBorrowedNode({ userData: machine.userData, npmDir: path.join(here, "../vendor/npm"), runtime: nodeRuntime(), agentsDir: path.join(machine.userData, "agents") });
+  const borrowed = setUpBorrowedNode({ userData: machine.userData, npmDir: path.join(appDir, "vendor/npm"), runtime: nodeRuntime(), agentsDir: path.join(machine.userData, "agents") });
   // After it, so a proxy the shell sets stands.
   await followSystemProxy((url) => session.defaultSession.resolveProxy(url));
 
@@ -115,7 +118,7 @@ app.whenReady().then(async () => {
       patchFiles: safe ? [] : [path.join(machine.userData, "tomrade.patch.yml"), ...(patchFlag >= 0 ? [argv[patchFlag + 1]] : [])],
       // What a first run is written in, before the person has picked a language.
       vars: {
-        userData, hubDir, pluginsRoot, pluginsDevRoot, logDir, appVersion: app.getVersion(), locale: app.getLocale(),
+        appDir, userData, hubDir, pluginsRoot, pluginsDevRoot, logDir, appVersion: app.getVersion(), locale: app.getLocale(),
         instanceKind: app.isPackaged ? "packaged" : "dev",
         // Where the renderer's own pages are, for a built-in's window: the dev server, the packaged copy, or a checkout's build.
         uiPages: process.env.VITE_DEV_SERVER_URL ? new URL("./", process.env.VITE_DEV_SERVER_URL).href : pathToFileURL(app.isPackaged ? path.join(here, "../ui/") : path.join(here, "../../../packages/ui/dist/")).href,

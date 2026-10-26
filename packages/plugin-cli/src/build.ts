@@ -1,6 +1,7 @@
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
-import * as esbuild from "esbuild";
+import type * as esbuild from "esbuild";
 import { readManifest } from "@tomradex/plugin-kit";
 import { SHARED } from "./sandbox.js";
 
@@ -21,6 +22,30 @@ export const scenarioOf = (dir: string): string | null => SCENARIOS.map((e) => p
 
 /** What a plugin shares with the host instead of carrying its own copy. */
 const external = [...SHARED, "zod/*"];
+
+/** The path a process can start for `file` inside an app.asar: its real copy in app.asar.unpacked. */
+export const unpackedPath = (file: string): string => file.replace(/([\\/])app\.asar(?=[\\/])/, "$1app.asar.unpacked");
+
+let loaded: Promise<typeof esbuild> | undefined;
+
+/**
+ * esbuild, loaded at the first build. In an app packed into app.asar (the Windows app) its binary resolves to a path
+ * no process can start, so it is pointed at the unpacked copy while it loads, and only then: a child that inherited
+ * ESBUILD_BINARY_PATH would run this binary for its own esbuild.
+ */
+function loadEsbuild(): Promise<typeof esbuild> {
+  return (loaded ??= (async () => {
+    const main = createRequire(import.meta.url).resolve("esbuild");
+    if (unpackedPath(main) === main || process.env.ESBUILD_BINARY_PATH) return import("esbuild");
+    const binary = createRequire(main).resolve(`@esbuild/${process.platform}-${process.arch}/${process.platform === "win32" ? "esbuild.exe" : "bin/esbuild"}`);
+    process.env.ESBUILD_BINARY_PATH = unpackedPath(binary);
+    try {
+      return await import("esbuild");
+    } finally {
+      delete process.env.ESBUILD_BINARY_PATH;
+    }
+  })());
+}
 
 const format = (m: esbuild.Message) => `${m.location ? `${m.location.file}:${m.location.line}:${m.location.column} ` : ""}${m.text}`;
 
@@ -54,9 +79,10 @@ export async function build(dir: string): Promise<BuildResult> {
     write: true
   };
   try {
-    const result = await esbuild.build({ ...common, entryPoints: [entry], outfile });
+    const { build: bundle } = await loadEsbuild();
+    const result = await bundle({ ...common, entryPoints: [entry], outfile });
     const scenario = scenarioOf(dir);
-    if (scenario) await esbuild.build({ ...common, entryPoints: [scenario], outfile: path.join(path.dirname(outfile), "test.js") });
+    if (scenario) await bundle({ ...common, entryPoints: [scenario], outfile: path.join(path.dirname(outfile), "test.js") });
     const staticDir = path.join(dir, "static");
     if (fs.existsSync(staticDir)) fs.cpSync(staticDir, path.join(path.dirname(outfile), "static"), { recursive: true });
     const bundled = [
