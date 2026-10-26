@@ -225,10 +225,28 @@ export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, it
         startedAt: s.startedAt,
         endedAt: live ? null : (s.endedAt ?? s.lastEventAt ?? s.startedAt),
         continuedIn: null,
-        recordSaved: s.recordSavedAt ? (s.recordCut ? "end" : "whole") : null
+        recordSaved: s.recordSavedAt ? (s.recordCut ? "end" : "whole") : null,
+        ranIn: s.herdrPane ?? null
       };
     })
     .sort((a, b) => Number(b.state !== "ended" && b.state !== "lost") - Number(a.state !== "ended" && a.state !== "lost") || Number(b.needsYou) - Number(a.needsYou) || b.startedAt - a.startedAt);
+}
+
+/** How many archived conversations a search reads, newest first. */
+const ARCHIVE_SEARCH_MAX = 100;
+/** How much of one conversation a search keeps to look in. */
+const SAID_MAX = 1024 * 1024;
+
+/** How many earlier sessions a pane's history keeps, newest kept. */
+export const PANE_HISTORY_MAX = 20;
+
+/** The ended sessions of each of these panes, oldest first: what ran in a pane before what it shows now. */
+export function paneHistory(ended: SessionRow[], panes: (string | null)[]): Record<string, SessionRow[]> {
+  const wanted = new Set(panes.filter((p): p is string => !!p));
+  const out: Record<string, SessionRow[]> = {};
+  for (const s of ended) if (s.ranIn && wanted.has(s.ranIn)) (out[s.ranIn] ??= []).push(s);
+  for (const pane of Object.keys(out)) out[pane] = out[pane]!.sort((a, b) => a.startedAt - b.startedAt).slice(-PANE_HISTORY_MAX);
+  return out;
 }
 
 /**
@@ -512,6 +530,7 @@ function apply(ctx: Context, config: Config) {
       autoPlace: saved.autoPlace !== false,
       reveal: win?.reveal ?? null,
       archive: { count: ended.length, rows: archiveOpen ? [...ended].sort((a, b) => b.endedAt! - a.endedAt!) : null },
+      history: paneHistory(ended, [...opened.map((t) => t.pane), ...sent.map((r) => r.pane)]),
       folded: saved.folded?.[projectId] === true
     };
   };
@@ -594,6 +613,42 @@ function apply(ctx: Context, config: Config) {
     // Whatever else the window hears comes after the bytes already painted, never before them.
     if (message.type !== "frame") flushFramesOf(win);
     send(win, message);
+  };
+
+  /** What each archived conversation said, lowercased, by session and when it ended: an ended one does not change. */
+  const said = new Map<string, string>();
+  /** Each window's newest search: an older one still reading stops. */
+  const searching = new WeakMap<Open, number>();
+  let searches = 0;
+  /**
+   * The archived sessions whose conversation says `query`, newest first and the newest `ARCHIVE_SEARCH_MAX` only, read
+   * from their agents' records one at a time, giving way between them. Titles, tickets, agents and folders the window
+   * matches itself.
+   */
+  const searchArchive = async (projectId: string, win: Open, query: string) => {
+    const turn = ++searches;
+    searching.set(win, turn);
+    const needle = query.trim().toLowerCase();
+    if (!needle) return;
+    const ended = listed(projectId).sessions
+      .filter((s) => s.endedAt !== null && (s.itemId || s.conversation || s.prompted))
+      .sort((a, b) => b.endedAt! - a.endedAt!)
+      .slice(0, ARCHIVE_SEARCH_MAX);
+    const ids: string[] = [];
+    for (const s of ended) {
+      if (win.closed || searching.get(win) !== turn) return;
+      const key = `${s.id}:${s.endedAt}`;
+      let text = said.get(key);
+      if (text === undefined) {
+        const read = ctx.codeLink.conversation?.(projectId, s.id) ?? null;
+        text = (read?.lines ?? []).map((l) => l.text).join("\n").toLowerCase().slice(0, SAID_MAX);
+        said.set(key, text);
+        if (said.size > ARCHIVE_SEARCH_MAX * 2) said.delete(said.keys().next().value!);
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      if (text.includes(needle)) ids.push(s.id);
+    }
+    if (searching.get(win) === turn) post(win, { type: "archiveFound", query, ids });
   };
 
   /**
@@ -782,6 +837,8 @@ function apply(ctx: Context, config: Config) {
       case "autoPlace":
         save(config.stateFile, { autoPlace: m.on });
         return refreshAll();
+      case "archiveSearch":
+        return void searchArchive(projectId, win, typeof m.query === "string" ? m.query : "");
       case "archive":
         win.archive = m.open;
         // Conversations from before titles were kept get theirs from the agent's transcript, once.

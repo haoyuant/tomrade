@@ -31,16 +31,19 @@ export const onState = (listener: (state: WindowState) => void) => surface()?.on
 export const onLook = (listener: (look: Look) => void) => surface()?.onLook(listener) ?? (() => undefined);
 
 type ShownIn = Extract<WindowPost, { type: "shownIn" }>;
+type Found = Extract<WindowPost, { type: "archiveFound" }>;
 type CellPost = Exclude<Extract<WindowPost, { cell: string }>, ShownIn>;
 const cells = new Map<string, (post: CellPost) => void>();
 const toasts = new Set<(text: string) => void>();
 const shownIn = new Set<(post: ShownIn) => void>();
+const found = new Set<(post: Found) => void>();
 
 // One listener for every post: frames and ends go to their cell, toasts to whoever shows them.
 surface()?.onMessage((raw) => {
   const post = raw as WindowPost;
   if (post.type === "toast") for (const listener of toasts) listener(post.text);
   else if (post.type === "shownIn") for (const listener of shownIn) listener(post);
+  else if (post.type === "archiveFound") for (const listener of found) listener(post);
   else cells.get(post.cell)?.(post);
 });
 
@@ -60,4 +63,10 @@ export function onShownIn(listener: (post: ShownIn) => void): () => void {
 export function onToast(listener: (text: string) => void): () => void {
   toasts.add(listener);
   return () => toasts.delete(listener);
+}
+
+/** The archived sessions a search found in what was said. */
+export function onArchiveFound(listener: (post: Found) => void): () => void {
+  found.add(listener);
+  return () => found.delete(listener);
 }

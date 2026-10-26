@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SessionRow, TerminalRow } from "@tomradex/code-sessions";
-import { away, bundles, sessionName, sidebarRows } from "../src/code-sessions/lists";
+import { away, bundles, matchesArchive, sessionName, sidebarRows } from "../src/code-sessions/lists";
 
 const row = (over: Partial<SessionRow> & { id: string }): SessionRow => ({
   itemId: null,
@@ -25,6 +25,7 @@ const row = (over: Partial<SessionRow> & { id: string }): SessionRow => ({
   endedAt: null,
   continuedIn: null,
   recordSaved: null,
+  ranIn: null,
   ...over
 });
 
@@ -95,4 +96,10 @@ describe("the Terminal window's sidebar", () => {
     expect(sessionName(row({ id: "c", branch: "" }))).toBe("Claude Code");
     expect(sessionName(row({ id: "d", branch: "", agentName: null, agent: "cursor" }))).toBe("cursor");
   });
+});
+
+it("finds an archived session by its ticket, title, conversation, agent, branch or folder, any case", () => {
+  const s = row({ id: "a", key: "TOM-12", title: "Sidebar groups", conversation: "终端侧栏", agent: "codex", agentName: "Codex", branch: "tom-12/x", cwd: "/repo/app" });
+  for (const needle of ["tom-12", "sidebar", "侧栏", "codex", "TOM-12/X", "/repo", "  app  ", ""]) expect(matchesArchive(s, needle)).toBe(true);
+  expect(matchesArchive(s, "nothing")).toBe(false);
 });

@@ -12,7 +12,7 @@ export const live = (s: SessionRow): boolean => s.state !== "ended" && s.state !
 export type HereRow = { kind: "session"; id: string; session: SessionRow } | { kind: "terminal"; id: string; terminal: TerminalRow; session: SessionRow | null };
 
 /** The herdr pane a row's terminal is; null while it has none. */
-const paneOf = (r: HereRow): string | null => (r.kind === "terminal" ? r.terminal.pane : r.session.pane);
+export const paneOf = (r: HereRow): string | null => (r.kind === "terminal" ? r.terminal.pane : r.session.pane);
 
 /**
  * The sidebar: one list of what this window shows, and the live sessions it cannot. A session with no ticket is never a
@@ -59,3 +59,9 @@ export function bundles(rows: HereRow[]): HereRow[][] {
 
 /** What a session goes by in the list: its ticket, else its branch, else its agent. */
 export const sessionName = (s: SessionRow): string => s.key ?? (s.branch || s.agentName || s.agent);
+
+/** Whether an archived session's title, ticket, agent, branch or folder holds the search, any case. */
+export const matchesArchive = (s: SessionRow, needle: string): boolean => {
+  const n = needle.trim().toLowerCase();
+  return !n || [s.key, s.title, s.conversation, s.agentName, s.agent, s.branch, s.cwd, s.worktree].some((v) => !!v && v.toLowerCase().includes(n));
+};
