@@ -345,8 +345,10 @@ export class Items extends Service implements ItemsReader, ItemsWriter {
     const projectId = input.projectId;
     if (!projectId) throw new NotFoundError("(no projectId) — every item belongs to a project; call list_projects and pass one");
     const db = this.db(projectId);
-    // The counter lives on the project so a deleted key is never handed out again.
-    const proj = db.prepare("SELECT key_prefix, next_key_num FROM projects WHERE id = ?").get(projectId) as { key_prefix: string; next_key_num: number } | undefined;
+    // The counter lives on the project so a deleted key is never handed out again; a counter left behind the items (a rebuilt cache, an import) never hands out a key in use.
+    const proj = db
+      .prepare("SELECT key_prefix, MAX(next_key_num, COALESCE((SELECT MAX(key_num) FROM items WHERE project_id = @projectId), 0) + 1) AS next_key_num FROM projects WHERE id = @projectId")
+      .get({ projectId }) as { key_prefix: string; next_key_num: number } | undefined;
     if (!proj) throw new NotFoundError(projectId);
     const now = Date.now();
     const stored = this.fields.normalize(projectId, input.fields ?? {});
