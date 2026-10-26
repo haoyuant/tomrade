@@ -77,6 +77,8 @@ export interface OpenedTerminal extends TerminalStream {
 export function openTerminal(pipe: string, input: { paneId: string; mode: TerminalMode; cols: number; rows: number }): OpenedTerminal {
   const frames = new Set<(frame: TerminalFrame) => void>();
   const closes = new Set<(reason: string | null) => void>();
+  // The first frame comes right behind the answer, often in the same read: kept, from the last whole one, until someone listens.
+  const early: TerminalFrame[] = [];
   let closed = false;
   let reason: string | null = null;
   let answered = false;
@@ -119,7 +121,13 @@ export function openTerminal(pipe: string, input: { paneId: string; mode: Termin
       return attach.resolve();
     }
     const parsed = parseTerminalLine(text);
-    if (parsed?.type === "frame") for (const listener of frames) listener(parsed.frame);
+    if (parsed?.type === "frame") {
+      if (!frames.size) {
+        if (parsed.frame.full) early.length = 0;
+        early.push(parsed.frame);
+      }
+      for (const listener of frames) listener(parsed.frame);
+    }
     else if (parsed?.type === "closed") finish(parsed.reason);
   }));
   connection.once("error", (err) => {
@@ -143,6 +151,7 @@ export function openTerminal(pipe: string, input: { paneId: string; mode: Termin
     onFrame(listener) {
       if (closed) return () => undefined;
       frames.add(listener);
+      for (const frame of early.splice(0)) listener(frame);
       return () => frames.delete(listener);
     },
     onClose(listener) {

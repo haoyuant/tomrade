@@ -88,9 +88,9 @@ export interface TerminalWorkspaceRef {
 export interface TerminalLaunch {
   cwd: string;
   label?: string;
-  /** Typed into the pane's shell, with Enter; a plain shell without one (or without `program`). */
+  /** Typed into the pane's shell, with Enter; a plain shell without one. Not typed where `program` runs instead. */
   command?: string;
-  /** Run as the pane's own process instead of a shell; a backend that types commands (herdr) ignores it. */
+  /** Run as the pane's own process instead of a shell, for a backend that can (the pty host); herdr types `command` instead. */
   program?: { file: string; args: string[] };
   workspace?: TerminalWorkspaceRef;
 }

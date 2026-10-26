@@ -142,8 +142,10 @@ app.whenReady().then(async () => {
     const cell = (i) => `.cs-cell[data-cell="c${i}"]`;
     check("工单脚本经 Git Bash 跑完，输出画在格子里", await wait(async () => (await cellText(cell(0))).includes("marker-one")), await cellText(cell(0)));
     check("脚本里的 HERDR_PANE_ID 就是它的 pane（hooks 靠它把会话归到 pane）", (await cellText(cell(0))).includes(`pane=${sessions[0].pane}`), await cellText(cell(0)));
-    const cjk = (await cellText(cell(1))).split("\n").find((l) => l.trimStart().startsWith("中文宽度")) ?? "";
+    const wide = (await cellText(cell(1))).split("\n").filter((l) => l.trimStart().startsWith("中文宽度"));
+    const cjk = wide[0] ?? "";
     check("中日韩字符按双宽显示，后面的字符位置正确", cjk.includes("END") && cjk.replace(/\s+$/, "").length < 30, JSON.stringify(cjk));
+    check("会话脚本只跑一次（Git Bash 直接运行它，不再往里敲命令）", wide.length === 1, JSON.stringify(wide));
     fs.writeFileSync(path.join(shots, "builtin-three.png"), (await win.webContents.capturePage()).toPNG());
 
     // Scrollback kept by the host, with the bar the window draws over it.

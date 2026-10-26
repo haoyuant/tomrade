@@ -148,6 +148,20 @@ describe("the host", () => {
     expect(t.frames.at(-1)!.full).toBe(false);
   });
 
+  it("keeps the first frame for a caller that listens only once the attach has resolved", async () => {
+    const { pipe } = await hostOn();
+    const { pane_id } = await hostCall<{ pane_id: string }>(pipe, "pane.launch", { cwd: os.tmpdir() });
+    FakePty.last!.print("before");
+    const stream = openTerminal(pipe, { paneId: pane_id, mode: "control", cols: 20, rows: 4 });
+    closers.push(() => stream.close());
+    await stream.attached;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const frames: TerminalFrame[] = [];
+    stream.onFrame((f) => frames.push(f));
+    expect(frames[0]?.full).toBe(true);
+    expect(Buffer.from(frames[0]!.bytes).toString()).toContain("before");
+  });
+
   it("takes input and size only from the one in control; a newer controller takes over and the old one is let go", async () => {
     const { pipe } = await hostOn();
     const { pane_id } = await hostCall<{ pane_id: string }>(pipe, "pane.launch", { cwd: os.tmpdir() });
@@ -262,9 +276,11 @@ describe("ctx.terminals over the host", () => {
     const { pipe } = await hostOn();
     const terminals = await service(pipe);
     expect(terminals.kind).toBe("builtin");
-    const launched = await terminals.launch({ cwd: os.tmpdir(), label: "TOM-7", program: { file: "bash.exe", args: ["run.command"] } });
+    const launched = await terminals.launch({ cwd: os.tmpdir(), label: "TOM-7", command: "bash 'run.command'", program: { file: "bash.exe", args: ["run.command"] } });
     expect(launched?.paneId).toMatch(/^p[0-9a-z]+-\d+$/);
     expect([FakePty.last!.file, FakePty.last!.args]).toEqual(["bash.exe", ["run.command"]]);
+    // The program runs the script; nothing is typed into it a second time.
+    expect(FakePty.last!.written).toBe("");
     // The pane gets Tomrade's environment without Electron's switches.
     expect(Object.keys(FakePty.last!.opts.env).some((k) => k.startsWith("ELECTRON_"))).toBe(false);
     expect(await terminals.panes()).toEqual([{ paneId: launched!.paneId, agent: null, agentSession: null, status: "unknown", title: null }]);

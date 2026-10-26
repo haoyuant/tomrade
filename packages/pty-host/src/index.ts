@@ -230,7 +230,8 @@ export class PtyHost extends Service implements TerminalProvider {
         cwd: input.cwd,
         file: program.file,
         args: program.args,
-        ...(input.command ? { command: input.command } : {}),
+        // A program of its own runs instead of the shell the command would be typed into.
+        ...(input.command && !input.program ? { command: input.command } : {}),
         ...(input.label ? { label: input.label } : {}),
         env: paneEnv(),
         cols: START_COLS,
