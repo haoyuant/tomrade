@@ -25,6 +25,8 @@ const HERDR_SESSION = `tomrade-cs-check-${process.pid}`;
 process.env.HERDR_SESSION = HERDR_SESSION;
 const ownSocket = path.join(os.homedir(), ".config/herdr/sessions", HERDR_SESSION, "herdr.sock");
 app.setPath("userData", work);
+// These read the DOM renderer's rows: without the GPU there is no WebGL, so a cell also shows it carries on without.
+app.commandLine.appendSwitch("disable-gpu");
 app.on("window-all-closed", () => {});
 
 const results = [];

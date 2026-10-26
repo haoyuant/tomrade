@@ -2,12 +2,27 @@ import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type P
 import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 import type { WindowPost } from "@tomradex/code-sessions";
 import { onCell, pathForFile, send } from "./bridge";
 import { followSelection } from "./selection";
 import { fileLinks } from "./fileLinks";
 import { modifiedEnter } from "./keys";
+
+/**
+ * Draws on the GPU: every cell shares the window's one thread, and the DOM renderer restyles each row on every paint.
+ * Without WebGL, or once the browser takes a context back (it keeps only so many), the DOM renderer carries on.
+ */
+function drawWithWebgl(terminal: Terminal): void {
+  try {
+    const webgl = new WebglAddon();
+    webgl.onContextLoss(() => webgl.dispose());
+    terminal.loadAddon(webgl);
+  } catch {
+    // no WebGL2 here
+  }
+}
 
 /** Where a pane's view is in herdr's scrollback, in rows. */
 type PaneScroll = Omit<Extract<WindowPost, { type: "scrolled" }>, "type" | "cell">;
@@ -191,6 +206,7 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
     terminal.loadAddon(fit);
     terminal.loadAddon(new WebLinksAddon(linkHandler.activate));
     terminal.open(el);
+    drawWithWebgl(terminal);
     const localLinks = fileLinks(terminal, linkHandler.activate);
     term.current = terminal;
     try {

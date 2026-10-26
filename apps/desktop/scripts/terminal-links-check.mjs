@@ -31,6 +31,8 @@ app.whenReady().then(async () => {
     await js(bundle.outputFiles[0].text + "\nvoid 0;");
     await wait();
     assert.ok(await js("sent.some(m => m.type === 'attach')"), "TerminalCell attached");
+    assert.ok(await js("!!document.querySelector('.xterm-screen > canvas') && !document.querySelector('.xterm-rows')?.childElementCount"), "TerminalCell draws with WebGL");
+    console.log("PASS draws with WebGL");
     const box = await js(`(() => {const r = document.querySelector('.xterm-screen').getBoundingClientRect(); const a = sent.find(m => m.type === 'attach'); return {x:r.x, y:r.y, w:r.width/a.cols, h:r.height/a.rows, cols:a.cols};})()`);
     const mouse = (type, col, row) => win.webContents.sendInputEvent({type, x:Math.round(box.x + box.w * (col + .5)), y:Math.round(box.y + box.h * (row + .5)), button:"left", clickCount:1});
     const click = async (col, row) => {
