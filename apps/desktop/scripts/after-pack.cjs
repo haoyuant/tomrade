@@ -68,7 +68,8 @@ function pruneConpty(modules, platform, arch) {
     }
   };
   walk(own, "");
-  for (const name of ["deps", "src", "third_party", "scripts", "typings", "build", "binding.gyp"]) fs.rmSync(path.join(dir, name), { recursive: true, force: true });
+  // node_modules: its own node-addon-api, headers only a build reads.
+  for (const name of ["deps", "src", "third_party", "scripts", "typings", "build", "binding.gyp", "node_modules"]) fs.rmSync(path.join(dir, name), { recursive: true, force: true });
   for (const name of fs.readdirSync(path.join(dir, "lib"))) if (/\.test\.js$/.test(name)) fs.rmSync(path.join(dir, "lib", name), { force: true });
 }
 exports.pruneConpty = pruneConpty;

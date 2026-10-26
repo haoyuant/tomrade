@@ -124,7 +124,7 @@ describe("node-pty in a packaged app", () => {
     const pkg = path.join(root, "node-pty");
     for (const arch of ["win32-x64", "win32-arm64"]) for (const file of RUNTIME) write(path.join(pkg, "prebuilds", arch, file));
     for (const file of ["darwin-arm64/pty.node", "darwin-arm64/spawn-helper", "darwin-x64/pty.node"]) write(path.join(pkg, "prebuilds", file));
-    for (const file of ["lib/index.js", "lib/windowsPtyAgent.js", "lib/windowsTerminal.test.js", "lib/shared/conout.js", "lib/worker/conoutSocketWorker.js", "deps/winpty/README", "src/win/conpty.cc", "third_party/conpty/1.23/win10-x64/OpenConsole.exe", "scripts/prebuild.js", "typings/node-pty.d.ts", "binding.gyp", "package.json"]) write(path.join(pkg, file));
+    for (const file of ["lib/index.js", "lib/windowsPtyAgent.js", "lib/windowsTerminal.test.js", "lib/shared/conout.js", "lib/worker/conoutSocketWorker.js", "deps/winpty/README", "src/win/conpty.cc", "third_party/conpty/1.23/win10-x64/OpenConsole.exe", "scripts/prebuild.js", "typings/node-pty.d.ts", "binding.gyp", "node_modules/node-addon-api/napi.h", "package.json"]) write(path.join(pkg, file));
     write(path.join(root, "@xterm/headless/package.json"));
     write(path.join(root, "@tomradex/pty-host/dist/index.js"));
     return root;
