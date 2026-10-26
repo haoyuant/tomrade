@@ -11,6 +11,7 @@
 import { app, BrowserWindow, clipboard } from "electron";
 import { spawn, execFileSync } from "node:child_process";
 import fs from "node:fs";
+import { agentLinks, changedLinks } from "./agent-links.mjs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -30,6 +31,8 @@ app.commandLine.appendSwitch("disable-gpu");
 app.on("window-all-closed", () => {});
 
 const results = [];
+// What the person's agents name as Tomrade before this run, to find unchanged at its end.
+const linksBefore = agentLinks();
 const check = (name, ok, extra = "") => {
   results.push({ name, ok: !!ok });
   console.log(`${ok ? "PASS" : "FAIL"}: ${name}${ok || !extra ? "" : ` — ${extra}`}`);
@@ -914,6 +917,8 @@ app.whenReady().then(async () => {
     }
     server?.kill();
     fs.rmSync(path.join(os.homedir(), ".config/herdr/sessions", HERDR_SESSION), { recursive: true, force: true });
+    const moved = changedLinks(linksBefore);
+    check("没有改动本机 agent 自己配置里的 Tomrade 条目", !moved.length, JSON.stringify(moved));
     const failed = results.filter((r) => !r.ok).length;
     console.log(`\n${results.length - failed}/${results.length} passed${shots === work ? ` · screenshots in ${work}` : ""}`);
     app.exit(failed ? 1 : 0);

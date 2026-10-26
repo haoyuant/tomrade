@@ -227,7 +227,12 @@ export const CodeLinkConfig = z.preprocess(
     /** How long a Start may take before the person is told it failed, rather than left waiting on a stuck step. */
     startTimeoutMs: z.number().int().min(1).default(120_000),
     /** Where the Start dialog's last used configuration rests, beside the settings file. Null keeps none. */
-    defaultsPath: z.string().nullish()
+    defaultsPath: z.string().nullish(),
+    /**
+     * Write Tomrade into each installed agent's own user-level configuration without a press. Off for a run that must
+     * leave the person's agents as they are (a UI check): Settings still connects one by hand.
+     */
+    linkAgents: z.union([z.boolean(), z.stringbool()]).default(true)
   })
 );
 export type CodeLinkConfig = z.infer<typeof CodeLinkConfig>;
@@ -1148,7 +1153,7 @@ export class CodeLink extends Service implements CodeLinkReader {
    */
   private async autoConnect(engine: Engine): Promise<void> {
     const link = engine.local?.mcpLink;
-    if (!link) return;
+    if (!link || !this.config.linkAgents) return;
     const state = await link.status();
     if (state.state === "connected" || state.state === "unavailable") return;
     const available = await engine.available().catch(() => null);

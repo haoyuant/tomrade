@@ -99,7 +99,7 @@ function installed(id: string): Engine {
   };
 }
 
-async function machine() {
+async function machine(codeLinkConfig: Record<string, unknown> = {}) {
   const hubDir = path.join(root, `hub-${n++}`);
   fs.mkdirSync(hubDir, { recursive: true });
   const repo = codeRepo();
@@ -113,7 +113,7 @@ async function machine() {
       Contributions,
       Agent,
       [Mcp, { port: 0 }],
-      [CodeLink, { scanMs: 0 }]
+      [CodeLink, { scanMs: 0, ...codeLinkConfig }]
     ]
   });
   await settle();
@@ -760,6 +760,17 @@ describe("an agent's own connection", () => {
     ctx.agent.engine({ id: "linked-agent", title: "Linked Agent", author: "ai:linked-agent", capabilities: ["code"], ...agent(ctx, state) });
     await until(() => state.connects === 1);
     expect(state.value).toBe("connected");
+  });
+
+  it("is left alone by a run told not to link agents (a UI check), whatever the agent says", async () => {
+    // As tomrade.yml hands it over: a string.
+    const { ctx } = await machine({ linkAgents: "false" });
+    const state = { value: "missing" as const, connects: 0 };
+    ctx.agent.engine({ id: "linked-agent", title: "Linked Agent", author: "ai:linked-agent", capabilities: ["code"], ...agent(ctx, state) });
+    ctx.emit("agent/engine-tried", "linked-agent", { ok: true, ms: 12, at: Date.now() });
+    await settle();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(state).toEqual({ value: "missing", connects: 0 });
   });
 
   it("is made once a test message says the agent works, when its first attempt was too early", async () => {

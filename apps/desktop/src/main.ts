@@ -120,6 +120,7 @@ app.whenReady().then(async () => {
       vars: {
         appDir, userData, hubDir, pluginsRoot, pluginsDevRoot, logDir, appVersion: app.getVersion(), locale: app.getLocale(),
         instanceKind: app.isPackaged ? "packaged" : "dev",
+        linkAgents: "true",
         // Where the renderer's own pages are, for a built-in's window: the dev server, the packaged copy, or a checkout's build.
         uiPages: process.env.VITE_DEV_SERVER_URL ? new URL("./", process.env.VITE_DEV_SERVER_URL).href : pathToFileURL(app.isPackaged ? path.join(here, "../ui/") : path.join(here, "../../../packages/ui/dist/")).href,
         // A checkout runs beside the installed app; on a port of its own, agents set up for the app keep reaching it.

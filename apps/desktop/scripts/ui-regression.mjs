@@ -13,6 +13,7 @@ import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { boot } from "../dist/boot.js";
 import { seedDesignProject } from "./seed.mjs";
+import { agentLinks, changedLinks } from "./agent-links.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEV_URL = process.env.TOMRADE_DEV_URL || "http://127.0.0.1:5173/";
@@ -26,6 +27,8 @@ fs.mkdirSync(SHOTS, { recursive: true });
 app.setPath("userData", WORK);
 
 const results = [];
+// What the person's agents name as Tomrade before this run, to find unchanged at its end.
+const linksBefore = agentLinks();
 const check = (name, cond) => {
   results.push({ name, pass: !!cond });
   console.log(`${cond ? "PASS" : "FAIL"}: ${name}`);
@@ -1755,6 +1758,9 @@ app.whenReady().then(async () => {
     console.log("HARNESS ERROR: " + (err && err.stack ? err.stack : String(err)));
     check("harness ran to completion", false);
   }
+  const moved = changedLinks(linksBefore);
+  if (moved.length) console.log(`INFO: agent links changed: ${JSON.stringify(moved)}`);
+  check("left the Tomrade entry in the person's agent configurations as it was", !moved.length);
   const failed = results.filter((r) => !r.pass);
   console.log(`\n${results.length - failed.length}/${results.length} checks passed · screenshots in ${SHOTS}`);
   if (failed.length) console.log("failed: " + failed.map((f) => f.name).join(" | "));
