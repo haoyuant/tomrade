@@ -102,7 +102,7 @@ function windowsRun(): LoginItem {
 }
 
 /** Quoted for a desktop entry's Exec key, which reserves these four inside quotes. */
-const quoteExec = (file: string) => `"${file.replace(/(["`$\\])/g, "\\$1")}"`;
+export const quoteExec = (file: string) => `"${file.replace(/(["`$\\])/g, "\\$1")}"`;
 
 export function autostartEntry(exec: string): string {
   return [
