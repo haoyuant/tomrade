@@ -7,6 +7,10 @@ const loaded: string[] = [];
 vi.mock("electron", () => ({
   app: { getLocale: () => "en-US" },
   BrowserWindow: class {
+    destroyed = false;
+    isDestroyed() {
+      return this.destroyed;
+    }
     loadURL(url: string) {
       loaded.push(url);
       return Promise.resolve();
@@ -20,7 +24,7 @@ vi.mock("electron", () => ({
   }
 }));
 
-const { showSplash } = await import("../src/startup.js");
+const { showSplash, splashWaitsForKeyring } = await import("../src/startup.js");
 
 /** The page the splash was told to show, out of its data: URL. */
 const page = (url: string) => decodeURIComponent(url.slice("data:text/html;charset=utf-8,".length));
@@ -58,5 +62,24 @@ describe("showSplash", () => {
     const html = page(loaded[0]);
     expect(html).not.toContain("<img");
     expect(html).toContain("Starting Tomrade");
+  });
+});
+
+describe("splashWaitsForKeyring", () => {
+  it("tells the person to answer the keyring dialog, under the same icon", async () => {
+    const file = path.join(dir, "icon.png");
+    fs.writeFileSync(file, "");
+    const win = await showSplash(file);
+    splashWaitsForKeyring(win, file);
+    expect(loaded).toHaveLength(2);
+    expect(page(loaded[1])).toContain("Answer the system's keyring dialog");
+    expect(page(loaded[1])).not.toContain("Starting Tomrade");
+  });
+
+  it("leaves a splash that is already gone alone", async () => {
+    const win = await showSplash(path.join(dir, "missing.png"));
+    Object.assign(win, { destroyed: true });
+    splashWaitsForKeyring(win, path.join(dir, "missing.png"));
+    expect(loaded).toHaveLength(1);
   });
 });

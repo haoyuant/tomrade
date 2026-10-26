@@ -7,6 +7,7 @@ import { AccountFolders, machineRoots, restart } from "./accounts.js";
 import { cameBack, keepsRunning, launchMode, PREFS_FILE } from "./background.js";
 import { boot, ConfigUnreadable, type Booted } from "./boot.js";
 import { setUpBorrowedNode } from "./borrowed-node.js";
+import { openKeyring } from "./cipher.js";
 import { deliverDeepLink, registerScheme, SCHEME } from "./deep-link.js";
 import { installDesktopEntry } from "./desktop-entry.js";
 import { registerExtensionResolution } from "./extension-resolve.js";
@@ -16,7 +17,7 @@ import { askForMainWindow, provideMainWindow } from "./main-window.js";
 import { nodeRuntime } from "./node-runtime.js";
 import { finishQuit, leaveOnSignal, leaving, prepareToQuit, quitApproved } from "./quit.js";
 import { adoptShellEnv } from "./shell-env.js";
-import { offerSafeStart, saySafeStart, showSplash, startFailed } from "./startup.js";
+import { offerSafeStart, saySafeStart, showSplash, splashWaitsForKeyring, startFailed } from "./startup.js";
 import { beginStart, hasOwnPlugins, SAFE_FLAG, SAFE_REQUEST_FILE, STARTING_FILE, startFinished, takeSafeRequest } from "./safe-start.js";
 import { followSystemProxy } from "./system-proxy.js";
 import { trustedKeys } from "./trust.js";
@@ -107,6 +108,10 @@ app.whenReady().then(async () => {
 
   // Until the main window opens; a start at login has nobody waiting for one.
   if (mode === "window" && !argv.includes("--dump-config")) splash = await showSplash(appIconPath(appIcon));
+  // Before anything reads a secret: a keyring that asks the person first would hold the start without a word.
+  await openKeyring(() => {
+    if (splash) splashWaitsForKeyring(splash, appIconPath(appIcon));
+  });
   // Before boot: plugins spawn CLIs (MCP servers, agents, git) from the first moment.
   const shellProblem = await adoptShellEnv();
   // After the shell's PATH, so its folders stay ahead and a system Node always wins over the borrowed one.
