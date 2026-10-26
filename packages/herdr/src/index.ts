@@ -427,6 +427,8 @@ export class Herdr extends Service implements TerminalProvider {
       throw err;
     }
     void Promise.race([stream.settled, new Promise((resolve) => setTimeout(resolve, CONTROL_SETTLE_MS).unref())]).then(settle);
+    // herdr knows whether the pane's program asked for the kitty keyboard protocol; its stream only takes bytes.
+    if (mode === "control") stream.key = (key) => void this.call("pane.send_input", { pane_id: paneId, keys: [key] }).catch(() => stream.input("\r"));
     this.terminals.add(stream);
     stream.onClose(() => this.terminals.delete(stream));
     return stream;

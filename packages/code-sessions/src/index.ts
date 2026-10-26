@@ -782,6 +782,11 @@ function apply(ctx: Context, config: Config) {
         else held.text += m.data;
         return;
       }
+      case "key": {
+        const stream = win.terminals.get(m.cell);
+        if (stream?.key) return stream.key(m.key);
+        return onMessage(projectId, win, { type: "input", cell: m.cell, data: "\r" });
+      }
       case "drop": {
         // Copies go to the temp folder, which the system clears of what has not been used for a while.
         const text = droppedPaste(await readableDrops(m.paths, path.join(os.tmpdir(), "tomrade-drops")));

@@ -18,6 +18,8 @@ export type TerminalMode = "control" | "observe";
 
 export type TerminalScroll = { source?: "wheel" | "page_key"; direction: "up" | "down"; lines: number; column?: number; row?: number; modifiers?: number };
 export type TerminalMouse = { action: "down" | "up" | "drag" | "move"; button?: "left" | "middle" | "right" | "none"; column: number; row: number; modifiers?: number };
+/** Keys a browser terminal writes as a plain Enter, which only the backend can encode as the pane's program reads keys. */
+export type TerminalKey = "ctrl+enter" | "shift+enter";
 
 /** A live terminal of a pane. Calls on a closed stream, or on an observer, are dropped. */
 export interface TerminalStream {
@@ -27,6 +29,8 @@ export interface TerminalStream {
   /** Once: the backend's reason (`server_shutdown`, `exited`…), or what it said when it would not attach. */
   onClose(listener: (reason: string | null) => void): () => void;
   input(data: string | Uint8Array): void;
+  /** Absent where the backend cannot tell them from Enter: then they are typed as one. */
+  key?(key: TerminalKey): void;
   resize(cols: number, rows: number): void;
   scroll(scroll: TerminalScroll): void;
   mouse(mouse: TerminalMouse): void;
