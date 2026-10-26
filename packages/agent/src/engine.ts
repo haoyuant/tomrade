@@ -129,10 +129,27 @@ export interface EngineSetupProgress {
   phase: "running" | "checking" | "waiting" | "done" | "failed";
   /** Which installer is being tried ("script", "npm", "brew", "archive"). */
   installer?: string;
+  /** Its place among the installers this run tries, from 1, and how many there are. */
+  attempt?: number;
+  attempts?: number;
+  /** The installer tried before this one, and why it gave way: a `not-found` or `unsupported` kind means it did not fit, any other that it failed. */
+  previous?: { installer: string; kind: EngineSetupFailure["kind"] };
+  /**
+   * What the installer is doing, as far as its own words say: `resolve` and `fetch` are npm reading
+   * package metadata and downloading packages, `link` is writing the command into place.
+   */
+  stage?: "download" | "unpack" | "resolve" | "fetch" | "link";
+  /** The packages npm has downloaded or taken from its cache so far. */
+  packages?: number;
+  /** Bytes of a download received so far, and its whole size when the server said. */
+  received?: number;
+  size?: number;
   /** The last lines of output: the latest while an installer runs, its end on a failure. */
   output?: string;
-  /** When the installer being tried started, for the screen to count the time. */
+  /** When the installer being tried (or the sign-in) started, for the screen to count the time. */
   startedAt?: number;
+  /** When it last printed something or received bytes, for the screen to say how long it has been quiet. */
+  lastOutputAt?: number;
   /** The installer printed nothing new for a while: it may be stuck. */
   stalled?: boolean;
   /** A registry npm can be retried with (`--registry`), offered when the default one looks unreachable or slow. */

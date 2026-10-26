@@ -5,7 +5,7 @@ import type { Engine, EngineSetupProgress, EngineSetupStep, EngineSignIn } from 
 import type {} from "@tomradex/ipc";
 import { archiveFolder, chosenCommand, localCli } from "@tomradex/engine-kit";
 import { installArgs, ManagedCopies, type ManagedOffer } from "./managed.js";
-import { machineSetupHost, runCommand, runInstall, runSignIn, type SetupHost, type SetupRunResult } from "./run.js";
+import { machineSetupHost, paced, runCommand, runInstall, runSignIn, type SetupHost, type SetupRunResult } from "./run.js";
 
 declare module "cordis" {
   interface Context {
@@ -131,9 +131,11 @@ export class AgentSetup extends Service {
     const abort = new AbortController();
     const run: Running = { progress: { engineId, step, phase: "running" }, abort };
     this.runs.set(engineId, run);
+    // The state answers with the latest at once; the broadcast is paced, so a chatty installer does not flood the window.
+    const broadcast = paced((progress) => this.ctx.get("ipc")?.send("agentSetup.event", progress));
     const report = (progress: EngineSetupProgress) => {
       run.progress = progress;
-      this.ctx.get("ipc")?.send("agentSetup.event", progress);
+      broadcast(progress);
     };
     const task = step === "sign-in" ? this.signIn(engine, report, abort.signal, options.method)
       : options.managed ? this.installManaged(engine, report, abort.signal, options.registry)
@@ -188,7 +190,7 @@ export class AgentSetup extends Service {
     if (!this.managed || !pkg || !cli) return void report({ engineId, step: "install", phase: "failed", failure: { kind: "unsupported", message: `${engine.title} has no npm package Tomrade can install itself` } });
     if (!npm) return void report({ engineId, step: "install", phase: "failed", failure: { kind: "not-found", message: "npm was not found — update Tomrade, which brings its own" } });
     const managed = this.managed;
-    report({ engineId, step: "install", phase: "running", installer: "npm", startedAt: Date.now() });
+    report({ engineId, step: "install", phase: "running", installer: "npm", stage: "resolve", startedAt: Date.now() });
     const offer = await managed.offer(pkg, npm, registry);
     if ("failure" in offer) return void report({ engineId, step: "install", phase: "failed", installer: "npm", failure: offer.failure });
     const state = { cli: cli.name, package: pkg };
@@ -266,7 +268,7 @@ export class AgentSetup extends Service {
 }
 
 export default AgentSetup;
-export { applicableInstallers, classifyFailure, installerLaunch, machineSetupHost, runArchive, runCommand, runInstall, runSignIn } from "./run.js";
+export { applicableInstallers, classifyFailure, installerLaunch, machineSetupHost, paced, runArchive, runCommand, runInstall, runSignIn, stageOf } from "./run.js";
 export { ArchiveError, archiveDir, listZip, unpackArchive, type ArchiveTarget } from "./archive.js";
 export { ManagedCopies, type ManagedConfig, type ManagedOffer, type ManagedState } from "./managed.js";
-export type { ArchiveResponse, InstallDeps, SetupHost, SetupRunResult, SignInDeps } from "./run.js";
+export type { ArchiveDeps, ArchiveResponse, InstallDeps, SetupHost, SetupRunResult, SignInDeps } from "./run.js";
