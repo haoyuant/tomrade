@@ -1,6 +1,7 @@
 # BEGIN TOMRADE MCP
 [mcp_servers.tomrade]
 url = "http://127.0.0.1:19090/mcp/014ce729-9739-41b5-a148-8d73f7825928"
+env_http_headers = { "X-Tomrade-Herdr-Pane" = "HERDR_PANE_ID" }
 # END TOMRADE MCP
 
 # BEGIN TOMRADE HOOKS
