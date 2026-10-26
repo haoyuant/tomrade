@@ -102,7 +102,7 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
       const frames = new Set<(f: unknown) => void>();
       const entry = { pane, size, sent: [] as unknown[], closed: false, frame: (text: string, at: { width?: number; height?: number; full?: boolean } = {}) => frames.forEach((l) => l({ seq: 1, width: at.width ?? 80, height: at.height ?? 24, full: at.full ?? true, bytes: new Uint8Array(Buffer.from(text)) })) };
       streams.push(entry);
-      return { paneId: pane, mode: "control", closed: false, onFrame: (l: (f: unknown) => void) => (frames.add(l), () => frames.delete(l)), onClose: () => () => {}, input: (d: unknown) => entry.sent.push(["input", d]), resize: (c: number, r: number) => entry.sent.push(["resize", c, r]), scroll: (s: unknown) => entry.sent.push(["scroll", s]), mouse: (m: unknown) => entry.sent.push(["mouse", m]), close: () => void (entry.closed = true) };
+      return { paneId: pane, mode: "control", closed: false, onFrame: (l: (f: unknown) => void) => (frames.add(l), () => frames.delete(l)), onClose: () => () => {}, input: (d: unknown) => entry.sent.push(["input", d]), key: (k: unknown) => entry.sent.push(["key", k]), resize: (c: number, r: number) => entry.sent.push(["resize", c, r]), scroll: (s: unknown) => entry.sent.push(["scroll", s]), mouse: (m: unknown) => entry.sent.push(["mouse", m]), close: () => void (entry.closed = true) };
     };
     onScroll = (pane: string, listener: (s: { offset: number; max: number; rows: number }) => void) => (scrolls.set(pane, listener), () => scrolls.delete(pane));
     scrollTo = async (pane: string, offset: number) => (scrolledTo.push([pane, offset]), true);
@@ -151,7 +151,8 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   win.spec.onMessage({ type: "attach", cell: "c1", sessionId: "s1", cols: 100, rows: 30 });
   win.spec.onMessage({ type: "attach", cell: "c1", sessionId: "s1", cols: 120, rows: 40 });
   win.spec.onMessage({ type: "input", cell: "c1", data: "输入法" });
-  await say({ type: "input", cell: "c1", data: "\r" });
+  // A key that has no stream to go to yet is typed as the Enter it reads as.
+  await say({ type: "key", cell: "c1", key: "shift+enter" });
   expect(streams.map((s) => [s.size, s.closed])).toEqual([[{ cols: 100, rows: 30 }, true], [{ cols: 120, rows: 40 }, false]]);
   expect(streams[0]!.sent).toEqual([]);
   expect(streams[1]!.sent).toEqual([["input", "输入法\r"]]);
@@ -174,9 +175,10 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
     [100, false, "xy"]
   ]);
   await say({ type: "input", cell: "c1", data: "ls\r" });
+  await say({ type: "key", cell: "c1", key: "ctrl+enter" });
   await say({ type: "resize", cell: "c1", cols: 90, rows: 20 });
   await say({ type: "scroll", cell: "c1", direction: "up", lines: 3 });
-  expect(live.sent).toEqual([["input", "ls\r"], ["resize", 90, 20], ["scroll", { type: "scroll", cell: "c1", direction: "up", lines: 3 }]]);
+  expect(live.sent).toEqual([["input", "ls\r"], ["key", "ctrl+enter"], ["resize", 90, 20], ["scroll", { type: "scroll", cell: "c1", direction: "up", lines: 3 }]]);
   // The pane's place in its scrollback reaches the cell's scrollbar; dragging it moves the pane.
   // A frame still waiting goes before it: the window draws what was painted before what is said about it.
   live.frame("tail", { full: false });

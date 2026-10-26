@@ -48,3 +48,9 @@ export function windowKey(e: KeyEventLike, mac = isMac): WindowKey | null {
 
 /** A window key as this platform writes it: "⇧⌘D" on a Mac, "Ctrl+Shift+O" elsewhere. */
 export const keyLabel = (id: WindowKey, mac = isMac): string => formatChord(WINDOW_KEYS[mac ? "mac" : "other"][id], mac);
+
+/** Ctrl+Enter or Shift+Enter, which xterm types as a plain Enter: the backend sends them as the pane's program reads keys. */
+export function modifiedEnter(e: KeyEventLike): "ctrl+enter" | "shift+enter" | null {
+  if (e.key !== "Enter" || e.isComposing || e.altKey || e.metaKey || e.ctrlKey === e.shiftKey) return null;
+  return e.ctrlKey ? "ctrl+enter" : "shift+enter";
+}

@@ -1,4 +1,4 @@
-import type { TerminalBridge, TerminalMouse, TerminalScroll, TerminalScrollPosition } from "@tomradex/contracts";
+import type { TerminalBridge, TerminalKey, TerminalMouse, TerminalScroll, TerminalScrollPosition } from "@tomradex/contracts";
 
 /** One code session as the window lists it. */
 export interface SessionRow {
@@ -144,6 +144,7 @@ export type WindowMessage =
   | { type: "fold"; folded: boolean }
   | { type: "detach"; cell: string }
   | { type: "input"; cell: string; data: string }
+  | { type: "key"; cell: string; key: TerminalKey }
   /** Files dropped onto a cell's terminal, by their paths on disk: typed into it as a paste. */
   | { type: "drop"; cell: string; paths: string[] }
   | { type: "resize"; cell: string; cols: number; rows: number }

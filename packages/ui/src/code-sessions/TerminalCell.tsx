@@ -7,6 +7,7 @@ import type { WindowPost } from "@tomradex/code-sessions";
 import { onCell, pathForFile, send } from "./bridge";
 import { followSelection } from "./selection";
 import { fileLinks } from "./fileLinks";
+import { modifiedEnter } from "./keys";
 
 /** Where a pane's view is in herdr's scrollback, in rows. */
 type PaneScroll = Omit<Extract<WindowPost, { type: "scrolled" }>, "type" | "cell">;
@@ -216,6 +217,15 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
       return false;
     });
     terminal.attachCustomKeyEventHandler((e) => {
+      const enter = modifiedEnter(e);
+      if (enter) {
+        // Its keypress would type a plain Enter too.
+        if (e.type === "keydown") {
+          e.preventDefault();
+          send({ type: "key", cell, key: enter });
+        }
+        return false;
+      }
       if (e.type !== "keydown" || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || (e.key !== "PageUp" && e.key !== "PageDown")) return true;
       send({ type: "scroll", cell, source: "page_key", direction: e.key === "PageUp" ? "up" : "down", lines: Math.max(1, terminal.rows - 1) });
       return false;

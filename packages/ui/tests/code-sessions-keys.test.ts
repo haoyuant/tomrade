@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { keyLabel, windowKey } from "../src/code-sessions/keys";
+import { keyLabel, modifiedEnter, windowKey } from "../src/code-sessions/keys";
 
 const press = (key: string, mods: { meta?: boolean; ctrl?: boolean; alt?: boolean; shift?: boolean } = {}, code = /^[a-z]$/i.test(key) ? `Key${key.toUpperCase()}` : key) => ({
   key,
@@ -48,4 +48,11 @@ it("writes each key the way its platform does", () => {
   expect(keyLabel("left", false)).toBe("Alt+←");
   expect(keyLabel("fold", true)).toBe("⌘B");
   expect(keyLabel("fold", false)).toBe("Ctrl+Shift+B");
+});
+
+it("hands Ctrl+Enter and Shift+Enter to the backend, and leaves every other Enter to xterm", () => {
+  expect(modifiedEnter(press("Enter", { ctrl: true }))).toBe("ctrl+enter");
+  expect(modifiedEnter(press("Enter", { shift: true }))).toBe("shift+enter");
+  for (const e of [press("Enter"), press("Enter", { alt: true }), press("Enter", { meta: true }), press("Enter", { ctrl: true, shift: true }), press("Enter", { ctrl: true, alt: true }), press("j", { ctrl: true })]) expect(modifiedEnter(e)).toBeNull();
+  expect(modifiedEnter({ ...press("Enter", { shift: true }), isComposing: true })).toBeNull();
 });
