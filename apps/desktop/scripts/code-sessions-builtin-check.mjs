@@ -22,6 +22,8 @@ const shots = process.env.TOMRADE_CHECK_SHOTS ?? work;
 for (const key of ["HERDR_SOCKET_PATH", "HERDR_CLIENT_SOCKET_PATH", "HERDR_PANE_ID", "HERDR_TAB_ID", "HERDR_WORKSPACE_ID", "HERDR_ENV"]) delete process.env[key];
 const pipe = `\\\\.\\pipe\\tomrade-pty-check-${process.pid}`;
 app.setPath("userData", work);
+// These read the DOM renderer's rows: without the GPU there is no WebGL, so a cell also shows it carries on without.
+app.commandLine.appendSwitch("disable-gpu");
 app.on("window-all-closed", () => {});
 
 const results = [];
