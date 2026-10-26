@@ -34,6 +34,8 @@ interface DockValue {
   requestedThread: { id: string; at: number } | null;
   /** Settings at an engine's row — where a ticket's Start sends an agent that is not ready. */
   openSettings: (engineId?: string) => void;
+  /** Where a repository is placed on this machine — the fix a start stopped for a missing checkout points at. */
+  openRepositories: () => void;
 }
 
 const Ctx = createContext<DockValue | null>(null);
@@ -120,8 +122,8 @@ export function ProjectShell() {
   const openRepositories = useCallback(() => bindingRef.current?.onOpenRepositories?.(), []);
 
   const value = useMemo<DockValue>(
-    () => ({ aiOpen, setAiOpen, bind, showThread, requestedThread, openSettings }),
-    [aiOpen, setAiOpen, bind, showThread, requestedThread, openSettings]
+    () => ({ aiOpen, setAiOpen, bind, showThread, requestedThread, openSettings, openRepositories }),
+    [aiOpen, setAiOpen, bind, showThread, requestedThread, openSettings, openRepositories]
   );
 
   return (

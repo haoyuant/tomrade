@@ -37,6 +37,7 @@ import { TabStrip } from "./TabStrip";
 import { Table } from "./Table";
 import { EpicStrip } from "./EpicStrip";
 import { TitleBar, ViewHead } from "./TitleBar";
+import { UnplacedRepoBanner } from "./UnplacedRepoBanner";
 import { ShortcutsDialog } from "~/components/dialogs/ShortcutsDialog";
 import { hitChord, isBare, type CommandId } from "~/lib/keybindings";
 import { isCancelKey } from "~/lib/keys";
@@ -351,6 +352,7 @@ export function Workspace() {
               <ViewHeadRegion onOpenViewSettings={openViewSettings} onOpenFields={openFieldsList} onEditWorkstream={editWorkstream} />
               <QueryBarRegion />
               {conflict && <ConflictBanner title={conflict} onDismiss={() => setConflict(null)} />}
+              <UnplacedRepoBanner projectId={ws.project.id} onOpenRepositories={() => setProjectSettings("repositories")} />
               {ws.itemsError ? (
                 <div className="items-error" role="alert">
                   <p>{t("workspace.itemsReadFailed")}</p>

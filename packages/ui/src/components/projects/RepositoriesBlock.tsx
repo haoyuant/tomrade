@@ -343,9 +343,13 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
         </button>
       )}
       <div className="cfg-row repo-checkout" style={{ marginTop: 0 }}>
-        <Icon name={checkout?.checkout ? "i-check" : "i-warn"} size={14} style={{ color: checkout?.checkout ? "var(--accent)" : "var(--danger)" }} />
-        <span className="cfg-name num" style={{ fontFamily: "var(--font-mono)", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={checkout?.checkout ?? ""}>
-          {checkout?.checkout ?? t("repositories.notSet")}
+        <Icon name={checkout?.checkout && !checkout.problem ? "i-check" : "i-warn"} size={14} style={{ color: checkout?.checkout && !checkout.problem ? "var(--accent)" : "var(--danger)" }} />
+        <span className="cfg-name num" data-testid="repo-checkout-path" style={{ fontFamily: "var(--font-mono)", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={checkout?.checkout ?? ""}>
+          {!checkout?.checkout
+            ? t("repositories.notSet")
+            : checkout.problem
+              ? t(checkout.problem === "missing" ? "repositories.checkoutMissing" : "repositories.checkoutNotGit", { dir: checkout.checkout })
+              : checkout.checkout}
         </span>
         <button type="button" className="btn btn-ghost repo-choose" disabled={busy || picking} onClick={() => void choose()}>
           {picking ? t("repositories.choosing") : t("repositories.choose")}
@@ -356,7 +360,7 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
           </button>
         )}
       </div>
-      {!checkout?.checkout && cloneTarget && (
+      {(!checkout?.checkout || checkout.problem) && cloneTarget && (
         <div className="cfg-row repo-clone-offer" style={{ marginTop: 0 }}>
           <Icon name="i-folder" size={14} style={{ color: "var(--meta)" }} />
           <span className="repo-remote-copy">
