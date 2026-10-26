@@ -68,6 +68,9 @@ modules:
     title: External MCP servers
   - id: codeLink
     title: Code link
+  # herdr's panes, or the pty host's on native Windows.
+  - id: terminals
+    title: Terminals
   - id: files
     title: Files
   - id: notes
@@ -413,6 +416,19 @@ plugins:
     config:
       # Machine-local: whether Tomrade has started herdr's server here before, so the person is told once.
       statePath: "${userData}/herdr.json"
+  # On native Windows, where herdr cannot attach, the Terminal window's panes
+  # come from a pty host Tomrade runs itself: started detached on demand
+  # (node-pty over ConPTY), so terminals outlive a restart of the app, and gone
+  # with its last terminal. macOS and Linux do not load it; herdr is theirs.
+  - id: pty-host
+    name: "@tomradex/pty-host"
+    title: Terminal host
+    platforms: [win32]
+    config:
+      nodeBinary: "${nodeRuntime}"
+      scope: "${userData}"
+      logFile: "${logDir}/pty-host.log"
+      version: "${appVersion}"
   # Ticket ↔ code: the branches, pull requests and coding sessions of a ticket,
   # its status read from git, and the Start button that hands a ticket to a
   # local coding agent. Optional — nothing else reads its tables.

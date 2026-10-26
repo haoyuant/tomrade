@@ -36,7 +36,7 @@ export { Starter, type StartGate, type StartMode, type StartOptions, type StartR
 export { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
 export { Sessions, HERDR_PANE_HEADER, HERDR_YIELD_MS, TERMINAL_HEADER, WT_HEADER, WINDOWS_TERMINAL, HOOK_EVENTS, describeTool, dshHooksSettings, hooksSettings, piExtension, sessionContext, writeGeminiHome, END_AFTER_MS, IDLE_AFTER_MS, type SessionMoment, type SessionsOptions } from "./sessions.js";
 export { fitsCommandLine, promptAsArgument } from "./command-line.js";
-export { AUTO_TERMINAL, GitBashMissing, SYSTEM_TERMINAL, TerminalSettings, bareCommand, fillTemplate, gitBash, herdrFallbackNote, launchTerminal, locatedCommand, machineTerminalSettings, openOnLinux, openOnWindows, optionFlags, pathExport, powerShellPath, setupOnWindows, setupTerminal, terminalApp, terminalApps, terminalPath, terminalTemplate, withOptions, type HerdrTerminal, type LaunchResult, type TerminalPath } from "./terminal.js";
+export { AUTO_TERMINAL, BUILTIN_TERMINAL, GitBashMissing, SYSTEM_TERMINAL, TerminalSettings, bareCommand, fillTemplate, gitBash, herdrFallbackNote, launchTerminal, locatedCommand, machineTerminalSettings, openOnLinux, openOnWindows, optionFlags, panesOf, pathExport, powerShellPath, setupOnWindows, setupTerminal, terminalApp, terminalApps, terminalPath, terminalTemplate, withOptions, type PaneTerminal, type LaunchResult, type TerminalPath } from "./terminal.js";
 export { BOOTSTRAP_LABEL, continuePrompt, firstPrompt, languageLine } from "./prompts.js";
 export { orientationPrompt, scanBrief } from "./orientation.js";
 export { PLAYBOOKS } from "./playbooks.js";

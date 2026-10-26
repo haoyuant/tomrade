@@ -8,7 +8,7 @@ import type {} from "@tomradex/ipc";
 import { HerdrError, herdrCall, herdrSocketPath, herdrStream, type HerdrEvent } from "./client.js";
 import { openTerminal, type OpenedTerminal, type TerminalFrame, type TerminalMode, type TerminalMouse, type TerminalScroll, type TerminalStream } from "./terminal.js";
 import { HERDR_WORDS } from "./words.js";
-import { type Check, type CheckResult, contract, errorMessage } from "@tomradex/contracts";
+import { type Check, type CheckResult, contract, errorMessage, type TerminalBridge, type TerminalPaneEvent, type TerminalPaneInfo, type TerminalProcess, type TerminalProvider, type TerminalRevive, type TerminalScrollPosition, type TerminalStatus, type TerminalWorkspaceRef } from "@tomradex/contracts";
 
 export { HerdrError, herdrCall, herdrSocketPath, herdrStream, type HerdrEvent } from "./client.js";
 export * from "./terminal.js";
@@ -21,20 +21,13 @@ export interface HerdrServer {
 }
 
 /** How herdr reads the agent in a pane. */
-export type HerdrStatus = "idle" | "working" | "blocked" | "done" | "unknown";
+export type HerdrStatus = TerminalStatus;
 
 /** What herdr says about a pane Tomrade follows. */
-export type HerdrPaneEvent =
-  | { kind: "status"; paneId: string; status: HerdrStatus; agent: string | null }
-  /** The pane's process ended, or the pane was closed: nothing runs there any more. */
-  | { kind: "exited"; paneId: string };
+export type HerdrPaneEvent = TerminalPaneEvent;
 
 /** A pane's view in its scrollback, in rows: `offset` above the bottom, at most `max`, `rows` on screen. */
-export interface HerdrScroll {
-  offset: number;
-  max: number;
-  rows: number;
-}
+export type HerdrScroll = TerminalScrollPosition;
 
 const scrollOf = (raw: unknown): HerdrScroll | null => {
   const s = raw as { offset_from_bottom?: unknown; max_offset_from_bottom?: unknown; viewport_rows?: unknown } | null;
@@ -45,6 +38,7 @@ const scrollOf = (raw: unknown): HerdrScroll | null => {
 declare module "cordis" {
   interface Context {
     herdr: Herdr;
+    terminals: TerminalProvider;
   }
 }
 
@@ -89,16 +83,8 @@ export const herdrInstall = (found: { brew: boolean; platform?: NodeJS.Platform 
 /** The oldest herdr whose terminal sessions take everything a window sends them (mouse events came in 0.9.2). */
 export const BRIDGE_MIN_VERSION = "0.9.2";
 
-/** Whether herdr can hand Tomrade a live terminal, and what to do when it cannot. */
-export type HerdrBridge =
-  | { state: "ready"; version: string }
-  /** herdr's direct attach does not run on native Windows. */
-  | { state: "unsupported" }
-  | { state: "notInstalled" }
-  | { state: "notRunning"; version: string }
-  | { state: "tooOld"; version: string; need: string; fix: string }
-  /** The CLI was upgraded but the server still runs the old build: they no longer speak the same private protocol. */
-  | { state: "stale"; version: string; server: string; fix: string };
+/** Whether herdr can hand Tomrade a live terminal, and what to do when it cannot (`unsupported`: herdr's direct attach does not run on native Windows). */
+export type HerdrBridge = TerminalBridge;
 
 /** Compares dotted versions by their numbers; a suffix such as `-preview` is ignored. */
 export function compareVersions(a: string, b: string): number {
@@ -109,12 +95,7 @@ export function compareVersions(a: string, b: string): number {
 }
 
 /** Where Tomrade keeps a project's herdr workspace: its sessions open there, one tab each. */
-export interface HerdrWorkspaceRef {
-  /** What the workspace is remembered by — the project's id. */
-  key: string;
-  /** What herdr shows it as — the project's name. */
-  label: string;
-}
+export type HerdrWorkspaceRef = TerminalWorkspaceRef;
 
 /** How long to wait before subscribing again after the stream ends; doubled each time it fails, up to the maximum. */
 export const RECONNECT_MS = 2_000;
@@ -143,18 +124,11 @@ export function herdrClientIn(ps: string): boolean {
   });
 }
 
-/** How `revive` went: the server answers (already, or started now), did not come up, is held by the limit, or herdr is not here. */
 /** What herdr reads off one pane: the agent it detected there, that agent's own session id, how it reads that agent, and the title on the pane. */
-export interface HerdrPaneInfo {
-  paneId: string;
-  agent: string | null;
-  agentSession: string | null;
-  /** `unknown` for a pane with no agent, too. */
-  status: HerdrStatus;
-  title: string | null;
-}
+export type HerdrPaneInfo = TerminalPaneInfo;
 
-export type HerdrRevive = "running" | "started" | "failed" | "held" | "notInstalled";
+/** How `revive` went: the server answers (already, or started now), did not come up, is held by the limit, or herdr is not here. */
+export type HerdrRevive = TerminalRevive;
 
 export interface HerdrConfig {
   /** The first wait before subscribing again; tests make it short. */
@@ -193,8 +167,10 @@ const statusOf = (value: unknown): HerdrStatus => (typeof value === "string" && 
  * launch if it is not running, and never stopped by Tomrade; when it is not
  * installed, nothing here is called.
  */
-export class Herdr extends Service {
+export class Herdr extends Service implements TerminalProvider {
   static provide = "herdr";
+
+  readonly kind = "herdr" as const;
 
   private readonly listeners = new Set<(event: HerdrPaneEvent) => void>();
   /** The panes being followed, each with its own status stream (herdr subscribes to status per pane), and who follows it. */
@@ -233,6 +209,8 @@ export class Herdr extends Service {
   }
 
   [Service.init]() {
+    // The terminal backend everywhere herdr can attach; native Windows has its own (`@tomradex/pty-host`).
+    if (process.platform !== "win32") this.ctx.provide("terminals", this);
     this.ctx.inject(["doctor"], (ctx) => contract(ctx, "doctor")?.check(this.check(ctx)));
     this.ctx.inject(["ipc"], (ctx) => this.serveTerminals(ctx));
     this.ctx.effect(() => () => {
@@ -457,6 +435,16 @@ export class Herdr extends Service {
   /** One request to the server; a refusal is a `HerdrError` with herdr's own code. */
   call<T = Record<string, unknown>>(method: string, params: Record<string, unknown> = {}): Promise<T> {
     return herdrCall<T>(this.socketPath(), method, params);
+  }
+
+  /** Installed, but its server does not answer: a stream that ended went with the server, not its pane. */
+  async serverGone(): Promise<boolean> {
+    return !!this.binary() && !(await this.server());
+  }
+
+  /** The processes herdr sees in a pane's foreground; none when it does not answer. */
+  async processes(paneId: string): Promise<TerminalProcess[]> {
+    return this.call<{ process_info: { foreground_processes?: TerminalProcess[] } }>("pane.process_info", { pane_id: paneId }).then((r) => r.process_info.foreground_processes ?? [], () => []);
   }
 
   /** Bring a pane to the front in herdr — its workspace, then the pane itself. False when herdr cannot: gone, or the pane with it. */

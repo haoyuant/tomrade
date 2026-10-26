@@ -3,10 +3,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
+import type { TerminalProvider } from "@tomradex/contracts";
 import { CODE_WORDS } from "./words.js";
 
 /** The terminal until the person picks one: it follows what this machine has. */
 export const AUTO_TERMINAL = "auto";
+
+/** Tomrade's own terminal on native Windows: a pane of its pty host, shown in the Terminal window as herdr's are elsewhere. */
+export const BUILTIN_TERMINAL = "builtin";
 
 /** Machine settings: which terminal opens, and how each coding agent is invoked in it. */
 export const TerminalSettings = z.object({
@@ -32,15 +36,22 @@ export type TerminalSettings = z.infer<typeof TerminalSettings>;
 
 /**
  * The section as this machine runs it. A terminal left on automatic is looked
- * at again each time — herdr once it is installed, the system terminal until
- * then — and one the person picked stays as it is.
+ * at again each time — herdr once it is installed (on Windows, Tomrade's own
+ * terminal host), the system terminal until then — and one the person picked
+ * stays as it is.
  */
-export async function machineTerminalSettings(stored: unknown, herdr: Pick<HerdrTerminal, "installed"> | null | undefined, platform: NodeJS.Platform = process.platform): Promise<TerminalSettings> {
+export async function machineTerminalSettings(stored: unknown, panes: Pick<PaneTerminal, "kind" | "installed"> | null | undefined, platform: NodeJS.Platform = process.platform): Promise<TerminalSettings> {
   const settings = TerminalSettings.parse(stored ?? {});
   if (settings.terminal !== AUTO_TERMINAL) return settings;
-  // herdr has no Windows build and its bridge refuses Windows.
-  return { ...settings, terminal: platform !== "win32" && (await herdr?.installed()) ? "herdr" : SYSTEM_TERMINAL };
+  // herdr has no Windows build and its bridge refuses Windows; the pty host runs only there.
+  const own = platform === "win32" ? "builtin" : "herdr";
+  return { ...settings, terminal: panes?.kind === own && (await panes.installed()) ? terminalOf(own) : SYSTEM_TERMINAL };
 }
+
+const terminalOf = (kind: PaneTerminal["kind"]) => (kind === "builtin" ? BUILTIN_TERMINAL : "herdr");
+
+/** The backend whose panes a terminal setting opens; null for a terminal app. */
+export const panesOf = (terminal: string): PaneTerminal["kind"] | null => (terminal === "herdr" ? "herdr" : terminal === BUILTIN_TERMINAL ? "builtin" : null);
 
 const TERMINAL_APPS = new Set(["terminal", "iterm", "iterm2", "warp", "ghostty", "alacritty", "kitty", "wezterm", "hyper", "tabby", "rio", "wave"]);
 
@@ -80,9 +91,9 @@ function isExecutable(file: string): boolean {
   }
 }
 
-/** The terminal choices on this machine: installed macOS bundles that `open -a` can launch, the Linux emulators found, then herdr (not on Windows) and none. */
+/** The terminal choices on this machine: installed macOS bundles that `open -a` can launch, the Linux emulators found, then herdr (on Windows, Tomrade's own) and none. */
 export function terminalApps(roots = ["/Applications", path.join(os.homedir(), "Applications"), "/System/Applications"], platform = process.platform, env: NodeJS.ProcessEnv = process.env): string[] {
-  if (platform === "win32") return ["none"];
+  if (platform === "win32") return [BUILTIN_TERMINAL, "none"];
   if (platform !== "darwin") return [...linuxTerminals(env), "herdr", "none"];
   const found = new Set<string>();
   const scan = (dir: string, depth: number) => {
@@ -155,11 +166,8 @@ export interface LaunchInput {
 export const RESUME_SCRIPT = "resume.command";
 export const RESUME_ID_FILE = "resume-id";
 
-/** What a terminal of "herdr" is run through: a pane with the script going in it, on a server started for it when none runs. */
-export interface HerdrTerminal {
-  launch(input: { cwd: string; label?: string; command: string; workspace?: { key: string; label: string } }): Promise<{ paneId: string; startedServer?: "first" | "again" } | null>;
-  installed(): Promise<string | null>;
-}
+/** What a terminal of "herdr" or "builtin" is run through: a pane with the script going in it, on a backend started for it when none runs. */
+export type PaneTerminal = Pick<TerminalProvider, "kind" | "launch" | "installed">;
 
 export interface LaunchResult {
   script: string;
@@ -168,6 +176,8 @@ export interface LaunchResult {
   paneId?: string;
   /** The terminal is herdr, and herdr did not answer: the script went to the system terminal instead. */
   herdrMissing?: "notInstalled" | "notRunning";
+  /** The terminal is Tomrade's own, and its host did not start: the script went to the system terminal instead. */
+  hostFailed?: true;
   /** herdr was not running and Tomrade started its server for this launch; "first" the first time ever on this machine. */
   herdrStarted?: "first" | "again";
   /** On Windows, no Git Bash to run the script with: nothing opened. */
@@ -294,9 +304,9 @@ export function herdrFallbackNote(locale: unknown, launch: LaunchResult): string
   const w = CODE_WORDS(locale);
   if (launch.herdrStarted === "first") return w("herdrStartedInBackground");
   const noBash = launch.gitBashMissing ? w("gitBashMissing") : null;
-  if (!launch.herdrMissing) return noBash;
+  if (!launch.herdrMissing && !launch.hostFailed) return noBash;
   const app = process.platform === "darwin" ? SYSTEM_TERMINAL : w("systemTerminal");
-  const note = launch.herdrMissing === "notInstalled" ? w("herdrNotInstalledFallback", { app }) : w("herdrNotRunningFallback", { app });
+  const note = launch.hostFailed ? w("hostFailedFallback", { app }) : launch.herdrMissing === "notInstalled" ? w("herdrNotInstalledFallback", { app }) : w("herdrNotRunningFallback", { app });
   return launch.launched ? note : `${note} ${noBash ?? w("fallbackDidNotOpen", { app })}`;
 }
 
@@ -354,7 +364,7 @@ export function withOptions(template: string, flags: string): string {
  * not answer opens the system terminal instead. A terminal of "none" writes
  * the script and stops, for a person to run it themselves.
  */
-export async function launchTerminal(input: LaunchInput, terminal: string, herdr: HerdrTerminal | null = null, platform: NodeJS.Platform = process.platform): Promise<LaunchResult> {
+export async function launchTerminal(input: LaunchInput, terminal: string, panes: PaneTerminal | null = null, platform: NodeJS.Platform = process.platform, bash: () => string | null = gitBash): Promise<LaunchResult> {
   fs.mkdirSync(input.dir, { recursive: true });
   const script = path.join(input.dir, "run.command");
   const exports = Object.entries(input.env ?? {}).map(([k, v]) => `export ${k}=${shellQuote(v)}`);
@@ -375,16 +385,19 @@ export async function launchTerminal(input: LaunchInput, terminal: string, herdr
   // The same wrapper around the resume: the pid file and the token come back with the session.
   if (input.resume) fs.writeFileSync(path.join(input.dir, RESUME_SCRIPT), wrap(input.resume), { mode: 0o755 });
   if (terminal === "none") return { script, launched: false };
-  let herdrMissing: LaunchResult["herdrMissing"];
-  if (terminal === "herdr") {
+  let missing: Pick<LaunchResult, "herdrMissing" | "hostFailed"> = {};
+  const kind = panesOf(terminal);
+  if (kind) {
+    // Git Bash runs the script in the pty host's pane, as it would in Windows Terminal.
+    const shell = kind === "builtin" ? bash() : null;
+    if (kind === "builtin" && !shell) return { script, launched: false, gitBashMissing: true };
     // The script, not the command: the pid file and the exports come along, and the shell stays after the agent for the person to read.
-    const pane = herdr ? await herdr.launch({ cwd: input.cwd, label: input.label, command: `bash ${shellQuote(script)}`, ...(input.workspace ? { workspace: input.workspace } : {}) }) : null;
+    const pane = panes?.kind === kind ? await panes.launch({ cwd: input.cwd, label: input.label, command: `bash ${shellQuote(script)}`, ...(shell ? { program: { file: shell, args: [script] } } : {}), ...(input.workspace ? { workspace: input.workspace } : {}) }) : null;
     if (pane) return { script, launched: true, paneId: pane.paneId, ...(pane.startedServer ? { herdrStarted: pane.startedServer } : {}) };
-    herdrMissing = (await herdr?.installed()) ? "notRunning" : "notInstalled";
+    missing = kind === "builtin" ? { hostFailed: true } : { herdrMissing: (await panes?.installed()) ? "notRunning" : "notInstalled" };
     terminal = SYSTEM_TERMINAL;
     if (systemWindow(terminal)) fs.writeFileSync(script, wrap(input.command, true), { mode: 0o755 });
   }
-  const missing = herdrMissing ? { herdrMissing } : {};
   try {
     await terminalApp.open(terminal, script, input.cwd);
     return { script, launched: true, ...missing };
@@ -398,9 +411,9 @@ export async function launchTerminal(input: LaunchInput, terminal: string, herdr
  * questions: a new shell afterwards picks up a PATH the install just changed.
  * Windows gets PowerShell, which the official installers there are written for.
  */
-export async function setupTerminal(command: string, dir: string, terminal: string, herdr: HerdrTerminal | null = null, dirs?: TerminalPath): Promise<{ launched: boolean }> {
+export async function setupTerminal(command: string, dir: string, terminal: string, panes: PaneTerminal | null = null, dirs?: TerminalPath): Promise<{ launched: boolean }> {
   if (process.platform === "win32") return setupOnWindows(dirs && (dirs.ahead.length || dirs.behind.length) ? `${powerShellPath(dirs)}; ${command}` : command);
-  const { launched } = await launchTerminal({ cwd: os.homedir(), command: `${command}\necho\nexec "\${SHELL:-bash}" -l`, dir, label: "setup", ...(dirs ? { path: dirs } : {}) }, terminal, herdr);
+  const { launched } = await launchTerminal({ cwd: os.homedir(), command: `${command}\necho\nexec "\${SHELL:-bash}" -l`, dir, label: "setup", ...(dirs ? { path: dirs } : {}) }, terminal, panes);
   return { launched };
 }
 

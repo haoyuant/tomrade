@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { AUTO_TERMINAL, GitBashMissing, fitsCommandLine, promptAsArgument, SYSTEM_TERMINAL, TerminalSettings, bareCommand, fillTemplate, gitBash, herdrFallbackNote, launchTerminal, locatedCommand, machineTerminalSettings, openOnLinux, openOnWindows, optionFlags, pathExport, powerShellPath, setupOnWindows, setupTerminal, terminalApp, terminalApps, terminalPath, terminalTemplate, withOptions, writeGeminiHome, type HerdrTerminal } from "@tomradex/code-link";
+import { AUTO_TERMINAL, BUILTIN_TERMINAL, GitBashMissing, fitsCommandLine, promptAsArgument, SYSTEM_TERMINAL, TerminalSettings, bareCommand, fillTemplate, gitBash, herdrFallbackNote, launchTerminal, locatedCommand, machineTerminalSettings, openOnLinux, openOnWindows, optionFlags, pathExport, powerShellPath, setupOnWindows, setupTerminal, terminalApp, terminalApps, terminalPath, terminalTemplate, withOptions, writeGeminiHome, type PaneTerminal } from "@tomradex/code-link";
 
 it("lists installed terminal apps with the special launch choices", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-terminal-apps-"));
@@ -16,8 +16,8 @@ it("lists installed terminal apps with the special launch choices", () => {
   }
 });
 
-it("offers no herdr on Windows, which herdr does not run on", () => {
-  expect(terminalApps([], "win32")).toEqual(["none"]);
+it("offers Tomrade's own terminal on Windows, where herdr does not run", () => {
+  expect(terminalApps([], "win32")).toEqual([BUILTIN_TERMINAL, "none"]);
 });
 
 it.skipIf(process.platform === "win32")("lists the Linux emulators on PATH, $TERMINAL first", () => {
@@ -46,8 +46,8 @@ describe("a terminal of herdr", () => {
   it("runs the script in herdr, as a tab named for the ticket in the project's workspace", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-herdr-terminal-"));
     const opened = vi.spyOn(terminalApp, "open").mockResolvedValue();
-    const launches: Parameters<HerdrTerminal["launch"]>[0][] = [];
-    const herdr: HerdrTerminal = { launch: async (input) => { launches.push(input); return { paneId: "w2:p1" }; }, installed: async () => "0.9.5" };
+    const launches: Parameters<PaneTerminal["launch"]>[0][] = [];
+    const herdr: PaneTerminal = { kind: "herdr", launch: async (input) => { launches.push(input); return { paneId: "w2:p1" }; }, installed: async () => "0.9.5" };
     const launched = await launchTerminal({ cwd: "/work/tom-9", command: "claude", env: { TOMRADE_MCP_TOKEN: "t" }, dir, label: "TOM-9", workspace: { key: "p1", label: "Tomrade" } }, "herdr", herdr);
     expect(launched).toEqual({ script: path.join(dir, "run.command"), launched: true, paneId: "w2:p1" });
     expect(launches).toEqual([{ cwd: "/work/tom-9", label: "TOM-9", command: `bash '${path.join(dir, "run.command")}'`, workspace: { key: "p1", label: "Tomrade" } }]);
@@ -78,8 +78,8 @@ describe("a terminal of herdr", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-herdr-fallback-"));
     const opened = vi.spyOn(terminalApp, "open").mockResolvedValue();
     const script = path.join(dir, "run.command");
-    const stopped: HerdrTerminal = { launch: async () => null, installed: async () => "0.9.5" };
-    const absent: HerdrTerminal = { launch: async () => null, installed: async () => null };
+    const stopped: PaneTerminal = { kind: "herdr", launch: async () => null, installed: async () => "0.9.5" };
+    const absent: PaneTerminal = { kind: "herdr", launch: async () => null, installed: async () => null };
 
     const notRunning = await launchTerminal({ cwd: "/work/tom-9", command: "claude", env: { TOMRADE_MCP_TOKEN: "t" }, dir, label: "TOM-9", resume: "claude --resume x" }, "herdr", stopped);
     expect(notRunning).toEqual({ script, launched: true, herdrMissing: "notRunning" });
@@ -114,7 +114,7 @@ describe("a terminal of herdr", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-herdr-started-"));
     const opened = vi.spyOn(terminalApp, "open").mockResolvedValue();
     const starts: ("first" | "again")[] = ["first", "again"];
-    const herdr: HerdrTerminal = { launch: async () => ({ paneId: "w1:p1", startedServer: starts.shift() }), installed: async () => "0.9.5" };
+    const herdr: PaneTerminal = { kind: "herdr", launch: async () => ({ paneId: "w1:p1", startedServer: starts.shift() }), installed: async () => "0.9.5" };
     const first = await launchTerminal({ cwd: "/work", command: "claude", dir }, "herdr", herdr);
     expect(first).toEqual({ script: path.join(dir, "run.command"), launched: true, paneId: "w1:p1", herdrStarted: "first" });
     expect(herdrFallbackNote("en", first)).toBe("herdr is running in the background now. Run `herdr` in a terminal to see its panes.");
@@ -123,6 +123,50 @@ describe("a terminal of herdr", () => {
     expect(again.herdrStarted).toBe("again");
     expect(herdrFallbackNote("en", again)).toBeNull();
     expect(opened).not.toHaveBeenCalled();
+    opened.mockRestore();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("Tomrade's own terminal", () => {
+  const bash = "C:\\Program Files\\Git\\bin\\bash.exe";
+
+  it("runs the script through Git Bash in a pane of the host, its shell staying after the agent", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-builtin-terminal-"));
+    const opened = vi.spyOn(terminalApp, "open").mockResolvedValue();
+    const launches: Parameters<PaneTerminal["launch"]>[0][] = [];
+    const host: PaneTerminal = { kind: "builtin", launch: async (input) => { launches.push(input); return { paneId: "p1-1" }; }, installed: async () => "0.20.0" };
+    const script = path.join(dir, "run.command");
+    const launched = await launchTerminal({ cwd: "C:\\work\\tom-9", command: "claude", dir, label: "TOM-9", workspace: { key: "p1", label: "Tomrade" } }, BUILTIN_TERMINAL, host, "win32", () => bash);
+    expect(launched).toEqual({ script, launched: true, paneId: "p1-1" });
+    expect(launches).toEqual([{ cwd: "C:\\work\\tom-9", label: "TOM-9", command: `bash '${script}'`, program: { file: bash, args: [script] }, workspace: { key: "p1", label: "Tomrade" } }]);
+    expect(fs.readFileSync(script, "utf8")).toContain('exec "${SHELL:-bash}"');
+    expect(opened).not.toHaveBeenCalled();
+    opened.mockRestore();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("opens nothing without Git Bash, and says so", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-builtin-nobash-"));
+    const host: PaneTerminal = { kind: "builtin", launch: async () => ({ paneId: "p1-1" }), installed: async () => "0.20.0" };
+    const launched = await launchTerminal({ cwd: dir, command: "claude", dir }, BUILTIN_TERMINAL, host, "win32", () => null);
+    expect(launched).toEqual({ script: path.join(dir, "run.command"), launched: false, gitBashMissing: true });
+    expect(herdrFallbackNote("en", launched)).toContain("Git Bash");
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("goes to the system terminal when the host does not start, and says why", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-builtin-fallback-"));
+    const opened = vi.spyOn(terminalApp, "open").mockResolvedValue();
+    const down: PaneTerminal = { kind: "builtin", launch: async () => null, installed: async () => "0.20.0" };
+    const launched = await launchTerminal({ cwd: dir, command: "claude", dir }, BUILTIN_TERMINAL, down, "win32", () => bash);
+    expect(launched).toEqual({ script: path.join(dir, "run.command"), launched: true, hostFailed: true });
+    expect(opened).toHaveBeenCalledOnce();
+    expect(herdrFallbackNote("en", launched)).toMatch(/^Tomrade's terminal host did not start, so this opened in .+ instead.$/);
+    expect(herdrFallbackNote("zh", launched)).toContain("终端 host 没能启动");
+    // A backend of the other kind is not used for it.
+    const herdr: PaneTerminal = { kind: "herdr", launch: async () => ({ paneId: "w1:p1" }), installed: async () => "0.9.5" };
+    expect((await launchTerminal({ cwd: dir, command: "claude", dir }, BUILTIN_TERMINAL, herdr, "win32", () => bash)).hostFailed).toBe(true);
     opened.mockRestore();
     fs.rmSync(dir, { recursive: true, force: true });
   });
@@ -215,7 +259,7 @@ describe("Gemini CLI's session home", () => {
 });
 
 describe("an unset terminal", () => {
-  const herdrThat = (version: string | null) => ({ installed: async () => version });
+  const herdrThat = (version: string | null) => ({ kind: "herdr" as const, installed: async () => version });
 
   it("never changes a terminal the person picked, herdr installed or not", async () => {
     for (const terminal of ["Warp", "Terminal", "herdr", "none"]) {
@@ -233,9 +277,16 @@ describe("an unset terminal", () => {
     expect(SYSTEM_TERMINAL).toBe("Terminal");
   });
 
-  it("is the system terminal on Windows, herdr installed or not", async () => {
+  it("is Tomrade's own terminal on Windows where its host can run, never herdr", async () => {
+    const builtin = (version: string | null) => ({ kind: "builtin" as const, installed: async () => version });
+    expect((await machineTerminalSettings(undefined, builtin("0.20.0"), "win32")).terminal).toBe(BUILTIN_TERMINAL);
+    // A build without the ConPTY runtime, or without the host's row: the system terminal, as before.
+    expect((await machineTerminalSettings(undefined, builtin(null), "win32")).terminal).toBe(SYSTEM_TERMINAL);
+    expect((await machineTerminalSettings(undefined, null, "win32")).terminal).toBe(SYSTEM_TERMINAL);
     expect((await machineTerminalSettings(undefined, herdrThat("0.9.5"), "win32")).terminal).toBe(SYSTEM_TERMINAL);
+    // herdr stays the default elsewhere.
     expect((await machineTerminalSettings(undefined, herdrThat("0.9.5"), "linux")).terminal).toBe("herdr");
+    expect((await machineTerminalSettings(undefined, builtin("0.20.0"), "darwin")).terminal).toBe(SYSTEM_TERMINAL);
   });
 
   it("follows herdr once it is installed later, with nothing saved in between", async () => {
@@ -405,11 +456,11 @@ describe("the system terminal on Linux", () => {
         await launchTerminal({ cwd: dir, command: "echo agent", dir }, terminal, null, platform);
         expect(fs.readFileSync(script, "utf8")).not.toContain("exec");
       }
-      const herdr: HerdrTerminal = { launch: async () => ({ paneId: "w1:p1" }), installed: async () => "0.9.5" };
+      const herdr: PaneTerminal = { kind: "herdr", launch: async () => ({ paneId: "w1:p1" }), installed: async () => "0.9.5" };
       await launchTerminal({ cwd: dir, command: "echo agent", dir }, "herdr", herdr, "linux");
       expect(fs.readFileSync(script, "utf8")).not.toContain("exec");
       // herdr not answering: the system terminal's window gets the tail
-      await launchTerminal({ cwd: dir, command: "echo agent", dir }, "herdr", { launch: async () => null, installed: async () => null }, "linux");
+      await launchTerminal({ cwd: dir, command: "echo agent", dir }, "herdr", { kind: "herdr", launch: async () => null, installed: async () => null }, "linux");
       expect(fs.readFileSync(script, "utf8")).toContain(tail);
     } finally {
       opened.mockRestore();

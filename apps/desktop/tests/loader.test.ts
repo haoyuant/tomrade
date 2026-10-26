@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { applyPatches, readConfig, readRows, writePatchRow } from "../src/loader.js";
+import { applyPatches, forPlatform, readConfig, readRows, writePatchRow } from "../src/loader.js";
 
 let dir: string;
 const file = (name: string) => path.join(dir, name);
@@ -54,6 +54,20 @@ plugins:
   it("says which entry is wrong rather than booting half a list", () => {
     const bad = write("bad.yml", "modules:\n  - id: db\nplugins: []\n");
     expect(() => readConfig(bad)).toThrow(/modules\[0\] needs a string id and title/);
+  });
+});
+
+describe("rows for one platform", () => {
+  it("leaves out a row that names other platforms, and keeps one that names none", () => {
+    const rows = [{ id: "herdr", name: "@tomradex/herdr" }, { id: "pty-host", name: "@tomradex/pty-host", platforms: ["win32"] }];
+    expect(forPlatform(rows, "darwin").map((r) => r.id)).toEqual(["herdr"]);
+    expect(forPlatform(rows, "linux").map((r) => r.id)).toEqual(["herdr"]);
+    expect(forPlatform(rows, "win32").map((r) => r.id)).toEqual(["herdr", "pty-host"]);
+  });
+
+  it("loads the built-in terminal host on Windows alone", () => {
+    const { rows } = readConfig(path.join(import.meta.dirname, "../tomrade.yml"));
+    expect(rows.find((r) => r.id === "pty-host")?.platforms).toEqual(["win32"]);
   });
 });
 

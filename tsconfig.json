@@ -74,6 +74,9 @@
       "path": "./packages/herdr"
     },
     {
+      "path": "./packages/pty-host"
+    },
+    {
       "path": "./packages/code-sessions"
     },
     {

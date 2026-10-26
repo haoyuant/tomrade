@@ -1,4 +1,5 @@
 import type { Author, Board, Dictionaries, Item, LanguageTag, ListItemsFilter, Patch, Project } from "@tomradex/domain";
+import type { TerminalProvider } from "./terminals.js";
 
 /*
  * The slices of each other's services that packages read through `ctx.get`,
@@ -150,6 +151,7 @@ export interface Contracts {
   repos: ReposReader;
   settings: SettingsReader;
   storage: StorageReader;
+  terminals: TerminalProvider;
 }
 
 /** A cordis context, as far as reading a service goes. */
