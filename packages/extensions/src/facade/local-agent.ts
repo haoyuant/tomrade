@@ -65,7 +65,7 @@ export const localAgentOf = (host: Host, spec: LocalAgentSpec<LocalAgentOptions>
         } } : {}),
     ...(record ? { record: {
       find: (sessionId, opts) => now(() => record.find(sessionId, { cwd: opts.cwd }), "record find", null),
-      read: (file) => now(() => record.read(file), "record read", null),
+      read: (file, opts) => now(() => record.read(file, opts ? { ...opts } : undefined), "record read", null),
       ...(record.title ? { title: (file: string) => now(() => record.title!(file), "record title", null) } : {})
     } } : {}),
     // A lent call is bounded by its caller's signal, as the app's own are.

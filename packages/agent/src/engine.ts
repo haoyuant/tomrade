@@ -332,12 +332,19 @@ export interface EngineLocal {
 export interface RecordLine {
   who: "person" | "agent" | "tool";
   text: string;
+  /** A tool call's whole input, and its output once the record holds it. */
+  detail?: { input: string; output?: string };
 }
 
-/** A session's conversation as read from its record; `cut` when only the record's end was read. */
+/**
+ * A stretch of a session's conversation as read from its record. `cut` when
+ * the record has more before it; then `start` is where it began, to ask for
+ * what came before.
+ */
 export interface RecordRead {
   lines: RecordLine[];
   cut: boolean;
+  start?: number;
 }
 
 /**
@@ -347,8 +354,8 @@ export interface RecordRead {
 export interface EngineRecord {
   /** Where its CLI keeps that session's record on this machine; null when it is not there. */
   find(sessionId: string, opts: { cwd: string | null }): string | null;
-  /** The record as conversation lines, the agent's machinery left out; null when it cannot be read. */
-  read(file: string): RecordRead | null;
+  /** The record's end as conversation lines, the agent's machinery left out, or the stretch `before` a read's `start`; null when it cannot be read. */
+  read(file: string, opts?: { before?: number }): RecordRead | null;
   /** What the record calls the conversation; null without a name. */
   title?(file: string): string | null;
 }

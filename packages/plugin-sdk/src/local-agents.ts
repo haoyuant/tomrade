@@ -253,6 +253,8 @@ export interface LocalAgentAcp<O> {
 export interface LocalAgentRecordLine {
   who: "person" | "agent" | "tool";
   text: string;
+  /** A tool call's whole input, and its output once the record holds it. */
+  detail?: { input: string; output?: string };
 }
 
 /**
@@ -265,7 +267,8 @@ export interface LocalAgentRecordLine {
  */
 export interface LocalAgentRecord {
   find(sessionId: string, opts: { cwd: string | null }): string | null;
-  read(file: string): { lines: LocalAgentRecordLine[]; cut: boolean } | null;
+  /** The record's end, or the stretch `before` an earlier read's `start`; `cut` (with `start`) when more came before. */
+  read(file: string, opts?: { before?: number }): { lines: LocalAgentRecordLine[]; cut: boolean; start?: number } | null;
   title?(file: string): string | null;
 }
 

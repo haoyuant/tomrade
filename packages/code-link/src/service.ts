@@ -816,13 +816,16 @@ export class CodeLink extends Service implements CodeLinkReader {
     return found;
   }
 
-  /** A session's conversation from its agent's own record, read-only; null when Tomrade cannot read that agent's record. */
-  conversation(projectId: string, sessionId: string): RecordRead | null {
+  /**
+   * A session's conversation from its agent's own record, read-only: its end, or the stretch `before` an earlier
+   * read's start. Null when Tomrade cannot read that agent's record.
+   */
+  conversation(projectId: string, sessionId: string, before?: number): RecordRead | null {
     const s = this.store.session(projectId, sessionId);
     const record = s?.externalId ? recordOf(this.ctx, s.agent) : null;
     if (!s?.externalId || !record) return null;
     const file = s.transcript ?? record.find(s.externalId, { cwd: s.cwd ?? null });
-    return file ? record.read(file) : null;
+    return file ? record.read(file, before === undefined ? undefined : { before }) : null;
   }
 
   sessionsOf(projectId: string, itemId?: string): SessionView[] {
