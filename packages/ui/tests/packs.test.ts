@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { message, say, setPackMessages } from "../src/lib/dicts";
+import { loadLocale, localeLoaded, message, say, setPackMessages } from "../src/lib/dicts";
 import { en } from "../src/lib/i18n-messages";
 
 afterEach(() => setPackMessages(null, null));
@@ -16,13 +16,24 @@ describe("a language pack in the interface", () => {
     expect(say("en", "common.cancel")).toBe("Cancel");
   });
 
-  it("speaks before a shipped language's own words, which come back once it goes", () => {
+  it("speaks before a shipped language's own words, which come back once it goes", async () => {
+    await loadLocale("ja");
     const shipped = say("ja", "common.cancel");
     setPackMessages("ja", { common: { cancel: "取消し" } });
     expect(say("ja", "common.cancel")).toBe("取消し");
     expect(say("ja", "common.save")).toBe("保存");
     setPackMessages(null, null);
     expect(say("ja", "common.cancel")).toBe(shipped);
+  });
+
+  it("shows English for a shipped language until its words arrive, then them", async () => {
+    expect(localeLoaded("ru")).toBe(false);
+    expect(say("ru", "common.cancel")).toBe("Cancel");
+    await loadLocale("ru");
+    expect(localeLoaded("ru")).toBe(true);
+    expect(say("ru", "common.cancel")).not.toBe("Cancel");
+    // The two complete languages are always here.
+    expect(localeLoaded("en") && localeLoaded("zh")).toBe(true);
   });
 
   it("shows English for a language with no words at all", () => {
