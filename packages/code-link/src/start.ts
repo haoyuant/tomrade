@@ -7,7 +7,7 @@ import { rulesSection } from "@tomradex/agent";
 import type {} from "@tomradex/boards";
 import type {} from "@tomradex/hub";
 import type {} from "@tomradex/items";
-import type {} from "@tomradex/repos";
+import type { CheckoutProblem } from "@tomradex/repos";
 import type {} from "@tomradex/settings";
 import { normalizeRepoPath, repoSubfolder, type Author, type Board, type Item, type Repo } from "@tomradex/domain";
 import { GitFolder, type Git } from "@tomradex/git";
@@ -75,6 +75,8 @@ export type StartResult =
       engine?: string;
       /** Pane gate: the herdr pane whose agent still works the ticket and did not take the prompt. */
       pane?: string;
+      /** Checkout gate: the folder this machine names for the repository, and why it cannot be worked in. */
+      placed?: { dir: string; problem: CheckoutProblem };
       /** Workdir gate: what stood in the way — the repository id a workstream still names, the branch and the worktree that has it, the folder that lies outside the checkout. */
       cause?: { code: WorkdirCause; repoId?: string; branch?: string; heldAt?: string; releasable?: boolean; folder?: string; checkout?: string };
     }
@@ -162,8 +164,13 @@ export class Starter {
       const claimed = await this.continueClaimed(projectId, item, repo, placement.checkout);
       if (claimed) return claimed;
     }
-    if (!placement.checkout || !fs.existsSync(placement.checkout)) {
+    if (!placement.checkout) {
       return { ok: false, gate: "checkout", message: `No checkout of ${repo.name} on this machine — point Tomrade at yours, or let it clone one`, ...onRepo };
+    }
+    // A folder that went away, or is no longer a repository, would only fail later — or hang in git.
+    if (placement.problem) {
+      const what = placement.problem === "missing" ? "does not exist" : "is not a git repository";
+      return { ok: false, gate: "checkout", message: `The checkout of ${repo.name} on this machine, ${placement.checkout}, ${what} — point Tomrade at the right folder, or let it clone one`, placed: { dir: placement.checkout, problem: placement.problem }, ...onRepo };
     }
 
     let state = store.repoState(projectId, repo.id);

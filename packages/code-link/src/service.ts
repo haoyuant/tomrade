@@ -102,7 +102,7 @@ export interface StartBatchRequest {
 }
 
 /** One ticket of a batch start: started, or stopped at a gate with the one thing that clears it. */
-export interface StartBatchEntry {
+export interface StartBatchEntry extends Pick<Extract<StartResult, { ok: false }>, "board" | "repo" | "remote" | "placed" | "cause" | "bootstrapKey"> {
   itemId: string;
   key: string;
   title: string;
@@ -220,6 +220,8 @@ export const CodeLinkConfig = z.preprocess(
     sweepMs: z.number().int().min(0).default(30_000),
     /** Fetch from the remote before reading. Off, only what this machine already has is read. */
     fetch: z.boolean().default(true),
+    /** How long a Start may take before the person is told it failed, rather than left waiting on a stuck step. */
+    startTimeoutMs: z.number().int().min(1).default(120_000),
     /** Where the Start dialog's last used configuration rests, beside the settings file. Null keeps none. */
     defaultsPath: z.string().nullish()
   })
@@ -926,7 +928,7 @@ export class CodeLink extends Service implements CodeLinkReader {
   /** Start or continue a ticket with a local agent — headless here or in the user's terminal, coding or General. See `Starter` for the gates. */
   async start(projectId: string, itemId: string, opts: StartOptions): Promise<StartResult> {
     const { then, ...rest } = opts;
-    const result = await this.starter.start(projectId, itemId, rest);
+    const result = await this.withinStartTimeout(projectId, itemId, this.starter.start(projectId, itemId, rest));
     // Only what actually started is remembered, with the engine it settled on: a gate the user had to
     // clear leaves the memory as it was, and an engine the caller left to Tomrade is not lost.
     if (result.ok) this.defaults.write({ mode: rest.mode, engine: result.engine, options: rest.options, permissionMode: rest.permissionMode, playbook: rest.playbook });
@@ -935,6 +937,19 @@ export class CodeLink extends Service implements CodeLinkReader {
       this.followOnStore.add({ projectId, itemId: then, afterItemId: itemId, options: { mode: rest.mode, engine: result.engine, options: rest.options, permissionMode: rest.permissionMode, playbook: rest.playbook }, at: Date.now() });
     }
     return result;
+  }
+
+  /** A Start stuck on a step that never answers (git waiting on a credential prompt, say) fails with the reason instead. */
+  private withinStartTimeout(projectId: string, itemId: string, started: Promise<StartResult>): Promise<StartResult> {
+    const ms = this.config.startTimeoutMs;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        const key = this.ctx.items.get(projectId, itemId)?.key ?? itemId;
+        reject(new Error(this.words()("startTimedOut", { key, seconds: Math.ceil(ms / 1000) })));
+      }, ms);
+    });
+    return Promise.race([started, timedOut]).finally(() => clearTimeout(timer));
   }
 
   /** Tickets waiting to start by themselves once another lands. */
@@ -1331,7 +1346,11 @@ export class CodeLink extends Service implements CodeLinkReader {
       try {
         const started = await this.start(projectId, item.id, opts);
         if (started.ok) results.push({ itemId: item.id, key: item.key, title: item.title, ok: true, threadId: started.threadId, branch: started.branch, engine: started.engine, continued: started.continued, ...(started.waitingOn ? { message: started.waitingOn } : {}) });
-        else results.push({ itemId: item.id, key: item.key, title: item.title, ok: false, gate: started.gate, message: started.message, ...(started.blockers ? { blockers: started.blockers } : {}) });
+        else {
+          // What the gate names travels with it, so the card can offer the same fix as the Start dialog.
+          const { ok: _ok, pane: _pane, ...stopped } = started;
+          results.push({ itemId: item.id, key: item.key, title: item.title, ok: false, ...stopped });
+        }
       } catch (err) {
         results.push({ itemId: item.id, key: item.key, title: item.title, ok: false, message: errorMessage(err) });
       }
@@ -1341,8 +1360,12 @@ export class CodeLink extends Service implements CodeLinkReader {
       const before = agent.store.cards(projectId, request.requestedBy).find((c) => c.id === request.cardId);
       const data = (before?.data ?? {}) as Partial<StartBatchCard>;
       const tickets = data.tickets ?? results.map((r) => ({ itemId: r.itemId, key: r.key, title: r.title }));
+      // A ticket started again from the card after its fix keeps the others' outcomes beside its own.
+      const merged = [...(data.results ?? []).filter((r) => !results.some((n) => n.itemId === r.itemId)), ...results];
+      // Kept with the outcome, so a ticket started again from the card goes with what the others went with.
+      const config = data.config ?? (request.engine ? { engine: request.engine, ...(request.options ? { options: request.options } : {}), ...(request.permissionMode ? { permissionMode: request.permissionMode } : {}) } : undefined);
       try {
-        agent.postCard(projectId, request.requestedBy, { id: request.cardId, schema: "start-batch", title: before?.title ?? tickets.map((t) => t.key).join(", "), data: { ...data, tickets, results } satisfies StartBatchCard }, AUTHOR);
+        agent.postCard(projectId, request.requestedBy, { id: request.cardId, schema: "start-batch", title: before?.title ?? tickets.map((t) => t.key).join(", "), data: { ...data, tickets, results: merged, ...(config ? { config } : {}) } satisfies StartBatchCard }, AUTHOR);
       } catch (err) {
         this.ctx.logger.warn(`start card not updated: ${errorMessage(err)}`);
       }

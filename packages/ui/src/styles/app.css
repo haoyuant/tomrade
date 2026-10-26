@@ -1765,7 +1765,7 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 /* tickets started from the conversation, and a delivery's merge offered there */
 .start-batch-list { display: grid; gap: 4px; list-style: none; margin: 0; padding: 5px 0; }
 .start-batch-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
-.start-batch-result { flex-basis: 100%; }
+.start-batch-result, .start-batch-list .gate-fix { flex-basis: 100%; }
 .start-batch-pick { flex-wrap: wrap; }
 .start-batch-pick .select { max-width: 14rem; }
 .start-batch-field { display: inline-flex; align-items: center; gap: 6px; }

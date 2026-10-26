@@ -16,7 +16,7 @@ import { Agent, type Engine, type TurnInput } from "@tomradex/agent";
 import { fakeLlm } from "@tomradex/llm";
 import { CodeLink, BOOTSTRAP_LABEL, sessionContext, terminalApp } from "@tomradex/code-link";
 import { Contributions } from "@tomradex/contributions";
-import { Repos } from "@tomradex/repos";
+import { Repos, normalizeRemote } from "@tomradex/repos";
 import GitHubAccount from "@tomradex/github";
 import { Settings } from "@tomradex/settings";
 import { Storage } from "@tomradex/storage";
@@ -109,7 +109,7 @@ function fakeCodeEngine(turns: TurnInput[]): Engine {
   };
 }
 
-async function machine(repo: { remote: string; checkout: string } | null, opts: { gitBinary?: string; defaultsPath?: string; llm?: (system: string, user: string) => unknown; codeEngine?: false; brief?: false } = {}) {
+async function machine(repo: { remote: string; checkout: string } | null, opts: { gitBinary?: string; defaultsPath?: string; llm?: (system: string, user: string) => unknown; codeEngine?: false; brief?: false; startTimeoutMs?: number } = {}) {
   const hubDir = path.join(root, `hub-${n++}`);
   fs.mkdirSync(hubDir, { recursive: true });
   const turns: TurnInput[] = [];
@@ -125,7 +125,7 @@ async function machine(repo: { remote: string; checkout: string } | null, opts: 
       Agent,
       ...(opts.codeEngine === false ? [] : [enginePlugin]),
       ...(opts.llm ? [fakeLlm(opts.llm)] : []),
-      [CodeLink, { scanMs: 0, gitBinary: opts.gitBinary ?? "git", defaultsPath: opts.defaultsPath ?? path.join(hubDir, "code-link.json") }]
+      [CodeLink, { scanMs: 0, gitBinary: opts.gitBinary ?? "git", defaultsPath: opts.defaultsPath ?? path.join(hubDir, "code-link.json"), ...(opts.startTimeoutMs ? { startTimeoutMs: opts.startTimeoutMs } : {}) }]
     ]
   });
   await settle();
@@ -567,6 +567,51 @@ describe("starting a ticket", () => {
 
     ctx.items.update(project.id, item.id, { humanLocked: true }, "human");
     expect(await codeLink.start(project.id, item.id, { mode: "run" })).toMatchObject({ ok: false, gate: "locked" });
+  });
+
+  it("stops at the checkout gate at once when this machine's folder is unset, gone, or no longer a repository", async () => {
+    const repo = codeRepo();
+    const { codeLink, ctx, project, ticket, repo: row } = await machine(repo);
+    const item = ticket("Synced from another machine");
+    const at = Date.now();
+    expect(await codeLink.start(project.id, item.id, { mode: "run" })).toMatchObject({ ok: false, gate: "checkout", repo: { id: row!.id }, remote: row!.remote });
+
+    await ctx.repos.setCheckout(repo.remote, repo.checkout);
+    fs.rmSync(path.join(repo.checkout, ".git"), { recursive: true, force: true });
+    const notGit = await codeLink.start(project.id, item.id, { mode: "run" });
+    expect(notGit).toMatchObject({ ok: false, gate: "checkout", placed: { dir: repo.checkout, problem: "not-git" }, message: expect.stringContaining("is not a git repository") });
+    expect(ctx.repos.checkouts()).toContainEqual(expect.objectContaining({ checkout: repo.checkout, problem: "not-git" }));
+
+    // A folder this machine once named that is not there any more.
+    const gone = path.join(root, `gone-${n++}`);
+    ctx.hub.catalog.setRepo(normalizeRemote(repo.remote), { checkout: gone });
+    expect(await codeLink.start(project.id, item.id, { mode: "run" })).toMatchObject({ ok: false, gate: "checkout", placed: { dir: gone, problem: "missing" } });
+    expect(Date.now() - at).toBeLessThan(5000);
+    // Nothing was left behind for the ticket to wait on.
+    expect(codeLink.sessionsOf(project.id, item.id)).toEqual([]);
+    expect(ctx.items.get(project.id, item.id)!.status).toBe("todo");
+  });
+
+  it("fails a start that does not finish in time, rather than leave the ticket waiting", async () => {
+    const repo = codeRepo();
+    const { codeLink, ctx, project, ticket } = await machine(repo, { startTimeoutMs: 200 });
+    await ctx.repos.setCheckout(repo.remote, repo.checkout);
+    const item = ticket("Stuck on git");
+    // A step that never answers, as git waiting on a credential window does.
+    codeLink.scan = () => new Promise(() => {});
+    await expect(codeLink.start(project.id, item.id, { mode: "run" })).rejects.toThrow(`Starting ${item.key} took longer than 1 seconds`);
+  });
+
+  it("keeps what a stopped ticket's gate names on the start card, beside the others' outcomes", async () => {
+    const repo = codeRepo();
+    const { codeLink, agent, project, ticket, repo: row } = await machine(repo);
+    const item = ticket("No folder here");
+    const thread = agent.newThread(project.id, "fake-code");
+    agent.postCard(project.id, thread.id, { id: "start-batch-t", schema: "start-batch", title: item.key, data: { tickets: [{ itemId: item.id, key: item.key, title: item.title }], results: [{ itemId: "other", key: "TOM-0", title: "", ok: true }] } }, "human");
+    const results = await codeLink.startTickets(project.id, { itemIds: [item.id], requestedBy: thread.id, engine: "fake-code", cardId: "start-batch-t" });
+    expect(results).toEqual([expect.objectContaining({ key: item.key, ok: false, gate: "checkout", repo: { id: row!.id, name: row!.name }, remote: row!.remote })]);
+    const card = agent.store.cards(project.id, thread.id).find((c) => c.id === "start-batch-t")!;
+    expect(card.data).toMatchObject({ config: { engine: "fake-code" }, results: [{ key: "TOM-0", ok: true }, { key: item.key, ok: false, gate: "checkout", remote: row!.remote }] });
   });
 
   it("does not mistake a repository it cannot reach for an empty one", async () => {

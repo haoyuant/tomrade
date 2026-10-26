@@ -29,7 +29,26 @@ export interface CheckoutView {
   remote: string;
   checkout: string | null;
   runInCheckout: boolean;
+  /** The folder this machine names cannot be worked in: gone from disk, or no longer a git checkout. */
+  problem?: CheckoutProblem;
 }
+
+export type CheckoutProblem = "missing" | "not-git";
+
+/** Every folder Tomrade places is a repository's top, so its own `.git` is what makes it usable. */
+function checkoutProblem(dir: string): CheckoutProblem | null {
+  try {
+    if (!fs.statSync(dir).isDirectory()) return "missing";
+  } catch {
+    return "missing";
+  }
+  return fs.existsSync(path.join(dir, ".git")) ? null : "not-git";
+}
+
+const withProblem = (view: CheckoutView): CheckoutView => {
+  const problem = view.checkout ? checkoutProblem(view.checkout) : null;
+  return problem ? { ...view, problem } : view;
+};
 
 /** Result of inspecting the folder the user explicitly chose. */
 export type CheckoutSelection =
@@ -374,14 +393,14 @@ export class Repos extends Service implements ReposReader {
 
   checkouts(): CheckoutView[] {
     return Object.entries(this.hub.catalog.repos())
-      .map(([remote, r]) => ({ remote, checkout: r.checkout, runInCheckout: r.runInCheckout }))
+      .map(([remote, r]) => withProblem({ remote, checkout: r.checkout, runInCheckout: r.runInCheckout }))
       .sort((a, b) => a.remote.localeCompare(b.remote));
   }
 
   checkout(remote: string): CheckoutView {
     const key = normalizeRemote(remote);
     const r = this.hub.catalog.repo(key);
-    return { remote: key, checkout: r?.checkout ?? null, runInCheckout: r?.runInCheckout ?? false };
+    return withProblem({ remote: key, checkout: r?.checkout ?? null, runInCheckout: r?.runInCheckout ?? false });
   }
 
   /** The folder must be a checkout of that very repository: its origin is compared, not trusted. */
@@ -470,7 +489,7 @@ export class Repos extends Service implements ReposReader {
     const repo = this.get(projectId, board.repo_id);
     if (!repo) return null;
     const placement = this.checkout(repo.remote);
-    if (!placement.checkout || !fs.existsSync(placement.checkout)) throw new CheckoutUnsetError(repo.remote);
+    if (!placement.checkout || placement.problem) throw new CheckoutUnsetError(repo.remote);
     // Stored with forward slashes, relative to the repository; an absolute path from before that rule still resolves here.
     const sub = repoSubfolder(board.repo_path, placement.checkout);
     if (sub === null) throw new RepoPathOutsideError(board.repo_path, placement.checkout);

@@ -309,7 +309,13 @@ export function registerTools(ctx: Context, host: ToolHost): void {
           return { started: [], ...(problems.length ? { problems } : {}), note: `A card in the conversation asks the user whether to start ${keys}; nothing runs until they say so. Say what the ticket is about in a line and end your turn.` };
         }
         const results = await host.startTickets(projectId, { itemIds: items.map((i) => i.id), requestedBy: inv.run.threadId, engine: config.engine, ...(config.options ? { options: config.options } : {}), ...(config.permissionMode ? { permissionMode: config.permissionMode } : {}), ...(task ? { task } : {}), ...(args.allowBlocked ? { allowBlocked: true } : {}), ...(args.autoMerge ? { autoMerge: true } : {}) });
-        const card: StartBatchCard = { tickets: items.map((i) => ({ itemId: i.id, key: i.key, title: i.title })), ...(task ? { task } : {}), results };
+        const card: StartBatchCard = {
+          tickets: items.map((i) => ({ itemId: i.id, key: i.key, title: i.title })),
+          ...(task ? { task } : {}),
+          results,
+          // What a ticket stopped at a gate is started again with from the card, once fixed.
+          config: { engine: config.engine, ...(config.options ? { options: config.options } : {}), ...(config.permissionMode ? { permissionMode: config.permissionMode } : {}) }
+        };
         agent.setCard(inv.run.id, { id: `start-batch-${inv.run.id}`, schema: "start-batch", title: items.map((i) => i.key).join(", "), data: card });
         const started = results.filter((r) => r.ok);
         const stopped = results.filter((r) => !r.ok);

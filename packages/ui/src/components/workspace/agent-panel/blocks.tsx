@@ -13,7 +13,8 @@ import type { RunProgress } from "~/lib/agent";
 import { offerStart, permissionLabel, useMergeTicket, useResolveMerge, useStartTickets } from "~/lib/codeLink";
 import { useEngines } from "~/lib/agent";
 import { useAgentDock } from "~/components/chrome/ProjectShell";
-import type { MergeCard, StartBatchCard } from "@tomradex/code-link";
+import type { MergeCard, StartBatchCard, StartBatchEntry } from "@tomradex/code-link";
+import { StartGateFix, useGateWords, type StartFailure } from "~/components/issue/StartGateFix";
 import { useSetupInTerminal } from "~/lib/setup";
 import { useImShareNext, useImThreadBindings } from "~/lib/im";
 import { isCancelKey, isCommitKey, isComposing } from "~/lib/keys";
@@ -244,7 +245,8 @@ export function StartOffer({ card, projectId, onOpenIssue }: { card: StartOfferC
 export function StartBatchBlock({ card, cardId, projectId, threadId, onOpenIssue }: { card: StartBatchCard; cardId: string; projectId: string; threadId: string; onOpenIssue: (id: string) => void }) {
   const { t } = useI18n();
   const engines = useEngines();
-  const { showThread } = useAgentDock();
+  const { showThread, openSettings, openRepositories } = useAgentDock();
+  const gateWords = useGateWords();
   const start = useStartTickets(projectId);
   const keyOf = useKeyOf(projectId);
   const ready = (engines.data ?? []).filter((engine) => engine.ok && engine.capabilities.includes("code") && !engine.terminalOnly);
@@ -263,6 +265,8 @@ export function StartBatchBlock({ card, cardId, projectId, threadId, onOpenIssue
       : t(n === 1 ? "agentPanel.startBatchPickOne" : "agentPanel.startBatchPick", { n });
   const go = (config: { engine: string; options?: Record<string, unknown>; permissionMode?: string }) =>
     start.mutate({ itemIds: card.tickets.map((ticket) => ticket.itemId), requestedBy: threadId, ...config, ...(card.task ? { task: card.task } : {}), cardId });
+  const retry = (itemId: string) => (allowBlocked?: boolean) =>
+    start.mutate({ itemIds: [itemId], requestedBy: threadId, ...(settled ?? {}), ...(card.task ? { task: card.task } : {}), ...(allowBlocked ? { allowBlocked: true } : {}), cardId });
   return (
     <div className="tool-card" data-testid="start-batch" data-state={card.results ? "started" : settled ? "confirm" : "pick"}>
       <div className="tool-head">
@@ -282,7 +286,9 @@ export function StartBatchBlock({ card, cardId, projectId, threadId, onOpenIssue
                     ? result.message
                       ? t("agentPanel.startBatchWaiting", { question: result.message })
                       : t(result.continued ? "agentPanel.startBatchContinued" : "agentPanel.startBatchStarted", { engine: findEngineTitle(engines.data, result.engine), branch: result.branch ?? "" })
-                    : result.message ?? t("agentPanel.startBatchStopped")}
+                    : result.gate
+                      ? gateWords(stoppedAt(result), ticket.key).lead
+                      : result.message ?? t("agentPanel.startBatchStopped")}
                   {result.ok && result.threadId && (
                     <>
                       {" · "}
@@ -290,6 +296,18 @@ export function StartBatchBlock({ card, cardId, projectId, threadId, onOpenIssue
                     </>
                   )}
                 </span>
+              )}
+              {result && !result.ok && result.gate && (
+                <StartGateFix
+                  projectId={projectId}
+                  itemId={ticket.itemId}
+                  failure={stoppedAt(result)}
+                  onRetry={retry(ticket.itemId)}
+                  onLeave={() => {}}
+                  onOpenRepositories={openRepositories}
+                  onOpenIssue={onOpenIssue}
+                  onOpenEngine={openSettings}
+                />
               )}
             </li>
           );
@@ -341,6 +359,9 @@ export function StartBatchBlock({ card, cardId, projectId, threadId, onOpenIssue
     </div>
   );
 }
+
+/** A card's stopped ticket as the Start dialog's failure, so it is said and fixed the same way. */
+const stoppedAt = (entry: StartBatchEntry): StartFailure => ({ ...entry, ok: false, gate: entry.gate!, message: entry.message ?? "" });
 
 const findEngineTitle = (engines: EngineView[] | undefined, id: string | undefined): string => engines?.find((e) => e.id === id || e.includes?.includes(id ?? ""))?.title ?? id ?? "";
 

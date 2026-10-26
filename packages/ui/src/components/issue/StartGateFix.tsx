@@ -20,6 +20,7 @@ export function useGateWords() {
       case "workstream":
         return { lead: f.message.includes("no longer has") ? t("codeLink.gateWorkstreamGone", { board }) : t("codeLink.gateWorkstream", { board }) };
       case "checkout":
+        if (f.placed) return { lead: t(f.placed.problem === "missing" ? "codeLink.gateCheckoutMissing" : "codeLink.gateCheckoutNotGit", { repo, dir: f.placed.dir }) };
         return { lead: t("codeLink.gateCheckout", { repo }) };
       case "remote":
         return { lead: t("codeLink.gateRemote", { repo }), detail: f.message };
@@ -164,6 +165,12 @@ export function StartGateFix({
             <button type="button" className="btn btn-primary" data-testid="gate-choose-checkout" disabled={selectCheckout.isPending} onClick={() => void choose()}>
               {t("codeLink.gateChooseCheckout")}
             </button>
+            {/* The same pick: a folder without the checkout is offered as where to clone it. */}
+            {!cloneInto && (
+              <button type="button" className="btn btn-ghost" data-testid="gate-clone-checkout" disabled={selectCheckout.isPending} onClick={() => void choose()}>
+                {t("codeLink.gateCloneCheckout")}
+              </button>
+            )}
             {repositories}
           </div>
           {cloneInto && repo && (
