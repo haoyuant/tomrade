@@ -27,7 +27,8 @@ export const CODE_SESSIONS_WORDS = defineWords("codeSessions", {
     herdrRestarting: "herdr's server stopped — starting it again, this terminal comes back on its own",
     hostRestarting: "Tomrade's terminal host stopped — starting it again; this cell attaches again once it is back",
     notSent: "What you typed while the terminal was connecting was not sent",
-    paneEnded: "This terminal ended"
+    paneEnded: "This terminal ended",
+    takenOver: "Another window took this terminal over"
   },
   zh: {
     open: "打开终端",
@@ -54,6 +55,7 @@ export const CODE_SESSIONS_WORDS = defineWords("codeSessions", {
     herdrRestarting: "herdr 服务停了，正在重新启动，这个终端会自己回来",
     hostRestarting: "Tomrade 的终端 host 停了，正在重新启动；它回来后这个格子会重新连接",
     notSent: "终端连接时输入的内容没有发出去",
-    paneEnded: "这个终端已经结束"
+    paneEnded: "这个终端已经结束",
+    takenOver: "这个终端被另一个窗口接管了"
   }
 });

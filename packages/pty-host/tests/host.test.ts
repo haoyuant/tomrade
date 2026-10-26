@@ -148,7 +148,7 @@ describe("the host", () => {
     expect(t.frames.at(-1)!.full).toBe(false);
   });
 
-  it("takes input and size only from the one in control; a newer controller takes over", async () => {
+  it("takes input and size only from the one in control; a newer controller takes over and the old one is let go", async () => {
     const { pipe } = await hostOn();
     const { pane_id } = await hostCall<{ pane_id: string }>(pipe, "pane.launch", { cwd: os.tmpdir() });
     const pty = FakePty.last!;
@@ -163,9 +163,11 @@ describe("the host", () => {
     second.stream.input("d");
     await vi.waitFor(() => expect(pty.written).toBe("ad"));
     expect(pty.sizes.at(-1)).toEqual([40, 6]);
-    // The one taken over from still watches.
+    await vi.waitFor(() => expect(first.closed()).toBe("taken_over"));
+    // An observer goes on watching.
     pty.print("x");
-    await vi.waitFor(() => expect(first.text()).toContain("x"));
+    await vi.waitFor(() => expect(watcher.text()).toContain("x"));
+    expect(watcher.closed()).toBeUndefined();
   });
 
   it("scrolls the scrollback on the wheel, tells where the view is, and comes back down on typing", async () => {

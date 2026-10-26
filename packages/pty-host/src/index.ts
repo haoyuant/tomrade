@@ -26,6 +26,7 @@ import { pipePath, PtyHostError, type PaneInfo } from "./protocol.js";
 import { defaultShell } from "./shell.js";
 import { PTY_HOST_WORDS } from "./words.js";
 
+export { hostCall } from "./client.js";
 export { pipePath, PROTOCOL, PtyHostError } from "./protocol.js";
 export { defaultShell, onPath } from "./shell.js";
 

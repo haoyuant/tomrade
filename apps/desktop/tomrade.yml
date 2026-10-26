@@ -68,6 +68,9 @@ modules:
     title: External MCP servers
   - id: codeLink
     title: Code link
+  # herdr's panes, or the pty host's on native Windows.
+  - id: terminals
+    title: Terminals
   - id: files
     title: Files
   - id: notes

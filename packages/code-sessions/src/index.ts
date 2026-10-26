@@ -677,7 +677,7 @@ function apply(ctx: Context, config: Config) {
       // The server going away is not the pane ending: it is started again and the cell comes back on its own.
       void serverGone().then((gone) => {
         if (win.turns.get(cell) !== mine) return;
-        post(win, { type: "closed", cell, reason: gone ? restarting : provider.kind === "builtin" && reason === "exited" ? words()("paneEnded") : reason });
+        post(win, { type: "closed", cell, reason: gone ? restarting : provider.kind !== "builtin" ? reason : reason === "exited" ? words()("paneEnded") : reason === "taken_over" ? words()("takenOver") : reason });
         if (gone) revive();
       });
     });

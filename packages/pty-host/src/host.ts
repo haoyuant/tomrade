@@ -82,11 +82,12 @@ export class Host {
       }
       if (request.method === "terminal.attach") {
         try {
-          stream = this.attach(socket, params as unknown as AttachParams);
-          return reply(id, { type: "attached" });
+          // Answered once the pane has it, so nothing the window sends after the answer finds it not there yet.
+          stream = this.attach(socket, params as unknown as AttachParams, () => reply(id, { type: "attached" }), (err) => fail(id, err));
         } catch (err) {
-          return fail(id, err);
+          fail(id, err);
         }
+        return;
       }
       void this.handle(request.method, params).then((result) => reply(id, result), (err: unknown) => fail(id, err));
     }));
@@ -187,10 +188,11 @@ export class Host {
   }
 
   /** A terminal on this connection: frames out, commands in, until either side closes. */
-  private attach(socket: net.Socket, params: AttachParams): (text: string) => void {
+  private attach(socket: net.Socket, params: AttachParams, ready: () => void, refuse: (err: RequestError) => void): (text: string) => void {
     const pane = this.pane(params as unknown as Record<string, unknown>);
     const mode = params.mode === "observe" ? "observe" : "control";
     let open = true;
+    let answered = false;
     const attachment: Attachment = {
       mode,
       send: (frame) => {
@@ -199,6 +201,8 @@ export class Host {
       close: (reason) => {
         if (!open) return;
         open = false;
+        // Ended before it was answered: the pane is gone, said as the answer.
+        if (!answered) return refuse(new RequestError("pane_not_found", `pane ${pane.id} ended`));
         if (socket.writable) socket.end(line({ type: "terminal.closed", reason }));
       }
     };
@@ -206,7 +210,10 @@ export class Host {
       open = false;
       pane.detach(attachment);
     });
-    pane.attach(attachment, params.cols, params.rows);
+    pane.attach(attachment, params.cols, params.rows, () => {
+      answered = true;
+      ready();
+    });
     return (text) => {
       let command: TerminalCommand;
       try {

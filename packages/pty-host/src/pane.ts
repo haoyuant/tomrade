@@ -154,18 +154,24 @@ export class Pane {
     return text.slice(-Math.max(1, lines)).join("\n");
   }
 
-  /** Attaches a window: it is painted the screen whole once everything written so far is on it. */
-  attach(attachment: Attachment, cols: number, rows: number): void {
+  /** Attaches a window once everything written so far is on the screen: `ready` hears it took, then the window is painted the screen whole. */
+  attach(attachment: Attachment, cols: number, rows: number, ready: () => void = () => undefined): void {
     this.term.write("", () => {
       if (this.exited) return attachment.close("exited");
       if (attachment.mode === "control") {
-        // Taking over: the one that held the pane only watches from now on.
+        // Taking over, as herdr does: the one that held the pane is let go, and its window offers to attach again.
+        const previous = this.controller;
         this.controller = attachment;
+        if (previous) {
+          this.attachments.delete(previous);
+          previous.close("taken_over");
+        }
         this.resize(cols, rows);
       }
       // The others are brought up to now first, so the new one joins on the screen they all have.
       this.flush();
       this.attachments.add(attachment);
+      ready();
       attachment.send(this.frame(this.shown!, true));
     });
   }
