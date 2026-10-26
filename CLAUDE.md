@@ -33,11 +33,13 @@ Local-first backlog workbench: an Electron app (`apps/desktop`) with a React UI 
 - `pnpm i18n:check` warns (never fails) about what each of those locales lacks and which translations are stale: git blame shows their English changed in a later commit (`--keys` lists every key). Updating a translation's line makes it current again.
 - Backend: a package's words live in `src/words.ts` as `defineWords(id, { en, zh })` (`@tomradex/domain`); zh must have every key with the same `{{slots}}`. Other languages read English (or an installed language pack). Prompts for an agent stay in English.
 
+<!-- BEGIN TOMRADE -->
 ## Tomrade
 
-The backlog for this repository lives in Tomrade (project "Tomrade"), reachable as the `tomrade` MCP server (`.mcp.json` for Claude Code, `.codex/config.toml` for Codex).
-Claude Code and Codex report session lifecycle through repository hooks. The hooks also carry Tomrade's answer: a code change made before this session claimed a ticket, or recorded the person's word to go without one, is refused with the way on. In Codex, trust the project and review the new hooks with `/hooks`, then start a new session; older Codex versions without hooks must be upgraded. No `notify` setting is changed.
-Cursor uses `.cursor/mcp.json`; Gemini CLI uses `.gemini/settings.json`. Neither reports its lifecycle, but once it calls `claim_ticket` Tomrade follows the session through its MCP connection: later calls on that connection need no key. Use `note_progress` only when the claim's result says `tracking.tracked` is true.
+The backlog for this repository lives in Tomrade (project "Tomrade"), reachable as the `tomrade` MCP server (`.mcp.json` for Claude Code and WorkBuddy, `.codex/config.toml` for Codex, `.pi/extensions/tomrade.ts` for Pi, `opencode.json` for OpenCode).
+This section applies only when the `tomrade` MCP server is available in your session. Tomrade runs on one developer's machine; without it (no such server, or its tools fail to connect) everything below is void: work as usual, never try to reach Tomrade another way, and never mention tickets you cannot read.
+Claude Code, Codex, WorkBuddy and Cursor report session lifecycle through repository hooks, Pi through that extension and OpenCode through `.opencode/plugins/tomrade.js`. The hooks also carry Tomrade's answer (Cursor's in its own fields): a code change made before this session claimed a ticket, or recorded the person's word to go without one, is refused with the way on. In Codex, trust the project and review the new hooks with `/hooks`, then start a new session; older Codex versions without hooks must be upgraded. Pi loads the extension once you trust the project. No `notify` setting is changed.
+Cursor uses `.cursor/mcp.json`, and `.cursor/hooks.json` runs `.cursor/hooks/tomrade` (`.cursor/hooks/tomrade.ps1` on Windows). Gemini CLI uses `.gemini/settings.json` and does not report its lifecycle, but once it calls `claim_ticket` Tomrade follows the session through its MCP connection: later calls on that connection need no key. Use `note_progress` only when the claim's result says `tracking.tracked` is true.
 For other MCP-capable agents, add a Streamable HTTP server named `tomrade` with URL http://127.0.0.1:19090/mcp/014ce729-9739-41b5-a148-8d73f7825928 in that agent's own settings. No configuration is generated for other tools; reading AGENTS.md alone supplies instructions, not MCP tools or session tracking.
 Not every session works on a ticket, and not every ticket involves code: never invent one. Work without a ticket is fine.
 
@@ -45,7 +47,7 @@ Not every session works on a ticket, and not every ticket involves code: never i
 
 Before changing code here, look where you are: the checkout's branch, and whether this session holds a ticket. A session that holds a ticket goes on with it turn after turn; when the checkout is already on a ticket's branch (its name carries a key) and the request continues that work, `claim_ticket` that key once and go on there — no new ticket or branch per request. A new piece of work the person asked for gets a ticket of its own — `create_item` (or the key they named), then `claim_ticket` — and is made on the branch the claim returns, every commit message naming the key; do not ask first for that: the person can change or drop the ticket, and the sidebar shows what this session works on from the moment it claims. When it is unclear a ticket is wanted (a tiny fix, an experiment, something they may want kept out of the backlog), ask them first; if they want it done here without one, call `work_without_ticket` with their words and go on. Never edit or commit on the default branch, or on another ticket's branch, without one of these. Reading, searching, explaining and answering questions need nothing.
 
-### When the work is a ticket (the user or the branch names a key such as `TOM-42`)
+### When the work is a ticket (the user or the branch names a key such as `TOM-42`) and the `tomrade` server is available
 
 - Call `claim_ticket("TOM-42")` before starting: it returns the ticket and the branch to use, and marks it Doing. A session that claimed a ticket owns only that ticket.
 - Implement only its stated outcome and acceptance criteria; neighboring tickets are context, not extra work. Work you find for another ticket stays untouched — mention it when you sync.
@@ -55,7 +57,7 @@ Before changing code here, look where you are: the checkout's branch, and whethe
 
 ### Syncing back
 
-When the user asks to sync with Tomrade (in Claude Code: `/tomrade:sync`; in Codex: `$tomrade-sync`):
+When the user asks to sync with Tomrade (in Claude Code: `/tomrade:sync`; in Codex: `$tomrade-sync`) and the `tomrade` server is available:
 
 1. Gather what this session did: what was built, changed, decided or found — from the conversation and, in a git repository, from the current branch, its commits not on the default branch, and any pull request.
 2. Match the work to tickets. A key in the branch, a commit, the pull request or the conversation settles it (get_item). Without one, search list_items with one or two distinctive words and take only a ticket that clearly describes this work. Work that matches no ticket stays unmatched, and that is fine.
@@ -68,3 +70,4 @@ When the user asks to sync with Tomrade (in Claude Code: `/tomrade:sync`; in Cod
 5. End with a short summary: each ticket and what changed on it, the keys of new tickets, and the work you left unmatched.
 
 When a meaningful piece of work looks like it belongs to a ticket, you may offer once to sync it back; drop it if the user declines.
+<!-- END TOMRADE -->

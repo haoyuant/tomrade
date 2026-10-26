@@ -1,0 +1,114 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" -H \"X-Tomrade-Agent: workbuddy\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\"; exit 0"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" -H \"X-Tomrade-Agent: workbuddy\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\"; exit 0"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" -H \"X-Tomrade-Agent: workbuddy\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\"; exit 0"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" -H \"X-Tomrade-Agent: workbuddy\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\"; exit 0"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" -H \"X-Tomrade-Agent: workbuddy\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\"; exit 0"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" -H \"X-Tomrade-Agent: workbuddy\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\"; exit 0"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" -H \"X-Tomrade-Agent: workbuddy\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\"; exit 0"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" -H \"X-Tomrade-Agent: workbuddy\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\"; exit 0"
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" -H \"X-Tomrade-Agent: workbuddy\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\"; exit 0"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" -H \"X-Tomrade-Agent: workbuddy\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\"; exit 0"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "set tomrade \"$(Remove-Item Alias:curl -Force -ErrorAction Ignore 2>&1)\"; curl -s -m 2 -X POST -H \"Content-Type: application/json\" -H \"X-Tomrade-Herdr-Pane: $HERDR_PANE_ID\" -H \"X-Tomrade-Terminal: $TERM_PROGRAM\" -H \"X-Tomrade-WT: $WT_SESSION\" -H \"X-Tomrade-Agent: workbuddy\" --data-binary \"@-\" \"http://127.0.0.1:19090/sessions/event\"; exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}
