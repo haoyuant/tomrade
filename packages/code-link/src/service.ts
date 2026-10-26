@@ -1065,7 +1065,8 @@ export class CodeLink extends Service implements CodeLinkReader {
   private filed(projectId: string, itemId: string): void {
     const item = this.ctx.items.get(projectId, itemId);
     const repoId = item ? this.ctx.boards.get(projectId, item.boardId)?.repoId : null;
-    if (!item || !repoId) return;
+    // An epic is planned, never worked: no session claims or delivers it.
+    if (!item || item.kind !== "ticket" || !repoId) return;
     const free = this.store.sessions(projectId, { live: true }).filter((s) =>
       s.mode === "terminal" && s.agent !== MCP_AGENT && s.threadId === null && s.repoId === repoId && s.endedAt === null && s.state !== "lost" && !s.itemIds.length);
     // One conversation may have left several rows behind; two conversations never share a ticket. Only the first is
