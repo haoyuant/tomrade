@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { defineWords } from "@tomradex/domain";
 import { resolveLocale, Settings, type InstalledLanguage, type SettingsSectionView } from "@tomradex/settings";
@@ -200,6 +200,20 @@ describe("language packs", () => {
     await second.dispose();
     expect(ctx.settings.languages().map((l) => l.plugin)).toEqual(["alice/pt"]);
     await first.dispose();
+  });
+
+  it("reads the locale from the language section alone, and follows it as it changes", async () => {
+    const { ctx } = await fresh({ plugins: [[Settings, { path: file(), locale: "zh-CN" }]] });
+    const get = vi.spyOn(Settings.prototype, "get");
+    expect(ctx.settings.locale()).toBe("zh");
+    ctx.settings.set({ ...ctx.settings.get(), language: "en" });
+    get.mockClear();
+    expect(ctx.settings.locale()).toBe("en");
+    ctx.settings.set({ ...ctx.settings.get(), language: "system" });
+    get.mockClear();
+    expect(ctx.settings.locale()).toBe("zh");
+    expect(get).not.toHaveBeenCalled();
+    get.mockRestore();
   });
 
   it("accepts any language tag as the language setting, and refuses what is not one", async () => {
