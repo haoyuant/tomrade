@@ -30,7 +30,7 @@ import { RoutinesRegion } from "~/components/routines/RoutinesRegion";
 import { Board } from "./Board";
 import { CommandPalette } from "./CommandPalette";
 import { DetailPane } from "./DetailPane";
-import { GraphView } from "./GraphView";
+import { GraphView } from "~/components/onDemand";
 import { QueryBar, focusTicketSearch } from "./QueryBar";
 import { Sidebar, sidebarOpenKey } from "./Sidebar";
 import { TabStrip } from "./TabStrip";

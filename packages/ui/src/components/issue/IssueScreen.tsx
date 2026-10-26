@@ -8,7 +8,7 @@ import { StatusBar } from "~/components/chrome/StatusBar";
 import { useScreenBinding, type ScreenBinding } from "~/components/chrome/ProjectShell";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import { ThemeSwitch } from "~/components/ui/theme-switch";
-import { IssueBody } from "~/components/issue/IssueBody";
+import { IssueBody } from "~/components/onDemand";
 import { StartTicket } from "~/components/issue/StartTicket";
 import { DeliveryPanel } from "~/components/issue/DeliveryPanel";
 import { LedgerRow, PluginSections } from "~/components/workspace/DetailPane";

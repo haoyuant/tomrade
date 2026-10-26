@@ -1,6 +1,6 @@
+import { useEffect, useState } from "react";
 import { usableWords, type Dictionaries } from "@tomradex/domain";
 import { en, zh, type PartialMessages } from "./i18n-messages";
-import { de, es, fr, ja, ru, zhHant } from "./i18n-messages/locales";
 
 /** The languages the interface ships. */
 export type BuiltinLocale = "en" | "zh" | "zh-Hant" | "ja" | "es" | "de" | "fr" | "ru";
@@ -15,10 +15,59 @@ export type MessageKey = {
   [N in keyof Messages]: `${N & string}.${keyof Messages[N] & string}`;
 }[keyof Messages];
 
-/** English and Simplified Chinese are complete; the rest may miss a string, which then shows in English. */
-const DICTS: Record<BuiltinLocale, PartialMessages> = { en, zh, "zh-Hant": zhHant, ja, es, de, fr, ru };
+/**
+ * The other shipped languages, loaded the first time one shows: together they weigh as much as the interface's own
+ * code, and a window carries only the language it speaks. Until it arrives, English.
+ */
+const LATER: Record<Exclude<BuiltinLocale, "en" | "zh">, () => Promise<PartialMessages>> = {
+  "zh-Hant": () => import("./i18n-messages/locales/zhHant").then((m) => m.zhHant),
+  ja: () => import("./i18n-messages/locales/ja").then((m) => m.ja),
+  es: () => import("./i18n-messages/locales/es").then((m) => m.es),
+  de: () => import("./i18n-messages/locales/de").then((m) => m.de),
+  fr: () => import("./i18n-messages/locales/fr").then((m) => m.fr),
+  ru: () => import("./i18n-messages/locales/ru").then((m) => m.ru)
+};
 
-export const isBuiltinLocale = (locale: string): locale is BuiltinLocale => Object.hasOwn(DICTS, locale);
+/** English and Simplified Chinese are complete and always here; the rest may miss a string, which then shows in English. */
+const DICTS: Partial<Record<BuiltinLocale, PartialMessages>> = { en, zh };
+const loading = new Map<string, Promise<void>>();
+
+export const isBuiltinLocale = (locale: string): locale is BuiltinLocale => Object.hasOwn(DICTS, locale) || Object.hasOwn(LATER, locale);
+
+/** Whether a language's shipped words are here; true for a tag the app does not ship, which has none to wait for. */
+export const localeLoaded = (locale: Locale): boolean => !Object.hasOwn(LATER, locale) || !!DICTS[locale as BuiltinLocale];
+
+/** Brings a shipped language's words; resolves at once when they are here or there are none to bring. */
+export function loadLocale(locale: Locale): Promise<void> {
+  if (localeLoaded(locale)) return Promise.resolve();
+  let pending = loading.get(locale);
+  if (!pending) {
+    const tag = locale as keyof typeof LATER;
+    pending = LATER[tag]().then((words) => void (DICTS[tag] = words));
+    // A failed load is tried again the next time the language is asked for.
+    pending.catch(() => loading.delete(locale));
+    loading.set(locale, pending);
+  }
+  return pending;
+}
+
+/** Renders again once the language's words have arrived: the number moves when they do. */
+export function useLocaleWords(locale: Locale): number {
+  const [arrived, setArrived] = useState(0);
+  const here = localeLoaded(locale);
+  useEffect(() => {
+    if (here) return;
+    let live = true;
+    loadLocale(locale).then(
+      () => live && setArrived((n) => n + 1),
+      () => {}
+    );
+    return () => {
+      live = false;
+    };
+  }, [locale, here]);
+  return arrived;
+}
 
 /** The showing language's pack, if it has one: only entries English has, asking for the values its template does. */
 let pack: { tag: string; ui: Dictionaries; messages: PartialMessages } | null = null;

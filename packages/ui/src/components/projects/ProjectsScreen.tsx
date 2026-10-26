@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
-import type { Board, Item, Project } from "@tomradex/domain";
+import type { Board, Project } from "@tomradex/domain";
+import type { ItemCounts } from "@tomradex/items";
 import { Icon } from "~/components/icons";
 import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
 import { StatusBar } from "~/components/chrome/StatusBar";
@@ -31,24 +32,19 @@ interface Facts {
 }
 
 /** Counts are read off the project's own rows, so a card can never claim a
- *  number the workspace disagrees with. */
+ *  number the workspace disagrees with — counted where they are, not fetched. */
 function useProjectFacts(projects: Project[]): Map<string, Facts> {
   const results = useQueries({
     queries: projects.flatMap((p) => [
       { queryKey: keys.boards(p.id), queryFn: () => invoke("boards.list", p.id) },
-      { queryKey: keys.items(p.id), queryFn: () => invoke("items.list", { projectId: p.id }) }
+      { queryKey: keys.itemCounts(p.id), queryFn: () => invoke("items.counts", p.id) }
     ])
   });
   const facts = new Map<string, Facts>();
   projects.forEach((p, i) => {
     const boards = (results[i * 2]?.data ?? []) as Board[];
-    const items = (results[i * 2 + 1]?.data ?? []) as Item[];
-    facts.set(p.id, {
-      boards: boards.length,
-      open: items.filter((i2) => i2.status !== "done" && i2.status !== "cancelled").length,
-      total: items.length,
-      lastWrite: items.length ? Math.max(...items.map((i2) => i2.updatedAt)) : null
-    });
+    const counts = results[i * 2 + 1]?.data as ItemCounts | undefined;
+    facts.set(p.id, { boards: boards.length, open: counts?.open ?? 0, total: counts?.total ?? 0, lastWrite: counts?.lastWrite ?? null });
   });
   return facts;
 }

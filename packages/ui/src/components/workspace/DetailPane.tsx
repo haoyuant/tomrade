@@ -17,7 +17,7 @@ import {
   useIssueWriter,
   type IssueWrite
 } from "~/components/issue/fields";
-import { IssueBody } from "~/components/issue/IssueBody";
+import { IssueBody } from "~/components/onDemand";
 import { StartTicket } from "~/components/issue/StartTicket";
 import { DeliveryPanel } from "~/components/issue/DeliveryPanel";
 import { PROVENANCE, agoLabel, authorLabel, describeWrite, fieldLabel, ledgerMarkOf, provenanceOf } from "~/lib/domain";
