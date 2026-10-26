@@ -741,8 +741,9 @@ describe("connecting a repository", () => {
 
 describe("an agent's own connection", () => {
   /** A stand-in agent whose user-level configuration is the only way it reaches Tomrade (Cursor, Antigravity, Hermes). */
-  const agent = (ctx: Awaited<ReturnType<typeof machine>>["ctx"], state: { value: "unavailable" | "missing" | "connected"; connects: number }) => {
-    const view = () => ({ state: state.value, url: ctx.mcp.url, configuredUrl: state.value === "connected" ? ctx.mcp.url : null, file: "/home/dev/.agent.json", manual: { connect: "connect", disconnect: "disconnect" } });
+  const agent = (ctx: Awaited<ReturnType<typeof machine>>["ctx"], state: { value: "unavailable" | "missing" | "stale" | "connected"; connects: number }) => {
+    const configuredUrl = () => (state.value === "connected" ? ctx.mcp.url : state.value === "stale" ? "http://127.0.0.1:19090/mcp" : null);
+    const view = () => ({ state: state.value, url: ctx.mcp.url, configuredUrl: configuredUrl(), file: "/home/dev/.agent.json", manual: { connect: "connect", disconnect: "disconnect" } });
     return {
       available: async () => ({ ok: true }),
       turn: async () => ({ stop: "end" as const }),
@@ -771,6 +772,30 @@ describe("an agent's own connection", () => {
     await settle();
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(state).toEqual({ value: "missing", connects: 0 });
+  });
+
+  it("is written again over a stale one by default, as the installed app repairs its own", async () => {
+    const { ctx } = await machine();
+    const state: { value: "stale" | "connected"; connects: number } = { value: "stale", connects: 0 };
+    ctx.agent.engine({ id: "linked-agent", title: "Linked Agent", author: "ai:linked-agent", capabilities: ["code"], ...agent(ctx, state) });
+    await until(() => state.connects === 1);
+    expect(state.value).toBe("connected");
+  });
+
+  it("is only filled in, never taken over, by a run linking missing ones (a checkout beside the installed app)", async () => {
+    const { ctx } = await machine({ linkAgents: "missing" });
+    // Linked to the installed app: left as it is.
+    const taken = { value: "stale" as const, connects: 0 };
+    ctx.agent.engine({ id: "linked-agent", title: "Linked Agent", author: "ai:linked-agent", capabilities: ["code"], ...agent(ctx, taken) });
+    // Linked to nothing: this run fills it in.
+    const free: { value: "missing" | "connected"; connects: number } = { value: "missing", connects: 0 };
+    ctx.agent.engine({ id: "free-agent", title: "Free Agent", author: "ai:free-agent", capabilities: ["code"], ...agent(ctx, free) });
+    await until(() => free.connects === 1);
+    ctx.emit("agent/engine-tried", "linked-agent", { ok: true, ms: 12, at: Date.now() });
+    await settle();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(taken).toEqual({ value: "stale", connects: 0 });
+    expect(free.value).toBe("connected");
   });
 
   it("is made once a test message says the agent works, when its first attempt was too early", async () => {
