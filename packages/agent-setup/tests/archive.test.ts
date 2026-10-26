@@ -5,7 +5,7 @@ import { crc32, deflateRawSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
 import type { EngineInstaller, EngineSetupProgress } from "@tomradex/agent";
 import { ArchiveError, archiveDir, listZip, unpackArchive } from "../src/archive.js";
-import { archiveFailure, applicableInstallers, bareLaunch, installerLaunch, runArchive, runInstall, type SetupHost } from "../src/run.js";
+import { archiveFailure, applicableInstallers, bareLaunch, installerLaunch, paced, runArchive, runInstall, type SetupHost } from "../src/run.js";
 
 /** One file as a zip holds it: its central-directory record and its local header. */
 function zipOf(files: { name: string; data: Buffer; method?: 0 | 8 }[]): Buffer {
@@ -165,6 +165,51 @@ describe("installing from an archive without a command", () => {
     expect(seen.filter((p) => p.phase === "running").length).toBeGreaterThanOrEqual(2);
     expect(seen.at(-2)?.phase).toBe("checking");
     expect(seen.at(-1)).toMatchObject({ phase: "done", output: expect.stringContaining("Unpacked to") });
+  });
+
+  it("pushes the bytes received as they arrive, against the whole size, then the unpack — at a pace", async () => {
+    const pushes: { at: number; progress: EngineSetupProgress }[] = [];
+    const piece = Math.ceil(TOP.length / 8);
+    // A slow server: eight chunks, one every 40ms.
+    const body = () => new ReadableStream<Uint8Array>({
+      async start(controller) {
+        for (let at = 0; at < TOP.length; at += piece) {
+          await new Promise((r) => setTimeout(r, 40));
+          controller.enqueue(new Uint8Array(TOP.subarray(at, at + piece)));
+        }
+        controller.close();
+      }
+    });
+    let found = false;
+    const end = await runInstall({
+      engineId: "agy",
+      installers: [ARCHIVE],
+      host: host({ download: async () => ({ ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(0), body: body(), headers: new Headers({ "content-length": String(TOP.length) }) }) }),
+      detect: async () => (found ? { ready: true, version: "1.4.1" } : { ready: false }),
+      report: paced((progress) => void pushes.push({ at: Date.now(), progress }), 100),
+      signal: new AbortController().signal,
+      unpack: async (installer, deps) => {
+        const ok = await runArchive(installer, deps);
+        found = "file" in ok;
+        return ok;
+      }
+    });
+    expect(end).toMatchObject({ phase: "done", installer: "archive", attempt: 1, attempts: 1 });
+    const running = pushes.map((p) => p.progress).filter((p) => p.phase === "running");
+    expect(running.map((p) => p.stage).filter((stage, i, all) => i === 0 || stage !== all[i - 1])).toEqual([undefined, "download", "unpack"]);
+    const downloading = running.filter((p) => p.stage === "download" && p.received !== undefined);
+    expect(downloading.length).toBeGreaterThanOrEqual(2);
+    expect(downloading.every((p) => p.size === TOP.length)).toBe(true);
+    const received = downloading.map((p) => p.received!);
+    expect(received).toEqual([...received].sort((a, b) => a - b));
+    expect(new Set(received).size).toBeGreaterThanOrEqual(2);
+    expect(running.find((p) => p.stage === "unpack")).toMatchObject({ received: TOP.length, size: TOP.length });
+    // Eight chunks and their lines, folded into fewer pushes, none of the same stage closer than the pace.
+    expect(downloading.length).toBeLessThan(8);
+    for (let i = 1; i < pushes.length; i++) {
+      const [a, b] = [pushes[i - 1]!, pushes[i]!];
+      if (a.progress.phase === b.progress.phase && a.progress.stage === b.progress.stage) expect(b.at - a.at).toBeGreaterThanOrEqual(95);
+    }
   });
 
   it("writes the unpacked path into the engine's command when its own lookup misses it", async () => {

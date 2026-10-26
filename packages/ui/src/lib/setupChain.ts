@@ -31,6 +31,8 @@ export interface ChainStep {
   progress?: EngineSetupProgress;
   /** The test step's outcome. */
   tried?: EngineTry;
+  /** When the test message was sent, for the screen to count the wait for its reply. */
+  startedAt?: number;
 }
 
 export const needsInstall = (engine: EngineView): boolean => ["missing", "desktop-only", "broken"].includes(engineStatus(engine));
@@ -68,7 +70,8 @@ export function chainSteps(engine: EngineView, run: ChainRun | null): ChainStep[
         id,
         state: run.failed ? "failed" : phase === "waiting" ? "waiting" : "active",
         ...(run.progress ? { progress: run.progress } : {}),
-        ...(id === "test" && run.tried ? { tried: run.tried } : {})
+        ...(id === "test" && run.tried ? { tried: run.tried } : {}),
+        ...(id === "test" && run.testStartedAt ? { startedAt: run.testStartedAt } : {})
       };
     }
     return { id, state: satisfied ? "done" : "pending" };
@@ -88,6 +91,8 @@ export interface ChainRun {
   step?: ChainStepId;
   progress?: EngineSetupProgress;
   tried?: EngineTry;
+  /** When the test message went out. */
+  testStartedAt?: number;
   failed?: boolean;
   /** This run installs the official CLI over a desktop app's copy. */
   official?: boolean;
@@ -181,7 +186,7 @@ export function useSetupChain(engine: EngineView, projectId?: string | null) {
         await qc.invalidateQueries({ queryKey: keys.agent.engines });
         return patch({ running: false });
       }
-      patch({ step: "test", progress: undefined });
+      patch({ step: "test", progress: undefined, testStartedAt: Date.now() });
       const tried = await invoke("agent.tryEngine", projectId ?? null, engineId).catch(
         (error): EngineTry => ({ ok: false, ms: 0, at: Date.now(), error: error instanceof Error ? error.message : String(error) })
       );

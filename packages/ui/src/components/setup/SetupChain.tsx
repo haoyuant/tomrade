@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { AgentSettings, EngineSetupFailure, EngineSetupProgress, EngineView } from "@tomradex/agent";
 import { useCurrentProject } from "~/components/dialogs/plugins/parts";
 import { Icon } from "~/components/icons";
-import { duration } from "~/components/workspace/agent-panel/format";
+import { duration, type Translate } from "~/components/workspace/agent-panel/format";
 import { invoke } from "~/lib/api";
 import { pickChoiceName, pickTitleOf } from "~/lib/engines";
 import { formatSize } from "~/lib/files";
@@ -44,42 +44,147 @@ function MirrorRetry({ progress, onRetry }: { progress?: EngineSetupProgress; on
   );
 }
 
-/** A running install: the time it has taken, npm's latest line, and a word when it goes quiet. */
-function InstallRunning({ progress, onRetry }: { progress?: EngineSetupProgress; onRetry: (registry?: string) => void }) {
-  const { t } = useI18n();
+/** Re-renders every second while `on`, for the times a step counts. */
+function useSecondTick(on: boolean) {
   const [, setTick] = useState(0);
-  const startedAt = progress?.startedAt;
   useEffect(() => {
-    if (!startedAt) return;
+    if (!on) return;
     const timer = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(timer);
-  }, [startedAt]);
+  }, [on]);
+}
+
+const INSTALLER_KEYS: Record<string, MessageKey> = { script: "setup.installerScript", npm: "setup.installerNpm", brew: "setup.installerBrew", archive: "setup.installerArchive" };
+const installerName = (t: Translate, kind: string) => (INSTALLER_KEYS[kind] ? t(INSTALLER_KEYS[kind]) : kind);
+
+const STAGE_KEYS: Record<NonNullable<EngineSetupProgress["stage"]>, MessageKey> = {
+  download: "setup.stageDownload",
+  unpack: "setup.stageUnpack",
+  resolve: "setup.stageResolve",
+  fetch: "setup.stageFetch",
+  link: "setup.stageLink"
+};
+
+/** An installer that gave way because it does not fit here, not because it failed. */
+const UNFIT_KINDS: EngineSetupFailure["kind"][] = ["unsupported", "not-found"];
+
+/** Quiet this long, a step says when it last heard from the installer — well before the backend calls it stalled. */
+const QUIET_MS = 15_000;
+
+/** What it printed: the latest line as it comes, the tail of the rest behind a disclosure. */
+function LiveOutput({ output }: { output?: string }) {
+  const { t } = useI18n();
+  if (!output) return null;
+  const latest = output.split("\n").at(-1);
+  return (
+    <>
+      {latest && <code className="setup-live" data-testid="chain-live-line">{latest}</code>}
+      <details className="eng-try-details">
+        <summary>{t("setup.failOutput")}</summary>
+        <pre>{output}</pre>
+      </details>
+    </>
+  );
+}
+
+/** What the installer is doing now, as its own words say, with a bar while a download's size is known. */
+function InstallStage({ progress }: { progress: EngineSetupProgress }) {
+  const { t } = useI18n();
+  const { stage, received, size } = progress;
+  if (!stage) return null;
+  const downloading = stage === "download" && received !== undefined;
+  const percent = downloading && size ? Math.min(100, Math.floor((received / size) * 100)) : null;
+  return (
+    <span className="setup-line" data-testid="chain-stage" data-stage={stage}>
+      {stage === "fetch" ? t("setup.stageFetch", { n: progress.packages ?? 0 }) : t(STAGE_KEYS[stage])}
+      {downloading && " · "}
+      {downloading && (size ? t("setup.downloadedOf", { received: formatSize(received), size: formatSize(size), percent: percent ?? 0 }) : t("setup.downloaded", { received: formatSize(received) }))}
+      {percent !== null && (
+        <span className="setup-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
+          <span style={{ width: `${percent}%` }} />
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** A running install: which installer of how many and for how long, why the last one gave way, its stage, its latest line, and a word when it goes quiet. */
+function InstallRunning({ progress, onRetry }: { progress?: EngineSetupProgress; onRetry: (registry?: string) => void }) {
+  const { t } = useI18n();
+  const startedAt = progress?.startedAt;
+  useSecondTick(!!startedAt);
   if (progress?.phase === "checking") return <span className="meta-txt">{t("setup.installChecking")}</span>;
-  const latest = progress?.output?.split("\n").at(-1);
+  const kind = progress?.installer;
+  const installer = kind && ((progress.attempts ?? 1) > 1 ? t("setup.installerAt", { installer: installerName(t, kind), n: progress.attempt ?? 1, total: progress.attempts ?? 1 }) : installerName(t, kind));
+  const elapsed = startedAt ? duration(t, Date.now() - startedAt) : null;
+  const previous = progress?.previous;
+  const quiet = startedAt ? Date.now() - (progress.lastOutputAt ?? startedAt) : 0;
+  const ago = duration(t, quiet);
   return (
     <span className="meta-txt">
-      {startedAt ? t("setup.installingFor", { elapsed: duration(t, Date.now() - startedAt) }) : t("setup.installing")}
-      {latest && <code className="setup-live" data-testid="chain-live-line">{latest}</code>}
+      <span className="setup-line" data-testid="chain-install-attempt">
+        {elapsed ? (installer ? t("setup.installingWith", { installer, elapsed }) : t("setup.installingFor", { elapsed })) : t("setup.installing")}
+      </span>
+      {previous && kind && previous.installer !== kind && (
+        <span className="setup-fix" data-testid="chain-switched">
+          {t(UNFIT_KINDS.includes(previous.kind) ? "setup.installSwitchUnfit" : "setup.installSwitchFailed", { previous: installerName(t, previous.installer), installer: installerName(t, kind) })}
+        </span>
+      )}
+      {progress && <InstallStage progress={progress} />}
+      <LiveOutput output={progress?.output} />
       {progress?.stalled ? (
         <span className="setup-fix" role="status" data-testid="chain-stalled">
-          {t("setup.installStalled")}
+          {t("setup.installStalled", { ago })}
           <button type="button" className="link-btn setup-action setup-retry" onClick={() => onRetry()}>
             {t("setup.retry")} →
           </button>
         </span>
       ) : (
-        progress?.mirror && <span className="setup-fix">{t("setup.registrySlow")}</span>
+        <>
+          {quiet >= QUIET_MS && (
+            <span className="setup-line" role="status" data-testid="chain-quiet">
+              {progress?.lastOutputAt ? t("setup.installQuiet", { ago }) : t("setup.installQuietNone", { ago })}
+            </span>
+          )}
+          {progress?.mirror && <span className="setup-fix">{t("setup.registrySlow")}</span>}
+        </>
       )}
       {progress?.prefix && <span className="setup-fix">{t("setup.installOwnFolder")}</span>}
       <MirrorRetry progress={progress} onRetry={onRetry} />
-      {progress?.output && (
-        <details className="eng-try-details">
-          <summary>{t("setup.failOutput")}</summary>
-          <pre>{progress.output}</pre>
-        </details>
-      )}
     </span>
   );
+}
+
+/** A sign-in under way: how long it has waited, that it goes on by itself, the address to open and what the command printed. */
+function SignInWait({ progress, title, children }: { progress?: EngineSetupProgress; title: string; children?: ReactNode }) {
+  const { t } = useI18n();
+  const startedAt = progress?.startedAt;
+  useSecondTick(!!startedAt);
+  const elapsed = startedAt ? duration(t, Date.now() - startedAt) : null;
+  return (
+    <span className="meta-txt" data-testid="chain-signin-wait">
+      {progress?.terminal ? (
+        <>
+          {t("setup.signInTerminalWait")}
+          {elapsed && <span className="setup-line">{t("setup.waitedFor", { elapsed })}</span>}
+        </>
+      ) : elapsed ? t("setup.signInWaited", { elapsed }) : t("setup.signingIn")}
+      {progress?.url && (
+        <button type="button" className="link-btn setup-action" data-testid="chain-signin-link" onClick={() => openExternal(progress.url!)}>
+          {t("setup.openSignIn", { title })} →
+        </button>
+      )}
+      <LiveOutput output={progress?.output} />
+      {children}
+    </span>
+  );
+}
+
+/** The test message is out: how long its reply has been awaited. */
+function TestWaiting({ startedAt }: { startedAt?: number }) {
+  const { t } = useI18n();
+  useSecondTick(!!startedAt);
+  return <span className="meta-txt" data-testid="chain-test-wait">{startedAt ? t("setup.testWaiting", { elapsed: duration(t, Date.now() - startedAt) }) : t("setup.testing")}</span>;
 }
 
 /** The ways the agent itself offers to sign in: the one running, the others to switch to, and what only a person can do. */
@@ -133,7 +238,7 @@ function StepDetail({ step, title, insideApp, terminalOnly, onRetry, onSignIn }:
     );
   }
   if (step.id === "test") {
-    if (step.state === "active") return <span className="meta-txt">{t("setup.testing")}</span>;
+    if (step.state === "active") return <TestWaiting startedAt={step.startedAt} />;
     if (step.tried?.ok) {
       return (
         <>
@@ -144,20 +249,8 @@ function StepDetail({ step, title, insideApp, terminalOnly, onRetry, onSignIn }:
     }
     return null;
   }
-  if (step.state === "active") return step.id === "install" ? <InstallRunning progress={progress} onRetry={onRetry} /> : <span className="meta-txt">{t("setup.signingIn")}{methods}</span>;
-  if (step.state === "waiting") {
-    return (
-      <span className="meta-txt">
-        {progress?.terminal ? t("setup.signInTerminalWait") : t("setup.signingIn")}
-        {progress?.url && (
-          <button type="button" className="link-btn setup-action" data-testid="chain-signin-link" onClick={() => openExternal(progress.url!)}>
-            {t("setup.openSignIn", { title })} →
-          </button>
-        )}
-        {methods}
-      </span>
-    );
-  }
+  if (step.state === "active" && step.id === "install") return <InstallRunning progress={progress} onRetry={onRetry} />;
+  if (step.state === "active" || step.state === "waiting") return <SignInWait progress={progress} title={title}>{methods}</SignInWait>;
   if (step.id === "install" && step.state === "done" && step.progress?.version) {
     return <span className="meta-txt">{step.progress.prefix ? t("setup.installedOwnFolder", { version: step.progress.version }) : step.progress.version}</span>;
   }

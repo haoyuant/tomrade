@@ -148,7 +148,7 @@ export interface EngineSetupProgress {
   output?: string;
   /** When the installer being tried (or the sign-in) started, for the screen to count the time. */
   startedAt?: number;
-  /** When it last printed something or received bytes, for the screen to say how long it has been quiet. */
+  /** When the installer last printed something or received bytes, for the screen to say how long it has been quiet. */
   lastOutputAt?: number;
   /** The installer printed nothing new for a while: it may be stuck. */
   stalled?: boolean;

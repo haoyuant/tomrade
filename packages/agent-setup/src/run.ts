@@ -292,7 +292,7 @@ export function stageOf(installer: EngineInstaller["kind"], line: string): Setup
 }
 
 /** How often a moving step is pushed to the screens at most: often enough to look live, not once per line. */
-export const PACE_MS = 300;
+const PACE_MS = 300;
 
 /** What a screen words differently: a change in it is pushed at once, the rest (output, bytes, counts) folds into the next push. */
 const shapeOf = (p: EngineSetupProgress) =>
@@ -575,7 +575,7 @@ export async function runSignIn(deps: SignInDeps): Promise<EngineSetupProgress> 
     let phase: EngineSetupProgress["phase"] = "running";
     let output = "";
     // What the login command prints shows too, so the screen has its latest line while the person signs in.
-    const show = () => at({ engineId: deps.engineId, step, phase, startedAt, lastOutputAt: Date.now(), ...(url ? { url } : {}), ...(output ? { output: tail(output) } : {}) });
+    const show = () => at({ engineId: deps.engineId, step, phase, startedAt, ...(url ? { url } : {}), ...(output ? { output: tail(output) } : {}) });
     at({ engineId: deps.engineId, step, phase, startedAt });
     run.onOutput((text) => {
       output = (output + text).slice(-OUTPUT_KEEP);

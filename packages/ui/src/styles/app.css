@@ -2475,6 +2475,9 @@ html.overlay-open .titlebar .btn-primary {
 .setup-step-dot { width: 6px; height: 6px; margin: 4px; border-radius: 50%; background: var(--border); }
 .setup-step-body { display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
 .setup-live { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 0.95em; color: var(--meta); }
+.setup-line { display: block; }
+.setup-bar { position: relative; display: block; max-width: 240px; height: 3px; margin-top: 4px; overflow: hidden; border-radius: 2px; background: var(--border); }
+.setup-bar > span { position: absolute; top: 0; bottom: 0; left: 0; border-radius: inherit; background: var(--accent); transition: width 0.3s ease-out; }
 .setup-methods { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin-top: 4px; }
 .setup-retry { display: block; }
 .setup-manual { margin-top: var(--space-2); font-size: var(--text-xs); color: var(--fg-2); }

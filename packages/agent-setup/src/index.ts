@@ -268,7 +268,7 @@ export class AgentSetup extends Service {
 }
 
 export default AgentSetup;
-export { applicableInstallers, classifyFailure, installerLaunch, machineSetupHost, paced, runArchive, runCommand, runInstall, runSignIn, stageOf } from "./run.js";
+export { applicableInstallers, classifyFailure, installerLaunch, machineSetupHost, runArchive, runCommand, runInstall, runSignIn } from "./run.js";
 export { ArchiveError, archiveDir, listZip, unpackArchive, type ArchiveTarget } from "./archive.js";
 export { ManagedCopies, type ManagedConfig, type ManagedOffer, type ManagedState } from "./managed.js";
-export type { ArchiveDeps, ArchiveResponse, InstallDeps, SetupHost, SetupRunResult, SignInDeps } from "./run.js";
+export type { ArchiveResponse, InstallDeps, SetupHost, SetupRunResult, SignInDeps } from "./run.js";
