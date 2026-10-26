@@ -72,6 +72,7 @@ export {
   type EngineMcpLink,
   type EngineNeed,
   type EnginePick,
+  type EngineStepLimit,
   type EngineInstaller,
   type EngineRegistration,
   type EngineSetup,

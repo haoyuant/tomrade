@@ -84,6 +84,10 @@ export function createTomradeEngine(ctx: Context, config: TomradeEngineConfig): 
     get liveModes() {
       return part(config.work)?.liveModes;
     },
+    // A conversation part's limit, set here: the options picked for Tomrade reach its parts.
+    get stepLimit() {
+      return own.map(part).find((engine) => engine?.stepLimit)?.stepLimit;
+    },
     local: {
       get diagnostics() {
         return part(config.work)?.local?.diagnostics;

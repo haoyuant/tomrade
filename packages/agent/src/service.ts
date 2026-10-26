@@ -680,7 +680,7 @@ export class Agent extends Service implements AgentReader {
       [...this.engines.values()].filter((engine) => this.answering(engine.id) === engine.id).map(async (engine) => {
         try {
           const state = await engine.available(fresh ? { fresh } : undefined);
-          return { id: engine.id, title: engine.title, capabilities: state.capabilities ?? engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, need: state.need, cli: state.cli, ...(state.configDir ? { configDir: state.configDir } : {}), ...(this.triedWith(engine.id) ? { tried: this.triedWith(engine.id) } : {}), picks: engine.local?.picks?.(), permissionModes: engine.permissionModes, ...(engine.liveModes ? { liveModes: true } : {}), ...(engine.terminal?.mode === "none" ? { terminal: false } : {}), ...(engine.terminal?.mode === "only" ? { terminalOnly: true, ...(engine.local?.ask ? { asks: true } : {}) } : {}), ...(engine.usesModels ? { usesModels: true } : {}), ...(engine.steering ? { steers: true } : {}), ...(state.setup ?? engine.local?.setup ? { setup: state.setup ?? engine.local?.setup } : {}), ...(engine.includes ? { includes: engine.includes } : {}), ...(engine.local?.mcpLink ? { mcpLink: true } : {}) };
+          return { id: engine.id, title: engine.title, capabilities: state.capabilities ?? engine.capabilities ?? ["backlog"], ok: state.ok, reason: state.reason, need: state.need, cli: state.cli, ...(state.configDir ? { configDir: state.configDir } : {}), ...(this.triedWith(engine.id) ? { tried: this.triedWith(engine.id) } : {}), picks: engine.local?.picks?.(), ...(engine.stepLimit ? { stepLimit: engine.stepLimit } : {}), permissionModes: engine.permissionModes, ...(engine.liveModes ? { liveModes: true } : {}), ...(engine.terminal?.mode === "none" ? { terminal: false } : {}), ...(engine.terminal?.mode === "only" ? { terminalOnly: true, ...(engine.local?.ask ? { asks: true } : {}) } : {}), ...(engine.usesModels ? { usesModels: true } : {}), ...(engine.steering ? { steers: true } : {}), ...(state.setup ?? engine.local?.setup ? { setup: state.setup ?? engine.local?.setup } : {}), ...(engine.includes ? { includes: engine.includes } : {}), ...(engine.local?.mcpLink ? { mcpLink: true } : {}) };
         } catch (err) {
           return { id: engine.id, title: engine.title, capabilities: engine.capabilities ?? ["backlog"], ok: false, reason: errorMessage(err) };
         }
@@ -1875,7 +1875,7 @@ export class Agent extends Service implements AgentReader {
       this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: rc.clock.timedOut ? w("timeLimit", { duration, hint: rc.thread.itemId ? "" : w("raiseTimeLimit") }) : w("stopped") }, rc.run.id);
     }
     if (result.stop === "budget") {
-      this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: this.words()("budget") }, rc.run.id);
+      this.appendAndBroadcast(rc.projectId, rc.threadId, "system", { type: "note", text: this.words()("budget"), ...(rc.engine.stepLimit ? { settingsFor: rc.engine.id } : {}) }, rc.run.id);
     }
     if (result.stop === "error") {
       const raw = result.error ?? "The engine stopped without an error message.";
