@@ -212,6 +212,9 @@ importers:
       '@tomradex/projects':
         specifier: workspace:*
         version: link:../../packages/projects
+      '@tomradex/pty-host':
+        specifier: workspace:*
+        version: link:../../packages/pty-host
       '@tomradex/repos':
         specifier: workspace:*
         version: link:../../packages/repos

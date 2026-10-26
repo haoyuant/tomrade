@@ -1,35 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { errorMessage } from "@tomradex/contracts";
+import { errorMessage, type TerminalFrame, type TerminalMode, type TerminalMouse, type TerminalScroll, type TerminalStream } from "@tomradex/contracts";
 
-/** One picture of the terminal: ANSI bytes that paint it — all of it when `full`, else only the cells that changed. */
-export interface TerminalFrame {
-  seq: number;
-  width: number;
-  height: number;
-  full: boolean;
-  bytes: Uint8Array;
-}
-
-/** `control` owns input and size (taking them from any other owner); `observe` only watches, alongside others. */
-export type TerminalMode = "control" | "observe";
-
-export type TerminalScroll = { source?: "wheel" | "page_key"; direction: "up" | "down"; lines: number; column?: number; row?: number; modifiers?: number };
-export type TerminalMouse = { action: "down" | "up" | "drag" | "move"; button?: "left" | "middle" | "right" | "none"; column: number; row: number; modifiers?: number };
-
-/** A live terminal of a herdr pane. Calls on a closed stream, or on an observer, are dropped. */
-export interface TerminalStream {
-  readonly paneId: string;
-  readonly mode: TerminalMode;
-  onFrame(listener: (frame: TerminalFrame) => void): () => void;
-  /** Once: the reason is herdr's (`server_shutdown`…), or what it printed when it would not attach (a pane it does not have). */
-  onClose(listener: (reason: string | null) => void): () => void;
-  input(data: string | Uint8Array): void;
-  resize(cols: number, rows: number): void;
-  scroll(scroll: TerminalScroll): void;
-  mouse(mouse: TerminalMouse): void;
-  close(): void;
-  readonly closed: boolean;
-}
+export type { TerminalFrame, TerminalMode, TerminalMouse, TerminalScroll, TerminalStream } from "@tomradex/contracts";
 
 export type TerminalLine = { type: "frame"; frame: TerminalFrame } | { type: "closed"; reason: string | null };
 

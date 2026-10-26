@@ -21,6 +21,8 @@ const PANE_WORD: Record<"left" | "right" | "up" | "down", SayKey> = { left: "pan
 function Banner({ state }: { state: WindowState }) {
   const say = useSay();
   const b = state.bridge;
+  // Tomrade's own terminal host (native Windows): nothing of herdr's to install, start or switch to.
+  const builtin = state.provider === "builtin";
   let body: ReactNode = null;
   if (b.state === "notInstalled")
     body = (
@@ -42,11 +44,11 @@ function Banner({ state }: { state: WindowState }) {
         )}
       </>
     );
-  else if (state.revive === "starting") body = <span>{say("herdrStarting")}</span>;
-  else if (b.state === "notRunning" && state.revive === "failed")
+  else if (state.revive === "starting") body = <span>{say(builtin ? "hostStarting" : "herdrStarting")}</span>;
+  else if (state.revive === "failed" && (builtin || b.state === "notRunning"))
     body = (
       <>
-        <span>{say("herdrStartFailed")}</span>
+        <span>{say(builtin ? "hostStartFailed" : "herdrStartFailed")}</span>
         <button type="button" className="btn btn-secondary btn-xs" onClick={() => send({ type: "startHerdr" })}>
           {say("herdrRetry")}
         </button>
@@ -62,9 +64,9 @@ function Banner({ state }: { state: WindowState }) {
       {state.warning && <div className="cs-banner" data-testid="cs-warning">{state.warning}</div>}
       {state.askSwitch && (
         <div className="cs-banner" data-testid="cs-ask-switch">
-          <span>{say("askSwitch", { terminal: state.terminal })}</span>
+          <span>{say(builtin ? "askSwitchBuiltin" : "askSwitch", { terminal: state.terminal })}</span>
           <button type="button" className="btn btn-primary btn-xs" onClick={() => send({ type: "switchTerminal", switch: true })}>
-            {say("switchYes")}
+            {say(builtin ? "switchYesBuiltin" : "switchYes")}
           </button>
           <button type="button" className="btn btn-secondary btn-xs" onClick={() => send({ type: "switchTerminal", switch: false })}>
             {say("switchNo")}

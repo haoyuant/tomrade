@@ -10,9 +10,10 @@ import type {} from "@tomradex/db";
 import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/items";
 import type {} from "@tomradex/settings";
-import { MCP_AGENT, WINDOWS_TERMINAL, resumeCommand, type CodeLink } from "@tomradex/code-link";
+import { BUILTIN_TERMINAL, MCP_AGENT, WINDOWS_TERMINAL, panesOf, resumeCommand, type CodeLink } from "@tomradex/code-link";
 import type { DesktopSurface } from "@tomradex/desktop-surface";
-import { HerdrError, type HerdrBridge, type TerminalStream } from "@tomradex/herdr";
+import type {} from "@tomradex/herdr";
+import type { TerminalBridge, TerminalPaneInfo, TerminalProvider, TerminalStream } from "@tomradex/contracts";
 import { randomUUID } from "node:crypto";
 import { droppedPaste, readableDrops } from "./drop.js";
 import type { Layout, LayoutPreset, SessionRow, TerminalPlace, TerminalRow, WindowMessage, WindowPost, WindowState } from "./protocol.js";
@@ -68,14 +69,11 @@ const within = (dir: string, root: string) => {
 /** A login or interactive shell, as a foreground command's first word. */
 const SHELL = /^-?(?:.*\/)?(zsh|bash|fish|sh|dash|ksh|tcsh|nu|login)$/;
 
-/** Where a pane's agent runs, when one does: herdr sees it, or the foreground command names one. Null otherwise. */
-async function agentIn(herdr: { call<T>(method: string, params: Record<string, unknown>): Promise<T> }, pane: string, cwd: string): Promise<string | null> {
-  const seen = await herdr.call<{ pane: { agent?: string | null } }>("pane.get", { pane_id: pane }).then((r) => !!r.pane.agent, () => false);
-  const info = await herdr
-    .call<{ process_info: { foreground_processes?: { cmdline?: string; cwd?: string }[] } }>("pane.process_info", { pane_id: pane })
-    .then((r) => r.process_info.foreground_processes ?? [], () => []);
+/** Where a pane's agent runs, when one does: the backend sees it, or the foreground command names one. Null otherwise. */
+async function agentIn(terminals: TerminalProvider, seen: TerminalPaneInfo | undefined, pane: string, cwd: string): Promise<string | null> {
+  const info = await terminals.processes(pane).catch(() => []);
   const named = info.find((p) => p.cmdline && AGENT_COMMAND.test(p.cmdline));
-  if (!seen && !named) return null;
+  if (!seen?.agent && !named) return null;
   return named?.cwd ?? info[0]?.cwd ?? cwd;
 }
 /** A repository's worktrees besides the checkout itself, as `git worktree list` gives them; none when git cannot say. */
@@ -276,7 +274,11 @@ function apply(ctx: Context, config: Config) {
   const projectName = (projectId: string) => (ctx.db.for(projectId).prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name ?? projectId;
   const terminal = () => (ctx.settings.get().codeLink as { terminal?: string } | undefined)?.terminal ?? "auto";
 
-  const bridge = async (): Promise<HerdrBridge> => (await ctx.get("herdr")?.bridge()) ?? { state: "notInstalled" };
+  /** The terminal backend: herdr, or Tomrade's own pty host on native Windows. */
+  const backend = () => ctx.get("terminals");
+  const builtin = () => backend()?.kind === "builtin";
+  // Without a backend on Windows, a new terminal opens in the system terminal; elsewhere herdr is what is missing.
+  const bridge = async (): Promise<TerminalBridge> => (await backend()?.bridge()) ?? (process.platform === "win32" ? { state: "unsupported" } : { state: "notInstalled" });
 
   /** The sessions to list; when they cannot be read the window says so and its terminals work on. */
   const listed = (projectId: string): { sessions: SessionRow[]; warning: string | null } => {
@@ -300,11 +302,11 @@ function apply(ctx: Context, config: Config) {
    * An agent herdr sees in one lends the terminal the title it gave the conversation.
    */
   const terminals = async (projectId: string): Promise<TerminalRow[]> => {
-    const herdr = ctx.get("herdr");
+    const provider = backend();
     // Read together, before herdr is asked: a terminal that finishes opening meanwhile is in one or the other.
     const saved = savedTerminals(projectId);
     const opening = [...(pending.get(projectId)?.values() ?? [])];
-    const panes = herdr && saved.length ? await herdr.panes().catch(() => null) : null;
+    const panes = provider && saved.length ? await provider.panes().catch(() => null) : null;
     const byPane = new Map((panes ?? []).map((p) => [p.paneId, p]));
     const gone = new Set(panes ? saved.filter((t) => !byPane.has(t.pane)).map((t) => t.id) : []);
     // Only those go: the list as it is now, which may have gained a terminal while herdr answered.
@@ -320,10 +322,8 @@ function apply(ctx: Context, config: Config) {
     // A terminal with no agent goes by what runs in it: its foreground command, else what its shell calls it.
     const running = async (pane: string | null): Promise<string | null> => {
       const info = pane ? byPane.get(pane) : undefined;
-      if (!herdr || !pane || !info || info.agent) return null;
-      const fg = await herdr
-        .call<{ process_info: { foreground_processes?: { cmdline?: string }[] } }>("pane.process_info", { pane_id: pane })
-        .then((r) => r.process_info.foreground_processes ?? [], () => []);
+      if (!provider || !pane || !info || info.agent) return null;
+      const fg = await provider.processes(pane).catch(() => []);
       const command = fg.map((p) => p.cmdline?.trim() ?? "").find((c) => c && !SHELL.test(c.split(/\s+/)[0]!));
       return command ? command.slice(0, 80) : info.title;
     };
@@ -337,11 +337,11 @@ function apply(ctx: Context, config: Config) {
    * One in a terminal opened here needs none: that terminal's row speaks for it.
    */
   const titled = async (sessions: SessionRow[], saved: SavedTerminal[]): Promise<SessionRow[]> => {
-    const herdr = ctx.get("herdr");
+    const provider = backend();
     const terminalPanes = new Set(saved.map((t) => t.pane));
     const loose = sessions.filter((s) => !s.itemId && s.pane && !terminalPanes.has(s.pane));
-    if (!herdr || !loose.length) return sessions;
-    const panes = await herdr.panes().catch(() => null);
+    if (!provider || !loose.length) return sessions;
+    const panes = await provider.panes().catch(() => null);
     if (!panes) return sessions;
     const byPane = new Map(panes.map((p) => [p.paneId, p]));
     return sessions.map((s) => {
@@ -361,10 +361,11 @@ function apply(ctx: Context, config: Config) {
     const owner = (pane: string | null) => (pane ? claimed.filter((s) => s.pane === pane).sort((a, b) => b.startedAt - a.startedAt)[0]?.id ?? null : null);
     const out = list.map((t) => ({ ...t, sessionId: owner(t.pane) }));
     const unplaced = claimed.filter((s) => s.agent === MCP_AGENT && !s.pane);
-    const herdr = ctx.get("herdr");
-    if (!unplaced.length || !herdr) return out;
+    const provider = backend();
+    if (!unplaced.length || !provider) return out;
     const free = out.filter((t) => t.pane && !t.sessionId);
-    const where = await Promise.all(free.map((t) => agentIn(herdr, t.pane!, t.cwd)));
+    const seen = new Map(((await provider.panes().catch(() => null)) ?? []).map((p) => [p.paneId, p]));
+    const where = await Promise.all(free.map((t) => agentIn(provider, seen.get(t.pane!), t.pane!, t.cwd)));
     const running = free.flatMap((t, i) => (where[i] ? [{ t, cwd: where[i] }] : []));
     let repos: string[] = [];
     try {
@@ -421,10 +422,7 @@ function apply(ctx: Context, config: Config) {
   const wantsHerdr = (projectId: string, sessions: SessionRow[]) =>
     savedTerminals(projectId).length > 0 || sessions.some((s) => s.where === "herdr" && (s.endedAt === null || Date.now() - s.endedAt < RECENTLY_ENDED_MS));
 
-  const serverGone = async () => {
-    const herdr = ctx.get("herdr");
-    return !!herdr?.binary() && !(await herdr.server());
-  };
+  const serverGone = async () => (await backend()?.serverGone().catch(() => false)) ?? false;
 
   /**
    * Start herdr's server again, once for every window: herdr brings back its panes with their ids and resumes their
@@ -432,12 +430,12 @@ function apply(ctx: Context, config: Config) {
    * over and over; Tomrade never stops it.
    */
   const revive = (force = false) => {
-    const herdr = ctx.get("herdr");
-    if (!herdr || reviving || (!force && reviveFailed)) return;
+    const provider = backend();
+    if (!provider || reviving || (!force && reviveFailed)) return;
     reviving = (async () => {
-      const result = await herdr.revive(force).catch(() => "failed" as const);
+      const result = await provider.revive(force).catch(() => "failed" as const);
       reviveFailed = result === "failed" || result === "held";
-      if (result === "failed" || result === "held") ctx.logger.warn(`code sessions: herdr's server did not come back (${result})`);
+      if (result === "failed" || result === "held") ctx.logger.warn(`code sessions: the terminal backend did not come back (${result})`);
       if (result !== "started" && result !== "running") return;
       for (const win of open.values()) {
         // A started server means every old stream is gone, a frozen one too.
@@ -479,11 +477,12 @@ function apply(ctx: Context, config: Config) {
       projectName: projectName(projectId),
       locale: ctx.settings.locale(),
       bridge: b,
-      herdrClient: b.state === "ready" && ((await ctx.get("herdr")?.clientAttached().catch(() => false)) ?? false),
+      provider: backend()?.kind ?? null,
+      herdrClient: b.state === "ready" && !builtin() && ((await ctx.get("herdr")?.clientAttached().catch(() => false)) ?? false),
       revive: reviving ? "starting" : reviveFailed && b.state === "notRunning" ? "failed" : null,
-      install: b.state === "notInstalled" ? await ctx.codeLink.herdrInstall() : null,
-      // "auto" lands in herdr once it is installed; only a terminal named otherwise keeps sessions out of it.
-      askSwitch: setting !== "herdr" && setting !== "auto" && !saved.asked,
+      install: b.state === "notInstalled" && !builtin() ? await ctx.codeLink.herdrInstall() : null,
+      // "auto" lands in the panes once they can open; only a terminal named otherwise keeps sessions out of them.
+      askSwitch: setting !== "auto" && !panesOf(setting) && !saved.asked && !!backend(),
       terminal: setting,
       // An ended one asked for from outside (a ticket's earlier session) comes along, so the window can put it in a cell.
       // An ended one a cell shows says where its pane goes on, so the cell can follow it there.
@@ -503,16 +502,16 @@ function apply(ctx: Context, config: Config) {
 
   /** Follow the panes of the terminals a window shows, and only those; one herdr stopped following is followed afresh. */
   const follow = (win: Open, list: TerminalRow[]) => {
-    const herdr = ctx.get("herdr");
-    const wanted = new Set(win.closed || !herdr ? [] : list.flatMap((t) => (t.pane ? [t.pane] : [])));
+    const provider = backend();
+    const wanted = new Set(win.closed || !provider ? [] : list.flatMap((t) => (t.pane ? [t.pane] : [])));
     for (const [pane, release] of win.follows) {
       if (wanted.has(pane)) continue;
       release();
       win.follows.delete(pane);
     }
-    if (!herdr) return;
-    const watching = new Set(herdr.watching());
-    for (const pane of wanted) if (!win.follows.has(pane) || !watching.has(pane)) win.follows.set(pane, herdr.watch(pane));
+    if (!provider) return;
+    const watching = new Set(provider.watching());
+    for (const pane of wanted) if (!win.follows.has(pane) || !watching.has(pane)) win.follows.set(pane, provider.watch(pane));
   };
 
   const refresh = async (projectId: string) => {
@@ -635,8 +634,9 @@ function apply(ctx: Context, config: Config) {
     detach(win, cell);
     const mine = turn(win, cell);
     const pane = paneOf(projectId, sessionId);
-    const herdr = ctx.get("herdr");
-    if (!pane || !herdr) return post(win, { type: "closed", cell, reason: words()("noTerminal") });
+    const provider = backend();
+    if (!pane || !provider) return post(win, { type: "closed", cell, reason: words()("noTerminal") });
+    const restarting = words()(provider.kind === "builtin" ? "hostRestarting" : "herdrRestarting");
     // One pane, one cell: a second attach would take it over and knock the other cell off. A cell the saved layout no
     // longer shows it in is a move, and lets go.
     const other = [...win.terminals].find(([c, stream]) => c !== cell && stream.paneId === pane)?.[0];
@@ -649,16 +649,17 @@ function apply(ctx: Context, config: Config) {
     if (!win.held.has(cell)) win.held.set(cell, { text: "", over: false });
     let stream: TerminalStream;
     try {
-      stream = await herdr.terminal(pane, { cols, rows });
+      stream = await provider.terminal(pane, { cols, rows });
     } catch (error) {
       if (win.turns.get(cell) !== mine) return;
       letGoHeld(win, cell);
       win.detached.add(cell);
-      if (error instanceof HerdrError && error.code === "notRunning") {
-        post(win, { type: "closed", cell, reason: words()("herdrRestarting") });
+      if ((error as { code?: unknown } | null)?.code === "notRunning") {
+        post(win, { type: "closed", cell, reason: restarting });
         return revive();
       }
-      return post(win, { type: "closed", cell, reason: errorMessage(error) });
+      // The pty host names a pane it no longer has; herdr's own words come as they are.
+      return post(win, { type: "closed", cell, reason: (error as { code?: unknown } | null)?.code === "pane_not_found" ? words()("paneEnded") : errorMessage(error) });
     }
     if (win.closed || win.turns.get(cell) !== mine) return stream.close();
     win.terminals.set(cell, stream);
@@ -668,7 +669,7 @@ function apply(ctx: Context, config: Config) {
     if (held?.text) stream.input(held.text);
     if (held?.over) post(win, { type: "toast", text: words()("notSent") });
     stream.onFrame((f) => pushFrame(win, cell, f));
-    stream.onClose(herdr.onScroll(pane, (s) => win.terminals.get(cell) === stream && post(win, { type: "scrolled", cell, ...s })));
+    stream.onClose(provider.onScroll(pane, (s) => win.terminals.get(cell) === stream && post(win, { type: "scrolled", cell, ...s })));
     stream.onClose((reason) => {
       if (win.terminals.get(cell) !== stream) return;
       win.terminals.delete(cell);
@@ -676,7 +677,7 @@ function apply(ctx: Context, config: Config) {
       // The server going away is not the pane ending: it is started again and the cell comes back on its own.
       void serverGone().then((gone) => {
         if (win.turns.get(cell) !== mine) return;
-        post(win, { type: "closed", cell, reason: gone ? words()("herdrRestarting") : reason });
+        post(win, { type: "closed", cell, reason: gone ? restarting : provider.kind === "builtin" && reason === "exited" ? words()("paneEnded") : reason });
         if (gone) revive();
       });
     });
@@ -691,7 +692,7 @@ function apply(ctx: Context, config: Config) {
     if (result.toast) post(win, { type: "toast", text: result.toast });
   };
 
-  /** A plain shell in a new tab of the project's herdr workspace. It needs nothing of code link: only herdr has to answer. */
+  /** A plain shell in a new tab of the project's workspace (herdr's, or a pane of the pty host). It needs nothing of code link: only the backend has to answer. */
   const newTerminal = async (projectId: string, win: Open, id: string, cwd: string | null, resume?: string) => {
     const where = cwd && fs.existsSync(cwd) ? cwd : (await places(projectId))[0]!.cwd;
     // A conversation taken up again: its agent, by its id, in the folder it ran in.
@@ -702,8 +703,8 @@ function apply(ctx: Context, config: Config) {
     pending.set(projectId, starting.set(id, row));
     void refresh(projectId);
     try {
-      const launched = await ctx.get("herdr")?.launch({ cwd: where, label: talk?.title ?? row.title, workspace: { key: projectId, label: projectName(projectId) }, ...(command ? { command } : {}) });
-      if (!launched) return post(win, { type: "toast", text: words()("terminalFailed") });
+      const launched = await backend()?.launch({ cwd: where, label: talk?.title ?? row.title, workspace: { key: projectId, label: projectName(projectId) }, ...(command ? { command } : {}) });
+      if (!launched) return post(win, { type: "toast", text: words()(builtin() ? "hostTerminalFailed" : "terminalFailed") });
       saveTerminals(projectId, [...savedTerminals(projectId), { ...row, pane: launched.paneId }]);
     } finally {
       starting.delete(id);
@@ -715,8 +716,8 @@ function apply(ctx: Context, config: Config) {
     const t = savedTerminals(projectId).find((x) => x.id === id);
     if (!t) return;
     for (const [cell, stream] of win.terminals) if (stream.paneId === t.pane) detach(win, cell);
-    const gone = (await ctx.get("herdr")?.closePane(t.pane)) ?? false;
-    if (!gone) return post(win, { type: "toast", text: words()("closeFailed") });
+    const gone = (await backend()?.closePane(t.pane)) ?? false;
+    if (!gone) return post(win, { type: "toast", text: words()(builtin() ? "hostCloseFailed" : "closeFailed") });
     saveTerminals(projectId, savedTerminals(projectId).filter((x) => x.id !== id));
     await refresh(projectId);
   };
@@ -793,7 +794,7 @@ function apply(ctx: Context, config: Config) {
         return win.terminals.get(m.cell)?.scroll(m);
       case "scrollTo": {
         const pane = win.terminals.get(m.cell)?.paneId;
-        if (pane) void ctx.get("herdr")?.scrollTo(pane, m.offset).catch(() => undefined);
+        if (pane) void backend()?.scrollTo(pane, m.offset).catch(() => undefined);
         return;
       }
       case "mouse":
@@ -860,7 +861,7 @@ function apply(ctx: Context, config: Config) {
         save(config.stateFile, { asked: true });
         if (m.switch) {
           const settings = ctx.settings.get();
-          ctx.settings.set({ ...settings, codeLink: { ...(settings.codeLink as object), terminal: "herdr" } });
+          ctx.settings.set({ ...settings, codeLink: { ...(settings.codeLink as object), terminal: builtin() ? BUILTIN_TERMINAL : "herdr" } });
         }
         return refresh(projectId);
       }
@@ -930,12 +931,12 @@ function apply(ctx: Context, config: Config) {
 
   ctx.on("codeLink/changed", (projectId) => void refresh(projectId));
   // An agent in a terminal changing how it stands, or the terminal ending, shows at once.
-  ctx.inject(["herdr"], (ctx) => {
-    ctx.herdr.onPane((event) => {
+  ctx.inject(["terminals"], (ctx) => {
+    ctx.terminals.onPane((event) => {
       for (const [projectId, win] of open) if (win.follows.has(event.paneId)) void refresh(projectId);
     });
   });
-  // Code link's starts and "open in terminal" land here while this window can show herdr's panes.
+  // Code link's starts and "open in terminal" land here while this window can show the backend's panes.
   const showable = async () => ["ready", "notRunning"].includes((await bridge()).state);
   ctx.on("codeLink/terminal-window", async () => (await showable()) || undefined);
   ctx.on("codeLink/show-session", async (projectId, sessionId) => {

@@ -110,6 +110,11 @@ export function writePatchRow(file: string, id: string, fields: Partial<PluginRo
   fs.writeFileSync(file, String(doc), "utf8");
 }
 
+/** The rows this platform loads: one naming other platforms is left out, as if it were not written. */
+export function forPlatform<T extends Pick<PluginRow, "platforms">>(rows: T[], platform: string = process.platform): T[] {
+  return rows.filter((r) => !Array.isArray(r.platforms) || r.platforms.includes(platform));
+}
+
 /** Static `${var}` substitution in config strings — never evaluation. */
 export function interpolate<T>(value: T, vars: Record<string, string>): T {
   if (typeof value === "string") {

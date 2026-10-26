@@ -4,7 +4,8 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { afterEach, describe, expect, it } from "vitest";
 
-const { pruneSqlite, pruneUnused, requireIcons, restoreSdkDeclarations } = createRequire(import.meta.url)("../scripts/after-pack.cjs") as {
+const { pruneConpty, pruneSqlite, pruneUnused, requireIcons, restoreSdkDeclarations } = createRequire(import.meta.url)("../scripts/after-pack.cjs") as {
+  pruneConpty: (modules: string, platform: string, arch: string) => void;
   pruneSqlite: (modules: string, platform: string, arch: string) => void;
   pruneUnused: (modules: string) => void;
   requireIcons: (resources: string) => void;
@@ -111,6 +112,63 @@ describe("better-sqlite3 in a packaged app", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-after-pack-"));
     dirs.push(root);
     expect(() => pruneSqlite(root, "darwin", "arm64")).not.toThrow();
+  });
+});
+
+describe("node-pty in a packaged app", () => {
+  const RUNTIME = ["conpty.node", "conpty.pdb", "conpty_console_list.node", "conpty_console_list.pdb", "conpty/OpenConsole.exe", "conpty/conpty.dll", "pty.node", "pty.pdb", "winpty.dll", "winpty.pdb", "winpty-agent.exe", "winpty-agent.pdb"];
+  /** node_modules holding node-pty as it installs, with the pty host and the headless xterm beside it. */
+  function withPty(): string {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-after-pack-"));
+    dirs.push(root);
+    const pkg = path.join(root, "node-pty");
+    for (const arch of ["win32-x64", "win32-arm64"]) for (const file of RUNTIME) write(path.join(pkg, "prebuilds", arch, file));
+    for (const file of ["darwin-arm64/pty.node", "darwin-arm64/spawn-helper", "darwin-x64/pty.node"]) write(path.join(pkg, "prebuilds", file));
+    for (const file of ["lib/index.js", "lib/windowsPtyAgent.js", "lib/windowsTerminal.test.js", "lib/shared/conout.js", "lib/worker/conoutSocketWorker.js", "deps/winpty/README", "src/win/conpty.cc", "third_party/conpty/1.23/win10-x64/OpenConsole.exe", "scripts/prebuild.js", "typings/node-pty.d.ts", "binding.gyp", "package.json"]) write(path.join(pkg, file));
+    write(path.join(root, "@xterm/headless/package.json"));
+    write(path.join(root, "@tomradex/pty-host/dist/index.js"));
+    return root;
+  }
+  const write = (file: string) => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, "");
+  };
+  const files = (dir: string) => fs.readdirSync(dir, { recursive: true, withFileTypes: true }).filter((e) => e.isFile()).map((e) => path.relative(dir, path.join(e.parentPath, e.name)).split(path.sep).join("/")).sort();
+
+  it.each(["x64", "arm64"])("keeps only the ConPTY runtime a win32 %s app loads, and node-pty's lib", (arch) => {
+    const root = withPty();
+    pruneConpty(root, "win32", arch);
+    expect(files(path.join(root, "node-pty"))).toEqual([
+      "lib/index.js",
+      "lib/shared/conout.js",
+      "lib/windowsPtyAgent.js",
+      "lib/worker/conoutSocketWorker.js",
+      "package.json",
+      `prebuilds/win32-${arch}/conpty.node`,
+      `prebuilds/win32-${arch}/conpty/OpenConsole.exe`,
+      `prebuilds/win32-${arch}/conpty/conpty.dll`,
+      `prebuilds/win32-${arch}/conpty_console_list.node`
+    ]);
+    expect(fs.existsSync(path.join(root, "@tomradex/pty-host/dist/index.js"))).toBe(true);
+  });
+
+  it("fails the build when the target's runtime is missing, leaving the package as it was", () => {
+    const root = withPty();
+    fs.rmSync(path.join(root, "node-pty/prebuilds/win32-arm64/conpty/OpenConsole.exe"));
+    expect(() => pruneConpty(root, "win32", "arm64")).toThrow(/no prebuilt win32-arm64 conpty\/OpenConsole\.exe/);
+    expect(fs.existsSync(path.join(root, "node-pty/prebuilds/darwin-arm64/pty.node"))).toBe(true);
+  });
+
+  it("fails a Windows build that carries no node-pty at all", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-after-pack-"));
+    dirs.push(root);
+    expect(() => pruneConpty(root, "win32", "x64")).toThrow(/no prebuilt win32-x64/);
+  });
+
+  it.each([["darwin", "universal"], ["darwin", "arm64"], ["linux", "x64"]])("leaves a %s %s app none of the built-in terminal", (platform, arch) => {
+    const root = withPty();
+    pruneConpty(root, platform, arch);
+    for (const gone of ["node-pty", "@xterm/headless", "@tomradex/pty-host"]) expect(fs.existsSync(path.join(root, gone))).toBe(false);
   });
 });
 

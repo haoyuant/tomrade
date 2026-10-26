@@ -1,4 +1,4 @@
-import type { HerdrBridge, HerdrScroll, TerminalMouse, TerminalScroll } from "@tomradex/herdr";
+import type { TerminalBridge, TerminalMouse, TerminalScroll, TerminalScrollPosition } from "@tomradex/contracts";
 
 /** One code session as the window lists it. */
 export interface SessionRow {
@@ -90,7 +90,9 @@ export interface WindowState {
   projectName: string;
   /** The app's language, so the window speaks it even before the main window says how it looks. */
   locale: string;
-  bridge: HerdrBridge;
+  bridge: TerminalBridge;
+  /** Which backend the panes are on: herdr, Tomrade's own terminal host (native Windows), or none. */
+  provider: "herdr" | "builtin" | null;
   /** A herdr client of its own runs on this machine: "Show in herdr" has a window to show the pane in. */
   herdrClient: boolean;
   /** herdr's server went away under this window's terminals: being started again, or that did not work (the person can retry). */
@@ -171,7 +173,7 @@ export type WindowPost =
   | { type: "frame"; cell: string; seq: number; width: number; height: number; full: boolean; bytes: Uint8Array }
   | { type: "closed"; cell: string; reason: string | null }
   /** Where the cell's pane is in its scrollback, in rows, for its scrollbar. */
-  | ({ type: "scrolled"; cell: string } & HerdrScroll)
+  | ({ type: "scrolled"; cell: string } & TerminalScrollPosition)
   /** herdr's server is back: attach the cell's pane again. */
   | { type: "reattach"; cell: string }
   /** A session's conversation, read-only; `lines` null when its agent's record cannot be read. */

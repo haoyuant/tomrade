@@ -1,8 +1,7 @@
-import { execFile } from "node:child_process";
 import fs from "node:fs";
-import { createRequire } from "node:module";
 import path from "node:path";
-import { Host, serve, type SpawnPty } from "./host.js";
+import { killTree, spawnConpty } from "./conpty.js";
+import { Host, serve } from "./host.js";
 import { PROTOCOL } from "./protocol.js";
 import { defaultShell } from "./shell.js";
 
@@ -32,27 +31,9 @@ if (!pipe) {
   process.exit(2);
 }
 
-const pty = createRequire(import.meta.url)("node-pty") as typeof import("node-pty");
-
-// useConptyDll: the OpenConsole shipped with node-pty, the same on Windows 10 and 11 and twice as fast as the system's conhost.
-const spawn: SpawnPty = (file, args, opts) => pty.spawn(file, args, { name: "xterm-256color", cwd: opts.cwd, env: opts.env, cols: opts.cols, rows: opts.rows, useConpty: true, useConptyDll: true });
-
-/** taskkill /T walks the tree from the live root, so it goes first; node-pty's kill then frees the console. */
-const killTree: ConstructorParameters<typeof Host>[0]["killTree"] = (pane) =>
-  new Promise<void>((resolve) => {
-    execFile("taskkill", ["/T", "/F", "/PID", String(pane.pid)], { windowsHide: true }, () => {
-      try {
-        pane.pty.kill();
-      } catch {
-        // already gone
-      }
-      resolve();
-    });
-  });
-
 let server: Awaited<ReturnType<typeof serve>> | null = null;
 const host = new Host({
-  spawn,
+  spawn: spawnConpty,
   shell: () => defaultShell(process.env),
   killTree,
   version,

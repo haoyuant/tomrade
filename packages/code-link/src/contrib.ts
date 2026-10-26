@@ -90,7 +90,7 @@ export function contribute(ctx: Context, host: ContribHost): void {
       }
       const live = sessions.find((s) => s.state !== "ended") ?? sessions[0];
       if (live) {
-        const where = live.herdrPane ? w("inHerdr") : live.mode === "terminal" ? w("inTerminal") : w("runByTomrade");
+        const where = live.herdrPane ? (home.get("terminals")?.kind === "builtin" ? w("inTomradeTerminal") : w("inHerdr")) : live.mode === "terminal" ? w("inTerminal") : w("runByTomrade");
         const when = since(live.lastEventAt ?? live.startedAt);
         // A blocked session waits on the person, with the reason it gave.
         const shownState = live.blocked && live.state === "error" ? "waiting" : live.state;
@@ -204,7 +204,7 @@ export function contribute(ctx: Context, host: ContribHost): void {
     const started = w(result.continued ? "continuing" : "started", { on: result.branch ? w("startedOn", { branch: result.branch }) : "" });
     // In herdr, shown in Tomrade's Terminal window when that is on.
     if (result.mode === "terminal" && result.launched && result.pane && (await self.showSession(scope.projectId, result.sessionId))) return { toast: `${started}${warning ? `\n${warning}` : ""}` };
-    if (result.mode === "terminal") return { toast: `${result.launched ? `${started}${result.pane ? w("herdrHasIt", { pane: result.pane }) : w("terminalHasIt")}` : w("runThis", { command: result.command ?? "" })}${warning ? `\n${warning}` : ""}` };
+    if (result.mode === "terminal") return { toast: `${result.launched ? `${started}${result.pane ? w(home.get("terminals")?.kind === "builtin" ? "builtinHasIt" : "herdrHasIt", { pane: result.pane }) : w("terminalHasIt")}` : w("runThis", { command: result.command ?? "" })}${warning ? `\n${warning}` : ""}` };
     // a run here is followed in its conversation, which opens with it
     if (result.waitingOn) return { toast: w("waitingOn", { question: result.waitingOn }), showThread: result.threadId ?? undefined };
     return { toast: `${started}${warning ? `\n${warning}` : ""}`, showThread: result.threadId ?? undefined };

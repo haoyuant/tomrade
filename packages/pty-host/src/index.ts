@@ -246,7 +246,6 @@ export class PtyHost extends Service implements TerminalProvider {
   /** A live terminal of a pane. Refused with a PtyHostError: `notRunning` when the host is gone, `pane_not_found` when the pane is. */
   async terminal(paneId: string, opts: { mode?: TerminalMode; cols: number; rows: number }): Promise<TerminalStream> {
     if (this.disposed) throw new PtyHostError("closed", "the terminal host is gone");
-    if ((await this.bridge()).state !== "ready") throw new PtyHostError("unsupported", "no terminal host on this machine");
     const stream = openTerminal(this.pipe, { paneId, mode: opts.mode ?? "control", cols: opts.cols, rows: opts.rows });
     try {
       await stream.attached;
