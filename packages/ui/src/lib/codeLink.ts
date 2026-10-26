@@ -8,6 +8,9 @@ import { invalidateWorkspace, keys } from "./queries";
 export const useHerdrStatus = (enabled: boolean) =>
   useQuery({ queryKey: keys.codeLink.herdrStatus, queryFn: () => invoke("codeLink.herdrStatus"), enabled, refetchInterval: 5000 });
 
+/** gh on this machine: a recommendation for pull requests, so it is asked once a minute at most. */
+export const useGhStatus = (enabled: boolean) => useQuery({ queryKey: keys.codeLink.gh, queryFn: () => invoke("codeLink.gh"), enabled, staleTime: 60_000 });
+
 /** Sessions started on this project open in Tomrade's own Terminal window: herdr is the terminal here and the window is on. */
 export const useTerminalWindow = (projectId: string) =>
   useQuery({ queryKey: keys.codeLink.terminalWindow(projectId), queryFn: () => invoke("codeLink.terminalWindow", projectId) });

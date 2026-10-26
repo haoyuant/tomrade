@@ -126,6 +126,7 @@ export const keys = {
     terminalWindow: (projectId: string) => ["codeLink", projectId, "terminalWindow"] as const,
     startDefaults: ["codeLink", "startDefaults"] as const,
     herdrStatus: ["codeLink", "herdrStatus"] as const,
+    gh: ["codeLink", "gh"] as const,
     herdrInstall: ["codeLink", "herdrInstall"] as const
   },
 

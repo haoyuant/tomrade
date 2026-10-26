@@ -42,7 +42,8 @@ import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView
 import { recordOf } from "./titles.js";
 import { AUTO_TERMINAL, TerminalSettings, commandOk, exec, locatedCommand, terminalApps, terminalPath } from "./terminal.js";
 import { registerTools } from "./tools.js";
-import { type CodeLinkReader, errorMessage } from "@tomradex/contracts";
+import { type CodeLinkReader, contract, errorMessage } from "@tomradex/contracts";
+import { ghRow, probeGh, type GhStatus } from "./gh.js";
 
 export { AUTHOR, deliveryMerged, primaryOf, type ScanSummary, type UnlinkedBranch } from "./scan/absorb.js";
 export { compareUrl, MERGE_COMMAND, type MergeCause, type MergeCheckView, type MergeLocalResult, type MergeResult, type OpenPrResult } from "./landing.js";
@@ -196,6 +197,8 @@ declare module "@tomradex/ipc" {
     /** What the Start dialog last ran with on this machine, so it opens the way it was left. */
     "codeLink.startDefaults": () => StartDefaultsView | null;
     "codeLink.herdrStatus": () => "notInstalled" | "notRunning" | "running";
+    /** Whether gh is there and signed in: a recommendation for opening and merging pull requests, never needed to connect. */
+    "codeLink.gh": () => GhStatus;
     /** Sessions started here open in Tomrade's own Terminal window: herdr is the terminal and the window is on. */
     "codeLink.terminalWindow": (projectId: string) => boolean;
     /** Show a session's herdr terminal in Tomrade's Terminal window; false when no window can. */
@@ -644,10 +647,16 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.setupInTerminal", (engineId, step) => ctx.codeLink.setupInTerminal(engineId, step));
       ctx.ipc.handle("codeLink.startDefaults", () => ctx.codeLink.startDefaults());
       ctx.ipc.handle("codeLink.herdrStatus", () => ctx.codeLink.herdrStatus());
+      ctx.ipc.handle("codeLink.gh", () => probeGh());
       ctx.ipc.handle("codeLink.terminalWindow", (projectId) => ctx.codeLink.terminalWindow(projectId));
       ctx.ipc.handle("codeLink.showSession", (projectId, sessionId) => ctx.codeLink.showSession(projectId, sessionId));
       ctx.ipc.handle("codeLink.herdrInstall", () => ctx.codeLink.herdrInstall());
       ctx.ipc.handle("codeLink.installHerdr", () => ctx.codeLink.installHerdr());
+    });
+    // Only on a general look: when an agent's turn failed, gh is never the cause.
+    this.home.inject(["doctor"], (ctx) => {
+      const doctor = contract(ctx, "doctor");
+      doctor?.check({ id: "gh", title: () => CODE_WORDS(doctor.locale())("ghTitle"), applies: (topic) => !(topic as { engineId?: string }).engineId, run: async () => ghRow(await probeGh(), CODE_WORDS(doctor.locale())) });
     });
     this.home.inject(["contributions"], (ctx) => contribute(ctx, { ctx: this.ctx, codeLink: this, herdr: this.herdr, words: () => this.words() }));
     this.herdr.follow(this.home);

@@ -196,6 +196,18 @@ describe("the troubleshooter", () => {
     const models = checklist.rows.find((r) => r.id === "models");
     expect(models?.state).toBe("warn");
   });
+
+  it("shows an advisory row, such as a missing gh, without making it a finding", async () => {
+    const { ctx, project } = await boot();
+    ctx.doctor.check({ id: "gh", title: () => "GitHub CLI (gh)", run: async () => ({ state: "skip", line: "Not installed. Optional", facts: { "gh.path": "none", "gh.auth": "missing" } }) });
+    const thread = ctx.doctor.start(project.id, null);
+    await settled(ctx, project.id, ctx.agent.store.runs(project.id, thread.id)[0]!.id, 15_000);
+    const checklist = cardsOf(ctx, project.id, thread.id).find((c) => c.schema === "checklist")!.data as ChecklistCard;
+    expect(checklist.rows.find((r) => r.id === "gh")).toMatchObject({ state: "skip", line: "Not installed. Optional" });
+    const findings = ctx.agent.store.messages(project.id, thread.id).flatMap((m) => (m.block.type === "card" && m.block.schema === "finding" ? [m.block.data as FindingCard] : []));
+    expect(findings.length).toBeGreaterThan(0);
+    expect(findings.some((f) => f.headline.includes("GitHub CLI"))).toBe(false);
+  });
   it("takes an engine and its error from setup as the topic, and the row carries the last test message", async () => {
     const { ctx, project } = await boot();
     // The remembered test message (TOM-503): the fake turn errors, so the try fails.

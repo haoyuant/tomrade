@@ -169,7 +169,11 @@ export const CODE_WORDS = defineWords("code-link", {
     limitedNextTry: "usage limit — next try at {{when}}{{resumes}}",
     limitedResumes: "; continues then",
     askingYou: "asking you something",
-    filedFrom: "Filed from {{key}}'s coding session."
+    filedFrom: "Filed from {{key}}'s coding session.",
+    ghTitle: "GitHub CLI (gh)",
+    ghReady: "gh {{version}} at {{path}}, signed in",
+    ghSignedOut: "gh {{version}} at {{path}}, not signed in. Optional: Tomrade uses gh to open and merge pull requests; run `gh auth login`, or connect GitHub in Tomrade's settings for repositories it reaches",
+    ghMissing: "Not installed. Optional: Tomrade uses gh to open and merge pull requests, and everything else works without it. Install it from {{url}}, then run `gh auth login`"
   },
   zh: {
     terminalHelp: '1. 按 herdr 的安装文档安装。2. 打开一个终端，运行 `herdr` 启动它。选 herdr 后，工单在 herdr 的 workspace 里运行；Tomrade 跟进这个 pane 的状态和最后输出，支持继续（Continue）和跳回 pane。herdr 不可用时，改在系统终端里打开。系统里有别的终端应用也可以选，或选 none 只准备脚本。',
@@ -334,7 +338,11 @@ export const CODE_WORDS = defineWords("code-link", {
     limitedNextTry: "用量到了上限，{{when}} 再试{{resumes}}",
     limitedResumes: "，届时自动继续",
     askingYou: "在问你问题",
-    filedFrom: "由 {{key}} 的编码会话创建。"
+    filedFrom: "由 {{key}} 的编码会话创建。",
+    ghTitle: "GitHub CLI（gh）",
+    ghReady: "gh {{version}}，位于 {{path}}，已登录",
+    ghSignedOut: "gh {{version}}，位于 {{path}}，未登录。可选：Tomrade 用 gh 创建和合并拉取请求；运行 `gh auth login`，或在 Tomrade 设置里连接 GitHub（对它能访问的仓库生效）",
+    ghMissing: "未安装。可选：Tomrade 用 gh 创建和合并拉取请求，其他功能不需要它。可以从 {{url}} 安装，再运行 `gh auth login`"
   }
 });
 

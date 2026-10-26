@@ -4,7 +4,7 @@ import type { Board, Repo } from "@tomradex/domain";
 import type { CheckoutView, FolderRepo } from "@tomradex/repos";
 import { Icon } from "~/components/icons";
 import { Eyebrow } from "~/components/ui/atoms";
-import { splitMergeChecks, useAllowMerge, useGithubCredential, useGithubCredentialAccount, useMergeChecks, useRecheckRemote, useRemoteIdentity, useRepoStates, useSetRepoPolicy, type ReadMergeCheck } from "~/lib/codeLink";
+import { splitMergeChecks, useAllowMerge, useGhStatus, useGithubCredential, useGithubCredentialAccount, useMergeChecks, useRecheckRemote, useRemoteIdentity, useRepoStates, useSetRepoPolicy, type ReadMergeCheck } from "~/lib/codeLink";
 import { intlTag, useI18n, type MessageKey } from "~/lib/i18n";
 import { normalizeRemote } from "~/lib/remotes";
 import {
@@ -22,7 +22,7 @@ import {
   useUpdateBoard,
   useUpdateRepo
 } from "~/lib/queries";
-import { pickDirectory, reveal } from "~/lib/shell";
+import { openExternal, pickDirectory, reveal } from "~/lib/shell";
 import { useToast } from "~/lib/toast";
 import { AgentConnection } from "./AgentConnection";
 import { ConnectionPanel, message } from "./destination";
@@ -390,6 +390,25 @@ function RepoRow({ repo, projectId, boards, checkout, remoteState }: { repo: Rep
       {checkout?.checkout && <p className="meta-txt dense">{t("repositories.runInCheckoutNote")}</p>}
       <AgentConnection projectId={projectId} repoId={repo.id} />
       <AgentMerge projectId={projectId} repoId={repo.id} policy={remoteState?.mergePolicy ?? "human"} local={remoteState?.remote === "none"} />
+      <GhHint enabled={remoteState?.remote !== "none"} />
+    </div>
+  );
+}
+
+/** A hint, never a gate: pull requests open and merge through gh, while connecting and everything else go on without it. */
+function GhHint({ enabled }: { enabled: boolean }) {
+  const { t } = useI18n();
+  const gh = useGhStatus(enabled);
+  const state = gh.data?.state;
+  if (!enabled || !state || state === "ready") return null;
+  return (
+    <div className="cfg-row repo-gh-hint" data-state={state} style={{ marginTop: 0 }}>
+      <Icon name="i-info" size={14} style={{ color: "var(--meta)" }} />
+      <span className="repo-remote-copy">
+        <span className="meta-txt dense">{t(state === "missing" ? "repositories.ghMissing" : "repositories.ghSignedOut")}</span>
+      </span>
+      {state === "missing" && <button type="button" className="btn btn-ghost" onClick={() => openExternal("https://cli.github.com")}>{t("repositories.ghInstall")}</button>}
+      <button type="button" className="btn btn-ghost" disabled={gh.isFetching} onClick={() => void gh.refetch()}>{t("repositories.ghRecheck")}</button>
     </div>
   );
 }
