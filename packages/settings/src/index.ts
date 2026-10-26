@@ -400,7 +400,10 @@ export class Settings extends Service implements SettingsReader {
   /** Registered sections come back complete: defaults filled in under whatever was stored. */
   /** The language to speak to the person in — for words the backend writes, which the renderer shows as they are. */
   locale(): Locale {
-    return resolveLocale(this.get().language as string | undefined, this.config.locale, [...LANGUAGES, ...this.packs.keys()]);
+    // Asked for every word the backend says: read the one section rather than building them all, as get() would.
+    const section = this.registry.get(LANGUAGE.id);
+    const preference = section ? (this.storedValue(section) ?? section.defaults) : this.stored[LANGUAGE.id];
+    return resolveLocale(preference as string | undefined, this.config.locale, [...LANGUAGES, ...this.packs.keys()]);
   }
 
   /**
