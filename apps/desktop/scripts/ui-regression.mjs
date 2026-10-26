@@ -1034,7 +1034,9 @@ const run = async () => {
   await press(`document.querySelector('.theme-custom-controls .icon-btn.danger')`);
   check("its bin deletes it and the toast offers Undo", await wait(() => $(`[...document.querySelectorAll('.toast')].some((n) => (n.textContent ?? '').includes('Deleted the theme') && (n.textContent ?? '').includes('Undo'))`)) && customThemes() === 0);
   await clickToast(`[...document.querySelectorAll('.toast button')].find((b) => (b.textContent ?? '').includes('Undo'))`);
-  check("Undo brings the theme back, selected again", await wait(() => customThemes() === 1) && (await $(`document.querySelector('.dlg-body .theme-switch .theme-seg[aria-pressed="true"]')?.getAttribute('aria-label')`)) === "Custom 1" && String(ctx.settings.get().theme).startsWith("custom:"));
+  // The settings change first in the main process; the switch shows it once the window has rendered again.
+  const selectedTheme = () => $(`document.querySelector('.dlg-body .theme-switch .theme-seg[aria-pressed="true"]')?.getAttribute('aria-label')`);
+  check("Undo brings the theme back, selected again", await wait(async () => customThemes() === 1 && (await selectedTheme()) === "Custom 1") && String(ctx.settings.get().theme).startsWith("custom:"));
   // leave Appearance as it was: the theme gone, its toast dismissed, the pinned built-in theme back
   await press(`document.querySelector('.theme-selection-actions button[aria-label="Edit theme"]')`);
   await wait(() => $(`!!document.querySelector('.theme-custom-controls')`));
