@@ -6,6 +6,9 @@ import type { ThreadMessage } from "@tomradex/agent";
  * would show a backlog below the question that followed it.
  */
 export function insertMessage(messages: readonly ThreadMessage[], message: ThreadMessage): ThreadMessage[] {
+  // The usual push comes after everything there: a message already held has a seq no later than the last.
+  const last = messages.at(-1);
+  if (!last || last.seq < message.seq) return [...messages, message];
   if (messages.some((m) => m.id === message.id)) return messages as ThreadMessage[];
   let at = messages.length;
   while (at > 0 && messages[at - 1]!.seq > message.seq) at--;

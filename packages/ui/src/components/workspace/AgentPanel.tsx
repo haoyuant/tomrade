@@ -117,9 +117,38 @@ export function AgentPanel({
   const following = useRef(true);
   const panel = useRef<HTMLElement>(null);
 
-  const onDelta = useCallback((runId: string, text: string | null) => {
-    setLive((prev) => (text === null ? null : prev && prev.runId === runId ? { runId, text: prev.text + text } : { runId, text }));
+  // Tokens arrive faster than frames: what came in between is shown together, at most once a frame.
+  const pendingDelta = useRef<{ runId: string; text: string } | null>(null);
+  const deltaTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flushDelta = useCallback(() => {
+    deltaTimer.current = null;
+    const next = pendingDelta.current;
+    pendingDelta.current = null;
+    if (next) setLive((prev) => (prev && prev.runId === next.runId ? { runId: next.runId, text: prev.text + next.text } : next));
   }, []);
+  const onDelta = useCallback(
+    (runId: string, text: string | null) => {
+      if (text === null) {
+        if (deltaTimer.current) clearTimeout(deltaTimer.current);
+        deltaTimer.current = null;
+        pendingDelta.current = null;
+        setLive(null);
+        return;
+      }
+      const held = pendingDelta.current;
+      // Another run's words never join this one's: what is held is shown first.
+      if (held && held.runId !== runId) flushDelta();
+      pendingDelta.current = pendingDelta.current ? { runId, text: pendingDelta.current.text + text } : { runId, text };
+      deltaTimer.current ??= setTimeout(flushDelta, 16);
+    },
+    [flushDelta]
+  );
+  useEffect(
+    () => () => {
+      if (deltaTimer.current) clearTimeout(deltaTimer.current);
+    },
+    []
+  );
   const onProgress = useCallback((next: RunProgress | null) => {
     setProgress((prev) => {
       if (next === null) return null;

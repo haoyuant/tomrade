@@ -910,6 +910,9 @@ strong { font-weight: var(--font-weight-medium); }
   cursor: grab; text-align: left; width: 100%;
   transition: box-shadow var(--motion-base) var(--ease-standard),
               border-color var(--motion-base) var(--ease-standard);
+  /* A long column lays out and paints only the cards near the view; one scrolled past keeps its size. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 62px;
 }
 .card:hover { box-shadow: var(--elev-raised); border-color: var(--border-soft); }
 .card:focus-visible { box-shadow: var(--focus-ring); }

@@ -1,4 +1,6 @@
-import { CHECKED, type FieldDef, type Item } from "@tomradex/domain";
+import { memo, useCallback, useRef } from "react";
+import { CHECKED, type Board, type FieldDef, type Item } from "@tomradex/domain";
+import type { Badge } from "@tomradex/contributions";
 import { Icon, type IconId } from "~/components/icons";
 import { PriorityGlyph, ProvenanceMark, StatusMark, Tag } from "~/components/ui/atoms";
 import { timeAgo } from "~/lib/domain";
@@ -42,25 +44,74 @@ function cardBeside(from: HTMLElement, key: string): HTMLElement | null {
   return null;
 }
 
+const NO_MARKS: Badge[] = [];
+
 /**
  * A card opens the issue in the pane beside the assistant, so it behaves as a
  * button. Arrow keys move between cards; dragging is a mouse affordance, and
  * ⌥← ⌥→ are the same write for anyone on a keyboard — the tooltip is where
  * that gets discovered.
+ *
+ * It reads the workspace and hands the face only what this card shows, so a
+ * write to one ticket, a search or a selection repaints the cards it changed
+ * and no others.
  */
-export function Card({ item, onOpen, onNudge, dragging, dragHandleRef }: CardProps) {
-  const { t } = useI18n();
+export function Card(props: CardProps) {
+  const { item } = props;
   const { boards, query, epicNames, badges, fieldById } = useWorkspace();
   const selected = useIsSelected(item.id);
-  const marks = badges[item.id] ?? [];
+  // The latest handlers, behind callbacks that stay the same: the face is kept across renders.
+  const handlers = useRef(props);
+  handlers.current = props;
+  const onOpen = useCallback(() => handlers.current.onOpen(), []);
+  const onNudge = useCallback((direction: -1 | 1) => handlers.current.onNudge(direction), []);
   const grouped = (fieldId: string) => query.columnBy === fieldId || query.groupBy === fieldId;
   // A filter pinned to one workstream already says which one every card is in.
   const pinnedBoard = query.filter.some((c) => c.field === "board" && c.op === "in" && c.values.filter((v) => v !== null).length === 1);
-  const owner = !grouped("board") && !pinnedBoard ? boards.find((b) => b.id === item.boardId) : undefined;
-  const epicName = item.parentId && !grouped("epic") ? epicNames.get(item.parentId) : undefined;
-  const customs = query.fields
-    .map((id) => fieldById.get(id))
-    .filter((def): def is FieldDef => !!def && !def.builtin && item.fields[def.id] !== undefined);
+  return (
+    <CardFace
+      item={item}
+      selected={selected}
+      dragging={!!props.dragging}
+      dragHandleRef={props.dragHandleRef}
+      marks={badges[item.id] ?? NO_MARKS}
+      owner={!grouped("board") && !pinnedBoard ? boards.find((b) => b.id === item.boardId) : undefined}
+      epicName={item.parentId && !grouped("epic") ? epicNames.get(item.parentId) : undefined}
+      fields={query.fields}
+      fieldById={fieldById}
+      onOpen={onOpen}
+      onNudge={onNudge}
+    />
+  );
+}
+
+const CardFace = memo(function CardFace({
+  item,
+  selected,
+  dragging,
+  dragHandleRef,
+  marks,
+  owner,
+  epicName,
+  fields,
+  fieldById,
+  onOpen,
+  onNudge
+}: {
+  item: Item;
+  selected: boolean;
+  dragging: boolean;
+  dragHandleRef?: (node: HTMLElement | null) => void;
+  marks: Badge[];
+  owner: Board | undefined;
+  epicName: string | undefined;
+  fields: string[];
+  fieldById: Map<string, FieldDef>;
+  onOpen: () => void;
+  onNudge: (direction: -1 | 1) => void;
+}) {
+  const { t } = useI18n();
+  const customs = fields.map((id) => fieldById.get(id)).filter((def): def is FieldDef => !!def && !def.builtin && item.fields[def.id] !== undefined);
 
   return (
     <div
@@ -130,4 +181,4 @@ export function Card({ item, onOpen, onNudge, dragging, dragHandleRef }: CardPro
       </span>
     </div>
   );
-}
+});
