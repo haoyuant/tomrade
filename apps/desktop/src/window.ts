@@ -1,4 +1,4 @@
-import { BrowserWindow } from "electron";
+import { BrowserWindow, powerMonitor } from "electron";
 import type { Context } from "cordis";
 import type {} from "@tomradex/ipc";
 import type { SurfaceBounds } from "@tomradex/desktop-surface";
@@ -14,6 +14,8 @@ interface WindowChrome {
 declare module "@tomradex/ipc" {
   interface Broadcasts {
     "window.chrome": (state: WindowChrome) => void;
+    /** The system woke, the screen unlocked or the window came back from minimized: what it shows may be behind. */
+    "window.wake": () => void;
   }
 }
 
@@ -64,6 +66,14 @@ export function createWindow(ctx: Context, opts: WindowOptions): BrowserWindow {
   win.webContents.on("render-process-gone", (_event, details) => log.error(`renderer gone: ${details.reason} (exit ${details.exitCode})`));
   win.on("enter-full-screen", sendChrome);
   win.on("leave-full-screen", sendChrome);
+  const wake = () => sendToWindow(win, "window.wake");
+  powerMonitor.on("resume", wake);
+  powerMonitor.on("unlock-screen", wake);
+  win.on("restore", wake);
+  win.on("closed", () => {
+    powerMonitor.off("resume", wake);
+    powerMonitor.off("unlock-screen", wake);
+  });
 
   const route = opts.detached?.route;
   if (opts.devServerUrl) void win.loadURL(route ? `${opts.devServerUrl.replace(/#.*$/, "")}#${route}` : opts.devServerUrl);

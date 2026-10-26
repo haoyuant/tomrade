@@ -91,6 +91,7 @@ function Row(props: Parameters<typeof RowBody>[0]) {
 }
 
 function RowBody({ m, onRetry, onRetryWith, onTroubleshoot, hint }: { m: ThreadMessage; onRetry?: () => void; onRetryWith?: (engineId: string) => void; onTroubleshoot?: () => void; hint?: boolean }) {
+  const { t } = useI18n();
   const { projectId, runs, cards, engines, retryEngines, pending, byKey, onOpenIssue, onAnswer, onRevert, onOpenSettings, onCardAction, busy } = useTranscriptActions();
   const b = m.block;
   if (m.role === "user") {
@@ -108,7 +109,20 @@ function RowBody({ m, onRetry, onRetryWith, onTroubleshoot, hint }: { m: ThreadM
       </div>
     );
   }
-  if (b.type === "note") return <p className="agent-note">{b.text}</p>;
+  if (b.type === "note")
+    return (
+      <p className="agent-note">
+        {b.text}
+        {b.settingsFor && (
+          <>
+            {" "}
+            <button type="button" className="link-btn" data-testid="note-settings" onClick={() => onOpenSettings(b.settingsFor)}>
+              {t("agentPanel.stepLimitSettings")}
+            </button>
+          </>
+        )}
+      </p>
+    );
   const failedEngine = b.type === "error" && m.runId ? findEngine(engines, runs.get(m.runId!)?.engine) : undefined;
   const body =
     b.type === "text" ? (

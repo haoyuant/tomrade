@@ -2,10 +2,12 @@ import os from "node:os";
 import path from "node:path";
 import type { Context } from "cordis";
 import { z } from "zod";
-import type { Engine } from "@tomradex/agent";
+import type { Engine, EngineStepLimit } from "@tomradex/agent";
 import { localAvailability, localCli } from "@tomradex/engine-kit";
 import { claudeSignedIn } from "./cli.js";
 import { claudeMcpLink } from "./mcp-link.js";
+
+const MAX_TURNS: EngineStepLimit = { key: "maxTurns", min: 1, max: 200, default: 24 };
 
 // Unknown keys are dropped, so a saved `transport` from older versions is ignored.
 export const ClaudeCodeOptions = z.object({
@@ -14,7 +16,7 @@ export const ClaudeCodeOptions = z.object({
   model: z.string().optional(),
   /** Passed as --effort; the CLI validates the level, so new levels need no release here. */
   effort: z.string().optional(),
-  maxTurns: z.number().int().min(1).max(200).default(24),
+  maxTurns: z.number().int().min(MAX_TURNS.min).max(MAX_TURNS.max).default(MAX_TURNS.default),
   maxBudgetUsd: z.number().positive().optional(),
   /** Claude Code's own tools to allow besides the tomrade MCP tools (e.g. "WebSearch", "Read", "Bash"). */
   allowTools: z.array(z.string()).default([]),
@@ -41,6 +43,7 @@ export function claudeCodeEngineInfo(ctx: Context): Omit<Engine, "turn"> {
     author: "ai:claude-code",
     capabilities: ["backlog", "code", "general"],
     options: ClaudeCodeOptions,
+    stepLimit: MAX_TURNS,
     available: localAvailability(ctx, {
       engineId: "claude-code",
       title: "Claude Code",

@@ -1,11 +1,13 @@
 import type {} from "cordis";
 import type { Context } from "cordis";
 import { z } from "zod";
-import { HOUSE_RULES, deferredTools, focusSuffix, isSuspended, kitLines, promptParts, type AgentRequest, type AgentTurnInfo, type Engine, type ThreadMessage, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
+import { HOUSE_RULES, deferredTools, focusSuffix, isSuspended, kitLines, promptParts, type AgentRequest, type AgentTurnInfo, type Engine, type EngineStepLimit, type ThreadMessage, type TurnIO, type TurnInput, type TurnResult } from "@tomradex/agent";
 import { errorMessage, localeOf } from "@tomradex/contracts";
 import { MediaRefused, NativeMediaRefused, NativeSearchRefused, assistantMessage, collect, modalityOf, toolResultsMessage, userMessage, type InputModality, type LlmService, type Message, type OutputModality, type ToolSpec } from "@tomradex/llm";
 import { LONG_RESULT, ToolInputError, compactList, type ToolDescriptor } from "@tomradex/tools";
 import { LOOP_WORDS } from "./words.js";
+
+const MAX_STEPS: EngineStepLimit = { key: "maxSteps", min: 1, max: 64, default: 24 };
 
 export const LoopOptions = z.object({
   /** auto: the playbook index guides the model; none: the bare loop. */
@@ -14,7 +16,7 @@ export const LoopOptions = z.object({
   profile: z.string().optional(),
   /** Reasoning effort, where the profile's endpoint has the knob (OpenAI-compatible). */
   effort: z.string().optional(),
-  maxSteps: z.number().int().min(1).max(64).default(24),
+  maxSteps: z.number().int().min(MAX_STEPS.min).max(MAX_STEPS.max).default(MAX_STEPS.default),
   maxTokens: z.number().int().min(256).default(8192)
 });
 export type LoopOptions = z.infer<typeof LoopOptions>;
@@ -265,6 +267,7 @@ export function createLoopEngine(ctx: Context): Engine {
     // Talks to the backlog through tools (a shell among them while @tomradex/shell is on); never implements a ticket.
     capabilities: ["backlog"],
     options: LoopOptions,
+    stepLimit: MAX_STEPS,
     available: async () => {
       const llm = ctx.get("llm");
       if (!llm) return { ok: false, reason: "No language model plugin is loaded", need: "service" };

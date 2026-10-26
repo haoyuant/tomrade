@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { AgentSettings, EnginePick, EngineView, PlaybookSource } from "@tomradex/agent";
+import type { AgentSettings, EnginePick, EngineStepLimit, EngineView, PlaybookSource } from "@tomradex/agent";
 import type { AppSettings } from "@tomradex/domain";
 import type { ModelProfile, ModelsSettings, ProviderView } from "@tomradex/llm";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -10,6 +10,7 @@ import { Fold, FoldChevron, FoldChevronSpace, SectionHead, Tag } from "~/compone
 import { invoke } from "~/lib/api";
 import { detectedHere, failedTry, pickFallbackName, pickTitleOf } from "~/lib/engines";
 import { useI18n, type MessageKey } from "~/lib/i18n";
+import { isCommitKey } from "~/lib/keys";
 import { engineStateLabel, engineStatus } from "~/lib/localCli";
 import { keys, usePlugins } from "~/lib/queries";
 import { useInstallProvider, useModelProviders, useProviderPlugins, useProviders } from "~/lib/setup";
@@ -108,7 +109,8 @@ export function AssistantPane({
       onCommit={(key, value) => {
         const opts = (agent.engines[e.id] ?? {}) as Record<string, unknown>;
         const next = { ...opts };
-        if (value.trim()) next[key] = value.trim();
+        if (typeof value === "number") next[key] = value;
+        else if (value?.trim()) next[key] = value.trim();
         else delete next[key];
         saveAgent({ ...agent, engines: { ...agent.engines, [e.id]: next } });
       }}
@@ -362,7 +364,8 @@ function EngineRow({
   focused: boolean;
   onMakeDefault: () => void;
   options: Record<string, unknown>;
-  onCommit: (key: string, value: string) => void;
+  /** null (or an empty string) puts the option back to its default. */
+  onCommit: (key: string, value: string | number | null) => void;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(isDefault || focused);
@@ -374,9 +377,10 @@ function EngineRow({
     requestAnimationFrame(() => row.current?.scrollIntoView({ block: "nearest" }));
   }, [focused]);
   const hasPicks = !!engine.picks?.length;
+  const stepLimit = engine.stepLimit;
   // a terminal-only CLI conducts no conversation to try
   const canTry = !engine.terminalOnly;
-  const hasBody = hasPicks || !!engine.cli || canTry;
+  const hasBody = hasPicks || !!stepLimit || !!engine.cli || canTry;
   const toggle = () => hasBody && setOpen((o) => !o);
   const status = engineStatus(engine);
   const failed = failedTry(engine);
@@ -415,7 +419,7 @@ function EngineRow({
           <EngineTryRow engine={engine} command={typeof options.command === "string" ? options.command : undefined} />
         </div>
       )}
-      {open && hasPicks && (
+      {open && (hasPicks || stepLimit) && (
         <div className="eng-body grid-2">
           {(engine.picks ?? []).map((pick) => (
             <EnginePickField
@@ -426,8 +430,64 @@ function EngineRow({
               onCommit={(value) => onCommit(pick.key, value)}
             />
           ))}
+          {stepLimit && (
+            <StepLimitField
+              key={String(options[stepLimit.key])}
+              engine={engine}
+              limit={stepLimit}
+              value={typeof options[stepLimit.key] === "number" ? (options[stepLimit.key] as number) : undefined}
+              onCommit={(value) => onCommit(stepLimit.key, value)}
+            />
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+/** The most steps one turn takes: a whole number in the engine's range, saved once the field is left; empty goes back to the default. */
+function StepLimitField({ engine, limit, value, onCommit }: { engine: EngineView; limit: EngineStepLimit; value: number | undefined; onCommit: (value: number | null) => void }) {
+  const { t } = useI18n();
+  // keyed by the saved value, so a save from elsewhere starts it over
+  const shown = String(value ?? limit.default);
+  const [draft, setDraft] = useState(shown);
+  const id = `engSteps-${engine.id}`;
+  const typed = draft.trim();
+  const n = Number(typed);
+  const bad = typed !== "" && (!Number.isInteger(n) || n < limit.min || n > limit.max);
+  const commit = () => {
+    if (bad || typed === shown) return;
+    if (typed === "") {
+      setDraft(String(limit.default));
+      if (value !== undefined) onCommit(null);
+    } else onCommit(n);
+  };
+  return (
+    <div className="field">
+      <label htmlFor={id}>{t("settingsDialog.stepLimitLabel")}</label>
+      <input
+        id={id}
+        className="input num"
+        type="number"
+        min={limit.min}
+        max={limit.max}
+        step={1}
+        data-testid={`step-limit-${engine.id}`}
+        value={draft}
+        aria-invalid={bad}
+        aria-describedby={bad ? `${id}-error` : undefined}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (isCommitKey(e)) commit();
+        }}
+      />
+      {bad && (
+        <span id={`${id}-error`} className="field-error" role="alert">
+          {t("settingsDialog.stepLimitRange", { min: limit.min, max: limit.max })}
+        </span>
+      )}
+      <span className="meta-txt">{t("settingsDialog.stepLimitNote", { min: limit.min, max: limit.max, default: limit.default })}</span>
     </div>
   );
 }

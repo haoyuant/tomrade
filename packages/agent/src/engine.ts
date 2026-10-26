@@ -249,6 +249,8 @@ export interface Engine {
   available(opts?: { fresh?: boolean; options?: unknown }): Promise<EngineAvailability>;
   /** Engine settings, drawn by the settings UI from the schema. */
   options?: z.ZodType<unknown>;
+  /** The option that caps one turn's steps; settings offer it as a number, and running out of it links there. */
+  stepLimit?: EngineStepLimit;
   /** `default` is what a session starts in until the person picks another mode. */
   permissionModes?: { default: string; choices: { value: string; label: string }[] };
   /** A mode picked while a turn runs can reach it in that turn (`io.modeTo`); absent, it waits for the next turn. */
@@ -408,6 +410,14 @@ export interface EngineTry {
   details?: string;
 }
 
+/** A numeric option of `options` (`key`) with its bounds and what applies while it is unset. */
+export interface EngineStepLimit {
+  key: string;
+  min: number;
+  max: number;
+  default: number;
+}
+
 export interface EngineView {
   id: string;
   title: string;
@@ -420,6 +430,7 @@ export interface EngineView {
   /** The last try with the settings it has now; a change to its settings clears it. */
   tried?: EngineTry;
   picks?: EnginePick[];
+  stepLimit?: EngineStepLimit;
   permissionModes?: Engine["permissionModes"];
   liveModes?: boolean;
   terminal?: boolean;

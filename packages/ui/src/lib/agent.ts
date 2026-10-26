@@ -7,6 +7,7 @@ import { useI18n, type MessageKey } from "./i18n";
 import { invalidateWorkspace, keys, useSaveSettings, useSettings } from "./queries";
 import { useToast } from "./toast";
 import { useErrorToast } from "~/lib/toast";
+import { catchUp, insertMessage, missedBefore } from "./threadLive";
 
 export const useAgentThreads = (projectId: string) => useQuery({ queryKey: keys.agent.threads(projectId), queryFn: () => invoke("agent.threads", projectId) });
 
@@ -272,7 +273,11 @@ export function useAgentEvents(
           break;
         case "message":
           if (event.message.block.type === "text" && event.message.role === "agent") onDelta(event.message.runId ?? "", null);
-          patch((d) => (d.messages.some((m) => m.id === event.message.id) ? d : { ...d, messages: [...d.messages, event.message] }));
+          patch((d) => {
+            if (missedBefore(d.messages, event.message)) void qc.invalidateQueries({ queryKey: key });
+            const messages = insertMessage(d.messages, event.message);
+            return messages === d.messages ? d : { ...d, messages };
+          });
           break;
         case "card":
           patch((d) => ({ ...d, cards: [...d.cards.filter((c) => c.id !== event.card.id), event.card] }));
@@ -296,4 +301,21 @@ export function useAgentEvents(
       }
     });
   }, [projectId, threadId, qc, onDelta, onProgress]);
+
+  // A window that slept, sat locked or minimized may have been handed its events late or not at all: fetch what it shows again.
+  useEffect(() => {
+    const refetch = catchUp(() => {
+      void qc.invalidateQueries({ queryKey: keys.agent.threadAll(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.agent.threads(projectId) });
+    });
+    const onVisible = () => { if (document.visibilityState === "visible") refetch(); };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", refetch);
+    const off = subscribe("window.wake", refetch);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", refetch);
+      off();
+    };
+  }, [projectId, qc]);
 }
