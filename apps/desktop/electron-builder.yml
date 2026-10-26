@@ -88,6 +88,10 @@ win:
   # an install take minutes. scripts/after-pack.cjs keeps real files only for
   # what must be one (its UNPACKED).
   asar: true
+# The static AppImage runtime: it needs no libfuse2 on the machine, and the
+# legacy arm64 one asked for libz.so, which only zlib1g-dev provides.
+toolsets:
+  appimage: "1.0.3"
 linux:
   icon: assets/icon.png
   # Otherwise derived from the package name, @tomrade/desktop.
