@@ -532,9 +532,11 @@ export function registerTools(ctx: Context, host: ToolHost): void {
         const held = () => (session?.itemIds ?? []).filter((id) => id !== item.id).map((id) => ctx.items.get(projectId, id));
         let others = held();
         // An outside terminal moves on once its ticket is finished, or once it handed that ticket's merge to the person
-        // (report_merge_blocked); until then its wrap-up is still owed. A session Tomrade started is one ticket's thread and worktree.
+        // (report_merge_blocked); until then its wrap-up is still owed. One it only filed and never claimed (a claim makes
+        // it Doing) owes nothing: it stays in the backlog. A session Tomrade started is one ticket's thread and worktree.
         const handedOff = session?.blocked === "merge";
-        const owing = () => others.find((held) => !held || (held.status !== "done" && held.status !== "cancelled" && !(held.status === "verifying" && handedOff)));
+        const owing = () =>
+          others.find((held) => !held || (held.status !== "done" && held.status !== "cancelled" && held.status !== "backlog" && held.status !== "todo" && !(held.status === "verifying" && handedOff)));
         let owed = owing();
         // The agent may have merged its pull request a moment ago, long before the next timed scan: look now rather than refuse.
         if (owed?.status === "verifying" && !tokened && !args.parallel && host.store.links(projectId, owed.id).some((l) => l.prState === "open")) {

@@ -794,6 +794,31 @@ describe("a ticket an agent files for itself", () => {
     expect(await ctx.tools.execute("note_progress", { key: filed.key, text: "written" }, inv)).toMatchObject({ ok: true });
   });
 
+  it("leaves an epic it files alone, and a ticket it only filed does not stop it claiming another", async () => {
+    const { ctx, codeLink, project, checkout } = await machine();
+    await start(ctx, project.id, checkout, "cli-1");
+    const [session] = codeLink.sessionsOf(project.id);
+    const inv = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-a" };
+    const epic = (await ctx.tools.execute("create_item", { title: "Session records", kind: "epic" }, inv)) as { id: string };
+    expect(codeLink.sessionsOf(project.id, epic.id)).toEqual([]);
+    // Planning: the first ticket filed joins the session, the next ones do not.
+    const filed = (await ctx.tools.execute("create_item", { title: "Readers as plugins", parentId: epic.id }, inv)) as { id: string; key: string };
+    const later = (await ctx.tools.execute("create_item", { title: "Whole records", parentId: epic.id }, inv)) as { id: string; key: string };
+    expect(codeLink.sessionsOf(project.id, filed.id).map((s) => s.id)).toEqual([session!.id]);
+    // Its hooks say it is the one claiming, as Claude Code's PreToolUse does.
+    const claiming = (key: string) =>
+      fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hook_event_name: "PreToolUse", session_id: "cli-1", cwd: checkout, tool_name: "mcp__tomrade__claim_ticket", tool_input: { key } }) });
+    // Claiming another of them moves the session there, no parallel needed; the one only filed stays in the backlog.
+    await claiming(later.key);
+    expect(await ctx.tools.execute("claim_ticket", { key: later.key }, inv)).toMatchObject({ key: later.key, status: "doing", tracking: { tracked: true, sessionId: session!.id } });
+    expect(codeLink.sessionsOf(project.id, filed.id)).toEqual([]);
+    expect(ctx.items.get(project.id, filed.id)?.status).toBe("backlog");
+    // A ticket it claimed is still owed its wrap-up.
+    const next = (await ctx.tools.execute("create_item", { title: "Snapshots", parentId: epic.id }, inv)) as { key: string };
+    await claiming(next.key);
+    await expect(ctx.tools.execute("claim_ticket", { key: next.key }, inv)).rejects.toThrow(`this session still owns ${later.key}, which is doing`);
+  });
+
   it("leaves two free sessions alone: nothing says whose ticket it is, and the agent's own claim decides", async () => {
     const { ctx, codeLink, project, checkout } = await machine();
     await start(ctx, project.id, checkout, "cli-1");
