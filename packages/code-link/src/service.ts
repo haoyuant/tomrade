@@ -230,9 +230,10 @@ export const CodeLinkConfig = z.preprocess(
     defaultsPath: z.string().nullish(),
     /**
      * Write Tomrade into each installed agent's own user-level configuration without a press. Off for a run that must
-     * leave the person's agents as they are (a UI check): Settings still connects one by hand.
+     * leave the person's agents as they are (a UI check); `missing` only fills a link nobody made, never one that names
+     * another Tomrade (a checkout beside the installed app). Settings still connects one by hand.
      */
-    linkAgents: z.union([z.boolean(), z.stringbool()]).default(true)
+    linkAgents: z.union([z.boolean(), z.literal("missing"), z.stringbool()]).default(true)
   })
 );
 export type CodeLinkConfig = z.infer<typeof CodeLinkConfig>;
@@ -1156,6 +1157,7 @@ export class CodeLink extends Service implements CodeLinkReader {
     if (!link || !this.config.linkAgents) return;
     const state = await link.status();
     if (state.state === "connected" || state.state === "unavailable") return;
+    if (state.state === "stale" && this.config.linkAgents === "missing") return;
     const available = await engine.available().catch(() => null);
     if (available?.cli?.state === "missing") return;
     const next = await link.connect();
