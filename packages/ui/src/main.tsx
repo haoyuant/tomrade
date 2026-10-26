@@ -86,13 +86,18 @@ if (window.tomrade) {
     if (entities.some((e) => e !== "item")) invalidateProject(queryClient, projectId);
     else invalidateWorkspace(queryClient, projectId);
   });
+  // Code-link writes only its own tables; a ticket it moves comes as items.changed. It fires on every
+  // session hook, so it asks again only for what those tables feed.
   subscribe("codeLink.changed", (projectId) => {
     void queryClient.invalidateQueries({ queryKey: keys.codeLink.all(projectId) });
     // A finished ticket's conversations may have just been archived.
     void queryClient.invalidateQueries({ queryKey: keys.agent.threads(projectId) });
     void queryClient.invalidateQueries({ queryKey: keys.agent.threadAll(projectId) });
     void queryClient.invalidateQueries({ queryKey: keys.contributions });
-    invalidateProject(queryClient, projectId);
+    // Derived fields may read its tables.
+    void queryClient.invalidateQueries({ queryKey: keys.items(projectId) });
+    // Its exported tables travel with the project.
+    void queryClient.invalidateQueries({ queryKey: keys.storageStatus(projectId) });
   });
 }
 

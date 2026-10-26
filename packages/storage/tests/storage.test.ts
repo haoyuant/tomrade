@@ -11,6 +11,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { Service, type Context } from "cordis";
 import { z } from "zod";
+import { ProjectDb } from "@tomradex/db";
 import { fresh, settle } from "@tomradex/testkit";
 import {
   ARTIFACT_DIR,
@@ -202,6 +203,32 @@ describe("ctx.storage", () => {
     expect((await storage.statusFor(project.id)).state).toBe("synced");
     const manifest = JSON.parse(read(dir, "project.json"));
     expect(manifest.snapshot.checkpoint["test-device"]).toBeGreaterThan(0);
+  });
+
+  it("exports the cache for status only when the file moved, whoever moved it", async () => {
+    const { ctx, db, storage, project } = await machine({ cacheDir: tmp("cache") });
+    ctx.db.migrate("demo", [{ version: 1, up: "CREATE TABLE plugin_demo_notes (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, body TEXT)" }], {
+      tables: { plugin_demo_notes: { project: "project_id", export: { order: "id", always: true } } }
+    });
+    await storage.publish(project.id);
+    const exports = vi.spyOn(Storage.prototype as unknown as { localDigest: (...args: unknown[]) => string }, "localDigest");
+    expect((await storage.statusFor(project.id)).state).toBe("synced");
+    exports.mockClear();
+    expect((await storage.statusFor(project.id)).state).toBe("synced");
+    expect(exports).not.toHaveBeenCalled();
+    exports.mockRestore();
+
+    // A plugin writing its own table goes past the write pipeline.
+    db.prepare("INSERT INTO plugin_demo_notes (id, project_id, body) VALUES ('n1', ?, 'hi')").run(project.id);
+    expect((await storage.statusFor(project.id)).state).toBe("ahead");
+    await storage.publish(project.id);
+    expect((await storage.statusFor(project.id)).state).toBe("synced");
+
+    // So does another connection to the same file.
+    const other = new ProjectDb(project.id, ctx.db.pathFor(project.id));
+    other.prepare("UPDATE plugin_demo_notes SET body = 'changed'").run();
+    other.close();
+    expect((await storage.statusFor(project.id)).state).toBe("ahead");
   });
 
   it("takes the folder's copy on refresh when local is clean, and imports the other machine's log as history", async () => {

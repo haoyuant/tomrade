@@ -1022,10 +1022,12 @@ export class Files extends Service implements FilesReader {
   async sync(projectId: string): Promise<FilesStatus> {
     // Git installed since the folder was opened without it: the same folder becomes a git store.
     if (this.open.get(projectId)?.store instanceof FolderFileStore && (await gitInstalled(this.config.gitBinary))) await this.reopen(projectId, true);
+    const before = this.lastState.get(projectId);
     const status = await (await this.store(projectId)).sync();
     this.lastState.set(projectId, status.state);
     this.home.emit("files/synced", projectId, status);
-    this.notify(projectId);
+    // The store tells of what its sync changed; the minute's sweep over quiet projects says nothing.
+    if (status.state !== before) this.notify(projectId);
     return status;
   }
 

@@ -20,7 +20,7 @@ function bare(): string {
   return dir;
 }
 
-async function store(remote: string | null = null) {
+async function store(remote: string | null = null, onChange: () => void = noop) {
   const dir = path.join(root, `store-${n++}`);
   return new GitFileStore({
     git,
@@ -29,7 +29,7 @@ async function store(remote: string | null = null) {
     remote: remote ? () => ({ url: remote, branch: "main" }) : null,
     location: remote ? "test remote" : null,
     warn: noop,
-    onChange: noop,
+    onChange,
     watch: false,
     // Tests sync by hand; a timed push landing mid-test would be joined by their sync() and skip a later write.
     pushMs: 600_000
@@ -58,6 +58,19 @@ describe("paths", () => {
 });
 
 describe("a local store", () => {
+  it("says nothing when a sync finds nothing to save, and tells of what it saved", async () => {
+    let changes = 0;
+    const s = await store(null, () => changes++);
+    await s.write("docs/a.md", text("a\n"));
+    await s.sync();
+    changes = 0;
+    await s.sync();
+    expect(changes).toBe(0);
+    fs.writeFileSync(path.join(s.dir, "docs", "b.md"), "edited outside\n");
+    await s.sync();
+    expect(changes).toBeGreaterThan(0);
+  });
+
   it("saves every write as a version with a stable id, and reads old versions back unchanged", async () => {
     const s = await store();
     const first = await s.write("docs/brief.md", text("# Brief\n"));
