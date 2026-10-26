@@ -11,7 +11,7 @@ export const localAgentOf = (host: Host, spec: LocalAgentSpec<LocalAgentOptions>
   const label = `local agent ${spec.id}`;
   const now = <T>(fn: () => T, what: string, fallback: T) => host.now(fn, `${label} ${what}`, () => fallback);
   const must = <T>(fn: () => T, what: string) => host.now<T>(fn, `${label} ${what}`, (message) => { throw new Error(`${spec.title}: ${message}`); });
-  const { acp, probe, signedIn, diagnostics, mcpLink, lend } = spec;
+  const { acp, probe, signedIn, diagnostics, mcpLink, lend, record } = spec;
   const bundled = spec.cli.bundled;
   const usage = acp?.usage;
   return {
@@ -63,6 +63,11 @@ export const localAgentOf = (host: Host, spec: LocalAgentSpec<LocalAgentOptions>
           connect: host.back(mcpLink.connect.bind(mcpLink), `${label} link connect`, { ms: 180_000 }),
           disconnect: host.back(mcpLink.disconnect.bind(mcpLink), `${label} link disconnect`, { ms: 180_000 })
         } } : {}),
+    ...(record ? { record: {
+      find: (sessionId, opts) => now(() => record.find(sessionId, { cwd: opts.cwd }), "record find", null),
+      read: (file) => now(() => record.read(file), "record read", null),
+      ...(record.title ? { title: (file: string) => now(() => record.title!(file), "record title", null) } : {})
+    } } : {}),
     // A lent call is bounded by its caller's signal, as the app's own are.
     ...(lend ? { lend: { ...(lend.rank !== undefined ? { rank: lend.rank } : {}), ask: host.back(lend.ask.bind(lend), `${label} lent call`) } } : {})
   };

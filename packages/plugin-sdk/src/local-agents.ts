@@ -249,6 +249,26 @@ export interface LocalAgentAcp<O> {
   terminalViaLink?: boolean;
 }
 
+/** SDK 0.2.29. One line of a session's record as a conversation: what the person said, what the agent answered, a tool call. */
+export interface LocalAgentRecordLine {
+  who: "person" | "agent" | "tool";
+  text: string;
+}
+
+/**
+ * SDK 0.2.29. How Tomrade reads the agent's own record of its sessions, for
+ * the Terminal window's ended sessions and their titles: where one session's
+ * record is on this machine (by the session id its hooks reported), the
+ * conversation in it with the agent's machinery left out (`cut` when only its
+ * end was read), and what it calls the conversation. Each is asked at once
+ * and answers at once; null, or a throw, reads as no record.
+ */
+export interface LocalAgentRecord {
+  find(sessionId: string, opts: { cwd: string | null }): string | null;
+  read(file: string): { lines: LocalAgentRecordLine[]; cut: boolean } | null;
+  title?(file: string): string | null;
+}
+
 /**
  * SDK 0.2.17. A coding agent installed on this machine, run by Tomrade: over
  * ACP inside the app when `acp` is given, else only in a terminal the person
@@ -283,4 +303,6 @@ export interface LocalAgentSpec<O extends LocalAgentOptions = LocalAgentOptions>
   mcpLink?: LocalAgentMcpLink<O>;
   /** Its sign-in lent to Tomrade's worker for one-shot calls, in Automatic order by `rank` (lowest first). */
   lend?: { rank?: number; ask(request: LentRequest, io: LocalAgentIo<O> & { signal?: AbortSignal }): Promise<LentAnswer> };
+  /** SDK 0.2.29. Its own record of its sessions, so the ones that ended show their conversation. */
+  record?: LocalAgentRecord;
 }

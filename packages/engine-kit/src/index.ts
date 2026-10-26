@@ -14,3 +14,7 @@ export { promptOf, sessionSystem, staticSystem, turnPrompt } from "./system.js";
 export { JsonLinePeer, jsonRpc, RpcError, STDERR_CAP, type PeerOptions, type RpcDialect, type RpcMessage } from "./rpc.js";
 export { pooledEngine, runTurn, type TurnFrame, type TurnSpec } from "./turn.js";
 export { engineLocale, KIT_WORDS } from "./words.js";
+export {
+  claudeRecord, claudeTranscriptLines, claudeTranscriptTitle, clipLine, findClaudeTranscript, isMachinery, promptTitle, readAt, readJsonlRecord, sessionIdShape, toolLine,
+  type ClaudeFolders
+} from "./record.js";

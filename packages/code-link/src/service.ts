@@ -4,7 +4,7 @@ import path from "node:path";
 import { Context, Service } from "cordis";
 import { z } from "zod";
 import type {} from "@tomradex/agent";
-import type { Engine, ThreadSummary } from "@tomradex/agent";
+import type { Engine, RecordRead, ThreadSummary } from "@tomradex/agent";
 import { untilLabel } from "@tomradex/agent";
 import type {} from "@tomradex/boards";
 import type {} from "@tomradex/contributions";
@@ -39,7 +39,7 @@ import { Sessions, type SessionMoment } from "./sessions.js";
 import { CODE_WORDS, type CodeWords } from "./words.js";
 import { Starter, type StartGate, type StartOptions, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type Readiness, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
-import { findCodexRollout, findTranscript, readConversation, transcriptTitleFor, type ConversationLine } from "./titles.js";
+import { recordOf } from "./titles.js";
 import { AUTO_TERMINAL, TerminalSettings, commandOk, exec, locatedCommand, terminalApps, terminalPath } from "./terminal.js";
 import { registerTools } from "./tools.js";
 import { type CodeLinkReader, errorMessage } from "@tomradex/contracts";
@@ -787,19 +787,19 @@ export class CodeLink extends Service implements CodeLinkReader {
   }
 
   /**
-   * Conversations that ended before Tomrade kept their titles: a Claude Code
-   * or CodeBuddy one finds its transcript by the agent's session id, a Codex
-   * one its rollout, and keeps the title once found. Each session is looked
-   * for once.
+   * Conversations that ended before Tomrade kept their titles: each finds its
+   * record by the agent's session id, read as its agent's engine says, and
+   * keeps the title once found. Each session is looked for once.
    */
   findTitles(projectId: string): boolean {
     let found = false;
     for (const s of this.store.sessions(projectId)) {
-      if (s.title || s.itemIds.length || !["claude-code", "workbuddy", "codex"].includes(s.agent) || !s.externalId || s.state !== "ended" && s.state !== "lost") continue;
-      if (this.titlesLooked.has(s.id)) continue;
+      if (s.title || s.itemIds.length || !s.externalId || s.state !== "ended" && s.state !== "lost") continue;
+      const record = recordOf(this.ctx, s.agent);
+      if (!record?.title || this.titlesLooked.has(s.id)) continue;
       this.titlesLooked.add(s.id);
-      const transcript = s.transcript ?? (s.agent === "codex" ? findCodexRollout(s.externalId) : findTranscript(s.externalId));
-      const title = transcript ? transcriptTitleFor(s.agent, transcript) : null;
+      const transcript = s.transcript ?? record.find(s.externalId, { cwd: s.cwd ?? null });
+      const title = transcript ? record.title(transcript) : null;
       if (!title) continue;
       this.store.patchSession(projectId, s.id, { title, transcript, prompted: true });
       found = true;
@@ -808,11 +808,12 @@ export class CodeLink extends Service implements CodeLinkReader {
   }
 
   /** A session's conversation from its agent's own record, read-only; null when Tomrade cannot read that agent's record. */
-  conversation(projectId: string, sessionId: string): { lines: ConversationLine[]; cut: boolean } | null {
+  conversation(projectId: string, sessionId: string): RecordRead | null {
     const s = this.store.session(projectId, sessionId);
-    if (!s?.externalId) return null;
-    const file = s.agent === "claude-code" || s.agent === "workbuddy" ? (s.transcript ?? findTranscript(s.externalId)) : s.agent === "codex" ? findCodexRollout(s.externalId) : null;
-    return file ? readConversation(s.agent, file) : null;
+    const record = s?.externalId ? recordOf(this.ctx, s.agent) : null;
+    if (!s?.externalId || !record) return null;
+    const file = s.transcript ?? record.find(s.externalId, { cwd: s.cwd ?? null });
+    return file ? record.read(file) : null;
   }
 
   sessionsOf(projectId: string, itemId?: string): SessionView[] {

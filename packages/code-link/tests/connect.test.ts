@@ -21,6 +21,7 @@ import { Settings } from "@tomradex/settings";
 import { Storage, digestState, exportState } from "@tomradex/storage";
 import { FakeGh, FakeHerdr, fresh, settle } from "@tomradex/testkit";
 import { Herdr } from "@tomradex/herdr";
+import { claudeRecord } from "@tomradex/engine-kit";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Tools } from "@tomradex/tools";
@@ -1042,6 +1043,8 @@ describe("outside clients, told apart by their connection", () => {
 
   it("keeps a conversation's folder, prompt and title from its hooks, and finds an older one's title by its transcript", async () => {
     const { codeLink, ctx, project, checkout } = await machine();
+    // Claude Code's engine says how its transcripts are read; not installed here, so nothing connects.
+    ctx.agent.engine({ ...installed("claude-code"), available: async () => ({ ok: false }), local: { record: claudeRecord({ variable: "CLAUDE_CONFIG_DIR", dir: ".claude" }) } });
     const post = (payload: unknown) => fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const transcript = path.join(root, `talk-${n++}.jsonl`);
     fs.writeFileSync(transcript, "");

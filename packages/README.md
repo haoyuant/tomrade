@@ -67,7 +67,7 @@ Every package keeps `"private": true`, so `npm publish` from a source folder fai
 | `files-github` | GitHub as where a project's files are shared. | — | files, github |
 | `notes` | Files read as notes: wiki links, backlinks, tags, full-text search, the journal. | `notes` | files, tools |
 | `repos` | The code repositories workstreams stand for, their checkouts, agent worktrees. | `repos` | boards, git, hub, storage, tools |
-| `code-link` | A ticket's branches, pull requests and coding sessions; status from git; Start. | `codeLink` | agent, boards, contributions, git, github, herdr, hub, items, llm, mcp, plugin-sdk, repos, storage, tools, write |
+| `code-link` | A ticket's branches, pull requests and coding sessions; status from git; Start. | `codeLink` | agent, boards, contributions, engine-kit, git, github, herdr, hub, items, llm, mcp, plugin-sdk, repos, storage, tools, write |
 | `herdr` | herdr on this machine: its socket, server and panes. Optional. Off Windows it is also `terminals`, the backend the Terminal window and code link run panes on. | `herdr` | engine-kit |
 | `pty-host` | `terminals` on native Windows: a detached pty host Tomrade starts itself (node-pty over ConPTY), speaking herdr's shapes. Loaded and packaged on Windows only. | `terminals` | — |
 | `code-sessions` | The Terminal window: terminals (herdr's, or the pty host's on Windows) and code sessions side by side. | — | code-link, contributions, desktop-surface, herdr, items |
