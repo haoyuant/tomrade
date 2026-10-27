@@ -74,6 +74,30 @@ describe("code-link delivery migration", () => {
     await ctx.fiber.dispose();
   });
 
+  it("lists every live session and only the newest few that ended lately", async () => {
+    const { ctx, db, project } = await fresh();
+    ctx.db.migrate("code_link", MIGRATIONS, { tables: TABLES });
+    const store = new CodeLinkStore(ctx.db);
+    const make = (state: string, endedAt: number | null) => {
+      const s = store.createSession(project.id, { repoId: "repo", branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: "here" });
+      db.prepare("UPDATE plugin_code_link_sessions SET state = ?, ended_at = ? WHERE id = ?").run(state, endedAt, s.id);
+      return s.id;
+    };
+    const running = make("running", null);
+    const waiting = make("waiting", null);
+    const old = make("ended", 1_000);
+    const lost = make("lost", 5_000);
+    const recent = [make("ended", 6_000), make("ended", 7_000), make("ended", 8_000)];
+    const ids = store.recentSessions(project.id, 2_000, 3).map((s) => s.id);
+    expect(ids.slice(0, 2).sort()).toEqual([running, waiting].sort());
+    // newest ended first, at most three, and nothing that ended before the cutoff
+    expect(ids.slice(2)).toEqual([recent[2], recent[1], recent[0]]);
+    expect(ids).not.toContain(old);
+    expect(ids).not.toContain(lost);
+    expect(store.recentSessions(project.id, 2_000, 8).map((s) => s.id)).toContain(lost);
+    await ctx.fiber.dispose();
+  });
+
   it("backfills existing links as delivery 1 without losing merge history", () => {
     const db = new ProjectDb("test", ":memory:");
     db.exec("CREATE TABLE items (id TEXT PRIMARY KEY, status TEXT NOT NULL)");

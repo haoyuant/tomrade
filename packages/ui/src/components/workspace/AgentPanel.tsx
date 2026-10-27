@@ -26,6 +26,10 @@ import { GUIDE, GuideList, slashCommand, SlashMenu, STARTERS, type SlashCommand,
 import { Composer } from "./agent-panel/Composer";
 import { STORE } from "./agent-panel/store";
 import { ThreadList, useThreadListState } from "./agent-panel/ThreadList";
+import { SessionBar, type BarMode } from "./agent-panel/SessionBar";
+import { sessionBarRows, type BarRow } from "~/lib/sessionBar";
+import { useRecentSessions } from "~/lib/codeLink";
+import { hits } from "~/lib/keybindings";
 import { Transcript } from "./agent-panel/Transcript";
 import { useComposerHistory } from "./agent-panel/useComposerHistory";
 import { useEngineChoice } from "./agent-panel/useEngineChoice";
@@ -108,10 +112,22 @@ export function AgentPanel({
   const [progress, setProgress] = useState<RunProgress | null>(null);
   const scroll = useRef<HTMLDivElement>(null);
   // what agents in this project wait on the person for: a count on the rail, a word in the thread list
-  const attention = useAttention().filter((e) => e.projectId === projectId);
+  const everyAttention = useAttention();
+  const attention = useMemo(() => everyAttention.filter((e) => e.projectId === projectId), [everyAttention, projectId]);
   const attentionOf = new Map(attention.flatMap((e) => (e.threadId ? [[e.threadId, e] as const] : [])));
   const attentionLabel = (e: AttentionEntry) => t(ATTENTION_KEY[e.kind]);
   const threadList = useThreadListState(projectId);
+  // Dots until the person asks for cards; a panel left narrow (the default) has no room for them.
+  const [barMode, setBarMode] = useState<BarMode>(() => {
+    const saved = localStorage.getItem(STORE.sessionBar);
+    if (saved === "rail" || saved === "cards") return saved;
+    return Number(localStorage.getItem(STORE.width) ?? DEFAULT_W) >= 720 ? "cards" : "rail";
+  });
+  const chooseBarMode = useCallback((mode: BarMode) => {
+    setBarMode(mode);
+    localStorage.setItem(STORE.sessionBar, mode);
+  }, []);
+  const recentSessions = useRecentSessions(projectId, open);
   const composer = useRef<HTMLTextAreaElement>(null);
   /** Whether the transcript follows new lines: true until the person scrolls up to read, again once they come back down. */
   const following = useRef(true);
@@ -439,6 +455,38 @@ export function AgentPanel({
     () => ({ projectId, runs, cards, engines: engines.data, retryEngines, pending, byKey, busy, onOpenIssue, onAnswer: answerRow, onRevert: revertRow, onOpenSettings: settingsRow, onCardAction: cardActionRow }),
     [projectId, runs, cards, engines.data, retryEngines, pending, byKey, busy, onOpenIssue, answerRow, revertRow, settingsRow, cardActionRow]
   );
+
+  const itemsById = useMemo(() => new Map((itemsQ.data ?? []).map((i) => [i.id, i])), [itemsQ.data]);
+  const barRows = useMemo(
+    () => sessionBarRows({
+      threads: threads.data ?? [], sessions: recentSessions.data ?? [], attention, openThreadId: threadId,
+      itemTitle: (id) => itemsById.get(id)?.title ?? null, itemKey: (id) => itemsById.get(id)?.key ?? null
+    }),
+    [threads.data, recentSessions.data, attention, threadId, itemsById]
+  );
+  const pickBarRow = (row: BarRow) => {
+    if (row.threadId) return pickThread(row.threadId);
+    if (!row.sessionId) return;
+    void invoke("codeLink.showSession", projectId, row.sessionId).then((shown) => {
+      if (!shown) toast({ body: row.where === "outside" && row.terminalApp ? t("sessionBar.elsewhere", { app: row.terminalApp.replace(/\.app$/, "") }) : t("sessionBar.notShown") });
+    }, reportError);
+  };
+  // the bar is memoized; its handlers keep their identity and read the latest render's state
+  const latestBar = useRef({ pickBarRow, newThread: () => {} });
+  latestBar.current = { pickBarRow, newThread: () => void openThread({ boardId }).then((th) => pickThread(th.id)) };
+  const pickBarRowStable = useCallback((row: BarRow) => latestBar.current.pickBarRow(row), []);
+  const newBarThread = useCallback(() => latestBar.current.newThread(), []);
+  // ⌘\ swaps the bar between dots and cards wherever the focus is, while the panel is open.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!hits(e, "sessionBar")) return;
+      e.preventDefault();
+      chooseBarMode(barMode === "rail" ? "cards" : "rail");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, barMode, chooseBarMode]);
 
   const archiveThreadById = (id: string) => {
     if (busy) return;
@@ -826,6 +874,15 @@ export function AgentPanel({
           })}
         </div>
       </div>
+      <SessionBar
+        rows={barRows}
+        openKey={threadId ? `thread:${threadId}` : null}
+        mode={barMode}
+        engines={engines.data}
+        onMode={chooseBarMode}
+        onPick={pickBarRowStable}
+        onNew={newBarThread}
+      />
       <ReportDialog projectId={projectId} threadId={reportFor} onOpenChange={(open) => { if (!open) setReportFor(null); }} />
     </aside>
   );

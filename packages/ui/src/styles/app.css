@@ -1545,6 +1545,53 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 .ai-head { display: flex; align-items: center; gap: var(--space-2); height: var(--titlebar-h); padding: 0 var(--space-4); border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .ai-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-4); scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .ai-foot { padding: var(--space-3); border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: var(--space-2); flex-shrink: 0; }
+/* the session bar takes the panel's right edge, beside the head, the conversation and the composer */
+.ai:has(> .sbar) { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto minmax(0, 1fr) auto; }
+.ai > .ai-head, .ai > .ai-scroll, .ai > .ai-foot { grid-column: 1; }
+.ai > .sbar { grid-column: 2; grid-row: 1 / 4; }
+/* The session bar on the panel's right edge: dots to switch by, or cards that say what each is doing.
+ * Shapes carry the state, colour only repeats it: ring runs, diamond waits, tick ended. */
+.sbar { flex-shrink: 0; position: relative; display: flex; flex-direction: column; min-height: 0; background: var(--bg); border-left: 1px solid var(--border); }
+.sbar-mark { flex-shrink: 0; }
+.sbar-mark.is-run circle { fill: none; stroke: var(--accent-light); stroke-width: 2; }
+.sbar-mark.is-wait path { fill: var(--warn); }
+.sbar-mark.is-done path { fill: none; stroke: var(--meta); stroke-width: 1.8; }
+.sbar.is-rail { width: 60px; align-items: center; }
+.sbar.is-rail .sbar-head { width: 100%; justify-content: center; padding: 0; }
+.sbar-waiting { margin: var(--space-2) 0 var(--space-1); padding: 0 7px; border: 1px solid var(--warn); border-radius: 999px; color: var(--warn); font-size: 11px; line-height: 18px; display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.sbar-dots { flex: 1; min-height: 0; width: 100%; overflow-y: auto; scrollbar-width: none; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: var(--space-1) 0 var(--space-2); }
+.sbar-dot { width: 52px; padding: 5px 0 3px; border: 0; border-radius: var(--radius-md, 8px); background: transparent; color: var(--fg); display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; flex-shrink: 0; }
+.sbar-dot:hover { background: var(--surface-warm); }
+.sbar-dot[aria-current="true"] { background: var(--surface); box-shadow: var(--elev-ring); }
+.sbar-dot-face { position: relative; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; background: var(--surface); border: 1px dashed var(--border-input); overflow: visible; }
+.sbar-dot[data-status="run"] .sbar-dot-face { border: 2px solid var(--accent-light); }
+.sbar-dot[data-status="wait"] .sbar-dot-face { border: 2px solid var(--warn); }
+.sbar-dot[data-status="idle"] .sbar-dot-face { border: 1px solid var(--border-input); }
+.sbar-dot-face .sbar-mark { position: absolute; top: -3px; left: -3px; }
+.sbar-dot[data-status="run"] .sbar-dot-face .sbar-mark, .sbar-dot[data-status="done"] .sbar-dot-face .sbar-mark { display: none; }
+.sbar-dot-where { font-size: 10px; color: var(--meta); max-width: 52px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sbar-new .sbar-dot-face { border-style: solid; color: var(--muted); }
+.sbar-rule { width: 32px; border-top: 1px solid var(--border); margin: 4px 0; flex-shrink: 0; }
+.sbar-peek { position: absolute; right: calc(100% + 6px); width: 280px; z-index: 20; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg, 10px); box-shadow: var(--elev-raised); pointer-events: none; font-size: var(--text-sm); }
+.sbar-peek[data-status="wait"] { border-color: var(--warn); }
+.sbar-peek-title { color: var(--fg); }
+.sbar-peek-wait, .sbar-card-wait { color: var(--warn); }
+.sbar-peek-said, .sbar-card-said { color: var(--muted); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.sbar.is-cards { width: 280px; }
+.sbar-head { display: flex; align-items: center; gap: var(--space-1); height: var(--titlebar-h); padding: 0 var(--space-2); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.sbar-head-title { flex: 1; font-size: var(--text-sm); }
+.sbar-filters { display: flex; flex-wrap: wrap; gap: 4px; padding: var(--space-2); flex-shrink: 0; }
+.sbar-filter { border: 1px solid var(--border-input); border-radius: 999px; background: transparent; color: var(--muted); font-size: 11px; line-height: 20px; padding: 0 8px; cursor: pointer; }
+.sbar-filter[aria-pressed="true"] { background: var(--fg); border-color: var(--fg); color: var(--surface); }
+.sbar-cards { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; padding: 0 var(--space-2) var(--space-2); display: flex; flex-direction: column; gap: 6px; }
+.sbar-card { text-align: left; width: 100%; border: 1px solid var(--border); border-radius: var(--radius-lg, 10px); background: var(--surface); color: var(--fg); padding: 8px 10px; display: flex; flex-direction: column; gap: 3px; cursor: pointer; font-size: var(--text-sm); }
+.sbar-card:hover { border-color: var(--border-input); }
+.sbar-card[data-status="wait"] { border-color: var(--warn); }
+.sbar-card[aria-current="true"] { box-shadow: var(--elev-ring-accent); }
+.sbar-card-title { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.sbar-card-title > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sbar-card-outcome { border-left: 2px solid var(--border-input); padding-left: 7px; color: var(--fg-2); }
+.sbar-empty { padding: var(--space-2); }
 .pet-stage {
   height: 112px; margin: calc(-1 * var(--space-2)) 0 0; overflow: hidden;
   display: flex; align-items: flex-end; justify-content: center;
