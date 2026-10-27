@@ -10,7 +10,7 @@ import { requestStart } from "~/lib/codeLink";
 import { useTemplateActions, useTemplates } from "~/lib/templates";
 import { useI18n } from "~/lib/i18n";
 import { mergeById } from "~/lib/closedWindow";
-import { useClosedFound, useCommands, useItem, useRunCommand } from "~/lib/queries";
+import { useClosedFound, useCommands, useRunCommand } from "~/lib/queries";
 import { useFilesTree } from "~/lib/files";
 import { notesSearch, useNotesEnabled } from "~/lib/notes";
 import { useNoteActions } from "~/components/files/useNoteActions";
@@ -21,8 +21,6 @@ import { useOptionalAgentDock } from "~/components/chrome/ProjectShell";
 import { keyLabel } from "~/lib/keybindings";
 import { isComposing } from "~/lib/keys";
 import { openSettingsPane } from "~/lib/settingsHost";
-
-const TICKET_KEY = /^[A-Za-z][A-Za-z0-9]*-\d+$/;
 
 export interface PaletteActions {
   newIssue: () => void;
@@ -71,8 +69,7 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
   // The window holds only the newest done and cancelled tickets; older ones are searched for, or opened by key.
   const typed = useDeferredValue(search.trim());
   const foundClosed = useClosedFound(ws.project.id, typed);
-  const byKey = useItem(ws.project.id, typed, TICKET_KEY.test(typed) && !ws.items.some((i) => i.key.toLowerCase() === typed.toLowerCase()));
-  const tickets = mergeById([ws.items, foundClosed.data, byKey.data ? [byKey.data] : undefined]).filter(isTicket);
+  const tickets = mergeById([ws.items, foundClosed.data]).filter(isTicket);
   const shownTickets = (terms.length ? tickets.filter((i) => matches(`${i.key} ${i.title}`)) : tickets).slice(0, 60);
   const shownFiles = (terms.length ? files.filter((f) => matches(f.path)) : files).slice(0, 400);
   useEffect(() => {

@@ -86,10 +86,20 @@ export function useClosedPages(projectId: string, filter: FilterClause[], search
 /** The most a search brings back of tickets the window left out. */
 const FOUND_LIMIT = 200;
 
-/** Done and cancelled tickets a search matches, whatever their age: a search reaches past the window. */
+const TICKET_KEY = /^[A-Za-z][A-Za-z0-9]*-\d+$/;
+
+/** Done and cancelled tickets a search matches, whatever their age: a search reaches past the window, by words or by key. */
 export const useClosedFound = (projectId: string, search: string) => {
-  const query = { projectId, search, filter: [{ field: "status", op: "in", values: [...CLOSED_STATUSES] }] as FilterClause[], ticketsOnly: true, limit: FOUND_LIMIT };
-  return useQuery({ queryKey: keys.itemQuery(projectId, "found", query), queryFn: () => invoke("items.query", query), enabled: !!search.trim() });
+  const text = search.trim();
+  const query = { projectId, search: text, filter: [{ field: "status", op: "in", values: [...CLOSED_STATUSES] }] as FilterClause[], ticketsOnly: true, limit: FOUND_LIMIT };
+  return useQuery({
+    queryKey: keys.itemQuery(projectId, "found", query),
+    queryFn: async () => {
+      const [found, byKey] = await Promise.all([invoke("items.query", query), TICKET_KEY.test(text) ? invoke("items.get", projectId, text) : null]);
+      return byKey && byKey.kind === "ticket" && !found.some((i) => i.id === byKey.id) ? [byKey, ...found] : found;
+    },
+    enabled: !!text
+  });
 };
 
 /** How many tickets each filter holds, by its id, counted in SQL: the window would undercount. */
