@@ -74,7 +74,8 @@ export function useLooseStart(projectId: string) {
         if (!result.ok) return toast({ body: t("commandPalette.looseFailed", { agent: cliName, reason: result.message }) });
         const inWindow = way === "cell" && !!result.pane && (await invoke("codeLink.showSession", projectId, result.sessionId).catch(() => false));
         dock?.setAiOpen(true);
-        await qc.fetchQuery({ queryKey: keys.codeLink.recentSessions(projectId), queryFn: () => invoke("codeLink.recentSessions", projectId) }).catch(() => undefined);
+        // read afresh: the list the window holds was read before this session was
+        await qc.fetchQuery({ queryKey: keys.codeLink.recentSessions(projectId), queryFn: () => invoke("codeLink.recentSessions", projectId), staleTime: 0 }).catch(() => undefined);
         askPanel({ kind: "openSession", sessionId: result.sessionId });
         toast({ body: t(inWindow ? "commandPalette.looseInWindow" : "commandPalette.looseStarted", { agent: cliName }) });
       }, (error: unknown) => toast(errorSpec(error)))
