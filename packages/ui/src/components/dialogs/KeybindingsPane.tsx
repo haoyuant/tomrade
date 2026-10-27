@@ -59,7 +59,7 @@ interface GlobalKeyStatus {
 const isGlobal = (id: CommandId) => COMMANDS.find((c) => c.id === id)?.group === "global";
 
 /** What the desktop shell made of the keys for the whole computer; empty in a browser tab. */
-function useGlobalKeyStatus(): GlobalKeyStatus[] {
+export function useGlobalKeyStatus(): GlobalKeyStatus[] {
   const qc = useQueryClient();
   useEffect(() => subscribe("keybindings.globalStatusChanged", (status) => qc.setQueryData(["keybindings", "globalStatus"], status)), [qc]);
   return useQuery({ queryKey: ["keybindings", "globalStatus"], queryFn: () => invoke("keybindings.globalStatus").catch(() => []), staleTime: Infinity }).data ?? [];
@@ -68,7 +68,7 @@ function useGlobalKeyStatus(): GlobalKeyStatus[] {
 const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((k, i) => k === b[i]);
 
 /** Only what differs from the defaults is stored, so later defaults still reach a command left alone. */
-function overridesOf(map: Keymap): Overrides {
+export function overridesOf(map: Keymap): Overrides {
   const out: Overrides = {};
   for (const c of COMMANDS) if (!sameList(map[c.id], c.defaults)) out[c.id] = map[c.id];
   return out;

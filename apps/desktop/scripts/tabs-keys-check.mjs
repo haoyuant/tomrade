@@ -19,6 +19,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { boot } from "../dist/boot.js";
 import { installGlobalHotkey } from "../dist/terminal-entries.js";
+import { SESSIONS_SECTION } from "../dist/sessions-section.js";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-tabs-keys-"));
@@ -43,6 +44,8 @@ const run = async () => {
   await ctx.storage.ready;
   for (const seeded of ctx.projects.list()) ctx.projects.remove(seeded.id);
   ctx.settings.set({ ...ctx.settings.get(), language: "en", onboarding: { seen: ["*"] } });
+  // as main.ts does: Settings › Sessions offers the key for the whole computer too
+  ctx.settings.register(SESSIONS_SECTION);
   const project = ctx.projects.create({ name: "Tabs regression", keyPrefix: "TAB" });
   await ctx.storage.ready;
   const board = ctx.boards.defaultFor(project.id);
@@ -225,9 +228,38 @@ const run = async () => {
   await press(`${globalRow} [data-testid="keys-reset"]`);
   check("Reset takes the key back to none", await wait(() => overrides().terminalWindowGlobal === undefined), overrides());
 
+  // ── the same key from Settings › Sessions: none, ⌥Space, or one pressed there — one setting, both panes show it ──
+  const sessionsRow = `[...document.querySelectorAll('.sheet-settings .dlg-nav .side-row')].find((n) => n.textContent.trim() === 'Sessions')`;
+  const hotkey = '[data-testid="global-hotkey"]';
+  const hotkeyPicked = () => $(`document.querySelector('${hotkey} [aria-checked="true"]')?.dataset.hotkey ?? null`);
+  check("Settings has a Sessions pane", await wait(() => $(`!!${sessionsRow}`), "the Sessions row"));
+  await $(`${sessionsRow}.click(); true`);
+  check("Sessions offers the key for the whole computer, none until one is picked", await wait(async () => (await hotkeyPicked()) === "none", "the Sessions key"), await hotkeyPicked());
+  await press(`${hotkey} [data-hotkey="altSpace"]`);
+  check("⌥Space is one click there", await wait(() => JSON.stringify(overrides().terminalWindowGlobal) === JSON.stringify(["Alt+Space"])), overrides());
+  check("and another app holding it is said there too", await wait(() => has('[data-testid="global-hotkey-taken"]')));
+  const altSpace = await $(`document.querySelector('${hotkey} [data-hotkey="altSpace"]').textContent`);
+  await $(`${navRow}.click(); true`);
+  await wait(() => has('[data-testid="keybindings-pane"]'), "the shortcuts pane again");
+  check("Keyboard shortcuts shows the key picked in Sessions", await wait(async () => (await $(`document.querySelector('${globalRow} .kbd')?.textContent ?? null`)) === altSpace), altSpace);
+  await press(`${globalRow} [data-testid="keys-reset"]`);
+  await wait(() => overrides().terminalWindowGlobal === undefined, "the key reset");
+  await $(`${sessionsRow}.click(); true`);
+  check("taken away there, Sessions says none", await wait(async () => (await hotkeyPicked()) === "none"), await hotkeyPicked());
+  await press(`${hotkey} [data-hotkey="record"]`);
+  await key({ key: "k", code: "KeyK", altKey: true, ...mod }, "document.body");
+  check("a key pressed in Sessions is kept as that key", await wait(() => JSON.stringify(overrides().terminalWindowGlobal) === JSON.stringify(["Mod+Alt+K"])), overrides());
+  check("and shows as the one picked", await wait(async () => (await hotkeyPicked()) === "record", "the key picked on screen"), await hotkeyPicked());
+  await press(`${hotkey} [data-hotkey="none"]`);
+  check("None there takes it away", await wait(() => overrides().terminalWindowGlobal === undefined), overrides());
+  await $(`${navRow}.click(); true`);
+  await wait(() => has('[data-testid="keybindings-pane"]'), "back on the shortcuts pane");
+
   await press(`${row("sidebar")} [data-testid="keys-reset"]`);
   check("Reset gives a command its default back", await wait(() => overrides().sidebar === undefined), overrides());
   check("taking it back from where it went", await wait(() => JSON.stringify(overrides().palette) === JSON.stringify(["Mod+Shift+P"])), overrides());
+  // Export writes what the pane holds: wait for the reset to reach it, not only the stored settings
+  await wait(async () => !(await has(`${row("sidebar")}[data-changed]`)), "the reset on screen");
 
   // export and import, past the native dialogs
   const exported = path.join(work, "keys.json");
