@@ -71,7 +71,7 @@ const session = (over: Partial<SessionView>): SessionView => ({
   id: "s1", projectId: "p", repoId: "r", delivery: 1, branch: "", itemIds: [], worked: [], mode: "terminal", agent: "claude-code",
   externalId: "abc", threadId: null, worktree: null, herdrPane: "w1:p1", terminal: null, title: null, cwd: null, transcript: null,
   prompted: true, withoutTicket: null, recordSavedAt: null, recordCut: false, state: "waiting", lastEventAt: 5, lastToolAt: null, lastCommitAt: null,
-  summary: null, activity: "needs your approval: Bash", blocked: null, requestedBy: null, autoMerge: false, device: "here", startedAt: 1, endedAt: null, ...over
+  summary: null, activity: null, ask: { kind: "permission", tool: "Bash", action: "run", detail: "pnpm test" }, blocked: null, requestedBy: null, autoMerge: false, device: "here", startedAt: 1, endedAt: null, ...over
 });
 
 /** A panel over herdr (a fake on its socket) and two agents: one that declares its approval keys, one that does not. */

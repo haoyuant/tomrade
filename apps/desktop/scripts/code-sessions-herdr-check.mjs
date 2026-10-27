@@ -900,11 +900,14 @@ app.whenReady().then(async () => {
     await showsOnScreen(sessions[4].pane, "printf 'Do you want to proceed?\\n❯ 1. Yes\\n  2. No, and tell Claude what to do differently\\n'", "❯ 1. Yes");
     await showsOnScreen(sessions[3].pane, "printf 'Do you trust the files in this folder?\\n❯ 1. No, exit\\n  2. Yes, I trust this folder\\n'", "❯ 1. No, exit");
     ctx.herdr.sendInput = async (pane, input) => { typedIn.push([pane, input]); return true; };
-    ctx.codeLink.store.patchSession(project.id, sessions[4].id, { state: "waiting", activity: "needs your approval: Bash" });
+    ctx.codeLink.store.patchSession(project.id, sessions[4].id, { state: "waiting", activity: null, ask: { kind: "permission", tool: "Bash", action: "run", detail: "git push -u origin tom-5/x" } });
     ctx.emit("codeLink/changed", project.id);
     const askCard = `[...document.querySelectorAll('.cs-row')].find((r) => r.textContent.includes(${JSON.stringify(sessions[4].item.key)}))`;
     // Allow and Deny sit under the card, in its list item (a pane with history puts the card in a fold row first).
     const asksOnTop = await wait(async () => tjs(`(() => { const card = ${askCard}; const li = card?.closest('li'); return !!card && card.dataset.status === 'wait' && document.querySelector('.cs-row') === card && !!li.querySelector('[data-testid=cs-allow]') && !!li.querySelector('[data-testid=cs-look]') && !li.querySelector('[data-testid=cs-deny]'); })()`), 8000);
+    // what it asks, in the window's language and with the command, not the hooks' English
+    const askWords = await tjs(`${askCard}?.querySelector('.cs-row-wait')?.textContent ?? null`);
+    check("等你允许的卡片写「想运行 git push -u origin tom-5/x」，不是英文原文", askWords === "想运行 git push -u origin tom-5/x", askWords);
     check("等你允许的会话排在最上，卡片下有「允许」「先看看」（拒绝在总览大卡上）", asksOnTop, await tjs(`[...document.querySelectorAll('.cs-row')].map((r) => [r.dataset.status, r.textContent.slice(0, 40)])`).then((rows) => JSON.stringify(rows)));
     fs.writeFileSync(path.join(shots, "code-sessions-bar.png"), (await tw.webContents.capturePage()).toPNG());
     const selectedBefore = await tjs(`document.querySelector('.cs-cell[data-focused]')?.dataset.cell ?? null`);
@@ -914,7 +917,7 @@ app.whenReady().then(async () => {
     const stayedPut = await wait(async () => tjs(`(document.querySelector('[data-testid=cs-toast]')?.textContent ?? '').startsWith('已允许「${sessions[4].item.key}」· 没离开当前会话')`), 3000);
     check("允许之后提示「已允许「…」· 没离开当前会话」，选中的格子不变", stayedPut && (await tjs(`document.querySelector('.cs-cell[data-focused]')?.dataset.cell ?? null`)) === selectedBefore, await tjs(`document.querySelector('[data-testid=cs-toast]')?.textContent ?? null`));
     // A folder's trust is no permission (Enter there would pick "No, exit"): its card waits on you, with no Allow or Deny to press.
-    ctx.codeLink.store.patchSession(project.id, sessions[3].id, { state: "waiting", activity: "needs your approval" });
+    ctx.codeLink.store.patchSession(project.id, sessions[3].id, { state: "waiting", activity: null, ask: { kind: "permission", tool: null, action: null, detail: null } });
     ctx.emit("codeLink/changed", project.id);
     const trustCard = `[...document.querySelectorAll('.cs-row')].find((r) => r.textContent.includes(${JSON.stringify(sessions[3].item.key)}))`;
     // the state that says it waits carries what its screen asks, so no buttons by then means none at all
@@ -936,8 +939,8 @@ app.whenReady().then(async () => {
     check("「先看看」在主窗口打开它；点「确认」直接回答，提示没离开当前会话", looked && chosen, JSON.stringify({ looked, chosen, toast: await tjs(`document.querySelector('[data-testid=cs-toast]')?.textContent ?? null`) }));
     // the overview below reads this pane's marker in its last lines
     await realSendInput.call(ctx.herdr, sessions[4].pane, { text: "echo marker-five", keys: ["enter"] });
-    ctx.codeLink.store.patchSession(project.id, sessions[3].id, { state: "running", activity: null });
-    ctx.codeLink.store.patchSession(project.id, sessions[4].id, { state: "running", activity: null });
+    ctx.codeLink.store.patchSession(project.id, sessions[3].id, { state: "running", activity: null, ask: null });
+    ctx.codeLink.store.patchSession(project.id, sessions[4].id, { state: "running", activity: null, ask: null });
     ctx.emit("codeLink/changed", project.id);
     await wait(async () => tjs(`${askCard}?.dataset.status === 'run'`), 5000);
     // A running session's card shows its pane's last line, from the glance its events bring — not what its hooks last said.

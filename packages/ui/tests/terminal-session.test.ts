@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RecordRead } from "@tomradex/agent";
-import { convoFromTail, convoLines, convoRefreshed, convoWithEarlier, delayUntil, isApprovalAsk, mayReadPane, READ_EVERY_MS, saidElsewhere, tailLines } from "../src/lib/terminalSession";
+import type { SessionAsk } from "@tomradex/code-link";
+import { askText, convoFromTail, convoLines, convoRefreshed, convoWithEarlier, delayUntil, isApprovalAsk, mayReadPane, READ_EVERY_MS, saidElsewhere, tailLines } from "../src/lib/terminalSession";
 
 const read = (texts: string[], opts: Partial<RecordRead> = {}): RecordRead => ({ lines: texts.map((text) => ({ who: "agent", text })), cut: false, ...opts });
 
@@ -16,11 +17,25 @@ describe("the strip's lines", () => {
 
 describe("what the panel does with a session", () => {
   it("offers Allow and Deny only on a permission ask, not on a turn that ended or a question", () => {
-    expect(isApprovalAsk({ state: "waiting", activity: "needs your approval: Bash" })).toBe(true);
-    expect(isApprovalAsk({ state: "waiting", activity: "needs your approval" })).toBe(true);
-    expect(isApprovalAsk({ state: "waiting", activity: null })).toBe(false);
-    expect(isApprovalAsk({ state: "waiting", activity: "asking you something" })).toBe(false);
-    expect(isApprovalAsk({ state: "running", activity: "needs your approval" })).toBe(false);
+    const permission = { kind: "permission" as const, tool: "Bash", action: "run" as const, detail: "pnpm test" };
+    expect(isApprovalAsk({ state: "waiting", ask: permission })).toBe(true);
+    expect(isApprovalAsk({ state: "waiting", ask: { kind: "permission", tool: null, action: null, detail: null } })).toBe(true);
+    expect(isApprovalAsk({ state: "waiting", ask: null })).toBe(false);
+    expect(isApprovalAsk({ state: "waiting", ask: { kind: "question", tool: null, action: null, detail: null } })).toBe(false);
+    expect(isApprovalAsk({ state: "running", ask: permission })).toBe(false);
+  });
+
+  it("words what a session asks: the command it would run, the file it would change, the tool, or a question", () => {
+    const w = (key: string, vars?: Record<string, string>) => `${key.replace("sessionBar.", "")}${vars ? `(${Object.values(vars).join(",")})` : ""}`;
+    const ask = (over: Partial<SessionAsk>): SessionAsk => ({ kind: "permission", tool: null, action: null, detail: null, ...over });
+    expect(askText(ask({ tool: "Bash", action: "run", detail: "git push -u origin tom-638/x" }), w)).toBe("askRun(git push -u origin tom-638/x)");
+    expect(askText(ask({ tool: "Bash", action: "run" }), w)).toBe("askRunAny");
+    expect(askText(ask({ tool: "Edit", action: "edit", detail: "src/app.ts" }), w)).toBe("askEdit(src/app.ts)");
+    expect(askText(ask({ tool: "Write", action: "edit" }), w)).toBe("askEditAny");
+    expect(askText(ask({ tool: "WebFetch", action: "use", detail: "https://x" }), w)).toBe("askTool(WebFetch,https://x)");
+    expect(askText(ask({ tool: "mcp__x", action: "use" }), w)).toBe("askToolAny(mcp__x)");
+    expect(askText(ask({}), w)).toBe("askApproval");
+    expect(askText(ask({ kind: "question" }), w)).toBe("askQuestion");
   });
 
   it("reads the pane only while the session is shown, has a pane, runs, and the window is visible", () => {

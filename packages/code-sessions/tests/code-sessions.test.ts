@@ -15,7 +15,7 @@ import { FakeHerdr, fresh, settle } from "@tomradex/testkit";
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-code-sessions-"));
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-type Session = { title?: string | null; prompted?: boolean; externalId?: string | null; cwd?: string | null; id: string; itemIds: string[]; branch: string; state: string; mode: "headless" | "terminal"; agent: string; herdrPane: string | null; terminal: string | null; device: string; threadId: string | null; worktree: string | null; activity: string | null; summary: string | null; blocked: unknown; startedAt: number; endedAt: number | null; lastEventAt: number | null };
+type Session = { ask?: { kind: "permission" | "question"; tool: string | null; action: "run" | "edit" | "use" | null; detail: string | null } | null; title?: string | null; prompted?: boolean; externalId?: string | null; cwd?: string | null; id: string; itemIds: string[]; branch: string; state: string; mode: "headless" | "terminal"; agent: string; herdrPane: string | null; terminal: string | null; device: string; threadId: string | null; worktree: string | null; activity: string | null; summary: string | null; blocked: unknown; startedAt: number; endedAt: number | null; lastEventAt: number | null };
 
 const session = (over: Partial<Session> & { id: string }): Session => ({ itemIds: [], branch: "b", state: "running", mode: "terminal", agent: "claude-code", herdrPane: null, terminal: null, device: "here", threadId: null, worktree: null, activity: null, summary: null, blocked: null, startedAt: 1, endedAt: null, lastEventAt: null, ...over });
 
@@ -1327,7 +1327,7 @@ it("lists the assistant's conversations from a cache read when they change, neve
   const tails = new Map<string, string | null>([["w1:p1", "$ pnpm test\n12 passed\nAllow? [y/n]"], ["w1:p2", null]]);
   const tailReads: string[] = [];
   const sessions = [
-    session({ id: "s1", itemIds: [], herdrPane: "w1:p1", branch: "tom-1/x", state: "waiting", blocked: { kind: "permission" }, activity: "needs your approval: Bash", lastEventAt: 50 }),
+    session({ id: "s1", itemIds: [], herdrPane: "w1:p1", branch: "tom-1/x", state: "waiting", blocked: { kind: "permission" }, activity: null, ask: { kind: "permission", tool: "Bash", action: "run", detail: "pnpm test" }, lastEventAt: 50 }),
     session({ id: "run", mode: "headless", threadId: "t-busy", herdrPane: null, startedAt: 3 }),
     session({ id: "gone", herdrPane: "w1:p2", state: "ended", endedAt: 9 })
   ];

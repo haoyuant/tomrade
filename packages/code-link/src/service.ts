@@ -42,6 +42,7 @@ import { CODE_WORDS, type CodeWords } from "./words.js";
 import { Starter, type StartGate, type StartOptions, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type Readiness, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
 import { readSnapshot, saveSnapshot, snapshotFile } from "./snapshots.js";
+import { askLine, permissionAsk, questionAsk } from "./ask.js";
 import { Review, type ReviewCursor, type ReviewPage, type ReviewSaid, type ReviewView, type SessionOutcome } from "./review.js";
 import { recordOf, resumeCommand } from "./titles.js";
 import { AUTO_TERMINAL, TerminalSettings, commandOk, exec, locatedCommand, terminalApps, terminalPath } from "./terminal.js";
@@ -424,7 +425,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       onChange: (projectId) => this.notify(projectId),
       prefixOf: (projectId) => this.prefixOf(projectId),
       onMoment: (session, moment) => this.noteMoment(session, moment),
-      onWaiting: (session, activity) => this.herdr.waiting(session, activity),
+      onWaiting: (session, ask) => this.herdr.waiting(session, askLine(ask, this.words())),
       panes: { alive: (pane) => this.herdr.paneAlive(pane), info: (pane) => this.herdr.pane(pane) },
       // A terminal session cannot be typed into: when the limit lifts the person is told, not the agent.
       onLimit: (session, until) => {
@@ -686,7 +687,7 @@ export class CodeLink extends Service implements CodeLinkReader {
         const thread = this.running.get(threadId);
         const session = thread && this.sessionOf(thread);
         if (!thread || !session) return;
-        if (event.pending) this.sessions.touch(thread.projectId, session.id, { state: "waiting", activity: event.pending.kind === "permission" ? this.words()("needsApproval") : this.words()("askingYou") });
+        if (event.pending) this.sessions.touch(thread.projectId, session.id, { state: "waiting", activity: null, ask: event.pending.kind === "permission" ? permissionAsk(null, undefined) : questionAsk() });
         else if (session.state === "waiting") this.sessions.touch(thread.projectId, session.id, { state: "running", activity: null });
       });
       ctx.on("agent/run-ended", (run, thread) => {
@@ -825,7 +826,7 @@ export class CodeLink extends Service implements CodeLinkReader {
         lastCommitAt: l.headAt
       })),
       session: live
-        ? { id: live.id, mode: live.mode, agent: live.agent, state: live.state, summary: live.summary, activity: live.activity, blocked: live.blocked, threadId: live.threadId, worktree: live.worktree, lastEventAt: live.lastEventAt ?? live.startedAt }
+        ? { id: live.id, mode: live.mode, agent: live.agent, state: live.state, summary: live.summary, activity: live.ask ? askLine(live.ask, this.words()) : live.activity, blocked: live.blocked, threadId: live.threadId, worktree: live.worktree, lastEventAt: live.lastEventAt ?? live.startedAt }
         : null,
       proposals: this.store.proposals(projectId, itemId, "open").map((p) => ({ id: p.id, kind: p.kind, toStatus: p.toStatus, reason: p.reason }))
     };
