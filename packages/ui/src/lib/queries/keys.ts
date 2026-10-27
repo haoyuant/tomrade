@@ -78,9 +78,10 @@ export const keys = {
 
   agent: {
     threads: (projectId: string) => ["agent", "threads", projectId] as const,
-    archivedThreads: (projectId: string) => ["agent", "threads", projectId, "archived"] as const,
     threadAll: (projectId: string) => ["agent", "thread", projectId] as const,
     thread: (projectId: string, threadId: string) => ["agent", "thread", projectId, threadId] as const,
+    /** What waiting conversations ask, for the session bar's cards: keyed by which wait, so a new ask reads it again. */
+    pendings: (projectId: string, waits: string) => ["agentPendings", projectId, waits] as const,
     engines: ["agent", "engines"] as const,
     playbooksAll: ["agent", "playbooks"] as const,
     playbooks: (projectId?: string) => ["agent", "playbooks", projectId ?? ""] as const,
@@ -135,6 +136,8 @@ export const keys = {
     links: (projectId: string, itemId?: string) => ["codeLink", projectId, "links", itemId ?? ""] as const,
     sessions: (projectId: string, itemId?: string) => ["codeLink", projectId, "sessions", itemId ?? ""] as const,
     recentSessions: (projectId: string) => ["codeLink", projectId, "recentSessions"] as const,
+    /** Kept apart from `all`: asked again only when the Terminal window says its cells changed, not on every hook. */
+    cells: (projectId: string) => ["codeLinkCells", projectId] as const,
     handoff: (projectId: string, threadId: string) => ["codeLink", projectId, "handoff", threadId] as const,
     deliveries: (projectId: string, itemId: string) => ["codeLink", projectId, "deliveries", itemId] as const,
     repos: (projectId: string) => ["codeLink", projectId, "repos"] as const,
@@ -146,8 +149,9 @@ export const keys = {
     unlinked: (projectId: string) => ["codeLink", projectId, "unlinked"] as const,
     worktree: (projectId: string, itemId: string) => ["codeLink", projectId, "worktree", itemId] as const,
     terminalWindow: (projectId: string) => ["codeLink", projectId, "terminalWindow"] as const,
-    /** The look back's first page (`query` empty), or its search by title and ticket: read again as sessions change. */
-    review: (projectId: string, query: string) => ["codeLink", projectId, "review", query] as const,
+    /** The look back's first page (`query` empty), or its search by title and ticket, `limit` rows: read again as sessions and conversations change. */
+    review: (projectId: string, query: string, limit = 0) => ["codeLink", projectId, "review", query, limit] as const,
+    reviewAll: (projectId: string) => ["codeLink", projectId, "review"] as const,
     startDefaults: ["codeLink", "startDefaults"] as const,
     herdrStatus: ["codeLink", "herdrStatus"] as const,
     gh: ["codeLink", "gh"] as const,

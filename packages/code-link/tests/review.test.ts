@@ -65,19 +65,29 @@ describe("what a ticket came to", () => {
   });
 });
 
-describe("one page from two sources", () => {
+describe("one page from three sources", () => {
   const row = (id: string, kind: ReviewRow["kind"], endedAt: number): ReviewRow => ({ id, kind, agent: "x", title: id, tickets: [], asked: null, commits: 0, pr: null, said: null, where: "panel", threadId: null, resumable: false, startedAt: 0, endedAt });
 
   it("orders sessions and conversations together by end, and says where each source goes on", () => {
-    const page = mergePage([row("s1", "session", 50), row("s2", "session", 30)], [row("t1", "thread", 40), row("t2", "thread", 20)], null, 3);
+    const page = mergePage({ session: [row("s1", "session", 50), row("s2", "session", 30)], thread: [row("t1", "thread", 40), row("t2", "thread", 20)], idle: [] }, null, 3);
     expect(page.rows.map((r) => r.id)).toEqual(["s1", "t1", "s2"]);
     // the sessions ran dry within the page; the conversations go on from the last one taken
-    expect(page.next).toEqual({ session: null, thread: { at: 40, id: "t1" } });
+    expect(page.next).toEqual({ session: null, thread: { at: 40, id: "t1" }, idle: null });
   });
 
-  it("ends when both sources ran dry within the page", () => {
-    expect(mergePage([row("s1", "session", 5)], [], null, 30).next).toBeNull();
-    const page = mergePage([row("s1", "session", 5)], [], { session: { at: 9, id: "z" }, thread: null }, 30);
+  it("lists idle conversations with the rest, by when they last moved, and pages them on their own", () => {
+    const page = mergePage({ session: [row("s1", "session", 50)], thread: [], idle: [row("i1", "idle", 60), row("i2", "idle", 40), row("i3", "idle", 10)] }, null, 3);
+    expect(page.rows.map((r) => r.id)).toEqual(["i1", "s1", "i2"]);
+    expect(page.next).toEqual({ session: null, thread: null, idle: { at: 40, id: "i2" } });
+    // a source that gave a full page goes on even when none of its rows were taken yet
+    const later = mergePage({ session: [], thread: [], idle: [row("i3", "idle", 10)] }, page.next, 1);
+    expect(later.rows.map((r) => r.id)).toEqual(["i3"]);
+    expect(later.next).toEqual({ session: null, thread: null, idle: { at: 10, id: "i3" } });
+  });
+
+  it("ends when every source ran dry within the page", () => {
+    expect(mergePage({ session: [row("s1", "session", 5)], thread: [], idle: [] }, null, 30).next).toBeNull();
+    const page = mergePage({ session: [row("s1", "session", 5)], thread: [], idle: [] }, { session: { at: 9, id: "z" }, thread: null, idle: null }, 30);
     expect(page.next).toBeNull();
   });
 });
@@ -128,6 +138,10 @@ describe("the look back over the store", () => {
     expect(first.rows.map((r) => r.id)).toEqual([ids[0], ids[1]]);
     expect(first.rows[0]).toMatchObject({ title: "结束时存下记录快照", asked: 2, commits: 4, pr: { number: 407, state: "merged" }, where: "outside" });
     expect(first.rows[0]!.tickets.map((t) => t.key)).toEqual([snap.key, mcp.key]);
+    // the session lists say what came of a session the way the look back does
+    const outcomes = review.outcomes(project.id, [store.session(project.id, ids[0]!)!, store.session(project.id, ids[1]!)!]);
+    expect(outcomes.get(ids[0]!)).toEqual({ pr: { number: 407, state: "merged", url: "https://x/407" }, commits: 4, asked: 2, said: null });
+    expect(outcomes.get(ids[1]!)).toEqual({ pr: null, commits: 0, asked: 0, said: null });
     const second = review.list(project.id, { limit: 2, before: first.next });
     expect(second.rows.map((r) => r.id)).toEqual([ids[2], ids[3]]);
     // a start nobody spoke to, with no ticket and no title, is not kept: the page after is empty and the last

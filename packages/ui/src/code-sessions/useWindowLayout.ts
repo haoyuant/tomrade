@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Layout, WindowState } from "@tomradex/code-sessions";
+import type { ClosedTerminalRow, Layout, SessionRow, WindowState } from "@tomradex/code-sessions";
 import { send } from "./bridge";
 import { carryOn, dedupe, leaves, place, prune, reveal, show, type Key } from "./layout";
 import { live } from "./lists";
 
 const ASKED_GRACE_MS = 5000;
+/** How long a revealed cell's flash lasts. */
+const FLASH_MS = 1200;
 
 /** What can go into a cell by itself: a session with a terminal here that no terminal of the window already shows, and plain terminals. */
 const placeableIds = (state: WindowState): string[] => {
@@ -15,12 +17,18 @@ const placeableIds = (state: WindowState): string[] => {
 /** A cell's id as the herdr pane it shows: a session and the terminal it runs in are one pane, never two cells. */
 export const paneKey = (state: WindowState): Key => {
   const panes = new Map<string, string>();
-  for (const s of [...(state.archive.rows ?? []), ...state.sessions]) if (s.pane) panes.set(s.id, s.pane);
+  for (const s of state.sessions) if (s.pane) panes.set(s.id, s.pane);
   for (const t of state.terminals) if (t.pane) panes.set(t.id, t.pane);
   return (id) => (panes.has(id) ? `pane:${panes.get(id)}` : id);
 };
 
 export type Leaf = Extract<Layout, { type: "leaf" }>;
+
+/** What was picked from History to read: known to the window by these until a state carries it, since a cell shows it. */
+export interface Picked {
+  sessions: ReadonlyMap<string, SessionRow>;
+  terminals: ReadonlyMap<string, ClosedTerminalRow>;
+}
 
 /** Sessions whose ticket finished while the agent goes on in their pane, to the row it goes on as; not those put in a cell to read. */
 export const carriedOf = (state: WindowState, toRead: Set<string>): Map<string, string> =>
@@ -41,7 +49,7 @@ export const asPicked = (state: WindowState, layout: Layout, cell: string, id: s
  * The window's cells: the layout the first state brings, kept by the window after that, with the cell selected last.
  * Changes are saved to the project's window.
  */
-export function useWindowLayout(state: WindowState | null) {
+export function useWindowLayout(state: WindowState | null, picked: Picked) {
   const [laid, setLayout] = useState<Layout | null>(null);
   const [focused, setFocused] = useState<string | null>(null);
   // The first state brings the remembered layout; after that the window owns it, minus sessions that went.
@@ -51,8 +59,8 @@ export function useWindowLayout(state: WindowState | null) {
   const toRead = useRef(new Set<string>());
   // A closed terminal is known only once picked to read: a terminal closed from its cell leaves the cell empty.
   const known = useMemo(
-    () => new Set([...(state?.sessions.map((s) => s.id) ?? []), ...(state?.archive.rows?.map((s) => s.id) ?? []), ...(state?.terminals.map((t) => t.id) ?? []), ...[...(state?.closedTerminals ?? []), ...(state?.archive.terminals ?? [])].filter((t) => toRead.current.has(t.id)).map((t) => t.id)]),
-    [state?.sessions, state?.archive.rows, state?.archive.terminals, state?.terminals, state?.closedTerminals]
+    () => new Set([...(state?.sessions.map((s) => s.id) ?? []), ...picked.sessions.keys(), ...(state?.terminals.map((t) => t.id) ?? []), ...[...(state?.closedTerminals ?? []), ...picked.terminals.values()].filter((t) => toRead.current.has(t.id)).map((t) => t.id)]),
+    [state?.sessions, state?.terminals, state?.closedTerminals, picked]
   );
   const current = useRef<Layout | null>(null);
   // What the first state already listed is not new: only what appears after it is placed.
@@ -65,6 +73,13 @@ export function useWindowLayout(state: WindowState | null) {
     if (focused) recent.current = [...recent.current.filter((id) => id !== focused), focused];
   }, [focused]);
   const revealed = useRef(0);
+  // The cell a session asked from outside landed in flashes once, so the eye finds it.
+  const [flash, setFlash] = useState<{ cell: string; at: number } | null>(null);
+  useEffect(() => {
+    if (!flash) return;
+    const timer = setTimeout(() => setFlash(null), FLASH_MS);
+    return () => clearTimeout(timer);
+  }, [flash]);
   const change = useCallback((next: Layout) => {
     current.current = next;
     setLayout(next);
@@ -91,6 +106,7 @@ export function useWindowLayout(state: WindowState | null) {
       const shown = reveal(placed, ask.sessionId, focusedNow.current, key);
       placed = asPicked(state, shown.layout, shown.cell, ask.sessionId, key);
       setFocused(shown.cell);
+      setFlash({ cell: shown.cell, at: ask.at });
     }
     if (placed !== kept) change(placed);
     else {
@@ -98,5 +114,5 @@ export function useWindowLayout(state: WindowState | null) {
       setLayout(pruned);
     }
   }, [state, known, change]);
-  return { laid, focused, setFocused, change, current, asked, recent, toRead };
+  return { laid, focused, setFocused, change, current, asked, recent, toRead, flash };
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ClosedTerminalRow, Layout, SessionRow, TerminalRow, ThreadRow, WindowState } from "@tomradex/code-sessions";
+import { Icon, IconSprite } from "~/components/icons";
 import { ContextMenuActionItem, ContextMenuSub } from "~/components/ui/menu";
 import { useLocaleWords } from "~/lib/dicts";
 import { onLook, onShownIn, onState, onTails, onToast, send, type Look } from "./bridge";
@@ -9,9 +10,9 @@ import { applyPreset, carryOn, close, cycle, heir, holder, landing, leaves, lock
 import { live, sessionName, sidebarRows, type HereRow } from "./lists";
 import { Overview } from "./Overview";
 import { Palette, type PaletteAction } from "./Palette";
-import { SayContext, sayIn, useSay, type SayKey } from "./say";
+import { SayContext, sayIn, useSay, WordsContext, wordsIn, type SayKey } from "./say";
 import { Sidebar } from "./Sidebar";
-import { asPicked, carriedOf, paneKey, useWindowLayout, type Leaf } from "./useWindowLayout";
+import { asPicked, carriedOf, paneKey, useWindowLayout, type Leaf, type Picked } from "./useWindowLayout";
 
 type Toast = { text: string; action?: { label: string; run: () => void } };
 
@@ -127,7 +128,9 @@ function Split({ node, render, onRatio }: { node: Extract<Layout, { type: "split
 export function App() {
   const [state, setState] = useState<WindowState | null>(null);
   const [look, setLook] = useState<Look | null>(null);
-  const { laid, focused, setFocused, change, current, asked, recent, toRead } = useWindowLayout(state);
+  // Ended sessions and closed terminals picked from History: a cell shows one before a state carries it.
+  const [picked, setPicked] = useState<Picked>(() => ({ sessions: new Map(), terminals: new Map() }));
+  const { laid, focused, setFocused, change, current, asked, recent, toRead, flash } = useWindowLayout(state, picked);
   const [toast, setToast] = useState<Toast | null>(null);
   // The window's own say once it has spoken; until then, the fold the project's window was left with.
   const [foldedHere, setFoldedHere] = useState<boolean | null>(null);
@@ -188,6 +191,8 @@ export function App() {
   const words = useLocaleWords(locale);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const say = useMemo(() => sayIn(locale), [locale, words]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const anyWords = useMemo(() => wordsIn(locale), [locale, words]);
   // The plugin would not stream a pane into a second cell: that cell empties, and the one showing it is selected.
   useEffect(
     () =>
@@ -214,16 +219,18 @@ export function App() {
   const layout = carryOn(laid, carriedOf(state, toRead.current), key);
   const cells = leaves(layout);
   const target = selectedCell(cells, focused);
-  // An archived session picked into a cell is in the archive's rows until the next state carries it.
-  const byId = new Map([...(state.archive.rows ?? []), ...state.sessions].map((s) => [s.id, s]));
+  // A session picked from History into a cell is known by that pick until the next state carries it.
+  const byId = new Map([...picked.sessions, ...state.sessions.map((s) => [s.id, s] as const)]);
   const terminalsById = new Map(state.terminals.map((t) => [t.id, t]));
-  // A closed terminal picked from the archive to play back, likewise.
-  const closedById = new Map([...(state.archive.terminals ?? []), ...state.closedTerminals].map((t) => [t.id, t]));
+  // A closed terminal picked from History to play back, likewise.
+  const closedById = new Map([...picked.terminals, ...state.closedTerminals.map((t) => [t.id, t] as const)]);
   // A terminal whose agent claimed a ticket shows that session in its own cell, on the pane it already has.
   const sessionIn = (id: string | null) => (id ? byId.get(terminalsById.get(id)?.sessionId ?? id) : undefined);
   const rowsOf = (c: Leaf) => (c.sessionId ? [c.sessionId, terminalsById.get(c.sessionId)?.sessionId ?? c.sessionId] : []);
   // Every cell's row reads as shown; the selected cell's alone as current.
   const active = new Set(cells.flatMap(rowsOf));
+  // Each cell's number, as its bar says it, for the rows it shows.
+  const cellNumbers = new Map(cells.flatMap((c, i) => rowsOf(c).map((id) => [id, i + 1] as const)));
   const selected = new Set(rowsOf(target));
   // The panes cells show, for the other tickets their agents work there.
   const shownPanes = new Set(cells.flatMap((c) => (c.sessionId ? [key(c.sessionId)] : [])));
@@ -266,18 +273,23 @@ export function App() {
     });
   };
   const pick = (s: SessionRow, beside = false) => {
-    if (!live(s)) toRead.current.add(s.id);
     if (s.mode === "run" && !s.pane) return send({ type: "openThread", sessionId: s.id });
+    if (!live(s)) {
+      toRead.current.add(s.id);
+      setPicked((p) => (p.sessions.has(s.id) ? p : { ...p, sessions: new Map(p.sessions).set(s.id, s) }));
+    }
     land(s.id, beside);
   };
-  // A closed terminal from the archive: its recording, read in a cell like an ended session.
+  // A closed terminal from History: its recording, read in a cell like an ended session.
   const pickClosed = (t: ClosedTerminalRow) => {
     toRead.current.add(t.id);
+    setPicked((p) => (p.terminals.has(t.id) ? p : { ...p, terminals: new Map(p.terminals).set(t.id, t) }));
     land(t.id, false);
   };
   // An assistant conversation has no pane here: the app window shows it.
   const showThread = (t: ThreadRow) => send({ type: "showThread", threadId: t.id });
   const answer = (s: SessionRow, which: "allow" | "deny") => send({ type: "answer", sessionId: s.id, which });
+  const answerThread = (t: ThreadRow, questionId: string, value: string) => send({ type: "answerThread", threadId: t.id, questionId, value });
   // The overview is drawn over the cells, so the keyboard leaves whatever terminal held it.
   const openOverview = () => {
     (document.activeElement as HTMLElement | null)?.blur();
@@ -420,6 +432,7 @@ export function App() {
         onNewTerminal={(cwd) => openTerminal(layout, node.id, cwd)}
         onTalk={(s) => openTerminal(layout, node.id, s.cwd ?? s.worktree, s.id)}
         focused={node.id === target.id && cells.length > 1}
+        flash={flash?.cell === node.id ? flash.at : null}
         selected={node.id === target.id}
         only={cells.length === 1}
         onFocus={() => setFocused(node.id)}
@@ -433,16 +446,20 @@ export function App() {
 
   return (
     <SayContext.Provider value={say}>
+      <WordsContext.Provider value={anyWords}>
       <div className="cs-window">
+        <IconSprite />
         <div className="cs-topbar">
           <span className="cs-project" data-testid="cs-project" title={say("projectTitle", { project: state.projectName })}>
             {state.projectName}
           </span>
-          <div className="seg cs-views" role="group" aria-label={say("viewToggle")} data-testid="cs-views">
+          <div className="seg quiet cs-views" role="group" aria-label={say("viewToggle")} data-testid="cs-views">
             <button type="button" aria-pressed={view === "grid"} data-testid="cs-view-grid" onClick={() => setView("grid")}>
+              <Icon className="ico" name="i-grid" size={13} />
               {say("viewGrid")}
             </button>
             <button type="button" aria-pressed={view === "overview"} data-testid="cs-view-overview" onClick={openOverview}>
+              <Icon className="ico" name="i-cards" size={13} />
               {say("viewOverview")}
             </button>
           </div>
@@ -451,7 +468,7 @@ export function App() {
           <main className="cs-main">
             <Banner state={state} />
             <div className="cs-layout">{render(layout)}</div>
-            {view === "overview" && <Overview rows={[...rows.here, ...rows.away.map((s): HereRow => ({ kind: "session", id: s.id, session: s }))]} tails={tails} active={active} onSee={seeInPane} onThread={showThread} onAnswer={answer} />}
+            {view === "overview" && <Overview rows={[...rows.here, ...rows.away.map((s): HereRow => ({ kind: "session", id: s.id, session: s }))]} tails={tails} active={active} cells={cellNumbers} onSee={seeInPane} onThread={showThread} onAnswer={answer} onAnswerThread={answerThread} />}
           </main>
           <Sidebar
             ref={side}
@@ -460,13 +477,14 @@ export function App() {
             locale={locale}
             folded={folded}
             onFold={toggleFold}
-            marks={{ active, selected, shownPanes, selectedPane, pane: key }}
+            marks={{ active, selected, cells: cellNumbers, shownPanes, selectedPane, pane: key }}
             canOpen={canOpen}
             onPick={pick}
             onTerminal={pickTerminal}
             onClosed={pickClosed}
             onThread={showThread}
             onAnswer={answer}
+            onAnswerThread={answerThread}
             onNewTerminal={newTerminal}
             onApplyPreset={(p) => {
               change(applyPreset(layout, p.layout, undefined, key));
@@ -488,6 +506,7 @@ export function App() {
           </div>
         )}
       </div>
+      </WordsContext.Provider>
     </SayContext.Provider>
   );
 }

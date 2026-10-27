@@ -147,12 +147,14 @@ export function foldSteps(messages: ThreadMessage[], codeFrom = -1, waiting: { i
     if (!isTrace(messages[i])) { out.push(messages[i++]); continue; }
     if (i >= coding) {
       const runId = messages[i].runId;
-      // a stretch: this run's steps, and what it said or was asked between them; it ends at its last step
+      // a stretch: this run's steps, and what it said or was asked between them — with the person's answer, not
+      // what they sent into the run — ending at its last step
       let last = i;
       for (let j = i + 1; j < messages.length; j++) {
         const m = messages[j];
         const b = m.block;
-        if (m.runId !== runId || m.role !== "agent" || !(b.type === "trace" || b.type === "text" || (b.type === "question" && b.id !== waiting?.id))) break;
+        const answer = m.role === "user" && b.type === "text" && !b.steerId && messages[j - 1]!.block.type === "question";
+        if (m.runId !== runId || !(answer || (m.role === "agent" && (b.type === "trace" || b.type === "text" || (b.type === "question" && b.id !== waiting?.id))))) break;
         if (b.type === "trace") last = j;
       }
       const fold = messages.slice(i, last + 1);

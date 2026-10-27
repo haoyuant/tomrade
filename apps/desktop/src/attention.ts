@@ -3,7 +3,7 @@ import type { Context } from "cordis";
 import { z } from "zod";
 import type { RunView, ThreadSummary } from "@tomradex/agent";
 import type { SettingsSection } from "@tomradex/settings";
-import type {} from "@tomradex/code-link";
+import { askLineIn } from "@tomradex/code-link";
 import type {} from "@tomradex/ipc";
 import type { ImReminder } from "@tomradex/im";
 import { showMainWindow, whenLoaded } from "./main-window.js";
@@ -307,8 +307,9 @@ export const attention = {
             const itemId = s.itemIds[0] ?? null;
             out.set(key, {
               key, projectId, threadId: s.threadId, itemId, itemKey: itemKeyOf(projectId, itemId),
-              kind: s.state === "error" ? "stuck" : "waiting",
-              who: engineTitle(s.agent), text: clip(s.activity ?? s.summary),
+              // what it asks says what kind of waiting it is: a tool's permission, a question
+              kind: s.state === "error" ? "stuck" : s.ask?.kind === "permission" ? "permission" : s.ask?.kind === "question" ? "question" : "waiting",
+              who: engineTitle(s.agent), text: clip(s.state !== "error" && s.ask ? askLineIn(s.ask, ctx.settings.locale()) : (s.activity ?? s.summary)),
               // herdr says so in its own window; Tomrade's own terminal host does not.
               ...(s.herdrPane && ctx.get("terminals")?.kind === "herdr" ? { toldIn: "herdr" as const } : {})
             });

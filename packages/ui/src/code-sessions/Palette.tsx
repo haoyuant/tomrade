@@ -5,7 +5,7 @@ import { isComposing } from "~/lib/keys";
 import { Mark, rowAgent, rowName, rowSaid, rowTitle } from "./cards";
 import { keyLabel } from "./keys";
 import { sessionStatus, statusOf, type HereRow } from "./lists";
-import { useSay } from "./say";
+import { useSay, useWords } from "./say";
 
 export interface PaletteAction {
   id: string;
@@ -30,6 +30,7 @@ export function Palette({ open, onOpenChange, here, away, ended, actions, onRow,
   onAway: (session: SessionRow) => void;
 }) {
   const say = useSay();
+  const words = useWords();
   const choose = (fn: () => void) => {
     onOpenChange(false);
     fn();
@@ -43,7 +44,7 @@ export function Palette({ open, onOpenChange, here, away, ended, actions, onRow,
     const status = statusOf(r);
     const name = rowName(r, say);
     const title = rowTitle(r, say);
-    const said = rowSaid(r, status, say);
+    const said = rowSaid(r, status, say, words);
     return (
       <Command.Item key={r.id} value={`${name} ${title ?? ""} ${rowAgent(r) ?? ""} ${said ?? ""} ${r.id}`} className="palette-row" data-row={r.id} onSelect={() => choose(onSelect)}>
         <span className="palette-mark"><Mark status={status} /></span>
