@@ -75,17 +75,25 @@ export function PaletteSessions({ projectId, items, search, run, shift }: {
   // Typed, ⌘K reaches past the few ended sessions the window holds: the look back's search, a moment after the typing stops.
   const typed = useDeferredValue(search.trim());
   const found = useQuery({
-    queryKey: keys.codeLink.review(projectId, typed),
+    queryKey: keys.codeLink.review(projectId, typed, 8),
     queryFn: () => invoke("codeLink.reviewList", projectId, { query: typed, limit: 8 }),
     enabled: typed.length >= 2,
     staleTime: 30_000
   });
   const known = new Set([...groups.waiting, ...groups.active, ...groups.history].map((r) => r.sessionId ?? r.threadId));
   const older = (found.data?.rows ?? []).filter((r) => !known.has(r.id));
+  // an idle conversation past the few the window holds opens as itself; what ended or was put away is looked back on
+  const olderIdle = older.filter((r) => r.kind === "idle");
+  const olderEnded = older.filter((r) => r.kind !== "idle");
   const outcomeOf = (r: ReviewRow) => outcomeLine(r, (key, vars) => t(`review.${key}`, vars));
+  const openOlder = (r: ReviewRow) => {
+    if (r.kind === "idle") return dock?.showThread(r.id);
+    openPanel();
+    askPanel(r.kind === "thread" ? { kind: "review", threadId: r.id } : { kind: "review", sessionId: r.id });
+  };
   const olderRow = (r: ReviewRow) => (
-    <Command.Item key={`review:${r.id}`} value={`${r.tickets[0]?.key ?? ""} ${r.title} ${findEngine(engines, r.agent)?.title ?? r.agent} ${outcomeOf(r) ?? ""} review:${r.id}`} className="palette-row" data-session={`review:${r.id}`} onSelect={() => run(() => { openPanel(); askPanel(r.kind === "thread" ? { kind: "review", threadId: r.id } : { kind: "review", sessionId: r.id }); })}>
-      <span className="palette-mark"><StatusMark status="done" size={12} /></span>
+    <Command.Item key={`review:${r.id}`} value={`${r.tickets[0]?.key ?? ""} ${r.title} ${findEngine(engines, r.agent)?.title ?? r.agent} ${outcomeOf(r) ?? ""} review:${r.id}`} className="palette-row" data-session={`review:${r.id}`} onSelect={() => run(() => openOlder(r))}>
+      <span className="palette-mark"><StatusMark status={r.kind === "idle" ? "idle" : "done"} size={12} /></span>
       <span className="p-label">
         {r.tickets[0]?.key ?? r.title}
         {r.tickets[0] && r.title && <span className="meta-txt"> · {r.title}</span>}
@@ -135,9 +143,10 @@ export function PaletteSessions({ projectId, items, search, run, shift }: {
           {groups.waiting.map(row)}
         </Command.Group>
       )}
-      {groups.active.length > 0 && (
+      {(groups.active.length > 0 || olderIdle.length > 0) && (
         <Command.Group heading={t("commandPalette.activeGroup")} className="eyebrow palette-group" data-testid="palette-active">
           {groups.active.map(row)}
+          {olderIdle.map(olderRow)}
         </Command.Group>
       )}
       <Command.Group heading={t("commandPalette.doGroup")} className="eyebrow palette-group" data-testid="palette-do">
@@ -149,10 +158,10 @@ export function PaletteSessions({ projectId, items, search, run, shift }: {
           </Command.Item>
         ))}
       </Command.Group>
-      {(groups.history.length > 0 || older.length > 0) && (
+      {(groups.history.length > 0 || olderEnded.length > 0) && (
         <Command.Group heading={t("commandPalette.historyGroup")} className="eyebrow palette-group" data-testid="palette-history">
           {groups.history.map(row)}
-          {older.map(olderRow)}
+          {olderEnded.map(olderRow)}
         </Command.Group>
       )}
     </>

@@ -103,14 +103,37 @@ const run = async () => {
   const panel = () =>
     $(`({ working: !!document.querySelector('.ai-scroll .working'), locked: document.querySelector('.ai-composer')?.hasAttribute('data-busy') ?? null,
           lines: [...document.querySelectorAll('.ai-scroll .turn-ai .turn-body p')].map((p) => p.textContent).filter((t) => ${JSON.stringify(LINES)}.includes(t)) })`);
-  const threads = async () => {
-    if (!(await $(`!!document.querySelector('.menu-row.is-radio')`))) await press(`document.querySelector('.ai-head .btn-icon[aria-label="Threads"]')`);
-    await sleep(400);
+  const until = async (fn, tries = 50) => {
+    for (let i = 0; i < tries; i++) {
+      if (await fn()) return true;
+      await sleep(100);
+    }
+    return false;
   };
+  const present = (selector) => $(`!!document.querySelector(${JSON.stringify(selector)})`);
+  const shownThread = () => $(`localStorage.getItem('tomrade.agent.thread.${alpha.id}')`);
+  const mac = process.platform === "darwin";
+  const flip = () => $(`window.dispatchEvent(new KeyboardEvent('keydown', { key: '\\\\', code: 'Backslash', metaKey: ${mac}, ctrlKey: ${!mac}, bubbles: true, cancelable: true }));true`);
+  const openPalette = async () => {
+    await $(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', code: 'KeyK', metaKey: ${mac}, ctrlKey: ${!mac}, bubbles: true, cancelable: true }));true`);
+    return until(() => present(".palette-input"), 30);
+  };
+  const typePalette = (text) => $(`(() => { const i = document.querySelector('.palette-input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, ${JSON.stringify(text)}); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  const enterPalette = (shift = false) => $(`document.querySelector('.palette-input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', shiftKey: ${shift}, bubbles: true, cancelable: true }));true`);
+  const closePalette = () => $(`document.querySelector('.palette-input')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));true`);
+  const typeReview = (text) => $(`(() => { const i = document.querySelector('[data-testid="ai-review-search"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, ${JSON.stringify(text)}); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  // No thread menu any more: the session bar's + opens a conversation, and ⌘K finds any by its title, in the bar or past it.
   const newThread = async () => {
-    await threads();
-    await press(`document.querySelector('button[aria-label="New thread"]')`);
+    await press(`document.querySelector('.ai .sbar button[aria-label="New thread"]')`);
     await sleep(800);
+  };
+  const paletteRow = (name) => `[...document.querySelectorAll('.palette [cmdk-item][data-session]')].find((n) => n.querySelector('.p-label')?.firstChild?.textContent === ${JSON.stringify(name)})`;
+  const openThreadNamed = async (name) => {
+    await openPalette();
+    await typePalette(name);
+    await until(() => $(`!!${paletteRow(name)}`), 30);
+    await press(paletteRow(name));
+    await sleep(400);
   };
   await sleep(2000);
 
@@ -172,10 +195,9 @@ const run = async () => {
   await newThread();
   check("the panel moved to a fresh thread", (await panel()).lines.length === 0);
   await sleep(3500);
-  await threads();
   // Titled from its first message once the run has had a moment, so looked up now.
   const busyTitle = ctx.agent.store.threads(alpha.id).find((th) => th.id === busyId)?.title;
-  check("the busy thread is in the threads menu", await press(`[...document.querySelectorAll('.menu-row.is-radio')].find((r) => r.querySelector('.m-name')?.textContent === ${JSON.stringify(busyTitle)})`), busyTitle);
+  check("the busy thread is in the session bar", await press(`document.querySelector('.ai .sbar-dot[data-key="thread:${busyId}"]')`), busyTitle);
   await sleep(1000);
   seen = await panel();
   check("picking the busy thread again shows its run finished", !seen.working && seen.lines.join("|") === LINES.join("|"), seen);
@@ -480,51 +502,83 @@ const run = async () => {
   await sleep(300);
   check("another conversation does not carry it", !(await $(`!!document.querySelector('.ai-scroll .guide-turn')`)));
 
-  // ── the thread list: searchable, says what runs, keeps the archive ───
+  // ── no thread list: the bar says what runs and carries origins; ⌘K finds any conversation; cards and peeks put away and delete; History holds the rest ──
   for (let i = 0; i < 8; i++) ctx.agent.newThread(alpha.id, "slow", null, { title: `Filler conversation ${i + 1}` });
+  const filler = (n) => ctx.agent.store.threads(alpha.id).find((th) => th.title === `Filler conversation ${n}`);
+  const cardOf = (id) => `document.querySelector('.ai .sbar-card[data-key="thread:${id}"]')`;
+  const cards = () => $(`[...document.querySelectorAll('.ai .sbar-card')].map((c) => ({ key: c.dataset.key, status: c.dataset.status, text: c.textContent, chips: [...c.querySelectorAll('.sbar-chip')].map((n) => n.textContent), archive: !!c.querySelector('button[aria-label="Archive thread"]'), remove: !!c.querySelector('button[aria-label="Delete thread"]') }))`);
   await newThread();
   await send("a long one");
   await sleep(300);
-  await threads();
-  check("a long thread list offers a search", await $(`!!document.querySelector('.menu-search input')`));
-  check("a conversation with a run going says so", await $(`[...document.querySelectorAll('.menu-row.is-radio')].some((r) => (r.textContent ?? '').includes('Running'))`));
-  await $(`(() => { const i = document.querySelector('.menu-search input'); Object.getOwnPropertyDescriptor(Object.getPrototypeOf(i), 'value').set.call(i, 'Filler conversation 3'); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  await flip();
+  await sleep(400);
+  let seenCards = await cards();
+  check("a conversation with a run going says so on its card, which offers neither to put it away nor to delete it", seenCards.some((c) => c.status === "run" && /running/.test(c.text) && !c.archive && !c.remove), seenCards);
+  check("an idle one offers both", seenCards.some((c) => c.status === "idle" && /Filler conversation/.test(c.text) && c.archive && c.remove), seenCards);
+  check("the bar keeps the newest idle ones and says the earlier are in History", seenCards.filter((c) => c.status === "idle").length === 8 && /Earlier ones are in History/.test(await $(`document.querySelector('.ai .sbar-foot')?.textContent ?? ''`)), seenCards.map((c) => c.status));
+  await openPalette();
+  await typePalette("Filler conversation 3");
+  check("⌘K puts the conversation typed first among the sessions", await until(async () => (await $(`document.querySelector('.palette [cmdk-item][data-session] .p-label')?.firstChild?.textContent ?? null`)) === "Filler conversation 3", 30));
+  await closePalette();
   await sleep(300);
-  check("typing narrows the list", (await $(`[...document.querySelectorAll('.menu-row.is-radio')].filter((r) => r.closest('.menu-foot') === null).map((r) => r.querySelector('.m-name')?.textContent)`)).join("|") === "Filler conversation 3");
   // What opened a conversation, said by the plugin that did, shows as chips after its title.
-  const tagged = ctx.agent.store.threads(alpha.id).find((th) => th.title === "Filler conversation 5");
+  const tagged = filler(5);
   ctx.agent.threadOrigins((_p, list) => list.filter((th) => th.id === tagged.id).map((th) => [th.id, "Routine"]));
-  await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
-  await sleep(300);
   ctx.ipc.send("codeLink.changed", alpha.id);
   await sleep(600);
-  await threads();
-  await $(`(() => { const i = document.querySelector('.menu-search input'); Object.getOwnPropertyDescriptor(Object.getPrototypeOf(i), 'value').set.call(i, 'Filler conversation'); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
-  await sleep(300);
-  const chips = await $(`[...document.querySelectorAll('.menu-row.is-radio')].map((r) => ({ name: r.querySelector('.m-name')?.textContent, chips: [...r.querySelectorAll('.m-chip')].map((c) => c.textContent) })).filter((r) => r.chips.length)`);
-  check("a conversation a plugin opened carries its chip after the title", chips.length === 1 && chips[0].name === "Filler conversation 5" && chips[0].chips.join() === "Routine", chips);
+  seenCards = await cards();
+  check("a conversation a plugin opened carries its chip after the title, on its card", seenCards.find((c) => c.key === `thread:${tagged.id}`)?.chips.join() === "Routine" && seenCards.filter((c) => c.chips.length).length === 1, seenCards.map((c) => c.chips));
   await shot("origin-chips.png");
-  await $(`(() => { const i = document.querySelector('.menu-search input'); Object.getOwnPropertyDescriptor(Object.getPrototypeOf(i), 'value').set.call(i, 'Filler conversation 3'); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
-  await sleep(300);
-  const filler = ctx.agent.store.threads(alpha.id).find((th) => th.title === "Filler conversation 3");
-  ctx.agent.archiveThread(alpha.id, filler.id);
+  await $(`(() => { const c = ${cardOf(filler(7).id)}; const r = c.getBoundingClientRect(); c.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 12, clientY: r.top + 12, button: 2 })); return true; })()`);
+  await sleep(400);
+  const menuRows = await $(`[...document.querySelectorAll('.menu.is-floating .menu-row')].map((r) => r.textContent)`);
+  check("right-clicking a card offers the same two", menuRows.join("|") === "Archive thread|Delete thread", menuRows);
   await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
   await sleep(300);
-  await threads();
-  check("the menu foot no longer holds an archive switch", await $(`!document.querySelector('.menu .menu-foot')`));
-  await press(`document.querySelector('.menu .menu-head button[aria-label="Show archived conversations"]')`);
+  const filler3 = filler(3);
+  await press(`${cardOf(filler3.id)}?.querySelector('button[aria-label="Archive thread"]')`);
   await sleep(600);
-  check("the archive opens in the same menu", await $(`document.querySelector('.menu .menu-head .eyebrow')?.textContent === 'Archived'`));
-  check("the archive lists what was put away", await $(`[...document.querySelectorAll('.menu .menu-row.is-radio')].some((r) => r.textContent?.includes('Filler conversation 3'))`));
-  await press(`document.querySelector('.menu .menu-head button[aria-label="Back to conversations"]')`);
+  check("a card's Archive puts the conversation away and takes it off the bar", ctx.agent.store.thread(alpha.id, filler3.id)?.archived === true && !(await $(`!!${cardOf(filler3.id)}`)));
+  const filler4 = filler(4);
+  await $(`window.confirm = () => false;true`);
+  await press(`${cardOf(filler4.id)}?.querySelector('button[aria-label="Delete thread"]')`);
+  await sleep(400);
+  check("Delete asks first; a no keeps the conversation", !!ctx.agent.store.thread(alpha.id, filler4.id) && (await $(`!!${cardOf(filler4.id)}`)));
+  await $(`window.confirm = () => true;true`);
+  await press(`${cardOf(filler4.id)}?.querySelector('button[aria-label="Delete thread"]')`);
+  await sleep(600);
+  check("a yes deletes it for good", !ctx.agent.store.thread(alpha.id, filler4.id) && !(await $(`!!${cardOf(filler4.id)}`)));
+  // History: the idle conversations past the bar, said to be idle, and what was put away; each opens as itself
+  await press(`document.querySelector('[data-testid="sbar-history"]')`);
+  await until(() => present('[data-testid="ai-review-list"]'), 30);
+  const reviewRowsNow = () => $(`[...document.querySelectorAll('[data-testid="ai-review-row"]')].map((r) => ({ kind: r.dataset.kind, text: r.textContent, review: r.dataset.review }))`);
+  await until(async () => (await reviewRowsNow()).some((r) => r.kind === "idle"), 30);
+  const idleRows = (await reviewRowsNow()).filter((r) => r.kind === "idle");
+  const inBar = (await cards()).map((c) => c.key);
+  check("History lists the idle conversations past the bar, each said to be idle, none the bar shows", idleRows.length > 0 && idleRows.every((r) => /idle/.test(r.text) && !inBar.includes(`thread:${r.review}`)), { idle: idleRows.length, inBar });
+  check("and the one put away", (await reviewRowsNow()).some((r) => r.kind === "thread" && r.review === filler3.id));
+  const earlier = idleRows[0];
+  await press(`document.querySelector('[data-testid="ai-review-row"][data-review="${earlier.review}"]')`);
+  check("opening an idle one from History goes back to the conversation itself", await until(async () => (await shownThread()) === earlier.review && !(await present('[data-testid="ai-review-list"]')), 30), { earlier, shown: await shownThread() });
+  await press(`document.querySelector('[data-testid="sbar-history"]')`);
+  await until(() => present('[data-testid="ai-review-search"]'), 30);
+  await typeReview("Filler conversation 3");
+  await until(async () => (await reviewRowsNow()).some((r) => r.review === filler3.id && r.kind === "thread"), 40);
+  await press(`document.querySelector('[data-testid="ai-review-row"][data-review="${filler3.id}"]')`);
+  await until(() => present('[data-testid="ai-review-resume"]'), 40);
+  await press(`document.querySelector('[data-testid="ai-review-resume"]')`);
+  check("a put-away conversation found in History comes back with Open and go on", await until(async () => ctx.agent.store.thread(alpha.id, filler3.id)?.archived === false && (await shownThread()) === filler3.id, 40));
+  // the rail: hovering a dot peeks, and the peek carries the same two buttons
+  await flip();
+  await sleep(400);
+  const filler6 = filler(6);
+  await $(`(() => { const d = document.querySelector('.ai .sbar-dot[data-key="thread:${filler6.id}"]'); d.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return true; })()`);
   await sleep(300);
-  check("and goes back to the list", await $(`document.querySelector('.menu .menu-head .eyebrow')?.textContent === 'Threads'`));
-  await press(`document.querySelector('.menu .menu-head button[aria-label="Show archived conversations"]')`);
+  check("hovering an idle dot peeks, with the way to put it away or delete it", await $(`!!document.querySelector('.ai .sbar-peek button[aria-label="Archive thread"]') && !!document.querySelector('.ai .sbar-peek button[aria-label="Delete thread"]')`));
+  await press(`document.querySelector('.ai .sbar-peek button[aria-label="Archive thread"]')`);
   await sleep(600);
-  await press(`[...document.querySelectorAll('.menu .menu-row.is-radio')].find((r) => r.textContent?.includes('Filler conversation 3'))`);
-  await sleep(800);
-  check("picking it brings it back", ctx.agent.store.thread(alpha.id, filler.id)?.archived === false);
-  await sleep(3500);
+  check("the peek's Archive puts it away", ctx.agent.store.thread(alpha.id, filler6.id)?.archived === true && !(await $(`!!document.querySelector('.ai .sbar-dot[data-key="thread:${filler6.id}"]')`)));
+  await sleep(2500);
 
   // ── archived while on screen: stays until the person moves on, read-only ──
   await newThread();
@@ -552,11 +606,7 @@ const run = async () => {
   await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
   await sleep(300);
   check("moving to another conversation lets it go", (await panel()).lines.length === 0 && !(await archivedNote()));
-  await threads();
-  const lingerTitle = ctx.agent.store.thread(alpha.id, lingerId)?.title;
-  check("and it is not in the list any more", !(await $(`[...document.querySelectorAll('.menu-row.is-radio')].filter((r) => r.closest('.menu-foot') === null).some((r) => r.querySelector('.m-name')?.textContent === ${JSON.stringify(lingerTitle)})`)), lingerTitle);
-  await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
-  await sleep(300);
+  check("and it is not in the bar any more", !(await $(`!!document.querySelector('.ai .sbar [data-key="thread:${lingerId}"]')`)), lingerId);
 
   // ── every step shown, long runs folded, retries said out loud ─────────
   ctx.agent.engine({
@@ -626,7 +676,6 @@ const run = async () => {
       dots: [...b.querySelectorAll('.sbar-dot[data-status]')].map((d) => [d.dataset.status, d.getAttribute('aria-label'), d.dataset.depth ?? null]),
       cards: [...b.querySelectorAll('.sbar-card')].map((c) => [c.dataset.status, c.textContent]),
       waiting: b.querySelector('.sbar-waiting')?.getAttribute('aria-label') ?? null, peek: b.querySelector('[role=tooltip]')?.textContent ?? null }; })()`);
-  const flip = () => $(`window.dispatchEvent(new KeyboardEvent('keydown', { key: '\\\\', code: 'Backslash', metaKey: ${process.platform === "darwin"}, ctrlKey: ${process.platform !== "darwin"}, bubbles: true, cancelable: true }));true`);
   let barSeen = await bar();
   check("the panel has a session bar, as dots while the panel is narrow", barSeen?.mode === "rail", barSeen);
   const waitingDots = barSeen?.dots.filter(([status]) => status === "wait") ?? [];
@@ -802,14 +851,6 @@ const run = async () => {
   check("picking a thread brings its conversation back and stops reading the pane and the record", !(await sessionView()) && tailReads === left.tail && convoReads === left.convo && !!(await $(`!!document.querySelector('.ai-scroll .turn, .ai-composer')`)), { tail: tailReads - left.tail, convo: convoReads - left.convo });
 
   // ── what else waits: a line on top, ⌥↓ to the next, and answering one opens the next — or stays, as the person chose ──
-  const until = async (fn, tries = 50) => {
-    for (let i = 0; i < tries; i++) {
-      if (await fn()) return true;
-      await sleep(100);
-    }
-    return false;
-  };
-  const present = (selector) => $(`!!document.querySelector(${JSON.stringify(selector)})`);
   let askers = 0;
   const asking = async () => {
     const th = ctx.agent.newThread(alpha.id, "mixed", null, { title: `Asker ${++askers}` });
@@ -817,7 +858,6 @@ const run = async () => {
     await until(async () => ctx.agent.thread(alpha.id, th.id).pending?.kind === "question", 60);
     return th.id;
   };
-  const shownThread = () => $(`localStorage.getItem('tomrade.agent.thread.${alpha.id}')`);
   const queueLine = () => $(`document.querySelector('[data-testid="wait-queue"] .ai-queue-text')?.textContent ?? null`);
   const asksHere = () => until(() => present('.ai-scroll .q-ask:not(.done) .chip-opt'), 50);
   const answerHere = async () => {
@@ -897,10 +937,7 @@ const run = async () => {
   const bgParent = ctx.agent.newThread(alpha.id, "bgcoder", null, { title: "Dedupe chat" });
   const bgHello = ctx.agent.send(alpha.id, bgParent.id, { kind: "text", text: "hello" });
   await until(() => ctx.agent.store.run(alpha.id, bgHello.runId)?.status === "done", 60);
-  await threads();
-  await $(`(() => { const i = document.querySelector('.menu-search input'); Object.getOwnPropertyDescriptor(Object.getPrototypeOf(i), 'value').set.call(i, 'Dedupe chat'); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
-  await sleep(300);
-  await press(`[...document.querySelectorAll('.menu-row.is-radio')].find((r) => r.querySelector('.m-name')?.textContent === 'Dedupe chat')`);
+  await openThreadNamed("Dedupe chat");
   await until(async () => (await shownThread()) === bgParent.id, 50);
   await sleep(600);
   await send("write the dedupe script");
@@ -955,12 +992,6 @@ const run = async () => {
   const cliThread = ctx.agent.newThread(alpha.id, "cli", null, { title: "Handoff chat" });
   const cliHello = ctx.agent.send(alpha.id, cliThread.id, { kind: "text", text: "hello" });
   await until(() => ctx.agent.store.run(alpha.id, cliHello.runId)?.status === "done", 60);
-  const openThreadNamed = async (name) => {
-    await threads();
-    await $(`(() => { const i = document.querySelector('.menu-search input'); Object.getOwnPropertyDescriptor(Object.getPrototypeOf(i), 'value').set.call(i, ${JSON.stringify(name)}); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
-    await sleep(300);
-    await press(`[...document.querySelectorAll('.menu-row.is-radio')].find((r) => r.querySelector('.m-name')?.textContent === ${JSON.stringify(name)})`);
-  };
   const handoffLine = () => $(`(() => { const l = document.querySelector('[data-testid="handoff"]'); if (!l) return null; const b = l.querySelector('[data-testid="to-terminal"], [data-testid="back-to-panel"]'); return { where: l.dataset.where, live: l.hasAttribute('data-live'), text: l.textContent, button: b ? { id: b.dataset.testid, disabled: b.disabled, title: b.title } : null, send: document.querySelector('.ai-send')?.disabled ?? null, sendTitle: document.querySelector('.ai-send')?.title ?? null }; })()`);
   await openThreadNamed("Dedupe chat");
   await until(async () => (await shownThread()) === bgParent.id, 50);
@@ -1007,18 +1038,11 @@ const run = async () => {
   ctx.contributions.run = runCommand;
 
   // ── ⌘K finds sessions and does things with them, from what the window already holds ──
-  const mac = process.platform === "darwin";
   const reads = { threads: 0, sessions: 0 };
   const threadsOf = ctx.agent.store.threads.bind(ctx.agent.store);
   ctx.agent.store.threads = (...args) => (reads.threads++, threadsOf(...args));
   const recentOf = ctx.codeLink.recentSessions.bind(ctx.codeLink);
   ctx.codeLink.recentSessions = (...args) => (reads.sessions++, recentOf(...args));
-  const openPalette = async () => {
-    await $(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', code: 'KeyK', metaKey: ${mac}, ctrlKey: ${!mac}, bubbles: true, cancelable: true }));true`);
-    return until(() => present(".palette-input"), 30);
-  };
-  const typePalette = (text) => $(`(() => { const i = document.querySelector('.palette-input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, ${JSON.stringify(text)}); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
-  const enterPalette = (shift = false) => $(`document.querySelector('.palette-input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', shiftKey: ${shift}, bubbles: true, cancelable: true }));true`);
   const readsAt = { ...reads };
   await openPalette();
   await sleep(600);
@@ -1056,6 +1080,25 @@ const run = async () => {
   check("↵ then starts one, sent those words", started && firstSaid === "zqx draft the release notes", { started, firstSaid });
   ctx.agent.store.threads = threadsOf;
   ctx.codeLink.recentSessions = recentOf;
+  // ⌘K reaches every conversation: an idle one past the fifty the window holds, and one put away
+  for (let i = 1; i <= 55; i++) ctx.agent.newThread(alpha.id, "slow", null, { title: `Bulk conversation ${i}` });
+  const putAway = ctx.agent.newThread(alpha.id, "slow", null, { title: "Put-away conversation" });
+  ctx.agent.archiveThread(alpha.id, putAway.id);
+  ctx.ipc.send("codeLink.changed", alpha.id);
+  await sleep(800);
+  const filler1 = filler(1);
+  await openPalette();
+  await typePalette("Filler conversation 1");
+  check("⌘K finds an idle conversation past the ones the window holds, as in progress", await until(() => present(`[data-testid="palette-active"] [data-session="review:${filler1.id}"]`), 40));
+  await press(`document.querySelector('[data-session="review:${filler1.id}"]')`);
+  check("and ↵ opens it here", await until(async () => (await shownThread()) === filler1.id, 30), await shownThread());
+  await openPalette();
+  await typePalette("Put-away conversation");
+  check("⌘K finds a conversation put away, in History", await until(() => present(`[data-testid="palette-history"] [data-session="review:${putAway.id}"]`), 40));
+  await press(`document.querySelector('[data-session="review:${putAway.id}"]')`);
+  check("and opens the look back on it", await until(async () => (await $(`document.querySelector('[data-testid="ai-review-open"]')?.dataset.review ?? null`)) === putAway.id, 30));
+  await press(`document.querySelector('.ai-review-head button[aria-label="Back to the conversation"]')`);
+  await sleep(300);
 
   // ── the look back: ended sessions by day with what came of each first; one opened read-only, cut by ticket ──
   // A session that did one ticket, then claimed and fixed another on the way: its record, as Claude Code writes one, stamped.
@@ -1090,7 +1133,6 @@ const run = async () => {
   check("rows sit under the day they ended", (await $(`document.querySelector('.ai-review-day')?.textContent ?? null`)) === "Today");
   await shot("review-list.png");
   // searched by a word said in the conversation, in no title
-  const typeReview = (text) => $(`(() => { const i = document.querySelector('[data-testid="ai-review-search"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, ${JSON.stringify(text)}); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
   await typeReview("leftover");
   check("searching a word said in a conversation finds it and quotes the line", await until(async () => /leftover/.test(await $(`[...document.querySelectorAll('[data-testid="ai-review-said"]')].map((s) => s.textContent).join('|')`)), 60));
   await typeReview("zqx nothing");
