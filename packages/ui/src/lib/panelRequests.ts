@@ -7,7 +7,9 @@ export type PanelRequest =
   | { kind: "startWith"; text: string }
   | { kind: "openSession"; sessionId: string }
   | { kind: "toggleBar" }
-  | { kind: "nextWaiting" };
+  | { kind: "nextWaiting" }
+  /** The look back on ended conversations: its list, or one of them opened — only `itemId`'s stretches when given. */
+  | { kind: "review"; sessionId?: string; threadId?: string; itemId?: string };
 
 const requests = new Set<(request: PanelRequest) => void>();
 

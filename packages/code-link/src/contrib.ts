@@ -34,6 +34,12 @@ export interface ContribHost {
   words: () => CodeWords;
 }
 
+/** The ended session that last worked the ticket, on it or moved on from it: the one its page looks back on. */
+const reviewable = (store: ContribHost["codeLink"]["store"], projectId: string, itemId: string) => {
+  const ended = (s: { state: string }) => s.state === "ended" || s.state === "lost";
+  return store.sessions(projectId, { itemId }).find(ended) ?? store.movedOn(projectId, itemId).find(ended) ?? null;
+};
+
 /** What code-link adds to the desktop: the ticket's Code section, card badges, the status line and its commands. */
 export function contribute(ctx: Context, host: ContribHost): void {
   const { codeLink: self, ctx: home, herdr, words } = host;
@@ -113,6 +119,9 @@ export function contribute(ctx: Context, host: ContribHost): void {
         const value = [named(w, SESSION_STATES, earlier.state), earlier.title ?? earlier.agent, now ? w("movedOnTo", { key: now }) : null].filter(Boolean).join(" · ");
         rows.push({ label: w("earlierSession"), icon: "i-terminal", value, command: "code-link.open-earlier" });
       }
+      // An ended session is looked back on in the assistant panel: what came of it, and only this ticket's stretches open.
+      const reviewed = sessions.find((s) => s.state === "ended" || s.state === "lost") ?? (earlier && (earlier.state === "ended" || earlier.state === "lost") ? earlier : null);
+      if (reviewed) rows.push({ label: w("review"), icon: "i-panel", value: w("reviewValue", { agent: home.get("agent")?.engineOf(reviewed.agent)?.title ?? reviewed.agent }), command: "code-link.review" });
       const worktree = self.worktreeOf(item.projectId, item.id);
       if (worktree) rows.push({ label: w("worktree"), icon: "i-folder", mono: true, value: worktree, command: "code-link.open-terminal" });
       else if (live?.worktree && live.state !== "ended") rows.push({ label: w("worktree"), icon: "i-folder", mono: true, value: live.worktree });
@@ -240,6 +249,16 @@ export function contribute(ctx: Context, host: ContribHost): void {
       const sessions = self.store.sessions(projectId, { itemId }).filter((s) => s.threadId);
       const threadId = (sessions.find((s) => s.state !== "ended") ?? sessions[0])?.threadId ?? self.store.links(projectId, itemId).find((l) => l.threadId)?.threadId;
       return threadId ? { showThread: threadId } : { toast: words()("noConversation") };
+    }
+  });
+  ctx.contributions.command({
+    id: "code-link.review",
+    title: () => words()("cmdReview"),
+    group,
+    run: ({ projectId, itemId }) => {
+      if (!projectId || !itemId) return { toast: words()("selectTicket") };
+      const session = reviewable(self.store, projectId, itemId);
+      return session ? { review: { sessionId: session.id, itemId } } : { toast: words()("noConversation") };
     }
   });
   ctx.contributions.command({

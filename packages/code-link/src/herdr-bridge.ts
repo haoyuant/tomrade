@@ -141,6 +141,16 @@ export class HerdrBridge {
     return this.answered("codeLink/show-session", () => this.ctx.serial("codeLink/show-session", projectId, sessionId));
   }
 
+  /** An ended session's conversation taken up again in a new cell of Tomrade's Terminal window; false when no window can. */
+  resumeSession(projectId: string, sessionId: string): Promise<boolean> {
+    return this.answered("codeLink/resume-session", () => this.ctx.serial("codeLink/resume-session", projectId, sessionId));
+  }
+
+  /** Whether the Terminal window recorded what the session's pane showed. */
+  rawOutputThere(projectId: string, sessionId: string): Promise<boolean> {
+    return this.answered("codeLink/raw-output-there", () => this.ctx.serial("codeLink/raw-output-there", projectId, sessionId));
+  }
+
   /** A plugin's answer is a convenience: one that throws counts as no window. */
   private async answered(name: string, ask: () => Promise<unknown>): Promise<boolean> {
     try {

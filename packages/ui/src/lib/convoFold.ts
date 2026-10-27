@@ -32,7 +32,7 @@ const OPEN_TOOLS = 3;
 export type ConvoEntry = ConvoLine | { fold: ConvoLine[]; work: WorkDone };
 
 /** A tool line reads "Tool · what": the tool's name, and for one that writes, the file it wrote. */
-const asStep = (l: ConvoLine) => ({ tool: l.text.split(/[\s·:(]/)[0] ?? "", args: { path: l.text.split(" · ")[1] }, output: l.detail?.output ?? null });
+export const asStep = (l: Pick<ConvoLine, "text" | "detail">) => ({ tool: l.text.split(/[\s·:(]/)[0] ?? "", args: { path: l.text.split(" · ")[1] }, output: l.detail?.output ?? null });
 
 /** A record's lines with each long run of tool calls folded but its last three. */
 export function foldTools(lines: ConvoLine[]): ConvoEntry[] {

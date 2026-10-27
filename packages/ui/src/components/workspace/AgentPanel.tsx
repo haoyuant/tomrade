@@ -26,6 +26,7 @@ import { GUIDE, GuideList, slashCommand, SlashMenu, STARTERS, type SlashCommand,
 import { Composer } from "./agent-panel/Composer";
 import { STORE } from "./agent-panel/store";
 import { ThreadList, useThreadListState } from "./agent-panel/ThreadList";
+import { Review, type ReviewFocus } from "./agent-panel/Review";
 import { SessionBar, type BarMode } from "./agent-panel/SessionBar";
 import { TerminalSession } from "./agent-panel/TerminalSession";
 import { sessionBarRows, type BarRow, type BarStatus } from "~/lib/sessionBar";
@@ -139,6 +140,14 @@ export function AgentPanel({
   const [openSessionIn, setOpenSessionIn] = useState<{ projectId: string; id: string } | null>(null);
   const openSession = openSessionIn?.projectId === projectId ? openSessionIn.id : null;
   const setOpenSession = useCallback((id: string | null) => setOpenSessionIn(id ? { projectId, id } : null), [projectId]);
+  // The look back on ended conversations takes the thread's place too: its list, or one of them opened. Kept with its project.
+  const [reviewIn, setReviewIn] = useState<{ projectId: string; focus: ReviewFocus | null } | null>(null);
+  const review = reviewIn?.projectId === projectId ? reviewIn : null;
+  const openReview = useCallback((focus: ReviewFocus | null) => {
+    setOpenSessionIn(null);
+    setReviewIn({ projectId, focus });
+  }, [projectId]);
+  const openHistory = useCallback(() => openReview(null), [openReview]);
   // kept once seen, so the view stays while the bar's list moves on without it (it ended a while ago)
   const lastSession = useRef<SessionView | null>(null);
   const shownSession = openSession ? (recentSessions.data?.find((s) => s.id === openSession) ?? (lastSession.current?.id === openSession ? lastSession.current : null)) : null;
@@ -516,6 +525,9 @@ export function AgentPanel({
       if (!shown) toast({ body: terminalApp ? t("sessionBar.elsewhere", { app: terminalApp.replace(/\.app$/, "") }) : t("sessionBar.notShown") });
     }, reportError);
   const pickBarRow = (row: BarRow) => {
+    setReviewIn(null);
+    // what ended is looked back on; what lives opens as itself
+    if (row.status === "done" && row.sessionId) return openReview({ sessionId: row.sessionId });
     if (row.threadId) return pickThread(row.threadId);
     if (row.sessionId) setOpenSession(row.sessionId);
   };
@@ -588,8 +600,9 @@ export function AgentPanel({
   latestRequest.current = (request) => {
     if (request.kind === "newThread") latestBar.current.newThread();
     else if (request.kind === "startWith") void startWith(request.text);
-    else if (request.kind === "openSession") setOpenSession(request.sessionId);
+    else if (request.kind === "openSession") { setReviewIn(null); setOpenSession(request.sessionId); }
     else if (request.kind === "toggleBar") chooseBarMode(barMode === "rail" ? "cards" : "rail");
+    else if (request.kind === "review") openReview(request.sessionId || request.threadId ? { sessionId: request.sessionId, threadId: request.threadId, itemId: request.itemId } : null);
     else latestNext.current();
   };
   useEffect(() => onPanelRequest((request) => latestRequest.current(request)), []);
@@ -648,8 +661,8 @@ export function AgentPanel({
           threadId={threadId}
           attentionOf={attentionOf}
           attentionLabel={attentionLabel}
-          onPick={pickThread}
-          onNew={() => void openThread({ boardId }).then((th) => pickThread(th.id))}
+          onPick={(id) => { setReviewIn(null); pickThread(id); }}
+          onNew={() => void openThread({ boardId }).then((th) => { setReviewIn(null); pickThread(th.id); })}
           onArchive={archiveThreadById}
           onDelete={deleteThreadById}
         />
@@ -667,7 +680,9 @@ export function AgentPanel({
           </button>
         </div>
       )}
-      {shownSession ? (
+      {review ? (
+        <Review projectId={projectId} focus={review.focus} engines={engines.data} onClose={() => setReviewIn(null)} onOpenThread={(id) => { setReviewIn(null); pickThread(id); }} />
+      ) : shownSession ? (
         <TerminalSession
           projectId={projectId}
           session={shownSession}
@@ -1025,6 +1040,7 @@ export function AgentPanel({
         onMode={chooseBarMode}
         onPick={pickBarRowStable}
         onNew={newBarThread}
+        onHistory={openHistory}
       />
       <ReportDialog projectId={projectId} threadId={reportFor} onOpenChange={(open) => { if (!open) setReportFor(null); }} />
     </aside>

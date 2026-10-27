@@ -23,6 +23,8 @@ export interface CommandResult {
   opens?: string;
   /** Starting the scoped ticket stopped on something the Start dialog can fix: open it there, in this mode. */
   startDialog?: "run" | "terminal";
+  /** An ended session to look back on in the assistant panel, read-only; `itemId` opens only that ticket's stretches. */
+  review?: { sessionId: string; itemId?: string };
 }
 
 /** Words a plugin may compute when shown, so they come out in the person's language at that moment. */

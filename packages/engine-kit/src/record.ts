@@ -79,6 +79,13 @@ function lineStart(fd: number, pos: number): number {
   return end === 0 ? 0 : pos;
 }
 
+/** When an entry was written, as Claude Code and Codex stamp theirs (`timestamp`, ISO or ms); null when unstamped. */
+const entryTime = (entry: Record<string, unknown>): number | null => {
+  const t = entry.timestamp;
+  const at = typeof t === "number" ? t : typeof t === "string" ? Date.parse(t) : NaN;
+  return Number.isFinite(at) ? at : null;
+};
+
 const entriesOf = (text: string): Record<string, unknown>[] =>
   text.split("\n").flatMap((row) => {
     if (!row.trim()) return [];
@@ -115,7 +122,9 @@ export function readJsonlRecord(file: string, reader: JsonlReader, opts?: { befo
       }
     };
     for (const entry of entriesOf(readAt(fd, start, end - start))) {
+      const at = entryTime(entry);
       for (const { call, ...line } of reader.lines(entry)) {
+        if (at !== null) line.at = at;
         lines.push(line);
         if (call) calls.set(call, line);
       }

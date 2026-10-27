@@ -198,6 +198,14 @@ ALTER TABLE plugin_code_link_sessions ADD COLUMN requested_by TEXT;
 ALTER TABLE plugin_code_link_sessions ADD COLUMN record_saved_at INTEGER;
 ALTER TABLE plugin_code_link_sessions ADD COLUMN record_cut INTEGER NOT NULL DEFAULT 0;
 `
+  },
+  // What a look back on a session says first: how often it turned to the person, and when it took each ticket on.
+  {
+    version: 19,
+    up: `
+ALTER TABLE plugin_code_link_sessions ADD COLUMN asked INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE plugin_code_link_sessions ADD COLUMN marks_json TEXT NOT NULL DEFAULT '[]';
+`
   }
 ];
 
@@ -298,6 +306,18 @@ export interface ProposalView {
 }
 
 export type SessionMode = "headless" | "terminal";
+
+/** A session taking a ticket on, at that moment. */
+export interface SessionMark {
+  itemId: string;
+  at: number;
+}
+
+/** Where one page of ended sessions stops: the last row's end and id, so the next page follows it exactly. */
+export interface SessionCursor {
+  at: number;
+  id: string;
+}
 /** `error`: the agent stopped on its own account (rate limit, auth) and is not working; the process may still be there. */
 export type SessionState = "running" | "waiting" | "idle" | "error" | "ended" | "lost";
 
@@ -310,6 +330,10 @@ export interface SessionView {
   itemIds: string[];
   /** Tickets it worked before moving on to the ones it holds, each with the delivery it worked. History only: nothing judges by it. */
   worked: { itemId: string; delivery: number }[];
+  /** When it took each ticket on, in order: where a look back on its conversation cuts it by ticket. */
+  marks: SessionMark[];
+  /** How many times it turned to the person: a permission, a question. */
+  asked: number;
   mode: SessionMode;
   agent: string;
   externalId: string | null;
@@ -420,6 +444,8 @@ interface SessionRow {
   branch: string;
   item_ids_json: string;
   worked_json: string | null;
+  marks_json: string | null;
+  asked: number | null;
   mode: string;
   agent: string;
   external_id: string | null;
@@ -522,6 +548,8 @@ const toSession = (r: SessionRow): SessionView => ({
   branch: r.branch,
   itemIds: JSON.parse(r.item_ids_json) as string[],
   worked: r.worked_json ? (JSON.parse(r.worked_json) as SessionView["worked"]) : [],
+  marks: r.marks_json ? (JSON.parse(r.marks_json) as SessionMark[]) : [],
+  asked: r.asked ?? 0,
   mode: r.mode as SessionMode,
   agent: r.agent,
   externalId: r.external_id,
@@ -589,6 +617,8 @@ export interface SessionPatch {
   branch?: string;
   itemIds?: string[];
   worked?: SessionView["worked"];
+  marks?: SessionMark[];
+  asked?: number;
   externalId?: string | null;
   threadId?: string | null;
   worktree?: string | null;
@@ -957,13 +987,57 @@ export class CodeLinkStore {
   createSession(projectId: string, input: { id?: string; repoId: string; delivery?: number; branch: string; itemIds: string[]; mode: SessionMode; agent: string; threadId: string | null; device: string; externalId?: string | null; worktree?: string | null; requestedBy?: string | null; autoMerge?: boolean }): SessionView {
     const id = input.id ?? randomUUID();
     const now = Date.now();
+    // A ticket it starts on is its first mark: the conversation belongs to it from the first line.
+    const marks: SessionMark[] = input.itemIds.map((itemId) => ({ itemId, at: now }));
     this.db(projectId)
       .prepare(
-        `INSERT INTO plugin_code_link_sessions (id, project_id, repo_id, delivery, branch, item_ids_json, mode, agent, external_id, thread_id, worktree, requested_by, auto_merge, state, last_event_at, device, started_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)`
+        `INSERT INTO plugin_code_link_sessions (id, project_id, repo_id, delivery, branch, item_ids_json, marks_json, mode, agent, external_id, thread_id, worktree, requested_by, auto_merge, state, last_event_at, device, started_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)`
       )
-      .run(id, projectId, input.repoId, input.delivery ?? 1, input.branch, JSON.stringify(input.itemIds), input.mode, input.agent, input.externalId ?? null, input.threadId, input.worktree ?? null, input.requestedBy ?? null, input.autoMerge ? 1 : 0, now, input.device, now);
+      .run(id, projectId, input.repoId, input.delivery ?? 1, input.branch, JSON.stringify(input.itemIds), JSON.stringify(marks), input.mode, input.agent, input.externalId ?? null, input.threadId, input.worktree ?? null, input.requestedBy ?? null, input.autoMerge ? 1 : 0, now, input.device, now);
     return this.session(projectId, id)!;
+  }
+
+  /**
+   * One page of the sessions that ended and were worth keeping (a ticket, a title, or someone spoke to them), newest
+   * end first from `before`; `limit` rows at most. Only those rows are read, never the whole table.
+   */
+  endedPage(projectId: string, before: SessionCursor | null, limit: number): SessionView[] {
+    const kept = "state IN ('ended', 'lost') AND (item_ids_json <> '[]' OR worked_json <> '[]' OR title IS NOT NULL OR prompted = 1)";
+    const at = "COALESCE(ended_at, last_event_at, started_at)";
+    const rows = before
+      ? (this.db(projectId).prepare(`SELECT * FROM plugin_code_link_sessions WHERE project_id = ? AND ${kept} AND (${at} < ? OR (${at} = ? AND id < ?)) ORDER BY ${at} DESC, id DESC LIMIT ?`).all(projectId, before.at, before.at, before.id, limit) as SessionRow[])
+      : (this.db(projectId).prepare(`SELECT * FROM plugin_code_link_sessions WHERE project_id = ? AND ${kept} ORDER BY ${at} DESC, id DESC LIMIT ?`).all(projectId, limit) as SessionRow[]);
+    return rows.map(toSession);
+  }
+
+  /** The newest `limit` ended sessions whose title, branch, folder, agent or ticket (by id) holds `needle`, any case. */
+  endedMatching(projectId: string, needle: string, itemIds: string[], limit: number): SessionView[] {
+    const kept = "state IN ('ended', 'lost') AND (item_ids_json <> '[]' OR worked_json <> '[]' OR title IS NOT NULL OR prompted = 1)";
+    const like = `%${needle.replace(/[\\%_]/g, "\\$&")}%`;
+    const byTicket = itemIds.map(() => "item_ids_json LIKE ? OR worked_json LIKE ?").join(" OR ");
+    const ticketArgs = itemIds.flatMap((id) => [`%${JSON.stringify(id)}%`, `%${JSON.stringify(id)}%`]);
+    const rows = this.db(projectId)
+      .prepare(
+        `SELECT * FROM plugin_code_link_sessions WHERE project_id = ? AND ${kept}
+         AND (title LIKE ? ESCAPE '\\' OR branch LIKE ? ESCAPE '\\' OR cwd LIKE ? ESCAPE '\\' OR worktree LIKE ? ESCAPE '\\' OR agent LIKE ? ESCAPE '\\' OR summary LIKE ? ESCAPE '\\'${byTicket ? ` OR ${byTicket}` : ""})
+         ORDER BY COALESCE(ended_at, last_event_at, started_at) DESC, id DESC LIMIT ?`
+      )
+      .all(projectId, like, like, like, like, like, like, ...ticketArgs, limit) as SessionRow[];
+    return rows.map(toSession);
+  }
+
+  /** Of these conversations, the ones a session speaks for (it ran in them): a list of conversations leaves those to the session. */
+  threadsWithSessions(projectId: string, threadIds: string[]): Set<string> {
+    if (!threadIds.length) return new Set();
+    const rows = this.db(projectId).prepare(`SELECT DISTINCT thread_id FROM plugin_code_link_sessions WHERE project_id = ? AND thread_id IN (${threadIds.map(() => "?").join(",")})`).all(projectId, ...threadIds) as { thread_id: string }[];
+    return new Set(rows.map((r) => r.thread_id));
+  }
+
+  /** The links of these tickets, in one read: what a page of sessions says about pull requests and commits. */
+  linksOfItems(projectId: string, itemIds: string[]): CodeLinkView[] {
+    if (!itemIds.length) return [];
+    return (this.db(projectId).prepare(`SELECT * FROM plugin_code_link_links WHERE project_id = ? AND item_id IN (${itemIds.map(() => "?").join(",")}) ORDER BY item_id, delivery ASC, created_at ASC`).all(projectId, ...itemIds) as LinkRow[]).map(toLink);
   }
 
   patchSession(projectId: string, id: string, patch: SessionPatch): SessionView {
@@ -972,6 +1046,8 @@ export class CodeLinkStore {
       branch: "branch",
       itemIds: "item_ids_json",
       worked: "worked_json",
+      marks: "marks_json",
+      asked: "asked",
       externalId: "external_id",
       threadId: "thread_id",
       worktree: "worktree",
@@ -1001,7 +1077,7 @@ export class CodeLinkStore {
       const value = patch[field];
       if (value === undefined) continue;
       sets.push(`${column} = ?`);
-      values.push(field === "itemIds" || field === "worked" ? JSON.stringify(value) : field === "prompted" || field === "autoMerge" || field === "recordCut" ? (value ? 1 : 0) : value);
+      values.push(field === "itemIds" || field === "worked" || field === "marks" ? JSON.stringify(value) : field === "prompted" || field === "autoMerge" || field === "recordCut" ? (value ? 1 : 0) : value);
     }
     if (!sets.length) return this.session(projectId, id)!;
     values.push(id);

@@ -24,6 +24,7 @@ import { PROVENANCE, agoLabel, authorLabel, describeWrite, fieldLabel, ledgerMar
 import { useI18n } from "~/lib/i18n";
 import { useFields, useHistory, useRunCommand, useSections } from "~/lib/queries";
 import { requestStart } from "~/lib/codeLink";
+import { askPanel } from "~/lib/panelRequests";
 import { openExternal } from "~/lib/shell";
 import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace } from "./context";
@@ -75,6 +76,8 @@ export function PluginSections({ projectId, itemId, variant = "pane" }: { projec
         if (r.startDialog && requestStart(itemId, r.startDialog)) return;
         if (r.toast) toast({ body: r.toast });
         if (r.showThread) dock?.showThread(r.showThread);
+        // the ticket's ended session, looked back on in the panel with only this ticket's stretches open
+        if (r.review) { dock?.setAiOpen(true); askPanel({ kind: "review", sessionId: r.review.sessionId, itemId: r.review.itemId ?? itemId }); }
       }, onError: (e) => toast(errorSpec(e)) });
   return (
     <>

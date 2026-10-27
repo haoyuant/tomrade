@@ -53,6 +53,7 @@ import { titleBar } from "./titleBar";
 import { toast } from "./toast";
 import { shortcuts } from "./shortcuts";
 import { sessionBar } from "./sessionBar";
+import { review } from "./review";
 import { waitQueue } from "./waitQueue";
 import { tabs } from "./tabs";
 import { viewSettingsDialog } from "./viewSettingsDialog";
@@ -103,6 +104,7 @@ export const en = {
   toast: toast.en,
   shortcuts: shortcuts.en,
   sessionBar: sessionBar.en,
+  review: review.en,
   waitQueue: waitQueue.en,
   tabs: tabs.en,
   codeSessions: codeSessions.en,
@@ -182,6 +184,7 @@ export const zh: typeof en = {
   toast: toast.zh,
   shortcuts: shortcuts.zh,
   sessionBar: sessionBar.zh,
+  review: review.zh,
   waitQueue: waitQueue.zh,
   tabs: tabs.zh,
   codeSessions: codeSessions.zh,

@@ -99,6 +99,13 @@ export const keys = {
     list: ["acpRegistry", "list"] as const
   },
 
+  /** The look back's reads of records: an ended conversation does not change, so nothing invalidates these. */
+  review: {
+    said: (projectId: string, query: string) => ["review", projectId, "said", query] as const,
+    open: (projectId: string, ref: string) => ["review", projectId, "open", ref] as const,
+    raw: (projectId: string, sessionId: string) => ["review", projectId, "raw", sessionId] as const
+  },
+
   agentSetup: {
     managed: (engineId: string) => ["agentSetup", "managed", engineId] as const
   },
@@ -138,6 +145,8 @@ export const keys = {
     unlinked: (projectId: string) => ["codeLink", projectId, "unlinked"] as const,
     worktree: (projectId: string, itemId: string) => ["codeLink", projectId, "worktree", itemId] as const,
     terminalWindow: (projectId: string) => ["codeLink", projectId, "terminalWindow"] as const,
+    /** The look back's first page (`query` empty), or its search by title and ticket: read again as sessions change. */
+    review: (projectId: string, query: string) => ["codeLink", projectId, "review", query] as const,
     startDefaults: ["codeLink", "startDefaults"] as const,
     herdrStatus: ["codeLink", "herdrStatus"] as const,
     gh: ["codeLink", "gh"] as const,
