@@ -16,6 +16,7 @@ export type CommandId =
   | "sidebar"
   | "assistant"
   | "terminalWindow"
+  | "terminalWindowGlobal"
   | "sessionBar"
   | "settings"
   | "undo"
@@ -30,7 +31,7 @@ export type CommandId =
   | "readWrite"
   | "saveBody";
 
-export type CommandGroup = "anywhere" | "tabs" | "board" | "writing";
+export type CommandGroup = "anywhere" | "global" | "tabs" | "board" | "writing";
 
 export interface CommandSpec {
   id: CommandId;
@@ -53,6 +54,7 @@ export const COMMANDS: CommandSpec[] = [
   { id: "sidebar", group: "anywhere", label: "shortcuts.sidebar", defaults: DEFAULT_KEYS.sidebar },
   { id: "assistant", group: "anywhere", label: "shortcuts.assistant", defaults: DEFAULT_KEYS.assistant },
   { id: "terminalWindow", group: "anywhere", label: "shortcuts.terminalWindow", defaults: DEFAULT_KEYS.terminalWindow },
+  { id: "terminalWindowGlobal", group: "global", label: "shortcuts.terminalWindowGlobal", defaults: DEFAULT_KEYS.terminalWindowGlobal },
   { id: "sessionBar", group: "anywhere", label: "shortcuts.sessionBar", defaults: DEFAULT_KEYS.sessionBar },
   { id: "settings", group: "anywhere", label: "shortcuts.settings", defaults: DEFAULT_KEYS.settings },
   { id: "undo", group: "anywhere", label: "shortcuts.undo", defaults: DEFAULT_KEYS.undo },
@@ -79,6 +81,7 @@ export const FIXED: FixedKey[] = [
 
 export const GROUPS: { id: CommandGroup; title: MessageKey }[] = [
   { id: "anywhere", title: "shortcuts.anywhere" },
+  { id: "global", title: "shortcuts.global" },
   { id: "tabs", title: "shortcuts.tabs" },
   { id: "board", title: "shortcuts.board" },
   { id: "writing", title: "shortcuts.writing" }
@@ -133,7 +136,8 @@ function eventKey(e: Pick<KeyboardEvent, "key" | "code">): string {
   if (/^[a-zA-Z0-9]$/.test(k)) return k.toUpperCase();
   if (/^Key[A-Z]$/.test(e.code)) return e.code.slice(3);
   if (/^Digit[0-9]$/.test(e.code)) return e.code.slice(5);
-  if (k === " ") return "Space";
+  // ⌥Space on a Mac types a no-break space: the key is still Space
+  if (k === " " || e.code === "Space") return "Space";
   if (k === "Esc") return "Escape";
   return k;
 }
@@ -308,4 +312,19 @@ export function parseKeybindingsFile(text: string): { overrides: Overrides; skip
     overrides[id] = good;
   }
   return { overrides, skipped };
+}
+
+/** Chords other apps and the system already answer to: a global key there would take them from everyone. */
+const COMMON_GLOBAL = ["Mod+Space", "Mod+Tab", "Mod+Q", "Mod+W", "Mod+T", "Mod+Shift+T", "Mod+N", "Mod+C", "Mod+V", "Mod+X", "Mod+Z", "Mod+A", "Mod+S", "Mod+H", "Mod+M", "Mod+Shift+3", "Mod+Shift+4", "Mod+Shift+5", "Alt+Tab", "Alt+F4"];
+
+/**
+ * Why a chord cannot be a key for the whole computer, or null when it can: one with no modifier types,
+ * one led by Ctrl belongs to the shell (Ctrl+D, Ctrl+W, tmux's Ctrl+B — Ctrl is Mod off a Mac), and common
+ * ones would be taken from every other app.
+ */
+export function globalChordProblem(chord: string, mac = isMac): "bare" | "ctrl" | "common" | null {
+  const c = parseChord(chord);
+  if (!c.mod && !c.ctrl && !c.alt) return "bare";
+  if (c.ctrl || (!mac && c.mod && !c.alt)) return "ctrl";
+  return COMMON_GLOBAL.some((k) => sameChord(k, chord, mac)) ? "common" : null;
 }

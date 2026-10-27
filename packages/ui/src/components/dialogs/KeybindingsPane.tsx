@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AppSettings } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { Kbd, SectionHead, Tag } from "~/components/ui/atoms";
-import { invoke } from "~/lib/api";
+import { invoke, subscribe } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
 import {
   COMMANDS,
@@ -12,6 +13,7 @@ import {
   conflictsOf,
   exportKeybindings,
   formatChord,
+  globalChordProblem,
   isBare,
   parseKeybindingsFile,
   resolveKeymap,
@@ -37,6 +39,30 @@ interface Pending {
   at: number | null;
   chord: string;
   others: CommandId[];
+}
+
+declare module "@tomradex/ipc" {
+  interface Channels {
+    /** The key given to the whole computer, and whether the system let Tomrade have it. */
+    "keybindings.globalStatus": () => GlobalKeyStatus[];
+  }
+  interface Broadcasts {
+    "keybindings.globalStatusChanged": (status: GlobalKeyStatus[]) => void;
+  }
+}
+interface GlobalKeyStatus {
+  command: string;
+  chord: string;
+  registered: boolean;
+}
+
+const isGlobal = (id: CommandId) => COMMANDS.find((c) => c.id === id)?.group === "global";
+
+/** What the desktop shell made of the keys for the whole computer; empty in a browser tab. */
+function useGlobalKeyStatus(): GlobalKeyStatus[] {
+  const qc = useQueryClient();
+  useEffect(() => subscribe("keybindings.globalStatusChanged", (status) => qc.setQueryData(["keybindings", "globalStatus"], status)), [qc]);
+  return useQuery({ queryKey: ["keybindings", "globalStatus"], queryFn: () => invoke("keybindings.globalStatus").catch(() => []), staleTime: Infinity }).data ?? [];
 }
 
 const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((k, i) => k === b[i]);
@@ -69,6 +95,7 @@ export function KeybindingsPane({ settings, onSave, scopeTag }: { settings: AppS
   const [problem, setProblem] = useState<{ id: CommandId; text: string } | null>(null);
   const [query, setQuery] = useState("");
   const [confirmReset, setConfirmReset] = useState(false);
+  const globalStatus = useGlobalKeyStatus();
   const changed = Object.keys(overridesOf(map)).length > 0;
 
   const commit = (next: Keymap) =>
@@ -99,6 +126,11 @@ export function KeybindingsPane({ settings, onSave, scopeTag }: { settings: AppS
       setRecording(null);
       if (isBare(chord) && RESERVED_BARE.has(chord.replace(/^Shift\+/, ""))) {
         setProblem({ id: recording.id, text: t("shortcuts.reserved", { keys: formatChord(chord) }) });
+        return;
+      }
+      const globalProblem = isGlobal(recording.id) ? globalChordProblem(chord) : null;
+      if (globalProblem) {
+        setProblem({ id: recording.id, text: t(globalProblem === "bare" ? "shortcuts.globalBare" : globalProblem === "ctrl" ? "shortcuts.globalCtrl" : "shortcuts.globalCommon", { keys: formatChord(chord) }) });
         return;
       }
       setProblem(null);
@@ -200,6 +232,9 @@ export function KeybindingsPane({ settings, onSave, scopeTag }: { settings: AppS
                 const isChanged = !sameList(keys, c.defaults);
                 const recordingHere = recording?.id === c.id;
                 const pendingHere = pending?.id === c.id ? pending : null;
+                // one key for the whole computer is plenty, and each one the system refused is said
+                const room = c.group === "global" ? 1 : 4;
+                const refused = c.group === "global" ? globalStatus.find((g) => g.command === c.id && !g.registered) : undefined;
                 return (
                   <div key={c.id} className="keys-row" data-command={c.id} data-changed={isChanged || undefined}>
                     <div className="keys-label">
@@ -233,7 +268,7 @@ export function KeybindingsPane({ settings, onSave, scopeTag }: { settings: AppS
                           {t("shortcuts.record")} <span className="meta-txt">{t("shortcuts.recordHint")}</span>
                         </span>
                       ) : (
-                        keys.length < 4 && (
+                        keys.length < room && (
                           <button type="button" className="btn btn-ghost keys-add" data-testid="keys-add" onClick={() => { setPending(null); setProblem(null); setRecording({ id: c.id, at: null }); }}>
                             {keys.length ? <Icon name="i-plus" size={12} /> : t("shortcuts.addKeys")}
                           </button>
@@ -266,6 +301,12 @@ export function KeybindingsPane({ settings, onSave, scopeTag }: { settings: AppS
                         <button type="button" className="btn btn-ghost" onClick={() => setPending(null)}>
                           {t("common.cancel")}
                         </button>
+                      </div>
+                    )}
+                    {refused && keys.some((k) => sameChord(k, refused.chord)) && (
+                      <div className="keys-note" role="alert" data-testid="keys-global-taken">
+                        <Icon name="i-warn" size={13} />
+                        <span>{t("shortcuts.globalTaken", { keys: formatChord(refused.chord) })}</span>
                       </div>
                     )}
                     {problem?.id === c.id && (

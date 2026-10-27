@@ -1226,6 +1226,8 @@ export const zhHant: PartialMessages = {
     sidebar: "顯示或隱藏側邊欄",
     assistant: "顯示或隱藏助手",
     terminalWindow: "打開終端視窗，開著就拉到前面",
+    global: "在任何 app 裡",
+    terminalWindowGlobal: "在任何 app 裡呼出終端視窗，再按一次收回去",
     sessionBar: "助手的會話欄：一列點或卡片",
     settings: "設定",
     undo: "撤銷",
