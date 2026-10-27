@@ -61,6 +61,42 @@ app.whenReady().then(async () => {
     finish();
     await wait(() => js(`!document.querySelector('[data-testid="start-dialog"]')`));
     assert("启动完成后对话框关闭", true);
+
+    // ── 一点就开始：用上次的 agent 和地方，不用再选、不用再点确认 ──
+    ctx.codeLink.startDefaults = () => ({ mode: "run", engine: "ready" });
+    let quick = null;
+    ctx.codeLink.start = async (_projectId, _itemId, opts) => {
+      quick = opts;
+      return { ok: true, continued: false, threadId: null, sessionId: "s-quick", branch: "spr-1/slow-start", worktree: null, cwd: work, mode: opts.mode, command: "claude", launched: false, pane: null, engine: "ready" };
+    };
+    await js(`location.reload(); true`);
+    await sleep(500);
+    await js(`location.hash = '#/p/${project.id}/i/${item.id}'; true`);
+    await wait(() => js(`(document.querySelector('[data-testid="start-quick"]')?.textContent ?? '').includes('Ready')`));
+    assert("记得上次怎么开始时，主按钮写着用哪个 agent", (await js(`document.querySelector('[data-testid="start-quick"]').textContent`)).includes("开始 · Ready"));
+    assert("旁边的按钮仍打开完整的对话框", await js(`!!document.querySelector('[data-testid="start-ticket"][aria-label]')`));
+    await js(`document.querySelector('[data-testid="start-quick"]').click(); true`);
+    await wait(async () => quick !== null && (await js(`!document.querySelector('[data-testid="start-dialog"]')`)));
+    assert("一点就开始，用上次的 agent 和地方", quick.engine === "ready" && quick.mode === "run");
+
+    // ── 工单已有会话在做：先问去看它、跟它说一句、还是另开一个 ──
+    const shown = [];
+    ctx.codeLink.showSession = async (_projectId, sessionId) => (shown.push(sessionId), true);
+    const realDeliveries = ctx.codeLink.deliveries.bind(ctx.codeLink);
+    ctx.codeLink.deliveries = (projectId, itemId) => [{ id: "d1", projectId, itemId, sequence: 1, state: "active", startedAt: Date.now(), completedAt: null, updatedAt: Date.now(), bases: {} }];
+    ctx.codeLink.sessionsOf = (projectId) => [{ id: "s-live", projectId, repoId: "r", delivery: 1, branch: "spr-1/slow-start", itemIds: [item.id], worked: [], mode: "terminal", agent: "ready", externalId: null, threadId: null, worktree: null, herdrPane: "w1:p1", terminal: null, title: null, cwd: null, transcript: null, prompted: true, withoutTicket: null, recordSavedAt: null, recordCut: false, state: "running", lastEventAt: Date.now(), lastToolAt: null, lastCommitAt: null, summary: null, activity: "Bash · pnpm test", blocked: null, requestedBy: null, autoMerge: false, device: "here", startedAt: Date.now(), endedAt: null }];
+    await js(`location.reload(); true`);
+    await sleep(500);
+    await js(`location.hash = '#/p/${project.id}/i/${item.id}'; true`);
+    await wait(() => js(`(document.querySelector('[data-testid="start-quick"]')?.textContent ?? '').includes('继续')`));
+    await js(`(() => { const b = document.querySelector('[data-testid="start-quick"]'); for (const type of ['pointerdown','mousedown','pointerup','mouseup','click']) b.dispatchEvent(new (type.startsWith('pointer') ? PointerEvent : MouseEvent)(type, { bubbles: true, cancelable: true, button: 0 })); return true; })()`);
+    await wait(() => js(`!!document.querySelector('.menu.is-floating')`));
+    const menu = await js(`document.querySelector('.menu.is-floating').textContent`);
+    assert("会话还在做时，开始先问：去看它 / 另开一个，并说它在做什么", menu.includes("Ready 已经在做这张了") && menu.includes("去看它") && menu.includes("另开一个") && menu.includes("Bash · pnpm test"));
+    await js(`[...document.querySelectorAll('.menu.is-floating .menu-row')].find((r) => r.textContent.includes('去看它')).click(); true`);
+    await wait(async () => shown.length > 0);
+    assert("去看它：在终端窗口里打开那个会话", shown[0] === "s-live");
+    ctx.codeLink.deliveries = realDeliveries;
     console.log(`界面截图：${work}`);
     win.destroy();
     await ctx.fiber.dispose();

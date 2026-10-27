@@ -1,6 +1,7 @@
 export const sessionBar = {
   en: {
     label: "Sessions",
+    new: "new",
     showCards: "Show sessions as cards (⌘\\)",
     showRail: "Show sessions as dots (⌘\\)",
     waitingCount: "{{n}} waiting",
@@ -24,6 +25,7 @@ export const sessionBar = {
   },
   zh: {
     label: "会话",
+    new: "新",
     showCards: "展开成卡片（⌘\\）",
     showRail: "收成一列点（⌘\\）",
     waitingCount: "等你 {{n}}",

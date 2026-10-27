@@ -604,6 +604,8 @@ const run = async () => {
   await shot("session-bar-cards.png");
   const card = barSeen?.cards.find(([, text]) => /Record pane output/.test(text));
   check("a card says the ticket, where it runs and what it waits on", card?.[0] === "wait" && /AL-\d+ Record pane output/.test(card[1]) && /iTerm/.test(card[1]) && /needs your approval/.test(card[1]), card);
+  check("a session started this minute says it is new", /new/.test(card?.[1] ?? ""), card);
+  check("an ended one never does", !barSeen?.cards.some(([status, text]) => status === "done" && /new/.test(text)), barSeen?.cards);
   check("an ended card carries its outcome", barSeen?.cards.some(([status, text]) => status === "done" && /PR #9 merged/.test(text)), barSeen?.cards);
   await press(`[...document.querySelectorAll('.ai .sbar-card')].find((n) => /Record pane output/.test(n.textContent))`);
   await sleep(500);

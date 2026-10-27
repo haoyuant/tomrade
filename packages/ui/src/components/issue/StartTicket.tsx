@@ -19,6 +19,7 @@ import { Icon } from "~/components/icons";
 import { useAgentDock } from "~/components/chrome/ProjectShell";
 import { useHerdrHint } from "~/components/setup/HerdrRecommend";
 import { Dialog, DialogBody, DialogClose, DialogFoot, DialogHead } from "~/components/ui/dialog";
+import { Menu, MenuActionItem, MenuHead } from "~/components/ui/menu";
 import { PickSelect } from "~/components/ui/pick-select";
 import { isFullAccess, permissionHint, permissionLabel } from "~/lib/codeLink";
 
@@ -45,7 +46,11 @@ export function StartTicket(props: StartTicketProps) {
   const [open, setOpen] = useState(false);
   // asked to open from elsewhere: in that mode, starting at once so what stopped it shows with its fix
   const [requested, setRequested] = useState<"run" | "terminal" | null>(null);
+  // a start with last time's choices, the dialog only showing its progress and anything that stops it
+  const [quick, setQuick] = useState(false);
   const [task, setTask] = useState<string | undefined>(undefined);
+  const { showThread } = useAgentDock();
+  const defaults = useStartDefaults();
   useEffect(
     () =>
       onStartRequest(item.id, (mode, offered) => {
@@ -63,19 +68,67 @@ export function StartTicket(props: StartTicketProps) {
   useHintToast("hint.start", startable && !!engines.data?.some((e) => e.ok && e.capabilities.some((c) => c === "code" || c === "general")), "onboarding.startHint");
   if (!startable) return null;
   const active = deliveries.data?.find((delivery) => delivery.state === "active");
-  const hasSession = !!active && !!sessions.data?.some((session) => session.delivery === active.sequence);
+  const ofDelivery = (sessions.data ?? []).filter((session) => !!active && session.delivery === active.sequence);
+  const hasSession = ofDelivery.length > 0;
+  // A session still at work on it: Start first asks whether to look at it, talk to it, or start another beside it.
+  const live = ofDelivery.filter((session) => session.state !== "ended" && session.state !== "lost").sort((a, b) => b.startedAt - a.startedAt)[0];
+  // One click goes the way this ticket — else this machine — last started; a first start chooses in the dialog.
+  const lastAgent = ofDelivery.sort((a, b) => b.startedAt - a.startedAt)[0]?.agent ?? defaults.data?.engine ?? null;
+  const quickEngine = lastAgent ? findEngine(engines.data, lastAgent) : undefined;
+  const openDialog = (asQuick: boolean) => {
+    setQuick(asQuick);
+    setOpen(true);
+  };
+  const look = () => {
+    if (!live) return;
+    if (live.herdrPane) void invoke("codeLink.showSession", projectId, live.id).catch(logQuietly("codeLink.showSession"));
+    else if (live.threadId) showThread(live.threadId);
+  };
+  const liveWho = live ? (findEngine(engines.data, live.agent)?.title ?? live.agent) : "";
   return (
     <>
-      <button type="button" className={cn("btn btn-primary", className)} data-testid="start-ticket" onClick={() => setOpen(true)}>
-        {t(hasSession ? "codeLink.continue" : "codeLink.start")}
-      </button>
+      <span className={cn("split-btn", className)}>
+        {live ? (
+          <Menu
+            label={t("codeLink.liveTitle", { agent: liveWho })}
+            trigger={
+              <button type="button" className="btn btn-primary" data-testid="start-quick">
+                {t("codeLink.continueWith", { agent: liveWho })}
+                <Icon name="i-chevdown" size={11} />
+              </button>
+            }
+          >
+            <MenuHead title={t("codeLink.liveTitle", { agent: liveWho })} />
+            {(live.summary || live.activity) && <p className="meta-txt dense menu-note" data-testid="start-live-said">{live.activity ?? live.summary}</p>}
+            <MenuActionItem icon={<Icon name="i-eye" size={13} />} name={t("codeLink.liveLook")} onSelect={look} />
+            {live.threadId && !live.herdrPane && <MenuActionItem icon={<Icon name="i-send" size={13} />} name={t("codeLink.liveSay")} onSelect={() => showThread(live.threadId!)} />}
+            <MenuActionItem icon={<Icon name="i-plus" size={13} />} name={t("codeLink.liveAnother")} onSelect={() => openDialog(false)} />
+          </Menu>
+        ) : quickEngine ? (
+          <button type="button" className="btn btn-primary" data-testid="start-quick" title={t("codeLink.quickHint")} onClick={() => openDialog(true)}>
+            {t(hasSession ? "codeLink.continueWith" : "codeLink.startWith", { agent: quickEngine.title })}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className={cn("btn btn-primary", (live || quickEngine) && "split-more")}
+          data-testid="start-ticket"
+          title={live || quickEngine ? t("codeLink.chooseHow") : undefined}
+          aria-label={live || quickEngine ? t("codeLink.chooseHow") : undefined}
+          onClick={() => openDialog(false)}
+        >
+          {live || quickEngine ? <Icon name="i-sliders" size={13} /> : t(hasSession ? "codeLink.continue" : "codeLink.start")}
+        </button>
+      </span>
       {open && (
         <StartTicketDialog
           {...props}
           requested={requested}
+          quick={quick}
           task={task}
           onClose={() => {
             setOpen(false);
+            setQuick(false);
             setRequested(null);
             setTask(undefined);
           }}
@@ -92,8 +145,9 @@ function StartTicketDialog({
   onOpenRepositories,
   onClose,
   requested,
+  quick,
   task
-}: StartTicketProps & { onClose: () => void; requested?: "run" | "terminal" | null; task?: string }) {
+}: StartTicketProps & { onClose: () => void; requested?: "run" | "terminal" | null; quick?: boolean; task?: string }) {
   const { t } = useI18n();
   const toast = useToast();
   const qc = useQueryClient();
@@ -132,7 +186,8 @@ function StartTicketDialog({
   const rememberedStart = defaults.data ?? null;
   const [chosenMode, setChosenMode] = useState<StartOptions["mode"] | null>(requested ?? null);
   // Coding work goes to Tomrade's own Terminal window when it can show it, unless the agent picked last has no terminal.
-  const terminalWindow = useTerminalWindow(projectId).data === true;
+  const terminalWindowQuery = useTerminalWindow(projectId);
+  const terminalWindow = terminalWindowQuery.data === true;
   const agentInTerminal = useMemo(() => {
     const code = (engines.data ?? []).filter((engine) => engine.capabilities.includes("code"));
     const last = findEngine(code, latest?.agent ?? thread?.engine ?? rememberedStart?.engine ?? null);
@@ -261,6 +316,15 @@ function StartTicketDialog({
       }
     );
   };
+
+  // One click: once everything the choices rest on is known, start with them — unless something needs the person first.
+  const quickTried = useRef(false);
+  const known = !!engines.data && !!settings.data && defaults.isSuccess && sessions.isSuccess && deliveries.isSuccess && threads.isSuccess && terminalWindowQuery.isSuccess && (!threadId || !!threadDetail) && !recommending;
+  useEffect(() => {
+    if (!quick || quickTried.current || !known) return;
+    quickTried.current = true;
+    if (ready && !waitsOn.length && !asked) submit();
+  });
 
   // opened because a start elsewhere stopped: try once more here, once the agents are known, so the problem shows with its fix
   const retried = useRef(false);

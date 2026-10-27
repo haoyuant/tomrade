@@ -44,6 +44,9 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engine
   const title = (r: BarRow) => r.title || t("agentPanel.newThread");
   const said = (r: BarRow) => (r.wait ? r.wait.text || t(ATTENTION_KEY[r.wait.kind]) : r.status === "done" ? r.outcome : r.activity);
   const waiting = rows.filter((r) => r.status === "wait").length;
+  // just started: it lands at the top of the running ones, and says so for its first minute
+  const now = Date.now();
+  const isNew = (r: BarRow) => r.status !== "done" && now - r.startedAt < 60_000;
   const count = (f: Filter) => (f === "all" ? rows.length : rows.filter((r) => r.status === f).length);
 
   if (mode === "rail") {
@@ -68,6 +71,7 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engine
         <span className="sbar-dot-face">
           {r.ticket ? r.ticket.replace(/^.*-/, "") : (Array.from(r.title.trim())[0] ?? "·").toUpperCase()}
           <StatusMark status={r.status} size={9} />
+          {isNew(r) && <span className="sbar-new-badge">{t("sessionBar.new")}</span>}
         </span>
         <span className="sbar-dot-where">{r.status === "done" ? statusWord("done") : where(r)}</span>
       </button>
@@ -130,6 +134,7 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engine
             <span className="sbar-card-title">
               <StatusMark status={r.status} />
               <span>{r.ticket ? `${r.ticket} ${title(r)}` : title(r)}</span>
+              {isNew(r) && <span className="sbar-new-badge">{t("sessionBar.new")}</span>}
             </span>
             <span className="meta-txt dense">{[agentName(r), where(r), r.status === "idle" ? timeAgo(r.at) : statusWord(r.status)].filter(Boolean).join(" · ")}</span>
             {said(r) && <span className={r.status === "wait" ? "sbar-card-wait" : r.status === "done" ? "sbar-card-outcome" : "sbar-card-said"}>{said(r)}</span>}

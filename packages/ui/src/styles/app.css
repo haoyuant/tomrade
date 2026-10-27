@@ -1060,6 +1060,10 @@ strong { font-weight: var(--font-weight-medium); }
 }
 .btn-primary { background: var(--accent); color: var(--accent-on); box-shadow: var(--elev-ring-accent); }
 .btn-primary:hover { background: var(--accent-active); color: var(--accent-on); box-shadow: 0 0 0 1px var(--accent-active); }
+/* Start: one click the way it last went, and beside it the dialog that chooses */
+.split-btn { display: inline-flex; align-items: stretch; }
+.split-btn > .btn:not(:last-child) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.split-btn > .split-more { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: 1px; padding-left: 8px; padding-right: 8px; }
 .btn-secondary { background: var(--surface-warm); color: var(--fg-2); box-shadow: var(--elev-ring); }
 .btn-secondary:hover { background: var(--surface); color: var(--fg); box-shadow: 0 0 0 1px var(--meta); }
 .btn-ghost { background: transparent; color: var(--muted); }
@@ -1571,6 +1575,8 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 .sbar-dot[data-status="run"] .sbar-dot-face .sbar-mark, .sbar-dot[data-status="done"] .sbar-dot-face .sbar-mark { display: none; }
 .sbar-dot-where { font-size: 10px; color: var(--meta); max-width: 52px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sbar-new .sbar-dot-face { border-style: solid; color: var(--muted); }
+.sbar-new-badge { font-size: 9px; line-height: 14px; padding: 0 5px; border-radius: 999px; background: var(--accent-light); color: var(--accent-on); flex-shrink: 0; }
+.sbar-dot-face .sbar-new-badge { position: absolute; top: -4px; right: -8px; }
 .sbar-rule { width: 32px; border-top: 1px solid var(--border); margin: 4px 0; flex-shrink: 0; }
 .sbar-peek { position: absolute; right: calc(100% + 6px); width: 280px; z-index: 20; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg, 10px); box-shadow: var(--elev-raised); pointer-events: none; font-size: var(--text-sm); }
 .sbar-peek[data-status="wait"] { border-color: var(--warn); }
