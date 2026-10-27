@@ -1,0 +1,9 @@
+› run the tests
+
+• I'll run the test suite.
+
+  Allow command?
+
+  $ pnpm test
+
+  ▌ Yes   Always   No, provide feedback

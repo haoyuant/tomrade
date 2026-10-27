@@ -1,0 +1,15 @@
+⏺ I need one decision before I go on.
+
+────────────────────────────────────────────────────────────────────────
+ ☐ Approach
+
+ Which approach should I take?
+
+ ❯ 1. Rewrite the parser
+     Start from the grammar.
+   2. Patch the tokenizer
+     Smallest change.
+   3. Type something.
+
+────────────────────────────────────────────────────────────────────────
+ Enter to select · ↑/↓ to navigate · Esc to cancel

@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import type net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -51,6 +52,15 @@ class FakePty implements Pty {
     this.exits.clear();
   }
 }
+
+/** One of the agent screens (fixtures/agent-screens), painted over whatever the pane showed. */
+const paint = (pty: FakePty, name: string) => pty.print(`\x1b[H\x1b[2J${fs.readFileSync(path.join(__dirname, "fixtures/agent-screens", name), "utf8").replace(/\n/g, "\r\n")}`);
+
+/** Claude Code running in the pane, as Windows' process table shows it. */
+const claudeTable = async (): Promise<ProcessRow[]> => [
+  { pid: 4242, ppid: 1, created: 1, name: "pwsh.exe", cmdline: "pwsh" },
+  { pid: 4300, ppid: 4242, created: 2, name: "claude.exe", cmdline: "claude" }
+];
 
 let n = 0;
 const pipeName = () => (process.platform === "win32" ? `\\\\.\\pipe\\tomrade-pty-test-${process.pid}-${++n}` : path.join(os.tmpdir(), `tomrade-pty-test-${process.pid}-${++n}.sock`));
@@ -337,6 +347,37 @@ describe("what runs in the host's panes", () => {
     expect((await hostCall<{ pane: PaneInfo }>(pipe, "pane.get", { pane_id })).pane.agent).toBe("claude");
   });
 
+  it("reads the agent in a pane off its screen with herdr's manifests, and tells whoever follows it as that changes", async () => {
+    const { host, pipe } = await hostOn({ scan: claudeTable, scanTiming: { minMs: 0, staleMs: 60_000, soonMs: 0 }, readTiming: { readMs: 20, idleHoldMs: 0 } });
+    const { pane_id } = await hostCall<{ pane_id: string }>(pipe, "pane.launch", { cwd: os.tmpdir(), cols: 100, rows: 30 });
+    await host.settled();
+    const told: Record<string, unknown>[] = [];
+    let subscribed = false;
+    const stream = hostStream(pipe, [{ type: "pane.agent_status_changed", pane_id }], (e) => told.push(e.data), () => undefined, () => (subscribed = true));
+    closers.push(() => stream.close());
+    await vi.waitFor(() => expect(subscribed).toBe(true));
+    const pty = FakePty.last!;
+    paint(pty, "claude-blocked-bash.txt");
+    await vi.waitFor(() => expect(told.at(-1)).toEqual({ pane_id, agent_status: "blocked", agent: "claude" }));
+    paint(pty, "claude-working.txt");
+    await vi.waitFor(() => expect(told.at(-1)).toEqual({ pane_id, agent_status: "working", agent: "claude" }));
+    paint(pty, "claude-idle.txt");
+    await vi.waitFor(() => expect(told.at(-1)).toEqual({ pane_id, agent_status: "idle", agent: "claude" }));
+    // Scrolled up, the view is not what is read: the live bottom is.
+    await hostCall(pipe, "pane.scroll", { pane_id, offset_from_bottom: 5 });
+    const { pane } = await hostCall<{ pane: PaneInfo }>(pipe, "pane.get", { pane_id });
+    expect([pane.agent, pane.agent_status]).toEqual(["claude", "idle"]);
+    expect(told.map((t) => t.agent_status)).toEqual(["blocked", "working", "idle"]);
+  });
+
+  it("reads a pane nobody follows only when it is asked about", async () => {
+    const { host, pipe } = await hostOn({ scan: claudeTable, scanTiming: { minMs: 0, staleMs: 60_000, soonMs: 0 }, readTiming: { readMs: 0, idleHoldMs: 0 } });
+    const { pane_id } = await hostCall<{ pane_id: string }>(pipe, "pane.launch", { cwd: os.tmpdir(), cols: 100, rows: 30 });
+    await host.settled();
+    paint(FakePty.last!, "claude-blocked-question.txt");
+    await vi.waitFor(async () => expect((await hostCall<{ panes: PaneInfo[] }>(pipe, "pane.list")).panes).toEqual([expect.objectContaining({ pane_id, agent: "claude", agent_status: "blocked" })]));
+  });
+
   it("keeps scans apart by the minimum interval", async () => {
     const scan = vi.fn(async () => table());
     const { host, pipe } = await hostOn({ scan, scanTiming: { minMs: 60_000, staleMs: 0, soonMs: 0 } });
@@ -426,6 +467,34 @@ describe("ctx.terminals over the host", () => {
     await vi.waitFor(async () => expect(await terminals.panes()).toEqual([{ paneId, agent: "claude", agentSession: null, status: "working", title: "Fixing the parser" }]));
     expect(await terminals.processes(paneId)).toEqual([{ cmdline: "node C:\\npm\\node_modules\\@anthropic-ai\\claude-code\\cli.js" }]);
     expect(await terminals.processes("p0-9")).toEqual([]);
+  });
+
+  it("tells a watched pane's agent status as the host reads it off the screen, once for each change", async () => {
+    const { host, pipe } = await hostOn({ scan: claudeTable, scanTiming: { minMs: 0, staleMs: 60_000, soonMs: 0 }, readTiming: { readMs: 20, idleHoldMs: 0 } });
+    const terminals = await service(pipe);
+    const { paneId } = (await terminals.launch({ cwd: os.tmpdir() }))!;
+    await host.settled();
+    const pty = FakePty.last!;
+    paint(pty, "claude-blocked-question.txt");
+    await vi.waitFor(async () => expect(await terminals.readTail(paneId, 40)).toContain("Which approach"));
+    const events: TerminalPaneEvent[] = [];
+    closers.push(terminals.onPane((e) => events.push(e)));
+    // Watched once the agent already asks: it is told so at once, not at the next change.
+    const release = terminals.watch(paneId);
+    await vi.waitFor(() => expect(events).toEqual([{ kind: "status", paneId, status: "blocked", agent: "claude" }]));
+    paint(pty, "claude-working.txt");
+    await vi.waitFor(() => expect(events.at(-1)).toEqual({ kind: "status", paneId, status: "working", agent: "claude" }));
+    paint(pty, "claude-blocked-bash.txt");
+    await vi.waitFor(() => expect(events.at(-1)).toEqual({ kind: "status", paneId, status: "blocked", agent: "claude" }));
+    paint(pty, "claude-blocked-edit.txt");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(events.map((e) => e.kind === "status" && e.status)).toEqual(["blocked", "working", "blocked"]);
+    expect(await terminals.panes()).toEqual([{ paneId, agent: "claude", agentSession: null, status: "blocked", title: null }]);
+    // Let go, the pane is heard of no more.
+    release();
+    paint(pty, "claude-idle.txt");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(events).toHaveLength(3);
   });
 
   it("reads a host that names no agents, as an older one, as before", async () => {

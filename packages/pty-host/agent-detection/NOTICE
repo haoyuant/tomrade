@@ -1,0 +1,5 @@
+Agent detection manifests from herdr (https://github.com/herdrdev/herdr),
+licensed under the Apache License, Version 2.0 (see LICENSE in this folder).
+
+Copied unmodified from distribution/agent-detection/ at commit 2713feb56e9c9db33992db0a262c68f7426d46dd.
+Refresh with: pnpm --filter @tomradex/pty-host refresh-agent-detection [<commit>]

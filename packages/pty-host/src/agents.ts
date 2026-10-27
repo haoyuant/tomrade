@@ -114,7 +114,7 @@ export function agentIn(root: Pick<ProcessRow, "name" | "cmdline"> | undefined, 
 /** Claude Code's busy spinner leading its title (herdr's `osc_title_working`, claude.toml): braille, then 2.1.228's half circles. */
 const CLAUDE_WORKING_TITLE = /^[\u2800-\u28FF\u25D0-\u25D3] /u;
 
-/** What the title says of the agent: only Claude's spinner reads as working; idle and blocked need the screen. */
+/** What the title alone says of an agent herdr has no detection manifest for: only Claude's spinner reads as working. */
 export function titleStatus(agent: string | null, title: string | null): TerminalStatus {
   return agent === "claude" && title && CLAUDE_WORKING_TITLE.test(title) ? "working" : "unknown";
 }
