@@ -1143,7 +1143,8 @@ const run = async () => {
   ctx.codeLink.defaults.write({ mode: "terminal", engine: "cli" });
   ctx.ipc.send("codeLink.startDefaultsChanged");
   const cliChat = await claimChat("Claim cli chat");
-  await $(`document.dispatchEvent(new Event('visibilitychange'));true`);
+  // the engine list was read before this check's CLI stand-in came: the window coming back to the front reads it again
+  await $(`window.dispatchEvent(new Event('visibilitychange'));window.dispatchEvent(new Event('focus'));true`);
   check("the third way names the CLI it would hand over to", await until(async () => (await claimCard())?.engine === "cli", 80), await claimCard());
   const launchedBefore = launches.length;
   await press(`document.querySelector('[data-testid="claim-cli"]')`);
