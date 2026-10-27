@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import type { Context } from "cordis";
-import type { Agent, ThreadSummary } from "@tomradex/agent";
+import { handoffRecap, type Agent, type ThreadSummary } from "@tomradex/agent";
 import { agentWorkspace } from "@tomradex/engine-kit";
 import type { HerdrBridge } from "./herdr-bridge.js";
 import type { Sessions } from "./sessions.js";
@@ -36,6 +36,15 @@ export interface HandoffHost {
 
 /** What the CLI is told first when it takes a free conversation up in a terminal; a ticket's gets Start's continue brief. */
 export const HANDOFF_PROMPT = "Tomrade: this conversation continues here, in a terminal, from Tomrade's assistant panel. Its session was resumed, so everything said so far is yours, and Tomrade's tools and hooks are connected again. Carry on with what was asked last; if nothing is pending, say in one line that you are here and wait for the person.\n";
+
+/** What a CLI agent is told first when it takes up a built-in assistant's conversation: where it came from and what was said. */
+export const handedPrompt = (title: string, recap: string): string =>
+  [
+    `Tomrade: this conversation was handed to you from Tomrade's built-in assistant — the conversation “${title || "untitled"}” — to write its code here, in a terminal. What was said there so far:`,
+    recap || "(nothing was said there yet)",
+    "",
+    "Carry on with the code changes it turned to: make them, run the relevant tests, and end with a short summary of what you changed and what the tests said."
+  ].join("\n");
 
 const OPEN = new Set(["backlog", "todo", "doing", "verifying"]);
 const live = (s: SessionView): boolean => s.state !== "ended" && s.state !== "lost";
@@ -147,6 +156,50 @@ export class Handoff {
     if (!result.ok) return { ok: false, message: result.message };
     const pane = result.pane ?? null;
     this.host.say(projectId, threadId, w("handoffToTerminal", { agent: engine.title, pane: pane ? w("handoffPane", { pane }) : "" }));
+    return { ok: true, sessionId: result.sessionId, pane, launched: result.launched, ...(result.warnings?.length ? { warnings: result.warnings } : {}) };
+  }
+
+  /**
+   * A built-in assistant's conversation handed to a CLI agent in a terminal cell, with what it came to: its turn here
+   * stopped, the thread switched to that agent, which starts afresh with the recap — on the ticket's branch through
+   * Start when its workstream has a repository, else in the folder the thread's runs use. Back to the panel as any
+   * terminal conversation comes back.
+   */
+  async toCli(projectId: string, threadId: string, engineId: string): Promise<HandoffResult> {
+    const agent = this.agent();
+    const thread = agent?.store.thread(projectId, threadId);
+    if (!agent || !thread) return { ok: false, message: `unknown thread ${threadId}` };
+    const w = this.host.words();
+    if (this.view(projectId, threadId).where === "terminal") return { ok: false, message: w("handoffAlreadyThere") };
+    const engine = agent.codeEngines().find((e) => e.id === agent.answering(engineId));
+    if (!engine || engine.terminal?.mode === "none") return { ok: false, message: w("handoffBuiltin", { agent: engine?.title ?? engineId }) };
+    if (!this.host.ctx.get("mcp")?.url) return { ok: false, message: this.reasonText("noMcp", engine.title) };
+    for (const active of agent.activeRuns().filter((a) => a.thread.id === threadId)) agent.cancel(active.run.id);
+    const deadline = Date.now() + 15_000;
+    while (agent.activeRuns().some((a) => a.thread.id === threadId)) {
+      if (Date.now() > deadline) return { ok: false, message: w("handoffRunning") };
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    const prompt = handedPrompt(thread.title, handoffRecap(agent.store.messages(projectId, threadId)));
+    agent.releaseRuntime(projectId, threadId);
+    const board = thread.itemId ? this.host.ctx.boards.get(projectId, this.host.ctx.items.get(projectId, thread.itemId)?.boardId ?? "") : null;
+    let result;
+    if (thread.itemId && board?.repoId) {
+      const headless = this.host.store.sessions(projectId, { live: true }).filter((s) => s.threadId === threadId && s.mode === "headless");
+      for (const s of headless) this.host.sessions.end(projectId, s.id, "ended", true, "the conversation went to a terminal");
+      result = await this.host.starter.start(projectId, thread.itemId, { mode: "terminal", threadId, engine: engine.id, message: prompt });
+      if (!result.ok && headless[0]) this.ensureHeadlessSession(projectId, thread, headless[0], agent.answering(thread.engine));
+    } else {
+      if (agent.answering(thread.engine) !== engine.id) agent.setEngine(projectId, threadId, engine.id);
+      const where = await agent.workdir(projectId, threadId, { create: true });
+      if (where.problem) return { ok: false, message: where.problem };
+      const cwd = where.cwd ?? agentWorkspace(projectId, threadId);
+      fs.mkdirSync(cwd, { recursive: true, mode: 0o700 });
+      result = await this.host.starter.startThread(projectId, agent.store.thread(projectId, threadId)!, { cwd, externalId: null, prompt });
+    }
+    if (!result.ok) return { ok: false, message: result.message };
+    const pane = result.pane ?? null;
+    this.host.say(projectId, threadId, w("handoffHanded", { agent: engine.title, pane: pane ? w("handoffPane", { pane }) : "" }));
     return { ok: true, sessionId: result.sessionId, pane, launched: result.launched, ...(result.warnings?.length ? { warnings: result.warnings } : {}) };
   }
 

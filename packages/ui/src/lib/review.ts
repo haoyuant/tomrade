@@ -47,10 +47,14 @@ export function outcomeParts(row: Pick<ReviewRow, "pr" | "commits" | "asked">, s
   ].filter((part): part is string => !!part);
 }
 
-/** The outcome in one line: what its code came to, else what the session last said. */
+/**
+ * The outcome in one line, the same wherever a session is listed: what its code came to (with how often it asked),
+ * else what the session last said, else how often it asked.
+ */
 export function outcomeLine(row: Pick<ReviewRow, "pr" | "commits" | "asked" | "said">, say: OutcomeWords): string | null {
   const parts = outcomeParts(row, say);
-  return parts.length ? parts.join(" · ") : row.said;
+  if (row.pr || row.commits > 0) return parts.join(" · ");
+  return row.said || parts.join(" · ") || null;
 }
 
 /** The tickets a session did besides the one it goes by. */
@@ -95,4 +99,17 @@ export function landingSegment(segments: Pick<ReviewSegment, "itemId">[], itemId
   if (itemId === null) return null;
   for (let i = segments.length - 1; i >= 0; i--) if (segments[i]!.itemId === itemId) return i;
   return null;
+}
+
+/** Each conversation opened under another right after it, set in by one; the rest keep their order. A child whose parent is not among the rows stands on its own. */
+export function nestRows<T extends { id: string; parentId?: string | null }>(rows: T[]): (T & { depth: 0 | 1 })[] {
+  const ids = new Set(rows.map((r) => r.id));
+  const nested = (r: T) => !!r.parentId && r.parentId !== r.id && ids.has(r.parentId);
+  const out: (T & { depth: 0 | 1 })[] = [];
+  for (const r of rows) {
+    if (nested(r)) continue;
+    out.push({ ...r, depth: 0 });
+    for (const child of rows) if (child.parentId === r.id && nested(child)) out.push({ ...child, depth: 1 });
+  }
+  return out;
 }

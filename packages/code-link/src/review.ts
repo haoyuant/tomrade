@@ -1,8 +1,10 @@
 import type { Context } from "cordis";
+import type { ItemStatus } from "@tomradex/domain";
 import { PANEL_SURFACES, type RecordLine, type RecordRead, type ThreadMessage, type ThreadSummary } from "@tomradex/agent";
 import { clipDetail, clipLine, toolLine } from "@tomradex/engine-kit";
 import type { PrState } from "./rules.js";
 import type { CodeLinkStore, CodeLinkView, SessionCursor, SessionMark, SessionView } from "./store.js";
+import { cutFrom } from "./segments.js";
 import { resumeCommand } from "./titles.js";
 
 /** How many rows one page of the look-back list holds. */
@@ -34,6 +36,8 @@ export interface ReviewTicket {
   itemId: string;
   key: string;
   title: string;
+  /** Where the ticket stands now. */
+  status: ItemStatus;
   pr: ReviewPr | null;
   commits: number;
 }
@@ -65,11 +69,18 @@ export interface ReviewRow {
   said: string | null;
   where: "pane" | "outside" | "panel";
   threadId: string | null;
+  /** The conversation this one wrote code in the background for; the list sets it in under that one. */
+  parentId?: string | null;
   /** Its agent can take the conversation up again by its id, in a new terminal. */
   resumable: boolean;
+  /** Ended on no ticket, with its agent's session id and the folder it ran in: it can go on in the background, as itself. */
+  continuable?: boolean;
   startedAt: number;
   endedAt: number;
 }
+
+/** What came of an ended session, as every list says it: its pull request, its commits, how often it asked, its last word. */
+export type SessionOutcome = Pick<ReviewRow, "pr" | "commits" | "asked" | "said">;
 
 /** Where a page stopped in each source the list reads; null in one once it ran dry. */
 export type ReviewCursor = Record<ReviewSource, SessionCursor | null>;
@@ -102,39 +113,44 @@ export interface ReviewView {
   raw: boolean;
 }
 
-/** The tools an outside agent claims a ticket with: `claim_ticket`, however its MCP client prefixes the name. */
-const CLAIM_LINE = /(?:^|[^a-z])claim_ticket\b[^·]*·\s*([A-Z][A-Z0-9]*-\d+)/i;
+
+
+/** A conversation cut where the session took a ticket on; see `cutFrom`. */
+export function cutByTicket(lines: RecordLine[], marks: SessionMark[], itemOfKey: (key: string) => string | null): { itemId: string | null; lines: RecordLine[] }[] {
+  return cutFrom(lines, marks, itemOfKey).cuts;
+}
+
+/** The tools that change a file, across the agents' records. */
+const FILE_TOOL = /^(?:write|edit|multi_?edit|apply_?patch|write_?file|edit_?file|create_?file|str_?replace\w*|notebook_?edit)$/i;
+const isTrace = (m: ThreadMessage | undefined): boolean => m?.role === "agent" && m.block.type === "trace";
 
 /**
- * A conversation cut where the session took a ticket on: each mark (a claim, a start on a ticket) begins that
- * ticket's stretch, and a claim the record itself shows begins it at that line. Lines before any mark belong to no
- * ticket; coming back to a ticket begins another stretch of it. Lines the record did not stamp stay where they are.
+ * An assistant conversation cut as a session is: where it claimed a ticket (the note a claim leaves), and where it
+ * first turned to writing code (the run of steps that first changed a file), so its chat and its code read apart.
+ * Before a claim it belongs to `itemId` — the ticket it was opened on — unless it claimed one later, then to none.
  */
-export function cutByTicket(lines: RecordLine[], marks: SessionMark[], itemOfKey: (key: string) => string | null): { itemId: string | null; lines: RecordLine[] }[] {
-  const sorted = [...marks].sort((a, b) => a.at - b.at);
-  const out: { itemId: string | null; lines: RecordLine[] }[] = [];
-  let current: string | null = null;
-  let next = 0;
-  const push = (itemId: string | null, line: RecordLine) => {
+export function cutThread(messages: ThreadMessage[], itemOfKey: (key: string) => string | null, itemId: string | null): { itemId: string | null; messages: ThreadMessage[] }[] {
+  const claims = messages.some((m) => m.block.type === "note" && !!m.block.claimed);
+  let code = messages.findIndex((m) => isTrace(m) && FILE_TOOL.test((m.block as Extract<ThreadMessage["block"], { type: "trace" }>).tool));
+  while (code > 0 && isTrace(messages[code - 1])) code--;
+  const out: { itemId: string | null; messages: ThreadMessage[] }[] = [];
+  let current = claims ? null : itemId;
+  messages.forEach((m, i) => {
+    const claimed = m.block.type === "note" ? m.block.claimed : undefined;
     const last = out.at(-1);
-    if (last && last.itemId === itemId) last.lines.push(line);
-    else out.push({ itemId, lines: [line] });
-  };
-  for (const line of lines) {
-    // A claim the agent made, as its record shows it: that line opens the ticket's stretch, and its mark is spent.
-    const claimed = line.who === "tool" ? CLAIM_LINE.exec(line.text)?.[1] : undefined;
-    const claimedId = claimed ? itemOfKey(claimed.toUpperCase()) : null;
-    if (claimedId) {
-      current = claimedId;
-      if (sorted[next]?.itemId === claimedId) next++;
-      push(current, line);
-      continue;
+    if (claimed) {
+      const was = current;
+      current = itemOfKey(claimed) ?? current;
+      // claimed for the code it had just started writing: that stretch is the ticket's
+      if (last && last.itemId === null && was === null && code >= 0 && last.messages[0] === messages[code]) {
+        last.itemId = current;
+        last.messages.push(m);
+        return;
+      }
     }
-    if (line.at !== undefined) {
-      while (next < sorted.length && sorted[next]!.at <= line.at) current = sorted[next++]!.itemId;
-    }
-    push(current, line);
-  }
+    if (!last || claimed || i === code) out.push({ itemId: current, messages: [m] });
+    else last.messages.push(m);
+  });
   return out;
 }
 
@@ -223,6 +239,11 @@ export class Review {
     return mergePage({ session: this.sessionRows(projectId, sessions), thread: rows(threads), idle: rows(idle) }, before, limit);
   }
 
+  /** What came of each of these sessions, by id, the way the list says it: their tickets' links read in one go. */
+  outcomes(projectId: string, sessions: SessionView[]): Map<string, SessionOutcome> {
+    return new Map(this.sessionRows(projectId, sessions).map((r) => [r.id, { pr: r.pr, commits: r.commits, asked: r.asked, said: r.said }]));
+  }
+
   /**
    * The ended conversations whose words say `query`, newest first and the newest few only, read one at a time and
    * giving way between them; each with the line that says it. A newer search stops an older one where it is.
@@ -271,9 +292,24 @@ export class Review {
     const thread = ref.threadId && agent ? agent.store.thread(projectId, ref.threadId) : null;
     if (!thread) return null;
     const row = this.threadRow(projectId, thread);
-    const lines = threadLines(agent!.store.messages(projectId, thread.id));
-    const ticket = row.tickets[0] ?? null;
-    return { row, segments: lines.length ? [this.segment(ticket?.itemId ?? null, ticket, lines)] : [], cut: false, unreadable: false, raw: false };
+    const ticketOf = (itemId: string | null): ReviewTicket | null => {
+      if (!itemId) return null;
+      const known = row.tickets.find((t) => t.itemId === itemId);
+      const item = known ? null : this.deps.ctx.items.get(projectId, itemId);
+      return known ?? (item ? { itemId, key: item.key, title: item.title, status: item.status, pr: null, commits: 0 } : null);
+    };
+    const cuts = cutThread(agent!.store.messages(projectId, thread.id), (key) => this.deps.ctx.items.getByKey(projectId, key)?.id ?? null, thread.itemId);
+    const segments = cuts.flatMap((c) => {
+      const lines = threadLines(c.messages);
+      return lines.length ? [this.segment(c.itemId, ticketOf(c.itemId), lines)] : [];
+    });
+    return { row, segments, cut: false, unreadable: false, raw: false };
+  }
+
+  /** The tickets a session worked, with what their code came to — for a running session cut by ticket. Reads no record. */
+  tickets(projectId: string, sessionId: string): ReviewTicket[] {
+    const session = this.deps.store.session(projectId, sessionId);
+    return session ? this.sessionRows(projectId, [session])[0]!.tickets : [];
   }
 
   private segment(itemId: string | null, ticket: ReviewTicket | null, lines: RecordLine[]): ReviewSegment {
@@ -311,7 +347,7 @@ export class Review {
       const ordered = this.ticketOrder(s);
       const tickets = ordered.flatMap((itemId): ReviewTicket[] => {
         const item = this.deps.ctx.items.get(projectId, itemId);
-        return item ? [{ itemId, key: item.key, title: item.title, ...ticketOutcome(s, itemId, links) }] : [];
+        return item ? [{ itemId, key: item.key, title: item.title, status: item.status, ...ticketOutcome(s, itemId, links) }] : [];
       });
       return {
         id: s.id,
@@ -326,6 +362,7 @@ export class Review {
         where: s.herdrPane ? "pane" : s.mode === "headless" ? "panel" : "outside",
         threadId: s.threadId,
         resumable: !!resumeCommand(s.agent, s.externalId),
+        continuable: !tickets.length && !!s.externalId && !!s.cwd && (s.state === "ended" || s.state === "lost"),
         startedAt: s.startedAt,
         endedAt: s.endedAt ?? s.lastEventAt ?? s.startedAt
       };
@@ -346,8 +383,8 @@ export class Review {
 
   private threadRow(projectId: string, th: ThreadSummary): ReviewRow {
     const item = th.itemId ? this.deps.ctx.items.get(projectId, th.itemId) : null;
-    const tickets: ReviewTicket[] = item ? [{ itemId: item.id, key: item.key, title: item.title, pr: null, commits: 0 }] : [];
-    return { id: th.id, kind: th.archived ? "thread" : "idle", agent: th.engine, title: th.title || item?.title || "", tickets, asked: null, commits: 0, pr: null, said: null, where: "panel", threadId: th.id, resumable: false, startedAt: th.createdAt, endedAt: th.updatedAt };
+    const tickets: ReviewTicket[] = item ? [{ itemId: item.id, key: item.key, title: item.title, status: item.status, pr: null, commits: 0 }] : [];
+    return { id: th.id, kind: th.archived ? "thread" : "idle", agent: th.engine, title: th.title || item?.title || "", tickets, asked: null, commits: 0, pr: null, said: th.said ?? null, where: "panel", threadId: th.id, parentId: th.parentId, resumable: false, startedAt: th.createdAt, endedAt: th.updatedAt };
   }
 
   /** Put-away (or open and idle) assistant conversations, a page at a time, leaving out those a session speaks for and those running. */

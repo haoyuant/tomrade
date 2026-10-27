@@ -5,12 +5,13 @@ import { ContextMenuActionItem, ContextMenuSub } from "~/components/ui/menu";
 import { useLocaleWords } from "~/lib/dicts";
 import { onLook, onShownIn, onState, onTails, onToast, send, type Look } from "./bridge";
 import { Cell } from "./Cell";
+import { GuessContext, guessesByPane } from "./guess";
 import { arrowsLabel, keyLabel, windowKey, type WindowKey } from "./keys";
 import { applyPreset, carryOn, close, cycle, heir, holder, landing, leaves, lock, neighbour, resize, show, split } from "./layout";
 import { live, sessionName, sidebarRows, type HereRow } from "./lists";
 import { Overview } from "./Overview";
 import { Palette, type PaletteAction } from "./Palette";
-import { SayContext, sayIn, useSay, type SayKey } from "./say";
+import { SayContext, sayIn, useSay, WordsContext, wordsIn, type SayKey } from "./say";
 import { Sidebar } from "./Sidebar";
 import { asPicked, carriedOf, paneKey, useWindowLayout, type Leaf, type Picked } from "./useWindowLayout";
 
@@ -130,7 +131,7 @@ export function App() {
   const [look, setLook] = useState<Look | null>(null);
   // Ended sessions and closed terminals picked from History: a cell shows one before a state carries it.
   const [picked, setPicked] = useState<Picked>(() => ({ sessions: new Map(), terminals: new Map() }));
-  const { laid, focused, setFocused, change, current, asked, recent, toRead } = useWindowLayout(state, picked);
+  const { laid, focused, setFocused, change, current, asked, recent, toRead, flash } = useWindowLayout(state, picked);
   const [toast, setToast] = useState<Toast | null>(null);
   // The window's own say once it has spoken; until then, the fold the project's window was left with.
   const [foldedHere, setFoldedHere] = useState<boolean | null>(null);
@@ -144,6 +145,7 @@ export function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [tails, setTails] = useState<Record<string, string | null>>({});
   const rows = useMemo(() => (state ? sidebarRows(state.sessions, state.terminals, state.threads) : { here: [], away: [] }), [state]);
+  const guesses = useMemo(() => guessesByPane(state?.sessions ?? []), [state]);
 
   useEffect(() => onState((next) => setState(next)), []);
   useEffect(() => onLook(setLook), []);
@@ -191,6 +193,8 @@ export function App() {
   const words = useLocaleWords(locale);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const say = useMemo(() => sayIn(locale), [locale, words]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const anyWords = useMemo(() => wordsIn(locale), [locale, words]);
   // The plugin would not stream a pane into a second cell: that cell empties, and the one showing it is selected.
   useEffect(
     () =>
@@ -227,6 +231,8 @@ export function App() {
   const rowsOf = (c: Leaf) => (c.sessionId ? [c.sessionId, terminalsById.get(c.sessionId)?.sessionId ?? c.sessionId] : []);
   // Every cell's row reads as shown; the selected cell's alone as current.
   const active = new Set(cells.flatMap(rowsOf));
+  // Each cell's number, as its bar says it, for the rows it shows.
+  const cellNumbers = new Map(cells.flatMap((c, i) => rowsOf(c).map((id) => [id, i + 1] as const)));
   const selected = new Set(rowsOf(target));
   // The panes cells show, for the other tickets their agents work there.
   const shownPanes = new Set(cells.flatMap((c) => (c.sessionId ? [key(c.sessionId)] : [])));
@@ -246,6 +252,8 @@ export function App() {
   // Shown where `landing` says: never a second controller on the same pane, never over a locked cell or one that needs
   // you. Whatever left a pane is said, with a way back.
   const land = (id: string, beside: boolean) => {
+    // Picked over the overview: back to the cells, to see it in its own.
+    setView("grid");
     const at = landing(layout, id, { selected: target.id, beside, recent: recent.current, needsYou: (shown) => !!sessionIn(shown)?.needsYou, key });
     const next = asPicked(state, at.layout, at.cell, id, key);
     if (next !== layout) change(next);
@@ -285,6 +293,7 @@ export function App() {
   // An assistant conversation has no pane here: the app window shows it.
   const showThread = (t: ThreadRow) => send({ type: "showThread", threadId: t.id });
   const answer = (s: SessionRow, which: "allow" | "deny") => send({ type: "answer", sessionId: s.id, which });
+  const answerThread = (t: ThreadRow, questionId: string, value: string) => send({ type: "answerThread", threadId: t.id, questionId, value });
   // The overview is drawn over the cells, so the keyboard leaves whatever terminal held it.
   const openOverview = () => {
     (document.activeElement as HTMLElement | null)?.blur();
@@ -331,8 +340,8 @@ export function App() {
         )}
         <ContextMenuActionItem icon={null} name={say("newTerminal")} disabled={!canOpen || !!node.locked} onSelect={() => openTerminal(layout, node.id, state.places[0]!.cwd)} />
         <ContextMenuActionItem icon={null} name={say("detach")} disabled={!node.sessionId || !!node.locked} onSelect={() => change(show(layout, node.id, null))} />
-        <ContextMenuActionItem icon={null} name={say("splitRight")} hint={keyLabel("splitRight")} onSelect={() => change(split(layout, node.id, "row").layout)} />
-        <ContextMenuActionItem icon={null} name={say("splitDown")} hint={keyLabel("splitDown")} onSelect={() => change(split(layout, node.id, "column").layout)} />
+        <ContextMenuActionItem icon={null} name={say("splitRight")} hint={keyLabel("splitRight")} onSelect={() => select(splitCell(node.id, "row"))} />
+        <ContextMenuActionItem icon={null} name={say("splitDown")} hint={keyLabel("splitDown")} onSelect={() => select(splitCell(node.id, "column"))} />
         <ContextMenuActionItem icon={null} name={cells.length === 1 ? say("clearCell") : say("closeCell")} hint={cells.length === 1 ? undefined : keyLabel("close")} onSelect={() => change(close(layout, node.id))} />
         {cells.length > 1 && (
           <ContextMenuSub icon={null} name={say("goToPane")}>
@@ -348,13 +357,13 @@ export function App() {
     );
   };
   const pickTerminal = (t: TerminalRow, beside = false) => land(t.id, beside);
-  const openTerminal = (base: Layout, cell: string, cwd: string | null, resume?: string) => {
+  const openTerminal = (base: Layout, cell: string, cwd: string | null, resume?: string, from?: string) => {
     if (outside) return cwd ? send({ type: "openOutside", cwd }) : undefined;
     const terminalId = crypto.randomUUID();
     asked.current.set(terminalId, Date.now());
     change(show(base, cell, terminalId));
     setFocused(cell);
-    send({ type: "newTerminal", terminalId, cwd, ...(resume ? { resume } : {}) });
+    send({ type: "newTerminal", terminalId, cwd, ...(resume ? { resume } : {}), ...(from ? { from } : {}) });
   };
   // Selected by key: the keyboard goes along, to the cell's terminal, or nowhere for a cell without one.
   const select = (cell: string) => {
@@ -365,9 +374,22 @@ export function App() {
       else (document.activeElement as HTMLElement | null)?.blur();
     });
   };
+  // The folder a cell works in: its terminal's, its session's worktree, a closed terminal's; the project's for an empty one.
+  const folderOf = (id: string | null): string => {
+    const s = sessionIn(id);
+    return (id ? terminalsById.get(id)?.cwd : undefined) ?? (s ? (s.worktree ?? s.cwd) : null) ?? (id ? closedById.get(id)?.cwd : undefined) ?? state.places[0]!.cwd;
+  };
+  // Split as iTerm does: the new half is a plain shell in the folder of the cell it came from, never asking for an agent.
+  // With nothing to open one in, it stays empty.
   const splitCell = (cell: string, direction: "row" | "column") => {
+    setView("grid");
     const next = split(layout, cell, direction);
-    change(next.layout);
+    if (!ready) {
+      change(next.layout);
+      return next.created;
+    }
+    const from = cells.find((c) => c.id === cell)?.sessionId ?? null;
+    openTerminal(next.layout, next.created, folderOf(from), undefined, (from ? (sessionIn(from)?.pane ?? terminalsById.get(from)?.pane) : null) ?? undefined);
     return next.created;
   };
   onWindowKey.current = (key) => {
@@ -427,6 +449,7 @@ export function App() {
         onNewTerminal={(cwd) => openTerminal(layout, node.id, cwd)}
         onTalk={(s) => openTerminal(layout, node.id, s.cwd ?? s.worktree, s.id)}
         focused={node.id === target.id && cells.length > 1}
+        flash={flash?.cell === node.id ? flash.at : null}
         selected={node.id === target.id}
         only={cells.length === 1}
         onFocus={() => setFocused(node.id)}
@@ -439,13 +462,31 @@ export function App() {
     );
 
   return (
-    <SayContext.Provider value={say}>
+    <SayContext.Provider value={say}><GuessContext.Provider value={guesses}>
+      <WordsContext.Provider value={anyWords}>
       <div className="cs-window">
         <IconSprite />
         <div className="cs-topbar">
           <span className="cs-project" data-testid="cs-project" title={say("projectTitle", { project: state.projectName })}>
             {state.projectName}
           </span>
+          <div className="cs-top-actions" data-testid="cs-top-actions">
+            <button type="button" className="btn btn-ghost btn-xs" data-testid="cs-top-split-right" aria-label={say("topSplitRight")} title={say("withKey", { action: say("splitRight"), key: keyLabel("splitRight") })} onClick={() => select(splitCell(target.id, "row"))}>
+              <Icon className="ico" name="i-split" size={13} />
+              <span className="cs-top-word">{say("topSplitRight")}</span>
+              <kbd className="cs-top-word">{keyLabel("splitRight")}</kbd>
+            </button>
+            <button type="button" className="btn btn-ghost btn-xs" data-testid="cs-top-split-down" aria-label={say("topSplitDown")} title={say("withKey", { action: say("splitDown"), key: keyLabel("splitDown") })} onClick={() => select(splitCell(target.id, "column"))}>
+              <Icon className="ico cs-ico-down" name="i-split" size={13} />
+              <span className="cs-top-word">{say("topSplitDown")}</span>
+              <kbd className="cs-top-word">{keyLabel("splitDown")}</kbd>
+            </button>
+            <button type="button" className="btn btn-ghost btn-xs" data-testid="cs-top-palette" aria-label={say("topPalette")} title={say("withKey", { action: say("topPalette"), key: keyLabel("palette") })} onClick={() => setPaletteOpen(true)}>
+              <Icon className="ico" name="i-search" size={13} />
+              <kbd className="cs-top-word">{keyLabel("palette")}</kbd>
+              <span className="cs-top-word">{say("topPalette")}</span>
+            </button>
+          </div>
           <div className="seg quiet cs-views" role="group" aria-label={say("viewToggle")} data-testid="cs-views">
             <button type="button" aria-pressed={view === "grid"} data-testid="cs-view-grid" onClick={() => setView("grid")}>
               <Icon className="ico" name="i-grid" size={13} />
@@ -456,12 +497,16 @@ export function App() {
               {say("viewOverview")}
             </button>
           </div>
+          <button type="button" className="btn btn-ghost btn-xs" data-testid="cs-top-main" aria-label={say("topMainWindow")} title={say("topMainWindowHint")} onClick={() => send({ type: "mainWindow" })}>
+            <Icon className="ico" name="i-monitor" size={13} />
+            <span className="cs-top-word">{say("topMainWindow")}</span>
+          </button>
         </div>
         <div className="cs-body">
           <main className="cs-main">
             <Banner state={state} />
             <div className="cs-layout">{render(layout)}</div>
-            {view === "overview" && <Overview rows={[...rows.here, ...rows.away.map((s): HereRow => ({ kind: "session", id: s.id, session: s }))]} tails={tails} active={active} onSee={seeInPane} onThread={showThread} onAnswer={answer} />}
+            {view === "overview" && <Overview rows={[...rows.here, ...rows.away.map((s): HereRow => ({ kind: "session", id: s.id, session: s }))]} tails={tails} active={active} cells={cellNumbers} onSee={seeInPane} onThread={showThread} onAnswer={answer} onAnswerThread={answerThread} />}
           </main>
           <Sidebar
             ref={side}
@@ -470,13 +515,14 @@ export function App() {
             locale={locale}
             folded={folded}
             onFold={toggleFold}
-            marks={{ active, selected, shownPanes, selectedPane, pane: key }}
+            marks={{ active, selected, cells: cellNumbers, shownPanes, selectedPane, pane: key }}
             canOpen={canOpen}
             onPick={pick}
             onTerminal={pickTerminal}
             onClosed={pickClosed}
             onThread={showThread}
             onAnswer={answer}
+            onAnswerThread={answerThread}
             onNewTerminal={newTerminal}
             onApplyPreset={(p) => {
               change(applyPreset(layout, p.layout, undefined, key));
@@ -498,6 +544,7 @@ export function App() {
           </div>
         )}
       </div>
-    </SayContext.Provider>
+      </WordsContext.Provider>
+    </GuessContext.Provider></SayContext.Provider>
   );
 }

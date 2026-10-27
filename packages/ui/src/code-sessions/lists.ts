@@ -37,11 +37,17 @@ export function statusOf(r: HereRow): BarStatus {
 /** The session waits on a permission its card can answer: its agent declared the keys, and its screen shows that prompt. */
 export const canAnswer = (s: SessionRow): boolean => s.approval && s.prompt !== null && live(s) && isApprovalAsk(s);
 
+/** How long a row says it is new: the assistant panel's session bar's rule. */
+export const NEW_MS = 60_000;
+
+/** Just started and not over: the bar says so for its first minute. */
+export const isNewRow = (r: HereRow, now = Date.now()): boolean => statusOf(r) !== "done" && now - rowStartedAt(r) < NEW_MS;
+
 const RANK: Record<BarStatus, number> = { wait: 0, run: 1, idle: 2, done: 3 };
-const startedAt = (r: HereRow): number => (r.kind === "terminal" ? r.terminal.startedAt : r.kind === "session" ? r.session.startedAt : r.thread.createdAt);
+export const rowStartedAt = (r: HereRow): number => (r.kind === "terminal" ? r.terminal.startedAt : r.kind === "session" ? r.session.startedAt : r.thread.createdAt);
 /** When the row last moved: its hooks' last word, else its start; a conversation's last update. */
 const movedAt = (r: HereRow): number => (r.kind === "thread" ? (r.session?.lastEventAt ?? r.thread.updatedAt) : r.kind === "terminal" && !r.session ? r.terminal.startedAt : (r.session!.lastEventAt ?? r.session!.startedAt));
-const waitedSince = (r: HereRow): number => (r.kind === "thread" ? (r.thread.wait?.since ?? movedAt(r)) : movedAt(r));
+export const waitedSince = (r: HereRow): number => (r.kind === "thread" ? (r.thread.wait?.since ?? movedAt(r)) : movedAt(r));
 
 /**
  * The bar's order, the assistant panel's: waiting first, by how long each has waited; then running, by start; idle by
@@ -52,7 +58,7 @@ export function order(a: HereRow, b: HereRow): number {
   const sb = statusOf(b);
   if (sa !== sb) return RANK[sa] - RANK[sb];
   if (sa === "wait") return waitedSince(a) - waitedSince(b);
-  if (sa === "run") return startedAt(b) - startedAt(a);
+  if (sa === "run") return rowStartedAt(b) - rowStartedAt(a);
   if (sa === "done") return (b.session?.endedAt ?? 0) - (a.session?.endedAt ?? 0);
   return movedAt(b) - movedAt(a);
 }

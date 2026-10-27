@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RecordLine, ThreadMessage } from "@tomradex/agent";
 import { fresh } from "@tomradex/testkit";
-import { CodeLinkStore, MIGRATIONS, Review, TABLES, cutByTicket, mergePage, threadLines, ticketOutcome, type CodeLinkView, type ReviewRow } from "@tomradex/code-link";
+import { CodeLinkStore, MIGRATIONS, Review, TABLES, cutByTicket, cutFrom, cutThread, joinCuts, mergePage, threadLines, ticketOutcome, type CodeLinkView, type ReviewRow } from "@tomradex/code-link";
 
 const itemOfKey = (key: string) => ({ "TOM-634": "a", "TOM-638": "b" })[key] ?? null;
 const me = (text: string, at?: number): RecordLine => ({ who: "person", text, ...(at !== undefined ? { at } : {}) });
@@ -26,10 +26,49 @@ describe("a conversation cut by ticket", () => {
     ]);
   });
 
+  it("cuts a running session a page at a time: the newest page goes on from where the earlier ones ended, as if cut at once", () => {
+    const lines = [me("看看", 100), tool("claim_ticket · TOM-634", 150), tool("Write · a.ts", 160), me("插一个", 300), tool("Edit · b.ts", 310), me("回到录制", 400), tool("Bash · pnpm test", 410), ag("测试过了", 420)];
+    const marks = [{ itemId: "b", at: 295 }, { itemId: "a", at: 395 }];
+    const whole = cutByTicket(lines, marks, itemOfKey);
+    for (let at = 0; at <= lines.length; at++) {
+      const earlier = cutFrom(lines.slice(0, at), marks, itemOfKey);
+      const tail = cutFrom(lines.slice(at), marks, itemOfKey, earlier.state);
+      expect(joinCuts(earlier.cuts, tail.cuts)).toEqual(whole);
+    }
+    // the session moved: only its newest page is cut again, from the state the earlier pages left
+    const earlier = cutFrom(lines.slice(0, 5), marks, itemOfKey);
+    const grown = [...lines.slice(5), tool("Write · c.ts", 430)];
+    expect(joinCuts(earlier.cuts, cutFrom(grown, marks, itemOfKey, earlier.state).cuts).map((c) => [c.itemId, c.lines.length])).toEqual([[null, 1], ["a", 2], ["b", 2], ["a", 4]]);
+  });
+
   it("gives every line to the ticket a session started on, from the first", () => {
     const lines = [me("Implement TOM-634", 100), tool("Write · a.ts", 200)];
     expect(cutByTicket(lines, [{ itemId: "a", at: 100 }], itemOfKey)).toEqual([{ itemId: "a", lines }]);
     expect(cutByTicket([], [], itemOfKey)).toEqual([]);
+  });
+});
+
+describe("an assistant conversation cut as a session is", () => {
+  let seq = 0;
+  const msg = (role: ThreadMessage["role"], block: ThreadMessage["block"]): ThreadMessage => ({ id: `m${++seq}`, threadId: "t", seq, role, block, runId: "r", at: seq });
+  const said = (text: string) => msg("agent", { type: "text", text });
+  const asked = (text: string) => msg("user", { type: "text", text });
+  const step = (tool: string) => msg("agent", { type: "trace", tool, args: { path: "a.ts" }, ok: true, summary: "", ms: 1 });
+  const claim = (key: string) => msg("system", { type: "note", text: `Claimed ${key}`, claimed: key });
+  const shape = (cuts: ReturnType<typeof cutThread>) => cuts.map((c) => [c.itemId, c.messages.length]);
+
+  it("reads its chat apart from its code, and the code as the ticket's it claimed for it", () => {
+    const chat = [asked("整理 Q4"), said("有 3 组重复。"), asked("写个脚本")];
+    const code = [step("read_file"), step("write_file"), said("写好了。")];
+    // claimed for the code it had just started writing: that stretch is the ticket's
+    expect(shape(cutThread([...chat, ...code, claim("TOM-634"), step("bash")], itemOfKey, null))).toEqual([[null, 3], ["a", 5]]);
+    // claimed before it wrote: the ticket's stretch starts at the claim, and its code is the ticket's too
+    expect(shape(cutThread([...chat, claim("TOM-634"), ...code], itemOfKey, null))).toEqual([[null, 3], ["a", 1], ["a", 3]]);
+    // opened on a ticket: all of it is the ticket's, chat and code apart
+    expect(shape(cutThread([...chat, ...code], itemOfKey, "b"))).toEqual([["b", 3], ["b", 3]]);
+    // never wrote, never claimed: one stretch
+    expect(shape(cutThread(chat, itemOfKey, null))).toEqual([[null, 3]]);
+    expect(cutThread([], itemOfKey, null)).toEqual([]);
   });
 });
 
@@ -123,6 +162,10 @@ describe("the look back over the store", () => {
     expect(first.rows.map((r) => r.id)).toEqual([ids[0], ids[1]]);
     expect(first.rows[0]).toMatchObject({ title: "结束时存下记录快照", asked: 2, commits: 4, pr: { number: 407, state: "merged" }, where: "outside" });
     expect(first.rows[0]!.tickets.map((t) => t.key)).toEqual([snap.key, mcp.key]);
+    // the session lists say what came of a session the way the look back does
+    const outcomes = review.outcomes(project.id, [store.session(project.id, ids[0]!)!, store.session(project.id, ids[1]!)!]);
+    expect(outcomes.get(ids[0]!)).toEqual({ pr: { number: 407, state: "merged", url: "https://x/407" }, commits: 4, asked: 2, said: null });
+    expect(outcomes.get(ids[1]!)).toEqual({ pr: null, commits: 0, asked: 0, said: null });
     const second = review.list(project.id, { limit: 2, before: first.next });
     expect(second.rows.map((r) => r.id)).toEqual([ids[2], ids[3]]);
     // a start nobody spoke to, with no ticket and no title, is not kept: the page after is empty and the last

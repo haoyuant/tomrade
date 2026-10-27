@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SessionRow, TerminalRow, ThreadRow } from "@tomradex/code-sessions";
-import { away, bundles, canAnswer, sessionName, sidebarRows, statusOf } from "../src/code-sessions/lists";
+import { away, bundles, canAnswer, isNewRow, NEW_MS, sessionName, sidebarRows, statusOf } from "../src/code-sessions/lists";
 
 const row = (over: Partial<SessionRow> & { id: string }): SessionRow => ({
   itemId: null,
@@ -117,13 +117,13 @@ describe("the Terminal window's sidebar", () => {
   });
 
   it("answers a permission from a card only when its agent declared the keys and its screen shows the prompt", () => {
-    const asks = row({ id: "a", state: "waiting", needsYou: true, activity: "needs your approval: Bash", approval: true, prompt: "allow" });
+    const asks = row({ id: "a", state: "waiting", needsYou: true, ask: { kind: "permission", tool: "Bash", action: "run", detail: "pnpm test" }, approval: true, prompt: "allow" });
     expect(canAnswer(asks)).toBe(true);
     expect(canAnswer({ ...asks, prompt: "deny" })).toBe(true);
     // a folder's trust, another menu, or a screen that could not be read
     expect(canAnswer({ ...asks, prompt: null })).toBe(false);
     expect(canAnswer({ ...asks, approval: false })).toBe(false);
-    expect(canAnswer({ ...asks, activity: "asking you something" })).toBe(false);
+    expect(canAnswer({ ...asks, ask: { kind: "question", tool: null, action: null, detail: null } })).toBe(false);
     expect(canAnswer({ ...asks, state: "ended", endedAt: 1 })).toBe(false);
   });
 
@@ -142,6 +142,16 @@ describe("the Terminal window's sidebar", () => {
     // Rows without a pane yet never bundle.
     const starting = [terminal({ id: "a", startedAt: 2 }), terminal({ id: "b", startedAt: 1 })];
     expect(bundles(sidebarRows([], starting).here).map((b) => b.length)).toEqual([1, 1]);
+  });
+
+  it("says a row is new for its first minute while it is not over, as the assistant panel's bar does", () => {
+    const now = 100 * NEW_MS;
+    const fresh = now - NEW_MS + 1000;
+    expect(isNewRow({ kind: "session", id: "a", session: row({ id: "a", startedAt: fresh }) }, now)).toBe(true);
+    expect(isNewRow({ kind: "session", id: "b", session: row({ id: "b", startedAt: now - NEW_MS - 1 }) }, now)).toBe(false);
+    expect(isNewRow({ kind: "session", id: "c", session: row({ id: "c", startedAt: fresh, state: "ended", endedAt: now }) }, now)).toBe(false);
+    expect(isNewRow({ kind: "terminal", id: "t", terminal: terminal({ id: "t", startedAt: fresh }), session: null }, now)).toBe(true);
+    expect(isNewRow({ kind: "thread", id: "h", thread: thread("h", { createdAt: fresh }), session: null }, now)).toBe(true);
   });
 
   it("names a session by its ticket, else its branch, else its agent", () => {

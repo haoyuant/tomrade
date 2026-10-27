@@ -6,7 +6,7 @@ import { afterAll, expect, it, vi } from "vitest";
 import { Service, type Context } from "cordis";
 import { EventEmitter } from "node:events";
 import type { ReviewRow } from "@tomradex/code-link";
-import CodeSessions, { continuedIn, needingYou, openSystemTerminal, sessionRows, type Layout, type WindowMessage, type WindowPost, type WindowState } from "@tomradex/code-sessions";
+import CodeSessions, { cellNumbers, continuedIn, needingYou, openSystemTerminal, sessionRows, type Layout, type WindowMessage, type WindowPost, type WindowState } from "@tomradex/code-sessions";
 import { Contributions } from "@tomradex/contributions";
 import { Settings } from "@tomradex/settings";
 import { Herdr, HerdrError } from "@tomradex/herdr";
@@ -15,7 +15,7 @@ import { FakeHerdr, fresh, settle } from "@tomradex/testkit";
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-code-sessions-"));
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-type Session = { title?: string | null; prompted?: boolean; externalId?: string | null; cwd?: string | null; id: string; itemIds: string[]; branch: string; state: string; mode: "headless" | "terminal"; agent: string; herdrPane: string | null; terminal: string | null; device: string; threadId: string | null; worktree: string | null; activity: string | null; summary: string | null; blocked: unknown; startedAt: number; endedAt: number | null; lastEventAt: number | null };
+type Session = { ask?: { kind: "permission" | "question"; tool: string | null; action: "run" | "edit" | "use" | null; detail: string | null } | null; title?: string | null; prompted?: boolean; externalId?: string | null; cwd?: string | null; id: string; itemIds: string[]; branch: string; state: string; mode: "headless" | "terminal"; agent: string; herdrPane: string | null; terminal: string | null; device: string; threadId: string | null; worktree: string | null; activity: string | null; summary: string | null; blocked: unknown; startedAt: number; endedAt: number | null; lastEventAt: number | null };
 
 const session = (over: Partial<Session> & { id: string }): Session => ({ itemIds: [], branch: "b", state: "running", mode: "terminal", agent: "claude-code", herdrPane: null, terminal: null, device: "here", threadId: null, worktree: null, activity: null, summary: null, blocked: null, startedAt: 1, endedAt: null, lastEventAt: null, ...over });
 
@@ -131,6 +131,9 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [{ branch: "tom-1/x", prUrl: "https://github.com/o/r/pull/7" }];
     herdrInstall = async () => ({ command: "brew install herdr", guide: "https://herdr.dev/docs/install/" });
@@ -347,6 +350,9 @@ it("keeps an ended session a cell shows, answers History a page at a time with t
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];
     repositoriesOf = () => [];
@@ -371,8 +377,8 @@ it("keeps an ended session a cell shows, answers History a page at a time with t
     win.spec.onMessage(m);
     await settle();
   };
-  // Live ones, an outside one among them, and the ended one a cell shows; the rest are History's, not the state's.
-  expect(win.states[0]!.sessions.map((s) => s.id)).toEqual(["live", "iterm", "shown"]);
+  // Live ones, an outside one among them, the ended one a cell shows, and what ended within the day; the rest are History's, not the state's.
+  expect(win.states[0]!.sessions.map((s) => s.id)).toEqual(["live", "iterm", "shown", "lost"]);
   expect(win.states[0]).toMatchObject({ folded: false });
   expect(win.states[0]).not.toHaveProperty("archive");
   expect(win.states[0]!.sessions.find((s) => s.id === "iterm")).toMatchObject({ where: "outside", terminal: "iTerm2", endedAt: null });
@@ -452,6 +458,9 @@ it("keeps what ran in each pane the window shows before what it shows now, and a
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];
     repositoriesOf = () => [];
@@ -486,6 +495,13 @@ it("keeps what ran in each pane the window shows before what it shows now, and a
   const found = win.posts.find((p) => p.type === "historySaid")!;
   expect(found).toMatchObject({ token: 7, found: { rows: [{ id: "gone" }, { id: "before" }], said }, agents: {} });
   expect(found.sessions.map((s) => [s.id, s.ranIn, s.endedAt])).toEqual([["before", "w1:p1", now - 5000], ["gone", "w9:p9", now - 1000]]);
+});
+
+it("numbers the cells as the window does, empty ones too, for the sessions they show and those on a terminal's pane", () => {
+  const layout: Layout = { type: "split", id: "r", direction: "row", ratio: 0.5, a: { type: "leaf", id: "c1", sessionId: null }, b: { type: "split", id: "s", direction: "column", ratio: 0.5, a: { type: "leaf", id: "c2", sessionId: "term" }, b: { type: "leaf", id: "c3", sessionId: "own" } } };
+  const terminals = [{ id: "term", pane: "w1:p1", sessionId: "claimed" }];
+  const sessions = [{ id: "claimed", pane: "w1:p1", endedAt: null }, { id: "beside", pane: "w1:p1", endedAt: null }, { id: "gone", pane: "w1:p1", endedAt: 5 }, { id: "own", pane: "w1:p2", endedAt: null }, { id: "loose", pane: "w1:p3", endedAt: null }];
+  expect(cellNumbers(layout, terminals, sessions)).toEqual({ term: 2, claimed: 2, beside: 2, own: 3 });
 });
 
 it("says where an ended session's pane goes on: a terminal opened on it first, else the newest live session there", () => {
@@ -535,6 +551,9 @@ it("tells the window where the pane of an ended session a cell shows goes on, an
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];
     repositoriesOf = () => [];
@@ -558,7 +577,8 @@ it("tells the window where the pane of an ended session a cell shows goes on, an
 it("never shows a state older than one already shown, so a pick from History keeps its cell", async () => {
   const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[] }[] = [];
   const now = Date.now();
-  const sessions = [session({ id: "live", herdrPane: "w1:p1", startedAt: 5 }), session({ id: "old", state: "ended", endedAt: now - 60_000, startedAt: 1, prompted: true })];
+  const sessions = [session({ id: "live", herdrPane: "w1:p1", startedAt: 5 }), session({ id: "old", state: "ended", endedAt: now - 2 * 24 * 3600_000, startedAt: 1, prompted: true })];
+  // ended two days ago: History's, not the bar's ended group
   // herdr's pane list answers when let go, so a state can be held after it read the layout.
   let held: (() => void)[] | null = null;
   class FakeSurfaces extends Service {
@@ -596,6 +616,9 @@ it("never shows a state older than one already shown, so a pick from History kee
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];
     repositoriesOf = () => [];
@@ -672,6 +695,9 @@ it("keeps a terminal that finishes opening while herdr is asked for its panes, a
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => [];
     links = () => [];
     repositoriesOf = () => [];
@@ -746,6 +772,9 @@ it("shows a session code link asks for: the window opens or comes forward with i
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];
     herdrInstall = async () => ({ command: null, guide: "" });
@@ -822,6 +851,9 @@ it("opens plain terminals in herdr without code link, keeps them, closes them, a
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => {
       if (sessionsBroken) throw new Error("bad session row");
       return [];
@@ -860,6 +892,16 @@ it("opens plain terminals in herdr without code link, keeps them, closes them, a
   await until(() => attached.length > 0);
   expect(attached).toEqual(["w1:p1"]);
 
+  // Split off its cell: a shell in the folder its shell is in now, as iTerm does; where that cannot be read, the cell's folder.
+  const moved = fs.mkdtempSync(path.join(repo, "moved-"));
+  fake.panes.get("w1:p1")!.foreground = { cmdline: "-zsh", cwd: moved };
+  win.spec.onMessage({ type: "newTerminal", terminalId: "split", cwd: repo, from: "w1:p1" });
+  await until(() => !!listed(win.states, "split")?.pane);
+  expect(listed(win.states, "split")!.cwd).toBe(moved);
+  delete fake.panes.get("w1:p1")!.foreground;
+  win.spec.onMessage({ type: "closeTerminal", terminalId: "split" });
+  await until(() => !listed(win.states, "split"));
+
   // Kept: a window opened later lists it again.
   win.spec.onClose();
   await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
@@ -884,7 +926,7 @@ it("opens plain terminals in herdr without code link, keeps them, closes them, a
   // Closed by the person: the pane ends and the terminal is forgotten. One whose pane went is forgotten too.
   next.spec.onMessage({ type: "closeTerminal", terminalId: "t1" });
   await until(() => !listed(next.states, "t1"));
-  expect(fake.of("pane.close")).toEqual([{ pane_id: "w1:p1" }]);
+  expect(fake.of("pane.close").at(-1)).toEqual({ pane_id: "w1:p1" });
   fake.exit(listed(next.states, "t2")!.pane!);
   next.spec.onMessage({ type: "refresh" });
   await until(() => next.states.at(-1)!.terminals.length === 0);
@@ -917,6 +959,9 @@ it("shows how herdr reads the agent in a plain terminal as it changes, nothing f
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => [];
     links = () => [];
     repositoriesOf = () => [];
@@ -973,6 +1018,9 @@ it("shows a terminal as the code session its agent claimed, in place, and as a p
   const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[] }[] = [];
   const sessions: Session[] = [];
   const patched: [string, unknown][] = [];
+  const posts: WindowPost[] = [];
+  const guesses = new Map<string, { itemId: string; key: string; title: string }>();
+  const answered: string[] = [];
 
   class FakeSurfaces extends Service {
     static provide = "desktopSurfaces";
@@ -982,7 +1030,7 @@ it("shows a terminal as the code session its agent claimed, in place, and as a p
     open(spec: (typeof opened)[number]["spec"]) {
       const entry = { spec, states: [spec.initialState as WindowState] };
       opened.push(entry);
-      return { id: "s", capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus() {}, setState: (s: WindowState) => void entry.states.push(s), post() {}, close: () => spec.onClose() };
+      return { id: "s", capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus() {}, setState: (s: WindowState) => void entry.states.push(s), post: (m: WindowPost) => void posts.push(m), close: () => spec.onClose() };
     }
   }
   class FakeCodeLink extends Service {
@@ -990,11 +1038,25 @@ it("shows a terminal as the code session its agent claimed, in place, and as a p
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];
     repositoriesOf = () => [];
     repositoryFoldersOf = this.repositoriesOf;
     herdrInstall = async () => ({ command: null, guide: "" });
+    guessOf = (_projectId: string, id: string) => guesses.get(id) ?? null;
+    takeGuess = (_projectId: string, id: string) => {
+      answered.push(`take:${id}`);
+      const guess = guesses.get(id);
+      guesses.delete(id);
+      return guess ? { key: guess.key } : null;
+    };
+    goWithoutTicket = (_projectId: string, id: string, words: string) => {
+      answered.push(`none:${id}:${words}`);
+      return guesses.delete(id);
+    };
     store = {
       patchSession: (_projectId: string, id: string, patch: { herdrPane?: string }) => {
         patched.push([id, patch]);
@@ -1031,6 +1093,10 @@ it("shows a terminal as the code session its agent claimed, in place, and as a p
   fake.panes.get(pane.t2!)!.foreground = { cmdline: "pnpm dev", cwd: dir };
   fake.panes.get(pane.t3!)!.foreground = { cmdline: "-zsh", cwd: dir };
   expect((await now()).map((t) => [t.id, t.running])).toEqual([["t1", "选中面板与侧边栏会话联动"], ["t2", "pnpm dev"], ["t3", null]]);
+  // Only a bare shell is one: another command in the foreground is not, nor is a terminal whose agent herdr sees.
+  fake.panes.get(pane.t1!)!.agent = "claude";
+  expect((await now()).map((t) => [t.id, t.shell])).toEqual([["t1", false], ["t2", false], ["t3", true]]);
+  fake.panes.get(pane.t1!)!.agent = null;
   delete fake.panes.get(pane.t2!)!.foreground;
   delete fake.panes.get(pane.t3!)!.foreground;
   // A session with no ticket in a herdr pane this window did not open goes by its conversation; one in a terminal here does not need to.
@@ -1044,6 +1110,18 @@ it("shows a terminal as the code session its agent claimed, in place, and as a p
   // Claude Code with the repo's hooks: its session reports the pane; before the claim it holds no ticket and stays plain.
   sessions.push(session({ id: "hooked", herdrPane: pane.t1!, startedAt: 2 }));
   expect((await now()).find((t) => t.id === "t1")!.sessionId).toBeNull();
+  // What it first said sounds like a ticket: its row carries code link's guess, and the person's answers go back there.
+  expect(win.states.at(-1)!.sessions.find((s) => s.id === "hooked")!.guess).toBeNull();
+  guesses.set("hooked", { itemId: ticket.id, key: ticket.key, title: ticket.title });
+  await now();
+  expect(win.states.at(-1)!.sessions.find((s) => s.id === "hooked")!.guess).toEqual({ key: ticket.key, title: ticket.title });
+  win.spec.onMessage({ type: "takeGuess", sessionId: "hooked" });
+  await now();
+  expect(win.states.at(-1)!.sessions.find((s) => s.id === "hooked")!.guess).toBeNull();
+  win.spec.onMessage({ type: "noTicket", sessionId: "hooked" });
+  await now();
+  expect(answered).toEqual(["take:hooked", "none:hooked:Chosen in the Terminal window: no ticket for this conversation"]);
+  expect(posts.filter((m) => m.type === "toast").map((m) => (m as { text: string }).text)).toEqual([expect.stringContaining(ticket.key), expect.stringContaining("no longer fits")]);
   sessions[0]!.itemIds = [ticket.id];
   expect((await now()).find((t) => t.id === "t1")!.sessionId).toBe("hooked");
   // The claim let go: a plain terminal again, still there.
@@ -1094,6 +1172,9 @@ it("keeps named layouts and the auto-place switch for every window, and starts f
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => [];
     links = () => [];
     repositoriesOf = () => [];
@@ -1263,6 +1344,9 @@ it("starts herdr's server again when it went away, on opening with saved termina
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => [];
     links = () => [];
     herdrInstall = async () => ({ command: "brew install herdr", guide: "https://herdr.dev/docs/install/" });
@@ -1335,7 +1419,7 @@ it("lists the assistant's conversations from a cache read when they change, neve
   const tails = new Map<string, string | null>([["w1:p1", "$ pnpm test\n12 passed\nAllow? [y/n]"], ["w1:p2", null]]);
   const tailReads: string[] = [];
   const sessions = [
-    session({ id: "s1", itemIds: [], herdrPane: "w1:p1", branch: "tom-1/x", state: "waiting", blocked: { kind: "permission" }, activity: "needs your approval: Bash", lastEventAt: 50 }),
+    session({ id: "s1", itemIds: [], herdrPane: "w1:p1", branch: "tom-1/x", state: "waiting", blocked: { kind: "permission" }, activity: null, ask: { kind: "permission", tool: "Bash", action: "run", detail: "pnpm test" }, lastEventAt: 50 }),
     session({ id: "run", mode: "headless", threadId: "t-busy", herdrPane: null, startedAt: 3 }),
     session({ id: "gone", herdrPane: "w1:p2", state: "ended", endedAt: 9 })
   ];
@@ -1344,7 +1428,9 @@ it("lists the assistant's conversations from a cache read when they change, neve
     { id: "t-asks", title: "整理 Q4 backlog", engine: "loop", itemId: null, createdAt: 1, updatedAt: 5 },
     { id: "t-busy", title: "", engine: "claude-code", itemId: null, createdAt: 2, updatedAt: 6 }
   ];
-  let pending: { threadId: string; kind: string; text: string }[] = [{ threadId: "t-asks", kind: "ask", text: "要我取消 3 张重复工单吗？" }];
+  let pending: { threadId: string; kind: string; text: string; options?: string[] }[] = [{ threadId: "t-asks", kind: "ask", text: "要我取消 3 张重复工单吗？" }];
+  const sent: unknown[][] = [];
+  const glanced: string[][] = [];
   class FakeSurfaces extends Service {
     static provide = "desktopSurfaces";
     constructor(ctx: Context) {
@@ -1375,6 +1461,9 @@ it("lists the assistant's conversations from a cache read when they change, neve
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    sessionGlances = async (_projectId: string, ids: string[]) => (glanced.push(ids), new Map(ids.map((id) => [id, { approval: true, prompt: null, tail: ["● Bash(pnpm test)", "  ⎿ 12 passed"] }])));
+    cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];
     herdrInstall = async () => ({ command: null, guide: "https://herdr.dev/docs/install/" });
@@ -1388,12 +1477,13 @@ it("lists the assistant's conversations from a cache read when they change, neve
     store = { threads: (projectId: string) => (threadReads.push(projectId), threadList.map((t) => ({ ...t, projectId, boardId: null, branch: null, surface: "assistant", archived: false }))) };
     activeRuns = () => [{ run: { id: "r1" }, thread: { id: "t-busy" } }];
     activities = () => pending.map((p) => ({ projectId: "p", threadId: p.threadId, run: null, pending: { threadId: p.threadId, kind: p.kind, workflow: null, question: { id: "q", text: p.text }, accepts: "text" } }));
+    send = async (...args: unknown[]) => (sent.push(args), { runId: "r9" });
     engineOf = (id: string) => (id === "loop" ? { id, title: "Tomrade assistant" } : id === "claude-code" ? { id, title: "Claude Code", local: { approval: { allow: ["enter"], deny: ["esc"] } } } : undefined);
   }
   const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "settings-threads.json") }], Contributions, FakeSurfaces, FakeHerdr, FakeCodeLink, FakeAgent, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile: path.join(dir, "state-threads.json") }]] });
   const projectId = w.project.id;
   // The fake agent answers for every project with the same list; the cache is keyed by the window's project.
-  (w.ctx.get("agent") as unknown as FakeAgent).activities = () => pending.map((p) => ({ projectId, threadId: p.threadId, run: null, pending: { threadId: p.threadId, kind: p.kind, workflow: null, question: { id: "q", text: p.text }, accepts: "text" } }));
+  (w.ctx.get("agent") as unknown as FakeAgent).activities = () => pending.map((p) => ({ projectId, threadId: p.threadId, run: null, pending: { threadId: p.threadId, kind: p.kind, workflow: null, question: { id: "q", text: p.text, ...(p.options ? { options: p.options } : {}) }, accepts: p.options ? "options" : "text" } }));
   w.ctx.on("desktop/open", (target) => void events.push(["desktop/open", target]));
   await w.ctx.contributions.run("code-sessions.open", { projectId });
   const win = opened[0]!;
@@ -1410,6 +1500,9 @@ it("lists the assistant's conversations from a cache read when they change, neve
   const since = first.threads[0]!.wait!.since;
   // Its agent declared the keys for its prompt; when its hooks last spoke, for the bar's order.
   expect(first.sessions.find((s) => s.id === "s1")).toMatchObject({ approval: true, needsYou: true, lastEventAt: 50 });
+  // A live session in a pane carries its pane's last lines for its card, from code link's glance; an ended one is never glanced at.
+  expect(first.sessions.find((s) => s.id === "s1")!.tail).toEqual(["● Bash(pnpm test)", "  ⎿ 12 passed"]);
+  expect(glanced.flat()).not.toContain("s2");
   // Refreshes read the sessions, never the conversations again.
   expect(threadReads).toEqual([projectId]);
   for (let i = 0; i < 5; i++) await say({ type: "refresh" });
@@ -1423,7 +1516,8 @@ it("lists the assistant's conversations from a cache read when they change, neve
   w.ctx.emit("agent/event", "t-busy", { type: "done", run: { id: "r1" } } as never);
   await new Promise((resolve) => setTimeout(resolve, 150));
   expect(threadReads).toHaveLength(2);
-  expect(win.states.at(-1)!.threads[0]!.wait).toEqual({ kind: "question", text: "要我取消 3 张重复工单吗？", since });
+  // it offers no choices: its card has none to press
+  expect(win.states.at(-1)!.threads[0]!.wait).toEqual({ kind: "question", text: "要我取消 3 张重复工单吗？", since, questionId: "q", options: null });
   // A conversation no window lists yet, and each message landing, leave it be: the conversation comes in with its run's start.
   pending = [];
   threadList.push({ id: "t-new", title: "新对话", engine: "loop", itemId: null, createdAt: 7, updatedAt: 8 });
@@ -1443,10 +1537,11 @@ it("lists the assistant's conversations from a cache read when they change, neve
   await new Promise((resolve) => setTimeout(resolve, 150));
   expect(threadReads).toHaveLength(4);
 
-  // Allow from a card: the keys its agent declared go to its pane through code link; not taken, the window is told.
+  // Allow from a card: the keys its agent declared go to its pane through code link, and the window says it stayed put;
+  // not taken, the window is told.
   await say({ type: "answer", sessionId: "s1", which: "allow" });
   expect(answered).toEqual([[projectId, "s1", "allow"]]);
-  expect(win.posts.filter((p) => p.type === "toast")).toEqual([]);
+  expect(win.posts.filter((p) => p.type === "toast").map((p) => (p as { text: string }).text)).toEqual([expect.stringMatching(/^Allowed “.+” · you stayed where you were$/)]);
   takes = "failed";
   await say({ type: "answer", sessionId: "s1", which: "deny" });
   expect(win.posts.at(-1)).toEqual({ type: "toast", text: "The terminal did not take the answer; answer in its pane" });
@@ -1455,6 +1550,15 @@ it("lists the assistant's conversations from a cache read when they change, neve
   await say({ type: "answer", sessionId: "s1", which: "allow" });
   expect(win.posts.at(-1)).toEqual({ type: "toast", text: "Its screen shows no permission prompt a key could answer safely — answer it in its pane" });
   expect(win.states.at(-1)!.reveal?.sessionId).toBe("s1");
+  // A question with choices, answered in words or by one of them: its card carries the choices.
+  pending = [{ threadId: "t-asks", kind: "ask", text: "取消这 3 张？", options: ["确认", "再看看"] }];
+  w.ctx.emit("agent/event", "t-asks", { type: "pending", pending: null });
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  expect(win.states.at(-1)!.threads.find((t) => t.id === "t-asks")!.wait).toMatchObject({ questionId: "q", options: ["确认", "再看看"] });
+  // An assistant question answered from its card by one of its choices: the agent hears it, the window stays.
+  await say({ type: "answerThread", threadId: "t-asks", questionId: "q", value: "确认" });
+  expect(sent).toEqual([[projectId, "t-asks", { kind: "answer", questionId: "q", value: "确认" }]]);
+  expect(win.posts.at(-1)).toEqual({ type: "toast", text: "Answered “整理 Q4 backlog” · you stayed where you were" });
   // An assistant conversation opens in the app window, as a notification's click does.
   await say({ type: "showThread", threadId: "t-asks" });
   expect(events).toEqual([["desktop/open", { projectId, threadId: "t-asks" }]]);
@@ -1481,7 +1585,7 @@ it("lists the assistant's conversations from a cache read when they change, neve
   // Closed, the window's conversations are let go; opened again, they are read afresh.
   win.spec.onClose();
   await w.ctx.contributions.run("code-sessions.open", { projectId });
-  expect(threadReads).toHaveLength(5);
+  expect(threadReads).toHaveLength(6);
 });
 
 it("records what a cell shows, asks it for a snapshot when a session begins on its pane, plays a session's part back, and keeps a closed terminal's recording for History", async () => {
@@ -1527,6 +1631,9 @@ it("records what a cell shows, asks it for a snapshot when a session begins on i
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];
     repositoriesOf = () => [];
@@ -1540,7 +1647,9 @@ it("records what a cell shows, asks it for a snapshot when a session begins on i
   for (const s of sessions) s.device = w.ctx.hub.deviceId;
   await settle();
   // The setting is there, on by default, and machine-local.
-  expect(w.ctx.settings.section("terminalRecording")).toMatchObject({ scope: "machine", defaults: { enabled: true, maxTotalMB: 1024, keepDays: 14 } });
+  expect(w.ctx.settings.section("terminalRecording")).toMatchObject({ scope: "machine", defaults: { enabled: true, background: true, maxPaneMB: 50, keepDays: 7 } });
+  // What the cells record, alone: panes with no cell on them are the next test's.
+  w.ctx.settings.set({ ...w.ctx.settings.get(), terminalRecording: { enabled: true, background: false, maxPaneMB: 50, keepDays: 7 } });
   await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
   const win = opened[0]!;
   const say = async (m: WindowMessage) => {
@@ -1614,7 +1723,7 @@ it("records what a cell shows, asks it for a snapshot when a session begins on i
 
   // Turned off: what is being recorded stops, and nothing new is recorded.
   await say({ type: "attach", cell: "c1", sessionId: "a", cols: 80, rows: 24 });
-  w.ctx.settings.set({ ...w.ctx.settings.get(), terminalRecording: { enabled: false, maxTotalMB: 1024, keepDays: 14 } });
+  w.ctx.settings.set({ ...w.ctx.settings.get(), terminalRecording: { enabled: false, background: false, maxPaneMB: 50, keepDays: 7 } });
   await settle();
   const before = fs.readdirSync(path.join(recordingsDir, "w1_p1")).length;
   streams.at(-1)!.frame("unrecorded", { full: true });
@@ -1622,5 +1731,124 @@ it("records what a cell shows, asks it for a snapshot when a session begins on i
   await say({ type: "detach", cell: "c1" });
   await settle();
   expect(fs.readdirSync(path.join(recordingsDir, "w1_p1")).length).toBeLessThanOrEqual(before);
+  win.spec.onClose();
+});
+
+it("records a pane no cell shows by watching it, never taking it over; a cell takes over and gives it back; its timeline has the manual work between sessions", async () => {
+  const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[]; posts: WindowPost[] }[] = [];
+  const started = Date.now() - 60_000;
+  const sessions = [session({ id: "a", herdrPane: "w1:p1", startedAt: started, prompted: true })];
+  type Opened = { pane: string; mode: string; cols: number; rows: number; closed: boolean; frame(text: string, full?: boolean): void };
+  const streams: Opened[] = [];
+  class FakeSurfaces extends Service {
+    static provide = "desktopSurfaces";
+    constructor(ctx: Context) {
+      super(ctx, "desktopSurfaces");
+    }
+    open(spec: (typeof opened)[number]["spec"]) {
+      const entry = { spec, states: [spec.initialState as WindowState], posts: [] as WindowPost[] };
+      opened.push(entry);
+      return { id: "s", capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus() {}, setState: (st: WindowState) => void entry.states.push(st), post: (m: WindowPost) => void entry.posts.push(m), close: () => spec.onClose() };
+    }
+  }
+  class FakeHerdr extends Service {
+    static provide = "terminals";
+    readonly kind = "herdr" as const;
+    constructor(ctx: Context) {
+      super(ctx, "terminals");
+    }
+    onPane = () => () => {};
+    watch = () => () => {};
+    watching = (): string[] => [];
+    bridge = async () => ({ state: "ready" as const, version: "0.9.5" });
+    clientAttached = async () => false;
+    panes = async () => [];
+    processes = async () => [];
+    closePane = async () => true;
+    onScroll = () => () => {};
+    terminal = async (pane: string, opts: { mode?: string; cols: number; rows: number }) => {
+      const frames = new Set<(f: unknown) => void>();
+      const closes = new Set<(reason: string | null) => void>();
+      const opened: Opened = { pane, mode: opts.mode ?? "control", cols: opts.cols, rows: opts.rows, closed: false, frame: (text, full = false) => frames.forEach((l) => l({ seq: 1, width: opts.cols, height: opts.rows, full, bytes: new Uint8Array(Buffer.from(text)) })) };
+      streams.push(opened);
+      const close = () => {
+        if (opened.closed) return;
+        opened.closed = true;
+        closes.forEach((l) => l(null));
+      };
+      return { paneId: pane, mode: opened.mode, get closed() { return opened.closed; }, onFrame: (l: (f: unknown) => void) => (frames.add(l), () => frames.delete(l)), onClose: (l: (r: string | null) => void) => (closes.add(l), () => closes.delete(l)), input() {}, resize() {}, scroll() {}, mouse() {}, close };
+    };
+  }
+  class FakeCodeLink extends Service {
+    static provide = "codeLink";
+    constructor(ctx: Context) {
+      super(ctx, "codeLink");
+    }
+    sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
+    cellsChanged = () => {};
+    sessionsOf = () => sessions;
+    links = () => [];
+    repositoriesOf = () => [];
+    repositoryFoldersOf = () => [];
+  }
+  const stateFile = path.join(dir, "background-state.json");
+  const recordingsDir = path.join(dir, "background-recordings");
+  const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "background-settings.json") }], Contributions, FakeSurfaces, FakeHerdr, FakeCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile, recordingsDir }]] });
+  fs.writeFileSync(stateFile, JSON.stringify({ layouts: { [w.project.id]: { type: "leaf", id: "c1", sessionId: null } } }));
+  for (const s of sessions) s.device = w.ctx.hub.deviceId;
+  const watching = () => streams.filter((s) => s.mode === "observe" && !s.closed);
+  const text = (r: { bytes: Uint8Array }) => Buffer.from(r.bytes).toString();
+
+  // No window open: the session's pane is watched, at herdr's own size, and what it shows is recorded.
+  await vi.waitFor(() => expect(watching().map((s) => [s.pane, s.cols, s.rows])).toEqual([["w1:p1", 120, 40]]));
+  watching()[0]!.frame("BEFORE", true);
+  await vi.waitFor(() => expect(fs.readdirSync(recordingsDir)).toEqual(["w1_p1"]));
+
+  // A cell shows it: the observer goes, and the cell's own stream takes over the recording, with its control.
+  await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
+  const win = opened[0]!;
+  const say = async (m: WindowMessage) => {
+    win.spec.onMessage(m);
+    await settle();
+  };
+  await say({ type: "attach", cell: "c1", sessionId: "a", cols: 100, rows: 30 });
+  await vi.waitFor(() => expect(watching()).toEqual([]));
+  expect(streams.filter((s) => s.mode === "control").map((s) => s.pane)).toEqual(["w1:p1"]);
+  await new Promise((r) => setTimeout(r, 400));
+  expect(watching()).toEqual([]);
+
+  // Let go: watched again, at the size the cell left it at.
+  await say({ type: "detach", cell: "c1" });
+  await vi.waitFor(() => expect(watching().map((s) => [s.pane, s.cols, s.rows])).toEqual([["w1:p1", 100, 30]]));
+  // The session ends and the person works in the pane by hand: manual work, between it and the next session.
+  const ended = Date.now();
+  Object.assign(sessions[0]!, { state: "ended", endedAt: ended - 20_000 });
+  watching()[0]!.frame("x".repeat(300));
+  // A session beginning there: watched afresh, so its stretch begins with the whole screen.
+  const observers = streams.filter((s) => s.mode === "observe").length;
+  sessions.push(session({ id: "b", herdrPane: "w1:p1", startedAt: Date.now() + 10_000, prompted: true, device: w.ctx.hub.deviceId }));
+  w.ctx.emit("codeLink/changed", w.project.id);
+  await vi.waitFor(() => expect(streams.filter((s) => s.mode === "observe").length).toBe(observers + 1));
+  expect(watching()).toHaveLength(1);
+
+  // The pane's timeline: the first session, the manual work after it, the second; the manual work plays back alone.
+  const timelines = () => win.posts.filter((p) => p.type === "timeline");
+  await say({ type: "timeline", cell: "c1", pane: "w1:p1" });
+  await vi.waitFor(() => expect(timelines()).toHaveLength(1));
+  const entries = timelines()[0]!.entries;
+  expect(entries.map((e) => [e.kind, e.id.startsWith("manual:") ? "manual" : e.id])).toEqual([["session", "a"], ["manual", "manual"], ["session", "b"]]);
+  expect(timelines()[0]!.keep).toEqual({ days: 7, mb: 50 });
+  const manual = entries[1]!;
+  await say({ type: "replay", cell: "c1", id: manual.id });
+  const replay = () => win.posts.find((p) => p.type === "replay");
+  await vi.waitFor(() => expect(replay()).toBeTruthy());
+  const shown = replay()!;
+  expect(shown.records.slice(shown.at).map(text)).toEqual(["x".repeat(300)]);
+  expect(shown.keep).toEqual({ days: 7, mb: 50 });
+
+  // Only what the window shows, by the setting: nothing is watched any more.
+  w.ctx.settings.set({ ...w.ctx.settings.get(), terminalRecording: { enabled: true, background: false, maxPaneMB: 50, keepDays: 7 } });
+  await vi.waitFor(() => expect(watching()).toEqual([]));
   win.spec.onClose();
 });

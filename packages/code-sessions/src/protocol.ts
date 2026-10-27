@@ -1,4 +1,4 @@
-import type { ReviewCursor, ReviewPage, ReviewSaid } from "@tomradex/code-link";
+import type { ReviewCursor, ReviewPage, ReviewSaid, SessionAsk, SessionOutcome } from "@tomradex/code-link";
 import type { TerminalBridge, TerminalKey, TerminalMouse, TerminalScroll, TerminalScrollPosition } from "@tomradex/contracts";
 
 /** One code session as the window lists it. */
@@ -13,6 +13,8 @@ export interface SessionRow {
   needsYou: boolean;
   /** What it is doing now, or what it last said. */
   activity: string | null;
+  /** What it waits on the person for, as a structure the window words: a tool's permission, a question; null otherwise. */
+  ask: SessionAsk | null;
   mode: "run" | "terminal";
   agent: string;
   /** The agent's own name (Claude Code, Codex…), for a session with no ticket to go by; null when Tomrade does not know it. */
@@ -55,6 +57,12 @@ export interface SessionRow {
   lastEventAt: number | null;
   /** Ended, and what its pane showed while it ran was recorded here: its raw output can be played back. */
   rawOutput: boolean;
+  /** Ended and listed: what came of it, the look back's way (its pull request, commits, asks, last word); null otherwise. */
+  outcome: SessionOutcome | null;
+  /** Live in a pane here: the pane's last lines that say something, as the bar's card shows them; null otherwise. */
+  tail: string[] | null;
+  /** On no ticket: the open one what the person first said to it sounds like; null without a guess. */
+  guess: { key: string; title: string } | null;
 }
 
 /** A plain terminal closed here whose output was recorded: in History, to play back. */
@@ -66,6 +74,9 @@ export interface ClosedTerminalRow {
   startedAt: number;
   endedAt: number;
 }
+
+/** One entry of a pane's timeline: a session that ran in it, or manual work done there between sessions (raw output only). */
+export type TimelineEntry = { kind: "session"; id: string; from: number; to: number | null; session: SessionRow } | { kind: "manual"; id: string; from: number; to: number; bytes: number };
 
 /** One frame of a recording played back: when it was painted, the screen's size, whether it paints the whole screen (a snapshot the window took, `key`, after a reset). */
 export interface ReplayRecord {
@@ -90,8 +101,11 @@ export interface ThreadRow {
   /** The conversation it was opened under, to write its code in the background: it sits under that one in the bar. */
   parentId: string | null;
   running: boolean;
-  /** What it waits on the person for, and since when this window has seen it wait in that way. */
-  wait: { kind: "permission" | "question"; text: string | null; since: number } | null;
+  /**
+   * What it waits on the person for, and since when this window has seen it wait in that way; with the question's id
+   * and the choices its card answers with (null when it offers none, or takes several at once).
+   */
+  wait: { kind: "permission" | "question"; text: string | null; since: number; questionId: string | null; options: string[] | null } | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -110,6 +124,8 @@ export interface TerminalRow {
   agentStatus: "working" | "blocked" | "idle" | "done" | null;
   /** With no agent in it: what runs in its foreground when that is not the shell, else the title its shell set. */
   running: string | null;
+  /** Nothing runs in it but its shell: no agent, no other command in its foreground. */
+  shell: boolean;
   /** The code session its agent claimed a ticket for: the cell shows that session, on the same pane. */
   sessionId: string | null;
   /** Why it stays a plain terminal although an agent claimed a ticket, when Tomrade cannot tell which terminal that was. */
@@ -192,8 +208,11 @@ export type WindowMessage =
   /** The window names the new terminal's id, so its cell shows it before herdr has opened it. */
   /** The ended session a cell shows: its conversation, read from its agent's own record; `before` an earlier read's `start`, what came before it. */
   | { type: "conversation"; cell: string; sessionId: string; before?: number }
-  /** `resume`: a conversation's session, taken up again in the new terminal by its agent. */
-  | { type: "newTerminal"; terminalId: string; cwd: string | null; resume?: string }
+  /**
+   * `resume`: a conversation's session, taken up again in the new terminal by its agent. `from`: the pane of the cell it
+   * was split off, whose shell's folder it starts in when that is known (the shell may have moved since `cwd`).
+   */
+  | { type: "newTerminal"; terminalId: string; cwd: string | null; resume?: string; from?: string }
   | { type: "closeTerminal"; terminalId: string }
   /** Where herdr cannot show a terminal here: open one in the system terminal, in this folder. */
   | { type: "openOutside"; cwd: string | null }
@@ -224,12 +243,21 @@ export type WindowMessage =
   | { type: "openThread"; sessionId: string }
   /** An assistant conversation, shown in the app window: it has no pane here. */
   | { type: "showThread"; threadId: string }
+  /** The app's main window brought forward, on this project. */
+  | { type: "mainWindow" }
+  /** The person's answer to a ticketless session's guess: take that ticket, or go on without one. */
+  | { type: "takeGuess"; sessionId: string }
+  | { type: "noTicket"; sessionId: string }
   /** The session's permission prompt answered from its card: the keys its agent declared, pressed in its pane. */
   | { type: "answer"; sessionId: string; which: "allow" | "deny" }
+  /** An assistant conversation's question answered from its card with one of its choices. */
+  | { type: "answerThread"; threadId: string; questionId: string; value: string }
   /** The last lines of every pane this window lists, for the overview: answered with `tails`. */
   | { type: "tails" }
-  /** The recording of an ended session or a closed terminal a cell shows: answered with `replay`. */
+  /** The recording of an ended session, a closed terminal or a stretch of manual work a cell shows: answered with `replay`. */
   | { type: "replay"; cell: string; id: string }
+  /** What happened in a pane from early to late, for the cell's timeline: answered with `timeline`. */
+  | { type: "timeline"; cell: string; pane: string }
   /** The cell's screen as asked for by `snapshot`: serialized by the window, as of the last frame it had drawn (`seq`). */
   | { type: "snapshot"; cell: string; token: number; seq: number; width: number; height: number; bytes: Uint8Array }
   | { type: "openWorktree"; sessionId: string }
@@ -278,5 +306,8 @@ export type WindowPost =
   /**
    * What was recorded of the session or terminal: the records before `at` bring the screen to its start and are not
    * shown. `cut`: its start did not fit; `clean`: the first record paints the whole screen. None recorded: no records.
+   * `keep`: how long and how much of a pane the recordings are kept, as the settings say.
    */
-  | { type: "replay"; cell: string; id: string; records: ReplayRecord[]; at: number; cut: boolean; clean: boolean; from: number; to: number };
+  | { type: "replay"; cell: string; id: string; records: ReplayRecord[]; at: number; cut: boolean; clean: boolean; from: number; to: number; keep: { days: number; mb: number } }
+  /** A pane's sessions and the manual work between them, oldest first; `keep` as for a replay. */
+  | { type: "timeline"; cell: string; pane: string; entries: TimelineEntry[]; keep: { days: number; mb: number } };
