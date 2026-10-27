@@ -1,8 +1,10 @@
 import type { Context } from "cordis";
+import type { ItemStatus } from "@tomradex/domain";
 import { PANEL_SURFACES, type RecordLine, type RecordRead, type ThreadMessage, type ThreadSummary } from "@tomradex/agent";
 import { clipDetail, clipLine, toolLine } from "@tomradex/engine-kit";
 import type { PrState } from "./rules.js";
 import type { CodeLinkStore, CodeLinkView, SessionCursor, SessionMark, SessionView } from "./store.js";
+import { cutFrom } from "./segments.js";
 import { resumeCommand } from "./titles.js";
 
 /** How many rows one page of the look-back list holds. */
@@ -34,6 +36,8 @@ export interface ReviewTicket {
   itemId: string;
   key: string;
   title: string;
+  /** Where the ticket stands now. */
+  status: ItemStatus;
   pr: ReviewPr | null;
   commits: number;
 }
@@ -105,40 +109,11 @@ export interface ReviewView {
   raw: boolean;
 }
 
-/** The tools an outside agent claims a ticket with: `claim_ticket`, however its MCP client prefixes the name. */
-const CLAIM_LINE = /(?:^|[^a-z])claim_ticket\b[^·]*·\s*([A-Z][A-Z0-9]*-\d+)/i;
 
-/**
- * A conversation cut where the session took a ticket on: each mark (a claim, a start on a ticket) begins that
- * ticket's stretch, and a claim the record itself shows begins it at that line. Lines before any mark belong to no
- * ticket; coming back to a ticket begins another stretch of it. Lines the record did not stamp stay where they are.
- */
+
+/** A conversation cut where the session took a ticket on; see `cutFrom`. */
 export function cutByTicket(lines: RecordLine[], marks: SessionMark[], itemOfKey: (key: string) => string | null): { itemId: string | null; lines: RecordLine[] }[] {
-  const sorted = [...marks].sort((a, b) => a.at - b.at);
-  const out: { itemId: string | null; lines: RecordLine[] }[] = [];
-  let current: string | null = null;
-  let next = 0;
-  const push = (itemId: string | null, line: RecordLine) => {
-    const last = out.at(-1);
-    if (last && last.itemId === itemId) last.lines.push(line);
-    else out.push({ itemId, lines: [line] });
-  };
-  for (const line of lines) {
-    // A claim the agent made, as its record shows it: that line opens the ticket's stretch, and its mark is spent.
-    const claimed = line.who === "tool" ? CLAIM_LINE.exec(line.text)?.[1] : undefined;
-    const claimedId = claimed ? itemOfKey(claimed.toUpperCase()) : null;
-    if (claimedId) {
-      current = claimedId;
-      if (sorted[next]?.itemId === claimedId) next++;
-      push(current, line);
-      continue;
-    }
-    if (line.at !== undefined) {
-      while (next < sorted.length && sorted[next]!.at <= line.at) current = sorted[next++]!.itemId;
-    }
-    push(current, line);
-  }
-  return out;
+  return cutFrom(lines, marks, itemOfKey).cuts;
 }
 
 /** The link that speaks for a ticket in this session: on its branch when it has one, the delivery it worked, a pull request over none. */
@@ -284,6 +259,12 @@ export class Review {
     return { row, segments: lines.length ? [this.segment(ticket?.itemId ?? null, ticket, lines)] : [], cut: false, unreadable: false, raw: false };
   }
 
+  /** The tickets a session worked, with what their code came to — for a running session cut by ticket. Reads no record. */
+  tickets(projectId: string, sessionId: string): ReviewTicket[] {
+    const session = this.deps.store.session(projectId, sessionId);
+    return session ? this.sessionRows(projectId, [session])[0]!.tickets : [];
+  }
+
   private segment(itemId: string | null, ticket: ReviewTicket | null, lines: RecordLine[]): ReviewSegment {
     const times = lines.flatMap((l) => (l.at === undefined ? [] : [l.at]));
     return { itemId, key: ticket?.key ?? null, title: ticket?.title ?? null, from: times.length ? Math.min(...times) : null, to: times.length ? Math.max(...times) : null, lines };
@@ -319,7 +300,7 @@ export class Review {
       const ordered = this.ticketOrder(s);
       const tickets = ordered.flatMap((itemId): ReviewTicket[] => {
         const item = this.deps.ctx.items.get(projectId, itemId);
-        return item ? [{ itemId, key: item.key, title: item.title, ...ticketOutcome(s, itemId, links) }] : [];
+        return item ? [{ itemId, key: item.key, title: item.title, status: item.status, ...ticketOutcome(s, itemId, links) }] : [];
       });
       return {
         id: s.id,
@@ -354,7 +335,7 @@ export class Review {
 
   private threadRow(projectId: string, th: ThreadSummary): ReviewRow {
     const item = th.itemId ? this.deps.ctx.items.get(projectId, th.itemId) : null;
-    const tickets: ReviewTicket[] = item ? [{ itemId: item.id, key: item.key, title: item.title, pr: null, commits: 0 }] : [];
+    const tickets: ReviewTicket[] = item ? [{ itemId: item.id, key: item.key, title: item.title, status: item.status, pr: null, commits: 0 }] : [];
     return { id: th.id, kind: th.archived ? "thread" : "idle", agent: th.engine, title: th.title || item?.title || "", tickets, asked: null, commits: 0, pr: null, said: null, where: "panel", threadId: th.id, resumable: false, startedAt: th.createdAt, endedAt: th.updatedAt };
   }
 

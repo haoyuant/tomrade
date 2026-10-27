@@ -25,6 +25,8 @@ export function ConvoLines({ lines, open, toggle, say, coding, waiting, notes }:
               </Fragment>
             ))}
           </details>
+        ) : entry.who === "mark" ? (
+          <p key={entry.key} className="cs-convo-mark" data-testid="convo-mark">{entry.text}</p>
         ) : (
           <Fragment key={entry.key}>
             {notes?.has(entry.key) && <p className="cs-convo-note" data-testid="cs-convo-note">{notes.get(entry.key)}</p>}

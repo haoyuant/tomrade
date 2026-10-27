@@ -911,6 +911,41 @@ const run = async () => {
   check("picking a thread brings its conversation back and stops reading the pane and the record", !(await sessionView()) && tailReads - left.tail <= 1 && convoReads === left.convo && !!(await $(`!!document.querySelector('.ai-scroll .turn, .ai-composer')`)), { tail: tailReads - left.tail, convo: convoReads - left.convo });
 
   // ── what else waits: a line on top, ⌥↓ to the next, and answering one opens the next — or stays, as the person chose ──
+  // ── a running session cut by ticket in the panel, as it moves: where it claimed, what it linked ──
+  const segTicket = ctx.items.create({ projectId: alpha.id, boardId, title: "Segment the record", by: "human" });
+  const segRecord = path.join(work, "cc-check-2.jsonl");
+  const segEntries = [
+    { type: "user", message: { content: "look at the record first" } },
+    { type: "assistant", message: { content: [{ type: "text", text: "It is one file per pane." }] } },
+    { type: "user", message: { content: `start ${segTicket.key}` } },
+    { type: "assistant", message: { content: [{ type: "tool_use", id: "c1", name: "mcp__tomrade__claim_ticket", input: { key: segTicket.key } }] } },
+    { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "c1", content: "claimed" }] } },
+    { type: "assistant", message: { content: [{ type: "tool_use", id: "e1", name: "Edit", input: { file_path: "src/record.ts", old_string: "a", new_string: "b" } }] } },
+    { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "e1", content: "ok" }] } }
+  ];
+  const writeSegRecord = (entries) => fs.writeFileSync(segRecord, entries.map((entry) => JSON.stringify(entry)).join("\n") + "\n");
+  writeSegRecord(segEntries);
+  const segPane = ctx.codeLink.store.createSession(alpha.id, { repoId: "check", branch: "", itemIds: [segTicket.id], mode: "terminal", agent: "claude-code", threadId: null, device: "check" });
+  const segMoved = () => {
+    ctx.codeLink.store.patchSession(alpha.id, segPane.id, { herdrPane: "w1:p2", externalId: "cc-check-2", transcript: segRecord, state: "running", lastEventAt: Date.now() });
+    ctx.emit("codeLink/changed", alpha.id);
+    ctx.ipc.send("codeLink.changed", alpha.id);
+  };
+  segMoved();
+  await sleep(800);
+  await press(`[...document.querySelectorAll('.ai .sbar-dot')].find((n) => /Segment the record/.test(n.getAttribute('aria-label')))`);
+  const sessionSegs = () => $(`[...document.querySelectorAll('[data-testid="ai-session-seg"]')].map((s) => ({ ticket: s.dataset.ticket, marks: [...s.querySelectorAll('[data-testid="convo-mark"]')].map((m) => m.textContent), facts: s.querySelector('[data-testid="ai-session-seg-facts"]')?.textContent ?? null }))`);
+  check("a running session in the panel is cut by ticket where it claimed, the claim said as a mark", await until(async () => { const s = await sessionSegs(); return s.length === 2 && s[0].ticket === "" && s[1].ticket === segTicket.key && s[1].marks[0] === `● Claimed ${segTicket.key}`; }, 60), await sessionSegs());
+  check("and the ticket's stretch ends on where the ticket stands", await until(async () => !!(await sessionSegs())[1]?.facts, 30), await sessionSegs());
+  await shot("session-segments.png");
+  writeSegRecord([...segEntries, { type: "assistant", message: { content: [{ type: "tool_use", id: "l1", name: "mcp__tomrade__link_code", input: { prUrl: "https://github.com/o/r/pull/419", scopeChecked: true } }] } }]);
+  segMoved();
+  check("as it moves, the stretch takes the new lines: the pull request it linked, said as a mark", await until(async () => !!(await sessionSegs())[1]?.marks.includes("● Linked PR #419"), 60) && (await sessionSegs()).length === 2, await sessionSegs());
+  ctx.codeLink.store.patchSession(alpha.id, segPane.id, { state: "ended", endedAt: Date.now() });
+  ctx.ipc.send("codeLink.changed", alpha.id);
+  await press(`document.querySelector('.ai-session-head button[aria-label="Back to the conversation"]')`);
+  await sleep(400);
+
   let askers = 0;
   const asking = async () => {
     const th = ctx.agent.newThread(alpha.id, "mixed", null, { title: `Asker ${++askers}` });
@@ -1343,9 +1378,16 @@ const run = async () => {
   check("without a recording of its pane there is no raw-output tab", !reviewOpen.lenses, reviewOpen);
   const segs = () => $(`[...document.querySelectorAll('[data-testid="ai-review-seg"]')].map((s) => [s.dataset.ticket, s.dataset.kind, !!s.dataset.open])`);
   check("the conversation is cut where the second ticket was claimed, each stretch marked writing code, all open from the list", JSON.stringify(await segs()) === JSON.stringify([[reviewTicket.key, "code", true], [alsoTicket.key, "code", true]]), await segs());
-  const segLines = await $(`[...document.querySelectorAll('[data-testid="ai-review-seg"]')].map((s) => [...s.querySelectorAll('.cs-convo-line')].map((l) => l.textContent))`);
-  check("each stretch holds its own lines, the claim opening the second", segLines[0]?.[0] === "start on the snapshot" && /claim_ticket/.test(segLines[1]?.[0] ?? ""), segLines);
+  const segLines = await $(`[...document.querySelectorAll('[data-testid="ai-review-seg"]')].map((s) => [...s.querySelectorAll('.cs-convo-line, [data-testid="convo-mark"]')].map((l) => l.textContent))`);
+  check("each stretch holds its own lines, the claim opening the second as a mark", segLines[0]?.[0] === "start on the snapshot" && segLines[1]?.[0] === `● Claimed ${alsoTicket.key}`, segLines);
+  const segFacts = () => $(`[...document.querySelectorAll('[data-testid="ai-review-seg"]')].map((s) => s.querySelector('[data-testid="ai-review-seg-facts"]')?.textContent ?? null)`);
+  check("a ticket's stretch ends on its commits, its pull request and where the ticket stands", /^4 commits · PR #407 merged · \w+/.test((await segFacts())[0] ?? ""), await segFacts());
   await shot("review-open.png");
+  // a ticket chip on top: only its stretches, and the way back to all of them
+  await press(`[...document.querySelectorAll('[data-testid="ai-review-chip"]')].find((c) => c.dataset.ticket === ${JSON.stringify(alsoTicket.key)})`);
+  check("picking a ticket's chip shows only that ticket's stretches, with the way back to all", await until(async () => JSON.stringify(await segs()) === JSON.stringify([[alsoTicket.key, "code", true]]) && (await present('[data-testid="ai-review-all"]')), 30), await segs());
+  await press(`document.querySelector('[data-testid="ai-review-all"]')`);
+  check("“show all” brings every stretch back", await until(async () => (await segs()).length === 2 && !(await present('[data-testid="ai-review-all"]')), 30), await segs());
   // going on in a terminal cell asks the Terminal window for a new cell with the agent's resume command
   const resumedIn = [];
   const resumeInTerminal = ctx.codeLink.resumeInTerminal.bind(ctx.codeLink);

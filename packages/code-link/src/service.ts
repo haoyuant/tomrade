@@ -44,7 +44,7 @@ import { Starter, type StartGate, type StartOptions, type StartResult } from "./
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type Readiness, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
 import { readSnapshot, saveSnapshot, snapshotFile } from "./snapshots.js";
 import { askLine, permissionAsk, questionAsk } from "./ask.js";
-import { Review, type ReviewCursor, type ReviewPage, type ReviewSaid, type ReviewView, type SessionOutcome } from "./review.js";
+import { Review, type ReviewCursor, type ReviewPage, type ReviewSaid, type ReviewTicket, type ReviewView, type SessionOutcome } from "./review.js";
 import { recordOf, resumeCommand } from "./titles.js";
 import { AUTO_TERMINAL, TerminalSettings, commandOk, exec, locatedCommand, terminalApps, terminalPath } from "./terminal.js";
 import { registerTools } from "./tools.js";
@@ -270,6 +270,8 @@ declare module "@tomradex/ipc" {
     /** The ended conversations that said `query`, among the newest few: read one at a time, never all at once. */
     "codeLink.reviewSaid": (projectId: string, query: string) => ReviewSaid;
     /** One ended conversation opened whole, cut by the tickets it worked; null when it is not there. */
+    /** The tickets a session worked, with their code's outcome and status, read from stored rows: a running session cut by ticket. */
+    "codeLink.sessionTickets": (projectId: string, sessionId: string) => ReviewTicket[];
     "codeLink.reviewOpen": (projectId: string, ref: { sessionId?: string; threadId?: string }) => ReviewView | null;
     /** What the session's pane showed while it ran, as the Terminal window recorded it; null without a recording. */
     "codeLink.reviewRaw": (projectId: string, sessionId: string) => RawOutput | null;
@@ -773,6 +775,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.reviewList", (projectId, opts) => ctx.codeLink.review.list(projectId, opts));
       ctx.ipc.handle("codeLink.reviewSaid", (projectId, query) => ctx.codeLink.review.saidIn(projectId, query));
       ctx.ipc.handle("codeLink.reviewOpen", (projectId, ref) => ctx.codeLink.review.open(projectId, ref));
+      ctx.ipc.handle("codeLink.sessionTickets", (projectId, sessionId) => ctx.codeLink.review.tickets(projectId, sessionId));
       ctx.ipc.handle("codeLink.reviewRaw", (projectId, sessionId) => ctx.codeLink.rawOutput(projectId, sessionId));
       ctx.ipc.handle("codeLink.resumeInTerminal", (projectId, sessionId) => ctx.codeLink.resumeInTerminal(projectId, sessionId));
     });

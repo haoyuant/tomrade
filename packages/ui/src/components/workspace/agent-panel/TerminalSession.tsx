@@ -2,12 +2,17 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useQuery } from "@tanstack/react-query";
 import type { EngineView } from "@tomradex/agent";
 import type { SessionView } from "@tomradex/code-link";
+import { cutFrom, joinCuts } from "@tomradex/code-link/segments";
+import type { Item } from "@tomradex/domain";
 import { PROMPT_LINES, promptOnScreen } from "@tomradex/code-link/prompt";
 import { Icon } from "~/components/icons";
 import { ConvoLines, ConvoTop, useOpenLines, type ConvoSay } from "~/components/ConversationRead";
 import { Spacer } from "~/components/ui/atoms";
 import { invoke, subscribe } from "~/lib/api";
 import { findEngine } from "~/lib/agent";
+import { STATUS } from "~/lib/domain";
+import { segmentKind, segmentWork, type OutcomeWords } from "~/lib/review";
+import { markLines, returns, segmentFacts, type MarkWord } from "~/lib/sessionSegments";
 import { useI18n } from "~/lib/i18n";
 import { isCommitKey, isComposing } from "~/lib/keys";
 import { ATTENTION_KEY } from "~/lib/attention";
@@ -25,11 +30,13 @@ const ANSWERED_MS = 8000;
  * session moves; a strip above it shows the pane's last lines, opening into a drawer with more; what is typed below
  * goes into the pane as keystrokes. Nothing here attaches to the pane, so the Terminal window keeps its control.
  */
-export function TerminalSession({ projectId, session, title, ticket, status, engines, cell, onShowInTerminal, onBack, backBlocked, onClose, onAnswered }: {
+export function TerminalSession({ projectId, session, title, ticket, status, engines, items, cell, onShowInTerminal, onBack, backBlocked, onClose, onAnswered }: {
   projectId: string;
   session: SessionView;
   title: string;
   ticket: string | null;
+  /** The project's tickets by key: the claims the record shows cut the conversation by ticket. */
+  items?: Map<string, Item>;
   status: BarStatus;
   engines: EngineView[] | undefined;
   /** The Terminal window cell that shows it, by the window's number; null when none does. */
@@ -262,6 +269,29 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
     const note = cell ? t("sessionBar.saidInCell", { n: cell }) : t("sessionBar.saidInTerminal");
     return new Map(saidElsewhere(lines, shownSince.current, sentHere.current).map((key) => [key, note]));
   }, [lines, cell, t]);
+  // Cut by ticket as it moves: the earlier pages once, the newest page again from where they ended.
+  const marksKey = session.marks.map((m) => `${m.itemId}@${m.at}`).join(",");
+  const marks = useMemo(() => (marksKey ? marksKey.split(",").map((m) => { const at = m.lastIndexOf("@"); return { itemId: m.slice(0, at), at: Number(m.slice(at + 1)) }; }) : []), [marksKey]);
+  const itemOfKey = useCallback((key: string) => items?.get(key)?.id ?? null, [items]);
+  const earlierCut = useMemo(() => cutFrom(convo?.earlier ?? [], marks, itemOfKey), [convo?.earlier, marks, itemOfKey]);
+  const cuts = useMemo(() => joinCuts(earlierCut.cuts, cutFrom(convo?.tail ?? [], marks, itemOfKey, earlierCut.state).cuts), [earlierCut, convo?.tail, marks, itemOfKey]);
+  const ticketed = cuts.some((c) => c.itemId);
+  const worked = useQuery({
+    queryKey: ["sessionTickets", projectId, session.id, marksKey, session.itemIds.join(",")],
+    queryFn: () => invoke("codeLink.sessionTickets", projectId, session.id),
+    enabled: ticketed,
+    staleTime: 30_000
+  });
+  const outcomeSay: OutcomeWords = (key, vars) => t(`review.${key}`, vars);
+  const segments = useMemo(() => {
+    const markSay: MarkWord = (key, vars) => t(`review.${key}`, vars);
+    const again = returns(cuts);
+    return cuts.map((c, i) => {
+      const tk = c.itemId ? worked.data?.find((w) => w.itemId === c.itemId) : undefined;
+      const key = tk?.key ?? (c.itemId ? [...(items?.values() ?? [])].find((it) => it.id === c.itemId)?.key ?? null : null);
+      return { itemId: c.itemId, key, lines: markLines(c.lines, key, again[i]!, markSay), kind: segmentKind(segmentWork(c.lines)), ticket: tk };
+    });
+  }, [cuts, worked.data, items, t]);
   const asked = session.ask ? askText(session.ask, t) : null;
   const wait = status === "wait" ? asked ?? session.activity ?? session.summary ?? t(ATTENTION_KEY[session.state === "error" ? "stuck" : "waiting"]) : null;
 
@@ -332,7 +362,19 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
           ) : convo ? (
             <>
               <ConvoTop cut={convo.before !== null} reading={readingEarlier} onEarlier={readEarlier} say={say} />
-              <ConvoLines lines={lines} open={open} toggle={toggle} say={say} waiting={asking} notes={notes} />
+              {ticketed ? (
+                segments.map((seg, i) => (
+                  <div key={seg.lines[0]?.key ?? i} className="ai-session-seg" data-testid="ai-session-seg" data-ticket={seg.key ?? ""} data-kind={seg.kind}>
+                    <div className="work-rule" role="separator">
+                      <span>{seg.key ? `${seg.key} · ${t(seg.kind === "code" ? "review.kindCode" : "review.kindChat")}` : t("review.beforeTicket")}</span>
+                    </div>
+                    <ConvoLines lines={seg.lines} open={open} toggle={toggle} say={say} coding={!!seg.key && seg.kind === "code"} waiting={asking && i === segments.length - 1} notes={notes} />
+                    {seg.ticket && <span className="ai-review-work" data-testid="ai-session-seg-facts">{segmentFacts(seg.ticket, outcomeSay, (st) => STATUS[st].label)}</span>}
+                  </div>
+                ))
+              ) : (
+                <ConvoLines lines={lines} open={open} toggle={toggle} say={say} waiting={asking} notes={notes} />
+              )}
             </>
           ) : null}
         </div>
