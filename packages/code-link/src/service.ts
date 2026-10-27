@@ -29,7 +29,7 @@ import { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
 import { FollowOnStore, type FollowOn } from "./follow-ons.js";
 import { Handoff, type HandoffResult, type HandoffView } from "./handoff.js";
 import { HerdrBridge, type HerdrInstall } from "./herdr-bridge.js";
-import { SessionPanel, type AnswerResult, type SessionPanelView } from "./panel.js";
+import { SessionPanel, type AnswerResult, type SessionGlance, type SessionPanelView } from "./panel.js";
 import { Landing, type MergeCause, type MergeCheckView, type MergeLocalResult, type OpenPrResult } from "./landing.js";
 import { Orientation } from "./orientation.js";
 import { SYNC_PROMPT, syncInstructions, syncPrompt, type SyncScope } from "./sync.js";
@@ -83,8 +83,8 @@ declare module "cordis" {
 export const RECENT_ENDED_MS = 24 * 60 * 60_000;
 export const RECENT_ENDED_MAX = 8;
 
-/** A session as the session lists show it: an ended one with what came of it, a live one with none. */
-export type RecentSession = SessionView & { outcome: SessionOutcome | null };
+/** A session as the session lists show it: an ended one with what came of it; a live one with whether its card can answer its prompt. */
+export type RecentSession = SessionView & SessionGlance & { outcome: SessionOutcome | null };
 
 /** A recording of a pane's output, as the Terminal window's plugin hands it over to play back elsewhere. */
 export interface RawOutput {
@@ -1002,12 +1002,17 @@ export class CodeLink extends Service implements CodeLinkReader {
     return this.handoff.backToPanel(projectId, threadId);
   }
 
-  /** Asked on every session change while a list shows: it reads the live rows and a handful of ended ones, not the whole history. */
-  recentSessions(projectId: string, now = Date.now()): RecentSession[] {
+  /**
+   * Asked on every session change while a list shows: it reads the live rows and a handful of ended ones, not the whole
+   * history; a pane's screen only for a session waiting on a permission its card can answer.
+   */
+  async recentSessions(projectId: string, now = Date.now()): Promise<RecentSession[]> {
     const rows = this.store.recentSessions(projectId, now - RECENT_ENDED_MS, RECENT_ENDED_MAX);
-    const ended = rows.filter((s) => s.state === "ended" || s.state === "lost");
+    const isEnded = (s: SessionView) => s.state === "ended" || s.state === "lost";
+    const ended = rows.filter(isEnded);
     const outcomes = ended.length ? this.review.outcomes(projectId, ended) : new Map<string, SessionOutcome>();
-    return rows.map((s) => ({ ...s, outcome: outcomes.get(s.id) ?? null }));
+    const glances = await this.panel.glance(rows.filter((s) => !isEnded(s)), now);
+    return rows.map((s) => ({ ...s, approval: false, prompt: null, ...glances.get(s.id), outcome: outcomes.get(s.id) ?? null }));
   }
 
   /** What came of each of these ended sessions, by id, the way every list says it. */

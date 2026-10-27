@@ -109,3 +109,9 @@ it("carries what came of an ended session as the look back reads it, and the cel
   // ended, it is looked back on: no cell, and its outcome as the history has it
   expect(out.find((r) => r.key === "session:old")).toMatchObject({ cell: null, outcome });
 });
+
+it("lets a waiting terminal session's card answer only the prompt its screen shows, for an agent that declared its keys", () => {
+  const asks = (id: string, over: Partial<SessionView> & { approval?: boolean; prompt?: "allow" | "deny" | null }) => ({ ...session(id, { state: "waiting", activity: "needs your approval: Bash" }), approval: true, prompt: "allow" as const, ...over });
+  const out = rows({ sessions: [asks("yes", {}), asks("no", { prompt: "deny" }), asks("mute", { approval: false }), asks("idle", { activity: "asking you something" }), session("runs", { approval: true, prompt: "allow" } as never)] });
+  expect(Object.fromEntries(out.map((r) => [r.sessionId, r.prompt]))).toEqual({ yes: "allow", no: "deny", mute: null, idle: null, runs: null });
+});

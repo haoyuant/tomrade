@@ -92,8 +92,11 @@ export interface ThreadRow {
   /** The conversation it was opened under, to write its code in the background: it sits under that one in the bar. */
   parentId: string | null;
   running: boolean;
-  /** What it waits on the person for, and since when this window has seen it wait in that way. */
-  wait: { kind: "permission" | "question"; text: string | null; since: number } | null;
+  /**
+   * What it waits on the person for, and since when this window has seen it wait in that way; with the question's id
+   * and the choices its card answers with (null when it is answered in words, or with several at once).
+   */
+  wait: { kind: "permission" | "question"; text: string | null; since: number; questionId: string | null; options: string[] | null } | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -228,6 +231,8 @@ export type WindowMessage =
   | { type: "showThread"; threadId: string }
   /** The session's permission prompt answered from its card: the keys its agent declared, pressed in its pane. */
   | { type: "answer"; sessionId: string; which: "allow" | "deny" }
+  /** An assistant conversation's question answered from its card with one of its choices. */
+  | { type: "answerThread"; threadId: string; questionId: string; value: string }
   /** The last lines of every pane this window lists, for the overview: answered with `tails`. */
   | { type: "tails" }
   /** The recording of an ended session or a closed terminal a cell shows: answered with `replay`. */

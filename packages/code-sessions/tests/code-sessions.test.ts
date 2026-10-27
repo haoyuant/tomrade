@@ -1324,7 +1324,8 @@ it("lists the assistant's conversations from a cache read when they change, neve
     { id: "t-asks", title: "整理 Q4 backlog", engine: "loop", itemId: null, createdAt: 1, updatedAt: 5 },
     { id: "t-busy", title: "", engine: "claude-code", itemId: null, createdAt: 2, updatedAt: 6 }
   ];
-  let pending: { threadId: string; kind: string; text: string }[] = [{ threadId: "t-asks", kind: "ask", text: "要我取消 3 张重复工单吗？" }];
+  let pending: { threadId: string; kind: string; text: string; options?: string[] }[] = [{ threadId: "t-asks", kind: "ask", text: "要我取消 3 张重复工单吗？" }];
+  const sent: unknown[][] = [];
   class FakeSurfaces extends Service {
     static provide = "desktopSurfaces";
     constructor(ctx: Context) {
@@ -1370,12 +1371,13 @@ it("lists the assistant's conversations from a cache read when they change, neve
     store = { threads: (projectId: string) => (threadReads.push(projectId), threadList.map((t) => ({ ...t, projectId, boardId: null, branch: null, surface: "assistant", archived: false }))) };
     activeRuns = () => [{ run: { id: "r1" }, thread: { id: "t-busy" } }];
     activities = () => pending.map((p) => ({ projectId: "p", threadId: p.threadId, run: null, pending: { threadId: p.threadId, kind: p.kind, workflow: null, question: { id: "q", text: p.text }, accepts: "text" } }));
+    send = async (...args: unknown[]) => (sent.push(args), { runId: "r9" });
     engineOf = (id: string) => (id === "loop" ? { id, title: "Tomrade assistant" } : id === "claude-code" ? { id, title: "Claude Code", local: { approval: { allow: ["enter"], deny: ["esc"] } } } : undefined);
   }
   const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "settings-threads.json") }], Contributions, FakeSurfaces, FakeHerdr, FakeCodeLink, FakeAgent, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile: path.join(dir, "state-threads.json") }]] });
   const projectId = w.project.id;
   // The fake agent answers for every project with the same list; the cache is keyed by the window's project.
-  (w.ctx.get("agent") as unknown as FakeAgent).activities = () => pending.map((p) => ({ projectId, threadId: p.threadId, run: null, pending: { threadId: p.threadId, kind: p.kind, workflow: null, question: { id: "q", text: p.text }, accepts: "text" } }));
+  (w.ctx.get("agent") as unknown as FakeAgent).activities = () => pending.map((p) => ({ projectId, threadId: p.threadId, run: null, pending: { threadId: p.threadId, kind: p.kind, workflow: null, question: { id: "q", text: p.text, ...(p.options ? { options: p.options } : {}) }, accepts: p.options ? "options" : "text" } }));
   w.ctx.on("desktop/open", (target) => void events.push(["desktop/open", target]));
   await w.ctx.contributions.run("code-sessions.open", { projectId });
   const win = opened[0]!;
@@ -1405,7 +1407,8 @@ it("lists the assistant's conversations from a cache read when they change, neve
   w.ctx.emit("agent/event", "t-busy", { type: "done", run: { id: "r1" } } as never);
   await new Promise((resolve) => setTimeout(resolve, 150));
   expect(threadReads).toHaveLength(2);
-  expect(win.states.at(-1)!.threads[0]!.wait).toEqual({ kind: "question", text: "要我取消 3 张重复工单吗？", since });
+  // answered in words, its card has no choices to press
+  expect(win.states.at(-1)!.threads[0]!.wait).toEqual({ kind: "question", text: "要我取消 3 张重复工单吗？", since, questionId: "q", options: null });
   // A conversation no window lists yet, and each message landing, leave it be: the conversation comes in with its run's start.
   pending = [];
   threadList.push({ id: "t-new", title: "新对话", engine: "loop", itemId: null, createdAt: 7, updatedAt: 8 });
@@ -1425,10 +1428,11 @@ it("lists the assistant's conversations from a cache read when they change, neve
   await new Promise((resolve) => setTimeout(resolve, 150));
   expect(threadReads).toHaveLength(4);
 
-  // Allow from a card: the keys its agent declared go to its pane through code link; not taken, the window is told.
+  // Allow from a card: the keys its agent declared go to its pane through code link, and the window says it stayed put;
+  // not taken, the window is told.
   await say({ type: "answer", sessionId: "s1", which: "allow" });
   expect(answered).toEqual([[projectId, "s1", "allow"]]);
-  expect(win.posts.filter((p) => p.type === "toast")).toEqual([]);
+  expect(win.posts.filter((p) => p.type === "toast").map((p) => (p as { text: string }).text)).toEqual([expect.stringMatching(/^Allowed “.+” · you stayed where you were$/)]);
   takes = "failed";
   await say({ type: "answer", sessionId: "s1", which: "deny" });
   expect(win.posts.at(-1)).toEqual({ type: "toast", text: "The terminal did not take the answer; answer in its pane" });
@@ -1437,6 +1441,10 @@ it("lists the assistant's conversations from a cache read when they change, neve
   await say({ type: "answer", sessionId: "s1", which: "allow" });
   expect(win.posts.at(-1)).toEqual({ type: "toast", text: "Its screen shows no permission prompt a key could answer safely — answer it in its pane" });
   expect(win.states.at(-1)!.reveal?.sessionId).toBe("s1");
+  // An assistant question answered from its card by one of its choices: the agent hears it, the window stays.
+  await say({ type: "answerThread", threadId: "t-asks", questionId: "q", value: "确认" });
+  expect(sent).toEqual([[projectId, "t-asks", { kind: "answer", questionId: "q", value: "确认" }]]);
+  expect(win.posts.at(-1)).toEqual({ type: "toast", text: "Answered “整理 Q4 backlog” · you stayed where you were" });
   // An assistant conversation opens in the app window, as a notification's click does.
   await say({ type: "showThread", threadId: "t-asks" });
   expect(events).toEqual([["desktop/open", { projectId, threadId: "t-asks" }]]);

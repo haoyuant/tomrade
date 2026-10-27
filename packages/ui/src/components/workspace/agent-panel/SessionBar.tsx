@@ -1,5 +1,5 @@
 import { Fragment, memo, useEffect, useId, useRef, useState, type ReactElement } from "react";
-import type { EngineView } from "@tomradex/agent";
+import type { EngineView, PendingView } from "@tomradex/agent";
 import { Icon } from "~/components/icons";
 import { ContextMenu, ContextMenuActionItem } from "~/components/ui/menu";
 import { ATTENTION_KEY } from "~/lib/attention";
@@ -11,6 +11,11 @@ import type { BarRow, BarStatus } from "~/lib/sessionBar";
 import { rangeLabel, spanLabel } from "~/lib/sessionTime";
 
 export type BarMode = "rail" | "cards";
+/** What a card answers with: a terminal session's permission prompt, or an assistant question by one of its choices. */
+export type CardAnswer = { which: "allow" | "deny" } | { questionId: string; value: string };
+
+/** At most this many of a question's choices sit on its card; the rest are answered where it opens. */
+const CHOICES_SHOWN = 3;
 type Filter = "all" | Exclude<BarStatus, "idle">;
 
 /** Three shapes, so the state reads without colour: a ring runs, a diamond waits, a tick ended. */
@@ -43,13 +48,17 @@ function RowActions({ row, onArchive, onDelete }: { row: BarRow; onArchive: (thr
  * The session bar on the panel's right edge: a column of dots to switch by, or cards that say what each is doing.
  * Memoized: the panel renders every frame a reply streams, and the bar has nothing new to show then.
  */
-export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engines, onMode, onPick, onNew, onHistory, onArchive, onDelete }: {
+export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engines, pendings, onMode, onPick, onAnswer, onNew, onHistory, onArchive, onDelete }: {
   rows: BarRow[];
   openKey: string | null;
   mode: BarMode;
   engines: EngineView[] | undefined;
+  /** What the waiting conversations ask, by thread, for their cards to answer in place. */
+  pendings: Map<string, PendingView>;
   onMode: (mode: BarMode) => void;
   onPick: (row: BarRow) => void;
+  /** Answered from its card: the panel stays where it is. */
+  onAnswer: (row: BarRow, answer: CardAnswer) => void;
   onNew: () => void;
   /** The look back on everything that ended, beyond the few the bar keeps. */
   onHistory: () => void;
@@ -85,6 +94,28 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engine
   const when = (r: BarRow) =>
     r.parkedUntil ? t("agentPanel.parkedUntil", { time: clockLabel(r.parkedUntil) }) : r.status === "wait" ? t("sessionBar.waitedFor", { d: spanLabel(now - r.at, t) }) : r.status === "run" ? t("sessionBar.ranFor", { d: spanLabel(now - r.startedAt, t) }) : r.status === "done" ? rangeLabel(r.startedAt, r.at) : timeAgo(r.at);
   const isNew = (r: BarRow) => r.status !== "done" && now - r.startedAt < 60_000;
+  // A waiting card answers in place: Allow (or Deny, with no under the cursor) for a prompt on a terminal's screen, a
+  // question's choices for a conversation; "look first" opens it. Nothing to press here leaves only the card.
+  const ask = (r: BarRow) => {
+    if (r.status !== "wait") return null;
+    const pending = r.threadId ? pendings.get(r.threadId) : undefined;
+    const choices = pending && pending.accepts === "options" && !pending.question.multiple ? (pending.question.options ?? []).slice(0, CHOICES_SHOWN) : [];
+    if (!r.prompt && !choices.length) return null;
+    const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+    return (
+      <div className="sbar-ask" role="group" aria-label={t("sessionBar.askGroup")} data-testid="sbar-ask" onClick={stop} onKeyDown={stop}>
+        <span className="sbar-ask-text">{pending?.question.text ?? said(r)}</span>
+        <span className="sbar-ask-actions">
+          {r.prompt === "allow" && <button type="button" className="btn btn-primary btn-xs" data-testid="sbar-allow" onClick={() => onAnswer(r, { which: "allow" })}>{t("sessionBar.allow")}</button>}
+          {r.prompt === "deny" && <button type="button" className="btn btn-secondary btn-xs" data-testid="sbar-deny" onClick={() => onAnswer(r, { which: "deny" })}>{t("sessionBar.deny")}</button>}
+          {pending && choices.map((choice, i) => (
+            <button key={choice} type="button" className={i === 0 ? "btn btn-primary btn-xs" : "btn btn-secondary btn-xs"} data-testid="sbar-choice" onClick={() => onAnswer(r, { questionId: pending.question.id, value: choice })}>{choice}</button>
+          ))}
+          <button type="button" className="btn btn-secondary btn-xs" data-testid="sbar-look" onClick={() => onPick(r)}>{t("sessionBar.lookFirst")}</button>
+        </span>
+      </div>
+    );
+  };
   const count = (f: Filter) => (f === "all" ? rows.length : rows.filter((r) => r.status === f).length);
   // right-click on a dot or a card: the same two things its buttons do
   const withMenu = (r: BarRow, node: ReactElement) =>
@@ -199,7 +230,7 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engine
               {actionable(r) && <RowActions row={r} onArchive={onArchive} onDelete={onDelete} />}
             </span>
             <span className="meta-txt dense">{[agentName(r), r.status === "done" ? statusWord("done") : where(r), when(r)].filter(Boolean).join(" · ")}</span>
-            {said(r) && <span className={r.status === "wait" ? "sbar-card-wait" : r.status === "done" ? "sbar-card-outcome" : "sbar-card-said"}>{said(r)}</span>}
+            {ask(r) ?? (said(r) && <span className={r.status === "wait" ? "sbar-card-wait" : r.status === "done" ? "sbar-card-outcome" : "sbar-card-said"}>{said(r)}</span>)}
           </div>
         )))}
         {!shown.length && <p className="meta-txt dense sbar-empty">{t("sessionBar.empty")}</p>}

@@ -1,6 +1,7 @@
 import type { ThreadSummary } from "@tomradex/agent";
 import type { SessionOutcome, SessionView } from "@tomradex/code-link";
 import type { AttentionEntry } from "~/lib/attention";
+import { isApprovalAsk } from "./terminalSession";
 
 export type BarStatus = "wait" | "run" | "idle" | "done";
 
@@ -24,6 +25,8 @@ export interface BarRow {
   outcome: SessionOutcome | null;
   /** The Terminal window cell that shows it, by the window's number; null when no cell does. */
   cell: number | null;
+  /** A terminal session waiting on a permission its card can answer: Allow with yes under the cursor, else Deny; null otherwise. */
+  prompt: "allow" | "deny" | null;
   itemIds: string[];
   /** The key of the ticket it works, when it works one. */
   ticket: string | null;
@@ -50,8 +53,8 @@ const RANK: Record<BarStatus, number> = { wait: 0, run: 1, idle: 2, done: 3 };
  */
 export function sessionBarRows(input: {
   threads: ThreadSummary[];
-  /** The session lists' rows; an ended one carries what came of it. */
-  sessions: (SessionView & { outcome?: SessionOutcome | null })[];
+  /** The session lists' rows; an ended one carries what came of it, a waiting one what its screen asks. */
+  sessions: (SessionView & { outcome?: SessionOutcome | null; approval?: boolean; prompt?: "allow" | "deny" | null })[];
   /** Which Terminal window cell shows each session, by session id. */
   cells?: Record<string, number>;
   attention: AttentionEntry[];
@@ -79,7 +82,7 @@ export function sessionBarRows(input: {
       key: `thread:${th.id}`, threadId: th.id, sessionId: session?.id ?? null,
       title: th.title || (th.itemId ? input.itemTitle(th.itemId) : null) || "",
       agent: th.engine, status, where: "panel", terminalApp: null,
-      wait: wait && { kind: wait.kind, text: wait.text }, activity: live ? session.activity : null, outcome: null, cell: live ? cellOf(session.id) : null,
+      wait: wait && { kind: wait.kind, text: wait.text }, activity: live ? session.activity : null, outcome: null, cell: live ? cellOf(session.id) : null, prompt: null,
       itemIds: th.itemId ? [th.itemId] : [], ticket: keyOf(th.itemId ? [th.itemId] : []), origins: th.origins ?? [], parkedUntil: th.parkedUntil ?? null, startedAt: th.createdAt, at: wait?.since ?? th.updatedAt,
       parentKey: th.parentId && panelThreads.has(th.parentId) ? `thread:${th.parentId}` : null, depth: 0
     });
@@ -96,6 +99,7 @@ export function sessionBarRows(input: {
       agent: s.agent, status, where: s.herdrPane ? "pane" : "outside", terminalApp: s.herdrPane ? null : s.terminal,
       wait: status === "wait" ? { kind: wait?.kind ?? (s.state === "error" ? "stuck" : "waiting"), text: wait?.text ?? s.activity ?? s.summary } : null,
       activity: ended ? null : s.activity, outcome: ended ? (s.outcome ?? { pr: null, commits: 0, asked: s.asked, said: s.summary }) : null, cell: ended ? null : cellOf(s.id),
+      prompt: status === "wait" && s.approval && isApprovalAsk(s) ? (s.prompt ?? null) : null,
       itemIds: s.itemIds, ticket: keyOf(s.itemIds), origins: [], parkedUntil: null, startedAt: s.startedAt, at: wait?.since ?? (ended ? s.endedAt : null) ?? s.lastEventAt ?? s.startedAt,
       parentKey: null, depth: 0
     });

@@ -900,12 +900,15 @@ app.whenReady().then(async () => {
     ctx.emit("codeLink/changed", project.id);
     const askCard = `[...document.querySelectorAll('.cs-row')].find((r) => r.textContent.includes(${JSON.stringify(sessions[4].item.key)}))`;
     // Allow and Deny sit under the card, in its list item (a pane with history puts the card in a fold row first).
-    const asksOnTop = await wait(async () => tjs(`(() => { const card = ${askCard}; return !!card && card.dataset.status === 'wait' && document.querySelector('.cs-row') === card && !!card.closest('li').querySelector('[data-testid=cs-allow]'); })()`), 8000);
-    check("等你允许的会话排在最上，卡片下有「允许」「拒绝」", asksOnTop, await tjs(`[...document.querySelectorAll('.cs-row')].map((r) => [r.dataset.status, r.textContent.slice(0, 40)])`).then((rows) => JSON.stringify(rows)));
+    const asksOnTop = await wait(async () => tjs(`(() => { const card = ${askCard}; const li = card?.closest('li'); return !!card && card.dataset.status === 'wait' && document.querySelector('.cs-row') === card && !!li.querySelector('[data-testid=cs-allow]') && !!li.querySelector('[data-testid=cs-look]') && !li.querySelector('[data-testid=cs-deny]'); })()`), 8000);
+    check("等你允许的会话排在最上，卡片下有「允许」「先看看」（拒绝在总览大卡上）", asksOnTop, await tjs(`[...document.querySelectorAll('.cs-row')].map((r) => [r.dataset.status, r.textContent.slice(0, 40)])`).then((rows) => JSON.stringify(rows)));
     fs.writeFileSync(path.join(shots, "code-sessions-bar.png"), (await tw.webContents.capturePage()).toPNG());
+    const selectedBefore = await tjs(`document.querySelector('.cs-cell[data-focused]')?.dataset.cell ?? null`);
     await tjs(`${askCard}?.closest('li').querySelector('[data-testid=cs-allow]')?.click(); true`);
     const allowed = await wait(async () => typedIn.length === 1, 3000);
     check("点「允许」把 agent 声明的按键发进它的 pane", allowed && JSON.stringify(typedIn[0]) === JSON.stringify([sessions[4].pane, { keys: ["enter"] }]), JSON.stringify(typedIn));
+    const stayedPut = await wait(async () => tjs(`(document.querySelector('[data-testid=cs-toast]')?.textContent ?? '').startsWith('已允许「${sessions[4].item.key}」· 没离开当前会话')`), 3000);
+    check("允许之后提示「已允许「…」· 没离开当前会话」，选中的格子不变", stayedPut && (await tjs(`document.querySelector('.cs-cell[data-focused]')?.dataset.cell ?? null`)) === selectedBefore, await tjs(`document.querySelector('[data-testid=cs-toast]')?.textContent ?? null`));
     // A folder's trust is no permission (Enter there would pick "No, exit"): its card waits on you, with no Allow or Deny to press.
     ctx.codeLink.store.patchSession(project.id, sessions[3].id, { state: "waiting", activity: "needs your approval" });
     ctx.emit("codeLink/changed", project.id);
@@ -915,6 +918,18 @@ app.whenReady().then(async () => {
     const trustButtons = await tjs(`!!${trustCard}?.closest('li').querySelector('[data-testid=cs-allow], [data-testid=cs-deny]')`);
     check("屏幕上不是权限提示（信任文件夹）时卡片照旧等你，但没有「允许」「拒绝」，一个键也不发", trustWaits && !trustButtons && typedIn.length === 1, JSON.stringify({ typedIn, trustWaits, trustButtons }));
     ctx.herdr.sendInput = realSendInput;
+    // An assistant conversation asking with choices: its card answers with one of them, or opens it in the app window first.
+    ctx.agent.engine({ id: "chooser", title: "Chooser", author: "ai:chooser", available: async () => ({ ok: true }), async turn(input, io) { if (input.input.kind === "text") { await io.tools.execute("ask_user", { question: "取消这 3 张重复工单？", options: ["确认", "再看看"] }); return { stop: "asked" }; } io.emit({ type: "text", text: "取消了" }); return { stop: "end" }; } });
+    const chooser = ctx.agent.newThread(project.id, "chooser", board.id, { title: "清理重复工单" });
+    ctx.agent.send(project.id, chooser.id, { kind: "text", text: "清理一下" });
+    const chooserCard = `[...document.querySelectorAll('.cs-row.cs-thread')].find((r) => r.textContent.includes('清理重复工单'))`;
+    const choices = await wait(async () => tjs(`(() => { const li = ${chooserCard}?.closest('li'); return !!li && JSON.stringify([...li.querySelectorAll('[data-testid=cs-row-actions] button')].map((b) => b.textContent)) === JSON.stringify(['确认', '再看看', '先看看']); })()`), 8000);
+    check("助手对话的提问在卡片下给出它的选项和「先看看」", choices, await tjs(`${chooserCard}?.closest('li')?.textContent ?? null`));
+    await tjs(`${chooserCard}?.closest('li').querySelector('[data-testid=cs-look]')?.click(); true`);
+    const looked = await wait(async () => opens.some((t) => t.threadId === chooser.id), 3000);
+    await tjs(`${chooserCard}?.closest('li').querySelector('[data-testid=cs-choice]')?.click(); true`);
+    const chosen = await wait(async () => !ctx.agent.thread(project.id, chooser.id).pending && (await tjs(`(document.querySelector('[data-testid=cs-toast]')?.textContent ?? '').startsWith('已回答「清理重复工单」· 没离开当前会话')`)), 5000);
+    check("「先看看」在主窗口打开它；点「确认」直接回答，提示没离开当前会话", looked && chosen, JSON.stringify({ looked, chosen, toast: await tjs(`document.querySelector('[data-testid=cs-toast]')?.textContent ?? null`) }));
     // the overview below reads this pane's marker in its last lines
     await realSendInput.call(ctx.herdr, sessions[4].pane, { text: "echo marker-five", keys: ["enter"] });
     ctx.codeLink.store.patchSession(project.id, sessions[3].id, { state: "running", activity: null });

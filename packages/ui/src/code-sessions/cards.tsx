@@ -86,16 +86,52 @@ export function rowSaid(r: HereRow, status: BarStatus, say: Say, words: Words): 
 /** Said under what a row says: the warning's colour while it waits, the quote of an outcome once it ended, muted otherwise. */
 export const saidClass = (status: BarStatus): string => (status === "wait" ? "cs-row-wait" : status === "done" ? "cs-row-outcome" : "cs-row-activity");
 
+/** At most this many of a question's choices sit on its card; the rest are answered where it opens. */
+const CHOICES_SHOWN = 3;
+
 /**
- * What can be done from a row without opening it: a permission prompt on its screen that its agent declared the keys
- * for is allowed (when yes is under the cursor) or denied here; in the overview, a row with a pane goes to its cell and a conversation to the app window.
+ * What can be done from a row without opening it. On a card in the bar, what it waits on is answered in place — a
+ * permission prompt on its screen that its agent declared the keys for (Allow with yes under the cursor, else Deny), or
+ * an assistant question by one of its choices — or looked at first. In the overview, Allow and Deny, and a row with a
+ * pane goes to its cell and a conversation to the app window.
  */
-export function RowActions({ row, big = false, onSee, onThread, onAnswer }: { row: HereRow; big?: boolean; onSee: (row: HereRow) => void; onThread: (thread: ThreadRow) => void; onAnswer: (session: SessionRow, which: "allow" | "deny") => void }) {
+export function RowActions({ row, big = false, onSee, onThread, onAnswer, onAnswerThread }: { row: HereRow; big?: boolean; onSee: (row: HereRow) => void; onThread: (thread: ThreadRow) => void; onAnswer: (session: SessionRow, which: "allow" | "deny") => void; onAnswerThread: (thread: ThreadRow, questionId: string, value: string) => void }) {
   const say = useSay();
   const s = row.session;
   const answerable = !!s && canAnswer(s);
+  const wait = row.kind === "thread" ? row.thread.wait : null;
+  const questionId = wait?.questionId ?? null;
+  const choices = questionId && wait?.options ? wait.options.slice(0, CHOICES_SHOWN) : [];
   const seeable = big && row.kind !== "thread" && !!(row.kind === "terminal" ? row.terminal.pane : s?.pane);
-  if (!answerable && !seeable && !(big && row.kind === "thread")) return null;
+  const choiceButtons = row.kind === "thread" && questionId
+    ? choices.map((choice, i) => (
+        <button key={choice} type="button" className={i === 0 ? "btn btn-primary btn-xs" : "btn btn-secondary btn-xs"} data-testid="cs-choice" onClick={() => onAnswerThread(row.thread, questionId, choice)}>
+          {choice}
+        </button>
+      ))
+    : null;
+  if (!big) {
+    if (!answerable && !choices.length) return null;
+    return (
+      <span className="cs-row-actions" role="group" aria-label={say("askGroup")} data-testid="cs-row-actions">
+        {answerable &&
+          (s.prompt === "allow" ? (
+            <button type="button" className="btn btn-primary btn-xs" data-testid="cs-allow" onClick={() => onAnswer(s, "allow")}>
+              {say("allow")}
+            </button>
+          ) : (
+            <button type="button" className="btn btn-secondary btn-xs" data-testid="cs-deny" onClick={() => onAnswer(s, "deny")}>
+              {say("deny")}
+            </button>
+          ))}
+        {choiceButtons}
+        <button type="button" className="btn btn-secondary btn-xs" data-testid="cs-look" onClick={() => onSee(row)}>
+          {say("lookFirst")}
+        </button>
+      </span>
+    );
+  }
+  if (!answerable && !seeable && row.kind !== "thread") return null;
   return (
     <span className="cs-row-actions" data-testid="cs-row-actions">
       {answerable && (
@@ -110,12 +146,13 @@ export function RowActions({ row, big = false, onSee, onThread, onAnswer }: { ro
           </button>
         </>
       )}
+      {choiceButtons}
       {seeable && (
         <button type="button" className="btn btn-secondary btn-xs" data-testid="cs-see-in-pane" onClick={() => onSee(row)}>
           {say("seeInPane")}
         </button>
       )}
-      {big && row.kind === "thread" && (
+      {row.kind === "thread" && (
         <button type="button" className="btn btn-secondary btn-xs" data-testid="cs-open-in-main" onClick={() => onThread(row.thread)}>
           {say("openInMain")}
         </button>
