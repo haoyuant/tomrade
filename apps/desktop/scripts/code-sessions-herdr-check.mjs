@@ -852,15 +852,14 @@ app.whenReady().then(async () => {
     await tjs(`${askCard}?.closest('li').querySelector('[data-testid=cs-allow]')?.click(); true`);
     const allowed = await wait(async () => typedIn.length === 1, 3000);
     check("点「允许」把 agent 声明的按键发进它的 pane", allowed && JSON.stringify(typedIn[0]) === JSON.stringify([sessions[4].pane, { keys: ["enter"] }]), JSON.stringify(typedIn));
-    // A folder's trust is no permission: Enter there would pick "No, exit". Nothing is pressed; the session comes into a cell to be answered there.
+    // A folder's trust is no permission (Enter there would pick "No, exit"): its card waits on you, with no Allow or Deny to press.
     ctx.codeLink.store.patchSession(project.id, sessions[3].id, { state: "waiting", activity: "needs your approval" });
     ctx.emit("codeLink/changed", project.id);
     const trustCard = `[...document.querySelectorAll('.cs-row')].find((r) => r.textContent.includes(${JSON.stringify(sessions[3].item.key)}))`;
-    await wait(async () => tjs(`!!${trustCard}?.closest('li').querySelector('[data-testid=cs-allow]')`), 5000);
-    await tjs(`${trustCard}?.closest('li').querySelector('[data-testid=cs-allow]')?.click(); true`);
-    const toldInPane = await wait(async () => tjs(`(document.querySelector('[data-testid=cs-toast]')?.textContent ?? '').includes('请在它的格子里回答')`), 3000);
-    const cameIntoCell = await wait(async () => tjs(`${trustCard}?.getAttribute('aria-current') === 'true'`), 3000);
-    check("屏幕上不是权限提示（信任文件夹）时点「允许」一个键也不发，提示到格子里回答并把它选中", toldInPane && cameIntoCell && typedIn.length === 1, JSON.stringify({ typedIn, toldInPane, cameIntoCell }));
+    // the state that says it waits carries what its screen asks, so no buttons by then means none at all
+    const trustWaits = await wait(async () => tjs(`${trustCard}?.dataset.status === 'wait'`), 5000);
+    const trustButtons = await tjs(`!!${trustCard}?.closest('li').querySelector('[data-testid=cs-allow], [data-testid=cs-deny]')`);
+    check("屏幕上不是权限提示（信任文件夹）时卡片照旧等你，但没有「允许」「拒绝」，一个键也不发", trustWaits && !trustButtons && typedIn.length === 1, JSON.stringify({ typedIn, trustWaits, trustButtons }));
     ctx.herdr.sendInput = realSendInput;
     // the overview below reads this pane's marker in its last lines
     await realSendInput.call(ctx.herdr, sessions[4].pane, { text: "echo marker-five", keys: ["enter"] });

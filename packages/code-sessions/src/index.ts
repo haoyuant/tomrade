@@ -11,6 +11,7 @@ import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/items";
 import type {} from "@tomradex/settings";
 import { BUILTIN_TERMINAL, MCP_AGENT, WINDOWS_TERMINAL, panesOf, resumeCommand, type CodeLink } from "@tomradex/code-link";
+import { PROMPT_LINES, promptOnScreen } from "@tomradex/code-link/prompt";
 import { PANEL_SURFACES } from "@tomradex/agent";
 import type { DesktopSurface } from "@tomradex/desktop-surface";
 import type {} from "@tomradex/herdr";
@@ -41,6 +42,10 @@ export const HELD_INPUT_MAX = 64 * 1024;
 const FRAME_BATCH_MS = 16;
 /** A batch past this goes at once, so a pane painting without pause cannot grow it without end. */
 const FRAME_BATCH_MAX = 256 * 1024;
+/** How soon a waiting session whose screen showed no prompt is looked at again. */
+const PROMPT_RECHECK_MS = 2000;
+/** What code link's hooks say while a session waits on a permission; only those screens are read for a prompt. */
+const APPROVAL_ASK = /^needs your approval/i;
 /** How long the assistant's events settle before the window is refreshed for them: a turn ends in a burst of them. */
 const THREADS_SETTLE_MS = 100;
 /** How many lines of each pane the overview reads. */
@@ -237,6 +242,7 @@ export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, it
         recordSaved: s.recordSavedAt ? (s.recordCut ? "end" : "whole") : null,
         ranIn: s.herdrPane ?? null,
         approval: false,
+        prompt: null,
         lastEventAt: s.lastEventAt ?? null
       };
     })
@@ -567,11 +573,37 @@ function apply(ctx: Context, config: Config) {
     void refreshAll();
   };
 
+  /**
+   * What each waiting session's screen asks, read only for those whose agent declared its keys: a prompt seen stays
+   * known until the session's next event, none is looked for again at most every PROMPT_RECHECK_MS.
+   */
+  const prompts = new Map<string, { at: number; event: number | null; prompt: SessionRow["prompt"] }>();
+  const withPrompts = async (rows: SessionRow[]): Promise<SessionRow[]> => {
+    const provider = backend();
+    const now = Date.now();
+    return Promise.all(
+      rows.map(async (r) => {
+        if (!provider || !r.approval || r.endedAt !== null || !r.pane || r.state !== "waiting" || !APPROVAL_ASK.test(r.activity ?? "")) {
+          prompts.delete(r.id);
+          return r;
+        }
+        const known = prompts.get(r.id);
+        if (known && known.event === r.lastEventAt && (known.prompt || now - known.at < PROMPT_RECHECK_MS)) return { ...r, prompt: known.prompt };
+        const seen = promptOnScreen((await provider.readTail(r.pane, PROMPT_LINES).catch(() => null)) ?? "");
+        const prompt = seen ? (seen.allows ? "allow" : "deny") : null;
+        prompts.set(r.id, { at: now, event: r.lastEventAt, prompt });
+        return { ...r, prompt };
+      })
+    );
+  };
+
   const state = async (projectId: string): Promise<WindowState> => {
     const b = await bridge();
     const shown = listed(projectId);
     if (b.state === "ready") reviveFailed = false;
     if (b.state === "notRunning" && wantsHerdr(projectId, shown.sessions)) revive();
+    // after the start is decided: the bridge read above must not go stale across this await
+    if (b.state === "ready") shown.sessions = await withPrompts(shown.sessions);
     const setting = terminal();
     const { saved, broken } = readState(config.stateFile);
     const remembered = saved.layouts?.[projectId];
@@ -977,7 +1009,9 @@ function apply(ctx: Context, config: Config) {
         return void ctx.emit("desktop/open", { projectId, threadId: m.threadId });
       case "answer": {
         const result = await ctx.codeLink.sessionAnswer(projectId, m.sessionId, m.which).catch(() => "failed" as const);
-        if (result === "answered") return;
+        // answered or not, what the screen asks is read again for the next state
+        prompts.delete(m.sessionId);
+        if (result === "answered") return void refresh(projectId);
         // Nothing pressed: whatever it asks is answered in its pane, which comes into a cell for that.
         if (result === "notPrompt") await show(projectId, m.sessionId);
         return post(win, { type: "toast", text: words()(result === "notPrompt" ? "answerInPane" : "answerNotTaken") });

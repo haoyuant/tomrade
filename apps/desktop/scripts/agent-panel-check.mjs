@@ -631,7 +631,7 @@ const run = async () => {
       note: document.querySelector('[data-testid="ai-session-note"]')?.textContent ?? null, strip: [...document.querySelectorAll('.ai-strip-line')].map((l) => l.textContent),
       lines: [...document.querySelectorAll('.ai-session-convo .cs-convo-line')].map((l) => [l.dataset.who, l.textContent]), details: document.querySelectorAll('.ai-session-convo .cs-convo-detail').length,
       empty: document.querySelector('.ai-session-empty')?.textContent ?? null, show: !!document.querySelector('[data-testid="ai-session-show"]'),
-      approve: document.querySelector('[data-testid="ai-approve"]')?.textContent ?? null, allow: !!document.querySelector('[data-testid="ai-allow"]'), there: !!document.querySelector('[data-testid="ai-answer-there"]'),
+      approve: document.querySelector('[data-testid="ai-approve"]')?.textContent ?? null, allow: !!document.querySelector('[data-testid="ai-allow"]'), deny: !!document.querySelector('[data-testid="ai-deny"]'), there: !!document.querySelector('[data-testid="ai-answer-there"]'),
       input: document.querySelector('.ai-session-foot .ai-input')?.value ?? null, drawer: document.querySelector('[data-testid="ai-drawer"]')?.textContent ?? null,
       current: document.querySelector('.ai .sbar [aria-current="true"]')?.getAttribute('aria-label') ?? document.querySelector('.ai .sbar [aria-current="true"]')?.textContent ?? null }; })()`);
   let view = await sessionView();
@@ -704,26 +704,33 @@ const run = async () => {
   view = await sessionView();
   check("the strip opens a drawer with more of the pane", /typed in the pane/.test(view?.drawer ?? "") && /❯ claude/.test(view?.drawer ?? ""), view?.drawer);
 
-  // The agent asks permission: the panel offers Allow and Deny, pressing the keys the agent declared; the answer closes the ask on both sides.
+  // The agent asks permission: the panel offers Allow and Deny while the pane shows a prompt they answer, pressing the
+  // keys the agent declared; the answer closes the ask on both sides.
   // the panel stays on this session after an answer here; going on to the next one waiting is checked further down
   ctx.settings.set({ ...ctx.settings.get(), sessions: { ...ctx.settings.get().sessions, afterAnswer: "stay" } });
+  // A folder's trust is no permission (Enter there is "No, exit"): the ask shows, with only the way to answer it in the pane.
+  screen = "Do you trust the files in this folder?\n\n❯ No, exit\n  Yes, I trust this folder\n\nEnter to confirm · Esc to cancel";
   const convoAt = convoReads;
   moved({ state: "waiting", activity: "needs your approval: Bash" });
   moved({ state: "waiting", activity: "needs your approval: Bash" });
   moved({ state: "waiting", activity: "needs your approval: Bash" });
   await sleep(1600);
   view = await sessionView();
-  check("a session waiting for approval shows Allow and Deny", view?.state === "waiting" && view.allow && /needs your approval: Bash/.test(view.approve ?? ""), view);
+  check("a session waiting on a folder's trust shows the ask with no Allow or Deny, only the way to its pane", view?.state === "waiting" && /needs your approval: Bash/.test(view.approve ?? "") && !view.allow && !view.deny && view.there, view);
   check("a burst of changes re-reads the record once, not once per change", convoReads - convoAt >= 1 && convoReads - convoAt <= 2, convoReads - convoAt);
+  const asks = "Bash command\n  pnpm test\nDo you want to proceed?\n❯ 1. Yes\n  2. Yes, and don't ask again\n  3. No, and tell Claude what to do differently (esc)";
+  // The cursor on No: Deny alone.
+  screen = asks.replace("❯ 1. Yes", "  1. Yes").replace("  3. No", "❯ 3. No");
+  moved({ state: "waiting", activity: "needs your approval: Bash" });
+  await sleep(1300);
+  view = await sessionView();
+  check("with No under the cursor only Deny is offered", !view?.allow && view?.deny && !view.there, view);
+  screen = asks;
+  moved({ state: "waiting", activity: "needs your approval: Bash" });
+  await sleep(1300);
+  view = await sessionView();
+  check("a permission prompt on its screen shows Allow and Deny", view?.state === "waiting" && view.allow && view.deny && /needs your approval: Bash/.test(view.approve ?? ""), view);
   await shot("terminal-session.png");
-  // The keys answer whatever the screen shows: on a folder's trust (Enter there is "No, exit") nothing is pressed.
-  const typedBefore = typed.length;
-  screen = "Do you trust the files in this folder?\n\n❯ No, exit\n  Yes, I trust this folder\n\nEnter to confirm · Esc to cancel";
-  await press(`document.querySelector('[data-testid="ai-allow"]')`);
-  await sleep(400);
-  const trustToast = await $(`[...document.querySelectorAll('.toast-body')].map((n) => n.textContent).join(' | ')`);
-  check("Allow on a screen that is no permission prompt presses nothing and says to answer it in the pane", typed.length === typedBefore && /no permission prompt a key could answer/.test(trustToast ?? "") && (await sessionView())?.allow, { typed: typed.slice(typedBefore), trustToast });
-  screen = "Bash command\n  pnpm test\nDo you want to proceed?\n❯ 1. Yes\n  2. Yes, and don't ask again\n  3. No, and tell Claude what to do differently (esc)";
   await press(`document.querySelector('[data-testid="ai-allow"]')`);
   await sleep(300);
   view = await sessionView();

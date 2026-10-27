@@ -34,8 +34,8 @@ export function statusOf(r: HereRow): BarStatus {
   return sessionStatus(r.session!);
 }
 
-/** The session waits on a permission its card can answer: its agent declared the keys, and the prompt is one of those. */
-export const canAnswer = (s: SessionRow): boolean => s.approval && live(s) && isApprovalAsk(s);
+/** The session waits on a permission its card can answer: its agent declared the keys, and its screen shows that prompt. */
+export const canAnswer = (s: SessionRow): boolean => s.approval && s.prompt !== null && live(s) && isApprovalAsk(s);
 
 const RANK: Record<BarStatus, number> = { wait: 0, run: 1, idle: 2, done: 3 };
 const startedAt = (r: HereRow): number => (r.kind === "terminal" ? r.terminal.startedAt : r.kind === "session" ? r.session.startedAt : r.thread.createdAt);

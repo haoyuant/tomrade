@@ -27,6 +27,7 @@ const row = (over: Partial<SessionRow> & { id: string }): SessionRow => ({
   recordSaved: null,
   ranIn: null,
   approval: false,
+  prompt: null,
   lastEventAt: null,
   ...over
 });
@@ -114,9 +115,12 @@ describe("the Terminal window's sidebar", () => {
     expect(statusOf({ kind: "terminal", id: "t1", terminal: terminal({ id: "t1" }), session: null })).toBe("idle");
   });
 
-  it("answers a permission from a card only when its agent declared the keys and the prompt is one", () => {
-    const asks = row({ id: "a", state: "waiting", needsYou: true, activity: "needs your approval: Bash", approval: true });
+  it("answers a permission from a card only when its agent declared the keys and its screen shows the prompt", () => {
+    const asks = row({ id: "a", state: "waiting", needsYou: true, activity: "needs your approval: Bash", approval: true, prompt: "allow" });
     expect(canAnswer(asks)).toBe(true);
+    expect(canAnswer({ ...asks, prompt: "deny" })).toBe(true);
+    // a folder's trust, another menu, or a screen that could not be read
+    expect(canAnswer({ ...asks, prompt: null })).toBe(false);
     expect(canAnswer({ ...asks, approval: false })).toBe(false);
     expect(canAnswer({ ...asks, activity: "asking you something" })).toBe(false);
     expect(canAnswer({ ...asks, state: "ended", endedAt: 1 })).toBe(false);
