@@ -338,7 +338,7 @@ function StartTicketDialog({
   // A session in a background pane: the panel opens on it once the list it is read from has it.
   const watchInPanel = async (sessionId: string) => {
     setAiOpen(true);
-    await qc.fetchQuery({ queryKey: keys.codeLink.recentSessions(projectId), queryFn: () => invoke("codeLink.recentSessions", projectId) }).catch(logQuietly("codeLink.recentSessions"));
+    await qc.fetchQuery({ queryKey: keys.codeLink.recentSessions(projectId), queryFn: () => invoke("codeLink.recentSessions", projectId), staleTime: 0 }).catch(logQuietly("codeLink.recentSessions"));
     askPanel({ kind: "openSession", sessionId });
   };
 

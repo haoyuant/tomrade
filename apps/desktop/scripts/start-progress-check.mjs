@@ -188,10 +188,15 @@ app.whenReady().then(async () => {
       return ctx.codeLink.store.patchSession(project.id, s.id, over.patch);
     };
     ctx.codeLink.store.ensureActiveDelivery(project.id, item.id);
+    // one after another, as they would start: the order is what the timeline reads
     mk({ mode: "headless", threadId: thread1.id, patch: { state: "ended", endedAt: Date.now(), summary: "定下录制格式：按窗格分文件", asked: 1 } });
+    await sleep(20);
     mk({ threadId: thread1.id, patch: { herdrPane: "w1:p5", state: "ended", endedAt: Date.now(), summary: "录制和读取写好了，测试过了" } });
-    const earlier = mk({ worktree: "/wt/spr-1", patch: { state: "running", herdrPane: "w1:p6", activity: "Bash · pnpm test" } });
-    const later = mk({ worktree: "/wt/spr-1", patch: { state: "running", herdrPane: "w1:p7", activity: "Read · recorder.ts" } });
+    await sleep(20);
+    // in another terminal app: no pane for this machine's herdr to find gone
+    const earlier = mk({ worktree: "/wt/spr-1", patch: { state: "running", terminal: "iTerm.app", activity: "Bash · pnpm test" } });
+    await sleep(20);
+    const later = mk({ worktree: "/wt/spr-1", patch: { state: "running", terminal: "iTerm.app", activity: "Read · recorder.ts" } });
     ctx.emit("codeLink/changed", project.id);
     ctx.ipc.send("codeLink.changed", project.id);
     await js(`location.reload(); true`);
@@ -215,7 +220,7 @@ app.whenReady().then(async () => {
     ctx.items.update(project.id, item.id, { status: "doing" }, "human");
     await js(`location.hash = '#/p/${project.id}'; true`);
     await wait(() => js(`!!document.querySelector('.card[data-id="${item.id}"] [data-testid="card-session"]')`));
-    assert("看板卡片写着哪个 agent 在做、在哪、多久", /Ready 在做 · 终端格子里 · \d+ 分钟/.test(await js(`document.querySelector('.card[data-id="${item.id}"] [data-testid="card-session"]').textContent`)));
+    assert("看板卡片写着哪个 agent 在做、在哪、多久", /Ready 在做 · 在 iTerm 里 · \d+ 分钟/.test(await js(`document.querySelector('.card[data-id="${item.id}"] [data-testid="card-session"]').textContent`)));
     ctx.codeLink.store.patchSession(project.id, earlier.id, { state: "ended", endedAt: Date.now() });
 
     // ── 对话里的开始卡片（TOM-661）：一张张开始，每张开始时显示自己的步骤 ──
