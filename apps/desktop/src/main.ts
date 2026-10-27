@@ -4,7 +4,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { aboutInfo } from "./about.js";
 import { APP_ICON_FILE, appIconPath, readAppIcon, wearAppIcon } from "./app-icon.js";
 import { AccountFolders, machineRoots, restart } from "./accounts.js";
-import { cameBack, keepsRunning, launchMode, PREFS_FILE } from "./background.js";
+import { cameBack, keepsRunning, launchMode, otherOrdinaryWindow, PREFS_FILE, whenLastWindowCloses } from "./background.js";
+import { openAtStart, SESSIONS_SECTION, startWindows } from "./sessions-section.js";
+import { hasTerminalWindow, openTerminal } from "./terminal-entries.js";
 import { boot, ConfigUnreadable, type Booted } from "./boot.js";
 import { setUpBorrowedNode } from "./borrowed-node.js";
 import { openKeyring } from "./cipher.js";
@@ -193,6 +195,7 @@ app.whenReady().then(async () => {
     void prepareToQuit(ctx).then((ok) => ok && finishQuit());
   });
   for (const signal of ["SIGTERM", "SIGINT"] as const) process.once(signal, () => void leaveOnSignal(ctx).finally(() => app.exit(0)));
+  ctx.settings.register(SESSIONS_SECTION);
 
   // A window a tab moved into stands where the last one was left: a place of the machine's, like its screens.
   const windows = new TomradeWindows(
@@ -214,6 +217,8 @@ app.whenReady().then(async () => {
     // With background running on it only closes, and the process stays.
     win.on("close", (event) => {
       if (quitApproved() || keepsRunning() || windows.all().some((other) => other !== win)) return;
+      // Someone who starts on the Terminal window keeps it when the main window closes; its own close quits.
+      if (openAtStart(ctx) !== "main" && otherOrdinaryWindow(win)) return;
       event.preventDefault();
       app.quit();
     });
@@ -223,8 +228,14 @@ app.whenReady().then(async () => {
   // Reached only with background running on: any other last close became a quit.
   app.on("window-all-closed", () => {});
   // The start got as far as a window that loaded, or as far as it goes without one.
-  if (mode === "window") openMain().webContents.once("did-finish-load", () => startFinished(startingFile));
+  const opens = startWindows(openAtStart(ctx), mode === "window" && hasTerminalWindow(ctx));
+  if (mode === "window" && opens.main) openMain().webContents.once("did-finish-load", () => startFinished(startingFile));
   else startFinished(startingFile);
+  // With no project named, the Terminal window opens the one it showed last; a start that opens nothing falls back to the main window.
+  if (mode === "window" && opens.terminal) void openTerminal(ctx, null).then((opened) => !opened && !opens.main && openMain());
+  whenLastWindowCloses(() => {
+    if (openAtStart(ctx) !== "main") app.quit();
+  });
   // After the start's own window, so a launch that came meanwhile brings that one forward rather than a second.
   provideMainWindow({ open: openMain, current: () => windows.lead() });
   // After the main window is up, so there is never a moment with none.

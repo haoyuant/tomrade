@@ -135,6 +135,13 @@ const run = async () => {
   await $(`document.querySelector('[data-testid="setup-recheck"]').click()`);
   check("once it lists its models and answers its test message, the screen says Tomrade is set", await wait(() => has('[data-testid="setup-done"]'), "done panel", 300), await text(row));
   check("with the agent as the assistant", ((await text('[data-testid="setup-done"]')) ?? "").includes("Assistant: Fake Agent"), await text('[data-testid="setup-done"]'));
+  // ── how agents work here: someone in several CLIs starts Tomrade on the Terminal window ──
+  check("with a local agent set up, the screen asks how agents work here", await wait(() => has('[data-testid="setup-work-style"]'), "work style"));
+  check("the assistant panel is the answer until one is given", (await $(`document.querySelector('[data-testid="setup-work-style"] [aria-checked="true"]')?.dataset.style ?? null`)) === "panel");
+  await $(`document.querySelector('[data-testid="setup-work-style"] [data-style="cli"]').click()`);
+  check("several CLIs in a terminal makes Tomrade open on the Terminal window", await wait(async () => ctx.settings.get().sessions?.openAtStart === "terminal", "terminal at start"), ctx.settings.get().sessions);
+  await $(`document.querySelector('[data-testid="setup-work-style"] [data-style="panel"]').click()`);
+  check("and the panel puts the main window back", await wait(async () => ctx.settings.get().sessions?.openAtStart === "main", "main at start"), ctx.settings.get().sessions);
   await shot("first-run-agent-02-fixed");
 
   // ── working: a launch with nothing seen yet goes straight to the projects ──

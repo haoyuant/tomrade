@@ -1,4 +1,5 @@
 import { app, autoUpdater, BrowserWindow, ipcMain, screen, shell, type IpcMainEvent } from "electron";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Context, Service } from "cordis";
@@ -47,13 +48,32 @@ const capabilities = (): SurfaceCapabilities => ({
   forwardedMouseMoves: process.platform === "darwin" || process.platform === "win32"
 });
 
+function readLook(file: string): SurfaceLook | null {
+  try {
+    const look = JSON.parse(fs.readFileSync(file, "utf8")) as SurfaceLook;
+    return look && typeof look === "object" && look.tokens && typeof look.tokens === "object" ? look : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeLook(file: string, look: SurfaceLook): void {
+  try {
+    fs.writeFileSync(file, JSON.stringify(look));
+  } catch {
+    // The next window waits for the renderer's look, as it always did.
+  }
+}
+
 /** Electron mechanics for auxiliary plugin surfaces; it owns no feature lifecycle. */
 export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHost {
   static provide = "desktopSurfaces";
 
   private openByContents = new Map<number, OpenSurface>();
   private openById = new Map<string, OpenSurface>();
-  private look: SurfaceLook | null = null;
+  // The main window's renderer says the look; kept on disk so a window that opens before it (a start on the Terminal window) wears the last one.
+  private readonly lookFile = path.join(app.getPath("userData"), "surface-look.json");
+  private look: SurfaceLook | null = readLook(this.lookFile);
   private readonly places = new SurfaceBoundsStore(path.join(app.getPath("userData"), "surface-bounds.json"));
 
   constructor(ctx: Context) {
@@ -75,6 +95,7 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
     ipcMain.on(MESSAGE_CHANNEL, onMessage);
     this.ctx.inject(["ipc"], (ctx) => {
       ctx.ipc.handle("surfaces.look", (look) => {
+        if (JSON.stringify(look) !== JSON.stringify(this.look)) writeLook(this.lookFile, look);
         this.look = look;
         for (const surface of this.openById.values()) if (surface.loaded && !surface.win.isDestroyed()) surface.win.webContents.send(LOOK_CHANNEL, look);
       });

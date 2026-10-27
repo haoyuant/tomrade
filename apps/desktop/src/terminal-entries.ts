@@ -23,14 +23,21 @@ export function terminalProjects(ctx: Context): { id: string; name: string }[] {
     .map((p) => ({ id: p.id, name: p.name }));
 }
 
-export function openTerminal(ctx: Context, projectId: string): void {
+/** null asks for the project the window showed last. False when no window opened: the command failed or had nothing to open. */
+export async function openTerminal(ctx: Context, projectId: string | null): Promise<boolean> {
   const contributions = ctx.get("contributions");
-  if (!contributions) return;
-  contributions.run(TERMINAL_COMMAND, { projectId }).catch((e) => ctx.logger("terminal-entries").warn(`terminal window did not open: ${errorMessage(e)}`));
+  if (!contributions) return false;
+  try {
+    const result = await contributions.run(TERMINAL_COMMAND, projectId ? { projectId } : {});
+    return !result.toast;
+  } catch (e) {
+    ctx.logger("terminal-entries").warn(`terminal window did not open: ${errorMessage(e)}`);
+    return false;
+  }
 }
 
 /** One "Terminal window · Project" row per project; none where there is no Terminal window. */
 export function terminalMenuItems(ctx: Context, label: (name: string) => string): MenuItemConstructorOptions[] {
   if (!hasTerminalWindow(ctx)) return [];
-  return terminalProjects(ctx).map((p) => ({ label: label(p.name), click: () => openTerminal(ctx, p.id) }));
+  return terminalProjects(ctx).map((p) => ({ label: label(p.name), click: () => void openTerminal(ctx, p.id) }));
 }

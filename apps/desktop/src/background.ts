@@ -105,10 +105,24 @@ export function cameBack(win: BrowserWindow): void {
   ordinary.add(win);
   win.once("closed", () => {
     ordinary.delete(win);
-    if (!ordinary.size && keepsRunning() && !leaving() && !quitApproved()) wentAway();
+    if (ordinary.size || leaving() || quitApproved()) return;
+    if (keepsRunning()) wentAway();
+    else lastClosed?.();
   });
   // A Dock shown again draws the bundle's icon, dropping the one set at startup (dev runs Electron's bundle).
   if (process.platform === "darwin") void app.dock?.show().then(() => app.dock?.setIcon(appIconPath(currentAppIcon())));
+}
+
+let lastClosed: (() => void) | null = null;
+
+/** What happens when the last window closes with background running off and no main window to have quit already (a Terminal window alone). */
+export function whenLastWindowCloses(fn: (() => void) | null): void {
+  lastClosed = fn;
+}
+
+/** Another window the person reaches from the Dock and Cmd-Tab is still open: a Terminal window, say. */
+export function otherOrdinaryWindow(win: BrowserWindow): boolean {
+  return [...ordinary].some((other) => other !== win && !other.isDestroyed());
 }
 
 function wentAway(): void {

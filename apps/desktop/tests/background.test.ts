@@ -29,7 +29,8 @@ vi.mock("../src/quit.js", () => ({ leaving: () => quit.leaving, quitApproved: ()
 
 const { app } = await import("electron");
 const { autostartEntry, autostartState, macAgent, withExec, xdgAutostart, BACKGROUND_FLAG } = await import("../src/login-item.js");
-const { background, cameBack, launchMode, readPrefs, relaunchArgs, writePrefs } = await import("../src/background.js");
+const { background, cameBack, launchMode, otherOrdinaryWindow, readPrefs, relaunchArgs, whenLastWindowCloses, writePrefs } = await import("../src/background.js");
+const { startWindows } = await import("../src/sessions-section.js");
 const { appIconPath, currentAppIcon, wearAppIcon } = await import("../src/app-icon.js");
 
 let dir: string;
@@ -284,5 +285,37 @@ describe("the Dock and tray menus", () => {
     expect(menu.slice(1, 4).map((r) => r.label ?? r.type)).toEqual(["separator", "Terminal window · New", "Terminal window · Old"]);
     menu[0].click!();
     expect(emitted).toEqual([["attention/open", entry]]);
+  });
+});
+
+describe("starting on the Terminal window", () => {
+  it("opens the main window unless the person chose the Terminal window alone and there is one", () => {
+    expect(startWindows("main", true)).toEqual({ main: true, terminal: false });
+    expect(startWindows("terminal", true)).toEqual({ main: false, terminal: true });
+    expect(startWindows("both", true)).toEqual({ main: true, terminal: true });
+    // no Terminal window in this app: the main window, whatever was chosen
+    expect(startWindows("terminal", false)).toEqual({ main: true, terminal: false });
+  });
+
+  it("quits when the last window closes with background running off, and knows another window is still open", () => {
+    const file = path.join(dir, "background.json");
+    writePrefs(file, { keepRunning: false, noticed: true });
+    const disposers: (() => void)[] = [];
+    background.apply({ logger: () => ({ warn: () => {} }), get: () => undefined, on: () => {}, ipc: { handle: () => {}, send: () => {} }, effect: (fn: () => () => void) => void disposers.push(fn()) } as never, { file });
+    const closes: number[] = [];
+    whenLastWindowCloses(() => void closes.push(1));
+    const make = () => Object.assign(new EventEmitter(), { isDestroyed: () => false }) as never;
+    const terminal = make();
+    const main = make();
+    cameBack(terminal);
+    cameBack(main);
+    expect(otherOrdinaryWindow(main)).toBe(true);
+    (main as EventEmitter).emit("closed");
+    expect(closes).toEqual([]);
+    expect(otherOrdinaryWindow(terminal)).toBe(false);
+    (terminal as EventEmitter).emit("closed");
+    expect(closes).toEqual([1]);
+    whenLastWindowCloses(null);
+    for (const dispose of disposers) dispose();
   });
 });

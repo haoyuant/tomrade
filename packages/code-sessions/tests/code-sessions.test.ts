@@ -156,6 +156,11 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
   expect(opened).toHaveLength(1);
   expect(win.focused).toBe(1);
+  // A start that names no project (Tomrade opening on the Terminal window) goes to the one it showed last.
+  expect(JSON.parse(fs.readFileSync(stateFile, "utf8")).lastProject).toBe(w.project.id);
+  await w.ctx.contributions.run("code-sessions.open", {});
+  expect(opened).toHaveLength(1);
+  expect(win.focused).toBe(2);
 
   const say = async (m: WindowMessage) => {
     win.spec.onMessage(m);
@@ -249,7 +254,7 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   await say({ type: "layout", layout });
   await say({ type: "switchTerminal", switch: true });
   expect((w.ctx.settings.get().codeLink as { terminal: string }).terminal).toBe("herdr");
-  expect(JSON.parse(fs.readFileSync(stateFile, "utf8"))).toEqual({ layouts: { [w.project.id]: layout }, asked: true });
+  expect(JSON.parse(fs.readFileSync(stateFile, "utf8"))).toEqual({ layouts: { [w.project.id]: layout }, asked: true, lastProject: w.project.id });
   expect(win.states.at(-1)).toMatchObject({ askSwitch: false, terminal: "herdr" });
 
   // One pane, one cell: another cell asking for the pane c1 streams is told where it is, and c1 keeps it.
