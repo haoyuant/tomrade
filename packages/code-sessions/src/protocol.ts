@@ -94,7 +94,7 @@ export interface ThreadRow {
   running: boolean;
   /**
    * What it waits on the person for, and since when this window has seen it wait in that way; with the question's id
-   * and the choices its card answers with (null when it is answered in words, or with several at once).
+   * and the choices its card answers with (null when it offers none, or takes several at once).
    */
   wait: { kind: "permission" | "question"; text: string | null; since: number; questionId: string | null; options: string[] | null } | null;
   createdAt: number;

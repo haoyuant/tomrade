@@ -99,7 +99,8 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engine
   const ask = (r: BarRow) => {
     if (r.status !== "wait") return null;
     const pending = r.threadId ? pendings.get(r.threadId) : undefined;
-    const choices = pending && pending.accepts === "options" && !pending.question.multiple ? (pending.question.options ?? []).slice(0, CHOICES_SHOWN) : [];
+    // a question with choices takes one as its answer, whether or not it also takes words; several at once are picked where it opens
+    const choices = pending && !pending.question.multiple ? (pending.question.options ?? []).slice(0, CHOICES_SHOWN) : [];
     if (!r.prompt && !choices.length) return null;
     const stop = (e: React.SyntheticEvent) => e.stopPropagation();
     return (

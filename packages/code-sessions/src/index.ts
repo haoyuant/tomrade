@@ -433,7 +433,7 @@ function apply(ctx: Context, config: Config) {
           ticketTitle: item?.title ?? null,
           parentId: th.parentId,
           running: running.has(th.id),
-          wait: kind ? { kind, text: clip(asked?.question.text), since: before?.kind === kind ? before.since : now, questionId: asked?.question.id ?? null, options: asked?.accepts === "options" && !asked.question.multiple && asked.question.options?.length ? asked.question.options : null } : null,
+          wait: kind ? { kind, text: clip(asked?.question.text), since: before?.kind === kind ? before.since : now, questionId: asked?.question.id ?? null, options: asked && !asked.question.multiple && asked.question.options?.length ? asked.question.options : null } : null,
           createdAt: th.createdAt,
           updatedAt: th.updatedAt
         };

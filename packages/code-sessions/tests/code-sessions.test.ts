@@ -1407,7 +1407,7 @@ it("lists the assistant's conversations from a cache read when they change, neve
   w.ctx.emit("agent/event", "t-busy", { type: "done", run: { id: "r1" } } as never);
   await new Promise((resolve) => setTimeout(resolve, 150));
   expect(threadReads).toHaveLength(2);
-  // answered in words, its card has no choices to press
+  // it offers no choices: its card has none to press
   expect(win.states.at(-1)!.threads[0]!.wait).toEqual({ kind: "question", text: "要我取消 3 张重复工单吗？", since, questionId: "q", options: null });
   // A conversation no window lists yet, and each message landing, leave it be: the conversation comes in with its run's start.
   pending = [];
@@ -1441,6 +1441,11 @@ it("lists the assistant's conversations from a cache read when they change, neve
   await say({ type: "answer", sessionId: "s1", which: "allow" });
   expect(win.posts.at(-1)).toEqual({ type: "toast", text: "Its screen shows no permission prompt a key could answer safely — answer it in its pane" });
   expect(win.states.at(-1)!.reveal?.sessionId).toBe("s1");
+  // A question with choices, answered in words or by one of them: its card carries the choices.
+  pending = [{ threadId: "t-asks", kind: "ask", text: "取消这 3 张？", options: ["确认", "再看看"] }];
+  w.ctx.emit("agent/event", "t-asks", { type: "pending", pending: null });
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  expect(win.states.at(-1)!.threads.find((t) => t.id === "t-asks")!.wait).toMatchObject({ questionId: "q", options: ["确认", "再看看"] });
   // An assistant question answered from its card by one of its choices: the agent hears it, the window stays.
   await say({ type: "answerThread", threadId: "t-asks", questionId: "q", value: "确认" });
   expect(sent).toEqual([[projectId, "t-asks", { kind: "answer", questionId: "q", value: "确认" }]]);
@@ -1471,7 +1476,7 @@ it("lists the assistant's conversations from a cache read when they change, neve
   // Closed, the window's conversations are let go; opened again, they are read afresh.
   win.spec.onClose();
   await w.ctx.contributions.run("code-sessions.open", { projectId });
-  expect(threadReads).toHaveLength(5);
+  expect(threadReads).toHaveLength(6);
 });
 
 it("records what a cell shows, asks it for a snapshot when a session begins on its pane, plays a session's part back, and keeps a closed terminal's recording for History", async () => {
