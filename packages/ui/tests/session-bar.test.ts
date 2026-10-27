@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import type { ThreadSummary } from "@tomradex/agent";
 import type { SessionView } from "@tomradex/code-link";
-import { paletteSessionGroups, sessionBarRows } from "../src/lib/sessionBar";
+import { paletteSessionGroups, sessionBarRows, THREAD_DONE_AFTER_MS } from "../src/lib/sessionBar";
 import type { AttentionEntry } from "../src/lib/attention";
 
 const thread = (id: string, over: Partial<ThreadSummary> = {}): ThreadSummary => ({
@@ -99,4 +99,26 @@ it("carries what opened a conversation and when a usage limit lets it continue, 
   const out = rows({ threads: [thread("t", { origins: ["Routine"], parkedUntil: 1234 })], sessions: [session("s")] });
   expect(out.find((r) => r.key === "thread:t")).toMatchObject({ origins: ["Routine"], parkedUntil: 1234 });
   expect(out.find((r) => r.key === "session:s")).toMatchObject({ origins: [], parkedUntil: null });
+});
+
+it("cards a conversation with what it said last, and reads it as done once its ticket is or it sat untouched a good while", () => {
+  const now = 10 * THREAD_DONE_AFTER_MS;
+  const out = rows({
+    threads: [
+      thread("talking", { updatedAt: now - 60_000, said: "Found 3 duplicates." }),
+      thread("shipped", { updatedAt: now - 60_000, itemId: "i1", said: "Wrote releases/0.21.md." }),
+      thread("quiet", { updatedAt: now - THREAD_DONE_AFTER_MS - 1, said: "Done." }),
+      thread("busy", { updatedAt: now - THREAD_DONE_AFTER_MS - 1, running: true, said: "Reading." })
+    ],
+    itemDone: (id) => id === "i1",
+    now
+  });
+  const by = (key: string) => out.find((r) => r.key === key)!;
+  expect(by("thread:talking")).toMatchObject({ status: "idle", activity: "Found 3 duplicates.", outcome: null });
+  expect(by("thread:shipped")).toMatchObject({ status: "done", activity: null, outcome: "Wrote releases/0.21.md." });
+  expect(by("thread:quiet")).toMatchObject({ status: "done", outcome: "Done." });
+  // a run going is never done, however long ago it last moved
+  expect(by("thread:busy").status).toBe("run");
+  // without a clock nothing is done for being quiet
+  expect(rows({ threads: [thread("quiet", { said: "Done." })] })[0]).toMatchObject({ status: "idle", activity: "Done." });
 });

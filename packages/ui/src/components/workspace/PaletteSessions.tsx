@@ -55,7 +55,8 @@ export function PaletteSessions({ projectId, items, search, run, shift }: {
     const byId = new Map(items.map((i) => [i.id, i]));
     const rows = sessionBarRows({
       threads: threads ?? [], sessions: sessions ?? [], attention: (attention ?? []).filter((e) => e.projectId === projectId), openThreadId: null, idleLimit: 50,
-      itemTitle: (id) => byId.get(id)?.title ?? null, itemKey: (id) => byId.get(id)?.key ?? null
+      itemTitle: (id) => byId.get(id)?.title ?? null, itemKey: (id) => byId.get(id)?.key ?? null,
+      itemDone: (id) => byId.get(id)?.status === "done", now: Date.now()
     });
     return paletteSessionGroups(rows);
   }, [threads, sessions, attention, items, projectId]);

@@ -51,7 +51,7 @@ export type { ConnectionView, AgentConnectionView } from "./connection.js";
 export { BRIDGED_BY_DSH, cliHookCall, cliHookEvent, hookReply, mergeAnswers } from "./cli-hooks.js";
 export { recordOf, resumeCommand } from "./titles.js";
 export { cutFrom, joinCuts, type CutState } from "./segments.js";
-export { Review, REVIEW_PAGE, cutByTicket, mergePage, threadLines, ticketOutcome, type ReviewCursor, type ReviewPage, type ReviewPr, type ReviewRow, type ReviewSaid, type ReviewSegment, type ReviewSource, type ReviewTicket, type ReviewView } from "./review.js";
+export { Review, REVIEW_PAGE, cutByTicket, cutThread, mergePage, threadLines, ticketOutcome, type ReviewCursor, type ReviewPage, type ReviewPr, type ReviewRow, type ReviewSaid, type ReviewSegment, type ReviewSource, type ReviewTicket, type ReviewView } from "./review.js";
 export type { RawOutput } from "./service.js";
 export { inputsOf, SessionPanel, type AnswerResult, type SessionPanelView } from "./panel.js";
 export { PROMPT_LINES, promptOnScreen } from "./prompt.js";
