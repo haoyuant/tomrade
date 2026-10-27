@@ -969,7 +969,7 @@ const run = async () => {
   cardAsk = await askOf("Card allows it");
   check("a terminal session's card offers Allow and Look first while its screen shows the prompt with yes under the cursor", JSON.stringify(cardAsk?.buttons.map(([id]) => id)) === JSON.stringify(["sbar-allow", "sbar-look"]) && cardAsk.text === "wants to run git push -u origin al/card", cardAsk);
   // waiting on a command's permission, it is listed on top as asking to run something
-  check("the line on top says the terminal session asks to run something", /AL-\d+ asks to run something/.test((await queueLine()) ?? ""), await queueLine());
+  check("the line on top says the terminal session asks to run something", await until(async () => /AL-\d+ asks to run something/.test((await queueLine()) ?? ""), 40), await queueLine());
   const typedBefore = typed.length;
   await pressIn("Card allows it", "sbar-allow");
   check("Allow on the card presses the agent's key for Yes in its pane, and the panel stays", await until(async () => typed.length === typedBefore + 1, 30) && typed.at(-1)?.paneId === "w1:p1" && typed.at(-1)?.keys?.join() === "enter" && (await shownThread()) === stayOn && !(await sessionView()) && (await until(async () => /Allowed “AL-\d+” · you stayed where you were/.test((await $(`document.body.innerText`)) ?? ""), 30)), { typed: typed.slice(typedBefore), shown: await shownThread() });
