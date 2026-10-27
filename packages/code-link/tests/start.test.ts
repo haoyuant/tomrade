@@ -377,6 +377,54 @@ it("runs a ticket in a tab of its project's herdr workspace, follows the pane's 
   fake.close();
 });
 
+it("takes the id herdr's own integration reported on an agent's pane when the agent's hooks never reach Tomrade, and keeps one the hooks gave", { timeout: 60_000 }, async () => {
+  const { codeLink, ctx, project, repo, checkout, ticket } = await machine(codeRepo());
+  await ctx.repos.setCheckout(repo!.remote, checkout!);
+  const fake = new FakeHerdr();
+  await ctx.plugin(Herdr, { reconnectMs: 30, socket: fake.socket });
+  await settle();
+  // Antigravity's panes: herdr's agy integration reported the conversation on the first; the second reported nothing.
+  const pane = (id: string, conversation: string | null) =>
+    fake.panes.set(id, { pane_id: id, workspace_id: "w1", tab_id: "w1:t1", cwd: checkout!, label: null, agent: "agy", agent_status: "idle", text: "", agent_session: conversation ? { source: "herdr:antigravity_cli", agent: "agy", kind: "id", value: conversation } : null });
+  pane("w1:p1", "agy-conv-1");
+  pane("w1:p2", null);
+  pane("w1:p3", "agy-conv-3");
+  pane("w1:p4", "agy-conv-4");
+  const session = (herdrPane: string, agent: string, externalId: string | null = null) => {
+    const item = ticket(`Work in ${herdrPane}`);
+    const made = codeLink.store.createSession(project.id, { repoId: repo!.id, branch: "", itemIds: [item.id], mode: "terminal", agent, threadId: null, device: ctx.hub.deviceId, externalId });
+    codeLink.store.patchSession(project.id, made.id, { herdrPane, state: "running" });
+    return made.id;
+  };
+  const named = session("w1:p1", "agy");
+  const unnamed = session("w1:p2", "agy");
+  const hooked = session("w1:p3", "agy", "from-hooks");
+  // herdr reads another agent than the session's in its pane: that id is not this session's
+  const other = session("w1:p4", "gemini");
+  ctx.emit("codeLink/changed", project.id);
+  const panes = ["w1:p1", "w1:p2", "w1:p3", "w1:p4"];
+  await until(() => panes.every((id) => fake.of("events.subscribe").some((s) => JSON.stringify(s).includes(id))));
+  for (const id of panes) fake.setStatus(id, "agy", "working");
+  await until(() => codeLink.store.session(project.id, named)!.externalId === "agy-conv-1");
+  await until(() => [unnamed, hooked, other].every((id) => codeLink.store.session(project.id, id)!.state === "running" && codeLink.store.session(project.id, id)!.lastEventAt !== null));
+  // nothing reported stays without; an id the hooks gave is never replaced
+  expect(codeLink.store.session(project.id, unnamed)!.externalId).toBeNull();
+  expect(codeLink.store.session(project.id, hooked)!.externalId).toBe("from-hooks");
+  expect(codeLink.store.session(project.id, other)!.externalId).toBeNull();
+  // herdr's integration reports the conversation later than its first reading of the screen: a later event takes it up
+  fake.panes.get("w1:p2")!.agent_session = { source: "herdr:antigravity_cli", agent: "agy", kind: "id", value: "agy-conv-2" };
+  await new Promise((resolve) => setTimeout(resolve, 2100));
+  fake.setStatus("w1:p2", "agy", "blocked");
+  await until(() => codeLink.store.session(project.id, unnamed)!.externalId === "agy-conv-2");
+  // the id known, its pane is not read for one again
+  const lists = fake.of("pane.list").length;
+  await new Promise((resolve) => setTimeout(resolve, 2100));
+  fake.setStatus("w1:p1", "agy", "done");
+  await until(() => codeLink.store.session(project.id, named)!.state === "waiting");
+  expect(fake.of("pane.list").length).toBe(lists);
+  fake.close();
+});
+
 it("installs herdr with Homebrew, or herdr's own installer without it, in a terminal the person watches, and runs nothing where only the guide fits", async () => {
   // No herdr on this machine: the terminal setting, left on automatic, is the system terminal.
   const { codeLink } = await machine(null);
