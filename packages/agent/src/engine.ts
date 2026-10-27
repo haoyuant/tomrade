@@ -281,6 +281,8 @@ export interface Engine {
   /** The agent's own setup on this machine: its CLI, install, connection, permissions and knobs. */
   local?: EngineLocal;
   turn(input: TurnInput, io: TurnIO): Promise<TurnResult>;
+  /** Closes the warm runtime it keeps for this thread, if any, so another process may take up the thread's session (a terminal resuming it). Absent: it keeps none. */
+  release?(thread: { projectId: string; threadId: string }): void;
 }
 
 export interface EngineTerminal {

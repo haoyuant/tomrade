@@ -1302,6 +1302,17 @@ export class Agent extends Service implements AgentReader {
     return this.store.thread(projectId, threadId)!;
   }
 
+  /**
+   * Closes the warm runtime the thread's engine keeps for it, so another process may take up the thread's session
+   * (a CLI resuming it in a terminal) with no second process writing it. Refused while a run is in progress.
+   */
+  releaseRuntime(projectId: string, threadId: string): void {
+    const thread = this.store.thread(projectId, threadId);
+    if (!thread) throw new Error(`unknown thread ${threadId}`);
+    if (this.activeByThread.has(threadId)) throw new Error("a run is in progress on this thread");
+    this.engines.get(this.answering(thread.engine))?.release?.({ projectId, threadId });
+  }
+
   /** The session to resume: the engine's own, else one an engine it took in left on the thread. */
   private resumeOf(thread: ThreadSummary, engine: Engine): string | undefined {
     const external = this.store.external(thread.projectId, thread.id);
@@ -1394,6 +1405,9 @@ export class Agent extends Service implements AgentReader {
     const engine = this.engines.get(thread.engine) ?? [...this.engines.values()].find((e) => e.terminal?.mode !== "only");
     if (!engine) throw new Error("No engine installed — enable one in the Plugins sheet");
     if (engine.terminal?.mode === "only") throw new Error(`${engine.title} runs only in a terminal — start the ticket "In a terminal", or pick another engine`);
+    // Another plugin may hold the thread's session elsewhere (its CLI resuming it in a terminal): a second process on it is refused.
+    const refused = this.ctx.bail("agent/before-send", thread);
+    if (refused) throw new Error(refused);
 
     const text = input.kind === "text" ? input.text : Array.isArray(input.value) ? input.value.join(", ") : input.value;
     const focus = input.kind === "text" && input.focus?.length ? input.focus : undefined;

@@ -1,0 +1,47 @@
+/** A conversation moving between the assistant panel and a terminal cell, and back once its CLI exited. */
+export const handoff = {
+  en: {
+    here: "here",
+    toTerminal: "Go on in a terminal cell",
+    toTerminalTitle: "Stop the agent here and let its CLI resume this same session in a cell of the Terminal window",
+    reasonBuiltin: "This agent runs only inside Tomrade.",
+    reasonNoSession: "Nothing to resume yet: say something here first.",
+    reasonRunning: "A turn is in progress; stop it or wait for it to end.",
+    reasonWaiting: "A question is waiting here; answer it first.",
+    reasonArchived: "This conversation is archived.",
+    reasonNoMcp: "The MCP server is not running.",
+    inTerminalLive: "{{agent}} runs this conversation in a terminal cell",
+    inTerminalEnded: "{{agent}} exited in the terminal",
+    show: "Show it",
+    back: "Take it back here",
+    backTitle: "Back into the conversation: the next message goes on through the SDK, in this same session",
+    backBlocked: "{{agent}} is still running there; wait for it to exit, or close it.",
+    composerElsewhere: "This conversation goes on in a terminal cell. Once its agent exits there, bring it back here.",
+    moved: "Moved to a terminal cell{{pane}}. Approval cards and permission settings don't apply there: the CLI asks in its own terminal.",
+    movedPane: " ({{pane}})",
+    notOpened: "The terminal did not open; the session is ready to run — see its folder.",
+    returned: "Back in the conversation: the next message resumes the same session."
+  },
+  zh: {
+    here: "在这里",
+    toTerminal: "在终端格子里接着做",
+    toTerminalTitle: "停掉这里的智能体，让它的 CLI 在终端窗口的格子里接着跑同一个会话",
+    reasonBuiltin: "这个智能体只在 Tomrade 里运行。",
+    reasonNoSession: "还没有可以续接的会话：先在这里说一句。",
+    reasonRunning: "有一轮正在运行；先停下，或者等它结束。",
+    reasonWaiting: "这里有一个问题在等你；先回答它。",
+    reasonArchived: "这段对话已归档。",
+    reasonNoMcp: "MCP 服务没有在运行。",
+    inTerminalLive: "{{agent}} 正在终端格子里跑这段对话",
+    inTerminalEnded: "{{agent}} 已在终端里退出",
+    show: "看它",
+    back: "接回对话",
+    backTitle: "回到对话：下一条消息通过 SDK 在同一个会话里接着跑",
+    backBlocked: "{{agent}} 还在那边跑；等它退出，或者关掉它。",
+    composerElsewhere: "这段对话正在终端格子里进行。等那边的智能体退出后，再把它接回来。",
+    moved: "已搬到终端格子{{pane}}。Tomrade 的审批卡片和权限设置在那里不起作用，由 CLI 在终端里自己询问。",
+    movedPane: "（{{pane}}）",
+    notOpened: "终端没有打开；会话已经准备好了，可以从它的文件夹运行。",
+    returned: "回到对话了：下一条消息接着同一个会话。"
+  }
+};

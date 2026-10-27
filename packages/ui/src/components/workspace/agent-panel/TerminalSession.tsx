@@ -25,7 +25,7 @@ const ANSWERED_MS = 8000;
  * session moves; a strip above it shows the pane's last lines, opening into a drawer with more; what is typed below
  * goes into the pane as keystrokes. Nothing here attaches to the pane, so the Terminal window keeps its control.
  */
-export function TerminalSession({ projectId, session, title, ticket, status, engines, onShowInTerminal, onClose, onAnswered }: {
+export function TerminalSession({ projectId, session, title, ticket, status, engines, onShowInTerminal, onBack, backBlocked, onClose, onAnswered }: {
   projectId: string;
   session: SessionView;
   title: string;
@@ -34,6 +34,10 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
   engines: EngineView[] | undefined;
   /** Present when the Terminal window can be asked to show it. */
   onShowInTerminal?: () => void;
+  /** Present for a conversation's own session: brings the conversation back to the panel once its CLI exited. */
+  onBack?: () => void;
+  /** Why it cannot come back yet: its CLI still runs here. */
+  backBlocked?: string;
   onClose: () => void;
   /** Allow or Deny went through: the panel may move on to what else waits. */
   onAnswered?: () => void;
@@ -226,6 +230,12 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
             <button type="button" className="btn btn-ghost ai-session-show" data-testid="ai-session-show" onClick={onShowInTerminal}>
               <Icon name="i-terminal" size={12} />
               {t("sessionBar.showInTerminal")}
+            </button>
+          )}
+          {onBack && (
+            <button type="button" className="btn btn-ghost ai-session-show" data-testid="back-to-panel" disabled={!!backBlocked} title={backBlocked ?? t("handoff.backTitle")} onClick={onBack}>
+              <Icon name="i-back" size={12} />
+              {t("handoff.back")}
             </button>
           )}
           <button type="button" className="btn btn-icon" title={t("sessionBar.backToThreads")} aria-label={t("sessionBar.backToThreads")} onClick={onClose}>

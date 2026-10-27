@@ -2507,4 +2507,52 @@ describe("starting tickets from a conversation", () => {
     await untilRunsSettle(agent);
     expect(codeLink.sessionsOf(project.id, other.id)).toEqual([expect.objectContaining({ agent: "fake-code", requestedBy: second.id })]);
   });
+
+  it("hands a ticket's conversation to a terminal cell, keeps a second process off its session, and takes it back once the CLI exited", { timeout: 60_000 }, async () => {
+    const { codeLink, ctx, project, repo, checkout, ticket, turns, agent } = await machine(codeRepo());
+    await ctx.repos.setCheckout(repo!.remote, checkout!);
+    const { Mcp } = await import("@tomradex/mcp");
+    await ctx.plugin(Mcp, { port: 0 });
+    const fake = new FakeHerdr();
+    await ctx.plugin(Herdr, { reconnectMs: 30, socket: fake.socket });
+    await settle();
+    const item = ticket("Hand off to a cell");
+    const started = await codeLink.start(project.id, item.id, { mode: "run" });
+    expect(started).toMatchObject({ ok: true, mode: "run" });
+    const threadId = started.ok ? started.threadId! : "";
+    await until(() => agent.store.run(project.id, started.ok ? started.runId! : "")?.status === "done");
+    expect(codeLink.handoffOf(project.id, threadId)).toEqual({ where: "here", toTerminal: { ok: true }, terminal: null });
+
+    // to the terminal: Start's continue, in the thread's worktree, resuming the session the headless run left; the headless session ends quietly
+    const moved = await codeLink.toTerminal(project.id, threadId);
+    expect(moved).toMatchObject({ ok: true, launched: true, pane: "w1:p1" });
+    const sessions = codeLink.sessionsOf(project.id, item.id);
+    expect(sessions.find((s) => s.mode === "headless")).toMatchObject({ state: "ended" });
+    const terminal = sessions.find((s) => s.mode === "terminal")!;
+    expect(terminal).toMatchObject({ state: "running", threadId, externalId: "fake-session-1", herdrPane: "w1:p1", itemIds: [item.id] });
+    expect(fake.of("workspace.create")).toEqual([{ cwd: started.ok ? started.cwd : "", label: project.name, focus: false }]);
+    expect(fs.readFileSync(path.join(codeLink.sessionDir(terminal.id), "run.command"), "utf8")).toContain("--resume fake-session-1");
+    expect(agent.store.thread(project.id, threadId)).toMatchObject({ surface: "code" });
+    expect(codeLink.handoffOf(project.id, threadId)).toMatchObject({ where: "terminal", terminal: { sessionId: terminal.id, live: true, pane: "w1:p1" } });
+    // one process on the session: neither the panel nor a Start runs the thread here meanwhile
+    expect(() => agent.send(project.id, threadId, { kind: "text", text: "more" })).toThrow("This conversation goes on with Fake coding agent in a terminal (pane w1:p1); bring it back to the conversation first.");
+    expect(await codeLink.start(project.id, item.id, { mode: "run" })).toMatchObject({ ok: false, gate: "pane", pane: "w1:p1" });
+    expect(agent.store.thread(project.id, threadId)).toMatchObject({ surface: "code" });
+    expect(await codeLink.backToPanel(project.id, threadId)).toMatchObject({ ok: false });
+
+    // the CLI exited: the conversation comes back, and the ticket's tracking goes on in a headless session again
+    codeLink.sessions.event(project.id, terminal.id, { hook_event_name: "SessionStart", session_id: "fake-session-1", cwd: started.ok ? started.cwd : "" });
+    codeLink.sessions.event(project.id, terminal.id, { hook_event_name: "SessionEnd" });
+    expect(await codeLink.backToPanel(project.id, threadId)).toMatchObject({ ok: true, sessionId: terminal.id });
+    expect(agent.store.thread(project.id, threadId)).toMatchObject({ surface: "assistant" });
+    const idle = codeLink.sessionsOf(project.id, item.id).find((s) => s.mode === "headless" && s.state === "idle");
+    expect(idle).toMatchObject({ threadId, branch: terminal.branch, repoId: repo!.id, delivery: terminal.delivery, externalId: "fake-session-1" });
+    expect(codeLink.handoffOf(project.id, threadId)).toEqual({ where: "here", toTerminal: { ok: true }, terminal: null });
+    const next = agent.send(project.id, threadId, { kind: "text", text: "and now" });
+    await until(() => agent.store.run(project.id, next.runId)?.status === "done");
+    expect(turns.at(-1)).toMatchObject({ threadId, cwd: started.ok ? started.cwd : "" });
+    // the run was tracked on the ticket's session, as before the hand-off
+    expect(codeLink.store.session(project.id, idle!.id)).toMatchObject({ state: "idle", externalId: "fake-session-1" });
+    fake.close();
+  });
 });

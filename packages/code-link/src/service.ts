@@ -27,6 +27,7 @@ import { Connections, MCP_AGENT } from "./connections.js";
 import { contribute } from "./contrib.js";
 import { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
 import { FollowOnStore, type FollowOn } from "./follow-ons.js";
+import { Handoff, type HandoffResult, type HandoffView } from "./handoff.js";
 import { HerdrBridge, type HerdrInstall } from "./herdr-bridge.js";
 import { SessionPanel, type AnswerResult, type SessionPanelView } from "./panel.js";
 import { Landing, type MergeCause, type MergeCheckView, type MergeLocalResult, type OpenPrResult } from "./landing.js";
@@ -237,6 +238,12 @@ declare module "@tomradex/ipc" {
     "codeLink.sessionAnswer": (projectId: string, sessionId: string, which: "allow" | "deny") => AnswerResult;
     /** The last lines on the session's pane; null without a pane. Asked by the panel only while it shows the session. */
     "codeLink.sessionTail": (projectId: string, sessionId: string, lines: number) => string | null;
+    /** Where a conversation runs — here on its engine's SDK, or in a terminal as a session — and whether it can move now. */
+    "codeLink.handoff": (projectId: string, threadId: string) => HandoffView;
+    /** The conversation to a terminal cell: its runtime here closed, its engine's CLI resuming the same session there. */
+    "codeLink.toTerminal": (projectId: string, threadId: string) => HandoffResult;
+    /** The conversation back to the panel once its CLI exited: the next message resumes the same session through the SDK. */
+    "codeLink.backToPanel": (projectId: string, threadId: string) => HandoffResult;
     /** How herdr installs on this machine: Homebrew's command where brew is, herdr's own installer on macOS and Linux, else only its install guide. */
     "codeLink.herdrInstall": () => HerdrInstall;
     /** Install herdr in a terminal with that command; the page never names it. */
@@ -370,6 +377,7 @@ export class CodeLink extends Service implements CodeLinkReader {
   private autoConnectTimer: NodeJS.Timeout | null = null;
   private herdr!: HerdrBridge;
   private panel!: SessionPanel;
+  private handoff!: Handoff;
   /** The engines' connection-file writers; Connect reads them when it runs, so load order does not matter. */
   private readonly connectors = new Map<ConnectorAgent, ConnectFileWriter>();
   /** Ended sessions already looked for a transcript title. */
@@ -428,6 +436,16 @@ export class CodeLink extends Service implements CodeLinkReader {
       notify: (projectId) => this.notify(projectId),
       sessionDir: (id) => this.sessionDir(id),
       worktrees: this.worktrees
+    });
+    this.handoff = new Handoff({
+      ctx: this.ctx,
+      store: this.store,
+      sessions: this.sessions,
+      starter: this.starter,
+      herdr: this.herdr,
+      words: () => this.words(),
+      notify: (projectId) => this.notify(projectId),
+      say: (projectId, threadId, text) => this.sayToThread(projectId, threadId, text)
     });
     this.connections = new Connections({
       ctx: this.ctx,
@@ -624,9 +642,10 @@ export class CodeLink extends Service implements CodeLinkReader {
       }
     });
     this.home.inject(["agent"], (ctx) => {
+      // Only while the session lives: a conversation brought back to the panel once its CLI exited stays there.
       const placeTerminalThreads = (projectId: string) => {
         for (const session of this.store.sessions(projectId)) {
-          if (session.mode !== "terminal" || !session.threadId) continue;
+          if (session.mode !== "terminal" || !session.threadId || session.state === "ended" || session.state === "lost") continue;
           const thread = ctx.agent.store.thread(projectId, session.threadId);
           if (thread && thread.surface !== "code") ctx.agent.store.touchThread(projectId, thread.id, { surface: "code" });
         }
@@ -640,6 +659,8 @@ export class CodeLink extends Service implements CodeLinkReader {
       for (const playbook of PLAYBOOKS) ctx.agent.playbook(playbook);
       // A thread on a ticket is one Start opened.
       ctx.agent.threadOrigins((_projectId, threads) => threads.filter((th) => th.itemId).map((th) => [th.id, this.words()("origin")] as [string, string]));
+      // One process on a conversation's session at a time: while its CLI runs in a terminal, nothing starts here.
+      ctx.on("agent/before-send", (thread) => this.handoff.refuseSend(thread));
       ctx.on("agent/run-started", (_run, thread) => {
         this.running.set(thread.id, thread);
         const session = this.sessionOf(thread);
@@ -714,6 +735,9 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.sessionSay", (projectId, sessionId, text) => ctx.codeLink.sessionSay(projectId, sessionId, text));
       ctx.ipc.handle("codeLink.sessionAnswer", (projectId, sessionId, which) => ctx.codeLink.sessionAnswer(projectId, sessionId, which));
       ctx.ipc.handle("codeLink.sessionTail", (projectId, sessionId, lines) => ctx.codeLink.sessionTail(projectId, sessionId, lines));
+      ctx.ipc.handle("codeLink.handoff", (projectId, threadId) => ctx.codeLink.handoffOf(projectId, threadId));
+      ctx.ipc.handle("codeLink.toTerminal", (projectId, threadId) => ctx.codeLink.toTerminal(projectId, threadId));
+      ctx.ipc.handle("codeLink.backToPanel", (projectId, threadId) => ctx.codeLink.backToPanel(projectId, threadId));
       ctx.ipc.handle("codeLink.herdrInstall", () => ctx.codeLink.herdrInstall());
       ctx.ipc.handle("codeLink.installHerdr", () => ctx.codeLink.installHerdr());
       ctx.ipc.handle("codeLink.reviewList", (projectId, opts) => ctx.codeLink.review.list(projectId, opts));
@@ -947,6 +971,21 @@ export class CodeLink extends Service implements CodeLinkReader {
   /** The last lines on a terminal session's pane; null without a pane, or when it is gone. */
   sessionTail(projectId: string, sessionId: string, lines: number): Promise<string | null> {
     return this.panel.tail(projectId, sessionId, lines);
+  }
+
+  /** Where a conversation runs, here or in a terminal, and whether it can move now; see `Handoff`. */
+  handoffOf(projectId: string, threadId: string): HandoffView {
+    return this.handoff.view(projectId, threadId);
+  }
+
+  /** The conversation to a terminal cell, its runtime here closed first. */
+  toTerminal(projectId: string, threadId: string): Promise<HandoffResult> {
+    return this.handoff.toTerminal(projectId, threadId);
+  }
+
+  /** The conversation back to the panel, once its CLI exited. */
+  backToPanel(projectId: string, threadId: string): Promise<HandoffResult> {
+    return this.handoff.backToPanel(projectId, threadId);
   }
 
   /** Asked on every session change while a list shows: it reads the live rows and a handful of ended ones, not the whole history. */
@@ -1640,8 +1679,15 @@ export class CodeLink extends Service implements CodeLinkReader {
     if (!agent?.store.thread(session.projectId, session.threadId)) return;
     const who = agent.codeEngines().find((engine) => engine.id === agent.answering(session.agent))?.title ?? session.agent;
     const text = moment.kind === "said" ? `${who}: ${moment.text}` : moment.kind === "failed" ? `${who} stopped: ${moment.text}` : `${who} session ended${moment.text ? ` (${moment.text})` : ""}.`;
-    const message = agent.store.appendMessage(session.projectId, session.threadId, "system", { type: "note", text }, null);
-    this.home.get("ipc")?.send("agent.event", session.threadId, { type: "message", message });
+    this.sayToThread(session.projectId, session.threadId, text);
+  }
+
+  /** A line of Tomrade's into a thread, on screen at once. */
+  private sayToThread(projectId: string, threadId: string, text: string): void {
+    const agent = this.ctx.get("agent");
+    if (!agent?.store.thread(projectId, threadId)) return;
+    const message = agent.store.appendMessage(projectId, threadId, "system", { type: "note", text }, null);
+    this.home.get("ipc")?.send("agent.event", threadId, { type: "message", message });
   }
 
   /** Per-session files (mcp.json, hooks settings, the prompt, the launch script) live in the Hub where the user can see them. */

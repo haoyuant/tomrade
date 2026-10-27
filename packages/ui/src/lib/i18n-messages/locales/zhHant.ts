@@ -1192,6 +1192,28 @@ export const zhHant: PartialMessages = {
     copy: "複製這條資訊",
     changedSince: "之後它又被改過了——請在操作歷史裡撤銷"
   },
+  handoff: {
+    here: "在這裡",
+    toTerminal: "在終端格子裡接著做",
+    toTerminalTitle: "停掉這裡的智慧代理，讓它的 CLI 在終端視窗的格子裡接著跑同一個工作階段",
+    reasonBuiltin: "這個智慧代理只在 Tomrade 裡執行。",
+    reasonNoSession: "還沒有可以續接的工作階段：先在這裡說一句。",
+    reasonRunning: "有一輪正在執行；先停下，或等它結束。",
+    reasonWaiting: "這裡有一個問題在等你；先回答它。",
+    reasonArchived: "這段對話已封存。",
+    reasonNoMcp: "MCP 服務沒有在執行。",
+    inTerminalLive: "{{agent}} 正在終端格子裡跑這段對話",
+    inTerminalEnded: "{{agent}} 已在終端裡退出",
+    show: "看它",
+    back: "接回對話",
+    backTitle: "回到對話：下一則訊息透過 SDK 在同一個工作階段裡接著跑",
+    backBlocked: "{{agent}} 還在那邊跑；等它退出，或關掉它。",
+    composerElsewhere: "這段對話正在終端格子裡進行。等那邊的智慧代理退出後，再把它接回來。",
+    moved: "已搬到終端格子{{pane}}。Tomrade 的審批卡片和權限設定在那裡不起作用，由 CLI 在終端裡自己詢問。",
+    movedPane: "（{{pane}}）",
+    notOpened: "終端沒有打開；工作階段已經準備好了，可以從它的資料夾執行。",
+    returned: "回到對話了：下一則訊息接著同一個工作階段。"
+  },
   sessionBar: {
     label: "會話",
     showCards: "展開成卡片（⌘\\）",
