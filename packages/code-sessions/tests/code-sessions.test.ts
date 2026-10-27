@@ -1722,6 +1722,9 @@ it("records a pane no cell shows by watching it, never taking it over; a cell ta
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];
     repositoriesOf = () => [];
