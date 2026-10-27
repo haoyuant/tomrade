@@ -254,11 +254,12 @@ it("runs a ticket in a tab of its project's herdr workspace, follows the pane's 
   await until(() => codeLink.store.session(project.id, result.sessionId)!.lastEventAt !== null && codeLink.store.session(project.id, result.sessionId)!.state === "running");
   fake.setStatus("w1:p1", "claude", "blocked");
   await until(() => codeLink.store.session(project.id, result.sessionId)!.state === "waiting");
-  expect(codeLink.store.session(project.id, result.sessionId)).toMatchObject({ state: "waiting", activity: "needs your approval" });
+  // herdr names no tool: the ask is a permission, worded where it shows
+  expect(codeLink.store.session(project.id, result.sessionId)).toMatchObject({ state: "waiting", activity: null, ask: { kind: "permission", tool: null, action: null, detail: null } });
   expect((await ctx.contributions.badgesFor(project.id))[item.id]).toEqual(expect.arrayContaining([expect.objectContaining({ id: "waiting" })]));
   // …and the person at the terminal is told there, once.
   await until(() => fake.of("notification.show").length === 1);
-  expect(fake.of("notification.show")).toEqual([{ title: `${item.key} needs you`, body: "needs your approval", sound: "request" }]);
+  expect(fake.of("notification.show")).toEqual([{ title: `${item.key} needs you`, body: "waits for your approval", sound: "request" }]);
   await until(() => fake.of("pane.report_metadata").at(-1)?.tokens?.session === "waiting for you");
   fake.setStatus("w1:p1", "claude", "working");
   await until(() => codeLink.store.session(project.id, result.sessionId)!.state === "running");
@@ -1206,7 +1207,7 @@ describe("starting a ticket", () => {
     const session = () => codeLink.sessionsOf(project.id, item.id)[0];
 
     // The question holds the run: the ticket says the session waits for the person…
-    await vi.waitFor(() => expect(session()).toMatchObject({ state: "waiting", activity: "needs your approval" }), { timeout: 10_000 });
+    await vi.waitFor(() => expect(session()).toMatchObject({ state: "waiting", ask: { kind: "permission" } }), { timeout: 10_000 });
     expect((await ctx.contributions.badgesFor(project.id))[item.id]).toEqual(expect.arrayContaining([expect.objectContaining({ id: "waiting" })]));
     // …and still does after a long silence, where a running session would be called idle.
     codeLink.sessions.sweep(project.id, Date.now() + 11 * 60 * 1000);

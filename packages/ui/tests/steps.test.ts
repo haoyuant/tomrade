@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import type { ThreadMessage } from "@tomradex/agent";
-import { firstCodeStep, foldSteps, startBriefId, traceState, workDone, writesCode } from "../src/lib/steps";
+import { askedFor, codingFrom, firstCodeStep, foldSteps, startBriefId, traceState, workDone, writesCode, type StepFold } from "../src/lib/steps";
+import { workConclusion } from "../src/lib/convoFold";
 
 it("maps command outcomes to distinct labels and reserves red warnings for failures", () => {
   const cases = [
@@ -86,4 +87,59 @@ it("folds the handover that opens a conversation writing code in the background,
   const opener = user("Carry on in the background — Dedupe chat\n\nThe person moved the coding out of the conversation…");
   expect(startBriefId([opener, user("and tests")], false)).toBe(opener.id);
   expect(startBriefId([opener], true)).toBe(opener.id);
+});
+
+const ask = (id: string, runId = "r"): ThreadMessage => ({ id: `m${++seq}`, threadId: "t", seq, role: "agent", runId, at: 0, block: { type: "question", id, text: `Run this command in /repo?\n\npnpm test`, options: ["Allow once", "Deny"] } });
+const said = (runId = "r"): ThreadMessage => ({ id: `m${++seq}`, threadId: "t", seq, role: "agent", runId, at: 0, block: { type: "text", text: "on it" } });
+const words = (k: string, vars?: Record<string, string | number>) => `${k}${vars ? `(${Object.values(vars).join(",")})` : ""}`;
+
+it("finds where the writing code begins: the run of steps that first changes a file, or the top of a ticket's session", () => {
+  const messages = [user("go"), text(), step("read_file"), step("write_file", { path: "a.ts" }), text()];
+  expect(codingFrom(messages, false)).toBe(2);
+  expect(codingFrom(messages, true)).toBe(0);
+  expect(codingFrom([user("go"), text(), step("bash")], false)).toBe(-1);
+});
+
+it("folds a stretch of writing code whole, failed steps and the narration between them too, leaving its conclusion open", () => {
+  const messages = [user("write it"), text(), step("read_file"), step("write_file", { path: "a.ts" }), said(), step("write_file", { path: "b.ts" }), step("bash", {}, "8 passed", false), text()];
+  const out = foldSteps(messages, codingFrom(messages, false));
+  expect(shape(out)).toEqual(["text", "text", "fold5", "text"]);
+  const fold = out[2] as StepFold;
+  expect(fold.coding).toBe(true);
+  expect(fold.work).toMatchObject({ steps: 4, files: 2, commands: 1, passed: 8 });
+  expect(workConclusion(fold.work, words, fold.waiting)).toBe("convoFiles(2) · convoCommand(1) · convoPassed(8)");
+  // a single step folds as well; before the writing, chat keeps its last steps open
+  const one = [user("go"), step("Bash"), step("Bash"), user("write"), step("edit", { path: "a.ts" }), text()];
+  expect(shape(foldSteps(one, codingFrom(one, false)))).toEqual(["text", "ok", "ok", "text", "fold1", "text"]);
+});
+
+it("keeps each run's stretch to itself and leaves what the person sent into it open", () => {
+  const steer: ThreadMessage = { id: `m${++seq}`, threadId: "t", seq, role: "user", runId: "r1", at: 0, block: { type: "text", text: "also b", steerId: "s" } };
+  const inRun = (m: ThreadMessage, runId: string): ThreadMessage => ({ ...m, runId });
+  const messages = [inRun(step("edit", { path: "a.ts" }), "r1"), steer, inRun(step("edit", { path: "b.ts" }), "r1"), inRun(user("next"), "r2"), inRun(step("edit", { path: "c.ts" }), "r2")];
+  expect(shape(foldSteps(messages, 0))).toEqual(["fold1", "text", "fold1", "text", "fold1"]);
+});
+
+it("says what writing code waits to be allowed, and folds the questions answered before", () => {
+  const answer = (): ThreadMessage => ({ id: `m${++seq}`, threadId: "t", seq, role: "user", runId: "r", at: 0, block: { type: "text", text: "Allow once" } });
+  const messages = [user("go"), step("write_file", { path: "a.ts" }), ask("q1"), answer(), step("bash", {}, "ok"), step("write_file", { path: "b.ts" }), said(), ask("q2")];
+  const out = foldSteps(messages, 0, { id: "q2", text: "Run this command in /repo?\n\npnpm test" });
+  expect(shape(out)).toEqual(["text", "fold5", "text", "question"]);
+  const fold = out[1] as StepFold;
+  expect(fold.waiting).toBe("pnpm test");
+  expect(workConclusion(fold.work, words, fold.waiting)).toBe("convoFiles(2) · convoCommand(1) · convoWaitingFor(pnpm test)");
+  // nothing waits: no word of it
+  expect((foldSteps(messages, 0)[1] as StepFold).waiting).toBeNull();
+});
+
+it("reads what a permission question asks to run", () => {
+  expect(askedFor("Run this command in /repo?\n\npnpm test:related")).toBe("pnpm test:related");
+  expect(askedFor('Bash\nRun the tests\n{\n  "command": "pnpm test",\n  "description": "x"\n}')).toBe("pnpm test");
+  expect(askedFor("x\n\n" + "a".repeat(80))).toHaveLength(60);
+});
+
+it("reads the built-in shell's test counts from its summary and the tail the summary cut", () => {
+  const shell: ThreadMessage = { id: `m${++seq}`, threadId: "t", seq, role: "agent", runId: "r", at: 0, block: { type: "trace", tool: "bash", args: { command: "pnpm test" }, ok: true, summary: "exit 0\n RUN v3", tail: "Test Files  2 passed (2)\n      Tests  8 passed (8)\n   Duration  265ms", ms: 1 } };
+  const out = foldSteps([step("write_file", { path: "a.ts" }), shell], 0);
+  expect((out[0] as StepFold).work).toMatchObject({ files: 1, commands: 1, passed: 8 });
 });

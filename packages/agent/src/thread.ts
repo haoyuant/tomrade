@@ -19,14 +19,15 @@ export interface FocusRef {
 export type Block =
   | { type: "text"; text: string; focus?: FocusRef[]; attachments?: import("./media.js").MediaRef[]; /** Sent into a running turn; the id the panel gave it. */ steerId?: string }
   | { type: "media"; media: import("./media.js").MediaRef; caption?: string }
-  | { type: "trace"; tool: string; args: unknown; ok: boolean; summary: string; ms: number;
+  /** `tail`: the end of a text result too long for the summary, where a command says how it went (a test run's counts). */
+  | { type: "trace"; tool: string; args: unknown; ok: boolean; summary: string; ms: number; tail?: string;
       commandResult?: { status: "success" | "no-match" | "condition-false" | "failed" | "declined" | "timed-out" | "interrupted"; exitCode: number | null; output: string } }
   | { type: "question"; id: string; text: string; options?: string[]; multiple?: boolean; freeText?: boolean }
   | { type: "card"; id: string; schema: string; title: string; data: unknown }
   | { type: "status"; text: string }
   | { type: "changes"; runId: string; count: number; items?: { key: string; label: string; op: "created" | "updated" | "deleted" }[] }
-  /** `settingsFor`: the engine whose settings change what the note is about; the panel links there. `threadFor`: another conversation the note is about (one this conversation's coding moved to); the panel links there too. */
-  | { type: "note"; text: string; settingsFor?: string; threadFor?: string }
+  /** `settingsFor`: the engine whose settings change what the note is about; the panel links there. `threadFor`: another conversation the note is about (one this conversation's coding moved to); the panel links there too. `claimed`: the key of the ticket the conversation claimed here — its writing code for that ticket starts at this note. */
+  | { type: "note"; text: string; settingsFor?: string; threadFor?: string; claimed?: string }
   /** One stretch of failed model requests, stored once it ends: recovered, or the run gave up. */
   | { type: "retry"; attempts: number; max?: number; reason: string; ms: number; recovered: boolean }
   /** `details`: what the engine knew beyond the one line, folded under it so it can be read and copied. */
@@ -112,6 +113,8 @@ export interface ThreadSummary {
   archived: boolean;
   /** A person brought it back from the archive: it stays open until they put it away again. */
   restored?: boolean;
+  /** What it said last: the first sentence of the agent's last text, written once a turn ends. */
+  said?: string | null;
   /** What opened it, in the person's words — each named by the plugin that did; chips beside the title. */
   origins?: string[];
   createdAt: number;

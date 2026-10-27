@@ -6,7 +6,7 @@ import { useSay } from "./say";
 
 type ReplayPost = Extract<WindowPost, { type: "replay" }>;
 
-/** A session's or a closed terminal's recording, asked of the window and played back in its cell. */
+/** A session's, a closed terminal's or a stretch of manual work's recording, asked of the window and played back in its cell, with where it is kept and who can see it. */
 export function Replay({ cell, id, font, tokens }: { cell: string; id: string; font: string; tokens: Record<string, string> }) {
   const say = useSay();
   const [data, setData] = useState<ReplayPost | null>(null);
@@ -20,5 +20,14 @@ export function Replay({ cell, id, font, tokens }: { cell: string; id: string; f
     return off;
   }, [cell, id]);
 
-  return <ReplayPlayer data={data} font={font} themeKey={tokens} say={say} />;
+  return (
+    <>
+      {data && (
+        <p className="cs-raw-tags" data-testid="cs-raw-tags">
+          {say("rawTags", { days: data.keep.days, mb: data.keep.mb })}
+        </p>
+      )}
+      <ReplayPlayer data={data} font={font} themeKey={tokens} say={say} />
+    </>
+  );
 }

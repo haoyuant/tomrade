@@ -7,7 +7,7 @@ import { onReviewFound, send } from "./bridge";
 import { Mark, rowAgent, rowName, rowSaid, rowTitle } from "./cards";
 import { keyLabel } from "./keys";
 import { sessionStatus, statusOf, type HereRow } from "./lists";
-import { useSay } from "./say";
+import { useSay, useWords } from "./say";
 
 export interface PaletteAction {
   id: string;
@@ -43,6 +43,7 @@ export function Palette({ open, onOpenChange, here, away, ended, actions, ticket
   onStartTicket: (ticket: TicketRow) => void;
 }) {
   const say = useSay();
+  const words = useWords();
   const [search, setSearch] = useState("");
   const [found, setFound] = useState<{ query: string; rows: ReviewHit[] } | null>(null);
   // Typed, the history reaches past what the window holds: the look back's search, a moment after the typing stops.
@@ -78,7 +79,7 @@ export function Palette({ open, onOpenChange, here, away, ended, actions, ticket
     const status = statusOf(r);
     const name = rowName(r, say);
     const title = rowTitle(r, say);
-    const said = rowSaid(r, status, say);
+    const said = rowSaid(r, status, say, words);
     const agent = rowAgent(r);
     return (
       <Command.Item key={r.id} value={`${name} ${title ?? ""} ${agent ?? ""} ${said ?? ""} ${r.id}`} className="palette-row" data-row={r.id} onSelect={() => choose(onSelect)}>

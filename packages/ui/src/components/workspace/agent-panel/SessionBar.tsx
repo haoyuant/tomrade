@@ -1,15 +1,24 @@
 import { Fragment, memo, useEffect, useId, useRef, useState, type ReactElement } from "react";
-import type { EngineView } from "@tomradex/agent";
+import type { EngineView, PendingView } from "@tomradex/agent";
 import { Icon } from "~/components/icons";
 import { ContextMenu, ContextMenuActionItem } from "~/components/ui/menu";
 import { ATTENTION_KEY } from "~/lib/attention";
 import { findEngine } from "~/lib/agent";
 import { clockLabel, timeAgo } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
+import { keyLabel } from "~/lib/keybindings";
+import { outcomeLine } from "~/lib/review";
 import type { BarRow, BarStatus } from "~/lib/sessionBar";
+import { rangeLabel, spanLabel } from "~/lib/sessionTime";
 import type { Starting } from "~/lib/startWays";
+import { askText } from "~/lib/terminalSession";
 
 export type BarMode = "rail" | "cards";
+/** What a card answers with: a terminal session's permission prompt, or an assistant question by one of its choices. */
+export type CardAnswer = { which: "allow" | "deny" } | { questionId: string; value: string };
+
+/** At most this many of a question's choices sit on its card; the rest are answered where it opens. */
+const CHOICES_SHOWN = 3;
 type Filter = "all" | Exclude<BarStatus, "idle">;
 
 /** Three shapes, so the state reads without colour: a ring runs, a diamond waits, a tick ended. */
@@ -42,15 +51,21 @@ function RowActions({ row, onArchive, onDelete }: { row: BarRow; onArchive: (thr
  * The session bar on the panel's right edge: a column of dots to switch by, or cards that say what each is doing.
  * Memoized: the panel renders every frame a reply streams, and the bar has nothing new to show then.
  */
-export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mode, engines, onMode, onPick, onNew, onHistory, onArchive, onDelete }: {
+export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mode, peeks = true, engines, pendings, onMode, onPick, onAnswer, onNew, onHistory, onArchive, onDelete }: {
   rows: BarRow[];
   /** Starts under way, before their sessions are there: on top, a dashed ring. */
   starting: readonly Starting[];
   openKey: string | null;
   mode: BarMode;
+  /** Hovering or focusing a dot shows what it is doing; off, the dots show only their state. */
+  peeks?: boolean;
   engines: EngineView[] | undefined;
+  /** What the waiting conversations ask, by thread, for their cards to answer in place. */
+  pendings: Map<string, PendingView>;
   onMode: (mode: BarMode) => void;
   onPick: (row: BarRow) => void;
+  /** Answered from its card: the panel stays where it is. */
+  onAnswer: (row: BarRow, answer: CardAnswer) => void;
   onNew: () => void;
   /** The look back on everything that ended, beyond the few the bar keeps. */
   onHistory: () => void;
@@ -69,19 +84,54 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
   const leave = () => { hold(); closing.current = setTimeout(() => setPeek(null), 200); };
   useEffect(() => () => { if (closing.current) clearTimeout(closing.current); }, []);
   // measured against the bar, so the peek sits beside its dot however far the dots have scrolled
-  const peekAt = (key: string, el: HTMLElement) => { hold(); setPeek({ key, top: el.getBoundingClientRect().top - (nav.current?.getBoundingClientRect().top ?? 0) }); };
+  const peekAt = (key: string, el: HTMLElement) => {
+    hold();
+    if (peeks) setPeek({ key, top: el.getBoundingClientRect().top - (nav.current?.getBoundingClientRect().top ?? 0) });
+  };
   const statusWord = (s: BarStatus) => t(s === "wait" ? "sessionBar.statusWait" : s === "run" ? "sessionBar.statusRun" : s === "done" ? "sessionBar.statusDone" : "sessionBar.statusIdle");
-  const where = (r: BarRow) => r.where === "panel" ? t("sessionBar.wherePanel") : r.where === "pane" ? t("sessionBar.wherePane") : r.terminalApp ? r.terminalApp.replace(/\.app$/, "") : t("sessionBar.whereOutside");
+  const where = (r: BarRow) => r.cell ? t("sessionBar.whereCell", { n: r.cell }) : r.where === "panel" ? t("sessionBar.wherePanel") : r.where === "pane" ? t("sessionBar.wherePane") : r.terminalApp ? r.terminalApp.replace(/\.app$/, "") : t("sessionBar.whereOutside");
+  // A dot's one word: both sides (open here and in a cell), its cell, a pane in the background, or a conversation — one writing code under another is in the background too.
+  const dotWhere = (r: BarRow) =>
+    r.where === "pane" ? (r.cell ? (r.key === openKey ? t("sessionBar.whereBoth") : t("sessionBar.whereCell", { n: r.cell })) : t("sessionBar.whereBackground")) : r.where === "panel" && r.depth === 1 ? t("sessionBar.whereBackground") : where(r);
   const agentName = (r: BarRow) => (r.agent ? (findEngine(engines, r.agent)?.title ?? r.agent) : null);
   const title = (r: BarRow) => r.title || t("agentPanel.newThread");
-  const said = (r: BarRow) => (r.wait ? r.wait.text || t(ATTENTION_KEY[r.wait.kind]) : r.status === "done" ? r.outcome : r.activity);
+  const outcome = (r: BarRow) => (r.outcome ? outcomeLine(r.outcome, (key, vars) => t(`review.${key}`, vars)) : null);
+  const said = (r: BarRow) => (r.wait ? (r.ask ? askText(r.ask, t) : r.wait.text || t(ATTENTION_KEY[r.wait.kind])) : r.status === "done" ? outcome(r) : r.activity);
   // what it is up to: continuing after a usage limit, else its state — an idle one says how long ago it moved
   const state = (r: BarRow) => (r.parkedUntil ? t("agentPanel.parkedUntil", { time: clockLabel(r.parkedUntil) }) : r.status === "idle" ? timeAgo(r.at) : statusWord(r.status));
+  // a live terminal session's pane, its last lines as the pane shows them
+  const tail = (r: BarRow) => (r.tail?.length ? <span className="sbar-tail mono" data-testid="sbar-tail">{r.tail.map((line, i) => <span key={i} className="sbar-tail-line">{line}</span>)}</span> : null);
   const chips = (r: BarRow) => r.origins.map((origin) => <span key={origin} className="tag neutral sbar-chip">{origin}</span>);
   const waiting = rows.filter((r) => r.status === "wait").length;
   // just started: it lands at the top of the running ones, and says so for its first minute
   const now = Date.now();
+  // how long it has run or waited, or when it ran; one parked on a usage limit, when it goes on; an idle one, when it was last used
+  const when = (r: BarRow) =>
+    r.parkedUntil ? t("agentPanel.parkedUntil", { time: clockLabel(r.parkedUntil) }) : r.status === "wait" ? t("sessionBar.waitedFor", { d: spanLabel(now - r.at, t) }) : r.status === "run" ? t("sessionBar.ranFor", { d: spanLabel(now - r.startedAt, t) }) : r.status === "done" ? rangeLabel(r.startedAt, r.at) : timeAgo(r.at);
   const isNew = (r: BarRow) => r.status !== "done" && now - r.startedAt < 60_000;
+  // A waiting card answers in place: Allow (or Deny, with no under the cursor) for a prompt on a terminal's screen, a
+  // question's choices for a conversation; "look first" opens it. Nothing to press here leaves only the card.
+  const ask = (r: BarRow) => {
+    if (r.status !== "wait") return null;
+    const pending = r.threadId ? pendings.get(r.threadId) : undefined;
+    // a question with choices takes one as its answer, whether or not it also takes words; several at once are picked where it opens
+    const choices = pending && !pending.question.multiple ? (pending.question.options ?? []).slice(0, CHOICES_SHOWN) : [];
+    if (!r.prompt && !choices.length) return null;
+    const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+    return (
+      <div className="sbar-ask" role="group" aria-label={t("sessionBar.askGroup")} data-testid="sbar-ask" onClick={stop} onKeyDown={stop}>
+        <span className="sbar-ask-text">{pending?.question.text ?? said(r)}</span>
+        <span className="sbar-ask-actions">
+          {r.prompt === "allow" && <button type="button" className="btn btn-primary btn-xs" data-testid="sbar-allow" onClick={() => onAnswer(r, { which: "allow" })}>{t("sessionBar.allow")}</button>}
+          {r.prompt === "deny" && <button type="button" className="btn btn-secondary btn-xs" data-testid="sbar-deny" onClick={() => onAnswer(r, { which: "deny" })}>{t("sessionBar.deny")}</button>}
+          {pending && choices.map((choice, i) => (
+            <button key={choice} type="button" className={i === 0 ? "btn btn-primary btn-xs" : "btn btn-secondary btn-xs"} data-testid="sbar-choice" onClick={() => onAnswer(r, { questionId: pending.question.id, value: choice })}>{choice}</button>
+          ))}
+          <button type="button" className="btn btn-secondary btn-xs" data-testid="sbar-look" onClick={() => onPick(r)}>{t("sessionBar.lookFirst")}</button>
+        </span>
+      </div>
+    );
+  };
   const count = (f: Filter) => (f === "all" ? rows.length : rows.filter((r) => r.status === f).length);
   // right-click on a dot or a card: the same two things its buttons do
   const withMenu = (r: BarRow, node: ReactElement) =>
@@ -97,7 +147,7 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
   if (mode === "rail") {
     const live = rows.filter((r) => r.status !== "done");
     const ended = rows.filter((r) => r.status === "done");
-    const shown = peek ? rows.find((r) => r.key === peek.key) : undefined;
+    const shown = peeks && peek ? rows.find((r) => r.key === peek.key) : undefined;
     const dot = (r: BarRow) => withMenu(r, (
       <button
         type="button"
@@ -107,7 +157,7 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
         data-depth={r.depth || undefined}
         aria-current={r.key === openKey ? "true" : undefined}
         aria-label={`${title(r)}, ${statusWord(r.status)}`}
-        aria-describedby={peek?.key === r.key ? peekId : undefined}
+        aria-describedby={shown?.key === r.key ? peekId : undefined}
         onClick={() => { hold(); setPeek(null); onPick(r); }}
         onMouseEnter={(e) => peekAt(r.key, e.currentTarget)}
         onMouseLeave={leave}
@@ -119,7 +169,7 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
           <StatusMark status={r.status} size={9} />
           {isNew(r) && <span className="sbar-new-badge">{t("sessionBar.new")}</span>}
         </span>
-        <span className="sbar-dot-where">{r.status === "done" ? statusWord("done") : where(r)}</span>
+        <span className="sbar-dot-where">{r.status === "done" ? statusWord("done") : dotWhere(r)}</span>
       </button>
     ));
     return (
@@ -163,9 +213,10 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
               {chips(shown)}
             </span>
             <span className="meta-txt dense">{[agentName(shown), where(shown), shown.status === "idle" ? statusWord("idle") : null, state(shown)].filter(Boolean).join(" · ")}</span>
-            {said(shown) && <span className={shown.status === "wait" ? "sbar-peek-wait" : "sbar-peek-said"}>{shown.status === "done" ? t("sessionBar.outcome", { text: said(shown)! }) : said(shown)}</span>}
+            {tail(shown)}
+            {said(shown) && (shown.status !== "run" || !shown.tail?.length) && <span className={shown.status === "wait" ? "sbar-peek-wait" : "sbar-peek-said"}>{shown.status === "done" ? t("sessionBar.outcome", { text: said(shown)! }) : said(shown)}</span>}
             <span className="sbar-peek-foot">
-              <span className="meta-txt dense">{t("sessionBar.peekHint")}</span>
+              <span className="meta-txt dense">{`${t("sessionBar.peekHint")} · ${t("sessionBar.peekExpand", { key: keyLabel("sessionBar") })}`}</span>
               {actionable(shown) && <RowActions row={shown} onArchive={onArchive} onDelete={onDelete} />}
             </span>
           </div>
@@ -214,8 +265,9 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
               {isNew(r) && <span className="sbar-new-badge">{t("sessionBar.new")}</span>}
               {actionable(r) && <RowActions row={r} onArchive={onArchive} onDelete={onDelete} />}
             </span>
-            <span className="meta-txt dense">{[agentName(r), where(r), state(r)].filter(Boolean).join(" · ")}</span>
-            {said(r) && <span className={r.status === "wait" ? "sbar-card-wait" : r.status === "done" ? "sbar-card-outcome" : "sbar-card-said"}>{said(r)}</span>}
+            <span className="meta-txt dense">{[agentName(r), r.status === "done" ? statusWord("done") : where(r), when(r)].filter(Boolean).join(" · ")}</span>
+            {tail(r)}
+            {ask(r) ?? (said(r) && (r.status !== "run" || !r.tail?.length) && <span className={r.status === "wait" ? "sbar-card-wait" : r.status === "done" ? "sbar-card-outcome" : "sbar-card-said"}>{said(r)}</span>)}
           </div>
         )))}
         {!shown.length && !starting.length && <p className="meta-txt dense sbar-empty">{t("sessionBar.empty")}</p>}

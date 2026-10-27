@@ -9,6 +9,8 @@ import { readableError } from "~/lib/toast";
 import { PetProfilesPanel } from "../PetProfilesPanel";
 import { PushStatus } from "./PushStatus";
 import { ScopeTag } from "./ScopeTag";
+import { ShellApprovalField } from "./ShellApprovalField";
+import { GlobalHotkeyField } from "./GlobalHotkeyField";
 
 /**
  * A plugin's settings pane. A typed field saves when it is left, a pick at
@@ -101,7 +103,11 @@ export function PluginPane({ section, stored, onSave, children }: { section: Set
 /** What one plugin field shows beyond its schema: words for some of its options, and a line under it. */
 const FIELD_EXTRAS: Record<string, { options?: Record<string, MessageKey>; below?: () => ReactNode }> = {
   // On Windows the choice is Tomrade's own terminal; herdr does not run there.
-  "codeLink.terminal": { options: { herdr: "codeLink.herdrOption", builtin: "codeLink.builtinOption" }, below: () => (isWindows ? <BuiltinTerminalNote /> : <HerdrRecommendation />) }
+  "codeLink.terminal": { options: { herdr: "codeLink.herdrOption", builtin: "codeLink.builtinOption" }, below: () => (isWindows ? <BuiltinTerminalNote /> : <HerdrRecommendation />) },
+  // The shell's own setting, offered where sessions are set too.
+  "sessions.afterAnswer": { below: () => <ShellApprovalField /> },
+  // The key for the whole computer, the same one Keyboard shortcuts keeps.
+  "sessions.openAtStart": { below: () => <GlobalHotkeyField /> }
 };
 
 import { AnalyticsIdentity } from "./AnalyticsIdentity";

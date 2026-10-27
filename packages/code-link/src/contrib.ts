@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Context } from "cordis";
 import type { Badge, SectionRow } from "@tomradex/contributions";
+import { askLine } from "./ask.js";
 import type { HerdrBridge } from "./herdr-bridge.js";
 import { currentLinks, primaryOf } from "./scan/absorb.js";
 import type { CodeLink, ConnectMode } from "./service.js";
@@ -102,7 +103,7 @@ export function contribute(ctx: Context, host: ContribHost): void {
         const shownState = live.blocked && live.state === "error" ? "waiting" : live.state;
         const state = ({ running: "live", waiting: "waiting", idle: "idle", error: "warn", ended: "ended", lost: "lost" } as const)[shownState];
         // What it is doing beats what it last said; an error is what it last said.
-        const doing = live.state === "error" ? (live.summary ?? w("stopped")) : (live.activity ?? live.summary ?? "");
+        const doing = live.state === "error" ? (live.summary ?? w("stopped")) : live.ask ? askLine(live.ask, w) : (live.activity ?? live.summary ?? "");
         rows.push({
           label: w("session"),
           icon: live.mode === "terminal" ? "i-terminal" : "i-plug",

@@ -10,7 +10,7 @@ import { Kbd, Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
 import { viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { firstCodeStep, foldSteps, startBriefId, writesCode } from "~/lib/steps";
+import { codingFrom, firstCodeStep, foldSteps, startBriefId, writesCode } from "~/lib/steps";
 import { conducts, findEngine, useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetWorkstream, useUnarchiveThread, useWorkdir, type RunProgress } from "~/lib/agent";
 import { keys, useAssistantAccessories, useBoards, useHeldItem, useItems, useSettings } from "~/lib/queries";
 import { ATTENTION_KEY, useAttention, type AttentionEntry } from "~/lib/attention";
@@ -26,13 +26,13 @@ import { GUIDE, GuideList, slashCommand, SlashMenu, STARTERS, type SlashCommand,
 import { Composer } from "./agent-panel/Composer";
 import { STORE } from "./agent-panel/store";
 import { Review, type ReviewFocus } from "./agent-panel/Review";
-import { SessionBar, type BarMode } from "./agent-panel/SessionBar";
+import { SessionBar, type BarMode, type CardAnswer } from "./agent-panel/SessionBar";
 import { HandoffLine } from "./agent-panel/HandoffLine";
 import { TerminalSession } from "./agent-panel/TerminalSession";
-import { sessionBarRows, type BarRow, type BarStatus } from "~/lib/sessionBar";
+import { barModeFor, barPrefsOf, CARDS_AT, sessionBarRows, type BarRow, type BarStatus } from "~/lib/sessionBar";
 import { askStartPalette, onPanelRequest, setPanelSession, type PanelRequest } from "~/lib/panelRequests";
 import { useStartingAll } from "~/lib/startWays";
-import { useHandoff, useRecentSessions } from "~/lib/codeLink";
+import { useHandoff, useRecentSessions, useSessionCells, useStartDefaults } from "~/lib/codeLink";
 import type { SessionView } from "@tomradex/code-link";
 import { hits, keyLabel } from "~/lib/keybindings";
 import { BackgroundOffer, Transcript } from "./agent-panel/Transcript";
@@ -126,17 +126,17 @@ export function AgentPanel({
   const attention = useMemo(() => everyAttention.filter((e) => e.projectId === projectId), [everyAttention, projectId]);
   const attentionLabel = (e: AttentionEntry) => t(ATTENTION_KEY[e.kind]);
   const unarchive = useUnarchiveThread(projectId);
-  // Dots until the person asks for cards; a panel left narrow (the default) has no room for them.
-  const [barMode, setBarMode] = useState<BarMode>(() => {
-    const saved = localStorage.getItem(STORE.sessionBar);
-    if (saved === "rail" || saved === "cards") return saved;
-    return Number(localStorage.getItem(STORE.width) ?? DEFAULT_W) >= 720 ? "cards" : "rail";
-  });
-  const chooseBarMode = useCallback((mode: BarMode) => {
-    setBarMode(mode);
-    localStorage.setItem(STORE.sessionBar, mode);
-  }, []);
+  // Settings › Sessions: by width (cards on a wide panel, dots on a narrow one, as it is dragged), or always one of them.
+  const barPrefs = barPrefsOf(settings.data?.sessions);
+  const [wide, setWide] = useState(() => Number(localStorage.getItem(STORE.width) ?? DEFAULT_W) >= CARDS_AT);
+  const fromSetting = barModeFor(barPrefs.bar, wide);
+  // ⌘\ or the bar's own button: for the moment, until the width or the setting gives the bar another way.
+  const [swap, setSwap] = useState<{ from: BarMode; to: BarMode } | null>(null);
+  if (swap && swap.from !== fromSetting) setSwap(null);
+  const barMode = swap?.from === fromSetting ? swap.to : fromSetting;
+  const chooseBarMode = useCallback((mode: BarMode) => setSwap({ from: fromSetting, to: mode }), [fromSetting]);
   const recentSessions = useRecentSessions(projectId, open);
+  const sessionCells = useSessionCells(projectId, open);
   const startingAll = useStartingAll();
   const starting = useMemo(() => startingAll.filter((s) => s.projectId === projectId), [startingAll, projectId]);
   // A terminal session picked from the bar takes the place of the thread: the same session as the Terminal window's
@@ -262,6 +262,14 @@ export function AgentPanel({
   useEffect(() => {
     const saved = localStorage.getItem(STORE.width);
     if (panel.current) panel.current.style.width = `${saved ? Math.min(maxW(), Math.max(MIN_W, Number(saved))) : DEFAULT_W}px`;
+  }, [open]);
+  // The width as drawn, dragged or held back by a narrow window: what "by width" goes by.
+  useEffect(() => {
+    const el = panel.current;
+    if (!open || !el || typeof ResizeObserver === "undefined") return;
+    const watch = new ResizeObserver(() => setWide(el.offsetWidth >= CARDS_AT));
+    watch.observe(el);
+    return () => watch.disconnect();
   }, [open]);
 
   // After layout, so a working line or question that just mounted is inside scrollHeight.
@@ -406,16 +414,23 @@ export function AgentPanel({
   // The hint about undoing rides on the newest set of changes only.
   const lastChangesId = [...(detail.data?.messages ?? [])].reverse().find((m) => m.block.type === "changes")?.id ?? null;
   const newestLast = [...(detail.data?.messages ?? [])].reverse();
-  const folded = useMemo(() => foldSteps(detail.data?.messages ?? []), [detail.data?.messages]);
   // The kickoff brief is machine-written and long: it opens folded, so the person's own exchange stays in view.
   const briefId = useMemo(() => startBriefId(detail.data?.messages ?? [], !!detail.data?.thread.itemId), [detail.data?.messages, detail.data?.thread.itemId]);
-  // Chat that turns to code: a rule where the first file is changed, with the ticket it is for when the thread has one.
-  const codeStep = useMemo(() => firstCodeStep(detail.data?.messages ?? []), [detail.data?.messages]);
+  // Once it writes code (from the top, for a ticket's own session), each stretch of steps folds whole under its conclusion.
+  const codeAt = useMemo(() => codingFrom(detail.data?.messages ?? [], !!briefId), [detail.data?.messages, briefId]);
+  const askId = pending?.kind === "permission" ? pending.question.id : null;
+  const askText = pending?.kind === "permission" ? pending.question.text : "";
+  const folded = useMemo(() => foldSteps(detail.data?.messages ?? [], codeAt, askId ? { id: askId, text: askText } : null), [detail.data?.messages, codeAt, askId, askText]);
+  // Chat that turns to code: a rule where the first file is changed, with the ticket it is for when the thread has one —
+  // unless it claimed one, which draws the rule at the moment it did.
+  const claimedHere = useMemo(() => (detail.data?.messages ?? []).some((m) => m.block.type === "note" && !!m.block.claimed), [detail.data?.messages]);
+  const codeStep = useMemo(() => (claimedHere ? null : firstCodeStep(detail.data?.messages ?? [])), [detail.data?.messages, claimedHere]);
   // The run going now has changed a file: that coding can move to a conversation of its own under this one — offered on
   // the rule when the rule is this run's, at the live end of the conversation when the thread coded before. Not from a
   // conversation that is itself a child, nor from a General delivery's, which does its work itself.
-  const codingNow = !!runningRun && writesCode(detail.data?.messages ?? [], runningRun.id);
-  const canBackground = codingNow && !doctorThread && !detail.data?.thread.parentId && !detail.data?.thread.execution;
+  // Offered for as long as the conversation is writing code, not only while a run changes files.
+  const codingNow = (!!runningRun && writesCode(detail.data?.messages ?? [], runningRun.id)) || codeAt >= 0;
+  const canBackground = codingNow && !doctorThread && !archivedNow && !elsewhere && !detail.data?.thread.parentId && !detail.data?.thread.execution;
   const ruleOffers = canBackground && detail.data?.messages.find((m) => m.id === codeStep)?.runId === runningRun?.id;
   const codeFrom = useMemo(() => (codeStep ? { id: codeStep, ticket: threadItem?.key ?? null, offer: ruleOffers } : null), [codeStep, threadItem?.key, ruleOffers]);
   const lastErrorId = newestLast[0]?.block.type === "error" ? newestLast[0].id : null;
@@ -496,6 +511,61 @@ export function AgentPanel({
     } catch (error) { reportError(error); }
     finally { setHandingOff(false); }
   };
+  // Before a workstream conversation's first change to a file, a card offers to claim a ticket for it. Closed, it stays closed.
+  const startDefaults = useStartDefaults();
+  const claimKey = threadId ? `tomrade.claim.closed.${threadId}` : null;
+  const [claimTick, setClaimTick] = useState(0);
+  const claimClosed = useMemo(() => {
+    void claimTick;
+    try { return !!claimKey && localStorage.getItem(claimKey) === "1"; } catch { return false; }
+  }, [claimKey, claimTick]);
+  const [claiming, setClaiming] = useState(false);
+  const shownThreadRow = detail.data?.thread;
+  const claimAt = shownThreadRow && shownThreadRow.surface === "assistant" && shownThreadRow.boardId && !shownThreadRow.itemId && !shownThreadRow.parentId && !shownThreadRow.execution
+    && !archivedNow && !elsewhere && !claimClosed && codeAt >= 0 ? (detail.data?.messages[codeAt]?.id ?? null) : null;
+  // The CLI agent a terminal cell would take it up with: the one tickets were last started with, else Claude Code, else any.
+  const cliPick = useMemo(() => {
+    const able = (engines.data ?? []).filter((e) => e.ok && e.capabilities.includes("code") && e.terminal !== false && !e.usesModels && e.id !== "tomrade" && e.id !== currentEngineId);
+    const picked = able.find((e) => e.id === startDefaults.data?.engine) ?? able.find((e) => e.id === "claude-code") ?? able[0];
+    return picked ? { id: picked.id, title: picked.title } : null;
+  }, [engines.data, startDefaults.data?.engine, currentEngineId]);
+  const claimThen = async (then?: () => Promise<void>) => {
+    if (!threadId || claiming) return;
+    setClaiming(true);
+    try {
+      const result = await invoke("codeLink.claimThread", projectId, threadId);
+      if (!result.ok) { toast({ body: t("claim.claimFailed", { reason: result.message }) }); return; }
+      void qc.invalidateQueries({ queryKey: keys.agent.thread(projectId, threadId) });
+      void threads.refetch();
+      void itemsQ.refetch();
+      await then?.();
+    } catch (error) { reportError(error); }
+    finally { setClaiming(false); }
+  };
+  const handToCli = async (engineId: string) => {
+    if (!threadId) return;
+    const result = await invoke("codeLink.toCli", projectId, threadId, engineId);
+    if (!result.ok) { toast({ body: result.message }); return; }
+    afterHandoff(threadId);
+    toast({ body: t("claim.handed", { agent: cliPick?.title ?? engineId, pane: result.pane ? t("handoff.movedPane", { pane: result.pane }) : "" }) });
+    setOpenSession(result.sessionId);
+  };
+  const claim = claimAt ? {
+    at: claimAt,
+    offer: {
+      title: shownThreadRow?.title ?? "",
+      ticket: null,
+      cli: cliPick,
+      busy: claiming || movingOut || handingOff,
+      onHere: () => void claimThen(),
+      onBackground: () => void claimThen(moveToBackground),
+      onCli: (engineId: string) => void claimThen(() => handToCli(engineId)),
+      onClose: () => {
+        try { if (claimKey) localStorage.setItem(claimKey, "1"); } catch { /* the card closes for this sitting only */ }
+        setClaimTick((n) => n + 1);
+      }
+    }
+  } : null;
   // The session shown in place of a thread may be a conversation's own, gone to a terminal: once its CLI exited, it comes back from here too.
   const shownSessionThread = shownSession?.threadId ?? null;
   const sessionHandoff = useHandoff(projectId, shownSessionThread);
@@ -552,18 +622,21 @@ export function AgentPanel({
   const itemsById = useMemo(() => new Map((itemsQ.data ?? []).map((i) => [i.id, i])), [itemsQ.data]);
   const barRows = useMemo(
     () => sessionBarRows({
-      threads: threads.data ?? [], sessions: recentSessions.data ?? [], attention, openThreadId: threadId, openSessionId: openSession,
-      itemTitle: (id) => itemsById.get(id)?.title ?? null, itemKey: (id) => itemsById.get(id)?.key ?? null
+      threads: threads.data ?? [], sessions: recentSessions.data ?? [], cells: sessionCells.data, attention, openThreadId: threadId, openSessionId: openSession,
+      itemTitle: (id) => itemsById.get(id)?.title ?? null, itemKey: (id) => itemsById.get(id)?.key ?? null,
+      itemDone: (id) => itemsById.get(id)?.status === "done", now: Date.now()
     }),
-    [threads.data, recentSessions.data, attention, threadId, openSession, itemsById]
+    [threads.data, recentSessions.data, sessionCells.data, attention, threadId, openSession, itemsById]
   );
   // How the conversations writing code in the background for this one stand, for the notes that point at them.
   // Keyed by a string, so the map is new only when one of them changes state — never on a streamed reply.
   const childKey = barRows.filter((r) => r.threadId && r.parentKey === `thread:${threadId}`).map((r) => `${r.threadId}:${r.status}`).join("|");
   const threadStatus = useMemo(() => new Map<string, BarStatus>(childKey ? childKey.split("|").map((entry) => { const at = entry.lastIndexOf(":"); return [entry.slice(0, at), entry.slice(at + 1) as BarStatus]; }) : []), [childKey]);
+  // The built-in shell asking before a command, as it does for each one unless set to let reading and checks through.
+  const commandAsk = !!askId && progress?.activity === "bash" && ((settings.data?.shell as { approval?: string } | undefined)?.approval ?? "ask") === "ask";
   const transcriptActions = useMemo(
-    () => ({ projectId, runs, cards, engines: engines.data, retryEngines, pending, byKey, busy, threadStatus, onOpenIssue, onOpenThread: openThreadRow, onAnswer: answerRow, onRevert: revertRow, onOpenSettings: settingsRow, onCardAction: cardActionRow }),
-    [projectId, runs, cards, engines.data, retryEngines, pending, byKey, busy, threadStatus, onOpenIssue, openThreadRow, answerRow, revertRow, settingsRow, cardActionRow]
+    () => ({ projectId, runs, cards, engines: engines.data, retryEngines, pending, byKey, busy, threadStatus, commandAsk, onOpenIssue, onOpenThread: openThreadRow, onAnswer: answerRow, onRevert: revertRow, onOpenSettings: settingsRow, onCardAction: cardActionRow }),
+    [projectId, runs, cards, engines.data, retryEngines, pending, byKey, busy, threadStatus, commandAsk, onOpenIssue, openThreadRow, answerRow, revertRow, settingsRow, cardActionRow]
   );
   const showInTerminal = (sessionId: string, terminalApp: string | null) =>
     void invoke("codeLink.showSession", projectId, sessionId).then((shown) => {
@@ -620,9 +693,24 @@ export function AgentPanel({
     if ((id === threadId && busy) || !window.confirm(t("agentPanel.deleteThreadConfirm"))) return;
     deleteThread.mutate(id, { onSuccess: () => { if (id === threadId) clearThread(); } });
   };
+  // Answered from a card: the panel stays where it is and says so; the open one goes on as the setting says.
+  const answerCard = async (row: BarRow, reply: CardAnswer) => {
+    try {
+      if ("which" in reply) {
+        const result = await invoke("codeLink.sessionAnswer", projectId, row.sessionId!, reply.which);
+        if (result === "notPrompt") return toast({ body: t("sessionBar.answerInPane"), actions: [{ label: t("sessionBar.lookFirst"), run: () => pickBarRow(row) }] });
+        if (result !== "answered") return toast({ body: t("sessionBar.notTaken") });
+      } else await invoke("agent.answer", projectId, row.threadId!, reply.questionId, reply.value);
+    } catch (error) {
+      return reportError(error);
+    }
+    void recentSessions.refetch();
+    if (row.key === currentKey && goesOn) return waitQueue.current.answered(row.key);
+    toast({ body: t("which" in reply ? (reply.which === "allow" ? "sessionBar.allowedStay" : "sessionBar.deniedStay") : "sessionBar.answeredStay", { name: rowName(row) }) });
+  };
   // the bar is memoized; its handlers keep their identity and read the latest render's state
-  const latestBar = useRef({ pickBarRow, newThread: () => {}, archive: archiveThreadById, remove: deleteThreadById });
-  latestBar.current = { pickBarRow, newThread: () => void openThread({ boardId }).then((th) => pickThread(th.id)), archive: archiveThreadById, remove: deleteThreadById };
+  const latestBar = useRef({ pickBarRow, newThread: () => {}, archive: archiveThreadById, remove: deleteThreadById, answer: answerCard });
+  latestBar.current = { pickBarRow, newThread: () => void openThread({ boardId }).then((th) => pickThread(th.id)), archive: archiveThreadById, remove: deleteThreadById, answer: answerCard };
   const pickBarRowStable = useCallback((row: BarRow) => latestBar.current.pickBarRow(row), []);
   // the bar's +: ⌘K on its ways to start (built-in assistant, a terminal agent in a pane or a cell); a new thread where there is no palette
   const newBarThread = useCallback(() => {
@@ -630,6 +718,11 @@ export function AgentPanel({
   }, []);
   const archiveBarThread = useCallback((id: string) => latestBar.current.archive(id), []);
   const deleteBarThread = useCallback((id: string) => latestBar.current.remove(id), []);
+  const answerBarRow = useCallback((row: BarRow, reply: CardAnswer) => void latestBar.current.answer(row, reply), []);
+  // What the waiting conversations ask, read only while their cards show and again for each new wait.
+  const threadWaits = barRows.filter((r) => r.status === "wait" && r.threadId).map((r) => `${r.threadId}:${r.at}`).join("|");
+  const pendingsQ = useQuery({ queryKey: keys.agent.pendings(projectId, threadWaits), queryFn: () => invoke("agent.pendings", projectId), enabled: open && barMode === "cards" && !!threadWaits });
+  const pendings = useMemo(() => new Map((pendingsQ.data ?? []).map((p) => [p.threadId, p])), [pendingsQ.data]);
   // the conversations the bar shows: the look back lists the idle ones past them
   const barThreadIds = useMemo(() => new Set(barRows.flatMap((r) => (r.threadId ? [r.threadId] : []))), [barRows]);
   // ⌘\ swaps the bar between dots and cards wherever the focus is, while the panel is open.
@@ -731,6 +824,8 @@ export function AgentPanel({
           ticket={sessionRow?.ticket ?? (shownSession.itemIds[0] ? itemsById.get(shownSession.itemIds[0])?.key ?? null : null)}
           status={sessionRow?.status ?? (shownSession.state === "ended" || shownSession.state === "lost" ? "done" : shownSession.state === "running" ? "run" : "idle")}
           engines={engines.data}
+          cell={sessionRow?.cell ?? null}
+          items={byKey}
           onShowInTerminal={shownSession.herdrPane || shownSession.state === "ended" || shownSession.state === "lost" ? () => showInTerminal(shownSession.id, shownSession.terminal) : undefined}
           onBack={shownSessionThread && sessionHandoff.data?.where === "terminal" && !handingOff ? () => void backToPanel(shownSessionThread) : undefined}
           backBlocked={sessionHandoff.data?.terminal?.live ? t("handoff.backBlocked", { agent: findEngine(engines.data, shownSession.agent)?.title ?? shownSession.agent }) : undefined}
@@ -777,6 +872,7 @@ export function AgentPanel({
           folded={folded}
           briefId={briefId}
           codeFrom={codeFrom}
+          claim={claim}
           lastErrorId={lastErrorId}
           lastChangesId={lastChangesId}
           onRetry={lastAsked && !busy ? () => void doSend(lastAsked) : undefined}
@@ -784,7 +880,7 @@ export function AgentPanel({
           onTroubleshoot={canTroubleshoot && !busy ? (inThread, runId) => actions.current.troubleshoot(inThread, runId) : undefined}
           onBackground={canBackground && !movingOut ? () => void moveToBackground() : undefined}
         />
-        {canBackground && !ruleOffers && (
+        {canBackground && !ruleOffers && !claimAt && (
           <div className="work-offer" data-testid="work-offer">
             <span>{t("agentPanel.writingCode")}</span>
             <BackgroundOffer busy={movingOut} onPick={() => void moveToBackground()} />
@@ -1092,9 +1188,12 @@ export function AgentPanel({
         starting={starting}
         openKey={shownSession ? `session:${shownSession.id}` : threadId ? `thread:${threadId}` : null}
         mode={barMode}
+        peeks={barPrefs.peek}
         engines={engines.data}
+        pendings={pendings}
         onMode={chooseBarMode}
         onPick={pickBarRowStable}
+        onAnswer={answerBarRow}
         onNew={newBarThread}
         onHistory={openHistory}
         onArchive={archiveBarThread}

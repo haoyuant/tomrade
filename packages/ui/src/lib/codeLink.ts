@@ -74,6 +74,10 @@ export const useCodeSessions = (projectId: string, itemId?: string) =>
 export const useRecentSessions = (projectId: string, enabled = true) =>
   useQuery({ queryKey: keys.codeLink.recentSessions(projectId), queryFn: () => invoke("codeLink.recentSessions", projectId), enabled });
 
+/** Which Terminal window cell shows each session, by session id; empty while the window is closed. */
+export const useSessionCells = (projectId: string, enabled = true) =>
+  useQuery({ queryKey: keys.codeLink.cells(projectId), queryFn: () => invoke("codeLink.sessionCells", projectId), enabled });
+
 /** The ticket's conversations by when each began, what it delivered, and two at work in one folder. */
 export const useTicketTimeline = (projectId: string, itemId: string) =>
   useQuery({ queryKey: keys.codeLink.timeline(projectId, itemId), queryFn: () => invoke("codeLink.timeline", projectId, itemId) });

@@ -7,7 +7,7 @@ import type { DesktopSurface, DesktopSurfaceHost, DesktopSurfaceSpec, SurfaceBou
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/settings";
 import { cameBack } from "./background.js";
-import { leadWindow, showMainWindow } from "./main-window.js";
+import { leadWindow, showMainWindow, takeKeptInFront } from "./main-window.js";
 import { SurfaceBoundsStore, placeWindow } from "./surface-bounds.js";
 
 const STATE_CHANNEL = "tomrade-surface:state";
@@ -119,6 +119,7 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
 
     const caps = capabilities();
     const window = spec.kind === "window";
+    let ahead = window ? takeKeptInFront() : null;
     const webPreferences = { preload: path.join(here, "../surface-preload.cjs"), contextIsolation: true, nodeIntegration: false };
     const place = window ? placeWindow(this.places.get(spec.id), spec, [screen.getPrimaryDisplay().workArea, ...screen.getAllDisplays().map((d) => d.workArea)]) : null;
     const win = window
@@ -238,7 +239,13 @@ export class ElectronDesktopSurfaces extends Service implements DesktopSurfaceHo
       if (this.look) win.webContents.send(LOOK_CHANNEL, this.look);
       win.webContents.send(STATE_CHANNEL, record.state);
       for (const message of record.queued.splice(0)) win.webContents.send(PUSH_CHANNEL, message);
-      if (window) controller.focus();
+      if (window && ahead && !ahead.isDestroyed()) {
+        // The start's "both": shown behind the main window, which keeps the lead.
+        win.showInactive();
+        ahead.moveTop();
+        ahead.focus();
+        ahead = null;
+      } else if (window) controller.focus();
       else if (spec.focusable) win.show();
       else win.showInactive();
     });
