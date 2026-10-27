@@ -761,8 +761,10 @@ app.whenReady().then(async () => {
 
     // Right-click on a pane's bar: the menu, and Detach empties that pane.
     const emptyCells = () => tjs(`document.querySelectorAll('.cs-cell-empty > .cs-new-terminal [data-testid=cs-new-terminal]').length`);
+    // the first cell that holds something: which cell the archive's picks above landed in follows the selection
+    const heldBar = `[...document.querySelectorAll('.cs-cell')].find((c) => !c.querySelector('.cs-cell-empty'))?.querySelector('.cs-cell-bar')`;
     const emptyBefore = await emptyCells();
-    await tjs(`document.querySelector('.cs-cell .cs-cell-bar').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 20 })); true`);
+    await tjs(`${heldBar}.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 20 })); true`);
     const menu = await wait(async () => tjs(`[...document.querySelectorAll('[role=menuitem]')].map((i) => i.textContent).join('|')`).then((t) => t.includes("连接会话") && t.includes("新终端") && t.includes("断开")), 3000);
     check("面板右键菜单：连接会话 / 新终端 / 断开 / 拆分 / 关闭", menu);
     await tjs(`[...document.querySelectorAll('[role=menuitem]')].find((i) => i.textContent === '断开').click(); true`);
@@ -783,7 +785,7 @@ app.whenReady().then(async () => {
     check("新会话自动放进空面板", await wait(async () => inCell(auto), 8000));
     await tjs(`document.querySelector('[data-testid=cs-side-new-terminal]').click(); true`);
     await sleep(300);
-    await tjs(`document.querySelector('.cs-cell-bar').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 20 })); true`);
+    await tjs(`${heldBar}.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 20 })); true`);
     await sleep(300);
     await tjs(`[...document.querySelectorAll('[role=menuitem]')].find((i) => i.textContent === '断开')?.click(); true`);
     await tjs(`document.querySelector('[data-testid=cs-auto-place]').click(); true`);
