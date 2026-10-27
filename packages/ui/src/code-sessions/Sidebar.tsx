@@ -9,12 +9,12 @@ import { interpolate, message } from "~/lib/dicts";
 import { isMac } from "~/lib/keys";
 import { keys } from "~/lib/queries";
 import { historyList, historySaid, onHistoryChanged, send } from "./bridge";
-import { Mark, RowActions, rowAgent, rowMono, rowName, rowSaid, rowTitle, saidClass, statusWord, whereOf } from "./cards";
+import { Mark, RowActions, rowAgent, rowMono, rowName, rowSaid, rowTail, rowTitle, rowWhen, saidClass, statusWord, whereOf } from "./cards";
 import { Guess } from "./guess";
 import { keyLabel } from "./keys";
 import type { Key } from "./layout";
 import { bundles, paneOf, sessionName, sessionStatus, statusOf, type BarStatus, type HereRow } from "./lists";
-import { useSay } from "./say";
+import { useSay, useWords } from "./say";
 
 /** ⌘-click (Ctrl-click off a Mac) opens a row in a new pane instead of the selected one. */
 const besideClick = (e: React.MouseEvent) => (isMac ? e.metaKey : e.ctrlKey);
@@ -26,17 +26,20 @@ const shortOf = (r: HereRow, name: string): string => {
   return key ? key.replace(/^.*-/, "") : (Array.from(name.trim())[0] ?? "·").toUpperCase();
 };
 
-type Marks = { active: Set<string>; selected: Set<string>; shownPanes: Set<string>; selectedPane: string | null; pane: Key };
-type Picks = { onSession: (s: SessionRow, beside: boolean) => void; onTerminal: (t: TerminalRow, beside: boolean) => void; onThread: (t: ThreadRow) => void; onAnswer: (s: SessionRow, which: "allow" | "deny") => void };
+/** `cells`: the number of the cell that shows each row, by row or session id. */
+type Marks = { active: Set<string>; selected: Set<string>; cells: Map<string, number>; shownPanes: Set<string>; selectedPane: string | null; pane: Key };
+type Picks = { onSession: (s: SessionRow, beside: boolean) => void; onTerminal: (t: TerminalRow, beside: boolean) => void; onThread: (t: ThreadRow) => void; onAnswer: (s: SessionRow, which: "allow" | "deny") => void; onAnswerThread: (t: ThreadRow, questionId: string, value: string) => void };
 
 const has = (set: Set<string>, r: HereRow) => set.has(r.id) || (!!r.session && set.has(r.session.id));
+const cellOf = (cells: Map<string, number>, r: HereRow): number | null => cells.get(r.id) ?? (r.session ? cells.get(r.session.id) : undefined) ?? null;
 
 /** A session that runs elsewhere, as a card: where it is, and what it waits with. */
 function AwayCard({ s, active, selected, onPick }: { s: SessionRow; active: Set<string>; selected: Set<string>; onPick: (s: SessionRow, beside: boolean) => void }) {
   const say = useSay();
+  const words = useWords();
   const row: HereRow = { kind: "session", id: s.id, session: s };
   const status = sessionStatus(s);
-  const said = rowSaid(row, status, say);
+  const said = rowSaid(row, status, say, words);
   const title = rowTitle(row, say);
   return (
     <button type="button" className="cs-row" data-status={status} title={say("pickHint", { mod: MOD })} aria-current={selected.has(s.id) ? "true" : undefined} data-active={active.has(s.id) || undefined} data-needs={s.needsYou || undefined} onClick={(e) => onPick(s, besideClick(e))}>
@@ -46,11 +49,11 @@ function AwayCard({ s, active, selected, onPick }: { s: SessionRow; active: Set<
           {sessionName(s)}
         </span>
         <span className="cs-where" data-where={s.where} title={s.where === "elsewhere" ? say("elsewhere") : s.where === "tomrade" ? undefined : say("outsideTitle", { terminal: s.terminal ?? say("outsideTerminal") })}>
-          {whereOf(row, false, say)}
+          {whereOf(row, null, say)}
         </span>
       </span>
       {title && <span className="cs-row-title">{title}</span>}
-      <span className="cs-row-meta">{[rowAgent(row), statusWord(status, say)].filter(Boolean).join(" · ")}</span>
+      <span className="cs-row-meta">{[rowAgent(row), rowWhen(row, status, say, words)].filter(Boolean).join(" · ")}</span>
       {said && <span className={saidClass(status)}>{said}</span>}
     </button>
   );
@@ -87,6 +90,7 @@ function PaneTimeline({ past, locale, selected, onPick }: { past: SessionRow[]; 
  */
 function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; history: WindowState["history"]; locale: string; marks: Marks; picks: Picks }) {
   const say = useSay();
+  const words = useWords();
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(() => new Set());
   if (!rows.length) return <p className="cs-empty">{say("none")}</p>;
   const { active, selected, shownPanes, selectedPane, pane } = marks;
@@ -123,7 +127,9 @@ function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; hi
     const bound = inCell || r.kind === "thread" ? undefined : pane(r.id) === selectedPane ? "selected" : shownPanes.has(pane(r.id)) ? "shown" : undefined;
     const name = rowName(r, say);
     const title = rowTitle(r, say);
-    const said = rowSaid(r, status, say);
+    const said = rowSaid(r, status, say, words);
+    // what its pane shows last, in place of what its hooks said
+    const last = rowTail(r, status).at(-1);
     const button = (
       <button
         type="button"
@@ -145,18 +151,18 @@ function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; hi
             <Mark status={status} />
             {name}
           </span>
-          {r.kind === "terminal" && !r.terminal.pane ? <span className="tag faint cs-chip">{say("starting")}</span> : <span className="cs-where">{whereOf(r, inCell, say)}</span>}
+          {r.kind === "terminal" && !r.terminal.pane ? <span className="tag faint cs-chip">{say("starting")}</span> : <span className="cs-where">{whereOf(r, cellOf(marks.cells, r), say)}</span>}
         </span>
         {title && <span className="cs-row-title">{title}</span>}
-        {r.kind === "terminal" && !s ? <span className="cs-row-meta mono">{r.terminal.cwd}</span> : <span className="cs-row-meta">{[rowAgent(r), statusWord(status, say)].filter(Boolean).join(" · ")}</span>}
-        {said && <span className={saidClass(status)}>{said}</span>}
+        {r.kind === "terminal" && !s ? <span className="cs-row-meta mono">{r.terminal.cwd}</span> : <span className="cs-row-meta">{[rowAgent(r), rowWhen(r, status, say, words)].filter(Boolean).join(" · ")}</span>}
+        {last ? <span className="cs-row-tail" data-testid="cs-row-tail">{last}</span> : said && <span className={saidClass(status)}>{said}</span>}
       </button>
     );
     // Allow and Deny sit inside the card's lower edge: beside its button, since a button holds no other.
     const card = (
       <div className="cs-card">
         {button}
-        <RowActions row={r} onSee={() => undefined} onThread={picks.onThread} onAnswer={picks.onAnswer} />
+        <RowActions row={r} onSee={() => (r.kind === "terminal" ? picks.onTerminal(r.terminal, false) : r.kind === "session" ? picks.onSession(r.session, false) : picks.onThread(r.thread))} onThread={picks.onThread} onAnswer={picks.onAnswer} onAnswerThread={picks.onAnswerThread} />
         <Guess session={s} pane={paneOf(r)} place="card" />
       </div>
     );
@@ -341,6 +347,7 @@ function Layouts({ presets, defaultPreset, autoPlace, onApply, onSave }: { prese
 /** The folded bar: a column of dots, one per row, with a peek beside the one under the pointer; the way back on top. */
 function Rail({ ref, rows, waiting, marks, picks, foldLabel, onFold }: { ref: Ref<HTMLElement>; rows: HereRow[]; waiting: number; marks: Marks; picks: Picks; foldLabel: string; onFold: () => void }) {
   const say = useSay();
+  const words = useWords();
   const [peek, setPeek] = useState<{ id: string; top: number } | null>(null);
   const peekId = useId();
   const nav = useRef<HTMLElement | null>(null);
@@ -378,7 +385,7 @@ function Rail({ ref, rows, waiting, marks, picks, foldLabel, onFold }: { ref: Re
           {shortOf(r, name)}
           <Mark status={status} size={9} />
         </span>
-        <span className="cs-dot-where">{status === "done" ? statusWord("done", say) : whereOf(r, has(marks.active, r), say)}</span>
+        <span className="cs-dot-where">{status === "done" ? statusWord("done", say) : whereOf(r, cellOf(marks.cells, r), say)}</span>
       </button>
     );
   };
@@ -413,8 +420,14 @@ function Rail({ ref, rows, waiting, marks, picks, foldLabel, onFold }: { ref: Re
       {shown && (
         <div id={peekId} role="tooltip" className="cs-peek" data-testid="cs-peek" data-status={statusOf(shown)} style={{ top: peek!.top }}>
           <span className="cs-peek-title">{[rowName(shown, say), rowTitle(shown, say)].filter(Boolean).join(" ")}</span>
-          <span className="cs-row-meta">{[rowAgent(shown), whereOf(shown, has(marks.active, shown), say), statusWord(statusOf(shown), say)].filter(Boolean).join(" · ")}</span>
-          {rowSaid(shown, statusOf(shown), say) && <span className={saidClass(statusOf(shown))}>{rowSaid(shown, statusOf(shown), say)}</span>}
+          <span className="cs-row-meta">{[rowAgent(shown), whereOf(shown, cellOf(marks.cells, shown), say), statusWord(statusOf(shown), say)].filter(Boolean).join(" · ")}</span>
+          {rowTail(shown, statusOf(shown)).length ? (
+            <span className="cs-peek-tail" data-testid="cs-peek-tail">
+              {rowTail(shown, statusOf(shown)).map((line, i) => <span key={i} className="cs-row-tail">{line}</span>)}
+            </span>
+          ) : (
+            rowSaid(shown, statusOf(shown), say, words) && <span className={saidClass(statusOf(shown))}>{rowSaid(shown, statusOf(shown), say, words)}</span>
+          )}
           <span className="cs-row-meta">{say("peekHint")}</span>
         </div>
       )}
@@ -436,6 +449,7 @@ type SidebarProps = {
   onClosed: (t: ClosedTerminalRow) => void;
   onThread: (t: ThreadRow) => void;
   onAnswer: (s: SessionRow, which: "allow" | "deny") => void;
+  onAnswerThread: (t: ThreadRow, questionId: string, value: string) => void;
   onNewTerminal: () => void;
   onApplyPreset: (p: LayoutPreset) => void;
   onSavePreset: (name: string) => void;
@@ -445,7 +459,7 @@ type SidebarProps = {
  * The session bar on the window's right edge, the assistant panel's: cards that say where each session stands and
  * what it waits with, the sessions this window cannot show, saved layouts and History; or, folded, a column of dots.
  */
-export function Sidebar({ ref, state, rows, locale, folded, onFold, marks, canOpen, onPick, onTerminal, onClosed, onThread, onAnswer, onNewTerminal, onApplyPreset, onSavePreset }: SidebarProps) {
+export function Sidebar({ ref, state, rows, locale, folded, onFold, marks, canOpen, onPick, onTerminal, onClosed, onThread, onAnswer, onAnswerThread, onNewTerminal, onApplyPreset, onSavePreset }: SidebarProps) {
   const say = useSay();
   const [outsideOpen, setOutsideOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -456,7 +470,7 @@ export function Sidebar({ ref, state, rows, locale, folded, onFold, marks, canOp
     setHistoryOpen(open);
     send({ type: "history", open });
   };
-  const picks: Picks = { onSession: onPick, onTerminal, onThread, onAnswer };
+  const picks: Picks = { onSession: onPick, onTerminal, onThread, onAnswer, onAnswerThread };
   const waiting = rows.here.filter((r) => statusOf(r) === "wait").length + rows.away.filter((s) => sessionStatus(s) === "wait").length;
   const foldLabel = `${say(folded ? "unfold" : "fold")} (${keyLabel("fold")})`;
   if (folded) return <Rail ref={ref} rows={rows.here} waiting={waiting} marks={marks} picks={picks} foldLabel={foldLabel} onFold={onFold} />;

@@ -54,6 +54,7 @@ import { toast } from "./toast";
 import { shortcuts } from "./shortcuts";
 import { sessionBar } from "./sessionBar";
 import { review } from "./review";
+import { claim } from "./claim";
 import { handoff } from "./handoff";
 import { waitQueue } from "./waitQueue";
 import { tabs } from "./tabs";
@@ -106,6 +107,7 @@ export const en = {
   shortcuts: shortcuts.en,
   sessionBar: sessionBar.en,
   review: review.en,
+  claim: claim.en,
   handoff: handoff.en,
   waitQueue: waitQueue.en,
   tabs: tabs.en,
@@ -187,6 +189,7 @@ export const zh: typeof en = {
   shortcuts: shortcuts.zh,
   sessionBar: sessionBar.zh,
   review: review.zh,
+  claim: claim.zh,
   handoff: handoff.zh,
   waitQueue: waitQueue.zh,
   tabs: tabs.zh,

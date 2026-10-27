@@ -117,13 +117,13 @@ describe("the Terminal window's sidebar", () => {
   });
 
   it("answers a permission from a card only when its agent declared the keys and its screen shows the prompt", () => {
-    const asks = row({ id: "a", state: "waiting", needsYou: true, activity: "needs your approval: Bash", approval: true, prompt: "allow" });
+    const asks = row({ id: "a", state: "waiting", needsYou: true, ask: { kind: "permission", tool: "Bash", action: "run", detail: "pnpm test" }, approval: true, prompt: "allow" });
     expect(canAnswer(asks)).toBe(true);
     expect(canAnswer({ ...asks, prompt: "deny" })).toBe(true);
     // a folder's trust, another menu, or a screen that could not be read
     expect(canAnswer({ ...asks, prompt: null })).toBe(false);
     expect(canAnswer({ ...asks, approval: false })).toBe(false);
-    expect(canAnswer({ ...asks, activity: "asking you something" })).toBe(false);
+    expect(canAnswer({ ...asks, ask: { kind: "question", tool: null, action: null, detail: null } })).toBe(false);
     expect(canAnswer({ ...asks, state: "ended", endedAt: 1 })).toBe(false);
   });
 

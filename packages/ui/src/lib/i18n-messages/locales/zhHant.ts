@@ -3159,7 +3159,7 @@ export const zhHant: PartialMessages = {
     viewGrid: "格子",
     viewOverview: "總覽",
     inAssistant: "在助手裡 · 沒有格子",
-    whereCell: "在格子裡",
+    whereCell: "格子 {{n}}",
     newThread: "新對話",
     waitPermission: "需要你批准",
     waitQuestion: "在問你問題",

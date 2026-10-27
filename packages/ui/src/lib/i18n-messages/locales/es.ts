@@ -3109,7 +3109,7 @@ export const es: PartialMessages = {
     viewGrid: "Paneles",
     viewOverview: "Resumen",
     inAssistant: "En el asistente · sin panel",
-    whereCell: "En un panel",
+    whereCell: "Panel {{n}}",
     newThread: "Conversación nueva",
     waitPermission: "Necesita tu aprobación",
     waitQuestion: "Te pregunta algo",
