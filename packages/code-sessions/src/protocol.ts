@@ -1,3 +1,4 @@
+import type { ReviewCursor, ReviewPage, ReviewSaid, SessionAsk, SessionOutcome } from "@tomradex/code-link";
 import type { TerminalBridge, TerminalKey, TerminalMouse, TerminalScroll, TerminalScrollPosition } from "@tomradex/contracts";
 
 /** One code session as the window lists it. */
@@ -12,6 +13,8 @@ export interface SessionRow {
   needsYou: boolean;
   /** What it is doing now, or what it last said. */
   activity: string | null;
+  /** What it waits on the person for, as a structure the window words: a tool's permission, a question; null otherwise. */
+  ask: SessionAsk | null;
   mode: "run" | "terminal";
   agent: string;
   /** The agent's own name (Claude Code, Codex…), for a session with no ticket to go by; null when Tomrade does not know it. */
@@ -54,9 +57,13 @@ export interface SessionRow {
   lastEventAt: number | null;
   /** Ended, and what its pane showed while it ran was recorded here: its raw output can be played back. */
   rawOutput: boolean;
+  /** Ended and listed: what came of it, the look back's way (its pull request, commits, asks, last word); null otherwise. */
+  outcome: SessionOutcome | null;
+  /** Live in a pane here: the pane's last lines that say something, as the bar's card shows them; null otherwise. */
+  tail: string[] | null;
 }
 
-/** A plain terminal closed here whose output was recorded: in the archive, to play back. */
+/** A plain terminal closed here whose output was recorded: in History, to play back. */
 export interface ClosedTerminalRow {
   id: string;
   title: string;
@@ -89,8 +96,11 @@ export interface ThreadRow {
   /** The conversation it was opened under, to write its code in the background: it sits under that one in the bar. */
   parentId: string | null;
   running: boolean;
-  /** What it waits on the person for, and since when this window has seen it wait in that way. */
-  wait: { kind: "permission" | "question"; text: string | null; since: number } | null;
+  /**
+   * What it waits on the person for, and since when this window has seen it wait in that way; with the question's id
+   * and the choices its card answers with (null when it offers none, or takes several at once).
+   */
+  wait: { kind: "permission" | "question"; text: string | null; since: number; questionId: string | null; options: string[] | null } | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -141,7 +151,7 @@ export type Layout = { type: "leaf"; id: string; sessionId: string | null; locke
 
 /**
  * What the window shows, set as its whole state. `sessions` holds the live ones and the ended ones a cell still
- * shows; the rest are in `archive`.
+ * shows; the rest are History's, read a page at a time (`historyList`).
  */
 export interface WindowState {
   projectId: string;
@@ -177,9 +187,7 @@ export interface WindowState {
   autoPlace: boolean;
   /** A session asked to be shown, from outside the window: put in a cell and selected once; `at` tells a new ask from one done. */
   reveal: { sessionId: string; at: number } | null;
-  /** Ended sessions, put away: how many, and the rows themselves only while the window has the archive open, newest first; with them, the closed terminals that were recorded. */
-  archive: { count: number; rows: SessionRow[] | null; terminals: ClosedTerminalRow[] | null };
-  /** Closed terminals a cell shows the recording of; the rest wait in the archive. */
+  /** Closed terminals a cell shows the recording of; the rest wait in History. */
   closedTerminals: ClosedTerminalRow[];
   /** By a pane this window shows: the sessions that ended in it before, oldest first. */
   history: Record<string, SessionRow[]>;
@@ -203,10 +211,12 @@ export type WindowMessage =
   | { type: "deletePreset"; id: string }
   | { type: "defaultPreset"; id: string | null }
   | { type: "autoPlace"; on: boolean }
-  /** The archive opened or closed: its rows come with the state while it is open. */
-  | { type: "archive"; open: boolean }
-  /** Which archived conversations said this: answered with `archiveFound`. */
-  | { type: "archiveSearch"; query: string }
+  /** History opened or closed: while it is open, a change to the conversations is said with `historyChanged`. */
+  | { type: "history"; open: boolean }
+  /** One page of History, the assistant panel's list: the newest, the one past `before`, or the newest matches of `query`; answered with `historyPage`. */
+  | { type: "historyList"; token: number; before?: ReviewCursor | null; query?: string }
+  /** Which ended conversations said this, from their agents' records; answered with `historySaid`. */
+  | { type: "historySaid"; token: number; query: string }
   | { type: "fold"; folded: boolean }
   | { type: "detach"; cell: string }
   | { type: "input"; cell: string; data: string }
@@ -225,6 +235,8 @@ export type WindowMessage =
   | { type: "showThread"; threadId: string }
   /** The session's permission prompt answered from its card: the keys its agent declared, pressed in its pane. */
   | { type: "answer"; sessionId: string; which: "allow" | "deny" }
+  /** An assistant conversation's question answered from its card with one of its choices. */
+  | { type: "answerThread"; threadId: string; questionId: string; value: string }
   /** The last lines of every pane this window lists, for the overview: answered with `tails`. */
   | { type: "tails" }
   /** The recording of an ended session or a closed terminal a cell shows: answered with `replay`. */
@@ -261,8 +273,15 @@ export type WindowPost =
   /** The pane the cell asked for streams in `other` already: one pane, one cell. */
   | { type: "shownIn"; cell: string; other: string }
   | { type: "toast"; text: string }
-  /** The archived sessions whose conversation says the query, from what their agents recorded. */
-  | { type: "archiveFound"; query: string; ids: string[] }
+  /**
+   * A page of History: its rows, and with them the session rows behind the coding sessions on it (so one picked goes
+   * into a cell), the agents' names by id, and — with the first page — the closed terminals whose output was recorded.
+   */
+  | { type: "historyPage"; token: number; page: ReviewPage; sessions: SessionRow[]; agents: Record<string, string>; terminals: ClosedTerminalRow[] | null }
+  /** The ended conversations that said the query, each with the line that says it; the session rows and agents' names as with a page. */
+  | { type: "historySaid"; token: number; found: ReviewSaid; sessions: SessionRow[]; agents: Record<string, string> }
+  /** A session ended or a conversation moved while History is open: its first page is read again. */
+  | { type: "historyChanged" }
   /** Each listed pane's last lines, styling stripped; null for a pane that is gone. */
   | { type: "tails"; panes: Record<string, string | null> }
   /** The recording asks the cell for its screen as it is, to begin a new stretch of the recording with. */

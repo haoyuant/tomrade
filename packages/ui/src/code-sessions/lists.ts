@@ -38,10 +38,10 @@ export function statusOf(r: HereRow): BarStatus {
 export const canAnswer = (s: SessionRow): boolean => s.approval && s.prompt !== null && live(s) && isApprovalAsk(s);
 
 const RANK: Record<BarStatus, number> = { wait: 0, run: 1, idle: 2, done: 3 };
-const startedAt = (r: HereRow): number => (r.kind === "terminal" ? r.terminal.startedAt : r.kind === "session" ? r.session.startedAt : r.thread.createdAt);
+export const rowStartedAt = (r: HereRow): number => (r.kind === "terminal" ? r.terminal.startedAt : r.kind === "session" ? r.session.startedAt : r.thread.createdAt);
 /** When the row last moved: its hooks' last word, else its start; a conversation's last update. */
 const movedAt = (r: HereRow): number => (r.kind === "thread" ? (r.session?.lastEventAt ?? r.thread.updatedAt) : r.kind === "terminal" && !r.session ? r.terminal.startedAt : (r.session!.lastEventAt ?? r.session!.startedAt));
-const waitedSince = (r: HereRow): number => (r.kind === "thread" ? (r.thread.wait?.since ?? movedAt(r)) : movedAt(r));
+export const waitedSince = (r: HereRow): number => (r.kind === "thread" ? (r.thread.wait?.since ?? movedAt(r)) : movedAt(r));
 
 /**
  * The bar's order, the assistant panel's: waiting first, by how long each has waited; then running, by start; idle by
@@ -52,7 +52,7 @@ export function order(a: HereRow, b: HereRow): number {
   const sb = statusOf(b);
   if (sa !== sb) return RANK[sa] - RANK[sb];
   if (sa === "wait") return waitedSince(a) - waitedSince(b);
-  if (sa === "run") return startedAt(b) - startedAt(a);
+  if (sa === "run") return rowStartedAt(b) - rowStartedAt(a);
   if (sa === "done") return (b.session?.endedAt ?? 0) - (a.session?.endedAt ?? 0);
   return movedAt(b) - movedAt(a);
 }
@@ -63,7 +63,7 @@ export function order(a: HereRow, b: HereRow): number {
  * the row. A session without a pane here whose conversation is the assistant's rides on that conversation's row. Rows
  * on one pane — an agent working several tickets side by side — sit together, where the first of them would. A conversation
  * writing code in the background for another sits right under it, the same way. An ended session a cell shows to read
- * closes the list, with what came of it; the rest are the archive's.
+ * closes the list, with what came of it; the rest are History's.
  */
 export function sidebarRows(sessions: SessionRow[], terminals: TerminalRow[], threads: ThreadRow[] = []): { here: HereRow[]; away: SessionRow[] } {
   const live = sessions.filter((s) => s.endedAt === null);
@@ -108,9 +108,3 @@ export function bundles(rows: HereRow[]): HereRow[][] {
 
 /** What a session goes by in the list: its ticket, else its branch, else its agent. */
 export const sessionName = (s: SessionRow): string => s.key ?? (s.branch || s.agentName || s.agent);
-
-/** Whether an archived session's title, ticket, agent, branch or folder holds the search, any case. */
-export const matchesArchive = (s: SessionRow, needle: string): boolean => {
-  const n = needle.trim().toLowerCase();
-  return !n || [s.key, s.title, s.conversation, s.agentName, s.agent, s.branch, s.cwd, s.worktree].some((v) => !!v && v.toLowerCase().includes(n));
-};

@@ -11,7 +11,7 @@ import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/m
 import { viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { codingFrom, firstCodeStep, foldSteps, startBriefId, writesCode } from "~/lib/steps";
-import { conducts, findEngine, useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetWorkstream, useWorkdir, type RunProgress } from "~/lib/agent";
+import { conducts, findEngine, useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetWorkstream, useUnarchiveThread, useWorkdir, type RunProgress } from "~/lib/agent";
 import { keys, useAssistantAccessories, useBoards, useHeldItem, useItems, useSettings } from "~/lib/queries";
 import { ATTENTION_KEY, useAttention, type AttentionEntry } from "~/lib/attention";
 import { pickChoiceName, pickFallbackName } from "~/lib/engines";
@@ -25,14 +25,13 @@ import { ImGroupShare, QueuedRow, WorkingLine, type Queued } from "./agent-panel
 import { GUIDE, GuideList, slashCommand, SlashMenu, STARTERS, type SlashCommand, type SlashContext, type Starter } from "./agent-panel/commands";
 import { Composer } from "./agent-panel/Composer";
 import { STORE } from "./agent-panel/store";
-import { ThreadList, useThreadListState } from "./agent-panel/ThreadList";
 import { Review, type ReviewFocus } from "./agent-panel/Review";
-import { SessionBar, type BarMode } from "./agent-panel/SessionBar";
+import { SessionBar, type BarMode, type CardAnswer } from "./agent-panel/SessionBar";
 import { HandoffLine } from "./agent-panel/HandoffLine";
 import { TerminalSession } from "./agent-panel/TerminalSession";
 import { sessionBarRows, type BarRow, type BarStatus } from "~/lib/sessionBar";
 import { onPanelRequest, setPanelSession, type PanelRequest } from "~/lib/panelRequests";
-import { useHandoff, useRecentSessions, useStartDefaults } from "~/lib/codeLink";
+import { useHandoff, useRecentSessions, useSessionCells, useStartDefaults } from "~/lib/codeLink";
 import type { SessionView } from "@tomradex/code-link";
 import { hits, keyLabel } from "~/lib/keybindings";
 import { BackgroundOffer, Transcript } from "./agent-panel/Transcript";
@@ -46,7 +45,9 @@ import { useThreadSelection } from "./agent-panel/useThreadSelection";
 const QUEUE_KIND = { permission: "waitQueue.permission", question: "waitQueue.question", waiting: "waitQueue.waiting", stuck: "waitQueue.stuck" } as const;
 
 const MIN_W = 352;
-const MAX_W = 924;
+/** The most of the window it may be dragged to; the CSS max-width still keeps the board a column on narrower ones. */
+const MAX_SHARE = 0.6;
+const maxW = () => Math.max(MIN_W, Math.round(window.innerWidth * MAX_SHARE));
 /** Until someone drags it: the former ceiling; the CSS max-width still yields to the board on narrow windows. */
 const DEFAULT_W = 616;
 
@@ -119,12 +120,11 @@ export function AgentPanel({
   const [live, setLive] = useState<{ runId: string; text: string } | null>(null);
   const [progress, setProgress] = useState<RunProgress | null>(null);
   const scroll = useRef<HTMLDivElement>(null);
-  // what agents in this project wait on the person for: a count on the rail, a word in the thread list
+  // what agents in this project wait on the person for: a count on the rail, a word in the session bar
   const everyAttention = useAttention();
   const attention = useMemo(() => everyAttention.filter((e) => e.projectId === projectId), [everyAttention, projectId]);
-  const attentionOf = new Map(attention.flatMap((e) => (e.threadId ? [[e.threadId, e] as const] : [])));
   const attentionLabel = (e: AttentionEntry) => t(ATTENTION_KEY[e.kind]);
-  const threadList = useThreadListState(projectId);
+  const unarchive = useUnarchiveThread(projectId);
   // Dots until the person asks for cards; a panel left narrow (the default) has no room for them.
   const [barMode, setBarMode] = useState<BarMode>(() => {
     const saved = localStorage.getItem(STORE.sessionBar);
@@ -136,6 +136,7 @@ export function AgentPanel({
     localStorage.setItem(STORE.sessionBar, mode);
   }, []);
   const recentSessions = useRecentSessions(projectId, open);
+  const sessionCells = useSessionCells(projectId, open);
   // A terminal session picked from the bar takes the place of the thread: the same session as the Terminal window's
   // cell, seen from here. Remembered with its project, so another project's panel never shows it.
   const [openSessionIn, setOpenSessionIn] = useState<{ projectId: string; id: string } | null>(null);
@@ -256,7 +257,7 @@ export function AgentPanel({
 
   useEffect(() => {
     const saved = localStorage.getItem(STORE.width);
-    if (panel.current) panel.current.style.width = `${saved ? Math.min(MAX_W, Math.max(MIN_W, Number(saved))) : DEFAULT_W}px`;
+    if (panel.current) panel.current.style.width = `${saved ? Math.min(maxW(), Math.max(MIN_W, Number(saved))) : DEFAULT_W}px`;
   }, [open]);
 
   // After layout, so a working line or question that just mounted is inside scrollHeight.
@@ -286,7 +287,7 @@ export function AgentPanel({
     const startW = panel.current?.offsetWidth ?? MIN_W;
     document.body.style.userSelect = "none";
     const onMove = (e: MouseEvent) => {
-      const width = Math.min(MAX_W, Math.max(MIN_W, startW + (startX - e.clientX)));
+      const width = Math.min(maxW(), Math.max(MIN_W, startW + (startX - e.clientX)));
       if (panel.current) panel.current.style.width = `${width}px`;
       localStorage.setItem(STORE.width, String(width));
     };
@@ -609,10 +610,10 @@ export function AgentPanel({
   const itemsById = useMemo(() => new Map((itemsQ.data ?? []).map((i) => [i.id, i])), [itemsQ.data]);
   const barRows = useMemo(
     () => sessionBarRows({
-      threads: threads.data ?? [], sessions: recentSessions.data ?? [], attention, openThreadId: threadId, openSessionId: openSession,
+      threads: threads.data ?? [], sessions: recentSessions.data ?? [], cells: sessionCells.data, attention, openThreadId: threadId, openSessionId: openSession,
       itemTitle: (id) => itemsById.get(id)?.title ?? null, itemKey: (id) => itemsById.get(id)?.key ?? null
     }),
-    [threads.data, recentSessions.data, attention, threadId, openSession, itemsById]
+    [threads.data, recentSessions.data, sessionCells.data, attention, threadId, openSession, itemsById]
   );
   // How the conversations writing code in the background for this one stand, for the notes that point at them.
   // Keyed by a string, so the map is new only when one of them changes state — never on a streamed reply.
@@ -670,11 +671,44 @@ export function AgentPanel({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
+  // Putting away or deleting from the bar: any conversation but the open one while its run goes; a delete asks first.
+  const archiveThreadById = (id: string) => {
+    if (id === threadId && busy) return;
+    archiveThread.mutate(id, { onSuccess: () => { if (id === threadId) clearThread(); } });
+  };
+  const deleteThreadById = (id: string) => {
+    if ((id === threadId && busy) || !window.confirm(t("agentPanel.deleteThreadConfirm"))) return;
+    deleteThread.mutate(id, { onSuccess: () => { if (id === threadId) clearThread(); } });
+  };
+  // Answered from a card: the panel stays where it is and says so; the open one goes on as the setting says.
+  const answerCard = async (row: BarRow, reply: CardAnswer) => {
+    try {
+      if ("which" in reply) {
+        const result = await invoke("codeLink.sessionAnswer", projectId, row.sessionId!, reply.which);
+        if (result === "notPrompt") return toast({ body: t("sessionBar.answerInPane"), actions: [{ label: t("sessionBar.lookFirst"), run: () => pickBarRow(row) }] });
+        if (result !== "answered") return toast({ body: t("sessionBar.notTaken") });
+      } else await invoke("agent.answer", projectId, row.threadId!, reply.questionId, reply.value);
+    } catch (error) {
+      return reportError(error);
+    }
+    void recentSessions.refetch();
+    if (row.key === currentKey && goesOn) return waitQueue.current.answered(row.key);
+    toast({ body: t("which" in reply ? (reply.which === "allow" ? "sessionBar.allowedStay" : "sessionBar.deniedStay") : "sessionBar.answeredStay", { name: rowName(row) }) });
+  };
   // the bar is memoized; its handlers keep their identity and read the latest render's state
-  const latestBar = useRef({ pickBarRow, newThread: () => {} });
-  latestBar.current = { pickBarRow, newThread: () => void openThread({ boardId }).then((th) => pickThread(th.id)) };
+  const latestBar = useRef({ pickBarRow, newThread: () => {}, archive: archiveThreadById, remove: deleteThreadById, answer: answerCard });
+  latestBar.current = { pickBarRow, newThread: () => void openThread({ boardId }).then((th) => pickThread(th.id)), archive: archiveThreadById, remove: deleteThreadById, answer: answerCard };
   const pickBarRowStable = useCallback((row: BarRow) => latestBar.current.pickBarRow(row), []);
   const newBarThread = useCallback(() => latestBar.current.newThread(), []);
+  const archiveBarThread = useCallback((id: string) => latestBar.current.archive(id), []);
+  const deleteBarThread = useCallback((id: string) => latestBar.current.remove(id), []);
+  const answerBarRow = useCallback((row: BarRow, reply: CardAnswer) => void latestBar.current.answer(row, reply), []);
+  // What the waiting conversations ask, read only while their cards show and again for each new wait.
+  const threadWaits = barRows.filter((r) => r.status === "wait" && r.threadId).map((r) => `${r.threadId}:${r.at}`).join("|");
+  const pendingsQ = useQuery({ queryKey: keys.agent.pendings(projectId, threadWaits), queryFn: () => invoke("agent.pendings", projectId), enabled: open && barMode === "cards" && !!threadWaits });
+  const pendings = useMemo(() => new Map((pendingsQ.data ?? []).map((p) => [p.threadId, p])), [pendingsQ.data]);
+  // the conversations the bar shows: the look back lists the idle ones past them
+  const barThreadIds = useMemo(() => new Set(barRows.flatMap((r) => (r.threadId ? [r.threadId] : []))), [barRows]);
   // ⌘\ swaps the bar between dots and cards wherever the focus is, while the panel is open.
   useEffect(() => {
     if (!open) return;
@@ -715,15 +749,6 @@ export function AgentPanel({
     return () => setPanelSession(null);
   }, [projectId, openSession]);
 
-  const archiveThreadById = (id: string) => {
-    if (busy) return;
-    archiveThread.mutate(id, { onSuccess: () => { if (id === threadId) clearThread(); } });
-  };
-  const deleteThreadById = (id: string) => {
-    if (busy || !window.confirm(t("agentPanel.deleteThreadConfirm"))) return;
-    deleteThread.mutate(id, { onSuccess: () => { if (id === threadId) clearThread(); } });
-  };
-
   if (!open) {
     return (
       <div className="rail ai-rail">
@@ -759,17 +784,6 @@ export function AgentPanel({
           <MenuHead title={t("agentPanel.guideTitle")} />
           <GuideList />
         </Menu>
-        <ThreadList
-          state={threadList}
-          threads={threads.data}
-          threadId={threadId}
-          attentionOf={attentionOf}
-          attentionLabel={attentionLabel}
-          onPick={(id) => { setReviewIn(null); pickThread(id); }}
-          onNew={() => void openThread({ boardId }).then((th) => { setReviewIn(null); pickThread(th.id); })}
-          onArchive={archiveThreadById}
-          onDelete={deleteThreadById}
-        />
         <button type="button" className="btn btn-icon" title={t("agentPanel.collapsePanel")} aria-label={t("agentPanel.collapseAssistantAria")} onClick={() => onToggle(false)}>
           <Icon name="i-panel" size={15} />
         </button>
@@ -785,7 +799,7 @@ export function AgentPanel({
         </div>
       )}
       {review ? (
-        <Review projectId={projectId} focus={review.focus} engines={engines.data} onClose={() => setReviewIn(null)} onOpenThread={(id) => { setReviewIn(null); pickThread(id); }} />
+        <Review projectId={projectId} focus={review.focus} engines={engines.data} omit={barThreadIds} onClose={() => setReviewIn(null)} onOpenThread={(id) => { setReviewIn(null); pickThread(id); }} />
       ) : shownSession ? (
         <TerminalSession
           projectId={projectId}
@@ -794,6 +808,7 @@ export function AgentPanel({
           ticket={sessionRow?.ticket ?? (shownSession.itemIds[0] ? itemsById.get(shownSession.itemIds[0])?.key ?? null : null)}
           status={sessionRow?.status ?? (shownSession.state === "ended" || shownSession.state === "lost" ? "done" : shownSession.state === "running" ? "run" : "idle")}
           engines={engines.data}
+          cell={sessionRow?.cell ?? null}
           onShowInTerminal={shownSession.herdrPane || shownSession.state === "ended" || shownSession.state === "lost" ? () => showInTerminal(shownSession.id, shownSession.terminal) : undefined}
           onBack={shownSessionThread && sessionHandoff.data?.where === "terminal" && !handingOff ? () => void backToPanel(shownSessionThread) : undefined}
           backBlocked={sessionHandoff.data?.terminal?.live ? t("handoff.backBlocked", { agent: findEngine(engines.data, shownSession.agent)?.title ?? shownSession.agent }) : undefined}
@@ -963,7 +978,7 @@ export function AgentPanel({
         {archivedNow && threadId && (
           <p className="ai-workdir meta-txt dense" style={{ margin: "6px 0 0", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
             <span>{t("agentPanel.archivedHere")}</span>
-            <button type="button" className="btn btn-ghost" style={{ padding: "0 6px" }} disabled={threadList.unarchive.isPending} onClick={() => threadList.unarchive.mutate(threadId)}>
+            <button type="button" className="btn btn-ghost" style={{ padding: "0 6px" }} disabled={unarchive.isPending} onClick={() => unarchive.mutate(threadId)}>
               {t("agentPanel.restoreThread")}
             </button>
           </p>
@@ -1155,10 +1170,14 @@ export function AgentPanel({
         openKey={shownSession ? `session:${shownSession.id}` : threadId ? `thread:${threadId}` : null}
         mode={barMode}
         engines={engines.data}
+        pendings={pendings}
         onMode={chooseBarMode}
         onPick={pickBarRowStable}
+        onAnswer={answerBarRow}
         onNew={newBarThread}
         onHistory={openHistory}
+        onArchive={archiveBarThread}
+        onDelete={deleteBarThread}
       />
       <ReportDialog projectId={projectId} threadId={reportFor} onOpenChange={(open) => { if (!open) setReportFor(null); }} />
     </aside>

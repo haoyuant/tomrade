@@ -176,7 +176,6 @@ declare module "@tomradex/ipc" {
     /** Put the thread on a workstream (its repository is where a code engine runs), or back on the whole project. */
     "agent.setWorkstream": (projectId: string, threadId: string, boardId: string | null) => ThreadSummary;
     "agent.archiveThread": (projectId: string, threadId: string) => boolean;
-    "agent.archivedThreads": (projectId: string) => ThreadSummary[];
     "agent.unarchiveThread": (projectId: string, threadId: string) => boolean;
     "agent.deleteThread": (projectId: string, threadId: string) => boolean;
     /** Where the thread's engine would run: ready, or why not yet (no checkout on this machine). */
@@ -188,6 +187,8 @@ declare module "@tomradex/ipc" {
     "agent.media.read": (projectId: string, threadId: string, id: string) => MediaContent;
     "agent.mediaCapabilities": (engineId: string, options?: unknown) => { input: string[]; output: string[] };
     "agent.answer": (projectId: string, threadId: string, questionId: string, value: string | string[]) => { runId: string };
+    /** What each of the project's conversations waits on the person for: the session bar's cards answer them in place. */
+    "agent.pendings": (projectId: string) => PendingView[];
     "agent.cancel": (runId: string) => boolean;
     /** Into the running turn, when its engine steers; false means it was not taken (queue it instead). */
     "agent.steer": (projectId: string, threadId: string, steerId: string, text: string) => Promise<boolean>;
@@ -469,7 +470,6 @@ export class Agent extends Service implements AgentReader {
       ctx.ipc.handle("agent.takeoverGeneral", (projectId, itemId) => ctx.agent.takeoverGeneral(projectId, itemId));
       ctx.ipc.handle("agent.setWorkstream", (projectId, threadId, boardId) => ctx.agent.setWorkstream(projectId, threadId, boardId));
       ctx.ipc.handle("agent.archiveThread", (projectId, threadId) => ctx.agent.archiveThread(projectId, threadId));
-      ctx.ipc.handle("agent.archivedThreads", (projectId) => ctx.agent.withOrigins(projectId, ctx.agent.store.archivedThreads(projectId, PANEL_SURFACES)));
       ctx.ipc.handle("agent.unarchiveThread", (projectId, threadId) => ctx.agent.unarchiveThread(projectId, threadId, { restored: true }));
       ctx.ipc.handle("agent.deleteThread", (projectId, threadId) => ctx.agent.deleteThread(projectId, threadId));
       ctx.ipc.handle("agent.workdir", (projectId, threadId) => ctx.agent.workdir(projectId, threadId));
@@ -483,6 +483,7 @@ export class Agent extends Service implements AgentReader {
       });
       ctx.ipc.handle("agent.setPermissionMode", (projectId, threadId, mode) => ctx.agent.setPermissionMode(projectId, threadId, mode));
       ctx.ipc.handle("agent.answer", (projectId, threadId, questionId, value) => ctx.agent.send(projectId, threadId, { kind: "answer", questionId, value }));
+      ctx.ipc.handle("agent.pendings", (projectId) => ctx.agent.activities().flatMap((a) => (a.projectId === projectId && a.pending ? [a.pending] : [])));
       ctx.ipc.handle("agent.cancel", (runId) => ctx.agent.cancel(runId));
       ctx.ipc.handle("agent.steer", (projectId, threadId, steerId, text) => ctx.agent.steer(projectId, threadId, steerId, text));
       ctx.ipc.handle("agent.showing", (threadId) => ctx.agent.show(threadId));

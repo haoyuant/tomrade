@@ -2,7 +2,7 @@ import { useDeferredValue, useMemo, type MutableRefObject } from "react";
 import { Command } from "cmdk";
 import { useQuery } from "@tanstack/react-query";
 import type { EngineView, ThreadSummary } from "@tomradex/agent";
-import type { ReviewRow, SessionView } from "@tomradex/code-link";
+import type { RecentSession, ReviewRow } from "@tomradex/code-link";
 import type { Item } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { Kbd } from "~/components/ui/atoms";
@@ -16,6 +16,7 @@ import { askPanel, usePanelSession } from "~/lib/panelRequests";
 import { keys } from "~/lib/queries";
 import { outcomeLine } from "~/lib/review";
 import { paletteSessionGroups, sessionBarRows, type BarRow } from "~/lib/sessionBar";
+import { askText } from "~/lib/terminalSession";
 import { useOpenTerminalWindow } from "~/lib/terminalWindow";
 import { errorSpec, useToast } from "~/lib/toast";
 import { useOptionalAgentDock } from "~/components/chrome/ProjectShell";
@@ -48,7 +49,7 @@ export function PaletteSessions({ projectId, items, search, run, shift }: {
   const openTerminal = useOpenTerminalWindow(projectId);
   const panelSession = usePanelSession(projectId);
   const threads = useHeld<ThreadSummary[]>(keys.agent.threads(projectId), () => invoke("agent.threads", projectId));
-  const sessions = useHeld<SessionView[]>(keys.codeLink.recentSessions(projectId), () => invoke("codeLink.recentSessions", projectId));
+  const sessions = useHeld<RecentSession[]>(keys.codeLink.recentSessions(projectId), () => invoke("codeLink.recentSessions", projectId));
   const attention = useHeld<AttentionEntry[]>(keys.attention, () => invoke("attention.list").catch(() => []));
   const engines = useHeld<EngineView[]>(keys.agent.engines, () => invoke("agent.engines"));
   const groups = useMemo(() => {
@@ -75,17 +76,25 @@ export function PaletteSessions({ projectId, items, search, run, shift }: {
   // Typed, ⌘K reaches past the few ended sessions the window holds: the look back's search, a moment after the typing stops.
   const typed = useDeferredValue(search.trim());
   const found = useQuery({
-    queryKey: keys.codeLink.review(projectId, typed),
+    queryKey: keys.codeLink.review(projectId, typed, 8),
     queryFn: () => invoke("codeLink.reviewList", projectId, { query: typed, limit: 8 }),
     enabled: typed.length >= 2,
     staleTime: 30_000
   });
   const known = new Set([...groups.waiting, ...groups.active, ...groups.history].map((r) => r.sessionId ?? r.threadId));
   const older = (found.data?.rows ?? []).filter((r) => !known.has(r.id));
+  // an idle conversation past the few the window holds opens as itself; what ended or was put away is looked back on
+  const olderIdle = older.filter((r) => r.kind === "idle");
+  const olderEnded = older.filter((r) => r.kind !== "idle");
   const outcomeOf = (r: ReviewRow) => outcomeLine(r, (key, vars) => t(`review.${key}`, vars));
+  const openOlder = (r: ReviewRow) => {
+    if (r.kind === "idle") return dock?.showThread(r.id);
+    openPanel();
+    askPanel(r.kind === "thread" ? { kind: "review", threadId: r.id } : { kind: "review", sessionId: r.id });
+  };
   const olderRow = (r: ReviewRow) => (
-    <Command.Item key={`review:${r.id}`} value={`${r.tickets[0]?.key ?? ""} ${r.title} ${findEngine(engines, r.agent)?.title ?? r.agent} ${outcomeOf(r) ?? ""} review:${r.id}`} className="palette-row" data-session={`review:${r.id}`} onSelect={() => run(() => { openPanel(); askPanel(r.kind === "thread" ? { kind: "review", threadId: r.id } : { kind: "review", sessionId: r.id }); })}>
-      <span className="palette-mark"><StatusMark status="done" size={12} /></span>
+    <Command.Item key={`review:${r.id}`} value={`${r.tickets[0]?.key ?? ""} ${r.title} ${findEngine(engines, r.agent)?.title ?? r.agent} ${outcomeOf(r) ?? ""} review:${r.id}`} className="palette-row" data-session={`review:${r.id}`} onSelect={() => run(() => openOlder(r))}>
+      <span className="palette-mark"><StatusMark status={r.kind === "idle" ? "idle" : "done"} size={12} /></span>
       <span className="p-label">
         {r.tickets[0]?.key ?? r.title}
         {r.tickets[0] && r.title && <span className="meta-txt"> · {r.title}</span>}
@@ -106,7 +115,7 @@ export function PaletteSessions({ projectId, items, search, run, shift }: {
   const pick = (r: BarRow) => run(() => (shift.current ? inCell(r) : here(r)));
 
   const name = (r: BarRow) => r.ticket ?? (r.title || t("agentPanel.newThread"));
-  const said = (r: BarRow) => (r.wait ? r.wait.text || t(ATTENTION_KEY[r.wait.kind]) : r.status === "done" ? r.outcome : r.activity);
+  const said = (r: BarRow) => (r.wait ? (r.ask ? askText(r.ask, t) : r.wait.text || t(ATTENTION_KEY[r.wait.kind])) : r.status === "done" ? (r.outcome ? outcomeLine(r.outcome, (key, vars) => t(`review.${key}`, vars)) : null) : r.activity);
   const agentName = (r: BarRow) => (r.agent ? (findEngine(engines, r.agent)?.title ?? r.agent) : null);
   const row = (r: BarRow) => (
     <Command.Item key={r.key} value={`${name(r)} ${r.title} ${agentName(r) ?? ""} ${said(r) ?? ""} ${r.key}`} className="palette-row" data-session={r.key} data-depth={r.depth || undefined} onSelect={() => pick(r)}>
@@ -135,9 +144,10 @@ export function PaletteSessions({ projectId, items, search, run, shift }: {
           {groups.waiting.map(row)}
         </Command.Group>
       )}
-      {groups.active.length > 0 && (
+      {(groups.active.length > 0 || olderIdle.length > 0) && (
         <Command.Group heading={t("commandPalette.activeGroup")} className="eyebrow palette-group" data-testid="palette-active">
           {groups.active.map(row)}
+          {olderIdle.map(olderRow)}
         </Command.Group>
       )}
       <Command.Group heading={t("commandPalette.doGroup")} className="eyebrow palette-group" data-testid="palette-do">
@@ -149,10 +159,10 @@ export function PaletteSessions({ projectId, items, search, run, shift }: {
           </Command.Item>
         ))}
       </Command.Group>
-      {(groups.history.length > 0 || older.length > 0) && (
+      {(groups.history.length > 0 || olderEnded.length > 0) && (
         <Command.Group heading={t("commandPalette.historyGroup")} className="eyebrow palette-group" data-testid="palette-history">
           {groups.history.map(row)}
-          {older.map(olderRow)}
+          {olderEnded.map(olderRow)}
         </Command.Group>
       )}
     </>

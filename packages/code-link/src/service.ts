@@ -30,7 +30,7 @@ import { FollowOnStore, type FollowOn } from "./follow-ons.js";
 import { Claims, type ClaimResult } from "./claim.js";
 import { Handoff, type HandoffResult, type HandoffView } from "./handoff.js";
 import { HerdrBridge, type HerdrInstall } from "./herdr-bridge.js";
-import { SessionPanel, type AnswerResult, type SessionPanelView } from "./panel.js";
+import { SessionPanel, type AnswerResult, type SessionGlance, type SessionPanelView } from "./panel.js";
 import { Landing, type MergeCause, type MergeCheckView, type MergeLocalResult, type OpenPrResult } from "./landing.js";
 import { Orientation } from "./orientation.js";
 import { SYNC_PROMPT, syncInstructions, syncPrompt, type SyncScope } from "./sync.js";
@@ -43,7 +43,8 @@ import { CODE_WORDS, type CodeWords } from "./words.js";
 import { Starter, type StartGate, type StartOptions, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type Readiness, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
 import { readSnapshot, saveSnapshot, snapshotFile } from "./snapshots.js";
-import { Review, type ReviewCursor, type ReviewPage, type ReviewSaid, type ReviewView } from "./review.js";
+import { askLine, permissionAsk, questionAsk } from "./ask.js";
+import { Review, type ReviewCursor, type ReviewPage, type ReviewSaid, type ReviewView, type SessionOutcome } from "./review.js";
 import { recordOf, resumeCommand } from "./titles.js";
 import { AUTO_TERMINAL, TerminalSettings, commandOk, exec, locatedCommand, terminalApps, terminalPath } from "./terminal.js";
 import { registerTools } from "./tools.js";
@@ -71,12 +72,21 @@ declare module "cordis" {
     "codeLink/show-session"(projectId: string, sessionId: string): Promise<boolean | void> | boolean | void;
     /** Asked: open a new terminal inside Tomrade that takes this ended session's conversation up again. True once a window has. */
     "codeLink/resume-session"(projectId: string, sessionId: string): Promise<boolean | void> | boolean | void;
+    /** Asked: which cell of Tomrade's Terminal window shows each session, numbered as the window numbers them; nothing while no window is open. */
+    "codeLink/session-cells"(projectId: string): Promise<Record<string, number> | void> | Record<string, number> | void;
     /** Asked: whether what this session's pane showed was recorded here. */
     "codeLink/raw-output-there"(projectId: string, sessionId: string): Promise<boolean | void> | boolean | void;
     /** Asked: the recording of what this session's pane showed, to play back; the Terminal window's plugin answers. */
     "codeLink/raw-output"(projectId: string, sessionId: string): Promise<RawOutput | null | void> | RawOutput | null | void;
   }
 }
+
+/** How long an ended session stays in the session lists, and how many of them do: the rest are the look back's. */
+export const RECENT_ENDED_MS = 24 * 60 * 60_000;
+export const RECENT_ENDED_MAX = 8;
+
+/** A session as the session lists show it: an ended one with what came of it; a live one with whether its card can answer its prompt. */
+export type RecentSession = SessionView & SessionGlance & { outcome: SessionOutcome | null };
 
 /** A recording of a pane's output, as the Terminal window's plugin hands it over to play back elsewhere. */
 export interface RawOutput {
@@ -198,8 +208,10 @@ declare module "@tomradex/ipc" {
     /** Start or continue work on a ticket with a local coding agent, headless or in a terminal. */
     "codeLink.start": (projectId: string, itemId: string, opts: StartOptions) => StartResult;
     "codeLink.sessions": (projectId: string, itemId?: string) => SessionView[];
-    /** The session lists' rows: every live session, and the few that ended in the last day. */
-    "codeLink.recentSessions": (projectId: string) => SessionView[];
+    /** The session lists' rows: every live session, and the few that ended in the last day with what came of each. */
+    "codeLink.recentSessions": (projectId: string) => RecentSession[];
+    /** Which cell of the Terminal window shows each session, by session id; empty while the window is closed. */
+    "codeLink.sessionCells": (projectId: string) => Record<string, number>;
     /** Push the ticket's branch from its worktree and open a pull request (gh), or hand back the compare page. */
     "codeLink.openPr": (projectId: string, itemId: string) => OpenPrResult;
     /** A repository with no remote: merge the ticket's branch into the default branch on this machine. */
@@ -266,6 +278,8 @@ declare module "@tomradex/ipc" {
   }
   interface Broadcasts {
     "codeLink.changed": (projectId: string) => void;
+    /** The Terminal window's cells came to show other sessions, or it opened or closed: `codeLink.sessionCells` reads differently. */
+    "codeLink.cellsChanged": (projectId: string) => void;
     /** What Start last ran with changed: windows that show a one-click Start read it again. */
     "codeLink.startDefaultsChanged": () => void;
   }
@@ -417,7 +431,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       onChange: (projectId) => this.notify(projectId),
       prefixOf: (projectId) => this.prefixOf(projectId),
       onMoment: (session, moment) => this.noteMoment(session, moment),
-      onWaiting: (session, activity) => this.herdr.waiting(session, activity),
+      onWaiting: (session, ask) => this.herdr.waiting(session, askLine(ask, this.words())),
       panes: { alive: (pane) => this.herdr.paneAlive(pane), info: (pane) => this.herdr.pane(pane) },
       // A terminal session cannot be typed into: when the limit lifts the person is told, not the agent.
       onLimit: (session, until) => {
@@ -686,7 +700,7 @@ export class CodeLink extends Service implements CodeLinkReader {
         const thread = this.running.get(threadId);
         const session = thread && this.sessionOf(thread);
         if (!thread || !session) return;
-        if (event.pending) this.sessions.touch(thread.projectId, session.id, { state: "waiting", activity: event.pending.kind === "permission" ? this.words()("needsApproval") : this.words()("askingYou") });
+        if (event.pending) this.sessions.touch(thread.projectId, session.id, { state: "waiting", activity: null, ask: event.pending.kind === "permission" ? permissionAsk(null, undefined) : questionAsk() });
         else if (session.state === "waiting") this.sessions.touch(thread.projectId, session.id, { state: "running", activity: null });
       });
       ctx.on("agent/run-ended", (run, thread) => {
@@ -728,6 +742,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.start", (projectId, itemId, opts) => ctx.codeLink.start(projectId, itemId, opts));
       ctx.ipc.handle("codeLink.sessions", (projectId, itemId) => ctx.codeLink.sessionsOf(projectId, itemId));
       ctx.ipc.handle("codeLink.recentSessions", (projectId) => ctx.codeLink.recentSessions(projectId));
+      ctx.ipc.handle("codeLink.sessionCells", (projectId) => ctx.codeLink.sessionCells(projectId));
       ctx.ipc.handle("codeLink.openPr", (projectId, itemId) => ctx.codeLink.openPr(projectId, itemId));
       ctx.ipc.handle("codeLink.mergeLocal", (projectId, itemId) => ctx.codeLink.mergeLocal(projectId, itemId));
       ctx.ipc.handle("codeLink.merge", (projectId, itemId) => ctx.codeLink.merge(projectId, itemId));
@@ -826,7 +841,7 @@ export class CodeLink extends Service implements CodeLinkReader {
         lastCommitAt: l.headAt
       })),
       session: live
-        ? { id: live.id, mode: live.mode, agent: live.agent, state: live.state, summary: live.summary, activity: live.activity, blocked: live.blocked, threadId: live.threadId, worktree: live.worktree, lastEventAt: live.lastEventAt ?? live.startedAt }
+        ? { id: live.id, mode: live.mode, agent: live.agent, state: live.state, summary: live.summary, activity: live.ask ? askLine(live.ask, this.words()) : live.activity, blocked: live.blocked, threadId: live.threadId, worktree: live.worktree, lastEventAt: live.lastEventAt ?? live.startedAt }
         : null,
       proposals: this.store.proposals(projectId, itemId, "open").map((p) => ({ id: p.id, kind: p.kind, toStatus: p.toStatus, reason: p.reason }))
     };
@@ -1013,9 +1028,44 @@ export class CodeLink extends Service implements CodeLinkReader {
     return this.handoff.toCli(projectId, threadId, engineId);
   }
 
-  /** Asked on every session change while a list shows: it reads the live rows and a handful of ended ones, not the whole history. */
-  recentSessions(projectId: string, now = Date.now()): SessionView[] {
-    return this.store.recentSessions(projectId, now - 24 * 60 * 60_000, 8);
+  /**
+   * Asked on every session change while a list shows: it reads the live rows and a handful of ended ones, not the whole
+   * history; each live pane's last lines through the glance, at most once per event and every few seconds.
+   */
+  async recentSessions(projectId: string, now = Date.now()): Promise<RecentSession[]> {
+    const rows = this.store.recentSessions(projectId, now - RECENT_ENDED_MS, RECENT_ENDED_MAX);
+    const isEnded = (s: SessionView) => s.state === "ended" || s.state === "lost";
+    const ended = rows.filter(isEnded);
+    const outcomes = ended.length ? this.review.outcomes(projectId, ended) : new Map<string, SessionOutcome>();
+    const glances = await this.panel.glance(rows.filter((s) => !isEnded(s)), now);
+    return rows.map((s) => ({ ...s, approval: false, prompt: null, tail: null, ...glances.get(s.id), outcome: outcomes.get(s.id) ?? null }));
+  }
+
+  /** The Terminal window's bar: the same glance at these live sessions' panes the panel's cards have, from the same reads. */
+  async sessionGlances(projectId: string, sessionIds: string[]): Promise<Map<string, SessionGlance>> {
+    const sessions = sessionIds.flatMap((id) => this.store.session(projectId, id) ?? []);
+    return sessions.length ? this.panel.glance(sessions) : new Map();
+  }
+
+  /** What came of each of these ended sessions, by id, the way every list says it. */
+  sessionOutcomes(projectId: string, sessionIds: string[]): Map<string, SessionOutcome> {
+    const sessions = sessionIds.flatMap((id) => this.store.session(projectId, id) ?? []);
+    return sessions.length ? this.review.outcomes(projectId, sessions) : new Map();
+  }
+
+  /** Which Terminal window cell shows each session; empty while no window shows the project. */
+  async sessionCells(projectId: string): Promise<Record<string, number>> {
+    try {
+      return ((await this.ctx.serial("codeLink/session-cells", projectId)) as Record<string, number> | undefined) ?? {};
+    } catch (error) {
+      this.ctx.logger.warn(`codeLink/session-cells: ${errorMessage(error)}`);
+      return {};
+    }
+  }
+
+  /** The Terminal window's cells show other sessions now: the windows that name cells read them again. */
+  cellsChanged(projectId: string): void {
+    this.home.get("ipc")?.send("codeLink.cellsChanged", projectId);
   }
 
   /**

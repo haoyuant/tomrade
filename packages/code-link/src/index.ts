@@ -1,6 +1,6 @@
 import type {} from "cordis";
 
-export { CodeLink, CodeLinkConfig, AUTHOR, MCP_AGENT, compareUrl, deliveryMerged, lastSaid, primaryOf, type CodeSummaryView, type ConnectMode, type ConnectResult, type OpenPrResult, type MergeCheckView, type MergeLocalResult, type MergeResult, MERGE_COMMAND, type MergeCard, type RepoPolicyPatch, type ScanSummary, type StartBatchCard, type StartBatchEntry, type StartBatchRequest, type StartConfig, type UnlinkedBranch } from "./service.js";
+export { CodeLink, CodeLinkConfig, RECENT_ENDED_MAX, RECENT_ENDED_MS, type RecentSession, AUTHOR, MCP_AGENT, compareUrl, deliveryMerged, lastSaid, primaryOf, type CodeSummaryView, type ConnectMode, type ConnectResult, type OpenPrResult, type MergeCheckView, type MergeLocalResult, type MergeResult, MERGE_COMMAND, type MergeCard, type RepoPolicyPatch, type ScanSummary, type StartBatchCard, type StartBatchEntry, type StartBatchRequest, type StartConfig, type UnlinkedBranch } from "./service.js";
 export { CLAUDE_LOCAL_SETTINGS, CONNECT_AGENTS, CONNECT_FILES, codexSyncSkill, hookCommand, hookCommands, posixHookCommand, tomradeSection, writeConnectFiles, type ConnectAgent, type ConnectFileWriter, type ConnectInput, type ConnectorAgent, type Connectors, type LocalConnect, type SkippedAgent, type SkipReason } from "./connect.js";
 export { SYNC_PROMPT, syncInstructions, syncPrompt, syncSteps, type SyncScope } from "./sync.js";
 export { covered, decisionsDir, listDecisions, recordDecision, type Decision as DecisionNote, type DecisionInput, type DecisionStatus } from "./decisions.js";
@@ -25,6 +25,7 @@ export {
   type SessionCursor,
   type SessionMark,
   type SessionMode,
+  type SessionAsk,
   type SessionPatch,
   type SessionState,
   type SessionView
@@ -50,7 +51,8 @@ export { CodeLink as default } from "./service.js";
 export type { ConnectionView, AgentConnectionView } from "./connection.js";
 export { BRIDGED_BY_DSH, cliHookCall, cliHookEvent, hookReply, mergeAnswers } from "./cli-hooks.js";
 export { recordOf, resumeCommand } from "./titles.js";
-export { Review, REVIEW_PAGE, cutByTicket, mergePage, threadLines, ticketOutcome, type ReviewCursor, type ReviewPage, type ReviewPr, type ReviewRow, type ReviewSaid, type ReviewSegment, type ReviewTicket, type ReviewView } from "./review.js";
+export { Review, REVIEW_PAGE, cutByTicket, mergePage, threadLines, ticketOutcome, type ReviewCursor, type ReviewPage, type ReviewPr, type ReviewRow, type ReviewSaid, type ReviewSegment, type ReviewSource, type ReviewTicket, type ReviewView, type SessionOutcome } from "./review.js";
 export type { RawOutput } from "./service.js";
-export { inputsOf, SessionPanel, type AnswerResult, type SessionPanelView } from "./panel.js";
+export { inputsOf, SessionPanel, type AnswerResult, type SessionGlance, type SessionPanelView } from "./panel.js";
 export { PROMPT_LINES, promptOnScreen } from "./prompt.js";
+export { askLine, askLineIn, permissionAsk, questionAsk, sameAsk } from "./ask.js";

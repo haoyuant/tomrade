@@ -21,14 +21,14 @@ const rows = (input: Partial<Parameters<typeof sessionBarRows>[0]>) =>
 it("puts what waits on the person first, then what runs, then idle conversations, then what ended", () => {
   const out = rows({
     threads: [thread("idle", { updatedAt: 9 }), thread("busy", { running: true, createdAt: 3 }), thread("asks", { createdAt: 2 })],
-    sessions: [session("cell", { startedAt: 4 }), session("old", { state: "ended", endedAt: 8, summary: "PR #1 merged" })],
+    sessions: [session("cell", { startedAt: 4 }), session("old", { state: "ended", endedAt: 8, summary: "PR #1 merged", asked: 1 })],
     attention: [waiting("thread:asks", 7)]
   });
   expect(out.map((r) => [r.key, r.status])).toEqual([
     ["thread:asks", "wait"], ["session:cell", "run"], ["thread:busy", "run"], ["thread:idle", "idle"], ["session:old", "done"]
   ]);
   expect(out.find((r) => r.key === "thread:asks")?.wait).toEqual({ kind: "permission", text: "may I?" });
-  expect(out.find((r) => r.key === "session:old")?.outcome).toBe("PR #1 merged");
+  expect(out.find((r) => r.key === "session:old")?.outcome).toEqual({ pr: null, commits: 0, asked: 1, said: "PR #1 merged" });
 });
 
 it("shows a headless session once, on its conversation", () => {
@@ -93,4 +93,39 @@ it("sets a conversation writing code in the background right under the one it wr
   const capped = rows({ threads: [...Array.from({ length: 4 }, (_, i) => thread(`t${i}`, { updatedAt: 100 - i })), thread("parent", { updatedAt: 1 }), thread("child", { parentId: "parent", running: true })], idleLimit: 2 });
   expect(capped.map((r) => [r.threadId, r.depth])).toEqual([["parent", 0], ["child", 1], ["t0", 0], ["t1", 0]]);
   expect(rows({ threads: [thread("child", { parentId: "gone" })] }).map((r) => [r.threadId, r.depth, r.parentKey])).toEqual([["child", 0, null]]);
+});
+
+it("carries what opened a conversation and when a usage limit lets it continue, for the cards and the peek", () => {
+  const out = rows({ threads: [thread("t", { origins: ["Routine"], parkedUntil: 1234 })], sessions: [session("s")] });
+  expect(out.find((r) => r.key === "thread:t")).toMatchObject({ origins: ["Routine"], parkedUntil: 1234 });
+  expect(out.find((r) => r.key === "session:s")).toMatchObject({ origins: [], parkedUntil: null });
+});
+
+it("carries what came of an ended session as the look back reads it, and the cell that shows a live one", () => {
+  const outcome = { pr: { number: 407, state: "merged" as const, url: null }, commits: 4, asked: 2, said: "done" };
+  const out = rows({ sessions: [session("cell"), session("away", { herdrPane: null, terminal: "iTerm.app" }), { ...session("old", { state: "ended", endedAt: 8 }), outcome }], cells: { cell: 2, old: 3 } });
+  expect(out.find((r) => r.key === "session:cell")?.cell).toBe(2);
+  expect(out.find((r) => r.key === "session:away")?.cell).toBeNull();
+  // ended, it is looked back on: no cell, and its outcome as the history has it
+  expect(out.find((r) => r.key === "session:old")).toMatchObject({ cell: null, outcome });
+});
+
+it("lets a waiting terminal session's card answer only the prompt its screen shows, for an agent that declared its keys", () => {
+  const permission = { kind: "permission" as const, tool: "Bash", action: "run" as const, detail: "pnpm test" };
+  const asks = (id: string, over: Partial<SessionView> & { approval?: boolean; prompt?: "allow" | "deny" | null }) => ({ ...session(id, { state: "waiting", ask: permission }), approval: true, prompt: "allow" as const, ...over });
+  const out = rows({ sessions: [asks("yes", {}), asks("no", { prompt: "deny" }), asks("mute", { approval: false }), asks("idle", { ask: { kind: "question", tool: null, action: null, detail: null } }), session("runs", { approval: true, prompt: "allow" } as never)] });
+  expect(Object.fromEntries(out.map((r) => [r.sessionId, r.prompt]))).toEqual({ yes: "allow", no: "deny", mute: null, idle: null, runs: null });
+});
+
+it("carries a live terminal session's last pane lines for its card and peek, and none once it ended", () => {
+  const out = rows({ sessions: [{ ...session("live"), tail: ["● Bash(pnpm test)", "  ⎿ 12 passed"] }, { ...session("old", { state: "ended", endedAt: 8 }), tail: ["gone"] }] });
+  expect(out.find((r) => r.key === "session:live")?.tail).toEqual(["● Bash(pnpm test)", "  ⎿ 12 passed"]);
+  expect(out.find((r) => r.key === "session:old")?.tail).toBeNull();
+});
+
+it("carries what a waiting terminal session asks, for the card and peek to word, and nothing once it moves on", () => {
+  const ask = { kind: "permission" as const, tool: "Bash", action: "run" as const, detail: "git push" };
+  const out = rows({ sessions: [session("asks", { state: "waiting", ask }), session("runs", { ask })] });
+  expect(out.find((r) => r.key === "session:asks")).toMatchObject({ status: "wait", ask });
+  expect(out.find((r) => r.key === "session:runs")?.ask).toBeNull();
 });
