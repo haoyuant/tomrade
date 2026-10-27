@@ -45,6 +45,10 @@ export const agentPanel = {
     earlierSteps: "{{n}} earlier steps",
     writingCode: "Writing code",
     writingCodeFor: "{{key}} · writing code",
+    toBackground: "Do it in the background, I'll keep talking",
+    toBackgroundTitle: "Moves the coding into a conversation of its own under this one; this one is free to talk meanwhile, and the conclusion comes back here",
+    movedToBackground: "Moved to the background · the child conversation is writing",
+    seeThread: "See it",
     stepLimitSettings: "Change the step limit",
     startBrief: "Session brief · what the agent started from",
 
@@ -276,6 +280,10 @@ export const agentPanel = {
     earlierSteps: "前面 {{n}} 步",
     writingCode: "写代码",
     writingCodeFor: "{{key}} · 写代码",
+    toBackground: "放到后台做，我接着聊",
+    toBackgroundTitle: "把写代码这段开成挂在这个会话下面的子会话；这里可以接着聊，子会话做完把结论写回这里",
+    movedToBackground: "放到了后台 · 子会话在写",
+    seeThread: "看它",
     stepLimitSettings: "调整步数上限",
     startBrief: "会话上下文 · Agent 开始时读到的内容",
 

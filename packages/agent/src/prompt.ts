@@ -87,6 +87,23 @@ export const rulesSection = (rules: string): string =>
 export const generalOpener = (ticket: { key: string; title: string }, continued: boolean): string =>
   `${continued ? "Continue" : "Work on"} ${ticket.key}: ${ticket.title}. Follow the selected delivery playbook and submit results for review.`;
 
+/** How the first message of a background coding conversation opens; the panel folds a message that starts so. */
+export const BACKGROUND_OPENER = "Carry on in the background — ";
+
+/**
+ * The first message of a conversation opened to write the code another conversation was writing, so
+ * that one is free to talk: where it comes from, everything that happened there, and what to do now.
+ */
+export const backgroundOpener = (title: string, recap: string): string =>
+  [
+    `${BACKGROUND_OPENER}${title || "untitled conversation"}`,
+    "",
+    `The person moved the coding out of the conversation “${title || "untitled"}” into this one, so they can keep talking there while the code is written here. This conversation works in the same place — the same workstream, ticket and checkout. What happened there so far, the turn that was handed over last:`,
+    recap || "(nothing was said there yet)",
+    "",
+    "Carry on with the code changes that were under way: finish them, run the relevant tests, and end with a short summary of what you changed and what the tests said — that summary is relayed to the original conversation. Do not write code anywhere but here; do not start another conversation for it."
+  ].join("\n");
+
 export const playbookSection = (playbook: GeneralExecution["playbook"]): string => `Selected playbook ${playbook.id} (${playbook.source}, ${playbook.digest}):\n${playbook.body}`;
 
 /**

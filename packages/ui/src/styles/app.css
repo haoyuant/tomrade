@@ -1624,9 +1624,16 @@ button.cs-convo-line { font: inherit; text-align: left; background: none; border
 .sbar-new .sbar-dot-face { border-style: solid; color: var(--muted); }
 .sbar-new-badge { font-size: 9px; line-height: 14px; padding: 0 5px; border-radius: 999px; background: var(--accent-light); color: var(--accent-on); flex-shrink: 0; }
 .sbar-dot-face .sbar-new-badge { position: absolute; top: -4px; right: -8px; }
+/* a conversation opened under another, to write its code in the background: set in under its parent */
+.sbar-dot[data-depth="1"] { margin-left: 10px; }
+.sbar-dot[data-depth="1"] .sbar-dot-face { width: 28px; height: 28px; font-size: 10px; }
+.sbar-card[data-depth="1"] { margin-left: 12px; width: calc(100% - 12px); }
 /* where a conversation turns to writing code */
 .work-rule { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-3) 0; color: var(--accent); font-size: var(--text-xs); }
 .work-rule::before, .work-rule::after { content: ""; flex: 1; border-top: 1px solid var(--border-input); }
+/* the offer to move that coding out, while the run is at it: on the rule, or at the live end when the rule is older */
+.work-offer { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-2) 0; font-size: var(--text-xs); color: var(--muted); }
+.agent-note .note-thread { color: var(--muted); }
 .sbar-rule { width: 32px; border-top: 1px solid var(--border); margin: 4px 0; flex-shrink: 0; }
 .sbar-peek { position: absolute; right: calc(100% + 6px); width: 280px; z-index: 20; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg, 10px); box-shadow: var(--elev-raised); pointer-events: none; font-size: var(--text-sm); }
 .sbar-peek[data-status="wait"] { border-color: var(--warn); }
@@ -2316,6 +2323,7 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
 }
 .palette-row:hover, .palette-row.active { background: var(--surface-warm); color: var(--fg); }
 .palette-row .p-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette-row[data-depth="1"] { margin-left: 14px; }
 .palette-empty { padding: var(--space-6) var(--space-4); text-align: center; font-size: 14px; color: var(--meta); }
 .palette-mark { width: 14px; display: inline-flex; justify-content: center; flex-shrink: 0; }
 .palette-said { overflow: hidden; text-overflow: ellipsis; }
