@@ -1541,9 +1541,9 @@ input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
 /* ─── AI panel ───────────────────────────────────────────────────────── */
 .ai {
   width: 616px; flex-shrink: 0; position: relative;
-  /* the assistant takes what the board leaves it — a dragged 924px included —
-   * so the board keeps a column and a half however wide the panel was set */
-  max-width: max(352px, calc(100vw - var(--sidebar-w) - 480px));
+  /* the assistant takes what the board leaves it — up to 60% of the window when dragged —
+   * so the board keeps a column (its 362px floor) however wide the panel was set */
+  max-width: max(352px, min(60vw, calc(100vw - var(--sidebar-w) - 362px)));
   display: flex; flex-direction: column; min-height: 0;
   background: var(--surface); border-left: 1px solid var(--border);
 }
