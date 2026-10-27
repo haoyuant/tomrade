@@ -63,22 +63,75 @@ app.whenReady().then(async () => {
     await wait(() => js(`!document.querySelector('[data-testid="start-dialog"]')`));
     assert("启动完成后对话框关闭", true);
 
-    // ── 一点就开始：用上次的 agent 和地方，不用再选、不用再点确认 ──
+    // ── 一点就开始（TOM-690）：用上次的 agent 和地方，不弹对话框；后台窗格里跑，面板选中它；▾ 是开始方式的菜单 ──
     ctx.codeLink.startDefaults = () => ({ mode: "run", engine: "ready" });
+    ctx.codeLink.terminalWindow = async () => true;
+    ctx.agent.engine({ id: "second", title: "Second", author: "ai:second", capabilities: ["code"], available: async () => ({ ok: true }), async turn() { return { stop: "end" }; } });
+    // 只有这里的 agent（这台机器装的不算）；内置助手能写代码时才列出来，这里没有模型，当它能
+    const engineViews = ctx.agent.engineViews.bind(ctx.agent);
+    ctx.agent.engineViews = async (...args) => (await engineViews(...args)).filter((e) => ["ready", "second", "tomrade"].includes(e.id)).map((e) => (e.id === "tomrade" ? { ...e, ok: true, capabilities: ["backlog", "code", "general"] } : e));
+    const inWindow = [];
+    ctx.codeLink.showSession = async (_projectId, sessionId) => (inWindow.push(sessionId), true);
     let quick = null;
-    ctx.codeLink.start = async (_projectId, _itemId, opts) => {
-      quick = opts;
-      return { ok: true, continued: false, threadId: null, sessionId: "s-quick", branch: "spr-1/slow-start", worktree: null, cwd: work, mode: opts.mode, command: "claude", launched: false, pane: null, engine: "ready" };
-    };
+    let release = null;
+    ctx.codeLink.start = (projectId, itemId, opts) =>
+      new Promise((resolve) => {
+        quick = opts;
+        release = () => {
+          const session = ctx.codeLink.store.createSession(projectId, { repoId: "r", branch: "spr-1/slow-start", itemIds: [itemId], mode: "terminal", agent: opts.engine, threadId: null, device: "check" });
+          ctx.codeLink.store.patchSession(projectId, session.id, { herdrPane: "w1:p9", state: "running", lastEventAt: Date.now() });
+          resolve({ ok: true, continued: false, threadId: null, sessionId: session.id, branch: "spr-1/slow-start", worktree: null, cwd: work, mode: opts.mode, command: "claude", launched: true, pane: "w1:p9", engine: opts.engine });
+        };
+      });
+    const press = (selector) => js(`(() => { const b = document.querySelector(${JSON.stringify(selector)}); for (const type of ['pointerdown','mousedown','pointerup','mouseup','click']) b.dispatchEvent(new (type.startsWith('pointer') ? PointerEvent : MouseEvent)(type, { bubbles: true, cancelable: true, button: 0 })); return true; })()`);
     await js(`location.reload(); true`);
     await sleep(500);
     await js(`location.hash = '#/p/${project.id}/i/${item.id}'; true`);
     await wait(() => js(`(document.querySelector('[data-testid="start-quick"]')?.textContent ?? '').includes('Ready')`));
     assert("记得上次怎么开始时，主按钮写着用哪个 agent", (await js(`document.querySelector('[data-testid="start-quick"]').textContent`)).includes("开始 · Ready"));
-    assert("旁边的按钮仍打开完整的对话框", await js(`!!document.querySelector('[data-testid="start-ticket"][aria-label]')`));
+    await press('[data-testid="start-ways"]');
+    await wait(() => js(`!!document.querySelector('.menu.is-floating')`));
+    const ways = await js(`[...document.querySelectorAll('.menu.is-floating .menu-row')].map((r) => r.textContent)`);
+    assert("▾ 是四种开始方式：上次的 agent 后台窗格（默认）/ 也打开终端窗口 / 另一个 agent 后台窗格 / 内置助手在面板里，最后是完整设置",
+      ways.length === 5 && ways[0].includes("Ready · 后台窗格") && ways[0].includes("默认 · 上次就是这样") && ways[1].includes("Ready · 也打开终端窗口") && ways[2].includes("Second · 后台窗格") && ways[3].includes("内置助手 · 在面板里") && ways[4].includes("完整设置"));
+    await js(`document.querySelector('.menu.is-floating').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`);
+    await wait(() => js(`!document.querySelector('.menu.is-floating')`));
     await js(`document.querySelector('[data-testid="start-quick"]').click(); true`);
-    await wait(async () => quick !== null && (await js(`!document.querySelector('[data-testid="start-dialog"]')`)));
-    assert("一点就开始，用上次的 agent 和地方", quick.engine === "ready" && quick.mode === "run");
+    await wait(async () => quick !== null);
+    await wait(() => js(`!!document.querySelector('[data-testid="start-starting"]')`));
+    assert("一点就开始，用上次的 agent，在后台窗格里", quick.engine === "ready" && quick.mode === "terminal");
+    assert("不弹对话框", await js(`!document.querySelector('[data-testid="start-dialog"]')`));
+    assert("工单上写着「● Ready 启动中」", (await js(`document.querySelector('[data-testid="start-starting"]').textContent`)).includes("Ready 启动中"));
+    await wait(() => js(`!!document.querySelector('.ai .sbar [data-status="start"]')`));
+    assert("会话栏最上面是虚线圈的「启动中」", await js(`(() => { const first = document.querySelector('.ai .sbar .sbar-dots > *, .ai .sbar .sbar-cards > *'); return first?.dataset.status === 'start' && getComputedStyle(first.querySelector('.sbar-dot-face') ?? first).borderTopStyle === 'dashed'; })()`));
+    fs.writeFileSync(path.join(work, "start-starting.png"), (await win.webContents.capturePage()).toPNG());
+    release();
+    await wait(() => js(`!document.querySelector('[data-testid="start-starting"]')`));
+    const paneSessionId = ctx.codeLink.store.sessions(project.id, { itemId: item.id }).find((s) => s.herdrPane === "w1:p9")?.id;
+    await wait(() => js(`document.querySelector('.ai .ai-session')?.dataset.session === ${JSON.stringify(paneSessionId)}`));
+    assert("起来后助手面板选中这个会话，没有打开终端窗口", inWindow.length === 0);
+    assert("会话栏不再有「启动中」，换成运行中的它", await js(`!document.querySelector('.ai .sbar [data-status="start"]') && !!document.querySelector('.ai .sbar [aria-current="true"]')`));
+    await wait(() => js(`[...document.querySelectorAll('.toast')].some(t => t.textContent.includes('后台窗格'))`));
+    assert("提示说在后台窗格里跑、已在面板里打开", true);
+    ctx.codeLink.store.patchSession(project.id, paneSessionId, { state: "ended", endedAt: Date.now() });
+    ctx.emit("codeLink/changed", project.id);
+    ctx.ipc.send("codeLink.changed", project.id);
+
+    // ▾ 里选「也打开终端窗口」：照旧在终端窗口里打开
+    quick = null;
+    await wait(() => js(`!!document.querySelector('[data-testid="start-ways"]')`));
+    await press('[data-testid="start-ways"]');
+    await wait(() => js(`!!document.querySelector('.menu.is-floating')`));
+    await js(`[...document.querySelectorAll('.menu.is-floating .menu-row')].find((r) => r.textContent.includes('也打开终端窗口')).click(); true`);
+    await wait(async () => quick !== null && !!release);
+    release();
+    await wait(async () => inWindow.length === 1);
+    assert("「也打开终端窗口」开始后在终端窗口里显示它", ctx.codeLink.store.session(project.id, inWindow[0])?.herdrPane === "w1:p9");
+    assert("这条路也不弹对话框", await js(`!document.querySelector('[data-testid="start-dialog"]')`));
+    ctx.codeLink.store.patchSession(project.id, inWindow[0], { state: "ended", endedAt: Date.now() });
+    ctx.emit("codeLink/changed", project.id);
+    ctx.ipc.send("codeLink.changed", project.id);
+    ctx.agent.engineViews = engineViews;
     // 别处开始过（对话里、MCP、另一个窗口）：开着的窗口马上重新读上次的选择，不等缓存过期
     let asked = 0;
     ctx.codeLink.startDefaults = () => (asked++, { mode: "run", engine: "ready" });

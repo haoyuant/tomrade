@@ -1,11 +1,13 @@
 import type { AgentSettings, EnginePick, PlaybookRecommendation } from "@tomradex/agent";
-import type { StartOptions } from "@tomradex/code-link";
+import type { StartOptions, StartResult } from "@tomradex/code-link";
 import type { Item } from "@tomradex/domain";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { findEngine, methodWords, ticketMethods, useAgentThread, useAgentThreads, useEngines, usePlaybooks } from "~/lib/agent";
 import { invoke, logQuietly } from "~/lib/api";
 import { defaultStartMode, onStartRequest, useHerdrStatus, useCodeDeliveries, useCodeSessions, useStartDefaults, useStartTicket, useTerminalWindow } from "~/lib/codeLink";
+import { askPanel } from "~/lib/panelRequests";
+import { beginStarting, opensWindow, startWays, useStartingFor, wayKey, wayOf, type StartWay, type WayKind } from "~/lib/startWays";
 import { StartGateFix, useGateWords, type StartFailure } from "./StartGateFix";
 import { StartProgressNote } from "./StartProgress";
 import { useI18n } from "~/lib/i18n";
@@ -13,16 +15,20 @@ import { pickFallbackName } from "~/lib/engines";
 import { engineStateLabel } from "~/lib/localCli";
 import { useHintToast } from "~/lib/onboarding";
 import { STATUS } from "~/lib/domain";
-import { invalidateWorkspace, useItems, useSettings } from "~/lib/queries";
+import { invalidateWorkspace, keys, useItems, useSettings } from "~/lib/queries";
 import { readableError, useToast } from "~/lib/toast";
 import { cn } from "~/lib/utils";
 import { Icon } from "~/components/icons";
 import { useAgentDock } from "~/components/chrome/ProjectShell";
 import { useHerdrHint } from "~/components/setup/HerdrRecommend";
 import { Dialog, DialogBody, DialogClose, DialogFoot, DialogHead } from "~/components/ui/dialog";
-import { Menu, MenuActionItem, MenuHead } from "~/components/ui/menu";
+import { Menu, MenuActionItem, MenuHead, MenuStackItem } from "~/components/ui/menu";
 import { PickSelect } from "~/components/ui/pick-select";
 import { isFullAccess, permissionHint, permissionLabel } from "~/lib/codeLink";
+import type { MessageKey } from "~/lib/i18n";
+
+const WAY_NAME: Record<WayKind, MessageKey> = { pane: "codeLink.wayPane", window: "codeLink.wayWindow", terminal: "codeLink.wayTerminal", here: "codeLink.wayHere", builtin: "codeLink.wayBuiltin" };
+const WAY_NOTE: Record<WayKind, MessageKey> = { pane: "codeLink.wayPaneNote", window: "codeLink.wayWindowNote", terminal: "codeLink.wayTerminalNote", here: "codeLink.wayHereNote", builtin: "codeLink.wayBuiltinNote" };
 
 interface StartTicketProps {
   projectId: string;
@@ -47,8 +53,9 @@ export function StartTicket(props: StartTicketProps) {
   const [open, setOpen] = useState(false);
   // asked to open from elsewhere: in that mode, starting at once so what stopped it shows with its fix
   const [requested, setRequested] = useState<"run" | "terminal" | null>(null);
-  // a start with last time's choices, the dialog only showing its progress and anything that stops it
+  // a start with last time's choices, or a way from ▾: no dialog unless something stops it or needs the person
   const [quick, setQuick] = useState(false);
+  const [way, setWay] = useState<StartWay | null>(null);
   const [task, setTask] = useState<string | undefined>(undefined);
   const { showThread } = useAgentDock();
   const defaults = useStartDefaults();
@@ -64,6 +71,9 @@ export function StartTicket(props: StartTicketProps) {
   const sessions = useCodeSessions(projectId, item.id);
   const deliveries = useCodeDeliveries(projectId, item.id);
   const engines = useEngines();
+  const settings = useSettings();
+  const terminalWindow = useTerminalWindow(projectId).data === true;
+  const starting = useStartingFor(item.id);
   const startable = item.kind === "ticket" && item.status !== "done" && item.status !== "cancelled";
   // Pointed out the first time it could actually run: a local agent is ready to take the ticket.
   useHintToast("hint.start", startable && !!engines.data?.some((e) => e.ok && e.capabilities.some((c) => c === "code" || c === "general")), "onboarding.startHint");
@@ -74,10 +84,24 @@ export function StartTicket(props: StartTicketProps) {
   // A session still at work on it: Start first asks whether to look at it, talk to it, or start another beside it.
   const live = ofDelivery.filter((session) => session.state !== "ended" && session.state !== "lost").sort((a, b) => b.startedAt - a.startedAt)[0];
   // One click goes the way this ticket — else this machine — last started; a first start chooses in the dialog.
-  const lastAgent = ofDelivery.sort((a, b) => b.startedAt - a.startedAt)[0]?.agent ?? defaults.data?.engine ?? null;
+  const latestSession = ofDelivery.sort((a, b) => b.startedAt - a.startedAt)[0];
+  const lastAgent = latestSession?.agent ?? defaults.data?.engine ?? null;
   const quickEngine = lastAgent ? findEngine(engines.data, lastAgent) : undefined;
-  const openDialog = (asQuick: boolean) => {
+  const general = item.workType === "general";
+  const quickWay = quickEngine
+    ? wayOf({
+        mode: defaultStartMode({ latest: latestSession?.mode ?? null, remembered: defaults.data?.mode ?? null, terminalWindow, coding: !general, agentInTerminal: quickEngine.terminal !== false }),
+        engine: quickEngine.id,
+        panes: terminalWindow,
+        window: opensWindow(settings.data?.sessions)
+      })
+    : null;
+  const ways = quickEngine ? startWays({ engines: engines.data, capability: general ? "general" : "code", primary: quickEngine.id, panes: terminalWindow, quick: quickWay }) : [];
+  const wayName = (w: StartWay) => t(WAY_NAME[w.kind], { agent: findEngine(engines.data, w.engine)?.title ?? w.engine });
+  const wayNote = (w: StartWay) => (quickWay && wayKey(w) === wayKey(quickWay) ? t("codeLink.wayDefault", { note: t(WAY_NOTE[w.kind]) }) : t(WAY_NOTE[w.kind]));
+  const openDialog = (asQuick: boolean, chosen: StartWay | null = null) => {
     setQuick(asQuick);
+    setWay(chosen);
     setOpen(true);
   };
   const look = () => {
@@ -89,47 +113,68 @@ export function StartTicket(props: StartTicketProps) {
   return (
     <>
       <span className={cn("split-btn", className)}>
-        {live ? (
-          <Menu
-            label={t("codeLink.liveTitle", { agent: liveWho })}
-            trigger={
-              <button type="button" className="btn btn-primary" data-testid="start-quick">
-                {t("codeLink.continueWith", { agent: liveWho })}
-                <Icon name="i-chevdown" size={11} />
-              </button>
-            }
-          >
-            <MenuHead title={t("codeLink.liveTitle", { agent: liveWho })} />
-            {(live.summary || live.activity) && <p className="meta-txt dense menu-note" data-testid="start-live-said">{live.activity ?? live.summary}</p>}
-            <MenuActionItem icon={<Icon name="i-eye" size={13} />} name={t("codeLink.liveLook")} onSelect={look} />
-            {live.threadId && !live.herdrPane && <MenuActionItem icon={<Icon name="i-send" size={13} />} name={t("codeLink.liveSay")} onSelect={() => showThread(live.threadId!)} />}
-            <MenuActionItem icon={<Icon name="i-plus" size={13} />} name={t("codeLink.liveAnother")} onSelect={() => openDialog(false)} />
-          </Menu>
+        {starting ? (
+          <span className="start-starting" role="status" data-testid="start-starting">
+            <span className="start-starting-mark" aria-hidden="true" />
+            {t("codeLink.startingLine", { agent: starting.agent })}
+          </span>
+        ) : live ? (
+          <>
+            <Menu
+              label={t("codeLink.liveTitle", { agent: liveWho })}
+              trigger={
+                <button type="button" className="btn btn-primary" data-testid="start-quick">
+                  {t("codeLink.continueWith", { agent: liveWho })}
+                  <Icon name="i-chevdown" size={11} />
+                </button>
+              }
+            >
+              <MenuHead title={t("codeLink.liveTitle", { agent: liveWho })} />
+              {(live.summary || live.activity) && <p className="meta-txt dense menu-note" data-testid="start-live-said">{live.activity ?? live.summary}</p>}
+              <MenuActionItem icon={<Icon name="i-eye" size={13} />} name={t("codeLink.liveLook")} onSelect={look} />
+              {live.threadId && !live.herdrPane && <MenuActionItem icon={<Icon name="i-send" size={13} />} name={t("codeLink.liveSay")} onSelect={() => showThread(live.threadId!)} />}
+              <MenuActionItem icon={<Icon name="i-plus" size={13} />} name={t("codeLink.liveAnother")} onSelect={() => openDialog(false)} />
+            </Menu>
+            <button type="button" className="btn btn-primary split-more" data-testid="start-ticket" title={t("codeLink.chooseHow")} aria-label={t("codeLink.chooseHow")} onClick={() => openDialog(false)}>
+              <Icon name="i-sliders" size={13} />
+            </button>
+          </>
         ) : quickEngine ? (
-          <button type="button" className="btn btn-primary" data-testid="start-quick" title={t("codeLink.quickHint")} onClick={() => openDialog(true)}>
-            {t(hasSession ? "codeLink.continueWith" : "codeLink.startWith", { agent: quickEngine.title })}
+          <>
+            <button type="button" className="btn btn-primary" data-testid="start-quick" title={t("codeLink.quickHint")} onClick={() => openDialog(true)}>
+              {t(hasSession ? "codeLink.continueWith" : "codeLink.startWith", { agent: quickEngine.title })}
+            </button>
+            <Menu
+              label={t("codeLink.waysLabel")}
+              wide
+              trigger={
+                <button type="button" className="btn btn-primary split-more" data-testid="start-ways" title={t("codeLink.waysLabel")} aria-label={t("codeLink.waysLabel")}>
+                  <Icon name="i-chevdown" size={11} />
+                </button>
+              }
+            >
+              <MenuHead title={t("codeLink.waysLabel")} />
+              {ways.map((w) => <MenuStackItem key={wayKey(w)} name={wayName(w)} sub={wayNote(w)} onSelect={() => openDialog(true, w)} />)}
+              <MenuActionItem icon={<Icon name="i-sliders" size={13} />} name={t("codeLink.fullSettings")} onSelect={() => openDialog(false)} />
+            </Menu>
+          </>
+        ) : (
+          <button type="button" className="btn btn-primary" data-testid="start-ticket" onClick={() => openDialog(false)}>
+            {t(hasSession ? "codeLink.continue" : "codeLink.start")}
           </button>
-        ) : null}
-        <button
-          type="button"
-          className={cn("btn btn-primary", (live || quickEngine) && "split-more")}
-          data-testid="start-ticket"
-          title={live || quickEngine ? t("codeLink.chooseHow") : undefined}
-          aria-label={live || quickEngine ? t("codeLink.chooseHow") : undefined}
-          onClick={() => openDialog(false)}
-        >
-          {live || quickEngine ? <Icon name="i-sliders" size={13} /> : t(hasSession ? "codeLink.continue" : "codeLink.start")}
-        </button>
+        )}
       </span>
       {open && (
         <StartTicketDialog
           {...props}
           requested={requested}
           quick={quick}
+          way={way}
           task={task}
           onClose={() => {
             setOpen(false);
             setQuick(false);
+            setWay(null);
             setRequested(null);
             setTask(undefined);
           }}
@@ -147,12 +192,16 @@ function StartTicketDialog({
   onClose,
   requested,
   quick,
+  way,
   task
-}: StartTicketProps & { onClose: () => void; requested?: "run" | "terminal" | null; quick?: boolean; task?: string }) {
+}: StartTicketProps & { onClose: () => void; requested?: "run" | "terminal" | null; quick?: boolean; way?: StartWay | null; task?: string }) {
   const { t } = useI18n();
   const toast = useToast();
   const qc = useQueryClient();
-  const { showThread, openSettings } = useAgentDock();
+  const { showThread, openSettings, setAiOpen } = useAgentDock();
+  // A quick start says nothing until something stops it or needs the person: then the dialog shows, with the fix.
+  const [shown, setShown] = useState(!quick);
+  const reveal = () => setShown(true);
   const general = item.workType === "general";
   const engines = useEngines();
   const settings = useSettings();
@@ -185,7 +234,7 @@ function StartTicketDialog({
   // How Start was last left on this machine, before this ticket's own thread says anything.
   const defaults = useStartDefaults();
   const rememberedStart = defaults.data ?? null;
-  const [chosenMode, setChosenMode] = useState<StartOptions["mode"] | null>(requested ?? null);
+  const [chosenMode, setChosenMode] = useState<StartOptions["mode"] | null>(requested ?? way?.mode ?? null);
   // Coding work goes to Tomrade's own Terminal window when it can show it, unless the agent picked last has no terminal.
   const terminalWindowQuery = useTerminalWindow(projectId);
   const terminalWindow = terminalWindowQuery.data === true;
@@ -197,6 +246,9 @@ function StartTicketDialog({
   const mode: StartOptions["mode"] =
     chosenMode ?? defaultStartMode({ latest: latest?.mode ?? null, remembered: rememberedStart?.mode ?? null, terminalWindow, coding: !general, agentInTerminal });
   const herdrStatus = useHerdrStatus(mode === "terminal");
+  // A start in a pane is watched in the panel, unless this start or Settings › Sessions brings up the Terminal window too.
+  const [chosenWindow, setChosenWindow] = useState<boolean | null>(way ? way.window : null);
+  const alsoWindow = chosenWindow ?? opensWindow(settings.data?.sessions);
   // Coding work in a terminal lands in Tomrade's Terminal window: the choices say so.
   const inTomrade = terminalWindow && !general;
   const herdrHint = useHerdrHint();
@@ -207,7 +259,7 @@ function StartTicketDialog({
     [engines.data, capability, mode]
   );
   const otherAllowed = mode === "terminal" && !!otherCommand;
-  const [chosenEngine, setChosenEngine] = useState<string | null>(null);
+  const [chosenEngine, setChosenEngine] = useState<string | null>(way?.engine ?? null);
   const lastAgent = latest?.agent ?? thread?.engine ?? rememberedStart?.engine ?? null;
   const remembered = findEngine(candidates, lastAgent)?.id ?? lastAgent;
   const engineId =
@@ -273,49 +325,64 @@ function StartTicketDialog({
   const ready = engineId === "other" ? true : !!engine?.ok;
   const busy = start.isPending || takeover.isPending;
 
+  // A session in a background pane: the panel opens on it once the list it is read from has it.
+  const watchInPanel = async (sessionId: string) => {
+    setAiOpen(true);
+    await qc.fetchQuery({ queryKey: keys.codeLink.recentSessions(projectId), queryFn: () => invoke("codeLink.recentSessions", projectId) }).catch(logQuietly("codeLink.recentSessions"));
+    askPanel({ kind: "openSession", sessionId });
+  };
+
   // `first`: another ticket (a bootstrap) is started with these choices instead, and this one follows it once it lands.
   const submit = (allowBlocked = waitsOn.length > 0, releaseBranch = false, first?: { itemId: string; key: string }) => {
     setError(null);
     const options: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(pickValues)) if (value) options[key] = value;
-    start.mutate(
-      first
-        ? { itemId: first.itemId, mode, engine: engineId, options, ...(permissionMode ? { permissionMode } : {}), then: item.id }
-        : { itemId: item.id, mode, engine: engineId, options, ...(general ? { playbook } : {}), ...(permissionMode ? { permissionMode } : {}), ...(allowBlocked ? { allowBlocked } : {}), ...(releaseBranch ? { releaseBranch } : {}), ...(task ? { message: task } : {}) },
-      {
-        onSuccess: (result) => {
-          if (!result.ok) {
-            setError({ message: result.message, failure: result });
-            return;
-          }
-          onClose();
-          if (first) {
-            toast({ body: t("codeLink.bootstrapFirstToast", { bootstrap: first.key, key: item.key }) });
-            if (result.mode === "run" && result.threadId) showThread(result.threadId);
-            return;
-          }
-          const vars = { key: item.key, branch: result.branch };
-          const warning = result.warnings?.join("\n");
-          if (result.mode === "run") {
-            const started = result.waitingOn ? t("codeLink.waitingToast", { question: result.waitingOn }) : t(result.continued ? "codeLink.continuedToast" : "codeLink.startedToast", vars);
-            toast({ body: warning ? `${started}\n${warning}` : started });
-            if (result.threadId) showThread(result.threadId);
-          } else if (result.launched) {
-            herdrHint(result, herdrStatus.data);
-            // In herdr: brought up in Tomrade's Terminal window when that is on, else where herdr shows it.
-            const shown = result.pane ? invoke("codeLink.showSession", projectId, result.sessionId).catch(() => false) : Promise.resolve(false);
-            void shown.then((inWindow) => {
-              const started = t(inWindow ? "codeLink.terminalWindowToast" : "codeLink.terminalToast", vars);
-              toast({ body: warning ? `${started}\n${warning}` : started });
-            });
-          } else {
-            const command = result.command ?? "";
-            toast({ body: warning ? `${command}\n${warning}` : command, actions: [{ label: t("codeLink.copyCommand"), run: () => void navigator.clipboard?.writeText(command).then(() => toast({ body: t("codeLink.commandCopied") })) }] });
-          }
-        },
-        onError: (err) => setError({ message: readableError(err) })
+    const target = first ? (items.data?.find((other) => other.id === first.itemId) ?? item) : item;
+    // Shown on the ticket and atop the session bar until its session is there to show.
+    const done = beginStarting({ projectId, itemId: target.id, ticket: target.key, title: target.title, agent: engineId === "other" ? t("codeLink.otherAgent") : (engine?.title ?? engineId) });
+    const failed = (failure: { message: string; failure?: StartFailure }) => {
+      setError(failure);
+      reveal();
+    };
+    const launched = async (result: Extract<StartResult, { ok: true }>) => {
+      onClose();
+      if (first) {
+        toast({ body: t("codeLink.bootstrapFirstToast", { bootstrap: first.key, key: item.key }) });
+        if (result.mode === "run" && result.threadId) showThread(result.threadId);
+        return;
       }
-    );
+      const vars = { key: item.key, branch: result.branch };
+      const warning = result.warnings?.join("\n");
+      const say = (body: string) => toast({ body: warning ? `${body}\n${warning}` : body });
+      if (result.mode === "run") {
+        say(result.waitingOn ? t("codeLink.waitingToast", { question: result.waitingOn }) : t(result.continued ? "codeLink.continuedToast" : "codeLink.startedToast", vars));
+        if (result.threadId) showThread(result.threadId);
+      } else if (result.launched && result.pane && !alsoWindow) {
+        herdrHint(result, herdrStatus.data);
+        await watchInPanel(result.sessionId);
+        say(t("codeLink.paneToast", vars));
+      } else if (result.launched) {
+        herdrHint(result, herdrStatus.data);
+        // In herdr: brought up in Tomrade's Terminal window when that is on, else where herdr shows it.
+        const inWindow = result.pane ? await invoke("codeLink.showSession", projectId, result.sessionId).catch(() => false) : false;
+        say(t(inWindow ? "codeLink.terminalWindowToast" : "codeLink.terminalToast", vars));
+      } else {
+        const command = result.command ?? "";
+        toast({ body: warning ? `${command}\n${warning}` : command, actions: [{ label: t("codeLink.copyCommand"), run: () => void navigator.clipboard?.writeText(command).then(() => toast({ body: t("codeLink.commandCopied") })) }] });
+      }
+      // the bar has the new session before the line saying it starts goes
+      await qc.refetchQueries({ queryKey: keys.codeLink.recentSessions(projectId), type: "active" }, { cancelRefetch: false });
+    };
+    // Awaited rather than mutate's callbacks: what follows a start still happens when this ticket's page was left meanwhile.
+    void start
+      .mutateAsync(
+        first
+          ? { itemId: first.itemId, mode, engine: engineId, options, ...(permissionMode ? { permissionMode } : {}), then: item.id }
+          : { itemId: item.id, mode, engine: engineId, options, ...(general ? { playbook } : {}), ...(permissionMode ? { permissionMode } : {}), ...(allowBlocked ? { allowBlocked } : {}), ...(releaseBranch ? { releaseBranch } : {}), ...(task ? { message: task } : {}) }
+      )
+      .then((result) => (result.ok ? launched(result) : failed({ message: result.message, failure: result })))
+      .catch((err: unknown) => failed({ message: readableError(err) }))
+      .finally(done);
   };
 
   // One click: once everything the choices rest on is known, start with them — unless something needs the person first.
@@ -324,7 +391,9 @@ function StartTicketDialog({
   useEffect(() => {
     if (!quick || quickTried.current || !known) return;
     quickTried.current = true;
-    if (ready && !waitsOn.length && !asked) submit();
+    // a way from ▾ whose agent cannot take it here is not started with another one behind the person's back
+    if (ready && !waitsOn.length && !asked && (!way || engineId === way.engine)) submit();
+    else reveal();
   });
 
   // opened because a start elsewhere stopped: try once more here, once the agents are known, so the problem shows with its fix
@@ -335,6 +404,7 @@ function StartTicketDialog({
     submit();
   });
 
+  if (!shown) return null;
   return (
     <Dialog open onOpenChange={(next) => !next && onClose()} label={title} className="sheet-md">
       <DialogHead title={title} />
@@ -354,7 +424,13 @@ function StartTicketDialog({
                 <Icon name="i-terminal" size={13} /> {t(inTomrade ? "codeLink.startTomrade" : "codeLink.startTerminal")}
               </button>
             </div>
-            <p className="meta-txt">{t(mode === "run" ? (general ? "codeLink.startHereGeneralHint" : "codeLink.startHereHint") : general ? "codeLink.startTerminalGeneralHint" : inTomrade ? "codeLink.startTomradeHint" : "codeLink.startTerminalHint")}</p>
+            <p className="meta-txt">{t(mode === "run" ? (general ? "codeLink.startHereGeneralHint" : "codeLink.startHereHint") : general ? "codeLink.startTerminalGeneralHint" : inTomrade ? (alsoWindow ? "codeLink.startTomradeHint" : "codeLink.startPaneHint") : "codeLink.startTerminalHint")}</p>
+            {mode === "terminal" && terminalWindow && (
+              <label className="cfg-row" style={{ cursor: "pointer" }}>
+                <input type="checkbox" data-testid="start-also-window" checked={alsoWindow} disabled={busy} onChange={(event) => setChosenWindow(event.target.checked)} />
+                <span className="cfg-name">{t("codeLink.alsoWindow")}</span>
+              </label>
+            )}
             {mode === "terminal" && herdrStatus.data && (
               <p className="meta-txt" role="status" data-testid="start-herdr-status">
                 {t(herdrStatus.data === "running" ? "codeLink.herdrRunning" : herdrStatus.data === "notRunning" ? "codeLink.herdrNotRunning" : "codeLink.herdrNotInstalled")}

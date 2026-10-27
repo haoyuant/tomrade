@@ -7,6 +7,7 @@ import { timeAgo } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useIsSelected, useWorkspace } from "./context";
 import { isCommitKey } from "~/lib/keys";
+import { useStartingFor } from "~/lib/startWays";
 
 export interface CardProps {
   item: Item;
@@ -60,6 +61,8 @@ export function Card(props: CardProps) {
   const { item } = props;
   const { boards, query, epicNames, badges, fieldById } = useWorkspace();
   const selected = useIsSelected(item.id);
+  // a start under way from its page or ⌘K: read from memory, no query per card
+  const starting = useStartingFor(item.id);
   // The latest handlers, behind callbacks that stay the same: the face is kept across renders.
   const handlers = useRef(props);
   handlers.current = props;
@@ -75,6 +78,7 @@ export function Card(props: CardProps) {
       dragging={!!props.dragging}
       dragHandleRef={props.dragHandleRef}
       marks={badges[item.id] ?? NO_MARKS}
+      starting={starting?.agent ?? null}
       owner={!grouped("board") && !pinnedBoard ? boards.find((b) => b.id === item.boardId) : undefined}
       epicName={item.parentId && !grouped("epic") ? epicNames.get(item.parentId) : undefined}
       fields={query.fields}
@@ -91,6 +95,7 @@ const CardFace = memo(function CardFace({
   dragging,
   dragHandleRef,
   marks,
+  starting,
   owner,
   epicName,
   fields,
@@ -103,6 +108,8 @@ const CardFace = memo(function CardFace({
   dragging: boolean;
   dragHandleRef?: (node: HTMLElement | null) => void;
   marks: Badge[];
+  /** The agent a start under way runs, until its session is up. */
+  starting: string | null;
   owner: Board | undefined;
   epicName: string | undefined;
   fields: string[];
@@ -157,6 +164,12 @@ const CardFace = memo(function CardFace({
           <span className="card-date">{timeAgo(item.updatedAt)}</span>
         </span>
         <span className="card-title">{item.title}</span>
+        {starting && (
+          <span className="card-starting" role="status">
+            <span className="start-starting-mark" aria-hidden="true" />
+            {t("codeLink.startingLine", { agent: starting })}
+          </span>
+        )}
         {(epicName || item.labels.length > 0 || marks.length > 0 || customs.length > 0) && (
           <span className="card-foot">
             {epicName && <span className="card-epic">{epicName}</span>}

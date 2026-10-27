@@ -7,6 +7,8 @@ export type OpenAtStart = "main" | "terminal" | "both";
 export interface SessionPrefs {
   openAtStart: OpenAtStart;
   afterAnswer: "next" | "stay";
+  /** A terminal start runs in a background pane watched in the panel, or brings up the Terminal window too. */
+  newWhere: "pane" | "window";
   /** The `tomrade` command on the person's PATH (tomrade-command.ts). */
   commandOnPath: boolean;
 }
@@ -22,20 +24,22 @@ export const SESSIONS_SECTION: SettingsSection<SessionPrefs> = {
   schema: z.object({
     openAtStart: z.enum(["main", "terminal", "both"]).default("main").meta({ title: en("openAtStartTitle") }).describe(en("openAtStartDescription")),
     afterAnswer: z.enum(["next", "stay"]).default("next").meta({ title: en("afterAnswerTitle") }).describe(en("afterAnswerDescription")),
+    newWhere: z.enum(["pane", "window"]).default("pane").meta({ title: en("newWhereTitle") }).describe(en("newWhereDescription")),
     commandOnPath: z.boolean().default(true).meta({ title: en("commandOnPathTitle") }).describe(en("commandOnPathDescription"))
   }),
-  defaults: { openAtStart: "main", afterAnswer: "next", commandOnPath: true },
+  defaults: { openAtStart: "main", afterAnswer: "next", newWhere: "pane", commandOnPath: true },
   order: 16,
   scope: "user",
   agent: "read",
   words: {
-    en: { fields: { openAtStart: { options: { main: en("openAtStartMain"), terminal: en("openAtStartTerminal"), both: en("openAtStartBoth") } }, afterAnswer: { options: { next: en("afterAnswerNext"), stay: en("afterAnswerStay") } } } },
+    en: { fields: { openAtStart: { options: { main: en("openAtStartMain"), terminal: en("openAtStartTerminal"), both: en("openAtStartBoth") } }, afterAnswer: { options: { next: en("afterAnswerNext"), stay: en("afterAnswerStay") } }, newWhere: { options: { pane: en("newWherePane"), window: en("newWhereWindow") } } } },
     zh: {
       title: zh("sessionsTitle"),
       description: zh("sessionsDescription"),
       fields: {
         openAtStart: { title: zh("openAtStartTitle"), description: zh("openAtStartDescription"), options: { main: zh("openAtStartMain"), terminal: zh("openAtStartTerminal"), both: zh("openAtStartBoth") } },
         afterAnswer: { title: zh("afterAnswerTitle"), description: zh("afterAnswerDescription"), options: { next: zh("afterAnswerNext"), stay: zh("afterAnswerStay") } },
+        newWhere: { title: zh("newWhereTitle"), description: zh("newWhereDescription"), options: { pane: zh("newWherePane"), window: zh("newWhereWindow") } },
         commandOnPath: { title: zh("commandOnPathTitle"), description: zh("commandOnPathDescription") }
       }
     }

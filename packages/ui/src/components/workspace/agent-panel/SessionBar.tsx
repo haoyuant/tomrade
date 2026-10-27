@@ -6,6 +6,7 @@ import { findEngine } from "~/lib/agent";
 import { timeAgo } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import type { BarRow, BarStatus } from "~/lib/sessionBar";
+import type { Starting } from "~/lib/startWays";
 
 export type BarMode = "rail" | "cards";
 type Filter = "all" | Exclude<BarStatus, "idle">;
@@ -22,8 +23,10 @@ export function StatusMark({ status, size = 10 }: { status: BarStatus; size?: nu
  * The session bar on the panel's right edge: a column of dots to switch by, or cards that say what each is doing.
  * Memoized: the panel renders every frame a reply streams, and the bar has nothing new to show then.
  */
-export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engines, onMode, onPick, onNew, onHistory }: {
+export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mode, engines, onMode, onPick, onNew, onHistory }: {
   rows: BarRow[];
+  /** Starts under way, before their sessions are there: on top, a dashed ring. */
+  starting: readonly Starting[];
   openKey: string | null;
   mode: BarMode;
   engines: EngineView[] | undefined;
@@ -93,6 +96,15 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engine
           </span>
         )}
         <div className="sbar-dots" onScroll={() => setPeek(null)}>
+          {starting.map((s) => (
+            <span key={s.id} className="sbar-dot is-starting" data-status="start" role="status" aria-label={`${s.ticket} ${s.title}, ${t("codeLink.startingLine", { agent: s.agent })}`}>
+              <span className="sbar-dot-face">
+                {s.ticket.replace(/^.*-/, "")}
+                <span className="sbar-new-badge">{t("sessionBar.new")}</span>
+              </span>
+              <span className="sbar-dot-where">{t("sessionBar.statusStarting")}</span>
+            </span>
+          ))}
           {live.map(dot)}
           {ended.length > 0 && <span className="sbar-rule" />}
           {ended.map(dot)}
@@ -136,6 +148,16 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engine
         ))}
       </div>
       <div className="sbar-cards">
+        {(filter === "all" || filter === "run") && starting.map((s) => (
+          <div key={s.id} className="sbar-card is-starting" data-status="start" role="status">
+            <span className="sbar-card-title">
+              <span className="start-starting-mark" aria-hidden="true" />
+              <span>{`${s.ticket} ${s.title}`}</span>
+              <span className="sbar-new-badge">{t("sessionBar.new")}</span>
+            </span>
+            <span className="meta-txt dense">{t("codeLink.startingLine", { agent: s.agent })}</span>
+          </div>
+        ))}
         {shown.map((r) => (
           <button key={r.key} type="button" className="sbar-card" data-status={r.status} data-depth={r.depth || undefined} aria-current={r.key === openKey ? "true" : undefined} onClick={() => onPick(r)}>
             <span className="sbar-card-title">
@@ -147,7 +169,7 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engine
             {said(r) && <span className={r.status === "wait" ? "sbar-card-wait" : r.status === "done" ? "sbar-card-outcome" : "sbar-card-said"}>{said(r)}</span>}
           </button>
         ))}
-        {!shown.length && <p className="meta-txt dense sbar-empty">{t("sessionBar.empty")}</p>}
+        {!shown.length && !starting.length && <p className="meta-txt dense sbar-empty">{t("sessionBar.empty")}</p>}
       </div>
       <div className="sbar-foot">
         <span>{t("review.historyNote")}</span>

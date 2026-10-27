@@ -162,7 +162,11 @@ app.whenReady().then(async () => {
     const pressed = () => js(`document.querySelector('[data-testid="start-mode"] [aria-pressed="true"]')?.dataset.mode`);
     assert("终端窗口可用时，默认在 Tomrade 终端里跑", (await pressed()) === "terminal");
     assert("两个选项说清楚去处", await js(`(() => { const b = [...document.querySelectorAll('[data-testid="start-mode"] button')].map(x => x.textContent.trim()); return b.includes('在助手面板里跑') && b.includes('在 Tomrade 终端里跑'); })()`));
-    assert("说明里写着在终端窗口里打开", await js(`[...document.querySelectorAll('.meta-txt')].some(p => p.textContent.includes('Tomrade 的终端窗口'))`));
+    // 设置 › 会话默认「后台窗格」：不勾「也打开终端窗口」时在面板里看
+    assert("默认不勾「也打开终端窗口」，说明写着在后台窗格里跑", await js(`!document.querySelector('[data-testid="start-also-window"]').checked && [...document.querySelectorAll('.meta-txt')].some(p => p.textContent.includes('后台窗格'))`));
+    await js(`document.querySelector('[data-testid="start-also-window"]').click(); true`);
+    await wait(() => js(`document.querySelector('[data-testid="start-also-window"]').checked`));
+    assert("勾上后说明里写着在终端窗口里打开", await js(`[...document.querySelectorAll('.meta-txt')].some(p => p.textContent.includes('Tomrade 的终端窗口'))`));
     await shot("start-terminal-window.png");
     await wait(() => js(`!![...document.querySelectorAll('#stEngine option')].find(o => o.value === 'ready')`));
     await wait(() => js(`!document.querySelector('[data-testid="start-confirm"]').disabled`));
