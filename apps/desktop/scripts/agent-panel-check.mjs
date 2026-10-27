@@ -612,6 +612,19 @@ const run = async () => {
   await sleep(300);
   check("⌘\\ turns them back into dots, and the choice is kept", (await bar())?.mode === "rail" && (await $(`localStorage.getItem('tomrade.ai.sessionBar')`)) === "rail");
   await shot("session-bar.png");
+
+  // The Terminal window from the main window: the title bar's button and ⇧⌘T run its own command for this project.
+  const opened = [];
+  const runCommand = ctx.contributions.run.bind(ctx.contributions);
+  ctx.contributions.run = async (id, scope) => (id === "code-sessions.open" ? (opened.push(scope.projectId), {}) : runCommand(id, scope));
+  check("the title bar offers the Terminal window", await $(`!!document.querySelector('[data-testid="titlebar-terminal"]')`));
+  await press(`document.querySelector('[data-testid="titlebar-terminal"]')`);
+  await sleep(400);
+  check("its button opens this project's Terminal window", opened.length === 1 && opened[0] === alpha.id, opened);
+  await $(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'T', code: 'KeyT', shiftKey: true, metaKey: ${process.platform === "darwin"}, ctrlKey: ${process.platform !== "darwin"}, bubbles: true, cancelable: true }));true`);
+  await sleep(400);
+  check("⇧⌘T opens it too", opened.length === 2 && opened[1] === alpha.id, opened);
+  ctx.contributions.run = runCommand;
   check("harness reached the end", true);
 };
 

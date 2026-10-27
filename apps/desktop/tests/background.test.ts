@@ -6,9 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const quit = vi.hoisted(() => ({ leaving: false, approved: false }));
 const notices = vi.hoisted(() => ({ shown: 0 }));
+const trays = vi.hoisted(() => ({ menu: null as unknown }));
 vi.mock("electron", () => ({
-  app: { dock: { hide: vi.fn(), show: vi.fn(async () => {}), setIcon: vi.fn() } },
-  Menu: { buildFromTemplate: () => ({}) },
+  app: { dock: { hide: vi.fn(), show: vi.fn(async () => {}), setIcon: vi.fn(), setMenu: vi.fn() }, quit: vi.fn() },
+  Menu: { buildFromTemplate: (template: unknown) => ({ template }) },
   nativeImage: { createFromPath: () => ({ setTemplateImage: () => {} }) },
   Notification: class {
     static isSupported = () => true;
@@ -17,7 +18,10 @@ vi.mock("electron", () => ({
   shell: {},
   Tray: class {
     setToolTip() {}
-    setContextMenu() {}
+    on() {}
+    setContextMenu(menu: unknown) {
+      trays.menu = menu;
+    }
     destroy() {}
   }
 }));
@@ -212,5 +216,73 @@ describe("the Dock icon", () => {
     cameBack(last);
     close(last);
     expect(dock.hide).not.toHaveBeenCalled();
+  });
+});
+
+describe("the Dock and tray menus", () => {
+  const platform = process.platform;
+  let disposers: (() => void)[] = [];
+  type Row = { label?: string; type?: string; click?: () => void };
+  const rows = (menu: unknown) => (menu as { template: Row[] }).template;
+  const dock = app.dock as unknown as { setMenu: ReturnType<typeof vi.fn> };
+  const start = (opts: { keepRunning?: boolean; terminal?: boolean } = {}) => {
+    const file = path.join(dir, "background.json");
+    writePrefs(file, { keepRunning: !!opts.keepRunning, noticed: true });
+    const ran: unknown[][] = [];
+    const emitted: unknown[][] = [];
+    const listeners = new Map<string, (...args: unknown[]) => void>();
+    const services: Record<string, unknown> = {
+      contributions: { commands: () => (opts.terminal === false ? [] : [{ id: "code-sessions.open" }]), run: async (...args: unknown[]) => (ran.push(args), {}) },
+      projects: {
+        list: () => [
+          { id: "old", name: "Old", archived: false, updatedAt: 1 },
+          { id: "new", name: "New", archived: false, updatedAt: 9 },
+          { id: "gone", name: "Gone", archived: true, updatedAt: 5 }
+        ]
+      }
+    };
+    const ctx = {
+      logger: () => ({ warn: () => {} }),
+      get: (name: string) => services[name],
+      on: (name: string, fn: (...args: unknown[]) => void) => void listeners.set(name, fn),
+      emit: (...args: unknown[]) => void emitted.push(args),
+      ipc: { handle: () => {}, send: () => {} },
+      effect: (fn: () => () => void) => void disposers.push(fn())
+    };
+    background.apply(ctx as never, { file });
+    return { ran, emitted, listeners };
+  };
+  beforeEach(() => {
+    Object.defineProperty(process, "platform", { value: "darwin" });
+    dock.setMenu.mockClear();
+    trays.menu = null;
+  });
+  afterEach(() => {
+    Object.defineProperty(process, "platform", { value: platform });
+    for (const dispose of disposers.splice(0)) dispose();
+  });
+
+  it("offers each project's Terminal window in the Dock menu, newest first, and the main window", () => {
+    const { ran } = start();
+    const menu = rows(dock.setMenu.mock.calls.at(-1)![0]);
+    expect(menu.map((r) => r.label ?? r.type)).toEqual(["Terminal window · New", "Terminal window · Old", "separator", "Open main window"]);
+    menu[0].click!();
+    expect(ran).toEqual([["code-sessions.open", { projectId: "new" }]]);
+  });
+
+  it("offers only the main window where there is no Terminal window", () => {
+    start({ terminal: false });
+    expect(rows(dock.setMenu.mock.calls.at(-1)![0]).map((r) => r.label)).toEqual(["Open main window"]);
+  });
+
+  it("lists what waits on the person at the top of the tray menu and opens it as a notification would", () => {
+    const { listeners, emitted } = start({ keepRunning: true });
+    const entry = { key: "session:s", projectId: "p", threadId: null, itemId: "i", itemKey: "AL-1", kind: "waiting", who: "Claude Code", text: "needs your approval", since: 1 };
+    listeners.get("attention/changed")!([entry]);
+    const menu = rows(trays.menu);
+    expect(menu[0].label).toBe("◆ AL-1 · Claude Code: needs your approval");
+    expect(menu.slice(1, 4).map((r) => r.label ?? r.type)).toEqual(["separator", "Terminal window · New", "Terminal window · Old"]);
+    menu[0].click!();
+    expect(emitted).toEqual([["attention/open", entry]]);
   });
 });
