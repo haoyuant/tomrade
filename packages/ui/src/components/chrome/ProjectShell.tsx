@@ -3,6 +3,7 @@ import { Outlet, useNavigate, useParams } from "@tanstack/react-router";
 import type { FocusRef } from "@tomradex/agent";
 import { AgentPanel, aiOpenKey } from "~/components/workspace/AgentPanel";
 import { onOpenRequest, takeOpenRequest } from "~/lib/attention";
+import { askPanel } from "~/lib/panelRequests";
 import { usePanelOpen } from "~/lib/panel";
 import { Surface } from "~/lib/analytics";
 import { hits } from "~/lib/keybindings";
@@ -113,16 +114,19 @@ export function ProjectShell() {
     },
     [navigate, projectId]
   );
-  // A clicked notification for this project: its conversation, or the ticket when it has none.
+  // A clicked notification for this project: its conversation, its terminal session in the panel, or the ticket when it has neither.
   useEffect(() => {
     const take = () => {
       const entry = takeOpenRequest(projectId);
       if (entry?.threadId) showThread(entry.threadId);
-      else if (entry?.itemId) openIssue(entry.itemId);
+      else if (entry?.sessionId) {
+        setAiOpen(true);
+        askPanel({ kind: "openSession", sessionId: entry.sessionId });
+      } else if (entry?.itemId) openIssue(entry.itemId);
     };
     take();
     return onOpenRequest(take);
-  }, [projectId, showThread, openIssue]);
+  }, [projectId, showThread, openIssue, setAiOpen]);
 
   const openSettings = useCallback((engineId?: string) => bindingRef.current?.openSettings?.(engineId), []);
   const openRepositories = useCallback(() => bindingRef.current?.onOpenRepositories?.(), []);

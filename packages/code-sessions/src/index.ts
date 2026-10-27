@@ -126,6 +126,9 @@ export function isLayout(value: unknown): value is Layout {
   return v.type === "split" && (v.direction === "row" || v.direction === "column") && typeof v.ratio === "number" && isLayout(v.a) && isLayout(v.b);
 }
 
+/** Every cell of a layout, empty ones too, in the reading order the window numbers them by. */
+const cellsIn = (layout: Layout): Extract<Layout, { type: "leaf" }>[] => (layout.type === "leaf" ? [layout] : [...cellsIn(layout.a), ...cellsIn(layout.b)]);
+
 const leafIds = (layout: Layout): string[] => (layout.type === "leaf" ? (layout.sessionId ? [layout.sessionId] : []) : [...leafIds(layout.a), ...leafIds(layout.b)]);
 
 /** The cell of that id in a saved layout, if the layout has it. */
@@ -1308,6 +1311,17 @@ function apply(ctx: Context, config: Config) {
     const bounds = replayBounds(projectId, sessionId);
     if (!bounds || !recorder.has(bounds.pane, bounds.from, bounds.to)) return null;
     return recorder.slice(bounds.pane, bounds.from, bounds.to);
+  });
+  // The tray's "· cell 2" and its way to a session's cell: only while the window is open to show them.
+  ctx.on("codeLink/cells", (projectId) => {
+    const win = open.get(projectId);
+    if (!win || win.closed) return;
+    const layout = stateOf(config.stateFile).layouts?.[projectId];
+    return cellsIn(isLayout(layout) ? layout : fresh()).flatMap((leaf, i) => (leaf.sessionId ? [{ sessionId: leaf.sessionId, n: i + 1 }] : []));
+  });
+  ctx.on("codeLink/new-terminal", async (projectId) => {
+    if (!(await showable())) return;
+    return !!(await term.openTerminal(projectId, ""));
   });
   ctx.on("settings/changed", () => {
     // Turned off: what is being recorded stops here; a cap lowered takes effect on what is kept.

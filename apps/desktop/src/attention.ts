@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { RunView, ThreadSummary } from "@tomradex/agent";
 import type { SettingsSection } from "@tomradex/settings";
 import type {} from "@tomradex/code-link";
+import { PROMPT_LINES, promptOnScreen } from "@tomradex/code-link/prompt";
 import type {} from "@tomradex/ipc";
 import type { ImReminder } from "@tomradex/im";
 import { showMainWindow, whenLoaded } from "./main-window.js";
@@ -25,9 +26,14 @@ export interface AttentionEntry {
   text: string | null;
   /** Since when it has waited in this kind, as far as this run of the app has seen. */
   since: number;
-  /** Where the person was already told, at the terminal: no system notification on top (the count and the badge stay). */
+  /** The terminal session, when it is one: opened in its cell, and answered on its screen. */
+  sessionId?: string | null;
+  /** Where the person may be told already: herdr's own window, while a client of its own is attached to show it (see `tomradeTells`). */
   toldIn?: "herdr";
 }
+
+/** What opening an entry needs: the tray's running sessions are opened the same way. */
+export type AttentionTarget = Pick<AttentionEntry, "projectId" | "threadId" | "itemId" | "sessionId">;
 
 /** What one notification says, and the entry it opens when clicked. */
 export interface AttentionNote {
@@ -66,7 +72,7 @@ declare module "cordis" {
     /** The list changed: what the Dock badge counts and the tray menu lists. */
     "attention/changed"(entries: AttentionEntry[]): void;
     /** Somewhere outside the window (the tray menu) asked to show this entry, as a notification click does. */
-    "attention/open"(entry: AttentionEntry): void;
+    "attention/open"(entry: AttentionTarget): void;
   }
 }
 
@@ -79,8 +85,8 @@ declare module "@tomradex/ipc" {
   }
   interface Broadcasts {
     "attention.changed": (entries: AttentionEntry[]) => void;
-    /** A notification was clicked: show its conversation. */
-    "attention.open": (entry: AttentionEntry) => void;
+    /** A notification was clicked: show its conversation, or its terminal session in the panel. */
+    "attention.open": (entry: AttentionTarget) => void;
   }
 }
 
@@ -237,6 +243,50 @@ export class Teller {
   }
 }
 
+/**
+ * Whether the system notification is Tomrade's to show. herdr alerts in its own window, and only while a client of its
+ * own is attached to show it: someone who uses Tomrade's Terminal window alone has nobody else to tell them.
+ */
+export async function tomradeTells(entry: Pick<AttentionEntry, "toldIn">, herdrClient: () => Promise<boolean>): Promise<boolean> {
+  return !entry.toldIn || !(await herdrClient().catch(() => false));
+}
+
+/** What the tray's Allow presses for an entry, and pressing it. */
+export interface TrayAllow {
+  label: string;
+  /** False when nothing was answered: the screen no longer asks, or the answer did not go. */
+  allow(): Promise<boolean>;
+}
+
+/** Null where nothing may be answered from outside the entry's window. */
+export async function allowOf(ctx: Context, entry: AttentionEntry, words: DesktopWords): Promise<TrayAllow | null> {
+  const threadId = entry.threadId;
+  // The assistant's own permission question: its first option, the yes every engine puts first, named as it is.
+  if (entry.kind === "permission" && threadId) {
+    const agent = ctx.get("agent");
+    const pending = agent?.activities().find((a) => a.threadId === threadId)?.pending;
+    const yes = pending?.kind === "permission" ? pending.question.options?.[0] : undefined;
+    if (!agent || !pending || !yes) return null;
+    return {
+      label: yes,
+      allow: async () => {
+        await agent.send(entry.projectId, threadId, { kind: "answer", questionId: pending.question.id, value: yes });
+        return true;
+      }
+    };
+  }
+  // A terminal session: only while its screen shows a permission prompt with yes under the cursor, read as the panel's Allow reads it.
+  const sessionId = entry.sessionId;
+  const codeLink = ctx.get("codeLink");
+  if (entry.kind !== "waiting" || !sessionId || !codeLink) return null;
+  const panel = codeLink.sessionPanel(entry.projectId, sessionId);
+  if (panel.input !== "ok" || !panel.approval) return null;
+  const screen = await codeLink.sessionTail(entry.projectId, sessionId, PROMPT_LINES).catch(() => null);
+  if (!promptOnScreen(screen ?? "")?.allows) return null;
+  // The answer reads the screen again and presses nothing on one that no longer asks.
+  return { label: words("trayAllow"), allow: async () => (await codeLink.sessionAnswer(entry.projectId, sessionId, "allow")) === "answered" };
+}
+
 export interface ImRemindable { remind(n: ImReminder): boolean }
 
 /** The one other place a notice reaches the person while they are away, as they chose. */
@@ -308,8 +358,8 @@ export const attention = {
             out.set(key, {
               key, projectId, threadId: s.threadId, itemId, itemKey: itemKeyOf(projectId, itemId),
               kind: s.state === "error" ? "stuck" : "waiting",
-              who: engineTitle(s.agent), text: clip(s.activity ?? s.summary),
-              // herdr says so in its own window; Tomrade's own terminal host does not.
+              who: engineTitle(s.agent), text: clip(s.activity ?? s.summary), sessionId: s.id,
+              // herdr may say so in its own window; Tomrade's own terminal host does not.
               ...(s.herdrPane && ctx.get("terminals")?.kind === "herdr" ? { toldIn: "herdr" as const } : {})
             });
           }
@@ -325,17 +375,28 @@ export const attention = {
           key, projectId: a.projectId, threadId: a.threadId, itemId, itemKey: itemKeyOf(a.projectId, itemId),
           kind: a.pending.kind === "permission" ? "permission" : "question",
           who: session?.who ?? (thread?.itemId ? engineTitle(thread.engine) : null),
-          text: clip(a.pending.question.text)
+          text: clip(a.pending.question.text),
+          ...(session?.sessionId ? { sessionId: session.sessionId } : {})
         });
       }
       return [...out.values()].sort((x, y) => x.key.localeCompare(y.key));
     };
 
-    const open = (entry: AttentionEntry) => {
+    const open = async (target: AttentionTarget) => {
+      // A terminal session goes to its cell while its project's Terminal window is open; anything else to the main window's panel.
+      const codeLink = ctx.get("codeLink");
+      if (target.sessionId && codeLink && ctx.bail("codeLink/cells", target.projectId) && (await codeLink.showSession(target.projectId, target.sessionId).catch(() => false))) return;
       // Running in the background there may be no window yet: one opens, and hears the entry once it has loaded.
       const win = showMainWindow();
-      if (win) whenLoaded(win, () => ctx.ipc.send("attention.open", entry));
-      else ctx.ipc.send("attention.open", entry);
+      if (win) whenLoaded(win, () => ctx.ipc.send("attention.open", target));
+      else ctx.ipc.send("attention.open", target);
+    };
+    const herdrClient = () => ctx.get("herdr")?.clientAttached() ?? Promise.resolve(false);
+    const show = (note: AttentionNote) => {
+      if (process.platform === "win32") for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed() && win.isFocusable()) win.flashFrame(true);
+      const n = new Notification({ title: note.title, body: note.body, silent: false });
+      n.on("click", () => void open(note.entry));
+      n.show();
     };
 
     const teller = new Teller({
@@ -362,11 +423,8 @@ export const attention = {
             })
             .catch((e) => ctx.logger.warn(`couldn't push: ${(e as Error).message}`));
         }
-        if (!shows || !Notification.isSupported() || note.entry.toldIn) return;
-        if (process.platform === "win32") for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed() && win.isFocusable()) win.flashFrame(true);
-        const n = new Notification({ title: note.title, body: note.body, silent: false });
-        n.on("click", () => open(note.entry));
-        n.show();
+        if (!shows || !Notification.isSupported()) return;
+        void tomradeTells(note.entry, herdrClient).then((ours) => ours && show(note));
       }
     });
 
@@ -415,7 +473,7 @@ export const attention = {
     });
     ctx.on("codeLink/changed", schedule);
     ctx.on("db/opened", schedule);
-    ctx.on("attention/open", open);
+    ctx.on("attention/open", (target) => void open(target));
     // Focusing a window is the person seeing it: stop the taskbar asking.
     const onFocus = (_e: unknown, win: BrowserWindow) => win.flashFrame(false);
     app.on("browser-window-focus", onFocus);

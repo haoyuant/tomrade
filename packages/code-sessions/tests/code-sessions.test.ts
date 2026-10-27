@@ -759,9 +759,16 @@ it("shows a session code link asks for: the window opens or comes forward with i
   const ask = (sessionId: string) => w.ctx.serial("codeLink/show-session", w.project.id, sessionId);
 
   expect(await w.ctx.serial("codeLink/terminal-window", w.project.id)).toBe(true);
+  // Closed: no cells to name.
+  expect(w.ctx.bail("codeLink/cells", w.project.id)).toBeUndefined();
   // Closed: it opens, already asked to reveal the session.
   expect(await ask("s1")).toBe(true);
   expect(opened).toHaveLength(1);
+  // Open: the cells it shows, numbered in reading order, empty ones counted.
+  expect(w.ctx.bail("codeLink/cells", w.project.id)).toEqual([]);
+  const leaf = (id: string, sessionId: string | null) => ({ type: "leaf", id, sessionId });
+  opened[0]!.spec.onMessage({ type: "layout", layout: { type: "split", id: "r", direction: "row", ratio: 0.5, a: leaf("c1", null), b: leaf("c2", "s1") } });
+  expect(w.ctx.bail("codeLink/cells", w.project.id)).toEqual([{ sessionId: "s1", n: 2 }]);
   const first = opened[0]!.states[0]!.reveal;
   expect(first).toMatchObject({ sessionId: "s1" });
   // Open: it comes forward with a new ask, and every later state keeps it until the next.
@@ -866,6 +873,13 @@ it("opens plain terminals in herdr without code link, keeps them, closes them, a
   expect(next.states.at(-1)).toMatchObject({ sessions: [], warning: expect.any(String) });
   expect(next.states.at(-1)!.terminals.map((t) => t.id)).toEqual(["t1", "t2"]);
   sessionsBroken = false;
+
+  // The tray's "Start in a terminal": a plain terminal in a new cell of this window, in the project's folder.
+  expect(await w.ctx.serial("codeLink/new-terminal", w.project.id)).toBe(true);
+  const added = next.states.at(-1)!.terminals.find((t) => t.id !== "t1" && t.id !== "t2");
+  expect(added).toMatchObject({ cwd: repo, pane: expect.any(String) });
+  await until(() => next.states.at(-1)!.reveal?.sessionId === added!.id);
+  fake.exit(added!.pane!);
 
   // Closed by the person: the pane ends and the terminal is forgotten. One whose pane went is forgotten too.
   next.spec.onMessage({ type: "closeTerminal", terminalId: "t1" });

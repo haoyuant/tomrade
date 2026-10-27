@@ -756,7 +756,14 @@ const run = async () => {
   await sleep(1500);
   view = await sessionView();
   check("picking a session in a pane shows it in the panel, with the way to the Terminal window", view?.id === inPane.id && view.show && view.state === "running", view);
-  check("its conversation is read from the agent's record, tool calls folded", view?.lines.map((l) => l[0]).join("|") === "person|agent|tool|agent" && view.lines[2][1] === "Bash · herdr pane read w1:p1" && view.details === 0, view?.lines);
+  // A notification or the tray naming it, with no Terminal window open: the panel shows the session, not its ticket.
+  await newThread();
+  const awayFrom = await sessionView();
+  ctx.emit("attention/open", { projectId: alpha.id, threadId: null, itemId: tailTicket.id, sessionId: inPane.id });
+  await sleep(1500);
+  view = await sessionView();
+  check("opened from a notification or the tray, a terminal session shows in the panel", awayFrom === null && view?.id === inPane.id && !(await $(`location.hash.includes('/i/')`)), { awayFrom, view });
+  check("its conversation is read from the agent's record, tool calls folded",view?.lines.map((l) => l[0]).join("|") === "person|agent|tool|agent" && view.lines[2][1] === "Bash · herdr pane read w1:p1" && view.details === 0, view?.lines);
   check("the strip shows the pane's last lines that say something", view?.strip.join("|") === "❯ claude|⏺ Reading the pane…", view?.strip);
   await press(`[...document.querySelectorAll('.ai-session-convo .cs-convo-line[data-who="tool"]')][0]`);
   await sleep(200);
