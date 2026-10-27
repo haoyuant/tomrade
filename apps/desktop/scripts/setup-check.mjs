@@ -133,7 +133,11 @@ const run = async () => {
     console.log("vendor/pi is missing — run `pnpm --filter @tomrade/desktop fetch:pi` to check the built-in agent");
   } else {
     // Pi talks to the model itself, past this process's fetch: point the profile at the stand-in.
-    ctx.settings.set({ ...ctx.settings.get(), models: { profiles: [{ ...profiles[0], baseURL: `${fake}/v1` }], roles: { worker: "" } } });
+    const pointed = { ...profiles[0], baseURL: `${fake}/v1` };
+    ctx.settings.set({ ...ctx.settings.get(), models: { profiles: [pointed], roles: { worker: "" } } });
+    // A new address is an untested model, and the built-in agent runs only one that answered its test (TOM-537): test it as Settings → Assistant does.
+    const tested = await ctx.llm.test(pointed);
+    check("the repointed profile answers its test", tested.ok, tested);
     // Tomrade answers for the built-in pi; "code" among what it can do means pi itself is ready.
     const view = (await ctx.agent.engineViews(true)).find((e) => e.id === "tomrade");
     check("the built-in agent is ready with nothing installed", view?.ok === true && view.capabilities.includes("code"), view);

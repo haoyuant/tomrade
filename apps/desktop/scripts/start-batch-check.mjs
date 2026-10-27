@@ -47,6 +47,8 @@ const run = async () => {
   fs.writeFileSync(path.join(folder, "README.md"), "# demo\n");
   git(["add", "-A"], folder);
   git(["commit", "-q", "-m", "initial"], folder);
+  // With a brief already written, the import starts no orientation: its conversation would run a real local agent and take the panel.
+  ctx.agent.setBrief(project.id, "Demo: a stand-in project for starting tickets from the conversation.");
   const { repo } = await ctx.repos.addFromFolder(project.id, folder);
   const board = ctx.boards.list(project.id)[0];
   ctx.boards.update(project.id, board.id, { repoId: repo.id });

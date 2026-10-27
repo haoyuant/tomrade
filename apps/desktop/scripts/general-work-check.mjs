@@ -18,13 +18,19 @@ let ctx;
 let win;
 const run = async () => {
 try {
-  ({ ctx } = await boot({ configFile: path.join(dir, "../tomrade.yml"), vars: { userData: work }, patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }]] }));
+  // The stand-in below is the only coding agent: one installed on this machine would be the dialog's default.
+  ({ ctx } = await boot({ configFile: path.join(dir, "../tomrade.yml"), vars: { userData: work }, patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, ...["engine-claude-code", "engine-codex", "engine-pi"].map((id) => ({ id, disabled: true }))]] }));
   // A playbook of the user's own, the kind a non-coding project adds: it must be a method like the built-in ones.
   const journal = path.join(work, "hub", "playbooks", "journal.daily");
   fs.mkdirSync(journal, { recursive: true });
   fs.writeFileSync(path.join(journal, "SKILL.md"), "---\nname: journal.daily\ntitle: Daily journal\ndescription: Write today's journal entry into Files\nworkTypes: [general]\n---\n\nWrite the entry under journal/, named by today's date.\n");
   ctx.hub.configure(path.join(work, "hub"));
   const project = ctx.projects.create({ name: "General work regression", keyPrefix: "GEN" });
+  // As on a machine without herdr: with Tomrade's Terminal window, a coding Start opens there (TOM-401), where no
+  // permission mode applies. herdr-start-check covers that path.
+  ctx.codeLink.terminalWindow = async () => false;
+  // With no local agent signed in, a first run would open on connecting an AI.
+  ctx.settings.set({ ...ctx.settings.get(), onboarding: { seen: ["*"] } });
   // A coding agent that starts with no approval and no sandbox, the way Codex does by default.
   ctx.agent.engine({
     id: "unboxed", title: "Unboxed", author: "ai:unboxed", capabilities: ["code"],
@@ -38,6 +44,7 @@ try {
   await win.loadURL(process.env.TOMRADE_DEV_URL ?? "http://127.0.0.1:5173/");
   const js = code => win.webContents.executeJavaScript(code, true);
   const wait = async check => { for (let i = 0; i < 100; i++) { if (await check()) return; await sleep(100); } throw new Error("UI condition timed out"); };
+  const eventually = async check => { for (let i = 0; i < 50; i++) { if (await check()) return true; await sleep(100); } return false; };
   const has = selector => js(`!!document.querySelector(${JSON.stringify(selector)})`);
   const click = selector => js(`document.querySelector(${JSON.stringify(selector)}).click(); true`);
   const press = selector => js(`(() => { const n = document.querySelector(${JSON.stringify(selector)}); for (const type of ['pointerdown','mousedown','pointerup','mouseup','click']) n.dispatchEvent(new (type.startsWith('pointer') ? PointerEvent : MouseEvent)(type, { bubbles: true, cancelable: true, button: 0, detail: 1 })); return true; })()`);
@@ -142,20 +149,22 @@ try {
   await wait(() => js(`!document.querySelector('[data-testid="start-dialog"]')`));
 
   // How the machine remembers Start: a file beside the settings file, not a settings section. Written
-  // here as a previous session would have left it, then read back by the next dialog -- no restart needed
-  // to prove the read, but the file is read from disk every time the dialog opens.
+  // here as a previous session would have left it, then read back by the next session's window: the
+  // backend reads the file from disk on every ask, and a fresh window asks again.
   fs.writeFileSync(path.join(work, "code-link.json"), JSON.stringify({ mode: "run", engine: "unboxed", options: { droid: "on" }, permissionMode: "workspace", updatedAt: Date.now() }));
-  await js(`location.hash = '#/p/${project.id}/i/${coding.id}'; true`);
+  win.webContents.reload();
   await wait(() => has('[data-testid="start-ticket"]'));
   await click('[data-testid="start-ticket"]');
   await wait(() => has('[data-testid="start-dialog"]'));
-  assert("the dialog opens on the agent and permission the last start here used", await js(`document.querySelector('#stEngine').value === 'unboxed' && document.querySelector('#stPermission')?.value === 'workspace'`));
+  assert("the dialog opens on the agent and permission the last start here used", await eventually(() => js(`document.querySelector('#stEngine').value === 'unboxed' && document.querySelector('#stPermission')?.value === 'workspace'`)));
   assert("the dialog says the choices came from the last start", await has('[data-testid="start-remembered"]'));
   fs.writeFileSync(path.join(work, "start-dialog-remembered.png"), (await win.webContents.capturePage()).toPNG());
   // A file a person has since edited, or an older Tomrade wrote, with nothing usable left: the dialog still opens on defaults.
   fs.writeFileSync(path.join(work, "code-link.json"), JSON.stringify({ mode: "run", updatedAt: Date.now() }));
   await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`);
   await wait(() => js(`!document.querySelector('[data-testid="start-dialog"]')`));
+  win.webContents.reload();
+  await wait(() => has('[data-testid="start-ticket"]'));
   await click('[data-testid="start-ticket"]');
   await wait(() => has('[data-testid="start-dialog"]'));
   assert("nothing usable is remembered, the dialog opens on defaults without a word about it", await js(`document.querySelector('#stEngine').value === 'unboxed' && !document.querySelector('[data-testid="start-remembered"]')`));

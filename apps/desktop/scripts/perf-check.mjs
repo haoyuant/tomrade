@@ -68,7 +68,15 @@ const run = async () => {
   await win.loadURL(`${process.env.TOMRADE_DEV_URL ?? "http://127.0.0.1:5173/"}#/p/${project.id}`);
   const $ = (js) => win.webContents.executeJavaScript(js, true);
   await sleep(4000);
-  check("the board shows every ticket", (await $(`document.querySelectorAll('.card').length`)) === 500, await $(`document.querySelectorAll('.card').length`));
+  // Done tickets past the closed window (TOM-624, 50 by default) wait behind the done column's "Load more".
+  const cards = () => $(`document.querySelectorAll('.card').length`);
+  const more = `document.querySelector('[data-column="done"] [data-testid="closed-more"]')`;
+  const opened = { cards: await cards(), more: await $(`${more}?.textContent ?? null`) };
+  check("the board holds every open ticket and the newest 50 done, and says 50 more are not shown", opened.cards === 450 && opened.more?.startsWith("50 more not shown"), opened);
+  await $(`${more}?.querySelector('button')?.click(); true`);
+  for (let i = 0; i < 50 && (await cards()) < 500; i++) await sleep(100);
+  await sleep(500);
+  check("loading the rest puts all 500 tickets on the board", (await cards()) === 500 && !(await $(`!!${more}`)), await cards());
 
   // click → two frames: React's render, layout and the paint it leads to
   const timeClick = (selector, index) =>
