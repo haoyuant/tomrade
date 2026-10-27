@@ -1255,6 +1255,7 @@ it("lists the assistant's conversations from a cache read when they change, neve
   const answered: [string, string, string][] = [];
   let takes: "answered" | "notPrompt" | "failed" = "answered";
   const tails = new Map<string, string | null>([["w1:p1", "$ pnpm test\n12 passed\nAllow? [y/n]"], ["w1:p2", null]]);
+  const tailReads: string[] = [];
   const sessions = [
     session({ id: "s1", itemIds: [], herdrPane: "w1:p1", branch: "tom-1/x", state: "waiting", blocked: { kind: "permission" }, activity: "needs your approval: Bash", lastEventAt: 50 }),
     session({ id: "run", mode: "headless", threadId: "t-busy", herdrPane: null, startedAt: 3 }),
@@ -1289,7 +1290,7 @@ it("lists the assistant's conversations from a cache read when they change, neve
     bridge = async () => ({ state: "ready" as const, version: "0.9.5" });
     clientAttached = async () => false;
     panes = async () => [];
-    readTail = async (pane: string) => tails.get(pane) ?? null;
+    readTail = async (pane: string) => (tailReads.push(pane), tails.get(pane) ?? null);
   }
   class FakeCodeLink extends Service {
     static provide = "codeLink";
@@ -1382,6 +1383,23 @@ it("lists the assistant's conversations from a cache read when they change, neve
   // The overview asks for the panes' last lines: every live session's pane and terminal, an ended one's never.
   await say({ type: "tails" });
   expect(win.posts.at(-1)).toEqual({ type: "tails", panes: { "w1:p1": "$ pnpm test\n12 passed\nAllow? [y/n]" } });
+  // Allow and Deny follow its screen: "Allow? [y/n]" offers no options to pick, so its card had neither.
+  expect(first.sessions.find((s) => s.id === "s1")!.prompt).toBeNull();
+  // A prompt with yes under the cursor, once its hooks speak again: both; what was seen holds until its next event.
+  tails.set("w1:p1", "Do you want to proceed?\n❯ 1. Yes\n  2. No, and tell Claude what to do differently (esc)");
+  sessions[0] = { ...sessions[0]!, lastEventAt: 60 };
+  await say({ type: "refresh" });
+  expect(win.states.at(-1)!.sessions.find((s) => s.id === "s1")!.prompt).toBe("allow");
+  const reads = tailReads.length;
+  await say({ type: "refresh" });
+  expect(tailReads).toHaveLength(reads);
+  // Answered, its screen is read again at once: the cursor now on no leaves only Deny.
+  takes = "answered";
+  tails.set("w1:p1", "Do you want to proceed?\n  1. Yes\n❯ 2. No, and tell Claude what to do differently (esc)");
+  await say({ type: "answer", sessionId: "s1", which: "deny" });
+  expect(win.states.at(-1)!.sessions.find((s) => s.id === "s1")!.prompt).toBe("deny");
+  // An ended session's pane is never read for a prompt.
+  expect(tailReads).not.toContain("w1:p2");
   // Closed, the window's conversations are let go; opened again, they are read afresh.
   win.spec.onClose();
   await w.ctx.contributions.run("code-sessions.open", { projectId });

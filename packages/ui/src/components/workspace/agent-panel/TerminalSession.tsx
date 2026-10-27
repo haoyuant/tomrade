@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { EngineView } from "@tomradex/agent";
 import type { SessionView } from "@tomradex/code-link";
+import { PROMPT_LINES, promptOnScreen } from "@tomradex/code-link/prompt";
 import { Icon } from "~/components/icons";
 import { ConvoLines, ConvoTop, useOpenLines, type ConvoSay } from "~/components/ConversationRead";
 import { Spacer } from "~/components/ui/atoms";
@@ -149,7 +150,8 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
     if (!reads) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const rows = drawer ? DRAWER_ROWS : STRIP_ROWS;
+    // an agent that declared its approval keys: enough of the screen to see whether a prompt is on it
+    const rows = drawer ? DRAWER_ROWS : panel.data?.approval ? Math.max(STRIP_ROWS, PROMPT_LINES) : STRIP_ROWS;
     const tick = async () => {
       tailAt.current = Date.now();
       const text = await invoke("codeLink.sessionTail", projectId, session.id, rows).catch(() => null);
@@ -162,7 +164,7 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
       stopped = true;
       if (timer) clearTimeout(timer);
     };
-  }, [reads, drawer, projectId, session.id]);
+  }, [reads, drawer, projectId, session.id, panel.data?.approval]);
   const strip = tailLines(screen, 2);
 
   // ── what is typed goes into the pane; Allow and Deny press the agent's own keys ──
@@ -204,6 +206,8 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
     }
   };
   const asking = isApprovalAsk(session) && answered !== session.lastEventAt;
+  // Allow and Deny only while the screen shows a prompt they answer: Allow with yes under the cursor, Deny with either.
+  const onScreen = useMemo(() => promptOnScreen(screen ?? ""), [screen]);
   const inputNote = !live ? t("sessionBar.inputEnded") : panel.data?.input === "noPane" ? t("sessionBar.inputOutside", { app: where }) : panel.data?.input === "noBackend" ? t("sessionBar.inputNoBackend") : panel.data?.input === "unsupported" ? t("sessionBar.inputUnsupported") : null;
   const lines = convo ? convoLines(convo) : [];
   const wait = status === "wait" ? session.activity ?? session.summary ?? t(ATTENTION_KEY[session.state === "error" ? "stuck" : "waiting"]) : null;
@@ -268,13 +272,13 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
         {asking && (
           <div className="ai-approve" data-testid="ai-approve" role="group" aria-label={session.activity ?? t("agentPanel.attention_permission")}>
             <span className="ai-approve-text">{session.activity ?? t("agentPanel.attention_permission")}</span>
-            {panel.data?.approval && canType ? (
+            {panel.data?.approval && canType && onScreen ? (
               <>
-                <button type="button" className="btn btn-primary btn-xs" data-testid="ai-allow" disabled={sending} onClick={() => void answer("allow")}>{t("sessionBar.allow")}</button>
+                {onScreen.allows && <button type="button" className="btn btn-primary btn-xs" data-testid="ai-allow" disabled={sending} onClick={() => void answer("allow")}>{t("sessionBar.allow")}</button>}
                 <button type="button" className="btn btn-secondary btn-xs" data-testid="ai-deny" disabled={sending} onClick={() => void answer("deny")}>{t("sessionBar.deny")}</button>
               </>
             ) : onShowInTerminal ? (
-              <button type="button" className="btn btn-secondary btn-xs" data-testid="ai-answer-there" title={panel.data && !panel.data.approval ? t("sessionBar.answerNoKeys", { agent: agentName }) : undefined} onClick={onShowInTerminal}>{t("sessionBar.answerInTerminal")}</button>
+              <button type="button" className="btn btn-secondary btn-xs" data-testid="ai-answer-there" title={panel.data && !panel.data.approval ? t("sessionBar.answerNoKeys", { agent: agentName }) : panel.data?.approval ? t("sessionBar.answerInPane") : undefined} onClick={onShowInTerminal}>{t("sessionBar.answerInTerminal")}</button>
             ) : null}
           </div>
         )}

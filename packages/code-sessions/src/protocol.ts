@@ -48,6 +48,8 @@ export interface SessionRow {
   recordSaved: "whole" | "end" | null;
   /** Its agent declared the keys that answer its permission prompt: Allow and Deny on its card press them in its pane. */
   approval: boolean;
+  /** What its screen asks that those keys answer now: a permission prompt with yes under the cursor, one with no, or nothing they could safely answer. */
+  prompt: "allow" | "deny" | null;
   /** When its hooks last spoke; what the session bar orders waiting and idle rows by. */
   lastEventAt: number | null;
   /** Ended, and what its pane showed while it ran was recorded here: its raw output can be played back. */

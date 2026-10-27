@@ -71,8 +71,8 @@ export function rowSaid(r: HereRow, status: BarStatus, say: Say): string | null 
 export const saidClass = (status: BarStatus): string => (status === "wait" ? "cs-row-wait" : status === "done" ? "cs-row-outcome" : "cs-row-activity");
 
 /**
- * What can be done from a row without opening it: a permission its agent declared the keys for is allowed or denied
- * here; in the overview, a row with a pane goes to its cell and a conversation to the app window.
+ * What can be done from a row without opening it: a permission prompt on its screen that its agent declared the keys
+ * for is allowed (when yes is under the cursor) or denied here; in the overview, a row with a pane goes to its cell and a conversation to the app window.
  */
 export function RowActions({ row, big = false, onSee, onThread, onAnswer }: { row: HereRow; big?: boolean; onSee: (row: HereRow) => void; onThread: (thread: ThreadRow) => void; onAnswer: (session: SessionRow, which: "allow" | "deny") => void }) {
   const say = useSay();
@@ -84,9 +84,11 @@ export function RowActions({ row, big = false, onSee, onThread, onAnswer }: { ro
     <span className="cs-row-actions" data-testid="cs-row-actions">
       {answerable && (
         <>
-          <button type="button" className="btn btn-primary btn-xs" data-testid="cs-allow" onClick={() => onAnswer(s, "allow")}>
-            {say("allow")}
-          </button>
+          {s.prompt === "allow" && (
+            <button type="button" className="btn btn-primary btn-xs" data-testid="cs-allow" onClick={() => onAnswer(s, "allow")}>
+              {say("allow")}
+            </button>
+          )}
           <button type="button" className="btn btn-secondary btn-xs" data-testid="cs-deny" onClick={() => onAnswer(s, "deny")}>
             {say("deny")}
           </button>
