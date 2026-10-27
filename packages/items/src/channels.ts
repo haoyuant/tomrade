@@ -1,11 +1,11 @@
 import type { Context } from "cordis";
-import type { CreateItemInput, Item, ListItemsFilter, Patch } from "@tomradex/domain";
+import type { ClosedWindow, CreateItemInput, Item, ListItemsFilter, Patch } from "@tomradex/domain";
 import type { z } from "zod";
 import type { addResourceSchema, submitDeliverySchema, reviewDeliverySchema } from "@tomradex/domain";
 import type { DeliveryView } from "@tomradex/db";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/fields";
-import type { ItemCounts, ItemQuery } from "./service.js";
+import type { EpicProgress, ItemCounts, ItemQuery } from "./service.js";
 import { errorMessage } from "@tomradex/contracts";
 
 declare module "@tomradex/ipc" {
@@ -19,6 +19,11 @@ declare module "@tomradex/ipc" {
     "items.list": (filter?: ListItemsFilter) => Item[];
     "items.counts": (projectId: string) => ItemCounts;
     "items.query": (query: ItemQuery) => Item[];
+    /** What the renderer holds: everything open, and the newest of each closed status the window lets through. */
+    "items.window": (projectId: string, window: ClosedWindow) => Item[];
+    "items.count": (query: ItemQuery) => number;
+    "items.epicProgress": (projectId: string) => Record<string, EpicProgress>;
+    /** By id, or by key (TOM-12): what opens a ticket the renderer's window left out. */
     "items.get": (projectId: string, id: string) => Item | null;
     "items.create": (input: Omit<CreateItemInput, "by">) => Item;
     "items.update": (projectId: string, id: string, patch: Patch, baseVersion: number) => Item;
@@ -49,6 +54,8 @@ function withDerived(ctx: Context, items: Item[]): Item[] {
   });
 }
 
+const KEY = /^[A-Za-z][A-Za-z0-9]*-\d+$/;
+
 /** Every renderer write is a human write. */
 export function registerChannels(ctx: Context): void {
   const one = (item: Item | null) => (item ? withDerived(ctx, [item])[0]! : item);
@@ -68,7 +75,14 @@ export function registerChannels(ctx: Context): void {
   ctx.ipc.handle("items.list", (filter = {}) => withDerived(ctx, ctx.items.list(filter)));
   ctx.ipc.handle("items.counts", (projectId) => ctx.items.counts(projectId));
   ctx.ipc.handle("items.query", (query) => withDerived(ctx, ctx.items.query(query)));
-  ctx.ipc.handle("items.get", (projectId, id) => one(ctx.items.get(projectId, id)));
+  ctx.ipc.handle("items.window", (projectId, window) => withDerived(ctx, ctx.items.windowed(projectId, window)));
+  ctx.ipc.handle("items.count", (query) => ctx.items.count(query));
+  ctx.ipc.handle("items.epicProgress", (projectId) => ctx.items.epicProgress(projectId));
+  const byKey = (projectId: string, key: string) => {
+    const item = KEY.test(key) ? ctx.items.getByKey(projectId, key) : null;
+    return item && item.key.toUpperCase() === key.toUpperCase() ? item : null;
+  };
+  ctx.ipc.handle("items.get", (projectId, id) => one(ctx.items.get(projectId, id) ?? byKey(projectId, id)));
   ctx.ipc.handle("items.create", (input) => one(ctx.items.create({ ...input, by: "human" }))!);
   ctx.ipc.handle("items.update", (projectId, id, patch, baseVersion) => one(ctx.items.update(projectId, id, patch, "human", { baseVersion }))!);
   ctx.ipc.handle("items.delete", (projectId, id) => ctx.items.delete(projectId, id, "human"));

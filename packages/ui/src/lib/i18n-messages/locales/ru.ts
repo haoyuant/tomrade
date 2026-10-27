@@ -1852,7 +1852,11 @@ export const ru: PartialMessages = {
     cannotDropToast: "Поле «{{field}}» нельзя задать перетаскиванием",
     sortLock: "Включена сортировка — перетаскивание меняет поля, а не порядок",
     alreadyFirst: "{{key}} уже в первом столбце",
-    alreadyLast: "{{key}} уже в последнем столбце"
+    alreadyLast: "{{key}} уже в последнем столбце",
+    hiddenMore: "Ещё {{n}} не показано",
+    hiddenClosed: "Не показано старых завершённых или отменённых тикетов: {{n}}",
+    loadMore: "Загрузить ещё",
+    loadingMore: "Загрузка…"
   },
   card: {
     blockedBadge: "заблокирован",

@@ -1815,7 +1815,11 @@ export const fr: PartialMessages = {
     cannotDropToast: "{{field}} ne peut pas être défini par glisser-déposer",
     sortLock: "Trié — le glisser modifie les champs, pas l’ordre",
     alreadyFirst: "{{key}} est déjà dans la première colonne",
-    alreadyLast: "{{key}} est déjà dans la dernière colonne"
+    alreadyLast: "{{key}} est déjà dans la dernière colonne",
+    hiddenMore: "{{n}} de plus non affichés",
+    hiddenClosed: "{{n}} tickets terminés ou annulés plus anciens non affichés",
+    loadMore: "Charger plus",
+    loadingMore: "Chargement…"
   },
   card: {
     blockedBadge: "bloqué",

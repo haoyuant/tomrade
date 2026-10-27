@@ -1815,7 +1815,11 @@ export const es: PartialMessages = {
     cannotDropToast: "{{field}} no se puede cambiar arrastrando",
     sortLock: "Ordenado: arrastrar cambia campos, no el orden",
     alreadyFirst: "{{key}} ya está en la primera columna",
-    alreadyLast: "{{key}} ya está en la última columna"
+    alreadyLast: "{{key}} ya está en la última columna",
+    hiddenMore: "{{n}} más sin mostrar",
+    hiddenClosed: "{{n}} tickets antiguos hechos o cancelados sin mostrar",
+    loadMore: "Cargar más",
+    loadingMore: "Cargando…"
   },
   card: {
     blockedBadge: "bloqueada",

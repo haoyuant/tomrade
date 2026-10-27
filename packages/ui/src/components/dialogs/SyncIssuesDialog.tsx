@@ -3,7 +3,7 @@ import type { AttentionView } from "@tomradex/storage";
 import { Dialog, DialogBody, DialogHead } from "~/components/ui/dialog";
 import { invoke } from "~/lib/api";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { invalidateWorkspace, keys, useItems, useStorageStatus, useSyncAttention } from "~/lib/queries";
+import { invalidateWorkspace, keys, useAllItems, useStorageStatus, useSyncAttention } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 
 // Notes are read back from the project's folder, which a newer Tomrade may have written: an unknown code shows as itself.
@@ -24,7 +24,8 @@ export function SyncIssuesDialog({ projectId, open, onOpenChange, onOpenIssue }:
   const toast = useToast();
   const qc = useQueryClient();
   const attention = useSyncAttention(projectId);
-  const items = useItems(projectId);
+  // A ticket with a sync issue may be an old done one.
+  const items = useAllItems(projectId, open);
   const status = useStorageStatus(projectId);
   const byId = new Map((items.data ?? []).map((i) => [i.id, i]));
   const rows = attention.data ?? [];

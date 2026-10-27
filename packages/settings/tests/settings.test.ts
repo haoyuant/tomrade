@@ -64,7 +64,8 @@ describe("settings", () => {
     expect((card.schema.properties as Record<string, unknown>).label).toMatchObject({ type: "string", advanced: true });
 
     await fiber.dispose();
-    expect(ctx.settings.sections().map((s) => s.id)).toEqual(["theme", "themeAutomation", "customThemes", "language"]);
+    // closedWindow is the items service's, which fresh() boots
+    expect(ctx.settings.sections().map((s) => s.id)).toEqual(["theme", "themeAutomation", "customThemes", "language", "closedWindow"]);
     expect(ctx.settings.get().demo).toEqual({ days: 3, label: "stale" });
   });
 

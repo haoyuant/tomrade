@@ -9,18 +9,6 @@ export interface EpicProgress {
   total: number;
 }
 
-/** Progress per epic over the whole project, so a filter never makes an epic look further along than it is. Cancelled tickets count for neither side. */
-export function epicProgress(owned: Item[]): Map<string, EpicProgress> {
-  const out = new Map<string, EpicProgress>();
-  for (const item of owned) {
-    if (!item.parentId || item.status === "cancelled") continue;
-    const p = out.get(item.parentId) ?? out.set(item.parentId, { done: 0, total: 0 }).get(item.parentId)!;
-    p.total++;
-    if (item.status === "done") p.done++;
-  }
-  return out;
-}
-
 /** A ring that fills as the epic's tickets finish — shape, not hue, like the status marks. */
 export function ProgressRing({ done, total, size = 12 }: EpicProgress & { size?: number }) {
   const r = size / 2 - 1.5;

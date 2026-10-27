@@ -4,7 +4,7 @@ import { Eyebrow, Tag } from "~/components/ui/atoms";
 import { useAdoptBranch, useProposals, useRescan, useResolveProposal, useUnlinkedBranches } from "~/lib/codeLink";
 import { STATUS, agoLabel } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { useItems } from "~/lib/queries";
+import { useAllItems } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 
 /**
@@ -15,7 +15,7 @@ import { errorSpec, useToast } from "~/lib/toast";
 export function CodeInboxDialog({ projectId, open, onOpenChange, onOpenIssue }: { projectId: string; open: boolean; onOpenChange: (open: boolean) => void; onOpenIssue: (id: string) => void }) {
   const { t } = useI18n();
   const toast = useToast();
-  const items = useItems(projectId);
+  const items = useAllItems(projectId, open);
   const proposals = useProposals(projectId);
   const unlinked = useUnlinkedBranches(projectId);
   const resolve = useResolveProposal(projectId);

@@ -254,4 +254,6 @@ CREATE INDEX IF NOT EXISTS idx_oplog_purge ON oplog(entity_id) WHERE op = 'purge
 CREATE INDEX IF NOT EXISTS idx_oplog_run ON oplog(run_id) WHERE run_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_oplog_via ON oplog(via) WHERE via IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_oplog_device ON oplog(device, device_seq) WHERE device_seq IS NOT NULL;
+-- When an item last changed status: what orders the done and cancelled columns.
+CREATE INDEX IF NOT EXISTS idx_oplog_item_status ON oplog(entity_id, at) WHERE entity = 'item' AND json_extract(patch_json, '$.status') IS NOT NULL;
 `;

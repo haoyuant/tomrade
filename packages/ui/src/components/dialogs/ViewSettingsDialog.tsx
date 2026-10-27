@@ -1,12 +1,13 @@
 import { useState } from "react";
-import { EMPTY_KEY, LAYOUTS, groupKeyOf, type Layout } from "@tomradex/domain";
+import { EMPTY_KEY, LAYOUTS, groupKeyOf, type FilterClause, type Layout } from "@tomradex/domain";
 import { Icon, type IconId } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead, useOpeningKey } from "~/components/ui/dialog";
 import { IconPicker } from "~/components/ui/icon-picker";
 import { Eyebrow, Tag } from "~/components/ui/atoms";
 import { BOARD_GLYPHS, DEFAULT_SHOWN_FIELDS, LAYOUT_LABEL, fieldLabel, viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { useGraphs, useUpdateView } from "~/lib/queries";
+import { isClosed } from "~/lib/closedWindow";
+import { useClosedTotals, useGraphs, useUpdateView } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace } from "~/components/workspace/context";
 
@@ -17,6 +18,8 @@ import { useWorkspace } from "~/components/workspace/context";
  * nothing on screen is lost, and the draft rebinds to what was saved. Each
  * opening starts from the view as it is now.
  */
+const NO_FILTER: FilterClause[] = [];
+
 export function ViewSettingsDialog(props: Parameters<typeof ViewSettingsSheet>[0]) {
   return <ViewSettingsSheet key={useOpeningKey(props.open)} {...props} />;
 }
@@ -24,6 +27,7 @@ export function ViewSettingsDialog(props: Parameters<typeof ViewSettingsSheet>[0
 function ViewSettingsSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { t, tx } = useI18n();
   const ws = useWorkspace();
+  const closedTotals = useClosedTotals(ws.project.id, NO_FILTER, "", open);
   const update = useUpdateView(ws.project.id);
   const graphs = useGraphs();
   const toast = useToast();
@@ -133,7 +137,9 @@ function ViewSettingsSheet({ open, onOpenChange }: { open: boolean; onOpenChange
               {space.map((key) => {
                 const on = columnOn(key);
                 const label = ws.groupLabel(columnBy, key);
-                const count = ws.owned.filter((i) => groupKeyOf(i, columnBy) === key).length;
+                const held = ws.owned.filter((i) => groupKeyOf(i, columnBy) === key).length;
+                // The renderer holds only the newest done and cancelled tickets; their columns count them all.
+                const count = columnBy === "status" && isClosed(key) ? Math.max(held, closedTotals[key] ?? held) : held;
                 return (
                   <div className={`cfg-row${on ? "" : " off"}`} key={key} data-column={key}>
                     <span className="cfg-name">{label}</span>

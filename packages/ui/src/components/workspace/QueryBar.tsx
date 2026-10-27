@@ -4,7 +4,8 @@ import { Icon, type IconId } from "~/components/icons";
 import { Kbd, PriorityGlyph, StatusMark } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuCheckItem, MenuEmpty, MenuFoot, MenuHead, MenuRadioItem } from "~/components/ui/menu";
 import { Popover } from "~/components/ui/popover";
-import { FILTER_OP_LABEL, fieldLabel, manualSortLabel, viewIcon } from "~/lib/domain";
+import { FILTER_OP_LABEL, fieldLabel, isTicket, manualSortLabel, viewIcon } from "~/lib/domain";
+import { useAllItems } from "~/lib/queries";
 import { useI18n } from "~/lib/i18n";
 import { ticketSearch, useTicketSearch, useWorkspace, type WorkspaceValue } from "./context";
 import { isCancelKey, isCommitKey } from "~/lib/keys";
@@ -74,8 +75,11 @@ function ChoiceEditor({ def, onBack }: { def: FieldDef; onBack?: () => void }) {
   const index = clauseIndexFor(ws.query, def.id, "in");
   const clause = index >= 0 ? ws.query.filter[index] : null;
   const chosen = new Set((clause?.values ?? []).map((v) => (v === null ? EMPTY_KEY : String(v))));
-  const options = ws.optionsOf(def.id).map((o) => ({ key: o.key, name: o.name, count: countFor(ws.owned, def, o.key) })).filter((o) => o.count > 0 || chosen.has(o.key));
-  const emptyCount = countFor(ws.owned, def, null);
+  // Counted over every ticket while the list is open: an option only old done tickets carry is still offered.
+  const all = useAllItems(ws.project.id);
+  const owned = all.data?.filter(isTicket) ?? ws.owned;
+  const options = ws.optionsOf(def.id).map((o) => ({ key: o.key, name: o.name, count: countFor(owned, def, o.key) })).filter((o) => o.count > 0 || chosen.has(o.key));
+  const emptyCount = countFor(owned, def, null);
   const withEmpty = ws.groupSpace(def.id).includes(EMPTY_KEY) && (emptyCount > 0 || chosen.has(EMPTY_KEY));
 
   const toggle = (key: string) => {

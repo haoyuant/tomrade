@@ -12,7 +12,7 @@ import { normalizeRemote } from "~/lib/remotes";
 import {
   useBoards,
   useCreateBoard,
-  useItems,
+  useAllItems,
   useMoveItemsToBoard,
   useRemoveBoard,
   useRepoCheckouts,
@@ -106,7 +106,8 @@ function WorkstreamRow({ board, count, others, projectId, onOpenRepositories }: 
   const folder = useChooseRepoFolder(projectId);
   const remove = useRemoveBoard(projectId);
   const move = useMoveItemsToBoard(projectId);
-  const items = useItems(projectId);
+  // Moving a workstream's tickets moves the old done ones too.
+  const items = useAllItems(projectId);
   const undoWrite = useToastUndo(projectId);
   const [removing, setRemoving] = useState(false);
   const [dest, setDest] = useState(others[0]?.id ?? "");
@@ -129,8 +130,8 @@ function WorkstreamRow({ board, count, others, projectId, onOpenRepositories }: 
 
   const moveThenRemove = () => {
     const target = others.find((b) => b.id === dest);
-    if (!target) return;
-    const ids = (items.data ?? []).filter((i) => i.boardId === board.id).map((i) => i.id);
+    if (!target || !items.data) return;
+    const ids = items.data.filter((i) => i.boardId === board.id).map((i) => i.id);
     move.mutate(
       { from: board.id, to: target.id, itemIds: ids },
       {

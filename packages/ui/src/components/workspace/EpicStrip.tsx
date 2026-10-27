@@ -3,7 +3,7 @@ import type { FilterClause } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { useI18n } from "~/lib/i18n";
 import { useWorkspace } from "./context";
-import { ProgressRing, epicProgress } from "./EpicHeader";
+import { ProgressRing } from "./EpicHeader";
 
 /**
  * Which epics the board holds, without grouping it: one chip per epic with
@@ -15,7 +15,7 @@ export function EpicStrip() {
   const ws = useWorkspace();
   const [hover, setHover] = useState<string | null>(null);
   const [showFinished, setShowFinished] = useState(false);
-  const progress = useMemo(() => epicProgress(ws.owned), [ws.owned]);
+  const progress = ws.epicProgress;
 
   const at = ws.query.filter.findIndex((c) => c.field === "epic" && c.op === "in");
   const chosen = new Set((at >= 0 ? ws.query.filter[at].values : []).filter((v): v is string => typeof v === "string"));

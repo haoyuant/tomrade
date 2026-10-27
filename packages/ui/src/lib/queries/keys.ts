@@ -14,6 +14,15 @@ export const keys = {
   items: (projectId: string) => ["items", projectId] as const,
   /** Under `items`, so whatever asks the list again asks the counts too. */
   itemCounts: (projectId: string) => ["items", projectId, "counts"] as const,
+  /** What the renderer holds of a project: everything open, and the newest done and cancelled tickets the window lets through. */
+  itemsWindow: (projectId: string, limit: number | null, days: number | null) => ["items", projectId, "window", limit, days] as const,
+  /** Every item, for the few dialogs that must see all of them; dropped once they close. */
+  itemsAll: (projectId: string) => ["items", projectId, "all"] as const,
+  /** One item by id or key, for when the window left it out. */
+  item: (projectId: string, idOrKey: string) => ["items", projectId, "one", idOrKey] as const,
+  /** Under `items` like the rest: any write may move what these count or page through. */
+  itemQuery: (projectId: string, kind: "count" | "page" | "found" | "ticketCounts", spec: unknown) => ["items", projectId, kind, spec] as const,
+  epicProgress: (projectId: string) => ["items", projectId, "epicProgress"] as const,
   labels: (projectId: string) => ["labels", projectId] as const,
   fields: (projectId: string) => ["fields", projectId] as const,
   ranksAll: ["ranks"] as const,

@@ -28,7 +28,7 @@ import {
 } from "~/components/issue/fields";
 import { PROVENANCE, STATUS, agoLabel, fieldLabel, provenanceOf } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { useBoards, useFields, useHistory, useItems, useLabels, useUndo } from "~/lib/queries";
+import { useBoards, useFields, useHeldItem, useHistory, useItems, useLabels, useUndo } from "~/lib/queries";
 import { keyLabel } from "~/lib/keybindings";
 import { readableError } from "~/lib/toast";
 import { useSettingsHost } from "~/lib/settingsHost";
@@ -46,7 +46,8 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
   const boards = useBoards(projectId);
   const labels = useLabels(projectId);
   const fields = useFields(projectId);
-  const history = useHistory(projectId, items.data?.find((i) => i.id === itemId || i.key === itemId)?.id);
+  const held = useHeldItem(projectId, items.data, itemId);
+  const history = useHistory(projectId, held.item?.id);
   const { write } = useIssueWriter(projectId);
   const undo = useUndo(projectId);
   const navigate = useNavigate();
@@ -59,7 +60,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
   });
   const [deleting, setDeleting] = useState(false);
 
-  const item = items.data?.find((i) => i.id === itemId || i.key === itemId);
+  const item = held.item;
 
   const openIssue = useCallback((id: string) => void navigate({ to: "/p/$projectId/i/$itemId", params: { projectId, itemId: id } }), [navigate, projectId]);
   const binding = useMemo<ScreenBinding>(
@@ -98,7 +99,7 @@ export function IssueScreen({ projectId, itemId }: { projectId: string; itemId: 
             </div>
           ) : (
             <div className="issue-wrap">
-              <p className="meta-txt">{items.isLoading ? t("issueScreen.loading") : t("issueScreen.notInProject")}</p>
+              <p className="meta-txt">{items.isLoading || held.loading ? t("issueScreen.loading") : t("issueScreen.notInProject")}</p>
             </div>
           )}
         </main>

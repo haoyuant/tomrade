@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { EMPTY_KEY, groupKeyOf, type FieldDef, type Item, type SortKey } from "@tomradex/domain";
+import { CLOSED_STATUSES, EMPTY_KEY, groupKeyOf, type FieldDef, type Item, type SortKey } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { BoardField, CustomField, DerivedField, EpicField, LabelsField, PriorityField, StatusField, useIssueWriter, type IssueWrite } from "~/components/issue/fields";
 import { DEFAULT_SHOWN_FIELDS, PROVENANCE, agoLabel, fieldLabel, provenanceOf } from "~/lib/domain";
@@ -7,7 +7,8 @@ import { useI18n } from "~/lib/i18n";
 import { useCreateItem } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 import { useIsSelected, useWorkspace, type WorkspaceValue } from "./context";
-import { EpicPriority, EpicProgressBar, EpicStatus, EpicTitle, epicProgress } from "./EpicHeader";
+import { LoadMore } from "./ClosedMore";
+import { EpicPriority, EpicProgressBar, EpicStatus, EpicTitle } from "./EpicHeader";
 import { mergePatch, seedFromFilter, toCreateInput } from "./patches";
 import { useToastUndo } from "~/lib/undo";
 import { isCancelKey, isCommitKey } from "~/lib/keys";
@@ -180,7 +181,7 @@ export function Table({ onConflict }: { onConflict: (title: string) => void }) {
 
   const byEpic = groupBy === "epic";
   const epicById = useMemo(() => new Map(ws.epics.map((e) => [e.id, e])), [ws.epics]);
-  const progress = useMemo(() => (byEpic ? epicProgress(ws.owned) : null), [byEpic, ws.owned]);
+  const progress = byEpic ? ws.epicProgress : null;
   const [shut, setShut] = useState<Set<string>>(new Set());
   const toggle = (key: string) =>
     setShut((current) => {
@@ -288,6 +289,13 @@ export function Table({ onConflict }: { onConflict: (title: string) => void }) {
             <tr className="tbl-empty">
               <td className="tbl-cell col-empty" colSpan={span}>
                 {ws.search.trim() ? t("table.emptySearch", { query: ws.search.trim() }) : t(ws.filterCount ? "table.emptyFiltered" : "table.emptyPlain")}
+              </td>
+            </tr>
+          )}
+          {CLOSED_STATUSES.some((status) => ws.closed.hidden(status) > 0) && (
+            <tr className="tbl-more">
+              <td className="tbl-cell" colSpan={span}>
+                <LoadMore statuses={[...CLOSED_STATUSES]} text={(n) => t("board.hiddenClosed", { n })} />
               </td>
             </tr>
           )}

@@ -1815,7 +1815,11 @@ export const ja: PartialMessages = {
     cannotDropToast: "{{field}} はドラッグでは設定できません",
     sortLock: "並べ替え中 — ドラッグで変わるのはフィールドで、順序ではありません",
     alreadyFirst: "{{key}} はすでに最初の列にあります",
-    alreadyLast: "{{key}} はすでに最後の列にあります"
+    alreadyLast: "{{key}} はすでに最後の列にあります",
+    hiddenMore: "ほかに {{n}} 件(未表示)",
+    hiddenClosed: "完了・キャンセル済みの古いチケット {{n}} 件は未表示です",
+    loadMore: "さらに読み込む",
+    loadingMore: "読み込み中…"
   },
   card: {
     blockedBadge: "ブロック中",

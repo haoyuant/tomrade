@@ -7,7 +7,7 @@ import { Spacer, Tag } from "~/components/ui/atoms";
 import { agoLabel, PRIORITY_LABEL } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { useInboxActions, useInboxEntries, useInboxSources, useInboxTriager } from "~/lib/inbox";
-import { useItems } from "~/lib/queries";
+import { useAllItems } from "~/lib/queries";
 import { openExternal } from "~/lib/shell";
 import { useErrorToast, useToast } from "~/lib/toast";
 import { isCommitKey } from "~/lib/keys";
@@ -214,7 +214,7 @@ function EntryDetail({ projectId, entry, source, onOpenIssue }: { projectId: str
   const toast = useToast();
   const reportError = useErrorToast();
   const actions = useInboxActions(projectId);
-  const items = useItems(projectId);
+  const items = useAllItems(projectId);
   const [mode, setMode] = useState<Mode>(null);
   const [title, setTitle] = useState(entry.title);
   const [kind, setKind] = useState<InboxKind>(entry.kind);
@@ -481,7 +481,7 @@ function SuggestionCard({
   const toast = useToast();
   const reportError = useErrorToast();
   const actions = useInboxActions(projectId);
-  const items = useItems(projectId);
+  const items = useAllItems(projectId);
   const s = entry.suggestion;
   const [draft, setDraft] = useState(s?.reply ?? "");
   const [send, setSend] = useState(true);

@@ -41,6 +41,12 @@
 /* the column foot when a sort is on: order is the sort's, not the mouse's */
 .sort-lock { padding: var(--space-2) var(--space-2) 0; color: var(--meta); }
 
+/* a done or cancelled column holds only its newest tickets; the rest load on request */
+.col-more { padding: var(--space-2) var(--space-2) 0; color: var(--meta); }
+.lane-cols-foot { border-top: 1px solid var(--border-soft); padding-bottom: var(--space-3); }
+.lane-cols-foot .col-more { padding-top: var(--space-3); }
+.board-more .col-more { padding: var(--space-2) var(--space-4) 0; }
+
 /* table ────────────────────────────────────────────────────────────────── */
 .tbl-wrap {
   flex: 1; min-height: 0;

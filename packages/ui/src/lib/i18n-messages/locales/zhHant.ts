@@ -1815,7 +1815,11 @@ export const zhHant: PartialMessages = {
     cannotDropToast: "{{field}} 無法透過拖曳設定",
     sortLock: "已排序——拖曳只改欄位，不改順序",
     alreadyFirst: "{{key}} 已經在第一欄了",
-    alreadyLast: "{{key}} 已經在最後一欄了"
+    alreadyLast: "{{key}} 已經在最後一欄了",
+    hiddenMore: "還有 {{n}} 張未顯示",
+    hiddenClosed: "還有 {{n}} 張較早的已完成或已取消工單未顯示",
+    loadMore: "載入更多",
+    loadingMore: "載入中…"
   },
   card: {
     blockedBadge: "被阻擋",

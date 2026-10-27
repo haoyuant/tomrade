@@ -3,16 +3,18 @@ import { CollisionPriority } from "@dnd-kit/abstract";
 import { DragDropProvider, useDroppable } from "@dnd-kit/react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { move } from "@dnd-kit/helpers";
-import { EMPTY_KEY, groupKeyOf, type Item, type Patch } from "@tomradex/domain";
+import { CLOSED_STATUSES, EMPTY_KEY, groupKeyOf, type ClosedStatus, type Item, type Patch } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
+import { isClosed } from "~/lib/closedWindow";
 import { fieldLabel } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useDoneGuard } from "~/lib/doneGuard";
 import { useCreateItem, usePatchItem, useSetViewRank, useSetViewRanks } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 import { Card } from "./Card";
+import { LoadMore } from "./ClosedMore";
 import { useWorkspace, type WorkspaceValue } from "./context";
-import { EpicPriority, EpicProgressBar, EpicStatus, EpicTitle, epicProgress, type EpicProgress } from "./EpicHeader";
+import { EpicPriority, EpicProgressBar, EpicStatus, EpicTitle, type EpicProgress } from "./EpicHeader";
 import { mergePatch, seedFromFilter, toCreateInput } from "./patches";
 import { useToastUndo } from "~/lib/undo";
 import { isCancelKey, isCommitKey } from "~/lib/keys";
@@ -114,6 +116,7 @@ function Column({
   cards,
   head,
   seed,
+  more,
   onOpen,
   onNudge
 }: {
@@ -125,11 +128,13 @@ function Column({
   head: { count: number; cap: number | undefined } | null;
   /** What creating here writes; null hides the composer (the column's field cannot be written). */
   seed: Patch | null;
+  /** A done or cancelled column, whose older tickets load on request; shown at its foot. */
+  more: ClosedStatus | null;
   onOpen: (item: Item) => void;
   onNudge: (item: Item, d: -1 | 1) => void;
 }) {
   const { t } = useI18n();
-  const { filterCount, query, search } = useWorkspace();
+  const { filterCount, query, search, closed } = useWorkspace();
   const [composing, setComposing] = useState(false);
   // Low priority lets a card win the collision, so an empty column still accepts a drop.
   const { ref, isDropTarget } = useDroppable({ id: cell, type: "column", accept: "card", collisionPriority: CollisionPriority.Low });
@@ -139,10 +144,11 @@ function Column({
     <section className={`col${isDropTarget ? " drop-target" : ""}`} role="group" aria-label={t("board.columnAria", { label, n: cards.length })} data-column={splitCell(cell).col}>
       {head && <ColumnHead index={index} label={label} count={head.count} cap={head.cap} />}
       <div className="col-body" ref={ref as (node: HTMLElement | null) => void}>
-        {cards.length === 0 && !composing && <p className="col-empty">{search.trim() ? t("board.emptySearch", { label, query: search.trim() }) : t(filterCount ? "board.emptyFiltered" : "board.emptyPlain", { label })}</p>}
+        {cards.length === 0 && !composing && !(more && closed.hidden(more)) && <p className="col-empty">{search.trim() ? t("board.emptySearch", { label, query: search.trim() }) : t(filterCount ? "board.emptyFiltered" : "board.emptyPlain", { label })}</p>}
         {cards.map((item, i) => (
           <SortableCard key={item.id} item={item} index={i} cell={cell} onOpen={() => onOpen(item)} onNudge={(d) => onNudge(item, d)} />
         ))}
+        {more && <LoadMore statuses={[more]} text={(n) => t("board.hiddenMore", { n })} />}
         {composing && seed && <Composer seed={seed} onDone={() => setComposing(false)} />}
         {seed && !composing && (
           <button type="button" className="btn btn-ghost" style={{ justifyContent: "flex-start", marginTop: 2 }} onClick={() => setComposing(true)}>
@@ -206,7 +212,7 @@ function EpicLaneHead({
 export function Board({ onConflict }: { onConflict: (title: string) => void }) {
   const { t, tx } = useI18n();
   const ws = useWorkspace();
-  const { project, view, query, visible, select, ranks, columnKeys, groupSpace, groupLabel, patchFor, fieldById } = ws;
+  const { project, view, query, visible, select, ranks, columnKeys, groupSpace, groupLabel, patchFor, fieldById, closed } = ws;
   const patch = usePatchItem(project.id);
   const guard = useDoneGuard();
   const setRank = useSetViewRank(project.id);
@@ -244,7 +250,7 @@ export function Board({ onConflict }: { onConflict: (title: string) => void }) {
   };
   const lanes = useMemo(() => (groupBy ? groupSpace(groupBy) : [""]), [groupBy, groupSpace]);
   const epicById = useMemo(() => new Map(ws.epics.map((e) => [e.id, e])), [ws.epics]);
-  const progress = useMemo(() => (groupBy === "epic" ? epicProgress(ws.owned) : null), [groupBy, ws.owned]);
+  const progress = groupBy === "epic" ? ws.epicProgress : null;
 
   const server = useMemo<Cells>(() => {
     const out: Cells = {};
@@ -269,7 +275,15 @@ export function Board({ onConflict }: { onConflict: (title: string) => void }) {
     if (!dragging.current) setCells(server);
   }, [server]);
 
-  const columnCount = (col: string) => lanes.reduce((n, lane) => n + (cells[cellKey(lane, col)]?.length ?? 0), 0);
+  /** A done or cancelled status column: it holds only part of itself, so it heads with the true count. */
+  const closedColumn = (col: string): ClosedStatus | null => (cb === "status" && isClosed(col) ? col : null);
+  const held = (col: string) => lanes.reduce((n, lane) => n + (cells[cellKey(lane, col)]?.length ?? 0), 0);
+  const columnCount = (col: string) => {
+    const status = closedColumn(col);
+    return status ? held(col) + closed.hidden(status) : held(col);
+  };
+  // Columns by another field mix closed tickets into every column, so the board says once what it left out.
+  const closedElsewhere = cb !== "status";
   const laneCount = (lane: string) => columnKeys.reduce((n, col) => n + (cells[cellKey(lane, col)]?.length ?? 0), 0);
 
   const rankFailed = (err: Error) => {
@@ -391,6 +405,7 @@ export function Board({ onConflict }: { onConflict: (title: string) => void }) {
         cards={cells[cell] ?? []}
         head={withHead ? { count: columnCount(col), cap: query.wip[col] } : null}
         seed={seedFor(lane, col)}
+        more={withHead ? closedColumn(col) : null}
         onOpen={(item) => select(item.id)}
         onNudge={nudge}
       />
@@ -422,6 +437,11 @@ export function Board({ onConflict }: { onConflict: (title: string) => void }) {
         write(start.item, start.cell, target, { rank: rankBetween(before, after) });
       }}
     >
+      {closedElsewhere && (
+        <div className="board-more">
+          <LoadMore statuses={[...CLOSED_STATUSES]} text={(n) => t("board.hiddenClosed", { n })} />
+        </div>
+      )}
       <div className="board-scroll-area" data-has-more={hasMoreColumns}>
         {groupBy ? (
           <div className="lanes" data-group-by={groupBy} ref={scrollRef}>
@@ -450,6 +470,18 @@ export function Board({ onConflict }: { onConflict: (title: string) => void }) {
                 </section>
               );
             })}
+            {columnKeys.some((col) => closedColumn(col)) && (
+              <div className="lane-cols lane-cols-foot" role="row">
+                {columnKeys.map((col) => {
+                  const status = closedColumn(col);
+                  return (
+                    <div className="col" key={col} data-column={col}>
+                      {status && <LoadMore statuses={[status]} text={(n) => t("board.hiddenMore", { n })} />}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         ) : (
           <div className="col-track" ref={scrollRef}>{columnKeys.map((col, i) => renderColumn("", col, i, true))}</div>

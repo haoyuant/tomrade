@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useDeferredValue, useEffect, useState } from "react";
 import { Command } from "cmdk";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { useNavigate } from "@tanstack/react-router";
@@ -9,13 +9,14 @@ import { LAYOUT_LABEL, isTicket, viewIcon } from "~/lib/domain";
 import { requestStart } from "~/lib/codeLink";
 import { useTemplateActions, useTemplates } from "~/lib/templates";
 import { useI18n } from "~/lib/i18n";
-import { useCommands, useRunCommand } from "~/lib/queries";
+import { mergeById } from "~/lib/closedWindow";
+import { useClosedFound, useCommands, useRunCommand } from "~/lib/queries";
 import { useFilesTree } from "~/lib/files";
 import { notesSearch, useNotesEnabled } from "~/lib/notes";
 import { useNoteActions } from "~/components/files/useNoteActions";
 import { THEME_OPTIONS, useTheme } from "~/lib/theme";
 import { errorSpec, useToast } from "~/lib/toast";
-import { useSelectedId, useWorkspace, viewCount } from "./context";
+import { useSelectedId, useWorkspace } from "./context";
 import { useOptionalAgentDock } from "~/components/chrome/ProjectShell";
 import { keyLabel } from "~/lib/keybindings";
 import { isComposing } from "~/lib/keys";
@@ -65,7 +66,10 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
   // cmdk only filters what is rendered, so with a query the whole project is searched first and the best few rendered
   const terms = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const matches = (text: string) => terms.every((term) => text.toLowerCase().includes(term));
-  const tickets = ws.items.filter(isTicket);
+  // The window holds only the newest done and cancelled tickets; older ones are searched for, or opened by key.
+  const typed = useDeferredValue(search.trim());
+  const foundClosed = useClosedFound(ws.project.id, typed);
+  const tickets = mergeById([ws.items, foundClosed.data]).filter(isTicket);
   const shownTickets = (terms.length ? tickets.filter((i) => matches(`${i.key} ${i.title}`)) : tickets).slice(0, 60);
   const shownFiles = (terms.length ? files.filter((f) => matches(f.path)) : files).slice(0, 400);
   useEffect(() => {
@@ -180,7 +184,7 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
                     <span className="p-label">
                       {view.name} <span className="meta-txt">· {LAYOUT_LABEL[view.layout].label}</span>
                     </span>
-                    <span className="card-id">{viewCount(ws.items, view)}</span>
+                    <span className="card-id">{ws.viewCounts[view.id] ?? ""}</span>
                   </Command.Item>
                 ))}
               </Command.Group>
@@ -190,7 +194,7 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
                   <Command.Item key={b.id} value={b.name} className="palette-row" onSelect={() => run(() => ws.openWorkstream(b.id))}>
                     <Icon name={viewIcon(b.icon)} size={14} style={{ color: "var(--meta)" }} />
                     <span className="p-label">{b.name}</span>
-                    <span className="card-id">{ws.owned.filter((i) => i.boardId === b.id).length}</span>
+                    <span className="card-id">{ws.workstreamCounts[b.id] ?? ""}</span>
                   </Command.Item>
                 ))}
               </Command.Group>
