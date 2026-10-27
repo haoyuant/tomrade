@@ -1,18 +1,27 @@
 import { useCallback, useState } from "react";
 import { FoldChevron } from "~/components/ui/atoms";
 import { logQuietly } from "~/lib/api";
+import { foldTools, workLabel, type ConvoLine, type ConvoSay } from "~/lib/convoFold";
 
-/** One line of a conversation read back from an agent's record, with the key the view holds it by. */
-export interface ConvoLine {
-  key: number;
-  who: "person" | "agent" | "tool";
-  text: string;
-  detail?: { input: string; output?: string };
+export type { ConvoLine, ConvoSay } from "~/lib/convoFold";
+
+/** A conversation's lines, long runs of tool calls folded under what they came to. */
+export function ConvoLines({ lines, open, toggle, say }: { lines: ConvoLine[]; open: ReadonlySet<number>; toggle: (key: number) => void; say: ConvoSay }) {
+  return (
+    <>
+      {foldTools(lines).map((entry) =>
+        "fold" in entry ? (
+          <details key={`fold-${entry.fold[0]!.key}`} className="trace-fold cs-convo-fold">
+            <summary>{workLabel(entry.work, say)}</summary>
+            {entry.fold.map((l) => <ConvoLineRow key={l.key} line={l} open={open.has(l.key)} onToggle={() => toggle(l.key)} say={say} />)}
+          </details>
+        ) : (
+          <ConvoLineRow key={entry.key} line={entry} open={open.has(entry.key)} onToggle={() => toggle(entry.key)} say={say} />
+        )
+      )}
+    </>
+  );
 }
-
-type ConvoWordKey = "convoCopy" | "convoCopied" | "convoInput" | "convoOutput" | "convoNoOutput" | "convoEarlier" | "convoReading" | "convoStart";
-/** The words these rows need, from whichever window shows them: the Terminal window's `say`, or the panel's `t` over the same keys. */
-export type ConvoSay = (key: ConvoWordKey) => string;
 
 /** One line of a conversation read back; a tool call folds open to its whole input and output. */
 export function ConvoLineRow({ line, open, onToggle, say }: { line: ConvoLine; open: boolean; onToggle: () => void; say: ConvoSay }) {

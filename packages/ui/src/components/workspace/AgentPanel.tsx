@@ -10,7 +10,7 @@ import { Kbd, Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
 import { viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { foldSteps, startBriefId } from "~/lib/steps";
+import { firstCodeStep, foldSteps, startBriefId } from "~/lib/steps";
 import { conducts, findEngine, useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetWorkstream, useWorkdir, type RunProgress } from "~/lib/agent";
 import { keys, useAssistantAccessories, useBoards, useHeldItem, useItems, useSettings } from "~/lib/queries";
 import { ATTENTION_KEY, useAttention, type AttentionEntry } from "~/lib/attention";
@@ -390,6 +390,9 @@ export function AgentPanel({
   const folded = useMemo(() => foldSteps(detail.data?.messages ?? []), [detail.data?.messages]);
   // The kickoff brief is machine-written and long: it opens folded, so the person's own exchange stays in view.
   const briefId = useMemo(() => startBriefId(detail.data?.messages ?? [], !!detail.data?.thread.itemId), [detail.data?.messages, detail.data?.thread.itemId]);
+  // Chat that turns to code: a rule where the first file is changed, with the ticket it is for when the thread has one.
+  const codeStep = useMemo(() => firstCodeStep(detail.data?.messages ?? []), [detail.data?.messages]);
+  const codeFrom = useMemo(() => (codeStep ? { id: codeStep, ticket: threadItem?.key ?? null } : null), [codeStep, threadItem?.key]);
   const lastErrorId = newestLast[0]?.block.type === "error" ? newestLast[0].id : null;
   const lastAskedBlock = newestLast.find((m) => m.role === "user" && m.block.type === "text")?.block;
   const lastAsked = lastAskedBlock?.type === "text" ? lastAskedBlock.text : null;
@@ -664,6 +667,7 @@ export function AgentPanel({
           actions={transcriptActions}
           folded={folded}
           briefId={briefId}
+          codeFrom={codeFrom}
           lastErrorId={lastErrorId}
           lastChangesId={lastChangesId}
           onRetry={lastAsked && !busy ? () => void doSend(lastAsked) : undefined}
