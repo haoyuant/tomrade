@@ -5,6 +5,7 @@ import { ContextMenuActionItem, ContextMenuSub } from "~/components/ui/menu";
 import { useLocaleWords } from "~/lib/dicts";
 import { onLook, onShownIn, onState, onTails, onToast, send, type Look } from "./bridge";
 import { Cell } from "./Cell";
+import { GuessContext, guessesByPane } from "./guess";
 import { arrowsLabel, keyLabel, windowKey, type WindowKey } from "./keys";
 import { applyPreset, carryOn, close, cycle, heir, holder, landing, leaves, lock, neighbour, resize, show, split } from "./layout";
 import { live, sessionName, sidebarRows, type HereRow } from "./lists";
@@ -144,6 +145,7 @@ export function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [tails, setTails] = useState<Record<string, string | null>>({});
   const rows = useMemo(() => (state ? sidebarRows(state.sessions, state.terminals, state.threads) : { here: [], away: [] }), [state]);
+  const guesses = useMemo(() => guessesByPane(state?.sessions ?? []), [state]);
 
   useEffect(() => onState((next) => setState(next)), []);
   useEffect(() => onLook(setLook), []);
@@ -445,7 +447,7 @@ export function App() {
     );
 
   return (
-    <SayContext.Provider value={say}>
+    <SayContext.Provider value={say}><GuessContext.Provider value={guesses}>
       <WordsContext.Provider value={anyWords}>
       <div className="cs-window">
         <IconSprite />
@@ -507,6 +509,6 @@ export function App() {
         )}
       </div>
       </WordsContext.Provider>
-    </SayContext.Provider>
+    </GuessContext.Provider></SayContext.Provider>
   );
 }

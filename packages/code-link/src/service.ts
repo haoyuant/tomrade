@@ -38,7 +38,8 @@ import { githubHttps } from "@tomradex/github";
 import { PLAYBOOKS } from "./playbooks.js";
 import { classifyRemoteFailure, probeRemote, readRemoteIdentity, type RemoteIdentity } from "./remote.js";
 import { AUTHOR, currentLinks, deliveryMerged, GitScan, LANDED_ELSEWHERE, primaryOf, type ScanSummary, type UnlinkedBranch } from "./scan/absorb.js";
-import { Sessions, type SessionMoment } from "./sessions.js";
+import { Sessions, END_AFTER_MS, type SessionMoment } from "./sessions.js";
+import { firstWords, guessable, similarIds, type TicketGuess } from "./guess.js";
 import { CODE_WORDS, type CodeWords } from "./words.js";
 import { Starter, type StartGate, type StartOptions, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type Readiness, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
@@ -412,6 +413,8 @@ export class CodeLink extends Service implements CodeLinkReader {
   private readonly running = new Map<string, ThreadSummary>();
   /** What the Start dialog last ran with on this machine (see `defaults.ts`). */
   private readonly defaults: StartDefaultsStore;
+  /** Each ticketless session's guess at its ticket, made once from what the person first said to it; kept in memory. */
+  private readonly guesses = new Map<string, TicketGuess>();
 
   constructor(
     ctx: Context,
@@ -436,6 +439,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       prefixOf: (projectId) => this.prefixOf(projectId),
       onMoment: (session, moment) => this.noteMoment(session, moment),
       onWaiting: (session, ask) => this.herdr.waiting(session, askLine(ask, this.words())),
+      onFirstPrompt: (session, prompt) => void this.guess(session, prompt),
       panes: { alive: (pane) => this.herdr.paneAlive(pane), info: (pane) => this.herdr.pane(pane) },
       // A terminal session cannot be typed into: when the limit lifts the person is told, not the agent.
       onLimit: (session, until) => {
@@ -1002,6 +1006,70 @@ export class CodeLink extends Service implements CodeLinkReader {
   /** The agent's declared keys for its permission prompt, pressed in the session's pane while it shows one; see `SessionPanel.answer`. */
   sessionAnswer(projectId: string, sessionId: string, which: "allow" | "deny"): Promise<AnswerResult> {
     return this.panel.answer(projectId, sessionId, which);
+  }
+
+  /**
+   * A session on no ticket, spoken to for the first time: the open ticket its first words sound like, by the same
+   * search find_similar makes, kept to offer the person. Asked once; nothing found, nothing offered.
+   */
+  private async guess(session: SessionView, prompt: string): Promise<void> {
+    const said = firstWords(prompt);
+    const tools = this.ctx.get("tools");
+    if (!said || !guessable(session) || !tools?.has("find_similar")) return;
+    try {
+      const answer = await tools.execute("find_similar", { title: said, limit: 5 }, { by: AUTHOR, projectId: session.projectId });
+      const itemId = similarIds(answer).find((id) => this.claimable(session.projectId, id, session.id));
+      const item = itemId ? this.ctx.items.get(session.projectId, itemId) : null;
+      const now = this.store.session(session.projectId, session.id);
+      if (!item || !now || !guessable(now)) return;
+      this.guesses.set(session.id, { itemId: item.id, key: item.key, title: item.title });
+      this.notify(session.projectId);
+    } catch (err) {
+      this.ctx.logger.warn(`guessing session ${session.id}'s ticket failed: ${errorMessage(err)}`);
+    }
+  }
+
+  /** A ticket the session could take on now: open, unlocked, and no other live session working it. */
+  private claimable(projectId: string, itemId: string, sessionId: string): boolean {
+    const item = this.ctx.items.get(projectId, itemId);
+    if (!item || item.kind !== "ticket" || item.humanLocked || item.status === "done" || item.status === "cancelled") return false;
+    return !this.store.sessions(projectId, { itemId, live: true }).some((s) => s.id !== sessionId && s.state !== "lost" && s.endedAt === null && Date.now() - (s.lastEventAt ?? s.startedAt) < END_AFTER_MS);
+  }
+
+  /** The ticket a session's first words sound like, while it holds none, has not been told to go without, and the ticket is still free. */
+  guessOf(projectId: string, sessionId: string): TicketGuess | null {
+    const guess = this.guesses.get(sessionId);
+    if (!guess) return null;
+    const session = this.store.session(projectId, sessionId);
+    const item = this.ctx.items.get(projectId, guess.itemId);
+    if (!session || !guessable(session) || !item || !this.claimable(projectId, item.id, sessionId)) return null;
+    return { itemId: item.id, key: item.key, title: item.title };
+  }
+
+  /**
+   * The person took the guess: the session works that ticket from now on, as a claim makes it, and its agent hears at
+   * its next step to claim it for the branch and conventions. Null when there is no guess to take any more.
+   */
+  takeGuess(projectId: string, sessionId: string): { key: string } | null {
+    const guess = this.guessOf(projectId, sessionId);
+    this.guesses.delete(sessionId);
+    const item = guess ? this.ctx.items.get(projectId, guess.itemId) : null;
+    if (!guess || !item) return null;
+    this.attach(projectId, sessionId, item.id, "", this.store.ensureActiveDelivery(projectId, item.id, item.updatedAt).sequence);
+    if (item.status === "backlog" || item.status === "todo") this.ctx.items.update(projectId, item.id, { status: "doing" }, "human");
+    this.sessions.tell(sessionId, `Tomrade: the person picked ${item.key} (${item.title}) for this conversation. Call claim_ticket("${item.key}") now for its branch and conventions, and work on that branch.`);
+    return { key: item.key };
+  }
+
+  /** The person said the session needs no ticket: recorded as work_without_ticket records it, in `words`, and the guess goes. */
+  goWithoutTicket(projectId: string, sessionId: string, words: string): boolean {
+    this.guesses.delete(sessionId);
+    const session = this.store.session(projectId, sessionId);
+    if (!session || !guessable(session)) return false;
+    this.store.patchSession(projectId, sessionId, { withoutTicket: words });
+    this.sessions.tell(sessionId, "Tomrade: the person said in Tomrade that this conversation needs no ticket; go on without one.");
+    this.notify(projectId);
+    return true;
   }
 
   /** The last lines on a terminal session's pane; null without a pane, or when it is gone. */

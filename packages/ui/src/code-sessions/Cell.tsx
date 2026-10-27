@@ -7,6 +7,7 @@ import { keyLabel } from "./keys";
 import { live, sessionName } from "./lists";
 import { Replay } from "./Replay";
 import { useSay } from "./say";
+import { Guess, ShellHint } from "./guess";
 import { NewTerminal } from "./NewTerminal";
 import { TerminalCell } from "./TerminalCell";
 
@@ -278,7 +279,11 @@ export function Cell({ leaf, number, pane, session, terminal, closed, places, re
         </span>
       </div>)}
       {session?.pane || terminal?.pane ? (
-        <TerminalCell cell={leaf.id} sessionId={leaf.sessionId!} pane={pane} tokens={look.tokens} font={look.tokens["--font-mono"] ?? ""} labels={labels} autoFocus={selected} />
+        <>
+          <TerminalCell cell={leaf.id} sessionId={leaf.sessionId!} pane={pane} tokens={look.tokens} font={look.tokens["--font-mono"] ?? ""} labels={labels} autoFocus={selected} />
+          <Guess session={session} pane={session?.pane ?? terminal?.pane} place="cell" />
+          {!session && terminal?.shell && <ShellHint cell={leaf.id} />}
+        </>
       ) : terminal ? (
         withMenu(<div className="cs-cell-empty">{say("starting")}</div>)
       ) : session ? (

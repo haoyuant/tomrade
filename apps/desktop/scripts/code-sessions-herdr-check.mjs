@@ -674,6 +674,8 @@ app.whenReady().then(async () => {
     check("关窗重开后，新终端在原来的格子里接回来", back);
     const plainChip = () => tjs(`document.querySelector('.cs-cell[data-cell-terminal] .cs-cell-bar [data-testid=cs-state]')?.dataset.state ?? null`);
     check("普通终端里只有 shell 时，标题栏不显示状态", (await plainChip()) === null, String(await plainChip()));
+    const shellHint = await wait(async () => tjs(`(() => { const hint = document.querySelector('.cs-cell[data-cell-terminal] [data-testid=cs-shell-hint]'); return !!hint?.offsetParent && hint.textContent.includes('在这里敲 claude 试试') && hint.textContent.includes('普通 shell 不算会话'); })()`), 8000);
+    check("只有 shell 的格子下面一行提示「在这里敲 claude 试试 · 普通 shell 不算会话；agent 一启动就算」", shellHint, await tjs(`document.querySelector('.cs-cell[data-cell-terminal]')?.textContent?.slice(-200)`));
 
     // An agent in it claims a ticket: code link learns the pane (as the repo's hooks report it) and the cell becomes
     // that session in place — same xterm, same picture, no second row. Letting the claim go makes it a terminal again.
@@ -687,8 +689,12 @@ app.whenReady().then(async () => {
     await sleep(1500);
     const unclaimed = await tjs(`[document.querySelectorAll('.cs-row').length, document.querySelectorAll('[data-terminal]').length, [...document.querySelectorAll('.cs-row .cs-row-head .mono')].filter((n) => !n.textContent.trim()).length]`);
     check("还没认领工单的 agent 只是它终端的那一行，没有空白的会话行", unclaimed[0] === rowCount && unclaimed[1] === 1 && unclaimed[2] === 0, JSON.stringify({ before: rowCount, now: unclaimed }));
-    ctx.codeLink.store.patchSession(project.id, claimSession.id, { itemIds: [claimed.id], branch: `${claimed.key.toLowerCase()}/claimed` });
-    ctx.emit("codeLink/changed", project.id);
+    // Its first words, as its hooks report them, sound like that ticket: the guess is offered on the terminal's card and in
+    // its cell, and taking it is the claim.
+    ctx.codeLink.sessions.event(project.id, claimSession.id, { hook_event_name: "UserPromptSubmit", prompt: "在终端里认领这张工单的活。" });
+    const guessed = await wait(async () => tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal] [data-testid=cs-guess]'); const card = document.querySelector('.cs-card:has([data-terminal]) [data-testid=cs-guess]'); return !!cell && !!card && [cell, card].every((g) => g.textContent.includes(${JSON.stringify(`你说的话像是 ${claimed.key}`)}) && g.textContent.includes('不用工单')); })()`), 15000);
+    check("没挂工单的会话：卡片和格子上「你说的话像是 …」+「认领」/「不用工单」", guessed, JSON.stringify(await tjs(`[...document.querySelectorAll('[data-testid=cs-guess]')].map((g) => g.textContent)`)));
+    await tjs(`document.querySelector('.cs-cell[data-cell-terminal] [data-testid=cs-guess-take]')?.click(); true`);
     const folded = await wait(async () => tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return !!cell && cell.querySelector('.cs-cell-name').textContent.includes(${JSON.stringify(claimed.key)}) && [...cell.querySelectorAll('.link-btn')].some((b) => b.textContent === '继续'); })()`));
     check("终端里的 agent 认领工单后，这个格子原地变成该工单的会话", folded);
     const inPlace = await tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return cell.querySelector('.xterm')?.dataset.mark === 'same' && [...cell.querySelectorAll('.xterm-rows > div')].some((r) => r.textContent.includes('reopened-ok')); })()`);
@@ -700,8 +706,11 @@ app.whenReady().then(async () => {
     const plainAgain = await wait(async () => tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return !!cell && [...cell.querySelectorAll('.link-btn')].some((b) => b.textContent === '关闭终端') && cell.querySelector('.xterm')?.dataset.mark === 'same'; })()`));
     check("释放工单后，格子变回普通终端（不清空、不重连）", plainAgain);
 
-    // An agent started in the plain terminal: herdr reads it, and the pane's bar shows how it stands, before any claim.
-    herdr("pane", "send-text", plainPane, "claude");
+    // An agent started in the plain terminal from the hint's button, which types its command without running it: herdr
+    // reads it, and the pane's bar shows how it stands, before any claim.
+    await tjs(`document.querySelector('.cs-cell[data-cell-terminal] [data-testid=cs-shell-try]')?.click(); true`);
+    const typedClaude = await wait(async () => /\bclaude\s*$/m.test(herdr("pane", "read", plainPane, "--source", "recent", "--lines", "5").trimEnd()), 5000);
+    check("点「在这里敲 claude 试试」把 claude 打进这个格子，不回车", typedClaude, herdr("pane", "read", plainPane, "--source", "recent", "--lines", "5").slice(-200));
     herdr("pane", "send-keys", plainPane, "enter");
     const agentChip = await wait(async () => ["running", "needs", "idle", "done"].includes(await plainChip()), 20000);
     check("普通终端里跑起 agent 后，标题栏按 herdr 的判断显示它的状态", agentChip, JSON.stringify({ chip: await plainChip(), pane: JSON.parse(herdr("pane", "get", plainPane)).result.pane }));

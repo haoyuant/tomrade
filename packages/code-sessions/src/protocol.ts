@@ -61,6 +61,8 @@ export interface SessionRow {
   outcome: SessionOutcome | null;
   /** Live in a pane here: the pane's last lines that say something, as the bar's card shows them; null otherwise. */
   tail: string[] | null;
+  /** On no ticket: the open one what the person first said to it sounds like; null without a guess. */
+  guess: { key: string; title: string } | null;
 }
 
 /** A plain terminal closed here whose output was recorded: in History, to play back. */
@@ -119,6 +121,8 @@ export interface TerminalRow {
   agentStatus: "working" | "blocked" | "idle" | "done" | null;
   /** With no agent in it: what runs in its foreground when that is not the shell, else the title its shell set. */
   running: string | null;
+  /** Nothing runs in it but its shell: no agent, no other command in its foreground. */
+  shell: boolean;
   /** The code session its agent claimed a ticket for: the cell shows that session, on the same pane. */
   sessionId: string | null;
   /** Why it stays a plain terminal although an agent claimed a ticket, when Tomrade cannot tell which terminal that was. */
@@ -233,6 +237,9 @@ export type WindowMessage =
   | { type: "openThread"; sessionId: string }
   /** An assistant conversation, shown in the app window: it has no pane here. */
   | { type: "showThread"; threadId: string }
+  /** The person's answer to a ticketless session's guess: take that ticket, or go on without one. */
+  | { type: "takeGuess"; sessionId: string }
+  | { type: "noTicket"; sessionId: string }
   /** The session's permission prompt answered from its card: the keys its agent declared, pressed in its pane. */
   | { type: "answer"; sessionId: string; which: "allow" | "deny" }
   /** An assistant conversation's question answered from its card with one of its choices. */

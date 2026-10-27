@@ -76,7 +76,7 @@ interface Saved {
 /** How many closed terminals a project's History keeps. */
 export const CLOSED_TERMINALS_MAX = 50;
 
-type SavedTerminal = Omit<TerminalRow, "sessionId" | "note" | "agentTitle" | "agentStatus" | "running"> & { pane: string };
+type SavedTerminal = Omit<TerminalRow, "sessionId" | "note" | "agentTitle" | "agentStatus" | "running" | "shell"> & { pane: string };
 type StartingTerminal = Omit<SavedTerminal, "pane"> & { pane: null };
 
 const run = promisify(execFile);
@@ -276,7 +276,8 @@ export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, it
         lastEventAt: s.lastEventAt ?? null,
         rawOutput: false,
         outcome: null,
-        tail: null
+        tail: null,
+        guess: null
       };
     })
     .sort((a, b) => Number(b.state !== "ended" && b.state !== "lost") - Number(a.state !== "ended" && a.state !== "lost") || Number(b.needsYou) - Number(a.needsYou) || b.startedAt - a.startedAt);
@@ -377,13 +378,20 @@ function apply(ctx: Context, config: Config) {
   });
   ctx.settings.register(RECORDING_SECTION);
 
+  /** What code link guesses a live session on no ticket works on, from what the person first said to it. */
+  const guessOf = (projectId: string, r: SessionRow): SessionRow["guess"] => {
+    if (r.endedAt !== null || r.itemId) return null;
+    const guess = ctx.codeLink.guessOf?.(projectId, r.id);
+    return guess ? { key: guess.key, title: guess.title } : null;
+  };
+
   /** The sessions to list; when they cannot be read the window says so and its terminals work on. */
   const listed = (projectId: string): { sessions: SessionRow[]; warning: string | null } => {
     try {
       const agents = ctx.get("agent");
       const rows = sessionRows(ctx.codeLink, ctx.items, projectId, Date.now(), ctx.get("hub")?.deviceId);
       return {
-        sessions: rows.map((r) => ({ ...r, agentName: agents?.engineOf(r.agent)?.title ?? null, approval: !!agents?.engineOf(r.agent)?.local?.approval, rawOutput: r.endedAt !== null && !!r.ranIn && recorder.has(r.ranIn, r.startedAt, r.endedAt) })),
+        sessions: rows.map((r) => ({ ...r, agentName: agents?.engineOf(r.agent)?.title ?? null, approval: !!agents?.engineOf(r.agent)?.local?.approval, rawOutput: r.endedAt !== null && !!r.ranIn && recorder.has(r.ranIn, r.startedAt, r.endedAt), guess: guessOf(projectId, r) })),
         warning: null
       };
     } catch (error) {
@@ -510,16 +518,16 @@ function apply(ctx: Context, config: Config) {
       return info?.agent && info.status !== "unknown" ? info.status : null;
     };
     // A terminal with no agent goes by what runs in it: its foreground command, else what its shell calls it.
-    const running = async (pane: string | null): Promise<string | null> => {
+    const running = async (pane: string | null): Promise<{ running: string | null; shell: boolean }> => {
       const info = pane ? byPane.get(pane) : undefined;
-      if (!provider || !pane || !info || info.agent) return null;
+      if (!provider || !pane || !info || info.agent) return { running: null, shell: false };
       const fg = await provider.processes(pane).catch(() => []);
       const command = fg.map((p) => p.cmdline?.trim() ?? "").find((c) => c && !SHELL.test(c.split(/\s+/)[0]!));
-      return command ? command.slice(0, 80) : info.title;
+      return command ? { running: command.slice(0, 80), shell: false } : { running: info.title, shell: true };
     };
     const rows = [...saved.filter((t) => !gone.has(t.id)), ...opening];
     const runs = await Promise.all(rows.map((t) => running(t.pane)));
-    return rows.map((t, i) => ({ ...t, agentTitle: agentTitle(t.pane), agentStatus: agentStatus(t.pane), running: runs[i] ?? null, sessionId: null, note: null }));
+    return rows.map((t, i) => ({ ...t, agentTitle: agentTitle(t.pane), agentStatus: agentStatus(t.pane), running: runs[i]?.running ?? null, shell: runs[i]?.shell ?? false, sessionId: null, note: null }));
   };
 
   /**
@@ -1172,6 +1180,16 @@ function apply(ctx: Context, config: Config) {
       // The app window comes forward on it, the way a notification's click or a tomrade:// link brings it up.
       case "showThread":
         return void ctx.emit("desktop/open", { projectId, threadId: m.threadId });
+      case "takeGuess": {
+        const taken = ctx.codeLink.takeGuess?.(projectId, m.sessionId) ?? null;
+        await refresh(projectId);
+        return post(win, { type: "toast", text: taken ? words()("guessTaken", { key: taken.key }) : words()("guessGone") });
+      }
+      case "noTicket": {
+        const done = ctx.codeLink.goWithoutTicket?.(projectId, m.sessionId, words()("noTicketChosen")) ?? false;
+        await refresh(projectId);
+        return post(win, { type: "toast", text: words()(done ? "noTicketTaken" : "guessGone") });
+      }
       case "answer": {
         const result = await ctx.codeLink.sessionAnswer(projectId, m.sessionId, m.which).catch(() => "failed" as const);
         // answered or not, what the screen asks is read again for the next state
