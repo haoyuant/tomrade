@@ -1,20 +1,52 @@
-/* The code sessions window: a list of sessions beside a layout of terminals. Colours are the app's theme variables. */
+/* The code sessions window: a layout of terminals with the session bar on its right. Colours are the app's theme variables. */
 html, body, #root { height: 100%; margin: 0; }
 body { background: var(--bg); color: var(--fg); font-family: var(--font-body); overflow: hidden; }
 
-.cs-window { display: flex; height: 100%; }
-/* The list reads like the app's own sidebar: its background, eyebrow heads, side rows and tags. */
-.cs-side { --text-xs: 13px; --text-sm: 14px; width: 280px; flex: none; border-right: 1px solid var(--border); background: var(--bg); overflow-y: auto; padding: 0 var(--space-3) var(--space-3); scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.cs-window { display: flex; flex-direction: column; height: 100%; }
+.cs-body { flex: 1; min-height: 0; display: flex; }
+/* The project this window belongs to, and how to look at it: the cells, or every session as a card. */
+.cs-topbar { display: flex; align-items: center; gap: 12px; height: 34px; padding: 0 12px; border-bottom: 1px solid var(--border); flex: none; }
+.cs-project { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); font-weight: 600; color: var(--fg); }
+.cs-views { display: flex; flex: none; }
+.cs-views > button { min-width: 56px; }
+/* The keys the window keeps, along the bottom. */
+.cs-keys { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 14px; min-height: 24px; padding: 2px 12px; border-top: 1px solid var(--border); font-size: 11px; color: var(--meta); flex: none; overflow: hidden; white-space: nowrap; }
+.cs-keys kbd { font-family: var(--font-mono); font-size: 10px; padding: 0 4px; border: 1px solid var(--border-input); border-radius: 4px; color: var(--muted); }
+
+/* The session bar reads like the assistant panel's: its background, cards that say where each session stands, dots when folded. */
+.cs-side { --text-xs: 12px; --text-sm: 13px; position: relative; width: 280px; flex: none; border-left: 1px solid var(--border); background: var(--bg); overflow-y: auto; padding: 0 var(--space-2) var(--space-3); scrollbar-width: thin; scrollbar-color: var(--border) transparent; display: flex; flex-direction: column; }
+.cs-bar-head { display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 2px; border-bottom: 1px solid var(--border); margin: 0 calc(-1 * var(--space-2)) var(--space-2); padding: 0 var(--space-2); flex: none; }
+.cs-bar-title { flex: 1; min-width: 0; font-size: var(--text-sm); color: var(--fg); }
+.cs-bar-head .side-add { font-size: var(--text-xs); flex: none; }
 .cs-side-head { margin: 0; padding: var(--space-5) var(--space-2) var(--space-2); }
-/* The project this window belongs to, first thing in the list, beside the fold. */
-.cs-project-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: var(--space-4) var(--space-2) 0; }
-.cs-project { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); font-weight: 600; color: var(--fg); }
 .cs-fold { width: 24px; height: 24px; flex: none; border: 0; border-radius: 4px; background: none; color: var(--muted); cursor: pointer; }
 .cs-fold:hover { background: var(--tag-bg-faint); color: var(--fg); }
-/* Folded: a strip with the way back, the needs-you count and the project's name. */
-.cs-side[data-folded] { width: 40px; padding: 0; overflow: hidden; }
-.cs-strip { display: flex; flex-direction: column; align-items: center; gap: 10px; padding-top: var(--space-3); height: 100%; }
-.cs-strip-name { writing-mode: vertical-rl; min-height: 0; max-height: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-xs); color: var(--meta); }
+/* The count of what waits on the person, in the warning's colour. */
+.cs-waiting { display: inline-flex; align-items: center; gap: 4px; padding: 0 7px; border: 1px solid var(--warn); border-radius: 999px; color: var(--warn); font-size: 11px; line-height: 18px; flex: none; font-variant-numeric: tabular-nums; }
+/* Folded: a column of dots to switch by, with a peek beside the one under the pointer. */
+.cs-side[data-folded] { width: 56px; padding: var(--space-2) 0; overflow: visible; align-items: center; gap: 6px; }
+.cs-dots { flex: 1; min-height: 0; width: 100%; overflow-y: auto; scrollbar-width: none; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 2px 0 var(--space-2); }
+.cs-dot { width: 50px; padding: 5px 0 3px; border: 0; border-radius: var(--radius-md, 8px); background: transparent; color: var(--fg); display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; flex-shrink: 0; }
+.cs-dot:hover { background: var(--surface-warm); }
+.cs-dot[aria-current="true"] { background: var(--surface); box-shadow: var(--elev-ring); }
+.cs-dot-face { position: relative; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-family: var(--font-mono); background: var(--surface); border: 1px dashed var(--border-input); overflow: visible; }
+.cs-dot[data-status="run"] .cs-dot-face { border: 2px solid var(--accent-light); }
+.cs-dot[data-status="wait"] .cs-dot-face { border: 2px solid var(--warn); }
+.cs-dot[data-status="idle"] .cs-dot-face { border: 1px solid var(--border-input); }
+.cs-dot[data-active] .cs-dot-face { box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 30%, transparent); }
+.cs-dot-face .cs-mark { position: absolute; top: -3px; left: -3px; }
+.cs-dot[data-status="run"] .cs-dot-face .cs-mark, .cs-dot[data-status="done"] .cs-dot-face .cs-mark { display: none; }
+.cs-dot-where { font-size: 10px; color: var(--meta); max-width: 50px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-rule { width: 28px; border-top: 1px solid var(--border); margin: 4px 0; flex-shrink: 0; }
+.cs-peek { position: absolute; right: calc(100% + 6px); width: 280px; z-index: 20; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg, 10px); box-shadow: var(--elev-raised); pointer-events: none; font-size: var(--text-sm); }
+.cs-peek[data-status="wait"] { border-color: var(--warn); }
+.cs-peek-title { color: var(--fg); }
+/* The marks: a ring runs, a diamond waits, a tick ended. */
+.cs-mark { flex-shrink: 0; }
+.cs-mark.is-run circle { fill: none; stroke: var(--accent-light); stroke-width: 2; }
+.cs-mark.is-wait path { fill: var(--warn); }
+.cs-mark.is-done path { fill: none; stroke: var(--meta); stroke-width: 1.8; }
+
 .cs-group { margin-top: 6px; }
 .cs-group-head { flex-direction: row; align-items: center; gap: 6px; width: 100%; cursor: pointer; font-size: var(--text-sm); color: var(--muted); }
 .cs-group-name { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -24,39 +56,62 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-side-sub h2 { margin: 0; }
 .cs-side-sub .side-add { font-size: var(--text-xs); }
 .cs-empty { margin: 0; padding: 0 var(--space-2); color: var(--meta); font-size: var(--text-sm); line-height: 1.5; }
-.cs-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
-.cs-row { flex-direction: column; align-items: stretch; gap: 2px; cursor: pointer; }
-/* Shown in a pane: a faint bar; the selected pane's row: the accent bar; one that needs you: the warning bar. */
-.cs-row[data-active] { border-left-color: color-mix(in oklab, var(--accent) 35%, transparent); }
-.cs-row[aria-current="true"] { border-left-color: var(--accent); }
-/* Another ticket worked in a pane a cell shows: the same bars, lighter, and never the selected row's background. */
-.cs-row[data-bound="shown"] { border-left-color: color-mix(in oklab, var(--accent) 20%, transparent); }
-.cs-row[data-bound="selected"] { border-left-color: color-mix(in oklab, var(--accent) 55%, transparent); color: var(--fg); }
-.cs-row[data-needs] { border-left-color: var(--warn); }
-/* One agent's tickets in one pane: framed together, the frame tinted while a cell shows that pane. */
-.cs-bundle { display: flex; flex-direction: column; gap: 1px; margin: 3px 0; padding: 4px 0 2px; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); }
-.cs-bundle[data-shown] { border-color: color-mix(in oklab, var(--accent) 22%, var(--border-soft)); }
-.cs-bundle[data-selected] { border-color: color-mix(in oklab, var(--accent) 45%, var(--border-soft)); }
-.cs-bundle-head { padding: 0 var(--space-2) 0 12px; font-size: var(--text-xs); color: var(--meta); }
-/* A pane that ran sessions before: its chevron left of the row, the earlier sessions under it. */
-.cs-fold-row { gap: 2px; }
-.cs-fold-row > .cs-row, .cs-fold-row > .cs-bundle-head { flex: 1; min-width: 0; }
-.cs-timeline { margin: 1px 0 3px; padding-left: calc(22px + 2px); }
-.cs-archive-search { margin: 0 var(--space-2) var(--space-2); width: calc(100% - 2 * var(--space-2)); box-sizing: border-box; }
-.cs-row[data-ended] { opacity: 0.6; }
-.cs-row-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: var(--text-sm); }
+.cs-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+/* A card: its name and where it is, the title, who works it and how it stands, then what it says. */
+.cs-row { text-align: left; width: 100%; border: 1px solid var(--border); border-radius: var(--radius-lg, 10px); background: var(--surface); color: var(--fg); padding: 7px 10px; display: flex; flex-direction: column; gap: 3px; cursor: pointer; font-size: var(--text-sm); font-family: inherit; }
+.cs-row:hover { border-color: var(--border-input); }
+/* Shown in a pane: the accent, faint; the selected pane's: the accent ring; waiting on you: the warning's border. */
+.cs-row[data-active] { border-color: color-mix(in oklab, var(--accent) 35%, var(--border)); }
+.cs-row[aria-current="true"] { box-shadow: var(--elev-ring-accent); }
+/* Another ticket worked in a pane a cell shows: the same tint, lighter, and never the selected row's ring. */
+.cs-row[data-bound="shown"] { border-color: color-mix(in oklab, var(--accent) 20%, var(--border)); }
+.cs-row[data-bound="selected"] { border-color: color-mix(in oklab, var(--accent) 55%, var(--border)); }
+.cs-row[data-status="wait"], .cs-row[data-needs] { border-color: var(--warn); }
+.cs-row[data-ended] { opacity: 0.7; }
+.cs-row-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-width: 0; }
+.cs-row-name { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-where { flex: none; font-size: 10px; color: var(--meta); max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cs-row-title { font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cs-row-meta, .cs-row-activity { font-size: var(--text-xs); color: var(--meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-row-wait { font-size: var(--text-xs); color: var(--warn); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.cs-row-outcome { font-size: var(--text-xs); border-left: 2px solid var(--border-input); padding-left: 7px; color: var(--fg-2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+/* Allow and Deny, under the card that asks: in the bar, inside its lower edge. */
+.cs-row-actions { display: flex; gap: 6px; flex-wrap: wrap; padding: 4px 2px 0; }
+.cs-card { position: relative; min-width: 0; }
+.cs-card:has(> .cs-row-actions) > .cs-row { padding-bottom: 38px; }
+.cs-card > .cs-row-actions { position: absolute; left: 10px; bottom: 9px; padding: 0; }
 .cs-chip[data-state="needs"] { background: color-mix(in oklab, var(--warn) 18%, transparent); color: var(--warn); }
 .cs-chip[data-state="error"], .cs-chip[data-state="lost"] { background: color-mix(in oklab, var(--danger) 14%, transparent); color: var(--danger); }
 .cs-chip[data-state="ended"], .cs-chip[data-state="idle"] { background: var(--surface-warm); color: var(--muted); }
 .cs-chip[data-state="done"] { background: color-mix(in oklab, var(--success) 16%, transparent); color: var(--success); }
+/* One agent's tickets in one pane: framed together, the frame tinted while a cell shows that pane. */
+.cs-bundle { display: flex; flex-direction: column; gap: 4px; margin: 2px 0; padding: 4px 4px 4px; border: 1px solid var(--border-soft); border-radius: var(--radius-lg, 10px); }
+.cs-bundle[data-shown] { border-color: color-mix(in oklab, var(--accent) 22%, var(--border-soft)); }
+.cs-bundle[data-selected] { border-color: color-mix(in oklab, var(--accent) 45%, var(--border-soft)); }
+.cs-bundle-head { padding: 0 var(--space-2) 0 6px; font-size: var(--text-xs); color: var(--meta); }
+/* A pane that ran sessions before: its chevron left of the card, the earlier sessions under it. */
+.cs-fold-row { gap: 2px; }
+.cs-fold-row > .cs-card, .cs-fold-row > .cs-bundle-head { flex: 1; min-width: 0; }
+.cs-timeline { margin: 4px 0 3px; padding-left: calc(22px + 2px); }
+.cs-archive-search { margin: 0 var(--space-2) var(--space-2); width: calc(100% - 2 * var(--space-2)); box-sizing: border-box; }
 
-.cs-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.cs-main { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .cs-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border-soft); background: var(--surface-warm); font-size: var(--text-sm); }
 .cs-banner code { font-family: var(--font-mono); font-size: var(--text-xs); }
 .cs-layout { flex: 1; min-height: 0; display: flex; padding: 6px; }
 .cs-layout > * { flex: 1; min-width: 0; min-height: 0; }
+/* The overview lies over the cells, which keep their terminals attached underneath. */
+.cs-overview { position: absolute; inset: 0; z-index: 5; overflow-y: auto; padding: 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; align-content: start; background: var(--bg); scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.cs-big { border: 1px solid var(--border); border-radius: var(--radius-lg, 10px); background: var(--surface); padding: 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; font-size: var(--text-sm); }
+.cs-big[data-status="wait"] { border-color: var(--warn); }
+.cs-big[aria-current="true"] { box-shadow: var(--elev-ring-accent); }
+.cs-big-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cs-big-name { flex: 1; min-width: 0; display: flex; gap: 8px; align-items: baseline; overflow: hidden; }
+.cs-big-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-big-name .mono { flex: none; }
+.cs-big-title { min-width: 0; }
+.cs-big-tail { margin: 0; padding: 8px 10px; border-radius: var(--radius-sm, 6px); background: var(--bg); font-family: var(--font-mono); font-size: 11px; line-height: 1.6; color: var(--fg-2); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 7.2em; overflow: hidden; }
+.cs-big .cs-row-actions { padding-top: 0; }
 
 .cs-split { display: flex; height: 100%; width: 100%; min-width: 0; min-height: 0; }
 .cs-split[data-direction="column"] { flex-direction: column; }
@@ -87,7 +142,6 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-preset-name { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cs-preset .icon-btn[data-default] { color: var(--accent); }
 .cs-auto-place { display: flex; gap: 6px; align-items: center; padding: var(--space-2) var(--space-2) 0; font-size: var(--text-sm); color: var(--muted); }
-.cs-where { margin-left: 6px; }
 .cs-not-here { display: flex; flex-direction: column; gap: 10px; align-items: center; max-width: min(420px, 100%); min-width: 0; line-height: 1.5; }
 .cs-not-here-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .cs-new-terminal { display: flex; flex-direction: column; gap: 10px; align-items: center; max-width: 100%; }
@@ -116,7 +170,7 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-term-drop { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; outline: 2px dashed var(--accent); outline-offset: -4px; background: color-mix(in oklch, var(--accent) 8%, transparent); color: var(--fg); font-size: var(--text-sm); }
 .cs-term-closed { position: absolute; inset: auto 0 0 0; display: flex; gap: 8px; align-items: center; justify-content: center; padding: 6px; background: var(--surface-warm); border-top: 1px solid var(--border-soft); font-size: var(--text-xs); }
 
-.cs-toast { position: fixed; right: 16px; bottom: 16px; max-width: 420px; padding: 10px 14px; border-radius: 8px; background: var(--fg); color: var(--bg); font-size: var(--text-sm); white-space: pre-wrap; box-shadow: 0 6px 24px rgb(0 0 0 / 0.18); cursor: pointer; display: flex; gap: 12px; align-items: baseline; }
+.cs-toast { position: fixed; right: 16px; bottom: 32px; max-width: 420px; padding: 10px 14px; border-radius: 8px; background: var(--fg); color: var(--bg); font-size: var(--text-sm); white-space: pre-wrap; box-shadow: 0 6px 24px rgb(0 0 0 / 0.18); cursor: pointer; display: flex; gap: 12px; align-items: baseline; z-index: 30; }
 .cs-toast-action { flex: none; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }
 /* A locked pane: its lock stays lit in the bar. */
 .cs-lock { display: inline-flex; align-items: center; justify-content: center; }

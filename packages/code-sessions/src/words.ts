@@ -28,7 +28,8 @@ export const CODE_SESSIONS_WORDS = defineWords("codeSessions", {
     hostRestarting: "Tomrade's terminal host stopped — starting it again; this cell attaches again once it is back",
     notSent: "What you typed while the terminal was connecting was not sent",
     paneEnded: "This terminal ended",
-    takenOver: "Another window took this terminal over"
+    takenOver: "Another window took this terminal over",
+    answerNotTaken: "The terminal did not take the answer; answer in its pane"
   },
   zh: {
     open: "打开终端",
@@ -56,6 +57,7 @@ export const CODE_SESSIONS_WORDS = defineWords("codeSessions", {
     hostRestarting: "Tomrade 的终端 host 停了，正在重新启动；它回来后这个格子会重新连接",
     notSent: "终端连接时输入的内容没有发出去",
     paneEnded: "这个终端已经结束",
-    takenOver: "这个终端被另一个窗口接管了"
+    takenOver: "这个终端被另一个窗口接管了",
+    answerNotTaken: "终端没有收下这个回答，请到它的格子里处理"
   }
 });

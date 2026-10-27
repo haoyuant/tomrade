@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { SessionRow, TerminalRow } from "@tomradex/code-sessions";
-import { away, bundles, matchesArchive, sessionName, sidebarRows } from "../src/code-sessions/lists";
+import type { SessionRow, TerminalRow, ThreadRow } from "@tomradex/code-sessions";
+import { away, bundles, canAnswer, matchesArchive, sessionName, sidebarRows, statusOf } from "../src/code-sessions/lists";
 
 const row = (over: Partial<SessionRow> & { id: string }): SessionRow => ({
   itemId: null,
@@ -26,13 +26,17 @@ const row = (over: Partial<SessionRow> & { id: string }): SessionRow => ({
   continuedIn: null,
   recordSaved: null,
   ranIn: null,
+  approval: false,
+  lastEventAt: null,
   ...over
 });
+
+const thread = (id: string, over: Partial<ThreadRow> = {}): ThreadRow => ({ id, title: `thread ${id}`, engine: "loop", engineName: "Tomrade assistant", itemId: null, key: null, ticketTitle: null, running: false, wait: null, createdAt: 1, updatedAt: 1, ...over });
 
 const terminal = (over: Partial<TerminalRow> & { id: string }): TerminalRow => ({ title: "repo", cwd: "/repo", pane: null, startedAt: 1, agentTitle: null, sessionId: null, note: null, ...over });
 
 describe("the Terminal window's sidebar", () => {
-  it("lists what this window shows in one list, groups what runs elsewhere, and leaves ended ones to the archive", () => {
+  it("lists what this window shows in one list, groups what runs elsewhere, and closes with an ended one a cell shows", () => {
     const sessions = [
       row({ id: "pane", itemId: "i1", key: "TOM-1", where: "herdr", pane: "w1:p1", startedAt: 3 }),
       row({ id: "run", itemId: "i2", where: "tomrade", mode: "run" }),
@@ -41,9 +45,11 @@ describe("the Terminal window's sidebar", () => {
       row({ id: "ended", where: "herdr", pane: "w1:p8", state: "ended", endedAt: 5 })
     ];
     const { here, away: elsewhere } = sidebarRows(sessions, [terminal({ id: "t1", pane: "w1:p2", startedAt: 9 })]);
+    // The state carries an ended session only while a cell shows it: a done card, with what came of it.
     expect(here.map((r) => [r.kind, r.id])).toEqual([
       ["session", "pane"],
-      ["terminal", "t1"]
+      ["terminal", "t1"],
+      ["session", "ended"]
     ]);
     // The assistant panel's runs are elsewhere too: this window has no screen for them.
     expect(elsewhere.map((s) => s.id)).toEqual(["run", "iterm", "laptop"]);
@@ -61,7 +67,7 @@ describe("the Terminal window's sidebar", () => {
     expect(after.map((r) => [r.kind, r.id, r.session?.key ?? null])).toEqual([["terminal", "t1", "TOM-7"]]);
   });
 
-  it("puts needs-you first, then ticket work, then plain terminals, newest first within each", () => {
+  it("puts what waits on the person first, then what runs by when it started, then idle rows", () => {
     const sessions = [
       row({ id: "old-ticket", itemId: "i1", key: "TOM-1", where: "herdr", pane: "w1:p1", startedAt: 1 }),
       row({ id: "new-ticket", itemId: "i2", key: "TOM-2", where: "herdr", pane: "w1:p2", startedAt: 5 }),
@@ -70,7 +76,50 @@ describe("the Terminal window's sidebar", () => {
       row({ id: "loose", where: "herdr", pane: "w2:p1", branch: "", agentTitle: "整理测试", startedAt: 8 })
     ];
     const terminals = [terminal({ id: "t-old", pane: "w1:p8", startedAt: 3 }), terminal({ id: "t-new", pane: "w1:p9", startedAt: 7 })];
-    expect(sidebarRows(sessions, terminals).here.map((r) => r.id)).toEqual(["needs", "new-ticket", "old-ticket", "loose", "t-new", "t-old"]);
+    expect(sidebarRows(sessions, terminals).here.map((r) => r.id)).toEqual(["needs", "loose", "new-ticket", "old-ticket", "t-new", "t-old"]);
+  });
+
+  it("lists the assistant's conversations beside the sessions, in the session bar's order, with an ended one a cell reads last", () => {
+    const threads = [thread("idle", { updatedAt: 9 }), thread("busy", { running: true, createdAt: 3 }), thread("asks", { wait: { kind: "question", text: "可以吗？", since: 7 } })];
+    const sessions = [
+      row({ id: "cell", where: "herdr", pane: "w1:p1", startedAt: 4, lastEventAt: 50 }),
+      row({ id: "waits", where: "herdr", pane: "w1:p2", state: "waiting", needsYou: true, lastEventAt: 2 }),
+      row({ id: "old", where: "herdr", state: "ended", endedAt: 8, activity: "PR #1 merged" }),
+      // Its pane goes on under another ticket: that row speaks for it.
+      row({ id: "carried", where: "herdr", state: "ended", endedAt: 9, continuedIn: "cell" })
+    ];
+    const { here } = sidebarRows(sessions, [], threads);
+    expect(here.map((r) => [r.kind, r.id, statusOf(r)])).toEqual([
+      ["session", "waits", "wait"],
+      ["thread", "asks", "wait"],
+      ["session", "cell", "run"],
+      ["thread", "busy", "run"],
+      ["thread", "idle", "idle"],
+      ["session", "old", "done"]
+    ]);
+    // The order holds while output streams: waiting by how long, running by start, never by the last event.
+    expect(sidebarRows([{ ...sessions[0]!, lastEventAt: 1 }, { ...sessions[1]!, lastEventAt: 3 }], [], threads).here.map((r) => r.id)).toEqual(["waits", "asks", "cell", "busy", "idle"]);
+  });
+
+  it("shows a headless session once, on its conversation; one with a pane here stays a row of its own", () => {
+    const threads = [thread("t")];
+    const headless = row({ id: "s", mode: "run", where: "tomrade", threadId: "t", activity: "Bash · pnpm test" });
+    const { here, away: elsewhere } = sidebarRows([headless], [], threads);
+    expect(here.map((r) => [r.kind, r.id, r.session?.id ?? null, statusOf(r)])).toEqual([["thread", "t", "s", "run"]]);
+    expect(elsewhere).toEqual([]);
+    const inPane = row({ id: "p", where: "herdr", pane: "w1:p1", threadId: "t" });
+    expect(sidebarRows([inPane], [], threads).here.map((r) => [r.kind, r.session?.id ?? null])).toEqual([["session", "p"], ["thread", null]]);
+    // A plain terminal's agent, as herdr reads it.
+    expect(statusOf({ kind: "terminal", id: "t1", terminal: terminal({ id: "t1", agentStatus: "blocked" }), session: null })).toBe("wait");
+    expect(statusOf({ kind: "terminal", id: "t1", terminal: terminal({ id: "t1" }), session: null })).toBe("idle");
+  });
+
+  it("answers a permission from a card only when its agent declared the keys and the prompt is one", () => {
+    const asks = row({ id: "a", state: "waiting", needsYou: true, activity: "needs your approval: Bash", approval: true });
+    expect(canAnswer(asks)).toBe(true);
+    expect(canAnswer({ ...asks, approval: false })).toBe(false);
+    expect(canAnswer({ ...asks, activity: "asking you something" })).toBe(false);
+    expect(canAnswer({ ...asks, state: "ended", endedAt: 1 })).toBe(false);
   });
 
   it("keeps the tickets one agent works side by side in one pane together, where the first of them sorts", () => {

@@ -1248,3 +1248,137 @@ it("starts herdr's server again when it went away, on opening with saved termina
   await until(() => win.states.at(-1)!.bridge.state === "ready" && win.states.at(-1)!.revive === null);
   expect(JSON.parse(fs.readFileSync(stateFile, "utf8")).terminals[w.project.id]).toEqual([saved]);
 });
+
+it("lists the assistant's conversations from a cache read when they change, never on a refresh; answers a prompt from a card; reads tails for the overview", async () => {
+  const opened: { spec: Record<string, unknown> & { onMessage(m: unknown): void; onClose(): void }; states: WindowState[]; posts: WindowPost[] }[] = [];
+  const events: [string, unknown][] = [];
+  const answered: [string, string, string][] = [];
+  let takes = true;
+  const tails = new Map<string, string | null>([["w1:p1", "$ pnpm test\n12 passed\nAllow? [y/n]"], ["w1:p2", null]]);
+  const sessions = [
+    session({ id: "s1", itemIds: [], herdrPane: "w1:p1", branch: "tom-1/x", state: "waiting", blocked: { kind: "permission" }, activity: "needs your approval: Bash", lastEventAt: 50 }),
+    session({ id: "run", mode: "headless", threadId: "t-busy", herdrPane: null, startedAt: 3 }),
+    session({ id: "gone", herdrPane: "w1:p2", state: "ended", endedAt: 9 })
+  ];
+  const threadReads: string[] = [];
+  const threadList: { id: string; title: string; engine: string; itemId: string | null; createdAt: number; updatedAt: number }[] = [
+    { id: "t-asks", title: "整理 Q4 backlog", engine: "loop", itemId: null, createdAt: 1, updatedAt: 5 },
+    { id: "t-busy", title: "", engine: "claude-code", itemId: null, createdAt: 2, updatedAt: 6 }
+  ];
+  let pending: { threadId: string; kind: string; text: string }[] = [{ threadId: "t-asks", kind: "ask", text: "要我取消 3 张重复工单吗？" }];
+  class FakeSurfaces extends Service {
+    static provide = "desktopSurfaces";
+    constructor(ctx: Context) {
+      super(ctx, "desktopSurfaces");
+    }
+    open(spec: (typeof opened)[number]["spec"]) {
+      const entry = { spec, states: [spec.initialState as WindowState], posts: [] as WindowPost[] };
+      opened.push(entry);
+      return { id: spec.id, capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus() {}, setState: (s: WindowState) => void entry.states.push(s), post: (m: WindowPost) => void entry.posts.push(m), close: () => spec.onClose() };
+    }
+  }
+  class FakeHerdr extends Service {
+    static provide = "terminals";
+    readonly kind = "herdr" as const;
+    constructor(ctx: Context) {
+      super(ctx, "terminals");
+    }
+    onPane = () => () => {};
+    watch = () => () => {};
+    watching = (): string[] => [];
+    bridge = async () => ({ state: "ready" as const, version: "0.9.5" });
+    clientAttached = async () => false;
+    panes = async () => [];
+    readTail = async (pane: string) => tails.get(pane) ?? null;
+  }
+  class FakeCodeLink extends Service {
+    static provide = "codeLink";
+    constructor(ctx: Context) {
+      super(ctx, "codeLink");
+    }
+    sessionsOf = () => sessions;
+    links = () => [];
+    herdrInstall = async () => ({ command: null, guide: "https://herdr.dev/docs/install/" });
+    sessionAnswer = async (projectId: string, sessionId: string, which: string) => (answered.push([projectId, sessionId, which]), takes);
+  }
+  class FakeAgent extends Service {
+    static provide = "agent";
+    constructor(ctx: Context) {
+      super(ctx, "agent");
+    }
+    store = { threads: (projectId: string) => (threadReads.push(projectId), threadList.map((t) => ({ ...t, projectId, boardId: null, branch: null, surface: "assistant", archived: false }))) };
+    activeRuns = () => [{ run: { id: "r1" }, thread: { id: "t-busy" } }];
+    activities = () => pending.map((p) => ({ projectId: "p", threadId: p.threadId, run: null, pending: { threadId: p.threadId, kind: p.kind, workflow: null, question: { id: "q", text: p.text }, accepts: "text" } }));
+    engineOf = (id: string) => (id === "loop" ? { id, title: "Tomrade assistant" } : id === "claude-code" ? { id, title: "Claude Code", local: { approval: { allow: ["enter"], deny: ["esc"] } } } : undefined);
+  }
+  const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "settings-threads.json") }], Contributions, FakeSurfaces, FakeHerdr, FakeCodeLink, FakeAgent, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile: path.join(dir, "state-threads.json") }]] });
+  const projectId = w.project.id;
+  // The fake agent answers for every project with the same list; the cache is keyed by the window's project.
+  (w.ctx.get("agent") as unknown as FakeAgent).activities = () => pending.map((p) => ({ projectId, threadId: p.threadId, run: null, pending: { threadId: p.threadId, kind: p.kind, workflow: null, question: { id: "q", text: p.text }, accepts: "text" } }));
+  w.ctx.on("desktop/open", (target) => void events.push(["desktop/open", target]));
+  await w.ctx.contributions.run("code-sessions.open", { projectId });
+  const win = opened[0]!;
+  const say = async (m: WindowMessage) => {
+    win.spec.onMessage(m);
+    await settle();
+  };
+  const first = win.states[0]!;
+  // Both conversations listed: the one asking, with its question; the one a run drives, with its headless session's thread.
+  expect(first.threads.map((t) => [t.id, t.engineName, t.running, t.wait?.kind, t.wait?.text])).toEqual([
+    ["t-asks", "Tomrade assistant", false, "question", "要我取消 3 张重复工单吗？"],
+    ["t-busy", "Claude Code", true, undefined, undefined]
+  ]);
+  const since = first.threads[0]!.wait!.since;
+  // Its agent declared the keys for its prompt; when its hooks last spoke, for the bar's order.
+  expect(first.sessions.find((s) => s.id === "s1")).toMatchObject({ approval: true, needsYou: true, lastEventAt: 50 });
+  // Refreshes read the sessions, never the conversations again.
+  expect(threadReads).toEqual([projectId]);
+  for (let i = 0; i < 5; i++) await say({ type: "refresh" });
+  w.ctx.emit("codeLink/changed", projectId);
+  await settle();
+  expect(threadReads).toHaveLength(1);
+  expect(win.states.at(-1)!.threads).toBe(first.threads);
+  // The assistant says a question was answered: read again, once the burst settles; a wait that stays keeps its since.
+  w.ctx.emit("agent/event", "t-asks", { type: "pending", pending: null });
+  w.ctx.emit("agent/event", "t-asks", { type: "delta", runId: "r", text: "…" } as never);
+  w.ctx.emit("agent/event", "t-busy", { type: "done", run: { id: "r1" } } as never);
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  expect(threadReads).toHaveLength(2);
+  expect(win.states.at(-1)!.threads[0]!.wait).toEqual({ kind: "question", text: "要我取消 3 张重复工单吗？", since });
+  // A conversation no window lists yet, and each message landing, leave it be: the conversation comes in with its run's start.
+  pending = [];
+  threadList.push({ id: "t-new", title: "新对话", engine: "loop", itemId: null, createdAt: 7, updatedAt: 8 });
+  w.ctx.emit("agent/event", "t-new", { type: "pending", pending: null });
+  w.ctx.emit("agent/event", "t-busy", { type: "message", message: { id: "m1" } } as never);
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  expect(threadReads).toHaveLength(2);
+  w.ctx.emit("agent/run-started", { id: "r2" } as never, { id: "t-new", projectId } as never);
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  expect(threadReads).toHaveLength(3);
+  expect(win.states.at(-1)!.threads.map((t) => [t.id, t.wait])).toEqual([["t-asks", null], ["t-busy", null], ["t-new", null]]);
+  // Words streamed by a run do not make the window read; a run ending does.
+  w.ctx.emit("agent/event", "t-busy", { type: "progress", runId: "r1" } as never);
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  expect(threadReads).toHaveLength(3);
+  w.ctx.emit("agent/run-ended", { id: "r1" } as never, { id: "t-busy", projectId } as never);
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  expect(threadReads).toHaveLength(4);
+
+  // Allow from a card: the keys its agent declared go to its pane through code link; not taken, the window is told.
+  await say({ type: "answer", sessionId: "s1", which: "allow" });
+  expect(answered).toEqual([[projectId, "s1", "allow"]]);
+  expect(win.posts.filter((p) => p.type === "toast")).toEqual([]);
+  takes = false;
+  await say({ type: "answer", sessionId: "s1", which: "deny" });
+  expect(win.posts.at(-1)).toEqual({ type: "toast", text: "The terminal did not take the answer; answer in its pane" });
+  // An assistant conversation opens in the app window, as a notification's click does.
+  await say({ type: "showThread", threadId: "t-asks" });
+  expect(events).toEqual([["desktop/open", { projectId, threadId: "t-asks" }]]);
+  // The overview asks for the panes' last lines: every live session's pane and terminal, an ended one's never.
+  await say({ type: "tails" });
+  expect(win.posts.at(-1)).toEqual({ type: "tails", panes: { "w1:p1": "$ pnpm test\n12 passed\nAllow? [y/n]" } });
+  // Closed, the window's conversations are let go; opened again, they are read afresh.
+  win.spec.onClose();
+  await w.ctx.contributions.run("code-sessions.open", { projectId });
+  expect(threadReads).toHaveLength(5);
+});
