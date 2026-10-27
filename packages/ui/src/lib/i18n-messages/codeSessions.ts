@@ -174,7 +174,18 @@ export const codeSessions = {
     closedTerminalRan: "Terminal · {{from}} – {{to}}",
     closedAt: "Closed {{when}}",
     shelfTerminals: "Terminals ({{n}})",
-    terminalsEmpty: "No closed terminal with a recording yet. A terminal is recorded while a pane of this window shows it."
+    terminalsEmpty: "No closed terminal with a recording yet. A terminal is recorded while a pane of this window shows it.",
+    keyPalette: "sessions and commands",
+    paletteTitle: "Sessions and commands",
+    paletteSearch: "Find a session, or something to do…",
+    paletteNone: "Nothing matches.",
+    paletteWaiting: "Waiting on you",
+    paletteActive: "In progress",
+    paletteDo: "Do",
+    paletteHistory: "History",
+    paletteClear: "Clear the selected cell's screen",
+    paletteLayout: "Layout: {{name}}",
+    paletteFoot: "↵ goes to its cell; one with no cell here opens in the app window · {{key}} closes"
   },
   zh: {
     here: "这个窗口里",
@@ -350,6 +361,17 @@ export const codeSessions = {
     closedTerminalRan: "终端 · {{from}} – {{to}}",
     closedAt: "关闭于 {{when}}",
     shelfTerminals: "终端（{{n}}）",
-    terminalsEmpty: "还没有带录制的已关闭终端。终端在这个窗口的格子显示它时才会被录制。"
+    terminalsEmpty: "还没有带录制的已关闭终端。终端在这个窗口的格子显示它时才会被录制。",
+    keyPalette: "会话和命令",
+    paletteTitle: "会话和命令",
+    paletteSearch: "找一个会话，或要做的事…",
+    paletteNone: "没有匹配的。",
+    paletteWaiting: "等你",
+    paletteActive: "进行中",
+    paletteDo: "做事",
+    paletteHistory: "历史",
+    paletteClear: "清屏（选中的格子）",
+    paletteLayout: "布局：{{name}}",
+    paletteFoot: "↵ 跳到它的格子；不在格子里的在主窗口打开 · {{key}} 关闭"
   }
 };

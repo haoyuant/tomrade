@@ -18,8 +18,9 @@ it("reads iTerm2's pane keys and ⌘B on a Mac, and leaves every Ctrl key to the
   expect(windowKey(press("ArrowDown", { meta: true, alt: true }), true)).toBe("down");
   expect(windowKey(press("[", { meta: true }, "BracketLeft"), true)).toBe("previous");
   expect(windowKey(press("]", { meta: true }, "BracketRight"), true)).toBe("next");
-  // The sidebar folds on ⌘B, as in the app.
+  // The sidebar folds on ⌘B, and ⌘K opens the palette, as in the app.
   expect(windowKey(press("b", { meta: true }), true)).toBe("fold");
+  expect(windowKey(press("k", { meta: true }), true)).toBe("palette");
   // The shell's own: Ctrl+D ends input, Ctrl+W deletes a word, Ctrl+B is tmux's, ⌥← moves a word.
   for (const e of [press("d", { ctrl: true }), press("w", { ctrl: true }), press("b", { ctrl: true }), press("ArrowLeft", { alt: true }), press("ArrowLeft", { meta: true }), press("d")]) expect(windowKey(e, true)).toBeNull();
   // An input method composing owns its keys.
@@ -36,7 +37,9 @@ it("reads Ctrl+Shift chords and Alt+arrows elsewhere, never a bare Ctrl key", ()
   expect(windowKey(press("Tab", { ctrl: true }), false)).toBe("next");
   expect(windowKey(press("Tab", { ctrl: true, shift: true }), false)).toBe("previous");
   expect(windowKey(press("B", { ctrl: true, shift: true }), false)).toBe("fold");
-  for (const e of [press("d", { ctrl: true }), press("w", { ctrl: true }), press("o", { ctrl: true }), press("b", { ctrl: true }), press("Tab"), press("d", { meta: true })]) expect(windowKey(e, false)).toBeNull();
+  expect(windowKey(press("K", { ctrl: true, shift: true }), false)).toBe("palette");
+  // Ctrl+K is the shell's: it cuts to the end of the line.
+  for (const e of [press("d", { ctrl: true }), press("w", { ctrl: true }), press("o", { ctrl: true }), press("b", { ctrl: true }), press("k", { ctrl: true }), press("Tab"), press("d", { meta: true })]) expect(windowKey(e, false)).toBeNull();
 });
 
 it("writes each key the way its platform does", () => {

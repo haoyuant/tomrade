@@ -8,6 +8,7 @@ import { arrowsLabel, keyLabel, windowKey, type WindowKey } from "./keys";
 import { applyPreset, carryOn, close, cycle, heir, holder, landing, leaves, lock, neighbour, resize, show, split } from "./layout";
 import { live, sessionName, sidebarRows, type HereRow } from "./lists";
 import { Overview } from "./Overview";
+import { Palette, type PaletteAction } from "./Palette";
 import { SayContext, sayIn, useSay, type SayKey } from "./say";
 import { Sidebar } from "./Sidebar";
 import { asPicked, carriedOf, paneKey, useWindowLayout, type Leaf } from "./useWindowLayout";
@@ -29,6 +30,7 @@ function KeysFooter() {
       <span><kbd>{arrowsLabel()}</kbd> {say("keyArrows")}</span>
       <span><kbd>{keyLabel("previous")}</kbd> <kbd>{keyLabel("next")}</kbd> {say("keyPrevNext")}</span>
       <span><kbd>{keyLabel("fold")}</kbd> {say("keyFold")}</span>
+      <span><kbd>{keyLabel("palette")}</kbd> {say("keyPalette")}</span>
     </footer>
   );
 }
@@ -136,6 +138,7 @@ export function App() {
   }, [folded]);
   // The cells, or every session as one big card over them; the cells stay attached underneath.
   const [view, setView] = useState<"grid" | "overview">("grid");
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [tails, setTails] = useState<Record<string, string | null>>({});
   const rows = useMemo(() => (state ? sidebarRows(state.sessions, state.terminals, state.threads) : { here: [], away: [] }), [state]);
 
@@ -361,6 +364,9 @@ export function App() {
     return next.created;
   };
   onWindowKey.current = (key) => {
+    // over the palette, the window's keys wait: ⌘K again closes it
+    if (paletteOpen) return key === "palette" ? setPaletteOpen(false) : undefined;
+    if (key === "palette") return setPaletteOpen(true);
     if (key === "fold") return toggleFold();
     if (key === "splitRight" || key === "splitDown") return select(splitCell(target.id, key === "splitRight" ? "row" : "column"));
     if (key === "close") {
@@ -381,6 +387,20 @@ export function App() {
     const next = split(layout, target.id, "row");
     openTerminal(next.layout, next.created, state.places[0]!.cwd);
   };
+
+  // ⌘K's history: the ended sessions cells show and the ones panes ran before, newest first.
+  const ended = [...new Map([...state.sessions.filter((s) => !live(s)), ...Object.values(state.history).flat()].map((s) => [s.id, s])).values()]
+    .sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0))
+    .slice(0, 30);
+  const paletteActions: PaletteAction[] = [
+    ...(canOpen ? [{ id: "new", label: say("newTerminal"), run: newTerminal }] : []),
+    view === "grid" ? { id: "overview", label: say("viewOverview"), run: openOverview } : { id: "grid", label: say("viewGrid"), run: () => setView("grid") },
+    { id: "fold", label: say(folded ? "unfold" : "fold"), kb: keyLabel("fold"), run: toggleFold },
+    // a Mac terminal's ⌘K: here the shell or agent in the selected cell clears its screen (Ctrl+L)
+    ...(target.sessionId ? [{ id: "clear", label: say("paletteClear"), run: () => send({ type: "input", cell: target.id, data: "\f" }) }] : []),
+    ...state.presets.map((p) => ({ id: `layout:${p.id}`, label: say("paletteLayout", { name: p.name }), run: () => { change(applyPreset(layout, p.layout, undefined, key)); setFocused(null); } }))
+  ];
+  const paletteRow = (r: HereRow) => (r.kind === "thread" ? showThread(r.thread) : seeInPane(r));
 
   const render = (node: Layout): ReactNode =>
     node.type === "split" ? (
@@ -455,6 +475,7 @@ export function App() {
           />
         </div>
         <KeysFooter />
+        <Palette open={paletteOpen} onOpenChange={setPaletteOpen} here={rows.here} away={rows.away} ended={ended} actions={paletteActions} onRow={paletteRow} onAway={(s) => send({ type: "openThread", sessionId: s.id })} />
         {toast && (
           <div className="cs-toast" role="status" data-testid="cs-toast" onClick={() => setToast(null)}>
             {toast.text}
