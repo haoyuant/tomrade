@@ -64,4 +64,8 @@ export function convoRefreshed(state: ConvoState, read: RecordRead | null): Conv
   return { ...state, tail: keyed(read.lines, 0) };
 }
 
+/** The person's lines said in the terminal while the panel showed it: stamped after `since`, and not typed from the panel. */
+export const saidElsewhere = (lines: ConvoLineView[], since: number, sentHere: ReadonlySet<string>): number[] =>
+  lines.filter((l) => l.who === "person" && l.at !== undefined && l.at >= since && !sentHere.has(l.text.trim())).map((l) => l.key);
+
 export const convoLines = (state: ConvoState): ConvoLineView[] => (state.earlier.length ? [...state.earlier, ...state.tail] : state.tail);

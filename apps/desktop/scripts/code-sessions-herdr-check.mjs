@@ -802,10 +802,14 @@ app.whenReady().then(async () => {
     // Asked from outside — "open in terminal" on its ticket — the session comes into a cell and is selected, auto-place off or not.
     check("代码关联认得这个终端窗口", await ctx.codeLink.terminalWindow(project.id));
     const manualItem = ctx.items.list({ projectId: project.id }).find((i) => i.key === manual);
+    // the cell it lands in flashes once: watched as it happens, since the flash is gone in a second
+    await tjs(`(() => { window.__flashed = []; new MutationObserver((ms) => { for (const m of ms) if (m.target.hasAttribute('data-flash')) window.__flashed.push(m.target.querySelector('.cs-cell-name')?.textContent ?? ''); }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['data-flash'] }); return true; })()`);
     const jumped = await ctx.contributions.run("code-link.open-terminal", { projectId: project.id, itemId: manualItem.id });
     const currentRows = () => tjs(`[...document.querySelectorAll('.cs-row[aria-current="true"]')].map((r) => r.textContent).join(' | ')`);
     const revealed = await wait(async () => (await inCell(manual)) && (await currentRows()).includes(manual), 8000);
     check("在终端打开：终端窗口把会话放进格子并选中它", revealed && !jumped.toast, `${JSON.stringify(jumped)} · current: ${await currentRows()}`);
+    const flashed = await wait(async () => tjs(`window.__flashed.some((n) => n.includes(${JSON.stringify(manual)}))`), 3000);
+    check("跳到格子时那个格子闪一下", flashed, JSON.stringify(await tjs(`window.__flashed`)));
     // Let go again, and the plain terminal's cell selected as before: the steps below count the empty cells.
     await tjs(`[...document.querySelectorAll('.cs-cell')].find((c) => c.querySelector('.cs-cell-name')?.textContent.includes(${JSON.stringify(manual)})).querySelector('.cs-cell-bar').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 20 })); true`);
     const detachShown = await wait(async () => tjs(`[...document.querySelectorAll('[role=menuitem]')].some((i) => i.textContent === '断开')`), 3000);

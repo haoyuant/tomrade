@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RecordRead } from "@tomradex/agent";
-import { convoFromTail, convoLines, convoRefreshed, convoWithEarlier, delayUntil, isApprovalAsk, mayReadPane, READ_EVERY_MS, tailLines } from "../src/lib/terminalSession";
+import { convoFromTail, convoLines, convoRefreshed, convoWithEarlier, delayUntil, isApprovalAsk, mayReadPane, READ_EVERY_MS, saidElsewhere, tailLines } from "../src/lib/terminalSession";
 
 const read = (texts: string[], opts: Partial<RecordRead> = {}): RecordRead => ({ lines: texts.map((text) => ({ who: "agent", text })), cut: false, ...opts });
 
@@ -71,4 +71,15 @@ describe("the conversation as the panel holds it", () => {
     expect(unreadable.unreadable).toBe(true);
     expect(convoRefreshed(unreadable, read(["now readable"])).unreadable).toBe(false);
   });
+});
+
+it("marks what the person said in the terminal while the panel showed the session, not what the panel typed or said before", () => {
+  const lines = [
+    { key: 0, who: "person" as const, text: "start TOM-1", at: 100 },
+    { key: 1, who: "agent" as const, text: "on it", at: 210 },
+    { key: 2, who: "person" as const, text: "typed in the cell", at: 220 },
+    { key: 3, who: "person" as const, text: "sent from the panel", at: 230 },
+    { key: 4, who: "person" as const, text: "no stamp" }
+  ];
+  expect(saidElsewhere(lines, 200, new Set(["sent from the panel"]))).toEqual([2]);
 });
