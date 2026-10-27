@@ -1253,7 +1253,7 @@ it("lists the assistant's conversations from a cache read when they change, neve
   const opened: { spec: Record<string, unknown> & { onMessage(m: unknown): void; onClose(): void }; states: WindowState[]; posts: WindowPost[] }[] = [];
   const events: [string, unknown][] = [];
   const answered: [string, string, string][] = [];
-  let takes = true;
+  let takes: "answered" | "notPrompt" | "failed" = "answered";
   const tails = new Map<string, string | null>([["w1:p1", "$ pnpm test\n12 passed\nAllow? [y/n]"], ["w1:p2", null]]);
   const sessions = [
     session({ id: "s1", itemIds: [], herdrPane: "w1:p1", branch: "tom-1/x", state: "waiting", blocked: { kind: "permission" }, activity: "needs your approval: Bash", lastEventAt: 50 }),
@@ -1368,9 +1368,14 @@ it("lists the assistant's conversations from a cache read when they change, neve
   await say({ type: "answer", sessionId: "s1", which: "allow" });
   expect(answered).toEqual([[projectId, "s1", "allow"]]);
   expect(win.posts.filter((p) => p.type === "toast")).toEqual([]);
-  takes = false;
+  takes = "failed";
   await say({ type: "answer", sessionId: "s1", which: "deny" });
   expect(win.posts.at(-1)).toEqual({ type: "toast", text: "The terminal did not take the answer; answer in its pane" });
+  // Its screen asks no permission (a folder's trust, say): nothing was pressed, and the session comes into a cell to be answered there.
+  takes = "notPrompt";
+  await say({ type: "answer", sessionId: "s1", which: "allow" });
+  expect(win.posts.at(-1)).toEqual({ type: "toast", text: "Its screen shows no permission prompt a key could answer safely — answer it in its pane" });
+  expect(win.states.at(-1)!.reveal?.sessionId).toBe("s1");
   // An assistant conversation opens in the app window, as a notification's click does.
   await say({ type: "showThread", threadId: "t-asks" });
   expect(events).toEqual([["desktop/open", { projectId, threadId: "t-asks" }]]);

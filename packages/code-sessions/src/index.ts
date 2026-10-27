@@ -976,9 +976,11 @@ function apply(ctx: Context, config: Config) {
       case "showThread":
         return void ctx.emit("desktop/open", { projectId, threadId: m.threadId });
       case "answer": {
-        const taken = await ctx.codeLink.sessionAnswer(projectId, m.sessionId, m.which).catch(() => false);
-        if (!taken) post(win, { type: "toast", text: words()("answerNotTaken") });
-        return;
+        const result = await ctx.codeLink.sessionAnswer(projectId, m.sessionId, m.which).catch(() => "failed" as const);
+        if (result === "answered") return;
+        // Nothing pressed: whatever it asks is answered in its pane, which comes into a cell for that.
+        if (result === "notPrompt") await show(projectId, m.sessionId);
+        return post(win, { type: "toast", text: words()(result === "notPrompt" ? "answerInPane" : "answerNotTaken") });
       }
       case "tails": {
         const provider = backend();

@@ -187,11 +187,15 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
     if (sending) return;
     setSending(true);
     try {
-      if (await invoke("codeLink.sessionAnswer", projectId, session.id, which)) {
+      const result = await invoke("codeLink.sessionAnswer", projectId, session.id, which);
+      if (result === "answered") {
         // answered here: the prompt stays gone until the session's next event says where it stands
         setAnswered(session.lastEventAt);
         setTimeout(() => setAnswered(null), ANSWERED_MS);
         onAnswered?.();
+      } else if (result === "notPrompt") {
+        // nothing was pressed: what its screen asks is answered in the pane
+        toast({ body: t("sessionBar.answerInPane"), actions: onShowInTerminal ? [{ label: t("sessionBar.showInTerminal"), run: onShowInTerminal }] : undefined });
       } else toast({ body: t("sessionBar.notTaken") });
     } catch (error) {
       reportError(error);
