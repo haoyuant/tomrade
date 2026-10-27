@@ -102,10 +102,10 @@ describe("a closed column's pages", () => {
 });
 
 describe("items.epicProgress", () => {
-  it("counts an epic's tickets where they all are", async () => {
+  it("counts an epic's tickets where they all are, cancelled ones on neither side", async () => {
     const s = await seed();
     for (const t of [...s.done, s.cancelled[0], s.open]) s.items.update(s.project.id, t.id, { parentId: s.epic.id }, "human");
-    expect(s.items.epicProgress(s.project.id)).toEqual({ [s.epic.id]: { done: 4, total: 6 } });
+    expect(s.items.epicProgress(s.project.id)).toEqual({ [s.epic.id]: { done: 4, total: 5 } });
   });
 });
 

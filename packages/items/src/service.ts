@@ -127,7 +127,7 @@ export interface ItemQuery {
   ticketsOnly?: boolean;
 }
 
-/** Done and cancelled tickets of one epic, for its progress: counted where they all are, not in the renderer's window. */
+/** One epic's tickets for its progress: counted where they all are, not in the renderer's window. */
 export interface EpicProgress {
   done: number;
   total: number;
@@ -394,10 +394,10 @@ export class Items extends Service implements ItemsReader, ItemsWriter {
     return this.hydrate(db, db.prepare(sql).all(projectId, window.limit, window.limit, since, since) as ItemRow[]);
   }
 
-  /** Every epic's tickets, done and in all, keyed by epic id. */
+  /** Every epic's tickets, done and in all, keyed by epic id. Cancelled ones count for neither side. */
   epicProgress(projectId: string): Record<string, EpicProgress> {
     const rows = this.db(projectId)
-      .prepare("SELECT parent_id AS id, COUNT(*) AS total, SUM(status = 'done') AS done FROM items WHERE kind = 'ticket' AND parent_id IS NOT NULL GROUP BY parent_id")
+      .prepare("SELECT parent_id AS id, COUNT(*) AS total, SUM(status = 'done') AS done FROM items WHERE kind = 'ticket' AND parent_id IS NOT NULL AND status != 'cancelled' GROUP BY parent_id")
       .all() as { id: string; total: number; done: number }[];
     return Object.fromEntries(rows.map((r) => [r.id, { done: r.done, total: r.total }]));
   }
