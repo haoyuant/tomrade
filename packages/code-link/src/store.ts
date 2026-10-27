@@ -934,6 +934,16 @@ export class CodeLinkStore {
     return rows.filter((s) => (filter.itemId ? s.itemIds.includes(filter.itemId) : true) && (filter.delivery !== undefined ? s.delivery === filter.delivery : true) && (filter.live ? s.state !== "ended" : true));
   }
 
+  /** What a session list shows at a glance: every session still going, then the newest few that ended since `since`. Reads only those rows. */
+  recentSessions(projectId: string, since: number, ended: number): SessionView[] {
+    const db = this.db(projectId);
+    const live = db.prepare("SELECT * FROM plugin_code_link_sessions WHERE project_id = ? AND state NOT IN ('ended', 'lost') ORDER BY started_at DESC").all(projectId) as SessionRow[];
+    const done = db
+      .prepare("SELECT * FROM plugin_code_link_sessions WHERE project_id = ? AND state IN ('ended', 'lost') AND COALESCE(ended_at, last_event_at, started_at) >= ? ORDER BY COALESCE(ended_at, last_event_at, started_at) DESC LIMIT ?")
+      .all(projectId, since, ended) as SessionRow[];
+    return [...live, ...done].map(toSession);
+  }
+
   /** Sessions that worked this ticket and moved on to another, newest first. */
   movedOn(projectId: string, itemId: string, delivery?: number): SessionView[] {
     return this.sessions(projectId).filter((s) => !s.itemIds.includes(itemId) && s.worked.some((w) => w.itemId === itemId && (delivery === undefined || w.delivery === delivery)));

@@ -175,6 +175,8 @@ declare module "@tomradex/ipc" {
     /** Start or continue work on a ticket with a local coding agent, headless or in a terminal. */
     "codeLink.start": (projectId: string, itemId: string, opts: StartOptions) => StartResult;
     "codeLink.sessions": (projectId: string, itemId?: string) => SessionView[];
+    /** The session lists' rows: every live session, and the few that ended in the last day. */
+    "codeLink.recentSessions": (projectId: string) => SessionView[];
     /** Push the ticket's branch from its worktree and open a pull request (gh), or hand back the compare page. */
     "codeLink.openPr": (projectId: string, itemId: string) => OpenPrResult;
     /** A repository with no remote: merge the ticket's branch into the default branch on this machine. */
@@ -643,6 +645,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.allowMerge", (projectId, repoId, engineId) => ctx.codeLink.allowMerge(projectId, repoId, engineId));
       ctx.ipc.handle("codeLink.start", (projectId, itemId, opts) => ctx.codeLink.start(projectId, itemId, opts));
       ctx.ipc.handle("codeLink.sessions", (projectId, itemId) => ctx.codeLink.sessionsOf(projectId, itemId));
+      ctx.ipc.handle("codeLink.recentSessions", (projectId) => ctx.codeLink.recentSessions(projectId));
       ctx.ipc.handle("codeLink.openPr", (projectId, itemId) => ctx.codeLink.openPr(projectId, itemId));
       ctx.ipc.handle("codeLink.mergeLocal", (projectId, itemId) => ctx.codeLink.mergeLocal(projectId, itemId));
       ctx.ipc.handle("codeLink.merge", (projectId, itemId) => ctx.codeLink.merge(projectId, itemId));
@@ -866,6 +869,11 @@ export class CodeLink extends Service implements CodeLinkReader {
 
   sessionsOf(projectId: string, itemId?: string): SessionView[] {
     return this.store.sessions(projectId, itemId ? { itemId } : {});
+  }
+
+  /** Asked on every session change while a list shows: it reads the live rows and a handful of ended ones, not the whole history. */
+  recentSessions(projectId: string, now = Date.now()): SessionView[] {
+    return this.store.recentSessions(projectId, now - 24 * 60 * 60_000, 8);
   }
 
   /**

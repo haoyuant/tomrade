@@ -127,6 +127,7 @@ export const keys = {
     all: (projectId: string) => ["codeLink", projectId] as const,
     links: (projectId: string, itemId?: string) => ["codeLink", projectId, "links", itemId ?? ""] as const,
     sessions: (projectId: string, itemId?: string) => ["codeLink", projectId, "sessions", itemId ?? ""] as const,
+    recentSessions: (projectId: string) => ["codeLink", projectId, "recentSessions"] as const,
     deliveries: (projectId: string, itemId: string) => ["codeLink", projectId, "deliveries", itemId] as const,
     repos: (projectId: string) => ["codeLink", projectId, "repos"] as const,
     connection: (projectId: string, repoId: string) => ["codeLink", projectId, "connection", repoId] as const,

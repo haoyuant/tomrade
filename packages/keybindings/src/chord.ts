@@ -16,6 +16,7 @@ export const DEFAULT_KEYS = {
   switchProject: ["Mod+P"],
   sidebar: ["Mod+B"],
   assistant: ["Mod+J"],
+  sessionBar: ["Mod+\\"],
   settings: ["Mod+,"],
   undo: ["Mod+Z"],
   redo: ["Mod+Shift+Z", "Mod+Y"],

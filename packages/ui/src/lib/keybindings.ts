@@ -15,6 +15,7 @@ export type CommandId =
   | "switchProject"
   | "sidebar"
   | "assistant"
+  | "sessionBar"
   | "settings"
   | "undo"
   | "redo"
@@ -50,6 +51,7 @@ export const COMMANDS: CommandSpec[] = [
   { id: "switchProject", group: "anywhere", label: "shortcuts.switchProject", defaults: DEFAULT_KEYS.switchProject },
   { id: "sidebar", group: "anywhere", label: "shortcuts.sidebar", defaults: DEFAULT_KEYS.sidebar },
   { id: "assistant", group: "anywhere", label: "shortcuts.assistant", defaults: DEFAULT_KEYS.assistant },
+  { id: "sessionBar", group: "anywhere", label: "shortcuts.sessionBar", defaults: DEFAULT_KEYS.sessionBar },
   { id: "settings", group: "anywhere", label: "shortcuts.settings", defaults: DEFAULT_KEYS.settings },
   { id: "undo", group: "anywhere", label: "shortcuts.undo", defaults: DEFAULT_KEYS.undo },
   { id: "redo", group: "anywhere", label: "shortcuts.redo", defaults: DEFAULT_KEYS.redo },

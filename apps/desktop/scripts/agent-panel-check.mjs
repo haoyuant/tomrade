@@ -567,6 +567,51 @@ const run = async () => {
   await press(`document.querySelector('.ai-scroll .trace-fold > summary')`);
   await sleep(300);
   await shot("finished.png");
+
+  // The session bar: the panel's threads and the project's terminal sessions in one column, waiting first.
+  const boardId = ctx.boards.list(alpha.id)[0].id;
+  const ticket = ctx.items.create({ projectId: alpha.id, boardId, title: "Record pane output", by: "human" });
+  const pane = ctx.codeLink.store.createSession(alpha.id, { repoId: "check", branch: "", itemIds: [ticket.id], mode: "terminal", agent: "claude-code", threadId: null, device: "check" });
+  // in another terminal app: no pane for anything here to find gone
+  ctx.codeLink.store.patchSession(alpha.id, pane.id, { terminal: "iTerm.app", state: "waiting", activity: "needs your approval", lastEventAt: Date.now() });
+  const ended = ctx.codeLink.store.createSession(alpha.id, { repoId: "check", branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: "check" });
+  ctx.codeLink.store.patchSession(alpha.id, ended.id, { title: "Snapshot records", state: "ended", endedAt: Date.now(), summary: "PR #9 merged" });
+  const shown = [];
+  ctx.codeLink.showSession = async (_projectId, sessionId) => (shown.push(sessionId), true);
+  ctx.emit("codeLink/changed", alpha.id);
+  ctx.ipc.send("codeLink.changed", alpha.id);
+  await sleep(1500);
+  const bar = () =>
+    $(`(() => { const b = document.querySelector('.ai .sbar'); if (!b) return null; return { mode: b.classList.contains('is-rail') ? 'rail' : 'cards',
+      dots: [...b.querySelectorAll('.sbar-dot[data-status]')].map((d) => [d.dataset.status, d.getAttribute('aria-label')]),
+      cards: [...b.querySelectorAll('.sbar-card')].map((c) => [c.dataset.status, c.textContent]),
+      waiting: b.querySelector('.sbar-waiting')?.getAttribute('aria-label') ?? null, peek: b.querySelector('[role=tooltip]')?.textContent ?? null }; })()`);
+  const flip = () => $(`window.dispatchEvent(new KeyboardEvent('keydown', { key: '\\\\', code: 'Backslash', metaKey: ${process.platform === "darwin"}, ctrlKey: ${process.platform !== "darwin"}, bubbles: true, cancelable: true }));true`);
+  let barSeen = await bar();
+  check("the panel has a session bar, as dots while the panel is narrow", barSeen?.mode === "rail", barSeen);
+  const waitingDots = barSeen?.dots.filter(([status]) => status === "wait") ?? [];
+  check("the terminal session waiting on the person sits with the other waiting ones, first in the bar", waitingDots.some(([, label]) => /Record pane output/.test(label)) && barSeen.dots.findIndex(([status]) => status !== "wait") === waitingDots.length, barSeen?.dots);
+  check("the bar counts what waits", barSeen?.waiting === `${waitingDots.length} waiting`, barSeen?.waiting);
+  check("the ended session is listed after the live ones", barSeen?.dots.at(-1)?.[0] === "done" && /Snapshot records/.test(barSeen.dots.at(-1)[1]), barSeen?.dots);
+  await $(`(() => { const d = [...document.querySelectorAll('.ai .sbar-dot[data-status="wait"]')].find((n) => /Record pane output/.test(n.getAttribute('aria-label'))); d.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return true; })()`);
+  await sleep(200);
+  barSeen = await bar();
+  check("hovering a dot peeks at what it waits on", /needs your approval/.test(barSeen?.peek ?? ""), barSeen?.peek);
+  await flip();
+  await sleep(300);
+  barSeen = await bar();
+  check("⌘\\ turns the dots into cards", barSeen?.mode === "cards", barSeen?.mode);
+  await shot("session-bar-cards.png");
+  const card = barSeen?.cards.find(([, text]) => /Record pane output/.test(text));
+  check("a card says the ticket, where it runs and what it waits on", card?.[0] === "wait" && /AL-\d+ Record pane output/.test(card[1]) && /iTerm/.test(card[1]) && /needs your approval/.test(card[1]), card);
+  check("an ended card carries its outcome", barSeen?.cards.some(([status, text]) => status === "done" && /PR #9 merged/.test(text)), barSeen?.cards);
+  await press(`[...document.querySelectorAll('.ai .sbar-card')].find((n) => /Record pane output/.test(n.textContent))`);
+  await sleep(500);
+  check("picking a terminal session shows it in the Terminal window", shown.includes(pane.id), shown);
+  await flip();
+  await sleep(300);
+  check("⌘\\ turns them back into dots, and the choice is kept", (await bar())?.mode === "rail" && (await $(`localStorage.getItem('tomrade.ai.sessionBar')`)) === "rail");
+  await shot("session-bar.png");
   check("harness reached the end", true);
 };
 

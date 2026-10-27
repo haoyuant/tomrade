@@ -52,6 +52,7 @@ import { theme } from "./theme";
 import { titleBar } from "./titleBar";
 import { toast } from "./toast";
 import { shortcuts } from "./shortcuts";
+import { sessionBar } from "./sessionBar";
 import { tabs } from "./tabs";
 import { viewSettingsDialog } from "./viewSettingsDialog";
 import { workspace } from "./workspace";
@@ -100,6 +101,7 @@ export const en = {
   destination: destination.en,
   toast: toast.en,
   shortcuts: shortcuts.en,
+  sessionBar: sessionBar.en,
   tabs: tabs.en,
   codeSessions: codeSessions.en,
 
@@ -177,6 +179,7 @@ export const zh: typeof en = {
   destination: destination.zh,
   toast: toast.zh,
   shortcuts: shortcuts.zh,
+  sessionBar: sessionBar.zh,
   tabs: tabs.zh,
   codeSessions: codeSessions.zh,
 
