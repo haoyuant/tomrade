@@ -839,7 +839,8 @@ const run = async () => {
   const coder = ctx.agent.newThread(alpha.id, "coder", null, { title: "Coder chat" });
   for (const said of ["hello", "write the parts"]) {
     const sent = ctx.agent.send(alpha.id, coder.id, { kind: "text", text: said });
-    for (let i = 0; i < 60 && ctx.agent.store.run(alpha.id, sent.runId)?.status === "running"; i++) await sleep(100);
+    // a busy machine writes the six parts slowly: the rule and the fold are read once the run is over
+    for (let i = 0; i < 300 && ctx.agent.store.run(alpha.id, sent.runId)?.status === "running"; i++) await sleep(100);
   }
   ctx.ipc.send("attention.open", { key: `thread:${coder.id}`, projectId: alpha.id, threadId: coder.id, itemId: null, itemKey: null, kind: "question", who: null, text: null, since: Date.now() });
   for (let i = 0; i < 50 && !(await $(`!!document.querySelector('[data-testid="work-rule"]')`)); i++) await sleep(100);
@@ -851,6 +852,7 @@ const run = async () => {
   check("and the writing folds whole, closed, under what it came to", coderFold?.summary === "6 files changed" && !coderFold.open && coderFold.rows === 6 && loose === 0, { coderFold, loose });
   await shot("writing-code.png");
   // asked before a command: the stretch says what it waits to be allowed, and the question points at the setting
+  await until(() => ctx.agent.store.runs(alpha.id, coder.id).every((r) => r.status !== "running"), 300);
   const tested = ctx.agent.send(alpha.id, coder.id, { kind: "text", text: "test the parts" });
   check("while it waits on a command, the stretch says what it waits to be allowed", await until(async () => (await workFolds())[1]?.summary === "1 file changed · waiting for you to allow `echo 'Tests  8 passed (8)'`", 80), await workFolds());
   check("and the question says every command asks, with the way to the setting", await until(() => present('[data-testid="ask-each-command"] button'), 30), await $(`document.querySelector('.q-ask')?.textContent ?? null`));
