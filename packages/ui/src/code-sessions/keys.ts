@@ -2,12 +2,12 @@ import { isMac } from "../lib/keys";
 import { formatChord, matchesChord } from "../lib/keybindings";
 
 type Direction = "left" | "right" | "up" | "down";
-export type WindowKey = "splitRight" | "splitDown" | "close" | Direction | "previous" | "next" | "fold";
+export type WindowKey = "splitRight" | "splitDown" | "close" | Direction | "previous" | "next" | "fold" | "palette";
 
 /**
  * The window's own keys: iTerm2's for panes on a Mac, and ⌘B for the sidebar as in the app. Elsewhere Ctrl+Shift
  * chords and Alt+arrows, as Linux terminals use them — Ctrl alone and ⌃ on a Mac belong to the shell (Ctrl+D,
- * Ctrl+W, and Ctrl+B for tmux), so they are never taken.
+ * Ctrl+W, and Ctrl+B for tmux), so they are never taken. ⌘K is the app's palette here too; a Mac terminal's "clear" is in it.
  */
 const WINDOW_KEYS: Record<"mac" | "other", Record<WindowKey, string>> = {
   mac: {
@@ -20,7 +20,8 @@ const WINDOW_KEYS: Record<"mac" | "other", Record<WindowKey, string>> = {
     down: "Mod+Alt+ArrowDown",
     previous: "Mod+[",
     next: "Mod+]",
-    fold: "Mod+B"
+    fold: "Mod+B",
+    palette: "Mod+K"
   },
   other: {
     splitRight: "Mod+Shift+D",
@@ -32,7 +33,8 @@ const WINDOW_KEYS: Record<"mac" | "other", Record<WindowKey, string>> = {
     down: "Alt+ArrowDown",
     previous: "Mod+Shift+Tab",
     next: "Mod+Tab",
-    fold: "Mod+Shift+B"
+    fold: "Mod+Shift+B",
+    palette: "Mod+Shift+K"
   }
 };
 

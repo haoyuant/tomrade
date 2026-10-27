@@ -525,6 +525,8 @@ plugins:
     config:
       document: "${uiPages}code-sessions.html"
       stateFile: "${userData}/code-sessions.json"
+      # What the panes showed while a cell showed them, for the raw-output replay: machine-local, never synced.
+      recordingsDir: "${userData}/terminal-recordings"
   # Which keys run which command. The defaults live with the renderer's
   # commands; this row holds only what the person rebound, in their settings.
   - id: keybindings

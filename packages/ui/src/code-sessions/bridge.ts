@@ -34,7 +34,7 @@ type ShownIn = Extract<WindowPost, { type: "shownIn" }>;
 type Found = Extract<WindowPost, { type: "archiveFound" }>;
 type Tails = Extract<WindowPost, { type: "tails" }>;
 type CellPost = Exclude<Extract<WindowPost, { cell: string }>, ShownIn>;
-const cells = new Map<string, (post: CellPost) => void>();
+const cells = new Map<string, Set<(post: CellPost) => void>>();
 const toasts = new Set<(text: string) => void>();
 const shownIn = new Set<(post: ShownIn) => void>();
 const found = new Set<(post: Found) => void>();
@@ -47,13 +47,17 @@ surface()?.onMessage((raw) => {
   else if (post.type === "shownIn") for (const listener of shownIn) listener(post);
   else if (post.type === "archiveFound") for (const listener of found) listener(post);
   else if (post.type === "tails") for (const listener of tails) listener(post);
-  else cells.get(post.cell)?.(post);
+  else for (const listener of cells.get(post.cell) ?? []) listener(post);
 });
 
+/** A cell's posts; a cell may listen from more than one place (its conversation and its replay). */
 export function onCell(cell: string, listener: (post: CellPost) => void): () => void {
-  cells.set(cell, listener);
+  const listeners = cells.get(cell) ?? new Set();
+  listeners.add(listener);
+  cells.set(cell, listeners);
   return () => {
-    if (cells.get(cell) === listener) cells.delete(cell);
+    listeners.delete(listener);
+    if (!listeners.size && cells.get(cell) === listeners) cells.delete(cell);
   };
 }
 

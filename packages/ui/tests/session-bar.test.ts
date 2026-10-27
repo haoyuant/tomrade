@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import type { ThreadSummary } from "@tomradex/agent";
 import type { SessionView } from "@tomradex/code-link";
-import { sessionBarRows } from "../src/lib/sessionBar";
+import { paletteSessionGroups, sessionBarRows } from "../src/lib/sessionBar";
 import type { AttentionEntry } from "../src/lib/attention";
 
 const thread = (id: string, over: Partial<ThreadSummary> = {}): ThreadSummary => ({
@@ -67,4 +67,15 @@ it("never drops the terminal session the panel shows, however idle it is", () =>
   const out = rows({ sessions, openSessionId: "s5", idleLimit: 2 });
   expect(out.map((r) => r.sessionId)).toEqual(["s0", "s1", "s5"]);
   expect(rows({ sessions, idleLimit: 2 }).map((r) => r.sessionId)).toEqual(["s0", "s1"]);
+});
+
+it("gives ⌘K the bar's rows in three groups, each in the bar's order: waiting, in progress, ended", () => {
+  const out = paletteSessionGroups(rows({
+    threads: [thread("idle", { updatedAt: 9 }), thread("busy", { running: true, createdAt: 3 }), thread("asks", { createdAt: 2 })],
+    sessions: [session("cell", { startedAt: 4 }), session("old", { state: "ended", endedAt: 8, summary: "PR #1 merged" })],
+    attention: [waiting("thread:asks", 7)]
+  }));
+  expect(out.waiting.map((r) => r.key)).toEqual(["thread:asks"]);
+  expect(out.active.map((r) => r.key)).toEqual(["session:cell", "thread:busy", "thread:idle"]);
+  expect(out.history.map((r) => r.key)).toEqual(["session:old"]);
 });

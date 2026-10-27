@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Layout, SessionRow, TerminalRow, ThreadRow, WindowState } from "@tomradex/code-sessions";
+import type { ClosedTerminalRow, Layout, SessionRow, TerminalRow, ThreadRow, WindowState } from "@tomradex/code-sessions";
 import { ContextMenuActionItem, ContextMenuSub } from "~/components/ui/menu";
 import { useLocaleWords } from "~/lib/dicts";
 import { onLook, onShownIn, onState, onTails, onToast, send, type Look } from "./bridge";
@@ -8,6 +8,7 @@ import { arrowsLabel, keyLabel, windowKey, type WindowKey } from "./keys";
 import { applyPreset, carryOn, close, cycle, heir, holder, landing, leaves, lock, neighbour, resize, show, split } from "./layout";
 import { live, sessionName, sidebarRows, type HereRow } from "./lists";
 import { Overview } from "./Overview";
+import { Palette, type PaletteAction } from "./Palette";
 import { SayContext, sayIn, useSay, type SayKey } from "./say";
 import { Sidebar } from "./Sidebar";
 import { asPicked, carriedOf, paneKey, useWindowLayout, type Leaf } from "./useWindowLayout";
@@ -29,6 +30,7 @@ function KeysFooter() {
       <span><kbd>{arrowsLabel()}</kbd> {say("keyArrows")}</span>
       <span><kbd>{keyLabel("previous")}</kbd> <kbd>{keyLabel("next")}</kbd> {say("keyPrevNext")}</span>
       <span><kbd>{keyLabel("fold")}</kbd> {say("keyFold")}</span>
+      <span><kbd>{keyLabel("palette")}</kbd> {say("keyPalette")}</span>
     </footer>
   );
 }
@@ -136,6 +138,7 @@ export function App() {
   }, [folded]);
   // The cells, or every session as one big card over them; the cells stay attached underneath.
   const [view, setView] = useState<"grid" | "overview">("grid");
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [tails, setTails] = useState<Record<string, string | null>>({});
   const rows = useMemo(() => (state ? sidebarRows(state.sessions, state.terminals, state.threads) : { here: [], away: [] }), [state]);
 
@@ -214,6 +217,8 @@ export function App() {
   // An archived session picked into a cell is in the archive's rows until the next state carries it.
   const byId = new Map([...(state.archive.rows ?? []), ...state.sessions].map((s) => [s.id, s]));
   const terminalsById = new Map(state.terminals.map((t) => [t.id, t]));
+  // A closed terminal picked from the archive to play back, likewise.
+  const closedById = new Map([...(state.archive.terminals ?? []), ...state.closedTerminals].map((t) => [t.id, t]));
   // A terminal whose agent claimed a ticket shows that session in its own cell, on the pane it already has.
   const sessionIn = (id: string | null) => (id ? byId.get(terminalsById.get(id)?.sessionId ?? id) : undefined);
   const rowsOf = (c: Leaf) => (c.sessionId ? [c.sessionId, terminalsById.get(c.sessionId)?.sessionId ?? c.sessionId] : []);
@@ -233,7 +238,7 @@ export function App() {
     const s = sessionIn(id);
     if (s) return sessionName(s);
     const t = terminalsById.get(id);
-    return t ? (t.agentTitle ?? t.title) : id;
+    return t ? (t.agentTitle ?? t.title) : (closedById.get(id)?.title ?? id);
   };
   // Shown where `landing` says: never a second controller on the same pane, never over a locked cell or one that needs
   // you. Whatever left a pane is said, with a way back.
@@ -264,6 +269,11 @@ export function App() {
     if (!live(s)) toRead.current.add(s.id);
     if (s.mode === "run" && !s.pane) return send({ type: "openThread", sessionId: s.id });
     land(s.id, beside);
+  };
+  // A closed terminal from the archive: its recording, read in a cell like an ended session.
+  const pickClosed = (t: ClosedTerminalRow) => {
+    toRead.current.add(t.id);
+    land(t.id, false);
   };
   // An assistant conversation has no pane here: the app window shows it.
   const showThread = (t: ThreadRow) => send({ type: "showThread", threadId: t.id });
@@ -354,6 +364,9 @@ export function App() {
     return next.created;
   };
   onWindowKey.current = (key) => {
+    // over the palette, the window's keys wait: ⌘K again closes it
+    if (paletteOpen) return key === "palette" ? setPaletteOpen(false) : undefined;
+    if (key === "palette") return setPaletteOpen(true);
     if (key === "fold") return toggleFold();
     if (key === "splitRight" || key === "splitDown") return select(splitCell(target.id, key === "splitRight" ? "row" : "column"));
     if (key === "close") {
@@ -375,6 +388,20 @@ export function App() {
     openTerminal(next.layout, next.created, state.places[0]!.cwd);
   };
 
+  // ⌘K's history: the ended sessions cells show and the ones panes ran before, newest first.
+  const ended = [...new Map([...state.sessions.filter((s) => !live(s)), ...Object.values(state.history).flat()].map((s) => [s.id, s])).values()]
+    .sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0))
+    .slice(0, 30);
+  const paletteActions: PaletteAction[] = [
+    ...(canOpen ? [{ id: "new", label: say("newTerminal"), run: newTerminal }] : []),
+    view === "grid" ? { id: "overview", label: say("viewOverview"), run: openOverview } : { id: "grid", label: say("viewGrid"), run: () => setView("grid") },
+    { id: "fold", label: say(folded ? "unfold" : "fold"), kb: keyLabel("fold"), run: toggleFold },
+    // a Mac terminal's ⌘K: here the shell or agent in the selected cell clears its screen (Ctrl+L)
+    ...(target.sessionId ? [{ id: "clear", label: say("paletteClear"), run: () => send({ type: "input", cell: target.id, data: "\f" }) }] : []),
+    ...state.presets.map((p) => ({ id: `layout:${p.id}`, label: say("paletteLayout", { name: p.name }), run: () => { change(applyPreset(layout, p.layout, undefined, key)); setFocused(null); } }))
+  ];
+  const paletteRow = (r: HereRow) => (r.kind === "thread" ? showThread(r.thread) : seeInPane(r));
+
   const render = (node: Layout): ReactNode =>
     node.type === "split" ? (
       <Split key={node.id} node={node} render={render} onRatio={(id, ratio) => change(resize(layout, id, ratio))} />
@@ -387,6 +414,7 @@ export function App() {
         herdrClient={state.herdrClient}
         session={sessionIn(node.sessionId)}
         terminal={node.sessionId ? terminalsById.get(node.sessionId) : undefined}
+        closed={node.sessionId ? closedById.get(node.sessionId) : undefined}
         places={state.places}
         ready={canOpen}
         onNewTerminal={(cwd) => openTerminal(layout, node.id, cwd)}
@@ -436,6 +464,7 @@ export function App() {
             canOpen={canOpen}
             onPick={pick}
             onTerminal={pickTerminal}
+            onClosed={pickClosed}
             onThread={showThread}
             onAnswer={answer}
             onNewTerminal={newTerminal}
@@ -447,6 +476,7 @@ export function App() {
           />
         </div>
         <KeysFooter />
+        <Palette open={paletteOpen} onOpenChange={setPaletteOpen} here={rows.here} away={rows.away} ended={ended} actions={paletteActions} onRow={paletteRow} onAway={(s) => send({ type: "openThread", sessionId: s.id })} />
         {toast && (
           <div className="cs-toast" role="status" data-testid="cs-toast" onClick={() => setToast(null)}>
             {toast.text}
