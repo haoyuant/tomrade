@@ -146,7 +146,7 @@ function Opened({ projectId, focus, agentName, span, where, say, onOpenThread }:
   const toast = useToast();
   const report = useErrorToast();
   const ref = refOf(focus);
-  const view = useQuery({ queryKey: keys.review.open(projectId, ref), queryFn: () => invoke("codeLink.reviewOpen", projectId, { sessionId: focus.sessionId, threadId: focus.threadId }), enabled: !!ref, staleTime: 5 * 60_000 });
+  const view = useQuery({ queryKey: keys.review.open(projectId, ref), queryFn: () => invoke("codeLink.reviewOpen", projectId, { sessionId: focus.sessionId, threadId: focus.threadId }), enabled: !!ref, staleTime: Infinity });
   const data = view.data ?? null;
   const [lens, setLens] = useState<"talk" | "raw">("talk");
   useEffect(() => setLens("talk"), [ref]);
