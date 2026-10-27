@@ -1,7 +1,7 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { EngineView } from "@tomradex/agent";
-import type { ReviewCursor, ReviewPage, ReviewRow, ReviewView } from "@tomradex/code-link";
+import type { ReviewRow, ReviewView } from "@tomradex/code-link";
 import { Icon } from "~/components/icons";
 import { ConvoLines, useOpenLines, type ConvoLine, type ConvoSay } from "~/components/ConversationRead";
 import { ReplayPlayer, type RawSay } from "~/components/ReplayPlayer";
@@ -10,12 +10,12 @@ import { invoke } from "~/lib/api";
 import { findEngine, useUnarchiveThread } from "~/lib/agent";
 import { useStartTicket } from "~/lib/codeLink";
 import { workParts } from "~/lib/convoFold";
-import { intlTag, timeAgo } from "~/lib/domain";
+import { intlTag } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { keys } from "~/lib/queries";
-import { alsoKeys, dayLabel, groupByDay, landingSegment, openAtFirst, outcomeLine, segmentKind, segmentSummary, segmentWork, stretchesOf, type OutcomeWords } from "~/lib/review";
+import { landingSegment, openAtFirst, outcomeLine, segmentKind, segmentSummary, segmentWork, stretchesOf, type OutcomeWords } from "~/lib/review";
 import { useErrorToast, useToast } from "~/lib/toast";
-import { StatusMark } from "./SessionBar";
+import { ReviewList, type ReviewSource } from "./ReviewList";
 
 /** What the look back opens on: one ended conversation, with the ticket whose stretches alone unfold; null for the list. */
 export interface ReviewFocus {
@@ -52,12 +52,15 @@ export function Review({ projectId, focus, engines, omit, onClose, onOpenThread 
   onClose: () => void;
   onOpenThread: (threadId: string) => void;
 }) {
-  const { t } = useI18n();
+  const words = useI18n();
+  const { t } = words;
   const [picked, setPicked] = useState<ReviewFocus | null>(focus);
   // asked for anew (⌘K, a ticket's page): what was open before gives way
   useEffect(() => setPicked(focus), [focus]);
   const { say, agentName, span } = useReviewWords(engines);
   const where = (r: ReviewRow) => t(r.where === "pane" ? "review.whereTerminal" : r.where === "outside" ? "review.whereOutside" : "review.wherePanel");
+  // The list's pages, over the app window's IPC.
+  const source = useMemo((): ReviewSource => ({ list: (opts) => invoke("codeLink.reviewList", projectId, opts), said: (query) => invoke("codeLink.reviewSaid", projectId, query) }), [projectId]);
 
   return (
     <div className="ai-scroll ai-review" data-testid="ai-review">
@@ -75,84 +78,9 @@ export function Review({ projectId, focus, engines, omit, onClose, onOpenThread 
       {picked ? (
         <Opened projectId={projectId} focus={picked} agentName={agentName} span={span} where={where} say={say} onOpenThread={onOpenThread} />
       ) : (
-        <ReviewList projectId={projectId} engines={engines} omit={omit} onPick={(r) => (r.kind === "idle" ? onOpenThread(r.id) : setPicked(r.kind === "thread" ? { threadId: r.id } : { sessionId: r.id }))} />
+        <ReviewList projectId={projectId} source={source} words={words} agentName={agentName} omit={omit} onPick={(r) => (r.kind === "idle" ? onOpenThread(r.id) : setPicked(r.kind === "thread" ? { threadId: r.id } : { sessionId: r.id }))} />
       )}
     </div>
-  );
-}
-
-/**
- * The conversations by day, outcomes first: ended sessions, put-away conversations and idle ones (said so); searched
- * by outcome, ticket and what was said; more on request. On its own, so another window's sidebar can hold it too.
- */
-function ReviewList({ projectId, engines, omit, onPick }: { projectId: string; engines: EngineView[] | undefined; omit?: ReadonlySet<string>; onPick: (r: ReviewRow) => void }) {
-  const { t, locale } = useI18n();
-  const { say, agentName, span } = useReviewWords(engines);
-  const [query, setQuery] = useState("");
-  const typed = useDeferredValue(query.trim());
-  const first = useQuery({ queryKey: keys.codeLink.review(projectId, ""), queryFn: () => invoke("codeLink.reviewList", projectId) });
-  // pages past the first are the person's own doing; the first page moving on (a session ended) starts them over
-  const [more, setMore] = useState<{ after: ReviewCursor | null; pages: ReviewPage[] }>({ after: null, pages: [] });
-  const [reading, setReading] = useState(false);
-  const report = useErrorToast();
-  const firstNext = first.data?.next ?? null;
-  const pages = useMemo(() => (more.after === firstNext ? more.pages : []), [more, firstNext]);
-  const next = (pages.at(-1) ?? first.data)?.next ?? null;
-  const readMore = () => {
-    if (!next || reading) return;
-    setReading(true);
-    invoke("codeLink.reviewList", projectId, { before: next })
-      .then((page) => setMore({ after: firstNext, pages: [...pages, page] }), report)
-      .finally(() => setReading(false));
-  };
-  const titles = useQuery({ queryKey: keys.codeLink.review(projectId, typed), queryFn: () => invoke("codeLink.reviewList", projectId, { query: typed }), enabled: typed.length > 0 });
-  const said = useQuery({ queryKey: keys.review.said(projectId, typed), queryFn: () => invoke("codeLink.reviewSaid", projectId, typed), enabled: typed.length >= 2, staleTime: 5 * 60_000 });
-  const rows = useMemo(() => {
-    // an idle conversation the bar shows is reached there; the list holds the ones past it
-    const shown = (r: ReviewRow) => r.kind === "idle" && !!omit?.has(r.id);
-    if (!typed) return [first.data, ...pages].flatMap((p) => p?.rows ?? []).filter((r) => !shown(r));
-    const seen = new Set<string>();
-    return [...(titles.data?.rows ?? []), ...(said.data?.rows ?? [])].filter((r) => !shown(r) && !seen.has(r.id) && seen.add(r.id)).sort((a, b) => b.endedAt - a.endedAt);
-  }, [typed, first.data, pages, titles.data, said.data, omit]);
-  const saidOnly = (r: ReviewRow) => !!typed && !!said.data?.said[r.id] && !titles.data?.rows.some((x) => x.id === r.id);
-  const now = Date.now();
-  const tag = intlTag(locale);
-  const day = (d: string) => dayLabel(d, now, { today: t("review.today"), yesterday: t("review.yesterday") }, (at) => new Date(at).toLocaleDateString(tag, { month: "short", day: "numeric" }));
-  const days = groupByDay(rows);
-  return (
-    <>
-      <input type="search" className="input ai-review-search" data-testid="ai-review-search" aria-label={t("review.search")} placeholder={t("review.searchPlaceholder")} value={query} onChange={(e) => setQuery(e.target.value)} />
-      <div className="ai-review-list" data-testid="ai-review-list">
-        {days.map((d) => (
-          <div key={d.day} className="ai-review-dayset">
-            <p className="ai-review-day">{day(d.day)}</p>
-            {d.rows.map((r) => {
-              const outcome = outcomeLine(r, say);
-              const also = alsoKeys(r);
-              return (
-                <button key={r.id} type="button" className="ai-review-row" data-testid="ai-review-row" data-review={r.id} data-kind={r.kind} onClick={() => onPick(r)}>
-                  <span className="ai-review-row-title">
-                    <StatusMark status={r.kind === "idle" ? "idle" : "done"} />
-                    <span>{r.tickets[0] ? `${r.tickets[0].key} ${r.title}` : r.title || t("agentPanel.newThread")}</span>
-                    {r.kind === "idle" && <span className="ai-review-kind">{t("sessionBar.statusIdle")}</span>}
-                  </span>
-                  {outcome && <span className="ai-review-outcome">{outcome}</span>}
-                  <span className="meta-txt dense">{[agentName(r.agent), r.kind === "idle" ? timeAgo(r.endedAt) : span(r), also.length ? t("review.also", { keys: also.join(", ") }) : null].filter(Boolean).join(" · ")}</span>
-                  {saidOnly(r) && <span className="ai-review-said" data-testid="ai-review-said">{t("review.said", { text: said.data!.said[r.id]! })}</span>}
-                </button>
-              );
-            })}
-          </div>
-        ))}
-        {typed.length >= 2 && said.isFetching && <p className="meta-txt dense">{t("review.searching")}</p>}
-        {!rows.length && !first.isLoading && !titles.isFetching && !said.isFetching && <p className="meta-txt dense ai-session-empty">{typed ? t("review.noMatch") : t("review.empty")}</p>}
-        {!typed && next && (
-          <button type="button" className="btn btn-secondary btn-xs ai-review-more" data-testid="ai-review-more" disabled={reading} onClick={readMore}>
-            {reading ? t("review.loading") : t("review.more")}
-          </button>
-        )}
-      </div>
-    </>
   );
 }
 

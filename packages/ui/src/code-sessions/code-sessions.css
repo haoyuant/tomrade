@@ -59,7 +59,14 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-group-head { flex-direction: row; align-items: center; gap: 6px; width: 100%; cursor: pointer; font-size: var(--text-sm); color: var(--muted); }
 .cs-group-name { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cs-group-caret { width: 10px; flex: none; }
-.cs-archive-open { display: block; margin: var(--space-4) var(--space-2) 0; font-size: var(--text-sm); }
+/* History at the foot of the bar, as the assistant panel's: the note, and the way in. */
+.cs-history-foot { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-4) 0 0; padding: var(--space-2) 0 0; border-top: 1px solid var(--border); font-size: var(--text-xs); color: var(--meta); flex: none; }
+.cs-history-foot > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The panel's list in the bar: the bar's gutter is its gutter; the closed-terminal filter sits under its search. */
+.cs-side .ai-review-search { margin: 0 0 var(--space-2); }
+.cs-side .ai-review-filter { margin: 0 0 var(--space-2); display: flex; }
+.cs-side .ai-review-filter > button { flex: 1; }
+.cs-side .ai-review-list { padding: 0 0 var(--space-3); }
 .cs-side-sub { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .cs-side-sub h2 { margin: 0; }
 .cs-side-sub .side-add { font-size: var(--text-xs); }
@@ -101,7 +108,6 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-fold-row { gap: 2px; }
 .cs-fold-row > .cs-card, .cs-fold-row > .cs-bundle-head { flex: 1; min-width: 0; }
 .cs-timeline { margin: 4px 0 3px; padding-left: calc(22px + 2px); }
-.cs-archive-search { margin: 0 var(--space-2) var(--space-2); width: calc(100% - 2 * var(--space-2)); box-sizing: border-box; }
 
 .cs-main { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .cs-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: var(--space-2) var(--cs-gutter); border-bottom: 1px solid var(--border-soft); background: var(--surface-warm); font-size: var(--text-sm); }
@@ -185,8 +191,6 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 /* A locked pane: its lock stays lit in the bar. */
 .cs-lock { display: inline-flex; align-items: center; justify-content: center; }
 .cs-lock[aria-pressed="true"] { color: var(--accent); }
-.cs-shelves { display: flex; margin: 0 var(--space-2) var(--space-2); }
-.cs-shelves > button { flex: 1; }
 /* An ended session read back: who and when, the way to go on, then the conversation, read-only. */
 .cs-ended { width: 100%; display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .cs-ended-head { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-3) var(--space-2); border-bottom: 1px solid var(--border-soft); }

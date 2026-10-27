@@ -707,9 +707,9 @@ app.whenReady().then(async () => {
     const ended = await wait(async () => !JSON.parse(herdr("pane", "list")).result.panes.some((p) => p.pane_id === plainPane) && saved().length === 0);
     check("关闭终端：herdr 里的 pane 结束，列表里也没了", ended);
 
-    // The closed terminal's output was recorded while its cell showed it: on the archive's terminals shelf, played
-    // back in the cell it is picked into. The ended ticket session that ran alongside in pane four has a second tab,
-    // the raw output of its own stretch: marker-four was on its screen, what was typed after it ended is not.
+    // The closed terminal's output was recorded while its cell showed it: under History's closed-terminals filter,
+    // played back in the cell it is picked into. The ended ticket session that ran alongside in pane four has a second
+    // tab, the raw output of its own stretch: marker-four was on its screen, what was typed after it ended is not.
     const rowsOf = (sel) => `[...(document.querySelector(${JSON.stringify(sel)})?.querySelectorAll('.xterm-rows > div') ?? [])].map((r) => r.textContent).join('\\n')`;
     const replayText = (sel) => tjs(rowsOf(sel));
     const detachCell = async (sel) => {
@@ -718,11 +718,13 @@ app.whenReady().then(async () => {
       await tjs(`[...document.querySelectorAll('[role=menuitem]')].find((i) => i.textContent === '断开')?.click(); true`);
       await sleep(300);
     };
-    await tjs(`document.querySelector('[data-testid=cs-archive]').click(); true`);
-    await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-shelf-terminals]')`), 5000);
-    await tjs(`document.querySelector('[data-testid=cs-shelf-terminals]').click(); true`);
-    const closedRow = await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-archive-terminals] .cs-row')`), 8000);
-    await tjs(`document.querySelector('[data-testid=cs-archive-terminals] .cs-row')?.click(); true`);
+    // History is the assistant panel's list, in the bar: its rows, not the bar's cards.
+    const historyRowWith = (text) => `[...document.querySelectorAll('[data-testid=ai-review-list] .ai-review-row')].find((r) => r.textContent.includes(${JSON.stringify(text)}))`;
+    await tjs(`document.querySelector('[data-testid=cs-history]').click(); true`);
+    await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-history-terminals]')`), 5000);
+    await tjs(`document.querySelector('[data-testid=cs-history-terminals]').click(); true`);
+    const closedRow = await wait(async () => tjs(`!!document.querySelector('[data-testid=ai-review-list] .ai-review-row[data-kind=terminal]')`), 8000);
+    await tjs(`document.querySelector('[data-testid=ai-review-list] .ai-review-row[data-kind=terminal]')?.click(); true`);
     // It opens on the terminal's last screen, Claude Code's trust prompt; the slider dragged back finds the lines
     // echoed before it (set through the native setter, so React hears the change).
     const closedReplay = "[data-testid=cs-closed-terminal] .cs-replay";
@@ -733,18 +735,18 @@ app.whenReady().then(async () => {
       if (!(await seekTo(fraction))) break;
       echoed = await wait(async () => (await replayText(closedReplay)).includes("pane-is-"), 1500);
     }
-    check("关掉的普通终端在归档的「终端」架子里，选中后格子回放它的原始输出，进度条拖回去能看到之前回显的内容", closedRow && replayOpen && echoed, JSON.stringify({ closedRow, replayOpen, text: (await replayText(closedReplay)).trim().slice(-300) }));
+    check("关掉的普通终端是历史里的一个筛选项，选中后格子回放它的原始输出，进度条拖回去能看到之前回显的内容", closedRow && replayOpen && echoed, JSON.stringify({ closedRow, replayOpen, text: (await replayText(closedReplay)).trim().slice(-300) }));
     fs.writeFileSync(path.join(shots, "code-sessions-replay-terminal.png"), (await tw.webContents.capturePage()).toPNG());
-    await tjs(`document.querySelector('[data-testid=cs-shelf-tickets]').click(); true`);
-    await sleep(300);
-    await tjs(`${rowWith(alongItem.key)}?.click(); true`);
+    await tjs(`document.querySelector('[data-testid=cs-history-all]').click(); true`);
+    await wait(async () => tjs(`!!${historyRowWith(alongItem.key)}`), 8000);
+    await tjs(`${historyRowWith(alongItem.key)}?.click(); true`);
     const rawTab = await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-ended] [data-testid=cs-tab-raw][data-recorded]')`), 8000);
     await tjs(`document.querySelector('[data-testid=cs-ended] [data-testid=cs-tab-raw]')?.click(); true`);
     const sessionReplay = () => replayText("[data-testid=cs-ended] .cs-replay");
     const ownStretch = rawTab && (await wait(async () => (await sessionReplay()).includes("marker-four"), 15000)) && !(await sessionReplay()).includes("after-pane-keys");
     check("结束的会话多一个「原始输出」标签：回放只含它自己那段，有 marker-four，没有它结束后才输入的 after-pane-keys", ownStretch, JSON.stringify({ rawTab, text: (await sessionReplay()).trim().slice(-400) }));
     fs.writeFileSync(path.join(shots, "code-sessions-replay-session.png"), (await tw.webContents.capturePage()).toPNG());
-    await tjs(`document.querySelector('[data-testid=cs-archive-back]').click(); true`);
+    await tjs(`document.querySelector('[data-testid=cs-history-back]').click(); true`);
     await sleep(300);
     // The cell used for reading is emptied again, for the steps below that count empty cells.
     await detachCell("[data-testid=cs-ended]");
@@ -761,7 +763,7 @@ app.whenReady().then(async () => {
 
     // Right-click on a pane's bar: the menu, and Detach empties that pane.
     const emptyCells = () => tjs(`document.querySelectorAll('.cs-cell-empty > .cs-new-terminal [data-testid=cs-new-terminal]').length`);
-    // the first cell that holds something: which cell the archive's picks above landed in follows the selection
+    // the first cell that holds something: which cell History's picks above landed in follows the selection
     const heldBar = `[...document.querySelectorAll('.cs-cell')].find((c) => !c.querySelector('.cs-cell-empty'))?.querySelector('.cs-cell-bar')`;
     const emptyBefore = await emptyCells();
     await tjs(`${heldBar}.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 20 })); true`);
@@ -970,14 +972,14 @@ app.whenReady().then(async () => {
     ctx.codeLink.store.patchSession(project.id, gone.id, { state: "ended", endedAt: Date.now() });
     ctx.emit("codeLink/changed", project.id);
     const goneRow = `[...document.querySelectorAll('.cs-row')].find((r) => r.textContent.includes(${JSON.stringify(goneItem.key)}))`;
-    // Ended, it leaves the list for the archive; opened there, it shows in a pane as before.
-    const archived = await wait(async () => tjs(`!${goneRow} && /\\d/.test(document.querySelector('[data-testid=cs-archive]')?.textContent ?? '') && document.querySelectorAll('[data-testid=cs-new-terminal-where] option').length >= 2`), 8000);
-    await tjs(`document.querySelector('[data-testid=cs-archive]').click(); true`);
-    const inArchive = await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-archive-list]') && !!${goneRow}`), 8000);
-    check("结束的会话离开列表，在归档里找得到", archived && inArchive);
-    fs.writeFileSync(path.join(shots, "code-sessions-archive.png"), (await tw.webContents.capturePage()).toPNG());
-    await tjs(`${goneRow}.click(); true`);
-    await tjs(`document.querySelector('[data-testid=cs-archive-back]').click(); true`);
+    // Ended, it is not the bar's but History's; opened there, it shows in a pane as before.
+    const offBar = await wait(async () => tjs(`!${goneRow} && document.querySelectorAll('[data-testid=cs-new-terminal-where] option').length >= 2`), 8000);
+    await tjs(`document.querySelector('[data-testid=cs-history]').click(); true`);
+    const inHistory = await wait(async () => tjs(`!!${historyRowWith(goneItem.key)}`), 8000);
+    check("结束的会话不在会话栏里，在历史里找得到", offBar && inHistory);
+    fs.writeFileSync(path.join(shots, "code-sessions-history.png"), (await tw.webContents.capturePage()).toPNG());
+    await tjs(`${historyRowWith(goneItem.key)}.click(); true`);
+    await tjs(`document.querySelector('[data-testid=cs-history-back]').click(); true`);
     const goneCell = `document.querySelector('[data-testid=cs-ended]')`;
     const offered = await wait(async () => tjs(`(() => { const box = ${goneCell}; return !!box && [...box.querySelectorAll('button')].some((b) => b.textContent === '在新终端里接着做') && !!box.querySelector('[data-testid=cs-new-terminal-where]') && !!box.querySelector('[data-testid=cs-new-terminal]'); })()`), 5000);
     check("终端已经没有的会话：保留「在新终端里接着做」，也有目录和「新终端」", offered);
@@ -1006,21 +1008,19 @@ app.whenReady().then(async () => {
       fs.writeFileSync(path.join(shots, "code-sessions-took.png"), (await tw.webContents.capturePage()).toPNG());
     }
 
-    // A conversation had without a ticket, ended: on the archive's 对话 shelf by its title, and taken up again in a new
-    // terminal by its agent's resume, in the folder it ran in.
+    // A conversation had without a ticket, ended: in History by its title, and taken up again in a new terminal by
+    // its agent's resume, in the folder it ran in.
     const talk = ctx.codeLink.store.createSession(project.id, { repoId: repo.id, branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, externalId: "talk-check-1" });
     const talkFile = path.join(work, "talk-check-1.jsonl");
     fs.writeFileSync(talkFile, [{ type: "user", message: { content: "侧栏该怎么分组？" } }, { type: "assistant", message: { content: [{ type: "text", text: "分成「这个窗口里」和「在其他地方」两组。" }, { type: "tool_use", id: "u1", name: "Bash", input: { command: "rg -n Sidebar", description: "Show the sidebar code" } }] } }, { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "u1", content: "Sidebar.tsx:15" }] } }].map((o) => JSON.stringify(o)).join("\n"));
     ctx.codeLink.store.patchSession(project.id, talk.id, { title: "终端侧栏设计讨论", prompted: true, cwd: repoDir, transcript: talkFile, state: "ended", endedAt: Date.now() });
     ctx.emit("codeLink/changed", project.id);
-    await tjs(`document.querySelector('[data-testid=cs-archive]').click(); true`);
-    await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-shelf-talks]')`), 5000);
-    await tjs(`document.querySelector('[data-testid=cs-shelf-talks]').click(); true`);
-    const talkRow = `[...document.querySelectorAll('[data-testid=cs-archive-list] .cs-row')].find((r) => r.textContent.includes('终端侧栏设计讨论'))`;
-    const shelved = await wait(async () => tjs(`!!${talkRow}`), 5000);
-    check("没有工单的对话结束后在归档的「对话」栏里，用它的标题", shelved);
+    await tjs(`document.querySelector('[data-testid=cs-history]').click(); true`);
+    const talkRow = historyRowWith("终端侧栏设计讨论");
+    const talkListed = await wait(async () => tjs(`!!${talkRow}`), 5000);
+    check("没有工单的对话结束后在历史里，用它的标题", talkListed);
     await tjs(`${talkRow}?.click(); true`);
-    await tjs(`document.querySelector('[data-testid=cs-archive-back]').click(); true`);
+    await tjs(`document.querySelector('[data-testid=cs-history-back]').click(); true`);
     const offeredTalk = await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-talk-on]')`), 5000);
     // Its cell says who worked it and shows the conversation, read-only, under the way to go on.
     const readBack = await wait(async () => tjs(`(() => { const by = document.querySelector('[data-testid=cs-ended-by]')?.textContent ?? ''; const lines = [...document.querySelectorAll('[data-testid=cs-convo] .cs-convo-line')].map((l) => [l.dataset.who, l.textContent]); return by.startsWith('Claude Code') && JSON.stringify(lines) === JSON.stringify([["person", "侧栏该怎么分组？"], ["agent", "分成「这个窗口里」和「在其他地方」两组。"], ["tool", "Bash · Show the sidebar code"]]); })()`), 5000);
@@ -1056,14 +1056,13 @@ app.whenReady().then(async () => {
     await tjs(`document.querySelector('[data-testid=cs-toast-action]')?.click(); true`);
     await wait(async () => tjs(`!!document.querySelector('.cs-cell[data-cell="${goneId}"] .xterm')`), 8000);
 
-    // The archive finds a conversation by something said in it, not only by its title.
-    await tjs(`document.querySelector('[data-testid=cs-archive]').click(); true`);
-    await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-archive-search]')`), 5000);
-    await tjs(`(() => { const box = document.querySelector('[data-testid=cs-archive-search]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(box, '这个窗口里'); box.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
-    await tjs(`document.querySelector('[data-testid=cs-shelf-talks]').click(); true`);
-    const foundSaid = await wait(async () => tjs(`[...document.querySelectorAll('[data-testid=cs-archive-list] .cs-row')].some((r) => r.textContent.includes('终端侧栏设计讨论') && !!r.querySelector('[data-testid=cs-archive-said]'))`), 8000);
-    check("归档里搜对话里说过的词，找到那段对话并标出是对话里提到的", foundSaid, JSON.stringify(await tjs(`[...document.querySelectorAll('[data-testid=cs-archive-list] .cs-row')].map((r) => r.textContent)`)));
-    await tjs(`document.querySelector('[data-testid=cs-archive-back]').click(); true`);
+    // History finds a conversation by something said in it, not only by its title, and quotes the line.
+    await tjs(`document.querySelector('[data-testid=cs-history]').click(); true`);
+    await wait(async () => tjs(`!!document.querySelector('[data-testid=ai-review-search]')`), 5000);
+    await tjs(`(() => { const box = document.querySelector('[data-testid=ai-review-search]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(box, '这个窗口里'); box.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    const foundSaid = await wait(async () => tjs(`[...document.querySelectorAll('[data-testid=ai-review-list] .ai-review-row')].some((r) => r.textContent.includes('终端侧栏设计讨论') && (r.querySelector('[data-testid=ai-review-said]')?.textContent ?? '').includes('这个窗口里'))`), 8000);
+    check("历史里搜对话里说过的词，找到那段对话并引出说过的那句", foundSaid, JSON.stringify(await tjs(`[...document.querySelectorAll('[data-testid=ai-review-list] .ai-review-row')].map((r) => r.textContent)`)));
+    await tjs(`document.querySelector('[data-testid=cs-history-back]').click(); true`);
 
     // herdr's server goes away under the window (this run's own, by its socket): Tomrade starts it again, herdr brings
     // the panes back with their ids, and the cells attach on their own.
@@ -1090,7 +1089,7 @@ app.whenReady().then(async () => {
 
     // A Gemini CLI session Tomrade started reports through the hooks in its own Gemini home (TOM-684): each one, run as
     // Gemini runs it (bash -c, Gemini's own payload on stdin), says nothing back and gives the session its id and its
-    // record; once it ends, the archive reads the conversation from that record. Gemini CLI's reader is the official
+    // record; once it ends, History reads the conversation from that record. Gemini CLI's reader is the official
     // plugin's when it is loaded, else a stand-in that reads the fixture's lines.
     if (!ctx.agent.engineOf("gemini")) {
       const standIn = { find: () => null, read: (file) => ({ lines: fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).flatMap((m) => (m.type === "user" ? [{ who: "person", text: m.content[0].text }] : m.type === "gemini" ? [{ who: "agent", text: m.content }] : [])), cut: false, start: 0 }) };
@@ -1134,16 +1133,14 @@ app.whenReady().then(async () => {
     const reported = ctx.codeLink.store.session(project.id, geminiSession.id);
     check("Gemini 会话主目录里的 hooks 照 Gemini 的方式运行：不往回打印，退出码 0，会话拿到 Gemini 的会话 id 和记录，结束后标为结束", hookRuns.every((r) => r.code === 0 && r.out === "") && reported?.externalId === "gemchk01-check" && reported?.transcript === geminiRecord && reported?.state === "ended", JSON.stringify({ hookRuns, session: { externalId: reported?.externalId, transcript: reported?.transcript, state: reported?.state } }));
     ctx.emit("codeLink/changed", project.id);
-    await tjs(`document.querySelector('[data-testid=cs-archive]').click(); true`);
-    await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-shelf-tickets]')`), 5000);
-    await tjs(`document.querySelector('[data-testid=cs-shelf-tickets]').click(); true`);
-    const geminiRow = `[...document.querySelectorAll('[data-testid=cs-archive-list] .cs-row')].find((r) => r.textContent.includes(${JSON.stringify(geminiItem.key)}))`;
-    const geminiShelved = await wait(async () => tjs(`!!${geminiRow}`), 8000);
+    await tjs(`document.querySelector('[data-testid=cs-history]').click(); true`);
+    const geminiRow = historyRowWith(geminiItem.key);
+    const geminiListed = await wait(async () => tjs(`!!${geminiRow}`), 8000);
     await tjs(`${geminiRow}?.click(); true`);
-    const geminiRead = geminiShelved && (await wait(async () => tjs(`(() => { const ended = [...document.querySelectorAll('[data-testid=cs-ended]')].find((e) => (e.querySelector('[data-testid=cs-ended-by]')?.textContent ?? '').startsWith('Gemini CLI')); const lines = [...(ended?.querySelectorAll('[data-testid=cs-convo] .cs-convo-line') ?? [])].map((l) => [l.dataset.who, l.textContent]); return JSON.stringify(lines.slice(0, 1)) === JSON.stringify([["person", "说声你好"]]) && lines.some(([who, text]) => who === "agent" && text === "你好！"); })()`), 8000));
-    check("新开的 Gemini CLI 会话结束后，归档里能看到它的对话", geminiRead, JSON.stringify(await tjs(`[...document.querySelectorAll('[data-testid=cs-ended]')].map((e) => e.textContent.slice(0, 160))`)));
+    const geminiRead = geminiListed && (await wait(async () => tjs(`(() => { const ended = [...document.querySelectorAll('[data-testid=cs-ended]')].find((e) => (e.querySelector('[data-testid=cs-ended-by]')?.textContent ?? '').startsWith('Gemini CLI')); const lines = [...(ended?.querySelectorAll('[data-testid=cs-convo] .cs-convo-line') ?? [])].map((l) => [l.dataset.who, l.textContent]); return JSON.stringify(lines.slice(0, 1)) === JSON.stringify([["person", "说声你好"]]) && lines.some(([who, text]) => who === "agent" && text === "你好！"); })()`), 8000));
+    check("新开的 Gemini CLI 会话结束后，历史里能看到它的对话", geminiRead, JSON.stringify(await tjs(`[...document.querySelectorAll('[data-testid=cs-ended]')].map((e) => e.textContent.slice(0, 160))`)));
     fs.writeFileSync(path.join(shots, "code-sessions-gemini.png"), (await tw.webContents.capturePage()).toPNG());
-    await tjs(`document.querySelector('[data-testid=cs-archive-back]')?.click(); true`);
+    await tjs(`document.querySelector('[data-testid=cs-history-back]')?.click(); true`);
     tw.close();
   } catch (error) {
     check("检查跑完", false, error?.stack ?? String(error));
