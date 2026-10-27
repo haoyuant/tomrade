@@ -35,7 +35,7 @@ const RANK: Record<BarStatus, number> = { wait: 0, run: 1, idle: 2, done: 3 };
 /**
  * The bar's rows, waiting first. Within a group the order holds still while output streams:
  * waiting by how long it has waited, running by when it started, idle by when it was last used,
- * ended by when it ended. Idle conversations beyond `idleLimit` stay in the full list; the open one never drops out.
+ * ended by when it ended. Idle conversations beyond `idleLimit` stay in the full list; the open thread or session never drops out.
  */
 export function sessionBarRows(input: {
   threads: ThreadSummary[];
@@ -44,6 +44,8 @@ export function sessionBarRows(input: {
   itemTitle: (itemId: string) => string | null;
   itemKey?: (itemId: string) => string | null;
   openThreadId: string | null;
+  /** The terminal session the panel shows in place of a thread, if any. */
+  openSessionId?: string | null;
   idleLimit?: number;
 }): BarRow[] {
   const waits = new Map(input.attention.map((e) => [e.key, e]));
@@ -87,5 +89,6 @@ export function sessionBarRows(input: {
   rows.sort(order);
   const limit = input.idleLimit ?? 8;
   let idle = 0;
-  return rows.filter((r) => r.status !== "idle" || ++idle <= limit || r.threadId === input.openThreadId);
+  const open = (r: BarRow) => (!!input.openThreadId && r.threadId === input.openThreadId) || (!!input.openSessionId && r.sessionId === input.openSessionId);
+  return rows.filter((r) => r.status !== "idle" || ++idle <= limit || open(r));
 }

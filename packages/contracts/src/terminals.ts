@@ -99,6 +99,15 @@ export interface TerminalLaunch {
   workspace?: TerminalWorkspaceRef;
 }
 
+/**
+ * Keystrokes for a pane's program, as a person would type them: `text` first, then `keys` by the backend's logical
+ * names (`enter`, `esc`, `tab`, `ctrl+c`…). Nothing attaches to the pane, so whoever holds it keeps it.
+ */
+export interface TerminalInput {
+  text?: string;
+  keys?: string[];
+}
+
 /** How `revive` went: the backend answers (already, or started now), did not come up, is held by the limit, or is not here. */
 export type TerminalRevive = "running" | "started" | "failed" | "held" | "notInstalled";
 
@@ -127,6 +136,8 @@ export interface TerminalProvider {
   processes(paneId: string): Promise<TerminalProcess[]>;
   /** Hand text to the agent in a pane, as a prompt. False when it could not. */
   prompt(paneId: string, text: string): Promise<boolean>;
+  /** Type into a pane's program without taking the pane from whoever holds it. False when it could not; absent where the backend cannot. */
+  sendInput?(paneId: string, input: TerminalInput): Promise<boolean>;
   /** The last lines on a pane's screen, styling stripped; null when the pane is gone. */
   readTail(paneId: string, lines?: number): Promise<string | null>;
   /** Where a pane's view is in its scrollback: now, then on every change. */

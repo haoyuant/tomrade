@@ -46,3 +46,4 @@ export { CodeLink as default } from "./service.js";
 export type { ConnectionView, AgentConnectionView } from "./connection.js";
 export { BRIDGED_BY_DSH, cliHookCall, cliHookEvent, hookReply, mergeAnswers } from "./cli-hooks.js";
 export { recordOf, resumeCommand } from "./titles.js";
+export { inputsOf, SessionPanel, type SessionPanelView } from "./panel.js";

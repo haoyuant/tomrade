@@ -1,8 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import type { ConversationLine, Layout, SessionRow, TerminalPlace, TerminalRow } from "@tomradex/code-sessions";
-import { FoldChevron } from "~/components/ui/atoms";
+import { ConvoLineRow, ConvoTop, useOpenLines, type ConvoLine } from "~/components/ConversationRead";
 import { ContextMenu } from "~/components/ui/menu";
-import { logQuietly } from "~/lib/api";
 import { onCell, send, type Look } from "./bridge";
 import { keyLabel } from "./keys";
 import { live, sessionName } from "./lists";
@@ -41,51 +40,10 @@ function AgentChip({ status }: { status: NonNullable<TerminalRow["agentStatus"]>
   );
 }
 
-type Line = ConversationLine & { key: number };
+type Line = ConvoLine;
 
 /** Lines as the view keeps them, each with a key that stays when earlier ones go in on top. */
 const keyed = (lines: ConversationLine[] | null, from: number): Line[] | null => lines?.map((l, i) => ({ ...l, key: from + i })) ?? null;
-
-/** One line of a conversation read back; a tool call folds open to its whole input and output. */
-function ConvoLine({ line, open, onToggle }: { line: Line; open: boolean; onToggle: () => void }) {
-  const say = useSay();
-  const [copied, setCopied] = useState(false);
-  const detail = line.detail;
-  const copy = () => {
-    const text = detail ? [line.text, detail.input, detail.output].filter(Boolean).join("\n\n") : line.text;
-    void navigator.clipboard?.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    }, logQuietly("clipboard"));
-  };
-  return (
-    <div className="cs-convo-item" data-who={line.who}>
-      {detail ? (
-        <div className="cs-convo-tool">
-          <FoldChevron open={open} onToggle={onToggle} />
-          <button type="button" className="cs-convo-line" data-who="tool" aria-expanded={open} onClick={onToggle}>
-            {line.text}
-          </button>
-        </div>
-      ) : (
-        <div className="cs-convo-line" data-who={line.who}>
-          {line.text}
-        </div>
-      )}
-      <button type="button" className="link-btn cs-convo-copy" onClick={copy}>
-        {say(copied ? "convoCopied" : "convoCopy")}
-      </button>
-      {detail && open && (
-        <div className="cs-convo-detail" data-testid="cs-convo-detail">
-          <span className="cs-row-meta">{say("convoInput")}</span>
-          <pre>{detail.input}</pre>
-          <span className="cs-row-meta">{say("convoOutput")}</span>
-          {detail.output !== undefined ? <pre>{detail.output}</pre> : <span className="cs-row-meta">{say("convoNoOutput")}</span>}
-        </div>
-      )}
-    </div>
-  );
-}
 
 /**
  * An ended session's cell: which agent worked it and when it ended, the way to go on, and its conversation read-only
@@ -96,7 +54,7 @@ function Ended({ session, cell, locale, resume, picker }: { session: SessionRow;
   const say = useSay();
   const [read, setRead] = useState<{ lines: Line[] | null; cut: boolean; start: number | null } | null>(null);
   const [earlier, setEarlier] = useState(false);
-  const [open, setOpen] = useState<ReadonlySet<number>>(() => new Set());
+  const [open, toggle, closeAll] = useOpenLines();
   const [picking, setPicking] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   // The view's height before earlier lines went in on top, so what was in view stays there; -1 opens at the end.
@@ -104,7 +62,7 @@ function Ended({ session, cell, locale, resume, picker }: { session: SessionRow;
   useEffect(() => {
     setRead(null);
     setEarlier(false);
-    setOpen(new Set());
+    closeAll();
     kept.current = -1;
     const off = onCell(cell, (post) => {
       if (post.type !== "conversation" || post.sessionId !== session.id) return;
@@ -122,7 +80,7 @@ function Ended({ session, cell, locale, resume, picker }: { session: SessionRow;
     });
     send({ type: "conversation", cell, sessionId: session.id });
     return off;
-  }, [cell, session.id]);
+  }, [cell, session.id, closeAll]);
   useLayoutEffect(() => {
     const el = box.current;
     if (!el || kept.current === null) return;
@@ -138,12 +96,6 @@ function Ended({ session, cell, locale, resume, picker }: { session: SessionRow;
     setEarlier(true);
     send({ type: "conversation", cell, sessionId: session.id, before: read.start });
   };
-  const toggle = (key: number) =>
-    setOpen((now) => {
-      const next = new Set(now);
-      if (!next.delete(key)) next.add(key);
-      return next;
-    });
   const lines = read?.lines?.length ? read.lines : null;
   const when = session.endedAt ? new Date(session.endedAt).toLocaleString(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : null;
   const who = session.agentName ?? session.agent;
@@ -175,15 +127,9 @@ function Ended({ session, cell, locale, resume, picker }: { session: SessionRow;
         )}
       </div>
       <div className="cs-convo" data-testid="cs-convo" aria-label={say("convoReadOnly")} ref={box} onScroll={(e) => e.currentTarget.scrollTop < 80 && readEarlier()}>
-        {read?.cut ? (
-          <button type="button" className="link-btn cs-convo-top" data-testid="cs-convo-earlier" disabled={earlier} onClick={readEarlier}>
-            {say(earlier ? "convoReading" : "convoEarlier")}
-          </button>
-        ) : (
-          <p className="cs-convo-top">{say("convoStart")}</p>
-        )}
+        <ConvoTop cut={!!read?.cut} reading={earlier} onEarlier={readEarlier} say={say} />
         {lines.map((l) => (
-          <ConvoLine key={l.key} line={l} open={open.has(l.key)} onToggle={() => toggle(l.key)} />
+          <ConvoLineRow key={l.key} line={l} open={open.has(l.key)} onToggle={() => toggle(l.key)} say={say} />
         ))}
       </div>
     </div>

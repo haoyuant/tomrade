@@ -93,6 +93,16 @@ describe("herdr service", () => {
     expect(fake.of("pane.read")[0]).toMatchObject({ pane_id: "w1:p1", source: "recent", lines: 20 });
     expect(await herdr.readTail("w9:p9")).toBeNull();
 
+    // Keystrokes go through the pane surface, text before keys, with nothing attached: whoever holds the pane keeps it.
+    expect(await herdr.sendInput("w1:p1", { text: "y" })).toBe(true);
+    expect(await herdr.sendInput("w1:p1", { text: "look", keys: ["enter"] })).toBe(true);
+    expect(await herdr.sendInput("w1:p1", { keys: ["esc"] })).toBe(true);
+    expect(fake.of("pane.send_input").slice(1)).toEqual([{ pane_id: "w1:p1", text: "y" }, { pane_id: "w1:p1", text: "look", keys: ["enter"] }, { pane_id: "w1:p1", keys: ["esc"] }]);
+    expect(await herdr.sendInput("w1:p1", {})).toBe(false);
+    expect(await herdr.sendInput("w9:p9", { keys: ["enter"] })).toBe(false);
+    // nothing was sent for the empty input; the pane herdr does not have was asked and refused
+    expect(fake.of("pane.send_input")).toHaveLength(5);
+
     fake.stop();
     expect(await herdr.launch({ cwd: "/work", command: "true" })).toBeNull();
     expect(await herdr.paneAlive("w1:p1")).toBeNull();

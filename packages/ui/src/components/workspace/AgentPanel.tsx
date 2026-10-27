@@ -27,8 +27,10 @@ import { Composer } from "./agent-panel/Composer";
 import { STORE } from "./agent-panel/store";
 import { ThreadList, useThreadListState } from "./agent-panel/ThreadList";
 import { SessionBar, type BarMode } from "./agent-panel/SessionBar";
+import { TerminalSession } from "./agent-panel/TerminalSession";
 import { sessionBarRows, type BarRow } from "~/lib/sessionBar";
 import { useRecentSessions } from "~/lib/codeLink";
+import type { SessionView } from "@tomradex/code-link";
 import { hits } from "~/lib/keybindings";
 import { Transcript } from "./agent-panel/Transcript";
 import { useComposerHistory } from "./agent-panel/useComposerHistory";
@@ -128,6 +130,17 @@ export function AgentPanel({
     localStorage.setItem(STORE.sessionBar, mode);
   }, []);
   const recentSessions = useRecentSessions(projectId, open);
+  // A terminal session picked from the bar takes the place of the thread: the same session as the Terminal window's
+  // cell, seen from here. Remembered with its project, so another project's panel never shows it.
+  const [openSessionIn, setOpenSessionIn] = useState<{ projectId: string; id: string } | null>(null);
+  const openSession = openSessionIn?.projectId === projectId ? openSessionIn.id : null;
+  const setOpenSession = useCallback((id: string | null) => setOpenSessionIn(id ? { projectId, id } : null), [projectId]);
+  // kept once seen, so the view stays while the bar's list moves on without it (it ended a while ago)
+  const lastSession = useRef<SessionView | null>(null);
+  const shownSession = openSession ? (recentSessions.data?.find((s) => s.id === openSession) ?? (lastSession.current?.id === openSession ? lastSession.current : null)) : null;
+  useEffect(() => {
+    if (shownSession) lastSession.current = shownSession;
+  }, [shownSession]);
   const composer = useRef<HTMLTextAreaElement>(null);
   /** Whether the transcript follows new lines: true until the person scrolls up to read, again once they come back down. */
   const following = useRef(true);
@@ -271,14 +284,16 @@ export function AgentPanel({
 
   const pickThread = (id: string) => {
     if (threadId && id !== threadId) { setAttachments([]); setAttachmentError(null); setAskReopen(false); history.stopBrowsing(); }
+    setOpenSession(null);
     chooseThread(id);
   };
   useEffect(() => {
     if (!requestedThread) return;
     setAttachments([]);
     setAttachmentError(null);
+    setOpenSession(null);
     chooseThread(requestedThread.id);
-  }, [requestedThread, projectId, chooseThread]);
+  }, [requestedThread, projectId, chooseThread, setOpenSession]);
 
   // Snapshotted at send time: navigating away mid-run can't change what "this" meant.
   const sendFocus = ctxMode === "off" ? [] : ctxMode === "pinned" ? pinnedFocus : focus;
@@ -459,18 +474,20 @@ export function AgentPanel({
   const itemsById = useMemo(() => new Map((itemsQ.data ?? []).map((i) => [i.id, i])), [itemsQ.data]);
   const barRows = useMemo(
     () => sessionBarRows({
-      threads: threads.data ?? [], sessions: recentSessions.data ?? [], attention, openThreadId: threadId,
+      threads: threads.data ?? [], sessions: recentSessions.data ?? [], attention, openThreadId: threadId, openSessionId: openSession,
       itemTitle: (id) => itemsById.get(id)?.title ?? null, itemKey: (id) => itemsById.get(id)?.key ?? null
     }),
-    [threads.data, recentSessions.data, attention, threadId, itemsById]
+    [threads.data, recentSessions.data, attention, threadId, openSession, itemsById]
   );
+  const showInTerminal = (sessionId: string, terminalApp: string | null) =>
+    void invoke("codeLink.showSession", projectId, sessionId).then((shown) => {
+      if (!shown) toast({ body: terminalApp ? t("sessionBar.elsewhere", { app: terminalApp.replace(/\.app$/, "") }) : t("sessionBar.notShown") });
+    }, reportError);
   const pickBarRow = (row: BarRow) => {
     if (row.threadId) return pickThread(row.threadId);
-    if (!row.sessionId) return;
-    void invoke("codeLink.showSession", projectId, row.sessionId).then((shown) => {
-      if (!shown) toast({ body: row.where === "outside" && row.terminalApp ? t("sessionBar.elsewhere", { app: row.terminalApp.replace(/\.app$/, "") }) : t("sessionBar.notShown") });
-    }, reportError);
+    if (row.sessionId) setOpenSession(row.sessionId);
   };
+  const sessionRow = shownSession ? barRows.find((r) => r.sessionId === shownSession.id) : undefined;
   // the bar is memoized; its handlers keep their identity and read the latest render's state
   const latestBar = useRef({ pickBarRow, newThread: () => {} });
   latestBar.current = { pickBarRow, newThread: () => void openThread({ boardId }).then((th) => pickThread(th.id)) };
@@ -548,6 +565,19 @@ export function AgentPanel({
         </button>
       </div>
 
+      {shownSession ? (
+        <TerminalSession
+          projectId={projectId}
+          session={shownSession}
+          title={sessionRow?.title ?? shownSession.title ?? (shownSession.itemIds[0] ? itemsById.get(shownSession.itemIds[0])?.title ?? "" : "")}
+          ticket={sessionRow?.ticket ?? (shownSession.itemIds[0] ? itemsById.get(shownSession.itemIds[0])?.key ?? null : null)}
+          status={sessionRow?.status ?? (shownSession.state === "ended" || shownSession.state === "lost" ? "done" : shownSession.state === "running" ? "run" : "idle")}
+          engines={engines.data}
+          onShowInTerminal={shownSession.herdrPane || shownSession.state === "ended" || shownSession.state === "lost" ? () => showInTerminal(shownSession.id, shownSession.terminal) : undefined}
+          onClose={() => setOpenSession(null)}
+        />
+      ) : (
+      <>
       <div
         className="ai-scroll"
         ref={scroll}
@@ -874,9 +904,11 @@ export function AgentPanel({
           })}
         </div>
       </div>
+      </>
+      )}
       <SessionBar
         rows={barRows}
-        openKey={threadId ? `thread:${threadId}` : null}
+        openKey={shownSession ? `session:${shownSession.id}` : threadId ? `thread:${threadId}` : null}
         mode={barMode}
         engines={engines.data}
         onMode={chooseBarMode}

@@ -236,6 +236,21 @@ describe("the host", () => {
     await vi.waitFor(() => expect(pty.written).toBe("go on\r"));
   });
 
+  it("presses keys by herdr's names after the text, and refuses a name it does not know before typing anything", async () => {
+    const { pipe } = await hostOn();
+    const { pane_id } = await hostCall<{ pane_id: string }>(pipe, "pane.launch", { cwd: os.tmpdir() });
+    const pty = FakePty.last!;
+    await hostCall(pipe, "pane.send_input", { pane_id, keys: ["esc"] });
+    await vi.waitFor(() => expect(pty.written).toBe("\x1b"));
+    pty.written = "";
+    await hostCall(pipe, "pane.send_input", { pane_id, text: "y", keys: ["enter", "ctrl+c", "shift+tab"] });
+    await vi.waitFor(() => expect(pty.written).toBe("y\r\x03\x1b[Z"));
+    pty.written = "";
+    await expect(hostCall(pipe, "pane.send_input", { pane_id, text: "nope", keys: ["hyper+q"] })).rejects.toMatchObject({ code: "invalid_request" });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(pty.written).toBe("");
+  });
+
   it("ends a closed pane's process tree, tells its windows and subscribers, and exits once it has no pane", async () => {
     const onIdle = vi.fn();
     const { host, pipe, killed } = await hostOn({ idleMs: 50, onIdle });

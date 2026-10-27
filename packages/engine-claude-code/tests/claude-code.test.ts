@@ -21,6 +21,13 @@ async function settled(ctx: Context, projectId: string, runId: string, timeout =
 }
 
 describe("the Claude Code engine", () => {
+  it("says how its permission prompt in a terminal is answered: Enter takes the Yes it opens on, Esc is the No it names itself", async () => {
+    const { ctx } = await fresh({ plugins: [Tools, [Settings, { path: path.join(fs.mkdtempSync(path.join(os.tmpdir(), "claude-approval-")), "settings.json") }], Agent, [Mcp, { port: 0 }], engineClaudeCode] });
+    await settle();
+    expect(ctx.agent.engineOf("claude-code")?.local?.approval).toEqual({ allow: ["enter"], deny: ["esc"] });
+    await ctx.fiber.dispose();
+  });
+
   it("ignores a saved cli transport, runs through the SDK with the picked model and effort, and opens coding threads unrestricted", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fake-claude-"));
     const log = path.join(dir, "requests.jsonl");

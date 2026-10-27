@@ -35,7 +35,9 @@ export function createCodexEngine(ctx: Context): Engine {
           return { model: value("model") ?? "default", provider: value("model_provider") ?? "default" };
         }
       },
-      record: codexRecord
+      record: codexRecord,
+      // its approval is a pick that opens on "Yes, proceed" (Enter takes it); Esc leaves it as "No, and tell Codex what to do differently"
+      approval: { allow: ["enter"], deny: ["esc"] }
     },
     turn: pooledEngine(ctx, { create: (input) => new CodexRuntime(ctx, input) })
   };

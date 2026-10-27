@@ -16,7 +16,11 @@ export function createClaudeCodeEngine(ctx: Context): Engine {
     steering: "forward",
     // the SDK session switches its permission mode mid-turn
     liveModes: true,
-    local: { ...info.local, commands: claudeCommands, record: claudeRecord({ variable: "CLAUDE_CONFIG_DIR", dir: ".claude" }) },
+    local: {
+      ...info.local, commands: claudeCommands, record: claudeRecord({ variable: "CLAUDE_CONFIG_DIR", dir: ".claude" }),
+      // its prompt is a numbered pick that opens on "Yes": Enter takes it, and the "No" row itself says "(esc)"
+      approval: { allow: ["enter"], deny: ["esc"] }
+    },
     media: () => ({ input: ["image/png", "image/jpeg", "image/webp", "image/gif", "application/pdf"], output: [] }),
     permissionModes: { default: "bypassPermissions", choices: [
       { value: "auto", label: "Auto" }, { value: "bypassPermissions", label: "Full access" },

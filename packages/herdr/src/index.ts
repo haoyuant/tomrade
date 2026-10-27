@@ -8,7 +8,7 @@ import type {} from "@tomradex/ipc";
 import { HerdrError, herdrCall, herdrSocketPath, herdrStream, type HerdrEvent } from "./client.js";
 import { openTerminal, type OpenedTerminal, type TerminalFrame, type TerminalMode, type TerminalMouse, type TerminalScroll, type TerminalStream } from "./terminal.js";
 import { HERDR_WORDS } from "./words.js";
-import { type Check, type CheckResult, contract, errorMessage, type TerminalBridge, type TerminalPaneEvent, type TerminalPaneInfo, type TerminalProcess, type TerminalProvider, type TerminalRevive, type TerminalScrollPosition, type TerminalStatus, type TerminalWorkspaceRef } from "@tomradex/contracts";
+import { type Check, type CheckResult, contract, errorMessage, type TerminalBridge, type TerminalInput, type TerminalPaneEvent, type TerminalPaneInfo, type TerminalProcess, type TerminalProvider, type TerminalRevive, type TerminalScrollPosition, type TerminalStatus, type TerminalWorkspaceRef } from "@tomradex/contracts";
 
 export { HerdrError, herdrCall, herdrSocketPath, herdrStream, type HerdrEvent } from "./client.js";
 export * from "./terminal.js";
@@ -599,6 +599,15 @@ export class Herdr extends Service implements TerminalProvider {
       if (!(err instanceof HerdrError)) throw err;
       return false;
     }
+  }
+
+  /**
+   * Keystrokes into a pane through herdr's pane surface, which works before an agent is detected and takes the pane
+   * from nobody — unlike a control session (TOM-412). The text goes first, then the keys. False when herdr would not.
+   */
+  sendInput(paneId: string, input: TerminalInput): Promise<boolean> {
+    if (!input.text && !input.keys?.length) return Promise.resolve(false);
+    return this.ok("pane.send_input", { pane_id: paneId, ...(input.text ? { text: input.text } : {}), ...(input.keys?.length ? { keys: input.keys } : {}) });
   }
 
   /**

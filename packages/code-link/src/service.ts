@@ -28,6 +28,7 @@ import { contribute } from "./contrib.js";
 import { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
 import { FollowOnStore, type FollowOn } from "./follow-ons.js";
 import { HerdrBridge, type HerdrInstall } from "./herdr-bridge.js";
+import { SessionPanel, type SessionPanelView } from "./panel.js";
 import { Landing, type MergeCause, type MergeCheckView, type MergeLocalResult, type OpenPrResult } from "./landing.js";
 import { Orientation } from "./orientation.js";
 import { SYNC_PROMPT, syncInstructions, syncPrompt, type SyncScope } from "./sync.js";
@@ -206,6 +207,16 @@ declare module "@tomradex/ipc" {
     "codeLink.terminalWindow": (projectId: string) => boolean;
     /** Show a session's herdr terminal in Tomrade's Terminal window; false when no window can. */
     "codeLink.showSession": (projectId: string, sessionId: string) => boolean;
+    /** A session's conversation from its agent's own record: its end, or the stretch `before` an earlier read's start. */
+    "codeLink.conversation": (projectId: string, sessionId: string, before?: number) => RecordRead | null;
+    /** What the assistant panel can do with a terminal session: type into its pane, answer its permission prompt. */
+    "codeLink.sessionPanel": (projectId: string, sessionId: string) => SessionPanelView;
+    /** Text into the session's pane, with Enter, as typed at its keyboard. */
+    "codeLink.sessionSay": (projectId: string, sessionId: string, text: string) => boolean;
+    /** The agent's declared keys for its permission prompt, pressed in the session's pane. */
+    "codeLink.sessionAnswer": (projectId: string, sessionId: string, which: "allow" | "deny") => boolean;
+    /** The last lines on the session's pane; null without a pane. Asked by the panel only while it shows the session. */
+    "codeLink.sessionTail": (projectId: string, sessionId: string, lines: number) => string | null;
     /** How herdr installs on this machine: Homebrew's command where brew is, herdr's own installer on macOS and Linux, else only its install guide. */
     "codeLink.herdrInstall": () => HerdrInstall;
     /** Install herdr in a terminal with that command; the page never names it. */
@@ -324,6 +335,7 @@ export class CodeLink extends Service implements CodeLinkReader {
   /** Coalesces the engines' arrivals into one pass over the projects' repositories. */
   private autoConnectTimer: NodeJS.Timeout | null = null;
   private herdr!: HerdrBridge;
+  private panel!: SessionPanel;
   /** The engines' connection-file writers; Connect reads them when it runs, so load order does not matter. */
   private readonly connectors = new Map<ConnectorAgent, ConnectFileWriter>();
   /** Ended sessions already looked for a transcript title. */
@@ -370,6 +382,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       onEnded: (session) => void this.saveRecord(session)
     });
     this.herdr = new HerdrBridge({ ctx: this.ctx, store: this.store, sessions: this.sessions, words: () => this.words(), sessionDir: (id) => this.sessionDir(id) });
+    this.panel = new SessionPanel(this.ctx, this.store);
     this.starter = new Starter({
       ctx: this.ctx,
       store: this.store,
@@ -661,6 +674,11 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.gh", () => probeGh());
       ctx.ipc.handle("codeLink.terminalWindow", (projectId) => ctx.codeLink.terminalWindow(projectId));
       ctx.ipc.handle("codeLink.showSession", (projectId, sessionId) => ctx.codeLink.showSession(projectId, sessionId));
+      ctx.ipc.handle("codeLink.conversation", (projectId, sessionId, before) => ctx.codeLink.conversation(projectId, sessionId, before));
+      ctx.ipc.handle("codeLink.sessionPanel", (projectId, sessionId) => ctx.codeLink.sessionPanel(projectId, sessionId));
+      ctx.ipc.handle("codeLink.sessionSay", (projectId, sessionId, text) => ctx.codeLink.sessionSay(projectId, sessionId, text));
+      ctx.ipc.handle("codeLink.sessionAnswer", (projectId, sessionId, which) => ctx.codeLink.sessionAnswer(projectId, sessionId, which));
+      ctx.ipc.handle("codeLink.sessionTail", (projectId, sessionId, lines) => ctx.codeLink.sessionTail(projectId, sessionId, lines));
       ctx.ipc.handle("codeLink.herdrInstall", () => ctx.codeLink.herdrInstall());
       ctx.ipc.handle("codeLink.installHerdr", () => ctx.codeLink.installHerdr());
     });
@@ -869,6 +887,26 @@ export class CodeLink extends Service implements CodeLinkReader {
 
   sessionsOf(projectId: string, itemId?: string): SessionView[] {
     return this.store.sessions(projectId, itemId ? { itemId } : {});
+  }
+
+  /** What the assistant panel can do with a terminal session besides read its conversation. */
+  sessionPanel(projectId: string, sessionId: string): SessionPanelView {
+    return this.panel.view(projectId, sessionId);
+  }
+
+  /** Text into a terminal session's pane, with Enter, as typed at its keyboard; false when it could not go. */
+  sessionSay(projectId: string, sessionId: string, text: string): Promise<boolean> {
+    return this.panel.say(projectId, sessionId, text);
+  }
+
+  /** The agent's declared keys for its permission prompt, pressed in the session's pane; false when it has none, or they would not go. */
+  sessionAnswer(projectId: string, sessionId: string, which: "allow" | "deny"): Promise<boolean> {
+    return this.panel.answer(projectId, sessionId, which);
+  }
+
+  /** The last lines on a terminal session's pane; null without a pane, or when it is gone. */
+  sessionTail(projectId: string, sessionId: string, lines: number): Promise<string | null> {
+    return this.panel.tail(projectId, sessionId, lines);
   }
 
   /** Asked on every session change while a list shows: it reads the live rows and a handful of ended ones, not the whole history. */

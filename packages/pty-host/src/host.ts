@@ -1,6 +1,7 @@
 import net from "node:net";
 import { agentIn, descendants, shortCommand, titleStatus, type ProcessRow } from "./agents.js";
 import { clampSize, frameLine, line, lineReader, PROTOCOL, type AttachParams, type LaunchParams, type PaneInfo, type ProcessInfo, type Request, type TerminalCommand } from "./protocol.js";
+import { keyBytes } from "./keys.js";
 import { Pane, type Attachment, type Pty, type ScrollState } from "./pane.js";
 
 /** Starts a program on a pseudo-terminal. */
@@ -199,8 +200,20 @@ export class Host {
       }
       case "pane.send_input": {
         const pane = this.pane(params);
-        pane.input(String(params.text ?? ""));
-        if (params.enter === true) setTimeout(() => pane.input("\r"), this.opts.enterDelayMs ?? 150);
+        // Every key is checked before anything is typed, as herdr does: a name this host does not know types nothing.
+        const keys = (Array.isArray(params.keys) ? params.keys : []).map((name) => [String(name), keyBytes(String(name))] as const);
+        const unknown = keys.find(([, bytes]) => bytes === null);
+        if (unknown) throw new RequestError("invalid_request", `unknown key ${unknown[0]}`);
+        const text = String(params.text ?? "");
+        pane.input(text);
+        // Typed text waits before its keys, so a program reading a fast burst as a paste still takes them as keys.
+        const press = () => {
+          for (const [, bytes] of keys) pane.input(bytes!);
+          if (params.enter === true) pane.input("\r");
+        };
+        if (!keys.length && params.enter !== true) return {};
+        if (text || params.enter === true) setTimeout(press, this.opts.enterDelayMs ?? 150);
+        else press();
         return {};
       }
       case "pane.read":

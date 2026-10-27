@@ -11,6 +11,7 @@ import {
   type Check,
   type CheckResult,
   type TerminalBridge,
+  type TerminalInput,
   type TerminalLaunch,
   type TerminalMode,
   type TerminalPaneEvent,
@@ -323,6 +324,12 @@ export class PtyHost extends Service implements TerminalProvider {
   /** Typed into the pane, then Enter a moment later, as a person would. */
   prompt(paneId: string, text: string): Promise<boolean> {
     return this.ok("pane.send_input", { pane_id: paneId, text, enter: true });
+  }
+
+  /** Keystrokes into a pane, the text first and the keys a moment later; the host refuses a key name it does not know. */
+  sendInput(paneId: string, input: TerminalInput): Promise<boolean> {
+    if (!input.text && !input.keys?.length) return Promise.resolve(false);
+    return this.ok("pane.send_input", { pane_id: paneId, ...(input.text ? { text: input.text } : {}), ...(input.keys?.length ? { keys: input.keys } : {}) });
   }
 
   async readTail(paneId: string, lines = 20): Promise<string | null> {
