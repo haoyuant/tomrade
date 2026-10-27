@@ -218,6 +218,42 @@ describe("a plugin's local agent, run by the app's conductor", () => {
     await w.ctx.fiber.dispose();
   });
 
+  it("is not ready while the ACP server its command names is missing beside a found CLI, and is once an archive unpacked it", async () => {
+    const agents = path.join(dir, "agents");
+    const was = process.env.TOMRADE_AGENTS_DIR;
+    process.env.TOMRADE_AGENTS_DIR = agents;
+    try {
+      const w = await world(async (p) => {
+        await p.agent.localAgent({
+          id: "demo",
+          title: "Demo",
+          // The CLI is found (node answers --version); the server a conversation starts is not.
+          cli: { name: "node" },
+          install: "download tomrade-fake-acp-server",
+          options: z.object({ command: z.string().default("tomrade-fake-acp-server") }),
+          acp: { permissionModes: { default: "full-access", choices: [PERMISSION_CHOICES["full-access"]] }, args: () => [] }
+        });
+      });
+      w.ctx.settings.set({ ...w.ctx.settings.get(), agent: { ...w.ctx.agent.settingsOf(), engines: {} } });
+      const engine = w.ctx.agent.engineOf("demo")!;
+      const missing = await engine.available({ fresh: true });
+      expect(missing).toMatchObject({ ok: false, need: "install", cli: { name: "tomrade-fake-acp-server", state: "missing" } });
+      expect(missing.reason).toBe("Demo: tomrade-fake-acp-server not found — download tomrade-fake-acp-server");
+
+      const server = path.join(agents, "demo", "server-1.0", "bin", "tomrade-fake-acp-server");
+      fs.mkdirSync(path.dirname(server), { recursive: true });
+      fs.copyFileSync(bin, server);
+      fs.chmodSync(server, 0o700);
+      expect(await engine.available({ fresh: true })).toMatchObject({ ok: true, cli: { name: "node", state: "ready" } });
+      // A turn starts it from there, though the app's PATH lacks the folder.
+      expect((await localCli("node").launch("tomrade-fake-acp-server")).file).toBe(server);
+      await w.ctx.fiber.dispose();
+    } finally {
+      if (was === undefined) delete process.env.TOMRADE_AGENTS_DIR;
+      else process.env.TOMRADE_AGENTS_DIR = was;
+    }
+  });
+
   it("writes an archive installer out as the download and unpack the app runs itself", async () => {
     const w = await world(async (p) => {
       await p.agent.localAgent({

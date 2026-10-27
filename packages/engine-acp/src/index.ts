@@ -1,5 +1,5 @@
 import type { Context } from "cordis";
-import type { Engine } from "@tomradex/agent";
+import type { Engine, EngineAvailability } from "@tomradex/agent";
 import { errorMessage } from "@tomradex/contracts";
 import { localAvailability, pooledEngine } from "@tomradex/engine-kit";
 import type {} from "@tomradex/mcp";
@@ -32,6 +32,15 @@ export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAg
       : probe ? { signIn: { args: probe.args, says: (output: string) => probe.says(output, catalog), reason: probe.reason, need: probe.need } }
       : agent.signedIn ? { signIn: { ask: async () => agent.signedIn!.ask(), reason: agent.signedIn.reason } } : {})
   });
+  // A conversation starts the command its options name; when that is a program apart from the CLI (Antigravity's ACP server), it must be here too.
+  const withServer = (state: EngineAvailability): EngineAvailability => {
+    if (state.cli?.state !== "ready") return state;
+    const read = agent.options.safeParse(ctx.get("agent")?.settingsOf().engines[agent.id] ?? {});
+    const command = read.success && typeof read.data.command === "string" ? read.data.command.trim() : "";
+    if (!command || command === agent.cli.name || /[\\/]/.test(command) || agent.cli.find(command)) return state;
+    const { path: _path, version: _version, source: _source, ...cli } = state.cli;
+    return { ok: false, reason: `${agent.title}: ${command} not found — ${agent.install}`, need: "install", cli: { ...cli, name: command, state: "missing" } };
+  };
   const quit = new AbortController();
   ctx.effect(() => () => quit.abort());
   let asking = false;
@@ -74,7 +83,7 @@ export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAg
         failedAt = 0;
         auth?.recheck();
       }
-      const state = await check(opts);
+      const state = withServer(await check(opts));
       if (state.ok) ask();
       // Its terminal sign-in is the command the agent itself lists, known only once it was asked.
       const signIn = auth && state.need === "sign-in" && agent.setup ? await auth.terminalCommand() : undefined;
