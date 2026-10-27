@@ -98,6 +98,7 @@ if (window.tomrade) {
   // session hook, so it asks again only for what those tables feed.
   // Asked again only when a start changed it: hook events do not touch it.
   subscribe("codeLink.startDefaultsChanged", () => void queryClient.invalidateQueries({ queryKey: keys.codeLink.startDefaults }));
+  subscribe("codeLink.cellsChanged", (projectId) => void queryClient.invalidateQueries({ queryKey: keys.codeLink.cells(projectId) }));
   subscribe("codeLink.changed", (projectId) => {
     void queryClient.invalidateQueries({ queryKey: keys.codeLink.all(projectId) });
     // A finished ticket's conversations may have just been archived.

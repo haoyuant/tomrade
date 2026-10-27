@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import type { ThreadSummary } from "@tomradex/agent";
 import type { SessionView } from "@tomradex/code-link";
-import { paletteSessionGroups, sessionBarRows } from "../src/lib/sessionBar";
+import { paletteSessionGroups, sessionBarRows, THREAD_DONE_AFTER_MS } from "../src/lib/sessionBar";
 import type { AttentionEntry } from "../src/lib/attention";
 
 const thread = (id: string, over: Partial<ThreadSummary> = {}): ThreadSummary => ({
@@ -21,14 +21,14 @@ const rows = (input: Partial<Parameters<typeof sessionBarRows>[0]>) =>
 it("puts what waits on the person first, then what runs, then idle conversations, then what ended", () => {
   const out = rows({
     threads: [thread("idle", { updatedAt: 9 }), thread("busy", { running: true, createdAt: 3 }), thread("asks", { createdAt: 2 })],
-    sessions: [session("cell", { startedAt: 4 }), session("old", { state: "ended", endedAt: 8, summary: "PR #1 merged" })],
+    sessions: [session("cell", { startedAt: 4 }), session("old", { state: "ended", endedAt: 8, summary: "PR #1 merged", asked: 1 })],
     attention: [waiting("thread:asks", 7)]
   });
   expect(out.map((r) => [r.key, r.status])).toEqual([
     ["thread:asks", "wait"], ["session:cell", "run"], ["thread:busy", "run"], ["thread:idle", "idle"], ["session:old", "done"]
   ]);
   expect(out.find((r) => r.key === "thread:asks")?.wait).toEqual({ kind: "permission", text: "may I?" });
-  expect(out.find((r) => r.key === "session:old")?.outcome).toBe("PR #1 merged");
+  expect(out.find((r) => r.key === "session:old")?.outcome).toEqual({ pr: null, commits: 0, asked: 1, said: "PR #1 merged" });
 });
 
 it("shows a headless session once, on its conversation", () => {
@@ -99,4 +99,55 @@ it("carries what opened a conversation and when a usage limit lets it continue, 
   const out = rows({ threads: [thread("t", { origins: ["Routine"], parkedUntil: 1234 })], sessions: [session("s")] });
   expect(out.find((r) => r.key === "thread:t")).toMatchObject({ origins: ["Routine"], parkedUntil: 1234 });
   expect(out.find((r) => r.key === "session:s")).toMatchObject({ origins: [], parkedUntil: null });
+});
+
+it("carries what came of an ended session as the look back reads it, and the cell that shows a live one", () => {
+  const outcome = { pr: { number: 407, state: "merged" as const, url: null }, commits: 4, asked: 2, said: "done" };
+  const out = rows({ sessions: [session("cell"), session("away", { herdrPane: null, terminal: "iTerm.app" }), { ...session("old", { state: "ended", endedAt: 8 }), outcome }], cells: { cell: 2, old: 3 } });
+  expect(out.find((r) => r.key === "session:cell")?.cell).toBe(2);
+  expect(out.find((r) => r.key === "session:away")?.cell).toBeNull();
+  // ended, it is looked back on: no cell, and its outcome as the history has it
+  expect(out.find((r) => r.key === "session:old")).toMatchObject({ cell: null, outcome });
+});
+
+it("lets a waiting terminal session's card answer only the prompt its screen shows, for an agent that declared its keys", () => {
+  const permission = { kind: "permission" as const, tool: "Bash", action: "run" as const, detail: "pnpm test" };
+  const asks = (id: string, over: Partial<SessionView> & { approval?: boolean; prompt?: "allow" | "deny" | null }) => ({ ...session(id, { state: "waiting", ask: permission }), approval: true, prompt: "allow" as const, ...over });
+  const out = rows({ sessions: [asks("yes", {}), asks("no", { prompt: "deny" }), asks("mute", { approval: false }), asks("idle", { ask: { kind: "question", tool: null, action: null, detail: null } }), session("runs", { approval: true, prompt: "allow" } as never)] });
+  expect(Object.fromEntries(out.map((r) => [r.sessionId, r.prompt]))).toEqual({ yes: "allow", no: "deny", mute: null, idle: null, runs: null });
+});
+
+it("carries a live terminal session's last pane lines for its card and peek, and none once it ended", () => {
+  const out = rows({ sessions: [{ ...session("live"), tail: ["● Bash(pnpm test)", "  ⎿ 12 passed"] }, { ...session("old", { state: "ended", endedAt: 8 }), tail: ["gone"] }] });
+  expect(out.find((r) => r.key === "session:live")?.tail).toEqual(["● Bash(pnpm test)", "  ⎿ 12 passed"]);
+  expect(out.find((r) => r.key === "session:old")?.tail).toBeNull();
+});
+
+it("cards a conversation with what it said last, and reads it as done once its ticket is or it sat untouched a good while", () => {
+  const now = 10 * THREAD_DONE_AFTER_MS;
+  const out = rows({
+    threads: [
+      thread("talking", { updatedAt: now - 60_000, said: "Found 3 duplicates." }),
+      thread("shipped", { updatedAt: now - 60_000, itemId: "i1", said: "Wrote releases/0.21.md." }),
+      thread("quiet", { updatedAt: now - THREAD_DONE_AFTER_MS - 1, said: "Done." }),
+      thread("busy", { updatedAt: now - THREAD_DONE_AFTER_MS - 1, running: true, said: "Reading." })
+    ],
+    itemDone: (id) => id === "i1",
+    now
+  });
+  const by = (key: string) => out.find((r) => r.key === key)!;
+  expect(by("thread:talking")).toMatchObject({ status: "idle", activity: "Found 3 duplicates.", outcome: null });
+  expect(by("thread:shipped")).toMatchObject({ status: "done", activity: null, outcome: { pr: null, commits: 0, asked: null, said: "Wrote releases/0.21.md." } });
+  expect(by("thread:quiet")).toMatchObject({ status: "done", outcome: { said: "Done." } });
+  // a run going is never done, however long ago it last moved
+  expect(by("thread:busy").status).toBe("run");
+  // without a clock nothing is done for being quiet
+  expect(rows({ threads: [thread("quiet", { said: "Done." })] })[0]).toMatchObject({ status: "idle", activity: "Done." });
+});
+
+it("carries what a waiting terminal session asks, for the card and peek to word, and nothing once it moves on", () => {
+  const ask = { kind: "permission" as const, tool: "Bash", action: "run" as const, detail: "git push" };
+  const out = rows({ sessions: [session("asks", { state: "waiting", ask }), session("runs", { ask })] });
+  expect(out.find((r) => r.key === "session:asks")).toMatchObject({ status: "wait", ask });
+  expect(out.find((r) => r.key === "session:runs")?.ask).toBeNull();
 });
