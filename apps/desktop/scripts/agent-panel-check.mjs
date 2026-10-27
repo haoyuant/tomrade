@@ -782,12 +782,15 @@ const run = async () => {
   ctx.codeLink.sessionCells = async () => ({ [inPane.id]: 3 });
   ctx.ipc.send("codeLink.cellsChanged", alpha.id);
   await sleep(600);
-  const cellHead = await $(`document.querySelector('[data-testid="ai-session-show"]')?.textContent ?? null`);
+  const cellHead = await $(`document.querySelector('[data-testid="ai-session-show"]')?.getAttribute('title') ?? null`);
   await $(`(() => { const d = [...document.querySelectorAll('.ai .sbar-dot')].find((n) => /Tail the pane/.test(n.getAttribute('aria-label'))); d.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return true; })()`);
   await sleep(200);
   const cellPeek = (await bar())?.peek ?? "";
   await $(`(() => { const d = [...document.querySelectorAll('.ai .sbar-dot')].find((n) => /Tail the pane/.test(n.getAttribute('aria-label'))); d.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })); return true; })()`);
   check("the panel names the cell that shows the session: «Show in Terminal window · cell 3», and the bar's peek says cell 3", cellHead === "Show in Terminal window · cell 3" && /cell 3/.test(cellPeek), { cellHead, cellPeek });
+  // Both sides open on one pane: the head says so, the strip names the cell, the input says where it lands, the dot says both.
+  const both = await $(`(() => ({ here: document.querySelector('[data-testid="ai-session-here"]')?.getAttribute('aria-pressed'), there: document.querySelector('[data-testid="ai-session-show"]')?.getAttribute('aria-pressed'), there_text: document.querySelector('[data-testid="ai-session-show"]')?.textContent, sub: document.querySelector('[data-testid="ai-session-both"]')?.textContent ?? null, strip: document.querySelector('[data-testid="ai-strip-title"]')?.textContent ?? null, placeholder: document.querySelector('.ai-session-foot .ai-input')?.placeholder ?? null, dot: [...document.querySelectorAll('.ai .sbar-dot')].find((n) => /Tail the pane/.test(n.getAttribute('aria-label')))?.querySelector('.sbar-dot-where')?.textContent ?? null }))()`);
+  check("open in the panel and in cell 3: «Here | Also in the Terminal window» both on, «the panel and cell 3 are open together», the strip and the input name cell 3, the dot says both", both.here === "true" && both.there === "true" && both.there_text === "Also in the Terminal window" && / · the panel and cell 3 are open together/.test(both.sub ?? "") && both.strip === "Terminal · live · the same pane as cell 3" && both.placeholder === "Say it here; Claude Code gets it in cell 3" && both.dot === "both", both);
   await press(`[...document.querySelectorAll('.ai-session-convo .cs-convo-line[data-who="tool"]')][0]`);
   await sleep(200);
   const detail = await $(`document.querySelector('.ai-session-convo .cs-convo-detail')?.textContent ?? null`);
@@ -805,6 +808,21 @@ const run = async () => {
   await sleep(1300);
   view = await sessionView();
   check("the strip opens a drawer with more of the pane", /typed in the pane/.test(view?.drawer ?? "") && /❯ claude/.test(view?.drawer ?? ""), view?.drawer);
+  // the drawer has a head (title · cell · you can type here), «Hide · Esc», and an input line of its own into the pane
+  const drawerHead = await $(`({ title: document.querySelector('[data-testid="ai-drawer-title"]')?.textContent ?? null, close: document.querySelector('[data-testid="ai-drawer-close"]')?.textContent ?? null, input: !!document.querySelector('[data-testid="ai-drawer-input"]') })`);
+  check("the drawer's head names it, its cell and that it takes typing, with «Hide · Esc» and an input line", drawerHead.title === "Tail the pane · cell 3 · you can type here" && drawerHead.close === "Hide · Esc" && drawerHead.input, drawerHead);
+  await $(`(() => { const i = document.querySelector('[data-testid="ai-drawer-input"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'from the drawer'); i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); return true; })()`);
+  await sleep(400);
+  check("the drawer's input line types into the pane, with Enter", typed.at(-1)?.paneId === "w1:p1" && typed.at(-1)?.text === "from the drawer" && typed.at(-1)?.keys?.join() === "enter", typed.at(-1));
+  await $(`document.querySelector('[data-testid="ai-drawer-input"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));true`);
+  await sleep(300);
+  check("Esc closes the drawer", !(await $(`!!document.querySelector('[data-testid="ai-drawer-box"]')`)));
+  // said in the cell while the panel shows it: its line in the conversation says where it came from
+  fs.appendFileSync(record, JSON.stringify({ type: "user", timestamp: new Date().toISOString(), message: { content: "typed in cell three" } }) + "\n");
+  moved({});
+  await sleep(1500);
+  const sourceNote = await $(`(() => { const items = [...document.querySelectorAll('.ai-session-convo .cs-convo-note, .ai-session-convo .cs-convo-line')].map((n) => n.textContent); const at = items.indexOf('typed in cell three'); return at > 0 ? items[at - 1] : null; })()`);
+  check("a line said in the cell while both are open is marked «You said this in cell 3»", sourceNote === "You said this in cell 3", sourceNote);
 
   // The agent asks permission: the panel offers Allow and Deny while the pane shows a prompt they answer, pressing the
   // keys the agent declared; the answer closes the ask on both sides.
@@ -852,6 +870,8 @@ const run = async () => {
   moved({ state: "running", activity: null });
   await sleep(600);
   check("answered in the pane, the ask goes down in the panel", !(await sessionView())?.approve);
+  const there = await $(`document.querySelector('[data-testid="ai-answered-there"]')?.textContent ?? null`);
+  check("and a line says it was allowed on the other side: «Allowed in cell 3»", there === "Allowed in cell 3 · the ask is down on both sides", there);
   // An agent that never said how its prompt is answered: the panel only points at the Terminal window.
   const muteTicket = ctx.items.create({ projectId: alpha.id, boardId, title: "Mute agent asks", by: "human" });
   const mute = ctx.codeLink.store.createSession(alpha.id, { repoId: "check", branch: "", itemIds: [muteTicket.id], mode: "terminal", agent: "slow", threadId: null, device: "check" });

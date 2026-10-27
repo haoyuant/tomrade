@@ -81,6 +81,9 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engine
   const peekAt = (key: string, el: HTMLElement) => { hold(); setPeek({ key, top: el.getBoundingClientRect().top - (nav.current?.getBoundingClientRect().top ?? 0) }); };
   const statusWord = (s: BarStatus) => t(s === "wait" ? "sessionBar.statusWait" : s === "run" ? "sessionBar.statusRun" : s === "done" ? "sessionBar.statusDone" : "sessionBar.statusIdle");
   const where = (r: BarRow) => r.cell ? t("sessionBar.whereCell", { n: r.cell }) : r.where === "panel" ? t("sessionBar.wherePanel") : r.where === "pane" ? t("sessionBar.wherePane") : r.terminalApp ? r.terminalApp.replace(/\.app$/, "") : t("sessionBar.whereOutside");
+  // A dot's one word: both sides (open here and in a cell), its cell, a pane in the background, or a conversation — one writing code under another is in the background too.
+  const dotWhere = (r: BarRow) =>
+    r.where === "pane" ? (r.cell ? (r.key === openKey ? t("sessionBar.whereBoth") : t("sessionBar.whereCell", { n: r.cell })) : t("sessionBar.whereBackground")) : r.where === "panel" && r.depth === 1 ? t("sessionBar.whereBackground") : where(r);
   const agentName = (r: BarRow) => (r.agent ? (findEngine(engines, r.agent)?.title ?? r.agent) : null);
   const title = (r: BarRow) => r.title || t("agentPanel.newThread");
   const outcome = (r: BarRow) => (r.outcome ? outcomeLine(r.outcome, (key, vars) => t(`review.${key}`, vars)) : null);
@@ -157,7 +160,7 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engine
           <StatusMark status={r.status} size={9} />
           {isNew(r) && <span className="sbar-new-badge">{t("sessionBar.new")}</span>}
         </span>
-        <span className="sbar-dot-where">{r.status === "done" ? statusWord("done") : where(r)}</span>
+        <span className="sbar-dot-where">{r.status === "done" ? statusWord("done") : dotWhere(r)}</span>
       </button>
     ));
     return (

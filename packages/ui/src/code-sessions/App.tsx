@@ -130,7 +130,7 @@ export function App() {
   const [look, setLook] = useState<Look | null>(null);
   // Ended sessions and closed terminals picked from History: a cell shows one before a state carries it.
   const [picked, setPicked] = useState<Picked>(() => ({ sessions: new Map(), terminals: new Map() }));
-  const { laid, focused, setFocused, change, current, asked, recent, toRead } = useWindowLayout(state, picked);
+  const { laid, focused, setFocused, change, current, asked, recent, toRead, flash } = useWindowLayout(state, picked);
   const [toast, setToast] = useState<Toast | null>(null);
   // The window's own say once it has spoken; until then, the fold the project's window was left with.
   const [foldedHere, setFoldedHere] = useState<boolean | null>(null);
@@ -432,6 +432,7 @@ export function App() {
         onNewTerminal={(cwd) => openTerminal(layout, node.id, cwd)}
         onTalk={(s) => openTerminal(layout, node.id, s.cwd ?? s.worktree, s.id)}
         focused={node.id === target.id && cells.length > 1}
+        flash={flash?.cell === node.id ? flash.at : null}
         selected={node.id === target.id}
         only={cells.length === 1}
         onFocus={() => setFocused(node.id)}

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { Fragment, useCallback, useState } from "react";
 import { FoldChevron } from "~/components/ui/atoms";
 import { logQuietly } from "~/lib/api";
 import { foldTools, workLabel, type ConvoLine, type ConvoSay } from "~/lib/convoFold";
@@ -6,7 +6,8 @@ import { foldTools, workLabel, type ConvoLine, type ConvoSay } from "~/lib/convo
 export type { ConvoLine, ConvoSay } from "~/lib/convoFold";
 
 /** A conversation's lines, long runs of tool calls folded under what they came to. */
-export function ConvoLines({ lines, open, toggle, say }: { lines: ConvoLine[]; open: ReadonlySet<number>; toggle: (key: number) => void; say: ConvoSay }) {
+/** `notes`: a word said above a line, by its key — where it came from, when another side said it. */
+export function ConvoLines({ lines, open, toggle, say, notes }: { lines: ConvoLine[]; open: ReadonlySet<number>; toggle: (key: number) => void; say: ConvoSay; notes?: ReadonlyMap<number, string> }) {
   return (
     <>
       {foldTools(lines).map((entry) =>
@@ -16,7 +17,10 @@ export function ConvoLines({ lines, open, toggle, say }: { lines: ConvoLine[]; o
             {entry.fold.map((l) => <ConvoLineRow key={l.key} line={l} open={open.has(l.key)} onToggle={() => toggle(l.key)} say={say} />)}
           </details>
         ) : (
-          <ConvoLineRow key={entry.key} line={entry} open={open.has(entry.key)} onToggle={() => toggle(entry.key)} say={say} />
+          <Fragment key={entry.key}>
+            {notes?.has(entry.key) && <p className="cs-convo-note" data-testid="cs-convo-note">{notes.get(entry.key)}</p>}
+            <ConvoLineRow line={entry} open={open.has(entry.key)} onToggle={() => toggle(entry.key)} say={say} />
+          </Fragment>
         )
       )}
     </>
