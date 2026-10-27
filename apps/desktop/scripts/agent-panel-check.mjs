@@ -1254,6 +1254,23 @@ const run = async () => {
   await sleep(400);
   ctx.codeLink.herdr.launch = launchWas;
 
+  // ── an assistant conversation as a session: its card says what it said last; put away, History carries that as its outcome, and its look back reads chat apart from code ──
+  const hereCard = () => $(`document.querySelector('.ai .sbar-card[data-key="thread:${hereChat.id}"]')?.textContent ?? null`);
+  await flip();
+  check("a conversation's card says what it said last, once its turn is over", await until(async () => /Written\./.test((await hereCard()) ?? ""), 40), await hereCard());
+  await flip();
+  ctx.agent.archiveThread(alpha.id, hereChat.id);
+  await sleep(400);
+  await press(`document.querySelector('[data-testid="sbar-history"]')`);
+  const hereRow = () => $(`document.querySelector('[data-testid="ai-review-row"][data-review="${hereChat.id}"]')?.textContent ?? null`);
+  check("put away, History lists it with what it said last as its outcome", await until(async () => /Written\./.test((await hereRow()) ?? ""), 50), await hereRow());
+  await press(`document.querySelector('[data-testid="ai-review-row"][data-review="${hereChat.id}"]')`);
+  const threadSegs = () => $(`[...document.querySelectorAll('[data-testid="ai-review-seg"]')].map((s) => [s.dataset.ticket, s.dataset.kind])`);
+  check("its look back reads the chat apart from the code, the code the ticket's it claimed", await until(async () => JSON.stringify(await threadSegs()) === JSON.stringify([["", "chat"], [claimedItem(hereChat.id)?.key ?? "?", "code"]]), 50), await threadSegs());
+  await shot("thread-look-back.png");
+  await press(`document.querySelector('.ai-review-head button[aria-label="Back to the conversation"]')`);
+  await sleep(400);
+
   // The Terminal window from the main window: the title bar's button and ⇧⌘T run its own command for this project.
   const opened = [];
   const runCommand = ctx.contributions.run.bind(ctx.contributions);

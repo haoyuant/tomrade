@@ -611,7 +611,8 @@ export function AgentPanel({
   const barRows = useMemo(
     () => sessionBarRows({
       threads: threads.data ?? [], sessions: recentSessions.data ?? [], cells: sessionCells.data, attention, openThreadId: threadId, openSessionId: openSession,
-      itemTitle: (id) => itemsById.get(id)?.title ?? null, itemKey: (id) => itemsById.get(id)?.key ?? null
+      itemTitle: (id) => itemsById.get(id)?.title ?? null, itemKey: (id) => itemsById.get(id)?.key ?? null,
+      itemDone: (id) => itemsById.get(id)?.status === "done", now: Date.now()
     }),
     [threads.data, recentSessions.data, sessionCells.data, attention, threadId, openSession, itemsById]
   );

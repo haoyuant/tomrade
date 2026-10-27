@@ -116,6 +116,40 @@ export function cutByTicket(lines: RecordLine[], marks: SessionMark[], itemOfKey
   return cutFrom(lines, marks, itemOfKey).cuts;
 }
 
+/** The tools that change a file, across the agents' records. */
+const FILE_TOOL = /^(?:write|edit|multi_?edit|apply_?patch|write_?file|edit_?file|create_?file|str_?replace\w*|notebook_?edit)$/i;
+const isTrace = (m: ThreadMessage | undefined): boolean => m?.role === "agent" && m.block.type === "trace";
+
+/**
+ * An assistant conversation cut as a session is: where it claimed a ticket (the note a claim leaves), and where it
+ * first turned to writing code (the run of steps that first changed a file), so its chat and its code read apart.
+ * Before a claim it belongs to `itemId` — the ticket it was opened on — unless it claimed one later, then to none.
+ */
+export function cutThread(messages: ThreadMessage[], itemOfKey: (key: string) => string | null, itemId: string | null): { itemId: string | null; messages: ThreadMessage[] }[] {
+  const claims = messages.some((m) => m.block.type === "note" && !!m.block.claimed);
+  let code = messages.findIndex((m) => isTrace(m) && FILE_TOOL.test((m.block as Extract<ThreadMessage["block"], { type: "trace" }>).tool));
+  while (code > 0 && isTrace(messages[code - 1])) code--;
+  const out: { itemId: string | null; messages: ThreadMessage[] }[] = [];
+  let current = claims ? null : itemId;
+  messages.forEach((m, i) => {
+    const claimed = m.block.type === "note" ? m.block.claimed : undefined;
+    const last = out.at(-1);
+    if (claimed) {
+      const was = current;
+      current = itemOfKey(claimed) ?? current;
+      // claimed for the code it had just started writing: that stretch is the ticket's
+      if (last && last.itemId === null && was === null && code >= 0 && last.messages[0] === messages[code]) {
+        last.itemId = current;
+        last.messages.push(m);
+        return;
+      }
+    }
+    if (!last || claimed || i === code) out.push({ itemId: current, messages: [m] });
+    else last.messages.push(m);
+  });
+  return out;
+}
+
 /** The link that speaks for a ticket in this session: on its branch when it has one, the delivery it worked, a pull request over none. */
 export function ticketOutcome(session: Pick<SessionView, "branch" | "delivery" | "worked">, itemId: string, links: CodeLinkView[]): { pr: ReviewPr | null; commits: number } {
   const delivery = session.worked.find((w) => w.itemId === itemId)?.delivery ?? session.delivery;
@@ -254,9 +288,18 @@ export class Review {
     const thread = ref.threadId && agent ? agent.store.thread(projectId, ref.threadId) : null;
     if (!thread) return null;
     const row = this.threadRow(projectId, thread);
-    const lines = threadLines(agent!.store.messages(projectId, thread.id));
-    const ticket = row.tickets[0] ?? null;
-    return { row, segments: lines.length ? [this.segment(ticket?.itemId ?? null, ticket, lines)] : [], cut: false, unreadable: false, raw: false };
+    const ticketOf = (itemId: string | null): ReviewTicket | null => {
+      if (!itemId) return null;
+      const known = row.tickets.find((t) => t.itemId === itemId);
+      const item = known ? null : this.deps.ctx.items.get(projectId, itemId);
+      return known ?? (item ? { itemId, key: item.key, title: item.title, status: item.status, pr: null, commits: 0 } : null);
+    };
+    const cuts = cutThread(agent!.store.messages(projectId, thread.id), (key) => this.deps.ctx.items.getByKey(projectId, key)?.id ?? null, thread.itemId);
+    const segments = cuts.flatMap((c) => {
+      const lines = threadLines(c.messages);
+      return lines.length ? [this.segment(c.itemId, ticketOf(c.itemId), lines)] : [];
+    });
+    return { row, segments, cut: false, unreadable: false, raw: false };
   }
 
   /** The tickets a session worked, with what their code came to — for a running session cut by ticket. Reads no record. */
@@ -336,7 +379,7 @@ export class Review {
   private threadRow(projectId: string, th: ThreadSummary): ReviewRow {
     const item = th.itemId ? this.deps.ctx.items.get(projectId, th.itemId) : null;
     const tickets: ReviewTicket[] = item ? [{ itemId: item.id, key: item.key, title: item.title, status: item.status, pr: null, commits: 0 }] : [];
-    return { id: th.id, kind: th.archived ? "thread" : "idle", agent: th.engine, title: th.title || item?.title || "", tickets, asked: null, commits: 0, pr: null, said: null, where: "panel", threadId: th.id, resumable: false, startedAt: th.createdAt, endedAt: th.updatedAt };
+    return { id: th.id, kind: th.archived ? "thread" : "idle", agent: th.engine, title: th.title || item?.title || "", tickets, asked: null, commits: 0, pr: null, said: th.said ?? null, where: "panel", threadId: th.id, resumable: false, startedAt: th.createdAt, endedAt: th.updatedAt };
   }
 
   /** Put-away (or open and idle) assistant conversations, a page at a time, leaving out those a session speaks for and those running. */

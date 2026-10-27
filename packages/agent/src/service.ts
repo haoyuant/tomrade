@@ -29,7 +29,7 @@ import { isSuspended, type GeneralExecution, type Playbook, type PlaybookIndexEn
 import { AGENT_WORDS, type AgentWords } from "./words.js";
 import { looksRateLimited, resetTime, untilLabel } from "./limits.js";
 import { describeFailure, readableError, redactSecrets } from "./failure.js";
-import { conversationRecap, handoffRecap } from "./recap.js";
+import { conversationRecap, firstSentence, handoffRecap } from "./recap.js";
 import { usageSummary, windowStart, type EngineUsage, type UsageRun, type UsageSummary } from "./usage.js";
 import { type AgentReader, bestEffort, contract, errorMessage, localeOf } from "@tomradex/contracts";
 
@@ -1981,6 +1981,9 @@ export class Agent extends Service implements AgentReader {
     const limit = status === "error" && (result.limit || looksRateLimited(result.error)) ? { until: result.limit?.until ?? resetTime(result.error) } : null;
     const park = limit ? this.park(rc.projectId, rc.threadId, { until: limit.until, runId: rc.run.id, attempt: tries + 1 }) : null;
     const run = this.store.endRun(rc.projectId, rc.run.id, { status, stop: result.stop, error: result.error, usage: result.usage, metrics: result.metrics, costUsd: result.costUsd, changes });
+    // what it said last, kept with the thread once the turn is over — never while it streams
+    const lastText = this.store.lastText(rc.projectId, rc.threadId, rc.run.id);
+    if (lastText) this.store.setSaid(rc.projectId, rc.threadId, firstSentence(lastText));
     this.broadcast(rc.threadId, { type: "done", run });
     const thread = this.store.thread(rc.projectId, rc.threadId) ?? rc.thread;
     if (park) this.ctx.emit("agent/parked", park, thread);

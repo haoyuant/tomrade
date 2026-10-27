@@ -49,6 +49,9 @@ export interface BarRow {
 
 const RANK: Record<BarStatus, number> = { wait: 0, run: 1, idle: 2, done: 3 };
 
+/** How long an assistant conversation sits untouched before it reads as done, with what it said last as its outcome. */
+export const THREAD_DONE_AFTER_MS = 8 * 60 * 60_000;
+
 /**
  * The bar's rows, waiting first. Within a group the order holds still while output streams:
  * waiting by how long it has waited, running by when it started, idle by when it was last used,
@@ -68,6 +71,10 @@ export function sessionBarRows(input: {
   /** The terminal session the panel shows in place of a thread, if any. */
   openSessionId?: string | null;
   idleLimit?: number;
+  /** Whether a ticket is done: a conversation on a done ticket is done too. */
+  itemDone?: (itemId: string) => boolean;
+  /** The clock quiet conversations are read against: one untouched past `THREAD_DONE_AFTER_MS` is done. Without it, none is. */
+  now?: number;
 }): BarRow[] {
   const waits = new Map(input.attention.map((e) => [e.key, e]));
   const threads = input.threads.filter((th) => !th.archived);
@@ -81,12 +88,16 @@ export function sessionBarRows(input: {
     const session = sessionOfThread.get(th.id);
     const wait = waits.get(`thread:${th.id}`) ?? null;
     const live = session && session.state !== "ended" && session.state !== "lost";
-    const status: BarStatus = wait ? "wait" : th.running || (live && session.state === "running") ? "run" : "idle";
+    const busy: BarStatus = wait ? "wait" : th.running || (live && session.state === "running") ? "run" : "idle";
+    // done once its ticket is, or once it sat untouched a good while: what it said last is what came of it
+    const finished = busy === "idle" && !live && ((!!th.itemId && !!input.itemDone?.(th.itemId)) || (input.now !== undefined && input.now - th.updatedAt > THREAD_DONE_AFTER_MS));
+    const status: BarStatus = finished ? "done" : busy;
     rows.push({
       key: `thread:${th.id}`, threadId: th.id, sessionId: session?.id ?? null,
       title: th.title || (th.itemId ? input.itemTitle(th.itemId) : null) || "",
       agent: th.engine, status, where: "panel", terminalApp: null,
-      wait: wait && { kind: wait.kind, text: wait.text }, activity: live ? session.activity : null, outcome: null, cell: live ? cellOf(session.id) : null, prompt: null, tail: null, ask: null,
+      wait: wait && { kind: wait.kind, text: wait.text }, activity: live ? session.activity : finished ? null : (th.said ?? null),
+      outcome: finished && th.said ? { pr: null, commits: 0, asked: null, said: th.said } : null, cell: live ? cellOf(session.id) : null, prompt: null, tail: null, ask: null,
       itemIds: th.itemId ? [th.itemId] : [], ticket: keyOf(th.itemId ? [th.itemId] : []), origins: th.origins ?? [], parkedUntil: th.parkedUntil ?? null, startedAt: th.createdAt, at: wait?.since ?? th.updatedAt,
       parentKey: th.parentId && panelThreads.has(th.parentId) ? `thread:${th.parentId}` : null, depth: 0
     });
