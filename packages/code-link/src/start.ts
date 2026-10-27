@@ -56,6 +56,8 @@ export interface StartOptions {
   autoMerge?: boolean;
   /** The ticket to start with these same choices once this one is done: the one this bootstrap was started ahead of. */
   then?: string;
+  /** Headless runs only: the conversation in `threadId` claims the ticket it writes code for — nothing is sent, and what it changed already comes along onto the branch. */
+  claim?: boolean;
 }
 
 export type StartResult =
@@ -141,6 +143,9 @@ const blockedGate = (item: Item, blockers: Item[]): StartResult => ({
  * ticket's workstream, a worktree on the ticket's branch, a session record,
  * and either a headless run or the user's own terminal.
  */
+/** What an agent resuming its own session in the background is told first. */
+const RESUME_PROMPT = "Tomrade: this conversation was taken up again from its look back. Carry on with what was asked last; if nothing is pending, say in one line where it stands and wait for the person.\n";
+
 export class Starter {
   constructor(private readonly host: StartHost) {}
 
@@ -321,7 +326,7 @@ export class Starter {
       return this.workdirGate(projectId, thread, where, onRepo);
     }
     if (carried && where.worktree) {
-      const moved = await this.moveWorktree(where.worktree, branch, repo.defaultBranch);
+      const moved = await this.moveWorktree(where.worktree, branch, repo.defaultBranch, !!opts.claim);
       if (moved) {
         uncarry();
         return { ok: false, gate: "workdir", message: moved, ...onRepo };
@@ -372,10 +377,11 @@ export class Starter {
         this.host.notify(projectId);
         return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command: null, launched: false, waitingOn: asked.text, engine: engineId, ...(warnings.length ? { warnings } : {}) };
       }
-      const runId = agent.activeRuns().find((a) => a.thread.id === thread!.id)?.run.id ?? agent.send(projectId, thread.id, { kind: "text", text: prompt }, sourced(opts)).runId;
-      store.patchSession(projectId, session.id, { state: "running", lastEventAt: now });
+      // A claim sends nothing: the conversation goes on as it was, now on the ticket.
+      const runId = agent.activeRuns().find((a) => a.thread.id === thread!.id)?.run.id ?? (opts.claim ? null : agent.send(projectId, thread.id, { kind: "text", text: prompt }, sourced(opts)).runId);
+      store.patchSession(projectId, session.id, { state: runId ? "running" : "idle", lastEventAt: now });
       this.host.notify(projectId);
-      return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command: null, launched: true, runId, engine: engineId, ...(warnings.length ? { warnings } : {}) };
+      return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command: null, launched: !!runId, ...(runId ? { runId } : {}), engine: engineId, ...(warnings.length ? { warnings } : {}) };
     }
 
     const terminalWords = CODE_WORDS(ctx.settings.locale?.());
@@ -411,7 +417,7 @@ export class Starter {
    * hooks, as a terminal session of the thread. The caller has closed the thread's warm runtime first; nothing else
    * of Start's — no ticket, no branch, no worktree — applies, and the thread leaves the panel's list for the bar's.
    */
-  async startThread(projectId: string, thread: ThreadSummary, input: { cwd: string; externalId: string; prompt: string }): Promise<StartResult> {
+  async startThread(projectId: string, thread: ThreadSummary, input: { cwd: string; externalId: string | null; prompt: string }): Promise<StartResult> {
     const { ctx, store } = this.host;
     const agent = ctx.get("agent");
     if (!agent) return { ok: false, gate: "engine", message: "the agent plugin is not loaded" };
@@ -443,6 +449,35 @@ export class Starter {
     this.host.notify(projectId);
     const fallback = this.host.herdr.fallbackNote(locale, launch);
     return { ok: true, continued: true, threadId: thread.id, sessionId: session.id, branch: "", worktree: null, cwd: input.cwd, mode: "terminal", command, launched: launch.launched, pane: launch.paneId ?? null, engine: engineId, ...(fallback ? { warnings: [fallback] } : {}) };
+  }
+
+  /**
+   * An ended terminal session on no ticket, taken up again in the background: its agent resumes the same session id
+   * in the folder it ran in, in a terminal pane nothing brings to the front, as the same session — the bar shows it
+   * running again. One process on a session at a time: a session still live is left as it is.
+   */
+  async resumeSession(projectId: string, sessionId: string): Promise<StartResult> {
+    const { ctx, store } = this.host;
+    const session = store.session(projectId, sessionId);
+    const agent = ctx.get("agent");
+    if (!agent) return { ok: false, gate: "engine", message: "the agent plugin is not loaded" };
+    if (!session?.externalId || !session.cwd) return { ok: false, gate: "workdir", message: "this conversation cannot be taken up again here" };
+    if (session.state !== "ended" && session.state !== "lost") return { ok: false, gate: "engine", message: "this conversation is still running" };
+    if (!ctx.get("mcp")?.url) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
+    const picked = await this.pickEngine(agent, session.agent, true);
+    if (!picked.ok) return { ok: false, gate: "engine", message: picked.reason, engine: session.agent };
+    const engineId = picked.engine.id;
+    const terminalSettings = await this.host.herdr.terminalSettings();
+    const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), RESUME_PROMPT);
+    if (!files) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
+    const { bin, path: onPath } = await binOf(agent, engineId);
+    const command = this.command(terminalSettings, engineId, session, files, session.cwd, agent.optionsOf({ options: null }, engineId), bin);
+    const workspace = this.workspaceOf(projectId);
+    const launch = await this.host.herdr.launch({ cwd: session.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir, path: onPath, label: session.title || picked.engine.title, ...(workspace ? { workspace } : {}) }, terminalSettings.terminal);
+    const now = Date.now();
+    store.patchSession(projectId, session.id, { state: "running", endedAt: null, activity: null, lastEventAt: now, ...(launch.paneId ? { herdrPane: launch.paneId } : {}) });
+    this.host.notify(projectId);
+    return { ok: true, continued: true, threadId: null, sessionId: session.id, branch: session.branch, worktree: session.worktree, cwd: session.cwd, mode: "terminal", command, launched: launch.launched, pane: launch.paneId ?? null, engine: engineId };
   }
 
   /**
@@ -571,11 +606,18 @@ export class Starter {
   }
 
   /** A carried conversation's worktree onto the new delivery's branch, from the default branch; the reason it cannot, or null. */
-  private async moveWorktree(worktree: string, branch: string, defaultBranch: string): Promise<string | null> {
+  private async moveWorktree(worktree: string, branch: string, defaultBranch: string, carry = false): Promise<string | null> {
     const git = this.host.git;
     const head = (await git(["rev-parse", "--abbrev-ref", "HEAD"], { cwd: worktree, ok: true })).stdout.trim();
     if (head === branch) return null;
-    if ((await git(["status", "--porcelain"], { cwd: worktree, ok: true })).stdout.trim()) return `${worktree} has uncommitted changes on ${head} — commit or discard them first, so the new delivery starts clean on ${branch}`;
+    const dirty = !!(await git(["status", "--porcelain"], { cwd: worktree, ok: true })).stdout.trim();
+    // A conversation claiming the ticket it is writing for: the branch starts where its copy is, its changes with it.
+    if (dirty && carry) {
+      const exists = (await git(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], { cwd: worktree, ok: true })).code === 0;
+      const switched = await git(exists ? ["switch", branch] : ["switch", "-c", branch], { cwd: worktree, ok: true });
+      return switched.code === 0 ? null : `could not move ${worktree} onto ${branch}: ${(switched.stderr ?? "").trim() || "git switch failed"}`;
+    }
+    if (dirty) return `${worktree} has uncommitted changes on ${head} — commit or discard them first, so the new delivery starts clean on ${branch}`;
     await git(["fetch", "--quiet", "origin", defaultBranch], { cwd: worktree, ok: true });
     const from = (await git(["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${defaultBranch}`], { cwd: worktree, ok: true })).code === 0 ? `origin/${defaultBranch}` : defaultBranch;
     const exists = (await git(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], { cwd: worktree, ok: true })).code === 0;

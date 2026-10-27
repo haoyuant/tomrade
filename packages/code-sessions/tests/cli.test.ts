@@ -68,6 +68,9 @@ it("answers tomrade term over the MCP port: a pane in the folder, a ticket start
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];
     repositoriesOf = () => [{ workstream: "Main", name: "tomrade", path: repo, defaultBranch: "main" }];

@@ -46,3 +46,20 @@ export function whenLoaded(win: BrowserWindow, then: () => void): void {
   // A beat after the load, so the renderer's own subscriptions are in place.
   else win.webContents.once("did-finish-load", () => setTimeout(then, 500));
 }
+
+let keptInFront: BrowserWindow | null = null;
+
+/** A start that opens both: the window a plugin opens next comes up behind this one, which stays in front. Undone by what it returns. */
+export function keepInFront(win: BrowserWindow): () => void {
+  keptInFront = win;
+  return () => {
+    if (keptInFront === win) keptInFront = null;
+  };
+}
+
+/** The window a plugin's window opening now stays behind, asked once by that window. */
+export function takeKeptInFront(): BrowserWindow | null {
+  const win = keptInFront && !keptInFront.isDestroyed() ? keptInFront : null;
+  keptInFront = null;
+  return win;
+}

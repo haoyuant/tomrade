@@ -1,13 +1,20 @@
-import { useEffect, useId, useRef, useState, type ReactNode, type Ref } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import type { ReviewRow } from "@tomradex/code-link";
 import type { ClosedTerminalRow, LayoutPreset, SessionRow, TerminalRow, ThreadRow, WindowState } from "@tomradex/code-sessions";
-import { isMac } from "~/lib/keys";
+import { Icon } from "~/components/icons";
 import { FoldChevron, FoldChevronSpace } from "~/components/ui/atoms";
-import { onArchiveFound, send } from "./bridge";
-import { Mark, RowActions, rowAgent, rowMono, rowName, rowSaid, rowTitle, saidClass, statusWord, whereOf } from "./cards";
+import { ReviewList, type ReviewSource, type ReviewWords } from "~/components/workspace/agent-panel/ReviewList";
+import { interpolate, message } from "~/lib/dicts";
+import { isMac } from "~/lib/keys";
+import { keys } from "~/lib/queries";
+import { historyList, historySaid, onHistoryChanged, send } from "./bridge";
+import { Mark, RowActions, rowAgent, rowMono, rowName, rowSaid, rowTail, rowTitle, rowWhen, saidClass, statusWord, whereOf } from "./cards";
+import { Guess } from "./guess";
 import { keyLabel } from "./keys";
 import type { Key } from "./layout";
-import { bundles, matchesArchive, paneOf, sessionName, sessionStatus, statusOf, type BarStatus, type HereRow } from "./lists";
-import { useSay } from "./say";
+import { bundles, isNewRow, paneOf, sessionName, sessionStatus, statusOf, type BarStatus, type HereRow } from "./lists";
+import { useSay, useWords } from "./say";
 
 /** ⌘-click (Ctrl-click off a Mac) opens a row in a new pane instead of the selected one. */
 const besideClick = (e: React.MouseEvent) => (isMac ? e.metaKey : e.ctrlKey);
@@ -19,17 +26,20 @@ const shortOf = (r: HereRow, name: string): string => {
   return key ? key.replace(/^.*-/, "") : (Array.from(name.trim())[0] ?? "·").toUpperCase();
 };
 
-type Marks = { active: Set<string>; selected: Set<string>; shownPanes: Set<string>; selectedPane: string | null; pane: Key };
-type Picks = { onSession: (s: SessionRow, beside: boolean) => void; onTerminal: (t: TerminalRow, beside: boolean) => void; onThread: (t: ThreadRow) => void; onAnswer: (s: SessionRow, which: "allow" | "deny") => void };
+/** `cells`: the number of the cell that shows each row, by row or session id. */
+type Marks = { active: Set<string>; selected: Set<string>; cells: Map<string, number>; shownPanes: Set<string>; selectedPane: string | null; pane: Key };
+type Picks = { onSession: (s: SessionRow, beside: boolean) => void; onTerminal: (t: TerminalRow, beside: boolean) => void; onThread: (t: ThreadRow) => void; onAnswer: (s: SessionRow, which: "allow" | "deny") => void; onAnswerThread: (t: ThreadRow, questionId: string, value: string) => void };
 
 const has = (set: Set<string>, r: HereRow) => set.has(r.id) || (!!r.session && set.has(r.session.id));
+const cellOf = (cells: Map<string, number>, r: HereRow): number | null => cells.get(r.id) ?? (r.session ? cells.get(r.session.id) : undefined) ?? null;
 
 /** A session that runs elsewhere, as a card: where it is, and what it waits with. */
 function AwayCard({ s, active, selected, onPick }: { s: SessionRow; active: Set<string>; selected: Set<string>; onPick: (s: SessionRow, beside: boolean) => void }) {
   const say = useSay();
+  const words = useWords();
   const row: HereRow = { kind: "session", id: s.id, session: s };
   const status = sessionStatus(s);
-  const said = rowSaid(row, status, say);
+  const said = rowSaid(row, status, say, words);
   const title = rowTitle(row, say);
   return (
     <button type="button" className="cs-row" data-status={status} title={say("pickHint", { mod: MOD })} aria-current={selected.has(s.id) ? "true" : undefined} data-active={active.has(s.id) || undefined} data-needs={s.needsYou || undefined} onClick={(e) => onPick(s, besideClick(e))}>
@@ -39,11 +49,11 @@ function AwayCard({ s, active, selected, onPick }: { s: SessionRow; active: Set<
           {sessionName(s)}
         </span>
         <span className="cs-where" data-where={s.where} title={s.where === "elsewhere" ? say("elsewhere") : s.where === "tomrade" ? undefined : say("outsideTitle", { terminal: s.terminal ?? say("outsideTerminal") })}>
-          {whereOf(row, false, say)}
+          {whereOf(row, null, say)}
         </span>
       </span>
       {title && <span className="cs-row-title">{title}</span>}
-      <span className="cs-row-meta">{[rowAgent(row), statusWord(status, say)].filter(Boolean).join(" · ")}</span>
+      <span className="cs-row-meta">{[rowAgent(row), rowWhen(row, status, say, words)].filter(Boolean).join(" · ")}</span>
       {said && <span className={saidClass(status)}>{said}</span>}
     </button>
   );
@@ -80,6 +90,7 @@ function PaneTimeline({ past, locale, selected, onPick }: { past: SessionRow[]; 
  */
 function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; history: WindowState["history"]; locale: string; marks: Marks; picks: Picks }) {
   const say = useSay();
+  const words = useWords();
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(() => new Set());
   if (!rows.length) return <p className="cs-empty">{say("none")}</p>;
   const { active, selected, shownPanes, selectedPane, pane } = marks;
@@ -116,7 +127,9 @@ function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; hi
     const bound = inCell || r.kind === "thread" ? undefined : pane(r.id) === selectedPane ? "selected" : shownPanes.has(pane(r.id)) ? "shown" : undefined;
     const name = rowName(r, say);
     const title = rowTitle(r, say);
-    const said = rowSaid(r, status, say);
+    const said = rowSaid(r, status, say, words);
+    // what its pane shows last, in place of what its hooks said
+    const last = rowTail(r, status).at(-1);
     const button = (
       <button
         type="button"
@@ -137,19 +150,21 @@ function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; hi
           <span className={rowMono(r) ? "cs-row-name mono" : "cs-row-name"}>
             <Mark status={status} />
             {name}
+            {isNewRow(r) && <span className="sbar-new-badge" data-testid="cs-new">{say("new")}</span>}
           </span>
-          {r.kind === "terminal" && !r.terminal.pane ? <span className="tag faint cs-chip">{say("starting")}</span> : <span className="cs-where">{whereOf(r, inCell, say)}</span>}
+          {r.kind === "terminal" && !r.terminal.pane ? <span className="tag faint cs-chip">{say("starting")}</span> : <span className="cs-where">{whereOf(r, cellOf(marks.cells, r), say)}</span>}
         </span>
         {title && <span className="cs-row-title">{title}</span>}
-        {r.kind === "terminal" && !s ? <span className="cs-row-meta mono">{r.terminal.cwd}</span> : <span className="cs-row-meta">{[rowAgent(r), statusWord(status, say)].filter(Boolean).join(" · ")}</span>}
-        {said && <span className={saidClass(status)}>{said}</span>}
+        {r.kind === "terminal" && !s ? <span className="cs-row-meta mono">{r.terminal.cwd}</span> : <span className="cs-row-meta">{[rowAgent(r), rowWhen(r, status, say, words)].filter(Boolean).join(" · ")}</span>}
+        {last ? <span className="cs-row-tail" data-testid="cs-row-tail">{last}</span> : said && <span className={saidClass(status)}>{said}</span>}
       </button>
     );
     // Allow and Deny sit inside the card's lower edge: beside its button, since a button holds no other.
     const card = (
       <div className="cs-card">
         {button}
-        <RowActions row={r} onSee={() => undefined} onThread={picks.onThread} onAnswer={picks.onAnswer} />
+        <RowActions row={r} onSee={() => (r.kind === "terminal" ? picks.onTerminal(r.terminal, false) : r.kind === "session" ? picks.onSession(r.session, false) : picks.onThread(r.thread))} onThread={picks.onThread} onAnswer={picks.onAnswer} onAnswerThread={picks.onAnswerThread} />
+        <Guess session={s} pane={paneOf(r)} place="card" />
       </div>
     );
     if (!lead || !folds) return <li key={r.id}>{card}</li>;
@@ -214,96 +229,54 @@ function OutsideGroup({ sessions, open, onToggle, list }: { sessions: SessionRow
 }
 
 /**
- * The ended sessions on two shelves, newest first: ticket work, and conversations had without a ticket; on a third,
- * the plain terminals closed here whose output was recorded. Picking one shows it in a pane as an ended session, or
- * as the terminal's raw output played back.
+ * History's pages come over the bridge, each with the session rows behind its coding sessions and its agents' names:
+ * kept here, across History opening and closing, so a row picked goes into a cell by its session, under its agent's
+ * name. The closed terminals with a recording come with the first page.
  */
-function ArchiveList({ rows, terminals, locale, active, selected, onPick, onClosed }: { rows: SessionRow[] | null; terminals: ClosedTerminalRow[] | null; locale: string; active: Set<string>; selected: Set<string>; onPick: (s: SessionRow) => void; onClosed: (t: ClosedTerminalRow) => void }) {
-  const say = useSay();
-  const [shelf, setShelf] = useState<"tickets" | "talks" | "terminals">("tickets");
-  const [query, setQuery] = useState("");
-  // What was said is searched in the agents' records, a moment after the typing stops; the rest is matched here.
-  const [said, setSaid] = useState<{ query: string; ids: Set<string> }>({ query: "", ids: new Set() });
-  useEffect(() => onArchiveFound((post) => setSaid({ query: post.query, ids: new Set(post.ids) })), []);
-  useEffect(() => {
-    if (!query.trim()) return;
-    const timer = setTimeout(() => send({ type: "archiveSearch", query }), 300);
-    return () => clearTimeout(timer);
-  }, [query]);
-  if (!rows) return <p className="cs-empty">{say("archiveLoading")}</p>;
-  const saidIt = (s: SessionRow) => said.query === query && said.ids.has(s.id);
-  const found = query.trim() ? rows.filter((s) => matchesArchive(s, query) || saidIt(s)) : rows;
-  const tickets = found.filter((s) => s.itemId);
-  const talks = found.filter((s) => !s.itemId);
-  const needle = query.trim().toLowerCase();
-  const closed = (terminals ?? []).filter((t) => !needle || t.title.toLowerCase().includes(needle) || t.cwd.toLowerCase().includes(needle));
-  const shown = shelf === "tickets" ? tickets : shelf === "talks" ? talks : [];
-  const when = (at: number) => new Date(at).toLocaleString(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-  const hour = (at: number) => new Date(at).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
-  return (
-    <>
-      <input type="search" className="input cs-archive-search" data-testid="cs-archive-search" aria-label={say("archiveSearch")} placeholder={say("archiveSearch")} value={query} onChange={(e) => setQuery(e.target.value)} />
-      <div className="seg cs-shelves" role="group" data-testid="cs-archive-shelves">
-        <button type="button" aria-pressed={shelf === "tickets"} data-testid="cs-shelf-tickets" onClick={() => setShelf("tickets")}>
-          {say("shelfTickets", { n: tickets.length })}
-        </button>
-        <button type="button" aria-pressed={shelf === "talks"} data-testid="cs-shelf-talks" onClick={() => setShelf("talks")}>
-          {say("shelfTalks", { n: talks.length })}
-        </button>
-        <button type="button" aria-pressed={shelf === "terminals"} data-testid="cs-shelf-terminals" onClick={() => setShelf("terminals")}>
-          {say("shelfTerminals", { n: closed.length })}
-        </button>
-      </div>
-      {shelf === "terminals" ? (
-        !closed.length ? (
-          <p className="cs-empty">{query.trim() ? say("archiveNoMatch") : say("terminalsEmpty")}</p>
-        ) : (
-          <ul className="cs-list" data-testid="cs-archive-terminals">
-            {closed.map((t) => (
-              <li key={t.id}>
-                <button type="button" className="cs-row" data-status="done" data-closed-terminal={t.id} aria-current={selected.has(t.id) ? "true" : undefined} data-active={active.has(t.id) || undefined} onClick={() => onClosed(t)}>
-                  <span className="cs-row-head">
-                    <span className="cs-row-name mono">
-                      <Mark status="done" />
-                      {t.title}
-                    </span>
-                    <span className="cs-row-meta">{say("closedAt", { when: when(t.endedAt) })}</span>
-                  </span>
-                  <span className="cs-row-meta mono">{t.cwd}</span>
-                  <span className="cs-row-meta">{`${when(t.startedAt)}–${hour(t.endedAt)}`}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )
-      ) : !shown.length ? (
-        <p className="cs-empty">{query.trim() ? say("archiveNoMatch") : say(shelf === "tickets" ? "archiveEmpty" : "talksEmpty")}</p>
-      ) : (
-        <ul className="cs-list" data-testid="cs-archive-list">
-          {shown.map((s) => (
-            <li key={s.id}>
-              <button type="button" className="cs-row" data-status="done" aria-current={selected.has(s.id) ? "true" : undefined} data-active={active.has(s.id) || undefined} onClick={() => onPick(s)}>
-                <span className="cs-row-head">
-                  <span className={s.itemId ? "cs-row-name mono" : "cs-row-name"}>
-                    <Mark status="done" />
-                    {s.itemId ? sessionName(s) : (s.conversation ?? sessionName(s))}
-                  </span>
-                  <span className="cs-row-meta">{say("endedAt", { when: when(s.endedAt!) })}</span>
-                </span>
-                {s.itemId && s.title && <span className="cs-row-title">{s.title}</span>}
-                <span className="cs-row-meta mono">{s.itemId ? s.branch : [s.agentName ?? s.agent, s.cwd ?? s.worktree].filter(Boolean).join(" · ")}</span>
-                {query.trim() && !matchesArchive(s, query) && saidIt(s) && (
-                  <span className="cs-row-meta" data-testid="cs-archive-said">
-                    {say("archiveSaid")}
-                  </span>
-                )}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </>
+function useHistory() {
+  const [agents, setAgents] = useState<Record<string, string>>({});
+  const [terminals, setTerminals] = useState<ClosedTerminalRow[]>([]);
+  const sessions = useRef(new Map<string, SessionRow>());
+  const keep = useCallback((post: { sessions: SessionRow[]; agents: Record<string, string> }) => {
+    for (const s of post.sessions) sessions.current.set(s.id, s);
+    if (Object.keys(post.agents).length) setAgents((now) => ({ ...now, ...post.agents }));
+  }, []);
+  const source = useMemo(
+    (): ReviewSource => ({
+      list: async (opts) => {
+        const answer = await historyList(opts);
+        keep(answer);
+        if (answer.terminals) setTerminals(answer.terminals);
+        return answer.page;
+      },
+      said: async (query) => {
+        const answer = await historySaid(query);
+        keep(answer);
+        return answer.found;
+      }
+    }),
+    [keep]
   );
+  const sessionOf = useCallback((id: string) => sessions.current.get(id), []);
+  return { source, agents, terminals, sessionOf };
+}
+
+/**
+ * History in this window: the assistant panel's list — ended sessions and conversations by day, outcomes first,
+ * searched by outcome, ticket and what was said — with the plain terminals closed here as a filter. A coding session
+ * picked shows in a pane, read-only; a closed terminal plays back there; an assistant conversation opens in the app window.
+ */
+function HistoryList({ projectId, locale, history, omit, onPick, onClosed }: { projectId: string; locale: string; history: ReturnType<typeof useHistory>; omit: ReadonlySet<string>; onPick: (s: SessionRow) => void; onClosed: (t: ClosedTerminalRow) => void }) {
+  const qc = useQueryClient();
+  useEffect(() => onHistoryChanged(() => void qc.invalidateQueries({ queryKey: keys.codeLink.reviewAll(projectId) })), [qc, projectId]);
+  const words = useMemo((): ReviewWords => ({ t: (key, vars) => interpolate(message(locale, key), vars), locale }), [locale]);
+  const agentName = (agent: string) => history.agents[agent] ?? agent;
+  const pick = (r: ReviewRow) => {
+    if (r.kind !== "session") return send({ type: "showThread", threadId: r.id });
+    const s = history.sessionOf(r.id);
+    if (s) onPick(s);
+  };
+  return <ReviewList projectId={projectId} source={history.source} words={words} agentName={agentName} omit={omit} terminals={{ rows: history.terminals, onPick: onClosed }} onPick={pick} />;
 }
 
 /** Saved layouts: apply one, keep the current one under a name, pick the one new windows open with; and the auto-place switch. */
@@ -375,6 +348,7 @@ function Layouts({ presets, defaultPreset, autoPlace, onApply, onSave }: { prese
 /** The folded bar: a column of dots, one per row, with a peek beside the one under the pointer; the way back on top. */
 function Rail({ ref, rows, waiting, marks, picks, foldLabel, onFold }: { ref: Ref<HTMLElement>; rows: HereRow[]; waiting: number; marks: Marks; picks: Picks; foldLabel: string; onFold: () => void }) {
   const say = useSay();
+  const words = useWords();
   const [peek, setPeek] = useState<{ id: string; top: number } | null>(null);
   const peekId = useId();
   const nav = useRef<HTMLElement | null>(null);
@@ -411,8 +385,9 @@ function Rail({ ref, rows, waiting, marks, picks, foldLabel, onFold }: { ref: Re
         <span className="cs-dot-face">
           {shortOf(r, name)}
           <Mark status={status} size={9} />
+          {isNewRow(r) && <span className="sbar-new-badge" data-testid="cs-new">{say("new")}</span>}
         </span>
-        <span className="cs-dot-where">{status === "done" ? statusWord("done", say) : whereOf(r, has(marks.active, r), say)}</span>
+        <span className="cs-dot-where">{status === "done" ? statusWord("done", say) : whereOf(r, cellOf(marks.cells, r), say)}</span>
       </button>
     );
   };
@@ -447,8 +422,14 @@ function Rail({ ref, rows, waiting, marks, picks, foldLabel, onFold }: { ref: Re
       {shown && (
         <div id={peekId} role="tooltip" className="cs-peek" data-testid="cs-peek" data-status={statusOf(shown)} style={{ top: peek!.top }}>
           <span className="cs-peek-title">{[rowName(shown, say), rowTitle(shown, say)].filter(Boolean).join(" ")}</span>
-          <span className="cs-row-meta">{[rowAgent(shown), whereOf(shown, has(marks.active, shown), say), statusWord(statusOf(shown), say)].filter(Boolean).join(" · ")}</span>
-          {rowSaid(shown, statusOf(shown), say) && <span className={saidClass(statusOf(shown))}>{rowSaid(shown, statusOf(shown), say)}</span>}
+          <span className="cs-row-meta">{[rowAgent(shown), whereOf(shown, cellOf(marks.cells, shown), say), statusWord(statusOf(shown), say)].filter(Boolean).join(" · ")}</span>
+          {rowTail(shown, statusOf(shown)).length ? (
+            <span className="cs-peek-tail" data-testid="cs-peek-tail">
+              {rowTail(shown, statusOf(shown)).map((line, i) => <span key={i} className="cs-row-tail">{line}</span>)}
+            </span>
+          ) : (
+            rowSaid(shown, statusOf(shown), say, words) && <span className={saidClass(statusOf(shown))}>{rowSaid(shown, statusOf(shown), say, words)}</span>
+          )}
           <span className="cs-row-meta">{say("peekHint")}</span>
         </div>
       )}
@@ -470,6 +451,7 @@ type SidebarProps = {
   onClosed: (t: ClosedTerminalRow) => void;
   onThread: (t: ThreadRow) => void;
   onAnswer: (s: SessionRow, which: "allow" | "deny") => void;
+  onAnswerThread: (t: ThreadRow, questionId: string, value: string) => void;
   onNewTerminal: () => void;
   onApplyPreset: (p: LayoutPreset) => void;
   onSavePreset: (name: string) => void;
@@ -477,17 +459,20 @@ type SidebarProps = {
 
 /**
  * The session bar on the window's right edge, the assistant panel's: cards that say where each session stands and
- * what it waits with, the sessions this window cannot show, saved layouts and the archive; or, folded, a column of dots.
+ * what it waits with, the sessions this window cannot show, saved layouts and History; or, folded, a column of dots.
  */
-export function Sidebar({ ref, state, rows, locale, folded, onFold, marks, canOpen, onPick, onTerminal, onClosed, onThread, onAnswer, onNewTerminal, onApplyPreset, onSavePreset }: SidebarProps) {
+export function Sidebar({ ref, state, rows, locale, folded, onFold, marks, canOpen, onPick, onTerminal, onClosed, onThread, onAnswer, onAnswerThread, onNewTerminal, onApplyPreset, onSavePreset }: SidebarProps) {
   const say = useSay();
   const [outsideOpen, setOutsideOpen] = useState(false);
-  const [archiveOpen, setArchiveOpen] = useState(false);
-  const openArchive = (open: boolean) => {
-    setArchiveOpen(open);
-    send({ type: "archive", open });
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const history = useHistory();
+  // The conversations the bar lists are reached there: History holds the ones past it.
+  const listed = useMemo(() => new Set(state.threads.map((t) => t.id)), [state.threads]);
+  const openHistory = (open: boolean) => {
+    setHistoryOpen(open);
+    send({ type: "history", open });
   };
-  const picks: Picks = { onSession: onPick, onTerminal, onThread, onAnswer };
+  const picks: Picks = { onSession: onPick, onTerminal, onThread, onAnswer, onAnswerThread };
   const waiting = rows.here.filter((r) => statusOf(r) === "wait").length + rows.away.filter((s) => sessionStatus(s) === "wait").length;
   const foldLabel = `${say(folded ? "unfold" : "fold")} (${keyLabel("fold")})`;
   if (folded) return <Rail ref={ref} rows={rows.here} waiting={waiting} marks={marks} picks={picks} foldLabel={foldLabel} onFold={onFold} />;
@@ -513,30 +498,33 @@ export function Sidebar({ ref, state, rows, locale, folded, onFold, marks, canOp
             {waiting}
           </span>
         )}
-        {!archiveOpen && (
+        {!historyOpen && (
           <button type="button" className="link-btn side-add" data-testid="cs-side-new-terminal" disabled={!canOpen} onClick={onNewTerminal}>
             + {say("newTerminal")}
           </button>
         )}
       </div>
-      {archiveOpen ? (
+      {historyOpen ? (
         <>
           <div className="cs-side-head cs-side-sub">
-            <h2 className="eyebrow">{say("archiveHead")}</h2>
-            <button type="button" className="link-btn side-add" data-testid="cs-archive-back" onClick={() => openArchive(false)}>
-              ← {say("archiveBack")}
+            <h2 className="eyebrow">{say("history")}</h2>
+            <button type="button" className="link-btn side-add" data-testid="cs-history-back" onClick={() => openHistory(false)}>
+              ← {say("historyBack")}
             </button>
           </div>
-          <ArchiveList rows={state.archive.rows} terminals={state.archive.terminals} locale={locale} active={marks.active} selected={marks.selected} onPick={onPick} onClosed={onClosed} />
+          <HistoryList projectId={state.projectId} locale={locale} history={history} omit={listed} onPick={onPick} onClosed={onClosed} />
         </>
       ) : (
         <>
           {(rows.here.length > 0 || !rows.away.length) && <HereList rows={rows.here} history={state.history} locale={locale} marks={marks} picks={picks} />}
           <OutsideGroup sessions={rows.away} open={outsideOpen} onToggle={() => setOutsideOpen((o) => !o)} list={awayList} />
           <Layouts presets={state.presets} defaultPreset={state.defaultPreset} autoPlace={state.autoPlace} onApply={onApplyPreset} onSave={onSavePreset} />
-          <button type="button" className="link-btn cs-archive-open" data-testid="cs-archive" onClick={() => openArchive(true)}>
-            {say("archive", { n: state.archive.count })}
-          </button>
+          <div className="cs-history-foot">
+            <span>{say("historyNote")}</span>
+            <button type="button" className="btn btn-secondary btn-xs" data-testid="cs-history" onClick={() => openHistory(true)}>
+              <Icon name="i-history" size={11} /> {say("history")}
+            </button>
+          </div>
         </>
       )}
     </aside>

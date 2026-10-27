@@ -4,9 +4,11 @@ import { ConvoLines, ConvoTop, useOpenLines, type ConvoLine } from "~/components
 import { ContextMenu } from "~/components/ui/menu";
 import { onCell, send, type Look } from "./bridge";
 import { keyLabel } from "./keys";
-import { live, sessionName } from "./lists";
+import { live, sessionName, sessionStatus } from "./lists";
 import { Replay } from "./Replay";
 import { useSay } from "./say";
+import { Guess, ShellHint } from "./guess";
+import { Timeline } from "./Timeline";
 import { NewTerminal } from "./NewTerminal";
 import { TerminalCell } from "./TerminalCell";
 
@@ -16,6 +18,18 @@ const LockGlyph = ({ locked }: { locked: boolean }) => (
     <g fill="none" stroke="currentColor" strokeWidth="1.15">
       <rect x="3.3" y="6.2" width="7.4" height="5.4" rx="1.2" />
       <path d={locked ? "M5.1 6.2V4.7a1.9 1.9 0 0 1 3.8 0v1.5" : "M5.1 6.2V4.7a1.9 1.9 0 0 1 3.7-.6"} />
+    </g>
+  </svg>
+);
+
+/** A pane's timeline: marks on a line, earliest at the top. */
+const TimelineGlyph = () => (
+  <svg width="13" height="13" viewBox="0 0 14 14" aria-hidden="true">
+    <g fill="none" stroke="currentColor" strokeWidth="1.15" strokeLinecap="round">
+      <path d="M3.5 2v10" />
+      <circle cx="3.5" cy="3.5" r="1.1" fill="currentColor" />
+      <circle cx="3.5" cy="10.5" r="1.1" fill="currentColor" />
+      <path d="M6.5 3.5h5M6.5 7h3.5M6.5 10.5h5" />
     </g>
   </svg>
 );
@@ -217,7 +231,7 @@ function NotHere({ session, cell, locale, picker, onTalk, look }: { session: Ses
   );
 }
 
-export function Cell({ leaf, number, pane, session, terminal, closed, places, ready, herdrClient, onNewTerminal, onTalk, focused, selected, only, onFocus, onSplit, onClose, onLock, menu, look }: { leaf: Extract<Layout, { type: "leaf" }>; number: number; pane: string; session: SessionRow | undefined; terminal: TerminalRow | undefined; closed: ClosedTerminalRow | undefined; places: TerminalPlace[]; ready: boolean; herdrClient: boolean; onNewTerminal: (cwd: string) => void; onTalk: (s: SessionRow) => void; focused: boolean; selected: boolean; only: boolean; onFocus: () => void; onSplit: (d: "row" | "column") => void; onClose: () => void; onLock: () => void; menu: ReactNode; look: Look }) {
+export function Cell({ leaf, number, pane, session, terminal, closed, places, ready, herdrClient, onNewTerminal, onTalk, focused, flash = null, selected, only, onFocus, onSplit, onClose, onLock, menu, look }: { leaf: Extract<Layout, { type: "leaf" }>; number: number; pane: string; session: SessionRow | undefined; terminal: TerminalRow | undefined; closed: ClosedTerminalRow | undefined; places: TerminalPlace[]; ready: boolean; herdrClient: boolean; onNewTerminal: (cwd: string) => void; onTalk: (s: SessionRow) => void; focused: boolean; /** Shown here on an ask from outside (the assistant panel, a start): it flashes once, keyed by the ask. */ flash?: number | null; selected: boolean; only: boolean; onFocus: () => void; onSplit: (d: "row" | "column") => void; onClose: () => void; onLock: () => void; menu: ReactNode; look: Look }) {
   const say = useSay();
   // Right-click on the bar, or on a cell with no terminal: inside a terminal it is the program's own.
   const withMenu = (node: ReactElement) => (
@@ -227,8 +241,11 @@ export function Cell({ leaf, number, pane, session, terminal, closed, places, re
   );
   const act = (type: "continue" | "openWorktree" | "openPr" | "focusHerdr" | "openThread") => session && send({ type, sessionId: session.id });
   const labels = useMemo(() => ({ detached: (reason: string | null) => (reason ? say("detached", { reason }) : say("detachedPlain")), reattach: say("reattach"), drop: say("dropFiles") }), [say]);
+  // The pane this cell shows, or showed: what its timeline is of.
+  const timelinePane = session?.pane ?? terminal?.pane ?? closed?.pane ?? session?.ranIn ?? null;
+  const [timeline, setTimeline] = useState(false);
   return (
-    <div className="cs-cell" data-cell={leaf.id} data-focused={focused || undefined} data-locked={leaf.locked || undefined} data-cell-terminal={terminal?.id} onMouseDownCapture={onFocus} onFocusCapture={onFocus}>
+    <div className="cs-cell" data-cell={leaf.id} data-focused={focused || undefined} data-flash={flash ?? undefined} data-wait={(session ? sessionStatus(session) === "wait" : terminal?.agentStatus === "blocked") || undefined} data-locked={leaf.locked || undefined} data-cell-terminal={terminal?.id} onMouseDownCapture={onFocus} onFocusCapture={onFocus}>
       {withMenu(<div className="cs-cell-bar">
         {/* Its number in reading order: what `tomrade term --attach` names it by. */}
         <span className="cs-cell-no" data-testid="cs-cell-no" title={say("cellNumber", { n: number })}>{number}</span>
@@ -267,6 +284,11 @@ export function Cell({ leaf, number, pane, session, terminal, closed, places, re
           </span>
         )}
         <span className="cs-cell-tools">
+          {timelinePane && (
+            <button type="button" className="icon-btn cs-lock" data-testid="cs-timeline-open" aria-pressed={timeline} title={say("timelineOpen")} aria-label={say("timelineOpen")} onClick={() => setTimeline(!timeline)}>
+              <TimelineGlyph />
+            </button>
+          )}
           {leaf.sessionId && (
             <button type="button" className="icon-btn cs-lock" data-testid="cs-lock" aria-pressed={!!leaf.locked} title={leaf.locked ? `${say("unlockCell")} · ${say("lockedHint")}` : say("lockCell")} aria-label={leaf.locked ? say("unlockCell") : say("lockCell")} onClick={onLock}>
               <LockGlyph locked={!!leaf.locked} />
@@ -277,8 +299,13 @@ export function Cell({ leaf, number, pane, session, terminal, closed, places, re
           <button type="button" className="icon-btn" title={only ? say("clearCell") : say("withKey", { action: say("closeCell"), key: keyLabel("close") })} aria-label={only ? say("clearCell") : say("closeCell")} onClick={onClose}>×</button>
         </span>
       </div>)}
+      {timeline && timelinePane && <Timeline cell={leaf.id} pane={timelinePane} number={number} cwd={terminal?.cwd ?? closed?.cwd ?? session?.cwd ?? session?.worktree ?? ""} locale={look.locale} look={look} onClose={() => setTimeline(false)} />}
       {session?.pane || terminal?.pane ? (
-        <TerminalCell cell={leaf.id} sessionId={leaf.sessionId!} pane={pane} tokens={look.tokens} font={look.tokens["--font-mono"] ?? ""} labels={labels} autoFocus={selected} />
+        <>
+          <TerminalCell cell={leaf.id} sessionId={leaf.sessionId!} pane={pane} tokens={look.tokens} font={look.tokens["--font-mono"] ?? ""} labels={labels} autoFocus={selected} />
+          <Guess session={session} pane={session?.pane ?? terminal?.pane} place="cell" />
+          {!session && terminal?.shell && <ShellHint cell={leaf.id} />}
+        </>
       ) : terminal ? (
         withMenu(<div className="cs-cell-empty">{say("starting")}</div>)
       ) : session ? (
@@ -296,7 +323,7 @@ export function Cell({ leaf, number, pane, session, terminal, closed, places, re
       ) : (
         withMenu(
           <div className="cs-cell-empty">
-            <span>{say("pickOrNew")}</span>
+            <span>{say("pickOrNew", { right: keyLabel("splitRight"), down: keyLabel("splitDown"), palette: keyLabel("palette") })}</span>
             <NewTerminal places={places} ready={ready} onOpen={onNewTerminal} />
           </div>
         )

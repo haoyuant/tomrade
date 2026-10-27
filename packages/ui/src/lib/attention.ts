@@ -18,7 +18,12 @@ export interface AttentionEntry {
   text: string | null;
   /** Since when it has waited in this kind. */
   since: number;
+  /** The terminal session, when it is one. */
+  sessionId?: string | null;
 }
+
+/** What opening an entry needs: a conversation, a terminal session, or the ticket. */
+type OpenTarget = Pick<AttentionEntry, "projectId" | "threadId" | "itemId" | "sessionId">;
 
 /** What each kind of waiting is called, wherever it is listed. */
 export const ATTENTION_KEY: Record<AttentionEntry["kind"], MessageKey> = {
@@ -34,7 +39,7 @@ declare module "@tomradex/ipc" {
   }
   interface Broadcasts {
     "attention.changed": (entries: AttentionEntry[]) => void;
-    "attention.open": (entry: AttentionEntry) => void;
+    "attention.open": (entry: OpenTarget) => void;
     /** A followed tomrade:// link, e.g. from an IM reply. */
     "app.open": (target: { projectId: string; itemId?: string; threadId?: string; path?: string }) => void;
   }
@@ -48,11 +53,11 @@ export function useAttention(): AttentionEntry[] {
 }
 
 // A clicked notification may name another project: it waits here until that project's shell mounts.
-let waiting: Pick<AttentionEntry, "projectId" | "threadId" | "itemId"> | null = null;
+let waiting: OpenTarget | null = null;
 const listeners = new Set<() => void>();
 
 /** The entry a clicked notification asked to show, once, if it belongs to this project. */
-export function takeOpenRequest(projectId: string): Pick<AttentionEntry, "projectId" | "threadId" | "itemId"> | null {
+export function takeOpenRequest(projectId: string): OpenTarget | null {
   if (waiting?.projectId !== projectId) return null;
   const entry = waiting;
   waiting = null;
@@ -64,11 +69,11 @@ export function onOpenRequest(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
-/** Brings up the entry's project, whose shell then opens the conversation (or the ticket). */
-export function useOpenAttention(): (entry: Pick<AttentionEntry, "projectId" | "threadId" | "itemId">) => void {
+/** Brings up the entry's project, whose shell then opens the conversation, the terminal session (or the ticket). */
+export function useOpenAttention(): (entry: OpenTarget) => void {
   const navigate = useNavigate();
   return useCallback(
-    (entry: Pick<AttentionEntry, "projectId" | "threadId" | "itemId">) => {
+    (entry: OpenTarget) => {
       waiting = entry;
       if (!window.location.hash.startsWith(`#/p/${entry.projectId}`)) void navigate({ to: "/p/$projectId", params: { projectId: entry.projectId } });
       for (const listener of listeners) listener();

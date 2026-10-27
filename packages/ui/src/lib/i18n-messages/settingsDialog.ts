@@ -226,7 +226,13 @@ export const settingsDialog = {
     projectsDirLabel: "Projects folder",
     projectsDirNote: "The default location for new project folders on this machine. Project contents are not temporary cache and are not uploaded to Supabase.",
     cacheDirLabel: "Cache folder",
-    cacheDirNote: "One database per project lives here. Delete it and Tomrade reads the folders again."
+    cacheDirNote: "One database per project lives here. Delete it and Tomrade reads the folders again.",
+    shellApprovalTitle: "When the built-in assistant writes code",
+    shellApprovalAsk: "Ask before every command",
+    shellApprovalChecks: "Don't ask to read files or run tests",
+    shellApprovalAskNote: "Every command asks you first. The same setting as Settings › Shell.",
+    shellApprovalChecksNote: "Only in a ticket's own copy: reading files and running test, lint and typecheck don't ask; editing files, git push and deleting still do. The same setting as Settings › Shell.",
+    shellApprovalOtherNote: "Set in Settings › Shell. Picking one here changes it there too."
   },
   zh: {
     dialogLabel: "设置",
@@ -454,6 +460,12 @@ export const settingsDialog = {
     projectsDirLabel: "项目文件夹",
     projectsDirNote: "这台机器上新项目的默认位置。项目内容不是临时缓存，也不会上传到 Supabase。",
     cacheDirLabel: "缓存目录",
-    cacheDirNote: "每个项目一个数据库，都放在这里。删掉它，Tomrade 会重新读取文件夹。"
+    cacheDirNote: "每个项目一个数据库，都放在这里。删掉它，Tomrade 会重新读取文件夹。",
+    shellApprovalTitle: "内置助手写代码时",
+    shellApprovalAsk: "每条命令都问",
+    shellApprovalChecks: "读文件、跑测试不问",
+    shellApprovalAskNote: "每条命令先问你。和「设置 › Shell 命令」是同一个设置。",
+    shellApprovalChecksNote: "只在工单自己的独立副本里：读文件、跑 test / lint / typecheck 不问；改文件、git push、删东西照样问。和「设置 › Shell 命令」是同一个设置。",
+    shellApprovalOtherNote: "在「设置 › Shell 命令」里设的。在这里选一个，那边也跟着改。"
   }
 };
