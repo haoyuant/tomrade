@@ -20,13 +20,13 @@ import type { TerminalBridge, TerminalPaneInfo, TerminalProvider, TerminalStream
 import { randomUUID } from "node:crypto";
 import { serveTerm, type TermWindow } from "./cli.js";
 import { droppedPaste, readableDrops } from "./drop.js";
-import { Recorder, RECORDING_SECTION, RecordingSettings, type Recording } from "./recorder.js";
-import type { ClosedTerminalRow, Layout, LayoutPreset, SessionRow, TerminalPlace, TerminalRow, ThreadRow, WindowMessage, WindowPost, WindowState } from "./protocol.js";
+import { manualStretches, Recorder, RECORDING_SECTION, RecordingSettings, type Recording } from "./recorder.js";
+import type { ClosedTerminalRow, Layout, LayoutPreset, SessionRow, TerminalPlace, TerminalRow, ThreadRow, TimelineEntry, WindowMessage, WindowPost, WindowState } from "./protocol.js";
 import { CODE_SESSIONS_WORDS } from "./words.js";
 import { errorMessage } from "@tomradex/contracts";
 
 export type * from "./protocol.js";
-export { Recorder, Recording, RECORDING_SECTION, RecordingSettings, REPLAY_MAX, SEGMENT_MAX, parseSegment, sliceOf } from "./recorder.js";
+export { Recorder, Recording, RECORDING_SECTION, RecordingSettings, REPLAY_MAX, SEGMENT_MAX, manualStretches, parseSegment, sliceOf } from "./recorder.js";
 
 export const Config = z.object({
   /** The window's page: the renderer's `code-sessions.html`. */
@@ -52,6 +52,15 @@ const FRAME_BATCH_MAX = 256 * 1024;
 const PROMPT_RECHECK_MS = 2000;
 /** How long the assistant's events settle before the window is refreshed for them: a turn ends in a burst of them. */
 const THREADS_SETTLE_MS = 100;
+/** How soon what is recorded in the background is looked at again after something changed: changes come in bursts. */
+const BACKGROUND_SETTLE_MS = 250;
+/** How long a pane whose observer would not open is left alone before it is tried again. */
+const BACKGROUND_RETRY_MS = 30_000;
+/** The size a pane is watched at when nothing here attached it and herdr does not say: herdr's own default. */
+const DEFAULT_SIZE = { cols: 120, rows: 40 };
+/** How many panes' sizes the saved state keeps. */
+const SIZES_MAX = 100;
+
 /** How many lines of each pane the overview reads. */
 const TAIL_LINES = 8;
 /** The most of a question an assistant card carries. */
@@ -71,6 +80,8 @@ interface Saved {
   lastProject?: string;
   /** Each project's closed terminals whose output was recorded, oldest first. */
   closed?: Record<string, ClosedTerminalRow[]>;
+  /** The size each pane was last attached at here, which it keeps after the cell lets go: what it is watched at. */
+  sizes?: Record<string, { cols: number; rows: number }>;
 }
 
 /** How many closed terminals a project's History keeps. */
@@ -340,6 +351,18 @@ interface Open {
   shown: { terminals: TerminalRow[]; sessions: SessionRow[] } | null;
 }
 
+/** A pane recorded with no cell on it: herdr's observer stream of it, and the newest session it had when watching began. */
+interface Watched {
+  stream: TerminalStream | null;
+  recording: Recording | null;
+  closed: boolean;
+  session: string | null;
+}
+
+/** A stretch of manual work in a pane, as a cell names it to play it back. */
+const MANUAL_ID = /^manual:(\d+):(\d+):(.+)$/;
+const manualId = (pane: string, from: number, to: number) => `manual:${from}:${to}:${pane}`;
+
 /** Frames of one cell while its batch is open: the ANSI bytes in order, and the frame that began it. */
 interface PendingFrames {
   bytes: Uint8Array[];
@@ -370,10 +393,11 @@ function apply(ctx: Context, config: Config) {
   // Without a backend on Windows, a new terminal opens in the system terminal; elsewhere herdr is what is missing.
   const bridge = async (): Promise<TerminalBridge> => (await backend()?.bridge()) ?? (process.platform === "win32" ? { state: "unsupported" } : { state: "notInstalled" });
 
-  /** What the panes show, recorded while a cell shows them; off by the setting, or without a folder to record in. */
+  const recordingSettings = () => RecordingSettings.parse(ctx.settings.get().terminalRecording ?? {});
+  /** What the panes show, recorded while a cell shows them and, by the setting, while none does; off by the setting, or without a folder to record in. */
   const recorder = new Recorder({
     dir: config.recordingsDir ?? null,
-    settings: () => RecordingSettings.parse(ctx.settings.get().terminalRecording ?? {}),
+    settings: recordingSettings,
     warn: (message) => ctx.logger.warn(message)
   });
   ctx.settings.register(RECORDING_SECTION);
@@ -750,6 +774,7 @@ function apply(ctx: Context, config: Config) {
   };
 
   const refresh = async (projectId: string) => {
+    watchSoon();
     const win = open.get(projectId);
     if (!win || win.closed || !win.surface) return;
     const turn = ++win.states.begun;
@@ -797,6 +822,143 @@ function apply(ctx: Context, config: Config) {
     win.recordings.get(cell)?.close();
     win.recordings.delete(cell);
     win.onPane.delete(cell);
+    // The pane may go on in the background.
+    watchSoon();
+  };
+
+  /**
+   * Panes no cell shows are recorded too, through herdr's observer stream: it watches beside whoever holds the pane and
+   * never takes it over or resizes it (TOM-412). One observer per pane of a live session on this machine or a terminal
+   * the window opened, while no cell attaches it: a cell attaching takes over, and the observer comes back once the cell
+   * lets go. Each is a `herdr terminal session observe` process; herdr sends it what changed on the screen, not every
+   * byte, so a busy pane costs little more than an idle one.
+   */
+  const background = new Map<string, Watched>();
+  /** Panes whose observer would not open, and when: not tried again before BACKGROUND_RETRY_MS. */
+  const unwatchable = new Map<string, number>();
+  /** The size each pane was last attached at here: a controller's size stays with the pane after it leaves. */
+  const sizes = new Map<string, { cols: number; rows: number }>(Object.entries(stateOf(config.stateFile).sizes ?? {}));
+  const keepSize = (pane: string) => {
+    const size = sizes.get(pane);
+    if (!size) return;
+    const kept = Object.entries({ ...stateOf(config.stateFile).sizes, [pane]: size }).slice(-SIZES_MAX);
+    save(config.stateFile, { sizes: Object.fromEntries(kept) });
+  };
+
+  /** The panes to record with no cell on them, each with the newest live session in it: a new one there begins a new stretch. */
+  const watchable = (): Map<string, string | null> => {
+    const device = ctx.get("hub")?.deviceId;
+    const out = new Map<string, { id: string | null; at: number }>();
+    let projects: string[] = [];
+    try {
+      projects = ctx.db.openIds();
+    } catch {
+      // no project open: only the terminals
+    }
+    for (const projectId of projects) {
+      let live: { id: string; herdrPane: string | null; device: string | null; startedAt: number; state: string }[] = [];
+      try {
+        live = ctx.codeLink.store?.sessions?.(projectId, { live: true }) ?? ctx.codeLink.sessionsOf(projectId);
+      } catch {
+        continue;
+      }
+      for (const s of live) {
+        if (!isLive(s) || !s.herdrPane || (device && s.device && s.device !== device)) continue;
+        const known = out.get(s.herdrPane);
+        if (!known || known.at < s.startedAt) out.set(s.herdrPane, { id: s.id, at: s.startedAt });
+      }
+    }
+    for (const list of Object.values(stateOf(config.stateFile).terminals ?? {})) for (const t of list) if (!out.has(t.pane)) out.set(t.pane, { id: null, at: 0 });
+    return new Map([...out].map(([pane, s]) => [pane, s.id]));
+  };
+
+  /** The size a pane is: as it was last attached here, else the rectangle herdr lays it out in. */
+  const sizeOf = async (pane: string): Promise<{ cols: number; rows: number }> => {
+    const known = sizes.get(pane);
+    if (known) return known;
+    try {
+      const { layout } = (await ctx.get("herdr")?.call<{ layout: { panes: { pane_id: string; rect: { width: number; height: number } }[] } }>("pane.layout", { pane_id: pane })) ?? { layout: { panes: [] } };
+      const rect = layout.panes.find((p) => p.pane_id === pane)?.rect;
+      if (rect?.width && rect.height) return { cols: rect.width, rows: rect.height };
+    } catch {
+      // herdr's own default
+    }
+    return DEFAULT_SIZE;
+  };
+
+  const watch = async (pane: string, session: string | null) => {
+    const provider = backend();
+    if (!provider) return;
+    const watched: Watched = { stream: null, recording: null, closed: false, session };
+    background.set(pane, watched);
+    let stream: TerminalStream;
+    try {
+      stream = await provider.terminal(pane, { mode: "observe", ...(await sizeOf(pane)) });
+    } catch (error) {
+      if (background.get(pane) === watched) background.delete(pane);
+      unwatchable.set(pane, Date.now());
+      ctx.logger.debug(`code sessions: pane ${pane} cannot be watched: ${errorMessage(error)}`);
+      return;
+    }
+    if (watched.closed || background.get(pane) !== watched) return stream.close();
+    const recording = recorder.open(pane, {
+      // A stretch past SEGMENT_MAX: watched afresh, so the next stretch begins with the whole screen.
+      needKeyframe: () => {
+        if (background.get(pane) !== watched) return;
+        unwatch(pane);
+        void watch(pane, session);
+      },
+      warn: (reason) => ctx.logger.warn(`code sessions: recording pane ${pane} in the background failed: ${reason}`)
+    });
+    if (!recording) {
+      background.delete(pane);
+      return stream.close();
+    }
+    watched.stream = stream;
+    watched.recording = recording;
+    stream.onFrame((frame) => recording.write(frame));
+    stream.onClose(() => {
+      recording.close();
+      if (background.get(pane) !== watched) return;
+      background.delete(pane);
+      unwatchable.set(pane, Date.now());
+      watchSoon();
+    });
+  };
+
+  const unwatch = (pane: string) => {
+    const watched = background.get(pane);
+    if (!watched) return;
+    background.delete(pane);
+    watched.closed = true;
+    watched.recording?.close();
+    watched.stream?.close();
+  };
+
+  /** Every pane that should be recorded with no cell on it is, and no other: herdr only, and while the settings say so. */
+  const rewatch = async () => {
+    const provider = backend();
+    const settings = recordingSettings();
+    const on = recorder.enabled() && settings.background && provider?.kind === "herdr" && !disposed && (await bridge()).state === "ready";
+    const wanted = on ? watchable() : new Map<string, string | null>();
+    for (const win of open.values()) for (const stream of win.terminals.values()) wanted.delete(stream.paneId);
+    for (const pane of [...background.keys()]) if (!wanted.has(pane)) unwatch(pane);
+    for (const [pane, session] of wanted) {
+      const watched = background.get(pane);
+      // A session beginning there: watched afresh, so its stretch begins with the whole screen.
+      if (watched && session && watched.session !== session) unwatch(pane);
+      if (!background.has(pane) && Date.now() - (unwatchable.get(pane) ?? 0) > BACKGROUND_RETRY_MS) void watch(pane, session);
+    }
+  };
+  let watchTimer: NodeJS.Timeout | null = null;
+  let disposed = false;
+  const watchSoon = () => {
+    if (watchTimer || disposed) return;
+    watchTimer = setTimeout(() => {
+      watchTimer = null;
+      void rewatch().catch((error: unknown) => ctx.logger.warn(`code sessions: background recording: ${errorMessage(error)}`));
+    }, BACKGROUND_SETTLE_MS);
+    watchTimer.unref?.();
   };
 
   // Presets and the auto-place switch belong to every project's window.
@@ -915,6 +1077,7 @@ function apply(ctx: Context, config: Config) {
     const stream = win.terminals.get(cell);
     win.terminals.delete(cell);
     stream?.close();
+    if (stream) keepSize(stream.paneId);
   };
 
   /** The herdr pane a cell's id stands for: a session's, or a terminal's. */
@@ -959,6 +1122,7 @@ function apply(ctx: Context, config: Config) {
       return post(win, { type: "closed", cell, reason: (error as { code?: unknown } | null)?.code === "pane_not_found" ? words()("paneEnded") : errorMessage(error) });
     }
     if (win.closed || win.turns.get(cell) !== mine) return stream.close();
+    sizes.set(pane, { cols, rows });
     win.terminals.set(cell, stream);
     win.detached.delete(cell);
     const held = win.held.get(cell);
@@ -984,6 +1148,8 @@ function apply(ctx: Context, config: Config) {
 
   /** The cell's stream recorded from its first frame; a failure is said once per window and leaves the cell as it is. */
   const record = (projectId: string, win: Open, cell: string, pane: string) => {
+    // The cell records it now: the observer goes, so one pane is never written twice.
+    unwatch(pane);
     const recording = recorder.open(pane, {
       needKeyframe: () => requestSnapshot(win, cell),
       warn: (reason) => {
@@ -1005,6 +1171,8 @@ function apply(ctx: Context, config: Config) {
    * not take the next agent's output along).
    */
   const replayBounds = (projectId: string, id: string): { pane: string; from: number; to: number } | null => {
+    const manual = MANUAL_ID.exec(id);
+    if (manual) return { pane: manual[3]!, from: Number(manual[1]), to: Number(manual[2]) };
     const closed = closedTerminals(projectId).find((t) => t.id === id);
     if (closed) return { pane: closed.pane, from: closed.startedAt, to: closed.endedAt };
     const s = sessionOf(projectId, id);
@@ -1021,7 +1189,23 @@ function apply(ctx: Context, config: Config) {
   const replay = async (projectId: string, win: Open, cell: string, id: string) => {
     const bounds = replayBounds(projectId, id);
     const slice = bounds ? await recorder.slice(bounds.pane, bounds.from, bounds.to) : { records: [], at: 0, cut: false, clean: false };
-    post(win, { type: "replay", cell, id, ...slice, from: bounds?.from ?? 0, to: bounds?.to ?? 0 });
+    post(win, { type: "replay", cell, id, ...slice, from: bounds?.from ?? 0, to: bounds?.to ?? 0, keep: keeping() });
+  };
+
+  /** How long and how much of each pane the recordings are kept, for the words beside a replay. */
+  const keeping = () => {
+    const settings = recordingSettings();
+    return { days: settings.keepDays, mb: settings.maxPaneMB };
+  };
+
+  /** A pane's history from early to late: the sessions that ran in it, and the manual work between them as it was recorded. */
+  const timeline = async (projectId: string, pane: string): Promise<TimelineEntry[]> => {
+    const rows = listed(projectId).sessions.filter((s) => s.ranIn === pane);
+    const manual = manualStretches(await recorder.activity(pane), rows.map((s) => ({ from: s.startedAt, to: s.endedAt })), Date.now());
+    return [
+      ...rows.map((s): TimelineEntry => ({ kind: "session", id: s.id, from: s.startedAt, to: s.endedAt, session: s })),
+      ...manual.map((m): TimelineEntry => ({ kind: "manual", id: manualId(pane, m.from, m.to), from: m.from, to: m.to, bytes: m.bytes }))
+    ].sort((a, b) => a.from - b.from);
   };
 
   /** A code-link command on the session's ticket, its toast told in the window; a conversation it names opens in the app window. */
@@ -1090,6 +1274,8 @@ function apply(ctx: Context, config: Config) {
         return closeTerminal(projectId, win, m.terminalId);
       case "replay":
         return replay(projectId, win, m.cell, m.id);
+      case "timeline":
+        return post(win, { type: "timeline", cell: m.cell, pane: m.pane, entries: await timeline(projectId, m.pane), keep: keeping() });
       case "snapshot":
         return win.recordings.get(m.cell)?.keyframe(m.token, m.seq, m.width, m.height, m.bytes);
       case "savePreset": {
@@ -1153,8 +1339,11 @@ function apply(ctx: Context, config: Config) {
         if (text) win.terminals.get(m.cell)?.input(text);
         return;
       }
-      case "resize":
-        return win.terminals.get(m.cell)?.resize(m.cols, m.rows);
+      case "resize": {
+        const stream = win.terminals.get(m.cell);
+        if (stream) sizes.set(stream.paneId, { cols: m.cols, rows: m.rows });
+        return stream?.resize(m.cols, m.rows);
+      }
       case "scroll":
         return win.terminals.get(m.cell)?.scroll(m);
       case "scrollTo": {
@@ -1346,6 +1535,7 @@ function apply(ctx: Context, config: Config) {
   ctx.on("codeLink/changed", (projectId) => {
     historyChanged(projectId);
     void refresh(projectId);
+    watchSoon();
   });
   // A question asked or answered, a run beginning or ending: what a conversation's card shows. Not each message or
   // streamed word. The event names only the thread: a conversation no window lists yet comes in with its run's start.
@@ -1360,6 +1550,7 @@ function apply(ctx: Context, config: Config) {
   ctx.inject(["terminals"], (ctx) => {
     ctx.terminals.onPane((event) => {
       for (const [projectId, win] of open) if (win.follows.has(event.paneId)) void refresh(projectId);
+      if (event.kind === "exited") watchSoon();
     });
   });
   // Code link's starts and "open in terminal" land here while this window can show the backend's panes.
@@ -1401,8 +1592,11 @@ function apply(ctx: Context, config: Config) {
     // Turned off: what is being recorded stops here; a cap lowered takes effect on what is kept.
     if (!recorder.enabled()) for (const win of open.values()) for (const cell of [...win.recordings.keys()]) stopRecording(win, cell);
     else void recorder.cleanup();
+    watchSoon();
     for (const projectId of open.keys()) void refresh(projectId);
   });
+  // What runs in herdr is recorded from the start, the window open or not.
+  watchSoon();
 
   ctx.contributions.command({
     id: "code-sessions.open",
@@ -1460,6 +1654,9 @@ function apply(ctx: Context, config: Config) {
   ctx.inject(["mcp"], (ctx) => ctx.mcp.cli("term", serveTerm(ctx, term, words)));
 
   ctx.effect(() => () => {
+    disposed = true;
+    if (watchTimer) clearTimeout(watchTimer);
+    for (const pane of [...background.keys()]) unwatch(pane);
     for (const timer of refreshSoon.values()) clearTimeout(timer);
     for (const win of open.values()) win.surface.close();
     recorder.closeAll();

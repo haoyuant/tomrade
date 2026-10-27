@@ -1585,7 +1585,9 @@ it("records what a cell shows, asks it for a snapshot when a session begins on i
   for (const s of sessions) s.device = w.ctx.hub.deviceId;
   await settle();
   // The setting is there, on by default, and machine-local.
-  expect(w.ctx.settings.section("terminalRecording")).toMatchObject({ scope: "machine", defaults: { enabled: true, maxTotalMB: 1024, keepDays: 14 } });
+  expect(w.ctx.settings.section("terminalRecording")).toMatchObject({ scope: "machine", defaults: { enabled: true, background: true, maxPaneMB: 50, keepDays: 7 } });
+  // What the cells record, alone: panes with no cell on them are the next test's.
+  w.ctx.settings.set({ ...w.ctx.settings.get(), terminalRecording: { enabled: true, background: false, maxPaneMB: 50, keepDays: 7 } });
   await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
   const win = opened[0]!;
   const say = async (m: WindowMessage) => {
@@ -1659,7 +1661,7 @@ it("records what a cell shows, asks it for a snapshot when a session begins on i
 
   // Turned off: what is being recorded stops, and nothing new is recorded.
   await say({ type: "attach", cell: "c1", sessionId: "a", cols: 80, rows: 24 });
-  w.ctx.settings.set({ ...w.ctx.settings.get(), terminalRecording: { enabled: false, maxTotalMB: 1024, keepDays: 14 } });
+  w.ctx.settings.set({ ...w.ctx.settings.get(), terminalRecording: { enabled: false, background: false, maxPaneMB: 50, keepDays: 7 } });
   await settle();
   const before = fs.readdirSync(path.join(recordingsDir, "w1_p1")).length;
   streams.at(-1)!.frame("unrecorded", { full: true });
@@ -1667,5 +1669,124 @@ it("records what a cell shows, asks it for a snapshot when a session begins on i
   await say({ type: "detach", cell: "c1" });
   await settle();
   expect(fs.readdirSync(path.join(recordingsDir, "w1_p1")).length).toBeLessThanOrEqual(before);
+  win.spec.onClose();
+});
+
+it("records a pane no cell shows by watching it, never taking it over; a cell takes over and gives it back; its timeline has the manual work between sessions", async () => {
+  const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[]; posts: WindowPost[] }[] = [];
+  const started = Date.now() - 60_000;
+  const sessions = [session({ id: "a", herdrPane: "w1:p1", startedAt: started, prompted: true })];
+  type Opened = { pane: string; mode: string; cols: number; rows: number; closed: boolean; frame(text: string, full?: boolean): void };
+  const streams: Opened[] = [];
+  class FakeSurfaces extends Service {
+    static provide = "desktopSurfaces";
+    constructor(ctx: Context) {
+      super(ctx, "desktopSurfaces");
+    }
+    open(spec: (typeof opened)[number]["spec"]) {
+      const entry = { spec, states: [spec.initialState as WindowState], posts: [] as WindowPost[] };
+      opened.push(entry);
+      return { id: "s", capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus() {}, setState: (st: WindowState) => void entry.states.push(st), post: (m: WindowPost) => void entry.posts.push(m), close: () => spec.onClose() };
+    }
+  }
+  class FakeHerdr extends Service {
+    static provide = "terminals";
+    readonly kind = "herdr" as const;
+    constructor(ctx: Context) {
+      super(ctx, "terminals");
+    }
+    onPane = () => () => {};
+    watch = () => () => {};
+    watching = (): string[] => [];
+    bridge = async () => ({ state: "ready" as const, version: "0.9.5" });
+    clientAttached = async () => false;
+    panes = async () => [];
+    processes = async () => [];
+    closePane = async () => true;
+    onScroll = () => () => {};
+    terminal = async (pane: string, opts: { mode?: string; cols: number; rows: number }) => {
+      const frames = new Set<(f: unknown) => void>();
+      const closes = new Set<(reason: string | null) => void>();
+      const opened: Opened = { pane, mode: opts.mode ?? "control", cols: opts.cols, rows: opts.rows, closed: false, frame: (text, full = false) => frames.forEach((l) => l({ seq: 1, width: opts.cols, height: opts.rows, full, bytes: new Uint8Array(Buffer.from(text)) })) };
+      streams.push(opened);
+      const close = () => {
+        if (opened.closed) return;
+        opened.closed = true;
+        closes.forEach((l) => l(null));
+      };
+      return { paneId: pane, mode: opened.mode, get closed() { return opened.closed; }, onFrame: (l: (f: unknown) => void) => (frames.add(l), () => frames.delete(l)), onClose: (l: (r: string | null) => void) => (closes.add(l), () => closes.delete(l)), input() {}, resize() {}, scroll() {}, mouse() {}, close };
+    };
+  }
+  class FakeCodeLink extends Service {
+    static provide = "codeLink";
+    constructor(ctx: Context) {
+      super(ctx, "codeLink");
+    }
+    sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
+    cellsChanged = () => {};
+    sessionsOf = () => sessions;
+    links = () => [];
+    repositoriesOf = () => [];
+    repositoryFoldersOf = () => [];
+  }
+  const stateFile = path.join(dir, "background-state.json");
+  const recordingsDir = path.join(dir, "background-recordings");
+  const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "background-settings.json") }], Contributions, FakeSurfaces, FakeHerdr, FakeCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile, recordingsDir }]] });
+  fs.writeFileSync(stateFile, JSON.stringify({ layouts: { [w.project.id]: { type: "leaf", id: "c1", sessionId: null } } }));
+  for (const s of sessions) s.device = w.ctx.hub.deviceId;
+  const watching = () => streams.filter((s) => s.mode === "observe" && !s.closed);
+  const text = (r: { bytes: Uint8Array }) => Buffer.from(r.bytes).toString();
+
+  // No window open: the session's pane is watched, at herdr's own size, and what it shows is recorded.
+  await vi.waitFor(() => expect(watching().map((s) => [s.pane, s.cols, s.rows])).toEqual([["w1:p1", 120, 40]]));
+  watching()[0]!.frame("BEFORE", true);
+  await vi.waitFor(() => expect(fs.readdirSync(recordingsDir)).toEqual(["w1_p1"]));
+
+  // A cell shows it: the observer goes, and the cell's own stream takes over the recording, with its control.
+  await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
+  const win = opened[0]!;
+  const say = async (m: WindowMessage) => {
+    win.spec.onMessage(m);
+    await settle();
+  };
+  await say({ type: "attach", cell: "c1", sessionId: "a", cols: 100, rows: 30 });
+  await vi.waitFor(() => expect(watching()).toEqual([]));
+  expect(streams.filter((s) => s.mode === "control").map((s) => s.pane)).toEqual(["w1:p1"]);
+  await new Promise((r) => setTimeout(r, 400));
+  expect(watching()).toEqual([]);
+
+  // Let go: watched again, at the size the cell left it at.
+  await say({ type: "detach", cell: "c1" });
+  await vi.waitFor(() => expect(watching().map((s) => [s.pane, s.cols, s.rows])).toEqual([["w1:p1", 100, 30]]));
+  // The session ends and the person works in the pane by hand: manual work, between it and the next session.
+  const ended = Date.now();
+  Object.assign(sessions[0]!, { state: "ended", endedAt: ended - 20_000 });
+  watching()[0]!.frame("x".repeat(300));
+  // A session beginning there: watched afresh, so its stretch begins with the whole screen.
+  const observers = streams.filter((s) => s.mode === "observe").length;
+  sessions.push(session({ id: "b", herdrPane: "w1:p1", startedAt: Date.now() + 10_000, prompted: true, device: w.ctx.hub.deviceId }));
+  w.ctx.emit("codeLink/changed", w.project.id);
+  await vi.waitFor(() => expect(streams.filter((s) => s.mode === "observe").length).toBe(observers + 1));
+  expect(watching()).toHaveLength(1);
+
+  // The pane's timeline: the first session, the manual work after it, the second; the manual work plays back alone.
+  const timelines = () => win.posts.filter((p) => p.type === "timeline");
+  await say({ type: "timeline", cell: "c1", pane: "w1:p1" });
+  await vi.waitFor(() => expect(timelines()).toHaveLength(1));
+  const entries = timelines()[0]!.entries;
+  expect(entries.map((e) => [e.kind, e.id.startsWith("manual:") ? "manual" : e.id])).toEqual([["session", "a"], ["manual", "manual"], ["session", "b"]]);
+  expect(timelines()[0]!.keep).toEqual({ days: 7, mb: 50 });
+  const manual = entries[1]!;
+  await say({ type: "replay", cell: "c1", id: manual.id });
+  const replay = () => win.posts.find((p) => p.type === "replay");
+  await vi.waitFor(() => expect(replay()).toBeTruthy());
+  const shown = replay()!;
+  expect(shown.records.slice(shown.at).map(text)).toEqual(["x".repeat(300)]);
+  expect(shown.keep).toEqual({ days: 7, mb: 50 });
+
+  // Only what the window shows, by the setting: nothing is watched any more.
+  w.ctx.settings.set({ ...w.ctx.settings.get(), terminalRecording: { enabled: true, background: false, maxPaneMB: 50, keepDays: 7 } });
+  await vi.waitFor(() => expect(watching()).toEqual([]));
   win.spec.onClose();
 });

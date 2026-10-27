@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, expect, it, vi } from "vitest";
-import { FLAG_FULL, FLAG_GAP, FLAG_KEYFRAME, HOLD_MAX, HOLD_MS, paneDir, parseSegment, RECORD_HEAD, Recorder, RecordingSettings, SEGMENT_MAX, sliceOf, type ReplayRecord } from "../src/recorder.js";
+import { FLAG_FULL, FLAG_GAP, FLAG_KEYFRAME, HOLD_MAX, HOLD_MS, MANUAL_IDLE_MS, manualStretches, paneDir, parseSegment, RECORD_HEAD, Recorder, RecordingSettings, SEGMENT_MAX, SESSION_MARGIN_MS, sliceOf, type ReplayRecord } from "../src/recorder.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-recorder-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -142,31 +142,73 @@ it("reads what it can of a file cut off mid-record, and takes a stretch never cl
   expect((await recorder.slice("w1:p5", 5000, 6000)).records.map((r) => [r.t, text(r)])).toEqual([[5010, "hello"]]);
 });
 
-it("drops recordings past the days kept, then the oldest while the whole is over the cap; what is open stays", async () => {
-  const { recorder, clock, dir } = fresh({ keepDays: 1, maxTotalMB: 64 });
-  const pane = path.join(dir, paneDir("w1:p6"));
-  fs.mkdirSync(pane, { recursive: true });
+it("keeps each pane 7 days or 50 MB by default, whichever comes first: past the days go, then the pane's oldest while it is over its cap; what is open stays", async () => {
+  expect(RecordingSettings.parse({})).toEqual({ enabled: true, background: true, maxPaneMB: 50, keepDays: 7 });
+  const { recorder, clock, dir } = fresh({ keepDays: 1, maxPaneMB: 64 });
+  const folder = (pane: string) => path.join(dir!, paneDir(pane));
   const day = 24 * 3600_000;
-  const seg = (start: number, end: number, mb: number) => {
-    const file = path.join(pane, `${start}-${end}.rec`);
+  const seg = (pane: string, start: number, end: number, mb: number) => {
+    fs.mkdirSync(folder(pane), { recursive: true });
+    const file = path.join(folder(pane), `${start}-${end}.rec`);
     fs.writeFileSync(file, "");
     fs.truncateSync(file, mb * 1024 * 1024);
   };
   clock.now = 10 * day;
-  seg(7 * day, 7 * day + 1000, 10); // past the day kept
-  seg(9 * day, 9 * day + 1000, 30);
-  seg(9 * day + 2000, 9 * day + 3000, 30);
-  seg(9 * day + 4000, 9 * day + 5000, 30); // the three together are over 64 MB: the oldest of them goes
+  seg("w1:p6", 7 * day, 7 * day + 1000, 10); // past the day kept
+  seg("w1:p6", 9 * day, 9 * day + 1000, 30);
+  seg("w1:p6", 9 * day + 2000, 9 * day + 3000, 30);
+  seg("w1:p6", 9 * day + 4000, 9 * day + 5000, 30); // the three together are over 64 MB: the oldest of them goes
+  // Another pane counts on its own: under its cap, it keeps all it has however much the first one holds.
+  seg("w1:p7", 9 * day, 9 * day + 1000, 40);
+  seg("w1:p7", 9 * day + 2000, 9 * day + 3000, 20);
   const rec = recorder.open("w1:p6", hooks())!;
   rec.write({ seq: 1, width: 80, height: 24, full: true, bytes: bytes("open") });
   await recorder.cleanup();
-  expect(fs.readdirSync(pane).sort()).toEqual([`${9 * day + 2000}-${9 * day + 3000}.rec`, `${9 * day + 4000}-${9 * day + 5000}.rec`, `${10 * day}.rec`]);
+  expect(fs.readdirSync(folder("w1:p6")).sort()).toEqual([`${9 * day + 2000}-${9 * day + 3000}.rec`, `${9 * day + 4000}-${9 * day + 5000}.rec`, `${10 * day}.rec`]);
+  expect(fs.readdirSync(folder("w1:p7")).sort()).toEqual([`${9 * day}-${9 * day + 1000}.rec`, `${9 * day + 2000}-${9 * day + 3000}.rec`]);
   rec.close();
   await recorder.settled();
   // The pane's folder goes with its last recording.
-  const tidy = new Recorder({ dir, settings: () => ({ enabled: true, keepDays: 1, maxTotalMB: 64 }), warn: () => undefined, now: () => 20 * day });
+  const tidy = new Recorder({ dir, settings: () => ({ enabled: true, background: true, keepDays: 1, maxPaneMB: 64 }), warn: () => undefined, now: () => 20 * day });
   await tidy.cleanup();
-  expect(fs.existsSync(pane)).toBe(false);
+  expect(fs.existsSync(folder("w1:p6"))).toBe(false);
+  expect(fs.existsSync(folder("w1:p7"))).toBe(false);
+});
+
+it("cuts a pane's recording between its sessions into the manual work done there: by the gap it falls in, by a long quiet, never a repaint", async () => {
+  const at = (t: number, bytes = 300, full = false) => ({ t, bytes, full });
+  const minute = 60_000;
+  const sessions = [{ from: 10 * minute, to: 20 * minute }, { from: 100 * minute, to: null }];
+  const activity = [
+    at(1 * minute, 4000, true), // a cell attaching: not work
+    at(2 * minute),
+    at(3 * minute),
+    at(10 * minute - SESSION_MARGIN_MS / 2), // the agent printing as it starts: the session's
+    at(15 * minute), // inside the session
+    at(25 * minute),
+    at(26 * minute, 50), // too little alone, but part of this stretch
+    at(26 * minute + MANUAL_IDLE_MS + 1), // after a long quiet: a stretch of its own
+    at(57 * minute, 20),
+    at(99 * minute, 20), // alone and too little to be work
+    at(110 * minute) // during the session still running
+  ];
+  expect(manualStretches(activity, sessions, 120 * minute)).toEqual([
+    { from: 2 * minute, to: 3 * minute, bytes: 600 },
+    { from: 25 * minute, to: 26 * minute, bytes: 350 },
+    { from: 26 * minute + MANUAL_IDLE_MS + 1, to: 57 * minute, bytes: 320 }
+  ]);
+  // A terminal with no session at all is one stretch.
+  expect(manualStretches([at(1000), at(2000)], [], 3000)).toEqual([{ from: 1000, to: 2000, bytes: 600 }]);
+  // Read back from what was recorded: the frames' times and sizes, the whole-screen paint marked.
+  const { recorder, clock } = fresh();
+  const rec = recorder.open("w1:p8", hooks())!;
+  rec.write({ seq: 1, width: 80, height: 24, full: true, bytes: bytes("x".repeat(500)) });
+  clock.now += 1000;
+  rec.write({ seq: 2, width: 80, height: 24, full: false, bytes: bytes("y".repeat(250)) });
+  rec.close();
+  await recorder.settled();
+  expect(await recorder.activity("w1:p8")).toEqual([{ t: 1_000_000, bytes: 500, full: true }, { t: 1_001_000, bytes: 250, full: false }]);
+  expect(manualStretches(await recorder.activity("w1:p8"), [], clock.now)).toEqual([{ from: 1_001_000, to: 1_001_000, bytes: 250 }]);
 });
 
 it("records nothing without a folder or with the setting off, and a folder that cannot be written is said once and the cell goes on", async () => {

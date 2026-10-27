@@ -3180,7 +3180,7 @@ export const zhHant: PartialMessages = {
     keyFold: "收合工作階段列",
     convoTab: "對話",
     rawTab: "原始輸出",
-    rawOnlyWhenShown: "原始輸出只在終端機視窗顯示這個窗格時錄製，可以在設定 → 終端機錄製裡關閉。",
+    rawOnlyWhenShown: "這個工作階段沒有錄到原始輸出。可以在設定 → 終端機錄製裡關閉錄製，或只錄終端機視窗顯示的窗格。",
     rawNone: "這段時間沒有錄到原始輸出。",
     rawLoading: "正在讀取錄製…",
     rawCut: "錄製的開頭超出了回放能容納的大小：從中途開始，畫面會隨播放逐漸補齊。",
@@ -3191,7 +3191,7 @@ export const zhHant: PartialMessages = {
     rawSpeed: "速度",
     closedTerminal: "已關閉的終端機",
     closedTerminalRan: "終端機 · {{from}} – {{to}}",
-    terminalsEmpty: "還沒有帶錄製的已關閉終端機。終端機在這個視窗的格子顯示它時才會被錄製。",
+    terminalsEmpty: "還沒有帶錄製的已關閉終端機。",
     cellNumber: "窗格 {{n}} · 在你自己的終端機裡執行 tomrade term --attach {{n}}，就能把它接過去"
   },
   review: {

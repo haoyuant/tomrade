@@ -218,3 +218,27 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-shell-note { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cs-shell-hide { width: 20px; height: 20px; flex: none; border: 0; border-radius: 4px; background: none; color: var(--muted); cursor: pointer; }
 .cs-shell-hide:hover { background: var(--tag-bg-faint); color: var(--fg); }
+/* Where a replay is kept and who can see it, above the player. */
+.cs-raw-tags { margin: 0; padding: 6px 12px; font-size: var(--text-xs); color: var(--meta); border-bottom: 1px solid var(--border-soft); text-align: center; }
+/* A pane's timeline, over its cell below the bar: the entries on the left, the picked one read on the right, what is kept at the foot. */
+.cs-cell { position: relative; }
+.cs-pane-timeline { position: absolute; inset: 29px 0 0 0; z-index: 4; display: flex; flex-direction: column; min-height: 0; background: var(--surface); font-size: var(--text-sm); }
+.cs-pane-timeline-head { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid var(--border-soft); flex: none; }
+.cs-pane-timeline-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); font-size: var(--text-xs); }
+.cs-pane-timeline-body { flex: 1; min-height: 0; display: flex; }
+.cs-pane-timeline-list { list-style: none; margin: 0; padding: 6px; width: min(260px, 40%); flex: none; overflow-y: auto; border-right: 1px solid var(--border-soft); display: flex; flex-direction: column; gap: 2px; }
+.cs-pane-timeline-row { width: 100%; display: flex; gap: 10px; align-items: flex-start; padding: 6px 8px; border: 0; border-radius: var(--radius-md, 8px); background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+.cs-pane-timeline-row:hover { background: var(--surface-warm); }
+.cs-pane-timeline-row[aria-current="true"] { background: var(--surface-warm); box-shadow: var(--elev-ring); }
+.cs-pane-timeline-row[data-kind="manual"] { padding-left: 20px; color: var(--fg-2); }
+.cs-pane-timeline-at { flex: none; font-size: var(--text-xs); color: var(--meta); }
+.cs-pane-timeline-what { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cs-pane-timeline-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-pane-timeline-read { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+.cs-pane-timeline-read-head { display: flex; justify-content: center; padding: 6px; border-bottom: 1px solid var(--border-soft); flex: none; }
+.cs-layers { flex: none; padding: 6px 12px; border-top: 1px solid var(--border-soft); font-size: var(--text-xs); color: var(--fg-2); max-height: 40%; overflow-y: auto; }
+.cs-layers summary { cursor: pointer; color: var(--muted); }
+.cs-layers dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin: 8px 0; }
+.cs-layers dt { font-weight: 600; color: var(--fg); }
+.cs-layers dd { margin: 2px 0 0; }
+.cs-layers p { margin: 0 0 4px; }
