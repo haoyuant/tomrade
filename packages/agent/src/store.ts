@@ -306,6 +306,16 @@ export class AgentStore {
     return (this.db(projectId).prepare(`SELECT * FROM plugin_agent_threads WHERE project_id = ? AND surface IN (${surfaces.map(() => "?").join(",")}) AND archived = 1 ORDER BY updated_at DESC`).all(projectId, ...surfaces) as ThreadRow[]).map(this.toThread);
   }
 
+  /** One page of the put-away conversations, newest first from `before` (the last row's time and id); never the whole archive. */
+  archivedThreadsPage(projectId: string, surface: ThreadSurface | ThreadSurface[], before: { at: number; id: string } | null, limit: number): ThreadSummary[] {
+    const surfaces = [surface].flat();
+    const marks = surfaces.map(() => "?").join(",");
+    const rows = before
+      ? (this.db(projectId).prepare(`SELECT * FROM plugin_agent_threads WHERE project_id = ? AND surface IN (${marks}) AND archived = 1 AND (updated_at < ? OR (updated_at = ? AND id < ?)) ORDER BY updated_at DESC, id DESC LIMIT ?`).all(projectId, ...surfaces, before.at, before.at, before.id, limit) as ThreadRow[])
+      : (this.db(projectId).prepare(`SELECT * FROM plugin_agent_threads WHERE project_id = ? AND surface IN (${marks}) AND archived = 1 ORDER BY updated_at DESC, id DESC LIMIT ?`).all(projectId, ...surfaces, limit) as ThreadRow[]);
+    return rows.map(this.toThread);
+  }
+
   setArchived(projectId: string, id: string, archived: boolean, opts: { restored?: boolean } = {}): void {
     this.db(projectId).prepare("UPDATE plugin_agent_threads SET archived = ?, restored = ?, updated_at = ? WHERE id = ?").run(archived ? 1 : 0, !archived && opts.restored ? 1 : 0, Date.now(), id);
   }

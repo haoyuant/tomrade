@@ -698,10 +698,13 @@ export class Sessions {
     const blocked = patch.blocked === undefined ? session.blocked : patch.blocked;
     const requestedState = blocked && patch.state !== "ended" ? "error" : patch.state;
     const state = session.state === "ended" && requestedState !== "ended" ? undefined : requestedState;
+    // Turning to the person with something to answer counts as asking once; the same ask repeated by another hook does not.
+    const asks = patch.state === "waiting" && !!patch.activity && !(session.state === "waiting" && session.activity === patch.activity);
     this.store.patchSession(projectId, sessionId, {
       lastEventAt: now,
       ...(patch.tool ? { lastToolAt: now } : {}),
       ...(state ? { state } : {}),
+      ...(asks ? { asked: session.asked + 1 } : {}),
       ...(patch.externalId ? { externalId: patch.externalId } : {}),
       ...(patch.herdrPane ? { herdrPane: patch.herdrPane } : {}),
       ...(patch.terminal ? { terminal: patch.terminal } : {}),

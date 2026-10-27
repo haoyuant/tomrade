@@ -1297,6 +1297,26 @@ function apply(ctx: Context, config: Config) {
     await show(projectId, sessionId);
     return true;
   });
+  // The look back's "go on in a terminal cell": a new terminal here, in the folder it ran in, its agent resuming the conversation.
+  ctx.on("codeLink/resume-session", async (projectId, sessionId) => {
+    const session = sessionOf(projectId, sessionId);
+    if (!session || isLive(session) || !resumeCommand(session.agent, session.externalId) || !(await showable())) return;
+    await show(projectId);
+    const win = open.get(projectId);
+    if (!win || win.closed) return;
+    await newTerminal(projectId, win, randomUUID(), session.cwd ?? session.worktree, sessionId);
+    return true;
+  });
+  // The look back's raw output: the recording of the session's pane, where this machine kept one.
+  ctx.on("codeLink/raw-output-there", (projectId, sessionId) => {
+    const bounds = replayBounds(projectId, sessionId);
+    return !!bounds && recorder.has(bounds.pane, bounds.from, bounds.to);
+  });
+  ctx.on("codeLink/raw-output", async (projectId, sessionId) => {
+    const bounds = replayBounds(projectId, sessionId);
+    if (!bounds || !recorder.has(bounds.pane, bounds.from, bounds.to)) return null;
+    return recorder.slice(bounds.pane, bounds.from, bounds.to);
+  });
   ctx.on("settings/changed", () => {
     // Turned off: what is being recorded stops here; a cap lowered takes effect on what is kept.
     if (!recorder.enabled()) for (const win of open.values()) for (const cell of [...win.recordings.keys()]) stopRecording(win, cell);

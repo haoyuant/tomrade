@@ -41,7 +41,8 @@ import { CODE_WORDS, type CodeWords } from "./words.js";
 import { Starter, type StartGate, type StartOptions, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type Readiness, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
 import { readSnapshot, saveSnapshot, snapshotFile } from "./snapshots.js";
-import { recordOf } from "./titles.js";
+import { Review, type ReviewCursor, type ReviewPage, type ReviewSaid, type ReviewView } from "./review.js";
+import { recordOf, resumeCommand } from "./titles.js";
 import { AUTO_TERMINAL, TerminalSettings, commandOk, exec, locatedCommand, terminalApps, terminalPath } from "./terminal.js";
 import { registerTools } from "./tools.js";
 import { type CodeLinkReader, contract, errorMessage } from "@tomradex/contracts";
@@ -66,7 +67,24 @@ declare module "cordis" {
     "codeLink/terminal-window"(projectId: string): Promise<boolean | void> | boolean | void;
     /** Asked: show this session's herdr terminal inside Tomrade. True once a window has. */
     "codeLink/show-session"(projectId: string, sessionId: string): Promise<boolean | void> | boolean | void;
+    /** Asked: open a new terminal inside Tomrade that takes this ended session's conversation up again. True once a window has. */
+    "codeLink/resume-session"(projectId: string, sessionId: string): Promise<boolean | void> | boolean | void;
+    /** Asked: whether what this session's pane showed was recorded here. */
+    "codeLink/raw-output-there"(projectId: string, sessionId: string): Promise<boolean | void> | boolean | void;
+    /** Asked: the recording of what this session's pane showed, to play back; the Terminal window's plugin answers. */
+    "codeLink/raw-output"(projectId: string, sessionId: string): Promise<RawOutput | null | void> | RawOutput | null | void;
   }
+}
+
+/** A recording of a pane's output, as the Terminal window's plugin hands it over to play back elsewhere. */
+export interface RawOutput {
+  /** In order; those before `at` bring the screen to the stretch's start and are not shown. */
+  records: { t: number; w: number; h: number; full: boolean; key: boolean; bytes: Uint8Array }[];
+  at: number;
+  /** The stretch's own start did not fit: it begins later than the session did. */
+  cut: boolean;
+  /** The first record paints the whole screen; otherwise the picture fills in as it plays. */
+  clean: boolean;
 }
 
 /** A ticket's current delivery: its code, primary link first, the session working on it, and what git proposes. */
@@ -223,6 +241,16 @@ declare module "@tomradex/ipc" {
     "codeLink.herdrInstall": () => HerdrInstall;
     /** Install herdr in a terminal with that command; the page never names it. */
     "codeLink.installHerdr": () => { launched: boolean; command: string };
+    /** One page of ended conversations to look back on, newest first; with `query`, the newest that match it. */
+    "codeLink.reviewList": (projectId: string, opts?: { before?: ReviewCursor | null; limit?: number; query?: string }) => ReviewPage;
+    /** The ended conversations that said `query`, among the newest few: read one at a time, never all at once. */
+    "codeLink.reviewSaid": (projectId: string, query: string) => ReviewSaid;
+    /** One ended conversation opened whole, cut by the tickets it worked; null when it is not there. */
+    "codeLink.reviewOpen": (projectId: string, ref: { sessionId?: string; threadId?: string }) => ReviewView | null;
+    /** What the session's pane showed while it ran, as the Terminal window recorded it; null without a recording. */
+    "codeLink.reviewRaw": (projectId: string, sessionId: string) => RawOutput | null;
+    /** Take an ended conversation up again in a new Terminal window cell, with its agent's own resume command; false when no window can. */
+    "codeLink.resumeInTerminal": (projectId: string, sessionId: string) => boolean;
   }
   interface Broadcasts {
     "codeLink.changed": (projectId: string) => void;
@@ -324,6 +352,8 @@ export class CodeLink extends Service implements CodeLinkReader {
 
   store!: CodeLinkStore;
   sessions!: Sessions;
+  /** The look back on ended conversations: a page at a time, one opened whole. */
+  review!: Review;
 
   private readonly home: Context;
   private readonly git: Git;
@@ -387,6 +417,7 @@ export class CodeLink extends Service implements CodeLinkReader {
     });
     this.herdr = new HerdrBridge({ ctx: this.ctx, store: this.store, sessions: this.sessions, words: () => this.words(), sessionDir: (id) => this.sessionDir(id) });
     this.panel = new SessionPanel(this.ctx, this.store);
+    this.review = new Review({ ctx: this.ctx, store: this.store, read: (projectId, sessionId, before) => this.conversation(projectId, sessionId, before), recorded: (projectId, sessionId) => this.herdr.rawOutputThere(projectId, sessionId) });
     this.starter = new Starter({
       ctx: this.ctx,
       store: this.store,
@@ -685,6 +716,11 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.sessionTail", (projectId, sessionId, lines) => ctx.codeLink.sessionTail(projectId, sessionId, lines));
       ctx.ipc.handle("codeLink.herdrInstall", () => ctx.codeLink.herdrInstall());
       ctx.ipc.handle("codeLink.installHerdr", () => ctx.codeLink.installHerdr());
+      ctx.ipc.handle("codeLink.reviewList", (projectId, opts) => ctx.codeLink.review.list(projectId, opts));
+      ctx.ipc.handle("codeLink.reviewSaid", (projectId, query) => ctx.codeLink.review.saidIn(projectId, query));
+      ctx.ipc.handle("codeLink.reviewOpen", (projectId, ref) => ctx.codeLink.review.open(projectId, ref));
+      ctx.ipc.handle("codeLink.reviewRaw", (projectId, sessionId) => ctx.codeLink.rawOutput(projectId, sessionId));
+      ctx.ipc.handle("codeLink.resumeInTerminal", (projectId, sessionId) => ctx.codeLink.resumeInTerminal(projectId, sessionId));
     });
     // Only on a general look: when an agent's turn failed, gh is never the cause.
     this.home.inject(["doctor"], (ctx) => {
@@ -1097,6 +1133,23 @@ export class CodeLink extends Service implements CodeLinkReader {
 
   herdrInstall(): Promise<HerdrInstall> {
     return this.herdr.herdrInstall();
+  }
+
+  /** An ended conversation taken up again in a new Terminal window cell, by its agent's resume command; false when no window can, or its agent cannot. */
+  resumeInTerminal(projectId: string, sessionId: string): Promise<boolean> {
+    const s = this.store.session(projectId, sessionId);
+    if (!s || !resumeCommand(s.agent, s.externalId)) return Promise.resolve(false);
+    return this.herdr.resumeSession(projectId, sessionId);
+  }
+
+  /** The recording of what a session's pane showed, from the Terminal window's plugin; null without one. */
+  async rawOutput(projectId: string, sessionId: string): Promise<RawOutput | null> {
+    try {
+      return (await this.ctx.serial("codeLink/raw-output", projectId, sessionId)) ?? null;
+    } catch (error) {
+      this.ctx.logger.warn(`codeLink/raw-output: ${errorMessage(error)}`);
+      return null;
+    }
   }
 
   async installHerdr(): Promise<{ launched: boolean; command: string }> {

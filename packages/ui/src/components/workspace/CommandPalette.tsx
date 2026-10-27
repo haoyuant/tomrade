@@ -105,6 +105,7 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
         if (r.startDialog && selectedId && requestStart(selectedId, r.startDialog)) return;
         if (r.toast) toast({ body: r.toast });
         if (r.showThread) dock?.showThread(r.showThread);
+        if (r.review) { dock?.setAiOpen(true); askPanel({ kind: "review", sessionId: r.review.sessionId, itemId: r.review.itemId ?? selectedId ?? undefined }); }
         if (r.settingsPane) openSettingsPane(r.settingsPane);
         if (r.opens) actions.openSurface(r.opens);
       }, onError: (e) => toast(errorSpec(e)) }
@@ -207,7 +208,7 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
                 )}
               </Command.Empty>
 
-              {dock && <PaletteSessions projectId={ws.project.id} items={ws.items} run={run} shift={shift} />}
+              {dock && <PaletteSessions projectId={ws.project.id} items={ws.items} search={search} run={run} shift={shift} />}
 
               <Command.Group heading={t("commandPalette.viewsGroup")} className="eyebrow palette-group">
                 {ws.views.map((view) => (

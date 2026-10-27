@@ -140,3 +140,9 @@ it("reads a long record a stretch at a time, back to its first line, each line o
   expect(claude.read(long, { before: 0 })).toEqual({ lines: [], cut: false, start: 0 });
   expect(claude.read(long, { before: text.length * 10 })?.lines.at(-1)?.text.startsWith("最后一句")).toBe(true);
 });
+
+it("stamps each line with when its entry was written, where the record says", () => {
+  const stamped = path.join(dir, "stamped.jsonl");
+  fs.writeFileSync(stamped, line({ type: "user", timestamp: "2026-10-27T01:02:03.000Z", message: { content: "你好" } }) + line({ type: "assistant", message: { content: [{ type: "text", text: "在。" }] } }));
+  expect(claude.read(stamped)?.lines).toEqual([{ who: "person", text: "你好", at: Date.parse("2026-10-27T01:02:03.000Z") }, { who: "agent", text: "在。" }]);
+});

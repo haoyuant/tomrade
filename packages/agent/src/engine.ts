@@ -345,6 +345,8 @@ export interface RecordLine {
   text: string;
   /** A tool call's whole input, and its output once the record holds it. */
   detail?: { input: string; output?: string };
+  /** When the record wrote it, where the record says. */
+  at?: number;
 }
 
 /**

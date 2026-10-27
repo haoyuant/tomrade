@@ -90,8 +90,11 @@ export class Connections {
     const fresh = opts.replace || (session.itemIds.includes(itemId) && session.delivery !== delivery);
     // The tickets it leaves keep it as history: their pages still reach the conversation that worked them.
     const left = opts.replace ? session.itemIds.filter((id) => id !== itemId).map((id) => ({ itemId: id, delivery: session.delivery })) : [];
+    // Taking a ticket on (or back) marks the conversation: what follows is that ticket's, until the next mark.
+    const marked = session.marks.at(-1)?.itemId === itemId && !opts.replace && session.itemIds.includes(itemId);
     this.store.patchSession(projectId, sessionId, {
       ...(left.length ? { worked: [...session.worked.filter((w) => !left.some((l) => l.itemId === w.itemId && l.delivery === w.delivery)), ...left] } : {}),
+      ...(marked ? {} : { marks: [...session.marks, { itemId, at: Date.now() }] }),
       delivery,
       itemIds: opts.replace ? [itemId] : session.itemIds.includes(itemId) ? session.itemIds : [...session.itemIds, itemId],
       // On a ticket now: the person's word to go without one is spent.

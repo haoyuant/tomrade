@@ -22,7 +22,7 @@ export function StatusMark({ status, size = 10 }: { status: BarStatus; size?: nu
  * The session bar on the panel's right edge: a column of dots to switch by, or cards that say what each is doing.
  * Memoized: the panel renders every frame a reply streams, and the bar has nothing new to show then.
  */
-export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engines, onMode, onPick, onNew }: {
+export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engines, onMode, onPick, onNew, onHistory }: {
   rows: BarRow[];
   openKey: string | null;
   mode: BarMode;
@@ -30,6 +30,8 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engine
   onMode: (mode: BarMode) => void;
   onPick: (row: BarRow) => void;
   onNew: () => void;
+  /** The look back on everything that ended, beyond the few the bar keeps. */
+  onHistory: () => void;
 }) {
   const { t } = useI18n();
   const [peek, setPeek] = useState<{ key: string; top: number } | null>(null);
@@ -96,6 +98,10 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engine
           <button type="button" className="sbar-dot sbar-new" title={t("agentPanel.newThread")} aria-label={t("agentPanel.newThread")} onClick={onNew}>
             <span className="sbar-dot-face"><Icon name="i-plus" size={13} /></span>
           </button>
+          <button type="button" className="sbar-dot sbar-history" data-testid="sbar-history" title={t("review.historyNote")} aria-label={t("review.history")} onClick={onHistory}>
+            <span className="sbar-dot-face"><Icon name="i-history" size={13} /></span>
+            <span className="sbar-dot-where">{t("review.history")}</span>
+          </button>
         </div>
         {shown && (
           <div id={peekId} role="tooltip" className="sbar-peek" data-status={shown.status} style={{ top: peek!.top }}>
@@ -141,6 +147,12 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engine
           </button>
         ))}
         {!shown.length && <p className="meta-txt dense sbar-empty">{t("sessionBar.empty")}</p>}
+      </div>
+      <div className="sbar-foot">
+        <span>{t("review.historyNote")}</span>
+        <button type="button" className="btn btn-secondary btn-xs" data-testid="sbar-history" onClick={onHistory}>
+          <Icon name="i-history" size={11} /> {t("review.history")}
+        </button>
       </div>
     </nav>
   );

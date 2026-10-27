@@ -906,6 +906,81 @@ const run = async () => {
   check("↵ then starts one, sent those words", started && firstSaid === "zqx draft the release notes", { started, firstSaid });
   ctx.agent.store.threads = threadsOf;
   ctx.codeLink.recentSessions = recentOf;
+
+  // ── the look back: ended sessions by day with what came of each first; one opened read-only, cut by ticket ──
+  // A session that did one ticket, then claimed and fixed another on the way: its record, as Claude Code writes one, stamped.
+  const reviewTicket = ctx.items.create({ projectId: alpha.id, boardId, title: "Save a record snapshot", by: "human" });
+  const alsoTicket = ctx.items.create({ projectId: alpha.id, boardId, title: "Leftover MCP entry", by: "human" });
+  const reviewed = ctx.codeLink.store.createSession(alpha.id, { repoId: "check", branch: "al-review/snapshot", itemIds: [reviewTicket.id], mode: "terminal", agent: "claude-code", threadId: null, device: "check" });
+  const reviewBase = reviewed.startedAt;
+  const stamp = (ms) => new Date(reviewBase + ms).toISOString();
+  const reviewRecord = path.join(work, "cc-review-1.jsonl");
+  fs.writeFileSync(reviewRecord, [
+    { type: "user", timestamp: stamp(0), message: { content: "start on the snapshot" } },
+    { type: "assistant", timestamp: stamp(1000), message: { content: [{ type: "text", text: "Reading the ticket first." }, { type: "tool_use", id: "r1", name: "Write", input: { file_path: "packages/code-link/src/snapshots.ts", content: "x" } }] } },
+    { type: "user", timestamp: stamp(1500), message: { content: [{ type: "tool_result", tool_use_id: "r1", content: "ok" }] } },
+    { type: "assistant", timestamp: stamp(3000), message: { content: [{ type: "text", text: `Found a leftover MCP entry, that is ${alsoTicket.key}. Claiming it.` }, { type: "tool_use", id: "r2", name: "mcp__tomrade__claim_ticket", input: { key: alsoTicket.key } }] } },
+    { type: "assistant", timestamp: stamp(4000), message: { content: [{ type: "tool_use", id: "r3", name: "Edit", input: { file_path: "apps/desktop/scripts/check-env.mjs", old_string: "a", new_string: "b" } }] } },
+    { type: "assistant", timestamp: stamp(5000), message: { content: [{ type: "text", text: "Fixed and merged." }] } }
+  ].map((entry) => JSON.stringify(entry)).join("\n") + "\n");
+  ctx.codeLink.store.patchSession(alpha.id, reviewed.id, { externalId: "cc-review-1", transcript: reviewRecord, terminal: "iTerm.app", asked: 2, marks: [{ itemId: reviewTicket.id, at: reviewBase }, { itemId: alsoTicket.id, at: reviewBase + 3500 }], worked: [{ itemId: alsoTicket.id, delivery: 1 }], state: "ended", endedAt: reviewBase + 6000, summary: "PR #407 merged" });
+  ctx.codeLink.store.upsertLink(alpha.id, { itemId: reviewTicket.id, repoId: "check", branch: "al-review/snapshot" }, { ahead: 4, prNumber: 407, prState: "merged", prUrl: "https://example.test/pr/407" });
+  // a claim opens the ticket's delivery: what its page reads the session that moved on from it by
+  ctx.codeLink.store.ensureActiveDelivery(alpha.id, alsoTicket.id);
+  ctx.emit("codeLink/changed", alpha.id);
+  ctx.ipc.send("codeLink.changed", alpha.id);
+  await sleep(600);
+  // the session bar's History opens the list
+  await press(`document.querySelector('[data-testid="sbar-history"]')`);
+  check("the session bar's History opens the look back in the panel", await until(() => present('[data-testid="ai-review-list"]'), 30));
+  const reviewRows = () => $(`[...document.querySelectorAll('[data-testid="ai-review-row"]')].map((r) => r.textContent)`);
+  await until(async () => (await reviewRows()).some((text) => /Save a record snapshot/.test(text)), 30);
+  const reviewRow = (await reviewRows()).find((text) => /Save a record snapshot/.test(text)) ?? null;
+  check("a row says the outcome first — the pull request, the commits, how often it asked — then the agent and the other ticket it did", /PR #407 merged · 4 commits · asked you 2 times/.test(reviewRow ?? "") && /Claude Code|claude-code/.test(reviewRow ?? "") && new RegExp(`also did ${alsoTicket.key}`).test(reviewRow ?? ""), reviewRow);
+  check("rows sit under the day they ended", (await $(`document.querySelector('.ai-review-day')?.textContent ?? null`)) === "Today");
+  await shot("review-list.png");
+  // searched by a word said in the conversation, in no title
+  const typeReview = (text) => $(`(() => { const i = document.querySelector('[data-testid="ai-review-search"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, ${JSON.stringify(text)}); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  await typeReview("leftover");
+  check("searching a word said in a conversation finds it and quotes the line", await until(async () => /leftover/.test(await $(`[...document.querySelectorAll('[data-testid="ai-review-said"]')].map((s) => s.textContent).join('|')`)), 60));
+  await typeReview("zqx nothing");
+  check("nothing found says so, and that raw output is not searched", await until(async () => /Raw output is not searched/.test(await $(`document.querySelector('.ai-review-list')?.textContent ?? ''`)), 60));
+  await typeReview("");
+  await until(async () => (await reviewRows()).some((text) => /Save a record snapshot/.test(text)), 30);
+  // opened from the list: everything on top, every stretch open
+  await press(`[...document.querySelectorAll('[data-testid="ai-review-row"]')].find((r) => /Save a record snapshot/.test(r.textContent))`);
+  await until(() => present('[data-testid="ai-review-seg"]'), 50);
+  const reviewOpen = await $(`({ title: document.querySelector('[data-testid="ai-review-title"]')?.textContent ?? null, outcome: document.querySelector('[data-testid="ai-review-outcome"]')?.textContent ?? null, tickets: document.querySelector('[data-testid="ai-review-tickets"]')?.textContent ?? null,
+    lenses: !!document.querySelector('[data-testid="ai-review-lenses"]'), resume: !!document.querySelector('[data-testid="ai-review-resume"]'), terminal: !!document.querySelector('[data-testid="ai-review-resume-terminal"]'), input: !!document.querySelector('.ai .ai-input') })`);
+  check("opening one shows its outcome and the tickets it did on top, read-only, with the ways to go on", /PR #407 merged/.test(reviewOpen.outcome ?? "") && reviewOpen.tickets?.includes(reviewTicket.key) && reviewOpen.tickets?.includes(alsoTicket.key) && reviewOpen.resume && reviewOpen.terminal && !reviewOpen.input, reviewOpen);
+  check("without a recording of its pane there is no raw-output tab", !reviewOpen.lenses, reviewOpen);
+  const segs = () => $(`[...document.querySelectorAll('[data-testid="ai-review-seg"]')].map((s) => [s.dataset.ticket, s.dataset.kind, !!s.dataset.open])`);
+  check("the conversation is cut where the second ticket was claimed, each stretch marked writing code, all open from the list", JSON.stringify(await segs()) === JSON.stringify([[reviewTicket.key, "code", true], [alsoTicket.key, "code", true]]), await segs());
+  const segLines = await $(`[...document.querySelectorAll('[data-testid="ai-review-seg"]')].map((s) => [...s.querySelectorAll('.cs-convo-line')].map((l) => l.textContent))`);
+  check("each stretch holds its own lines, the claim opening the second", segLines[0]?.[0] === "start on the snapshot" && /claim_ticket/.test(segLines[1]?.[0] ?? ""), segLines);
+  await shot("review-open.png");
+  // going on in a terminal cell asks the Terminal window for a new cell with the agent's resume command
+  const resumedIn = [];
+  const resumeInTerminal = ctx.codeLink.resumeInTerminal.bind(ctx.codeLink);
+  ctx.codeLink.resumeInTerminal = async (_projectId, sessionId) => (resumedIn.push(sessionId), true);
+  await press(`document.querySelector('[data-testid="ai-review-resume-terminal"]')`);
+  check("“go on in a terminal cell” asks for a new cell on this session", await until(() => Promise.resolve(resumedIn[0] === reviewed.id), 30) && (await until(async () => /resuming the conversation/.test(await $(`document.body.innerText`)), 30)), resumedIn);
+  ctx.codeLink.resumeInTerminal = resumeInTerminal;
+  // from the other ticket's page: only its stretches open
+  await $(`[...document.querySelectorAll('.card')].find((n) => n.textContent.includes('Leftover MCP entry'))?.click(); true`);
+  const reviewRowSel = `[...document.querySelectorAll('.detail .sect-row')].find((r) => /Look back/.test(r.querySelector('dt')?.textContent ?? ''))?.querySelector('button')`;
+  check("the ticket's Code section offers to look back on the session that worked it", await until(() => $(`!!${reviewRowSel}`), 50));
+  await press(reviewRowSel);
+  check("opened from the ticket's page, only that ticket's stretches are open", await until(async () => JSON.stringify(await segs()) === JSON.stringify([[reviewTicket.key, "code", false], [alsoTicket.key, "code", true]]), 50), await segs());
+  // ⌘K's History reaches it too, and opens the look back on it
+  await press(`document.querySelector('[data-testid="ai-review-back"]')`);
+  await openPalette();
+  await typePalette("record snapshot");
+  const historyRow = `[...document.querySelectorAll('[data-testid="palette-history"] [cmdk-item]')].find((n) => /Save a record snapshot/.test(n.textContent))`;
+  check("⌘K's History lists the ended session with its outcome", await until(() => $(`!!${historyRow} && /PR #407 merged/.test(${historyRow}.textContent)`), 30));
+  await $(`${historyRow}?.dispatchEvent(new PointerEvent('pointermove', { bubbles: true }));true`);
+  await enterPalette();
+  check("picking it in ⌘K opens the look back on it", await until(async () => (await $(`document.querySelector('[data-testid="ai-review-open"]')?.dataset.review ?? null`)) === reviewed.id, 30));
   check("harness reached the end", true);
 };
 
