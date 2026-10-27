@@ -54,6 +54,7 @@ import { toast } from "./toast";
 import { shortcuts } from "./shortcuts";
 import { sessionBar } from "./sessionBar";
 import { review } from "./review";
+import { handoff } from "./handoff";
 import { waitQueue } from "./waitQueue";
 import { tabs } from "./tabs";
 import { viewSettingsDialog } from "./viewSettingsDialog";
@@ -105,6 +106,7 @@ export const en = {
   shortcuts: shortcuts.en,
   sessionBar: sessionBar.en,
   review: review.en,
+  handoff: handoff.en,
   waitQueue: waitQueue.en,
   tabs: tabs.en,
   codeSessions: codeSessions.en,
@@ -185,6 +187,7 @@ export const zh: typeof en = {
   shortcuts: shortcuts.zh,
   sessionBar: sessionBar.zh,
   review: review.zh,
+  handoff: handoff.zh,
   waitQueue: waitQueue.zh,
   tabs: tabs.zh,
   codeSessions: codeSessions.zh,

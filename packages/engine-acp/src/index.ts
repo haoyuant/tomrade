@@ -20,7 +20,7 @@ export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAg
   Object.assign(catalog, kept.read(agent.id));
   const remember = () => kept.write(agent.id, catalog);
   const auth = agent.acpAuth ? new AcpSignIn(ctx, agent) : null;
-  const turn = pooledEngine(ctx, { create: (input) => new AcpRuntime(ctx, agent, catalog, input, remember, auth ? () => auth.signedOut() : undefined) });
+  const pooled = pooledEngine(ctx, { create: (input) => new AcpRuntime(ctx, agent, catalog, input, remember, auth ? () => auth.signedOut() : undefined) });
   const probe = agent.probe;
   const check = localAvailability(ctx, {
     engineId: agent.id,
@@ -106,7 +106,7 @@ export function createAcpEngine<O extends AcpOptions>(ctx: Context, agent: AcpAg
         facts: () => ({ models: catalog.models.slice(0, 40).map((m) => m.value).join(",") || "unknown", ...agent.diagnostics?.facts?.(catalog) })
       }
     },
-    turn
+    ...pooled
   };
 }
 

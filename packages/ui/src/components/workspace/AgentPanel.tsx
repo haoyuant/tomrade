@@ -4,7 +4,7 @@ import { Icon } from "~/components/icons";
 import { PetStage } from "./PetStage";
 import { SetupCard } from "./SetupCard";
 import { AgentAttachment, readAttachment } from "./AgentAttachment";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "~/lib/api";
 import { Kbd, Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
@@ -28,10 +28,11 @@ import { STORE } from "./agent-panel/store";
 import { ThreadList, useThreadListState } from "./agent-panel/ThreadList";
 import { Review, type ReviewFocus } from "./agent-panel/Review";
 import { SessionBar, type BarMode } from "./agent-panel/SessionBar";
+import { HandoffLine } from "./agent-panel/HandoffLine";
 import { TerminalSession } from "./agent-panel/TerminalSession";
 import { sessionBarRows, type BarRow, type BarStatus } from "~/lib/sessionBar";
 import { onPanelRequest, setPanelSession, type PanelRequest } from "~/lib/panelRequests";
-import { useRecentSessions } from "~/lib/codeLink";
+import { useHandoff, useRecentSessions } from "~/lib/codeLink";
 import type { SessionView } from "@tomradex/code-link";
 import { hits, keyLabel } from "~/lib/keybindings";
 import { BackgroundOffer, Transcript } from "./agent-panel/Transcript";
@@ -215,7 +216,10 @@ export function AgentPanel({
   const doneTicket = threadItem?.status === "done" ? threadItem : null;
   const [askReopen, setAskReopen] = useState(false);
   const [reopening, setReopening] = useState(false);
-  const blocked = !!workdirProblem || archivedNow;
+  // The conversation's agent is in a terminal cell: nothing starts here until it is brought back.
+  const handoff = useHandoff(projectId, threadId);
+  const elsewhere = handoff.data?.where === "terminal" ? handoff.data.terminal : null;
+  const blocked = !!workdirProblem || archivedNow || !!elsewhere;
   const pending = detail.data?.pending ?? null;
   // Stable between renders, so a streamed reply re-renders its own line and not every row above it.
   const runs = useMemo(() => new Map((detail.data?.runs ?? []).map((r) => [r.id, r])), [detail.data?.runs]);
@@ -454,6 +458,42 @@ export function AgentPanel({
     } catch (error) { reportError(error); }
     finally { setMovingOut(false); }
   };
+  // To a terminal cell and back: one process on the conversation's session at a time, so the panel waits for each.
+  const qc = useQueryClient();
+  const [handingOff, setHandingOff] = useState(false);
+  const afterHandoff = (id: string) => {
+    void qc.invalidateQueries({ queryKey: keys.codeLink.handoff(projectId, id) });
+    void qc.invalidateQueries({ queryKey: keys.agent.thread(projectId, id) });
+    void threads.refetch();
+    void recentSessions.refetch();
+  };
+  const toTerminal = async () => {
+    if (!threadId || handingOff) return;
+    setHandingOff(true);
+    try {
+      const result = await invoke("codeLink.toTerminal", projectId, threadId);
+      if (!result.ok) { toast({ body: result.message }); return; }
+      afterHandoff(threadId);
+      toast({ body: `${t("handoff.moved", { pane: result.pane ? t("handoff.movedPane", { pane: result.pane }) : "" })}${result.launched ? "" : ` ${t("handoff.notOpened")}`}` });
+      setOpenSession(result.sessionId);
+    } catch (error) { reportError(error); }
+    finally { setHandingOff(false); }
+  };
+  const backToPanel = async (id: string) => {
+    if (handingOff) return;
+    setHandingOff(true);
+    try {
+      const result = await invoke("codeLink.backToPanel", projectId, id);
+      if (!result.ok) { toast({ body: result.message }); return; }
+      afterHandoff(id);
+      toast({ body: t("handoff.returned") });
+      pickThread(id);
+    } catch (error) { reportError(error); }
+    finally { setHandingOff(false); }
+  };
+  // The session shown in place of a thread may be a conversation's own, gone to a terminal: once its CLI exited, it comes back from here too.
+  const shownSessionThread = shownSession?.threadId ?? null;
+  const sessionHandoff = useHandoff(projectId, shownSessionThread);
   const setupInTerminal = useSetupInTerminal();
   // Only with the troubleshooter plugin on; it opens its own thread about the failure.
   const canTroubleshoot = !!engines.data?.some((e) => e.id === "doctor") && !doctorThread;
@@ -691,6 +731,8 @@ export function AgentPanel({
           status={sessionRow?.status ?? (shownSession.state === "ended" || shownSession.state === "lost" ? "done" : shownSession.state === "running" ? "run" : "idle")}
           engines={engines.data}
           onShowInTerminal={shownSession.herdrPane || shownSession.state === "ended" || shownSession.state === "lost" ? () => showInTerminal(shownSession.id, shownSession.terminal) : undefined}
+          onBack={shownSessionThread && sessionHandoff.data?.where === "terminal" && !handingOff ? () => void backToPanel(shownSessionThread) : undefined}
+          backBlocked={sessionHandoff.data?.terminal?.live ? t("handoff.backBlocked", { agent: findEngine(engines.data, shownSession.agent)?.title ?? shownSession.agent }) : undefined}
           onClose={() => setOpenSession(null)}
           onAnswered={() => waitQueue.current.answered(`session:${shownSession.id}`)}
         />
@@ -804,11 +846,11 @@ export function AgentPanel({
         <Composer
           composer={composer}
           draft={draft}
-          placeholder={archivedNow ? t("agentPanel.archivedPlaceholder") : doneTicket ? t("agentPanel.reopenPlaceholder", { key: doneTicket.key }) : pending ? t("agentPanel.answerPlaceholder") : runningRun ? t(engine?.steers ? "agentPanel.queueOrSteerPlaceholder" : "agentPanel.queuePlaceholder") : doctorThread ? t("doctor.placeholder") : t("agentPanel.messagePlaceholder")}
+          placeholder={archivedNow ? t("agentPanel.archivedPlaceholder") : elsewhere ? t("handoff.composerElsewhere") : doneTicket ? t("agentPanel.reopenPlaceholder", { key: doneTicket.key }) : pending ? t("agentPanel.answerPlaceholder") : runningRun ? t(engine?.steers ? "agentPanel.queueOrSteerPlaceholder" : "agentPanel.queuePlaceholder") : doctorThread ? t("doctor.placeholder") : t("agentPanel.messagePlaceholder")}
           archived={archivedNow}
           busy={busy}
           canSend={!(busy || blocked || (!draft.trim() && !attachments.length))}
-          problem={workdirProblem}
+          problem={workdirProblem ?? (elsewhere ? t("handoff.composerElsewhere") : null)}
           acceptedMedia={acceptedMedia}
           onChange={(e) => { history.stopBrowsing(); slash.setClosed(false); slash.setAt(0); setDraft(e.target.value); }}
           onAttach={addAttachments}
@@ -860,6 +902,17 @@ export function AgentPanel({
               {t("agentPanel.restoreThread")}
             </button>
           </p>
+        )}
+        {threadId && handoff.data && !doctorThread && (
+          <HandoffLine
+            view={handoff.data}
+            agent={elsewhere ? (findEngine(engines.data, elsewhere.agent)?.title ?? elsewhere.agent) : (engine?.title ?? currentEngineId)}
+            running={!!runningRun}
+            busy={handingOff || send.isPending || uploading}
+            onToTerminal={() => void toTerminal()}
+            onShow={() => { if (elsewhere) setOpenSession(elsewhere.sessionId); }}
+            onBack={() => void backToPanel(threadId)}
+          />
         )}
         {threadBoardId && (
           <p className={workdirProblem ? "ai-workdir is-problem meta-txt dense" : "ai-workdir meta-txt dense num"} style={{ margin: "6px 0 0", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>

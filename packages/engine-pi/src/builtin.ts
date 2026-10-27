@@ -147,7 +147,7 @@ export function createBuiltinPiEngine(ctx: Context, config: BuiltinPiConfig): En
       if (!probe.ok) return { ok: false, need: "repair", reason: words()("doesNotStart", { detail: probe.detail }) };
       return { ok: true };
     },
-    turn: pooledEngine(ctx, {
+    ...pooledEngine(ctx, {
       create: (input) => new PiRuntime(ctx, input, start),
       // A new key or model for the profile is a new process.
       fingerprint: (input) => createHash("sha256").update(JSON.stringify(profileOf(input.options) ?? null)).digest("hex")

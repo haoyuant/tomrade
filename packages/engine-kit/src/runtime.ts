@@ -70,9 +70,17 @@ export function runtimeFingerprint(input: TurnInput, io: TurnIO, url: string | n
   })).digest("hex");
 }
 
+/**
+ * The folder a thread's agent runs in when the thread has no worktree: stable for the logical thread, including a
+ * cold resume after idle eviction. A CLI resuming the thread's session from a terminal starts in the same folder,
+ * since Claude Code keeps its sessions by folder.
+ */
+export function agentWorkspace(projectId: string, threadId: string): string {
+  return path.join(os.tmpdir(), "tomrade-agent-workspaces", createHash("sha256").update(`${projectId}:${threadId}`).digest("hex"));
+}
+
 export function runtimeDirectory(input: TurnInput): { token: string; cwd: string; dispose(): void } {
-  // Stable for the logical thread, including cold resume after idle eviction.
-  const dir = path.join(os.tmpdir(), "tomrade-agent-workspaces", createHash("sha256").update(`${input.projectId}:${input.threadId}`).digest("hex"));
+  const dir = agentWorkspace(input.projectId, input.threadId);
   if (!input.cwd) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   return { token: randomUUID(), cwd: input.cwd ?? dir, dispose() {} };
 }

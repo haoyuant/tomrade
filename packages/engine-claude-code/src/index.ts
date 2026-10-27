@@ -27,7 +27,7 @@ export function createClaudeCodeEngine(ctx: Context): Engine {
       { value: "acceptEdits", label: "Accept edits" }, { value: "default", label: "Ask permissions" },
       { value: "plan", label: "Plan" }, { value: "local", label: "Local rules" }
     ] },
-    turn: pooledEngine(ctx, { create: (input) => new ClaudeRuntime(ctx, input) })
+    ...pooledEngine(ctx, { create: (input) => new ClaudeRuntime(ctx, input) })
   };
 }
 

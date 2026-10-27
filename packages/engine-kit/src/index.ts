@@ -9,7 +9,7 @@ export {
 export { MODE_ALLOWS, OpenAsks } from "./asks.js";
 export { binKind, managedLaunch, type BinKind, type ManagedCli } from "./managed.js";
 export { MCP_NAME, userMcpLink, type UserMcpConfig } from "./mcp-link.js";
-export { RuntimePool, runtimeFingerprint, runtimeDirectory, bindTurn, MessageQueue, type Runtime } from "./runtime.js";
+export { RuntimePool, agentWorkspace, runtimeFingerprint, runtimeDirectory, bindTurn, MessageQueue, type Runtime } from "./runtime.js";
 export { promptOf, sessionSystem, staticSystem, turnPrompt } from "./system.js";
 export { JsonLinePeer, jsonRpc, RpcError, STDERR_CAP, type PeerOptions, type RpcDialect, type RpcMessage } from "./rpc.js";
 export { pooledEngine, runTurn, type TurnFrame, type TurnSpec } from "./turn.js";

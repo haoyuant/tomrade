@@ -11,6 +11,8 @@ declare module "cordis" {
     "agent/prepare-turn"(input: TurnInput): Promise<void> | void;
     /** The brief a CLI agent starts a delivery from, before it is handed over. A plugin may add context an in-app turn would get from `agent/prepare-turn`. */
     "agent/prepare-brief"(brief: { projectId: string; itemId: string; filesIndex?: string }): Promise<void> | void;
+    /** A message is about to start a run on the thread. The first listener to answer with a reason refuses it; the reason reaches the person. */
+    "agent/before-send"(thread: ThreadSummary): string | void;
     /** A run began driving a thread. */
     "agent/run-started"(run: RunView, thread: ThreadSummary): void;
     /** A run settled, however it stopped; `run.stop` says how. */

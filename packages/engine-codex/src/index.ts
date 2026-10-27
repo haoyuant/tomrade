@@ -39,7 +39,7 @@ export function createCodexEngine(ctx: Context): Engine {
       // its approval is a pick that opens on "Yes, proceed" (Enter takes it); Esc leaves it as "No, and tell Codex what to do differently"
       approval: { allow: ["enter"], deny: ["esc"] }
     },
-    turn: pooledEngine(ctx, { create: (input) => new CodexRuntime(ctx, input) })
+    ...pooledEngine(ctx, { create: (input) => new CodexRuntime(ctx, input) })
   };
 }
 
