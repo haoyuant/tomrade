@@ -73,6 +73,8 @@ export interface ReviewRow {
   parentId?: string | null;
   /** Its agent can take the conversation up again by its id, in a new terminal. */
   resumable: boolean;
+  /** Ended on no ticket, with its agent's session id and the folder it ran in: it can go on in the background, as itself. */
+  continuable?: boolean;
   startedAt: number;
   endedAt: number;
 }
@@ -352,6 +354,7 @@ export class Review {
         where: s.herdrPane ? "pane" : s.mode === "headless" ? "panel" : "outside",
         threadId: s.threadId,
         resumable: !!resumeCommand(s.agent, s.externalId),
+        continuable: !tickets.length && !!s.externalId && !!s.cwd && (s.state === "ended" || s.state === "lost"),
         startedAt: s.startedAt,
         endedAt: s.endedAt ?? s.lastEventAt ?? s.startedAt
       };

@@ -194,7 +194,7 @@ function Opened({ projectId, focus, agentName, span, where, say, onOpenThread }:
           )}
         </div>
         <div className="ai-review-actions">
-          {(ticket || row.kind !== "session" || row.resumable) && (
+          {(ticket || row.kind !== "session" || row.continuable) && (
             <button type="button" className="btn btn-primary btn-xs" data-testid="ai-review-resume" title={t(row.kind === "idle" ? "review.openThreadHint" : row.kind === "thread" ? "review.resumeThreadHint" : ticket ? "review.resumeHint" : "review.resumeSessionHint")} disabled={busy} onClick={goOn}>
               {t(row.kind === "idle" ? "review.openThread" : row.kind === "thread" ? "review.resumeThread" : "review.resume")}
             </button>
