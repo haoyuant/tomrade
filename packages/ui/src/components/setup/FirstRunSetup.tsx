@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
+import { GlobalHotkeyField } from "~/components/dialogs/settings/GlobalHotkeyField";
 import { Icon } from "~/components/icons";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import { invoke, logQuietly } from "~/lib/api";
@@ -172,18 +173,26 @@ function WorkStyle() {
     setPicked(style);
     // Only this field differs between two quick saves, so the later one stands either way.
     save.mutate({ ...settings.data!, sessions: { ...(settings.data!.sessions as object | undefined), openAtStart: style === "cli" ? "terminal" : "main" } });
+    // Several CLIs at once: the Terminal window right away, and a key to bring it up from any app.
+    if (style === "cli") void invoke("contributions.run", "code-sessions.open", {}).catch(logQuietly("the Terminal window"));
   };
   return (
     <div className="stack-2" data-testid="setup-work-style">
       <p className="meta-txt">{t("setup.workStyleTitle")}</p>
       <div className="quick-providers" role="radiogroup" aria-label={t("setup.workStyleTitle")}>
-        {(["panel", "cli"] as const).map((style) => (
+        {(["cli", "panel"] as const).map((style) => (
           <button key={style} type="button" role="radio" aria-checked={style === current} className={style === current ? "chip-opt sel" : "chip-opt"} data-style={style} onClick={() => pick(style)}>
             {t(style === "cli" ? "setup.workStyleCli" : "setup.workStylePanel")}
           </button>
         ))}
       </div>
       <p className="meta-txt dense">{t(current === "cli" ? "setup.workStyleCliNote" : "setup.workStylePanelNote")}</p>
+      {picked === "cli" && (
+        <div className="stack-2" data-testid="setup-hotkey">
+          <p className="meta-txt">{t("setup.workStyleHotkey")}</p>
+          <GlobalHotkeyField />
+        </div>
+      )}
     </div>
   );
 }

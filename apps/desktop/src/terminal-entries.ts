@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, type JumpListCategory, type JumpListItem } from "electron";
+import { app, BrowserWindow, globalShortcut, screen, type JumpListCategory, type JumpListItem, type Rectangle } from "electron";
 import type { Context } from "cordis";
 import type {} from "@tomradex/code-link";
 import type {} from "@tomradex/contributions";
@@ -138,10 +138,58 @@ declare module "@tomradex/ipc" {
   }
 }
 
+/** How long macOS takes over an animated move: putting Tomrade away waits for the slide. */
+const SLIDE_MS = 250;
+
+const isTerminalWindow = (win: BrowserWindow | null | undefined): win is BrowserWindow => !!win && !win.isDestroyed() && win.webContents.getURL().includes("code-sessions");
+
 /**
- * The key the person gave the whole computer (Settings › Keyboard shortcuts, "From any app"; none by default):
- * pressed anywhere it brings the Terminal window up, pressed in it it puts Tomrade away. Registered only while
- * one is set, and released when it changes and when Tomrade quits.
+ * macOS: the Terminal window as a hotkey window. It drops from the top of the screen the pointer is on, onto the
+ * desktop in front rather than switching to its own, and slides back up when the key is pressed in it; its own place
+ * and desktop come back once it is away.
+ */
+export class HotkeyWindow {
+  private places = new Map<BrowserWindow, Rectangle>();
+
+  /** Before it shows: above the top of the screen under the pointer, on every desktop. Where it will drop to. */
+  ready(win: BrowserWindow): Rectangle {
+    if (!this.places.has(win)) this.places.set(win, win.getBounds());
+    const own = this.places.get(win)!;
+    const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+    const width = Math.min(own.width, area.width);
+    const height = Math.min(own.height, area.height);
+    const to = { x: Math.round(area.x + (area.width - width) / 2), y: area.y, width, height };
+    win.setVisibleOnAllWorkspaces(true);
+    win.setBounds({ ...to, y: to.y - height }, false);
+    return to;
+  }
+
+  drop(win: BrowserWindow, to: Rectangle): void {
+    if (!win.isDestroyed()) win.setBounds(to, true);
+  }
+
+  async pullUp(win: BrowserWindow): Promise<void> {
+    const at = win.getBounds();
+    if (!this.places.has(win)) this.places.set(win, at);
+    win.setBounds({ ...at, y: at.y - at.height }, true);
+    await new Promise((resolve) => setTimeout(resolve, SLIDE_MS));
+  }
+
+  /** Once it is away: its own place, on its own desktop. */
+  settle(win: BrowserWindow): void {
+    const own = this.places.get(win);
+    this.places.delete(win);
+    if (win.isDestroyed()) return;
+    win.setVisibleOnAllWorkspaces(false);
+    if (own) win.setBounds(own, false);
+  }
+}
+
+/**
+ * The key the person gave the whole computer (Settings › Keyboard shortcuts, "From any app", or Settings › Sessions;
+ * none by default): pressed anywhere it brings the Terminal window up, pressed in it it puts Tomrade away — on macOS
+ * as a hotkey window that drops from the top of the screen. Registered only while one is set, and released when it
+ * changes and when Tomrade quits.
  */
 export function installGlobalHotkey(ctx: Context): void {
   let held: { chord: string; accelerator: string; registered: boolean } | null = null;
@@ -149,16 +197,25 @@ export function installGlobalHotkey(ctx: Context): void {
     const overrides = (ctx.get("settings")?.get().keybindings as { overrides?: Record<string, string[]> } | undefined)?.overrides;
     return overrides?.[GLOBAL_COMMAND]?.[0] ?? null;
   };
-  const fire = () => {
+  const hotkey = new HotkeyWindow();
+  const fire = async () => {
     const focused = BrowserWindow.getFocusedWindow();
-    if (focused && !focused.isDestroyed() && focused.webContents.getURL().includes("code-sessions")) {
-      if (process.platform === "darwin") app.hide();
-      else focused.minimize();
+    if (isTerminalWindow(focused)) {
+      if (process.platform !== "darwin") return void focused.minimize();
+      await hotkey.pullUp(focused);
+      app.hide();
+      hotkey.settle(focused);
       return;
     }
+    if (process.platform !== "darwin") return void (await openTerminal(ctx, null));
+    // The one open already drops into view; a window that opens now comes up as it does from anywhere else.
+    const open = BrowserWindow.getAllWindows().filter(isTerminalWindow);
+    const win = open.length === 1 ? open[0]! : null;
+    const to = win ? hotkey.ready(win) : null;
     // from another app, the window alone can come up behind it
-    if (process.platform === "darwin") app.focus({ steal: true });
-    void openTerminal(ctx, null);
+    app.focus({ steal: true });
+    await openTerminal(ctx, null);
+    if (win && to) hotkey.drop(win, to);
   };
   const status = (): GlobalKeyStatus[] => (held ? [{ command: GLOBAL_COMMAND, chord: held.chord, registered: held.registered }] : []);
   const release = () => {
@@ -173,7 +230,7 @@ export function installGlobalHotkey(ctx: Context): void {
       const acc = accelerator(chord);
       let registered = false;
       try {
-        registered = globalShortcut.register(acc, fire);
+        registered = globalShortcut.register(acc, () => void fire());
       } catch (e) {
         ctx.logger("terminal-entries").warn(`global key ${acc} not taken: ${errorMessage(e)}`);
       }
