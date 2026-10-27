@@ -3109,7 +3109,7 @@ export const de: PartialMessages = {
     viewGrid: "Bereiche",
     viewOverview: "Übersicht",
     inAssistant: "Im Assistenten · kein Bereich",
-    whereCell: "In einem Bereich",
+    whereCell: "Bereich {{n}}",
     newThread: "Neue Unterhaltung",
     waitPermission: "Braucht deine Freigabe",
     waitQuestion: "Fragt dich etwas",

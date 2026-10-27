@@ -89,6 +89,9 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-row-title { font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cs-row-meta, .cs-row-activity { font-size: var(--text-xs); color: var(--meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cs-row-wait { font-size: var(--text-xs); color: var(--warn); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+/* a live session's last line on its pane, as its card shows it */
+.cs-row-tail { font-family: var(--font-mono); font-size: 11px; line-height: 1.5; padding: 2px 6px; border-radius: var(--radius-sm, 6px); background: var(--bg); color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.cs-peek-tail { display: flex; flex-direction: column; }
 .cs-row-outcome { font-size: var(--text-xs); border-left: 2px solid var(--border-input); padding-left: 7px; color: var(--fg-2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 /* Allow and Deny, under the card that asks: in the bar, inside its lower edge. */
 .cs-row-actions { display: flex; gap: 6px; flex-wrap: wrap; padding: 4px 2px 0; }
@@ -197,6 +200,14 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-convo { text-align: left; flex: 1; min-height: 0; overflow: auto; padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); font-size: var(--text-sm); line-height: 1.5; user-select: text; }
 .cs-read-tabs { display: inline-flex; }
 .cs-read-tabs > button { min-width: 72px; }
+
+/* the cell a session was shown in from outside: one flash of the accent ring */
+.cs-cell[data-flash] { animation: cs-cell-flash 1.1s ease-out 1; }
+@keyframes cs-cell-flash {
+  0%, 40% { box-shadow: inset 0 0 0 2px var(--accent); }
+  100% { box-shadow: inset 0 0 0 0 transparent; }
+}
+@media (prefers-reduced-motion: reduce) { .cs-cell[data-flash] { animation: none; outline: 2px solid var(--accent); outline-offset: -2px; } }
 /* A session on no ticket: the ticket its first words sound like, and the two answers. */
 .cs-guess { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: var(--text-sm); line-height: 1.4; color: var(--fg); }
 .cs-guess[data-place="cell"] { flex: none; padding: 6px 10px; border-top: 1px solid var(--border-soft); background: var(--surface-warm); }

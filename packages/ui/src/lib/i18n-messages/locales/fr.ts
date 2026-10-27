@@ -3109,7 +3109,7 @@ export const fr: PartialMessages = {
     viewGrid: "Panneaux",
     viewOverview: "Vue d’ensemble",
     inAssistant: "Dans l’assistant · sans panneau",
-    whereCell: "Dans un panneau",
+    whereCell: "Panneau {{n}}",
     newThread: "Nouvelle conversation",
     waitPermission: "Attend votre accord",
     waitQuestion: "Vous pose une question",

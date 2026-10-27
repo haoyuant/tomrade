@@ -3115,7 +3115,7 @@ export const ja: PartialMessages = {
     viewGrid: "ペイン",
     viewOverview: "一覧",
     inAssistant: "アシスタント内 · ペインなし",
-    whereCell: "ペインに表示中",
+    whereCell: "ペイン {{n}}",
     newThread: "新しい会話",
     waitPermission: "承認待ち",
     waitQuestion: "質問があります",

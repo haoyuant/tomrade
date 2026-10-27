@@ -80,6 +80,8 @@ export const keys = {
     threads: (projectId: string) => ["agent", "threads", projectId] as const,
     threadAll: (projectId: string) => ["agent", "thread", projectId] as const,
     thread: (projectId: string, threadId: string) => ["agent", "thread", projectId, threadId] as const,
+    /** What waiting conversations ask, for the session bar's cards: keyed by which wait, so a new ask reads it again. */
+    pendings: (projectId: string, waits: string) => ["agentPendings", projectId, waits] as const,
     engines: ["agent", "engines"] as const,
     playbooksAll: ["agent", "playbooks"] as const,
     playbooks: (projectId?: string) => ["agent", "playbooks", projectId ?? ""] as const,
@@ -134,6 +136,8 @@ export const keys = {
     links: (projectId: string, itemId?: string) => ["codeLink", projectId, "links", itemId ?? ""] as const,
     sessions: (projectId: string, itemId?: string) => ["codeLink", projectId, "sessions", itemId ?? ""] as const,
     recentSessions: (projectId: string) => ["codeLink", projectId, "recentSessions"] as const,
+    /** Kept apart from `all`: asked again only when the Terminal window says its cells changed, not on every hook. */
+    cells: (projectId: string) => ["codeLinkCells", projectId] as const,
     handoff: (projectId: string, threadId: string) => ["codeLink", projectId, "handoff", threadId] as const,
     deliveries: (projectId: string, itemId: string) => ["codeLink", projectId, "deliveries", itemId] as const,
     repos: (projectId: string) => ["codeLink", projectId, "repos"] as const,

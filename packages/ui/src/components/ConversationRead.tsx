@@ -1,22 +1,37 @@
-import { useCallback, useState } from "react";
+import { Fragment, useCallback, useMemo, useState } from "react";
 import { FoldChevron } from "~/components/ui/atoms";
 import { logQuietly } from "~/lib/api";
-import { foldTools, workLabel, type ConvoLine, type ConvoSay } from "~/lib/convoFold";
+import { codingFromLines, foldTools, workConclusion, workLabel, type ConvoLine, type ConvoSay } from "~/lib/convoFold";
 
 export type { ConvoLine, ConvoSay } from "~/lib/convoFold";
 
-/** A conversation's lines, long runs of tool calls folded under what they came to. */
-export function ConvoLines({ lines, open, toggle, say }: { lines: ConvoLine[]; open: ReadonlySet<number>; toggle: (key: number) => void; say: ConvoSay }) {
+/**
+ * A conversation's lines, long runs of tool calls folded under what they came to; once it writes code, each stretch
+ * of it folds whole under its conclusion. `coding`: all of it is writing code. `waiting`: the session waits on the person.
+ * `notes`: a word said above a line, by its key — where it came from, when another side said it.
+ */
+export function ConvoLines({ lines, open, toggle, say, coding, waiting, notes }: { lines: ConvoLine[]; open: ReadonlySet<number>; toggle: (key: number) => void; say: ConvoSay; coding?: boolean; waiting?: boolean; notes?: ReadonlyMap<number, string> }) {
+  const entries = useMemo(() => foldTools(lines, coding ? 0 : codingFromLines(lines), waiting), [lines, coding, waiting]);
   return (
     <>
-      {foldTools(lines).map((entry) =>
+      {entries.map((entry) =>
         "fold" in entry ? (
-          <details key={`fold-${entry.fold[0]!.key}`} className="trace-fold cs-convo-fold">
-            <summary>{workLabel(entry.work, say)}</summary>
-            {entry.fold.map((l) => <ConvoLineRow key={l.key} line={l} open={open.has(l.key)} onToggle={() => toggle(l.key)} say={say} />)}
+          <details key={`fold-${entry.fold[0]!.key}`} className={entry.coding ? "trace-fold cs-convo-fold work-fold" : "trace-fold cs-convo-fold"} data-testid={entry.coding ? "work-fold" : undefined}>
+            <summary>{entry.coding ? workConclusion(entry.work, say, entry.waiting) : workLabel(entry.work, say)}</summary>
+            {entry.fold.map((l) => (
+              <Fragment key={l.key}>
+                {notes?.has(l.key) && <p className="cs-convo-note" data-testid="cs-convo-note">{notes.get(l.key)}</p>}
+                <ConvoLineRow line={l} open={open.has(l.key)} onToggle={() => toggle(l.key)} say={say} />
+              </Fragment>
+            ))}
           </details>
+        ) : entry.who === "mark" ? (
+          <p key={entry.key} className="cs-convo-mark" data-testid="convo-mark">{entry.text}</p>
         ) : (
-          <ConvoLineRow key={entry.key} line={entry} open={open.has(entry.key)} onToggle={() => toggle(entry.key)} say={say} />
+          <Fragment key={entry.key}>
+            {notes?.has(entry.key) && <p className="cs-convo-note" data-testid="cs-convo-note">{notes.get(entry.key)}</p>}
+            <ConvoLineRow line={entry} open={open.has(entry.key)} onToggle={() => toggle(entry.key)} say={say} />
+          </Fragment>
         )
       )}
     </>

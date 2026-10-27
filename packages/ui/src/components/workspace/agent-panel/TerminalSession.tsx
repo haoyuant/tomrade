@@ -2,17 +2,22 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useQuery } from "@tanstack/react-query";
 import type { EngineView } from "@tomradex/agent";
 import type { SessionView } from "@tomradex/code-link";
+import { cutFrom, joinCuts } from "@tomradex/code-link/segments";
+import type { Item } from "@tomradex/domain";
 import { PROMPT_LINES, promptOnScreen } from "@tomradex/code-link/prompt";
 import { Icon } from "~/components/icons";
 import { ConvoLines, ConvoTop, useOpenLines, type ConvoSay } from "~/components/ConversationRead";
 import { Spacer } from "~/components/ui/atoms";
 import { invoke, subscribe } from "~/lib/api";
 import { findEngine } from "~/lib/agent";
+import { STATUS } from "~/lib/domain";
+import { segmentKind, segmentWork, type OutcomeWords } from "~/lib/review";
+import { markLines, returns, segmentFacts, type MarkWord } from "~/lib/sessionSegments";
 import { useI18n } from "~/lib/i18n";
 import { isCommitKey, isComposing } from "~/lib/keys";
 import { ATTENTION_KEY } from "~/lib/attention";
 import type { BarStatus } from "~/lib/sessionBar";
-import { convoFromTail, convoLines, convoRefreshed, convoWithEarlier, delayUntil, DRAWER_ROWS, isApprovalAsk, isLive, mayReadPane, STRIP_ROWS, tailLines, type ConvoState } from "~/lib/terminalSession";
+import { convoFromTail, convoLines, convoRefreshed, convoWithEarlier, delayUntil, DRAWER_ROWS, askText, isApprovalAsk, isLive, mayReadPane, saidElsewhere, STRIP_ROWS, tailLines, type ConvoState } from "~/lib/terminalSession";
 import { useErrorToast, useToast } from "~/lib/toast";
 import { StatusMark } from "./SessionBar";
 
@@ -25,13 +30,17 @@ const ANSWERED_MS = 8000;
  * session moves; a strip above it shows the pane's last lines, opening into a drawer with more; what is typed below
  * goes into the pane as keystrokes. Nothing here attaches to the pane, so the Terminal window keeps its control.
  */
-export function TerminalSession({ projectId, session, title, ticket, status, engines, onShowInTerminal, onBack, backBlocked, onClose, onAnswered }: {
+export function TerminalSession({ projectId, session, title, ticket, status, engines, items, cell, onShowInTerminal, onBack, backBlocked, onClose, onAnswered }: {
   projectId: string;
   session: SessionView;
   title: string;
   ticket: string | null;
+  /** The project's tickets by key: the claims the record shows cut the conversation by ticket. */
+  items?: Map<string, Item>;
   status: BarStatus;
   engines: EngineView[] | undefined;
+  /** The Terminal window cell that shows it, by the window's number; null when none does. */
+  cell: number | null;
   /** Present when the Terminal window can be asked to show it. */
   onShowInTerminal?: () => void;
   /** Present for a conversation's own session: brings the conversation back to the panel once its CLI exited. */
@@ -47,7 +56,7 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
   const reportError = useErrorToast();
   const live = isLive(session);
   const agentName = findEngine(engines, session.agent)?.title ?? session.agent;
-  const where = session.herdrPane ? t("sessionBar.wherePane") : session.terminal ? session.terminal.replace(/\.app$/, "") : t("sessionBar.whereOutside");
+  const where = cell ? t("sessionBar.whereCell", { n: cell }) : session.herdrPane ? t("sessionBar.wherePane") : session.terminal ? session.terminal.replace(/\.app$/, "") : t("sessionBar.whereOutside");
   const say: ConvoSay = (key, vars) => t(`codeSessions.${key}`, vars);
 
   // What this machine lets the panel do with the pane: asked once per session, not on every change of it.
@@ -71,11 +80,14 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
   const readAt = useRef<number | null>(null);
   const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** The session's last movement, and the one the view last read for: a change schedules one read, a re-render none. */
-  const move = `${session.lastEventAt}|${session.state}|${session.activity}`;
+  const move = `${session.lastEventAt}|${session.state}|${session.activity}|${session.ask?.kind}`;
   const latestMove = useRef(move);
   latestMove.current = move;
   const seen = useRef("");
   const generation = useRef(0);
+  /** What this view typed into the pane, and since when it shows the session: a person's line after that it did not type was said in the terminal. */
+  const sentHere = useRef(new Set<string>());
+  const shownSince = useRef(Date.now());
 
   const readTail = useCallback(async (first: boolean) => {
     const mine = ++generation.current;
@@ -92,6 +104,8 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
     closeAll();
     following.current = true;
     readAt.current = null;
+    sentHere.current = new Set();
+    shownSince.current = Date.now();
     seen.current = latestMove.current;
     if (session.externalId) void readTail(true);
     else { generation.current++; setConvo(convoFromTail(null)); }
@@ -173,16 +187,22 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
 
   // ── what is typed goes into the pane; Allow and Deny press the agent's own keys ──
   const [draft, setDraft] = useState("");
+  const [drawerDraft, setDrawerDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [answered, setAnswered] = useState<number | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
-  const sayToPane = async () => {
-    const text = draft.trim();
+  /** The event of the ask showing now, and the asks answered from here, by their events. */
+  const askedAt = useRef<number | null | undefined>(undefined);
+  const answeredHere = useRef(new Set<number | null>());
+  const sayToPane = async (said: string, clear: () => void) => {
+    const text = said.trim();
     if (!text || !canType || sending) return;
     setSending(true);
     try {
-      if (await invoke("codeLink.sessionSay", projectId, session.id, text)) setDraft("");
-      else toast({ body: t("sessionBar.notTaken") });
+      if (await invoke("codeLink.sessionSay", projectId, session.id, text)) {
+        sentHere.current.add(text);
+        clear();
+      } else toast({ body: t("sessionBar.notTaken") });
     } catch (error) {
       reportError(error);
     } finally {
@@ -197,6 +217,7 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
       if (result === "answered") {
         // answered here: the prompt stays gone until the session's next event says where it stands
         setAnswered(session.lastEventAt);
+        answeredHere.current.add(session.lastEventAt);
         setTimeout(() => setAnswered(null), ANSWERED_MS);
         onAnswered?.();
       } else if (result === "notPrompt") {
@@ -210,11 +231,69 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
     }
   };
   const asking = isApprovalAsk(session) && answered !== session.lastEventAt;
+  // Answered on the other side (its cell, or the terminal): the ask goes down here too, with a line saying where.
+  const [answeredThere, setElsewhere] = useState<{ id: string; text: string } | null>(null);
+  const elsewhere = answeredThere?.id === session.id ? answeredThere.text : null;
+  const asks = isApprovalAsk(session);
+  useEffect(() => {
+    if (asks) {
+      askedAt.current = session.lastEventAt;
+      return;
+    }
+    const was = askedAt.current;
+    askedAt.current = undefined;
+    if (was === undefined || answeredHere.current.has(was) || !live) return;
+    const ran = session.state === "running";
+    setElsewhere({ id: session.id, text: cell ? t(ran ? "sessionBar.allowedInCell" : "sessionBar.answeredInCell", { n: cell }) : t(ran ? "sessionBar.allowedInTerminal" : "sessionBar.answeredInTerminal") });
+    const timer = setTimeout(() => setElsewhere(null), ANSWERED_MS);
+    return () => clearTimeout(timer);
+  }, [asks, live, session.id, session.lastEventAt, session.state, cell, t]);
+  // The drawer closes on Esc, wherever in the panel the keyboard is.
+  const drawerBox = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!drawer) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || isComposing(e) || !drawerBox.current?.closest(".ai")?.contains(e.target as Node)) return;
+      e.preventDefault();
+      setDrawer(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [drawer]);
   // Allow and Deny only while the screen shows a prompt they answer: Allow with yes under the cursor, Deny with either.
   const onScreen = useMemo(() => promptOnScreen(screen ?? ""), [screen]);
   const inputNote = !live ? t("sessionBar.inputEnded") : panel.data?.input === "noPane" ? t("sessionBar.inputOutside", { app: where }) : panel.data?.input === "noBackend" ? t("sessionBar.inputNoBackend") : panel.data?.input === "unsupported" ? t("sessionBar.inputUnsupported") : null;
-  const lines = convo ? convoLines(convo) : [];
-  const wait = status === "wait" ? session.activity ?? session.summary ?? t(ATTENTION_KEY[session.state === "error" ? "stuck" : "waiting"]) : null;
+  const lines = useMemo(() => (convo ? convoLines(convo) : []), [convo]);
+  // what the person said in the terminal while this view showed it, marked where it came from
+  const notes = useMemo(() => {
+    const note = cell ? t("sessionBar.saidInCell", { n: cell }) : t("sessionBar.saidInTerminal");
+    return new Map(saidElsewhere(lines, shownSince.current, sentHere.current).map((key) => [key, note]));
+  }, [lines, cell, t]);
+  // Cut by ticket as it moves: the earlier pages once, the newest page again from where they ended.
+  const marksKey = session.marks.map((m) => `${m.itemId}@${m.at}`).join(",");
+  const marks = useMemo(() => (marksKey ? marksKey.split(",").map((m) => { const at = m.lastIndexOf("@"); return { itemId: m.slice(0, at), at: Number(m.slice(at + 1)) }; }) : []), [marksKey]);
+  const itemOfKey = useCallback((key: string) => items?.get(key)?.id ?? null, [items]);
+  const earlierCut = useMemo(() => cutFrom(convo?.earlier ?? [], marks, itemOfKey), [convo?.earlier, marks, itemOfKey]);
+  const cuts = useMemo(() => joinCuts(earlierCut.cuts, cutFrom(convo?.tail ?? [], marks, itemOfKey, earlierCut.state).cuts), [earlierCut, convo?.tail, marks, itemOfKey]);
+  const ticketed = cuts.some((c) => c.itemId);
+  const worked = useQuery({
+    queryKey: ["sessionTickets", projectId, session.id, marksKey, session.itemIds.join(",")],
+    queryFn: () => invoke("codeLink.sessionTickets", projectId, session.id),
+    enabled: ticketed,
+    staleTime: 30_000
+  });
+  const outcomeSay: OutcomeWords = (key, vars) => t(`review.${key}`, vars);
+  const segments = useMemo(() => {
+    const markSay: MarkWord = (key, vars) => t(`review.${key}`, vars);
+    const again = returns(cuts);
+    return cuts.map((c, i) => {
+      const tk = c.itemId ? worked.data?.find((w) => w.itemId === c.itemId) : undefined;
+      const key = tk?.key ?? (c.itemId ? [...(items?.values() ?? [])].find((it) => it.id === c.itemId)?.key ?? null : null);
+      return { itemId: c.itemId, key, lines: markLines(c.lines, key, again[i]!, markSay), kind: segmentKind(segmentWork(c.lines)), ticket: tk };
+    });
+  }, [cuts, worked.data, items, t]);
+  const asked = session.ask ? askText(session.ask, t) : null;
+  const wait = status === "wait" ? asked ?? session.activity ?? session.summary ?? t(ATTENTION_KEY[session.state === "error" ? "stuck" : "waiting"]) : null;
 
   return (
     <>
@@ -226,11 +305,22 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
             {title || t("agentPanel.newThread")}
           </span>
           <Spacer />
-          {onShowInTerminal && (
-            <button type="button" className="btn btn-ghost ai-session-show" data-testid="ai-session-show" onClick={onShowInTerminal}>
-              <Icon name="i-terminal" size={12} />
-              {t("sessionBar.showInTerminal")}
-            </button>
+          {session.herdrPane && live ? (
+            // the same pane, seen here and, once a cell shows it, in the Terminal window too
+            <div className="seg ai-session-views" role="group" aria-label={t("sessionBar.viewsLabel")} data-testid="ai-session-views">
+              <button type="button" aria-pressed="true" data-testid="ai-session-here">{t("sessionBar.viewHere")}</button>
+              <button type="button" aria-pressed={!!cell} data-testid="ai-session-show" disabled={!onShowInTerminal} title={cell ? t("sessionBar.showInTerminalCell", { n: cell }) : t("sessionBar.showInTerminal")} onClick={onShowInTerminal}>
+                <Icon name="i-terminal" size={12} />
+                {t("sessionBar.viewTerminal")}
+              </button>
+            </div>
+          ) : (
+            onShowInTerminal && (
+              <button type="button" className="btn btn-ghost ai-session-show" data-testid="ai-session-show" onClick={onShowInTerminal}>
+                <Icon name="i-terminal" size={12} />
+                {cell ? t("sessionBar.showInTerminalCell", { n: cell }) : t("sessionBar.showInTerminal")}
+              </button>
+            )
           )}
           {onBack && (
             <button type="button" className="btn btn-ghost ai-session-show" data-testid="back-to-panel" disabled={!!backBlocked} title={backBlocked ?? t("handoff.backTitle")} onClick={onBack}>
@@ -245,10 +335,12 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
         <p className="ai-session-meta meta-txt dense">
           {[agentName, where, t(status === "wait" ? "sessionBar.statusWait" : status === "run" ? "sessionBar.statusRun" : status === "done" ? "sessionBar.statusDone" : "sessionBar.statusIdle")].join(" · ")}
           {wait && <span className="ai-session-wait"> · {wait}</span>}
+          {cell && live && <span data-testid="ai-session-both"> · {t("sessionBar.bothOpen", { n: cell })}</span>}
         </p>
         {session.herdrPane && live && (
           <button type="button" className="ai-strip" data-testid="ai-strip" aria-expanded={drawer} aria-label={t(drawer ? "sessionBar.paneOutputLess" : "sessionBar.paneOutputMore")} title={t(drawer ? "sessionBar.paneOutputLess" : "sessionBar.paneOutputMore")} onClick={() => setDrawer((d) => !d)}>
             <span className="ai-strip-lines">
+              <span className="ai-strip-title" data-testid="ai-strip-title">{cell ? t("sessionBar.stripTitleCell", { n: cell }) : t("sessionBar.stripTitle")}</span>
               {strip.length ? strip.map((line, i) => <span key={i} className="ai-strip-line">{line}</span>) : <span className="ai-strip-line is-quiet">{t("sessionBar.paneQuiet")}</span>}
             </span>
             <Icon name="i-chevdown" size={10} className="ai-strip-chev" style={drawer ? { transform: "rotate(180deg)" } : undefined} />
@@ -270,18 +362,56 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
           ) : convo ? (
             <>
               <ConvoTop cut={convo.before !== null} reading={readingEarlier} onEarlier={readEarlier} say={say} />
-              <ConvoLines lines={lines} open={open} toggle={toggle} say={say} />
+              {ticketed ? (
+                segments.map((seg, i) => (
+                  <div key={seg.lines[0]?.key ?? i} className="ai-session-seg" data-testid="ai-session-seg" data-ticket={seg.key ?? ""} data-kind={seg.kind}>
+                    <div className="work-rule" role="separator">
+                      <span>{seg.key ? `${seg.key} · ${t(seg.kind === "code" ? "review.kindCode" : "review.kindChat")}` : t("review.beforeTicket")}</span>
+                    </div>
+                    <ConvoLines lines={seg.lines} open={open} toggle={toggle} say={say} coding={!!seg.key && seg.kind === "code"} waiting={asking && i === segments.length - 1} notes={notes} />
+                    {seg.ticket && <span className="ai-review-work" data-testid="ai-session-seg-facts">{segmentFacts(seg.ticket, outcomeSay, (st) => STATUS[st].label)}</span>}
+                  </div>
+                ))
+              ) : (
+                <ConvoLines lines={lines} open={open} toggle={toggle} say={say} waiting={asking} notes={notes} />
+              )}
             </>
           ) : null}
         </div>
       </div>
       <div className="ai-foot ai-session-foot">
         {drawer && session.herdrPane && live && (
-          <pre className="ai-drawer" data-testid="ai-drawer" aria-label={t("sessionBar.paneOutput")}>{screen ?? ""}</pre>
+          <div className="ai-drawer-box" ref={drawerBox} data-testid="ai-drawer-box">
+            <div className="ai-drawer-head">
+              <span className="ai-drawer-title" data-testid="ai-drawer-title">{[title || t("agentPanel.newThread"), cell ? t("sessionBar.whereCell", { n: cell }) : null, canType ? t("sessionBar.drawerTypes") : null].filter(Boolean).join(" · ")}</span>
+              <button type="button" className="btn btn-ghost btn-xs" data-testid="ai-drawer-close" onClick={() => setDrawer(false)}>{t("sessionBar.drawerClose")}</button>
+            </div>
+            <pre className="ai-drawer" data-testid="ai-drawer" aria-label={t("sessionBar.paneOutput")}>{screen ?? ""}</pre>
+            {canType && (
+              <label className="ai-drawer-input">
+                <span aria-hidden="true">&gt;</span>
+                <input
+                  data-testid="ai-drawer-input"
+                  placeholder={t("sessionBar.drawerInput")}
+                  aria-label={t("sessionBar.sayAria")}
+                  value={drawerDraft}
+                  disabled={sending}
+                  autoFocus
+                  onChange={(e) => setDrawerDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (isComposing(e) || e.key !== "Enter") return;
+                    e.preventDefault();
+                    void sayToPane(drawerDraft, () => setDrawerDraft(""));
+                  }}
+                />
+              </label>
+            )}
+          </div>
         )}
+        {elsewhere && <p className="ai-answered-there meta-txt dense" data-testid="ai-answered-there" role="status">{elsewhere}</p>}
         {asking && (
-          <div className="ai-approve" data-testid="ai-approve" role="group" aria-label={session.activity ?? t("agentPanel.attention_permission")}>
-            <span className="ai-approve-text">{session.activity ?? t("agentPanel.attention_permission")}</span>
+          <div className="ai-approve" data-testid="ai-approve" role="group" aria-label={asked ?? t("agentPanel.attention_permission")}>
+            <span className="ai-approve-text">{asked ?? t("agentPanel.attention_permission")}</span>
             {panel.data?.approval && canType && onScreen ? (
               <>
                 {onScreen.allows && <button type="button" className="btn btn-primary btn-xs" data-testid="ai-allow" disabled={sending} onClick={() => void answer("allow")}>{t("sessionBar.allow")}</button>}
@@ -300,7 +430,7 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
               ref={input}
               className="ai-input"
               rows={1}
-              placeholder={t("sessionBar.sayPlaceholder")}
+              placeholder={cell ? t("sessionBar.sayHereCell", { agent: agentName, n: cell }) : t("sessionBar.sayHere", { agent: agentName })}
               aria-label={t("sessionBar.sayAria")}
               disabled={!canType}
               value={draft}
@@ -308,10 +438,10 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
               onKeyDown={(e) => {
                 if (isComposing(e) || !isCommitKey(e) || e.shiftKey) return;
                 e.preventDefault();
-                void sayToPane();
+                void sayToPane(draft, () => setDraft(""));
               }}
             />
-            <button type="button" className="btn btn-icon ai-send" title={t("sessionBar.send")} aria-label={t("sessionBar.send")} disabled={!canType || !draft.trim() || sending} onClick={() => void sayToPane()}>
+            <button type="button" className="btn btn-icon ai-send" title={t("sessionBar.send")} aria-label={t("sessionBar.send")} disabled={!canType || !draft.trim() || sending} onClick={() => void sayToPane(draft, () => setDraft(""))}>
               <Icon name="i-send" size={14} />
             </button>
           </div>

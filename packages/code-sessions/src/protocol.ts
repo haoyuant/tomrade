@@ -1,4 +1,4 @@
-import type { ReviewCursor, ReviewPage, ReviewSaid } from "@tomradex/code-link";
+import type { ReviewCursor, ReviewPage, ReviewSaid, SessionAsk, SessionOutcome } from "@tomradex/code-link";
 import type { TerminalBridge, TerminalKey, TerminalMouse, TerminalScroll, TerminalScrollPosition } from "@tomradex/contracts";
 
 /** One code session as the window lists it. */
@@ -13,6 +13,8 @@ export interface SessionRow {
   needsYou: boolean;
   /** What it is doing now, or what it last said. */
   activity: string | null;
+  /** What it waits on the person for, as a structure the window words: a tool's permission, a question; null otherwise. */
+  ask: SessionAsk | null;
   mode: "run" | "terminal";
   agent: string;
   /** The agent's own name (Claude Code, Codex…), for a session with no ticket to go by; null when Tomrade does not know it. */
@@ -55,6 +57,10 @@ export interface SessionRow {
   lastEventAt: number | null;
   /** Ended, and what its pane showed while it ran was recorded here: its raw output can be played back. */
   rawOutput: boolean;
+  /** Ended and listed: what came of it, the look back's way (its pull request, commits, asks, last word); null otherwise. */
+  outcome: SessionOutcome | null;
+  /** Live in a pane here: the pane's last lines that say something, as the bar's card shows them; null otherwise. */
+  tail: string[] | null;
   /** On no ticket: the open one what the person first said to it sounds like; null without a guess. */
   guess: { key: string; title: string } | null;
 }
@@ -95,8 +101,11 @@ export interface ThreadRow {
   /** The conversation it was opened under, to write its code in the background: it sits under that one in the bar. */
   parentId: string | null;
   running: boolean;
-  /** What it waits on the person for, and since when this window has seen it wait in that way. */
-  wait: { kind: "permission" | "question"; text: string | null; since: number } | null;
+  /**
+   * What it waits on the person for, and since when this window has seen it wait in that way; with the question's id
+   * and the choices its card answers with (null when it offers none, or takes several at once).
+   */
+  wait: { kind: "permission" | "question"; text: string | null; since: number; questionId: string | null; options: string[] | null } | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -241,6 +250,8 @@ export type WindowMessage =
   | { type: "noTicket"; sessionId: string }
   /** The session's permission prompt answered from its card: the keys its agent declared, pressed in its pane. */
   | { type: "answer"; sessionId: string; which: "allow" | "deny" }
+  /** An assistant conversation's question answered from its card with one of its choices. */
+  | { type: "answerThread"; threadId: string; questionId: string; value: string }
   /** The last lines of every pane this window lists, for the overview: answered with `tails`. */
   | { type: "tails" }
   /** The recording of an ended session, a closed terminal or a stretch of manual work a cell shows: answered with `replay`. */

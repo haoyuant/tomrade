@@ -9,7 +9,7 @@ export { AgentStore } from "./store.js";
 export { frontmatter, loadPlaybookDir, resolvePlaybook, missingPlaybookCapabilities, type PlaybookVariants } from "./playbooks.js";
 export { looksRateLimited, resetTime, untilLabel } from "./limits.js";
 export { describeFailure, readableError, redactSecrets, DETAILS_MAX_CHARS } from "./failure.js";
-export { conversationRecap, handoffRecap, withRecap } from "./recap.js";
+export { conversationRecap, firstSentence, handoffRecap, withRecap } from "./recap.js";
 export { resultLine, stepHint, stepSummary } from "./steps.js";
 export { parseBrief, renderBrief, withSection, briefTooLong, type BriefSection } from "./brief.js";
 export { BACKGROUND_OPENER, BRIEF_MAX_CHARS, HOUSE_RULES, RULES_INSTRUCTIONS_MAX, RULES_MAX_CHARS, rulesInstructions, rulesSection, attachmentsLine, backgroundOpener, focusSuffix, generalBrief, generalOpener, generalPrompt, playbookSection, promptParts, promptSections, waitsOnLine } from "./prompt.js";
