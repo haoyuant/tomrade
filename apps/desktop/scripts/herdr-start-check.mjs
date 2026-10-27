@@ -1,5 +1,6 @@
 /** Isolated renderer + IPC regression. Run after build:backend with the UI dev server running. */
 import { app, BrowserWindow } from "electron";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -9,8 +10,32 @@ import { boot } from "../dist/boot.js";
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-herdr-ui-"));
 app.setPath("userData", work);
+// Inside a herdr pane HERDR_SOCKET_PATH names the person's server and wins over HERDR_SESSION: this run reaches only a session of its own.
+for (const key of ["HERDR_SOCKET_PATH", "HERDR_CLIENT_SOCKET_PATH", "HERDR_PANE_ID", "HERDR_TAB_ID", "HERDR_WORKSPACE_ID", "HERDR_ENV"]) delete process.env[key];
+const HERDR_SESSION = `tomrade-hs-check-${process.pid}`;
+process.env.HERDR_SESSION = HERDR_SESSION;
+const ownSession = path.join(os.homedir(), ".config/herdr/sessions", HERDR_SESSION);
+/** Nothing here should start herdr; should something have, stop only this run's server. */
+const leaveHerdr = () => {
+  if (!fs.existsSync(ownSession)) return;
+  try {
+    const socket = execFileSync("herdr", ["status"], { encoding: "utf8" }).match(/socket:\s*(\S+)/)?.[1];
+    if (socket === path.join(ownSession, "herdr.sock")) execFileSync("herdr", ["server", "stop"]);
+  } catch {
+    // not running
+  }
+  fs.rmSync(ownSession, { recursive: true, force: true });
+};
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const assert = (name, value) => { if (!value) throw new Error(name); console.log(`PASS: ${name}`); };
+// Screenshots are for a person to look at: a shown window that is covered or asleep may give none, which fails nothing.
+const shot = async (name) => {
+  try {
+    fs.writeFileSync(path.join(work, name), (await win.webContents.capturePage()).toPNG());
+  } catch (error) {
+    console.log(`截图 ${name} 没拍成：${error.message}`);
+  }
+};
 let ctx;
 let win;
 app.whenReady().then(async () => {
@@ -27,7 +52,8 @@ app.whenReady().then(async () => {
       const field = ctx.settings.sections(locale).find(s => s.id === "codeLink").schema.properties.terminal;
       assert(`${locale} 终端选项以自动开头并有说明`, field.enum[0] === "auto" && !!field.enumLabels?.auto);
       const help = field.description;
-      assert(`${locale} 设置说明包含安装和启动命令`, help.includes("brew install herdr") && help.includes("`herdr`"));
+      // The install command depends on the machine (TOM-556): the static text points at herdr's install guide; Settings' install button carries the command.
+      assert(`${locale} 设置说明包含安装指引和启动命令`, help.includes(locale === "zh" ? "安装文档" : "install guide") && help.includes("`herdr`") && !help.includes("brew"));
       assert(`${locale} 设置说明不含错误插件命令`, !help.includes("plugin install"));
     }
     let state = "notInstalled";
@@ -43,12 +69,12 @@ app.whenReady().then(async () => {
     await js(`document.querySelectorAll('[data-testid="start-mode"] button')[1].click(); true`);
     const line = () => js(`document.querySelector('[data-testid="start-herdr-status"]')?.textContent ?? ''`);
     await wait(async () => (await line()).includes("未安装"));
-    assert("未安装时显示安装和启动指引", (await line()).includes("brew install herdr") && (await line()).includes("打开一个终端"));
+    assert("未安装时显示安装和启动指引", (await line()).includes("安装文档") && (await line()).includes("打开一个终端"));
     await wait(() => js(`!![...document.querySelectorAll('#stEngine option')].find(o => o.value === 'ready')`));
     await js(`const select = document.querySelector('#stEngine'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, 'ready'); select.dispatchEvent(new Event('change', { bubbles: true })); true`);
     await wait(() => js(`!document.querySelector('[data-testid="start-confirm"]').disabled`));
     assert("未安装 herdr 不阻断开始", await js(`!document.querySelector('[data-testid="start-confirm"]').disabled`));
-    fs.writeFileSync(path.join(work, "herdr-missing.png"), (await win.webContents.capturePage()).toPNG());
+    await shot("herdr-missing.png");
     state = "notRunning";
     await wait(async () => (await line()).includes("已安装未运行"));
     state = "running";
@@ -82,7 +108,7 @@ app.whenReady().then(async () => {
     await wait(() => js(`!!document.querySelector('[data-testid="start-ticket"]')`));
     await openCodeLink();
     await wait(() => js(`!!document.querySelector('[data-testid="herdr-install"]')`));
-    fs.writeFileSync(path.join(work, "herdr-settings.png"), (await win.webContents.capturePage()).toPNG());
+    await shot("herdr-settings.png");
     assert("打开设置不会安装", installs === 0);
     await js(`document.querySelector('[data-testid="herdr-install"]').click(); true`);
     await wait(async () => installs === 1);
@@ -111,7 +137,7 @@ app.whenReady().then(async () => {
     };
     await startInTerminal();
     await wait(async () => (await hint()) === 1);
-    fs.writeFileSync(path.join(work, "herdr-hint.png"), (await win.webContents.capturePage()).toPNG());
+    await shot("herdr-hint.png");
     assert("普通终端启动后提示 herdr 的好处", await js(`[...document.querySelectorAll('.toast')].some(t => t.textContent.includes('普通终端') && t.textContent.includes('Tomrade 退出后'))`));
     assert("提示出现时没有安装任何东西", installs === 1);
     await wait(async () => ctx.settings.get().onboarding.seen.includes("hint.herdr"));
@@ -137,7 +163,7 @@ app.whenReady().then(async () => {
     assert("终端窗口可用时，默认在 Tomrade 终端里跑", (await pressed()) === "terminal");
     assert("两个选项说清楚去处", await js(`(() => { const b = [...document.querySelectorAll('[data-testid="start-mode"] button')].map(x => x.textContent.trim()); return b.includes('在助手面板里跑') && b.includes('在 Tomrade 终端里跑'); })()`));
     assert("说明里写着在终端窗口里打开", await js(`[...document.querySelectorAll('.meta-txt')].some(p => p.textContent.includes('Tomrade 的终端窗口'))`));
-    fs.writeFileSync(path.join(work, "start-terminal-window.png"), (await win.webContents.capturePage()).toPNG());
+    await shot("start-terminal-window.png");
     await wait(() => js(`!![...document.querySelectorAll('#stEngine option')].find(o => o.value === 'ready')`));
     await wait(() => js(`!document.querySelector('[data-testid="start-confirm"]').disabled`));
     await js(`document.querySelector('[data-testid="start-confirm"]').click(); true`);
@@ -148,11 +174,13 @@ app.whenReady().then(async () => {
     console.log(`界面截图：${work}`);
     win.destroy();
     await ctx.fiber.dispose();
+    leaveHerdr();
     app.exit(0);
   } catch (error) {
     console.error(error);
     if (win) console.error(await win.webContents.executeJavaScript("document.body.innerText"));
     console.error(`测试目录：${work}`);
+    leaveHerdr();
     app.exit(1);
   }
 });
