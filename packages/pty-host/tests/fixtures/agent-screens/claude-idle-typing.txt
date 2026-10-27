@@ -1,0 +1,6 @@
+⏺ Done — the parser now accepts empty input.
+
+────────────────────────────────────────────────────────────────────────
+❯ and now the tokenizer, do you want to proceed with yes
+────────────────────────────────────────────────────────────────────────
+  ⏵⏵ accept edits on (shift+tab to cycle)

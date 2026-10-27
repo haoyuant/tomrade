@@ -1,0 +1,14 @@
+› fix the parser
+
+• Explored
+  └ Read parser.ts
+
+• Edited src/parser.ts (+3 -1)
+
+─ Worked for 1m 12s ─────────────────────────────────────────────────────────
+
+• The parser now accepts empty input.
+
+› Summarize recent commits
+
+  ? for shortcuts                                          97% context left

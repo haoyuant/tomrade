@@ -20,6 +20,7 @@ import {
   type TerminalProvider,
   type TerminalRevive,
   type TerminalScrollPosition,
+  type TerminalStatus,
   type TerminalStream
 } from "@tomradex/contracts";
 import { hostCall, hostStream, openTerminal } from "./client.js";
@@ -62,6 +63,9 @@ export const START_TIMEOUT_MS = 10_000;
 /** At most this many starts by `revive` within the window, so a host that keeps dying is not started over and over. */
 export const REVIVE_LIMIT = 3;
 export const REVIVE_WINDOW_MS = 5 * 60_000;
+const STATUSES = new Set<string>(["idle", "working", "blocked", "done", "unknown"]);
+const statusOf = (value: unknown): TerminalStatus => (typeof value === "string" && STATUSES.has(value) ? (value as TerminalStatus) : "unknown");
+
 /** The size a pane starts at, until a window attaches and sizes it. */
 const START_COLS = 120;
 const START_ROWS = 32;
@@ -101,6 +105,8 @@ export class PtyHost extends Service implements TerminalProvider {
   private reviving: Promise<TerminalRevive> | null = null;
   private readonly listeners = new Set<(event: TerminalPaneEvent) => void>();
   private readonly watched = new Map<string, Set<symbol>>();
+  /** What each watched pane's listeners were last told of its agent, as `agent:status`. */
+  private readonly told = new Map<string, string>();
   private global: { stream: { close(): void } | null; timer: NodeJS.Timeout | null; delay: number } | null = null;
   private readonly terminals = new Set<TerminalStream>();
 
@@ -297,7 +303,7 @@ export class PtyHost extends Service implements TerminalProvider {
     }
   }
 
-  /** The agent the host sees in each pane, by its processes; an agent's title without the glyph it leads with. */
+  /** The agent the host sees in each pane, by its processes, and how it reads on its screen; an agent's title without the glyph it leads with. */
   async panes(): Promise<TerminalPaneInfo[] | null> {
     try {
       const { panes } = await this.call<{ panes: PaneInfo[] }>("pane.list");
@@ -378,16 +384,23 @@ export class PtyHost extends Service implements TerminalProvider {
     }, "terminals.onPane");
   }
 
-  /** The host tells every pane's end on one stream, so following a pane is only remembering it. */
+  /**
+   * The host tells every pane's end and its agent's status on one stream, so following a pane is remembering it — and
+   * hearing how its agent reads now, so a change made while nobody listened is not missed.
+   */
   watch(paneId: string): () => void {
     const hold = Symbol(paneId);
     const holds = this.watched.get(paneId) ?? new Set<symbol>();
+    const first = !holds.size;
     holds.add(hold);
     this.watched.set(paneId, holds);
+    if (first) void this.call<{ pane: PaneInfo }>("pane.get", { pane_id: paneId }).then(({ pane }) => this.status(paneId, pane.agent_status, pane.agent), () => undefined);
     return () => {
       const current = this.watched.get(paneId);
       if (!current?.delete(hold)) return;
-      if (!current.size) this.watched.delete(paneId);
+      if (current.size) return;
+      this.watched.delete(paneId);
+      this.told.delete(paneId);
     };
   }
 
@@ -397,9 +410,28 @@ export class PtyHost extends Service implements TerminalProvider {
 
   private exited(paneId: string): void {
     if (!this.watched.delete(paneId)) return;
+    this.told.delete(paneId);
+    this.tell({ kind: "exited", paneId });
+  }
+
+  /**
+   * How the host reads a watched pane's agent — its screen, by herdr's manifests — told once per change. Display only,
+   * as herdr's: code link lets a session's own hooks speak over it, and nothing types into a pane on its word.
+   */
+  private status(paneId: string, agentStatus: unknown, agent: unknown): void {
+    if (!this.watched.has(paneId)) return;
+    const status = statusOf(agentStatus);
+    const who = typeof agent === "string" ? agent : null;
+    const key = `${who ?? ""}:${status}`;
+    if ((this.told.get(paneId) ?? ":unknown") === key) return;
+    this.told.set(paneId, key);
+    this.tell({ kind: "status", paneId, status, agent: who });
+  }
+
+  private tell(event: TerminalPaneEvent): void {
     for (const listener of this.listeners) {
       try {
-        listener({ kind: "exited", paneId });
+        listener(event);
       } catch (err) {
         this.ctx.logger.warn(`a terminals listener failed: ${errorMessage(err)}`);
       }
@@ -433,8 +465,11 @@ export class PtyHost extends Service implements TerminalProvider {
     const global = this.global;
     if (!global || this.disposed) return;
     global.timer = null;
-    const stream = hostStream(this.pipe, [{ type: "pane.exited" }], (event) => {
-      if (typeof event.data.pane_id === "string") this.exited(event.data.pane_id);
+    const stream = hostStream(this.pipe, [{ type: "pane.exited" }, { type: "pane.agent_status_changed" }], (event) => {
+      const paneId = event.data.pane_id;
+      if (typeof paneId !== "string") return;
+      if (event.event === "pane.exited") this.exited(paneId);
+      else if (event.event === "pane.agent_status_changed") this.status(paneId, event.data.agent_status, event.data.agent);
     }, (error) => {
       if (this.global !== global || global.stream !== stream) return;
       global.stream = null;
@@ -443,8 +478,11 @@ export class PtyHost extends Service implements TerminalProvider {
       global.timer.unref?.();
     }, () => {
       global.delay = this.reconnectMs;
-      // Back after a gap: a watched pane that went meanwhile is told now.
+      // Back after a gap: a watched pane that went meanwhile is told now, and how the others' agents read.
       for (const paneId of this.watched.keys()) void this.paneAlive(paneId).then((alive) => alive === false && this.exited(paneId));
+      if (this.watched.size) void this.call<{ panes: PaneInfo[] }>("pane.list").then(({ panes }) => {
+        for (const p of panes) this.status(p.pane_id, p.agent_status, p.agent);
+      }, () => undefined);
     });
     global.stream = stream;
   }

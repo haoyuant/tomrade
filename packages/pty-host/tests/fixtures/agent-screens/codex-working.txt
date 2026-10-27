@@ -1,0 +1,11 @@
+› fix the parser
+
+• Explored
+  └ Read parser.ts
+
+• Working (12s • esc to interrupt)
+
+
+› Summarize recent commits
+
+  ? for shortcuts                                          98% context left

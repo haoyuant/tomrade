@@ -1,0 +1,9 @@
+⏺ Update(src/parser.ts)
+  ⎿  Updated src/parser.ts with 3 additions
+
+· Thinking…
+
+────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────
+  ⏵⏵ accept edits on (shift+tab to cycle) · esc to interrupt

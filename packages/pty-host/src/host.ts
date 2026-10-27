@@ -1,8 +1,9 @@
 import net from "node:net";
-import { agentIn, descendants, shortCommand, titleStatus, type ProcessRow } from "./agents.js";
+import { agentIn, descendants, shortCommand, type ProcessRow } from "./agents.js";
 import { clampSize, frameLine, line, lineReader, PROTOCOL, type AttachParams, type LaunchParams, type PaneInfo, type ProcessInfo, type Request, type TerminalCommand } from "./protocol.js";
 import { keyBytes } from "./keys.js";
 import { Pane, type Attachment, type Pty, type ScrollState } from "./pane.js";
+import { AgentScreens, type ReadTiming } from "./status.js";
 
 /** Starts a program on a pseudo-terminal. */
 export type SpawnPty = (file: string, args: string[], opts: { cwd: string; env: Record<string, string>; cols: number; rows: number }) => Pty;
@@ -24,6 +25,7 @@ export interface HostOptions {
   /** Reads the machine's process table, for what runs in each pane; without it the host names no agent. */
   scan?: () => Promise<ProcessRow[]>;
   scanTiming?: Partial<ScanTiming>;
+  readTiming?: Partial<ReadTiming>;
 }
 
 export interface ScanTiming {
@@ -38,6 +40,7 @@ export interface ScanTiming {
 export const SCAN_TIMING: ScanTiming = { minMs: 3_000, staleMs: 5_000, soonMs: 1_000 };
 
 type Subscription = { type: string; pane_id?: string };
+type Table = { rows: ProcessRow[]; at: number };
 
 class RequestError extends Error {
   constructor(
@@ -59,14 +62,18 @@ export class Host {
   private next = 0;
   private readonly prefix = `p${Date.now().toString(36)}`;
   private idle: NodeJS.Timeout | null = null;
-  private table: { rows: ProcessRow[]; at: number } | null = null;
+  private table: Table | null = null;
   private scanning: Promise<void> | null = null;
   private lastScan = 0;
   private soon: NodeJS.Timeout | null = null;
   private readonly timing: ScanTiming;
+  /** The agent in each pane, by the table they were found in. */
+  private agents: { table: Table | null; of: Map<string, string | null> } = { table: null, of: new Map() };
+  private readonly screens: AgentScreens;
 
   constructor(private readonly opts: HostOptions) {
     this.timing = { ...SCAN_TIMING, ...opts.scanTiming };
+    this.screens = new AgentScreens({ told: (pane, agent, status) => this.emit("pane.agent_status_changed", { pane_id: pane.id, agent_status: status, agent }), log: opts.log, timing: opts.readTiming });
     this.armIdle();
   }
 
@@ -77,6 +84,8 @@ export class Host {
       this.lastScan = Date.now();
       try {
         this.table = { rows: await this.opts.scan!(), at: Date.now() };
+        // An agent that started or ended in a pane someone follows is told now.
+        for (const pane of this.panes.values()) if (this.following(pane)) this.screens.changed(pane, this.agentOf(pane));
       } catch (err) {
         this.opts.log?.(`reading the process table failed: ${err instanceof Error ? err.message : String(err)}`);
       } finally {
@@ -115,11 +124,28 @@ export class Host {
     return { root: rows.find((r) => r.pid === pane.pid), below: descendants(rows, pane.pid) };
   }
 
-  /** A pane as `pane.get` and `pane.list` give it, with the agent the process table shows in it. */
+  /** The agent the process table shows in a pane, worked out once per table. */
+  private agentOf(pane: Pane): string | null {
+    if (this.agents.table !== this.table) this.agents = { table: this.table, of: new Map() };
+    let agent = this.agents.of.get(pane.id);
+    if (agent === undefined) {
+      const { root, below } = this.processesOf(pane);
+      agent = agentIn(root, below);
+      this.agents.of.set(pane.id, agent);
+    }
+    return agent;
+  }
+
+  /** Whether anyone listens for the pane's agent status; only then is its screen read as it draws. */
+  private following(pane: Pane): boolean {
+    for (const { subs } of this.subscribers) if (subs.some((s) => s.type === "pane.agent_status_changed" && (!s.pane_id || s.pane_id === pane.id))) return true;
+    return false;
+  }
+
+  /** A pane as `pane.get` and `pane.list` give it: the agent the process table shows in it, and how that agent reads on its screen. */
   private info(pane: Pane): PaneInfo {
-    const { root, below } = this.processesOf(pane);
-    const agent = agentIn(root, below);
-    return { ...pane.info(), agent, agent_status: titleStatus(agent, pane.title) };
+    const agent = this.agentOf(pane);
+    return { ...pane.info(), agent, agent_status: this.screens.status(pane, agent) };
   }
 
   private processInfo(pane: Pane): ProcessInfo {
@@ -237,13 +263,22 @@ export class Host {
     // The hooks of an agent started in the pane send this, so its session folds into the pane (herdr's variable, which they already read).
     const env = { ...(params.env ?? {}), HERDR_PANE_ID: id };
     const pty = this.opts.spawn(file, args, { cwd: params.cwd, env, cols, rows });
-    const pane = new Pane(id, pty, params.cwd, params.label ?? null, cols, rows, { onScroll: (p, s) => this.scrolled(p, s), onExit: (p) => this.exited(p), onTitle: () => this.scanSoon() }, this.opts.scrollback);
+    const pane = new Pane(id, pty, params.cwd, params.label ?? null, cols, rows, { onScroll: (p, s) => this.scrolled(p, s), onExit: (p) => this.exited(p), onTitle: (p) => this.retitled(p), onOutput: (p) => this.drew(p) }, this.opts.scrollback);
     this.panes.set(id, pane);
     this.armIdle();
     this.scanSoon();
     if (params.command) pane.input(`${params.command}\r`);
     this.opts.log?.(`pane ${id}: ${file} ${args.join(" ")} (pid ${pty.pid})`);
     return pane;
+  }
+
+  private retitled(pane: Pane): void {
+    this.scanSoon();
+    this.drew(pane);
+  }
+
+  private drew(pane: Pane): void {
+    if (this.following(pane)) this.screens.changed(pane, this.agentOf(pane));
   }
 
   /** Ends the pane's whole process tree; resolves once the pane is gone. */
@@ -265,6 +300,7 @@ export class Host {
   private exited(pane: Pane): void {
     if (this.panes.get(pane.id) !== pane) return;
     this.panes.delete(pane.id);
+    this.screens.forget(pane.id);
     pane.end();
     this.emit("pane.exited", { pane_id: pane.id });
     pane.dispose();
@@ -338,6 +374,7 @@ export class Host {
     if (this.idle) clearTimeout(this.idle);
     if (this.soon) clearTimeout(this.soon);
     this.soon = null;
+    this.screens.dispose();
   }
 }
 

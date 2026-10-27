@@ -1,0 +1,14 @@
+› fix the parser
+
+• Explored
+  └ Read parser.ts, tokenizer.ts
+
+◦ Running tests (1m 05s • esc to interrupt) · 2 background terminals running
+  └ pnpm test
+
+• Queued follow-up inputs
+  ↳ also update the docs
+
+› Summarize recent commits
+
+  ? for shortcuts                                          98% context left

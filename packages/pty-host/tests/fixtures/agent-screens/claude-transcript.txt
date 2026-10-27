@@ -1,0 +1,4 @@
+⏺ Read(src/parser.ts)
+  ⎿  Read 120 lines
+
+  Showing detailed transcript · ctrl+o to toggle · ctrl+e to show all
