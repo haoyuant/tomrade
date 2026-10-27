@@ -168,6 +168,22 @@ export interface CreateItemInput {
   by: Author;
 }
 
+/** Statuses whose tickets pile up: the renderer holds only a window of them. */
+export const CLOSED_STATUSES = ["done", "cancelled"] as const satisfies readonly ItemStatus[];
+export type ClosedStatus = (typeof CLOSED_STATUSES)[number];
+
+/**
+ * How many done and cancelled tickets the renderer holds, each status apart:
+ * the newest `limit` by when they reached it, and only those of the last `days`.
+ * Null lifts that bound.
+ */
+export interface ClosedWindow {
+  limit: number | null;
+  days: number | null;
+}
+
+export const DEFAULT_CLOSED_WINDOW: ClosedWindow = { limit: 50, days: null };
+
 export interface ListItemsFilter {
   projectId?: string;
   boardId?: string;

@@ -7,9 +7,11 @@ import { DeliveryStore } from "@tomradex/db";
 import type { Oplog } from "@tomradex/oplog";
 import { write } from "@tomradex/write";
 import {
+  CLOSED_STATUSES,
   DependencyCycleError,
   NotFoundError,
   type Author,
+  type ClosedWindow,
   type CreateItemInput,
   type FieldValue,
   type FilterClause,
@@ -25,6 +27,8 @@ import type { Fields, StoredValue } from "@tomradex/fields";
 import { registerChannels } from "./channels.js";
 import { compileQuery, compileSearch, type SearchMode } from "./query.js";
 import { registerTools } from "./tools.js";
+import { CLOSED_WINDOW_SECTION } from "./settings.js";
+import type {} from "@tomradex/settings";
 import type { ItemsReader, ItemsWriter } from "@tomradex/contracts";
 
 declare module "cordis" {
@@ -117,7 +121,26 @@ export interface ItemQuery {
   limit?: number;
   /** When no item has every search term, fall back to items with some of them. */
   widen?: boolean;
+  /** Order by when each item reached its status, newest first, ahead of every sort key: a closed column's next page. */
+  newestClosedFirst?: boolean;
+  /** Leave epics out, as the board and the views' counts do. */
+  ticketsOnly?: boolean;
 }
+
+/** Done and cancelled tickets of one epic, for its progress: counted where they all are, not in the renderer's window. */
+export interface EpicProgress {
+  done: number;
+  total: number;
+}
+
+/**
+ * When an item reached its status: its last write that set one (creation
+ * included), else its last write at all — a row older than the oplog's
+ * patches has nothing better. Matches idx_oplog_item_status.
+ */
+const STATUS_AT_SQL = "COALESCE((SELECT MAX(o.at) FROM oplog o WHERE o.entity_id = i.id AND o.entity = 'item' AND json_extract(o.patch_json, '$.status') IS NOT NULL), i.updated_at)";
+const CLOSED_SQL = `(${CLOSED_STATUSES.map((s) => `'${s}'`).join(", ")})`;
+const DAY_MS = 86_400_000;
 
 export class Items extends Service implements ItemsReader, ItemsWriter {
   get deliveries(): DeliveryStore { return new DeliveryStore(this.ctx.db); }
@@ -252,6 +275,7 @@ export class Items extends Service implements ItemsReader, ItemsWriter {
   [Service.init]() {
     this.ctx.inject(["tools", "boards"], registerTools);
     this.ctx.inject(["ipc"], registerChannels);
+    this.ctx.inject(["settings"], (ctx) => ctx.settings.register(CLOSED_WINDOW_SECTION));
   }
 
   /** Resolved per call: a rebuild swaps a project's file underneath, so nothing holds a handle. */
@@ -322,21 +346,60 @@ export class Items extends Service implements ItemsReader, ItemsWriter {
    */
   query(q: ItemQuery): Item[] {
     const db = this.db(q.projectId);
-    const defs = new Map(this.fields.list(q.projectId).map((f) => [f.id, f]));
-    const compiled = compileQuery({ filter: q.filter ?? [], sortBy: q.sortBy ?? [] }, defs, this.fields.derivedSql());
     const run = (mode: SearchMode) => {
-      const search = compileSearch(q.search, mode);
-      const joins = [...compiled.joins, ...search.joins];
-      const where = [...compiled.where, ...search.where];
-      const orderBy = [...compiled.orderBy, ...search.orderBy, "i.rank ASC", "i.updated_at DESC"];
-      const sql = `${SELECT_ITEM} ${joins.join(" ")} WHERE i.project_id = ?${where.length ? " AND " + where.join(" AND ") : ""} ORDER BY ${orderBy.join(", ")}${q.limit !== undefined ? " LIMIT ?" : ""}`;
-      // The project id binds after the joins and before the clause params.
-      const joinCount = compiled.joins.length;
-      const params = [...compiled.params.slice(0, joinCount), ...search.joinParams, q.projectId, ...compiled.params.slice(joinCount), ...search.whereParams, ...search.orderParams, ...(q.limit !== undefined ? [q.limit] : [])];
-      return { rows: this.hydrate(db, db.prepare(sql).all(...params) as ItemRow[]), terms: search.terms };
+      const c = this.compiled(q, mode);
+      const orderBy = [...(q.newestClosedFirst ? [`${STATUS_AT_SQL} DESC`, "i.key_num DESC"] : []), ...c.orderBy, "i.rank ASC", "i.updated_at DESC"];
+      const sql = `${SELECT_ITEM} ${c.from} ORDER BY ${orderBy.join(", ")}${q.limit !== undefined ? " LIMIT ?" : ""}`;
+      return { rows: this.hydrate(db, db.prepare(sql).all(...c.params, ...c.orderParams, ...(q.limit !== undefined ? [q.limit] : [])) as ItemRow[]), terms: c.terms };
     };
     const strict = run("all");
     return !strict.rows.length && q.widen && strict.terms >= 2 ? run("any").rows : strict.rows;
+  }
+
+  /** How many items a query matches, counted in SQL: the true size of a column the renderer holds only part of. */
+  count(q: ItemQuery): number {
+    const c = this.compiled(q, "all");
+    return (this.db(q.projectId).prepare(`SELECT COUNT(*) AS n FROM items i ${c.from}`).get(...c.params) as { n: number }).n;
+  }
+
+  /** A query's joins and WHERE clause after `FROM items i`, with their params in order. */
+  private compiled(q: ItemQuery, mode: SearchMode) {
+    const defs = new Map(this.fields.list(q.projectId).map((f) => [f.id, f]));
+    const compiled = compileQuery({ filter: q.filter ?? [], sortBy: q.sortBy ?? [] }, defs, this.fields.derivedSql());
+    const search = compileSearch(q.search, mode);
+    const joins = [...compiled.joins, ...search.joins];
+    const where = [...(q.ticketsOnly ? ["i.kind = 'ticket'"] : []), ...compiled.where, ...search.where];
+    // The project id binds after the joins and before the clause params.
+    const joinCount = compiled.joins.length;
+    return {
+      from: `${joins.join(" ")} WHERE i.project_id = ?${where.length ? " AND " + where.join(" AND ") : ""}`,
+      params: [...compiled.params.slice(0, joinCount), ...search.joinParams, q.projectId, ...compiled.params.slice(joinCount), ...search.whereParams],
+      orderBy: [...compiled.orderBy, ...search.orderBy],
+      orderParams: search.orderParams,
+      terms: search.terms
+    };
+  }
+
+  /**
+   * What the renderer holds of a project: every epic and every open ticket,
+   * and of each closed status the newest tickets the window lets through, by
+   * when they reached it. The rest is asked for when something shows it.
+   */
+  windowed(projectId: string, window: ClosedWindow): Item[] {
+    const db = this.db(projectId);
+    const since = window.days !== null ? Date.now() - window.days * DAY_MS : null;
+    const closed = `SELECT id, status, key_num, ${STATUS_AT_SQL} AS at FROM items i WHERE i.kind = 'ticket' AND i.status IN ${CLOSED_SQL}`;
+    const ranked = `SELECT id, at, ROW_NUMBER() OVER (PARTITION BY status ORDER BY at DESC, key_num DESC) AS n FROM (${closed})`;
+    const sql = `${SELECT_ITEM} WHERE i.project_id = ? AND (i.kind = 'epic' OR i.status NOT IN ${CLOSED_SQL} OR i.id IN (SELECT id FROM (${ranked}) WHERE (? IS NULL OR n <= ?) AND (? IS NULL OR at >= ?))) ORDER BY i.rank ASC, i.updated_at DESC`;
+    return this.hydrate(db, db.prepare(sql).all(projectId, window.limit, window.limit, since, since) as ItemRow[]);
+  }
+
+  /** Every epic's tickets, done and in all, keyed by epic id. */
+  epicProgress(projectId: string): Record<string, EpicProgress> {
+    const rows = this.db(projectId)
+      .prepare("SELECT parent_id AS id, COUNT(*) AS total, SUM(status = 'done') AS done FROM items WHERE kind = 'ticket' AND parent_id IS NOT NULL GROUP BY parent_id")
+      .all() as { id: string; total: number; done: number }[];
+    return Object.fromEntries(rows.map((r) => [r.id, { done: r.done, total: r.total }]));
   }
 
   get(projectId: string, id: string): Item | null {

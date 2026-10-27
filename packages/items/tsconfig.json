@@ -30,6 +30,9 @@
       "path": "../oplog"
     },
     {
+      "path": "../settings"
+    },
+    {
       "path": "../tools"
     },
     {

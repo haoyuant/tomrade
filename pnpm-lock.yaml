@@ -1672,6 +1672,9 @@ importers:
       '@tomradex/oplog':
         specifier: workspace:*
         version: link:../oplog
+      '@tomradex/settings':
+        specifier: workspace:*
+        version: link:../settings
       '@tomradex/tools':
         specifier: workspace:*
         version: link:../tools

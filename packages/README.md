@@ -44,7 +44,7 @@ Every package keeps `"private": true`, so `npm publish` from a source folder fai
 | `projects` | Projects, the scope every board and issue lives in. | `projects` | hub, tools |
 | `boards` | Boards (workstreams) and the views that slice them. | `boards`, `views` | oplog, tools, write |
 | `fields` | The field registry: built-in fields plus user-defined ones. | `fields` | tools |
-| `items` | Issues, labels and relations, written through the write protocol. | `items` | boards, fields, oplog, tools, write |
+| `items` | Issues, labels and relations, written through the write protocol. | `items` | boards, fields, oplog, settings, tools, write |
 | `deps-graph` | The Dependencies graph and the "blocked" badge over `Item.blocks`. | — | plugin-sdk |
 | `inbox` | A project's inbox: feedback waits here until triaged into tickets. | `inbox` | boards, contributions, fields, items |
 | `inbox-github` | GitHub issues as an inbox source. | — | github, inbox, items, repos |
