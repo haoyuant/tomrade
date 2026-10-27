@@ -306,6 +306,12 @@ describe("a row that cannot be loaded", () => {
     expect(viewOf(h, "ghost").state).toBe("disabled");
     expect(h.persisted).toEqual([["ghost", true]]);
   });
+
+  it("is tried again when switched on, and no switch is written", async () => {
+    await h.ctx.plugins.setEnabled("ghost", true);
+    expect(viewOf(h, "ghost").state).toBe("failed");
+    expect(h.persisted).toEqual([]);
+  });
 });
 
 describe("a row waiting for a service nothing provides", () => {

@@ -110,6 +110,26 @@ export function writePatchRow(file: string, id: string, fields: Partial<PluginRo
   fs.writeFileSync(file, String(doc), "utf8");
 }
 
+/**
+ * Once per machine, take back a row's switch-off that a broken build left: the
+ * Plugins list showed a row that failed to load as on, so flipping it wrote
+ * `disabled: true` nobody meant. The marker makes it once, so a later switch-off stands.
+ */
+export function clearSwitchOffOnce(file: string, id: string, marker: string): void {
+  if (fs.existsSync(marker)) return;
+  if (fs.existsSync(file)) {
+    const doc = parseDocument(fs.readFileSync(file, "utf8"));
+    const rows = doc.get("plugins");
+    const row = isSeq(rows) ? rows.items.find((item) => isMap(item) && item.get("id") === id) : undefined;
+    if (isMap(row) && row.get("disabled") === true) {
+      row.delete("disabled");
+      fs.writeFileSync(file, String(doc), "utf8");
+    }
+  }
+  fs.mkdirSync(path.dirname(marker), { recursive: true });
+  fs.writeFileSync(marker, String(Date.now()));
+}
+
 /** The rows this platform loads: one naming other platforms is left out, as if it were not written. */
 export function forPlatform<T extends Pick<PluginRow, "platforms">>(rows: T[], platform: string = process.platform): T[] {
   return rows.filter((r) => !Array.isArray(r.platforms) || r.platforms.includes(platform));
