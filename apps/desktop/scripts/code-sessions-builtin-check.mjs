@@ -238,6 +238,34 @@ app.whenReady().then(async () => {
     ctx.emit("codeLink/changed", project.id);
     check("释放工单后，格子变回普通终端（不清空、不重连）", await wait(async () => js(`(() => { const cell = document.querySelector('${plain}'); return !!cell && [...cell.querySelectorAll('.link-btn')].some((b) => b.textContent === '关闭终端') && cell.querySelector('.xterm')?.dataset.mark === 'same'; })()`)));
 
+    // An agent without Tomrade's hooks in the plain terminal: the host reads how it stands off its screen, as herdr does
+    // on macOS. A stand-in for Claude Code (Node running @anthropic-ai/claude-code, as Windows' process table shows it)
+    // paints herdr's fixture screens on the alternate screen, the next one on each key, and leaves on the last.
+    const screens = ["claude-blocked-bash.txt", "claude-working.txt", "claude-idle.txt"].map((name) => fs.readFileSync(path.join(dir, "../../../packages/pty-host/tests/fixtures/agent-screens", name), "utf8"));
+    const fakeAgent = path.join(work, "agent", "node_modules", "@anthropic-ai", "claude-code");
+    fs.mkdirSync(fakeAgent, { recursive: true });
+    fs.writeFileSync(path.join(fakeAgent, "screens.json"), JSON.stringify(screens));
+    fs.writeFileSync(path.join(fakeAgent, "cli.js"), [
+      'const screens = JSON.parse(require("fs").readFileSync(require("path").join(__dirname, "screens.json"), "utf8"));',
+      'const paint = (s) => process.stdout.write("\\x1b[H\\x1b[2J" + s.replace(/\\n/g, "\\r\\n"));',
+      'let at = 0;',
+      'process.stdout.write("\\x1b[?1049h");',
+      'paint(screens[0]);',
+      'process.stdin.setRawMode?.(true);',
+      'process.stdin.on("data", () => { if (++at < screens.length) return paint(screens[at]); process.stdout.write("\\x1b[?1049l"); process.exit(0); });'
+    ].join("\n"));
+    const plainInfo = async () => ((await terminals.panes()) ?? []).find((p) => p.paneId === plainPane);
+    const chip = () => js(`document.querySelector('${plain} [data-testid=cs-state]')?.dataset.state ?? ''`);
+    const reads = async (status, state) => (await plainInfo())?.agent === "claude" && (await plainInfo())?.status === status && (await chip()) === state;
+    check("无 hooks 的 agent 在普通终端里跑起来", await typeIn(plain, `node "${path.join(fakeAgent, "cli.js")}"`, "Do you want to proceed?"));
+    check("host 从画面读出权限提示：blocked，格子显示「需要你」", await wait(() => reads("blocked", "needs"), 20000), JSON.stringify({ info: await plainInfo(), chip: await chip() }));
+    await terminals.sendInput(plainPane, { text: "n" });
+    check("画面换成干活中：working，格子显示「运行中」", await wait(() => reads("working", "running"), 15000), JSON.stringify({ info: await plainInfo(), chip: await chip() }));
+    await terminals.sendInput(plainPane, { text: "n" });
+    check("画面回到输入框：idle", await wait(() => reads("idle", "idle"), 15000), JSON.stringify({ info: await plainInfo(), chip: await chip() }));
+    await terminals.sendInput(plainPane, { text: "n" });
+    check("agent 退出后格子不再显示它的状态，终端画面还在", await wait(async () => !(await chip()) && (await cellText(plain)).includes("plain-ok"), 20000), JSON.stringify({ info: await plainInfo(), chip: await chip() }));
+
     // A layout kept under a name, and the pane menu.
     await js(`document.querySelector('[data-testid=cs-save-layout]').click(); true`);
     await sleep(200);

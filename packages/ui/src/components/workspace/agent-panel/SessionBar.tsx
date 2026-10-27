@@ -61,6 +61,7 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engine
         type="button"
         className="sbar-dot"
         data-status={r.status}
+        data-depth={r.depth || undefined}
         aria-current={r.key === openKey ? "true" : undefined}
         aria-label={`${title(r)}, ${statusWord(r.status)}`}
         aria-describedby={peek?.key === r.key ? peekId : undefined}
@@ -136,7 +137,7 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engine
       </div>
       <div className="sbar-cards">
         {shown.map((r) => (
-          <button key={r.key} type="button" className="sbar-card" data-status={r.status} aria-current={r.key === openKey ? "true" : undefined} onClick={() => onPick(r)}>
+          <button key={r.key} type="button" className="sbar-card" data-status={r.status} data-depth={r.depth || undefined} aria-current={r.key === openKey ? "true" : undefined} onClick={() => onPick(r)}>
             <span className="sbar-card-title">
               <StatusMark status={r.status} />
               <span>{r.ticket ? `${r.ticket} ${title(r)}` : title(r)}</span>

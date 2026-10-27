@@ -25,8 +25,8 @@ export type Block =
   | { type: "card"; id: string; schema: string; title: string; data: unknown }
   | { type: "status"; text: string }
   | { type: "changes"; runId: string; count: number; items?: { key: string; label: string; op: "created" | "updated" | "deleted" }[] }
-  /** `settingsFor`: the engine whose settings change what the note is about; the panel links there. */
-  | { type: "note"; text: string; settingsFor?: string }
+  /** `settingsFor`: the engine whose settings change what the note is about; the panel links there. `threadFor`: another conversation the note is about (one this conversation's coding moved to); the panel links there too. */
+  | { type: "note"; text: string; settingsFor?: string; threadFor?: string }
   /** One stretch of failed model requests, stored once it ends: recovered, or the run gave up. */
   | { type: "retry"; attempts: number; max?: number; reason: string; ms: number; recovered: boolean }
   /** `details`: what the engine knew beyond the one line, folded under it so it can be read and copied. */
@@ -100,6 +100,8 @@ export interface ThreadSummary {
   itemId: string | null;
   /** The branch the thread's worktree is on; null for a free-form thread, which sits detached at the default branch. */
   branch: string | null;
+  /** The conversation this one was opened under, to write its code in the background: it sits under that one in every list, works in its checkout, and reports back into it. */
+  parentId: string | null;
   title: string;
   engine: string;
   /** Which product surface owns the thread. Code sessions use Agent's worktree machinery without becoming Assistant conversations. */

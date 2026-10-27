@@ -1,0 +1,15 @@
+╭──────────────────────────────────────────────╮
+│ >_ OpenAI Codex (v0.160.0)                   │
+│                                              │
+│ model:     gpt-5.5   /model to change        │
+│ directory: ~/Projects/demo                   │
+╰──────────────────────────────────────────────╯
+
+  To get started, describe a task or try one of these commands:
+
+  /init - create an AGENTS.md file with instructions for Codex
+  /status - show current session configuration
+
+› Explain this codebase
+
+  ? for shortcuts                                         100% context left

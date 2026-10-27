@@ -411,6 +411,7 @@ function apply(ctx: Context, config: Config) {
           itemId: th.itemId,
           key: item?.key ?? null,
           ticketTitle: item?.title ?? null,
+          parentId: th.parentId,
           running: running.has(th.id),
           wait: kind ? { kind, text: clip(asked?.question.text), since: before?.kind === kind ? before.since : now } : null,
           createdAt: th.createdAt,

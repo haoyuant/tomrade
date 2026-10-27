@@ -63,6 +63,7 @@ export interface PaneInfo {
   scroll: { offset_from_bottom: number; max_offset_from_bottom: number; viewport_rows: number };
   /** The coding agent the host sees running in the pane; absent from a host older than that. */
   agent?: string | null;
+  /** How that agent reads on the pane's screen and title, by herdr's detection manifests (by its title alone from a host before them). */
   agent_status?: TerminalStatus;
 }
 

@@ -1,0 +1,13 @@
+> fix the parser
+
+⏺ I'll look at the parser first.
+
+⏺ Read(src/parser.ts)
+  ⎿  Read 120 lines
+
+✻ Cogitating… (12s · ↓ 1.2k tokens · esc to interrupt)
+
+────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────
+  ⏵⏵ accept edits on (shift+tab to cycle)

@@ -524,7 +524,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.on("tools/result", (call, outcome) => {
         if (call.name !== "create_item" || !outcome.ok || call.by !== `ai:${MCP_AGENT}` || !call.projectId) return;
         const id = (outcome.result as { id?: unknown } | null)?.id;
-        if (typeof id === "string") this.filed(call.projectId, id);
+        if (typeof id === "string") this.filed(call.projectId, id, call.connection);
       });
       return registerTools(ctx, {
         store: this.store,
@@ -1172,21 +1172,27 @@ export class CodeLink extends Service implements CodeLinkReader {
   }
 
   /**
-   * A ticket an agent filed from its own terminal, before any claim: the one live session that holds nothing and
-   * stands on that repository takes it. Exactly one — with two, nothing says whose the ticket is, and the agent's
-   * own claim decides; a session already working a ticket filed a follow-up, not its next one.
+   * A ticket an agent filed from its own terminal, before any claim: its conversation takes it when it holds nothing
+   * else — one already working a ticket filed a follow-up, not its next one. The filer is the conversation its
+   * connection claimed for, else the one whose hooks announced this call; with neither, the only conversation on that
+   * repository, if it is the only one — with two, nothing says whose the ticket is, and the agent's own claim decides.
    */
-  private filed(projectId: string, itemId: string): void {
+  private filed(projectId: string, itemId: string, connection: string | undefined): void {
     const item = this.ctx.items.get(projectId, itemId);
     const repoId = item ? this.ctx.boards.get(projectId, item.boardId)?.repoId : null;
     // An epic is planned, never worked: no session claims or delivers it.
     if (!item || item.kind !== "ticket" || !repoId) return;
-    const free = this.store.sessions(projectId, { live: true }).filter((s) =>
-      s.mode === "terminal" && s.agent !== MCP_AGENT && s.threadId === null && s.repoId === repoId && s.endedAt === null && s.state !== "lost" && !s.itemIds.length);
-    // One conversation may have left several rows behind; two conversations never share a ticket. Only the first is
-    // a ticket's, and of its rows the one its hooks reached last — not the earlier one a restart left standing.
-    if (new Set(free.map((s) => s.externalId ?? s.id)).size !== 1) return;
-    const latest = free.reduce((best, s) => ((s.lastEventAt ?? s.startedAt) > (best.lastEventAt ?? best.startedAt) ? s : best), free[0]!);
+    const conversation = (s: SessionView) => s.externalId ?? s.id;
+    const live = this.store.sessions(projectId, { live: true }).filter((s) =>
+      s.mode === "terminal" && s.agent !== MCP_AGENT && s.threadId === null && s.repoId === repoId && s.endedAt === null && s.state !== "lost");
+    const announced = this.sessions.filer(projectId, item.title);
+    const bound = connection ? this.connections.connectedSessions(projectId, connection) : [];
+    const announcer = announced && !bound.length ? this.store.session(projectId, announced) : null;
+    const filer = bound.length ? new Set(bound.map(conversation)) : announcer ? new Set([conversation(announcer)]) : null;
+    const theirs = filer ? live.filter((s) => filer.has(conversation(s))) : live;
+    if (new Set(theirs.map(conversation)).size !== 1 || theirs.some((s) => s.itemIds.length)) return;
+    // One conversation may have left several rows behind: the one its hooks reached last, not the earlier one a restart left standing.
+    const latest = theirs.reduce((best, s) => ((s.lastEventAt ?? s.startedAt) > (best.lastEventAt ?? best.startedAt) ? s : best), theirs[0]!);
     this.attach(projectId, this.connections.freshest(projectId, latest).id, item.id, "", this.store.ensureActiveDelivery(projectId, item.id, item.updatedAt).sequence);
   }
 

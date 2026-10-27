@@ -751,6 +751,24 @@ describe("code link", () => {
     expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ mergedSha: expect.any(String), prState: "merged" });
   });
 
+  it("lets a session's own hooks speak over the terminal backend's reading of its screen", async () => {
+    const { codeLink, project, repo, ticket } = await machine(codeRepo());
+    const item = ticket("Screen and hooks", "doing");
+    const session = codeLink.store.createSession(project.id, { repoId: repo.id, branch: "", itemIds: [item.id], mode: "terminal", agent: "claude-code", threadId: null, device: "test" });
+    const state = () => codeLink.store.session(project.id, session.id)!.state;
+    // No hook heard: how the screen reads (herdr's reading, or the pty host's on Windows) stands for the session.
+    codeLink.sessions.event(project.id, session.id, { hook_event_name: "PermissionRequest", herdr: true });
+    expect(state()).toBe("waiting");
+    // A hook spoke: the screen is not believed over it for a while.
+    codeLink.sessions.event(project.id, session.id, { hook_event_name: "PreToolUse", tool_name: "Read" });
+    expect(state()).toBe("running");
+    codeLink.sessions.event(project.id, session.id, { hook_event_name: "PermissionRequest", herdr: true });
+    expect(state()).toBe("running");
+    // The pane going is the end, whatever was said.
+    codeLink.sessions.event(project.id, session.id, { hook_event_name: "SessionEnd", reason: "pane closed", herdr: true });
+    expect(state()).toBe("ended");
+  });
+
   it("starts a new delivery when a done ticket is reopened, without old merge evidence completing it", async () => {
     const { codeLink, items, project, repo, checkout, ticket } = await machine(codeRepo());
     const item = ticket("Ship, then revise", "todo");

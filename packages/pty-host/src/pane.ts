@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import type { IBufferCell, Terminal as HeadlessTerminal } from "@xterm/headless";
 import type { TerminalFrame, TerminalMode, TerminalMouse, TerminalScroll } from "@tomradex/contracts";
+import type { DetectionInput } from "./detection.js";
 import { clampSize, type PaneInfo } from "./protocol.js";
 import { diffFrame, fullFrame, renderRow, type Screen } from "./render.js";
 
@@ -34,6 +35,10 @@ export const SCROLLBACK = 5_000;
 /** How long the frames of a burst of output wait to go as one. */
 export const FRAME_MS = 16;
 
+/** How much of a title or progress report detection keeps, as herdr keeps it. */
+const OSC_MAX = 256;
+const oscText = (text: string) => [...text.replace(/\p{Cc}/gu, "")].slice(0, OSC_MAX).join("");
+
 const sameScroll = (a: ScrollState | null, b: ScrollState) => !!a && a.offset === b.offset && a.max === b.max && a.rows === b.rows;
 
 /**
@@ -46,6 +51,11 @@ const sameScroll = (a: ScrollState | null, b: ScrollState) => !!a && a.offset ==
 export class Pane {
   readonly term: HeadlessTerminal;
   title: string | null = null;
+  /** Counts what changed the screen or title, so a reading of an unchanged pane is skipped. */
+  revision = 0;
+  /** The title and the last OSC 9 report as the agent sent them, for detection. */
+  private oscTitle = "";
+  private oscProgress = "";
   offset = 0;
   exited = false;
   private readonly attachments = new Set<Attachment>();
@@ -67,7 +77,7 @@ export class Pane {
     readonly label: string | null,
     cols: number,
     rows: number,
-    private readonly hooks: { onScroll(pane: Pane, scroll: ScrollState): void; onExit(pane: Pane): void; onTitle?(pane: Pane): void },
+    private readonly hooks: { onScroll(pane: Pane, scroll: ScrollState): void; onExit(pane: Pane): void; onTitle?(pane: Pane): void; onOutput?(pane: Pane): void },
     scrollback = SCROLLBACK
   ) {
     this.term = new Terminal({ cols: clampSize(cols), rows: clampSize(rows), scrollback, allowProposedApi: true });
@@ -91,7 +101,15 @@ export class Pane {
       this.sgrMouse = false;
       return false;
     });
+    // OSC 9;4 is how some agents report progress (`4;0` idle); detection reads the last one.
+    this.term.parser.registerOscHandler(9, (data) => {
+      this.oscProgress = oscText(data);
+      this.revision++;
+      return false;
+    });
     this.term.onTitleChange((title) => {
+      this.oscTitle = oscText(title);
+      this.revision++;
       const next = title.trim() || null;
       if (next === this.title) return;
       this.title = next;
@@ -104,7 +122,9 @@ export class Pane {
       this.term.write(data, () => {
         // A view up in the scrollback stays on what it showed while output goes on below.
         if (this.offset) this.offset = Math.min(this.offset + Math.max(0, this.term.buffer.active.baseY - base), this.maxOffset());
+        this.revision++;
         this.schedule();
+        hooks.onOutput?.(this);
       });
     });
     pty.onExit(() => hooks.onExit(this));
@@ -148,6 +168,38 @@ export class Pane {
     const m = this.term.modes;
     const set = (n: number, on: boolean) => `\x1b[?${n}${on ? "h" : "l"}`;
     return `${set(1, m.applicationCursorKeysMode)}${m.applicationKeypadMode ? "\x1b=" : "\x1b>"}${set(2004, m.bracketedPasteMode)}${set(1004, m.sendFocusMode)}\x1b[${this.cursorStyle} q`;
+  }
+
+  /**
+   * The pane's live bottom as herdr's detection reads it, whatever the view is scrolled to: a screen's height of rows
+   * ending at the last one with something on it (or the cursor's, if lower), each without trailing blanks, the blank
+   * rows at the end dropped. On the alternate screen, the whole screen.
+   */
+  detectionText(): string {
+    const buffer = this.term.buffer.active;
+    const total = buffer.length;
+    const row = (y: number) => buffer.getLine(y)?.translateToString(true).trimEnd() ?? "";
+    let end = total - 1;
+    if (buffer.type === "normal") {
+      const top = buffer.baseY;
+      let last = -1;
+      for (let y = total - 1; y >= top && last < 0; y--) if (row(y).trim()) last = y;
+      if (last >= 0) end = Math.max(last, Math.min(top + buffer.cursorY, total - 1));
+    }
+    const rows: string[] = [];
+    for (let y = Math.max(0, end + 1 - this.term.rows); y <= end; y++) rows.push(row(y));
+    while (rows.length && !rows.at(-1)!.trim()) rows.pop();
+    return rows.length ? `${rows.join("\n")}\n` : "";
+  }
+
+  /** What an agent's detection manifest reads of the pane. */
+  detectionInput(): DetectionInput {
+    return { screen: this.detectionText(), oscTitle: this.oscTitle, oscProgress: this.oscProgress };
+  }
+
+  /** Progress another agent reported says nothing of the one that took its place. */
+  forgetProgress(): void {
+    this.oscProgress = "";
   }
 
   /** The last lines with something on them, styling stripped. */
@@ -205,6 +257,7 @@ export class Pane {
     const r = clampSize(rows);
     if (this.exited || (c === this.term.cols && r === this.term.rows)) return;
     this.term.resize(c, r);
+    this.revision++;
     try {
       this.pty.resize(c, r);
     } catch {

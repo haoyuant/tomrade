@@ -29,6 +29,10 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-dot { width: 50px; padding: 5px 0 3px; border: 0; border-radius: var(--radius-md, 8px); background: transparent; color: var(--fg); display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; flex-shrink: 0; }
 .cs-dot:hover { background: var(--surface-warm); }
 .cs-dot[aria-current="true"] { background: var(--surface); box-shadow: var(--elev-ring); }
+/* a conversation writing code in the background for the one above it: set in under it */
+.cs-dot[data-depth="1"] { margin-left: 10px; }
+.cs-dot[data-depth="1"] .cs-dot-face { width: 26px; height: 26px; font-size: 10px; }
+.cs-row[data-depth="1"] { margin-left: 12px; width: calc(100% - 12px); }
 .cs-dot-face { position: relative; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-family: var(--font-mono); background: var(--surface); border: 1px dashed var(--border-input); overflow: visible; }
 .cs-dot[data-status="run"] .cs-dot-face { border: 2px solid var(--accent-light); }
 .cs-dot[data-status="wait"] .cs-dot-face { border: 2px solid var(--warn); }

@@ -865,6 +865,37 @@ describe("a ticket an agent files for itself", () => {
     expect(codeLink.sessionsOf(project.id, filed.id)).toEqual([]);
   });
 
+  it("gives a ticket filed by a conversation already working one to nobody, though another session on the repository holds nothing", async () => {
+    const { ctx, codeLink, project, board, items, checkout } = await machine();
+    await start(ctx, project.id, checkout, "cli-1");
+    await start(ctx, project.id, checkout, "cli-2", 2);
+    const post = (payload: unknown) => fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const claiming = (key: string) => post({ hook_event_name: "PreToolUse", session_id: "cli-1", cwd: checkout, tool_name: "mcp__tomrade__claim_ticket", tool_input: { key } });
+    const working = items.create({ projectId: project.id, boardId: board.id, title: "Earlier work", by: "human" });
+    const inv = { by: "ai:mcp" as const, projectId: project.id, connection: "conn-a" };
+    await claiming(working.key);
+    await ctx.tools.execute("claim_ticket", { key: working.key }, inv);
+    // Filed by cli-1, which works a ticket: a follow-up of its own, not cli-2's next ticket.
+    const filed = (await ctx.tools.execute("create_item", { title: "Follow-up found on the way" }, inv)) as { id: string; key: string };
+    expect(codeLink.sessionsOf(project.id, filed.id)).toEqual([]);
+    // Its own claim, alongside the ticket it works, is not refused as someone else's.
+    await claiming(filed.key);
+    const claimed = await ctx.tools.execute("claim_ticket", { key: filed.key, parallel: true }, inv);
+    expect(claimed).toMatchObject({ key: filed.key, status: "doing" });
+    expect(codeLink.sessionsOf(project.id, filed.id).map((s) => s.externalId)).toEqual(["cli-1"]);
+  });
+
+  it("takes the filer from its hooks when its connection has claimed nothing yet", async () => {
+    const { ctx, codeLink, project, checkout } = await machine();
+    await start(ctx, project.id, checkout, "cli-1");
+    await start(ctx, project.id, checkout, "cli-2", 2);
+    const second = codeLink.sessionsOf(project.id).find((s) => s.externalId === "cli-2")!;
+    // As Claude Code's PreToolUse announces the call before it reaches the MCP server.
+    await fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hook_event_name: "PreToolUse", session_id: "cli-2", cwd: checkout, tool_name: "mcp__tomrade__create_item", tool_input: { title: "Write the README" } }) });
+    const filed = (await ctx.tools.execute("create_item", { title: "Write the README" }, { by: "ai:mcp" as const, projectId: project.id, connection: "conn-b" })) as { id: string };
+    expect(codeLink.sessionsOf(project.id, filed.id).map((s) => s.id)).toEqual([second.id]);
+  });
+
   it("claims the row its conversation opened last, not the one the connection was bound to before", async () => {
     const { ctx, codeLink, project, board, items, checkout } = await machine();
     const post = (payload: unknown) => fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
