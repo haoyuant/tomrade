@@ -28,7 +28,7 @@ import { contribute } from "./contrib.js";
 import { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
 import { FollowOnStore, type FollowOn } from "./follow-ons.js";
 import { HerdrBridge, type HerdrInstall } from "./herdr-bridge.js";
-import { SessionPanel, type SessionPanelView } from "./panel.js";
+import { SessionPanel, type AnswerResult, type SessionPanelView } from "./panel.js";
 import { Landing, type MergeCause, type MergeCheckView, type MergeLocalResult, type OpenPrResult } from "./landing.js";
 import { Orientation } from "./orientation.js";
 import { SYNC_PROMPT, syncInstructions, syncPrompt, type SyncScope } from "./sync.js";
@@ -216,7 +216,7 @@ declare module "@tomradex/ipc" {
     /** Text into the session's pane, with Enter, as typed at its keyboard. */
     "codeLink.sessionSay": (projectId: string, sessionId: string, text: string) => boolean;
     /** The agent's declared keys for its permission prompt, pressed in the session's pane. */
-    "codeLink.sessionAnswer": (projectId: string, sessionId: string, which: "allow" | "deny") => boolean;
+    "codeLink.sessionAnswer": (projectId: string, sessionId: string, which: "allow" | "deny") => AnswerResult;
     /** The last lines on the session's pane; null without a pane. Asked by the panel only while it shows the session. */
     "codeLink.sessionTail": (projectId: string, sessionId: string, lines: number) => string | null;
     /** How herdr installs on this machine: Homebrew's command where brew is, herdr's own installer on macOS and Linux, else only its install guide. */
@@ -903,8 +903,8 @@ export class CodeLink extends Service implements CodeLinkReader {
     return this.panel.say(projectId, sessionId, text);
   }
 
-  /** The agent's declared keys for its permission prompt, pressed in the session's pane; false when it has none, or they would not go. */
-  sessionAnswer(projectId: string, sessionId: string, which: "allow" | "deny"): Promise<boolean> {
+  /** The agent's declared keys for its permission prompt, pressed in the session's pane while it shows one; see `SessionPanel.answer`. */
+  sessionAnswer(projectId: string, sessionId: string, which: "allow" | "deny"): Promise<AnswerResult> {
     return this.panel.answer(projectId, sessionId, which);
   }
 

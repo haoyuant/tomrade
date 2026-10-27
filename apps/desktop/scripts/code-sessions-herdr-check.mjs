@@ -832,6 +832,15 @@ app.whenReady().then(async () => {
     // A session waiting on a permission its agent declared the keys for: its card goes to the top and allows from there.
     const typedIn = [];
     const realSendInput = ctx.herdr.sendInput;
+    // Allow presses keys only on a permission prompt the pane's screen shows: these panes print one.
+    const showsOnScreen = async (pane, command, seen) => {
+      // a drop earlier may have left words on the shell's line
+      await realSendInput.call(ctx.herdr, pane, { keys: ["ctrl+c"] });
+      await realSendInput.call(ctx.herdr, pane, { text: command, keys: ["enter"] });
+      return wait(async () => ((await ctx.herdr.readTail(pane, 12)) ?? "").split("\n").some((l) => l.trim() === seen), 5000);
+    };
+    await showsOnScreen(sessions[4].pane, "printf 'Do you want to proceed?\\n❯ 1. Yes\\n  2. No, and tell Claude what to do differently\\n'", "❯ 1. Yes");
+    await showsOnScreen(sessions[3].pane, "printf 'Do you trust the files in this folder?\\n❯ 1. No, exit\\n  2. Yes, I trust this folder\\n'", "❯ 1. No, exit");
     ctx.herdr.sendInput = async (pane, input) => { typedIn.push([pane, input]); return true; };
     ctx.codeLink.store.patchSession(project.id, sessions[4].id, { state: "waiting", activity: "needs your approval: Bash" });
     ctx.emit("codeLink/changed", project.id);
@@ -843,7 +852,19 @@ app.whenReady().then(async () => {
     await tjs(`${askCard}?.closest('li').querySelector('[data-testid=cs-allow]')?.click(); true`);
     const allowed = await wait(async () => typedIn.length === 1, 3000);
     check("点「允许」把 agent 声明的按键发进它的 pane", allowed && JSON.stringify(typedIn[0]) === JSON.stringify([sessions[4].pane, { keys: ["enter"] }]), JSON.stringify(typedIn));
+    // A folder's trust is no permission: Enter there would pick "No, exit". Nothing is pressed; the session comes into a cell to be answered there.
+    ctx.codeLink.store.patchSession(project.id, sessions[3].id, { state: "waiting", activity: "needs your approval" });
+    ctx.emit("codeLink/changed", project.id);
+    const trustCard = `[...document.querySelectorAll('.cs-row')].find((r) => r.textContent.includes(${JSON.stringify(sessions[3].item.key)}))`;
+    await wait(async () => tjs(`!!${trustCard}?.closest('li').querySelector('[data-testid=cs-allow]')`), 5000);
+    await tjs(`${trustCard}?.closest('li').querySelector('[data-testid=cs-allow]')?.click(); true`);
+    const toldInPane = await wait(async () => tjs(`(document.querySelector('[data-testid=cs-toast]')?.textContent ?? '').includes('请在它的格子里回答')`), 3000);
+    const cameIntoCell = await wait(async () => tjs(`${trustCard}?.getAttribute('aria-current') === 'true'`), 3000);
+    check("屏幕上不是权限提示（信任文件夹）时点「允许」一个键也不发，提示到格子里回答并把它选中", toldInPane && cameIntoCell && typedIn.length === 1, JSON.stringify({ typedIn, toldInPane, cameIntoCell }));
     ctx.herdr.sendInput = realSendInput;
+    // the overview below reads this pane's marker in its last lines
+    await realSendInput.call(ctx.herdr, sessions[4].pane, { text: "echo marker-five", keys: ["enter"] });
+    ctx.codeLink.store.patchSession(project.id, sessions[3].id, { state: "running", activity: null });
     ctx.codeLink.store.patchSession(project.id, sessions[4].id, { state: "running", activity: null });
     ctx.emit("codeLink/changed", project.id);
     await wait(async () => tjs(`${askCard}?.dataset.status === 'run'`), 5000);

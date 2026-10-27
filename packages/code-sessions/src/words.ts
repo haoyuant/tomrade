@@ -29,7 +29,8 @@ export const CODE_SESSIONS_WORDS = defineWords("codeSessions", {
     notSent: "What you typed while the terminal was connecting was not sent",
     paneEnded: "This terminal ended",
     takenOver: "Another window took this terminal over",
-    answerNotTaken: "The terminal did not take the answer; answer in its pane"
+    answerNotTaken: "The terminal did not take the answer; answer in its pane",
+    answerInPane: "Its screen shows no permission prompt a key could answer safely — answer it in its pane"
   },
   zh: {
     open: "打开终端",
@@ -58,6 +59,7 @@ export const CODE_SESSIONS_WORDS = defineWords("codeSessions", {
     notSent: "终端连接时输入的内容没有发出去",
     paneEnded: "这个终端已经结束",
     takenOver: "这个终端被另一个窗口接管了",
-    answerNotTaken: "终端没有收下这个回答，请到它的格子里处理"
+    answerNotTaken: "终端没有收下这个回答，请到它的格子里处理",
+    answerInPane: "它的屏幕上不是能用按键安全回答的权限提示，请在它的格子里回答"
   }
 });

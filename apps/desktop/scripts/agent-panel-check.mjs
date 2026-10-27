@@ -716,6 +716,14 @@ const run = async () => {
   check("a session waiting for approval shows Allow and Deny", view?.state === "waiting" && view.allow && /needs your approval: Bash/.test(view.approve ?? ""), view);
   check("a burst of changes re-reads the record once, not once per change", convoReads - convoAt >= 1 && convoReads - convoAt <= 2, convoReads - convoAt);
   await shot("terminal-session.png");
+  // The keys answer whatever the screen shows: on a folder's trust (Enter there is "No, exit") nothing is pressed.
+  const typedBefore = typed.length;
+  screen = "Do you trust the files in this folder?\n\n❯ No, exit\n  Yes, I trust this folder\n\nEnter to confirm · Esc to cancel";
+  await press(`document.querySelector('[data-testid="ai-allow"]')`);
+  await sleep(400);
+  const trustToast = await $(`[...document.querySelectorAll('.toast-body')].map((n) => n.textContent).join(' | ')`);
+  check("Allow on a screen that is no permission prompt presses nothing and says to answer it in the pane", typed.length === typedBefore && /no permission prompt a key could answer/.test(trustToast ?? "") && (await sessionView())?.allow, { typed: typed.slice(typedBefore), trustToast });
+  screen = "Bash command\n  pnpm test\nDo you want to proceed?\n❯ 1. Yes\n  2. Yes, and don't ask again\n  3. No, and tell Claude what to do differently (esc)";
   await press(`document.querySelector('[data-testid="ai-allow"]')`);
   await sleep(300);
   view = await sessionView();
