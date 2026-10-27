@@ -4,7 +4,7 @@ import { ConvoLines, ConvoTop, useOpenLines, type ConvoLine } from "~/components
 import { ContextMenu } from "~/components/ui/menu";
 import { onCell, send, type Look } from "./bridge";
 import { keyLabel } from "./keys";
-import { live, sessionName } from "./lists";
+import { live, sessionName, sessionStatus } from "./lists";
 import { Replay } from "./Replay";
 import { useSay } from "./say";
 import { Guess, ShellHint } from "./guess";
@@ -245,7 +245,7 @@ export function Cell({ leaf, number, pane, session, terminal, closed, places, re
   const timelinePane = session?.pane ?? terminal?.pane ?? closed?.pane ?? session?.ranIn ?? null;
   const [timeline, setTimeline] = useState(false);
   return (
-    <div className="cs-cell" data-cell={leaf.id} data-focused={focused || undefined} data-flash={flash ?? undefined} data-locked={leaf.locked || undefined} data-cell-terminal={terminal?.id} onMouseDownCapture={onFocus} onFocusCapture={onFocus}>
+    <div className="cs-cell" data-cell={leaf.id} data-focused={focused || undefined} data-flash={flash ?? undefined} data-wait={(session ? sessionStatus(session) === "wait" : terminal?.agentStatus === "blocked") || undefined} data-locked={leaf.locked || undefined} data-cell-terminal={terminal?.id} onMouseDownCapture={onFocus} onFocusCapture={onFocus}>
       {withMenu(<div className="cs-cell-bar">
         {/* Its number in reading order: what `tomrade term --attach` names it by. */}
         <span className="cs-cell-no" data-testid="cs-cell-no" title={say("cellNumber", { n: number })}>{number}</span>

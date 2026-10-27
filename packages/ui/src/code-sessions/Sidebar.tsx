@@ -13,7 +13,7 @@ import { Mark, RowActions, rowAgent, rowMono, rowName, rowSaid, rowTail, rowTitl
 import { Guess } from "./guess";
 import { keyLabel } from "./keys";
 import type { Key } from "./layout";
-import { bundles, paneOf, sessionName, sessionStatus, statusOf, type BarStatus, type HereRow } from "./lists";
+import { bundles, isNewRow, paneOf, sessionName, sessionStatus, statusOf, type BarStatus, type HereRow } from "./lists";
 import { useSay, useWords } from "./say";
 
 /** ⌘-click (Ctrl-click off a Mac) opens a row in a new pane instead of the selected one. */
@@ -150,6 +150,7 @@ function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; hi
           <span className={rowMono(r) ? "cs-row-name mono" : "cs-row-name"}>
             <Mark status={status} />
             {name}
+            {isNewRow(r) && <span className="sbar-new-badge" data-testid="cs-new">{say("new")}</span>}
           </span>
           {r.kind === "terminal" && !r.terminal.pane ? <span className="tag faint cs-chip">{say("starting")}</span> : <span className="cs-where">{whereOf(r, cellOf(marks.cells, r), say)}</span>}
         </span>
@@ -384,6 +385,7 @@ function Rail({ ref, rows, waiting, marks, picks, foldLabel, onFold }: { ref: Re
         <span className="cs-dot-face">
           {shortOf(r, name)}
           <Mark status={status} size={9} />
+          {isNewRow(r) && <span className="sbar-new-badge" data-testid="cs-new">{say("new")}</span>}
         </span>
         <span className="cs-dot-where">{status === "done" ? statusWord("done", say) : whereOf(r, cellOf(marks.cells, r), say)}</span>
       </button>

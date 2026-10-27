@@ -420,6 +420,9 @@ app.whenReady().then(async () => {
     const needsBar = await wait(async () => (await barChip(sessions[5].item.key))?.[0] === "needs", 3000);
     const runningBar = await barChip(sessions[4].item.key);
     check("每个面板的标题栏标出会话状态：需要你、运行中", needsBar && runningBar?.[1] === "运行中", JSON.stringify({ needs: await barChip(sessions[5].item.key), running: runningBar }));
+    const cellOf = (key) => `[...document.querySelectorAll('.cs-cell')].find((c) => c.querySelector('.cs-cell-name')?.textContent.startsWith(${JSON.stringify(`${key} `)}))`;
+    const waitBorder = await js(`(() => { const cell = ${cellOf(sessions[5].item.key)}; const run = ${cellOf(sessions[4].item.key)}; const probe = document.createElement('div'); probe.style.color = 'var(--warn)'; document.body.append(probe); const want = getComputedStyle(probe).color; probe.remove(); return { wait: !!cell?.hasAttribute('data-wait'), border: cell ? getComputedStyle(cell).borderTopColor : null, want, runWait: !!run?.hasAttribute('data-wait'), runBorder: run ? getComputedStyle(run).borderTopColor : null }; })()`);
+    check("等你的格子边框标橙，运行中的不标", waitBorder.wait && waitBorder.border === waitBorder.want && !waitBorder.runWait && waitBorder.runBorder !== waitBorder.want, JSON.stringify(waitBorder));
     await selectPane(5);
     await js(`${seventhRow}.click(); true`);
     const needsKept = (await wait(async () => cellShows(seventhItem.key), 3000)) && (await cellNames())[5]?.startsWith(`${sessions[5].item.key} `);
@@ -918,6 +921,11 @@ app.whenReady().then(async () => {
     const inCell = (key) => tjs(`[...document.querySelectorAll('.cs-cell-name')].some((n) => n.textContent.includes(${JSON.stringify(key)}))`);
     const auto = await appear("自动放进空面板");
     check("新会话自动放进空面板", await wait(async () => inCell(auto), 8000));
+    // A card by its name alone: CSC-1 is not CSC-12.
+    const cardOf = (key) => `[...document.querySelectorAll('.cs-card')].find((c) => c.querySelector('.cs-row-name')?.firstChild && [...c.querySelector('.cs-row-name').childNodes].some((n) => n.nodeType === 3 && n.textContent.trim() === ${JSON.stringify(key)}))`;
+    const newMark = await wait(async () => tjs(`${cardOf(auto)}?.querySelector('[data-testid=cs-new]')?.textContent === '新'`), 3000);
+    const oldUnmarked = await tjs(`!!${cardOf(sessions[0].item.key)} && !${cardOf(sessions[0].item.key)}.querySelector('[data-testid=cs-new]')`);
+    check("刚开始的会话卡片带「新」（一分钟内，同助手面板），早开始的不带", newMark && oldUnmarked, JSON.stringify({ newMark, oldUnmarked }));
     await tjs(`document.querySelector('[data-testid=cs-side-new-terminal]').click(); true`);
     await sleep(300);
     await tjs(`${heldBar}.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 20 })); true`);
@@ -988,8 +996,8 @@ app.whenReady().then(async () => {
     const barRight = await tjs(`(() => { const side = document.querySelector('.cs-side').getBoundingClientRect(); const main = document.querySelector('.cs-main').getBoundingClientRect(); return side.left >= main.right - 1 && !!document.querySelector('[data-testid=cs-views]'); })()`);
     check("会话栏在右边，顶部有「格子 | 总览」", barRight);
     // The top bar breathes: the view switch carries an icon on each word, stands shorter than the bar and centred in it,
-    // and ends on the session cards' right edge; the project name starts on the first cell's left edge.
-    const topbar = await tjs(`(() => { const r = (el) => el.getBoundingClientRect(); const bar = r(document.querySelector('.cs-topbar')); const views = r(document.querySelector('[data-testid=cs-views]')); const side = document.querySelector('.cs-side'); const cards = r(side).right - parseFloat(getComputedStyle(side).paddingRight); const name = r(document.querySelector('[data-testid=cs-project]')); const cell = r(document.querySelector('.cs-cell')); return { room: bar.height - views.height, centred: Math.abs((views.top - bar.top) - (bar.bottom - views.bottom)) <= 1, right: Math.abs(views.right - cards) <= 1, left: Math.abs(name.left - cell.left) <= 1, icons: document.querySelectorAll('[data-testid=cs-views] button svg').length }; })()`);
+    // and the bar's last button ends on the session cards' right edge; the project name starts on the first cell's left edge.
+    const topbar = await tjs(`(() => { const r = (el) => el.getBoundingClientRect(); const bar = r(document.querySelector('.cs-topbar')); const views = r(document.querySelector('[data-testid=cs-views]')); const last = r(document.querySelector('.cs-topbar').lastElementChild); const side = document.querySelector('.cs-side'); const cards = r(side).right - parseFloat(getComputedStyle(side).paddingRight); const name = r(document.querySelector('[data-testid=cs-project]')); const cell = r(document.querySelector('.cs-cell')); return { room: bar.height - views.height, centred: Math.abs((views.top - bar.top) - (bar.bottom - views.bottom)) <= 1, right: Math.abs(last.right - cards) <= 1, left: Math.abs(name.left - cell.left) <= 1, icons: document.querySelectorAll('[data-testid=cs-views] button svg').length }; })()`);
     check("顶栏有余地：「格子 | 总览」各带图标，比顶栏矮且居中，右边齐会话卡片，项目名齐第一个格子", topbar.room >= 8 && topbar.centred && topbar.right && topbar.left && topbar.icons === 2, JSON.stringify(topbar));
     foldKey();
     const dots = await wait(async () => tjs(`!!document.querySelector('.cs-side[data-folded]') && document.querySelectorAll('.cs-dot').length >= 6 && document.querySelectorAll('.cs-row').length === 0`), 3000);
@@ -1015,6 +1023,32 @@ app.whenReady().then(async () => {
     await tjs(`${threadCard}?.click(); true`);
     const openedThread = await wait(async () => opens.some((t) => t.projectId === project.id && t.threadId === thread.id), 3000);
     check("点它在主窗口打开（desktop/open 带着这个对话）", openedThread, JSON.stringify(opens));
+
+    // The top bar's own buttons, beside the view switch: split right and down, ⌘K, and the main window.
+    const topWords = await tjs(`['cs-top-split-right', 'cs-top-split-down', 'cs-top-palette', 'cs-top-main'].map((id) => document.querySelector('[data-testid=' + id + ']')?.textContent.trim() ?? null)`);
+    const wordsOk = process.platform !== "darwin" || JSON.stringify(topWords) === JSON.stringify(["向右分⌘D", "向下分⇧⌘D", "⌘K找会话或做事", "主窗口"]);
+    const cellsBeforeTop = await tjs(`document.querySelectorAll('.cs-cell').length`);
+    const terminalsBeforeTop = await tjs(`document.querySelectorAll('.cs-cell[data-cell-terminal]').length`);
+    await tjs(`document.querySelector('[data-testid=cs-top-split-right]').click(); true`);
+    const topSplit = await wait(async () => tjs(`document.querySelectorAll('.cs-cell').length === ${cellsBeforeTop + 1} && document.querySelectorAll('.cs-cell[data-cell-terminal] .xterm').length === ${terminalsBeforeTop + 1}`), 10000);
+    // That shell goes again, and its cell.
+    await tjs(`(() => { const cell = document.querySelector('.cs-cell[data-focused]'); [...(cell?.querySelectorAll('.cs-cell-bar .link-btn') ?? [])].find((b) => b.textContent === '关闭终端')?.click(); return true; })()`);
+    await sleep(800);
+    await tjs(`document.querySelector('.cs-cell[data-focused] button[aria-label="关闭这个窗格"]')?.click(); true`);
+    await wait(async () => (await tjs(`document.querySelectorAll('.cs-cell').length`)) === cellsBeforeTop, 5000);
+    await tjs(`document.querySelector('[data-testid=cs-top-palette]').click(); true`);
+    const topPalette = await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-palette]')`), 3000);
+    tw.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
+    tw.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
+    if (!(await wait(async () => tjs(`!document.querySelector('[data-testid=cs-palette]')`), 2000))) {
+      const mac = process.platform === "darwin";
+      await tjs(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', code: 'KeyK', metaKey: ${mac}, ctrlKey: ${!mac}, shiftKey: ${!mac}, bubbles: true, cancelable: true })); true`);
+      await wait(async () => tjs(`!document.querySelector('[data-testid=cs-palette]')`), 2000);
+    }
+    const opensBefore = opens.length;
+    await tjs(`document.querySelector('[data-testid=cs-top-main]').click(); true`);
+    const topMain = await wait(async () => opens.slice(opensBefore).some((t) => t.projectId === project.id && !t.threadId), 3000);
+    check("顶栏右侧「向右分 ⌘D」「向下分 ⇧⌘D」「⌘K 找会话或做事」「主窗口」：分出 shell、打开 ⌘K、把主窗口调到前面", wordsOk && topSplit && topPalette && topMain, JSON.stringify({ topWords, topSplit, topPalette, topMain }));
 
     // A session waiting on a permission its agent declared the keys for: its card goes to the top and allows from there.
     const typedIn = [];
@@ -1088,6 +1122,12 @@ app.whenReady().then(async () => {
     const overviewEdge = await tjs(`(() => { const name = document.querySelector('[data-testid=cs-project]').getBoundingClientRect(); const card = document.querySelector('[data-testid=cs-big]').getBoundingClientRect(); return Math.abs(name.left - card.left) <= 1; })()`);
     check("总览的第一张卡片齐项目名", overviewEdge);
     fs.writeFileSync(path.join(shots, "code-sessions-overview.png"), (await tw.webContents.capturePage()).toPNG());
+    // A card of the session bar picked over the overview: back to the cells, its own selected.
+    await tjs(`[...document.querySelectorAll('.cs-side .cs-row')].find((r) => r.textContent.includes(${JSON.stringify(sessions[3].item.key)}))?.click(); true`);
+    const barToGrid = await wait(async () => tjs(`!document.querySelector('[data-testid=cs-overview]') && document.querySelector('[data-testid=cs-view-grid]').getAttribute('aria-pressed') === 'true' && (document.querySelector('.cs-cell[data-focused] .cs-cell-name')?.textContent ?? '').startsWith(${JSON.stringify(`${sessions[3].item.key} `)})`), 5000);
+    check("在总览里点会话栏的卡片：切回格子视图并选中它的格子", barToGrid, await tjs(`document.querySelector('.cs-cell[data-focused] .cs-cell-name')?.textContent`));
+    await tjs(`document.querySelector('[data-testid=cs-view-overview]').click(); true`);
+    await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-overview]')`), 3000);
     await tjs(`${bigFive}?.querySelector('[data-testid=cs-see-in-pane]')?.click(); true`);
     const backToGrid = await wait(async () => tjs(`!document.querySelector('[data-testid=cs-overview]') && document.querySelector('[data-testid=cs-view-grid]').getAttribute('aria-pressed') === 'true' && (document.querySelector('.cs-cell[data-focused] .cs-cell-name')?.textContent ?? '').startsWith(${JSON.stringify(`${sessions[4].item.key} `)})`), 5000);
     check("「在格子里看」回到格子并选中它的格子", backToGrid, await tjs(`document.querySelector('.cs-cell[data-focused] .cs-cell-name')?.textContent`));

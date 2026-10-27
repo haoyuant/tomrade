@@ -252,6 +252,8 @@ export function App() {
   // Shown where `landing` says: never a second controller on the same pane, never over a locked cell or one that needs
   // you. Whatever left a pane is said, with a way back.
   const land = (id: string, beside: boolean) => {
+    // Picked over the overview: back to the cells, to see it in its own.
+    setView("grid");
     const at = landing(layout, id, { selected: target.id, beside, recent: recent.current, needsYou: (shown) => !!sessionIn(shown)?.needsYou, key });
     const next = asPicked(state, at.layout, at.cell, id, key);
     if (next !== layout) change(next);
@@ -380,6 +382,7 @@ export function App() {
   // Split as iTerm does: the new half is a plain shell in the folder of the cell it came from, never asking for an agent.
   // With nothing to open one in, it stays empty.
   const splitCell = (cell: string, direction: "row" | "column") => {
+    setView("grid");
     const next = split(layout, cell, direction);
     if (!ready) {
       change(next.layout);
@@ -467,6 +470,23 @@ export function App() {
           <span className="cs-project" data-testid="cs-project" title={say("projectTitle", { project: state.projectName })}>
             {state.projectName}
           </span>
+          <div className="cs-top-actions" data-testid="cs-top-actions">
+            <button type="button" className="btn btn-ghost btn-xs" data-testid="cs-top-split-right" aria-label={say("topSplitRight")} title={say("withKey", { action: say("splitRight"), key: keyLabel("splitRight") })} onClick={() => select(splitCell(target.id, "row"))}>
+              <Icon className="ico" name="i-split" size={13} />
+              <span className="cs-top-word">{say("topSplitRight")}</span>
+              <kbd className="cs-top-word">{keyLabel("splitRight")}</kbd>
+            </button>
+            <button type="button" className="btn btn-ghost btn-xs" data-testid="cs-top-split-down" aria-label={say("topSplitDown")} title={say("withKey", { action: say("splitDown"), key: keyLabel("splitDown") })} onClick={() => select(splitCell(target.id, "column"))}>
+              <Icon className="ico cs-ico-down" name="i-split" size={13} />
+              <span className="cs-top-word">{say("topSplitDown")}</span>
+              <kbd className="cs-top-word">{keyLabel("splitDown")}</kbd>
+            </button>
+            <button type="button" className="btn btn-ghost btn-xs" data-testid="cs-top-palette" aria-label={say("topPalette")} title={say("withKey", { action: say("topPalette"), key: keyLabel("palette") })} onClick={() => setPaletteOpen(true)}>
+              <Icon className="ico" name="i-search" size={13} />
+              <kbd className="cs-top-word">{keyLabel("palette")}</kbd>
+              <span className="cs-top-word">{say("topPalette")}</span>
+            </button>
+          </div>
           <div className="seg quiet cs-views" role="group" aria-label={say("viewToggle")} data-testid="cs-views">
             <button type="button" aria-pressed={view === "grid"} data-testid="cs-view-grid" onClick={() => setView("grid")}>
               <Icon className="ico" name="i-grid" size={13} />
@@ -477,6 +497,10 @@ export function App() {
               {say("viewOverview")}
             </button>
           </div>
+          <button type="button" className="btn btn-ghost btn-xs" data-testid="cs-top-main" aria-label={say("topMainWindow")} title={say("topMainWindowHint")} onClick={() => send({ type: "mainWindow" })}>
+            <Icon className="ico" name="i-monitor" size={13} />
+            <span className="cs-top-word">{say("topMainWindow")}</span>
+          </button>
         </div>
         <div className="cs-body">
           <main className="cs-main">

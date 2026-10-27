@@ -242,3 +242,15 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-layers dt { font-weight: 600; color: var(--fg); }
 .cs-layers dd { margin: 2px 0 0; }
 .cs-layers p { margin: 0 0 4px; }
+/* What the window does from its top bar — split, ⌘K, the main window — in the title bar's quiet buttons; narrow, only their icons. */
+.cs-top-actions { display: flex; flex: none; gap: 2px; }
+.cs-topbar .btn-ghost { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.cs-topbar kbd { font-family: var(--font-mono); font-size: 10px; padding: 0 4px; border: 1px solid var(--border-input); border-radius: 4px; color: var(--muted); }
+.cs-ico-down { transform: rotate(90deg); }
+@media (max-width: 1100px) { .cs-top-word { display: none; } }
+/* A cell waiting on the person: the warning's border; selected as well, the accent ring inside it. */
+.cs-cell[data-wait] { border-color: var(--warn); }
+.cs-cell[data-wait][data-focused] { box-shadow: inset 0 0 0 1px var(--accent); }
+/* "New" beside a row's name for its first minute, the assistant panel's badge; on a dot, at its corner. */
+.cs-row-name .sbar-new-badge { margin-left: 2px; }
+.cs-dot-face .sbar-new-badge { position: absolute; top: -4px; right: -8px; }
