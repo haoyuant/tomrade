@@ -4,7 +4,8 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { AUTO_TERMINAL, BUILTIN_TERMINAL, GitBashMissing, fitsCommandLine, promptAsArgument, SYSTEM_TERMINAL, TerminalSettings, bareCommand, fillTemplate, gitBash, herdrFallbackNote, launchTerminal, locatedCommand, machineTerminalSettings, openOnLinux, openOnWindows, optionFlags, pathExport, powerShellPath, setupOnWindows, setupTerminal, terminalApp, terminalApps, terminalPath, terminalTemplate, withOptions, writeGeminiHome, type PaneTerminal } from "@tomradex/code-link";
+import { AUTO_TERMINAL, BUILTIN_TERMINAL, GitBashMissing, fitsCommandLine, promptAsArgument, SYSTEM_TERMINAL, TerminalSettings, bareCommand, fillTemplate, gitBash, herdrFallbackNote, launchTerminal, locatedCommand, machineTerminalSettings, openOnLinux, openOnWindows, optionFlags, pathExport, powerShellPath, setupOnWindows, setupTerminal, terminalApp, terminalApps, terminalPath, terminalTemplate, withOptions, writeGeminiHome, hookCommand, type PaneTerminal } from "@tomradex/code-link";
+import { geminiHooks } from "../src/gemini-hooks.js";
 
 it("lists installed terminal apps with the special launch choices", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-terminal-apps-"));
@@ -210,19 +211,24 @@ describe("terminal command options", () => {
 });
 
 describe("Gemini CLI's session home", () => {
-  it("is the person's own ~/.gemini, linked, with the server added to a copy of its settings", () => {
+  it("is the person's own ~/.gemini, linked, with the server and its hooks added to a copy of its settings", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-gemini-home-"));
     const own = path.join(root, "me", ".gemini");
     fs.mkdirSync(path.join(own, "extensions"), { recursive: true });
     fs.writeFileSync(path.join(own, "oauth_creds.json"), "{}");
     // Gemini reads its settings as JSON with comments.
-    fs.writeFileSync(path.join(own, "settings.json"), '{\n  // the person\'s own\n  "theme": "Dracula", /* a "quoted" note */\n  "url": "http://x//y",\n  "mcpServers": { "mine": { "command": "mine" } }\n}\n');
+    fs.writeFileSync(path.join(own, "settings.json"), '{\n  // the person\'s own\n  "theme": "Dracula", /* a "quoted" note */\n  "url": "http://x//y",\n  "mcpServers": { "mine": { "command": "mine" } },\n  "hooks": { "BeforeTool": [{ "matcher": "run_shell_command", "hooks": [{ "type": "command", "command": "./lint.sh" }] }] }\n}\n');
     fs.writeFileSync(path.join(root, "me", ".env"), "GEMINI_API_KEY=k\n");
     const home = path.join(root, "session", "gemini-home");
     const tomrade = { httpUrl: "http://127.0.0.1:1/mcp/p", headers: { "X-Tomrade-Run": "t" } };
-    writeGeminiHome(home, { tomrade }, own);
+    const eventUrl = "http://127.0.0.1:1/sessions/t/event";
+    writeGeminiHome(home, { servers: { tomrade }, eventUrl }, own);
 
-    expect(JSON.parse(fs.readFileSync(path.join(home, ".gemini", "settings.json"), "utf8"))).toEqual({ theme: "Dracula", url: "http://x//y", mcpServers: { mine: { command: "mine" }, tomrade } });
+    const ownHooks = { BeforeTool: [{ matcher: "run_shell_command", hooks: [{ type: "command", command: "./lint.sh" }] }] };
+    const settings = JSON.parse(fs.readFileSync(path.join(home, ".gemini", "settings.json"), "utf8"));
+    expect(settings).toEqual({ theme: "Dracula", url: "http://x//y", mcpServers: { mine: { command: "mine" }, tomrade }, hooks: geminiHooks(eventUrl, ownHooks) });
+    // The person's own hook still runs, before Tomrade's.
+    expect(settings.hooks.BeforeTool).toEqual([ownHooks.BeforeTool[0], { hooks: [{ type: "command", name: "tomrade", command: hookCommand(eventUrl), timeout: 5000 }] }]);
     expect(fs.realpathSync(path.join(home, ".gemini", "oauth_creds.json"))).toBe(fs.realpathSync(path.join(own, "oauth_creds.json")));
     expect(fs.realpathSync(path.join(home, ".gemini", "extensions"))).toBe(fs.realpathSync(path.join(own, "extensions")));
     expect(fs.realpathSync(path.join(home, ".env"))).toBe(fs.realpathSync(path.join(root, "me", ".env")));
@@ -230,11 +236,14 @@ describe("Gemini CLI's session home", () => {
     expect(fs.readFileSync(path.join(own, "settings.json"), "utf8")).toContain("// the person's own");
 
     // Bound again (a resumed session): laid down afresh, the same way.
-    writeGeminiHome(home, { tomrade: { ...tomrade, headers: { "X-Tomrade-Run": "t2" } } }, own);
+    writeGeminiHome(home, { servers: { tomrade: { ...tomrade, headers: { "X-Tomrade-Run": "t2" } } }, eventUrl }, own);
     expect(JSON.parse(fs.readFileSync(path.join(home, ".gemini", "settings.json"), "utf8")).mcpServers.tomrade.headers).toEqual({ "X-Tomrade-Run": "t2" });
 
-    // No ~/.gemini yet, or settings Gemini could not read either: the server alone.
-    writeGeminiHome(home, { tomrade }, path.join(root, "nobody", ".gemini"));
+    // No ~/.gemini yet, or settings Gemini could not read either: the server and its hooks alone.
+    writeGeminiHome(home, { servers: { tomrade }, eventUrl }, path.join(root, "nobody", ".gemini"));
+    expect(JSON.parse(fs.readFileSync(path.join(home, ".gemini", "settings.json"), "utf8"))).toEqual({ mcpServers: { tomrade }, hooks: geminiHooks(eventUrl) });
+    // Without an address to report to, no hooks.
+    writeGeminiHome(home, { servers: { tomrade } }, path.join(root, "nobody", ".gemini"));
     expect(JSON.parse(fs.readFileSync(path.join(home, ".gemini", "settings.json"), "utf8"))).toEqual({ mcpServers: { tomrade } });
   });
 

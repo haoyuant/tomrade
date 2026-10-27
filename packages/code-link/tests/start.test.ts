@@ -15,6 +15,7 @@ import type { Context } from "cordis";
 import { Agent, type Engine, type TurnInput } from "@tomradex/agent";
 import { fakeLlm } from "@tomradex/llm";
 import { CodeLink, BOOTSTRAP_LABEL, sessionContext, terminalApp } from "@tomradex/code-link";
+import { geminiHooks } from "../src/gemini-hooks.js";
 import { Contributions } from "@tomradex/contributions";
 import { Repos, normalizeRemote } from "@tomradex/repos";
 import GitHubAccount from "@tomradex/github";
@@ -1856,7 +1857,9 @@ describe("starting a ticket", () => {
     if (!gemini.ok) return;
     expect(gemini.command).toMatch(/^GEMINI_CLI_HOME=".*gemini-home" "gemini" -m pro -i "\$\(cat ".*prompt\.md"\)"$/);
     const geminiSettings = JSON.parse(fs.readFileSync(path.join(codeLink.sessionDir(gemini.sessionId), "gemini-home", ".gemini", "settings.json"), "utf8"));
-    expect(geminiSettings).toEqual({ security: { auth: { selectedType: "gemini-api-key" } }, mcpServers: { tomrade: { httpUrl: ctx.mcp.urlFor(project.id), headers: { "X-Tomrade-Run": codeLink.sessions.token(gemini.sessionId) } } } });
+    const token = codeLink.sessions.token(gemini.sessionId)!;
+    // The session's own server, and hooks that report the session to it.
+    expect(geminiSettings).toEqual({ security: { auth: { selectedType: "gemini-api-key" } }, mcpServers: { tomrade: { httpUrl: ctx.mcp.urlFor(project.id), headers: { "X-Tomrade-Run": token } } }, hooks: geminiHooks(ctx.mcp.eventUrlFor(token)!) });
     // a terminal-only engine takes no turn inside Tomrade
     expect(() => ctx.agent.send(project.id, gemini.threadId, { kind: "text", text: "go on" })).toThrow(/only in a terminal/);
 
