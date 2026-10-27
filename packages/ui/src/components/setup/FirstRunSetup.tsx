@@ -5,7 +5,7 @@ import { Icon } from "~/components/icons";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";
 import { invoke, logQuietly } from "~/lib/api";
 import { useI18n } from "~/lib/i18n";
-import { useProjects, useSettings } from "~/lib/queries";
+import { useCommands, useProjects, useSaveSettings, useSettings } from "~/lib/queries";
 import { findEngine } from "~/lib/agent";
 import { useSetup } from "~/lib/setup";
 import { builtinProblem } from "~/lib/setupState";
@@ -99,6 +99,7 @@ export function FirstRunSetup({ onDone }: { onDone: () => void }) {
                   </li>
                 )}
               </ul>
+              {state.locals.length > 0 && <WorkStyle />}
               {sample ? (
                 <>
                   <p className="meta-txt">{t("setup.doneTour")}</p>
@@ -149,6 +150,40 @@ export function FirstRunSetup({ onDone }: { onDone: () => void }) {
         </div>
       </main>
       <SettingsDialog open={!!settings} onOpenChange={(open) => !open && setSettings(null)} pane="assistant" engine={settings?.engine} />
+    </div>
+  );
+}
+
+/**
+ * Asked once, where a local agent is set up: someone who works in several CLIs at once starts on the Terminal window.
+ * It is Settings › Sessions' "When Tomrade opens", answered here so nobody has to find it.
+ */
+function WorkStyle() {
+  const { t } = useI18n();
+  const settings = useSettings();
+  const save = useSaveSettings();
+  const terminal = !!useCommands().data?.some((c) => c.id === "code-sessions.open");
+  // the click shows at once; the saved value catches up
+  const [picked, setPicked] = useState<"panel" | "cli" | null>(null);
+  if (!terminal || !settings.data) return null;
+  const current = picked ?? ((settings.data.sessions as { openAtStart?: string } | undefined)?.openAtStart === "terminal" ? "cli" : "panel");
+  const pick = (style: "panel" | "cli") => {
+    if (style === current) return;
+    setPicked(style);
+    // Only this field differs between two quick saves, so the later one stands either way.
+    save.mutate({ ...settings.data!, sessions: { ...(settings.data!.sessions as object | undefined), openAtStart: style === "cli" ? "terminal" : "main" } });
+  };
+  return (
+    <div className="stack-2" data-testid="setup-work-style">
+      <p className="meta-txt">{t("setup.workStyleTitle")}</p>
+      <div className="quick-providers" role="radiogroup" aria-label={t("setup.workStyleTitle")}>
+        {(["panel", "cli"] as const).map((style) => (
+          <button key={style} type="button" role="radio" aria-checked={style === current} className={style === current ? "chip-opt sel" : "chip-opt"} data-style={style} onClick={() => pick(style)}>
+            {t(style === "cli" ? "setup.workStyleCli" : "setup.workStylePanel")}
+          </button>
+        ))}
+      </div>
+      <p className="meta-txt dense">{t(current === "cli" ? "setup.workStyleCliNote" : "setup.workStylePanelNote")}</p>
     </div>
   );
 }

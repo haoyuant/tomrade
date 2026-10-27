@@ -51,6 +51,8 @@ interface Saved {
   autoPlace?: boolean;
   /** Each project's window with its sidebar folded. */
   folded?: Record<string, boolean>;
+  /** The project the window last opened for: where a start that names none goes. */
+  lastProject?: string;
 }
 
 type SavedTerminal = Omit<TerminalRow, "sessionId" | "note" | "agentTitle" | "agentStatus" | "running"> & { pane: string };
@@ -969,6 +971,8 @@ function apply(ctx: Context, config: Config) {
     open.set(projectId, win);
     try {
       await opening(projectId, win, w);
+      // after the state is read, so a file that could not be read is still said to be unreadable
+      save(config.stateFile, { lastProject: projectId });
     } catch (error) {
       // A failed open leaves nothing behind, so the next try opens afresh.
       win.closed = true;
@@ -1035,8 +1039,12 @@ function apply(ctx: Context, config: Config) {
     title: () => words()("open"),
     group: () => words()("group"),
     run: async ({ projectId }) => {
-      if (!projectId) return { toast: words()("openProject") };
-      await show(projectId);
+      // Asked without a project (a start that opens this window first): the one it showed last, else one on this machine.
+      const open = ctx.db.openIds();
+      const last = stateOf(config.stateFile).lastProject;
+      const target = projectId ?? (last && open.includes(last) ? last : open[0]);
+      if (!target) return { toast: words()("openProject") };
+      await show(target);
       return {};
     }
   });
