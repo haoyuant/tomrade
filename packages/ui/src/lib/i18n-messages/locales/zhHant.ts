@@ -3165,6 +3165,22 @@ export const zhHant: PartialMessages = {
     keyClose: "關格子",
     keyArrows: "+ 方向鍵 換格子",
     keyPrevNext: "上一個 / 下一個",
-    keyFold: "收合工作階段列"
+    keyFold: "收合工作階段列",
+    convoTab: "對話",
+    rawTab: "原始輸出",
+    rawOnlyWhenShown: "原始輸出只在終端機視窗顯示這個窗格時錄製，可以在設定 → 終端機錄製裡關閉。",
+    rawNone: "這段時間沒有錄到原始輸出。",
+    rawLoading: "正在讀取錄製…",
+    rawCut: "錄製的開頭超出了回放能容納的大小：從中途開始，畫面會隨播放逐漸補齊。",
+    rawUnclean: "錄製的開頭沒有整個畫面：畫面會隨播放逐漸補齊。",
+    rawPlay: "播放",
+    rawPause: "暫停",
+    rawPosition: "錄製中的位置",
+    rawSpeed: "速度",
+    closedTerminal: "已關閉的終端機",
+    closedTerminalRan: "終端機 · {{from}} – {{to}}",
+    closedAt: "關閉於 {{when}}",
+    shelfTerminals: "終端機（{{n}}）",
+    terminalsEmpty: "還沒有帶錄製的已關閉終端機。終端機在這個視窗的格子顯示它時才會被錄製。"
   }
 };

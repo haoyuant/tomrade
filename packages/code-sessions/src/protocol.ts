@@ -50,6 +50,28 @@ export interface SessionRow {
   approval: boolean;
   /** When its hooks last spoke; what the session bar orders waiting and idle rows by. */
   lastEventAt: number | null;
+  /** Ended, and what its pane showed while it ran was recorded here: its raw output can be played back. */
+  rawOutput: boolean;
+}
+
+/** A plain terminal closed here whose output was recorded: in the archive, to play back. */
+export interface ClosedTerminalRow {
+  id: string;
+  title: string;
+  cwd: string;
+  pane: string;
+  startedAt: number;
+  endedAt: number;
+}
+
+/** One frame of a recording played back: when it was painted, the screen's size, whether it paints the whole screen (a snapshot the window took, `key`, after a reset). */
+export interface ReplayRecord {
+  t: number;
+  w: number;
+  h: number;
+  full: boolean;
+  key: boolean;
+  bytes: Uint8Array;
 }
 
 /** A conversation of the assistant panel's, the built-in assistant's among them: in the session bar beside the sessions, with no pane here. */
@@ -151,8 +173,10 @@ export interface WindowState {
   autoPlace: boolean;
   /** A session asked to be shown, from outside the window: put in a cell and selected once; `at` tells a new ask from one done. */
   reveal: { sessionId: string; at: number } | null;
-  /** Ended sessions, put away: how many, and the rows themselves only while the window has the archive open, newest first. */
-  archive: { count: number; rows: SessionRow[] | null };
+  /** Ended sessions, put away: how many, and the rows themselves only while the window has the archive open, newest first; with them, the closed terminals that were recorded. */
+  archive: { count: number; rows: SessionRow[] | null; terminals: ClosedTerminalRow[] | null };
+  /** Closed terminals a cell shows the recording of; the rest wait in the archive. */
+  closedTerminals: ClosedTerminalRow[];
   /** By a pane this window shows: the sessions that ended in it before, oldest first. */
   history: Record<string, SessionRow[]>;
   /** The sidebar folded to a strip, as this project's window was left. */
@@ -199,6 +223,10 @@ export type WindowMessage =
   | { type: "answer"; sessionId: string; which: "allow" | "deny" }
   /** The last lines of every pane this window lists, for the overview: answered with `tails`. */
   | { type: "tails" }
+  /** The recording of an ended session or a closed terminal a cell shows: answered with `replay`. */
+  | { type: "replay"; cell: string; id: string }
+  /** The cell's screen as asked for by `snapshot`: serialized by the window, as of the last frame it had drawn (`seq`). */
+  | { type: "snapshot"; cell: string; token: number; seq: number; width: number; height: number; bytes: Uint8Array }
   | { type: "openWorktree"; sessionId: string }
   | { type: "openPr"; sessionId: string }
   | { type: "focusHerdr"; sessionId: string }
@@ -232,4 +260,11 @@ export type WindowPost =
   /** The archived sessions whose conversation says the query, from what their agents recorded. */
   | { type: "archiveFound"; query: string; ids: string[] }
   /** Each listed pane's last lines, styling stripped; null for a pane that is gone. */
-  | { type: "tails"; panes: Record<string, string | null> };
+  | { type: "tails"; panes: Record<string, string | null> }
+  /** The recording asks the cell for its screen as it is, to begin a new stretch of the recording with. */
+  | { type: "snapshot"; cell: string; token: number }
+  /**
+   * What was recorded of the session or terminal: the records before `at` bring the screen to its start and are not
+   * shown. `cut`: its start did not fit; `clean`: the first record paints the whole screen. None recorded: no records.
+   */
+  | { type: "replay"; cell: string; id: string; records: ReplayRecord[]; at: number; cut: boolean; clean: boolean; from: number; to: number };

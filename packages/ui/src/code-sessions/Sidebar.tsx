@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode, type Ref } from "react";
-import type { LayoutPreset, SessionRow, TerminalRow, ThreadRow, WindowState } from "@tomradex/code-sessions";
+import type { ClosedTerminalRow, LayoutPreset, SessionRow, TerminalRow, ThreadRow, WindowState } from "@tomradex/code-sessions";
 import { isMac } from "~/lib/keys";
 import { FoldChevron, FoldChevronSpace } from "~/components/ui/atoms";
 import { onArchiveFound, send } from "./bridge";
@@ -213,12 +213,13 @@ function OutsideGroup({ sessions, open, onToggle, list }: { sessions: SessionRow
 }
 
 /**
- * The ended sessions on two shelves, newest first: ticket work, and conversations had without a ticket. Picking one
- * shows it in a pane as an ended session.
+ * The ended sessions on two shelves, newest first: ticket work, and conversations had without a ticket; on a third,
+ * the plain terminals closed here whose output was recorded. Picking one shows it in a pane as an ended session, or
+ * as the terminal's raw output played back.
  */
-function ArchiveList({ rows, locale, active, selected, onPick }: { rows: SessionRow[] | null; locale: string; active: Set<string>; selected: Set<string>; onPick: (s: SessionRow) => void }) {
+function ArchiveList({ rows, terminals, locale, active, selected, onPick, onClosed }: { rows: SessionRow[] | null; terminals: ClosedTerminalRow[] | null; locale: string; active: Set<string>; selected: Set<string>; onPick: (s: SessionRow) => void; onClosed: (t: ClosedTerminalRow) => void }) {
   const say = useSay();
-  const [shelf, setShelf] = useState<"tickets" | "talks">("tickets");
+  const [shelf, setShelf] = useState<"tickets" | "talks" | "terminals">("tickets");
   const [query, setQuery] = useState("");
   // What was said is searched in the agents' records, a moment after the typing stops; the rest is matched here.
   const [said, setSaid] = useState<{ query: string; ids: Set<string> }>({ query: "", ids: new Set() });
@@ -233,8 +234,11 @@ function ArchiveList({ rows, locale, active, selected, onPick }: { rows: Session
   const found = query.trim() ? rows.filter((s) => matchesArchive(s, query) || saidIt(s)) : rows;
   const tickets = found.filter((s) => s.itemId);
   const talks = found.filter((s) => !s.itemId);
-  const shown = shelf === "tickets" ? tickets : talks;
+  const needle = query.trim().toLowerCase();
+  const closed = (terminals ?? []).filter((t) => !needle || t.title.toLowerCase().includes(needle) || t.cwd.toLowerCase().includes(needle));
+  const shown = shelf === "tickets" ? tickets : shelf === "talks" ? talks : [];
   const when = (at: number) => new Date(at).toLocaleString(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const hour = (at: number) => new Date(at).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
   return (
     <>
       <input type="search" className="input cs-archive-search" data-testid="cs-archive-search" aria-label={say("archiveSearch")} placeholder={say("archiveSearch")} value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -245,8 +249,33 @@ function ArchiveList({ rows, locale, active, selected, onPick }: { rows: Session
         <button type="button" aria-pressed={shelf === "talks"} data-testid="cs-shelf-talks" onClick={() => setShelf("talks")}>
           {say("shelfTalks", { n: talks.length })}
         </button>
+        <button type="button" aria-pressed={shelf === "terminals"} data-testid="cs-shelf-terminals" onClick={() => setShelf("terminals")}>
+          {say("shelfTerminals", { n: closed.length })}
+        </button>
       </div>
-      {!shown.length ? (
+      {shelf === "terminals" ? (
+        !closed.length ? (
+          <p className="cs-empty">{query.trim() ? say("archiveNoMatch") : say("terminalsEmpty")}</p>
+        ) : (
+          <ul className="cs-list" data-testid="cs-archive-terminals">
+            {closed.map((t) => (
+              <li key={t.id}>
+                <button type="button" className="cs-row" data-status="done" data-closed-terminal={t.id} aria-current={selected.has(t.id) ? "true" : undefined} data-active={active.has(t.id) || undefined} onClick={() => onClosed(t)}>
+                  <span className="cs-row-head">
+                    <span className="cs-row-name mono">
+                      <Mark status="done" />
+                      {t.title}
+                    </span>
+                    <span className="cs-row-meta">{say("closedAt", { when: when(t.endedAt) })}</span>
+                  </span>
+                  <span className="cs-row-meta mono">{t.cwd}</span>
+                  <span className="cs-row-meta">{`${when(t.startedAt)}–${hour(t.endedAt)}`}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : !shown.length ? (
         <p className="cs-empty">{query.trim() ? say("archiveNoMatch") : say(shelf === "tickets" ? "archiveEmpty" : "talksEmpty")}</p>
       ) : (
         <ul className="cs-list" data-testid="cs-archive-list">
@@ -436,6 +465,7 @@ type SidebarProps = {
   canOpen: boolean;
   onPick: (s: SessionRow, beside?: boolean) => void;
   onTerminal: (t: TerminalRow, beside?: boolean) => void;
+  onClosed: (t: ClosedTerminalRow) => void;
   onThread: (t: ThreadRow) => void;
   onAnswer: (s: SessionRow, which: "allow" | "deny") => void;
   onNewTerminal: () => void;
@@ -447,7 +477,7 @@ type SidebarProps = {
  * The session bar on the window's right edge, the assistant panel's: cards that say where each session stands and
  * what it waits with, the sessions this window cannot show, saved layouts and the archive; or, folded, a column of dots.
  */
-export function Sidebar({ ref, state, rows, locale, folded, onFold, marks, canOpen, onPick, onTerminal, onThread, onAnswer, onNewTerminal, onApplyPreset, onSavePreset }: SidebarProps) {
+export function Sidebar({ ref, state, rows, locale, folded, onFold, marks, canOpen, onPick, onTerminal, onClosed, onThread, onAnswer, onNewTerminal, onApplyPreset, onSavePreset }: SidebarProps) {
   const say = useSay();
   const [outsideOpen, setOutsideOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
@@ -495,7 +525,7 @@ export function Sidebar({ ref, state, rows, locale, folded, onFold, marks, canOp
               ← {say("archiveBack")}
             </button>
           </div>
-          <ArchiveList rows={state.archive.rows} locale={locale} active={marks.active} selected={marks.selected} onPick={onPick} />
+          <ArchiveList rows={state.archive.rows} terminals={state.archive.terminals} locale={locale} active={marks.active} selected={marks.selected} onPick={onPick} onClosed={onClosed} />
         </>
       ) : (
         <>

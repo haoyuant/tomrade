@@ -368,7 +368,7 @@ it("puts ended sessions in the archive, keeps one a cell shows, sends the archiv
   // A conversation keeps its name and can be taken up again by its agent.
   expect(win.states.at(-1)!.archive.rows!.find((s) => s.id === "old")).toMatchObject({ conversation: "上个月的方案讨论", resumable: true });
   await say({ type: "archive", open: false });
-  expect(win.states.at(-1)!.archive).toEqual({ count: 3, rows: null });
+  expect(win.states.at(-1)!.archive).toEqual({ count: 3, rows: null, terminals: null });
 
   // Folded for this project only, and still folded when the window opens again.
   await say({ type: "fold", folded: true });
@@ -1386,4 +1386,141 @@ it("lists the assistant's conversations from a cache read when they change, neve
   win.spec.onClose();
   await w.ctx.contributions.run("code-sessions.open", { projectId });
   expect(threadReads).toHaveLength(5);
+});
+
+it("records what a cell shows, asks it for a snapshot when a session begins on its pane, plays a session's part back, and keeps a closed terminal's recording for the archive", async () => {
+  const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[]; posts: WindowPost[] }[] = [];
+  const started = Date.now() - 10_000;
+  const sessions = [session({ id: "a", herdrPane: "w1:p1", startedAt: started, prompted: true })];
+  const streams: { pane: string; frame(text: string, at?: { full?: boolean; seq?: number }): void }[] = [];
+  class FakeSurfaces extends Service {
+    static provide = "desktopSurfaces";
+    constructor(ctx: Context) {
+      super(ctx, "desktopSurfaces");
+    }
+    open(spec: (typeof opened)[number]["spec"]) {
+      const entry = { spec, states: [spec.initialState as WindowState], posts: [] as WindowPost[] };
+      opened.push(entry);
+      return { id: "s", capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus() {}, setState: (st: WindowState) => void entry.states.push(st), post: (m: WindowPost) => void entry.posts.push(m), close: () => spec.onClose() };
+    }
+  }
+  class FakeHerdr extends Service {
+    static provide = "terminals";
+    readonly kind = "herdr" as const;
+    constructor(ctx: Context) {
+      super(ctx, "terminals");
+    }
+    onPane = () => () => {};
+    watch = () => () => {};
+    watching = (): string[] => [];
+    bridge = async () => ({ state: "ready" as const, version: "0.9.5" });
+    clientAttached = async () => false;
+    panes = async () => [{ paneId: "w1:p2", agent: null, agentSession: null, status: "unknown" as const, title: null }];
+    processes = async () => [];
+    launch = async () => ({ paneId: "w1:p2", workspaceId: "w1" });
+    closePane = async () => true;
+    onScroll = () => () => {};
+    terminal = async (pane: string) => {
+      const frames = new Set<(f: unknown) => void>();
+      streams.push({ pane, frame: (text, at = {}) => frames.forEach((l) => l({ seq: at.seq ?? 1, width: 80, height: 24, full: at.full ?? false, bytes: new Uint8Array(Buffer.from(text)) })) });
+      return { paneId: pane, mode: "control", closed: false, onFrame: (l: (f: unknown) => void) => (frames.add(l), () => frames.delete(l)), onClose: () => () => {}, input() {}, resize() {}, scroll() {}, mouse() {}, close() {} };
+    };
+  }
+  class FakeCodeLink extends Service {
+    static provide = "codeLink";
+    constructor(ctx: Context) {
+      super(ctx, "codeLink");
+    }
+    sessionsOf = () => sessions;
+    links = () => [];
+    repositoriesOf = () => [];
+    repositoryFoldersOf = () => [];
+  }
+  const stateFile = path.join(dir, "recording-state.json");
+  const recordingsDir = path.join(dir, "recordings");
+  const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "recording-settings.json") }], Contributions, FakeSurfaces, FakeHerdr, FakeCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile, recordingsDir }]] });
+  fs.writeFileSync(stateFile, JSON.stringify({ layouts: { [w.project.id]: { type: "split", id: "r", direction: "row", ratio: 0.5, a: { type: "leaf", id: "c1", sessionId: "a" }, b: { type: "leaf", id: "c2", sessionId: null } } } }));
+  for (const s of sessions) s.device = w.ctx.hub.deviceId;
+  await settle();
+  // The setting is there, on by default, and machine-local.
+  expect(w.ctx.settings.section("terminalRecording")).toMatchObject({ scope: "machine", defaults: { enabled: true, maxTotalMB: 1024, keepDays: 14 } });
+  await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
+  const win = opened[0]!;
+  const say = async (m: WindowMessage) => {
+    win.spec.onMessage(m);
+    await settle();
+  };
+  const batched = () => new Promise<void>((resolve) => setTimeout(resolve, 40));
+  const text = (r: { bytes: Uint8Array }) => Buffer.from(r.bytes).toString();
+  await say({ type: "attach", cell: "c1", sessionId: "a", cols: 80, rows: 24 });
+  streams[0]!.frame("hello", { full: true, seq: 1 });
+  await batched();
+  const panes = () => fs.readdirSync(recordingsDir).sort();
+  await vi.waitFor(() => expect(panes()).toEqual(["w1_p1"]));
+
+  // Another session begins on the pane: the cell is asked for its screen, and what comes after the answer begins a new stretch.
+  const second = Date.now();
+  sessions.push(session({ id: "b", herdrPane: "w1:p1", startedAt: second, prompted: true, device: w.ctx.hub.deviceId }));
+  w.ctx.emit("codeLink/changed", w.project.id);
+  await vi.waitFor(() => expect(win.posts.some((p) => p.type === "snapshot" && p.cell === "c1")).toBe(true));
+  const ask = win.posts.find((p) => p.type === "snapshot")!;
+  streams[0]!.frame("tail", { seq: 2 });
+  await batched();
+  await say({ type: "snapshot", cell: "c1", token: ask.token, seq: 2, width: 80, height: 24, bytes: new Uint8Array(Buffer.from("SNAP")) });
+  streams[0]!.frame("world", { seq: 3 });
+  await batched();
+  // Only one ask, however many states follow.
+  w.ctx.emit("codeLink/changed", w.project.id);
+  await settle();
+  expect(win.posts.filter((p) => p.type === "snapshot")).toHaveLength(1);
+
+  // The second session ends; the cell lets the pane go, and the stretches close under their names.
+  Object.assign(sessions[1]!, { state: "ended", endedAt: Date.now() });
+  await say({ type: "detach", cell: "c1" });
+  await vi.waitFor(() => expect(fs.readdirSync(path.join(recordingsDir, "w1_p1")).filter((n) => /^\d+-\d+\.rec$/.test(n))).toHaveLength(2));
+  w.ctx.emit("codeLink/changed", w.project.id);
+  await say({ type: "archive", open: true });
+  await vi.waitFor(() => expect(win.states.at(-1)!.archive.rows?.find((s) => s.id === "b")).toMatchObject({ rawOutput: true, ranIn: "w1:p1" }));
+  // Its part: what the pane painted from its start — the frame before the snapshot came, the snapshot, what followed —
+  // after the whole-screen paint before it, which catches the screen up unseen.
+  const replays = () => win.posts.filter((p) => p.type === "replay");
+  await say({ type: "replay", cell: "c2", id: "b" });
+  await vi.waitFor(() => expect(replays()).toHaveLength(1));
+  const replayed = replays();
+  expect(replayed[0]!.records.map((r) => [text(r), r.full, r.key])).toEqual([["hello", true, false], ["tail", false, false], ["SNAP", true, true], ["world", false, false]]);
+  expect(replayed[0]).toMatchObject({ id: "b", at: 1, cut: false, clean: true, from: second });
+  // The first session's part ends where the second began.
+  await say({ type: "replay", cell: "c2", id: "a" });
+  await vi.waitFor(() => expect(replays()).toHaveLength(2));
+  expect(replays().at(-1)).toMatchObject({ id: "a", from: started, to: second });
+  // Nothing recorded of a session that never showed here.
+  await say({ type: "replay", cell: "c2", id: "nobody" });
+  await vi.waitFor(() => expect(replays()).toHaveLength(3));
+  expect(replays().at(-1)).toMatchObject({ id: "nobody", records: [], at: 0 });
+
+  // A plain terminal: shown, recorded, closed — and in the archive with its recording, to play back.
+  await say({ type: "newTerminal", terminalId: "t1", cwd: dir });
+  await vi.waitFor(() => expect(win.states.at(-1)!.terminals.map((t) => t.pane)).toEqual(["w1:p2"]));
+  await say({ type: "attach", cell: "c2", sessionId: "t1", cols: 80, rows: 24 });
+  streams.at(-1)!.frame("shell", { full: true });
+  await batched();
+  await say({ type: "closeTerminal", terminalId: "t1" });
+  await vi.waitFor(() => expect(win.states.at(-1)!.archive.terminals?.map((t) => [t.id, t.pane, t.title])).toEqual([["t1", "w1:p2", path.basename(dir)]]));
+  await vi.waitFor(() => expect(fs.readdirSync(path.join(recordingsDir, "w1_p2")).every((n) => /^\d+-\d+\.rec$/.test(n))).toBe(true));
+  await say({ type: "replay", cell: "c2", id: "t1" });
+  await vi.waitFor(() => expect(replays()).toHaveLength(4));
+  expect(replays().at(-1)).toMatchObject({ id: "t1", records: [expect.objectContaining({ full: true })] });
+  expect(text(replays().at(-1)!.records[0]!)).toBe("shell");
+
+  // Turned off: what is being recorded stops, and nothing new is recorded.
+  await say({ type: "attach", cell: "c1", sessionId: "a", cols: 80, rows: 24 });
+  w.ctx.settings.set({ ...w.ctx.settings.get(), terminalRecording: { enabled: false, maxTotalMB: 1024, keepDays: 14 } });
+  await settle();
+  const before = fs.readdirSync(path.join(recordingsDir, "w1_p1")).length;
+  streams.at(-1)!.frame("unrecorded", { full: true });
+  await batched();
+  await say({ type: "detach", cell: "c1" });
+  await settle();
+  expect(fs.readdirSync(path.join(recordingsDir, "w1_p1")).length).toBeLessThanOrEqual(before);
+  win.spec.onClose();
 });

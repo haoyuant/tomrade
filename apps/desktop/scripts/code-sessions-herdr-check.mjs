@@ -707,6 +707,48 @@ app.whenReady().then(async () => {
     const ended = await wait(async () => !JSON.parse(herdr("pane", "list")).result.panes.some((p) => p.pane_id === plainPane) && saved().length === 0);
     check("关闭终端：herdr 里的 pane 结束，列表里也没了", ended);
 
+    // The closed terminal's output was recorded while its cell showed it: on the archive's terminals shelf, played
+    // back in the cell it is picked into. The ended ticket session that ran alongside in pane four has a second tab,
+    // the raw output of its own stretch: marker-four was on its screen, what was typed after it ended is not.
+    const rowsOf = (sel) => `[...(document.querySelector(${JSON.stringify(sel)})?.querySelectorAll('.xterm-rows > div') ?? [])].map((r) => r.textContent).join('\\n')`;
+    const replayText = (sel) => tjs(rowsOf(sel));
+    const detachCell = async (sel) => {
+      await tjs(`document.querySelector(${JSON.stringify(sel)})?.closest('.cs-cell')?.querySelector('.cs-cell-bar').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 20 })); true`);
+      await sleep(300);
+      await tjs(`[...document.querySelectorAll('[role=menuitem]')].find((i) => i.textContent === '断开')?.click(); true`);
+      await sleep(300);
+    };
+    await tjs(`document.querySelector('[data-testid=cs-archive]').click(); true`);
+    await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-shelf-terminals]')`), 5000);
+    await tjs(`document.querySelector('[data-testid=cs-shelf-terminals]').click(); true`);
+    const closedRow = await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-archive-terminals] .cs-row')`), 8000);
+    await tjs(`document.querySelector('[data-testid=cs-archive-terminals] .cs-row')?.click(); true`);
+    // It opens on the terminal's last screen, Claude Code's trust prompt; the slider dragged back finds the lines
+    // echoed before it (set through the native setter, so React hears the change).
+    const closedReplay = "[data-testid=cs-closed-terminal] .cs-replay";
+    const replayOpen = closedRow && (await wait(async () => tjs(`!!document.querySelector(${JSON.stringify(closedReplay)}) && !document.querySelector(${JSON.stringify(closedReplay)}).hasAttribute('data-drawing')`), 15000));
+    const seekTo = (fraction) => tjs(`(() => { const s = document.querySelector('[data-testid=cs-closed-terminal] [data-testid=cs-replay-slider]'); if (!s) return false; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(s, Math.round(Number(s.max) * ${fraction})); s.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    let echoed = false;
+    for (let fraction = 0.9; replayOpen && fraction >= 0 && !echoed; fraction = Math.round((fraction - 0.1) * 10) / 10) {
+      if (!(await seekTo(fraction))) break;
+      echoed = await wait(async () => (await replayText(closedReplay)).includes("pane-is-"), 1500);
+    }
+    check("关掉的普通终端在归档的「终端」架子里，选中后格子回放它的原始输出，进度条拖回去能看到之前回显的内容", closedRow && replayOpen && echoed, JSON.stringify({ closedRow, replayOpen, text: (await replayText(closedReplay)).trim().slice(-300) }));
+    fs.writeFileSync(path.join(shots, "code-sessions-replay-terminal.png"), (await tw.webContents.capturePage()).toPNG());
+    await tjs(`document.querySelector('[data-testid=cs-shelf-tickets]').click(); true`);
+    await sleep(300);
+    await tjs(`${rowWith(alongItem.key)}?.click(); true`);
+    const rawTab = await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-ended] [data-testid=cs-tab-raw][data-recorded]')`), 8000);
+    await tjs(`document.querySelector('[data-testid=cs-ended] [data-testid=cs-tab-raw]')?.click(); true`);
+    const sessionReplay = () => replayText("[data-testid=cs-ended] .cs-replay");
+    const ownStretch = rawTab && (await wait(async () => (await sessionReplay()).includes("marker-four"), 15000)) && !(await sessionReplay()).includes("after-pane-keys");
+    check("结束的会话多一个「原始输出」标签：回放只含它自己那段，有 marker-four，没有它结束后才输入的 after-pane-keys", ownStretch, JSON.stringify({ rawTab, text: (await sessionReplay()).trim().slice(-400) }));
+    fs.writeFileSync(path.join(shots, "code-sessions-replay-session.png"), (await tw.webContents.capturePage()).toPNG());
+    await tjs(`document.querySelector('[data-testid=cs-archive-back]').click(); true`);
+    await sleep(300);
+    // The cell used for reading is emptied again, for the steps below that count empty cells.
+    await detachCell("[data-testid=cs-ended]");
+
     // A layout kept under a name.
     await tjs(`document.querySelector('[data-testid=cs-save-layout]').click(); true`);
     await sleep(200);
@@ -719,8 +761,10 @@ app.whenReady().then(async () => {
 
     // Right-click on a pane's bar: the menu, and Detach empties that pane.
     const emptyCells = () => tjs(`document.querySelectorAll('.cs-cell-empty > .cs-new-terminal [data-testid=cs-new-terminal]').length`);
+    // the first cell that holds something: which cell the archive's picks above landed in follows the selection
+    const heldBar = `[...document.querySelectorAll('.cs-cell')].find((c) => !c.querySelector('.cs-cell-empty'))?.querySelector('.cs-cell-bar')`;
     const emptyBefore = await emptyCells();
-    await tjs(`document.querySelector('.cs-cell .cs-cell-bar').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 20 })); true`);
+    await tjs(`${heldBar}.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 20 })); true`);
     const menu = await wait(async () => tjs(`[...document.querySelectorAll('[role=menuitem]')].map((i) => i.textContent).join('|')`).then((t) => t.includes("连接会话") && t.includes("新终端") && t.includes("断开")), 3000);
     check("面板右键菜单：连接会话 / 新终端 / 断开 / 拆分 / 关闭", menu);
     await tjs(`[...document.querySelectorAll('[role=menuitem]')].find((i) => i.textContent === '断开').click(); true`);
@@ -741,7 +785,7 @@ app.whenReady().then(async () => {
     check("新会话自动放进空面板", await wait(async () => inCell(auto), 8000));
     await tjs(`document.querySelector('[data-testid=cs-side-new-terminal]').click(); true`);
     await sleep(300);
-    await tjs(`document.querySelector('.cs-cell-bar').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 20 })); true`);
+    await tjs(`${heldBar}.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 20 })); true`);
     await sleep(300);
     await tjs(`[...document.querySelectorAll('[role=menuitem]')].find((i) => i.textContent === '断开')?.click(); true`);
     await tjs(`document.querySelector('[data-testid=cs-auto-place]').click(); true`);
