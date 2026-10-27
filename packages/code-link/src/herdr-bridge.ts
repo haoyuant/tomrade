@@ -15,6 +15,8 @@ export type { HerdrInstall };
 
 /** How often a terminal session whose hooks name no pane asks the terminal backend which pane runs it. */
 const PANE_LOOK_MS = 15_000;
+/** How soon a session still without its agent's id looks at its pane again: one herdr call, on herdr's own events only. */
+const ID_LOOK_MS = 2_000;
 
 /** The name herdr knows an engine's CLI by. */
 const herdrAgentOf = (engine: string): string => ({ "claude-code": "claude", workbuddy: "codebuddy", gemini: "gemini", cursor: "cursor-agent", dsh: "dsh" } as Record<string, string>)[engine] ?? engine;
@@ -49,6 +51,8 @@ export class HerdrBridge {
   private readonly sessionDir: HerdrBridgeDeps["sessionDir"];
   /** When each session last asked herdr for its pane. */
   private readonly paneLooked = new Map<string, number>();
+  /** When each session its hooks never named looked for the id herdr's own integration reported on its pane. */
+  private readonly idLooked = new Map<string, number>();
 
   constructor(deps: HerdrBridgeDeps) {
     this.ctx = deps.ctx;
@@ -273,6 +277,23 @@ export class HerdrBridge {
   }
 
   /**
+   * An agent whose hooks cannot reach Tomrade (Antigravity reads them only from the person's global configuration) may
+   * still have told herdr its conversation, through herdr's own integration for it: a session nothing has named takes
+   * the id its pane reports, when the pane runs that agent. Looked for on herdr's own events, at most once an
+   * ID_LOOK_MS per session — a short turn has few of them — so the record can be read once it ends.
+   */
+  private async learnId(projectId: string, session: SessionView, paneId: string): Promise<void> {
+    const now = Date.now();
+    if (now - (this.idLooked.get(session.id) ?? 0) < ID_LOOK_MS) return;
+    this.idLooked.set(session.id, now);
+    const pane = (await this.ctx.get("terminals")?.panes())?.find((x) => x.paneId === paneId);
+    const current = this.store.session(projectId, session.id);
+    if (!pane?.agentSession || pane.agent !== session.agent || !current || current.externalId || current.herdrPane !== paneId) return;
+    this.idLooked.delete(session.id);
+    this.sessions.touch(projectId, session.id, { externalId: pane.agentSession });
+  }
+
+  /**
    * What herdr reads on a session's pane, said the way the session's hooks would say it: working
    * is a tool starting, blocked a permission asked, done a stop with the screen's last line for
    * what was said, the pane going the session's end. Idle and unknown say nothing; a hook that
@@ -286,6 +307,8 @@ export class HerdrBridge {
         this.sessions.event(projectId, session.id, { hook_event_name: "SessionEnd", reason: "pane closed", herdr: true, herdr_pane: event.paneId });
         return;
       }
+      // looked up beside the event, never before it: an event that waited on it could land after the next one
+      if (!session.externalId) void this.learnId(projectId, session, event.paneId).catch((err) => this.ctx.logger.warn(`reading ${event.paneId}'s agent session: ${errorMessage(err)}`));
       const name = event.status === "working" ? "PreToolUse" : event.status === "blocked" ? "PermissionRequest" : event.status === "done" ? "Stop" : null;
       if (!name) return;
       const said = name === "Stop" ? lastSaid(await ctx.terminals.readTail(event.paneId)) : "";
