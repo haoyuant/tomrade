@@ -144,21 +144,20 @@ function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; hi
         {said && <span className={saidClass(status)}>{said}</span>}
       </button>
     );
-    const actions = <RowActions row={r} onSee={() => undefined} onThread={picks.onThread} onAnswer={picks.onAnswer} />;
-    if (!lead || !folds)
-      return (
-        <li key={r.id}>
-          {button}
-          {actions}
-        </li>
-      );
+    // Allow and Deny sit inside the card's lower edge: beside its button, since a button holds no other.
+    const card = (
+      <div className="cs-card">
+        {button}
+        <RowActions row={r} onSee={() => undefined} onThread={picks.onThread} onAnswer={picks.onAnswer} />
+      </div>
+    );
+    if (!lead || !folds) return <li key={r.id}>{card}</li>;
     return (
       <li key={r.id}>
         <div className="fold-row cs-fold-row">
           {chevron(r)}
-          {button}
+          {card}
         </div>
-        {actions}
         {timeline(r)}
       </li>
     );

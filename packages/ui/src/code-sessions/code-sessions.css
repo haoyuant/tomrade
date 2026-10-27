@@ -75,8 +75,11 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-row-meta, .cs-row-activity { font-size: var(--text-xs); color: var(--meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cs-row-wait { font-size: var(--text-xs); color: var(--warn); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .cs-row-outcome { font-size: var(--text-xs); border-left: 2px solid var(--border-input); padding-left: 7px; color: var(--fg-2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-/* Allow and Deny, under the card that asks. */
+/* Allow and Deny, under the card that asks: in the bar, inside its lower edge. */
 .cs-row-actions { display: flex; gap: 6px; flex-wrap: wrap; padding: 4px 2px 0; }
+.cs-card { position: relative; min-width: 0; }
+.cs-card:has(> .cs-row-actions) > .cs-row { padding-bottom: 38px; }
+.cs-card > .cs-row-actions { position: absolute; left: 10px; bottom: 9px; padding: 0; }
 .cs-chip[data-state="needs"] { background: color-mix(in oklab, var(--warn) 18%, transparent); color: var(--warn); }
 .cs-chip[data-state="error"], .cs-chip[data-state="lost"] { background: color-mix(in oklab, var(--danger) 14%, transparent); color: var(--danger); }
 .cs-chip[data-state="ended"], .cs-chip[data-state="idle"] { background: var(--surface-warm); color: var(--muted); }
@@ -88,7 +91,7 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-bundle-head { padding: 0 var(--space-2) 0 6px; font-size: var(--text-xs); color: var(--meta); }
 /* A pane that ran sessions before: its chevron left of the card, the earlier sessions under it. */
 .cs-fold-row { gap: 2px; }
-.cs-fold-row > .cs-row, .cs-fold-row > .cs-bundle-head { flex: 1; min-width: 0; }
+.cs-fold-row > .cs-card, .cs-fold-row > .cs-bundle-head { flex: 1; min-width: 0; }
 .cs-timeline { margin: 4px 0 3px; padding-left: calc(22px + 2px); }
 .cs-archive-search { margin: 0 var(--space-2) var(--space-2); width: calc(100% - 2 * var(--space-2)); box-sizing: border-box; }
 
