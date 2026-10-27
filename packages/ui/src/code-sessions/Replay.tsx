@@ -91,7 +91,7 @@ export function Replay({ cell, id, font, tokens }: { cell: string; id: string; f
     for (let i = p.applied; i < upTo; i++) {
       const r = p.records[i]!;
       if (r.key) terminal.reset();
-      if (r.w !== terminal.cols || r.h !== terminal.rows) terminal.resize(r.w, r.h);
+      if (r.w > 0 && r.h > 0 && (r.w !== terminal.cols || r.h !== terminal.rows)) terminal.resize(r.w, r.h);
       terminal.write(r.bytes);
       wrote = true;
     }

@@ -723,8 +723,17 @@ app.whenReady().then(async () => {
     await tjs(`document.querySelector('[data-testid=cs-shelf-terminals]').click(); true`);
     const closedRow = await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-archive-terminals] .cs-row')`), 8000);
     await tjs(`document.querySelector('[data-testid=cs-archive-terminals] .cs-row')?.click(); true`);
-    const closedReplayed = closedRow && (await wait(async () => (await replayText("[data-testid=cs-closed-terminal] .cs-replay")).includes("pane-is-"), 15000));
-    check("关掉的普通终端在归档的「终端」架子里，选中后格子回放它的原始输出", closedReplayed, JSON.stringify({ closedRow, text: (await replayText("[data-testid=cs-closed-terminal] .cs-replay")).trim().slice(-300) }));
+    // It opens on the terminal's last screen, Claude Code's trust prompt; the slider dragged back finds the lines
+    // echoed before it (set through the native setter, so React hears the change).
+    const closedReplay = "[data-testid=cs-closed-terminal] .cs-replay";
+    const replayOpen = closedRow && (await wait(async () => tjs(`!!document.querySelector(${JSON.stringify(closedReplay)}) && !document.querySelector(${JSON.stringify(closedReplay)}).hasAttribute('data-drawing')`), 15000));
+    const seekTo = (fraction) => tjs(`(() => { const s = document.querySelector('[data-testid=cs-closed-terminal] [data-testid=cs-replay-slider]'); if (!s) return false; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(s, Math.round(Number(s.max) * ${fraction})); s.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    let echoed = false;
+    for (let fraction = 0.9; replayOpen && fraction >= 0 && !echoed; fraction = Math.round((fraction - 0.1) * 10) / 10) {
+      if (!(await seekTo(fraction))) break;
+      echoed = await wait(async () => (await replayText(closedReplay)).includes("pane-is-"), 1500);
+    }
+    check("关掉的普通终端在归档的「终端」架子里，选中后格子回放它的原始输出，进度条拖回去能看到之前回显的内容", closedRow && replayOpen && echoed, JSON.stringify({ closedRow, replayOpen, text: (await replayText(closedReplay)).trim().slice(-300) }));
     fs.writeFileSync(path.join(shots, "code-sessions-replay-terminal.png"), (await tw.webContents.capturePage()).toPNG());
     await tjs(`document.querySelector('[data-testid=cs-shelf-tickets]').click(); true`);
     await sleep(300);
