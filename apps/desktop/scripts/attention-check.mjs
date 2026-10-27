@@ -1,7 +1,7 @@
 /**
  * Attention regression: an agent that waits on the person is seen wherever
  * the person is — a count on the Dock, a badge on the collapsed assistant, a
- * word in the thread list, a list in the status bar — and a clicked
+ * word in the session bar, a list in the status bar — and a clicked
  * notification opens its thread. A finished run is told once; what the person
  * switched off in Settings is not told at all. A stand-in engine that asks
  * permission mid-run makes it deterministic.
@@ -80,11 +80,12 @@ const run = async () => {
   check("the collapsed assistant carries a badge", (await $(`document.querySelector('.ai-rail .rail-badge')?.textContent`)) === "1");
   await press(`document.querySelector('.ai-rail .rail-btn')`);
   await sleep(500);
-  await press(`document.querySelector('.ai-head .btn-icon[aria-label="Threads"]')`);
-  await sleep(400);
-  check("the thread list says which conversation waits, and on what", (await $(`[...document.querySelectorAll('.menu-row.is-radio')].some((r) => (r.textContent ?? '').includes('Needs your approval'))`)) === true);
-  await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
+  // the session bar marks the conversation that waits; hovering its dot says on what
+  await $(`document.querySelector('.ai .sbar-dot[data-status="wait"]')?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));true`);
   await sleep(300);
+  check("the session bar says which conversation waits, and on what", (await $(`document.querySelectorAll('.ai .sbar-dot[data-status="wait"]').length`)) === 1 && /Run the migration\?/.test(await $(`document.querySelector('.ai .sbar-peek')?.textContent ?? ''`)), await $(`document.querySelector('.ai .sbar-peek')?.textContent ?? null`));
+  await $(`document.querySelector('.ai .sbar-dot[data-status="wait"]')?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));true`);
+  await sleep(400);
 
   // answering clears it everywhere
   await press(`[...document.querySelectorAll('.ai-scroll button')].find((b) => b.textContent?.trim() === 'Allow')`);
@@ -102,9 +103,7 @@ const run = async () => {
   ctx.settings.set({ ...ctx.settings.get(), notifications: { ...ctx.settings.get().notifications, approvals: false } });
 
   // ── a clicked notification opens the thread that waits ─────────────────
-  await press(`document.querySelector('.ai-head .btn-icon[aria-label="Threads"]')`);
-  await sleep(400);
-  await press(`document.querySelector('button[aria-label="New thread"]')`);
+  await press(`document.querySelector('.ai .sbar button[aria-label="New thread"]')`);
   await sleep(800);
   await send("and the second one");
   await sleep(1200);
@@ -112,19 +111,15 @@ const run = async () => {
   const second = entries.find((e) => e.threadId !== firstThread);
   check("a second conversation waits", !!second, entries);
   check("with approvals switched off, it is counted but not told", notes.length === told, notes.slice(told));
-  // the person moves to the first thread, then clicks the notification for the second
-  await press(`document.querySelector('.ai-head .btn-icon[aria-label="Threads"]')`);
-  await sleep(400);
-  await press(`[...document.querySelectorAll('.menu-row.is-radio')].find((r) => !(r.textContent ?? '').includes('Needs your approval'))`);
+  // the person moves to the first thread (the one not waiting, in the session bar), then clicks the notification for the second
+  await press(`[...document.querySelectorAll('.ai .sbar-dot[data-status]')].find((d) => d.dataset.status !== 'wait')`);
   await sleep(800);
   ctx.ipc.send("attention.open", second);
   await sleep(1000);
   check("clicking its notification shows the conversation that waits", (await $(`[...document.querySelectorAll('.ai-scroll button')].some((b) => b.textContent?.trim() === 'Allow')`)) === true);
 
   // the status bar's list is a way back too
-  await press(`document.querySelector('.ai-head .btn-icon[aria-label="Threads"]')`);
-  await sleep(400);
-  await press(`[...document.querySelectorAll('.menu-row.is-radio')].find((r) => !(r.textContent ?? '').includes('Needs your approval'))`);
+  await press(`[...document.querySelectorAll('.ai .sbar-dot[data-status]')].find((d) => d.dataset.status !== 'wait')`);
   await sleep(800);
   const shown = () => $(`document.querySelector('.ai-scroll')?.textContent ?? ''`);
   check("away from it, the first conversation is on screen", (await shown()).includes("migrate the database") && !(await shown()).includes("and the second one"));
@@ -146,11 +141,10 @@ const run = async () => {
   ctx.ipc.send("attention.open", { key: `thread:${limited.id}`, projectId: project.id, threadId: limited.id, itemId: null, itemKey: null, kind: "waiting", who: null, text: null, since: Date.now() });
   await sleep(1200);
   check("the conversation says it waits for the limit", /Hit a usage limit/.test(await shown()), (await shown()).slice(-300));
-  await press(`document.querySelector('.ai-head .btn-icon[aria-label="Threads"]')`);
-  await sleep(400);
-  const subs = await $(`[...document.querySelectorAll('.menu-row.is-radio .m-sub')].map((n) => n.textContent)`);
-  check("the thread list says the conversation continues later", subs.some((s) => /^Usage limit · continues /.test(s)), subs);
-  await $(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
+  await $(`document.querySelector('.ai .sbar-dot[aria-current="true"]')?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));true`);
+  await sleep(300);
+  const peeked = await $(`document.querySelector('.ai .sbar-peek')?.textContent ?? ''`);
+  check("the session bar says the conversation continues later", /Usage limit · continues /.test(peeked), peeked);
   check("harness reached the end", true);
 };
 

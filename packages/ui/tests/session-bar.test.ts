@@ -94,3 +94,9 @@ it("sets a conversation writing code in the background right under the one it wr
   expect(capped.map((r) => [r.threadId, r.depth])).toEqual([["parent", 0], ["child", 1], ["t0", 0], ["t1", 0]]);
   expect(rows({ threads: [thread("child", { parentId: "gone" })] }).map((r) => [r.threadId, r.depth, r.parentKey])).toEqual([["child", 0, null]]);
 });
+
+it("carries what opened a conversation and when a usage limit lets it continue, for the cards and the peek", () => {
+  const out = rows({ threads: [thread("t", { origins: ["Routine"], parkedUntil: 1234 })], sessions: [session("s")] });
+  expect(out.find((r) => r.key === "thread:t")).toMatchObject({ origins: ["Routine"], parkedUntil: 1234 });
+  expect(out.find((r) => r.key === "session:s")).toMatchObject({ origins: [], parkedUntil: null });
+});

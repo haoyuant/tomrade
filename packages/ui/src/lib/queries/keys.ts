@@ -78,7 +78,6 @@ export const keys = {
 
   agent: {
     threads: (projectId: string) => ["agent", "threads", projectId] as const,
-    archivedThreads: (projectId: string) => ["agent", "threads", projectId, "archived"] as const,
     threadAll: (projectId: string) => ["agent", "thread", projectId] as const,
     thread: (projectId: string, threadId: string) => ["agent", "thread", projectId, threadId] as const,
     engines: ["agent", "engines"] as const,
@@ -146,8 +145,9 @@ export const keys = {
     unlinked: (projectId: string) => ["codeLink", projectId, "unlinked"] as const,
     worktree: (projectId: string, itemId: string) => ["codeLink", projectId, "worktree", itemId] as const,
     terminalWindow: (projectId: string) => ["codeLink", projectId, "terminalWindow"] as const,
-    /** The look back's first page (`query` empty), or its search by title and ticket: read again as sessions change. */
-    review: (projectId: string, query: string) => ["codeLink", projectId, "review", query] as const,
+    /** The look back's first page (`query` empty), or its search by title and ticket, `limit` rows: read again as sessions and conversations change. */
+    review: (projectId: string, query: string, limit = 0) => ["codeLink", projectId, "review", query, limit] as const,
+    reviewAll: (projectId: string) => ["codeLink", projectId, "review"] as const,
     startDefaults: ["codeLink", "startDefaults"] as const,
     herdrStatus: ["codeLink", "herdrStatus"] as const,
     gh: ["codeLink", "gh"] as const,
