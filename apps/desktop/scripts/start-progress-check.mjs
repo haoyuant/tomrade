@@ -78,6 +78,12 @@ app.whenReady().then(async () => {
     await js(`document.querySelector('[data-testid="start-quick"]').click(); true`);
     await wait(async () => quick !== null && (await js(`!document.querySelector('[data-testid="start-dialog"]')`)));
     assert("一点就开始，用上次的 agent 和地方", quick.engine === "ready" && quick.mode === "run");
+    // 别处开始过（对话里、MCP、另一个窗口）：开着的窗口马上重新读上次的选择，不等缓存过期
+    let asked = 0;
+    ctx.codeLink.startDefaults = () => (asked++, { mode: "run", engine: "ready" });
+    ctx.ipc.send("codeLink.startDefaultsChanged");
+    await wait(async () => asked > 0);
+    assert("别处开始后，开着的窗口立刻重新读上次的选择", asked > 0);
 
     // ── 工单已有会话在做：先问去看它、跟它说一句、还是另开一个 ──
     const shown = [];

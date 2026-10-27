@@ -96,6 +96,8 @@ if (window.tomrade) {
   });
   // Code-link writes only its own tables; a ticket it moves comes as items.changed. It fires on every
   // session hook, so it asks again only for what those tables feed.
+  // Asked again only when a start changed it: hook events do not touch it.
+  subscribe("codeLink.startDefaultsChanged", () => void queryClient.invalidateQueries({ queryKey: keys.codeLink.startDefaults }));
   subscribe("codeLink.changed", (projectId) => {
     void queryClient.invalidateQueries({ queryKey: keys.codeLink.all(projectId) });
     // A finished ticket's conversations may have just been archived.
