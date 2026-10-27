@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ClosedTerminalRow, Layout, SessionRow, TerminalRow, ThreadRow, WindowState } from "@tomradex/code-sessions";
+import { Icon, IconSprite } from "~/components/icons";
 import { ContextMenuActionItem, ContextMenuSub } from "~/components/ui/menu";
 import { useLocaleWords } from "~/lib/dicts";
 import { onLook, onShownIn, onState, onTails, onToast, send, type Look } from "./bridge";
@@ -434,15 +435,18 @@ export function App() {
   return (
     <SayContext.Provider value={say}>
       <div className="cs-window">
+        <IconSprite />
         <div className="cs-topbar">
           <span className="cs-project" data-testid="cs-project" title={say("projectTitle", { project: state.projectName })}>
             {state.projectName}
           </span>
-          <div className="seg cs-views" role="group" aria-label={say("viewToggle")} data-testid="cs-views">
+          <div className="seg quiet cs-views" role="group" aria-label={say("viewToggle")} data-testid="cs-views">
             <button type="button" aria-pressed={view === "grid"} data-testid="cs-view-grid" onClick={() => setView("grid")}>
+              <Icon className="ico" name="i-grid" size={13} />
               {say("viewGrid")}
             </button>
             <button type="button" aria-pressed={view === "overview"} data-testid="cs-view-overview" onClick={openOverview}>
+              <Icon className="ico" name="i-cards" size={13} />
               {say("viewOverview")}
             </button>
           </div>

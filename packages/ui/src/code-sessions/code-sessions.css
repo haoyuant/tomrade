@@ -4,13 +4,16 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 
 .cs-window { display: flex; flex-direction: column; height: 100%; }
 .cs-body { flex: 1; min-height: 0; display: flex; }
-/* The project this window belongs to, and how to look at it: the cells, or every session as a card. */
-.cs-topbar { display: flex; align-items: center; gap: 12px; height: 34px; padding: 0 12px; border-bottom: 1px solid var(--border); flex: none; }
+/* The project this window belongs to, and how to look at it: the cells, or every session as a card.
+   As tall as the app's title bar; its gutter is the main area's margin and the session bar's padding (--space-2),
+   so the name sits on the first cell's edge and the view switch on the session cards'. */
+.cs-topbar { display: flex; align-items: center; gap: var(--space-3); height: var(--titlebar-h); padding: 0 var(--space-2); border-bottom: 1px solid var(--border); flex: none; }
 .cs-project { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); font-weight: 600; color: var(--fg); }
-.cs-views { display: flex; flex: none; }
-.cs-views > button { min-width: 56px; }
+/* The view switch: the title bar's quiet one, an icon and the word, shorter than the bar it is centred in. */
+.cs-views { flex: none; }
+.cs-views > button { line-height: 18px; }
 /* The keys the window keeps, along the bottom. */
-.cs-keys { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 14px; min-height: 24px; padding: 2px 12px; border-top: 1px solid var(--border); font-size: 11px; color: var(--meta); flex: none; overflow: hidden; white-space: nowrap; }
+.cs-keys { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 14px; min-height: 24px; padding: 2px var(--space-2); border-top: 1px solid var(--border); font-size: 11px; color: var(--meta); flex: none; overflow: hidden; white-space: nowrap; }
 .cs-keys kbd { font-family: var(--font-mono); font-size: 10px; padding: 0 4px; border: 1px solid var(--border-input); border-radius: 4px; color: var(--muted); }
 
 /* The session bar reads like the assistant panel's: its background, cards that say where each session stands, dots when folded. */
@@ -100,12 +103,13 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-archive-search { margin: 0 var(--space-2) var(--space-2); width: calc(100% - 2 * var(--space-2)); box-sizing: border-box; }
 
 .cs-main { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.cs-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border-soft); background: var(--surface-warm); font-size: var(--text-sm); }
+.cs-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: var(--space-2); border-bottom: 1px solid var(--border-soft); background: var(--surface-warm); font-size: var(--text-sm); }
 .cs-banner code { font-family: var(--font-mono); font-size: var(--text-xs); }
-.cs-layout { flex: 1; min-height: 0; display: flex; padding: 6px; }
+/* The cells and the overview keep the same margin as the top bar's gutter and the session bar's padding; cells sit a margin apart. */
+.cs-layout { flex: 1; min-height: 0; display: flex; padding: var(--space-2); }
 .cs-layout > * { flex: 1; min-width: 0; min-height: 0; }
 /* The overview lies over the cells, which keep their terminals attached underneath. */
-.cs-overview { position: absolute; inset: 0; z-index: 5; overflow-y: auto; padding: 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; align-content: start; background: var(--bg); scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.cs-overview { position: absolute; inset: 0; z-index: 5; overflow-y: auto; padding: var(--space-2); display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--space-3); align-content: start; background: var(--bg); scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .cs-big { border: 1px solid var(--border); border-radius: var(--radius-lg, 10px); background: var(--surface); padding: 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; font-size: var(--text-sm); }
 .cs-big[data-status="wait"] { border-color: var(--warn); }
 .cs-big[aria-current="true"] { box-shadow: var(--elev-ring-accent); }
@@ -122,8 +126,8 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-split-part { display: flex; min-width: 0; min-height: 0; }
 .cs-split-part > * { flex: 1; min-width: 0; min-height: 0; }
 .cs-divider { flex: none; background: transparent; }
-.cs-divider[data-direction="row"] { width: 6px; cursor: col-resize; }
-.cs-divider[data-direction="column"] { height: 6px; cursor: row-resize; }
+.cs-divider[data-direction="row"] { width: var(--space-2); cursor: col-resize; }
+.cs-divider[data-direction="column"] { height: var(--space-2); cursor: row-resize; }
 .cs-divider:hover { background: var(--border-soft); }
 
 .cs-cell { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--border-soft); border-radius: 8px; overflow: hidden; background: var(--surface); }
