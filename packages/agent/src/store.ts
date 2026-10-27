@@ -142,7 +142,9 @@ CREATE TABLE IF NOT EXISTS plugin_agent_briefs (
     run_id TEXT NOT NULL, source_json TEXT, created_at INTEGER NOT NULL
   )` },
   // The brief one step back: a careless rewrite is undone, not lost.
-  { version: 15, up: "ALTER TABLE plugin_agent_briefs ADD COLUMN previous_body TEXT" }
+  { version: 15, up: "ALTER TABLE plugin_agent_briefs ADD COLUMN previous_body TEXT" },
+  // A conversation opened under another, to write its code in the background while that one goes on talking.
+  { version: 16, up: "ALTER TABLE plugin_agent_threads ADD COLUMN parent_id TEXT" }
 ];
 
 interface ThreadRow {
@@ -153,6 +155,7 @@ interface ThreadRow {
   board_id: string | null;
   item_id: string | null;
   branch: string | null;
+  parent_id: string | null;
   title: string;
   engine: string;
   surface: string;
@@ -210,6 +213,7 @@ const toThread = (r: ThreadRow, engineOf: (id: string) => string = (id) => id): 
   boardId: r.board_id ?? null,
   itemId: r.item_id ?? null,
   branch: r.branch ?? null,
+  parentId: r.parent_id ?? null,
   title: r.title,
   engine: engineOf(r.engine),
   surface: SURFACES.includes(r.surface as ThreadSurface) ? (r.surface as ThreadSurface) : "assistant",
@@ -338,12 +342,12 @@ export class AgentStore {
     this.db(projectId).prepare("UPDATE plugin_agent_runs SET playbooks_json = ? WHERE id = ?").run(JSON.stringify([...snapshots, playbook]), runId);
   }
 
-  createThread(projectId: string, engine: string, title = "", boardId: string | null = null, itemId: string | null = null, branch: string | null = null, surface: ThreadSurface = "assistant"): ThreadSummary {
+  createThread(projectId: string, engine: string, title = "", boardId: string | null = null, itemId: string | null = null, branch: string | null = null, surface: ThreadSurface = "assistant", parentId: string | null = null): ThreadSummary {
     const now = Date.now();
     const id = randomUUID();
     this.db(projectId)
-      .prepare("INSERT INTO plugin_agent_threads (id, project_id, board_id, item_id, branch, title, engine, surface, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(id, projectId, boardId, itemId, branch, title, engine, surface, now, now);
+      .prepare("INSERT INTO plugin_agent_threads (id, project_id, board_id, item_id, branch, parent_id, title, engine, surface, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(id, projectId, boardId, itemId, branch, parentId, title, engine, surface, now, now);
     return this.thread(projectId, id)!;
   }
 
@@ -436,8 +440,11 @@ export class AgentStore {
     return null;
   }
 
-  /** Runs left mid-flight by a killed process — no in-memory controller will ever cancel them. */
-  reconcileInterrupted(projectId: string, note = "Interrupted — the app closed while this run was in progress."): void {
+  /**
+   * Runs left mid-flight by a killed process — no in-memory controller will ever cancel them. A background
+   * conversation's interruption is its conclusion: `parentNote` words it for the conversation it reports to.
+   */
+  reconcileInterrupted(projectId: string, note = "Interrupted — the app closed while this run was in progress.", parentNote?: (title: string) => string): void {
     const db = this.db(projectId);
     const stale = db.prepare("SELECT id, thread_id FROM plugin_agent_runs WHERE status = 'running'").all() as { id: string; thread_id: string }[];
     if (!stale.length) return;
@@ -446,6 +453,8 @@ export class AgentStore {
     for (const { id, thread_id } of stale) {
       update.run(note, now, id);
       this.appendMessage(projectId, thread_id, "system", { type: "note", text: note }, id);
+      const thread = db.prepare("SELECT title, parent_id FROM plugin_agent_threads WHERE id = ?").get(thread_id) as { title: string; parent_id: string | null } | undefined;
+      if (parentNote && thread?.parent_id && this.thread(projectId, thread.parent_id)) this.appendMessage(projectId, thread.parent_id, "system", { type: "note", text: parentNote(thread.title), threadFor: thread_id }, null);
     }
   }
 

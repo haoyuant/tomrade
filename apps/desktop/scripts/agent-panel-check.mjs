@@ -600,7 +600,7 @@ const run = async () => {
   await sleep(1500);
   const bar = () =>
     $(`(() => { const b = document.querySelector('.ai .sbar'); if (!b) return null; return { mode: b.classList.contains('is-rail') ? 'rail' : 'cards',
-      dots: [...b.querySelectorAll('.sbar-dot[data-status]')].map((d) => [d.dataset.status, d.getAttribute('aria-label')]),
+      dots: [...b.querySelectorAll('.sbar-dot[data-status]')].map((d) => [d.dataset.status, d.getAttribute('aria-label'), d.dataset.depth ?? null]),
       cards: [...b.querySelectorAll('.sbar-card')].map((c) => [c.dataset.status, c.textContent]),
       waiting: b.querySelector('.sbar-waiting')?.getAttribute('aria-label') ?? null, peek: b.querySelector('[role=tooltip]')?.textContent ?? null }; })()`);
   const flip = () => $(`window.dispatchEvent(new KeyboardEvent('keydown', { key: '\\\\', code: 'Backslash', metaKey: ${process.platform === "darwin"}, ctrlKey: ${process.platform !== "darwin"}, bubbles: true, cancelable: true }));true`);
@@ -842,6 +842,72 @@ const run = async () => {
   const coderFold = await $(`document.querySelector('.ai-scroll .trace-fold > summary')?.textContent ?? null`);
   check("and the folded steps say what they changed", coderFold === "3 earlier steps · 3 files changed", coderFold);
   await shot("writing-code.png");
+
+  // ── 「放到后台做」: the coding moves to a child conversation under this one; this one stays free to talk, and the conclusion comes back ──
+  const gates = new Map();
+  // the stand-in holds its turn here until the harness lets it go — or until the turn is stopped
+  // a turn stopped before it got here (between two writes, say) never hears an abort again: it is over already
+  const gate = (id, signal) => new Promise((resolve, reject) => { if (signal.aborted) return reject(new Error("stopped")); gates.set(id, resolve); signal.addEventListener("abort", () => reject(new Error("stopped")), { once: true }); });
+  ctx.agent.engine({
+    id: "bgcoder",
+    title: "Background coder",
+    author: "ai:bgcoder",
+    available: async () => ({ ok: true }),
+    async turn(input, io) {
+      const text = input.input.kind === "text" ? input.input.text : "";
+      if (text.startsWith("Carry on in the background")) {
+        await io.tools.execute("write_file", { path: "code/part-4.md", content: "part 4" });
+        await gate("child", io.signal);
+        io.emit({ type: "text", text: "All parts written, tests pass." });
+        return { stop: "end" };
+      }
+      if (text.startsWith("write")) {
+        for (let i = 1; i <= 3; i++) await io.tools.execute("write_file", { path: `code/part-${i}.md`, content: `part ${i}` });
+        await gate("parent", io.signal);
+        io.emit({ type: "text", text: "Written." });
+        return { stop: "end" };
+      }
+      io.emit({ type: "text", text: "Sure." });
+      return { stop: "end" };
+    }
+  });
+  const bgParent = ctx.agent.newThread(alpha.id, "bgcoder", null, { title: "Dedupe chat" });
+  const bgHello = ctx.agent.send(alpha.id, bgParent.id, { kind: "text", text: "hello" });
+  await until(() => ctx.agent.store.run(alpha.id, bgHello.runId)?.status === "done", 60);
+  await threads();
+  await $(`(() => { const i = document.querySelector('.menu-search input'); Object.getOwnPropertyDescriptor(Object.getPrototypeOf(i), 'value').set.call(i, 'Dedupe chat'); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  await sleep(300);
+  await press(`[...document.querySelectorAll('.menu-row.is-radio')].find((r) => r.querySelector('.m-name')?.textContent === 'Dedupe chat')`);
+  await until(async () => (await shownThread()) === bgParent.id, 50);
+  await sleep(600);
+  await send("write the dedupe script");
+  check("while the run writes code, the rule offers to do it in the background", await until(() => present('[data-testid="work-rule"] [data-testid="to-background"]'), 60));
+  await shot("to-background.png");
+  await press(`document.querySelector('[data-testid="to-background"]')`);
+  const childOf = () => ctx.agent.store.threads(alpha.id).find((th) => th.parentId === bgParent.id);
+  check("it opens a child conversation under this one, on the same engine, and starts it", await until(() => !!childOf() && childOf().engine === "bgcoder" && ctx.agent.activeRuns().some((a) => a.thread.id === childOf().id), 60), childOf());
+  const bgChild = childOf();
+  check("the turn here was stopped and the conversation stays open", await until(async () => ctx.agent.store.runs(alpha.id, bgParent.id).at(-1)?.status === "cancelled" && !(await panel()).working && (await shownThread()) === bgParent.id, 50));
+  check("and a note says the coding moved, with the way to the child", await until(() => $(`[...document.querySelectorAll('.ai-scroll .agent-note')].some((n) => /Moved the coding to the background/.test(n.textContent) && !!n.querySelector('[data-testid="note-thread"]'))`), 50));
+  await sleep(600);
+  barSeen = await bar();
+  const bgAt = barSeen?.dots.findIndex(([, label]) => /^Dedupe chat,/.test(label)) ?? -1;
+  const bgNext = barSeen?.dots[bgAt + 1];
+  check("in the session bar the child sits right under its parent, set in, running", bgAt >= 0 && barSeen.dots[bgAt][2] === null && bgNext?.[0] === "run" && /writing code/.test(bgNext?.[1] ?? "") && bgNext?.[2] === "1", barSeen?.dots);
+  // the stand-in answers at once, so the new turn is told by the run it started, not by a spinner that may be gone already
+  const parentRuns = ctx.agent.store.runs(alpha.id, bgParent.id).length;
+  await send("another question");
+  await sleep(400);
+  check("while the child runs, this conversation takes a message at once, not into the queue", ctx.agent.store.runs(alpha.id, bgParent.id).length === parentRuns + 1 && ctx.agent.activeRuns().some((a) => a.thread.id === bgChild.id) && (await queued()).length === 0 && (await asked()).includes("another question"), { queued: await queued(), asked: await asked() });
+  await until(async () => !(await panel()).working, 50);
+  await until(() => gates.has("child"), 50);
+  gates.get("child")?.();
+  await until(() => ctx.agent.store.runs(alpha.id, bgChild.id).at(-1)?.status === "done", 60);
+  const conclusions = () => $(`[...document.querySelectorAll('.ai-scroll .agent-note')].filter((n) => /All parts written, tests pass/.test(n.textContent)).length`);
+  check("when the child finishes, its conclusion lands here, once", await until(async () => (await conclusions()) === 1, 50) && (await shownThread()) === bgParent.id, await conclusions());
+  await sleep(800);
+  check("and once only", (await conclusions()) === 1 && ctx.agent.thread(alpha.id, bgParent.id).messages.filter((m) => m.block.type === "note" && m.block.threadFor === bgChild.id).length === 2, await conclusions());
+  await shot("background-done.png");
 
   // The Terminal window from the main window: the title bar's button and ⇧⌘T run its own command for this project.
   const opened = [];

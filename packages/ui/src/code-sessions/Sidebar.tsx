@@ -124,6 +124,7 @@ function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; hi
         data-status={status}
         data-terminal={r.kind === "terminal" ? r.terminal.id : undefined}
         data-thread={r.kind === "thread" ? r.thread.id : undefined}
+        data-depth={r.kind === "thread" ? r.depth : undefined}
         title={r.kind === "thread" ? say("openInMain") : say("pickHint", { mod: MOD })}
         aria-current={current ? "true" : undefined}
         data-active={inCell || undefined}
@@ -391,6 +392,7 @@ function Rail({ ref, rows, waiting, marks, picks, foldLabel, onFold }: { ref: Re
         className="cs-dot"
         data-status={status}
         data-thread={r.kind === "thread" ? r.thread.id : undefined}
+        data-depth={r.kind === "thread" ? r.depth : undefined}
         aria-current={current ? "true" : undefined}
         data-active={has(marks.active, r) || undefined}
         aria-label={`${name}, ${statusWord(status, say)}`}

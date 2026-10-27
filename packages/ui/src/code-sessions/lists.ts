@@ -13,7 +13,7 @@ export type BarStatus = "wait" | "run" | "idle" | "done";
  * One row of the session bar: a session in a herdr pane of its own, a terminal opened here — with the ticket session
  * its agent claimed, once it has — or an assistant conversation, with the headless session Tomrade runs for it.
  */
-export type HereRow = { kind: "session"; id: string; session: SessionRow } | { kind: "terminal"; id: string; terminal: TerminalRow; session: SessionRow | null } | { kind: "thread"; id: string; thread: ThreadRow; session: SessionRow | null };
+export type HereRow = { kind: "session"; id: string; session: SessionRow } | { kind: "terminal"; id: string; terminal: TerminalRow; session: SessionRow | null } | { kind: "thread"; id: string; thread: ThreadRow; session: SessionRow | null; /** 1 when it sits under the conversation it writes code in the background for. */ depth?: 1 };
 
 /** The herdr pane a row's terminal is; null while it has none, and for a conversation, which has no pane here. */
 export const paneOf = (r: HereRow): string | null => (r.kind === "terminal" ? r.terminal.pane : r.kind === "session" ? r.session.pane : null);
@@ -61,8 +61,9 @@ export function order(a: HereRow, b: HereRow): number {
  * The session bar: one list of what this window shows and the assistant's conversations, and the live sessions it
  * cannot show. A session with no ticket is never a row of its own when a terminal here holds its pane: that terminal is
  * the row. A session without a pane here whose conversation is the assistant's rides on that conversation's row. Rows
- * on one pane — an agent working several tickets side by side — sit together, where the first of them would. An ended
- * session a cell shows to read closes the list, with what came of it; the rest are the archive's.
+ * on one pane — an agent working several tickets side by side — sit together, where the first of them would. A conversation
+ * writing code in the background for another sits right under it, the same way. An ended session a cell shows to read
+ * closes the list, with what came of it; the rest are the archive's.
  */
 export function sidebarRows(sessions: SessionRow[], terminals: TerminalRow[], threads: ThreadRow[] = []): { here: HereRow[]; away: SessionRow[] } {
   const live = sessions.filter((s) => s.endedAt === null);
@@ -79,10 +80,15 @@ export function sidebarRows(sessions: SessionRow[], terminals: TerminalRow[], th
   ];
   const sorted = rows.sort(order);
   const here: HereRow[] = [];
+  const parentOf = (r: HereRow) => (r.kind === "thread" && r.thread.parentId ? sorted.find((o) => o.kind === "thread" && o.id === r.thread.parentId) : undefined);
+  const children = (r: HereRow) => sorted.filter((o): o is Extract<HereRow, { kind: "thread" }> => o.kind === "thread" && o.thread.parentId === r.id).map((o) => ({ ...o, depth: 1 as const }));
   for (const r of sorted) {
-    if (here.includes(r)) continue;
-    const pane = paneOf(r);
-    here.push(...(pane ? sorted.filter((o) => paneOf(o) === pane) : [r]));
+    if (here.some((o) => o.id === r.id)) continue;
+    const top = parentOf(r) ?? r;
+    const pane = paneOf(top);
+    if (pane) { here.push(...sorted.filter((o) => paneOf(o) === pane)); continue; }
+    if (!here.some((o) => o.id === top.id)) here.push(top);
+    here.push(...children(top).filter((c) => !here.some((o) => o.id === c.id)));
   }
   const done = sessions.filter((s) => s.endedAt !== null && s.continuedIn === null).map((s): HereRow => ({ kind: "session", id: s.id, session: s }));
   return { here: [...here, ...done.sort(order)], away: live.filter((s) => away(s) && !onThread(s)) };

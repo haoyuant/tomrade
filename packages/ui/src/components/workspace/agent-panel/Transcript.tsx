@@ -5,6 +5,7 @@ import { Icon } from "~/components/icons";
 import { findEngine } from "~/lib/agent";
 import { workParts } from "~/lib/convoFold";
 import { useI18n } from "~/lib/i18n";
+import type { BarStatus } from "~/lib/sessionBar";
 import type { foldSteps } from "~/lib/steps";
 import { AgentMedia } from "../AgentMedia";
 import { ChecklistBlock, FindingBlock } from "../DoctorCards";
@@ -21,11 +22,24 @@ export interface TranscriptActionsValue {
   pending: PendingView | null;
   byKey: Map<string, Item>;
   busy: boolean;
+  /** How the conversations a note points at stand now, by thread id — a child writing code in the background. */
+  threadStatus: Map<string, BarStatus>;
   onOpenIssue: (id: string) => void;
+  onOpenThread: (id: string) => void;
   onAnswer: (id: string, value: string | string[]) => void;
   onRevert: (runId: string) => void;
   onOpenSettings: (engineId?: string) => void;
   onCardAction: (action: CardAction, threadId: string, engineId?: string) => void;
+}
+
+/** While the run writes code: the way to move that coding into a conversation of its own under this one, and keep talking here. */
+export function BackgroundOffer({ busy, onPick }: { busy: boolean; onPick: () => void }) {
+  const { t } = useI18n();
+  return (
+    <button type="button" className="btn btn-secondary btn-xs" data-testid="to-background" title={t("agentPanel.toBackgroundTitle")} disabled={busy} onClick={onPick}>
+      {t("agentPanel.toBackground")}
+    </button>
+  );
 }
 
 const TranscriptActions = createContext<TranscriptActionsValue | null>(null);
@@ -37,17 +51,19 @@ const useTranscriptActions = (): TranscriptActionsValue => {
 };
 
 /** The thread's messages, steps folded and the kickoff brief closed; only the newest failure offers a retry, only the newest changes the undo hint. */
-export function Transcript({ actions, folded, briefId, codeFrom, lastErrorId, lastChangesId, onRetry, onRetryWith, onTroubleshoot }: {
+export function Transcript({ actions, folded, briefId, codeFrom, lastErrorId, lastChangesId, onRetry, onRetryWith, onTroubleshoot, onBackground }: {
   actions: TranscriptActionsValue;
   folded: ReturnType<typeof foldSteps>;
   briefId: string | null;
-  /** Where the conversation turns to writing code, and the ticket it writes for: a rule is drawn there. */
-  codeFrom?: { id: string; ticket: string | null } | null;
+  /** Where the conversation turns to writing code, and the ticket it writes for: a rule is drawn there. `offer`: that writing is the run going now, so the rule offers to move it out. */
+  codeFrom?: { id: string; ticket: string | null; offer?: boolean } | null;
   lastErrorId: string | null;
   lastChangesId: string | null;
   onRetry?: () => void;
   onRetryWith?: (engineId: string) => void;
   onTroubleshoot?: (threadId: string, runId: ThreadMessage["runId"]) => void;
+  /** Moves the coding under way into a conversation of its own under this one. */
+  onBackground?: () => void;
 }) {
   const { t } = useI18n();
   return (
@@ -79,6 +95,7 @@ export function Transcript({ actions, folded, briefId, codeFrom, lastErrorId, la
           <Fragment key={`code-${codeFrom!.id}`}>
             <div className="work-rule" role="separator" data-testid="work-rule">
               <span>{codeFrom!.ticket ? t("agentPanel.writingCodeFor", { key: codeFrom!.ticket }) : t("agentPanel.writingCode")}</span>
+              {codeFrom!.offer && onBackground && <BackgroundOffer busy={false} onPick={onBackground} />}
             </div>
             {row}
           </Fragment>
@@ -106,7 +123,7 @@ function Row(props: Parameters<typeof RowBody>[0]) {
 
 function RowBody({ m, onRetry, onRetryWith, onTroubleshoot, hint }: { m: ThreadMessage; onRetry?: () => void; onRetryWith?: (engineId: string) => void; onTroubleshoot?: () => void; hint?: boolean }) {
   const { t } = useI18n();
-  const { projectId, runs, cards, engines, retryEngines, pending, byKey, onOpenIssue, onAnswer, onRevert, onOpenSettings, onCardAction, busy } = useTranscriptActions();
+  const { projectId, runs, cards, engines, retryEngines, pending, byKey, threadStatus, onOpenIssue, onOpenThread, onAnswer, onRevert, onOpenSettings, onCardAction, busy } = useTranscriptActions();
   const b = m.block;
   if (m.role === "user") {
     const focus = b.type === "text" ? b.focus : undefined;
@@ -123,7 +140,9 @@ function RowBody({ m, onRetry, onRetryWith, onTroubleshoot, hint }: { m: ThreadM
       </div>
     );
   }
-  if (b.type === "note")
+  if (b.type === "note") {
+    // the conversation the note is about, with how it stands now: running, or waiting on the person
+    const status = b.threadFor ? threadStatus.get(b.threadFor) : undefined;
     return (
       <p className="agent-note">
         {b.text}
@@ -135,8 +154,18 @@ function RowBody({ m, onRetry, onRetryWith, onTroubleshoot, hint }: { m: ThreadM
             </button>
           </>
         )}
+        {b.threadFor && (
+          <>
+            {(status === "run" || status === "wait") && <span className="note-thread" data-status={status}>{` · ${t(status === "run" ? "sessionBar.statusRun" : "sessionBar.statusWait")}`}</span>}
+            {" "}
+            <button type="button" className="link-btn" data-testid="note-thread" onClick={() => onOpenThread(b.threadFor!)}>
+              {t("agentPanel.seeThread")}
+            </button>
+          </>
+        )}
       </p>
     );
+  }
   const failedEngine = b.type === "error" && m.runId ? findEngine(engines, runs.get(m.runId!)?.engine) : undefined;
   const body =
     b.type === "text" ? (

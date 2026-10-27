@@ -89,6 +89,11 @@ export function firstCodeStep(messages: ThreadMessage[]): string | null {
   return null;
 }
 
+/** Whether the run has changed a file: the moment its coding can be moved out to a conversation of its own. */
+export function writesCode(messages: ThreadMessage[], runId: string): boolean {
+  return messages.some((m) => m.runId === runId && m.role === "agent" && m.block.type === "trace" && FILE_TOOL.test(m.block.tool));
+}
+
 /**
  * The transcript with long runs of steps folded: in each unbroken run of
  * traces, successful ones before the last few fold into one row. A failed
@@ -123,12 +128,15 @@ export function foldSteps(messages: ThreadMessage[]): (ThreadMessage | { fold: T
  * the person's words. It is long and English by design, so the panel folds it
  * behind a label instead of pushing the real conversation off the screen.
  * Recognized by the opener the starter wrote — firstPrompt, continuePrompt or
- * the bootstrap one — so a person's own message is never folded.
+ * the bootstrap one — so a person's own message is never folded. The opener
+ * of a conversation writing code in the background for another is folded in
+ * any thread: it is the machine's handover, not the person's words.
  */
 export function startBriefId(messages: ThreadMessage[], ticketThread: boolean): string | null {
-  if (!ticketThread) return null;
   const first = messages[0];
   const block = first?.block;
   if (first?.role !== "user" || block?.type !== "text" || block.steerId) return null;
+  if (block.text.startsWith("Carry on in the background — ")) return first.id;
+  if (!ticketThread) return null;
   return /^(Implement|Continue|Bootstrap) [A-Z][A-Z0-9]*-\d+ — /.test(block.text) ? first.id : null;
 }
