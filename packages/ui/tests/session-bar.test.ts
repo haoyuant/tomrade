@@ -111,8 +111,9 @@ it("carries what came of an ended session as the look back reads it, and the cel
 });
 
 it("lets a waiting terminal session's card answer only the prompt its screen shows, for an agent that declared its keys", () => {
-  const asks = (id: string, over: Partial<SessionView> & { approval?: boolean; prompt?: "allow" | "deny" | null }) => ({ ...session(id, { state: "waiting", activity: "needs your approval: Bash" }), approval: true, prompt: "allow" as const, ...over });
-  const out = rows({ sessions: [asks("yes", {}), asks("no", { prompt: "deny" }), asks("mute", { approval: false }), asks("idle", { activity: "asking you something" }), session("runs", { approval: true, prompt: "allow" } as never)] });
+  const permission = { kind: "permission" as const, tool: "Bash", action: "run" as const, detail: "pnpm test" };
+  const asks = (id: string, over: Partial<SessionView> & { approval?: boolean; prompt?: "allow" | "deny" | null }) => ({ ...session(id, { state: "waiting", ask: permission }), approval: true, prompt: "allow" as const, ...over });
+  const out = rows({ sessions: [asks("yes", {}), asks("no", { prompt: "deny" }), asks("mute", { approval: false }), asks("idle", { ask: { kind: "question", tool: null, action: null, detail: null } }), session("runs", { approval: true, prompt: "allow" } as never)] });
   expect(Object.fromEntries(out.map((r) => [r.sessionId, r.prompt]))).toEqual({ yes: "allow", no: "deny", mute: null, idle: null, runs: null });
 });
 
@@ -120,4 +121,11 @@ it("carries a live terminal session's last pane lines for its card and peek, and
   const out = rows({ sessions: [{ ...session("live"), tail: ["● Bash(pnpm test)", "  ⎿ 12 passed"] }, { ...session("old", { state: "ended", endedAt: 8 }), tail: ["gone"] }] });
   expect(out.find((r) => r.key === "session:live")?.tail).toEqual(["● Bash(pnpm test)", "  ⎿ 12 passed"]);
   expect(out.find((r) => r.key === "session:old")?.tail).toBeNull();
+});
+
+it("carries what a waiting terminal session asks, for the card and peek to word, and nothing once it moves on", () => {
+  const ask = { kind: "permission" as const, tool: "Bash", action: "run" as const, detail: "git push" };
+  const out = rows({ sessions: [session("asks", { state: "waiting", ask }), session("runs", { ask })] });
+  expect(out.find((r) => r.key === "session:asks")).toMatchObject({ status: "wait", ask });
+  expect(out.find((r) => r.key === "session:runs")?.ask).toBeNull();
 });

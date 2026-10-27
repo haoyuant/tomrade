@@ -1,5 +1,5 @@
 import type { RecordLine, RecordRead } from "@tomradex/agent";
-import type { SessionView } from "@tomradex/code-link";
+import type { SessionAsk, SessionView } from "@tomradex/code-link";
 
 /** The least time between two reads of one session's pane, or of its record: the panel never asks faster. */
 export const READ_EVERY_MS = 1000;
@@ -12,7 +12,20 @@ export const DRAWER_ROWS = 60;
 export { tailLines } from "@tomradex/code-link/prompt";
 
 /** The session waits on the person's say-so for a tool: what Allow and Deny answer. Not a turn that ended, nor a question. */
-export const isApprovalAsk = (session: Pick<SessionView, "state" | "activity">): boolean => session.state === "waiting" && /^needs your approval/i.test(session.activity ?? "");
+export const isApprovalAsk = (session: Pick<SessionView, "state" | "ask">): boolean => session.state === "waiting" && session.ask?.kind === "permission";
+
+type AskKey = "sessionBar.askRun" | "sessionBar.askRunAny" | "sessionBar.askEdit" | "sessionBar.askEditAny" | "sessionBar.askTool" | "sessionBar.askToolAny" | "sessionBar.askApproval" | "sessionBar.askQuestion";
+/** The words an ask is said with: the panel's `t`, or the Terminal window's words. */
+export type AskWords = (key: AskKey, vars?: Record<string, string>) => string;
+
+/** What a session asks, in the person's language: the command it would run, the file it would change, the tool, or a question. */
+export function askText(ask: SessionAsk, w: AskWords): string {
+  if (ask.kind === "question") return w("sessionBar.askQuestion");
+  if (ask.action === "run") return ask.detail ? w("sessionBar.askRun", { detail: ask.detail }) : w("sessionBar.askRunAny");
+  if (ask.action === "edit") return ask.detail ? w("sessionBar.askEdit", { detail: ask.detail }) : w("sessionBar.askEditAny");
+  if (ask.tool) return ask.detail ? w("sessionBar.askTool", { tool: ask.tool, detail: ask.detail }) : w("sessionBar.askToolAny", { tool: ask.tool });
+  return w("sessionBar.askApproval");
+}
 
 export const isLive = (session: Pick<SessionView, "state">): boolean => session.state !== "ended" && session.state !== "lost";
 

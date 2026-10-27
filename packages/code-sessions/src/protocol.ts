@@ -1,4 +1,4 @@
-import type { ReviewCursor, ReviewPage, ReviewSaid, SessionOutcome } from "@tomradex/code-link";
+import type { ReviewCursor, ReviewPage, ReviewSaid, SessionAsk, SessionOutcome } from "@tomradex/code-link";
 import type { TerminalBridge, TerminalKey, TerminalMouse, TerminalScroll, TerminalScrollPosition } from "@tomradex/contracts";
 
 /** One code session as the window lists it. */
@@ -13,6 +13,8 @@ export interface SessionRow {
   needsYou: boolean;
   /** What it is doing now, or what it last said. */
   activity: string | null;
+  /** What it waits on the person for, as a structure the window words: a tool's permission, a question; null otherwise. */
+  ask: SessionAsk | null;
   mode: "run" | "terminal";
   agent: string;
   /** The agent's own name (Claude Code, Codex…), for a session with no ticket to go by; null when Tomrade does not know it. */

@@ -25,6 +25,7 @@ export {
   type SessionCursor,
   type SessionMark,
   type SessionMode,
+  type SessionAsk,
   type SessionPatch,
   type SessionState,
   type SessionView
@@ -53,3 +54,4 @@ export { Review, REVIEW_PAGE, cutByTicket, mergePage, threadLines, ticketOutcome
 export type { RawOutput } from "./service.js";
 export { inputsOf, SessionPanel, type AnswerResult, type SessionGlance, type SessionPanelView } from "./panel.js";
 export { PROMPT_LINES, promptOnScreen } from "./prompt.js";
+export { askLine, askLineIn, permissionAsk, questionAsk, sameAsk } from "./ask.js";

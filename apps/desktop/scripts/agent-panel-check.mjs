@@ -663,7 +663,9 @@ const run = async () => {
   const ticket = ctx.items.create({ projectId: alpha.id, boardId, title: "Record pane output", by: "human" });
   const pane = ctx.codeLink.store.createSession(alpha.id, { repoId: "check", branch: "", itemIds: [ticket.id], mode: "terminal", agent: "claude-code", threadId: null, device: "check" });
   // in another terminal app: no pane for anything here to find gone
-  ctx.codeLink.store.patchSession(alpha.id, pane.id, { terminal: "iTerm.app", state: "waiting", activity: "needs your approval", lastEventAt: Date.now() });
+  // What a session asks is a structure (TOM-696): the tool and what it would run or change; each window words it.
+  const asksTo = (tool, detail = null) => ({ kind: "permission", tool, action: tool === null ? null : tool === "Bash" ? "run" : tool === "Edit" || tool === "Write" ? "edit" : "use", detail });
+  ctx.codeLink.store.patchSession(alpha.id, pane.id, { terminal: "iTerm.app", state: "waiting", activity: null, ask: asksTo(null), lastEventAt: Date.now() });
   const ended = ctx.codeLink.store.createSession(alpha.id, { repoId: "check", branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: "check" });
   ctx.codeLink.store.patchSession(alpha.id, ended.id, { title: "Snapshot records", state: "ended", endedAt: Date.now(), summary: "PR #9 merged" });
   // One whose ticket's branch has a merged pull request: its card says so, the way the look back does.
@@ -690,14 +692,14 @@ const run = async () => {
   await $(`(() => { const d = [...document.querySelectorAll('.ai .sbar-dot[data-status="wait"]')].find((n) => /Record pane output/.test(n.getAttribute('aria-label'))); d.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return true; })()`);
   await sleep(200);
   barSeen = await bar();
-  check("hovering a dot peeks at what it waits on", /needs your approval/.test(barSeen?.peek ?? ""), barSeen?.peek);
+  check("hovering a dot peeks at what it waits on, worded from what it asks", /waits for your approval/.test(barSeen?.peek ?? "") && !/needs your approval/.test(barSeen?.peek ?? ""), barSeen?.peek);
   await flip();
   await sleep(300);
   barSeen = await bar();
   check("⌘\\ turns the dots into cards", barSeen?.mode === "cards", barSeen?.mode);
   await shot("session-bar-cards.png");
   const card = barSeen?.cards.find(([, text]) => /Record pane output/.test(text));
-  check("a card says the ticket, where it runs and what it waits on", card?.[0] === "wait" && /AL-\d+ Record pane output/.test(card[1]) && /iTerm/.test(card[1]) && /needs your approval/.test(card[1]), card);
+  check("a card says the ticket, where it runs and what it waits on", card?.[0] === "wait" && /AL-\d+ Record pane output/.test(card[1]) && /iTerm/.test(card[1]) && /waits for your approval/.test(card[1]), card);
   check("a session started this minute says it is new", /new/.test(card?.[1] ?? ""), card);
   check("an ended one never does", !barSeen?.cards.some(([status, text]) => status === "done" && /new/.test(text)), barSeen?.cards);
   check("an ended card carries its outcome", barSeen?.cards.some(([status, text]) => status === "done" && /PR #9 merged/.test(text)), barSeen?.cards);
@@ -750,7 +752,8 @@ const run = async () => {
   let convoReads = 0;
   ctx.codeLink.conversation = (...args) => (convoReads++, readConversation(...args));
   const moved = (patch) => {
-    ctx.codeLink.store.patchSession(alpha.id, inPane.id, { lastEventAt: Date.now(), ...patch });
+    // an ask lasts until the session's next word, as code link's own hooks keep it
+    ctx.codeLink.store.patchSession(alpha.id, inPane.id, { lastEventAt: Date.now(), ask: null, ...patch });
     ctx.emit("codeLink/changed", alpha.id);
     ctx.ipc.send("codeLink.changed", alpha.id);
   };
@@ -831,25 +834,25 @@ const run = async () => {
   // A folder's trust is no permission (Enter there is "No, exit"): the ask shows, with only the way to answer it in the pane.
   screen = "Do you trust the files in this folder?\n\n❯ No, exit\n  Yes, I trust this folder\n\nEnter to confirm · Esc to cancel";
   const convoAt = convoReads;
-  moved({ state: "waiting", activity: "needs your approval: Bash" });
-  moved({ state: "waiting", activity: "needs your approval: Bash" });
-  moved({ state: "waiting", activity: "needs your approval: Bash" });
+  moved({ state: "waiting", activity: null, ask: asksTo("Bash", "pnpm test") });
+  moved({ state: "waiting", activity: null, ask: asksTo("Bash", "pnpm test") });
+  moved({ state: "waiting", activity: null, ask: asksTo("Bash", "pnpm test") });
   await sleep(1600);
   view = await sessionView();
-  check("a session waiting on a folder's trust shows the ask with no Allow or Deny, only the way to its pane", view?.state === "waiting" && /needs your approval: Bash/.test(view.approve ?? "") && !view.allow && !view.deny && view.there, view);
+  check("a session waiting on a folder's trust shows the ask with no Allow or Deny, only the way to its pane", view?.state === "waiting" && /wants to run pnpm test/.test(view.approve ?? "") && !view.allow && !view.deny && view.there, view);
   check("a burst of changes re-reads the record once, not once per change", convoReads - convoAt >= 1 && convoReads - convoAt <= 2, convoReads - convoAt);
   const asks = "Bash command\n  pnpm test\nDo you want to proceed?\n❯ 1. Yes\n  2. Yes, and don't ask again\n  3. No, and tell Claude what to do differently (esc)";
   // The cursor on No: Deny alone.
   screen = asks.replace("❯ 1. Yes", "  1. Yes").replace("  3. No", "❯ 3. No");
-  moved({ state: "waiting", activity: "needs your approval: Bash" });
+  moved({ state: "waiting", activity: null, ask: asksTo("Bash", "pnpm test") });
   await sleep(1300);
   view = await sessionView();
   check("with No under the cursor only Deny is offered", !view?.allow && view?.deny && !view.there, view);
   screen = asks;
-  moved({ state: "waiting", activity: "needs your approval: Bash" });
+  moved({ state: "waiting", activity: null, ask: asksTo("Bash", "pnpm test") });
   await sleep(1300);
   view = await sessionView();
-  check("a permission prompt on its screen shows Allow and Deny", view?.state === "waiting" && view.allow && view.deny && /needs your approval: Bash/.test(view.approve ?? ""), view);
+  check("a permission prompt on its screen shows Allow and Deny, with the command it would run", view?.state === "waiting" && view.allow && view.deny && /wants to run pnpm test/.test(view.approve ?? ""), view);
   await shot("terminal-session.png");
   await press(`document.querySelector('[data-testid="ai-allow"]')`);
   await sleep(300);
@@ -858,13 +861,13 @@ const run = async () => {
   moved({ state: "running", activity: "Bash · pnpm test" });
   await sleep(600);
   check("and the agent going on keeps it down", !(await sessionView())?.approve);
-  moved({ state: "waiting", activity: "needs your approval: Edit" });
+  moved({ state: "waiting", activity: null, ask: asksTo("Edit", "src/app.ts") });
   await sleep(600);
   await press(`document.querySelector('[data-testid="ai-deny"]')`);
   await sleep(300);
   check("Deny presses its key for No", typed.at(-1)?.keys?.join() === "esc", typed.at(-1));
   // Answered in the pane instead: the session's next event takes the ask down here too.
-  moved({ state: "waiting", activity: "needs your approval: Write" });
+  moved({ state: "waiting", activity: null, ask: asksTo("Write") });
   await sleep(600);
   check("an ask answered nowhere stays up", (await sessionView())?.allow);
   moved({ state: "running", activity: null });
@@ -875,7 +878,7 @@ const run = async () => {
   // An agent that never said how its prompt is answered: the panel only points at the Terminal window.
   const muteTicket = ctx.items.create({ projectId: alpha.id, boardId, title: "Mute agent asks", by: "human" });
   const mute = ctx.codeLink.store.createSession(alpha.id, { repoId: "check", branch: "", itemIds: [muteTicket.id], mode: "terminal", agent: "slow", threadId: null, device: "check" });
-  ctx.codeLink.store.patchSession(alpha.id, mute.id, { herdrPane: "w1:p2", state: "waiting", activity: "needs your approval: Bash", lastEventAt: Date.now() });
+  ctx.codeLink.store.patchSession(alpha.id, mute.id, { herdrPane: "w1:p2", state: "waiting", activity: null, ask: asksTo("Bash", "pnpm test"), lastEventAt: Date.now() });
   ctx.emit("codeLink/changed", alpha.id);
   ctx.ipc.send("codeLink.changed", alpha.id);
   await sleep(800);
@@ -959,18 +962,20 @@ const run = async () => {
   const cardTicket = ctx.items.create({ projectId: alpha.id, boardId, title: "Card allows it", by: "human" });
   const cardSession = ctx.codeLink.store.createSession(alpha.id, { repoId: "check", branch: "", itemIds: [cardTicket.id], mode: "terminal", agent: "claude-code", threadId: null, device: "check" });
   screen = asks;
-  ctx.codeLink.store.patchSession(alpha.id, cardSession.id, { herdrPane: "w1:p1", state: "waiting", activity: "needs your approval: Bash", lastEventAt: Date.now() });
+  ctx.codeLink.store.patchSession(alpha.id, cardSession.id, { herdrPane: "w1:p1", state: "waiting", activity: null, ask: asksTo("Bash", "git push -u origin al/card"), lastEventAt: Date.now() });
   ctx.emit("codeLink/changed", alpha.id);
   ctx.ipc.send("codeLink.changed", alpha.id);
   await until(async () => !!(await askOf("Card allows it")), 40);
   cardAsk = await askOf("Card allows it");
-  check("a terminal session's card offers Allow and Look first while its screen shows the prompt with yes under the cursor", JSON.stringify(cardAsk?.buttons.map(([id]) => id)) === JSON.stringify(["sbar-allow", "sbar-look"]) && /needs your approval: Bash/.test(cardAsk.text ?? ""), cardAsk);
+  check("a terminal session's card offers Allow and Look first while its screen shows the prompt with yes under the cursor", JSON.stringify(cardAsk?.buttons.map(([id]) => id)) === JSON.stringify(["sbar-allow", "sbar-look"]) && cardAsk.text === "wants to run git push -u origin al/card", cardAsk);
+  // waiting on a command's permission, it is listed on top as asking to run something
+  check("the line on top says the terminal session asks to run something", await until(async () => /AL-\d+ asks to run something/.test((await queueLine()) ?? ""), 40), await queueLine());
   const typedBefore = typed.length;
   await pressIn("Card allows it", "sbar-allow");
   check("Allow on the card presses the agent's key for Yes in its pane, and the panel stays", await until(async () => typed.length === typedBefore + 1, 30) && typed.at(-1)?.paneId === "w1:p1" && typed.at(-1)?.keys?.join() === "enter" && (await shownThread()) === stayOn && !(await sessionView()) && (await until(async () => /Allowed “AL-\d+” · you stayed where you were/.test((await $(`document.body.innerText`)) ?? ""), 30)), { typed: typed.slice(typedBefore), shown: await shownThread() });
   // the cursor on No: Deny alone on the card; Look first opens the session
   screen = asks.replace("❯ 1. Yes", "  1. Yes").replace("  3. No", "❯ 3. No");
-  ctx.codeLink.store.patchSession(alpha.id, cardSession.id, { state: "waiting", activity: "needs your approval: Bash", lastEventAt: Date.now() });
+  ctx.codeLink.store.patchSession(alpha.id, cardSession.id, { state: "waiting", activity: null, ask: asksTo("Bash", "git push -u origin al/card"), lastEventAt: Date.now() });
   ctx.emit("codeLink/changed", alpha.id);
   ctx.ipc.send("codeLink.changed", alpha.id);
   check("with No under the cursor the card offers Deny alone", await until(async () => JSON.stringify((await askOf("Card allows it"))?.buttons.map(([id]) => id)) === JSON.stringify(["sbar-deny", "sbar-look"]), 40), await askOf("Card allows it"));

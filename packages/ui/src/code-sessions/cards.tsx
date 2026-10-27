@@ -1,6 +1,7 @@
 import type { SessionRow, ThreadRow } from "@tomradex/code-sessions";
 import { outcomeLine } from "../lib/review";
 import { rangeLabel, spanLabel } from "../lib/sessionTime";
+import { askText } from "../lib/terminalSession";
 import { canAnswer, rowStartedAt, sessionName, waitedSince, type BarStatus, type HereRow } from "./lists";
 import { useSay, type Say, type Words } from "./say";
 
@@ -78,7 +79,7 @@ export function rowSaid(r: HereRow, status: BarStatus, say: Say, words: Words): 
   }
   const s = r.session;
   if (!s) return null;
-  if (status === "wait") return s.activity ?? say("waitPermission");
+  if (status === "wait") return s.ask ? askText(s.ask, words) : (s.activity ?? say("waitPermission"));
   if (status === "done") return outcomeOf(s, words);
   return s.activity;
 }

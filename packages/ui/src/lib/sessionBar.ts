@@ -1,5 +1,5 @@
 import type { ThreadSummary } from "@tomradex/agent";
-import type { SessionOutcome, SessionView } from "@tomradex/code-link";
+import type { SessionAsk, SessionOutcome, SessionView } from "@tomradex/code-link";
 import type { AttentionEntry } from "~/lib/attention";
 import { isApprovalAsk } from "./terminalSession";
 
@@ -19,6 +19,8 @@ export interface BarRow {
   where: "panel" | "pane" | "outside";
   terminalApp: string | null;
   wait: Pick<AttentionEntry, "kind" | "text"> | null;
+  /** What a waiting terminal session asks, worded where it shows; null otherwise. */
+  ask: SessionAsk | null;
   /** What it is doing now, or what it last said. */
   activity: string | null;
   /** What came of an ended session: its pull request, commits, asks and last word, said by `outcomeLine`. */
@@ -84,7 +86,7 @@ export function sessionBarRows(input: {
       key: `thread:${th.id}`, threadId: th.id, sessionId: session?.id ?? null,
       title: th.title || (th.itemId ? input.itemTitle(th.itemId) : null) || "",
       agent: th.engine, status, where: "panel", terminalApp: null,
-      wait: wait && { kind: wait.kind, text: wait.text }, activity: live ? session.activity : null, outcome: null, cell: live ? cellOf(session.id) : null, prompt: null, tail: null,
+      wait: wait && { kind: wait.kind, text: wait.text }, activity: live ? session.activity : null, outcome: null, cell: live ? cellOf(session.id) : null, prompt: null, tail: null, ask: null,
       itemIds: th.itemId ? [th.itemId] : [], ticket: keyOf(th.itemId ? [th.itemId] : []), origins: th.origins ?? [], parkedUntil: th.parkedUntil ?? null, startedAt: th.createdAt, at: wait?.since ?? th.updatedAt,
       parentKey: th.parentId && panelThreads.has(th.parentId) ? `thread:${th.parentId}` : null, depth: 0
     });
@@ -101,7 +103,7 @@ export function sessionBarRows(input: {
       agent: s.agent, status, where: s.herdrPane ? "pane" : "outside", terminalApp: s.herdrPane ? null : s.terminal,
       wait: status === "wait" ? { kind: wait?.kind ?? (s.state === "error" ? "stuck" : "waiting"), text: wait?.text ?? s.activity ?? s.summary } : null,
       activity: ended ? null : s.activity, outcome: ended ? (s.outcome ?? { pr: null, commits: 0, asked: s.asked, said: s.summary }) : null, cell: ended ? null : cellOf(s.id),
-      prompt: status === "wait" && s.approval && isApprovalAsk(s) ? (s.prompt ?? null) : null, tail: ended ? null : (s.tail ?? null),
+      prompt: status === "wait" && s.approval && isApprovalAsk(s) ? (s.prompt ?? null) : null, tail: ended ? null : (s.tail ?? null), ask: status === "wait" && s.state === "waiting" ? (s.ask ?? null) : null,
       itemIds: s.itemIds, ticket: keyOf(s.itemIds), origins: [], parkedUntil: null, startedAt: s.startedAt, at: wait?.since ?? (ended ? s.endedAt : null) ?? s.lastEventAt ?? s.startedAt,
       parentKey: null, depth: 0
     });

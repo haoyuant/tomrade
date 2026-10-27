@@ -12,7 +12,7 @@ import { useI18n } from "~/lib/i18n";
 import { isCommitKey, isComposing } from "~/lib/keys";
 import { ATTENTION_KEY } from "~/lib/attention";
 import type { BarStatus } from "~/lib/sessionBar";
-import { convoFromTail, convoLines, convoRefreshed, convoWithEarlier, delayUntil, DRAWER_ROWS, isApprovalAsk, isLive, mayReadPane, saidElsewhere, STRIP_ROWS, tailLines, type ConvoState } from "~/lib/terminalSession";
+import { convoFromTail, convoLines, convoRefreshed, convoWithEarlier, delayUntil, DRAWER_ROWS, askText, isApprovalAsk, isLive, mayReadPane, saidElsewhere, STRIP_ROWS, tailLines, type ConvoState } from "~/lib/terminalSession";
 import { useErrorToast, useToast } from "~/lib/toast";
 import { StatusMark } from "./SessionBar";
 
@@ -73,7 +73,7 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
   const readAt = useRef<number | null>(null);
   const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** The session's last movement, and the one the view last read for: a change schedules one read, a re-render none. */
-  const move = `${session.lastEventAt}|${session.state}|${session.activity}`;
+  const move = `${session.lastEventAt}|${session.state}|${session.activity}|${session.ask?.kind}`;
   const latestMove = useRef(move);
   latestMove.current = move;
   const seen = useRef("");
@@ -262,7 +262,8 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
     const note = cell ? t("sessionBar.saidInCell", { n: cell }) : t("sessionBar.saidInTerminal");
     return new Map(saidElsewhere(lines, shownSince.current, sentHere.current).map((key) => [key, note]));
   }, [lines, cell, t]);
-  const wait = status === "wait" ? session.activity ?? session.summary ?? t(ATTENTION_KEY[session.state === "error" ? "stuck" : "waiting"]) : null;
+  const asked = session.ask ? askText(session.ask, t) : null;
+  const wait = status === "wait" ? asked ?? session.activity ?? session.summary ?? t(ATTENTION_KEY[session.state === "error" ? "stuck" : "waiting"]) : null;
 
   return (
     <>
@@ -367,8 +368,8 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
         )}
         {elsewhere && <p className="ai-answered-there meta-txt dense" data-testid="ai-answered-there" role="status">{elsewhere}</p>}
         {asking && (
-          <div className="ai-approve" data-testid="ai-approve" role="group" aria-label={session.activity ?? t("agentPanel.attention_permission")}>
-            <span className="ai-approve-text">{session.activity ?? t("agentPanel.attention_permission")}</span>
+          <div className="ai-approve" data-testid="ai-approve" role="group" aria-label={asked ?? t("agentPanel.attention_permission")}>
+            <span className="ai-approve-text">{asked ?? t("agentPanel.attention_permission")}</span>
             {panel.data?.approval && canType && onScreen ? (
               <>
                 {onScreen.allows && <button type="button" className="btn btn-primary btn-xs" data-testid="ai-allow" disabled={sending} onClick={() => void answer("allow")}>{t("sessionBar.allow")}</button>}

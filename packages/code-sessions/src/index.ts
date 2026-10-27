@@ -50,8 +50,6 @@ const FRAME_BATCH_MS = 16;
 const FRAME_BATCH_MAX = 256 * 1024;
 /** How soon a waiting session whose screen showed no prompt is looked at again. */
 const PROMPT_RECHECK_MS = 2000;
-/** What code link's hooks say while a session waits on a permission; only those screens are read for a prompt. */
-const APPROVAL_ASK = /^needs your approval/i;
 /** How long the assistant's events settle before the window is refreshed for them: a turn ends in a burst of them. */
 const THREADS_SETTLE_MS = 100;
 /** How many lines of each pane the overview reads. */
@@ -252,6 +250,7 @@ export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, it
         state: s.state,
         needsYou: live && !!s.blocked,
         activity: s.activity ?? s.summary,
+        ask: live && s.state === "waiting" ? s.ask : null,
         mode: s.mode === "headless" ? "run" : "terminal",
         agent: s.agent,
         agentName: null,
@@ -651,7 +650,7 @@ function apply(ctx: Context, config: Config) {
     const now = Date.now();
     return Promise.all(
       rows.map(async (r) => {
-        if (!provider || !r.approval || r.endedAt !== null || !r.pane || r.state !== "waiting" || !APPROVAL_ASK.test(r.activity ?? "")) {
+        if (!provider || !r.approval || r.endedAt !== null || !r.pane || r.state !== "waiting" || r.ask?.kind !== "permission") {
           prompts.delete(r.id);
           return r;
         }

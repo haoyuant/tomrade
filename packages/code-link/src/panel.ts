@@ -17,8 +17,6 @@ const TAIL_ROWS = 12;
 /** How many lines a card shows, and how long each may be. */
 const TAIL_SHOWN = 2;
 const TAIL_LINE_MAX = 200;
-/** What the hooks say while a session waits on a permission: only those screens are read for a prompt. */
-const APPROVAL_ASK = /^needs your approval/i;
 
 /** What the session lists show of a live terminal session without opening it: its pane's last lines, and whether its card can answer its prompt. */
 export interface SessionGlance {
@@ -139,7 +137,7 @@ export class SessionPanel {
           out.set(s.id, { approval, prompt: null, tail: null });
           return;
         }
-        const asks = approval && s.state === "waiting" && APPROVAL_ASK.test(s.activity ?? "");
+        const asks = approval && s.state === "waiting" && s.ask?.kind === "permission";
         const known = this.seen.get(s.id);
         const sameEvent = known?.event === s.lastEventAt;
         const reuse = !!known && (asks ? known.asks && sameEvent && (!!known.prompt || now - known.at < GLANCE_RECHECK_MS) : now - known.at < (sameEvent ? TAIL_STALE_MS : TAIL_MIN_MS));
