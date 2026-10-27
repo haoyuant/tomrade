@@ -16,6 +16,7 @@
     "eval:backlog": "electron scripts/backlog-eval.mjs",
     "test:onboarding": "electron scripts/onboarding-check.mjs",
     "test:plugins": "electron scripts/plugins-check.mjs",
+    "test:app-icon": "electron scripts/app-icon-check.mjs",
     "test:media": "electron scripts/media-check.mjs",
     "test:assistant-links": "electron scripts/assistant-media-links-check.mjs",
     "test:live-mode": "electron scripts/live-mode-check.mjs",

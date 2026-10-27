@@ -11,6 +11,7 @@ import { openKeyring } from "./cipher.js";
 import { deliverDeepLink, registerScheme, SCHEME } from "./deep-link.js";
 import { installDesktopEntry } from "./desktop-entry.js";
 import { registerExtensionResolution } from "./extension-resolve.js";
+import { clearSwitchOffOnce } from "./loader.js";
 import { installAppMenu } from "./menu.js";
 import { loginItem } from "./login-item.js";
 import { askForMainWindow, provideMainWindow } from "./main-window.js";
@@ -125,6 +126,12 @@ app.whenReady().then(async () => {
   const pluginsRoot = process.env.TOMRADE_PLUGINS_DIR ?? path.join(machine.tomradeDir, "plugins");
   const pluginsDevRoot = path.join(machine.tomradeDir, "plugins-dev");
   const logDir = path.join(machine.userData, "logs");
+  // 0.19 and 0.20 could not load app-icon (TOM-625), and a flip of its failed row there switched it off for good.
+  try {
+    clearSwitchOffOnce(path.join(machine.userData, "tomrade.patch.yml"), "app-icon", path.join(machine.userData, "app-icon-switch-cleared"));
+  } catch (error) {
+    console.error("Could not clear app-icon's old switch:", error);
+  }
   // Without the person's own files: none read, and no switch written back to them.
   const start = (safe: boolean) =>
     boot({

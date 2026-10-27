@@ -35,7 +35,8 @@ export function ExtensionRow({ plugin }: { plugin: PluginView }) {
   const [uninstalling, setUninstalling] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const on = plugin.state !== "disabled";
+  // A row that failed to load is not running, so its switch reads off; switching it on tries it again.
+  const on = plugin.state !== "disabled" && plugin.state !== "failed";
   const fail = (e: unknown) => setError(messageOf(e));
   const name = ext.dir.split(/[\\/]/).at(-1) ?? ext.id;
 

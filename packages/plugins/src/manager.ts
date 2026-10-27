@@ -296,6 +296,8 @@ export class Plugins extends Service {
   private async apply(id: string, enabled: boolean): Promise<PluginsSnapshot> {
     const row = this.config.rows.find((r) => r.id === id);
     if (!row) throw new Error(`Unknown plugin “${id}”`);
+    // A failed row's switch reads off; switching it on tries it again and writes nothing.
+    if (enabled && !row.disabled && this.errors.has(id)) return this.restart(id);
     if (!row.disabled === enabled) return this.snapshot();
 
     if (enabled) {

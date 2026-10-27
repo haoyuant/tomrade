@@ -110,7 +110,8 @@ function PluginRow({
 }) {
   const { t } = useI18n();
   const detail = useDetailOf(plugin);
-  const on = plugin.state !== "disabled";
+  // A row that failed to load is not running, so its switch reads off; switching it on tries it again.
+  const on = plugin.state !== "disabled" && plugin.state !== "failed";
   const locked = plugin.holds.length > 0;
   // Stated once in the lede above, so the row carries only which modules it
   // holds; the sentence lives on the control that will not move.

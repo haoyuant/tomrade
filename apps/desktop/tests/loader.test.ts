@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { applyPatches, forPlatform, readConfig, readRows, writePatchRow } from "../src/loader.js";
+import { applyPatches, clearSwitchOffOnce, forPlatform, readConfig, readRows, writePatchRow } from "../src/loader.js";
 
 let dir: string;
 const file = (name: string) => path.join(dir, name);
@@ -121,5 +121,25 @@ plugins:
     const base = readConfig(write("tomrade.yml", "plugins:\n  - id: mcp\n    name: \"@tomradex/mcp\"\n")).rows;
     const patch = write("patch.yml", "plugins:\n  - id: stale\n    disabled: true\n  - id: mine\n    name: /opt/mine/index.js\n");
     expect(applyPatches(base, [readRows(patch)])).toEqual([{ id: "mcp", name: "@tomradex/mcp" }, { id: "mine", name: "/opt/mine/index.js" }]);
+  });
+});
+
+describe("taking back a switch-off a broken build left", () => {
+  it("clears the row's disabled: true once, and a later switch-off stands", () => {
+    const patch = write("patch.yml", "plugins:\n  - id: app-icon\n    disabled: true\n  - id: mcp\n    disabled: true\n");
+    clearSwitchOffOnce(patch, "app-icon", file("marker"));
+    expect(readRows(patch)).toEqual([{ id: "app-icon" }, { id: "mcp", disabled: true }]);
+    writePatchRow(patch, "app-icon", { disabled: true });
+    clearSwitchOffOnce(patch, "app-icon", file("marker"));
+    expect(readRows(patch)[0]).toEqual({ id: "app-icon", disabled: true });
+  });
+
+  it("leaves a switch-on alone, and marks a profile with no patch file so a later switch-off stands", () => {
+    const patch = write("patch.yml", "plugins:\n  - id: app-icon\n    disabled: false\n");
+    clearSwitchOffOnce(patch, "app-icon", file("marker"));
+    expect(readRows(patch)).toEqual([{ id: "app-icon", disabled: false }]);
+    clearSwitchOffOnce(file("none.yml"), "app-icon", file("fresh-marker"));
+    expect(fs.existsSync(file("none.yml"))).toBe(false);
+    expect(fs.existsSync(file("fresh-marker"))).toBe(true);
   });
 });
