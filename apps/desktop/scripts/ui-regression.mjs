@@ -1304,7 +1304,10 @@ const run = async () => {
   await press(`[...document.querySelectorAll('.menu-row.is-radio')].find(r => r.querySelector('.m-name')?.textContent === 'high')`);
   await sleep(1000);
   check("the effort pick lands on the chip", (await $(`[...document.querySelectorAll('.ai-knobs .chip-btn')].find(b => b.title === 'Effort')?.textContent ?? ''`)).includes("high"));
+  // the bar's + opens ⌘K on its ways to start: ↵ with nothing typed is a new conversation with the built-in assistant
   await press(`document.querySelector('.ai .sbar button[aria-label="New thread"]')`);
+  for (let i = 0; i < 30 && !(await $(`!!document.querySelector('[data-testid="palette-start"]')`)); i++) await sleep(100);
+  await $(`document.querySelector('.palette-input')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }));true`);
   await sleep(1400);
   const nextThread = ctx.agent.store.threads(project.id)[0];
   check("a new thread opens on the engine and effort the panel was showing", nextThread.id !== showing.id && nextThread.engine === showing.engine && nextThread.options?.effort === "high");
