@@ -1525,45 +1525,50 @@ export class CodeLink extends Service implements CodeLinkReader {
     return { choose: true, reason: reasons.filter((r, at, all) => all.indexOf(r) === at).join(" · ") || "no coding agent is ready" };
   }
 
-  /** Start each ticket headless with the one configuration, one after another, and show the outcome on the asking card when there is one. */
+  /** Start each ticket headless with the one configuration, one after another, and show each outcome on the asking card, when there is one, as it comes. */
   async startTickets(projectId: string, request: StartBatchRequest): Promise<StartBatchEntry[]> {
     const results: StartBatchEntry[] = [];
     const seen = new Set<string>();
     for (const itemId of request.itemIds) {
       if (seen.has(itemId)) continue;
       seen.add(itemId);
-      const item = this.ctx.items.get(projectId, itemId);
-      if (!item) {
-        results.push({ itemId, key: itemId, title: "", ok: false, message: `unknown item ${itemId}` });
-        continue;
-      }
-      const opts: StartOptions = {
-        mode: "run",
-        ...(request.engine ? { engine: request.engine } : {}),
-        ...(request.options ? { options: request.options } : {}),
-        ...(request.permissionMode ? { permissionMode: request.permissionMode } : {}),
-        ...(request.allowBlocked ? { allowBlocked: true } : {}),
-        ...(request.task?.trim() ? { message: request.task.trim() } : {}),
-        ...(request.autoMerge ? { autoMerge: true } : {}),
-        requestedBy: request.requestedBy
-      };
-      try {
-        const started = await this.start(projectId, item.id, opts);
-        if (started.ok) results.push({ itemId: item.id, key: item.key, title: item.title, ok: true, threadId: started.threadId, branch: started.branch, engine: started.engine, continued: started.continued, ...(started.waitingOn ? { message: started.waitingOn } : {}) });
-        else {
-          // What the gate names travels with it, so the card can offer the same fix as the Start dialog.
-          const { ok: _ok, pane: _pane, ...stopped } = started;
-          results.push({ itemId: item.id, key: item.key, title: item.title, ok: false, ...stopped });
-        }
-      } catch (err) {
-        results.push({ itemId: item.id, key: item.key, title: item.title, ok: false, message: errorMessage(err) });
-      }
+      results.push(await this.startFromBatch(projectId, itemId, request));
+      // The card shows a ticket's outcome before the next one starts: that one's progress is shown from here.
+      this.showStarted(projectId, request, results);
     }
+    return results;
+  }
+
+  private async startFromBatch(projectId: string, itemId: string, request: StartBatchRequest): Promise<StartBatchEntry> {
+    const item = this.ctx.items.get(projectId, itemId);
+    if (!item) return { itemId, key: itemId, title: "", ok: false, message: `unknown item ${itemId}` };
+    const opts: StartOptions = {
+      mode: "run",
+      ...(request.engine ? { engine: request.engine } : {}),
+      ...(request.options ? { options: request.options } : {}),
+      ...(request.permissionMode ? { permissionMode: request.permissionMode } : {}),
+      ...(request.allowBlocked ? { allowBlocked: true } : {}),
+      ...(request.task?.trim() ? { message: request.task.trim() } : {}),
+      ...(request.autoMerge ? { autoMerge: true } : {}),
+      requestedBy: request.requestedBy
+    };
+    try {
+      const started = await this.start(projectId, item.id, opts);
+      if (started.ok) return { itemId: item.id, key: item.key, title: item.title, ok: true, threadId: started.threadId, branch: started.branch, engine: started.engine, continued: started.continued, ...(started.waitingOn ? { message: started.waitingOn } : {}) };
+      // What the gate names travels with it, so the card can offer the same fix as the Start dialog.
+      const { ok: _ok, pane: _pane, ...stopped } = started;
+      return { itemId: item.id, key: item.key, title: item.title, ok: false, ...stopped };
+    } catch (err) {
+      return { itemId: item.id, key: item.key, title: item.title, ok: false, message: errorMessage(err) };
+    }
+  }
+
+  private showStarted(projectId: string, request: StartBatchRequest, results: StartBatchEntry[]): void {
     const agent = this.ctx.get("agent");
     if (agent && request.cardId) {
       const before = agent.store.cards(projectId, request.requestedBy).find((c) => c.id === request.cardId);
       const data = (before?.data ?? {}) as Partial<StartBatchCard>;
-      const tickets = data.tickets ?? results.map((r) => ({ itemId: r.itemId, key: r.key, title: r.title }));
+      const tickets = [...(data.tickets ?? []), ...results.filter((r) => !data.tickets?.some((t) => t.itemId === r.itemId)).map((r) => ({ itemId: r.itemId, key: r.key, title: r.title }))];
       // A ticket started again from the card after its fix keeps the others' outcomes beside its own.
       const merged = [...(data.results ?? []).filter((r) => !results.some((n) => n.itemId === r.itemId)), ...results];
       // Kept with the outcome, so a ticket started again from the card goes with what the others went with.
@@ -1574,7 +1579,6 @@ export class CodeLink extends Service implements CodeLinkReader {
         this.ctx.logger.warn(`start card not updated: ${errorMessage(err)}`);
       }
     }
-    return results;
   }
 
   openPr(projectId: string, itemId: string): Promise<OpenPrResult> {

@@ -290,6 +290,11 @@ describe("connecting a repository", () => {
     expect(text).toContain('# BEGIN TOMRADE MCP\n[mcp_servers.tomrade]\nurl = "http://127.0.0.1:19090/mcp/p1"\nenv_http_headers = { "X-Tomrade-Herdr-Pane" = "HERDR_PANE_ID" }\n# END TOMRADE MCP');
     expect(text).not.toContain("X-Tomrade-Agent");
     expect(parseToml(text)).toMatchObject({ hooks: { SessionStart: [{ hooks: [{ command: "echo custom" }] }] } });
+    // Its instructions name the server, and no hooks that are not there.
+    const instructions = fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8");
+    expect(instructions).toContain("(`.codex/config.toml` for Codex)");
+    expect(instructions).not.toContain("session lifecycle");
+    expect(instructions).not.toContain("/hooks");
     expect(writeConnectFiles(dir, input, ["codex"]).files).toEqual([]);
   });
 
@@ -358,15 +363,42 @@ describe("connecting a repository", () => {
     expect(await codeLink.connection(project.id, repo.id)).toMatchObject({ state: "other-instance", configuredUrl: otherUrl });
   });
 
-  it("gives Pi the project extension its engine writes, and only the instructions while no engine has registered one", () => {
+  it("gives Pi the project extension its engine writes, and only the instructions, naming no extension, while no engine has registered one", () => {
     const dir = path.join(root, `pi-${n++}`);
     fs.mkdirSync(dir, { recursive: true });
     const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
     expect(writeWith(dir, input, ["pi"])).toEqual({ files: ["AGENTS.md"], skipped: [{ agent: "pi", file: ".pi/extensions/tomrade.ts", reason: "no-connector" }] });
+    expect(fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8")).not.toContain("Pi");
     writeConnectFiles(dir, input);
     expect(fs.readFileSync(path.join(dir, ".pi/extensions/tomrade.ts"), "utf8")).toBe(piConnector.write(input.mcpUrl, input.eventUrl));
+    expect(fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8")).toContain("`.pi/extensions/tomrade.ts` for Pi");
     expect(writeConnectFiles(dir, input).files).toEqual([]);
     expect(writeConnectFiles(dir, { ...input, mcpUrl: "http://127.0.0.1:19091/mcp/p1", eventUrl: "http://127.0.0.1:19091/sessions/event" }).files).toContain(".pi/extensions/tomrade.ts");
+  });
+
+  it("names in the agent instructions only what the folder connects: no agent left out, and every agent once all are written", () => {
+    const dir = path.join(root, `named-${n++}`);
+    fs.mkdirSync(path.join(dir, ".cursor"), { recursive: true });
+    fs.writeFileSync(path.join(dir, ".cursor/mcp.json"), "{ nope");
+    const input = { projectName: "App", mcpUrl: "http://127.0.0.1:19090/mcp/p1", eventUrl: "http://127.0.0.1:19090/sessions/event", prefix: "APP", branchTemplate: "{key}/{slug}" };
+    // Pi's engine is off, OpenCode is not chosen, and Cursor's server file cannot be read.
+    expect(writeWith(dir, input, ["claude-code", "codex", "workbuddy", "pi", "cursor", "gemini"]).skipped.map((skip) => skip.agent)).toEqual(["pi", "cursor"]);
+    for (const name of ["CLAUDE.md", "AGENTS.md"]) {
+      const text = fs.readFileSync(path.join(dir, name), "utf8");
+      for (const absent of ["Pi", ".pi/", "OpenCode", "opencode", "Cursor", ".cursor/"]) expect(text).not.toContain(absent);
+      expect(text).toContain("MCP server (`.mcp.json` for Claude Code and WorkBuddy, `.codex/config.toml` for Codex).");
+      expect(text).toContain("\nClaude Code, Codex and WorkBuddy report session lifecycle through repository hooks. The hooks also carry Tomrade's answer: ");
+      expect(text).toContain("\nGemini CLI uses `.gemini/settings.json`");
+    }
+    fs.rmSync(path.join(dir, ".cursor/mcp.json"));
+    writeConnectFiles(dir, input);
+    const all = fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8");
+    for (const file of [".mcp.json", ".codex/config.toml", ".pi/extensions/tomrade.ts", "opencode.json", ".opencode/plugins/tomrade.js", ".cursor/mcp.json", ".cursor/hooks.json", ".cursor/hooks/tomrade", ".cursor/hooks/tomrade.ps1", ".gemini/settings.json"]) expect(all).toContain(`\`${file}\``);
+    expect(all).toContain("\nClaude Code, Codex, WorkBuddy and Cursor report session lifecycle through repository hooks, Pi through that extension and OpenCode through `.opencode/plugins/tomrade.js`. ");
+    // A later write for one agent, as a machine fills in what it lacks, still names the others.
+    fs.rmSync(path.join(dir, ".cursor/hooks.json"));
+    expect(writeConnectFiles(dir, input, ["cursor"]).files).toEqual([".cursor/hooks.json"]);
+    expect(fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8")).toBe(all);
   });
 
   it("gives OpenCode a tomrade server in opencode.json and a reporting plugin, keeping the project's own config", () => {
@@ -381,10 +413,11 @@ describe("connecting a repository", () => {
     expect(plugin).toContain(`const eventUrl = "${input.eventUrl}";`);
     expect(plugin).toContain('"x-tomrade-agent": "opencode"');
     expect(writeConnectFiles(dir, input).files).toEqual([]);
-    // One it cannot read leaves OpenCode out and the file as it was.
+    // One it cannot read leaves OpenCode out and the file as it was, and the instructions stop naming it.
     fs.writeFileSync(path.join(dir, "opencode.json"), "{ not json");
-    expect(writeConnectFiles(dir, input)).toEqual({ files: [], skipped: [{ agent: "opencode", file: "opencode.json", reason: "invalid" }] });
+    expect(writeConnectFiles(dir, input)).toEqual({ files: ["CLAUDE.md", "AGENTS.md"], skipped: [{ agent: "opencode", file: "opencode.json", reason: "invalid" }] });
     expect(fs.readFileSync(path.join(dir, "opencode.json"), "utf8")).toBe("{ not json");
+    expect(fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8")).not.toContain("OpenCode");
   });
 
   it("reads JSON with comments, writes only for the chosen agents, and skips one whose file it cannot change safely", () => {
@@ -736,6 +769,22 @@ describe("connecting a repository", () => {
     // A remote GitHub does not host has no compare page either.
     expect(await codeLink.connect(project.id, repo.id)).toMatchObject({ pushed: true, url: null, message: expect.stringContaining("tomrade/connect pushed") });
     expect(gh.calls.slice(-2).map((call) => call.slice(0, 2).join(" "))).toEqual(["pr create", "pr view"]);
+  });
+
+  it("says in its commit and pull request only what it connected, never an agent it left out", async () => {
+    const { codeLink, project, repo, checkout } = await machine();
+    onTestFinished(() => gh.reset());
+    gh.answer("pr create", { stdout: "https://github.com/example/app/pull/8" });
+    // Pi's engine is off: its extension is left out.
+    codeLink.registerConnector("pi", piConnector)();
+    codeLink.setRepoPolicy(project.id, repo.id, { connectAgents: ["claude-code", "codex", "pi"] });
+    const result = await codeLink.connect(project.id, repo.id);
+    expect(result.skipped.map((skip) => skip.agent)).toEqual(["pi"]);
+    const said = "Project config lets Claude Code and Codex reach Tomrade's MCP server. Claude Code and Codex report session lifecycle back. Agent instructions describe the ticket conventions.";
+    git(["fetch", "-q", "origin"], checkout);
+    expect(git(["log", "-1", "--format=%B", "origin/tomrade/connect"], checkout)).toBe(`Connect this repository to Tomrade\n\n${said}`);
+    expect(gh.calls.at(-1)!.at(-1)).toBe(`Adds ${result.files.join(", ")}. ${said} Review Codex hooks with /hooks after merging.`);
+    expect(git(["show", "origin/tomrade/connect:AGENTS.md"], checkout)).not.toContain("Pi");
   });
 });
 

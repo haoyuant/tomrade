@@ -10,11 +10,12 @@ import { PRIORITY_LABEL, WORK_TYPE_KEY } from "~/lib/domain";
 import { useI18n, type MessageKey } from "~/lib/i18n";
 import { traceState } from "~/lib/steps";
 import type { RunProgress } from "~/lib/agent";
-import { offerStart, permissionLabel, useMergeTicket, useResolveMerge, useStartTickets } from "~/lib/codeLink";
+import { offerStart, permissionLabel, startBatchWaits, useMergeTicket, useResolveMerge, useStartTickets } from "~/lib/codeLink";
 import { useEngines } from "~/lib/agent";
 import { useAgentDock } from "~/components/chrome/ProjectShell";
-import type { MergeCard, StartBatchCard, StartBatchEntry } from "@tomradex/code-link";
+import type { MergeCard, StartBatchCard, StartBatchEntry, StartBatchRequest } from "@tomradex/code-link";
 import { StartGateFix, useGateWords, type StartFailure } from "~/components/issue/StartGateFix";
+import { StartProgressNote } from "~/components/issue/StartProgress";
 import { useSetupInTerminal } from "~/lib/setup";
 import { useImShareNext, useImThreadBindings } from "~/lib/im";
 import { isCancelKey, isCommitKey, isComposing } from "~/lib/keys";
@@ -240,7 +241,7 @@ export function StartOffer({ card, projectId, onOpenIssue }: { card: StartOfferC
 /**
  * Tickets the assistant was asked to start. Until they run, the person either confirms the start
  * (a ticket just filed from their request) or picks the agent here (the conversation's own could
- * not code) and starts them all at once; then each ticket says how it went and opens its session.
+ * not code) and starts them all at once; each ticket shows its steps while it starts, then says how it went and opens its session.
  */
 export function StartBatchBlock({ card, cardId, projectId, threadId, onOpenIssue }: { card: StartBatchCard; cardId: string; projectId: string; threadId: string; onOpenIssue: (id: string) => void }) {
   const { t } = useI18n();
@@ -249,7 +250,9 @@ export function StartBatchBlock({ card, cardId, projectId, threadId, onOpenIssue
   const gateWords = useGateWords();
   const start = useStartTickets(projectId);
   const keyOf = useKeyOf(projectId);
+  const items = useItems(projectId);
   const ready = (engines.data ?? []).filter((engine) => engine.ok && engine.capabilities.includes("code") && !engine.terminalOnly);
+  const [hadOutcome, setHadOutcome] = useState<ReadonlySet<string>>(new Set());
   const [chosenEngine, setChosenEngine] = useState<string | null>(null);
   const [chosenPermission, setChosenPermission] = useState<string | null>(null);
   const settled = card.config ?? null;
@@ -258,17 +261,25 @@ export function StartBatchBlock({ card, cardId, projectId, threadId, onOpenIssue
   const permissionModes = engine?.permissionModes;
   const permissionMode = permissionModes ? (chosenPermission && permissionModes.choices.some((c) => c.value === chosenPermission) ? chosenPermission : permissionModes.default) : undefined;
   const n = card.tickets.length;
-  const head = card.results
-    ? t(n === 1 ? "agentPanel.startBatchDoneOne" : "agentPanel.startBatchDone", { n })
-    : settled
-      ? t(n === 1 ? "agentPanel.startBatchConfirmOne" : "agentPanel.startBatchConfirm", { n })
-      : t(n === 1 ? "agentPanel.startBatchPickOne" : "agentPanel.startBatchPick", { n });
+  const going = start.variables?.itemIds.length ?? n;
+  const waits = start.isPending && start.variables ? startBatchWaits(start.variables.itemIds, card.results, hadOutcome) : new Map<string, "starting" | "queued">();
+  const head = start.isPending
+    ? t(going === 1 ? "agentPanel.startBatchRunningOne" : "agentPanel.startBatchRunning", { n: going })
+    : card.results
+      ? t(n === 1 ? "agentPanel.startBatchDoneOne" : "agentPanel.startBatchDone", { n })
+      : settled
+        ? t(n === 1 ? "agentPanel.startBatchConfirmOne" : "agentPanel.startBatchConfirm", { n })
+        : t(n === 1 ? "agentPanel.startBatchPickOne" : "agentPanel.startBatchPick", { n });
+  const send = (request: StartBatchRequest) => {
+    setHadOutcome(new Set((card.results ?? []).map((r) => r.itemId)));
+    start.mutate(request);
+  };
   const go = (config: { engine: string; options?: Record<string, unknown>; permissionMode?: string }) =>
-    start.mutate({ itemIds: card.tickets.map((ticket) => ticket.itemId), requestedBy: threadId, ...config, ...(card.task ? { task: card.task } : {}), cardId });
+    send({ itemIds: card.tickets.map((ticket) => ticket.itemId), requestedBy: threadId, ...config, ...(card.task ? { task: card.task } : {}), cardId });
   const retry = (itemId: string) => (allowBlocked?: boolean) =>
-    start.mutate({ itemIds: [itemId], requestedBy: threadId, ...(settled ?? {}), ...(card.task ? { task: card.task } : {}), ...(allowBlocked ? { allowBlocked: true } : {}), cardId });
+    send({ itemIds: [itemId], requestedBy: threadId, ...(settled ?? {}), ...(card.task ? { task: card.task } : {}), ...(allowBlocked ? { allowBlocked: true } : {}), cardId });
   return (
-    <div className="tool-card" data-testid="start-batch" data-state={card.results ? "started" : settled ? "confirm" : "pick"}>
+    <div className="tool-card" data-testid="start-batch" data-state={start.isPending ? "starting" : card.results ? "started" : settled ? "confirm" : "pick"}>
       <div className="tool-head">
         <Icon name="i-plug" size={12} />
         {head}
@@ -276,10 +287,14 @@ export function StartBatchBlock({ card, cardId, projectId, threadId, onOpenIssue
       {card.task && <p className="tool-row" data-testid="start-batch-task">{t("codeLink.startTask", { task: card.task })}</p>}
       <ul className="tool-row start-batch-list">
         {card.tickets.map((ticket) => {
-          const result = card.results?.find((r) => r.itemId === ticket.itemId);
+          const wait = waits.get(ticket.itemId);
+          // A ticket started again shows its steps, not what stopped it last time.
+          const result = wait ? undefined : card.results?.find((r) => r.itemId === ticket.itemId);
           return (
-            <li key={ticket.itemId} data-testid="start-batch-ticket" data-state={result ? (result.ok ? "started" : "stopped") : "pending"}>
+            <li key={ticket.itemId} data-testid="start-batch-ticket" data-state={wait ?? (result ? (result.ok ? "started" : "stopped") : "pending")}>
               <button type="button" className="kref num" onClick={() => onOpenIssue(ticket.itemId)}>{keyOf(ticket.itemId, ticket.key)}</button> {ticket.title}
+              {wait === "starting" && <StartProgressNote mode="run" general={items.data?.find((item) => item.id === ticket.itemId)?.workType === "general"} branch={null} />}
+              {wait === "queued" && <span className="meta-txt dense start-batch-result" data-testid="start-batch-queued">{t("agentPanel.startBatchQueued")}</span>}
               {result && (
                 <span className="meta-txt dense start-batch-result">
                   {result.ok
@@ -317,7 +332,7 @@ export function StartBatchBlock({ card, cardId, projectId, threadId, onOpenIssue
         <div className="tool-row start-batch-pick">
           <span className="meta-txt dense">{t("agentPanel.startBatchWith", { engine: findEngineTitle(engines.data, settled.engine) })}</span>
           <button type="button" className="btn btn-primary btn-xs" disabled={start.isPending} data-testid="start-batch-go" onClick={() => go(settled)}>
-            {start.isPending ? t("agentPanel.startBatchStarting") : t(n === 1 ? "agentPanel.startBatchGoOne" : "agentPanel.startBatchGo", { n })}
+            {start.isPending ? <><Icon name="i-sync" size={12} className="is-spinning" /> {t("agentPanel.startBatchStarting")}</> : t(n === 1 ? "agentPanel.startBatchGoOne" : "agentPanel.startBatchGo", { n })}
           </button>
         </div>
       )}
@@ -349,7 +364,7 @@ export function StartBatchBlock({ card, cardId, projectId, threadId, onOpenIssue
                 data-testid="start-batch-go"
                 onClick={() => engine && go({ engine: engine.id, ...(permissionMode ? { permissionMode } : {}) })}
               >
-                {start.isPending ? t("agentPanel.startBatchStarting") : t(n === 1 ? "agentPanel.startBatchGoOne" : "agentPanel.startBatchGo", { n })}
+                {start.isPending ? <><Icon name="i-sync" size={12} className="is-spinning" /> {t("agentPanel.startBatchStarting")}</> : t(n === 1 ? "agentPanel.startBatchGoOne" : "agentPanel.startBatchGo", { n })}
               </button>
             </div>
           )}

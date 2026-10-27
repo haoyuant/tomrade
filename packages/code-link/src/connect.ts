@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parse as parseToml } from "smol-toml";
+import { inspectConnectFiles, type AgentConnectionView } from "./connection.js";
 import { CURSOR_HOOK_POWERSHELL, CURSOR_HOOK_SCRIPT, LEGACY_CURSOR_HOOK_SCRIPT, cursorHookPowerShell, cursorHookScript, withCursorHooks } from "./cursor-hooks.js";
 import { opencodePlugin, withMcpEntry } from "./opencode-files.js";
 import { HERDR_PANE_HEADER, HOOK_EVENTS, TERMINAL_HEADER, WT_HEADER, stripJsonComments } from "./sessions.js";
@@ -203,24 +204,57 @@ function withCodexHooks(existing: string, eventUrl: string): string | null {
   }
 }
 
+/** What a folder's connection files give each agent: the `tomrade` server, and its lifecycle reports where it sends them. */
+export type ConnectedAgents = readonly Pick<AgentConnectionView, "id" | "title" | "tools" | "tracking">[];
+
+/** "A", "A and B", "A, B and C". */
+export const andList = (items: readonly string[]): string => (items.length > 1 ? `${items.slice(0, -1).join(", ")} and ${items.at(-1)}` : (items[0] ?? ""));
+
 /**
  * The CLAUDE.md section that tells any coding agent how this repository and
  * Tomrade stay in step — when the work has a ticket at all, and only where
  * the `tomrade` server is reachable: the file is committed, Tomrade is one
  * developer's. Claude Code reads the project's rules in the MCP server's
  * instructions; agents that read AGENTS.md (Codex) take those for tool
- * notes, so `fetchRules` has them ask.
+ * notes, so `fetchRules` has them ask. It names only the agents whose files
+ * `agents` found reaching the server, and as reporting only those that do.
  */
-export function tomradeSection(input: ConnectInput, options: { fetchRules?: boolean } = {}): string {
+export function tomradeSection(input: ConnectInput, agents: ConnectedAgents, options: { fetchRules?: boolean } = {}): string {
   const example = `${input.prefix}-42`;
+  const reach = agents.filter((agent) => agent.tools);
+  const report = reach.filter((agent) => agent.tracking === "hooks");
+  const has = (list: ConnectedAgents, id: string) => list.some((agent) => agent.id === id);
+  const titles = (list: ConnectedAgents) => andList(list.map((agent) => agent.title));
+  const servers = ([[".mcp.json", ["claude-code", "workbuddy"]], [".codex/config.toml", ["codex"]], [PI_EXTENSION, ["pi"]], ["opencode.json", ["opencode"]]] as const).flatMap(([file, ids]) => {
+    const who = reach.filter((agent) => (ids as readonly string[]).includes(agent.id));
+    return who.length ? [`\`${file}\` for ${titles(who)}`] : [];
+  });
+  const hooked = report.filter((agent) => ["claude-code", "codex", "workbuddy", "cursor"].includes(agent.id));
+  const routes = [
+    ...(hooked.length ? [{ who: titles(hooked), many: hooked.length > 1, how: "through repository hooks" }] : []),
+    ...(has(report, "pi") ? [{ who: "Pi", many: false, how: "through that extension" }] : []),
+    ...(has(report, "opencode") ? [{ who: "OpenCode", many: false, how: `through \`${OPENCODE_PLUGIN}\`` }] : [])
+  ];
+  const reporting = [
+    ...(routes.length ? [`${andList(routes.map((route, i) => (i ? `${route.who} ${route.how}` : `${route.who} ${route.many ? "report" : "reports"} session lifecycle ${route.how}`)))}.`] : []),
+    ...(hooked.length ? [`The hooks also carry Tomrade's answer${has(hooked, "cursor") ? " (Cursor's in its own fields)" : ""}: a code change made before this session claimed a ticket, or recorded the person's word to go without one, is refused with the way on.`] : []),
+    ...(has(report, "codex") ? ["In Codex, trust the project and review the new hooks with `/hooks`, then start a new session; older Codex versions without hooks must be upgraded."] : []),
+    ...(has(reach, "pi") ? ["Pi loads the extension once you trust the project."] : []),
+    ...(has(reach, "codex") ? ["No `notify` setting is changed."] : [])
+  ];
+  const others = [
+    ...(has(reach, "cursor") ? [`Cursor uses \`.cursor/mcp.json\`${has(report, "cursor") ? `, and \`.cursor/hooks.json\` runs \`${CURSOR_HOOK_SCRIPT}\` (\`${CURSOR_HOOK_POWERSHELL}\` on Windows)` : ""}.`] : []),
+    ...(has(reach, "gemini") ? ["Gemini CLI uses `.gemini/settings.json` and does not report its lifecycle, but once it calls `claim_ticket` Tomrade follows the session through its MCP connection: later calls on that connection need no key."] : []),
+    "Use `note_progress` only when the claim's result says `tracking.tracked` is true."
+  ];
   return [
     SECTION_BEGIN,
     SECTION_HEADING,
     "",
-    `The backlog for this repository lives in Tomrade (project "${input.projectName}"), reachable as the \`tomrade\` MCP server (\`.mcp.json\` for Claude Code and WorkBuddy, \`.codex/config.toml\` for Codex, \`.pi/extensions/tomrade.ts\` for Pi, \`opencode.json\` for OpenCode).`,
+    `The backlog for this repository lives in Tomrade (project "${input.projectName}"), reachable as the \`tomrade\` MCP server${servers.length ? ` (${servers.join(", ")})` : ""}.`,
     "This section applies only when the `tomrade` MCP server is available in your session. Tomrade runs on one developer's machine; without it (no such server, or its tools fail to connect) everything below is void: work as usual, never try to reach Tomrade another way, and never mention tickets you cannot read.",
-    "Claude Code, Codex, WorkBuddy and Cursor report session lifecycle through repository hooks, Pi through that extension and OpenCode through `.opencode/plugins/tomrade.js`. The hooks also carry Tomrade's answer (Cursor's in its own fields): a code change made before this session claimed a ticket, or recorded the person's word to go without one, is refused with the way on. In Codex, trust the project and review the new hooks with `/hooks`, then start a new session; older Codex versions without hooks must be upgraded. Pi loads the extension once you trust the project. No `notify` setting is changed.",
-    "Cursor uses `.cursor/mcp.json`, and `.cursor/hooks.json` runs `.cursor/hooks/tomrade` (`.cursor/hooks/tomrade.ps1` on Windows). Gemini CLI uses `.gemini/settings.json` and does not report its lifecycle, but once it calls `claim_ticket` Tomrade follows the session through its MCP connection: later calls on that connection need no key. Use `note_progress` only when the claim's result says `tracking.tracked` is true.",
+    ...(reporting.length ? [reporting.join(" ")] : []),
+    others.join(" "),
     `For other MCP-capable agents, add a Streamable HTTP server named \`tomrade\` with URL ${input.mcpUrl} in that agent's own settings. No configuration is generated for other tools; reading AGENTS.md alone supplies instructions, not MCP tools or session tracking.`,
     "Not every session works on a ticket, and not every ticket involves code: never invent one. Work without a ticket is fine.",
     ...(options.fetchRules ? ["When the `tomrade` MCP server is available, call its tool `get_project_rules` before your first reply in every session and follow what it returns throughout: the person keeps rules there for every agent in this project."] : []),
@@ -415,21 +449,16 @@ export interface LocalConnect {
  * tracks — that agent is skipped and says so.
  */
 export function writeConnectFiles(root: string, input: ConnectInput, agents: readonly ConnectAgent[] = CONNECT_AGENTS, local?: LocalConnect, connectors: Connectors = NO_CONNECTORS): { files: string[]; skipped: SkippedAgent[] } {
-  interface Write { name: string; text: string | null; mode?: number }
+  interface Write { name: string; text: string | null; mode?: number; section?: boolean }
   const read = (name: string) => {
     const file = path.join(root, name);
     return fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null;
   };
   const exact = (name: string, text: string, mode?: number): Write => ({ name, text: read(name) === text ? null : text, ...(mode ? { mode } : {}) });
   const json = (name: string, change: (json: string) => string, satisfied?: (json: string) => boolean): Write => ({ name, text: nextJson(root, name, change, satisfied) });
-  const section = (name: "CLAUDE.md" | "AGENTS.md"): Write[] => {
-    // This machine only: a file git does not track is ours to write, so the agent reads the rules; one the team
-    // tracks stays the team's, and the MCP server's instructions speak instead.
-    if (local?.tracked.has(name)) return [];
-    const existing = read(name) ?? "";
-    const body = withTomradeSection(existing, input.projectName, tomradeSection(input, { fetchRules: name === "AGENTS.md" }));
-    return [{ name, text: body === existing ? null : body }];
-  };
+  // This machine only: a file git does not track is ours to write, so the agent reads the rules; one the team
+  // tracks stays the team's, and the MCP server's instructions speak instead. Its text waits for the other files.
+  const section = (name: "CLAUDE.md" | "AGENTS.md"): Write[] => (local?.tracked.has(name) ? [] : [{ name, text: null, section: true }]);
   const skipped: SkippedAgent[] = [];
   const codex = (): Write => {
     const name = ".codex/config.toml";
@@ -491,12 +520,22 @@ export function writeConnectFiles(root: string, input: ConnectInput, agents: rea
     }
   }
   const files: string[] = [];
-  for (const { name, text, mode } of writes.values()) {
-    if (text === null) continue;
+  const put = (name: string, text: string, mode?: number) => {
     const file = path.join(root, name);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, text, mode ? { mode } : undefined);
     files.push(name);
+  };
+  for (const { name, text, mode } of writes.values()) if (text !== null) put(name, text, mode);
+  // The instructions name what the folder now holds, written now or before, never an agent that was left out.
+  const sections = [...writes.values()].filter((write) => write.section);
+  if (sections.length) {
+    const found = inspectConnectFiles(root, input.mcpUrl, input.eventUrl, [], connectors).agents;
+    for (const { name } of sections) {
+      const existing = read(name) ?? "";
+      const body = withTomradeSection(existing, input.projectName, tomradeSection(input, found, { fetchRules: name === "AGENTS.md" }));
+      if (body !== existing) put(name, body);
+    }
   }
   return { files, skipped };
 }
