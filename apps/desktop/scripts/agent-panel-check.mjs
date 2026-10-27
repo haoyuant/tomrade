@@ -909,6 +909,67 @@ const run = async () => {
   check("and once only", (await conclusions()) === 1 && ctx.agent.thread(alpha.id, bgParent.id).messages.filter((m) => m.block.type === "note" && m.block.threadFor === bgChild.id).length === 2, await conclusions());
   await shot("background-done.png");
 
+  // ── 「在终端格子里接着做」 and back: a CLI agent's conversation to a terminal cell, one process on its session at a time ──
+  const cliTurns = [];
+  const cliReleased = [];
+  ctx.agent.engine({
+    id: "cli",
+    title: "Fake CLI",
+    author: "ai:cli",
+    capabilities: ["backlog", "code"],
+    available: async () => ({ ok: true }),
+    async turn(input, io) {
+      cliTurns.push({ text: input.input.kind === "text" ? input.input.text : "", resume: io.resume ?? null });
+      io.emit({ type: "text", text: "ok" });
+      return { stop: "end", resume: io.resume ?? "cli-check-1" };
+    },
+    release: (thread) => void cliReleased.push(thread.threadId)
+  });
+  // the terminal is a stand-in: no pane opens on this machine, the launch is only recorded
+  const launches = [];
+  const launchWas = ctx.codeLink.herdr.launch.bind(ctx.codeLink.herdr);
+  ctx.codeLink.herdr.launch = async (input) => (launches.push(input), { script: "", launched: true, paneId: "w1:p7" });
+  const cliThread = ctx.agent.newThread(alpha.id, "cli", null, { title: "Handoff chat" });
+  const cliHello = ctx.agent.send(alpha.id, cliThread.id, { kind: "text", text: "hello" });
+  await until(() => ctx.agent.store.run(alpha.id, cliHello.runId)?.status === "done", 60);
+  const openThreadNamed = async (name) => {
+    await threads();
+    await $(`(() => { const i = document.querySelector('.menu-search input'); Object.getOwnPropertyDescriptor(Object.getPrototypeOf(i), 'value').set.call(i, ${JSON.stringify(name)}); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    await sleep(300);
+    await press(`[...document.querySelectorAll('.menu-row.is-radio')].find((r) => r.querySelector('.m-name')?.textContent === ${JSON.stringify(name)})`);
+  };
+  const handoffLine = () => $(`(() => { const l = document.querySelector('[data-testid="handoff"]'); if (!l) return null; const b = l.querySelector('[data-testid="to-terminal"], [data-testid="back-to-panel"]'); return { where: l.dataset.where, live: l.hasAttribute('data-live'), text: l.textContent, button: b ? { id: b.dataset.testid, disabled: b.disabled, title: b.title } : null, send: document.querySelector('.ai-send')?.disabled ?? null, sendTitle: document.querySelector('.ai-send')?.title ?? null }; })()`);
+  await openThreadNamed("Dedupe chat");
+  await until(async () => (await shownThread()) === bgParent.id, 50);
+  await sleep(400);
+  check("a conversation on the built-in coder shows no way to a terminal", !(await present('[data-testid="handoff"]')));
+  await openThreadNamed("Handoff chat");
+  await until(async () => (await shownThread()) === cliThread.id, 50);
+  check("a CLI agent's conversation offers to go on in a terminal cell", await until(async () => (await handoffLine())?.button?.id === "to-terminal" && !(await handoffLine()).button.disabled, 50), await handoffLine());
+  await shot("to-terminal.png");
+  await press(`document.querySelector('[data-testid="to-terminal"]')`);
+  const cliSession = () => ctx.codeLink.store.sessions(alpha.id).find((s) => s.threadId === cliThread.id && s.mode === "terminal");
+  check("it closes the runtime here and opens a terminal session of the thread, resuming the same session in the thread's own folder", await until(() => !!cliSession() && cliReleased.includes(cliThread.id) && launches.length === 1, 60) && cliSession().externalId === "cli-check-1" && launches[0].cwd === cliSession().cwd && /--resume cli-check-1/.test(launches[0].command), { session: cliSession(), launch: launches[0], released: cliReleased });
+  check("the panel moves to that session's view, with the way back there but not yet", await until(async () => (await sessionView())?.id === cliSession()?.id, 50) && (await $(`document.querySelector('[data-testid="back-to-panel"]')?.disabled ?? null`)) === true, await sessionView());
+  check("and the conversation says where it went and that approvals are the CLI's there", ctx.agent.thread(alpha.id, cliThread.id).messages.some((m) => m.block.type === "note" && /Moved to a terminal cell \(pane w1:p7\).*the CLI asks there itself/.test(m.block.text)));
+  await shot("in-terminal.png");
+  // back on the thread while its CLI runs: nothing can be sent, and it cannot come back yet
+  await press(`document.querySelector('.ai-session-head button[aria-label="Back to the conversation"]')`);
+  await until(async () => (await handoffLine())?.where === "terminal", 50);
+  let hl = await handoffLine();
+  check("back on the thread, the panel says the CLI runs it in a terminal cell, takes no message and cannot take it back yet", hl?.where === "terminal" && hl.live && /(Fake CLI|cli) runs this conversation in a terminal cell/.test(hl.text) && hl.button?.id === "back-to-panel" && hl.button.disabled && hl.send === true && /goes on in a terminal cell/.test(hl.sendTitle ?? ""), hl);
+  // the CLI ran as its hooks say, then exited
+  ctx.codeLink.sessions.event(alpha.id, cliSession().id, { hook_event_name: "SessionStart", session_id: "cli-check-2", cwd: cliSession().cwd });
+  ctx.codeLink.sessions.event(alpha.id, cliSession().id, { hook_event_name: "SessionEnd" });
+  check("once the CLI exited, the way back opens", await until(async () => { const l = await handoffLine(); return l?.where === "terminal" && !l.live && l.button?.id === "back-to-panel" && !l.button.disabled; }, 50), await handoffLine());
+  await shot("back-offered.png");
+  await press(`document.querySelector('[data-testid="back-to-panel"]')`);
+  check("taking it back lists the conversation again, free to talk", await until(async () => (await handoffLine())?.where === "here" && ctx.agent.store.thread(alpha.id, cliThread.id).surface === "assistant" && (await shownThread()) === cliThread.id, 50) && (await handoffLine()).sendTitle === "Send", await handoffLine());
+  await send("again");
+  await until(() => cliTurns.length === 2, 60);
+  check("and the next message resumes the session the CLI ran as, through the SDK", cliTurns[1]?.text === "again" && cliTurns[1]?.resume === "cli-check-2", cliTurns);
+  ctx.codeLink.herdr.launch = launchWas;
+
   // The Terminal window from the main window: the title bar's button and ⇧⌘T run its own command for this project.
   const opened = [];
   const runCommand = ctx.contributions.run.bind(ctx.contributions);

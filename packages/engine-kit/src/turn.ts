@@ -79,16 +79,21 @@ export async function runTurn(io: TurnIO, spec: TurnSpec, body: (turn: TurnFrame
 
 /**
  * An engine's `turn` over warm runtimes, one per thread, closed with the
- * plugin. `fingerprint` names what else makes a thread's runtime stale.
+ * plugin, and its `release`, which closes one thread's runtime so another
+ * process may take up that thread's session. `fingerprint` names what else
+ * makes a thread's runtime stale.
  */
-export function pooledEngine<T extends Runtime>(ctx: Context, opts: { create(input: TurnInput): T; fingerprint?(input: TurnInput, io: TurnIO): string }): Engine["turn"] {
+export function pooledEngine<T extends Runtime>(ctx: Context, opts: { create(input: TurnInput): T; fingerprint?(input: TurnInput, io: TurnIO): string }): Required<Pick<Engine, "turn" | "release">> {
   const pool = new RuntimePool<T>();
   ctx.effect(() => () => pool.close());
-  return async (input, io) => {
-    const url = ctx.mcp.url;
-    if (!url) return { stop: "error", error: KIT_WORDS(engineLocale(ctx))("noMcp") };
-    const fingerprint = runtimeFingerprint(input, io, url);
-    return pool.run(`${input.projectId}:${input.threadId}`, opts.fingerprint ? `${fingerprint}:${opts.fingerprint(input, io)}` : fingerprint,
-      () => opts.create(input), input, io);
+  return {
+    async turn(input, io) {
+      const url = ctx.mcp.url;
+      if (!url) return { stop: "error", error: KIT_WORDS(engineLocale(ctx))("noMcp") };
+      const fingerprint = runtimeFingerprint(input, io, url);
+      return pool.run(`${input.projectId}:${input.threadId}`, opts.fingerprint ? `${fingerprint}:${opts.fingerprint(input, io)}` : fingerprint,
+        () => opts.create(input), input, io);
+    },
+    release: (thread) => pool.evict(`${thread.projectId}:${thread.threadId}`)
   };
 }

@@ -60,7 +60,7 @@ export function createPiEngine(ctx: Context): Engine {
         download: "https://pi.dev"
       }
     },
-    turn: pooledEngine(ctx, { create: (input) => new PiRuntime(ctx, input) })
+    ...pooledEngine(ctx, { create: (input) => new PiRuntime(ctx, input) })
   };
 }
 

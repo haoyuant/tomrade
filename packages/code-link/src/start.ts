@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { Context } from "cordis";
-import type { Agent, Engine, EngineAvailability } from "@tomradex/agent";
+import type { Agent, Engine, EngineAvailability, ThreadSummary } from "@tomradex/agent";
 import { rulesSection } from "@tomradex/agent";
 import type {} from "@tomradex/boards";
 import type {} from "@tomradex/hub";
@@ -268,6 +268,12 @@ export class Starter {
     const carriedFrom = carried?.branch ?? null;
     if (carried) agent.store.touchThread(projectId, carried.id, { branch });
     const uncarry = () => { if (carried) agent.store.touchThread(projectId, carried.id, { branch: carriedFrom }); };
+    // The conversation goes on in a terminal right now: a run here would be a second process on its session.
+    const inTerminal = thread && opts.mode === "run" ? this.liveTerminalSession(projectId, thread.id) : null;
+    if (inTerminal) {
+      uncarry();
+      return this.terminalGate(item.key, inTerminal);
+    }
     // An open question takes any message as its answer, and switching engines would drop it: the thread
     // is left as it is and the question handed back, for the person to answer in the conversation.
     const asked = thread && opts.mode === "run" && !agent.activeRuns().some((a) => a.thread.id === thread!.id) ? agent.store.pending(projectId, thread.id)?.question : undefined;
@@ -390,15 +396,70 @@ export class Starter {
     const command = wrapped ? ctx.github.wrap(baseCommand) : baseCommand;
     const baseResume = this.resumeCommand(terminalSettings, engineId, files, where.cwd, options, bin);
     const resume = baseResume && wrapped ? ctx.github.wrap(baseResume) : baseResume;
-    // A project's sessions share one herdr workspace, a tab each.
-    const projectName = (ctx.db.for(projectId).prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name;
-    const workspace = projectName ? { key: projectId, label: projectName } : undefined;
+    const workspace = this.workspaceOf(projectId);
     const launch = await this.host.herdr.launch({ cwd: where.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir, path: onPath, label: item.key, ...(workspace ? { workspace } : {}), ...(resume ? { resume } : {}) }, terminalSettings.terminal);
     const fallback = this.host.herdr.fallbackNote(terminalWords.locale, launch);
     if (fallback) warnings.push(fallback);
     store.patchSession(projectId, session.id, { state: "running", lastEventAt: now, ...(launch.paneId ? { herdrPane: launch.paneId } : {}) });
     this.host.notify(projectId);
     return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command, launched: launch.launched, pane: launch.paneId ?? null, engine: engineId, ...(warnings.length ? { warnings } : {}) };
+  }
+
+  /**
+   * A conversation with no ticket, taken up in a terminal: its engine's CLI resumes the thread's own session in
+   * `cwd`, the folder the thread's runs use (Claude Code keeps its sessions by folder), with Tomrade's tools and
+   * hooks, as a terminal session of the thread. The caller has closed the thread's warm runtime first; nothing else
+   * of Start's — no ticket, no branch, no worktree — applies, and the thread leaves the panel's list for the bar's.
+   */
+  async startThread(projectId: string, thread: ThreadSummary, input: { cwd: string; externalId: string; prompt: string }): Promise<StartResult> {
+    const { ctx, store } = this.host;
+    const agent = ctx.get("agent");
+    if (!agent) return { ok: false, gate: "engine", message: "the agent plugin is not loaded" };
+    if (!ctx.get("mcp")?.url) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
+    const picked = await this.pickEngine(agent, thread.engine, true);
+    if (!picked.ok) return { ok: false, gate: "engine", message: picked.reason, engine: thread.engine };
+    const engineId = picked.engine.id;
+    const terminalSettings = await this.host.herdr.terminalSettings();
+    const locale = ctx.settings.locale?.() ?? "en";
+    const now = Date.now();
+    const session = store.createSession(projectId, { repoId: "", branch: "", itemIds: [], mode: "terminal", agent: engineId, threadId: thread.id, device: ctx.hub.deviceId, externalId: input.externalId });
+    store.patchSession(projectId, session.id, { cwd: input.cwd, ...(thread.title ? { title: thread.title } : {}) });
+    const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), input.prompt);
+    if (!files) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
+    const { bin, path: onPath } = await binOf(agent, engineId);
+    const options = agent.optionsOf(thread, engineId);
+    const command = this.command(terminalSettings, engineId, session, files, input.cwd, options, bin);
+    const tooLong = this.promptTooLong(terminalSettings, engineId, session, files, command, locale);
+    if (tooLong) {
+      store.patchSession(projectId, session.id, { state: "ended", endedAt: now, activity: null });
+      return tooLong;
+    }
+    const resume = this.resumeCommand(terminalSettings, engineId, files, input.cwd, options, bin);
+    const workspace = this.workspaceOf(projectId);
+    const launch = await this.host.herdr.launch({ cwd: input.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir, path: onPath, label: thread.title || picked.engine.title, ...(workspace ? { workspace } : {}), ...(resume ? { resume } : {}) }, terminalSettings.terminal);
+    store.patchSession(projectId, session.id, { state: "running", lastEventAt: now, ...(launch.paneId ? { herdrPane: launch.paneId } : {}) });
+    // In the bar as its session from now on, as a ticket's terminal conversation is; back in the panel's list once it returns.
+    agent.store.touchThread(projectId, thread.id, { surface: "code" });
+    this.host.notify(projectId);
+    const fallback = this.host.herdr.fallbackNote(locale, launch);
+    return { ok: true, continued: true, threadId: thread.id, sessionId: session.id, branch: "", worktree: null, cwd: input.cwd, mode: "terminal", command, launched: launch.launched, pane: launch.paneId ?? null, engine: engineId, ...(fallback ? { warnings: [fallback] } : {}) };
+  }
+
+  /** The thread's terminal session whose agent still runs, if any. */
+  liveTerminalSession(projectId: string, threadId: string): SessionView | null {
+    return this.host.store.sessions(projectId, { live: true }).find((s) => s.threadId === threadId && s.mode === "terminal" && s.state !== "lost") ?? null;
+  }
+
+  /** A headless run refused because the conversation's agent is in a terminal: one process on its session at a time. */
+  private terminalGate(key: string, session: SessionView): StartResult {
+    const where = session.herdrPane ? `herdr pane ${session.herdrPane}` : (session.terminal ?? "a terminal");
+    return { ok: false, gate: "pane", message: `${key} goes on in ${where}; wait for its agent to exit, or go on with it there`, ...(session.herdrPane ? { pane: session.herdrPane } : {}) };
+  }
+
+  /** A project's sessions share one herdr workspace, a tab each. */
+  private workspaceOf(projectId: string): { key: string; label: string } | undefined {
+    const name = (this.host.ctx.db.for(projectId).prepare("SELECT name FROM projects WHERE id = ?").get(projectId) as { name: string } | undefined)?.name;
+    return name ? { key: projectId, label: name } : undefined;
   }
 
   /**
@@ -579,6 +640,9 @@ export class Starter {
     if (refused) return { ok: false, gate: "engine", message: refused, ...(opts.engine ? { engine: opts.engine } : {}) };
     const blockers = this.openBlockers(projectId, item);
     if (blockers.length && !opts.allowBlocked) return blockedGate(item, blockers);
+    // The ticket's conversation goes on in a terminal right now: a run here would be a second process on its session.
+    const inTerminal = opts.mode === "run" ? agent.store.threadsForItem(projectId, item.id).map((t) => this.liveTerminalSession(projectId, t.id)).find((s) => !!s) ?? null : null;
+    if (inTerminal) return this.terminalGate(item.key, inTerminal);
     const prepared = await agent.prepareGeneral(projectId, item.id, {
       ...(other ? {} : { engine: opts.engine }),
       playbook: opts.playbook,

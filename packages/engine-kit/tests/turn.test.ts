@@ -68,12 +68,12 @@ describe("the turn frame", () => {
 
 describe("a pooled engine", () => {
   it("refuses without the MCP server, keeps one runtime per thread, and starts another when the fingerprint changes", async () => {
-    expect(await pooledEngine(ctx(null).ctx, { create: () => { throw new Error("never"); } })(input(), io())).toEqual({ stop: "error", error: "The MCP server is not running" });
+    expect(await pooledEngine(ctx(null).ctx, { create: () => { throw new Error("never"); } }).turn(input(), io())).toEqual({ stop: "error", error: "The MCP server is not running" });
     const { ctx: live, dispose } = ctx();
     const made: string[] = [];
     let profile = "a";
     const closed: string[] = [];
-    const turn = pooledEngine(live, {
+    const { turn } = pooledEngine(live, {
       create: (thread) => {
         const name = `${thread.threadId}-${made.length}`;
         made.push(name);
@@ -92,5 +92,30 @@ describe("a pooled engine", () => {
     expect(closed).toEqual(["one-0"]);
     dispose();
     expect(closed.sort()).toEqual(["one-0", "one-2", "two-1"]);
+  });
+});
+
+describe("releasing a thread's runtime", () => {
+  it("closes the warm runtime of that thread alone, so a cold one takes the next turn", async () => {
+    const closed: string[] = [];
+    const warmth: string[] = [];
+    const create = (input: TurnInput): Runtime => ({ token: input.threadId, cwd: "/tmp", alive: true, busy: false,
+      close() { closed.push(this.token); this.alive = false; },
+      async turn(_input, _io, warm) { warmth.push(`${this.token}:${warm ? "warm" : "cold"}`); return { stop: "end" }; } });
+    const { ctx: fake, dispose } = ctx();
+    const engine = pooledEngine(fake, { create });
+    try {
+      await engine.turn(input("one"), io());
+      await engine.turn(input("two"), io());
+      engine.release({ projectId: "project", threadId: "one" });
+      expect(closed).toEqual(["one"]);
+      await engine.turn(input("one"), io());
+      await engine.turn(input("two"), io());
+      expect(warmth).toEqual(["one:cold", "two:cold", "one:cold", "two:warm"]);
+      // nothing to close is nothing to do
+      engine.release({ projectId: "project", threadId: "none" });
+      expect(closed).toEqual(["one"]);
+    } finally { dispose(); }
+    expect(closed).toEqual(["one", "one", "two"]);
   });
 });

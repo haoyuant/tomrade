@@ -64,6 +64,10 @@ export const useCodeSessions = (projectId: string, itemId?: string) =>
 export const useRecentSessions = (projectId: string, enabled = true) =>
   useQuery({ queryKey: keys.codeLink.recentSessions(projectId), queryFn: () => invoke("codeLink.recentSessions", projectId), enabled });
 
+/** Where a conversation runs — here, or in a terminal cell as a session — and whether it can move now; asked again on every session change. */
+export const useHandoff = (projectId: string, threadId: string | null) =>
+  useQuery({ queryKey: keys.codeLink.handoff(projectId, threadId ?? ""), queryFn: () => invoke("codeLink.handoff", projectId, threadId!), enabled: !!threadId, staleTime: 5_000 });
+
 /** Readiness and policy per repository, as the last scan on any machine left them. */
 export const useRepoStates = (projectId: string) => useQuery({ queryKey: keys.codeLink.repos(projectId), queryFn: () => invoke("codeLink.repos", projectId) });
 
