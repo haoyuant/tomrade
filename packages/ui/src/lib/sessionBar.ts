@@ -1,5 +1,5 @@
 import type { ThreadSummary } from "@tomradex/agent";
-import type { SessionView } from "@tomradex/code-link";
+import type { SessionOutcome, SessionView } from "@tomradex/code-link";
 import type { AttentionEntry } from "~/lib/attention";
 
 export type BarStatus = "wait" | "run" | "idle" | "done";
@@ -20,8 +20,10 @@ export interface BarRow {
   wait: Pick<AttentionEntry, "kind" | "text"> | null;
   /** What it is doing now, or what it last said. */
   activity: string | null;
-  /** An ended session's own one-liner about what came of it. */
-  outcome: string | null;
+  /** What came of an ended session: its pull request, commits, asks and last word, said by `outcomeLine`. */
+  outcome: SessionOutcome | null;
+  /** The Terminal window cell that shows it, by the window's number; null when no cell does. */
+  cell: number | null;
   itemIds: string[];
   /** The key of the ticket it works, when it works one. */
   ticket: string | null;
@@ -48,7 +50,10 @@ const RANK: Record<BarStatus, number> = { wait: 0, run: 1, idle: 2, done: 3 };
  */
 export function sessionBarRows(input: {
   threads: ThreadSummary[];
-  sessions: SessionView[];
+  /** The session lists' rows; an ended one carries what came of it. */
+  sessions: (SessionView & { outcome?: SessionOutcome | null })[];
+  /** Which Terminal window cell shows each session, by session id. */
+  cells?: Record<string, number>;
   attention: AttentionEntry[];
   itemTitle: (itemId: string) => string | null;
   itemKey?: (itemId: string) => string | null;
@@ -63,6 +68,7 @@ export function sessionBarRows(input: {
   const sessionOfThread = new Map(input.sessions.filter((s) => s.threadId).map((s) => [s.threadId!, s]));
   const rows: BarRow[] = [];
   const keyOf = (ids: string[]) => (ids[0] && input.itemKey?.(ids[0])) || null;
+  const cellOf = (sessionId: string | undefined) => (sessionId && input.cells?.[sessionId]) || null;
 
   for (const th of threads) {
     const session = sessionOfThread.get(th.id);
@@ -73,7 +79,7 @@ export function sessionBarRows(input: {
       key: `thread:${th.id}`, threadId: th.id, sessionId: session?.id ?? null,
       title: th.title || (th.itemId ? input.itemTitle(th.itemId) : null) || "",
       agent: th.engine, status, where: "panel", terminalApp: null,
-      wait: wait && { kind: wait.kind, text: wait.text }, activity: live ? session.activity : null, outcome: null,
+      wait: wait && { kind: wait.kind, text: wait.text }, activity: live ? session.activity : null, outcome: null, cell: live ? cellOf(session.id) : null,
       itemIds: th.itemId ? [th.itemId] : [], ticket: keyOf(th.itemId ? [th.itemId] : []), origins: th.origins ?? [], parkedUntil: th.parkedUntil ?? null, startedAt: th.createdAt, at: wait?.since ?? th.updatedAt,
       parentKey: th.parentId && panelThreads.has(th.parentId) ? `thread:${th.parentId}` : null, depth: 0
     });
@@ -89,7 +95,7 @@ export function sessionBarRows(input: {
       title: s.title || (s.itemIds[0] ? input.itemTitle(s.itemIds[0]) : null) || "",
       agent: s.agent, status, where: s.herdrPane ? "pane" : "outside", terminalApp: s.herdrPane ? null : s.terminal,
       wait: status === "wait" ? { kind: wait?.kind ?? (s.state === "error" ? "stuck" : "waiting"), text: wait?.text ?? s.activity ?? s.summary } : null,
-      activity: ended ? null : s.activity, outcome: ended ? s.summary : null,
+      activity: ended ? null : s.activity, outcome: ended ? (s.outcome ?? { pr: null, commits: 0, asked: s.asked, said: s.summary }) : null, cell: ended ? null : cellOf(s.id),
       itemIds: s.itemIds, ticket: keyOf(s.itemIds), origins: [], parkedUntil: null, startedAt: s.startedAt, at: wait?.since ?? (ended ? s.endedAt : null) ?? s.lastEventAt ?? s.startedAt,
       parentKey: null, depth: 0
     });

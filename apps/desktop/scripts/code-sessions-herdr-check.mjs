@@ -222,6 +222,9 @@ app.whenReady().then(async () => {
     };
     const followed = (await selectPane(4)) && (await selectPane(1));
     const shownRows = await js(`document.querySelectorAll('.cs-row[data-active]').length`);
+    // Each card names the cell that shows it by its number, and says how long it has run.
+    const cellNumbered = await js(`(() => { const cells = [...document.querySelectorAll('.cs-cell')]; const rows = [...document.querySelectorAll('.cs-row')]; return cells.map((c, i) => { const key = (c.querySelector('.cs-cell-name')?.textContent ?? '').split(' ')[0]; const row = rows.find((r) => !!key && r.textContent.includes(key)); return [i + 1, row?.querySelector('.cs-where')?.textContent ?? null, row?.querySelector('.cs-row-meta')?.textContent ?? null]; }); })()`);
+    check("会话栏卡片写着它在第几个格子（格子 N），第二行写运行了多久", cellNumbered.length === 6 && cellNumbered.every(([n, where, meta]) => where === `格子 ${n}` && /(运行|等了) \d+(分钟|小时)/.test(meta ?? "")), JSON.stringify(cellNumbered));
     check("选中面板时，侧栏只把它的会话标成当前，其余显示中的会话仍有标记", followed && shownRows === 6, `current: ${await js(`[...document.querySelectorAll('.cs-row[aria-current="true"]')].map((r) => r.textContent).join(" | ")`)}, shown: ${shownRows}`);
     // On Tomrade's theme: the terminal's background is its pane's, nothing dark around light, and its ANSI colours are the theme's.
     const colours = await js(`(() => {
@@ -382,7 +385,8 @@ app.whenReady().then(async () => {
     const sameStream = !streams.some((x) => x.pane === sessions[3].pane && x.opened >= endedAt);
     check("面板显示的工单结束、同一 agent 还在这个面板做别的工单：格子留在面板上改显示那个工单，锁保持，终端不重连", carried && carriedText && sameStream, JSON.stringify({ ...(await cellFour()), text: (await terminalText(3)).trim().slice(0, 200), streams: streams.filter((x) => x.pane === sessions[3].pane).map((x) => ({ opened: x.opened - endedAt, closed: x.closed && { at: x.closed.at - endedAt, reason: x.closed.reason }, lastFrame: x.lastFrame && x.lastFrame - endedAt })) }));
     await js(`document.querySelectorAll('.cs-cell')[3].querySelector('[data-testid=cs-lock]').click(); true`);
-    await wait(async () => (await js(`document.querySelectorAll('.cs-row').length`)) === 6 && !(await cellFour()).locked, 5000);
+    // the ticket that ended stays in the bar's ended group: the live rows are counted
+    await wait(async () => (await js(`document.querySelectorAll('.cs-row:not([data-ended])').length`)) === 6 && !(await cellFour()).locked, 5000);
 
     // Every pane full and a seventh session in the list: a pick never silently hides what a pane showed.
     const seventhItem = ctx.items.create({ projectId: project.id, boardId: board.id, title: "Marker seven", workType: "coding", status: "doing", by: "human" });
@@ -390,7 +394,7 @@ app.whenReady().then(async () => {
     const seventh = ctx.codeLink.store.createSession(project.id, { repoId: "check", branch: `${seventhItem.key.toLowerCase()}/check`, itemIds: [seventhItem.id], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, worktree: cwd });
     ctx.codeLink.store.patchSession(project.id, seventh.id, { state: "running", herdrPane: seventhPane.paneId });
     ctx.emit("codeLink/changed", project.id);
-    await wait(async () => (await js(`document.querySelectorAll('.cs-row').length`)) === 7, 8000);
+    await wait(async () => (await js(`document.querySelectorAll('.cs-row:not([data-ended])').length`)) === 7, 8000);
     const cellNames = () => js(`[...document.querySelectorAll('.cs-cell .cs-cell-name')].map((n) => n.textContent)`);
     const cellShows = async (key) => (await cellNames()).some((n) => n.startsWith(`${key} `));
     const seventhRow = `[...document.querySelectorAll('.cs-row')].find((r) => r.textContent.includes(${JSON.stringify(seventhItem.key)}))`;
@@ -969,14 +973,18 @@ app.whenReady().then(async () => {
     ctx.boards.update(project.id, board.id, { repoId: repo.id });
     const goneItem = ctx.items.create({ projectId: project.id, boardId: board.id, title: "终端已经没有了", workType: "coding", status: "doing", by: "human" });
     const gone = ctx.codeLink.store.createSession(project.id, { repoId: repo.id, branch: "gone/check", itemIds: [goneItem.id], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, worktree });
+    // what its code came to, as the look back says it
+    ctx.codeLink.store.upsertLink(project.id, { itemId: goneItem.id, repoId: repo.id, branch: "gone/check" }, { ahead: 3, prNumber: 77, prState: "merged", prUrl: "https://example.com/pull/77" });
     ctx.codeLink.store.patchSession(project.id, gone.id, { state: "ended", endedAt: Date.now() });
     ctx.emit("codeLink/changed", project.id);
     const goneRow = `[...document.querySelectorAll('.cs-row')].find((r) => r.textContent.includes(${JSON.stringify(goneItem.key)}))`;
-    // Ended, it is not the bar's but History's; opened there, it shows in a pane as before.
-    const offBar = await wait(async () => tjs(`!${goneRow} && document.querySelectorAll('[data-testid=cs-new-terminal-where] option').length >= 2`), 8000);
+    // Ended, it stays in the bar's ended group for the day, with its outcome and when it ran; History has it too, and opened there it shows in a pane as before.
+    const endedCard = await wait(async () => tjs(`(() => { const row = ${goneRow}; return !!row && row.dataset.status === 'done' && row.querySelector('.cs-row-outcome')?.textContent === 'PR #77 已合并 · 3 个 commit' && /已结束 · \\d\\d:\\d\\d–\\d\\d:\\d\\d/.test(row.querySelector('.cs-row-meta')?.textContent ?? ''); })()`), 8000);
+    check("刚结束的会话留在会话栏的完成组里，写着结论（PR / commit）和起止时间", endedCard, await tjs(`${goneRow}?.textContent ?? null`));
+    const offBar = await wait(async () => tjs(`document.querySelectorAll('[data-testid=cs-new-terminal-where] option').length >= 2`), 8000);
     await tjs(`document.querySelector('[data-testid=cs-history]').click(); true`);
     const inHistory = await wait(async () => tjs(`!!${historyRowWith(goneItem.key)}`), 8000);
-    check("结束的会话不在会话栏里，在历史里找得到", offBar && inHistory);
+    check("结束的会话在历史里也找得到", offBar && inHistory);
     fs.writeFileSync(path.join(shots, "code-sessions-history.png"), (await tw.webContents.capturePage()).toPNG());
     await tjs(`${historyRowWith(goneItem.key)}.click(); true`);
     await tjs(`document.querySelector('[data-testid=cs-history-back]').click(); true`);

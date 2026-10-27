@@ -10,7 +10,7 @@ import { applyPreset, carryOn, close, cycle, heir, holder, landing, leaves, lock
 import { live, sessionName, sidebarRows, type HereRow } from "./lists";
 import { Overview } from "./Overview";
 import { Palette, type PaletteAction } from "./Palette";
-import { SayContext, sayIn, useSay, type SayKey } from "./say";
+import { SayContext, sayIn, useSay, WordsContext, wordsIn, type SayKey } from "./say";
 import { Sidebar } from "./Sidebar";
 import { asPicked, carriedOf, paneKey, useWindowLayout, type Leaf, type Picked } from "./useWindowLayout";
 
@@ -191,6 +191,8 @@ export function App() {
   const words = useLocaleWords(locale);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const say = useMemo(() => sayIn(locale), [locale, words]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const anyWords = useMemo(() => wordsIn(locale), [locale, words]);
   // The plugin would not stream a pane into a second cell: that cell empties, and the one showing it is selected.
   useEffect(
     () =>
@@ -227,6 +229,8 @@ export function App() {
   const rowsOf = (c: Leaf) => (c.sessionId ? [c.sessionId, terminalsById.get(c.sessionId)?.sessionId ?? c.sessionId] : []);
   // Every cell's row reads as shown; the selected cell's alone as current.
   const active = new Set(cells.flatMap(rowsOf));
+  // Each cell's number, as its bar says it, for the rows it shows.
+  const cellNumbers = new Map(cells.flatMap((c, i) => rowsOf(c).map((id) => [id, i + 1] as const)));
   const selected = new Set(rowsOf(target));
   // The panes cells show, for the other tickets their agents work there.
   const shownPanes = new Set(cells.flatMap((c) => (c.sessionId ? [key(c.sessionId)] : [])));
@@ -440,6 +444,7 @@ export function App() {
 
   return (
     <SayContext.Provider value={say}>
+      <WordsContext.Provider value={anyWords}>
       <div className="cs-window">
         <IconSprite />
         <div className="cs-topbar">
@@ -461,7 +466,7 @@ export function App() {
           <main className="cs-main">
             <Banner state={state} />
             <div className="cs-layout">{render(layout)}</div>
-            {view === "overview" && <Overview rows={[...rows.here, ...rows.away.map((s): HereRow => ({ kind: "session", id: s.id, session: s }))]} tails={tails} active={active} onSee={seeInPane} onThread={showThread} onAnswer={answer} />}
+            {view === "overview" && <Overview rows={[...rows.here, ...rows.away.map((s): HereRow => ({ kind: "session", id: s.id, session: s }))]} tails={tails} active={active} cells={cellNumbers} onSee={seeInPane} onThread={showThread} onAnswer={answer} />}
           </main>
           <Sidebar
             ref={side}
@@ -470,7 +475,7 @@ export function App() {
             locale={locale}
             folded={folded}
             onFold={toggleFold}
-            marks={{ active, selected, shownPanes, selectedPane, pane: key }}
+            marks={{ active, selected, cells: cellNumbers, shownPanes, selectedPane, pane: key }}
             canOpen={canOpen}
             onPick={pick}
             onTerminal={pickTerminal}
@@ -498,6 +503,7 @@ export function App() {
           </div>
         )}
       </div>
+      </WordsContext.Provider>
     </SayContext.Provider>
   );
 }

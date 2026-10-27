@@ -666,6 +666,11 @@ const run = async () => {
   ctx.codeLink.store.patchSession(alpha.id, pane.id, { terminal: "iTerm.app", state: "waiting", activity: "needs your approval", lastEventAt: Date.now() });
   const ended = ctx.codeLink.store.createSession(alpha.id, { repoId: "check", branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: "check" });
   ctx.codeLink.store.patchSession(alpha.id, ended.id, { title: "Snapshot records", state: "ended", endedAt: Date.now(), summary: "PR #9 merged" });
+  // One whose ticket's branch has a merged pull request: its card says so, the way the look back does.
+  const shippedTicket = ctx.items.create({ projectId: alpha.id, boardId, title: "Ship the snapshot", by: "human" });
+  const shipped = ctx.codeLink.store.createSession(alpha.id, { repoId: "check", branch: "al/ship", itemIds: [shippedTicket.id], mode: "terminal", agent: "claude-code", threadId: null, device: "check" });
+  ctx.codeLink.store.upsertLink(alpha.id, { itemId: shippedTicket.id, repoId: "check", branch: "al/ship" }, { ahead: 4, prNumber: 407, prState: "merged", prUrl: "https://example.com/pull/407" });
+  ctx.codeLink.store.patchSession(alpha.id, shipped.id, { state: "ended", endedAt: Date.now() + 5, summary: "All done.", asked: 2 });
   const shown = [];
   ctx.codeLink.showSession = async (_projectId, sessionId) => (shown.push(sessionId), true);
   ctx.emit("codeLink/changed", alpha.id);
@@ -696,6 +701,8 @@ const run = async () => {
   check("a session started this minute says it is new", /new/.test(card?.[1] ?? ""), card);
   check("an ended one never does", !barSeen?.cards.some(([status, text]) => status === "done" && /new/.test(text)), barSeen?.cards);
   check("an ended card carries its outcome", barSeen?.cards.some(([status, text]) => status === "done" && /PR #9 merged/.test(text)), barSeen?.cards);
+  check("an ended card says what its code came to as the look back does, and when it ran", barSeen?.cards.some(([status, text]) => status === "done" && /Ship the snapshot/.test(text) && /PR #407 merged · 4 commits · asked you 2 times/.test(text) && /ended · \d\d:\d\d–\d\d:\d\d/.test(text)), barSeen?.cards);
+  check("a live card says how long it has waited", /waiting \d+(m|h)/.test(card?.[1] ?? ""), card);
   await press(`[...document.querySelectorAll('.ai .sbar-card')].find((n) => /Record pane output/.test(n.textContent))`);
   await sleep(500);
   const sessionView = () =>
@@ -758,6 +765,16 @@ const run = async () => {
   check("picking a session in a pane shows it in the panel, with the way to the Terminal window", view?.id === inPane.id && view.show && view.state === "running", view);
   check("its conversation is read from the agent's record, tool calls folded", view?.lines.map((l) => l[0]).join("|") === "person|agent|tool|agent" && view.lines[2][1] === "Bash · herdr pane read w1:p1" && view.details === 0, view?.lines);
   check("the strip shows the pane's last lines that say something", view?.strip.join("|") === "❯ claude|⏺ Reading the pane…", view?.strip);
+  // The Terminal window shows it in its third cell: the head and the bar say which, once the window says its cells changed.
+  ctx.codeLink.sessionCells = async () => ({ [inPane.id]: 3 });
+  ctx.ipc.send("codeLink.cellsChanged", alpha.id);
+  await sleep(600);
+  const cellHead = await $(`document.querySelector('[data-testid="ai-session-show"]')?.textContent ?? null`);
+  await $(`(() => { const d = [...document.querySelectorAll('.ai .sbar-dot')].find((n) => /Tail the pane/.test(n.getAttribute('aria-label'))); d.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return true; })()`);
+  await sleep(200);
+  const cellPeek = (await bar())?.peek ?? "";
+  await $(`(() => { const d = [...document.querySelectorAll('.ai .sbar-dot')].find((n) => /Tail the pane/.test(n.getAttribute('aria-label'))); d.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })); return true; })()`);
+  check("the panel names the cell that shows the session: «Show in Terminal window · cell 3», and the bar's peek says cell 3", cellHead === "Show in Terminal window · cell 3" && /cell 3/.test(cellPeek), { cellHead, cellPeek });
   await press(`[...document.querySelectorAll('.ai-session-convo .cs-convo-line[data-who="tool"]')][0]`);
   await sleep(200);
   const detail = await $(`document.querySelector('.ai-session-convo .cs-convo-detail')?.textContent ?? null`);

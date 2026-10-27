@@ -31,7 +31,7 @@ import { HandoffLine } from "./agent-panel/HandoffLine";
 import { TerminalSession } from "./agent-panel/TerminalSession";
 import { sessionBarRows, type BarRow, type BarStatus } from "~/lib/sessionBar";
 import { onPanelRequest, setPanelSession, type PanelRequest } from "~/lib/panelRequests";
-import { useHandoff, useRecentSessions } from "~/lib/codeLink";
+import { useHandoff, useRecentSessions, useSessionCells } from "~/lib/codeLink";
 import type { SessionView } from "@tomradex/code-link";
 import { hits, keyLabel } from "~/lib/keybindings";
 import { BackgroundOffer, Transcript } from "./agent-panel/Transcript";
@@ -136,6 +136,7 @@ export function AgentPanel({
     localStorage.setItem(STORE.sessionBar, mode);
   }, []);
   const recentSessions = useRecentSessions(projectId, open);
+  const sessionCells = useSessionCells(projectId, open);
   // A terminal session picked from the bar takes the place of the thread: the same session as the Terminal window's
   // cell, seen from here. Remembered with its project, so another project's panel never shows it.
   const [openSessionIn, setOpenSessionIn] = useState<{ projectId: string; id: string } | null>(null);
@@ -547,10 +548,10 @@ export function AgentPanel({
   const itemsById = useMemo(() => new Map((itemsQ.data ?? []).map((i) => [i.id, i])), [itemsQ.data]);
   const barRows = useMemo(
     () => sessionBarRows({
-      threads: threads.data ?? [], sessions: recentSessions.data ?? [], attention, openThreadId: threadId, openSessionId: openSession,
+      threads: threads.data ?? [], sessions: recentSessions.data ?? [], cells: sessionCells.data, attention, openThreadId: threadId, openSessionId: openSession,
       itemTitle: (id) => itemsById.get(id)?.title ?? null, itemKey: (id) => itemsById.get(id)?.key ?? null
     }),
-    [threads.data, recentSessions.data, attention, threadId, openSession, itemsById]
+    [threads.data, recentSessions.data, sessionCells.data, attention, threadId, openSession, itemsById]
   );
   // How the conversations writing code in the background for this one stand, for the notes that point at them.
   // Keyed by a string, so the map is new only when one of them changes state — never on a streamed reply.
@@ -723,6 +724,7 @@ export function AgentPanel({
           ticket={sessionRow?.ticket ?? (shownSession.itemIds[0] ? itemsById.get(shownSession.itemIds[0])?.key ?? null : null)}
           status={sessionRow?.status ?? (shownSession.state === "ended" || shownSession.state === "lost" ? "done" : shownSession.state === "running" ? "run" : "idle")}
           engines={engines.data}
+          cell={sessionRow?.cell ?? null}
           onShowInTerminal={shownSession.herdrPane || shownSession.state === "ended" || shownSession.state === "lost" ? () => showInTerminal(shownSession.id, shownSession.terminal) : undefined}
           onBack={shownSessionThread && sessionHandoff.data?.where === "terminal" && !handingOff ? () => void backToPanel(shownSessionThread) : undefined}
           backBlocked={sessionHandoff.data?.terminal?.live ? t("handoff.backBlocked", { agent: findEngine(engines.data, shownSession.agent)?.title ?? shownSession.agent }) : undefined}

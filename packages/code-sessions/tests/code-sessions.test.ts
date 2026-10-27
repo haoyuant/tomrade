@@ -6,7 +6,7 @@ import { afterAll, expect, it, vi } from "vitest";
 import { Service, type Context } from "cordis";
 import { EventEmitter } from "node:events";
 import type { ReviewRow } from "@tomradex/code-link";
-import CodeSessions, { continuedIn, needingYou, openSystemTerminal, sessionRows, type Layout, type WindowMessage, type WindowPost, type WindowState } from "@tomradex/code-sessions";
+import CodeSessions, { cellNumbers, continuedIn, needingYou, openSystemTerminal, sessionRows, type Layout, type WindowMessage, type WindowPost, type WindowState } from "@tomradex/code-sessions";
 import { Contributions } from "@tomradex/contributions";
 import { Settings } from "@tomradex/settings";
 import { Herdr, HerdrError } from "@tomradex/herdr";
@@ -131,6 +131,8 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [{ branch: "tom-1/x", prUrl: "https://github.com/o/r/pull/7" }];
     herdrInstall = async () => ({ command: "brew install herdr", guide: "https://herdr.dev/docs/install/" });
@@ -347,6 +349,8 @@ it("keeps an ended session a cell shows, answers History a page at a time with t
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];
     repositoriesOf = () => [];
@@ -371,8 +375,8 @@ it("keeps an ended session a cell shows, answers History a page at a time with t
     win.spec.onMessage(m);
     await settle();
   };
-  // Live ones, an outside one among them, and the ended one a cell shows; the rest are History's, not the state's.
-  expect(win.states[0]!.sessions.map((s) => s.id)).toEqual(["live", "iterm", "shown"]);
+  // Live ones, an outside one among them, the ended one a cell shows, and what ended within the day; the rest are History's, not the state's.
+  expect(win.states[0]!.sessions.map((s) => s.id)).toEqual(["live", "iterm", "shown", "lost"]);
   expect(win.states[0]).toMatchObject({ folded: false });
   expect(win.states[0]).not.toHaveProperty("archive");
   expect(win.states[0]!.sessions.find((s) => s.id === "iterm")).toMatchObject({ where: "outside", terminal: "iTerm2", endedAt: null });
@@ -452,6 +456,8 @@ it("keeps what ran in each pane the window shows before what it shows now, and a
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];
     repositoriesOf = () => [];
@@ -486,6 +492,13 @@ it("keeps what ran in each pane the window shows before what it shows now, and a
   const found = win.posts.find((p) => p.type === "historySaid")!;
   expect(found).toMatchObject({ token: 7, found: { rows: [{ id: "gone" }, { id: "before" }], said }, agents: {} });
   expect(found.sessions.map((s) => [s.id, s.ranIn, s.endedAt])).toEqual([["before", "w1:p1", now - 5000], ["gone", "w9:p9", now - 1000]]);
+});
+
+it("numbers the cells as the window does, empty ones too, for the sessions they show and those on a terminal's pane", () => {
+  const layout: Layout = { type: "split", id: "r", direction: "row", ratio: 0.5, a: { type: "leaf", id: "c1", sessionId: null }, b: { type: "split", id: "s", direction: "column", ratio: 0.5, a: { type: "leaf", id: "c2", sessionId: "term" }, b: { type: "leaf", id: "c3", sessionId: "own" } } };
+  const terminals = [{ id: "term", pane: "w1:p1", sessionId: "claimed" }];
+  const sessions = [{ id: "claimed", pane: "w1:p1", endedAt: null }, { id: "beside", pane: "w1:p1", endedAt: null }, { id: "gone", pane: "w1:p1", endedAt: 5 }, { id: "own", pane: "w1:p2", endedAt: null }, { id: "loose", pane: "w1:p3", endedAt: null }];
+  expect(cellNumbers(layout, terminals, sessions)).toEqual({ term: 2, claimed: 2, beside: 2, own: 3 });
 });
 
 it("says where an ended session's pane goes on: a terminal opened on it first, else the newest live session there", () => {
@@ -535,6 +548,8 @@ it("tells the window where the pane of an ended session a cell shows goes on, an
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];
     repositoriesOf = () => [];
@@ -558,7 +573,8 @@ it("tells the window where the pane of an ended session a cell shows goes on, an
 it("never shows a state older than one already shown, so a pick from History keeps its cell", async () => {
   const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[] }[] = [];
   const now = Date.now();
-  const sessions = [session({ id: "live", herdrPane: "w1:p1", startedAt: 5 }), session({ id: "old", state: "ended", endedAt: now - 60_000, startedAt: 1, prompted: true })];
+  const sessions = [session({ id: "live", herdrPane: "w1:p1", startedAt: 5 }), session({ id: "old", state: "ended", endedAt: now - 2 * 24 * 3600_000, startedAt: 1, prompted: true })];
+  // ended two days ago: History's, not the bar's ended group
   // herdr's pane list answers when let go, so a state can be held after it read the layout.
   let held: (() => void)[] | null = null;
   class FakeSurfaces extends Service {
@@ -596,6 +612,8 @@ it("never shows a state older than one already shown, so a pick from History kee
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];
     repositoriesOf = () => [];
@@ -672,6 +690,8 @@ it("keeps a terminal that finishes opening while herdr is asked for its panes, a
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => [];
     links = () => [];
     repositoriesOf = () => [];
@@ -746,6 +766,8 @@ it("shows a session code link asks for: the window opens or comes forward with i
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];
     herdrInstall = async () => ({ command: null, guide: "" });
@@ -815,6 +837,8 @@ it("opens plain terminals in herdr without code link, keeps them, closes them, a
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => {
       if (sessionsBroken) throw new Error("bad session row");
       return [];
@@ -903,6 +927,8 @@ it("shows how herdr reads the agent in a plain terminal as it changes, nothing f
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => [];
     links = () => [];
     repositoriesOf = () => [];
@@ -976,6 +1002,8 @@ it("shows a terminal as the code session its agent claimed, in place, and as a p
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];
     repositoriesOf = () => [];
@@ -1080,6 +1108,8 @@ it("keeps named layouts and the auto-place switch for every window, and starts f
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => [];
     links = () => [];
     repositoriesOf = () => [];
@@ -1211,6 +1241,8 @@ it("starts herdr's server again when it went away, on opening with saved termina
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => [];
     links = () => [];
     herdrInstall = async () => ({ command: "brew install herdr", guide: "https://herdr.dev/docs/install/" });
@@ -1323,6 +1355,8 @@ it("lists the assistant's conversations from a cache read when they change, neve
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];
     herdrInstall = async () => ({ command: null, guide: "https://herdr.dev/docs/install/" });
@@ -1475,6 +1509,8 @@ it("records what a cell shows, asks it for a snapshot when a session begins on i
     constructor(ctx: Context) {
       super(ctx, "codeLink");
     }
+    sessionOutcomes = () => new Map();
+    cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];
     repositoriesOf = () => [];

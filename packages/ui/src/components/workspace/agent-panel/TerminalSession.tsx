@@ -25,13 +25,15 @@ const ANSWERED_MS = 8000;
  * session moves; a strip above it shows the pane's last lines, opening into a drawer with more; what is typed below
  * goes into the pane as keystrokes. Nothing here attaches to the pane, so the Terminal window keeps its control.
  */
-export function TerminalSession({ projectId, session, title, ticket, status, engines, onShowInTerminal, onBack, backBlocked, onClose, onAnswered }: {
+export function TerminalSession({ projectId, session, title, ticket, status, engines, cell, onShowInTerminal, onBack, backBlocked, onClose, onAnswered }: {
   projectId: string;
   session: SessionView;
   title: string;
   ticket: string | null;
   status: BarStatus;
   engines: EngineView[] | undefined;
+  /** The Terminal window cell that shows it, by the window's number; null when none does. */
+  cell: number | null;
   /** Present when the Terminal window can be asked to show it. */
   onShowInTerminal?: () => void;
   /** Present for a conversation's own session: brings the conversation back to the panel once its CLI exited. */
@@ -47,7 +49,7 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
   const reportError = useErrorToast();
   const live = isLive(session);
   const agentName = findEngine(engines, session.agent)?.title ?? session.agent;
-  const where = session.herdrPane ? t("sessionBar.wherePane") : session.terminal ? session.terminal.replace(/\.app$/, "") : t("sessionBar.whereOutside");
+  const where = cell ? t("sessionBar.whereCell", { n: cell }) : session.herdrPane ? t("sessionBar.wherePane") : session.terminal ? session.terminal.replace(/\.app$/, "") : t("sessionBar.whereOutside");
   const say: ConvoSay = (key, vars) => t(`codeSessions.${key}`, vars);
 
   // What this machine lets the panel do with the pane: asked once per session, not on every change of it.
@@ -229,7 +231,7 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
           {onShowInTerminal && (
             <button type="button" className="btn btn-ghost ai-session-show" data-testid="ai-session-show" onClick={onShowInTerminal}>
               <Icon name="i-terminal" size={12} />
-              {t("sessionBar.showInTerminal")}
+              {cell ? t("sessionBar.showInTerminalCell", { n: cell }) : t("sessionBar.showInTerminal")}
             </button>
           )}
           {onBack && (

@@ -6,7 +6,9 @@ import { ATTENTION_KEY } from "~/lib/attention";
 import { findEngine } from "~/lib/agent";
 import { clockLabel, timeAgo } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
+import { outcomeLine } from "~/lib/review";
 import type { BarRow, BarStatus } from "~/lib/sessionBar";
+import { rangeLabel, spanLabel } from "~/lib/sessionTime";
 
 export type BarMode = "rail" | "cards";
 type Filter = "all" | Exclude<BarStatus, "idle">;
@@ -68,16 +70,20 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engine
   // measured against the bar, so the peek sits beside its dot however far the dots have scrolled
   const peekAt = (key: string, el: HTMLElement) => { hold(); setPeek({ key, top: el.getBoundingClientRect().top - (nav.current?.getBoundingClientRect().top ?? 0) }); };
   const statusWord = (s: BarStatus) => t(s === "wait" ? "sessionBar.statusWait" : s === "run" ? "sessionBar.statusRun" : s === "done" ? "sessionBar.statusDone" : "sessionBar.statusIdle");
-  const where = (r: BarRow) => r.where === "panel" ? t("sessionBar.wherePanel") : r.where === "pane" ? t("sessionBar.wherePane") : r.terminalApp ? r.terminalApp.replace(/\.app$/, "") : t("sessionBar.whereOutside");
+  const where = (r: BarRow) => r.cell ? t("sessionBar.whereCell", { n: r.cell }) : r.where === "panel" ? t("sessionBar.wherePanel") : r.where === "pane" ? t("sessionBar.wherePane") : r.terminalApp ? r.terminalApp.replace(/\.app$/, "") : t("sessionBar.whereOutside");
   const agentName = (r: BarRow) => (r.agent ? (findEngine(engines, r.agent)?.title ?? r.agent) : null);
   const title = (r: BarRow) => r.title || t("agentPanel.newThread");
-  const said = (r: BarRow) => (r.wait ? r.wait.text || t(ATTENTION_KEY[r.wait.kind]) : r.status === "done" ? r.outcome : r.activity);
+  const outcome = (r: BarRow) => (r.outcome ? outcomeLine(r.outcome, (key, vars) => t(`review.${key}`, vars)) : null);
+  const said = (r: BarRow) => (r.wait ? r.wait.text || t(ATTENTION_KEY[r.wait.kind]) : r.status === "done" ? outcome(r) : r.activity);
   // what it is up to: continuing after a usage limit, else its state — an idle one says how long ago it moved
   const state = (r: BarRow) => (r.parkedUntil ? t("agentPanel.parkedUntil", { time: clockLabel(r.parkedUntil) }) : r.status === "idle" ? timeAgo(r.at) : statusWord(r.status));
   const chips = (r: BarRow) => r.origins.map((origin) => <span key={origin} className="tag neutral sbar-chip">{origin}</span>);
   const waiting = rows.filter((r) => r.status === "wait").length;
   // just started: it lands at the top of the running ones, and says so for its first minute
   const now = Date.now();
+  // how long it has run or waited, or when it ran; one parked on a usage limit, when it goes on; an idle one, when it was last used
+  const when = (r: BarRow) =>
+    r.parkedUntil ? t("agentPanel.parkedUntil", { time: clockLabel(r.parkedUntil) }) : r.status === "wait" ? t("sessionBar.waitedFor", { d: spanLabel(now - r.at, t) }) : r.status === "run" ? t("sessionBar.ranFor", { d: spanLabel(now - r.startedAt, t) }) : r.status === "done" ? rangeLabel(r.startedAt, r.at) : timeAgo(r.at);
   const isNew = (r: BarRow) => r.status !== "done" && now - r.startedAt < 60_000;
   const count = (f: Filter) => (f === "all" ? rows.length : rows.filter((r) => r.status === f).length);
   // right-click on a dot or a card: the same two things its buttons do
@@ -192,7 +198,7 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engine
               {isNew(r) && <span className="sbar-new-badge">{t("sessionBar.new")}</span>}
               {actionable(r) && <RowActions row={r} onArchive={onArchive} onDelete={onDelete} />}
             </span>
-            <span className="meta-txt dense">{[agentName(r), where(r), state(r)].filter(Boolean).join(" · ")}</span>
+            <span className="meta-txt dense">{[agentName(r), r.status === "done" ? statusWord("done") : where(r), when(r)].filter(Boolean).join(" · ")}</span>
             {said(r) && <span className={r.status === "wait" ? "sbar-card-wait" : r.status === "done" ? "sbar-card-outcome" : "sbar-card-said"}>{said(r)}</span>}
           </div>
         )))}
