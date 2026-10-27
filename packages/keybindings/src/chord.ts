@@ -20,6 +20,7 @@ export const DEFAULT_KEYS = {
   // A key the whole computer gives Tomrade: none until the person picks one.
   terminalWindowGlobal: [] as string[],
   sessionBar: ["Mod+\\"],
+  nextWaiting: ["Alt+ArrowDown"],
   settings: ["Mod+,"],
   undo: ["Mod+Z"],
   redo: ["Mod+Shift+Z", "Mod+Y"],

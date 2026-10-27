@@ -688,6 +688,8 @@ const run = async () => {
   check("the strip opens a drawer with more of the pane", /typed in the pane/.test(view?.drawer ?? "") && /❯ claude/.test(view?.drawer ?? ""), view?.drawer);
 
   // The agent asks permission: the panel offers Allow and Deny, pressing the keys the agent declared; the answer closes the ask on both sides.
+  // the panel stays on this session after an answer here; going on to the next one waiting is checked further down
+  ctx.settings.set({ ...ctx.settings.get(), sessions: { ...ctx.settings.get().sessions, afterAnswer: "stay" } });
   const convoAt = convoReads;
   moved({ state: "waiting", activity: "needs your approval: Bash" });
   moved({ state: "waiting", activity: "needs your approval: Bash" });
@@ -743,6 +745,57 @@ const run = async () => {
   moved({ state: "running", activity: "Bash · more" });
   await sleep(2200);
   check("picking a thread brings its conversation back and stops reading the pane and the record", !(await sessionView()) && tailReads === left.tail && convoReads === left.convo && !!(await $(`!!document.querySelector('.ai-scroll .turn, .ai-composer')`)), { tail: tailReads - left.tail, convo: convoReads - left.convo });
+
+  // ── what else waits: a line on top, ⌥↓ to the next, and answering one opens the next — or stays, as the person chose ──
+  const until = async (fn, tries = 50) => {
+    for (let i = 0; i < tries; i++) {
+      if (await fn()) return true;
+      await sleep(100);
+    }
+    return false;
+  };
+  const present = (selector) => $(`!!document.querySelector(${JSON.stringify(selector)})`);
+  let askers = 0;
+  const asking = async () => {
+    const th = ctx.agent.newThread(alpha.id, "mixed", null, { title: `Asker ${++askers}` });
+    ctx.agent.send(alpha.id, th.id, { kind: "text", text: "ask" });
+    await until(async () => ctx.agent.thread(alpha.id, th.id).pending?.kind === "question", 60);
+    return th.id;
+  };
+  const shownThread = () => $(`localStorage.getItem('tomrade.agent.thread.${alpha.id}')`);
+  const queueLine = () => $(`document.querySelector('[data-testid="wait-queue"] .ai-queue-text')?.textContent ?? null`);
+  const asksHere = () => until(() => present('.ai-scroll .q-ask:not(.done) .chip-opt'), 50);
+  const answerHere = async () => {
+    await press(`document.querySelector('.ai-scroll .q-ask:not(.done) .chip-opt')`);
+    await sleep(150);
+    await press(`document.querySelector('.ai-scroll .q-ask:not(.done) .q-confirm .btn')`);
+  };
+  // the session steps above leave nothing waiting in a pane; earlier conversations may still wait, longer, and come first
+  ctx.settings.set({ ...ctx.settings.get(), sessions: { ...ctx.settings.get().sessions, afterAnswer: "next" } });
+  for (const s of ctx.codeLink.store.sessions(alpha.id)) if (s.state !== "ended" && s.state !== "lost") ctx.codeLink.store.patchSession(alpha.id, s.id, { state: "ended", endedAt: Date.now() });
+  ctx.emit("codeLink/changed", alpha.id);
+  ctx.ipc.send("codeLink.changed", alpha.id);
+  const first = await asking();
+  await asking();
+  ctx.ipc.send("attention.open", { key: `thread:${first}`, projectId: alpha.id, threadId: first, itemId: null, itemKey: null, kind: "question", who: null, text: "Which one?", since: Date.now() });
+  await until(async () => (await shownThread()) === first, 50);
+  await shot("wait-queue.png");
+  check("with others waiting, a line on top says who waits for what", /Asker 2 asks you something/.test((await queueLine()) ?? ""), await queueLine());
+  await asksHere();
+  await answerHere();
+  check("answering opens the next one waiting", await until(async () => ![first, null].includes(await shownThread()), 50), await shownThread());
+  check("and says so", await until(async () => ((await $(`document.body.innerText`)) ?? "").includes("Done with Asker 1 · this one waits too"), 30));
+  ctx.settings.set({ ...ctx.settings.get(), sessions: { ...ctx.settings.get().sessions, afterAnswer: "stay" } });
+  await asking();
+  const answered = await shownThread();
+  await asksHere();
+  await answerHere();
+  await sleep(1500);
+  check("set to stay, answering keeps the conversation that was answered", (await shownThread()) === answered, await shownThread());
+  check("and the line on top still lists the rest", /asks you something/.test((await queueLine()) ?? ""), await queueLine());
+  await $(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', altKey: true, bubbles: true, cancelable: true }));true`);
+  check("⌥↓ goes to the next one waiting", await until(async () => (await shownThread()) !== answered, 30), await shownThread());
+  ctx.settings.set({ ...ctx.settings.get(), sessions: { ...ctx.settings.get().sessions, afterAnswer: "next" } });
 
   // The Terminal window from the main window: the title bar's button and ⇧⌘T run its own command for this project.
   const opened = [];

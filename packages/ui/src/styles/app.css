@@ -1588,9 +1588,18 @@ button.cs-convo-line { font: inherit; text-align: left; background: none; border
 .ai-approve { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; padding: 6px 10px; border: 1px solid var(--warn); border-radius: var(--radius-md); background: color-mix(in oklab, var(--warn) 10%, transparent); font-size: var(--text-sm); }
 .ai-approve-text { flex: 1; min-width: 0; color: var(--warn); }
 /* the session bar takes the panel's right edge, beside the head, the conversation and the composer */
-.ai:has(> .sbar) { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto minmax(0, 1fr) auto; }
+/* rows by name of what fills them: the queue line's row is empty (zero high) while nothing else waits */
+.ai:has(> .sbar) { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto minmax(0, 1fr) auto; }
 .ai > .ai-head, .ai > .ai-scroll, .ai > .ai-foot { grid-column: 1; }
-.ai > .sbar { grid-column: 2; grid-row: 1 / 4; }
+.ai > .ai-head { grid-row: 1; }
+.ai > .ai-scroll { grid-row: 3; }
+.ai > .ai-foot { grid-row: 4; }
+.ai > .sbar { grid-column: 2; grid-row: 1 / -1; }
+/* what else waits on the person: a line under the head, the next one a click (or ⌥↓) away */
+.ai > .ai-queue { grid-column: 1; grid-row: 2; }
+.ai-queue { display: flex; align-items: center; gap: var(--space-2); padding: 6px var(--space-4); border-bottom: 1px solid var(--warn); background: var(--surface-warm); font-size: var(--text-sm); }
+.ai-queue svg path { fill: var(--warn); }
+.ai-queue-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The session bar on the panel's right edge: dots to switch by, or cards that say what each is doing.
  * Shapes carry the state, colour only repeats it: ring runs, diamond waits, tick ended. */
 .sbar { flex-shrink: 0; position: relative; display: flex; flex-direction: column; min-height: 0; background: var(--bg); border-left: 1px solid var(--border); }

@@ -18,6 +18,7 @@ export type CommandId =
   | "terminalWindow"
   | "terminalWindowGlobal"
   | "sessionBar"
+  | "nextWaiting"
   | "settings"
   | "undo"
   | "redo"
@@ -56,6 +57,7 @@ export const COMMANDS: CommandSpec[] = [
   { id: "terminalWindow", group: "anywhere", label: "shortcuts.terminalWindow", defaults: DEFAULT_KEYS.terminalWindow },
   { id: "terminalWindowGlobal", group: "global", label: "shortcuts.terminalWindowGlobal", defaults: DEFAULT_KEYS.terminalWindowGlobal },
   { id: "sessionBar", group: "anywhere", label: "shortcuts.sessionBar", defaults: DEFAULT_KEYS.sessionBar },
+  { id: "nextWaiting", group: "anywhere", label: "shortcuts.nextWaiting", defaults: DEFAULT_KEYS.nextWaiting },
   { id: "settings", group: "anywhere", label: "shortcuts.settings", defaults: DEFAULT_KEYS.settings },
   { id: "undo", group: "anywhere", label: "shortcuts.undo", defaults: DEFAULT_KEYS.undo },
   { id: "redo", group: "anywhere", label: "shortcuts.redo", defaults: DEFAULT_KEYS.redo },

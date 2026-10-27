@@ -6,6 +6,7 @@ import { DESKTOP_WORDS } from "./words.js";
 export type OpenAtStart = "main" | "terminal" | "both";
 export interface SessionPrefs {
   openAtStart: OpenAtStart;
+  afterAnswer: "next" | "stay";
 }
 
 const en = DESKTOP_WORDS("en");
@@ -17,18 +18,22 @@ export const SESSIONS_SECTION: SettingsSection<SessionPrefs> = {
   title: en("sessionsTitle"),
   description: en("sessionsDescription"),
   schema: z.object({
-    openAtStart: z.enum(["main", "terminal", "both"]).default("main").meta({ title: en("openAtStartTitle") }).describe(en("openAtStartDescription"))
+    openAtStart: z.enum(["main", "terminal", "both"]).default("main").meta({ title: en("openAtStartTitle") }).describe(en("openAtStartDescription")),
+    afterAnswer: z.enum(["next", "stay"]).default("next").meta({ title: en("afterAnswerTitle") }).describe(en("afterAnswerDescription"))
   }),
-  defaults: { openAtStart: "main" },
+  defaults: { openAtStart: "main", afterAnswer: "next" },
   order: 16,
   scope: "user",
   agent: "read",
   words: {
-    en: { fields: { openAtStart: { options: { main: en("openAtStartMain"), terminal: en("openAtStartTerminal"), both: en("openAtStartBoth") } } } },
+    en: { fields: { openAtStart: { options: { main: en("openAtStartMain"), terminal: en("openAtStartTerminal"), both: en("openAtStartBoth") } }, afterAnswer: { options: { next: en("afterAnswerNext"), stay: en("afterAnswerStay") } } } },
     zh: {
       title: zh("sessionsTitle"),
       description: zh("sessionsDescription"),
-      fields: { openAtStart: { title: zh("openAtStartTitle"), description: zh("openAtStartDescription"), options: { main: zh("openAtStartMain"), terminal: zh("openAtStartTerminal"), both: zh("openAtStartBoth") } } }
+      fields: {
+        openAtStart: { title: zh("openAtStartTitle"), description: zh("openAtStartDescription"), options: { main: zh("openAtStartMain"), terminal: zh("openAtStartTerminal"), both: zh("openAtStartBoth") } },
+        afterAnswer: { title: zh("afterAnswerTitle"), description: zh("afterAnswerDescription"), options: { next: zh("afterAnswerNext"), stay: zh("afterAnswerStay") } }
+      }
     }
   }
 };
