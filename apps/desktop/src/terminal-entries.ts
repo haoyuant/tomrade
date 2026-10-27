@@ -1,11 +1,14 @@
-import { app, BrowserWindow, globalShortcut, type MenuItemConstructorOptions } from "electron";
+import { app, BrowserWindow, globalShortcut, type JumpListCategory, type JumpListItem } from "electron";
 import type { Context } from "cordis";
+import type {} from "@tomradex/code-link";
 import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/projects";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/settings";
 import { errorMessage } from "@tomradex/contracts";
 import { DEFAULT_KEYS } from "@tomradex/keybindings/chord";
+import { keepInFront } from "./main-window.js";
+import type { DesktopWords } from "./words.js";
 
 /** The Terminal window's own command: it opens the project's window, or brings it forward when it is open. */
 export const TERMINAL_COMMAND = "code-sessions.open";
@@ -39,10 +42,68 @@ export async function openTerminal(ctx: Context, projectId: string | null): Prom
   }
 }
 
-/** One "Terminal window · Project" row per project; none where there is no Terminal window. */
-export function terminalMenuItems(ctx: Context, label: (name: string) => string): MenuItemConstructorOptions[] {
+/** A project whose Terminal window was used, and how many cells that window has. */
+export interface RecentTerminalWindow {
+  projectId: string;
+  name: string;
+  cells: number;
+}
+
+/** The Terminal windows used last, most recent first; none where there is no Terminal window. */
+export function recentTerminalWindows(ctx: Context): RecentTerminalWindow[] {
   if (!hasTerminalWindow(ctx)) return [];
-  return terminalProjects(ctx).map((p) => ({ label: label(p.name), click: () => void openTerminal(ctx, p.id) }));
+  const names = new Map((ctx.get("projects")?.list() ?? []).filter((p) => !p.archived).map((p) => [p.id, p.name]));
+  return (ctx.bail("codeLink/terminal-windows") ?? [])
+    .flatMap((w) => {
+      const name = names.get(w.projectId);
+      return name ? [{ projectId: w.projectId, name, cells: w.cells }] : [];
+    })
+    .slice(0, MAX_PROJECTS);
+}
+
+/** "Project · 3 cells", as the Dock and the jump list name a recent Terminal window. */
+export const recentLabel = (w: DesktopWords, r: RecentTerminalWindow): string => w(r.cells === 1 ? "terminalWindowCellsOne" : "terminalWindowCellsMany", { name: r.name, n: r.cells });
+
+/** A launch from a jump list task: a project's Terminal window, or the main window. */
+export const TERMINAL_FLAG = "--terminal-window";
+export const MAIN_FLAG = "--main-window";
+
+/** What a launch's arguments ask for: a Terminal window (`projectId` null for the last one), the main window, or nothing of the kind. */
+export function launchAsk(args: string[]): { window: "terminal"; projectId: string | null } | { window: "main" } | null {
+  for (const arg of args) {
+    if (arg === MAIN_FLAG) return { window: "main" };
+    if (arg === TERMINAL_FLAG) return { window: "terminal", projectId: null };
+    if (arg.startsWith(`${TERMINAL_FLAG}=`)) return { window: "terminal", projectId: arg.slice(TERMINAL_FLAG.length + 1) || null };
+  }
+  return null;
+}
+
+/**
+ * Windows' taskbar jump list, the Dock menu's rows: the recent Terminal windows, then a new Terminal window and a new
+ * main window. Each launches the app with a flag the running one hears as a second instance. A row the person removed
+ * stays out: Windows drops the whole group otherwise.
+ */
+export function jumpList(recent: RecentTerminalWindow[], w: DesktopWords, launch: { program: string; args: string[] }, removed: string[]): JumpListCategory[] {
+  const task = (title: string, flag: string): JumpListItem => ({ type: "task", title, program: launch.program, args: [...launch.args, flag].join(" "), iconPath: launch.program, iconIndex: 0 });
+  const rows = recent.map((r) => task(recentLabel(w, r), `${TERMINAL_FLAG}=${r.projectId}`)).filter((item) => !removed.includes(item.args!));
+  return [
+    ...(rows.length ? [{ type: "custom" as const, name: w("recentTerminalWindows"), items: rows }] : []),
+    { type: "tasks", items: [task(w("newTerminalWindow"), TERMINAL_FLAG), task(w("newMainWindow"), MAIN_FLAG)] }
+  ];
+}
+
+/**
+ * A start's windows, as Settings › Sessions says. With both, the main window leads and the Terminal window comes up
+ * behind it; a start whose Terminal window does not open falls back to the main window.
+ */
+export async function openStartWindows(ctx: Context, opens: { main: boolean; terminal: boolean; projectId?: string | null }, openMain: () => BrowserWindow): Promise<BrowserWindow | null> {
+  const main = opens.main ? openMain() : null;
+  if (!opens.terminal) return main;
+  const release = main ? keepInFront(main) : null;
+  const opened = await openTerminal(ctx, opens.projectId ?? null);
+  release?.();
+  if (!opened && !main) return openMain();
+  return main;
 }
 
 /** The key that opens the Terminal window inside Tomrade, as the person bound it; null once they took it away. */

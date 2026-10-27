@@ -624,9 +624,23 @@ app.whenReady().then(async () => {
       // Gone before the next round looks for the window by its title.
       await wait(async () => !again || again.isDestroyed(), 5000);
     }
-    front.destroy();
     if (canFocus && !interrupted) check("关掉再打开（三次）、被别的窗口挡住时再点，窗口都到最前并获得焦点", forward, `focused: ${focusedTitle}`);
     else console.log(`INFO: skipped the focus step — ${canFocus ? "another app took focus while it ran" : "another app is in front"}, so this app's windows cannot take focus`);
+    // 「打开时：两个都开」: the start opens the main window first and the Terminal window behind it; the main window stays in front.
+    if (canFocus && !interrupted) {
+      const { openStartWindows } = await import("../dist/terminal-entries.js");
+      front.focus();
+      await sleep(300);
+      await openStartWindows(ctx, { main: true, terminal: true }, () => front);
+      const behind = await wait(async () => sessionsWindow()?.isVisible() ?? false, 10000);
+      await sleep(1000);
+      const focused = BrowserWindow.getFocusedWindow();
+      if (!focused) console.log("INFO: skipped the start-order step — another app took focus while it ran");
+      else check("两个都开：终端窗口在后面打开，主窗口留在最前", behind && focused === front, `focused: ${focused.getTitle()}`);
+      sessionsWindow()?.close();
+      await wait(async () => !sessionsWindow(), 5000);
+    }
+    front.destroy();
 
     // A plain terminal from the list's button: every cell is taken, so it opens in a new one beside them.
     await ctx.contributions.run("code-sessions.open", { projectId: project.id });

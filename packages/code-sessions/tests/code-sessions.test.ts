@@ -261,7 +261,7 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   await say({ type: "layout", layout });
   await say({ type: "switchTerminal", switch: true });
   expect((w.ctx.settings.get().codeLink as { terminal: string }).terminal).toBe("herdr");
-  expect(JSON.parse(fs.readFileSync(stateFile, "utf8"))).toEqual({ layouts: { [w.project.id]: layout }, asked: true, lastProject: w.project.id });
+  expect(JSON.parse(fs.readFileSync(stateFile, "utf8"))).toEqual({ layouts: { [w.project.id]: layout }, asked: true, lastProject: w.project.id, used: { [w.project.id]: expect.any(Number) } });
   expect(win.states.at(-1)).toMatchObject({ askSwitch: false, terminal: "herdr" });
 
   // One pane, one cell: another cell asking for the pane c1 streams is told where it is, and c1 keeps it.
@@ -1220,6 +1220,44 @@ it("keeps named layouts and the auto-place switch for every window, and starts f
   expect(JSON.parse(fs.readFileSync(stateFile, "utf8")).layouts[w.project.id]).toEqual(grid);
   await say({ type: "deletePreset", id });
   expect(win.states.at(-1)).toMatchObject({ presets: [], defaultPreset: null });
+});
+
+it("names the Terminal windows used last first, each with its cells, for the Dock and the jump list", async () => {
+  class FakeSurfaces extends Service {
+    static provide = "desktopSurfaces";
+    constructor(ctx: Context) {
+      super(ctx, "desktopSurfaces");
+    }
+    open(spec: { initialState: unknown; onClose(): void }) {
+      return { id: "s", capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus() {}, setState() {}, post() {}, close: () => spec.onClose() };
+    }
+  }
+  class FakeCodeLink extends Service {
+    static provide = "codeLink";
+    constructor(ctx: Context) {
+      super(ctx, "codeLink");
+    }
+    sessionsOf = () => [];
+    links = () => [];
+    repositoriesOf = () => [];
+    repositoryFoldersOf = this.repositoriesOf;
+    herdrInstall = async () => ({ command: null, guide: "" });
+  }
+  const stateFile = path.join(dir, "recent.json");
+  const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "settings-recent.json") }], Contributions, FakeSurfaces, FakeCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile }]] });
+  const b = w.ctx.projects.create({ name: "B", keyPrefix: "BB" });
+  const c = w.ctx.projects.create({ name: "C", keyPrefix: "CC" });
+  await settle();
+  expect(w.ctx.bail("codeLink/terminal-windows")).toEqual([]);
+  const leaf = (id: string) => ({ type: "leaf", id, sessionId: null });
+  const three = { type: "split", id: "r", direction: "row", ratio: 0.5, a: leaf("c1"), b: { type: "split", id: "r2", direction: "column", ratio: 0.5, a: leaf("c2"), b: leaf("c3") } };
+  // C's window was opened before its use was kept: it counts as used long ago, the last one opened.
+  fs.writeFileSync(stateFile, JSON.stringify({ layouts: { [w.project.id]: three, gone: leaf("c1") }, used: { [w.project.id]: 100, [b.id]: 200 }, lastProject: c.id }));
+  const listed = () => w.ctx.bail("codeLink/terminal-windows")!.map((x) => [x.projectId, x.cells]);
+  expect(listed()).toEqual([[b.id, 1], [w.project.id, 3], [c.id, 1]]);
+  // Opened again, a window goes first.
+  await w.ctx.contributions.run("code-sessions.open", { projectId: c.id });
+  expect(listed()[0]).toEqual([c.id, 1]);
 });
 
 it("opens the system terminal where herdr cannot show one: Windows Terminal in the folder, else PowerShell, nothing elsewhere", async () => {

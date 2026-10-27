@@ -83,6 +83,8 @@ declare module "cordis" {
     "codeLink/cells"(projectId: string): { sessionId: string; n: number }[] | void;
     /** Asked: a plain terminal in a new cell of this project's Terminal window, opening the window if needed. True once one has. */
     "codeLink/new-terminal"(projectId: string): Promise<boolean | void> | boolean | void;
+    /** Asked: the projects whose Terminal window was used, last used first, each with how many cells its window has. */
+    "codeLink/terminal-windows"(): { projectId: string; cells: number; usedAt: number }[] | void;
   }
 }
 

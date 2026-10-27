@@ -96,8 +96,10 @@ export function TitleBar({
         {t("titleBar.newButton")}
       </button>
       {openTerminal && (
-        <button type="button" className="btn btn-icon no-drag" onClick={openTerminal} title={t("titleBar.terminalWindowTitle")} aria-label={t("titleBar.terminalWindow")} data-testid="titlebar-terminal">
-          <Icon name="i-terminal" size={16} />
+        <button type="button" className="btn btn-ghost no-drag titlebar-terminal" onClick={openTerminal} title={t("titleBar.terminalWindowTitle")} aria-label={t("titleBar.terminalWindow")} data-testid="titlebar-terminal">
+          <Icon name="i-terminal" size={15} />
+          <span className="lbl">{t("titleBar.terminalWindow")}</span>
+          <Kbd>{keyLabel("terminalWindow")}</Kbd>
         </button>
       )}
       <button type="button" className="btn btn-icon no-drag" onClick={onOpenUsage} title={t("usage.label")} aria-label={t("usage.label")} data-testid="titlebar-usage">

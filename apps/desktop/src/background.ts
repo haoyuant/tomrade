@@ -14,7 +14,7 @@ import { BACKGROUND_FLAG, loginItem, type LoginItem, type LoginState } from "./l
 import { hasMainWindow, showMainWindow } from "./main-window.js";
 import { allowOf, type AttentionEntry, type AttentionTarget, type TrayAllow } from "./attention.js";
 import { openAtStart } from "./sessions-section.js";
-import { accelerator, hasTerminalWindow, openTerminal, terminalChord, terminalMenuItems, terminalProjects } from "./terminal-entries.js";
+import { accelerator, hasTerminalWindow, jumpList, openTerminal, recentLabel, recentTerminalWindows, terminalChord, terminalProjects } from "./terminal-entries.js";
 import { leaving, quitApproved } from "./quit.js";
 import { DESKTOP_WORDS } from "./words.js";
 import { errorMessage, writeJsonAtomic } from "@tomradex/contracts";
@@ -169,6 +169,15 @@ export function trayRunning(ctx: Context): { who: string; cell: number | null; t
   return out.slice(0, TRAY_ROWS);
 }
 
+/** The Dock icon's menu: "Recent Terminal windows" and theirs, then a new Terminal window and the main window. */
+function dockMenu(recent: { label: string; open: () => void }[], terminal: boolean, w: ReturnType<typeof DESKTOP_WORDS>, ctx: Context): MenuItemConstructorOptions[] {
+  return [
+    ...(recent.length ? [{ label: w("recentTerminalWindows"), enabled: false }, ...recent.map((r) => ({ label: r.label, click: r.open })), { type: "separator" as const }] : []),
+    ...(terminal ? [{ label: w("newTerminalWindow"), click: () => void openTerminal(ctx, null) }] : []),
+    { label: w("newMainWindow"), click: () => void showMainWindow() }
+  ];
+}
+
 const LOGIN_SETTINGS: Partial<Record<NodeJS.Platform, string>> = {
   darwin: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension",
   win32: "ms-settings:startupapps"
@@ -292,16 +301,32 @@ export const background = {
       allows = next;
       if (changed) refreshTray();
     };
-    // macOS: the Dock icon's menu opens a project's Terminal window, or the main window. Set again only when its rows change.
+    // The Dock icon's menu (macOS) and the taskbar's jump list (Windows): the Terminal windows used last, a new one, the main window.
+    // Set again only when their rows change.
     let dockShape = "";
     const refreshDock = () => {
-      if (process.platform !== "darwin" || !app.dock) return;
+      const dock = process.platform === "darwin" ? app.dock : undefined;
+      if (!dock && process.platform !== "win32") return;
       const w = words();
-      const terminals = terminalMenuItems(ctx, (name) => w("terminalWindowOf", { name }));
-      const shape = JSON.stringify([w("openMainWindow"), terminals.length ? terminalProjects(ctx) : []]);
+      const recent = recentTerminalWindows(ctx);
+      const terminal = hasTerminalWindow(ctx);
+      const shape = JSON.stringify([w("newMainWindow"), terminal, recent]);
       if (shape === dockShape) return;
       dockShape = shape;
-      app.dock.setMenu(Menu.buildFromTemplate([...terminals, ...(terminals.length ? [{ type: "separator" as const }] : []), { label: w("openMainWindow"), click: () => void showMainWindow() }]));
+      if (dock) {
+        dock.setMenu(Menu.buildFromTemplate(dockMenu(recent.map((r) => ({ label: recentLabel(w, r), open: () => void openTerminal(ctx, r.projectId) })), terminal, w, ctx)));
+        return;
+      }
+      // A checkout runs Electron with its entry script; the installed app is the program itself.
+      const launch = { program: process.execPath, args: process.defaultApp && process.argv[1] ? [`"${path.resolve(process.argv[1])}"`] : [] };
+      let removed: string[] = [];
+      try {
+        removed = app.getJumpListSettings().removedItems.flatMap((item) => (item.args ? [item.args] : []));
+      } catch {
+        // nothing removed that can be read
+      }
+      const result = app.setJumpList(terminal ? jumpList(recent, w, launch, removed) : null);
+      if (result !== "ok") log.warn(`jump list not set: ${result}`);
     };
     // With background running, or for someone who starts on the Terminal window: the main window opens from here.
     const wantsTray = () => keepsRunning() || openAtStart(ctx) !== "main";
