@@ -1,4 +1,4 @@
-import type { ReviewCursor, ReviewPage, ReviewSaid } from "@tomradex/code-link";
+import type { ReviewCursor, ReviewPage, ReviewSaid, SessionOutcome } from "@tomradex/code-link";
 import type { TerminalBridge, TerminalKey, TerminalMouse, TerminalScroll, TerminalScrollPosition } from "@tomradex/contracts";
 
 /** One code session as the window lists it. */
@@ -55,6 +55,8 @@ export interface SessionRow {
   lastEventAt: number | null;
   /** Ended, and what its pane showed while it ran was recorded here: its raw output can be played back. */
   rawOutput: boolean;
+  /** Ended and listed: what came of it, the look back's way (its pull request, commits, asks, last word); null otherwise. */
+  outcome: SessionOutcome | null;
 }
 
 /** A plain terminal closed here whose output was recorded: in History, to play back. */

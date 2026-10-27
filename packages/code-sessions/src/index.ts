@@ -10,7 +10,7 @@ import type {} from "@tomradex/db";
 import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/items";
 import type {} from "@tomradex/settings";
-import { BUILTIN_TERMINAL, MCP_AGENT, WINDOWS_TERMINAL, panesOf, resumeCommand, type CodeLink, type ReviewRow } from "@tomradex/code-link";
+import { BUILTIN_TERMINAL, MCP_AGENT, RECENT_ENDED_MAX, RECENT_ENDED_MS, WINDOWS_TERMINAL, panesOf, resumeCommand, type CodeLink, type ReviewRow } from "@tomradex/code-link";
 import { PROMPT_LINES, promptOnScreen } from "@tomradex/code-link/prompt";
 import { PANEL_SURFACES } from "@tomradex/agent";
 import type { DesktopSurface } from "@tomradex/desktop-surface";
@@ -124,6 +124,26 @@ export function isLayout(value: unknown): value is Layout {
   if (typeof v.id !== "string") return false;
   if (v.type === "leaf") return (v.sessionId === null || typeof v.sessionId === "string") && (v.locked === undefined || v.locked === true);
   return v.type === "split" && (v.direction === "row" || v.direction === "column") && typeof v.ratio === "number" && isLayout(v.a) && isLayout(v.b);
+}
+
+/** Every cell of a layout in the window's order, empty ones too: the window numbers its cells this way, from 1. */
+const cellsIn = (layout: Layout): Extract<Layout, { type: "leaf" }>[] => (layout.type === "leaf" ? [layout] : [...cellsIn(layout.a), ...cellsIn(layout.b)]);
+
+/**
+ * Which cell shows each session, by its number: the session or terminal a cell holds, the session a terminal's agent
+ * claimed, and every live session on that terminal's pane (one agent working several tickets there).
+ */
+export function cellNumbers(layout: Layout, terminals: Pick<TerminalRow, "id" | "pane" | "sessionId">[], sessions: Pick<SessionRow, "id" | "pane" | "endedAt">[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  cellsIn(layout).forEach((cell, i) => {
+    if (!cell.sessionId) return;
+    out[cell.sessionId] = i + 1;
+    const terminal = terminals.find((t) => t.id === cell.sessionId);
+    if (terminal?.sessionId) out[terminal.sessionId] = i + 1;
+    const pane = terminal?.pane ?? sessions.find((s) => s.id === cell.sessionId)?.pane;
+    if (pane) for (const s of sessions) if (s.endedAt === null && s.pane === pane && !(s.id in out)) out[s.id] = i + 1;
+  });
+  return out;
 }
 
 const leafIds = (layout: Layout): string[] => (layout.type === "leaf" ? (layout.sessionId ? [layout.sessionId] : []) : [...leafIds(layout.a), ...leafIds(layout.b)]);
@@ -255,7 +275,8 @@ export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, it
         approval: false,
         prompt: null,
         lastEventAt: s.lastEventAt ?? null,
-        rawOutput: false
+        rawOutput: false,
+        outcome: null
       };
     })
     .sort((a, b) => Number(b.state !== "ended" && b.state !== "lost") - Number(a.state !== "ended" && a.state !== "lost") || Number(b.needsYou) - Number(a.needsYou) || b.startedAt - a.startedAt);
@@ -312,6 +333,10 @@ interface Open {
   onPane: Map<string, string | null>;
   /** A recording failed and the window was told; the next failure is only logged. */
   warnedRecording: boolean;
+  /** Which cell shows each session, as the last state laid them out; what the panel names a session's cell by. */
+  cells: Record<string, number>;
+  /** The terminals and sessions of the last state, to number the cells again when only the layout changes. */
+  shown: { terminals: TerminalRow[]; sessions: SessionRow[] } | null;
 }
 
 /** Frames of one cell while its batch is open: the ANSI bytes in order, and the frame that began it. */
@@ -658,7 +683,12 @@ function apply(ctx: Context, config: Config) {
     // Ticket work, and conversations someone had; a start nobody spoke to is not kept.
     const ended = shown.sessions.filter((s) => s.endedAt !== null && (s.itemId || s.conversation || s.prompted));
     const win = open.get(projectId);
-    const sent = await titled(shown.sessions.filter((s) => s.endedAt === null || inCells.has(s.id) || s.id === win?.reveal?.sessionId), savedTerminals(projectId));
+    // What ended lately stays in the bar's ended group for a day, as in the assistant panel, cell or no cell.
+    const recent = new Set(ended.filter((s) => Date.now() - s.endedAt! < RECENT_ENDED_MS).sort((a, b) => b.endedAt! - a.endedAt!).slice(0, RECENT_ENDED_MAX).map((s) => s.id));
+    const listedNow = await titled(shown.sessions.filter((s) => s.endedAt === null || inCells.has(s.id) || recent.has(s.id) || s.id === win?.reveal?.sessionId), savedTerminals(projectId));
+    const endedIds = listedNow.flatMap((s) => (s.endedAt !== null ? [s.id] : []));
+    const outcomes = endedIds.length ? ctx.codeLink.sessionOutcomes(projectId, endedIds) : null;
+    const sent = outcomes ? listedNow.map((s) => (outcomes.has(s.id) ? { ...s, outcome: outcomes.get(s.id)! } : s)) : listedNow;
     const opened = await fold(projectId, shown.sessions, await terminals(projectId));
     return {
       projectId,
@@ -712,8 +742,18 @@ function apply(ctx: Context, config: Config) {
     if (win.closed || turn < win.states.shown) return;
     win.states.shown = turn;
     follow(win, next.terminals);
+    win.shown = { terminals: next.terminals, sessions: next.sessions };
+    renumber(projectId, win, next.layout);
     win.surface.setState(next);
     snapshotNewSessions(win, next.sessions);
+  };
+
+  /** The cells numbered again for a layout; the panel hears of it only when a session's cell changed. */
+  const renumber = (projectId: string, win: Open, layout: Layout | null) => {
+    const cells = layout && win.shown && !win.closed ? cellNumbers(layout, win.shown.terminals, win.shown.sessions) : {};
+    const same = Object.keys(cells).length === Object.keys(win.cells).length && Object.entries(cells).every(([id, n]) => win.cells[id] === n);
+    win.cells = cells;
+    if (!same) ctx.codeLink.cellsChanged(projectId);
   };
 
   /** The newest live session on a pane, by when it started; null with none. */
@@ -1107,6 +1147,7 @@ function apply(ctx: Context, config: Config) {
         if (!isLayout(m.layout)) return;
         save(config.stateFile, { layouts: { ...stateOf(config.stateFile).layouts, [projectId]: m.layout } });
         for (const listener of laidOut) listener(projectId, m.layout);
+        renumber(projectId, win, m.layout);
         return;
       case "continue":
         return command(projectId, win, "code-link.start-terminal", m.sessionId);
@@ -1209,7 +1250,7 @@ function apply(ctx: Context, config: Config) {
       return refresh(projectId);
     }
     const w = words();
-    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), held: new Map(), timer: setInterval(() => void refresh(projectId), BRIDGE_POLL_MS), closed: false, reveal: asked, history: false, states: { begun: 0, shown: 0 }, follows: new Map(), frames: new Map(), recordings: new Map(), onPane: new Map(), warnedRecording: false };
+    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), held: new Map(), timer: setInterval(() => void refresh(projectId), BRIDGE_POLL_MS), closed: false, reveal: asked, history: false, states: { begun: 0, shown: 0 }, follows: new Map(), frames: new Map(), recordings: new Map(), onPane: new Map(), warnedRecording: false, cells: {}, shown: null };
     win.timer.unref?.();
     open.set(projectId, win);
     try {
@@ -1247,6 +1288,7 @@ function apply(ctx: Context, config: Config) {
       onClose: () => {
         win.closed = true;
         clearInterval(win.timer);
+        renumber(projectId, win, null);
         dropFramesOf(win);
         follow(win, []);
         for (const cell of [...win.terminals.keys()]) detach(win, cell);
@@ -1281,6 +1323,10 @@ function apply(ctx: Context, config: Config) {
   // Code link's starts and "open in terminal" land here while this window can show the backend's panes.
   const showable = async () => ["ready", "notRunning"].includes((await bridge()).state);
   ctx.on("codeLink/terminal-window", async () => (await showable()) || undefined);
+  ctx.on("codeLink/session-cells", (projectId) => {
+    const win = open.get(projectId);
+    return win && !win.closed ? win.cells : undefined;
+  });
   ctx.on("codeLink/show-session", async (projectId, sessionId) => {
     const session = sessionOf(projectId, sessionId);
     // A live one shows its pane; an ended one, its conversation, read-only.

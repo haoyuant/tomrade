@@ -1,6 +1,8 @@
 import type { SessionRow, ThreadRow } from "@tomradex/code-sessions";
-import { canAnswer, sessionName, type BarStatus, type HereRow } from "./lists";
-import { useSay, type Say } from "./say";
+import { outcomeLine } from "../lib/review";
+import { rangeLabel, spanLabel } from "../lib/sessionTime";
+import { canAnswer, rowStartedAt, sessionName, waitedSince, type BarStatus, type HereRow } from "./lists";
+import { useSay, type Say, type Words } from "./say";
 
 /** Three shapes, the session bar's, so the state reads without colour: a ring runs, a diamond waits, a tick ended. */
 export function Mark({ status, size = 10 }: { status: BarStatus; size?: number }) {
@@ -43,10 +45,10 @@ export const rowAgent = (r: HereRow): string | null => (r.kind === "thread" ? (r
 
 export const statusWord = (s: BarStatus, say: Say): string => say(s === "wait" ? "needsYou" : s === "run" ? "running" : s === "done" ? "ended" : "idle");
 
-/** Where it is: a pane of this window, a terminal here, another app, another computer, Tomrade itself, or the assistant. */
-export function whereOf(r: HereRow, inCell: boolean, say: Say): string {
+/** Where it is: a cell of this window by its number, a terminal here, another app, another computer, Tomrade itself, or the assistant. */
+export function whereOf(r: HereRow, cell: number | null, say: Say): string {
   if (r.kind === "thread") return say("inAssistant");
-  if (inCell) return say("whereCell");
+  if (cell) return say("whereCell", { n: cell });
   const s = r.session;
   if (r.kind === "terminal" || !s || s.where === "herdr") return say("terminal");
   if (s.where === "tomrade") return say("runMode");
@@ -54,8 +56,21 @@ export function whereOf(r: HereRow, inCell: boolean, say: Say): string {
   return s.terminal ?? say("outsideTerminal");
 }
 
+/** What came of an ended session, said the way the assistant panel and the look back say it. */
+export const outcomeOf = (s: SessionRow, words: Words): string | null => (s.outcome ? outcomeLine(s.outcome, (key, vars) => words(`review.${key}`, vars)) : s.activity);
+
+/** How long it has run or waited, or when it ran; an idle one says so. */
+export function rowWhen(r: HereRow, status: BarStatus, say: Say, words: Words, now = Date.now()): string {
+  const span = (ms: number) => spanLabel(ms, words);
+  if (status === "run") return say("runningFor", { d: span(now - rowStartedAt(r)) });
+  if (status === "wait") return say("waitingFor", { d: span(now - waitedSince(r)) });
+  const s = r.session;
+  if (status === "done" && s?.endedAt) return say("endedRange", { range: rangeLabel(s.startedAt, s.endedAt) });
+  return statusWord(status, say);
+}
+
 /** What the card says under its name: the question it waits with, what it is doing now, or what came of it. */
-export function rowSaid(r: HereRow, status: BarStatus, say: Say): string | null {
+export function rowSaid(r: HereRow, status: BarStatus, say: Say, words: Words): string | null {
   if (r.kind === "thread") {
     const wait = r.thread.wait;
     if (wait) return wait.text ?? say(wait.kind === "permission" ? "waitPermission" : "waitQuestion");
@@ -64,6 +79,7 @@ export function rowSaid(r: HereRow, status: BarStatus, say: Say): string | null 
   const s = r.session;
   if (!s) return null;
   if (status === "wait") return s.activity ?? say("waitPermission");
+  if (status === "done") return outcomeOf(s, words);
   return s.activity;
 }
 

@@ -21,14 +21,14 @@ const rows = (input: Partial<Parameters<typeof sessionBarRows>[0]>) =>
 it("puts what waits on the person first, then what runs, then idle conversations, then what ended", () => {
   const out = rows({
     threads: [thread("idle", { updatedAt: 9 }), thread("busy", { running: true, createdAt: 3 }), thread("asks", { createdAt: 2 })],
-    sessions: [session("cell", { startedAt: 4 }), session("old", { state: "ended", endedAt: 8, summary: "PR #1 merged" })],
+    sessions: [session("cell", { startedAt: 4 }), session("old", { state: "ended", endedAt: 8, summary: "PR #1 merged", asked: 1 })],
     attention: [waiting("thread:asks", 7)]
   });
   expect(out.map((r) => [r.key, r.status])).toEqual([
     ["thread:asks", "wait"], ["session:cell", "run"], ["thread:busy", "run"], ["thread:idle", "idle"], ["session:old", "done"]
   ]);
   expect(out.find((r) => r.key === "thread:asks")?.wait).toEqual({ kind: "permission", text: "may I?" });
-  expect(out.find((r) => r.key === "session:old")?.outcome).toBe("PR #1 merged");
+  expect(out.find((r) => r.key === "session:old")?.outcome).toEqual({ pr: null, commits: 0, asked: 1, said: "PR #1 merged" });
 });
 
 it("shows a headless session once, on its conversation", () => {
@@ -99,4 +99,13 @@ it("carries what opened a conversation and when a usage limit lets it continue, 
   const out = rows({ threads: [thread("t", { origins: ["Routine"], parkedUntil: 1234 })], sessions: [session("s")] });
   expect(out.find((r) => r.key === "thread:t")).toMatchObject({ origins: ["Routine"], parkedUntil: 1234 });
   expect(out.find((r) => r.key === "session:s")).toMatchObject({ origins: [], parkedUntil: null });
+});
+
+it("carries what came of an ended session as the look back reads it, and the cell that shows a live one", () => {
+  const outcome = { pr: { number: 407, state: "merged" as const, url: null }, commits: 4, asked: 2, said: "done" };
+  const out = rows({ sessions: [session("cell"), session("away", { herdrPane: null, terminal: "iTerm.app" }), { ...session("old", { state: "ended", endedAt: 8 }), outcome }], cells: { cell: 2, old: 3 } });
+  expect(out.find((r) => r.key === "session:cell")?.cell).toBe(2);
+  expect(out.find((r) => r.key === "session:away")?.cell).toBeNull();
+  // ended, it is looked back on: no cell, and its outcome as the history has it
+  expect(out.find((r) => r.key === "session:old")).toMatchObject({ cell: null, outcome });
 });

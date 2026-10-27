@@ -3222,7 +3222,7 @@ export const ru: PartialMessages = {
     viewGrid: "Панели",
     viewOverview: "Обзор",
     inAssistant: "В ассистенте · без панели",
-    whereCell: "В панели",
+    whereCell: "Панель {{n}}",
     newThread: "Новый разговор",
     waitPermission: "Нужно ваше разрешение",
     waitQuestion: "Задаёт вам вопрос",
