@@ -155,9 +155,7 @@ const run = async () => {
   win.webContents.reload();
   await sleep(2500);
   check("a reload does not bring the hint back, and the card leaves a thread with a run in it", (await has(".run-wrap")) && !(await has(".hint")) && !(await has(".agent-setup")));
-  if (!(await $(`!!document.querySelector('.menu-row.is-radio')`))) await press(`document.querySelector('.ai-head .btn-icon[aria-label="Threads"]')`);
-  await sleep(400);
-  await press(`document.querySelector('button[aria-label="New thread"]')`);
+  await press(`document.querySelector('.ai .sbar button[aria-label="New thread"]')`);
   check("a new thread shows what is still missing again", await wait(() => has(".agent-setup"), "setup card in a new thread"));
   await $(`document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
 

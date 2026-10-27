@@ -11,10 +11,6 @@ import { catchUp, insertMessage, missedBefore } from "./threadLive";
 
 export const useAgentThreads = (projectId: string) => useQuery({ queryKey: keys.agent.threads(projectId), queryFn: () => invoke("agent.threads", projectId) });
 
-/** Put-away conversations, fetched only while the list asks for them. */
-export const useArchivedThreads = (projectId: string, enabled: boolean) =>
-  useQuery({ queryKey: keys.agent.archivedThreads(projectId), queryFn: () => invoke("agent.archivedThreads", projectId), enabled });
-
 export function useUnarchiveThread(projectId: string) {
   const qc = useQueryClient();
   const report = useErrorToast();
@@ -24,6 +20,7 @@ export function useUnarchiveThread(projectId: string) {
     onSuccess: (_ok, threadId) => {
       void qc.invalidateQueries({ queryKey: keys.agent.threads(projectId) });
       void qc.invalidateQueries({ queryKey: keys.agent.thread(projectId, threadId) });
+      void qc.invalidateQueries({ queryKey: keys.codeLink.reviewAll(projectId) });
     }
   });
 }
@@ -143,7 +140,15 @@ export function useSetWorkstream(projectId: string) {
 export function useArchiveThread(projectId: string) {
   const qc = useQueryClient();
   const report = useErrorToast();
-  return useMutation({ onError: report, mutationFn: (threadId: string) => invoke("agent.archiveThread", projectId, threadId), onSuccess: () => void qc.invalidateQueries({ queryKey: keys.agent.threads(projectId) }) });
+  // the look back lists idle and put-away conversations, so it moves with them
+  return useMutation({
+    onError: report,
+    mutationFn: (threadId: string) => invoke("agent.archiveThread", projectId, threadId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.agent.threads(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.codeLink.reviewAll(projectId) });
+    }
+  });
 }
 
 export function useDeleteThread(projectId: string) {
@@ -156,6 +161,7 @@ export function useDeleteThread(projectId: string) {
       qc.setQueryData(keys.agent.threads(projectId), (threads: { id: string }[] | undefined) => threads?.filter((thread) => thread.id !== threadId));
       qc.removeQueries({ queryKey: keys.agent.thread(projectId, threadId) });
       void qc.invalidateQueries({ queryKey: keys.agent.threads(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.codeLink.reviewAll(projectId) });
     }
   });
 }

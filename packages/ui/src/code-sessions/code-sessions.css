@@ -2,20 +2,24 @@
 html, body, #root { height: 100%; margin: 0; }
 body { background: var(--bg); color: var(--fg); font-family: var(--font-body); overflow: hidden; }
 
-.cs-window { display: flex; flex-direction: column; height: 100%; }
+/* One gutter for the window: the top bar's sides, the cells' and the overview's margin, the session bar's padding. */
+.cs-window { --cs-gutter: var(--space-3); display: flex; flex-direction: column; height: 100%; }
 .cs-body { flex: 1; min-height: 0; display: flex; }
-/* The project this window belongs to, and how to look at it: the cells, or every session as a card. */
-.cs-topbar { display: flex; align-items: center; gap: 12px; height: 34px; padding: 0 12px; border-bottom: 1px solid var(--border); flex: none; }
+/* The project this window belongs to, and how to look at it: the cells, or every session as a card.
+   As tall as the app's title bar; its sides are the window's gutter,
+   so the name sits on the first cell's edge and the view switch on the session cards'. */
+.cs-topbar { display: flex; align-items: center; gap: var(--space-3); height: var(--titlebar-h); padding: 0 var(--cs-gutter); border-bottom: 1px solid var(--border); flex: none; }
 .cs-project { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); font-weight: 600; color: var(--fg); }
-.cs-views { display: flex; flex: none; }
-.cs-views > button { min-width: 56px; }
+/* The view switch: the title bar's quiet one, an icon and the word, shorter than the bar it is centred in. */
+.cs-views { flex: none; }
+.cs-views > button { line-height: 18px; }
 /* The keys the window keeps, along the bottom. */
-.cs-keys { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 14px; min-height: 24px; padding: 2px 12px; border-top: 1px solid var(--border); font-size: 11px; color: var(--meta); flex: none; overflow: hidden; white-space: nowrap; }
+.cs-keys { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 14px; min-height: 24px; padding: 2px var(--cs-gutter); border-top: 1px solid var(--border); font-size: 11px; color: var(--meta); flex: none; overflow: hidden; white-space: nowrap; }
 .cs-keys kbd { font-family: var(--font-mono); font-size: 10px; padding: 0 4px; border: 1px solid var(--border-input); border-radius: 4px; color: var(--muted); }
 
 /* The session bar reads like the assistant panel's: its background, cards that say where each session stands, dots when folded. */
-.cs-side { --text-xs: 12px; --text-sm: 13px; position: relative; width: 280px; flex: none; border-left: 1px solid var(--border); background: var(--bg); overflow-y: auto; padding: 0 var(--space-2) var(--space-3); scrollbar-width: thin; scrollbar-color: var(--border) transparent; display: flex; flex-direction: column; }
-.cs-bar-head { display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 2px; border-bottom: 1px solid var(--border); margin: 0 calc(-1 * var(--space-2)) var(--space-2); padding: 0 var(--space-2); flex: none; }
+.cs-side { --text-xs: 12px; --text-sm: 13px; position: relative; width: 280px; flex: none; border-left: 1px solid var(--border); background: var(--bg); overflow-y: auto; padding: 0 var(--cs-gutter) var(--space-3); scrollbar-width: thin; scrollbar-color: var(--border) transparent; display: flex; flex-direction: column; }
+.cs-bar-head { display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 2px; border-bottom: 1px solid var(--border); margin: 0 calc(-1 * var(--cs-gutter)) var(--space-2); padding: 0 var(--cs-gutter); flex: none; }
 .cs-bar-title { flex: 1; min-width: 0; font-size: var(--text-sm); color: var(--fg); }
 .cs-bar-head .side-add { font-size: var(--text-xs); flex: none; }
 .cs-side-head { margin: 0; padding: var(--space-5) var(--space-2) var(--space-2); }
@@ -55,7 +59,14 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-group-head { flex-direction: row; align-items: center; gap: 6px; width: 100%; cursor: pointer; font-size: var(--text-sm); color: var(--muted); }
 .cs-group-name { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cs-group-caret { width: 10px; flex: none; }
-.cs-archive-open { display: block; margin: var(--space-4) var(--space-2) 0; font-size: var(--text-sm); }
+/* History at the foot of the bar, as the assistant panel's: the note, and the way in. */
+.cs-history-foot { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-4) 0 0; padding: var(--space-2) 0 0; border-top: 1px solid var(--border); font-size: var(--text-xs); color: var(--meta); flex: none; }
+.cs-history-foot > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The panel's list in the bar: the bar's gutter is its gutter; the closed-terminal filter sits under its search. */
+.cs-side .ai-review-search { margin: 0 0 var(--space-2); }
+.cs-side .ai-review-filter { margin: 0 0 var(--space-2); display: flex; }
+.cs-side .ai-review-filter > button { flex: 1; }
+.cs-side .ai-review-list { padding: 0 0 var(--space-3); }
 .cs-side-sub { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .cs-side-sub h2 { margin: 0; }
 .cs-side-sub .side-add { font-size: var(--text-xs); }
@@ -97,15 +108,15 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-fold-row { gap: 2px; }
 .cs-fold-row > .cs-card, .cs-fold-row > .cs-bundle-head { flex: 1; min-width: 0; }
 .cs-timeline { margin: 4px 0 3px; padding-left: calc(22px + 2px); }
-.cs-archive-search { margin: 0 var(--space-2) var(--space-2); width: calc(100% - 2 * var(--space-2)); box-sizing: border-box; }
 
 .cs-main { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.cs-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border-soft); background: var(--surface-warm); font-size: var(--text-sm); }
+.cs-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: var(--space-2) var(--cs-gutter); border-bottom: 1px solid var(--border-soft); background: var(--surface-warm); font-size: var(--text-sm); }
 .cs-banner code { font-family: var(--font-mono); font-size: var(--text-xs); }
-.cs-layout { flex: 1; min-height: 0; display: flex; padding: 6px; }
+/* The cells and the overview keep the window's gutter; cells sit a divider apart. */
+.cs-layout { flex: 1; min-height: 0; display: flex; padding: var(--cs-gutter); }
 .cs-layout > * { flex: 1; min-width: 0; min-height: 0; }
 /* The overview lies over the cells, which keep their terminals attached underneath. */
-.cs-overview { position: absolute; inset: 0; z-index: 5; overflow-y: auto; padding: 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; align-content: start; background: var(--bg); scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.cs-overview { position: absolute; inset: 0; z-index: 5; overflow-y: auto; padding: var(--cs-gutter); display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--space-3); align-content: start; background: var(--bg); scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .cs-big { border: 1px solid var(--border); border-radius: var(--radius-lg, 10px); background: var(--surface); padding: 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; font-size: var(--text-sm); }
 .cs-big[data-status="wait"] { border-color: var(--warn); }
 .cs-big[aria-current="true"] { box-shadow: var(--elev-ring-accent); }
@@ -122,8 +133,8 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-split-part { display: flex; min-width: 0; min-height: 0; }
 .cs-split-part > * { flex: 1; min-width: 0; min-height: 0; }
 .cs-divider { flex: none; background: transparent; }
-.cs-divider[data-direction="row"] { width: 6px; cursor: col-resize; }
-.cs-divider[data-direction="column"] { height: 6px; cursor: row-resize; }
+.cs-divider[data-direction="row"] { width: var(--space-2); cursor: col-resize; }
+.cs-divider[data-direction="column"] { height: var(--space-2); cursor: row-resize; }
 .cs-divider:hover { background: var(--border-soft); }
 
 .cs-cell { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--border-soft); border-radius: 8px; overflow: hidden; background: var(--surface); }
@@ -180,8 +191,6 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 /* A locked pane: its lock stays lit in the bar. */
 .cs-lock { display: inline-flex; align-items: center; justify-content: center; }
 .cs-lock[aria-pressed="true"] { color: var(--accent); }
-.cs-shelves { display: flex; margin: 0 var(--space-2) var(--space-2); }
-.cs-shelves > button { flex: 1; }
 /* An ended session read back: who and when, the way to go on, then the conversation, read-only. */
 .cs-ended { width: 100%; display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .cs-ended-head { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-3) var(--space-2); border-bottom: 1px solid var(--border-soft); }

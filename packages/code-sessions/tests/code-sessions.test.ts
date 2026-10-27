@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { afterAll, expect, it, vi } from "vitest";
 import { Service, type Context } from "cordis";
 import { EventEmitter } from "node:events";
+import type { ReviewRow } from "@tomradex/code-link";
 import CodeSessions, { continuedIn, needingYou, openSystemTerminal, sessionRows, type Layout, type WindowMessage, type WindowPost, type WindowState } from "@tomradex/code-sessions";
 import { Contributions } from "@tomradex/contributions";
 import { Settings } from "@tomradex/settings";
@@ -17,6 +18,9 @@ afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
 type Session = { title?: string | null; prompted?: boolean; externalId?: string | null; cwd?: string | null; id: string; itemIds: string[]; branch: string; state: string; mode: "headless" | "terminal"; agent: string; herdrPane: string | null; terminal: string | null; device: string; threadId: string | null; worktree: string | null; activity: string | null; summary: string | null; blocked: unknown; startedAt: number; endedAt: number | null; lastEventAt: number | null };
 
 const session = (over: Partial<Session> & { id: string }): Session => ({ itemIds: [], branch: "b", state: "running", mode: "terminal", agent: "claude-code", herdrPane: null, terminal: null, device: "here", threadId: null, worktree: null, activity: null, summary: null, blocked: null, startedAt: 1, endedAt: null, lastEventAt: null, ...over });
+
+/** A row of code link's look back, as its list answers: History's pages come from there. */
+const reviewRow = (id: string, endedAt: number, over: Partial<ReviewRow> = {}): ReviewRow => ({ id, kind: "session", agent: "claude-code", title: "", tickets: [], asked: null, commits: 0, pr: null, said: null, where: "pane", threadId: null, resumable: false, startedAt: 1, endedAt, ...over });
 
 it("lists live sessions first, needs-you before the rest, then every ended one with when it ended", () => {
   const now = 10 * 24 * 3600_000;
@@ -300,8 +304,8 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   expect(opened).toHaveLength(6);
 });
 
-it("puts ended sessions in the archive, keeps one a cell shows, sends the archive only while it is open, and remembers the fold per project", async () => {
-  const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[] }[] = [];
+it("keeps an ended session a cell shows, answers History a page at a time with the rows behind it, says when it changes while open, and remembers the fold per project", async () => {
+  const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[]; posts: WindowPost[] }[] = [];
   const now = Date.now();
   const sessions = [
     session({ id: "live", herdrPane: "w1:p1", startedAt: 5 }),
@@ -318,9 +322,9 @@ it("puts ended sessions in the archive, keeps one a cell shows, sends the archiv
       super(ctx, "desktopSurfaces");
     }
     open(spec: (typeof opened)[number]["spec"]) {
-      const entry = { spec, states: [spec.initialState as WindowState] };
+      const entry = { spec, states: [spec.initialState as WindowState], posts: [] as WindowPost[] };
       opened.push(entry);
-      return { id: "s", capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus() {}, setState: (s: WindowState) => void entry.states.push(s), post() {}, close: () => spec.onClose() };
+      return { id: "s", capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus() {}, setState: (s: WindowState) => void entry.states.push(s), post: (m: WindowPost) => void entry.posts.push(m), close: () => spec.onClose() };
     }
   }
   class ReadyHerdr extends Service {
@@ -336,6 +340,8 @@ it("puts ended sessions in the archive, keeps one a cell shows, sends the archiv
     clientAttached = async () => false;
     panes = async () => [];
   }
+  // Code link's look back answers the pages; the plugin adds the window's rows behind them.
+  const asked: unknown[] = [];
   class FakeCodeLink extends Service {
     static provide = "codeLink";
     constructor(ctx: Context) {
@@ -345,10 +351,17 @@ it("puts ended sessions in the archive, keeps one a cell shows, sends the archiv
     links = () => [];
     repositoriesOf = () => [];
     repositoryFoldersOf = this.repositoriesOf;
+    review = {
+      list: (_projectId: string, opts: unknown) => {
+        asked.push(opts);
+        return { rows: [reviewRow("shown", now - 5000), reviewRow("lost", now - 60_000, { where: "panel" }), reviewRow("old", now - 30 * 24 * 3600_000, { title: "上个月的方案讨论", resumable: true })], next: null };
+      },
+      saidIn: async () => ({ rows: [], said: {} })
+    };
   }
-  const stateFile = path.join(dir, "archive-state.json");
+  const stateFile = path.join(dir, "history-page-state.json");
   const shown: Layout = { type: "split", id: "r", direction: "row", ratio: 0.5, a: { type: "leaf", id: "c1", sessionId: "live" }, b: { type: "leaf", id: "c2", sessionId: "shown" } };
-  const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "archive-settings.json") }], Contributions, FakeSurfaces, ReadyHerdr, FakeCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile }]] });
+  const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "history-page-settings.json") }], Contributions, FakeSurfaces, ReadyHerdr, FakeCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile }]] });
   fs.writeFileSync(stateFile, JSON.stringify({ layouts: { [w.project.id]: shown } }));
   for (const s of sessions) s.device = w.ctx.hub.deviceId;
   await settle();
@@ -358,17 +371,35 @@ it("puts ended sessions in the archive, keeps one a cell shows, sends the archiv
     win.spec.onMessage(m);
     await settle();
   };
-  // Live ones, an outside one among them, and the ended one a cell shows; the rest are only counted.
+  // Live ones, an outside one among them, and the ended one a cell shows; the rest are History's, not the state's.
   expect(win.states[0]!.sessions.map((s) => s.id)).toEqual(["live", "iterm", "shown"]);
-  expect(win.states[0]).toMatchObject({ archive: { count: 3, rows: null }, folded: false });
+  expect(win.states[0]).toMatchObject({ folded: false });
+  expect(win.states[0]).not.toHaveProperty("archive");
   expect(win.states[0]!.sessions.find((s) => s.id === "iterm")).toMatchObject({ where: "outside", terminal: "iTerm2", endedAt: null });
 
-  await say({ type: "archive", open: true });
-  expect(win.states.at(-1)!.archive.rows!.map((s) => s.id)).toEqual(["shown", "lost", "old"]);
+  // A page, with the session rows behind its coding sessions, and the closed terminals with the first page only.
+  await say({ type: "history", open: true });
+  await say({ type: "historyList", token: 1 });
+  const page = win.posts.find((p) => p.type === "historyPage")!;
+  expect(page).toMatchObject({ token: 1, terminals: [], agents: {} });
+  expect(page.page.rows.map((r) => r.id)).toEqual(["shown", "lost", "old"]);
+  expect(page.sessions.map((s) => s.id)).toEqual(["shown", "lost", "old"]);
   // A conversation keeps its name and can be taken up again by its agent.
-  expect(win.states.at(-1)!.archive.rows!.find((s) => s.id === "old")).toMatchObject({ conversation: "上个月的方案讨论", resumable: true });
-  await say({ type: "archive", open: false });
-  expect(win.states.at(-1)!.archive).toEqual({ count: 3, rows: null, terminals: null });
+  expect(page.sessions.find((s) => s.id === "old")).toMatchObject({ conversation: "上个月的方案讨论", resumable: true });
+  expect(asked.at(-1)).toEqual({ before: null, query: undefined });
+  const cursor = { session: { at: 1, id: "old" }, thread: null, idle: null };
+  await say({ type: "historyList", token: 2, before: cursor, query: "方案" });
+  expect(win.posts.filter((p) => p.type === "historyPage").at(-1)).toMatchObject({ token: 2, terminals: null });
+  expect(asked.at(-1)).toEqual({ before: cursor, query: "方案" });
+
+  // A change while History is open is said once per change; closed, it is not.
+  w.ctx.emit("codeLink/changed", w.project.id);
+  await settle();
+  expect(win.posts.filter((p) => p.type === "historyChanged")).toHaveLength(1);
+  await say({ type: "history", open: false });
+  w.ctx.emit("codeLink/changed", w.project.id);
+  await settle();
+  expect(win.posts.filter((p) => p.type === "historyChanged")).toHaveLength(1);
 
   // Folded for this project only, and still folded when the window opens again.
   await say({ type: "fold", folded: true });
@@ -376,10 +407,10 @@ it("puts ended sessions in the archive, keeps one a cell shows, sends the archiv
   expect(JSON.parse(fs.readFileSync(stateFile, "utf8")).folded).toEqual({ [w.project.id]: true });
   win.spec.onClose();
   await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
-  expect(opened[1]!.states[0]).toMatchObject({ folded: true, archive: { count: 3, rows: null } });
+  expect(opened[1]!.states[0]).toMatchObject({ folded: true });
 });
 
-it("keeps what ran in each pane the window shows before what it shows now, and finds archived conversations by what was said", async () => {
+it("keeps what ran in each pane the window shows before what it shows now, and answers a search of what was said with the rows behind the finds", async () => {
   const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[]; posts: WindowPost[] }[] = [];
   const now = Date.now();
   const sessions = [
@@ -390,8 +421,8 @@ it("keeps what ran in each pane the window shows before what it shows now, and f
     session({ id: "gone", herdrPane: "w9:p9", state: "ended", endedAt: now - 1000, startedAt: 5, prompted: true }),
     session({ id: "quiet", herdrPane: "w1:p1", state: "ended", endedAt: now - 2000, startedAt: 25 })
   ];
-  const said: Record<string, string[]> = { before: ["把侧栏分成两组"], first: ["随便聊聊"], gone: ["侧栏的分组再想想"] };
-  let reads = 0;
+  const said: Record<string, string> = { before: "把侧栏分成两组", gone: "侧栏的分组再想想" };
+  const searched: string[] = [];
   class FakeSurfaces extends Service {
     static provide = "desktopSurfaces";
     constructor(ctx: Context) {
@@ -425,9 +456,12 @@ it("keeps what ran in each pane the window shows before what it shows now, and f
     links = () => [];
     repositoriesOf = () => [];
     repositoryFoldersOf = this.repositoriesOf;
-    conversation = (_projectId: string, id: string) => {
-      reads++;
-      return said[id] ? { lines: said[id].map((text) => ({ who: "person" as const, text })), cut: false } : null;
+    review = {
+      list: () => ({ rows: [], next: null }),
+      saidIn: async (_projectId: string, query: string) => {
+        searched.push(query);
+        return { rows: [reviewRow("gone", now - 1000), reviewRow("before", now - 5000)], said };
+      }
     };
   }
   const stateFile = path.join(dir, "history-state.json");
@@ -445,18 +479,13 @@ it("keeps what ran in each pane the window shows before what it shows now, and f
   expect(Object.keys(win.states.at(-1)!.history)).toEqual(["w1:p1"]);
   expect(win.states.at(-1)!.history["w1:p1"]!.map((r) => [r.id, r.ranIn, r.pane])).toEqual([["first", "w1:p1", null], ["before", "w1:p1", null]]);
 
-  await say({ type: "archiveSearch", query: "侧栏" });
-  await vi.waitFor(() => expect(win.posts.some((p) => p.type === "archiveFound")).toBe(true));
-  expect(win.posts.filter((p) => p.type === "archiveFound")).toEqual([{ type: "archiveFound", query: "侧栏", ids: ["gone", "before"] }]);
-  // What each said is read once: a second search reads nothing again.
-  const read = reads;
-  await say({ type: "archiveSearch", query: "随便" });
-  await vi.waitFor(() => expect(win.posts.filter((p) => p.type === "archiveFound")).toHaveLength(2));
-  expect(win.posts.at(-1)).toEqual({ type: "archiveFound", query: "随便", ids: ["first"] });
-  expect(reads).toBe(read);
-  // An empty search asks nothing.
-  await say({ type: "archiveSearch", query: "  " });
-  expect(win.posts.filter((p) => p.type === "archiveFound")).toHaveLength(2);
+  // What was said is searched by code link's look back; the finds come back under the ask's token, with the window's rows for them.
+  await say({ type: "historySaid", token: 7, query: "侧栏" });
+  await vi.waitFor(() => expect(win.posts.some((p) => p.type === "historySaid")).toBe(true));
+  expect(searched).toEqual(["侧栏"]);
+  const found = win.posts.find((p) => p.type === "historySaid")!;
+  expect(found).toMatchObject({ token: 7, found: { rows: [{ id: "gone" }, { id: "before" }], said }, agents: {} });
+  expect(found.sessions.map((s) => [s.id, s.ranIn, s.endedAt])).toEqual([["before", "w1:p1", now - 5000], ["gone", "w9:p9", now - 1000]]);
 });
 
 it("says where an ended session's pane goes on: a terminal opened on it first, else the newest live session there", () => {
@@ -526,7 +555,7 @@ it("tells the window where the pane of an ended session a cell shows goes on, an
   ]);
 });
 
-it("never shows a state older than one already shown, so a pick from the archive keeps its cell when the archive closes", async () => {
+it("never shows a state older than one already shown, so a pick from History keeps its cell", async () => {
   const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[] }[] = [];
   const now = Date.now();
   const sessions = [session({ id: "live", herdrPane: "w1:p1", startedAt: 5 }), session({ id: "old", state: "ended", endedAt: now - 60_000, startedAt: 1, prompted: true })];
@@ -580,16 +609,14 @@ it("never shows a state older than one already shown, so a pick from the archive
   await settle();
   await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
   const win = opened[0]!;
-  win.spec.onMessage({ type: "archive", open: true });
-  await settle();
-  expect(win.states.at(-1)!.archive.rows!.map((s) => s.id)).toEqual(["old"]);
+  expect(win.states.at(-1)!.sessions.map((s) => s.id)).toEqual(["live"]);
 
-  // A state begins with the archive open; the archived session is picked into a cell and the archive closes.
+  // A state begins; the ended session is picked from History into a cell, and another state begins after that.
   held = [];
   w.ctx.emit("codeLink/changed", w.project.id);
   await settle();
   win.spec.onMessage({ type: "layout", layout: { ...one, b: { type: "leaf", id: "c2", sessionId: "old" } } });
-  win.spec.onMessage({ type: "archive", open: false });
+  win.spec.onMessage({ type: "refresh" });
   await settle();
   const [older, newer] = held;
   held = null;
@@ -598,9 +625,8 @@ it("never shows a state older than one already shown, so a pick from the archive
   await settle();
   older!();
   await settle();
-  // The newer state alone is shown: the archive closed, the picked session still in the state for its cell.
+  // The newer state alone is shown, the picked session in it for its cell.
   expect(win.states.length).toBe(before + 1);
-  expect(win.states.at(-1)!.archive.rows).toBeNull();
   expect(win.states.at(-1)!.sessions.map((s) => s.id)).toEqual(["live", "old"]);
 });
 
@@ -1406,7 +1432,7 @@ it("lists the assistant's conversations from a cache read when they change, neve
   expect(threadReads).toHaveLength(5);
 });
 
-it("records what a cell shows, asks it for a snapshot when a session begins on its pane, plays a session's part back, and keeps a closed terminal's recording for the archive", async () => {
+it("records what a cell shows, asks it for a snapshot when a session begins on its pane, plays a session's part back, and keeps a closed terminal's recording for History", async () => {
   const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[]; posts: WindowPost[] }[] = [];
   const started = Date.now() - 10_000;
   const sessions = [session({ id: "a", herdrPane: "w1:p1", startedAt: started, prompted: true })];
@@ -1453,6 +1479,7 @@ it("records what a cell shows, asks it for a snapshot when a session begins on i
     links = () => [];
     repositoriesOf = () => [];
     repositoryFoldersOf = () => [];
+    review = { list: () => ({ rows: sessions.filter((s) => s.endedAt !== null).map((s) => reviewRow(s.id, s.endedAt!)), next: null }), saidIn: async () => ({ rows: [], said: {} }) };
   }
   const stateFile = path.join(dir, "recording-state.json");
   const recordingsDir = path.join(dir, "recordings");
@@ -1497,8 +1524,8 @@ it("records what a cell shows, asks it for a snapshot when a session begins on i
   await say({ type: "detach", cell: "c1" });
   await vi.waitFor(() => expect(fs.readdirSync(path.join(recordingsDir, "w1_p1")).filter((n) => /^\d+-\d+\.rec$/.test(n))).toHaveLength(2));
   w.ctx.emit("codeLink/changed", w.project.id);
-  await say({ type: "archive", open: true });
-  await vi.waitFor(() => expect(win.states.at(-1)!.archive.rows?.find((s) => s.id === "b")).toMatchObject({ rawOutput: true, ranIn: "w1:p1" }));
+  await say({ type: "historyList", token: 1 });
+  expect(win.posts.find((p) => p.type === "historyPage")?.sessions.find((s) => s.id === "b")).toMatchObject({ rawOutput: true, ranIn: "w1:p1" });
   // Its part: what the pane painted from its start — the frame before the snapshot came, the snapshot, what followed —
   // after the whole-screen paint before it, which catches the screen up unseen.
   const replays = () => win.posts.filter((p) => p.type === "replay");
@@ -1516,14 +1543,17 @@ it("records what a cell shows, asks it for a snapshot when a session begins on i
   await vi.waitFor(() => expect(replays()).toHaveLength(3));
   expect(replays().at(-1)).toMatchObject({ id: "nobody", records: [], at: 0 });
 
-  // A plain terminal: shown, recorded, closed — and in the archive with its recording, to play back.
+  // A plain terminal: shown, recorded, closed — and in History with its recording, to play back.
   await say({ type: "newTerminal", terminalId: "t1", cwd: dir });
   await vi.waitFor(() => expect(win.states.at(-1)!.terminals.map((t) => t.pane)).toEqual(["w1:p2"]));
   await say({ type: "attach", cell: "c2", sessionId: "t1", cols: 80, rows: 24 });
   streams.at(-1)!.frame("shell", { full: true });
   await batched();
   await say({ type: "closeTerminal", terminalId: "t1" });
-  await vi.waitFor(() => expect(win.states.at(-1)!.archive.terminals?.map((t) => [t.id, t.pane, t.title])).toEqual([["t1", "w1:p2", path.basename(dir)]]));
+  await vi.waitFor(async () => {
+    await say({ type: "historyList", token: 2 });
+    expect(win.posts.filter((p) => p.type === "historyPage").at(-1)?.terminals?.map((t) => [t.id, t.pane, t.title])).toEqual([["t1", "w1:p2", path.basename(dir)]]);
+  });
   await vi.waitFor(() => expect(fs.readdirSync(path.join(recordingsDir, "w1_p2")).every((n) => /^\d+-\d+\.rec$/.test(n))).toBe(true));
   await say({ type: "replay", cell: "c2", id: "t1" });
   await vi.waitFor(() => expect(replays()).toHaveLength(4));
