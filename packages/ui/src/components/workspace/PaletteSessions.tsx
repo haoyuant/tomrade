@@ -79,7 +79,7 @@ export function PaletteSessions({ projectId, items, run, shift }: {
   const said = (r: BarRow) => (r.wait ? r.wait.text || t(ATTENTION_KEY[r.wait.kind]) : r.status === "done" ? r.outcome : r.activity);
   const agentName = (r: BarRow) => (r.agent ? (findEngine(engines, r.agent)?.title ?? r.agent) : null);
   const row = (r: BarRow) => (
-    <Command.Item key={r.key} value={`${name(r)} ${r.title} ${agentName(r) ?? ""} ${said(r) ?? ""} ${r.key}`} className="palette-row" data-session={r.key} onSelect={() => pick(r)}>
+    <Command.Item key={r.key} value={`${name(r)} ${r.title} ${agentName(r) ?? ""} ${said(r) ?? ""} ${r.key}`} className="palette-row" data-session={r.key} data-depth={r.depth || undefined} onSelect={() => pick(r)}>
       <span className="palette-mark"><StatusMark status={r.status} size={12} /></span>
       <span className="p-label">
         {name(r)}
