@@ -57,3 +57,16 @@ function titled(lines: string[]): { selected: null; allows: false } | null {
   const row = lines.slice(at + 1).map((l) => l.split(/\s{3,}/)).find((cells) => cells.some((c) => YES.test(c)) && cells.some((c) => NO.test(c)));
   return row ? { selected: null, allows: false } : null;
 }
+
+/** A line of a pane's screen that is furniture, not output: a rule, an empty input box, a shortcut hint. */
+const FURNITURE = /^[>❯$%#│|?]+$|^\? for shortcuts|^esc to interrupt|^\d+ tokens?\b|^ctrl\+/i;
+
+/** The last `n` lines of a pane's screen that say something, box drawing stripped. */
+export function tailLines(screen: string | null | undefined, n: number): string[] {
+  if (!screen) return [];
+  const lines = screen
+    .split("\n")
+    .map((line) => line.replace(/[─-╿]/g, " ").replace(/\s+$/, ""))
+    .filter((line) => line.trim() && !FURNITURE.test(line.trim()));
+  return lines.slice(-n);
+}

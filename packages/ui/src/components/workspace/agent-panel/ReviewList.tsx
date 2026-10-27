@@ -5,7 +5,7 @@ import type { ClosedTerminalRow } from "@tomradex/code-sessions";
 import type { MessageKey } from "~/lib/dicts";
 import { intlTag, timeAgo } from "~/lib/domain";
 import { keys } from "~/lib/queries";
-import { alsoKeys, dayLabel, groupByDay, outcomeLine, type OutcomeWords } from "~/lib/review";
+import { alsoKeys, dayLabel, groupByDay, nestRows, outcomeLine, type OutcomeWords } from "~/lib/review";
 import { useErrorToast } from "~/lib/toast";
 import { StatusMark } from "./SessionBar";
 
@@ -110,11 +110,11 @@ export function ReviewList({ projectId, source, words, agentName, omit, terminal
                     <span className="meta-txt dense">{[t("codeSessions.closedTerminal"), span(c)].join(" · ")}</span>
                   </button>
                 ))
-              : (d.rows as ReviewRow[]).map((r) => {
+              : nestRows(d.rows as ReviewRow[]).map((r) => {
                   const outcome = outcomeLine(r, say);
                   const also = alsoKeys(r);
                   return (
-                    <button key={r.id} type="button" className="ai-review-row" data-testid="ai-review-row" data-review={r.id} data-kind={r.kind} onClick={() => onPick(r)}>
+                    <button key={r.id} type="button" className="ai-review-row" data-testid="ai-review-row" data-review={r.id} data-kind={r.kind} data-depth={r.depth || undefined} onClick={() => onPick(r)}>
                       <span className="ai-review-row-title">
                         <StatusMark status={r.kind === "idle" ? "idle" : "done"} />
                         <span>{r.tickets[0] ? `${r.tickets[0].key} ${r.title}` : r.title || t("agentPanel.newThread")}</span>

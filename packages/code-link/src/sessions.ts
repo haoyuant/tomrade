@@ -17,7 +17,8 @@ import { hookCommand } from "./connect.js";
 import { GEMINI_AGENT, geminiHookPayload, geminiHooks } from "./gemini-hooks.js";
 import { classifyRemoteFailure, remoteFailureDetail } from "./remote.js";
 import { CODE_WORDS } from "./words.js";
-import type { CodeLinkStore, SessionBlock, SessionState, SessionView } from "./store.js";
+import type { CodeLinkStore, SessionAsk, SessionBlock, SessionState, SessionView } from "./store.js";
+import { permissionAsk, questionAsk, sameAsk } from "./ask.js";
 import { contract, errorMessage } from "@tomradex/contracts";
 
 /** How long a session may be silent before it counts as idle, and how long idle before it is over. */
@@ -116,7 +117,9 @@ export interface SessionsOptions {
   /** The session ended, however it ended — also when no scan follows (`end` called quiet). */
   onEnded?(session: SessionView): void;
   /** The session just turned to the person for something — an approval, an answer — and says what. */
-  onWaiting?(session: SessionView, activity: string): void;
+  onWaiting?(session: SessionView, ask: SessionAsk): void;
+  /** The person spoke to the session for the first time, and said this. */
+  onFirstPrompt?(session: SessionView, prompt: string): void;
   /** The agent stopped on a usage limit, lifting at `until` when it said; returns what the session's summary should say. */
   onLimit?(session: SessionView, until: number | null): string;
   /** The project's ticket key prefix (TOM), to read the ticket a branch names. */
@@ -307,6 +310,8 @@ export class Sessions {
   private readonly filing = new Map<string, { projectId: string; title: string; at: number }>();
   /** The herdr panes each session's hooks spoke from and did not end in, the latest last: one conversation can run in two. */
   private readonly panes = new Map<string, Set<string>>();
+  /** What Tomrade has to tell each session's agent, said with the next answer its hooks can carry. */
+  private readonly told = new Map<string, string>();
 
   constructor(
     private readonly ctx: Context,
@@ -548,7 +553,10 @@ export class Sessions {
     const named = said && !AGENT_NAME_TITLE.test(said) ? said : null;
     if (named && named !== session.title) patch.title = named;
     if (p.hook_event_name === "UserPromptSubmit") {
-      if (!session.prompted) patch.prompted = true;
+      if (!session.prompted) {
+        patch.prompted = true;
+        if (typeof p.prompt === "string") this.options.onFirstPrompt?.(session, p.prompt);
+      }
       const first = !session.title && !patch.title ? promptTitle(p.prompt) : null;
       if (first) patch.title = first;
     }
@@ -636,12 +644,13 @@ export class Sessions {
         Object.assign(patch, { state: "running", tool: true, activity: p.tool_name ? `${p.tool_name} failed` : "a tool failed" });
         break;
       case "PermissionRequest":
-        Object.assign(patch, { state: "waiting", activity: `needs your approval${p.tool_name ? `: ${p.tool_name}` : ""}` });
+        // herdr's read of a blocked pane names no tool: what a hook said of the same ask stays
+        Object.assign(patch, { state: "waiting", activity: null, ask: p.tool_name ? permissionAsk(p.tool_name, p.tool_input) : session.ask?.kind === "permission" ? session.ask : permissionAsk(null, undefined) });
         break;
       case "Notification":
-        if (p.notification_type === "permission_prompt") Object.assign(patch, { state: "waiting", activity: "needs your approval" });
+        if (p.notification_type === "permission_prompt") Object.assign(patch, { state: "waiting", activity: null, ask: session.ask?.kind === "permission" ? session.ask : permissionAsk(null, undefined) });
         else if (p.notification_type === "idle_prompt") Object.assign(patch, { state: "waiting", activity: null });
-        else if (p.notification_type === "agent_needs_input" || p.notification_type === "elicitation_dialog") Object.assign(patch, { state: "waiting", activity: "asking you something" });
+        else if (p.notification_type === "agent_needs_input" || p.notification_type === "elicitation_dialog") Object.assign(patch, { state: "waiting", activity: null, ask: questionAsk() });
         break;
       case "Stop": {
         const said = firstLine(p.last_assistant_message, 200);
@@ -670,18 +679,34 @@ export class Sessions {
       patch.state = "error";
       delete patch.summary;
     }
-    const turned = patch.state === "waiting" && !!patch.activity && !(session.state === "waiting" && session.activity === patch.activity);
+    const turned = patch.state === "waiting" && !!patch.ask && !(session.state === "waiting" && sameAsk(session.ask, patch.ask));
     this.touch(projectId, sessionId, patch);
-    if (turned) this.options.onWaiting?.(this.store.session(projectId, sessionId) ?? session, patch.activity!);
+    if (turned) this.options.onWaiting?.(this.store.session(projectId, sessionId) ?? session, patch.ask!);
     if (moment) this.options.onMoment?.(this.store.session(projectId, sessionId) ?? session, moment);
     if (patch.state === "ended") {
       this.release(sessionId);
       this.panes.delete(sessionId);
+      this.told.delete(sessionId);
       const ended = this.store.session(projectId, sessionId);
       if (ended) this.options.onEnded?.(ended);
       if (ended) this.options.onEnd?.(ended);
     }
+    const told = deny || p.herdr ? undefined : this.toldNow(sessionId, p.hook_event_name);
+    if (told) context = context ? `${context}\n\n${told}` : told;
     return deny ? { deny } : context ? { context } : {};
+  }
+
+  /** Something for the session's agent from the person's side, said with its next answer that can carry words. */
+  tell(sessionId: string, text: string): void {
+    this.told.set(sessionId, text);
+  }
+
+  /** What waits to be told, used up by an event whose answer carries context (a start, a prompt, after a tool). */
+  private toldNow(sessionId: string, event: string | undefined): string | undefined {
+    const text = this.told.get(sessionId);
+    if (!text || !["SessionStart", "UserPromptSubmit", "PostToolUse", "PostToolUseFailure"].includes(event ?? "")) return undefined;
+    this.told.delete(sessionId);
+    return text;
   }
 
   /**
@@ -713,7 +738,7 @@ export class Sessions {
   }
 
   /** Any sign of life, with what it says about the session. */
-  touch(projectId: string, sessionId: string, patch: { state?: SessionState; externalId?: string; herdrPane?: string; terminal?: string; endedAt?: number; tool?: boolean; summary?: string; activity?: string | null; blocked?: SessionBlock | null } = {}): void {
+  touch(projectId: string, sessionId: string, patch: { state?: SessionState; externalId?: string; herdrPane?: string; terminal?: string; endedAt?: number; tool?: boolean; summary?: string; activity?: string | null; ask?: SessionAsk | null; blocked?: SessionBlock | null } = {}): void {
     const session = this.store.session(projectId, sessionId);
     if (!session) return;
     const now = Date.now();
@@ -722,7 +747,9 @@ export class Sessions {
     const requestedState = blocked && patch.state !== "ended" ? "error" : patch.state;
     const state = session.state === "ended" && requestedState !== "ended" ? undefined : requestedState;
     // Turning to the person with something to answer counts as asking once; the same ask repeated by another hook does not.
-    const asks = patch.state === "waiting" && !!patch.activity && !(session.state === "waiting" && session.activity === patch.activity);
+    const asks = patch.state === "waiting" && !!patch.ask && !(session.state === "waiting" && sameAsk(session.ask, patch.ask));
+    // An ask lasts until the session moves on: any other word of where it stands takes it down.
+    const ask = patch.ask !== undefined ? patch.ask : patch.state !== undefined || patch.activity !== undefined ? null : undefined;
     this.store.patchSession(projectId, sessionId, {
       lastEventAt: now,
       ...(patch.tool ? { lastToolAt: now } : {}),
@@ -734,6 +761,7 @@ export class Sessions {
       ...(patch.endedAt ? { endedAt: patch.endedAt } : {}),
       ...(patch.summary !== undefined ? { summary: patch.summary } : {}),
       ...(patch.activity !== undefined ? { activity: patch.activity } : {}),
+      ...(ask !== undefined ? { ask } : {}),
       ...(patch.blocked !== undefined ? { blocked: patch.blocked } : {})
     });
     this.options.onChange(projectId);
@@ -743,7 +771,7 @@ export class Sessions {
   end(projectId: string, sessionId: string, state: "ended" | "lost" = "ended", quiet = false, why = "code link ended it"): void {
     const session = this.store.session(projectId, sessionId);
     if (!session || session.state === "ended") return;
-    this.store.patchSession(projectId, sessionId, { state, endedAt: Date.now(), activity: null });
+    this.store.patchSession(projectId, sessionId, { state, endedAt: Date.now(), activity: null, ask: null });
     this.said(session, `${state}: ${why}`);
     this.release(sessionId);
     this.panes.delete(sessionId);
