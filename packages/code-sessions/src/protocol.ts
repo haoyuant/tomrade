@@ -69,6 +69,9 @@ export interface ClosedTerminalRow {
   endedAt: number;
 }
 
+/** One entry of a pane's timeline: a session that ran in it, or manual work done there between sessions (raw output only). */
+export type TimelineEntry = { kind: "session"; id: string; from: number; to: number | null; session: SessionRow } | { kind: "manual"; id: string; from: number; to: number; bytes: number };
+
 /** One frame of a recording played back: when it was painted, the screen's size, whether it paints the whole screen (a snapshot the window took, `key`, after a reset). */
 export interface ReplayRecord {
   t: number;
@@ -235,8 +238,10 @@ export type WindowMessage =
   | { type: "answer"; sessionId: string; which: "allow" | "deny" }
   /** The last lines of every pane this window lists, for the overview: answered with `tails`. */
   | { type: "tails" }
-  /** The recording of an ended session or a closed terminal a cell shows: answered with `replay`. */
+  /** The recording of an ended session, a closed terminal or a stretch of manual work a cell shows: answered with `replay`. */
   | { type: "replay"; cell: string; id: string }
+  /** What happened in a pane from early to late, for the cell's timeline: answered with `timeline`. */
+  | { type: "timeline"; cell: string; pane: string }
   /** The cell's screen as asked for by `snapshot`: serialized by the window, as of the last frame it had drawn (`seq`). */
   | { type: "snapshot"; cell: string; token: number; seq: number; width: number; height: number; bytes: Uint8Array }
   | { type: "openWorktree"; sessionId: string }
@@ -285,5 +290,8 @@ export type WindowPost =
   /**
    * What was recorded of the session or terminal: the records before `at` bring the screen to its start and are not
    * shown. `cut`: its start did not fit; `clean`: the first record paints the whole screen. None recorded: no records.
+   * `keep`: how long and how much of a pane the recordings are kept, as the settings say.
    */
-  | { type: "replay"; cell: string; id: string; records: ReplayRecord[]; at: number; cut: boolean; clean: boolean; from: number; to: number };
+  | { type: "replay"; cell: string; id: string; records: ReplayRecord[]; at: number; cut: boolean; clean: boolean; from: number; to: number; keep: { days: number; mb: number } }
+  /** A pane's sessions and the manual work between them, oldest first; `keep` as for a replay. */
+  | { type: "timeline"; cell: string; pane: string; entries: TimelineEntry[]; keep: { days: number; mb: number } };

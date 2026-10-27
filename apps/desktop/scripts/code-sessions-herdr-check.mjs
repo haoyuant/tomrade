@@ -77,7 +77,7 @@ app.whenReady().then(async () => {
     const openStream = herdrService.terminal.bind(herdrService);
     herdrService.terminal = async (pane, opts) => {
       const stream = await openStream(pane, opts);
-      const seen = { pane, opened: Date.now(), closed: null, lastFrame: null, typed: [] };
+      const seen = { pane, mode: opts?.mode ?? "control", opened: Date.now(), closed: null, lastFrame: null, typed: [] };
       streams.push(seen);
       stream.onFrame(() => (seen.lastFrame = Date.now()));
       stream.onClose((reason) => (seen.closed = { at: Date.now(), reason }));
@@ -555,6 +555,21 @@ app.whenReady().then(async () => {
     win.close();
     await sleep(500);
     check("关窗后 pane 还在 herdr 里跑", JSON.parse(herdr("pane", "list")).result.panes.length >= 6);
+    // With no window, what the panes show is still recorded: herdr's observer watches each beside whoever holds it,
+    // never taking it over; the session's raw output has what was typed after the window closed.
+    const awayPane = sessions[2].pane;
+    const closedAt = Date.now();
+    await wait(async () => streams.some((st) => st.pane === awayPane && st.mode === "observe" && st.opened >= closedAt && !st.closed), 5000);
+    herdr("pane", "send-text", awayPane, "echo bgmark-$((40+2))");
+    herdr("pane", "send-keys", awayPane, "enter");
+    const recordedAway = await wait(async () => {
+      const raw = await ctx.serial("codeLink/raw-output", project.id, sessions[2].id);
+      // A frame paints only the cells that changed: the words are read with the escapes between them taken out.
+      const painted = (raw?.records ?? []).filter((r) => r.t >= closedAt).map((r) => Buffer.from(r.bytes).toString("utf8")).join("");
+      return painted.replace(/\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "").includes("bgmark-42");
+    }, 10000);
+    const controlledAway = streams.filter((st) => st.pane === awayPane && st.opened >= closedAt && st.mode !== "observe").length;
+    check("终端窗口关着时窗格照样录：herdr 只旁观（observe，不接管），关窗后敲的命令在会话的原始输出里", recordedAway && controlledAway === 0, JSON.stringify({ recordedAway, controlledAway, observers: streams.filter((st) => st.mode === "observe").length }));
 
     // Closed and opened again, and opened while another window is in front: it comes forward each time.
     const front = new BrowserWindow({ width: 1600, height: 1000, x: 0, y: 0, title: "app window stand-in" });
@@ -636,6 +651,58 @@ app.whenReady().then(async () => {
     const plainPane = saved()[0]?.pane;
     const typed = !!plainPane && (await wait(async () => herdr("pane", "read", plainPane, "--source", "recent", "--lines", "20").includes("plain-terminal-ok")));
     check("在新终端里输入的命令跑了", typed, `pane: ${plainPane}`);
+
+    // Typing into a cell while panes no cell shows print without pause: recorded through observers, then not (only
+    // what the window shows). Keystroke to the cell's screen, median of 15 each way; the observers' own cost from ps.
+    const latency = async () => {
+      await tjs(`window.__lat = new Promise((resolve) => { const rows = document.querySelector('.cs-cell[data-cell-terminal] .xterm-rows'); const before = rows.textContent; const t0 = performance.now(); const seen = new MutationObserver(() => { if (rows.textContent !== before) { seen.disconnect(); resolve(performance.now() - t0); } }); seen.observe(rows, { subtree: true, childList: true, characterData: true }); setTimeout(() => { seen.disconnect(); resolve(-1); }, 2000); }); true`);
+      tw.webContents.insertText("x");
+      return tjs("window.__lat");
+    };
+    const median = async () => {
+      await tjs(`document.querySelector('.cs-cell[data-cell-terminal] .xterm-helper-textarea').focus(); true`);
+      const runs = [];
+      for (let i = 0; i < 15; i++) {
+        runs.push(await latency());
+        await sleep(120);
+      }
+      herdr("pane", "send-keys", plainPane, "ctrl+u");
+      const ok = runs.filter((n) => n >= 0).sort((a, b) => a - b);
+      return { median: Math.round(ok[Math.floor(ok.length / 2)] ?? -1), p90: Math.round(ok[Math.floor(ok.length * 0.9)] ?? -1), lost: runs.length - ok.length };
+    };
+    const noisy = [];
+    for (let i = 0; i < 3; i++) {
+      const pane = await ctx.herdr.launch({ cwd, label: `noise ${i}`, command: "while true; do echo noise-$RANDOM-$RANDOM-$RANDOM; sleep 0.02; done", workspace: { key: project.id, label: project.name } });
+      const s = ctx.codeLink.store.createSession(project.id, { repoId: "check", branch: `noise-${i}`, itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, worktree: cwd });
+      ctx.codeLink.store.patchSession(project.id, s.id, { state: "running", herdrPane: pane.paneId });
+      noisy.push({ id: s.id, pane: pane.paneId });
+    }
+    ctx.emit("codeLink/changed", project.id);
+    const observing = () => noisy.filter((n) => streams.some((st) => st.pane === n.pane && st.mode === "observe" && !st.closed)).length;
+    const recordSettings = (background) => ctx.settings.set({ ...ctx.settings.get(), terminalRecording: { ...ctx.settings.get().terminalRecording, background } });
+    // Warmed up first; then not observed, observed, not observed again, so neither side gets the cold start.
+    recordSettings(false);
+    await wait(async () => observing() === 0, 5000);
+    await median();
+    const withoutBefore = await median();
+    recordSettings(true);
+    const watchedNoise = await wait(async () => observing() === noisy.length, 8000);
+    await sleep(1500);
+    const observerCost = execFileSync("ps", ["-Ao", "%cpu=,rss=,command="], { encoding: "utf8" }).split("\n").filter((l) => l.includes("terminal session observe")).map((l) => l.trim().split(/\s+/).slice(0, 2).map(Number));
+    const withObservers = await median();
+    recordSettings(false);
+    await wait(async () => observing() === 0, 5000);
+    const withoutAfter = await median();
+    recordSettings(true);
+    const baseline = Math.round((withoutBefore.median + withoutAfter.median) / 2);
+    console.log(`INFO: typing latency in a cell, ${noisy.length} panes printing without pause — observed: ${JSON.stringify(withObservers)} · not observed, before and after: ${JSON.stringify(withoutBefore)} ${JSON.stringify(withoutAfter)} · observers (%cpu, rss KB): ${JSON.stringify(observerCost)}`);
+    check("后台窗格在录时打字延迟不回退（中位数不比不录时多 15 ms）", watchedNoise && withObservers.median >= 0 && withObservers.median <= baseline + 15, JSON.stringify({ watchedNoise, withObservers, withoutBefore, withoutAfter }));
+    for (const n of noisy) {
+      ctx.codeLink.store.patchSession(project.id, n.id, { state: "ended", endedAt: Date.now() });
+      herdr("pane", "close", n.pane);
+    }
+    ctx.emit("codeLink/changed", project.id);
+    await sleep(500);
     // A plain terminal goes by what runs in it while it runs. Sent once the shell is back at its prompt: typed ahead,
     // zsh drops it.
     const foreground = () => JSON.parse(herdr("pane", "process-info", "--pane", plainPane)).result.process_info.foreground_processes.map((p) => p.cmdline);
@@ -669,6 +736,7 @@ app.whenReady().then(async () => {
     const back = await wait(async () => (await tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return !!cell?.querySelector('.xterm') && [...cell.querySelectorAll('.xterm-rows > div')].some((r) => r.textContent.includes('reopened-ok')); })()`)));
     check("关窗重开后，新终端在原来的格子里接回来", back);
     const plainChip = () => tjs(`document.querySelector('.cs-cell[data-cell-terminal] .cs-cell-bar [data-testid=cs-state]')?.dataset.state ?? null`);
+    const rowsOfManual = `[...(document.querySelector('.cs-cell[data-cell-terminal] .cs-pane-timeline .cs-replay')?.querySelectorAll('.xterm-rows > div') ?? [])].map((r) => r.textContent).join('\\n')`;
     check("普通终端里只有 shell 时，标题栏不显示状态", (await plainChip()) === null, String(await plainChip()));
     const shellHint = await wait(async () => tjs(`(() => { const hint = document.querySelector('.cs-cell[data-cell-terminal] [data-testid=cs-shell-hint]'); return !!hint?.offsetParent && hint.textContent.includes('在这里敲 claude 试试') && hint.textContent.includes('普通 shell 不算会话'); })()`), 8000);
     check("只有 shell 的格子下面一行提示「在这里敲 claude 试试 · 普通 shell 不算会话；agent 一启动就算」", shellHint, await tjs(`document.querySelector('.cs-cell[data-cell-terminal]')?.textContent?.slice(-200)`));
@@ -701,6 +769,26 @@ app.whenReady().then(async () => {
     ctx.emit("codeLink/changed", project.id);
     const plainAgain = await wait(async () => tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return !!cell && [...cell.querySelectorAll('.link-btn')].some((b) => b.textContent === '关闭终端') && cell.querySelector('.xterm')?.dataset.mark === 'same'; })()`));
     check("释放工单后，格子变回普通终端（不清空、不重连）", plainAgain);
+
+    // The pane's timeline over its cell: the sessions that ran there and the manual work between them; manual work
+    // reads as raw output only, with where it is kept and who can see it.
+    await tjs(`document.querySelector('.cs-cell[data-cell-terminal] [data-testid=cs-timeline-open]')?.click(); true`);
+    const timelineRows = () => tjs(`[...document.querySelectorAll('.cs-cell[data-cell-terminal] [data-testid=cs-timeline-entry]')].map((r) => [r.dataset.kind, r.textContent])`);
+    const timelineShown = await wait(async () => (await timelineRows()).some(([kind]) => kind === "manual") && (await timelineRows()).some(([kind]) => kind === "session"), 10000);
+    await tjs(`[...document.querySelectorAll('.cs-cell[data-cell-terminal] [data-testid=cs-timeline-entry]')].find((r) => r.dataset.kind === 'manual')?.click(); true`);
+    const manualReplay = ".cs-cell[data-cell-terminal] .cs-pane-timeline .cs-replay";
+    const manualOpen = await wait(async () => tjs(`!!document.querySelector(${JSON.stringify(manualReplay)}) && !document.querySelector(${JSON.stringify(manualReplay)}).hasAttribute('data-drawing')`), 10000);
+    const convoOff = await tjs(`document.querySelector('.cs-cell[data-cell-terminal] [data-testid=cs-timeline-convo]')?.disabled === true`);
+    const tags = await tjs(`document.querySelector('.cs-cell[data-cell-terminal] .cs-pane-timeline [data-testid=cs-raw-tags]')?.textContent ?? ''`);
+    const seekManual = (fraction) => tjs(`(() => { const s = document.querySelector('.cs-cell[data-cell-terminal] .cs-pane-timeline [data-testid=cs-replay-slider]'); if (!s) return false; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(s, Math.round(Number(s.max) * ${fraction})); s.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    let manualEcho = false;
+    for (let fraction = 1; manualOpen && fraction >= 0 && !manualEcho; fraction = Math.round((fraction - 0.1) * 10) / 10) {
+      if (!(await seekManual(fraction))) break;
+      manualEcho = await wait(async () => /plain-terminal-ok|pane-is-|reopened-ok/.test(await tjs(rowsOfManual)), 1500);
+    }
+    check("窗格时间线（格子 N · 目录 · 从早到晚）列出会话段和「手动操作」段；手动段只放原始输出，带隐私标签", timelineShown && manualOpen && convoOff && manualEcho && tags.includes("只存在这台电脑") && tags.includes("不进搜索"), JSON.stringify({ rows: await timelineRows(), manualOpen, convoOff, manualEcho, tags }));
+    fs.writeFileSync(path.join(shots, "code-sessions-pane-timeline.png"), (await tw.webContents.capturePage()).toPNG());
+    await tjs(`document.querySelector('.cs-cell[data-cell-terminal] [data-testid=cs-timeline-close]')?.click(); true`);
 
     // An agent started in the plain terminal from the hint's button, which types its command without running it: herdr
     // reads it, and the pane's bar shows how it stands, before any claim.

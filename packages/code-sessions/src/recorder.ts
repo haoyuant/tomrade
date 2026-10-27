@@ -18,16 +18,17 @@ import { errorMessage } from "@tomradex/contracts";
  */
 
 export const RecordingSettings = z.object({
-  enabled: z.boolean().default(true).meta({ title: "Record terminal output" }).describe("Keep what the Terminal window's panes show, so an ended session or a closed terminal can be played back as raw output. Only while a pane is shown in the window; the recordings never leave this computer."),
-  maxTotalMB: z.number().int().min(64).max(65536).default(1024).meta({ title: "Keep at most (MB)", advanced: true }).describe("The oldest recordings go once they take more than this together."),
-  keepDays: z.number().int().min(1).max(3650).default(14).meta({ title: "Keep for (days)", advanced: true }).describe("A recording older than this goes.")
+  enabled: z.boolean().default(true).meta({ title: "Record terminal output" }).describe("Keep everything Tomrade's terminal panes show, so a session, a stretch of manual work between sessions or a closed terminal can be played back as raw output. The recordings never leave this computer."),
+  background: z.boolean().default(true).meta({ title: "Also record panes the window does not show" }).describe("Panes no cell of the Terminal window shows are recorded too, by watching them without taking them over. Off: only what a cell shows is recorded."),
+  maxPaneMB: z.number().int().min(5).max(4096).default(50).meta({ title: "Keep at most per pane (MB)", advanced: true }).describe("A pane's oldest recordings go once its recordings take more than this."),
+  keepDays: z.number().int().min(1).max(3650).default(7).meta({ title: "Keep for (days)", advanced: true }).describe("A recording older than this goes; whichever limit comes first applies.")
 });
 export type RecordingSettings = z.infer<typeof RecordingSettings>;
 
 export const RECORDING_SECTION: SettingsSection<RecordingSettings> = {
   id: "terminalRecording",
   title: "Terminal recording",
-  description: "The Terminal window records what each pane shows while a cell shows it, so an ended session or a closed terminal can be played back as raw output. The recordings stay in this computer's data folder and are never synced.",
+  description: "Everything Tomrade's terminal panes show is recorded — the sessions and the manual work between them — so it can be played back as raw output. Recordings stay in this computer's data folder: never synced, never read by an agent, never searched. Each pane keeps 7 days or 50 MB, whichever comes first.",
   schema: RecordingSettings,
   defaults: RecordingSettings.parse({}),
   scope: "machine",
@@ -35,11 +36,12 @@ export const RECORDING_SECTION: SettingsSection<RecordingSettings> = {
   words: {
     zh: {
       title: "终端录制",
-      description: "终端窗口在格子显示某个窗格期间录下它的画面，结束的会话和关掉的终端可以用「原始输出」回放。录制只在终端窗口显示这个窗格时进行，保存在本机数据目录，不同步到远端。",
+      description: "录下 Tomrade 终端窗格里出现过的一切——会话，以及会话之间你自己的手动操作——可以用「原始输出」回放。录制只存在本机数据目录：不同步、agent 读不到、不进搜索。每个窗格保留 7 天或 50 MB，先到先删。",
       fields: {
-        enabled: { title: "录制终端输出", description: "录下终端窗口里窗格的画面，供结束后回放。只在终端窗口显示这个窗格时录制；录制不离开这台电脑。" },
-        maxTotalMB: { title: "最多保留（MB）", description: "所有录制加起来超过这个大小时，从最旧的开始删除。" },
-        keepDays: { title: "保留天数", description: "超过这个天数的录制会被删除。" }
+        enabled: { title: "录制终端输出", description: "录下 Tomrade 终端窗格里出现过的一切，会话、会话之间的手动操作和关掉的终端都能用原始输出回放。录制不离开这台电脑。" },
+        background: { title: "终端窗口没显示的窗格也录", description: "格子里没显示的窗格也录：只旁观，不接管它。关掉后只录格子里显示的。" },
+        maxPaneMB: { title: "每个窗格最多保留（MB）", description: "一个窗格的录制超过这个大小时，从它最旧的开始删除。" },
+        keepDays: { title: "保留天数", description: "超过这个天数的录制会被删除；和大小限制先到先删。" }
       }
     }
   }
@@ -187,6 +189,53 @@ export function sliceOf(records: ReplayRecord[], from: number, to: number, cap =
     total = list.reduce((n, r) => n + r.bytes.length, 0);
   }
   return { records: list, at, cut, clean };
+}
+
+/** A recorded frame as a pane's timeline reads it: when, how many bytes, and whether it repaints the whole screen. */
+export interface Activity {
+  t: number;
+  bytes: number;
+  full: boolean;
+}
+
+/** What the person did by hand in a pane, between its sessions: a stretch of its recording, and how much it painted. */
+export interface ManualStretch {
+  from: number;
+  to: number;
+  bytes: number;
+}
+
+/** An agent prints as it starts and as it quits, a moment before its hooks say so and after: that is the session's, not manual work. */
+export const SESSION_MARGIN_MS = 5_000;
+/** Quiet this long splits manual work in two: a terminal used in the morning and again after lunch is two stretches. */
+export const MANUAL_IDLE_MS = 30 * 60_000;
+/** Less than this painted is no manual work: a prompt redrawn, a cursor moved. */
+export const MANUAL_MIN_BYTES = 200;
+
+/**
+ * The stretches of a pane's recording outside its sessions: frames painted between them (whole-screen repaints are a
+ * cell attaching, not work), cut where the pane was quiet for MANUAL_IDLE_MS, oldest first.
+ */
+export function manualStretches(activity: Activity[], sessions: { from: number; to: number | null }[], now: number): ManualStretch[] {
+  const inSession = (t: number) => sessions.some((s) => t >= s.from - SESSION_MARGIN_MS && t <= (s.to ?? now) + SESSION_MARGIN_MS);
+  // Which gap between sessions a moment falls in: manual work in two gaps is two stretches.
+  const gapOf = (t: number) => sessions.filter((s) => s.from <= t).length;
+  const out: ManualStretch[] = [];
+  let open: (ManualStretch & { gap: number }) | null = null;
+  const done = () => {
+    if (open && open.bytes >= MANUAL_MIN_BYTES) out.push({ from: open.from, to: open.to, bytes: open.bytes });
+    open = null;
+  };
+  for (const a of activity) {
+    if (a.full || inSession(a.t)) continue;
+    const gap = gapOf(a.t);
+    if (open && (open.gap !== gap || a.t - open.to > MANUAL_IDLE_MS)) done();
+    if (!open) open = { from: a.t, to: a.t, bytes: 0, gap };
+    open.to = a.t;
+    open.bytes += a.bytes;
+  }
+  done();
+  return out;
 }
 
 /** One attached cell's recording: its open segment, and the frames held while the window takes a snapshot. */
@@ -355,9 +404,9 @@ export interface RecorderOptions {
 
 /**
  * The recordings on this machine: one folder per pane, the segments in it named by when they began and ended. The
- * index is read from the folder once, then kept as segments open, close and go; nothing here runs on a timer. The
- * oldest go when the total passes the setting's cap, and any older than the setting's days, whenever a segment
- * closes.
+ * index is read from the folder once, then kept as segments open, close and go; nothing here runs on a timer. A
+ * pane's oldest go when its recordings pass the setting's cap, and any older than the setting's days, whenever a
+ * segment closes.
  */
 export class Recorder {
   private index: Map<string, Segment[]> | null = null;
@@ -516,7 +565,7 @@ export class Recorder {
     return sliceOf(records, from, to, cap);
   }
 
-  /** The oldest recordings go: past the setting's days, then while the whole takes more than its cap. Open segments stay. */
+  /** Each pane's oldest recordings go: past the setting's days, then while the pane's take more than its cap. Open segments stay. */
   cleanup(): Promise<void> {
     if (this.cleaning) {
       this.cleanAgain = true;
@@ -537,19 +586,43 @@ export class Recorder {
   private async cleanOnce(): Promise<void> {
     if (!this.options.dir) return;
     const settings = this.options.settings();
-    const now = this.now();
-    const all = [...this.scan().values()].flat();
-    const closed = all.filter((s) => !s.open).sort((a, b) => a.start - b.start);
-    const oldest = now - settings.keepDays * 24 * 3600_000;
-    const stale = closed.filter((s) => (s.end ?? s.start) < oldest);
-    for (const seg of stale) await this.remove(seg);
-    const cap = settings.maxTotalMB * 1024 * 1024;
-    let total = all.reduce((n, s) => n + s.size, 0) - stale.reduce((n, s) => n + s.size, 0);
-    for (const seg of closed) {
-      if (total <= cap) break;
-      if (stale.includes(seg)) continue;
-      total -= seg.size;
-      await this.remove(seg);
+    const oldest = this.now() - settings.keepDays * 24 * 3600_000;
+    const cap = settings.maxPaneMB * 1024 * 1024;
+    for (const segments of [...this.scan().values()]) {
+      const closed = segments.filter((s) => !s.open).sort((a, b) => a.start - b.start);
+      let total = segments.reduce((n, s) => n + s.size, 0);
+      for (const seg of closed) {
+        if ((seg.end ?? seg.start) >= oldest && total <= cap) break;
+        total -= seg.size;
+        await this.remove(seg);
+      }
     }
+  }
+
+  /** When the pane's recorded frames came, their size, and whether each paints the whole screen; for its timeline. */
+  async activity(pane: string): Promise<Activity[]> {
+    const out: Activity[] = [];
+    for (const seg of this.segmentsOf(pane)) {
+      let data: Buffer;
+      try {
+        data = await fs.promises.readFile(seg.file);
+      } catch {
+        continue;
+      }
+      const nl = data.indexOf(0x0a);
+      let start = seg.start;
+      try {
+        start = (JSON.parse(data.subarray(0, Math.max(0, nl)).toString("utf8")) as SegmentHeader).startedAt ?? seg.start;
+      } catch {
+        // its name says when it began
+      }
+      for (let at = nl + 1; nl >= 0 && at + RECORD_HEAD <= data.length; ) {
+        const len = data.readUInt32BE(at + 9);
+        if (at + RECORD_HEAD + len > data.length) break;
+        out.push({ t: start + data.readUInt32BE(at), bytes: len, full: !!(data.readUInt8(at + 8) & FLAG_FULL) });
+        at += RECORD_HEAD + len;
+      }
+    }
+    return out.sort((a, b) => a.t - b.t);
   }
 }
