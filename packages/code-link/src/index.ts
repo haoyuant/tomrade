@@ -34,7 +34,7 @@ export { classifyRemoteFailure, probeRemote, readRemoteIdentity, remoteFailureDe
 export { githubPull, readPull, type ForgePull } from "./forge.js";
 export { decide, type Decision, type Evidence, type PrState, type RulePolicy } from "./rules.js";
 export { DEFAULT_BRANCH_TEMPLATE, SLUG_MAX, branchFor, deliveredKeys, keysInText, parseBranch, slugify, subjectKey, subjectPr, titleSlug, usableSlug } from "./keys.js";
-export { Starter, type StartGate, type StartMode, type StartOptions, type StartResult, type WorkdirCause } from "./start.js";
+export { Starter, apartBranch, type StartGate, type StartMode, type StartOptions, type StartResult, type WorkdirCause } from "./start.js";
 export { Handoff, HANDOFF_PROMPT, type HandoffRefusal, type HandoffResult, type HandoffView } from "./handoff.js";
 export { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
 export { Sessions, HERDR_PANE_HEADER, HERDR_YIELD_MS, TERMINAL_HEADER, WT_HEADER, WINDOWS_TERMINAL, HOOK_EVENTS, describeTool, dshHooksSettings, hooksSettings, piExtension, sessionContext, writeGeminiHome, END_AFTER_MS, IDLE_AFTER_MS, type SessionMoment, type SessionsOptions } from "./sessions.js";
@@ -52,4 +52,5 @@ export { recordOf, resumeCommand } from "./titles.js";
 export { Review, REVIEW_PAGE, cutByTicket, mergePage, threadLines, ticketOutcome, type ReviewCursor, type ReviewPage, type ReviewPr, type ReviewRow, type ReviewSaid, type ReviewSegment, type ReviewSource, type ReviewTicket, type ReviewView } from "./review.js";
 export type { RawOutput } from "./service.js";
 export { inputsOf, SessionPanel, type AnswerResult, type SessionPanelView } from "./panel.js";
+export { ticketTimeline, type TicketTimeline, type TimelineEntry, type TimelinePlace, type TimelineStop } from "./timeline.js";
 export { PROMPT_LINES, promptOnScreen } from "./prompt.js";

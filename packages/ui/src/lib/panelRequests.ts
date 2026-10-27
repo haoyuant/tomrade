@@ -5,7 +5,8 @@ export type PanelRequest =
   | { kind: "newThread" }
   /** A new conversation, sent these words at once. */
   | { kind: "startWith"; text: string }
-  | { kind: "openSession"; sessionId: string }
+  /** `say`: with the keyboard in its input, to say something to it. */
+  | { kind: "openSession"; sessionId: string; say?: boolean }
   | { kind: "toggleBar" }
   | { kind: "nextWaiting" }
   /** The look back on ended conversations: its list, or one of them opened — only `itemId`'s stretches when given. */

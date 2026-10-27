@@ -119,6 +119,9 @@ const CardFace = memo(function CardFace({
 }) {
   const { t } = useI18n();
   const customs = fields.map((id) => fieldById.get(id)).filter((def): def is FieldDef => !!def && !def.builtin && item.fields[def.id] !== undefined);
+  // the session at work on it comes as code link's badge, said as a line of its own rather than a tag
+  const session = marks.find((b) => b.id === "session");
+  const tags = session ? marks.filter((b) => b !== session) : marks;
 
   return (
     <div
@@ -164,13 +167,18 @@ const CardFace = memo(function CardFace({
           <span className="card-date">{timeAgo(item.updatedAt)}</span>
         </span>
         <span className="card-title">{item.title}</span>
-        {starting && (
+        {starting ? (
           <span className="card-starting" role="status">
             <span className="start-starting-mark" aria-hidden="true" />
             {t("codeLink.startingLine", { agent: starting })}
           </span>
+        ) : session && (
+          <span className="card-session" data-testid="card-session" title={session.title}>
+            <span className="card-session-mark" aria-hidden="true" />
+            {session.label}
+          </span>
         )}
-        {(epicName || item.labels.length > 0 || marks.length > 0 || customs.length > 0) && (
+        {(epicName || item.labels.length > 0 || tags.length > 0 || customs.length > 0) && (
           <span className="card-foot">
             {epicName && <span className="card-epic">{epicName}</span>}
             {item.labels.map((l) => (
@@ -178,7 +186,7 @@ const CardFace = memo(function CardFace({
                 {l}
               </Tag>
             ))}
-            {marks.map((b) => (
+            {tags.map((b) => (
               <Tag key={b.id} tone={b.tone ?? "neutral"} title={b.title}>
                 {/* the dependency plugin's one word, said in the person's language */}
                 {b.id === "blocked" ? t("card.blockedBadge") : b.label}

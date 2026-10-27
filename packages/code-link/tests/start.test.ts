@@ -869,7 +869,11 @@ describe("starting a ticket", () => {
     expect(section.rows.find((r) => r.label === "Pull request")).toMatchObject({ value: "#12 · open", href: "https://github.com/acme/app/pull/12" });
     expect(section.rows.find((r) => r.label === "Session")?.value).toMatch(/^idle · run by Tomrade/);
     expect(section.rows.find((r) => r.label === "Worktree")).toMatchObject({ value: result.worktree, command: "code-link.open-terminal" });
-    expect((await ctx.contributions.badgesFor(project.id))[item.id]).toEqual([{ id: "pr", label: "PR #12", tone: "strong", title: "https://github.com/acme/app/pull/12" }]);
+    // the session at work says so on the card, beside the pull request
+    expect((await ctx.contributions.badgesFor(project.id))[item.id]).toEqual([
+      { id: "session", label: expect.stringMatching(/ at work · in the assistant · \d+ min$/), tone: "faint" },
+      { id: "pr", label: "PR #12", tone: "strong", title: "https://github.com/acme/app/pull/12" }
+    ]);
     // An agent elsewhere (an IM conversation) reads the same code.
     const read = await ctx.tools.execute("get_code_links", { key: item.key.toLowerCase() }, { by: "ai:test", projectId: project.id });
     expect(read).toMatchObject({

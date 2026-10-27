@@ -40,6 +40,7 @@ import { AUTHOR, currentLinks, deliveryMerged, GitScan, LANDED_ELSEWHERE, primar
 import { Sessions, type SessionMoment } from "./sessions.js";
 import { CODE_WORDS, type CodeWords } from "./words.js";
 import { Starter, type StartGate, type StartOptions, type StartResult } from "./start.js";
+import { ticketTimeline, type TicketTimeline } from "./timeline.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type Readiness, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
 import { readSnapshot, saveSnapshot, snapshotFile } from "./snapshots.js";
 import { Review, type ReviewCursor, type ReviewPage, type ReviewSaid, type ReviewView } from "./review.js";
@@ -229,6 +230,8 @@ declare module "@tomradex/ipc" {
     /** Show a session's herdr terminal in Tomrade's Terminal window; false when no window can. */
     "codeLink.showSession": (projectId: string, sessionId: string) => boolean;
     "codeLink.startLoose": (projectId: string, input: { engine?: string; prompt: string }) => StartResult;
+    "codeLink.timeline": (projectId: string, itemId: string) => TicketTimeline;
+    "codeLink.stopSession": (projectId: string, sessionId: string) => boolean;
     /** A session's conversation from its agent's own record: its end, or the stretch `before` an earlier read's start. */
     "codeLink.conversation": (projectId: string, sessionId: string, before?: number) => RecordRead | null;
     /** What the assistant panel can do with a terminal session: type into its pane, answer its permission prompt. */
@@ -732,6 +735,8 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.terminalWindow", (projectId) => ctx.codeLink.terminalWindow(projectId));
       ctx.ipc.handle("codeLink.showSession", (projectId, sessionId) => ctx.codeLink.showSession(projectId, sessionId));
       ctx.ipc.handle("codeLink.startLoose", (projectId, input) => ctx.codeLink.startLoose(projectId, input));
+      ctx.ipc.handle("codeLink.timeline", (projectId, itemId) => ctx.codeLink.timeline(projectId, itemId));
+      ctx.ipc.handle("codeLink.stopSession", (projectId, sessionId) => ctx.codeLink.stopSession(projectId, sessionId));
       ctx.ipc.handle("codeLink.conversation", (projectId, sessionId, before) => ctx.codeLink.conversation(projectId, sessionId, before));
       ctx.ipc.handle("codeLink.sessionPanel", (projectId, sessionId) => ctx.codeLink.sessionPanel(projectId, sessionId));
       ctx.ipc.handle("codeLink.sessionSay", (projectId, sessionId, text) => ctx.codeLink.sessionSay(projectId, sessionId, text));
@@ -1124,6 +1129,44 @@ export class CodeLink extends Service implements CodeLinkReader {
   startLoose(projectId: string, input: { engine?: string; prompt: string }): Promise<StartResult> {
     if (!input.prompt.trim()) return Promise.resolve({ ok: false, gate: "prompt", message: "say what to do first" });
     return this.starter.startLoose(projectId, { ...input, cwd: this.repositoryFoldersOf(projectId)[0]?.path ?? os.homedir() });
+  }
+
+  /** The ticket's conversations by when each began, what it delivered, and two at work in one folder. */
+  async timeline(projectId: string, itemId: string): Promise<TicketTimeline> {
+    const sessions = [...this.store.sessions(projectId, { itemId }), ...this.store.movedOn(projectId, itemId)];
+    const links = currentLinks(this.store, projectId, itemId);
+    return ticketTimeline(sessions, links, await this.filesChanged(projectId, primaryOf(links)));
+  }
+
+  /** Files changed by a branch at a commit: asked of git once, not on every session event the ticket page refreshes on. */
+  private readonly filesAt = new Map<string, number | null>();
+
+  /** How many files the ticket's branch changes against its default branch, or its merge did; null where git cannot say. */
+  private async filesChanged(projectId: string, link: CodeLinkView | null): Promise<number | null> {
+    const repo = link ? this.ctx.repos.get(projectId, link.repoId) : null;
+    const checkout = repo ? this.ctx.repos.checkout(repo.remote).checkout : null;
+    if (!link || !repo || !checkout || !fs.existsSync(checkout)) return null;
+    const args = link.mergedSha ? ["show", "--name-only", "--format=", link.mergedSha] : link.branch ? ["diff", "--name-only", `${repo.defaultBranch}...${link.branch}`] : null;
+    if (!args) return null;
+    const key = `${checkout}\0${args.join(" ")}\0${link.headSha ?? ""}`;
+    if (this.filesAt.has(key)) return this.filesAt.get(key)!;
+    const out = await this.git(args, { cwd: checkout, ok: true }).catch(() => null);
+    const files = out && out.code === 0 ? out.stdout.split("\n").filter(Boolean).length : null;
+    if (this.filesAt.size > 500) this.filesAt.clear();
+    this.filesAt.set(key, files);
+    return files;
+  }
+
+  /** Stops a session: its run here, and the pane its terminal is; it ends with what it said so far. False when it was not running. */
+  async stopSession(projectId: string, sessionId: string): Promise<boolean> {
+    const session = this.store.session(projectId, sessionId);
+    if (!session || session.state === "ended" || session.state === "lost") return false;
+    const agent = this.ctx.get("agent");
+    if (agent && session.threadId) for (const active of agent.activeRuns()) if (active.thread.id === session.threadId) agent.cancel(active.run.id);
+    if (session.herdrPane) await this.ctx.get("terminals")?.closePane(session.herdrPane).catch(() => false);
+    this.store.patchSession(projectId, session.id, { state: "ended", endedAt: Date.now(), activity: null });
+    this.notify(projectId);
+    return true;
   }
 
   /** A Start stuck on a step that never answers (git waiting on a credential prompt, say) fails with the reason instead. */

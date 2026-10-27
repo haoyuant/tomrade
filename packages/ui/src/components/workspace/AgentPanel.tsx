@@ -144,6 +144,8 @@ export function AgentPanel({
   const [openSessionIn, setOpenSessionIn] = useState<{ projectId: string; id: string } | null>(null);
   const openSession = openSessionIn?.projectId === projectId ? openSessionIn.id : null;
   const setOpenSession = useCallback((id: string | null) => setOpenSessionIn(id ? { projectId, id } : null), [projectId]);
+  // a session opened to say something to it (its ticket's Start): its input takes the keyboard
+  const [sayTo, setSayTo] = useState<string | null>(null);
   // The look back on ended conversations takes the thread's place too: its list, or one of them opened. Kept with its project.
   const [reviewIn, setReviewIn] = useState<{ projectId: string; focus: ReviewFocus | null } | null>(null);
   const review = reviewIn?.projectId === projectId ? reviewIn : null;
@@ -659,7 +661,7 @@ export function AgentPanel({
   latestRequest.current = (request) => {
     if (request.kind === "newThread") latestBar.current.newThread();
     else if (request.kind === "startWith") void startWith(request.text);
-    else if (request.kind === "openSession") { setReviewIn(null); setOpenSession(request.sessionId); }
+    else if (request.kind === "openSession") { setReviewIn(null); setOpenSession(request.sessionId); setSayTo(request.say ? request.sessionId : null); }
     else if (request.kind === "toggleBar") chooseBarMode(barMode === "rail" ? "cards" : "rail");
     else if (request.kind === "review") openReview(request.sessionId || request.threadId ? { sessionId: request.sessionId, threadId: request.threadId, itemId: request.itemId } : null);
     else latestNext.current();
@@ -734,6 +736,7 @@ export function AgentPanel({
           backBlocked={sessionHandoff.data?.terminal?.live ? t("handoff.backBlocked", { agent: findEngine(engines.data, shownSession.agent)?.title ?? shownSession.agent }) : undefined}
           onClose={() => setOpenSession(null)}
           onAnswered={() => waitQueue.current.answered(`session:${shownSession.id}`)}
+          focusSay={sayTo === shownSession.id}
         />
       ) : (
       <>

@@ -134,6 +134,7 @@ export const keys = {
     links: (projectId: string, itemId?: string) => ["codeLink", projectId, "links", itemId ?? ""] as const,
     sessions: (projectId: string, itemId?: string) => ["codeLink", projectId, "sessions", itemId ?? ""] as const,
     recentSessions: (projectId: string) => ["codeLink", projectId, "recentSessions"] as const,
+    timeline: (projectId: string, itemId: string) => ["codeLink", projectId, "timeline", itemId] as const,
     handoff: (projectId: string, threadId: string) => ["codeLink", projectId, "handoff", threadId] as const,
     deliveries: (projectId: string, itemId: string) => ["codeLink", projectId, "deliveries", itemId] as const,
     repos: (projectId: string) => ["codeLink", projectId, "repos"] as const,

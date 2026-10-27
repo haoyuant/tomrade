@@ -56,14 +56,17 @@ export function StartTicket(props: StartTicketProps) {
   // a start with last time's choices, or a way from ▾: no dialog unless something stops it or needs the person
   const [quick, setQuick] = useState(false);
   const [way, setWay] = useState<StartWay | null>(null);
+  // "Start another" beside a session at work: in a folder and on a branch of its own
+  const [apart, setApart] = useState(false);
   const [task, setTask] = useState<string | undefined>(undefined);
-  const { showThread } = useAgentDock();
+  const { showThread, setAiOpen } = useAgentDock();
   const defaults = useStartDefaults();
   useEffect(
     () =>
-      onStartRequest(item.id, (mode, offered) => {
+      onStartRequest(item.id, (mode, offered, beside) => {
         setRequested(mode);
         setTask(offered);
+        setApart(!!beside);
         setOpen(true);
       }),
     [item.id]
@@ -99,15 +102,19 @@ export function StartTicket(props: StartTicketProps) {
   const ways = quickEngine ? startWays({ engines: engines.data, capability: general ? "general" : "code", primary: quickEngine.id, panes: terminalWindow, quick: quickWay }) : [];
   const wayName = (w: StartWay) => t(WAY_NAME[w.kind], { agent: findEngine(engines.data, w.engine)?.title ?? w.engine });
   const wayNote = (w: StartWay) => (quickWay && wayKey(w) === wayKey(quickWay) ? t("codeLink.wayDefault", { note: t(WAY_NOTE[w.kind]) }) : t(WAY_NOTE[w.kind]));
-  const openDialog = (asQuick: boolean, chosen: StartWay | null = null) => {
+  const openDialog = (asQuick: boolean, chosen: StartWay | null = null, beside = false) => {
     setQuick(asQuick);
     setWay(chosen);
+    setApart(beside);
     setOpen(true);
   };
-  const look = () => {
+  // The session at work, in the assistant panel: a terminal one as its session view (its input taking the keyboard, to say something), one run here as its conversation.
+  const inPanel = (say: boolean) => {
     if (!live) return;
-    if (live.herdrPane) void invoke("codeLink.showSession", projectId, live.id).catch(logQuietly("codeLink.showSession"));
-    else if (live.threadId) showThread(live.threadId);
+    if (live.mode === "terminal") {
+      setAiOpen(true);
+      askPanel({ kind: "openSession", sessionId: live.id, say });
+    } else if (live.threadId) showThread(live.threadId);
   };
   const liveWho = live ? (findEngine(engines.data, live.agent)?.title ?? live.agent) : "";
   return (
@@ -131,9 +138,9 @@ export function StartTicket(props: StartTicketProps) {
             >
               <MenuHead title={t("codeLink.liveTitle", { agent: liveWho })} />
               {(live.summary || live.activity) && <p className="meta-txt dense menu-note" data-testid="start-live-said">{live.activity ?? live.summary}</p>}
-              <MenuActionItem icon={<Icon name="i-eye" size={13} />} name={t("codeLink.liveLook")} onSelect={look} />
-              {live.threadId && !live.herdrPane && <MenuActionItem icon={<Icon name="i-send" size={13} />} name={t("codeLink.liveSay")} onSelect={() => showThread(live.threadId!)} />}
-              <MenuActionItem icon={<Icon name="i-plus" size={13} />} name={t("codeLink.liveAnother")} onSelect={() => openDialog(false)} />
+              <MenuStackItem mark={<Icon name="i-eye" size={13} />} name={t("codeLink.liveLook")} sub={t("codeLink.liveLookNote")} onSelect={() => inPanel(false)} />
+              {(live.mode === "terminal" || live.threadId) && <MenuStackItem mark={<Icon name="i-send" size={13} />} name={t("codeLink.liveSay")} sub={t("codeLink.liveSayNote")} onSelect={() => inPanel(true)} />}
+              <MenuStackItem mark={<Icon name="i-plus" size={13} />} name={t("codeLink.liveAnother")} sub={t("codeLink.liveAnotherNote")} onSelect={() => openDialog(false, null, true)} />
             </Menu>
             <button type="button" className="btn btn-primary split-more" data-testid="start-ticket" title={t("codeLink.chooseHow")} aria-label={t("codeLink.chooseHow")} onClick={() => openDialog(false)}>
               <Icon name="i-sliders" size={13} />
@@ -170,11 +177,13 @@ export function StartTicket(props: StartTicketProps) {
           requested={requested}
           quick={quick}
           way={way}
+          apart={apart}
           task={task}
           onClose={() => {
             setOpen(false);
             setQuick(false);
             setWay(null);
+            setApart(false);
             setRequested(null);
             setTask(undefined);
           }}
@@ -193,8 +202,9 @@ function StartTicketDialog({
   requested,
   quick,
   way,
+  apart,
   task
-}: StartTicketProps & { onClose: () => void; requested?: "run" | "terminal" | null; quick?: boolean; way?: StartWay | null; task?: string }) {
+}: StartTicketProps & { onClose: () => void; requested?: "run" | "terminal" | null; quick?: boolean; way?: StartWay | null; apart?: boolean; task?: string }) {
   const { t } = useI18n();
   const toast = useToast();
   const qc = useQueryClient();
@@ -378,7 +388,7 @@ function StartTicketDialog({
       .mutateAsync(
         first
           ? { itemId: first.itemId, mode, engine: engineId, options, ...(permissionMode ? { permissionMode } : {}), then: item.id }
-          : { itemId: item.id, mode, engine: engineId, options, ...(general ? { playbook } : {}), ...(permissionMode ? { permissionMode } : {}), ...(allowBlocked ? { allowBlocked } : {}), ...(releaseBranch ? { releaseBranch } : {}), ...(task ? { message: task } : {}) }
+          : { itemId: item.id, mode, engine: engineId, options, ...(general ? { playbook } : {}), ...(permissionMode ? { permissionMode } : {}), ...(allowBlocked ? { allowBlocked } : {}), ...(releaseBranch ? { releaseBranch } : {}), ...(task ? { message: task } : {}), ...(apart ? { apart } : {}) }
       )
       .then((result) => (result.ok ? launched(result) : failed({ message: result.message, failure: result })))
       .catch((err: unknown) => failed({ message: readableError(err) }))
@@ -410,6 +420,11 @@ function StartTicketDialog({
       <DialogHead title={title} />
       <DialogBody>
         <div className="stack-4" data-testid="start-dialog">
+          {apart && (
+            <p className="meta-txt" role="note" data-testid="start-apart">
+              {t("codeLink.apartNote")}
+            </p>
+          )}
           {task && (
             <p className="meta-txt" role="note" data-testid="start-task">
               {t("codeLink.startTask", { task })}

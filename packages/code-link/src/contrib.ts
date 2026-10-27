@@ -146,9 +146,17 @@ export function contribute(ctx: Context, host: ContribHost): void {
       const current = self.store.currentDeliveries(projectId);
       const waiting = new Map<string, string>();
       const stuck = new Map<string, string>();
+      // The session at work on a ticket, said on its card in a line: who, where, for how long.
+      const working = new Map<string, string>();
+      const engines = home.get("agent");
       for (const s of self.store.sessions(projectId, { live: true })) {
         for (const id of s.itemIds) {
           if (current.get(id)?.sequence !== s.delivery) continue;
+          if ((s.state === "running" || s.state === "idle") && !working.has(id)) {
+            const minutes = Math.max(1, Math.round((Date.now() - s.startedAt) / 60_000));
+            const where = s.mode === "headless" ? w("badgeSessionPanel") : s.herdrPane ? w("badgeSessionPane") : s.terminal ? w("badgeSessionTerminal", { app: s.terminal.replace(/\.app$/, "") }) : w("badgeSessionPane");
+            working.set(id, w("badgeSession", { agent: engines?.engineOf(s.agent)?.title ?? s.agent, where, time: minutes < 60 ? w("badgeSessionMinutes", { n: minutes }) : w("badgeSessionHours", { n: Math.round(minutes / 60) }) }));
+          }
           if (s.state === "waiting") waiting.set(id, w("badgeWaitingTitle"));
           if (s.state !== "error") continue;
           const summary = s.summary ?? w("stopped");
@@ -164,8 +172,9 @@ export function contribute(ctx: Context, host: ContribHost): void {
         const delivery = current.get(item.id);
         const links = delivery ? allLinks.filter((link) => link.delivery === delivery.sequence) : [];
         const flag = flags.get(item.id);
-        if (!links.length && !flag && !waiting.has(item.id) && !stuck.has(item.id)) continue;
+        if (!links.length && !flag && !waiting.has(item.id) && !stuck.has(item.id) && !working.has(item.id)) continue;
         const badges: Badge[] = [];
+        if (working.has(item.id)) badges.push({ id: "session", label: working.get(item.id)!, tone: "faint" });
         if (waiting.has(item.id)) badges.push({ id: "waiting", label: w("badgeWaiting"), tone: "strong", title: waiting.get(item.id) });
         if (stuck.has(item.id)) badges.push({ id: "stuck", label: w("badgeStuck"), tone: "strong", title: stuck.get(item.id) });
         if (flag) badges.push({ id: "mismatch", label: w("badgeMismatch"), tone: "strong", title: flag.reason });
