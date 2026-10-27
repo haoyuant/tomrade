@@ -10,10 +10,11 @@ import { invoke } from "~/lib/api";
 import { findEngine, useUnarchiveThread } from "~/lib/agent";
 import { useStartTicket } from "~/lib/codeLink";
 import { workParts } from "~/lib/convoFold";
-import { intlTag } from "~/lib/domain";
+import { intlTag, STATUS } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { keys } from "~/lib/queries";
 import { alsoKeys, dayLabel, groupByDay, landingSegment, openAtFirst, outcomeLine, segmentKind, segmentSummary, segmentWork, stretchesOf, type OutcomeWords } from "~/lib/review";
+import { markLines, returns, segmentFacts, type MarkWord } from "~/lib/sessionSegments";
 import { useErrorToast, useToast } from "~/lib/toast";
 import { StatusMark } from "./SessionBar";
 
@@ -162,13 +163,18 @@ function Opened({ projectId, focus, agentName, span, where, say, onOpenThread }:
   // The stretches: open as the way in says (all from the list, only the ticket's from its page), landing on the ticket's last.
   const segments = useMemo(() => {
     let key = 0;
-    return (data?.segments ?? []).map((s) => {
+    const markSay: MarkWord = (k, vars) => t(`review.${k}`, vars);
+    const again = returns(data?.segments ?? []);
+    return (data?.segments ?? []).map((s, i) => {
       const work = segmentWork(s.lines);
       const lines: ConvoLine[] = s.lines.map((l) => ({ key: key++, who: l.who, text: l.text, ...(l.detail ? { detail: l.detail } : {}) }));
-      return { ...s, lines, work, kind: segmentKind(work), summary: segmentSummary(s.lines) };
+      return { ...s, lines: markLines(lines, s.key, again[i]!, markSay), work, kind: segmentKind(work), summary: segmentSummary(s.lines) };
     });
-  }, [data]);
-  const wanted = focus.itemId ?? null;
+  }, [data, t]);
+  // A ticket chip picked on top: only its stretches are shown, all of them open, until "Show all".
+  const [only, setOnly] = useState<string | null>(null);
+  useEffect(() => setOnly(null), [ref]);
+  const wanted = only ?? focus.itemId ?? null;
   const [unfolded, setUnfolded] = useState<Set<number>>(() => new Set());
   const [open, toggle, closeAll] = useOpenLines();
   const landed = useRef<string | null>(null);
@@ -224,11 +230,14 @@ function Opened({ projectId, focus, agentName, span, where, say, onOpenThread }:
         <div className="ai-review-chips" data-testid="ai-review-tickets">
           <span>{t("review.ticketsDone")}</span>
           {row.tickets.map((tk) => (
-            <span key={tk.itemId} className="ai-review-chip" title={tk.title}>
+            <button key={tk.itemId} type="button" className="ai-review-chip" data-testid="ai-review-chip" data-ticket={tk.key} aria-pressed={only === tk.itemId} title={t("review.onlyTicket", { key: tk.key })} disabled={!counts.get(tk.itemId)} onClick={() => setOnly(only === tk.itemId ? null : tk.itemId)}>
               {[tk.key, (counts.get(tk.itemId) ?? 0) > 0 ? t((counts.get(tk.itemId) ?? 0) === 1 ? "review.stretch" : "review.stretches", { n: counts.get(tk.itemId) ?? 0 }) : null, tk.pr ? outcomeLine({ pr: tk.pr, commits: 0, asked: null, said: null }, say) : null].filter(Boolean).join(" · ")}
-            </span>
+            </button>
           ))}
           {!row.tickets.length && <span className="ai-review-chip">{t("review.noTicket")}</span>}
+          {only && (
+            <button type="button" className="link-btn" data-testid="ai-review-all" onClick={() => setOnly(null)}>{t("review.showAll")}</button>
+          )}
         </div>
         <div className="ai-review-actions">
           {(ticket || row.kind === "thread") && (
@@ -262,8 +271,10 @@ function Opened({ projectId, focus, agentName, span, where, say, onOpenThread }:
           {data.unreadable && <p className="meta-txt dense ai-session-empty">{t("review.unreadable")}</p>}
           {data.cut && <p className="ai-review-note">{t("review.cut")}</p>}
           {segments.map((s, i) => {
+            if (only && s.itemId !== only) return null;
             const isOpen = unfolded.has(i);
             const dim = wanted !== null && s.itemId !== wanted;
+            const facts = s.itemId ? segmentFacts(row.tickets.find((tk) => tk.itemId === s.itemId), say, (st) => STATUS[st].label) : null;
             return (
               <div key={i} className="ai-review-seg" data-testid="ai-review-seg" data-kind={s.kind} data-ticket={s.key ?? ""} data-open={isOpen || undefined} data-dim={dim || undefined}>
                 <button type="button" className="ai-review-seg-head" aria-expanded={isOpen} ref={(el) => { if (el) heads.current.set(i, el); else heads.current.delete(i); }} onClick={() => flip(i)}>
@@ -277,6 +288,7 @@ function Opened({ projectId, focus, agentName, span, where, say, onOpenThread }:
                   <div className="ai-review-seg-body cs-convo">
                     {s.lines.length ? <ConvoLines lines={s.lines} open={open} toggle={toggle} say={convoSay} coding={s.kind === "code"} /> : <p className="meta-txt dense">{t("review.nothingSaid")}</p>}
                     {s.kind === "code" && <span className="ai-review-work">{[t("codeSessions.convoSteps", { n: s.work.steps }), ...workParts(s.work, convoSay)].join(" · ")}</span>}
+                    {facts && <span className="ai-review-work" data-testid="ai-review-seg-facts">{facts}</span>}
                   </div>
                 )}
               </div>

@@ -19,6 +19,8 @@ export function ConvoLines({ lines, open, toggle, say, coding, waiting }: { line
             <summary>{entry.coding ? workConclusion(entry.work, say, entry.waiting) : workLabel(entry.work, say)}</summary>
             {entry.fold.map((l) => <ConvoLineRow key={l.key} line={l} open={open.has(l.key)} onToggle={() => toggle(l.key)} say={say} />)}
           </details>
+        ) : entry.who === "mark" ? (
+          <p key={entry.key} className="cs-convo-mark" data-testid="convo-mark">{entry.text}</p>
         ) : (
           <ConvoLineRow key={entry.key} line={entry} open={open.has(entry.key)} onToggle={() => toggle(entry.key)} say={say} />
         )

@@ -3,7 +3,8 @@ import { changesFile, workDone, type WorkDone } from "./steps";
 /** One line of a conversation read back from an agent's record, with the key the view holds it by. */
 export interface ConvoLine {
   key: number;
-  who: "person" | "agent" | "tool";
+  /** `mark`: a moment of the session's own, said in the view's words — a claim, a pull request linked, a return to a ticket. */
+  who: "person" | "agent" | "tool" | "mark";
   text: string;
   detail?: { input: string; output?: string };
 }
@@ -75,7 +76,7 @@ export function foldTools(lines: ConvoLine[], codeFrom = codingFromLines(lines),
     if (i >= coding && line.who === "tool") {
       flush();
       let last = i;
-      for (let j = i + 1; j < lines.length && lines[j]!.who !== "person"; j++) if (lines[j]!.who === "tool") last = j;
+      for (let j = i + 1; j < lines.length && lines[j]!.who !== "person" && lines[j]!.who !== "mark"; j++) if (lines[j]!.who === "tool") last = j;
       const fold = lines.slice(i, last + 1);
       const tools = fold.filter((l) => l.who === "tool");
       const asked = tools.at(-1)!;

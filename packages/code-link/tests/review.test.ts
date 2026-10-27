@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RecordLine, ThreadMessage } from "@tomradex/agent";
 import { fresh } from "@tomradex/testkit";
-import { CodeLinkStore, MIGRATIONS, Review, TABLES, cutByTicket, mergePage, threadLines, ticketOutcome, type CodeLinkView, type ReviewRow } from "@tomradex/code-link";
+import { CodeLinkStore, MIGRATIONS, Review, TABLES, cutByTicket, cutFrom, joinCuts, mergePage, threadLines, ticketOutcome, type CodeLinkView, type ReviewRow } from "@tomradex/code-link";
 
 const itemOfKey = (key: string) => ({ "TOM-634": "a", "TOM-638": "b" })[key] ?? null;
 const me = (text: string, at?: number): RecordLine => ({ who: "person", text, ...(at !== undefined ? { at } : {}) });
@@ -24,6 +24,21 @@ describe("a conversation cut by ticket", () => {
       ["b", ["mcp__tomrade__claim_ticket · TOM-638", "认领了。", "没时间戳的一句"]],
       ["a", ["claim_ticket · tom-634", "换了一张"]]
     ]);
+  });
+
+  it("cuts a running session a page at a time: the newest page goes on from where the earlier ones ended, as if cut at once", () => {
+    const lines = [me("看看", 100), tool("claim_ticket · TOM-634", 150), tool("Write · a.ts", 160), me("插一个", 300), tool("Edit · b.ts", 310), me("回到录制", 400), tool("Bash · pnpm test", 410), ag("测试过了", 420)];
+    const marks = [{ itemId: "b", at: 295 }, { itemId: "a", at: 395 }];
+    const whole = cutByTicket(lines, marks, itemOfKey);
+    for (let at = 0; at <= lines.length; at++) {
+      const earlier = cutFrom(lines.slice(0, at), marks, itemOfKey);
+      const tail = cutFrom(lines.slice(at), marks, itemOfKey, earlier.state);
+      expect(joinCuts(earlier.cuts, tail.cuts)).toEqual(whole);
+    }
+    // the session moved: only its newest page is cut again, from the state the earlier pages left
+    const earlier = cutFrom(lines.slice(0, 5), marks, itemOfKey);
+    const grown = [...lines.slice(5), tool("Write · c.ts", 430)];
+    expect(joinCuts(earlier.cuts, cutFrom(grown, marks, itemOfKey, earlier.state).cuts).map((c) => [c.itemId, c.lines.length])).toEqual([[null, 1], ["a", 2], ["b", 2], ["a", 4]]);
   });
 
   it("gives every line to the ticket a session started on, from the first", () => {
