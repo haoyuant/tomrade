@@ -41,7 +41,7 @@ export const canAnswer = (s: SessionRow): boolean => s.approval && s.prompt !== 
 export const NEW_MS = 60_000;
 
 /** Just started and not over: the bar says so for its first minute. */
-export const isNewRow = (r: HereRow, now = Date.now()): boolean => statusOf(r) !== "done" && now - startedAt(r) < NEW_MS;
+export const isNewRow = (r: HereRow, now = Date.now()): boolean => statusOf(r) !== "done" && now - rowStartedAt(r) < NEW_MS;
 
 const RANK: Record<BarStatus, number> = { wait: 0, run: 1, idle: 2, done: 3 };
 export const rowStartedAt = (r: HereRow): number => (r.kind === "terminal" ? r.terminal.startedAt : r.kind === "session" ? r.session.startedAt : r.thread.createdAt);
