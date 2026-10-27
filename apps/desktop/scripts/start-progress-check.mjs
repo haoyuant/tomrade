@@ -1,5 +1,6 @@
 /**
- * A slow Start shows what it is doing: spinner, the current step, and past ~10 s the "not stuck" note.
+ * A slow Start shows what it is doing: spinner, the current step, and past ~10 s the "not stuck" note —
+ * in the Start dialog and, ticket by ticket, on a conversation's start card.
  * Run after build:backend with the UI dev server running.
  */
 import { app, BrowserWindow } from "electron";
@@ -103,6 +104,50 @@ app.whenReady().then(async () => {
     await wait(async () => shown.length > 0);
     assert("去看它：在终端窗口里打开那个会话", shown[0] === "s-live");
     ctx.codeLink.deliveries = realDeliveries;
+
+    // ── 对话里的开始卡片（TOM-661）：一张张开始，每张开始时显示自己的步骤 ──
+    const tickets = ["Card first", "Card second"].map((title) => ctx.items.create({ projectId: project.id, boardId: board.id, title, workType: "coding", status: "todo", by: "human" })).map((i) => ({ itemId: i.id, key: i.key, title: i.title }));
+    const thread = ctx.agent.newThread(project.id, "ready");
+    const cardData = { tickets, config: { engine: "ready" } };
+    ctx.agent.postCard(project.id, thread.id, { id: "start-batch-spr", schema: "start-batch", title: "SPR", data: cardData });
+    ctx.agent.show(thread.id);
+    // As the backend does: one ticket after another, each outcome on the card as it comes.
+    const releases = [];
+    ctx.codeLink.startTickets = async (projectId, request) => {
+      const results = [];
+      for (const itemId of request.itemIds) {
+        await new Promise((resolve) => releases.push(resolve));
+        const ticket = tickets.find((t) => t.itemId === itemId);
+        results.push({ ...ticket, ok: true, threadId: null, branch: `${ticket.key.toLowerCase()}/card`, engine: "ready", continued: false });
+        ctx.agent.postCard(projectId, request.requestedBy, { id: request.cardId, schema: "start-batch", title: "SPR", data: { ...cardData, results: [...results] } });
+      }
+      return results;
+    };
+    await js(`location.reload(); true`);
+    await sleep(500);
+    await js(`location.hash = '#/p/${project.id}'; true`);
+    await wait(() => js(`!!document.querySelector('[data-testid="start-batch-go"]')`));
+    const rows = () => js(`[...document.querySelectorAll('[data-testid="start-batch-ticket"]')].map((li) => ({ state: li.dataset.state, step: li.querySelector('[data-testid="start-progress-step"]')?.textContent ?? null, text: li.textContent }))`);
+    assert("点开始前卡片上没有进度", await js(`!document.querySelector('[data-testid="start-batch"] [data-testid="start-progress"]')`));
+    await js(`document.querySelector('[data-testid="start-batch-go"]').click(); true`);
+    await wait(async () => releases.length === 1 && (await rows())[0].step !== null);
+    let now = await rows();
+    assert("第一张显示自己正在进行的步骤", now[0].state === "starting" && now[0].step.includes("准备工作副本"));
+    assert("第二张排队，不显示步骤", now[1].state === "queued" && now[1].step === null && now[1].text.includes("排队中"));
+    assert("卡片标题说正在开始两个工单", (await js(`document.querySelector('[data-testid="start-batch"] .tool-head').textContent`)).includes("正在开始 2 个工单"));
+    assert("开始按钮转着加载图标", await js(`!!document.querySelector('[data-testid="start-batch-go"] .is-spinning')`));
+    fs.writeFileSync(path.join(work, "start-batch-progress.png"), (await win.webContents.capturePage()).toPNG());
+    await wait(async () => (await rows())[0].step.includes("检出"));
+    assert("第一张几秒后换到下一步", true);
+
+    releases[0]();
+    await wait(async () => releases.length === 2 && (await rows())[1].step !== null);
+    now = await rows();
+    assert("第一张开始后显示和以前一样的结果行", now[0].state === "started" && now[0].step === null && now[0].text.includes("card"));
+    assert("第二张从第一步开始显示自己的步骤", now[1].state === "starting" && now[1].step.includes("准备工作副本"));
+    releases[1]();
+    await wait(async () => (await rows()).every((r) => r.state === "started"));
+    assert("都开始后卡片上不再有进度，标题说已开始", await js(`!document.querySelector('[data-testid="start-batch"] [data-testid="start-progress"]') && document.querySelector('[data-testid="start-batch"] .tool-head').textContent.includes("已开始 2 个工单")`));
     console.log(`界面截图：${work}`);
     win.destroy();
     await ctx.fiber.dispose();

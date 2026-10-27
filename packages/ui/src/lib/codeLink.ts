@@ -50,6 +50,16 @@ export function startProgress(elapsedMs: number, input: { mode: StartOptions["mo
   return { steps, current, slow: elapsedMs >= 10_000, stalled: elapsedMs >= 60_000 };
 }
 
+/**
+ * Where a start card's pending start is, ticket by ticket. The backend starts them one after another and posts
+ * each outcome as it comes, so the first without a new outcome is the one starting and the rest wait their turn.
+ * `hadOutcome` is what had one when the start was asked: a ticket started again waits until the whole start answers.
+ */
+export function startBatchWaits(itemIds: string[], outcomes: { itemId: string }[] | undefined, hadOutcome: ReadonlySet<string>): Map<string, "starting" | "queued"> {
+  const waiting = itemIds.filter((id, at) => itemIds.indexOf(id) === at && (hadOutcome.has(id) || !outcomes?.some((o) => o.itemId === id)));
+  return new Map(waiting.map((id, at) => [id, at === 0 ? "starting" : "queued"]));
+}
+
 /** How the Start dialog was left on this machine; null before anything was started here. */
 export const useStartDefaults = () =>
   useQuery({ queryKey: keys.codeLink.startDefaults, queryFn: () => invoke("codeLink.startDefaults") });
