@@ -5,6 +5,8 @@ import { carryOn, dedupe, leaves, place, prune, reveal, show, type Key } from ".
 import { live } from "./lists";
 
 const ASKED_GRACE_MS = 5000;
+/** How long a revealed cell's flash lasts. */
+const FLASH_MS = 1200;
 
 /** What can go into a cell by itself: a session with a terminal here that no terminal of the window already shows, and plain terminals. */
 const placeableIds = (state: WindowState): string[] => {
@@ -71,6 +73,13 @@ export function useWindowLayout(state: WindowState | null, picked: Picked) {
     if (focused) recent.current = [...recent.current.filter((id) => id !== focused), focused];
   }, [focused]);
   const revealed = useRef(0);
+  // The cell a session asked from outside landed in flashes once, so the eye finds it.
+  const [flash, setFlash] = useState<{ cell: string; at: number } | null>(null);
+  useEffect(() => {
+    if (!flash) return;
+    const timer = setTimeout(() => setFlash(null), FLASH_MS);
+    return () => clearTimeout(timer);
+  }, [flash]);
   const change = useCallback((next: Layout) => {
     current.current = next;
     setLayout(next);
@@ -97,6 +106,7 @@ export function useWindowLayout(state: WindowState | null, picked: Picked) {
       const shown = reveal(placed, ask.sessionId, focusedNow.current, key);
       placed = asPicked(state, shown.layout, shown.cell, ask.sessionId, key);
       setFocused(shown.cell);
+      setFlash({ cell: shown.cell, at: ask.at });
     }
     if (placed !== kept) change(placed);
     else {
@@ -104,5 +114,5 @@ export function useWindowLayout(state: WindowState | null, picked: Picked) {
       setLayout(pruned);
     }
   }, [state, known, change]);
-  return { laid, focused, setFocused, change, current, asked, recent, toRead };
+  return { laid, focused, setFocused, change, current, asked, recent, toRead, flash };
 }

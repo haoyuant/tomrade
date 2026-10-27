@@ -2,7 +2,7 @@ import { useDeferredValue, useMemo, type MutableRefObject } from "react";
 import { Command } from "cmdk";
 import { useQuery } from "@tanstack/react-query";
 import type { EngineView, ThreadSummary } from "@tomradex/agent";
-import type { ReviewRow, SessionView } from "@tomradex/code-link";
+import type { RecentSession, ReviewRow } from "@tomradex/code-link";
 import type { Item } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { Kbd } from "~/components/ui/atoms";
@@ -16,6 +16,7 @@ import { askPanel, usePanelSession } from "~/lib/panelRequests";
 import { keys } from "~/lib/queries";
 import { outcomeLine } from "~/lib/review";
 import { paletteSessionGroups, sessionBarRows, type BarRow } from "~/lib/sessionBar";
+import { askText } from "~/lib/terminalSession";
 import { useOpenTerminalWindow } from "~/lib/terminalWindow";
 import { errorSpec, useToast } from "~/lib/toast";
 import { useOptionalAgentDock } from "~/components/chrome/ProjectShell";
@@ -48,7 +49,7 @@ export function PaletteSessions({ projectId, items, search, run, shift }: {
   const openTerminal = useOpenTerminalWindow(projectId);
   const panelSession = usePanelSession(projectId);
   const threads = useHeld<ThreadSummary[]>(keys.agent.threads(projectId), () => invoke("agent.threads", projectId));
-  const sessions = useHeld<SessionView[]>(keys.codeLink.recentSessions(projectId), () => invoke("codeLink.recentSessions", projectId));
+  const sessions = useHeld<RecentSession[]>(keys.codeLink.recentSessions(projectId), () => invoke("codeLink.recentSessions", projectId));
   const attention = useHeld<AttentionEntry[]>(keys.attention, () => invoke("attention.list").catch(() => []));
   const engines = useHeld<EngineView[]>(keys.agent.engines, () => invoke("agent.engines"));
   const groups = useMemo(() => {
@@ -115,7 +116,7 @@ export function PaletteSessions({ projectId, items, search, run, shift }: {
   const pick = (r: BarRow) => run(() => (shift.current ? inCell(r) : here(r)));
 
   const name = (r: BarRow) => r.ticket ?? (r.title || t("agentPanel.newThread"));
-  const said = (r: BarRow) => (r.wait ? r.wait.text || t(ATTENTION_KEY[r.wait.kind]) : r.status === "done" ? r.outcome : r.activity);
+  const said = (r: BarRow) => (r.wait ? (r.ask ? askText(r.ask, t) : r.wait.text || t(ATTENTION_KEY[r.wait.kind])) : r.status === "done" ? (r.outcome ? outcomeLine(r.outcome, (key, vars) => t(`review.${key}`, vars)) : null) : r.activity);
   const agentName = (r: BarRow) => (r.agent ? (findEngine(engines, r.agent)?.title ?? r.agent) : null);
   const row = (r: BarRow) => (
     <Command.Item key={r.key} value={`${name(r)} ${r.title} ${agentName(r) ?? ""} ${said(r) ?? ""} ${r.key}`} className="palette-row" data-session={r.key} data-depth={r.depth || undefined} onSelect={() => pick(r)}>
