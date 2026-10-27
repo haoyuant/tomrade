@@ -79,3 +79,18 @@ it("gives ⌘K the bar's rows in three groups, each in the bar's order: waiting,
   expect(out.active.map((r) => r.key)).toEqual(["session:cell", "thread:busy", "thread:idle"]);
   expect(out.history.map((r) => r.key)).toEqual(["session:old"]);
 });
+
+it("sets a conversation writing code in the background right under the one it writes for, where the more urgent of the two would be", () => {
+  const out = rows({
+    threads: [thread("other", { running: true, createdAt: 9 }), thread("parent", { updatedAt: 2 }), thread("child", { parentId: "parent", running: true, createdAt: 5 })]
+  });
+  expect(out.map((r) => [r.threadId, r.depth, r.status])).toEqual([["other", 0, "run"], ["parent", 0, "idle"], ["child", 1, "run"]]);
+  expect(out.find((r) => r.threadId === "child")?.parentKey).toBe("thread:parent");
+  // a waiting child lifts its parent to the top of the bar with it
+  const lifted = rows({ threads: [thread("other", { running: true }), thread("parent"), thread("child", { parentId: "parent" })], attention: [waiting("thread:child", 3)] });
+  expect(lifted.map((r) => r.threadId)).toEqual(["parent", "child", "other"]);
+  // a parent the idle cap would drop stays for its child; a child whose parent is gone stands on its own
+  const capped = rows({ threads: [...Array.from({ length: 4 }, (_, i) => thread(`t${i}`, { updatedAt: 100 - i })), thread("parent", { updatedAt: 1 }), thread("child", { parentId: "parent", running: true })], idleLimit: 2 });
+  expect(capped.map((r) => [r.threadId, r.depth])).toEqual([["parent", 0], ["child", 1], ["t0", 0], ["t1", 0]]);
+  expect(rows({ threads: [thread("child", { parentId: "gone" })] }).map((r) => [r.threadId, r.depth, r.parentKey])).toEqual([["child", 0, null]]);
+});

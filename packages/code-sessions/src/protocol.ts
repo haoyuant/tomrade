@@ -86,6 +86,8 @@ export interface ThreadRow {
   itemId: string | null;
   key: string | null;
   ticketTitle: string | null;
+  /** The conversation it was opened under, to write its code in the background: it sits under that one in the bar. */
+  parentId: string | null;
   running: boolean;
   /** What it waits on the person for, and since when this window has seen it wait in that way. */
   wait: { kind: "permission" | "question"; text: string | null; since: number } | null;

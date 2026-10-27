@@ -28,6 +28,10 @@ export interface BarRow {
   startedAt: number;
   /** When it last moved: the age a card shows. */
   at: number;
+  /** The row of the conversation this one writes code in the background for; it sits right under that row. */
+  parentKey: string | null;
+  /** 0 for a row of its own, 1 under its parent. */
+  depth: 0 | 1;
 }
 
 const RANK: Record<BarStatus, number> = { wait: 0, run: 1, idle: 2, done: 3 };
@@ -36,6 +40,7 @@ const RANK: Record<BarStatus, number> = { wait: 0, run: 1, idle: 2, done: 3 };
  * The bar's rows, waiting first. Within a group the order holds still while output streams:
  * waiting by how long it has waited, running by when it started, idle by when it was last used,
  * ended by when it ended. Idle conversations beyond `idleLimit` stay in the full list; the open thread or session never drops out.
+ * A conversation writing code in the background for another sits right under it, wherever the more urgent of the two would be.
  */
 export function sessionBarRows(input: {
   threads: ThreadSummary[];
@@ -65,7 +70,8 @@ export function sessionBarRows(input: {
       title: th.title || (th.itemId ? input.itemTitle(th.itemId) : null) || "",
       agent: th.engine, status, where: "panel", terminalApp: null,
       wait: wait && { kind: wait.kind, text: wait.text }, activity: live ? session.activity : null, outcome: null,
-      itemIds: th.itemId ? [th.itemId] : [], ticket: keyOf(th.itemId ? [th.itemId] : []), startedAt: th.createdAt, at: wait?.since ?? th.updatedAt
+      itemIds: th.itemId ? [th.itemId] : [], ticket: keyOf(th.itemId ? [th.itemId] : []), startedAt: th.createdAt, at: wait?.since ?? th.updatedAt,
+      parentKey: th.parentId && panelThreads.has(th.parentId) ? `thread:${th.parentId}` : null, depth: 0
     });
   }
 
@@ -80,7 +86,8 @@ export function sessionBarRows(input: {
       agent: s.agent, status, where: s.herdrPane ? "pane" : "outside", terminalApp: s.herdrPane ? null : s.terminal,
       wait: status === "wait" ? { kind: wait?.kind ?? (s.state === "error" ? "stuck" : "waiting"), text: wait?.text ?? s.activity ?? s.summary } : null,
       activity: ended ? null : s.activity, outcome: ended ? s.summary : null,
-      itemIds: s.itemIds, ticket: keyOf(s.itemIds), startedAt: s.startedAt, at: wait?.since ?? (ended ? s.endedAt : null) ?? s.lastEventAt ?? s.startedAt
+      itemIds: s.itemIds, ticket: keyOf(s.itemIds), startedAt: s.startedAt, at: wait?.since ?? (ended ? s.endedAt : null) ?? s.lastEventAt ?? s.startedAt,
+      parentKey: null, depth: 0
     });
   }
 
@@ -90,7 +97,26 @@ export function sessionBarRows(input: {
   const limit = input.idleLimit ?? 8;
   let idle = 0;
   const open = (r: BarRow) => (!!input.openThreadId && r.threadId === input.openThreadId) || (!!input.openSessionId && r.sessionId === input.openSessionId);
-  return rows.filter((r) => r.status !== "idle" || ++idle <= limit || open(r));
+  const kept = rows.filter((r) => r.status !== "idle" || ++idle <= limit || open(r));
+  // a parent an idle cap dropped comes back for the child that is still here, so the child is never orphaned
+  const keptKeys = new Set(kept.map((r) => r.key));
+  for (const r of kept) if (r.parentKey && !keptKeys.has(r.parentKey)) { keptKeys.add(r.parentKey); kept.push(rows.find((x) => x.key === r.parentKey)!); }
+  kept.sort(order);
+  return nest(kept);
+}
+
+/** Each child right under its parent, the pair placed where the first of them came in the order. */
+function nest(rows: BarRow[]): BarRow[] {
+  const byKey = new Map(rows.map((r) => [r.key, r]));
+  const out: BarRow[] = [];
+  const placed = new Set<string>();
+  for (const r of rows) {
+    if (placed.has(r.key)) continue;
+    const top = (r.parentKey && byKey.get(r.parentKey)) || r;
+    if (!placed.has(top.key)) { out.push(top); placed.add(top.key); }
+    for (const child of rows) if (child.parentKey === top.key && !placed.has(child.key)) { out.push({ ...child, depth: 1 }); placed.add(child.key); }
+  }
+  return out;
 }
 
 /** ⌘K's sessions, each group in the bar's order: waiting on the person, in progress (running or idle), and ended. */
