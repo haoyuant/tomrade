@@ -878,7 +878,7 @@ const run = async () => {
   await sleep(300);
   await press(`[...document.querySelectorAll('.menu-row.is-radio')].find((r) => r.querySelector('.m-name')?.textContent === 'Dedupe chat')`);
   await until(async () => (await shownThread()) === bgParent.id, 50);
-  await sleep(300);
+  await sleep(600);
   await send("write the dedupe script");
   check("while the run writes code, the rule offers to do it in the background", await until(() => present('[data-testid="work-rule"] [data-testid="to-background"]'), 60));
   await shot("to-background.png");
@@ -897,6 +897,7 @@ const run = async () => {
   await sleep(400);
   check("while the child runs, this conversation takes a message at once, not into the queue", (await panel()).working && (await queued()).length === 0 && (await asked()).includes("another question"), { queued: await queued(), asked: await asked() });
   await until(async () => !(await panel()).working, 50);
+  await until(() => gates.has("child"), 50);
   gates.get("child")?.();
   await until(() => ctx.agent.store.runs(alpha.id, bgChild.id).at(-1)?.status === "done", 60);
   const conclusions = () => $(`[...document.querySelectorAll('.ai-scroll .agent-note')].filter((n) => /All parts written, tests pass/.test(n.textContent)).length`);
