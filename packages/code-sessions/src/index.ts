@@ -17,17 +17,21 @@ import type {} from "@tomradex/herdr";
 import type { TerminalBridge, TerminalPaneInfo, TerminalProvider, TerminalStream } from "@tomradex/contracts";
 import { randomUUID } from "node:crypto";
 import { droppedPaste, readableDrops } from "./drop.js";
-import type { Layout, LayoutPreset, SessionRow, TerminalPlace, TerminalRow, ThreadRow, WindowMessage, WindowPost, WindowState } from "./protocol.js";
+import { Recorder, RECORDING_SECTION, RecordingSettings, type Recording } from "./recorder.js";
+import type { ClosedTerminalRow, Layout, LayoutPreset, SessionRow, TerminalPlace, TerminalRow, ThreadRow, WindowMessage, WindowPost, WindowState } from "./protocol.js";
 import { CODE_SESSIONS_WORDS } from "./words.js";
 import { errorMessage } from "@tomradex/contracts";
 
 export type * from "./protocol.js";
+export { Recorder, Recording, RECORDING_SECTION, RecordingSettings, REPLAY_MAX, SEGMENT_MAX, parseSegment, sliceOf } from "./recorder.js";
 
 export const Config = z.object({
   /** The window's page: the renderer's `code-sessions.html`. */
   document: z.string(),
   /** Where each project's layout, and whether the person was asked to switch to herdr, are kept on this machine. */
-  stateFile: z.string().optional()
+  stateFile: z.string().optional(),
+  /** Where what the panes showed is recorded, on this machine; without it nothing is recorded. */
+  recordingsDir: z.string().optional()
 });
 export type Config = z.infer<typeof Config>;
 
@@ -60,7 +64,12 @@ interface Saved {
   folded?: Record<string, boolean>;
   /** The project the window last opened for: where a start that names none goes. */
   lastProject?: string;
+  /** Each project's closed terminals whose output was recorded, oldest first. */
+  closed?: Record<string, ClosedTerminalRow[]>;
 }
+
+/** How many closed terminals a project's archive keeps. */
+export const CLOSED_TERMINALS_MAX = 50;
 
 type SavedTerminal = Omit<TerminalRow, "sessionId" | "note" | "agentTitle" | "agentStatus" | "running"> & { pane: string };
 type StartingTerminal = Omit<SavedTerminal, "pane"> & { pane: null };
@@ -237,7 +246,8 @@ export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, it
         recordSaved: s.recordSavedAt ? (s.recordCut ? "end" : "whole") : null,
         ranIn: s.herdrPane ?? null,
         approval: false,
-        lastEventAt: s.lastEventAt ?? null
+        lastEventAt: s.lastEventAt ?? null,
+        rawOutput: false
       };
     })
     .sort((a, b) => Number(b.state !== "ended" && b.state !== "lost") - Number(a.state !== "ended" && a.state !== "lost") || Number(b.needsYou) - Number(a.needsYou) || b.startedAt - a.startedAt);
@@ -293,6 +303,12 @@ interface Open {
   follows: Map<string, () => void>;
   /** Frames waiting to go to the window, one batch per cell. */
   frames: Map<string, PendingFrames>;
+  /** What each attached cell's pane shows, being recorded. */
+  recordings: Map<string, Recording>;
+  /** The newest live session on each attached cell's pane, as last seen: another one appearing asks the cell for a snapshot. */
+  onPane: Map<string, string | null>;
+  /** A recording failed and the window was told; the next failure is only logged. */
+  warnedRecording: boolean;
 }
 
 /** Frames of one cell while its batch is open: the ANSI bytes in order, and the frame that began it. */
@@ -325,12 +341,23 @@ function apply(ctx: Context, config: Config) {
   // Without a backend on Windows, a new terminal opens in the system terminal; elsewhere herdr is what is missing.
   const bridge = async (): Promise<TerminalBridge> => (await backend()?.bridge()) ?? (process.platform === "win32" ? { state: "unsupported" } : { state: "notInstalled" });
 
+  /** What the panes show, recorded while a cell shows them; off by the setting, or without a folder to record in. */
+  const recorder = new Recorder({
+    dir: config.recordingsDir ?? null,
+    settings: () => RecordingSettings.parse(ctx.settings.get().terminalRecording ?? {}),
+    warn: (message) => ctx.logger.warn(message)
+  });
+  ctx.settings.register(RECORDING_SECTION);
+
   /** The sessions to list; when they cannot be read the window says so and its terminals work on. */
   const listed = (projectId: string): { sessions: SessionRow[]; warning: string | null } => {
     try {
       const agents = ctx.get("agent");
       const rows = sessionRows(ctx.codeLink, ctx.items, projectId, Date.now(), ctx.get("hub")?.deviceId);
-      return { sessions: rows.map((r) => ({ ...r, agentName: agents?.engineOf(r.agent)?.title ?? null, approval: !!agents?.engineOf(r.agent)?.local?.approval })), warning: null };
+      return {
+        sessions: rows.map((r) => ({ ...r, agentName: agents?.engineOf(r.agent)?.title ?? null, approval: !!agents?.engineOf(r.agent)?.local?.approval, rawOutput: r.endedAt !== null && !!r.ranIn && recorder.has(r.ranIn, r.startedAt, r.endedAt) })),
+        warning: null
+      };
     } catch (error) {
       ctx.logger.warn(`code sessions: listing sessions failed: ${errorMessage(error)}`);
       return { sessions: [], warning: words()("sessionsUnreadable") };
@@ -414,6 +441,16 @@ function apply(ctx: Context, config: Config) {
   const savedTerminals = (projectId: string) => stateOf(config.stateFile).terminals?.[projectId] ?? [];
   const saveTerminals = (projectId: string, list: SavedTerminal[]) => save(config.stateFile, { terminals: { ...stateOf(config.stateFile).terminals, [projectId]: list } });
 
+  /** A project's closed terminals with a recording still there to play back. */
+  const closedTerminals = (projectId: string): ClosedTerminalRow[] => (stateOf(config.stateFile).closed?.[projectId] ?? []).filter((t) => recorder.has(t.pane, t.startedAt, t.endedAt));
+  /** A terminal that went: kept for the archive when its pane was recorded, the oldest making room past CLOSED_TERMINALS_MAX. */
+  const rememberClosed = (projectId: string, gone: SavedTerminal[], endedAt = Date.now()) => {
+    const kept = gone.filter((t) => recorder.has(t.pane, t.startedAt, endedAt)).map((t): ClosedTerminalRow => ({ id: t.id, title: t.title, cwd: t.cwd, pane: t.pane, startedAt: t.startedAt, endedAt }));
+    if (!kept.length) return;
+    const saved = stateOf(config.stateFile);
+    save(config.stateFile, { closed: { ...saved.closed, [projectId]: [...(saved.closed?.[projectId] ?? []), ...kept].slice(-CLOSED_TERMINALS_MAX) } });
+  };
+
   /**
    * The project's terminals; one whose pane herdr no longer has is forgotten. While herdr does not answer, they all stay.
    * An agent herdr sees in one lends the terminal the title it gave the conversation.
@@ -427,7 +464,10 @@ function apply(ctx: Context, config: Config) {
     const byPane = new Map((panes ?? []).map((p) => [p.paneId, p]));
     const gone = new Set(panes ? saved.filter((t) => !byPane.has(t.pane)).map((t) => t.id) : []);
     // Only those go: the list as it is now, which may have gained a terminal while herdr answered.
-    if (gone.size) saveTerminals(projectId, savedTerminals(projectId).filter((t) => !gone.has(t.id)));
+    if (gone.size) {
+      rememberClosed(projectId, saved.filter((t) => gone.has(t.id)));
+      saveTerminals(projectId, savedTerminals(projectId).filter((t) => !gone.has(t.id)));
+    }
     const agentTitle = (pane: string | null) => {
       const info = pane ? byPane.get(pane) : undefined;
       return info?.agent ? info.title : null;
@@ -613,7 +653,8 @@ function apply(ctx: Context, config: Config) {
       defaultPreset: preset?.id ?? null,
       autoPlace: saved.autoPlace !== false,
       reveal: win?.reveal ?? null,
-      archive: { count: ended.length, rows: archiveOpen ? [...ended].sort((a, b) => b.endedAt! - a.endedAt!) : null },
+      archive: { count: ended.length, rows: archiveOpen ? [...ended].sort((a, b) => b.endedAt! - a.endedAt!) : null, terminals: archiveOpen ? closedTerminals(projectId).sort((a, b) => b.endedAt - a.endedAt) : null },
+      closedTerminals: closedTerminals(projectId).filter((t) => inCells.has(t.id)),
       history: paneHistory(ended, [...opened.map((t) => t.pane), ...sent.map((r) => r.pane)]),
       folded: saved.folded?.[projectId] === true
     };
@@ -642,6 +683,35 @@ function apply(ctx: Context, config: Config) {
     win.states.shown = turn;
     follow(win, next.terminals);
     win.surface.setState(next);
+    snapshotNewSessions(win, next.sessions);
+  };
+
+  /** The newest live session on a pane, by when it started; null with none. */
+  const newestOn = (sessions: { id: string; endedAt: number | null; pane: string | null; startedAt: number }[], pane: string): string | null => sessions.filter((s) => s.endedAt === null && s.pane === pane).sort((a, b) => b.startedAt - a.startedAt)[0]?.id ?? null;
+
+  /**
+   * A session beginning on a pane a cell shows (another agent, or the same one again): the recording asks the cell
+   * for its screen, so the session's replay can begin there rather than catch up from where the cell attached.
+   */
+  const snapshotNewSessions = (win: Open, sessions: SessionRow[]) => {
+    for (const [cell, stream] of win.terminals) {
+      const id = newestOn(sessions, stream.paneId);
+      const before = win.onPane.get(cell);
+      win.onPane.set(cell, id);
+      if (id && before !== undefined && before !== id) requestSnapshot(win, cell);
+    }
+  };
+
+  const requestSnapshot = (win: Open, cell: string) => {
+    const recording = win.recordings.get(cell);
+    if (!recording || recording.closed || win.closed) return;
+    post(win, { type: "snapshot", cell, token: recording.hold() });
+  };
+
+  const stopRecording = (win: Open, cell: string) => {
+    win.recordings.get(cell)?.close();
+    win.recordings.delete(cell);
+    win.onPane.delete(cell);
   };
 
   // Presets and the auto-place switch belong to every project's window.
@@ -664,15 +734,10 @@ function apply(ctx: Context, config: Config) {
     win.frames.delete(cell);
     clearTimeout(pending.timer);
     if (!pending.size) return;
-    send(win, {
-      type: "frame",
-      cell,
-      seq: pending.seq,
-      width: pending.width,
-      height: pending.height,
-      full: pending.full,
-      bytes: pending.bytes.length === 1 ? pending.bytes[0]! : Buffer.concat(pending.bytes, pending.size)
-    });
+    const bytes = pending.bytes.length === 1 ? pending.bytes[0]! : Buffer.concat(pending.bytes, pending.size);
+    send(win, { type: "frame", cell, seq: pending.seq, width: pending.width, height: pending.height, full: pending.full, bytes });
+    // The same batch, after the window has it: the recording queues it for the disk and never waits on it.
+    win.recordings.get(cell)?.write({ seq: pending.seq, width: pending.width, height: pending.height, full: pending.full, bytes });
   };
 
   /** Everything waiting goes, in cell order, before a message that is not a frame. */
@@ -770,6 +835,7 @@ function apply(ctx: Context, config: Config) {
     win.detached.delete(cell);
     // Its stream is going: what it painted and has not sent belongs to a screen that is being replaced.
     dropFrames(win, cell);
+    stopRecording(win, cell);
     const stream = win.terminals.get(cell);
     win.terminals.delete(cell);
     stream?.close();
@@ -823,10 +889,12 @@ function apply(ctx: Context, config: Config) {
     win.held.delete(cell);
     if (held?.text) stream.input(held.text);
     if (held?.over) post(win, { type: "toast", text: words()("notSent") });
+    record(projectId, win, cell, pane);
     stream.onFrame((f) => pushFrame(win, cell, f));
     stream.onClose(provider.onScroll(pane, (s) => win.terminals.get(cell) === stream && post(win, { type: "scrolled", cell, ...s })));
     stream.onClose((reason) => {
       if (win.terminals.get(cell) !== stream) return;
+      stopRecording(win, cell);
       win.terminals.delete(cell);
       win.detached.add(cell);
       // The server going away is not the pane ending: it is started again and the cell comes back on its own.
@@ -836,6 +904,48 @@ function apply(ctx: Context, config: Config) {
         if (gone) revive();
       });
     });
+  };
+
+  /** The cell's stream recorded from its first frame; a failure is said once per window and leaves the cell as it is. */
+  const record = (projectId: string, win: Open, cell: string, pane: string) => {
+    const recording = recorder.open(pane, {
+      needKeyframe: () => requestSnapshot(win, cell),
+      warn: (reason) => {
+        ctx.logger.warn(`code sessions: recording pane ${pane} failed: ${reason}`);
+        if (win.warnedRecording) return;
+        win.warnedRecording = true;
+        post(win, { type: "toast", text: words()("recordingFailed", { reason }) });
+      }
+    });
+    if (!recording) return;
+    win.recordings.set(cell, recording);
+    // Whatever runs there now is not new: only a session beginning after this asks for a snapshot.
+    win.onPane.set(cell, newestOn(ctx.codeLink.sessionsOf(projectId).map((s) => ({ id: s.id, endedAt: isLive(s) ? null : (s.endedAt ?? 0), pane: s.herdrPane, startedAt: s.startedAt })), pane));
+  };
+
+  /**
+   * The stretch of its pane's recording a session or a closed terminal plays back: the session's, between when its
+   * hooks said it started and ended, cut short where the next session on the pane began (an end reported late must
+   * not take the next agent's output along).
+   */
+  const replayBounds = (projectId: string, id: string): { pane: string; from: number; to: number } | null => {
+    const closed = closedTerminals(projectId).find((t) => t.id === id);
+    if (closed) return { pane: closed.pane, from: closed.startedAt, to: closed.endedAt };
+    const s = sessionOf(projectId, id);
+    if (!s?.herdrPane) return null;
+    const pane = s.herdrPane;
+    const next = ctx.codeLink
+      .sessionsOf(projectId)
+      .filter((o) => o.id !== s.id && o.herdrPane === pane && o.startedAt > s.startedAt)
+      .sort((a, b) => a.startedAt - b.startedAt)[0];
+    const ended = isLive(s) ? Date.now() : (s.endedAt ?? s.lastEventAt ?? Date.now());
+    return { pane, from: s.startedAt, to: next ? Math.min(ended, next.startedAt) : ended };
+  };
+
+  const replay = async (projectId: string, win: Open, cell: string, id: string) => {
+    const bounds = replayBounds(projectId, id);
+    const slice = bounds ? await recorder.slice(bounds.pane, bounds.from, bounds.to) : { records: [], at: 0, cut: false, clean: false };
+    post(win, { type: "replay", cell, id, ...slice, from: bounds?.from ?? 0, to: bounds?.to ?? 0 });
   };
 
   /** A code-link command on the session's ticket, its toast told in the window; a conversation it names opens in the app window. */
@@ -873,6 +983,7 @@ function apply(ctx: Context, config: Config) {
     for (const [cell, stream] of win.terminals) if (stream.paneId === t.pane) detach(win, cell);
     const gone = (await backend()?.closePane(t.pane)) ?? false;
     if (!gone) return post(win, { type: "toast", text: words()(builtin() ? "hostCloseFailed" : "closeFailed") });
+    rememberClosed(projectId, [t]);
     saveTerminals(projectId, savedTerminals(projectId).filter((x) => x.id !== id));
     await refresh(projectId);
   };
@@ -901,6 +1012,10 @@ function apply(ctx: Context, config: Config) {
       }
       case "closeTerminal":
         return closeTerminal(projectId, win, m.terminalId);
+      case "replay":
+        return replay(projectId, win, m.cell, m.id);
+      case "snapshot":
+        return win.recordings.get(m.cell)?.keyframe(m.token, m.seq, m.width, m.height, m.bytes);
       case "savePreset": {
         if (!isLayout(m.layout)) return;
         const preset = { id: randomUUID(), name: m.name.trim() || words()("presetName"), layout: emptied(m.layout) };
@@ -1064,7 +1179,7 @@ function apply(ctx: Context, config: Config) {
       return refresh(projectId);
     }
     const w = words();
-    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), held: new Map(), timer: setInterval(() => void refresh(projectId), BRIDGE_POLL_MS), closed: false, reveal: asked, archive: false, states: { begun: 0, shown: 0 }, follows: new Map(), frames: new Map() };
+    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), held: new Map(), timer: setInterval(() => void refresh(projectId), BRIDGE_POLL_MS), closed: false, reveal: asked, archive: false, states: { begun: 0, shown: 0 }, follows: new Map(), frames: new Map(), recordings: new Map(), onPane: new Map(), warnedRecording: false };
     win.timer.unref?.();
     open.set(projectId, win);
     try {
@@ -1142,6 +1257,9 @@ function apply(ctx: Context, config: Config) {
     return true;
   });
   ctx.on("settings/changed", () => {
+    // Turned off: what is being recorded stops here; a cap lowered takes effect on what is kept.
+    if (!recorder.enabled()) for (const win of open.values()) for (const cell of [...win.recordings.keys()]) stopRecording(win, cell);
+    else void recorder.cleanup();
     for (const projectId of open.keys()) void refresh(projectId);
   });
 
@@ -1170,6 +1288,7 @@ function apply(ctx: Context, config: Config) {
   ctx.effect(() => () => {
     for (const timer of refreshSoon.values()) clearTimeout(timer);
     for (const win of open.values()) win.surface.close();
+    recorder.closeAll();
   });
 }
 

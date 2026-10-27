@@ -30,7 +30,8 @@ export const CODE_SESSIONS_WORDS = defineWords("codeSessions", {
     paneEnded: "This terminal ended",
     takenOver: "Another window took this terminal over",
     answerNotTaken: "The terminal did not take the answer; answer in its pane",
-    answerInPane: "Its screen shows no permission prompt a key could answer safely — answer it in its pane"
+    answerInPane: "Its screen shows no permission prompt a key could answer safely — answer it in its pane",
+    recordingFailed: "Recording this terminal's output failed: {{reason}}. The terminal itself goes on; the recording stops."
   },
   zh: {
     open: "打开终端",
@@ -60,6 +61,7 @@ export const CODE_SESSIONS_WORDS = defineWords("codeSessions", {
     paneEnded: "这个终端已经结束",
     takenOver: "这个终端被另一个窗口接管了",
     answerNotTaken: "终端没有收下这个回答，请到它的格子里处理",
-    answerInPane: "它的屏幕上不是能用按键安全回答的权限提示，请在它的格子里回答"
+    answerInPane: "它的屏幕上不是能用按键安全回答的权限提示，请在它的格子里回答",
+    recordingFailed: "录制这个终端的输出失败：{{reason}}。终端本身不受影响，录制已停止。"
   }
 });
