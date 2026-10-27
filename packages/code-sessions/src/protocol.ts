@@ -57,6 +57,8 @@ export interface SessionRow {
   rawOutput: boolean;
   /** Ended and listed: what came of it, the look back's way (its pull request, commits, asks, last word); null otherwise. */
   outcome: SessionOutcome | null;
+  /** Live in a pane here: the pane's last lines that say something, as the bar's card shows them; null otherwise. */
+  tail: string[] | null;
 }
 
 /** A plain terminal closed here whose output was recorded: in History, to play back. */

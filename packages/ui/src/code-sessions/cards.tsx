@@ -83,6 +83,9 @@ export function rowSaid(r: HereRow, status: BarStatus, say: Say, words: Words): 
   return s.activity;
 }
 
+/** A live session's last lines on its pane, as the glance read them; none once it ended or waits. */
+export const rowTail = (r: HereRow, status: BarStatus): string[] => (status === "run" || status === "idle" ? (r.session?.tail ?? []) : []);
+
 /** Said under what a row says: the warning's colour while it waits, the quote of an outcome once it ended, muted otherwise. */
 export const saidClass = (status: BarStatus): string => (status === "wait" ? "cs-row-wait" : status === "done" ? "cs-row-outcome" : "cs-row-activity");
 

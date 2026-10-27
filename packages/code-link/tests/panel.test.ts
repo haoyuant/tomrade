@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { Context } from "cordis";
 import { inputsOf, promptOnScreen, SessionPanel, type CodeLinkStore, type SessionView } from "@tomradex/code-link";
+import { tailLines } from "@tomradex/code-link/prompt";
 import { Herdr } from "@tomradex/herdr";
 import { FakeHerdr } from "@tomradex/testkit";
 
@@ -145,30 +146,49 @@ describe("the panel's side of a terminal session", () => {
     fake.close();
   });
 
-  it("glances at a waiting session's screen for its card: once per event, only for a permission its agent declared keys for", async () => {
+  it("glances at a live session's pane for its card: its last lines, and the prompt only where its agent declared keys", async () => {
     const fake = new FakeHerdr();
     const pane = fake.createPane("/work");
     pane.text = CLAUDE_ASKS;
     const asks = session({});
     const runs = session({ id: "runs", state: "running", activity: "Bash · pnpm test" });
     const mute = session({ id: "mute", agent: "mute" });
+    const away = session({ id: "away", herdrPane: null, terminal: "iTerm.app" });
     const panel = await panelOn(fake, {});
     const reads = () => fake.of("pane.read").length;
-    const seen = await panel.glance([asks, runs, mute], 1000);
-    expect(Object.fromEntries(seen)).toEqual({ s1: { approval: true, prompt: "allow" }, runs: { approval: true, prompt: null }, mute: { approval: false, prompt: null } });
-    expect(reads()).toBe(1);
-    // the same event again reads nothing; the cursor on No, after its next event, leaves Deny only
-    await panel.glance([asks], 1500);
-    expect(reads()).toBe(1);
+    const lines = tailLines(CLAUDE_ASKS, 2);
+    const seen = await panel.glance([asks, runs, mute, away], 1000);
+    expect(Object.fromEntries(seen)).toEqual({ s1: { approval: true, prompt: "allow", tail: lines }, runs: { approval: true, prompt: null, tail: lines }, mute: { approval: false, prompt: null, tail: lines }, away: { approval: true, prompt: null, tail: null } });
+    // the prompt reads as many rows as it may need, the lines alone a strip's worth; a session with no pane here none
+    expect(fake.of("pane.read").map((r) => r.lines).sort()).toEqual([12, 12, 30]);
+    // the same event again reads nothing, until the lines are old; a new event reads again, but not twice within two seconds
+    await panel.glance([asks, runs], 1500);
+    expect(reads()).toBe(3);
+    await panel.glance([{ ...runs, lastEventAt: 6 }], 2500);
+    expect(reads()).toBe(3);
+    await panel.glance([{ ...runs, lastEventAt: 6 }], 3100);
+    expect(reads()).toBe(4);
+    await panel.glance([{ ...runs, lastEventAt: 7 }], 4000);
+    expect(reads()).toBe(4);
+    await panel.glance([{ ...runs, lastEventAt: 7 }], 5200);
+    expect(reads()).toBe(5);
+    await panel.glance([{ ...runs, lastEventAt: 7 }], 14_000);
+    expect(reads()).toBe(5);
+    await panel.glance([{ ...runs, lastEventAt: 7 }], 15_300);
+    expect(reads()).toBe(6);
+    // the cursor on No, after its next event, leaves Deny only — read at once, as Allow and Deny need
     pane.text = CLAUDE_ASKS.replace("❯ 1. Yes", "  1. Yes").replace("  3. No", "❯ 3. No");
-    expect((await panel.glance([{ ...asks, lastEventAt: 6 }], 1600)).get("s1")).toEqual({ approval: true, prompt: "deny" });
+    expect((await panel.glance([{ ...asks, lastEventAt: 6 }], 1600)).get("s1")?.prompt).toBe("deny");
     // a screen with no prompt is looked at again only after a while
     pane.text = CLAUDE_TRUST;
     expect((await panel.glance([{ ...asks, lastEventAt: 7 }], 2000)).get("s1")?.prompt).toBeNull();
+    const before = reads();
     await panel.glance([{ ...asks, lastEventAt: 7 }], 3000);
-    expect(reads()).toBe(3);
+    expect(reads()).toBe(before);
     await panel.glance([{ ...asks, lastEventAt: 7 }], 4500);
-    expect(reads()).toBe(4);
+    expect(reads()).toBe(before + 1);
+    // no longer asking, its prompt is gone at once
+    expect((await panel.glance([{ ...asks, state: "running", activity: null, lastEventAt: 7 }], 4600)).get("s1")?.prompt).toBeNull();
     fake.close();
   });
 

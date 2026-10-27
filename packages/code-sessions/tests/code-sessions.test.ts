@@ -132,6 +132,7 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
       super(ctx, "codeLink");
     }
     sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
     cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [{ branch: "tom-1/x", prUrl: "https://github.com/o/r/pull/7" }];
@@ -350,6 +351,7 @@ it("keeps an ended session a cell shows, answers History a page at a time with t
       super(ctx, "codeLink");
     }
     sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
     cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];
@@ -457,6 +459,7 @@ it("keeps what ran in each pane the window shows before what it shows now, and a
       super(ctx, "codeLink");
     }
     sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
     cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];
@@ -549,6 +552,7 @@ it("tells the window where the pane of an ended session a cell shows goes on, an
       super(ctx, "codeLink");
     }
     sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
     cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];
@@ -613,6 +617,7 @@ it("never shows a state older than one already shown, so a pick from History kee
       super(ctx, "codeLink");
     }
     sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
     cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];
@@ -691,6 +696,7 @@ it("keeps a terminal that finishes opening while herdr is asked for its panes, a
       super(ctx, "codeLink");
     }
     sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
     cellsChanged = () => {};
     sessionsOf = () => [];
     links = () => [];
@@ -767,6 +773,7 @@ it("shows a session code link asks for: the window opens or comes forward with i
       super(ctx, "codeLink");
     }
     sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
     cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];
@@ -838,6 +845,7 @@ it("opens plain terminals in herdr without code link, keeps them, closes them, a
       super(ctx, "codeLink");
     }
     sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
     cellsChanged = () => {};
     sessionsOf = () => {
       if (sessionsBroken) throw new Error("bad session row");
@@ -928,6 +936,7 @@ it("shows how herdr reads the agent in a plain terminal as it changes, nothing f
       super(ctx, "codeLink");
     }
     sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
     cellsChanged = () => {};
     sessionsOf = () => [];
     links = () => [];
@@ -1003,6 +1012,7 @@ it("shows a terminal as the code session its agent claimed, in place, and as a p
       super(ctx, "codeLink");
     }
     sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
     cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];
@@ -1109,6 +1119,7 @@ it("keeps named layouts and the auto-place switch for every window, and starts f
       super(ctx, "codeLink");
     }
     sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
     cellsChanged = () => {};
     sessionsOf = () => [];
     links = () => [];
@@ -1242,6 +1253,7 @@ it("starts herdr's server again when it went away, on opening with saved termina
       super(ctx, "codeLink");
     }
     sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
     cellsChanged = () => {};
     sessionsOf = () => [];
     links = () => [];
@@ -1326,6 +1338,7 @@ it("lists the assistant's conversations from a cache read when they change, neve
   ];
   let pending: { threadId: string; kind: string; text: string; options?: string[] }[] = [{ threadId: "t-asks", kind: "ask", text: "要我取消 3 张重复工单吗？" }];
   const sent: unknown[][] = [];
+  const glanced: string[][] = [];
   class FakeSurfaces extends Service {
     static provide = "desktopSurfaces";
     constructor(ctx: Context) {
@@ -1357,6 +1370,7 @@ it("lists the assistant's conversations from a cache read when they change, neve
       super(ctx, "codeLink");
     }
     sessionOutcomes = () => new Map();
+    sessionGlances = async (_projectId: string, ids: string[]) => (glanced.push(ids), new Map(ids.map((id) => [id, { approval: true, prompt: null, tail: ["● Bash(pnpm test)", "  ⎿ 12 passed"] }])));
     cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];
@@ -1394,6 +1408,9 @@ it("lists the assistant's conversations from a cache read when they change, neve
   const since = first.threads[0]!.wait!.since;
   // Its agent declared the keys for its prompt; when its hooks last spoke, for the bar's order.
   expect(first.sessions.find((s) => s.id === "s1")).toMatchObject({ approval: true, needsYou: true, lastEventAt: 50 });
+  // A live session in a pane carries its pane's last lines for its card, from code link's glance; an ended one is never glanced at.
+  expect(first.sessions.find((s) => s.id === "s1")!.tail).toEqual(["● Bash(pnpm test)", "  ⎿ 12 passed"]);
+  expect(glanced.flat()).not.toContain("s2");
   // Refreshes read the sessions, never the conversations again.
   expect(threadReads).toEqual([projectId]);
   for (let i = 0; i < 5; i++) await say({ type: "refresh" });
@@ -1523,6 +1540,7 @@ it("records what a cell shows, asks it for a snapshot when a session begins on i
       super(ctx, "codeLink");
     }
     sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
     cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];

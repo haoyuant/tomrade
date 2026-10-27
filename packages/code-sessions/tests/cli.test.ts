@@ -69,6 +69,7 @@ it("answers tomrade term over the MCP port: a pane in the folder, a ticket start
       super(ctx, "codeLink");
     }
     sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
     cellsChanged = () => {};
     sessionsOf = () => sessions;
     links = () => [];

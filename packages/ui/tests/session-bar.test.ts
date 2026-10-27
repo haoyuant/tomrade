@@ -115,3 +115,9 @@ it("lets a waiting terminal session's card answer only the prompt its screen sho
   const out = rows({ sessions: [asks("yes", {}), asks("no", { prompt: "deny" }), asks("mute", { approval: false }), asks("idle", { activity: "asking you something" }), session("runs", { approval: true, prompt: "allow" } as never)] });
   expect(Object.fromEntries(out.map((r) => [r.sessionId, r.prompt]))).toEqual({ yes: "allow", no: "deny", mute: null, idle: null, runs: null });
 });
+
+it("carries a live terminal session's last pane lines for its card and peek, and none once it ended", () => {
+  const out = rows({ sessions: [{ ...session("live"), tail: ["● Bash(pnpm test)", "  ⎿ 12 passed"] }, { ...session("old", { state: "ended", endedAt: 8 }), tail: ["gone"] }] });
+  expect(out.find((r) => r.key === "session:live")?.tail).toEqual(["● Bash(pnpm test)", "  ⎿ 12 passed"]);
+  expect(out.find((r) => r.key === "session:old")?.tail).toBeNull();
+});

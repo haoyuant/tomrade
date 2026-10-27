@@ -1,22 +1,33 @@
 import type { Context } from "cordis";
 import type { EngineApproval } from "@tomradex/agent";
 import type { TerminalInput } from "@tomradex/contracts";
-import { PROMPT_LINES, promptOnScreen } from "./prompt.js";
+import { PROMPT_LINES, promptOnScreen, tailLines } from "./prompt.js";
 import type { CodeLinkStore, SessionView } from "./store.js";
 
 /** The most of a pane's screen one read of its tail takes. */
 const TAIL_MAX = 200;
 /** How soon a waiting session whose screen showed no prompt is looked at again. */
 const GLANCE_RECHECK_MS = 2000;
+/** A card's lines of a pane are read again at most this often, however fast its session moves… */
+const TAIL_MIN_MS = 2000;
+/** …and, while a list asks and nothing moved, once they are this old. */
+const TAIL_STALE_MS = 10_000;
+/** How many of a pane's rows a card's two lines are found in. */
+const TAIL_ROWS = 12;
+/** How many lines a card shows, and how long each may be. */
+const TAIL_SHOWN = 2;
+const TAIL_LINE_MAX = 200;
 /** What the hooks say while a session waits on a permission: only those screens are read for a prompt. */
 const APPROVAL_ASK = /^needs your approval/i;
 
-/** What the session lists show of a live terminal session without opening it: whether its card can answer its prompt. */
+/** What the session lists show of a live terminal session without opening it: its pane's last lines, and whether its card can answer its prompt. */
 export interface SessionGlance {
   /** Its agent declared the keys that answer its permission prompt. */
   approval: boolean;
   /** What its screen asks that those keys answer now: a prompt with yes under the cursor, one with no, or nothing. */
   prompt: "allow" | "deny" | null;
+  /** The last lines its pane shows that say something; null without a pane here. */
+  tail: string[] | null;
 }
 
 /** What answering a session's permission prompt came to: answered, nothing pressed for a screen that asks no such thing, or failed. */
@@ -56,8 +67,12 @@ export function inputsOf(keys: string[]): TerminalInput[] {
  * session would, TOM-412) and works before an agent is detected in it. Nothing here starts a process.
  */
 export class SessionPanel {
-  /** Each session's last read prompt: kept until its next event, and one not seen is looked for again at most every GLANCE_RECHECK_MS. */
-  private readonly seen = new Map<string, { event: number | null; at: number; prompt: SessionGlance["prompt"] }>();
+  /**
+   * Each session's last read of its pane. A prompt seen is kept until the session's next event, and one not seen is
+   * looked for again at most every GLANCE_RECHECK_MS; the lines alone are read again on an event at most every
+   * TAIL_MIN_MS, and without one once TAIL_STALE_MS old.
+   */
+  private readonly seen = new Map<string, { event: number | null; at: number; asks: boolean; prompt: SessionGlance["prompt"]; tail: string[] }>();
 
   constructor(
     private readonly ctx: Context,
@@ -109,8 +124,9 @@ export class SessionPanel {
   }
 
   /**
-   * What the session lists show of these sessions' panes: for one waiting on a permission its agent declared the keys
-   * for, the prompt on its screen, read once per event and never for a session that waits on nothing.
+   * What the session lists show of these live sessions' panes, asked only while a list shows them: the last lines, and
+   * for one waiting on a permission its agent declared the keys for, the prompt on its screen. One read of the pane
+   * serves both; nothing attaches to it, and a session with no pane here is never read.
    */
   async glance(sessions: SessionView[], now = Date.now()): Promise<Map<string, SessionGlance>> {
     const terminals = this.terminals();
@@ -118,17 +134,22 @@ export class SessionPanel {
     await Promise.all(
       sessions.map(async (s) => {
         const approval = !!this.approvalOf(s.agent);
-        if (!approval || !terminals || !s.herdrPane || s.state !== "waiting" || !APPROVAL_ASK.test(s.activity ?? "")) {
+        if (!terminals || !s.herdrPane || s.state === "ended" || s.state === "lost") {
           this.seen.delete(s.id);
-          out.set(s.id, { approval, prompt: null });
+          out.set(s.id, { approval, prompt: null, tail: null });
           return;
         }
+        const asks = approval && s.state === "waiting" && APPROVAL_ASK.test(s.activity ?? "");
         const known = this.seen.get(s.id);
-        if (known && known.event === s.lastEventAt && (known.prompt || now - known.at < GLANCE_RECHECK_MS)) return void out.set(s.id, { approval, prompt: known.prompt });
-        const seen = promptOnScreen((await terminals.readTail(s.herdrPane, PROMPT_LINES).catch(() => null)) ?? "");
+        const sameEvent = known?.event === s.lastEventAt;
+        const reuse = !!known && (asks ? known.asks && sameEvent && (!!known.prompt || now - known.at < GLANCE_RECHECK_MS) : now - known.at < (sameEvent ? TAIL_STALE_MS : TAIL_MIN_MS));
+        if (known && reuse) return void out.set(s.id, { approval, prompt: asks ? known.prompt : null, tail: known.tail });
+        const screen = (await terminals.readTail(s.herdrPane, asks ? PROMPT_LINES : TAIL_ROWS).catch(() => null)) ?? "";
+        const seen = asks ? promptOnScreen(screen) : null;
         const prompt = seen ? (seen.allows ? "allow" : "deny") : null;
-        this.seen.set(s.id, { event: s.lastEventAt, at: now, prompt });
-        out.set(s.id, { approval, prompt });
+        const tail = tailLines(screen, TAIL_SHOWN).map((line) => line.slice(0, TAIL_LINE_MAX));
+        this.seen.set(s.id, { event: s.lastEventAt, at: now, asks, prompt, tail });
+        out.set(s.id, { approval, prompt, tail });
       })
     );
     return out;

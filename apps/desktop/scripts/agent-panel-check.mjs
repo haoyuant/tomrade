@@ -758,7 +758,20 @@ const run = async () => {
   await sleep(1200);
   const readsBefore = { tail: tailReads, convo: convoReads };
   await sleep(2000);
-  check("while no terminal session is shown, the panel reads nothing off the pane or its record", tailReads === readsBefore.tail && convoReads === readsBefore.convo && tailReads === 0, { tailReads, convoReads });
+  // the bar's cards glance at a live pane once per event (TOM-697), never on a timer; its record is never read
+  check("while no terminal session is shown, the panel reads its pane only for the bar's glance, once for the event, and never its record", tailReads === readsBefore.tail && convoReads === readsBefore.convo && tailReads <= 1 && convoReads === 0, { tailReads, convoReads });
+  // its card and its peek show the pane's last two lines; the peek says how to turn the dots into cards
+  await $(`(() => { const d = [...document.querySelectorAll('.ai .sbar-dot')].find((n) => /Tail the pane/.test(n.getAttribute('aria-label'))); d.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return true; })()`);
+  await sleep(200);
+  const tailPeek = await $(`(() => { const p = document.querySelector('.ai .sbar-peek'); return p ? { tail: [...p.querySelectorAll('.sbar-tail-line')].map((l) => l.textContent), hint: p.querySelector('.sbar-peek-foot')?.textContent ?? null } : null; })()`);
+  await $(`(() => { const d = [...document.querySelectorAll('.ai .sbar-dot')].find((n) => /Tail the pane/.test(n.getAttribute('aria-label'))); d.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })); return true; })()`);
+  check("the peek shows the pane's last two lines and says ⌘\\ turns the dots into cards", tailPeek?.tail.join("|") === "❯ claude|⏺ Reading the pane…" && /Hover to peek, click to switch · .+ expands into cards/.test(tailPeek.hint ?? ""), tailPeek);
+  await flip();
+  await sleep(300);
+  const tailCard = await $(`[...([...document.querySelectorAll('.ai .sbar-card')].find((n) => /Tail the pane/.test(n.textContent))?.querySelectorAll('.sbar-tail-line') ?? [])].map((l) => l.textContent)`);
+  check("its card shows the same two lines, in the terminal's colours", tailCard.join("|") === "❯ claude|⏺ Reading the pane…", tailCard);
+  await flip();
+  await sleep(300);
   await press(`[...document.querySelectorAll('.ai .sbar-dot')].find((n) => /Tail the pane/.test(n.getAttribute('aria-label')))`);
   await sleep(1500);
   view = await sessionView();
@@ -865,7 +878,8 @@ const run = async () => {
   await sleep(600);
   moved({ state: "running", activity: "Bash · more" });
   await sleep(2200);
-  check("picking a thread brings its conversation back and stops reading the pane and the record", !(await sessionView()) && tailReads === left.tail && convoReads === left.convo && !!(await $(`!!document.querySelector('.ai-scroll .turn, .ai-composer')`)), { tail: tailReads - left.tail, convo: convoReads - left.convo });
+  // what is left is the bar's glance at the event, once
+  check("picking a thread brings its conversation back and stops reading the pane and the record", !(await sessionView()) && tailReads - left.tail <= 1 && convoReads === left.convo && !!(await $(`!!document.querySelector('.ai-scroll .turn, .ai-composer')`)), { tail: tailReads - left.tail, convo: convoReads - left.convo });
 
   // ── what else waits: a line on top, ⌥↓ to the next, and answering one opens the next — or stays, as the person chose ──
   let askers = 0;
