@@ -3019,7 +3019,7 @@ export const ja: PartialMessages = {
     elsewhereTag: "別のコンピューター",
     endedHere: "このセッションのターミナルはもうありません",
     pick: "右のセッションを選ぶと、そのターミナルがここに表示されます",
-    pickOrNew: "右のセッションを選ぶか、ここで新しいターミナルを開いてください",
+    pickOrNew: "{{right}} / {{down}} で新しいペインを分割、または {{palette}} でセッションをここに置く",
     newTerminal: "新しいターミナル",
     startIn: "開始場所",
     starting: "起動中…",

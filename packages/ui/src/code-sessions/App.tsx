@@ -338,8 +338,8 @@ export function App() {
         )}
         <ContextMenuActionItem icon={null} name={say("newTerminal")} disabled={!canOpen || !!node.locked} onSelect={() => openTerminal(layout, node.id, state.places[0]!.cwd)} />
         <ContextMenuActionItem icon={null} name={say("detach")} disabled={!node.sessionId || !!node.locked} onSelect={() => change(show(layout, node.id, null))} />
-        <ContextMenuActionItem icon={null} name={say("splitRight")} hint={keyLabel("splitRight")} onSelect={() => change(split(layout, node.id, "row").layout)} />
-        <ContextMenuActionItem icon={null} name={say("splitDown")} hint={keyLabel("splitDown")} onSelect={() => change(split(layout, node.id, "column").layout)} />
+        <ContextMenuActionItem icon={null} name={say("splitRight")} hint={keyLabel("splitRight")} onSelect={() => select(splitCell(node.id, "row"))} />
+        <ContextMenuActionItem icon={null} name={say("splitDown")} hint={keyLabel("splitDown")} onSelect={() => select(splitCell(node.id, "column"))} />
         <ContextMenuActionItem icon={null} name={cells.length === 1 ? say("clearCell") : say("closeCell")} hint={cells.length === 1 ? undefined : keyLabel("close")} onSelect={() => change(close(layout, node.id))} />
         {cells.length > 1 && (
           <ContextMenuSub icon={null} name={say("goToPane")}>
@@ -355,13 +355,13 @@ export function App() {
     );
   };
   const pickTerminal = (t: TerminalRow, beside = false) => land(t.id, beside);
-  const openTerminal = (base: Layout, cell: string, cwd: string | null, resume?: string) => {
+  const openTerminal = (base: Layout, cell: string, cwd: string | null, resume?: string, from?: string) => {
     if (outside) return cwd ? send({ type: "openOutside", cwd }) : undefined;
     const terminalId = crypto.randomUUID();
     asked.current.set(terminalId, Date.now());
     change(show(base, cell, terminalId));
     setFocused(cell);
-    send({ type: "newTerminal", terminalId, cwd, ...(resume ? { resume } : {}) });
+    send({ type: "newTerminal", terminalId, cwd, ...(resume ? { resume } : {}), ...(from ? { from } : {}) });
   };
   // Selected by key: the keyboard goes along, to the cell's terminal, or nowhere for a cell without one.
   const select = (cell: string) => {
@@ -372,9 +372,21 @@ export function App() {
       else (document.activeElement as HTMLElement | null)?.blur();
     });
   };
+  // The folder a cell works in: its terminal's, its session's worktree, a closed terminal's; the project's for an empty one.
+  const folderOf = (id: string | null): string => {
+    const s = sessionIn(id);
+    return (id ? terminalsById.get(id)?.cwd : undefined) ?? (s ? (s.worktree ?? s.cwd) : null) ?? (id ? closedById.get(id)?.cwd : undefined) ?? state.places[0]!.cwd;
+  };
+  // Split as iTerm does: the new half is a plain shell in the folder of the cell it came from, never asking for an agent.
+  // With nothing to open one in, it stays empty.
   const splitCell = (cell: string, direction: "row" | "column") => {
     const next = split(layout, cell, direction);
-    change(next.layout);
+    if (!ready) {
+      change(next.layout);
+      return next.created;
+    }
+    const from = cells.find((c) => c.id === cell)?.sessionId ?? null;
+    openTerminal(next.layout, next.created, folderOf(from), undefined, (from ? (sessionIn(from)?.pane ?? terminalsById.get(from)?.pane) : null) ?? undefined);
     return next.created;
   };
   onWindowKey.current = (key) => {

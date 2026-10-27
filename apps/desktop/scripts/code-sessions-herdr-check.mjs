@@ -502,17 +502,27 @@ app.whenReady().then(async () => {
     }, 5000);
     await js(`(() => { const cell = document.querySelectorAll('.cs-cell')[3]; cell.querySelector('.cs-cell-bar').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); cell.querySelector('.xterm-helper-textarea').focus(); return true; })()`);
     const rowsBefore = await js(`document.querySelectorAll('.cs-row').length`);
+    // Split like iTerm: the new half is a plain shell, in the folder of the cell it came from, and selected.
+    const savedTerminals = () => JSON.parse(fs.readFileSync(path.join(work, "code-sessions.json"), "utf8")).terminals?.[project.id] ?? [];
+    const terminalsBefore = savedTerminals().length;
     press("D", ["meta"]);
     const splitRight = await settled({ count: 7, selected: 4 });
-    const rightEmpty = (await paneCells()).empty[4];
+    const rightShell = await wait(async () => (await paneCells()).empty[4] === false && savedTerminals().length === terminalsBefore + 1, 10000);
     press("D", ["meta", "shift"]);
     const splitDown = await settled({ count: 8, selected: 5 });
-    check("⌘D 向右分屏、⇧⌘D 向下分屏，新面板是空的并被选中", splitRight && rightEmpty && splitDown, JSON.stringify(await paneCells()));
+    const downShell = await wait(async () => (await paneCells()).empty[5] === false && savedTerminals().length === terminalsBefore + 2, 10000);
+    const splitFolders = savedTerminals().slice(terminalsBefore).map((t) => t.cwd);
+    check("⌘D 向右分屏、⇧⌘D 向下分屏：分出来就是 shell（不问 agent），文件夹跟着当前格子，并被选中", splitRight && rightShell && splitDown && downShell && splitFolders.every((f) => f === cwd || f === fs.realpathSync(cwd)), JSON.stringify({ cells: await paneCells(), splitFolders, cwd }));
     press("Left", ["meta", "alt"]);
     const wentLeft = await settled({ selected: 3, typing: 3 });
     press("Right", ["meta", "alt"]);
     const wentRight = await settled({ selected: 4 });
     check("⌥⌘← / ⌥⌘→ 选中旁边的面板，键盘跟着进到它的终端", wentLeft && wentRight, JSON.stringify(await paneCells()));
+    // The two shells end, so the list is as it was; their cells stay until closed.
+    for (const t of savedTerminals().slice(terminalsBefore)) await js(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal="${t.id}"]'); [...(cell?.querySelectorAll('.cs-cell-bar .link-btn') ?? [])].find((b) => b.textContent === '关闭终端')?.click(); return true; })()`);
+    await wait(async () => savedTerminals().length === terminalsBefore && (await js(`document.querySelectorAll('.cs-row').length`)) === rowsBefore, 8000);
+    await js(`document.querySelectorAll('.cs-cell')[4].querySelector('.cs-cell-bar').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); true`);
+    await settled({ selected: 4 });
     press("W", ["meta"]);
     const closedOne = await settled({ count: 7, selected: 4 });
     press("W", ["meta"]);
@@ -624,12 +634,34 @@ app.whenReady().then(async () => {
     await tjs(`document.querySelector('[data-testid=cs-side-new-terminal]').click(); true`);
     const opened = await wait(async () => (await tjs(`document.querySelectorAll('.cs-cell').length === 7 && !!document.querySelector('.cs-cell[data-cell-terminal] .xterm')`)));
     check("新终端：格子都占满时，在旁边新开一格并连上 herdr", opened);
-    // An empty pane beside it, auto-place on; then the agent in the terminal starts, and its hooks make it a session with
-    // no ticket on the same pane: it is not placed in the empty pane, and the terminal's cell is not knocked off.
+    // Its bar's split button: a plain shell beside it, in the folder its shell has moved to since it opened.
+    const termsNow = () => JSON.parse(fs.readFileSync(path.join(work, "code-sessions.json"), "utf8")).terminals?.[project.id] ?? [];
+    const firstTerminal = await tjs(`document.querySelector('.cs-cell[data-cell-terminal]').dataset.cellTerminal`);
+    const newPane = termsNow().find((t) => t.id === firstTerminal)?.pane;
+    const movedTo = fs.realpathSync(fs.mkdtempSync(path.join(cwd, "moved-")));
+    const shellCwd = () => JSON.parse(herdr("pane", "process-info", "--pane", newPane)).result.process_info.foreground_processes.map((p) => p.cwd);
+    await sleep(800);
+    herdr("pane", "send-text", newPane, `cd ${movedTo}`);
+    herdr("pane", "send-keys", newPane, "enter");
+    await wait(async () => shellCwd().some((d) => d && fs.realpathSync(d) === movedTo), 5000);
     await tjs(`document.querySelector('.cs-cell[data-cell-terminal] button[aria-label="向右分屏"]').click(); true`);
+    const splitOff = () => termsNow().find((t) => t.id !== firstTerminal);
+    const buttonShell = await wait(async () => !!splitOff()?.pane && (await tjs(`!!document.querySelector('.cs-cell[data-cell-terminal="${splitOff()?.id}"] .xterm')`)), 10000);
+    const buttonFolder = splitOff()?.cwd;
+    check("格子标题栏的分屏按钮分出来就是 shell，文件夹是当前格子的 shell 现在所在的目录", buttonShell && !!buttonFolder && fs.realpathSync(buttonFolder) === movedTo, JSON.stringify({ splitOff: splitOff(), movedTo, shell: shellCwd() }));
+    // That shell ends and its cell is let go: an empty pane beside the terminal. Auto-place on, the agent in the terminal
+    // starts and its hooks make it a session with no ticket on the same pane: it is not placed in the empty pane, and
+    // the terminal's cell is not knocked off.
+    const offId = splitOff()?.id;
+    await tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal="${offId}"]'); [...(cell?.querySelectorAll('.cs-cell-bar .link-btn') ?? [])].find((b) => b.textContent === '关闭终端')?.click(); return true; })()`);
+    await wait(async () => !splitOff(), 8000);
+    await tjs(`(() => { const cell = [...document.querySelectorAll('.cs-cell')].find((c) => c.querySelector('[data-testid=cs-closed-terminal]') || (!c.querySelector('.xterm') && c.dataset.cell !== document.querySelector('.cs-cell[data-cell-terminal]')?.dataset.cell)); cell?.querySelector('.cs-cell-bar').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 20 })); return true; })()`);
+    await sleep(300);
+    await tjs(`[...document.querySelectorAll('[role=menuitem]')].find((i) => i.textContent === '断开')?.click(); true`);
     await wait(async () => (await tjs(`[...document.querySelectorAll('.cs-cell-name')].filter((n) => n.textContent === '从右侧选一个会话，在这里显示它的终端').length`)) === 1, 5000);
+    const emptyText = await tjs(`[...document.querySelectorAll('.cs-cell')].find((c) => c.querySelector('.cs-cell-name').textContent === '从右侧选一个会话，在这里显示它的终端')?.querySelector('.cs-cell-empty > span')?.textContent ?? ''`);
+    check("空格子写着「⌘D / ⇧⌘D 分出新格子，或 ⌘K 把会话放进来」，下面仍有文件夹和「新终端」", emptyText.includes("分出新格子") && emptyText.includes("把会话放进来") && (await tjs(`!!document.querySelector('.cs-cell-empty > .cs-new-terminal [data-testid=cs-new-terminal]')`)), emptyText);
     const cellsNow = await tjs(`document.querySelectorAll('.cs-cell').length`);
-    const newPane = (JSON.parse(fs.readFileSync(path.join(work, "code-sessions.json"), "utf8")).terminals?.[project.id] ?? []).sort((a, b) => b.startedAt - a.startedAt)[0]?.pane;
     const hooked = ctx.codeLink.store.createSession(project.id, { repoId: "check", branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, worktree: cwd });
     ctx.codeLink.store.patchSession(project.id, hooked.id, { state: "running", herdrPane: newPane });
     ctx.emit("codeLink/changed", project.id);

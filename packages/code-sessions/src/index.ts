@@ -1218,8 +1218,11 @@ function apply(ctx: Context, config: Config) {
   };
 
   /** A plain shell in a new tab of the project's workspace (herdr's, or a pane of the pty host). It needs nothing of code link: only the backend has to answer. */
-  const newTerminal = async (projectId: string, win: Open, id: string, cwd: string | null, resume?: string) => {
-    const where = cwd && fs.existsSync(cwd) ? cwd : (await places(projectId))[0]!.cwd;
+  const newTerminal = async (projectId: string, win: Open, id: string, cwd: string | null, resume?: string, from?: string) => {
+    // Split off a cell: where its shell is now, as iTerm does, else the folder the window knows it by.
+    const live = from ? (await backend()?.processes(from).catch(() => []))?.find((p) => p.cwd && fs.existsSync(p.cwd))?.cwd : undefined;
+    const asked = live ?? cwd;
+    const where = asked && fs.existsSync(asked) ? asked : (await places(projectId))[0]!.cwd;
     // A conversation taken up again: its agent, by its id, in the folder it ran in.
     const talk = resume ? sessionOf(projectId, resume) : undefined;
     const command = talk ? resumeCommand(talk.agent, talk.externalId) : null;
@@ -1264,7 +1267,7 @@ function apply(ctx: Context, config: Config) {
         }
       }
       case "newTerminal":
-        return newTerminal(projectId, win, m.terminalId, m.cwd, m.resume);
+        return newTerminal(projectId, win, m.terminalId, m.cwd, m.resume, typeof m.from === "string" ? m.from : undefined);
       case "conversation": {
         const before = typeof m.before === "number" && Number.isSafeInteger(m.before) && m.before >= 0 ? m.before : undefined;
         const read = ctx.codeLink.conversation?.(projectId, m.sessionId, before) ?? null;

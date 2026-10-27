@@ -208,8 +208,11 @@ export type WindowMessage =
   /** The window names the new terminal's id, so its cell shows it before herdr has opened it. */
   /** The ended session a cell shows: its conversation, read from its agent's own record; `before` an earlier read's `start`, what came before it. */
   | { type: "conversation"; cell: string; sessionId: string; before?: number }
-  /** `resume`: a conversation's session, taken up again in the new terminal by its agent. */
-  | { type: "newTerminal"; terminalId: string; cwd: string | null; resume?: string }
+  /**
+   * `resume`: a conversation's session, taken up again in the new terminal by its agent. `from`: the pane of the cell it
+   * was split off, whose shell's folder it starts in when that is known (the shell may have moved since `cwd`).
+   */
+  | { type: "newTerminal"; terminalId: string; cwd: string | null; resume?: string; from?: string }
   | { type: "closeTerminal"; terminalId: string }
   /** Where herdr cannot show a terminal here: open one in the system terminal, in this folder. */
   | { type: "openOutside"; cwd: string | null }
