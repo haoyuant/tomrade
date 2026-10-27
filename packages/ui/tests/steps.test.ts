@@ -121,9 +121,10 @@ it("keeps each run's stretch to itself and leaves what the person sent into it o
 });
 
 it("says what writing code waits to be allowed, and folds the questions answered before", () => {
-  const messages = [user("go"), step("write_file", { path: "a.ts" }), ask("q1"), step("bash", {}, "ok"), step("write_file", { path: "b.ts" }), said(), ask("q2")];
+  const answer = (): ThreadMessage => ({ id: `m${++seq}`, threadId: "t", seq, role: "user", runId: "r", at: 0, block: { type: "text", text: "Allow once" } });
+  const messages = [user("go"), step("write_file", { path: "a.ts" }), ask("q1"), answer(), step("bash", {}, "ok"), step("write_file", { path: "b.ts" }), said(), ask("q2")];
   const out = foldSteps(messages, 0, { id: "q2", text: "Run this command in /repo?\n\npnpm test" });
-  expect(shape(out)).toEqual(["text", "fold4", "text", "question"]);
+  expect(shape(out)).toEqual(["text", "fold5", "text", "question"]);
   const fold = out[1] as StepFold;
   expect(fold.waiting).toBe("pnpm test");
   expect(workConclusion(fold.work, words, fold.waiting)).toBe("convoFiles(2) · convoCommand(1) · convoWaitingFor(pnpm test)");
