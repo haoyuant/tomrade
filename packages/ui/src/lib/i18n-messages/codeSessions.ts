@@ -158,7 +158,23 @@ export const codeSessions = {
     keyClose: "close the pane",
     keyArrows: "+ arrows: the pane beside",
     keyPrevNext: "previous / next pane",
-    keyFold: "fold the session bar"
+    keyFold: "fold the session bar",
+    convoTab: "Conversation",
+    rawTab: "Raw output",
+    rawOnlyWhenShown: "Raw output is recorded only while this window shows the pane. It can be turned off in Settings → Terminal recording.",
+    rawNone: "No raw output was recorded for this stretch.",
+    rawLoading: "Loading the recording…",
+    rawCut: "The recording's start is past what a replay can hold: it begins later, and the screen fills in as it plays.",
+    rawUnclean: "The recording begins without a whole screen: it fills in as it plays.",
+    rawPlay: "Play",
+    rawPause: "Pause",
+    rawPosition: "Position in the recording",
+    rawSpeed: "Speed",
+    closedTerminal: "Closed terminal",
+    closedTerminalRan: "Terminal · {{from}} – {{to}}",
+    closedAt: "Closed {{when}}",
+    shelfTerminals: "Terminals ({{n}})",
+    terminalsEmpty: "No closed terminal with a recording yet. A terminal is recorded while a pane of this window shows it."
   },
   zh: {
     here: "这个窗口里",
@@ -318,6 +334,22 @@ export const codeSessions = {
     keyClose: "关格子",
     keyArrows: "+ 方向键 换格子",
     keyPrevNext: "上一个 / 下一个",
-    keyFold: "收起会话栏"
+    keyFold: "收起会话栏",
+    convoTab: "对话",
+    rawTab: "原始输出",
+    rawOnlyWhenShown: "原始输出只在终端窗口显示这个窗格时录制，可以在设置 → 终端录制里关掉。",
+    rawNone: "这段时间没有录到原始输出。",
+    rawLoading: "正在读取录制…",
+    rawCut: "录制的开头超出了回放能容纳的大小：从中途开始，画面会随播放逐渐补全。",
+    rawUnclean: "录制的开头没有整屏画面：画面会随播放逐渐补全。",
+    rawPlay: "播放",
+    rawPause: "暂停",
+    rawPosition: "录制中的位置",
+    rawSpeed: "速度",
+    closedTerminal: "已关闭的终端",
+    closedTerminalRan: "终端 · {{from}} – {{to}}",
+    closedAt: "关闭于 {{when}}",
+    shelfTerminals: "终端（{{n}}）",
+    terminalsEmpty: "还没有带录制的已关闭终端。终端在这个窗口的格子显示它时才会被录制。"
   }
 };

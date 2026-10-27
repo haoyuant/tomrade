@@ -707,6 +707,39 @@ app.whenReady().then(async () => {
     const ended = await wait(async () => !JSON.parse(herdr("pane", "list")).result.panes.some((p) => p.pane_id === plainPane) && saved().length === 0);
     check("关闭终端：herdr 里的 pane 结束，列表里也没了", ended);
 
+    // The closed terminal's output was recorded while its cell showed it: on the archive's terminals shelf, played
+    // back in the cell it is picked into. The ended ticket session that ran alongside in pane four has a second tab,
+    // the raw output of its own stretch: marker-four was on its screen, what was typed after it ended is not.
+    const rowsOf = (sel) => `[...(document.querySelector(${JSON.stringify(sel)})?.querySelectorAll('.xterm-rows > div') ?? [])].map((r) => r.textContent).join('\\n')`;
+    const replayText = (sel) => tjs(rowsOf(sel));
+    const detachCell = async (sel) => {
+      await tjs(`document.querySelector(${JSON.stringify(sel)})?.closest('.cs-cell')?.querySelector('.cs-cell-bar').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 20 })); true`);
+      await sleep(300);
+      await tjs(`[...document.querySelectorAll('[role=menuitem]')].find((i) => i.textContent === '断开')?.click(); true`);
+      await sleep(300);
+    };
+    await tjs(`document.querySelector('[data-testid=cs-archive]').click(); true`);
+    await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-shelf-terminals]')`), 5000);
+    await tjs(`document.querySelector('[data-testid=cs-shelf-terminals]').click(); true`);
+    const closedRow = await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-archive-terminals] .cs-row')`), 8000);
+    await tjs(`document.querySelector('[data-testid=cs-archive-terminals] .cs-row')?.click(); true`);
+    const closedReplayed = closedRow && (await wait(async () => (await replayText("[data-testid=cs-closed-terminal] .cs-replay")).includes("pane-is-"), 15000));
+    check("关掉的普通终端在归档的「终端」架子里，选中后格子回放它的原始输出", closedReplayed, JSON.stringify({ closedRow, text: (await replayText("[data-testid=cs-closed-terminal] .cs-replay")).trim().slice(-300) }));
+    fs.writeFileSync(path.join(shots, "code-sessions-replay-terminal.png"), (await tw.webContents.capturePage()).toPNG());
+    await tjs(`document.querySelector('[data-testid=cs-shelf-tickets]').click(); true`);
+    await sleep(300);
+    await tjs(`${rowWith(alongItem.key)}?.click(); true`);
+    const rawTab = await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-ended] [data-testid=cs-tab-raw][data-recorded]')`), 8000);
+    await tjs(`document.querySelector('[data-testid=cs-ended] [data-testid=cs-tab-raw]')?.click(); true`);
+    const sessionReplay = () => replayText("[data-testid=cs-ended] .cs-replay");
+    const ownStretch = rawTab && (await wait(async () => (await sessionReplay()).includes("marker-four"), 15000)) && !(await sessionReplay()).includes("after-pane-keys");
+    check("结束的会话多一个「原始输出」标签：回放只含它自己那段，有 marker-four，没有它结束后才输入的 after-pane-keys", ownStretch, JSON.stringify({ rawTab, text: (await sessionReplay()).trim().slice(-400) }));
+    fs.writeFileSync(path.join(shots, "code-sessions-replay-session.png"), (await tw.webContents.capturePage()).toPNG());
+    await tjs(`document.querySelector('[data-testid=cs-archive-back]').click(); true`);
+    await sleep(300);
+    // The cell used for reading is emptied again, for the steps below that count empty cells.
+    await detachCell("[data-testid=cs-ended]");
+
     // A layout kept under a name.
     await tjs(`document.querySelector('[data-testid=cs-save-layout]').click(); true`);
     await sleep(200);
