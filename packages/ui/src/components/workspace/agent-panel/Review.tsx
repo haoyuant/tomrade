@@ -10,7 +10,7 @@ import { invoke } from "~/lib/api";
 import { findEngine, useUnarchiveThread } from "~/lib/agent";
 import { useStartTicket } from "~/lib/codeLink";
 import { workParts } from "~/lib/convoFold";
-import { intlTag } from "~/lib/domain";
+import { intlTag, timeAgo } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { keys } from "~/lib/queries";
 import { alsoKeys, dayLabel, groupByDay, landingSegment, openAtFirst, outcomeLine, segmentKind, segmentSummary, segmentWork, stretchesOf, type OutcomeWords } from "~/lib/review";
@@ -26,28 +26,37 @@ export interface ReviewFocus {
 
 const refOf = (f: ReviewFocus) => (f.sessionId ? `session:${f.sessionId}` : f.threadId ? `thread:${f.threadId}` : "");
 
-/**
- * The look back in the assistant panel: ended conversations by day, what came of each first; one opened read-only,
- * its outcome and tickets on top, the conversation cut by ticket with each stretch marked chat or writing code, and
- * the raw output its pane showed where that was recorded. Counts come with the rows; a record is read only for the
- * conversation opened.
- */
-export function Review({ projectId, focus, engines, onClose, onOpenThread }: {
-  projectId: string;
-  focus: ReviewFocus | null;
-  engines: EngineView[] | undefined;
-  onClose: () => void;
-  onOpenThread: (threadId: string) => void;
-}) {
+/** The words every part of the look back shares: an agent's name, a session's span, the outcome's. */
+function useReviewWords(engines: EngineView[] | undefined) {
   const { t, locale } = useI18n();
-  const [picked, setPicked] = useState<ReviewFocus | null>(focus);
-  // asked for anew (⌘K, a ticket's page): what was open before gives way
-  useEffect(() => setPicked(focus), [focus]);
   const say: OutcomeWords = (key, vars) => t(`review.${key}`, vars);
   const agentName = (agent: string) => findEngine(engines, agent)?.title ?? agent;
   const tag = intlTag(locale);
   const hhmm = (at: number) => new Date(at).toLocaleTimeString(tag, { hour: "2-digit", minute: "2-digit" });
   const span = (r: ReviewRow) => `${hhmm(r.startedAt)}–${hhmm(r.endedAt)}`;
+  return { say, agentName, span };
+}
+
+/**
+ * The look back in the assistant panel: ended conversations by day, what came of each first, and the idle ones the
+ * session bar no longer shows; one opened read-only, its outcome and tickets on top, the conversation cut by ticket
+ * with each stretch marked chat or writing code, and the raw output its pane showed where that was recorded. Counts
+ * come with the rows; a record is read only for the conversation opened. An idle conversation opens as itself.
+ */
+export function Review({ projectId, focus, engines, omit, onClose, onOpenThread }: {
+  projectId: string;
+  focus: ReviewFocus | null;
+  engines: EngineView[] | undefined;
+  /** The conversations the session bar shows: the list leaves those out. */
+  omit?: ReadonlySet<string>;
+  onClose: () => void;
+  onOpenThread: (threadId: string) => void;
+}) {
+  const { t } = useI18n();
+  const [picked, setPicked] = useState<ReviewFocus | null>(focus);
+  // asked for anew (⌘K, a ticket's page): what was open before gives way
+  useEffect(() => setPicked(focus), [focus]);
+  const { say, agentName, span } = useReviewWords(engines);
   const where = (r: ReviewRow) => t(r.where === "pane" ? "review.whereTerminal" : r.where === "outside" ? "review.whereOutside" : "review.wherePanel");
 
   return (
@@ -66,15 +75,19 @@ export function Review({ projectId, focus, engines, onClose, onOpenThread }: {
       {picked ? (
         <Opened projectId={projectId} focus={picked} agentName={agentName} span={span} where={where} say={say} onOpenThread={onOpenThread} />
       ) : (
-        <List projectId={projectId} agentName={agentName} span={span} say={say} onPick={(r) => setPicked(r.kind === "thread" ? { threadId: r.id } : { sessionId: r.id })} />
+        <ReviewList projectId={projectId} engines={engines} omit={omit} onPick={(r) => (r.kind === "idle" ? onOpenThread(r.id) : setPicked(r.kind === "thread" ? { threadId: r.id } : { sessionId: r.id }))} />
       )}
     </div>
   );
 }
 
-/** The ended conversations by day, outcomes first; searched by outcome, ticket and what was said; more on request. */
-function List({ projectId, agentName, span, say, onPick }: { projectId: string; agentName: (agent: string) => string; span: (r: ReviewRow) => string; say: OutcomeWords; onPick: (r: ReviewRow) => void }) {
+/**
+ * The conversations by day, outcomes first: ended sessions, put-away conversations and idle ones (said so); searched
+ * by outcome, ticket and what was said; more on request. On its own, so another window's sidebar can hold it too.
+ */
+function ReviewList({ projectId, engines, omit, onPick }: { projectId: string; engines: EngineView[] | undefined; omit?: ReadonlySet<string>; onPick: (r: ReviewRow) => void }) {
   const { t, locale } = useI18n();
+  const { say, agentName, span } = useReviewWords(engines);
   const [query, setQuery] = useState("");
   const typed = useDeferredValue(query.trim());
   const first = useQuery({ queryKey: keys.codeLink.review(projectId, ""), queryFn: () => invoke("codeLink.reviewList", projectId) });
@@ -95,10 +108,12 @@ function List({ projectId, agentName, span, say, onPick }: { projectId: string; 
   const titles = useQuery({ queryKey: keys.codeLink.review(projectId, typed), queryFn: () => invoke("codeLink.reviewList", projectId, { query: typed }), enabled: typed.length > 0 });
   const said = useQuery({ queryKey: keys.review.said(projectId, typed), queryFn: () => invoke("codeLink.reviewSaid", projectId, typed), enabled: typed.length >= 2, staleTime: 5 * 60_000 });
   const rows = useMemo(() => {
-    if (!typed) return [first.data, ...pages].flatMap((p) => p?.rows ?? []);
+    // an idle conversation the bar shows is reached there; the list holds the ones past it
+    const shown = (r: ReviewRow) => r.kind === "idle" && !!omit?.has(r.id);
+    if (!typed) return [first.data, ...pages].flatMap((p) => p?.rows ?? []).filter((r) => !shown(r));
     const seen = new Set<string>();
-    return [...(titles.data?.rows ?? []), ...(said.data?.rows ?? [])].filter((r) => !seen.has(r.id) && seen.add(r.id)).sort((a, b) => b.endedAt - a.endedAt);
-  }, [typed, first.data, pages, titles.data, said.data]);
+    return [...(titles.data?.rows ?? []), ...(said.data?.rows ?? [])].filter((r) => !shown(r) && !seen.has(r.id) && seen.add(r.id)).sort((a, b) => b.endedAt - a.endedAt);
+  }, [typed, first.data, pages, titles.data, said.data, omit]);
   const saidOnly = (r: ReviewRow) => !!typed && !!said.data?.said[r.id] && !titles.data?.rows.some((x) => x.id === r.id);
   const now = Date.now();
   const tag = intlTag(locale);
@@ -115,13 +130,14 @@ function List({ projectId, agentName, span, say, onPick }: { projectId: string; 
               const outcome = outcomeLine(r, say);
               const also = alsoKeys(r);
               return (
-                <button key={r.id} type="button" className="ai-review-row" data-testid="ai-review-row" data-review={r.id} onClick={() => onPick(r)}>
+                <button key={r.id} type="button" className="ai-review-row" data-testid="ai-review-row" data-review={r.id} data-kind={r.kind} onClick={() => onPick(r)}>
                   <span className="ai-review-row-title">
-                    <StatusMark status="done" />
+                    <StatusMark status={r.kind === "idle" ? "idle" : "done"} />
                     <span>{r.tickets[0] ? `${r.tickets[0].key} ${r.title}` : r.title || t("agentPanel.newThread")}</span>
+                    {r.kind === "idle" && <span className="ai-review-kind">{t("sessionBar.statusIdle")}</span>}
                   </span>
                   {outcome && <span className="ai-review-outcome">{outcome}</span>}
-                  <span className="meta-txt dense">{[agentName(r.agent), span(r), also.length ? t("review.also", { keys: also.join(", ") }) : null].filter(Boolean).join(" · ")}</span>
+                  <span className="meta-txt dense">{[agentName(r.agent), r.kind === "idle" ? timeAgo(r.endedAt) : span(r), also.length ? t("review.also", { keys: also.join(", ") }) : null].filter(Boolean).join(" · ")}</span>
                   {saidOnly(r) && <span className="ai-review-said" data-testid="ai-review-said">{t("review.said", { text: said.data!.said[r.id]! })}</span>}
                 </button>
               );
@@ -198,8 +214,9 @@ function Opened({ projectId, focus, agentName, span, where, say, onOpenThread }:
   const outcome = outcomeLine(row, say);
   const counts = stretchesOf(data.segments);
   const ticket = row.tickets[0] ?? null;
-  // Going on: a ticket session continues headless in a conversation of its own; a put-away conversation comes back.
+  // Going on: a ticket session continues headless in a conversation of its own; a put-away conversation comes back; an idle one opens.
   const goOn = () => {
+    if (row.kind === "idle") return onOpenThread(row.id);
     if (row.kind === "thread") return unarchive.mutate(row.id, { onSuccess: () => onOpenThread(row.id) });
     if (!ticket) return;
     start.mutate({ itemId: ticket.itemId, mode: "run" }, {
@@ -231,9 +248,9 @@ function Opened({ projectId, focus, agentName, span, where, say, onOpenThread }:
           {!row.tickets.length && <span className="ai-review-chip">{t("review.noTicket")}</span>}
         </div>
         <div className="ai-review-actions">
-          {(ticket || row.kind === "thread") && (
-            <button type="button" className="btn btn-primary btn-xs" data-testid="ai-review-resume" title={t(row.kind === "thread" ? "review.resumeThreadHint" : "review.resumeHint")} disabled={busy} onClick={goOn}>
-              {t(row.kind === "thread" ? "review.resumeThread" : "review.resume")}
+          {(ticket || row.kind !== "session") && (
+            <button type="button" className="btn btn-primary btn-xs" data-testid="ai-review-resume" title={t(row.kind === "idle" ? "review.openThreadHint" : row.kind === "thread" ? "review.resumeThreadHint" : "review.resumeHint")} disabled={busy} onClick={goOn}>
+              {t(row.kind === "idle" ? "review.openThread" : row.kind === "thread" ? "review.resumeThread" : "review.resume")}
             </button>
           )}
           {row.resumable && (
@@ -250,7 +267,7 @@ function Opened({ projectId, focus, agentName, span, where, say, onOpenThread }:
             <button type="button" aria-pressed={lens === "raw"} data-testid="ai-review-lens-raw" onClick={() => setLens("raw")}>{t("review.lensRaw")}</button>
           </span>
         )}
-        <span className="ai-review-lens-note">{t(row.kind === "thread" || row.where === "panel" ? "review.lensNoteThread" : "review.lensNote")}</span>
+        <span className="ai-review-lens-note">{t(row.kind !== "session" || row.where === "panel" ? "review.lensNoteThread" : "review.lensNote")}</span>
       </div>
       {lens === "raw" ? (
         <div className="ai-review-raw" data-testid="ai-review-raw">

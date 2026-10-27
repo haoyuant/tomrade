@@ -176,7 +176,6 @@ declare module "@tomradex/ipc" {
     /** Put the thread on a workstream (its repository is where a code engine runs), or back on the whole project. */
     "agent.setWorkstream": (projectId: string, threadId: string, boardId: string | null) => ThreadSummary;
     "agent.archiveThread": (projectId: string, threadId: string) => boolean;
-    "agent.archivedThreads": (projectId: string) => ThreadSummary[];
     "agent.unarchiveThread": (projectId: string, threadId: string) => boolean;
     "agent.deleteThread": (projectId: string, threadId: string) => boolean;
     /** Where the thread's engine would run: ready, or why not yet (no checkout on this machine). */
@@ -467,7 +466,6 @@ export class Agent extends Service implements AgentReader {
       ctx.ipc.handle("agent.takeoverGeneral", (projectId, itemId) => ctx.agent.takeoverGeneral(projectId, itemId));
       ctx.ipc.handle("agent.setWorkstream", (projectId, threadId, boardId) => ctx.agent.setWorkstream(projectId, threadId, boardId));
       ctx.ipc.handle("agent.archiveThread", (projectId, threadId) => ctx.agent.archiveThread(projectId, threadId));
-      ctx.ipc.handle("agent.archivedThreads", (projectId) => ctx.agent.withOrigins(projectId, ctx.agent.store.archivedThreads(projectId, PANEL_SURFACES)));
       ctx.ipc.handle("agent.unarchiveThread", (projectId, threadId) => ctx.agent.unarchiveThread(projectId, threadId, { restored: true }));
       ctx.ipc.handle("agent.deleteThread", (projectId, threadId) => ctx.agent.deleteThread(projectId, threadId));
       ctx.ipc.handle("agent.workdir", (projectId, threadId) => ctx.agent.workdir(projectId, threadId));

@@ -25,6 +25,10 @@ export interface BarRow {
   itemIds: string[];
   /** The key of the ticket it works, when it works one. */
   ticket: string | null;
+  /** What opened a conversation, as the plugin that did names it; chips after the title. */
+  origins: string[];
+  /** A conversation stopped by a usage limit continues then, on its own. */
+  parkedUntil: number | null;
   startedAt: number;
   /** When it last moved: the age a card shows. */
   at: number;
@@ -70,7 +74,7 @@ export function sessionBarRows(input: {
       title: th.title || (th.itemId ? input.itemTitle(th.itemId) : null) || "",
       agent: th.engine, status, where: "panel", terminalApp: null,
       wait: wait && { kind: wait.kind, text: wait.text }, activity: live ? session.activity : null, outcome: null,
-      itemIds: th.itemId ? [th.itemId] : [], ticket: keyOf(th.itemId ? [th.itemId] : []), startedAt: th.createdAt, at: wait?.since ?? th.updatedAt,
+      itemIds: th.itemId ? [th.itemId] : [], ticket: keyOf(th.itemId ? [th.itemId] : []), origins: th.origins ?? [], parkedUntil: th.parkedUntil ?? null, startedAt: th.createdAt, at: wait?.since ?? th.updatedAt,
       parentKey: th.parentId && panelThreads.has(th.parentId) ? `thread:${th.parentId}` : null, depth: 0
     });
   }
@@ -86,7 +90,7 @@ export function sessionBarRows(input: {
       agent: s.agent, status, where: s.herdrPane ? "pane" : "outside", terminalApp: s.herdrPane ? null : s.terminal,
       wait: status === "wait" ? { kind: wait?.kind ?? (s.state === "error" ? "stuck" : "waiting"), text: wait?.text ?? s.activity ?? s.summary } : null,
       activity: ended ? null : s.activity, outcome: ended ? s.summary : null,
-      itemIds: s.itemIds, ticket: keyOf(s.itemIds), startedAt: s.startedAt, at: wait?.since ?? (ended ? s.endedAt : null) ?? s.lastEventAt ?? s.startedAt,
+      itemIds: s.itemIds, ticket: keyOf(s.itemIds), origins: [], parkedUntil: null, startedAt: s.startedAt, at: wait?.since ?? (ended ? s.endedAt : null) ?? s.lastEventAt ?? s.startedAt,
       parentKey: null, depth: 0
     });
   }
