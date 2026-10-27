@@ -5,11 +5,23 @@ import type { Context } from "cordis";
 import { GitFolder, type Git } from "@tomradex/git";
 import { CURSOR_HOOK_SCRIPT } from "./cursor-hooks.js";
 import { inspectConnection, inspectConnectFiles, type AgentConnectionView, type ConnectionView } from "./connection.js";
-import { CONNECT_AGENTS, connectFiles, writeConnectFiles, type ConnectAgent, type ConnectInput, type Connectors, type SkippedAgent } from "./connect.js";
+import { andList, CONNECT_AGENTS, connectFiles, writeConnectFiles, type ConnectAgent, type ConnectInput, type Connectors, type SkippedAgent } from "./connect.js";
 import { compareUrl } from "./landing.js";
 import type { CodeLinkStore } from "./store.js";
 import { commandOk, exec } from "./terminal.js";
 import type { CodeWords } from "./words.js";
+
+/** What a connection's commit and pull request say it gives: the chosen agents its files connect, never one left out. */
+function connectSummary(agents: readonly AgentConnectionView[], files: readonly string[]): string {
+  const reach = agents.filter((agent) => agent.chosen && agent.tools);
+  const report = reach.filter((agent) => agent.tracking === "hooks");
+  const titles = (list: readonly AgentConnectionView[]) => andList(list.map((agent) => agent.title));
+  return [
+    ...(reach.length ? [`Project config lets ${titles(reach)} reach Tomrade's MCP server.`] : []),
+    ...(report.length ? [`${titles(report)} ${report.length > 1 ? "report" : "reports"} session lifecycle back.`] : []),
+    ...(files.includes("CLAUDE.md") || files.includes("AGENTS.md") ? ["Agent instructions describe the ticket conventions."] : [])
+  ].join(" ");
+}
 
 /** For everyone who clones the repository (a branch and pull request), or for this machine only (untracked files in the checkout). */
 export type ConnectMode = "team" | "local";
@@ -197,7 +209,8 @@ export class RepoConnect {
       if (files.length) await this.git(["add", "-f", "--", ...files], { cwd: worktree });
       // A checkout on Windows records no executable bit, and elsewhere Cursor runs the script by its path.
       if (files.includes(CURSOR_HOOK_SCRIPT)) await this.git(["add", "--chmod=+x", "--", CURSOR_HOOK_SCRIPT], { cwd: worktree });
-      const committed = files.length > 0 && (await folder.commit("Connect this repository to Tomrade\n\nProject MCP config lets Claude Code, Codex and WorkBuddy discover Tomrade, a project extension does it for Pi and opencode.json with a plugin for OpenCode, agent instructions describe the ticket conventions, and their hooks report session lifecycle back."));
+      const said = connectSummary(agents, files);
+      const committed = files.length > 0 && (await folder.commit(`Connect this repository to Tomrade${said ? `\n\n${said}` : ""}`));
 
       if (!(await folder.remoteUrl())) return { branch, agents, files, skipped, committed, pushed: false, url: null, message: w("connectLocal", { branch, base: repo.defaultBranch }) };
       if (state && !state.agentPush) return { branch, agents, files, skipped, committed, pushed: false, url: null, message: w("connectPushOff", { branch }) };
@@ -208,7 +221,7 @@ export class RepoConnect {
       if (await commandOk("gh")) {
         const env = await this.ctx.github.environment(this.git, worktree);
         try {
-          url = (await exec("gh", ["pr", "create", "--head", branch, "--base", repo.defaultBranch, "--title", "Connect this repository to Tomrade", "--body", `Adds ${files.join(", ")} to connect agent tools and Claude Code/Codex/WorkBuddy/Pi/OpenCode lifecycle reports. Review Codex hooks with /hooks after merging.`], worktree, env)).trim().split("\n").pop() ?? null;
+          url = (await exec("gh", ["pr", "create", "--head", branch, "--base", repo.defaultBranch, "--title", "Connect this repository to Tomrade", "--body", [`Adds ${files.join(", ")}.`, said, ...(agents.some((agent) => agent.id === "codex" && agent.chosen && agent.tracking === "hooks") ? ["Review Codex hooks with /hooks after merging."] : [])].filter(Boolean).join(" ")], worktree, env)).trim().split("\n").pop() ?? null;
           created = !!url;
         } catch {
           try {
