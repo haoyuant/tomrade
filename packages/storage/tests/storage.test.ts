@@ -231,6 +231,17 @@ describe("ctx.storage", () => {
     expect((await storage.statusFor(project.id)).state).toBe("ahead");
   });
 
+  it("reads the cache once for a publish and the status after it", async () => {
+    const { db, storage, items, board, project } = await machine();
+    await storage.publish(project.id);
+    items.create({ title: "New", projectId: project.id, boardId: board.id, by: "human" });
+    const sql = vi.spyOn(db, "prepare");
+    await storage.publish(project.id);
+    expect((await storage.statusFor(project.id)).state).toBe("synced");
+    expect(sql.mock.calls.filter(([q]) => /FROM items WHERE project_id = @projectId ORDER BY/.test(q))).toHaveLength(1);
+    sql.mockRestore();
+  });
+
   it("takes the folder's copy on refresh when local is clean, and imports the other machine's log as history", async () => {
     const a = await machine();
     const item = a.items.create({ title: "From A", projectId: a.project.id, boardId: a.board.id, by: "human" });
