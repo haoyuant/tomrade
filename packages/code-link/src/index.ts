@@ -51,5 +51,5 @@ export { BRIDGED_BY_DSH, cliHookCall, cliHookEvent, hookReply, mergeAnswers } fr
 export { recordOf, resumeCommand } from "./titles.js";
 export { Review, REVIEW_PAGE, cutByTicket, mergePage, threadLines, ticketOutcome, type ReviewCursor, type ReviewPage, type ReviewPr, type ReviewRow, type ReviewSaid, type ReviewSegment, type ReviewSource, type ReviewTicket, type ReviewView, type SessionOutcome } from "./review.js";
 export type { RawOutput } from "./service.js";
-export { inputsOf, SessionPanel, type AnswerResult, type SessionPanelView } from "./panel.js";
+export { inputsOf, SessionPanel, type AnswerResult, type SessionGlance, type SessionPanelView } from "./panel.js";
 export { PROMPT_LINES, promptOnScreen } from "./prompt.js";

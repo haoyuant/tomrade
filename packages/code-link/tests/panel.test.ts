@@ -145,6 +145,33 @@ describe("the panel's side of a terminal session", () => {
     fake.close();
   });
 
+  it("glances at a waiting session's screen for its card: once per event, only for a permission its agent declared keys for", async () => {
+    const fake = new FakeHerdr();
+    const pane = fake.createPane("/work");
+    pane.text = CLAUDE_ASKS;
+    const asks = session({});
+    const runs = session({ id: "runs", state: "running", activity: "Bash · pnpm test" });
+    const mute = session({ id: "mute", agent: "mute" });
+    const panel = await panelOn(fake, {});
+    const reads = () => fake.of("pane.read").length;
+    const seen = await panel.glance([asks, runs, mute], 1000);
+    expect(Object.fromEntries(seen)).toEqual({ s1: { approval: true, prompt: "allow" }, runs: { approval: true, prompt: null }, mute: { approval: false, prompt: null } });
+    expect(reads()).toBe(1);
+    // the same event again reads nothing; the cursor on No, after its next event, leaves Deny only
+    await panel.glance([asks], 1500);
+    expect(reads()).toBe(1);
+    pane.text = CLAUDE_ASKS.replace("❯ 1. Yes", "  1. Yes").replace("  3. No", "❯ 3. No");
+    expect((await panel.glance([{ ...asks, lastEventAt: 6 }], 1600)).get("s1")).toEqual({ approval: true, prompt: "deny" });
+    // a screen with no prompt is looked at again only after a while
+    pane.text = CLAUDE_TRUST;
+    expect((await panel.glance([{ ...asks, lastEventAt: 7 }], 2000)).get("s1")?.prompt).toBeNull();
+    await panel.glance([{ ...asks, lastEventAt: 7 }], 3000);
+    expect(reads()).toBe(3);
+    await panel.glance([{ ...asks, lastEventAt: 7 }], 4500);
+    expect(reads()).toBe(4);
+    fake.close();
+  });
+
   it("says why typing cannot reach a session: no pane, ended, or no terminal backend on this machine", async () => {
     const fake = new FakeHerdr();
     fake.createPane("/work");

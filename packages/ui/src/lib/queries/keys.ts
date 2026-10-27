@@ -80,6 +80,8 @@ export const keys = {
     threads: (projectId: string) => ["agent", "threads", projectId] as const,
     threadAll: (projectId: string) => ["agent", "thread", projectId] as const,
     thread: (projectId: string, threadId: string) => ["agent", "thread", projectId, threadId] as const,
+    /** What waiting conversations ask, for the session bar's cards: keyed by which wait, so a new ask reads it again. */
+    pendings: (projectId: string, waits: string) => ["agentPendings", projectId, waits] as const,
     engines: ["agent", "engines"] as const,
     playbooksAll: ["agent", "playbooks"] as const,
     playbooks: (projectId?: string) => ["agent", "playbooks", projectId ?? ""] as const,

@@ -11,7 +11,7 @@ const TAIL_SHOWN = 4;
  * Every session as one big card, in the bar's order: what it is doing — its pane's last lines, the question it waits
  * with, or what came of it — and what can be done from here. "See in a pane" goes back to the cells on it.
  */
-export function Overview({ rows, tails, active, cells, onSee, onThread, onAnswer }: { rows: HereRow[]; tails: Record<string, string | null>; active: Set<string>; cells: Map<string, number>; onSee: (row: HereRow) => void; onThread: (thread: ThreadRow) => void; onAnswer: (session: SessionRow, which: "allow" | "deny") => void }) {
+export function Overview({ rows, tails, active, cells, onSee, onThread, onAnswer, onAnswerThread }: { rows: HereRow[]; tails: Record<string, string | null>; active: Set<string>; cells: Map<string, number>; onSee: (row: HereRow) => void; onThread: (thread: ThreadRow) => void; onAnswer: (session: SessionRow, which: "allow" | "deny") => void; onAnswerThread: (thread: ThreadRow, questionId: string, value: string) => void }) {
   const say = useSay();
   const words = useWords();
   return (
@@ -45,7 +45,7 @@ export function Overview({ rows, tails, active, cells, onSee, onThread, onAnswer
               ) : (
                 said && status !== "done" && status !== "wait" && <span className="cs-row-activity">{said}</span>
               )}
-              <RowActions row={r} big onSee={onSee} onThread={onThread} onAnswer={onAnswer} />
+              <RowActions row={r} big onSee={onSee} onThread={onThread} onAnswer={onAnswer} onAnswerThread={onAnswerThread} />
             </section>
           );
         })

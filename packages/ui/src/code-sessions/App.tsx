@@ -289,6 +289,7 @@ export function App() {
   // An assistant conversation has no pane here: the app window shows it.
   const showThread = (t: ThreadRow) => send({ type: "showThread", threadId: t.id });
   const answer = (s: SessionRow, which: "allow" | "deny") => send({ type: "answer", sessionId: s.id, which });
+  const answerThread = (t: ThreadRow, questionId: string, value: string) => send({ type: "answerThread", threadId: t.id, questionId, value });
   // The overview is drawn over the cells, so the keyboard leaves whatever terminal held it.
   const openOverview = () => {
     (document.activeElement as HTMLElement | null)?.blur();
@@ -466,7 +467,7 @@ export function App() {
           <main className="cs-main">
             <Banner state={state} />
             <div className="cs-layout">{render(layout)}</div>
-            {view === "overview" && <Overview rows={[...rows.here, ...rows.away.map((s): HereRow => ({ kind: "session", id: s.id, session: s }))]} tails={tails} active={active} cells={cellNumbers} onSee={seeInPane} onThread={showThread} onAnswer={answer} />}
+            {view === "overview" && <Overview rows={[...rows.here, ...rows.away.map((s): HereRow => ({ kind: "session", id: s.id, session: s }))]} tails={tails} active={active} cells={cellNumbers} onSee={seeInPane} onThread={showThread} onAnswer={answer} onAnswerThread={answerThread} />}
           </main>
           <Sidebar
             ref={side}
@@ -482,6 +483,7 @@ export function App() {
             onClosed={pickClosed}
             onThread={showThread}
             onAnswer={answer}
+            onAnswerThread={answerThread}
             onNewTerminal={newTerminal}
             onApplyPreset={(p) => {
               change(applyPreset(layout, p.layout, undefined, key));

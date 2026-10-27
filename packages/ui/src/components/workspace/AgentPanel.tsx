@@ -26,7 +26,7 @@ import { GUIDE, GuideList, slashCommand, SlashMenu, STARTERS, type SlashCommand,
 import { Composer } from "./agent-panel/Composer";
 import { STORE } from "./agent-panel/store";
 import { Review, type ReviewFocus } from "./agent-panel/Review";
-import { SessionBar, type BarMode } from "./agent-panel/SessionBar";
+import { SessionBar, type BarMode, type CardAnswer } from "./agent-panel/SessionBar";
 import { HandoffLine } from "./agent-panel/HandoffLine";
 import { TerminalSession } from "./agent-panel/TerminalSession";
 import { sessionBarRows, type BarRow, type BarStatus } from "~/lib/sessionBar";
@@ -616,13 +616,33 @@ export function AgentPanel({
     if ((id === threadId && busy) || !window.confirm(t("agentPanel.deleteThreadConfirm"))) return;
     deleteThread.mutate(id, { onSuccess: () => { if (id === threadId) clearThread(); } });
   };
+  // Answered from a card: the panel stays where it is and says so; the open one goes on as the setting says.
+  const answerCard = async (row: BarRow, reply: CardAnswer) => {
+    try {
+      if ("which" in reply) {
+        const result = await invoke("codeLink.sessionAnswer", projectId, row.sessionId!, reply.which);
+        if (result === "notPrompt") return toast({ body: t("sessionBar.answerInPane"), actions: [{ label: t("sessionBar.lookFirst"), run: () => pickBarRow(row) }] });
+        if (result !== "answered") return toast({ body: t("sessionBar.notTaken") });
+      } else await invoke("agent.answer", projectId, row.threadId!, reply.questionId, reply.value);
+    } catch (error) {
+      return reportError(error);
+    }
+    void recentSessions.refetch();
+    if (row.key === currentKey && goesOn) return waitQueue.current.answered(row.key);
+    toast({ body: t("which" in reply ? (reply.which === "allow" ? "sessionBar.allowedStay" : "sessionBar.deniedStay") : "sessionBar.answeredStay", { name: rowName(row) }) });
+  };
   // the bar is memoized; its handlers keep their identity and read the latest render's state
-  const latestBar = useRef({ pickBarRow, newThread: () => {}, archive: archiveThreadById, remove: deleteThreadById });
-  latestBar.current = { pickBarRow, newThread: () => void openThread({ boardId }).then((th) => pickThread(th.id)), archive: archiveThreadById, remove: deleteThreadById };
+  const latestBar = useRef({ pickBarRow, newThread: () => {}, archive: archiveThreadById, remove: deleteThreadById, answer: answerCard });
+  latestBar.current = { pickBarRow, newThread: () => void openThread({ boardId }).then((th) => pickThread(th.id)), archive: archiveThreadById, remove: deleteThreadById, answer: answerCard };
   const pickBarRowStable = useCallback((row: BarRow) => latestBar.current.pickBarRow(row), []);
   const newBarThread = useCallback(() => latestBar.current.newThread(), []);
   const archiveBarThread = useCallback((id: string) => latestBar.current.archive(id), []);
   const deleteBarThread = useCallback((id: string) => latestBar.current.remove(id), []);
+  const answerBarRow = useCallback((row: BarRow, reply: CardAnswer) => void latestBar.current.answer(row, reply), []);
+  // What the waiting conversations ask, read only while their cards show and again for each new wait.
+  const threadWaits = barRows.filter((r) => r.status === "wait" && r.threadId).map((r) => `${r.threadId}:${r.at}`).join("|");
+  const pendingsQ = useQuery({ queryKey: keys.agent.pendings(projectId, threadWaits), queryFn: () => invoke("agent.pendings", projectId), enabled: open && barMode === "cards" && !!threadWaits });
+  const pendings = useMemo(() => new Map((pendingsQ.data ?? []).map((p) => [p.threadId, p])), [pendingsQ.data]);
   // the conversations the bar shows: the look back lists the idle ones past them
   const barThreadIds = useMemo(() => new Set(barRows.flatMap((r) => (r.threadId ? [r.threadId] : []))), [barRows]);
   // ⌘\ swaps the bar between dots and cards wherever the focus is, while the panel is open.
@@ -1085,8 +1105,10 @@ export function AgentPanel({
         openKey={shownSession ? `session:${shownSession.id}` : threadId ? `thread:${threadId}` : null}
         mode={barMode}
         engines={engines.data}
+        pendings={pendings}
         onMode={chooseBarMode}
         onPick={pickBarRowStable}
+        onAnswer={answerBarRow}
         onNew={newBarThread}
         onHistory={openHistory}
         onArchive={archiveBarThread}

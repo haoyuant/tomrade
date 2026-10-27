@@ -187,6 +187,8 @@ declare module "@tomradex/ipc" {
     "agent.media.read": (projectId: string, threadId: string, id: string) => MediaContent;
     "agent.mediaCapabilities": (engineId: string, options?: unknown) => { input: string[]; output: string[] };
     "agent.answer": (projectId: string, threadId: string, questionId: string, value: string | string[]) => { runId: string };
+    /** What each of the project's conversations waits on the person for: the session bar's cards answer them in place. */
+    "agent.pendings": (projectId: string) => PendingView[];
     "agent.cancel": (runId: string) => boolean;
     /** Into the running turn, when its engine steers; false means it was not taken (queue it instead). */
     "agent.steer": (projectId: string, threadId: string, steerId: string, text: string) => Promise<boolean>;
@@ -479,6 +481,7 @@ export class Agent extends Service implements AgentReader {
       });
       ctx.ipc.handle("agent.setPermissionMode", (projectId, threadId, mode) => ctx.agent.setPermissionMode(projectId, threadId, mode));
       ctx.ipc.handle("agent.answer", (projectId, threadId, questionId, value) => ctx.agent.send(projectId, threadId, { kind: "answer", questionId, value }));
+      ctx.ipc.handle("agent.pendings", (projectId) => ctx.agent.activities().flatMap((a) => (a.projectId === projectId && a.pending ? [a.pending] : [])));
       ctx.ipc.handle("agent.cancel", (runId) => ctx.agent.cancel(runId));
       ctx.ipc.handle("agent.steer", (projectId, threadId, steerId, text) => ctx.agent.steer(projectId, threadId, steerId, text));
       ctx.ipc.handle("agent.showing", (threadId) => ctx.agent.show(threadId));

@@ -27,7 +27,7 @@ const shortOf = (r: HereRow, name: string): string => {
 
 /** `cells`: the number of the cell that shows each row, by row or session id. */
 type Marks = { active: Set<string>; selected: Set<string>; cells: Map<string, number>; shownPanes: Set<string>; selectedPane: string | null; pane: Key };
-type Picks = { onSession: (s: SessionRow, beside: boolean) => void; onTerminal: (t: TerminalRow, beside: boolean) => void; onThread: (t: ThreadRow) => void; onAnswer: (s: SessionRow, which: "allow" | "deny") => void };
+type Picks = { onSession: (s: SessionRow, beside: boolean) => void; onTerminal: (t: TerminalRow, beside: boolean) => void; onThread: (t: ThreadRow) => void; onAnswer: (s: SessionRow, which: "allow" | "deny") => void; onAnswerThread: (t: ThreadRow, questionId: string, value: string) => void };
 
 const has = (set: Set<string>, r: HereRow) => set.has(r.id) || (!!r.session && set.has(r.session.id));
 const cellOf = (cells: Map<string, number>, r: HereRow): number | null => cells.get(r.id) ?? (r.session ? cells.get(r.session.id) : undefined) ?? null;
@@ -159,7 +159,7 @@ function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; hi
     const card = (
       <div className="cs-card">
         {button}
-        <RowActions row={r} onSee={() => undefined} onThread={picks.onThread} onAnswer={picks.onAnswer} />
+        <RowActions row={r} onSee={() => (r.kind === "terminal" ? picks.onTerminal(r.terminal, false) : r.kind === "session" ? picks.onSession(r.session, false) : picks.onThread(r.thread))} onThread={picks.onThread} onAnswer={picks.onAnswer} onAnswerThread={picks.onAnswerThread} />
       </div>
     );
     if (!lead || !folds) return <li key={r.id}>{card}</li>;
@@ -439,6 +439,7 @@ type SidebarProps = {
   onClosed: (t: ClosedTerminalRow) => void;
   onThread: (t: ThreadRow) => void;
   onAnswer: (s: SessionRow, which: "allow" | "deny") => void;
+  onAnswerThread: (t: ThreadRow, questionId: string, value: string) => void;
   onNewTerminal: () => void;
   onApplyPreset: (p: LayoutPreset) => void;
   onSavePreset: (name: string) => void;
@@ -448,7 +449,7 @@ type SidebarProps = {
  * The session bar on the window's right edge, the assistant panel's: cards that say where each session stands and
  * what it waits with, the sessions this window cannot show, saved layouts and History; or, folded, a column of dots.
  */
-export function Sidebar({ ref, state, rows, locale, folded, onFold, marks, canOpen, onPick, onTerminal, onClosed, onThread, onAnswer, onNewTerminal, onApplyPreset, onSavePreset }: SidebarProps) {
+export function Sidebar({ ref, state, rows, locale, folded, onFold, marks, canOpen, onPick, onTerminal, onClosed, onThread, onAnswer, onAnswerThread, onNewTerminal, onApplyPreset, onSavePreset }: SidebarProps) {
   const say = useSay();
   const [outsideOpen, setOutsideOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -459,7 +460,7 @@ export function Sidebar({ ref, state, rows, locale, folded, onFold, marks, canOp
     setHistoryOpen(open);
     send({ type: "history", open });
   };
-  const picks: Picks = { onSession: onPick, onTerminal, onThread, onAnswer };
+  const picks: Picks = { onSession: onPick, onTerminal, onThread, onAnswer, onAnswerThread };
   const waiting = rows.here.filter((r) => statusOf(r) === "wait").length + rows.away.filter((s) => sessionStatus(s) === "wait").length;
   const foldLabel = `${say(folded ? "unfold" : "fold")} (${keyLabel("fold")})`;
   if (folded) return <Rail ref={ref} rows={rows.here} waiting={waiting} marks={marks} picks={picks} foldLabel={foldLabel} onFold={onFold} />;

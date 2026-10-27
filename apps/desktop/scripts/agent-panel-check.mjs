@@ -909,6 +909,45 @@ const run = async () => {
   check("⌥↓ goes to the next one waiting", await until(async () => (await shownThread()) !== answered, 30), await shownThread());
   ctx.settings.set({ ...ctx.settings.get(), sessions: { ...ctx.settings.get().sessions, afterAnswer: "next" } });
 
+  // ── a waiting card answers in place — a question's choice, Allow on a terminal's prompt — or looks first; answered, the panel stays ──
+  const stayOn = await shownThread();
+  const cardAsker = await asking();
+  const askerName = `Asker ${askers}`;
+  if ((await bar())?.mode !== "cards") await flip();
+  const askOf = (name) => $(`(() => { const c = [...document.querySelectorAll('.ai .sbar-card')].find((n) => n.textContent.includes(${JSON.stringify(name)})); const a = c?.querySelector('[data-testid="sbar-ask"]'); return a ? { text: a.querySelector('.sbar-ask-text')?.textContent ?? null, buttons: [...a.querySelectorAll('button')].map((b) => [b.dataset.testid, b.textContent]) } : null; })()`);
+  const pressIn = (name, testid, text) => press(`[...[...document.querySelectorAll('.ai .sbar-card')].find((n) => n.textContent.includes(${JSON.stringify(name)})).querySelectorAll('[data-testid="${testid}"]')].find((b) => ${text ? `b.textContent === ${JSON.stringify(text)}` : "true"})`);
+  await until(async () => !!(await askOf(askerName)), 40);
+  let cardAsk = await askOf(askerName);
+  check("a waiting conversation's card carries its question, its choices and Look first", cardAsk?.text === "Which one?" && JSON.stringify(cardAsk.buttons) === JSON.stringify([["sbar-choice", "A"], ["sbar-choice", "B"], ["sbar-look", "Look first"]]), cardAsk);
+  await pressIn(askerName, "sbar-choice", "A");
+  check("a choice on the card answers the question, and the panel stays on the conversation it showed", await until(async () => !ctx.agent.thread(alpha.id, cardAsker).pending, 40) && (await shownThread()) === stayOn && (await until(async () => ((await $(`document.body.innerText`)) ?? "").includes(`Answered “${askerName}” · you stayed where you were`), 30)), { shown: await shownThread(), stayOn });
+  // a terminal session waiting on its agent's permission prompt: Allow on the card presses the agent's key in its pane
+  const cardTicket = ctx.items.create({ projectId: alpha.id, boardId, title: "Card allows it", by: "human" });
+  const cardSession = ctx.codeLink.store.createSession(alpha.id, { repoId: "check", branch: "", itemIds: [cardTicket.id], mode: "terminal", agent: "claude-code", threadId: null, device: "check" });
+  screen = asks;
+  ctx.codeLink.store.patchSession(alpha.id, cardSession.id, { herdrPane: "w1:p1", state: "waiting", activity: "needs your approval: Bash", lastEventAt: Date.now() });
+  ctx.emit("codeLink/changed", alpha.id);
+  ctx.ipc.send("codeLink.changed", alpha.id);
+  await until(async () => !!(await askOf("Card allows it")), 40);
+  cardAsk = await askOf("Card allows it");
+  check("a terminal session's card offers Allow and Look first while its screen shows the prompt with yes under the cursor", JSON.stringify(cardAsk?.buttons.map(([id]) => id)) === JSON.stringify(["sbar-allow", "sbar-look"]) && /needs your approval: Bash/.test(cardAsk.text ?? ""), cardAsk);
+  const typedBefore = typed.length;
+  await pressIn("Card allows it", "sbar-allow");
+  check("Allow on the card presses the agent's key for Yes in its pane, and the panel stays", await until(async () => typed.length === typedBefore + 1, 30) && typed.at(-1)?.paneId === "w1:p1" && typed.at(-1)?.keys?.join() === "enter" && (await shownThread()) === stayOn && !(await sessionView()) && (await until(async () => /Allowed “AL-\d+” · you stayed where you were/.test((await $(`document.body.innerText`)) ?? ""), 30)), { typed: typed.slice(typedBefore), shown: await shownThread() });
+  // the cursor on No: Deny alone on the card; Look first opens the session
+  screen = asks.replace("❯ 1. Yes", "  1. Yes").replace("  3. No", "❯ 3. No");
+  ctx.codeLink.store.patchSession(alpha.id, cardSession.id, { state: "waiting", activity: "needs your approval: Bash", lastEventAt: Date.now() });
+  ctx.emit("codeLink/changed", alpha.id);
+  ctx.ipc.send("codeLink.changed", alpha.id);
+  check("with No under the cursor the card offers Deny alone", await until(async () => JSON.stringify((await askOf("Card allows it"))?.buttons.map(([id]) => id)) === JSON.stringify(["sbar-deny", "sbar-look"]), 40), await askOf("Card allows it"));
+  await pressIn("Card allows it", "sbar-look");
+  check("Look first opens the session in the panel", await until(async () => (await sessionView())?.id === cardSession.id, 30), await sessionView());
+  ctx.codeLink.store.patchSession(alpha.id, cardSession.id, { state: "ended", endedAt: Date.now() });
+  ctx.emit("codeLink/changed", alpha.id);
+  ctx.ipc.send("codeLink.changed", alpha.id);
+  await openThreadNamed(askerName);
+  if ((await bar())?.mode !== "rail") await flip();
+
   // ── chat that turns to code: a rule where the writing starts, the earlier steps folded under what they changed ──
   const coder = ctx.agent.newThread(alpha.id, "coder", null, { title: "Coder chat" });
   for (const said of ["hello", "write the parts"]) {

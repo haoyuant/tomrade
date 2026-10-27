@@ -6,6 +6,18 @@ import type { CodeLinkStore, SessionView } from "./store.js";
 
 /** The most of a pane's screen one read of its tail takes. */
 const TAIL_MAX = 200;
+/** How soon a waiting session whose screen showed no prompt is looked at again. */
+const GLANCE_RECHECK_MS = 2000;
+/** What the hooks say while a session waits on a permission: only those screens are read for a prompt. */
+const APPROVAL_ASK = /^needs your approval/i;
+
+/** What the session lists show of a live terminal session without opening it: whether its card can answer its prompt. */
+export interface SessionGlance {
+  /** Its agent declared the keys that answer its permission prompt. */
+  approval: boolean;
+  /** What its screen asks that those keys answer now: a prompt with yes under the cursor, one with no, or nothing. */
+  prompt: "allow" | "deny" | null;
+}
 
 /** What answering a session's permission prompt came to: answered, nothing pressed for a screen that asks no such thing, or failed. */
 export type AnswerResult = "answered" | "notPrompt" | "failed";
@@ -44,6 +56,9 @@ export function inputsOf(keys: string[]): TerminalInput[] {
  * session would, TOM-412) and works before an agent is detected in it. Nothing here starts a process.
  */
 export class SessionPanel {
+  /** Each session's last read prompt: kept until its next event, and one not seen is looked for again at most every GLANCE_RECHECK_MS. */
+  private readonly seen = new Map<string, { event: number | null; at: number; prompt: SessionGlance["prompt"] }>();
+
   constructor(
     private readonly ctx: Context,
     private readonly store: CodeLinkStore
@@ -91,6 +106,32 @@ export class SessionPanel {
     if (!prompt || (which === "allow" && !prompt.allows)) return "notPrompt";
     for (const input of inputsOf(keys)) if (!(await terminals.sendInput(s.herdrPane, input))) return "failed";
     return "answered";
+  }
+
+  /**
+   * What the session lists show of these sessions' panes: for one waiting on a permission its agent declared the keys
+   * for, the prompt on its screen, read once per event and never for a session that waits on nothing.
+   */
+  async glance(sessions: SessionView[], now = Date.now()): Promise<Map<string, SessionGlance>> {
+    const terminals = this.terminals();
+    const out = new Map<string, SessionGlance>();
+    await Promise.all(
+      sessions.map(async (s) => {
+        const approval = !!this.approvalOf(s.agent);
+        if (!approval || !terminals || !s.herdrPane || s.state !== "waiting" || !APPROVAL_ASK.test(s.activity ?? "")) {
+          this.seen.delete(s.id);
+          out.set(s.id, { approval, prompt: null });
+          return;
+        }
+        const known = this.seen.get(s.id);
+        if (known && known.event === s.lastEventAt && (known.prompt || now - known.at < GLANCE_RECHECK_MS)) return void out.set(s.id, { approval, prompt: known.prompt });
+        const seen = promptOnScreen((await terminals.readTail(s.herdrPane, PROMPT_LINES).catch(() => null)) ?? "");
+        const prompt = seen ? (seen.allows ? "allow" : "deny") : null;
+        this.seen.set(s.id, { event: s.lastEventAt, at: now, prompt });
+        out.set(s.id, { approval, prompt });
+      })
+    );
+    return out;
   }
 
   /** The last lines on the session's pane; null without a pane, or when it is gone. */

@@ -1715,6 +1715,10 @@ button.cs-convo-line { font: inherit; text-align: left; background: none; border
 .sbar-card-title > .sbar-actions { margin-left: auto; visibility: hidden; }
 .sbar-card:hover .sbar-actions, .sbar-card:focus-within .sbar-actions { visibility: visible; }
 .sbar-card-outcome { border-left: 2px solid var(--border-input); padding-left: 7px; color: var(--fg-2); }
+/* what a waiting card asks, answered in place */
+.sbar-ask { display: flex; flex-direction: column; gap: 5px; margin-top: 3px; padding-top: 6px; border-top: 1px dashed var(--border); cursor: default; }
+.sbar-ask-text { color: var(--warn); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.sbar-ask-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .sbar-empty { padding: var(--space-2); }
 .pet-stage {
   height: 112px; margin: calc(-1 * var(--space-2)) 0 0; overflow: hidden;
