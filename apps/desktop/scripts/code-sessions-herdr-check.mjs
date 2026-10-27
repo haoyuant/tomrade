@@ -848,6 +848,10 @@ app.whenReady().then(async () => {
     // The session bar, the assistant panel's: on the right, cards open and dots folded, the keys along the bottom.
     const barRight = await tjs(`(() => { const side = document.querySelector('.cs-side').getBoundingClientRect(); const main = document.querySelector('.cs-main').getBoundingClientRect(); return side.left >= main.right - 1 && !!document.querySelector('[data-testid=cs-views]'); })()`);
     check("会话栏在右边，顶部有「格子 | 总览」", barRight);
+    // The top bar breathes: the view switch carries an icon on each word, stands shorter than the bar and centred in it,
+    // and ends on the session cards' right edge; the project name starts on the first cell's left edge.
+    const topbar = await tjs(`(() => { const r = (el) => el.getBoundingClientRect(); const bar = r(document.querySelector('.cs-topbar')); const views = r(document.querySelector('[data-testid=cs-views]')); const side = document.querySelector('.cs-side'); const cards = r(side).right - parseFloat(getComputedStyle(side).paddingRight); const name = r(document.querySelector('[data-testid=cs-project]')); const cell = r(document.querySelector('.cs-cell')); return { room: bar.height - views.height, centred: Math.abs((views.top - bar.top) - (bar.bottom - views.bottom)) <= 1, right: Math.abs(views.right - cards) <= 1, left: Math.abs(name.left - cell.left) <= 1, icons: document.querySelectorAll('[data-testid=cs-views] button svg').length }; })()`);
+    check("顶栏有余地：「格子 | 总览」各带图标，比顶栏矮且居中，右边齐会话卡片，项目名齐第一个格子", topbar.room >= 8 && topbar.centred && topbar.right && topbar.left && topbar.icons === 2, JSON.stringify(topbar));
     foldKey();
     const dots = await wait(async () => tjs(`!!document.querySelector('.cs-side[data-folded]') && document.querySelectorAll('.cs-dot').length >= 6 && document.querySelectorAll('.cs-row').length === 0`), 3000);
     // React hears mouseenter as a mouseover that bubbles, and draws the peek on its next frame.
@@ -919,6 +923,8 @@ app.whenReady().then(async () => {
     const tailShown = await wait(async () => tjs(`${bigFive}?.querySelector('[data-testid=cs-big-tail]')?.textContent.includes('marker-five') ?? false`), 8000);
     const threadBig = await tjs(`!![...document.querySelectorAll('[data-testid=cs-big]')].find((c) => c.textContent.includes('整理 Q4 backlog'))?.querySelector('[data-testid=cs-open-in-main]')`);
     check("总览把每个会话摊成大卡片，显示窗格最近几行；助手会话的卡片能在主窗口打开", overview && tailShown && threadBig, JSON.stringify({ overview, tailShown, threadBig, cards: await tjs(`document.querySelectorAll('[data-testid=cs-big]').length`) }));
+    const overviewEdge = await tjs(`(() => { const name = document.querySelector('[data-testid=cs-project]').getBoundingClientRect(); const card = document.querySelector('[data-testid=cs-big]').getBoundingClientRect(); return Math.abs(name.left - card.left) <= 1; })()`);
+    check("总览的第一张卡片齐项目名", overviewEdge);
     fs.writeFileSync(path.join(shots, "code-sessions-overview.png"), (await tw.webContents.capturePage()).toPNG());
     await tjs(`${bigFive}?.querySelector('[data-testid=cs-see-in-pane]')?.click(); true`);
     const backToGrid = await wait(async () => tjs(`!document.querySelector('[data-testid=cs-overview]') && document.querySelector('[data-testid=cs-view-grid]').getAttribute('aria-pressed') === 'true' && (document.querySelector('.cs-cell[data-focused] .cs-cell-name')?.textContent ?? '').startsWith(${JSON.stringify(`${sessions[4].item.key} `)})`), 5000);
