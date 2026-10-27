@@ -1318,6 +1318,8 @@ function apply(ctx: Context, config: Config) {
       // The app window comes forward on it, the way a notification's click or a tomrade:// link brings it up.
       case "showThread":
         return void ctx.emit("desktop/open", { projectId, threadId: m.threadId });
+      case "mainWindow":
+        return void ctx.emit("desktop/open", { projectId });
       case "takeGuess": {
         const taken = ctx.codeLink.takeGuess?.(projectId, m.sessionId) ?? null;
         await refresh(projectId);
