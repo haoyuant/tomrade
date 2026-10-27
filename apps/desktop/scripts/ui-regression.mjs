@@ -1304,9 +1304,7 @@ const run = async () => {
   await press(`[...document.querySelectorAll('.menu-row.is-radio')].find(r => r.querySelector('.m-name')?.textContent === 'high')`);
   await sleep(1000);
   check("the effort pick lands on the chip", (await $(`[...document.querySelectorAll('.ai-knobs .chip-btn')].find(b => b.title === 'Effort')?.textContent ?? ''`)).includes("high"));
-  await press(`document.querySelector('.ai-head .btn-icon[aria-label="Threads"]')`);
-  await sleep(500);
-  await press(`document.querySelector('button[aria-label="New thread"]')`);
+  await press(`document.querySelector('.ai .sbar button[aria-label="New thread"]')`);
   await sleep(1400);
   const nextThread = ctx.agent.store.threads(project.id)[0];
   check("a new thread opens on the engine and effort the panel was showing", nextThread.id !== showing.id && nextThread.engine === showing.engine && nextThread.options?.effort === "high");

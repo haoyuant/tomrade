@@ -10,7 +10,7 @@ import type {} from "@tomradex/db";
 import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/items";
 import type {} from "@tomradex/settings";
-import { BUILTIN_TERMINAL, MCP_AGENT, WINDOWS_TERMINAL, panesOf, resumeCommand, type CodeLink } from "@tomradex/code-link";
+import { BUILTIN_TERMINAL, MCP_AGENT, RECENT_ENDED_MAX, RECENT_ENDED_MS, WINDOWS_TERMINAL, panesOf, resumeCommand, type CodeLink, type ReviewRow } from "@tomradex/code-link";
 import { PROMPT_LINES, promptOnScreen } from "@tomradex/code-link/prompt";
 import { PANEL_SURFACES } from "@tomradex/agent";
 import type { DesktopSurface } from "@tomradex/desktop-surface";
@@ -50,8 +50,6 @@ const FRAME_BATCH_MS = 16;
 const FRAME_BATCH_MAX = 256 * 1024;
 /** How soon a waiting session whose screen showed no prompt is looked at again. */
 const PROMPT_RECHECK_MS = 2000;
-/** What code link's hooks say while a session waits on a permission; only those screens are read for a prompt. */
-const APPROVAL_ASK = /^needs your approval/i;
 /** How long the assistant's events settle before the window is refreshed for them: a turn ends in a burst of them. */
 const THREADS_SETTLE_MS = 100;
 /** How many lines of each pane the overview reads. */
@@ -75,7 +73,7 @@ interface Saved {
   closed?: Record<string, ClosedTerminalRow[]>;
 }
 
-/** How many closed terminals a project's archive keeps. */
+/** How many closed terminals a project's History keeps. */
 export const CLOSED_TERMINALS_MAX = 50;
 
 type SavedTerminal = Omit<TerminalRow, "sessionId" | "note" | "agentTitle" | "agentStatus" | "running"> & { pane: string };
@@ -124,6 +122,26 @@ export function isLayout(value: unknown): value is Layout {
   if (typeof v.id !== "string") return false;
   if (v.type === "leaf") return (v.sessionId === null || typeof v.sessionId === "string") && (v.locked === undefined || v.locked === true);
   return v.type === "split" && (v.direction === "row" || v.direction === "column") && typeof v.ratio === "number" && isLayout(v.a) && isLayout(v.b);
+}
+
+/** Every cell of a layout in the window's order, empty ones too: the window numbers its cells this way, from 1. */
+const cellsIn = (layout: Layout): Extract<Layout, { type: "leaf" }>[] => (layout.type === "leaf" ? [layout] : [...cellsIn(layout.a), ...cellsIn(layout.b)]);
+
+/**
+ * Which cell shows each session, by its number: the session or terminal a cell holds, the session a terminal's agent
+ * claimed, and every live session on that terminal's pane (one agent working several tickets there).
+ */
+export function cellNumbers(layout: Layout, terminals: Pick<TerminalRow, "id" | "pane" | "sessionId">[], sessions: Pick<SessionRow, "id" | "pane" | "endedAt">[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  cellsIn(layout).forEach((cell, i) => {
+    if (!cell.sessionId) return;
+    out[cell.sessionId] = i + 1;
+    const terminal = terminals.find((t) => t.id === cell.sessionId);
+    if (terminal?.sessionId) out[terminal.sessionId] = i + 1;
+    const pane = terminal?.pane ?? sessions.find((s) => s.id === cell.sessionId)?.pane;
+    if (pane) for (const s of sessions) if (s.endedAt === null && s.pane === pane && !(s.id in out)) out[s.id] = i + 1;
+  });
+  return out;
 }
 
 const leafIds = (layout: Layout): string[] => (layout.type === "leaf" ? (layout.sessionId ? [layout.sessionId] : []) : [...leafIds(layout.a), ...leafIds(layout.b)]);
@@ -232,6 +250,7 @@ export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, it
         state: s.state,
         needsYou: live && !!s.blocked,
         activity: s.activity ?? s.summary,
+        ask: live && s.state === "waiting" ? s.ask : null,
         mode: s.mode === "headless" ? "run" : "terminal",
         agent: s.agent,
         agentName: null,
@@ -255,16 +274,13 @@ export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, it
         approval: false,
         prompt: null,
         lastEventAt: s.lastEventAt ?? null,
-        rawOutput: false
+        rawOutput: false,
+        outcome: null,
+        tail: null
       };
     })
     .sort((a, b) => Number(b.state !== "ended" && b.state !== "lost") - Number(a.state !== "ended" && a.state !== "lost") || Number(b.needsYou) - Number(a.needsYou) || b.startedAt - a.startedAt);
 }
-
-/** How many archived conversations a search reads, newest first. */
-const ARCHIVE_SEARCH_MAX = 100;
-/** How much of one conversation a search keeps to look in. */
-const SAID_MAX = 1024 * 1024;
 
 /** How many earlier sessions a pane's history keeps, newest kept. */
 export const PANE_HISTORY_MAX = 20;
@@ -303,8 +319,8 @@ interface Open {
   closed: boolean;
   /** The latest ask to show a session, kept in every state so a window that opens late still sees it. */
   reveal: WindowState["reveal"];
-  /** The archive is open: its rows go with every state. */
-  archive: boolean;
+  /** History is open: a change to the conversations is said, so it reads its first page again. */
+  history: boolean;
   /** States begun, and the newest one shown: one that finishes after a newer one is not shown. */
   states: { begun: number; shown: number };
   /** The panes of its terminals followed in herdr, so an agent's status there shows as it changes. */
@@ -317,6 +333,10 @@ interface Open {
   onPane: Map<string, string | null>;
   /** A recording failed and the window was told; the next failure is only logged. */
   warnedRecording: boolean;
+  /** Which cell shows each session, as the last state laid them out; what the panel names a session's cell by. */
+  cells: Record<string, number>;
+  /** The terminals and sessions of the last state, to number the cells again when only the layout changes. */
+  shown: { terminals: TerminalRow[]; sessions: SessionRow[] } | null;
 }
 
 /** Frames of one cell while its batch is open: the ANSI bytes in order, and the frame that began it. */
@@ -413,7 +433,7 @@ function apply(ctx: Context, config: Config) {
           ticketTitle: item?.title ?? null,
           parentId: th.parentId,
           running: running.has(th.id),
-          wait: kind ? { kind, text: clip(asked?.question.text), since: before?.kind === kind ? before.since : now } : null,
+          wait: kind ? { kind, text: clip(asked?.question.text), since: before?.kind === kind ? before.since : now, questionId: asked?.question.id ?? null, options: asked && !asked.question.multiple && asked.question.options?.length ? asked.question.options : null } : null,
           createdAt: th.createdAt,
           updatedAt: th.updatedAt
         };
@@ -436,6 +456,7 @@ function apply(ctx: Context, config: Config) {
   const threadsChanged = (projectId: string) => {
     if (!open.has(projectId)) return;
     staleThreads.add(projectId);
+    historyChanged(projectId);
     if (refreshSoon.has(projectId)) return;
     const timer = setTimeout(() => {
       refreshSoon.delete(projectId);
@@ -455,7 +476,7 @@ function apply(ctx: Context, config: Config) {
 
   /** A project's closed terminals with a recording still there to play back. */
   const closedTerminals = (projectId: string): ClosedTerminalRow[] => (stateOf(config.stateFile).closed?.[projectId] ?? []).filter((t) => recorder.has(t.pane, t.startedAt, t.endedAt));
-  /** A terminal that went: kept for the archive when its pane was recorded, the oldest making room past CLOSED_TERMINALS_MAX. */
+  /** A terminal that went: kept for History when its pane was recorded, the oldest making room past CLOSED_TERMINALS_MAX. */
   const rememberClosed = (projectId: string, gone: SavedTerminal[], endedAt = Date.now()) => {
     const kept = gone.filter((t) => recorder.has(t.pane, t.startedAt, endedAt)).map((t): ClosedTerminalRow => ({ id: t.id, title: t.title, cwd: t.cwd, pane: t.pane, startedAt: t.startedAt, endedAt }));
     if (!kept.length) return;
@@ -629,7 +650,7 @@ function apply(ctx: Context, config: Config) {
     const now = Date.now();
     return Promise.all(
       rows.map(async (r) => {
-        if (!provider || !r.approval || r.endedAt !== null || !r.pane || r.state !== "waiting" || !APPROVAL_ASK.test(r.activity ?? "")) {
+        if (!provider || !r.approval || r.endedAt !== null || !r.pane || r.state !== "waiting" || r.ask?.kind !== "permission") {
           prompts.delete(r.id);
           return r;
         }
@@ -657,15 +678,24 @@ function apply(ctx: Context, config: Config) {
     const preset = presets.find((p) => p.id === saved.defaultPreset);
     const warning = [shown.warning, broken || (remembered !== undefined && !isLayout(remembered)) ? words()("stateUnreadable") : null].filter(Boolean).join(" · ") || null;
     const layout = isLayout(remembered) ? remembered : preset ? preset.layout : fresh();
-    // An ended session stays with the state while a cell shows it; the rest wait in the archive.
+    // An ended session stays with the state while a cell shows it; the rest wait in History.
     const inCells = new Set(leafIds(layout));
     // Ticket work, and conversations someone had; a start nobody spoke to is not kept.
     const ended = shown.sessions.filter((s) => s.endedAt !== null && (s.itemId || s.conversation || s.prompted));
     const win = open.get(projectId);
-    // Read with the layout, before anything is awaited: a state begun before a pick from the archive was saved must
-    // still carry that session, or the window would drop it from the cell it was just put in.
-    const archiveOpen = win?.archive ?? false;
-    const sent = await titled(shown.sessions.filter((s) => s.endedAt === null || inCells.has(s.id) || s.id === win?.reveal?.sessionId), savedTerminals(projectId));
+    // What ended lately stays in the bar's ended group for a day, as in the assistant panel, cell or no cell.
+    const recent = new Set(ended.filter((s) => Date.now() - s.endedAt! < RECENT_ENDED_MS).sort((a, b) => b.endedAt! - a.endedAt!).slice(0, RECENT_ENDED_MAX).map((s) => s.id));
+    const listedNow = await titled(shown.sessions.filter((s) => s.endedAt === null || inCells.has(s.id) || recent.has(s.id) || s.id === win?.reveal?.sessionId), savedTerminals(projectId));
+    const endedIds = listedNow.flatMap((s) => (s.endedAt !== null ? [s.id] : []));
+    const outcomes = endedIds.length ? ctx.codeLink.sessionOutcomes(projectId, endedIds) : null;
+    // A card's last lines of its pane, from the glance the assistant panel's cards share: read on a session's events, not per card.
+    const paned = b.state === "ready" ? listedNow.flatMap((s) => (s.endedAt === null && s.pane ? [s.id] : [])) : [];
+    const glances = paned.length ? await ctx.codeLink.sessionGlances(projectId, paned).catch(() => null) : null;
+    const sent = listedNow.map((s) => {
+      const outcome = outcomes?.get(s.id);
+      const tail = glances?.get(s.id)?.tail;
+      return outcome || tail ? { ...s, ...(outcome ? { outcome } : {}), ...(tail ? { tail } : {}) } : s;
+    });
     const opened = await fold(projectId, shown.sessions, await terminals(projectId));
     return {
       projectId,
@@ -691,7 +721,6 @@ function apply(ctx: Context, config: Config) {
       defaultPreset: preset?.id ?? null,
       autoPlace: saved.autoPlace !== false,
       reveal: win?.reveal ?? null,
-      archive: { count: ended.length, rows: archiveOpen ? [...ended].sort((a, b) => b.endedAt! - a.endedAt!) : null, terminals: archiveOpen ? closedTerminals(projectId).sort((a, b) => b.endedAt - a.endedAt) : null },
       closedTerminals: closedTerminals(projectId).filter((t) => inCells.has(t.id)),
       history: paneHistory(ended, [...opened.map((t) => t.pane), ...sent.map((r) => r.pane)]),
       folded: saved.folded?.[projectId] === true
@@ -720,8 +749,18 @@ function apply(ctx: Context, config: Config) {
     if (win.closed || turn < win.states.shown) return;
     win.states.shown = turn;
     follow(win, next.terminals);
+    win.shown = { terminals: next.terminals, sessions: next.sessions };
+    renumber(projectId, win, next.layout);
     win.surface.setState(next);
     snapshotNewSessions(win, next.sessions);
+  };
+
+  /** The cells numbered again for a layout; the panel hears of it only when a session's cell changed. */
+  const renumber = (projectId: string, win: Open, layout: Layout | null) => {
+    const cells = layout && win.shown && !win.closed ? cellNumbers(layout, win.shown.terminals, win.shown.sessions) : {};
+    const same = Object.keys(cells).length === Object.keys(win.cells).length && Object.entries(cells).every(([id, n]) => win.cells[id] === n);
+    win.cells = cells;
+    if (!same) ctx.codeLink.cellsChanged(projectId);
   };
 
   /** The newest live session on a pane, by when it started; null with none. */
@@ -802,40 +841,25 @@ function apply(ctx: Context, config: Config) {
     send(win, message);
   };
 
-  /** What each archived conversation said, lowercased, by session and when it ended: an ended one does not change. */
-  const said = new Map<string, string>();
-  /** Each window's newest search: an older one still reading stops. */
-  const searching = new WeakMap<Open, number>();
-  let searches = 0;
   /**
-   * The archived sessions whose conversation says `query`, newest first and the newest `ARCHIVE_SEARCH_MAX` only, read
-   * from their agents' records one at a time, giving way between them. Titles, tickets, agents and folders the window
-   * matches itself.
+   * What goes with a page of History or a search's finds: the window's rows for the coding sessions among them, so
+   * one picked goes into a cell as an ended session; and the agents' names, which the panel's rows carry only by id.
    */
-  const searchArchive = async (projectId: string, win: Open, query: string) => {
-    const turn = ++searches;
-    searching.set(win, turn);
-    const needle = query.trim().toLowerCase();
-    if (!needle) return;
-    const ended = listed(projectId).sessions
-      .filter((s) => s.endedAt !== null && (s.itemId || s.conversation || s.prompted))
-      .sort((a, b) => b.endedAt! - a.endedAt!)
-      .slice(0, ARCHIVE_SEARCH_MAX);
-    const ids: string[] = [];
-    for (const s of ended) {
-      if (win.closed || searching.get(win) !== turn) return;
-      const key = `${s.id}:${s.endedAt}`;
-      let text = said.get(key);
-      if (text === undefined) {
-        const read = ctx.codeLink.conversation?.(projectId, s.id) ?? null;
-        text = (read?.lines ?? []).map((l) => l.text).join("\n").toLowerCase().slice(0, SAID_MAX);
-        said.set(key, text);
-        if (said.size > ARCHIVE_SEARCH_MAX * 2) said.delete(said.keys().next().value!);
-        await new Promise<void>((resolve) => setImmediate(resolve));
-      }
-      if (text.includes(needle)) ids.push(s.id);
+  const historyRows = (projectId: string, rows: ReviewRow[]): { sessions: SessionRow[]; agents: Record<string, string> } => {
+    const wanted = new Set(rows.filter((r) => r.kind === "session").map((r) => r.id));
+    const sessions = wanted.size ? listed(projectId).sessions.filter((s) => wanted.has(s.id)) : [];
+    const engines = ctx.get("agent");
+    const agents: Record<string, string> = {};
+    for (const r of rows) {
+      const title = engines?.engineOf(r.agent)?.title;
+      if (title) agents[r.agent] = title;
     }
-    if (searching.get(win) === turn) post(win, { type: "archiveFound", query, ids });
+    return { sessions, agents };
+  };
+  /** A session ended, or a conversation moved, while a window has History open: it reads its first page again. */
+  const historyChanged = (projectId: string) => {
+    const win = open.get(projectId);
+    if (win && !win.closed && win.surface && win.history) post(win, { type: "historyChanged" });
   };
 
   /**
@@ -860,6 +884,12 @@ function apply(ctx: Context, config: Config) {
     if (batch.size >= FRAME_BATCH_MAX) flushFrames(win, cell);
   };
 
+  /** What a session goes by in a toast: its ticket, else its conversation's title, else its agent. */
+  const nameOf = (projectId: string, id: string): string => {
+    const s = sessionOf(projectId, id);
+    const itemId = s?.itemIds[0];
+    return (itemId ? ctx.items.get(projectId, itemId)?.key : null) ?? s?.title ?? s?.agent ?? id;
+  };
   const sessionOf = (projectId: string, id: string) => ctx.codeLink.sessionsOf(projectId).find((s) => s.id === id);
 
   const turn = (win: Open, cell: string) => {
@@ -1074,13 +1104,24 @@ function apply(ctx: Context, config: Config) {
       case "autoPlace":
         save(config.stateFile, { autoPlace: m.on });
         return refreshAll();
-      case "archiveSearch":
-        return void searchArchive(projectId, win, typeof m.query === "string" ? m.query : "");
-      case "archive":
-        win.archive = m.open;
-        // Conversations from before titles were kept get theirs from the agent's transcript, once.
+      case "history":
+        win.history = m.open;
+        // Conversations from before titles were kept get theirs from the agent's transcript, once, before the first page is read.
         if (m.open) ctx.codeLink.findTitles?.(projectId);
-        return refresh(projectId);
+        return;
+      case "historyList": {
+        const before = m.before ?? null;
+        const query = typeof m.query === "string" ? m.query : undefined;
+        const page = ctx.codeLink.review.list(projectId, { before, query });
+        // The closed terminals go with the first page: few, and the window filters them itself.
+        const terminals = before ? null : closedTerminals(projectId).sort((a, b) => b.endedAt - a.endedAt);
+        return post(win, { type: "historyPage", token: m.token, page, ...historyRows(projectId, page.rows), terminals });
+      }
+      case "historySaid": {
+        const found = await ctx.codeLink.review.saidIn(projectId, typeof m.query === "string" ? m.query : "");
+        if (win.closed) return;
+        return post(win, { type: "historySaid", token: m.token, found, ...historyRows(projectId, found.rows) });
+      }
       case "fold":
         save(config.stateFile, { folded: { ...stateOf(config.stateFile).folded, [projectId]: m.folded } });
         return refresh(projectId);
@@ -1119,6 +1160,7 @@ function apply(ctx: Context, config: Config) {
         if (!isLayout(m.layout)) return;
         save(config.stateFile, { layouts: { ...stateOf(config.stateFile).layouts, [projectId]: m.layout } });
         for (const listener of laidOut) listener(projectId, m.layout);
+        renumber(projectId, win, m.layout);
         return;
       case "continue":
         return command(projectId, win, "code-link.start-terminal", m.sessionId);
@@ -1134,10 +1176,21 @@ function apply(ctx: Context, config: Config) {
         const result = await ctx.codeLink.sessionAnswer(projectId, m.sessionId, m.which).catch(() => "failed" as const);
         // answered or not, what the screen asks is read again for the next state
         prompts.delete(m.sessionId);
-        if (result === "answered") return void refresh(projectId);
+        if (result === "answered") {
+          // answered from its card: the cells stay as they were, and the window says so
+          post(win, { type: "toast", text: words()(m.which === "allow" ? "allowedStay" : "deniedStay", { name: nameOf(projectId, m.sessionId) }) });
+          return void refresh(projectId);
+        }
         // Nothing pressed: whatever it asks is answered in its pane, which comes into a cell for that.
         if (result === "notPrompt") await show(projectId, m.sessionId);
         return post(win, { type: "toast", text: words()(result === "notPrompt" ? "answerInPane" : "answerNotTaken") });
+      }
+      case "answerThread": {
+        const agent = ctx.get("agent");
+        if (!agent) return;
+        await agent.send(projectId, m.threadId, { kind: "answer", questionId: m.questionId, value: m.value });
+        const thread = threads(projectId).find((t) => t.id === m.threadId);
+        return post(win, { type: "toast", text: words()("answeredStay", { name: thread?.key ?? (thread?.title || m.threadId) }) });
       }
       case "tails": {
         const provider = backend();
@@ -1221,7 +1274,7 @@ function apply(ctx: Context, config: Config) {
       return refresh(projectId);
     }
     const w = words();
-    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), held: new Map(), timer: setInterval(() => void refresh(projectId), BRIDGE_POLL_MS), closed: false, reveal: asked, archive: false, states: { begun: 0, shown: 0 }, follows: new Map(), frames: new Map(), recordings: new Map(), onPane: new Map(), warnedRecording: false };
+    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), held: new Map(), timer: setInterval(() => void refresh(projectId), BRIDGE_POLL_MS), closed: false, reveal: asked, history: false, states: { begun: 0, shown: 0 }, follows: new Map(), frames: new Map(), recordings: new Map(), onPane: new Map(), warnedRecording: false, cells: {}, shown: null };
     win.timer.unref?.();
     open.set(projectId, win);
     try {
@@ -1259,6 +1312,7 @@ function apply(ctx: Context, config: Config) {
       onClose: () => {
         win.closed = true;
         clearInterval(win.timer);
+        renumber(projectId, win, null);
         dropFramesOf(win);
         follow(win, []);
         for (const cell of [...win.terminals.keys()]) detach(win, cell);
@@ -1271,7 +1325,10 @@ function apply(ctx: Context, config: Config) {
     });
   };
 
-  ctx.on("codeLink/changed", (projectId) => void refresh(projectId));
+  ctx.on("codeLink/changed", (projectId) => {
+    historyChanged(projectId);
+    void refresh(projectId);
+  });
   // A question asked or answered, a run beginning or ending: what a conversation's card shows. Not each message or
   // streamed word. The event names only the thread: a conversation no window lists yet comes in with its run's start.
   ctx.on("agent/event", (threadId, event) => {
@@ -1290,6 +1347,10 @@ function apply(ctx: Context, config: Config) {
   // Code link's starts and "open in terminal" land here while this window can show the backend's panes.
   const showable = async () => ["ready", "notRunning"].includes((await bridge()).state);
   ctx.on("codeLink/terminal-window", async () => (await showable()) || undefined);
+  ctx.on("codeLink/session-cells", (projectId) => {
+    const win = open.get(projectId);
+    return win && !win.closed ? win.cells : undefined;
+  });
   ctx.on("codeLink/show-session", async (projectId, sessionId) => {
     const session = sessionOf(projectId, sessionId);
     // A live one shows its pane; an ended one, its conversation, read-only.

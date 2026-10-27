@@ -47,10 +47,14 @@ export function outcomeParts(row: Pick<ReviewRow, "pr" | "commits" | "asked">, s
   ].filter((part): part is string => !!part);
 }
 
-/** The outcome in one line: what its code came to, else what the session last said. */
+/**
+ * The outcome in one line, the same wherever a session is listed: what its code came to (with how often it asked),
+ * else what the session last said, else how often it asked.
+ */
 export function outcomeLine(row: Pick<ReviewRow, "pr" | "commits" | "asked" | "said">, say: OutcomeWords): string | null {
   const parts = outcomeParts(row, say);
-  return parts.length ? parts.join(" · ") : row.said;
+  if (row.pr || row.commits > 0) return parts.join(" · ");
+  return row.said || parts.join(" · ") || null;
 }
 
 /** The tickets a session did besides the one it goes by. */

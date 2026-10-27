@@ -130,7 +130,7 @@ describe("a Gemini CLI session Tomrade started", () => {
     await gemini.post(said.before);
     expect(gemini.now()).toMatchObject({ state: "running", activity: "Bash · echo hi" });
     await gemini.post(said.asks);
-    expect(gemini.now()).toMatchObject({ state: "waiting", activity: "needs your approval" });
+    expect(gemini.now()).toMatchObject({ state: "waiting", activity: null, ask: { kind: "permission" } });
     await gemini.post(said.after);
     expect(gemini.now()).toMatchObject({ state: "running", activity: null });
     // An event Tomrade does not read is not even a sign of life.

@@ -1,5 +1,5 @@
 import type { Context } from "cordis";
-import type { RecordLine, RecordRead, ThreadMessage, ThreadSummary } from "@tomradex/agent";
+import { PANEL_SURFACES, type RecordLine, type RecordRead, type ThreadMessage, type ThreadSummary } from "@tomradex/agent";
 import { clipDetail, clipLine, toolLine } from "@tomradex/engine-kit";
 import type { PrState } from "./rules.js";
 import type { CodeLinkStore, CodeLinkView, SessionCursor, SessionMark, SessionView } from "./store.js";
@@ -38,11 +38,18 @@ export interface ReviewTicket {
   commits: number;
 }
 
-/** One ended conversation in the look-back list: what came of it first, then who and when. */
+/** Where the look-back list's rows come from; each row's `kind` names its source. */
+export type ReviewSource = "session" | "thread" | "idle";
+const SOURCES: ReviewSource[] = ["session", "thread", "idle"];
+
+/** One conversation in the look-back list: what came of it first, then who and when. */
 export interface ReviewRow {
   id: string;
-  /** A coding session (in a terminal, or run by Tomrade), or an assistant conversation put away. */
-  kind: "session" | "thread";
+  /**
+   * A coding session (in a terminal, or run by Tomrade), an assistant conversation put away, or one still open and
+   * idle — the session bar shows only the newest few of those, the list finds the rest.
+   */
+  kind: ReviewSource;
   agent: string;
   /** What it goes by: its ticket's title, its own title, or what it was asked first. */
   title: string;
@@ -64,11 +71,11 @@ export interface ReviewRow {
   endedAt: number;
 }
 
-/** Where a page stopped in each of the two sources the list reads; null in one once it ran dry. */
-export interface ReviewCursor {
-  session: SessionCursor | null;
-  thread: SessionCursor | null;
-}
+/** What came of an ended session, as every list says it: its pull request, its commits, how often it asked, its last word. */
+export type SessionOutcome = Pick<ReviewRow, "pr" | "commits" | "asked" | "said">;
+
+/** Where a page stopped in each source the list reads; null in one once it ran dry. */
+export type ReviewCursor = Record<ReviewSource, SessionCursor | null>;
 
 export interface ReviewPage {
   rows: ReviewRow[];
@@ -167,15 +174,19 @@ export function threadLines(messages: ThreadMessage[]): RecordLine[] {
   return out;
 }
 
-/** The two sources' rows in one order, newest first, `limit` of them; and where each source stops for the next page. */
-export function mergePage(sessions: ReviewRow[], threads: ReviewRow[], before: ReviewCursor | null, limit: number): ReviewPage {
-  const rows = [...sessions, ...threads].sort((a, b) => b.endedAt - a.endedAt || (b.id < a.id ? -1 : 1)).slice(0, limit);
-  const takenS = rows.filter((r) => r.kind === "session");
-  const takenT = rows.filter((r) => r.kind === "thread");
-  const moreS = sessions.length === limit || takenS.length < sessions.length;
-  const moreT = threads.length === limit || takenT.length < threads.length;
-  const stop = (taken: ReviewRow[], was: SessionCursor | null): SessionCursor | null => (taken.length ? { at: taken.at(-1)!.endedAt, id: taken.at(-1)!.id } : was);
-  return { rows, next: moreS || moreT ? { session: moreS ? stop(takenS, before?.session ?? null) : null, thread: moreT ? stop(takenT, before?.thread ?? null) : null } : null };
+/** The sources' rows in one order, newest first, `limit` of them; and where each source stops for the next page. */
+export function mergePage(sources: Record<ReviewSource, ReviewRow[]>, before: ReviewCursor | null, limit: number): ReviewPage {
+  const rows = SOURCES.flatMap((source) => sources[source]).sort((a, b) => b.endedAt - a.endedAt || (b.id < a.id ? -1 : 1)).slice(0, limit);
+  const next = { session: null, thread: null, idle: null } as ReviewCursor;
+  let more = false;
+  for (const source of SOURCES) {
+    const taken = rows.filter((r) => r.kind === source);
+    const goesOn = sources[source].length === limit || taken.length < sources[source].length;
+    if (!goesOn) continue;
+    more = true;
+    next[source] = taken.length ? { at: taken.at(-1)!.endedAt, id: taken.at(-1)!.id } : (before?.[source] ?? null);
+  }
+  return { rows, next: more ? next : null };
 }
 
 export interface ReviewDeps {
@@ -188,9 +199,10 @@ export interface ReviewDeps {
 }
 
 /**
- * The look back on ended conversations: coding sessions and put-away assistant conversations, a page at a time with
- * what came of each, and one opened whole, cut by the tickets it worked. Counts come from stored rows; a record is
- * read only for the conversation opened, or when what was said is searched.
+ * The look back on conversations: ended coding sessions, put-away assistant conversations and the idle ones the
+ * session bar no longer shows, a page at a time with what came of each, and one opened whole, cut by the tickets it
+ * worked. Counts come from stored rows; a record is read only for the conversation opened, or when what was said is
+ * searched.
  */
 export class Review {
   /** What each conversation said, lowercased, by id and when it ended: an ended one does not change. */
@@ -199,14 +211,24 @@ export class Review {
 
   constructor(private readonly deps: ReviewDeps) {}
 
-  /** One page of ended conversations, newest first; with `query`, the newest ones whose title, ticket or words match. */
+  /** One page of conversations, newest first; with `query`, the newest ones whose title, ticket or words match. */
   list(projectId: string, opts: { before?: ReviewCursor | null; limit?: number; query?: string } = {}): ReviewPage {
     const limit = Math.max(1, Math.min(opts.limit ?? REVIEW_PAGE, 100));
     const before = opts.before ?? null;
     const needle = opts.query?.trim() ?? "";
-    const sessions = needle ? (before ? [] : this.deps.store.endedMatching(projectId, needle, this.itemsMatching(projectId, needle), limit)) : before && !before.session ? [] : this.deps.store.endedPage(projectId, before?.session ?? null, limit);
-    const threads = needle ? (before ? [] : this.archivedMatching(projectId, needle, limit)) : before && !before.thread ? [] : this.threadsPage(projectId, before?.thread ?? null, limit);
-    return mergePage(this.sessionRows(projectId, sessions), threads.map((th) => this.threadRow(projectId, th)), before, limit);
+    // a search is one page: the newest matches of each source
+    const page = <T>(source: ReviewSource, matching: () => T[], paged: (from: SessionCursor | null) => T[]): T[] =>
+      needle ? (before ? [] : matching()) : before && !before[source] ? [] : paged(before?.[source] ?? null);
+    const sessions = page("session", () => this.deps.store.endedMatching(projectId, needle, this.itemsMatching(projectId, needle), limit), (from) => this.deps.store.endedPage(projectId, from, limit));
+    const threads = page("thread", () => this.threadsMatching(projectId, true, needle, limit), (from) => this.threadsPage(projectId, true, from, limit));
+    const idle = page("idle", () => this.threadsMatching(projectId, false, needle, limit), (from) => this.threadsPage(projectId, false, from, limit));
+    const rows = (list: ThreadSummary[]) => list.map((th) => this.threadRow(projectId, th));
+    return mergePage({ session: this.sessionRows(projectId, sessions), thread: rows(threads), idle: rows(idle) }, before, limit);
+  }
+
+  /** What came of each of these sessions, by id, the way the list says it: their tickets' links read in one go. */
+  outcomes(projectId: string, sessions: SessionView[]): Map<string, SessionOutcome> {
+    return new Map(this.sessionRows(projectId, sessions).map((r) => [r.id, { pr: r.pr, commits: r.commits, asked: r.asked, said: r.said }]));
   }
 
   /**
@@ -333,21 +355,36 @@ export class Review {
   private threadRow(projectId: string, th: ThreadSummary): ReviewRow {
     const item = th.itemId ? this.deps.ctx.items.get(projectId, th.itemId) : null;
     const tickets: ReviewTicket[] = item ? [{ itemId: item.id, key: item.key, title: item.title, pr: null, commits: 0 }] : [];
-    return { id: th.id, kind: "thread", agent: th.engine, title: th.title || item?.title || "", tickets, asked: null, commits: 0, pr: null, said: null, where: "panel", threadId: th.id, resumable: false, startedAt: th.createdAt, endedAt: th.updatedAt };
+    return { id: th.id, kind: th.archived ? "thread" : "idle", agent: th.engine, title: th.title || item?.title || "", tickets, asked: null, commits: 0, pr: null, said: null, where: "panel", threadId: th.id, resumable: false, startedAt: th.createdAt, endedAt: th.updatedAt };
   }
 
-  /** Put-away assistant conversations, a page at a time, leaving out those a session speaks for. */
-  private threadsPage(projectId: string, before: SessionCursor | null, limit: number): ThreadSummary[] {
+  /** Put-away (or open and idle) assistant conversations, a page at a time, leaving out those a session speaks for and those running. */
+  private threadsPage(projectId: string, archived: boolean, before: SessionCursor | null, limit: number): ThreadSummary[] {
     const agent = this.deps.ctx.get("agent");
     if (!agent) return [];
-    const page = agent.store.archivedThreadsPage(projectId, "assistant", before, limit);
-    const spoken = this.deps.store.threadsWithSessions(projectId, page.map((th) => th.id));
-    return page.filter((th) => !spoken.has(th.id));
+    const out: ThreadSummary[] = [];
+    let from = before;
+    // read past what the filter leaves out: a page short of `limit` would read as the source's end while the store has more
+    for (;;) {
+      const page = agent.store.threadsPage(projectId, PANEL_SURFACES, archived, from, limit);
+      out.push(...this.ownThreads(projectId, page));
+      const last = page.at(-1);
+      if (out.length >= limit || page.length < limit || !last) break;
+      from = { at: last.updatedAt, id: last.id };
+    }
+    return out.slice(0, limit);
   }
 
-  private archivedMatching(projectId: string, needle: string, limit: number): ThreadSummary[] {
-    const n = needle.toLowerCase();
-    return this.threadsPage(projectId, null, limit * 4).filter((th) => th.title.toLowerCase().includes(n)).slice(0, limit);
+  private threadsMatching(projectId: string, archived: boolean, needle: string, limit: number): ThreadSummary[] {
+    const agent = this.deps.ctx.get("agent");
+    return agent ? this.ownThreads(projectId, agent.store.threadsMatching(projectId, PANEL_SURFACES, archived, needle, limit)) : [];
+  }
+
+  /** A conversation a session ran in is the session's row; one with a run going is the bar's, not the list's. */
+  private ownThreads(projectId: string, threads: ThreadSummary[]): ThreadSummary[] {
+    const spoken = this.deps.store.threadsWithSessions(projectId, threads.map((th) => th.id));
+    const running = new Set(this.deps.ctx.get("agent")?.activeRuns().map((a) => a.thread.id));
+    return threads.filter((th) => !spoken.has(th.id) && !running.has(th.id));
   }
 
   /** The tickets whose key or title holds the search: a session that worked one of them matches by it. */
