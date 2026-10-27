@@ -2317,6 +2317,9 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
 .palette-row:hover, .palette-row.active { background: var(--surface-warm); color: var(--fg); }
 .palette-row .p-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .palette-empty { padding: var(--space-6) var(--space-4); text-align: center; font-size: 14px; color: var(--meta); }
+.palette-mark { width: 14px; display: inline-flex; justify-content: center; flex-shrink: 0; }
+.palette-said { overflow: hidden; text-overflow: ellipsis; }
+.palette-foot { padding: 6px var(--space-4); border-top: 1px solid var(--border); font-size: var(--text-xs); color: var(--meta); }
 .palette-search-notes { display: flex; align-items: center; gap: 6px; margin: calc(-1 * var(--space-3)) auto var(--space-4); }
 
 /* ─── toast ──────────────────────────────────────────────────────────── */

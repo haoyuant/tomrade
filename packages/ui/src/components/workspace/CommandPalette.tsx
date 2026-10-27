@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useState } from "react";
+import { useDeferredValue, useEffect, useRef, useState } from "react";
 import { Command } from "cmdk";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { useNavigate } from "@tanstack/react-router";
@@ -21,6 +21,8 @@ import { useOptionalAgentDock } from "~/components/chrome/ProjectShell";
 import { keyLabel } from "~/lib/keybindings";
 import { isComposing } from "~/lib/keys";
 import { openSettingsPane } from "~/lib/settingsHost";
+import { askPanel } from "~/lib/panelRequests";
+import { PaletteSessions } from "./PaletteSessions";
 
 export interface PaletteActions {
   newIssue: () => void;
@@ -72,9 +74,18 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
   const tickets = mergeById([ws.items, foundClosed.data]).filter(isTicket);
   const shownTickets = (terms.length ? tickets.filter((i) => matches(`${i.key} ${i.title}`)) : tickets).slice(0, 60);
   const shownFiles = (terms.length ? files.filter((f) => matches(f.path)) : files).slice(0, 400);
+  // ⇧↵ picks a session into a Terminal window cell: the key is seen before cmdk turns it into a choice.
+  const shift = useRef(false);
+  const list = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!open) setSearch("");
+    if (open) return;
+    setSearch("");
+    shift.current = false;
   }, [open]);
+  const startWith = (text: string) => {
+    dock?.setAiOpen(true);
+    askPanel({ kind: "startWith", text });
+  };
 
   const run = (fn: () => void) => {
     onOpenChange(false);
@@ -157,7 +168,19 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
           onEscapeKeyDown={(e) => { if (isComposing(e)) e.preventDefault(); }}
         >
           <RadixDialog.Title className="sr-only">{t("commandPalette.title")}</RadixDialog.Title>
-          <Command loop>
+          <Command
+            loop
+            onKeyDown={(e) => {
+              if (e.key !== "Enter" || isComposing(e)) return;
+              shift.current = e.shiftKey;
+              // nothing found: Enter starts a conversation with the words typed
+              const words = search.trim();
+              if (words && dock && !list.current?.querySelector("[cmdk-item]")) {
+                e.preventDefault();
+                run(() => startWith(words));
+              }
+            }}
+          >
             <Command.Input
               className="palette-input"
               placeholder={t("commandPalette.searchPlaceholder")}
@@ -165,9 +188,16 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
               value={search}
               onValueChange={setSearch}
             />
-            <Command.List className="palette-list">
+            <Command.List className="palette-list" ref={list}>
               <Command.Empty>
                 <div className="palette-empty">{t("commandPalette.noMatches", { query: search })}</div>
+                {dock && search.trim() && (
+                  <button type="button" className="btn btn-ghost palette-search-notes" data-testid="palette-start-with" onClick={() => run(() => startWith(search.trim()))}>
+                    <Icon name="i-chev" size={13} />
+                    {t("commandPalette.startWith", { text: search.trim() })}
+                    <Kbd>↵</Kbd>
+                  </button>
+                )}
                 {/* Nothing is called that — it may still be written somewhere. */}
                 {notesOn && search.trim() && (
                   <button type="button" className="btn btn-ghost palette-search-notes" onClick={() => run(() => notesSearch.open(search.trim()))}>
@@ -176,6 +206,8 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
                   </button>
                 )}
               </Command.Empty>
+
+              {dock && <PaletteSessions projectId={ws.project.id} items={ws.items} run={run} shift={shift} />}
 
               <Command.Group heading={t("commandPalette.viewsGroup")} className="eyebrow palette-group">
                 {ws.views.map((view) => (
@@ -249,6 +281,7 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
                 </Command.Group>
               ))}
             </Command.List>
+            {dock && <div className="palette-foot">{t("commandPalette.shiftEnterHint")}</div>}
           </Command>
         </RadixDialog.Content>
       </RadixDialog.Portal>

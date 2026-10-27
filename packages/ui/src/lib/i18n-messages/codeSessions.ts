@@ -158,7 +158,18 @@ export const codeSessions = {
     keyClose: "close the pane",
     keyArrows: "+ arrows: the pane beside",
     keyPrevNext: "previous / next pane",
-    keyFold: "fold the session bar"
+    keyFold: "fold the session bar",
+    keyPalette: "sessions and commands",
+    paletteTitle: "Sessions and commands",
+    paletteSearch: "Find a session, or something to do…",
+    paletteNone: "Nothing matches.",
+    paletteWaiting: "Waiting on you",
+    paletteActive: "In progress",
+    paletteDo: "Do",
+    paletteHistory: "History",
+    paletteClear: "Clear the selected cell's screen",
+    paletteLayout: "Layout: {{name}}",
+    paletteFoot: "↵ goes to its cell; one with no cell here opens in the app window · {{key}} closes"
   },
   zh: {
     here: "这个窗口里",
@@ -318,6 +329,17 @@ export const codeSessions = {
     keyClose: "关格子",
     keyArrows: "+ 方向键 换格子",
     keyPrevNext: "上一个 / 下一个",
-    keyFold: "收起会话栏"
+    keyFold: "收起会话栏",
+    keyPalette: "会话和命令",
+    paletteTitle: "会话和命令",
+    paletteSearch: "找一个会话，或要做的事…",
+    paletteNone: "没有匹配的。",
+    paletteWaiting: "等你",
+    paletteActive: "进行中",
+    paletteDo: "做事",
+    paletteHistory: "历史",
+    paletteClear: "清屏（选中的格子）",
+    paletteLayout: "布局：{{name}}",
+    paletteFoot: "↵ 跳到它的格子；不在格子里的在主窗口打开 · {{key}} 关闭"
   }
 };

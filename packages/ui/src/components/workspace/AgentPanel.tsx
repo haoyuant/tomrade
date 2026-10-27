@@ -29,6 +29,7 @@ import { ThreadList, useThreadListState } from "./agent-panel/ThreadList";
 import { SessionBar, type BarMode } from "./agent-panel/SessionBar";
 import { TerminalSession } from "./agent-panel/TerminalSession";
 import { sessionBarRows, type BarRow } from "~/lib/sessionBar";
+import { onPanelRequest, setPanelSession, type PanelRequest } from "~/lib/panelRequests";
 import { useRecentSessions } from "~/lib/codeLink";
 import type { SessionView } from "@tomradex/code-link";
 import { hits, keyLabel } from "~/lib/keybindings";
@@ -547,6 +548,33 @@ export function AgentPanel({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, barMode, chooseBarMode]);
+
+  // ⌘K's "start with these words": a conversation of its own, sent them at once, whatever this one is doing.
+  const startWith = async (text: string) => {
+    try {
+      const th = await openThread({ boardId });
+      pickThread(th.id);
+      following.current = true;
+      const { runId } = await send.mutateAsync({ threadId: th.id, text });
+      setSentRun(runId);
+    } catch (error) {
+      reportError(error);
+    }
+  };
+  // What ⌘K asks of the panel, answered with this render's state.
+  const latestRequest = useRef<(request: PanelRequest) => void>(() => {});
+  latestRequest.current = (request) => {
+    if (request.kind === "newThread") latestBar.current.newThread();
+    else if (request.kind === "startWith") void startWith(request.text);
+    else if (request.kind === "openSession") setOpenSession(request.sessionId);
+    else if (request.kind === "toggleBar") chooseBarMode(barMode === "rail" ? "cards" : "rail");
+    else latestNext.current();
+  };
+  useEffect(() => onPanelRequest((request) => latestRequest.current(request)), []);
+  useEffect(() => {
+    setPanelSession(openSession ? { projectId, sessionId: openSession } : null);
+    return () => setPanelSession(null);
+  }, [projectId, openSession]);
 
   const archiveThreadById = (id: string) => {
     if (busy) return;
