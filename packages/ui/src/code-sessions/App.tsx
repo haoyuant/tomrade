@@ -3,6 +3,7 @@ import type { ClosedTerminalRow, Layout, SessionRow, TerminalRow, ThreadRow, Win
 import { Icon, IconSprite } from "~/components/icons";
 import { ContextMenuActionItem, ContextMenuSub } from "~/components/ui/menu";
 import { useLocaleWords } from "~/lib/dicts";
+import { hits } from "~/lib/keybindings";
 import { onLook, onShownIn, onState, onTails, onToast, send, type Look } from "./bridge";
 import { Cell } from "./Cell";
 import { GuessContext, guessesByPane } from "./guess";
@@ -32,7 +33,7 @@ function KeysFooter() {
       <span><kbd>{arrowsLabel()}</kbd> {say("keyArrows")}</span>
       <span><kbd>{keyLabel("previous")}</kbd> <kbd>{keyLabel("next")}</kbd> {say("keyPrevNext")}</span>
       <span><kbd>{keyLabel("fold")}</kbd> {say("keyFold")}</span>
-      <span><kbd>{keyLabel("palette")}</kbd> {say("keyPalette")}</span>
+      <span>{say("keyOnlyNew")} <kbd>{keyLabel("palette")}</kbd></span>
     </footer>
   );
 }
@@ -179,6 +180,13 @@ export function App() {
   const onWindowKey = useRef<(key: WindowKey) => void>(() => undefined);
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
+      // the app's key for this window, pressed in it: it is already in front, so the shell never hears it
+      if (hits(e, "terminalWindow")) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.focus();
+        return;
+      }
       const key = windowKey(e);
       if (!key) return;
       e.preventDefault();

@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { arrowsLabel, keyLabel, modifiedEnter, windowKey } from "../src/code-sessions/keys";
+import { arrowsLabel, keyLabel, modifiedEnter, windowChord, windowKey } from "../src/code-sessions/keys";
 
 const press = (key: string, mods: { meta?: boolean; ctrl?: boolean; alt?: boolean; shift?: boolean } = {}, code = /^[a-z]$/i.test(key) ? `Key${key.toUpperCase()}` : key) => ({
   key,
@@ -61,4 +61,11 @@ it("hands Ctrl+Enter and Shift+Enter to the backend, and leaves every other Ente
   expect(modifiedEnter(press("Enter", { shift: true }))).toBe("shift+enter");
   for (const e of [press("Enter"), press("Enter", { alt: true }), press("Enter", { meta: true }), press("Enter", { ctrl: true, shift: true }), press("Enter", { ctrl: true, alt: true }), press("j", { ctrl: true })]) expect(modifiedEnter(e)).toBeNull();
   expect(modifiedEnter({ ...press("Enter", { shift: true }), isComposing: true })).toBeNull();
+});
+
+it("gives each window key's chord for the shortcuts sheet, as the window reads it on each platform", () => {
+  expect(windowChord("splitRight", true)).toBe("Mod+D");
+  expect(windowChord("palette", true)).toBe("Mod+K");
+  expect(windowChord("splitRight", false)).toBe("Mod+Shift+D");
+  expect(windowKey(press("d", { meta: true }), true)).toBe("splitRight");
 });

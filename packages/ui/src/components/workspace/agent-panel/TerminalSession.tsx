@@ -30,7 +30,7 @@ const ANSWERED_MS = 8000;
  * session moves; a strip above it shows the pane's last lines, opening into a drawer with more; what is typed below
  * goes into the pane as keystrokes. Nothing here attaches to the pane, so the Terminal window keeps its control.
  */
-export function TerminalSession({ projectId, session, title, ticket, status, engines, items, cell, onShowInTerminal, onBack, backBlocked, onClose, onAnswered, focusSay }: {
+export function TerminalSession({ projectId, session, title, ticket, status, engines, items, cell, onShowInTerminal, onBack, backBlocked, onClose, onAnswered, goesOnNext, focusSay }: {
   projectId: string;
   session: SessionView;
   title: string;
@@ -50,6 +50,8 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
   onClose: () => void;
   /** Allow or Deny went through: the panel may move on to what else waits. */
   onAnswered?: () => void;
+  /** Answering moves on to the next conversation or session waiting on the person. */
+  goesOnNext?: boolean;
   /** Opened to say something to it: the keyboard goes to its input once it can take typing. */
   focusSay?: boolean;
 }) {
@@ -417,6 +419,7 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
         {asking && (
           <div className="ai-approve" data-testid="ai-approve" role="group" aria-label={asked ?? t("agentPanel.attention_permission")}>
             <span className="ai-approve-text">{asked ?? t("agentPanel.attention_permission")}</span>
+            {goesOnNext && <span className="ai-approve-note" data-testid="ask-goes-on">{t("sessionBar.goesOnNext")}</span>}
             {panel.data?.approval && canType && onScreen ? (
               <>
                 {onScreen.allows && <button type="button" className="btn btn-primary btn-xs" data-testid="ai-allow" disabled={sending} onClick={() => void answer("allow")}>{t("sessionBar.allow")}</button>}

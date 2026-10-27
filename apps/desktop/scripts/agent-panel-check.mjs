@@ -693,12 +693,15 @@ const run = async () => {
     $(`(() => { const b = document.querySelector('.ai .sbar'); if (!b) return null; return { mode: b.classList.contains('is-rail') ? 'rail' : 'cards',
       dots: [...b.querySelectorAll('.sbar-dot[data-status]')].map((d) => [d.dataset.status, d.getAttribute('aria-label'), d.dataset.depth ?? null]),
       cards: [...b.querySelectorAll('.sbar-card')].map((c) => [c.dataset.status, c.textContent]),
-      waiting: b.querySelector('.sbar-waiting')?.getAttribute('aria-label') ?? null, peek: b.querySelector('[role=tooltip]')?.textContent ?? null }; })()`);
+      waiting: b.querySelector('.sbar-waiting')?.getAttribute('aria-label') ?? null, waitingText: b.querySelector('.sbar-waiting')?.textContent ?? null,
+      doneWhere: b.querySelector('.sbar-dot[data-status="done"] .sbar-dot-where')?.textContent ?? null, peek: b.querySelector('[role=tooltip]')?.textContent ?? null }; })()`);
   let barSeen = await bar();
   check("the panel has a session bar, as dots while the panel is narrow", barSeen?.mode === "rail", barSeen);
   const waitingDots = barSeen?.dots.filter(([status]) => status === "wait") ?? [];
   check("the terminal session waiting on the person sits with the other waiting ones, first in the bar", waitingDots.some(([, label]) => /Record pane output/.test(label)) && barSeen.dots.findIndex(([status]) => status !== "wait") === waitingDots.length, barSeen?.dots);
   check("the bar counts what waits", barSeen?.waiting === `${waitingDots.length} waiting`, barSeen?.waiting);
+  check("in words, not a bare number", barSeen?.waitingText === `${waitingDots.length} waiting`, barSeen?.waitingText);
+  check("an ended dot says done", barSeen?.doneWhere === "done", barSeen?.doneWhere);
   check("the ended session is listed after the live ones", barSeen?.dots.at(-1)?.[0] === "done" && /Snapshot records/.test(barSeen.dots.at(-1)[1]), barSeen?.dots);
   await $(`(() => { const d = [...document.querySelectorAll('.ai .sbar-dot[data-status="wait"]')].find((n) => /Record pane output/.test(n.getAttribute('aria-label'))); d.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return true; })()`);
   await sleep(200);
@@ -1019,6 +1022,7 @@ const run = async () => {
   await shot("wait-queue.png");
   check("with others waiting, a line on top says who waits for what", /Asker 2 asks you something/.test((await queueLine()) ?? ""), await queueLine());
   await asksHere();
+  check("the ask says answering it brings up the next one waiting", await present('.ai-scroll .q-ask:not(.done) [data-testid="ask-goes-on"]'));
   await answerHere();
   check("answering opens the next one waiting", await until(async () => ![first, null].includes(await shownThread()), 50), await shownThread());
   check("and says so", await until(async () => ((await $(`document.body.innerText`)) ?? "").includes("Done with Asker 1 · this one waits too"), 30));
@@ -1057,10 +1061,10 @@ const run = async () => {
   cardAsk = await askOf("Card allows it");
   check("a terminal session's card offers Allow and Look first while its screen shows the prompt with yes under the cursor", JSON.stringify(cardAsk?.buttons.map(([id]) => id)) === JSON.stringify(["sbar-allow", "sbar-look"]) && cardAsk.text === "wants to run git push -u origin al/card", cardAsk);
   // waiting on a command's permission, it is listed on top as asking to run something
-  check("the line on top says the terminal session asks to run something", await until(async () => /AL-\d+ asks to run something/.test((await queueLine()) ?? ""), 40), await queueLine());
+  check("the line on top says the terminal session asks to run something, by its whole title", await until(async () => /AL-\d+ Card allows it asks to run something/.test((await queueLine()) ?? ""), 40), await queueLine());
   const typedBefore = typed.length;
   await pressIn("Card allows it", "sbar-allow");
-  check("Allow on the card presses the agent's key for Yes in its pane, and the panel stays", await until(async () => typed.length === typedBefore + 1, 30) && typed.at(-1)?.paneId === "w1:p1" && typed.at(-1)?.keys?.join() === "enter" && (await shownThread()) === stayOn && !(await sessionView()) && (await until(async () => /Allowed “AL-\d+” · you stayed where you were/.test((await $(`document.body.innerText`)) ?? ""), 30)), { typed: typed.slice(typedBefore), shown: await shownThread() });
+  check("Allow on the card presses the agent's key for Yes in its pane, and the panel stays", await until(async () => typed.length === typedBefore + 1, 30) && typed.at(-1)?.paneId === "w1:p1" && typed.at(-1)?.keys?.join() === "enter" && (await shownThread()) === stayOn && !(await sessionView()) && (await until(async () => /Allowed “AL-\d+ Card allows it” · you stayed where you were/.test((await $(`document.body.innerText`)) ?? ""), 30)), { typed: typed.slice(typedBefore), shown: await shownThread() });
   // the cursor on No: Deny alone on the card; Look first opens the session
   screen = asks.replace("❯ 1. Yes", "  1. Yes").replace("  3. No", "❯ 3. No");
   ctx.codeLink.store.patchSession(alpha.id, cardSession.id, { state: "waiting", activity: null, ask: asksTo("Bash", "git push -u origin al/card"), lastEventAt: Date.now() });

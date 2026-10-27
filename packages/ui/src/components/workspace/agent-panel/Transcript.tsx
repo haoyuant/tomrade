@@ -28,6 +28,8 @@ export interface TranscriptActionsValue {
   threadStatus: Map<string, BarStatus>;
   /** The question waiting now is the built-in shell asking before a command, as it does for every one: it points at the setting that lets reading and checks through. */
   commandAsk?: boolean;
+  /** Answering moves on to the next conversation or session waiting on the person. */
+  goesOnNext?: boolean;
   onOpenIssue: (id: string) => void;
   onOpenThread: (id: string) => void;
   onAnswer: (id: string, value: string | string[]) => void;
@@ -136,7 +138,7 @@ function Row(props: Parameters<typeof RowBody>[0]) {
 
 function RowBody({ m, onRetry, onRetryWith, onTroubleshoot, hint }: { m: ThreadMessage; onRetry?: () => void; onRetryWith?: (engineId: string) => void; onTroubleshoot?: () => void; hint?: boolean }) {
   const { t } = useI18n();
-  const { projectId, runs, cards, engines, retryEngines, pending, byKey, threadStatus, commandAsk, onOpenIssue, onOpenThread, onAnswer, onRevert, onOpenSettings, onCardAction, busy } = useTranscriptActions();
+  const { projectId, runs, cards, engines, retryEngines, pending, byKey, threadStatus, commandAsk, goesOnNext, onOpenIssue, onOpenThread, onAnswer, onRevert, onOpenSettings, onCardAction, busy } = useTranscriptActions();
   const b = m.block;
   if (m.role === "user") {
     const focus = b.type === "text" ? b.focus : undefined;
@@ -199,7 +201,7 @@ function RowBody({ m, onRetry, onRetryWith, onTroubleshoot, hint }: { m: ThreadM
     ) : b.type === "trace" ? (
       <Trace block={b} />
     ) : b.type === "question" ? (
-      <Question block={b} pending={pending} onAnswer={onAnswer} busy={busy && pending?.kind !== "permission"} onCommandSettings={commandAsk ? () => { if (!openSettingsPane("shell")) onOpenSettings(); } : undefined} />
+      <Question block={b} pending={pending} onAnswer={onAnswer} busy={busy && pending?.kind !== "permission"} goesOnNext={goesOnNext} onCommandSettings={commandAsk ? () => { if (!openSettingsPane("shell")) onOpenSettings(); } : undefined} />
     ) : b.type === "card" && b.schema === "checklist" ? (
       // the stream holds the card as it was first posted; the live one ticks as checks finish
       <ChecklistBlock title={b.title} card={(cards.get(b.id)?.data ?? b.data) as ChecklistCard} />

@@ -48,6 +48,9 @@ export function windowKey(e: KeyEventLike, mac = isMac): WindowKey | null {
   return null;
 }
 
+/** A window key's chord on this platform, for lists that write it themselves. */
+export const windowChord = (id: WindowKey, mac = isMac): string => WINDOW_KEYS[mac ? "mac" : "other"][id];
+
 /** A window key as this platform writes it: "⇧⌘D" on a Mac, "Ctrl+Shift+O" elsewhere. */
 export const keyLabel = (id: WindowKey, mac = isMac): string => formatChord(WINDOW_KEYS[mac ? "mac" : "other"][id], mac);
 

@@ -169,7 +169,7 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
           <StatusMark status={r.status} size={9} />
           {isNew(r) && <span className="sbar-new-badge">{t("sessionBar.new")}</span>}
         </span>
-        <span className="sbar-dot-where">{r.status === "done" ? statusWord("done") : dotWhere(r)}</span>
+        <span className="sbar-dot-where">{r.status === "done" ? t("sessionBar.dotDone") : dotWhere(r)}</span>
       </button>
     ));
     return (
@@ -181,8 +181,7 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
         </div>
         {waiting > 0 && (
           <span className="sbar-waiting num" role="status" aria-label={t("sessionBar.waitingCount", { n: waiting })} title={t("sessionBar.waitingCount", { n: waiting })}>
-            <StatusMark status="wait" size={8} />
-            {waiting}
+            {t("sessionBar.waitingShort", { n: waiting })}
           </span>
         )}
         <div className="sbar-dots" onScroll={() => { hold(); setPeek(null); }}>
