@@ -96,3 +96,16 @@ export function landingSegment(segments: Pick<ReviewSegment, "itemId">[], itemId
   for (let i = segments.length - 1; i >= 0; i--) if (segments[i]!.itemId === itemId) return i;
   return null;
 }
+
+/** Each conversation opened under another right after it, set in by one; the rest keep their order. A child whose parent is not among the rows stands on its own. */
+export function nestRows<T extends { id: string; parentId?: string | null }>(rows: T[]): (T & { depth: 0 | 1 })[] {
+  const ids = new Set(rows.map((r) => r.id));
+  const nested = (r: T) => !!r.parentId && r.parentId !== r.id && ids.has(r.parentId);
+  const out: (T & { depth: 0 | 1 })[] = [];
+  for (const r of rows) {
+    if (nested(r)) continue;
+    out.push({ ...r, depth: 0 });
+    for (const child of rows) if (child.parentId === r.id && nested(child)) out.push({ ...child, depth: 1 });
+  }
+  return out;
+}

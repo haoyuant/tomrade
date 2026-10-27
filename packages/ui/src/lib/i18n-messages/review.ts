@@ -61,6 +61,10 @@ export const review = {
     markLinked: "● Linked the code",
     onlyTicket: "Only {{key}}'s stretches",
     showAll: "Show all",
+    resumeSessionHint: "Its agent takes the same conversation up again in the background; the session bar shows it running",
+    resumedHere: "{{agent}} takes the conversation up again in the background",
+    rawNone: "No raw output: what its pane showed was not recorded here",
+    rawNoneThread: "No raw output: this conversation ran in no terminal pane",
     whereTerminal: "terminal",
     whereOutside: "another terminal",
     wherePanel: "here"
@@ -127,6 +131,10 @@ export const review = {
     markLinked: "● 关联了代码",
     onlyTicket: "只看 {{key}} 的段",
     showAll: "看全部",
+    resumeSessionHint: "它的 agent 在后台续上同一段对话；会话栏里它又变回运行中",
+    resumedHere: "{{agent}} 在后台续上了这段对话",
+    rawNone: "没有原始输出：它的窗格当时没在这里录下来",
+    rawNoneThread: "没有原始输出：这段对话没在终端窗格里跑过",
     whereTerminal: "终端",
     whereOutside: "别的终端",
     wherePanel: "对话"

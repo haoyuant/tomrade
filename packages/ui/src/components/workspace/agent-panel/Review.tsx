@@ -76,6 +76,7 @@ export function Review({ projectId, focus, engines, omit, onClose, onOpenThread 
           <Icon name="i-close" size={11} />
         </button>
       </div>
+      {!picked && <p className="ai-review-hint meta-txt dense" data-testid="ai-review-hint">{t("review.hint")}</p>}
       {picked ? (
         <Opened projectId={projectId} focus={picked} agentName={agentName} span={span} where={where} say={say} onOpenThread={onOpenThread} />
       ) : (
@@ -94,6 +95,7 @@ function Opened({ projectId, focus, agentName, span, where, say, onOpenThread }:
   const view = useQuery({ queryKey: keys.review.open(projectId, ref), queryFn: () => invoke("codeLink.reviewOpen", projectId, { sessionId: focus.sessionId, threadId: focus.threadId }), enabled: !!ref, staleTime: Infinity });
   const data = view.data ?? null;
   const [lens, setLens] = useState<"talk" | "raw">("talk");
+  const [resuming, setResuming] = useState(false);
   useEffect(() => setLens("talk"), [ref]);
   const raw = useQuery({ queryKey: keys.review.raw(projectId, focus.sessionId ?? ""), queryFn: () => invoke("codeLink.reviewRaw", projectId, focus.sessionId!), enabled: lens === "raw" && !!focus.sessionId && !!data?.raw, staleTime: Infinity });
   const start = useStartTicket(projectId);
@@ -148,11 +150,18 @@ function Opened({ projectId, focus, agentName, span, where, say, onOpenThread }:
   const outcome = outcomeLine(row, say);
   const counts = stretchesOf(data.segments);
   const ticket = row.tickets[0] ?? null;
-  // Going on: a ticket session continues headless in a conversation of its own; a put-away conversation comes back; an idle one opens.
+  // Going on: a ticket session continues headless in a conversation of its own; one on no ticket resumes its own session in
+  // the background; a put-away conversation comes back; an idle one opens.
   const goOn = () => {
     if (row.kind === "idle") return onOpenThread(row.id);
     if (row.kind === "thread") return unarchive.mutate(row.id, { onSuccess: () => onOpenThread(row.id) });
-    if (!ticket) return;
+    if (!ticket) {
+      setResuming(true);
+      void invoke("codeLink.resumeSession", projectId, row.id)
+        .then((r) => toast({ body: r.ok ? t("review.resumedHere", { agent: agentName(row.agent) }) : r.message }), report)
+        .finally(() => setResuming(false));
+      return;
+    }
     start.mutate({ itemId: ticket.itemId, mode: "run" }, {
       onSuccess: (r) => {
         if (!r.ok) return toast({ body: r.message });
@@ -163,7 +172,7 @@ function Opened({ projectId, focus, agentName, span, where, say, onOpenThread }:
     });
   };
   const goOnInTerminal = () => void invoke("codeLink.resumeInTerminal", projectId, row.id).then((ok) => toast({ body: ok ? t("review.resumed", { agent: agentName(row.agent) }) : t("review.resumeFailed") }), report);
-  const busy = start.isPending || unarchive.isPending;
+  const busy = start.isPending || unarchive.isPending || resuming;
   return (
     <div className="ai-review-open" data-testid="ai-review-open" data-review={row.id}>
       <div className="ai-review-top">
@@ -185,8 +194,8 @@ function Opened({ projectId, focus, agentName, span, where, say, onOpenThread }:
           )}
         </div>
         <div className="ai-review-actions">
-          {(ticket || row.kind !== "session") && (
-            <button type="button" className="btn btn-primary btn-xs" data-testid="ai-review-resume" title={t(row.kind === "idle" ? "review.openThreadHint" : row.kind === "thread" ? "review.resumeThreadHint" : "review.resumeHint")} disabled={busy} onClick={goOn}>
+          {(ticket || row.kind !== "session" || row.resumable) && (
+            <button type="button" className="btn btn-primary btn-xs" data-testid="ai-review-resume" title={t(row.kind === "idle" ? "review.openThreadHint" : row.kind === "thread" ? "review.resumeThreadHint" : ticket ? "review.resumeHint" : "review.resumeSessionHint")} disabled={busy} onClick={goOn}>
               {t(row.kind === "idle" ? "review.openThread" : row.kind === "thread" ? "review.resumeThread" : "review.resume")}
             </button>
           )}
@@ -198,12 +207,12 @@ function Opened({ projectId, focus, agentName, span, where, say, onOpenThread }:
         </div>
       </div>
       <div className="ai-review-lens">
-        {data.raw && (
-          <span className="seg" role="group" data-testid="ai-review-lenses">
-            <button type="button" aria-pressed={lens === "talk"} onClick={() => setLens("talk")}>{t("review.lensTalk")}</button>
-            <button type="button" aria-pressed={lens === "raw"} data-testid="ai-review-lens-raw" onClick={() => setLens("raw")}>{t("review.lensRaw")}</button>
-          </span>
-        )}
+        <span className="seg" role="group" data-testid="ai-review-lenses">
+          <button type="button" aria-pressed={lens === "talk"} onClick={() => setLens("talk")}>{t("review.lensTalk")}</button>
+          {/* not recorded: the raw output stays in sight, greyed, and says why */}
+          <button type="button" aria-pressed={lens === "raw"} data-testid="ai-review-lens-raw" disabled={!data.raw} title={data.raw ? undefined : t(row.kind !== "session" || row.where === "panel" ? "review.rawNoneThread" : "review.rawNone")} onClick={() => setLens("raw")}>{t("review.lensRaw")}</button>
+        </span>
+        {!data.raw && <span className="ai-review-lens-note" data-testid="ai-review-raw-none">{t(row.kind !== "session" || row.where === "panel" ? "review.rawNoneThread" : "review.rawNone")}</span>}
         <span className="ai-review-lens-note">{t(row.kind !== "session" || row.where === "panel" ? "review.lensNoteThread" : "review.lensNote")}</span>
       </div>
       {lens === "raw" ? (

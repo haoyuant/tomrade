@@ -265,6 +265,8 @@ declare module "@tomradex/ipc" {
     "codeLink.reviewRaw": (projectId: string, sessionId: string) => RawOutput | null;
     /** Take an ended conversation up again in a new Terminal window cell, with its agent's own resume command; false when no window can. */
     "codeLink.resumeInTerminal": (projectId: string, sessionId: string) => boolean;
+    /** An ended session on no ticket taken up again in the background: its agent resumes the same session in a pane nothing brings forward. */
+    "codeLink.resumeSession": (projectId: string, sessionId: string) => StartResult;
   }
   interface Broadcasts {
     "codeLink.changed": (projectId: string) => void;
@@ -763,6 +765,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.sessionTickets", (projectId, sessionId) => ctx.codeLink.review.tickets(projectId, sessionId));
       ctx.ipc.handle("codeLink.reviewRaw", (projectId, sessionId) => ctx.codeLink.rawOutput(projectId, sessionId));
       ctx.ipc.handle("codeLink.resumeInTerminal", (projectId, sessionId) => ctx.codeLink.resumeInTerminal(projectId, sessionId));
+      ctx.ipc.handle("codeLink.resumeSession", (projectId, sessionId) => ctx.codeLink.resumeSession(projectId, sessionId));
     });
     // Only on a general look: when an agent's turn failed, gh is never the cause.
     this.home.inject(["doctor"], (ctx) => {
@@ -1207,6 +1210,11 @@ export class CodeLink extends Service implements CodeLinkReader {
     const s = this.store.session(projectId, sessionId);
     if (!s || !resumeCommand(s.agent, s.externalId)) return Promise.resolve(false);
     return this.herdr.resumeSession(projectId, sessionId);
+  }
+
+  /** An ended session on no ticket taken up again in the background, as the same session; see `Starter.resumeSession`. */
+  resumeSession(projectId: string, sessionId: string): Promise<StartResult> {
+    return this.starter.resumeSession(projectId, sessionId);
   }
 
   /** The recording of what a session's pane showed, from the Terminal window's plugin; null without one. */

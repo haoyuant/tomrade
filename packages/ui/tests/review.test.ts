@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ReviewRow, ReviewSegment } from "@tomradex/code-link";
-import { alsoKeys, dayLabel, dayOf, groupByDay, landingSegment, openAtFirst, outcomeLine, outcomeParts, segmentKind, segmentSummary, segmentWork, stretchesOf } from "../src/lib/review";
+import { alsoKeys, dayLabel, dayOf, groupByDay, landingSegment, nestRows, openAtFirst, outcomeLine, outcomeParts, segmentKind, segmentSummary, segmentWork, stretchesOf } from "../src/lib/review";
 
 const say = (key: string, vars?: Record<string, string | number>) => (vars?.n !== undefined ? `${key}:${vars.n}` : key);
 const row = (over: Partial<ReviewRow> = {}): ReviewRow => ({
@@ -57,4 +57,9 @@ describe("a conversation's stretches", () => {
     expect(landingSegment(segments, null)).toBeNull();
     expect([...stretchesOf(segments)]).toEqual([[null, 1], ["tom-634", 2], ["tom-638", 1]]);
   });
+});
+
+it("sets each conversation opened under another right under it, and leaves one whose parent is not listed on its own", () => {
+  const rows = [{ id: "a" }, { id: "c", parentId: "b" }, { id: "b" }, { id: "d", parentId: "gone" }, { id: "e", parentId: "a" }];
+  expect(nestRows(rows).map((r) => [r.id, r.depth])).toEqual([["a", 0], ["e", 1], ["b", 0], ["c", 1], ["d", 0]]);
 });

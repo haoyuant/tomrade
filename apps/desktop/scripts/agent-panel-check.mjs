@@ -1272,6 +1272,7 @@ const run = async () => {
   // the session bar's History opens the list
   await press(`document.querySelector('[data-testid="sbar-history"]')`);
   check("the session bar's History opens the look back in the panel", await until(() => present('[data-testid="ai-review-list"]'), 30));
+  check("its head says the ways here", (await $(`document.querySelector('[data-testid="ai-review-hint"]')?.textContent ?? null`)) === "The session bar's History and ⌘K both come here");
   const reviewRows = () => $(`[...document.querySelectorAll('[data-testid="ai-review-row"]')].map((r) => r.textContent)`);
   await until(async () => (await reviewRows()).some((text) => /Save a record snapshot/.test(text)), 30);
   const reviewRow = (await reviewRows()).find((text) => /Save a record snapshot/.test(text)) ?? null;
@@ -1291,7 +1292,8 @@ const run = async () => {
   const reviewOpen = await $(`({ title: document.querySelector('[data-testid="ai-review-title"]')?.textContent ?? null, outcome: document.querySelector('[data-testid="ai-review-outcome"]')?.textContent ?? null, tickets: document.querySelector('[data-testid="ai-review-tickets"]')?.textContent ?? null,
     lenses: !!document.querySelector('[data-testid="ai-review-lenses"]'), resume: !!document.querySelector('[data-testid="ai-review-resume"]'), terminal: !!document.querySelector('[data-testid="ai-review-resume-terminal"]'), input: !!document.querySelector('.ai .ai-input') })`);
   check("opening one shows its outcome and the tickets it did on top, read-only, with the ways to go on", /PR #407 merged/.test(reviewOpen.outcome ?? "") && reviewOpen.tickets?.includes(reviewTicket.key) && reviewOpen.tickets?.includes(alsoTicket.key) && reviewOpen.resume && reviewOpen.terminal && !reviewOpen.input, reviewOpen);
-  check("without a recording of its pane there is no raw-output tab", !reviewOpen.lenses, reviewOpen);
+  const rawLens = await $(`({ disabled: document.querySelector('[data-testid="ai-review-lens-raw"]')?.disabled ?? null, why: document.querySelector('[data-testid="ai-review-raw-none"]')?.textContent ?? null })`);
+  check("without a recording of its pane the raw output is greyed out, and says why", reviewOpen.lenses && rawLens.disabled === true && /not recorded/.test(rawLens.why ?? ""), rawLens);
   const segs = () => $(`[...document.querySelectorAll('[data-testid="ai-review-seg"]')].map((s) => [s.dataset.ticket, s.dataset.kind, !!s.dataset.open])`);
   check("the conversation is cut where the second ticket was claimed, each stretch marked writing code, all open from the list", JSON.stringify(await segs()) === JSON.stringify([[reviewTicket.key, "code", true], [alsoTicket.key, "code", true]]), await segs());
   const segLines = await $(`[...document.querySelectorAll('[data-testid="ai-review-seg"]')].map((s) => [...s.querySelectorAll('.cs-convo-line, [data-testid="convo-mark"]')].map((l) => l.textContent))`);
@@ -1326,6 +1328,29 @@ const run = async () => {
   await $(`${historyRow}?.dispatchEvent(new PointerEvent('pointermove', { bubbles: true }));true`);
   await enterPalette();
   check("picking it in ⌘K opens the look back on it", await until(async () => (await $(`document.querySelector('[data-testid="ai-review-open"]')?.dataset.review ?? null`)) === reviewed.id, 30));
+
+  // ── a session on no ticket goes on in the background as itself; a conversation opened under another sits under it ──
+  ctx.agent.archiveThread(alpha.id, bgParent.id);
+  ctx.agent.archiveThread(alpha.id, bgChild.id);
+  const looseSession = ctx.codeLink.store.createSession(alpha.id, { repoId: "", branch: "", itemIds: [], mode: "terminal", agent: "cli", threadId: null, device: "check", externalId: "cli-loose-1" });
+  ctx.codeLink.store.patchSession(alpha.id, looseSession.id, { title: "Loose chat", cwd: work, state: "ended", endedAt: Date.now() });
+  ctx.emit("codeLink/changed", alpha.id);
+  ctx.ipc.send("codeLink.changed", alpha.id);
+  await press(`document.querySelector('[data-testid="ai-review-back"]')`);
+  const listed = () => $(`[...document.querySelectorAll('[data-testid="ai-review-row"]')].map((r) => [r.dataset.review, r.dataset.depth ?? "0"])`);
+  check("a conversation opened under another sits right under it in History, set in", await until(async () => { const l = await listed(); const at = l.findIndex(([id]) => id === bgParent.id); return at >= 0 && l[at + 1]?.[0] === bgChild.id && l[at + 1]?.[1] === "1" && l[at][1] === "0"; }, 60), await listed());
+  await shot("review-nested.png");
+  const resumes = [];
+  const launchNow = ctx.codeLink.herdr.launch.bind(ctx.codeLink.herdr);
+  ctx.codeLink.herdr.launch = async (input) => (resumes.push(input), { script: "", launched: true, paneId: "w1:p9" });
+  await until(async () => (await listed()).some(([id]) => id === looseSession.id), 30);
+  await press(`document.querySelector('[data-testid="ai-review-row"][data-review="${looseSession.id}"]')`);
+  check("a session on no ticket that can be resumed offers to go on", await until(() => present('[data-testid="ai-review-resume"]'), 40));
+  await press(`document.querySelector('[data-testid="ai-review-resume"]')`);
+  check("going on resumes the same session in the background, and the bar has it running again", await until(() => ctx.codeLink.store.session(alpha.id, looseSession.id)?.state === "running" && resumes.length === 1, 60)
+    && /--resume cli-loose-1/.test(resumes[0].command) && resumes[0].cwd === work && ctx.codeLink.store.sessions(alpha.id).filter((x) => x.externalId === "cli-loose-1").length === 1
+    && (await until(async () => (await bar())?.dots.some(([status, label]) => status === "run" && /^Loose chat,/.test(label)), 40)), { session: ctx.codeLink.store.session(alpha.id, looseSession.id), resumes, dots: (await bar())?.dots });
+  ctx.codeLink.herdr.launch = launchNow;
   check("harness reached the end", true);
 };
 
