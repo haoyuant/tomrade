@@ -157,3 +157,13 @@ it("finds an archived session by its ticket, title, conversation, agent, branch 
   for (const needle of ["tom-12", "sidebar", "侧栏", "codex", "TOM-12/X", "/repo", "  app  ", ""]) expect(matchesArchive(s, needle)).toBe(true);
   expect(matchesArchive(s, "nothing")).toBe(false);
 });
+
+describe("a conversation writing code in the background", () => {
+  it("sits right under the conversation it writes for, set in, where the more urgent of the two comes", () => {
+    const { here } = sidebarRows([row({ id: "pane", where: "herdr", pane: "w1:p1", startedAt: 3 })], [], [thread("parent", { updatedAt: 2 }), thread("child", { parentId: "parent", running: true, createdAt: 5 }), thread("other", { running: true, createdAt: 9 })]);
+    // running rows come newest first: the child (5) lifts its idle parent to its own place, ahead of the pane (3)
+    expect(here.map((r) => [r.id, r.kind === "thread" ? (r.depth ?? 0) : null])).toEqual([["other", 0], ["parent", 0], ["child", 1], ["pane", null]]);
+    // a child whose parent this window does not list stands on its own
+    expect(sidebarRows([], [], [thread("child", { parentId: "gone" })]).here.map((r) => [r.id, r.kind === "thread" ? (r.depth ?? 0) : null])).toEqual([["child", 0]]);
+  });
+});

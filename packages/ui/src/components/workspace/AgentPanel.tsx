@@ -10,7 +10,7 @@ import { Kbd, Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
 import { viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { firstCodeStep, foldSteps, startBriefId } from "~/lib/steps";
+import { firstCodeStep, foldSteps, startBriefId, writesCode } from "~/lib/steps";
 import { conducts, findEngine, useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetWorkstream, useWorkdir, type RunProgress } from "~/lib/agent";
 import { keys, useAssistantAccessories, useBoards, useHeldItem, useItems, useSettings } from "~/lib/queries";
 import { ATTENTION_KEY, useAttention, type AttentionEntry } from "~/lib/attention";
@@ -28,12 +28,12 @@ import { STORE } from "./agent-panel/store";
 import { ThreadList, useThreadListState } from "./agent-panel/ThreadList";
 import { SessionBar, type BarMode } from "./agent-panel/SessionBar";
 import { TerminalSession } from "./agent-panel/TerminalSession";
-import { sessionBarRows, type BarRow } from "~/lib/sessionBar";
+import { sessionBarRows, type BarRow, type BarStatus } from "~/lib/sessionBar";
 import { onPanelRequest, setPanelSession, type PanelRequest } from "~/lib/panelRequests";
 import { useRecentSessions } from "~/lib/codeLink";
 import type { SessionView } from "@tomradex/code-link";
 import { hits, keyLabel } from "~/lib/keybindings";
-import { Transcript } from "./agent-panel/Transcript";
+import { BackgroundOffer, Transcript } from "./agent-panel/Transcript";
 import { useComposerHistory } from "./agent-panel/useComposerHistory";
 import { useEngineChoice } from "./agent-panel/useEngineChoice";
 import { useSendQueue } from "./agent-panel/useSendQueue";
@@ -393,7 +393,13 @@ export function AgentPanel({
   const briefId = useMemo(() => startBriefId(detail.data?.messages ?? [], !!detail.data?.thread.itemId), [detail.data?.messages, detail.data?.thread.itemId]);
   // Chat that turns to code: a rule where the first file is changed, with the ticket it is for when the thread has one.
   const codeStep = useMemo(() => firstCodeStep(detail.data?.messages ?? []), [detail.data?.messages]);
-  const codeFrom = useMemo(() => (codeStep ? { id: codeStep, ticket: threadItem?.key ?? null } : null), [codeStep, threadItem?.key]);
+  // The run going now has changed a file: that coding can move to a conversation of its own under this one — offered on
+  // the rule when the rule is this run's, at the live end of the conversation when the thread coded before. Not from a
+  // conversation that is itself a child, nor from a General delivery's, which does its work itself.
+  const codingNow = !!runningRun && writesCode(detail.data?.messages ?? [], runningRun.id);
+  const canBackground = codingNow && !doctorThread && !detail.data?.thread.parentId && !detail.data?.thread.execution;
+  const ruleOffers = canBackground && detail.data?.messages.find((m) => m.id === codeStep)?.runId === runningRun?.id;
+  const codeFrom = useMemo(() => (codeStep ? { id: codeStep, ticket: threadItem?.key ?? null, offer: ruleOffers } : null), [codeStep, threadItem?.key, ruleOffers]);
   const lastErrorId = newestLast[0]?.block.type === "error" ? newestLast[0].id : null;
   const lastAskedBlock = newestLast.find((m) => m.role === "user" && m.block.type === "text")?.block;
   const lastAsked = lastAskedBlock?.type === "text" ? lastAskedBlock.text : null;
@@ -419,13 +425,26 @@ export function AgentPanel({
     answer.mutate({ threadId, questionId, value }, { onSuccess: () => waitQueue.current.answered(key) });
   };
   // rows take callbacks that keep their identity; each reads the latest render's handlers
-  const latest = useRef({ doAnswer, revert: revert.mutate, onOpenSettings });
-  latest.current = { doAnswer, revert: revert.mutate, onOpenSettings };
+  const latest = useRef({ doAnswer, revert: revert.mutate, onOpenSettings, pickThread });
+  latest.current = { doAnswer, revert: revert.mutate, onOpenSettings, pickThread };
   const answerRow = useCallback((questionId: string, value: string | string[]) => latest.current.doAnswer(questionId, value), []);
   const revertRow = useCallback((runId: string) => latest.current.revert(runId), []);
   const settingsRow = useCallback((engineId?: string) => latest.current.onOpenSettings(engineId), []);
+  const openThreadRow = useCallback((id: string) => latest.current.pickThread(id), []);
   const reportError = useErrorToast();
   const toast = useToast();
+  // The coding goes to a child conversation; this one stays on screen, its turn stopped, free to talk.
+  const [movingOut, setMovingOut] = useState(false);
+  const moveToBackground = async () => {
+    if (!threadId || movingOut) return;
+    setMovingOut(true);
+    try {
+      await invoke("agent.toBackground", projectId, threadId);
+      void threads.refetch();
+      toast({ body: t("agentPanel.movedToBackground") });
+    } catch (error) { reportError(error); }
+    finally { setMovingOut(false); }
+  };
   const setupInTerminal = useSetupInTerminal();
   // Only with the troubleshooter plugin on; it opens its own thread about the failure.
   const canTroubleshoot = !!engines.data?.some((e) => e.id === "doctor") && !doctorThread;
@@ -476,11 +495,6 @@ export function AgentPanel({
     () => (engines.data ?? []).filter((e) => e.ok && !e.terminalOnly && conducts(e) && (!needsCode || e.capabilities.includes("code"))),
     [engines.data, needsCode]
   );
-  const transcriptActions = useMemo(
-    () => ({ projectId, runs, cards, engines: engines.data, retryEngines, pending, byKey, busy, onOpenIssue, onAnswer: answerRow, onRevert: revertRow, onOpenSettings: settingsRow, onCardAction: cardActionRow }),
-    [projectId, runs, cards, engines.data, retryEngines, pending, byKey, busy, onOpenIssue, answerRow, revertRow, settingsRow, cardActionRow]
-  );
-
   const itemsById = useMemo(() => new Map((itemsQ.data ?? []).map((i) => [i.id, i])), [itemsQ.data]);
   const barRows = useMemo(
     () => sessionBarRows({
@@ -488,6 +502,14 @@ export function AgentPanel({
       itemTitle: (id) => itemsById.get(id)?.title ?? null, itemKey: (id) => itemsById.get(id)?.key ?? null
     }),
     [threads.data, recentSessions.data, attention, threadId, openSession, itemsById]
+  );
+  // How the conversations writing code in the background for this one stand, for the notes that point at them.
+  // Keyed by a string, so the map is new only when one of them changes state — never on a streamed reply.
+  const childKey = barRows.filter((r) => r.threadId && r.parentKey === `thread:${threadId}`).map((r) => `${r.threadId}:${r.status}`).join("|");
+  const threadStatus = useMemo(() => new Map<string, BarStatus>(childKey ? childKey.split("|").map((entry) => { const at = entry.lastIndexOf(":"); return [entry.slice(0, at), entry.slice(at + 1) as BarStatus]; }) : []), [childKey]);
+  const transcriptActions = useMemo(
+    () => ({ projectId, runs, cards, engines: engines.data, retryEngines, pending, byKey, busy, threadStatus, onOpenIssue, onOpenThread: openThreadRow, onAnswer: answerRow, onRevert: revertRow, onOpenSettings: settingsRow, onCardAction: cardActionRow }),
+    [projectId, runs, cards, engines.data, retryEngines, pending, byKey, busy, threadStatus, onOpenIssue, openThreadRow, answerRow, revertRow, settingsRow, cardActionRow]
   );
   const showInTerminal = (sessionId: string, terminalApp: string | null) =>
     void invoke("codeLink.showSession", projectId, sessionId).then((shown) => {
@@ -701,7 +723,14 @@ export function AgentPanel({
           onRetry={lastAsked && !busy ? () => void doSend(lastAsked) : undefined}
           onRetryWith={lastAsked && !busy && threadId ? (engineId) => void retryWith(engineId) : undefined}
           onTroubleshoot={canTroubleshoot && !busy ? (inThread, runId) => actions.current.troubleshoot(inThread, runId) : undefined}
+          onBackground={canBackground && !movingOut ? () => void moveToBackground() : undefined}
         />
+        {canBackground && !ruleOffers && (
+          <div className="work-offer" data-testid="work-offer">
+            <span>{t("agentPanel.writingCode")}</span>
+            <BackgroundOffer busy={movingOut} onPick={() => void moveToBackground()} />
+          </div>
+        )}
         {live?.text && (
           <div className="turn turn-ai">
             <div className="turn-mark">

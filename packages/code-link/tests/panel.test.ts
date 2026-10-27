@@ -38,6 +38,21 @@ describe("the prompt on a pane's screen", () => {
     expect(promptOnScreen("Do you want to make this edit to\npackages/ui/src/App.tsx?\n❯ 1. Yes\n  2. No")).toEqual({ selected: "Yes", allows: true });
   });
 
+  it("reads the prompts other agents draw, as they were captured from their CLIs", () => {
+    // Cursor numbers nothing: the cursor's arrow marks one row, and every row names its key
+    const cursor = "$ sleep 1 in .\nRun this command?\nNot in allowlist: sleep\n→ Run (once) (y)\n  Add Shell(sleep) to allowlist? (tab)\n  Run Everything (shift+tab)\n  Skip & tell the agent what to do instead (esc or n)";
+    expect(promptOnScreen(cursor)).toEqual({ selected: "Run (once) (y)", allows: true });
+    expect(promptOnScreen(cursor.replace("→ Run (once)", "  Run (once)").replace("  Skip &", "→ Skip &"))).toEqual({ selected: "Skip & tell the agent what to do instead (esc or n)", allows: false });
+    expect(promptOnScreen("Run this MCP tool?\n→ Run (once) (y)\n  Skip (esc or n)\n  Reject & propose changes (p)")).toEqual({ selected: "Run (once) (y)", allows: true });
+    // OpenCode: a title, and the options on one row with the cursor's only by colour — No answers it, Yes cannot be told
+    const opencode = "△ Permission required\n# Shell command\n$ sleep 1\nAllow once   Allow always   Reject          ctrl+f fullscreen  ⇆ select  enter confirm";
+    expect(promptOnScreen(opencode)).toEqual({ selected: null, allows: false });
+    expect(promptOnScreen(opencode.replace("   Reject", ""))).toBeNull();
+    // Gemini CLI's file edit, and CodeBuddy's REPL in Code Mode
+    expect(promptOnScreen("Apply this change?\n● 1. Allow once\n  2. Allow for this session\n  3. Modify with external editor\n  4. No, suggest changes (esc)")).toEqual({ selected: "Allow once", allows: true });
+    expect(promptOnScreen('Confirm\nREPL\ncode: "sleep 1", description: "Wait a second"\nAre you sure you want to do this?\n> 1. Yes\n  2. Yes, and don\'t ask again this session (shift + tab)\n  3. No, and tell CodeBuddy what to do differently (escape)')).toEqual({ selected: "Yes", allows: true });
+  });
+
   it("finds none where a key could do harm: a folder's trust, either way round, a shell, an agent's own input line", () => {
     expect(promptOnScreen(CLAUDE_TRUST)).toBeNull();
     expect(promptOnScreen("Do you trust the files in this folder?\n❯ 1. Yes, proceed\n  2. No, exit")).toBeNull();
@@ -45,6 +60,9 @@ describe("the prompt on a pane's screen", () => {
     expect(promptOnScreen("haoyuant@mac repo % echo marker-five\nmarker-five\nhaoyuant@mac repo %")).toBeNull();
     expect(promptOnScreen("What next?\n› Ask Codex to do anything\n  GPT-6.1 medium · 94% left")).toBeNull();
     expect(promptOnScreen("")).toBeNull();
+    // a titled prompt about a folder's trust, and rows that name keys under no question at all
+    expect(promptOnScreen("△ Permission required\nTrust this folder?\nAllow once   Allow always   Reject")).toBeNull();
+    expect(promptOnScreen("Settings\n→ Theme (t)\n  Skip intro (esc)")).toBeNull();
   });
 });
 

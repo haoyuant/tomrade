@@ -18,7 +18,7 @@ import { defineTool, requireProjectId, type RunHandle, type LedgerEntry } from "
 import { loadPlaybookDir, missingPlaybookCapabilities, resolvePlaybook, type PlaybookVariants } from "./playbooks.js";
 import { AgentStore, MIGRATIONS, TABLES, type PendingRecord } from "./store.js";
 import { AgentMediaStore, type MediaRef, type MediaUpload, type MediaContent } from "./media.js";
-import { RULES_MAX_CHARS, generalOpener, generalPrompt, rulesInstructions, BRIEF_MAX_CHARS } from "./prompt.js";
+import { RULES_MAX_CHARS, backgroundOpener, generalOpener, generalPrompt, rulesInstructions, BRIEF_MAX_CHARS } from "./prompt.js";
 import { COMPACT_SYSTEM, briefTooLong, parseBrief, withSection } from "./brief.js";
 import type { AgentPolicy } from "./hooks.js";
 import type { CliCheck, Engine, EngineAvailability, EngineRegistration, EngineTry, EngineView, McpLinkView } from "./engine.js";
@@ -29,7 +29,7 @@ import { isSuspended, type GeneralExecution, type Playbook, type PlaybookIndexEn
 import { AGENT_WORDS, type AgentWords } from "./words.js";
 import { looksRateLimited, resetTime, untilLabel } from "./limits.js";
 import { describeFailure, readableError, redactSecrets } from "./failure.js";
-import { conversationRecap } from "./recap.js";
+import { conversationRecap, handoffRecap } from "./recap.js";
 import { usageSummary, windowStart, type EngineUsage, type UsageRun, type UsageSummary } from "./usage.js";
 import { type AgentReader, bestEffort, contract, errorMessage, localeOf } from "@tomradex/contracts";
 
@@ -127,6 +127,8 @@ export type BriefPatch = { body: string } | { section: string; text: string } | 
 export interface NewThreadOptions {
   itemId?: string | null;
   branch?: string | null;
+  /** The conversation this one is opened under, to write its code in the background. */
+  parentId?: string | null;
   title?: string;
   /** The UI that owns this thread. Defaults to the Assistant panel. */
   surface?: ThreadSurface;
@@ -180,6 +182,8 @@ declare module "@tomradex/ipc" {
     /** Where the thread's engine would run: ready, or why not yet (no checkout on this machine). */
     "agent.workdir": (projectId: string, threadId: string) => WorkdirStatus;
     "agent.send": (projectId: string, threadId: string, text: string, focus?: FocusRef[], attachments?: MediaRef[]) => { runId: string };
+    /** Moves the coding into a conversation of its own under this one: the turn here stops, the child carries on from everything said and done so far, and this conversation is free to talk. */
+    "agent.toBackground": (projectId: string, threadId: string) => Promise<{ threadId: string; runId: string }>;
     "agent.media.upload": (projectId: string, threadId: string, upload: MediaUpload) => MediaRef;
     "agent.media.read": (projectId: string, threadId: string, id: string) => MediaContent;
     "agent.mediaCapabilities": (engineId: string, options?: unknown) => { input: string[]; output: string[] };
@@ -385,8 +389,9 @@ export class Agent extends Service implements AgentReader {
     for (const playbook of loadPlaybookDir(fileURLToPath(new URL("../playbooks", import.meta.url)))) this.playbook(playbook);
     // A run left "running" by a killed process has no controller; settle it in
     // every project file that is open now and in each one opened later.
-    for (const projectId of this.ctx.db.openIds()) this.store.reconcileInterrupted(projectId, this.words()("interrupted"));
-    this.ctx.on("db/opened", (projectId) => this.store.reconcileInterrupted(projectId, this.words()("interrupted")));
+    const reconcile = (projectId: string) => this.store.reconcileInterrupted(projectId, this.words()("interrupted"), (title) => this.words()("backgroundInterrupted", { title }));
+    for (const projectId of this.ctx.db.openIds()) reconcile(projectId);
+    this.ctx.on("db/opened", reconcile);
     for (const projectId of this.ctx.db.openIds()) this.armParked(projectId);
     this.ctx.on("db/opened", (projectId) => this.armParked(projectId));
     // A project closing (removed from this machine) stops the runs working in it.
@@ -467,6 +472,7 @@ export class Agent extends Service implements AgentReader {
       ctx.ipc.handle("agent.deleteThread", (projectId, threadId) => ctx.agent.deleteThread(projectId, threadId));
       ctx.ipc.handle("agent.workdir", (projectId, threadId) => ctx.agent.workdir(projectId, threadId));
       ctx.ipc.handle("agent.send", (projectId, threadId, text, focus, attachments) => ctx.agent.send(projectId, threadId, { kind: "text", text, focus, attachments }));
+      ctx.ipc.handle("agent.toBackground", (projectId, threadId) => ctx.agent.toBackground(projectId, threadId));
       ctx.ipc.handle("agent.media.upload", (projectId, threadId, upload) => ctx.agent.uploadMedia(projectId, threadId, upload));
       ctx.ipc.handle("agent.media.read", (projectId, threadId, id) => ctx.agent.readMedia(projectId, threadId, id));
       ctx.ipc.handle("agent.mediaCapabilities", (asked, options) => {
@@ -877,7 +883,7 @@ export class Agent extends Service implements AgentReader {
     const holds = (e: Engine | undefined) => !!e && (e.terminal?.mode !== "only" || !!opts.itemId);
     const known = holds(this.engines.get(chosen));
     const engineId = known ? chosen : ([...this.engines.values()].find((e) => holds(e))?.id ?? chosen);
-    const thread = this.store.createThread(projectId, engineId, opts.title ?? "", boardId, opts.itemId ?? null, opts.branch ?? null, opts.surface ?? "assistant");
+    const thread = this.store.createThread(projectId, engineId, opts.title ?? "", boardId, opts.itemId ?? null, opts.branch ?? null, opts.surface ?? "assistant", opts.parentId ?? null);
     // The knobs the thread was opened from — a thread keeps the engine and effort it was started with
     // instead of falling back to the engine's defaults. Only when the engine asked for is the one that
     // answered: knobs picked for a plugin that is gone mean nothing to the engine that took its place.
@@ -1172,7 +1178,8 @@ export class Agent extends Service implements AgentReader {
       const ticket = thread.itemId ? this.itemOf(projectId, thread.itemId) : null;
       const finished = thread.archived || (!!thread.itemId && (!ticket || ticket.status === "done"));
       const create = !!opts.create && (!finished || !!opts.revive);
-      const view = await repos.workdirFor(projectId, thread.boardId, threadId, { branch: thread.branch, create });
+      // A background conversation writes in the checkout of the conversation it was opened under: the same branch, the same files.
+      const view = await repos.workdirFor(projectId, thread.boardId, this.rootOf(projectId, thread), { branch: thread.branch, create });
       if (!view) {
         const board = contract(this.ctx, "boards")?.get(projectId, thread.boardId);
         return { ...none, code: board?.repoId ? "unknown-repo" : "no-board-repo" };
@@ -1189,6 +1196,66 @@ export class Agent extends Service implements AgentReader {
       const code = name === "CheckoutUnsetError" ? "no-checkout" : name === "HubUnsetError" ? "no-hub" : name === "BranchInUseError" ? "branch-in-use" : name === "RepoPathOutsideError" ? "folder-outside" : "error";
       return { ...none, remote: remote ?? null, branch: branch ?? null, problem: errorMessage(err), code, ...(at ? { heldAt: at } : {}) };
     }
+  }
+
+  /** The conversation a thread's worktree belongs to: itself, or the one at the top of the chain it was opened under. */
+  private rootOf(projectId: string, thread: ThreadSummary): string {
+    let root = thread;
+    const seen = new Set<string>([thread.id]);
+    while (root.parentId && !seen.has(root.parentId)) {
+      seen.add(root.parentId);
+      const parent = this.store.thread(projectId, root.parentId);
+      if (!parent) break;
+      root = parent;
+    }
+    return root.id;
+  }
+
+  /**
+   * The coding moves to a conversation of its own under this one, so this one is free to talk: the turn
+   * here is stopped and waited out, then the child starts from everything said and done here — the same
+   * engine, workstream, ticket and checkout — and what it comes to is written back into this conversation.
+   * A turn in progress cannot be moved whole (its engine loop is bound to this thread), so it ends here and
+   * carries on there; what it had streamed stays in this conversation.
+   */
+  async toBackground(projectId: string, threadId: string): Promise<{ threadId: string; runId: string }> {
+    const thread = this.store.thread(projectId, threadId);
+    if (!thread) throw new Error(`unknown thread ${threadId}`);
+    if (thread.execution) throw new Error("A General delivery's conversation does its work itself; it cannot move it to the background");
+    const rc = this.activeByThread.get(threadId);
+    if (rc) {
+      rc.abort.abort();
+      const deadline = Date.now() + 15_000;
+      while (this.activeById.has(rc.run.id)) {
+        if (Date.now() > deadline) throw new Error("The turn has not stopped yet; try again in a moment");
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    }
+    const w = this.words();
+    const title = thread.title ? w("backgroundTitle", { title: thread.title }) : w("backgroundTitleBare");
+    const child = this.newThread(projectId, thread.engine, thread.boardId, { itemId: thread.itemId, branch: thread.branch, title, surface: thread.surface, options: thread.options, parentId: threadId });
+    if (thread.permissionMode) this.store.touchThread(projectId, child.id, { permissionMode: thread.permissionMode });
+    this.appendAndBroadcast(projectId, threadId, "system", { type: "note", text: w("movedToBackground", { title }), threadFor: child.id }, null);
+    const opener = backgroundOpener(thread.title, handoffRecap(this.store.messages(projectId, threadId)));
+    const { runId } = this.send(projectId, child.id, { kind: "text", text: opener });
+    return { threadId: child.id, runId };
+  }
+
+  /** What a background conversation's run came to, written once into the conversation it was opened under. */
+  private relayToParent(rc: RunCtx, run: RunView, thread: ThreadSummary): void {
+    if (!thread.parentId || !this.store.thread(rc.projectId, thread.parentId)) return;
+    const w = this.words();
+    const own = this.store.messages(rc.projectId, rc.threadId).filter((m) => m.runId === run.id);
+    const clip = (text: string) => (text.length > 600 ? `${text.slice(0, 599)}…` : text);
+    const lastText = [...own].reverse().find((m) => m.role === "agent" && m.block.type === "text")?.block as Extract<Block, { type: "text" }> | undefined;
+    const question = [...own].reverse().find((m) => m.block.type === "question")?.block as Extract<Block, { type: "question" }> | undefined;
+    const error = [...own].reverse().find((m) => m.block.type === "error")?.block as Extract<Block, { type: "error" }> | undefined;
+    const text =
+      run.status === "asked" ? w("backgroundAsks", { title: thread.title, said: clip(question?.text ?? lastText?.text ?? "") })
+      : run.status === "error" ? w("backgroundFailed", { title: thread.title, said: clip(error?.text ?? run.error ?? "") })
+      : run.status === "cancelled" ? w("backgroundStopped", { title: thread.title })
+      : w("backgroundDone", { title: thread.title, said: lastText?.text.trim() ? clip(lastText.text.trim()) : w("backgroundNoSummary") });
+    this.appendAndBroadcast(rc.projectId, thread.parentId, "system", { type: "note", text, threadFor: rc.threadId }, null);
   }
 
   setPermissionMode(projectId: string, threadId: string, mode: string): ThreadSummary {
@@ -1900,6 +1967,8 @@ export class Agent extends Service implements AgentReader {
     const thread = this.store.thread(rc.projectId, rc.threadId) ?? rc.thread;
     if (park) this.ctx.emit("agent/parked", park, thread);
     this.ctx.emit("agent/run-ended", run, thread);
+    // once per run, here and nowhere else: a background conversation's conclusion lands in the one it reports to
+    if (thread.parentId) this.relayToParent(rc, run, thread);
   }
 
   /** The thread waiting for a usage limit to lift, if it is. */

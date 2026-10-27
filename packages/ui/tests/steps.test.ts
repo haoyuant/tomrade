@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { ThreadMessage } from "@tomradex/agent";
-import { firstCodeStep, foldSteps, startBriefId, traceState, workDone } from "../src/lib/steps";
+import { firstCodeStep, foldSteps, startBriefId, traceState, workDone, writesCode } from "../src/lib/steps";
 
 it("maps command outcomes to distinct labels and reserves red warnings for failures", () => {
   const cases = [
@@ -73,4 +73,17 @@ it("marks where a conversation turns to code: the first changed file after somet
   // a thread that starts on code has nothing to set apart, nor one that never writes
   expect(firstCodeStep([user("go"), step("edit"), text()])).toBeNull();
   expect(firstCodeStep([user("go"), text(), step("bash")])).toBeNull();
+});
+
+it("says whether the run going now has changed a file — the moment its coding can move to the background", () => {
+  const inRun = (m: ThreadMessage, runId: string): ThreadMessage => ({ ...m, runId });
+  const messages = [inRun(user("write it"), "r1"), inRun(step("bash", { command: "ls" }), "r1"), inRun(step("write_file", { path: "a.ts" }), "r1"), inRun(user("more"), "r2"), inRun(step("bash", {}), "r2")];
+  expect(writesCode(messages, "r1")).toBe(true);
+  expect(writesCode(messages, "r2")).toBe(false);
+});
+
+it("folds the handover that opens a conversation writing code in the background, ticket or not", () => {
+  const opener = user("Carry on in the background — Dedupe chat\n\nThe person moved the coding out of the conversation…");
+  expect(startBriefId([opener, user("and tests")], false)).toBe(opener.id);
+  expect(startBriefId([opener], true)).toBe(opener.id);
 });
