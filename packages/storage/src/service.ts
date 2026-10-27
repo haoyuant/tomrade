@@ -24,7 +24,6 @@ import {
   DEFAULT_LOG_WINDOW_DAYS,
   TornArtifactError,
   digestState,
-  exportState,
   hasArtifact,
   importPlugins,
   importState,
@@ -36,8 +35,10 @@ import {
   restoreLf,
   serializeState,
   writeArtifact,
+  type ExportOptions,
   type ProjectState
 } from "./state.js";
+import { LocalDigests } from "./digests.js";
 import {
   ForeignProjectError,
   HubUnconfiguredError,
@@ -188,7 +189,7 @@ export class Storage extends Service implements StorageReader {
   /** A folder's digest as status last read it, kept while its files are the ones it read. */
   private folderSeen = new Map<string, { stamp: string; verify: boolean; digest: string | null }>();
   /** The local digest as status last computed it, kept while the cache file and what decides the export are unchanged. */
-  private digestSeen = new Map<string, { db: ProjectDb; key: string; digest: string }>();
+  private digests = new LocalDigests();
   /** The last reason a project's folder was not read or written, so the log says it once rather than on every try. */
   private gaveUpWhy = new Map<string, string>();
   private closing = false;
@@ -758,17 +759,19 @@ export class Storage extends Service implements StorageReader {
     return Object.fromEntries(rows.map((r) => [r.device, r.m]));
   }
 
-  private exportFor(projectId: string, entry: CatalogProject, at = Date.now()): ProjectState {
+  private exportOptions(projectId: string, entry: CatalogProject): ExportOptions {
     const registrations = (this.ctx.db as Db).registrations("project");
-    return exportState(this.db(projectId), projectId, {
+    return {
       registrations,
       exports: this.allowedExports(entry.exports, entry.visibility),
       repo: entry.git === "dedicated" ? "dedicated" : undefined,
-      checkpoint: this.checkpointOf(projectId),
-      at,
       withhold: entry.withheld,
       carry: this.unregistered(projectId, new Set(registrations.map((r) => r.namespace)))
-    });
+    };
+  }
+
+  private exportFor(projectId: string, entry: CatalogProject, at = Date.now()): ProjectState {
+    return this.digests.export(projectId, this.db(projectId), { ...this.exportOptions(projectId, entry), checkpoint: this.checkpointOf(projectId), at });
   }
 
   /** The digest of what this machine would write now; the export already carries it, so it is not hashed twice. */
@@ -778,28 +781,14 @@ export class Storage extends Service implements StorageReader {
   }
 
   /**
-   * The local digest for status, which is asked on every change anywhere in the project. SQLite's
-   * own counters say whether the file moved: a row this connection wrote, a commit by any other,
-   * a schema change. Tables carried for a plugin that is not loaded come from elsewhere, so then
-   * nothing is kept.
+   * The local digest for status, which is asked on every change anywhere in the project: kept, and
+   * read again only for the tables a write touched. Tables carried for a plugin that is not loaded
+   * come from elsewhere, so then nothing is kept.
    */
   private statusDigest(projectId: string, entry: CatalogProject): string {
-    const db = this.db(projectId);
-    const registrations = (this.ctx.db as Db).registrations("project");
-    if (Object.keys(this.unregistered(projectId, new Set(registrations.map((r) => r.namespace)))).length) return this.localDigest(projectId, entry);
-    const counters = db.prepare("SELECT total_changes() AS changes, (SELECT data_version FROM pragma_data_version) AS version, (SELECT schema_version FROM pragma_schema_version) AS schema").get();
-    const key = JSON.stringify([
-      counters,
-      this.allowedExports(entry.exports, entry.visibility),
-      entry.git,
-      entry.withheld,
-      registrations.map((r) => [r.namespace, r.scope, r.tables])
-    ]);
-    const seen = this.digestSeen.get(projectId);
-    if (seen && seen.db === db && seen.key === key) return seen.digest;
-    const digest = this.localDigest(projectId, entry);
-    this.digestSeen.set(projectId, { db, key, digest });
-    return digest;
+    const opts = this.exportOptions(projectId, entry);
+    if (Object.keys(opts.carry ?? {}).length) return this.localDigest(projectId, entry);
+    return this.digests.digest(projectId, this.db(projectId), opts);
   }
 
   /**
@@ -1857,7 +1846,7 @@ export class Storage extends Service implements StorageReader {
     this.lastState.delete(projectId);
     this.publishedMem.delete(projectId);
     this.gitFailed.delete(projectId);
-    this.digestSeen.delete(projectId);
+    this.digests.forget(projectId);
   }
 
   /** Bring one project's folder and cache in step, whichever moved. */

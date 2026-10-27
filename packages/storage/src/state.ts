@@ -73,7 +73,8 @@ export const TABLES: readonly TableSpec[] = [
     name: "item_relations",
     columns: ["from_item_id", "to_item_id", "kind"],
     // Both ends inside the project: an edge across projects has no home in one project's artifact.
-    scope: `from_item_id IN (${ITEMS_OF}) AND to_item_id IN (${ITEMS_OF})`,
+    // The unary + keeps SQLite from probing the key once per pair of items (~25 ms on 650 items).
+    scope: `from_item_id IN (${ITEMS_OF}) AND +to_item_id IN (${ITEMS_OF})`,
     order: "from_item_id, to_item_id, kind"
   },
   { name: "view_item_rank", columns: ["view_id", "item_id", "rank"], scope: `view_id IN (${VIEWS_OF})`, order: "view_id, item_id" }
@@ -143,16 +144,40 @@ export interface ExportOptions {
   carry?: ProjectState["plugins"];
 }
 
-export function exportState(db: StateDb, projectId: string, opts: ExportOptions = {}): ProjectState {
-  const project = db.prepare(`SELECT ${PROJECT_COLUMNS.join(", ")} FROM projects WHERE id = @projectId`).get({ projectId }) as Record<string, unknown> | undefined;
-  if (!project) throw new Error(`Project ${projectId} not found`);
-  const tables: Record<string, Record<string, unknown>[]> = {};
-  for (const spec of TABLES) {
-    const rows = db.prepare(`SELECT ${spec.columns.join(", ")} FROM ${spec.name} WHERE ${spec.scope} ORDER BY ${spec.order}`).all({ projectId }) as Record<string, unknown>[];
-    tables[spec.name] = rows.map((r) => pick(r, spec.columns));
-  }
-  const exports = [...(opts.exports ?? [])].sort();
-  const plugins: ProjectState["plugins"] = {};
+/** One state file and how to read its rows: export and the kept local digest both go by this list. */
+export interface StatePart {
+  file: string;
+  table: string;
+  /** Set for a plugin's table. */
+  namespace?: string;
+  /** Every table a write to which can change this file's rows. */
+  reads: string[];
+  columns: readonly string[];
+  /** WHERE over `@projectId`; a plugin's table travels whole. */
+  scope?: string;
+  /** Ends in rowid when the table has one, so tied rows keep one order whichever way SQLite reads them. */
+  order: string;
+  rowid: boolean;
+}
+
+/** Whether the table keeps a rowid (a WITHOUT ROWID table does not). */
+export function hasRowid(db: Queryable, table: string): boolean {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as { sql: string | null } | undefined;
+  return !/\bWITHOUT\s+ROWID\b/i.test(row?.sql ?? "");
+}
+
+/** The state files `exportState` writes for this file and these options, the carried tables aside. */
+export function stateParts(db: Queryable, projectId: string, opts: ExportOptions = {}): StatePart[] {
+  const parts: StatePart[] = TABLES.map((spec) => ({
+    file: path.join(ARTIFACT_DIR, STATE_DIR, `${spec.name}.jsonl`),
+    table: spec.name,
+    reads: [spec.name, ...[...spec.scope.matchAll(/FROM (\w+)/g)].map((m) => m[1]!)],
+    columns: spec.columns,
+    scope: spec.scope,
+    order: `${spec.order}, rowid`,
+    rowid: true
+  }));
+  const exports = opts.exports ?? [];
   for (const reg of opts.registrations ?? []) {
     if (reg.scope !== "project") continue;
     const chosen = exports.includes(reg.namespace);
@@ -166,24 +191,77 @@ export function exportState(db: StateDb, projectId: string, opts: ExportOptions 
         continue; // the plugin's migration failed on this file; nothing to export
       }
       if (!columns.length) continue;
-      const rows = db.prepare(`SELECT ${columns.join(", ")} FROM ${table} ORDER BY ${spec.export.order}`).all() as Record<string, unknown>[];
-      (plugins[reg.namespace] ??= {})[table] = rows.map((r) => pick(r, columns));
+      const rowid = hasRowid(db, table);
+      parts.push({
+        file: path.join(ARTIFACT_DIR, PLUGINS_DIR, reg.namespace, `${table}.jsonl`),
+        table,
+        namespace: reg.namespace,
+        reads: [table],
+        columns,
+        order: rowid ? `${spec.export.order}, rowid` : spec.export.order,
+        rowid
+      });
     }
   }
+  return parts;
+}
+
+export interface PartRow {
+  /** Null for a WITHOUT ROWID table. */
+  rowid: number | null;
+  row: Record<string, unknown>;
+}
+
+/** A part's rows in file order; with `only`, just the rows of those rowids, in no order. */
+export function readPart(db: Queryable, projectId: string, part: StatePart, only?: number[]): PartRow[] {
+  const id = part.rowid ? "rowid AS tomrade_rowid, " : "";
+  const sql = only
+    ? `SELECT ${id}${part.columns.join(", ")} FROM ${part.table} WHERE rowid IN (SELECT value FROM json_each(@only))`
+    : `SELECT ${id}${part.columns.join(", ")} FROM ${part.table}${part.scope ? ` WHERE ${part.scope}` : ""} ORDER BY ${part.order}`;
+  const params = only ? { only: JSON.stringify(only) } : part.scope ? { projectId } : null;
+  const rows = (params ? db.prepare(sql).all(params) : db.prepare(sql).all()) as Record<string, unknown>[];
+  return rows.map((r) => ({ rowid: part.rowid ? (r.tomrade_rowid as number) : null, row: pick(r, part.columns) }));
+}
+
+/** A row's line in its state file, as the bytes hashed and written. */
+export const lineOf = (row: Record<string, unknown>): Buffer => Buffer.from(JSON.stringify(row) + "\n");
+
+export function exportState(db: StateDb, projectId: string, opts: ExportOptions = {}): ProjectState {
+  return exportParts(db, projectId, opts).state;
+}
+
+/** The export, with each part's rows as lines: the bytes its digest was taken over. */
+export function exportParts(db: StateDb, projectId: string, opts: ExportOptions = {}): { state: ProjectState; parts: StatePart[]; lines: Map<string, { rowid: number | null; line: Buffer }[]> } {
+  const project = db.prepare(`SELECT ${PROJECT_COLUMNS.join(", ")} FROM projects WHERE id = @projectId`).get({ projectId }) as Record<string, unknown> | undefined;
+  if (!project) throw new Error(`Project ${projectId} not found`);
+  const tables: Record<string, Record<string, unknown>[]> = {};
+  const plugins: ProjectState["plugins"] = {};
+  const parts = stateParts(db, projectId, opts);
+  const lines = new Map<string, { rowid: number | null; line: Buffer }[]>();
+  for (const part of parts) {
+    const read = readPart(db, projectId, part);
+    const rows = read.map((r) => r.row);
+    if (part.namespace) (plugins[part.namespace] ??= {})[part.table] = rows;
+    else tables[part.table] = rows;
+    lines.set(part.file, read.map((r) => ({ rowid: r.rowid, line: lineOf(r.row) })));
+  }
+  const hashed = new Map<string, readonly Uint8Array[]>([...lines].map(([file, rows]) => [file, rows.map((r) => r.line)]));
   for (const [namespace, byTable] of Object.entries(opts.carry ?? {})) {
-    if (!plugins[namespace] && Object.keys(byTable).length) plugins[namespace] = byTable;
+    if (plugins[namespace] || !Object.keys(byTable).length) continue;
+    plugins[namespace] = byTable;
+    for (const [table, rows] of Object.entries(byTable)) hashed.set(path.join(ARTIFACT_DIR, PLUGINS_DIR, namespace, `${table}.jsonl`), rows.map(lineOf));
   }
   const manifest: ProjectManifest = {
     v: 2,
     schemaVersion: CORE_SCHEMA_VERSION,
     project: pick(project, PROJECT_COLUMNS),
     ...(opts.repo ? { repo: opts.repo } : {}),
-    exports,
+    exports: [...(opts.exports ?? [])].sort(),
     logWindowDays: opts.logWindowDays ?? DEFAULT_LOG_WINDOW_DAYS
   };
   const state: ProjectState = { manifest, tables, plugins };
-  state.manifest.snapshot = { digest: digestState(state), at: opts.at ?? Date.now(), checkpoint: opts.checkpoint ?? {} };
-  return state;
+  state.manifest.snapshot = { digest: digestLines(hashed), at: opts.at ?? Date.now(), checkpoint: opts.checkpoint ?? {} };
+  return { state, parts, lines };
 }
 
 const jsonl = (rows: Record<string, unknown>[]): string => rows.map((r) => JSON.stringify(r)).join("\n") + (rows.length ? "\n" : "");
@@ -272,6 +350,18 @@ export function digestFiles(files: Map<string, string>): string {
     hash.update(name.split(path.sep).join("/"));
     hash.update("\0");
     hash.update(body);
+    hash.update("\0");
+  }
+  return hash.digest("hex");
+}
+
+/** `digestFiles` over files given line by line: the same digest without joining each file. */
+export function digestLines(files: Map<string, readonly Uint8Array[]>): string {
+  const hash = createHash("sha256");
+  for (const [name, lines] of [...files].sort(([a], [b]) => a.localeCompare(b))) {
+    hash.update(name.split(path.sep).join("/"));
+    hash.update("\0");
+    for (const line of lines) hash.update(line);
     hash.update("\0");
   }
   return hash.digest("hex");
