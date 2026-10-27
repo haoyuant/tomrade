@@ -60,6 +60,8 @@ declare module "cordis" {
   interface Events {
     /** Links or sessions of a project changed — for main-process observers; the renderer hears codeLink.changed. */
     "codeLink/changed"(projectId: string): void;
+    /** A start was remembered: the next one-click Start goes this way. The renderer hears codeLink.startDefaultsChanged. */
+    "codeLink/start-defaults"(): void;
     /** Asked: a window inside Tomrade can show this project's herdr sessions. Its plugin answers true. */
     "codeLink/terminal-window"(projectId: string): Promise<boolean | void> | boolean | void;
     /** Asked: show this session's herdr terminal inside Tomrade. True once a window has. */
@@ -224,6 +226,8 @@ declare module "@tomradex/ipc" {
   }
   interface Broadcasts {
     "codeLink.changed": (projectId: string) => void;
+    /** What Start last ran with changed: windows that show a one-click Start read it again. */
+    "codeLink.startDefaultsChanged": () => void;
   }
 }
 
@@ -1026,7 +1030,12 @@ export class CodeLink extends Service implements CodeLinkReader {
     const result = await this.withinStartTimeout(projectId, itemId, this.starter.start(projectId, itemId, rest));
     // Only what actually started is remembered, with the engine it settled on: a gate the user had to
     // clear leaves the memory as it was, and an engine the caller left to Tomrade is not lost.
-    if (result.ok) this.defaults.write({ mode: rest.mode, engine: result.engine, options: rest.options, permissionMode: rest.permissionMode, playbook: rest.playbook });
+    if (result.ok) {
+      this.defaults.write({ mode: rest.mode, engine: result.engine, options: rest.options, permissionMode: rest.permissionMode, playbook: rest.playbook });
+      // A start from a conversation, MCP or another window: every open Start button names the new choice at once.
+      this.home.emit("codeLink/start-defaults");
+      this.home.get("ipc")?.send("codeLink.startDefaultsChanged");
+    }
     // The ticket this one was started ahead of follows it with the same choices once it lands.
     if (result.ok && then && then !== itemId && this.ctx.items.get(projectId, then)) {
       this.followOnStore.add({ projectId, itemId: then, afterItemId: itemId, options: { mode: rest.mode, engine: result.engine, options: rest.options, permissionMode: rest.permissionMode, playbook: rest.playbook }, at: Date.now() });

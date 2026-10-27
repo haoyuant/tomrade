@@ -2162,11 +2162,15 @@ describe("remembering the start configuration", () => {
     const { codeLink, ctx, project, repo, checkout, agent, ticket } = world;
     await ctx.repos.setCheckout(repo!.remote, checkout!);
     expect(codeLink.startDefaults()).toBeNull();
+    let told = 0;
+    ctx.on("codeLink/start-defaults", () => void told++);
 
     const first = ticket("Pick a model");
     expect(await codeLink.start(project.id, first.id, { mode: "run", options: { model: "opus", effort: "high" } })).toMatchObject({ ok: true });
     await untilRunsSettle(agent);
     expect(codeLink.startDefaults()).toEqual({ mode: "run", engine: "fake-code", options: { model: "opus", effort: "high" } });
+    // so that every open one-click Start names it at once
+    expect(told).toBe(1);
 
     // A General ticket carries its method along with the surface and the agent.
     const general = world.items.create({ projectId: project.id, boardId: world.board.id, title: "Prepare the workshop", workType: "general", status: "todo", by: "human" });
