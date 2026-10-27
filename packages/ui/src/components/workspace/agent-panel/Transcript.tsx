@@ -10,6 +10,7 @@ import type { BarStatus } from "~/lib/sessionBar";
 import type { foldSteps } from "~/lib/steps";
 import { AgentMedia } from "../AgentMedia";
 import { ChecklistBlock, FindingBlock } from "../DoctorCards";
+import { ClaimCard, type ClaimOffer } from "./ClaimCard";
 import { CardBlock, ErrorBlock, linkify, MergeBlock, ProposalBlock, Question, RetryRow, RunFoot, RunMetrics, StartBatchBlock, StartBrief, StartOffer, Trace, type ProposalCard, type StartOfferCard } from "./blocks";
 import type { MergeCard, StartBatchCard } from "@tomradex/code-link";
 
@@ -54,12 +55,14 @@ const useTranscriptActions = (): TranscriptActionsValue => {
 };
 
 /** The thread's messages, steps folded and the kickoff brief closed; only the newest failure offers a retry, only the newest changes the undo hint. */
-export function Transcript({ actions, folded, briefId, codeFrom, lastErrorId, lastChangesId, onRetry, onRetryWith, onTroubleshoot, onBackground }: {
+export function Transcript({ actions, folded, briefId, codeFrom, claim, lastErrorId, lastChangesId, onRetry, onRetryWith, onTroubleshoot, onBackground }: {
   actions: TranscriptActionsValue;
   folded: ReturnType<typeof foldSteps>;
   briefId: string | null;
   /** Where the conversation turns to writing code, and the ticket it writes for: a rule is drawn there. `offer`: that writing is the run going now, so the rule offers to move it out. */
   codeFrom?: { id: string; ticket: string | null; offer?: boolean } | null;
+  /** Before the message where the conversation first changes a file: the card that offers to claim a ticket for it. */
+  claim?: { at: string; offer: ClaimOffer } | null;
   lastErrorId: string | null;
   lastChangesId: string | null;
   onRetry?: () => void;
@@ -95,13 +98,18 @@ export function Transcript({ actions, folded, briefId, codeFrom, lastErrorId, la
             hint={entry.id === lastChangesId}
           />
         );
-        const starts = !!codeFrom && ("fold" in entry ? entry.fold.some((m) => m.id === codeFrom.id) : entry.id === codeFrom.id);
-        return starts ? (
-          <Fragment key={`code-${codeFrom!.id}`}>
-            <div className="work-rule" role="separator" data-testid="work-rule">
-              <span>{codeFrom!.ticket ? t("agentPanel.writingCodeFor", { key: codeFrom!.ticket }) : t("agentPanel.writingCode")}</span>
-              {codeFrom!.offer && onBackground && <BackgroundOffer busy={false} onPick={onBackground} />}
-            </div>
+        const has = (id: string) => ("fold" in entry ? entry.fold.some((m) => m.id === id) : entry.id === id);
+        const starts = !!codeFrom && has(codeFrom.id);
+        const offers = !!claim && has(claim.at);
+        return starts || offers ? (
+          <Fragment key={`code-${"fold" in entry ? entry.fold[0].id : entry.id}`}>
+            {offers && <ClaimCard offer={claim!.offer} />}
+            {starts && (
+              <div className="work-rule" role="separator" data-testid="work-rule">
+                <span>{codeFrom!.ticket ? t("agentPanel.writingCodeFor", { key: codeFrom!.ticket }) : t("agentPanel.writingCode")}</span>
+                {codeFrom!.offer && onBackground && <BackgroundOffer busy={false} onPick={onBackground} />}
+              </div>
+            )}
             {row}
           </Fragment>
         ) : row;
@@ -142,6 +150,14 @@ function RowBody({ m, onRetry, onRetryWith, onTroubleshoot, hint }: { m: ThreadM
             {focus.map((r) => r.key ?? r.title).join(" · ")}
           </span>
         )}
+      </div>
+    );
+  }
+  if (b.type === "note" && b.claimed) {
+    // the moment the conversation claimed a ticket: its writing code for it starts here
+    return (
+      <div className="work-rule" role="separator" data-testid="work-rule" data-claimed={b.claimed} title={b.text}>
+        <span>{t("agentPanel.writingCodeFor", { key: b.claimed })}</span>
       </div>
     );
   }

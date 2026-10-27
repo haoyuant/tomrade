@@ -986,6 +986,82 @@ const run = async () => {
   await send("again");
   await until(() => cliTurns.length === 2, 60);
   check("and the next message resumes the session the CLI ran as, through the SDK", cliTurns[1]?.text === "again" && cliTurns[1]?.resume === "cli-check-2", cliTurns);
+
+  // ── the claim card: before a workstream conversation's first change to a file, claim a ticket — here, in the background, or with a CLI ──
+  ctx.agent.engine({
+    id: "claimer",
+    title: "Claimer",
+    author: "ai:claimer",
+    available: async () => ({ ok: true }),
+    async turn(input, io) {
+      const text = input.input.kind === "text" ? input.input.text : "";
+      if (text.startsWith("Carry on in the background")) {
+        io.emit({ type: "text", text: "Finished in the background." });
+        return { stop: "end" };
+      }
+      if (text.startsWith("write")) {
+        await io.tools.execute("write_file", { path: `code/${text.replace(/\W+/g, "-")}.md`, content: text });
+        io.emit({ type: "text", text: "Written." });
+        return { stop: "end" };
+      }
+      io.emit({ type: "text", text: "Sure." });
+      return { stop: "end" };
+    }
+  });
+  const sayTo = async (threadId, text) => {
+    const sent = ctx.agent.send(alpha.id, threadId, { kind: "text", text });
+    await until(() => ctx.agent.store.run(alpha.id, sent.runId)?.status === "done", 60);
+  };
+  const claimChat = async (title) => {
+    const th = ctx.agent.newThread(alpha.id, "claimer", boardId, { title });
+    await sayTo(th.id, "hello");
+    await sayTo(th.id, `write ${title}`);
+    ctx.ipc.send("attention.open", { key: `thread:${th.id}`, projectId: alpha.id, threadId: th.id, itemId: null, itemKey: null, kind: "question", who: null, text: null, since: Date.now() });
+    await until(async () => (await shownThread()) === th.id, 50);
+    return th;
+  };
+  const claimCard = () => $(`(() => { const c = document.querySelector('[data-testid="claim-card"]'); return c ? { text: c.textContent, buttons: [...c.querySelectorAll('button[data-testid]')].map((b) => b.dataset.testid), engine: c.querySelector('[data-testid="claim-cli"]')?.dataset.engine ?? null } : null; })()`);
+  const writes = (threadId) => ctx.agent.store.messages(alpha.id, threadId).filter((m) => m.block.type === "trace" && m.block.tool === "write_file" && m.block.ok).length;
+  const closeChat = await claimChat("Claim close chat");
+  check("before a workstream conversation's first change to a file, a card offers to claim a ticket: here, in the background, or with a CLI", await until(async () => (await claimCard())?.buttons.join() === "claim-close,claim-here,claim-background,claim-cli", 50) && /About to change code/.test((await claimCard()).text), await claimCard());
+  check("and it does not hold the writing up", writes(closeChat.id) === 1, writes(closeChat.id));
+  await shot("claim-card.png");
+  await press(`document.querySelector('[data-testid="claim-close"]')`);
+  check("closed, the card goes and the conversation stays without a ticket", await until(async () => !(await claimCard()), 30) && ctx.agent.store.thread(alpha.id, closeChat.id).itemId === null);
+  await sayTo(closeChat.id, "write more");
+  await sleep(400);
+  check("and it writes on as before, the card not back", writes(closeChat.id) === 2 && !(await claimCard()), { writes: writes(closeChat.id), card: await claimCard() });
+
+  const hereChat = await claimChat("Claim here chat");
+  await until(async () => !!(await claimCard()), 50);
+  await press(`document.querySelector('[data-testid="claim-here"]')`);
+  const claimedItem = (threadId) => { const id = ctx.agent.store.thread(alpha.id, threadId)?.itemId; return id ? ctx.items.get(alpha.id, id) : null; };
+  check("claiming here puts a new ticket named after the conversation on it, and marks it Doing", await until(() => claimedItem(hereChat.id)?.title === "Claim here chat", 50) && claimedItem(hereChat.id).status === "doing", claimedItem(hereChat.id));
+  const claimRule = () => $(`document.querySelector('[data-testid="work-rule"][data-claimed]')?.textContent ?? null`);
+  check("the rule is drawn where it claimed, with the ticket, and the card is gone", await until(async () => (await claimRule()) === `${claimedItem(hereChat.id)?.key} · writing code` && !(await claimCard()), 50), { rule: await claimRule(), card: await claimCard() });
+  await shot("claimed-here.png");
+
+  const bgChat = await claimChat("Claim background chat");
+  await until(async () => !!(await claimCard()), 50);
+  await press(`document.querySelector('[data-testid="claim-background"]')`);
+  const bgChildOf = () => ctx.agent.store.threads(alpha.id).find((th) => th.parentId === bgChat.id);
+  check("claiming into the background opens a child conversation on the new ticket, and this one stays free to talk", await until(() => !!claimedItem(bgChat.id) && !!bgChildOf() && bgChildOf().itemId === claimedItem(bgChat.id).id, 60) && (await shownThread()) === bgChat.id, { child: bgChildOf(), item: claimedItem(bgChat.id) });
+
+  // the CLI a terminal cell takes it up with: the one tickets were last started with on this machine
+  ctx.codeLink.defaults.write({ mode: "terminal", engine: "cli" });
+  ctx.ipc.send("codeLink.startDefaultsChanged");
+  const cliChat = await claimChat("Claim cli chat");
+  await $(`document.dispatchEvent(new Event('visibilitychange'));true`);
+  check("the third way names the CLI it would hand over to", await until(async () => (await claimCard())?.engine === "cli", 80), await claimCard());
+  const launchedBefore = launches.length;
+  await press(`document.querySelector('[data-testid="claim-cli"]')`);
+  const cliClaimSession = () => ctx.codeLink.store.sessions(alpha.id).find((s) => s.threadId === cliChat.id && s.mode === "terminal");
+  check("switching to the CLI claims the ticket and opens a terminal session of the conversation on that agent, fresh, with what it came to", await until(() => !!cliClaimSession() && launches.length === launchedBefore + 1 && !!claimedItem(cliChat.id), 80)
+    && cliClaimSession().agent === "cli" && cliClaimSession().externalId === null && ctx.agent.store.thread(alpha.id, cliChat.id).engine === "cli" && !/--resume/.test(launches.at(-1).command)
+    && fs.readFileSync(path.join(ctx.codeLink.sessionDir(cliClaimSession().id), "prompt.md"), "utf8").includes("handed to you from Tomrade's built-in assistant"), { session: cliClaimSession(), launch: launches.at(-1) });
+  check("and the panel moves to that session", await until(async () => (await sessionView())?.id === cliClaimSession()?.id, 50), await sessionView());
+  await press(`document.querySelector('.ai-session-head button[aria-label="Back to the conversation"]')`);
+  await sleep(400);
   ctx.codeLink.herdr.launch = launchWas;
 
   // The Terminal window from the main window: the title bar's button and ⇧⌘T run its own command for this project.

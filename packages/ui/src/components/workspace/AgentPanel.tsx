@@ -32,7 +32,7 @@ import { HandoffLine } from "./agent-panel/HandoffLine";
 import { TerminalSession } from "./agent-panel/TerminalSession";
 import { sessionBarRows, type BarRow, type BarStatus } from "~/lib/sessionBar";
 import { onPanelRequest, setPanelSession, type PanelRequest } from "~/lib/panelRequests";
-import { useHandoff, useRecentSessions } from "~/lib/codeLink";
+import { useHandoff, useRecentSessions, useStartDefaults } from "~/lib/codeLink";
 import type { SessionView } from "@tomradex/code-link";
 import { hits, keyLabel } from "~/lib/keybindings";
 import { BackgroundOffer, Transcript } from "./agent-panel/Transcript";
@@ -408,13 +408,16 @@ export function AgentPanel({
   const askId = pending?.kind === "permission" ? pending.question.id : null;
   const askText = pending?.kind === "permission" ? pending.question.text : "";
   const folded = useMemo(() => foldSteps(detail.data?.messages ?? [], codeAt, askId ? { id: askId, text: askText } : null), [detail.data?.messages, codeAt, askId, askText]);
-  // Chat that turns to code: a rule where the first file is changed, with the ticket it is for when the thread has one.
-  const codeStep = useMemo(() => firstCodeStep(detail.data?.messages ?? []), [detail.data?.messages]);
+  // Chat that turns to code: a rule where the first file is changed, with the ticket it is for when the thread has one —
+  // unless it claimed one, which draws the rule at the moment it did.
+  const claimedHere = useMemo(() => (detail.data?.messages ?? []).some((m) => m.block.type === "note" && !!m.block.claimed), [detail.data?.messages]);
+  const codeStep = useMemo(() => (claimedHere ? null : firstCodeStep(detail.data?.messages ?? [])), [detail.data?.messages, claimedHere]);
   // The run going now has changed a file: that coding can move to a conversation of its own under this one — offered on
   // the rule when the rule is this run's, at the live end of the conversation when the thread coded before. Not from a
   // conversation that is itself a child, nor from a General delivery's, which does its work itself.
-  const codingNow = !!runningRun && writesCode(detail.data?.messages ?? [], runningRun.id);
-  const canBackground = codingNow && !doctorThread && !detail.data?.thread.parentId && !detail.data?.thread.execution;
+  // Offered for as long as the conversation is writing code, not only while a run changes files.
+  const codingNow = (!!runningRun && writesCode(detail.data?.messages ?? [], runningRun.id)) || codeAt >= 0;
+  const canBackground = codingNow && !doctorThread && !archivedNow && !elsewhere && !detail.data?.thread.parentId && !detail.data?.thread.execution;
   const ruleOffers = canBackground && detail.data?.messages.find((m) => m.id === codeStep)?.runId === runningRun?.id;
   const codeFrom = useMemo(() => (codeStep ? { id: codeStep, ticket: threadItem?.key ?? null, offer: ruleOffers } : null), [codeStep, threadItem?.key, ruleOffers]);
   const lastErrorId = newestLast[0]?.block.type === "error" ? newestLast[0].id : null;
@@ -495,6 +498,61 @@ export function AgentPanel({
     } catch (error) { reportError(error); }
     finally { setHandingOff(false); }
   };
+  // Before a workstream conversation's first change to a file, a card offers to claim a ticket for it. Closed, it stays closed.
+  const startDefaults = useStartDefaults();
+  const claimKey = threadId ? `tomrade.claim.closed.${threadId}` : null;
+  const [claimTick, setClaimTick] = useState(0);
+  const claimClosed = useMemo(() => {
+    void claimTick;
+    try { return !!claimKey && localStorage.getItem(claimKey) === "1"; } catch { return false; }
+  }, [claimKey, claimTick]);
+  const [claiming, setClaiming] = useState(false);
+  const shownThreadRow = detail.data?.thread;
+  const claimAt = shownThreadRow && shownThreadRow.surface === "assistant" && shownThreadRow.boardId && !shownThreadRow.itemId && !shownThreadRow.parentId && !shownThreadRow.execution
+    && !archivedNow && !elsewhere && !claimClosed && codeAt >= 0 ? (detail.data?.messages[codeAt]?.id ?? null) : null;
+  // The CLI agent a terminal cell would take it up with: the one tickets were last started with, else Claude Code, else any.
+  const cliPick = useMemo(() => {
+    const able = (engines.data ?? []).filter((e) => e.ok && e.capabilities.includes("code") && e.terminal !== false && !e.usesModels && e.id !== "tomrade" && e.id !== currentEngineId);
+    const picked = able.find((e) => e.id === startDefaults.data?.engine) ?? able.find((e) => e.id === "claude-code") ?? able[0];
+    return picked ? { id: picked.id, title: picked.title } : null;
+  }, [engines.data, startDefaults.data?.engine, currentEngineId]);
+  const claimThen = async (then?: () => Promise<void>) => {
+    if (!threadId || claiming) return;
+    setClaiming(true);
+    try {
+      const result = await invoke("codeLink.claimThread", projectId, threadId);
+      if (!result.ok) { toast({ body: t("claim.claimFailed", { reason: result.message }) }); return; }
+      void qc.invalidateQueries({ queryKey: keys.agent.thread(projectId, threadId) });
+      void threads.refetch();
+      void itemsQ.refetch();
+      await then?.();
+    } catch (error) { reportError(error); }
+    finally { setClaiming(false); }
+  };
+  const handToCli = async (engineId: string) => {
+    if (!threadId) return;
+    const result = await invoke("codeLink.toCli", projectId, threadId, engineId);
+    if (!result.ok) { toast({ body: result.message }); return; }
+    afterHandoff(threadId);
+    toast({ body: t("claim.handed", { agent: cliPick?.title ?? engineId, pane: result.pane ? t("handoff.movedPane", { pane: result.pane }) : "" }) });
+    setOpenSession(result.sessionId);
+  };
+  const claim = claimAt ? {
+    at: claimAt,
+    offer: {
+      title: shownThreadRow?.title ?? "",
+      ticket: null,
+      cli: cliPick,
+      busy: claiming || movingOut || handingOff,
+      onHere: () => void claimThen(),
+      onBackground: () => void claimThen(moveToBackground),
+      onCli: (engineId: string) => void claimThen(() => handToCli(engineId)),
+      onClose: () => {
+        try { if (claimKey) localStorage.setItem(claimKey, "1"); } catch { /* the card closes for this sitting only */ }
+        setClaimTick((n) => n + 1);
+      }
+    }
+  } : null;
   // The session shown in place of a thread may be a conversation's own, gone to a terminal: once its CLI exited, it comes back from here too.
   const shownSessionThread = shownSession?.threadId ?? null;
   const sessionHandoff = useHandoff(projectId, shownSessionThread);
@@ -781,6 +839,7 @@ export function AgentPanel({
           folded={folded}
           briefId={briefId}
           codeFrom={codeFrom}
+          claim={claim}
           lastErrorId={lastErrorId}
           lastChangesId={lastChangesId}
           onRetry={lastAsked && !busy ? () => void doSend(lastAsked) : undefined}
@@ -788,7 +847,7 @@ export function AgentPanel({
           onTroubleshoot={canTroubleshoot && !busy ? (inThread, runId) => actions.current.troubleshoot(inThread, runId) : undefined}
           onBackground={canBackground && !movingOut ? () => void moveToBackground() : undefined}
         />
-        {canBackground && !ruleOffers && (
+        {canBackground && !ruleOffers && !claimAt && (
           <div className="work-offer" data-testid="work-offer">
             <span>{t("agentPanel.writingCode")}</span>
             <BackgroundOffer busy={movingOut} onPick={() => void moveToBackground()} />
