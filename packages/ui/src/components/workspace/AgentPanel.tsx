@@ -12,7 +12,7 @@ import { viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { foldSteps, startBriefId } from "~/lib/steps";
 import { conducts, findEngine, useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetWorkstream, useWorkdir, type RunProgress } from "~/lib/agent";
-import { keys, useAssistantAccessories, useBoards, useItems, useSettings } from "~/lib/queries";
+import { keys, useAssistantAccessories, useBoards, useHeldItem, useItems, useSettings } from "~/lib/queries";
 import { ATTENTION_KEY, useAttention, type AttentionEntry } from "~/lib/attention";
 import { pickChoiceName, pickFallbackName } from "~/lib/engines";
 import { engineStateLabel } from "~/lib/localCli";
@@ -168,7 +168,9 @@ export function AgentPanel({
   const busy = !!runningRun || send.isPending || answer.isPending || uploading;
   const archivedNow = !!detail.data?.thread.archived;
   // A done ticket's conversation, brought back by hand: its next message first reopens the ticket.
-  const doneTicket = !archivedNow && !detail.data?.thread.execution && detail.data?.thread.itemId ? (itemsQ.data ?? []).find((i) => i.id === detail.data!.thread.itemId && i.status === "done") ?? null : null;
+  // An old one may be outside the renderer's window, and is asked for by id.
+  const threadItem = useHeldItem(projectId, itemsQ.data, !archivedNow && !detail.data?.thread.execution ? detail.data?.thread.itemId : null).item;
+  const doneTicket = threadItem?.status === "done" ? threadItem : null;
   const [askReopen, setAskReopen] = useState(false);
   const [reopening, setReopening] = useState(false);
   const blocked = !!workdirProblem || archivedNow;

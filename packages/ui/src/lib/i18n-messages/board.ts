@@ -15,7 +15,11 @@ export const board = {
     cannotDropToast: "{{field}} cannot be set by dragging",
     sortLock: "Sorted — drag changes fields, not order",
     alreadyFirst: "{{key}} is already in the first column",
-    alreadyLast: "{{key}} is already in the last column"
+    alreadyLast: "{{key}} is already in the last column",
+    hiddenMore: "{{n}} more not shown",
+    hiddenClosed: "{{n}} older done or cancelled tickets not shown",
+    loadMore: "Load more",
+    loadingMore: "Loading…"
   },
   zh: {
     scrollRight: "向右滚动，查看更多状态",
@@ -33,6 +37,10 @@ export const board = {
     cannotDropToast: "{{field}} 不能通过拖拽设置",
     sortLock: "已排序——拖拽只改字段，不改顺序",
     alreadyFirst: "{{key}} 已经在第一列了",
-    alreadyLast: "{{key}} 已经在最后一列了"
+    alreadyLast: "{{key}} 已经在最后一列了",
+    hiddenMore: "还有 {{n}} 张未显示",
+    hiddenClosed: "还有 {{n}} 张较早的已完成或已取消工单未显示",
+    loadMore: "加载更多",
+    loadingMore: "加载中…"
   }
 };

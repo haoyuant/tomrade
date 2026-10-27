@@ -1815,7 +1815,11 @@ export const de: PartialMessages = {
     cannotDropToast: "{{field}} lässt sich nicht per Ziehen setzen",
     sortLock: "Sortiert — Ziehen ändert Felder, nicht die Reihenfolge",
     alreadyFirst: "{{key}} ist bereits in der ersten Spalte",
-    alreadyLast: "{{key}} ist bereits in der letzten Spalte"
+    alreadyLast: "{{key}} ist bereits in der letzten Spalte",
+    hiddenMore: "{{n}} weitere nicht angezeigt",
+    hiddenClosed: "{{n}} ältere erledigte oder abgebrochene Tickets nicht angezeigt",
+    loadMore: "Mehr laden",
+    loadingMore: "Wird geladen…"
   },
   card: {
     blockedBadge: "blockiert",

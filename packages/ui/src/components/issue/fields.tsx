@@ -5,7 +5,7 @@ import { PriorityGlyph, StatusMark } from "~/components/ui/atoms";
 import { PRIORITIES, PRIORITY_LABEL, STATUS, STATUS_KEYS, WORK_TYPE_KEY, isTicket, usd } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { useDoneGuard } from "~/lib/doneGuard";
-import { usePatchItem } from "~/lib/queries";
+import { useItemsById, usePatchItem } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 import { cn } from "~/lib/utils";
 import { useToastUndo } from "~/lib/undo";
@@ -468,7 +468,8 @@ export function DepsField({ item, write, items, mode, onOpen }: FieldProps & { i
   const [adding, setAdding] = useState(false);
   const settled = useRef(false);
 
-  const related = mode === "blocks" ? item.blocks.map((id) => items.find((i) => i.id === id)).filter((i): i is Item => !!i) : items.filter((i) => i.blocks.includes(item.id));
+  // Either side may be an old done ticket the renderer does not hold; those are asked for by id.
+  const related = useItemsById(item.projectId, items, mode === "blocks" ? item.blocks : item.blockedBy);
   // Worked out only while adding, with one walk of the graph: for "blocks", a
   // candidate that reaches this issue would close a loop; for "blocked by", one
   // this issue reaches would.

@@ -10,7 +10,7 @@ import { useI18n } from "~/lib/i18n";
 import { normalizeRemote } from "~/lib/remotes";
 import { useRemoveView, useRepoCheckouts, useRepos, useUpdateView } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
-import { useWorkspace, viewCount } from "./context";
+import { useWorkspace } from "./context";
 import { useToastUndo } from "~/lib/undo";
 import { keyLabel } from "~/lib/keybindings";
 import { isCancelKey, isCommitKey } from "~/lib/keys";
@@ -226,7 +226,7 @@ export function ViewHead({ onOpenViewSettings, onOpenFields, onEditWorkstream }:
               name={v.name}
               sub={LAYOUT_LABEL[v.layout].label}
               mark={<Icon name={viewIcon(v.icon)} size={13} />}
-              count={viewCount(ws.items, v)}
+              count={ws.viewCounts[v.id]}
               onSelect={() => {
                 setSwitcherOpen(false);
                 ws.openView(v.id);

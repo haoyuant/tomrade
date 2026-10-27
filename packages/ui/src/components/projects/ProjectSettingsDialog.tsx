@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { Project } from "@tomradex/domain";
+import type { ClosedWindow, Project } from "@tomradex/domain";
 import { Icon, type IconId } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
 import { Eyebrow, Num, SectionHead, Tag } from "~/components/ui/atoms";
 import { agoLabel, isTicket, provenanceOf } from "~/lib/domain";
 import { confirmationMatches } from "~/lib/confirmation";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { useBoards, useItems, useLabels, useRemoveProject, useStorageInfo, useUpdateProject, useViews } from "~/lib/queries";
+import { closedWindowOf, wholeOrNull, withClosedWindow } from "~/lib/closedWindow";
+import { useAllItems, useBoards, useLabels, useRemoveProject, useSaveSettings, useSettings, useStorageInfo, useUpdateProject, useViews } from "~/lib/queries";
 import { FilesBlock } from "~/components/files/FilesBlock";
 import { RepositoriesBlock } from "./RepositoriesBlock";
 import { RulesBlock } from "./RulesBlock";
@@ -37,7 +38,7 @@ interface Facts {
 function useFacts(projectId: string): Facts {
   const boards = useBoards(projectId);
   const views = useViews(projectId);
-  const items = useItems(projectId);
+  const items = useAllItems(projectId);
   const labels = useLabels(projectId);
   return useMemo(() => {
     const all = items.data ?? [];
@@ -137,7 +138,10 @@ export function ProjectSettingsDialog({
   );
 }
 
-type ProjectSettingsPane = "overview" | "rules" | "brief" | "storage" | "repositories" | "files" | "lifecycle";
+type ProjectSettingsPane = "overview" | "closed" | "rules" | "brief" | "storage" | "repositories" | "files" | "lifecycle";
+
+/** What the closed-days switch turns on with. */
+const DEFAULT_CLOSED_DAYS = 30;
 
 interface ProjectPane {
   id: ProjectSettingsPane;
@@ -156,9 +160,17 @@ function SettingsFace({ project, onClose, onRequestDelete, section }: { project:
   const [name, setName] = useState(project.name);
   const [description, setDescription] = useState(project.description ?? "");
   const [archived, setArchived] = useState(project.archived);
+  const settings = useSettings();
+  const saveSettings = useSaveSettings();
+  const savedWindow = closedWindowOf(settings.data, project.id);
+  const [closedDraft, setClosedDraft] = useState<ClosedWindow | null>(null);
+  const closed = closedDraft ?? savedWindow;
 
   const save = () => {
     const trimmed = name.trim() || project.name;
+    if (settings.data && closedDraft && (closedDraft.limit !== savedWindow.limit || closedDraft.days !== savedWindow.days)) {
+      saveSettings.mutate(withClosedWindow(settings.data, project.id, closedDraft) as typeof settings.data, { onError: (err) => toast(errorSpec(err)) });
+    }
     // "Saved" only once it is: a refused save keeps the sheet open with the draft
     update.mutate(
       { id: project.id, patch: { name: trimmed, description: description.trim() || null, archived } },
@@ -219,6 +231,57 @@ function SettingsFace({ project, onClose, onRequestDelete, section }: { project:
             </p>
             <p className="meta-txt dense">{t("projectSettingsDialog.boardNote")}</p>
           </div>
+        </>
+      )
+    },
+    {
+      id: "closed",
+      label: t("projectSettingsDialog.closedLabel"),
+      icon: "i-board",
+      render: () => (
+        <>
+          <SectionHead title={t("projectSettingsDialog.closedLabel")}>{t("projectSettingsDialog.closedLede")}</SectionHead>
+          <div className="project-settings-fields">
+            <div className="field">
+              <label htmlFor="psClosedLimit">{t("projectSettingsDialog.closedLimitLabel")}</label>
+              <input
+                id="psClosedLimit"
+                className="input num"
+                type="number"
+                min={1}
+                placeholder={t("projectSettingsDialog.closedLimitPlaceholder")}
+                value={closed.limit ?? ""}
+                onChange={(e) => setClosedDraft({ ...closed, limit: wholeOrNull(e.target.value) })}
+              />
+              <span className="meta-txt">{t("projectSettingsDialog.closedLimitNote")}</span>
+            </div>
+            <div className="field">
+              <div className="cfg-row">
+                <span className="cfg-name">{t("projectSettingsDialog.closedDaysLabel")}</span>
+                <button
+                  type="button"
+                  className="switch"
+                  role="switch"
+                  aria-checked={closed.days !== null}
+                  aria-label={t("projectSettingsDialog.closedDaysAria")}
+                  onClick={() => setClosedDraft({ ...closed, days: closed.days === null ? DEFAULT_CLOSED_DAYS : null })}
+                />
+              </div>
+              {closed.days !== null && (
+                <input
+                  id="psClosedDays"
+                  className="input num"
+                  type="number"
+                  min={1}
+                  aria-label={t("projectSettingsDialog.closedDaysInput")}
+                  value={closed.days}
+                  onChange={(e) => setClosedDraft({ ...closed, days: wholeOrNull(e.target.value) ?? 1 })}
+                />
+              )}
+              <span className="meta-txt">{t("projectSettingsDialog.closedDaysNote")}</span>
+            </div>
+          </div>
+          <p className="meta-txt dense project-settings-section">{t("projectSettingsDialog.closedReach")}</p>
         </>
       )
     },

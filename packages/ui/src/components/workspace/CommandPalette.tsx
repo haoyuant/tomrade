@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useDeferredValue, useEffect, useState } from "react";
 import { Command } from "cmdk";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { useNavigate } from "@tanstack/react-router";
@@ -9,17 +9,20 @@ import { LAYOUT_LABEL, isTicket, viewIcon } from "~/lib/domain";
 import { requestStart } from "~/lib/codeLink";
 import { useTemplateActions, useTemplates } from "~/lib/templates";
 import { useI18n } from "~/lib/i18n";
-import { useCommands, useRunCommand } from "~/lib/queries";
+import { mergeById } from "~/lib/closedWindow";
+import { useClosedFound, useCommands, useItem, useRunCommand } from "~/lib/queries";
 import { useFilesTree } from "~/lib/files";
 import { notesSearch, useNotesEnabled } from "~/lib/notes";
 import { useNoteActions } from "~/components/files/useNoteActions";
 import { THEME_OPTIONS, useTheme } from "~/lib/theme";
 import { errorSpec, useToast } from "~/lib/toast";
-import { useSelectedId, useWorkspace, viewCount } from "./context";
+import { useSelectedId, useWorkspace } from "./context";
 import { useOptionalAgentDock } from "~/components/chrome/ProjectShell";
 import { keyLabel } from "~/lib/keybindings";
 import { isComposing } from "~/lib/keys";
 import { openSettingsPane } from "~/lib/settingsHost";
+
+const TICKET_KEY = /^[A-Za-z][A-Za-z0-9]*-\d+$/;
 
 export interface PaletteActions {
   newIssue: () => void;
@@ -65,7 +68,11 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
   // cmdk only filters what is rendered, so with a query the whole project is searched first and the best few rendered
   const terms = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const matches = (text: string) => terms.every((term) => text.toLowerCase().includes(term));
-  const tickets = ws.items.filter(isTicket);
+  // The window holds only the newest done and cancelled tickets; older ones are searched for, or opened by key.
+  const typed = useDeferredValue(search.trim());
+  const foundClosed = useClosedFound(ws.project.id, typed);
+  const byKey = useItem(ws.project.id, typed, TICKET_KEY.test(typed) && !ws.items.some((i) => i.key.toLowerCase() === typed.toLowerCase()));
+  const tickets = mergeById([ws.items, foundClosed.data, byKey.data ? [byKey.data] : undefined]).filter(isTicket);
   const shownTickets = (terms.length ? tickets.filter((i) => matches(`${i.key} ${i.title}`)) : tickets).slice(0, 60);
   const shownFiles = (terms.length ? files.filter((f) => matches(f.path)) : files).slice(0, 400);
   useEffect(() => {
@@ -180,7 +187,7 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
                     <span className="p-label">
                       {view.name} <span className="meta-txt">· {LAYOUT_LABEL[view.layout].label}</span>
                     </span>
-                    <span className="card-id">{viewCount(ws.items, view)}</span>
+                    <span className="card-id">{ws.viewCounts[view.id] ?? ""}</span>
                   </Command.Item>
                 ))}
               </Command.Group>

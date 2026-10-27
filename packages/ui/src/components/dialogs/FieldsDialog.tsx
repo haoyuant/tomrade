@@ -9,7 +9,7 @@ import {
   useAddFieldOption,
   useCreateField,
   useFields,
-  useItems,
+  useAllItems,
   useRemoveField,
   useRemoveFieldOption,
   useUpdateField,
@@ -275,7 +275,8 @@ function FieldsSheet({
     : undefined;
   const toast = useToast();
   const fields = useFields(projectId);
-  const items = useItems(projectId);
+  // Field and workstream counts take every ticket, not the renderer's window.
+  const items = useAllItems(projectId, open);
   const create = useCreateField(projectId);
   const [selectedId, setSelectedId] = useState<string | null>(initialFieldId);
   const [newName, setNewName] = useState("");

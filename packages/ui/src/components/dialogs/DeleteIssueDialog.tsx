@@ -6,17 +6,16 @@ import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dial
 import { Num, Tag } from "~/components/ui/atoms";
 import { invoke } from "~/lib/api";
 import { useI18n, type MessageKey } from "~/lib/i18n";
-import { keys, usePurgeItem } from "~/lib/queries";
+import { keys, useAllItems, usePurgeItem } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
 import { keyLabel } from "~/lib/keybindings";
 
 /** The plain-English list of what goes with the issue, and what does not. */
-function consequences(item: Item, items: Item[], t: (key: MessageKey, vars?: Record<string, string | number>) => string): string[] {
+function consequences(item: Item, t: (key: MessageKey, vars?: Record<string, string | number>) => string): string[] {
   const out = [t("deleteIssueDialog.activityTrail")];
   if (item.labels.length) out.push(t(item.labels.length === 1 ? "deleteIssueDialog.labelLinkOne" : "deleteIssueDialog.labelLinkMany", { n: item.labels.length }));
 
-  const blockedBy = items.filter((i) => i.id !== item.id && i.blocks.includes(item.id)).length;
-  const edges = item.blocks.length + blockedBy;
+  const edges = item.blocks.length + item.blockedBy.filter((id) => id !== item.id).length;
   if (edges) out.push(t(edges === 1 ? "deleteIssueDialog.blocksRelationOne" : "deleteIssueDialog.blocksRelationMany", { n: edges }));
 
   out.push(t("deleteIssueDialog.manualOrder"));
@@ -79,8 +78,10 @@ export function DeleteIssueDialog({
 
   // Any issue can be a parent — `parent_id` carries no kind constraint, and an
   // agent may set it over MCP — so this never asks whether the target is an epic.
-  const children = item ? items.filter((i) => i.parentId === item.id) : [];
-  const lost = item ? consequences(item, items, t) : [];
+  // The renderer holds only the newest done and cancelled tickets; the count has to see them all.
+  const all = useAllItems(projectId, !!item);
+  const children = item ? (all.data ?? items).filter((i) => i.parentId === item.id) : [];
+  const lost = item ? consequences(item, t) : [];
   // Files keeps its own history, so these are offered rather than taken: left alone unless ticked.
   const attachments = useQuery({
     queryKey: keys.files.attachmentsOf(projectId, item?.id ?? ""),

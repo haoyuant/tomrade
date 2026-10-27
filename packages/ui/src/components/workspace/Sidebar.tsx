@@ -14,11 +14,11 @@ import { useI18n } from "~/lib/i18n";
 import { normalizeRemote } from "~/lib/remotes";
 import { useCreateBoard, useCreateView, useRepoCheckouts, useRepos, useUpdateView } from "~/lib/queries";
 import { errorSpec, useToast } from "~/lib/toast";
-import { useWorkspace, viewCount } from "./context";
+import { useWorkspace } from "./context";
 import { useToastUndo } from "~/lib/undo";
 
 function ViewRow({ view, index }: { view: View; index: number }) {
-  const { items, view: active, openView, virtual, filePath, routines } = useWorkspace();
+  const { viewCounts, view: active, openView, virtual, filePath, routines } = useWorkspace();
   const current = !virtual && filePath === null && !routines && view.id === active.id;
   const { ref, isDragging } = useSortable({ id: view.id, index, type: "view", accept: "view" });
   return (
@@ -34,7 +34,7 @@ function ViewRow({ view, index }: { view: View; index: number }) {
     >
       <Icon className="ico" name={viewIcon(view.icon)} size={15} />
       <span className="side-name">{view.name}</span>
-      <span className="side-count num">{viewCount(items, view)}</span>
+      <span className="side-count num">{viewCounts[view.id] ?? ""}</span>
     </button>
   );
 }

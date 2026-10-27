@@ -13,6 +13,7 @@ import {
   patchForGroup,
   searchTerms,
   type Board,
+  type ClosedStatus,
   type FieldDef,
   type Item,
   type Layout,
@@ -24,7 +25,25 @@ import {
 } from "@tomradex/domain";
 import { PRIORITY_LABEL, PROVENANCE, STATUS, STATUS_KEYS, checkedLabel, emptyGroupLabel, isTicket } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { useBadges, useBoards, useCreateView, useFields, useItems, useLabels, useProjects, useUpdateView, useViewRanks, useViews } from "~/lib/queries";
+import { hiddenCount, mergeById, pageSize } from "~/lib/closedWindow";
+import {
+  useBadges,
+  useBoards,
+  useClosedFound,
+  useClosedPages,
+  useClosedTotals,
+  useClosedWindow,
+  useCreateView,
+  useEpicProgress,
+  useFields,
+  useItems,
+  useLabels,
+  useProjects,
+  useUpdateView,
+  useViewCounts,
+  useViewRanks,
+  useViews
+} from "~/lib/queries";
 import { errorSpec, readableError, useToast } from "~/lib/toast";
 
 /** One option of a groupable / filterable field, in display terms. */
@@ -56,10 +75,16 @@ export interface WorkspaceValue {
   /** Every field the project has, built-ins first, in rank order. */
   fields: FieldDef[];
   fieldById: Map<string, FieldDef>;
-  /** Every item in the project, epics included. */
+  /** The project's items the renderer holds, epics included: every open one, and the done and cancelled ones the window, a "load more" or the search brought in. */
   items: Item[];
-  /** Every ticket (epics excluded), filter ignored. */
+  /** Those of `items` that are tickets, filter ignored. */
   owned: Item[];
+  /** Each epic's progress over all its tickets, counted where they all are. */
+  epicProgress: Map<string, { done: number; total: number }>;
+  /** How many tickets each saved view holds, by view id. */
+  viewCounts: Record<string, number>;
+  /** The done and cancelled tickets of this view the renderer does not hold yet. */
+  closed: ClosedView;
   epics: Item[];
   epicNames: Map<string, string>;
   labels: string[];
@@ -114,6 +139,17 @@ export interface WorkspaceValue {
   patchFor: (fieldId: string, key: string) => Patch | null;
   /** For `compareItems`: option order and names resolved from the vocabulary above. */
   queryCtx: QueryContext;
+}
+
+/** A view's done and cancelled columns: their true size, how much of it is held, and the way to more. */
+export interface ClosedView {
+  /** Under the filter and the search; absent until counted. */
+  totals: Partial<Record<ClosedStatus, number>>;
+  /** How many of each `visible` holds. */
+  hidden: (status: ClosedStatus) => number;
+  /** Asks for the next page of each status named. */
+  loadMore: (statuses: ClosedStatus[]) => void;
+  loading: (status: ClosedStatus) => boolean;
 }
 
 const Ctx = createContext<WorkspaceValue | null>(null);
@@ -207,9 +243,6 @@ function canon(value: unknown): string {
 
 const draftOf = (view: View): Draft => ({ layout: view.layout, query: normalizeQuery(view.query) });
 
-/** Tickets a saved view resolves to, ignoring column visibility — the count beside its name. */
-export const viewCount = (items: Item[], view: View): number => items.filter((i) => isTicket(i) && matchesFilter(i, view.query.filter)).length;
-
 /** The board view a workstream page shows: everything in that workstream, by status. */
 function workstreamView(board: Board): View {
   return {
@@ -249,6 +282,8 @@ export function WorkspaceProvider({
   const boards = useBoards(projectId);
   const views = useViews(projectId);
   const items = useItems(projectId);
+  const closedWindow = useClosedWindow(projectId);
+  const epicProgress = useEpicProgress(projectId);
   const labels = useLabels(projectId);
   const fieldsQuery = useFields(projectId);
   // A workstream page keeps no manual order of its own.
@@ -294,7 +329,20 @@ export function WorkspaceProvider({
   const live = draft ?? saved;
   const dirty = !!saved && !!draft && canon(draft) !== canon(saved);
 
-  const all = useMemo(() => items.data ?? [], [items.data]);
+  // "Load more" lasts while the view, its filter and the search stay what they were.
+  const filter = live?.query.filter;
+  const moreKey = `${placeKey}\u0000${canon(filter ?? [])}\u0000${search}`;
+  const [more, setMore] = useState<{ key: string; limits: Partial<Record<ClosedStatus, number>> }>({ key: "", limits: {} });
+  const limits = useMemo(() => (more.key === moreKey ? more.limits : {}), [more, moreKey]);
+  const stableFilter = useMemo(() => filter ?? [], [filter]);
+  const pages = useClosedPages(projectId, stableFilter, search, limits);
+  const found = useClosedFound(projectId, search);
+  const closedTotals = useClosedTotals(projectId, stableFilter, search);
+  const viewCounts = useViewCounts(projectId, views.data ?? []);
+  const [donePage, cancelledPage] = [pages[0]?.data, pages[1]?.data];
+  const all = useMemo(() => mergeById([items.data, donePage, cancelledPage, found.data]), [items.data, donePage, cancelledPage, found.data]);
+  const progressMap = useMemo(() => new Map(Object.entries(epicProgress.data ?? {})), [epicProgress.data]);
+  const [doneLoading, cancelledLoading] = [!!pages[0]?.isFetching, !!pages[1]?.isFetching];
   const fields = fieldsQuery.data ?? (BUILTIN_FIELDS as FieldDef[]);
   const fieldById = useMemo(() => new Map(fields.map((f) => [f.id, f])), [fields]);
   const epics = useMemo(() => all.filter((i) => i.kind === "epic"), [all]);
@@ -380,8 +428,19 @@ export function WorkspaceProvider({
     const rankOf = (i: Item) => rankMap[i.id] ?? i.rank;
     const owned = all.filter(isTicket);
     const terms = searchTerms(search);
-    const found = terms.length ? owned.filter((i) => matchesSearch(i, terms)) : owned;
-    const visible = found.filter((i) => matchesFilter(i, live.query.filter)).sort((a, b) => compareItems(a, b, live.query.sortBy, queryCtx, rankOf));
+    const matched = terms.length ? owned.filter((i) => matchesSearch(i, terms)) : owned;
+    const visible = matched.filter((i) => matchesFilter(i, live.query.filter)).sort((a, b) => compareItems(a, b, live.query.sortBy, queryCtx, rankOf));
+    const shown = (status: ClosedStatus) => visible.reduce((n, i) => n + (i.status === status ? 1 : 0), 0);
+    const closed: ClosedView = {
+      totals: closedTotals,
+      hidden: (status) => hiddenCount(closedTotals[status], shown(status)),
+      loadMore: (statuses) => {
+        const next = { ...limits };
+        for (const status of statuses) next[status] = shown(status) + pageSize(closedWindow);
+        setMore({ key: moreKey, limits: next });
+      },
+      loading: (status) => (status === "done" ? doneLoading : cancelledLoading)
+    };
     const columnBy = live.query.columnBy ?? "status";
     const space = groupSpace(columnBy);
     const chosen = live.query.columns.filter((k) => space.includes(k));
@@ -410,6 +469,9 @@ export function WorkspaceProvider({
       fieldById,
       items: all,
       owned,
+      epicProgress: progressMap,
+      viewCounts,
+      closed,
       epics,
       epicNames,
       labels: labelList,
@@ -435,7 +497,7 @@ export function WorkspaceProvider({
       openRoutines,
       filterCount: live.query.filter.length,
       search,
-      searchElsewhere: terms.length ? found.length - visible.length : 0,
+      searchElsewhere: terms.length ? matched.length - visible.length : 0,
       visible,
       ranks: rankMap,
       badges: badges.data ?? {},
@@ -463,6 +525,14 @@ export function WorkspaceProvider({
     all,
     epics,
     epicNames,
+    progressMap,
+    viewCounts,
+    closedTotals,
+    closedWindow,
+    limits,
+    moreKey,
+    doneLoading,
+    cancelledLoading,
     labelList,
     ranks.data,
     badges.data,

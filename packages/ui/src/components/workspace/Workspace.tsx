@@ -22,7 +22,7 @@ import { usePlaybookConflictNotice } from "~/lib/agent";
 import { usePanelOpen } from "~/lib/panel";
 import { useSettingsHost } from "~/lib/settingsHost";
 import { Surface } from "~/lib/analytics";
-import { useCreateView, useRedo, useRunCommand, useUndo } from "~/lib/queries";
+import { useCreateView, useHeldItem, useRedo, useRunCommand, useUndo } from "~/lib/queries";
 import { errorSpec, useToast, useToastDismiss } from "~/lib/toast";
 import { useHintToast, useSeen } from "~/lib/onboarding";
 import { FilesRegion } from "~/components/files/FilesRegion";
@@ -148,8 +148,9 @@ export function Workspace() {
   /** The issue the confirmation is open on, held by id so it can go stale. */
   const [deleting, setDeleting] = useState<string | null>(null);
 
-  const selected = ws.items.find((i) => i.id === selectedId) ?? null;
-  const deleteTarget = ws.items.find((i) => i.id === deleting) ?? null;
+  // An old done ticket opened by key or from a link may be outside what the window holds.
+  const selected = useHeldItem(ws.project.id, ws.items, selectedId).item ?? null;
+  const deleteTarget = useHeldItem(ws.project.id, ws.items, deleting).item ?? null;
 
   // What the global panel should know while this screen is up: chips select
   // into the sidebar detail, and "this" means the open detail, then the view.
