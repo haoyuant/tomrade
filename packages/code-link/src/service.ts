@@ -79,6 +79,10 @@ declare module "cordis" {
     "codeLink/raw-output-there"(projectId: string, sessionId: string): Promise<boolean | void> | boolean | void;
     /** Asked: the recording of what this session's pane showed, to play back; the Terminal window's plugin answers. */
     "codeLink/raw-output"(projectId: string, sessionId: string): Promise<RawOutput | null | void> | RawOutput | null | void;
+    /** Asked: the sessions and terminals in the cells of this project's open Terminal window, numbered as it shows them; nothing while it is closed. */
+    "codeLink/cells"(projectId: string): { sessionId: string; n: number }[] | void;
+    /** Asked: a plain terminal in a new cell of this project's Terminal window, opening the window if needed. True once one has. */
+    "codeLink/new-terminal"(projectId: string): Promise<boolean | void> | boolean | void;
   }
 }
 

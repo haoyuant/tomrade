@@ -1593,6 +1593,17 @@ function apply(ctx: Context, config: Config) {
     if (!bounds || !recorder.has(bounds.pane, bounds.from, bounds.to)) return null;
     return recorder.slice(bounds.pane, bounds.from, bounds.to);
   });
+  // The tray's "· cell 2" and its way to a session's cell: only while the window is open to show them.
+  ctx.on("codeLink/cells", (projectId) => {
+    const win = open.get(projectId);
+    if (!win || win.closed) return;
+    const layout = stateOf(config.stateFile).layouts?.[projectId];
+    return cellsIn(isLayout(layout) ? layout : fresh()).flatMap((leaf, i) => (leaf.sessionId ? [{ sessionId: leaf.sessionId, n: i + 1 }] : []));
+  });
+  ctx.on("codeLink/new-terminal", async (projectId) => {
+    if (!(await showable())) return;
+    return !!(await term.openTerminal(projectId, ""));
+  });
   ctx.on("settings/changed", () => {
     // Turned off: what is being recorded stops here; a cap lowered takes effect on what is kept.
     if (!recorder.enabled()) for (const win of open.values()) for (const cell of [...win.recordings.keys()]) stopRecording(win, cell);

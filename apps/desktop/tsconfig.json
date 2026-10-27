@@ -39,6 +39,9 @@
       "path": "../../packages/code-link"
     },
     {
+      "path": "../../packages/keybindings"
+    },
+    {
       "path": "../../packages/contributions"
     },
     {

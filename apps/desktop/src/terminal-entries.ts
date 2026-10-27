@@ -5,6 +5,7 @@ import type {} from "@tomradex/projects";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/settings";
 import { errorMessage } from "@tomradex/contracts";
+import { DEFAULT_KEYS } from "@tomradex/keybindings/chord";
 
 /** The Terminal window's own command: it opens the project's window, or brings it forward when it is open. */
 export const TERMINAL_COMMAND = "code-sessions.open";
@@ -42,6 +43,12 @@ export async function openTerminal(ctx: Context, projectId: string | null): Prom
 export function terminalMenuItems(ctx: Context, label: (name: string) => string): MenuItemConstructorOptions[] {
   if (!hasTerminalWindow(ctx)) return [];
   return terminalProjects(ctx).map((p) => ({ label: label(p.name), click: () => void openTerminal(ctx, p.id) }));
+}
+
+/** The key that opens the Terminal window inside Tomrade, as the person bound it; null once they took it away. */
+export function terminalChord(ctx: Context): string | null {
+  const overrides = (ctx.get("settings")?.get().keybindings as { overrides?: Record<string, string[]> } | undefined)?.overrides;
+  return (overrides?.terminalWindow ?? DEFAULT_KEYS.terminalWindow)[0] ?? null;
 }
 
 const GLOBAL_COMMAND = "terminalWindowGlobal";
