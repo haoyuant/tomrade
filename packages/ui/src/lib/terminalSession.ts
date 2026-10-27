@@ -8,18 +8,8 @@ export const READ_EVERY_MS = 1000;
 export const STRIP_ROWS = 12;
 export const DRAWER_ROWS = 60;
 
-/** A line of a pane's screen that is furniture, not output: a rule, an empty input box, a shortcut hint. */
-const FURNITURE = /^[>❯$%#│|?]+$|^\? for shortcuts|^esc to interrupt|^\d+ tokens?\b|^ctrl\+/i;
-
-/** The last `n` lines of a pane's screen that say something, box drawing stripped. */
-export function tailLines(screen: string | null | undefined, n: number): string[] {
-  if (!screen) return [];
-  const lines = screen
-    .split("\n")
-    .map((line) => line.replace(/[─-╿]/g, " ").replace(/\s+$/, ""))
-    .filter((line) => line.trim() && !FURNITURE.test(line.trim()));
-  return lines.slice(-n);
-}
+/** The pane's lines read the same way wherever they show: the panel's strip, the cards, the overview. */
+export { tailLines } from "@tomradex/code-link/prompt";
 
 /** The session waits on the person's say-so for a tool: what Allow and Deny answer. Not a turn that ended, nor a question. */
 export const isApprovalAsk = (session: Pick<SessionView, "state" | "activity">): boolean => session.state === "waiting" && /^needs your approval/i.test(session.activity ?? "");

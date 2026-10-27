@@ -1004,7 +1004,7 @@ export class CodeLink extends Service implements CodeLinkReader {
 
   /**
    * Asked on every session change while a list shows: it reads the live rows and a handful of ended ones, not the whole
-   * history; a pane's screen only for a session waiting on a permission its card can answer.
+   * history; each live pane's last lines through the glance, at most once per event and every few seconds.
    */
   async recentSessions(projectId: string, now = Date.now()): Promise<RecentSession[]> {
     const rows = this.store.recentSessions(projectId, now - RECENT_ENDED_MS, RECENT_ENDED_MAX);
@@ -1012,7 +1012,13 @@ export class CodeLink extends Service implements CodeLinkReader {
     const ended = rows.filter(isEnded);
     const outcomes = ended.length ? this.review.outcomes(projectId, ended) : new Map<string, SessionOutcome>();
     const glances = await this.panel.glance(rows.filter((s) => !isEnded(s)), now);
-    return rows.map((s) => ({ ...s, approval: false, prompt: null, ...glances.get(s.id), outcome: outcomes.get(s.id) ?? null }));
+    return rows.map((s) => ({ ...s, approval: false, prompt: null, tail: null, ...glances.get(s.id), outcome: outcomes.get(s.id) ?? null }));
+  }
+
+  /** The Terminal window's bar: the same glance at these live sessions' panes the panel's cards have, from the same reads. */
+  async sessionGlances(projectId: string, sessionIds: string[]): Promise<Map<string, SessionGlance>> {
+    const sessions = sessionIds.flatMap((id) => this.store.session(projectId, id) ?? []);
+    return sessions.length ? this.panel.glance(sessions) : new Map();
   }
 
   /** What came of each of these ended sessions, by id, the way every list says it. */

@@ -9,7 +9,7 @@ import { interpolate, message } from "~/lib/dicts";
 import { isMac } from "~/lib/keys";
 import { keys } from "~/lib/queries";
 import { historyList, historySaid, onHistoryChanged, send } from "./bridge";
-import { Mark, RowActions, rowAgent, rowMono, rowName, rowSaid, rowTitle, rowWhen, saidClass, statusWord, whereOf } from "./cards";
+import { Mark, RowActions, rowAgent, rowMono, rowName, rowSaid, rowTail, rowTitle, rowWhen, saidClass, statusWord, whereOf } from "./cards";
 import { keyLabel } from "./keys";
 import type { Key } from "./layout";
 import { bundles, paneOf, sessionName, sessionStatus, statusOf, type BarStatus, type HereRow } from "./lists";
@@ -127,6 +127,8 @@ function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; hi
     const name = rowName(r, say);
     const title = rowTitle(r, say);
     const said = rowSaid(r, status, say, words);
+    // what its pane shows last, in place of what its hooks said
+    const last = rowTail(r, status).at(-1);
     const button = (
       <button
         type="button"
@@ -152,7 +154,7 @@ function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; hi
         </span>
         {title && <span className="cs-row-title">{title}</span>}
         {r.kind === "terminal" && !s ? <span className="cs-row-meta mono">{r.terminal.cwd}</span> : <span className="cs-row-meta">{[rowAgent(r), rowWhen(r, status, say, words)].filter(Boolean).join(" · ")}</span>}
-        {said && <span className={saidClass(status)}>{said}</span>}
+        {last ? <span className="cs-row-tail" data-testid="cs-row-tail">{last}</span> : said && <span className={saidClass(status)}>{said}</span>}
       </button>
     );
     // Allow and Deny sit inside the card's lower edge: beside its button, since a button holds no other.
@@ -417,7 +419,13 @@ function Rail({ ref, rows, waiting, marks, picks, foldLabel, onFold }: { ref: Re
         <div id={peekId} role="tooltip" className="cs-peek" data-testid="cs-peek" data-status={statusOf(shown)} style={{ top: peek!.top }}>
           <span className="cs-peek-title">{[rowName(shown, say), rowTitle(shown, say)].filter(Boolean).join(" ")}</span>
           <span className="cs-row-meta">{[rowAgent(shown), whereOf(shown, cellOf(marks.cells, shown), say), statusWord(statusOf(shown), say)].filter(Boolean).join(" · ")}</span>
-          {rowSaid(shown, statusOf(shown), say, words) && <span className={saidClass(statusOf(shown))}>{rowSaid(shown, statusOf(shown), say, words)}</span>}
+          {rowTail(shown, statusOf(shown)).length ? (
+            <span className="cs-peek-tail" data-testid="cs-peek-tail">
+              {rowTail(shown, statusOf(shown)).map((line, i) => <span key={i} className="cs-row-tail">{line}</span>)}
+            </span>
+          ) : (
+            rowSaid(shown, statusOf(shown), say, words) && <span className={saidClass(statusOf(shown))}>{rowSaid(shown, statusOf(shown), say, words)}</span>
+          )}
           <span className="cs-row-meta">{say("peekHint")}</span>
         </div>
       )}

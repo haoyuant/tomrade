@@ -1719,6 +1719,9 @@ button.cs-convo-line { font: inherit; text-align: left; background: none; border
 .sbar-ask { display: flex; flex-direction: column; gap: 5px; margin-top: 3px; padding-top: 6px; border-top: 1px dashed var(--border); cursor: default; }
 .sbar-ask-text { color: var(--warn); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 .sbar-ask-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+/* a live terminal session's last lines, as its pane shows them */
+.sbar-tail { display: flex; flex-direction: column; margin-top: 2px; padding: 4px 7px; border-radius: var(--radius-md); background: var(--term-bg); color: var(--term-fg); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.45; min-width: 0; }
+.sbar-tail-line { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
 .sbar-empty { padding: var(--space-2); }
 .pet-stage {
   height: 112px; margin: calc(-1 * var(--space-2)) 0 0; overflow: hidden;

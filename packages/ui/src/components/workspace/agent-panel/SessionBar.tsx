@@ -6,6 +6,7 @@ import { ATTENTION_KEY } from "~/lib/attention";
 import { findEngine } from "~/lib/agent";
 import { clockLabel, timeAgo } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
+import { keyLabel } from "~/lib/keybindings";
 import { outcomeLine } from "~/lib/review";
 import type { BarRow, BarStatus } from "~/lib/sessionBar";
 import { rangeLabel, spanLabel } from "~/lib/sessionTime";
@@ -86,6 +87,8 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engine
   const said = (r: BarRow) => (r.wait ? r.wait.text || t(ATTENTION_KEY[r.wait.kind]) : r.status === "done" ? outcome(r) : r.activity);
   // what it is up to: continuing after a usage limit, else its state — an idle one says how long ago it moved
   const state = (r: BarRow) => (r.parkedUntil ? t("agentPanel.parkedUntil", { time: clockLabel(r.parkedUntil) }) : r.status === "idle" ? timeAgo(r.at) : statusWord(r.status));
+  // a live terminal session's pane, its last lines as the pane shows them
+  const tail = (r: BarRow) => (r.tail?.length ? <span className="sbar-tail mono" data-testid="sbar-tail">{r.tail.map((line, i) => <span key={i} className="sbar-tail-line">{line}</span>)}</span> : null);
   const chips = (r: BarRow) => r.origins.map((origin) => <span key={origin} className="tag neutral sbar-chip">{origin}</span>);
   const waiting = rows.filter((r) => r.status === "wait").length;
   // just started: it lands at the top of the running ones, and says so for its first minute
@@ -189,9 +192,10 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engine
               {chips(shown)}
             </span>
             <span className="meta-txt dense">{[agentName(shown), where(shown), shown.status === "idle" ? statusWord("idle") : null, state(shown)].filter(Boolean).join(" · ")}</span>
-            {said(shown) && <span className={shown.status === "wait" ? "sbar-peek-wait" : "sbar-peek-said"}>{shown.status === "done" ? t("sessionBar.outcome", { text: said(shown)! }) : said(shown)}</span>}
+            {tail(shown)}
+            {said(shown) && (shown.status !== "run" || !shown.tail?.length) && <span className={shown.status === "wait" ? "sbar-peek-wait" : "sbar-peek-said"}>{shown.status === "done" ? t("sessionBar.outcome", { text: said(shown)! }) : said(shown)}</span>}
             <span className="sbar-peek-foot">
-              <span className="meta-txt dense">{t("sessionBar.peekHint")}</span>
+              <span className="meta-txt dense">{`${t("sessionBar.peekHint")} · ${t("sessionBar.peekExpand", { key: keyLabel("sessionBar") })}`}</span>
               {actionable(shown) && <RowActions row={shown} onArchive={onArchive} onDelete={onDelete} />}
             </span>
           </div>
@@ -231,7 +235,8 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engine
               {actionable(r) && <RowActions row={r} onArchive={onArchive} onDelete={onDelete} />}
             </span>
             <span className="meta-txt dense">{[agentName(r), r.status === "done" ? statusWord("done") : where(r), when(r)].filter(Boolean).join(" · ")}</span>
-            {ask(r) ?? (said(r) && <span className={r.status === "wait" ? "sbar-card-wait" : r.status === "done" ? "sbar-card-outcome" : "sbar-card-said"}>{said(r)}</span>)}
+            {tail(r)}
+            {ask(r) ?? (said(r) && (r.status !== "run" || !r.tail?.length) && <span className={r.status === "wait" ? "sbar-card-wait" : r.status === "done" ? "sbar-card-outcome" : "sbar-card-said"}>{said(r)}</span>)}
           </div>
         )))}
         {!shown.length && <p className="meta-txt dense sbar-empty">{t("sessionBar.empty")}</p>}

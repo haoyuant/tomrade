@@ -276,7 +276,8 @@ export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, it
         prompt: null,
         lastEventAt: s.lastEventAt ?? null,
         rawOutput: false,
-        outcome: null
+        outcome: null,
+        tail: null
       };
     })
     .sort((a, b) => Number(b.state !== "ended" && b.state !== "lost") - Number(a.state !== "ended" && a.state !== "lost") || Number(b.needsYou) - Number(a.needsYou) || b.startedAt - a.startedAt);
@@ -688,7 +689,14 @@ function apply(ctx: Context, config: Config) {
     const listedNow = await titled(shown.sessions.filter((s) => s.endedAt === null || inCells.has(s.id) || recent.has(s.id) || s.id === win?.reveal?.sessionId), savedTerminals(projectId));
     const endedIds = listedNow.flatMap((s) => (s.endedAt !== null ? [s.id] : []));
     const outcomes = endedIds.length ? ctx.codeLink.sessionOutcomes(projectId, endedIds) : null;
-    const sent = outcomes ? listedNow.map((s) => (outcomes.has(s.id) ? { ...s, outcome: outcomes.get(s.id)! } : s)) : listedNow;
+    // A card's last lines of its pane, from the glance the assistant panel's cards share: read on a session's events, not per card.
+    const paned = b.state === "ready" ? listedNow.flatMap((s) => (s.endedAt === null && s.pane ? [s.id] : [])) : [];
+    const glances = paned.length ? await ctx.codeLink.sessionGlances(projectId, paned).catch(() => null) : null;
+    const sent = listedNow.map((s) => {
+      const outcome = outcomes?.get(s.id);
+      const tail = glances?.get(s.id)?.tail;
+      return outcome || tail ? { ...s, ...(outcome ? { outcome } : {}), ...(tail ? { tail } : {}) } : s;
+    });
     const opened = await fold(projectId, shown.sessions, await terminals(projectId));
     return {
       projectId,

@@ -936,6 +936,11 @@ app.whenReady().then(async () => {
     ctx.codeLink.store.patchSession(project.id, sessions[4].id, { state: "running", activity: null });
     ctx.emit("codeLink/changed", project.id);
     await wait(async () => tjs(`${askCard}?.dataset.status === 'run'`), 5000);
+    // A running session's card shows its pane's last line, from the glance its events bring — not what its hooks last said.
+    const paneLast = () => herdr("pane", "read", sessions[4].pane, "--source", "recent", "--lines", "12").split("\n").map((l) => l.replace(/[─-╿]/g, " ").replace(/\s+$/, "")).filter((l) => l.trim() && !/^[>❯$%#│|?]+$/.test(l.trim())).at(-1) ?? "";
+    const cardTail = () => tjs(`${askCard}?.querySelector('[data-testid=cs-row-tail]')?.textContent ?? null`);
+    const tailOnCard = await wait(async () => { const shown = await cardTail(); return !!shown && shown === paneLast(); }, 15000);
+    check("运行中的会话卡片显示它窗格的最后一行（等宽），不是 hooks 报的 activity", tailOnCard, JSON.stringify({ card: await cardTail(), pane: paneLast() }));
 
     // The overview: every session as a big card with its pane's last lines; "see in a pane" goes back to the cells on it.
     await tjs(`document.querySelector('[data-testid=cs-view-overview]').click(); true`);
