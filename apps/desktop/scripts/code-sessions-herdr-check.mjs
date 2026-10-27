@@ -1024,6 +1024,7 @@ app.whenReady().then(async () => {
     const keysText = await tjs(`document.querySelector('[data-testid=cs-keys]')?.textContent ?? ''`);
     const keyLabels = process.platform === "darwin" ? ["⌘D", "⇧⌘D", "⌘W", "⌥⌘", "⌘[", "⌘]", "⌘B", "⌘K"] : ["Ctrl+Shift+D", "Ctrl+Shift+O", "Ctrl+Shift+W", "Alt", "Ctrl+Shift+Tab", "Ctrl+Tab", "Ctrl+Shift+B", "Ctrl+Shift+K"];
     check("底部一行写着沿用的按键", keyLabels.every((k) => keysText.includes(k)), keysText);
+    check("按键栏写「按键和现在一样」「新加的只有 ⌘K」", keysText.includes("按键和现在一样") && keysText.includes("新加的只有"), keysText);
 
     // An assistant conversation, the built-in kind: listed as a card with no pane; opening it brings the app window up on it.
     const opens = [];

@@ -309,6 +309,7 @@ const run = async () => {
   await wait(() => has('.shortcut-row[data-command="palette"]'), "the shortcuts sheet");
   check("the ? sheet lists the person's keys, not the defaults", (await $(`document.querySelector('.shortcut-row[data-command="palette"] .kbd')?.textContent`)) === (mac ? "⇧⌘P" : "Ctrl+Shift+P"));
   check("and lists the tab keys", await has('.shortcut-row[data-command="closeTab"]'));
+  check("and the Terminal window's own keys", ((await $(`document.querySelector('[data-testid="shortcuts-terminal"]')?.textContent`)) ?? "").includes(mac ? "⌘D" : "Ctrl+Shift+D"));
   await shot("keys-03-sheet");
   await press('[data-testid="shortcuts-customize"]');
   check("“Change keys…” opens the pane", await wait(() => has('[data-testid="keybindings-pane"]')));

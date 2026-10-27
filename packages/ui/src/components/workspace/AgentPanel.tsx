@@ -632,11 +632,17 @@ export function AgentPanel({
   // Keyed by a string, so the map is new only when one of them changes state — never on a streamed reply.
   const childKey = barRows.filter((r) => r.threadId && r.parentKey === `thread:${threadId}`).map((r) => `${r.threadId}:${r.status}`).join("|");
   const threadStatus = useMemo(() => new Map<string, BarStatus>(childKey ? childKey.split("|").map((entry) => { const at = entry.lastIndexOf(":"); return [entry.slice(0, at), entry.slice(at + 1) as BarStatus]; }) : []), [childKey]);
+  // ── what waits on the person besides what is open: a line on top, and once one is answered the next comes up ──
+  const currentKey = openSession ? `session:${openSession}` : threadId ? `thread:${threadId}` : null;
+  const waitingElsewhere = barRows.filter((r) => r.status === "wait" && r.key !== currentKey);
+  const goesOn = (settings.data?.sessions as { afterAnswer?: string } | undefined)?.afterAnswer !== "stay";
+  // an ask here says what answering it does: the next one waiting comes up
+  const goesOnNext = goesOn && waitingElsewhere.length > 0;
   // The built-in shell asking before a command, as it does for each one unless set to let reading and checks through.
   const commandAsk = !!askId && progress?.activity === "bash" && ((settings.data?.shell as { approval?: string } | undefined)?.approval ?? "ask") === "ask";
   const transcriptActions = useMemo(
-    () => ({ projectId, runs, cards, engines: engines.data, retryEngines, pending, byKey, busy, threadStatus, commandAsk, onOpenIssue, onOpenThread: openThreadRow, onAnswer: answerRow, onRevert: revertRow, onOpenSettings: settingsRow, onCardAction: cardActionRow }),
-    [projectId, runs, cards, engines.data, retryEngines, pending, byKey, busy, threadStatus, commandAsk, onOpenIssue, openThreadRow, answerRow, revertRow, settingsRow, cardActionRow]
+    () => ({ projectId, runs, cards, engines: engines.data, retryEngines, pending, byKey, busy, threadStatus, commandAsk, goesOnNext, onOpenIssue, onOpenThread: openThreadRow, onAnswer: answerRow, onRevert: revertRow, onOpenSettings: settingsRow, onCardAction: cardActionRow }),
+    [projectId, runs, cards, engines.data, retryEngines, pending, byKey, busy, threadStatus, commandAsk, goesOnNext, onOpenIssue, openThreadRow, answerRow, revertRow, settingsRow, cardActionRow]
   );
   const showInTerminal = (sessionId: string, terminalApp: string | null) =>
     void invoke("codeLink.showSession", projectId, sessionId).then((shown) => {
@@ -650,11 +656,7 @@ export function AgentPanel({
     if (row.sessionId) setOpenSession(row.sessionId);
   };
   const sessionRow = shownSession ? barRows.find((r) => r.sessionId === shownSession.id) : undefined;
-  // ── what waits on the person besides what is open: a line on top, and once one is answered the next comes up ──
-  const currentKey = openSession ? `session:${openSession}` : threadId ? `thread:${threadId}` : null;
-  const waitingElsewhere = barRows.filter((r) => r.status === "wait" && r.key !== currentKey);
-  const goesOn = (settings.data?.sessions as { afterAnswer?: string } | undefined)?.afterAnswer !== "stay";
-  const rowName = (r: BarRow) => r.ticket ?? (r.title || t("agentPanel.newThread"));
+  const rowName = (r: BarRow) => (r.ticket && r.title ? `${r.ticket} ${r.title}` : r.title || r.ticket || t("agentPanel.newThread"));
   waitQueue.current.answered = (key: string) => {
     if (!goesOn) return;
     const handled = barRows.find((r) => r.key === key);
@@ -831,6 +833,7 @@ export function AgentPanel({
           backBlocked={sessionHandoff.data?.terminal?.live ? t("handoff.backBlocked", { agent: findEngine(engines.data, shownSession.agent)?.title ?? shownSession.agent }) : undefined}
           onClose={() => setOpenSession(null)}
           onAnswered={() => waitQueue.current.answered(`session:${shownSession.id}`)}
+          goesOnNext={goesOnNext}
           focusSay={sayTo === shownSession.id}
         />
       ) : (

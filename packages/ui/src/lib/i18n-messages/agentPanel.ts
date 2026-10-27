@@ -151,7 +151,7 @@ export const agentPanel = {
     starterGroomPrompt: "Tidy up the backlog: merge duplicates, flag stale tickets, split oversized ones.",
 
     answerPlaceholder: "Answer, or pick an option above…",
-    messagePlaceholder: "Message the assistant…",
+    messagePlaceholder: "Reply, or / for commands",
     queuePlaceholder: "Queue a message — it goes out when this turn ends…",
     queued: "Queued",
     queuedHeld: "Held",
@@ -382,7 +382,7 @@ export const agentPanel = {
     starterGroomPrompt: "帮我整理 backlog：合并重复的、标出过时的、拆开太大的。",
 
     answerPlaceholder: "在此回答，或在上方选择一个选项…",
-    messagePlaceholder: "给助手发消息…",
+    messagePlaceholder: "回复，或 / 打开命令",
     queuePlaceholder: "排队一条消息，本轮结束后自动发出…",
     queued: "排队中",
     queuedHeld: "已暂停",

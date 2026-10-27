@@ -504,7 +504,7 @@ export function CardBlock({ block }: { block: Block & { type: "card" } }) {
  * options combine. The block stays in the transcript after it is answered,
  * dimmed — the chosen value is the user message right below it.
  */
-export function Question({ block, pending, onAnswer, busy, onCommandSettings }: { block: Block & { type: "question" }; pending: PendingView | null; onAnswer: (id: string, value: string | string[]) => void; busy: boolean; /** Asking before a command, as the shell does for every one: the way to the setting that lets reading and checks through. */ onCommandSettings?: () => void }) {
+export function Question({ block, pending, onAnswer, busy, goesOnNext, onCommandSettings }: { block: Block & { type: "question" }; pending: PendingView | null; onAnswer: (id: string, value: string | string[]) => void; busy: boolean; goesOnNext?: boolean; /** Asking before a command, as the shell does for every one: the way to the setting that lets reading and checks through. */ onCommandSettings?: () => void }) {
   const { t } = useI18n();
   const live = pending?.question.id === block.id;
   const [picked, setPicked] = useState<string[]>([]);
@@ -513,6 +513,7 @@ export function Question({ block, pending, onAnswer, busy, onCommandSettings }: 
   return (
     <div className={live ? "q-ask" : "q-ask done"}>
       <span className="q-eyebrow">{live ? t(block.multiple ? "agentPanel.waitingPickAny" : "agentPanel.waitingPickOne") : t("agentPanel.asked")}</span>
+      {live && goesOnNext && <span className="q-next meta-txt" data-testid="ask-goes-on">{t("sessionBar.goesOnNext")}</span>}
       <p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{block.text}</p>
       {live && onCommandSettings && (
         <p className="q-hint meta-txt" data-testid="ask-each-command">

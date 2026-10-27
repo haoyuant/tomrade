@@ -3171,7 +3171,7 @@ export const zhHant: PartialMessages = {
     overviewEmpty: "還沒有工作階段。",
     paneTail: "窗格最近的輸出",
     outcome: "結論：{{text}}",
-    keysNote: "按鍵照舊：",
+    keysNote: "按鍵和現在一樣：",
     keySplitRight: "向右分",
     keySplitDown: "向下分",
     keyClose: "關格子",
