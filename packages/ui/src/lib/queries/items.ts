@@ -92,12 +92,11 @@ export const useClosedFound = (projectId: string, search: string) => {
   return useQuery({ queryKey: keys.itemQuery(projectId, "found", query), queryFn: () => invoke("items.query", query), enabled: !!search.trim() });
 };
 
-/** How many tickets each view holds, counted in SQL: the window would undercount. */
-export function useViewCounts(projectId: string, views: { id: string; query: { filter: FilterClause[] } }[]): Record<string, number> {
-  const spec = views.map((v) => [v.id, v.query.filter] as const);
+/** How many tickets each filter holds, by its id, counted in SQL: the window would undercount. */
+export function useTicketCounts(projectId: string, specs: { id: string; filter: FilterClause[] }[]): Record<string, number> {
   const counts = useQuery({
-    queryKey: keys.itemQuery(projectId, "viewCounts", spec),
-    queryFn: async () => Object.fromEntries(await Promise.all(spec.map(async ([id, filter]) => [id, await invoke("items.count", { projectId, filter, ticketsOnly: true })] as const))),
+    queryKey: keys.itemQuery(projectId, "ticketCounts", specs),
+    queryFn: async () => Object.fromEntries(await Promise.all(specs.map(async ({ id, filter }) => [id, await invoke("items.count", { projectId, filter, ticketsOnly: true })] as const))),
     placeholderData: keepPreviousData
   });
   return counts.data ?? NO_COUNTS;

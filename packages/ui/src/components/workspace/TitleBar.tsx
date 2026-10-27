@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { LAYOUTS, repoPathLabel, type Layout } from "@tomradex/domain";
+import { CLOSED_STATUSES, LAYOUTS, repoPathLabel, type Layout } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { Kbd, Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuLinkItem, MenuRadioItem } from "~/components/ui/menu";
@@ -183,6 +183,8 @@ export function ViewHead({ onOpenViewSettings, onOpenFields, onEditWorkstream }:
   const ws = useWorkspace();
   const { t, tx } = useI18n();
   const repos = useRepos(ws.project.id);
+  // Old done and cancelled tickets the board has not loaded still belong to the view.
+  const shownCount = ws.visible.length + CLOSED_STATUSES.reduce((n, status) => n + ws.closed.hidden(status), 0);
   const wsRepo = ws.workstream?.repoId ? (repos.data ?? []).find((r) => r.id === ws.workstream!.repoId) ?? null : null;
   const checkouts = useRepoCheckouts();
   const wsPath = ws.workstream ? repoPathLabel(ws.workstream.repoPath, wsRepo ? ((checkouts.data ?? []).find((c) => c.remote === normalizeRemote(wsRepo.remote))?.checkout ?? null) : null) : "";
@@ -240,7 +242,7 @@ export function ViewHead({ onOpenViewSettings, onOpenFields, onEditWorkstream }:
               checked={ws.virtual && ws.workstream?.id === b.id}
               name={b.name}
               mark={<Icon name={viewIcon(b.icon)} size={13} />}
-              count={ws.owned.filter((i) => i.boardId === b.id).length}
+              count={ws.workstreamCounts[b.id]}
               onSelect={() => {
                 setSwitcherOpen(false);
                 ws.openWorkstream(b.id);
@@ -280,7 +282,7 @@ export function ViewHead({ onOpenViewSettings, onOpenFields, onEditWorkstream }:
         )}
         {ws.dirty && <span className="tag faint view-dirty">{t("titleBar.unsaved")}</span>}
         <span className="meta-txt">
-          {tx("titleBar.shownOf", { shown: <span className="num">{ws.visible.length}</span>, total: <span className="num">{ws.owned.length}</span> })}
+          {tx("titleBar.shownOf", { shown: <span className="num">{shownCount}</span>, total: <span className="num">{ws.ticketTotal ?? ws.owned.length}</span> })}
         </span>
       </div>
       <Spacer />

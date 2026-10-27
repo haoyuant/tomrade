@@ -21,7 +21,7 @@ export const keys = {
   /** One item by id or key, for when the window left it out. */
   item: (projectId: string, idOrKey: string) => ["items", projectId, "one", idOrKey] as const,
   /** Under `items` like the rest: any write may move what these count or page through. */
-  itemQuery: (projectId: string, kind: "count" | "page" | "found" | "viewCounts", spec: unknown) => ["items", projectId, kind, spec] as const,
+  itemQuery: (projectId: string, kind: "count" | "page" | "found" | "ticketCounts", spec: unknown) => ["items", projectId, kind, spec] as const,
   epicProgress: (projectId: string) => ["items", projectId, "epicProgress"] as const,
   labels: (projectId: string) => ["labels", projectId] as const,
   fields: (projectId: string) => ["fields", projectId] as const,

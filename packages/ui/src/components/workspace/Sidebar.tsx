@@ -150,9 +150,9 @@ function NewViewRow() {
  */
 function WorkstreamRow({ board, repo, onEdit }: { board: Board; repo: Repo | null; onEdit: () => void }) {
   const { t } = useI18n();
-  const { owned, openWorkstream, virtual, workstream } = useWorkspace();
+  const { workstreamCounts, openWorkstream, virtual, workstream } = useWorkspace();
   const current = virtual && workstream?.id === board.id;
-  const count = owned.filter((i) => i.boardId === board.id).length;
+  const count = workstreamCounts[board.id];
   const checkouts = useRepoCheckouts();
   const path = repoPathLabel(board.repoPath, repo ? ((checkouts.data ?? []).find((c) => c.remote === normalizeRemote(repo.remote))?.checkout ?? null) : null);
   return (

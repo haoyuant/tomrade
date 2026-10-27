@@ -40,7 +40,7 @@ import {
   useLabels,
   useProjects,
   useUpdateView,
-  useViewCounts,
+  useTicketCounts,
   useViewRanks,
   useViews
 } from "~/lib/queries";
@@ -83,6 +83,10 @@ export interface WorkspaceValue {
   epicProgress: Map<string, { done: number; total: number }>;
   /** How many tickets each saved view holds, by view id. */
   viewCounts: Record<string, number>;
+  /** How many tickets each workstream holds, by board id. */
+  workstreamCounts: Record<string, number>;
+  /** How many tickets the project holds; absent until counted. */
+  ticketTotal: number | undefined;
   /** The done and cancelled tickets of this view the renderer does not hold yet. */
   closed: ClosedView;
   epics: Item[];
@@ -338,7 +342,20 @@ export function WorkspaceProvider({
   const pages = useClosedPages(projectId, stableFilter, search, limits);
   const found = useClosedFound(projectId, search);
   const closedTotals = useClosedTotals(projectId, stableFilter, search);
-  const viewCounts = useViewCounts(projectId, views.data ?? []);
+  // The window holds only part of the project, so every count beside a name is asked of the main process.
+  const countSpecs = useMemo(
+    () => [
+      { id: "*", filter: [] },
+      ...(views.data ?? []).map((v) => ({ id: `v:${v.id}`, filter: v.query.filter })),
+      ...(boards.data ?? []).map((b) => ({ id: `w:${b.id}`, filter: [{ field: "board", op: "in" as const, values: [b.id] }] }))
+    ],
+    [views.data, boards.data]
+  );
+  const counts = useTicketCounts(projectId, countSpecs);
+  const [viewCounts, workstreamCounts] = useMemo(() => {
+    const pick = (prefix: string) => Object.fromEntries(Object.entries(counts).flatMap(([id, n]) => (id.startsWith(prefix) ? [[id.slice(prefix.length), n]] : [])));
+    return [pick("v:"), pick("w:")];
+  }, [counts]);
   const [donePage, cancelledPage] = [pages[0]?.data, pages[1]?.data];
   const all = useMemo(() => mergeById([items.data, donePage, cancelledPage, found.data]), [items.data, donePage, cancelledPage, found.data]);
   const progressMap = useMemo(() => new Map(Object.entries(epicProgress.data ?? {})), [epicProgress.data]);
@@ -471,6 +488,8 @@ export function WorkspaceProvider({
       owned,
       epicProgress: progressMap,
       viewCounts,
+      workstreamCounts,
+      ticketTotal: counts["*"],
       closed,
       epics,
       epicNames,
@@ -527,6 +546,8 @@ export function WorkspaceProvider({
     epicNames,
     progressMap,
     viewCounts,
+    workstreamCounts,
+    counts,
     closedTotals,
     closedWindow,
     limits,

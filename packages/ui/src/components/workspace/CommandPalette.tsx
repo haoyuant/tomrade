@@ -197,7 +197,7 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
                   <Command.Item key={b.id} value={b.name} className="palette-row" onSelect={() => run(() => ws.openWorkstream(b.id))}>
                     <Icon name={viewIcon(b.icon)} size={14} style={{ color: "var(--meta)" }} />
                     <span className="p-label">{b.name}</span>
-                    <span className="card-id">{ws.owned.filter((i) => i.boardId === b.id).length}</span>
+                    <span className="card-id">{ws.workstreamCounts[b.id] ?? ""}</span>
                   </Command.Item>
                 ))}
               </Command.Group>
