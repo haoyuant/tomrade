@@ -1397,14 +1397,14 @@ const run = async () => {
   await sleep(300);
 
   // ── ⌘K starts on the words three ways: ↵ the built-in assistant (above), ⌥↵ a terminal agent in a background pane, ⇧↵ in a Terminal window cell ──
-  const loose = [];
+  const looseStarts = [];
   const startLooseWas = ctx.codeLink.startLoose.bind(ctx.codeLink);
   ctx.codeLink.startLoose = async (projectId, input) => {
-    loose.push(input);
+    looseStarts.push(input);
     const s = ctx.codeLink.store.createSession(projectId, { repoId: "", branch: "", itemIds: [], mode: "terminal", agent: input.engine ?? "termcli", threadId: null, device: "check" });
     // no pane on the session itself: a herdr here would find it gone
     ctx.codeLink.store.patchSession(projectId, s.id, { title: input.prompt, terminal: "iTerm.app", state: "running", lastEventAt: Date.now() });
-    return { ok: true, continued: false, threadId: null, sessionId: s.id, branch: "", worktree: null, cwd: work, mode: "terminal", command: "cli", launched: true, pane: `w9:p${loose.length}`, engine: input.engine ?? "termcli" };
+    return { ok: true, continued: false, threadId: null, sessionId: s.id, branch: "", worktree: null, cwd: work, mode: "terminal", command: "cli", launched: true, pane: `w9:p${looseStarts.length}`, engine: input.engine ?? "termcli" };
   };
   const inCell = [];
   const showSessionWas = ctx.codeLink.showSession;
@@ -1419,14 +1419,14 @@ const run = async () => {
     ways.length === 3 && ways[0][0] === "builtin" && /Built-in assistant.*↵/.test(ways[0][1]) && ways[1][0] === "pane" && /background pane.*⌥↵/.test(ways[1][1]) && ways[2][0] === "cell" && /new cell of the Terminal window.*⇧↵/.test(ways[2][1]), ways);
   check("one is recommended, and a line under them says how to choose", (await present('[data-testid="palette-start"] .is-recommended')) && /Both change code/.test(await $(`document.querySelector('.palette-start-foot')?.textContent ?? ''`)));
   await $(`document.querySelector('.palette-input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', altKey: true, bubbles: true, cancelable: true }));true`);
-  const looseSession = (title) => ctx.codeLink.store.sessions(alpha.id).find((s) => s.title === title)?.id;
+  const looseSessionOf = (title) => ctx.codeLink.store.sessions(alpha.id).find((s) => s.title === title)?.id;
   check("⌥↵ starts the terminal agent on those words in a background pane: no Terminal window, the panel selects it",
-    (await until(async () => loose.length === 1 && !!looseSession("vqkz jumble") && (await sessionView())?.id === looseSession("vqkz jumble"), 60)) && loose[0].prompt === "vqkz jumble" && inCell.length === 0, { loose, view: await sessionView(), inCell });
+    (await until(async () => looseStarts.length === 1 && !!looseSessionOf("vqkz jumble") && (await sessionView())?.id === looseSessionOf("vqkz jumble"), 60)) && looseStarts[0].prompt === "vqkz jumble" && inCell.length === 0, { looseStarts, view: await sessionView(), inCell });
   await openPalette();
   await typePalette("zqkv wobble");
   await sleep(300);
   await enterPalette(true);
-  check("⇧↵ starts it the same way and puts it in a Terminal window cell", (await until(() => Promise.resolve(loose.length === 2 && inCell.length === 1), 60)) && loose[1].prompt === "zqkv wobble" && inCell[0] === looseSession("zqkv wobble"), { loose, inCell });
+  check("⇧↵ starts it the same way and puts it in a Terminal window cell", (await until(() => Promise.resolve(looseStarts.length === 2 && inCell.length === 1), 60)) && looseStarts[1].prompt === "zqkv wobble" && inCell[0] === looseSessionOf("zqkv wobble"), { looseStarts, inCell });
   // the session bar's +: ⌘K on its ways to start, nothing else
   await until(() => present(".ai .sbar"), 20);
   await press(`document.querySelector('.ai .sbar-new') ?? document.querySelector('.ai .sbar-head button[aria-label="New thread"]')`);
