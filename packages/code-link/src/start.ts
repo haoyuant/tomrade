@@ -143,6 +143,9 @@ const blockedGate = (item: Item, blockers: Item[]): StartResult => ({
  * ticket's workstream, a worktree on the ticket's branch, a session record,
  * and either a headless run or the user's own terminal.
  */
+/** What an agent resuming its own session in the background is told first. */
+const RESUME_PROMPT = "Tomrade: this conversation was taken up again from its look back. Carry on with what was asked last; if nothing is pending, say in one line where it stands and wait for the person.\n";
+
 export class Starter {
   constructor(private readonly host: StartHost) {}
 
@@ -446,6 +449,35 @@ export class Starter {
     this.host.notify(projectId);
     const fallback = this.host.herdr.fallbackNote(locale, launch);
     return { ok: true, continued: true, threadId: thread.id, sessionId: session.id, branch: "", worktree: null, cwd: input.cwd, mode: "terminal", command, launched: launch.launched, pane: launch.paneId ?? null, engine: engineId, ...(fallback ? { warnings: [fallback] } : {}) };
+  }
+
+  /**
+   * An ended terminal session on no ticket, taken up again in the background: its agent resumes the same session id
+   * in the folder it ran in, in a terminal pane nothing brings to the front, as the same session — the bar shows it
+   * running again. One process on a session at a time: a session still live is left as it is.
+   */
+  async resumeSession(projectId: string, sessionId: string): Promise<StartResult> {
+    const { ctx, store } = this.host;
+    const session = store.session(projectId, sessionId);
+    const agent = ctx.get("agent");
+    if (!agent) return { ok: false, gate: "engine", message: "the agent plugin is not loaded" };
+    if (!session?.externalId || !session.cwd) return { ok: false, gate: "workdir", message: "this conversation cannot be taken up again here" };
+    if (session.state !== "ended" && session.state !== "lost") return { ok: false, gate: "engine", message: "this conversation is still running" };
+    if (!ctx.get("mcp")?.url) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
+    const picked = await this.pickEngine(agent, session.agent, true);
+    if (!picked.ok) return { ok: false, gate: "engine", message: picked.reason, engine: session.agent };
+    const engineId = picked.engine.id;
+    const terminalSettings = await this.host.herdr.terminalSettings();
+    const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), RESUME_PROMPT);
+    if (!files) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
+    const { bin, path: onPath } = await binOf(agent, engineId);
+    const command = this.command(terminalSettings, engineId, session, files, session.cwd, agent.optionsOf({ options: null }, engineId), bin);
+    const workspace = this.workspaceOf(projectId);
+    const launch = await this.host.herdr.launch({ cwd: session.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir, path: onPath, label: session.title || picked.engine.title, ...(workspace ? { workspace } : {}) }, terminalSettings.terminal);
+    const now = Date.now();
+    store.patchSession(projectId, session.id, { state: "running", endedAt: null, activity: null, lastEventAt: now, ...(launch.paneId ? { herdrPane: launch.paneId } : {}) });
+    this.host.notify(projectId);
+    return { ok: true, continued: true, threadId: null, sessionId: session.id, branch: session.branch, worktree: session.worktree, cwd: session.cwd, mode: "terminal", command, launched: launch.launched, pane: launch.paneId ?? null, engine: engineId };
   }
 
   /** The thread's terminal session whose agent still runs, if any. */

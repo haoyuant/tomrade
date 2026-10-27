@@ -69,8 +69,12 @@ export interface ReviewRow {
   said: string | null;
   where: "pane" | "outside" | "panel";
   threadId: string | null;
+  /** The conversation this one wrote code in the background for; the list sets it in under that one. */
+  parentId?: string | null;
   /** Its agent can take the conversation up again by its id, in a new terminal. */
   resumable: boolean;
+  /** Ended on no ticket, with its agent's session id and the folder it ran in: it can go on in the background, as itself. */
+  continuable?: boolean;
   startedAt: number;
   endedAt: number;
 }
@@ -358,6 +362,7 @@ export class Review {
         where: s.herdrPane ? "pane" : s.mode === "headless" ? "panel" : "outside",
         threadId: s.threadId,
         resumable: !!resumeCommand(s.agent, s.externalId),
+        continuable: !tickets.length && !!s.externalId && !!s.cwd && (s.state === "ended" || s.state === "lost"),
         startedAt: s.startedAt,
         endedAt: s.endedAt ?? s.lastEventAt ?? s.startedAt
       };
@@ -379,7 +384,7 @@ export class Review {
   private threadRow(projectId: string, th: ThreadSummary): ReviewRow {
     const item = th.itemId ? this.deps.ctx.items.get(projectId, th.itemId) : null;
     const tickets: ReviewTicket[] = item ? [{ itemId: item.id, key: item.key, title: item.title, status: item.status, pr: null, commits: 0 }] : [];
-    return { id: th.id, kind: th.archived ? "thread" : "idle", agent: th.engine, title: th.title || item?.title || "", tickets, asked: null, commits: 0, pr: null, said: th.said ?? null, where: "panel", threadId: th.id, resumable: false, startedAt: th.createdAt, endedAt: th.updatedAt };
+    return { id: th.id, kind: th.archived ? "thread" : "idle", agent: th.engine, title: th.title || item?.title || "", tickets, asked: null, commits: 0, pr: null, said: th.said ?? null, where: "panel", threadId: th.id, parentId: th.parentId, resumable: false, startedAt: th.createdAt, endedAt: th.updatedAt };
   }
 
   /** Put-away (or open and idle) assistant conversations, a page at a time, leaving out those a session speaks for and those running. */

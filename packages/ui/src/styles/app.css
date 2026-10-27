@@ -1608,11 +1608,14 @@ button.cs-convo-line { font: inherit; text-align: left; background: none; border
 .ai-review-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: var(--text-xs); color: var(--meta); }
 .ai-review-chip { font-size: var(--text-xs); border: 1px solid var(--border-input); border-radius: 999px; padding: 1px 9px; color: var(--fg); }
 button.ai-review-chip { font-family: inherit; background: none; cursor: pointer; }
+.ai-review-row[data-depth="1"] { margin-left: var(--space-4); }
+.ai-review-hint { margin: 0 0 var(--space-2); }
 button.ai-review-chip:disabled { cursor: default; }
 button.ai-review-chip:hover:not(:disabled), .ai-review-chip[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
 .ai-review-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .ai-review-lens { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--border-soft, var(--border)); flex-shrink: 0; }
 .ai-review-lens > .seg > button { min-width: 72px; }
+.ai-review-lens > .seg > button:disabled { opacity: 0.45; cursor: default; background: transparent; }
 .ai-review-lens-note { font-size: var(--text-xs); color: var(--meta); min-width: 0; }
 .ai-review-segs { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-2) var(--space-4) var(--space-4); display: flex; flex-direction: column; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .ai-review-seg { border-bottom: 1px solid var(--border-soft, var(--border)); }

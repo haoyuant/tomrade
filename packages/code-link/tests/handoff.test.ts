@@ -187,3 +187,22 @@ it("lets a built-in assistant's conversation claim a ticket for the code it turn
     await ctx.fiber.dispose();
   }
 });
+
+it("takes an ended session on no ticket up again in the background, as the same session, and only once", { timeout: 30_000 }, async () => {
+  const { ctx, project, codeLink, fake } = await machine();
+  try {
+    const cwd = path.join(root, "loose");
+    fs.mkdirSync(cwd, { recursive: true });
+    const session = codeLink.store.createSession(project.id, { repoId: "", branch: "", itemIds: [], mode: "terminal", agent: "fake-cli", threadId: null, device: "here", externalId: "cli-9" });
+    codeLink.store.patchSession(project.id, session.id, { cwd, title: "Loose chat", state: "ended", endedAt: Date.now() });
+    const resumed = await codeLink.resumeSession(project.id, session.id);
+    expect(resumed).toMatchObject({ ok: true, sessionId: session.id, launched: true });
+    expect(codeLink.store.session(project.id, session.id)).toMatchObject({ state: "running", endedAt: null, externalId: "cli-9" });
+    expect(fs.readFileSync(path.join(codeLink.sessionDir(session.id), "run.command"), "utf8")).toContain("--resume cli-9");
+    // running again: a second process on the same session is refused
+    expect(await codeLink.resumeSession(project.id, session.id)).toMatchObject({ ok: false });
+  } finally {
+    fake.close();
+    await ctx.fiber.dispose();
+  }
+});
