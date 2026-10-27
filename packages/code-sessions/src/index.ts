@@ -10,7 +10,7 @@ import type {} from "@tomradex/db";
 import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/items";
 import type {} from "@tomradex/settings";
-import { BUILTIN_TERMINAL, MCP_AGENT, WINDOWS_TERMINAL, panesOf, resumeCommand, type CodeLink } from "@tomradex/code-link";
+import { BUILTIN_TERMINAL, MCP_AGENT, WINDOWS_TERMINAL, panesOf, resumeCommand, type CodeLink, type ReviewRow } from "@tomradex/code-link";
 import { PROMPT_LINES, promptOnScreen } from "@tomradex/code-link/prompt";
 import { PANEL_SURFACES } from "@tomradex/agent";
 import type { DesktopSurface } from "@tomradex/desktop-surface";
@@ -75,7 +75,7 @@ interface Saved {
   closed?: Record<string, ClosedTerminalRow[]>;
 }
 
-/** How many closed terminals a project's archive keeps. */
+/** How many closed terminals a project's History keeps. */
 export const CLOSED_TERMINALS_MAX = 50;
 
 type SavedTerminal = Omit<TerminalRow, "sessionId" | "note" | "agentTitle" | "agentStatus" | "running"> & { pane: string };
@@ -261,11 +261,6 @@ export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, it
     .sort((a, b) => Number(b.state !== "ended" && b.state !== "lost") - Number(a.state !== "ended" && a.state !== "lost") || Number(b.needsYou) - Number(a.needsYou) || b.startedAt - a.startedAt);
 }
 
-/** How many archived conversations a search reads, newest first. */
-const ARCHIVE_SEARCH_MAX = 100;
-/** How much of one conversation a search keeps to look in. */
-const SAID_MAX = 1024 * 1024;
-
 /** How many earlier sessions a pane's history keeps, newest kept. */
 export const PANE_HISTORY_MAX = 20;
 
@@ -303,8 +298,8 @@ interface Open {
   closed: boolean;
   /** The latest ask to show a session, kept in every state so a window that opens late still sees it. */
   reveal: WindowState["reveal"];
-  /** The archive is open: its rows go with every state. */
-  archive: boolean;
+  /** History is open: a change to the conversations is said, so it reads its first page again. */
+  history: boolean;
   /** States begun, and the newest one shown: one that finishes after a newer one is not shown. */
   states: { begun: number; shown: number };
   /** The panes of its terminals followed in herdr, so an agent's status there shows as it changes. */
@@ -436,6 +431,7 @@ function apply(ctx: Context, config: Config) {
   const threadsChanged = (projectId: string) => {
     if (!open.has(projectId)) return;
     staleThreads.add(projectId);
+    historyChanged(projectId);
     if (refreshSoon.has(projectId)) return;
     const timer = setTimeout(() => {
       refreshSoon.delete(projectId);
@@ -455,7 +451,7 @@ function apply(ctx: Context, config: Config) {
 
   /** A project's closed terminals with a recording still there to play back. */
   const closedTerminals = (projectId: string): ClosedTerminalRow[] => (stateOf(config.stateFile).closed?.[projectId] ?? []).filter((t) => recorder.has(t.pane, t.startedAt, t.endedAt));
-  /** A terminal that went: kept for the archive when its pane was recorded, the oldest making room past CLOSED_TERMINALS_MAX. */
+  /** A terminal that went: kept for History when its pane was recorded, the oldest making room past CLOSED_TERMINALS_MAX. */
   const rememberClosed = (projectId: string, gone: SavedTerminal[], endedAt = Date.now()) => {
     const kept = gone.filter((t) => recorder.has(t.pane, t.startedAt, endedAt)).map((t): ClosedTerminalRow => ({ id: t.id, title: t.title, cwd: t.cwd, pane: t.pane, startedAt: t.startedAt, endedAt }));
     if (!kept.length) return;
@@ -657,14 +653,11 @@ function apply(ctx: Context, config: Config) {
     const preset = presets.find((p) => p.id === saved.defaultPreset);
     const warning = [shown.warning, broken || (remembered !== undefined && !isLayout(remembered)) ? words()("stateUnreadable") : null].filter(Boolean).join(" · ") || null;
     const layout = isLayout(remembered) ? remembered : preset ? preset.layout : fresh();
-    // An ended session stays with the state while a cell shows it; the rest wait in the archive.
+    // An ended session stays with the state while a cell shows it; the rest wait in History.
     const inCells = new Set(leafIds(layout));
     // Ticket work, and conversations someone had; a start nobody spoke to is not kept.
     const ended = shown.sessions.filter((s) => s.endedAt !== null && (s.itemId || s.conversation || s.prompted));
     const win = open.get(projectId);
-    // Read with the layout, before anything is awaited: a state begun before a pick from the archive was saved must
-    // still carry that session, or the window would drop it from the cell it was just put in.
-    const archiveOpen = win?.archive ?? false;
     const sent = await titled(shown.sessions.filter((s) => s.endedAt === null || inCells.has(s.id) || s.id === win?.reveal?.sessionId), savedTerminals(projectId));
     const opened = await fold(projectId, shown.sessions, await terminals(projectId));
     return {
@@ -691,7 +684,6 @@ function apply(ctx: Context, config: Config) {
       defaultPreset: preset?.id ?? null,
       autoPlace: saved.autoPlace !== false,
       reveal: win?.reveal ?? null,
-      archive: { count: ended.length, rows: archiveOpen ? [...ended].sort((a, b) => b.endedAt! - a.endedAt!) : null, terminals: archiveOpen ? closedTerminals(projectId).sort((a, b) => b.endedAt - a.endedAt) : null },
       closedTerminals: closedTerminals(projectId).filter((t) => inCells.has(t.id)),
       history: paneHistory(ended, [...opened.map((t) => t.pane), ...sent.map((r) => r.pane)]),
       folded: saved.folded?.[projectId] === true
@@ -802,40 +794,25 @@ function apply(ctx: Context, config: Config) {
     send(win, message);
   };
 
-  /** What each archived conversation said, lowercased, by session and when it ended: an ended one does not change. */
-  const said = new Map<string, string>();
-  /** Each window's newest search: an older one still reading stops. */
-  const searching = new WeakMap<Open, number>();
-  let searches = 0;
   /**
-   * The archived sessions whose conversation says `query`, newest first and the newest `ARCHIVE_SEARCH_MAX` only, read
-   * from their agents' records one at a time, giving way between them. Titles, tickets, agents and folders the window
-   * matches itself.
+   * What goes with a page of History or a search's finds: the window's rows for the coding sessions among them, so
+   * one picked goes into a cell as an ended session; and the agents' names, which the panel's rows carry only by id.
    */
-  const searchArchive = async (projectId: string, win: Open, query: string) => {
-    const turn = ++searches;
-    searching.set(win, turn);
-    const needle = query.trim().toLowerCase();
-    if (!needle) return;
-    const ended = listed(projectId).sessions
-      .filter((s) => s.endedAt !== null && (s.itemId || s.conversation || s.prompted))
-      .sort((a, b) => b.endedAt! - a.endedAt!)
-      .slice(0, ARCHIVE_SEARCH_MAX);
-    const ids: string[] = [];
-    for (const s of ended) {
-      if (win.closed || searching.get(win) !== turn) return;
-      const key = `${s.id}:${s.endedAt}`;
-      let text = said.get(key);
-      if (text === undefined) {
-        const read = ctx.codeLink.conversation?.(projectId, s.id) ?? null;
-        text = (read?.lines ?? []).map((l) => l.text).join("\n").toLowerCase().slice(0, SAID_MAX);
-        said.set(key, text);
-        if (said.size > ARCHIVE_SEARCH_MAX * 2) said.delete(said.keys().next().value!);
-        await new Promise<void>((resolve) => setImmediate(resolve));
-      }
-      if (text.includes(needle)) ids.push(s.id);
+  const historyRows = (projectId: string, rows: ReviewRow[]): { sessions: SessionRow[]; agents: Record<string, string> } => {
+    const wanted = new Set(rows.filter((r) => r.kind === "session").map((r) => r.id));
+    const sessions = wanted.size ? listed(projectId).sessions.filter((s) => wanted.has(s.id)) : [];
+    const engines = ctx.get("agent");
+    const agents: Record<string, string> = {};
+    for (const r of rows) {
+      const title = engines?.engineOf(r.agent)?.title;
+      if (title) agents[r.agent] = title;
     }
-    if (searching.get(win) === turn) post(win, { type: "archiveFound", query, ids });
+    return { sessions, agents };
+  };
+  /** A session ended, or a conversation moved, while a window has History open: it reads its first page again. */
+  const historyChanged = (projectId: string) => {
+    const win = open.get(projectId);
+    if (win && !win.closed && win.surface && win.history) post(win, { type: "historyChanged" });
   };
 
   /**
@@ -1074,13 +1051,24 @@ function apply(ctx: Context, config: Config) {
       case "autoPlace":
         save(config.stateFile, { autoPlace: m.on });
         return refreshAll();
-      case "archiveSearch":
-        return void searchArchive(projectId, win, typeof m.query === "string" ? m.query : "");
-      case "archive":
-        win.archive = m.open;
-        // Conversations from before titles were kept get theirs from the agent's transcript, once.
+      case "history":
+        win.history = m.open;
+        // Conversations from before titles were kept get theirs from the agent's transcript, once, before the first page is read.
         if (m.open) ctx.codeLink.findTitles?.(projectId);
-        return refresh(projectId);
+        return;
+      case "historyList": {
+        const before = m.before ?? null;
+        const query = typeof m.query === "string" ? m.query : undefined;
+        const page = ctx.codeLink.review.list(projectId, { before, query });
+        // The closed terminals go with the first page: few, and the window filters them itself.
+        const terminals = before ? null : closedTerminals(projectId).sort((a, b) => b.endedAt - a.endedAt);
+        return post(win, { type: "historyPage", token: m.token, page, ...historyRows(projectId, page.rows), terminals });
+      }
+      case "historySaid": {
+        const found = await ctx.codeLink.review.saidIn(projectId, typeof m.query === "string" ? m.query : "");
+        if (win.closed) return;
+        return post(win, { type: "historySaid", token: m.token, found, ...historyRows(projectId, found.rows) });
+      }
       case "fold":
         save(config.stateFile, { folded: { ...stateOf(config.stateFile).folded, [projectId]: m.folded } });
         return refresh(projectId);
@@ -1221,7 +1209,7 @@ function apply(ctx: Context, config: Config) {
       return refresh(projectId);
     }
     const w = words();
-    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), held: new Map(), timer: setInterval(() => void refresh(projectId), BRIDGE_POLL_MS), closed: false, reveal: asked, archive: false, states: { begun: 0, shown: 0 }, follows: new Map(), frames: new Map(), recordings: new Map(), onPane: new Map(), warnedRecording: false };
+    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), held: new Map(), timer: setInterval(() => void refresh(projectId), BRIDGE_POLL_MS), closed: false, reveal: asked, history: false, states: { begun: 0, shown: 0 }, follows: new Map(), frames: new Map(), recordings: new Map(), onPane: new Map(), warnedRecording: false };
     win.timer.unref?.();
     open.set(projectId, win);
     try {
@@ -1271,7 +1259,10 @@ function apply(ctx: Context, config: Config) {
     });
   };
 
-  ctx.on("codeLink/changed", (projectId) => void refresh(projectId));
+  ctx.on("codeLink/changed", (projectId) => {
+    historyChanged(projectId);
+    void refresh(projectId);
+  });
   // A question asked or answered, a run beginning or ending: what a conversation's card shows. Not each message or
   // streamed word. The event names only the thread: a conversation no window lists yet comes in with its run's start.
   ctx.on("agent/event", (threadId, event) => {

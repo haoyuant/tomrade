@@ -63,7 +63,7 @@ export function order(a: HereRow, b: HereRow): number {
  * the row. A session without a pane here whose conversation is the assistant's rides on that conversation's row. Rows
  * on one pane — an agent working several tickets side by side — sit together, where the first of them would. A conversation
  * writing code in the background for another sits right under it, the same way. An ended session a cell shows to read
- * closes the list, with what came of it; the rest are the archive's.
+ * closes the list, with what came of it; the rest are History's.
  */
 export function sidebarRows(sessions: SessionRow[], terminals: TerminalRow[], threads: ThreadRow[] = []): { here: HereRow[]; away: SessionRow[] } {
   const live = sessions.filter((s) => s.endedAt === null);
@@ -108,9 +108,3 @@ export function bundles(rows: HereRow[]): HereRow[][] {
 
 /** What a session goes by in the list: its ticket, else its branch, else its agent. */
 export const sessionName = (s: SessionRow): string => s.key ?? (s.branch || s.agentName || s.agent);
-
-/** Whether an archived session's title, ticket, agent, branch or folder holds the search, any case. */
-export const matchesArchive = (s: SessionRow, needle: string): boolean => {
-  const n = needle.trim().toLowerCase();
-  return !n || [s.key, s.title, s.conversation, s.agentName, s.agent, s.branch, s.cwd, s.worktree].some((v) => !!v && v.toLowerCase().includes(n));
-};
