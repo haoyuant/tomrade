@@ -131,10 +131,11 @@ export class Handoff {
     let result;
     if (thread.itemId) {
       // The ticket's tracking moves to the terminal session: the headless one ends here, so nothing shows twice.
-      for (const s of this.host.store.sessions(projectId, { live: true })) {
-        if (s.threadId === threadId && s.mode === "headless") this.host.sessions.end(projectId, s.id, "ended", true, "the conversation went to a terminal");
-      }
+      const headless = this.host.store.sessions(projectId, { live: true }).filter((s) => s.threadId === threadId && s.mode === "headless");
+      for (const s of headless) this.host.sessions.end(projectId, s.id, "ended", true, "the conversation went to a terminal");
       result = await this.host.starter.start(projectId, thread.itemId, { mode: "terminal", threadId, engine: engine.id });
+      // Refused: it stays here, and so does the ticket's tracking.
+      if (!result.ok && headless[0]) this.ensureHeadlessSession(projectId, thread, headless[0], agent.answering(thread.engine));
     } else {
       const where = await agent.workdir(projectId, threadId, { create: true });
       if (where.problem) return { ok: false, message: where.problem };

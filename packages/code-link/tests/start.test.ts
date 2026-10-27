@@ -2523,6 +2523,13 @@ describe("starting tickets from a conversation", () => {
     await until(() => agent.store.run(project.id, started.ok ? started.runId! : "")?.status === "done");
     expect(codeLink.handoffOf(project.id, threadId)).toEqual({ where: "here", toTerminal: { ok: true }, terminal: null });
 
+    // a Start that is refused (the checkout went away) leaves it here, and the ticket still tracked on a headless session
+    fs.renameSync(checkout!, `${checkout}-away`);
+    expect(await codeLink.toTerminal(project.id, threadId)).toMatchObject({ ok: false });
+    fs.renameSync(`${checkout}-away`, checkout!);
+    expect(codeLink.sessionsOf(project.id, item.id).filter((s) => s.mode === "headless" && s.state !== "ended")).toEqual([expect.objectContaining({ threadId, state: "idle" })]);
+    expect(agent.store.thread(project.id, threadId)).toMatchObject({ surface: "assistant" });
+
     // to the terminal: Start's continue, in the thread's worktree, resuming the session the headless run left; the headless session ends quietly
     const moved = await codeLink.toTerminal(project.id, threadId);
     expect(moved).toMatchObject({ ok: true, launched: true, pane: "w1:p1" });
