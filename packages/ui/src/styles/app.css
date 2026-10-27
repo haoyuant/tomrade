@@ -1692,6 +1692,13 @@ button.ai-review-chip:hover:not(:disabled), .ai-review-chip[aria-pressed="true"]
 .sbar-new .sbar-dot-face { border-style: solid; color: var(--muted); }
 .sbar-new-badge { font-size: 9px; line-height: 14px; padding: 0 5px; border-radius: 999px; background: var(--accent-light); color: var(--accent-on); flex-shrink: 0; }
 .sbar-dot-face .sbar-new-badge { position: absolute; top: -4px; right: -8px; }
+/* a start under way, before its session is up: a dashed ring */
+.sbar-dot[data-status="start"] { cursor: default; }
+.sbar-dot[data-status="start"] .sbar-dot-face { border: 2px dashed var(--accent-light); }
+.sbar-card[data-status="start"] { cursor: default; border-style: dashed; border-color: var(--accent-light); }
+.start-starting { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; color: var(--accent-light); font-size: var(--text-sm); }
+.start-starting-mark { width: 10px; height: 10px; flex: none; border-radius: 50%; border: 2px dashed var(--accent-light); }
+.card-starting { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--accent-light); }
 /* a conversation opened under another, to write its code in the background: set in under its parent */
 .sbar-dot[data-depth="1"] { margin-left: 10px; }
 .sbar-dot[data-depth="1"] .sbar-dot-face { width: 28px; height: 28px; font-size: 10px; }

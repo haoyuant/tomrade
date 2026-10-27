@@ -153,8 +153,12 @@ try {
   // backend reads the file from disk on every ask, and a fresh window asks again.
   fs.writeFileSync(path.join(work, "code-link.json"), JSON.stringify({ mode: "run", engine: "unboxed", options: { droid: "on" }, permissionMode: "workspace", updatedAt: Date.now() }));
   win.webContents.reload();
-  await wait(() => has('[data-testid="start-ticket"]'));
-  await click('[data-testid="start-ticket"]');
+  // Remembered: one click starts that way; ▾ holds the other ways and the full dialog.
+  await wait(() => has('[data-testid="start-ways"]'));
+  assert("a remembered start is one click, named by its agent", (await js(`document.querySelector('[data-testid="start-quick"]').textContent`)).includes("Start · Unboxed"));
+  await press('[data-testid="start-ways"]');
+  await wait(() => has(".menu.is-floating"));
+  await js(`[...document.querySelectorAll('.menu.is-floating .menu-row')].find((r) => r.textContent.includes('Full settings')).click(); true`);
   await wait(() => has('[data-testid="start-dialog"]'));
   assert("the dialog opens on the agent and permission the last start here used", await eventually(() => js(`document.querySelector('#stEngine').value === 'unboxed' && document.querySelector('#stPermission')?.value === 'workspace'`)));
   assert("the dialog says the choices came from the last start", await has('[data-testid="start-remembered"]'));

@@ -10,6 +10,7 @@ import { keyLabel } from "~/lib/keybindings";
 import { outcomeLine } from "~/lib/review";
 import type { BarRow, BarStatus } from "~/lib/sessionBar";
 import { rangeLabel, spanLabel } from "~/lib/sessionTime";
+import type { Starting } from "~/lib/startWays";
 import { askText } from "~/lib/terminalSession";
 
 export type BarMode = "rail" | "cards";
@@ -50,8 +51,10 @@ function RowActions({ row, onArchive, onDelete }: { row: BarRow; onArchive: (thr
  * The session bar on the panel's right edge: a column of dots to switch by, or cards that say what each is doing.
  * Memoized: the panel renders every frame a reply streams, and the bar has nothing new to show then.
  */
-export const SessionBar = memo(function SessionBar({ rows, openKey, mode, peeks = true, engines, pendings, onMode, onPick, onAnswer, onNew, onHistory, onArchive, onDelete }: {
+export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mode, peeks = true, engines, pendings, onMode, onPick, onAnswer, onNew, onHistory, onArchive, onDelete }: {
   rows: BarRow[];
+  /** Starts under way, before their sessions are there: on top, a dashed ring. */
+  starting: readonly Starting[];
   openKey: string | null;
   mode: BarMode;
   /** Hovering or focusing a dot shows what it is doing; off, the dots show only their state. */
@@ -183,6 +186,15 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, peeks 
           </span>
         )}
         <div className="sbar-dots" onScroll={() => { hold(); setPeek(null); }}>
+          {starting.map((s) => (
+            <span key={s.id} className="sbar-dot is-starting" data-status="start" role="status" aria-label={`${s.ticket} ${s.title}, ${t("codeLink.startingLine", { agent: s.agent })}`}>
+              <span className="sbar-dot-face">
+                {s.ticket.replace(/^.*-/, "")}
+                <span className="sbar-new-badge">{t("sessionBar.new")}</span>
+              </span>
+              <span className="sbar-dot-where">{t("sessionBar.statusStarting")}</span>
+            </span>
+          ))}
           {live.map(dot)}
           {ended.length > 0 && <span className="sbar-rule" />}
           {ended.map(dot)}
@@ -233,6 +245,16 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, peeks 
         ))}
       </div>
       <div className="sbar-cards">
+        {(filter === "all" || filter === "run") && starting.map((s) => (
+          <div key={s.id} className="sbar-card is-starting" data-status="start" role="status">
+            <span className="sbar-card-title">
+              <span className="start-starting-mark" aria-hidden="true" />
+              <span>{`${s.ticket} ${s.title}`}</span>
+              <span className="sbar-new-badge">{t("sessionBar.new")}</span>
+            </span>
+            <span className="meta-txt dense">{t("codeLink.startingLine", { agent: s.agent })}</span>
+          </div>
+        ))}
         {shown.map((r) => withMenu(r, (
           // a div, so the card's own buttons sit inside it; Enter and Space open it as a button would
           <div role="button" tabIndex={0} className="sbar-card" data-key={r.key} data-status={r.status} data-depth={r.depth || undefined} aria-current={r.key === openKey ? "true" : undefined} onClick={() => onPick(r)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(r); } }}>
@@ -248,7 +270,7 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, peeks 
             {ask(r) ?? (said(r) && (r.status !== "run" || !r.tail?.length) && <span className={r.status === "wait" ? "sbar-card-wait" : r.status === "done" ? "sbar-card-outcome" : "sbar-card-said"}>{said(r)}</span>)}
           </div>
         )))}
-        {!shown.length && <p className="meta-txt dense sbar-empty">{t("sessionBar.empty")}</p>}
+        {!shown.length && !starting.length && <p className="meta-txt dense sbar-empty">{t("sessionBar.empty")}</p>}
       </div>
       <div className="sbar-foot">
         <span>{t("review.historyNote")}</span>

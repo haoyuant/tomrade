@@ -31,6 +31,7 @@ import { HandoffLine } from "./agent-panel/HandoffLine";
 import { TerminalSession } from "./agent-panel/TerminalSession";
 import { barModeFor, barPrefsOf, CARDS_AT, sessionBarRows, type BarRow, type BarStatus } from "~/lib/sessionBar";
 import { onPanelRequest, setPanelSession, type PanelRequest } from "~/lib/panelRequests";
+import { useStartingAll } from "~/lib/startWays";
 import { useHandoff, useRecentSessions, useSessionCells, useStartDefaults } from "~/lib/codeLink";
 import type { SessionView } from "@tomradex/code-link";
 import { hits, keyLabel } from "~/lib/keybindings";
@@ -136,6 +137,8 @@ export function AgentPanel({
   const chooseBarMode = useCallback((mode: BarMode) => setSwap({ from: fromSetting, to: mode }), [fromSetting]);
   const recentSessions = useRecentSessions(projectId, open);
   const sessionCells = useSessionCells(projectId, open);
+  const startingAll = useStartingAll();
+  const starting = useMemo(() => startingAll.filter((s) => s.projectId === projectId), [startingAll, projectId]);
   // A terminal session picked from the bar takes the place of the thread: the same session as the Terminal window's
   // cell, seen from here. Remembered with its project, so another project's panel never shows it.
   const [openSessionIn, setOpenSessionIn] = useState<{ projectId: string; id: string } | null>(null);
@@ -1176,6 +1179,7 @@ export function AgentPanel({
       )}
       <SessionBar
         rows={barRows}
+        starting={starting}
         openKey={shownSession ? `session:${shownSession.id}` : threadId ? `thread:${threadId}` : null}
         mode={barMode}
         peeks={barPrefs.peek}
