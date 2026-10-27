@@ -14,7 +14,7 @@ vi.mock("electron", () => ({
   }
 }));
 vi.mock("../src/main-window.js", () => ({ showMainWindow: () => null, whenLoaded: () => {} }));
-import { attention, NOTIFICATIONS_SECTION, phonePushRequest, pushTargets, remindAway, Teller, tomradeTells, type AttentionEntry, type AttentionNote, type NotificationPrefs } from "../src/attention.js";
+import { allowOf, attention, NOTIFICATIONS_SECTION, phonePushRequest, pushTargets, remindAway, Teller, tomradeTells, type AttentionEntry, type AttentionNote, type NotificationPrefs } from "../src/attention.js";
 import { DESKTOP_WORDS } from "../src/words.js";
 
 const WORDS = DESKTOP_WORDS("en");
@@ -251,4 +251,22 @@ it("shows Tomrade's notification unless herdr shows it to an attached client", a
   expect(await tomradeTells({ toldIn: "herdr" }, async () => false)).toBe(true);
   // a client that cannot be read leaves the telling to Tomrade
   expect(await tomradeTells({ toldIn: "herdr" }, async () => Promise.reject(new Error("ps failed")))).toBe(true);
+});
+
+it("offers the tray's Allow on a terminal session's prompt whether its wait is listed as a permission or as waiting", async () => {
+  const answered: string[] = [];
+  const codeLink = {
+    sessionPanel: () => ({ input: "ok", approval: true }),
+    sessionTail: async () => "Do you want to proceed?\n❯ 1. Yes\n  2. No",
+    sessionAnswer: async (_p: string, id: string) => (answered.push(id), "answered")
+  };
+  const ctx = { get: (name: string) => (name === "codeLink" ? codeLink : name === "agent" ? { activities: () => [] } : undefined) };
+  for (const kind of ["permission", "waiting"] as const) {
+    const allow = await allowOf(ctx as never, entry(`session:${kind}`, kind, { threadId: "t", sessionId: kind }), WORDS);
+    expect(allow?.label).toBe(WORDS("trayAllow"));
+    expect(await allow?.allow()).toBe(true);
+  }
+  expect(answered).toEqual(["permission", "waiting"]);
+  // a question is not a prompt the tray answers
+  expect(await allowOf(ctx as never, entry("session:q", "question", { sessionId: "q" }), WORDS)).toBeNull();
 });

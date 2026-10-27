@@ -59,3 +59,25 @@ export function handoffRecap(messages: ThreadMessage[]): string {
 
 /** The recap and the turn's own prompt, in that order; the prompt alone when there is nothing to recap. */
 export const withRecap = (recap: string | undefined, prompt: string): string => (recap ? `${recap}\n\n${prompt}` : prompt);
+
+/** How long a conversation's last word may be, as a card shows it. */
+const SAID_MAX = 120;
+
+/**
+ * What a conversation last said, as a card shows it: the first sentence of the agent's last text, its markdown
+ * marks dropped, on one line and kept short.
+ */
+export function firstSentence(text: string): string | null {
+  const plain = text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^\s*(?:#+|[-*>]|\d+\.)\s+/gm, "")
+    .replace(/[*_]{1,3}([^*_]+)[*_]{1,3}/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!plain) return null;
+  const end = /[.!?](?=\s|$)|[。！？]/.exec(plain);
+  const sentence = end ? plain.slice(0, end.index + 1) : plain;
+  return sentence.length > SAID_MAX ? `${sentence.slice(0, SAID_MAX - 1)}…` : sentence;
+}

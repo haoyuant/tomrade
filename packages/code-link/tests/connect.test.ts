@@ -24,7 +24,8 @@ import { Herdr } from "@tomradex/herdr";
 import { claudeRecord } from "@tomradex/engine-kit";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { Tools } from "@tomradex/tools";
+import { Tools, defineTool } from "@tomradex/tools";
+import { z } from "zod";
 
 /** Pi's engine registers the real writer (see engine-pi); this one names the same endpoints the same way. */
 const piConnector: ConnectFileWriter = {
@@ -997,6 +998,76 @@ describe("an outside session before it claims", () => {
     expect(codeLink.sessionsOf(project.id)[0]).toMatchObject({ withoutTicket: null, itemIds: [item.id] });
     expect(await post({ hook_event_name: "PreToolUse", tool_name: "Edit", tool_input: { file_path: path.join(checkout, "README.md") } })).toEqual({});
     expect(await post({ hook_event_name: "SessionStart" })).toEqual({});
+  });
+
+  it("guesses its ticket once, from what the person first said, and takes the person's answer: that ticket, or none", async () => {
+    const { ctx, codeLink, items, project, board, checkout } = await machine();
+    const archive = items.create({ projectId: project.id, boardId: board.id, title: "Filter the archive by agent", by: "human" });
+    const search = items.create({ projectId: project.id, boardId: board.id, title: "Search the archive's conversations", by: "human" });
+    // find_similar's own answer shape; what it finds is this test's, so the guess is what is under test.
+    const asked: string[] = [];
+    ctx.tools.register(
+      defineTool({
+        name: "find_similar",
+        title: "Find similar items",
+        description: "stub",
+        input: z.object({ title: z.string().optional(), body: z.string().optional(), titles: z.array(z.string()).optional(), limit: z.number().optional() }),
+        execute: ({ title }) => {
+          asked.push(title ?? "");
+          const hit = /filter/i.test(title ?? "") ? archive : /search/i.test(title ?? "") ? search : null;
+          return hit ? { verdict: "related", matches: [{ id: hit.id, key: hit.key, title: hit.title, kind: "ticket", status: hit.status, score: 0.5, reason: "similar title" }] } : { verdict: "none", matches: [] };
+        }
+      })
+    );
+    const post = async (id: string, payload: Record<string, unknown>) =>
+      (await fetch(ctx.mcp.eventUrl!, { method: "POST", headers: { "Content-Type": "application/json", "X-Tomrade-Agent": "codex" }, body: JSON.stringify({ session_id: id, cwd: checkout, ...payload }) })).json() as Promise<Record<string, unknown>>;
+    const sessionOf = (id: string) => codeLink.sessionsOf(project.id).find((s) => s.externalId === id)!;
+
+    // Its first words sound like a ticket: that one is offered, from the first sentence or two only, and asked once.
+    await post("cx-1", { hook_event_name: "SessionStart" });
+    await post("cx-1", { hook_event_name: "UserPromptSubmit", prompt: "Let the archive filter by agent. Codex and Claude apart. And more after that, which is not read." });
+    await until(() => !!codeLink.guessOf(project.id, sessionOf("cx-1").id));
+    expect(codeLink.guessOf(project.id, sessionOf("cx-1").id)).toMatchObject({ itemId: archive.id, key: archive.key });
+    expect(asked).toEqual(["Let the archive filter by agent. Codex and Claude apart."]);
+    await post("cx-1", { hook_event_name: "UserPromptSubmit", prompt: "filter it, I said" });
+    await settle();
+    expect(asked).toHaveLength(1);
+
+    // Nothing like it, or a slash command: nothing offered.
+    await post("cx-2", { hook_event_name: "SessionStart" });
+    await post("cx-2", { hook_event_name: "UserPromptSubmit", prompt: "What does this repository do?" });
+    await until(() => asked.length === 2);
+    await settle();
+    expect(codeLink.guessOf(project.id, sessionOf("cx-2").id)).toBeNull();
+    await post("cx-4", { hook_event_name: "SessionStart" });
+    await post("cx-4", { hook_event_name: "UserPromptSubmit", prompt: "/clear" });
+    await settle();
+    expect(asked).toHaveLength(2);
+
+    // Taken: the session works the ticket now, which is Doing; its agent hears at its next step to claim it, and the claim lands there.
+    const first = sessionOf("cx-1");
+    expect(codeLink.takeGuess(project.id, first.id)).toEqual({ key: archive.key });
+    expect(sessionOf("cx-1").itemIds).toEqual([archive.id]);
+    expect(items.get(project.id, archive.id)?.status).toBe("doing");
+    expect(codeLink.guessOf(project.id, first.id)).toBeNull();
+    expect(codeLink.takeGuess(project.id, first.id)).toBeNull();
+    expect(await post("cx-1", { hook_event_name: "PreToolUse", tool_name: "Read", tool_input: { file_path: path.join(checkout, "README.md") } })).toEqual({});
+    const told = await post("cx-1", { hook_event_name: "PostToolUse", tool_name: "Read", tool_input: {}, tool_output: "ok" });
+    expect(told).toMatchObject({ additionalContext: expect.stringContaining(`claim_ticket("${archive.key}")`) });
+    expect(await post("cx-1", { hook_event_name: "PostToolUse", tool_name: "Read", tool_input: {}, tool_output: "ok" })).toEqual({});
+    await post("cx-1", { hook_event_name: "PreToolUse", tool_name: "mcp__tomrade__claim_ticket", tool_input: { key: archive.key } });
+    const claimed = (await ctx.tools.execute("claim_ticket", { key: archive.key }, { by: "ai:mcp", projectId: project.id, connection: "conn-g" })) as { tracking: { sessionId: string }; branch: string };
+    expect(claimed.tracking.sessionId).toBe(first.id);
+    expect(sessionOf("cx-1").branch).toBe(claimed.branch);
+
+    // Gone without: recorded as the person's word, so its edits are not held; no guess is left to offer.
+    await post("cx-3", { hook_event_name: "SessionStart" });
+    await post("cx-3", { hook_event_name: "UserPromptSubmit", prompt: "Search the archive for what was said" });
+    await until(() => !!codeLink.guessOf(project.id, sessionOf("cx-3").id));
+    expect(codeLink.goWithoutTicket(project.id, sessionOf("cx-3").id, "no ticket, said in the Terminal window")).toBe(true);
+    expect(sessionOf("cx-3")).toMatchObject({ withoutTicket: "no ticket, said in the Terminal window", itemIds: [] });
+    expect(codeLink.guessOf(project.id, sessionOf("cx-3").id)).toBeNull();
+    expect(await post("cx-3", { hook_event_name: "PreToolUse", tool_name: "Edit", tool_input: { file_path: path.join(checkout, "README.md") } })).toEqual({});
   });
 
   it("names the other live session in the same folder when a ticket is claimed there", async () => {
