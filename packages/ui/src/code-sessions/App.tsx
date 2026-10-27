@@ -409,6 +409,7 @@ export function App() {
       <Cell
         key={node.id}
         leaf={node}
+        number={cells.indexOf(node) + 1}
         pane={node.sessionId ? key(node.sessionId) : ""}
         herdrClient={state.herdrClient}
         session={sessionIn(node.sessionId)}

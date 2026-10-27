@@ -3256,6 +3256,7 @@ export const ru: PartialMessages = {
     keyClose: "закрыть панель",
     keyArrows: "+ стрелки: соседняя панель",
     keyPrevNext: "предыдущая / следующая панель",
-    keyFold: "свернуть панель сеансов"
+    keyFold: "свернуть панель сеансов",
+    cellNumber: "Панель {{n}} · tomrade term --attach {{n}} подключает её к вашему собственному терминалу"
   }
 };

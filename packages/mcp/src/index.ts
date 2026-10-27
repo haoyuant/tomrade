@@ -164,6 +164,9 @@ export interface RunBinding {
   event?(payload: unknown): unknown | Promise<unknown>;
 }
 
+/** What `tomrade <name> …` (Tomrade's own command, in the person's terminal) asks, answered with JSON. */
+export type CliHandler = (request: Record<string, unknown>) => unknown | Promise<unknown>;
+
 /** Where a session stands: its project when it opened on `/mcp/<projectId>`, none on the bare endpoint. */
 export interface McpScope {
   projectId?: string;
@@ -249,6 +252,7 @@ export class Mcp extends Service implements McpReader {
   private places = new Map<string, { pane?: string; terminal?: string }>();
   private prompts = new Map<string, McpPrompt>();
   private instructions = new Map<(scope: McpScope) => string | null, number>();
+  private cliHandlers = new Map<string, CliHandler>();
 
   constructor(
     ctx: Context,
@@ -343,6 +347,21 @@ export class Mcp extends Service implements McpReader {
       if (!binding?.event) return res.status(404).json({ error: "unknown session" });
       try {
         res.json((await binding.event(withPane(req))) ?? {});
+      } catch (e) {
+        res.status(500).json({ error: errorMessage(e) });
+      }
+    });
+
+    // The `tomrade` command. A web page cannot ask: the Host is checked, and a JSON body with a header of its own is
+    // something a page sends only after a preflight this server never answers.
+    app.post("/cli/:name", async (req, res) => {
+      if (!req.is("application/json") || !req.get("X-Tomrade-Cli")) return res.status(400).json({ error: "not a request from the tomrade command" });
+      const handler = this.cliHandlers.get(req.params.name);
+      // Still starting, or the plugin that answers is off: the command says so, or waits while Tomrade starts.
+      if (!handler) return res.status(503).json({ error: `nothing answers tomrade ${req.params.name} yet` });
+      try {
+        const body: unknown = req.body;
+        res.json((await handler(body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {})) ?? {});
       } catch (e) {
         res.status(500).json({ error: errorMessage(e) });
       }
@@ -486,6 +505,16 @@ export class Mcp extends Service implements McpReader {
       this.eventListeners.add(listener);
       return () => this.eventListeners.delete(listener);
     }, "mcp.onEvent");
+  }
+
+  /** Answer `tomrade <name> …` from the person's own terminal: `POST /cli/<name>` on this port, JSON both ways. Reversible with the plugin that registered it. */
+  cli(name: string, handler: CliHandler): () => void {
+    return this.ctx.effect(() => {
+      this.cliHandlers.set(name, handler);
+      return () => {
+        if (this.cliHandlers.get(name) === handler) this.cliHandlers.delete(name);
+      };
+    }, `mcp.cli(${name})`);
   }
 
   /** Offer a prompt to every session opened from now on. Reversible with the plugin that registered it. */

@@ -14,8 +14,10 @@ import { BUILTIN_TERMINAL, MCP_AGENT, WINDOWS_TERMINAL, panesOf, resumeCommand, 
 import { PANEL_SURFACES } from "@tomradex/agent";
 import type { DesktopSurface } from "@tomradex/desktop-surface";
 import type {} from "@tomradex/herdr";
+import type {} from "@tomradex/mcp";
 import type { TerminalBridge, TerminalPaneInfo, TerminalProvider, TerminalStream } from "@tomradex/contracts";
 import { randomUUID } from "node:crypto";
+import { serveTerm, type TermWindow } from "./cli.js";
 import { droppedPaste, readableDrops } from "./drop.js";
 import { Recorder, RECORDING_SECTION, RecordingSettings, type Recording } from "./recorder.js";
 import type { ClosedTerminalRow, Layout, LayoutPreset, SessionRow, TerminalPlace, TerminalRow, ThreadRow, WindowMessage, WindowPost, WindowState } from "./protocol.js";
@@ -435,6 +437,9 @@ function apply(ctx: Context, config: Config) {
     timer.unref?.();
     refreshSoon.set(projectId, timer);
   };
+
+  /** Who hears each layout a window saves: the `tomrade` command, waiting to say which cell it opened. */
+  const laidOut = new Set<(projectId: string, layout: Layout) => void>();
 
   /** Terminals herdr is still opening, by project: shown as starting, never saved. */
   const pending = new Map<string, Map<string, StartingTerminal>>();
@@ -1079,7 +1084,9 @@ function apply(ctx: Context, config: Config) {
         return win.terminals.get(m.cell)?.mouse(m);
       case "layout":
         if (!isLayout(m.layout)) return;
-        return save(config.stateFile, { layouts: { ...stateOf(config.stateFile).layouts, [projectId]: m.layout } });
+        save(config.stateFile, { layouts: { ...stateOf(config.stateFile).layouts, [projectId]: m.layout } });
+        for (const listener of laidOut) listener(projectId, m.layout);
+        return;
       case "continue":
         return command(projectId, win, "code-link.start-terminal", m.sessionId);
       case "openThread": {
@@ -1284,6 +1291,39 @@ function apply(ctx: Context, config: Config) {
     command: "code-sessions.open",
     count: ({ projectId }) => needingYou(ctx.codeLink, projectId) || null
   });
+
+  // `tomrade term` in the person's own terminal, over the MCP port.
+  const term: TermWindow = {
+    lastProject: () => stateOf(config.stateFile).lastProject,
+    name: projectName,
+    show: (projectId) => show(projectId),
+    openTerminal: async (projectId, cwd) => {
+      await show(projectId);
+      const win = open.get(projectId);
+      if (!win || win.closed) return null;
+      const id = randomUUID();
+      await newTerminal(projectId, win, id, cwd);
+      if (!savedTerminals(projectId).some((t) => t.id === id)) return null;
+      // Into a cell, as a start from outside is: an empty one, else a new one beside.
+      win.reveal = { sessionId: id, at: ++asks };
+      void refresh(projectId);
+      return id;
+    },
+    layout: (projectId) => {
+      const layout = stateOf(config.stateFile).layouts?.[projectId];
+      return isLayout(layout) ? layout : null;
+    },
+    terminal: (projectId, id) => savedTerminals(projectId).find((t) => t.id === id),
+    onLayout: (listener) => {
+      laidOut.add(listener);
+      return () => laidOut.delete(listener);
+    },
+    reattach: (projectId, cell) => {
+      const win = open.get(projectId);
+      if (win) post(win, { type: "reattach", cell });
+    }
+  };
+  ctx.inject(["mcp"], (ctx) => ctx.mcp.cli("term", serveTerm(ctx, term, words)));
 
   ctx.effect(() => () => {
     for (const timer of refreshSoon.values()) clearTimeout(timer);

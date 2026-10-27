@@ -701,6 +701,9 @@ importers:
       '@tomradex/items':
         specifier: workspace:*
         version: link:../items
+      '@tomradex/mcp':
+        specifier: workspace:*
+        version: link:../mcp
       '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings

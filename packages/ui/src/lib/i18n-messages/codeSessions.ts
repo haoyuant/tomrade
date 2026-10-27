@@ -185,7 +185,8 @@ export const codeSessions = {
     paletteHistory: "History",
     paletteClear: "Clear the selected cell's screen",
     paletteLayout: "Layout: {{name}}",
-    paletteFoot: "↵ goes to its cell; one with no cell here opens in the app window · {{key}} closes"
+    paletteFoot: "↵ goes to its cell; one with no cell here opens in the app window · {{key}} closes",
+    cellNumber: "Pane {{n}} · tomrade term --attach {{n}} attaches it to your own terminal"
   },
   zh: {
     here: "这个窗口里",
@@ -372,6 +373,7 @@ export const codeSessions = {
     paletteHistory: "历史",
     paletteClear: "清屏（选中的格子）",
     paletteLayout: "布局：{{name}}",
-    paletteFoot: "↵ 跳到它的格子；不在格子里的在主窗口打开 · {{key}} 关闭"
+    paletteFoot: "↵ 跳到它的格子；不在格子里的在主窗口打开 · {{key}} 关闭",
+    cellNumber: "格子 {{n}} · 在你自己的终端里运行 tomrade term --attach {{n}}，就能把它接过去"
   }
 };

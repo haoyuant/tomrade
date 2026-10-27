@@ -217,7 +217,7 @@ function NotHere({ session, cell, locale, picker, onTalk, look }: { session: Ses
   );
 }
 
-export function Cell({ leaf, pane, session, terminal, closed, places, ready, herdrClient, onNewTerminal, onTalk, focused, selected, only, onFocus, onSplit, onClose, onLock, menu, look }: { leaf: Extract<Layout, { type: "leaf" }>; pane: string; session: SessionRow | undefined; terminal: TerminalRow | undefined; closed: ClosedTerminalRow | undefined; places: TerminalPlace[]; ready: boolean; herdrClient: boolean; onNewTerminal: (cwd: string) => void; onTalk: (s: SessionRow) => void; focused: boolean; selected: boolean; only: boolean; onFocus: () => void; onSplit: (d: "row" | "column") => void; onClose: () => void; onLock: () => void; menu: ReactNode; look: Look }) {
+export function Cell({ leaf, number, pane, session, terminal, closed, places, ready, herdrClient, onNewTerminal, onTalk, focused, selected, only, onFocus, onSplit, onClose, onLock, menu, look }: { leaf: Extract<Layout, { type: "leaf" }>; number: number; pane: string; session: SessionRow | undefined; terminal: TerminalRow | undefined; closed: ClosedTerminalRow | undefined; places: TerminalPlace[]; ready: boolean; herdrClient: boolean; onNewTerminal: (cwd: string) => void; onTalk: (s: SessionRow) => void; focused: boolean; selected: boolean; only: boolean; onFocus: () => void; onSplit: (d: "row" | "column") => void; onClose: () => void; onLock: () => void; menu: ReactNode; look: Look }) {
   const say = useSay();
   // Right-click on the bar, or on a cell with no terminal: inside a terminal it is the program's own.
   const withMenu = (node: ReactElement) => (
@@ -230,6 +230,8 @@ export function Cell({ leaf, pane, session, terminal, closed, places, ready, her
   return (
     <div className="cs-cell" data-cell={leaf.id} data-focused={focused || undefined} data-locked={leaf.locked || undefined} data-cell-terminal={terminal?.id} onMouseDownCapture={onFocus} onFocusCapture={onFocus}>
       {withMenu(<div className="cs-cell-bar">
+        {/* Its number in reading order: what `tomrade term --attach` names it by. */}
+        <span className="cs-cell-no" data-testid="cs-cell-no" title={say("cellNumber", { n: number })}>{number}</span>
         <span className="cs-cell-name">
           {session?.key ? (
             <>

@@ -1,11 +1,12 @@
 import { app, BrowserWindow, session } from "electron";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { aboutInfo } from "./about.js";
 import { APP_ICON_FILE, appIconPath, readAppIcon, wearAppIcon } from "./app-icon.js";
 import { AccountFolders, machineRoots, restart } from "./accounts.js";
 import { cameBack, keepsRunning, launchMode, otherOrdinaryWindow, PREFS_FILE, whenLastWindowCloses } from "./background.js";
-import { openAtStart, SESSIONS_SECTION, startWindows } from "./sessions-section.js";
+import { commandOnPath, openAtStart, SESSIONS_SECTION, startWindows } from "./sessions-section.js";
 import { hasTerminalWindow, installGlobalHotkey, openTerminal } from "./terminal-entries.js";
 import { boot, ConfigUnreadable, type Booted } from "./boot.js";
 import { setUpBorrowedNode } from "./borrowed-node.js";
@@ -23,6 +24,7 @@ import { adoptShellEnv } from "./shell-env.js";
 import { offerSafeStart, saySafeStart, showSplash, splashWaitsForKeyring, startFailed } from "./startup.js";
 import { beginStart, hasOwnPlugins, SAFE_FLAG, SAFE_REQUEST_FILE, STARTING_FILE, startFinished, takeSafeRequest } from "./safe-start.js";
 import { followSystemProxy } from "./system-proxy.js";
+import { keepCommandPlaced } from "./tomrade-command.js";
 import { trustedKeys } from "./trust.js";
 import { TomradeWindows, type TabTarget } from "./windows.js";
 
@@ -134,6 +136,8 @@ app.whenReady().then(async () => {
   } catch (error) {
     console.error("Could not clear app-icon's old switch:", error);
   }
+  // A checkout runs beside the installed app; on a port of its own, agents set up for the app keep reaching it.
+  const mcpPort = process.env.TOMRADE_MCP_PORT ?? (app.isPackaged ? "19090" : "19091");
   // Without the person's own files: none read, and no switch written back to them.
   const start = (safe: boolean) =>
     boot({
@@ -147,8 +151,7 @@ app.whenReady().then(async () => {
         linkAgents: app.isPackaged ? "true" : "missing",
         // Where the renderer's own pages are, for a built-in's window: the dev server, the packaged copy, or a checkout's build.
         uiPages: process.env.VITE_DEV_SERVER_URL ? new URL("./", process.env.VITE_DEV_SERVER_URL).href : pathToFileURL(app.isPackaged ? path.join(here, "../ui/") : path.join(here, "../../../packages/ui/dist/")).href,
-        // A checkout runs beside the installed app; on a port of its own, agents set up for the app keep reaching it.
-        mcpPort: process.env.TOMRADE_MCP_PORT ?? (app.isPackaged ? "19090" : "19091")
+        mcpPort
       },
       // A checkout is always 0.1.0, so only a release holds full-mode plugins to the Tomrade versions they name.
       extensions: safe ? undefined : { root: pluginsRoot, trustedKeys: trustedKeys(), appVersion: app.isPackaged ? app.getVersion() : null }
@@ -197,6 +200,33 @@ app.whenReady().then(async () => {
   for (const signal of ["SIGTERM", "SIGINT"] as const) process.once(signal, () => void leaveOnSignal(ctx).finally(() => app.exit(0)));
   ctx.settings.register(SESSIONS_SECTION);
   installGlobalHotkey(ctx);
+  // A window shown at the `tomrade` command's word comes in front of the terminal it was typed in.
+  ctx.on("desktop/activate", () => {
+    if (process.platform === "darwin") app.focus({ steal: true });
+  });
+  // The installed app's `tomrade` command; a checkout never takes it over (scripts/tomrade-command-check.mjs places one in a home of its own).
+  if (app.isPackaged)
+    keepCommandPlaced(
+      ctx,
+      () => ({
+        platform: process.platform,
+        home: os.homedir(),
+        zdotdir: process.env.ZDOTDIR,
+        shell: process.env.SHELL || os.userInfo().shell || "/bin/sh",
+        pathDirs: (process.env.PATH ?? "").split(path.delimiter).filter(Boolean),
+        dir: path.join(machine.userData, "cli"),
+        runtime: nodeRuntime(),
+        script: path.join(here, "tomrade-cli.js"),
+        appImage: process.platform === "linux" ? process.env.APPIMAGE : undefined,
+        config: {
+          url: (ctx.get("mcp")?.url ?? `http://127.0.0.1:${mcpPort}/mcp`).replace(/\/mcp$/, ""),
+          // What starts Tomrade when the command finds it not running: the bundle on macOS, the AppImage or the executable elsewhere.
+          open: process.platform === "darwin" ? path.resolve(process.execPath, "../../..") : (process.env.APPIMAGE ?? process.execPath),
+          locale: ctx.settings.locale()
+        }
+      }),
+      () => commandOnPath(ctx)
+    );
 
   // A window a tab moved into stands where the last one was left: a place of the machine's, like its screens.
   const windows = new TomradeWindows(

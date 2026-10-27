@@ -366,4 +366,31 @@ describe("the MCP surface", () => {
       await ctx.fiber.dispose();
     }
   });
+  it("answers the tomrade command on its own route, and nothing that a web page could send", async () => {
+    const { ctx } = await fresh({ plugins: [Tools, [Mcp, { port: 0 }]] });
+    await settle();
+    const base = ctx.mcp.url!.replace(/\/mcp$/, "");
+    const post = (body: unknown, headers: Record<string, string> = { "Content-Type": "application/json", "X-Tomrade-Cli": "1" }) => fetch(`${base}/cli/term`, { method: "POST", headers, body: JSON.stringify(body) });
+    try {
+      // Before anything answers it (a Tomrade still starting): the command waits and asks again.
+      expect((await post({ op: "open" })).status).toBe(503);
+      const seen: unknown[] = [];
+      const drop = ctx.mcp.cli("term", async (request) => {
+        seen.push(request);
+        if (request.op === "boom") throw new Error("it broke");
+        return { ok: true, text: "opened" };
+      });
+      expect(await (await post({ op: "open", cwd: "/x" })).json()).toEqual({ ok: true, text: "opened" });
+      expect(seen).toEqual([{ op: "open", cwd: "/x" }]);
+      expect(await (await post({ op: "boom" })).json()).toEqual({ error: "it broke" });
+      // A page's simple request: no header of its own, no JSON. Never reaches the handler.
+      expect((await post({ op: "open" }, { "Content-Type": "text/plain" })).status).toBe(400);
+      expect((await post({ op: "open" }, { "Content-Type": "application/json" })).status).toBe(400);
+      expect(seen).toHaveLength(2);
+      drop();
+      expect((await post({ op: "open" })).status).toBe(503);
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
 });

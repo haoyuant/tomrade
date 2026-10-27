@@ -27,6 +27,7 @@
     "@tomradex/domain": "workspace:*",
     "@tomradex/herdr": "workspace:*",
     "@tomradex/items": "workspace:*",
+    "@tomradex/mcp": "workspace:*",
     "@tomradex/settings": "workspace:*",
     "cordis": "4.0.0-rc.8",
     "zod": "^4.4.3"

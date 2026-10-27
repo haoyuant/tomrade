@@ -3143,6 +3143,7 @@ export const de: PartialMessages = {
     keyClose: "Bereich schließen",
     keyArrows: "+ Pfeile: der Bereich daneben",
     keyPrevNext: "voriger / nächster Bereich",
-    keyFold: "Sitzungsleiste einklappen"
+    keyFold: "Sitzungsleiste einklappen",
+    cellNumber: "Bereich {{n}} · tomrade term --attach {{n}} holt ihn in dein eigenes Terminal"
   }
 };

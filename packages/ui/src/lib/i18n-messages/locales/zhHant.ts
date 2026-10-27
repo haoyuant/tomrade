@@ -3181,6 +3181,7 @@ export const zhHant: PartialMessages = {
     closedTerminalRan: "終端機 · {{from}} – {{to}}",
     closedAt: "關閉於 {{when}}",
     shelfTerminals: "終端機（{{n}}）",
-    terminalsEmpty: "還沒有帶錄製的已關閉終端機。終端機在這個視窗的格子顯示它時才會被錄製。"
+    terminalsEmpty: "還沒有帶錄製的已關閉終端機。終端機在這個視窗的格子顯示它時才會被錄製。",
+    cellNumber: "窗格 {{n}} · 在你自己的終端機裡執行 tomrade term --attach {{n}}，就能把它接過去"
   }
 };

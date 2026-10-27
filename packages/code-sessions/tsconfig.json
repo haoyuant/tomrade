@@ -16,6 +16,7 @@
     { "path": "../domain" },
     { "path": "../herdr" },
     { "path": "../items" },
+    { "path": "../mcp" },
     { "path": "../settings" }
   ]
 }
