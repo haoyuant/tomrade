@@ -332,6 +332,8 @@ const summarize = (value: unknown): string => {
   }
   return String(value);
 };
+/** The end of a text result the summary cut, kept beside it: where a command's output says how it went. */
+const tailOf = (value: unknown): string | undefined => (typeof value === "string" && value.length > 160 ? value.slice(-400) : undefined);
 
 /**
  * The platform every engine runs on. Owns the threads, the runs, the ledger,
@@ -1664,7 +1666,8 @@ export class Agent extends Service implements AgentReader {
           entries.push({ seq: entries.length + 1, tool: name, args, ok: true, summary, ms });
           this.store.appendLedger(thread.projectId, run.id, entries.length, name, args, true, summary, ms);
           progress({ activity: null });
-          if (!suspended) emit({ type: "trace", tool: name, args, ok: true, summary, ms });
+          const tail = suspended ? undefined : tailOf(result);
+          if (!suspended) emit({ type: "trace", tool: name, args, ok: true, summary, ms, ...(tail ? { tail } : {}) });
           return result;
         } catch (err) {
           const ms = Date.now() - t0;

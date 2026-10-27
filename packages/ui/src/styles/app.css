@@ -2638,6 +2638,8 @@ html.overlay-open .titlebar .btn-primary {
 .trace-fold > summary svg { transition: transform 120ms ease; }
 .trace-fold[open] > summary svg { transform: rotate(90deg); }
 .trace-fold > summary:hover { color: var(--fg-2); }
+.trace-fold.work-fold > summary { color: var(--fg-2); }
+.trace-fold.work-fold[data-waiting] > summary { color: var(--warn); }
 .retry-row { display: flex; align-items: center; gap: 7px; margin: var(--space-2) 0 0; padding: 4px 9px; border: 1px solid color-mix(in oklab, var(--warn) 45%, transparent); border-radius: var(--radius-sm); background: color-mix(in oklab, var(--warn) 10%, var(--bg)); color: var(--warn); font-size: var(--text-xs); }
 .retry-row.failed { border-color: color-mix(in oklab, var(--danger) 45%, transparent); background: color-mix(in oklab, var(--danger) 10%, var(--bg)); color: var(--danger); }
 .agent-note { text-align: center; font-size: var(--text-xs); color: var(--meta); margin: var(--space-3) 0; }
@@ -2736,6 +2738,7 @@ html.overlay-open .titlebar .btn-primary {
 .q-ask .q-eyebrow { display: block; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
 .q-ask.done .q-eyebrow { color: var(--meta); }
 .q-ask p { margin: 0; }
+.q-ask .q-hint { margin-top: 4px; font-size: var(--text-xs); }
 .chip-opt.sel { border-color: var(--accent); color: var(--accent); background: var(--surface-warm); box-shadow: inset 0 0 0 1px var(--accent); }
 .q-confirm { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-3); }
 .q-confirm .btn { padding: 3px 12px; font-size: var(--text-sm); }

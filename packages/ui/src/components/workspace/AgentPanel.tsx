@@ -10,7 +10,7 @@ import { Kbd, Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
 import { viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
-import { firstCodeStep, foldSteps, startBriefId, writesCode } from "~/lib/steps";
+import { codingFrom, firstCodeStep, foldSteps, startBriefId, writesCode } from "~/lib/steps";
 import { conducts, findEngine, useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetWorkstream, useUnarchiveThread, useWorkdir, type RunProgress } from "~/lib/agent";
 import { keys, useAssistantAccessories, useBoards, useHeldItem, useItems, useSettings } from "~/lib/queries";
 import { ATTENTION_KEY, useAttention, type AttentionEntry } from "~/lib/attention";
@@ -402,9 +402,13 @@ export function AgentPanel({
   // The hint about undoing rides on the newest set of changes only.
   const lastChangesId = [...(detail.data?.messages ?? [])].reverse().find((m) => m.block.type === "changes")?.id ?? null;
   const newestLast = [...(detail.data?.messages ?? [])].reverse();
-  const folded = useMemo(() => foldSteps(detail.data?.messages ?? []), [detail.data?.messages]);
   // The kickoff brief is machine-written and long: it opens folded, so the person's own exchange stays in view.
   const briefId = useMemo(() => startBriefId(detail.data?.messages ?? [], !!detail.data?.thread.itemId), [detail.data?.messages, detail.data?.thread.itemId]);
+  // Once it writes code (from the top, for a ticket's own session), each stretch of steps folds whole under its conclusion.
+  const codeAt = useMemo(() => codingFrom(detail.data?.messages ?? [], !!briefId), [detail.data?.messages, briefId]);
+  const askId = pending?.kind === "permission" ? pending.question.id : null;
+  const askText = pending?.kind === "permission" ? pending.question.text : "";
+  const folded = useMemo(() => foldSteps(detail.data?.messages ?? [], codeAt, askId ? { id: askId, text: askText } : null), [detail.data?.messages, codeAt, askId, askText]);
   // Chat that turns to code: a rule where the first file is changed, with the ticket it is for when the thread has one.
   const codeStep = useMemo(() => firstCodeStep(detail.data?.messages ?? []), [detail.data?.messages]);
   // The run going now has changed a file: that coding can move to a conversation of its own under this one — offered on
@@ -557,9 +561,11 @@ export function AgentPanel({
   // Keyed by a string, so the map is new only when one of them changes state — never on a streamed reply.
   const childKey = barRows.filter((r) => r.threadId && r.parentKey === `thread:${threadId}`).map((r) => `${r.threadId}:${r.status}`).join("|");
   const threadStatus = useMemo(() => new Map<string, BarStatus>(childKey ? childKey.split("|").map((entry) => { const at = entry.lastIndexOf(":"); return [entry.slice(0, at), entry.slice(at + 1) as BarStatus]; }) : []), [childKey]);
+  // The built-in shell asking before a command, as it does for each one unless set to let reading and checks through.
+  const commandAsk = !!askId && progress?.activity === "bash" && ((settings.data?.shell as { approval?: string } | undefined)?.approval ?? "ask") === "ask";
   const transcriptActions = useMemo(
-    () => ({ projectId, runs, cards, engines: engines.data, retryEngines, pending, byKey, busy, threadStatus, onOpenIssue, onOpenThread: openThreadRow, onAnswer: answerRow, onRevert: revertRow, onOpenSettings: settingsRow, onCardAction: cardActionRow }),
-    [projectId, runs, cards, engines.data, retryEngines, pending, byKey, busy, threadStatus, onOpenIssue, openThreadRow, answerRow, revertRow, settingsRow, cardActionRow]
+    () => ({ projectId, runs, cards, engines: engines.data, retryEngines, pending, byKey, busy, threadStatus, commandAsk, onOpenIssue, onOpenThread: openThreadRow, onAnswer: answerRow, onRevert: revertRow, onOpenSettings: settingsRow, onCardAction: cardActionRow }),
+    [projectId, runs, cards, engines.data, retryEngines, pending, byKey, busy, threadStatus, commandAsk, onOpenIssue, openThreadRow, answerRow, revertRow, settingsRow, cardActionRow]
   );
   const showInTerminal = (sessionId: string, terminalApp: string | null) =>
     void invoke("codeLink.showSession", projectId, sessionId).then((shown) => {

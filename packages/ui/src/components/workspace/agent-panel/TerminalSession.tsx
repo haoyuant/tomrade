@@ -332,7 +332,7 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
           ) : convo ? (
             <>
               <ConvoTop cut={convo.before !== null} reading={readingEarlier} onEarlier={readEarlier} say={say} />
-              <ConvoLines lines={lines} open={open} toggle={toggle} say={say} notes={notes} />
+              <ConvoLines lines={lines} open={open} toggle={toggle} say={say} waiting={asking} notes={notes} />
             </>
           ) : null}
         </div>

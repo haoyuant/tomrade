@@ -220,7 +220,7 @@ function Opened({ projectId, focus, agentName, span, where, say, onOpenThread }:
                 </button>
                 {isOpen && (
                   <div className="ai-review-seg-body cs-convo">
-                    {s.lines.length ? <ConvoLines lines={s.lines} open={open} toggle={toggle} say={convoSay} /> : <p className="meta-txt dense">{t("review.nothingSaid")}</p>}
+                    {s.lines.length ? <ConvoLines lines={s.lines} open={open} toggle={toggle} say={convoSay} coding={s.kind === "code"} /> : <p className="meta-txt dense">{t("review.nothingSaid")}</p>}
                     {s.kind === "code" && <span className="ai-review-work">{[t("codeSessions.convoSteps", { n: s.work.steps }), ...workParts(s.work, convoSay)].join(" · ")}</span>}
                   </div>
                 )}

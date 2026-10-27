@@ -3,8 +3,9 @@ import type { CardAction, CardView, ChecklistCard, EngineView, FindingCard, Pend
 import type { Item } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { findEngine } from "~/lib/agent";
-import { workParts } from "~/lib/convoFold";
+import { workConclusion, workParts, type ConvoSay } from "~/lib/convoFold";
 import { useI18n } from "~/lib/i18n";
+import { openSettingsPane } from "~/lib/settingsHost";
 import type { BarStatus } from "~/lib/sessionBar";
 import type { foldSteps } from "~/lib/steps";
 import { AgentMedia } from "../AgentMedia";
@@ -24,6 +25,8 @@ export interface TranscriptActionsValue {
   busy: boolean;
   /** How the conversations a note points at stand now, by thread id — a child writing code in the background. */
   threadStatus: Map<string, BarStatus>;
+  /** The question waiting now is the built-in shell asking before a command, as it does for every one: it points at the setting that lets reading and checks through. */
+  commandAsk?: boolean;
   onOpenIssue: (id: string) => void;
   onOpenThread: (id: string) => void;
   onAnswer: (id: string, value: string | string[]) => void;
@@ -66,14 +69,16 @@ export function Transcript({ actions, folded, briefId, codeFrom, lastErrorId, la
   onBackground?: () => void;
 }) {
   const { t } = useI18n();
+  const say: ConvoSay = (key, vars) => t(`codeSessions.${key}`, vars);
   return (
     <TranscriptActions.Provider value={actions}>
       {folded.map((entry) => {
         const row = "fold" in entry ? (
-          <details key={`fold-${entry.fold[0].id}`} className="trace-fold">
+          // writing code folds whole, under what it came to; chat folds only its earlier steps
+          <details key={`fold-${entry.fold[0].id}`} className={entry.coding ? "trace-fold work-fold" : "trace-fold"} data-testid={entry.coding ? "work-fold" : undefined} data-waiting={entry.waiting != null || undefined}>
             <summary>
               <Icon name="i-chev" size={10} />
-              <span>{[t("agentPanel.earlierSteps", { n: entry.fold.length }), ...workParts(entry.work, (key, vars) => t(`codeSessions.${key}`, vars))].join(" · ")}</span>
+              <span>{entry.coding ? workConclusion(entry.work, say, entry.waiting) : [t("agentPanel.earlierSteps", { n: entry.fold.length }), ...workParts(entry.work, say)].join(" · ")}</span>
             </summary>
             {entry.fold.map((m) => <TranscriptRow key={m.id} m={m} />)}
           </details>
@@ -123,7 +128,7 @@ function Row(props: Parameters<typeof RowBody>[0]) {
 
 function RowBody({ m, onRetry, onRetryWith, onTroubleshoot, hint }: { m: ThreadMessage; onRetry?: () => void; onRetryWith?: (engineId: string) => void; onTroubleshoot?: () => void; hint?: boolean }) {
   const { t } = useI18n();
-  const { projectId, runs, cards, engines, retryEngines, pending, byKey, threadStatus, onOpenIssue, onOpenThread, onAnswer, onRevert, onOpenSettings, onCardAction, busy } = useTranscriptActions();
+  const { projectId, runs, cards, engines, retryEngines, pending, byKey, threadStatus, commandAsk, onOpenIssue, onOpenThread, onAnswer, onRevert, onOpenSettings, onCardAction, busy } = useTranscriptActions();
   const b = m.block;
   if (m.role === "user") {
     const focus = b.type === "text" ? b.focus : undefined;
@@ -178,7 +183,7 @@ function RowBody({ m, onRetry, onRetryWith, onTroubleshoot, hint }: { m: ThreadM
     ) : b.type === "trace" ? (
       <Trace block={b} />
     ) : b.type === "question" ? (
-      <Question block={b} pending={pending} onAnswer={onAnswer} busy={busy && pending?.kind !== "permission"} />
+      <Question block={b} pending={pending} onAnswer={onAnswer} busy={busy && pending?.kind !== "permission"} onCommandSettings={commandAsk ? () => { if (!openSettingsPane("shell")) onOpenSettings(); } : undefined} />
     ) : b.type === "card" && b.schema === "checklist" ? (
       // the stream holds the card as it was first posted; the live one ticks as checks finish
       <ChecklistBlock title={b.title} card={(cards.get(b.id)?.data ?? b.data) as ChecklistCard} />
