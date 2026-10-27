@@ -243,6 +243,12 @@ const run = async () => {
     available: async () => ({ ok: true }),
     async turn(input, io) {
       const text = input.input.kind === "text" ? input.input.text : "";
+      if (text.startsWith("test")) {
+        await io.tools.execute("write_file", { path: "code/part-7.md", content: "part 7" });
+        await io.tools.execute("bash", { command: "echo 'Tests  8 passed (8)'" });
+        io.emit({ type: "text", text: "Tested." });
+        return { stop: "end" };
+      }
       if (!text.startsWith("write")) {
         io.emit({ type: "text", text: "Sure, what should it say?" });
         return { stop: "end" };
@@ -839,9 +845,21 @@ const run = async () => {
   for (let i = 0; i < 50 && !(await $(`!!document.querySelector('[data-testid="work-rule"]')`)); i++) await sleep(100);
   const rule = await $(`document.querySelector('[data-testid="work-rule"]')?.textContent ?? null`);
   check("where a chat turns to writing files, a rule says so", rule === "Writing code", rule);
-  const coderFold = await $(`document.querySelector('.ai-scroll .trace-fold > summary')?.textContent ?? null`);
-  check("and the folded steps say what they changed", coderFold === "3 earlier steps · 3 files changed", coderFold);
+  const workFolds = () => $(`[...document.querySelectorAll('.ai-scroll [data-testid="work-fold"]')].map((f) => ({ summary: f.querySelector('summary')?.textContent, open: f.open, rows: f.querySelectorAll('.trace-row').length, waiting: f.hasAttribute('data-waiting') }))`);
+  const coderFold = (await workFolds())[0];
+  const loose = await $(`[...document.querySelectorAll('.ai-scroll .trace-row')].filter((r) => !r.closest('.trace-fold')).length`);
+  check("and the writing folds whole, closed, under what it came to", coderFold?.summary === "6 files changed" && !coderFold.open && coderFold.rows === 6 && loose === 0, { coderFold, loose });
   await shot("writing-code.png");
+  // asked before a command: the stretch says what it waits to be allowed, and the question points at the setting
+  const tested = ctx.agent.send(alpha.id, coder.id, { kind: "text", text: "test the parts" });
+  check("while it waits on a command, the stretch says what it waits to be allowed", await until(async () => (await workFolds())[1]?.summary === "1 file changed · waiting for you to allow `echo 'Tests  8 passed (8)'`", 80), await workFolds());
+  check("and the question says every command asks, with the way to the setting", await until(() => present('[data-testid="ask-each-command"] button'), 30), await $(`document.querySelector('.q-ask')?.textContent ?? null`));
+  await shot("writing-code-waiting.png");
+  await press(`[...document.querySelectorAll('.q-ask:not(.done) .chip-opt')].find((b) => b.textContent === 'Allow once')`);
+  await sleep(200);
+  await press(`document.querySelector('.q-ask:not(.done) .q-confirm .btn')`);
+  await until(() => ctx.agent.store.run(alpha.id, tested.runId)?.status === "done", 80);
+  check("once allowed, the stretch folds the answer in and says how the tests went", await until(async () => { const f = (await workFolds())[1]; return f?.summary === "1 file changed · 1 command · tests 8 passed" && !f.waiting && f.rows === 2; }, 50) && !(await present('[data-testid="ask-each-command"]')), await workFolds());
 
   // ── 「放到后台做」: the coding moves to a child conversation under this one; this one stays free to talk, and the conclusion comes back ──
   const gates = new Map();

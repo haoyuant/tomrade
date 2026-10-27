@@ -19,7 +19,8 @@ export interface FocusRef {
 export type Block =
   | { type: "text"; text: string; focus?: FocusRef[]; attachments?: import("./media.js").MediaRef[]; /** Sent into a running turn; the id the panel gave it. */ steerId?: string }
   | { type: "media"; media: import("./media.js").MediaRef; caption?: string }
-  | { type: "trace"; tool: string; args: unknown; ok: boolean; summary: string; ms: number;
+  /** `tail`: the end of a text result too long for the summary, where a command says how it went (a test run's counts). */
+  | { type: "trace"; tool: string; args: unknown; ok: boolean; summary: string; ms: number; tail?: string;
       commandResult?: { status: "success" | "no-match" | "condition-false" | "failed" | "declined" | "timed-out" | "interrupted"; exitCode: number | null; output: string } }
   | { type: "question"; id: string; text: string; options?: string[]; multiple?: boolean; freeText?: boolean }
   | { type: "card"; id: string; schema: string; title: string; data: unknown }

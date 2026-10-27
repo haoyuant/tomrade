@@ -1,18 +1,22 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { FoldChevron } from "~/components/ui/atoms";
 import { logQuietly } from "~/lib/api";
-import { foldTools, workLabel, type ConvoLine, type ConvoSay } from "~/lib/convoFold";
+import { codingFromLines, foldTools, workConclusion, workLabel, type ConvoLine, type ConvoSay } from "~/lib/convoFold";
 
 export type { ConvoLine, ConvoSay } from "~/lib/convoFold";
 
-/** A conversation's lines, long runs of tool calls folded under what they came to. */
-export function ConvoLines({ lines, open, toggle, say }: { lines: ConvoLine[]; open: ReadonlySet<number>; toggle: (key: number) => void; say: ConvoSay }) {
+/**
+ * A conversation's lines, long runs of tool calls folded under what they came to; once it writes code, each stretch
+ * of it folds whole under its conclusion. `coding`: all of it is writing code. `waiting`: the session waits on the person.
+ */
+export function ConvoLines({ lines, open, toggle, say, coding, waiting }: { lines: ConvoLine[]; open: ReadonlySet<number>; toggle: (key: number) => void; say: ConvoSay; coding?: boolean; waiting?: boolean }) {
+  const entries = useMemo(() => foldTools(lines, coding ? 0 : codingFromLines(lines), waiting), [lines, coding, waiting]);
   return (
     <>
-      {foldTools(lines).map((entry) =>
+      {entries.map((entry) =>
         "fold" in entry ? (
-          <details key={`fold-${entry.fold[0]!.key}`} className="trace-fold cs-convo-fold">
-            <summary>{workLabel(entry.work, say)}</summary>
+          <details key={`fold-${entry.fold[0]!.key}`} className={entry.coding ? "trace-fold cs-convo-fold work-fold" : "trace-fold cs-convo-fold"} data-testid={entry.coding ? "work-fold" : undefined}>
+            <summary>{entry.coding ? workConclusion(entry.work, say, entry.waiting) : workLabel(entry.work, say)}</summary>
             {entry.fold.map((l) => <ConvoLineRow key={l.key} line={l} open={open.has(l.key)} onToggle={() => toggle(l.key)} say={say} />)}
           </details>
         ) : (

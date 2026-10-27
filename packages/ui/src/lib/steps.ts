@@ -16,7 +16,7 @@ export function traceState(block: Extract<Block, { type: "trace" }>): { failed: 
   return states[status];
 }
 
-/** Steps kept open at the end of a run of them; earlier successful ones fold. */
+/** Steps kept open at the end of a run of them before the conversation writes code; earlier successful ones fold. */
 const OPEN_STEPS = 3;
 
 /** What a stretch of steps came to, for the line that stands in for them folded. */
@@ -40,6 +40,9 @@ export interface WorkStep {
 // Tool names across the built-in agent, Pi, Claude Code and Codex records: the ones that change a file, and the shells.
 const FILE_TOOL = /^(?:write|edit|multi_?edit|apply_?patch|write_?file|edit_?file|create_?file|str_?replace\w*|notebook_?edit)$/i;
 const COMMAND_TOOL = /^(?:bash|shell|exec|run_?command|command|terminal)$/i;
+
+/** Whether a tool by this name changes a file. */
+export const changesFile = (tool: string): boolean => FILE_TOOL.test(tool);
 
 const pathOf = (args: unknown): string | null => {
   if (!args || typeof args !== "object") return null;
@@ -73,7 +76,9 @@ export function workDone(steps: WorkStep[]): WorkDone {
 
 const traceStep = (m: ThreadMessage): WorkStep => {
   const b = m.block as Block & { type: "trace" };
-  return { tool: b.tool, args: b.args, output: b.commandResult?.output ?? null };
+  // the built-in shell's output is its summary and, when long, the tail the summary cut
+  const said = COMMAND_TOOL.test(b.tool) ? [b.summary, b.tail].filter(Boolean).join("\n") : "";
+  return { tool: b.tool, args: b.args, output: b.commandResult?.output ?? (said || null) };
 };
 
 /**
@@ -94,18 +99,73 @@ export function writesCode(messages: ThreadMessage[], runId: string): boolean {
   return messages.some((m) => m.runId === runId && m.role === "agent" && m.block.type === "trace" && FILE_TOOL.test(m.block.tool));
 }
 
+const isTrace = (m: ThreadMessage | undefined): boolean => m?.role === "agent" && m.block.type === "trace";
+
 /**
- * The transcript with long runs of steps folded: in each unbroken run of
- * traces, successful ones before the last few fold into one row. A failed
- * step is never folded, so it splits the fold around it.
+ * Where a conversation's writing code begins, as an index: the stretch of steps that first changes a file, or the top
+ * of a conversation opened to implement a ticket. -1 when it never writes.
  */
-export function foldSteps(messages: ThreadMessage[]): (ThreadMessage | { fold: ThreadMessage[]; work: WorkDone })[] {
-  const out: (ThreadMessage | { fold: ThreadMessage[]; work: WorkDone })[] = [];
+export function codingFrom(messages: ThreadMessage[], fromTop: boolean): number {
+  if (fromTop) return 0;
+  let at = messages.findIndex((m) => isTrace(m) && FILE_TOOL.test((m.block as Block & { type: "trace" }).tool));
+  while (at > 0 && isTrace(messages[at - 1])) at--;
+  return at;
+}
+
+/** What a permission question asks to run, in a few words: the command it names, else its last line. */
+export function askedFor(text: string): string {
+  const quoted = /"command"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(text);
+  let said = "";
+  if (quoted) {
+    try { said = JSON.parse(`"${quoted[1]}"`) as string; } catch { said = quoted[1]!; }
+  }
+  if (!said) said = text.trim().split(/\n{2,}/).at(-1)!.split("\n")[0]!;
+  said = said.trim();
+  return said.length > 60 ? `${said.slice(0, 59)}…` : said;
+}
+
+/** A folded stretch of steps. `coding`: it is writing code, so the whole stretch folds to what it came to; `waiting`: what the person is asked to allow right after it. */
+export interface StepFold {
+  fold: ThreadMessage[];
+  work: WorkDone;
+  coding?: boolean;
+  waiting?: string | null;
+}
+
+/**
+ * The transcript with its steps folded. Before the conversation writes code, in each unbroken run of traces the
+ * successful ones before the last few fold into one row, and a failed step splits the fold around it. From
+ * `codeFrom` on, a run's whole stretch of steps folds into one row that says what it came to — with what it said
+ * and was asked between them — and only its conclusion stays open; when the run then waits on `waiting`, the row
+ * says what it waits to be allowed.
+ */
+export function foldSteps(messages: ThreadMessage[], codeFrom = -1, waiting: { id: string; text: string } | null = null): (ThreadMessage | StepFold)[] {
+  const out: (ThreadMessage | StepFold)[] = [];
+  const coding = codeFrom >= 0 ? codeFrom : messages.length;
   let i = 0;
   while (i < messages.length) {
-    if (messages[i].role !== "agent" || messages[i].block.type !== "trace") { out.push(messages[i++]); continue; }
+    if (!isTrace(messages[i])) { out.push(messages[i++]); continue; }
+    if (i >= coding) {
+      const runId = messages[i].runId;
+      // a stretch: this run's steps, and what it said or was asked between them; it ends at its last step
+      let last = i;
+      for (let j = i + 1; j < messages.length; j++) {
+        const m = messages[j];
+        const b = m.block;
+        if (m.runId !== runId || m.role !== "agent" || !(b.type === "trace" || b.type === "text" || (b.type === "question" && b.id !== waiting?.id))) break;
+        if (b.type === "trace") last = j;
+      }
+      const fold = messages.slice(i, last + 1);
+      let next = last + 1;
+      while (next < messages.length && messages[next].runId === runId && messages[next].role === "agent" && messages[next].block.type === "text") next++;
+      const after = messages[next]?.block;
+      const asked = waiting && after?.type === "question" && after.id === waiting.id ? askedFor(waiting.text) : null;
+      out.push({ fold, work: workDone(fold.filter(isTrace).map(traceStep)), coding: true, waiting: asked });
+      i = last + 1;
+      continue;
+    }
     let end = i;
-    while (end < messages.length && messages[end].role === "agent" && messages[end].block.type === "trace") end++;
+    while (end < messages.length && end < coding && isTrace(messages[end])) end++;
     let held: ThreadMessage[] = [];
     const flush = () => {
       if (held.length > 1) out.push({ fold: held, work: workDone(held.map(traceStep)) });

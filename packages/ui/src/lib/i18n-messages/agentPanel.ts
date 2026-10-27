@@ -50,6 +50,8 @@ export const agentPanel = {
     movedToBackground: "Moved to the background · the child conversation is writing",
     seeThread: "See it",
     stepLimitSettings: "Change the step limit",
+    askEachCommand: "The assistant asks before every command · in a ticket's own copy, reading files and running tests can go without asking.",
+    askEachCommandSettings: "Change it",
     startBrief: "Session brief · what the agent started from",
 
     waitingPickAny: "Waiting on you · pick any",
@@ -288,6 +290,8 @@ export const agentPanel = {
     movedToBackground: "放到了后台 · 子会话在写",
     seeThread: "看它",
     stepLimitSettings: "调整步数上限",
+    askEachCommand: "内置助手每条命令都先问你 · 在工单副本里，可以设成读文件和跑测试不问。",
+    askEachCommandSettings: "去设置",
     startBrief: "会话上下文 · Agent 开始时读到的内容",
 
     waitingPickAny: "等待你的选择 · 可多选",
