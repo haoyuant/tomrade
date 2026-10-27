@@ -1,48 +1,91 @@
-import type { SessionRow, TerminalRow } from "@tomradex/code-sessions";
+import type { SessionRow, TerminalRow, ThreadRow } from "@tomradex/code-sessions";
+import { isApprovalAsk } from "../lib/terminalSession";
 
 /** A live session this window cannot show: it runs in another terminal app here, on another computer, or in the assistant panel. */
 export const away = (s: SessionRow): boolean => s.endedAt === null && s.where !== "herdr";
 
 export const live = (s: SessionRow): boolean => s.state !== "ended" && s.state !== "lost";
 
-/**
- * One row of what this window shows: a session in a herdr pane of its own, or a terminal opened here — with the
- * ticket session its agent claimed, once it has.
- */
-export type HereRow = { kind: "session"; id: string; session: SessionRow } | { kind: "terminal"; id: string; terminal: TerminalRow; session: SessionRow | null };
-
-/** The herdr pane a row's terminal is; null while it has none. */
-export const paneOf = (r: HereRow): string | null => (r.kind === "terminal" ? r.terminal.pane : r.session.pane);
+/** Where a row stands in the session bar: waiting on the person, running, idle, or ended. */
+export type BarStatus = "wait" | "run" | "idle" | "done";
 
 /**
- * The sidebar: one list of what this window shows, and the live sessions it cannot. A session with no ticket is never a
- * row of its own when a terminal here holds its pane: that terminal is the row. Rows on one pane — an agent working
- * several tickets side by side — sit together, where the first of them would. Ended sessions are the archive's.
+ * One row of the session bar: a session in a herdr pane of its own, a terminal opened here — with the ticket session
+ * its agent claimed, once it has — or an assistant conversation, with the headless session Tomrade runs for it.
  */
-export function sidebarRows(sessions: SessionRow[], terminals: TerminalRow[]): { here: HereRow[]; away: SessionRow[] } {
+export type HereRow = { kind: "session"; id: string; session: SessionRow } | { kind: "terminal"; id: string; terminal: TerminalRow; session: SessionRow | null } | { kind: "thread"; id: string; thread: ThreadRow; session: SessionRow | null };
+
+/** The herdr pane a row's terminal is; null while it has none, and for a conversation, which has no pane here. */
+export const paneOf = (r: HereRow): string | null => (r.kind === "terminal" ? r.terminal.pane : r.kind === "session" ? r.session.pane : null);
+
+/** A session's status as the bar reads it: ended, on the person (a permission, a question, its merge, an error), running, or idle. */
+export const sessionStatus = (s: SessionRow): BarStatus => (!live(s) ? "done" : s.needsYou || s.state === "waiting" || s.state === "error" ? "wait" : s.state === "running" ? "run" : "idle");
+
+export function statusOf(r: HereRow): BarStatus {
+  if (r.kind === "thread") {
+    const s = r.session && live(r.session) ? r.session : null;
+    return r.thread.wait || s?.needsYou ? "wait" : r.thread.running || s?.state === "running" ? "run" : "idle";
+  }
+  // A plain terminal goes by how herdr reads the agent in it.
+  if (r.kind === "terminal" && !r.session) {
+    const agent = r.terminal.agentStatus;
+    return agent === "blocked" ? "wait" : agent === "working" ? "run" : "idle";
+  }
+  return sessionStatus(r.session!);
+}
+
+/** The session waits on a permission its card can answer: its agent declared the keys, and the prompt is one of those. */
+export const canAnswer = (s: SessionRow): boolean => s.approval && live(s) && isApprovalAsk(s);
+
+const RANK: Record<BarStatus, number> = { wait: 0, run: 1, idle: 2, done: 3 };
+const startedAt = (r: HereRow): number => (r.kind === "terminal" ? r.terminal.startedAt : r.kind === "session" ? r.session.startedAt : r.thread.createdAt);
+/** When the row last moved: its hooks' last word, else its start; a conversation's last update. */
+const movedAt = (r: HereRow): number => (r.kind === "thread" ? (r.session?.lastEventAt ?? r.thread.updatedAt) : r.kind === "terminal" && !r.session ? r.terminal.startedAt : (r.session!.lastEventAt ?? r.session!.startedAt));
+const waitedSince = (r: HereRow): number => (r.kind === "thread" ? (r.thread.wait?.since ?? movedAt(r)) : movedAt(r));
+
+/**
+ * The bar's order, the assistant panel's: waiting first, by how long each has waited; then running, by start; idle by
+ * when last used; ended last, by when. It holds still while output streams.
+ */
+export function order(a: HereRow, b: HereRow): number {
+  const sa = statusOf(a);
+  const sb = statusOf(b);
+  if (sa !== sb) return RANK[sa] - RANK[sb];
+  if (sa === "wait") return waitedSince(a) - waitedSince(b);
+  if (sa === "run") return startedAt(b) - startedAt(a);
+  if (sa === "done") return (b.session?.endedAt ?? 0) - (a.session?.endedAt ?? 0);
+  return movedAt(b) - movedAt(a);
+}
+
+/**
+ * The session bar: one list of what this window shows and the assistant's conversations, and the live sessions it
+ * cannot show. A session with no ticket is never a row of its own when a terminal here holds its pane: that terminal is
+ * the row. A session without a pane here whose conversation is the assistant's rides on that conversation's row. Rows
+ * on one pane — an agent working several tickets side by side — sit together, where the first of them would. An ended
+ * session a cell shows to read closes the list, with what came of it; the rest are the archive's.
+ */
+export function sidebarRows(sessions: SessionRow[], terminals: TerminalRow[], threads: ThreadRow[] = []): { here: HereRow[]; away: SessionRow[] } {
   const live = sessions.filter((s) => s.endedAt === null);
   const byId = new Map(live.map((s) => [s.id, s]));
   const terminalPanes = new Set(terminals.flatMap((t) => (t.pane ? [t.pane] : [])));
   const claimed = new Set(terminals.flatMap((t) => (t.sessionId ? [t.sessionId] : [])));
+  const listed = new Set(threads.map((t) => t.id));
+  const onThread = (s: SessionRow) => !s.pane && !!s.threadId && listed.has(s.threadId);
+  const byThread = new Map(live.filter(onThread).map((s) => [s.threadId!, s]));
   const rows: HereRow[] = [
     ...terminals.map((t): HereRow => ({ kind: "terminal", id: t.id, terminal: t, session: t.sessionId ? (byId.get(t.sessionId) ?? null) : null })),
-    ...live.filter((s) => !away(s) && !claimed.has(s.id) && !(s.pane && !s.itemId && terminalPanes.has(s.pane))).map((s): HereRow => ({ kind: "session", id: s.id, session: s }))
+    ...live.filter((s) => !away(s) && !claimed.has(s.id) && !(s.pane && !s.itemId && terminalPanes.has(s.pane))).map((s): HereRow => ({ kind: "session", id: s.id, session: s })),
+    ...threads.map((t): HereRow => ({ kind: "thread", id: t.id, thread: t, session: byThread.get(t.id) ?? null }))
   ];
-  // Needs-you first, then the ones working a ticket, then plain terminals; newest first within each.
-  const rank = (r: HereRow) => {
-    const s = r.session;
-    if (s?.needsYou) return 0;
-    return s?.itemId ? 1 : 2;
-  };
-  const started = (r: HereRow) => (r.kind === "terminal" ? r.terminal.startedAt : r.session.startedAt);
-  const sorted = rows.sort((a, b) => rank(a) - rank(b) || started(b) - started(a));
+  const sorted = rows.sort(order);
   const here: HereRow[] = [];
   for (const r of sorted) {
     if (here.includes(r)) continue;
     const pane = paneOf(r);
     here.push(...(pane ? sorted.filter((o) => paneOf(o) === pane) : [r]));
   }
-  return { here, away: live.filter(away) };
+  const done = sessions.filter((s) => s.endedAt !== null && s.continuedIn === null).map((s): HereRow => ({ kind: "session", id: s.id, session: s }));
+  return { here: [...here, ...done.sort(order)], away: live.filter((s) => away(s) && !onThread(s)) };
 }
 
 /** The list cut where the pane changes: rows on one pane make one bundle, every other row one of its own. */

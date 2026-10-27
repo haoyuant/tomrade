@@ -293,7 +293,7 @@ app.whenReady().then(async () => {
     await js(`[...document.querySelector('${freshCell}').querySelectorAll('.link-btn')].find((b) => b.textContent === '关闭终端')?.click(); true`);
     const ended = await wait(async () => !((await again.panes()) ?? []).some((p) => p.paneId === freshPane) && !saved().some((t) => t.pane === freshPane), 15000);
     check("关闭终端：pane 结束、进程树退出，列表里也没了", ended && !!freshPid && (await wait(async () => !alive(freshPid), 10000)), `pane ${freshPane} pid ${freshPid}`);
-    check("窗口说的是应用的语言", (await js(`document.querySelector('.cs-side-head .eyebrow').textContent`)) === "这个窗口里");
+    check("窗口说的是应用的语言", (await js(`document.querySelector('.cs-bar-title').textContent`)) === "会话");
     win.close();
   } catch (error) {
     check("检查跑完", false, error?.stack ?? String(error));

@@ -46,6 +46,27 @@ export interface SessionRow {
   ranIn: string | null;
   /** A ticket session's conversation was saved on this machine as it ended: all of it, or only its end. */
   recordSaved: "whole" | "end" | null;
+  /** Its agent declared the keys that answer its permission prompt: Allow and Deny on its card press them in its pane. */
+  approval: boolean;
+  /** When its hooks last spoke; what the session bar orders waiting and idle rows by. */
+  lastEventAt: number | null;
+}
+
+/** A conversation of the assistant panel's, the built-in assistant's among them: in the session bar beside the sessions, with no pane here. */
+export interface ThreadRow {
+  id: string;
+  title: string;
+  engine: string;
+  /** The engine's own name; null when Tomrade does not know it. */
+  engineName: string | null;
+  itemId: string | null;
+  key: string | null;
+  ticketTitle: string | null;
+  running: boolean;
+  /** What it waits on the person for, and since when this window has seen it wait in that way. */
+  wait: { kind: "permission" | "question"; text: string | null; since: number } | null;
+  createdAt: number;
+  updatedAt: number;
 }
 
 /** A plain terminal the window opened: a herdr pane of the person's, with no ticket or code-link session behind it. */
@@ -115,6 +136,8 @@ export interface WindowState {
   /** The terminal setting, as code link reads it on this machine. */
   terminal: string;
   sessions: SessionRow[];
+  /** The assistant panel's conversations, read when they change rather than with every state. */
+  threads: ThreadRow[];
   /** Said above the cells when the sessions could not be read; terminals still open. */
   warning: string | null;
   terminals: TerminalRow[];
@@ -170,6 +193,12 @@ export type WindowMessage =
   | { type: "layout"; layout: Layout }
   | { type: "continue"; sessionId: string }
   | { type: "openThread"; sessionId: string }
+  /** An assistant conversation, shown in the app window: it has no pane here. */
+  | { type: "showThread"; threadId: string }
+  /** The session's permission prompt answered from its card: the keys its agent declared, pressed in its pane. */
+  | { type: "answer"; sessionId: string; which: "allow" | "deny" }
+  /** The last lines of every pane this window lists, for the overview: answered with `tails`. */
+  | { type: "tails" }
   | { type: "openWorktree"; sessionId: string }
   | { type: "openPr"; sessionId: string }
   | { type: "focusHerdr"; sessionId: string }
@@ -201,4 +230,6 @@ export type WindowPost =
   | { type: "shownIn"; cell: string; other: string }
   | { type: "toast"; text: string }
   /** The archived sessions whose conversation says the query, from what their agents recorded. */
-  | { type: "archiveFound"; query: string; ids: string[] };
+  | { type: "archiveFound"; query: string; ids: string[] }
+  /** Each listed pane's last lines, styling stripped; null for a pane that is gone. */
+  | { type: "tails"; panes: Record<string, string | null> };

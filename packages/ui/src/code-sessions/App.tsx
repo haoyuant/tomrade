@@ -1,17 +1,37 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Layout, SessionRow, TerminalRow, WindowState } from "@tomradex/code-sessions";
+import type { Layout, SessionRow, TerminalRow, ThreadRow, WindowState } from "@tomradex/code-sessions";
 import { ContextMenuActionItem, ContextMenuSub } from "~/components/ui/menu";
 import { useLocaleWords } from "~/lib/dicts";
-import { onLook, onShownIn, onState, onToast, send, type Look } from "./bridge";
+import { onLook, onShownIn, onState, onTails, onToast, send, type Look } from "./bridge";
 import { Cell } from "./Cell";
-import { keyLabel, windowKey, type WindowKey } from "./keys";
+import { arrowsLabel, keyLabel, windowKey, type WindowKey } from "./keys";
 import { applyPreset, carryOn, close, cycle, heir, holder, landing, leaves, lock, neighbour, resize, show, split } from "./layout";
-import { live, sessionName } from "./lists";
+import { live, sessionName, sidebarRows, type HereRow } from "./lists";
+import { Overview } from "./Overview";
 import { SayContext, sayIn, useSay, type SayKey } from "./say";
 import { Sidebar } from "./Sidebar";
 import { asPicked, carriedOf, paneKey, useWindowLayout, type Leaf } from "./useWindowLayout";
 
 type Toast = { text: string; action?: { label: string; run: () => void } };
+
+/** How often the overview reads the panes' last lines while it is open. */
+const TAILS_EVERY_MS = 2000;
+
+/** The keys the window keeps, said along its bottom edge the way this platform writes them. */
+function KeysFooter() {
+  const say = useSay();
+  return (
+    <footer className="cs-keys" data-testid="cs-keys">
+      <span>{say("keysNote")}</span>
+      <span><kbd>{keyLabel("splitRight")}</kbd> {say("keySplitRight")}</span>
+      <span><kbd>{keyLabel("splitDown")}</kbd> {say("keySplitDown")}</span>
+      <span><kbd>{keyLabel("close")}</kbd> {say("keyClose")}</span>
+      <span><kbd>{arrowsLabel()}</kbd> {say("keyArrows")}</span>
+      <span><kbd>{keyLabel("previous")}</kbd> <kbd>{keyLabel("next")}</kbd> {say("keyPrevNext")}</span>
+      <span><kbd>{keyLabel("fold")}</kbd> {say("keyFold")}</span>
+    </footer>
+  );
+}
 
 /** The selected cell, where a pick from the list goes: the one clicked last, else the first empty one, else the first. */
 const selectedCell = (cells: Leaf[], focused: string | null): Leaf => cells.find((c) => c.id === focused) ?? cells.find((c) => !c.sessionId) ?? cells[0]!;
@@ -114,10 +134,21 @@ export function App() {
     setFoldedHere(!folded);
     send({ type: "fold", folded: !folded });
   }, [folded]);
+  // The cells, or every session as one big card over them; the cells stay attached underneath.
+  const [view, setView] = useState<"grid" | "overview">("grid");
+  const [tails, setTails] = useState<Record<string, string | null>>({});
+  const rows = useMemo(() => (state ? sidebarRows(state.sessions, state.terminals, state.threads) : { here: [], away: [] }), [state]);
 
   useEffect(() => onState((next) => setState(next)), []);
   useEffect(() => onLook(setLook), []);
   useEffect(() => onToast((text) => setToast({ text })), []);
+  useEffect(() => onTails((post) => setTails(post.panes)), []);
+  useEffect(() => {
+    if (view !== "overview") return;
+    send({ type: "tails" });
+    const timer = setInterval(() => send({ type: "tails" }), TAILS_EVERY_MS);
+    return () => clearInterval(timer);
+  }, [view]);
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), 6000);
@@ -171,7 +202,7 @@ export function App() {
   const side = useRef<HTMLElement>(null);
   const selectedId = laid ? selectedCell(leaves(laid), focused).sessionId : null;
   useEffect(() => {
-    side.current?.querySelector('.cs-row[aria-current="true"]')?.scrollIntoView({ block: "nearest" });
+    side.current?.querySelector('.cs-row[aria-current="true"], .cs-dot[aria-current="true"]')?.scrollIntoView({ block: "nearest" });
   }, [selectedId]);
 
   if (!state || !laid) return null;
@@ -233,6 +264,20 @@ export function App() {
     if (!live(s)) toRead.current.add(s.id);
     if (s.mode === "run" && !s.pane) return send({ type: "openThread", sessionId: s.id });
     land(s.id, beside);
+  };
+  // An assistant conversation has no pane here: the app window shows it.
+  const showThread = (t: ThreadRow) => send({ type: "showThread", threadId: t.id });
+  const answer = (s: SessionRow, which: "allow" | "deny") => send({ type: "answer", sessionId: s.id, which });
+  // The overview is drawn over the cells, so the keyboard leaves whatever terminal held it.
+  const openOverview = () => {
+    (document.activeElement as HTMLElement | null)?.blur();
+    setView("overview");
+  };
+  // "See in a pane": back to the cells, with it in one, selected.
+  const seeInPane = (r: HereRow) => {
+    setView("grid");
+    if (r.kind === "terminal") pickTerminal(r.terminal);
+    else if (r.session) pick(r.session);
   };
   // The cell menu's "connect": one session or terminal into that cell.
   const connect = (cell: string, id: string) => {
@@ -360,31 +405,47 @@ export function App() {
   return (
     <SayContext.Provider value={say}>
       <div className="cs-window">
-        <Sidebar
-          ref={side}
-          state={state}
-          locale={locale}
-          folded={folded}
-          onFold={toggleFold}
-          active={active}
-          selected={selected}
-          shownPanes={shownPanes}
-          selectedPane={selectedPane}
-          pane={key}
-          canOpen={canOpen}
-          onPick={pick}
-          onTerminal={pickTerminal}
-          onNewTerminal={newTerminal}
-          onApplyPreset={(p) => {
-            change(applyPreset(layout, p.layout, undefined, key));
-            setFocused(null);
-          }}
-          onSavePreset={(name) => send({ type: "savePreset", name, layout })}
-        />
-        <main className="cs-main">
-          <Banner state={state} />
-          <div className="cs-layout">{render(layout)}</div>
-        </main>
+        <div className="cs-topbar">
+          <span className="cs-project" data-testid="cs-project" title={say("projectTitle", { project: state.projectName })}>
+            {state.projectName}
+          </span>
+          <div className="seg cs-views" role="group" aria-label={say("viewToggle")} data-testid="cs-views">
+            <button type="button" aria-pressed={view === "grid"} data-testid="cs-view-grid" onClick={() => setView("grid")}>
+              {say("viewGrid")}
+            </button>
+            <button type="button" aria-pressed={view === "overview"} data-testid="cs-view-overview" onClick={openOverview}>
+              {say("viewOverview")}
+            </button>
+          </div>
+        </div>
+        <div className="cs-body">
+          <main className="cs-main">
+            <Banner state={state} />
+            <div className="cs-layout">{render(layout)}</div>
+            {view === "overview" && <Overview rows={[...rows.here, ...rows.away.map((s): HereRow => ({ kind: "session", id: s.id, session: s }))]} tails={tails} active={active} onSee={seeInPane} onThread={showThread} onAnswer={answer} />}
+          </main>
+          <Sidebar
+            ref={side}
+            state={state}
+            rows={rows}
+            locale={locale}
+            folded={folded}
+            onFold={toggleFold}
+            marks={{ active, selected, shownPanes, selectedPane, pane: key }}
+            canOpen={canOpen}
+            onPick={pick}
+            onTerminal={pickTerminal}
+            onThread={showThread}
+            onAnswer={answer}
+            onNewTerminal={newTerminal}
+            onApplyPreset={(p) => {
+              change(applyPreset(layout, p.layout, undefined, key));
+              setFocused(null);
+            }}
+            onSavePreset={(name) => send({ type: "savePreset", name, layout })}
+          />
+        </div>
+        <KeysFooter />
         {toast && (
           <div className="cs-toast" role="status" data-testid="cs-toast" onClick={() => setToast(null)}>
             {toast.text}

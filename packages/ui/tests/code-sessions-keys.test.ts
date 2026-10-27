@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { keyLabel, modifiedEnter, windowKey } from "../src/code-sessions/keys";
+import { arrowsLabel, keyLabel, modifiedEnter, windowKey } from "../src/code-sessions/keys";
 
 const press = (key: string, mods: { meta?: boolean; ctrl?: boolean; alt?: boolean; shift?: boolean } = {}, code = /^[a-z]$/i.test(key) ? `Key${key.toUpperCase()}` : key) => ({
   key,
@@ -48,6 +48,9 @@ it("writes each key the way its platform does", () => {
   expect(keyLabel("left", false)).toBe("Alt+←");
   expect(keyLabel("fold", true)).toBe("⌘B");
   expect(keyLabel("fold", false)).toBe("Ctrl+Shift+B");
+  // The footer says the arrows' modifiers once for all four.
+  expect(arrowsLabel(true)).toBe("⌥⌘");
+  expect(arrowsLabel(false)).toBe("Alt");
 });
 
 it("hands Ctrl+Enter and Shift+Enter to the backend, and leaves every other Enter to xterm", () => {

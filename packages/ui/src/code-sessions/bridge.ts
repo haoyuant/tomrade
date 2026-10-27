@@ -32,11 +32,13 @@ export const onLook = (listener: (look: Look) => void) => surface()?.onLook(list
 
 type ShownIn = Extract<WindowPost, { type: "shownIn" }>;
 type Found = Extract<WindowPost, { type: "archiveFound" }>;
+type Tails = Extract<WindowPost, { type: "tails" }>;
 type CellPost = Exclude<Extract<WindowPost, { cell: string }>, ShownIn>;
 const cells = new Map<string, (post: CellPost) => void>();
 const toasts = new Set<(text: string) => void>();
 const shownIn = new Set<(post: ShownIn) => void>();
 const found = new Set<(post: Found) => void>();
+const tails = new Set<(post: Tails) => void>();
 
 // One listener for every post: frames and ends go to their cell, toasts to whoever shows them.
 surface()?.onMessage((raw) => {
@@ -44,6 +46,7 @@ surface()?.onMessage((raw) => {
   if (post.type === "toast") for (const listener of toasts) listener(post.text);
   else if (post.type === "shownIn") for (const listener of shownIn) listener(post);
   else if (post.type === "archiveFound") for (const listener of found) listener(post);
+  else if (post.type === "tails") for (const listener of tails) listener(post);
   else cells.get(post.cell)?.(post);
 });
 
@@ -69,4 +72,10 @@ export function onToast(listener: (text: string) => void): () => void {
 export function onArchiveFound(listener: (post: Found) => void): () => void {
   found.add(listener);
   return () => found.delete(listener);
+}
+
+/** The last lines of the panes the window lists, for the overview. */
+export function onTails(listener: (post: Tails) => void): () => void {
+  tails.add(listener);
+  return () => tails.delete(listener);
 }

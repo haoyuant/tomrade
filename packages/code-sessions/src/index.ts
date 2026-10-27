@@ -11,12 +11,13 @@ import type {} from "@tomradex/contributions";
 import type {} from "@tomradex/items";
 import type {} from "@tomradex/settings";
 import { BUILTIN_TERMINAL, MCP_AGENT, WINDOWS_TERMINAL, panesOf, resumeCommand, type CodeLink } from "@tomradex/code-link";
+import { PANEL_SURFACES } from "@tomradex/agent";
 import type { DesktopSurface } from "@tomradex/desktop-surface";
 import type {} from "@tomradex/herdr";
 import type { TerminalBridge, TerminalPaneInfo, TerminalProvider, TerminalStream } from "@tomradex/contracts";
 import { randomUUID } from "node:crypto";
 import { droppedPaste, readableDrops } from "./drop.js";
-import type { Layout, LayoutPreset, SessionRow, TerminalPlace, TerminalRow, WindowMessage, WindowPost, WindowState } from "./protocol.js";
+import type { Layout, LayoutPreset, SessionRow, TerminalPlace, TerminalRow, ThreadRow, WindowMessage, WindowPost, WindowState } from "./protocol.js";
 import { CODE_SESSIONS_WORDS } from "./words.js";
 import { errorMessage } from "@tomradex/contracts";
 
@@ -40,6 +41,12 @@ export const HELD_INPUT_MAX = 64 * 1024;
 const FRAME_BATCH_MS = 16;
 /** A batch past this goes at once, so a pane painting without pause cannot grow it without end. */
 const FRAME_BATCH_MAX = 256 * 1024;
+/** How long the assistant's events settle before the window is refreshed for them: a turn ends in a burst of them. */
+const THREADS_SETTLE_MS = 100;
+/** How many lines of each pane the overview reads. */
+const TAIL_LINES = 8;
+/** The most of a question an assistant card carries. */
+const WAIT_TEXT_MAX = 160;
 
 interface Saved {
   asked?: boolean;
@@ -228,7 +235,9 @@ export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, it
         endedAt: live ? null : (s.endedAt ?? s.lastEventAt ?? s.startedAt),
         continuedIn: null,
         recordSaved: s.recordSavedAt ? (s.recordCut ? "end" : "whole") : null,
-        ranIn: s.herdrPane ?? null
+        ranIn: s.herdrPane ?? null,
+        approval: false,
+        lastEventAt: s.lastEventAt ?? null
       };
     })
     .sort((a, b) => Number(b.state !== "ended" && b.state !== "lost") - Number(a.state !== "ended" && a.state !== "lost") || Number(b.needsYou) - Number(a.needsYou) || b.startedAt - a.startedAt);
@@ -321,11 +330,83 @@ function apply(ctx: Context, config: Config) {
     try {
       const agents = ctx.get("agent");
       const rows = sessionRows(ctx.codeLink, ctx.items, projectId, Date.now(), ctx.get("hub")?.deviceId);
-      return { sessions: rows.map((r) => ({ ...r, agentName: agents?.engineOf(r.agent)?.title ?? null })), warning: null };
+      return { sessions: rows.map((r) => ({ ...r, agentName: agents?.engineOf(r.agent)?.title ?? null, approval: !!agents?.engineOf(r.agent)?.local?.approval })), warning: null };
     } catch (error) {
       ctx.logger.warn(`code sessions: listing sessions failed: ${errorMessage(error)}`);
       return { sessions: [], warning: words()("sessionsUnreadable") };
     }
+  };
+
+  /**
+   * Each open window's assistant conversations, kept from the last time they changed: a state is built far more often
+   * than a conversation moves (every pane event, every poll), and reading the thread list and its questions each time
+   * would cost more than the sessions themselves. Dropped when the assistant says something changed, or the window closes.
+   */
+  const threadsOf = new Map<string, ThreadRow[]>();
+  /** Windows whose conversations changed since they were read: read again with the next state, against the rows they had. */
+  const staleThreads = new Set<string>();
+  const clip = (text: string | null | undefined): string | null => {
+    const line = text?.replace(/\s+/g, " ").trim();
+    return line ? (line.length > WAIT_TEXT_MAX ? `${line.slice(0, WAIT_TEXT_MAX - 1)}…` : line) : null;
+  };
+  const threadRows = (projectId: string): ThreadRow[] => {
+    const agent = ctx.get("agent");
+    if (!agent) return [];
+    const was = new Map((threadsOf.get(projectId) ?? []).map((t) => [t.id, t.wait]));
+    const now = Date.now();
+    try {
+      const running = new Set(agent.activeRuns().map((a) => a.thread.id));
+      const pending = new Map(agent.activities().flatMap((a) => (a.projectId === projectId && a.pending ? [[a.threadId, a.pending] as const] : [])));
+      // Several conversations about one ticket read it once.
+      const known = new Map<string, { key: string; title: string } | null | undefined>();
+      const itemOf = (id: string) => {
+        if (!known.has(id)) known.set(id, ctx.items.get(projectId, id));
+        return known.get(id);
+      };
+      return agent.store.threads(projectId, PANEL_SURFACES).map((th): ThreadRow => {
+        const asked = pending.get(th.id);
+        const kind = asked ? (asked.kind === "permission" ? "permission" : "question") : null;
+        const before = was.get(th.id);
+        const item = th.itemId ? itemOf(th.itemId) : null;
+        return {
+          id: th.id,
+          title: th.title,
+          engine: th.engine,
+          engineName: agent.engineOf(th.engine)?.title ?? null,
+          itemId: th.itemId,
+          key: item?.key ?? null,
+          ticketTitle: item?.title ?? null,
+          running: running.has(th.id),
+          wait: kind ? { kind, text: clip(asked?.question.text), since: before?.kind === kind ? before.since : now } : null,
+          createdAt: th.createdAt,
+          updatedAt: th.updatedAt
+        };
+      });
+    } catch (error) {
+      ctx.logger.warn(`code sessions: listing assistant conversations failed: ${errorMessage(error)}`);
+      return threadsOf.get(projectId) ?? [];
+    }
+  };
+  const threads = (projectId: string): ThreadRow[] => {
+    const rows = threadsOf.get(projectId);
+    if (rows && !staleThreads.has(projectId)) return rows;
+    staleThreads.delete(projectId);
+    const next = threadRows(projectId);
+    threadsOf.set(projectId, next);
+    return next;
+  };
+  const refreshSoon = new Map<string, NodeJS.Timeout>();
+  /** The project's assistant conversations changed: its window reads them again, once the burst settles. */
+  const threadsChanged = (projectId: string) => {
+    if (!open.has(projectId)) return;
+    staleThreads.add(projectId);
+    if (refreshSoon.has(projectId)) return;
+    const timer = setTimeout(() => {
+      refreshSoon.delete(projectId);
+      void refresh(projectId);
+    }, THREADS_SETTLE_MS);
+    timer.unref?.();
+    refreshSoon.set(projectId, timer);
   };
 
   /** Terminals herdr is still opening, by project: shown as starting, never saved. */
@@ -523,6 +604,7 @@ function apply(ctx: Context, config: Config) {
       // An ended one asked for from outside (a ticket's earlier session) comes along, so the window can put it in a cell.
       // An ended one a cell shows says where its pane goes on, so the cell can follow it there.
       sessions: sent.map((s) => (s.endedAt !== null && inCells.has(s.id) ? { ...s, continuedIn: continuedIn(sessionOf(projectId, s.id)?.herdrPane ?? null, shown.sessions, opened) } : s)),
+      threads: threads(projectId),
       warning,
       terminals: opened,
       places: await places(projectId),
@@ -890,6 +972,20 @@ function apply(ctx: Context, config: Config) {
         if (s?.threadId) return void ctx.emit("desktop/open", { projectId, threadId: s.threadId });
         return command(projectId, win, "code-link.open-thread", m.sessionId);
       }
+      // The app window comes forward on it, the way a notification's click or a tomrade:// link brings it up.
+      case "showThread":
+        return void ctx.emit("desktop/open", { projectId, threadId: m.threadId });
+      case "answer": {
+        const taken = await ctx.codeLink.sessionAnswer(projectId, m.sessionId, m.which).catch(() => false);
+        if (!taken) post(win, { type: "toast", text: words()("answerNotTaken") });
+        return;
+      }
+      case "tails": {
+        const provider = backend();
+        const panes = [...new Set([...ctx.codeLink.sessionsOf(projectId).flatMap((s) => (isLive(s) && s.herdrPane ? [s.herdrPane] : [])), ...savedTerminals(projectId).map((t) => t.pane)])];
+        const read = provider ? await Promise.all(panes.map((pane) => provider.readTail(pane, TAIL_LINES).catch(() => null))) : [];
+        return post(win, { type: "tails", panes: Object.fromEntries(panes.map((pane, i) => [pane, read[i] ?? null])) });
+      }
       case "switchTo": {
         const s = sessionOf(projectId, m.sessionId);
         const app = s?.terminal ? TERMINAL_APPS[s.terminal]?.app : undefined;
@@ -1007,12 +1103,25 @@ function apply(ctx: Context, config: Config) {
         dropFramesOf(win);
         follow(win, []);
         for (const cell of [...win.terminals.keys()]) detach(win, cell);
-        if (open.get(projectId) === win) open.delete(projectId);
+        if (open.get(projectId) === win) {
+          open.delete(projectId);
+          threadsOf.delete(projectId);
+          staleThreads.delete(projectId);
+        }
       }
     });
   };
 
   ctx.on("codeLink/changed", (projectId) => void refresh(projectId));
+  // A question asked or answered, a run beginning or ending: what a conversation's card shows. Not each message or
+  // streamed word. The event names only the thread: a conversation no window lists yet comes in with its run's start.
+  ctx.on("agent/event", (threadId, event) => {
+    if (event.type !== "pending" && event.type !== "done") return;
+    const projectId = [...threadsOf].find(([, rows]) => rows.some((t) => t.id === threadId))?.[0];
+    if (projectId) threadsChanged(projectId);
+  });
+  ctx.on("agent/run-started", (_run, thread) => threadsChanged(thread.projectId));
+  ctx.on("agent/run-ended", (_run, thread) => threadsChanged(thread.projectId));
   // An agent in a terminal changing how it stands, or the terminal ending, shows at once.
   ctx.inject(["terminals"], (ctx) => {
     ctx.terminals.onPane((event) => {
@@ -1057,6 +1166,7 @@ function apply(ctx: Context, config: Config) {
   });
 
   ctx.effect(() => () => {
+    for (const timer of refreshSoon.values()) clearTimeout(timer);
     for (const win of open.values()) win.surface.close();
   });
 }
