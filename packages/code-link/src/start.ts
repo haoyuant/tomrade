@@ -58,6 +58,8 @@ export interface StartOptions {
   then?: string;
   /** Headless runs only: the conversation in `threadId` claims the ticket it writes code for — nothing is sent, and what it changed already comes along onto the branch. */
   claim?: boolean;
+  /** Another session beside the one at work: a conversation of its own, on a branch and so in a folder of its own. */
+  apart?: boolean;
 }
 
 export type StartResult =
@@ -128,6 +130,13 @@ export interface StartHost {
 const OPEN = new Set(["backlog", "todo", "doing", "verifying"]);
 
 const sourced = (opts: StartOptions) => (opts.source ? { requestId: `start:${randomUUID()}`, source: opts.source } : undefined);
+
+/** A branch beside the ticket's own for a second session on it: `-b`, `-c`… after it, the first no link or conversation has. */
+export function apartBranch(base: string, taken: string[]): string {
+  const used = new Set(taken);
+  for (const letter of "bcdefghijklmnopqrstuvwxyz") if (!used.has(`${base}-${letter}`)) return `${base}-${letter}`;
+  for (let n = 2; ; n++) if (!used.has(`${base}-x${n}`)) return `${base}-x${n}`;
+}
 
 /** Unfinished dependencies are a question for the human, not a wall: Start again with allowBlocked to work ahead of them. */
 const blockedGate = (item: Item, blockers: Item[]): StartResult => ({
@@ -261,9 +270,9 @@ export class Starter {
 
     // An open thread on this ticket is continued, not duplicated.
     const links = store.links(projectId, item.id).filter((l) => l.repoId === repo.id && l.delivery === delivery.sequence && l.branch);
-    const linked = links.map((l) => (l.threadId ? agent.store.thread(projectId, l.threadId) : null)).find((t) => !!t) ?? null;
+    const linked = opts.apart ? null : (links.map((l) => (l.threadId ? agent.store.thread(projectId, l.threadId) : null)).find((t) => !!t) ?? null);
     // A conversation from an earlier delivery comes along on this delivery's own branch: the old one is delivered.
-    const named = !linked && opts.threadId ? agent.store.thread(projectId, opts.threadId) : null;
+    const named = !linked && !opts.apart && opts.threadId ? agent.store.thread(projectId, opts.threadId) : null;
     const carried = named?.itemId === item.id ? named : null;
     const previous = linked ?? carried;
     let continued = false;
@@ -296,7 +305,7 @@ export class Starter {
       }
       if (!asked && engineId !== "other" && thread.engine !== engineId && !agent.activeRuns().some((a) => a.thread.id === thread!.id)) agent.setEngine(projectId, thread.id, engineId);
     } else {
-      branch = plannedBranch;
+      branch = opts.apart ? apartBranch(plannedBranch, [...store.links(projectId, item.id).map((l) => l.branch), ...agent.store.threads(projectId, null).flatMap((t) => (t.itemId === item.id && t.branch ? [t.branch] : []))]) : plannedBranch;
       thread = agent.newThread(projectId, engineId === "other" ? undefined : engineId, board.id, { itemId: item.id, branch, title: `${item.key} ${item.title}`, surface });
       fresh = thread.id;
     }

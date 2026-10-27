@@ -138,6 +138,7 @@ export const keys = {
     recentSessions: (projectId: string) => ["codeLink", projectId, "recentSessions"] as const,
     /** Kept apart from `all`: asked again only when the Terminal window says its cells changed, not on every hook. */
     cells: (projectId: string) => ["codeLinkCells", projectId] as const,
+    timeline: (projectId: string, itemId: string) => ["codeLink", projectId, "timeline", itemId] as const,
     handoff: (projectId: string, threadId: string) => ["codeLink", projectId, "handoff", threadId] as const,
     deliveries: (projectId: string, itemId: string) => ["codeLink", projectId, "deliveries", itemId] as const,
     repos: (projectId: string) => ["codeLink", projectId, "repos"] as const,

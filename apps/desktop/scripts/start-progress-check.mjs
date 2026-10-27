@@ -139,24 +139,89 @@ app.whenReady().then(async () => {
     await wait(async () => asked > 0);
     assert("别处开始后，开着的窗口立刻重新读上次的选择", asked > 0);
 
-    // ── 工单已有会话在做：先问去看它、跟它说一句、还是另开一个 ──
+    // ── 工单已有会话在做：先问去看它、跟它说一句、还是另开一个（TOM-699：都在面板里，另开一个用自己的文件夹和分支） ──
     const shown = [];
     ctx.codeLink.showSession = async (_projectId, sessionId) => (shown.push(sessionId), true);
     const realDeliveries = ctx.codeLink.deliveries.bind(ctx.codeLink);
+    const realSessionsOf = ctx.codeLink.sessionsOf.bind(ctx.codeLink);
+    const realRecent = ctx.codeLink.recentSessions.bind(ctx.codeLink);
     ctx.codeLink.deliveries = (projectId, itemId) => [{ id: "d1", projectId, itemId, sequence: 1, state: "active", startedAt: Date.now(), completedAt: null, updatedAt: Date.now(), bases: {} }];
-    ctx.codeLink.sessionsOf = (projectId) => [{ id: "s-live", projectId, repoId: "r", delivery: 1, branch: "spr-1/slow-start", itemIds: [item.id], worked: [], mode: "terminal", agent: "ready", externalId: null, threadId: null, worktree: null, herdrPane: "w1:p1", terminal: null, title: null, cwd: null, transcript: null, prompted: true, withoutTicket: null, recordSavedAt: null, recordCut: false, state: "running", lastEventAt: Date.now(), lastToolAt: null, lastCommitAt: null, summary: null, activity: "Bash · pnpm test", blocked: null, requestedBy: null, autoMerge: false, device: "here", startedAt: Date.now(), endedAt: null }];
+    const liveSession = { id: "s-live", projectId: project.id, repoId: "r", delivery: 1, branch: "spr-1/slow-start", itemIds: [item.id], worked: [], marks: [], asked: 0, mode: "terminal", agent: "ready", externalId: null, threadId: null, worktree: null, herdrPane: "w1:p1", terminal: null, title: null, cwd: null, transcript: null, prompted: true, withoutTicket: null, recordSavedAt: null, recordCut: false, state: "running", lastEventAt: Date.now(), lastToolAt: null, lastCommitAt: null, summary: null, activity: "Bash · pnpm test", blocked: null, requestedBy: null, autoMerge: false, device: "here", startedAt: Date.now(), endedAt: null };
+    ctx.codeLink.sessionsOf = () => [liveSession];
+    ctx.codeLink.recentSessions = async (projectId) => [{ ...liveSession, approval: false, prompt: null, tail: null, outcome: null }, ...(await realRecent(projectId))];
+    let apartOpts = null;
+    ctx.codeLink.start = async (_projectId, _itemId, opts) => ((apartOpts = opts), { ok: true, continued: false, threadId: null, sessionId: "s-apart", branch: "spr-1/slow-start-b", worktree: null, cwd: work, mode: opts.mode, command: "claude", launched: false, pane: null, engine: "ready" });
     await js(`location.reload(); true`);
     await sleep(500);
     await js(`location.hash = '#/p/${project.id}/i/${item.id}'; true`);
     await wait(() => js(`(document.querySelector('[data-testid="start-quick"]')?.textContent ?? '').includes('继续')`));
-    await js(`(() => { const b = document.querySelector('[data-testid="start-quick"]'); for (const type of ['pointerdown','mousedown','pointerup','mouseup','click']) b.dispatchEvent(new (type.startsWith('pointer') ? PointerEvent : MouseEvent)(type, { bubbles: true, cancelable: true, button: 0 })); return true; })()`);
-    await wait(() => js(`!!document.querySelector('.menu.is-floating')`));
+    const liveMenu = async () => {
+      await press('[data-testid="start-quick"]');
+      await wait(() => js(`!!document.querySelector('.menu.is-floating')`));
+    };
+    await liveMenu();
     const menu = await js(`document.querySelector('.menu.is-floating').textContent`);
-    assert("会话还在做时，开始先问：去看它 / 另开一个，并说它在做什么", menu.includes("Ready 已经在做这张了") && menu.includes("去看它") && menu.includes("另开一个") && menu.includes("Bash · pnpm test"));
+    assert("会话还在做时，开始先问：去看它 / 跟它说一句 / 另开一个，并说它在做什么", menu.includes("Ready 已经在做这张了") && menu.includes("去看它") && menu.includes("跟它说一句") && menu.includes("另开一个") && menu.includes("用自己的文件夹和分支") && menu.includes("Bash · pnpm test"));
     await js(`[...document.querySelectorAll('.menu.is-floating .menu-row')].find((r) => r.textContent.includes('去看它')).click(); true`);
-    await wait(async () => shown.length > 0);
-    assert("去看它：在终端窗口里打开那个会话", shown[0] === "s-live");
+    await wait(() => js(`document.querySelector('.ai .ai-session')?.dataset.session === 's-live'`));
+    assert("去看它：在助手面板里选中那个会话，不拉起终端窗口", shown.length === 0);
+    await liveMenu();
+    await js(`[...document.querySelectorAll('.menu.is-floating .menu-row')].find((r) => r.textContent.includes('跟它说一句')).click(); true`);
+    await wait(() => js(`document.querySelector('.ai .ai-session')?.dataset.session === 's-live' && !!document.querySelector('.ai-session-foot .ai-input')`));
+    assert("跟它说一句：终端会话也行，在面板里打开它的输入框", shown.length === 0);
+    await liveMenu();
+    await js(`[...document.querySelectorAll('.menu.is-floating .menu-row')].find((r) => r.textContent.includes('另开一个')).click(); true`);
+    await wait(() => js(`!!document.querySelector('[data-testid="start-apart"]')`));
+    assert("另开一个：对话框说新会话用自己的文件夹和分支", (await js(`document.querySelector('[data-testid="start-apart"]').textContent`)).includes("自己的文件夹和分支"));
+    await wait(() => js(`!document.querySelector('[data-testid="start-confirm"]').disabled`));
+    await js(`document.querySelector('[data-testid="start-confirm"]').click(); true`);
+    await wait(async () => apartOpts !== null);
+    assert("另开一个开始时要自己的文件夹和分支", apartOpts.apart === true);
     ctx.codeLink.deliveries = realDeliveries;
+    ctx.codeLink.sessionsOf = realSessionsOf;
+    ctx.codeLink.recentSessions = realRecent;
+
+    // ── 工单页的会话时间线（TOM-699）：一行一个会话，先写结论；续接不算新会话；两个在同一个文件夹时警告 ──
+    const thread1 = ctx.agent.newThread(project.id, "ready");
+    const mk = (over) => {
+      const s = ctx.codeLink.store.createSession(project.id, { repoId: "r", branch: "spr-1/slow-start", itemIds: [item.id], mode: over.mode ?? "terminal", agent: "ready", threadId: over.threadId ?? null, device: "check", worktree: over.worktree ?? null });
+      return ctx.codeLink.store.patchSession(project.id, s.id, over.patch);
+    };
+    ctx.codeLink.store.ensureActiveDelivery(project.id, item.id);
+    // one after another, as they would start: the order is what the timeline reads
+    mk({ mode: "headless", threadId: thread1.id, patch: { state: "ended", endedAt: Date.now(), summary: "定下录制格式：按窗格分文件", asked: 1 } });
+    await sleep(20);
+    mk({ threadId: thread1.id, patch: { herdrPane: "w1:p5", state: "ended", endedAt: Date.now(), summary: "录制和读取写好了，测试过了" } });
+    await sleep(20);
+    // in another terminal app: no pane for this machine's herdr to find gone
+    const earlier = mk({ worktree: "/wt/spr-1", patch: { state: "running", terminal: "iTerm.app", activity: "Bash · pnpm test" } });
+    await sleep(20);
+    const later = mk({ worktree: "/wt/spr-1", patch: { state: "running", terminal: "iTerm.app", activity: "Read · recorder.ts" } });
+    ctx.emit("codeLink/changed", project.id);
+    ctx.ipc.send("codeLink.changed", project.id);
+    await js(`location.reload(); true`);
+    await sleep(500);
+    await js(`location.hash = '#/p/${project.id}/i/${item.id}'; true`);
+    await wait(() => js(`!!document.querySelector('[data-testid="ticket-timeline"]')`));
+    const timeline = await js(`[...document.querySelectorAll('[data-testid="ticket-timeline-row"]')].map((r) => r.textContent)`);
+    const handedOff = timeline.find((r) => r.includes("录制和读取写好了"));
+    assert("工单页按开始的先后列会话；在助手和终端格子之间续接的只算一行，先写结论", !!handedOff && !timeline.some((r) => r.includes("定下录制格式")) && /续接了 1 次/.test(handedOff) && /问过你 1 次/.test(handedOff) && /助手 → 终端格子/.test(handedOff));
+    await js(`[...document.querySelectorAll('[data-testid="ticket-timeline-row"]')].find((r) => r.textContent.includes('录制和读取写好了')).querySelector('.fold-chev').click(); true`);
+    await wait(() => js(`!!document.querySelector('[data-testid="ticket-timeline-stops"]')`));
+    assert("展开看这个会话去过的地方", (await js(`document.querySelector('[data-testid="ticket-timeline-stops"]').textContent`)).includes("同一个会话去过的地方"));
+    assert("「这张工单交了什么」写着来自几个会话，和时间线的行数一样", (await js(`document.querySelector('[data-testid="ticket-delivered"]').textContent`)).includes(`来自 ${timeline.length} 个会话`));
+    assert("两个会话同时在同一个文件夹做时有警告条", (await js(`document.querySelector('[data-testid="ticket-clash"]')?.textContent ?? ''`)).includes("2 个会话同时在做这张工单，而且在同一个文件夹"));
+    fs.writeFileSync(path.join(work, "ticket-timeline.png"), (await win.webContents.capturePage()).toPNG());
+    await js(`document.querySelector('[data-testid="ticket-clash-stop"]').click(); true`);
+    await wait(() => js(`!document.querySelector('[data-testid="ticket-clash"]')`));
+    assert("「停掉后开始的」停下后开始的那个，警告条消失", ctx.codeLink.store.session(project.id, later.id).state === "ended" && ctx.codeLink.store.session(project.id, earlier.id).state === "running");
+
+    // ── 看板 Doing 卡片一行「● Ready 在做 · …」，数据走看板已有的查询 ──
+    ctx.items.update(project.id, item.id, { status: "doing" }, "human");
+    await js(`location.hash = '#/p/${project.id}'; true`);
+    await wait(() => js(`!!document.querySelector('.card[data-id="${item.id}"] [data-testid="card-session"]')`));
+    assert("看板卡片写着哪个 agent 在做、在哪、多久", /Ready 在做 · 在 iTerm 里 · \d+ 分钟/.test(await js(`document.querySelector('.card[data-id="${item.id}"] [data-testid="card-session"]').textContent`)));
+    ctx.codeLink.store.patchSession(project.id, earlier.id, { state: "ended", endedAt: Date.now() });
 
     // ── 对话里的开始卡片（TOM-661）：一张张开始，每张开始时显示自己的步骤 ──
     const tickets = ["Card first", "Card second"].map((title) => ctx.items.create({ projectId: project.id, boardId: board.id, title, workType: "coding", status: "todo", by: "human" })).map((i) => ({ itemId: i.id, key: i.key, title: i.title }));

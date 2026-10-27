@@ -35,7 +35,7 @@ export { classifyRemoteFailure, probeRemote, readRemoteIdentity, remoteFailureDe
 export { githubPull, readPull, type ForgePull } from "./forge.js";
 export { decide, type Decision, type Evidence, type PrState, type RulePolicy } from "./rules.js";
 export { DEFAULT_BRANCH_TEMPLATE, SLUG_MAX, branchFor, deliveredKeys, keysInText, parseBranch, slugify, subjectKey, subjectPr, titleSlug, usableSlug } from "./keys.js";
-export { Starter, type StartGate, type StartMode, type StartOptions, type StartResult, type WorkdirCause } from "./start.js";
+export { Starter, apartBranch, type StartGate, type StartMode, type StartOptions, type StartResult, type WorkdirCause } from "./start.js";
 export type { ClaimResult } from "./claim.js";
 export { Handoff, HANDOFF_PROMPT, handedPrompt, type HandoffRefusal, type HandoffResult, type HandoffView } from "./handoff.js";
 export { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
@@ -55,5 +55,6 @@ export { cutFrom, joinCuts, type CutState } from "./segments.js";
 export { Review, REVIEW_PAGE, cutByTicket, cutThread, mergePage, threadLines, ticketOutcome, type ReviewCursor, type ReviewPage, type ReviewPr, type ReviewRow, type ReviewSaid, type ReviewSegment, type ReviewSource, type ReviewTicket, type ReviewView, type SessionOutcome } from "./review.js";
 export type { RawOutput } from "./service.js";
 export { inputsOf, SessionPanel, type AnswerResult, type SessionGlance, type SessionPanelView } from "./panel.js";
+export { ticketTimeline, type TicketTimeline, type TimelineEntry, type TimelinePlace, type TimelineStop } from "./timeline.js";
 export { PROMPT_LINES, promptOnScreen } from "./prompt.js";
 export { askLine, askLineIn, permissionAsk, questionAsk, sameAsk } from "./ask.js";

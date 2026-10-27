@@ -30,7 +30,7 @@ const ANSWERED_MS = 8000;
  * session moves; a strip above it shows the pane's last lines, opening into a drawer with more; what is typed below
  * goes into the pane as keystrokes. Nothing here attaches to the pane, so the Terminal window keeps its control.
  */
-export function TerminalSession({ projectId, session, title, ticket, status, engines, items, cell, onShowInTerminal, onBack, backBlocked, onClose, onAnswered }: {
+export function TerminalSession({ projectId, session, title, ticket, status, engines, items, cell, onShowInTerminal, onBack, backBlocked, onClose, onAnswered, focusSay }: {
   projectId: string;
   session: SessionView;
   title: string;
@@ -50,6 +50,8 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
   onClose: () => void;
   /** Allow or Deny went through: the panel may move on to what else waits. */
   onAnswered?: () => void;
+  /** Opened to say something to it: the keyboard goes to its input once it can take typing. */
+  focusSay?: boolean;
 }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -194,6 +196,9 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
   /** The event of the ask showing now, and the asks answered from here, by their events. */
   const askedAt = useRef<number | null | undefined>(undefined);
   const answeredHere = useRef(new Set<number | null>());
+  useEffect(() => {
+    if (focusSay && canType) input.current?.focus();
+  }, [focusSay, canType]);
   const sayToPane = async (said: string, clear: () => void) => {
     const text = said.trim();
     if (!text || !canType || sending) return;

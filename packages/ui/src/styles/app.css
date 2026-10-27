@@ -1699,6 +1699,20 @@ button.ai-review-chip:hover:not(:disabled), .ai-review-chip[aria-pressed="true"]
 .start-starting { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; color: var(--accent-light); font-size: var(--text-sm); }
 .start-starting-mark { width: 10px; height: 10px; flex: none; border-radius: 50%; border: 2px dashed var(--accent-light); }
 .card-starting { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--accent-light); }
+/* the session at work on the ticket: who, where, for how long */
+.card-session { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--text-xs); color: var(--accent-light); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-session-mark { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--accent-light); }
+/* a ticket's sessions by when each began: what came of each first, where it went unfolded */
+.ticket-sessions { display: flex; flex-direction: column; gap: var(--space-2); }
+.ticket-clash { display: flex; flex-direction: column; gap: var(--space-1); }
+.ticket-delivered { margin: 0; }
+.ticket-timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.ticket-timeline-row { display: flex; align-items: flex-start; gap: 4px; }
+.ticket-timeline-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--text-sm); }
+.ticket-timeline-body .card-session-mark { display: inline-block; vertical-align: middle; }
+.ticket-timeline-outcome { color: var(--fg); }
+.ticket-timeline-stops { margin-top: var(--space-1); padding-left: var(--space-2); border-left: 2px solid var(--border-input); }
+.ticket-timeline-stops ol { margin: 2px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
 /* a conversation opened under another, to write its code in the background: set in under its parent */
 .sbar-dot[data-depth="1"] { margin-left: 10px; }
 .sbar-dot[data-depth="1"] .sbar-dot-face { width: 28px; height: 28px; font-size: 10px; }

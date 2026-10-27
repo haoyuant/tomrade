@@ -26,6 +26,7 @@ import { useFields, useHistory, useRunCommand, useSections } from "~/lib/queries
 import { requestStart } from "~/lib/codeLink";
 import { askPanel } from "~/lib/panelRequests";
 import { openExternal } from "~/lib/shell";
+import { TicketSessions } from "~/components/issue/TicketSessions";
 import { errorSpec, useToast } from "~/lib/toast";
 import { useWorkspace } from "./context";
 import { useOptionalAgentDock } from "~/components/chrome/ProjectShell";
@@ -368,6 +369,7 @@ function DetailBody({
             <IssueBody key={`body:${item.id}`} item={item} write={write} className="issue-body" />
             <DeliveryPanel key={item.id} item={item} />
             <PluginSections projectId={item.projectId} itemId={item.id} />
+            {item.kind === "ticket" && <TicketSessions projectId={item.projectId} itemId={item.id} />}
           </div>
           <aside className="detail-side">
             <Ledger projectId={item.projectId} itemId={item.id} />

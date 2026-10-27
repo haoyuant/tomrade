@@ -78,6 +78,10 @@ export const useRecentSessions = (projectId: string, enabled = true) =>
 export const useSessionCells = (projectId: string, enabled = true) =>
   useQuery({ queryKey: keys.codeLink.cells(projectId), queryFn: () => invoke("codeLink.sessionCells", projectId), enabled });
 
+/** The ticket's conversations by when each began, what it delivered, and two at work in one folder. */
+export const useTicketTimeline = (projectId: string, itemId: string) =>
+  useQuery({ queryKey: keys.codeLink.timeline(projectId, itemId), queryFn: () => invoke("codeLink.timeline", projectId, itemId) });
+
 /** Where a conversation runs — here, or in a terminal cell as a session — and whether it can move now; asked again on every session change. */
 export const useHandoff = (projectId: string, threadId: string | null) =>
   useQuery({ queryKey: keys.codeLink.handoff(projectId, threadId ?? ""), queryFn: () => invoke("codeLink.handoff", projectId, threadId!), enabled: !!threadId, staleTime: 5_000 });
@@ -279,7 +283,7 @@ export const isFullAccess = (value: string | undefined): boolean => value === "f
 
 // A start that stopped somewhere without a dialog (a section's Continue, the palette) asks the ticket's own Start button to open.
 // null only opens the dialog, for the person to choose; a mode also starts at once. An offer may name what to do first.
-type StartListener = (mode: "run" | "terminal" | null, task?: string) => void;
+type StartListener = (mode: "run" | "terminal" | null, task?: string, apart?: boolean) => void;
 const startRequests = new Map<string, Set<StartListener>>();
 // An offer taken while its ticket is still opening waits for the first Start button that mounts.
 const waitingOffers = new Map<string, { at: number; task?: string }>();
@@ -298,6 +302,13 @@ export function onStartRequest(itemId: string, listener: StartListener): () => v
 export function requestStart(itemId: string, mode: "run" | "terminal"): boolean {
   const listeners = [...(startRequests.get(itemId) ?? [])];
   listeners.at(-1)?.(mode);
+  return listeners.length > 0;
+}
+
+/** Opens the ticket's Start dialog on another session beside the one at work, in a folder of its own; false with no Start button to take it. */
+export function offerApart(itemId: string): boolean {
+  const listeners = [...(startRequests.get(itemId) ?? [])];
+  listeners.at(-1)?.(null, undefined, true);
   return listeners.length > 0;
 }
 
