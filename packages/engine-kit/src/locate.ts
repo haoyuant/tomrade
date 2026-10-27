@@ -596,6 +596,11 @@ export class CliLocator {
     return this.launchOf(status.path ?? this.name, dirs);
   }
 
+  /** Where a program named beside this CLI lies, found without running it; null when it is nowhere. */
+  find(command: string): string | null {
+    return findCommand(command, this.host);
+  }
+
   async check(file: string): Promise<CliCheck> {
     const candidates = this.manualCandidates(file.trim());
     const candidate = candidates.find((c) => isFile(c.file, this.host.platform));
@@ -630,7 +635,8 @@ export class CliLocator {
     const { platform, env, home } = this.host;
     const p = pathFor(platform);
     const expanded = manual.startsWith("~") ? p.join(home, manual.slice(1)) : platform === "win32" ? expandWindowsVars(manual, env) : manual;
-    if (!/[\\/]/.test(expanded)) return this.inDirs(splitPath(envValue(env, "PATH"), platform), "manual", expanded);
+    // A bare name may be a program an archive installer unpacked, in a folder the app's PATH lacks.
+    if (!/[\\/]/.test(expanded)) return this.inDirs(searchPath(this.host), "manual", expanded);
     const file = p.resolve(expanded.replace(/^"(.*)"$/, "$1"));
     const ext = p.extname(file);
     // npm leaves codex, codex.cmd and codex.ps1 side by side; only the .cmd runs without a shell, whichever was picked.
