@@ -711,8 +711,43 @@ const run = async () => {
   check("and the bar marks it as the open one", /Record pane output/.test(view?.current ?? ""), view?.current);
   await flip();
   await sleep(300);
-  check("⌘\\ turns them back into dots, and the choice is kept", (await bar())?.mode === "rail" && (await $(`localStorage.getItem('tomrade.ai.sessionBar')`)) === "rail");
+  check("⌘\\ turns them back into dots", (await bar())?.mode === "rail");
   await shot("session-bar.png");
+  // Settings › Sessions, by width (the default): the bar unfolds as the panel is dragged past 720 and folds as it narrows; ⌘\\ swaps only for the moment.
+  const widthNow = async () => Math.round(await $(`document.querySelector('aside.ai').getBoundingClientRect().width`));
+  await dragPanel(300);
+  await sleep(300);
+  const wideAt = await widthNow();
+  check("by width, the panel dragged wide shows cards", wideAt >= 720 && (await bar())?.mode === "cards", { wideAt, mode: (await bar())?.mode });
+  await flip();
+  await sleep(300);
+  check("⌘\\ folds it for the moment", (await bar())?.mode === "rail");
+  await dragPanel(-1000);
+  await sleep(300);
+  await dragPanel(600);
+  await sleep(300);
+  check("dragged narrow and wide again, the width decides once more", (await bar())?.mode === "cards", (await bar())?.mode);
+  await dragPanel(-1000);
+  await sleep(300);
+  check("and dragged narrow it folds into dots", (await widthNow()) < 720 && (await bar())?.mode === "rail", await widthNow());
+  const setSessions = async (patch) => {
+    ctx.settings.set({ ...ctx.settings.get(), sessions: { ...ctx.settings.get().sessions, ...patch } });
+    await sleep(600);
+  };
+  await setSessions({ sessionBar: "cards" });
+  check("always unfolded shows cards on a narrow panel", (await bar())?.mode === "cards", (await bar())?.mode);
+  await setSessions({ sessionBar: "rail", peek: false });
+  await $(`(() => { const d = document.querySelector('.ai .sbar-dot[data-status]'); d.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return true; })()`);
+  await sleep(200);
+  barSeen = await bar();
+  check("with peeking off, hovering a dot shows nothing", barSeen?.mode === "rail" && barSeen.peek === null, barSeen);
+  await setSessions({ sessionBar: "auto", peek: true });
+  await $(`(() => { const d = document.querySelector('.ai .sbar-dot[data-status]'); d.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return true; })()`);
+  await sleep(200);
+  check("peeking back on, it peeks again", !!(await bar())?.peek);
+  await $(`(() => { const d = document.querySelector('.ai .sbar-dot[data-status]'); d.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })); return true; })()`);
+  await $(`localStorage.removeItem("tomrade.ai.width"); document.querySelector('aside.ai').style.width = ''; true`);
+  await sleep(500);
 
   // ── a session in a Terminal window pane, seen from the panel: the same session from another side ──
   // Its agent's own record, as Claude Code writes one; the session names the file, so code link reads it.

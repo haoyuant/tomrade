@@ -41,10 +41,12 @@ function RowActions({ row, onArchive, onDelete }: { row: BarRow; onArchive: (thr
  * The session bar on the panel's right edge: a column of dots to switch by, or cards that say what each is doing.
  * Memoized: the panel renders every frame a reply streams, and the bar has nothing new to show then.
  */
-export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engines, onMode, onPick, onNew, onHistory, onArchive, onDelete }: {
+export const SessionBar = memo(function SessionBar({ rows, openKey, mode, peeks = true, engines, onMode, onPick, onNew, onHistory, onArchive, onDelete }: {
   rows: BarRow[];
   openKey: string | null;
   mode: BarMode;
+  /** Hovering or focusing a dot shows what it is doing; off, the dots show only their state. */
+  peeks?: boolean;
   engines: EngineView[] | undefined;
   onMode: (mode: BarMode) => void;
   onPick: (row: BarRow) => void;
@@ -66,7 +68,10 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engine
   const leave = () => { hold(); closing.current = setTimeout(() => setPeek(null), 200); };
   useEffect(() => () => { if (closing.current) clearTimeout(closing.current); }, []);
   // measured against the bar, so the peek sits beside its dot however far the dots have scrolled
-  const peekAt = (key: string, el: HTMLElement) => { hold(); setPeek({ key, top: el.getBoundingClientRect().top - (nav.current?.getBoundingClientRect().top ?? 0) }); };
+  const peekAt = (key: string, el: HTMLElement) => {
+    hold();
+    if (peeks) setPeek({ key, top: el.getBoundingClientRect().top - (nav.current?.getBoundingClientRect().top ?? 0) });
+  };
   const statusWord = (s: BarStatus) => t(s === "wait" ? "sessionBar.statusWait" : s === "run" ? "sessionBar.statusRun" : s === "done" ? "sessionBar.statusDone" : "sessionBar.statusIdle");
   const where = (r: BarRow) => r.where === "panel" ? t("sessionBar.wherePanel") : r.where === "pane" ? t("sessionBar.wherePane") : r.terminalApp ? r.terminalApp.replace(/\.app$/, "") : t("sessionBar.whereOutside");
   const agentName = (r: BarRow) => (r.agent ? (findEngine(engines, r.agent)?.title ?? r.agent) : null);
@@ -94,7 +99,7 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engine
   if (mode === "rail") {
     const live = rows.filter((r) => r.status !== "done");
     const ended = rows.filter((r) => r.status === "done");
-    const shown = peek ? rows.find((r) => r.key === peek.key) : undefined;
+    const shown = peeks && peek ? rows.find((r) => r.key === peek.key) : undefined;
     const dot = (r: BarRow) => withMenu(r, (
       <button
         type="button"
@@ -104,7 +109,7 @@ export const SessionBar = memo(function SessionBar({ rows, openKey, mode, engine
         data-depth={r.depth || undefined}
         aria-current={r.key === openKey ? "true" : undefined}
         aria-label={`${title(r)}, ${statusWord(r.status)}`}
-        aria-describedby={peek?.key === r.key ? peekId : undefined}
+        aria-describedby={shown?.key === r.key ? peekId : undefined}
         onClick={() => { hold(); setPeek(null); onPick(r); }}
         onMouseEnter={(e) => peekAt(r.key, e.currentTarget)}
         onMouseLeave={leave}

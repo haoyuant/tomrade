@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import type { ThreadSummary } from "@tomradex/agent";
 import type { SessionView } from "@tomradex/code-link";
-import { paletteSessionGroups, sessionBarRows } from "../src/lib/sessionBar";
+import { barModeFor, barPrefsOf, paletteSessionGroups, sessionBarRows } from "../src/lib/sessionBar";
 import type { AttentionEntry } from "../src/lib/attention";
 
 const thread = (id: string, over: Partial<ThreadSummary> = {}): ThreadSummary => ({
@@ -99,4 +99,12 @@ it("carries what opened a conversation and when a usage limit lets it continue, 
   const out = rows({ threads: [thread("t", { origins: ["Routine"], parkedUntil: 1234 })], sessions: [session("s")] });
   expect(out.find((r) => r.key === "thread:t")).toMatchObject({ origins: ["Routine"], parkedUntil: 1234 });
   expect(out.find((r) => r.key === "session:s")).toMatchObject({ origins: [], parkedUntil: null });
+});
+
+it("folds the bar by the panel's width unless Settings › Sessions says always, and peeks unless switched off", () => {
+  expect(barPrefsOf(undefined)).toEqual({ bar: "auto", peek: true });
+  expect(barPrefsOf({ sessionBar: "cards", peek: false })).toEqual({ bar: "cards", peek: false });
+  expect(barPrefsOf({ sessionBar: "sideways" }).bar).toBe("auto");
+  expect([barModeFor("auto", true), barModeFor("auto", false)]).toEqual(["cards", "rail"]);
+  expect([barModeFor("rail", true), barModeFor("cards", false)]).toEqual(["rail", "cards"]);
 });

@@ -29,7 +29,7 @@ import { Review, type ReviewFocus } from "./agent-panel/Review";
 import { SessionBar, type BarMode } from "./agent-panel/SessionBar";
 import { HandoffLine } from "./agent-panel/HandoffLine";
 import { TerminalSession } from "./agent-panel/TerminalSession";
-import { sessionBarRows, type BarRow, type BarStatus } from "~/lib/sessionBar";
+import { barModeFor, barPrefsOf, CARDS_AT, sessionBarRows, type BarRow, type BarStatus } from "~/lib/sessionBar";
 import { onPanelRequest, setPanelSession, type PanelRequest } from "~/lib/panelRequests";
 import { useHandoff, useRecentSessions } from "~/lib/codeLink";
 import type { SessionView } from "@tomradex/code-link";
@@ -125,16 +125,15 @@ export function AgentPanel({
   const attention = useMemo(() => everyAttention.filter((e) => e.projectId === projectId), [everyAttention, projectId]);
   const attentionLabel = (e: AttentionEntry) => t(ATTENTION_KEY[e.kind]);
   const unarchive = useUnarchiveThread(projectId);
-  // Dots until the person asks for cards; a panel left narrow (the default) has no room for them.
-  const [barMode, setBarMode] = useState<BarMode>(() => {
-    const saved = localStorage.getItem(STORE.sessionBar);
-    if (saved === "rail" || saved === "cards") return saved;
-    return Number(localStorage.getItem(STORE.width) ?? DEFAULT_W) >= 720 ? "cards" : "rail";
-  });
-  const chooseBarMode = useCallback((mode: BarMode) => {
-    setBarMode(mode);
-    localStorage.setItem(STORE.sessionBar, mode);
-  }, []);
+  // Settings › Sessions: by width (cards on a wide panel, dots on a narrow one, as it is dragged), or always one of them.
+  const barPrefs = barPrefsOf(settings.data?.sessions);
+  const [wide, setWide] = useState(() => Number(localStorage.getItem(STORE.width) ?? DEFAULT_W) >= CARDS_AT);
+  const fromSetting = barModeFor(barPrefs.bar, wide);
+  // ⌘\ or the bar's own button: for the moment, until the width or the setting gives the bar another way.
+  const [swap, setSwap] = useState<{ from: BarMode; to: BarMode } | null>(null);
+  if (swap && swap.from !== fromSetting) setSwap(null);
+  const barMode = swap?.from === fromSetting ? swap.to : fromSetting;
+  const chooseBarMode = useCallback((mode: BarMode) => setSwap({ from: fromSetting, to: mode }), [fromSetting]);
   const recentSessions = useRecentSessions(projectId, open);
   // A terminal session picked from the bar takes the place of the thread: the same session as the Terminal window's
   // cell, seen from here. Remembered with its project, so another project's panel never shows it.
@@ -257,6 +256,14 @@ export function AgentPanel({
   useEffect(() => {
     const saved = localStorage.getItem(STORE.width);
     if (panel.current) panel.current.style.width = `${saved ? Math.min(maxW(), Math.max(MIN_W, Number(saved))) : DEFAULT_W}px`;
+  }, [open]);
+  // The width as drawn, dragged or held back by a narrow window: what "by width" goes by.
+  useEffect(() => {
+    const el = panel.current;
+    if (!open || !el || typeof ResizeObserver === "undefined") return;
+    const watch = new ResizeObserver(() => setWide(el.offsetWidth >= CARDS_AT));
+    watch.observe(el);
+    return () => watch.disconnect();
   }, [open]);
 
   // After layout, so a working line or question that just mounted is inside scrollHeight.
@@ -1082,6 +1089,7 @@ export function AgentPanel({
         rows={barRows}
         openKey={shownSession ? `session:${shownSession.id}` : threadId ? `thread:${threadId}` : null}
         mode={barMode}
+        peeks={barPrefs.peek}
         engines={engines.data}
         onMode={chooseBarMode}
         onPick={pickBarRowStable}
