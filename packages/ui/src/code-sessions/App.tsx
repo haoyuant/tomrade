@@ -11,7 +11,7 @@ import { applyPreset, carryOn, close, cycle, heir, holder, landing, leaves, lock
 import { live, sessionName, sidebarRows, type HereRow } from "./lists";
 import { Overview } from "./Overview";
 import { Palette, type PaletteAction } from "./Palette";
-import { SayContext, sayIn, useSay, type SayKey } from "./say";
+import { SayContext, sayIn, useSay, WordsContext, wordsIn, type SayKey } from "./say";
 import { Sidebar } from "./Sidebar";
 import { asPicked, carriedOf, paneKey, useWindowLayout, type Leaf, type Picked } from "./useWindowLayout";
 
@@ -131,7 +131,7 @@ export function App() {
   const [look, setLook] = useState<Look | null>(null);
   // Ended sessions and closed terminals picked from History: a cell shows one before a state carries it.
   const [picked, setPicked] = useState<Picked>(() => ({ sessions: new Map(), terminals: new Map() }));
-  const { laid, focused, setFocused, change, current, asked, recent, toRead } = useWindowLayout(state, picked);
+  const { laid, focused, setFocused, change, current, asked, recent, toRead, flash } = useWindowLayout(state, picked);
   const [toast, setToast] = useState<Toast | null>(null);
   // The window's own say once it has spoken; until then, the fold the project's window was left with.
   const [foldedHere, setFoldedHere] = useState<boolean | null>(null);
@@ -193,6 +193,8 @@ export function App() {
   const words = useLocaleWords(locale);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const say = useMemo(() => sayIn(locale), [locale, words]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const anyWords = useMemo(() => wordsIn(locale), [locale, words]);
   // The plugin would not stream a pane into a second cell: that cell empties, and the one showing it is selected.
   useEffect(
     () =>
@@ -229,6 +231,8 @@ export function App() {
   const rowsOf = (c: Leaf) => (c.sessionId ? [c.sessionId, terminalsById.get(c.sessionId)?.sessionId ?? c.sessionId] : []);
   // Every cell's row reads as shown; the selected cell's alone as current.
   const active = new Set(cells.flatMap(rowsOf));
+  // Each cell's number, as its bar says it, for the rows it shows.
+  const cellNumbers = new Map(cells.flatMap((c, i) => rowsOf(c).map((id) => [id, i + 1] as const)));
   const selected = new Set(rowsOf(target));
   // The panes cells show, for the other tickets their agents work there.
   const shownPanes = new Set(cells.flatMap((c) => (c.sessionId ? [key(c.sessionId)] : [])));
@@ -287,6 +291,7 @@ export function App() {
   // An assistant conversation has no pane here: the app window shows it.
   const showThread = (t: ThreadRow) => send({ type: "showThread", threadId: t.id });
   const answer = (s: SessionRow, which: "allow" | "deny") => send({ type: "answer", sessionId: s.id, which });
+  const answerThread = (t: ThreadRow, questionId: string, value: string) => send({ type: "answerThread", threadId: t.id, questionId, value });
   // The overview is drawn over the cells, so the keyboard leaves whatever terminal held it.
   const openOverview = () => {
     (document.activeElement as HTMLElement | null)?.blur();
@@ -429,6 +434,7 @@ export function App() {
         onNewTerminal={(cwd) => openTerminal(layout, node.id, cwd)}
         onTalk={(s) => openTerminal(layout, node.id, s.cwd ?? s.worktree, s.id)}
         focused={node.id === target.id && cells.length > 1}
+        flash={flash?.cell === node.id ? flash.at : null}
         selected={node.id === target.id}
         only={cells.length === 1}
         onFocus={() => setFocused(node.id)}
@@ -442,6 +448,7 @@ export function App() {
 
   return (
     <SayContext.Provider value={say}><GuessContext.Provider value={guesses}>
+      <WordsContext.Provider value={anyWords}>
       <div className="cs-window">
         <IconSprite />
         <div className="cs-topbar">
@@ -463,7 +470,7 @@ export function App() {
           <main className="cs-main">
             <Banner state={state} />
             <div className="cs-layout">{render(layout)}</div>
-            {view === "overview" && <Overview rows={[...rows.here, ...rows.away.map((s): HereRow => ({ kind: "session", id: s.id, session: s }))]} tails={tails} active={active} onSee={seeInPane} onThread={showThread} onAnswer={answer} />}
+            {view === "overview" && <Overview rows={[...rows.here, ...rows.away.map((s): HereRow => ({ kind: "session", id: s.id, session: s }))]} tails={tails} active={active} cells={cellNumbers} onSee={seeInPane} onThread={showThread} onAnswer={answer} onAnswerThread={answerThread} />}
           </main>
           <Sidebar
             ref={side}
@@ -472,13 +479,14 @@ export function App() {
             locale={locale}
             folded={folded}
             onFold={toggleFold}
-            marks={{ active, selected, shownPanes, selectedPane, pane: key }}
+            marks={{ active, selected, cells: cellNumbers, shownPanes, selectedPane, pane: key }}
             canOpen={canOpen}
             onPick={pick}
             onTerminal={pickTerminal}
             onClosed={pickClosed}
             onThread={showThread}
             onAnswer={answer}
+            onAnswerThread={answerThread}
             onNewTerminal={newTerminal}
             onApplyPreset={(p) => {
               change(applyPreset(layout, p.layout, undefined, key));
@@ -500,6 +508,7 @@ export function App() {
           </div>
         )}
       </div>
+      </WordsContext.Provider>
     </GuessContext.Provider></SayContext.Provider>
   );
 }
