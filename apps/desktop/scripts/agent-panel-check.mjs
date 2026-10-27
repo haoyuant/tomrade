@@ -114,6 +114,29 @@ const run = async () => {
   };
   await sleep(2000);
 
+  // ── how far the panel drags: 60% of the window, and the board keeps a column on a narrower one ──
+  const dragPanel = async (dx) => {
+    await $(`(() => { const h = document.querySelector('.ai-resize'); const x = h.getBoundingClientRect().left + 3;
+      h.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: x, clientY: 200 }));
+      window.dispatchEvent(new MouseEvent('mousemove', { clientX: x - ${dx}, clientY: 200 }));
+      window.dispatchEvent(new MouseEvent('mouseup', { clientX: x - ${dx}, clientY: 200 }));
+      return true; })()`);
+    await sleep(300);
+    return $(`({ panel: Math.round(document.querySelector('aside.ai').getBoundingClientRect().width), window: innerWidth,
+      board: Math.round(document.querySelector('section.board-region')?.getBoundingClientRect().width ?? -1) })`);
+  };
+  win.setSize(2000, 900);
+  await sleep(800);
+  let sized = await dragPanel(2000);
+  check("dragged all the way on a wide window, the panel stops at 60% of it", Math.abs(sized.panel - Math.round(sized.window * 0.6)) <= 2, sized);
+  win.setSize(1400, 900);
+  await sleep(800);
+  sized = await dragPanel(2000);
+  check("on a narrower window it gives way, and the board keeps a column", sized.board >= 361 && sized.panel <= Math.round(sized.window * 0.6) + 1, sized);
+  // the steps below see the panel as it opens by default
+  await $(`localStorage.removeItem("tomrade.ai.width"); document.querySelector('aside.ai').style.width = ''; true`);
+  await sleep(300);
+
   // ── the run ends while another project is on screen ──────────────────
   await send("first");
   await sleep(300);

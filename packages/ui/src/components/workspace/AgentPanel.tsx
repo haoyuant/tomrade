@@ -46,7 +46,9 @@ import { useThreadSelection } from "./agent-panel/useThreadSelection";
 const QUEUE_KIND = { permission: "waitQueue.permission", question: "waitQueue.question", waiting: "waitQueue.waiting", stuck: "waitQueue.stuck" } as const;
 
 const MIN_W = 352;
-const MAX_W = 924;
+/** The most of the window it may be dragged to; the CSS max-width still keeps the board a column on narrower ones. */
+const MAX_SHARE = 0.6;
+const maxW = () => Math.max(MIN_W, Math.round(window.innerWidth * MAX_SHARE));
 /** Until someone drags it: the former ceiling; the CSS max-width still yields to the board on narrow windows. */
 const DEFAULT_W = 616;
 
@@ -256,7 +258,7 @@ export function AgentPanel({
 
   useEffect(() => {
     const saved = localStorage.getItem(STORE.width);
-    if (panel.current) panel.current.style.width = `${saved ? Math.min(MAX_W, Math.max(MIN_W, Number(saved))) : DEFAULT_W}px`;
+    if (panel.current) panel.current.style.width = `${saved ? Math.min(maxW(), Math.max(MIN_W, Number(saved))) : DEFAULT_W}px`;
   }, [open]);
 
   // After layout, so a working line or question that just mounted is inside scrollHeight.
@@ -286,7 +288,7 @@ export function AgentPanel({
     const startW = panel.current?.offsetWidth ?? MIN_W;
     document.body.style.userSelect = "none";
     const onMove = (e: MouseEvent) => {
-      const width = Math.min(MAX_W, Math.max(MIN_W, startW + (startX - e.clientX)));
+      const width = Math.min(maxW(), Math.max(MIN_W, startW + (startX - e.clientX)));
       if (panel.current) panel.current.style.width = `${width}px`;
       localStorage.setItem(STORE.width, String(width));
     };
