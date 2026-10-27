@@ -3165,6 +3165,7 @@ export const zhHant: PartialMessages = {
     keyClose: "關格子",
     keyArrows: "+ 方向鍵 換格子",
     keyPrevNext: "上一個 / 下一個",
-    keyFold: "收合工作階段列"
+    keyFold: "收合工作階段列",
+    cellNumber: "窗格 {{n}} · 在你自己的終端機裡執行 tomrade term --attach {{n}}，就能把它接過去"
   }
 };

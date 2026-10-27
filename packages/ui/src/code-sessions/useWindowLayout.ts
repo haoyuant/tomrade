@@ -78,9 +78,10 @@ export function useWindowLayout(state: WindowState | null) {
     const fresh = seen.current ? placeable.filter((id) => !seen.current!.has(id)) : [];
     seen.current = new Set([...(seen.current ?? []), ...placeable]);
     let placed = state.autoPlace ? fresh.reduce((acc, id) => place(acc, id, key), pruned) : pruned;
-    // Asked from outside (a start, "open in terminal", a ticket's earlier session): the session in a cell, that cell selected — once it has its pane, or ended, to read.
+    // Asked from outside (a start, "open in terminal", a ticket's earlier session, `tomrade term`): the session or terminal in a cell, that cell selected — once it has its pane, or ended, to read.
     const ask = state.reveal;
-    if (ask && ask.at !== revealed.current && state.sessions.some((s) => s.id === ask.sessionId && (s.pane || s.endedAt !== null))) {
+    const ready = (id: string) => state.sessions.some((s) => s.id === id && (s.pane || s.endedAt !== null)) || state.terminals.some((t) => t.id === id && t.pane);
+    if (ask && ask.at !== revealed.current && ready(ask.sessionId)) {
       revealed.current = ask.at;
       if (state.sessions.some((s) => s.id === ask.sessionId && s.endedAt !== null)) toRead.current.add(ask.sessionId);
       const shown = reveal(placed, ask.sessionId, focusedNow.current, key);

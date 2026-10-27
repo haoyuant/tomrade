@@ -70,7 +70,7 @@ Every package keeps `"private": true`, so `npm publish` from a source folder fai
 | `code-link` | A ticket's branches, pull requests and coding sessions; status from git; Start. | `codeLink` | agent, boards, contributions, engine-kit, git, github, herdr, hub, items, llm, mcp, plugin-sdk, repos, storage, tools, write |
 | `herdr` | herdr on this machine: its socket, server and panes. Optional. Off Windows it is also `terminals`, the backend the Terminal window and code link run panes on. | `herdr` | engine-kit |
 | `pty-host` | `terminals` on native Windows: a detached pty host Tomrade starts itself (node-pty over ConPTY), speaking herdr's shapes. Loaded and packaged on Windows only. | `terminals` | — |
-| `code-sessions` | The Terminal window: terminals (herdr's, or the pty host's on Windows) and code sessions side by side, with the assistant panel's conversations in its session bar. | — | agent, code-link, contributions, desktop-surface, herdr, items |
+| `code-sessions` | The Terminal window: terminals (herdr's, or the pty host's on Windows) and code sessions side by side, with the assistant panel's conversations in its session bar; `tomrade term` answers from the person's own terminal. | — | agent, code-link, contributions, desktop-surface, herdr, items, mcp |
 
 ## Agents
 

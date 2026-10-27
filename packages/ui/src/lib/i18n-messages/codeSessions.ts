@@ -158,7 +158,8 @@ export const codeSessions = {
     keyClose: "close the pane",
     keyArrows: "+ arrows: the pane beside",
     keyPrevNext: "previous / next pane",
-    keyFold: "fold the session bar"
+    keyFold: "fold the session bar",
+    cellNumber: "Pane {{n}} · tomrade term --attach {{n}} attaches it to your own terminal"
   },
   zh: {
     here: "这个窗口里",
@@ -318,6 +319,7 @@ export const codeSessions = {
     keyClose: "关格子",
     keyArrows: "+ 方向键 换格子",
     keyPrevNext: "上一个 / 下一个",
-    keyFold: "收起会话栏"
+    keyFold: "收起会话栏",
+    cellNumber: "格子 {{n}} · 在你自己的终端里运行 tomrade term --attach {{n}}，就能把它接过去"
   }
 };

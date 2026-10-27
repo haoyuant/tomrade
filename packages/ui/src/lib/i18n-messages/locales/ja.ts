@@ -3143,6 +3143,7 @@ export const ja: PartialMessages = {
     keyClose: "ペインを閉じる",
     keyArrows: "+ 矢印キー：隣のペイン",
     keyPrevNext: "前 / 次のペイン",
-    keyFold: "セッションバーを折りたたむ"
+    keyFold: "セッションバーを折りたたむ",
+    cellNumber: "ペイン {{n}} · 自分のターミナルで tomrade term --attach {{n}} を実行すると、そこにつなげます"
   }
 };

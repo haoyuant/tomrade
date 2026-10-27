@@ -89,5 +89,7 @@ declare module "cordis" {
     "desktop/reveal"(target: string): void;
     /** Open a local path in its system default application. */
     "desktop/open-path"(target: string): void;
+    /** The app comes in front of the one the person is in, for a window it shows at their word from outside (the `tomrade` command). */
+    "desktop/activate"(): void;
   }
 }

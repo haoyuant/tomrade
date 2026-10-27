@@ -125,6 +125,7 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-cell { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--border-soft); border-radius: 8px; overflow: hidden; background: var(--surface); }
 .cs-cell[data-focused] { border-color: var(--accent); }
 .cs-cell-bar { display: flex; align-items: center; gap: 10px; padding: 4px 8px; border-bottom: 1px solid var(--border-soft); font-size: var(--text-xs); min-height: 28px; }
+.cs-cell-no { flex: none; min-width: 1ch; font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); }
 .cs-cell-name { flex: 1 1 auto; min-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); }
 .cs-cell-agent { color: var(--muted); }
 .cs-cell-bar .cs-chip { flex: none; }

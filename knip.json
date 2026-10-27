@@ -14,7 +14,7 @@
     },
     "apps/desktop": {
       "entry": [
-        "src/{alerts,attention,background,deep-link,github,hub-cloud,ipc,settings,shell,surfaces,updater,extension-hooks}.ts",
+        "src/{alerts,attention,background,deep-link,github,hub-cloud,ipc,settings,shell,surfaces,updater,extension-hooks,tomrade-cli}.ts",
         "preload.cjs",
         "surface-preload.cjs",
         "scripts/*.{mjs,cjs}"
