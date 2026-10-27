@@ -11,7 +11,7 @@ import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/m
 import { viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { firstCodeStep, foldSteps, startBriefId, writesCode } from "~/lib/steps";
-import { conducts, findEngine, useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetWorkstream, useWorkdir, type RunProgress } from "~/lib/agent";
+import { conducts, findEngine, useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetWorkstream, useUnarchiveThread, useWorkdir, type RunProgress } from "~/lib/agent";
 import { keys, useAssistantAccessories, useBoards, useHeldItem, useItems, useSettings } from "~/lib/queries";
 import { ATTENTION_KEY, useAttention, type AttentionEntry } from "~/lib/attention";
 import { pickChoiceName, pickFallbackName } from "~/lib/engines";
@@ -25,7 +25,6 @@ import { ImGroupShare, QueuedRow, WorkingLine, type Queued } from "./agent-panel
 import { GUIDE, GuideList, slashCommand, SlashMenu, STARTERS, type SlashCommand, type SlashContext, type Starter } from "./agent-panel/commands";
 import { Composer } from "./agent-panel/Composer";
 import { STORE } from "./agent-panel/store";
-import { ThreadList, useThreadListState } from "./agent-panel/ThreadList";
 import { Review, type ReviewFocus } from "./agent-panel/Review";
 import { SessionBar, type BarMode } from "./agent-panel/SessionBar";
 import { HandoffLine } from "./agent-panel/HandoffLine";
@@ -121,12 +120,11 @@ export function AgentPanel({
   const [live, setLive] = useState<{ runId: string; text: string } | null>(null);
   const [progress, setProgress] = useState<RunProgress | null>(null);
   const scroll = useRef<HTMLDivElement>(null);
-  // what agents in this project wait on the person for: a count on the rail, a word in the thread list
+  // what agents in this project wait on the person for: a count on the rail, a word in the session bar
   const everyAttention = useAttention();
   const attention = useMemo(() => everyAttention.filter((e) => e.projectId === projectId), [everyAttention, projectId]);
-  const attentionOf = new Map(attention.flatMap((e) => (e.threadId ? [[e.threadId, e] as const] : [])));
   const attentionLabel = (e: AttentionEntry) => t(ATTENTION_KEY[e.kind]);
-  const threadList = useThreadListState(projectId);
+  const unarchive = useUnarchiveThread(projectId);
   // Dots until the person asks for cards; a panel left narrow (the default) has no room for them.
   const [barMode, setBarMode] = useState<BarMode>(() => {
     const saved = localStorage.getItem(STORE.sessionBar);
@@ -608,11 +606,24 @@ export function AgentPanel({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
+  // Putting away or deleting from the bar: any conversation but the open one while its run goes; a delete asks first.
+  const archiveThreadById = (id: string) => {
+    if (id === threadId && busy) return;
+    archiveThread.mutate(id, { onSuccess: () => { if (id === threadId) clearThread(); } });
+  };
+  const deleteThreadById = (id: string) => {
+    if ((id === threadId && busy) || !window.confirm(t("agentPanel.deleteThreadConfirm"))) return;
+    deleteThread.mutate(id, { onSuccess: () => { if (id === threadId) clearThread(); } });
+  };
   // the bar is memoized; its handlers keep their identity and read the latest render's state
-  const latestBar = useRef({ pickBarRow, newThread: () => {} });
-  latestBar.current = { pickBarRow, newThread: () => void openThread({ boardId }).then((th) => pickThread(th.id)) };
+  const latestBar = useRef({ pickBarRow, newThread: () => {}, archive: archiveThreadById, remove: deleteThreadById });
+  latestBar.current = { pickBarRow, newThread: () => void openThread({ boardId }).then((th) => pickThread(th.id)), archive: archiveThreadById, remove: deleteThreadById };
   const pickBarRowStable = useCallback((row: BarRow) => latestBar.current.pickBarRow(row), []);
   const newBarThread = useCallback(() => latestBar.current.newThread(), []);
+  const archiveBarThread = useCallback((id: string) => latestBar.current.archive(id), []);
+  const deleteBarThread = useCallback((id: string) => latestBar.current.remove(id), []);
+  // the conversations the bar shows: the look back lists the idle ones past them
+  const barThreadIds = useMemo(() => new Set(barRows.flatMap((r) => (r.threadId ? [r.threadId] : []))), [barRows]);
   // ⌘\ swaps the bar between dots and cards wherever the focus is, while the panel is open.
   useEffect(() => {
     if (!open) return;
@@ -653,15 +664,6 @@ export function AgentPanel({
     return () => setPanelSession(null);
   }, [projectId, openSession]);
 
-  const archiveThreadById = (id: string) => {
-    if (busy) return;
-    archiveThread.mutate(id, { onSuccess: () => { if (id === threadId) clearThread(); } });
-  };
-  const deleteThreadById = (id: string) => {
-    if (busy || !window.confirm(t("agentPanel.deleteThreadConfirm"))) return;
-    deleteThread.mutate(id, { onSuccess: () => { if (id === threadId) clearThread(); } });
-  };
-
   if (!open) {
     return (
       <div className="rail ai-rail">
@@ -697,17 +699,6 @@ export function AgentPanel({
           <MenuHead title={t("agentPanel.guideTitle")} />
           <GuideList />
         </Menu>
-        <ThreadList
-          state={threadList}
-          threads={threads.data}
-          threadId={threadId}
-          attentionOf={attentionOf}
-          attentionLabel={attentionLabel}
-          onPick={(id) => { setReviewIn(null); pickThread(id); }}
-          onNew={() => void openThread({ boardId }).then((th) => { setReviewIn(null); pickThread(th.id); })}
-          onArchive={archiveThreadById}
-          onDelete={deleteThreadById}
-        />
         <button type="button" className="btn btn-icon" title={t("agentPanel.collapsePanel")} aria-label={t("agentPanel.collapseAssistantAria")} onClick={() => onToggle(false)}>
           <Icon name="i-panel" size={15} />
         </button>
@@ -723,7 +714,7 @@ export function AgentPanel({
         </div>
       )}
       {review ? (
-        <Review projectId={projectId} focus={review.focus} engines={engines.data} onClose={() => setReviewIn(null)} onOpenThread={(id) => { setReviewIn(null); pickThread(id); }} />
+        <Review projectId={projectId} focus={review.focus} engines={engines.data} omit={barThreadIds} onClose={() => setReviewIn(null)} onOpenThread={(id) => { setReviewIn(null); pickThread(id); }} />
       ) : shownSession ? (
         <TerminalSession
           projectId={projectId}
@@ -900,7 +891,7 @@ export function AgentPanel({
         {archivedNow && threadId && (
           <p className="ai-workdir meta-txt dense" style={{ margin: "6px 0 0", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
             <span>{t("agentPanel.archivedHere")}</span>
-            <button type="button" className="btn btn-ghost" style={{ padding: "0 6px" }} disabled={threadList.unarchive.isPending} onClick={() => threadList.unarchive.mutate(threadId)}>
+            <button type="button" className="btn btn-ghost" style={{ padding: "0 6px" }} disabled={unarchive.isPending} onClick={() => unarchive.mutate(threadId)}>
               {t("agentPanel.restoreThread")}
             </button>
           </p>
@@ -1096,6 +1087,8 @@ export function AgentPanel({
         onPick={pickBarRowStable}
         onNew={newBarThread}
         onHistory={openHistory}
+        onArchive={archiveBarThread}
+        onDelete={deleteBarThread}
       />
       <ReportDialog projectId={projectId} threadId={reportFor} onOpenChange={(open) => { if (!open) setReportFor(null); }} />
     </aside>
