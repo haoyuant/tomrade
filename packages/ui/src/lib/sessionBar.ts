@@ -5,6 +5,24 @@ import { isApprovalAsk } from "./terminalSession";
 
 export type BarStatus = "wait" | "run" | "idle" | "done";
 
+/** The panel is wide enough for cards from here on. */
+export const CARDS_AT = 720;
+
+/** Settings › Sessions on the bar: by width, always folded or always unfolded; and whether a folded dot peeks. */
+export interface BarPrefs {
+  bar: "auto" | "rail" | "cards";
+  peek: boolean;
+}
+
+/** The bar prefs as stored, by width and peeking unless the person set otherwise. */
+export function barPrefsOf(sessions: unknown): BarPrefs {
+  const s = (sessions && typeof sessions === "object" ? sessions : {}) as { sessionBar?: unknown; peek?: unknown };
+  return { bar: s.sessionBar === "rail" || s.sessionBar === "cards" ? s.sessionBar : "auto", peek: s.peek !== false };
+}
+
+/** What the setting gives a panel this wide: cards on a wide one and dots on a narrow one, unless it says always. */
+export const barModeFor = (bar: BarPrefs["bar"], wide: boolean): "rail" | "cards" => (bar === "auto" ? (wide ? "cards" : "rail") : bar);
+
 /** One conversation in the session bar: an assistant thread, or a coding session in a terminal — never both for the same one. */
 export interface BarRow {
   key: string;

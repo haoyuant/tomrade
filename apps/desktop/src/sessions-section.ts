@@ -5,6 +5,10 @@ import { DESKTOP_WORDS } from "./words.js";
 
 export type OpenAtStart = "main" | "terminal" | "both";
 export interface SessionPrefs {
+  /** The assistant panel's session bar: cards on a wide panel and dots on a narrow one, or always one of them. */
+  sessionBar: "auto" | "rail" | "cards";
+  /** Hovering a dot of the folded bar shows what that session is doing. */
+  peek: boolean;
   openAtStart: OpenAtStart;
   afterAnswer: "next" | "stay";
   /** The `tomrade` command on the person's PATH (tomrade-command.ts). */
@@ -20,20 +24,24 @@ export const SESSIONS_SECTION: SettingsSection<SessionPrefs> = {
   title: en("sessionsTitle"),
   description: en("sessionsDescription"),
   schema: z.object({
+    sessionBar: z.enum(["auto", "rail", "cards"]).default("auto").meta({ title: en("sessionBarTitle") }).describe(en("sessionBarDescription")),
+    peek: z.boolean().default(true).meta({ title: en("peekTitle") }).describe(en("peekDescription")),
     openAtStart: z.enum(["main", "terminal", "both"]).default("main").meta({ title: en("openAtStartTitle") }).describe(en("openAtStartDescription")),
     afterAnswer: z.enum(["next", "stay"]).default("next").meta({ title: en("afterAnswerTitle") }).describe(en("afterAnswerDescription")),
     commandOnPath: z.boolean().default(true).meta({ title: en("commandOnPathTitle") }).describe(en("commandOnPathDescription"))
   }),
-  defaults: { openAtStart: "main", afterAnswer: "next", commandOnPath: true },
+  defaults: { sessionBar: "auto", peek: true, openAtStart: "main", afterAnswer: "next", commandOnPath: true },
   order: 16,
   scope: "user",
   agent: "read",
   words: {
-    en: { fields: { openAtStart: { options: { main: en("openAtStartMain"), terminal: en("openAtStartTerminal"), both: en("openAtStartBoth") } }, afterAnswer: { options: { next: en("afterAnswerNext"), stay: en("afterAnswerStay") } } } },
+    en: { fields: { sessionBar: { options: { auto: en("sessionBarAuto"), rail: en("sessionBarRail"), cards: en("sessionBarCards") } }, openAtStart: { options: { main: en("openAtStartMain"), terminal: en("openAtStartTerminal"), both: en("openAtStartBoth") } }, afterAnswer: { options: { next: en("afterAnswerNext"), stay: en("afterAnswerStay") } } } },
     zh: {
       title: zh("sessionsTitle"),
       description: zh("sessionsDescription"),
       fields: {
+        sessionBar: { title: zh("sessionBarTitle"), description: zh("sessionBarDescription"), options: { auto: zh("sessionBarAuto"), rail: zh("sessionBarRail"), cards: zh("sessionBarCards") } },
+        peek: { title: zh("peekTitle"), description: zh("peekDescription") },
         openAtStart: { title: zh("openAtStartTitle"), description: zh("openAtStartDescription"), options: { main: zh("openAtStartMain"), terminal: zh("openAtStartTerminal"), both: zh("openAtStartBoth") } },
         afterAnswer: { title: zh("afterAnswerTitle"), description: zh("afterAnswerDescription"), options: { next: zh("afterAnswerNext"), stay: zh("afterAnswerStay") } },
         commandOnPath: { title: zh("commandOnPathTitle"), description: zh("commandOnPathDescription") }

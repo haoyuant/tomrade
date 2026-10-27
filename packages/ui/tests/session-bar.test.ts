@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import type { ThreadSummary } from "@tomradex/agent";
 import type { SessionView } from "@tomradex/code-link";
-import { paletteSessionGroups, sessionBarRows, THREAD_DONE_AFTER_MS } from "../src/lib/sessionBar";
+import { barModeFor, barPrefsOf, paletteSessionGroups, sessionBarRows, THREAD_DONE_AFTER_MS } from "../src/lib/sessionBar";
 import type { AttentionEntry } from "../src/lib/attention";
 
 const thread = (id: string, over: Partial<ThreadSummary> = {}): ThreadSummary => ({
@@ -143,6 +143,14 @@ it("cards a conversation with what it said last, and reads it as done once its t
   expect(by("thread:busy").status).toBe("run");
   // without a clock nothing is done for being quiet
   expect(rows({ threads: [thread("quiet", { said: "Done." })] })[0]).toMatchObject({ status: "idle", activity: "Done." });
+});
+
+it("folds the bar by the panel's width unless Settings › Sessions says always, and peeks unless switched off", () => {
+  expect(barPrefsOf(undefined)).toEqual({ bar: "auto", peek: true });
+  expect(barPrefsOf({ sessionBar: "cards", peek: false })).toEqual({ bar: "cards", peek: false });
+  expect(barPrefsOf({ sessionBar: "sideways" }).bar).toBe("auto");
+  expect([barModeFor("auto", true), barModeFor("auto", false)]).toEqual(["cards", "rail"]);
+  expect([barModeFor("rail", true), barModeFor("cards", false)]).toEqual(["rail", "cards"]);
 });
 
 it("carries what a waiting terminal session asks, for the card and peek to word, and nothing once it moves on", () => {
