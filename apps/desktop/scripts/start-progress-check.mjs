@@ -148,7 +148,7 @@ app.whenReady().then(async () => {
     ctx.codeLink.deliveries = (projectId, itemId) => [{ id: "d1", projectId, itemId, sequence: 1, state: "active", startedAt: Date.now(), completedAt: null, updatedAt: Date.now(), bases: {} }];
     const liveSession = { id: "s-live", projectId: project.id, repoId: "r", delivery: 1, branch: "spr-1/slow-start", itemIds: [item.id], worked: [], marks: [], asked: 0, mode: "terminal", agent: "ready", externalId: null, threadId: null, worktree: null, herdrPane: "w1:p1", terminal: null, title: null, cwd: null, transcript: null, prompted: true, withoutTicket: null, recordSavedAt: null, recordCut: false, state: "running", lastEventAt: Date.now(), lastToolAt: null, lastCommitAt: null, summary: null, activity: "Bash · pnpm test", blocked: null, requestedBy: null, autoMerge: false, device: "here", startedAt: Date.now(), endedAt: null };
     ctx.codeLink.sessionsOf = () => [liveSession];
-    ctx.codeLink.recentSessions = (projectId) => [liveSession, ...realRecent(projectId)];
+    ctx.codeLink.recentSessions = async (projectId) => [{ ...liveSession, approval: false, prompt: null, tail: null, outcome: null }, ...(await realRecent(projectId))];
     let apartOpts = null;
     ctx.codeLink.start = async (_projectId, _itemId, opts) => ((apartOpts = opts), { ok: true, continued: false, threadId: null, sessionId: "s-apart", branch: "spr-1/slow-start-b", worktree: null, cwd: work, mode: opts.mode, command: "claude", launched: false, pane: null, engine: "ready" });
     await js(`location.reload(); true`);
