@@ -249,7 +249,7 @@ const run = async () => {
   await press(`${hotkey} [data-hotkey="record"]`);
   await key({ key: "k", code: "KeyK", altKey: true, ...mod }, "document.body");
   check("a key pressed in Sessions is kept as that key", await wait(() => JSON.stringify(overrides().terminalWindowGlobal) === JSON.stringify(["Mod+Alt+K"])), overrides());
-  check("and shows as the one picked", (await hotkeyPicked()) === "record");
+  check("and shows as the one picked", await wait(async () => (await hotkeyPicked()) === "record", "the key picked on screen"), await hotkeyPicked());
   await press(`${hotkey} [data-hotkey="none"]`);
   check("None there takes it away", await wait(() => overrides().terminalWindowGlobal === undefined), overrides());
   await $(`${navRow}.click(); true`);
@@ -258,6 +258,8 @@ const run = async () => {
   await press(`${row("sidebar")} [data-testid="keys-reset"]`);
   check("Reset gives a command its default back", await wait(() => overrides().sidebar === undefined), overrides());
   check("taking it back from where it went", await wait(() => JSON.stringify(overrides().palette) === JSON.stringify(["Mod+Shift+P"])), overrides());
+  // Export writes what the pane holds: wait for the reset to reach it, not only the stored settings
+  await wait(async () => !(await has(`${row("sidebar")}[data-changed]`)), "the reset on screen");
 
   // export and import, past the native dialogs
   const exported = path.join(work, "keys.json");
