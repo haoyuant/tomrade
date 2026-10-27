@@ -75,6 +75,9 @@ export interface ReviewRow {
   endedAt: number;
 }
 
+/** What came of an ended session, as every list says it: its pull request, its commits, how often it asked, its last word. */
+export type SessionOutcome = Pick<ReviewRow, "pr" | "commits" | "asked" | "said">;
+
 /** Where a page stopped in each source the list reads; null in one once it ran dry. */
 export type ReviewCursor = Record<ReviewSource, SessionCursor | null>;
 
@@ -230,6 +233,11 @@ export class Review {
     const idle = page("idle", () => this.threadsMatching(projectId, false, needle, limit), (from) => this.threadsPage(projectId, false, from, limit));
     const rows = (list: ThreadSummary[]) => list.map((th) => this.threadRow(projectId, th));
     return mergePage({ session: this.sessionRows(projectId, sessions), thread: rows(threads), idle: rows(idle) }, before, limit);
+  }
+
+  /** What came of each of these sessions, by id, the way the list says it: their tickets' links read in one go. */
+  outcomes(projectId: string, sessions: SessionView[]): Map<string, SessionOutcome> {
+    return new Map(this.sessionRows(projectId, sessions).map((r) => [r.id, { pr: r.pr, commits: r.commits, asked: r.asked, said: r.said }]));
   }
 
   /**

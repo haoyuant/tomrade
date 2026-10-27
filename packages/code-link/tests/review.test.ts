@@ -162,6 +162,10 @@ describe("the look back over the store", () => {
     expect(first.rows.map((r) => r.id)).toEqual([ids[0], ids[1]]);
     expect(first.rows[0]).toMatchObject({ title: "结束时存下记录快照", asked: 2, commits: 4, pr: { number: 407, state: "merged" }, where: "outside" });
     expect(first.rows[0]!.tickets.map((t) => t.key)).toEqual([snap.key, mcp.key]);
+    // the session lists say what came of a session the way the look back does
+    const outcomes = review.outcomes(project.id, [store.session(project.id, ids[0]!)!, store.session(project.id, ids[1]!)!]);
+    expect(outcomes.get(ids[0]!)).toEqual({ pr: { number: 407, state: "merged", url: "https://x/407" }, commits: 4, asked: 2, said: null });
+    expect(outcomes.get(ids[1]!)).toEqual({ pr: null, commits: 0, asked: 0, said: null });
     const second = review.list(project.id, { limit: 2, before: first.next });
     expect(second.rows.map((r) => r.id)).toEqual([ids[2], ids[3]]);
     // a start nobody spoke to, with no ticket and no title, is not kept: the page after is empty and the last

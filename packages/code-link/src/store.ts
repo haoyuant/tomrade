@@ -206,7 +206,9 @@ ALTER TABLE plugin_code_link_sessions ADD COLUMN record_cut INTEGER NOT NULL DEF
 ALTER TABLE plugin_code_link_sessions ADD COLUMN asked INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE plugin_code_link_sessions ADD COLUMN marks_json TEXT NOT NULL DEFAULT '[]';
 `
-  }
+  },
+  // What a session waits on the person for, as a structure each window words in its own language.
+  { version: 20, up: "ALTER TABLE plugin_code_link_sessions ADD COLUMN ask_json TEXT" }
 ];
 
 /** Durable code links travel with the project; running sessions belong to this machine. */
@@ -318,6 +320,17 @@ export interface SessionCursor {
   at: number;
   id: string;
 }
+/**
+ * What a waiting session asks the person: a tool's permission — to run a command, to change a file, to use another
+ * tool — or a question. `detail` is the command or the file, clipped; null when its hooks did not say.
+ */
+export interface SessionAsk {
+  kind: "permission" | "question";
+  tool: string | null;
+  action: "run" | "edit" | "use" | null;
+  detail: string | null;
+}
+
 /** `error`: the agent stopped on its own account (rate limit, auth) and is not working; the process may still be there. */
 export type SessionState = "running" | "waiting" | "idle" | "error" | "ended" | "lost";
 
@@ -364,8 +377,10 @@ export interface SessionView {
   lastCommitAt: number | null;
   /** The agent's own one-liner about where it is (note_progress, or what it said when it last stopped). */
   summary: string | null;
-  /** What it is doing this moment, from its last hook; null between tools. */
+  /** What it is doing this moment, from its last hook; null between tools, and while it asks. */
   activity: string | null;
+  /** What it waits on the person for, while it does; null otherwise. */
+  ask: SessionAsk | null;
   blocked: SessionBlock | null;
   /** The conversation (thread) that asked Tomrade to start this session, when one did: where its delivery is reported back. */
   requestedBy: string | null;
@@ -445,6 +460,7 @@ interface SessionRow {
   item_ids_json: string;
   worked_json: string | null;
   marks_json: string | null;
+  ask_json: string | null;
   asked: number | null;
   mode: string;
   agent: string;
@@ -570,6 +586,7 @@ const toSession = (r: SessionRow): SessionView => ({
   lastCommitAt: r.last_commit_at,
   summary: r.summary,
   activity: r.activity ?? null,
+  ask: r.ask_json ? (JSON.parse(r.ask_json) as SessionAsk) : null,
   blocked: (r.blocked as SessionBlock | null) ?? null,
   requestedBy: r.requested_by ?? null,
   autoMerge: r.auto_merge === 1,
@@ -637,6 +654,7 @@ export interface SessionPatch {
   lastCommitAt?: number | null;
   summary?: string | null;
   activity?: string | null;
+  ask?: SessionAsk | null;
   blocked?: SessionBlock | null;
   requestedBy?: string | null;
   autoMerge?: boolean;
@@ -1066,6 +1084,7 @@ export class CodeLinkStore {
       lastCommitAt: "last_commit_at",
       summary: "summary",
       activity: "activity",
+      ask: "ask_json",
       blocked: "blocked",
       requestedBy: "requested_by",
       autoMerge: "auto_merge",
@@ -1077,7 +1096,7 @@ export class CodeLinkStore {
       const value = patch[field];
       if (value === undefined) continue;
       sets.push(`${column} = ?`);
-      values.push(field === "itemIds" || field === "worked" || field === "marks" ? JSON.stringify(value) : field === "prompted" || field === "autoMerge" || field === "recordCut" ? (value ? 1 : 0) : value);
+      values.push(field === "itemIds" || field === "worked" || field === "marks" || (field === "ask" && value !== null) ? JSON.stringify(value) : field === "prompted" || field === "autoMerge" || field === "recordCut" ? (value ? 1 : 0) : value);
     }
     if (!sets.length) return this.session(projectId, id)!;
     values.push(id);
