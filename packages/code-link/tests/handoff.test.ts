@@ -146,3 +146,26 @@ it("takes a free conversation to a terminal cell in the folder its runs use, kee
     await ctx.fiber.dispose();
   }
 });
+
+it("starts a coding agent on the person's own words with no ticket: a terminal session in the project's folder, the words its first prompt", { timeout: 30_000 }, async () => {
+  const { ctx, project, codeLink, fake } = await machine();
+  try {
+    expect(await codeLink.startLoose(project.id, { engine: "fake-cli", prompt: "  " })).toMatchObject({ ok: false, gate: "prompt" });
+    // an agent that runs only inside Tomrade has no terminal to start in
+    expect(await codeLink.startLoose(project.id, { engine: "inside", prompt: "Tidy up" })).toMatchObject({ ok: false, gate: "engine" });
+    const started = await codeLink.startLoose(project.id, { engine: "fake-cli", prompt: "Tidy the release notes\nand the changelog" });
+    expect(started).toMatchObject({ ok: true, launched: true, threadId: null, mode: "terminal", engine: "fake-cli", branch: "" });
+    const sessionId = started.ok ? started.sessionId : "";
+    // no repository on this machine: the home folder
+    expect(codeLink.store.session(project.id, sessionId)).toMatchObject({ mode: "terminal", threadId: null, itemIds: [], agent: "fake-cli", title: "Tidy the release notes", cwd: os.homedir(), prompted: true, state: "running" });
+    expect(codeLink.store.session(project.id, sessionId)?.herdrPane).toBe(started.ok ? started.pane : null);
+    const dir = codeLink.sessionDir(sessionId);
+    expect(fs.readFileSync(path.join(dir, "prompt.md"), "utf8")).toMatch(/^Tidy the release notes\nand the changelog\n\nLanguage: /);
+    const script = fs.readFileSync(path.join(dir, "run.command"), "utf8");
+    expect(script).toContain("--mcp-config");
+    expect(script).not.toContain("--resume");
+  } finally {
+    fake.close();
+    await ctx.fiber.dispose();
+  }
+});

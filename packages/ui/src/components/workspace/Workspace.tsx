@@ -52,6 +52,7 @@ const GraphRegion = memo(GraphView);
 const EpicStripRegion = memo(EpicStrip);
 import { useSelectedId, useWorkspace } from "./context";
 import { notesSearch, useNotesSearchState } from "~/lib/notes";
+import { onStartPalette } from "~/lib/panelRequests";
 import { useToastUndo } from "~/lib/undo";
 
 /** Below this the three panes cannot all hold their minimum. */
@@ -108,6 +109,9 @@ export function Workspace() {
   const [expanded, setExpanded] = useState(false);
   const [conflict, setConflict] = useState<string | null>(null);
   const [palette, setPalette] = useState(false);
+  // opened by the session bar's +: on its ways to start a new session
+  const [paletteStarts, setPaletteStarts] = useState(false);
+  useEffect(() => onStartPalette(() => { setPaletteStarts(true); setPalette(true); }), []);
   const [newIssue, setNewIssue] = useState(false);
   /** null when shut; the pane to land on when open, "" for wherever it was left. */
   const [settings, setSettings] = useState<string | null>(null);
@@ -277,6 +281,7 @@ export function Workspace() {
       };
       if (on("palette")) {
         e.preventDefault();
+        setPaletteStarts(false);
         setPalette(true);
       } else if (on("searchNotes")) {
         e.preventDefault();
@@ -410,7 +415,8 @@ export function Workspace() {
       />
       <CommandPalette
         open={palette}
-        onOpenChange={setPalette}
+        onOpenChange={(next) => { setPalette(next); if (!next) setPaletteStarts(false); }}
+        starting={paletteStarts}
         actions={{
           newIssue: () => setNewIssue(true),
           newView,

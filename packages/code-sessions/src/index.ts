@@ -21,7 +21,7 @@ import { randomUUID } from "node:crypto";
 import { serveTerm, type TermWindow } from "./cli.js";
 import { droppedPaste, readableDrops } from "./drop.js";
 import { Recorder, RECORDING_SECTION, RecordingSettings, type Recording } from "./recorder.js";
-import type { ClosedTerminalRow, Layout, LayoutPreset, SessionRow, TerminalPlace, TerminalRow, ThreadRow, WindowMessage, WindowPost, WindowState } from "./protocol.js";
+import type { ClosedTerminalRow, Layout, LayoutPreset, ReviewHit, SessionRow, TerminalPlace, TerminalRow, ThreadRow, TicketRow, WindowMessage, WindowPost, WindowState } from "./protocol.js";
 import { CODE_SESSIONS_WORDS } from "./words.js";
 import { errorMessage } from "@tomradex/contracts";
 
@@ -58,6 +58,9 @@ const THREADS_SETTLE_MS = 100;
 const TAIL_LINES = 8;
 /** The most of a question an assistant card carries. */
 const WAIT_TEXT_MAX = 160;
+/** The tickets ⌘K can start from the window: open ones, the latest changed first, this many at most. */
+const OPEN_TICKET = new Set(["backlog", "todo", "doing", "verifying"]);
+const TICKETS_LISTED = 100;
 
 interface Saved {
   asked?: boolean;
@@ -643,6 +646,29 @@ function apply(ctx: Context, config: Config) {
     );
   };
 
+  /** The agent a ticket started here runs, as Start picks it: the one last started with, else the first that runs in a terminal. */
+  const startEngine = (): { id: string; title: string; options?: Record<string, unknown> } | null => {
+    try {
+      const engines = (ctx.get("agent")?.codeEngines() ?? []).filter((e) => e.terminal?.mode !== "none");
+      const remembered = ctx.codeLink.startDefaults();
+      const engine = engines.find((e) => e.id === remembered?.engine) ?? engines[0];
+      if (!engine) return null;
+      return { id: engine.id, title: engine.title, ...(remembered?.engine === engine.id && remembered.options ? { options: remembered.options } : {}) };
+    } catch (error) {
+      // only names the agent ⌘K starts tickets with: a window without it still lists and shows everything else
+      ctx.logger.warn(`code sessions: the agent to start with could not be read: ${errorMessage(error)}`);
+      return null;
+    }
+  };
+  /** What ⌘K can start: the project's open tickets, the latest changed first. */
+  const openTickets = (projectId: string): TicketRow[] =>
+    ctx.items
+      .list({ projectId })
+      .filter((i) => i.kind === "ticket" && OPEN_TICKET.has(i.status))
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, TICKETS_LISTED)
+      .map((i) => ({ id: i.id, key: i.key, title: i.title, status: i.status }));
+
   const state = async (projectId: string): Promise<WindowState> => {
     const b = await bridge();
     const shown = listed(projectId);
@@ -694,7 +720,9 @@ function apply(ctx: Context, config: Config) {
       archive: { count: ended.length, rows: archiveOpen ? [...ended].sort((a, b) => b.endedAt! - a.endedAt!) : null, terminals: archiveOpen ? closedTerminals(projectId).sort((a, b) => b.endedAt - a.endedAt) : null },
       closedTerminals: closedTerminals(projectId).filter((t) => inCells.has(t.id)),
       history: paneHistory(ended, [...opened.map((t) => t.pane), ...sent.map((r) => r.pane)]),
-      folded: saved.folded?.[projectId] === true
+      folded: saved.folded?.[projectId] === true,
+      tickets: openTickets(projectId),
+      startAgent: startEngine()?.title ?? null
     };
   };
 
@@ -1122,6 +1150,31 @@ function apply(ctx: Context, config: Config) {
         return;
       case "continue":
         return command(projectId, win, "code-link.start-terminal", m.sessionId);
+      // ⌘K: a ticket with the agent Start would pick, in a new cell here, as `tomrade term --agent` starts one.
+      case "startTicket": {
+        const item = ctx.items.get(projectId, m.itemId);
+        if (!item) return;
+        const engine = startEngine();
+        const result = await ctx.codeLink.start(projectId, item.id, { mode: "terminal", ...(engine ? { engine: engine.id } : {}), ...(engine?.options ? { options: engine.options } : {}) });
+        if (!result.ok) {
+          // The ticket comes forward in Tomrade, where its Start says what to fix.
+          ctx.emit("desktop/open", { projectId, itemId: item.id });
+          return post(win, { type: "toast", text: words()("cliStartStopped", { key: item.key, reason: result.message }) });
+        }
+        if (result.pane) return show(projectId, result.sessionId);
+        const who = engine?.title ?? result.engine;
+        return post(win, { type: "toast", text: result.launched ? words()("cliStartedElsewhere", { key: item.key, agent: who, branch: result.branch }) : words()("cliRunThis", { key: item.key, agent: who, command: result.command ?? "" }) });
+      }
+      case "reviewSearch": {
+        const query = m.query.trim();
+        if (query.length < 2) return;
+        const agents = ctx.get("agent")?.codeEngines() ?? [];
+        const page = await ctx.codeLink.review.list(projectId, { query, limit: 8 });
+        const rows: ReviewHit[] = page.rows.map((r) => ({ id: r.id, kind: r.kind, key: r.tickets[0]?.key ?? null, title: r.title, agent: agents.find((e) => e.id === r.agent)?.title ?? null, said: r.said }));
+        return post(win, { type: "reviewFound", query: m.query, rows });
+      }
+      case "show":
+        return show(projectId, m.sessionId);
       case "openThread": {
         const s = sessionOf(projectId, m.sessionId);
         if (s?.threadId) return void ctx.emit("desktop/open", { projectId, threadId: s.threadId });

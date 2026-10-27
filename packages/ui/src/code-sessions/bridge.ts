@@ -33,12 +33,14 @@ export const onLook = (listener: (look: Look) => void) => surface()?.onLook(list
 type ShownIn = Extract<WindowPost, { type: "shownIn" }>;
 type Found = Extract<WindowPost, { type: "archiveFound" }>;
 type Tails = Extract<WindowPost, { type: "tails" }>;
+type Reviewed = Extract<WindowPost, { type: "reviewFound" }>;
 type CellPost = Exclude<Extract<WindowPost, { cell: string }>, ShownIn>;
 const cells = new Map<string, Set<(post: CellPost) => void>>();
 const toasts = new Set<(text: string) => void>();
 const shownIn = new Set<(post: ShownIn) => void>();
 const found = new Set<(post: Found) => void>();
 const tails = new Set<(post: Tails) => void>();
+const reviewed = new Set<(post: Reviewed) => void>();
 
 // One listener for every post: frames and ends go to their cell, toasts to whoever shows them.
 surface()?.onMessage((raw) => {
@@ -47,6 +49,7 @@ surface()?.onMessage((raw) => {
   else if (post.type === "shownIn") for (const listener of shownIn) listener(post);
   else if (post.type === "archiveFound") for (const listener of found) listener(post);
   else if (post.type === "tails") for (const listener of tails) listener(post);
+  else if (post.type === "reviewFound") for (const listener of reviewed) listener(post);
   else for (const listener of cells.get(post.cell) ?? []) listener(post);
 });
 
@@ -82,4 +85,10 @@ export function onArchiveFound(listener: (post: Found) => void): () => void {
 export function onTails(listener: (post: Tails) => void): () => void {
   tails.add(listener);
   return () => tails.delete(listener);
+}
+
+/** What the look back found for ⌘K's history. */
+export function onReviewFound(listener: (post: Reviewed) => void): () => void {
+  reviewed.add(listener);
+  return () => reviewed.delete(listener);
 }

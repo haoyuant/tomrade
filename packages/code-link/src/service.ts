@@ -228,6 +228,7 @@ declare module "@tomradex/ipc" {
     "codeLink.terminalWindow": (projectId: string) => boolean;
     /** Show a session's herdr terminal in Tomrade's Terminal window; false when no window can. */
     "codeLink.showSession": (projectId: string, sessionId: string) => boolean;
+    "codeLink.startLoose": (projectId: string, input: { engine?: string; prompt: string }) => StartResult;
     /** A session's conversation from its agent's own record: its end, or the stretch `before` an earlier read's start. */
     "codeLink.conversation": (projectId: string, sessionId: string, before?: number) => RecordRead | null;
     /** What the assistant panel can do with a terminal session: type into its pane, answer its permission prompt. */
@@ -730,6 +731,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.gh", () => probeGh());
       ctx.ipc.handle("codeLink.terminalWindow", (projectId) => ctx.codeLink.terminalWindow(projectId));
       ctx.ipc.handle("codeLink.showSession", (projectId, sessionId) => ctx.codeLink.showSession(projectId, sessionId));
+      ctx.ipc.handle("codeLink.startLoose", (projectId, input) => ctx.codeLink.startLoose(projectId, input));
       ctx.ipc.handle("codeLink.conversation", (projectId, sessionId, before) => ctx.codeLink.conversation(projectId, sessionId, before));
       ctx.ipc.handle("codeLink.sessionPanel", (projectId, sessionId) => ctx.codeLink.sessionPanel(projectId, sessionId));
       ctx.ipc.handle("codeLink.sessionSay", (projectId, sessionId, text) => ctx.codeLink.sessionSay(projectId, sessionId, text));
@@ -1116,6 +1118,12 @@ export class CodeLink extends Service implements CodeLinkReader {
       this.followOnStore.add({ projectId, itemId: then, afterItemId: itemId, options: { mode: rest.mode, engine: result.engine, options: rest.options, permissionMode: rest.permissionMode, playbook: rest.playbook }, at: Date.now() });
     }
     return result;
+  }
+
+  /** A coding agent started on the person's words with no ticket, in the project's repository folder (else the home folder). */
+  startLoose(projectId: string, input: { engine?: string; prompt: string }): Promise<StartResult> {
+    if (!input.prompt.trim()) return Promise.resolve({ ok: false, gate: "prompt", message: "say what to do first" });
+    return this.starter.startLoose(projectId, { ...input, cwd: this.repositoryFoldersOf(projectId)[0]?.path ?? os.homedir() });
   }
 
   /** A Start stuck on a step that never answers (git waiting on a credential prompt, say) fails with the reason instead. */

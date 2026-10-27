@@ -95,6 +95,28 @@ export interface ThreadRow {
   updatedAt: number;
 }
 
+/** A ticket ⌘K can start in a new cell: one of the project's open ones. */
+export interface TicketRow {
+  id: string;
+  key: string;
+  title: string;
+  status: string;
+}
+
+/** An ended conversation the look back found for ⌘K's history, searched by what was said. */
+export interface ReviewHit {
+  id: string;
+  /** An ended coding session, an assistant conversation put away, or one left idle (still open in the app window). */
+  kind: "session" | "thread" | "idle";
+  /** The ticket it went by, when it worked one. */
+  key: string | null;
+  title: string;
+  /** Its agent's own name; null when Tomrade does not know it. */
+  agent: string | null;
+  /** Its own last word on where it got to. */
+  said: string | null;
+}
+
 /** A plain terminal the window opened: a herdr pane of the person's, with no ticket or code-link session behind it. */
 export interface TerminalRow {
   id: string;
@@ -185,6 +207,10 @@ export interface WindowState {
   history: Record<string, SessionRow[]>;
   /** The sidebar folded to a strip, as this project's window was left. */
   folded: boolean;
+  /** The project's open tickets, the latest changed first: ⌘K starts one in a new cell. */
+  tickets: TicketRow[];
+  /** The agent a ticket started from here runs, by name: the one Start would pick; null when none can run in a terminal. */
+  startAgent: string | null;
 }
 
 /** What the window asks for. */
@@ -243,6 +269,12 @@ export type WindowMessage =
   | { type: "switchTerminal"; switch: boolean }
   /** Start herdr's server again after it would not come up. */
   | { type: "startHerdr" }
+  /** A ticket started with the agent Start would pick, in a new cell of this window. */
+  | { type: "startTicket"; itemId: string }
+  /** The look back searched for ⌘K's history, as the app window's ⌘K does: answered with `reviewFound`. */
+  | { type: "reviewSearch"; query: string }
+  /** An ended session the look back found, put in a cell to read. */
+  | { type: "show"; sessionId: string }
   | { type: "refresh" };
 
 /** What the plugin posts to the window, one by one. */
@@ -263,6 +295,8 @@ export type WindowPost =
   | { type: "toast"; text: string }
   /** The archived sessions whose conversation says the query, from what their agents recorded. */
   | { type: "archiveFound"; query: string; ids: string[] }
+  /** What the look back found for ⌘K's history. */
+  | { type: "reviewFound"; query: string; rows: ReviewHit[] }
   /** Each listed pane's last lines, styling stripped; null for a pane that is gone. */
   | { type: "tails"; panes: Record<string, string | null> }
   /** The recording asks the cell for its screen as it is, to begin a new stretch of the recording with. */

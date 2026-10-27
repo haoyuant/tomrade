@@ -77,6 +77,8 @@ const run = async () => {
       return { stop: "end" };
     }
   });
+  // a coding agent that runs only in a terminal: what ⌘K starts on the words typed, with no ticket (no picker here lists it)
+  ctx.agent.engine({ id: "termcli", title: "Term CLI", author: "ai:termcli", capabilities: ["code"], terminal: { mode: "only" }, available: async () => ({ ok: true }), async turn() { return { stop: "end" }; } });
   const settings = ctx.settings.get();
   ctx.settings.set({ ...settings, language: "en", agent: { ...settings.agent, defaultEngine: "slow" } });
 
@@ -1099,6 +1101,48 @@ const run = async () => {
   check("and opens the look back on it", await until(async () => (await $(`document.querySelector('[data-testid="ai-review-open"]')?.dataset.review ?? null`)) === putAway.id, 30));
   await press(`document.querySelector('.ai-review-head button[aria-label="Back to the conversation"]')`);
   await sleep(300);
+
+  // ── ⌘K starts on the words three ways: ↵ the built-in assistant (above), ⌥↵ a terminal agent in a background pane, ⇧↵ in a Terminal window cell ──
+  check("⌘K's box says what it searches and that what to do can be typed", /Search sessions, ticket keys, what was said/.test(await $(`document.querySelector('.palette-input')?.placeholder ?? ''`)));
+  const loose = [];
+  const startLooseWas = ctx.codeLink.startLoose.bind(ctx.codeLink);
+  ctx.codeLink.startLoose = async (projectId, input) => {
+    loose.push(input);
+    const s = ctx.codeLink.store.createSession(projectId, { repoId: "", branch: "", itemIds: [], mode: "terminal", agent: input.engine ?? "termcli", threadId: null, device: "check" });
+    ctx.codeLink.store.patchSession(projectId, s.id, { title: input.prompt, herdrPane: `w9:p${loose.length}`, state: "running", lastEventAt: Date.now() });
+    return { ok: true, continued: false, threadId: null, sessionId: s.id, branch: "", worktree: null, cwd: work, mode: "terminal", command: "cli", launched: true, pane: `w9:p${loose.length}`, engine: input.engine ?? "termcli" };
+  };
+  const inCell = [];
+  const showSessionWas = ctx.codeLink.showSession;
+  ctx.codeLink.showSession = async (_projectId, sessionId) => (inCell.push(sessionId), true);
+  await $(`(document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
+  await openPalette();
+  await typePalette("vqkz jumble");
+  await sleep(300);
+  const ways = await $(`[...document.querySelectorAll('[data-testid="palette-start"] [data-way]')].map((b) => [b.dataset.way, b.textContent])`);
+  check("with nothing found, ⌘K offers three ways on the words: the built-in assistant ↵, a terminal agent in a background pane ⌥↵, in a new Terminal window cell ⇧↵",
+    ways.length === 3 && ways[0][0] === "builtin" && /Built-in assistant.*↵/.test(ways[0][1]) && ways[1][0] === "pane" && /background pane.*⌥↵/.test(ways[1][1]) && ways[2][0] === "cell" && /new cell of the Terminal window.*⇧↵/.test(ways[2][1]), ways);
+  check("one is recommended, and a line under them says how to choose", (await present('[data-testid="palette-start"] .is-recommended')) && /Both change code/.test(await $(`document.querySelector('.palette-start-foot')?.textContent ?? ''`)));
+  await $(`document.querySelector('.palette-input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', altKey: true, bubbles: true, cancelable: true }));true`);
+  const looseSession = (title) => ctx.codeLink.store.sessions(alpha.id).find((s) => s.title === title)?.id;
+  check("⌥↵ starts the terminal agent on those words in a background pane: no Terminal window, the panel selects it",
+    (await until(async () => loose.length === 1 && !!looseSession("vqkz jumble") && (await sessionView())?.id === looseSession("vqkz jumble"), 60)) && loose[0].prompt === "vqkz jumble" && inCell.length === 0, { loose, view: await sessionView(), inCell });
+  await openPalette();
+  await typePalette("zqkv wobble");
+  await sleep(300);
+  await enterPalette(true);
+  check("⇧↵ starts it the same way and puts it in a Terminal window cell", (await until(() => Promise.resolve(loose.length === 2 && inCell.length === 1), 60)) && loose[1].prompt === "zqkv wobble" && inCell[0] === looseSession("zqkv wobble"), { loose, inCell });
+  // the session bar's +: ⌘K on its ways to start, nothing else
+  await until(() => present(".ai .sbar"), 20);
+  await press(`document.querySelector('.ai .sbar-new') ?? document.querySelector('.ai .sbar-head button[aria-label="New thread"]')`);
+  check("the session bar's + opens ⌘K on its ways to start a new session, nothing else listed",
+    (await until(() => present('[data-testid="palette-start"]'), 30)) && !(await present(".palette [cmdk-group-heading]")) && /Start a new session/.test(await $(`document.querySelector('[data-testid="palette-start"]').textContent`)));
+  check("with nothing typed yet, the terminal ways wait for the first words", await $(`document.querySelector('[data-testid="palette-start-pane"]').disabled && !document.querySelector('[data-testid="palette-start-with"]').disabled`));
+  const plainBefore = ctx.agent.store.threads(alpha.id, ["assistant"]).length;
+  await enterPalette();
+  check("↵ with nothing typed opens a new conversation with the built-in assistant", await until(() => Promise.resolve(ctx.agent.store.threads(alpha.id, ["assistant"]).length === plainBefore + 1), 50));
+  ctx.codeLink.startLoose = startLooseWas;
+  ctx.codeLink.showSession = showSessionWas;
 
   // ── the look back: ended sessions by day with what came of each first; one opened read-only, cut by ticket ──
   // A session that did one ticket, then claimed and fixed another on the way: its record, as Claude Code writes one, stamped.

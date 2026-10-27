@@ -22,7 +22,7 @@ import { keyLabel } from "~/lib/keybindings";
 import { isComposing } from "~/lib/keys";
 import { openSettingsPane } from "~/lib/settingsHost";
 import { askPanel } from "~/lib/panelRequests";
-import { PaletteSessions } from "./PaletteSessions";
+import { PaletteSessions, PaletteStart, useLooseStart } from "./PaletteSessions";
 
 export interface PaletteActions {
   newIssue: () => void;
@@ -48,7 +48,13 @@ export interface PaletteActions {
 }
 
 /** One palette spanning every view, every issue and every action. */
-export function CommandPalette({ open, onOpenChange, actions }: { open: boolean; onOpenChange: (open: boolean) => void; actions: PaletteActions }) {
+export function CommandPalette({ open, onOpenChange, actions, starting = false }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  actions: PaletteActions;
+  /** Opened on its ways to start a new session (the session bar's +): nothing else is listed. */
+  starting?: boolean;
+}) {
   const ws = useWorkspace();
   const selectedId = useSelectedId();
   const navigate = useNavigate();
@@ -61,6 +67,10 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
   const templateActions = useTemplateActions(ws.project.id);
   const runCommand = useRunCommand(ws.project.id);
   const [search, setSearch] = useState("");
+  // "Start a new session…" turns the open palette to its ways to start, the words typed kept
+  const [startHere, setStartHere] = useState(false);
+  const startMode = starting || startHere;
+  const looseStart = useLooseStart(ws.project.id);
   const tree = useFilesTree(ws.project.id);
   const notesOn = useNotesEnabled();
   const noteActions = useNoteActions();
@@ -80,12 +90,9 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
   useEffect(() => {
     if (open) return;
     setSearch("");
+    setStartHere(false);
     shift.current = false;
   }, [open]);
-  const startWith = (text: string) => {
-    dock?.setAiOpen(true);
-    askPanel({ kind: "startWith", text });
-  };
 
   const run = (fn: () => void) => {
     onOpenChange(false);
@@ -174,11 +181,13 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
             onKeyDown={(e) => {
               if (e.key !== "Enter" || isComposing(e)) return;
               shift.current = e.shiftKey;
-              // nothing found: Enter starts a conversation with the words typed
+              // nothing found, or opened to start: ↵ the built-in assistant on the words typed, ⌥↵ a terminal agent in a background pane, ⇧↵ in a new Terminal window cell
               const words = search.trim();
-              if (words && dock && !list.current?.querySelector("[cmdk-item]")) {
+              if (dock && (words || startMode) && !list.current?.querySelector("[cmdk-item]")) {
                 e.preventDefault();
-                run(() => startWith(words));
+                const way = e.shiftKey ? "cell" : e.altKey ? "pane" : "builtin";
+                if (way !== "builtin" && !words) return;
+                run(() => looseStart.go(way, words));
               }
             }}
           >
@@ -190,15 +199,11 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
               onValueChange={setSearch}
             />
             <Command.List className="palette-list" ref={list}>
+              {startMode && dock && <PaletteStart start={looseStart} words={search.trim()} fresh run={run} />}
+              {!startMode && (
               <Command.Empty>
                 <div className="palette-empty">{t("commandPalette.noMatches", { query: search })}</div>
-                {dock && search.trim() && (
-                  <button type="button" className="btn btn-ghost palette-search-notes" data-testid="palette-start-with" onClick={() => run(() => startWith(search.trim()))}>
-                    <Icon name="i-chev" size={13} />
-                    {t("commandPalette.startWith", { text: search.trim() })}
-                    <Kbd>↵</Kbd>
-                  </button>
-                )}
+                {dock && search.trim() && <PaletteStart start={looseStart} words={search.trim()} fresh={false} run={run} />}
                 {/* Nothing is called that — it may still be written somewhere. */}
                 {notesOn && search.trim() && (
                   <button type="button" className="btn btn-ghost palette-search-notes" onClick={() => run(() => notesSearch.open(search.trim()))}>
@@ -207,8 +212,11 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
                   </button>
                 )}
               </Command.Empty>
+              )}
 
-              {dock && <PaletteSessions projectId={ws.project.id} items={ws.items} search={search} run={run} shift={shift} />}
+              {!startMode && (
+              <>
+              {dock && <PaletteSessions projectId={ws.project.id} items={ws.items} search={search} run={run} shift={shift} onStart={() => setStartHere(true)} />}
 
               <Command.Group heading={t("commandPalette.viewsGroup")} className="eyebrow palette-group">
                 {ws.views.map((view) => (
@@ -281,8 +289,10 @@ export function CommandPalette({ open, onOpenChange, actions }: { open: boolean;
                   ))}
                 </Command.Group>
               ))}
+              </>
+              )}
             </Command.List>
-            {dock && <div className="palette-foot">{t("commandPalette.shiftEnterHint")}</div>}
+            {dock && !startMode && <div className="palette-foot">{t("commandPalette.shiftEnterHint")}</div>}
           </Command>
         </RadixDialog.Content>
       </RadixDialog.Portal>

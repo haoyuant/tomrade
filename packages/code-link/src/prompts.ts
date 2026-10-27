@@ -36,6 +36,9 @@ export const languageLine = (locale: LanguageTag = "en") => {
   return `Language: the person reads Tomrade in ${name} — write everything the person will read (your replies, note_progress, questions, reports) in ${name}; keep code, identifiers, commands, file paths and commit messages as they are.`;
 };
 
+/** A session started on the person's own words, with no ticket: their words first, then the language to answer in. */
+export const loosePrompt = (words: string, locale: LanguageTag = "en"): string => `${words.trim()}\n\n${languageLine(locale)}`;
+
 /** Who merges: the pull request, or, with no remote, the branch into the default branch here. */
 export const mergeLine = (merge: boolean, local = false): string =>
   local

@@ -30,7 +30,7 @@ import { SessionBar, type BarMode } from "./agent-panel/SessionBar";
 import { HandoffLine } from "./agent-panel/HandoffLine";
 import { TerminalSession } from "./agent-panel/TerminalSession";
 import { sessionBarRows, type BarRow, type BarStatus } from "~/lib/sessionBar";
-import { onPanelRequest, setPanelSession, type PanelRequest } from "~/lib/panelRequests";
+import { askStartPalette, onPanelRequest, setPanelSession, type PanelRequest } from "~/lib/panelRequests";
 import { useStartingAll } from "~/lib/startWays";
 import { useHandoff, useRecentSessions } from "~/lib/codeLink";
 import type { SessionView } from "@tomradex/code-link";
@@ -622,7 +622,10 @@ export function AgentPanel({
   const latestBar = useRef({ pickBarRow, newThread: () => {}, archive: archiveThreadById, remove: deleteThreadById });
   latestBar.current = { pickBarRow, newThread: () => void openThread({ boardId }).then((th) => pickThread(th.id)), archive: archiveThreadById, remove: deleteThreadById };
   const pickBarRowStable = useCallback((row: BarRow) => latestBar.current.pickBarRow(row), []);
-  const newBarThread = useCallback(() => latestBar.current.newThread(), []);
+  // the bar's +: ⌘K on its ways to start (built-in assistant, a terminal agent in a pane or a cell); a new thread where there is no palette
+  const newBarThread = useCallback(() => {
+    if (!askStartPalette()) latestBar.current.newThread();
+  }, []);
   const archiveBarThread = useCallback((id: string) => latestBar.current.archive(id), []);
   const deleteBarThread = useCallback((id: string) => latestBar.current.remove(id), []);
   // the conversations the bar shows: the look back lists the idle ones past them
