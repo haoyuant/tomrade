@@ -24,10 +24,11 @@ export const IDLE_AFTER_MS = 10 * 60 * 1000;
 export const END_AFTER_MS = 60 * 60 * 1000;
 /** How long after a hook spoke herdr's reading of the screen is left unsaid. */
 export const HERDR_YIELD_MS = 30 * 1000;
-/** How long a PreToolUse for claim_ticket (or work_without_ticket) vouches for the call that follows it. */
+/** How long a PreToolUse for claim_ticket (or work_without_ticket, or create_item) vouches for the call that follows it. */
 const CLAIM_HEARD_MS = 10 * 1000;
 const CLAIM_TOOL = /(?:^|[_.:/])claim_ticket$/;
 const NO_TICKET_TOOL = /(?:^|[_.:/])work_without_ticket$/;
+const FILE_TOOL = /(?:^|[_.:/])create_item$/;
 /** The tools that change files, under every agent's names; the shell tools; and the shell commands that write git history. */
 const WRITE_TOOL = /^(?:Edit|Write|MultiEdit|NotebookEdit|StrReplace|Delete|apply_patch|edit_file|write_file|create_file|str_replace_editor|str_replace_based_edit_tool)$/i;
 const SHELL_TOOL = /^(?:Bash|Shell|exec|exec_command|run_command|run_terminal_cmd|terminal)$/i;
@@ -301,6 +302,8 @@ export class Sessions {
   private readonly claiming = new Map<string, { projectId: string; key: string; at: number }>();
   /** A work_without_ticket each session's hooks announced, the same way. */
   private readonly excusing = new Map<string, { projectId: string; at: number }>();
+  /** A create_item each session's hooks announced, by the title it files. */
+  private readonly filing = new Map<string, { projectId: string; title: string; at: number }>();
   /** The herdr panes each session's hooks spoke from and did not end in, the latest last: one conversation can run in two. */
   private readonly panes = new Map<string, Set<string>>();
 
@@ -438,6 +441,18 @@ export class Sessions {
       else if (c.projectId === projectId && (!best || c.at > best.at)) best = { sessionId, at: c.at };
     }
     if (best) this.excusing.delete(best.sessionId);
+    return best?.sessionId ?? null;
+  }
+
+  /** The session whose hooks just announced filing an item with this title, if one did; the announcement is used up. */
+  filer(projectId: string, title: string): string | null {
+    const wanted = title.trim();
+    let best: { sessionId: string; at: number } | null = null;
+    for (const [sessionId, c] of this.filing) {
+      if (Date.now() - c.at > CLAIM_HEARD_MS) this.filing.delete(sessionId);
+      else if (c.projectId === projectId && c.title === wanted && (!best || c.at > best.at)) best = { sessionId, at: c.at };
+    }
+    if (best) this.filing.delete(best.sessionId);
     return best?.sessionId ?? null;
   }
 
@@ -604,6 +619,9 @@ export class Sessions {
           this.claiming.set(sessionId, { projectId, key: p.tool_input.key.trim().toUpperCase(), at: Date.now() });
         }
         if (p.tool_name && NO_TICKET_TOOL.test(p.tool_name)) this.excusing.set(sessionId, { projectId, at: Date.now() });
+        if (p.tool_name && FILE_TOOL.test(p.tool_name) && typeof p.tool_input?.title === "string") {
+          this.filing.set(sessionId, { projectId, title: p.tool_input.title.trim(), at: Date.now() });
+        }
         deny = this.ticketGate(session, p);
         break;
       case "PostToolUse":
