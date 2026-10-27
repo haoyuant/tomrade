@@ -853,6 +853,16 @@ it("opens plain terminals in herdr without code link, keeps them, closes them, a
   await until(() => attached.length > 0);
   expect(attached).toEqual(["w1:p1"]);
 
+  // Split off its cell: a shell in the folder its shell is in now, as iTerm does; where that cannot be read, the cell's folder.
+  const moved = fs.mkdtempSync(path.join(repo, "moved-"));
+  fake.panes.get("w1:p1")!.foreground = { cmdline: "-zsh", cwd: moved };
+  win.spec.onMessage({ type: "newTerminal", terminalId: "split", cwd: repo, from: "w1:p1" });
+  await until(() => !!listed(win.states, "split")?.pane);
+  expect(listed(win.states, "split")!.cwd).toBe(moved);
+  delete fake.panes.get("w1:p1")!.foreground;
+  win.spec.onMessage({ type: "closeTerminal", terminalId: "split" });
+  await until(() => !listed(win.states, "split"));
+
   // Kept: a window opened later lists it again.
   win.spec.onClose();
   await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
@@ -870,7 +880,7 @@ it("opens plain terminals in herdr without code link, keeps them, closes them, a
   // Closed by the person: the pane ends and the terminal is forgotten. One whose pane went is forgotten too.
   next.spec.onMessage({ type: "closeTerminal", terminalId: "t1" });
   await until(() => !listed(next.states, "t1"));
-  expect(fake.of("pane.close")).toEqual([{ pane_id: "w1:p1" }]);
+  expect(fake.of("pane.close").at(-1)).toEqual({ pane_id: "w1:p1" });
   fake.exit(listed(next.states, "t2")!.pane!);
   next.spec.onMessage({ type: "refresh" });
   await until(() => next.states.at(-1)!.terminals.length === 0);

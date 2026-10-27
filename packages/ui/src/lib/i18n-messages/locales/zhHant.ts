@@ -3063,7 +3063,7 @@ export const zhHant: PartialMessages = {
     elsewhereTag: "其他電腦",
     endedHere: "這個工作階段的終端機已經不在了",
     pick: "從右側選一個工作階段，在這裡顯示它的終端機",
-    pickOrNew: "從右側選一個工作階段，或在這裡開一個新終端機",
+    pickOrNew: "{{right}} / {{down}} 分出新格子，或 {{palette}} 把工作階段放進來",
     newTerminal: "新終端機",
     startIn: "目錄",
     starting: "正在開啟…",

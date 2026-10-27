@@ -323,7 +323,7 @@ export function Cell({ leaf, number, pane, session, terminal, closed, places, re
       ) : (
         withMenu(
           <div className="cs-cell-empty">
-            <span>{say("pickOrNew")}</span>
+            <span>{say("pickOrNew", { right: keyLabel("splitRight"), down: keyLabel("splitDown"), palette: keyLabel("palette") })}</span>
             <NewTerminal places={places} ready={ready} onOpen={onNewTerminal} />
           </div>
         )

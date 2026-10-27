@@ -3013,7 +3013,7 @@ export const fr: PartialMessages = {
     elsewhereTag: "Autre ordinateur",
     endedHere: "Cette session n’a plus de terminal",
     pick: "Choisissez une session à droite pour afficher son terminal ici",
-    pickOrNew: "Choisissez une session à droite, ou ouvrez ici un nouveau terminal",
+    pickOrNew: "{{right}} / {{down}} ouvre un nouveau volet, ou {{palette}} place une session ici",
     newTerminal: "Nouveau terminal",
     startIn: "Démarrer dans",
     starting: "Démarrage…",
