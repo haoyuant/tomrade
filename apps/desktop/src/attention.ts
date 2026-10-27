@@ -3,7 +3,7 @@ import type { Context } from "cordis";
 import { z } from "zod";
 import type { RunView, ThreadSummary } from "@tomradex/agent";
 import type { SettingsSection } from "@tomradex/settings";
-import type {} from "@tomradex/code-link";
+import { askLineIn } from "@tomradex/code-link";
 import { PROMPT_LINES, promptOnScreen } from "@tomradex/code-link/prompt";
 import type {} from "@tomradex/ipc";
 import type { ImReminder } from "@tomradex/im";
@@ -266,19 +266,21 @@ export async function allowOf(ctx: Context, entry: AttentionEntry, words: Deskto
     const agent = ctx.get("agent");
     const pending = agent?.activities().find((a) => a.threadId === threadId)?.pending;
     const yes = pending?.kind === "permission" ? pending.question.options?.[0] : undefined;
-    if (!agent || !pending || !yes) return null;
-    return {
-      label: yes,
-      allow: async () => {
-        await agent.send(entry.projectId, threadId, { kind: "answer", questionId: pending.question.id, value: yes });
-        return true;
-      }
-    };
+    if (agent && pending && yes) {
+      return {
+        label: yes,
+        allow: async () => {
+          await agent.send(entry.projectId, threadId, { kind: "answer", questionId: pending.question.id, value: yes });
+          return true;
+        }
+      };
+    }
   }
   // A terminal session: only while its screen shows a permission prompt with yes under the cursor, read as the panel's Allow reads it.
+  // Its hooks having said what it asks, its wait is listed as a permission; otherwise as waiting.
   const sessionId = entry.sessionId;
   const codeLink = ctx.get("codeLink");
-  if (entry.kind !== "waiting" || !sessionId || !codeLink) return null;
+  if ((entry.kind !== "waiting" && entry.kind !== "permission") || !sessionId || !codeLink) return null;
   const panel = codeLink.sessionPanel(entry.projectId, sessionId);
   if (panel.input !== "ok" || !panel.approval) return null;
   const screen = await codeLink.sessionTail(entry.projectId, sessionId, PROMPT_LINES).catch(() => null);
@@ -357,8 +359,9 @@ export const attention = {
             const itemId = s.itemIds[0] ?? null;
             out.set(key, {
               key, projectId, threadId: s.threadId, itemId, itemKey: itemKeyOf(projectId, itemId),
-              kind: s.state === "error" ? "stuck" : "waiting",
-              who: engineTitle(s.agent), text: clip(s.activity ?? s.summary), sessionId: s.id,
+              // what it asks says what kind of waiting it is: a tool's permission, a question
+              kind: s.state === "error" ? "stuck" : s.ask?.kind === "permission" ? "permission" : s.ask?.kind === "question" ? "question" : "waiting",
+              who: engineTitle(s.agent), text: clip(s.state !== "error" && s.ask ? askLineIn(s.ask, ctx.settings.locale()) : (s.activity ?? s.summary)), sessionId: s.id,
               // herdr may say so in its own window; Tomrade's own terminal host does not.
               ...(s.herdrPane && ctx.get("terminals")?.kind === "herdr" ? { toldIn: "herdr" as const } : {})
             });

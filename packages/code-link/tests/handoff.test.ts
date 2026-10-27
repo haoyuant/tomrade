@@ -9,7 +9,7 @@ import path from "node:path";
 import { afterAll, expect, it } from "vitest";
 import type { Context } from "cordis";
 import { Agent, type Engine } from "@tomradex/agent";
-import { CodeLink, HANDOFF_PROMPT } from "@tomradex/code-link";
+import { CodeLink, HANDOFF_PROMPT, handedPrompt } from "@tomradex/code-link";
 import { Contributions } from "@tomradex/contributions";
 import { agentWorkspace } from "@tomradex/engine-kit";
 import GitHubAccount from "@tomradex/github";
@@ -141,6 +141,66 @@ it("takes a free conversation to a terminal cell in the folder its runs use, kee
     const next = agent.send(project.id, thread.id, { kind: "text", text: "and now" });
     await until(() => agent.store.run(project.id, next.runId)?.status === "done");
     expect(turns.at(-1)).toEqual({ text: "and now", resume: "cli-2", cwd: undefined });
+  } finally {
+    fake.close();
+    await ctx.fiber.dispose();
+  }
+});
+
+it("lets a built-in assistant's conversation claim a ticket for the code it turns to, and hands it to a CLI agent in a terminal cell with what it came to", { timeout: 30_000 }, async () => {
+  const { ctx, project, codeLink, agent, fake } = await machine();
+  try {
+    const thread = agent.newThread(project.id, "inside", null, { title: "Dedupe script" });
+    const said = agent.send(project.id, thread.id, { kind: "text", text: "write a dedupe script" });
+    await until(() => agent.store.run(project.id, said.runId)?.status === "done");
+    // claimed: a new ticket named after the conversation, on it from here, marked by a note where its code starts
+    const claimed = await codeLink.claimThread(project.id, thread.id);
+    expect(claimed).toMatchObject({ ok: true, branch: null });
+    const item = claimed.ok ? ctx.items.get(project.id, claimed.itemId)! : null;
+    expect(item).toMatchObject({ title: "Dedupe script", status: "doing", workType: "coding" });
+    expect(agent.store.thread(project.id, thread.id)).toMatchObject({ itemId: item!.id });
+    const note = agent.store.messages(project.id, thread.id).at(-1)!.block;
+    expect(note).toEqual({ type: "note", text: `Claimed ${item!.key}: the code from here is written for it.`, claimed: item!.key });
+    // claiming again keeps the ticket it is on
+    expect(await codeLink.claimThread(project.id, thread.id)).toMatchObject({ ok: true, itemId: item!.id });
+    expect(ctx.items.list({ projectId: project.id }).length).toBe(1);
+    // a conversation writing in the background for another claims nothing itself
+    const child = agent.newThread(project.id, "inside", null, { title: "child", parentId: thread.id });
+    expect(await codeLink.claimThread(project.id, child.id)).toEqual({ ok: false, message: "Only a conversation of the assistant panel claims a ticket this way." });
+
+    // to a CLI agent: not one that runs only inside Tomrade; a CLI starts afresh in the thread's folder with the recap
+    expect(await codeLink.toCli(project.id, thread.id, "inside")).toEqual({ ok: false, message: "Inside runs only inside Tomrade, so a terminal cannot take this conversation up." });
+    const recap = handedPrompt("Dedupe script", "");
+    const handed = await codeLink.toCli(project.id, thread.id, "fake-cli");
+    expect(handed).toMatchObject({ ok: true, launched: true });
+    const sessionId = handed.ok ? handed.sessionId : "";
+    expect(codeLink.store.session(project.id, sessionId)).toMatchObject({ mode: "terminal", threadId: thread.id, agent: "fake-cli", externalId: null, state: "running" });
+    expect(agent.store.thread(project.id, thread.id)).toMatchObject({ engine: "fake-cli", surface: "code", itemId: item!.id });
+    const dir = codeLink.sessionDir(sessionId);
+    expect(fs.readFileSync(path.join(dir, "run.command"), "utf8")).not.toContain("--resume");
+    const prompt = fs.readFileSync(path.join(dir, "prompt.md"), "utf8");
+    expect(prompt.startsWith(recap.split("\n")[0]!)).toBe(true);
+    expect(prompt).toContain("User: write a dedupe script");
+    expect(agent.store.messages(project.id, thread.id).at(-1)!.block).toMatchObject({ type: "note", text: expect.stringMatching(/^Handed to Fake CLI in a terminal cell \(pane w1:p\d+\), with what this conversation came to/) });
+  } finally {
+    fake.close();
+    await ctx.fiber.dispose();
+  }
+});
+
+it("takes an ended session on no ticket up again in the background, as the same session, and only once", { timeout: 30_000 }, async () => {
+  const { ctx, project, codeLink, fake } = await machine();
+  try {
+    const cwd = path.join(root, "loose");
+    fs.mkdirSync(cwd, { recursive: true });
+    const session = codeLink.store.createSession(project.id, { repoId: "", branch: "", itemIds: [], mode: "terminal", agent: "fake-cli", threadId: null, device: "here", externalId: "cli-9" });
+    codeLink.store.patchSession(project.id, session.id, { cwd, title: "Loose chat", state: "ended", endedAt: Date.now() });
+    const resumed = await codeLink.resumeSession(project.id, session.id);
+    expect(resumed).toMatchObject({ ok: true, sessionId: session.id, launched: true });
+    expect(codeLink.store.session(project.id, session.id)).toMatchObject({ state: "running", endedAt: null, externalId: "cli-9" });
+    expect(fs.readFileSync(path.join(codeLink.sessionDir(session.id), "run.command"), "utf8")).toContain("--resume cli-9");
+    // running again: a second process on the same session is refused
+    expect(await codeLink.resumeSession(project.id, session.id)).toMatchObject({ ok: false });
   } finally {
     fake.close();
     await ctx.fiber.dispose();

@@ -15,6 +15,10 @@
     "./prompt": {
       "types": "./dist/prompt.d.ts",
       "default": "./dist/prompt.js"
+    },
+    "./segments": {
+      "types": "./dist/segments.d.ts",
+      "default": "./dist/segments.js"
     }
   },
   "scripts": {

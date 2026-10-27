@@ -31,6 +31,9 @@ export const CODE_SESSIONS_WORDS = defineWords("codeSessions", {
     takenOver: "Another window took this terminal over",
     answerNotTaken: "The terminal did not take the answer; answer in its pane",
     answerInPane: "Its screen shows no permission prompt a key could answer safely — answer it in its pane",
+    allowedStay: "Allowed “{{name}}” · you stayed where you were",
+    deniedStay: "Denied “{{name}}” · you stayed where you were",
+    answeredStay: "Answered “{{name}}” · you stayed where you were",
     recordingFailed: "Recording this terminal's output failed: {{reason}}. The terminal itself goes on; the recording stops.",
     cliNoFolder: "That folder does not exist",
     cliNoBackend: "There is nothing here yet to open terminals with: install herdr, as the Terminal window shows",
@@ -49,7 +52,11 @@ export const CODE_SESSIONS_WORDS = defineWords("codeSessions", {
     cliCellOver: "The session in pane {{n}} has ended: there is no terminal to attach",
     cliCellNoTerminal: "Pane {{n}} shows no terminal to attach",
     cliAttach: "Attaching pane {{n}} · {{what}}. herdr's detach key (Ctrl+B, then Q) hands it back to Tomrade, where it goes on.",
-    cliAttachUnsupported: "Attaching a pane to your own terminal needs herdr, which does not run on Windows. Open it in Tomrade's Terminal window instead."
+    cliAttachUnsupported: "Attaching a pane to your own terminal needs herdr, which does not run on Windows. Open it in Tomrade's Terminal window instead.",
+    guessTaken: "This session works {{key}} now; its agent is told to claim it at its next step",
+    guessGone: "That guess no longer fits: the ticket was taken, or the session moved on",
+    noTicketChosen: "Chosen in the Terminal window: no ticket for this conversation",
+    noTicketTaken: "This session goes on without a ticket; it is still recorded"
   },
   zh: {
     open: "打开终端",
@@ -80,6 +87,9 @@ export const CODE_SESSIONS_WORDS = defineWords("codeSessions", {
     takenOver: "这个终端被另一个窗口接管了",
     answerNotTaken: "终端没有收下这个回答，请到它的格子里处理",
     answerInPane: "它的屏幕上不是能用按键安全回答的权限提示，请在它的格子里回答",
+    allowedStay: "已允许「{{name}}」· 没离开当前会话",
+    deniedStay: "已拒绝「{{name}}」· 没离开当前会话",
+    answeredStay: "已回答「{{name}}」· 没离开当前会话",
     recordingFailed: "录制这个终端的输出失败：{{reason}}。终端本身不受影响，录制已停止。",
     cliNoFolder: "没有这个文件夹",
     cliNoBackend: "这里还没有能开终端的东西：按终端窗口里说的装上 herdr",
@@ -98,7 +108,11 @@ export const CODE_SESSIONS_WORDS = defineWords("codeSessions", {
     cliCellOver: "格子 {{n}} 里的会话已经结束，没有终端可以接",
     cliCellNoTerminal: "格子 {{n}} 里没有可以接的终端",
     cliAttach: "把格子 {{n}} 接到这个终端 · {{what}}。按 herdr 的脱离键（Ctrl+B 再按 Q）交还给 Tomrade，它在那里继续。",
-    cliAttachUnsupported: "把格子接到你自己的终端需要 herdr，而 herdr 不支持 Windows。请在 Tomrade 的终端窗口里打开这个格子。"
+    cliAttachUnsupported: "把格子接到你自己的终端需要 herdr，而 herdr 不支持 Windows。请在 Tomrade 的终端窗口里打开这个格子。",
+    guessTaken: "这个会话现在做 {{key}}；它的 agent 下一步会收到认领它的提示",
+    guessGone: "这个猜测已经不合适了：工单被别人做了，或者会话已经换了",
+    noTicketChosen: "在终端窗口里选的：这段对话不用工单",
+    noTicketTaken: "这个会话不挂工单继续做；照样记录"
   }
 });
 
