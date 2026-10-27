@@ -6,7 +6,7 @@ import { SetupCard } from "./SetupCard";
 import { AgentAttachment, readAttachment } from "./AgentAttachment";
 import { useQuery } from "@tanstack/react-query";
 import { invoke } from "~/lib/api";
-import { Spacer } from "~/components/ui/atoms";
+import { Kbd, Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/menu";
 import { viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
@@ -31,13 +31,16 @@ import { TerminalSession } from "./agent-panel/TerminalSession";
 import { sessionBarRows, type BarRow } from "~/lib/sessionBar";
 import { useRecentSessions } from "~/lib/codeLink";
 import type { SessionView } from "@tomradex/code-link";
-import { hits } from "~/lib/keybindings";
+import { hits, keyLabel } from "~/lib/keybindings";
 import { Transcript } from "./agent-panel/Transcript";
 import { useComposerHistory } from "./agent-panel/useComposerHistory";
 import { useEngineChoice } from "./agent-panel/useEngineChoice";
 import { useSendQueue } from "./agent-panel/useSendQueue";
 import { useSlashMenu } from "./agent-panel/useSlashMenu";
 import { useThreadSelection } from "./agent-panel/useThreadSelection";
+
+/** What each kind of waiting is called in the queue line. */
+const QUEUE_KIND = { permission: "waitQueue.permission", question: "waitQueue.question", waiting: "waitQueue.waiting", stuck: "waitQueue.stuck" } as const;
 
 const MIN_W = 352;
 const MAX_W = 924;
@@ -404,9 +407,12 @@ export function AgentPanel({
     });
   };
 
+  // set further down, once the bar's rows are known: what answering one waiting conversation leads to
+  const waitQueue = useRef({ answered: (_key: string) => {} });
   const doAnswer = (questionId: string, value: string | string[]) => {
     if (!threadId || answer.isPending || (busy && pending?.kind !== "permission")) return;
-    answer.mutate({ threadId, questionId, value });
+    const key = `thread:${threadId}`;
+    answer.mutate({ threadId, questionId, value }, { onSuccess: () => waitQueue.current.answered(key) });
   };
   // rows take callbacks that keep their identity; each reads the latest render's handlers
   const latest = useRef({ doAnswer, revert: revert.mutate, onOpenSettings });
@@ -488,6 +494,40 @@ export function AgentPanel({
     if (row.sessionId) setOpenSession(row.sessionId);
   };
   const sessionRow = shownSession ? barRows.find((r) => r.sessionId === shownSession.id) : undefined;
+  // ── what waits on the person besides what is open: a line on top, and once one is answered the next comes up ──
+  const currentKey = openSession ? `session:${openSession}` : threadId ? `thread:${threadId}` : null;
+  const waitingElsewhere = barRows.filter((r) => r.status === "wait" && r.key !== currentKey);
+  const goesOn = (settings.data?.sessions as { afterAnswer?: string } | undefined)?.afterAnswer !== "stay";
+  const rowName = (r: BarRow) => r.ticket ?? (r.title || t("agentPanel.newThread"));
+  waitQueue.current.answered = (key: string) => {
+    if (!goesOn) return;
+    const handled = barRows.find((r) => r.key === key);
+    const next = waitingElsewhere.find((r) => r.key !== key);
+    if (next) {
+      pickBarRow(next);
+      toast({ body: t("waitQueue.handledNext", { name: handled ? rowName(handled) : "" }) });
+    } else toast({ body: t("waitQueue.none") });
+  };
+  const nextWaiting = () => {
+    const next = waitingElsewhere[0];
+    if (next) pickBarRow(next);
+  };
+  const latestNext = useRef(nextWaiting);
+  latestNext.current = nextWaiting;
+  // ⌥↓ (rebindable) goes to the next waiting one; inside text it moves the caret, so a field with words keeps it.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!hits(e, "nextWaiting")) return;
+      const field = e.target as HTMLElement | null;
+      if ((field instanceof HTMLTextAreaElement || field instanceof HTMLInputElement) && field.value) return;
+      if (field?.isContentEditable) return;
+      e.preventDefault();
+      latestNext.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
   // the bar is memoized; its handlers keep their identity and read the latest render's state
   const latestBar = useRef({ pickBarRow, newThread: () => {} });
   latestBar.current = { pickBarRow, newThread: () => void openThread({ boardId }).then((th) => pickThread(th.id)) };
@@ -565,6 +605,15 @@ export function AgentPanel({
         </button>
       </div>
 
+      {waitingElsewhere.length > 0 && (
+        <div className="ai-queue" role="status" data-testid="wait-queue">
+          <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 0 L10 5 L5 10 L0 5 Z" /></svg>
+          <span className="ai-queue-text">{waitingElsewhere.slice(0, 3).map((r) => t(QUEUE_KIND[r.wait?.kind ?? "waiting"], { name: rowName(r) })).join(" · ")}{waitingElsewhere.length > 3 ? ` · ${t("waitQueue.more", { n: waitingElsewhere.length - 3 })}` : ""}</span>
+          <button type="button" className="btn btn-secondary btn-xs" data-testid="wait-queue-next" title={t("waitQueue.nextTitle")} onClick={nextWaiting}>
+            {t("waitQueue.next")} <Kbd>{keyLabel("nextWaiting")}</Kbd>
+          </button>
+        </div>
+      )}
       {shownSession ? (
         <TerminalSession
           projectId={projectId}
@@ -575,6 +624,7 @@ export function AgentPanel({
           engines={engines.data}
           onShowInTerminal={shownSession.herdrPane || shownSession.state === "ended" || shownSession.state === "lost" ? () => showInTerminal(shownSession.id, shownSession.terminal) : undefined}
           onClose={() => setOpenSession(null)}
+          onAnswered={() => waitQueue.current.answered(`session:${shownSession.id}`)}
         />
       ) : (
       <>

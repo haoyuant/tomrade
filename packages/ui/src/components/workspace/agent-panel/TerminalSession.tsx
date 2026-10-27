@@ -24,7 +24,7 @@ const ANSWERED_MS = 8000;
  * session moves; a strip above it shows the pane's last lines, opening into a drawer with more; what is typed below
  * goes into the pane as keystrokes. Nothing here attaches to the pane, so the Terminal window keeps its control.
  */
-export function TerminalSession({ projectId, session, title, ticket, status, engines, onShowInTerminal, onClose }: {
+export function TerminalSession({ projectId, session, title, ticket, status, engines, onShowInTerminal, onClose, onAnswered }: {
   projectId: string;
   session: SessionView;
   title: string;
@@ -34,6 +34,8 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
   /** Present when the Terminal window can be asked to show it. */
   onShowInTerminal?: () => void;
   onClose: () => void;
+  /** Allow or Deny went through: the panel may move on to what else waits. */
+  onAnswered?: () => void;
 }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -189,6 +191,7 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
         // answered here: the prompt stays gone until the session's next event says where it stands
         setAnswered(session.lastEventAt);
         setTimeout(() => setAnswered(null), ANSWERED_MS);
+        onAnswered?.();
       } else toast({ body: t("sessionBar.notTaken") });
     } catch (error) {
       reportError(error);
