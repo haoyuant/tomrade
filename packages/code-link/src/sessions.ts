@@ -14,6 +14,7 @@ import { recordOf } from "./titles.js";
 import { CLI_HOOK_COVERAGE } from "@tomradex/plugin-sdk";
 import { BRIDGED_BY_DSH, cliHookCall, cliHookEvent, hookReply, mergeAnswers, type HookSource } from "./cli-hooks.js";
 import { hookCommand } from "./connect.js";
+import { GEMINI_AGENT, geminiHookPayload, geminiHooks } from "./gemini-hooks.js";
 import { classifyRemoteFailure, remoteFailureDetail } from "./remote.js";
 import { CODE_WORDS } from "./words.js";
 import type { CodeLinkStore, SessionBlock, SessionState, SessionView } from "./store.js";
@@ -133,7 +134,7 @@ export interface SessionFiles {
   settings: string;
   /** The extension a terminal pi session loads: the MCP server and hook-style reports in one. */
   piExtension: string;
-  /** A Gemini CLI home for this session (`GEMINI_CLI_HOME`): the person's own ~/.gemini, with the server added to its settings. */
+  /** A Gemini CLI home for this session (`GEMINI_CLI_HOME`): the person's own ~/.gemini, with the server and hooks that report to it added to its settings. */
   geminiHome: string;
   /** OpenCode's own shape of the same MCP server. */
   opencodeConfig: string;
@@ -337,7 +338,11 @@ export class Sessions {
         const filed = key ? CODE_WORDS(settings?.locale?.())("filedFrom", { key }) : "";
         return call(name, await followUp(args, filed, tools.has("find_similar") ? call : null));
       },
-      event: (payload: unknown) => this.hook(session.projectId, session.id, payload, true)
+      event: async (payload: unknown) => {
+        // Gemini CLI posts its own hook payloads; they are read as Claude Code's.
+        const p = session.agent === GEMINI_AGENT ? geminiHookPayload(payload) : payload;
+        return p ? this.hook(session.projectId, session.id, p, true) : {};
+      }
     };
   }
 
@@ -366,7 +371,7 @@ export class Sessions {
     fs.writeFileSync(mcpConfig, JSON.stringify({ mcpServers: { tomrade: { type: "http", url: mcpUrl, headers: { "X-Tomrade-Run": token } } } }, null, 2));
     fs.writeFileSync(settings, JSON.stringify(hooksSettings(eventUrl), null, 2));
     fs.writeFileSync(piFile, piExtension(mcpUrl, token, eventUrl));
-    writeGeminiHome(geminiHome, { tomrade: { httpUrl: mcpUrl, headers: { "X-Tomrade-Run": token } } });
+    writeGeminiHome(geminiHome, { servers: { tomrade: { httpUrl: mcpUrl, headers: { "X-Tomrade-Run": token } } }, eventUrl });
     fs.writeFileSync(opencodeConfig, JSON.stringify({ $schema: "https://opencode.ai/config.json", mcp: { tomrade: { type: "remote", url: mcpUrl, enabled: true, headers: { "X-Tomrade-Run": token } } } }, null, 2));
     fs.writeFileSync(dshHooks, JSON.stringify(dshHooksSettings(eventUrl), null, 2));
     fs.writeFileSync(dshPatch, dshMcpPatch(mcpUrl, token, dshHooks));
@@ -851,13 +856,14 @@ export function stripJsonComments(text: string): string {
 /**
  * A Gemini CLI home for one terminal session. Gemini 0.64 skips a system
  * defaults file that root does not own, so the session's server goes into
- * user settings instead: a copy of the person's own with the server added.
- * Every other entry of their ~/.gemini (sign-in, extensions, history, trust)
- * is linked, so the session reads and writes those as always. A file Gemini
- * replaces whole stays in the copy: a settings change made during the
+ * user settings instead: a copy of the person's own with the server added,
+ * and with `eventUrl` the hooks that report the session there after their
+ * own. Every other entry of their ~/.gemini (sign-in, extensions, history,
+ * trust) is linked, so the session reads and writes those as always. A file
+ * Gemini replaces whole stays in the copy: a settings change made during the
  * session, and its project list, whose folders it finds again by their marker.
  */
-export function writeGeminiHome(home: string, servers: Record<string, unknown>, source = path.join(process.env.GEMINI_CLI_HOME || os.homedir(), ".gemini")): void {
+export function writeGeminiHome(home: string, add: { servers: Record<string, unknown>; eventUrl?: string }, source = path.join(process.env.GEMINI_CLI_HOME || os.homedir(), ".gemini")): void {
   const own = path.join(home, ".gemini");
   fs.rmSync(home, { recursive: true, force: true });
   fs.mkdirSync(own, { recursive: true });
@@ -882,8 +888,8 @@ export function writeGeminiHome(home: string, servers: Record<string, unknown>, 
   // Gemini looks for ~/.env last, under the home it was given.
   const dotenv = path.join(path.dirname(source), ".env");
   if (fs.existsSync(dotenv)) link(dotenv, path.join(home, ".env"));
-  const mcpServers = { ...((settings.mcpServers as Record<string, unknown> | undefined) ?? {}), ...servers };
-  fs.writeFileSync(path.join(own, "settings.json"), JSON.stringify({ ...settings, mcpServers }, null, 2));
+  const mcpServers = { ...((settings.mcpServers as Record<string, unknown> | undefined) ?? {}), ...add.servers };
+  fs.writeFileSync(path.join(own, "settings.json"), JSON.stringify({ ...settings, mcpServers, ...(add.eventUrl ? { hooks: geminiHooks(add.eventUrl, settings.hooks) } : {}) }, null, 2));
 }
 
 /**

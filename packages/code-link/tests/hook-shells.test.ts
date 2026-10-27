@@ -10,6 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { hookCommand, hooksSettings, writeConnectFiles } from "@tomradex/code-link";
+import { geminiHooks } from "../src/gemini-hooks.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-hook-shells-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -118,6 +119,35 @@ describe("the hooks of a session Tomrade started", () => {
       expect(sent.stdout.trim()).toBe(REPLY);
       expect(tomrade.heard.map((heard) => heard.body)).toEqual([payload]);
       expect(await run(powershell!, ["-NoProfile", "-Command", command(tomrade.down)], { stdin: payload })).toMatchObject({ code: 0, stdout: "", stderr: "" });
+    } finally {
+      tomrade.close();
+    }
+  }, 60_000);
+});
+
+describe("the hooks of a Gemini CLI session Tomrade started", () => {
+  const command = (url: string) => (geminiHooks(url).BeforeTool as { hooks: { command: string }[] }[])[0]!.hooks[0]!.command;
+
+  // Gemini runs a hook with `bash -c` (PowerShell on Windows) and reads anything on stdout as the hook's answer.
+  it.skipIf(process.platform === "win32")("post the payload under bash -c and print nothing back, and exit 0 at once when Tomrade is down", async () => {
+    const tomrade = await stub();
+    try {
+      const sent = await run("bash", ["-c", command(tomrade.url)], { stdin: payload, pane: "w1-2" });
+      expect(sent).toMatchObject({ code: 0, stdout: "", stderr: "" });
+      expect(tomrade.heard.map((heard) => [heard.body, heard.headers["x-tomrade-herdr-pane"]])).toEqual([[payload, "w1-2"]]);
+      const down = await run("bash", ["-c", command(tomrade.down)], { stdin: payload });
+      expect(down).toMatchObject({ code: 0, stdout: "", stderr: "" });
+      expect(down.ms).toBeLessThan(3000);
+    } finally {
+      tomrade.close();
+    }
+  }, 30_000);
+
+  it.skipIf(!powershell)("do the same under PowerShell", async () => {
+    const tomrade = await stub();
+    try {
+      expect(await run(powershell!, ["-NoProfile", "-Command", command(tomrade.url)], { stdin: payload })).toMatchObject({ code: 0, stdout: "", stderr: "" });
+      expect(tomrade.heard.map((heard) => heard.body)).toEqual([payload]);
     } finally {
       tomrade.close();
     }

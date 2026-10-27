@@ -238,7 +238,7 @@ function FullMode({ full, refused }: { full: FullModeInfo; refused?: string[] })
   );
 }
 
-const AGENT_NAMES: Record<string, string> = { "claude-code": "Claude Code", workbuddy: "WorkBuddy", dsh: "DeepSeek Harness", pi: "Pi", codex: "Codex", cursor: "Cursor", opencode: "OpenCode", hermes: "Hermes" };
+const AGENT_NAMES: Record<string, string> = { "claude-code": "Claude Code", workbuddy: "WorkBuddy", dsh: "DeepSeek Harness", pi: "Pi", codex: "Codex", cursor: "Cursor", opencode: "OpenCode", hermes: "Hermes", gemini: "Gemini CLI" };
 
 /** Which coding agents each of its hooks reaches: the ones that act on its answer, and the ones it only hears. */
 function AgentHooks({ events }: { events: string[] }) {

@@ -309,7 +309,7 @@ const SETTINGS_SECTION = {
         claudeCommand: { title: "Claude Code 命令" },
         codexCommand: { title: "Codex 命令" },
         piCommand: { title: "Pi 命令", description: "Pi 没有 MCP 参数；{piExtension} 是只在本次会话生效的扩展，负责注册 Tomrade 的服务，并像 Claude 的 hooks 一样回报进展。" },
-        geminiCommand: { title: "Gemini CLI 命令", description: "{geminiHome} 是只给本次会话用的 Gemini 主目录：沿用你自己的 ~/.gemini（登录、扩展、历史），在它设置的副本里加上 Tomrade 的服务。你自己的文件不会被改动。" },
+        geminiCommand: { title: "Gemini CLI 命令", description: "{geminiHome} 是只给本次会话用的 Gemini 主目录：沿用你自己的 ~/.gemini（登录、扩展、历史），在它设置的副本里加上 Tomrade 的服务，以及向它回报这次会话的 hooks。你自己的文件不会被改动。" },
         opencodeCommand: { title: "OpenCode 命令", description: "{opencodeConfig} 是只在本次会话生效的配置，会和你自己的 OpenCode 配置合并。" },
         workbuddyCommand: { title: "WorkBuddy 命令" },
         agyCommand: { title: "Antigravity CLI 命令", description: "agy 没有 MCP 参数：它通过自己用户级的 tomrade 服务连到 Tomrade（先在设置里的 Antigravity CLI 下连接），开始时先认领工单。" },

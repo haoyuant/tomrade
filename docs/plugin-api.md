@@ -1238,17 +1238,19 @@ whether it will be acted on:
 
 | Event | Acts on the answer, in sessions Tomrade starts | Heard only |
 |---|---|---|
-| `session-start`, `prompt` | Claude Code, WorkBuddy, DeepSeek Harness | Pi, Codex, Cursor, OpenCode, Hermes |
-| `pre-tool`, `post-tool` | Claude Code, WorkBuddy, DeepSeek Harness, Pi | Codex, Cursor, OpenCode, Hermes |
-| `stop` | Claude Code, WorkBuddy, DeepSeek Harness | Pi, Codex, Cursor, OpenCode, Hermes |
+| `session-start`, `prompt` | Claude Code, WorkBuddy, DeepSeek Harness | Pi, Codex, Cursor, OpenCode, Hermes, Gemini CLI |
+| `pre-tool`, `post-tool` | Claude Code, WorkBuddy, DeepSeek Harness, Pi | Codex, Cursor, OpenCode, Hermes, Gemini CLI |
+| `stop` | Claude Code, WorkBuddy, DeepSeek Harness | Pi, Codex, Cursor, OpenCode, Hermes, Gemini CLI |
 | `session-end` | — | all of them |
 
 A connected repository's hooks are heard only — they post without a token,
 and nothing is read back — and an event a started session already reports
-through its token is not heard twice. Gemini CLI and Antigravity report no
-hooks, so none reach them. `CLI_HOOK_COVERAGE` in the SDK is this table, and a
-plugin's detail in the Plugins pane shows it for the events the plugin hears
-(its build records them in `contributes.agentHooks`).
+through its token is not heard twice. Gemini CLI is heard only in sessions
+Tomrade starts, through the hooks of the session's own Gemini home, which
+read nothing back. Antigravity reports no hooks, so none reach it.
+`CLI_HOOK_COVERAGE` in the SDK is this table, and a plugin's detail in the
+Plugins pane shows it for the events the plugin hears (its build records them
+in `contributes.agentHooks`).
 
 Tomrade's own answer comes first: a tool it refuses (a push after the
 repository's credentials failed) stays refused, and a plugin's context sits

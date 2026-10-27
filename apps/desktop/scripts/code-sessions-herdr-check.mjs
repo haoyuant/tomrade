@@ -1081,6 +1081,63 @@ app.whenReady().then(async () => {
     const here = await tjs(`[...document.querySelectorAll('.cs-cell')].indexOf(document.querySelector('.cs-cell[data-cell="${goneId}"]'))`);
     const answers = here >= 0 && (await typeInCell(tw.webContents, tjs, here, "echo back-after-restart", "back-after-restart"));
     check("重启后在终端里输入照常有回显", answers);
+
+    // A Gemini CLI session Tomrade started reports through the hooks in its own Gemini home (TOM-684): each one, run as
+    // Gemini runs it (bash -c, Gemini's own payload on stdin), says nothing back and gives the session its id and its
+    // record; once it ends, the archive reads the conversation from that record. Gemini CLI's reader is the official
+    // plugin's when it is loaded, else a stand-in that reads the fixture's lines.
+    if (!ctx.agent.engineOf("gemini")) {
+      const standIn = { find: () => null, read: (file) => ({ lines: fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).flatMap((m) => (m.type === "user" ? [{ who: "person", text: m.content[0].text }] : m.type === "gemini" ? [{ who: "agent", text: m.content }] : [])), cut: false, start: 0 }) };
+      ctx.agent.engine({ id: "gemini", title: "Gemini CLI", author: "ai:gemini", terminal: { mode: "only" }, local: { record: standIn }, available: async () => ({ ok: true }), async turn() { return { stop: "error", error: "terminal only" }; } });
+    }
+    const geminiItem = ctx.items.create({ projectId: project.id, boardId: board.id, title: "Gemini 终端会话", workType: "coding", status: "doing", by: "human" });
+    const geminiSession = ctx.codeLink.store.createSession(project.id, { repoId: "check", branch: `${geminiItem.key.toLowerCase()}/check`, itemIds: [geminiItem.id], mode: "terminal", agent: "gemini", threadId: null, device: ctx.hub.deviceId, worktree: cwd });
+    ctx.codeLink.store.patchSession(project.id, geminiSession.id, { state: "running" });
+    // The session home is made from a stand-in ~/.gemini, so this run links nothing of the person's.
+    const ownGemini = process.env.GEMINI_CLI_HOME;
+    process.env.GEMINI_CLI_HOME = fs.mkdtempSync(path.join(work, "gemini-own-"));
+    const geminiFiles = ctx.codeLink.sessions.bind(geminiSession, "ai:gemini", ctx.codeLink.sessionDir(geminiSession.id), "Say hi");
+    if (ownGemini === undefined) delete process.env.GEMINI_CLI_HOME;
+    else process.env.GEMINI_CLI_HOME = ownGemini;
+    const geminiHooks = JSON.parse(fs.readFileSync(path.join(geminiFiles.geminiHome, ".gemini", "settings.json"), "utf8")).hooks ?? {};
+    const geminiRecord = path.join(work, "session-2026-10-27T12-00-gemchk01.jsonl");
+    fs.writeFileSync(geminiRecord, [{ sessionId: "gemchk01-check", projectHash: "x", startTime: "2026-10-27T12:00:00.000Z", kind: "main" }, { id: "m1", type: "user", content: [{ text: "说声你好" }] }, { id: "m2", type: "gemini", content: "你好！" }].map((o) => JSON.stringify(o)).join("\n") + "\n");
+    const geminiBase = { session_id: "gemchk01-check", transcript_path: geminiRecord, cwd, timestamp: new Date().toISOString() };
+    const geminiEvents = [
+      ["SessionStart", { source: "startup" }],
+      ["BeforeAgent", { prompt: "说声你好" }],
+      ["BeforeTool", { tool_name: "run_shell_command", tool_input: { command: "echo 你好" } }],
+      ["AfterTool", { tool_name: "run_shell_command", tool_input: { command: "echo 你好" }, tool_response: { llmContent: "Output: 你好", returnDisplay: "你好" } }],
+      ["AfterAgent", { prompt: "说声你好", prompt_response: "你好！", stop_hook_active: false }],
+      ["SessionEnd", { reason: "exit" }]
+    ];
+    // Not execFileSync: the hook posts to this process's own server, which must keep answering.
+    const runHook = (command, payload) => new Promise((resolve) => {
+      const child = spawn("bash", ["-c", command], { stdio: ["pipe", "pipe", "pipe"] });
+      let out = "";
+      child.stdout.on("data", (d) => (out += d));
+      child.stderr.on("data", (d) => (out += d));
+      child.on("close", (code) => resolve({ code, out }));
+      child.stdin.end(JSON.stringify(payload));
+    });
+    const hookRuns = [];
+    for (const [event, fields] of geminiEvents) {
+      const command = geminiHooks[event]?.at(-1)?.hooks?.[0]?.command;
+      hookRuns.push(command ? await runHook(command, { ...geminiBase, hook_event_name: event, ...fields }) : { code: "no hook", out: "" });
+    }
+    const reported = ctx.codeLink.store.session(project.id, geminiSession.id);
+    check("Gemini 会话主目录里的 hooks 照 Gemini 的方式运行：不往回打印，退出码 0，会话拿到 Gemini 的会话 id 和记录，结束后标为结束", hookRuns.every((r) => r.code === 0 && r.out === "") && reported?.externalId === "gemchk01-check" && reported?.transcript === geminiRecord && reported?.state === "ended", JSON.stringify({ hookRuns, session: { externalId: reported?.externalId, transcript: reported?.transcript, state: reported?.state } }));
+    ctx.emit("codeLink/changed", project.id);
+    await tjs(`document.querySelector('[data-testid=cs-archive]').click(); true`);
+    await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-shelf-tickets]')`), 5000);
+    await tjs(`document.querySelector('[data-testid=cs-shelf-tickets]').click(); true`);
+    const geminiRow = `[...document.querySelectorAll('[data-testid=cs-archive-list] .cs-row')].find((r) => r.textContent.includes(${JSON.stringify(geminiItem.key)}))`;
+    const geminiShelved = await wait(async () => tjs(`!!${geminiRow}`), 8000);
+    await tjs(`${geminiRow}?.click(); true`);
+    const geminiRead = geminiShelved && (await wait(async () => tjs(`(() => { const ended = [...document.querySelectorAll('[data-testid=cs-ended]')].find((e) => (e.querySelector('[data-testid=cs-ended-by]')?.textContent ?? '').startsWith('Gemini CLI')); const lines = [...(ended?.querySelectorAll('[data-testid=cs-convo] .cs-convo-line') ?? [])].map((l) => [l.dataset.who, l.textContent]); return JSON.stringify(lines.slice(0, 1)) === JSON.stringify([["person", "说声你好"]]) && lines.some(([who, text]) => who === "agent" && text === "你好！"); })()`), 8000));
+    check("新开的 Gemini CLI 会话结束后，归档里能看到它的对话", geminiRead, JSON.stringify(await tjs(`[...document.querySelectorAll('[data-testid=cs-ended]')].map((e) => e.textContent.slice(0, 160))`)));
+    fs.writeFileSync(path.join(shots, "code-sessions-gemini.png"), (await tw.webContents.capturePage()).toPNG());
+    await tjs(`document.querySelector('[data-testid=cs-archive-back]')?.click(); true`);
     tw.close();
   } catch (error) {
     check("检查跑完", false, error?.stack ?? String(error));
