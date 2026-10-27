@@ -266,19 +266,21 @@ export async function allowOf(ctx: Context, entry: AttentionEntry, words: Deskto
     const agent = ctx.get("agent");
     const pending = agent?.activities().find((a) => a.threadId === threadId)?.pending;
     const yes = pending?.kind === "permission" ? pending.question.options?.[0] : undefined;
-    if (!agent || !pending || !yes) return null;
-    return {
-      label: yes,
-      allow: async () => {
-        await agent.send(entry.projectId, threadId, { kind: "answer", questionId: pending.question.id, value: yes });
-        return true;
-      }
-    };
+    if (agent && pending && yes) {
+      return {
+        label: yes,
+        allow: async () => {
+          await agent.send(entry.projectId, threadId, { kind: "answer", questionId: pending.question.id, value: yes });
+          return true;
+        }
+      };
+    }
   }
   // A terminal session: only while its screen shows a permission prompt with yes under the cursor, read as the panel's Allow reads it.
+  // Its hooks having said what it asks, its wait is listed as a permission; otherwise as waiting.
   const sessionId = entry.sessionId;
   const codeLink = ctx.get("codeLink");
-  if (entry.kind !== "waiting" || !sessionId || !codeLink) return null;
+  if ((entry.kind !== "waiting" && entry.kind !== "permission") || !sessionId || !codeLink) return null;
   const panel = codeLink.sessionPanel(entry.projectId, sessionId);
   if (panel.input !== "ok" || !panel.approval) return null;
   const screen = await codeLink.sessionTail(entry.projectId, sessionId, PROMPT_LINES).catch(() => null);
