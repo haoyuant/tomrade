@@ -855,10 +855,13 @@ const run = async () => {
   check("while it waits on a command, the stretch says what it waits to be allowed", await until(async () => (await workFolds())[1]?.summary === "1 file changed · waiting for you to allow `echo 'Tests  8 passed (8)'`", 80), await workFolds());
   check("and the question says every command asks, with the way to the setting", await until(() => present('[data-testid="ask-each-command"] button'), 30), await $(`document.querySelector('.q-ask')?.textContent ?? null`));
   await shot("writing-code-waiting.png");
+  // answered here, the panel stays on this conversation rather than moving on to whatever else waits
+  ctx.settings.set({ ...ctx.settings.get(), sessions: { ...ctx.settings.get().sessions, afterAnswer: "stay" } });
   await press(`[...document.querySelectorAll('.q-ask:not(.done) .chip-opt')].find((b) => b.textContent === 'Allow once')`);
   await sleep(200);
   await press(`document.querySelector('.q-ask:not(.done) .q-confirm .btn')`);
   await until(() => ctx.agent.store.run(alpha.id, tested.runId)?.status === "done", 80);
+  ctx.settings.set({ ...ctx.settings.get(), sessions: { ...ctx.settings.get().sessions, afterAnswer: "next" } });
   check("once allowed, the stretch folds the answer in and says how the tests went", await until(async () => { const f = (await workFolds())[1]; return f?.summary === "1 file changed · 1 command · tests 8 passed" && !f.waiting && f.rows === 2; }, 50) && !(await present('[data-testid="ask-each-command"]')), await workFolds());
 
   // ── 「放到后台做」: the coding moves to a child conversation under this one; this one stays free to talk, and the conclusion comes back ──
