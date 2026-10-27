@@ -3,6 +3,7 @@ import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
+import { SerializeAddon } from "@xterm/addon-serialize";
 import "@xterm/xterm/css/xterm.css";
 import type { WindowPost } from "@tomradex/code-sessions";
 import { onCell, pathForFile, send } from "./bridge";
@@ -87,7 +88,7 @@ function hex(css: string, probe: HTMLElement, pixel: CanvasRenderingContext2D): 
  * The terminal's colours from the theme on this page — the app's look once it has arrived, Tomrade's
  * default before — the ANSI palette included, so programs' colours read on light and dark themes alike.
  */
-function terminalTheme(): ITheme {
+export function terminalTheme(): ITheme {
   const probe = document.createElement("span");
   probe.style.display = "none";
   document.body.appendChild(probe);
@@ -248,6 +249,9 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.loadAddon(new WebLinksAddon(linkHandler.activate));
+    // For the recording: the screen as it stands, when a new stretch of it needs one to begin with.
+    const serialize = new SerializeAddon();
+    terminal.loadAddon(serialize);
     terminal.open(el);
     const gpu = drawWithWebgl(terminal, el);
     const localLinks = fileLinks(terminal, linkHandler.activate);
@@ -260,13 +264,21 @@ export function TerminalCell({ cell, sessionId, pane, tokens, font, labels, auto
     setClosed(undefined);
     setScroll(null);
     const selection = followSelection(terminal, el);
+    // The last frame handed to xterm; a snapshot says it is of the screen as of this one.
+    let seq = 0;
     const off = onCell(cell, (post) => {
-      if (post.type === "frame") terminal.write(post.bytes);
-      else if (post.type === "scrolled") {
+      if (post.type === "frame") {
+        seq = post.seq;
+        terminal.write(post.bytes);
+      } else if (post.type === "scrolled") {
         setScroll({ offset: post.offset, max: post.max, rows: post.rows });
-      }
-      else if (post.type === "reattach") setAttempt((n) => n + 1);
+      } else if (post.type === "reattach") setAttempt((n) => n + 1);
       else if (post.type === "closed") setClosed(post.reason);
+      else if (post.type === "snapshot") {
+        // Taken once every frame before it is on the screen: xterm draws what it was given in order.
+        const asOf = seq;
+        terminal.write("", () => send({ type: "snapshot", cell, token: post.token, seq: asOf, width: terminal.cols, height: terminal.rows, bytes: new TextEncoder().encode(serialize.serialize({ excludeModes: true, excludeAltBuffer: true })) }));
+      }
     });
     send({ type: "attach", cell, sessionId: attachAs.current, cols: terminal.cols, rows: terminal.rows });
     const input = terminal.onData((data) => send({ type: "input", cell, data }));

@@ -7,6 +7,8 @@ export type OpenAtStart = "main" | "terminal" | "both";
 export interface SessionPrefs {
   openAtStart: OpenAtStart;
   afterAnswer: "next" | "stay";
+  /** The `tomrade` command on the person's PATH (tomrade-command.ts). */
+  commandOnPath: boolean;
 }
 
 const en = DESKTOP_WORDS("en");
@@ -19,9 +21,10 @@ export const SESSIONS_SECTION: SettingsSection<SessionPrefs> = {
   description: en("sessionsDescription"),
   schema: z.object({
     openAtStart: z.enum(["main", "terminal", "both"]).default("main").meta({ title: en("openAtStartTitle") }).describe(en("openAtStartDescription")),
-    afterAnswer: z.enum(["next", "stay"]).default("next").meta({ title: en("afterAnswerTitle") }).describe(en("afterAnswerDescription"))
+    afterAnswer: z.enum(["next", "stay"]).default("next").meta({ title: en("afterAnswerTitle") }).describe(en("afterAnswerDescription")),
+    commandOnPath: z.boolean().default(true).meta({ title: en("commandOnPathTitle") }).describe(en("commandOnPathDescription"))
   }),
-  defaults: { openAtStart: "main", afterAnswer: "next" },
+  defaults: { openAtStart: "main", afterAnswer: "next", commandOnPath: true },
   order: 16,
   scope: "user",
   agent: "read",
@@ -32,7 +35,8 @@ export const SESSIONS_SECTION: SettingsSection<SessionPrefs> = {
       description: zh("sessionsDescription"),
       fields: {
         openAtStart: { title: zh("openAtStartTitle"), description: zh("openAtStartDescription"), options: { main: zh("openAtStartMain"), terminal: zh("openAtStartTerminal"), both: zh("openAtStartBoth") } },
-        afterAnswer: { title: zh("afterAnswerTitle"), description: zh("afterAnswerDescription"), options: { next: zh("afterAnswerNext"), stay: zh("afterAnswerStay") } }
+        afterAnswer: { title: zh("afterAnswerTitle"), description: zh("afterAnswerDescription"), options: { next: zh("afterAnswerNext"), stay: zh("afterAnswerStay") } },
+        commandOnPath: { title: zh("commandOnPathTitle"), description: zh("commandOnPathDescription") }
       }
     }
   }
@@ -41,6 +45,11 @@ export const SESSIONS_SECTION: SettingsSection<SessionPrefs> = {
 export function openAtStart(ctx: Context): OpenAtStart {
   const value = (ctx.get("settings")?.get().sessions as Partial<SessionPrefs> | undefined)?.openAtStart;
   return value === "terminal" || value === "both" ? value : "main";
+}
+
+/** Whether the `tomrade` command should be on PATH: on unless the person turned it off. */
+export function commandOnPath(ctx: Context): boolean {
+  return (ctx.get("settings")?.get().sessions as Partial<SessionPrefs> | undefined)?.commandOnPath !== false;
 }
 
 /** Which windows a start opens: the main window unless the person chose the Terminal window alone and there is one to open. */

@@ -3143,6 +3143,7 @@ export const fr: PartialMessages = {
     keyClose: "fermer le panneau",
     keyArrows: "+ flèches : le panneau voisin",
     keyPrevNext: "panneau précédent / suivant",
-    keyFold: "replier la barre des sessions"
+    keyFold: "replier la barre des sessions",
+    cellNumber: "Panneau {{n}} · tomrade term --attach {{n}} le rattache à votre propre terminal"
   }
 };

@@ -47,7 +47,13 @@ export function useWindowLayout(state: WindowState | null) {
   // The first state brings the remembered layout; after that the window owns it, minus sessions that went.
   // A terminal just asked for may miss from a state sent before the ask arrived; its cell keeps it a moment.
   const asked = useRef(new Map<string, number>());
-  const known = useMemo(() => new Set([...(state?.sessions.map((s) => s.id) ?? []), ...(state?.archive.rows?.map((s) => s.id) ?? []), ...(state?.terminals.map((t) => t.id) ?? [])]), [state?.sessions, state?.archive.rows, state?.terminals]);
+  // Ended sessions and closed terminals the person put in a cell to read: they stay, wherever their pane went on.
+  const toRead = useRef(new Set<string>());
+  // A closed terminal is known only once picked to read: a terminal closed from its cell leaves the cell empty.
+  const known = useMemo(
+    () => new Set([...(state?.sessions.map((s) => s.id) ?? []), ...(state?.archive.rows?.map((s) => s.id) ?? []), ...(state?.terminals.map((t) => t.id) ?? []), ...[...(state?.closedTerminals ?? []), ...(state?.archive.terminals ?? [])].filter((t) => toRead.current.has(t.id)).map((t) => t.id)]),
+    [state?.sessions, state?.archive.rows, state?.archive.terminals, state?.terminals, state?.closedTerminals]
+  );
   const current = useRef<Layout | null>(null);
   // What the first state already listed is not new: only what appears after it is placed.
   const seen = useRef<Set<string> | null>(null);
@@ -59,8 +65,6 @@ export function useWindowLayout(state: WindowState | null) {
     if (focused) recent.current = [...recent.current.filter((id) => id !== focused), focused];
   }, [focused]);
   const revealed = useRef(0);
-  // Ended sessions the person put in a cell to read: they stay, wherever their pane went on.
-  const toRead = useRef(new Set<string>());
   const change = useCallback((next: Layout) => {
     current.current = next;
     setLayout(next);
@@ -78,9 +82,10 @@ export function useWindowLayout(state: WindowState | null) {
     const fresh = seen.current ? placeable.filter((id) => !seen.current!.has(id)) : [];
     seen.current = new Set([...(seen.current ?? []), ...placeable]);
     let placed = state.autoPlace ? fresh.reduce((acc, id) => place(acc, id, key), pruned) : pruned;
-    // Asked from outside (a start, "open in terminal", a ticket's earlier session): the session in a cell, that cell selected — once it has its pane, or ended, to read.
+    // Asked from outside (a start, "open in terminal", a ticket's earlier session, `tomrade term`): the session or terminal in a cell, that cell selected — once it has its pane, or ended, to read.
     const ask = state.reveal;
-    if (ask && ask.at !== revealed.current && state.sessions.some((s) => s.id === ask.sessionId && (s.pane || s.endedAt !== null))) {
+    const ready = (id: string) => state.sessions.some((s) => s.id === id && (s.pane || s.endedAt !== null)) || state.terminals.some((t) => t.id === id && t.pane);
+    if (ask && ask.at !== revealed.current && ready(ask.sessionId)) {
       revealed.current = ask.at;
       if (state.sessions.some((s) => s.id === ask.sessionId && s.endedAt !== null)) toRead.current.add(ask.sessionId);
       const shown = reveal(placed, ask.sessionId, focusedNow.current, key);

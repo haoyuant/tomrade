@@ -92,3 +92,8 @@ export function sessionBarRows(input: {
   const open = (r: BarRow) => (!!input.openThreadId && r.threadId === input.openThreadId) || (!!input.openSessionId && r.sessionId === input.openSessionId);
   return rows.filter((r) => r.status !== "idle" || ++idle <= limit || open(r));
 }
+
+/** ⌘K's sessions, each group in the bar's order: waiting on the person, in progress (running or idle), and ended. */
+export function paletteSessionGroups(rows: BarRow[]): { waiting: BarRow[]; active: BarRow[]; history: BarRow[] } {
+  return { waiting: rows.filter((r) => r.status === "wait"), active: rows.filter((r) => r.status === "run" || r.status === "idle"), history: rows.filter((r) => r.status === "done") };
+}

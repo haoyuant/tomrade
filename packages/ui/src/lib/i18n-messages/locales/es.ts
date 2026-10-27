@@ -3143,6 +3143,7 @@ export const es: PartialMessages = {
     keyClose: "cerrar el panel",
     keyArrows: "+ flechas: el panel de al lado",
     keyPrevNext: "panel anterior / siguiente",
-    keyFold: "plegar la barra de sesiones"
+    keyFold: "plegar la barra de sesiones",
+    cellNumber: "Panel {{n}} · tomrade term --attach {{n}} lo conecta a tu propia terminal"
   }
 };

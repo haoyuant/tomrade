@@ -29,6 +29,7 @@ const row = (over: Partial<SessionRow> & { id: string }): SessionRow => ({
   approval: false,
   prompt: null,
   lastEventAt: null,
+  rawOutput: false,
   ...over
 });
 

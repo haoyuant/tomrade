@@ -855,6 +855,57 @@ const run = async () => {
   await sleep(400);
   check("⇧⌘T opens it too", opened.length === 2 && opened[1] === alpha.id, opened);
   ctx.contributions.run = runCommand;
+
+  // ── ⌘K finds sessions and does things with them, from what the window already holds ──
+  const mac = process.platform === "darwin";
+  const reads = { threads: 0, sessions: 0 };
+  const threadsOf = ctx.agent.store.threads.bind(ctx.agent.store);
+  ctx.agent.store.threads = (...args) => (reads.threads++, threadsOf(...args));
+  const recentOf = ctx.codeLink.recentSessions.bind(ctx.codeLink);
+  ctx.codeLink.recentSessions = (...args) => (reads.sessions++, recentOf(...args));
+  const openPalette = async () => {
+    await $(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', code: 'KeyK', metaKey: ${mac}, ctrlKey: ${!mac}, bubbles: true, cancelable: true }));true`);
+    return until(() => present(".palette-input"), 30);
+  };
+  const typePalette = (text) => $(`(() => { const i = document.querySelector('.palette-input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, ${JSON.stringify(text)}); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  const enterPalette = (shift = false) => $(`document.querySelector('.palette-input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', shiftKey: ${shift}, bubbles: true, cancelable: true }));true`);
+  const readsAt = { ...reads };
+  await openPalette();
+  await sleep(600);
+  const groups = await $(`[...document.querySelectorAll('.palette [cmdk-group-heading]')].map((h) => h.textContent)`);
+  check("⌘K lists what waits on you, what is in progress, what to do and what ended, ahead of the views and actions it had", ["Waiting on you", "In progress", "Do", "History", "Views", "Actions"].every((g) => groups.includes(g)) && groups.indexOf("Waiting on you") < groups.indexOf("Views"), groups);
+  check("opening it asks the main process for nothing: the sessions are the ones the window holds", reads.threads === readsAt.threads && reads.sessions === readsAt.sessions, { reads, readsAt });
+  await shot("palette-sessions.png");
+  // ↵ on one waiting: its conversation, here
+  const asker = await $(`document.querySelector('[data-testid="palette-waiting"] [cmdk-item]')?.dataset.session ?? null`);
+  await press(`document.querySelector('[data-testid="palette-waiting"] [cmdk-item]')`);
+  check("picking one that waits opens its conversation in the panel", !!asker && (await until(async () => `thread:${await shownThread()}` === asker, 30)), { asker, shown: await shownThread() });
+  // ⇧↵ on a terminal session: its Terminal window cell
+  const shownIn = [];
+  const showSession = ctx.codeLink.showSession.bind(ctx.codeLink);
+  ctx.codeLink.showSession = async (projectId, sessionId) => (shownIn.push(sessionId), true);
+  await openPalette();
+  await typePalette("Tail the pane");
+  await sleep(300);
+  // the ticket of that name matches too: the pointer on the session's row makes it the one ↵ takes
+  await $(`document.querySelector('[data-session="session:${inPane.id}"]')?.dispatchEvent(new PointerEvent('pointermove', { bubbles: true }));true`);
+  await enterPalette(true);
+  await sleep(400);
+  check("⇧↵ on a terminal session opens it in a Terminal window cell", shownIn.length === 1 && shownIn[0] === inPane.id, { shownIn, want: inPane.id });
+  ctx.codeLink.showSession = showSession;
+  // nothing found: ↵ starts a conversation with the words typed
+  const threadsBefore = ctx.agent.store.threads(alpha.id, ["assistant"]).length;
+  await openPalette();
+  await typePalette("zqx draft the release notes");
+  await sleep(300);
+  check("with nothing found, the palette offers to start a session with the words", await present('[data-testid="palette-start-with"]'));
+  await enterPalette();
+  const started = await until(async () => ctx.agent.store.threads(alpha.id, ["assistant"]).length > threadsBefore, 50);
+  const startedThread = await shownThread();
+  const firstSaid = startedThread ? ctx.agent.thread(alpha.id, startedThread)?.messages?.find((m) => m.role === "user")?.block?.text : null;
+  check("↵ then starts one, sent those words", started && firstSaid === "zqx draft the release notes", { started, firstSaid });
+  ctx.agent.store.threads = threadsOf;
+  ctx.codeLink.recentSessions = recentOf;
   check("harness reached the end", true);
 };
 
