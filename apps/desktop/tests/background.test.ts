@@ -8,7 +8,7 @@ const quit = vi.hoisted(() => ({ leaving: false, approved: false }));
 const notices = vi.hoisted(() => ({ shown: 0 }));
 const trays = vi.hoisted(() => ({ menu: null as unknown, title: "", made: 0 }));
 vi.mock("electron", () => ({
-  app: { dock: { hide: vi.fn(), show: vi.fn(async () => {}), setIcon: vi.fn(), setMenu: vi.fn() }, quit: vi.fn() },
+  app: { dock: { hide: vi.fn(), show: vi.fn(async () => {}), setIcon: vi.fn(), setMenu: vi.fn() }, quit: vi.fn(), setJumpList: vi.fn(() => "ok"), getJumpListSettings: () => ({ minItems: 10, removedItems: [] }) },
   Menu: { buildFromTemplate: (template: unknown) => ({ template }) },
   nativeImage: { createFromPath: () => ({ setTemplateImage: () => {} }) },
   Notification: class {
@@ -40,6 +40,9 @@ const { autostartEntry, autostartState, macAgent, withExec, xdgAutostart, BACKGR
 const { background, cameBack, launchMode, otherOrdinaryWindow, readPrefs, relaunchArgs, whenLastWindowCloses, writePrefs } = await import("../src/background.js");
 const { startWindows } = await import("../src/sessions-section.js");
 const { appIconPath, currentAppIcon, wearAppIcon } = await import("../src/app-icon.js");
+const { jumpList, launchAsk, openStartWindows } = await import("../src/terminal-entries.js");
+const { takeKeptInFront } = await import("../src/main-window.js");
+const { DESKTOP_WORDS } = await import("../src/words.js");
 
 let dir: string;
 beforeEach(() => {
@@ -236,7 +239,12 @@ describe("the Dock and tray menus", () => {
   const labels = (menu: unknown) => rows(menu).map((r) => r.label ?? r.type);
   const dock = app.dock as unknown as { setMenu: ReturnType<typeof vi.fn> };
   const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
-  const start = (opts: { keepRunning?: boolean; terminal?: boolean; openAtStart?: string; services?: Record<string, unknown>; cells?: { sessionId: string; n: number }[] } = {}) => {
+  const used = [
+    { projectId: "old", cells: 3, usedAt: 20 },
+    { projectId: "gone", cells: 1, usedAt: 10 },
+    { projectId: "new", cells: 1, usedAt: 5 }
+  ];
+  const start = (opts: { keepRunning?: boolean; terminal?: boolean; openAtStart?: string; services?: Record<string, unknown>; cells?: { sessionId: string; n: number }[]; windows?: typeof used } = {}) => {
     const file = path.join(dir, "background.json");
     writePrefs(file, { keepRunning: !!opts.keepRunning, noticed: true });
     const ran: unknown[][] = [];
@@ -260,7 +268,7 @@ describe("the Dock and tray menus", () => {
       get: (name: string) => services[name],
       on: (name: string, fn: (...args: unknown[]) => void) => void listeners.set(name, fn),
       emit: (...args: unknown[]) => void emitted.push(args),
-      bail: (name: string) => (name === "codeLink/cells" ? opts.cells : undefined),
+      bail: (name: string) => (name === "codeLink/cells" ? opts.cells : name === "codeLink/terminal-windows" ? (opts.windows ?? used) : undefined),
       serial: async (...args: unknown[]) => void serial.push(args),
       ipc: { handle: () => {}, send: () => {} },
       effect: (fn: () => () => void) => void disposers.push(fn())
@@ -281,17 +289,36 @@ describe("the Dock and tray menus", () => {
     for (const dispose of disposers.splice(0)) dispose();
   });
 
-  it("offers each project's Terminal window in the Dock menu, newest first, and the main window", () => {
+  it("lists the Terminal windows used last in the Dock menu with their cells, then a new Terminal window and the main window", () => {
     const { ran } = start();
     const menu = rows(dock.setMenu.mock.calls.at(-1)![0]);
-    expect(menu.map((r) => r.label ?? r.type)).toEqual(["Terminal window · New", "Terminal window · Old", "separator", "Open main window"]);
-    menu[0].click!();
-    expect(ran).toEqual([["code-sessions.open", { projectId: "new" }]]);
+    // used last first; an archived project's window stays out
+    expect(menu.map((r) => r.label ?? r.type)).toEqual(["Recent Terminal windows", "Old · 3 cells", "New · 1 cell", "separator", "New Terminal window", "New main window"]);
+    expect((menu[0] as { enabled?: boolean }).enabled).toBe(false);
+    menu[1].click!();
+    menu[4].click!();
+    expect(ran).toEqual([["code-sessions.open", { projectId: "old" }], ["code-sessions.open", {}]]);
   });
 
-  it("offers only the main window where there is no Terminal window", () => {
+  it("offers a new Terminal window before any was used, and only the main window where there is none", () => {
+    start({ windows: [] });
+    expect(labels(dock.setMenu.mock.calls.at(-1)![0])).toEqual(["New Terminal window", "New main window"]);
+    for (const dispose of disposers.splice(0)) dispose();
     start({ terminal: false });
-    expect(rows(dock.setMenu.mock.calls.at(-1)![0]).map((r) => r.label)).toEqual(["Open main window"]);
+    expect(labels(dock.setMenu.mock.calls.at(-1)![0])).toEqual(["New main window"]);
+  });
+
+  it("sets the same rows as Windows' jump list, each launching the app with a flag", () => {
+    Object.defineProperty(process, "platform", { value: "win32" });
+    const setJumpList = app.setJumpList as unknown as ReturnType<typeof vi.fn>;
+    setJumpList.mockClear();
+    start();
+    expect(dock.setMenu).not.toHaveBeenCalled();
+    const [categories] = setJumpList.mock.calls.at(-1)! as [{ type: string; name?: string; items: { title: string; args: string }[] }[]];
+    expect(categories.map((c) => [c.type, c.name, c.items.map((i) => [i.title, i.args.split(" ").at(-1)])])).toEqual([
+      ["custom", "Recent Terminal windows", [["Old · 3 cells", "--terminal-window=old"], ["New · 1 cell", "--terminal-window=new"]]],
+      ["tasks", undefined, [["New Terminal window", "--terminal-window"], ["New main window", "--main-window"]]]
+    ]);
   });
 
   it("puts the tray up for someone who starts on the Terminal window, background running or not", () => {
@@ -390,6 +417,45 @@ describe("the Dock and tray menus", () => {
     expect(menu.slice(0, 3).map((r) => r.label ?? r.type)).toEqual(["● TOM-634 running · cell 1", "● spike running", "separator"]);
     menu[0].click!();
     expect(emitted).toEqual([["attention/open", { projectId: "p", threadId: null, itemId: "i1", sessionId: "s1" }]]);
+  });
+});
+
+describe("jump list and launches", () => {
+  const w = DESKTOP_WORDS("en");
+
+  it("reads what a jump list task's launch asks for", () => {
+    expect(launchAsk(["C:\\Tomrade.exe", "--terminal-window=p1"])).toEqual({ window: "terminal", projectId: "p1" });
+    expect(launchAsk(["--terminal-window"])).toEqual({ window: "terminal", projectId: null });
+    expect(launchAsk(["--main-window"])).toEqual({ window: "main" });
+    expect(launchAsk(["tomrade://item/p/AL-1"])).toBeNull();
+  });
+
+  it("leaves out a row the person removed, and the group with nothing left", () => {
+    const launch = { program: "C:\\Tomrade.exe", args: [] };
+    const recent = [{ projectId: "p1", name: "Alpha", cells: 2 }];
+    expect(jumpList(recent, w, launch, ["--terminal-window=p1"]).map((c) => c.type)).toEqual(["tasks"]);
+    expect(jumpList(recent, w, launch, [])[0]!.items![0]).toMatchObject({ type: "task", title: "Alpha · 2 cells", program: "C:\\Tomrade.exe", args: "--terminal-window=p1" });
+  });
+
+  it("opens both with the Terminal window kept behind the main window, and falls back to the main window when the Terminal window does not open", async () => {
+    const main = { isDestroyed: () => false } as never;
+    let behind: unknown = "not asked";
+    let opens = true;
+    const ctx = {
+      get: (name: string) => (name === "contributions" ? { run: async () => ((behind = takeKeptInFront()), opens ? {} : { toast: "no project" }) } : undefined),
+      logger: () => ({ warn: () => {} })
+    };
+    let made = 0;
+    const openMain = () => (made++, main);
+    expect(await openStartWindows(ctx as never, { main: true, terminal: true }, openMain)).toBe(main);
+    expect(behind).toBe(main);
+    expect(takeKeptInFront()).toBeNull();
+    // the Terminal window alone: nothing kept in front, and the main window when it does not open
+    behind = "not asked";
+    opens = false;
+    expect(await openStartWindows(ctx as never, { main: false, terminal: true }, openMain)).toBe(main);
+    expect(behind).toBeNull();
+    expect(made).toBe(2);
   });
 });
 

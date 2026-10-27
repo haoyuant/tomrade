@@ -1036,6 +1036,8 @@ const run = async () => {
   const runCommand = ctx.contributions.run.bind(ctx.contributions);
   ctx.contributions.run = async (id, scope) => (id === "code-sessions.open" ? (opened.push(scope.projectId), {}) : runCommand(id, scope));
   check("the title bar offers the Terminal window", await $(`!!document.querySelector('[data-testid="titlebar-terminal"]')`));
+  const terminalDoor = await $(`(() => { const b = document.querySelector('[data-testid="titlebar-terminal"]'); const shown = (n) => !!n && getComputedStyle(n).display !== 'none'; return { label: shown(b?.querySelector('.lbl')) ? b.querySelector('.lbl').textContent : null, key: shown(b?.querySelector('.kbd')) ? b.querySelector('.kbd').textContent : null, wide: innerWidth > 1100 }; })()`);
+  check("its button names the window and its key while the bar has room", !terminalDoor.wide || (terminalDoor.label === "Terminal window" && /T$/.test(terminalDoor.key ?? "")), terminalDoor);
   await press(`document.querySelector('[data-testid="titlebar-terminal"]')`);
   await sleep(400);
   check("its button opens this project's Terminal window", opened.length === 1 && opened[0] === alpha.id, opened);

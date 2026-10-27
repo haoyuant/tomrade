@@ -71,6 +71,8 @@ interface Saved {
   folded?: Record<string, boolean>;
   /** The project the window last opened for: where a start that names none goes. */
   lastProject?: string;
+  /** When each project's window was last opened or brought forward: the Dock's and the jump list's order. */
+  used?: Record<string, number>;
   /** Each project's closed terminals whose output was recorded, oldest first. */
   closed?: Record<string, ClosedTerminalRow[]>;
 }
@@ -1203,8 +1205,10 @@ function apply(ctx: Context, config: Config) {
   let asks = 0;
   const show = async (projectId: string, reveal?: string) => {
     const asked = reveal ? { sessionId: reveal, at: ++asks } : null;
+    const used = () => ({ used: { ...stateOf(config.stateFile).used, [projectId]: Date.now() } });
     const already = open.get(projectId);
     if (already && !already.closed) {
+      save(config.stateFile, used());
       if (asked) already.reveal = asked;
       // Still opening: that call brings it up.
       if (!already.surface) return;
@@ -1218,7 +1222,7 @@ function apply(ctx: Context, config: Config) {
     try {
       await opening(projectId, win, w);
       // after the state is read, so a file that could not be read is still said to be unreadable
-      save(config.stateFile, { lastProject: projectId });
+      save(config.stateFile, { lastProject: projectId, ...used() });
     } catch (error) {
       // A failed open leaves nothing behind, so the next try opens afresh.
       win.closed = true;
@@ -1318,6 +1322,20 @@ function apply(ctx: Context, config: Config) {
     if (!win || win.closed) return;
     const layout = stateOf(config.stateFile).layouts?.[projectId];
     return cellsIn(isLayout(layout) ? layout : fresh()).flatMap((leaf, i) => (leaf.sessionId ? [{ sessionId: leaf.sessionId, n: i + 1 }] : []));
+  });
+  // Projects with a window before `used` was kept count as used long ago, the last one opened first.
+  ctx.on("codeLink/terminal-windows", () => {
+    const saved = stateOf(config.stateFile);
+    const ids = new Set([...Object.keys(saved.used ?? {}), ...Object.keys(saved.layouts ?? {}), ...(saved.lastProject ? [saved.lastProject] : [])]);
+    const openIds = ctx.db.openIds();
+    const usedAt = (id: string) => saved.used?.[id] ?? (id === saved.lastProject ? 1 : 0);
+    return [...ids]
+      .filter((id) => openIds.includes(id))
+      .map((id) => {
+        const layout = saved.layouts?.[id];
+        return { projectId: id, cells: isLayout(layout) ? cellsIn(layout).length : 1, usedAt: usedAt(id) };
+      })
+      .sort((a, b) => b.usedAt - a.usedAt);
   });
   ctx.on("codeLink/new-terminal", async (projectId) => {
     if (!(await showable())) return;
