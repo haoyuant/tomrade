@@ -125,8 +125,11 @@ const run = async () => {
   const closePalette = () => $(`document.querySelector('.palette-input')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));true`);
   const typeReview = (text) => $(`(() => { const i = document.querySelector('[data-testid="ai-review-search"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, ${JSON.stringify(text)}); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
   // No thread menu any more: the session bar's + opens a conversation, and ⌘K finds any by its title, in the bar or past it.
+  // the bar's + opens ⌘K on its ways to start: ↵ with nothing typed is a new conversation with the built-in assistant
   const newThread = async () => {
     await press(`document.querySelector('.ai .sbar button[aria-label="New thread"]')`);
+    for (let i = 0; i < 30 && !(await $(`!!document.querySelector('[data-testid="palette-start"]')`)); i++) await sleep(100);
+    await $(`document.querySelector('.palette-input')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }));true`);
     await sleep(800);
   };
   const paletteRow = (name) => `[...document.querySelectorAll('.palette [cmdk-item][data-session]')].find((n) => n.querySelector('.p-label')?.firstChild?.textContent === ${JSON.stringify(name)})`;
@@ -1103,13 +1106,13 @@ const run = async () => {
   await sleep(300);
 
   // ── ⌘K starts on the words three ways: ↵ the built-in assistant (above), ⌥↵ a terminal agent in a background pane, ⇧↵ in a Terminal window cell ──
-  check("⌘K's box says what it searches and that what to do can be typed", /Search sessions, ticket keys, what was said/.test(await $(`document.querySelector('.palette-input')?.placeholder ?? ''`)));
   const loose = [];
   const startLooseWas = ctx.codeLink.startLoose.bind(ctx.codeLink);
   ctx.codeLink.startLoose = async (projectId, input) => {
     loose.push(input);
     const s = ctx.codeLink.store.createSession(projectId, { repoId: "", branch: "", itemIds: [], mode: "terminal", agent: input.engine ?? "termcli", threadId: null, device: "check" });
-    ctx.codeLink.store.patchSession(projectId, s.id, { title: input.prompt, herdrPane: `w9:p${loose.length}`, state: "running", lastEventAt: Date.now() });
+    // no pane on the session itself: a herdr here would find it gone
+    ctx.codeLink.store.patchSession(projectId, s.id, { title: input.prompt, terminal: "iTerm.app", state: "running", lastEventAt: Date.now() });
     return { ok: true, continued: false, threadId: null, sessionId: s.id, branch: "", worktree: null, cwd: work, mode: "terminal", command: "cli", launched: true, pane: `w9:p${loose.length}`, engine: input.engine ?? "termcli" };
   };
   const inCell = [];
@@ -1117,6 +1120,7 @@ const run = async () => {
   ctx.codeLink.showSession = async (_projectId, sessionId) => (inCell.push(sessionId), true);
   await $(`(document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
   await openPalette();
+  check("⌘K's box says what it searches and that what to do can be typed", /Search sessions, ticket keys, what was said/.test(await $(`document.querySelector('.palette-input')?.placeholder ?? ''`)));
   await typePalette("vqkz jumble");
   await sleep(300);
   const ways = await $(`[...document.querySelectorAll('[data-testid="palette-start"] [data-way]')].map((b) => [b.dataset.way, b.textContent])`);
