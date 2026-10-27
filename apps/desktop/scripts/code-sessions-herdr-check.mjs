@@ -813,7 +813,7 @@ app.whenReady().then(async () => {
     const cards = await wait(async () => tjs(`!document.querySelector('.cs-side[data-folded]') && document.querySelectorAll('.cs-row').length >= 6 && [...document.querySelectorAll('.cs-row')].every((r) => getComputedStyle(r).borderRadius !== '0px')`), 3000);
     check("收起是一列点（悬停有预览），展开是卡片", dots && dotPeek && cards, JSON.stringify({ dots, dotPeek, cards }));
     const keysText = await tjs(`document.querySelector('[data-testid=cs-keys]')?.textContent ?? ''`);
-    const keyLabels = process.platform === "darwin" ? ["⌘D", "⇧⌘D", "⌘W", "⌥⌘", "⌘[", "⌘]", "⌘B"] : ["Ctrl+Shift+D", "Ctrl+Shift+O", "Ctrl+Shift+W", "Alt", "Ctrl+Shift+Tab", "Ctrl+Tab", "Ctrl+Shift+B"];
+    const keyLabels = process.platform === "darwin" ? ["⌘D", "⇧⌘D", "⌘W", "⌥⌘", "⌘[", "⌘]", "⌘B", "⌘K"] : ["Ctrl+Shift+D", "Ctrl+Shift+O", "Ctrl+Shift+W", "Alt", "Ctrl+Shift+Tab", "Ctrl+Tab", "Ctrl+Shift+B", "Ctrl+Shift+K"];
     check("底部一行写着沿用的按键", keyLabels.every((k) => keysText.includes(k)), keysText);
 
     // An assistant conversation, the built-in kind: listed as a card with no pane; opening it brings the app window up on it.
@@ -880,6 +880,27 @@ app.whenReady().then(async () => {
     await tjs(`${bigFive}?.querySelector('[data-testid=cs-see-in-pane]')?.click(); true`);
     const backToGrid = await wait(async () => tjs(`!document.querySelector('[data-testid=cs-overview]') && document.querySelector('[data-testid=cs-view-grid]').getAttribute('aria-pressed') === 'true' && (document.querySelector('.cs-cell[data-focused] .cs-cell-name')?.textContent ?? '').startsWith(${JSON.stringify(`${sessions[4].item.key} `)})`), 5000);
     check("「在格子里看」回到格子并选中它的格子", backToGrid, await tjs(`document.querySelector('.cs-cell[data-focused] .cs-cell-name')?.textContent`));
+
+    // ⌘K here too: the window's sessions, what to do, what ran before. ↵ goes to a session's cell; "clear" is in it.
+    const mac = process.platform === "darwin";
+    const paletteKey = () => tjs(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', code: 'KeyK', metaKey: ${mac}, ctrlKey: ${!mac}, shiftKey: ${!mac}, bubbles: true, cancelable: true })); true`);
+    await paletteKey();
+    const paletteGroups = await wait(async () => tjs(`(() => { const h = [...document.querySelectorAll('[data-testid=cs-palette] [cmdk-group-heading]')].map((n) => n.textContent); return h.includes('进行中') && h.includes('做事') ? h : false; })()`), 3000);
+    check("终端窗口里 ⌘K 打开同一套：等你 / 进行中 / 做事 / 历史，「清屏」在做事里", !!paletteGroups && (await tjs(`!!document.querySelector('[data-testid=cs-palette] [data-do=clear]')`)), JSON.stringify(paletteGroups));
+    fs.writeFileSync(path.join(shots, "code-sessions-palette.png"), (await tw.webContents.capturePage()).toPNG());
+    await tjs(`document.querySelector('[data-testid=cs-palette] [data-row="${sessions[5].id}"]')?.click(); true`);
+    const paletteJumped = await wait(async () => tjs(`!document.querySelector('[data-testid=cs-palette]') && (document.querySelector('.cs-cell[data-focused] .cs-cell-name')?.textContent ?? '').startsWith(${JSON.stringify(sessions[5].item.key)})`), 3000);
+    check("在 ⌘K 里选一个会话，跳到它的格子并选中", paletteJumped, await tjs(`document.querySelector('.cs-cell[data-focused] .cs-cell-name')?.textContent`));
+    const focusedScreen = () => tjs(`[...(document.querySelector('.cs-cell[data-focused]')?.querySelectorAll('.xterm-rows > div') ?? [])].map((r) => r.textContent).join('\\n')`);
+    await paletteKey();
+    await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-palette] [data-do=clear]')`), 3000);
+    await tjs(`document.querySelector('[data-testid=cs-palette] [data-do=clear]').click(); true`);
+    const cleared = await wait(async () => !(await focusedScreen()).includes("echo marker-six"), 4000);
+    check("「清屏」让选中格子里的 shell 清屏（Ctrl+L）", cleared, (await focusedScreen()).slice(0, 200));
+    await paletteKey();
+    await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-palette]')`), 2000);
+    await paletteKey();
+    check("再按 ⌘K 关掉它", await wait(async () => tjs(`!document.querySelector('[data-testid=cs-palette]')`), 2000));
 
     // A session whose terminal is gone keeps "continue" and offers the same new-terminal picker, starting in its
     // worktree (the project's repository and that worktree are the places now); a terminal opened there takes the cell.

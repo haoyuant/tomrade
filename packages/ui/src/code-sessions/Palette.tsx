@@ -46,7 +46,7 @@ export function Palette({ open, onOpenChange, here, away, ended, actions, onRow,
     const said = rowSaid(r, status, say);
     return (
       <Command.Item key={r.id} value={`${name} ${title ?? ""} ${rowAgent(r) ?? ""} ${said ?? ""} ${r.id}`} className="palette-row" data-row={r.id} onSelect={() => choose(onSelect)}>
-        <Mark status={status} />
+        <span className="palette-mark"><Mark status={status} /></span>
         <span className="p-label">
           {name}
           {title && <span className="meta-txt"> · {title}</span>}
