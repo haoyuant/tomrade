@@ -12,12 +12,13 @@
  *   pnpm build:backend && pnpm dev:ui   then
  *   pnpm --filter @tomrade/desktop test:tabs-keys
  */
-import { app, BrowserWindow, dialog } from "electron";
+import { app, BrowserWindow, dialog, globalShortcut } from "electron";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { boot } from "../dist/boot.js";
+import { installGlobalHotkey } from "../dist/terminal-entries.js";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-tabs-keys-"));
@@ -197,6 +198,32 @@ const run = async () => {
   await press(`${row("palette")} [data-testid="keys-use-here"]`);
   check("“Use it here” moves them", await wait(() => JSON.stringify(overrides().palette) === JSON.stringify(["Mod+Shift+P", "Mod+B"]) && JSON.stringify(overrides().sidebar) === "[]"), overrides());
   check("leaving the other command without keys, said so", await wait(async () => ((await $(`document.querySelector('${row("sidebar")}')?.textContent`)) ?? "").includes("No keys")));
+
+  // ── a key for the whole computer: none by default, refused when it types or is the shell's, said when another app has it ──
+  // never really taken on this machine: the system's answer is played here
+  const refusedByOthers = new Set(["Alt+Space"]);
+  globalShortcut.register = (acc) => !refusedByOthers.has(acc);
+  globalShortcut.unregister = () => {};
+  installGlobalHotkey(ctx);
+  const globalRow = row("terminalWindowGlobal");
+  const note = () => $(`document.querySelector('${globalRow} .keys-note')?.textContent ?? ""`);
+  check("“From any app” offers the Terminal window, with no keys until one is picked", ((await $(`document.querySelector('${globalRow}')?.textContent ?? ""`)) ?? "").includes("No keys"));
+  await press(`${globalRow} .keys-add`);
+  await wait(() => has(`${globalRow} .keys-recording`), "recording a global key");
+  await key({ key: "F12", code: "F12" }, "document.body");
+  check("a key with no ⌘ or ⌥ is refused for the whole computer", await wait(async () => (await note()).includes("types in every app")), await note());
+  await press(`${globalRow} .keys-add`);
+  await wait(() => has(`${globalRow} .keys-recording`), "recording a common global key");
+  await key({ key: "T", code: "KeyT", shiftKey: true, ...mod }, "document.body");
+  check("and so is one other apps answer to", await wait(async () => (await note()).includes("Other apps already answer")), await note());
+  await press(`${globalRow} .keys-add`);
+  await wait(() => has(`${globalRow} .keys-recording`), "recording ⌥Space");
+  await key({ key: "\u00a0", code: "Space", altKey: true }, "document.body");
+  check("⌥Space is taken, though a Mac types a no-break space for it", await wait(() => JSON.stringify(overrides().terminalWindowGlobal) === JSON.stringify(["Alt+Space"])), overrides());
+  check("another app holding it is said under the row", await wait(() => has(`${globalRow} [data-testid="keys-global-taken"]`)));
+  check("one key for the whole computer is all there is room for", !(await has(`${globalRow} .keys-add`)));
+  await press(`${globalRow} [data-testid="keys-reset"]`);
+  check("Reset takes the key back to none", await wait(() => overrides().terminalWindowGlobal === undefined), overrides());
 
   await press(`${row("sidebar")} [data-testid="keys-reset"]`);
   check("Reset gives a command its default back", await wait(() => overrides().sidebar === undefined), overrides());

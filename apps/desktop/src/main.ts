@@ -6,7 +6,7 @@ import { APP_ICON_FILE, appIconPath, readAppIcon, wearAppIcon } from "./app-icon
 import { AccountFolders, machineRoots, restart } from "./accounts.js";
 import { cameBack, keepsRunning, launchMode, otherOrdinaryWindow, PREFS_FILE, whenLastWindowCloses } from "./background.js";
 import { openAtStart, SESSIONS_SECTION, startWindows } from "./sessions-section.js";
-import { hasTerminalWindow, openTerminal } from "./terminal-entries.js";
+import { hasTerminalWindow, installGlobalHotkey, openTerminal } from "./terminal-entries.js";
 import { boot, ConfigUnreadable, type Booted } from "./boot.js";
 import { setUpBorrowedNode } from "./borrowed-node.js";
 import { openKeyring } from "./cipher.js";
@@ -196,6 +196,7 @@ app.whenReady().then(async () => {
   });
   for (const signal of ["SIGTERM", "SIGINT"] as const) process.once(signal, () => void leaveOnSignal(ctx).finally(() => app.exit(0)));
   ctx.settings.register(SESSIONS_SECTION);
+  installGlobalHotkey(ctx);
 
   // A window a tab moved into stands where the last one was left: a place of the machine's, like its screens.
   const windows = new TomradeWindows(

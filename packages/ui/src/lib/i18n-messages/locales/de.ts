@@ -1226,6 +1226,8 @@ export const de: PartialMessages = {
     sidebar: "Seitenleiste ein- oder ausblenden",
     assistant: "Assistenten ein- oder ausblenden",
     terminalWindow: "Terminalfenster öffnen oder nach vorn holen",
+    global: "Aus jeder App",
+    terminalWindowGlobal: "Terminalfenster aus jeder App holen; noch einmal drücken blendet es aus",
     sessionBar: "Sitzungen des Assistenten als Punkte oder Karten",
     settings: "Einstellungen",
     undo: "Rückgängig",

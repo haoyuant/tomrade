@@ -1226,6 +1226,8 @@ export const fr: PartialMessages = {
     sidebar: "Afficher ou masquer la barre latérale",
     assistant: "Afficher ou masquer l’assistant",
     terminalWindow: "Ouvrir la fenêtre Terminal ou la ramener devant",
+    global: "Depuis n’importe quelle app",
+    terminalWindowGlobal: "Faire venir la fenêtre Terminal depuis n’importe quelle app ; appuyez à nouveau pour la ranger",
     sessionBar: "Sessions de l’assistant en points ou en cartes",
     settings: "Paramètres",
     undo: "Annuler",

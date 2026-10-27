@@ -1226,6 +1226,8 @@ export const ja: PartialMessages = {
     sidebar: "サイドバーの表示/非表示",
     assistant: "アシスタントの表示/非表示",
     terminalWindow: "ターミナルウィンドウを開く（開いていれば前面へ）",
+    global: "どのアプリからでも",
+    terminalWindowGlobal: "どのアプリからでもターミナルウィンドウを呼び出す（もう一度押すと隠す）",
     sessionBar: "会話バーの表示：点またはカード",
     settings: "設定",
     undo: "元に戻す",

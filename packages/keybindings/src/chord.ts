@@ -17,6 +17,8 @@ export const DEFAULT_KEYS = {
   sidebar: ["Mod+B"],
   assistant: ["Mod+J"],
   terminalWindow: ["Mod+Shift+T"],
+  // A key the whole computer gives Tomrade: none until the person picks one.
+  terminalWindowGlobal: [] as string[],
   sessionBar: ["Mod+\\"],
   settings: ["Mod+,"],
   undo: ["Mod+Z"],
