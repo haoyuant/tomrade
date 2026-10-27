@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, Menu, nativeImage, Notification, shell as electronShell, Tray, type BrowserWindow } from "electron";
+import { app, Menu, nativeImage, Notification, shell as electronShell, Tray, type BrowserWindow, type MenuItemConstructorOptions } from "electron";
 import type { Context } from "cordis";
 import { z } from "zod";
 import type {} from "@tomradex/agent";
@@ -11,6 +11,8 @@ import type {} from "@tomradex/settings";
 import { appIconPath, currentAppIcon } from "./app-icon.js";
 import { BACKGROUND_FLAG, loginItem, type LoginItem, type LoginState } from "./login-item.js";
 import { hasMainWindow, showMainWindow } from "./main-window.js";
+import type { AttentionEntry } from "./attention.js";
+import { terminalMenuItems, terminalProjects } from "./terminal-entries.js";
 import { leaving, quitApproved } from "./quit.js";
 import { DESKTOP_WORDS } from "./words.js";
 import { errorMessage, writeJsonAtomic } from "@tomradex/contracts";
@@ -190,11 +192,23 @@ export const background = {
     };
 
     let tray: Tray | null = null;
+    // what waits on the person, as the attention row last said; the tray lists it and opens it like a notification
+    let waiting: AttentionEntry[] = [];
+    const waitingItems = (w: ReturnType<typeof words>): MenuItemConstructorOptions[] =>
+      waiting.slice(0, 5).map((e) => {
+        const who = [e.itemKey, e.who].filter(Boolean).join(" · ") || w("trayAssistant");
+        return { label: e.text ? w("trayWaiting", { who, text: e.text.slice(0, 60) }) : `◆ ${who}`, click: () => ctx.emit("attention/open", e) };
+      });
     const menu = () => {
       const mcp = ctx.get("mcp")?.url ?? null;
       const runs = ctx.get("agent")?.activeRuns().length ?? 0;
       const w = words();
+      const waits = waitingItems(w);
+      const terminals = terminalMenuItems(ctx, (name) => w("terminalWindowOf", { name }));
       return Menu.buildFromTemplate([
+        ...waits,
+        ...(waits.length ? [{ type: "separator" as const }] : []),
+        ...terminals,
         { label: w("trayOpen"), click: () => void showMainWindow() },
         { type: "separator" },
         { label: mcp ? `MCP: ${mcp.replace(/^https?:\/\//, "")}` : w("trayMcpStopped"), enabled: false },
@@ -204,6 +218,17 @@ export const background = {
       ]);
     };
     const refreshTray = () => tray?.setContextMenu(menu());
+    // macOS: the Dock icon's menu opens a project's Terminal window, or the main window. Set again only when its rows change.
+    let dockShape = "";
+    const refreshDock = () => {
+      if (process.platform !== "darwin" || !app.dock) return;
+      const w = words();
+      const terminals = terminalMenuItems(ctx, (name) => w("terminalWindowOf", { name }));
+      const shape = JSON.stringify([w("openMainWindow"), terminals.length ? terminalProjects(ctx) : []]);
+      if (shape === dockShape) return;
+      dockShape = shape;
+      app.dock.setMenu(Menu.buildFromTemplate([...terminals, ...(terminals.length ? [{ type: "separator" as const }] : []), { label: w("openMainWindow"), click: () => void showMainWindow() }]));
+    };
     const syncTray = () => {
       if (keepsRunning() && !tray) {
         tray = new Tray(trayImage());
@@ -217,12 +242,20 @@ export const background = {
       }
     };
     syncTray();
+    refreshDock();
+    ctx.on("attention/changed", (entries) => {
+      waiting = entries;
+      refreshTray();
+    });
     ctx.on("agent/run-ended", refreshTray);
     ctx.on("agent/event", (_threadId, event) => {
       if (event.type === "done") refreshTray();
     });
     // A run that starts has no event of its own here; the count catches up within a few seconds.
-    const sweep = setInterval(refreshTray, 5_000);
+    const sweep = setInterval(() => {
+      refreshTray();
+      refreshDock();
+    }, 5_000);
 
     onAway = () => {
       if (current?.noticed || !Notification.isSupported()) return;

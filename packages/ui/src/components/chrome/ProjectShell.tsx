@@ -6,6 +6,7 @@ import { onOpenRequest, takeOpenRequest } from "~/lib/attention";
 import { usePanelOpen } from "~/lib/panel";
 import { Surface } from "~/lib/analytics";
 import { hits } from "~/lib/keybindings";
+import { useOpenTerminalWindow } from "~/lib/terminalWindow";
 
 /**
  * What the mounted screen teaches the global panel while it is on screen. The
@@ -87,17 +88,22 @@ export function ProjectShell() {
   const bindingRef = useRef(binding);
   bindingRef.current = binding;
 
-  // ⌘J is chrome, not screen behavior: the panel toggles from every screen.
+  // ⌘J is chrome, not screen behavior: the panel toggles from every screen; ⇧⌘T opens the Terminal window the same way.
+  const openTerminal = useOpenTerminalWindow(projectId);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (hits(e, "assistant", { lenientCtrl: !(document.activeElement as HTMLElement | null)?.isContentEditable })) {
+      const lenientCtrl = !(document.activeElement as HTMLElement | null)?.isContentEditable;
+      if (hits(e, "assistant", { lenientCtrl })) {
         e.preventDefault();
         setAiOpen((v) => !v);
+      } else if (openTerminal && hits(e, "terminalWindow", { lenientCtrl })) {
+        e.preventDefault();
+        openTerminal();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setAiOpen]);
+  }, [setAiOpen, openTerminal]);
 
   const openIssue = useCallback(
     (id: string) => {

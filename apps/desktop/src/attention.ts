@@ -63,6 +63,10 @@ declare module "cordis" {
   interface Events {
     /** A notification was decided on — whether or not the system is asked to show it. */
     "attention/notified"(note: AttentionNote): void;
+    /** The list changed: what the Dock badge counts and the tray menu lists. */
+    "attention/changed"(entries: AttentionEntry[]): void;
+    /** Somewhere outside the window (the tray menu) asked to show this entry, as a notification click does. */
+    "attention/open"(entry: AttentionEntry): void;
   }
 }
 
@@ -376,6 +380,7 @@ export const attention = {
       since = new Map(entries.map((e) => [e.key, { kind: e.kind, at: e.since }]));
       if (process.platform !== "win32") app.setBadgeCount(entries.length);
       ctx.ipc.send("attention.changed", entries);
+      ctx.emit("attention/changed", entries);
       teller.update(entries);
     };
     const schedule = () => {
@@ -410,6 +415,7 @@ export const attention = {
     });
     ctx.on("codeLink/changed", schedule);
     ctx.on("db/opened", schedule);
+    ctx.on("attention/open", open);
     // Focusing a window is the person seeing it: stop the taskbar asking.
     const onFocus = (_e: unknown, win: BrowserWindow) => win.flashFrame(false);
     app.on("browser-window-focus", onFocus);

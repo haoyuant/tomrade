@@ -6,6 +6,7 @@ import { Kbd, Spacer } from "~/components/ui/atoms";
 import { Menu, MenuActionItem, MenuHead, MenuLinkItem, MenuRadioItem } from "~/components/ui/menu";
 import { FIELD_LABEL, LAYOUT_LABEL, viewIcon } from "~/lib/domain";
 import { useRepoStates } from "~/lib/codeLink";
+import { useOpenTerminalWindow } from "~/lib/terminalWindow";
 import { useI18n } from "~/lib/i18n";
 import { normalizeRemote } from "~/lib/remotes";
 import { useRemoveView, useRepoCheckouts, useRepos, useUpdateView } from "~/lib/queries";
@@ -38,6 +39,7 @@ export function TitleBar({
   const navigate = useNavigate();
   const { t } = useI18n();
   const open = items.filter((i) => i.kind !== "epic" && i.status !== "done" && i.status !== "cancelled").length;
+  const openTerminal = useOpenTerminalWindow(project.id);
 
   return (
     <header className="titlebar">
@@ -93,6 +95,11 @@ export function TitleBar({
         <Icon name="i-plus" size={14} />
         {t("titleBar.newButton")}
       </button>
+      {openTerminal && (
+        <button type="button" className="btn btn-icon no-drag" onClick={openTerminal} title={t("titleBar.terminalWindowTitle")} aria-label={t("titleBar.terminalWindow")} data-testid="titlebar-terminal">
+          <Icon name="i-terminal" size={16} />
+        </button>
+      )}
       <button type="button" className="btn btn-icon no-drag" onClick={onOpenUsage} title={t("usage.label")} aria-label={t("usage.label")} data-testid="titlebar-usage">
         <Icon name="i-bars" size={17} />
       </button>
