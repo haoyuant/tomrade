@@ -56,6 +56,8 @@ export interface StartOptions {
   autoMerge?: boolean;
   /** The ticket to start with these same choices once this one is done: the one this bootstrap was started ahead of. */
   then?: string;
+  /** Headless runs only: the conversation in `threadId` claims the ticket it writes code for — nothing is sent, and what it changed already comes along onto the branch. */
+  claim?: boolean;
 }
 
 export type StartResult =
@@ -321,7 +323,7 @@ export class Starter {
       return this.workdirGate(projectId, thread, where, onRepo);
     }
     if (carried && where.worktree) {
-      const moved = await this.moveWorktree(where.worktree, branch, repo.defaultBranch);
+      const moved = await this.moveWorktree(where.worktree, branch, repo.defaultBranch, !!opts.claim);
       if (moved) {
         uncarry();
         return { ok: false, gate: "workdir", message: moved, ...onRepo };
@@ -372,10 +374,11 @@ export class Starter {
         this.host.notify(projectId);
         return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command: null, launched: false, waitingOn: asked.text, engine: engineId, ...(warnings.length ? { warnings } : {}) };
       }
-      const runId = agent.activeRuns().find((a) => a.thread.id === thread!.id)?.run.id ?? agent.send(projectId, thread.id, { kind: "text", text: prompt }, sourced(opts)).runId;
-      store.patchSession(projectId, session.id, { state: "running", lastEventAt: now });
+      // A claim sends nothing: the conversation goes on as it was, now on the ticket.
+      const runId = agent.activeRuns().find((a) => a.thread.id === thread!.id)?.run.id ?? (opts.claim ? null : agent.send(projectId, thread.id, { kind: "text", text: prompt }, sourced(opts)).runId);
+      store.patchSession(projectId, session.id, { state: runId ? "running" : "idle", lastEventAt: now });
       this.host.notify(projectId);
-      return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command: null, launched: true, runId, engine: engineId, ...(warnings.length ? { warnings } : {}) };
+      return { ok: true, continued, threadId: thread.id, sessionId: session.id, branch, worktree: where.worktree, cwd: where.cwd, mode: opts.mode, command: null, launched: !!runId, ...(runId ? { runId } : {}), engine: engineId, ...(warnings.length ? { warnings } : {}) };
     }
 
     const terminalWords = CODE_WORDS(ctx.settings.locale?.());
@@ -411,7 +414,7 @@ export class Starter {
    * hooks, as a terminal session of the thread. The caller has closed the thread's warm runtime first; nothing else
    * of Start's — no ticket, no branch, no worktree — applies, and the thread leaves the panel's list for the bar's.
    */
-  async startThread(projectId: string, thread: ThreadSummary, input: { cwd: string; externalId: string; prompt: string }): Promise<StartResult> {
+  async startThread(projectId: string, thread: ThreadSummary, input: { cwd: string; externalId: string | null; prompt: string }): Promise<StartResult> {
     const { ctx, store } = this.host;
     const agent = ctx.get("agent");
     if (!agent) return { ok: false, gate: "engine", message: "the agent plugin is not loaded" };
@@ -532,11 +535,18 @@ export class Starter {
   }
 
   /** A carried conversation's worktree onto the new delivery's branch, from the default branch; the reason it cannot, or null. */
-  private async moveWorktree(worktree: string, branch: string, defaultBranch: string): Promise<string | null> {
+  private async moveWorktree(worktree: string, branch: string, defaultBranch: string, carry = false): Promise<string | null> {
     const git = this.host.git;
     const head = (await git(["rev-parse", "--abbrev-ref", "HEAD"], { cwd: worktree, ok: true })).stdout.trim();
     if (head === branch) return null;
-    if ((await git(["status", "--porcelain"], { cwd: worktree, ok: true })).stdout.trim()) return `${worktree} has uncommitted changes on ${head} — commit or discard them first, so the new delivery starts clean on ${branch}`;
+    const dirty = !!(await git(["status", "--porcelain"], { cwd: worktree, ok: true })).stdout.trim();
+    // A conversation claiming the ticket it is writing for: the branch starts where its copy is, its changes with it.
+    if (dirty && carry) {
+      const exists = (await git(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], { cwd: worktree, ok: true })).code === 0;
+      const switched = await git(exists ? ["switch", branch] : ["switch", "-c", branch], { cwd: worktree, ok: true });
+      return switched.code === 0 ? null : `could not move ${worktree} onto ${branch}: ${(switched.stderr ?? "").trim() || "git switch failed"}`;
+    }
+    if (dirty) return `${worktree} has uncommitted changes on ${head} — commit or discard them first, so the new delivery starts clean on ${branch}`;
     await git(["fetch", "--quiet", "origin", defaultBranch], { cwd: worktree, ok: true });
     const from = (await git(["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${defaultBranch}`], { cwd: worktree, ok: true })).code === 0 ? `origin/${defaultBranch}` : defaultBranch;
     const exists = (await git(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], { cwd: worktree, ok: true })).code === 0;

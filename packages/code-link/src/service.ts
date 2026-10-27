@@ -27,6 +27,7 @@ import { Connections, MCP_AGENT } from "./connections.js";
 import { contribute } from "./contrib.js";
 import { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
 import { FollowOnStore, type FollowOn } from "./follow-ons.js";
+import { Claims, type ClaimResult } from "./claim.js";
 import { Handoff, type HandoffResult, type HandoffView } from "./handoff.js";
 import { HerdrBridge, type HerdrInstall } from "./herdr-bridge.js";
 import { SessionPanel, type AnswerResult, type SessionGlance, type SessionPanelView } from "./panel.js";
@@ -256,6 +257,10 @@ declare module "@tomradex/ipc" {
     "codeLink.toTerminal": (projectId: string, threadId: string) => HandoffResult;
     /** The conversation back to the panel once its CLI exited: the next message resumes the same session through the SDK. */
     "codeLink.backToPanel": (projectId: string, threadId: string) => HandoffResult;
+    /** A panel conversation turning to code claims a ticket for it: the one it is on, else a new one; its copy moves onto the ticket's branch. */
+    "codeLink.claimThread": (projectId: string, threadId: string) => ClaimResult;
+    /** A built-in assistant's conversation handed to a CLI agent in a terminal cell, with what it came to. */
+    "codeLink.toCli": (projectId: string, threadId: string, engineId: string) => HandoffResult;
     /** How herdr installs on this machine: Homebrew's command where brew is, herdr's own installer on macOS and Linux, else only its install guide. */
     "codeLink.herdrInstall": () => HerdrInstall;
     /** Install herdr in a terminal with that command; the page never names it. */
@@ -392,6 +397,7 @@ export class CodeLink extends Service implements CodeLinkReader {
   private herdr!: HerdrBridge;
   private panel!: SessionPanel;
   private handoff!: Handoff;
+  private claims!: Claims;
   /** The engines' connection-file writers; Connect reads them when it runs, so load order does not matter. */
   private readonly connectors = new Map<ConnectorAgent, ConnectFileWriter>();
   /** Ended sessions already looked for a transcript title. */
@@ -460,6 +466,13 @@ export class CodeLink extends Service implements CodeLinkReader {
       words: () => this.words(),
       notify: (projectId) => this.notify(projectId),
       say: (projectId, threadId, text) => this.sayToThread(projectId, threadId, text)
+    });
+    this.claims = new Claims({
+      ctx: this.ctx,
+      starter: this.starter,
+      words: () => this.words(),
+      notify: (projectId) => this.notify(projectId),
+      say: (projectId, threadId, text, claimed) => this.sayToThread(projectId, threadId, text, claimed)
     });
     this.connections = new Connections({
       ctx: this.ctx,
@@ -753,6 +766,8 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.handoff", (projectId, threadId) => ctx.codeLink.handoffOf(projectId, threadId));
       ctx.ipc.handle("codeLink.toTerminal", (projectId, threadId) => ctx.codeLink.toTerminal(projectId, threadId));
       ctx.ipc.handle("codeLink.backToPanel", (projectId, threadId) => ctx.codeLink.backToPanel(projectId, threadId));
+      ctx.ipc.handle("codeLink.claimThread", (projectId, threadId) => ctx.codeLink.claimThread(projectId, threadId));
+      ctx.ipc.handle("codeLink.toCli", (projectId, threadId, engineId) => ctx.codeLink.toCli(projectId, threadId, engineId));
       ctx.ipc.handle("codeLink.herdrInstall", () => ctx.codeLink.herdrInstall());
       ctx.ipc.handle("codeLink.installHerdr", () => ctx.codeLink.installHerdr());
       ctx.ipc.handle("codeLink.reviewList", (projectId, opts) => ctx.codeLink.review.list(projectId, opts));
@@ -1001,6 +1016,16 @@ export class CodeLink extends Service implements CodeLinkReader {
   /** The conversation back to the panel, once its CLI exited. */
   backToPanel(projectId: string, threadId: string): Promise<HandoffResult> {
     return this.handoff.backToPanel(projectId, threadId);
+  }
+
+  /** A panel conversation claims a ticket for the code it writes; see `Claims`. */
+  claimThread(projectId: string, threadId: string): Promise<ClaimResult> {
+    return this.claims.claim(projectId, threadId);
+  }
+
+  /** A built-in assistant's conversation handed to a CLI agent in a terminal cell; see `Handoff.toCli`. */
+  toCli(projectId: string, threadId: string, engineId: string): Promise<HandoffResult> {
+    return this.handoff.toCli(projectId, threadId, engineId);
   }
 
   /**
@@ -1737,10 +1762,10 @@ export class CodeLink extends Service implements CodeLinkReader {
   }
 
   /** A line of Tomrade's into a thread, on screen at once. */
-  private sayToThread(projectId: string, threadId: string, text: string): void {
+  private sayToThread(projectId: string, threadId: string, text: string, claimed?: string): void {
     const agent = this.ctx.get("agent");
     if (!agent?.store.thread(projectId, threadId)) return;
-    const message = agent.store.appendMessage(projectId, threadId, "system", { type: "note", text }, null);
+    const message = agent.store.appendMessage(projectId, threadId, "system", { type: "note", text, ...(claimed ? { claimed } : {}) }, null);
     this.home.get("ipc")?.send("agent.event", threadId, { type: "message", message });
   }
 

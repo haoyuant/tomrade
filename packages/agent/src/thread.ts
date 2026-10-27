@@ -26,8 +26,8 @@ export type Block =
   | { type: "card"; id: string; schema: string; title: string; data: unknown }
   | { type: "status"; text: string }
   | { type: "changes"; runId: string; count: number; items?: { key: string; label: string; op: "created" | "updated" | "deleted" }[] }
-  /** `settingsFor`: the engine whose settings change what the note is about; the panel links there. `threadFor`: another conversation the note is about (one this conversation's coding moved to); the panel links there too. */
-  | { type: "note"; text: string; settingsFor?: string; threadFor?: string }
+  /** `settingsFor`: the engine whose settings change what the note is about; the panel links there. `threadFor`: another conversation the note is about (one this conversation's coding moved to); the panel links there too. `claimed`: the key of the ticket the conversation claimed here — its writing code for that ticket starts at this note. */
+  | { type: "note"; text: string; settingsFor?: string; threadFor?: string; claimed?: string }
   /** One stretch of failed model requests, stored once it ends: recovered, or the run gave up. */
   | { type: "retry"; attempts: number; max?: number; reason: string; ms: number; recovered: boolean }
   /** `details`: what the engine knew beyond the one line, folded under it so it can be read and copied. */
