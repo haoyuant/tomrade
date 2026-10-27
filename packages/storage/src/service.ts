@@ -188,7 +188,7 @@ export class Storage extends Service implements StorageReader {
   private torn = new Map<string, { since: number; told: boolean }>();
   /** A folder's digest as status last read it, kept while its files are the ones it read. */
   private folderSeen = new Map<string, { stamp: string; verify: boolean; digest: string | null }>();
-  /** The local digest as status last computed it, kept while the cache file and what decides the export are unchanged. */
+  /** The local digest as status last computed it, kept row by row. */
   private digests = new LocalDigests();
   /** The last reason a project's folder was not read or written, so the log says it once rather than on every try. */
   private gaveUpWhy = new Map<string, string>();
