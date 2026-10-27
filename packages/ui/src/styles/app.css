@@ -1144,8 +1144,9 @@ strong { font-weight: var(--font-weight-medium); }
 /* A pending Start: spinner, the step it is on, and an indeterminate bar — the backend sends no percentage. */
 .start-progress { display: grid; gap: var(--space-2); padding: var(--space-3); border-radius: var(--radius-md); background: color-mix(in srgb, var(--accent) 6%, var(--surface)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent); }
 .start-progress p { margin: 0; }
-.start-progress-head { display: flex; align-items: center; gap: var(--space-2); color: var(--accent); }
-.start-progress-step { color: var(--fg); font-size: var(--text-sm); font-weight: 600; }
+.start-progress-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); color: var(--accent); }
+.start-progress-step { flex: 1 1 12em; min-width: 0; color: var(--fg); font-size: var(--text-sm); font-weight: 600; }
+.start-progress-head > .num { flex: none; white-space: nowrap; }
 .start-progress-bar { position: relative; height: 3px; overflow: hidden; border-radius: 2px; background: var(--border); }
 .start-progress-bar > span { position: absolute; top: 0; bottom: 0; width: 40%; border-radius: inherit; background: var(--accent); animation: sect-run 1.4s ease-in-out infinite; }
 .start-progress-steps { display: flex; flex-wrap: wrap; gap: 4px var(--space-3); margin: 0; padding: 0; list-style: none; font-size: var(--text-xs); color: var(--meta); }
@@ -1933,7 +1934,7 @@ button.cs-convo-line { font: inherit; text-align: left; background: none; border
 /* tickets started from the conversation, and a delivery's merge offered there */
 .start-batch-list { display: grid; gap: 4px; list-style: none; margin: 0; padding: 5px 0; }
 .start-batch-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
-.start-batch-result, .start-batch-list .gate-fix { flex-basis: 100%; }
+.start-batch-result, .start-batch-list .gate-fix, .start-batch-list .start-progress { flex-basis: 100%; min-width: 0; }
 .start-batch-pick { flex-wrap: wrap; }
 .start-batch-pick .select { max-width: 14rem; }
 .start-batch-field { display: inline-flex; align-items: center; gap: 6px; }

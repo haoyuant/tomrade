@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { startProgress } from "../src/lib/codeLink";
+import { startBatchWaits, startProgress } from "../src/lib/codeLink";
 
 it("walks a coding start through worktree, branch and MCP, then holds on the launch", () => {
   const at = (ms: number, mode: "run" | "terminal" = "run") => startProgress(ms, { mode, general: false });
@@ -21,4 +21,15 @@ it("says it is not stuck past 10 s and where to look past 60 s", () => {
   expect(at(9_999)).toMatchObject({ slow: false, stalled: false });
   expect(at(10_000)).toMatchObject({ slow: true, stalled: false });
   expect(at(60_000)).toMatchObject({ slow: true, stalled: true });
+});
+
+it("shows a start card's tickets starting one after another, each until its outcome comes", () => {
+  const ids = ["a", "b", "c"];
+  expect([...startBatchWaits(ids, undefined, new Set())]).toEqual([["a", "starting"], ["b", "queued"], ["c", "queued"]]);
+  expect([...startBatchWaits(ids, [{ itemId: "a" }], new Set())]).toEqual([["b", "starting"], ["c", "queued"]]);
+  expect(startBatchWaits(ids, [{ itemId: "a" }, { itemId: "b" }, { itemId: "c" }], new Set()).size).toBe(0);
+});
+
+it("keeps a ticket started again from the card starting until the start answers, its old outcome aside", () => {
+  expect([...startBatchWaits(["b"], [{ itemId: "a" }, { itemId: "b" }], new Set(["a", "b"]))]).toEqual([["b", "starting"]]);
 });
