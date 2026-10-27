@@ -10,6 +10,7 @@ import { isMac } from "~/lib/keys";
 import { keys } from "~/lib/queries";
 import { historyList, historySaid, onHistoryChanged, send } from "./bridge";
 import { Mark, RowActions, rowAgent, rowMono, rowName, rowSaid, rowTitle, saidClass, statusWord, whereOf } from "./cards";
+import { Guess } from "./guess";
 import { keyLabel } from "./keys";
 import type { Key } from "./layout";
 import { bundles, paneOf, sessionName, sessionStatus, statusOf, type BarStatus, type HereRow } from "./lists";
@@ -156,6 +157,7 @@ function HereList({ rows, history, locale, marks, picks }: { rows: HereRow[]; hi
       <div className="cs-card">
         {button}
         <RowActions row={r} onSee={() => undefined} onThread={picks.onThread} onAnswer={picks.onAnswer} />
+        <Guess session={s} pane={paneOf(r)} place="card" />
       </div>
     );
     if (!lead || !folds) return <li key={r.id}>{card}</li>;

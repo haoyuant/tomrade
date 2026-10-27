@@ -959,6 +959,9 @@ it("shows a terminal as the code session its agent claimed, in place, and as a p
   const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[] }[] = [];
   const sessions: Session[] = [];
   const patched: [string, unknown][] = [];
+  const posts: WindowPost[] = [];
+  const guesses = new Map<string, { itemId: string; key: string; title: string }>();
+  const answered: string[] = [];
 
   class FakeSurfaces extends Service {
     static provide = "desktopSurfaces";
@@ -968,7 +971,7 @@ it("shows a terminal as the code session its agent claimed, in place, and as a p
     open(spec: (typeof opened)[number]["spec"]) {
       const entry = { spec, states: [spec.initialState as WindowState] };
       opened.push(entry);
-      return { id: "s", capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus() {}, setState: (s: WindowState) => void entry.states.push(s), post() {}, close: () => spec.onClose() };
+      return { id: "s", capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus() {}, setState: (s: WindowState) => void entry.states.push(s), post: (m: WindowPost) => void posts.push(m), close: () => spec.onClose() };
     }
   }
   class FakeCodeLink extends Service {
@@ -981,6 +984,17 @@ it("shows a terminal as the code session its agent claimed, in place, and as a p
     repositoriesOf = () => [];
     repositoryFoldersOf = this.repositoriesOf;
     herdrInstall = async () => ({ command: null, guide: "" });
+    guessOf = (_projectId: string, id: string) => guesses.get(id) ?? null;
+    takeGuess = (_projectId: string, id: string) => {
+      answered.push(`take:${id}`);
+      const guess = guesses.get(id);
+      guesses.delete(id);
+      return guess ? { key: guess.key } : null;
+    };
+    goWithoutTicket = (_projectId: string, id: string, words: string) => {
+      answered.push(`none:${id}:${words}`);
+      return guesses.delete(id);
+    };
     store = {
       patchSession: (_projectId: string, id: string, patch: { herdrPane?: string }) => {
         patched.push([id, patch]);
@@ -1017,6 +1031,10 @@ it("shows a terminal as the code session its agent claimed, in place, and as a p
   fake.panes.get(pane.t2!)!.foreground = { cmdline: "pnpm dev", cwd: dir };
   fake.panes.get(pane.t3!)!.foreground = { cmdline: "-zsh", cwd: dir };
   expect((await now()).map((t) => [t.id, t.running])).toEqual([["t1", "选中面板与侧边栏会话联动"], ["t2", "pnpm dev"], ["t3", null]]);
+  // Only a bare shell is one: another command in the foreground is not, nor is a terminal whose agent herdr sees.
+  fake.panes.get(pane.t1!)!.agent = "claude";
+  expect((await now()).map((t) => [t.id, t.shell])).toEqual([["t1", false], ["t2", false], ["t3", true]]);
+  fake.panes.get(pane.t1!)!.agent = null;
   delete fake.panes.get(pane.t2!)!.foreground;
   delete fake.panes.get(pane.t3!)!.foreground;
   // A session with no ticket in a herdr pane this window did not open goes by its conversation; one in a terminal here does not need to.
@@ -1030,6 +1048,18 @@ it("shows a terminal as the code session its agent claimed, in place, and as a p
   // Claude Code with the repo's hooks: its session reports the pane; before the claim it holds no ticket and stays plain.
   sessions.push(session({ id: "hooked", herdrPane: pane.t1!, startedAt: 2 }));
   expect((await now()).find((t) => t.id === "t1")!.sessionId).toBeNull();
+  // What it first said sounds like a ticket: its row carries code link's guess, and the person's answers go back there.
+  expect(win.states.at(-1)!.sessions.find((s) => s.id === "hooked")!.guess).toBeNull();
+  guesses.set("hooked", { itemId: ticket.id, key: ticket.key, title: ticket.title });
+  await now();
+  expect(win.states.at(-1)!.sessions.find((s) => s.id === "hooked")!.guess).toEqual({ key: ticket.key, title: ticket.title });
+  win.spec.onMessage({ type: "takeGuess", sessionId: "hooked" });
+  await now();
+  expect(win.states.at(-1)!.sessions.find((s) => s.id === "hooked")!.guess).toBeNull();
+  win.spec.onMessage({ type: "noTicket", sessionId: "hooked" });
+  await now();
+  expect(answered).toEqual(["take:hooked", "none:hooked:Chosen in the Terminal window: no ticket for this conversation"]);
+  expect(posts.filter((m) => m.type === "toast").map((m) => (m as { text: string }).text)).toEqual([expect.stringContaining(ticket.key), expect.stringContaining("no longer fits")]);
   sessions[0]!.itemIds = [ticket.id];
   expect((await now()).find((t) => t.id === "t1")!.sessionId).toBe("hooked");
   // The claim let go: a plain terminal again, still there.

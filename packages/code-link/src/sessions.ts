@@ -117,6 +117,8 @@ export interface SessionsOptions {
   onEnded?(session: SessionView): void;
   /** The session just turned to the person for something — an approval, an answer — and says what. */
   onWaiting?(session: SessionView, activity: string): void;
+  /** The person spoke to the session for the first time, and said this. */
+  onFirstPrompt?(session: SessionView, prompt: string): void;
   /** The agent stopped on a usage limit, lifting at `until` when it said; returns what the session's summary should say. */
   onLimit?(session: SessionView, until: number | null): string;
   /** The project's ticket key prefix (TOM), to read the ticket a branch names. */
@@ -307,6 +309,8 @@ export class Sessions {
   private readonly filing = new Map<string, { projectId: string; title: string; at: number }>();
   /** The herdr panes each session's hooks spoke from and did not end in, the latest last: one conversation can run in two. */
   private readonly panes = new Map<string, Set<string>>();
+  /** What Tomrade has to tell each session's agent, said with the next answer its hooks can carry. */
+  private readonly told = new Map<string, string>();
 
   constructor(
     private readonly ctx: Context,
@@ -548,7 +552,10 @@ export class Sessions {
     const named = said && !AGENT_NAME_TITLE.test(said) ? said : null;
     if (named && named !== session.title) patch.title = named;
     if (p.hook_event_name === "UserPromptSubmit") {
-      if (!session.prompted) patch.prompted = true;
+      if (!session.prompted) {
+        patch.prompted = true;
+        if (typeof p.prompt === "string") this.options.onFirstPrompt?.(session, p.prompt);
+      }
       const first = !session.title && !patch.title ? promptTitle(p.prompt) : null;
       if (first) patch.title = first;
     }
@@ -677,11 +684,27 @@ export class Sessions {
     if (patch.state === "ended") {
       this.release(sessionId);
       this.panes.delete(sessionId);
+      this.told.delete(sessionId);
       const ended = this.store.session(projectId, sessionId);
       if (ended) this.options.onEnded?.(ended);
       if (ended) this.options.onEnd?.(ended);
     }
+    const told = deny || p.herdr ? undefined : this.toldNow(sessionId, p.hook_event_name);
+    if (told) context = context ? `${context}\n\n${told}` : told;
     return deny ? { deny } : context ? { context } : {};
+  }
+
+  /** Something for the session's agent from the person's side, said with its next answer that can carry words. */
+  tell(sessionId: string, text: string): void {
+    this.told.set(sessionId, text);
+  }
+
+  /** What waits to be told, used up by an event whose answer carries context (a start, a prompt, after a tool). */
+  private toldNow(sessionId: string, event: string | undefined): string | undefined {
+    const text = this.told.get(sessionId);
+    if (!text || !["SessionStart", "UserPromptSubmit", "PostToolUse", "PostToolUseFailure"].includes(event ?? "")) return undefined;
+    this.told.delete(sessionId);
+    return text;
   }
 
   /**
