@@ -846,7 +846,8 @@ const run = async () => {
   // ── 「放到后台做」: the coding moves to a child conversation under this one; this one stays free to talk, and the conclusion comes back ──
   const gates = new Map();
   // the stand-in holds its turn here until the harness lets it go — or until the turn is stopped
-  const gate = (id, signal) => new Promise((resolve, reject) => { gates.set(id, resolve); signal.addEventListener("abort", () => reject(new Error("stopped")), { once: true }); });
+  // a turn stopped before it got here (between two writes, say) never hears an abort again: it is over already
+  const gate = (id, signal) => new Promise((resolve, reject) => { if (signal.aborted) return reject(new Error("stopped")); gates.set(id, resolve); signal.addEventListener("abort", () => reject(new Error("stopped")), { once: true }); });
   ctx.agent.engine({
     id: "bgcoder",
     title: "Background coder",
@@ -893,9 +894,11 @@ const run = async () => {
   const bgAt = barSeen?.dots.findIndex(([, label]) => /^Dedupe chat,/.test(label)) ?? -1;
   const bgNext = barSeen?.dots[bgAt + 1];
   check("in the session bar the child sits right under its parent, set in, running", bgAt >= 0 && barSeen.dots[bgAt][2] === null && bgNext?.[0] === "run" && /writing code/.test(bgNext?.[1] ?? "") && bgNext?.[2] === "1", barSeen?.dots);
+  // the stand-in answers at once, so the new turn is told by the run it started, not by a spinner that may be gone already
+  const parentRuns = ctx.agent.store.runs(alpha.id, bgParent.id).length;
   await send("another question");
   await sleep(400);
-  check("while the child runs, this conversation takes a message at once, not into the queue", (await panel()).working && (await queued()).length === 0 && (await asked()).includes("another question"), { queued: await queued(), asked: await asked() });
+  check("while the child runs, this conversation takes a message at once, not into the queue", ctx.agent.store.runs(alpha.id, bgParent.id).length === parentRuns + 1 && ctx.agent.activeRuns().some((a) => a.thread.id === bgChild.id) && (await queued()).length === 0 && (await asked()).includes("another question"), { queued: await queued(), asked: await asked() });
   await until(async () => !(await panel()).working, 50);
   await until(() => gates.has("child"), 50);
   gates.get("child")?.();
