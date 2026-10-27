@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { ThreadMessage } from "@tomradex/agent";
-import { foldSteps, startBriefId, traceState } from "../src/lib/steps";
+import { firstCodeStep, foldSteps, startBriefId, traceState, workDone } from "../src/lib/steps";
 
 it("maps command outcomes to distinct labels and reserves red warnings for failures", () => {
   const cases = [
@@ -47,4 +47,30 @@ it("folds the machine-written brief that opened a ticket's session, and only tha
   expect(startBriefId([user("Work on TOM-1: Cart badge. Follow the selected delivery playbook")], true)).toBeNull();
   // a continued session's brief is folded the same way
   expect(startBriefId([user("Continue TOM-1 — \"Cart badge\" on branch tom-1/cart-badge.")], true)).toBeTruthy();
+});
+
+const step = (tool: string, args: unknown = {}, output?: string, ok = true): ThreadMessage => ({
+  id: `m${++seq}`, threadId: "t", seq, role: "agent", runId: "r", at: 0,
+  block: { type: "trace", tool, args, ok, summary: "", ms: 1, ...(output !== undefined ? { commandResult: { status: "success", exitCode: 0, output } } : {}) }
+});
+
+it("says what a folded stretch of steps came to: files changed, commands run, and the latest test counts", () => {
+  const folded = foldSteps([
+    step("write_file", { path: "a.ts" }), step("edit", { file_path: "a.ts" }), step("Edit", { file_path: "b.ts" }),
+    step("bash", {}, " Tests  2 failed | 10 passed"), step("bash", {}, " Test Files  3 passed (3)\n      Tests  12 passed (12)"),
+    step("read_file", { path: "c.ts" }), step("Bash"), step("Bash"), step("Bash")
+  ]);
+  const fold = folded[0] as { fold: ThreadMessage[]; work: ReturnType<typeof workDone> };
+  expect(fold.work).toEqual({ steps: 6, files: 2, commands: 2, passed: 12, failed: null });
+  expect(workDone([{ tool: "bash", output: "5 passed, 1 failed in 0.3s" }])).toMatchObject({ passed: 5, failed: 1 });
+  expect(workDone([{ tool: "read_file" }])).toEqual({ steps: 1, files: 0, commands: 0, passed: null, failed: null });
+});
+
+it("marks where a conversation turns to code: the first changed file after something was said", () => {
+  const said = text();
+  const write = step("write_file", { path: "a.ts" });
+  expect(firstCodeStep([user("go"), said, step("read_file"), write, step("edit")])).toBe(write.id);
+  // a thread that starts on code has nothing to set apart, nor one that never writes
+  expect(firstCodeStep([user("go"), step("edit"), text()])).toBeNull();
+  expect(firstCodeStep([user("go"), text(), step("bash")])).toBeNull();
 });

@@ -1624,6 +1624,9 @@ button.cs-convo-line { font: inherit; text-align: left; background: none; border
 .sbar-new .sbar-dot-face { border-style: solid; color: var(--muted); }
 .sbar-new-badge { font-size: 9px; line-height: 14px; padding: 0 5px; border-radius: 999px; background: var(--accent-light); color: var(--accent-on); flex-shrink: 0; }
 .sbar-dot-face .sbar-new-badge { position: absolute; top: -4px; right: -8px; }
+/* where a conversation turns to writing code */
+.work-rule { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-3) 0; color: var(--accent); font-size: var(--text-xs); }
+.work-rule::before, .work-rule::after { content: ""; flex: 1; border-top: 1px solid var(--border-input); }
 .sbar-rule { width: 32px; border-top: 1px solid var(--border); margin: 4px 0; flex-shrink: 0; }
 .sbar-peek { position: absolute; right: calc(100% + 6px); width: 280px; z-index: 20; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg, 10px); box-shadow: var(--elev-raised); pointer-events: none; font-size: var(--text-sm); }
 .sbar-peek[data-status="wait"] { border-color: var(--warn); }

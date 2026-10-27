@@ -1,8 +1,9 @@
-import { createContext, memo, useContext } from "react";
+import { createContext, Fragment, memo, useContext } from "react";
 import type { CardAction, CardView, ChecklistCard, EngineView, FindingCard, PendingView, RunView, ThreadMessage } from "@tomradex/agent";
 import type { Item } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { findEngine } from "~/lib/agent";
+import { workParts } from "~/lib/convoFold";
 import { useI18n } from "~/lib/i18n";
 import type { foldSteps } from "~/lib/steps";
 import { AgentMedia } from "../AgentMedia";
@@ -36,10 +37,12 @@ const useTranscriptActions = (): TranscriptActionsValue => {
 };
 
 /** The thread's messages, steps folded and the kickoff brief closed; only the newest failure offers a retry, only the newest changes the undo hint. */
-export function Transcript({ actions, folded, briefId, lastErrorId, lastChangesId, onRetry, onRetryWith, onTroubleshoot }: {
+export function Transcript({ actions, folded, briefId, codeFrom, lastErrorId, lastChangesId, onRetry, onRetryWith, onTroubleshoot }: {
   actions: TranscriptActionsValue;
   folded: ReturnType<typeof foldSteps>;
   briefId: string | null;
+  /** Where the conversation turns to writing code, and the ticket it writes for: a rule is drawn there. */
+  codeFrom?: { id: string; ticket: string | null } | null;
   lastErrorId: string | null;
   lastChangesId: string | null;
   onRetry?: () => void;
@@ -49,27 +52,38 @@ export function Transcript({ actions, folded, briefId, lastErrorId, lastChangesI
   const { t } = useI18n();
   return (
     <TranscriptActions.Provider value={actions}>
-      {folded.map((entry) => "fold" in entry ? (
-        <details key={`fold-${entry.fold[0].id}`} className="trace-fold">
-          <summary>
-            <Icon name="i-chev" size={10} />
-            <span>{t("agentPanel.earlierSteps", { n: entry.fold.length })}</span>
-          </summary>
-          {entry.fold.map((m) => <TranscriptRow key={m.id} m={m} />)}
-        </details>
-      ) : entry.id === briefId ? (
-        <StartBrief key={entry.id} m={entry} />
-      ) : (m => (
-        <TranscriptRow
-          key={m.id}
-          m={m}
-          // only the newest failure, and only while nothing runs: try the last message again
-          onRetry={m.id === lastErrorId ? onRetry : undefined}
-          onRetryWith={m.id === lastErrorId ? onRetryWith : undefined}
-          onTroubleshoot={m.id === lastErrorId && onTroubleshoot ? () => onTroubleshoot(m.threadId, m.runId) : undefined}
-          hint={m.id === lastChangesId}
-        />
-      ))(entry))}
+      {folded.map((entry) => {
+        const row = "fold" in entry ? (
+          <details key={`fold-${entry.fold[0].id}`} className="trace-fold">
+            <summary>
+              <Icon name="i-chev" size={10} />
+              <span>{[t("agentPanel.earlierSteps", { n: entry.fold.length }), ...workParts(entry.work, (key, vars) => t(`codeSessions.${key}`, vars))].join(" · ")}</span>
+            </summary>
+            {entry.fold.map((m) => <TranscriptRow key={m.id} m={m} />)}
+          </details>
+        ) : entry.id === briefId ? (
+          <StartBrief key={entry.id} m={entry} />
+        ) : (
+          <TranscriptRow
+            key={entry.id}
+            m={entry}
+            // only the newest failure, and only while nothing runs: try the last message again
+            onRetry={entry.id === lastErrorId ? onRetry : undefined}
+            onRetryWith={entry.id === lastErrorId ? onRetryWith : undefined}
+            onTroubleshoot={entry.id === lastErrorId && onTroubleshoot ? () => onTroubleshoot(entry.threadId, entry.runId) : undefined}
+            hint={entry.id === lastChangesId}
+          />
+        );
+        const starts = !!codeFrom && ("fold" in entry ? entry.fold.some((m) => m.id === codeFrom.id) : entry.id === codeFrom.id);
+        return starts ? (
+          <Fragment key={`code-${codeFrom!.id}`}>
+            <div className="work-rule" role="separator" data-testid="work-rule">
+              <span>{codeFrom!.ticket ? t("agentPanel.writingCodeFor", { key: codeFrom!.ticket }) : t("agentPanel.writingCode")}</span>
+            </div>
+            {row}
+          </Fragment>
+        ) : row;
+      })}
     </TranscriptActions.Provider>
   );
 }

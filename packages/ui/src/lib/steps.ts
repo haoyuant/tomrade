@@ -19,13 +19,83 @@ export function traceState(block: Extract<Block, { type: "trace" }>): { failed: 
 /** Steps kept open at the end of a run of them; earlier successful ones fold. */
 const OPEN_STEPS = 3;
 
+/** What a stretch of steps came to, for the line that stands in for them folded. */
+export interface WorkDone {
+  steps: number;
+  /** Distinct files a step wrote or edited. */
+  files: number;
+  commands: number;
+  /** From the last test output among them that counts its results; null when none did. */
+  passed: number | null;
+  failed: number | null;
+}
+
+/** One step as the summary reads it: a tool's name, its arguments when there are any, what it printed. */
+export interface WorkStep {
+  tool: string;
+  args?: unknown;
+  output?: string | null;
+}
+
+// Tool names across the built-in agent, Pi, Claude Code and Codex records: the ones that change a file, and the shells.
+const FILE_TOOL = /^(?:write|edit|multi_?edit|apply_?patch|write_?file|edit_?file|create_?file|str_?replace\w*|notebook_?edit)$/i;
+const COMMAND_TOOL = /^(?:bash|shell|exec|run_?command|command|terminal)$/i;
+
+const pathOf = (args: unknown): string | null => {
+  if (!args || typeof args !== "object") return null;
+  const a = args as Record<string, unknown>;
+  const p = a.path ?? a.file_path ?? a.filePath ?? a.file;
+  return typeof p === "string" && p ? p : null;
+};
+
+/** The count a test runner prints at its end (vitest, jest, pytest, mocha…): its last mention in the latest such output. */
+const lastCount = (outputs: string[], word: "passed" | "failed"): number | null => {
+  for (let i = outputs.length - 1; i >= 0; i--) {
+    const hits = [...outputs[i]!.matchAll(new RegExp(`\\b(\\d+) ${word}\\b`, "g"))];
+    if (hits.length) return Number(hits.at(-1)![1]);
+  }
+  return null;
+};
+
+export function workDone(steps: WorkStep[]): WorkDone {
+  const files = new Set<string>();
+  let commands = 0;
+  const outputs: string[] = [];
+  for (const step of steps) {
+    if (FILE_TOOL.test(step.tool)) files.add(pathOf(step.args) ?? `#${files.size}`);
+    if (COMMAND_TOOL.test(step.tool)) commands++;
+    if (step.output && /\b\d+ (?:passed|failed)\b/.test(step.output)) outputs.push(step.output);
+  }
+  // the last run's own counts: an earlier run's failures were what the later one fixed
+  const last = outputs.slice(-1);
+  return { steps: steps.length, files: files.size, commands, passed: lastCount(last, "passed"), failed: lastCount(last, "failed") || null };
+}
+
+const traceStep = (m: ThreadMessage): WorkStep => {
+  const b = m.block as Block & { type: "trace" };
+  return { tool: b.tool, args: b.args, output: b.commandResult?.output ?? null };
+};
+
+/**
+ * Where a conversation turns to writing code: the first step that changes a file, once something was said
+ * before it — a thread that starts on code has nothing to set apart.
+ */
+export function firstCodeStep(messages: ThreadMessage[]): string | null {
+  let talked = false;
+  for (const m of messages) {
+    if (m.role === "agent" && m.block.type === "text") talked = true;
+    if (m.role === "agent" && m.block.type === "trace" && FILE_TOOL.test(m.block.tool)) return talked ? m.id : null;
+  }
+  return null;
+}
+
 /**
  * The transcript with long runs of steps folded: in each unbroken run of
  * traces, successful ones before the last few fold into one row. A failed
  * step is never folded, so it splits the fold around it.
  */
-export function foldSteps(messages: ThreadMessage[]): (ThreadMessage | { fold: ThreadMessage[] })[] {
-  const out: (ThreadMessage | { fold: ThreadMessage[] })[] = [];
+export function foldSteps(messages: ThreadMessage[]): (ThreadMessage | { fold: ThreadMessage[]; work: WorkDone })[] {
+  const out: (ThreadMessage | { fold: ThreadMessage[]; work: WorkDone })[] = [];
   let i = 0;
   while (i < messages.length) {
     if (messages[i].role !== "agent" || messages[i].block.type !== "trace") { out.push(messages[i++]); continue; }
@@ -33,7 +103,7 @@ export function foldSteps(messages: ThreadMessage[]): (ThreadMessage | { fold: T
     while (end < messages.length && messages[end].role === "agent" && messages[end].block.type === "trace") end++;
     let held: ThreadMessage[] = [];
     const flush = () => {
-      if (held.length > 1) out.push({ fold: held });
+      if (held.length > 1) out.push({ fold: held, work: workDone(held.map(traceStep)) });
       else out.push(...held);
       held = [];
     };

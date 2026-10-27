@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import type { ConversationLine, Layout, SessionRow, TerminalPlace, TerminalRow } from "@tomradex/code-sessions";
-import { ConvoLineRow, ConvoTop, useOpenLines, type ConvoLine } from "~/components/ConversationRead";
+import { ConvoLines, ConvoTop, useOpenLines, type ConvoLine } from "~/components/ConversationRead";
 import { ContextMenu } from "~/components/ui/menu";
 import { onCell, send, type Look } from "./bridge";
 import { keyLabel } from "./keys";
@@ -128,9 +128,7 @@ function Ended({ session, cell, locale, resume, picker }: { session: SessionRow;
       </div>
       <div className="cs-convo" data-testid="cs-convo" aria-label={say("convoReadOnly")} ref={box} onScroll={(e) => e.currentTarget.scrollTop < 80 && readEarlier()}>
         <ConvoTop cut={!!read?.cut} reading={earlier} onEarlier={readEarlier} say={say} />
-        {lines.map((l) => (
-          <ConvoLineRow key={l.key} line={l} open={open.has(l.key)} onToggle={() => toggle(l.key)} say={say} />
-        ))}
+        <ConvoLines lines={lines} open={open} toggle={toggle} say={say} />
       </div>
     </div>
   );

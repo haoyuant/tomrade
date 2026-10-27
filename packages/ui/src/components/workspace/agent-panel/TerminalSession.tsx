@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { EngineView } from "@tomradex/agent";
 import type { SessionView } from "@tomradex/code-link";
 import { Icon } from "~/components/icons";
-import { ConvoLineRow, ConvoTop, useOpenLines, type ConvoSay } from "~/components/ConversationRead";
+import { ConvoLines, ConvoTop, useOpenLines, type ConvoSay } from "~/components/ConversationRead";
 import { Spacer } from "~/components/ui/atoms";
 import { invoke, subscribe } from "~/lib/api";
 import { findEngine } from "~/lib/agent";
@@ -43,7 +43,7 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
   const live = isLive(session);
   const agentName = findEngine(engines, session.agent)?.title ?? session.agent;
   const where = session.herdrPane ? t("sessionBar.wherePane") : session.terminal ? session.terminal.replace(/\.app$/, "") : t("sessionBar.whereOutside");
-  const say: ConvoSay = (key) => t(`codeSessions.${key}`);
+  const say: ConvoSay = (key, vars) => t(`codeSessions.${key}`, vars);
 
   // What this machine lets the panel do with the pane: asked once per session, not on every change of it.
   const panel = useQuery({
@@ -252,9 +252,7 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
           ) : convo ? (
             <>
               <ConvoTop cut={convo.before !== null} reading={readingEarlier} onEarlier={readEarlier} say={say} />
-              {lines.map((l) => (
-                <ConvoLineRow key={l.key} line={l} open={open.has(l.key)} onToggle={() => toggle(l.key)} say={say} />
-              ))}
+              <ConvoLines lines={lines} open={open} toggle={toggle} say={say} />
             </>
           ) : null}
         </div>

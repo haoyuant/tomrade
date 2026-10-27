@@ -235,6 +235,23 @@ const run = async () => {
       return { stop: "end" };
     }
   });
+  // Chats first, then writes: the transcript sets the writing apart and folds its steps under what they changed.
+  ctx.agent.engine({
+    id: "coder",
+    title: "Coder",
+    author: "ai:coder",
+    available: async () => ({ ok: true }),
+    async turn(input, io) {
+      const text = input.input.kind === "text" ? input.input.text : "";
+      if (!text.startsWith("write")) {
+        io.emit({ type: "text", text: "Sure, what should it say?" });
+        return { stop: "end" };
+      }
+      for (let i = 1; i <= 6; i++) await io.tools.execute("write_file", { path: `code/part-${i}.md`, content: `part ${i}` });
+      io.emit({ type: "text", text: "Written." });
+      return { stop: "end" };
+    }
+  });
   await newThread();
   await $(`(document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
   await sleep(300);
@@ -555,7 +572,7 @@ const run = async () => {
   now = await line();
   check("a failed request reads as a retry, with the count and why", now?.retrying && /retry 1\/3/.test(now.text) && now.text.includes("connection dropped") && /next try in \ds/.test(now.text), now);
   const folds = await $(`[...document.querySelectorAll('.ai-scroll .trace-fold')].map((f) => ({ summary: f.querySelector('summary')?.textContent, open: f.open, rows: f.querySelectorAll('.trace-row').length }))`);
-  check("earlier steps fold, around the failed one", folds.length === 1 && folds[0].summary === "2 earlier steps" && !folds[0].open && folds[0].rows === 2, folds);
+  check("earlier steps fold, around the failed one", folds.length === 1 && /^2 earlier steps( · |$)/.test(folds[0].summary) && !folds[0].open && folds[0].rows === 2, folds);
   check("the failed step and the last ones stay open", (await $(`[...document.querySelectorAll('.ai-scroll .trace-row')].filter((r) => !r.closest('.trace-fold')).map((r) => r.querySelector('.t-sum')?.textContent)`)).join("|") === "step 3 — exit 1|step 4|step 5|step 6|step 7");
   await shot("retrying.png");
   await sleep(1300);
@@ -796,6 +813,20 @@ const run = async () => {
   await $(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', altKey: true, bubbles: true, cancelable: true }));true`);
   check("⌥↓ goes to the next one waiting", await until(async () => (await shownThread()) !== answered, 30), await shownThread());
   ctx.settings.set({ ...ctx.settings.get(), sessions: { ...ctx.settings.get().sessions, afterAnswer: "next" } });
+
+  // ── chat that turns to code: a rule where the writing starts, the earlier steps folded under what they changed ──
+  const coder = ctx.agent.newThread(alpha.id, "coder", null, { title: "Coder chat" });
+  for (const said of ["hello", "write the parts"]) {
+    const sent = ctx.agent.send(alpha.id, coder.id, { kind: "text", text: said });
+    for (let i = 0; i < 60 && ctx.agent.store.run(alpha.id, sent.runId)?.status === "running"; i++) await sleep(100);
+  }
+  ctx.ipc.send("attention.open", { key: `thread:${coder.id}`, projectId: alpha.id, threadId: coder.id, itemId: null, itemKey: null, kind: "question", who: null, text: null, since: Date.now() });
+  for (let i = 0; i < 50 && !(await $(`!!document.querySelector('[data-testid="work-rule"]')`)); i++) await sleep(100);
+  const rule = await $(`document.querySelector('[data-testid="work-rule"]')?.textContent ?? null`);
+  check("where a chat turns to writing files, a rule says so", rule === "Writing code", rule);
+  const coderFold = await $(`document.querySelector('.ai-scroll .trace-fold > summary')?.textContent ?? null`);
+  check("and the folded steps say what they changed", coderFold === "3 earlier steps · 3 files changed", coderFold);
+  await shot("writing-code.png");
 
   // The Terminal window from the main window: the title bar's button and ⇧⌘T run its own command for this project.
   const opened = [];
