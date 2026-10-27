@@ -61,3 +61,10 @@ it("names an untitled session after its ticket", () => {
   const out = rows({ sessions: [session("s", { title: null, itemIds: ["i1"] })], itemTitle: (id) => (id === "i1" ? "Record pane output" : null), itemKey: () => "TOM-634" });
   expect(out[0]).toMatchObject({ title: "Record pane output", ticket: "TOM-634" });
 });
+
+it("never drops the terminal session the panel shows, however idle it is", () => {
+  const sessions = Array.from({ length: 6 }, (_, i) => session(`s${i}`, { state: "idle", lastEventAt: 100 - i }));
+  const out = rows({ sessions, openSessionId: "s5", idleLimit: 2 });
+  expect(out.map((r) => r.sessionId)).toEqual(["s0", "s1", "s5"]);
+  expect(rows({ sessions, idleLimit: 2 }).map((r) => r.sessionId)).toEqual(["s0", "s1"]);
+});

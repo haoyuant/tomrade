@@ -67,6 +67,7 @@ export {
   type EngineAvailability,
   type EngineCapability,
   type EngineCommands,
+  type EngineApproval,
   type EngineDiagnostics,
   type EngineLocal,
   type EngineMcpLink,

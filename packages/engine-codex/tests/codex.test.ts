@@ -20,6 +20,13 @@ async function settled(ctx: Context, projectId: string, runId: string): Promise<
 }
 
 describe("the Codex engine", () => {
+  it("says how its approval is answered from a terminal: Enter on the \"Yes, proceed\" it opens on, Esc for No", async () => {
+    const { ctx } = await fresh({ plugins: [Tools, [Settings, { path: path.join(fs.mkdtempSync(path.join(os.tmpdir(), "codex-approval-")), "settings.json") }], Agent, [Mcp, { port: 0 }], engineCodex] });
+    await settle();
+    expect(ctx.agent.engineOf("codex")?.local?.approval).toEqual({ allow: ["enter"], deny: ["esc"] });
+    await ctx.fiber.dispose();
+  });
+
   it("migrates Tomrade's rejected legacy preset, ignores a saved cli transport, and runs through app-server", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fake-codex-"));
     const log = path.join(dir, "requests.jsonl");

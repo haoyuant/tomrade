@@ -326,6 +326,17 @@ export interface EngineLocal {
   ask?(prompt: string, signal?: AbortSignal): Promise<string>;
   /** How Tomrade reads its CLI's own record of a session; absent, an ended session shows no conversation. */
   record?: EngineRecord;
+  /** How its CLI's permission prompt is answered from the keyboard; absent, the panel only points at the terminal. */
+  approval?: EngineApproval;
+}
+
+/**
+ * The keys that answer the CLI's own permission prompt in its terminal: each a logical key by the terminal backend's
+ * name (`enter`, `esc`, `tab`, `ctrl+c`…) or one character to type, pressed in order.
+ */
+export interface EngineApproval {
+  allow: string[];
+  deny: string[];
 }
 
 /** One line of a session's record as a conversation: what the person said, what the agent answered, a tool call. */

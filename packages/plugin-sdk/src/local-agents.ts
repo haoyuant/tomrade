@@ -308,4 +308,16 @@ export interface LocalAgentSpec<O extends LocalAgentOptions = LocalAgentOptions>
   lend?: { rank?: number; ask(request: LentRequest, io: LocalAgentIo<O> & { signal?: AbortSignal }): Promise<LentAnswer> };
   /** SDK 0.2.29. Its own record of its sessions, so the ones that ended show their conversation. */
   record?: LocalAgentRecord;
+  /** SDK 0.2.30. How its permission prompt in a terminal is answered from the keyboard, so the assistant panel can offer Allow and Deny. */
+  approval?: LocalAgentApproval;
+}
+
+/**
+ * SDK 0.2.30. The keys that answer the agent's own permission prompt in its terminal: each a logical key by herdr's
+ * name (`enter`, `esc`, `tab`, `ctrl+c`…) or one character to type, pressed in order. Absent, a session waiting in a
+ * pane only points the person at the Terminal window.
+ */
+export interface LocalAgentApproval {
+  allow: string[];
+  deny: string[];
 }

@@ -11,7 +11,7 @@ export type BarMode = "rail" | "cards";
 type Filter = "all" | Exclude<BarStatus, "idle">;
 
 /** Three shapes, so the state reads without colour: a ring runs, a diamond waits, a tick ended. */
-function StatusMark({ status, size = 10 }: { status: BarStatus; size?: number }) {
+export function StatusMark({ status, size = 10 }: { status: BarStatus; size?: number }) {
   if (status === "wait") return <svg className="sbar-mark is-wait" width={size} height={size} viewBox="0 0 10 10" aria-hidden="true"><path d="M5 0 L10 5 L5 10 L0 5 Z" /></svg>;
   if (status === "run") return <svg className="sbar-mark is-run" width={size} height={size} viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="5" r="3.6" /></svg>;
   if (status === "done") return <svg className="sbar-mark is-done" width={size} height={size} viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6.5 L5 9 L10 3" /></svg>;
