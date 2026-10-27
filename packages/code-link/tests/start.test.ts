@@ -14,7 +14,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Context } from "cordis";
 import { Agent, type Engine, type TurnInput } from "@tomradex/agent";
 import { fakeLlm } from "@tomradex/llm";
-import { CodeLink, BOOTSTRAP_LABEL, sessionContext, terminalApp } from "@tomradex/code-link";
+import { CodeLink, BOOTSTRAP_LABEL, sessionContext, terminalApp, type StartBatchCard, type StartResult } from "@tomradex/code-link";
 import { geminiHooks } from "../src/gemini-hooks.js";
 import { Contributions } from "@tomradex/contributions";
 import { Repos, normalizeRemote } from "@tomradex/repos";
@@ -661,6 +661,28 @@ describe("starting a ticket", () => {
     expect(results).toEqual([expect.objectContaining({ key: item.key, ok: false, gate: "checkout", repo: { id: row!.id, name: row!.name }, remote: row!.remote })]);
     const card = agent.store.cards(project.id, thread.id).find((c) => c.id === "start-batch-t")!;
     expect(card.data).toMatchObject({ config: { engine: "fake-code" }, results: [{ key: "TOM-0", ok: true }, { key: item.key, ok: false, gate: "checkout", remote: row!.remote }] });
+  });
+
+  it("shows each ticket's outcome on the start card as it comes, before the next one has started", async () => {
+    const { codeLink, agent, project, ticket } = await machine(codeRepo());
+    const first = ticket("Quick one");
+    const second = ticket("Slow one");
+    const thread = agent.newThread(project.id, "fake-code");
+    const tickets = [first, second].map((i) => ({ itemId: i.id, key: i.key, title: i.title }));
+    agent.postCard(project.id, thread.id, { id: "start-batch-p", schema: "start-batch", title: "both", data: { tickets, config: { engine: "fake-code" } } }, "human");
+    let release = () => {};
+    const slow = new Promise<void>((resolve) => (release = resolve));
+    codeLink.start = async (_projectId, itemId) => {
+      if (itemId === second.id) await slow;
+      return { ok: true, continued: false, threadId: null, sessionId: `s-${itemId}`, branch: `b-${itemId}`, worktree: null, cwd: root, mode: "run", command: "fake", launched: false, pane: null, engine: "fake-code" } as StartResult;
+    };
+    const card = () => agent.store.cards(project.id, thread.id).find((c) => c.id === "start-batch-p")!.data as StartBatchCard;
+    const started = codeLink.startTickets(project.id, { itemIds: [first.id, second.id], requestedBy: thread.id, engine: "fake-code", cardId: "start-batch-p" });
+    await expect.poll(() => card().results?.map((r) => r.key)).toEqual([first.key]);
+    expect(card().tickets).toEqual(tickets);
+    release();
+    await started;
+    expect(card().results?.map((r) => r.key)).toEqual([first.key, second.key]);
   });
 
   it("does not mistake a repository it cannot reach for an empty one", async () => {
