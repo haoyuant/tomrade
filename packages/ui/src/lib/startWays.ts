@@ -74,7 +74,9 @@ export function startWays(input: {
 export interface Starting {
   id: string;
   projectId: string;
-  itemId: string;
+  /** Null for a session started on the person's words, with no ticket. */
+  itemId: string | null;
+  /** The ticket's key; empty with no ticket. */
   ticket: string;
   title: string;
   /** The agent's name, as the line says it. */

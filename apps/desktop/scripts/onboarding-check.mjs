@@ -155,7 +155,10 @@ const run = async () => {
   win.webContents.reload();
   await sleep(2500);
   check("a reload does not bring the hint back, and the card leaves a thread with a run in it", (await has(".run-wrap")) && !(await has(".hint")) && !(await has(".agent-setup")));
+  // the bar's + opens ⌘K on its ways to start: ↵ with nothing typed is a new conversation with the built-in assistant
   await press(`document.querySelector('.ai .sbar button[aria-label="New thread"]')`);
+  for (let i = 0; i < 30 && !(await $(`!!document.querySelector('[data-testid="palette-start"]')`)); i++) await sleep(100);
+  await $(`document.querySelector('.palette-input')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }));true`);
   check("a new thread shows what is still missing again", await wait(() => has(".agent-setup"), "setup card in a new thread"));
   await $(`document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));true`);
 

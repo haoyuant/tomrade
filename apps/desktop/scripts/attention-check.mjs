@@ -103,7 +103,10 @@ const run = async () => {
   ctx.settings.set({ ...ctx.settings.get(), notifications: { ...ctx.settings.get().notifications, approvals: false } });
 
   // ── a clicked notification opens the thread that waits ─────────────────
+  // the bar's + opens ⌘K on its ways to start: ↵ with nothing typed is a new conversation with the built-in assistant
   await press(`document.querySelector('.ai .sbar button[aria-label="New thread"]')`);
+  for (let i = 0; i < 30 && !(await $(`!!document.querySelector('[data-testid="palette-start"]')`)); i++) await sleep(100);
+  await $(`document.querySelector('.palette-input')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }));true`);
   await sleep(800);
   await send("and the second one");
   await sleep(1200);

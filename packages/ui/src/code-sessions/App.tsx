@@ -423,6 +423,8 @@ export function App() {
     .slice(0, 30);
   const paletteActions: PaletteAction[] = [
     ...(canOpen ? [{ id: "new", label: say("newTerminal"), run: newTerminal }] : []),
+    // as ⌘D does: an empty cell beside the selected one, selected
+    { id: "split", label: say("paletteSplitRight"), kb: keyLabel("splitRight"), run: () => select(splitCell(target.id, "row")) },
     view === "grid" ? { id: "overview", label: say("viewOverview"), run: openOverview } : { id: "grid", label: say("viewGrid"), run: () => setView("grid") },
     { id: "fold", label: say(folded ? "unfold" : "fold"), kb: keyLabel("fold"), run: toggleFold },
     // a Mac terminal's ⌘K: here the shell or agent in the selected cell clears its screen (Ctrl+L)
@@ -430,6 +432,11 @@ export function App() {
     ...state.presets.map((p) => ({ id: `layout:${p.id}`, label: say("paletteLayout", { name: p.name }), run: () => { change(applyPreset(layout, p.layout, undefined, key)); setFocused(null); } }))
   ];
   const paletteRow = (r: HereRow) => (r.kind === "thread" ? showThread(r.thread) : seeInPane(r));
+  // The cell a row is in, numbered as the cells' heads number them.
+  const cellOf = (r: HereRow): number | null => {
+    const at = cells.findIndex((c) => !!c.sessionId && (c.sessionId === r.id || (!!r.session && rowsOf(c).includes(r.session.id))));
+    return at < 0 ? null : at + 1;
+  };
 
   const render = (node: Layout): ReactNode =>
     node.type === "split" ? (
@@ -532,7 +539,20 @@ export function App() {
           />
         </div>
         <KeysFooter />
-        <Palette open={paletteOpen} onOpenChange={setPaletteOpen} here={rows.here} away={rows.away} ended={ended} actions={paletteActions} onRow={paletteRow} onAway={(s) => send({ type: "openThread", sessionId: s.id })} />
+        <Palette
+          open={paletteOpen}
+          onOpenChange={setPaletteOpen}
+          here={rows.here}
+          away={rows.away}
+          ended={ended}
+          actions={paletteActions}
+          tickets={canOpen ? state.tickets : []}
+          startAgent={state.startAgent}
+          cellOf={cellOf}
+          onRow={paletteRow}
+          onAway={(s) => send({ type: "openThread", sessionId: s.id })}
+          onStartTicket={(ticket) => send({ type: "startTicket", itemId: ticket.id })}
+        />
         {toast && (
           <div className="cs-toast" role="status" data-testid="cs-toast" onClick={() => setToast(null)}>
             {toast.text}

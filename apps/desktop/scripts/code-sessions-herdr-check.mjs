@@ -1167,6 +1167,37 @@ app.whenReady().then(async () => {
     await paletteKey();
     check("再按 ⌘K 关掉它", await wait(async () => tjs(`!document.querySelector('[data-testid=cs-palette]')`), 2000));
 
+    // ⌘K's rows say what ↵ does; its tickets start in a new cell with the agent Start would pick; ⌘D's split is in it;
+    // its history searches the look back, as the app window's does.
+    const typeIn = (text) => tjs(`(() => { const i = document.querySelector('[data-testid=cs-palette] .palette-input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, ${JSON.stringify(text)}); i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    const fresh = ctx.items.create({ projectId: project.id, boardId: board.id, title: "Palette start ticket", workType: "coding", status: "todo", by: "human" });
+    const startedFrom = [];
+    const startWas = ctx.codeLink.start;
+    ctx.codeLink.start = async (projectId, itemId, opts) => (startedFrom.push({ itemId, opts }), { ok: true, continued: false, threadId: null, sessionId: sessions[3].id, branch: "x", worktree: null, cwd, mode: "terminal", command: "x", launched: true, pane: sessions[3].pane, engine: opts.engine ?? "claude-code" });
+    const reviewWas = ctx.codeLink.review.list;
+    ctx.codeLink.review.list = async (projectId, opts) => ({ rows: opts?.query ? [{ id: "old-review-1", kind: "session", agent: "claude-code", title: "Archive filter by agent", tickets: [{ itemId: "gone", key: "CSC-99", title: "Archive filter by agent" }], asked: 0, commits: 2, pr: null, said: "merged long ago", where: "pane", threadId: null, resumable: false, startedAt: 1, endedAt: 2 }] : [], next: null });
+    ctx.emit("codeLink/changed", project.id);
+    await sleep(800);
+    await paletteKey();
+    await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-palette]')`), 2000);
+    const enterSays = await tjs(`document.querySelector('[data-testid=cs-palette] [data-row="${sessions[5].id}"] [data-testid=cs-palette-enter]')?.textContent ?? null`);
+    check("⌘K 每行右边写回车做什么：在格子里的写「↵ 跳到格子几」", /^↵ 跳到格子 \d+$/.test(enterSays ?? ""), enterSays);
+    check("「向右分出一个新格子」在做事里，写着 ⌘D", /向右分出一个新格子/.test(await tjs(`document.querySelector('[data-testid=cs-palette] [data-do=split]')?.textContent ?? ''`)));
+    await typeIn(fresh.key);
+    const ticketRow = `document.querySelector('[data-testid=cs-palette] [data-ticket="${fresh.key}"]')`;
+    check("⌘K 的工单组：在新格子里开始 TOM-xxx · 用哪个 agent，⌥↵", await wait(async () => tjs(`/在新格子里开始 ${fresh.key} · .+/.test(${ticketRow}?.textContent ?? '') && /⌥↵/.test(${ticketRow}?.textContent ?? '')`), 3000), await tjs(`${ticketRow}?.textContent ?? null`));
+    await tjs(`${ticketRow}.click(); true`);
+    check("选它就在终端里开始这张工单（照「开始」会选的 agent），并放进格子", await wait(async () => startedFrom.length === 1, 5000) && startedFrom[0].itemId === fresh.id && startedFrom[0].opts.mode === "terminal", JSON.stringify(startedFrom));
+    await paletteKey();
+    await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-palette]')`), 2000);
+    await typeIn("archive filter");
+    const reviewRow = `document.querySelector('[data-testid=cs-palette] [data-row="review:old-review-1"]')`;
+    check("⌘K 的历史打字时搜回看，搜到更早的会话，右边写「只读」", await wait(async () => tjs(`/CSC-99/.test(${reviewRow}?.textContent ?? '') && ${reviewRow}?.querySelector('[data-testid=cs-palette-enter]')?.textContent === '只读'`), 5000), await tjs(`${reviewRow}?.textContent ?? null`));
+    await paletteKey();
+    await wait(async () => tjs(`!document.querySelector('[data-testid=cs-palette]')`), 2000);
+    ctx.codeLink.start = startWas;
+    ctx.codeLink.review.list = reviewWas;
+
     // A session whose terminal is gone keeps "continue" and offers the same new-terminal picker, starting in its
     // worktree (the project's repository and that worktree are the places now); a terminal opened there takes the cell.
     const repoDir = path.join(work, "code", "app");

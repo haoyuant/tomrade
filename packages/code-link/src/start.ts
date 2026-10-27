@@ -14,7 +14,7 @@ import { GitFolder, type Git } from "@tomradex/git";
 import { fitsCommandLine, promptAsArgument } from "./command-line.js";
 import { listDecisions } from "./decisions.js";
 import { branchFor, titleSlug } from "./keys.js";
-import { BOOTSTRAP_LABEL, bootstrapBody, continuePrompt, firstPrompt, languageLine } from "./prompts.js";
+import { BOOTSTRAP_LABEL, bootstrapBody, continuePrompt, firstPrompt, languageLine, loosePrompt } from "./prompts.js";
 import { classifyRemoteFailure, probeRemote, remoteFailureDetail, remoteFailureMessage, scrubRemoteOutput } from "./remote.js";
 import type { HerdrBridge } from "./herdr-bridge.js";
 import type { SessionFiles, Sessions } from "./sessions.js";
@@ -478,6 +478,45 @@ export class Starter {
     store.patchSession(projectId, session.id, { state: "running", endedAt: null, activity: null, lastEventAt: now, ...(launch.paneId ? { herdrPane: launch.paneId } : {}) });
     this.host.notify(projectId);
     return { ok: true, continued: true, threadId: null, sessionId: session.id, branch: session.branch, worktree: session.worktree, cwd: session.cwd, mode: "terminal", command, launched: launch.launched, pane: launch.paneId ?? null, engine: engineId };
+  }
+
+  /**
+   * A coding agent started on the person's own words, with no ticket and no thread: a terminal session in `cwd`, with
+   * Tomrade's tools and hooks. The repository's instructions have it claim a ticket before it changes code.
+   */
+  async startLoose(projectId: string, input: { engine?: string; prompt: string; cwd: string }): Promise<StartResult> {
+    const { ctx, store } = this.host;
+    const agent = ctx.get("agent");
+    if (!agent) return { ok: false, gate: "engine", message: "the agent plugin is not loaded" };
+    if (!ctx.get("mcp")?.url) return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
+    const picked = await this.pickEngine(agent, input.engine, true);
+    if (!picked.ok) return { ok: false, gate: "engine", message: picked.reason, ...(input.engine ? { engine: input.engine } : {}) };
+    const engineId = picked.engine.id;
+    const terminalSettings = await this.host.herdr.terminalSettings();
+    const locale = ctx.settings.locale?.() ?? "en";
+    const now = Date.now();
+    const title = input.prompt.trim().split("\n")[0]!.slice(0, 80);
+    const session = store.createSession(projectId, { repoId: "", branch: "", itemIds: [], mode: "terminal", agent: engineId, threadId: null, device: ctx.hub.deviceId });
+    store.patchSession(projectId, session.id, { cwd: input.cwd, title, prompted: true });
+    const ended = () => store.patchSession(projectId, session.id, { state: "ended", endedAt: now, activity: null });
+    const files = this.host.sessions.bind(session, `ai:${engineId}` as Author, this.host.sessionDir(session.id), loosePrompt(input.prompt, locale));
+    if (!files) {
+      ended();
+      return { ok: false, gate: "mcp", message: "the MCP server is not running — enable the mcp plugin" };
+    }
+    const { bin, path: onPath } = await binOf(agent, engineId);
+    const command = this.command(terminalSettings, engineId, { externalId: null }, files, input.cwd, agent.optionsOf({}, engineId), bin);
+    const tooLong = this.promptTooLong(terminalSettings, engineId, session, files, command, locale);
+    if (tooLong) {
+      ended();
+      return tooLong;
+    }
+    const workspace = this.workspaceOf(projectId);
+    const launch = await this.host.herdr.launch({ cwd: input.cwd, command, env: { TOMRADE_MCP_TOKEN: files.token }, dir: files.dir, path: onPath, label: title || picked.engine.title, ...(workspace ? { workspace } : {}) }, terminalSettings.terminal);
+    store.patchSession(projectId, session.id, { state: "running", lastEventAt: now, ...(launch.paneId ? { herdrPane: launch.paneId } : {}) });
+    this.host.notify(projectId);
+    const fallback = this.host.herdr.fallbackNote(locale, launch);
+    return { ok: true, continued: false, threadId: null, sessionId: session.id, branch: "", worktree: null, cwd: input.cwd, mode: "terminal", command, launched: launch.launched, pane: launch.paneId ?? null, engine: engineId, ...(fallback ? { warnings: [fallback] } : {}) };
   }
 
   /** The thread's terminal session whose agent still runs, if any. */

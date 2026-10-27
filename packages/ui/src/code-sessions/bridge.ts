@@ -35,6 +35,7 @@ type ShownIn = Extract<WindowPost, { type: "shownIn" }>;
 type Tails = Extract<WindowPost, { type: "tails" }>;
 type HistoryPage = Extract<WindowPost, { type: "historyPage" }>;
 type HistorySaid = Extract<WindowPost, { type: "historySaid" }>;
+type Reviewed = Extract<WindowPost, { type: "reviewFound" }>;
 type CellPost = Exclude<Extract<WindowPost, { cell: string }>, ShownIn>;
 const cells = new Map<string, Set<(post: CellPost) => void>>();
 const toasts = new Set<(text: string) => void>();
@@ -44,6 +45,7 @@ const historyChanged = new Set<() => void>();
 /** Each History ask, by its token, waiting for its answer. */
 const answers = new Map<number, (post: HistoryPage | HistorySaid) => void>();
 let tokens = 0;
+const reviewed = new Set<(post: Reviewed) => void>();
 
 // One listener for every post: frames and ends go to their cell, toasts to whoever shows them, History's answers to their ask.
 surface()?.onMessage((raw) => {
@@ -55,6 +57,7 @@ surface()?.onMessage((raw) => {
     answers.get(post.token)?.(post);
     answers.delete(post.token);
   } else if (post.type === "historyChanged") for (const listener of historyChanged) listener();
+  else if (post.type === "reviewFound") for (const listener of reviewed) listener(post);
   else for (const listener of cells.get(post.cell) ?? []) listener(post);
 });
 
@@ -105,4 +108,10 @@ export function onToast(listener: (text: string) => void): () => void {
 export function onTails(listener: (post: Tails) => void): () => void {
   tails.add(listener);
   return () => tails.delete(listener);
+}
+
+/** What the look back found for ⌘K's history. */
+export function onReviewFound(listener: (post: Reviewed) => void): () => void {
+  reviewed.add(listener);
+  return () => reviewed.delete(listener);
 }

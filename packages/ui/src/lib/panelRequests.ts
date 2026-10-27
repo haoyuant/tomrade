@@ -23,6 +23,20 @@ export function onPanelRequest(listener: (request: PanelRequest) => void): () =>
   return () => requests.delete(listener);
 }
 
+/** ⌘K opened from elsewhere on its ways to start a new session (the session bar's +). */
+const paletteRequests = new Set<() => void>();
+
+/** Whether a palette was there to open; without one the caller starts a conversation itself. */
+export function askStartPalette(): boolean {
+  for (const listener of paletteRequests) listener();
+  return paletteRequests.size > 0;
+}
+
+export function onStartPalette(listener: () => void): () => void {
+  paletteRequests.add(listener);
+  return () => paletteRequests.delete(listener);
+}
+
 /** The terminal session the panel shows in place of a thread, if any: what "this session" means to ⌘K. */
 let shown: { projectId: string; sessionId: string } | null = null;
 const shownListeners = new Set<() => void>();

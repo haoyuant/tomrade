@@ -2434,6 +2434,15 @@ button.fld-row:focus-visible { outline: none; border-color: var(--accent); box-s
 .palette-said { overflow: hidden; text-overflow: ellipsis; }
 .palette-foot { padding: 6px var(--space-4); border-top: 1px solid var(--border); font-size: var(--text-xs); color: var(--meta); }
 .palette-search-notes { display: flex; align-items: center; gap: 6px; margin: calc(-1 * var(--space-3)) auto var(--space-4); }
+/* the ways to start a session on the words typed: ↵ here, ⌥↵ a background pane, ⇧↵ a Terminal window cell */
+.palette-start { display: flex; flex-direction: column; gap: 2px; padding: 0 var(--space-1) var(--space-2); text-align: left; }
+.palette-start-head { padding: var(--space-2) var(--space-3) var(--space-1); }
+.palette-start-row { display: flex; align-items: center; gap: var(--space-3); width: 100%; min-height: 40px; padding: 6px var(--space-3); border: 0; border-radius: var(--radius-md, 8px); background: transparent; color: var(--fg-2); font: inherit; text-align: left; cursor: pointer; }
+.palette-start-row:hover:not(:disabled) { background: var(--surface-warm); color: var(--fg); }
+.palette-start-row:disabled { cursor: default; opacity: 0.7; }
+.palette-start-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; font-size: var(--text-sm); }
+.palette-start-chip { margin-left: 6px; }
+.palette-start-foot { margin: var(--space-1) var(--space-3) 0; font-size: var(--text-xs); }
 
 /* ─── toast ──────────────────────────────────────────────────────────── */
 /* Bottom-left: the right edge belongs to the assistant panel's composer. */

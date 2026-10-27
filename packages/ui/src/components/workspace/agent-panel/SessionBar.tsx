@@ -187,9 +187,9 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
         )}
         <div className="sbar-dots" onScroll={() => { hold(); setPeek(null); }}>
           {starting.map((s) => (
-            <span key={s.id} className="sbar-dot is-starting" data-status="start" role="status" aria-label={`${s.ticket} ${s.title}, ${t("codeLink.startingLine", { agent: s.agent })}`}>
+            <span key={s.id} className="sbar-dot is-starting" data-status="start" role="status" aria-label={`${s.ticket ? `${s.ticket} ` : ""}${s.title}, ${t("codeLink.startingLine", { agent: s.agent })}`}>
               <span className="sbar-dot-face">
-                {s.ticket.replace(/^.*-/, "")}
+                {s.ticket ? s.ticket.replace(/^.*-/, "") : (Array.from(s.title.trim())[0] ?? "·").toUpperCase()}
                 <span className="sbar-new-badge">{t("sessionBar.new")}</span>
               </span>
               <span className="sbar-dot-where">{t("sessionBar.statusStarting")}</span>
@@ -249,7 +249,7 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
           <div key={s.id} className="sbar-card is-starting" data-status="start" role="status">
             <span className="sbar-card-title">
               <span className="start-starting-mark" aria-hidden="true" />
-              <span>{`${s.ticket} ${s.title}`}</span>
+              <span>{s.ticket ? `${s.ticket} ${s.title}` : s.title}</span>
               <span className="sbar-new-badge">{t("sessionBar.new")}</span>
             </span>
             <span className="meta-txt dense">{t("codeLink.startingLine", { agent: s.agent })}</span>

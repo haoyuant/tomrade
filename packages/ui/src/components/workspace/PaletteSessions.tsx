@@ -1,8 +1,8 @@
 import { useDeferredValue, useMemo, type MutableRefObject } from "react";
 import { Command } from "cmdk";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { EngineView, ThreadSummary } from "@tomradex/agent";
-import type { RecentSession, ReviewRow } from "@tomradex/code-link";
+import type { RecentSession, ReviewRow, SessionView, StartDefaultsView } from "@tomradex/code-link";
 import type { Item } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { Kbd } from "~/components/ui/atoms";
@@ -16,9 +16,11 @@ import { askPanel, usePanelSession } from "~/lib/panelRequests";
 import { keys } from "~/lib/queries";
 import { outcomeLine } from "~/lib/review";
 import { paletteSessionGroups, sessionBarRows, type BarRow } from "~/lib/sessionBar";
+import { beginStarting, startWays } from "~/lib/startWays";
 import { askText } from "~/lib/terminalSession";
 import { useOpenTerminalWindow } from "~/lib/terminalWindow";
 import { errorSpec, useToast } from "~/lib/toast";
+import { cn } from "~/lib/utils";
 import { useOptionalAgentDock } from "~/components/chrome/ProjectShell";
 
 /**
@@ -29,11 +31,112 @@ function useHeld<T>(queryKey: readonly unknown[], queryFn: () => Promise<T>): T 
   return useQuery({ queryKey, queryFn, enabled: false }).data;
 }
 
+/** How a session starts on the words typed: the built-in assistant here (↵), a terminal agent in a background pane (⌥↵), or in a new Terminal window cell (⇧↵). */
+export type LooseWay = "builtin" | "pane" | "cell";
+
+const looseKey = (projectId: string) => `tomrade.startWay.${projectId}`;
+/** The way this project started a session last: what ⌘K recommends. */
+function lastLooseWay(projectId: string): LooseWay {
+  try {
+    const saved = localStorage.getItem(looseKey(projectId));
+    return saved === "pane" || saved === "cell" ? saved : "builtin";
+  } catch {
+    return "builtin";
+  }
+}
+
+/**
+ * Starting a session with no ticket, from the words typed. The terminal agent is the one Start would use, read from
+ * what the window already holds: opening ⌘K asks the main process nothing.
+ */
+export function useLooseStart(projectId: string) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const qc = useQueryClient();
+  const dock = useOptionalAgentDock();
+  const engines = useHeld<EngineView[]>(keys.agent.engines, () => invoke("agent.engines"));
+  const defaults = useHeld<StartDefaultsView | null>(keys.codeLink.startDefaults, () => invoke("codeLink.startDefaults"));
+  const cli = startWays({ engines, capability: "code", primary: defaults?.engine ?? null, panes: true }).find((way) => way.kind === "pane") ?? null;
+  const cliName = cli ? (findEngine(engines, cli.engine)?.title ?? cli.engine) : null;
+  const go = (way: LooseWay, words: string) => {
+    try {
+      localStorage.setItem(looseKey(projectId), way);
+    } catch {
+      // only a recommendation
+    }
+    if (way === "builtin" || !cli || !cliName) {
+      dock?.setAiOpen(true);
+      return askPanel(words ? { kind: "startWith", text: words } : { kind: "newThread" });
+    }
+    if (!words) return;
+    const done = beginStarting({ projectId, itemId: null, ticket: "", title: words, agent: cliName });
+    void invoke("codeLink.startLoose", projectId, { engine: cli.engine, prompt: words })
+      .then(async (result) => {
+        if (!result.ok) return toast({ body: t("commandPalette.looseFailed", { agent: cliName, reason: result.message }) });
+        const inWindow = way === "cell" && !!result.pane && (await invoke("codeLink.showSession", projectId, result.sessionId).catch(() => false));
+        dock?.setAiOpen(true);
+        // read afresh: the list the window holds was read before this session was
+        await qc.fetchQuery({ queryKey: keys.codeLink.recentSessions(projectId), queryFn: () => invoke("codeLink.recentSessions", projectId), staleTime: 0 }).catch(() => undefined);
+        askPanel({ kind: "openSession", sessionId: result.sessionId });
+        toast({ body: t(inWindow ? "commandPalette.looseInWindow" : "commandPalette.looseStarted", { agent: cliName }) });
+      }, (error: unknown) => toast(errorSpec(error)))
+      .finally(done);
+  };
+  return { cliName, go, recommended: lastLooseWay(projectId) };
+}
+
+/** The ways to start a session, under ⌘K: on the words typed when nothing matched them, or as all ⌘K shows when opened to start. */
+export function PaletteStart({ start, words, fresh, run }: {
+  start: ReturnType<typeof useLooseStart>;
+  words: string;
+  /** Opened to start (the session bar's +), not because nothing matched. */
+  fresh: boolean;
+  run: (fn: () => void) => void;
+}) {
+  const { t } = useI18n();
+  const { cliName, go, recommended } = start;
+  const rows: { way: LooseWay; title: string; sub: string; key: string }[] = [
+    { way: "builtin", title: t("commandPalette.startBuiltin"), sub: t("commandPalette.startBuiltinSub"), key: "↵" },
+    ...(cliName
+      ? [
+          { way: "pane" as const, title: t("commandPalette.startPane", { agent: cliName }), sub: t("commandPalette.startPaneSub"), key: "⌥↵" },
+          { way: "cell" as const, title: t("commandPalette.startCell", { agent: cliName }), sub: t("commandPalette.startCellSub"), key: "⇧↵" }
+        ]
+      : [])
+  ];
+  return (
+    <div className="palette-start" data-testid="palette-start" role="group" aria-label={t(fresh ? "commandPalette.startGroupNew" : "commandPalette.startGroup")}>
+      <p className="eyebrow palette-start-head">{t(fresh ? "commandPalette.startGroupNew" : "commandPalette.startGroup")}</p>
+      {rows.map((row) => (
+        <button
+          key={row.way}
+          type="button"
+          className={cn("palette-start-row", row.way === recommended && "is-recommended")}
+          data-testid={row.way === "builtin" ? "palette-start-with" : `palette-start-${row.way}`}
+          data-way={row.way}
+          disabled={row.way !== "builtin" && !words}
+          onClick={() => run(() => go(row.way, words))}
+        >
+          <span className="palette-start-text">
+            <span>
+              {row.title}
+              {row.way === recommended && <span className="tag neutral palette-start-chip">{t("commandPalette.startRecommended")}</span>}
+            </span>
+            <span className="meta-txt">{row.way !== "builtin" && !words ? t("commandPalette.startNeedsWords") : row.sub}</span>
+          </span>
+          <Kbd>{row.key}</Kbd>
+        </button>
+      ))}
+      {cliName && <p className="meta-txt palette-start-foot">{t("commandPalette.startFoot", { agent: cliName })}</p>}
+    </div>
+  );
+}
+
 /**
  * ⌘K's sessions and the things to do with them: waiting on you, in progress, ended. ↵ opens one here; ⇧↵ in a
  * Terminal window cell, where a terminal session has one.
  */
-export function PaletteSessions({ projectId, items, search, run, shift }: {
+export function PaletteSessions({ projectId, items, search, run, shift, onStart }: {
   projectId: string;
   items: Item[];
   /** What is typed in the palette: past two characters, the look back is searched for older ended sessions too. */
@@ -42,6 +145,8 @@ export function PaletteSessions({ projectId, items, search, run, shift }: {
   run: (fn: () => void) => void;
   /** Whether the choice was made with ⇧↵. */
   shift: MutableRefObject<boolean>;
+  /** ⌘K turns to its ways to start a session, the words typed kept. */
+  onStart: () => void;
 }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -131,7 +236,7 @@ export function PaletteSessions({ projectId, items, search, run, shift }: {
   );
 
   const doRows = [
-    { id: "new", label: t("commandPalette.startSession"), kb: undefined, run: () => { openPanel(); askPanel({ kind: "newThread" }); } },
+    { id: "new", label: t("commandPalette.startSession"), kb: undefined, run: onStart, stay: true },
     ...(openTerminal ? [{ id: "terminal", label: t("commandPalette.openTerminalWindow"), kb: keyLabel("terminalWindow"), run: openTerminal }] : []),
     ...(panelSession ? [{ id: "to-cell", label: t("commandPalette.sessionToCell"), kb: undefined, run: () => { const r = [...groups.waiting, ...groups.active, ...groups.history].find((x) => x.sessionId === panelSession); if (r) inCell(r); } }] : []),
     { id: "bar", label: t("commandPalette.toggleSessionBar"), kb: keyLabel("sessionBar"), run: () => { openPanel(); askPanel({ kind: "toggleBar" }); } },
@@ -153,7 +258,7 @@ export function PaletteSessions({ projectId, items, search, run, shift }: {
       )}
       <Command.Group heading={t("commandPalette.doGroup")} className="eyebrow palette-group" data-testid="palette-do">
         {doRows.map((a) => (
-          <Command.Item key={a.id} value={a.label} className="palette-row" data-do={a.id} onSelect={() => run(a.run)}>
+          <Command.Item key={a.id} value={a.label} className="palette-row" data-do={a.id} onSelect={() => ("stay" in a ? a.run() : run(a.run))}>
             <Icon name="i-chev" size={14} style={{ color: "var(--meta)" }} />
             <span className="p-label">{a.label}</span>
             {a.kb && <Kbd>{a.kb}</Kbd>}

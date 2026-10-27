@@ -210,7 +210,7 @@ export const codeSessions = {
     terminalsEmpty: "No closed terminal with a recording yet.",
     keyPalette: "sessions and commands",
     paletteTitle: "Sessions and commands",
-    paletteSearch: "Find a session, or something to do…",
+    paletteSearch: "Search sessions, ticket keys, what was said, or something to do…",
     paletteNone: "Nothing matches.",
     paletteWaiting: "Waiting on you",
     paletteActive: "In progress",
@@ -219,6 +219,13 @@ export const codeSessions = {
     paletteClear: "Clear the selected cell's screen",
     paletteLayout: "Layout: {{name}}",
     paletteFoot: "↵ goes to its cell; one with no cell here opens in the app window · {{key}} closes",
+    paletteTickets: "Tickets",
+    paletteStartTicket: "Start {{key}} in a new cell · {{agent}}",
+    paletteSplitRight: "Split a new cell to the right",
+    paletteToCell: "↵ go to cell {{n}}",
+    paletteIntoCell: "↵ into a cell",
+    paletteInApp: "↵ open in the app window",
+    paletteReadOnly: "read-only",
     cellNumber: "Pane {{n}} · tomrade term --attach {{n}} attaches it to your own terminal"
   },
   zh: {
@@ -431,7 +438,7 @@ export const codeSessions = {
     terminalsEmpty: "还没有带录制的已关闭终端。",
     keyPalette: "会话和命令",
     paletteTitle: "会话和命令",
-    paletteSearch: "找一个会话，或要做的事…",
+    paletteSearch: "搜会话、工单号、说过的话，或要做的事",
     paletteNone: "没有匹配的。",
     paletteWaiting: "等你",
     paletteActive: "进行中",
@@ -440,6 +447,13 @@ export const codeSessions = {
     paletteClear: "清屏（选中的格子）",
     paletteLayout: "布局：{{name}}",
     paletteFoot: "↵ 跳到它的格子；不在格子里的在主窗口打开 · {{key}} 关闭",
+    paletteTickets: "工单",
+    paletteStartTicket: "在新格子里开始 {{key}} · {{agent}}",
+    paletteSplitRight: "向右分出一个新格子",
+    paletteToCell: "↵ 跳到格子 {{n}}",
+    paletteIntoCell: "↵ 放进格子",
+    paletteInApp: "↵ 在主窗口打开",
+    paletteReadOnly: "只读",
     cellNumber: "格子 {{n}} · 在你自己的终端里运行 tomrade term --attach {{n}}，就能把它接过去"
   }
 };

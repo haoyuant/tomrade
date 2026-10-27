@@ -30,7 +30,7 @@ import { SessionBar, type BarMode, type CardAnswer } from "./agent-panel/Session
 import { HandoffLine } from "./agent-panel/HandoffLine";
 import { TerminalSession } from "./agent-panel/TerminalSession";
 import { barModeFor, barPrefsOf, CARDS_AT, sessionBarRows, type BarRow, type BarStatus } from "~/lib/sessionBar";
-import { onPanelRequest, setPanelSession, type PanelRequest } from "~/lib/panelRequests";
+import { askStartPalette, onPanelRequest, setPanelSession, type PanelRequest } from "~/lib/panelRequests";
 import { useStartingAll } from "~/lib/startWays";
 import { useHandoff, useRecentSessions, useSessionCells, useStartDefaults } from "~/lib/codeLink";
 import type { SessionView } from "@tomradex/code-link";
@@ -710,7 +710,10 @@ export function AgentPanel({
   const latestBar = useRef({ pickBarRow, newThread: () => {}, archive: archiveThreadById, remove: deleteThreadById, answer: answerCard });
   latestBar.current = { pickBarRow, newThread: () => void openThread({ boardId }).then((th) => pickThread(th.id)), archive: archiveThreadById, remove: deleteThreadById, answer: answerCard };
   const pickBarRowStable = useCallback((row: BarRow) => latestBar.current.pickBarRow(row), []);
-  const newBarThread = useCallback(() => latestBar.current.newThread(), []);
+  // the bar's +: ⌘K on its ways to start (built-in assistant, a terminal agent in a pane or a cell); a new thread where there is no palette
+  const newBarThread = useCallback(() => {
+    if (!askStartPalette()) latestBar.current.newThread();
+  }, []);
   const archiveBarThread = useCallback((id: string) => latestBar.current.archive(id), []);
   const deleteBarThread = useCallback((id: string) => latestBar.current.remove(id), []);
   const answerBarRow = useCallback((row: BarRow, reply: CardAnswer) => void latestBar.current.answer(row, reply), []);
