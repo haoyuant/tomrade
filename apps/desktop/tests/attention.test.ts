@@ -1,7 +1,20 @@
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("electron", () => ({ app: {}, BrowserWindow: {}, Notification: {} }));
-import { NOTIFICATIONS_SECTION, phonePushRequest, pushTargets, remindAway, Teller, type AttentionEntry, type AttentionNote, type NotificationPrefs } from "../src/attention.js";
+const shown = vi.hoisted(() => [] as string[]);
+vi.mock("electron", () => ({
+  app: { on: () => {}, off: () => {}, setBadgeCount: () => {} },
+  BrowserWindow: { getFocusedWindow: () => null, getAllWindows: () => [] },
+  Notification: class {
+    static isSupported = () => true;
+    constructor(private readonly options: { title: string }) {}
+    on() {}
+    show() {
+      shown.push(this.options.title);
+    }
+  }
+}));
+vi.mock("../src/main-window.js", () => ({ showMainWindow: () => null, whenLoaded: () => {} }));
+import { allowOf, attention, NOTIFICATIONS_SECTION, phonePushRequest, pushTargets, remindAway, Teller, tomradeTells, type AttentionEntry, type AttentionNote, type NotificationPrefs } from "../src/attention.js";
 import { DESKTOP_WORDS } from "../src/words.js";
 
 const WORDS = DESKTOP_WORDS("en");
@@ -160,4 +173,100 @@ it("reminds in IM only when that is where the person chose to be reminded", () =
   expect(reminded).toHaveLength(1);
   // No IM running: nothing to do, and nothing breaks.
   expect(() => remindAway({ ...NOTIFICATIONS_SECTION.defaults }, note, undefined)).not.toThrow();
+});
+
+describe("the attention row", () => {
+  type Listener = (...args: unknown[]) => unknown;
+  const disposers: (() => void)[] = [];
+  afterEach(() => {
+    for (const dispose of disposers.splice(0)) dispose();
+    shown.length = 0;
+  });
+  const start = () => {
+    const state = { sessions: [] as unknown[], client: false, cells: undefined as { sessionId: string; n: number }[] | undefined };
+    const listeners = new Map<string, Listener>();
+    const sent: unknown[][] = [];
+    const revealed: unknown[][] = [];
+    const services: Record<string, unknown> = {
+      codeLink: { sessionsOf: () => state.sessions, showSession: async (...args: unknown[]) => (revealed.push(args), true) },
+      db: { openIds: () => ["p"] },
+      terminals: { kind: "herdr" },
+      herdr: { clientAttached: async () => state.client }
+    };
+    const ctx = {
+      settings: { register: () => {}, locale: () => "en", get: () => ({}) },
+      agent: { codeEngines: () => [{ id: "claude", title: "Claude Code" }], activities: () => [], store: { thread: () => null, messages: () => [] } },
+      get: (name: string) => services[name],
+      bail: (name: string) => (name === "codeLink/cells" ? state.cells : undefined),
+      ipc: { handle: () => {}, send: (...args: unknown[]) => void sent.push(args) },
+      emit: () => {},
+      on: (name: string, fn: Listener) => void listeners.set(name, fn),
+      effect: (fn: () => () => void) => void disposers.push(fn()),
+      logger: { warn: () => {} }
+    };
+    attention.apply(ctx as never, { waitingDelayMs: 0 });
+    return { state, listeners, sent, revealed };
+  };
+  const waitingIn = (id: string, pane: string | null) => ({ id, state: "waiting", threadId: null, itemIds: [], agent: "claude", activity: "Allow command?", summary: null, herdrPane: pane });
+
+  it("leaves a herdr pane's session to herdr while a client of its own shows it, and tells it otherwise", async () => {
+    const { state, listeners } = start();
+    await vi.advanceTimersByTimeAsync(300);
+    state.client = true;
+    state.sessions = [waitingIn("s1", "w1:p1")];
+    listeners.get("codeLink/changed")!("p");
+    await vi.advanceTimersByTimeAsync(300);
+    expect(shown).toEqual([]);
+    // only Tomrade's Terminal window shows the panes: nobody else tells the person
+    state.client = false;
+    state.sessions = [waitingIn("s1", "w1:p1"), waitingIn("s2", "w1:p2")];
+    listeners.get("codeLink/changed")!("p");
+    await vi.advanceTimersByTimeAsync(300);
+    expect(shown).toEqual(["Claude Code is waiting for you"]);
+  });
+
+  it("opens a terminal session in its cell while its Terminal window is open, and in the main window's panel otherwise", async () => {
+    const { state, listeners, sent, revealed } = start();
+    const target = { projectId: "p", threadId: null, itemId: "i", sessionId: "s1" };
+    state.cells = [];
+    listeners.get("attention/open")!(target);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(revealed).toEqual([["p", "s1"]]);
+    expect(sent.filter(([channel]) => channel === "attention.open")).toEqual([]);
+    state.cells = undefined;
+    listeners.get("attention/open")!(target);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(revealed).toHaveLength(1);
+    expect(sent.filter(([channel]) => channel === "attention.open")).toEqual([["attention.open", target]]);
+    // the assistant's conversation always opens in the panel
+    listeners.get("attention/open")!({ projectId: "p", threadId: "t", itemId: null });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(revealed).toHaveLength(1);
+  });
+});
+
+it("shows Tomrade's notification unless herdr shows it to an attached client", async () => {
+  expect(await tomradeTells({}, async () => true)).toBe(true);
+  expect(await tomradeTells({ toldIn: "herdr" }, async () => true)).toBe(false);
+  expect(await tomradeTells({ toldIn: "herdr" }, async () => false)).toBe(true);
+  // a client that cannot be read leaves the telling to Tomrade
+  expect(await tomradeTells({ toldIn: "herdr" }, async () => Promise.reject(new Error("ps failed")))).toBe(true);
+});
+
+it("offers the tray's Allow on a terminal session's prompt whether its wait is listed as a permission or as waiting", async () => {
+  const answered: string[] = [];
+  const codeLink = {
+    sessionPanel: () => ({ input: "ok", approval: true }),
+    sessionTail: async () => "Do you want to proceed?\n❯ 1. Yes\n  2. No",
+    sessionAnswer: async (_p: string, id: string) => (answered.push(id), "answered")
+  };
+  const ctx = { get: (name: string) => (name === "codeLink" ? codeLink : name === "agent" ? { activities: () => [] } : undefined) };
+  for (const kind of ["permission", "waiting"] as const) {
+    const allow = await allowOf(ctx as never, entry(`session:${kind}`, kind, { threadId: "t", sessionId: kind }), WORDS);
+    expect(allow?.label).toBe(WORDS("trayAllow"));
+    expect(await allow?.allow()).toBe(true);
+  }
+  expect(answered).toEqual(["permission", "waiting"]);
+  // a question is not a prompt the tray answers
+  expect(await allowOf(ctx as never, entry("session:q", "question", { sessionId: "q" }), WORDS)).toBeNull();
 });

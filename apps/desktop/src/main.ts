@@ -7,7 +7,7 @@ import { APP_ICON_FILE, appIconPath, readAppIcon, wearAppIcon } from "./app-icon
 import { AccountFolders, machineRoots, restart } from "./accounts.js";
 import { cameBack, keepsRunning, launchMode, otherOrdinaryWindow, PREFS_FILE, whenLastWindowCloses } from "./background.js";
 import { commandOnPath, openAtStart, SESSIONS_SECTION, startWindows } from "./sessions-section.js";
-import { hasTerminalWindow, installGlobalHotkey, openTerminal } from "./terminal-entries.js";
+import { hasTerminalWindow, installGlobalHotkey, launchAsk, openStartWindows, openTerminal } from "./terminal-entries.js";
 import { boot, ConfigUnreadable, type Booted } from "./boot.js";
 import { setUpBorrowedNode } from "./borrowed-node.js";
 import { openKeyring } from "./cipher.js";
@@ -49,13 +49,18 @@ if (!primary) {
   app.quit();
 }
 
+// Once booted: what a jump list task's launch opens a Terminal window with.
+let started: Booted["ctx"] | null = null;
+
 // tomrade:// links: macOS hands them over as events, from launch on; elsewhere they arrive as arguments.
 if (primary) {
   // From the first moment: a launch while this one still boots, or runs hidden, is answered once there is a window to show.
   app.on("second-instance", (_event, args) => {
     if (leaving()) return;
     for (const arg of args) deliverDeepLink(arg);
-    askForMainWindow();
+    const asked = launchAsk(args);
+    if (asked?.window === "terminal" && started) void openTerminal(started, asked.projectId).then((opened) => opened || askForMainWindow());
+    else askForMainWindow();
   });
   app.on("open-url", (event, url) => {
     event.preventDefault();
@@ -259,11 +264,20 @@ app.whenReady().then(async () => {
   // Reached only with background running on: any other last close became a quit.
   app.on("window-all-closed", () => {});
   // The start got as far as a window that loaded, or as far as it goes without one.
-  const opens = startWindows(openAtStart(ctx), mode === "window" && hasTerminalWindow(ctx));
-  if (mode === "window" && opens.main) openMain().webContents.once("did-finish-load", () => startFinished(startingFile));
-  else startFinished(startingFile);
-  // With no project named, the Terminal window opens the one it showed last; a start that opens nothing falls back to the main window.
-  if (mode === "window" && opens.terminal) void openTerminal(ctx, null).then((opened) => !opened && !opens.main && openMain());
+  // A jump list task names the window it wants; otherwise Settings › Sessions says. With no project named, the Terminal
+  // window opens the one it showed last; a start that opens nothing falls back to the main window.
+  const asked = launchAsk(argv);
+  const terminalHere = mode === "window" && hasTerminalWindow(ctx);
+  const opens = asked && (asked.window === "main" || terminalHere) ? { main: asked.window === "main", terminal: asked.window === "terminal" } : startWindows(openAtStart(ctx), terminalHere);
+  if (mode === "window") {
+    const openFirst = () => {
+      const win = openMain();
+      win.webContents.once("did-finish-load", () => startFinished(startingFile));
+      return win;
+    };
+    void openStartWindows(ctx, { ...opens, projectId: asked?.window === "terminal" ? asked.projectId : null }, openFirst).then((main) => main || startFinished(startingFile));
+  } else startFinished(startingFile);
+  started = ctx;
   whenLastWindowCloses(() => {
     if (openAtStart(ctx) !== "main") app.quit();
   });

@@ -5,14 +5,16 @@ import { app, Menu, nativeImage, Notification, shell as electronShell, Tray, typ
 import type { Context } from "cordis";
 import { z } from "zod";
 import type {} from "@tomradex/agent";
+import type {} from "@tomradex/code-link";
 import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/mcp";
 import type {} from "@tomradex/settings";
 import { appIconPath, currentAppIcon } from "./app-icon.js";
 import { BACKGROUND_FLAG, loginItem, type LoginItem, type LoginState } from "./login-item.js";
 import { hasMainWindow, showMainWindow } from "./main-window.js";
-import type { AttentionEntry } from "./attention.js";
-import { terminalMenuItems, terminalProjects } from "./terminal-entries.js";
+import { allowOf, type AttentionEntry, type AttentionTarget, type TrayAllow } from "./attention.js";
+import { openAtStart } from "./sessions-section.js";
+import { accelerator, hasTerminalWindow, jumpList, openTerminal, recentLabel, recentTerminalWindows, terminalChord, terminalProjects } from "./terminal-entries.js";
 import { leaving, quitApproved } from "./quit.js";
 import { DESKTOP_WORDS } from "./words.js";
 import { errorMessage, writeJsonAtomic } from "@tomradex/contracts";
@@ -141,6 +143,41 @@ function trayImage() {
   return nativeImage.createFromPath(path.join(assets, "tray.png"));
 }
 
+/** The most waiting, and the most running, sessions the tray lists. */
+const TRAY_ROWS = 5;
+
+/** The terminal sessions running now, for the tray: what each is about, and its cell while its Terminal window is open. */
+export function trayRunning(ctx: Context): { who: string; cell: number | null; target: AttentionTarget }[] {
+  const codeLink = ctx.get("codeLink");
+  if (!codeLink) return [];
+  const out: { who: string; cell: number | null; target: AttentionTarget }[] = [];
+  for (const projectId of ctx.get("db")?.openIds() ?? []) {
+    const cells = ctx.bail("codeLink/cells", projectId) ?? [];
+    let sessions: ReturnType<typeof codeLink.sessionsOf> = [];
+    try {
+      sessions = codeLink.sessionsOf(projectId);
+    } catch {
+      // a project that cannot be read lists nothing running
+    }
+    for (const s of sessions) {
+      if (s.state !== "running") continue;
+      const itemId = s.itemIds[0] ?? null;
+      const who = (itemId ? ctx.get("items")?.get(projectId, itemId)?.key : null) ?? s.title ?? s.branch;
+      out.push({ who, cell: cells.find((c) => c.sessionId === s.id)?.n ?? null, target: { projectId, threadId: s.threadId, itemId, sessionId: s.id } });
+    }
+  }
+  return out.slice(0, TRAY_ROWS);
+}
+
+/** The Dock icon's menu: "Recent Terminal windows" and theirs, then a new Terminal window and the main window. */
+function dockMenu(recent: { label: string; open: () => void }[], terminal: boolean, w: ReturnType<typeof DESKTOP_WORDS>, ctx: Context): MenuItemConstructorOptions[] {
+  return [
+    ...(recent.length ? [{ label: w("recentTerminalWindows"), enabled: false }, ...recent.map((r) => ({ label: r.label, click: r.open })), { type: "separator" as const }] : []),
+    ...(terminal ? [{ label: w("newTerminalWindow"), click: () => void openTerminal(ctx, null) }] : []),
+    { label: w("newMainWindow"), click: () => void showMainWindow() }
+  ];
+}
+
 const LOGIN_SETTINGS: Partial<Record<NodeJS.Platform, string>> = {
   darwin: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension",
   win32: "ms-settings:startupapps"
@@ -208,22 +245,33 @@ export const background = {
     let tray: Tray | null = null;
     // what waits on the person, as the attention row last said; the tray lists it and opens it like a notification
     let waiting: AttentionEntry[] = [];
+    // what each listed entry's Allow presses, read off its screen for a terminal session; none where nothing may be answered here
+    let allows = new Map<string, TrayAllow>();
     const waitingItems = (w: ReturnType<typeof words>): MenuItemConstructorOptions[] =>
-      waiting.slice(0, 5).map((e) => {
+      waiting.slice(0, TRAY_ROWS).flatMap((e) => {
         const who = [e.itemKey, e.who].filter(Boolean).join(" · ") || w("trayAssistant");
-        return { label: e.text ? w("trayWaiting", { who, text: e.text.slice(0, 60) }) : `◆ ${who}`, click: () => ctx.emit("attention/open", e) };
+        const row: MenuItemConstructorOptions = { label: e.text ? w("trayWaiting", { who, text: e.text.slice(0, 60) }) : `◆ ${who}`, click: () => ctx.emit("attention/open", e) };
+        const allow = allows.get(e.key);
+        // Answered on a screen that no longer asks: the session opens, to be answered there.
+        return allow ? [row, { label: `    ${allow.label}`, click: () => void allow.allow().catch(() => false).then((done) => done || ctx.emit("attention/open", e)) }] : [row];
       });
+    const runningItems = (w: ReturnType<typeof words>): MenuItemConstructorOptions[] =>
+      trayRunning(ctx).map((r) => ({ label: r.cell ? w("trayCell", { label: w("trayRunning", { who: r.who }), n: r.cell }) : w("trayRunning", { who: r.who }), click: () => ctx.emit("attention/open", r.target) }));
     const menu = () => {
       const mcp = ctx.get("mcp")?.url ?? null;
       const runs = ctx.get("agent")?.activeRuns().length ?? 0;
       const w = words();
-      const waits = waitingItems(w);
-      const terminals = terminalMenuItems(ctx, (name) => w("terminalWindowOf", { name }));
+      const sessions = [...waitingItems(w), ...runningItems(w)];
+      const projects = hasTerminalWindow(ctx) ? terminalProjects(ctx) : [];
+      const chord = terminalChord(ctx);
       return Menu.buildFromTemplate([
-        ...waits,
-        ...(waits.length ? [{ type: "separator" as const }] : []),
-        ...terminals,
-        { label: w("trayOpen"), click: () => void showMainWindow() },
+        ...sessions,
+        ...(sessions.length ? [{ type: "separator" as const }] : []),
+        ...(hasTerminalWindow(ctx)
+          ? [{ label: w("newTerminalWindow"), ...(chord ? { accelerator: accelerator(chord), registerAccelerator: false } : {}), click: () => void openTerminal(ctx, null) }]
+          : []),
+        ...(projects.length ? [{ label: w("startInTerminal"), submenu: projects.map((p) => ({ label: p.name, click: () => void ctx.serial("codeLink/new-terminal", p.id) })) }] : []),
+        { label: w("openMainWindow"), click: () => void showMainWindow() },
         { type: "separator" },
         { label: mcp ? `MCP: ${mcp.replace(/^https?:\/\//, "")}` : w("trayMcpStopped"), enabled: false },
         { label: w(runs === 1 ? "trayRunsOne" : "trayRunsMany", { n: runs }), enabled: false },
@@ -231,26 +279,65 @@ export const background = {
         { label: w("trayQuit"), click: () => app.quit() }
       ]);
     };
-    const refreshTray = () => tray?.setContextMenu(menu());
-    // macOS: the Dock icon's menu opens a project's Terminal window, or the main window. Set again only when its rows change.
+    const refreshTray = () => {
+      if (!tray) return;
+      tray.setContextMenu(menu());
+      // The count beside the icon, as the Dock's badge; a tray without a title (Windows, Linux) says it on hover.
+      const n = waiting.length;
+      if (process.platform === "darwin") tray.setTitle(n ? `◆ ${n}` : "");
+      tray.setToolTip(n ? words()("trayWaitingTip", { n }) : "Tomrade");
+    };
+    // Screens are read only while the tray is there to offer what they allow.
+    const readAllows = async () => {
+      if (!tray) return;
+      const w = words();
+      const next = new Map<string, TrayAllow>();
+      for (const e of waiting.slice(0, TRAY_ROWS)) {
+        const allow = await allowOf(ctx, e, w).catch(() => null);
+        if (allow) next.set(e.key, allow);
+      }
+      const shape = (m: Map<string, TrayAllow>) => JSON.stringify([...m].map(([key, a]) => [key, a.label]));
+      const changed = shape(next) !== shape(allows);
+      allows = next;
+      if (changed) refreshTray();
+    };
+    // The Dock icon's menu (macOS) and the taskbar's jump list (Windows): the Terminal windows used last, a new one, the main window.
+    // Set again only when their rows change.
     let dockShape = "";
     const refreshDock = () => {
-      if (process.platform !== "darwin" || !app.dock) return;
+      const dock = process.platform === "darwin" ? app.dock : undefined;
+      if (!dock && process.platform !== "win32") return;
       const w = words();
-      const terminals = terminalMenuItems(ctx, (name) => w("terminalWindowOf", { name }));
-      const shape = JSON.stringify([w("openMainWindow"), terminals.length ? terminalProjects(ctx) : []]);
+      const recent = recentTerminalWindows(ctx);
+      const terminal = hasTerminalWindow(ctx);
+      const shape = JSON.stringify([w("newMainWindow"), terminal, recent]);
       if (shape === dockShape) return;
       dockShape = shape;
-      app.dock.setMenu(Menu.buildFromTemplate([...terminals, ...(terminals.length ? [{ type: "separator" as const }] : []), { label: w("openMainWindow"), click: () => void showMainWindow() }]));
+      if (dock) {
+        dock.setMenu(Menu.buildFromTemplate(dockMenu(recent.map((r) => ({ label: recentLabel(w, r), open: () => void openTerminal(ctx, r.projectId) })), terminal, w, ctx)));
+        return;
+      }
+      // A checkout runs Electron with its entry script; the installed app is the program itself.
+      const launch = { program: process.execPath, args: process.defaultApp && process.argv[1] ? [`"${path.resolve(process.argv[1])}"`] : [] };
+      let removed: string[] = [];
+      try {
+        removed = app.getJumpListSettings().removedItems.flatMap((item) => (item.args ? [item.args] : []));
+      } catch {
+        // nothing removed that can be read
+      }
+      const result = app.setJumpList(terminal ? jumpList(recent, w, launch, removed) : null);
+      if (result !== "ok") log.warn(`jump list not set: ${result}`);
     };
+    // With background running, or for someone who starts on the Terminal window: the main window opens from here.
+    const wantsTray = () => keepsRunning() || openAtStart(ctx) !== "main";
     const syncTray = () => {
-      if (keepsRunning() && !tray) {
+      if (wantsTray() && !tray) {
         tray = new Tray(trayImage());
-        tray.setToolTip("Tomrade");
         // macOS and Linux open the menu on a click; Windows keeps it for the right button.
         if (process.platform === "win32") tray.on("click", () => void showMainWindow());
         refreshTray();
-      } else if (!keepsRunning() && tray) {
+        void readAllows();
+      } else if (!wantsTray() && tray) {
         tray.destroy();
         tray = null;
       }
@@ -260,7 +347,9 @@ export const background = {
     ctx.on("attention/changed", (entries) => {
       waiting = entries;
       refreshTray();
+      void readAllows();
     });
+    ctx.on("settings/changed", syncTray);
     ctx.on("agent/run-ended", refreshTray);
     ctx.on("agent/event", (_threadId, event) => {
       if (event.type === "done") refreshTray();
@@ -269,6 +358,7 @@ export const background = {
     const sweep = setInterval(() => {
       refreshTray();
       refreshDock();
+      void readAllows();
     }, 5_000);
 
     onAway = () => {

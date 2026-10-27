@@ -288,6 +288,12 @@ const run = async () => {
     available: async () => ({ ok: true }),
     async turn(input, io) {
       const text = input.input.kind === "text" ? input.input.text : "";
+      if (text.startsWith("test")) {
+        await io.tools.execute("write_file", { path: "code/part-7.md", content: "part 7" });
+        await io.tools.execute("bash", { command: "echo 'Tests  8 passed (8)'" });
+        io.emit({ type: "text", text: "Tested." });
+        return { stop: "end" };
+      }
       if (!text.startsWith("write")) {
         io.emit({ type: "text", text: "Sure, what should it say?" });
         return { stop: "end" };
@@ -663,9 +669,16 @@ const run = async () => {
   const ticket = ctx.items.create({ projectId: alpha.id, boardId, title: "Record pane output", by: "human" });
   const pane = ctx.codeLink.store.createSession(alpha.id, { repoId: "check", branch: "", itemIds: [ticket.id], mode: "terminal", agent: "claude-code", threadId: null, device: "check" });
   // in another terminal app: no pane for anything here to find gone
-  ctx.codeLink.store.patchSession(alpha.id, pane.id, { terminal: "iTerm.app", state: "waiting", activity: "needs your approval", lastEventAt: Date.now() });
+  // What a session asks is a structure (TOM-696): the tool and what it would run or change; each window words it.
+  const asksTo = (tool, detail = null) => ({ kind: "permission", tool, action: tool === null ? null : tool === "Bash" ? "run" : tool === "Edit" || tool === "Write" ? "edit" : "use", detail });
+  ctx.codeLink.store.patchSession(alpha.id, pane.id, { terminal: "iTerm.app", state: "waiting", activity: null, ask: asksTo(null), lastEventAt: Date.now() });
   const ended = ctx.codeLink.store.createSession(alpha.id, { repoId: "check", branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: "check" });
   ctx.codeLink.store.patchSession(alpha.id, ended.id, { title: "Snapshot records", state: "ended", endedAt: Date.now(), summary: "PR #9 merged" });
+  // One whose ticket's branch has a merged pull request: its card says so, the way the look back does.
+  const shippedTicket = ctx.items.create({ projectId: alpha.id, boardId, title: "Ship the snapshot", by: "human" });
+  const shipped = ctx.codeLink.store.createSession(alpha.id, { repoId: "check", branch: "al/ship", itemIds: [shippedTicket.id], mode: "terminal", agent: "claude-code", threadId: null, device: "check" });
+  ctx.codeLink.store.upsertLink(alpha.id, { itemId: shippedTicket.id, repoId: "check", branch: "al/ship" }, { ahead: 4, prNumber: 407, prState: "merged", prUrl: "https://example.com/pull/407" });
+  ctx.codeLink.store.patchSession(alpha.id, shipped.id, { state: "ended", endedAt: Date.now() + 5, summary: "All done.", asked: 2 });
   const shown = [];
   ctx.codeLink.showSession = async (_projectId, sessionId) => (shown.push(sessionId), true);
   ctx.emit("codeLink/changed", alpha.id);
@@ -685,17 +698,19 @@ const run = async () => {
   await $(`(() => { const d = [...document.querySelectorAll('.ai .sbar-dot[data-status="wait"]')].find((n) => /Record pane output/.test(n.getAttribute('aria-label'))); d.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return true; })()`);
   await sleep(200);
   barSeen = await bar();
-  check("hovering a dot peeks at what it waits on", /needs your approval/.test(barSeen?.peek ?? ""), barSeen?.peek);
+  check("hovering a dot peeks at what it waits on, worded from what it asks", /waits for your approval/.test(barSeen?.peek ?? "") && !/needs your approval/.test(barSeen?.peek ?? ""), barSeen?.peek);
   await flip();
   await sleep(300);
   barSeen = await bar();
   check("⌘\\ turns the dots into cards", barSeen?.mode === "cards", barSeen?.mode);
   await shot("session-bar-cards.png");
   const card = barSeen?.cards.find(([, text]) => /Record pane output/.test(text));
-  check("a card says the ticket, where it runs and what it waits on", card?.[0] === "wait" && /AL-\d+ Record pane output/.test(card[1]) && /iTerm/.test(card[1]) && /needs your approval/.test(card[1]), card);
+  check("a card says the ticket, where it runs and what it waits on", card?.[0] === "wait" && /AL-\d+ Record pane output/.test(card[1]) && /iTerm/.test(card[1]) && /waits for your approval/.test(card[1]), card);
   check("a session started this minute says it is new", /new/.test(card?.[1] ?? ""), card);
   check("an ended one never does", !barSeen?.cards.some(([status, text]) => status === "done" && /new/.test(text)), barSeen?.cards);
   check("an ended card carries its outcome", barSeen?.cards.some(([status, text]) => status === "done" && /PR #9 merged/.test(text)), barSeen?.cards);
+  check("an ended card says what its code came to as the look back does, and when it ran", barSeen?.cards.some(([status, text]) => status === "done" && /Ship the snapshot/.test(text) && /PR #407 merged · 4 commits · asked you 2 times/.test(text) && /ended · \d\d:\d\d–\d\d:\d\d/.test(text)), barSeen?.cards);
+  check("a live card says how long it has waited", /waiting \d+(m|h)/.test(card?.[1] ?? ""), card);
   await press(`[...document.querySelectorAll('.ai .sbar-card')].find((n) => /Record pane output/.test(n.textContent))`);
   await sleep(500);
   const sessionView = () =>
@@ -711,8 +726,43 @@ const run = async () => {
   check("and the bar marks it as the open one", /Record pane output/.test(view?.current ?? ""), view?.current);
   await flip();
   await sleep(300);
-  check("⌘\\ turns them back into dots, and the choice is kept", (await bar())?.mode === "rail" && (await $(`localStorage.getItem('tomrade.ai.sessionBar')`)) === "rail");
+  check("⌘\\ turns them back into dots", (await bar())?.mode === "rail");
   await shot("session-bar.png");
+  // Settings › Sessions, by width (the default): the bar unfolds as the panel is dragged past 720 and folds as it narrows; ⌘\\ swaps only for the moment.
+  const widthNow = async () => Math.round(await $(`document.querySelector('aside.ai').getBoundingClientRect().width`));
+  await dragPanel(300);
+  await sleep(300);
+  const wideAt = await widthNow();
+  check("by width, the panel dragged wide shows cards", wideAt >= 720 && (await bar())?.mode === "cards", { wideAt, mode: (await bar())?.mode });
+  await flip();
+  await sleep(300);
+  check("⌘\\ folds it for the moment", (await bar())?.mode === "rail");
+  await dragPanel(-1000);
+  await sleep(300);
+  await dragPanel(600);
+  await sleep(300);
+  check("dragged narrow and wide again, the width decides once more", (await bar())?.mode === "cards", (await bar())?.mode);
+  await dragPanel(-1000);
+  await sleep(300);
+  check("and dragged narrow it folds into dots", (await widthNow()) < 720 && (await bar())?.mode === "rail", await widthNow());
+  const setSessions = async (patch) => {
+    ctx.settings.set({ ...ctx.settings.get(), sessions: { ...ctx.settings.get().sessions, ...patch } });
+    await sleep(600);
+  };
+  await setSessions({ sessionBar: "cards" });
+  check("always unfolded shows cards on a narrow panel", (await bar())?.mode === "cards", (await bar())?.mode);
+  await setSessions({ sessionBar: "rail", peek: false });
+  await $(`(() => { const d = document.querySelector('.ai .sbar-dot[data-status]'); d.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return true; })()`);
+  await sleep(200);
+  barSeen = await bar();
+  check("with peeking off, hovering a dot shows nothing", barSeen?.mode === "rail" && barSeen.peek === null, barSeen);
+  await setSessions({ sessionBar: "auto", peek: true });
+  await $(`(() => { const d = document.querySelector('.ai .sbar-dot[data-status]'); d.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return true; })()`);
+  await sleep(200);
+  check("peeking back on, it peeks again", !!(await bar())?.peek);
+  await $(`(() => { const d = document.querySelector('.ai .sbar-dot[data-status]'); d.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })); return true; })()`);
+  await $(`localStorage.removeItem("tomrade.ai.width"); document.querySelector('aside.ai').style.width = ''; true`);
+  await sleep(500);
 
   // ── a session in a Terminal window pane, seen from the panel: the same session from another side ──
   // Its agent's own record, as Claude Code writes one; the session names the file, so code link reads it.
@@ -743,7 +793,8 @@ const run = async () => {
   let convoReads = 0;
   ctx.codeLink.conversation = (...args) => (convoReads++, readConversation(...args));
   const moved = (patch) => {
-    ctx.codeLink.store.patchSession(alpha.id, inPane.id, { lastEventAt: Date.now(), ...patch });
+    // an ask lasts until the session's next word, as code link's own hooks keep it
+    ctx.codeLink.store.patchSession(alpha.id, inPane.id, { lastEventAt: Date.now(), ask: null, ...patch });
     ctx.emit("codeLink/changed", alpha.id);
     ctx.ipc.send("codeLink.changed", alpha.id);
   };
@@ -751,13 +802,46 @@ const run = async () => {
   await sleep(1200);
   const readsBefore = { tail: tailReads, convo: convoReads };
   await sleep(2000);
-  check("while no terminal session is shown, the panel reads nothing off the pane or its record", tailReads === readsBefore.tail && convoReads === readsBefore.convo && tailReads === 0, { tailReads, convoReads });
+  // the bar's cards glance at a live pane once per event (TOM-697), never on a timer; its record is never read
+  check("while no terminal session is shown, the panel reads its pane only for the bar's glance, once for the event, and never its record", tailReads === readsBefore.tail && convoReads === readsBefore.convo && tailReads <= 1 && convoReads === 0, { tailReads, convoReads });
+  // its card and its peek show the pane's last two lines; the peek says how to turn the dots into cards
+  await $(`(() => { const d = [...document.querySelectorAll('.ai .sbar-dot')].find((n) => /Tail the pane/.test(n.getAttribute('aria-label'))); d.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return true; })()`);
+  await sleep(200);
+  const tailPeek = await $(`(() => { const p = document.querySelector('.ai .sbar-peek'); return p ? { tail: [...p.querySelectorAll('.sbar-tail-line')].map((l) => l.textContent), hint: p.querySelector('.sbar-peek-foot')?.textContent ?? null } : null; })()`);
+  await $(`(() => { const d = [...document.querySelectorAll('.ai .sbar-dot')].find((n) => /Tail the pane/.test(n.getAttribute('aria-label'))); d.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })); return true; })()`);
+  check("the peek shows the pane's last two lines and says ⌘\\ turns the dots into cards", tailPeek?.tail.join("|") === "❯ claude|⏺ Reading the pane…" && /Hover to peek, click to switch · .+ expands into cards/.test(tailPeek.hint ?? ""), tailPeek);
+  await flip();
+  await sleep(300);
+  const tailCard = await $(`[...([...document.querySelectorAll('.ai .sbar-card')].find((n) => /Tail the pane/.test(n.textContent))?.querySelectorAll('.sbar-tail-line') ?? [])].map((l) => l.textContent)`);
+  check("its card shows the same two lines, in the terminal's colours", tailCard.join("|") === "❯ claude|⏺ Reading the pane…", tailCard);
+  await flip();
+  await sleep(300);
   await press(`[...document.querySelectorAll('.ai .sbar-dot')].find((n) => /Tail the pane/.test(n.getAttribute('aria-label')))`);
   await sleep(1500);
   view = await sessionView();
   check("picking a session in a pane shows it in the panel, with the way to the Terminal window", view?.id === inPane.id && view.show && view.state === "running", view);
-  check("its conversation is read from the agent's record, tool calls folded", view?.lines.map((l) => l[0]).join("|") === "person|agent|tool|agent" && view.lines[2][1] === "Bash · herdr pane read w1:p1" && view.details === 0, view?.lines);
+  // A notification or the tray naming it, with no Terminal window open: the panel shows the session, not its ticket.
+  await newThread();
+  const awayFrom = await sessionView();
+  ctx.emit("attention/open", { projectId: alpha.id, threadId: null, itemId: tailTicket.id, sessionId: inPane.id });
+  await sleep(1500);
+  view = await sessionView();
+  check("opened from a notification or the tray, a terminal session shows in the panel", awayFrom === null && view?.id === inPane.id && !(await $(`location.hash.includes('/i/')`)), { awayFrom, view });
+  check("its conversation is read from the agent's record, tool calls folded",view?.lines.map((l) => l[0]).join("|") === "person|agent|tool|agent" && view.lines[2][1] === "Bash · herdr pane read w1:p1" && view.details === 0, view?.lines);
   check("the strip shows the pane's last lines that say something", view?.strip.join("|") === "❯ claude|⏺ Reading the pane…", view?.strip);
+  // The Terminal window shows it in its third cell: the head and the bar say which, once the window says its cells changed.
+  ctx.codeLink.sessionCells = async () => ({ [inPane.id]: 3 });
+  ctx.ipc.send("codeLink.cellsChanged", alpha.id);
+  await sleep(600);
+  const cellHead = await $(`document.querySelector('[data-testid="ai-session-show"]')?.getAttribute('title') ?? null`);
+  await $(`(() => { const d = [...document.querySelectorAll('.ai .sbar-dot')].find((n) => /Tail the pane/.test(n.getAttribute('aria-label'))); d.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return true; })()`);
+  await sleep(200);
+  const cellPeek = (await bar())?.peek ?? "";
+  await $(`(() => { const d = [...document.querySelectorAll('.ai .sbar-dot')].find((n) => /Tail the pane/.test(n.getAttribute('aria-label'))); d.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })); return true; })()`);
+  check("the panel names the cell that shows the session: «Show in Terminal window · cell 3», and the bar's peek says cell 3", cellHead === "Show in Terminal window · cell 3" && /cell 3/.test(cellPeek), { cellHead, cellPeek });
+  // Both sides open on one pane: the head says so, the strip names the cell, the input says where it lands, the dot says both.
+  const both = await $(`(() => ({ here: document.querySelector('[data-testid="ai-session-here"]')?.getAttribute('aria-pressed'), there: document.querySelector('[data-testid="ai-session-show"]')?.getAttribute('aria-pressed'), there_text: document.querySelector('[data-testid="ai-session-show"]')?.textContent, sub: document.querySelector('[data-testid="ai-session-both"]')?.textContent ?? null, strip: document.querySelector('[data-testid="ai-strip-title"]')?.textContent ?? null, placeholder: document.querySelector('.ai-session-foot .ai-input')?.placeholder ?? null, dot: [...document.querySelectorAll('.ai .sbar-dot')].find((n) => /Tail the pane/.test(n.getAttribute('aria-label')))?.querySelector('.sbar-dot-where')?.textContent ?? null }))()`);
+  check("open in the panel and in cell 3: «Here | Also in the Terminal window» both on, «the panel and cell 3 are open together», the strip and the input name cell 3, the dot says both", both.here === "true" && both.there === "true" && both.there_text === "Also in the Terminal window" && / · the panel and cell 3 are open together/.test(both.sub ?? "") && both.strip === "Terminal · live · the same pane as cell 3" && both.placeholder === "Say it here; Claude Code gets it in cell 3" && both.dot === "both", both);
   await press(`[...document.querySelectorAll('.ai-session-convo .cs-convo-line[data-who="tool"]')][0]`);
   await sleep(200);
   const detail = await $(`document.querySelector('.ai-session-convo .cs-convo-detail')?.textContent ?? null`);
@@ -775,6 +859,21 @@ const run = async () => {
   await sleep(1300);
   view = await sessionView();
   check("the strip opens a drawer with more of the pane", /typed in the pane/.test(view?.drawer ?? "") && /❯ claude/.test(view?.drawer ?? ""), view?.drawer);
+  // the drawer has a head (title · cell · you can type here), «Hide · Esc», and an input line of its own into the pane
+  const drawerHead = await $(`({ title: document.querySelector('[data-testid="ai-drawer-title"]')?.textContent ?? null, close: document.querySelector('[data-testid="ai-drawer-close"]')?.textContent ?? null, input: !!document.querySelector('[data-testid="ai-drawer-input"]') })`);
+  check("the drawer's head names it, its cell and that it takes typing, with «Hide · Esc» and an input line", drawerHead.title === "Tail the pane · cell 3 · you can type here" && drawerHead.close === "Hide · Esc" && drawerHead.input, drawerHead);
+  await $(`(() => { const i = document.querySelector('[data-testid="ai-drawer-input"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'from the drawer'); i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); return true; })()`);
+  await sleep(400);
+  check("the drawer's input line types into the pane, with Enter", typed.at(-1)?.paneId === "w1:p1" && typed.at(-1)?.text === "from the drawer" && typed.at(-1)?.keys?.join() === "enter", typed.at(-1));
+  await $(`document.querySelector('[data-testid="ai-drawer-input"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));true`);
+  await sleep(300);
+  check("Esc closes the drawer", !(await $(`!!document.querySelector('[data-testid="ai-drawer-box"]')`)));
+  // said in the cell while the panel shows it: its line in the conversation says where it came from
+  fs.appendFileSync(record, JSON.stringify({ type: "user", timestamp: new Date().toISOString(), message: { content: "typed in cell three" } }) + "\n");
+  moved({});
+  await sleep(1500);
+  const sourceNote = await $(`(() => { const items = [...document.querySelectorAll('.ai-session-convo .cs-convo-note, .ai-session-convo .cs-convo-line')].map((n) => n.textContent); const at = items.indexOf('typed in cell three'); return at > 0 ? items[at - 1] : null; })()`);
+  check("a line said in the cell while both are open is marked «You said this in cell 3»", sourceNote === "You said this in cell 3", sourceNote);
 
   // The agent asks permission: the panel offers Allow and Deny while the pane shows a prompt they answer, pressing the
   // keys the agent declared; the answer closes the ask on both sides.
@@ -783,25 +882,25 @@ const run = async () => {
   // A folder's trust is no permission (Enter there is "No, exit"): the ask shows, with only the way to answer it in the pane.
   screen = "Do you trust the files in this folder?\n\n❯ No, exit\n  Yes, I trust this folder\n\nEnter to confirm · Esc to cancel";
   const convoAt = convoReads;
-  moved({ state: "waiting", activity: "needs your approval: Bash" });
-  moved({ state: "waiting", activity: "needs your approval: Bash" });
-  moved({ state: "waiting", activity: "needs your approval: Bash" });
+  moved({ state: "waiting", activity: null, ask: asksTo("Bash", "pnpm test") });
+  moved({ state: "waiting", activity: null, ask: asksTo("Bash", "pnpm test") });
+  moved({ state: "waiting", activity: null, ask: asksTo("Bash", "pnpm test") });
   await sleep(1600);
   view = await sessionView();
-  check("a session waiting on a folder's trust shows the ask with no Allow or Deny, only the way to its pane", view?.state === "waiting" && /needs your approval: Bash/.test(view.approve ?? "") && !view.allow && !view.deny && view.there, view);
+  check("a session waiting on a folder's trust shows the ask with no Allow or Deny, only the way to its pane", view?.state === "waiting" && /wants to run pnpm test/.test(view.approve ?? "") && !view.allow && !view.deny && view.there, view);
   check("a burst of changes re-reads the record once, not once per change", convoReads - convoAt >= 1 && convoReads - convoAt <= 2, convoReads - convoAt);
   const asks = "Bash command\n  pnpm test\nDo you want to proceed?\n❯ 1. Yes\n  2. Yes, and don't ask again\n  3. No, and tell Claude what to do differently (esc)";
   // The cursor on No: Deny alone.
   screen = asks.replace("❯ 1. Yes", "  1. Yes").replace("  3. No", "❯ 3. No");
-  moved({ state: "waiting", activity: "needs your approval: Bash" });
+  moved({ state: "waiting", activity: null, ask: asksTo("Bash", "pnpm test") });
   await sleep(1300);
   view = await sessionView();
   check("with No under the cursor only Deny is offered", !view?.allow && view?.deny && !view.there, view);
   screen = asks;
-  moved({ state: "waiting", activity: "needs your approval: Bash" });
+  moved({ state: "waiting", activity: null, ask: asksTo("Bash", "pnpm test") });
   await sleep(1300);
   view = await sessionView();
-  check("a permission prompt on its screen shows Allow and Deny", view?.state === "waiting" && view.allow && view.deny && /needs your approval: Bash/.test(view.approve ?? ""), view);
+  check("a permission prompt on its screen shows Allow and Deny, with the command it would run", view?.state === "waiting" && view.allow && view.deny && /wants to run pnpm test/.test(view.approve ?? ""), view);
   await shot("terminal-session.png");
   await press(`document.querySelector('[data-testid="ai-allow"]')`);
   await sleep(300);
@@ -810,22 +909,24 @@ const run = async () => {
   moved({ state: "running", activity: "Bash · pnpm test" });
   await sleep(600);
   check("and the agent going on keeps it down", !(await sessionView())?.approve);
-  moved({ state: "waiting", activity: "needs your approval: Edit" });
+  moved({ state: "waiting", activity: null, ask: asksTo("Edit", "src/app.ts") });
   await sleep(600);
   await press(`document.querySelector('[data-testid="ai-deny"]')`);
   await sleep(300);
   check("Deny presses its key for No", typed.at(-1)?.keys?.join() === "esc", typed.at(-1));
   // Answered in the pane instead: the session's next event takes the ask down here too.
-  moved({ state: "waiting", activity: "needs your approval: Write" });
+  moved({ state: "waiting", activity: null, ask: asksTo("Write") });
   await sleep(600);
   check("an ask answered nowhere stays up", (await sessionView())?.allow);
   moved({ state: "running", activity: null });
   await sleep(600);
   check("answered in the pane, the ask goes down in the panel", !(await sessionView())?.approve);
+  const there = await $(`document.querySelector('[data-testid="ai-answered-there"]')?.textContent ?? null`);
+  check("and a line says it was allowed on the other side: «Allowed in cell 3»", there === "Allowed in cell 3 · the ask is down on both sides", there);
   // An agent that never said how its prompt is answered: the panel only points at the Terminal window.
   const muteTicket = ctx.items.create({ projectId: alpha.id, boardId, title: "Mute agent asks", by: "human" });
   const mute = ctx.codeLink.store.createSession(alpha.id, { repoId: "check", branch: "", itemIds: [muteTicket.id], mode: "terminal", agent: "slow", threadId: null, device: "check" });
-  ctx.codeLink.store.patchSession(alpha.id, mute.id, { herdrPane: "w1:p2", state: "waiting", activity: "needs your approval: Bash", lastEventAt: Date.now() });
+  ctx.codeLink.store.patchSession(alpha.id, mute.id, { herdrPane: "w1:p2", state: "waiting", activity: null, ask: asksTo("Bash", "pnpm test"), lastEventAt: Date.now() });
   ctx.emit("codeLink/changed", alpha.id);
   ctx.ipc.send("codeLink.changed", alpha.id);
   await sleep(800);
@@ -848,9 +949,45 @@ const run = async () => {
   await sleep(600);
   moved({ state: "running", activity: "Bash · more" });
   await sleep(2200);
-  check("picking a thread brings its conversation back and stops reading the pane and the record", !(await sessionView()) && tailReads === left.tail && convoReads === left.convo && !!(await $(`!!document.querySelector('.ai-scroll .turn, .ai-composer')`)), { tail: tailReads - left.tail, convo: convoReads - left.convo });
+  // what is left is the bar's glance at the event, once
+  check("picking a thread brings its conversation back and stops reading the pane and the record", !(await sessionView()) && tailReads - left.tail <= 1 && convoReads === left.convo && !!(await $(`!!document.querySelector('.ai-scroll .turn, .ai-composer')`)), { tail: tailReads - left.tail, convo: convoReads - left.convo });
 
   // ── what else waits: a line on top, ⌥↓ to the next, and answering one opens the next — or stays, as the person chose ──
+  // ── a running session cut by ticket in the panel, as it moves: where it claimed, what it linked ──
+  const segTicket = ctx.items.create({ projectId: alpha.id, boardId, title: "Segment the record", by: "human" });
+  const segRecord = path.join(work, "cc-check-2.jsonl");
+  const segEntries = [
+    { type: "user", message: { content: "look at the record first" } },
+    { type: "assistant", message: { content: [{ type: "text", text: "It is one file per pane." }] } },
+    { type: "user", message: { content: `start ${segTicket.key}` } },
+    { type: "assistant", message: { content: [{ type: "tool_use", id: "c1", name: "mcp__tomrade__claim_ticket", input: { key: segTicket.key } }] } },
+    { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "c1", content: "claimed" }] } },
+    { type: "assistant", message: { content: [{ type: "tool_use", id: "e1", name: "Edit", input: { file_path: "src/record.ts", old_string: "a", new_string: "b" } }] } },
+    { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "e1", content: "ok" }] } }
+  ];
+  const writeSegRecord = (entries) => fs.writeFileSync(segRecord, entries.map((entry) => JSON.stringify(entry)).join("\n") + "\n");
+  writeSegRecord(segEntries);
+  const segPane = ctx.codeLink.store.createSession(alpha.id, { repoId: "check", branch: "", itemIds: [segTicket.id], mode: "terminal", agent: "claude-code", threadId: null, device: "check" });
+  const segMoved = () => {
+    ctx.codeLink.store.patchSession(alpha.id, segPane.id, { herdrPane: "w1:p2", externalId: "cc-check-2", transcript: segRecord, state: "running", lastEventAt: Date.now() });
+    ctx.emit("codeLink/changed", alpha.id);
+    ctx.ipc.send("codeLink.changed", alpha.id);
+  };
+  segMoved();
+  await sleep(800);
+  await press(`[...document.querySelectorAll('.ai .sbar-dot')].find((n) => /Segment the record/.test(n.getAttribute('aria-label')))`);
+  const sessionSegs = () => $(`[...document.querySelectorAll('[data-testid="ai-session-seg"]')].map((s) => ({ ticket: s.dataset.ticket, marks: [...s.querySelectorAll('[data-testid="convo-mark"]')].map((m) => m.textContent), facts: s.querySelector('[data-testid="ai-session-seg-facts"]')?.textContent ?? null }))`);
+  check("a running session in the panel is cut by ticket where it claimed, the claim said as a mark", await until(async () => { const s = await sessionSegs(); return s.length === 2 && s[0].ticket === "" && s[1].ticket === segTicket.key && s[1].marks[0] === `● Claimed ${segTicket.key}`; }, 60), await sessionSegs());
+  check("and the ticket's stretch ends on where the ticket stands", await until(async () => !!(await sessionSegs())[1]?.facts, 30), await sessionSegs());
+  await shot("session-segments.png");
+  writeSegRecord([...segEntries, { type: "assistant", message: { content: [{ type: "tool_use", id: "l1", name: "mcp__tomrade__link_code", input: { prUrl: "https://github.com/o/r/pull/419", scopeChecked: true } }] } }]);
+  segMoved();
+  check("as it moves, the stretch takes the new lines: the pull request it linked, said as a mark", await until(async () => !!(await sessionSegs())[1]?.marks.includes("● Linked PR #419"), 60) && (await sessionSegs()).length === 2, await sessionSegs());
+  ctx.codeLink.store.patchSession(alpha.id, segPane.id, { state: "ended", endedAt: Date.now() });
+  ctx.ipc.send("codeLink.changed", alpha.id);
+  await press(`document.querySelector('.ai-session-head button[aria-label="Back to the conversation"]')`);
+  await sleep(400);
+
   let askers = 0;
   const asking = async () => {
     const th = ctx.agent.newThread(alpha.id, "mixed", null, { title: `Asker ${++askers}` });
@@ -892,19 +1029,77 @@ const run = async () => {
   check("⌥↓ goes to the next one waiting", await until(async () => (await shownThread()) !== answered, 30), await shownThread());
   ctx.settings.set({ ...ctx.settings.get(), sessions: { ...ctx.settings.get().sessions, afterAnswer: "next" } });
 
+  // ── a waiting card answers in place — a question's choice, Allow on a terminal's prompt — or looks first; answered, the panel stays ──
+  const stayOn = await shownThread();
+  const cardAsker = await asking();
+  const askerName = `Asker ${askers}`;
+  if ((await bar())?.mode !== "cards") await flip();
+  const askOf = (name) => $(`(() => { const c = [...document.querySelectorAll('.ai .sbar-card')].find((n) => n.textContent.includes(${JSON.stringify(name)})); const a = c?.querySelector('[data-testid="sbar-ask"]'); return a ? { text: a.querySelector('.sbar-ask-text')?.textContent ?? null, buttons: [...a.querySelectorAll('button')].map((b) => [b.dataset.testid, b.textContent]) } : null; })()`);
+  const pressIn = (name, testid, text) => press(`[...[...document.querySelectorAll('.ai .sbar-card')].find((n) => n.textContent.includes(${JSON.stringify(name)})).querySelectorAll('[data-testid="${testid}"]')].find((b) => ${text ? `b.textContent === ${JSON.stringify(text)}` : "true"})`);
+  await until(async () => !!(await askOf(askerName)), 40);
+  let cardAsk = await askOf(askerName);
+  check("a waiting conversation's card carries its question, its choices and Look first", cardAsk?.text === "Which one?" && JSON.stringify(cardAsk.buttons) === JSON.stringify([["sbar-choice", "A"], ["sbar-choice", "B"], ["sbar-look", "Look first"]]), cardAsk);
+  await pressIn(askerName, "sbar-choice", "A");
+  check("a choice on the card answers the question, and the panel stays on the conversation it showed", await until(async () => !ctx.agent.thread(alpha.id, cardAsker).pending, 40) && (await shownThread()) === stayOn && (await until(async () => ((await $(`document.body.innerText`)) ?? "").includes(`Answered “${askerName}” · you stayed where you were`), 30)), { shown: await shownThread(), stayOn });
+  // a terminal session waiting on its agent's permission prompt: Allow on the card presses the agent's key in its pane
+  const cardTicket = ctx.items.create({ projectId: alpha.id, boardId, title: "Card allows it", by: "human" });
+  const cardSession = ctx.codeLink.store.createSession(alpha.id, { repoId: "check", branch: "", itemIds: [cardTicket.id], mode: "terminal", agent: "claude-code", threadId: null, device: "check" });
+  screen = asks;
+  ctx.codeLink.store.patchSession(alpha.id, cardSession.id, { herdrPane: "w1:p1", state: "waiting", activity: null, ask: asksTo("Bash", "git push -u origin al/card"), lastEventAt: Date.now() });
+  ctx.emit("codeLink/changed", alpha.id);
+  ctx.ipc.send("codeLink.changed", alpha.id);
+  await until(async () => !!(await askOf("Card allows it")), 40);
+  cardAsk = await askOf("Card allows it");
+  check("a terminal session's card offers Allow and Look first while its screen shows the prompt with yes under the cursor", JSON.stringify(cardAsk?.buttons.map(([id]) => id)) === JSON.stringify(["sbar-allow", "sbar-look"]) && cardAsk.text === "wants to run git push -u origin al/card", cardAsk);
+  // waiting on a command's permission, it is listed on top as asking to run something
+  check("the line on top says the terminal session asks to run something", await until(async () => /AL-\d+ asks to run something/.test((await queueLine()) ?? ""), 40), await queueLine());
+  const typedBefore = typed.length;
+  await pressIn("Card allows it", "sbar-allow");
+  check("Allow on the card presses the agent's key for Yes in its pane, and the panel stays", await until(async () => typed.length === typedBefore + 1, 30) && typed.at(-1)?.paneId === "w1:p1" && typed.at(-1)?.keys?.join() === "enter" && (await shownThread()) === stayOn && !(await sessionView()) && (await until(async () => /Allowed “AL-\d+” · you stayed where you were/.test((await $(`document.body.innerText`)) ?? ""), 30)), { typed: typed.slice(typedBefore), shown: await shownThread() });
+  // the cursor on No: Deny alone on the card; Look first opens the session
+  screen = asks.replace("❯ 1. Yes", "  1. Yes").replace("  3. No", "❯ 3. No");
+  ctx.codeLink.store.patchSession(alpha.id, cardSession.id, { state: "waiting", activity: null, ask: asksTo("Bash", "git push -u origin al/card"), lastEventAt: Date.now() });
+  ctx.emit("codeLink/changed", alpha.id);
+  ctx.ipc.send("codeLink.changed", alpha.id);
+  check("with No under the cursor the card offers Deny alone", await until(async () => JSON.stringify((await askOf("Card allows it"))?.buttons.map(([id]) => id)) === JSON.stringify(["sbar-deny", "sbar-look"]), 40), await askOf("Card allows it"));
+  await pressIn("Card allows it", "sbar-look");
+  check("Look first opens the session in the panel", await until(async () => (await sessionView())?.id === cardSession.id, 30), await sessionView());
+  ctx.codeLink.store.patchSession(alpha.id, cardSession.id, { state: "ended", endedAt: Date.now() });
+  ctx.emit("codeLink/changed", alpha.id);
+  ctx.ipc.send("codeLink.changed", alpha.id);
+  await openThreadNamed(askerName);
+  if ((await bar())?.mode !== "rail") await flip();
+
   // ── chat that turns to code: a rule where the writing starts, the earlier steps folded under what they changed ──
   const coder = ctx.agent.newThread(alpha.id, "coder", null, { title: "Coder chat" });
   for (const said of ["hello", "write the parts"]) {
     const sent = ctx.agent.send(alpha.id, coder.id, { kind: "text", text: said });
-    for (let i = 0; i < 60 && ctx.agent.store.run(alpha.id, sent.runId)?.status === "running"; i++) await sleep(100);
+    // a busy machine writes the six parts slowly: the rule and the fold are read once the run is over
+    for (let i = 0; i < 300 && ctx.agent.store.run(alpha.id, sent.runId)?.status === "running"; i++) await sleep(100);
   }
   ctx.ipc.send("attention.open", { key: `thread:${coder.id}`, projectId: alpha.id, threadId: coder.id, itemId: null, itemKey: null, kind: "question", who: null, text: null, since: Date.now() });
   for (let i = 0; i < 50 && !(await $(`!!document.querySelector('[data-testid="work-rule"]')`)); i++) await sleep(100);
   const rule = await $(`document.querySelector('[data-testid="work-rule"]')?.textContent ?? null`);
   check("where a chat turns to writing files, a rule says so", rule === "Writing code", rule);
-  const coderFold = await $(`document.querySelector('.ai-scroll .trace-fold > summary')?.textContent ?? null`);
-  check("and the folded steps say what they changed", coderFold === "3 earlier steps · 3 files changed", coderFold);
+  const workFolds = () => $(`[...document.querySelectorAll('.ai-scroll [data-testid="work-fold"]')].map((f) => ({ summary: f.querySelector('summary')?.textContent, open: f.open, rows: f.querySelectorAll('.trace-row').length, waiting: f.hasAttribute('data-waiting') }))`);
+  const coderFold = (await workFolds())[0];
+  const loose = await $(`[...document.querySelectorAll('.ai-scroll .trace-row')].filter((r) => !r.closest('.trace-fold')).length`);
+  check("and the writing folds whole, closed, under what it came to", coderFold?.summary === "6 files changed" && !coderFold.open && coderFold.rows === 6 && loose === 0, { coderFold, loose });
   await shot("writing-code.png");
+  // asked before a command: the stretch says what it waits to be allowed, and the question points at the setting
+  await until(() => ctx.agent.store.runs(alpha.id, coder.id).every((r) => r.status !== "running"), 300);
+  const tested = ctx.agent.send(alpha.id, coder.id, { kind: "text", text: "test the parts" });
+  check("while it waits on a command, the stretch says what it waits to be allowed", await until(async () => (await workFolds())[1]?.summary === "1 file changed · waiting for you to allow `echo 'Tests  8 passed (8)'`", 80), await workFolds());
+  check("and the question says every command asks, with the way to the setting", await until(() => present('[data-testid="ask-each-command"] button'), 30), await $(`document.querySelector('.q-ask')?.textContent ?? null`));
+  await shot("writing-code-waiting.png");
+  // answered here, the panel stays on this conversation rather than moving on to whatever else waits
+  ctx.settings.set({ ...ctx.settings.get(), sessions: { ...ctx.settings.get().sessions, afterAnswer: "stay" } });
+  await press(`[...document.querySelectorAll('.q-ask:not(.done) .chip-opt')].find((b) => b.textContent === 'Allow once')`);
+  await sleep(200);
+  await press(`document.querySelector('.q-ask:not(.done) .q-confirm .btn')`);
+  await until(() => ctx.agent.store.run(alpha.id, tested.runId)?.status === "done", 80);
+  ctx.settings.set({ ...ctx.settings.get(), sessions: { ...ctx.settings.get().sessions, afterAnswer: "next" } });
+  check("once allowed, the stretch folds the answer in and says how the tests went", await until(async () => { const f = (await workFolds())[1]; return f?.summary === "1 file changed · 1 command · tests 8 passed" && !f.waiting && f.rows === 2; }, 50) && !(await present('[data-testid="ask-each-command"]')), await workFolds());
 
   // ── 「放到后台做」: the coding moves to a child conversation under this one; this one stays free to talk, and the conclusion comes back ──
   const gates = new Map();
@@ -1022,13 +1217,109 @@ const run = async () => {
   await send("again");
   await until(() => cliTurns.length === 2, 60);
   check("and the next message resumes the session the CLI ran as, through the SDK", cliTurns[1]?.text === "again" && cliTurns[1]?.resume === "cli-check-2", cliTurns);
+
+  // ── the claim card: before a workstream conversation's first change to a file, claim a ticket — here, in the background, or with a CLI ──
+  ctx.agent.engine({
+    id: "claimer",
+    title: "Claimer",
+    author: "ai:claimer",
+    available: async () => ({ ok: true }),
+    async turn(input, io) {
+      const text = input.input.kind === "text" ? input.input.text : "";
+      if (text.startsWith("Carry on in the background")) {
+        io.emit({ type: "text", text: "Finished in the background." });
+        return { stop: "end" };
+      }
+      if (text.startsWith("write")) {
+        await io.tools.execute("write_file", { path: `code/${text.replace(/\W+/g, "-")}.md`, content: text });
+        io.emit({ type: "text", text: "Written." });
+        return { stop: "end" };
+      }
+      io.emit({ type: "text", text: "Sure." });
+      return { stop: "end" };
+    }
+  });
+  const sayTo = async (threadId, text) => {
+    const sent = ctx.agent.send(alpha.id, threadId, { kind: "text", text });
+    await until(() => ctx.agent.store.run(alpha.id, sent.runId)?.status === "done", 60);
+  };
+  const claimChat = async (title) => {
+    const th = ctx.agent.newThread(alpha.id, "claimer", boardId, { title });
+    await sayTo(th.id, "hello");
+    await sayTo(th.id, `write ${title}`);
+    ctx.ipc.send("attention.open", { key: `thread:${th.id}`, projectId: alpha.id, threadId: th.id, itemId: null, itemKey: null, kind: "question", who: null, text: null, since: Date.now() });
+    await until(async () => (await shownThread()) === th.id, 50);
+    return th;
+  };
+  const claimCard = () => $(`(() => { const c = document.querySelector('[data-testid="claim-card"]'); return c ? { text: c.textContent, buttons: [...c.querySelectorAll('button[data-testid]')].map((b) => b.dataset.testid), engine: c.querySelector('[data-testid="claim-cli"]')?.dataset.engine ?? null } : null; })()`);
+  const writes = (threadId) => ctx.agent.store.messages(alpha.id, threadId).filter((m) => m.block.type === "trace" && m.block.tool === "write_file" && m.block.ok).length;
+  const closeChat = await claimChat("Claim close chat");
+  check("before a workstream conversation's first change to a file, a card offers to claim a ticket: here, in the background, or with a CLI", await until(async () => (await claimCard())?.buttons.join() === "claim-close,claim-here,claim-background,claim-cli", 50) && /About to change code/.test((await claimCard()).text), await claimCard());
+  check("and it does not hold the writing up", writes(closeChat.id) === 1, writes(closeChat.id));
+  await shot("claim-card.png");
+  await press(`document.querySelector('[data-testid="claim-close"]')`);
+  check("closed, the card goes and the conversation stays without a ticket", await until(async () => !(await claimCard()), 30) && ctx.agent.store.thread(alpha.id, closeChat.id).itemId === null);
+  await sayTo(closeChat.id, "write more");
+  await sleep(400);
+  check("and it writes on as before, the card not back", writes(closeChat.id) === 2 && !(await claimCard()), { writes: writes(closeChat.id), card: await claimCard() });
+
+  const hereChat = await claimChat("Claim here chat");
+  await until(async () => !!(await claimCard()), 50);
+  await press(`document.querySelector('[data-testid="claim-here"]')`);
+  const claimedItem = (threadId) => { const id = ctx.agent.store.thread(alpha.id, threadId)?.itemId; return id ? ctx.items.get(alpha.id, id) : null; };
+  check("claiming here puts a new ticket named after the conversation on it, and marks it Doing", await until(() => claimedItem(hereChat.id)?.title === "Claim here chat", 50) && claimedItem(hereChat.id).status === "doing", claimedItem(hereChat.id));
+  const claimRule = () => $(`document.querySelector('[data-testid="work-rule"][data-claimed]')?.textContent ?? null`);
+  check("the rule is drawn where it claimed, with the ticket, and the card is gone", await until(async () => (await claimRule()) === `${claimedItem(hereChat.id)?.key} · writing code` && !(await claimCard()), 50), { rule: await claimRule(), card: await claimCard() });
+  await shot("claimed-here.png");
+
+  const bgChat = await claimChat("Claim background chat");
+  await until(async () => !!(await claimCard()), 50);
+  await press(`document.querySelector('[data-testid="claim-background"]')`);
+  const bgChildOf = () => ctx.agent.store.threads(alpha.id).find((th) => th.parentId === bgChat.id);
+  check("claiming into the background opens a child conversation on the new ticket, and this one stays free to talk", await until(() => !!claimedItem(bgChat.id) && !!bgChildOf() && bgChildOf().itemId === claimedItem(bgChat.id).id, 60) && (await shownThread()) === bgChat.id, { child: bgChildOf(), item: claimedItem(bgChat.id) });
+
+  // the CLI a terminal cell takes it up with: the one tickets were last started with on this machine
+  ctx.codeLink.defaults.write({ mode: "terminal", engine: "cli" });
+  ctx.ipc.send("codeLink.startDefaultsChanged");
+  const cliChat = await claimChat("Claim cli chat");
+  // the engine list was read before this check's CLI stand-in came: coming back online reads it again
+  await $(`window.dispatchEvent(new Event('offline'));window.dispatchEvent(new Event('online'));window.dispatchEvent(new Event('visibilitychange'));true`);
+  check("the third way names the CLI it would hand over to", await until(async () => (await claimCard())?.engine === "cli", 80), await claimCard());
+  const launchedBefore = launches.length;
+  await press(`document.querySelector('[data-testid="claim-cli"]')`);
+  const cliClaimSession = () => ctx.codeLink.store.sessions(alpha.id).find((s) => s.threadId === cliChat.id && s.mode === "terminal");
+  check("switching to the CLI claims the ticket and opens a terminal session of the conversation on that agent, fresh, with what it came to", await until(() => !!cliClaimSession() && launches.length === launchedBefore + 1 && !!claimedItem(cliChat.id), 80)
+    && cliClaimSession().agent === "cli" && cliClaimSession().externalId === null && ctx.agent.store.thread(alpha.id, cliChat.id).engine === "cli" && !/--resume/.test(launches.at(-1).command)
+    && fs.readFileSync(path.join(ctx.codeLink.sessionDir(cliClaimSession().id), "prompt.md"), "utf8").includes("handed to you from Tomrade's built-in assistant"), { session: cliClaimSession(), launch: launches.at(-1) });
+  check("and the panel moves to that session", await until(async () => (await sessionView())?.id === cliClaimSession()?.id, 50), await sessionView());
+  await press(`document.querySelector('.ai-session-head button[aria-label="Back to the conversation"]')`);
+  await sleep(400);
   ctx.codeLink.herdr.launch = launchWas;
+
+  // ── an assistant conversation as a session: its card says what it said last; put away, History carries that as its outcome, and its look back reads chat apart from code ──
+  const hereCard = () => $(`document.querySelector('.ai .sbar-card[data-key="thread:${hereChat.id}"]')?.textContent ?? null`);
+  await flip();
+  check("a conversation's card says what it said last, once its turn is over", await until(async () => /Written\./.test((await hereCard()) ?? ""), 40), await hereCard());
+  await flip();
+  ctx.agent.archiveThread(alpha.id, hereChat.id);
+  await sleep(400);
+  await press(`document.querySelector('[data-testid="sbar-history"]')`);
+  const hereRow = () => $(`document.querySelector('[data-testid="ai-review-row"][data-review="${hereChat.id}"]')?.textContent ?? null`);
+  check("put away, History lists it with what it said last as its outcome", await until(async () => /Written\./.test((await hereRow()) ?? ""), 50), await hereRow());
+  await press(`document.querySelector('[data-testid="ai-review-row"][data-review="${hereChat.id}"]')`);
+  const threadSegs = () => $(`[...document.querySelectorAll('[data-testid="ai-review-seg"]')].map((s) => [s.dataset.ticket, s.dataset.kind])`);
+  check("its look back reads the chat apart from the code, the code the ticket's it claimed", await until(async () => JSON.stringify(await threadSegs()) === JSON.stringify([["", "chat"], [claimedItem(hereChat.id)?.key ?? "?", "code"]]), 50), await threadSegs());
+  await shot("thread-look-back.png");
+  await press(`document.querySelector('.ai-review-head button[aria-label="Back to the conversation"]')`);
+  await sleep(400);
 
   // The Terminal window from the main window: the title bar's button and ⇧⌘T run its own command for this project.
   const opened = [];
   const runCommand = ctx.contributions.run.bind(ctx.contributions);
   ctx.contributions.run = async (id, scope) => (id === "code-sessions.open" ? (opened.push(scope.projectId), {}) : runCommand(id, scope));
   check("the title bar offers the Terminal window", await $(`!!document.querySelector('[data-testid="titlebar-terminal"]')`));
+  const terminalDoor = await $(`(() => { const b = document.querySelector('[data-testid="titlebar-terminal"]'); const shown = (n) => !!n && getComputedStyle(n).display !== 'none'; return { label: shown(b?.querySelector('.lbl')) ? b.querySelector('.lbl').textContent : null, key: shown(b?.querySelector('.kbd')) ? b.querySelector('.kbd').textContent : null, wide: innerWidth > 1100 }; })()`);
+  check("its button names the window and its key while the bar has room", !terminalDoor.wide || (terminalDoor.label === "Terminal window" && /T$/.test(terminalDoor.key ?? "")), terminalDoor);
   await press(`document.querySelector('[data-testid="titlebar-terminal"]')`);
   await sleep(400);
   check("its button opens this project's Terminal window", opened.length === 1 && opened[0] === alpha.id, opened);
@@ -1126,6 +1417,7 @@ const run = async () => {
   // the session bar's History opens the list
   await press(`document.querySelector('[data-testid="sbar-history"]')`);
   check("the session bar's History opens the look back in the panel", await until(() => present('[data-testid="ai-review-list"]'), 30));
+  check("its head says the ways here", (await $(`document.querySelector('[data-testid="ai-review-hint"]')?.textContent ?? null`)) === "The session bar's History and ⌘K both come here");
   const reviewRows = () => $(`[...document.querySelectorAll('[data-testid="ai-review-row"]')].map((r) => r.textContent)`);
   await until(async () => (await reviewRows()).some((text) => /Save a record snapshot/.test(text)), 30);
   const reviewRow = (await reviewRows()).find((text) => /Save a record snapshot/.test(text)) ?? null;
@@ -1145,12 +1437,20 @@ const run = async () => {
   const reviewOpen = await $(`({ title: document.querySelector('[data-testid="ai-review-title"]')?.textContent ?? null, outcome: document.querySelector('[data-testid="ai-review-outcome"]')?.textContent ?? null, tickets: document.querySelector('[data-testid="ai-review-tickets"]')?.textContent ?? null,
     lenses: !!document.querySelector('[data-testid="ai-review-lenses"]'), resume: !!document.querySelector('[data-testid="ai-review-resume"]'), terminal: !!document.querySelector('[data-testid="ai-review-resume-terminal"]'), input: !!document.querySelector('.ai .ai-input') })`);
   check("opening one shows its outcome and the tickets it did on top, read-only, with the ways to go on", /PR #407 merged/.test(reviewOpen.outcome ?? "") && reviewOpen.tickets?.includes(reviewTicket.key) && reviewOpen.tickets?.includes(alsoTicket.key) && reviewOpen.resume && reviewOpen.terminal && !reviewOpen.input, reviewOpen);
-  check("without a recording of its pane there is no raw-output tab", !reviewOpen.lenses, reviewOpen);
+  const rawLens = await $(`({ disabled: document.querySelector('[data-testid="ai-review-lens-raw"]')?.disabled ?? null, why: document.querySelector('[data-testid="ai-review-raw-none"]')?.textContent ?? null })`);
+  check("without a recording of its pane the raw output is greyed out, and says why", reviewOpen.lenses && rawLens.disabled === true && /not recorded/.test(rawLens.why ?? ""), rawLens);
   const segs = () => $(`[...document.querySelectorAll('[data-testid="ai-review-seg"]')].map((s) => [s.dataset.ticket, s.dataset.kind, !!s.dataset.open])`);
   check("the conversation is cut where the second ticket was claimed, each stretch marked writing code, all open from the list", JSON.stringify(await segs()) === JSON.stringify([[reviewTicket.key, "code", true], [alsoTicket.key, "code", true]]), await segs());
-  const segLines = await $(`[...document.querySelectorAll('[data-testid="ai-review-seg"]')].map((s) => [...s.querySelectorAll('.cs-convo-line')].map((l) => l.textContent))`);
-  check("each stretch holds its own lines, the claim opening the second", segLines[0]?.[0] === "start on the snapshot" && /claim_ticket/.test(segLines[1]?.[0] ?? ""), segLines);
+  const segLines = await $(`[...document.querySelectorAll('[data-testid="ai-review-seg"]')].map((s) => [...s.querySelectorAll('.cs-convo-line, [data-testid="convo-mark"]')].map((l) => l.textContent))`);
+  check("each stretch holds its own lines, the claim opening the second as a mark", segLines[0]?.[0] === "start on the snapshot" && segLines[1]?.[0] === `● Claimed ${alsoTicket.key}`, segLines);
+  const segFacts = () => $(`[...document.querySelectorAll('[data-testid="ai-review-seg"]')].map((s) => s.querySelector('[data-testid="ai-review-seg-facts"]')?.textContent ?? null)`);
+  check("a ticket's stretch ends on its commits, its pull request and where the ticket stands", /^4 commits · PR #407 merged · \w+/.test((await segFacts())[0] ?? ""), await segFacts());
   await shot("review-open.png");
+  // a ticket chip on top: only its stretches, and the way back to all of them
+  await press(`[...document.querySelectorAll('[data-testid="ai-review-chip"]')].find((c) => c.dataset.ticket === ${JSON.stringify(alsoTicket.key)})`);
+  check("picking a ticket's chip shows only that ticket's stretches, with the way back to all", await until(async () => JSON.stringify(await segs()) === JSON.stringify([[alsoTicket.key, "code", true]]) && (await present('[data-testid="ai-review-all"]')), 30), await segs());
+  await press(`document.querySelector('[data-testid="ai-review-all"]')`);
+  check("“show all” brings every stretch back", await until(async () => (await segs()).length === 2 && !(await present('[data-testid="ai-review-all"]')), 30), await segs());
   // going on in a terminal cell asks the Terminal window for a new cell with the agent's resume command
   const resumedIn = [];
   const resumeInTerminal = ctx.codeLink.resumeInTerminal.bind(ctx.codeLink);
@@ -1173,6 +1473,29 @@ const run = async () => {
   await $(`${historyRow}?.dispatchEvent(new PointerEvent('pointermove', { bubbles: true }));true`);
   await enterPalette();
   check("picking it in ⌘K opens the look back on it", await until(async () => (await $(`document.querySelector('[data-testid="ai-review-open"]')?.dataset.review ?? null`)) === reviewed.id, 30));
+
+  // ── a session on no ticket goes on in the background as itself; a conversation opened under another sits under it ──
+  ctx.agent.archiveThread(alpha.id, bgParent.id);
+  ctx.agent.archiveThread(alpha.id, bgChild.id);
+  const looseSession = ctx.codeLink.store.createSession(alpha.id, { repoId: "", branch: "", itemIds: [], mode: "terminal", agent: "cli", threadId: null, device: "check", externalId: "cli-loose-1" });
+  ctx.codeLink.store.patchSession(alpha.id, looseSession.id, { title: "Loose chat", cwd: work, state: "ended", endedAt: Date.now() });
+  ctx.emit("codeLink/changed", alpha.id);
+  ctx.ipc.send("codeLink.changed", alpha.id);
+  await press(`document.querySelector('[data-testid="ai-review-back"]')`);
+  const listed = () => $(`[...document.querySelectorAll('[data-testid="ai-review-row"]')].map((r) => [r.dataset.review, r.dataset.depth ?? "0"])`);
+  check("a conversation opened under another sits right under it in History, set in", await until(async () => { const l = await listed(); const at = l.findIndex(([id]) => id === bgParent.id); return at >= 0 && l[at + 1]?.[0] === bgChild.id && l[at + 1]?.[1] === "1" && l[at][1] === "0"; }, 60), await listed());
+  await shot("review-nested.png");
+  const resumes = [];
+  const launchNow = ctx.codeLink.herdr.launch.bind(ctx.codeLink.herdr);
+  ctx.codeLink.herdr.launch = async (input) => (resumes.push(input), { script: "", launched: true, paneId: "w1:p9" });
+  await until(async () => (await listed()).some(([id]) => id === looseSession.id), 30);
+  await press(`document.querySelector('[data-testid="ai-review-row"][data-review="${looseSession.id}"]')`);
+  check("a session on no ticket that can be resumed offers to go on", await until(() => present('[data-testid="ai-review-resume"]'), 40));
+  await press(`document.querySelector('[data-testid="ai-review-resume"]')`);
+  check("going on resumes the same session in the background, and the bar has it running again", await until(() => ctx.codeLink.store.session(alpha.id, looseSession.id)?.state === "running" && resumes.length === 1, 60)
+    && /--resume cli-loose-1/.test(resumes[0].command) && resumes[0].cwd === work && ctx.codeLink.store.sessions(alpha.id).filter((x) => x.externalId === "cli-loose-1").length === 1
+    && (await until(async () => (await bar())?.dots.some(([status, label]) => status === "run" && /^Loose chat,/.test(label)), 40)), { session: ctx.codeLink.store.session(alpha.id, looseSession.id), resumes, dots: (await bar())?.dots });
+  ctx.codeLink.herdr.launch = launchNow;
   check("harness reached the end", true);
 };
 

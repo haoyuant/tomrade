@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ReviewRow, ReviewSegment } from "@tomradex/code-link";
-import { alsoKeys, dayLabel, dayOf, groupByDay, landingSegment, openAtFirst, outcomeLine, outcomeParts, segmentKind, segmentSummary, segmentWork, stretchesOf } from "../src/lib/review";
+import { alsoKeys, dayLabel, dayOf, groupByDay, landingSegment, nestRows, openAtFirst, outcomeLine, outcomeParts, segmentKind, segmentSummary, segmentWork, stretchesOf } from "../src/lib/review";
 
 const say = (key: string, vars?: Record<string, string | number>) => (vars?.n !== undefined ? `${key}:${vars.n}` : key);
 const row = (over: Partial<ReviewRow> = {}): ReviewRow => ({
@@ -27,6 +27,10 @@ describe("the look back's list", () => {
     expect(outcomeParts(row({ pr: { number: null, state: "merged", url: null } }), say)).toEqual(["mergedLocally"]);
     expect(outcomeLine(row({ said: "写好了 releases/0.21.md" }), say)).toBe("写好了 releases/0.21.md");
     expect(outcomeLine(row({ asked: null, said: null }), say)).toBeNull();
+    // what its code came to speaks first; without code, its last word, and the asks only when it said nothing
+    expect(outcomeLine(row({ pr: { number: 407, state: "merged", url: null }, commits: 4, asked: 2, said: "done" }), say)).toBe("prMerged:407 · commits:4 · asked:2");
+    expect(outcomeLine(row({ asked: 2, said: "写好了" }), say)).toBe("写好了");
+    expect(outcomeLine(row({ asked: 2, said: null }), say)).toBe("asked:2");
     expect(alsoKeys(row({ tickets: [ticket("TOM-633"), ticket("TOM-647")] }))).toEqual(["TOM-647"]);
   });
 });
@@ -57,4 +61,9 @@ describe("a conversation's stretches", () => {
     expect(landingSegment(segments, null)).toBeNull();
     expect([...stretchesOf(segments)]).toEqual([[null, 1], ["tom-634", 2], ["tom-638", 1]]);
   });
+});
+
+it("sets each conversation opened under another right under it, and leaves one whose parent is not listed on its own", () => {
+  const rows = [{ id: "a" }, { id: "c", parentId: "b" }, { id: "b" }, { id: "d", parentId: "gone" }, { id: "e", parentId: "a" }];
+  expect(nestRows(rows).map((r) => [r.id, r.depth])).toEqual([["a", 0], ["e", 1], ["b", 0], ["c", 1], ["d", 0]]);
 });

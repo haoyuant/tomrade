@@ -9,7 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { CodeLink, deliveryMerged, type CodeLinkView, type ForgePull } from "@tomradex/code-link";
+import { CodeLink, askLineIn, deliveryMerged, permissionAsk, questionAsk, type CodeLinkView, type ForgePull } from "@tomradex/code-link";
 import { Contributions } from "@tomradex/contributions";
 import { Repos } from "@tomradex/repos";
 import GitHubAccount from "@tomradex/github";
@@ -767,6 +767,34 @@ describe("code link", () => {
     // The pane going is the end, whatever was said.
     codeLink.sessions.event(project.id, session.id, { hook_event_name: "SessionEnd", reason: "pane closed", herdr: true });
     expect(state()).toBe("ended");
+  });
+
+  it("keeps what a session asks as a structure — the command, the file, a question — counted once and cleared once it moves on", async () => {
+    const { codeLink, project, repo, ticket } = await machine(codeRepo());
+    const item = ticket("Asks", "doing");
+    const session = codeLink.store.createSession(project.id, { repoId: repo.id, branch: "", itemIds: [item.id], mode: "terminal", agent: "claude-code", threadId: null, device: "test" });
+    const now = () => codeLink.store.session(project.id, session.id)!;
+    codeLink.sessions.event(project.id, session.id, { hook_event_name: "PermissionRequest", tool_name: "Bash", tool_input: { command: "git push -u origin tom-638/archive-agent-filter" } });
+    expect(now()).toMatchObject({ state: "waiting", activity: null, asked: 1, ask: { kind: "permission", tool: "Bash", action: "run", detail: "git push -u origin tom-638/archive-agent-filter" } });
+    // Claude Code's permission notification after it is the same ask: it keeps the command and is not counted again
+    codeLink.sessions.event(project.id, session.id, { hook_event_name: "Notification", notification_type: "permission_prompt" });
+    expect(now()).toMatchObject({ asked: 1, ask: { tool: "Bash", detail: "git push -u origin tom-638/archive-agent-filter" } });
+    codeLink.sessions.event(project.id, session.id, { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "git push" } });
+    expect(now()).toMatchObject({ state: "running", ask: null });
+    codeLink.sessions.event(project.id, session.id, { hook_event_name: "PermissionRequest", tool_name: "Edit", tool_input: { file_path: "src/app.ts" } });
+    expect(now()).toMatchObject({ asked: 2, ask: { action: "edit", detail: "src/app.ts" } });
+    codeLink.sessions.event(project.id, session.id, { hook_event_name: "Notification", notification_type: "agent_needs_input" });
+    expect(now()).toMatchObject({ asked: 3, ask: { kind: "question", tool: null } });
+    codeLink.sessions.event(project.id, session.id, { hook_event_name: "Stop" });
+    expect(now().ask).toBeNull();
+  });
+
+  it("words an ask in the person's language for what the backend says itself", () => {
+    expect(askLineIn(permissionAsk("Bash", { command: "pnpm test" }), "zh")).toBe("想运行 pnpm test");
+    expect(askLineIn(permissionAsk("Write", { file_path: `/work/${"deep/".repeat(30)}app.ts` }), "en")).toMatch(/^wants to change ….{60,}deep\/app\.ts$/);
+    expect(askLineIn(permissionAsk("WebFetch", { url: "https://x.dev" }), "en")).toBe("wants to use WebFetch · https://x.dev");
+    expect(askLineIn(permissionAsk(null, undefined), "zh")).toBe("等你允许");
+    expect(askLineIn(questionAsk(), "en")).toBe("is asking you something");
   });
 
   it("starts a new delivery when a done ticket is reopened, without old merge evidence completing it", async () => {

@@ -27,9 +27,10 @@ import { Connections, MCP_AGENT } from "./connections.js";
 import { contribute } from "./contrib.js";
 import { StartDefaultsStore, type StartDefaultsView } from "./defaults.js";
 import { FollowOnStore, type FollowOn } from "./follow-ons.js";
+import { Claims, type ClaimResult } from "./claim.js";
 import { Handoff, type HandoffResult, type HandoffView } from "./handoff.js";
 import { HerdrBridge, type HerdrInstall } from "./herdr-bridge.js";
-import { SessionPanel, type AnswerResult, type SessionPanelView } from "./panel.js";
+import { SessionPanel, type AnswerResult, type SessionGlance, type SessionPanelView } from "./panel.js";
 import { Landing, type MergeCause, type MergeCheckView, type MergeLocalResult, type OpenPrResult } from "./landing.js";
 import { Orientation } from "./orientation.js";
 import { SYNC_PROMPT, syncInstructions, syncPrompt, type SyncScope } from "./sync.js";
@@ -37,12 +38,14 @@ import { githubHttps } from "@tomradex/github";
 import { PLAYBOOKS } from "./playbooks.js";
 import { classifyRemoteFailure, probeRemote, readRemoteIdentity, type RemoteIdentity } from "./remote.js";
 import { AUTHOR, currentLinks, deliveryMerged, GitScan, LANDED_ELSEWHERE, primaryOf, type ScanSummary, type UnlinkedBranch } from "./scan/absorb.js";
-import { Sessions, type SessionMoment } from "./sessions.js";
+import { Sessions, END_AFTER_MS, type SessionMoment } from "./sessions.js";
+import { firstWords, guessable, similarIds, type TicketGuess } from "./guess.js";
 import { CODE_WORDS, type CodeWords } from "./words.js";
 import { Starter, type StartGate, type StartOptions, type StartResult } from "./start.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type Readiness, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
 import { readSnapshot, saveSnapshot, snapshotFile } from "./snapshots.js";
-import { Review, type ReviewCursor, type ReviewPage, type ReviewSaid, type ReviewView } from "./review.js";
+import { askLine, permissionAsk, questionAsk } from "./ask.js";
+import { Review, type ReviewCursor, type ReviewPage, type ReviewSaid, type ReviewTicket, type ReviewView, type SessionOutcome } from "./review.js";
 import { recordOf, resumeCommand } from "./titles.js";
 import { AUTO_TERMINAL, TerminalSettings, commandOk, exec, locatedCommand, terminalApps, terminalPath } from "./terminal.js";
 import { registerTools } from "./tools.js";
@@ -70,12 +73,27 @@ declare module "cordis" {
     "codeLink/show-session"(projectId: string, sessionId: string): Promise<boolean | void> | boolean | void;
     /** Asked: open a new terminal inside Tomrade that takes this ended session's conversation up again. True once a window has. */
     "codeLink/resume-session"(projectId: string, sessionId: string): Promise<boolean | void> | boolean | void;
+    /** Asked: which cell of Tomrade's Terminal window shows each session, numbered as the window numbers them; nothing while no window is open. */
+    "codeLink/session-cells"(projectId: string): Promise<Record<string, number> | void> | Record<string, number> | void;
     /** Asked: whether what this session's pane showed was recorded here. */
     "codeLink/raw-output-there"(projectId: string, sessionId: string): Promise<boolean | void> | boolean | void;
     /** Asked: the recording of what this session's pane showed, to play back; the Terminal window's plugin answers. */
     "codeLink/raw-output"(projectId: string, sessionId: string): Promise<RawOutput | null | void> | RawOutput | null | void;
+    /** Asked: the sessions and terminals in the cells of this project's open Terminal window, numbered as it shows them; nothing while it is closed. */
+    "codeLink/cells"(projectId: string): { sessionId: string; n: number }[] | void;
+    /** Asked: a plain terminal in a new cell of this project's Terminal window, opening the window if needed. True once one has. */
+    "codeLink/new-terminal"(projectId: string): Promise<boolean | void> | boolean | void;
+    /** Asked: the projects whose Terminal window was used, last used first, each with how many cells its window has. */
+    "codeLink/terminal-windows"(): { projectId: string; cells: number; usedAt: number }[] | void;
   }
 }
+
+/** How long an ended session stays in the session lists, and how many of them do: the rest are the look back's. */
+export const RECENT_ENDED_MS = 24 * 60 * 60_000;
+export const RECENT_ENDED_MAX = 8;
+
+/** A session as the session lists show it: an ended one with what came of it; a live one with whether its card can answer its prompt. */
+export type RecentSession = SessionView & SessionGlance & { outcome: SessionOutcome | null };
 
 /** A recording of a pane's output, as the Terminal window's plugin hands it over to play back elsewhere. */
 export interface RawOutput {
@@ -197,8 +215,10 @@ declare module "@tomradex/ipc" {
     /** Start or continue work on a ticket with a local coding agent, headless or in a terminal. */
     "codeLink.start": (projectId: string, itemId: string, opts: StartOptions) => StartResult;
     "codeLink.sessions": (projectId: string, itemId?: string) => SessionView[];
-    /** The session lists' rows: every live session, and the few that ended in the last day. */
-    "codeLink.recentSessions": (projectId: string) => SessionView[];
+    /** The session lists' rows: every live session, and the few that ended in the last day with what came of each. */
+    "codeLink.recentSessions": (projectId: string) => RecentSession[];
+    /** Which cell of the Terminal window shows each session, by session id; empty while the window is closed. */
+    "codeLink.sessionCells": (projectId: string) => Record<string, number>;
     /** Push the ticket's branch from its worktree and open a pull request (gh), or hand back the compare page. */
     "codeLink.openPr": (projectId: string, itemId: string) => OpenPrResult;
     /** A repository with no remote: merge the ticket's branch into the default branch on this machine. */
@@ -244,6 +264,10 @@ declare module "@tomradex/ipc" {
     "codeLink.toTerminal": (projectId: string, threadId: string) => HandoffResult;
     /** The conversation back to the panel once its CLI exited: the next message resumes the same session through the SDK. */
     "codeLink.backToPanel": (projectId: string, threadId: string) => HandoffResult;
+    /** A panel conversation turning to code claims a ticket for it: the one it is on, else a new one; its copy moves onto the ticket's branch. */
+    "codeLink.claimThread": (projectId: string, threadId: string) => ClaimResult;
+    /** A built-in assistant's conversation handed to a CLI agent in a terminal cell, with what it came to. */
+    "codeLink.toCli": (projectId: string, threadId: string, engineId: string) => HandoffResult;
     /** How herdr installs on this machine: Homebrew's command where brew is, herdr's own installer on macOS and Linux, else only its install guide. */
     "codeLink.herdrInstall": () => HerdrInstall;
     /** Install herdr in a terminal with that command; the page never names it. */
@@ -253,14 +277,20 @@ declare module "@tomradex/ipc" {
     /** The ended conversations that said `query`, among the newest few: read one at a time, never all at once. */
     "codeLink.reviewSaid": (projectId: string, query: string) => ReviewSaid;
     /** One ended conversation opened whole, cut by the tickets it worked; null when it is not there. */
+    /** The tickets a session worked, with their code's outcome and status, read from stored rows: a running session cut by ticket. */
+    "codeLink.sessionTickets": (projectId: string, sessionId: string) => ReviewTicket[];
     "codeLink.reviewOpen": (projectId: string, ref: { sessionId?: string; threadId?: string }) => ReviewView | null;
     /** What the session's pane showed while it ran, as the Terminal window recorded it; null without a recording. */
     "codeLink.reviewRaw": (projectId: string, sessionId: string) => RawOutput | null;
     /** Take an ended conversation up again in a new Terminal window cell, with its agent's own resume command; false when no window can. */
     "codeLink.resumeInTerminal": (projectId: string, sessionId: string) => boolean;
+    /** An ended session on no ticket taken up again in the background: its agent resumes the same session in a pane nothing brings forward. */
+    "codeLink.resumeSession": (projectId: string, sessionId: string) => StartResult;
   }
   interface Broadcasts {
     "codeLink.changed": (projectId: string) => void;
+    /** The Terminal window's cells came to show other sessions, or it opened or closed: `codeLink.sessionCells` reads differently. */
+    "codeLink.cellsChanged": (projectId: string) => void;
     /** What Start last ran with changed: windows that show a one-click Start read it again. */
     "codeLink.startDefaultsChanged": () => void;
   }
@@ -378,6 +408,7 @@ export class CodeLink extends Service implements CodeLinkReader {
   private herdr!: HerdrBridge;
   private panel!: SessionPanel;
   private handoff!: Handoff;
+  private claims!: Claims;
   /** The engines' connection-file writers; Connect reads them when it runs, so load order does not matter. */
   private readonly connectors = new Map<ConnectorAgent, ConnectFileWriter>();
   /** Ended sessions already looked for a transcript title. */
@@ -388,6 +419,8 @@ export class CodeLink extends Service implements CodeLinkReader {
   private readonly running = new Map<string, ThreadSummary>();
   /** What the Start dialog last ran with on this machine (see `defaults.ts`). */
   private readonly defaults: StartDefaultsStore;
+  /** Each ticketless session's guess at its ticket, made once from what the person first said to it; kept in memory. */
+  private readonly guesses = new Map<string, TicketGuess>();
 
   constructor(
     ctx: Context,
@@ -411,7 +444,8 @@ export class CodeLink extends Service implements CodeLinkReader {
       onChange: (projectId) => this.notify(projectId),
       prefixOf: (projectId) => this.prefixOf(projectId),
       onMoment: (session, moment) => this.noteMoment(session, moment),
-      onWaiting: (session, activity) => this.herdr.waiting(session, activity),
+      onWaiting: (session, ask) => this.herdr.waiting(session, askLine(ask, this.words())),
+      onFirstPrompt: (session, prompt) => void this.guess(session, prompt),
       panes: { alive: (pane) => this.herdr.paneAlive(pane), info: (pane) => this.herdr.pane(pane) },
       // A terminal session cannot be typed into: when the limit lifts the person is told, not the agent.
       onLimit: (session, until) => {
@@ -446,6 +480,13 @@ export class CodeLink extends Service implements CodeLinkReader {
       words: () => this.words(),
       notify: (projectId) => this.notify(projectId),
       say: (projectId, threadId, text) => this.sayToThread(projectId, threadId, text)
+    });
+    this.claims = new Claims({
+      ctx: this.ctx,
+      starter: this.starter,
+      words: () => this.words(),
+      notify: (projectId) => this.notify(projectId),
+      say: (projectId, threadId, text, claimed) => this.sayToThread(projectId, threadId, text, claimed)
     });
     this.connections = new Connections({
       ctx: this.ctx,
@@ -673,7 +714,7 @@ export class CodeLink extends Service implements CodeLinkReader {
         const thread = this.running.get(threadId);
         const session = thread && this.sessionOf(thread);
         if (!thread || !session) return;
-        if (event.pending) this.sessions.touch(thread.projectId, session.id, { state: "waiting", activity: event.pending.kind === "permission" ? this.words()("needsApproval") : this.words()("askingYou") });
+        if (event.pending) this.sessions.touch(thread.projectId, session.id, { state: "waiting", activity: null, ask: event.pending.kind === "permission" ? permissionAsk(null, undefined) : questionAsk() });
         else if (session.state === "waiting") this.sessions.touch(thread.projectId, session.id, { state: "running", activity: null });
       });
       ctx.on("agent/run-ended", (run, thread) => {
@@ -715,6 +756,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.start", (projectId, itemId, opts) => ctx.codeLink.start(projectId, itemId, opts));
       ctx.ipc.handle("codeLink.sessions", (projectId, itemId) => ctx.codeLink.sessionsOf(projectId, itemId));
       ctx.ipc.handle("codeLink.recentSessions", (projectId) => ctx.codeLink.recentSessions(projectId));
+      ctx.ipc.handle("codeLink.sessionCells", (projectId) => ctx.codeLink.sessionCells(projectId));
       ctx.ipc.handle("codeLink.openPr", (projectId, itemId) => ctx.codeLink.openPr(projectId, itemId));
       ctx.ipc.handle("codeLink.mergeLocal", (projectId, itemId) => ctx.codeLink.mergeLocal(projectId, itemId));
       ctx.ipc.handle("codeLink.merge", (projectId, itemId) => ctx.codeLink.merge(projectId, itemId));
@@ -738,13 +780,17 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.handoff", (projectId, threadId) => ctx.codeLink.handoffOf(projectId, threadId));
       ctx.ipc.handle("codeLink.toTerminal", (projectId, threadId) => ctx.codeLink.toTerminal(projectId, threadId));
       ctx.ipc.handle("codeLink.backToPanel", (projectId, threadId) => ctx.codeLink.backToPanel(projectId, threadId));
+      ctx.ipc.handle("codeLink.claimThread", (projectId, threadId) => ctx.codeLink.claimThread(projectId, threadId));
+      ctx.ipc.handle("codeLink.toCli", (projectId, threadId, engineId) => ctx.codeLink.toCli(projectId, threadId, engineId));
       ctx.ipc.handle("codeLink.herdrInstall", () => ctx.codeLink.herdrInstall());
       ctx.ipc.handle("codeLink.installHerdr", () => ctx.codeLink.installHerdr());
       ctx.ipc.handle("codeLink.reviewList", (projectId, opts) => ctx.codeLink.review.list(projectId, opts));
       ctx.ipc.handle("codeLink.reviewSaid", (projectId, query) => ctx.codeLink.review.saidIn(projectId, query));
       ctx.ipc.handle("codeLink.reviewOpen", (projectId, ref) => ctx.codeLink.review.open(projectId, ref));
+      ctx.ipc.handle("codeLink.sessionTickets", (projectId, sessionId) => ctx.codeLink.review.tickets(projectId, sessionId));
       ctx.ipc.handle("codeLink.reviewRaw", (projectId, sessionId) => ctx.codeLink.rawOutput(projectId, sessionId));
       ctx.ipc.handle("codeLink.resumeInTerminal", (projectId, sessionId) => ctx.codeLink.resumeInTerminal(projectId, sessionId));
+      ctx.ipc.handle("codeLink.resumeSession", (projectId, sessionId) => ctx.codeLink.resumeSession(projectId, sessionId));
     });
     // Only on a general look: when an agent's turn failed, gh is never the cause.
     this.home.inject(["doctor"], (ctx) => {
@@ -811,7 +857,7 @@ export class CodeLink extends Service implements CodeLinkReader {
         lastCommitAt: l.headAt
       })),
       session: live
-        ? { id: live.id, mode: live.mode, agent: live.agent, state: live.state, summary: live.summary, activity: live.activity, blocked: live.blocked, threadId: live.threadId, worktree: live.worktree, lastEventAt: live.lastEventAt ?? live.startedAt }
+        ? { id: live.id, mode: live.mode, agent: live.agent, state: live.state, summary: live.summary, activity: live.ask ? askLine(live.ask, this.words()) : live.activity, blocked: live.blocked, threadId: live.threadId, worktree: live.worktree, lastEventAt: live.lastEventAt ?? live.startedAt }
         : null,
       proposals: this.store.proposals(projectId, itemId, "open").map((p) => ({ id: p.id, kind: p.kind, toStatus: p.toStatus, reason: p.reason }))
     };
@@ -968,6 +1014,70 @@ export class CodeLink extends Service implements CodeLinkReader {
     return this.panel.answer(projectId, sessionId, which);
   }
 
+  /**
+   * A session on no ticket, spoken to for the first time: the open ticket its first words sound like, by the same
+   * search find_similar makes, kept to offer the person. Asked once; nothing found, nothing offered.
+   */
+  private async guess(session: SessionView, prompt: string): Promise<void> {
+    const said = firstWords(prompt);
+    const tools = this.ctx.get("tools");
+    if (!said || !guessable(session) || !tools?.has("find_similar")) return;
+    try {
+      const answer = await tools.execute("find_similar", { title: said, limit: 5 }, { by: AUTHOR, projectId: session.projectId });
+      const itemId = similarIds(answer).find((id) => this.claimable(session.projectId, id, session.id));
+      const item = itemId ? this.ctx.items.get(session.projectId, itemId) : null;
+      const now = this.store.session(session.projectId, session.id);
+      if (!item || !now || !guessable(now)) return;
+      this.guesses.set(session.id, { itemId: item.id, key: item.key, title: item.title });
+      this.notify(session.projectId);
+    } catch (err) {
+      this.ctx.logger.warn(`guessing session ${session.id}'s ticket failed: ${errorMessage(err)}`);
+    }
+  }
+
+  /** A ticket the session could take on now: open, unlocked, and no other live session working it. */
+  private claimable(projectId: string, itemId: string, sessionId: string): boolean {
+    const item = this.ctx.items.get(projectId, itemId);
+    if (!item || item.kind !== "ticket" || item.humanLocked || item.status === "done" || item.status === "cancelled") return false;
+    return !this.store.sessions(projectId, { itemId, live: true }).some((s) => s.id !== sessionId && s.state !== "lost" && s.endedAt === null && Date.now() - (s.lastEventAt ?? s.startedAt) < END_AFTER_MS);
+  }
+
+  /** The ticket a session's first words sound like, while it holds none, has not been told to go without, and the ticket is still free. */
+  guessOf(projectId: string, sessionId: string): TicketGuess | null {
+    const guess = this.guesses.get(sessionId);
+    if (!guess) return null;
+    const session = this.store.session(projectId, sessionId);
+    const item = this.ctx.items.get(projectId, guess.itemId);
+    if (!session || !guessable(session) || !item || !this.claimable(projectId, item.id, sessionId)) return null;
+    return { itemId: item.id, key: item.key, title: item.title };
+  }
+
+  /**
+   * The person took the guess: the session works that ticket from now on, as a claim makes it, and its agent hears at
+   * its next step to claim it for the branch and conventions. Null when there is no guess to take any more.
+   */
+  takeGuess(projectId: string, sessionId: string): { key: string } | null {
+    const guess = this.guessOf(projectId, sessionId);
+    this.guesses.delete(sessionId);
+    const item = guess ? this.ctx.items.get(projectId, guess.itemId) : null;
+    if (!guess || !item) return null;
+    this.attach(projectId, sessionId, item.id, "", this.store.ensureActiveDelivery(projectId, item.id, item.updatedAt).sequence);
+    if (item.status === "backlog" || item.status === "todo") this.ctx.items.update(projectId, item.id, { status: "doing" }, "human");
+    this.sessions.tell(sessionId, `Tomrade: the person picked ${item.key} (${item.title}) for this conversation. Call claim_ticket("${item.key}") now for its branch and conventions, and work on that branch.`);
+    return { key: item.key };
+  }
+
+  /** The person said the session needs no ticket: recorded as work_without_ticket records it, in `words`, and the guess goes. */
+  goWithoutTicket(projectId: string, sessionId: string, words: string): boolean {
+    this.guesses.delete(sessionId);
+    const session = this.store.session(projectId, sessionId);
+    if (!session || !guessable(session)) return false;
+    this.store.patchSession(projectId, sessionId, { withoutTicket: words });
+    this.sessions.tell(sessionId, "Tomrade: the person said in Tomrade that this conversation needs no ticket; go on without one.");
+    this.notify(projectId);
+    return true;
+  }
+
   /** The last lines on a terminal session's pane; null without a pane, or when it is gone. */
   sessionTail(projectId: string, sessionId: string, lines: number): Promise<string | null> {
     return this.panel.tail(projectId, sessionId, lines);
@@ -988,9 +1098,54 @@ export class CodeLink extends Service implements CodeLinkReader {
     return this.handoff.backToPanel(projectId, threadId);
   }
 
-  /** Asked on every session change while a list shows: it reads the live rows and a handful of ended ones, not the whole history. */
-  recentSessions(projectId: string, now = Date.now()): SessionView[] {
-    return this.store.recentSessions(projectId, now - 24 * 60 * 60_000, 8);
+  /** A panel conversation claims a ticket for the code it writes; see `Claims`. */
+  claimThread(projectId: string, threadId: string): Promise<ClaimResult> {
+    return this.claims.claim(projectId, threadId);
+  }
+
+  /** A built-in assistant's conversation handed to a CLI agent in a terminal cell; see `Handoff.toCli`. */
+  toCli(projectId: string, threadId: string, engineId: string): Promise<HandoffResult> {
+    return this.handoff.toCli(projectId, threadId, engineId);
+  }
+
+  /**
+   * Asked on every session change while a list shows: it reads the live rows and a handful of ended ones, not the whole
+   * history; each live pane's last lines through the glance, at most once per event and every few seconds.
+   */
+  async recentSessions(projectId: string, now = Date.now()): Promise<RecentSession[]> {
+    const rows = this.store.recentSessions(projectId, now - RECENT_ENDED_MS, RECENT_ENDED_MAX);
+    const isEnded = (s: SessionView) => s.state === "ended" || s.state === "lost";
+    const ended = rows.filter(isEnded);
+    const outcomes = ended.length ? this.review.outcomes(projectId, ended) : new Map<string, SessionOutcome>();
+    const glances = await this.panel.glance(rows.filter((s) => !isEnded(s)), now);
+    return rows.map((s) => ({ ...s, approval: false, prompt: null, tail: null, ...glances.get(s.id), outcome: outcomes.get(s.id) ?? null }));
+  }
+
+  /** The Terminal window's bar: the same glance at these live sessions' panes the panel's cards have, from the same reads. */
+  async sessionGlances(projectId: string, sessionIds: string[]): Promise<Map<string, SessionGlance>> {
+    const sessions = sessionIds.flatMap((id) => this.store.session(projectId, id) ?? []);
+    return sessions.length ? this.panel.glance(sessions) : new Map();
+  }
+
+  /** What came of each of these ended sessions, by id, the way every list says it. */
+  sessionOutcomes(projectId: string, sessionIds: string[]): Map<string, SessionOutcome> {
+    const sessions = sessionIds.flatMap((id) => this.store.session(projectId, id) ?? []);
+    return sessions.length ? this.review.outcomes(projectId, sessions) : new Map();
+  }
+
+  /** Which Terminal window cell shows each session; empty while no window shows the project. */
+  async sessionCells(projectId: string): Promise<Record<string, number>> {
+    try {
+      return ((await this.ctx.serial("codeLink/session-cells", projectId)) as Record<string, number> | undefined) ?? {};
+    } catch (error) {
+      this.ctx.logger.warn(`codeLink/session-cells: ${errorMessage(error)}`);
+      return {};
+    }
+  }
+
+  /** The Terminal window's cells show other sessions now: the windows that name cells read them again. */
+  cellsChanged(projectId: string): void {
+    this.home.get("ipc")?.send("codeLink.cellsChanged", projectId);
   }
 
   /**
@@ -1179,6 +1334,11 @@ export class CodeLink extends Service implements CodeLinkReader {
     const s = this.store.session(projectId, sessionId);
     if (!s || !resumeCommand(s.agent, s.externalId)) return Promise.resolve(false);
     return this.herdr.resumeSession(projectId, sessionId);
+  }
+
+  /** An ended session on no ticket taken up again in the background, as the same session; see `Starter.resumeSession`. */
+  resumeSession(projectId: string, sessionId: string): Promise<StartResult> {
+    return this.starter.resumeSession(projectId, sessionId);
   }
 
   /** The recording of what a session's pane showed, from the Terminal window's plugin; null without one. */
@@ -1687,10 +1847,10 @@ export class CodeLink extends Service implements CodeLinkReader {
   }
 
   /** A line of Tomrade's into a thread, on screen at once. */
-  private sayToThread(projectId: string, threadId: string, text: string): void {
+  private sayToThread(projectId: string, threadId: string, text: string, claimed?: string): void {
     const agent = this.ctx.get("agent");
     if (!agent?.store.thread(projectId, threadId)) return;
-    const message = agent.store.appendMessage(projectId, threadId, "system", { type: "note", text }, null);
+    const message = agent.store.appendMessage(projectId, threadId, "system", { type: "note", text, ...(claimed ? { claimed } : {}) }, null);
     this.home.get("ipc")?.send("agent.event", threadId, { type: "message", message });
   }
 

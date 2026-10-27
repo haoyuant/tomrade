@@ -29,7 +29,7 @@ import { isSuspended, type GeneralExecution, type Playbook, type PlaybookIndexEn
 import { AGENT_WORDS, type AgentWords } from "./words.js";
 import { looksRateLimited, resetTime, untilLabel } from "./limits.js";
 import { describeFailure, readableError, redactSecrets } from "./failure.js";
-import { conversationRecap, handoffRecap } from "./recap.js";
+import { conversationRecap, firstSentence, handoffRecap } from "./recap.js";
 import { usageSummary, windowStart, type EngineUsage, type UsageRun, type UsageSummary } from "./usage.js";
 import { type AgentReader, bestEffort, contract, errorMessage, localeOf } from "@tomradex/contracts";
 
@@ -187,6 +187,8 @@ declare module "@tomradex/ipc" {
     "agent.media.read": (projectId: string, threadId: string, id: string) => MediaContent;
     "agent.mediaCapabilities": (engineId: string, options?: unknown) => { input: string[]; output: string[] };
     "agent.answer": (projectId: string, threadId: string, questionId: string, value: string | string[]) => { runId: string };
+    /** What each of the project's conversations waits on the person for: the session bar's cards answer them in place. */
+    "agent.pendings": (projectId: string) => PendingView[];
     "agent.cancel": (runId: string) => boolean;
     /** Into the running turn, when its engine steers; false means it was not taken (queue it instead). */
     "agent.steer": (projectId: string, threadId: string, steerId: string, text: string) => Promise<boolean>;
@@ -330,6 +332,8 @@ const summarize = (value: unknown): string => {
   }
   return String(value);
 };
+/** The end of a text result the summary cut, kept beside it: where a command's output says how it went. */
+const tailOf = (value: unknown): string | undefined => (typeof value === "string" && value.length > 160 ? value.slice(-400) : undefined);
 
 /**
  * The platform every engine runs on. Owns the threads, the runs, the ledger,
@@ -479,6 +483,7 @@ export class Agent extends Service implements AgentReader {
       });
       ctx.ipc.handle("agent.setPermissionMode", (projectId, threadId, mode) => ctx.agent.setPermissionMode(projectId, threadId, mode));
       ctx.ipc.handle("agent.answer", (projectId, threadId, questionId, value) => ctx.agent.send(projectId, threadId, { kind: "answer", questionId, value }));
+      ctx.ipc.handle("agent.pendings", (projectId) => ctx.agent.activities().flatMap((a) => (a.projectId === projectId && a.pending ? [a.pending] : [])));
       ctx.ipc.handle("agent.cancel", (runId) => ctx.agent.cancel(runId));
       ctx.ipc.handle("agent.steer", (projectId, threadId, steerId, text) => ctx.agent.steer(projectId, threadId, steerId, text));
       ctx.ipc.handle("agent.showing", (threadId) => ctx.agent.show(threadId));
@@ -1661,7 +1666,8 @@ export class Agent extends Service implements AgentReader {
           entries.push({ seq: entries.length + 1, tool: name, args, ok: true, summary, ms });
           this.store.appendLedger(thread.projectId, run.id, entries.length, name, args, true, summary, ms);
           progress({ activity: null });
-          if (!suspended) emit({ type: "trace", tool: name, args, ok: true, summary, ms });
+          const tail = suspended ? undefined : tailOf(result);
+          if (!suspended) emit({ type: "trace", tool: name, args, ok: true, summary, ms, ...(tail ? { tail } : {}) });
           return result;
         } catch (err) {
           const ms = Date.now() - t0;
@@ -1975,6 +1981,9 @@ export class Agent extends Service implements AgentReader {
     const limit = status === "error" && (result.limit || looksRateLimited(result.error)) ? { until: result.limit?.until ?? resetTime(result.error) } : null;
     const park = limit ? this.park(rc.projectId, rc.threadId, { until: limit.until, runId: rc.run.id, attempt: tries + 1 }) : null;
     const run = this.store.endRun(rc.projectId, rc.run.id, { status, stop: result.stop, error: result.error, usage: result.usage, metrics: result.metrics, costUsd: result.costUsd, changes });
+    // what it said last, kept with the thread once the turn is over — never while it streams
+    const lastText = this.store.lastText(rc.projectId, rc.threadId, rc.run.id);
+    if (lastText) this.store.setSaid(rc.projectId, rc.threadId, firstSentence(lastText));
     this.broadcast(rc.threadId, { type: "done", run });
     const thread = this.store.thread(rc.projectId, rc.threadId) ?? rc.thread;
     if (park) this.ctx.emit("agent/parked", park, thread);

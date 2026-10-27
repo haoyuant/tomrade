@@ -144,7 +144,9 @@ CREATE TABLE IF NOT EXISTS plugin_agent_briefs (
   // The brief one step back: a careless rewrite is undone, not lost.
   { version: 15, up: "ALTER TABLE plugin_agent_briefs ADD COLUMN previous_body TEXT" },
   // A conversation opened under another, to write its code in the background while that one goes on talking.
-  { version: 16, up: "ALTER TABLE plugin_agent_threads ADD COLUMN parent_id TEXT" }
+  { version: 16, up: "ALTER TABLE plugin_agent_threads ADD COLUMN parent_id TEXT" },
+  // What a conversation said last, kept with it so a card shows it without reading the conversation.
+  { version: 17, up: "ALTER TABLE plugin_agent_threads ADD COLUMN said TEXT" }
 ];
 
 interface ThreadRow {
@@ -162,6 +164,7 @@ interface ThreadRow {
   permission_mode: string | null;
   archived: number;
   restored: number;
+  said?: string | null;
   external_json: string;
   waivers_json: string;
   created_at: number;
@@ -221,6 +224,7 @@ const toThread = (r: ThreadRow, engineOf: (id: string) => string = (id) => id): 
   options: r.options_json ? JSON.parse(r.options_json) : null,
   archived: r.archived === 1,
   restored: r.restored === 1,
+  said: r.said ?? null,
   createdAt: r.created_at,
   updatedAt: r.updated_at
 });
@@ -380,6 +384,21 @@ export class AgentStore {
     if (fields.surface !== undefined) db.prepare("UPDATE plugin_agent_threads SET surface = ? WHERE id = ?").run(fields.surface, id);
     if (fields.options !== undefined) db.prepare("UPDATE plugin_agent_threads SET options_json = ? WHERE id = ?").run(fields.options && Object.keys(fields.options).length ? JSON.stringify(fields.options) : null, id);
     db.prepare("UPDATE plugin_agent_threads SET updated_at = ? WHERE id = ?").run(Date.now(), id);
+  }
+
+  /** What a conversation said last, set once a turn ends; its place in the lists stays as it was. */
+  setSaid(projectId: string, id: string, said: string | null): void {
+    this.db(projectId).prepare("UPDATE plugin_agent_threads SET said = ? WHERE id = ?").run(said, id);
+  }
+
+  /** The last text a run said, read from that run's own messages newest first; null when it said nothing. */
+  lastText(projectId: string, threadId: string, runId: string): string | null {
+    const rows = this.db(projectId).prepare("SELECT block_json FROM plugin_agent_messages WHERE thread_id = ? AND run_id = ? AND role = 'agent' ORDER BY seq DESC LIMIT 200").all(threadId, runId) as { block_json: string }[];
+    for (const row of rows) {
+      const block = JSON.parse(row.block_json) as Block;
+      if (block.type === "text" && block.text.trim()) return block.text;
+    }
+    return null;
   }
 
   /** Threads started from a ticket, newest first. */

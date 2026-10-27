@@ -77,7 +77,7 @@ app.whenReady().then(async () => {
     const openStream = herdrService.terminal.bind(herdrService);
     herdrService.terminal = async (pane, opts) => {
       const stream = await openStream(pane, opts);
-      const seen = { pane, opened: Date.now(), closed: null, lastFrame: null, typed: [] };
+      const seen = { pane, mode: opts?.mode ?? "control", opened: Date.now(), closed: null, lastFrame: null, typed: [] };
       streams.push(seen);
       stream.onFrame(() => (seen.lastFrame = Date.now()));
       stream.onClose((reason) => (seen.closed = { at: Date.now(), reason }));
@@ -222,6 +222,9 @@ app.whenReady().then(async () => {
     };
     const followed = (await selectPane(4)) && (await selectPane(1));
     const shownRows = await js(`document.querySelectorAll('.cs-row[data-active]').length`);
+    // Each card names the cell that shows it by its number, and says how long it has run.
+    const cellNumbered = await js(`(() => { const cells = [...document.querySelectorAll('.cs-cell')]; const rows = [...document.querySelectorAll('.cs-row')]; return cells.map((c, i) => { const key = (c.querySelector('.cs-cell-name')?.textContent ?? '').split(' ')[0]; const row = rows.find((r) => !!key && r.textContent.includes(key)); return [i + 1, row?.querySelector('.cs-where')?.textContent ?? null, row?.querySelector('.cs-row-meta')?.textContent ?? null]; }); })()`);
+    check("会话栏卡片写着它在第几个格子（格子 N），第二行写运行了多久", cellNumbered.length === 6 && cellNumbered.every(([n, where, meta]) => where === `格子 ${n}` && /(运行|等了) \d+(分钟|小时)/.test(meta ?? "")), JSON.stringify(cellNumbered));
     check("选中面板时，侧栏只把它的会话标成当前，其余显示中的会话仍有标记", followed && shownRows === 6, `current: ${await js(`[...document.querySelectorAll('.cs-row[aria-current="true"]')].map((r) => r.textContent).join(" | ")`)}, shown: ${shownRows}`);
     // On Tomrade's theme: the terminal's background is its pane's, nothing dark around light, and its ANSI colours are the theme's.
     const colours = await js(`(() => {
@@ -382,7 +385,8 @@ app.whenReady().then(async () => {
     const sameStream = !streams.some((x) => x.pane === sessions[3].pane && x.opened >= endedAt);
     check("面板显示的工单结束、同一 agent 还在这个面板做别的工单：格子留在面板上改显示那个工单，锁保持，终端不重连", carried && carriedText && sameStream, JSON.stringify({ ...(await cellFour()), text: (await terminalText(3)).trim().slice(0, 200), streams: streams.filter((x) => x.pane === sessions[3].pane).map((x) => ({ opened: x.opened - endedAt, closed: x.closed && { at: x.closed.at - endedAt, reason: x.closed.reason }, lastFrame: x.lastFrame && x.lastFrame - endedAt })) }));
     await js(`document.querySelectorAll('.cs-cell')[3].querySelector('[data-testid=cs-lock]').click(); true`);
-    await wait(async () => (await js(`document.querySelectorAll('.cs-row').length`)) === 6 && !(await cellFour()).locked, 5000);
+    // the ticket that ended stays in the bar's ended group: the live rows are counted
+    await wait(async () => (await js(`document.querySelectorAll('.cs-row:not([data-ended])').length`)) === 6 && !(await cellFour()).locked, 5000);
 
     // Every pane full and a seventh session in the list: a pick never silently hides what a pane showed.
     const seventhItem = ctx.items.create({ projectId: project.id, boardId: board.id, title: "Marker seven", workType: "coding", status: "doing", by: "human" });
@@ -390,7 +394,7 @@ app.whenReady().then(async () => {
     const seventh = ctx.codeLink.store.createSession(project.id, { repoId: "check", branch: `${seventhItem.key.toLowerCase()}/check`, itemIds: [seventhItem.id], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, worktree: cwd });
     ctx.codeLink.store.patchSession(project.id, seventh.id, { state: "running", herdrPane: seventhPane.paneId });
     ctx.emit("codeLink/changed", project.id);
-    await wait(async () => (await js(`document.querySelectorAll('.cs-row').length`)) === 7, 8000);
+    await wait(async () => (await js(`document.querySelectorAll('.cs-row:not([data-ended])').length`)) === 7, 8000);
     const cellNames = () => js(`[...document.querySelectorAll('.cs-cell .cs-cell-name')].map((n) => n.textContent)`);
     const cellShows = async (key) => (await cellNames()).some((n) => n.startsWith(`${key} `));
     const seventhRow = `[...document.querySelectorAll('.cs-row')].find((r) => r.textContent.includes(${JSON.stringify(seventhItem.key)}))`;
@@ -416,6 +420,9 @@ app.whenReady().then(async () => {
     const needsBar = await wait(async () => (await barChip(sessions[5].item.key))?.[0] === "needs", 3000);
     const runningBar = await barChip(sessions[4].item.key);
     check("每个面板的标题栏标出会话状态：需要你、运行中", needsBar && runningBar?.[1] === "运行中", JSON.stringify({ needs: await barChip(sessions[5].item.key), running: runningBar }));
+    const cellOf = (key) => `[...document.querySelectorAll('.cs-cell')].find((c) => c.querySelector('.cs-cell-name')?.textContent.startsWith(${JSON.stringify(`${key} `)}))`;
+    const waitBorder = await js(`(() => { const cell = ${cellOf(sessions[5].item.key)}; const run = ${cellOf(sessions[4].item.key)}; const probe = document.createElement('div'); probe.style.color = 'var(--warn)'; document.body.append(probe); const want = getComputedStyle(probe).color; probe.remove(); return { wait: !!cell?.hasAttribute('data-wait'), border: cell ? getComputedStyle(cell).borderTopColor : null, want, runWait: !!run?.hasAttribute('data-wait'), runBorder: run ? getComputedStyle(run).borderTopColor : null }; })()`);
+    check("等你的格子边框标橙，运行中的不标", waitBorder.wait && waitBorder.border === waitBorder.want && !waitBorder.runWait && waitBorder.runBorder !== waitBorder.want, JSON.stringify(waitBorder));
     await selectPane(5);
     await js(`${seventhRow}.click(); true`);
     const needsKept = (await wait(async () => cellShows(seventhItem.key), 3000)) && (await cellNames())[5]?.startsWith(`${sessions[5].item.key} `);
@@ -498,17 +505,27 @@ app.whenReady().then(async () => {
     }, 5000);
     await js(`(() => { const cell = document.querySelectorAll('.cs-cell')[3]; cell.querySelector('.cs-cell-bar').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); cell.querySelector('.xterm-helper-textarea').focus(); return true; })()`);
     const rowsBefore = await js(`document.querySelectorAll('.cs-row').length`);
+    // Split like iTerm: the new half is a plain shell, in the folder of the cell it came from, and selected.
+    const savedTerminals = () => JSON.parse(fs.readFileSync(path.join(work, "code-sessions.json"), "utf8")).terminals?.[project.id] ?? [];
+    const terminalsBefore = savedTerminals().length;
     press("D", ["meta"]);
     const splitRight = await settled({ count: 7, selected: 4 });
-    const rightEmpty = (await paneCells()).empty[4];
+    const rightShell = await wait(async () => (await paneCells()).empty[4] === false && savedTerminals().length === terminalsBefore + 1, 10000);
     press("D", ["meta", "shift"]);
     const splitDown = await settled({ count: 8, selected: 5 });
-    check("⌘D 向右分屏、⇧⌘D 向下分屏，新面板是空的并被选中", splitRight && rightEmpty && splitDown, JSON.stringify(await paneCells()));
+    const downShell = await wait(async () => (await paneCells()).empty[5] === false && savedTerminals().length === terminalsBefore + 2, 10000);
+    const splitFolders = savedTerminals().slice(terminalsBefore).map((t) => t.cwd);
+    check("⌘D 向右分屏、⇧⌘D 向下分屏：分出来就是 shell（不问 agent），文件夹跟着当前格子，并被选中", splitRight && rightShell && splitDown && downShell && splitFolders.every((f) => f === cwd || f === fs.realpathSync(cwd)), JSON.stringify({ cells: await paneCells(), splitFolders, cwd }));
     press("Left", ["meta", "alt"]);
     const wentLeft = await settled({ selected: 3, typing: 3 });
     press("Right", ["meta", "alt"]);
     const wentRight = await settled({ selected: 4 });
     check("⌥⌘← / ⌥⌘→ 选中旁边的面板，键盘跟着进到它的终端", wentLeft && wentRight, JSON.stringify(await paneCells()));
+    // The two shells end, so the list is as it was; their cells stay until closed.
+    for (const t of savedTerminals().slice(terminalsBefore)) await js(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal="${t.id}"]'); [...(cell?.querySelectorAll('.cs-cell-bar .link-btn') ?? [])].find((b) => b.textContent === '关闭终端')?.click(); return true; })()`);
+    await wait(async () => savedTerminals().length === terminalsBefore && (await js(`document.querySelectorAll('.cs-row').length`)) === rowsBefore, 8000);
+    await js(`document.querySelectorAll('.cs-cell')[4].querySelector('.cs-cell-bar').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); true`);
+    await settled({ selected: 4 });
     press("W", ["meta"]);
     const closedOne = await settled({ count: 7, selected: 4 });
     press("W", ["meta"]);
@@ -555,6 +572,21 @@ app.whenReady().then(async () => {
     win.close();
     await sleep(500);
     check("关窗后 pane 还在 herdr 里跑", JSON.parse(herdr("pane", "list")).result.panes.length >= 6);
+    // With no window, what the panes show is still recorded: herdr's observer watches each beside whoever holds it,
+    // never taking it over; the session's raw output has what was typed after the window closed.
+    const awayPane = sessions[2].pane;
+    const closedAt = Date.now();
+    await wait(async () => streams.some((st) => st.pane === awayPane && st.mode === "observe" && st.opened >= closedAt && !st.closed), 5000);
+    herdr("pane", "send-text", awayPane, "echo bgmark-$((40+2))");
+    herdr("pane", "send-keys", awayPane, "enter");
+    const recordedAway = await wait(async () => {
+      const raw = await ctx.serial("codeLink/raw-output", project.id, sessions[2].id);
+      // A frame paints only the cells that changed: the words are read with the escapes between them taken out.
+      const painted = (raw?.records ?? []).filter((r) => r.t >= closedAt).map((r) => Buffer.from(r.bytes).toString("utf8")).join("");
+      return painted.replace(/\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "").includes("bgmark-42");
+    }, 10000);
+    const controlledAway = streams.filter((st) => st.pane === awayPane && st.opened >= closedAt && st.mode !== "observe").length;
+    check("终端窗口关着时窗格照样录：herdr 只旁观（observe，不接管），关窗后敲的命令在会话的原始输出里", recordedAway && controlledAway === 0, JSON.stringify({ recordedAway, controlledAway, observers: streams.filter((st) => st.mode === "observe").length }));
 
     // Closed and opened again, and opened while another window is in front: it comes forward each time.
     const front = new BrowserWindow({ width: 1600, height: 1000, x: 0, y: 0, title: "app window stand-in" });
@@ -592,9 +624,23 @@ app.whenReady().then(async () => {
       // Gone before the next round looks for the window by its title.
       await wait(async () => !again || again.isDestroyed(), 5000);
     }
-    front.destroy();
     if (canFocus && !interrupted) check("关掉再打开（三次）、被别的窗口挡住时再点，窗口都到最前并获得焦点", forward, `focused: ${focusedTitle}`);
     else console.log(`INFO: skipped the focus step — ${canFocus ? "another app took focus while it ran" : "another app is in front"}, so this app's windows cannot take focus`);
+    // 「打开时：两个都开」: the start opens the main window first and the Terminal window behind it; the main window stays in front.
+    if (canFocus && !interrupted) {
+      const { openStartWindows } = await import("../dist/terminal-entries.js");
+      front.focus();
+      await sleep(300);
+      await openStartWindows(ctx, { main: true, terminal: true }, () => front);
+      const behind = await wait(async () => sessionsWindow()?.isVisible() ?? false, 10000);
+      await sleep(1000);
+      const focused = BrowserWindow.getFocusedWindow();
+      if (!focused) console.log("INFO: skipped the start-order step — another app took focus while it ran");
+      else check("两个都开：终端窗口在后面打开，主窗口留在最前", behind && focused === front, `focused: ${focused.getTitle()}`);
+      sessionsWindow()?.close();
+      await wait(async () => !sessionsWindow(), 5000);
+    }
+    front.destroy();
 
     // A plain terminal from the list's button: every cell is taken, so it opens in a new one beside them.
     await ctx.contributions.run("code-sessions.open", { projectId: project.id });
@@ -605,12 +651,34 @@ app.whenReady().then(async () => {
     await tjs(`document.querySelector('[data-testid=cs-side-new-terminal]').click(); true`);
     const opened = await wait(async () => (await tjs(`document.querySelectorAll('.cs-cell').length === 7 && !!document.querySelector('.cs-cell[data-cell-terminal] .xterm')`)));
     check("新终端：格子都占满时，在旁边新开一格并连上 herdr", opened);
-    // An empty pane beside it, auto-place on; then the agent in the terminal starts, and its hooks make it a session with
-    // no ticket on the same pane: it is not placed in the empty pane, and the terminal's cell is not knocked off.
+    // Its bar's split button: a plain shell beside it, in the folder its shell has moved to since it opened.
+    const termsNow = () => JSON.parse(fs.readFileSync(path.join(work, "code-sessions.json"), "utf8")).terminals?.[project.id] ?? [];
+    const firstTerminal = await tjs(`document.querySelector('.cs-cell[data-cell-terminal]').dataset.cellTerminal`);
+    const newPane = termsNow().find((t) => t.id === firstTerminal)?.pane;
+    const movedTo = fs.realpathSync(fs.mkdtempSync(path.join(cwd, "moved-")));
+    const shellCwd = () => JSON.parse(herdr("pane", "process-info", "--pane", newPane)).result.process_info.foreground_processes.map((p) => p.cwd);
+    await sleep(800);
+    herdr("pane", "send-text", newPane, `cd ${movedTo}`);
+    herdr("pane", "send-keys", newPane, "enter");
+    await wait(async () => shellCwd().some((d) => d && fs.realpathSync(d) === movedTo), 5000);
     await tjs(`document.querySelector('.cs-cell[data-cell-terminal] button[aria-label="向右分屏"]').click(); true`);
+    const splitOff = () => termsNow().find((t) => t.id !== firstTerminal);
+    const buttonShell = await wait(async () => !!splitOff()?.pane && (await tjs(`!!document.querySelector('.cs-cell[data-cell-terminal="${splitOff()?.id}"] .xterm')`)), 10000);
+    const buttonFolder = splitOff()?.cwd;
+    check("格子标题栏的分屏按钮分出来就是 shell，文件夹是当前格子的 shell 现在所在的目录", buttonShell && !!buttonFolder && fs.realpathSync(buttonFolder) === movedTo, JSON.stringify({ splitOff: splitOff(), movedTo, shell: shellCwd() }));
+    // That shell ends and its cell is let go: an empty pane beside the terminal. Auto-place on, the agent in the terminal
+    // starts and its hooks make it a session with no ticket on the same pane: it is not placed in the empty pane, and
+    // the terminal's cell is not knocked off.
+    const offId = splitOff()?.id;
+    await tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal="${offId}"]'); [...(cell?.querySelectorAll('.cs-cell-bar .link-btn') ?? [])].find((b) => b.textContent === '关闭终端')?.click(); return true; })()`);
+    await wait(async () => !splitOff(), 8000);
+    await tjs(`(() => { const cell = [...document.querySelectorAll('.cs-cell')].find((c) => c.querySelector('[data-testid=cs-closed-terminal]') || (!c.querySelector('.xterm') && c.dataset.cell !== document.querySelector('.cs-cell[data-cell-terminal]')?.dataset.cell)); cell?.querySelector('.cs-cell-bar').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 20 })); return true; })()`);
+    await sleep(300);
+    await tjs(`[...document.querySelectorAll('[role=menuitem]')].find((i) => i.textContent === '断开')?.click(); true`);
     await wait(async () => (await tjs(`[...document.querySelectorAll('.cs-cell-name')].filter((n) => n.textContent === '从右侧选一个会话，在这里显示它的终端').length`)) === 1, 5000);
+    const emptyText = await tjs(`[...document.querySelectorAll('.cs-cell')].find((c) => c.querySelector('.cs-cell-name').textContent === '从右侧选一个会话，在这里显示它的终端')?.querySelector('.cs-cell-empty > span')?.textContent ?? ''`);
+    check("空格子写着「⌘D / ⇧⌘D 分出新格子，或 ⌘K 把会话放进来」，下面仍有文件夹和「新终端」", emptyText.includes("分出新格子") && emptyText.includes("把会话放进来") && (await tjs(`!!document.querySelector('.cs-cell-empty > .cs-new-terminal [data-testid=cs-new-terminal]')`)), emptyText);
     const cellsNow = await tjs(`document.querySelectorAll('.cs-cell').length`);
-    const newPane = (JSON.parse(fs.readFileSync(path.join(work, "code-sessions.json"), "utf8")).terminals?.[project.id] ?? []).sort((a, b) => b.startedAt - a.startedAt)[0]?.pane;
     const hooked = ctx.codeLink.store.createSession(project.id, { repoId: "check", branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, worktree: cwd });
     ctx.codeLink.store.patchSession(project.id, hooked.id, { state: "running", herdrPane: newPane });
     ctx.emit("codeLink/changed", project.id);
@@ -636,6 +704,58 @@ app.whenReady().then(async () => {
     const plainPane = saved()[0]?.pane;
     const typed = !!plainPane && (await wait(async () => herdr("pane", "read", plainPane, "--source", "recent", "--lines", "20").includes("plain-terminal-ok")));
     check("在新终端里输入的命令跑了", typed, `pane: ${plainPane}`);
+
+    // Typing into a cell while panes no cell shows print without pause: recorded through observers, then not (only
+    // what the window shows). Keystroke to the cell's screen, median of 15 each way; the observers' own cost from ps.
+    const latency = async () => {
+      await tjs(`window.__lat = new Promise((resolve) => { const rows = document.querySelector('.cs-cell[data-cell-terminal] .xterm-rows'); const before = rows.textContent; const t0 = performance.now(); const seen = new MutationObserver(() => { if (rows.textContent !== before) { seen.disconnect(); resolve(performance.now() - t0); } }); seen.observe(rows, { subtree: true, childList: true, characterData: true }); setTimeout(() => { seen.disconnect(); resolve(-1); }, 2000); }); true`);
+      tw.webContents.insertText("x");
+      return tjs("window.__lat");
+    };
+    const median = async () => {
+      await tjs(`document.querySelector('.cs-cell[data-cell-terminal] .xterm-helper-textarea').focus(); true`);
+      const runs = [];
+      for (let i = 0; i < 15; i++) {
+        runs.push(await latency());
+        await sleep(120);
+      }
+      herdr("pane", "send-keys", plainPane, "ctrl+u");
+      const ok = runs.filter((n) => n >= 0).sort((a, b) => a - b);
+      return { median: Math.round(ok[Math.floor(ok.length / 2)] ?? -1), p90: Math.round(ok[Math.floor(ok.length * 0.9)] ?? -1), lost: runs.length - ok.length };
+    };
+    const noisy = [];
+    for (let i = 0; i < 3; i++) {
+      const pane = await ctx.herdr.launch({ cwd, label: `noise ${i}`, command: "while true; do echo noise-$RANDOM-$RANDOM-$RANDOM; sleep 0.02; done", workspace: { key: project.id, label: project.name } });
+      const s = ctx.codeLink.store.createSession(project.id, { repoId: "check", branch: `noise-${i}`, itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, worktree: cwd });
+      ctx.codeLink.store.patchSession(project.id, s.id, { state: "running", herdrPane: pane.paneId });
+      noisy.push({ id: s.id, pane: pane.paneId });
+    }
+    ctx.emit("codeLink/changed", project.id);
+    const observing = () => noisy.filter((n) => streams.some((st) => st.pane === n.pane && st.mode === "observe" && !st.closed)).length;
+    const recordSettings = (background) => ctx.settings.set({ ...ctx.settings.get(), terminalRecording: { ...ctx.settings.get().terminalRecording, background } });
+    // Warmed up first; then not observed, observed, not observed again, so neither side gets the cold start.
+    recordSettings(false);
+    await wait(async () => observing() === 0, 5000);
+    await median();
+    const withoutBefore = await median();
+    recordSettings(true);
+    const watchedNoise = await wait(async () => observing() === noisy.length, 8000);
+    await sleep(1500);
+    const observerCost = execFileSync("ps", ["-Ao", "%cpu=,rss=,command="], { encoding: "utf8" }).split("\n").filter((l) => l.includes("terminal session observe")).map((l) => l.trim().split(/\s+/).slice(0, 2).map(Number));
+    const withObservers = await median();
+    recordSettings(false);
+    await wait(async () => observing() === 0, 5000);
+    const withoutAfter = await median();
+    recordSettings(true);
+    const baseline = Math.round((withoutBefore.median + withoutAfter.median) / 2);
+    console.log(`INFO: typing latency in a cell, ${noisy.length} panes printing without pause — observed: ${JSON.stringify(withObservers)} · not observed, before and after: ${JSON.stringify(withoutBefore)} ${JSON.stringify(withoutAfter)} · observers (%cpu, rss KB): ${JSON.stringify(observerCost)}`);
+    check("后台窗格在录时打字延迟不回退（中位数不比不录时多 15 ms）", watchedNoise && withObservers.median >= 0 && withObservers.median <= baseline + 15, JSON.stringify({ watchedNoise, withObservers, withoutBefore, withoutAfter }));
+    for (const n of noisy) {
+      ctx.codeLink.store.patchSession(project.id, n.id, { state: "ended", endedAt: Date.now() });
+      herdr("pane", "close", n.pane);
+    }
+    ctx.emit("codeLink/changed", project.id);
+    await sleep(500);
     // A plain terminal goes by what runs in it while it runs. Sent once the shell is back at its prompt: typed ahead,
     // zsh drops it.
     const foreground = () => JSON.parse(herdr("pane", "process-info", "--pane", plainPane)).result.process_info.foreground_processes.map((p) => p.cmdline);
@@ -669,7 +789,10 @@ app.whenReady().then(async () => {
     const back = await wait(async () => (await tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return !!cell?.querySelector('.xterm') && [...cell.querySelectorAll('.xterm-rows > div')].some((r) => r.textContent.includes('reopened-ok')); })()`)));
     check("关窗重开后，新终端在原来的格子里接回来", back);
     const plainChip = () => tjs(`document.querySelector('.cs-cell[data-cell-terminal] .cs-cell-bar [data-testid=cs-state]')?.dataset.state ?? null`);
+    const rowsOfManual = `[...(document.querySelector('.cs-cell[data-cell-terminal] .cs-pane-timeline .cs-replay')?.querySelectorAll('.xterm-rows > div') ?? [])].map((r) => r.textContent).join('\\n')`;
     check("普通终端里只有 shell 时，标题栏不显示状态", (await plainChip()) === null, String(await plainChip()));
+    const shellHint = await wait(async () => tjs(`(() => { const hint = document.querySelector('.cs-cell[data-cell-terminal] [data-testid=cs-shell-hint]'); return !!hint?.offsetParent && hint.textContent.includes('在这里敲 claude 试试') && hint.textContent.includes('普通 shell 不算会话'); })()`), 8000);
+    check("只有 shell 的格子下面一行提示「在这里敲 claude 试试 · 普通 shell 不算会话；agent 一启动就算」", shellHint, await tjs(`document.querySelector('.cs-cell[data-cell-terminal]')?.textContent?.slice(-200)`));
 
     // An agent in it claims a ticket: code link learns the pane (as the repo's hooks report it) and the cell becomes
     // that session in place — same xterm, same picture, no second row. Letting the claim go makes it a terminal again.
@@ -683,8 +806,12 @@ app.whenReady().then(async () => {
     await sleep(1500);
     const unclaimed = await tjs(`[document.querySelectorAll('.cs-row').length, document.querySelectorAll('[data-terminal]').length, [...document.querySelectorAll('.cs-row .cs-row-head .mono')].filter((n) => !n.textContent.trim()).length]`);
     check("还没认领工单的 agent 只是它终端的那一行，没有空白的会话行", unclaimed[0] === rowCount && unclaimed[1] === 1 && unclaimed[2] === 0, JSON.stringify({ before: rowCount, now: unclaimed }));
-    ctx.codeLink.store.patchSession(project.id, claimSession.id, { itemIds: [claimed.id], branch: `${claimed.key.toLowerCase()}/claimed` });
-    ctx.emit("codeLink/changed", project.id);
+    // Its first words, as its hooks report them, sound like that ticket: the guess is offered on the terminal's card and in
+    // its cell, and taking it is the claim.
+    ctx.codeLink.sessions.event(project.id, claimSession.id, { hook_event_name: "UserPromptSubmit", prompt: "在终端里认领这张工单的活。" });
+    const guessed = await wait(async () => tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal] [data-testid=cs-guess]'); const card = document.querySelector('.cs-card:has([data-terminal]) [data-testid=cs-guess]'); return !!cell && !!card && [cell, card].every((g) => g.textContent.includes(${JSON.stringify(`你说的话像是 ${claimed.key}`)}) && g.textContent.includes('不用工单')); })()`), 15000);
+    check("没挂工单的会话：卡片和格子上「你说的话像是 …」+「认领」/「不用工单」", guessed, JSON.stringify(await tjs(`[...document.querySelectorAll('[data-testid=cs-guess]')].map((g) => g.textContent)`)));
+    await tjs(`document.querySelector('.cs-cell[data-cell-terminal] [data-testid=cs-guess-take]')?.click(); true`);
     const folded = await wait(async () => tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return !!cell && cell.querySelector('.cs-cell-name').textContent.includes(${JSON.stringify(claimed.key)}) && [...cell.querySelectorAll('.link-btn')].some((b) => b.textContent === '继续'); })()`));
     check("终端里的 agent 认领工单后，这个格子原地变成该工单的会话", folded);
     const inPlace = await tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return cell.querySelector('.xterm')?.dataset.mark === 'same' && [...cell.querySelectorAll('.xterm-rows > div')].some((r) => r.textContent.includes('reopened-ok')); })()`);
@@ -696,8 +823,31 @@ app.whenReady().then(async () => {
     const plainAgain = await wait(async () => tjs(`(() => { const cell = document.querySelector('.cs-cell[data-cell-terminal]'); return !!cell && [...cell.querySelectorAll('.link-btn')].some((b) => b.textContent === '关闭终端') && cell.querySelector('.xterm')?.dataset.mark === 'same'; })()`));
     check("释放工单后，格子变回普通终端（不清空、不重连）", plainAgain);
 
-    // An agent started in the plain terminal: herdr reads it, and the pane's bar shows how it stands, before any claim.
-    herdr("pane", "send-text", plainPane, "claude");
+    // The pane's timeline over its cell: the sessions that ran there and the manual work between them; manual work
+    // reads as raw output only, with where it is kept and who can see it.
+    await tjs(`document.querySelector('.cs-cell[data-cell-terminal] [data-testid=cs-timeline-open]')?.click(); true`);
+    const timelineRows = () => tjs(`[...document.querySelectorAll('.cs-cell[data-cell-terminal] [data-testid=cs-timeline-entry]')].map((r) => [r.dataset.kind, r.textContent])`);
+    const timelineShown = await wait(async () => (await timelineRows()).some(([kind]) => kind === "manual") && (await timelineRows()).some(([kind]) => kind === "session"), 10000);
+    await tjs(`[...document.querySelectorAll('.cs-cell[data-cell-terminal] [data-testid=cs-timeline-entry]')].find((r) => r.dataset.kind === 'manual')?.click(); true`);
+    const manualReplay = ".cs-cell[data-cell-terminal] .cs-pane-timeline .cs-replay";
+    const manualOpen = await wait(async () => tjs(`!!document.querySelector(${JSON.stringify(manualReplay)}) && !document.querySelector(${JSON.stringify(manualReplay)}).hasAttribute('data-drawing')`), 10000);
+    const convoOff = await tjs(`document.querySelector('.cs-cell[data-cell-terminal] [data-testid=cs-timeline-convo]')?.disabled === true`);
+    const tags = await tjs(`document.querySelector('.cs-cell[data-cell-terminal] .cs-pane-timeline [data-testid=cs-raw-tags]')?.textContent ?? ''`);
+    const seekManual = (fraction) => tjs(`(() => { const s = document.querySelector('.cs-cell[data-cell-terminal] .cs-pane-timeline [data-testid=cs-replay-slider]'); if (!s) return false; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(s, Math.round(Number(s.max) * ${fraction})); s.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    let manualEcho = false;
+    for (let fraction = 1; manualOpen && fraction >= 0 && !manualEcho; fraction = Math.round((fraction - 0.1) * 10) / 10) {
+      if (!(await seekManual(fraction))) break;
+      manualEcho = await wait(async () => /plain-terminal-ok|pane-is-|reopened-ok/.test(await tjs(rowsOfManual)), 1500);
+    }
+    check("窗格时间线（格子 N · 目录 · 从早到晚）列出会话段和「手动操作」段；手动段只放原始输出，带隐私标签", timelineShown && manualOpen && convoOff && manualEcho && tags.includes("只存在这台电脑") && tags.includes("不进搜索"), JSON.stringify({ rows: await timelineRows(), manualOpen, convoOff, manualEcho, tags }));
+    fs.writeFileSync(path.join(shots, "code-sessions-pane-timeline.png"), (await tw.webContents.capturePage()).toPNG());
+    await tjs(`document.querySelector('.cs-cell[data-cell-terminal] [data-testid=cs-timeline-close]')?.click(); true`);
+
+    // An agent started in the plain terminal from the hint's button, which types its command without running it: herdr
+    // reads it, and the pane's bar shows how it stands, before any claim.
+    await tjs(`document.querySelector('.cs-cell[data-cell-terminal] [data-testid=cs-shell-try]')?.click(); true`);
+    const typedClaude = await wait(async () => /\bclaude\s*$/m.test(herdr("pane", "read", plainPane, "--source", "recent", "--lines", "5").trimEnd()), 5000);
+    check("点「在这里敲 claude 试试」把 claude 打进这个格子，不回车", typedClaude, herdr("pane", "read", plainPane, "--source", "recent", "--lines", "5").slice(-200));
     herdr("pane", "send-keys", plainPane, "enter");
     const agentChip = await wait(async () => ["running", "needs", "idle", "done"].includes(await plainChip()), 20000);
     check("普通终端里跑起 agent 后，标题栏按 herdr 的判断显示它的状态", agentChip, JSON.stringify({ chip: await plainChip(), pane: JSON.parse(herdr("pane", "get", plainPane)).result.pane }));
@@ -707,9 +857,9 @@ app.whenReady().then(async () => {
     const ended = await wait(async () => !JSON.parse(herdr("pane", "list")).result.panes.some((p) => p.pane_id === plainPane) && saved().length === 0);
     check("关闭终端：herdr 里的 pane 结束，列表里也没了", ended);
 
-    // The closed terminal's output was recorded while its cell showed it: on the archive's terminals shelf, played
-    // back in the cell it is picked into. The ended ticket session that ran alongside in pane four has a second tab,
-    // the raw output of its own stretch: marker-four was on its screen, what was typed after it ended is not.
+    // The closed terminal's output was recorded while its cell showed it: under History's closed-terminals filter,
+    // played back in the cell it is picked into. The ended ticket session that ran alongside in pane four has a second
+    // tab, the raw output of its own stretch: marker-four was on its screen, what was typed after it ended is not.
     const rowsOf = (sel) => `[...(document.querySelector(${JSON.stringify(sel)})?.querySelectorAll('.xterm-rows > div') ?? [])].map((r) => r.textContent).join('\\n')`;
     const replayText = (sel) => tjs(rowsOf(sel));
     const detachCell = async (sel) => {
@@ -718,11 +868,13 @@ app.whenReady().then(async () => {
       await tjs(`[...document.querySelectorAll('[role=menuitem]')].find((i) => i.textContent === '断开')?.click(); true`);
       await sleep(300);
     };
-    await tjs(`document.querySelector('[data-testid=cs-archive]').click(); true`);
-    await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-shelf-terminals]')`), 5000);
-    await tjs(`document.querySelector('[data-testid=cs-shelf-terminals]').click(); true`);
-    const closedRow = await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-archive-terminals] .cs-row')`), 8000);
-    await tjs(`document.querySelector('[data-testid=cs-archive-terminals] .cs-row')?.click(); true`);
+    // History is the assistant panel's list, in the bar: its rows, not the bar's cards.
+    const historyRowWith = (text) => `[...document.querySelectorAll('[data-testid=ai-review-list] .ai-review-row')].find((r) => r.textContent.includes(${JSON.stringify(text)}))`;
+    await tjs(`document.querySelector('[data-testid=cs-history]').click(); true`);
+    await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-history-terminals]')`), 5000);
+    await tjs(`document.querySelector('[data-testid=cs-history-terminals]').click(); true`);
+    const closedRow = await wait(async () => tjs(`!!document.querySelector('[data-testid=ai-review-list] .ai-review-row[data-kind=terminal]')`), 8000);
+    await tjs(`document.querySelector('[data-testid=ai-review-list] .ai-review-row[data-kind=terminal]')?.click(); true`);
     // It opens on the terminal's last screen, Claude Code's trust prompt; the slider dragged back finds the lines
     // echoed before it (set through the native setter, so React hears the change).
     const closedReplay = "[data-testid=cs-closed-terminal] .cs-replay";
@@ -733,18 +885,18 @@ app.whenReady().then(async () => {
       if (!(await seekTo(fraction))) break;
       echoed = await wait(async () => (await replayText(closedReplay)).includes("pane-is-"), 1500);
     }
-    check("关掉的普通终端在归档的「终端」架子里，选中后格子回放它的原始输出，进度条拖回去能看到之前回显的内容", closedRow && replayOpen && echoed, JSON.stringify({ closedRow, replayOpen, text: (await replayText(closedReplay)).trim().slice(-300) }));
+    check("关掉的普通终端是历史里的一个筛选项，选中后格子回放它的原始输出，进度条拖回去能看到之前回显的内容", closedRow && replayOpen && echoed, JSON.stringify({ closedRow, replayOpen, text: (await replayText(closedReplay)).trim().slice(-300) }));
     fs.writeFileSync(path.join(shots, "code-sessions-replay-terminal.png"), (await tw.webContents.capturePage()).toPNG());
-    await tjs(`document.querySelector('[data-testid=cs-shelf-tickets]').click(); true`);
-    await sleep(300);
-    await tjs(`${rowWith(alongItem.key)}?.click(); true`);
+    await tjs(`document.querySelector('[data-testid=cs-history-all]').click(); true`);
+    await wait(async () => tjs(`!!${historyRowWith(alongItem.key)}`), 8000);
+    await tjs(`${historyRowWith(alongItem.key)}?.click(); true`);
     const rawTab = await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-ended] [data-testid=cs-tab-raw][data-recorded]')`), 8000);
     await tjs(`document.querySelector('[data-testid=cs-ended] [data-testid=cs-tab-raw]')?.click(); true`);
     const sessionReplay = () => replayText("[data-testid=cs-ended] .cs-replay");
     const ownStretch = rawTab && (await wait(async () => (await sessionReplay()).includes("marker-four"), 15000)) && !(await sessionReplay()).includes("after-pane-keys");
     check("结束的会话多一个「原始输出」标签：回放只含它自己那段，有 marker-four，没有它结束后才输入的 after-pane-keys", ownStretch, JSON.stringify({ rawTab, text: (await sessionReplay()).trim().slice(-400) }));
     fs.writeFileSync(path.join(shots, "code-sessions-replay-session.png"), (await tw.webContents.capturePage()).toPNG());
-    await tjs(`document.querySelector('[data-testid=cs-archive-back]').click(); true`);
+    await tjs(`document.querySelector('[data-testid=cs-history-back]').click(); true`);
     await sleep(300);
     // The cell used for reading is emptied again, for the steps below that count empty cells.
     await detachCell("[data-testid=cs-ended]");
@@ -761,7 +913,7 @@ app.whenReady().then(async () => {
 
     // Right-click on a pane's bar: the menu, and Detach empties that pane.
     const emptyCells = () => tjs(`document.querySelectorAll('.cs-cell-empty > .cs-new-terminal [data-testid=cs-new-terminal]').length`);
-    // the first cell that holds something: which cell the archive's picks above landed in follows the selection
+    // the first cell that holds something: which cell History's picks above landed in follows the selection
     const heldBar = `[...document.querySelectorAll('.cs-cell')].find((c) => !c.querySelector('.cs-cell-empty'))?.querySelector('.cs-cell-bar')`;
     const emptyBefore = await emptyCells();
     await tjs(`${heldBar}.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 20 })); true`);
@@ -783,6 +935,11 @@ app.whenReady().then(async () => {
     const inCell = (key) => tjs(`[...document.querySelectorAll('.cs-cell-name')].some((n) => n.textContent.includes(${JSON.stringify(key)}))`);
     const auto = await appear("自动放进空面板");
     check("新会话自动放进空面板", await wait(async () => inCell(auto), 8000));
+    // A card by its name alone: CSC-1 is not CSC-12.
+    const cardOf = (key) => `[...document.querySelectorAll('.cs-card')].find((c) => c.querySelector('.cs-row-name')?.firstChild && [...c.querySelector('.cs-row-name').childNodes].some((n) => n.nodeType === 3 && n.textContent.trim() === ${JSON.stringify(key)}))`;
+    const newMark = await wait(async () => tjs(`${cardOf(auto)}?.querySelector('[data-testid=cs-new]')?.textContent === '新'`), 3000);
+    const oldUnmarked = await tjs(`!!${cardOf(sessions[0].item.key)} && !${cardOf(sessions[0].item.key)}.querySelector('[data-testid=cs-new]')`);
+    check("刚开始的会话卡片带「新」（一分钟内，同助手面板），早开始的不带", newMark && oldUnmarked, JSON.stringify({ newMark, oldUnmarked }));
     await tjs(`document.querySelector('[data-testid=cs-side-new-terminal]').click(); true`);
     await sleep(300);
     await tjs(`${heldBar}.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 20 })); true`);
@@ -796,10 +953,14 @@ app.whenReady().then(async () => {
     // Asked from outside — "open in terminal" on its ticket — the session comes into a cell and is selected, auto-place off or not.
     check("代码关联认得这个终端窗口", await ctx.codeLink.terminalWindow(project.id));
     const manualItem = ctx.items.list({ projectId: project.id }).find((i) => i.key === manual);
+    // the cell it lands in flashes once: watched as it happens, since the flash is gone in a second
+    await tjs(`(() => { window.__flashed = []; new MutationObserver((ms) => { for (const m of ms) if (m.target.hasAttribute('data-flash')) window.__flashed.push(m.target.querySelector('.cs-cell-name')?.textContent ?? ''); }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['data-flash'] }); return true; })()`);
     const jumped = await ctx.contributions.run("code-link.open-terminal", { projectId: project.id, itemId: manualItem.id });
     const currentRows = () => tjs(`[...document.querySelectorAll('.cs-row[aria-current="true"]')].map((r) => r.textContent).join(' | ')`);
     const revealed = await wait(async () => (await inCell(manual)) && (await currentRows()).includes(manual), 8000);
     check("在终端打开：终端窗口把会话放进格子并选中它", revealed && !jumped.toast, `${JSON.stringify(jumped)} · current: ${await currentRows()}`);
+    const flashed = await wait(async () => tjs(`window.__flashed.some((n) => n.includes(${JSON.stringify(manual)}))`), 3000);
+    check("跳到格子时那个格子闪一下", flashed, JSON.stringify(await tjs(`window.__flashed`)));
     // Let go again, and the plain terminal's cell selected as before: the steps below count the empty cells.
     await tjs(`[...document.querySelectorAll('.cs-cell')].find((c) => c.querySelector('.cs-cell-name')?.textContent.includes(${JSON.stringify(manual)})).querySelector('.cs-cell-bar').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 20 })); true`);
     const detachShown = await wait(async () => tjs(`[...document.querySelectorAll('[role=menuitem]')].some((i) => i.textContent === '断开')`), 3000);
@@ -849,8 +1010,8 @@ app.whenReady().then(async () => {
     const barRight = await tjs(`(() => { const side = document.querySelector('.cs-side').getBoundingClientRect(); const main = document.querySelector('.cs-main').getBoundingClientRect(); return side.left >= main.right - 1 && !!document.querySelector('[data-testid=cs-views]'); })()`);
     check("会话栏在右边，顶部有「格子 | 总览」", barRight);
     // The top bar breathes: the view switch carries an icon on each word, stands shorter than the bar and centred in it,
-    // and ends on the session cards' right edge; the project name starts on the first cell's left edge.
-    const topbar = await tjs(`(() => { const r = (el) => el.getBoundingClientRect(); const bar = r(document.querySelector('.cs-topbar')); const views = r(document.querySelector('[data-testid=cs-views]')); const side = document.querySelector('.cs-side'); const cards = r(side).right - parseFloat(getComputedStyle(side).paddingRight); const name = r(document.querySelector('[data-testid=cs-project]')); const cell = r(document.querySelector('.cs-cell')); return { room: bar.height - views.height, centred: Math.abs((views.top - bar.top) - (bar.bottom - views.bottom)) <= 1, right: Math.abs(views.right - cards) <= 1, left: Math.abs(name.left - cell.left) <= 1, icons: document.querySelectorAll('[data-testid=cs-views] button svg').length }; })()`);
+    // and the bar's last button ends on the session cards' right edge; the project name starts on the first cell's left edge.
+    const topbar = await tjs(`(() => { const r = (el) => el.getBoundingClientRect(); const bar = r(document.querySelector('.cs-topbar')); const views = r(document.querySelector('[data-testid=cs-views]')); const last = r(document.querySelector('.cs-topbar').lastElementChild); const side = document.querySelector('.cs-side'); const cards = r(side).right - parseFloat(getComputedStyle(side).paddingRight); const name = r(document.querySelector('[data-testid=cs-project]')); const cell = r(document.querySelector('.cs-cell')); return { room: bar.height - views.height, centred: Math.abs((views.top - bar.top) - (bar.bottom - views.bottom)) <= 1, right: Math.abs(last.right - cards) <= 1, left: Math.abs(name.left - cell.left) <= 1, icons: document.querySelectorAll('[data-testid=cs-views] button svg').length }; })()`);
     check("顶栏有余地：「格子 | 总览」各带图标，比顶栏矮且居中，右边齐会话卡片，项目名齐第一个格子", topbar.room >= 8 && topbar.centred && topbar.right && topbar.left && topbar.icons === 2, JSON.stringify(topbar));
     foldKey();
     const dots = await wait(async () => tjs(`!!document.querySelector('.cs-side[data-folded]') && document.querySelectorAll('.cs-dot').length >= 6 && document.querySelectorAll('.cs-row').length === 0`), 3000);
@@ -877,6 +1038,32 @@ app.whenReady().then(async () => {
     const openedThread = await wait(async () => opens.some((t) => t.projectId === project.id && t.threadId === thread.id), 3000);
     check("点它在主窗口打开（desktop/open 带着这个对话）", openedThread, JSON.stringify(opens));
 
+    // The top bar's own buttons, beside the view switch: split right and down, ⌘K, and the main window.
+    const topWords = await tjs(`['cs-top-split-right', 'cs-top-split-down', 'cs-top-palette', 'cs-top-main'].map((id) => document.querySelector('[data-testid=' + id + ']')?.textContent.trim() ?? null)`);
+    const wordsOk = process.platform !== "darwin" || JSON.stringify(topWords) === JSON.stringify(["向右分⌘D", "向下分⇧⌘D", "⌘K找会话或做事", "主窗口"]);
+    const cellsBeforeTop = await tjs(`document.querySelectorAll('.cs-cell').length`);
+    const terminalsBeforeTop = await tjs(`document.querySelectorAll('.cs-cell[data-cell-terminal]').length`);
+    await tjs(`document.querySelector('[data-testid=cs-top-split-right]').click(); true`);
+    const topSplit = await wait(async () => tjs(`document.querySelectorAll('.cs-cell').length === ${cellsBeforeTop + 1} && document.querySelectorAll('.cs-cell[data-cell-terminal] .xterm').length === ${terminalsBeforeTop + 1}`), 10000);
+    // That shell goes again, and its cell.
+    await tjs(`(() => { const cell = document.querySelector('.cs-cell[data-focused]'); [...(cell?.querySelectorAll('.cs-cell-bar .link-btn') ?? [])].find((b) => b.textContent === '关闭终端')?.click(); return true; })()`);
+    await sleep(800);
+    await tjs(`document.querySelector('.cs-cell[data-focused] button[aria-label="关闭这个窗格"]')?.click(); true`);
+    await wait(async () => (await tjs(`document.querySelectorAll('.cs-cell').length`)) === cellsBeforeTop, 5000);
+    await tjs(`document.querySelector('[data-testid=cs-top-palette]').click(); true`);
+    const topPalette = await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-palette]')`), 3000);
+    tw.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
+    tw.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
+    if (!(await wait(async () => tjs(`!document.querySelector('[data-testid=cs-palette]')`), 2000))) {
+      const mac = process.platform === "darwin";
+      await tjs(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', code: 'KeyK', metaKey: ${mac}, ctrlKey: ${!mac}, shiftKey: ${!mac}, bubbles: true, cancelable: true })); true`);
+      await wait(async () => tjs(`!document.querySelector('[data-testid=cs-palette]')`), 2000);
+    }
+    const opensBefore = opens.length;
+    await tjs(`document.querySelector('[data-testid=cs-top-main]').click(); true`);
+    const topMain = await wait(async () => opens.slice(opensBefore).some((t) => t.projectId === project.id && !t.threadId), 3000);
+    check("顶栏右侧「向右分 ⌘D」「向下分 ⇧⌘D」「⌘K 找会话或做事」「主窗口」：分出 shell、打开 ⌘K、把主窗口调到前面", wordsOk && topSplit && topPalette && topMain, JSON.stringify({ topWords, topSplit, topPalette, topMain }));
+
     // A session waiting on a permission its agent declared the keys for: its card goes to the top and allows from there.
     const typedIn = [];
     const realSendInput = ctx.herdr.sendInput;
@@ -890,18 +1077,24 @@ app.whenReady().then(async () => {
     await showsOnScreen(sessions[4].pane, "printf 'Do you want to proceed?\\n❯ 1. Yes\\n  2. No, and tell Claude what to do differently\\n'", "❯ 1. Yes");
     await showsOnScreen(sessions[3].pane, "printf 'Do you trust the files in this folder?\\n❯ 1. No, exit\\n  2. Yes, I trust this folder\\n'", "❯ 1. No, exit");
     ctx.herdr.sendInput = async (pane, input) => { typedIn.push([pane, input]); return true; };
-    ctx.codeLink.store.patchSession(project.id, sessions[4].id, { state: "waiting", activity: "needs your approval: Bash" });
+    ctx.codeLink.store.patchSession(project.id, sessions[4].id, { state: "waiting", activity: null, ask: { kind: "permission", tool: "Bash", action: "run", detail: "git push -u origin tom-5/x" } });
     ctx.emit("codeLink/changed", project.id);
     const askCard = `[...document.querySelectorAll('.cs-row')].find((r) => r.textContent.includes(${JSON.stringify(sessions[4].item.key)}))`;
     // Allow and Deny sit under the card, in its list item (a pane with history puts the card in a fold row first).
-    const asksOnTop = await wait(async () => tjs(`(() => { const card = ${askCard}; return !!card && card.dataset.status === 'wait' && document.querySelector('.cs-row') === card && !!card.closest('li').querySelector('[data-testid=cs-allow]'); })()`), 8000);
-    check("等你允许的会话排在最上，卡片下有「允许」「拒绝」", asksOnTop, await tjs(`[...document.querySelectorAll('.cs-row')].map((r) => [r.dataset.status, r.textContent.slice(0, 40)])`).then((rows) => JSON.stringify(rows)));
+    const asksOnTop = await wait(async () => tjs(`(() => { const card = ${askCard}; const li = card?.closest('li'); return !!card && card.dataset.status === 'wait' && document.querySelector('.cs-row') === card && !!li.querySelector('[data-testid=cs-allow]') && !!li.querySelector('[data-testid=cs-look]') && !li.querySelector('[data-testid=cs-deny]'); })()`), 8000);
+    // what it asks, in the window's language and with the command, not the hooks' English
+    const askWords = await tjs(`${askCard}?.querySelector('.cs-row-wait')?.textContent ?? null`);
+    check("等你允许的卡片写「想运行 git push -u origin tom-5/x」，不是英文原文", askWords === "想运行 git push -u origin tom-5/x", askWords);
+    check("等你允许的会话排在最上，卡片下有「允许」「先看看」（拒绝在总览大卡上）", asksOnTop, await tjs(`[...document.querySelectorAll('.cs-row')].map((r) => [r.dataset.status, r.textContent.slice(0, 40)])`).then((rows) => JSON.stringify(rows)));
     fs.writeFileSync(path.join(shots, "code-sessions-bar.png"), (await tw.webContents.capturePage()).toPNG());
+    const selectedBefore = await tjs(`document.querySelector('.cs-cell[data-focused]')?.dataset.cell ?? null`);
     await tjs(`${askCard}?.closest('li').querySelector('[data-testid=cs-allow]')?.click(); true`);
     const allowed = await wait(async () => typedIn.length === 1, 3000);
     check("点「允许」把 agent 声明的按键发进它的 pane", allowed && JSON.stringify(typedIn[0]) === JSON.stringify([sessions[4].pane, { keys: ["enter"] }]), JSON.stringify(typedIn));
+    const stayedPut = await wait(async () => tjs(`(document.querySelector('[data-testid=cs-toast]')?.textContent ?? '').startsWith('已允许「${sessions[4].item.key}」· 没离开当前会话')`), 3000);
+    check("允许之后提示「已允许「…」· 没离开当前会话」，选中的格子不变", stayedPut && (await tjs(`document.querySelector('.cs-cell[data-focused]')?.dataset.cell ?? null`)) === selectedBefore, await tjs(`document.querySelector('[data-testid=cs-toast]')?.textContent ?? null`));
     // A folder's trust is no permission (Enter there would pick "No, exit"): its card waits on you, with no Allow or Deny to press.
-    ctx.codeLink.store.patchSession(project.id, sessions[3].id, { state: "waiting", activity: "needs your approval" });
+    ctx.codeLink.store.patchSession(project.id, sessions[3].id, { state: "waiting", activity: null, ask: { kind: "permission", tool: null, action: null, detail: null } });
     ctx.emit("codeLink/changed", project.id);
     const trustCard = `[...document.querySelectorAll('.cs-row')].find((r) => r.textContent.includes(${JSON.stringify(sessions[3].item.key)}))`;
     // the state that says it waits carries what its screen asks, so no buttons by then means none at all
@@ -909,12 +1102,29 @@ app.whenReady().then(async () => {
     const trustButtons = await tjs(`!!${trustCard}?.closest('li').querySelector('[data-testid=cs-allow], [data-testid=cs-deny]')`);
     check("屏幕上不是权限提示（信任文件夹）时卡片照旧等你，但没有「允许」「拒绝」，一个键也不发", trustWaits && !trustButtons && typedIn.length === 1, JSON.stringify({ typedIn, trustWaits, trustButtons }));
     ctx.herdr.sendInput = realSendInput;
+    // An assistant conversation asking with choices: its card answers with one of them, or opens it in the app window first.
+    ctx.agent.engine({ id: "chooser", title: "Chooser", author: "ai:chooser", available: async () => ({ ok: true }), async turn(input, io) { if (input.input.kind === "text") { await io.tools.execute("ask_user", { question: "取消这 3 张重复工单？", options: ["确认", "再看看"] }); return { stop: "asked" }; } io.emit({ type: "text", text: "取消了" }); return { stop: "end" }; } });
+    const chooser = ctx.agent.newThread(project.id, "chooser", board.id, { title: "清理重复工单" });
+    ctx.agent.send(project.id, chooser.id, { kind: "text", text: "清理一下" });
+    const chooserCard = `[...document.querySelectorAll('.cs-row.cs-thread')].find((r) => r.textContent.includes('清理重复工单'))`;
+    const choices = await wait(async () => tjs(`(() => { const li = ${chooserCard}?.closest('li'); return !!li && JSON.stringify([...li.querySelectorAll('[data-testid=cs-row-actions] button')].map((b) => b.textContent)) === JSON.stringify(['确认', '再看看', '先看看']); })()`), 8000);
+    check("助手对话的提问在卡片下给出它的选项和「先看看」", choices, await tjs(`${chooserCard}?.closest('li')?.textContent ?? null`));
+    await tjs(`${chooserCard}?.closest('li').querySelector('[data-testid=cs-look]')?.click(); true`);
+    const looked = await wait(async () => opens.some((t) => t.threadId === chooser.id), 3000);
+    await tjs(`${chooserCard}?.closest('li').querySelector('[data-testid=cs-choice]')?.click(); true`);
+    const chosen = await wait(async () => !ctx.agent.thread(project.id, chooser.id).pending && (await tjs(`(document.querySelector('[data-testid=cs-toast]')?.textContent ?? '').startsWith('已回答「清理重复工单」· 没离开当前会话')`)), 5000);
+    check("「先看看」在主窗口打开它；点「确认」直接回答，提示没离开当前会话", looked && chosen, JSON.stringify({ looked, chosen, toast: await tjs(`document.querySelector('[data-testid=cs-toast]')?.textContent ?? null`) }));
     // the overview below reads this pane's marker in its last lines
     await realSendInput.call(ctx.herdr, sessions[4].pane, { text: "echo marker-five", keys: ["enter"] });
-    ctx.codeLink.store.patchSession(project.id, sessions[3].id, { state: "running", activity: null });
-    ctx.codeLink.store.patchSession(project.id, sessions[4].id, { state: "running", activity: null });
+    ctx.codeLink.store.patchSession(project.id, sessions[3].id, { state: "running", activity: null, ask: null });
+    ctx.codeLink.store.patchSession(project.id, sessions[4].id, { state: "running", activity: null, ask: null });
     ctx.emit("codeLink/changed", project.id);
     await wait(async () => tjs(`${askCard}?.dataset.status === 'run'`), 5000);
+    // A running session's card shows its pane's last line, from the glance its events bring — not what its hooks last said.
+    const paneLast = () => herdr("pane", "read", sessions[4].pane, "--source", "recent", "--lines", "12").split("\n").map((l) => l.replace(/[─-╿]/g, " ").replace(/\s+$/, "")).filter((l) => l.trim() && !/^[>❯$%#│|?]+$/.test(l.trim())).at(-1) ?? "";
+    const cardTail = () => tjs(`${askCard}?.querySelector('[data-testid=cs-row-tail]')?.textContent ?? null`);
+    const tailOnCard = await wait(async () => { const shown = await cardTail(); return !!shown && shown === paneLast(); }, 15000);
+    check("运行中的会话卡片显示它窗格的最后一行（等宽），不是 hooks 报的 activity", tailOnCard, JSON.stringify({ card: await cardTail(), pane: paneLast() }));
 
     // The overview: every session as a big card with its pane's last lines; "see in a pane" goes back to the cells on it.
     await tjs(`document.querySelector('[data-testid=cs-view-overview]').click(); true`);
@@ -926,6 +1136,12 @@ app.whenReady().then(async () => {
     const overviewEdge = await tjs(`(() => { const name = document.querySelector('[data-testid=cs-project]').getBoundingClientRect(); const card = document.querySelector('[data-testid=cs-big]').getBoundingClientRect(); return Math.abs(name.left - card.left) <= 1; })()`);
     check("总览的第一张卡片齐项目名", overviewEdge);
     fs.writeFileSync(path.join(shots, "code-sessions-overview.png"), (await tw.webContents.capturePage()).toPNG());
+    // A card of the session bar picked over the overview: back to the cells, its own selected.
+    await tjs(`[...document.querySelectorAll('.cs-side .cs-row')].find((r) => r.textContent.includes(${JSON.stringify(sessions[3].item.key)}))?.click(); true`);
+    const barToGrid = await wait(async () => tjs(`!document.querySelector('[data-testid=cs-overview]') && document.querySelector('[data-testid=cs-view-grid]').getAttribute('aria-pressed') === 'true' && (document.querySelector('.cs-cell[data-focused] .cs-cell-name')?.textContent ?? '').startsWith(${JSON.stringify(`${sessions[3].item.key} `)})`), 5000);
+    check("在总览里点会话栏的卡片：切回格子视图并选中它的格子", barToGrid, await tjs(`document.querySelector('.cs-cell[data-focused] .cs-cell-name')?.textContent`));
+    await tjs(`document.querySelector('[data-testid=cs-view-overview]').click(); true`);
+    await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-overview]')`), 3000);
     await tjs(`${bigFive}?.querySelector('[data-testid=cs-see-in-pane]')?.click(); true`);
     const backToGrid = await wait(async () => tjs(`!document.querySelector('[data-testid=cs-overview]') && document.querySelector('[data-testid=cs-view-grid]').getAttribute('aria-pressed') === 'true' && (document.querySelector('.cs-cell[data-focused] .cs-cell-name')?.textContent ?? '').startsWith(${JSON.stringify(`${sessions[4].item.key} `)})`), 5000);
     check("「在格子里看」回到格子并选中它的格子", backToGrid, await tjs(`document.querySelector('.cs-cell[data-focused] .cs-cell-name')?.textContent`));
@@ -967,17 +1183,21 @@ app.whenReady().then(async () => {
     ctx.boards.update(project.id, board.id, { repoId: repo.id });
     const goneItem = ctx.items.create({ projectId: project.id, boardId: board.id, title: "终端已经没有了", workType: "coding", status: "doing", by: "human" });
     const gone = ctx.codeLink.store.createSession(project.id, { repoId: repo.id, branch: "gone/check", itemIds: [goneItem.id], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, worktree });
+    // what its code came to, as the look back says it
+    ctx.codeLink.store.upsertLink(project.id, { itemId: goneItem.id, repoId: repo.id, branch: "gone/check" }, { ahead: 3, prNumber: 77, prState: "merged", prUrl: "https://example.com/pull/77" });
     ctx.codeLink.store.patchSession(project.id, gone.id, { state: "ended", endedAt: Date.now() });
     ctx.emit("codeLink/changed", project.id);
     const goneRow = `[...document.querySelectorAll('.cs-row')].find((r) => r.textContent.includes(${JSON.stringify(goneItem.key)}))`;
-    // Ended, it leaves the list for the archive; opened there, it shows in a pane as before.
-    const archived = await wait(async () => tjs(`!${goneRow} && /\\d/.test(document.querySelector('[data-testid=cs-archive]')?.textContent ?? '') && document.querySelectorAll('[data-testid=cs-new-terminal-where] option').length >= 2`), 8000);
-    await tjs(`document.querySelector('[data-testid=cs-archive]').click(); true`);
-    const inArchive = await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-archive-list]') && !!${goneRow}`), 8000);
-    check("结束的会话离开列表，在归档里找得到", archived && inArchive);
-    fs.writeFileSync(path.join(shots, "code-sessions-archive.png"), (await tw.webContents.capturePage()).toPNG());
-    await tjs(`${goneRow}.click(); true`);
-    await tjs(`document.querySelector('[data-testid=cs-archive-back]').click(); true`);
+    // Ended, it stays in the bar's ended group for the day, with its outcome and when it ran; History has it too, and opened there it shows in a pane as before.
+    const endedCard = await wait(async () => tjs(`(() => { const row = ${goneRow}; return !!row && row.dataset.status === 'done' && row.querySelector('.cs-row-outcome')?.textContent === 'PR #77 已合并 · 3 个 commit' && /已结束 · \\d\\d:\\d\\d–\\d\\d:\\d\\d/.test(row.querySelector('.cs-row-meta')?.textContent ?? ''); })()`), 8000);
+    check("刚结束的会话留在会话栏的完成组里，写着结论（PR / commit）和起止时间", endedCard, await tjs(`${goneRow}?.textContent ?? null`));
+    const offBar = await wait(async () => tjs(`document.querySelectorAll('[data-testid=cs-new-terminal-where] option').length >= 2`), 8000);
+    await tjs(`document.querySelector('[data-testid=cs-history]').click(); true`);
+    const inHistory = await wait(async () => tjs(`!!${historyRowWith(goneItem.key)}`), 8000);
+    check("结束的会话在历史里也找得到", offBar && inHistory);
+    fs.writeFileSync(path.join(shots, "code-sessions-history.png"), (await tw.webContents.capturePage()).toPNG());
+    await tjs(`${historyRowWith(goneItem.key)}.click(); true`);
+    await tjs(`document.querySelector('[data-testid=cs-history-back]').click(); true`);
     const goneCell = `document.querySelector('[data-testid=cs-ended]')`;
     const offered = await wait(async () => tjs(`(() => { const box = ${goneCell}; return !!box && [...box.querySelectorAll('button')].some((b) => b.textContent === '在新终端里接着做') && !!box.querySelector('[data-testid=cs-new-terminal-where]') && !!box.querySelector('[data-testid=cs-new-terminal]'); })()`), 5000);
     check("终端已经没有的会话：保留「在新终端里接着做」，也有目录和「新终端」", offered);
@@ -1006,21 +1226,19 @@ app.whenReady().then(async () => {
       fs.writeFileSync(path.join(shots, "code-sessions-took.png"), (await tw.webContents.capturePage()).toPNG());
     }
 
-    // A conversation had without a ticket, ended: on the archive's 对话 shelf by its title, and taken up again in a new
-    // terminal by its agent's resume, in the folder it ran in.
+    // A conversation had without a ticket, ended: in History by its title, and taken up again in a new terminal by
+    // its agent's resume, in the folder it ran in.
     const talk = ctx.codeLink.store.createSession(project.id, { repoId: repo.id, branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: ctx.hub.deviceId, externalId: "talk-check-1" });
     const talkFile = path.join(work, "talk-check-1.jsonl");
     fs.writeFileSync(talkFile, [{ type: "user", message: { content: "侧栏该怎么分组？" } }, { type: "assistant", message: { content: [{ type: "text", text: "分成「这个窗口里」和「在其他地方」两组。" }, { type: "tool_use", id: "u1", name: "Bash", input: { command: "rg -n Sidebar", description: "Show the sidebar code" } }] } }, { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "u1", content: "Sidebar.tsx:15" }] } }].map((o) => JSON.stringify(o)).join("\n"));
     ctx.codeLink.store.patchSession(project.id, talk.id, { title: "终端侧栏设计讨论", prompted: true, cwd: repoDir, transcript: talkFile, state: "ended", endedAt: Date.now() });
     ctx.emit("codeLink/changed", project.id);
-    await tjs(`document.querySelector('[data-testid=cs-archive]').click(); true`);
-    await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-shelf-talks]')`), 5000);
-    await tjs(`document.querySelector('[data-testid=cs-shelf-talks]').click(); true`);
-    const talkRow = `[...document.querySelectorAll('[data-testid=cs-archive-list] .cs-row')].find((r) => r.textContent.includes('终端侧栏设计讨论'))`;
-    const shelved = await wait(async () => tjs(`!!${talkRow}`), 5000);
-    check("没有工单的对话结束后在归档的「对话」栏里，用它的标题", shelved);
+    await tjs(`document.querySelector('[data-testid=cs-history]').click(); true`);
+    const talkRow = historyRowWith("终端侧栏设计讨论");
+    const talkListed = await wait(async () => tjs(`!!${talkRow}`), 5000);
+    check("没有工单的对话结束后在历史里，用它的标题", talkListed);
     await tjs(`${talkRow}?.click(); true`);
-    await tjs(`document.querySelector('[data-testid=cs-archive-back]').click(); true`);
+    await tjs(`document.querySelector('[data-testid=cs-history-back]').click(); true`);
     const offeredTalk = await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-talk-on]')`), 5000);
     // Its cell says who worked it and shows the conversation, read-only, under the way to go on.
     const readBack = await wait(async () => tjs(`(() => { const by = document.querySelector('[data-testid=cs-ended-by]')?.textContent ?? ''; const lines = [...document.querySelectorAll('[data-testid=cs-convo] .cs-convo-line')].map((l) => [l.dataset.who, l.textContent]); return by.startsWith('Claude Code') && JSON.stringify(lines) === JSON.stringify([["person", "侧栏该怎么分组？"], ["agent", "分成「这个窗口里」和「在其他地方」两组。"], ["tool", "Bash · Show the sidebar code"]]); })()`), 5000);
@@ -1056,14 +1274,13 @@ app.whenReady().then(async () => {
     await tjs(`document.querySelector('[data-testid=cs-toast-action]')?.click(); true`);
     await wait(async () => tjs(`!!document.querySelector('.cs-cell[data-cell="${goneId}"] .xterm')`), 8000);
 
-    // The archive finds a conversation by something said in it, not only by its title.
-    await tjs(`document.querySelector('[data-testid=cs-archive]').click(); true`);
-    await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-archive-search]')`), 5000);
-    await tjs(`(() => { const box = document.querySelector('[data-testid=cs-archive-search]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(box, '这个窗口里'); box.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
-    await tjs(`document.querySelector('[data-testid=cs-shelf-talks]').click(); true`);
-    const foundSaid = await wait(async () => tjs(`[...document.querySelectorAll('[data-testid=cs-archive-list] .cs-row')].some((r) => r.textContent.includes('终端侧栏设计讨论') && !!r.querySelector('[data-testid=cs-archive-said]'))`), 8000);
-    check("归档里搜对话里说过的词，找到那段对话并标出是对话里提到的", foundSaid, JSON.stringify(await tjs(`[...document.querySelectorAll('[data-testid=cs-archive-list] .cs-row')].map((r) => r.textContent)`)));
-    await tjs(`document.querySelector('[data-testid=cs-archive-back]').click(); true`);
+    // History finds a conversation by something said in it, not only by its title, and quotes the line.
+    await tjs(`document.querySelector('[data-testid=cs-history]').click(); true`);
+    await wait(async () => tjs(`!!document.querySelector('[data-testid=ai-review-search]')`), 5000);
+    await tjs(`(() => { const box = document.querySelector('[data-testid=ai-review-search]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(box, '这个窗口里'); box.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    const foundSaid = await wait(async () => tjs(`[...document.querySelectorAll('[data-testid=ai-review-list] .ai-review-row')].some((r) => r.textContent.includes('终端侧栏设计讨论') && (r.querySelector('[data-testid=ai-review-said]')?.textContent ?? '').includes('这个窗口里'))`), 8000);
+    check("历史里搜对话里说过的词，找到那段对话并引出说过的那句", foundSaid, JSON.stringify(await tjs(`[...document.querySelectorAll('[data-testid=ai-review-list] .ai-review-row')].map((r) => r.textContent)`)));
+    await tjs(`document.querySelector('[data-testid=cs-history-back]').click(); true`);
 
     // herdr's server goes away under the window (this run's own, by its socket): Tomrade starts it again, herdr brings
     // the panes back with their ids, and the cells attach on their own.
@@ -1090,7 +1307,7 @@ app.whenReady().then(async () => {
 
     // A Gemini CLI session Tomrade started reports through the hooks in its own Gemini home (TOM-684): each one, run as
     // Gemini runs it (bash -c, Gemini's own payload on stdin), says nothing back and gives the session its id and its
-    // record; once it ends, the archive reads the conversation from that record. Gemini CLI's reader is the official
+    // record; once it ends, History reads the conversation from that record. Gemini CLI's reader is the official
     // plugin's when it is loaded, else a stand-in that reads the fixture's lines.
     if (!ctx.agent.engineOf("gemini")) {
       const standIn = { find: () => null, read: (file) => ({ lines: fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).flatMap((m) => (m.type === "user" ? [{ who: "person", text: m.content[0].text }] : m.type === "gemini" ? [{ who: "agent", text: m.content }] : [])), cut: false, start: 0 }) };
@@ -1134,16 +1351,14 @@ app.whenReady().then(async () => {
     const reported = ctx.codeLink.store.session(project.id, geminiSession.id);
     check("Gemini 会话主目录里的 hooks 照 Gemini 的方式运行：不往回打印，退出码 0，会话拿到 Gemini 的会话 id 和记录，结束后标为结束", hookRuns.every((r) => r.code === 0 && r.out === "") && reported?.externalId === "gemchk01-check" && reported?.transcript === geminiRecord && reported?.state === "ended", JSON.stringify({ hookRuns, session: { externalId: reported?.externalId, transcript: reported?.transcript, state: reported?.state } }));
     ctx.emit("codeLink/changed", project.id);
-    await tjs(`document.querySelector('[data-testid=cs-archive]').click(); true`);
-    await wait(async () => tjs(`!!document.querySelector('[data-testid=cs-shelf-tickets]')`), 5000);
-    await tjs(`document.querySelector('[data-testid=cs-shelf-tickets]').click(); true`);
-    const geminiRow = `[...document.querySelectorAll('[data-testid=cs-archive-list] .cs-row')].find((r) => r.textContent.includes(${JSON.stringify(geminiItem.key)}))`;
-    const geminiShelved = await wait(async () => tjs(`!!${geminiRow}`), 8000);
+    await tjs(`document.querySelector('[data-testid=cs-history]').click(); true`);
+    const geminiRow = historyRowWith(geminiItem.key);
+    const geminiListed = await wait(async () => tjs(`!!${geminiRow}`), 8000);
     await tjs(`${geminiRow}?.click(); true`);
-    const geminiRead = geminiShelved && (await wait(async () => tjs(`(() => { const ended = [...document.querySelectorAll('[data-testid=cs-ended]')].find((e) => (e.querySelector('[data-testid=cs-ended-by]')?.textContent ?? '').startsWith('Gemini CLI')); const lines = [...(ended?.querySelectorAll('[data-testid=cs-convo] .cs-convo-line') ?? [])].map((l) => [l.dataset.who, l.textContent]); return JSON.stringify(lines.slice(0, 1)) === JSON.stringify([["person", "说声你好"]]) && lines.some(([who, text]) => who === "agent" && text === "你好！"); })()`), 8000));
-    check("新开的 Gemini CLI 会话结束后，归档里能看到它的对话", geminiRead, JSON.stringify(await tjs(`[...document.querySelectorAll('[data-testid=cs-ended]')].map((e) => e.textContent.slice(0, 160))`)));
+    const geminiRead = geminiListed && (await wait(async () => tjs(`(() => { const ended = [...document.querySelectorAll('[data-testid=cs-ended]')].find((e) => (e.querySelector('[data-testid=cs-ended-by]')?.textContent ?? '').startsWith('Gemini CLI')); const lines = [...(ended?.querySelectorAll('[data-testid=cs-convo] .cs-convo-line') ?? [])].map((l) => [l.dataset.who, l.textContent]); return JSON.stringify(lines.slice(0, 1)) === JSON.stringify([["person", "说声你好"]]) && lines.some(([who, text]) => who === "agent" && text === "你好！"); })()`), 8000));
+    check("新开的 Gemini CLI 会话结束后，历史里能看到它的对话", geminiRead, JSON.stringify(await tjs(`[...document.querySelectorAll('[data-testid=cs-ended]')].map((e) => e.textContent.slice(0, 160))`)));
     fs.writeFileSync(path.join(shots, "code-sessions-gemini.png"), (await tw.webContents.capturePage()).toPNG());
-    await tjs(`document.querySelector('[data-testid=cs-archive-back]')?.click(); true`);
+    await tjs(`document.querySelector('[data-testid=cs-history-back]')?.click(); true`);
     tw.close();
   } catch (error) {
     check("检查跑完", false, error?.stack ?? String(error));
