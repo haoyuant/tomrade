@@ -22,10 +22,12 @@ const message = (id: string, text: string, extra: Partial<ImInbound & { kind: "m
 function gated() {
   let release: () => void = () => {};
   const steered: string[] = [];
-  const engine = (steers: boolean): Parameters<Agent["engine"]>[0] => ({
-    id: "gated", title: "Gated", author: "ai:test", available: async () => ({ ok: true }), steers,
+  const engine = (steers: boolean, available: Engine["available"] = async () => ({ ok: true })): Parameters<Agent["engine"]>[0] => ({
+    id: "gated", title: "Gated", author: "ai:test", available, steers,
     turn: (async (input, io) => {
       const text = input.input.kind === "text" ? input.input.text : "";
+      // Says nothing at all until released, like an engine waiting on a sign-in.
+      if (text.startsWith("hush")) await new Promise<void>(r => { release = r; });
       if (text.startsWith("long")) {
         let done = false;
         const gate = new Promise<void>(r => { release = () => { done = true; r(); }; });
@@ -42,7 +44,7 @@ function gated() {
   return { engine, steered, release: () => release() };
 }
 
-async function boot(opts: { edit?: boolean; steers?: boolean; locale?: "en" | "zh" } = {}) {
+async function boot(opts: { edit?: boolean; steers?: boolean; locale?: "en" | "zh"; available?: Engine["available"]; stallMs?: number } = {}) {
   const dir = mkdtempSync(path.join(os.tmpdir(), "tomrade-im-running-"));
   const delivered: (ImDelivery & { messageId: string })[] = [];
   const ios = new Map<string, AdapterIO>();
@@ -54,10 +56,11 @@ async function boot(opts: { edit?: boolean; steers?: boolean; locale?: "en" | "z
       return { deliver: async d => { const messageId = d.replaceMessageId ?? `m-${delivered.length + 1}`; delivered.push({ ...structuredClone(d), messageId }); return { messageId }; }, close: () => {} };
     }
   };
-  const world = await fresh({ plugins: [Tools, [Settings, { path: path.join(dir, "settings.json"), locale: opts.locale ?? "en" }], [Agent, { mediaDir: path.join(dir, "media") }], [Im, { pollMs: 10, retryMs: 10, progressMs: 100, sweepMs: 50 }]] });
+  const world = await fresh({ plugins: [Tools, [Settings, { path: path.join(dir, "settings.json"), locale: opts.locale ?? "en" }], [Agent, { mediaDir: path.join(dir, "media") }], [Im, { pollMs: 10, retryMs: 10, progressMs: 100, sweepMs: 50, ...(opts.stallMs ? { stallMs: opts.stallMs } : {}) }]] });
   cleanups.push(async () => { for (const r of world.ctx.agent.activeRuns()) world.ctx.agent.cancel(r.run.id); await expect.poll(() => world.ctx.agent.activeRuns().length).toBe(0); await world.ctx.fiber.dispose(); rmSync(dir, { recursive: true, force: true }); });
   const g = gated();
-  world.ctx.agent.engine(g.engine(opts.steers ?? true));
+  world.ctx.agent.engine(g.engine(opts.steers ?? true, opts.available));
+  world.ctx.agent.engine({ id: "spare", title: "Spare", author: "ai:test", available: async () => ({ ok: true }), turn: async () => ({ stop: "end" }) });
   world.ctx.plugin(sdk(definePlugin({ inject: ["im"], async apply(ctx) { await ctx.im.register(adapter); } }), { id: "test/im", namespace: "test", origin: "extension" }));
   world.ctx.settings.set({ ...world.ctx.settings.get(), im: ImSettings.parse({ connections: [{ id: "bot", adapterId: "test_im" }],
     routes: [{ id: "route", connectionId: "bot", tenantId: "team", conversationId: "chat", projectId: world.project.id, engine: "gated", allowedActors: ["owner", "mate"] }] }) });
@@ -108,6 +111,29 @@ describe("IM while a turn runs", () => {
     expect(w.delivered.filter(d => d.operationId.startsWith("queued:"))).toHaveLength(2);
     w.release();
     await expect.poll(() => w.userTexts()).toEqual(["long job", "third"]);
+  });
+
+  it("ends at once, saying why and what to do, when the engine cannot start; later messages do the same instead of queueing", async () => {
+    const w = await boot({ locale: "zh", available: async () => ({ ok: false, reason: "Authentication required", need: "sign-in" }) });
+    await w.receive(message("a", "hello"));
+    await expect.poll(() => w.said("Gated 需要先在电脑上登录（Authentication required）。\n发 /engine spare 换一个引擎，或者在电脑上处理好后再发。")).toBe(true);
+    await w.receive(message("b", "again"));
+    await expect.poll(() => w.delivered.filter(d => d.operationId.startsWith("unready:")).length).toBe(2);
+    expect(w.delivered.some(d => d.operationId.startsWith("queued:"))).toBe(false);
+    expect(w.ctx.agent.store.threads(w.project.id).flatMap(th => w.ctx.agent.store.runs(w.project.id, th.id))).toHaveLength(0);
+  });
+
+  it("says once when a turn has shown nothing for a while, what it waits on and how to end it, and tells messages queued behind it", async () => {
+    const w = await boot({ stallMs: 150 });
+    await w.receive(message("a", "hush"));
+    await w.running();
+    await expect.poll(() => w.said(/^Gated hasn't answered yet \(started just now\)\. It may need signing in on the computer, or be stuck\.\nSend \/stop to end this turn, then \/engine spare to switch\.$/)).toBe(true);
+    await w.receive(message("b", "second"));
+    await expect.poll(() => w.latest("queued:")).toBe("Queued (1 in line); it runs after the current turn. /queue lists, /unqueue 1 withdraws.\nThe turn ahead has been quiet for a while; /stop ends it.");
+    await new Promise(r => setTimeout(r, 300));
+    expect(w.delivered.filter(d => d.operationId.startsWith("stalled:"))).toHaveLength(1);
+    w.release();
+    await expect.poll(() => w.said("done:second")).toBe(true);
   });
 
   it("steers the running turn with /steer and with a reply to its progress message", async () => {

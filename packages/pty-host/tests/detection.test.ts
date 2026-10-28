@@ -4,6 +4,8 @@ import { parse } from "smol-toml";
 import { describe, expect, it } from "vitest";
 import { compileManifest, detect, ENGINE_VERSION, regionText, rustRegex, type AgentManifest, type DetectionInput } from "../src/detection.js";
 import { HERDR_COMMIT, MANIFESTS } from "../src/manifests.js";
+import { TOMRADE_MANIFESTS } from "../src/manifests-tomrade.js";
+import { manifestOf, ownAgentOfCommand, ownManifest } from "../src/screens.js";
 
 const vendored = path.join(__dirname, "../agent-detection");
 const screens = path.join(__dirname, "fixtures/agent-screens");
@@ -267,5 +269,45 @@ describe("Claude Code and Codex screens, as herdr reads them", () => {
     expect(detect(codex, input("", "⠙ demo"))).toMatchObject({ state: "working", rule: "osc_title_working" });
     expect(detect(codex, input("", "Action Required · demo"))).toMatchObject({ state: "blocked", rule: "osc_title_blocked" });
     expect(detect(codex, input("", "demo"))).toMatchObject({ state: "idle", rule: "osc_title_idle", visibleIdle: true });
+  });
+});
+
+/**
+ * CodeBuddy Code, which herdr has no manifest for, read with Tomrade's own (src/manifests-tomrade.ts). The trust screen
+ * is CodeBuddy 2.177's as it drew it in a fresh folder; the others are put together from that build's own strings.
+ */
+describe("CodeBuddy Code screens, with Tomrade's own manifest", () => {
+  const codebuddy = manifestOf("codebuddy")!;
+  const read: [string, string, string | null][] = [
+    ["codebuddy-blocked-trust.txt", "blocked", "trust_prompt"],
+    ["codebuddy-blocked-question.txt", "blocked", "question_menu"],
+    ["codebuddy-blocked-review.txt", "blocked", "question_review"],
+    ["codebuddy-blocked-bash.txt", "blocked", "tool_permission"],
+    ["codebuddy-idle.txt", "idle", "idle_prompt"]
+  ];
+
+  it.each(read)("%s reads %s (%s)", (file, state, rule) => {
+    const d = detect(codebuddy, input(fs.readFileSync(path.join(screens, file), "utf8")));
+    expect([d.state, d.rule]).toEqual([state, rule]);
+  });
+
+  it("is found by the agent's names, and herdr's own manifests stay first", () => {
+    expect(manifestOf("codebuddy-code")?.id).toBe("codebuddy");
+    expect(manifestOf("workbuddy")?.id).toBe("codebuddy");
+    expect(ownManifest("codebuddy")).toBe(true);
+    expect(ownManifest("claude")).toBe(false);
+    for (const m of Object.values(TOMRADE_MANIFESTS)) {
+      expect(() => compileManifest(m)).not.toThrow();
+      expect(Object.values(MANIFESTS).some((h) => h.id === m.id)).toBe(false);
+    }
+  });
+
+  it("names CodeBuddy by its foreground command, run itself or by Node", () => {
+    expect(ownAgentOfCommand("codebuddy --settings /tmp/s.json")).toBe("codebuddy");
+    expect(ownAgentOfCommand("node /Users/me/.nvm/versions/node/v25.9.0/bin/codebuddy --mcp-config /tmp/m.json Implement FB-7")).toBe("codebuddy");
+    expect(ownAgentOfCommand("/opt/homebrew/bin/node --no-warnings /opt/homebrew/bin/codebuddy")).toBe("codebuddy");
+    expect(ownAgentOfCommand("-zsh")).toBeNull();
+    expect(ownAgentOfCommand("node server.js codebuddy")).toBeNull();
+    expect(ownAgentOfCommand(undefined)).toBeNull();
   });
 });

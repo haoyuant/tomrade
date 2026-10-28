@@ -260,6 +260,8 @@ declare module "@tomradex/ipc" {
     "codeLink.sessionSay": (projectId: string, sessionId: string, text: string) => boolean;
     /** The agent's declared keys for its permission prompt, pressed in the session's pane. */
     "codeLink.sessionAnswer": (projectId: string, sessionId: string, which: "allow" | "deny") => AnswerResult;
+    /** A folder's trust on the session's pane answered: the cursor moved to trusting it or leaving, then Enter. */
+    "codeLink.sessionTrust": (projectId: string, sessionId: string, which: "trust" | "exit") => AnswerResult;
     "codeLink.sessionEscape": (projectId: string, sessionId: string) => boolean;
     /** The last lines on the session's pane; null without a pane. Asked by the panel only while it shows the session. */
     "codeLink.sessionTail": (projectId: string, sessionId: string, lines: number) => string | null;
@@ -312,7 +314,7 @@ export const CodeLinkConfig = z.preprocess(
     /** The cadence while no window of the app can be seen; a window showing again scans at once if a pass is due. */
     hiddenScanMs: z.number().int().min(0).default(600_000),
     /** How often sessions are checked against the clock and their process; 0 turns it off. */
-    sweepMs: z.number().int().min(0).default(30_000),
+    sweepMs: z.number().int().min(0).default(5_000),
     /** Fetch from the remote before reading. Off, only what this machine already has is read. */
     fetch: z.boolean().default(true),
     /** How long a Start may take before the person is told it failed, rather than left waiting on a stuck step. */
@@ -809,6 +811,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       ctx.ipc.handle("codeLink.sessionPanel", (projectId, sessionId) => ctx.codeLink.sessionPanel(projectId, sessionId));
       ctx.ipc.handle("codeLink.sessionSay", (projectId, sessionId, text) => ctx.codeLink.sessionSay(projectId, sessionId, text));
       ctx.ipc.handle("codeLink.sessionAnswer", (projectId, sessionId, which) => ctx.codeLink.sessionAnswer(projectId, sessionId, which));
+      ctx.ipc.handle("codeLink.sessionTrust", (projectId, sessionId, which) => ctx.codeLink.sessionTrust(projectId, sessionId, which));
       ctx.ipc.handle("codeLink.sessionEscape", (projectId, sessionId) => ctx.codeLink.sessionEscape(projectId, sessionId));
       ctx.ipc.handle("codeLink.sessionTail", (projectId, sessionId, lines) => ctx.codeLink.sessionTail(projectId, sessionId, lines));
       ctx.ipc.handle("codeLink.handoff", (projectId, threadId) => ctx.codeLink.handoffOf(projectId, threadId));
@@ -840,7 +843,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       this.seen = seen;
       if (seen && this.config.scanMs > 0 && Date.now() - this.openScannedAt >= this.config.scanMs) void this.scanOpen();
     });
-    // Sessions are judged more often than repositories are scanned: a process that is gone should read as gone within the minute.
+    // Sessions are judged more often than repositories are scanned: a process that is gone should read as gone within seconds.
     const sweeper =
       this.config.sweepMs > 0
         ? setInterval(() => {
@@ -1117,6 +1120,11 @@ export class CodeLink extends Service implements CodeLinkReader {
   /** The agent's declared keys for its permission prompt, pressed in the session's pane while it shows one; see `SessionPanel.answer`. */
   sessionAnswer(projectId: string, sessionId: string, which: "allow" | "deny"): Promise<AnswerResult> {
     return this.panel.answer(projectId, sessionId, which);
+  }
+
+  /** A folder's trust on a terminal session's pane answered from its card; see `SessionPanel.trust`. */
+  sessionTrust(projectId: string, sessionId: string, which: "trust" | "exit"): Promise<AnswerResult> {
+    return this.panel.trust(projectId, sessionId, which);
   }
 
   /**
