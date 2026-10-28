@@ -63,7 +63,7 @@ export interface GitStoreOptions {
   /** Non-secret, for status lines; the folder when null. */
   location: string | null;
   warn(message: string): void;
-  onChange(): void;
+  onChange(paths?: string[]): void;
   watch?: boolean;
   /** Outside edits are saved this long after the last one. */
   settleMs?: number;
@@ -448,8 +448,9 @@ export class GitFileStore implements FileStore {
     this.settleTimer.unref?.();
   }
 
-  private afterChange(): void {
-    this.opts.onChange();
+  /** `paths` when this store's own write knows what it touched. */
+  private afterChange(paths?: string[]): void {
+    this.opts.onChange(paths);
     if (this.opts.remote) this.schedulePush();
   }
 
@@ -805,7 +806,7 @@ export class GitFileStore implements FileStore {
       const [rel] = this.guard([{ path: p, body, expect: opts.expect }]);
       this.put(rel!, body);
       await this.commitAll(opts.message ?? `Saved ${rel}`);
-      this.afterChange();
+      this.afterChange([rel!]);
       const content = await this.read(rel!);
       if (!content) throw new Error(`${rel} vanished while saving`);
       return content;
@@ -817,7 +818,7 @@ export class GitFileStore implements FileStore {
       if (!entries.length) return;
       const rels = this.guard(entries);
       entries.forEach((entry, i) => this.put(rels[i]!, entry.body));
-      if (await this.commitAll(opts.message ?? (rels.length === 1 ? `Saved ${rels[0]}` : `Saved ${rels.length} files`))) this.afterChange();
+      if (await this.commitAll(opts.message ?? (rels.length === 1 ? `Saved ${rels[0]}` : `Saved ${rels.length} files`))) this.afterChange(rels);
     });
   }
 
@@ -857,7 +858,7 @@ export class GitFileStore implements FileStore {
       // git keeps no empty folders; a hidden marker makes this one travel.
       const keep = path.join(abs, KEEP);
       if (!fs.existsSync(keep)) fs.writeFileSync(keep, "", "utf8");
-      if (await this.commitAll(`Created folder ${rel}`)) this.afterChange();
+      if (await this.commitAll(`Created folder ${rel}`)) this.afterChange([rel]);
     });
   }
 
@@ -876,7 +877,7 @@ export class GitFileStore implements FileStore {
         for (const rule of rules) if (contains(src, rule.path)) rule.path = dst + rule.path.slice(src.length);
       }
       this.savePolicy();
-      if (await this.commitAll(opts.message ?? `Moved ${src} to ${dst}`)) this.afterChange();
+      if (await this.commitAll(opts.message ?? `Moved ${src} to ${dst}`)) this.afterChange([src, dst]);
     });
   }
 
@@ -891,7 +892,7 @@ export class GitFileStore implements FileStore {
       this.quiet();
       fs.mkdirSync(path.dirname(this.abs(dst)), { recursive: true });
       fs.cpSync(this.abs(src), this.abs(dst), { recursive: true });
-      if (await this.commitAll(opts.message ?? `Copied ${src} to ${dst}`)) this.afterChange();
+      if (await this.commitAll(opts.message ?? `Copied ${src} to ${dst}`)) this.afterChange([dst]);
     });
   }
 
@@ -902,7 +903,7 @@ export class GitFileStore implements FileStore {
       if (!fs.existsSync(this.abs(rel))) return;
       this.quiet();
       fs.rmSync(this.abs(rel), { recursive: true, force: true });
-      if (await this.commitAll(opts.message ?? `Deleted ${rel}`)) this.afterChange();
+      if (await this.commitAll(opts.message ?? `Deleted ${rel}`)) this.afterChange([rel]);
     });
   }
 

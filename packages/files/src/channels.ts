@@ -63,7 +63,7 @@ declare module "@tomradex/ipc" {
     "files.readById": (projectId: string, fileId: string) => FileContent | null;
   }
   interface Broadcasts {
-    /** This project's files or their sync state moved; refetch everything keyed by it. */
-    "files.changed": (projectId: string) => void;
+    /** This project's files or their sync state moved. `paths` names the files that changed when the writer knows them; without it, refetch everything keyed by the project. */
+    "files.changed": (projectId: string, paths?: string[]) => void;
   }
 }

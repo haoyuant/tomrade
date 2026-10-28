@@ -13,7 +13,7 @@ const SEARCH_LIMIT = 2 * 1024 * 1024;
 export class FolderFileStore implements FileStore {
   constructor(
     readonly dir: string,
-    private readonly opts: { detail: string; onChange(): void }
+    private readonly opts: { detail: string; onChange(paths?: string[]): void }
   ) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -110,7 +110,7 @@ export class FolderFileStore implements FileStore {
       fs.writeFileSync(tmp, entry.body);
       fs.renameSync(tmp, abs);
     });
-    if (entries.length) this.opts.onChange();
+    if (entries.length) this.opts.onChange(rels);
   }
 
   async mkdir(p: string): Promise<void> {
@@ -118,7 +118,7 @@ export class FolderFileStore implements FileStore {
     if (!rel) throw new InvalidPathError(p);
     if (fs.existsSync(this.abs(rel)) && !fs.statSync(this.abs(rel)).isDirectory()) throw new Error(`${rel} is a file`);
     fs.mkdirSync(this.abs(rel), { recursive: true });
-    this.opts.onChange();
+    this.opts.onChange([rel]);
   }
 
   private pair(from: string, to: string, verb: "move" | "copy"): [string, string] {
@@ -135,13 +135,13 @@ export class FolderFileStore implements FileStore {
   async move(from: string, to: string): Promise<void> {
     const [src, dst] = this.pair(from, to, "move");
     fs.renameSync(this.abs(src), this.abs(dst));
-    this.opts.onChange();
+    this.opts.onChange([src, dst]);
   }
 
   async copy(from: string, to: string): Promise<void> {
     const [src, dst] = this.pair(from, to, "copy");
     fs.cpSync(this.abs(src), this.abs(dst), { recursive: true });
-    this.opts.onChange();
+    this.opts.onChange([dst]);
   }
 
   async remove(p: string): Promise<void> {
@@ -149,7 +149,7 @@ export class FolderFileStore implements FileStore {
     if (!rel) throw new InvalidPathError(p);
     if (!fs.existsSync(this.abs(rel))) return;
     fs.rmSync(this.abs(rel), { recursive: true, force: true });
-    this.opts.onChange();
+    this.opts.onChange([rel]);
   }
 
   async settle(): Promise<boolean> {

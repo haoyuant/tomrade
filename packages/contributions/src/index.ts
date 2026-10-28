@@ -348,7 +348,7 @@ export class Contributions extends Service {
 
   async badgesFor(projectId: string): Promise<Record<string, Badge[]>> {
     if (!this.badgeMap.size) return {};
-    const items = this.ctx.items.list({ projectId });
+    const items = this.itemsOf(projectId);
     const out: Record<string, Badge[]> = {};
     const computed = await Promise.all([...this.badgeMap.values()].map((provider) => this.isolated(`badge ${provider.id}`, () => provider.compute(items, { projectId }), {})));
     for (const result of computed) {
@@ -397,7 +397,7 @@ export class Contributions extends Service {
   async graphEdges(id: string, scope: { projectId: string }): Promise<GraphEdge[]> {
     const graph = this.graphMap.get(id);
     if (!graph) throw new Error(`Unknown graph: ${id}`);
-    return graph.compute(this.ctx.items.list({ projectId: scope.projectId }), scope);
+    return graph.compute(this.itemsOf(scope.projectId), scope);
   }
 
   async sectionsFor(projectId: string, itemId: string): Promise<SectionView[]> {
@@ -409,6 +409,11 @@ export class Contributions extends Service {
       const r = rendered[i];
       return r ? [{ id: s.id, title: said(s.title)!, rows: r.rows ?? [], text: r.text }] : [];
     });
+  }
+
+  /** Badges are asked for after every write and session move, by every window at once: they share one read. */
+  private itemsOf(projectId: string): Item[] {
+    return this.ctx.items.listAll(projectId);
   }
 
   /** One contribution that throws or stalls costs only itself, never the refresh it is part of. */

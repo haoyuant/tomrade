@@ -37,6 +37,45 @@ export function invalidateProject(qc: QueryClient, projectId: string): void {
 }
 
 /**
+ * What a burst of writes to a project can have changed, by what they wrote: a ticket reaches the board and what
+ * reads tickets; a view (its settings or a card's rank, as a drag writes it) only the views and ranks. A board
+ * written (rare: a workstream added, renamed, removed), or anything else, asks for everything.
+ */
+export function invalidateWrites(qc: QueryClient, projectId: string, entities: readonly string[]): void {
+  if (entities.some((e) => e !== "item" && e !== "view")) return invalidateProject(qc, projectId);
+  if (entities.includes("item")) invalidateWorkspace(qc, projectId);
+  if (entities.includes("view")) {
+    void qc.invalidateQueries({ queryKey: keys.views(projectId) });
+    void qc.invalidateQueries({ queryKey: keys.ranksAll });
+  }
+}
+
+/** File queries that read one path: they are asked again only when a change names that path, or a folder above it. */
+const PATH_READS = new Set(["read", "history"]);
+
+/**
+ * A change to a project's files. `paths` names what changed when the writer knows; without it (a sync, an outside
+ * edit) everything about the project's files is asked again. With it, the tree, status and the rest are, but an
+ * open file's content and history only for a path that changed. A version's content never changes.
+ */
+export function invalidateFiles(qc: QueryClient, projectId: string, paths?: readonly string[]): void {
+  void qc.invalidateQueries({ queryKey: keys.timeline(projectId) });
+  if (!paths) {
+    void qc.invalidateQueries({ queryKey: keys.files.all(projectId) });
+    return;
+  }
+  const touched = (p: string) => paths.some((changed) => p === changed || p.startsWith(`${changed}/`));
+  void qc.invalidateQueries({
+    queryKey: keys.files.all(projectId),
+    predicate: (q) => {
+      const kind = q.queryKey[2];
+      if (kind === "version") return false;
+      return typeof kind === "string" && PATH_READS.has(kind) ? touched(String(q.queryKey[3])) : true;
+    }
+  });
+}
+
+/**
  * A session's hook, read by what lists sessions and a ticket's page; a session's state, ask or block changing
  * also by the board's badges and the other contributions. Tickets and threads are not asked again.
  */
