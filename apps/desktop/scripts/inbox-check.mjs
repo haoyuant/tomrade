@@ -25,10 +25,6 @@ const dir = path.dirname(fileURLToPath(import.meta.url));
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-inbox-"));
 app.setPath("userData", work);
 quietStarters(work);
-// The issues source falls back to the GitHub CLI's sign-in: this machine's gh must not count as an account here.
-process.env.GH_CONFIG_DIR = path.join(work, "gh");
-delete process.env.GH_TOKEN;
-delete process.env.GITHUB_TOKEN;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const results = [];
 const check = (name, cond, detail) => {
@@ -43,7 +39,9 @@ const run = async () => {
     configFile: path.join(dir, "../tomrade.yml"),
     vars: { userData: work },
     patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, { id: "attention", config: { notify: false } }, ...local.map((id) => ({ id, disabled: true })),
-      { id: "doctor", config: { dataDir: "${userData}/doctor", logDir: "${logDir}", version: "${appVersion}", catalogUrl: "" } }]]
+      { id: "doctor", config: { dataDir: "${userData}/doctor", logDir: "${logDir}", version: "${appVersion}", catalogUrl: "" } },
+      // the issues source falls back to the GitHub CLI's sign-in: this machine's gh must not count as an account here
+      { id: "github", config: { ghToken: async () => "" } }]]
   });
   ctx.hub.configure(path.join(work, "hub"));
   await ctx.storage.ready;
