@@ -188,9 +188,9 @@ export function FilesTree({ children: frame }: { children: (head: ReactNode, bod
       .catch((error) => toast(errorSpec(error)));
   };
 
-  // The record the delete made is what its Undo takes back — not whatever happens to be newest by then.
+  // The record the delete made is what its Undo takes back — not whatever happens to be newest by then. Undo
+  // stands in for asking first.
   const deleteEntry = (entry: FileEntry) => {
-    if (!window.confirm(t("files.deleteConfirm", { name: entry.name }))) return;
     remove.mutate(entry.path, {
       onSuccess: (ref) =>
         toast({

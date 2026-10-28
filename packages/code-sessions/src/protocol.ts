@@ -247,6 +247,8 @@ export type WindowMessage =
   | { type: "savePreset"; name: string; layout: Layout }
   | { type: "renamePreset"; id: string; name: string }
   | { type: "deletePreset"; id: string }
+  /** A deleted layout's Undo: back where it was in the list, the default again if it was. */
+  | { type: "restorePreset"; preset: LayoutPreset; at: number; isDefault: boolean }
   | { type: "defaultPreset"; id: string | null }
   | { type: "autoPlace"; on: boolean }
   /** History opened or closed: while it is open, a change to the conversations is said with `historyChanged`. */

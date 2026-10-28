@@ -610,6 +610,12 @@ export function App() {
               setFocused(null);
             }}
             onSavePreset={(name) => send({ type: "savePreset", name, layout })}
+            onDeletePreset={(preset) => {
+              const at = state.presets.findIndex((p) => p.id === preset.id);
+              const isDefault = state.defaultPreset === preset.id;
+              send({ type: "deletePreset", id: preset.id });
+              setToast({ text: say("layoutDeleted", { name: preset.name }), action: { label: say("undo"), run: () => send({ type: "restorePreset", preset, at: Math.max(0, at), isDefault }) } });
+            }}
           />
         </div>
         <KeysFooter />

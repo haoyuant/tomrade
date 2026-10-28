@@ -1233,8 +1233,13 @@ it("keeps named layouts and the auto-place switch for every window, and starts f
   // The window's own layout keeps its locks, for the next time it opens.
   await say({ type: "layout", layout: grid });
   expect(JSON.parse(fs.readFileSync(stateFile, "utf8")).layouts[w.project.id]).toEqual(grid);
+  const kept = win.states.at(-1)!.presets[0]!;
   await say({ type: "deletePreset", id });
   expect(win.states.at(-1)).toMatchObject({ presets: [], defaultPreset: null });
+  // Its Undo brings it back as it was, the default again; a second Undo adds nothing.
+  await say({ type: "restorePreset", preset: kept, at: 0, isDefault: true });
+  await say({ type: "restorePreset", preset: kept, at: 0, isDefault: true });
+  expect(win.states.at(-1)).toMatchObject({ presets: [kept], defaultPreset: id });
 });
 
 it("names the Terminal windows used last first, each with its cells, for the Dock and the jump list", async () => {

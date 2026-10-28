@@ -20,6 +20,7 @@ import { AttentionOpener } from "~/lib/attention";
 import { DoneGuardProvider } from "~/lib/doneGuard";
 import { useLeadWindow } from "~/lib/window-chrome";
 import { Surface } from "~/lib/analytics";
+import { ConfirmProvider } from "~/lib/confirm";
 
 /** Notices that ask once for the whole app: the leading window shows them, the others stay quiet. */
 function LeadOnly({ children }: { children: ReactNode }) {
@@ -31,17 +32,19 @@ const rootRoute = createRootRoute({
     <I18nProvider>
       <ThemeProvider>
         <ToastProvider>
-          <IconSprite />
-          <DoneGuardProvider>
-            <AccountGate><Outlet /></AccountGate>
-          </DoneGuardProvider>
-          <TermsPrompt />
-          <PendingBuildWatcher />
-          <LeadOnly>
-            <UpdateNotice />
-            <AnnouncementNotice />
-          </LeadOnly>
-          <AttentionOpener />
+          <ConfirmProvider>
+            <IconSprite />
+            <DoneGuardProvider>
+              <AccountGate><Outlet /></AccountGate>
+            </DoneGuardProvider>
+            <TermsPrompt />
+            <PendingBuildWatcher />
+            <LeadOnly>
+              <UpdateNotice />
+              <AnnouncementNotice />
+            </LeadOnly>
+            <AttentionOpener />
+          </ConfirmProvider>
         </ToastProvider>
       </ThemeProvider>
     </I18nProvider>

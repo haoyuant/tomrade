@@ -1978,6 +1978,8 @@ button.ai-review-chip:hover:not(:disabled), .ai-review-chip[aria-pressed="true"]
 
 .status-needs { color: var(--fg-2); text-decoration: none; }
 .needs-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--warn); flex-shrink: 0; }
+.status-needs[data-fresh] .needs-dot { animation: state-breathe 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .status-needs[data-fresh] .needs-dot { animation: none; } }
 .rail-label {
   writing-mode: vertical-rl; font-size: var(--text-xs);
   letter-spacing: var(--tracking-eyebrow); text-transform: uppercase; color: var(--meta);

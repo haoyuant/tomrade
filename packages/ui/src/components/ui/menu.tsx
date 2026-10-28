@@ -152,7 +152,15 @@ export function MenuActionItem({ icon, name, onSelect, keepOpen, disabled, title
       }}
     >
       <span className="m-mark">{icon}</span>
-      <span className="m-name">{name}</span>
+      {/* A disabled row takes no pointer, so its tooltip never shows: the reason is its second line. */}
+      {disabled && title ? (
+        <span className="m-stack">
+          <span className="m-name">{name}</span>
+          <span className="m-sub">{title}</span>
+        </span>
+      ) : (
+        <span className="m-name">{name}</span>
+      )}
     </RadixMenu.Item>
   );
 }

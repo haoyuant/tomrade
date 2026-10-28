@@ -473,16 +473,19 @@ const run = async () => {
   await send("/xyz is not a command");
   await sleep(500);
   check("an unknown /word goes out as an ordinary message", (await asked()).includes("/xyz is not a command") && (await panel()).working);
-  await $(`window.confirm = () => false;true`);
   before = threadCount();
   await setDraft("/new");
   await key({ key: "Escape" });
   await key({});
+  await sleep(400);
+  check("/new while a turn runs asks first, in the app's own sheet", (await $(`!!document.querySelector('[data-testid=confirm-yes]')`)) === true);
+  await press(`document.querySelector('[data-testid=confirm-yes]')?.parentElement?.querySelector('.btn-ghost')`);
   await sleep(500);
-  check("/new while a turn runs asks first, and a no leaves everything as it was", threadCount() === before && (await panel()).working && (await draftNow()) === "/new");
-  await $(`window.confirm = () => true;true`);
+  check("a no leaves everything as it was", threadCount() === before && (await panel()).working && (await draftNow()) === "/new");
   const runningThread = ctx.agent.store.threads(alpha.id)[0].id;
   await key({});
+  await sleep(400);
+  await press(`document.querySelector('[data-testid=confirm-yes]')`);
   await sleep(1200);
   check("a yes opens a new conversation", threadCount() === before + 1 && (await draftNow()) === "");
   await sleep(3500); // the stand-in engine finishes its sleeps before the stop lands
@@ -550,13 +553,20 @@ const run = async () => {
   await press(`${cardOf(filler3.id)}?.querySelector('button[aria-label="Archive thread"]')`);
   await sleep(600);
   check("a card's Archive puts the conversation away and takes it off the bar", ctx.agent.store.thread(alpha.id, filler3.id)?.archived === true && !(await $(`!!${cardOf(filler3.id)}`)));
+  await press(`[...document.querySelectorAll('.toast-stack button')].find((b) => /undo/i.test(b.textContent ?? ''))`);
+  await sleep(600);
+  check("its toast's Undo brings it back to the bar", ctx.agent.store.thread(alpha.id, filler3.id)?.archived === false && (await $(`!!${cardOf(filler3.id)}`)));
+  await press(`${cardOf(filler3.id)}?.querySelector('button[aria-label="Archive thread"]')`);
+  await sleep(600);
   const filler4 = filler(4);
-  await $(`window.confirm = () => false;true`);
   await press(`${cardOf(filler4.id)}?.querySelector('button[aria-label="Delete thread"]')`);
   await sleep(400);
+  await press(`document.querySelector('[data-testid=confirm-yes]')?.parentElement?.querySelector('.btn-ghost')`);
+  await sleep(400);
   check("Delete asks first; a no keeps the conversation", !!ctx.agent.store.thread(alpha.id, filler4.id) && (await $(`!!${cardOf(filler4.id)}`)));
-  await $(`window.confirm = () => true;true`);
   await press(`${cardOf(filler4.id)}?.querySelector('button[aria-label="Delete thread"]')`);
+  await sleep(400);
+  await press(`document.querySelector('[data-testid=confirm-yes]')`);
   await sleep(600);
   check("a yes deletes it for good", !ctx.agent.store.thread(alpha.id, filler4.id) && !(await $(`!!${cardOf(filler4.id)}`)));
   // History: the idle conversations past the bar, said to be idle, and what was put away; each opens as itself

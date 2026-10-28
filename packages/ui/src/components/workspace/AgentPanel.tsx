@@ -43,6 +43,7 @@ import { useEngineChoice } from "./agent-panel/useEngineChoice";
 import { useSendQueue } from "./agent-panel/useSendQueue";
 import { useSlashMenu } from "./agent-panel/useSlashMenu";
 import { useThreadSelection } from "./agent-panel/useThreadSelection";
+import { useConfirm } from "~/lib/confirm";
 
 /** What each kind of waiting is called in the queue line. */
 const QUEUE_KIND = { permission: "waitQueue.permission", question: "waitQueue.question", waiting: "waitQueue.waiting", stuck: "waitQueue.stuck" } as const;
@@ -79,6 +80,7 @@ export function AgentPanel({
   onOpenIssue: (id: string) => void;
 }) {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const threads = useAgentThreads(projectId);
   const settings = useSettings();
   const itemsQ = useItems(projectId);
@@ -366,9 +368,9 @@ export function AgentPanel({
   };
 
   const slashContext: SlashContext = {
-    newThread: () => {
+    newThread: async () => {
       // a new conversation leaves a running turn behind only if the person says so
-      if (runningRun && !window.confirm(t("agentPanel.slashNewStops"))) return;
+      if (runningRun && !(await confirm({ body: t("agentPanel.slashNewStops"), yes: t("agentPanel.slashNewStopsYes") }))) return;
       if (runningRun) cancel.mutate(runningRun.id);
       setDraft("");
       void openThread({ boardId }).then((th) => pickThread(th.id));
@@ -702,12 +704,15 @@ export function AgentPanel({
   // Putting away or deleting from the bar: any conversation but the open one while its run goes; a delete asks first.
   const archiveThreadById = (id: string) => {
     if (id === threadId && busy) return;
-    archiveThread.mutate(id, { onSuccess: () => { if (id === threadId) clearThread(); } });
+    archiveThread.mutate(id, { onSuccess: () => {
+      if (id === threadId) clearThread();
+      toast({ body: t("agentPanel.archivedToast"), onUndo: () => unarchive.mutate(id) });
+    } });
   };
-  const deleteThreadById = (id: string) => {
+  const deleteThreadById = async (id: string) => {
     // A conversation still running in a terminal takes its session along (TOM-720): the question says so.
     const inTerminal = recentSessions.data?.some((s) => s.threadId === id && s.mode === "terminal" && s.state !== "ended" && s.state !== "lost");
-    if ((id === threadId && busy) || !window.confirm(t(inTerminal ? "agentPanel.deleteThreadEndsSession" : "agentPanel.deleteThreadConfirm"))) return;
+    if ((id === threadId && busy) || !(await confirm({ body: t(inTerminal ? "agentPanel.deleteThreadEndsSession" : "agentPanel.deleteThreadConfirm") }))) return;
     deleteThread.mutate(id, { onSuccess: () => { if (id === threadId) clearThread(); } });
   };
   // Answered from a card: the panel stays where it is and says so; the open one goes on as the setting says.
