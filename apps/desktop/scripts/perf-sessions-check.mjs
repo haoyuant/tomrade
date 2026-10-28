@@ -107,11 +107,11 @@ ipcMain.emit = (channel, event, ...args) => {
   return emit(channel, event, ...args);
 };
 const sum = (byWc, key) => [...(byWc?.values() ?? [])].reduce((n, row) => n + row[key], 0);
-const top = (byWc, n = 4) =>
+const top = (byWc, n = 4, key = "count") =>
   [...(byWc?.entries() ?? [])]
-    .sort((a, b) => b[1].count - a[1].count)
+    .sort((a, b) => b[1][key] - a[1][key])
     .slice(0, n)
-    .map(([channel, row]) => `${channel.replace(/^tomrade:/, "")} ×${row.count}`);
+    .map(([channel, row]) => `${channel.replace(/^tomrade:/, "")} ${key === "count" ? `×${row.count}` : `${Math.round(row[key] / 1024)} KB`}`);
 
 // ── what a renderer measures of itself: long tasks, and the time between frames ──
 const PROBE = `(() => {
@@ -321,6 +321,7 @@ const run = async () => {
     messages: { count: sum(ipc.messages.get(id), "count"), kb: Math.round(sum(ipc.messages.get(id), "bytes") / 1024) },
     topSends: top(ipc.sends.get(id)),
     topInvokes: top(ipc.invokes.get(id)),
+    topReplies: top(ipc.invokes.get(id), 3, "reply"),
     topMessages: top(ipc.messages.get(id))
   });
   const frames = (f) => ({ frames: f.frames, p50: ms1(f.p50), p95: ms1(f.p95), max: ms1(f.max), over50: f.over50, longTaskMs: Math.round(f.long), longTasks: f.longs });
@@ -365,7 +366,7 @@ const run = async () => {
   row("JS heap start → end (MB)", `${r.memoryMb.mainWindowJsHeap[0]} → ${r.memoryMb.mainWindowJsHeap[1]}`, `${r.memoryMb.terminalJsHeap[0]} → ${r.memoryMb.terminalJsHeap[1]}`);
   row("working set start → end (MB)", `${r.memoryMb.mainWindowWorkingSet[0]} → ${r.memoryMb.mainWindowWorkingSet[1]}`, `${r.memoryMb.terminalWorkingSet[0]} → ${r.memoryMb.terminalWorkingSet[1]}`);
   row("main process: heap | rss (MB)", `${r.memoryMb.mainHeap[0]} → ${r.memoryMb.mainHeap[1]}`, `${r.memoryMb.mainRss[0]} → ${r.memoryMb.mainRss[1]}`);
-  console.log(`  busiest: main sends ${r.main.ipc.topSends.join(", ")}; invokes ${r.main.ipc.topInvokes.join(", ")}`);
+  console.log(`  busiest: main sends ${r.main.ipc.topSends.join(", ")}; invokes ${r.main.ipc.topInvokes.join(", ")}; largest replies ${r.main.ipc.topReplies.join(", ")}`);
   console.log(`           Terminal sends ${r.terminal.ipc.topSends.join(", ")}; messages ${r.terminal.ipc.topMessages.join(", ")}`);
   console.log(`  (counting IPC took ${r.instrumentationMs} ms of the main thread)`);
   console.log(`PERF_SESSIONS_JSON ${JSON.stringify(report)}`);
