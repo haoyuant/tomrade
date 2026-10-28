@@ -27,6 +27,7 @@ import { files } from "./files";
 import { notes } from "./notes";
 import { onboarding } from "./onboarding";
 import { setup } from "./setup";
+import { firstTask } from "./firstTask";
 import { fieldsDialog } from "./fieldsDialog";
 import { issueScreen } from "./issueScreen";
 import { language } from "./language";
@@ -144,6 +145,7 @@ export const en = {
   agentPanel: agentPanel.en,
   onboarding: onboarding.en,
   setup: setup.en,
+  firstTask: firstTask.en,
   codeLink: codeLink.en,
   localCli: localCli.en,
   mcpLink: mcpLink.en,
@@ -227,6 +229,7 @@ export const zh: typeof en = {
   agentPanel: agentPanel.zh,
   onboarding: onboarding.zh,
   setup: setup.zh,
+  firstTask: firstTask.zh,
   codeLink: codeLink.zh,
   localCli: localCli.zh,
   mcpLink: mcpLink.zh,

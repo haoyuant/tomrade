@@ -3,7 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { SettingsDialog } from "~/components/onDemand";
 import { GlobalHotkeyField } from "~/components/dialogs/settings/GlobalHotkeyField";
 import { Icon } from "~/components/icons";
-import { Eyebrow, Spacer } from "~/components/ui/atoms";
+import { Eyebrow, Spacer, Tag } from "~/components/ui/atoms";
 import { invoke, logQuietly } from "~/lib/api";
 import { keyLabel } from "~/lib/keybindings";
 import { errorSpec, readableError, useToast } from "~/lib/toast";
@@ -12,12 +12,14 @@ import { useCommands, useProjects, useSaveSettings, useSettings } from "~/lib/qu
 import { findEngine } from "~/lib/agent";
 import { useSetup } from "~/lib/setup";
 import { builtinProblem } from "~/lib/setupState";
+import { RepoTask } from "./RepoTask";
 import { SetupOptions } from "./SetupOptions";
 
 /**
  * First run, before the projects: connect a model or a local agent — either
  * is enough. What is already on this computer is offered first. Once it
- * works, the screen says what that unlocked and steps aside.
+ * works, the screen says what that unlocked and offers two ways on: a small
+ * thing in the person's own repository, or the sample project's tour.
  */
 export function FirstRunSetup({ onDone }: { onDone: () => void }) {
   const { t } = useI18n();
@@ -43,10 +45,17 @@ export function FirstRunSetup({ onDone }: { onDone: () => void }) {
         toast({ ...errorSpec(error), body: t("setup.terminalWindowFailed", { reason: readableError(error), key: keyLabel("palette") }) })
       );
   };
-  // Done either way, the tour is where a first run goes next.
+  // One of the two ways on once set, and where "later" goes.
   const openTour = () => {
     done();
     if (sample) void navigate({ to: "/p/$projectId", params: { projectId: sample.id } });
+  };
+  // Once opened, the steps stay mounted while hidden, so going back and in again goes on with the project already made.
+  const [repoTask, setRepoTask] = useState<"open" | "hidden" | null>(null);
+  // The small thing was sent: its project opens on the assistant's answer.
+  const openProject = (projectId: string) => {
+    done();
+    void navigate({ to: "/p/$projectId", params: { projectId } });
   };
   // A chain that keeps failing hands over to the troubleshooter, whose thread lives in the sample project; the panel shows the newest thread.
   const troubleshoot =
@@ -113,28 +122,41 @@ export function FirstRunSetup({ onDone }: { onDone: () => void }) {
                 )}
               </ul>
               {state.locals.length > 0 && <WorkStyle onPick={(style) => setCli(style === "cli")} />}
-              {sample ? (
-                <>
-                  <p className="meta-txt">{t("setup.doneTour")}</p>
-                  <div className="row" style={{ gap: "var(--space-2)" }}>
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      data-testid="setup-open-tour"
-                      onClick={openTour}
-                    >
-                      {t("setup.openTour")}
-                    </button>
-                    <button type="button" className="btn btn-secondary" data-testid="setup-continue" onClick={done}>
-                      {t("setup.toProjects")}
+              {repoTask && (
+                <div hidden={repoTask === "hidden"}>
+                  <RepoTask agents={state.locals.length > 0 ? names(state.locals) : null} onBack={() => setRepoTask("hidden")} onOpened={openProject} />
+                </div>
+              )}
+              {repoTask !== "open" && (
+                <div className="stack-3" data-testid="setup-paths">
+                  <p className="meta-txt">{t("firstTask.pathsTitle")}</p>
+                  <div className="setup-path" data-testid="setup-path-repo">
+                    <span className="setup-name">
+                      {t("firstTask.repoTitle")} <Tag tone="strong">{t("firstTask.recommended")}</Tag>
+                    </span>
+                    <span className="meta-txt">{t("firstTask.repoDesc")}</span>
+                    <div>
+                      <button type="button" className="btn btn-primary" data-testid="setup-repo-task" onClick={() => setRepoTask("open")}>
+                        {t("firstTask.repoBegin")}
+                      </button>
+                    </div>
+                  </div>
+                  {sample && (
+                    <div className="setup-path" data-testid="setup-path-tour">
+                      <span className="setup-name">{t("firstTask.tourTitle")}</span>
+                      <span className="meta-txt">{t("setup.doneTour")}</span>
+                      <div>
+                        <button type="button" className="btn btn-secondary" data-testid="setup-open-tour" onClick={openTour}>
+                          {t("setup.openTour")}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <button type="button" className="btn btn-ghost" data-testid="setup-continue" onClick={done}>
+                      {t(sample ? "setup.toProjects" : "setup.continue")}
                     </button>
                   </div>
-                </>
-              ) : (
-                <div>
-                  <button type="button" className="btn btn-primary" data-testid="setup-continue" onClick={done}>
-                    {t("setup.continue")}
-                  </button>
                 </div>
               )}
             </div>
