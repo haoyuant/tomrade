@@ -1735,6 +1735,8 @@ button.ai-review-chip:hover:not(:disabled), .ai-review-chip[aria-pressed="true"]
 .claim-card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--space-2); }
 .agent-note .note-thread { color: var(--muted); }
 .sbar-rule { width: 32px; border-top: 1px solid var(--border); margin: 4px 0; flex-shrink: 0; }
+/* The last few to end, below a rule so they never read as still going. */
+.sbar-ended { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--border); }
 .sbar-peek { position: absolute; right: calc(100% + 6px); width: 280px; z-index: 20; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg, 10px); box-shadow: var(--elev-raised); font-size: var(--text-sm); }
 .sbar-peek[data-status="wait"] { border-color: var(--warn); }
 .sbar-peek-title { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; color: var(--fg); }
