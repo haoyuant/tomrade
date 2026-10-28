@@ -759,13 +759,17 @@ export function AgentPanel({
         const result = await invoke("codeLink.sessionAnswer", projectId, row.sessionId!, reply.which);
         if (result === "notPrompt") return toast({ body: t("sessionBar.answerInPane"), actions: [{ label: t("sessionBar.lookFirst"), run: () => pickBarRow(row) }] });
         if (result !== "answered") return toast({ body: t("sessionBar.notTaken") });
+      } else if ("trust" in reply) {
+        const result = await invoke("codeLink.sessionTrust", projectId, row.sessionId!, reply.trust);
+        if (result === "notPrompt") return toast({ body: t("sessionBar.answerInPane"), actions: [{ label: t("sessionBar.lookFirst"), run: () => pickBarRow(row) }] });
+        if (result !== "answered") return toast({ body: t("sessionBar.notTaken") });
       } else await invoke("agent.answer", projectId, row.threadId!, reply.questionId, reply.value);
     } catch (error) {
       return reportError(error);
     }
     void recentSessions.refetch();
     if (row.key === currentKey && goesOn) return waitQueue.current.answered(row.key);
-    toast({ body: t("which" in reply ? (reply.which === "allow" ? "sessionBar.allowedStay" : "sessionBar.deniedStay") : "sessionBar.answeredStay", { name: rowName(row) }) });
+    toast({ body: t("which" in reply ? (reply.which === "allow" ? "sessionBar.allowedStay" : "sessionBar.deniedStay") : "trust" in reply ? (reply.trust === "trust" ? "sessionBar.trustedStay" : "sessionBar.leftStay") : "sessionBar.answeredStay", { name: rowName(row) }) });
   };
   // the bar is memoized; its handlers keep their identity and read the latest render's state
   const latestBar = useRef({ pickBarRow, newThread: () => {}, archive: archiveThreadById, remove: deleteThreadById, end: endSessionById, answer: answerCard });
