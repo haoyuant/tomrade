@@ -11,7 +11,7 @@ import type {} from "@tomradex/files";
 import type {} from "@tomradex/notes";
 import type {} from "@tomradex/community";
 import type {} from "@tomradex/plugin-studio";
-import { invalidateContributions, invalidateProject, invalidateSessions, invalidateWorkspace, keys } from "./lib/queries/index.js";
+import { invalidateContributions, invalidateProject, invalidateWorkspace, keys, sessionsRefresher } from "./lib/queries/index.js";
 import { isLeadWindow, watchWindowChrome } from "./lib/window-chrome.js";
 import { openSettingsPane } from "./lib/settingsHost.js";
 import { letOpenSelectsScroll } from "./lib/select-wheel.js";
@@ -95,11 +95,11 @@ if (window.tomrade) {
     else invalidateWorkspace(queryClient, projectId);
   });
   // Code-link writes only its own tables; a ticket it moves comes as items.changed. A session's hook
-  // comes as codeLink.sessionsChanged and asks again only for what reads sessions.
+  // comes as codeLink.sessionsChanged and asks again only for what reads sessions, once per burst of them.
   // Asked again only when a start changed it: hook events do not touch it.
   subscribe("codeLink.startDefaultsChanged", () => void queryClient.invalidateQueries({ queryKey: keys.codeLink.startDefaults }));
   subscribe("codeLink.cellsChanged", (projectId) => void queryClient.invalidateQueries({ queryKey: keys.codeLink.cells(projectId) }));
-  subscribe("codeLink.sessionsChanged", (projectId, moved) => invalidateSessions(queryClient, projectId, moved));
+  subscribe("codeLink.sessionsChanged", sessionsRefresher(queryClient));
   subscribe("codeLink.changed", (projectId) => {
     void queryClient.invalidateQueries({ queryKey: keys.codeLink.all(projectId) });
     // A finished ticket's conversations may have just been archived.
