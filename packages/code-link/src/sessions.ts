@@ -686,11 +686,11 @@ export class Sessions {
         Object.assign(patch, { state: "running", tool: true, activity: null, failedTool: p.tool_name?.trim() ?? "" });
         break;
       case "PermissionRequest":
-        // herdr's read of a blocked pane names no tool: what a hook said of the same ask stays
-        Object.assign(patch, { state: "waiting", activity: null, ask: p.tool_name ? permissionAsk(p.tool_name, p.tool_input) : session.ask?.kind === "permission" ? session.ask : permissionAsk(null, undefined) });
+        // herdr's read of a blocked pane names no tool: what a hook said of the same ask (a question too) stays
+        Object.assign(patch, { state: "waiting", activity: null, ask: p.tool_name ? permissionAsk(p.tool_name, p.tool_input) : session.ask ?? permissionAsk(null, undefined) });
         break;
       case "Notification":
-        if (p.notification_type === "permission_prompt") Object.assign(patch, { state: "waiting", activity: null, ask: session.ask?.kind === "permission" ? session.ask : permissionAsk(null, undefined) });
+        if (p.notification_type === "permission_prompt") Object.assign(patch, { state: "waiting", activity: null, ask: session.ask ?? permissionAsk(null, undefined) });
         else if (p.notification_type === "idle_prompt") Object.assign(patch, { state: "waiting", activity: null });
         else if (p.notification_type === "agent_needs_input" || p.notification_type === "elicitation_dialog") Object.assign(patch, { state: "waiting", activity: null, ask: questionAsk() });
         break;

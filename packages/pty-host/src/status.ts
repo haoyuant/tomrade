@@ -1,8 +1,10 @@
 import type { TerminalStatus } from "@tomradex/contracts";
 import { titleStatus } from "./agents.js";
-import { compileManifest, detect, type CompiledManifest } from "./detection.js";
-import { MANIFESTS } from "./manifests.js";
+import { detect } from "./detection.js";
 import type { Pane } from "./pane.js";
+import { manifestOf } from "./screens.js";
+
+export { manifestOf } from "./screens.js";
 
 /*
  * Each pane's agent read off its screen, as herdr reads it on macOS: with
@@ -21,23 +23,6 @@ export interface ReadTiming {
 }
 
 export const READ_TIMING: ReadTiming = { readMs: 250, idleHoldMs: 300 };
-
-const compiled = new Map<string, CompiledManifest | null>();
-
-/** herdr's manifest for an agent, by its id or an alias; null for one herdr has none for, or one this engine cannot read. */
-export function manifestOf(agent: string, log?: (line: string) => void): CompiledManifest | null {
-  if (!compiled.has(agent)) {
-    const manifest = Object.values(MANIFESTS).find((m) => m.id === agent || m.aliases?.includes(agent));
-    let ready: CompiledManifest | null = null;
-    try {
-      ready = manifest ? compileManifest(manifest) : null;
-    } catch (err) {
-      log?.(`the ${agent} detection manifest does not compile: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    compiled.set(agent, ready);
-  }
-  return compiled.get(agent)!;
-}
 
 interface Reading {
   agent: string | null;
