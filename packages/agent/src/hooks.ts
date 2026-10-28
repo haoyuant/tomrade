@@ -17,6 +17,8 @@ declare module "cordis" {
     "agent/run-started"(run: RunView, thread: ThreadSummary): void;
     /** A run settled, however it stopped; `run.stop` says how. */
     "agent/run-ended"(run: RunView, thread: ThreadSummary): void;
+    /** A thread and its rows are gone. */
+    "agent/thread-deleted"(projectId: string, threadId: string): void;
     /** A thread stopped on a usage limit and waits for it to lift. */
     "agent/parked"(park: ParkView, thread: ThreadSummary): void;
     /** A parked thread's limit lifted and nobody continues it on its own: the person may. */
