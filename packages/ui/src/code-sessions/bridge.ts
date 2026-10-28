@@ -44,6 +44,8 @@ const tails = new Set<(post: Tails) => void>();
 const historyChanged = new Set<() => void>();
 /** Each History ask, by its token, waiting for its answer. */
 const answers = new Map<number, (post: HistoryPage | HistorySaid) => void>();
+/** Each card's answer on its way, by its token. */
+const answering = new Map<number, () => void>();
 let tokens = 0;
 const reviewed = new Set<(post: Reviewed) => void>();
 
@@ -51,6 +53,10 @@ const reviewed = new Set<(post: Reviewed) => void>();
 surface()?.onMessage((raw) => {
   const post = raw as WindowPost;
   if (post.type === "toast") for (const listener of toasts) listener(post.text);
+  else if (post.type === "answered") {
+    answering.get(post.token)?.();
+    answering.delete(post.token);
+  }
   else if (post.type === "shownIn") for (const listener of shownIn) listener(post);
   else if (post.type === "tails") for (const listener of tails) listener(post);
   else if (post.type === "historyPage" || post.type === "historySaid") {
@@ -69,6 +75,30 @@ function ask<T extends HistoryPage | HistorySaid>(message: (token: number) => Wi
     send(message(token));
   });
 }
+
+/** How long a card waits on an answer that never says it went before its buttons work again. */
+const ANSWER_GIVE_UP_MS = 15_000;
+
+/** A card's answer, settled once the plugin says it went or failed to. */
+function answer(message: (token: number) => WindowMessage): Promise<void> {
+  return new Promise((resolve) => {
+    const token = ++tokens;
+    const done = () => {
+      clearTimeout(timer);
+      answering.delete(token);
+      resolve();
+    };
+    const timer = setTimeout(done, ANSWER_GIVE_UP_MS);
+    answering.set(token, done);
+    send(message(token));
+  });
+}
+
+/** A terminal session's prompt allowed or denied from its card. */
+export const answerSession = (sessionId: string, which: "allow" | "deny"): Promise<void> => answer((token) => ({ type: "answer", sessionId, which, token }));
+
+/** An assistant conversation's question answered from its card. */
+export const answerThreadAsk = (threadId: string, questionId: string, value: string): Promise<void> => answer((token) => ({ type: "answerThread", threadId, questionId, value, token }));
 
 /** One page of History: the newest, the one past `before`, or the newest matches of `query`. */
 export const historyList = (opts: { before?: ReviewCursor | null; query?: string }): Promise<HistoryPage> => ask((token) => ({ type: "historyList", token, ...opts }));

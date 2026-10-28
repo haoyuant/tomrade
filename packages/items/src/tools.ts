@@ -5,7 +5,7 @@ import { ToolInputError, defineTool, requireProjectId, type ToolInvocation } fro
 import type {} from "@tomradex/boards";
 import { addResourceSchema, reviewDeliverySchema, submitDeliverySchema } from "@tomradex/domain";
 import { ITEMS_WORDS } from "./words.js";
-import { contract, localeOf } from "@tomradex/contracts";
+import { contract, localeOf, type AgentReader } from "@tomradex/contracts";
 
 const itemId = z.string().describe("The item's id, or its key such as TOM-12");
 const withVersion = z.object({ projectId: z.string().optional(), id: itemId, baseVersion: z.number().optional() });
@@ -18,8 +18,8 @@ const listInput = readInput.extend({ limit: z.number().int().positive().optional
 /** A page an agent can read; anything larger is asked for. count_items answers the quantity questions. */
 const DEFAULT_LIST_LIMIT = 50;
 
-/** How long an agent creating a ticket waits for the worker model's playbook pick before the keyword fallback answers. */
-export const RECOMMEND_WITHIN_MS = 4_000;
+/** How long the worker model has to refine an agent-created ticket's playbook, after create_item has already answered. */
+export const RECOMMEND_WITHIN_MS = 30_000;
 /** How long create_item remembers a requestId, so a client retrying a call that seemed to hang gets the first item back. */
 const REQUEST_ID_TTL_MS = 10 * 60_000;
 
@@ -142,21 +142,36 @@ export function registerTools(ctx: Context): void {
     // simply retain the explicit/default values).
     let playbookId = args.playbookId;
     let workType = args.workType;
-    if (playbookId === undefined && inv.by.startsWith("ai:")) {
-      const agent = contract(ctx, "agent");
-      if (agent?.recommendPlaybook) {
-        try {
-          // The agent is waiting on this call; past the budget the recommendation falls back to keywords.
-          const recommendation = await agent.recommendPlaybook(projectId, { title: args.title, body: args.body ?? null, workType }, { withinMs: RECOMMEND_WITHIN_MS, signal: inv.signal });
-          playbookId = recommendation.playbookId;
-          if (workType === undefined) workType = recommendation.workType;
-        } catch {
-          // Recommendation is advisory; ticket creation must still succeed.
-        }
+    const agent = playbookId === undefined && inv.by.startsWith("ai:") ? contract(ctx, "agent") : undefined;
+    const input = { title: args.title, body: args.body ?? null };
+    if (agent?.recommendPlaybook) {
+      try {
+        // The agent waits on this call: the keywords pick at once, and the worker model may refine it afterwards.
+        const recommendation = await agent.recommendPlaybook(projectId, { ...input, workType }, { keywordsOnly: true });
+        playbookId = recommendation.playbookId;
+        if (workType === undefined) workType = recommendation.workType;
+      } catch {
+        // Recommendation is advisory; ticket creation must still succeed.
       }
     }
-    return ctx.items.create({ ...resolveRefs(projectId, args), playbookId, workType, projectId, boardId: args.boardId ?? ctx.boards.defaultFor(projectId).id, by: inv.by });
+    const item = ctx.items.create({ ...resolveRefs(projectId, args), playbookId, workType, projectId, boardId: args.boardId ?? ctx.boards.defaultFor(projectId).id, by: inv.by });
+    if (agent?.recommendPlaybook) void refinePlaybook(agent, item, { ...input, workType: item.workType }, inv.by);
+    return item;
   };
+
+  /** The worker model's pick replaces the keywords' only while nobody has touched the ticket since it was made. */
+  const refinePlaybook = async (agent: AgentReader, made: Item, input: { title: string; body: string | null; workType: "coding" | "general" }, by: ToolInvocation["by"]): Promise<void> => {
+    try {
+      const better = await agent.recommendPlaybook(made.projectId, input, { withinMs: RECOMMEND_WITHIN_MS });
+      if (better.source !== "llm" || better.playbookId === made.playbookId) return;
+      const now = ctx.items.get(made.projectId, made.id);
+      if (!now || now.version !== made.version) return;
+      ctx.items.update(made.projectId, made.id, { playbookId: better.playbookId }, by, { baseVersion: made.version });
+    } catch {
+      // The keywords' pick stands.
+    }
+  };
+
 
   ctx.tools.register(
     defineTool({

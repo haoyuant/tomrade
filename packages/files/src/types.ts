@@ -188,8 +188,10 @@ export interface FileStore {
   setAgentRules?(paths: string[], mode: ListMode | "inherit"): Promise<FilesAgentPolicy>;
   /** Literal or regular-expression search over the working copy. Absent when a backend cannot search. */
   search?(input: FileSearchInput): Promise<FileSearchResult>;
-  /** Save, take the remote's changes, push. Conflicts are left for `conflicts()`/`resolve()`. */
-  sync(): Promise<FilesStatus>;
+  /** Save, take the remote's changes, push. Conflicts are left for `conflicts()`/`resolve()`. `quiet`: the periodic sweep, which tells only of what changed. */
+  sync(opts?: { quiet?: boolean }): Promise<FilesStatus>;
+  /** Whether outside edits are being watched, so a sweep is not what saves them. */
+  watching?(): boolean;
   conflicts(): Promise<FileConflict[]>;
   resolve(path: string, choice: ConflictChoice): Promise<void>;
   close(): void;

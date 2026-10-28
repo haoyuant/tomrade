@@ -72,6 +72,19 @@ describe("findSimilar without a model", () => {
   });
 });
 
+describe("findSimilar with a model that does not answer", () => {
+  it("answers from the scores once its time is up, and lets the model stop", async () => {
+    const existing = [item("Send interval water reminders"), item("Export data as CSV")];
+    let aborted = false;
+    const hung = { completeJson: (_schema: unknown, request: { signal?: AbortSignal }) => new Promise((_resolve, reject) => request.signal?.addEventListener("abort", () => { aborted = true; reject(new Error("aborted")); })) } as unknown as LlmService;
+    const started = Date.now();
+    const dup = await findSimilar(hung, { title: "Send water reminders at intervals" }, existing, 5, { withinMs: 30 });
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(aborted).toBe(true);
+    expect(dup.matches[0].title).toBe("Send interval water reminders");
+  });
+});
+
 describe("findSimilarBatch without a model", () => {
   it("answers every proposal from one pass", async () => {
     const { findSimilarBatch } = await import("@tomradex/agent-backlog");

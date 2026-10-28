@@ -9,7 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { CodeLink, TABLES, askLineIn, deliveryMerged, doingLine, permissionAsk, questionAsk, type CodeLinkView, type ForgePull } from "@tomradex/code-link";
+import { CodeLink, GitMemo, TABLES, askLineIn, scanRepo, deliveryMerged, doingLine, permissionAsk, questionAsk, type CodeLinkView, type ForgePull } from "@tomradex/code-link";
 import { CODE_WORDS } from "../src/words.js";
 import { Contributions } from "@tomradex/contributions";
 import { Repos } from "@tomradex/repos";
@@ -17,6 +17,7 @@ import GitHubAccount from "@tomradex/github";
 import { Settings } from "@tomradex/settings";
 import { Storage } from "@tomradex/storage";
 import { fresh, settle } from "@tomradex/testkit";
+import { gitRunner } from "@tomradex/git";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-code-link-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -79,12 +80,12 @@ async function until(check: () => boolean, timeout = 3000): Promise<void> {
   }
 }
 
-async function machine(repo: { remote: string; checkout: string }) {
+async function machine(repo: { remote: string; checkout: string }, codeLinkConfig: Record<string, unknown> = {}) {
   const hubDir = path.join(root, `hub-${n++}`);
   fs.mkdirSync(hubDir, { recursive: true });
   const bag = await fresh({
     hubDir,
-    plugins: [[Settings, { path: path.join(hubDir, "settings.json") }], GitHubAccount, [Storage, { snapshotIdleMs: 60_000, snapshotMaxMs: 60_000, watch: false, reconcileMs: 0 }], Repos, Contributions, [CodeLink, { scanMs: 0 }]]
+    plugins: [[Settings, { path: path.join(hubDir, "settings.json") }], GitHubAccount, [Storage, { snapshotIdleMs: 60_000, snapshotMaxMs: 60_000, watch: false, reconcileMs: 0 }], Repos, Contributions, [CodeLink, { scanMs: 0, ...codeLinkConfig }]]
   });
   await settle();
   await bag.ctx.storage.ready;
@@ -395,6 +396,84 @@ describe("code link", () => {
 
     // Nothing left to say: a third scan is quiet.
     expect((await codeLink.scan(project.id)).changed).toBe(0);
+  });
+
+  it("reads a repository whose refs did not move in a few git calls, and asks again once the default branch moves", async () => {
+    const { checkout } = codeRepo();
+    commitOn(checkout, "tom-1/named", "a.ts", "TOM-1: named");
+    commitOn(checkout, "side-work", "b.ts", "TOM-2: found by its commit");
+    git(["push", "-q", "origin", "tom-1/named", "side-work"], checkout);
+    git(["checkout", "-q", "main"], checkout);
+    const asked: string[][] = [];
+    const run = gitRunner("git");
+    const counted = ((args: string[], opts?: Parameters<typeof run>[1]) => { asked.push(args); return run(args, opts); }) as typeof run;
+    const memo = new GitMemo();
+    const scan = (sinceSha: string | null) => scanRepo(counted, checkout, { defaultBranch: "main", prefix: "TOM", sinceSha, memo });
+    const first = await scan(null);
+    expect(first.branches.map((b) => [b.name, b.keyNums])).toEqual(expect.arrayContaining([["tom-1/named", [1]], ["side-work", [2]]]));
+    const heavy = (calls: string[][]) => calls.filter((a) => ["ls-tree", "rev-list", "log"].includes(a[0]!)).map((a) => a[0]);
+    expect(heavy(asked).length).toBeGreaterThan(0);
+    // The next pass reads from where this one left the default branch, as a project's stored state says.
+    await scan(first.defaultSha);
+    asked.length = 0;
+    const again = await scan(first.defaultSha);
+    expect(heavy(asked)).toEqual([]);
+    expect(again.branches).toEqual(first.branches);
+    expect({ ...again, mergedKeys: null }).toEqual({ ...first, mergedKeys: null });
+
+    commitOn(checkout, "main", "c.ts", "chore: main moves");
+    git(["push", "-q", "origin", "main"], checkout);
+    asked.length = 0;
+    await scan(first.defaultSha);
+    expect(heavy(asked)).toContain("ls-tree");
+  });
+
+  it("asks git once about a link whose branch is gone, not on every pass", async () => {
+    const wrapper = path.join(root, `git-counting-${n++}`);
+    const calls = `${wrapper}.log`;
+    fs.writeFileSync(wrapper, `#!/bin/sh\necho "$*" >> "${calls}"\nexec git "$@"\n`, { mode: 0o755 });
+    const { codeLink, ctx, project, checkout, ticket } = await machine(codeRepo(), { gitBinary: wrapper });
+    try {
+      const item = ticket("Branch dropped before merging", "todo");
+      const branch = `tom-${item.keyNum}/dropped`;
+      const head = commitOn(checkout, branch, "dropped.ts", `TOM-${item.keyNum}: dropped`);
+      git(["push", "-q", "origin", branch], checkout);
+      await codeLink.scan(project.id);
+      git(["checkout", "-q", "main"], checkout);
+      git(["branch", "-q", "-D", branch], checkout);
+      git(["push", "-q", "origin", "--delete", branch], checkout);
+      fs.writeFileSync(calls, "");
+      await codeLink.scan(project.id);
+      await codeLink.scan(project.id);
+      await codeLink.scan(project.id);
+      const asked = fs.readFileSync(calls, "utf8").split("\n").filter((line) => line.startsWith("log ") && line.endsWith(`..${head}`));
+      expect(asked).toHaveLength(1);
+      expect(codeLink.links(project.id, item.id)[0]).toMatchObject({ branch, mergedSha: null });
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+
+  it("scans less while no window can be seen, and at once when one shows again with a pass due", async () => {
+    const { codeLink, ctx } = await machine(codeRepo(), { scanMs: 60_000, hiddenScanMs: 600_000 });
+    try {
+      const passes = vi.spyOn(codeLink, "scanOpen").mockResolvedValue();
+      const due = () => (codeLink as unknown as { scanDue(): boolean }).scanDue();
+      expect(due()).toBe(true);
+      ctx.emit("desktop/seen", false);
+      expect(due()).toBe(true);
+      (codeLink as unknown as { openScannedAt: number }).openScannedAt = Date.now();
+      expect(due()).toBe(false);
+      ctx.emit("desktop/seen", true);
+      expect(passes).not.toHaveBeenCalled();
+      expect(due()).toBe(true);
+      ctx.emit("desktop/seen", false);
+      (codeLink as unknown as { openScannedAt: number }).openScannedAt = Date.now() - 120_000;
+      ctx.emit("desktop/seen", true);
+      expect(passes).toHaveBeenCalledTimes(1);
+    } finally {
+      await ctx.fiber.dispose();
+    }
   });
 
   it("tells no one after a scan that found nothing new, and once after one that did", async () => {

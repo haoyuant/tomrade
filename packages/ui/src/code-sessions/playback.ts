@@ -35,6 +35,21 @@ export function playedBy(times: number[], time: number): number {
   return lo;
 }
 
+/**
+ * Where to write from to show the first `upTo` records, when the first `applied` are in the terminal: on from there,
+ * unless a keyframe (which resets the screen) comes at or after it — or `upTo` is behind it — when the newest keyframe
+ * before `upTo` is where the screen starts, and nothing before it shows. `size` is the pane's size at that start.
+ */
+export function replayFrom(records: ReplayRecord[], applied: number, upTo: number): { from: number; reset: boolean; size: { w: number; h: number } | null } {
+  let key = -1;
+  for (let i = upTo - 1; i >= 0; i--) if (records[i]!.key) { key = i; break; }
+  if (upTo >= applied && key < applied) return { from: applied, reset: false, size: null };
+  const from = Math.max(0, key);
+  let size: { w: number; h: number } | null = null;
+  for (let i = from; i >= 0; i--) if (records[i]!.w > 0 && records[i]!.h > 0) { size = { w: records[i]!.w, h: records[i]!.h }; break; }
+  return { from, reset: true, size };
+}
+
 /** The recording's clock at a play time: what the pane showed then. */
 export function clockAt(records: ReplayRecord[], times: number[], time: number): number | null {
   const n = playedBy(times, time);

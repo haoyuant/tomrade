@@ -103,8 +103,8 @@ export interface AgentReader {
   recommendPlaybook(
     projectId: string,
     input: { title: string; body?: string | null; workType?: "coding" | "general" },
-    opts?: { withinMs?: number; signal?: AbortSignal }
-  ): Promise<{ playbookId: string | null; workType: "coding" | "general" }>;
+    opts?: { withinMs?: number; signal?: AbortSignal; keywordsOnly?: boolean }
+  ): Promise<{ playbookId: string | null; workType: "coding" | "general"; source?: "llm" | "fallback" }>;
 }
 
 /** What one check found. `Action` is what the troubleshooter can offer about it. */

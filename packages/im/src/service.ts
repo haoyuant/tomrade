@@ -622,16 +622,20 @@ export class Im extends Service {
     }
     const dirty = new Set(this.dirty);
     this.dirty.clear();
+    // Four times a second, so only the conversations something happened in: a message waiting, a run moving, the sweep.
+    const queued = new Set(this.store.all<{ binding_id: string }>("SELECT DISTINCT binding_id FROM plugin_im_inbox WHERE state = 'queued'").map(r => r.binding_id));
+    if (!sweep && !dirty.size && !queued.size) return;
     for (let b of this.store.bindings()) {
       // One that only listens has no conversation to follow, and nothing waits in it.
       if (!b.thread_id || !this.authorizedBinding(b) || !this.home.db.has(b.project_id)) continue;
+      if (!sweep && !dirty.has(b.thread_id) && !queued.has(b.id)) continue;
       if (!this.processing.has(b.thread_id)) {
         try { b = this.leaveArchived(b); } catch { continue; }
       }
       if (sweep || dirty.has(b.thread_id)) {
         try { this.project(b); } catch { continue; }
       }
-      if (!this.processing.has(b.thread_id) && this.store.get("SELECT 1 FROM plugin_im_inbox WHERE binding_id = ? AND state = 'queued'", b.id)) void this.process(b);
+      if (!this.processing.has(b.thread_id) && queued.has(b.id)) void this.process(b);
     }
   }
 

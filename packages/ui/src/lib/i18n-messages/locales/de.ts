@@ -2179,6 +2179,7 @@ export const de: PartialMessages = {
     archiveThread: "Thread archivieren",
     deleteThread: "Thread löschen",
     deleteThreadConfirm: "Diesen Thread endgültig löschen?",
+    deleteThreadEndsSession: "Diesen Thread endgültig löschen? Seine Terminal-Sitzung endet ebenfalls.",
     collapsePanel: "Bereich einklappen – [[cmd:assistant]]",
     collapseAssistantAria: "Assistentenbereich einklappen",
     introMessage: "Ich kann dieses Board lesen und darin schreiben. Jede meiner Änderungen wird mir zugeordnet, nach Lauf gruppiert und lässt sich mit einem Klick zurücksetzen.",

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import type { Block, EngineView, FocusRef, PendingView, RunView, ThreadMessage } from "@tomradex/agent";
 import type { Item, ModelErrorKind } from "@tomradex/domain";
@@ -26,6 +26,7 @@ import { useRenderMarkdown } from "~/lib/markdownLater";
 import { useToast } from "~/lib/toast";
 import { duration, liveTokens, retryReason, runTokensLabel } from "./format";
 import { decorate, KEY_RE, LINK_RE, localPath, ON_DISK, trimTrailing, withoutFileUrls } from "./links";
+import { useLive, type LiveStore } from "./liveStore";
 
 /** The pulse that says "not stuck": what it's doing, for how long, and the tokens so far — or, loudly, that requests are failing. */
 export function WorkingLine({ startedAt, progress, streaming }: { startedAt: number; progress: RunProgress | null; streaming: boolean }) {
@@ -61,6 +62,30 @@ export function WorkingLine({ startedAt, progress, streaming }: { startedAt: num
         {progress?.usage ? ` · ${liveTokens(progress.usage)}` : ""}
       </span>
     </p>
+  );
+}
+
+/** The working line, reading the run's progress from where it streams in: tokens re-render this line, not the panel. */
+export function LiveWorkingLine({ progress, ...rest }: { startedAt: number; progress: LiveStore<RunProgress | null>; streaming: boolean }) {
+  return <WorkingLine {...rest} progress={useLive(progress, (p) => p)} />;
+}
+
+/** The reply as it streams in, before its message lands; `onGrow` keeps it in view. */
+export function LiveReply({ live, onGrow }: { live: LiveStore<{ runId: string; text: string } | null>; onGrow: () => void }) {
+  const text = useLive(live, (l) => l?.text ?? "");
+  useLayoutEffect(() => {
+    if (text) onGrow();
+  }, [text, onGrow]);
+  if (!text) return null;
+  return (
+    <div className="turn turn-ai">
+      <div className="turn-mark">
+        <span className="prov-tick" style={{ height: 12 }} />
+      </div>
+      <div className="turn-body">
+        <p>{text}</p>
+      </div>
+    </div>
   );
 }
 

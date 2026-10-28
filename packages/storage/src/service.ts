@@ -1181,6 +1181,9 @@ export class Storage extends Service implements StorageReader {
   private absorbFolder(projectId: string): void {
     const entry = this.mustEntry(projectId);
     if (!entry.dir) return;
+    // The folder unchanged since it was last read, and holding what was published: nothing to take, nothing to parse.
+    const known = this.folderDigest(entry.dir, this.verifies(projectId));
+    if (!known.problem && known.digest !== null && known.digest === entry.lastPublishedDigest) return;
     const { state, problem } = this.readFolder(entry.dir, this.verifies(projectId));
     if (problem) this.gaveUp(projectId, "not read", problem);
     if (!state) return;

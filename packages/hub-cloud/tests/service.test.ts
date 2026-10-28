@@ -21,6 +21,8 @@ const remote = vi.hoisted(() => ({
   meta: {} as Record<string, unknown>, signUpData: null as Record<string, unknown> | null, metaUpdates: [] as Record<string, unknown>[],
   /** Accounts deleted through the RPC. */
   deleted: [] as string[],
+  /** Each read of the Hub's records: from when, or null for all of them. */
+  reads: [] as (string | null)[],
   /** Whether this machine starts with a stored session. */
   signedIn: true
 }));
@@ -78,8 +80,15 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => {
       return { data: result, error: null };
     },
     from: () => {
+      // A row without its own change time reads as changed just now, as a newly written one would.
+      let since: string | null = null;
       const query = { select: () => query, eq: () => query, order: () => query,
-        range: async (a: number, b: number) => ({ data: [...remote.records.values()].slice(a, b + 1), error: null }) };
+        gt: (_column: string, at: string) => { since = at; return query; },
+        range: async (a: number, b: number) => {
+          if (a === 0) remote.reads.push(since);
+          const rows = [...remote.records.values()].map((r) => ({ updated_at: new Date().toISOString(), ...r }));
+          return { data: rows.filter((r) => !since || r.updated_at > since).slice(a, b + 1), error: null };
+        } };
       return query;
     }
   };
@@ -91,7 +100,7 @@ beforeEach(() => {
   remote.offline = false; remote.loseReply = false; remote.records.clear(); remote.receipts.clear(); remote.requests = []; remote.forgotten = [];
   remote.as = null; remote.confirm = false; remote.signUps = 0; remote.adopted = [];
   remote.mails = []; remote.taken = false; remote.mailWait = 0;
-  remote.meta = {}; remote.signUpData = null; remote.metaUpdates = []; remote.deleted = []; remote.signedIn = true;
+  remote.meta = {}; remote.signUpData = null; remote.metaUpdates = []; remote.deleted = []; remote.signedIn = true; remote.reads = [];
 });
 afterEach(async () => {
   for (const ctx of contexts.splice(0)) await ctx.fiber.dispose();
@@ -120,6 +129,24 @@ async function machine({ used = true, accounts }: { used?: boolean; accounts?: L
   await bag.ctx.cloudHub.ready;
   return { ...bag, dir, hubDir, legacy, cloud: bag.ctx.cloudHub };
 }
+
+it("reads only what changed in the cloud after the first read, and tells no window of a pass that changed nothing", async () => {
+  const { ctx, cloud, dir } = await machine();
+  await cloud.sync();
+  const refreshed = vi.spyOn(ctx.settings, "refreshUserStore");
+  remote.reads = [];
+  await cloud.sync();
+  expect(remote.reads).toHaveLength(1);
+  expect(remote.reads[0]).not.toBeNull();
+  expect(refreshed).not.toHaveBeenCalled();
+  remote.records.set("project:elsewhere", { kind: "project", key: "elsewhere", value: { id: "elsewhere", name: "Elsewhere", keyPrefix: "ELS" }, version: 1 });
+  await cloud.sync();
+  expect(refreshed).toHaveBeenCalledTimes(1);
+  // Laid over what was read before, not in its place.
+  const keys = (JSON.parse(fs.readFileSync(path.join(dir, "hub-cloud.json"), "utf8")) as { records: { key: string }[] }).records.map((r) => r.key);
+  expect(keys).toContain("elsewhere");
+  expect(keys).toContain("settings");
+});
 
 it("migrates only portable metadata, preserves legacy files, and continues the project write path", async () => {
   const { ctx, cloud, hubDir, legacy, project, board, items, hub } = await machine();
