@@ -2367,4 +2367,24 @@ describe("syncing a session back", () => {
       await client.close();
     }
   });
+
+  it("lets an agent on an unbound connection propose a rule for the project it names, once the user has agreed", async () => {
+    const { ctx, project } = await machine();
+    ctx.agent.setRules(project.id, "- Keep tickets small");
+    const client = new Client({ name: "pi", version: "0" });
+    try {
+      await client.connect(new StreamableHTTPClientTransport(new URL(ctx.mcp.url!)));
+      const text = (r: Awaited<ReturnType<typeof client.callTool>>) => (r.content as { text: string }[])[0]!.text;
+      const unasked = await client.callTool({ name: "propose_rule", arguments: { projectId: project.id, rule: "Test with the cheap model" } });
+      expect(unasked.isError).toBe(true);
+      expect(text(unasked)).toContain("userSaid");
+      expect(ctx.agent.rules(project.id)).toBe("- Keep tickets small");
+      const agreed = await client.callTool({ name: "propose_rule", arguments: { projectId: project.id, rule: "Test with the cheap model", userSaid: "yes, add it" } });
+      expect(agreed.isError).toBeFalsy();
+      expect(JSON.parse(text(agreed))).toMatchObject({ added: true });
+      expect(ctx.agent.rules(project.id)).toBe("- Keep tickets small\n- Test with the cheap model");
+    } finally {
+      await client.close();
+    }
+  });
 });

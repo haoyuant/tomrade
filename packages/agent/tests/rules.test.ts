@@ -74,6 +74,24 @@ it("adds a proposed rule only once the person says yes", async () => {
   }
 });
 
+it("takes the project from the call when the connection names none", async () => {
+  const t = await boot();
+  try {
+    const unbound = { by: "ai:mcp" };
+    await expect(t.ctx.tools.execute("propose_rule", { rule: "Test with the cheap model" }, unbound)).rejects.toThrow(/projectId: required here/);
+    // Nobody here to ask: the agent asks the user itself and passes their yes.
+    await expect(t.ctx.tools.execute("propose_rule", { projectId: t.project.id, rule: "Test with the cheap model" }, unbound)).rejects.toThrow(/userSaid/);
+    expect(t.ctx.agent.rules(t.project.id)).toBeNull();
+    expect(await t.ctx.tools.execute("propose_rule", { projectId: t.project.id, rule: "Test with the cheap model", userSaid: "yes, add it" }, unbound)).toMatchObject({ added: true });
+    expect(t.ctx.agent.rules(t.project.id)).toBe("- Test with the cheap model");
+    // Where Tomrade can ask, it still asks, whatever the agent passed.
+    expect(await t.ctx.tools.execute("propose_rule", { projectId: t.project.id, rule: "Never touch billing", userSaid: "yes" }, { ...unbound, ask: async () => "Don't add" })).toMatchObject({ added: false });
+    expect(t.ctx.agent.rules(t.project.id)).toBe("- Test with the cheap model");
+  } finally {
+    await t.ctx.fiber.dispose();
+  }
+});
+
 it("puts the rules in a terminal agent's brief", () => {
   const prompt = generalPrompt({ ticket: { key: "AL-1", title: "Weekly report" }, cwd: "/tmp/x", playbook: { id: "document.write", source: "plugin", digest: "d", body: "Write it." }, continued: false, rules: "- Reply in Chinese" });
   expect(prompt).toContain("Project rules — the person set these for every agent working in this project");
