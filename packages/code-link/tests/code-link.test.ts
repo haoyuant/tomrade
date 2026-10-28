@@ -410,6 +410,12 @@ describe("code link", () => {
       await codeLink.scan(project.id);
       await codeLink.scan(project.id);
       expect(heard).toBe(0);
+      // An agent's hooks writing its session while the scan waits on git are not the scan's news.
+      const session = codeLink.store.createSession(project.id, { repoId: "repo", branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: "here" });
+      const scanning = codeLink.scan(project.id);
+      codeLink.store.patchSession(project.id, session.id, { activity: "Reading a file", lastEventAt: Date.now() });
+      await scanning;
+      expect(heard).toBe(0);
 
       commitOn(checkout, branch, "news.ts", `TOM-${item.keyNum}: more news`);
       git(["push", "-q", "origin", branch], checkout);

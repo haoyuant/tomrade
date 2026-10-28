@@ -167,14 +167,24 @@ export class GitScan {
   }
 
 
-  /** Rows this project's connection has written since it opened: a scan that moves it changed something. */
-  private writes(projectId: string): number {
-    return (this.ctx.db.for(projectId).prepare("SELECT total_changes() AS n").get() as { n: number }).n;
+  /**
+   * What a scan can write, in one line: its links, proposals, repositories' state, deliveries and sessions' last
+   * commits. Agents' hooks write sessions on the same connection meanwhile; their activity is not counted.
+   */
+  private footprint(projectId: string): string {
+    const row = this.ctx.db.for(projectId).prepare(
+      `SELECT (SELECT count(*) || ':' || coalesce(max(updated_at), 0) FROM plugin_code_link_links WHERE project_id = @p) AS links,
+              (SELECT count(*) || ':' || coalesce(max(created_at), 0) || ':' || coalesce(max(resolved_at), 0) || ':' || sum(state = 'open') FROM plugin_code_link_proposals WHERE project_id = @p) AS proposals,
+              (SELECT count(*) || ':' || coalesce(max(updated_at), 0) FROM plugin_code_link_repos WHERE project_id = @p) AS repos,
+              (SELECT count(*) || ':' || coalesce(max(updated_at), 0) FROM deliveries WHERE project_id = @p) AS deliveries,
+              (SELECT coalesce(max(last_commit_at), 0) FROM plugin_code_link_sessions WHERE project_id = @p) AS commits`
+    ).get({ p: projectId });
+    return JSON.stringify(row);
   }
 
   private async doScan(projectId: string): Promise<ScanSummary> {
     const firstScan = !this.scannedAt.has(projectId);
-    const writesBefore = this.writes(projectId);
+    const before = this.footprint(projectId);
     const unlinkedBefore = JSON.stringify(this.unlinkedByProject.get(projectId) ?? []);
     this.archiveCompletedSessions(projectId);
     const summary: ScanSummary = { repos: 0, scanned: 0, offline: 0, links: 0, changed: 0, proposals: 0, skipped: [] };
@@ -244,8 +254,7 @@ export class GitScan {
     this.unlinkedByProject.set(projectId, unlinked);
     this.scannedAt.set(projectId, now);
     // A pass that found nothing new tells no one: every window would read the project's tickets and threads again.
-    // Another writer's rows landing meanwhile count too, which only costs a refresh.
-    if (firstScan || this.writes(projectId) !== writesBefore || JSON.stringify(unlinked) !== unlinkedBefore) this.notify(projectId);
+    if (firstScan || this.footprint(projectId) !== before || JSON.stringify(unlinked) !== unlinkedBefore) this.notify(projectId);
     return summary;
   }
 
