@@ -109,7 +109,7 @@ export function RowActions({ row, big = false, onSee, onThread, onAnswer, onAnsw
   const seeable = big && row.kind !== "thread" && !!(row.kind === "terminal" ? row.terminal.pane : s?.pane);
   const choiceButtons = row.kind === "thread" && questionId
     ? choices.map((choice, i) => (
-        <button key={choice} type="button" className={i === 0 ? "btn btn-primary btn-xs" : "btn btn-secondary btn-xs"} data-testid="cs-choice" onClick={() => onAnswerThread(row.thread, questionId, choice)}>
+        <button key={choice} type="button" className={i === 0 ? "btn btn-primary btn-xs ask-choice" : "btn btn-secondary btn-xs ask-choice"} data-testid="cs-choice" onClick={() => onAnswerThread(row.thread, questionId, choice)}>
           {choice}
         </button>
       ))
@@ -117,7 +117,7 @@ export function RowActions({ row, big = false, onSee, onThread, onAnswer, onAnsw
   if (!big) {
     if (!answerable && !choices.length) return null;
     return (
-      <span className="cs-row-actions" role="group" aria-label={say("askGroup")} data-testid="cs-row-actions">
+      <span className="cs-row-actions" role="group" aria-label={say("askGroup")} data-testid="cs-row-actions" data-choices={choices.length ? "" : undefined}>
         {answerable &&
           (s.prompt === "allow" ? (
             <button type="button" className="btn btn-primary btn-xs" data-testid="cs-allow" onClick={() => onAnswer(s, "allow")}>
