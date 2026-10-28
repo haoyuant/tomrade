@@ -67,6 +67,9 @@ export interface BarRow {
   depth: 0 | 1;
 }
 
+/** A conversation the app's closing interrupted, when the desktop's attention list (where its words come from) does not list it: a browser tab. */
+const INTERRUPTED_WAIT: Pick<AttentionEntry, "kind" | "text"> & { since?: undefined } = { kind: "stuck", text: null };
+
 const RANK: Record<BarStatus, number> = { wait: 0, run: 1, idle: 2, done: 3 };
 
 /** How long an assistant conversation sits untouched before it reads as done, with what it said last as its outcome. */
@@ -106,7 +109,8 @@ export function sessionBarRows(input: {
 
   for (const th of threads) {
     const session = sessionOfThread.get(th.id);
-    const wait = waits.get(`thread:${th.id}`) ?? null;
+    // the app closed mid-run and nobody has gone on since: it waits on the person, the desktop's list or not
+    const wait = waits.get(`thread:${th.id}`) ?? (th.interrupted && !th.running ? INTERRUPTED_WAIT : null);
     const live = session && session.state !== "ended" && session.state !== "lost";
     const busy: BarStatus = wait ? "wait" : th.running || (live && session.state === "running") ? "run" : "idle";
     // done once its ticket is, or once it sat untouched a good while: what it said last is what came of it
