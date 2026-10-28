@@ -2065,6 +2065,11 @@ export const es: PartialMessages = {
     missingOption: "(opción eliminada)"
   },
   agentPanel: {
+    interruptedHint: "Tomrade se cerró mientras trabajaba. «Continuar» retoma donde se quedó, en la misma sesión.",
+    interruptedChildHint: "Tomrade se cerró mientras esa conversación trabajaba. «Continuar» la retoma donde se quedó.",
+    interruptedContinue: "Continuar",
+    interruptedDismiss: "Descartar",
+    interruptedDismissTitle: "Dejarlo como está: deja de esperarte",
     commandSuccess: "Completado",
     commandNoMatch: "Sin coincidencias",
     commandConditionFalse: "Condición falsa",

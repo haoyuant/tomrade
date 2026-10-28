@@ -91,7 +91,13 @@ export const sessionBar = {
     inputUnsupported: "This terminal backend can't take typing from the panel; use the Terminal window.",
     usageSession: "This session · {{tokens}}",
     turnRunning: "Running · {{time}}",
-    turnDone: "Last turn · {{time}}"
+    turnDone: "Last turn · {{time}}",
+    endSession: "End session",
+    endSessionConfirm: "End “{{name}}”? Its terminal pane closes and {{agent}} in it stops.",
+    endSessionYes: "End it",
+    endSessionOutsideConfirm: "Take “{{name}}” off the bar? It runs in {{app}}, which Tomrade can't close: it keeps running there.",
+    endSessionOutsideYes: "Take it off",
+    endedToast: "Ended “{{name}}”"
   },
   zh: {
     label: "会话",
@@ -185,6 +191,12 @@ export const sessionBar = {
     inputUnsupported: "这个终端后端收不了面板里的输入，请用终端窗口。",
     usageSession: "整个会话 · {{tokens}}",
     turnRunning: "进行中 · {{time}}",
-    turnDone: "上一轮 · {{time}}"
+    turnDone: "上一轮 · {{time}}",
+    endSession: "结束会话",
+    endSessionConfirm: "结束「{{name}}」？它的终端窗格会关掉，里面的 {{agent}} 也会停下。",
+    endSessionYes: "结束",
+    endSessionOutsideConfirm: "把「{{name}}」从会话栏移除？它在 {{app}} 里运行，Tomrade 关不了那边，它会照旧运行。",
+    endSessionOutsideYes: "移除",
+    endedToast: "已结束「{{name}}」"
   }
 };

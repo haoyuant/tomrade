@@ -1310,6 +1310,37 @@ describe("starting a ticket", () => {
     expect(codeLink.store.session(project.id, started.sessionId)).toMatchObject({ state: "ended", threadId: started.threadId });
   });
 
+  it("tracks a ticket's conversation on the ticket again once it runs after the app's closing lost its headless session, unless the ticket is done", async () => {
+    const { codeLink, ctx, agent, project, repo, ticket } = await machine(codeRepo());
+    const seed = (status: "doing" | "done") => {
+      const item = ticket(`Interrupted ${status}`, "doing");
+      if (status === "done") ctx.items.update(project.id, item.id, { status: "done" }, "human");
+      const thread = agent.store.createThread(project.id, "fake-code", "Code", null, item.id, `tom-${item.keyNum}/x`);
+      const session = codeLink.store.createSession(project.id, { repoId: repo!.id, branch: `tom-${item.keyNum}/x`, itemIds: [item.id], mode: "headless", agent: "fake-code", threadId: thread.id, device: ctx.hub.deviceId, externalId: "cli-1" });
+      codeLink.store.patchSession(project.id, session.id, { state: "running" });
+      return { item, thread, session };
+    };
+    const open = seed("doing");
+    const done = seed("done");
+    // the app restarts: no headless process survived it
+    ctx.emit("db/opened", project.id);
+    expect(codeLink.store.session(project.id, open.session.id)?.state).toBe("lost");
+    const runOn = (thread: typeof open.thread) => {
+      const run = agent.store.beginRun(project.id, thread.id, "fake-code");
+      ctx.emit("agent/run-started", run, agent.store.thread(project.id, thread.id)!);
+      return run;
+    };
+    const tracked = (itemId: string) => codeLink.store.sessions(project.id, { itemId }).filter((s) => s.state !== "ended" && s.state !== "lost");
+
+    const run = runOn(open.thread);
+    expect(tracked(open.item.id)).toEqual([expect.objectContaining({ threadId: open.thread.id, mode: "headless", state: "running", externalId: "cli-1" })]);
+    ctx.emit("agent/run-ended", agent.store.endRun(project.id, run.id, { status: "done", stop: "end", changes: 0 }), agent.store.thread(project.id, open.thread.id)!);
+    expect(tracked(open.item.id)).toEqual([expect.objectContaining({ threadId: open.thread.id, state: "idle" })]);
+
+    runOn(done.thread);
+    expect(tracked(done.item.id)).toEqual([]);
+  });
+
   it.each(["scan", "db/opened", "storage/imported"] as const)("backfills completed sessions on %s without repeating archive operations", async trigger => {
     const { codeLink, ctx, agent, project, repo, ticket } = await machine(codeRepo());
     const done = ticket("Previously completed");

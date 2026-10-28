@@ -32,18 +32,29 @@ export function StatusMark({ status, size = 10 }: { status: BarStatus; size?: nu
 
 /** An assistant conversation of its own can be put away or deleted here — not while its run goes, nor while it holds a permission prompt. */
 const actionable = (r: BarRow) => !!r.threadId && r.status !== "run" && r.wait?.kind !== "permission";
+/** A terminal session not yet ended can be ended here: its pane closes; one in another terminal app only leaves the bar. */
+const endable = (r: BarRow) => r.where !== "panel" && !!r.sessionId && r.status !== "done";
 
-/** The two buttons a card and a peek carry for such a conversation. */
-function RowActions({ row, onArchive, onDelete }: { row: BarRow; onArchive: (threadId: string) => void; onDelete: (threadId: string) => void }) {
+/** The buttons a card and a peek carry: put away or delete a conversation, end a terminal session. */
+function RowActions({ row, onArchive, onDelete, onEnd }: { row: BarRow; onArchive: (threadId: string) => void; onDelete: (threadId: string) => void; onEnd: (row: BarRow) => void }) {
   const { t } = useI18n();
   return (
     <span className="sbar-actions" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-      <button type="button" className="btn btn-icon" title={t("agentPanel.archiveThread")} aria-label={t("agentPanel.archiveThread")} onClick={() => onArchive(row.threadId!)}>
-        <Icon name="i-archive" size={12} />
-      </button>
-      <button type="button" className="btn btn-icon" title={t("agentPanel.deleteThread")} aria-label={t("agentPanel.deleteThread")} onClick={() => onDelete(row.threadId!)}>
-        <Icon name="i-trash" size={12} />
-      </button>
+      {actionable(row) && (
+        <>
+          <button type="button" className="btn btn-icon" title={t("agentPanel.archiveThread")} aria-label={t("agentPanel.archiveThread")} onClick={() => onArchive(row.threadId!)}>
+            <Icon name="i-archive" size={12} />
+          </button>
+          <button type="button" className="btn btn-icon" title={t("agentPanel.deleteThread")} aria-label={t("agentPanel.deleteThread")} onClick={() => onDelete(row.threadId!)}>
+            <Icon name="i-trash" size={12} />
+          </button>
+        </>
+      )}
+      {endable(row) && (
+        <button type="button" className="btn btn-icon" data-testid="sbar-end" title={t("sessionBar.endSession")} aria-label={t("sessionBar.endSession")} onClick={() => onEnd(row)}>
+          <Icon name="i-stop" size={12} />
+        </button>
+      )}
     </span>
   );
 }
@@ -52,7 +63,7 @@ function RowActions({ row, onArchive, onDelete }: { row: BarRow; onArchive: (thr
  * The session bar on the panel's right edge: a column of dots to switch by, or cards that say what each is doing.
  * Memoized: the panel renders every frame a reply streams, and the bar has nothing new to show then.
  */
-export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mode, peeks = true, engines, pendings, onMode, onPick, onAnswer, onNew, onHistory, onArchive, onDelete }: {
+export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mode, peeks = true, engines, pendings, onMode, onPick, onAnswer, onNew, onHistory, onArchive, onDelete, onEnd }: {
   rows: BarRow[];
   /** Starts under way, before their sessions are there: on top, a dashed ring. */
   starting: readonly Starting[];
@@ -73,6 +84,8 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
   onArchive: (threadId: string) => void;
   /** Asks first; the panel confirms. */
   onDelete: (threadId: string) => void;
+  /** Ends a terminal session; asks first, the panel confirms. */
+  onEnd: (row: BarRow) => void;
 }) {
   const { t } = useI18n();
   const [peek, setPeek] = useState<{ key: string; top: number } | null>(null);
@@ -143,12 +156,13 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
     );
   };
   const count = (f: Filter) => (f === "all" ? rows.length : rows.filter((r) => r.status === f).length);
-  // right-click on a dot or a card: the same two things its buttons do
+  // right-click on a dot or a card: the same things its buttons do
   const withMenu = (r: BarRow, node: ReactElement) =>
-    actionable(r) ? (
+    actionable(r) || endable(r) ? (
       <ContextMenu key={r.key} label={title(r)} trigger={node}>
-        <ContextMenuActionItem icon={<Icon name="i-archive" size={13} />} name={t("agentPanel.archiveThread")} onSelect={() => onArchive(r.threadId!)} />
-        <ContextMenuActionItem icon={<Icon name="i-trash" size={13} />} name={t("agentPanel.deleteThread")} onSelect={() => onDelete(r.threadId!)} />
+        {actionable(r) && <ContextMenuActionItem icon={<Icon name="i-archive" size={13} />} name={t("agentPanel.archiveThread")} onSelect={() => onArchive(r.threadId!)} />}
+        {actionable(r) && <ContextMenuActionItem icon={<Icon name="i-trash" size={13} />} name={t("agentPanel.deleteThread")} onSelect={() => onDelete(r.threadId!)} />}
+        {endable(r) && <ContextMenuActionItem icon={<Icon name="i-stop" size={13} />} name={t("sessionBar.endSession")} onSelect={() => onEnd(r)} />}
       </ContextMenu>
     ) : (
       <Fragment key={r.key}>{node}</Fragment>
@@ -229,7 +243,7 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
             {said(shown) && (shown.status !== "run" || !shown.tail?.length) && <span className={shown.status === "wait" ? "sbar-peek-wait" : "sbar-peek-said"}>{shown.status === "done" ? t("sessionBar.outcome", { text: said(shown)! }) : said(shown)}</span>}
             <span className="sbar-peek-foot">
               <span className="meta-txt dense">{`${t("sessionBar.peekHint")} · ${t("sessionBar.peekExpand", { key: keyLabel("sessionBar") })}`}</span>
-              {actionable(shown) && <RowActions row={shown} onArchive={onArchive} onDelete={onDelete} />}
+              {(actionable(shown) || endable(shown)) && <RowActions row={shown} onArchive={onArchive} onDelete={onDelete} onEnd={onEnd} />}
             </span>
           </div>
         )}
@@ -249,7 +263,7 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
         <span>{r.ticket ? `${r.ticket} ${title(r)}` : title(r)}</span>
         {chips(r)}
         {isNew(r) && <span className="sbar-new-badge">{t("sessionBar.new")}</span>}
-        {actionable(r) && <RowActions row={r} onArchive={onArchive} onDelete={onDelete} />}
+        {(actionable(r) || endable(r)) && <RowActions row={r} onArchive={onArchive} onDelete={onDelete} onEnd={onEnd} />}
       </span>
       <span className="meta-txt dense">{[agentName(r), r.status === "done" ? statusWord("done") : where(r), when(r)].filter(Boolean).join(" · ")}</span>
       {tail(r)}

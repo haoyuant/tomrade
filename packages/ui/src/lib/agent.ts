@@ -25,6 +25,23 @@ export function useUnarchiveThread(projectId: string) {
   });
 }
 
+/** A conversation the app's closing interrupted: go on from where it stopped (`continue`), or wave that away (`dismiss`). */
+export function useInterrupted(projectId: string) {
+  const qc = useQueryClient();
+  const report = useErrorToast();
+  return useMutation({
+    onError: report,
+    mutationFn: async ({ threadId, action }: { threadId: string; action: "continue" | "dismiss" }): Promise<void> => {
+      if (action === "continue") await invoke("agent.continueInterrupted", projectId, threadId);
+      else await invoke("agent.dismissInterrupted", projectId, threadId);
+    },
+    onSuccess: (_result, { threadId }) => {
+      void qc.invalidateQueries({ queryKey: keys.agent.threads(projectId) });
+      void qc.invalidateQueries({ queryKey: keys.agent.thread(projectId, threadId) });
+    }
+  });
+}
+
 // Events only patch the thread on screen, so a cached one missed whatever its run did meanwhile
 // (even finishing, which left the panel "working" for good): always refetch when it comes back into view.
 export function useAgentThread(projectId: string, threadId: string | null) {

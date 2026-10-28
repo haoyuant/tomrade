@@ -11,7 +11,7 @@ import { Menu, MenuActionItem, MenuHead, MenuRadioItem } from "~/components/ui/m
 import { viewIcon } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { codingFrom, firstCodeStep, foldSteps, startBriefId, writesCode } from "~/lib/steps";
-import { conducts, findEngine, useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useNewThread, useRevertRun, useSend, useSetEngine, useSetWorkstream, useUnarchiveThread, useWorkdir, type RunProgress } from "~/lib/agent";
+import { conducts, findEngine, useAgentEvents, useAgentThread, useAgentThreads, useAnswer, useArchiveThread, useCancelRun, useDeleteThread, useEngines, useInterrupted, useNewThread, useRevertRun, useSend, useSetEngine, useSetWorkstream, useUnarchiveThread, useWorkdir, type RunProgress } from "~/lib/agent";
 import { keys, useAssistantAccessories, useBoards, useHeldItem, useItems, useSettings } from "~/lib/queries";
 import { ATTENTION_KEY, useAttention, type AttentionEntry } from "~/lib/attention";
 import { pickChoiceName, pickFallbackName } from "~/lib/engines";
@@ -32,6 +32,7 @@ import { SessionBar, type BarMode, type CardAnswer } from "./agent-panel/Session
 import { HandoffLine } from "./agent-panel/HandoffLine";
 import { TerminalSession } from "./agent-panel/TerminalSession";
 import { barModeFor, barPrefsOf, barShown, CARDS_AT, sessionBarRows, type BarRow, type BarStatus } from "~/lib/sessionBar";
+import { interruptedNotes } from "~/lib/interrupted";
 import { askStartPalette, onPanelRequest, setPanelSession, type PanelRequest } from "~/lib/panelRequests";
 import { useStartingAll } from "~/lib/startWays";
 import { useHandoff, useRecentSessions, useSessionCells, useStartDefaults } from "~/lib/codeLink";
@@ -657,9 +658,25 @@ export function AgentPanel({
   // The built-in shell asking before a command, as it does for each one unless set to let reading and checks through.
   const runActivity = useLive(progress, (p) => p?.activity ?? null);
   const commandAsk = !!askId && runActivity === "bash" && ((settings.data?.shell as { approval?: string } | undefined)?.approval ?? "ask") === "ask";
+  // The newest interruption of this conversation, and of each one coding under it, offers to go on while it still waits.
+  // Keyed by a string, so the map is new only when which conversations are interrupted changes.
+  const interruptedKey = (threads.data ?? []).filter((th) => th.interrupted).map((th) => th.id).join("|");
+  const interruptAt = useMemo(() => {
+    const ids = new Set(interruptedKey ? interruptedKey.split("|") : []);
+    return threadId ? interruptedNotes(detail.data?.messages ?? [], threadId, (id) => ids.has(id)) : new Map<string, string>();
+  }, [detail.data?.messages, threadId, interruptedKey]);
+  const interrupted = useInterrupted(projectId);
+  const latestInterrupted = useRef({ interrupted, threadId, busy });
+  latestInterrupted.current = { interrupted, threadId, busy };
+  // Going on, or waving it away, settles this conversation's wait like an answer does: the next one waiting comes up.
+  const interruptedRow = useCallback((target: string, action: "continue" | "dismiss") => {
+    const { interrupted: mutation, threadId: here, busy: working } = latestInterrupted.current;
+    if (mutation.isPending || (target === here && working)) return;
+    mutation.mutate({ threadId: target, action }, { onSuccess: () => { if (target === here) waitQueue.current.answered(`thread:${target}`); } });
+  }, []);
   const transcriptActions = useMemo(
-    () => ({ projectId, runs, cards, engines: engines.data, retryEngines, pending, byKey, busy, threadStatus, commandAsk, goesOnNext, onOpenIssue, onOpenThread: openThreadRow, onAnswer: answerRow, onRevert: revertRow, onOpenSettings: settingsRow, onCardAction: cardActionRow }),
-    [projectId, runs, cards, engines.data, retryEngines, pending, byKey, busy, threadStatus, commandAsk, goesOnNext, onOpenIssue, openThreadRow, answerRow, revertRow, settingsRow, cardActionRow]
+    () => ({ projectId, runs, cards, engines: engines.data, retryEngines, pending, byKey, busy, threadStatus, commandAsk, goesOnNext, interruptAt, onOpenIssue, onOpenThread: openThreadRow, onAnswer: answerRow, onRevert: revertRow, onOpenSettings: settingsRow, onCardAction: cardActionRow, onInterrupted: interruptedRow }),
+    [projectId, runs, cards, engines.data, retryEngines, pending, byKey, busy, threadStatus, commandAsk, goesOnNext, interruptAt, onOpenIssue, openThreadRow, answerRow, revertRow, settingsRow, cardActionRow, interruptedRow]
   );
   const showInTerminal = (sessionId: string, terminalApp: string | null) =>
     void invoke("codeLink.showSession", projectId, sessionId).then((shown) => {
@@ -717,6 +734,24 @@ export function AgentPanel({
     if ((id === threadId && busy) || !(await confirm({ body: t(inTerminal ? "agentPanel.deleteThreadEndsSession" : "agentPanel.deleteThreadConfirm") }))) return;
     deleteThread.mutate(id, { onSuccess: () => { if (id === threadId) clearThread(); } });
   };
+  // Ending a terminal session, from the bar or its view, asks first: its pane closes and its agent stops; one in another terminal app only leaves the bar.
+  const endSessionById = async (sessionId: string) => {
+    const session = recentSessions.data?.find((s) => s.id === sessionId);
+    if (!session) return;
+    const row = barRows.find((r) => r.sessionId === sessionId);
+    const name = row ? rowName(row) : session.title || t("agentPanel.newThread");
+    const body = session.herdrPane
+      ? t("sessionBar.endSessionConfirm", { name, agent: findEngine(engines.data, session.agent)?.title ?? session.agent })
+      : t("sessionBar.endSessionOutsideConfirm", { name, app: session.terminal?.replace(/\.app$/, "") || t("sessionBar.whereOutside") });
+    if (!(await confirm({ body, yes: t(session.herdrPane ? "sessionBar.endSessionYes" : "sessionBar.endSessionOutsideYes") }))) return;
+    try {
+      await invoke("codeLink.stopSession", projectId, sessionId);
+    } catch (error) {
+      return reportError(error);
+    }
+    void recentSessions.refetch();
+    toast({ body: t("sessionBar.endedToast", { name }) });
+  };
   // Answered from a card: the panel stays where it is and says so; the open one goes on as the setting says.
   const answerCard = async (row: BarRow, reply: CardAnswer) => {
     try {
@@ -733,8 +768,8 @@ export function AgentPanel({
     toast({ body: t("which" in reply ? (reply.which === "allow" ? "sessionBar.allowedStay" : "sessionBar.deniedStay") : "sessionBar.answeredStay", { name: rowName(row) }) });
   };
   // the bar is memoized; its handlers keep their identity and read the latest render's state
-  const latestBar = useRef({ pickBarRow, newThread: () => {}, archive: archiveThreadById, remove: deleteThreadById, answer: answerCard });
-  latestBar.current = { pickBarRow, newThread: () => void openThread({ boardId }).then((th) => pickThread(th.id)), archive: archiveThreadById, remove: deleteThreadById, answer: answerCard };
+  const latestBar = useRef({ pickBarRow, newThread: () => {}, archive: archiveThreadById, remove: deleteThreadById, end: endSessionById, answer: answerCard });
+  latestBar.current = { pickBarRow, newThread: () => void openThread({ boardId }).then((th) => pickThread(th.id)), archive: archiveThreadById, remove: deleteThreadById, end: endSessionById, answer: answerCard };
   const pickBarRowStable = useCallback((row: BarRow) => latestBar.current.pickBarRow(row), []);
   // the bar's +: ⌘K on its ways to start (built-in assistant, a terminal agent in a pane or a cell); a new thread where there is no palette
   const newBarThread = useCallback(() => {
@@ -742,6 +777,7 @@ export function AgentPanel({
   }, []);
   const archiveBarThread = useCallback((id: string) => latestBar.current.archive(id), []);
   const deleteBarThread = useCallback((id: string) => latestBar.current.remove(id), []);
+  const endBarSession = useCallback((row: BarRow) => void latestBar.current.end(row.sessionId!), []);
   const answerBarRow = useCallback((row: BarRow, reply: CardAnswer) => latestBar.current.answer(row, reply), []);
   // What the waiting conversations ask, read only while their cards show and again for each new wait.
   const threadWaits = barRows.filter((r) => r.status === "wait" && r.threadId).map((r) => `${r.threadId}:${r.at}`).join("|");
@@ -868,10 +904,12 @@ export function AgentPanel({
           engines={engines.data}
           cell={sessionRow?.cell ?? null}
           items={byKey}
+          onOpenIssue={onOpenIssue}
           onShowInTerminal={shownSession.herdrPane || shownSession.state === "ended" || shownSession.state === "lost" ? () => showInTerminal(shownSession.id, shownSession.terminal) : undefined}
           onBack={shownSessionThread && sessionHandoff.data?.where === "terminal" && !handingOff ? () => void backToPanel(shownSessionThread) : undefined}
           backBlocked={sessionHandoff.data?.terminal?.live ? t("handoff.backBlocked", { agent: findEngine(engines.data, shownSession.agent)?.title ?? shownSession.agent }) : undefined}
           onClose={() => setOpenSession(null)}
+          onEnd={shownSession.state === "ended" || shownSession.state === "lost" ? undefined : () => void endSessionById(shownSession.id)}
           onAnswered={() => waitQueue.current.answered(`session:${shownSession.id}`)}
           goesOnNext={goesOnNext}
           focusSay={sayTo === shownSession.id}
@@ -1233,6 +1271,7 @@ export function AgentPanel({
         onHistory={openHistory}
         onArchive={archiveBarThread}
         onDelete={deleteBarThread}
+        onEnd={endBarSession}
       />
       <ReportDialog projectId={projectId} threadId={reportFor} onOpenChange={(open) => { if (!open) setReportFor(null); }} />
     </aside>
