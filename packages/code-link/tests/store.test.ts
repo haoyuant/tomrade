@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { BOOKKEEPING_REFRESH_MS, CodeLinkStore, MIGRATIONS, TABLES } from "@tomradex/code-link";
 import { ProjectDb, migrateCore } from "@tomradex/db";
 import { fresh } from "@tomradex/testkit";
@@ -71,6 +71,49 @@ describe("code-link delivery migration", () => {
     expect(store.session(project.id, session.id)!.herdrPane).toBe("w3:p1");
     expect(session.terminal).toBeNull();
     expect(store.patchSession(project.id, session.id, { terminal: "iTerm.app" }).terminal).toBe("iTerm.app");
+    await ctx.fiber.dispose();
+  });
+
+  it("narrows sessions in the query as the old whole-table filter did, parsing only the rows that match", async () => {
+    const { ctx, db, project } = await fresh();
+    ctx.db.migrate("code_link", MIGRATIONS, { tables: TABLES });
+    const store = new CodeLinkStore(ctx.db);
+    const make = (i: number, state: string, itemIds: string[], extra: { threadId?: string | null; externalId?: string | null; delivery?: number; worked?: string[] } = {}) => {
+      const s = store.createSession(project.id, { repoId: "repo", branch: `b${i}`, itemIds, mode: "terminal", agent: "claude-code", threadId: extra.threadId ?? null, externalId: extra.externalId ?? null, delivery: extra.delivery ?? 1, device: "here" });
+      db.prepare("UPDATE plugin_code_link_sessions SET state = ?, started_at = ?, worked_json = ? WHERE id = ?").run(state, i, JSON.stringify((extra.worked ?? []).map((itemId) => ({ itemId, delivery: 1 }))), s.id);
+      return s.id;
+    };
+    for (let i = 0; i < 996; i++) make(i, "ended", [`item-${i % 50}`], { externalId: `ext-${i % 7}`, threadId: i % 3 ? null : `thread-${i % 5}`, delivery: 1 + (i % 2), worked: i % 11 ? [] : ["item-7"] });
+    make(996, "lost", ["item-7"], { externalId: "ext-1" });
+    make(997, "running", ["item-7", "item-8"], { externalId: "ext-1", threadId: "thread-1", delivery: 2 });
+    make(998, "waiting", [], { externalId: "ext-2", worked: ["item-7"] });
+    make(999, "idle", ["item-9"]);
+    const all = store.sessions(project.id);
+    expect(all).toHaveLength(1000);
+    expect(all.map((s) => s.startedAt)).toEqual([...all.map((s) => s.startedAt)].sort((a, b) => b - a));
+    const ids = (list: { id: string }[]) => list.map((s) => s.id);
+    const cases = [
+      { live: true },
+      { itemId: "item-7" },
+      { itemId: "item-7", live: true },
+      { itemId: "item-7", delivery: 2 },
+      { delivery: 2, live: true },
+      { threadId: "thread-1" },
+      { threadId: null, live: true },
+      { externalId: "ext-1" },
+      { externalId: "ext-1", live: true }
+    ];
+    for (const filter of cases) {
+      const old = all.filter((s) => (filter.itemId ? s.itemIds.includes(filter.itemId) : true) && (filter.delivery !== undefined ? s.delivery === filter.delivery : true) && (filter.live ? s.state !== "ended" : true)
+        && (filter.threadId !== undefined ? s.threadId === filter.threadId : true) && (filter.externalId ? s.externalId === filter.externalId : true));
+      expect(ids(store.sessions(project.id, filter)), JSON.stringify(filter)).toEqual(ids(old));
+    }
+    expect(ids(store.movedOn(project.id, "item-7"))).toEqual(ids(all.filter((s) => !s.itemIds.includes("item-7") && s.worked.some((w) => w.itemId === "item-7"))));
+    // A hook's question — which sessions still go — parses the four live rows, not the thousand.
+    const parse = vi.spyOn(JSON, "parse");
+    expect(store.sessions(project.id, { live: true })).toHaveLength(4);
+    expect(parse.mock.calls.length).toBeLessThanOrEqual(4 * 3);
+    parse.mockRestore();
     await ctx.fiber.dispose();
   });
 

@@ -64,8 +64,8 @@ declare module "cordis" {
     codeLink: CodeLink;
   }
   interface Events {
-    /** Links or sessions of a project changed — for main-process observers; the renderer hears codeLink.changed. */
-    "codeLink/changed"(projectId: string): void;
+    /** Links or sessions of a project changed — for main-process observers; the renderer hears codeLink.changed. `session` is set when only a session changed: "doing" for its activity alone. */
+    "codeLink/changed"(projectId: string, session?: SessionChange): void;
     /** A start was remembered: the next one-click Start goes this way. The renderer hears codeLink.startDefaultsChanged. */
     "codeLink/start-defaults"(): void;
     /** Asked: a window inside Tomrade can show this project's herdr sessions. Its plugin answers true. */
@@ -699,8 +699,8 @@ export class CodeLink extends Service implements CodeLinkReader {
     this.home.inject(["agent"], (ctx) => {
       // Only while the session lives: a conversation brought back to the panel once its CLI exited stays there.
       const placeTerminalThreads = (projectId: string) => {
-        for (const session of this.store.sessions(projectId)) {
-          if (session.mode !== "terminal" || !session.threadId || session.state === "ended" || session.state === "lost") continue;
+        for (const session of this.store.sessions(projectId, { live: true })) {
+          if (session.mode !== "terminal" || !session.threadId || session.state === "lost") continue;
           const thread = ctx.agent.store.thread(projectId, session.threadId);
           if (thread && thread.surface !== "code") ctx.agent.store.touchThread(projectId, thread.id, { surface: "code" });
         }
@@ -1081,8 +1081,9 @@ export class CodeLink extends Service implements CodeLinkReader {
     }
   }
 
-  sessionsOf(projectId: string, itemId?: string): SessionView[] {
-    return this.store.sessions(projectId, itemId ? { itemId } : {});
+  /** `live` leaves out the ended ones, most of the table, in the query itself. */
+  sessionsOf(projectId: string, itemId?: string, filter: { live?: boolean } = {}): SessionView[] {
+    return this.store.sessions(projectId, { ...(itemId ? { itemId } : {}), ...filter });
   }
 
   /** What the assistant panel can do with a terminal session besides read its conversation. */
@@ -1249,11 +1250,11 @@ export class CodeLink extends Service implements CodeLinkReader {
     if (!agent) return;
     const running = new Set(agent.activeRuns().map(({ thread }) => thread.id));
     const done = (itemId: string) => this.ctx.items.get(projectId, itemId)?.status === "done";
-    const sessions = this.store.sessions(projectId);
+    const sessions = this.store.sessions(projectId, { live: true });
     let changed = false;
     for (const session of sessions) {
       // Shared sessions stay available while any associated ticket still needs work.
-      if (session.state === "ended" || !session.itemIds.length || !session.itemIds.every(done)) continue;
+      if (!session.itemIds.length || !session.itemIds.every(done)) continue;
       if (session.threadId && running.has(session.threadId)) continue;
       this.sessions.end(projectId, session.id, "ended", true, "its tickets are done");
       changed = true;
@@ -2007,7 +2008,7 @@ export class CodeLink extends Service implements CodeLinkReader {
 
   /** A session's own change reaches the renderer as one: it asks again only for what reads sessions, not the project's tickets. */
   private notify(projectId: string, session?: SessionChange): void {
-    this.home.emit("codeLink/changed", projectId);
+    this.home.emit("codeLink/changed", projectId, session);
     if (session) this.home.get("ipc")?.send("codeLink.sessionsChanged", projectId, session === "moved");
     else this.home.get("ipc")?.send("codeLink.changed", projectId);
   }

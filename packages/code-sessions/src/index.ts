@@ -263,7 +263,7 @@ const isLive = (s: { state: string }) => s.state !== "ended" && s.state !== "los
 
 /** How many of a project's sessions wait on the person: the sidebar's count, without building every row. */
 export function needingYou(codeLink: Pick<CodeLink, "sessionsOf">, projectId: string): number {
-  return codeLink.sessionsOf(projectId).filter((s) => isLive(s) && !!s.blocked).length;
+  return codeLink.sessionsOf(projectId, undefined, { live: true }).filter((s) => isLive(s) && !!s.blocked).length;
 }
 
 /** A project's code sessions, live ones first and needs-you before the rest, then every ended one code link keeps. */
@@ -1582,7 +1582,7 @@ function apply(ctx: Context, config: Config) {
       case "tails": {
         if (win.hidden) return;
         const provider = backend();
-        const panes = [...new Set([...ctx.codeLink.sessionsOf(projectId).flatMap((s) => (isLive(s) && s.herdrPane ? [s.herdrPane] : [])), ...savedTerminals(projectId).map((t) => t.pane)])];
+        const panes = [...new Set([...ctx.codeLink.sessionsOf(projectId, undefined, { live: true }).flatMap((s) => (isLive(s) && s.herdrPane ? [s.herdrPane] : [])), ...savedTerminals(projectId).map((t) => t.pane)])];
         const read = provider ? await Promise.all(panes.map((pane) => provider.readTail(pane, TAIL_LINES).catch(() => null))) : [];
         return post(win, { type: "tails", panes: Object.fromEntries(panes.map((pane, i) => [pane, read[i] ?? null])) });
       }

@@ -1,7 +1,7 @@
 /**
  * Performance baseline (TOM-715): three agents at work in terminal panes while both windows watch. A project of 500
  * tickets; three sessions in stand-in herdr panes, each with a Claude Code record over 2 MB that keeps growing, and
- * two hook events a second through code link's own hook path; the main window's panel shows one of them, the Terminal
+ * two hook events a second through code link's own hook path, and PERF_ENDED_SESSIONS (800) ended ones on record; the main window's panel shows one of them, the Terminal
  * window is open on its overview. For PERF_SECONDS (30) it records the main process's event-loop delay, each window's
  * long tasks and frame times, memory at the start and the end, and the IPC between them, then prints a report.
  * Numbers only: it fails when the scenario could not be set up, never on a slow number (PERF_LOOP_P99_MS, 1000,
@@ -41,6 +41,8 @@ const gc = (() => {
 const SECONDS = Number(process.env.PERF_SECONDS ?? 30);
 const EVENTS_PER_SECOND = 2;
 const SESSIONS = 3;
+// A project in use keeps every session that ever ended (the Tomrade project had 775 on 2026-10-28), most of them days old.
+const ENDED_SESSIONS = Number(process.env.PERF_ENDED_SESSIONS ?? 800);
 const RECORD_MIN = 2 * 1024 * 1024;
 const LOOP_RESOLUTION_MS = 10;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -179,6 +181,13 @@ const run = async () => {
     ctx.codeLink.store.patchSession(project.id, session.id, { herdrPane: pane, externalId, transcript: record, cwd, state: "running", prompted: true, lastEventAt: Date.now() });
     sessions.push({ id: session.id, ticket: tickets[i], pane, externalId, record, step: 1000, tick: 0, screen: ["❯ claude", `⏺ Working on ${tickets[i].key}`] });
   }
+  for (let i = 0; i < ENDED_SESSIONS; i++) {
+    const ticket = tickets[SESSIONS + (i % (tickets.length - SESSIONS))];
+    const old = ctx.codeLink.store.createSession(project.id, { repoId: "perf", branch: `${ticket.key.toLowerCase()}/old-${i}`, itemIds: [ticket.id], mode: "terminal", agent: "claude-code", threadId: null, externalId: randomUUID(), device: ctx.hub.deviceId, worktree: cwd });
+    const endedAt = Date.now() - 3 * 86_400_000 - i * 3_600_000;
+    ctx.codeLink.store.patchSession(project.id, old.id, { state: "ended", endedAt, summary: `Finished ${ticket.key}`, prompted: true });
+    ctx.db.for(project.id).prepare("UPDATE plugin_code_link_sessions SET started_at = ?, last_event_at = ? WHERE id = ?").run(endedAt - 1_800_000, endedAt, old.id);
+  }
   const sizes = sessions.map((s) => fs.statSync(s.record).size);
   check("three sessions, each with a record over 2 MB", sizes.every((n) => n >= RECORD_MIN), sizes);
 
@@ -299,10 +308,12 @@ const run = async () => {
   ipc.on = true;
   loop.enable();
   const started = performance.now();
+  const cpu = process.cpuUsage();
   startLoad();
   await sleep(SECONDS * 1000);
   for (const timer of timers) clearInterval(timer);
   loop.disable();
+  const cpuMs = Math.round((({ user, system }) => (user + system) / 1000)(process.cpuUsage(cpu)));
   ipc.on = false;
   const elapsed = (performance.now() - started) / 1000;
   const mainFrames = await $(STOP);
@@ -328,6 +339,8 @@ const run = async () => {
   const report = {
     seconds: Math.round(elapsed * 10) / 10,
     hookEvents: delivered,
+    endedSessions: ENDED_SESSIONS,
+    mainCpuMs: cpuMs,
     loopDelayMs: { p50: ms1(delay(loop.percentile(50))), p99: ms1(delay(loop.percentile(99))), max: ms1(delay(loop.max)) },
     main: { ...frames(mainFrames), ipc: ipcOf(ids.main) },
     terminal: { ...frames(termFrames), ipc: ipcOf(ids.terminal) },
@@ -353,7 +366,8 @@ const run = async () => {
 
   const r = report;
   const row = (label, a, b) => console.log(`  ${label.padEnd(34)}${String(a).padStart(16)}${String(b ?? "").padStart(16)}`);
-  console.log(`\nmulti-session perf, ${r.seconds} s, ${r.hookEvents.ok} hook events`);
+  console.log(`\nmulti-session perf, ${r.seconds} s, ${r.hookEvents.ok} hook events, ${r.endedSessions} ended sessions on record`);
+  row("main process CPU (ms)", r.mainCpuMs);
   row("main event loop delay p50/p99/max", `${r.loopDelayMs.p50}/${r.loopDelayMs.p99}/${r.loopDelayMs.max} ms`);
   row("", "main window", "Terminal");
   row("long tasks (total ms / count)", `${r.main.longTaskMs} / ${r.main.longTasks}`, `${r.terminal.longTaskMs} / ${r.terminal.longTasks}`);
