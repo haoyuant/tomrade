@@ -121,6 +121,7 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-body); o
 .cs-layout { flex: 1; min-height: 0; display: flex; padding: var(--cs-gutter); }
 .cs-layout > * { flex: 1; min-width: 0; min-height: 0; }
 /* The overview lies over the cells, which keep their terminals attached underneath. */
+.cs-overview-scope { grid-column: 1 / -1; justify-self: start; }
 .cs-overview { position: absolute; inset: 0; z-index: 5; overflow-y: auto; padding: var(--cs-gutter); display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--space-3); align-content: start; background: var(--bg); scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .cs-big { border: 1px solid var(--border); border-radius: var(--radius-lg, 10px); background: var(--surface); padding: 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; font-size: var(--text-sm); }
 .cs-big[data-status="wait"] { border-color: var(--warn); }

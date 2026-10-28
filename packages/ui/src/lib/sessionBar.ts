@@ -71,6 +71,15 @@ const RANK: Record<BarStatus, number> = { wait: 0, run: 1, idle: 2, done: 3 };
 
 /** How long an assistant conversation sits untouched before it reads as done, with what it said last as its outcome. */
 export const THREAD_DONE_AFTER_MS = 8 * 60 * 60_000;
+/** How many idle conversations a session bar shows; the rest are in the full list. */
+export const IDLE_SHOWN = 8;
+
+/**
+ * A conversation that reads as done: idle, with no live session speaking for it, and its ticket done or untouched for
+ * `THREAD_DONE_AFTER_MS`. Without `now`, only a done ticket finishes it. The Terminal window's bar reads it the same way.
+ */
+export const threadFinished = (t: { idle: boolean; live: boolean; ticketDone: boolean; movedAt: number }, now?: number): boolean =>
+  t.idle && !t.live && (t.ticketDone || (now !== undefined && now - t.movedAt > THREAD_DONE_AFTER_MS));
 
 /**
  * The bar's rows, waiting first. Within a group the order holds still while output streams:
@@ -110,7 +119,7 @@ export function sessionBarRows(input: {
     const live = session && session.state !== "ended" && session.state !== "lost";
     const busy: BarStatus = wait ? "wait" : th.running || (live && session.state === "running") ? "run" : "idle";
     // done once its ticket is, or once it sat untouched a good while: what it said last is what came of it
-    const finished = busy === "idle" && !live && ((!!th.itemId && !!input.itemDone?.(th.itemId)) || (input.now !== undefined && input.now - th.updatedAt > THREAD_DONE_AFTER_MS));
+    const finished = threadFinished({ idle: busy === "idle", live: !!live, ticketDone: !!th.itemId && !!input.itemDone?.(th.itemId), movedAt: th.updatedAt }, input.now);
     const status: BarStatus = finished ? "done" : busy;
     rows.push({
       key: `thread:${th.id}`, threadId: th.id, sessionId: session?.id ?? null,
@@ -143,7 +152,7 @@ export function sessionBarRows(input: {
   const order = (a: BarRow, b: BarRow) =>
     RANK[a.status] - RANK[b.status] || (a.status === "wait" ? a.at - b.at : a.status === "run" ? b.startedAt - a.startedAt : b.at - a.at);
   rows.sort(order);
-  const limit = input.idleLimit ?? 8;
+  const limit = input.idleLimit ?? IDLE_SHOWN;
   let idle = 0;
   const open = (r: BarRow) => (!!input.openThreadId && r.threadId === input.openThreadId) || (!!input.openSessionId && r.sessionId === input.openSessionId);
   const kept = rows.filter((r) => r.status !== "idle" || ++idle <= limit || open(r));

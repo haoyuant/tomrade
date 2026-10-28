@@ -103,6 +103,8 @@ export interface ThreadRow {
   /** The conversation it was opened under, to write its code in the background: it sits under that one in the bar. */
   parentId: string | null;
   running: boolean;
+  /** Its ticket is done: as in the assistant panel, it reads as finished once nothing runs in it. */
+  ticketDone: boolean;
   /**
    * What it waits on the person for, and since when this window has seen it wait in that way; with the question's id
    * and the choices its card answers with (null when it offers none, or takes several at once).
@@ -224,6 +226,8 @@ export interface WindowState {
   history: Record<string, SessionRow[]>;
   /** The sidebar folded to a strip, as this project's window was left. */
   folded: boolean;
+  /** The overview shows every row, not only what is active, as this project's window was left. */
+  overviewAll: boolean;
   /** The project's open tickets, the latest changed first: ⌘K starts one in a new cell. */
   tickets: TicketRow[];
   /** The agent a ticket started from here runs, by name: the one Start would pick; null when none can run in a terminal. */
@@ -258,6 +262,7 @@ export type WindowMessage =
   /** Which ended conversations said this, from their agents' records; answered with `historySaid`. */
   | { type: "historySaid"; token: number; query: string }
   | { type: "fold"; folded: boolean }
+  | { type: "overviewAll"; all: boolean }
   | { type: "detach"; cell: string }
   | { type: "input"; cell: string; data: string }
   | { type: "key"; cell: string; key: TerminalKey }

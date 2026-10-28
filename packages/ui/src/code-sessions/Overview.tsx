@@ -4,6 +4,14 @@ import { Mark, RowActions, rowAgent, rowName, rowSaid, rowTitle, statusWord, whe
 import { paneOf, statusOf, type HereRow } from "./lists";
 import { useSay, useWords } from "./say";
 
+/** Which rows the overview shows: what is still going (the bar's rows), or every one; with how many each holds. */
+export interface OverviewScope {
+  all: boolean;
+  active: number;
+  total: number;
+  onAll: (all: boolean) => void;
+}
+
 /** How many of a pane's last lines a card shows. */
 const TAIL_SHOWN = 4;
 
@@ -11,11 +19,19 @@ const TAIL_SHOWN = 4;
  * Every session as one big card, in the bar's order: what it is doing — its pane's last lines, the question it waits
  * with, or what came of it — and what can be done from here. "See in a pane" goes back to the cells on it.
  */
-export function Overview({ rows, tails, active, cells, onSee, onThread, onAnswer, onAnswerThread }: { rows: HereRow[]; tails: Record<string, string | null>; active: Set<string>; cells: Map<string, number>; onSee: (row: HereRow) => void; onThread: (thread: ThreadRow) => void; onAnswer: (session: SessionRow, which: "allow" | "deny") => Promise<void> | void; onAnswerThread: (thread: ThreadRow, questionId: string, value: string) => Promise<void> | void }) {
+export function Overview({ rows, scope, tails, active, cells, onSee, onThread, onAnswer, onAnswerThread }: { rows: HereRow[]; scope: OverviewScope; tails: Record<string, string | null>; active: Set<string>; cells: Map<string, number>; onSee: (row: HereRow) => void; onThread: (thread: ThreadRow) => void; onAnswer: (session: SessionRow, which: "allow" | "deny") => Promise<void> | void; onAnswerThread: (thread: ThreadRow, questionId: string, value: string) => Promise<void> | void }) {
   const say = useSay();
   const words = useWords();
   return (
     <div className="cs-overview" data-testid="cs-overview" role="region" aria-label={say("viewOverview")}>
+      <div className="seg quiet cs-overview-scope" role="group" aria-label={say("overviewScope")} data-testid="cs-overview-scope">
+        <button type="button" aria-pressed={!scope.all} data-testid="cs-overview-active" onClick={() => scope.onAll(false)}>
+          {say("overviewActive", { n: scope.active })}
+        </button>
+        <button type="button" aria-pressed={scope.all} data-testid="cs-overview-all" onClick={() => scope.onAll(true)}>
+          {say("overviewAll", { n: scope.total })}
+        </button>
+      </div>
       {rows.length ? (
         rows.map((r) => {
           const status = statusOf(r);
@@ -50,7 +66,7 @@ export function Overview({ rows, tails, active, cells, onSee, onThread, onAnswer
           );
         })
       ) : (
-        <p className="cs-empty">{say("overviewEmpty")}</p>
+        <p className="cs-empty">{say(scope.all || !scope.total ? "overviewEmpty" : "overviewNoneActive")}</p>
       )}
     </div>
   );

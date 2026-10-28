@@ -9,7 +9,7 @@ import { Cell } from "./Cell";
 import { GuessContext, guessesByPane } from "./guess";
 import { arrowsLabel, keyLabel, windowKey, type WindowKey } from "./keys";
 import { applyPreset, carryOn, close, cycle, heir, holder, landing, leaves, lock, neighbour, resize, show, split } from "./layout";
-import { live, sessionName, sidebarRows, type HereRow } from "./lists";
+import { activeRows, live, sessionName, sidebarRows, type HereRow } from "./lists";
 import { Overview } from "./Overview";
 import { Palette, type PaletteAction } from "./Palette";
 import { SayContext, sayIn, useSay, WordsContext, wordsIn, type SayKey } from "./say";
@@ -168,6 +168,8 @@ export function App() {
   }, [folded]);
   // The cells, or every session as one big card over them; the cells stay attached underneath.
   const [view, setView] = useState<"grid" | "overview">("grid");
+  // The window's own choice once made; until then, the one the project's window was left with.
+  const [overviewAllHere, setOverviewAllHere] = useState<boolean | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [tails, setTails] = useState<Record<string, string | null>>({});
   const rows = useMemo(() => (state ? sidebarRows(state.sessions, state.terminals, state.threads) : { here: [], away: [] }), [state]);
@@ -279,6 +281,11 @@ export function App() {
   const active = new Set(cells.flatMap(rowsOf));
   // Each cell's number, as its bar says it, for the rows it shows.
   const cellNumbers = new Map(cells.flatMap((c, i) => rowsOf(c).map((id) => [id, i + 1] as const)));
+  // What is still going, as the assistant panel's bar reads it: the bar shows only this, the overview unless asked for all.
+  const going = activeRows(rows, active, Date.now());
+  const overviewAll = overviewAllHere ?? state.overviewAll;
+  const scope = { all: overviewAll, active: going.here.length + going.away.length, total: rows.here.length + rows.away.length, onAll: (all: boolean) => { setOverviewAllHere(all); send({ type: "overviewAll", all }); } };
+  const shownInOverview = overviewAll ? rows : going;
   const selected = new Set(rowsOf(target));
   // The panes cells show, for the other tickets their agents work there.
   const shownPanes = new Set(cells.flatMap((c) => (c.sessionId ? [key(c.sessionId)] : [])));
@@ -587,12 +594,12 @@ export function App() {
           <main className="cs-main">
             <Banner state={state} />
             <div className="cs-layout">{render(layout)}</div>
-            {view === "overview" && <Overview rows={[...rows.here, ...rows.away.map((s): HereRow => ({ kind: "session", id: s.id, session: s }))]} tails={tails} active={active} cells={cellNumbers} onSee={seeInPane} onThread={showThread} onAnswer={answer} onAnswerThread={answerThread} />}
+            {view === "overview" && <Overview rows={[...shownInOverview.here, ...shownInOverview.away.map((s): HereRow => ({ kind: "session", id: s.id, session: s }))]} scope={scope} tails={tails} active={active} cells={cellNumbers} onSee={seeInPane} onThread={showThread} onAnswer={answer} onAnswerThread={answerThread} />}
           </main>
           <Sidebar
             ref={side}
             state={state}
-            rows={rows}
+            rows={going}
             locale={locale}
             folded={folded}
             onFold={toggleFold}
