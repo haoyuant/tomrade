@@ -105,8 +105,8 @@ describe("who sees what in IM", () => {
     await expect.poll(() => w.delivered.find(d => d.content.text.startsWith("**Test needs your approval**")), { timeout: 5000 }).toBeDefined();
     const reminder = w.delivered.find(d => d.content.text.startsWith("**Test needs your approval**"))!;
     expect(reminder.address.conversationId).toBe("dm-owner");
-    expect(reminder.content.text).toContain(`tomrade://thread/${encodeURIComponent(w.project.id)}/${desk.id}`);
-    expect(reminder.content.actions?.map(a => a.label)).toEqual(["Allow", "Deny"]);
+    expect(reminder.content.text).toBe("**Test needs your approval**\nRun the deploy?\n\n" + w.ctx.agent.thread(w.project.id, desk.id).pending!.question.text);
+    expect(reminder.content.actions?.map(a => [a.label, a.style])).toEqual([["Allow", "primary"], ["Deny", undefined]]);
 
     await w.receive(press("p1", reminder.content.actions![0].token, "dm-owner"));
     await expect.poll(() => w.ctx.agent.thread(w.project.id, desk.id).messages.some(m => m.block.type === "text" && m.block.text === "permission:Allow"), { timeout: 5000 }).toBe(true);
@@ -155,7 +155,7 @@ describe("who sees what in IM", () => {
     w.ctx.emit("schedules/ran", w.project.id, { id: "r2", ok: false, itemIds: [], threadId: null, error: "No engine" }, "Standup");
     await expect.poll(() => w.to("dm-owner"), { timeout: 5000 }).toContain("Routine “Standup” failed: No engine");
     const ran = w.delivered.find(d => d.content.text.startsWith("Routine “Weekly review” ran"))!;
-    expect(ran.content.text).toContain(`tomrade://thread/${encodeURIComponent(w.project.id)}/t1`);
+    expect(JSON.stringify(ran.content)).not.toContain("tomrade://");
     expect(w.to("room").some(t => t.startsWith("Routine"))).toBe(false);
   });
 

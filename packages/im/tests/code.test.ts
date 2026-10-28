@@ -93,8 +93,7 @@ describe("code links in IM", () => {
         { label: "Status", value: "Doing" }, { label: "Priority", value: "High" },
         { label: "Branch", value: "tom-1/login" }, { label: "Pull request", value: "#12 · Open" }, { label: "Session", value: "Running" }
       ] },
-      { type: "links", links: [{ label: "Pull request #12", url: "https://github.com/o/r/pull/12" },
-        { label: "Open in Tomrade", url: `tomrade://item/${encodeURIComponent(w.project.id)}/${w.item.key}` }] }
+      { type: "links", links: [{ label: "Pull request #12", url: "https://github.com/o/r/pull/12" }] }
     ]);
   });
 

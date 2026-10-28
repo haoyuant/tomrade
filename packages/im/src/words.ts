@@ -57,6 +57,7 @@ export const IM_WORDS = defineWords("im", {
     helpHead: "Project: {{project}} · Assistant: {{engine}}",
     helpSteers: "Replying to the progress message also steers.",
     helpNoSteer: "This assistant can't take messages mid-turn: /steer queues instead.",
+    helpMention: "In a group or channel, mention me by typing @ and picking me from the list; a pasted “@Tomrade” is plain text and doesn't reach me.",
 
     withdrawn: "Withdrawn; it won't run.",
     withdrawnPreview: "Withdrawn: {{preview}}",
@@ -94,6 +95,20 @@ export const IM_WORDS = defineWords("im", {
     executionStopped: "Execution stopped",
     waitingForAnswer: "Waiting for your answer",
     turnFinished: "Turn finished",
+    toolDuplicates: "Checking for duplicate tickets",
+    toolCreate: "Creating the ticket",
+    toolUpdate: "Updating the ticket",
+    toolStart: "Starting the work",
+    toolBacklog: "Looking through the backlog",
+    toolProject: "Looking up the project",
+    toolCommand: "Running a command",
+    toolRead: "Reading files",
+    toolEdit: "Editing files",
+    toolWeb: "Searching the web",
+    toolAsk: "Asking you",
+    toolDeliver: "Handing in the work",
+    toolHelper: "Working with a helper",
+    toolOther: "Using tools",
 
     yourAnswer: "Your answer",
     questionGone: "Question already handled, expired, or not yours to answer",
@@ -284,8 +299,6 @@ export const IM_WORDS = defineWords("im", {
     prClosedUnmerged: "Pull request{{pr}} closed without merging",
     agentCantMerge: "The agent couldn't merge; the merge waits on you",
     proposal: "{{key}}: move it to {{to}}?\n{{reason}}",
-    openInTomrade: "Open in Tomrade",
-    seeInTomrade: "See it in Tomrade",
     reviewAccepted: "Accepted",
     reviewChanges: "Sent back for changes",
     reviewReplaced: "A newer delivery replaced it",
@@ -295,7 +308,7 @@ export const IM_WORDS = defineWords("im", {
     executionError: "Execution error: {{text}}",
     changedCount: "Changed {{count}} items",
     andMore: "…and {{n}} more",
-    saved: "Saved [{{path}}]({{url}})"
+    saved: "Saved {{path}}"
   },
   zh: {
     listSep: "、",
@@ -353,6 +366,7 @@ export const IM_WORDS = defineWords("im", {
     helpHead: "项目：{{project}} · 助手：{{engine}}",
     helpSteers: "回复进度消息也算插话。",
     helpNoSteer: "当前助手不支持运行中插话：/steer 会改为排队。",
+    helpMention: "在群或频道里叫我：输入 @ 后从列表里选我；粘贴的「@Tomrade」只是文字，我收不到。",
 
     withdrawn: "已撤回，不会执行。",
     withdrawnPreview: "已撤回：{{preview}}",
@@ -390,6 +404,20 @@ export const IM_WORDS = defineWords("im", {
     executionStopped: "执行已停止",
     waitingForAnswer: "等待你的回答",
     turnFinished: "本轮执行结束",
+    toolDuplicates: "在查有没有重复的工单",
+    toolCreate: "在建工单",
+    toolUpdate: "在更新工单",
+    toolStart: "在开工",
+    toolBacklog: "在翻看工单",
+    toolProject: "在查项目信息",
+    toolCommand: "在运行命令",
+    toolRead: "在读文件",
+    toolEdit: "在改文件",
+    toolWeb: "在查网页",
+    toolAsk: "在问你",
+    toolDeliver: "在提交交付",
+    toolHelper: "在让助手分头做",
+    toolOther: "在用工具",
 
     yourAnswer: "你的回答",
     questionGone: "问题已处理、已失效，或不由你回答",
@@ -579,8 +607,6 @@ export const IM_WORDS = defineWords("im", {
     prClosedUnmerged: "PR{{pr}} 已关闭，未合并",
     agentCantMerge: "agent 无法合并，需要你来合并",
     proposal: "{{key}}：改为「{{to}}」吗？\n{{reason}}",
-    openInTomrade: "在 Tomrade 打开",
-    seeInTomrade: "在 Tomrade 查看",
     reviewAccepted: "已验收通过",
     reviewChanges: "已退回修改",
     reviewReplaced: "已有更新的交付",
@@ -590,7 +616,7 @@ export const IM_WORDS = defineWords("im", {
     executionError: "执行出错：{{text}}",
     changedCount: "已变更 {{count}} 项",
     andMore: "……另有 {{n}} 项",
-    saved: "已保存 [{{path}}]({{url}})"
+    saved: "已保存 {{path}}"
   }
 });
 

@@ -55,24 +55,60 @@ const creates: Engine["turn"] = async (_input, io) => {
 };
 
 describe("rich IM replies", () => {
-  it("answers a change with a ticket card that opens the ticket on the desktop", async () => {
+  it("folds the ticket a turn created into its reply, with no link a phone can't open", async () => {
     const w = await boot(CARDS, creates);
     await w.receive(hello());
     await expect.poll(() => w.delivered.find(d => d.content.elements?.some(e => e.type === "section")), { timeout: 5000 }).toBeDefined();
     const item = w.ctx.items.list({ projectId: w.project.id })[0];
     const card = w.delivered.find(d => d.content.elements?.some(e => e.type === "section"))!;
+    expect(card.content.text).toBe("Filed it.");
     expect(card.content.elements).toEqual([
-      { type: "section", title: `Created · ${item.key} Fix the login page`, fields: [{ label: "Status", value: "Todo" }, { label: "Priority", value: "High" }] },
-      { type: "links", links: [{ label: "Open in Tomrade", url: `tomrade://item/${encodeURIComponent(w.project.id)}/${item.key}` }] }
+      { type: "section", title: `Created · ${item.key} Fix the login page`, fields: [{ label: "Status", value: "Todo" }, { label: "Priority", value: "High" }] }
     ]);
+    // The reply was changed in place: the progress message and the reply are all the turn sent.
+    expect(new Set(w.delivered.map(d => d.content.text === "Filed it." ? "reply" : d.operationId.split(":")[0]))).toEqual(new Set(["progress", "reply"]));
+    expect(JSON.stringify(w.delivered)).not.toContain("tomrade://");
   });
 
-  it("folds the card into text with the link where the platform has no cards", async () => {
+  it("answers a request to file and start a ticket with one reply: what it made and where it stands, and the question apart", async () => {
+    const turn: Engine["turn"] = async (_input, io) => {
+      const made = await io.tools.execute("create_item", { title: "Explain local setup", status: "todo", priority: 3 }) as { id: string; key: string };
+      await io.tools.execute("change_status", { id: made.id, status: "doing" });
+      // A card IM shows only by its title, here the keys a start was about.
+      io.emit({ type: "card", id: "start-batch", schema: "start-batch", title: made.key, data: {} });
+      await io.tools.execute("ask_user", { question: "Where should the checkout go?", options: ["Clone it (Recommended)", "Use an existing folder"], freeText: true });
+      io.emit({ type: "text", text: "Filed and started it." });
+      return { stop: "end" };
+    };
+    const w = await boot(CARDS, turn);
+    await w.receive(hello());
+    await expect.poll(() => w.delivered.find(d => d.content.text === "Filed and started it." && d.content.elements?.length), { timeout: 5000 }).toBeDefined();
+    const item = w.ctx.items.list({ projectId: w.project.id })[0];
+    const reply = w.delivered.findLast(d => d.content.text === "Filed and started it.")!;
+    expect(reply.content.elements).toEqual([{ type: "section", title: `Created · ${item.key} Explain local setup`, fields: [{ label: "Status", value: "Doing" }, { label: "Priority", value: "High" }] }]);
+    const question = w.delivered.find(d => d.content.text.startsWith("Where should the checkout go?"))!;
+    expect(question.content.actions?.map(a => [a.label, a.style])).toEqual([["Clone it (Recommended)", "primary"], ["Use an existing folder", undefined]]);
+    // The progress message, the question and the reply: no status news, no card of its own.
+    expect(new Set(w.delivered.map(d => d.operationId.split(":")[0]))).toEqual(new Set(["progress", "question", "message"]));
+    const progress = w.delivered.filter(d => d.operationId.startsWith("progress:")).at(-1)!.content.text;
+    expect(progress).toBe("Turn finished\nCreating the ticket · Updating the ticket");
+    expect(JSON.stringify(w.delivered)).not.toMatch(/tomrade:\/\/|create_item|change_status|ask_user/);
+  });
+
+  it("tells about mentions and lists the commands in /help", async () => {
+    const w = await boot(CARDS, creates);
+    await w.receive(hello("h", "/help"));
+    await expect.poll(() => w.delivered.find(d => d.content.text.includes("/project")), { timeout: 5000 }).toBeDefined();
+    expect(w.delivered.find(d => d.content.text.includes("/project"))!.content.text).toContain("typing @ and picking me from the list");
+  });
+
+  it("folds the card into text where the platform has no cards, after the reply it can't change", async () => {
     const w = await boot(PLAIN, creates);
     await w.receive(hello());
     const item = () => w.ctx.items.list({ projectId: w.project.id })[0];
-    await expect.poll(() => w.delivered.some(d => d.content.text.includes("Open in Tomrade (tomrade://item/")), { timeout: 5000 }).toBe(true);
-    const text = w.delivered.find(d => d.content.text.includes("Open in Tomrade"))!.content.text;
+    await expect.poll(() => w.delivered.some(d => d.content.text.includes("Status: Todo")), { timeout: 5000 }).toBe(true);
+    expect(w.delivered.map(d => d.content.text.split("\n")[0])).toEqual(["Filed it.", `Created · ${item().key} Fix the login page`]);
+    const text = w.delivered.find(d => d.content.text.includes("Status: Todo"))!.content.text;
     expect(text).toContain(`${item().key} Fix the login page`);
     expect(text).toContain("Status: Todo");
   });
@@ -95,7 +131,7 @@ describe("rich IM replies", () => {
     // The first message carries the first version, not whatever the file holds now.
     expect(Buffer.from(w.sent[file.id]).toString("utf8")).toBe(body);
     expect((await w.ctx.files.readVersion(w.project.id, { fileId, versionId }))?.body).toBe(body);
-    expect(first.content.text).toBe(toImDialect(`Saved [Docs/release-plan.md](tomrade://file/${encodeURIComponent(w.project.id)}/${fileId})`, "markdown"));
+    expect(first.content.text).toBe(toImDialect("Saved Docs/release-plan.md", "markdown"));
   });
 
   it("keeps tools and retries to one line of the progress message, and lists each tool only when asked", async () => {
@@ -113,11 +149,11 @@ describe("rich IM replies", () => {
     const w = await boot(CARDS, turn);
     await w.receive(hello());
     await expect.poll(() => w.delivered.some(d => d.content.text.startsWith("Retrying (attempt 2 of 3)")), { timeout: 5000 }).toBe(true);
-    await expect.poll(() => w.delivered.some(d => d.content.text === "looking\nlist_items ✓"), { timeout: 5000 }).toBe(true);
-    await expect.poll(() => w.delivered.some(d => d.content.text === "Turn finished\nlist_items ✓"), { timeout: 5000 }).toBe(true);
+    await expect.poll(() => w.delivered.some(d => d.content.text === "looking\nLooking through the backlog"), { timeout: 5000 }).toBe(true);
+    await expect.poll(() => w.delivered.some(d => d.content.text === "Turn finished\nLooking through the backlog"), { timeout: 5000 }).toBe(true);
     // The sweep that settles missed runs leaves the tool line in place.
     await new Promise(r => setTimeout(r, 200));
-    expect(w.delivered.filter(d => d.operationId.startsWith("progress:")).at(-1)!.content.text).toBe("Turn finished\nlist_items ✓");
+    expect(w.delivered.filter(d => d.operationId.startsWith("progress:")).at(-1)!.content.text).toBe("Turn finished\nLooking through the backlog");
     expect(w.delivered.some(d => d.content.text === "✓ list_items")).toBe(false);
     expect(JSON.stringify(w.delivered)).not.toContain("overloaded");
 

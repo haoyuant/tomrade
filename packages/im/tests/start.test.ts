@@ -374,7 +374,7 @@ describe("starting a ticket from IM", () => {
     other.code.gate = { gate: "checkout", message: "No checkout of tomrade on this machine" };
     await other.receive(say("c", `/start ${other.item.key} model=fast`));
     const gate = await other.said(/^Couldn't start .*: No checkout of tomrade on this machine\. It's fixed on the desktop\.$/);
-    expect(gate.content.elements).toEqual([{ type: "links", links: [{ label: "Open in Tomrade", url: `tomrade://item/${encodeURIComponent(other.project.id)}/${other.item.key}` }] }]);
+    expect(JSON.stringify(gate.content)).not.toContain("tomrade://");
   });
 
   it("says why there is no working folder, and never without the detail", async () => {

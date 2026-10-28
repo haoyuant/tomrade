@@ -8,13 +8,13 @@ import type {} from "@tomradex/ipc";
 import type {} from "@tomradex/oplog";
 import type {} from "@tomradex/projects";
 import type {} from "@tomradex/settings";
-import { resolveImCapabilities, type ImAdapter, type ImAdapterSetup, type ImCapabilities, type Localized, type ImAdapterSession, type ImAddress, type ImCommand, type ImContent, type ImConnectionState, type ImElement, type ImInbound, type ImNotice, type ImReaction, type ResolvedImCapabilities } from "@tomradex/plugin-sdk";
+import { resolveImCapabilities, type ImAdapter, type ImAdapterSetup, type ImButton, type ImCapabilities, type Localized, type ImAdapterSession, type ImAddress, type ImCommand, type ImContent, type ImConnectionState, type ImElement, type ImInbound, type ImNotice, type ImReaction, type ResolvedImCapabilities } from "@tomradex/plugin-sdk";
 import { ImConfig, ImSettings, InboundSchema, type ImConnection, type ImNotifyKind, type ImRoute } from "./config.js";
 import { fromAdapter, withContext, type ContextLine } from "./context.js";
 import { GROUP_PRESETS, type GroupPreset } from "./presets.js";
 import { prepare } from "./render.js";
 import { IM_WORDS, type ImPlainWord } from "./words.js";
-import { FILE_HANDLE, statusText, awaitingReview, codeNews, codeSeen, deliveryCard, links, proposalText, renderBlock, reviewOutcome, ticket, toolLine, type CodeLookup, type CodeSeen, type Delivered, type ItemLookup, type RenderScope } from "./rich.js";
+import { FILE_HANDLE, statusText, activityText, awaitingReview, codeNews, codeSeen, coveredBy, deliveryCard, folds, joined, proposalText, renderBlock, reviewOutcome, ticket, toolLine, type CodeLookup, type CodeSeen, type Delivered, type ItemLookup, type RenderScope } from "./rich.js";
 import { ImStore, MIGRATIONS, TABLES, type Action, type Binding, type Inbox, type Outbox, type Topic, type Watch, type WindowRow } from "./store.js";
 import { bestEffort, contract, errorMessage } from "@tomradex/contracts";
 
@@ -534,7 +534,8 @@ export class Im extends Service {
     return [
       this.w("helpHead", { project, engine: engine?.title ?? thread.engine }),
       ...this.commands().map(c => `/${c.name}${c.args ? ` ${c.args}` : ""} — ${c.description}`),
-      engine?.steering ? this.w("helpSteers") : this.w("helpNoSteer")
+      engine?.steering ? this.w("helpSteers") : this.w("helpNoSteer"),
+      this.w("helpMention")
     ].join("\n");
   }
 
@@ -1145,7 +1146,7 @@ export class Im extends Service {
           const doing = this.activity.get(b.thread_id);
           const lines = [this.w("currentProject", { project: this.home.projects.get(b.project_id)?.name ?? b.project_id }),
             detail.pending ? this.w("waitingAnswer", { question: detail.pending.question.text })
-            : busy ? (doing ? this.w("workingOn", { doing }) : this.w("working")) : this.w("noTask")];
+            : busy ? (doing ? this.w("workingOn", { doing: activityText(this.w, doing) }) : this.w("working")) : this.w("noTask")];
           if (queue.length) lines.push(this.w("waitingCount", { n: queue.length }));
           this.enqueue(b, `status:${row.id}`, { text: lines.join("\n") }, reply);
           this.accept(row); return;
@@ -1332,7 +1333,7 @@ export class Im extends Service {
     for (const [connectionId, actorId] of new Map(people.map(p => [p.join("\u0000"), p])).values()) {
       const dm = this.directChat(connectionId, actorId);
       if (!dm || !this.notifies(dm, "attention")) continue;
-      const head = `**${n.title}**${n.body ? `\n${n.body}` : ""}\n[${this.w("openInTomrade")}](${links.thread(n.projectId, n.threadId)})`;
+      const head = `**${n.title}**${n.body ? `\n${n.body}` : ""}`;
       const content: ImContent = pending ? this.remoteQuestion(dm, n.projectId, n.threadId, pending, actorId, head) : { text: head };
       this.enqueue(dm, `remind:${dm.id}:${n.threadId}:${pending?.question.id ?? `${n.kind}:${runId}`}`, content, { anchor: null });
       reached = true;
@@ -1350,7 +1351,7 @@ export class Im extends Service {
     };
     const { question } = pending;
     const options = question.options ?? [];
-    const actions = question.multiple ? [] : options.map(value => ({ label: value, token: issue(value) }));
+    const actions = question.multiple ? [] : choiceActions(options, issue);
     const elements: ImElement[] = [];
     if (question.multiple && options.length) elements.push({ type: "select", token: issue(null), multiple: true, options: options.map(o => ({ label: o, value: o })) });
     if (question.freeText || (pending.accepts === "text" && !options.length)) elements.push({ type: "input", token: issue(null), label: this.w("yourAnswer") });
@@ -1677,8 +1678,10 @@ export class Im extends Service {
       // Their own words, as review_delivery keeps them, and who gave the verdict from where.
       const comment = verdict === "accept" ? `Accepted in IM by ${who}` : `${said}\n\nRequested in IM by ${who}`;
       host.reviewDelivery(projectId, item.id, { submissionId, decision: verdict === "accept" ? "accepted" : "changes-requested", comment }, item.version);
-      this.settleDelivery(b, submissionId, verdict === "accept" ? this.w("acceptedBy", { who })
-        : this.w("changesBy", { who, said }));
+      // The chat shows their name; a platform's long id is for the record only.
+      const shown = this.who(b, actorId, false);
+      this.settleDelivery(b, submissionId, verdict === "accept" ? this.w("acceptedBy", { who: shown })
+        : this.w("changesBy", { who: shown, said }));
       this.accept(row);
       return;
     }
@@ -1974,8 +1977,7 @@ export class Im extends Service {
         // A branch held where nothing would be lost is freed by the person's say-so, here.
         const free = result.cause?.code === "branch-in-use" && result.cause.releasable;
         this.enqueue(b, `start-gate:${row.id}`, { text: w(free ? "startGateHere" : "startGate", { key: item.key, reason }),
-          ...(free ? { actions: [{ label: w("freeAndStart"), token: this.offerValue(b, "start!", actorId, JSON.stringify({ ...draft, releaseBranch: true })), style: "primary" as const }] } : {}),
-          elements: [{ type: "links", links: [{ label: w("openInTomrade"), url: links.item(b.project_id, item.key) }] }] }, reply);
+          ...(free ? { actions: [{ label: w("freeAndStart"), token: this.offerValue(b, "start!", actorId, JSON.stringify({ ...draft, releaseBranch: true })), style: "primary" as const }] } : {}) }, reply);
       }
       this.accept(row); return;
     }
@@ -2114,11 +2116,13 @@ export class Im extends Service {
         const id = streamed?.id ?? `message:${b.id}:${message.id}`;
         const content = rendered && this.startActions(b, rendered, message.block, id);
         if (content) this.watch(b, message.block);
-        if (streamed && content) this.replace(b, id, content, { final: true });
+        if (content && message.runId && folds(message.block, content) && this.hold(b, message.runId, message.block, content)) { /* goes out with the turn's reply */ }
+        else if (streamed && content) this.replace(b, id, content, { final: true });
         else if (content) this.enqueue(b, id, content);
         this.store.run("UPDATE plugin_im_bindings SET cursor = ? WHERE id = ?", message.seq, b.id);
       }
       this.pending(b, this.visible(b, detail.runs.at(-1)?.id ?? null) ? detail.pending : null);
+      this.releaseHeld(b, detail);
       // Settles a progress message whose `done` event was missed, e.g. across a restart; never posts a new one.
       for (const run of detail.runs.filter(r => r.status !== "running")) {
         const progress = this.store.get<Outbox>("SELECT * FROM plugin_im_outbox WHERE id = ?", `progress:${b.id}:${run.id}`);
@@ -2130,6 +2134,44 @@ export class Im extends Service {
         }
       }
     });
+  }
+
+  /**
+   * What a turn changed, kept back to go out with its reply: the cards of one turn become one. False when the turn's
+   * reply went out already, and the card is a message of its own.
+   */
+  private hold(b: Binding, runId: string, block: Block, content: ImContent): boolean {
+    const id = `fold:${b.id}:${runId}`;
+    const held = this.store.get<Outbox>("SELECT * FROM plugin_im_outbox WHERE id = ?", id);
+    if (held && held.state !== "held") return false;
+    let next = held ? joined(JSON.parse(held.content_json) as ImContent, content) : content;
+    if (block.type === "changes") {
+      // A card titled only by keys this one lists, such as a start's, adds nothing beside it.
+      const keys = new Set((block.items ?? []).map(i => i.key));
+      const { elements, ...rest } = next;
+      const kept = (elements ?? []).filter(e => !coveredBy(e, keys));
+      next = { ...rest, ...(kept.length ? { elements: kept } : {}) };
+    }
+    if (held) this.store.run("UPDATE plugin_im_outbox SET content_json = ? WHERE id = ?", JSON.stringify(next), id);
+    else this.store.run("INSERT INTO plugin_im_outbox (id, binding_id, thread_id, content_json, created_at, anchor, state) VALUES (?, ?, ?, ?, ?, ?, 'held')",
+      id, b.id, b.thread_id, JSON.stringify(next), Date.now(), b.anchor);
+    return true;
+  }
+
+  /** A turn that ended takes what it held into its last reply, where the platform can change that message; elsewhere it follows. */
+  private releaseHeld(b: Binding, detail: { runs: { id: string; status: string }[]; messages: { id: string; runId: string | null; role: string; block: Block }[] }) {
+    for (const held of this.store.all<Outbox>("SELECT * FROM plugin_im_outbox WHERE binding_id = ? AND state = 'held'", b.id)) {
+      const runId = held.id.slice(`fold:${b.id}:`.length);
+      if (held.thread_id !== b.thread_id) { this.store.run("UPDATE plugin_im_outbox SET state = 'cancelled' WHERE id = ?", held.id); continue; }
+      if (detail.runs.find(r => r.id === runId)?.status === "running") continue;
+      const last = detail.messages.filter(m => m.runId === runId && m.role === "agent" && m.block.type === "text").at(-1);
+      const reply = last && this.capsOf(b)?.edit ? this.store.get<Outbox>("SELECT * FROM plugin_im_outbox WHERE binding_id = ? AND (id = ? OR stream_of = ?) AND state != 'cancelled'",
+        b.id, `message:${b.id}:${last.id}`, last.id) : undefined;
+      if (reply) {
+        this.replace(b, reply.id, joined(JSON.parse(reply.content_json) as ImContent, JSON.parse(held.content_json) as ImContent), { final: true });
+        this.store.run("UPDATE plugin_im_outbox SET state = 'cancelled' WHERE id = ?", held.id);
+      } else this.store.run("UPDATE plugin_im_outbox SET state = 'queued' WHERE id = ?", held.id);
+    }
   }
 
   private pending(b: Binding, pending: PendingView | null) {
@@ -2156,7 +2198,7 @@ export class Im extends Service {
     };
     const { question } = pending;
     const options = question.options ?? [];
-    const actions = question.multiple ? [] : options.map(value => ({ label: value, token: issue(value) }));
+    const actions = question.multiple ? [] : choiceActions(options, issue);
     const elements: ImElement[] = [];
     if (question.multiple && options.length) elements.push({ type: "select", token: issue(null), multiple: true, options: options.map(o => ({ label: o, value: o })) });
     if (question.freeText || (pending.accepts === "text" && !options.length)) elements.push({ type: "input", token: issue(null), label: this.w("yourAnswer") });
@@ -2210,7 +2252,7 @@ export class Im extends Service {
     if (this.stopped || !this.store || !host || !this.home.db.has(projectId)) return;
     let item: ReturnType<ReviewHost["get"]>;
     try { item = host.get(projectId, itemId); } catch { return; }
-    if (item && move) this.onStatus(projectId, item, move);
+    if (item && move) this.onStatus(projectId, item, move, runId);
     if (!item?.evidence) return;
     const open = awaitingReview(item);
     const thread = runId ? this.home.agent.store.run(projectId, runId)?.threadId : undefined;
@@ -2243,9 +2285,12 @@ export class Im extends Service {
    * A ticket moved: each conversation of its project hears where to, unless it turned that off. A group with ticket
    * topics hears it in the ticket's topic, opened once the ticket is worked; the topic's title follows the ticket.
    */
-  private onStatus(projectId: string, item: { id: string; key: string; title: string }, move: StatusMove) {
+  private onStatus(projectId: string, item: { id: string; key: string; title: string }, move: StatusMove, runId: string | null) {
     const opens = move.to === "doing" || move.to === "verifying";
+    const thread = runId ? this.home.agent.store.run(projectId, runId)?.threadId : undefined;
     for (const b of this.store.bindings().filter(b => b.project_id === projectId && this.authorizedBinding(b) && this.notifies(b, "tickets") && !this.topicOf(b))) {
+      // The turn that moved it says so in its own reply here.
+      if (thread && thread === b.thread_id && !this.topical(b) && this.visible(b, runId)) continue;
       const to = this.newsTo(b, item.id, opens);
       if (to) this.enqueue(to, `item-status:${to.id}:${item.id}:${move.version}`, { text: `${item.key}: ${statusText(this.w, move.from)} → ${statusText(this.w, move.to)}`,
         elements: ticket(this.scope(to), item.key, item.title) }, { anchor: null });
@@ -2264,8 +2309,7 @@ export class Im extends Service {
       const text = !run.ok ? w("routineFailed", { name, error: run.error ?? w("unknownError") })
         : keys.length ? w("routineMade", { name, keys: keys.join(w("listSep")) })
         : w("routineRan", { name });
-      const open = run.threadId ? [{ type: "links" as const, links: [{ label: w("openInTomrade"), url: links.thread(projectId, run.threadId) }] }] : [];
-      this.enqueue(b, `routine:${b.id}:${run.id}`, { text, ...(open.length ? { elements: open } : {}) }, { anchor: null });
+      this.enqueue(b, `routine:${b.id}:${run.id}`, { text }, { anchor: null });
     }
   }
 
@@ -2508,11 +2552,11 @@ export class Im extends Service {
     }
   }
 
-  /** The IM person's paired name, for the verdict they give here. */
-  private who(b: Binding, actorId: string): string {
+  /** The IM person's paired name, for the verdict they give here; `withId` adds the platform's id, for the record. */
+  private who(b: Binding, actorId: string, withId = true): string {
     const tenant = (JSON.parse(b.address_json) as ImAddress).tenantId;
     const id = this.settings.identities.find(i => i.connectionId === b.connection_id && i.tenantId === tenant && i.actorId === actorId);
-    return id?.name ? `${id.name} (${actorId})` : actorId;
+    return id?.name ? (withId ? `${id.name} (${actorId})` : id.name) : actorId;
   }
 
   private paired(b: Binding, actorId: string): boolean {
@@ -2581,7 +2625,7 @@ export class Im extends Service {
   private progressText(threadId: string, head: string): string {
     const turn = this.turns.get(threadId);
     const retry = turn?.retry ? this.w("retrying", { attempt: turn.retry.attempt, of: turn.retry.max ? this.w("retryOf", { max: turn.retry.max }) : "" }) : "";
-    return [retry || head, toolLine(turn?.tools ?? [])].filter(Boolean).join("\n");
+    return [retry || head, toolLine(this.w, turn?.tools ?? [])].filter(Boolean).join("\n");
   }
 
   private finished(status: string): string {
@@ -2618,7 +2662,7 @@ export class Im extends Service {
         if (event.type === "delta" && streaming) { this.stream(b, event.runId, event.text); continue; }
         // Non-editing providers only receive stable output, so token streams don't spam chats.
         if (!caps.edit) continue;
-        const text = this.progressText(threadId, event.type === "progress" ? event.activity || this.w("working") : this.w("writingReply"));
+        const text = this.progressText(threadId, event.type === "progress" && event.activity ? activityText(this.w, event.activity) : event.type === "progress" ? this.w("working") : this.w("writingReply"));
         const runId = event.runId;
         // Throttled, but the latest state still shows once the interval is up.
         const show = () => {
@@ -2807,6 +2851,12 @@ export class Im extends Service {
     }
     throw new Error("File is not part of this connection's current delivery");
   }
+}
+
+/** A question's options as buttons; the one it recommends (its first, unless one says so) is the primary one. */
+function choiceActions(options: string[], issue: (value: string) => string): ImButton[] {
+  const recommended = Math.max(0, options.findIndex(o => /recommend|推荐|建议/i.test(o)));
+  return options.map((value, i) => ({ label: value, token: issue(value), ...(i === recommended ? { style: "primary" as const } : {}) }));
 }
 
 /** Commands that act at once, ahead of ordinary messages waiting for the turn. A demoted /steer carries its text in `input_json`. */
