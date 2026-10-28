@@ -397,6 +397,42 @@ describe("code link", () => {
     expect((await codeLink.scan(project.id)).changed).toBe(0);
   });
 
+  it("tells no one after a scan that found nothing new, and once after one that did", async () => {
+    const { codeLink, ctx, project, checkout, ticket } = await machine(codeRepo());
+    try {
+      const item = ticket("Heard only on news", "todo");
+      const branch = `tom-${item.keyNum}/news`;
+      commitOn(checkout, branch, "news.ts", `TOM-${item.keyNum}: news`);
+      git(["push", "-q", "origin", branch], checkout);
+      await codeLink.scan(project.id);
+      let heard = 0;
+      ctx.on("codeLink/changed", (projectId) => { if (projectId === project.id) heard += 1; });
+      await codeLink.scan(project.id);
+      await codeLink.scan(project.id);
+      expect(heard).toBe(0);
+      // An agent's hooks writing its session while the scan waits on git are not the scan's news.
+      const session = codeLink.store.createSession(project.id, { repoId: "repo", branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: "here" });
+      const scanning = codeLink.scan(project.id);
+      codeLink.store.patchSession(project.id, session.id, { activity: "Reading a file", lastEventAt: Date.now() });
+      await scanning;
+      expect(heard).toBe(0);
+
+      commitOn(checkout, branch, "news.ts", `TOM-${item.keyNum}: more news`);
+      git(["push", "-q", "origin", branch], checkout);
+      await codeLink.scan(project.id);
+      expect(heard).toBe(1);
+
+      // A branch naming no ticket here is news too: the status bar counts it.
+      commitOn(checkout, "tom-9999/elsewhere", "elsewhere.ts", "TOM-9999: elsewhere");
+      git(["push", "-q", "origin", "tom-9999/elsewhere"], checkout);
+      await codeLink.scan(project.id);
+      expect(heard).toBe(2);
+      expect(codeLink.unlinked(project.id)).toEqual([expect.objectContaining({ branch: "tom-9999/elsewhere", keyNum: 9999 })]);
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+
   it("writes nothing the project's folder carries when a scan finds nothing new", async () => {
     const { codeLink, ctx, project, checkout, ticket } = await machine(codeRepo());
     try {
