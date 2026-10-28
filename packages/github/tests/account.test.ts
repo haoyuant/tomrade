@@ -93,7 +93,9 @@ it("falls back to the GitHub CLI's token for issues only, after the sign-in and 
   expect(await github.token()).toBe("");
   expect(github.credential()).toBeNull();
   expect(await github.readToken()).toBe("gho_cli");
-  expect(await github.status()).toMatchObject({ connected: true, label: "@me", detail: expect.stringContaining("gh") });
+  // gh reads issues only: the account itself, which storage and publishing go by, stays unconnected
+  expect(await github.status()).toEqual({ connected: false });
+  expect(await github.issues.whoami()).toBe("me");
   expect(calls.at(-1)).toBe("Bearer gho_cli");
 
   // a personal token comes first

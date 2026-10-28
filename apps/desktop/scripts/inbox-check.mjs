@@ -25,6 +25,10 @@ const dir = path.dirname(fileURLToPath(import.meta.url));
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "tomrade-inbox-"));
 app.setPath("userData", work);
 quietStarters(work);
+// The issues source falls back to the GitHub CLI's sign-in: this machine's gh must not count as an account here.
+process.env.GH_CONFIG_DIR = path.join(work, "gh");
+delete process.env.GH_TOKEN;
+delete process.env.GITHUB_TOKEN;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const results = [];
 const check = (name, cond, detail) => {

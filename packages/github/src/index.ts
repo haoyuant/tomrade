@@ -249,16 +249,8 @@ export class GitHubAccount extends Service {
         else return { connected: false, detail: error instanceof GitHubError ? error.message : "Could not reach GitHub" };
       }
     }
-    if (!this.personalToken()) {
-      if (await this.gh()) {
-        try {
-          return { connected: true, label: `@${await this.issues.whoami()}`, detail: "via the GitHub CLI (gh)" };
-        } catch {
-          // a stale gh token is no connection
-        }
-      }
-      return { connected: false, ...(this.problem ? { detail: this.problem } : {}) };
-    }
+    // The account's own state: storage and publishing use token(), which never falls back to gh.
+    if (!this.personalToken()) return { connected: false, ...(this.problem ? { detail: this.problem } : {}) };
     try {
       return { connected: true, label: `@${await this.api.whoami()}` };
     } catch (error) {
