@@ -2104,6 +2104,11 @@ export const ru: PartialMessages = {
     missingOption: "(удалённый вариант)"
   },
   agentPanel: {
+    interruptedHint: "Tomrade закрылся, пока шла работа. «Продолжить» продолжит с того места, где она остановилась, в той же сессии.",
+    interruptedChildHint: "Tomrade закрылся, пока работал этот разговор. «Продолжить» продолжит его с того места, где он остановился.",
+    interruptedContinue: "Продолжить",
+    interruptedDismiss: "Пропустить",
+    interruptedDismissTitle: "Оставить как есть: он больше не ждёт вас",
     commandSuccess: "Выполнено",
     commandNoMatch: "Совпадений нет",
     commandConditionFalse: "Условие не выполнено",
