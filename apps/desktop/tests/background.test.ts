@@ -388,6 +388,40 @@ describe("the Dock and tray menus", () => {
     expect(menu[1].type).toBe("separator");
   });
 
+  it("cuts a long ask with an ellipsis and opens it instead of allowing what the row cannot show, and says what it allowed", async () => {
+    const answers: unknown[][] = [];
+    const codeLink = {
+      sessionPanel: () => ({ pane: "w1:p1", input: "ok", approval: true }),
+      sessionTail: async () => "Do you want to proceed?\n❯ 1. Yes\n  2. No, and tell Claude what to do differently",
+      sessionAnswer: async (...args: unknown[]) => (answers.push(args), "answered")
+    };
+    const { listeners, emitted } = start({ keepRunning: true, services: { codeLink } });
+    const long = "wants to run rm -rf build/cache && git push --force origin main --no-verify";
+    const entry = waits({ text: long });
+    listeners.get("attention/changed")!([entry]);
+    await flush();
+    let menu = rows(trays.menu);
+    expect(menu[0].label).toBe(`◆ AL-1 · Claude Code: ${long.slice(0, 59)}…`);
+    expect(menu[1].label?.trim()).toBe("Open to read it all");
+    menu[1].click!();
+    await flush();
+    expect(answers).toEqual([]);
+    expect(emitted).toEqual([["attention/open", entry]]);
+    // clipped before it reached the tray: not whole either
+    listeners.get("attention/changed")!([waits({ text: "wants to run git push…" })]);
+    await flush();
+    expect(rows(trays.menu)[1].label?.trim()).toBe("Open to read it all");
+    // whole: allowed from here, and a notice says what was
+    listeners.get("attention/changed")!([waits({ text: "wants to run git push" })]);
+    await flush();
+    menu = rows(trays.menu);
+    const shown = notices.shown;
+    menu[1].click!();
+    await flush();
+    expect(answers).toEqual([["p", "s", "allow"]]);
+    expect(notices.shown).toBe(shown + 1);
+  });
+
   it("allows the assistant's permission by its first option, named as it is", async () => {
     const sent: unknown[][] = [];
     const agent = {

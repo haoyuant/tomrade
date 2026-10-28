@@ -525,11 +525,11 @@ export class GitScan {
   }
 
   /** What GitHub says about each unsettled pull request of a repository's current deliveries, asked once per pull request. */
-  private async askPulls(projectId: string, repo: Repo, cwd: string | null): Promise<{ link: CodeLinkView; item: Item; pull: ForgePull }[]> {
+  private async askPulls(projectId: string, repo: Repo, cwd: string | null, itemId?: string): Promise<{ link: CodeLinkView; item: Item; pull: ForgePull }[]> {
     const asked = new Map<string, Promise<ForgePull | null>>();
     const out: { link: CodeLinkView; item: Item; pull: ForgePull }[] = [];
     for (const link of this.store.linksForRepo(projectId, repo.id)) {
-      if (link.mergedSha || link.prState === "closed" || (link.prNumber === null && !link.prUrl)) continue;
+      if ((itemId && link.itemId !== itemId) || link.mergedSha || link.prState === "closed" || (link.prNumber === null && !link.prUrl)) continue;
       const item = this.ctx.items.get(projectId, link.itemId);
       if (!item || link.delivery !== this.store.activeDelivery(projectId, item.id)?.sequence) continue;
       const ref = await githubPull(link.prUrl, link.prNumber, repo.remote);
@@ -546,9 +546,9 @@ export class GitScan {
    * A repository with no checkout here: GitHub alone settles its pull requests. Without the
    * default branch to look in, a merge counts only when GitHub says it went into that branch.
    */
-  private async settlePulls(projectId: string, repo: Repo): Promise<{ changed: number; proposals: number }> {
+  private async settlePulls(projectId: string, repo: Repo, itemId?: string): Promise<{ changed: number; proposals: number; touched: number }> {
     const touched = new Set<string>();
-    for (const { link, item, pull } of await this.askPulls(projectId, repo, null)) {
+    for (const { link, item, pull } of await this.askPulls(projectId, repo, null, itemId)) {
       if (pull.merged && pull.mergeSha && pull.base === repo.defaultBranch) this.store.patchLink(projectId, link.id, { mergedSha: pull.mergeSha, prState: "merged" });
       else if (!pull.merged && pull.state === "closed") this.store.patchLink(projectId, link.id, { prState: "closed" });
       else continue;
@@ -564,7 +564,22 @@ export class GitScan {
       changed += r.changed;
       proposals += r.proposals;
     }
-    return { changed, proposals };
+    return { changed, proposals, touched: touched.size };
+  }
+
+  /**
+   * What GitHub says now of one ticket's open pull requests, with no pass over git: a claim asks it the moment the
+   * agent merged, rather than wait out a fetch and every repository's scan. The timed scan still follows.
+   */
+  async settleTicket(projectId: string, itemId: string): Promise<void> {
+    const open = new Set(this.store.links(projectId, itemId).filter((l) => !l.mergedSha && l.prState !== "closed" && (l.prNumber !== null || !!l.prUrl)).map((l) => l.repoId));
+    let touched = 0;
+    for (const repo of this.ctx.repos.list(projectId)) {
+      if (!open.has(repo.id)) continue;
+      touched += (await this.settlePulls(projectId, repo, itemId)).touched;
+      this.releaseMerged(projectId, repo.id);
+    }
+    if (touched) this.notify(projectId);
   }
 
   /** A merge the agent was refused is over once someone merged it. */

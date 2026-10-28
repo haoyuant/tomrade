@@ -2179,6 +2179,7 @@ export const es: PartialMessages = {
     archiveThread: "Archivar conversación",
     deleteThread: "Eliminar conversación",
     deleteThreadConfirm: "¿Eliminar esta conversación permanentemente?",
+    deleteThreadEndsSession: "¿Eliminar esta conversación permanentemente? Su sesión de terminal también terminará.",
     collapsePanel: "Contraer panel — [[cmd:assistant]]",
     collapseAssistantAria: "Contraer el panel del asistente",
     introMessage: "Puedo leer este tablero y escribir en él. Cada cambio que hago queda atribuido, agrupado por ejecución y se puede revertir con un clic.",

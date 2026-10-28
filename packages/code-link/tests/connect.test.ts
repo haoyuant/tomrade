@@ -1451,7 +1451,14 @@ describe("outside clients, told apart by their connection", () => {
     git(["reset", "-q", "--hard", "HEAD~1"], checkout);
     const squash = git(["rev-parse", "origin/main"], checkout);
     codeLink.pulls = async () => ({ merged: true, state: "closed", mergeSha: squash, base: "main" });
+    // GitHub alone answers: no fetch and no pass over every repository while the agent waits.
+    const scans = (codeLink as unknown as { scans: { scan(projectId: string): Promise<unknown> } }).scans;
+    const scan = scans.scan.bind(scans);
+    let passes = 0;
+    scans.scan = (projectId) => { passes += 1; return scan(projectId); };
     const claimed = (await ctx.tools.execute("claim_ticket", { key: next.key }, a)) as { key: string };
+    expect(passes).toBe(0);
+    scans.scan = scan;
     expect(claimed.key).toBe(next.key);
     expect(items.get(project.id, first.id)!.status).toBe("done");
     expect(items.get(project.id, next.id)!.status).toBe("doing");

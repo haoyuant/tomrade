@@ -692,7 +692,9 @@ export function AgentPanel({
     archiveThread.mutate(id, { onSuccess: () => { if (id === threadId) clearThread(); } });
   };
   const deleteThreadById = (id: string) => {
-    if ((id === threadId && busy) || !window.confirm(t("agentPanel.deleteThreadConfirm"))) return;
+    // A conversation still running in a terminal takes its session along (TOM-720): the question says so.
+    const inTerminal = recentSessions.data?.some((s) => s.threadId === id && s.mode === "terminal" && s.state !== "ended" && s.state !== "lost");
+    if ((id === threadId && busy) || !window.confirm(t(inTerminal ? "agentPanel.deleteThreadEndsSession" : "agentPanel.deleteThreadConfirm"))) return;
     deleteThread.mutate(id, { onSuccess: () => { if (id === threadId) clearThread(); } });
   };
   // Answered from a card: the panel stays where it is and says so; the open one goes on as the setting says.
@@ -720,7 +722,7 @@ export function AgentPanel({
   }, []);
   const archiveBarThread = useCallback((id: string) => latestBar.current.archive(id), []);
   const deleteBarThread = useCallback((id: string) => latestBar.current.remove(id), []);
-  const answerBarRow = useCallback((row: BarRow, reply: CardAnswer) => void latestBar.current.answer(row, reply), []);
+  const answerBarRow = useCallback((row: BarRow, reply: CardAnswer) => latestBar.current.answer(row, reply), []);
   // What the waiting conversations ask, read only while their cards show and again for each new wait.
   const threadWaits = barRows.filter((r) => r.status === "wait" && r.threadId).map((r) => `${r.threadId}:${r.at}`).join("|");
   const pendingsQ = useQuery({ queryKey: keys.agent.pendings(projectId, threadWaits), queryFn: () => invoke("agent.pendings", projectId), enabled: open && barMode === "cards" && !!threadWaits });
