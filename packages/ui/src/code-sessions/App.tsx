@@ -4,7 +4,7 @@ import { Icon, IconSprite } from "~/components/icons";
 import { ContextMenuActionItem, ContextMenuSub } from "~/components/ui/menu";
 import { useLocaleWords } from "~/lib/dicts";
 import { hits } from "~/lib/keybindings";
-import { onLook, onShownIn, onState, onTails, onToast, send, type Look } from "./bridge";
+import { answerSession, answerThreadAsk, onLook, onShownIn, onState, onTails, onToast, send, type Look } from "./bridge";
 import { Cell } from "./Cell";
 import { GuessContext, guessesByPane } from "./guess";
 import { arrowsLabel, keyLabel, windowKey, type WindowKey } from "./keys";
@@ -318,8 +318,8 @@ export function App() {
   };
   // An assistant conversation has no pane here: the app window shows it.
   const showThread = (t: ThreadRow) => send({ type: "showThread", threadId: t.id });
-  const answer = (s: SessionRow, which: "allow" | "deny") => send({ type: "answer", sessionId: s.id, which });
-  const answerThread = (t: ThreadRow, questionId: string, value: string) => send({ type: "answerThread", threadId: t.id, questionId, value });
+  const answer = (s: SessionRow, which: "allow" | "deny") => answerSession(s.id, which);
+  const answerThread = (t: ThreadRow, questionId: string, value: string) => answerThreadAsk(t.id, questionId, value);
   // The overview is drawn over the cells, so the keyboard leaves whatever terminal held it.
   const openOverview = () => {
     (document.activeElement as HTMLElement | null)?.blur();

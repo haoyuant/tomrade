@@ -2228,6 +2228,7 @@ export const zhHant: PartialMessages = {
     archiveThread: "封存對話",
     deleteThread: "刪除對話",
     deleteThreadConfirm: "永久刪除這個對話？",
+    deleteThreadEndsSession: "永久刪除這個對話？它的終端工作階段也會結束。",
     collapsePanel: "收合面板 — [[cmd:assistant]]",
     collapseAssistantAria: "收合助理面板",
     introMessage: "我可以讀取這個看板並對它寫入。我做出的每一次寫入都會標明來源、依執行分組，並且可以一鍵復原。",

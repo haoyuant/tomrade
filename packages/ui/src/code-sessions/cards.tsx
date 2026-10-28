@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { SessionRow, ThreadRow } from "@tomradex/code-sessions";
 import { outcomeLine } from "../lib/review";
 import { rangeLabel, spanLabel } from "../lib/sessionTime";
@@ -99,8 +100,15 @@ const CHOICES_SHOWN = 3;
  * an assistant question by one of its choices — or looked at first. In the overview, Allow and Deny, and a row with a
  * pane goes to its cell and a conversation to the app window.
  */
-export function RowActions({ row, big = false, onSee, onThread, onAnswer, onAnswerThread }: { row: HereRow; big?: boolean; onSee: (row: HereRow) => void; onThread: (thread: ThreadRow) => void; onAnswer: (session: SessionRow, which: "allow" | "deny") => void; onAnswerThread: (thread: ThreadRow, questionId: string, value: string) => void }) {
+export function RowActions({ row, big = false, onSee, onThread, onAnswer, onAnswerThread }: { row: HereRow; big?: boolean; onSee: (row: HereRow) => void; onThread: (thread: ThreadRow) => void; onAnswer: (session: SessionRow, which: "allow" | "deny") => Promise<void> | void; onAnswerThread: (thread: ThreadRow, questionId: string, value: string) => Promise<void> | void }) {
   const say = useSay();
+  // An answer on its way: no second press, which could answer whatever it asks next.
+  const [sending, setSending] = useState(false);
+  const pressOnce = (go: () => Promise<void> | void) => () => {
+    if (sending) return;
+    setSending(true);
+    void Promise.resolve(go()).finally(() => setSending(false));
+  };
   const s = row.session;
   const answerable = !!s && canAnswer(s);
   const wait = row.kind === "thread" ? row.thread.wait : null;
@@ -109,7 +117,7 @@ export function RowActions({ row, big = false, onSee, onThread, onAnswer, onAnsw
   const seeable = big && row.kind !== "thread" && !!(row.kind === "terminal" ? row.terminal.pane : s?.pane);
   const choiceButtons = row.kind === "thread" && questionId
     ? choices.map((choice, i) => (
-        <button key={choice} type="button" className={i === 0 ? "btn btn-primary btn-xs ask-choice" : "btn btn-secondary btn-xs ask-choice"} data-testid="cs-choice" onClick={() => onAnswerThread(row.thread, questionId, choice)}>
+        <button key={choice} type="button" className={i === 0 ? "btn btn-primary btn-xs ask-choice" : "btn btn-secondary btn-xs ask-choice"} data-testid="cs-choice" disabled={sending} onClick={pressOnce(() => onAnswerThread(row.thread, questionId, choice))}>
           {choice}
         </button>
       ))
@@ -120,11 +128,11 @@ export function RowActions({ row, big = false, onSee, onThread, onAnswer, onAnsw
       <span className="cs-row-actions" role="group" aria-label={say("askGroup")} data-testid="cs-row-actions" data-choices={choices.length ? "" : undefined}>
         {answerable &&
           (s.prompt === "allow" ? (
-            <button type="button" className="btn btn-primary btn-xs" data-testid="cs-allow" onClick={() => onAnswer(s, "allow")}>
+            <button type="button" className="btn btn-primary btn-xs" data-testid="cs-allow" disabled={sending} onClick={pressOnce(() => onAnswer(s, "allow"))}>
               {say("allow")}
             </button>
           ) : (
-            <button type="button" className="btn btn-secondary btn-xs" data-testid="cs-deny" onClick={() => onAnswer(s, "deny")}>
+            <button type="button" className="btn btn-secondary btn-xs" data-testid="cs-deny" disabled={sending} onClick={pressOnce(() => onAnswer(s, "deny"))}>
               {say("deny")}
             </button>
           ))}
@@ -141,11 +149,11 @@ export function RowActions({ row, big = false, onSee, onThread, onAnswer, onAnsw
       {answerable && (
         <>
           {s.prompt === "allow" && (
-            <button type="button" className="btn btn-primary btn-xs" data-testid="cs-allow" onClick={() => onAnswer(s, "allow")}>
+            <button type="button" className="btn btn-primary btn-xs" data-testid="cs-allow" disabled={sending} onClick={pressOnce(() => onAnswer(s, "allow"))}>
               {say("allow")}
             </button>
           )}
-          <button type="button" className="btn btn-secondary btn-xs" data-testid="cs-deny" onClick={() => onAnswer(s, "deny")}>
+          <button type="button" className="btn btn-secondary btn-xs" data-testid="cs-deny" disabled={sending} onClick={pressOnce(() => onAnswer(s, "deny"))}>
             {say("deny")}
           </button>
         </>
