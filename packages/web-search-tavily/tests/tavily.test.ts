@@ -35,7 +35,7 @@ const signal = () => new AbortController().signal;
 
 describe("the Tavily provider", () => {
   it("is unavailable without a key, naming where to add one, and takes TAVILY_API_KEY from the environment", () => {
-    expect(tavilyProvider({ settings: settings({ apiKey: "" }), env: {} }).unavailable()).toMatch(/Settings → Tavily/);
+    expect(tavilyProvider({ settings: settings({ apiKey: "" }), env: {} }).unavailable()).toMatch(/Settings → Web search/);
     expect(tavilyProvider({ settings: settings({ apiKey: " " }), env: { TAVILY_API_KEY: "tvly-env" } }).unavailable()).toBeNull();
   });
 
@@ -66,7 +66,7 @@ describe("the Tavily provider", () => {
   });
 
   it.each([
-    [401, { detail: { error: "Unauthorized: missing or invalid API key." } }, {}, /refused the API key — the user can check it in Settings → Tavily/],
+    [401, { detail: { error: "Unauthorized: missing or invalid API key." } }, {}, /refused the API key — the user can check it in Settings → Web search/],
     [429, { detail: { error: "slow down" } }, { "retry-after": "12" }, /rate-limiting this key; try again in 12 s/],
     [432, { detail: { error: "This request exceeds your plan's set usage limit." } }, {}, /credit limit: This request exceeds your plan's set usage limit/],
     [422, { detail: [{ loc: ["body", "max_results"], msg: "too big" }] }, {}, /Tavily answered 422: body.max_results: too big/]

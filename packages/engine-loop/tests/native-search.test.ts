@@ -103,7 +103,7 @@ describe("web search in the loop", () => {
     expect(cards[0].schema).toBe("finding");
     const card = cards[0].data as { tone: string; actions: { kind: string; pane?: string }[] };
     expect(card.tone).toBe("warn");
-    expect(card.actions).toEqual([expect.objectContaining({ kind: "settings" }), expect.objectContaining({ kind: "settings", pane: "plugins" })]);
+    expect(card.actions).toEqual([expect.objectContaining({ kind: "settings" }), expect.objectContaining({ kind: "settings", pane: "webSearch" })]);
     expect(card.actions[0].pane).toBeUndefined();
   });
 
