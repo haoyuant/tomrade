@@ -7,6 +7,7 @@ import { SessionBar, type BarMode } from "../src/components/workspace/agent-pane
 import { sessionBarRows, type BarRow } from "../src/lib/sessionBar";
 
 vi.mock("~/components/icons", () => ({ Icon: () => null }));
+vi.mock("~/components/ui/atoms", () => ({ FoldChevron: () => null }));
 vi.mock("~/components/ui/menu", () => ({ ContextMenu: ({ trigger }: { trigger: unknown }) => trigger, ContextMenuActionItem: () => null }));
 vi.mock("~/lib/attention", () => ({ ATTENTION_KEY: {} }));
 vi.mock("~/lib/agent", () => ({ findEngine: () => undefined }));
@@ -51,7 +52,8 @@ it("lets a terminal session the bar shows be ended from its card, while it waits
   expect(shown["session:runs"]).toContain('data-testid="sbar-end"');
   // one in another terminal app only leaves the bar, which the confirmation says; the button is the same
   expect(shown["session:idles"]).toContain('data-testid="sbar-end"');
-  expect(shown["session:ended"]).not.toContain('data-testid="sbar-end"');
+  // an ended one waits folded under "Just ended": no End on the bar for it
+  expect(shown["session:ended"] ?? "").not.toContain('data-testid="sbar-end"');
   // an assistant conversation is archived or deleted, not ended
   expect(shown["thread:t"]).not.toContain('data-testid="sbar-end"');
 });
