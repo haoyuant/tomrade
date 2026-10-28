@@ -29,6 +29,8 @@ const BACKFILL_TOPICS = 20;
 const PAIR_TRIES = 5;
 /** How long "Not here" keeps the bot from asking again in a group. */
 const ASK_SNOOZE_MS = 24 * 60 * 60 * 1000;
+/** How long a message waits on the engine saying whether it can run; past that, the turn tries anyway. */
+const UNREADY_CHECK_MS = 10_000;
 
 export interface ImConnectionView {
   id: string; adapterId: string; label?: string; state: ImConnectionState | "unconfigured";
@@ -197,6 +199,10 @@ export class Im extends Service {
   private readonly listed = new Map<string, string[]>();
   /** What each running thread last said it was doing, for `/status`. */
   private readonly activity = new Map<string, string>();
+  /** Per running thread: when its turn last showed anything, whether it showed anything at all, and whether the chat was told it went quiet. */
+  private readonly quiet = new Map<string, { runId: string; engine: string; at: number; heard: boolean; told: boolean }>();
+  /** What the turn ahead was doing when a queued message was first acknowledged, so its receipt does not change with every tool call. */
+  private readonly ahead = new Map<string, string>();
   /** Per running thread: the tools called and the model retry in progress, for its progress message. */
   private readonly turns = new Map<string, { tools: { tool: string; ok: boolean }[]; retry: { attempt: number; max?: number } | null }>();
   /** The reply being streamed per binding and run; the text is what the Agent has written so far. */
@@ -620,6 +626,7 @@ export class Im extends Service {
       this.ensureBindings();
       this.backfillTopics();
     }
+    this.stalls();
     const dirty = new Set(this.dirty);
     this.dirty.clear();
     // Four times a second, so only the conversations something happened in: a message waiting, a run moving, the sweep.
@@ -1109,11 +1116,14 @@ export class Im extends Service {
       }) ?? (!busy ? rows[0] : undefined);
       if (busy) {
         const queue = this.waiting(rows).filter(r => r !== row);
+        const stalled = !!this.quiet.get(b.thread_id)?.told;
         for (const [i, q] of queue.entries()) {
-          this.receipt(b, q, this.w("queued", { n: i + 1 }),
+          if (!this.ahead.has(q.id)) this.ahead.set(q.id, this.activity.get(b.thread_id) ?? this.w("working"));
+          this.receipt(b, q, `${this.w("queued", { n: i + 1 })}\n${stalled ? this.w("aheadStalled") : this.w("aheadDoing", { doing: this.ahead.get(q.id)! })}`,
             anchorOf(JSON.parse(q.event_json) as ImInbound));
         }
       }
+      for (const id of this.ahead.keys()) if (!rows.some(r => r.id === id)) this.ahead.delete(id);
       if (!row) return;
       handling = row;
       const event = JSON.parse(row.event_json) as ImInbound;
@@ -1229,6 +1239,14 @@ export class Im extends Service {
       }
       // A desktop turn may have started while attachment bytes were being downloaded.
       if (input.kind === "text" && this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id)) return;
+      // An engine that cannot start would hold this turn, and every message after it, with nothing said.
+      const unready = this.home.agent.activeRuns().some(r => r.thread.id === b.thread_id) ? null : await this.unready(b);
+      if (unready) {
+        this.store.run("UPDATE plugin_im_inbox SET state = 'failed', error = ? WHERE id = ?", unready, row.id);
+        this.enqueue(b, `unready:${row.id}`, { text: unready }, reply);
+        if (event.kind === "message") this.react(b, event.messageId, "failed");
+        return;
+      }
       // Identity is provenance, never a forged human author or a policy bypass.
       const { runId } = this.home.agent.send(b.project_id, b.thread_id, input, { requestId: `im:${row.id}`, source: {
         connection: b.connection_id, tenant: event.address.tenantId, conversation: event.address.conversationId,
@@ -1738,6 +1756,20 @@ export class Im extends Service {
   }
 
   /** Engines that can run headless here, as the Start dialog offers them. */
+  /** Why the conversation's engine cannot take a turn now, with what to do, or null when it can (or nobody can tell). */
+  private async unready(b: Binding): Promise<string | null> {
+    const id = this.home.agent.store.thread(b.project_id, b.thread_id)?.engine;
+    const engine = id ? this.home.agent.engineOf(id) : undefined;
+    if (!engine) return null;
+    let state: Awaited<ReturnType<typeof engine.available>>;
+    try { state = await deadline(engine.available(), UNREADY_CHECK_MS); } catch { return null; }
+    if (state.ok) return null;
+    const reason = state.reason ?? this.w("executionFailed");
+    const other = (await this.headless()).find(v => v.id !== engine.id);
+    return [state.need === "sign-in" ? this.w("engineSignIn", { engine: engine.title, reason }) : this.w("engineUnavailable", { engine: engine.title, reason }),
+      other ? this.w("engineSwitchTo", { id: other.id }) : this.w("engineFixLater")].join("\n");
+  }
+
   private async headless() { return (await this.home.agent.engineViews()).filter(v => v.ok && !v.terminalOnly); }
 
   /** The methods a General ticket can be delivered with, as the Start dialog lists them. */
@@ -2506,6 +2538,7 @@ export class Im extends Service {
   private onAgentEvent(threadId: string, event: AgentEvent) {
     if (this.stopped) return;
     if (event.type === "done") queueMicrotask(() => this.turns.delete(threadId));
+    this.heard(threadId, event);
     if (event.type !== "delta" && event.type !== "progress") this.dirty.add(threadId);
     const runId = event.type === "progress" || event.type === "delta" ? event.runId : event.type === "done" ? event.run.id : event.type === "message" ? event.message.runId : null;
     for (const b of this.store.bindings().filter(b => b.thread_id === threadId && this.authorizedBinding(b))) {
@@ -2564,6 +2597,49 @@ export class Im extends Service {
         if (e?.kind === "message" && (event.run.status === "error" || event.run.status === "done")) this.react(b, e.messageId, event.run.status === "error" ? "failed" : "done");
       }
     }
+  }
+
+  /** Keeps when each running turn last showed anything, for `stalls`. */
+  private heard(threadId: string, event: AgentEvent) {
+    if (event.type === "done") { this.quiet.delete(threadId); return; }
+    if (event.type === "run") {
+      if (event.run.status === "running" && this.quiet.get(threadId)?.runId !== event.run.id) this.quiet.set(threadId, { runId: event.run.id, engine: event.run.engine, at: Date.now(), heard: false, told: false });
+      return;
+    }
+    const runId = event.type === "progress" || event.type === "delta" ? event.runId : event.type === "message" && event.message.role !== "user" ? event.message.runId : null;
+    const q = this.quiet.get(threadId);
+    if (!q || q.runId !== runId) return;
+    q.at = Date.now();
+    q.heard = true;
+  }
+
+  /**
+   * A turn that has shown nothing for `stallMs` says so once in each chat that shows it: what it waits on and
+   * that /stop ends it. An engine that never answers (not signed in, stuck) would otherwise hold every message after it.
+   */
+  private stalls() {
+    for (const [threadId, q] of this.quiet) {
+      if (q.told || Date.now() - q.at < this.config.stallMs) continue;
+      q.told = true;
+      const bound = this.store.bindings().filter(b => b.thread_id === threadId && this.authorizedBinding(b) && this.home.db.has(b.project_id) && this.visible(b, q.runId));
+      if (!bound.length) continue;
+      void this.sayStalled(bound, threadId, q).catch(() => {});
+    }
+  }
+
+  private async sayStalled(bound: Binding[], threadId: string, q: { runId: string; engine: string; at: number; heard: boolean }) {
+    // A question or an approval waits on the person, not on the engine.
+    if (this.home.agent.thread(bound[0].project_id, threadId).pending) return;
+    const engine = this.home.agent.engineOf(q.engine);
+    const title = engine?.title ?? q.engine;
+    const doing = this.activity.get(threadId);
+    const tried = this.home.agent.triedWith(q.engine);
+    const other = q.heard ? undefined : (await this.headless()).find(v => v.id !== q.engine);
+    const lines = [q.heard ? this.w("stalledDoing", { ago: this.ago(q.at), doing: doing ?? this.w("working") }) : this.w("stalledStart", { engine: title, ago: this.ago(q.at) })];
+    if (!q.heard && tried && !tried.ok && tried.error) lines.push(this.w("stalledTried", { error: tried.error }));
+    lines.push(other ? this.w("stalledSwitch", { id: other.id }) : this.w("stalledStop"));
+    if (!this.home.agent.activeRuns().some(r => r.run.id === q.runId)) return;
+    for (const b of bound) this.enqueue(b, `stalled:${b.id}:${q.runId}`, { text: lines.join("\n") });
   }
 
   /** Grows the reply's snapshot, at most once per `progressMs`; the final message always follows. */
