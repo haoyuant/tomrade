@@ -314,7 +314,7 @@ export const CodeLinkConfig = z.preprocess(
     /** The cadence while no window of the app can be seen; a window showing again scans at once if a pass is due. */
     hiddenScanMs: z.number().int().min(0).default(600_000),
     /** How often sessions are checked against the clock and their process; 0 turns it off. */
-    sweepMs: z.number().int().min(0).default(30_000),
+    sweepMs: z.number().int().min(0).default(5_000),
     /** Fetch from the remote before reading. Off, only what this machine already has is read. */
     fetch: z.boolean().default(true),
     /** How long a Start may take before the person is told it failed, rather than left waiting on a stuck step. */
@@ -843,7 +843,7 @@ export class CodeLink extends Service implements CodeLinkReader {
       this.seen = seen;
       if (seen && this.config.scanMs > 0 && Date.now() - this.openScannedAt >= this.config.scanMs) void this.scanOpen();
     });
-    // Sessions are judged more often than repositories are scanned: a process that is gone should read as gone within the minute.
+    // Sessions are judged more often than repositories are scanned: a process that is gone should read as gone within seconds.
     const sweeper =
       this.config.sweepMs > 0
         ? setInterval(() => {

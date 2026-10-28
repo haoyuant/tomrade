@@ -16,6 +16,7 @@ import { BRIDGED_BY_DSH, cliHookCall, cliHookEvent, hookReply, mergeAnswers, typ
 import { hookCommand } from "./connect.js";
 import { GEMINI_AGENT, geminiHookPayload, geminiHooks } from "./gemini-hooks.js";
 import { classifyRemoteFailure, remoteFailureDetail } from "./remote.js";
+import { EXITED_FILE } from "./terminal.js";
 import { CODE_WORDS } from "./words.js";
 import type { CodeLinkStore, SessionAsk, SessionBlock, SessionState, SessionView } from "./store.js";
 import { permissionAsk, questionAsk, sameAsk } from "./ask.js";
@@ -408,6 +409,7 @@ export class Sessions {
     fs.writeFileSync(dshReporter, dshReport(eventUrl));
     fs.writeFileSync(promptFile, prompt);
     fs.rmSync(path.join(dir, "pid"), { force: true });
+    fs.rmSync(path.join(dir, EXITED_FILE), { force: true });
     return { dir, mcpConfig, settings, piExtension: piFile, geminiHome, opencodeConfig, dshPatch, dshReporter, prompt: promptFile, mcpUrl, eventUrl, token };
   }
 
@@ -844,8 +846,9 @@ export class Sessions {
     if (state === "ended" && !quiet) this.options.onEnd?.(this.store.session(projectId, sessionId)!);
   }
 
-  /** The process Tomrade launched for the session, if its script left a pid and it still answers. */
+  /** The process Tomrade launched for the session: gone once its script said it ended, else whether the pid it left still answers. */
   private processAlive(sessionId: string): boolean | null {
+    if (fs.existsSync(path.join(this.options.dirOf(sessionId), EXITED_FILE))) return false;
     const file = path.join(this.options.dirOf(sessionId), "pid");
     let pid: number;
     try {
@@ -863,6 +866,29 @@ export class Sessions {
   }
 
   /**
+   * A terminal session whose launched process exited ends now rather than at the next sweep: its agent left the pane
+   * for the shell (at a folder's trust, say) with no hook to tell. True when it ended. The pane stays; its closing is
+   * herdr's to tell (TOM-765).
+   */
+  endIfExited(projectId: string, sessionId: string): boolean {
+    const s = this.store.session(projectId, sessionId);
+    if (!s || s.mode !== "terminal" || s.state === "ended" || s.state === "lost" || this.processAlive(s.id) !== false) return false;
+    const ended = this.closeExited(projectId, s, Date.now());
+    this.options.onChange(projectId, "moved");
+    this.options.onEnded?.(ended);
+    this.options.onEnd?.(ended);
+    return true;
+  }
+
+  private closeExited(projectId: string, s: SessionView, now: number): SessionView {
+    this.store.patchSession(projectId, s.id, { state: "ended", endedAt: now, activity: null, ask: null });
+    this.said(s, "ended: the process Tomrade launched exited");
+    this.release(s.id);
+    this.options.onMoment?.(this.store.session(projectId, s.id)!, { kind: "ended", text: "process exited" });
+    return this.store.session(projectId, s.id)!;
+  }
+
+  /**
    * The clock's verdict on quiet sessions — idle after a while, over after a
    * long while — and the process's: a terminal Tomrade launched whose pid is
    * gone ended, however it ended, hook or no hook.
@@ -873,11 +899,7 @@ export class Sessions {
     for (const s of this.store.sessions(projectId, { live: true })) {
       if (s.state === "lost") continue;
       if (s.mode === "terminal" && this.processAlive(s.id) === false) {
-        this.store.patchSession(projectId, s.id, { state: "ended", endedAt: now, activity: null });
-        this.said(s, "ended: the process Tomrade launched exited");
-        this.release(s.id);
-        this.options.onMoment?.(this.store.session(projectId, s.id)!, { kind: "ended", text: "process exited" });
-        ended.push(this.store.session(projectId, s.id)!);
+        ended.push(this.closeExited(projectId, s, now));
         changed = true;
         continue;
       }
