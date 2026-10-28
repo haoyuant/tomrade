@@ -242,6 +242,13 @@ it("ends a terminal session and cuts its link when its conversation is deleted, 
     expect(agent.deleteThread(project.id, thread.id)).toBe(true);
     expect(codeLink.store.session(project.id, sessionId)).toMatchObject({ threadId: null, state: "ended" });
   } finally {
+    // a session an older version left behind: its conversation is gone, the link stays until the project opens
+    const old = agent.newThread(project.id, "fake-cli", null, { title: "Old chat" });
+    const left = codeLink.store.createSession(project.id, { repoId: "", branch: "", itemIds: [], mode: "terminal", agent: "fake-cli", threadId: old.id, device: "d" });
+    agent.store.deleteThread(project.id, old.id);
+    expect(codeLink.store.session(project.id, left.id)).toMatchObject({ threadId: old.id });
+    ctx.emit("db/opened", project.id);
+    expect(codeLink.store.session(project.id, left.id)).toMatchObject({ threadId: null, state: "ended" });
     fake.close();
     await ctx.fiber.dispose();
   }
