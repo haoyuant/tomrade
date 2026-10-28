@@ -25,7 +25,8 @@ import { ImGroupShare, QueuedRow, WorkingLine, type Queued } from "./agent-panel
 import { GUIDE, GuideList, slashCommand, SlashMenu, STARTERS, type SlashCommand, type SlashContext, type Starter } from "./agent-panel/commands";
 import { Composer } from "./agent-panel/Composer";
 import { STORE } from "./agent-panel/store";
-import { Review, type ReviewFocus } from "./agent-panel/Review";
+import { Review } from "~/components/onDemand";
+import type { ReviewFocus } from "./agent-panel/Review";
 import { SessionBar, type BarMode, type CardAnswer } from "./agent-panel/SessionBar";
 import { HandoffLine } from "./agent-panel/HandoffLine";
 import { TerminalSession } from "./agent-panel/TerminalSession";

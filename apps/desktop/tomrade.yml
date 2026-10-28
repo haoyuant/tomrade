@@ -176,6 +176,9 @@ plugins:
   # else is read back in. Git is driven only in folders Tomrade made itself.
   - id: storage
     name: "@tomradex/storage"
+    config:
+      # The boot reconcile waits for the first window to load, at most this long.
+      bootWaitMs: 3000
   # Announcements Tomrade publishes to every install, read through the account
   # client above whether or not anyone is signed in; each one pops up once.
   # Anonymous feature usage: how often each feature is used and for how long,

@@ -49,15 +49,20 @@ export function mergeShellEnv(current: Env, shell: Env): Env {
 }
 
 /**
+ * Starts reading the login shell's environment at once; the returned call takes it into this process when the start
+ * is ready to (half a second of the shell's startup files then runs beside the splash and the keyring).
  * Started from a terminal, the app already has the person's environment.
- * Resolves to what went wrong, for the log once there is one.
+ * Adopting resolves to what went wrong, for the log once there is one.
  */
-export async function adoptShellEnv(): Promise<string | null> {
-  if (process.platform === "win32" || process.env.TERM) return null;
+export function readShellEnvSoon(): () => Promise<string | null> {
+  if (process.platform === "win32" || process.env.TERM) return () => Promise.resolve(null);
   const shell = process.env.SHELL || os.userInfo().shell || "/bin/sh";
-  const read = await readShellEnv(shell, process.env);
-  if (!read.env) return `the login shell ${shell} ${read.problem}: what its startup files export is missing, and commands they put on PATH (claude, codex, gh…) may not be found`;
-  const merged = mergeShellEnv(process.env, read.env);
-  for (const [key, value] of Object.entries(merged)) if (value !== undefined) process.env[key] = value;
-  return null;
+  const reading = readShellEnv(shell, { ...process.env });
+  return async () => {
+    const read = await reading;
+    if (!read.env) return `the login shell ${shell} ${read.problem}: what its startup files export is missing, and commands they put on PATH (claude, codex, gh…) may not be found`;
+    const merged = mergeShellEnv(process.env, read.env);
+    for (const [key, value] of Object.entries(merged)) if (value !== undefined) process.env[key] = value;
+    return null;
+  };
 }

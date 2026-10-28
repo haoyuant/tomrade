@@ -3,7 +3,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import type { Item, ItemStatus } from "@tomradex/domain";
 import { Icon } from "~/components/icons";
 import { DeleteIssueDialog } from "~/components/dialogs/DeleteIssueDialog";
-import { SettingsDialog } from "~/components/dialogs/SettingsDialog";
+import { SettingsDialog } from "~/components/onDemand";
 import { StatusBar } from "~/components/chrome/StatusBar";
 import { useScreenBinding, type ScreenBinding } from "~/components/chrome/ProjectShell";
 import { Eyebrow, Spacer } from "~/components/ui/atoms";

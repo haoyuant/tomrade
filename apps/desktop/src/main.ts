@@ -20,7 +20,7 @@ import { loginItem } from "./login-item.js";
 import { askForMainWindow, provideMainWindow } from "./main-window.js";
 import { nodeRuntime } from "./node-runtime.js";
 import { finishQuit, leaveOnSignal, leaving, prepareToQuit, quitApproved } from "./quit.js";
-import { adoptShellEnv } from "./shell-env.js";
+import { readShellEnvSoon } from "./shell-env.js";
 import { offerSafeStart, saySafeStart, showSplash, splashWaitsForKeyring, startFailed } from "./startup.js";
 import { beginStart, hasOwnPlugins, SAFE_FLAG, SAFE_REQUEST_FILE, STARTING_FILE, startFinished, takeSafeRequest } from "./safe-start.js";
 import { followSystemProxy } from "./system-proxy.js";
@@ -116,6 +116,8 @@ app.whenReady().then(async () => {
     })
   );
 
+  // Read now, taken in below: nothing before that point starts a command that needs it.
+  const adoptShellEnv = readShellEnvSoon();
   // Until the main window opens; a start at login has nobody waiting for one.
   if (mode === "window" && !argv.includes("--dump-config")) splash = await showSplash(appIconPath(appIcon));
   // Before anything reads a secret: a keyring that asks the person first would hold the start without a word.
@@ -159,7 +161,9 @@ app.whenReady().then(async () => {
         mcpPort
       },
       // A checkout is always 0.1.0, so only a release holds full-mode plugins to the Tomrade versions they name.
-      extensions: safe ? undefined : { root: pluginsRoot, trustedKeys: trustedKeys(), appVersion: app.isPackaged ? app.getVersion() : null }
+      extensions: safe ? undefined : { root: pluginsRoot, trustedKeys: trustedKeys(), appVersion: app.isPackaged ? app.getVersion() : null },
+      // Said below once the first window has loaded: work that would slow its first screen waits for it.
+      windowComing: mode === "window" && !argv.includes("--dump-config")
     });
   // A plugin with the app's whole context can stop a start before it gets anywhere; the next start notices.
   const dumping = argv.includes("--dump-config");
@@ -269,14 +273,18 @@ app.whenReady().then(async () => {
   const asked = launchAsk(argv);
   const terminalHere = mode === "window" && hasTerminalWindow(ctx);
   const opens = asked && (asked.window === "main" || terminalHere) ? { main: asked.window === "main", terminal: asked.window === "terminal" } : startWindows(openAtStart(ctx), terminalHere);
+  const finished = () => {
+    startFinished(startingFile);
+    ctx.emit("app/started");
+  };
   if (mode === "window") {
     const openFirst = () => {
       const win = openMain();
-      win.webContents.once("did-finish-load", () => startFinished(startingFile));
+      win.webContents.once("did-finish-load", finished);
       return win;
     };
-    void openStartWindows(ctx, { ...opens, projectId: asked?.window === "terminal" ? asked.projectId : null }, openFirst).then((main) => main || startFinished(startingFile));
-  } else startFinished(startingFile);
+    void openStartWindows(ctx, { ...opens, projectId: asked?.window === "terminal" ? asked.projectId : null }, openFirst).then((main) => main || finished());
+  } else finished();
   started = ctx;
   whenLastWindowCloses(() => {
     if (openAtStart(ctx) !== "main") app.quit();
