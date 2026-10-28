@@ -152,7 +152,7 @@ export function trayRunning(ctx: Context): { who: string; cell: number | null; t
   if (!codeLink) return [];
   const out: { who: string; cell: number | null; target: AttentionTarget }[] = [];
   for (const projectId of ctx.get("db")?.openIds() ?? []) {
-    const cells = ctx.bail("codeLink/cells", projectId) ?? [];
+    const cells = ctx.bail("codeLink/session-cells", projectId) ?? {};
     let sessions: ReturnType<typeof codeLink.sessionsOf> = [];
     try {
       sessions = codeLink.sessionsOf(projectId);
@@ -163,7 +163,7 @@ export function trayRunning(ctx: Context): { who: string; cell: number | null; t
       if (s.state !== "running") continue;
       const itemId = s.itemIds[0] ?? null;
       const who = (itemId ? ctx.get("items")?.get(projectId, itemId)?.key : null) ?? s.title ?? s.branch;
-      out.push({ who, cell: cells.find((c) => c.sessionId === s.id)?.n ?? null, target: { projectId, threadId: s.threadId, itemId, sessionId: s.id } });
+      out.push({ who, cell: cells[s.id] ?? null, target: { projectId, threadId: s.threadId, itemId, sessionId: s.id } });
     }
   }
   return out.slice(0, TRAY_ROWS);

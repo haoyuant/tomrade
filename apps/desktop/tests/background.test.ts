@@ -244,7 +244,7 @@ describe("the Dock and tray menus", () => {
     { projectId: "gone", cells: 1, usedAt: 10 },
     { projectId: "new", cells: 1, usedAt: 5 }
   ];
-  const start = (opts: { keepRunning?: boolean; terminal?: boolean; openAtStart?: string; services?: Record<string, unknown>; cells?: { sessionId: string; n: number }[]; windows?: typeof used } = {}) => {
+  const start = (opts: { keepRunning?: boolean; terminal?: boolean; openAtStart?: string; services?: Record<string, unknown>; cells?: Record<string, number>; windows?: typeof used } = {}) => {
     const file = path.join(dir, "background.json");
     writePrefs(file, { keepRunning: !!opts.keepRunning, noticed: true });
     const ran: unknown[][] = [];
@@ -268,7 +268,7 @@ describe("the Dock and tray menus", () => {
       get: (name: string) => services[name],
       on: (name: string, fn: (...args: unknown[]) => void) => void listeners.set(name, fn),
       emit: (...args: unknown[]) => void emitted.push(args),
-      bail: (name: string) => (name === "codeLink/cells" ? opts.cells : name === "codeLink/terminal-windows" ? (opts.windows ?? used) : undefined),
+      bail: (name: string) => (name === "codeLink/session-cells" ? opts.cells : name === "codeLink/terminal-windows" ? (opts.windows ?? used) : undefined),
       serial: async (...args: unknown[]) => void serial.push(args),
       ipc: { handle: () => {}, send: () => {} },
       effect: (fn: () => () => void) => void disposers.push(fn())
@@ -412,11 +412,21 @@ describe("the Dock and tray menus", () => {
       { id: "s3", state: "waiting", itemIds: [], threadId: null, title: null, branch: "other" }
     ];
     const services = { codeLink: { sessionsOf }, db: { openIds: () => ["p"] }, items: { get: (_p: string, id: string) => (id === "i1" ? { key: "TOM-634" } : null) } };
-    const { emitted } = start({ keepRunning: true, services, cells: [{ sessionId: "s1", n: 1 }] });
+    const { emitted } = start({ keepRunning: true, services, cells: { s1: 1 } });
     const menu = rows(trays.menu);
     expect(menu.slice(0, 3).map((r) => r.label ?? r.type)).toEqual(["● TOM-634 running · cell 1", "● spike running", "separator"]);
     menu[0].click!();
     expect(emitted).toEqual([["attention/open", { projectId: "p", threadId: null, itemId: "i1", sessionId: "s1" }]]);
+  });
+
+  it("writes the cell the panel writes: a session a cell's terminal claimed, and another on the same pane", () => {
+    const sessionsOf = () => [
+      { id: "claimed", state: "running", itemIds: [], threadId: null, title: null, branch: "tom-712/a" },
+      { id: "beside", state: "running", itemIds: [], threadId: null, title: null, branch: "tom-712/b" }
+    ];
+    const services = { codeLink: { sessionsOf }, db: { openIds: () => ["p"] }, items: { get: () => null } };
+    start({ keepRunning: true, services, cells: { term: 2, claimed: 2, beside: 2 } });
+    expect(rows(trays.menu).slice(0, 2).map((r) => r.label)).toEqual(["● tom-712/a running · cell 2", "● tom-712/b running · cell 2"]);
   });
 });
 

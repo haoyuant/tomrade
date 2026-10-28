@@ -207,6 +207,21 @@ it("opens a window per project, streams a session's pane into a cell, and lets g
   await say({ type: "resize", cell: "c1", cols: 90, rows: 20 });
   await say({ type: "scroll", cell: "c1", direction: "up", lines: 3 });
   expect(live.sent).toEqual([["input", "ls\r"], ["key", "ctrl+enter"], ["resize", 90, 20], ["scroll", { type: "scroll", cell: "c1", direction: "up", lines: 3 }]]);
+  // The first frame after a keystroke is its echo: it goes at once, and the frames after it are batched again.
+  const shown = () => win.posts.flatMap((p) => (p.type === "frame" ? [Buffer.from(p.bytes).toString()] : []));
+  live.frame("ls", { full: false });
+  expect(shown().at(-1)).toBe("ls");
+  live.frame("out", { full: false });
+  expect(shown().at(-1)).toBe("ls");
+  await batched();
+  expect(shown().at(-1)).toBe("out");
+  // Long after the keystroke a frame is no echo: it waits for its batch.
+  await say({ type: "input", cell: "c1", data: "x" });
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  live.frame("late", { full: false });
+  expect(shown().at(-1)).toBe("out");
+  await batched();
+  expect(shown().at(-1)).toBe("late");
   // The pane's place in its scrollback reaches the cell's scrollbar; dragging it moves the pane.
   // A frame still waiting goes before it: the window draws what was painted before what is said about it.
   live.frame("tail", { full: false });
@@ -739,7 +754,7 @@ it("keeps a terminal that finishes opening while herdr is asked for its panes, a
 
 it("shows a session code link asks for: the window opens or comes forward with it to reveal, only while herdr can show panes", async () => {
   const opened: { spec: Record<string, unknown> & { onMessage(m: unknown): void; onClose(): void }; states: WindowState[]; posts: WindowPost[]; focused: number }[] = [];
-  const sessions = [session({ id: "s1", herdrPane: "w1:p1" }), session({ id: "s2", herdrPane: "w1:p2" }), session({ id: "s3", mode: "headless" }), session({ id: "s4", state: "ended", endedAt: 5, title: "An earlier ticket" })];
+  const sessions = [session({ id: "s1", herdrPane: "w1:p1" }), session({ id: "s2", herdrPane: "w1:p2" }), session({ id: "s5", herdrPane: "w1:p1" }), session({ id: "s3", mode: "headless" }), session({ id: "s4", state: "ended", endedAt: 5, title: "An earlier ticket" })];
   let bridge: { state: string } = { state: "ready" };
   const herdrShown: string[] = [];
 
@@ -789,15 +804,15 @@ it("shows a session code link asks for: the window opens or comes forward with i
 
   expect(await w.ctx.serial("codeLink/terminal-window", w.project.id)).toBe(true);
   // Closed: no cells to name.
-  expect(w.ctx.bail("codeLink/cells", w.project.id)).toBeUndefined();
+  expect(w.ctx.bail("codeLink/session-cells", w.project.id)).toBeUndefined();
   // Closed: it opens, already asked to reveal the session.
   expect(await ask("s1")).toBe(true);
   expect(opened).toHaveLength(1);
-  // Open: the cells it shows, numbered in reading order, empty ones counted.
-  expect(w.ctx.bail("codeLink/cells", w.project.id)).toEqual([]);
+  // Open: the cells it shows, numbered in reading order, empty ones counted; a live session beside it on its pane shares its cell.
+  expect(w.ctx.bail("codeLink/session-cells", w.project.id)).toEqual({});
   const leaf = (id: string, sessionId: string | null) => ({ type: "leaf", id, sessionId });
   opened[0]!.spec.onMessage({ type: "layout", layout: { type: "split", id: "r", direction: "row", ratio: 0.5, a: leaf("c1", null), b: leaf("c2", "s1") } });
-  expect(w.ctx.bail("codeLink/cells", w.project.id)).toEqual([{ sessionId: "s1", n: 2 }]);
+  expect(w.ctx.bail("codeLink/session-cells", w.project.id)).toEqual({ s1: 2, s5: 2 });
   const first = opened[0]!.states[0]!.reveal;
   expect(first).toMatchObject({ sessionId: "s1" });
   // Open: it comes forward with a new ask, and every later state keeps it until the next.
