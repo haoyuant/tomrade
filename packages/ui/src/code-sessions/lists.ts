@@ -1,5 +1,6 @@
 import type { SessionRow, TerminalRow, ThreadRow } from "@tomradex/code-sessions";
 import { isApprovalAsk } from "../lib/terminalSession";
+import { IDLE_SHOWN, THREAD_DONE_AFTER_MS, threadFinished } from "../lib/sessionBar";
 
 /** A live session this window cannot show: it runs in another terminal app here, on another computer, or in the assistant panel. */
 export const away = (s: SessionRow): boolean => s.endedAt === null && s.where !== "herdr";
@@ -98,6 +99,31 @@ export function sidebarRows(sessions: SessionRow[], terminals: TerminalRow[], th
   }
   const done = sessions.filter((s) => s.endedAt !== null && s.continuedIn === null).map((s): HereRow => ({ kind: "session", id: s.id, session: s }));
   return { here: [...here, ...done.sort(order)], away: live.filter((s) => away(s) && !onThread(s)) };
+}
+
+/**
+ * What is still going, out of the session bar: the bar and the overview show this unless asked for everything. It reads
+ * as the assistant panel's bar does: an ended session is History's; a conversation idle with its ticket done, or untouched
+ * for `THREAD_DONE_AFTER_MS`, is finished; idle ones past the newest `IDLE_SHOWN` wait in the full list. A live session
+ * idle that long goes the same way, for one nothing ends (a terminal outside with no pane, whose process Tomrade did not
+ * start). What waits or runs, a terminal open here, and whatever a cell shows always stay.
+ */
+export function activeRows(rows: { here: HereRow[]; away: SessionRow[] }, shown: ReadonlySet<string>, now: number): { here: HereRow[]; away: SessionRow[] } {
+  const inCell = (r: HereRow) => shown.has(r.id) || (!!r.session && shown.has(r.session.id));
+  const quiet = (at: number) => now - at > THREAD_DONE_AFTER_MS;
+  const stale = (s: SessionRow) => sessionStatus(s) === "idle" && quiet(s.lastEventAt ?? s.startedAt);
+  let idle = 0;
+  const keep = new Set<string>();
+  for (const r of rows.here) {
+    const status = statusOf(r);
+    if (inCell(r) || status === "wait" || status === "run" || (r.kind === "terminal" && status !== "done")) keep.add(r.id);
+    else if (status === "done") continue;
+    else if (r.kind === "thread" ? threadFinished({ idle: true, live: !!r.session && live(r.session), ticketDone: r.thread.ticketDone, movedAt: r.thread.updatedAt }, now) : !!r.session && stale(r.session)) continue;
+    else if (++idle <= IDLE_SHOWN) keep.add(r.id);
+  }
+  // A conversation kept brings the one it writes code for, so it never sits under nothing.
+  for (const r of rows.here) if (keep.has(r.id) && r.kind === "thread" && r.thread.parentId) keep.add(r.thread.parentId);
+  return { here: rows.here.filter((r) => keep.has(r.id)), away: rows.away.filter((s) => shown.has(s.id) || !stale(s)) };
 }
 
 /** The list cut where the pane changes: rows on one pane make one bundle, every other row one of its own. */

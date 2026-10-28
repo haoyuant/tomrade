@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SessionRow, TerminalRow, ThreadRow } from "@tomradex/code-sessions";
-import { away, bundles, canAnswer, isNewRow, NEW_MS, sessionName, sidebarRows, statusOf } from "../src/code-sessions/lists";
+import { activeRows, away, bundles, canAnswer, isNewRow, NEW_MS, sessionName, sidebarRows, statusOf } from "../src/code-sessions/lists";
+import { IDLE_SHOWN, THREAD_DONE_AFTER_MS } from "../src/lib/sessionBar";
 
 const row = (over: Partial<SessionRow> & { id: string }): SessionRow => ({
   itemId: null,
@@ -33,7 +34,7 @@ const row = (over: Partial<SessionRow> & { id: string }): SessionRow => ({
   ...over
 });
 
-const thread = (id: string, over: Partial<ThreadRow> = {}): ThreadRow => ({ id, title: `thread ${id}`, engine: "loop", engineName: "Tomrade assistant", itemId: null, key: null, ticketTitle: null, running: false, wait: null, createdAt: 1, updatedAt: 1, ...over });
+const thread = (id: string, over: Partial<ThreadRow> = {}): ThreadRow => ({ id, title: `thread ${id}`, engine: "loop", engineName: "Tomrade assistant", itemId: null, key: null, ticketTitle: null, running: false, ticketDone: false, wait: null, createdAt: 1, updatedAt: 1, ...over });
 
 const terminal = (over: Partial<TerminalRow> & { id: string }): TerminalRow => ({ title: "repo", cwd: "/repo", pane: null, startedAt: 1, agentTitle: null, sessionId: null, note: null, ...over });
 
@@ -169,5 +170,43 @@ describe("a conversation writing code in the background", () => {
     expect(here.map((r) => [r.id, r.kind === "thread" ? (r.depth ?? 0) : null])).toEqual([["other", 0], ["parent", 0], ["child", 1], ["pane", null]]);
     // a child whose parent this window does not list stands on its own
     expect(sidebarRows([], [], [thread("child", { parentId: "gone" })]).here.map((r) => [r.id, r.kind === "thread" ? (r.depth ?? 0) : null])).toEqual([["child", 0]]);
+  });
+});
+
+describe("what the Terminal window shows unless asked for everything", () => {
+  const now = 100 * THREAD_DONE_AFTER_MS;
+  const long = now - 2 * THREAD_DONE_AFTER_MS;
+  const ids = (r: { here: { id: string }[]; away: { id: string }[] }) => [...r.here.map((x) => x.id), ...r.away.map((x) => x.id)].sort();
+
+  it("keeps what waits, runs or is open here, and the newest few idle; ended and long-quiet ones go to History", () => {
+    // 85 conversations nobody touched for days, as the Tomrade project had, and a handful still going.
+    const old = Array.from({ length: 85 }, (_, i) => thread(`old${i}`, { updatedAt: long - i }));
+    const threads = [...old, thread("asking", { updatedAt: long, wait: { kind: "question", text: "?", since: long, questionId: "q", options: null } }), thread("busy", { running: true, updatedAt: long }), thread("fresh", { updatedAt: now - 60_000 }), thread("finished", { updatedAt: now - 60_000, itemId: "i1", ticketDone: true })];
+    const sessions = [
+      row({ id: "live", where: "herdr", pane: "w1:p1", state: "running", startedAt: now - 1000, lastEventAt: now - 1000 }),
+      row({ id: "ended", state: "ended", endedAt: now - 1000, where: "herdr", ranIn: "w1:p9" }),
+      // A terminal outside nothing ends: idle for days, it is quiet, not going.
+      row({ id: "outsideQuiet", state: "idle", where: "outside", startedAt: long, lastEventAt: long }),
+      row({ id: "outsideNow", state: "idle", where: "outside", startedAt: now - 1000, lastEventAt: now - 1000 })
+    ];
+    const terminals = [terminal({ id: "shell", pane: "w2:p1", startedAt: long })];
+    const all = sidebarRows(sessions, terminals, threads);
+    expect(all.here.length + all.away.length).toBe(85 + 4 + 4 + 1);
+
+    const going = activeRows(all, new Set(), now);
+    expect(ids(going)).toEqual(["asking", "busy", "fresh", "live", "outsideNow", "shell"]);
+  });
+
+  it("keeps whatever a cell shows, and at most the newest few idle ones", () => {
+    const idle = Array.from({ length: IDLE_SHOWN + 3 }, (_, i) => thread(`idle${i}`, { updatedAt: now - (i + 1) * 60_000 }));
+    const sessions = [row({ id: "readInCell", state: "idle", where: "herdr", pane: "w1:p1", startedAt: long, lastEventAt: long }), row({ id: "endedInCell", state: "ended", endedAt: long, where: "herdr" })];
+    const all = sidebarRows(sessions, [], [...idle, thread("quietInCell", { updatedAt: long })]);
+    const going = activeRows(all, new Set(["readInCell", "quietInCell", "endedInCell"]), now);
+    expect(ids(going)).toEqual([...idle.slice(0, IDLE_SHOWN).map((t) => t.id), "endedInCell", "quietInCell", "readInCell"].sort());
+  });
+
+  it("brings back the conversation a kept one writes code for", () => {
+    const all = sidebarRows([], [], [thread("parent", { updatedAt: long }), thread("child", { parentId: "parent", running: true, updatedAt: now })]);
+    expect(activeRows(all, new Set(), now).here.map((r) => r.id)).toEqual(["parent", "child"]);
   });
 });

@@ -1223,13 +1223,14 @@ app.whenReady().then(async () => {
     ctx.codeLink.store.patchSession(project.id, gone.id, { state: "ended", endedAt: Date.now() });
     ctx.emit("codeLink/changed", project.id);
     const goneRow = `[...document.querySelectorAll('.cs-row')].find((r) => r.textContent.includes(${JSON.stringify(goneItem.key)}))`;
-    // Ended, it stays in the bar's ended group for the day, with its outcome and when it ran; History has it too, and opened there it shows in a pane as before.
-    const endedCard = await wait(async () => tjs(`(() => { const row = ${goneRow}; return !!row && row.dataset.status === 'done' && row.querySelector('.cs-row-outcome')?.textContent === 'PR #77 已合并 · 3 个 commit' && /已结束 · \\d\\d:\\d\\d–\\d\\d:\\d\\d/.test(row.querySelector('.cs-row-meta')?.textContent ?? ''); })()`), 8000);
-    check("刚结束的会话留在会话栏的完成组里，写着结论（PR / commit）和起止时间", endedCard, await tjs(`${goneRow}?.textContent ?? null`));
+    // Ended, it leaves the bar for History (TOM-764), where it says what came of it; opened there it shows in a pane as before.
     const offBar = await wait(async () => tjs(`document.querySelectorAll('[data-testid=cs-new-terminal-where] option').length >= 2`), 8000);
+    await sleep(1500);
+    const leftBar = !(await tjs(`!!${goneRow}`));
+    check("刚结束的会话不再占着会话栏", leftBar, await tjs(`${goneRow}?.textContent ?? null`));
     await tjs(`document.querySelector('[data-testid=cs-history]').click(); true`);
     const inHistory = await wait(async () => tjs(`!!${historyRowWith(goneItem.key)}`), 8000);
-    check("结束的会话在历史里也找得到", offBar && inHistory);
+    check("结束的会话在历史里找得到", offBar && inHistory);
     fs.writeFileSync(path.join(shots, "code-sessions-history.png"), (await tw.webContents.capturePage()).toPNG());
     await tjs(`${historyRowWith(goneItem.key)}.click(); true`);
     await tjs(`document.querySelector('[data-testid=cs-history-back]').click(); true`);

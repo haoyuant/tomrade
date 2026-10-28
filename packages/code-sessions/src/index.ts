@@ -83,6 +83,7 @@ interface Saved {
   autoPlace?: boolean;
   /** Each project's window with its sidebar folded. */
   folded?: Record<string, boolean>;
+  overviewAll?: Record<string, boolean>;
   /** The project the window last opened for: where a start that names none goes. */
   lastProject?: string;
   /** When each project's window was last opened or brought forward: the Dock's and the jump list's order. */
@@ -513,6 +514,7 @@ function apply(ctx: Context, config: Config) {
           ticketTitle: item?.title ?? null,
           parentId: th.parentId,
           running: running.has(th.id),
+          ticketDone: false,
           wait: kind ? { kind, text: clip(asked?.question.text), since: before?.kind === kind ? before.since : now, questionId: asked?.question.id ?? null, options: asked && !asked.question.multiple && asked.question.options?.length ? asked.question.options : null } : null,
           createdAt: th.createdAt,
           updatedAt: th.updatedAt
@@ -530,6 +532,15 @@ function apply(ctx: Context, config: Config) {
     const next = threadRows(projectId);
     threadsOf.set(projectId, next);
     return next;
+  };
+  /** Whether each conversation's ticket is done, read with every state: a ticket finishes without its conversation moving. */
+  const ticketsDone = (projectId: string, rows: ThreadRow[]): ThreadRow[] => {
+    const done = new Map<string, boolean>();
+    const isDone = (id: string) => {
+      if (!done.has(id)) done.set(id, ctx.items.get(projectId, id)?.status === "done");
+      return done.get(id)!;
+    };
+    return rows.map((t) => (t.itemId && isDone(t.itemId) !== t.ticketDone ? { ...t, ticketDone: !t.ticketDone } : t));
   };
   /** The project's assistant conversations changed: its window reads them again, once the burst settles. */
   const threadsChanged = (projectId: string) => {
@@ -869,7 +880,7 @@ function apply(ctx: Context, config: Config) {
       // An ended one asked for from outside (a ticket's earlier session) comes along, so the window can put it in a cell.
       // An ended one a cell shows says where its pane goes on, so the cell can follow it there.
       sessions: sent.map((s) => (s.endedAt !== null && inCells.has(s.id) ? { ...s, continuedIn: continuedIn(sessionOf(projectId, s.id)?.herdrPane ?? null, shown.sessions, opened) } : s)),
-      threads: threads(projectId),
+      threads: ticketsDone(projectId, threads(projectId)),
       warning,
       terminals: opened,
       places: await places(projectId),
@@ -881,6 +892,7 @@ function apply(ctx: Context, config: Config) {
       closedTerminals: closedTerminals(projectId).filter((t) => inCells.has(t.id)),
       history: paneHistory([...ended, ...earlier], panes),
       folded: saved.folded?.[projectId] === true,
+      overviewAll: saved.overviewAll?.[projectId] === true,
       tickets: openTickets(projectId),
       startAgent: startEngine()?.title ?? null
     };
@@ -1517,6 +1529,9 @@ function apply(ctx: Context, config: Config) {
       }
       case "fold":
         save({ folded: { ...stateOf().folded, [projectId]: m.folded } });
+        return refresh(projectId);
+      case "overviewAll":
+        save({ overviewAll: { ...stateOf().overviewAll, [projectId]: m.all } });
         return refresh(projectId);
       case "input": {
         const stream = win.terminals.get(m.cell);
