@@ -22,6 +22,7 @@
     "@tomradex/domain": "workspace:*",
     "@tomradex/engine-kit": "workspace:*",
     "@tomradex/ipc": "workspace:*",
+    "@tomradex/pty-host": "workspace:*",
     "cordis": "4.0.0-rc.8"
   },
   "devDependencies": {
