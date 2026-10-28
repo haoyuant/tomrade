@@ -4,12 +4,15 @@
  * key does not work, connects the found one with a click, and says what that
  * unlocked — the assistant, the built-in agent for Start, planning. Then the
  * built-in agent (the bundled Pi, run by this Electron as Node) takes a turn.
+ * Once set, it offers two ways on: a small thing in the person's own
+ * repository, walked step by step (a refused folder says why and what next),
+ * or the sample project's tour as before.
  * A stand-in OpenAI-compatible endpoint plays DeepSeek, so nothing is spent.
  *
  *   pnpm build:backend && pnpm dev:ui   then
  *   pnpm --filter @tomrade/desktop test:setup
  */
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, dialog } from "electron";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -122,7 +125,43 @@ const run = async () => {
   const bundled = fs.existsSync(path.join(dir, "../vendor/pi/dist/bundle/cli.js"));
   check("it says what that unlocked", done.includes("Assistant: Tomrade") && done.includes("Planning uses: DeepSeek") && (!bundled || done.includes("Start hands tickets to: Tomrade")), done);
   check("and points at the sample project next", (await text('[data-testid="setup-open-tour"]')) === "Open the sample project" && (await has('[data-testid="setup-continue"]')));
+  check("it offers two ways on: the small thing in your repository first, recommended, then the sample", await (async () => { const ways = await texts('[data-testid="setup-paths"] .setup-path'); return ways.length === 2 && ways[0].startsWith("Do a small thing in my repository Recommended") && ways[1].startsWith("Tour the sample project first"); })(), await texts('[data-testid="setup-paths"] .setup-path'));
   await shot("setup-03-done");
+
+  // ── the first way: a small thing in my repository ──────────────────────
+  const repoDir = path.join(work, "code", "my-app");
+  fs.mkdirSync(repoDir, { recursive: true });
+  fs.writeFileSync(path.join(repoDir, "README.md"), "# my-app\n");
+  const projectsBefore = ctx.projects.list().length;
+  const showOpenDialog = dialog.showOpenDialog;
+  let picked = path.join(work, "code", "not-there");
+  dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [picked] });
+  await click('[data-testid="setup-repo-task"]');
+  check("the repository way lists its eight steps, each with what comes next", await wait(async () => (await texts('[data-testid="repo-task"] li[data-step]')).length === 8, "repo steps"), await texts('[data-testid="repo-task"] li[data-step]'));
+  check("and starts on choosing the folder", (await $(`document.querySelector('li[data-step="pick"]')?.dataset.state`)) === "active");
+  await click('[data-testid="repo-task-pick"]');
+  check("a folder that cannot be connected says why", await wait(async () => ((await text('[data-testid="repo-task-failure"]')) ?? "").includes("not an existing folder"), "repo failure"), await text('li[data-step="pick"]'));
+  check("and what to do next", ((await text('li[data-step="pick"]')) ?? "").includes("Choose another folder"), await text('li[data-step="pick"]'));
+  picked = repoDir;
+  await click('[data-testid="repo-task-pick"]');
+  check("the next folder makes the project and connects it", await wait(async () => (await $(`document.querySelector('li[data-step="project"]')?.dataset.state`)) === "done", "project step"), await text('li[data-step="project"]'));
+  const made = ctx.projects.list().filter((p) => p.name === "my-app");
+  const repo = made[0] && ctx.repos.list(made[0].id)[0];
+  check("one project, named after the folder, with the folder as its repository", ctx.projects.list().length === projectsBefore + 1 && made.length === 1 && repo?.name === "my-app", ctx.projects.list().map((p) => p.name));
+  check("and its workstream coded there", !!repo && ctx.boards.list(made[0].id).some((b) => b.repoId === repo.id));
+  check("it says the folder became a repository, with no remote", ((await text('li[data-step="project"]')) ?? "").includes("git init") && ((await text('li[data-step="project"]')) ?? "").includes("no remote"), await text('li[data-step="project"]'));
+  check("then asks for the small thing", (await has("#repoTaskText")) && (await $(`document.querySelector('[data-testid="repo-task-send"]').disabled`)));
+  await type("#repoTaskText", "Add install steps to the README");
+  check("which can be sent once named", !(await $(`document.querySelector('[data-testid="repo-task-send"]').disabled`)));
+  await shot("setup-03b-repo-task");
+  dialog.showOpenDialog = showOpenDialog;
+  await click('[data-testid="repo-task-back"]');
+  check("back leads to the two ways again", await wait(() => has('[data-testid="setup-open-tour"]'), "the two ways"));
+  await click('[data-testid="setup-repo-task"]');
+  check("and going in again goes on with the same project", await wait(async () => (await $(`document.querySelector('li[data-step="project"]')?.dataset.state`)) === "done", "same project") && ctx.projects.list().length === projectsBefore + 1);
+  await click('[data-testid="repo-task-back"]');
+
+  // ── the second way: the sample project, as before ─────────────────────
   await click('[data-testid="setup-open-tour"]');
   check("which opens on its board, and the screen stays away for good", await wait(async () => (await texts(".card-title")).includes("Drag this ticket to Done") && (ctx.settings.get().onboarding?.seen ?? []).includes(`setup-screen:${ctx.hub.deviceId}`), "sample board"));
   check("with no setup card in the assistant", await wait(() => has(".ai-input"), "assistant panel") && !(await has(".agent-setup")));
