@@ -83,6 +83,16 @@ function decorateText(doc: Document, text: string, byKey: Map<string, Item>, inC
   return changed ? frag : null;
 }
 
+/** The tickets a text names by key, as they stand: it changes when one of them does (or appears), and is "" for a text that names none. */
+export function mentionSignature(text: string, byKey: Map<string, Item>): string {
+  const keys = text.match(KEY_RE);
+  if (!keys) return "";
+  return [...new Set(keys)].map((key) => {
+    const item = byKey.get(key);
+    return item ? `${key}=${item.id}|${item.status}|${item.title}` : key;
+  }).join("\n");
+}
+
 const safeDecode = (href: string): string => {
   try {
     return decodeURI(href);

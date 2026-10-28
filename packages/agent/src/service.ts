@@ -162,7 +162,7 @@ declare module "@tomradex/ipc" {
     "agent.startGeneral": (projectId: string, itemId: string, opts?: GeneralStartOptions) => { threadId: string; runId: string; continued: boolean };
     "agent.takeoverGeneral": (projectId: string, itemId: string) => { stopped: number };
     "agent.threads": (projectId: string) => ThreadSummary[];
-    "agent.thread": (projectId: string, threadId: string) => ThreadDetail;
+    "agent.thread": (projectId: string, threadId: string, afterSeq?: number) => ThreadDetail;
     "agent.usage": (days?: number) => UsageSummary;
     /** The project's rules for every agent, as the person wrote them; empty when there are none. */
     "agent.rules": (projectId: string) => { body: string; file: string | null };
@@ -229,6 +229,8 @@ export type AgentConfig = z.infer<typeof AgentConfig>;
 
 /** Room for a local agent to plan or research, while a run that hangs is still noticed within the quarter hour. */
 const RUN_MINUTES = 15;
+/** How often a streamed reply refreshes its run's progress (the token estimate); tools, retries and usage reports send theirs at once. */
+const STREAM_PROGRESS_MS = 250;
 
 export interface AgentSettings {
   defaultEngine: string;
@@ -454,7 +456,7 @@ export class Agent extends Service implements AgentReader {
         const parked = new Map(ctx.agent.store.allParked(projectId).map((p) => [p.threadId, p.until]));
         return ctx.agent.withOrigins(projectId, ctx.agent.store.threads(projectId, PANEL_SURFACES)).map((th) => (running.has(th.id) || parked.has(th.id) ? { ...th, ...(running.has(th.id) ? { running: true } : {}), ...(parked.has(th.id) ? { parkedUntil: parked.get(th.id) } : {}) } : th));
       });
-      ctx.ipc.handle("agent.thread", (projectId, threadId) => ctx.agent.thread(projectId, threadId));
+      ctx.ipc.handle("agent.thread", (projectId, threadId, afterSeq) => ctx.agent.thread(projectId, threadId, afterSeq));
       ctx.ipc.handle("agent.usage", (days?: number) => ctx.agent.usage(Date.now(), typeof days === "number" ? days : 7));
       ctx.ipc.handle("agent.rules", (projectId) => ({ body: ctx.agent.rules(projectId) ?? "", file: ctx.agent.rulesFile(projectId) }));
       ctx.ipc.handle("agent.setRules", (projectId, body) => {
@@ -634,14 +636,15 @@ export class Agent extends Service implements AgentReader {
 
   // ── views ──────────────────────────────────────────────────────────────────
 
-  thread(projectId: string, threadId: string): ThreadDetail {
+  /** `afterSeq`: only the messages after it, for a reader that holds the rest; everything else is whole. */
+  thread(projectId: string, threadId: string, afterSeq?: number): ThreadDetail {
     const thread = this.store.thread(projectId, threadId);
     if (!thread) throw new Error(`unknown thread ${threadId}`);
     const pending = this.store.pending(projectId, threadId);
     return {
       thread,
       activePermissionMode: this.activeByThread.get(threadId)?.io.run.scratch.get("permissionMode") as string | undefined,
-      messages: this.store.messages(projectId, threadId),
+      messages: this.store.messages(projectId, threadId, afterSeq),
       runs: this.store.runs(projectId, threadId),
       cards: this.store.cards(projectId, threadId),
       pending: this.permissions.get(threadId)?.pending ?? (pending ? this.pendingView(pending) : null)
@@ -1608,7 +1611,12 @@ export class Agent extends Service implements AgentReader {
     // conservative estimate of the reply, and every event carries the latest figure so the live line never blanks.
     let reported = { inputTokens: 0, outputTokens: 0 };
     let streamedSinceReport = 0;
+    let progressAt = -Infinity;
+    let progressSoon: ReturnType<typeof setTimeout> | null = null;
     const progress = (p: { activity?: string | null; usage?: { inputTokens: number; outputTokens: number } }) => {
+      progressAt = performance.now();
+      if (progressSoon) clearTimeout(progressSoon);
+      progressSoon = null;
       if (p.usage) {
         reported = p.usage;
         streamedSinceReport = 0;
@@ -1696,7 +1704,13 @@ export class Agent extends Service implements AgentReader {
         partial.text += text;
         streamedSinceReport += text.length;
         this.broadcast(thread.id, { type: "delta", runId: run.id, text });
-        progress({});
+        // the estimate a streamed word moves is a figure on the working line: a few times a second is enough
+        const wait = progressAt + STREAM_PROGRESS_MS - performance.now();
+        if (wait <= 0) progress({});
+        else progressSoon ??= setTimeout(() => {
+          progressSoon = null;
+          if (this.store.run(thread.projectId, run.id)?.status === "running") progress({});
+        }, wait);
       },
       progress: (usage) => progress({ usage: { inputTokens: usage.inputTokens ?? 0, outputTokens: usage.outputTokens ?? 0 } }),
       activity: (label) => {

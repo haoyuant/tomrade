@@ -21,7 +21,8 @@ import { openSettingsPane } from "~/lib/settingsHost";
 import { readableError, useErrorToast, useToast } from "~/lib/toast";
 import { ReportDialog } from "~/components/dialogs/ReportDialog";
 import { isCancelKey, isCommitKey, isComposing } from "~/lib/keys";
-import { ImGroupShare, QueuedRow, WorkingLine, type Queued } from "./agent-panel/blocks";
+import { ImGroupShare, LiveReply, LiveWorkingLine, QueuedRow, type Queued } from "./agent-panel/blocks";
+import { liveStore, useLive } from "./agent-panel/liveStore";
 import { GUIDE, GuideList, slashCommand, SlashMenu, STARTERS, type SlashCommand, type SlashContext, type Starter } from "./agent-panel/commands";
 import { Composer } from "./agent-panel/Composer";
 import { STORE } from "./agent-panel/store";
@@ -118,8 +119,10 @@ export function AgentPanel({
   // the panel never unmounts inside a project, so it survives navigation.
   const [ctxMode, setCtxMode] = useState<"follow" | "pinned" | "off">("follow");
   const [pinnedFocus, setPinnedFocus] = useState<FocusRef[]>([]);
-  const [live, setLive] = useState<{ runId: string; text: string } | null>(null);
-  const [progress, setProgress] = useState<RunProgress | null>(null);
+  // What streams in (the reply so far, the run's progress) lives outside React state: only the lines showing it render per token.
+  const [live] = useState(() => liveStore<{ runId: string; text: string } | null>(null));
+  const [progress] = useState(() => liveStore<RunProgress | null>(null));
+  const streaming = useLive(live, (l) => !!l);
   const scroll = useRef<HTMLDivElement>(null);
   // what agents in this project wait on the person for: a count on the rail, a word in the session bar
   const everyAttention = useAttention();
@@ -172,15 +175,15 @@ export function AgentPanel({
     deltaTimer.current = null;
     const next = pendingDelta.current;
     pendingDelta.current = null;
-    if (next) setLive((prev) => (prev && prev.runId === next.runId ? { runId: next.runId, text: prev.text + next.text } : next));
-  }, []);
+    if (next) live.set((prev) => (prev && prev.runId === next.runId ? { runId: next.runId, text: prev.text + next.text } : next));
+  }, [live]);
   const onDelta = useCallback(
     (runId: string, text: string | null) => {
       if (text === null) {
         if (deltaTimer.current) clearTimeout(deltaTimer.current);
         deltaTimer.current = null;
         pendingDelta.current = null;
-        setLive(null);
+        live.set(null);
         return;
       }
       const held = pendingDelta.current;
@@ -189,7 +192,7 @@ export function AgentPanel({
       pendingDelta.current = pendingDelta.current ? { runId, text: pendingDelta.current.text + text } : { runId, text };
       deltaTimer.current ??= setTimeout(flushDelta, 16);
     },
-    [flushDelta]
+    [flushDelta, live]
   );
   useEffect(
     () => () => {
@@ -198,13 +201,13 @@ export function AgentPanel({
     []
   );
   const onProgress = useCallback((next: RunProgress | null) => {
-    setProgress((prev) => {
+    progress.set((prev) => {
       if (next === null) return null;
       const same = prev?.runId === next.runId ? prev : null;
       // null clears (the tool ended, the retry went through); only an absent field keeps what was there
       return { runId: next.runId, activity: next.activity !== undefined ? next.activity : same?.activity ?? null, retry: next.retry !== undefined ? next.retry : same?.retry ?? null, usage: next.usage ?? same?.usage ?? null };
     });
-  }, []);
+  }, [progress]);
   useAgentEvents(projectId, threadId, onDelta, onProgress);
 
   const runningRun = detail.data?.runs.find((r) => r.status === "running");
@@ -279,7 +282,15 @@ export function AgentPanel({
     requestAnimationFrame(() => {
       el.scrollTop = el.scrollHeight;
     });
-  }, [detail.data?.messages.length, live?.text, runningRun?.id, pending?.question.id]);
+  }, [detail.data?.messages.length, runningRun?.id, pending?.question.id]);
+  // the reply streaming in keeps the newest line in view, from the line that shows it
+  const followLive = useCallback(() => {
+    const el = scroll.current;
+    if (!el || !following.current) return;
+    requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+  }, []);
 
   // another thread opens at its newest line
   useEffect(() => {
@@ -639,7 +650,8 @@ export function AgentPanel({
   // an ask here says what answering it does: the next one waiting comes up
   const goesOnNext = goesOn && waitingElsewhere.length > 0;
   // The built-in shell asking before a command, as it does for each one unless set to let reading and checks through.
-  const commandAsk = !!askId && progress?.activity === "bash" && ((settings.data?.shell as { approval?: string } | undefined)?.approval ?? "ask") === "ask";
+  const runActivity = useLive(progress, (p) => p?.activity ?? null);
+  const commandAsk = !!askId && runActivity === "bash" && ((settings.data?.shell as { approval?: string } | undefined)?.approval ?? "ask") === "ask";
   const transcriptActions = useMemo(
     () => ({ projectId, runs, cards, engines: engines.data, retryEngines, pending, byKey, busy, threadStatus, commandAsk, goesOnNext, onOpenIssue, onOpenThread: openThreadRow, onAnswer: answerRow, onRevert: revertRow, onOpenSettings: settingsRow, onCardAction: cardActionRow }),
     [projectId, runs, cards, engines.data, retryEngines, pending, byKey, busy, threadStatus, commandAsk, goesOnNext, onOpenIssue, openThreadRow, answerRow, revertRow, settingsRow, cardActionRow]
@@ -889,16 +901,7 @@ export function AgentPanel({
             <BackgroundOffer busy={movingOut} onPick={() => void moveToBackground()} />
           </div>
         )}
-        {live?.text && (
-          <div className="turn turn-ai">
-            <div className="turn-mark">
-              <span className="prov-tick" style={{ height: 12 }} />
-            </div>
-            <div className="turn-body">
-              <p>{live.text}</p>
-            </div>
-          </div>
-        )}
+        <LiveReply live={live} onGrow={followLive} />
         {helpIn !== null && helpIn === (threadId ?? "") && (
           <div className="turn turn-ai guide-turn">
             <div className="turn-mark">
@@ -915,7 +918,7 @@ export function AgentPanel({
             </div>
           </div>
         )}
-        {runningRun && <WorkingLine startedAt={runningRun.startedAt} progress={progress} streaming={!!live} />}
+        {runningRun && <LiveWorkingLine startedAt={runningRun.startedAt} progress={progress} streaming={streaming} />}
       </div>
 
       <div className="ai-foot" onDragOver={event => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }} onDrop={event => {
