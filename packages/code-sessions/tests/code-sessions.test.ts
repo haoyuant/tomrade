@@ -754,7 +754,7 @@ it("keeps a terminal that finishes opening while herdr is asked for its panes, a
 
 it("shows a session code link asks for: the window opens or comes forward with it to reveal, only while herdr can show panes", async () => {
   const opened: { spec: Record<string, unknown> & { onMessage(m: unknown): void; onClose(): void }; states: WindowState[]; posts: WindowPost[]; focused: number }[] = [];
-  const sessions = [session({ id: "s1", herdrPane: "w1:p1" }), session({ id: "s2", herdrPane: "w1:p2" }), session({ id: "s3", mode: "headless" }), session({ id: "s4", state: "ended", endedAt: 5, title: "An earlier ticket" })];
+  const sessions = [session({ id: "s1", herdrPane: "w1:p1" }), session({ id: "s2", herdrPane: "w1:p2" }), session({ id: "s5", herdrPane: "w1:p1" }), session({ id: "s3", mode: "headless" }), session({ id: "s4", state: "ended", endedAt: 5, title: "An earlier ticket" })];
   let bridge: { state: string } = { state: "ready" };
   const herdrShown: string[] = [];
 
@@ -804,15 +804,15 @@ it("shows a session code link asks for: the window opens or comes forward with i
 
   expect(await w.ctx.serial("codeLink/terminal-window", w.project.id)).toBe(true);
   // Closed: no cells to name.
-  expect(w.ctx.bail("codeLink/cells", w.project.id)).toBeUndefined();
+  expect(w.ctx.bail("codeLink/session-cells", w.project.id)).toBeUndefined();
   // Closed: it opens, already asked to reveal the session.
   expect(await ask("s1")).toBe(true);
   expect(opened).toHaveLength(1);
-  // Open: the cells it shows, numbered in reading order, empty ones counted.
-  expect(w.ctx.bail("codeLink/cells", w.project.id)).toEqual([]);
+  // Open: the cells it shows, numbered in reading order, empty ones counted; a live session beside it on its pane shares its cell.
+  expect(w.ctx.bail("codeLink/session-cells", w.project.id)).toEqual({});
   const leaf = (id: string, sessionId: string | null) => ({ type: "leaf", id, sessionId });
   opened[0]!.spec.onMessage({ type: "layout", layout: { type: "split", id: "r", direction: "row", ratio: 0.5, a: leaf("c1", null), b: leaf("c2", "s1") } });
-  expect(w.ctx.bail("codeLink/cells", w.project.id)).toEqual([{ sessionId: "s1", n: 2 }]);
+  expect(w.ctx.bail("codeLink/session-cells", w.project.id)).toEqual({ s1: 2, s5: 2 });
   const first = opened[0]!.states[0]!.reveal;
   expect(first).toMatchObject({ sessionId: "s1" });
   // Open: it comes forward with a new ask, and every later state keeps it until the next.
