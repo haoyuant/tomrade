@@ -16,6 +16,23 @@ import { SayContext, sayIn, useSay, WordsContext, wordsIn, type SayKey } from ".
 import { Sidebar } from "./Sidebar";
 import { asPicked, carriedOf, paneKey, useWindowLayout, type Leaf, type Picked } from "./useWindowLayout";
 
+/** What a cell's buttons and menu do, read from the window's latest render when they are used. */
+interface CellActs {
+  newTerminal(cell: string, cwd: string): void;
+  talk(cell: string, s: SessionRow): void;
+  focus(cell: string): void;
+  lock(cell: string): void;
+  split(cell: string, direction: "row" | "column"): void;
+  close(cell: string): void;
+  menu(cell: string): ReactNode;
+}
+type CellHandlers = { onNewTerminal: (cwd: string) => void; onTalk: (s: SessionRow) => void; onFocus: () => void; onLock: () => void; onSplit: (d: "row" | "column") => void; onClose: () => void; menu: ReactNode };
+
+/** A cell's menu, made as it opens from the window as it is then. */
+function CellMenu({ cell, acts }: { cell: string; acts: { current: CellActs | null } }) {
+  return <>{acts.current?.menu(cell)}</>;
+}
+
 type Toast = { text: string; action?: { label: string; run: () => void } };
 
 /** How often the overview reads the panes' last lines while it is open. */
@@ -196,6 +213,9 @@ export function App() {
 
   // The window's keys, taken before a terminal hears them, so they never reach the shell; what they do is read from the latest render.
   const onWindowKey = useRef<(key: WindowKey) => void>(() => undefined);
+  // Each cell's handlers, made once and reading the latest render: a cell then redraws only when what it shows changes.
+  const cellActs = useRef<CellActs | null>(null);
+  const cellHandlers = useRef(new Map<string, CellHandlers>());
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       // the app's key for this window, pressed in it: it is already in front, so the shell never hears it
@@ -418,6 +438,40 @@ export function App() {
     openTerminal(next.layout, next.created, folderOf(from), undefined, (from ? (sessionIn(from)?.pane ?? terminalsById.get(from)?.pane) : null) ?? undefined);
     return next.created;
   };
+  const leafOf = (cell: string) => cells.find((c) => c.id === cell);
+  cellActs.current = {
+    newTerminal: (cell, cwd) => openTerminal(layout, cell, cwd),
+    talk: (cell, s) => openTerminal(layout, cell, s.cwd ?? s.worktree, s.id),
+    focus: (cell) => setFocused(cell),
+    lock: (cell) => {
+      const leaf = leafOf(cell);
+      if (leaf) change(lock(layout, cell, !leaf.locked));
+    },
+    split: (cell, direction) => setFocused(splitCell(cell, direction)),
+    close: (cell) => change(close(layout, cell)),
+    menu: (cell) => {
+      const leaf = leafOf(cell);
+      return leaf ? cellMenu(leaf) : null;
+    }
+  };
+  for (const id of cellHandlers.current.keys()) if (!leafOf(id)) cellHandlers.current.delete(id);
+  const handlersOf = (cell: string): CellHandlers => {
+    let made = cellHandlers.current.get(cell);
+    if (!made) {
+      const acts = () => cellActs.current!;
+      made = {
+        onNewTerminal: (cwd) => acts().newTerminal(cell, cwd),
+        onTalk: (s) => acts().talk(cell, s),
+        onFocus: () => acts().focus(cell),
+        onLock: () => acts().lock(cell),
+        onSplit: (direction) => acts().split(cell, direction),
+        onClose: () => acts().close(cell),
+        menu: <CellMenu cell={cell} acts={cellActs} />
+      };
+      cellHandlers.current.set(cell, made);
+    }
+    return made;
+  };
   onWindowKey.current = (key) => {
     // over the palette, the window's keys wait: ⌘K again closes it
     if (paletteOpen) return key === "palette" ? setPaletteOpen(false) : undefined;
@@ -479,17 +533,11 @@ export function App() {
         closed={node.sessionId ? closedById.get(node.sessionId) : undefined}
         places={state.places}
         ready={canOpen}
-        onNewTerminal={(cwd) => openTerminal(layout, node.id, cwd)}
-        onTalk={(s) => openTerminal(layout, node.id, s.cwd ?? s.worktree, s.id)}
         focused={node.id === target.id && cells.length > 1}
         flash={flash?.cell === node.id ? flash.at : null}
         selected={node.id === target.id}
         only={cells.length === 1}
-        onFocus={() => setFocused(node.id)}
-        onLock={() => change(lock(layout, node.id, !node.locked))}
-        onSplit={(direction) => setFocused(splitCell(node.id, direction))}
-        onClose={() => change(close(layout, node.id))}
-        menu={cellMenu(node)}
+        {...handlersOf(node.id)}
         look={shown}
       />
     );
