@@ -191,3 +191,70 @@ it("goes on from where the last read stopped: only what came since, a call waiti
   fs.appendFileSync(talk, said(`很长 ${"y".repeat(1024 * 1024)}`).repeat(4));
   expect(claude.read(talk, { after: Buffer.byteLength(said("新的开始")) })?.start).toBeGreaterThan(Buffer.byteLength(said("新的开始")));
 });
+
+it("counts a Claude Code session's tokens: each reply once over its entries, its subagents too, and the turn from the person's last line", () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "usage-"));
+  const file = path.join(home, "s-1.jsonl");
+  const at = (s: number) => new Date(Date.UTC(2026, 9, 28, 10, 0, s)).toISOString();
+  const usage = (input: number, output: number, read = 0, write = 0) => ({ input_tokens: input, output_tokens: output, cache_read_input_tokens: read, cache_creation_input_tokens: write });
+  const reply = (id: string, s: number, u: ReturnType<typeof usage>, content: unknown[] = [{ type: "text", text: "ok" }]) => line({ type: "assistant", timestamp: at(s), message: { id, content, usage: u } });
+  const said = (text: string, s: number) => line({ type: "user", timestamp: at(s), message: { content: text } });
+  // one reply written as three entries (thinking, text, a tool call), each carrying the same usage
+  fs.writeFileSync(file,
+    said("first", 0) +
+    reply("m1", 2, usage(10, 100, 1000, 50), [{ type: "thinking", thinking: "…" }]) +
+    reply("m1", 3, usage(10, 100, 1000, 50)) +
+    reply("m1", 4, usage(10, 100, 1000, 50), [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "ls" } }]) +
+    line({ type: "user", timestamp: at(5), message: { content: [{ type: "tool_result", tool_use_id: "t1", content: "a\nb" }] } }) +
+    reply("m2", 6, usage(5, 20, 2000))
+  );
+  const first = claude.usage!(file);
+  expect(first?.total).toEqual({ inputTokens: 3065, uncachedInputTokens: 15, cacheReadTokens: 3000, cacheWriteTokens: 50, outputTokens: 120 });
+  expect(first?.turn).toEqual({ startedAt: Date.parse(at(0)), lastAt: Date.parse(at(6)), tokens: first!.total });
+  // nothing written since: the same count, read no further
+  expect(claude.usage!(file, first)).toBe(first);
+
+  // the person speaks again; a reply is cut mid-write, then finished; a subagent runs in this turn
+  const sub = path.join(home, "s-1", "subagents");
+  fs.mkdirSync(sub, { recursive: true });
+  fs.writeFileSync(path.join(sub, "agent-a1.jsonl"),
+    line({ type: "user", isSidechain: true, timestamp: at(11), message: { content: "look around" } }) +
+    line({ type: "assistant", isSidechain: true, timestamp: at(12), message: { id: "s1", content: [], usage: usage(7, 3) } }) +
+    line({ type: "assistant", isSidechain: true, timestamp: at(12), message: { id: "s1", content: [], usage: usage(7, 3) } }));
+  const cut = reply("m3", 15, usage(1, 9, 4000));
+  fs.appendFileSync(file, said("second", 10) + cut.slice(0, 40));
+  const mid = claude.usage!(file, first);
+  expect(mid?.turn).toEqual({ startedAt: Date.parse(at(10)), lastAt: Date.parse(at(10)), tokens: { inputTokens: 7, uncachedInputTokens: 7, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 3 } });
+  fs.appendFileSync(file, cut.slice(40) + reply("m3", 16, usage(1, 9, 4000)));
+  const now = claude.usage!(file, mid);
+  expect(now?.turn?.tokens).toEqual({ inputTokens: 4008, uncachedInputTokens: 8, cacheReadTokens: 4000, cacheWriteTokens: 0, outputTokens: 12 });
+  expect(now?.turn?.lastAt).toBe(Date.parse(at(16)));
+  expect(now?.total.outputTokens).toBe(120 + 3 + 9);
+  // counted step by step, it adds up to the same as counting it all at once
+  expect(claude.usage!(file)).toEqual({ ...now, state: expect.anything() });
+  // a subagent of an earlier turn counts in the session, not in the turn
+  fs.appendFileSync(file, said("third", 20));
+  const third = claude.usage!(file, now);
+  expect(third?.total).toEqual(now?.total);
+  expect(third?.turn).toEqual({ startedAt: Date.parse(at(20)), lastAt: Date.parse(at(20)), tokens: expect.objectContaining({ inputTokens: 0, outputTokens: 0 }) });
+  // a record that cannot be read counts nothing
+  expect(claude.usage!(path.join(home, "missing.jsonl"))).toBeNull();
+});
+
+it("starts a count over when the record shrank, and leaves a compacted conversation's summary out of the turns", () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "usage-"));
+  const file = path.join(home, "s-2.jsonl");
+  const reply = (id: string, output: number) => line({ type: "assistant", message: { id, content: [], usage: { input_tokens: 1, output_tokens: output } } });
+  fs.writeFileSync(file, line({ type: "user", message: { content: "go" } }) + reply("a", 5) + line({ type: "user", isCompactSummary: true, message: { content: "This session is being continued…" } }) + reply("b", 7));
+  const before = claude.usage!(file);
+  expect(before?.turn?.tokens.outputTokens).toBe(12);
+  fs.writeFileSync(file, line({ type: "user", message: { content: "again" } }) + reply("c", 2));
+  expect(claude.usage!(file, before)?.total.outputTokens).toBe(2);
+});
+
+it("counts a record larger than one step of reading, a line across the steps' edge whole", () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "usage-")), "s-3.jsonl");
+  const reply = (id: string, output: number) => line({ type: "assistant", message: { id, content: [{ type: "text", text: "x".repeat(3 * 1024 * 1024) }], usage: { input_tokens: 1, output_tokens: output } } });
+  fs.writeFileSync(file, line({ type: "user", message: { content: "go" } }) + reply("a", 5) + line({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t", content: "y".repeat(5 * 1024 * 1024) }] } }) + reply("b", 7));
+  expect(claude.usage!(file)?.total.outputTokens).toBe(12);
+});

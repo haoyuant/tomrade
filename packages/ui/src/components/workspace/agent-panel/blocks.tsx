@@ -24,7 +24,7 @@ import { useItems } from "~/lib/queries/items";
 import { openExternal, openPath } from "~/lib/shell";
 import { renderMarkdown } from "~/lib/markdown";
 import { useToast } from "~/lib/toast";
-import { duration, retryReason, runTokensLabel, tokens } from "./format";
+import { duration, liveTokens, retryReason, runTokensLabel } from "./format";
 import { decorate, KEY_RE, LINK_RE, localPath, ON_DISK, trimTrailing, withoutFileUrls } from "./links";
 
 /** The pulse that says "not stuck": what it's doing, for how long, and the tokens so far — or, loudly, that requests are failing. */
@@ -58,7 +58,7 @@ export function WorkingLine({ startedAt, progress, streaming }: { startedAt: num
       )}
       <span className="num w-meta">
         {duration(t, Date.now() - startedAt)}
-        {progress?.usage ? ` · ↑${tokens(progress.usage.inputTokens)} ↓${tokens(progress.usage.outputTokens)} tok` : ""}
+        {progress?.usage ? ` · ${liveTokens(progress.usage)}` : ""}
       </span>
     </p>
   );

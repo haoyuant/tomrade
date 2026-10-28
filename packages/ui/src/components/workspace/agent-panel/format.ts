@@ -1,4 +1,4 @@
-import type { RunView } from "@tomradex/agent";
+import type { RunView, TokenBreakdown } from "@tomradex/agent";
 import type { useI18n } from "~/lib/i18n";
 
 /** Token counts a person can skim: 962, 1.2k, 12k, 999k, then 1.0M — never "1000k". */
@@ -10,13 +10,16 @@ export const tokens = (n: number): string => {
 };
 
 /** A finished run's tokens, split the same way Settings → Usage adds them up. */
-export const runTokensLabel = (t: Translate, run: RunView): string | null => {
-  const k = run.tokens;
-  if (!k) return null;
-  return k.cacheReadTokens + k.cacheWriteTokens > 0
+export const runTokensLabel = (t: Translate, run: RunView): string | null => (run.tokens ? tokensLabel(t, run.tokens) : null);
+
+/** Tokens while they still add up: in and out, as the working line shows them. */
+export const liveTokens = (k: { inputTokens: number; outputTokens: number }): string => `↑${tokens(k.inputTokens)} ↓${tokens(k.outputTokens)} tok`;
+
+/** Tokens split the same way Settings → Usage adds them up. */
+export const tokensLabel = (t: Translate, k: TokenBreakdown): string =>
+  k.cacheReadTokens + k.cacheWriteTokens > 0
     ? t("agentPanel.tokensSplit", { input: tokens(k.inputTokens), uncached: tokens(k.uncachedInputTokens), read: tokens(k.cacheReadTokens), write: tokens(k.cacheWriteTokens), output: tokens(k.outputTokens) })
     : t("agentPanel.tokensNew", { input: tokens(k.inputTokens), output: tokens(k.outputTokens) });
-};
 
 export type Translate = ReturnType<typeof useI18n>["t"];
 

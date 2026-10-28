@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { EngineRecord, RecordLine, RecordRead } from "@tomradex/agent";
+import { addTokens, NO_TOKENS, type EngineRecord, type RecordLine, type RecordRead, type RecordUsageCount, type TokenBreakdown } from "@tomradex/agent";
 
 /** How much of a transcript is read from each end for its title: titles repeat through it, so the tail nearly always has one. */
 const TITLE_CHUNK = 256 * 1024;
@@ -59,10 +59,22 @@ export const clipDetail = (text: string) => (text.length > DETAIL_TEXT ? `${text
 /** A line of a record being read: a tool call carries `call`, the id its result is filed under. */
 export type RecordCallLine = RecordLine & { call?: string };
 
-/** How one agent's JSONL record reads: each entry's lines, and the tool results it holds. */
+/** The tokens one entry of a record counts: a reply's, under its id when one reply is written as several entries, or the session's running total. */
+export interface UsageEntry {
+  tokens: TokenBreakdown;
+  id?: string;
+  running?: boolean;
+}
+
+/** How one agent's JSONL record reads: each entry's lines, the tool results it holds, and the tokens it counts. */
 export interface JsonlReader {
   lines(entry: Record<string, unknown>): RecordCallLine[];
   results?(entry: Record<string, unknown>): { call: string; output: string }[];
+  usage?(entry: Record<string, unknown>): UsageEntry | null;
+  /** Whether an entry starts a turn; without this, one holding a line the person said does. */
+  startsTurn?(entry: Record<string, unknown>): boolean;
+  /** Whether a row may count or start a turn, judged before it is parsed: counting skips the rest unparsed. */
+  skim?(row: Buffer): boolean;
 }
 
 /** Where the line holding byte `pos` begins: just after the newline before it, 0, or `pos` itself past `LINE_MAX`. */
@@ -169,6 +181,135 @@ export function readJsonlRecord(file: string, reader: JsonlReader, opts?: { befo
   }
 }
 
+/** How much of a record one step of counting its tokens reads. */
+const USAGE_CHUNK = 4 * 1024 * 1024;
+
+/** How many reply ids a count remembers: one reply's entries are written together, never far apart. */
+const SEEN_IDS = 256;
+
+/** What a JSONL count keeps to go on: where it stopped, the last replies it counted, and the last running total. */
+interface JsonlTally {
+  offset: number;
+  seen: string[];
+  running: TokenBreakdown | null;
+}
+
+const minus = (a: TokenBreakdown, b: TokenBreakdown): TokenBreakdown | null => {
+  const d = {
+    inputTokens: a.inputTokens - b.inputTokens,
+    uncachedInputTokens: a.uncachedInputTokens - b.uncachedInputTokens,
+    cacheReadTokens: a.cacheReadTokens - b.cacheReadTokens,
+    cacheWriteTokens: a.cacheWriteTokens - b.cacheWriteTokens,
+    outputTokens: a.outputTokens - b.outputTokens
+  };
+  return Object.values(d).some((n) => n < 0) ? null : d;
+};
+
+/**
+ * The tokens a JSONL record counts, going on `from` an earlier count over only what was written since (all of it when
+ * the record shrank): each reply once, however many entries write it, and a running total by what it grew. The turn
+ * starts at the person's last line; with `turnAt` (a subagent's record, which the person never speaks in) it is what
+ * was written from then on. Returns `from` itself when nothing was written since; null when the file cannot be read.
+ */
+export function countJsonlUsage(file: string, reader: JsonlReader, from?: RecordUsageCount | null, opts?: { turnAt?: number | null }): RecordUsageCount | null {
+  let fd: number;
+  try {
+    fd = fs.openSync(file, "r");
+  } catch {
+    return null;
+  }
+  try {
+    const size = fs.fstatSync(fd).size;
+    const kept = from?.state as JsonlTally | undefined;
+    const goesOn = !!kept && kept.offset <= size;
+    const given = opts && "turnAt" in opts;
+    const turnAt = given ? (opts!.turnAt ?? null) : undefined;
+    if (goesOn && kept.offset === size && (!given || (from!.turn?.startedAt ?? null) === turnAt)) return from!;
+    let total = goesOn ? from!.total : NO_TOKENS;
+    let turn = goesOn ? from!.turn : null;
+    if (given) turn = turnAt === null ? null : turn?.startedAt === turnAt ? turn : { startedAt: turnAt!, lastAt: null, tokens: NO_TOKENS };
+    const seen = goesOn ? [...kept.seen] : [];
+    let running = goesOn ? kept.running : null;
+    const isTurn = reader.startsTurn ?? ((entry: Record<string, unknown>) => reader.lines(entry).some((l) => l.who === "person"));
+    /** Counts a row; false when it is not whole JSON. The last row, which may still be being written, is always parsed. */
+    const take = (row: Buffer, last = false) => {
+      if (!row.length || (!last && reader.skim && !reader.skim(row))) return true;
+      let entry: Record<string, unknown>;
+      try {
+        entry = JSON.parse(row.toString("utf8")) as Record<string, unknown>;
+      } catch {
+        return false;
+      }
+      const at = entryTime(entry);
+      const used = reader.usage?.(entry) ?? null;
+      if (!used) {
+        if (!given && isTurn(entry)) turn = { startedAt: at, lastAt: at, tokens: NO_TOKENS };
+        return true;
+      }
+      const inTurn = !!turn && (!given || at === null || at >= (turn.startedAt ?? 0));
+      if (inTurn && at !== null) turn = { ...turn!, lastAt: at };
+      let tokens: TokenBreakdown | null = used.tokens;
+      if (used.running) {
+        // a total that fell is a new count from nothing (the agent started over)
+        tokens = running ? (minus(used.tokens, running) ?? used.tokens) : used.tokens;
+        running = used.tokens;
+      } else if (used.id) {
+        if (seen.includes(used.id)) tokens = null;
+        else {
+          seen.push(used.id);
+          if (seen.length > SEEN_IDS) seen.shift();
+        }
+      }
+      if (!tokens) return true;
+      total = addTokens(total, tokens);
+      if (inTurn) turn = { ...turn!, tokens: addTokens(turn!.tokens, tokens) };
+      return true;
+    };
+    let pos = goesOn ? kept.offset : 0;
+    let offset = pos;
+    let carry: Buffer = Buffer.alloc(0);
+    let skipping = false;
+    while (pos < size) {
+      const buf = Buffer.alloc(Math.min(USAGE_CHUNK, size - pos));
+      const got = fs.readSync(fd, buf, 0, buf.length, pos);
+      if (!got) break;
+      pos += got;
+      let data = buf.subarray(0, got);
+      if (skipping) {
+        const nl = data.indexOf(0x0a);
+        if (nl < 0) {
+          offset = pos;
+          continue;
+        }
+        skipping = false;
+        offset = pos - got + nl + 1;
+        data = data.subarray(nl + 1);
+      }
+      if (carry.length) data = Buffer.concat([carry, data]);
+      let at = 0;
+      for (let nl = data.indexOf(0x0a); nl >= 0; nl = data.indexOf(0x0a, at)) {
+        take(data.subarray(at, nl));
+        at = nl + 1;
+      }
+      offset += at;
+      carry = Buffer.from(data.subarray(at));
+      // a line too long to keep is left out, as reading the conversation leaves it out
+      if (carry.length > LINE_MAX) {
+        offset += carry.length;
+        carry = Buffer.alloc(0);
+        skipping = true;
+      }
+    }
+    // the last line, unless it is still being written
+    if (carry.length && !skipping && take(carry, true)) offset += carry.length;
+    return { total, turn, state: { offset, seen, running } satisfies JsonlTally };
+  } catch {
+    return null;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 /** The title lines in some JSONL: the person's own (`/rename`) over the agent's, the last of each. */
 function titleIn(text: string): string | null {
   let custom: string | null = null;
@@ -257,7 +398,70 @@ function claudeTranscriptResults(o: Record<string, unknown>): { call: string; ou
   );
 }
 
-const CLAUDE_TRANSCRIPT: JsonlReader = { lines: claudeTranscriptLines, results: claudeTranscriptResults };
+/** One Claude Code reply's tokens: its input is new, cache read and cache write together. Several entries share one reply's id. */
+function claudeTranscriptUsage(o: Record<string, unknown>): UsageEntry | null {
+  if (o.type !== "assistant") return null;
+  const message = o.message as { id?: unknown; usage?: Record<string, unknown> } | undefined;
+  const u = message?.usage;
+  if (!u || typeof u !== "object") return null;
+  const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0);
+  const uncached = n(u.input_tokens);
+  const read = n(u.cache_read_input_tokens);
+  const write = n(u.cache_creation_input_tokens);
+  const tokens = { inputTokens: uncached + read + write, uncachedInputTokens: uncached, cacheReadTokens: read, cacheWriteTokens: write, outputTokens: n(u.output_tokens) };
+  return typeof message?.id === "string" ? { tokens, id: message.id } : { tokens };
+}
+
+const CLAUDE_TRANSCRIPT: JsonlReader = {
+  lines: claudeTranscriptLines,
+  results: claudeTranscriptResults,
+  usage: claudeTranscriptUsage,
+  // a compacted conversation's summary is written as the person's, though they said nothing
+  startsTurn: (o) => !o.isCompactSummary && claudeTranscriptLines(o).some((l) => l.who === "person"),
+  // tool results are most of a transcript, and neither count nor start a turn
+  skim: (row) => row.includes('"usage"') || (row.includes('"type":"user"') && !row.includes('"tool_result"'))
+};
+
+/** What a Claude Code count keeps: its transcript's, and each of its subagents' by file name. */
+interface ClaudeTally {
+  main: RecordUsageCount;
+  subs: Record<string, RecordUsageCount>;
+}
+
+/**
+ * The tokens of a Claude Code session: its transcript's, and those of the subagents it ran, which Claude Code writes
+ * beside it in `<session id>/subagents/agent-*.jsonl`; a subagent's count in the turn is what it wrote since the
+ * person's last line.
+ */
+function claudeSessionUsage(file: string, from?: RecordUsageCount | null): RecordUsageCount | null {
+  const kept = from?.state as ClaudeTally | undefined;
+  const main = countJsonlUsage(file, CLAUDE_TRANSCRIPT, kept?.main);
+  if (!main) return null;
+  const dir = path.join(path.dirname(file), path.basename(file, ".jsonl"), "subagents");
+  let names: string[] = [];
+  try {
+    names = fs.readdirSync(dir).filter((name) => /^agent-[\w-]+\.jsonl$/.test(name)).sort();
+  } catch {
+    // no subagents ran
+  }
+  const turnAt = main.turn?.startedAt ?? null;
+  const subs: Record<string, RecordUsageCount> = {};
+  let same = !!kept && main === kept.main && names.length === Object.keys(kept.subs).length;
+  for (const name of names) {
+    const sub = countJsonlUsage(path.join(dir, name), CLAUDE_TRANSCRIPT, kept?.subs[name], { turnAt });
+    if (!sub) continue;
+    subs[name] = sub;
+    if (sub !== kept?.subs[name]) same = false;
+  }
+  if (same) return from!;
+  let total = main.total;
+  let turnTokens = main.turn?.tokens ?? null;
+  for (const sub of Object.values(subs)) {
+    total = addTokens(total, sub.total);
+    if (turnTokens && sub.turn && sub.turn.startedAt === turnAt) turnTokens = addTokens(turnTokens, sub.turn.tokens);
+  }
+  return { total, turn: main.turn && turnTokens ? { ...main.turn, tokens: turnTokens } : null, state: { main, subs } satisfies ClaudeTally };
+}
 
 /** Where a CLI writing Claude Code's transcripts keeps its config: the variable that moves it, and its folder in the home. */
 export interface ClaudeFolders {
@@ -299,6 +503,7 @@ export function claudeRecord(folders: ClaudeFolders): EngineRecord {
   return {
     find: (sessionId) => findClaudeTranscript(sessionId, folders),
     read: (file, opts) => readJsonlRecord(file, CLAUDE_TRANSCRIPT, opts),
-    title: claudeTranscriptTitle
+    title: claudeTranscriptTitle,
+    usage: claudeSessionUsage
   };
 }

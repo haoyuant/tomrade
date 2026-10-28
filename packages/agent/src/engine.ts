@@ -380,6 +380,23 @@ export interface EngineRecord {
   read(file: string, opts?: { before?: number; after?: number }): RecordRead | null;
   /** What the record calls the conversation; null without a name. */
   title?(file: string): string | null;
+  /**
+   * The tokens the record counts, going on `from` an earlier count as this returned it over only what was written
+   * since; null when it cannot be read.
+   */
+  usage?(file: string, from?: RecordUsageCount | null): RecordUsageCount | null;
+}
+
+/** A session's tokens as its agent's record counts them: the whole session's, and its turn from the person's last line. */
+export interface RecordUsage {
+  total: import("./tokens.js").TokenBreakdown;
+  /** When the person last said something, when the record last wrote after it, and the tokens since; null before they said anything. */
+  turn: { startedAt: number | null; lastAt: number | null; tokens: import("./tokens.js").TokenBreakdown } | null;
+}
+
+/** A count as a record's reader keeps it to go on from: `state` is the reader's own. */
+export interface RecordUsageCount extends RecordUsage {
+  state: unknown;
 }
 
 /** The flat members an engine had before they were grouped; `Agent.engine` still maps them once, at registration. */
