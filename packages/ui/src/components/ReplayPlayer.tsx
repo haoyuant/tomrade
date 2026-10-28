@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { clockAt, clockLabel, fitScale, playTimes, playedBy, SPEEDS, type Speed } from "~/code-sessions/playback";
+import { clockAt, clockLabel, fitScale, playTimes, playedBy, replayFrom, SPEEDS, type Speed } from "~/code-sessions/playback";
 import { terminalTheme } from "~/lib/xtermTheme";
 
 /** One painted stretch of a pane, as the recording kept it. */
@@ -85,14 +85,16 @@ export function ReplayPlayer({ data, font, themeKey, say }: { data: ReplayData |
     return () => cancelAnimationFrame(frame);
   }, [themeKey]);
 
-  /** The records up to `upTo` in the terminal: from where it is, or from the start again when `upTo` is behind. */
+  /** The records up to `upTo` in the terminal: on from where it is, or from the newest keyframe before `upTo`. */
   const apply = (upTo: number, then?: () => void) => {
     const terminal = term.current;
     const p = player.current;
     if (!terminal) return;
-    if (upTo < p.applied) {
+    const start = replayFrom(p.records, p.applied, upTo);
+    if (start.reset) {
       terminal.reset();
-      p.applied = 0;
+      if (start.size && (start.size.w !== terminal.cols || start.size.h !== terminal.rows)) terminal.resize(start.size.w, start.size.h);
+      p.applied = start.from;
     }
     let wrote = false;
     for (let i = p.applied; i < upTo; i++) {
