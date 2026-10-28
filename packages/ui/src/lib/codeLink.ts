@@ -70,7 +70,7 @@ export const useCodeDeliveries = (projectId: string, itemId: string) =>
 export const useCodeSessions = (projectId: string, itemId?: string) =>
   useQuery({ queryKey: keys.codeLink.sessions(projectId, itemId), queryFn: () => invoke("codeLink.sessions", projectId, itemId) });
 
-/** Live sessions and the few that ended today: what the session bars list. Asked again on every session change, so it stays small. */
+/** Live sessions and the few that ended today: what the session bars list. Asked again once per burst of session changes, so it stays small. */
 export const useRecentSessions = (projectId: string, enabled = true) =>
   useQuery({ queryKey: keys.codeLink.recentSessions(projectId), queryFn: () => invoke("codeLink.recentSessions", projectId), enabled });
 

@@ -46,3 +46,39 @@ export function invalidateSessions(qc: QueryClient, projectId: string, moved: bo
   }
   if (moved) invalidateContributions(qc, projectId);
 }
+
+/** How long hooks settle before what reads sessions is asked again, and the least time between two standing changes' asks. */
+export const SESSIONS_SETTLE_MS = 100;
+/** Hooks that change no session's standing (only what it is doing) are heard at most once this often. */
+export const SESSIONS_GAP_MS = 1000;
+
+/**
+ * `invalidateSessions` once per burst of hooks: several agents send a few a second each, and every ask re-reads
+ * the session bars' list. A change in a session's standing (`moved`: waiting, ended, claimed, state) goes at once,
+ * or within SESSIONS_SETTLE_MS of the last ask; activity waits for the burst to settle and comes at most once a
+ * SESSIONS_GAP_MS. A standing change asks for everything activity does, so it takes a pending one along.
+ */
+export function sessionsRefresher(qc: QueryClient, { settleMs = SESSIONS_SETTLE_MS, gapMs = SESSIONS_GAP_MS } = {}): (projectId: string, moved: boolean) => void {
+  const projects = new Map<string, { timer: ReturnType<typeof setTimeout> | null; due: number; moved: boolean; last: number }>();
+  const run = (projectId: string) => {
+    const soon = projects.get(projectId)!;
+    if (soon.timer) clearTimeout(soon.timer);
+    const moved = soon.moved;
+    Object.assign(soon, { timer: null, moved: false, last: Date.now() });
+    invalidateSessions(qc, projectId, moved);
+  };
+  return (projectId, moved) => {
+    const soon = projects.get(projectId) ?? { timer: null, due: 0, moved: false, last: -Infinity };
+    projects.set(projectId, soon);
+    const now = Date.now();
+    soon.moved ||= moved;
+    const wait = moved ? Math.max(0, soon.last + settleMs - now) : Math.max(settleMs, soon.last + gapMs - now);
+    if (wait === 0) return run(projectId);
+    if (soon.timer) {
+      if (soon.due <= now + wait) return;
+      clearTimeout(soon.timer);
+    }
+    soon.due = now + wait;
+    soon.timer = setTimeout(() => run(projectId), wait);
+  };
+}
