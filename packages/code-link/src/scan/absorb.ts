@@ -167,7 +167,15 @@ export class GitScan {
   }
 
 
+  /** Rows this project's connection has written since it opened: a scan that moves it changed something. */
+  private writes(projectId: string): number {
+    return (this.ctx.db.for(projectId).prepare("SELECT total_changes() AS n").get() as { n: number }).n;
+  }
+
   private async doScan(projectId: string): Promise<ScanSummary> {
+    const firstScan = !this.scannedAt.has(projectId);
+    const writesBefore = this.writes(projectId);
+    const unlinkedBefore = JSON.stringify(this.unlinkedByProject.get(projectId) ?? []);
     this.archiveCompletedSessions(projectId);
     const summary: ScanSummary = { repos: 0, scanned: 0, offline: 0, links: 0, changed: 0, proposals: 0, skipped: [] };
     const prefix = this.prefixOf(projectId);
@@ -235,7 +243,9 @@ export class GitScan {
     for (const item of this.ctx.items.list({ projectId })) this.closeEmptyScannedDelivery(projectId, item, now);
     this.unlinkedByProject.set(projectId, unlinked);
     this.scannedAt.set(projectId, now);
-    this.notify(projectId);
+    // A pass that found nothing new tells no one: every window would read the project's tickets and threads again.
+    // Another writer's rows landing meanwhile count too, which only costs a refresh.
+    if (firstScan || this.writes(projectId) !== writesBefore || JSON.stringify(unlinked) !== unlinkedBefore) this.notify(projectId);
     return summary;
   }
 
