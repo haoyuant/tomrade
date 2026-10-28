@@ -68,6 +68,8 @@ declare module "cordis" {
     "codeLink/changed"(projectId: string, session?: SessionChange): void;
     /** A start was remembered: the next one-click Start goes this way. The renderer hears codeLink.startDefaultsChanged. */
     "codeLink/start-defaults"(): void;
+    /** From the desktop shell: whether any of the app's windows can be seen. Not heard, everything counts as seen. */
+    "desktop/seen"(seen: boolean): void;
     /** Asked: a window inside Tomrade can show this project's herdr sessions. Its plugin answers true. */
     "codeLink/terminal-window"(projectId: string): Promise<boolean | void> | boolean | void;
     /** Asked: show this session's herdr terminal inside Tomrade. True once a window has. */
@@ -307,6 +309,8 @@ export const CodeLinkConfig = z.preprocess(
     gitBinary: z.string().default("git"),
     /** Rescan cadence for open projects; 0 turns the timer off (tests, or a machine that only rescans by hand). */
     scanMs: z.number().int().min(0).default(120_000),
+    /** The cadence while no window of the app can be seen; a window showing again scans at once if a pass is due. */
+    hiddenScanMs: z.number().int().min(0).default(600_000),
     /** How often sessions are checked against the clock and their process; 0 turns it off. */
     sweepMs: z.number().int().min(0).default(30_000),
     /** Fetch from the remote before reading. Off, only what this machine already has is read. */
@@ -417,6 +421,10 @@ export class CodeLink extends Service implements CodeLinkReader {
   private readonly usageCounts = new Map<string, RecordUsageCount>();
   /** Coalesces the engines' arrivals into one pass over the projects' repositories. */
   private autoConnectTimer: NodeJS.Timeout | null = null;
+  /** Whether a window of the app can be seen, as the desktop shell last said; the timer's scans slow down while none can. */
+  private seen = true;
+  /** When the timer last began a pass over the open projects. */
+  private openScannedAt = 0;
   private herdr!: HerdrBridge;
   private panel!: SessionPanel;
   private handoff!: Handoff;
@@ -825,8 +833,12 @@ export class CodeLink extends Service implements CodeLinkReader {
     this.home.inject(["contributions"], (ctx) => contribute(ctx, { ctx: this.ctx, codeLink: this, herdr: this.herdr, words: () => this.words() }));
     this.herdr.follow(this.home);
 
-    const timer = this.config.scanMs > 0 ? setInterval(() => void this.scanOpen(), this.config.scanMs) : null;
+    const timer = this.config.scanMs > 0 ? setInterval(() => { if (this.scanDue()) void this.scanOpen(); }, this.config.scanMs) : null;
     timer?.unref?.();
+    this.home.on("desktop/seen", (seen) => {
+      this.seen = seen;
+      if (seen && this.config.scanMs > 0 && Date.now() - this.openScannedAt >= this.config.scanMs) void this.scanOpen();
+    });
     // Sessions are judged more often than repositories are scanned: a process that is gone should read as gone within the minute.
     const sweeper =
       this.config.sweepMs > 0
@@ -1892,7 +1904,13 @@ export class CodeLink extends Service implements CodeLinkReader {
     return this.scans.rescan(projectId).then((summary) => this.oriented(projectId, summary));
   }
 
+  /** Whether the timer's pass is due: every tick while a window can be seen, every `hiddenScanMs` while none can. */
+  private scanDue(): boolean {
+    return this.seen || Date.now() - this.openScannedAt >= this.config.hiddenScanMs - 1000;
+  }
+
   async scanOpen(): Promise<void> {
+    this.openScannedAt = Date.now();
     for (const projectId of this.ctx.db.openIds()) {
       try {
         await this.scan(projectId);
