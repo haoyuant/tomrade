@@ -9,9 +9,22 @@ out/
 .DS_Store
 *.log
 .env
-.env.local
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+*.pfx
 data/*.db
 data/*.db-*
+
+# Machine-specific agent settings
+.codebuddy/settings.local.json
+.claude/settings.local.json
+
+# Historical design drafts are kept in the project Files library.
+docs/history/
 
 # Test scratch directories a run failed to clean up
 packages/*/tests/.tmp-*/
