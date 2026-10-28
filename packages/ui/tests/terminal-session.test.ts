@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RecordRead } from "@tomradex/agent";
 import type { SessionAsk } from "@tomradex/code-link";
-import { askText, convoFromTail, doingText, convoLines, convoRefreshed, convoWithEarlier, delayUntil, isApprovalAsk, mayReadPane, READ_EVERY_MS, saidElsewhere, tailLines } from "../src/lib/terminalSession";
+import { askText, convoContinued, convoFromTail, doingText, convoLines, convoRefreshed, convoWithEarlier, delayUntil, isApprovalAsk, mayReadPane, READ_EVERY_MS, saidElsewhere, tailLines } from "../src/lib/terminalSession";
 
 const read = (texts: string[], opts: Partial<RecordRead> = {}): RecordRead => ({ lines: texts.map((text) => ({ who: "agent", text })), cut: false, ...opts });
 
@@ -105,4 +105,26 @@ it("marks what the person said in the terminal while the panel showed the sessio
     { key: 4, who: "person" as const, text: "no stamp" }
   ];
   expect(saidElsewhere(lines, 200, new Set(["sent from the panel"]))).toEqual([2]);
+});
+
+describe("a conversation read on from where it stopped", () => {
+  const person = (text: string) => ({ who: "person" as const, text });
+  const call = (output?: string) => ({ who: "tool" as const, text: "Bash · pnpm test", detail: output ? { input: "$ pnpm test", output } : { input: "$ pnpm test" } });
+
+  it("keeps the lines it held, puts the new ones after them under the same keys, and starts over when the read did not go on", () => {
+    const first = convoFromTail({ lines: [person("开始"), call()], cut: false, start: 0, next: 40, held: 1 });
+    expect([first.next, first.held]).toEqual([40, 1]);
+    const next = convoContinued(first, 40, { lines: [call("41 passed"), person("好了")], cut: true, start: 40, next: 120, held: 2 });
+    expect(next.tail).toEqual([{ ...person("开始"), key: 0 }, { ...call("41 passed"), key: 1 }, { ...person("好了"), key: 2 }]);
+    expect(next.tail[0]).toBe(first.tail[0]);
+    expect([next.next, next.held]).toEqual([120, 3]);
+    // Nothing came: the same lines.
+    expect(convoContinued(next, 120, { lines: [], cut: true, start: 120, next: 120, held: 0 }).tail).toEqual(next.tail);
+    // The record shrank or grew past a page: the read starts elsewhere, and the view with it.
+    const over = convoContinued(next, 120, { lines: [person("新的开始")], cut: false, start: 0, next: 20, held: 1 });
+    expect(over.tail).toEqual([{ ...person("新的开始"), key: 0 }]);
+    // An answer to an older ask is dropped; no read leaves the view as it was.
+    expect(convoContinued(next, 40, { lines: [person("旧的")], cut: true, start: 40, next: 60, held: 1 })).toBe(next);
+    expect(convoContinued(next, 120, null)).toBe(next);
+  });
 });

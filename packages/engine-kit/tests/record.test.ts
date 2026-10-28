@@ -68,6 +68,8 @@ it("reads a conversation read-only from Claude Code's transcript, leaving the ma
   expect(claude.read(talk)).toEqual({
     cut: false,
     start: 0,
+    next: fs.statSync(talk).size,
+    held: 3,
     lines: [
       { who: "person", text: "侧栏该怎么分组？" },
       { who: "agent", text: "我建议分成两组。" },
@@ -145,4 +147,47 @@ it("stamps each line with when its entry was written, where the record says", ()
   const stamped = path.join(dir, "stamped.jsonl");
   fs.writeFileSync(stamped, line({ type: "user", timestamp: "2026-10-27T01:02:03.000Z", message: { content: "你好" } }) + line({ type: "assistant", message: { content: [{ type: "text", text: "在。" }] } }));
   expect(claude.read(stamped)?.lines).toEqual([{ who: "person", text: "你好", at: Date.parse("2026-10-27T01:02:03.000Z") }, { who: "agent", text: "在。" }]);
+});
+
+it("goes on from where the last read stopped: only what came since, a call waiting for its output read again with it", () => {
+  const talk = path.join(dir, "going-on.jsonl");
+  const said = (text: string) => line({ type: "user", message: { content: text } });
+  const call = (id: string, command: string) => line({ type: "assistant", message: { content: [{ type: "tool_use", id, name: "Bash", input: { command } }] } });
+  const result = (id: string, content: string) => line({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, content }] } });
+  // A record past one page: the panel's first read is its end, later ones only what was added.
+  fs.writeFileSync(talk, said(`很早 ${"x".repeat(1024 * 1024)}`).repeat(3) + said("开始") + call("t1", "ls") + result("t1", "a.ts"));
+  const first = claude.read(talk)!;
+  expect(first.cut).toBe(true);
+  expect(first.lines.slice(-2).map((l) => l.text)).toEqual(["开始", "Bash · ls"]);
+  expect([first.next, first.held]).toEqual([fs.statSync(talk).size, first.lines.length]);
+
+  // A call whose output is not written yet: the next read starts back at it, the line before it is held.
+  const callAt = fs.statSync(talk).size;
+  fs.appendFileSync(talk, said("再跑一次测试") + call("t2", "pnpm test"));
+  const second = claude.read(talk, { after: first.next })!;
+  expect(second.start).toBe(first.next);
+  expect(second.lines).toEqual([{ who: "person", text: "再跑一次测试" }, { who: "tool", text: "Bash · pnpm test", detail: { input: "$ pnpm test" } }]);
+  expect(second.held).toBe(1);
+  expect(second.next).toBe(callAt + Buffer.byteLength(said("再跑一次测试")));
+
+  // Its output and a half-written line arrive: the call is read again with its output, the half line waits.
+  const before = fs.statSync(talk).size;
+  fs.appendFileSync(talk, result("t2", "41 passed") + said("好了").slice(0, 10));
+  const third = claude.read(talk, { after: second.next })!;
+  expect(third.lines).toEqual([{ who: "tool", text: "Bash · pnpm test", detail: { input: "$ pnpm test", output: "41 passed" } }]);
+  expect([third.held, third.next]).toEqual([1, before + Buffer.byteLength(result("t2", "41 passed"))]);
+  // Read about as much as was added, not the page.
+  expect(fs.statSync(talk).size - third.start!).toBeLessThan(1024);
+
+  // Nothing new: nothing read, the same place.
+  fs.writeFileSync(talk, fs.readFileSync(talk, "utf8").slice(0, -10) + said("好了"));
+  const fourth = claude.read(talk, { after: third.next })!;
+  expect(fourth.lines).toEqual([{ who: "person", text: "好了" }]);
+  expect(claude.read(talk, { after: fourth.next })).toMatchObject({ lines: [], start: fourth.next, next: fourth.next, held: 0 });
+
+  // The record shrank, or grew past a page since: its end is read afresh.
+  fs.writeFileSync(talk, said("新的开始"));
+  expect(claude.read(talk, { after: fourth.next })).toMatchObject({ start: 0, lines: [{ who: "person", text: "新的开始" }] });
+  fs.appendFileSync(talk, said(`很长 ${"y".repeat(1024 * 1024)}`).repeat(4));
+  expect(claude.read(talk, { after: Buffer.byteLength(said("新的开始")) })?.start).toBeGreaterThan(Buffer.byteLength(said("新的开始")));
 });

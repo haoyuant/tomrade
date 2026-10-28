@@ -54,13 +54,16 @@ export interface ConvoState {
   before: number | null;
   /** The record could not be read at all. */
   unreadable: boolean;
+  /** Where the next read goes on from, and how many tail lines come before it; null to read the end again. */
+  next: number | null;
+  held: number;
 }
 
 const keyed = (lines: RecordLine[], from: number): ConvoLineView[] => lines.map((l, i) => ({ ...l, key: from + i }));
 
 export function convoFromTail(read: RecordRead | null): ConvoState {
-  if (!read) return { earlier: [], tail: [], tailStart: null, before: null, unreadable: true };
-  return { earlier: [], tail: keyed(read.lines, 0), tailStart: read.start ?? 0, before: read.cut ? (read.start ?? null) : null, unreadable: false };
+  if (!read) return { earlier: [], tail: [], tailStart: null, before: null, unreadable: true, next: null, held: 0 };
+  return { earlier: [], tail: keyed(read.lines, 0), tailStart: read.start ?? 0, before: read.cut ? (read.start ?? null) : null, unreadable: false, next: read.next ?? null, held: read.held ?? 0 };
 }
 
 /** An earlier stretch, in on top — only the one asked for (`before` the earliest page), so a late answer does not double lines. */
@@ -78,7 +81,19 @@ export function convoWithEarlier(state: ConvoState, before: number, read: Record
 export function convoRefreshed(state: ConvoState, read: RecordRead | null): ConvoState {
   if (!read) return state;
   if (state.unreadable || (read.start ?? 0) !== state.tailStart) return convoFromTail(read);
-  return { ...state, tail: keyed(read.lines, 0) };
+  return { ...state, tail: keyed(read.lines, 0), next: read.next ?? null, held: read.held ?? 0 };
+}
+
+/**
+ * What came after the last read, read from where it stopped: the lines it held stay as they are, the rest give way to
+ * the new ones. A read that did not go on from there (the record shrank, or grew past a page) starts the view over;
+ * one for a place the view has since moved past is dropped.
+ */
+export function convoContinued(state: ConvoState, after: number, read: RecordRead | null): ConvoState {
+  // read for an earlier place: the next movement reads from the right one
+  if (!read || state.next !== after) return state;
+  if (state.unreadable || read.start !== after) return convoFromTail(read);
+  return { ...state, tail: [...state.tail.slice(0, state.held), ...keyed(read.lines, state.held)], next: read.next ?? null, held: state.held + (read.held ?? 0) };
 }
 
 /** The person's lines said in the terminal while the panel showed it: stamped after `since`, and not typed from the panel. */
