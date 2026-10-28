@@ -375,9 +375,11 @@ export class Files extends Service implements FilesReader {
     this.home.logger.warn(`files: ${projectId}: ${errorMessage(error)}`);
   }
 
-  private notify(projectId: string): void {
+  /** `paths`, when the change is known to touch only them, lets a window keep what it read of every other file. */
+  private notify(projectId: string, paths?: string[]): void {
     this.told.set(projectId, (this.told.get(projectId) ?? 0) + 1);
-    this.home.get("ipc")?.send("files.changed", projectId);
+    const named = paths?.map((p) => normalizeRel(p)).filter((p): p is string => !!p);
+    this.home.get("ipc")?.send("files.changed", projectId, ...(named?.length ? [named] : []));
     this.home.emit("files/changed", projectId);
   }
 
@@ -533,7 +535,7 @@ export class Files extends Service implements FilesReader {
         dir,
         remote: backend ? config : null,
         warn: (m) => this.warn(projectId, m),
-        onChange: () => this.notify(projectId),
+        onChange: (paths) => this.notify(projectId, paths),
         projectRepository: () => this.projectRepository(projectId),
         env: { gitBinary: this.config.gitBinary, watch: this.config.watch, settleMs: this.config.settleMs, pushMs: this.config.pushMs }
       });
@@ -542,7 +544,7 @@ export class Files extends Service implements FilesReader {
       if (!(error instanceof GitMissingError)) throw error;
       // No git here: the folder still works as it is, and versions and sharing wait for git.
       if (backend) this.warn(projectId, `git is not installed; sharing through "${chosen.id}" waits for it`);
-      store = new FolderFileStore(dir, { detail: this.words()(backend ? "noGitShared" : "noGit"), onChange: () => this.notify(projectId) });
+      store = new FolderFileStore(dir, { detail: this.words()(backend ? "noGitShared" : "noGit"), onChange: (paths) => this.notify(projectId, paths) });
     }
     const raced = this.open.get(projectId);
     if (raced) {
@@ -820,7 +822,7 @@ export class Files extends Service implements FilesReader {
   async write(projectId: string, p: string, body: Buffer | string, opts: WriteOptions = {}): Promise<FileContent> {
     const store = await this.store(projectId);
     const { result } = await this.recordOp(projectId, store, { kind: "write", path: p, paths: [p] }, () => store.write(p, Buffer.isBuffer(body) ? body : Buffer.from(body, "utf8"), opts));
-    this.notify(projectId);
+    this.notify(projectId, [p]);
     return result;
   }
 
@@ -843,7 +845,7 @@ export class Files extends Service implements FilesReader {
     if (!store.writeMany) throw new Error("This Files backend cannot save several files at once");
     const files = entries.map((e) => ({ path: e.path, body: Buffer.isBuffer(e.body) ? e.body : Buffer.from(e.body, "utf8"), expect: e.expect }));
     const { ref } = await this.recordOp(projectId, store, { kind: "write", path: entries[0]?.path ?? "", paths: entries.map((e) => e.path) }, () => store.writeMany!(files, opts));
-    this.notify(projectId);
+    this.notify(projectId, entries.map((e) => e.path));
     return ref;
   }
 
@@ -878,7 +880,7 @@ export class Files extends Service implements FilesReader {
       if (folders.length) await store.settle(folders.length === 1 ? `Imported folder ${folders[0]!.rel}` : `Imported ${folders.length} folders`);
       for (const file of files) await store.write(file.rel, fs.readFileSync(file.src), { message: `Imported ${file.rel}` });
     });
-    this.notify(projectId);
+    this.notify(projectId, [...folders, ...files].map((f) => f.rel));
     return (await store.list(target)).filter((e) => names.has(e.name));
   }
 
@@ -886,14 +888,14 @@ export class Files extends Service implements FilesReader {
   async mkdir(projectId: string, p: string): Promise<string | null> {
     const store = await this.store(projectId);
     const { ref } = await this.recordOp(projectId, store, { kind: "mkdir", path: p, paths: [p] }, () => store.mkdir(p));
-    this.notify(projectId);
+    this.notify(projectId, [p]);
     return ref;
   }
 
   async move(projectId: string, from: string, to: string): Promise<string | null> {
     const store = await this.store(projectId);
     const { ref } = await this.recordOp(projectId, store, { kind: "move", path: from, target: to, paths: [from, to] }, () => store.move(from, to));
-    this.notify(projectId);
+    this.notify(projectId, [from, to]);
     if (ref) await this.home.parallel("files/moved", projectId, normalizeRel(from), normalizeRel(to));
     return ref;
   }
@@ -901,14 +903,14 @@ export class Files extends Service implements FilesReader {
   async copy(projectId: string, from: string, to: string): Promise<string | null> {
     const store = await this.store(projectId);
     const { ref } = await this.recordOp(projectId, store, { kind: "copy", path: from, target: to, paths: [to] }, () => store.copy(from, to));
-    this.notify(projectId);
+    this.notify(projectId, [to]);
     return ref;
   }
 
   async remove(projectId: string, p: string): Promise<string | null> {
     const store = await this.store(projectId);
     const { ref } = await this.recordOp(projectId, store, { kind: "remove", path: p, paths: [p] }, () => store.remove(p));
-    this.notify(projectId);
+    this.notify(projectId, [p]);
     return ref;
   }
 

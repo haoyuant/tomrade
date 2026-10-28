@@ -126,3 +126,24 @@ describe("the closed window setting", () => {
     expect(s.ctx.settings.get().closedWindow).toEqual({ [s.project.id]: { limit: 20, days: 14 } });
   });
 });
+
+describe("every item, read for each window's badges", () => {
+  it("is read once while nothing is written, and again after any write or once a few seconds pass", async () => {
+    const { items, project, board, ctx } = await fresh();
+    const a = items.create({ projectId: project.id, boardId: board.id, title: "First", by: "human" });
+    const list = vi.spyOn(items, "list");
+    expect(items.listAll(project.id).map((i) => i.title)).toEqual(["First"]);
+    expect(items.listAll(project.id).map((i) => i.title)).toEqual(["First"]);
+    expect(list).toHaveBeenCalledTimes(1);
+    items.update(project.id, a.id, { title: "Renamed" }, "human");
+    expect(items.listAll(project.id).map((i) => i.title)).toEqual(["Renamed"]);
+    expect(list).toHaveBeenCalledTimes(2);
+    // A write that bypasses the items service (an import, a repair) is seen too.
+    ctx.db.for(project.id).prepare("UPDATE items SET title = 'Imported' WHERE id = ?").run(a.id);
+    expect(items.listAll(project.id).map((i) => i.title)).toEqual(["Imported"]);
+    vi.setSystemTime(Date.now() + 6_000);
+    items.listAll(project.id);
+    expect(list).toHaveBeenCalledTimes(4);
+    await ctx.fiber.dispose();
+  });
+});

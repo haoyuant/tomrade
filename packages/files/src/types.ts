@@ -234,8 +234,8 @@ export interface OpenStoreOptions<C> {
   remote: C | null;
   /** Non-fatal trouble goes here, prefixed by the caller. */
   warn(message: string): void;
-  /** The store's files changed underneath the app: a sync, an outside edit. */
-  onChange(): void;
+  /** The store's files changed underneath the app: a sync, an outside edit. `paths` when the store knows which. */
+  onChange(paths?: string[]): void;
   /** What the service was configured with; a backend takes what applies to it. */
   env: StoreEnv;
   /** The project's own repository, asked on every sync; a backend sharing through git keeps out of its root and the store's folder. */

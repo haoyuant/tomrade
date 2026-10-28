@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useRef, useState } from "react";
+import { useDeferredValue, useRef, useState } from "react";
 import { Command } from "cmdk";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { useNavigate } from "@tanstack/react-router";
@@ -47,14 +47,23 @@ export interface PaletteActions {
   searchTickets: () => void;
 }
 
-/** One palette spanning every view, every issue and every action. */
-export function CommandPalette({ open, onOpenChange, actions, starting = false }: {
+interface PaletteProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   actions: PaletteActions;
   /** Opened on its ways to start a new session (the session bar's +): nothing else is listed. */
   starting?: boolean;
-}) {
+}
+
+/**
+ * One palette spanning every view, every issue and every action. Closed, it is not there at all: it reads the
+ * whole project's tickets and files, and would follow every change to them for nobody.
+ */
+export function CommandPalette(props: PaletteProps) {
+  return props.open ? <Palette {...props} /> : null;
+}
+
+function Palette({ open, onOpenChange, actions, starting = false }: PaletteProps) {
   const ws = useWorkspace();
   const selectedId = useSelectedId();
   const navigate = useNavigate();
@@ -87,12 +96,6 @@ export function CommandPalette({ open, onOpenChange, actions, starting = false }
   // ⇧↵ picks a session into a Terminal window cell: the key is seen before cmdk turns it into a choice.
   const shift = useRef(false);
   const list = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (open) return;
-    setSearch("");
-    setStartHere(false);
-    shift.current = false;
-  }, [open]);
 
   const run = (fn: () => void) => {
     onOpenChange(false);
