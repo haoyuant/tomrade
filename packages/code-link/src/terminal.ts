@@ -368,6 +368,12 @@ export function withOptions(template: string, flags: string): string {
  * not answer opens the system terminal instead. A terminal of "none" writes
  * the script and stops, for a person to run it themselves.
  */
+/**
+ * What a session's launch script leaves in its folder when it ends, its agent with it: the process exited, which a
+ * missing pid file alone cannot tell from one not started yet. The pane or window it ran in may stay, back at a shell.
+ */
+export const EXITED_FILE = "exited";
+
 export async function launchTerminal(input: LaunchInput, terminal: string, panes: PaneTerminal | null = null, platform: NodeJS.Platform = process.platform, bash: () => string | null = gitBash): Promise<LaunchResult> {
   fs.mkdirSync(input.dir, { recursive: true });
   const script = path.join(input.dir, "run.command");
@@ -382,8 +388,11 @@ export async function launchTerminal(input: LaunchInput, terminal: string, panes
   const writePid = platform === "win32" ? `{ cat /proc/$$/winpid 2>/dev/null || echo $$; } > ${shellQuote(pidFile)}` : `echo $$ > ${shellQuote(pidFile)}`;
   // Windows Terminal and Linux emulators close the window with its shell; a shell of the person's own keeps it open
   // to read, the pid file gone first as the EXIT trap would have, since exec skips the trap.
-  const keepOpen = `rm -f ${shellQuote(pidFile)}\nexec "\${SHELL:-bash}"`;
-  const wrap = (command: string, stay = false) => ["#!/bin/bash", `cd ${shellQuote(input.cwd)} || exit 1`, writePid, `trap 'rm -f ${shellQuote(pidFile)}' EXIT`, ...exports, command, ...(stay ? [keepOpen] : []), ""].join("\n");
+  const exited = shellQuote(path.join(input.dir, EXITED_FILE));
+  // A function, not a quoted command: a quoted path inside the trap's own quotes splits at a space.
+  const onExit = `tomrade_exited() { rm -f ${shellQuote(pidFile)}; : > ${exited}; }`;
+  const keepOpen = `rm -f ${shellQuote(pidFile)}\n: > ${exited}\nexec "\${SHELL:-bash}"`;
+  const wrap = (command: string, stay = false) => ["#!/bin/bash", `cd ${shellQuote(input.cwd)} || exit 1`, `rm -f ${exited}`, writePid, onExit, "trap tomrade_exited EXIT", ...exports, command, ...(stay ? [keepOpen] : []), ""].join("\n");
   const systemWindow = (app: string) => platform !== "darwin" && app !== "none" && app !== "herdr";
   fs.writeFileSync(script, wrap(input.command, systemWindow(terminal)), { mode: 0o755 });
   // The same wrapper around the resume: the pid file and the token come back with the session.

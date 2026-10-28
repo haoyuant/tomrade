@@ -5,6 +5,8 @@ import { CODE_WORDS, type CodeWords } from "./words.js";
 const RUN_TOOL = /^(?:bash|shell|exec_command|local_shell|run_shell_command|run_terminal_cmd|terminal|run_command|execute_command)$/i;
 /** The tools that change a file. */
 const EDIT_TOOL = /^(?:edit|write|multiedit|notebookedit|write_file|edit_file|replace|apply_patch|str_replace(?:_editor|_based_edit_tool)?|create_file)$/i;
+/** The tools that ask the person a question rather than for leave: Claude Code's and CodeBuddy's AskUserQuestion, and others'. */
+const QUESTION_TOOL = /^(?:askuserquestion|ask_user_question|ask_user|ask_followup_question|ask_question)$/i;
 /** How long a command or a path may be on a card. */
 const DETAIL_MAX = 80;
 
@@ -25,10 +27,14 @@ const clip = (value: string, fromStart: boolean): string | null => {
   return fromStart ? `…${flat.slice(flat.length - DETAIL_MAX + 1)}` : `${flat.slice(0, DETAIL_MAX - 1)}…`;
 };
 
-/** A tool's permission asked for, read from what its hook sent: the command it would run, the file it would change, or the tool alone. */
+/**
+ * A tool's permission asked for, read from what its hook sent: the command it would run, the file it would change, or
+ * the tool alone. A question tool asks the person something, whatever hook reported it.
+ */
 export function permissionAsk(tool: string | null | undefined, input: Record<string, unknown> | undefined): SessionAsk {
   const name = tool?.trim() || null;
   if (!name) return { kind: "permission", tool: null, action: null, detail: null };
+  if (QUESTION_TOOL.test(name)) return questionAsk();
   if (RUN_TOOL.test(name)) return { kind: "permission", tool: name, action: "run", detail: clip(text(input, "command", "cmd"), false) };
   if (EDIT_TOOL.test(name)) return { kind: "permission", tool: name, action: "edit", detail: clip(text(input, "file_path", "path", "notebook_path", "filename"), true) };
   return { kind: "permission", tool: name, action: "use", detail: clip(text(input, "description", "query", "url", "pattern", "prompt"), false) };

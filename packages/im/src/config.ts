@@ -104,6 +104,8 @@ export const ImConfig = z.object({
   operationTimeoutMs: z.number().int().min(10).default(30_000),
   /** Thread projection runs on Agent events; this sweep catches anything missed. */
   sweepMs: z.number().int().min(10).default(5_000),
+  /** A turn that shows nothing new this long says so in its chat, once, with how to end it. */
+  stallMs: z.number().int().min(10).default(60_000),
   /** Finished inbox/outbox records are kept this long; older replays fall back to Agent input receipts. */
   retentionMs: z.number().int().min(1_000).default(30 * 24 * 60 * 60 * 1000)
 }).prefault({});

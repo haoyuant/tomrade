@@ -981,6 +981,22 @@ describe("code link", () => {
     expect(askLineIn(permissionAsk("WebFetch", { url: "https://x.dev" }), "en")).toBe("wants to use WebFetch · https://x.dev");
     expect(askLineIn(permissionAsk(null, undefined), "zh")).toBe("等你允许");
     expect(askLineIn(questionAsk(), "en")).toBe("is asking you something");
+    // A question tool asks a question, whichever hook reported it.
+    expect(permissionAsk("AskUserQuestion", { questions: [] })).toEqual(questionAsk());
+    expect(permissionAsk("ask_user_question", undefined).kind).toBe("question");
+  });
+
+  it("keeps a session's question a question when its permission notice or its screen's reading follows it", async () => {
+    const { codeLink, project, repo, ticket } = await machine(codeRepo());
+    const item = ticket("Ask me", "doing");
+    const session = codeLink.store.createSession(project.id, { repoId: repo.id, branch: "", itemIds: [item.id], mode: "terminal", agent: "workbuddy", threadId: null, device: "test" });
+    const ask = () => codeLink.store.session(project.id, session.id)!.ask;
+    codeLink.sessions.event(project.id, session.id, { hook_event_name: "PermissionRequest", tool_name: "AskUserQuestion", tool_input: { questions: [{ question: "Which?" }] } });
+    expect(ask()).toEqual(questionAsk());
+    codeLink.sessions.event(project.id, session.id, { hook_event_name: "Notification", notification_type: "permission_prompt" });
+    expect(ask()).toEqual(questionAsk());
+    codeLink.sessions.event(project.id, session.id, { hook_event_name: "PermissionRequest", tool_name: "Bash", tool_input: { command: "ls" } });
+    expect(ask()).toMatchObject({ kind: "permission", action: "run" });
   });
 
   it("starts a new delivery when a done ticket is reopened, without old merge evidence completing it", async () => {

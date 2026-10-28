@@ -354,7 +354,7 @@ export function apply(ctx: Context) {
   const codeLink = () => contract(ctx, "codeLink");
   ctx.inbox.source(
     githubSource({
-      api: ctx.github.api,
+      api: ctx.github.issues,
       inbox: ctx.inbox,
       async repos(projectId) {
         const out = new Map<string, string>();
@@ -366,7 +366,7 @@ export function apply(ctx: Context) {
       },
       item: (projectId, itemId) => ctx.items.get(projectId, itemId),
       links: (projectId, itemId) => codeLink()?.links(projectId, itemId) ?? [],
-      connected: async () => !!(await ctx.github.token()),
+      connected: async () => !!(await ctx.github.readToken()),
       words
     })
   );

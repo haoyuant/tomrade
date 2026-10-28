@@ -15,8 +15,8 @@ import type { Starting } from "~/lib/startWays";
 import { askText, doingText } from "~/lib/terminalSession";
 
 export type BarMode = "rail" | "cards";
-/** What a card answers with: a terminal session's permission prompt, or an assistant question by one of its choices. */
-export type CardAnswer = { which: "allow" | "deny" } | { questionId: string; value: string };
+/** What a card answers with: a terminal session's permission prompt or a folder's trust, or an assistant question by one of its choices. */
+export type CardAnswer = { which: "allow" | "deny" } | { trust: "trust" | "exit" } | { questionId: string; value: string };
 
 /** At most this many of a question's choices sit on its card; the rest are answered where it opens. */
 const CHOICES_SHOWN = 3;
@@ -143,8 +143,14 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
     const stop = (e: React.SyntheticEvent) => e.stopPropagation();
     return (
       <div className="sbar-ask" role="group" aria-label={t("sessionBar.askGroup")} aria-busy={sending || undefined} data-testid="sbar-ask" onClick={stop} onKeyDown={stop}>
-        <span className="sbar-ask-text">{pending?.question.text ?? said(r)}</span>
+        <span className="sbar-ask-text">{pending?.question.text ?? (r.prompt === "trust" ? t("sessionBar.trustAsk") : said(r))}</span>
         <span className="sbar-ask-actions">
+          {r.prompt === "trust" && (
+            <>
+              <button type="button" className="btn btn-primary btn-xs" data-testid="sbar-trust" disabled={sending} onClick={answer(r, { trust: "trust" })}>{t("sessionBar.trustContinue")}</button>
+              <button type="button" className="btn btn-secondary btn-xs" data-testid="sbar-trust-exit" disabled={sending} onClick={answer(r, { trust: "exit" })}>{t("sessionBar.trustExit")}</button>
+            </>
+          )}
           {r.prompt === "allow" && <button type="button" className="btn btn-primary btn-xs" data-testid="sbar-allow" disabled={sending} onClick={answer(r, { which: "allow" })}>{t("sessionBar.allow")}</button>}
           {r.prompt === "deny" && <button type="button" className="btn btn-secondary btn-xs" data-testid="sbar-deny" disabled={sending} onClick={answer(r, { which: "deny" })}>{t("sessionBar.deny")}</button>}
           {pending && choices.map((choice, i) => (

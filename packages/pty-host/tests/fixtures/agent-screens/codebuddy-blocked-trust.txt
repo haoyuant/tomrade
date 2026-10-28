@@ -1,0 +1,18 @@
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Do you trust the files in this folder?                                                           │
+│                                                                                                  │
+│ /Users/me/Projects/demo-wt/fb-3                                                                  │
+│                                                                                                  │
+│ CodeBuddy Code may read, write, or execute files contained in this directory. This can pose      │
+│ security risks, so only use files and bash commands from trusted sources.                        │
+│                                                                                                  │
+│ Learn more ( https://www.codebuddy.ai/docs/cli )                                                 │
+│                                                                                                  │
+│   > 1. Trust folder only (fb-3)                                                                  │
+│     2. Trust parent folder (demo-wt/**)                                                          │
+│     3. Trust folder and all subdirectories (fb-3/**)                                             │
+│     4. No, exit (escape)                                                                         │
+│                                                                                                  │
+│ Enter to confirm • Esc to exit                                                                   │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
