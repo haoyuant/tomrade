@@ -1,3 +1,4 @@
+import { useQueries } from "@tanstack/react-query";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import type { Block, EngineView, FocusRef, PendingView, RunView, ThreadMessage } from "@tomradex/agent";
@@ -21,6 +22,8 @@ import { useImShareNext, useImThreadBindings } from "~/lib/im";
 import { isCancelKey, isCommitKey, isComposing } from "~/lib/keys";
 import { useFilesInfo } from "~/lib/files";
 import { useItems } from "~/lib/queries/items";
+import { invoke } from "~/lib/api";
+import { keys } from "~/lib/queries/keys";
 import { openExternal, openPath } from "~/lib/shell";
 import { useRenderMarkdown } from "~/lib/markdownLater";
 import { useToast } from "~/lib/toast";
@@ -286,6 +289,16 @@ export function StartBatchBlock({ card, cardId, projectId, threadId, onOpenIssue
   const keyOf = useKeyOf(projectId);
   const items = useItems(projectId);
   const ready = (engines.data ?? []).filter((engine) => engine.ok && engine.capabilities.includes("code") && !engine.terminalOnly);
+  // The windowed list may lack a closed ticket, so ask for the ones it lacks: a reverted or deleted ticket answers with nothing.
+  const lookups = useQueries({
+    queries: card.tickets.map((ticket) => ({
+      queryKey: keys.item(projectId, ticket.itemId),
+      queryFn: () => invoke("items.get", projectId, ticket.itemId),
+      enabled: !!items.data && !items.data.some((item) => item.id === ticket.itemId)
+    }))
+  });
+  const gone = new Set(card.tickets.filter((_, i) => lookups[i]?.isSuccess && !lookups[i].data).map((ticket) => ticket.itemId));
+  const allGone = gone.size === card.tickets.length;
   const [hadOutcome, setHadOutcome] = useState<ReadonlySet<string>>(new Set());
   const [chosenEngine, setChosenEngine] = useState<string | null>(null);
   const [chosenPermission, setChosenPermission] = useState<string | null>(null);
@@ -299,7 +312,9 @@ export function StartBatchBlock({ card, cardId, projectId, threadId, onOpenIssue
   const waits = start.isPending && start.variables ? startBatchWaits(start.variables.itemIds, card.results, hadOutcome) : new Map<string, "starting" | "queued">();
   const head = start.isPending
     ? t(going === 1 ? "agentPanel.startBatchRunningOne" : "agentPanel.startBatchRunning", { n: going })
-    : card.results
+    : card.results && !card.results.some((r) => r.ok)
+      ? t(n === 1 ? "agentPanel.startBatchStoppedOne" : "agentPanel.startBatchStoppedAll", { n })
+      : card.results
       ? t(n === 1 ? "agentPanel.startBatchDoneOne" : "agentPanel.startBatchDone", { n })
       : settled
         ? t(n === 1 ? "agentPanel.startBatchConfirmOne" : "agentPanel.startBatchConfirm", { n })
@@ -327,6 +342,7 @@ export function StartBatchBlock({ card, cardId, projectId, threadId, onOpenIssue
           return (
             <li key={ticket.itemId} data-testid="start-batch-ticket" data-state={wait ?? (result ? (result.ok ? "started" : "stopped") : "pending")}>
               <button type="button" className="kref num" onClick={() => onOpenIssue(ticket.itemId)}>{keyOf(ticket.itemId, ticket.key)}</button> {ticket.title}
+              {gone.has(ticket.itemId) && !result?.ok && <span className="meta-txt dense start-batch-result" data-testid="start-batch-gone">{t("agentPanel.startBatchGone")}</span>}
               {wait === "starting" && <StartProgressNote mode="run" general={items.data?.find((item) => item.id === ticket.itemId)?.workType === "general"} branch={null} />}
               {wait === "queued" && <span className="meta-txt dense start-batch-result" data-testid="start-batch-queued">{t("agentPanel.startBatchQueued")}</span>}
               {result && (
@@ -365,7 +381,7 @@ export function StartBatchBlock({ card, cardId, projectId, threadId, onOpenIssue
       {settled && !card.results && (
         <div className="tool-row start-batch-pick">
           <span className="meta-txt dense">{t("agentPanel.startBatchWith", { engine: findEngineTitle(engines.data, settled.engine) })}</span>
-          <button type="button" className="btn btn-primary btn-xs" disabled={start.isPending} data-testid="start-batch-go" onClick={() => go(settled)}>
+          <button type="button" className="btn btn-primary btn-xs" disabled={start.isPending || allGone} data-testid="start-batch-go" onClick={() => go(settled)}>
             {start.isPending ? <><Icon name="i-sync" size={12} className="is-spinning" /> {t("agentPanel.startBatchStarting")}</> : t(n === 1 ? "agentPanel.startBatchGoOne" : "agentPanel.startBatchGo", { n })}
           </button>
         </div>
@@ -394,7 +410,7 @@ export function StartBatchBlock({ card, cardId, projectId, threadId, onOpenIssue
               <button
                 type="button"
                 className="btn btn-primary btn-xs"
-                disabled={start.isPending || !engine}
+                disabled={start.isPending || !engine || allGone}
                 data-testid="start-batch-go"
                 onClick={() => engine && go({ engine: engine.id, ...(permissionMode ? { permissionMode } : {}) })}
               >

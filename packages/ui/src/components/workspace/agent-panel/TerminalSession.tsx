@@ -4,7 +4,7 @@ import type { EngineView, RecordUsage } from "@tomradex/agent";
 import type { SessionView } from "@tomradex/code-link";
 import { cutFrom, joinCuts } from "@tomradex/code-link/segments";
 import type { Item } from "@tomradex/domain";
-import { PROMPT_LINES, promptOnScreen } from "@tomradex/code-link/prompt";
+import { PROMPT_LINES, promptOnScreen, trustOnScreen } from "@tomradex/code-link/prompt";
 import { Icon } from "~/components/icons";
 import { ConvoLines, ConvoTop, useOpenLines, type AgentText, type ConvoSay } from "~/components/ConversationRead";
 import { Spacer } from "~/components/ui/atoms";
@@ -200,13 +200,14 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
     };
   }, []);
   const reads = mayReadPane({ shown: true, visible, pane: !!session.herdrPane, live });
+  const screenAsk = isApprovalAsk(session) && !session.ask?.tool;
   const tailAt = useRef<number | null>(null);
   useEffect(() => {
     if (!reads) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    // an agent that declared its approval keys: enough of the screen to see whether a prompt is on it
-    const rows = drawer ? DRAWER_ROWS : panel.data?.approval ? Math.max(STRIP_ROWS, PROMPT_LINES) : STRIP_ROWS;
+    // an agent that declared its approval keys, or an ask only its screen told of (a folder's trust): enough of the screen to see the prompt
+    const rows = drawer ? DRAWER_ROWS : panel.data?.approval || screenAsk ? Math.max(STRIP_ROWS, PROMPT_LINES) : STRIP_ROWS;
     const tick = async () => {
       tailAt.current = Date.now();
       const text = await invoke("codeLink.sessionTail", projectId, session.id, rows).catch(() => null);
@@ -219,7 +220,7 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
       stopped = true;
       if (timer) clearTimeout(timer);
     };
-  }, [reads, drawer, projectId, session.id, panel.data?.approval]);
+  }, [reads, drawer, projectId, session.id, panel.data?.approval, screenAsk]);
   const strip = tailLines(screen, 2);
 
   // ── what is typed goes into the pane; Allow and Deny press the agent's own keys ──
@@ -237,6 +238,8 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
   const sayToPane = async (said: string, clear: () => void) => {
     const text = said.trim();
     if (!text || !canType || sending) return;
+    // a key typed into a folder's trust may pick Exit: its buttons answer it
+    if (trusting) return void toast({ body: t("sessionBar.trustUseButtons") });
     setSending(true);
     try {
       if (await invoke("codeLink.sessionSay", projectId, session.id, text)) {
@@ -277,6 +280,24 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
       setSending(false);
     }
   };
+  const answerTrust = async (which: "trust" | "exit") => {
+    if (sending) return;
+    setSending(true);
+    try {
+      const result = await invoke("codeLink.sessionTrust", projectId, session.id, which);
+      if (result === "answered") {
+        setAnswered(session.lastEventAt);
+        answeredHere.current.add(session.lastEventAt);
+        setTimeout(() => setAnswered(null), ANSWERED_MS);
+        onAnswered?.();
+      } else if (result === "notPrompt") toast({ body: t("sessionBar.answerInPane"), actions: onShowInTerminal ? [{ label: t("sessionBar.showInTerminal"), run: onShowInTerminal }] : undefined });
+      else toast({ body: t("sessionBar.notTaken") });
+    } catch (error) {
+      reportError(error);
+    } finally {
+      setSending(false);
+    }
+  };
   const asking = isApprovalAsk(session) && answered !== session.lastEventAt;
   // Answered on the other side (its cell, or the terminal): the ask goes down here too, with a line saying where.
   const [answeredThere, setElsewhere] = useState<{ id: string; text: string } | null>(null);
@@ -311,6 +332,8 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
   }, [drawer]);
   // Allow and Deny only while the screen shows a prompt they answer: Allow with yes under the cursor, Deny with either.
   const onScreen = useMemo(() => promptOnScreen(screen ?? ""), [screen]);
+  // A folder's trust on the screen: its own two buttons, which move the cursor before Enter, whatever the session's state says.
+  const trusting = useMemo(() => (live && answered !== session.lastEventAt ? trustOnScreen(screen ?? "") : null), [screen, live, answered, session.lastEventAt]);
   const inputNote = !live ? t("sessionBar.inputEnded") : panel.data?.input === "noPane" ? t("sessionBar.inputOutside", { app: where }) : panel.data?.input === "noBackend" ? t("sessionBar.inputNoBackend") : panel.data?.input === "unsupported" ? t("sessionBar.inputUnsupported") : null;
   const lines = useMemo(() => (convo ? convoLines(convo) : []), [convo]);
   // what the person said in the terminal while this view showed it, marked where it came from
@@ -478,7 +501,13 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
         )}
         {usage?.turn && <TurnLine turn={usage.turn} runs={live && (session.state === "running" || isApprovalAsk(session))} />}
         {elsewhere && <p className="ai-answered-there meta-txt dense" data-testid="ai-answered-there" role="status">{elsewhere}</p>}
-        {asking && (
+        {trusting && canType ? (
+          <div className="ai-approve" data-testid="ai-trust" role="group" aria-label={t("sessionBar.trustAsk")}>
+            <span className="ai-approve-text">{t("sessionBar.trustAsk")}</span>
+            <button type="button" className="btn btn-primary btn-xs" data-testid="ai-trust-continue" disabled={sending} title={t("sessionBar.trustTitle", { option: trusting.options[trusting.trust]! })} onClick={() => void answerTrust("trust")}>{t("sessionBar.trustContinue")}</button>
+            <button type="button" className="btn btn-secondary btn-xs" data-testid="ai-trust-exit" disabled={sending} title={t("sessionBar.trustTitle", { option: trusting.options[trusting.exit]! })} onClick={() => void answerTrust("exit")}>{t("sessionBar.trustExit")}</button>
+          </div>
+        ) : asking && (
           <div className="ai-approve" data-testid="ai-approve" role="group" aria-label={asked ?? t("agentPanel.attention_permission")}>
             <span className="ai-approve-text">{asked ?? t("agentPanel.attention_permission")}</span>
             {goesOnNext && <span className="ai-approve-note" data-testid="ask-goes-on">{t("sessionBar.goesOnNext")}</span>}
