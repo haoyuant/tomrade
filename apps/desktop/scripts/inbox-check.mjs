@@ -41,7 +41,7 @@ const run = async () => {
     patches: [[{ id: "mcp", config: { port: 0 } }, { id: "hub-cloud", disabled: true }, { id: "attention", config: { notify: false } }, ...local.map((id) => ({ id, disabled: true })),
       { id: "doctor", config: { dataDir: "${userData}/doctor", logDir: "${logDir}", version: "${appVersion}", catalogUrl: "" } },
       // the issues source falls back to the GitHub CLI's sign-in: this machine's gh must not count as an account here
-      { id: "github", config: { ghToken: async () => "" } }]]
+      { id: "github", config: { userData: "${userData}", clientId: "Iv23lilOnDQLgcQBtlrt", appSlug: "tomradex", nodeBinary: "${nodeRuntime}", ghToken: async () => "" } }]]
   });
   ctx.hub.configure(path.join(work, "hub"));
   await ctx.storage.ready;
