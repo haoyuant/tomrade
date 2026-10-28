@@ -388,7 +388,7 @@ export const attention = {
     const open = async (target: AttentionTarget) => {
       // A terminal session goes to its cell while its project's Terminal window is open; anything else to the main window's panel.
       const codeLink = ctx.get("codeLink");
-      if (target.sessionId && codeLink && ctx.bail("codeLink/cells", target.projectId) && (await codeLink.showSession(target.projectId, target.sessionId).catch(() => false))) return;
+      if (target.sessionId && codeLink && ctx.bail("codeLink/session-cells", target.projectId) && (await codeLink.showSession(target.projectId, target.sessionId).catch(() => false))) return;
       // Running in the background there may be no window yet: one opens, and hears the entry once it has loaded.
       const win = showMainWindow();
       if (win) whenLoaded(win, () => ctx.ipc.send("attention.open", target));

@@ -9,7 +9,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { CodeLink, askLineIn, deliveryMerged, permissionAsk, questionAsk, type CodeLinkView, type ForgePull } from "@tomradex/code-link";
+import { CodeLink, askLineIn, deliveryMerged, doingLine, permissionAsk, questionAsk, type CodeLinkView, type ForgePull } from "@tomradex/code-link";
+import { CODE_WORDS } from "../src/words.js";
 import { Contributions } from "@tomradex/contributions";
 import { Repos } from "@tomradex/repos";
 import GitHubAccount from "@tomradex/github";
@@ -807,6 +808,30 @@ describe("code link", () => {
     expect(now()).toMatchObject({ asked: 3, ask: { kind: "question", tool: null } });
     codeLink.sessions.event(project.id, session.id, { hook_event_name: "Stop" });
     expect(now().ask).toBeNull();
+  });
+
+  it("keeps a failed tool call as the tool's name, not English, until the session's next word of what it does", async () => {
+    const { codeLink, project, repo, ticket } = await machine(codeRepo());
+    const item = ticket("Fails", "doing");
+    const session = codeLink.store.createSession(project.id, { repoId: repo.id, branch: "", itemIds: [item.id], mode: "terminal", agent: "claude-code", threadId: null, device: "test" });
+    const now = () => codeLink.store.session(project.id, session.id)!;
+    codeLink.sessions.event(project.id, session.id, { hook_event_name: "PostToolUseFailure", tool_name: "Bash", tool_input: { command: "pnpm test" }, tool_error: "exit 1" });
+    expect(now()).toMatchObject({ state: "running", activity: null, failedTool: "Bash" });
+    codeLink.sessions.event(project.id, session.id, { hook_event_name: "PreToolUse", tool_name: "Read", tool_input: { file_path: "/repo/a.ts" } });
+    expect(now()).toMatchObject({ activity: "Read · a.ts", failedTool: null });
+    codeLink.sessions.event(project.id, session.id, { hook_event_name: "PostToolUseFailure" });
+    expect(now()).toMatchObject({ activity: null, failedTool: "" });
+    codeLink.sessions.event(project.id, session.id, { hook_event_name: "Stop" });
+    expect(now().failedTool).toBeNull();
+  });
+
+  it("words what a session does in the person's language: a failed tool call, else its activity", () => {
+    expect(doingLine({ activity: null, failedTool: "Bash" }, CODE_WORDS("zh"))).toBe("Bash 失败了");
+    expect(doingLine({ activity: null, failedTool: "Bash" }, CODE_WORDS("en"))).toBe("Bash failed");
+    expect(doingLine({ activity: null, failedTool: "" }, CODE_WORDS("zh"))).toBe("工具调用失败");
+    expect(doingLine({ activity: "Read · a.ts", failedTool: null }, CODE_WORDS("en"))).toBe("Read · a.ts");
+    // what an older session kept stays as it was
+    expect(doingLine({ activity: "Bash failed", failedTool: null }, CODE_WORDS("zh"))).toBe("Bash failed");
   });
 
   it("words an ask in the person's language for what the backend says itself", () => {

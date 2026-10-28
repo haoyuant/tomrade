@@ -1,4 +1,4 @@
-import type { SessionAsk } from "./store.js";
+import type { SessionAsk, SessionView } from "./store.js";
 import { CODE_WORDS, type CodeWords } from "./words.js";
 
 /** The tools that run a command, as each agent names its own. */
@@ -50,3 +50,7 @@ export function askLine(ask: SessionAsk, w: CodeWords): string {
 
 /** The same line in a given language, for what speaks for the app outside code link: the waiting list, a notification. */
 export const askLineIn = (ask: SessionAsk, locale: string | undefined): string => askLine(ask, CODE_WORDS(locale));
+
+/** What a session does now, as a line in the person's language: a tool call that just failed, else its activity. */
+export const doingLine = (s: Pick<SessionView, "activity" | "failedTool">, w: CodeWords): string | null =>
+  s.failedTool === null ? s.activity : s.failedTool ? w("toolFailed", { tool: s.failedTool }) : w("toolFailedAny");

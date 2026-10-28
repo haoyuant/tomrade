@@ -45,7 +45,7 @@ import { Starter, type StartGate, type StartOptions, type StartResult } from "./
 import { ticketTimeline, type TicketTimeline } from "./timeline.js";
 import { CodeLinkStore, MIGRATIONS, TABLES, type CodeLinkView, type DeliveryView, type ProposalView, type Readiness, type RepoStatePatch, type RepoStateView, type SessionView } from "./store.js";
 import { readSnapshot, saveSnapshot, snapshotFile } from "./snapshots.js";
-import { askLine, permissionAsk, questionAsk } from "./ask.js";
+import { askLine, doingLine, permissionAsk, questionAsk } from "./ask.js";
 import { Review, type ReviewCursor, type ReviewPage, type ReviewSaid, type ReviewTicket, type ReviewView, type SessionOutcome } from "./review.js";
 import { recordOf, resumeCommand } from "./titles.js";
 import { AUTO_TERMINAL, TerminalSettings, commandOk, exec, locatedCommand, terminalApps, terminalPath } from "./terminal.js";
@@ -74,14 +74,12 @@ declare module "cordis" {
     "codeLink/show-session"(projectId: string, sessionId: string): Promise<boolean | void> | boolean | void;
     /** Asked: open a new terminal inside Tomrade that takes this ended session's conversation up again. True once a window has. */
     "codeLink/resume-session"(projectId: string, sessionId: string): Promise<boolean | void> | boolean | void;
-    /** Asked: which cell of Tomrade's Terminal window shows each session, numbered as the window numbers them; nothing while no window is open. */
-    "codeLink/session-cells"(projectId: string): Promise<Record<string, number> | void> | Record<string, number> | void;
+    /** Asked: which cell of Tomrade's Terminal window shows each session, numbered as the window numbers them; nothing while no window is open. The panel, the session bar and the tray all read this one. */
+    "codeLink/session-cells"(projectId: string): Record<string, number> | void;
     /** Asked: whether what this session's pane showed was recorded here. */
     "codeLink/raw-output-there"(projectId: string, sessionId: string): Promise<boolean | void> | boolean | void;
     /** Asked: the recording of what this session's pane showed, to play back; the Terminal window's plugin answers. */
     "codeLink/raw-output"(projectId: string, sessionId: string): Promise<RawOutput | null | void> | RawOutput | null | void;
-    /** Asked: the sessions and terminals in the cells of this project's open Terminal window, numbered as it shows them; nothing while it is closed. */
-    "codeLink/cells"(projectId: string): { sessionId: string; n: number }[] | void;
     /** Asked: a plain terminal in a new cell of this project's Terminal window, opening the window if needed. True once one has. */
     "codeLink/new-terminal"(projectId: string): Promise<boolean | void> | boolean | void;
     /** Asked: the projects whose Terminal window was used, last used first, each with how many cells its window has. */
@@ -866,7 +864,7 @@ export class CodeLink extends Service implements CodeLinkReader {
         lastCommitAt: l.headAt
       })),
       session: live
-        ? { id: live.id, mode: live.mode, agent: live.agent, state: live.state, summary: live.summary, activity: live.ask ? askLine(live.ask, this.words()) : live.activity, blocked: live.blocked, threadId: live.threadId, worktree: live.worktree, lastEventAt: live.lastEventAt ?? live.startedAt }
+        ? { id: live.id, mode: live.mode, agent: live.agent, state: live.state, summary: live.summary, activity: live.ask ? askLine(live.ask, this.words()) : doingLine(live, this.words()), blocked: live.blocked, threadId: live.threadId, worktree: live.worktree, lastEventAt: live.lastEventAt ?? live.startedAt }
         : null,
       proposals: this.store.proposals(projectId, itemId, "open").map((p) => ({ id: p.id, kind: p.kind, toStatus: p.toStatus, reason: p.reason }))
     };

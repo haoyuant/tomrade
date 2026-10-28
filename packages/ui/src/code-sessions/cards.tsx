@@ -1,7 +1,7 @@
 import type { SessionRow, ThreadRow } from "@tomradex/code-sessions";
 import { outcomeLine } from "../lib/review";
 import { rangeLabel, spanLabel } from "../lib/sessionTime";
-import { askText } from "../lib/terminalSession";
+import { askText, doingText } from "../lib/terminalSession";
 import { canAnswer, rowStartedAt, sessionName, waitedSince, type BarStatus, type HereRow } from "./lists";
 import { useSay, type Say, type Words } from "./say";
 
@@ -58,7 +58,7 @@ export function whereOf(r: HereRow, cell: number | null, say: Say): string {
 }
 
 /** What came of an ended session, said the way the assistant panel and the look back say it. */
-export const outcomeOf = (s: SessionRow, words: Words): string | null => (s.outcome ? outcomeLine(s.outcome, (key, vars) => words(`review.${key}`, vars)) : s.activity);
+export const outcomeOf = (s: SessionRow, words: Words): string | null => (s.outcome ? outcomeLine(s.outcome, (key, vars) => words(`review.${key}`, vars)) : doingText(s, words));
 
 /** How long it has run or waited, or when it ran; an idle one says so. */
 export function rowWhen(r: HereRow, status: BarStatus, say: Say, words: Words, now = Date.now()): string {
@@ -75,13 +75,13 @@ export function rowSaid(r: HereRow, status: BarStatus, say: Say, words: Words): 
   if (r.kind === "thread") {
     const wait = r.thread.wait;
     if (wait) return wait.text ?? say(wait.kind === "permission" ? "waitPermission" : "waitQuestion");
-    return r.session?.activity ?? null;
+    return r.session ? doingText(r.session, words) : null;
   }
   const s = r.session;
   if (!s) return null;
   if (status === "wait") return s.ask ? askText(s.ask, words) : (s.activity ?? say("waitPermission"));
   if (status === "done") return outcomeOf(s, words);
-  return s.activity;
+  return doingText(s, words);
 }
 
 /** A live session's last lines on its pane, as the glance read them; none once it ended or waits. */

@@ -48,6 +48,8 @@ export const HELD_INPUT_MAX = 64 * 1024;
 const FRAME_BATCH_MS = 16;
 /** A batch past this goes at once, so a pane painting without pause cannot grow it without end. */
 const FRAME_BATCH_MAX = 256 * 1024;
+/** How soon after a keystroke the next frame of its cell still counts as its echo, and skips the batch. */
+const ECHO_MS = 100;
 /** How soon a waiting session whose screen showed no prompt is looked at again. */
 const PROMPT_RECHECK_MS = 2000;
 /** How long the assistant's events settle before the window is refreshed for them: a turn ends in a burst of them. */
@@ -266,6 +268,7 @@ export function sessionRows(codeLink: Pick<CodeLink, "sessionsOf" | "links">, it
         state: s.state,
         needsYou: live && !!s.blocked,
         activity: s.activity ?? s.summary,
+        failedTool: live ? s.failedTool : null,
         ask: live && s.state === "waiting" ? s.ask : null,
         mode: s.mode === "headless" ? "run" : "terminal",
         agent: s.agent,
@@ -344,6 +347,8 @@ interface Open {
   follows: Map<string, () => void>;
   /** Frames waiting to go to the window, one batch per cell. */
   frames: Map<string, PendingFrames>;
+  /** When each cell was last typed into, until its next frame: that frame is the echo, and goes at once. */
+  typed: Map<string, number>;
   /** What each attached cell's pane shows, being recorded. */
   recordings: Map<string, Recording>;
   /** The newest live session on each attached cell's pane, as last seen: another one appearing asks the cell for a snapshot. */
@@ -818,9 +823,9 @@ function apply(ctx: Context, config: Config) {
     snapshotNewSessions(win, next.sessions);
   };
 
-  /** The cells numbered again for a layout; the panel hears of it only when a session's cell changed. */
+  /** The cells numbered again for a layout; the panel hears of it only when a session's cell changed. Before the first state, by what the cells hold. */
   const renumber = (projectId: string, win: Open, layout: Layout | null) => {
-    const cells = layout && win.shown && !win.closed ? cellNumbers(layout, win.shown.terminals, win.shown.sessions) : {};
+    const cells = layout && !win.closed ? cellNumbers(layout, win.shown?.terminals ?? [], win.shown?.sessions ?? []) : {};
     const same = Object.keys(cells).length === Object.keys(win.cells).length && Object.entries(cells).every(([id, n]) => win.cells[id] === n);
     win.cells = cells;
     if (!same) ctx.codeLink.cellsChanged(projectId);
@@ -1073,9 +1078,14 @@ function apply(ctx: Context, config: Config) {
     if (pending && (pending.width !== frame.width || pending.height !== frame.height)) flushFrames(win, cell);
     const batch = win.frames.get(cell);
     if (!batch) {
+      const typedAt = win.typed.get(cell);
+      win.typed.delete(cell);
       const timer = setTimeout(() => flushFrames(win, cell), FRAME_BATCH_MS);
       timer.unref?.();
       win.frames.set(cell, { bytes: [frame.bytes], size: frame.bytes.length, seq: frame.seq, width: frame.width, height: frame.height, full: frame.full, timer });
+      // The first frame after a keystroke goes at once: herdr may already have held it for its next paint (other panes
+      // watched in the background keep it painting), and a batch on top of that is felt as lag (TOM-713).
+      if (typedAt !== undefined && Date.now() - typedAt <= ECHO_MS) flushFrames(win, cell);
       return;
     }
     batch.bytes.push(frame.bytes);
@@ -1354,7 +1364,10 @@ function apply(ctx: Context, config: Config) {
         return refresh(projectId);
       case "input": {
         const stream = win.terminals.get(m.cell);
-        if (stream) return stream.input(m.data);
+        if (stream) {
+          win.typed.set(m.cell, Date.now());
+          return stream.input(m.data);
+        }
         const held = win.held.get(m.cell);
         if (!held) return;
         if (held.text.length + m.data.length > HELD_INPUT_MAX) held.over = true;
@@ -1363,7 +1376,10 @@ function apply(ctx: Context, config: Config) {
       }
       case "key": {
         const stream = win.terminals.get(m.cell);
-        if (stream?.key) return stream.key(m.key);
+        if (stream?.key) {
+          win.typed.set(m.cell, Date.now());
+          return stream.key(m.key);
+        }
         return onMessage(projectId, win, { type: "input", cell: m.cell, data: "\r" });
       }
       case "drop": {
@@ -1543,7 +1559,7 @@ function apply(ctx: Context, config: Config) {
       return refresh(projectId);
     }
     const w = words();
-    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), held: new Map(), timer: setInterval(() => void refresh(projectId), BRIDGE_POLL_MS), closed: false, reveal: asked, history: false, states: { begun: 0, shown: 0 }, follows: new Map(), frames: new Map(), recordings: new Map(), onPane: new Map(), warnedRecording: false, cells: {}, shown: null };
+    const win: Open = { surface: null as unknown as DesktopSurface, terminals: new Map(), turns: new Map(), detached: new Set(), held: new Map(), timer: setInterval(() => void refresh(projectId), BRIDGE_POLL_MS), closed: false, reveal: asked, history: false, states: { begun: 0, shown: 0 }, follows: new Map(), frames: new Map(), typed: new Map(), recordings: new Map(), onPane: new Map(), warnedRecording: false, cells: {}, shown: null };
     win.timer.unref?.();
     open.set(projectId, win);
     try {
@@ -1564,6 +1580,8 @@ function apply(ctx: Context, config: Config) {
   const opening = async (projectId: string, win: Open, w: ReturnType<typeof words>) => {
     const initialState = await state(projectId);
     follow(win, initialState.terminals);
+    win.shown = { terminals: initialState.terminals, sessions: initialState.sessions };
+    renumber(projectId, win, initialState.layout);
     win.surface = ctx.desktopSurfaces.open({
       id: `code-sessions.${projectId}`,
       title: w("windowTitle", { project: projectName(projectId) }),
@@ -1649,13 +1667,6 @@ function apply(ctx: Context, config: Config) {
     const bounds = replayBounds(projectId, sessionId);
     if (!bounds || !recorder.has(bounds.pane, bounds.from, bounds.to)) return null;
     return recorder.slice(bounds.pane, bounds.from, bounds.to);
-  });
-  // The tray's "· cell 2" and its way to a session's cell: only while the window is open to show them.
-  ctx.on("codeLink/cells", (projectId) => {
-    const win = open.get(projectId);
-    if (!win || win.closed) return;
-    const layout = stateOf(config.stateFile).layouts?.[projectId];
-    return cellsIn(isLayout(layout) ? layout : fresh()).flatMap((leaf, i) => (leaf.sessionId ? [{ sessionId: leaf.sessionId, n: i + 1 }] : []));
   });
   // Projects with a window before `used` was kept count as used long ago, the last one opened first.
   ctx.on("codeLink/terminal-windows", () => {

@@ -14,7 +14,7 @@ export { tailLines } from "@tomradex/code-link/prompt";
 /** The session waits on the person's say-so for a tool: what Allow and Deny answer. Not a turn that ended, nor a question. */
 export const isApprovalAsk = (session: Pick<SessionView, "state" | "ask">): boolean => session.state === "waiting" && session.ask?.kind === "permission";
 
-type AskKey = "sessionBar.askRun" | "sessionBar.askRunAny" | "sessionBar.askEdit" | "sessionBar.askEditAny" | "sessionBar.askTool" | "sessionBar.askToolAny" | "sessionBar.askApproval" | "sessionBar.askQuestion";
+type AskKey = "sessionBar.askRun" | "sessionBar.askRunAny" | "sessionBar.askEdit" | "sessionBar.askEditAny" | "sessionBar.askTool" | "sessionBar.askToolAny" | "sessionBar.askApproval" | "sessionBar.askQuestion" | "sessionBar.toolFailed" | "sessionBar.toolFailedAny";
 /** The words an ask is said with: the panel's `t`, or the Terminal window's words. */
 export type AskWords = (key: AskKey, vars?: Record<string, string>) => string;
 
@@ -26,6 +26,10 @@ export function askText(ask: SessionAsk, w: AskWords): string {
   if (ask.tool) return ask.detail ? w("sessionBar.askTool", { tool: ask.tool, detail: ask.detail }) : w("sessionBar.askToolAny", { tool: ask.tool });
   return w("sessionBar.askApproval");
 }
+
+/** What a session does now, in the person's language: a tool call that just failed, else its activity. */
+export const doingText = (s: { activity: string | null; failedTool: string | null }, w: AskWords): string | null =>
+  s.failedTool === null ? s.activity : s.failedTool ? w("sessionBar.toolFailed", { tool: s.failedTool }) : w("sessionBar.toolFailedAny");
 
 export const isLive = (session: Pick<SessionView, "state">): boolean => session.state !== "ended" && session.state !== "lost";
 

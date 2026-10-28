@@ -644,7 +644,7 @@ export class Sessions {
         Object.assign(patch, { state: "running", tool: true, activity: null });
         break;
       case "PostToolUseFailure":
-        Object.assign(patch, { state: "running", tool: true, activity: p.tool_name ? `${p.tool_name} failed` : "a tool failed" });
+        Object.assign(patch, { state: "running", tool: true, activity: null, failedTool: p.tool_name?.trim() ?? "" });
         break;
       case "PermissionRequest":
         // herdr's read of a blocked pane names no tool: what a hook said of the same ask stays
@@ -741,7 +741,7 @@ export class Sessions {
   }
 
   /** Any sign of life, with what it says about the session. */
-  touch(projectId: string, sessionId: string, patch: { state?: SessionState; externalId?: string; herdrPane?: string; terminal?: string; endedAt?: number; tool?: boolean; summary?: string; activity?: string | null; ask?: SessionAsk | null; blocked?: SessionBlock | null } = {}): void {
+  touch(projectId: string, sessionId: string, patch: { state?: SessionState; externalId?: string; herdrPane?: string; terminal?: string; endedAt?: number; tool?: boolean; summary?: string; activity?: string | null; failedTool?: string; ask?: SessionAsk | null; blocked?: SessionBlock | null } = {}): void {
     const session = this.store.session(projectId, sessionId);
     if (!session) return;
     const now = Date.now();
@@ -764,6 +764,7 @@ export class Sessions {
       ...(patch.endedAt ? { endedAt: patch.endedAt } : {}),
       ...(patch.summary !== undefined ? { summary: patch.summary } : {}),
       ...(patch.activity !== undefined ? { activity: patch.activity } : {}),
+      ...(patch.failedTool !== undefined ? { failedTool: patch.failedTool } : {}),
       ...(ask !== undefined ? { ask } : {}),
       ...(patch.blocked !== undefined ? { blocked: patch.blocked } : {})
     });
