@@ -6,7 +6,7 @@ import { afterAll, expect, it, vi } from "vitest";
 import { Service, type Context } from "cordis";
 import { EventEmitter } from "node:events";
 import type { ReviewRow } from "@tomradex/code-link";
-import CodeSessions, { cellNumbers, continuedIn, needingYou, openSystemTerminal, sessionRows, type Layout, type WindowMessage, type WindowPost, type WindowState } from "@tomradex/code-sessions";
+import CodeSessions, { BRIDGE_POLL_MS, cellNumbers, continuedIn, needingYou, openSystemTerminal, sessionRows, type Layout, type WindowMessage, type WindowPost, type WindowState } from "@tomradex/code-sessions";
 import { Contributions } from "@tomradex/contributions";
 import { Settings } from "@tomradex/settings";
 import { Herdr, HerdrError } from "@tomradex/herdr";
@@ -651,7 +651,7 @@ it("never shows a state older than one already shown, so a pick from History kee
 
   // A state begins; the ended session is picked from History into a cell, and another state begins after that.
   held = [];
-  w.ctx.emit("codeLink/changed", w.project.id);
+  win.spec.onMessage({ type: "refresh" });
   await settle();
   win.spec.onMessage({ type: "layout", layout: { ...one, b: { type: "leaf", id: "c2", sessionId: "old" } } });
   win.spec.onMessage({ type: "refresh" });
@@ -1866,4 +1866,213 @@ it("records a pane no cell shows by watching it, never taking it over; a cell ta
   w.ctx.settings.set({ ...w.ctx.settings.get(), terminalRecording: { enabled: true, background: false, maxPaneMB: 50, keepDays: 7 } });
   await vi.waitFor(() => expect(watching()).toEqual([]));
   win.spec.onClose();
+});
+
+it("computes the window's state once for a burst of session events, at once for one that changes a session's standing, and never sends the same state twice", async () => {
+  const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[] }[] = [];
+  const sessions = [session({ id: "s1", herdrPane: "w1:p1", startedAt: 5, activity: "start" })];
+  let computed = 0;
+  class FakeSurfaces extends Service {
+    static provide = "desktopSurfaces";
+    constructor(ctx: Context) {
+      super(ctx, "desktopSurfaces");
+    }
+    open(spec: (typeof opened)[number]["spec"]) {
+      const entry = { spec, states: [spec.initialState as WindowState] };
+      opened.push(entry);
+      return { id: "s", capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus() {}, setState: (s: WindowState) => void entry.states.push(s), post() {}, close: () => spec.onClose() };
+    }
+  }
+  class CountingHerdr extends Service {
+    static provide = "terminals";
+    readonly kind = "herdr" as const;
+    constructor(ctx: Context) {
+      super(ctx, "terminals");
+    }
+    onPane = () => () => {};
+    watch = () => () => {};
+    watching = (): string[] => [];
+    // Once per state: what the window's state is computed from first.
+    bridge = async () => (computed++, { state: "ready" as const, version: "0.9.5" });
+    clientAttached = async () => false;
+    panes = async () => [];
+    processes = async () => [];
+  }
+  class FakeCodeLink extends Service {
+    static provide = "codeLink";
+    constructor(ctx: Context) {
+      super(ctx, "codeLink");
+    }
+    sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
+    cellsChanged = () => {};
+    sessionsOf = () => sessions;
+    links = () => [];
+    repositoriesOf = () => [];
+    repositoryFoldersOf = this.repositoriesOf;
+  }
+  const stateFile = path.join(dir, "burst-state.json");
+  const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "burst-settings.json") }], Contributions, FakeSurfaces, CountingHerdr, FakeCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile }]] });
+  for (const s of sessions) s.device = w.ctx.hub.deviceId;
+  await settle();
+  await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
+  const win = opened[0]!;
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const activity = () => win.states.at(-1)!.sessions.find((s) => s.id === "s1")?.activity;
+
+  // An agent at work: ten hook events within a second, each moving its activity only.
+  computed = 0;
+  for (let i = 1; i <= 10; i++) {
+    sessions[0]!.activity = `step ${i}`;
+    w.ctx.emit("codeLink/changed", w.project.id);
+    await sleep(90);
+  }
+  await sleep(1300);
+  expect(computed).toBeGreaterThanOrEqual(1);
+  expect(computed).toBeLessThanOrEqual(2);
+  expect(activity()).toBe("step 10");
+
+  // Ten at once: one state.
+  computed = 0;
+  for (let i = 1; i <= 10; i++) {
+    sessions[0]!.activity = `burst ${i}`;
+    w.ctx.emit("codeLink/changed", w.project.id);
+  }
+  await sleep(1300);
+  expect(computed).toBe(1);
+  expect(activity()).toBe("burst 10");
+
+  // Waiting on the person changes its standing: shown after the burst settles, not after the gap.
+  computed = 0;
+  sessions[0]!.activity = "busy";
+  w.ctx.emit("codeLink/changed", w.project.id);
+  sessions[0]!.state = "waiting";
+  sessions[0]!.blocked = { kind: "permission" };
+  w.ctx.emit("codeLink/changed", w.project.id);
+  await sleep(300);
+  expect(win.states.at(-1)!.sessions.find((s) => s.id === "s1")).toMatchObject({ state: "waiting", needsYou: true });
+  expect(computed).toBe(1);
+
+  // Nothing changed: computed, and not sent again.
+  const sent = win.states.length;
+  win.spec.onMessage({ type: "refresh" });
+  await sleep(20);
+  expect(computed).toBe(2);
+  expect(win.states).toHaveLength(sent);
+
+  // The saved state is read from memory, and again only when something else wrote the file.
+  const reads = vi.spyOn(fs, "readFileSync");
+  const stateReads = () => reads.mock.calls.filter(([file]) => file === stateFile).length;
+  try {
+    for (let i = 0; i < 3; i++) win.spec.onMessage({ type: "refresh" });
+    win.spec.onMessage({ type: "layout", layout: { type: "leaf", id: "c1", sessionId: "s1" } });
+    await sleep(20);
+    expect(stateReads()).toBe(0);
+    expect(JSON.parse(fs.readFileSync(stateFile, "utf8")).layouts[w.project.id]).toEqual({ type: "leaf", id: "c1", sessionId: "s1" });
+    reads.mockClear();
+    fs.writeFileSync(stateFile, JSON.stringify({ layouts: { [w.project.id]: { type: "leaf", id: "c9", sessionId: null } } }));
+    win.spec.onMessage({ type: "refresh" });
+    await sleep(20);
+    expect(stateReads()).toBe(1);
+    expect(win.states.at(-1)!.layout).toEqual({ type: "leaf", id: "c9", sessionId: null });
+  } finally {
+    reads.mockRestore();
+  }
+});
+
+it("asks herdr nothing for a window nobody can see and sends it nothing, numbers its cells all the same, and brings it up to date once when it is seen again", async () => {
+  const opened: { spec: { onMessage(m: unknown): void; onClose(): void; initialState: unknown }; states: WindowState[]; posts: WindowPost[] }[] = [];
+  const sessions = [session({ id: "s1", herdrPane: "w1:p1", startedAt: 5 })];
+  const asked: string[] = [];
+  const paneListeners = new Set<(event: { kind: "status" | "exited"; paneId: string; status?: string; agent?: string | null }) => void>();
+  let cellsChanged = 0;
+  class FakeSurfaces extends Service {
+    static provide = "desktopSurfaces";
+    constructor(ctx: Context) {
+      super(ctx, "desktopSurfaces");
+    }
+    open(spec: (typeof opened)[number]["spec"]) {
+      const entry = { spec, states: [spec.initialState as WindowState], posts: [] as WindowPost[] };
+      opened.push(entry);
+      return { id: "s", capabilities: { programmaticPosition: true, forwardedMouseMoves: false }, bounds: () => ({ x: 0, y: 0, width: 1, height: 1 }), workArea: () => ({ x: 0, y: 0, width: 1, height: 1 }), setPosition() {}, focus() {}, setState: (s: WindowState) => void entry.states.push(s), post: (m: WindowPost) => void entry.posts.push(m), close: () => spec.onClose() };
+    }
+  }
+  class CountingHerdr extends Service {
+    static provide = "terminals";
+    readonly kind = "herdr" as const;
+    constructor(ctx: Context) {
+      super(ctx, "terminals");
+    }
+    onPane = (listener: (event: never) => void) => (paneListeners.add(listener), () => paneListeners.delete(listener));
+    watch = () => () => {};
+    watching = (): string[] => [];
+    bridge = async () => (asked.push("bridge"), { state: "ready" as const, version: "0.9.5" });
+    clientAttached = async () => false;
+    panes = async () => (asked.push("panes"), [{ paneId: "w1:p9", agent: null, agentSession: null, status: "unknown" as const, title: "zsh" }]);
+    processes = async () => (asked.push("processes"), []);
+    readTail = async () => (asked.push("readTail"), "tail");
+  }
+  class FakeCodeLink extends Service {
+    static provide = "codeLink";
+    constructor(ctx: Context) {
+      super(ctx, "codeLink");
+    }
+    sessionOutcomes = () => new Map();
+    sessionGlances = async () => new Map();
+    cellsChanged = () => void cellsChanged++;
+    sessionsOf = () => sessions;
+    links = () => [];
+    repositoriesOf = () => [];
+    repositoryFoldersOf = this.repositoriesOf;
+  }
+  const stateFile = path.join(dir, "hidden-state.json");
+  const w = await fresh({ plugins: [[Settings, { path: path.join(dir, "hidden-settings.json") }], Contributions, FakeSurfaces, CountingHerdr, FakeCodeLink, [CodeSessions, { document: "file:///ui/code-sessions.html", stateFile }]] });
+  // A terminal in the one cell: a session beginning on its pane is numbered with it.
+  fs.writeFileSync(stateFile, JSON.stringify({ layouts: { [w.project.id]: { type: "leaf", id: "c1", sessionId: "t1" } }, terminals: { [w.project.id]: [{ id: "t1", title: "repo", cwd: dir, pane: "w1:p9", startedAt: 1 }] } }));
+  for (const s of sessions) s.device = w.ctx.hub.deviceId;
+  await settle();
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  try {
+    await w.ctx.contributions.run("code-sessions.open", { projectId: w.project.id });
+    const win = opened[0]!;
+    // Seen: herdr is asked every BRIDGE_POLL_MS.
+    asked.length = 0;
+    vi.advanceTimersByTime(BRIDGE_POLL_MS);
+    await sleep(1200);
+    expect(asked).toContain("panes");
+
+    // Minimised, hidden or covered: no poll, no session event, no pane event and no tails ask reaches herdr, and the window hears nothing.
+    win.spec.onMessage({ type: "visible", visible: false });
+    await sleep(20);
+    asked.length = 0;
+    const states = win.states.length;
+    const posts = win.posts.length;
+    vi.advanceTimersByTime(3 * BRIDGE_POLL_MS);
+    sessions.push(session({ id: "s2", herdrPane: "w1:p9", startedAt: 9, device: w.ctx.hub.deviceId }));
+    for (let i = 0; i < 10; i++) w.ctx.emit("codeLink/changed", w.project.id);
+    for (const listener of paneListeners) listener({ kind: "status", paneId: "w1:p9", status: "working", agent: "claude" });
+    win.spec.onMessage({ type: "tails" });
+    win.spec.onMessage({ type: "refresh" });
+    await sleep(1300);
+    expect(asked).toEqual([]);
+    expect(win.states).toHaveLength(states);
+    expect(win.posts).toHaveLength(posts);
+    // The panel still names the cell a session beginning on the terminal's pane shows in.
+    expect(cellsChanged).toBeGreaterThan(0);
+    expect(w.ctx.bail("codeLink/session-cells", w.project.id)).toMatchObject({ t1: 1, s2: 1 });
+
+    // Seen again: one state at once, with what changed meanwhile, and the poll again.
+    win.spec.onMessage({ type: "visible", visible: true });
+    await sleep(20);
+    expect(asked.filter((a) => a === "bridge")).toHaveLength(1);
+    expect(win.states).toHaveLength(states + 1);
+    expect(win.states.at(-1)!.sessions.map((s) => s.id)).toEqual(["s2", "s1"]);
+    asked.length = 0;
+    vi.advanceTimersByTime(BRIDGE_POLL_MS);
+    await sleep(1200);
+    expect(asked).toContain("panes");
+  } finally {
+    vi.useRealTimers();
+  }
 });
