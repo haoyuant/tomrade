@@ -67,6 +67,7 @@ async function boot() {
       const task = text === "offer the merge" ? { task: "PR #9 conflicts with main: merge origin/main, resolve, test, push, merge" } : {};
       world.ctx.agent.setCard(run.run.id, { id: `start-${item.id}-${run.run.id}`, schema: "start", title: `${item.key} ${item.title}`, data: { itemId: item.id, key: item.key, title: item.title, ...task } });
     }
+    if (text === "wait" && probe.hold) await probe.hold;
     if (text === "confirm" || text === "confirm two" || text === "pick") {
       const run = world.ctx.agent.activeRuns().find(r => r.thread.id === input.threadId)!;
       const item = world.ctx.items.getByKey(world.project.id, ticket)!;
@@ -75,7 +76,6 @@ async function boot() {
       const data = text === "pick" ? { tickets, reason: "no agent" } : { tickets, task: "Do it", config: { engine: "test", options: { model: "fast" }, permissionMode: "auto" } };
       world.ctx.agent.setCard(run.run.id, { id: `start-batch-${run.run.id}`, schema: "start-batch", title: tickets.map(t => t.key).join(", "), data });
     }
-    if (text === "wait" && probe.hold) await probe.hold;
     if (text === "ask") { await io.tools.execute("ask_user", { question: "Ship it?", options: ["Yes", "No"] }); return { stop: "end" }; }
     if (text.startsWith("Brief")) {
       await io.tools.execute("ask_user", { question: "Which page first?", freeText: true });
