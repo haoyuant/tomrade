@@ -106,10 +106,13 @@ export interface SessionMoment {
   text: string;
 }
 
+/** What a change to a session touched: only what it is doing this moment, or where it stands (its state, ask, block, pane). */
+export type SessionChange = "doing" | "moved";
+
 export interface SessionsOptions {
   /** Where a session's files (mcp.json, settings.json, pid) live. */
   dirOf(sessionId: string): string;
-  onChange(projectId: string): void;
+  onChange(projectId: string, change: SessionChange): void;
   /** Something the thread should hear about: what the agent said when it stopped, why it failed, that it ended. */
   onMoment?(session: SessionView, moment: SessionMoment): void;
   /** The process is over; code evidence may have changed while it was still counted as active. */
@@ -765,7 +768,8 @@ export class Sessions {
       ...(ask !== undefined ? { ask } : {}),
       ...(patch.blocked !== undefined ? { blocked: patch.blocked } : {})
     });
-    this.options.onChange(projectId);
+    const moved = (!!state && state !== session.state) || asks || (ask !== undefined && (ask === null ? session.ask !== null : !sameAsk(ask, session.ask))) || (patch.blocked !== undefined && patch.blocked !== session.blocked) || (!!patch.herdrPane && patch.herdrPane !== session.herdrPane) || (!!patch.terminal && patch.terminal !== session.terminal);
+    this.options.onChange(projectId, moved ? "moved" : "doing");
   }
 
   /** `quiet` skips the follow-up rescan, for sessions closed because their tickets are already done; `why` goes to the log. */
@@ -776,7 +780,7 @@ export class Sessions {
     this.said(session, `${state}: ${why}`);
     this.release(sessionId);
     this.panes.delete(sessionId);
-    this.options.onChange(projectId);
+    this.options.onChange(projectId, "moved");
     if (state === "ended") this.options.onEnded?.(this.store.session(projectId, sessionId)!);
     if (state === "ended" && !quiet) this.options.onEnd?.(this.store.session(projectId, sessionId)!);
   }
@@ -832,7 +836,7 @@ export class Sessions {
         changed = true;
       }
     }
-    if (changed) this.options.onChange(projectId);
+    if (changed) this.options.onChange(projectId, "moved");
     for (const session of ended) {
       this.options.onEnded?.(session);
       this.options.onEnd?.(session);
@@ -856,7 +860,7 @@ export class Sessions {
         changed = true;
       }
     }
-    if (changed) this.options.onChange(projectId);
+    if (changed) this.options.onChange(projectId, "moved");
   }
 }
 

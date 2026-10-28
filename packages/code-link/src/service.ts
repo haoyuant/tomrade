@@ -38,7 +38,7 @@ import { githubHttps } from "@tomradex/github";
 import { PLAYBOOKS } from "./playbooks.js";
 import { classifyRemoteFailure, probeRemote, readRemoteIdentity, type RemoteIdentity } from "./remote.js";
 import { AUTHOR, currentLinks, deliveryMerged, GitScan, LANDED_ELSEWHERE, primaryOf, type ScanSummary, type UnlinkedBranch } from "./scan/absorb.js";
-import { Sessions, END_AFTER_MS, type SessionMoment } from "./sessions.js";
+import { Sessions, END_AFTER_MS, type SessionChange, type SessionMoment } from "./sessions.js";
 import { firstWords, guessable, similarIds, type TicketGuess } from "./guess.js";
 import { CODE_WORDS, type CodeWords } from "./words.js";
 import { Starter, type StartGate, type StartOptions, type StartResult } from "./start.js";
@@ -291,6 +291,8 @@ declare module "@tomradex/ipc" {
   }
   interface Broadcasts {
     "codeLink.changed": (projectId: string) => void;
+    /** Only sessions changed — `moved` when one's state, ask or block did, not only what it is doing: `codeLink.changed` does not follow. */
+    "codeLink.sessionsChanged": (projectId: string, moved: boolean) => void;
     /** The Terminal window's cells came to show other sessions, or it opened or closed: `codeLink.sessionCells` reads differently. */
     "codeLink.cellsChanged": (projectId: string) => void;
     /** What Start last ran with changed: windows that show a one-click Start read it again. */
@@ -443,7 +445,7 @@ export class CodeLink extends Service implements CodeLinkReader {
     this.ctx.on("storage/imported", (projectId) => this.store.repairLegacyDeliveries(projectId));
     this.sessions = new Sessions(this.ctx, this.store, {
       dirOf: (id) => this.sessionDir(id),
-      onChange: (projectId) => this.notify(projectId),
+      onChange: (projectId, change) => this.notify(projectId, change),
       prefixOf: (projectId) => this.prefixOf(projectId),
       onMoment: (session, moment) => this.noteMoment(session, moment),
       onWaiting: (session, ask) => this.herdr.waiting(session, askLine(ask, this.words())),
@@ -1919,8 +1921,10 @@ export class CodeLink extends Service implements CodeLinkReader {
     return row?.key_prefix ?? "TOM";
   }
 
-  private notify(projectId: string): void {
+  /** A session's own change reaches the renderer as one: it asks again only for what reads sessions, not the project's tickets. */
+  private notify(projectId: string, session?: SessionChange): void {
     this.home.emit("codeLink/changed", projectId);
-    this.home.get("ipc")?.send("codeLink.changed", projectId);
+    if (session) this.home.get("ipc")?.send("codeLink.sessionsChanged", projectId, session === "moved");
+    else this.home.get("ipc")?.send("codeLink.changed", projectId);
   }
 }

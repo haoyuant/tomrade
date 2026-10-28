@@ -35,3 +35,14 @@ export function invalidateProject(qc: QueryClient, projectId: string): void {
   }
   void qc.invalidateQueries({ queryKey: keys.ranksAll });
 }
+
+/**
+ * A session's hook, read by what lists sessions and a ticket's page; a session's state, ask or block changing
+ * also by the board's badges and the other contributions. Tickets and threads are not asked again.
+ */
+export function invalidateSessions(qc: QueryClient, projectId: string, moved: boolean): void {
+  for (const key of [keys.codeLink.sessionsAll(projectId), keys.codeLink.recentSessions(projectId), keys.codeLink.timelineAll(projectId), keys.codeLink.handoffAll(projectId), keys.codeLink.reviewAll(projectId), keys.sectionsAll(projectId)]) {
+    void qc.invalidateQueries({ queryKey: key });
+  }
+  if (moved) invalidateContributions(qc, projectId);
+}
