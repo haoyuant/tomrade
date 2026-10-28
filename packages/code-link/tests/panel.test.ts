@@ -115,6 +115,9 @@ describe("the panel's side of a terminal session", () => {
     pane.text = "haoyuant@mac repo %";
     expect(await panel.answer("p", "s1", "allow")).toBe("notPrompt");
     expect(fake.of("pane.send_input")).toHaveLength(4);
+    // Esc goes as at the pane's keyboard, whatever the screen shows: it closes the agent's own menus and panels
+    expect(await panel.escape("p", "s3")).toBe(true);
+    expect(fake.of("pane.send_input").at(-1)).toEqual({ pane_id: "w1:p1", keys: ["esc"] });
     pane.text = CLAUDE_ASKS;
     // never an agent call (it fails until herdr detects the agent) and never a control session (it would take the pane)
     expect(fake.of("agent.prompt")).toEqual([]);
@@ -126,6 +129,7 @@ describe("the panel's side of a terminal session", () => {
     expect(await panel.say("p", "s1", "")).toBe(false);
     fake.exit(pane.pane_id);
     expect(await panel.say("p", "s1", "still there?")).toBe(false);
+    expect(await panel.escape("p", "s1")).toBe(false);
     expect(await panel.answer("p", "s1", "allow")).not.toBe("answered");
     fake.close();
   });

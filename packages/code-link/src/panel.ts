@@ -106,6 +106,14 @@ export class SessionPanel {
     return terminals.sendInput(s.herdrPane, { text, keys: ["enter"] });
   }
 
+  /** Esc pressed in the session's pane, as at its keyboard: what closes the agent's own menus and panels. False when it could not go. */
+  async escape(projectId: string, sessionId: string): Promise<boolean> {
+    const s = this.live(projectId, sessionId);
+    const terminals = this.terminals();
+    if (!s?.herdrPane || !terminals?.sendInput) return false;
+    return terminals.sendInput(s.herdrPane, { keys: ["esc"] });
+  }
+
   /**
    * The agent's declared keys for its permission prompt, pressed in the session's pane — only while its screen shows such
    * a prompt, and Allow only with yes under the cursor: the keys answer whatever is on the screen.

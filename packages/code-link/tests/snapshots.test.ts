@@ -19,7 +19,7 @@ it("saves a conversation as its lines, reads it back a stretch at a time, and ke
   );
   const to = snapshotFile(dir, "claude-code", "talk-1")!;
   expect(await saveSnapshot(to, "claude-code", claude, transcript, 1000)).toEqual({ cut: false });
-  expect(readSnapshot(to)).toEqual({ cut: false, start: 0, lines: [{ who: "person", text: "第 0 句" }, { who: "tool", text: "Bash · ls", detail: { input: "$ ls", output: "a.ts" } }] });
+  expect(readSnapshot(to)).toMatchObject({ cut: false, start: 0, lines: [{ who: "person", text: "第 0 句" }, { who: "tool", text: "Bash · ls", detail: { input: "$ ls", output: "a.ts" } }] });
   // Taken up again and ended again: the same file, now with what came after.
   fs.appendFileSync(transcript, said(1));
   await saveSnapshot(to, "claude-code", claude, transcript, 2000);

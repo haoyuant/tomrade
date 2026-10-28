@@ -17,7 +17,7 @@ import { useI18n } from "~/lib/i18n";
 import { isCommitKey, isComposing } from "~/lib/keys";
 import { ATTENTION_KEY } from "~/lib/attention";
 import type { BarStatus } from "~/lib/sessionBar";
-import { convoFromTail, convoLines, convoRefreshed, convoWithEarlier, delayUntil, DRAWER_ROWS, askText, isApprovalAsk, isLive, mayReadPane, saidElsewhere, STRIP_ROWS, tailLines, type ConvoState } from "~/lib/terminalSession";
+import { convoContinued, convoFromTail, convoLines, convoRefreshed, convoWithEarlier, delayUntil, DRAWER_ROWS, askText, isApprovalAsk, isLive, mayReadPane, saidElsewhere, STRIP_ROWS, tailLines, type ConvoState } from "~/lib/terminalSession";
 import { useErrorToast, useToast } from "~/lib/toast";
 import { StatusMark } from "./SessionBar";
 
@@ -73,6 +73,9 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
 
   // ── the conversation, from the agent's record ──────────────────────────
   const [convo, setConvo] = useState<ConvoState | null>(null);
+  /** Where the shown conversation's next read goes on from. */
+  const goesOnAt = useRef<number | null>(null);
+  goesOnAt.current = convo?.next ?? null;
   const [readingEarlier, setReadingEarlier] = useState(false);
   const [open, toggle, closeAll] = useOpenLines();
   const box = useRef<HTMLDivElement>(null);
@@ -96,10 +99,12 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
   const readTail = useCallback(async (first: boolean) => {
     const mine = ++generation.current;
     readAt.current = Date.now();
-    const read = await invoke("codeLink.conversation", projectId, session.id).catch(() => null);
+    // Past the first read, only what came after where the last one stopped.
+    const after = first ? null : goesOnAt.current;
+    const read = await invoke("codeLink.conversation", projectId, session.id, undefined, after ?? undefined).catch(() => null);
     if (mine !== generation.current) return;
     kept.current = first || following.current ? -1 : null;
-    setConvo((now) => (first || !now ? convoFromTail(read) : convoRefreshed(now, read)));
+    setConvo((now) => (first || !now ? convoFromTail(read) : after !== null ? convoContinued(now, after, read) : convoRefreshed(now, read)));
   }, [projectId, session.id]);
 
   useEffect(() => {
@@ -216,6 +221,13 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
       setSending(false);
     }
   };
+  const pressEscape = async () => {
+    try {
+      if (!(await invoke("codeLink.sessionEscape", projectId, session.id))) toast({ body: t("sessionBar.notTaken") });
+    } catch (error) {
+      reportError(error);
+    }
+  };
   const answer = async (which: "allow" | "deny") => {
     if (sending) return;
     setSending(true);
@@ -255,12 +267,14 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
     const timer = setTimeout(() => setElsewhere(null), ANSWERED_MS);
     return () => clearTimeout(timer);
   }, [asks, live, session.id, session.lastEventAt, session.state, cell, t]);
-  // The drawer closes on Esc, wherever in the panel the keyboard is.
+  // The drawer closes on Esc, wherever in the panel the keyboard is, or with nothing holding it; its empty input sends Esc to the pane instead.
   const drawerBox = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!drawer) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || isComposing(e) || !drawerBox.current?.closest(".ai")?.contains(e.target as Node)) return;
+      const at = e.target as Node;
+      const held = drawerBox.current?.closest(".ai")?.contains(at) || at === document.body || at === document.documentElement;
+      if (e.key !== "Escape" || isComposing(e) || e.defaultPrevented || !held) return;
       e.preventDefault();
       setDrawer(false);
     };
@@ -393,7 +407,7 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
               <span className="ai-drawer-title" data-testid="ai-drawer-title">{[title || t("agentPanel.newThread"), cell ? t("sessionBar.whereCell", { n: cell }) : null, canType ? t("sessionBar.drawerTypes") : null].filter(Boolean).join(" · ")}</span>
               <button type="button" className="btn btn-ghost btn-xs" data-testid="ai-drawer-close" onClick={() => setDrawer(false)}>{t("sessionBar.drawerClose")}</button>
             </div>
-            <pre className="ai-drawer" data-testid="ai-drawer" aria-label={t("sessionBar.paneOutput")}>{screen ?? ""}</pre>
+            <pre className="ai-drawer" data-testid="ai-drawer" aria-label={t("sessionBar.paneOutput")} tabIndex={0}>{screen ?? ""}</pre>
             {canType && (
               <label className="ai-drawer-input">
                 <span aria-hidden="true">&gt;</span>
@@ -402,11 +416,18 @@ export function TerminalSession({ projectId, session, title, ticket, status, eng
                   placeholder={t("sessionBar.drawerInput")}
                   aria-label={t("sessionBar.sayAria")}
                   value={drawerDraft}
-                  disabled={sending}
+                  // read-only, not disabled, while it sends: a disabled input loses the keyboard and Esc reaches nothing
+                  readOnly={sending}
                   autoFocus
                   onChange={(e) => setDrawerDraft(e.target.value)}
                   onKeyDown={(e) => {
-                    if (isComposing(e) || e.key !== "Enter") return;
+                    if (isComposing(e)) return;
+                    if (e.key === "Escape" && !drawerDraft) {
+                      e.preventDefault();
+                      void pressEscape();
+                      return;
+                    }
+                    if (e.key !== "Enter") return;
                     e.preventDefault();
                     void sayToPane(drawerDraft, () => setDrawerDraft(""));
                   }}

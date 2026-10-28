@@ -21,6 +21,14 @@ type Toast = { text: string; action?: { label: string; run: () => void } };
 /** How often the overview reads the panes' last lines while it is open. */
 const TAILS_EVERY_MS = 2000;
 
+const sameTails = (a: Record<string, string | null>, b: Record<string, string | null>) => {
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((k) => k in b && a[k] === b[k]);
+};
+
+/** Whether anyone can see the window: not when it is minimised, hidden or covered. */
+const seen = () => document.visibilityState !== "hidden";
+
 /** The keys the window keeps, said along its bottom edge the way this platform writes them. */
 function KeysFooter() {
   const say = useSay();
@@ -151,13 +159,23 @@ export function App() {
   useEffect(() => onState((next) => setState(next)), []);
   useEffect(() => onLook(setLook), []);
   useEffect(() => onToast((text) => setToast({ text })), []);
-  useEffect(() => onTails((post) => setTails(post.panes)), []);
+  useEffect(() => onTails((post) => setTails((was) => (sameTails(was, post.panes) ? was : post.panes))), []);
+  // Nobody sees it: the plugin stops asking herdr for it and sending it state, and the overview stops reading tails.
+  const [visible, setVisible] = useState(seen);
   useEffect(() => {
-    if (view !== "overview") return;
+    const changed = () => {
+      setVisible(seen());
+      send({ type: "visible", visible: seen() });
+    };
+    document.addEventListener("visibilitychange", changed);
+    return () => document.removeEventListener("visibilitychange", changed);
+  }, []);
+  useEffect(() => {
+    if (view !== "overview" || !visible) return;
     send({ type: "tails" });
     const timer = setInterval(() => send({ type: "tails" }), TAILS_EVERY_MS);
     return () => clearInterval(timer);
-  }, [view]);
+  }, [view, visible]);
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), 6000);
