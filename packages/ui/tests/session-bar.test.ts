@@ -175,3 +175,16 @@ it("keeps a parent the bar would drop when a child under it stays", () => {
   const all = rows({ threads: [thread("parent", { updatedAt: 1 }), thread("child", { parentId: "parent", running: true })], now });
   expect(barShown(all, null, now).map((r) => r.key)).toEqual(["thread:parent", "thread:child"]);
 });
+
+it("waits on the person for a conversation the app's closing interrupted, as stopped, with the desktop's words when it lists it, and never reads it as done", () => {
+  const interrupted = thread("cut", { interrupted: true, updatedAt: 1 });
+  const alone = rows({ threads: [thread("idle", { updatedAt: 9 }), interrupted], now: 10 + THREAD_DONE_AFTER_MS });
+  expect(alone.map((r) => [r.key, r.status])).toEqual([["thread:cut", "wait"], ["thread:idle", "done"]]);
+  expect(alone[0]?.wait).toEqual({ kind: "stuck", text: null });
+  expect(paletteSessionGroups(alone).waiting.map((r) => r.key)).toEqual(["thread:cut"]);
+
+  const listed = rows({ threads: [interrupted], attention: [{ ...waiting("thread:cut", 4, "Interrupted — the app closed while this run was in progress."), kind: "stuck" }] });
+  expect(listed[0]).toMatchObject({ status: "wait", wait: { kind: "stuck", text: "Interrupted — the app closed while this run was in progress." }, at: 4 });
+  // continued: it runs, and waits on nobody
+  expect(rows({ threads: [thread("cut", { interrupted: true, running: true })] })[0]).toMatchObject({ status: "run", wait: null });
+});
