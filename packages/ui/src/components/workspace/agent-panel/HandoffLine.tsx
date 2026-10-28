@@ -16,13 +16,14 @@ const REASON: Record<HandoffRefusal, MessageKey> = {
  * or in a terminal cell, with the way to its session and, once its CLI exited, back here. Nothing for an agent
  * that runs only inside Tomrade.
  */
-export function HandoffLine({ view, agent, running, busy, onToTerminal, onShow, onBack }: {
+export function HandoffLine({ view, agent, running, busy, transferring, onToTerminal, onShow, onBack }: {
   view: HandoffView;
   /** The agent's name: the thread's engine here, the session's in a terminal. */
   agent: string;
   /** A run is going now, whatever the view said when it was read. */
   running: boolean;
   busy: boolean;
+  transferring?: boolean;
   onToTerminal: () => void;
   onShow: () => void;
   onBack: () => void;
@@ -42,12 +43,12 @@ export function HandoffLine({ view, agent, running, busy, onToTerminal, onShow, 
   }
   const reason = view.toTerminal.ok ? null : (view.toTerminal.reason ?? "builtin");
   if (reason === "builtin") return null;
-  const blocked = running ? "running" : reason;
+  const blocked = reason;
   return (
     <p className="ai-workdir meta-txt dense" data-testid="handoff" data-where="here" style={{ margin: "6px 0 0", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
       <Icon name="i-terminal" size={12} style={{ flexShrink: 0 }} />
       <span>{agent} · {t("handoff.here")}</span>
-      <button type="button" className="btn btn-ghost" style={ghost} data-testid="to-terminal" disabled={!!blocked || busy} title={blocked ? t(REASON[blocked]) : t("handoff.toTerminalTitle")} onClick={onToTerminal}>{t("handoff.toTerminal")}</button>
+      <button type="button" className="btn btn-ghost" style={ghost} data-testid="to-terminal" disabled={!!blocked || busy} title={blocked ? t(REASON[blocked]) : t("handoff.toTerminalTitle")} onClick={onToTerminal}>{t(transferring ? (running ? "handoff.stopping" : "handoff.opening") : running ? "handoff.stopAndTransfer" : "handoff.toTerminal")}</button>
     </p>
   );
 }

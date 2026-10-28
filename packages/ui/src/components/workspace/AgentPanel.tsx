@@ -219,7 +219,8 @@ export function AgentPanel({
     permissionModes, selectedPermissionMode, activePermissionMode, permissionLabel, setPermissionMode,
     threadOptions, engineOptions, picks, pickValue, setPick, pickTitle
   } = useEngineChoice({ projectId, threadId, detail: detail.data, engines: engines.data, settings: settings.data, runningRun });
-  const busy = !!runningRun || send.isPending || answer.isPending || uploading;
+  const [handingOff, setHandingOff] = useState(false);
+  const busy = handingOff || !!runningRun || send.isPending || answer.isPending || uploading;
   const archivedNow = !!detail.data?.thread.archived;
   // A done ticket's conversation, brought back by hand: its next message first reopens the ticket.
   // An old one may be outside the renderer's window, and is asked for by id.
@@ -494,7 +495,6 @@ export function AgentPanel({
   };
   // To a terminal cell and back: one process on the conversation's session at a time, so the panel waits for each.
   const qc = useQueryClient();
-  const [handingOff, setHandingOff] = useState(false);
   const afterHandoff = (id: string) => {
     void qc.invalidateQueries({ queryKey: keys.codeLink.handoff(projectId, id) });
     void qc.invalidateQueries({ queryKey: keys.agent.thread(projectId, id) });
@@ -507,11 +507,10 @@ export function AgentPanel({
     try {
       const result = await invoke("codeLink.toTerminal", projectId, threadId);
       if (!result.ok) { toast({ body: result.message }); return; }
-      afterHandoff(threadId);
       toast({ body: `${t("handoff.moved", { pane: result.pane ? t("handoff.movedPane", { pane: result.pane }) : "" })}${result.launched ? "" : ` ${t("handoff.notOpened")}`}` });
       setOpenSession(result.sessionId);
     } catch (error) { reportError(error); }
-    finally { setHandingOff(false); }
+    finally { afterHandoff(threadId); setHandingOff(false); }
   };
   const backToPanel = async (id: string) => {
     if (handingOff) return;
@@ -1021,6 +1020,7 @@ export function AgentPanel({
             agent={elsewhere ? (findEngine(engines.data, elsewhere.agent)?.title ?? elsewhere.agent) : (engine?.title ?? currentEngineId)}
             running={!!runningRun}
             busy={handingOff || send.isPending || uploading}
+            transferring={handingOff}
             onToTerminal={() => void toTerminal()}
             onShow={() => { if (elsewhere) setOpenSession(elsewhere.sessionId); }}
             onBack={() => void backToPanel(threadId)}

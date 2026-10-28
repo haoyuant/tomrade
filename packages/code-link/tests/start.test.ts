@@ -93,6 +93,13 @@ function fakeCodeEngine(turns: TurnInput[]): Engine {
     available: async () => ({ ok: true }),
     async turn(input, io) {
       turns.push(input);
+      if (input.input.kind === "text" && input.input.text === "hold for transfer") {
+        await new Promise<void>((resolve) => {
+          if (io.signal.aborted) resolve();
+          else io.signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+        return { stop: "cancelled", resume: io.resume };
+      }
       // An orientation pass: the agent reads and writes the brief, nothing else.
       if (input.purpose === "backlog" && input.input.kind === "text" && input.input.text.startsWith("Orientation:")) {
         await io.tools.execute("update_project_brief", { body: "Shop: products are pulled from the supplier feed, never edited here." });
@@ -2611,9 +2618,13 @@ describe("starting tickets from a conversation", () => {
     expect(codeLink.sessionsOf(project.id, item.id).filter((s) => s.mode === "headless" && s.state !== "ended")).toEqual([expect.objectContaining({ threadId, state: "idle" })]);
     expect(agent.store.thread(project.id, threadId)).toMatchObject({ surface: "assistant" });
 
+    // A running ticket transfers with one click too, keeping its worktree and branch.
+    const running = agent.send(project.id, threadId, { kind: "text", text: "hold for transfer" });
+    await until(() => { const input = turns.at(-1)?.input; return input?.kind === "text" && input.text === "hold for transfer"; });
     // to the terminal: Start's continue, in the thread's worktree, resuming the session the headless run left; the headless session ends quietly
     const moved = await codeLink.toTerminal(project.id, threadId);
     expect(moved).toMatchObject({ ok: true, launched: true, pane: "w1:p1" });
+    expect(agent.store.run(project.id, running.runId)?.status).toBe("cancelled");
     const sessions = codeLink.sessionsOf(project.id, item.id);
     expect(sessions.find((s) => s.mode === "headless")).toMatchObject({ state: "ended" });
     const terminal = sessions.find((s) => s.mode === "terminal")!;
