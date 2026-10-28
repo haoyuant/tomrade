@@ -5,6 +5,8 @@ export type PanelRequest =
   | { kind: "newThread" }
   /** A new conversation, sent these words at once. */
   | { kind: "startWith"; text: string }
+  /** These words in the input, not sent: in this conversation while it is empty, else a new one. */
+  | { kind: "fill"; text: string }
   /** `say`: with the keyboard in its input, to say something to it. */
   | { kind: "openSession"; sessionId: string; say?: boolean }
   | { kind: "toggleBar" }

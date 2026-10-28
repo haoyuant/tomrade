@@ -17,6 +17,7 @@ import { AnnouncementNotice } from "~/components/dialogs/AnnouncementNotice";
 import { TermsPrompt } from "~/components/dialogs/TermsPrompt";
 import { RouteError } from "~/components/chrome/RouteError";
 import { AttentionOpener } from "~/lib/attention";
+import { CapabilitiesHost } from "~/components/dialogs/CapabilitiesDialog";
 import { DoneGuardProvider } from "~/lib/doneGuard";
 import { useLeadWindow } from "~/lib/window-chrome";
 import { Surface } from "~/lib/analytics";
@@ -44,6 +45,7 @@ const rootRoute = createRootRoute({
               <AnnouncementNotice />
             </LeadOnly>
             <AttentionOpener />
+            <CapabilitiesHost />
           </ConfirmProvider>
         </ToastProvider>
       </ThemeProvider>

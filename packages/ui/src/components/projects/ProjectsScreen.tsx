@@ -24,6 +24,11 @@ import { NewProjectDialog } from "./NewProjectDialog";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { RestoreBanner, RestoreCard, useRestoredToasts } from "./RestoreCards";
 import { hits } from "~/lib/keybindings";
+import { CapabilitiesSection } from "~/components/dialogs/CapabilitiesDialog";
+import { showsOnHome } from "~/lib/capabilities";
+
+/** Put away from the home once hidden; Help and the palette still open the cards. */
+const CAPABILITIES_SEEN = "capabilities-home";
 
 interface Facts {
   boards: number;
@@ -317,6 +322,13 @@ function ProjectsHome({ setupCard }: { setupCard: boolean }) {
               </div>
             )}
           </div>
+
+          {!!projects.data && showsOnHome(list) && !seen(CAPABILITIES_SEEN) && (
+            <>
+              <hr className="rule" />
+              <CapabilitiesSection onHide={() => markSeen(CAPABILITIES_SEEN)} />
+            </>
+          )}
 
           <hr className="rule" />
           {/* For people who drive Claude Code or Cline themselves; nobody needs it to start, so it stays folded. */}
