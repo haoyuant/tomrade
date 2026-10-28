@@ -22,6 +22,7 @@ import { Surface } from "~/lib/analytics";
 import { useCreateView, useHeldItem, useRedo, useRunCommand, useUndo } from "~/lib/queries";
 import { errorSpec, useToast, useToastDismiss } from "~/lib/toast";
 import { useHintToast, useSeen } from "~/lib/onboarding";
+import { useSetup } from "~/lib/setup";
 import { FilesRegion } from "~/components/files/FilesRegion";
 import { RoutinesRegion } from "~/components/routines/RoutinesRegion";
 import { Board } from "./Board";
@@ -70,22 +71,34 @@ function ConflictBanner({ title, onDismiss }: { title: string; onDismiss: () => 
   );
 }
 
+/**
+ * The sample's first visit opens its first lesson, not the example backlog: the
+ * core loop's, on its first workstream — or, with no model or agent to run it
+ * on yet, the board lesson that leads the second and says to connect one.
+ */
+function FirstLesson() {
+  const ws = useWorkspace();
+  const { seen, markSeen } = useSeen();
+  const { state } = useSetup();
+  const lessons = state && !state.checking ? ws.boards[state.complete ? 0 : 1] : undefined;
+  const rankOf = (id: string, rank: number) => ws.ranks[id] ?? rank;
+  const first = lessons ? ws.items.filter((i) => i.boardId === lessons.id).sort((a, b) => rankOf(a.id, a.rank) - rankOf(b.id, b.rank))[0]?.id : undefined;
+  const selectTicket = ws.select;
+  useEffect(() => {
+    if (!first || seen(FIRST_LESSON)) return;
+    markSeen(FIRST_LESSON);
+    // Narrower, opening it would close the assistant, and the setup card with it.
+    if (window.innerWidth >= THREE_PANE_FLOOR) selectTicket(first);
+  }, [first, seen, markSeen, selectTicket]);
+  return null;
+}
+
 export function Workspace() {
   const ws = useWorkspace();
   const selectedId = useSelectedId();
   usePlaybookConflictNotice(ws.project.id);
   // The sample teaches the graph with a ticket of its own; elsewhere, the first dependency points at it.
   useHintToast("hint.graph", !ws.project.sample && ws.layout !== "graph" && ws.items.some((i) => i.blocks.length > 0), "onboarding.graphHint");
-  // The sample's first visit opens its first lesson — where the learning path starts — not the example backlog beside it.
-  const { seen, markSeen } = useSeen();
-  const firstLesson = ws.project.sample ? ws.items.find((i) => i.blocks.length > 0 && i.blockedBy.length === 0) : undefined;
-  const selectTicket = ws.select;
-  useEffect(() => {
-    if (!firstLesson || seen(FIRST_LESSON)) return;
-    markSeen(FIRST_LESSON);
-    // Narrower, opening it would close the assistant, and the setup card with it.
-    if (window.innerWidth >= THREE_PANE_FLOOR) selectTicket(firstLesson.id);
-  }, [firstLesson, seen, markSeen, selectTicket]);
   const { t, tx } = useI18n();
   const undo = useUndo(ws.project.id);
   const undoWrite = useToastUndo(ws.project.id);
@@ -341,6 +354,7 @@ export function Workspace() {
 
   return (
     <div className="app">
+      {ws.project.sample && <FirstLesson />}
       <TitleBar
         onOpenPalette={() => setPalette(true)}
         onNewIssue={() => setNewIssue(true)}

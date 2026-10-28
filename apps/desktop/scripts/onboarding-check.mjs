@@ -128,9 +128,9 @@ const run = async () => {
   check("it opens on its board", await wait(() => $(`!!${byText(".card-title", "Drag this ticket to Done")}`), "first tour ticket"));
   await sleep(800);
   check("and leaves the first lesson closed this time", !(await has("aside.detail")));
-  check("with the tour and the practice backlog as workstreams", await wait(async () => {
+  check("with the tour's two groups and the practice backlog as workstreams", await wait(async () => {
     const rows = await texts(".side-workstreams .side-name");
-    return rows.includes("Getting started") && rows.includes("Example: Pomodoro app");
+    return rows.includes("Start here") && rows.includes("More") && rows.includes("Example: Pomodoro app");
   }, "workstreams"));
   check("the learning path is a view in the sidebar", await wait(() => $(`!!${byText(".side-views .side-name", "Learning path")}`), "learning path view"));
   await press(`${byText(".side-views .side-name", "Learning path")}?.closest('a, button, .side-row')`);
@@ -190,7 +190,7 @@ const run = async () => {
   await press(`document.querySelector('.proj-sample')`);
   check("it is made again, in Chinese", await wait(async () => (await again())?.name === "Tomrade 入门", "zh sample"));
   const tiled = await again();
-  check("its workstreams are named in Chinese too", ctx.boards.list(tiled.id).map((b) => b.name).join("|") === "入门|示例：番茄钟 App", ctx.boards.list(tiled.id).map((b) => b.name));
+  check("its workstreams are named in Chinese too", ctx.boards.list(tiled.id).map((b) => b.name).join("|") === "开始|更多|示例：番茄钟 App", ctx.boards.list(tiled.id).map((b) => b.name));
   check("and the app opens it on its first lesson", await wait(async () => (await $(`location.hash`)).includes(tiled.id) && (await lesson())?.label?.endsWith("把这个工单拖到「已完成」"), "sample tile opens lesson"), await lesson());
   check("leaving the other hints seen", seen().includes("hint.graph") && !seen().includes("sample-tile"), seen());
   await shot("onboarding-06-zh-sample");
@@ -221,7 +221,7 @@ const run = async () => {
   check("with every hint unseen and the sample back", seen().length === 0 && !!(await again()));
   const zh = await again();
   check("made again in Chinese", zh?.name === "Tomrade 入门", zh?.name);
-  check("its workstreams are named in Chinese too", ctx.boards.list(zh.id).map((b) => b.name).join("|") === "入门|示例：番茄钟 App", ctx.boards.list(zh.id).map((b) => b.name));
+  check("its workstreams are named in Chinese too", ctx.boards.list(zh.id).map((b) => b.name).join("|") === "开始|更多|示例：番茄钟 App", ctx.boards.list(zh.id).map((b) => b.name));
   await shot("onboarding-07-restarted");
   await press(`document.querySelector('[data-testid="setup-later"]')`);
   const before = await again();
