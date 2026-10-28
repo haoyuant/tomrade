@@ -13,6 +13,8 @@ export interface SessionRow {
   needsYou: boolean;
   /** What it is doing now, or what it last said. */
   activity: string | null;
+  /** The tool whose call just failed, for the window to word ("" when its hook named none); null otherwise. */
+  failedTool: string | null;
   /** What it waits on the person for, as a structure the window words: a tool's permission, a question; null otherwise. */
   ask: SessionAsk | null;
   mode: "run" | "terminal";

@@ -57,4 +57,4 @@ export type { RawOutput } from "./service.js";
 export { inputsOf, SessionPanel, type AnswerResult, type SessionGlance, type SessionPanelView } from "./panel.js";
 export { ticketTimeline, type TicketTimeline, type TimelineEntry, type TimelinePlace, type TimelineStop } from "./timeline.js";
 export { PROMPT_LINES, promptOnScreen } from "./prompt.js";
-export { askLine, askLineIn, permissionAsk, questionAsk, sameAsk } from "./ask.js";
+export { askLine, askLineIn, doingLine, permissionAsk, questionAsk, sameAsk } from "./ask.js";

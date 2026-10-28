@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RecordRead } from "@tomradex/agent";
 import type { SessionAsk } from "@tomradex/code-link";
-import { askText, convoFromTail, convoLines, convoRefreshed, convoWithEarlier, delayUntil, isApprovalAsk, mayReadPane, READ_EVERY_MS, saidElsewhere, tailLines } from "../src/lib/terminalSession";
+import { askText, convoFromTail, doingText, convoLines, convoRefreshed, convoWithEarlier, delayUntil, isApprovalAsk, mayReadPane, READ_EVERY_MS, saidElsewhere, tailLines } from "../src/lib/terminalSession";
 
 const read = (texts: string[], opts: Partial<RecordRead> = {}): RecordRead => ({ lines: texts.map((text) => ({ who: "agent", text })), cut: false, ...opts });
 
@@ -36,6 +36,14 @@ describe("what the panel does with a session", () => {
     expect(askText(ask({ tool: "mcp__x", action: "use" }), w)).toBe("askToolAny(mcp__x)");
     expect(askText(ask({}), w)).toBe("askApproval");
     expect(askText(ask({ kind: "question" }), w)).toBe("askQuestion");
+  });
+
+  it("words what a session does: a tool call that just failed, else its activity as it came", () => {
+    const w = (key: string, vars?: Record<string, string>) => `${key.replace("sessionBar.", "")}${vars ? `(${Object.values(vars).join(",")})` : ""}`;
+    expect(doingText({ activity: null, failedTool: "Bash" }, w)).toBe("toolFailed(Bash)");
+    expect(doingText({ activity: null, failedTool: "" }, w)).toBe("toolFailedAny");
+    expect(doingText({ activity: "Read · a.ts", failedTool: null }, w)).toBe("Read · a.ts");
+    expect(doingText({ activity: null, failedTool: null }, w)).toBeNull();
   });
 
   it("reads the pane only while the session is shown, has a pane, runs, and the window is visible", () => {

@@ -7,6 +7,7 @@ import { findEngine, methodWords, ticketMethods, useAgentThread, useAgentThreads
 import { invoke, logQuietly } from "~/lib/api";
 import { defaultStartMode, onStartRequest, useHerdrStatus, useCodeDeliveries, useCodeSessions, useStartDefaults, useStartTicket, useTerminalWindow } from "~/lib/codeLink";
 import { askPanel } from "~/lib/panelRequests";
+import { doingText } from "~/lib/terminalSession";
 import { beginStarting, opensWindow, startWays, useStartingFor, wayKey, wayOf, type StartWay, type WayKind } from "~/lib/startWays";
 import { StartGateFix, useGateWords, type StartFailure } from "./StartGateFix";
 import { StartProgressNote } from "./StartProgress";
@@ -137,7 +138,7 @@ export function StartTicket(props: StartTicketProps) {
               }
             >
               <MenuHead title={t("codeLink.liveTitle", { agent: liveWho })} />
-              {(live.summary || live.activity) && <p className="meta-txt dense menu-note" data-testid="start-live-said">{live.activity ?? live.summary}</p>}
+              {(live.summary || doingText(live, t)) && <p className="meta-txt dense menu-note" data-testid="start-live-said">{doingText(live, t) ?? live.summary}</p>}
               <MenuStackItem mark={<Icon name="i-eye" size={13} />} name={t("codeLink.liveLook")} sub={t("codeLink.liveLookNote")} onSelect={() => inPanel(false)} />
               {(live.mode === "terminal" || live.threadId) && <MenuStackItem mark={<Icon name="i-send" size={13} />} name={t("codeLink.liveSay")} sub={t("codeLink.liveSayNote")} onSelect={() => inPanel(true)} />}
               <MenuStackItem mark={<Icon name="i-plus" size={13} />} name={t("codeLink.liveAnother")} sub={t("codeLink.liveAnotherNote")} onSelect={() => openDialog(false, null, true)} />
