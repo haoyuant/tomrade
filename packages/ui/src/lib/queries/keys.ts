@@ -48,6 +48,7 @@ export const keys = {
   attention: ["attention"] as const,
   pushStatus: ["attention", "pushStatus"] as const,
   background: ["background"] as const,
+  webSearch: ["webSearch"] as const,
   appIcon: ["appIcon"] as const,
   updates: ["updates"] as const,
   hub: ["hub"] as const,

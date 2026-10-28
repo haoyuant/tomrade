@@ -59,7 +59,7 @@ function detailOf(body: string): string {
 }
 
 function failure(status: number, body: string, retryAfter: string | null): string {
-  if (status === 401) return "Tavily refused the API key — the user can check it in Settings → Tavily";
+  if (status === 401) return "Tavily refused the API key — the user can check it in Settings → Web search";
   if (status === 429) return `Tavily is rate-limiting this key${retryAfter ? `; try again in ${retryAfter} s` : ""}`;
   if (status === 432 || status === 433) return `This Tavily key has reached its credit limit: ${detailOf(body)}`;
   return `Tavily answered ${status}: ${detailOf(body)}`;
@@ -96,7 +96,7 @@ export function tavilyProvider({ settings, env = process.env, fetch: send = fetc
     id: "tavily",
     title: "Tavily",
     settings: TAVILY_SECTION.id,
-    unavailable: () => (key() ? null : "Web search has no Tavily API key yet — tell the user to add one in Settings → Tavily (keys come from https://app.tavily.com)"),
+    unavailable: () => (key() ? null : "Web search has no Tavily API key yet — tell the user to add one in Settings → Web search (keys come from https://app.tavily.com)"),
 
     async search(request: SearchRequest, signal: AbortSignal): Promise<SearchResponse> {
       const data = await call<TavilySearch>(

@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
+import type { SettingsSectionView } from "@tomradex/settings";
 import { useQueryClient } from "@tanstack/react-query";
 import { Icon, type IconId } from "~/components/icons";
 import { Dialog, DialogBody, DialogFoot, DialogHead } from "~/components/ui/dialog";
@@ -17,12 +18,14 @@ import { PANE_EXTRAS, PluginPane } from "./settings/PluginPane";
 import { ScopeTag } from "./settings/ScopeTag";
 import { AppIconSection } from "./settings/AppIconSection";
 import { ThemePane, useThemeEditor } from "./settings/ThemePane";
+import { WebSearchPane } from "./settings/WebSearchPane";
 import { Eyebrow, SectionHead, Tag } from "~/components/ui/atoms";
 import { useBackgroundStatus } from "~/lib/background";
 import { useI18n } from "~/lib/i18n";
 import { reportAction } from "~/lib/analytics";
 import { keys, useSaveSettings, useSettings, useSettingsSections, useStorageProviders } from "~/lib/queries";
 import { useSettingsSheet } from "~/lib/settingsHost";
+import { useWebSearchProviders } from "~/lib/web-search";
 
 /** Sections the dialog lays out by hand; every other registered section gets a pane drawn from its schema. */
 // closedWindow is per project, drawn in each project's settings.
@@ -57,6 +60,7 @@ export function SettingsDialog({
   const save = useSaveSettings();
   const background = useBackgroundStatus();
   const providers = useStorageProviders();
+  const searchProviders = useWebSearchProviders();
   const [active, setActive] = useState("appearance");
   // Set only by a pane that sends the person to find a plugin; any other way in opens the list unfiltered.
   const [pluginsQuery, setPluginsQuery] = useState<string>();
@@ -76,8 +80,21 @@ export function SettingsDialog({
   // settings — so the section behind it is storage, not a screen. Whoever claims
   // one draws it; this dialog does not draw it twice.
   const claimed = new Set((providers.data ?? []).map((p) => p.settingsSection).filter(Boolean) as string[]);
-  const pluginSections = (sections.data ?? []).filter((s) => !HAND_DRAWN.has(s.id) && !claimed.has(s.id));
+  // A web search provider's own section is drawn on the Web search pane, not as a pane of its own.
+  const searchSections = (sections.data ?? []).filter((s) => searchProviders.data?.some((p) => p.settings === s.id));
+  const inWebSearch = new Set(searchSections.map((s) => s.id));
+  const pluginSections = (sections.data ?? []).filter((s) => !HAND_DRAWN.has(s.id) && !claimed.has(s.id) && !inWebSearch.has(s.id));
   const scopeOf = (id: string) => sections.data?.find((s) => s.id === id)?.scope;
+  const pluginPane = (section: SettingsSectionView) => (
+    <PluginPane
+      key={section.id}
+      section={section}
+      stored={settings.data?.[section.id]}
+      onSave={(next) => (settings.data ? save.mutateAsync({ ...settings.data, [section.id]: next }) : Promise.resolve())}
+    >
+      {PANE_EXTRAS[section.id]?.()}
+    </PluginPane>
+  );
 
   const panes: Pane[] = [
     {
@@ -145,6 +162,27 @@ export function SettingsDialog({
     ...(sections.data?.some((s) => s.id === "mcpServers")
       ? [{ id: "mcpServers", label: t("mcpServers.label"), icon: "i-plug" as IconId, group: "app" as const, render: () => <><AgentAccessSection /><hr className="rule" /><McpServersPane /></> }]
       : []),
+    // While web search runs: its providers, and the settings of those that keep their own.
+    ...(searchProviders.data
+      ? [
+          {
+            id: "webSearch",
+            label: t("webSearch.label"),
+            icon: "i-globe" as IconId,
+            group: "app" as const,
+            render: () => (
+              <WebSearchPane providers={searchProviders.data ?? []} drawn={inWebSearch} onGo={go}>
+                {searchSections.map((section) => (
+                  <Fragment key={section.id}>
+                    <hr className="rule" />
+                    {pluginPane(section)}
+                  </Fragment>
+                ))}
+              </WebSearchPane>
+            )
+          }
+        ]
+      : []),
     ...(sections.data?.some((s) => s.id === "im")
       ? [{ id: "im", label: t("imSettings.label"), icon: "i-send" as IconId, group: "app" as const, render: () => <ImPane scopeTag={<ScopeTag scope="machine" />} /> }]
       : []),
@@ -167,22 +205,15 @@ export function SettingsDialog({
         label: section.title,
         icon: "i-plug",
         group: "plugins",
-        render: () => (
-          <PluginPane
-            section={section}
-            stored={settings.data?.[section.id]}
-            onSave={(next) => (settings.data ? save.mutateAsync({ ...settings.data, [section.id]: next }) : Promise.resolve())}
-          >
-            {PANE_EXTRAS[section.id]?.()}
-          </PluginPane>
-        )
+        render: () => pluginPane(section)
       })
     ),
     { id: "plugins", label: t("settingsDialog.manageLabel"), icon: "i-plug", group: "plugins", render: () => <PluginsPanel query={pluginsQuery} onLeave={() => onOpenChange(false)} /> }
   ];
 
   // A plugin switched off takes its pane with it, so the menu falls back rather than emptying the body.
-  const current = panes.find((p) => p.id === active) ?? panes[0];
+  // Asked for a provider's own section (the search-unavailable card names one): the pane that draws it.
+  const current = panes.find((p) => p.id === (inWebSearch.has(active) ? "webSearch" : active)) ?? panes[0];
   const rows = (group: Pane["group"]) =>
     panes
       .filter((p) => p.group === group)

@@ -1,4 +1,6 @@
 import { Context, Service } from "cordis";
+import type {} from "@tomradex/ipc";
+import type {} from "@tomradex/settings";
 import type {} from "@tomradex/tools";
 import { registerTools } from "./tools.js";
 
@@ -52,6 +54,14 @@ export interface WebSearchProvider {
   settings?: string;
 }
 
+/** A provider as the Web search pane in Settings lists it. */
+export interface WebSearchProviderView {
+  id: string;
+  title: string;
+  unavailable: string | null;
+  settings?: string;
+}
+
 /** Why no provider can search, and where the person fixes it. */
 export interface Unavailable {
   reason: string;
@@ -65,6 +75,17 @@ declare module "cordis" {
   interface Events {
     "webSearch/registered"(id: string): void;
     "webSearch/unregistered"(id: string): void;
+  }
+}
+
+declare module "@tomradex/ipc" {
+  interface Channels {
+    /** In the order they are asked: the first one available answers. */
+    "webSearch.providers": () => WebSearchProviderView[];
+  }
+  interface Broadcasts {
+    /** A provider came or went, or a setting may have changed whether one can answer. */
+    "webSearch.changed": () => void;
   }
 }
 
@@ -84,6 +105,13 @@ export class WebSearch extends Service {
 
   [Service.init]() {
     this.home.inject(["tools"], (ctx) => registerTools(ctx, this));
+    this.home.inject(["ipc"], (ctx) => {
+      ctx.ipc.handle("webSearch.providers", () => this.views());
+      const changed = () => ctx.ipc.send("webSearch.changed");
+      ctx.on("webSearch/registered", changed);
+      ctx.on("webSearch/unregistered", changed);
+      ctx.on("settings/changed", changed);
+    });
   }
 
   /** Reversible: the provider goes with the plugin that registered it, and the tools with the last one. */
@@ -101,6 +129,10 @@ export class WebSearch extends Service {
 
   providers(): WebSearchProvider[] {
     return [...this.registry.values()];
+  }
+
+  views(): WebSearchProviderView[] {
+    return this.providers().map((p) => ({ id: p.id, title: p.title, unavailable: p.unavailable(), ...(p.settings ? { settings: p.settings } : {}) }));
   }
 
   search(request: SearchRequest, signal?: AbortSignal): Promise<SearchResponse> {
@@ -128,7 +160,7 @@ export class WebSearch extends Service {
   private missing(can: (p: WebSearchProvider) => boolean): Unavailable | null {
     const able = this.providers().filter(can);
     if (able.some((p) => !p.unavailable())) return null;
-    if (!able.length) return { reason: "No web search provider is switched on — the user can turn one on in Settings → Plugins", settings: "plugins" };
+    if (!able.length) return { reason: "No web search provider is switched on — the user can add one in Settings → Web search", settings: "webSearch" };
     return { reason: able[0].unavailable()!, ...(able[0].settings ? { settings: able[0].settings } : {}) };
   }
 }
