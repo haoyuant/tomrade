@@ -9,7 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { CodeLink, askLineIn, deliveryMerged, doingLine, permissionAsk, questionAsk, type CodeLinkView, type ForgePull } from "@tomradex/code-link";
+import { CodeLink, TABLES, askLineIn, deliveryMerged, doingLine, permissionAsk, questionAsk, type CodeLinkView, type ForgePull } from "@tomradex/code-link";
 import { CODE_WORDS } from "../src/words.js";
 import { Contributions } from "@tomradex/contributions";
 import { Repos } from "@tomradex/repos";
@@ -395,6 +395,68 @@ describe("code link", () => {
 
     // Nothing left to say: a third scan is quiet.
     expect((await codeLink.scan(project.id)).changed).toBe(0);
+  });
+
+  it("tells no one after a scan that found nothing new, and once after one that did", async () => {
+    const { codeLink, ctx, project, checkout, ticket } = await machine(codeRepo());
+    try {
+      const item = ticket("Heard only on news", "todo");
+      const branch = `tom-${item.keyNum}/news`;
+      commitOn(checkout, branch, "news.ts", `TOM-${item.keyNum}: news`);
+      git(["push", "-q", "origin", branch], checkout);
+      await codeLink.scan(project.id);
+      let heard = 0;
+      ctx.on("codeLink/changed", (projectId) => { if (projectId === project.id) heard += 1; });
+      await codeLink.scan(project.id);
+      await codeLink.scan(project.id);
+      expect(heard).toBe(0);
+      // An agent's hooks writing its session while the scan waits on git are not the scan's news.
+      const session = codeLink.store.createSession(project.id, { repoId: "repo", branch: "", itemIds: [], mode: "terminal", agent: "claude-code", threadId: null, device: "here" });
+      const scanning = codeLink.scan(project.id);
+      codeLink.store.patchSession(project.id, session.id, { activity: "Reading a file", lastEventAt: Date.now() });
+      await scanning;
+      expect(heard).toBe(0);
+
+      commitOn(checkout, branch, "news.ts", `TOM-${item.keyNum}: more news`);
+      git(["push", "-q", "origin", branch], checkout);
+      await codeLink.scan(project.id);
+      expect(heard).toBe(1);
+
+      // A branch naming no ticket here is news too: the status bar counts it.
+      commitOn(checkout, "tom-9999/elsewhere", "elsewhere.ts", "TOM-9999: elsewhere");
+      git(["push", "-q", "origin", "tom-9999/elsewhere"], checkout);
+      await codeLink.scan(project.id);
+      expect(heard).toBe(2);
+      expect(codeLink.unlinked(project.id)).toEqual([expect.objectContaining({ branch: "tom-9999/elsewhere", keyNum: 9999 })]);
+    } finally {
+      await ctx.fiber.dispose();
+    }
+  });
+
+  it("writes nothing the project's folder carries when a scan finds nothing new", async () => {
+    const { codeLink, ctx, project, checkout, ticket } = await machine(codeRepo());
+    try {
+      const item = ticket("Quiet scans", "todo");
+      const branch = `tom-${item.keyNum}/quiet`;
+      commitOn(checkout, branch, "quiet.ts", `TOM-${item.keyNum}: quiet`);
+      git(["push", "-q", "origin", branch], checkout);
+      await codeLink.scan(project.id);
+      const db = ctx.db.for(project.id);
+      const carried = () => JSON.stringify(Object.keys(TABLES).filter((t) => TABLES[t as keyof typeof TABLES].export).map((t) => db.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all()));
+      const before = carried();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      await codeLink.scan(project.id);
+      expect(carried()).toBe(before);
+
+      // A new commit is news, and lands in the rows at once.
+      const sha = commitOn(checkout, branch, "quiet.ts", `TOM-${item.keyNum}: louder`);
+      git(["push", "-q", "origin", branch], checkout);
+      await codeLink.scan(project.id);
+      expect(carried()).not.toBe(before);
+      expect(codeLink.links(project.id, item.id)[0].headSha).toBe(sha);
+    } finally {
+      await ctx.fiber.dispose();
+    }
   });
 
   it("discovers work started outside Tomrade from ticket keys in commits on an arbitrary branch", async () => {
