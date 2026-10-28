@@ -5,8 +5,9 @@ import { Context, Service } from "cordis";
 import { z } from "zod";
 import type { SettingsSection } from "@tomradex/settings";
 import type {} from "@tomradex/ipc";
+import type { AnalyticsReader } from "@tomradex/contracts";
 import { AnonIdentity, type IdentityInfo } from "./anon.js";
-import { FEATURE_REGISTRY_VERSION } from "./features.js";
+import { FEATURE_REGISTRY_VERSION, isOnce } from "./features.js";
 import type { AnalyticsEvent } from "./events.js";
 import { parseEvent, SCHEMA_VERSION } from "./events.js";
 import { EventQueue } from "./queue.js";
@@ -116,7 +117,7 @@ declare module "@tomradex/ipc" {
  * never blocks the interface: a failure to read a file or to send a batch is
  * logged, and the next tick carries on.
  */
-export class Analytics extends Service {
+export class Analytics extends Service implements AnalyticsReader {
   static provide = "analytics";
   static inject = ["ipc", "settings"];
   static Config = z.object({
@@ -130,6 +131,7 @@ export class Analytics extends Service {
   private readonly queue: EventQueue;
   private readonly snapshotFile: string;
   private readonly uploadFile: string;
+  private readonly onceFile: string;
   private readonly tracker: Tracker;
   private readonly uploader: Uploader | null;
   private stopTracker: (() => void) | null = null;
@@ -145,12 +147,13 @@ export class Analytics extends Service {
     this.queue = new EventQueue(path.join(config.dir, "queue.jsonl"));
     this.snapshotFile = path.join(config.dir, "session.json");
     this.uploadFile = path.join(config.dir, "upload.json");
+    this.onceFile = path.join(config.dir, "once.json");
     this.uploadState = this.readUploadState();
     this.uploader = config.upload ? new Uploader(config.upload) : null;
     this.tracker = new Tracker(
       config.host,
       {
-        activate: (featureId, action, dim, ts) => this.record({ event: "feature.activate", feature_id: featureId, action, dim }, ts),
+        activate: (featureId, action, dim, ts) => this.recordAction(featureId, action, dim, ts),
         session: (draft) => this.recordSession(draft)
       },
       { enabled: () => this.enabled(), heartbeat: (snapshot) => this.saveSnapshot(snapshot) }
@@ -172,6 +175,14 @@ export class Analytics extends Service {
 
     if (this.enabled()) void this.begin();
     return () => this.stop();
+  }
+
+  /**
+   * An action the backend saw (a plan written, a run undone, a claim). The
+   * same switch as the renderer's: off, nothing is recorded.
+   */
+  activate(featureId: string, action: string, dim: string | null = null): void {
+    this.tracker.activate(featureId, action, dim);
   }
 
   /** Where the data stands, for the settings card. */
@@ -280,10 +291,12 @@ export class Analytics extends Service {
     this.identity.clear();
     this.uploadState = { ...UPLOAD_STATE, lastAnonId: null };
     this.saveUploadState();
-    try {
-      fs.rmSync(this.snapshotFile, { force: true });
-    } catch {
-      // Already gone.
+    for (const file of [this.snapshotFile, this.onceFile]) {
+      try {
+        fs.rmSync(file, { force: true });
+      } catch {
+        // Already gone.
+      }
     }
   }
 
@@ -332,8 +345,8 @@ export class Analytics extends Service {
   }
 
   /** One event, validated before it can reach the queue or a file. */
-  private record(partial: Record<string, unknown>, ts = Date.now(), extra: Record<string, unknown> = {}): void {
-    if (!this.active || !this.enabled()) return;
+  private record(partial: Record<string, unknown>, ts = Date.now(), extra: Record<string, unknown> = {}): boolean {
+    if (!this.active || !this.enabled()) return false;
     let event: AnalyticsEvent;
     try {
       event = parseEvent({
@@ -350,15 +363,55 @@ export class Analytics extends Service {
       });
     } catch (error) {
       this.ctx.logger.warn(`analytics: dropped an event: ${String(error)}`);
-      return;
+      return false;
     }
     try {
       this.queue.push(event);
     } catch (error) {
       this.ctx.logger.warn(`analytics: could not queue an event: ${String(error)}`);
-      return;
+      return false;
     }
     if (this.queue.size >= FLUSH_BATCH) void this.flush();
+    return true;
+  }
+
+  /** A milestone goes once per anonymous id: a new id (rotation, reset, switched back on) may record it again. */
+  private recordAction(featureId: string, action: string, dim: string | null, ts: number): void {
+    if (!isOnce(featureId, action)) {
+      this.record({ event: "feature.activate", feature_id: featureId, action, dim }, ts);
+      return;
+    }
+    if (!this.active || !this.enabled()) return;
+    let anonId: string;
+    try {
+      anonId = this.identity.current();
+    } catch {
+      return;
+    }
+    const key = `${featureId}/${action}`;
+    const done = this.readOnce(anonId);
+    if (done.includes(key)) return;
+    if (this.record({ event: "feature.activate", feature_id: featureId, action, dim }, ts)) this.saveOnce(anonId, [...done, key]);
+  }
+
+  private readOnce(anonId: string): string[] {
+    try {
+      const raw = JSON.parse(fs.readFileSync(this.onceFile, "utf8")) as { anonId?: unknown; done?: unknown };
+      return raw.anonId === anonId && Array.isArray(raw.done) ? raw.done.filter((entry): entry is string => typeof entry === "string") : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private saveOnce(anonId: string, done: string[]): void {
+    try {
+      fs.mkdirSync(this.config.dir, { recursive: true, mode: 0o700 });
+      const tmp = `${this.onceFile}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify({ anonId, done }));
+      fs.renameSync(tmp, this.onceFile);
+    } catch {
+      // Lost, the milestone is recorded again next time: a duplicate the funnel's distinct count absorbs.
+    }
   }
 
   private recordSession(draft: SessionDraft): void {

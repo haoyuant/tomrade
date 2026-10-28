@@ -8,6 +8,7 @@ import { SettingsDialog } from "~/components/onDemand";
 import { StatusBar } from "~/components/chrome/StatusBar";
 import { Eyebrow, LiveDot, Num, Spacer, Tag } from "~/components/ui/atoms";
 import { invoke } from "~/lib/api";
+import { reportAction } from "~/lib/analytics";
 import { agoLabel } from "~/lib/domain";
 import { useI18n } from "~/lib/i18n";
 import { keys, useHubInfo, useMcpUrl, useProjects, useRestores, useSettings, useSettingsSections } from "~/lib/queries";
@@ -142,6 +143,11 @@ export function ProjectsScreen() {
     const decided = firstRunSetup(state, { seen, device, waited });
     if (decided) setSetup(decided);
   }, [setup, state, seen, settings.data, device, waited]);
+  // The first time anything works on this install; the main process keeps it to once per anonymous id.
+  const complete = !!state?.complete;
+  useEffect(() => {
+    if (complete) reportAction("onboarding", "setup_done");
+  }, [complete]);
   // Onboarding run again, from Settings: the setup screen comes back even with something connected.
   const [asked, takeAsk] = useSetupAsked();
   useEffect(() => {

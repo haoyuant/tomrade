@@ -12,7 +12,7 @@ import { GitError, GitFolder, cloneInto, gitRunner, type Git } from "@tomradex/g
 import { slugOf } from "@tomradex/storage";
 import { defineTool, requireProjectId } from "@tomradex/tools";
 import { isLocalRemote, normalizeRemote, sameRepository } from "./remotes.js";
-import type { ReposReader } from "@tomradex/contracts";
+import { contract, type ReposReader } from "@tomradex/contracts";
 
 declare module "cordis" {
   interface Context {
@@ -256,6 +256,7 @@ export class Repos extends Service implements ReposReader {
       .prepare("INSERT INTO repos (id, project_id, remote, name, default_branch, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .run(repo.id, repo.projectId, repo.remote, repo.name, repo.defaultBranch, now, now);
     this.notify();
+    contract(this.home, "analytics")?.activate("code.link", "project_repo_linked");
     return repo;
   }
 

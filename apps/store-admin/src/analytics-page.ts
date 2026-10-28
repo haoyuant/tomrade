@@ -1,5 +1,5 @@
 import { translator, type MessageKey } from "./analytics-messages.js";
-import { regions, type DashboardData, type Filters } from "./analytics-data.js";
+import { FUNNEL_STEPS, regions, type DashboardData, type Filters } from "./analytics-data.js";
 
 const escape = (value: unknown) => String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 // Inside <script type="application/json">: `<` could close the element, U+2028/9 break older parsers.
@@ -49,6 +49,24 @@ export function renderDashboard(f: Filters, data?: DashboardData, error?: "faile
       days: data.days.map(({ day, feature_id, duration_ms, uses }) => ({ day, feature_id, duration_ms, uses })),
       retention
     };
+    const fill = (text: string, slots: Record<string, number | string>) => text.replace(/\{\{(\w+)\}\}/g, (_, k: string) => String(slots[k] ?? ""));
+    const percent = (part: number, whole: number) => (whole ? `${n(part / whole * 100)}%` : "—");
+    const span = (ms: number) => ms < 3600000 ? fill(t("minutesShort"), { n: n(ms / 60000) }) : ms < 86400000 ? fill(t("hoursShort"), { n: n(ms / 3600000) }) : fill(t("daysShort"), { n: n(ms / 86400000) });
+    const { activation } = data;
+    const stepNames: Record<typeof FUNNEL_STEPS[number], MessageKey> = { installs: "installs", setup_done: "setupDone", start: "firstStart", open_pr: "openPr", merge: "merged" };
+    const funnel = FUNNEL_STEPS.map((step, i) => {
+      const reached = activation.funnel[step];
+      const installs = activation.funnel.installs;
+      const previous = i ? activation.funnel[FUNNEL_STEPS[i - 1]!] : installs;
+      const width = installs ? reached / installs * 100 : 0;
+      return [escape(t(stepNames[step])), n(reached), `<span class="share"><span style="width:${width.toFixed(1)}%"></span></span>${percent(reached, installs)}`, i ? percent(reached, previous) : "—"];
+    });
+    const stat = (label: string, value: string, sub: string) => `<article class="stat"><span class="label">${escape(label)}</span><strong>${escape(value)}</strong><span class="sub">${escape(sub)}</span></article>`;
+    const activationCard = card(t("activation"), t("activationHint"), `<div class="stats">
+        ${stat(t("timeToStart"), activation.first_start.median_ms === null ? "—" : span(activation.first_start.median_ms), fill(t("timeToStartSub"), { n: n(activation.first_start.n) }))}
+        ${stat(t("merged7d"), percent(activation.merged_7d.merged, activation.merged_7d.cohort), fill(t("merged7dSub"), { merged: n(activation.merged_7d.merged), cohort: n(activation.merged_7d.cohort) }))}
+        ${stat(t("weekReturn"), percent(activation.week_return.returned, activation.week_return.cohort), fill(t("weekReturnSub"), { returned: n(activation.week_return.returned), cohort: n(activation.week_return.cohort) }))}
+      </div>${table([t("step"), t("reached"), t("ofInstalls"), t("ofPrevious")], funnel)}`);
     content = `<div class="kpis">
       ${kpi(t("active"), today ? today.aai : null, escape(f.to), "aai")}
       ${kpi(t("periodActive"), report.totals.aai, `${escape(f.from)} — ${escape(f.to)}`, "aai")}
@@ -63,6 +81,7 @@ export function renderDashboard(f: Filters, data?: DashboardData, error?: "faile
         `<label class="pick"><span>${escape(t("feature"))}</span><select id="feature-pick">${features.map((d) => `<option value="${escape(d.feature_id)}"${d.feature_id === selected ? " selected" : ""}>${escape(d.feature_id)}</option>`).join("")}</select></label>`, true)}
       ${card(t("retention"), t("retentionHint"), `<div class="chart" id="chart-retention" role="img" aria-label="${escape(t("retention"))}"></div>`)}
     </div>
+    ${activationCard}
     ${card(t("features"), "", table([t("feature"), t("duration"), t("uses"), t("activeIds"), t("share"), `${t("minutes")} / ${t("perDay")}`, `${t("uses")} / ${t("perDay")}`], features.map((d) => {
       const share = total ? d[f.metric] / total * 100 : 0;
       return [`<a href="${escape(href({ feature: d.feature_id }))}" data-feature="${escape(d.feature_id)}"${d.feature_id === selected ? ' aria-current="true"' : ""}>${escape(d.feature_id)}</a>`,
@@ -113,6 +132,9 @@ main{max-width:1280px;margin:0 auto;padding:20px 16px 48px}
 .seg a[aria-current]{background:var(--surface);color:var(--text);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08)}
 .chips{display:flex;gap:6px;flex-wrap:wrap}.chips a{padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--muted);font-size:13px}
 .chips a:hover{text-decoration:none;color:var(--text)}.chips a[aria-current]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:600}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px}
+.stat{display:flex;flex-direction:column;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--raised)}
+.stat .label{color:var(--muted);font-size:12px}.stat strong{font-size:22px;font-weight:650;font-variant-numeric:tabular-nums}.stat .sub{color:var(--muted);font-size:12px}
 .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-bottom:16px}
 .kpi{position:relative;display:flex;flex-direction:column;padding:16px 18px 0;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden;min-height:150px}
 .kpi .label{color:var(--muted);font-size:12.5px}.kpi strong{font-size:30px;font-weight:650;letter-spacing:-.02em;line-height:1.25;margin-top:6px;font-variant-numeric:tabular-nums}
@@ -136,5 +158,5 @@ details>summary{cursor:pointer;font-weight:620;font-size:15px}details[open]>summ
 .notice.error{color:var(--danger);background:var(--danger-soft);border:1px solid var(--danger)}
 .note{color:var(--muted);font-size:12px;max-width:760px}
 @media (max-width:1000px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.grid,.split{grid-template-columns:minmax(0,1fr)}}
-@media (max-width:560px){.kpis{grid-template-columns:minmax(0,1fr)}.range{margin-left:0}.top{position:static}}
+@media (max-width:560px){.kpis,.stats{grid-template-columns:minmax(0,1fr)}.range{margin-left:0}.top{position:static}}
 `;

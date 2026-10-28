@@ -27,7 +27,15 @@ export interface Report {
   latest: string | null;
 }
 export interface FeatureDay { day: string; feature_id: string; region: string; duration_ms: number; uses: number }
-export interface DashboardData { report: Report; days: FeatureDay[] }
+/** tomrade_analytics_activation: the installs first seen in the range, followed up to now. */
+export interface Activation {
+  funnel: { installs: number; setup_done: number; start: number; open_pr: number; merge: number };
+  first_start: { median_ms: number | null; n: number };
+  merged_7d: { cohort: number; merged: number };
+  week_return: { cohort: number; returned: number };
+}
+export const FUNNEL_STEPS = ["installs", "setup_done", "start", "open_pr", "merge"] as const;
+export interface DashboardData { report: Report; days: FeatureDay[]; activation: Activation }
 export interface Endpoint { url: string; key: string }
 export function endpoints(env: NodeJS.ProcessEnv): Endpoint[] {
   const result: Endpoint[] = [];
@@ -55,8 +63,12 @@ export async function loadDashboard(sources: Endpoint[], f: Filters, request: ty
     return response.json() as Promise<T>;
   };
   const rows = await Promise.all(sources.map(async (source) => {
-    const [report, series] = await Promise.all([rpc<Report>(source, "tomrade_analytics_report"), rpc<{ days: FeatureDay[] }>(source, "tomrade_analytics_feature_days")]);
-    return { report, days: series.days };
+    const [report, series, activation] = await Promise.all([
+      rpc<Report>(source, "tomrade_analytics_report"),
+      rpc<{ days: FeatureDay[] }>(source, "tomrade_analytics_feature_days"),
+      rpc<Activation>(source, "tomrade_analytics_activation")
+    ]);
+    return { report, days: series.days, activation };
   }));
   return mergeReports(rows);
 }
@@ -66,6 +78,14 @@ export function mergeReports(rows: DashboardData[]): DashboardData {
   const features = new Map<string, Report["features"][number]>();
   const retention = new Map<string, Report["retention"][number]>();
   const days = new Map<string, FeatureDay>();
+  const activation: Activation = {
+    funnel: { installs: 0, setup_done: 0, start: 0, open_pr: 0, merge: 0 },
+    first_start: { median_ms: null, n: 0 },
+    merged_7d: { cohort: 0, merged: 0 },
+    week_return: { cohort: 0, returned: 0 }
+  };
+  // Medians do not add: across deployments, each one's median weighted by how many it covers.
+  let startWeighted = 0;
   const add = (a: Metrics, b: Metrics) => { a.duration_ms += b.duration_ms; a.uses += b.uses; a.aai += b.aai; };
   for (const row of rows) {
     add(report.totals, row.report.totals);
@@ -86,10 +106,18 @@ export function mergeReports(rows: DashboardData[]): DashboardData {
       const target = days.get(key) ?? { ...d, region: "all", duration_ms: 0, uses: 0 };
       target.duration_ms += d.duration_ms; target.uses += d.uses; days.set(key, target);
     }
+    for (const step of FUNNEL_STEPS) activation.funnel[step] += row.activation.funnel[step];
+    if (row.activation.first_start.median_ms !== null && row.activation.first_start.n) {
+      startWeighted += row.activation.first_start.median_ms * row.activation.first_start.n;
+      activation.first_start.n += row.activation.first_start.n;
+    }
+    activation.merged_7d.cohort += row.activation.merged_7d.cohort; activation.merged_7d.merged += row.activation.merged_7d.merged;
+    activation.week_return.cohort += row.activation.week_return.cohort; activation.week_return.returned += row.activation.week_return.returned;
     if (row.report.latest && (!report.latest || row.report.latest > report.latest)) report.latest = row.report.latest;
   }
   report.daily = [...daily.values()].sort((a, b) => a.day.localeCompare(b.day));
   report.features = [...features.values()];
   report.retention = [...retention.values()].sort((a, b) => a.day.localeCompare(b.day));
-  return { report, days: [...days.values()].sort((a, b) => a.day.localeCompare(b.day)) };
+  if (activation.first_start.n) activation.first_start.median_ms = Math.round(startWeighted / activation.first_start.n);
+  return { report, days: [...days.values()].sort((a, b) => a.day.localeCompare(b.day)), activation };
 }

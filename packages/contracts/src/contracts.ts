@@ -94,6 +94,11 @@ export interface CodeLinkReader {
   links(projectId: string, itemId?: string): LandedLink[];
 }
 
+/** Anonymous usage statistics, `@tomradex/analytics`: an action from the registry, dropped while statistics are off. */
+export interface AnalyticsReader {
+  activate(featureId: string, action: string, dim?: string | null): void;
+}
+
 export interface CommunityReader {
   /** The login the person publishes plugins under, once they have signed in to publish. */
   publisherLogin(): string | null;
@@ -137,6 +142,7 @@ export interface DoctorChecks {
 /** Each service key and the contract it is read through. */
 export interface Contracts {
   agent: AgentReader;
+  analytics: AnalyticsReader;
   boards: BoardsReader;
   cloudHub: CloudHubReader;
   codeLink: CodeLinkReader;

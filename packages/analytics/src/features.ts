@@ -17,6 +17,13 @@ export interface FeatureAction {
   name: string;
   /** Counted towards 使用次数 (the spec's ✓). */
   counted?: boolean;
+  /**
+   * A milestone: recorded at most once per anonymous id, however often the
+   * app sees it again. Client-side only; the server keeps whatever arrives.
+   */
+  once?: boolean;
+  /** The registry version that added this action to a feature older than it. */
+  sinceRegistry?: number;
 }
 
 export interface FeatureDefinition {
@@ -62,6 +69,8 @@ export const SOURCE_DIMS = ["quick", "form", "template"] as const;
 
 const counted = (name: string): FeatureAction => ({ name, counted: true });
 const seen = (name: string): FeatureAction => ({ name });
+/** An activation step (TOM-749): adoption and the funnel only, never a use, never content. */
+const step = (name: string, extra: Partial<FeatureAction> = {}): FeatureAction => ({ name, sinceRegistry: 2, ...extra });
 
 export const FEATURES: readonly FeatureDefinition[] = [
   {
@@ -144,7 +153,16 @@ export const FEATURES: readonly FeatureDefinition[] = [
     title: "Code link",
     titleZh: "代码链接",
     kind: "action",
-    actions: [counted("start"), seen("open_pr"), counted("merge"), seen("open_worktree")],
+    actions: [
+      counted("start"),
+      seen("open_pr"),
+      counted("merge"),
+      seen("open_worktree"),
+      // A repository added to a project: what code links need first.
+      step("project_repo_linked"),
+      // An agent in the person's own terminal took a ticket with claim_ticket.
+      step("claim_external")
+    ],
     sinceRegistry: 1
   },
   {
@@ -160,7 +178,14 @@ export const FEATURES: readonly FeatureDefinition[] = [
     title: "Assistant",
     titleZh: "AI 助手",
     kind: "surface",
-    actions: [counted("open"), seen("message_sent")],
+    actions: [
+      counted("open"),
+      seen("message_sent"),
+      // A proposed requirement tree written to the backlog.
+      step("plan_applied"),
+      // A whole run taken back in one click.
+      step("run_reverted")
+    ],
     dims: ENGINE_DIMS,
     dimAction: "message_sent",
     sinceRegistry: 1
@@ -280,13 +305,19 @@ export const FEATURES: readonly FeatureDefinition[] = [
     title: "First run",
     titleZh: "首次引导",
     kind: "sub",
-    actions: [seen("tour_start"), seen("tour_finish"), seen("hint_dismiss")],
+    actions: [
+      seen("tour_start"),
+      seen("tour_finish"),
+      seen("hint_dismiss"),
+      // The first-run check first finds the worker model and an assistant engine ready.
+      step("setup_done", { once: true })
+    ],
     sinceRegistry: 1
   }
 ];
 
 /** Bumped whenever any row, action or `counted` flag changes. */
-export const FEATURE_REGISTRY_VERSION = 1;
+export const FEATURE_REGISTRY_VERSION = 2;
 
 const BY_ID = new Map(FEATURES.map((feature) => [feature.id, feature]));
 
@@ -300,6 +331,10 @@ export const timerSurfaces = (): FeatureDefinition[] => FEATURES.filter((feature
 
 export const isAction = (feature: FeatureDefinition, action: string): boolean =>
   feature.actions.some((entry) => entry.name === action);
+
+/** Recorded at most once per anonymous id. */
+export const isOnce = (featureId: string, action: string): boolean =>
+  !!BY_ID.get(featureId)?.actions.some((entry) => entry.name === action && entry.once);
 
 export const isCounted = (featureId: string, action: string): boolean => {
   const feature = BY_ID.get(featureId);
