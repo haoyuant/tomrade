@@ -19,6 +19,7 @@
     "lint": "eslint . --max-warnings 0",
     "lint:unused": "knip --no-exit-code",
     "build:backend": "tsc -b",
+    "install:dev": "node scripts/install-dev.mjs",
     "i18n:check": "node scripts/i18n-check.mjs",
     "dump-config": "pnpm --filter @tomrade/desktop dump-config",
     "analytics": "pnpm --filter @tomradex/store-admin analytics"

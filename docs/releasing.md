@@ -2,6 +2,8 @@
 
 `pnpm --filter @tomrade/desktop package` builds the backend and the renderer, then the installers, into `apps/desktop/release/`. On macOS that's a DMG and a ZIP. Add `-- --dir` to build just the unpacked app.
 
+To try a checkout in the real app on an Apple-silicon Mac, `pnpm install:dev` builds an unsigned arm64 app stamped with the next release plus `-dev` (`0.23.0-dev` after v0.22.0), replaces `/Applications/Tomrade.app` and starts it. It shares the installed app's data folder.
+
 ## Official plugins carried in the app
 
 Packaging needs github.com: after the backend is built and before electron-builder runs, `apps/desktop/scripts/bundle-official-plugins.mjs` puts the official starters into the app, so a machine that cannot reach GitHub (offline, or mainland China without a proxy) still gets them on first run or upgrade. It reads `starters` from the community row in `apps/desktop/tomrade.yml`, fetches the official catalog, and writes to `apps/desktop/official-plugins/` (gitignored):
