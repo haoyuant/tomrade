@@ -2301,16 +2301,25 @@ export class Agent extends Service implements AgentReader {
         name: "propose_rule",
         title: "Propose a project rule",
         description:
-          "When the user corrects how you work in a way that should hold for every agent in this project from now on (\"always write tickets in Chinese\", \"never touch the billing module\"), offer it as a project rule. The user confirms before anything is written; one short imperative sentence per rule. Not for one-off instructions, and not for facts about the product — those belong in the project brief.",
-        input: z.object({ rule: z.string().min(3).max(300).describe("One short imperative sentence.") }),
-        execute: async ({ rule }, inv) => {
-          const projectId = requireProjectId("propose_rule", undefined, inv);
-          if (!inv.ask) throw new Error("Nobody here can confirm a rule. Tell the user they can add it in Project settings → Rules.");
+          "When the user corrects how you work in a way that should hold for every agent in this project from now on (\"always write tickets in Chinese\", \"never touch the billing module\"), offer it as a project rule. The user confirms before anything is written: where Tomrade can ask them, it asks; elsewhere ask them yourself first and pass their yes, in their own words, as userSaid. One short imperative sentence per rule. Not for one-off instructions, and not for facts about the product — those belong in the project brief.",
+        input: z.object({
+          projectId: z.string().optional(),
+          rule: z.string().min(3).max(300).describe("One short imperative sentence."),
+          userSaid: z.string().trim().min(1).optional().describe("Only where Tomrade cannot ask the user itself: their own words agreeing to add this rule, quoted")
+        }),
+        execute: async ({ projectId: given, rule, userSaid }, inv) => {
+          const projectId = requireProjectId("propose_rule", given, inv);
           const w = this.words();
           const line = rule.replace(/\s+/g, " ").trim().replace(/^[-*]\s*/, "");
-          const [addRule, skipRule] = [w("addRule"), w("skipRule")];
-          const answer = await inv.ask(w("proposeRule", { rule: line }), [addRule, skipRule]);
-          if (answer !== addRule) return { added: false, note: "The user did not add it. Follow it for this conversation only if they asked you to." };
+          if (inv.ask) {
+            const [addRule, skipRule] = [w("addRule"), w("skipRule")];
+            const answer = await inv.ask(w("proposeRule", { rule: line }), [addRule, skipRule]);
+            if (answer !== addRule) return { added: false, note: "The user did not add it. Follow it for this conversation only if they asked you to." };
+          } else if (!userSaid) {
+            throw new Error(
+              "Tomrade cannot ask the user to confirm a rule from here. Show them the rule and ask whether to add it to the project's rules; once they agree, call propose_rule again with their words in userSaid. They can also add it themselves in Project settings → Rules."
+            );
+          }
           const current = this.rules(projectId);
           this.setRules(projectId, current ? `${current}\n- ${line}` : `- ${line}`);
           return { added: true, file: this.rulesFile(projectId) };
