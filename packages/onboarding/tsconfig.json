@@ -13,12 +13,15 @@
     { "path": "../boards" },
     { "path": "../db" },
     { "path": "../domain" },
+    { "path": "../git" },
     { "path": "../hub" },
     { "path": "../inbox" },
     { "path": "../ipc" },
     { "path": "../items" },
     { "path": "../keybindings" },
     { "path": "../projects" },
-    { "path": "../settings" }
+    { "path": "../repos" },
+    { "path": "../settings" },
+    { "path": "../storage" }
   ]
 }

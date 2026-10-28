@@ -205,6 +205,9 @@ export const SessionBar = memo(function SessionBar({ rows, starting, openKey, mo
           {live.map(dot)}
           {ended.length > 0 && <span className="sbar-rule" />}
           {ended.map(dot)}
+        </div>
+        {/* New and History stay in sight below the dots, however many there are */}
+        <div className="sbar-rail-foot">
           <button type="button" className="sbar-dot sbar-new" title={t("agentPanel.newThread")} aria-label={t("agentPanel.newThread")} onClick={onNew}>
             <span className="sbar-dot-face"><Icon name="i-plus" size={13} /></span>
           </button>

@@ -31,7 +31,7 @@ import type { ReviewFocus } from "./agent-panel/Review";
 import { SessionBar, type BarMode, type CardAnswer } from "./agent-panel/SessionBar";
 import { HandoffLine } from "./agent-panel/HandoffLine";
 import { TerminalSession } from "./agent-panel/TerminalSession";
-import { barModeFor, barPrefsOf, CARDS_AT, sessionBarRows, type BarRow, type BarStatus } from "~/lib/sessionBar";
+import { barModeFor, barPrefsOf, barShown, CARDS_AT, sessionBarRows, type BarRow, type BarStatus } from "~/lib/sessionBar";
 import { askStartPalette, onPanelRequest, setPanelSession, type PanelRequest } from "~/lib/panelRequests";
 import { useStartingAll } from "~/lib/startWays";
 import { useHandoff, useRecentSessions, useSessionCells, useStartDefaults } from "~/lib/codeLink";
@@ -219,7 +219,8 @@ export function AgentPanel({
     permissionModes, selectedPermissionMode, activePermissionMode, permissionLabel, setPermissionMode,
     threadOptions, engineOptions, picks, pickValue, setPick, pickTitle
   } = useEngineChoice({ projectId, threadId, detail: detail.data, engines: engines.data, settings: settings.data, runningRun });
-  const busy = !!runningRun || send.isPending || answer.isPending || uploading;
+  const [handingOff, setHandingOff] = useState(false);
+  const busy = handingOff || !!runningRun || send.isPending || answer.isPending || uploading;
   const archivedNow = !!detail.data?.thread.archived;
   // A done ticket's conversation, brought back by hand: its next message first reopens the ticket.
   // An old one may be outside the renderer's window, and is asked for by id.
@@ -494,7 +495,6 @@ export function AgentPanel({
   };
   // To a terminal cell and back: one process on the conversation's session at a time, so the panel waits for each.
   const qc = useQueryClient();
-  const [handingOff, setHandingOff] = useState(false);
   const afterHandoff = (id: string) => {
     void qc.invalidateQueries({ queryKey: keys.codeLink.handoff(projectId, id) });
     void qc.invalidateQueries({ queryKey: keys.agent.thread(projectId, id) });
@@ -507,11 +507,10 @@ export function AgentPanel({
     try {
       const result = await invoke("codeLink.toTerminal", projectId, threadId);
       if (!result.ok) { toast({ body: result.message }); return; }
-      afterHandoff(threadId);
       toast({ body: `${t("handoff.moved", { pane: result.pane ? t("handoff.movedPane", { pane: result.pane }) : "" })}${result.launched ? "" : ` ${t("handoff.notOpened")}`}` });
       setOpenSession(result.sessionId);
     } catch (error) { reportError(error); }
-    finally { setHandingOff(false); }
+    finally { afterHandoff(threadId); setHandingOff(false); }
   };
   const backToPanel = async (id: string) => {
     if (handingOff) return;
@@ -642,6 +641,9 @@ export function AgentPanel({
     }),
     [threads.data, recentSessions.data, sessionCells.data, attention, threadId, openSession, itemsById]
   );
+  // the bar itself keeps only the last few to end; the rest, like ⌘K's, are in History
+  const barOpenKey = shownSession ? `session:${shownSession.id}` : threadId ? `thread:${threadId}` : null;
+  const shownBarRows = useMemo(() => barShown(barRows, barOpenKey, Date.now()), [barRows, barOpenKey]);
   // How the conversations writing code in the background for this one stand, for the notes that point at them.
   // Keyed by a string, so the map is new only when one of them changes state — never on a streamed reply.
   const childKey = barRows.filter((r) => r.threadId && r.parentKey === `thread:${threadId}`).map((r) => `${r.threadId}:${r.status}`).join("|");
@@ -771,11 +773,29 @@ export function AgentPanel({
       reportError(error);
     }
   };
+  // A "Try it" card: the words wait in the input for the person to finish and send; nobody's own conversation is written over.
+  const fillWith = async (text: string) => {
+    setReviewIn(null);
+    if (!empty || draft.trim() || attachments.length || busy || archivedNow) {
+      try {
+        pickThread((await openThread({ boardId })).id);
+      } catch (error) {
+        return reportError(error);
+      }
+    } else setOpenSession(null);
+    setDraft(text);
+    // the panel may only now be unfolding
+    setTimeout(() => {
+      composer.current?.focus();
+      composer.current?.setSelectionRange(text.length, text.length);
+    }, 60);
+  };
   // What ⌘K asks of the panel, answered with this render's state.
   const latestRequest = useRef<(request: PanelRequest) => void>(() => {});
   latestRequest.current = (request) => {
     if (request.kind === "newThread") latestBar.current.newThread();
     else if (request.kind === "startWith") void startWith(request.text);
+    else if (request.kind === "fill") void fillWith(request.text);
     else if (request.kind === "openSession") { setReviewIn(null); setOpenSession(request.sessionId); setSayTo(request.say ? request.sessionId : null); }
     else if (request.kind === "toggleBar") chooseBarMode(barMode === "rail" ? "cards" : "rail");
     else if (request.kind === "review") openReview(request.sessionId || request.threadId ? { sessionId: request.sessionId, threadId: request.threadId, itemId: request.itemId } : null);
@@ -1021,6 +1041,7 @@ export function AgentPanel({
             agent={elsewhere ? (findEngine(engines.data, elsewhere.agent)?.title ?? elsewhere.agent) : (engine?.title ?? currentEngineId)}
             running={!!runningRun}
             busy={handingOff || send.isPending || uploading}
+            transferring={handingOff}
             onToTerminal={() => void toTerminal()}
             onShow={() => { if (elsewhere) setOpenSession(elsewhere.sessionId); }}
             onBack={() => void backToPanel(threadId)}
@@ -1198,9 +1219,9 @@ export function AgentPanel({
       </>
       )}
       <SessionBar
-        rows={barRows}
+        rows={shownBarRows}
         starting={starting}
-        openKey={shownSession ? `session:${shownSession.id}` : threadId ? `thread:${threadId}` : null}
+        openKey={barOpenKey}
         mode={barMode}
         peeks={barPrefs.peek}
         engines={engines.data}

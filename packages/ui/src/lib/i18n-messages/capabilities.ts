@@ -1,0 +1,40 @@
+export const capabilities = {
+  en: {
+    label: "What Tomrade can do",
+    lede: "Five things worth trying first. Each card shows one in a few seconds; Try it takes you to where it starts.",
+    tryIt: "Try it",
+    tryItAria: "Try it: {{title}}",
+    hide: "Hide",
+    hideHint: "Hide these cards. They stay under Help › What Tomrade can do, and in the command palette.",
+    needProject: "Create a project first: Try it happens inside one.",
+    ideaTitle: "From an idea to a merged PR",
+    ideaLine: "Say it in one sentence. The assistant splits it into tickets, your agent opens the pull request, and merging marks the ticket done.",
+    terminalTitle: "Your terminal agent claims a ticket",
+    terminalLine: "Claude Code or Codex, in your own terminal, claims a ticket and syncs what it did back to Tomrade.",
+    sessionsTitle: "Several sessions: who is waiting on you",
+    sessionsLine: "Run agents side by side. The session bar shows which one needs you, and you answer on its card.",
+    groomTitle: "Tidy the backlog, undo in one click",
+    groomLine: "The assistant merges duplicates and splits oversized tickets. Not what you wanted? Undo the whole run.",
+    imTitle: "Say it in a chat app",
+    imLine: "Message the bot on Discord, Slack, Telegram or Feishu. It files the ticket, starts it and reports back."
+  },
+  zh: {
+    label: "Tomrade 能做什么",
+    lede: "最值得先试的五件事。每张卡片几秒钟讲清一件，「试一下」直接带你到起点。",
+    tryIt: "试一下",
+    tryItAria: "试一下：{{title}}",
+    hide: "收起",
+    hideHint: "收起这些卡片。之后仍可从「帮助 › Tomrade 能做什么」或命令面板打开。",
+    needProject: "先新建一个项目：「试一下」要在项目里进行。",
+    ideaTitle: "从一个想法到合并",
+    ideaLine: "说一句话，助手拆成工单，你的 Agent 开 PR，合并后工单自动完成。",
+    terminalTitle: "终端里的 Agent 认领工单",
+    terminalLine: "你自己终端里的 Claude Code、Codex 认领工单，做完把结果同步回 Tomrade。",
+    sessionsTitle: "多个会话，谁在等你",
+    sessionsLine: "几个 Agent 同时跑，会话栏一眼看出谁在等你，在卡片上直接回答。",
+    groomTitle: "整理需求池，一键撤回",
+    groomLine: "助手合并重复、拆开太大的工单；不满意就把整次运行撤回。",
+    imTitle: "在 IM 里说一句话",
+    imLine: "在 Discord、Slack、Telegram、飞书里给机器人发一句话，它建单、开始，并回报进度。"
+  }
+};

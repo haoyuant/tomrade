@@ -1,7 +1,7 @@
 import { app, BrowserWindow, Notification } from "electron";
 import type { Context } from "cordis";
 import { z } from "zod";
-import type { RunView, ThreadSummary } from "@tomradex/agent";
+import { PANEL_SURFACES, type RunView, type ThreadSummary } from "@tomradex/agent";
 import type { SettingsSection } from "@tomradex/settings";
 import { askLineIn } from "@tomradex/code-link";
 import { PROMPT_LINES, promptOnScreen } from "@tomradex/code-link/prompt";
@@ -30,6 +30,11 @@ export interface AttentionEntry {
   sessionId?: string | null;
   /** Where the person may be told already: herdr's own window, while a client of its own is attached to show it (see `tomradeTells`). */
   toldIn?: "herdr";
+  /**
+   * The app closed while the conversation ran, and nobody has gone on since. That only ever shows up at a launch,
+   * with a window in front: it is told then all the same, which another wait already there at launch is not.
+   */
+  interrupted?: true;
 }
 
 /** What opening an entry needs: the tray's running sessions are opened the same way. */
@@ -181,7 +186,7 @@ export class Teller {
     }
     if (!this.primed) {
       this.primed = true;
-      for (const e of entries) this.told.set(e.key, e.kind);
+      for (const e of entries) if (!e.interrupted) this.told.set(e.key, e.kind);
     }
     for (const e of entries) {
       if (this.told.get(e.key) === e.kind || this.timers.has(e.key)) continue;
@@ -233,7 +238,7 @@ export class Teller {
     this.told.set(entry.key, entry.kind);
     const prefs = this.options.prefs();
     const on = entry.kind === "permission" || entry.kind === "question" ? prefs.approvals : entry.kind === "waiting" ? prefs.waiting : prefs.stopped;
-    if (!prefs.enabled || !on || this.options.focused()) return;
+    if (!prefs.enabled || !on || (this.options.focused() && !entry.interrupted)) return;
     this.options.tell({ title: this.titleOf(entry.itemKey, entry.kind, entry.who), body: entry.text ?? "", entry, event: entry.kind });
   }
 
@@ -382,6 +387,17 @@ export const attention = {
           ...(session?.sessionId ? { sessionId: session.sessionId } : {})
         });
       }
+      // the app closed mid-run: the conversation waits on the person to go on, or to wave it away
+      for (const projectId of ctx.get("db")?.openIds() ?? []) {
+        for (const thread of ctx.agent.store.interruptedThreads(projectId, PANEL_SURFACES)) {
+          const key = `thread:${thread.id}`;
+          if (out.has(key)) continue;
+          out.set(key, {
+            key, projectId, threadId: thread.id, itemId: thread.itemId, itemKey: itemKeyOf(projectId, thread.itemId), kind: "stuck",
+            who: thread.itemId ? engineTitle(thread.engine) : null, text: clip(ctx.agent.store.interruptedRun(projectId, thread.id)?.error), interrupted: true
+          });
+        }
+      }
       return [...out.values()].sort((x, y) => x.key.localeCompare(y.key));
     };
 
@@ -475,6 +491,7 @@ export const attention = {
       teller.lifted({ key: `thread:${thread.id}`, projectId: thread.projectId, threadId: thread.id, itemId: thread.itemId, itemKey: itemKeyOf(thread.projectId, thread.itemId), who, text: null });
     });
     ctx.on("codeLink/changed", schedule);
+    ctx.on("agent/interrupted-changed", schedule);
     ctx.on("db/opened", schedule);
     ctx.on("attention/open", (target) => void open(target));
     // Focusing a window is the person seeing it: stop the taskbar asking.

@@ -1,6 +1,7 @@
 import { about } from "./about";
 import { analytics } from "./analytics";
 import { announcements } from "./announcements";
+import { capabilities } from "./capabilities";
 import { legal } from "./legal";
 import { usage } from "./usage";
 import { background } from "./background";
@@ -84,6 +85,7 @@ export const en = {
   about: about.en,
   analytics: analytics.en,
   announcements: announcements.en,
+  capabilities: capabilities.en,
   legal: legal.en,
   usage: usage.en,
   background: background.en,
@@ -168,6 +170,7 @@ export const zh: typeof en = {
   settingsDialog: settingsDialog.zh,
   about: about.zh,
   announcements: announcements.zh,
+  capabilities: capabilities.zh,
   legal: legal.zh,
   usage: usage.zh,
   background: background.zh,

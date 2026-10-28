@@ -26,8 +26,8 @@ export type Block =
   | { type: "card"; id: string; schema: string; title: string; data: unknown }
   | { type: "status"; text: string }
   | { type: "changes"; runId: string; count: number; items?: { key: string; label: string; op: "created" | "updated" | "deleted" }[] }
-  /** `settingsFor`: the engine whose settings change what the note is about; the panel links there. `threadFor`: another conversation the note is about (one this conversation's coding moved to); the panel links there too. `claimed`: the key of the ticket the conversation claimed here — its writing code for that ticket starts at this note. */
-  | { type: "note"; text: string; settingsFor?: string; threadFor?: string; claimed?: string }
+  /** `settingsFor`: the engine whose settings change what the note is about; the panel links there. `threadFor`: another conversation the note is about (one this conversation's coding moved to); the panel links there too. `claimed`: the key of the ticket the conversation claimed here — its writing code for that ticket starts at this note. `interrupted`: the app closed while a run was going — this conversation's (or, with `threadFor`, that one's); the latest such note offers to continue. */
+  | { type: "note"; text: string; settingsFor?: string; threadFor?: string; claimed?: string; interrupted?: boolean }
   /** One stretch of failed model requests, stored once it ends: recovered, or the run gave up. */
   | { type: "retry"; attempts: number; max?: number; reason: string; ms: number; recovered: boolean }
   /** `details`: what the engine knew beyond the one line, folded under it so it can be read and copied. */
@@ -93,6 +93,8 @@ export interface ThreadSummary {
   running?: boolean;
   /** In a listing for the panel: it stopped on a usage limit that lifts then. */
   parkedUntil?: number | null;
+  /** In a listing for the panel: the app closed while its last run was going, and nobody has continued or waved it away since. */
+  interrupted?: boolean;
   id: string;
   projectId: string;
   /** The workstream the thread stands on, and so the repository it runs in; null for a thread about the whole project. */
@@ -141,6 +143,8 @@ export interface RunView {
   keptOnRevert: number;
   startedAt: number;
   endedAt: number | null;
+  /** A run the app's closing interrupted (`stop: "interrupted"`): when the person waved that away; null while it still waits on them. */
+  dismissedAt?: number | null;
   metrics?: import("./evaluation.js").TurnMetrics | null;
 }
 

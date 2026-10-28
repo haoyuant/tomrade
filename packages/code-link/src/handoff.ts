@@ -58,6 +58,8 @@ const live = (s: SessionView): boolean => s.state !== "ended" && s.state !== "lo
  * sessions, both kept, so a restart loses nothing.
  */
 export class Handoff {
+  private readonly transfers = new Map<string, Promise<HandoffResult>>();
+
   constructor(private readonly host: HandoffHost) {}
 
   private agent(): Agent | undefined {
@@ -85,7 +87,6 @@ export class Handoff {
     const engine = this.engineOf(agent, thread);
     if (!engine || engine.terminal?.mode === "none") return "builtin";
     if (!this.externalOf(agent, thread, engine)) return "noSession";
-    if (agent.activeRuns().some((a) => a.thread.id === thread.id)) return "running";
     if (agent.store.pending(thread.projectId, thread.id)) return "waiting";
     if (!this.host.ctx.get("mcp")?.url) return "noMcp";
     return null;
@@ -103,6 +104,7 @@ export class Handoff {
 
   /** The reason a send into the thread is refused while its agent is in a terminal; nothing otherwise. */
   refuseSend(thread: ThreadSummary): string | undefined {
+    if (this.transfers.has(thread.id)) return this.host.words()("handoffTransferring");
     const session = this.host.starter.liveTerminalSession(thread.projectId, thread.id);
     if (!session) return undefined;
     const w = this.host.words();
@@ -128,6 +130,15 @@ export class Handoff {
 
   /** The conversation to a terminal cell: its runtime here closed first, so the CLI is the one process on its session. */
   async toTerminal(projectId: string, threadId: string): Promise<HandoffResult> {
+    const existing = this.transfers.get(threadId);
+    if (existing) return existing;
+    const transfer = Promise.resolve().then(() => this.moveToTerminal(projectId, threadId));
+    this.transfers.set(threadId, transfer);
+    try { return await transfer; }
+    finally { this.transfers.delete(threadId); this.host.notify(projectId); }
+  }
+
+  private async moveToTerminal(projectId: string, threadId: string): Promise<HandoffResult> {
     const agent = this.agent();
     const thread = agent?.store.thread(projectId, threadId);
     if (!agent || !thread) return { ok: false, message: `unknown thread ${threadId}` };
@@ -136,24 +147,49 @@ export class Handoff {
     if (view.where === "terminal") return { ok: false, message: w("handoffAlreadyThere") };
     const engine = this.engineOf(agent, thread);
     if (!view.toTerminal.ok || !engine) return { ok: false, message: this.reasonText(view.toTerminal.reason ?? "builtin", engine?.title ?? thread.engine) };
-    agent.releaseRuntime(projectId, threadId);
-    let result;
-    if (thread.itemId) {
-      // The ticket's tracking moves to the terminal session: the headless one ends here, so nothing shows twice.
-      const headless = this.host.store.sessions(projectId, { live: true }).filter((s) => s.threadId === threadId && s.mode === "headless");
-      for (const s of headless) this.host.sessions.end(projectId, s.id, "ended", true, "the conversation went to a terminal");
-      result = await this.host.starter.start(projectId, thread.itemId, { mode: "terminal", threadId, engine: engine.id });
-      // Refused: it stays here, and so does the ticket's tracking.
-      if (!result.ok && headless[0]) this.ensureHeadlessSession(projectId, thread, headless[0], agent.answering(thread.engine));
-    } else {
-      const where = await agent.workdir(projectId, threadId, { create: true });
-      if (where.problem) return { ok: false, message: where.problem };
-      // The folder the thread's runs use: a worktree of its workstream, else the thread's own workspace folder.
-      const cwd = where.cwd ?? agentWorkspace(projectId, threadId);
-      fs.mkdirSync(cwd, { recursive: true, mode: 0o700 });
-      result = await this.host.starter.startThread(projectId, thread, { cwd, externalId: this.externalOf(agent, thread, engine)!, prompt: HANDOFF_PROMPT });
+    for (const active of agent.activeRuns().filter((a) => a.thread.id === threadId)) agent.cancel(active.run.id);
+    const deadline = Date.now() + 15_000;
+    while (agent.activeRuns().some((a) => a.thread.id === threadId)) {
+      if (Date.now() >= deadline) return { ok: false, message: w("handoffStopTimeout") };
+      await new Promise((resolve) => setTimeout(resolve, 25));
     }
-    if (!result.ok) return { ok: false, message: result.message };
+    // Cancellation can finish with a question, or the thread may have changed while stopping.
+    const current = agent.store.thread(projectId, threadId);
+    if (!current) return { ok: false, message: w("handoffArchived") };
+    const refusal = this.refusal(agent, current);
+    if (refusal) return { ok: false, message: this.reasonText(refusal, engine.title) };
+    if (current.engine !== thread.engine) return { ok: false, message: w("handoffRetry") };
+    agent.releaseRuntime(projectId, threadId);
+    const before = this.host.store.sessions(projectId, { threadId });
+    const headless = before.find((s) => s.mode === "headless" && live(s));
+    const recover = () => {
+      // Only sessions created by this transfer are ours to retire.
+      for (const s of this.host.store.sessions(projectId, { threadId })) {
+        if (s.mode === "terminal" && !before.some((old) => old.id === s.id)) this.host.sessions.end(projectId, s.id, "ended", true, "terminal handoff failed");
+      }
+      agent.store.touchThread(projectId, threadId, { surface: "assistant" });
+      if (headless) this.ensureHeadlessSession(projectId, current, headless, engine.id);
+    };
+    let result;
+    try {
+      if (current.itemId) {
+        for (const s of before.filter((s) => s.mode === "headless" && live(s))) this.host.sessions.end(projectId, s.id, "ended", true, "the conversation went to a terminal");
+        result = await this.host.starter.start(projectId, current.itemId, { mode: "terminal", threadId, engine: engine.id });
+      } else {
+        const where = await agent.workdir(projectId, threadId, { create: true });
+        if (where.problem) return { ok: false, message: where.problem };
+        const cwd = where.cwd ?? agentWorkspace(projectId, threadId);
+        fs.mkdirSync(cwd, { recursive: true, mode: 0o700 });
+        result = await this.host.starter.startThread(projectId, current, { cwd, externalId: this.externalOf(agent, current, engine)!, prompt: HANDOFF_PROMPT });
+      }
+      if (!result.ok || !result.launched) {
+        recover();
+        return { ok: false, message: !result.ok ? `${result.message} ${w("handoffRetry")}` : w("handoffLaunchFailed") };
+      }
+    } catch (error) {
+      recover();
+      return { ok: false, message: `${w("handoffLaunchFailed")} ${error instanceof Error ? error.message : String(error)}` };
+    }
     const pane = result.pane ?? null;
     this.host.say(projectId, threadId, w("handoffToTerminal", { agent: engine.title, pane: pane ? w("handoffPane", { pane }) : "" }));
     return { ok: true, sessionId: result.sessionId, pane, launched: result.launched, ...(result.warnings?.length ? { warnings: result.warnings } : {}) };
@@ -170,6 +206,7 @@ export class Handoff {
     const thread = agent?.store.thread(projectId, threadId);
     if (!agent || !thread) return { ok: false, message: `unknown thread ${threadId}` };
     const w = this.host.words();
+    if (this.transfers.has(threadId)) return { ok: false, message: w("handoffTransferring") };
     if (this.view(projectId, threadId).where === "terminal") return { ok: false, message: w("handoffAlreadyThere") };
     const engine = agent.codeEngines().find((e) => e.id === agent.answering(engineId));
     if (!engine || engine.terminal?.mode === "none") return { ok: false, message: w("handoffBuiltin", { agent: engine?.title ?? engineId }) };

@@ -67,6 +67,9 @@ export interface BarRow {
   depth: 0 | 1;
 }
 
+/** A conversation the app's closing interrupted, when the desktop's attention list (where its words come from) does not list it: a browser tab. */
+const INTERRUPTED_WAIT: Pick<AttentionEntry, "kind" | "text"> & { since?: undefined } = { kind: "stuck", text: null };
+
 const RANK: Record<BarStatus, number> = { wait: 0, run: 1, idle: 2, done: 3 };
 
 /** How long an assistant conversation sits untouched before it reads as done, with what it said last as its outcome. */
@@ -115,7 +118,8 @@ export function sessionBarRows(input: {
 
   for (const th of threads) {
     const session = sessionOfThread.get(th.id);
-    const wait = waits.get(`thread:${th.id}`) ?? null;
+    // the app closed mid-run and nobody has gone on since: it waits on the person, the desktop's list or not
+    const wait = waits.get(`thread:${th.id}`) ?? (th.interrupted && !th.running ? INTERRUPTED_WAIT : null);
     const live = session && session.state !== "ended" && session.state !== "lost";
     const busy: BarStatus = wait ? "wait" : th.running || (live && session.state === "running") ? "run" : "idle";
     // done once its ticket is, or once it sat untouched a good while: what it said last is what came of it
@@ -175,6 +179,18 @@ function nest(rows: BarRow[]): BarRow[] {
     for (const child of rows) if (child.parentKey === top.key && !placed.has(child.key)) { out.push({ ...child, depth: 1 }); placed.add(child.key); }
   }
   return out;
+}
+
+/** Ended sessions the bar keeps: the last few to end within this while; the rest are in History. */
+export const DONE_SHOWN_FOR_MS = 60 * 60_000;
+export const DONE_SHOWN = 3;
+
+/** What the bar shows of its rows: every one still going, the last few to end, the open one, and a parent of any kept. */
+export function barShown(rows: BarRow[], openKey: string | null, now: number): BarRow[] {
+  let done = 0;
+  const keep = new Set(rows.filter((r) => r.status !== "done" || r.key === openKey || (now - r.at <= DONE_SHOWN_FOR_MS && ++done <= DONE_SHOWN)).map((r) => r.key));
+  for (const r of rows) if (r.parentKey && keep.has(r.key)) keep.add(r.parentKey);
+  return rows.filter((r) => keep.has(r.key));
 }
 
 /** ⌘K's sessions, each group in the bar's order: waiting on the person, in progress (running or idle), and ended. */

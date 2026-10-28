@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, expect, it } from "vitest";
+import { afterAll, expect, it, vi } from "vitest";
 import type { Context } from "cordis";
 import { Agent, type Engine } from "@tomradex/agent";
 import { CodeLink, HANDOFF_PROMPT, handedPrompt } from "@tomradex/code-link";
@@ -78,7 +78,7 @@ async function machine() {
 }
 
 it("takes a free conversation to a terminal cell in the folder its runs use, keeps a second process off its session, and brings it back once the CLI exited", { timeout: 30_000 }, async () => {
-  const { ctx, project, codeLink, agent, turns, released, fake, held, letGo } = await machine();
+  const { ctx, project, codeLink, agent, turns, released, fake } = await machine();
   try {
     // an agent that runs only inside Tomrade has no way to a terminal; a conversation that never ran has nothing to resume
     const inside = agent.newThread(project.id, "inside", null, { title: "Inside only" });
@@ -89,15 +89,6 @@ it("takes a free conversation to a terminal cell in the folder its runs use, kee
     const first = agent.send(project.id, thread.id, { kind: "text", text: "hi" });
     await until(() => agent.store.run(project.id, first.runId)?.status === "done");
     expect(agent.store.external(project.id, thread.id)).toEqual({ "fake-cli": "cli-1" });
-    // not while a turn runs
-    const second = agent.send(project.id, thread.id, { kind: "text", text: "hold" });
-    await until(held);
-    expect(codeLink.handoffOf(project.id, thread.id)).toEqual({ where: "here", toTerminal: { ok: false, reason: "running" }, terminal: null });
-    expect(await codeLink.toTerminal(project.id, thread.id)).toEqual({ ok: false, message: "A turn is in progress; stop it, or wait for it to end." });
-    letGo();
-    await until(() => agent.store.run(project.id, second.runId)?.status === "done");
-    expect(codeLink.handoffOf(project.id, thread.id)).toEqual({ where: "here", toTerminal: { ok: true }, terminal: null });
-
     // to the terminal: the runtime here closed first, then the CLI in the thread's own folder, resuming its session with Tomrade's hooks
     const moved = await codeLink.toTerminal(project.id, thread.id);
     expect(moved).toMatchObject({ ok: true, launched: true, pane: "w1:p1" });
@@ -249,6 +240,82 @@ it("ends a terminal session and cuts its link when its conversation is deleted, 
     expect(codeLink.store.session(project.id, left.id)).toMatchObject({ threadId: old.id });
     ctx.emit("db/opened", project.id);
     expect(codeLink.store.session(project.id, left.id)).toMatchObject({ threadId: null, state: "ended" });
+    fake.close();
+    await ctx.fiber.dispose();
+  }
+});
+
+for (const failure of ["none", "timeout", "launch", "throw"] as const) {
+  it(`transfers a running conversation once, recovering from ${failure}`, { timeout: 30_000 }, async () => {
+    const { ctx, project, codeLink, agent, fake, held, letGo, released } = await machine();
+    try {
+      const thread = agent.newThread(project.id, "fake-cli", null, { title: "Running transfer" });
+      const first = agent.send(project.id, thread.id, { kind: "text", text: "hi" });
+      await until(() => agent.store.run(project.id, first.runId)?.status === "done");
+      const second = agent.send(project.id, thread.id, { kind: "text", text: "hold" });
+      await until(held);
+      expect(codeLink.handoffOf(project.id, thread.id).toTerminal).toEqual({ ok: true });
+      const cancel = vi.spyOn(agent, "cancel").mockReturnValue(true);
+      const originalLaunch = codeLink.herdr.launch.bind(codeLink.herdr);
+      const launch = vi.spyOn(codeLink.herdr, "launch").mockImplementation(async (...args) => {
+        expect(agent.activeRuns()).toEqual([]);
+        expect(() => agent.send(project.id, thread.id, { kind: "text", text: "race after stopping" })).toThrow("moving to a terminal");
+        return originalLaunch(...args);
+      });
+      if (failure === "launch") launch.mockResolvedValue({ launched: false, script: "" });
+      if (failure === "throw") launch.mockRejectedValue(new Error("test launch failure"));
+      const moving = codeLink.toTerminal(project.id, thread.id);
+      const duplicate = codeLink.toTerminal(project.id, thread.id);
+      await until(() => cancel.mock.calls.length === 1);
+      expect(() => agent.send(project.id, thread.id, { kind: "text", text: "race" })).toThrow();
+      expect(released).toEqual([]);
+      expect(launch).not.toHaveBeenCalled();
+      if (failure === "timeout") {
+        const now = Date.now();
+        vi.spyOn(Date, "now").mockReturnValue(now + 16_000);
+      } else letGo();
+      const result = await moving;
+      expect(await duplicate).toEqual(result);
+      if (failure === "none") {
+        expect(result).toMatchObject({ ok: true, launched: true });
+        expect(launch).toHaveBeenCalledTimes(1);
+        expect(agent.activeRuns()).toEqual([]);
+        expect(codeLink.store.sessions(project.id, { threadId: thread.id }).filter((s) => s.mode === "terminal")).toHaveLength(1);
+        expect(agent.store.external(project.id, thread.id)).toEqual({ "fake-cli": "cli-1" });
+      } else {
+        expect(result).toMatchObject({ ok: false });
+        expect(agent.store.thread(project.id, thread.id)?.surface).toBe("assistant");
+        expect(codeLink.store.sessions(project.id, { threadId: thread.id }).filter((s) => s.mode === "terminal" && s.state !== "ended")).toEqual([]);
+        if (failure === "timeout") {
+          expect(launch).not.toHaveBeenCalled();
+          expect(released).toEqual([]);
+        }
+        vi.restoreAllMocks();
+        letGo();
+        await until(() => !agent.activeRuns().length);
+        expect(await codeLink.toTerminal(project.id, thread.id)).toMatchObject({ ok: true, launched: true });
+      }
+    } finally {
+      vi.restoreAllMocks();
+      letGo();
+      await until(() => !agent.activeRuns().length);
+      fake.close();
+      await ctx.fiber.dispose();
+    }
+  });
+}
+
+it("cancels the real active turn before releasing its runtime and resuming in a terminal", async () => {
+  const { ctx, project, codeLink, agent, fake, held, released } = await machine();
+  try {
+    const thread = agent.newThread(project.id, "fake-cli", null);
+    agent.store.setExternal(project.id, thread.id, "fake-cli", "cli-1");
+    const run = agent.send(project.id, thread.id, { kind: "text", text: "hold" });
+    await until(held);
+    expect(await codeLink.toTerminal(project.id, thread.id)).toMatchObject({ ok: true, launched: true });
+    expect(agent.store.run(project.id, run.runId)?.status).toBe("cancelled");
+    expect(released).toEqual([{ projectId: project.id, threadId: thread.id }]);
+  } finally {
     fake.close();
     await ctx.fiber.dispose();
   }

@@ -1913,6 +1913,9 @@ importers:
       '@tomradex/domain':
         specifier: workspace:*
         version: link:../domain
+      '@tomradex/git':
+        specifier: workspace:*
+        version: link:../git
       '@tomradex/hub':
         specifier: workspace:*
         version: link:../hub
@@ -1931,9 +1934,15 @@ importers:
       '@tomradex/projects':
         specifier: workspace:*
         version: link:../projects
+      '@tomradex/repos':
+        specifier: workspace:*
+        version: link:../repos
       '@tomradex/settings':
         specifier: workspace:*
         version: link:../settings
+      '@tomradex/storage':
+        specifier: workspace:*
+        version: link:../storage
       cordis:
         specifier: 4.0.0-rc.8
         version: 4.0.0-rc.8

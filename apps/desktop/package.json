@@ -39,6 +39,7 @@
     "test:restore": "electron scripts/restore-check.mjs",
     "test:github-signin": "electron scripts/github-signin-check.mjs",
     "test:terms": "electron scripts/terms-check.mjs",
+    "test:capabilities": "electron scripts/capabilities-check.mjs",
     "test:account-delete": "electron scripts/account-delete-check.mjs",
     "test:account-optional": "electron scripts/account-optional-check.mjs",
     "test:updates": "electron scripts/updates-check.mjs",

@@ -40,6 +40,22 @@ it("leaves what already waited at launch to the badge", () => {
   expect(told).toEqual([]);
 });
 
+it("tells a conversation the app's closing interrupted even when it was there at launch and a window has focus, once, unless stops are switched off", () => {
+  const { teller, told, state } = setup();
+  state.focused = true;
+  const cut = entry("thread:a", "stuck", { interrupted: true, who: null, text: "Interrupted." });
+  teller.update([entry("thread:b", "permission"), cut]);
+  teller.update([entry("thread:b", "permission"), cut]);
+  expect(told.map((n) => [n.title, n.body])).toEqual([["The assistant stopped", "Interrupted."]]);
+  // any other stop still keeps quiet while a window has focus
+  teller.update([cut, entry("thread:c", "stuck")]);
+  expect(told).toHaveLength(1);
+
+  const off = setup({ stopped: false });
+  off.teller.update([cut]);
+  expect(off.told).toEqual([]);
+});
+
 it("tells an approval at once, and once", () => {
   const { teller, told } = setup();
   teller.update([]);
@@ -183,7 +199,7 @@ describe("the attention row", () => {
     shown.length = 0;
   });
   const start = () => {
-    const state = { sessions: [] as unknown[], client: false, cells: undefined as Record<string, number> | undefined };
+    const state = { sessions: [] as unknown[], client: false, cells: undefined as Record<string, number> | undefined, interrupted: [] as { id: string; itemId: string | null; engine: string; error: string }[] };
     const listeners = new Map<string, Listener>();
     const sent: unknown[][] = [];
     const revealed: unknown[][] = [];
@@ -195,7 +211,14 @@ describe("the attention row", () => {
     };
     const ctx = {
       settings: { register: () => {}, locale: () => "en", get: () => ({}) },
-      agent: { codeEngines: () => [{ id: "claude", title: "Claude Code" }], activities: () => [], store: { thread: () => null, messages: () => [] } },
+      agent: {
+        codeEngines: () => [{ id: "claude", title: "Claude Code" }], activities: () => [],
+        store: {
+          thread: () => null, messages: () => [],
+          interruptedThreads: () => state.interrupted,
+          interruptedRun: (_projectId: string, threadId: string) => ({ error: state.interrupted.find((th) => th.id === threadId)?.error ?? null })
+        }
+      },
       get: (name: string) => services[name],
       bail: (name: string) => (name === "codeLink/session-cells" ? state.cells : undefined),
       ipc: { handle: () => {}, send: (...args: unknown[]) => void sent.push(args) },
@@ -223,6 +246,20 @@ describe("the attention row", () => {
     listeners.get("codeLink/changed")!("p");
     await vi.advanceTimersByTimeAsync(300);
     expect(shown).toEqual(["Claude Code is waiting for you"]);
+  });
+
+  it("lists a conversation the app's closing interrupted as stopped, in what its note said, until it is no longer", async () => {
+    const { state, listeners, sent } = start();
+    const listed = () => (sent.filter(([channel]) => channel === "attention.changed").at(-1)?.[1] ?? []) as AttentionEntry[];
+    state.interrupted = [{ id: "t", itemId: null, engine: "loop", error: "Interrupted — the app closed while this run was in progress." }];
+    await vi.advanceTimersByTimeAsync(300);
+    expect(listed()).toEqual([expect.objectContaining({ key: "thread:t", threadId: "t", kind: "stuck", who: null, text: "Interrupted — the app closed while this run was in progress.", interrupted: true })]);
+    // there at launch, and told all the same
+    expect(shown).toEqual(["The assistant stopped"]);
+    state.interrupted = [];
+    listeners.get("agent/interrupted-changed")!("p", "t");
+    await vi.advanceTimersByTimeAsync(300);
+    expect(listed()).toEqual([]);
   });
 
   it("opens a terminal session in its cell while its Terminal window is open, and in the main window's panel otherwise", async () => {

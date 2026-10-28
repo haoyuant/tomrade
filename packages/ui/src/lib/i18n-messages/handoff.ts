@@ -2,6 +2,9 @@
 export const handoff = {
   en: {
     here: "here",
+    stopping: "Stopping the current turn…",
+    opening: "Moving to a terminal…",
+    stopAndTransfer: "Stop and continue in a terminal cell",
     toTerminal: "Go on in a terminal cell",
     toTerminalTitle: "Stop the agent here and let its CLI resume this same session in a cell of the Terminal window",
     reasonBuiltin: "This agent runs only inside Tomrade.",
@@ -24,6 +27,9 @@ export const handoff = {
   },
   zh: {
     here: "在这里",
+    stopping: "正在停止当前轮次…",
+    opening: "正在转到终端…",
+    stopAndTransfer: "停止并转到终端格子继续",
     toTerminal: "在终端格子里接着做",
     toTerminalTitle: "停掉这里的智能体，让它的 CLI 在终端窗口的格子里接着跑同一个会话",
     reasonBuiltin: "这个智能体只在 Tomrade 里运行。",

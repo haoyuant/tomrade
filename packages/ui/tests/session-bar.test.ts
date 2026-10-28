@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import type { ThreadSummary } from "@tomradex/agent";
 import type { SessionView } from "@tomradex/code-link";
-import { barModeFor, barPrefsOf, paletteSessionGroups, sessionBarRows, THREAD_DONE_AFTER_MS } from "../src/lib/sessionBar";
+import { barModeFor, barPrefsOf, barShown, DONE_SHOWN_FOR_MS, paletteSessionGroups, sessionBarRows, THREAD_DONE_AFTER_MS } from "../src/lib/sessionBar";
 import type { AttentionEntry } from "../src/lib/attention";
 
 const thread = (id: string, over: Partial<ThreadSummary> = {}): ThreadSummary => ({
@@ -158,4 +158,33 @@ it("carries what a waiting terminal session asks, for the card and peek to word,
   const out = rows({ sessions: [session("asks", { state: "waiting", ask }), session("runs", { ask })] });
   expect(out.find((r) => r.key === "session:asks")).toMatchObject({ status: "wait", ask });
   expect(out.find((r) => r.key === "session:runs")?.ask).toBeNull();
+});
+
+it("keeps in the bar what still goes and the last few to end; the rest are History's, and ⌘K's history keeps them all", () => {
+  const now = 10 * DONE_SHOWN_FOR_MS;
+  const ended = Array.from({ length: 90 }, (_, i) => session(`old${i}`, { state: "ended", endedAt: 1000 + i }));
+  const recent = Array.from({ length: 5 }, (_, i) => session(`new${i}`, { state: "ended", endedAt: now - 1000 * (i + 1) }));
+  const all = rows({ threads: [thread("idle", { updatedAt: now - 1000 })], sessions: [session("live"), ...ended, ...recent], now });
+  const shown = barShown(all, "session:old3", now);
+  expect(shown.map((r) => r.key)).toEqual(["session:live", "thread:idle", "session:new0", "session:new1", "session:new2", "session:old3"]);
+  expect(paletteSessionGroups(all).history).toHaveLength(95);
+});
+
+it("keeps a parent the bar would drop when a child under it stays", () => {
+  const now = 10 * DONE_SHOWN_FOR_MS;
+  const all = rows({ threads: [thread("parent", { updatedAt: 1 }), thread("child", { parentId: "parent", running: true })], now });
+  expect(barShown(all, null, now).map((r) => r.key)).toEqual(["thread:parent", "thread:child"]);
+});
+
+it("waits on the person for a conversation the app's closing interrupted, as stopped, with the desktop's words when it lists it, and never reads it as done", () => {
+  const interrupted = thread("cut", { interrupted: true, updatedAt: 1 });
+  const alone = rows({ threads: [thread("idle", { updatedAt: 9 }), interrupted], now: 10 + THREAD_DONE_AFTER_MS });
+  expect(alone.map((r) => [r.key, r.status])).toEqual([["thread:cut", "wait"], ["thread:idle", "done"]]);
+  expect(alone[0]?.wait).toEqual({ kind: "stuck", text: null });
+  expect(paletteSessionGroups(alone).waiting.map((r) => r.key)).toEqual(["thread:cut"]);
+
+  const listed = rows({ threads: [interrupted], attention: [{ ...waiting("thread:cut", 4, "Interrupted — the app closed while this run was in progress."), kind: "stuck" }] });
+  expect(listed[0]).toMatchObject({ status: "wait", wait: { kind: "stuck", text: "Interrupted — the app closed while this run was in progress." }, at: 4 });
+  // continued: it runs, and waits on nobody
+  expect(rows({ threads: [thread("cut", { interrupted: true, running: true })] })[0]).toMatchObject({ status: "run", wait: null });
 });

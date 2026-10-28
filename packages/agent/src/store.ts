@@ -18,6 +18,9 @@ interface ParkedRow {
 
 const toPark = (r: ParkedRow): ParkView => ({ threadId: r.thread_id, runId: r.run_id, until: r.until, known: !!r.known, resume: !!r.resume, attempt: r.attempt });
 
+/** How a run the app's closing cut short stopped — not cancelled by anyone. */
+const INTERRUPTED = "interrupted";
+
 export const MIGRATIONS = [
   {
     version: 1,
@@ -146,7 +149,9 @@ CREATE TABLE IF NOT EXISTS plugin_agent_briefs (
   // A conversation opened under another, to write its code in the background while that one goes on talking.
   { version: 16, up: "ALTER TABLE plugin_agent_threads ADD COLUMN parent_id TEXT" },
   // What a conversation said last, kept with it so a card shows it without reading the conversation.
-  { version: 17, up: "ALTER TABLE plugin_agent_threads ADD COLUMN said TEXT" }
+  { version: 17, up: "ALTER TABLE plugin_agent_threads ADD COLUMN said TEXT" },
+  // A run the app's closing interrupted, once the person waved it away instead of continuing.
+  { version: 18, up: "ALTER TABLE plugin_agent_runs ADD COLUMN dismissed_at INTEGER" }
 ];
 
 interface ThreadRow {
@@ -188,6 +193,7 @@ interface RunRow {
   kept: number;
   started_at: number;
   ended_at: number | null;
+  dismissed_at?: number | null;
 }
 
 interface PendingRow {
@@ -249,6 +255,7 @@ const toRun = (r: RunRow): RunView => {
     keptOnRevert: r.kept,
     startedAt: r.started_at,
     endedAt: r.ended_at,
+    ...(r.stop === INTERRUPTED ? { dismissedAt: r.dismissed_at ?? null } : {}),
     metrics
   };
 };
@@ -481,19 +488,53 @@ export class AgentStore {
   /**
    * Runs left mid-flight by a killed process — no in-memory controller will ever cancel them. A background
    * conversation's interruption is its conclusion: `parentNote` words it for the conversation it reports to.
+   * The runs stop as `interrupted`, and both notes say so, so the conversation can offer to go on. Returns the
+   * conversations interrupted.
    */
-  reconcileInterrupted(projectId: string, note = "Interrupted — the app closed while this run was in progress.", parentNote?: (title: string) => string): void {
+  reconcileInterrupted(projectId: string, note = "Interrupted — the app closed while this run was in progress.", parentNote?: (title: string) => string): string[] {
     const db = this.db(projectId);
     const stale = db.prepare("SELECT id, thread_id FROM plugin_agent_runs WHERE status = 'running'").all() as { id: string; thread_id: string }[];
-    if (!stale.length) return;
+    if (!stale.length) return [];
     const now = Date.now();
-    const update = db.prepare("UPDATE plugin_agent_runs SET status = 'cancelled', stop = 'cancelled', error = ?, ended_at = ? WHERE id = ?");
+    const update = db.prepare("UPDATE plugin_agent_runs SET status = 'cancelled', stop = ?, error = ?, ended_at = ? WHERE id = ?");
     for (const { id, thread_id } of stale) {
-      update.run(note, now, id);
-      this.appendMessage(projectId, thread_id, "system", { type: "note", text: note }, id);
+      update.run(INTERRUPTED, note, now, id);
+      this.appendMessage(projectId, thread_id, "system", { type: "note", text: note, interrupted: true }, id);
       const thread = db.prepare("SELECT title, parent_id FROM plugin_agent_threads WHERE id = ?").get(thread_id) as { title: string; parent_id: string | null } | undefined;
-      if (parentNote && thread?.parent_id && this.thread(projectId, thread.parent_id)) this.appendMessage(projectId, thread.parent_id, "system", { type: "note", text: parentNote(thread.title), threadFor: thread_id }, null);
+      if (parentNote && thread?.parent_id && this.thread(projectId, thread.parent_id)) this.appendMessage(projectId, thread.parent_id, "system", { type: "note", text: parentNote(thread.title), threadFor: thread_id, interrupted: true }, null);
     }
+    return [...new Set(stale.map((s) => s.thread_id))];
+  }
+
+  /**
+   * The run that left this conversation interrupted: its last run, when the app's closing cut it short and
+   * nobody has continued, waved it away or archived the conversation since. Null otherwise.
+   */
+  interruptedRun(projectId: string, threadId: string): RunView | null {
+    const row = this.db(projectId)
+      .prepare("SELECT r.* FROM plugin_agent_runs r JOIN plugin_agent_threads t ON t.id = r.thread_id WHERE r.thread_id = ? AND t.archived = 0 ORDER BY r.started_at DESC, r.rowid DESC LIMIT 1")
+      .get(threadId) as RunRow | undefined;
+    return row && row.stop === INTERRUPTED && row.dismissed_at == null ? toRun(row) : null;
+  }
+
+  /** The project's open conversations left interrupted (see `interruptedRun`), on these surfaces. */
+  interruptedThreads(projectId: string, surface: ThreadSurface | ThreadSurface[] = "assistant"): ThreadSummary[] {
+    const surfaces = [surface].flat();
+    const rows = this.db(projectId)
+      .prepare(
+        `SELECT t.* FROM plugin_agent_threads t JOIN plugin_agent_runs r ON r.id = (SELECT id FROM plugin_agent_runs WHERE thread_id = t.id ORDER BY started_at DESC, rowid DESC LIMIT 1)
+         WHERE t.project_id = ? AND t.archived = 0 AND t.surface IN (${surfaces.map(() => "?").join(",")}) AND r.stop = ? AND r.dismissed_at IS NULL ORDER BY t.updated_at DESC`
+      )
+      .all(projectId, ...surfaces, INTERRUPTED) as ThreadRow[];
+    return rows.map(this.toThread);
+  }
+
+  /** The person waved the interruption away: the conversation stays as it is, no longer interrupted. Returns the run, or null when it was not interrupted. */
+  dismissInterrupted(projectId: string, threadId: string): RunView | null {
+    const run = this.interruptedRun(projectId, threadId);
+    if (!run) return null;
+    this.db(projectId).prepare("UPDATE plugin_agent_runs SET dismissed_at = ? WHERE id = ?").run(Date.now(), run.id);
+    return this.run(projectId, run.id);
   }
 
   beginRun(projectId: string, threadId: string, engine: string): RunView {
