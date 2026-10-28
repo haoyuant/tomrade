@@ -2709,6 +2709,11 @@ html.overlay-open .titlebar .btn-primary {
 .retry-row { display: flex; align-items: center; gap: 7px; margin: var(--space-2) 0 0; padding: 4px 9px; border: 1px solid color-mix(in oklab, var(--warn) 45%, transparent); border-radius: var(--radius-sm); background: color-mix(in oklab, var(--warn) 10%, var(--bg)); color: var(--warn); font-size: var(--text-xs); }
 .retry-row.failed { border-color: color-mix(in oklab, var(--danger) 45%, transparent); background: color-mix(in oklab, var(--danger) 10%, var(--bg)); color: var(--danger); }
 .agent-note { text-align: center; font-size: var(--text-xs); color: var(--meta); margin: var(--space-3) 0; }
+/* the app closed mid-run: unlike a plain note it waits on the person, so it stands out and offers to go on */
+.ai-interrupted { margin: var(--space-3) 0; padding: var(--space-2) var(--space-3); border: 1px solid var(--warn); border-radius: var(--radius-sm); color: var(--fg); font-size: 14px; line-height: var(--leading-dense); }
+.ai-interrupted > p { margin: 0; }
+.ai-interrupted > p:first-child { color: var(--warn); display: flex; align-items: center; gap: 6px; }
+.ai-interrupted > p.ai-interrupted-hint { margin-top: 2px; color: var(--meta); font-size: var(--text-sm); }
 .agent-empty { display: flex; flex-direction: column; gap: var(--space-3); align-items: flex-start; padding: var(--space-3); border: 1px dashed var(--border); border-radius: var(--radius-md); margin-bottom: var(--space-4); font-size: var(--text-sm); color: var(--fg-2); }
 .agent-empty ul { margin: 0; font-size: var(--text-xs); color: var(--meta); }
 /* What the assistant can do here and what is missing; with nothing ready it is the empty state above. */
