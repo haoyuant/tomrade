@@ -770,7 +770,11 @@ export function AgentPanel({
   const deleteThreadById = async (id: string) => {
     // A conversation still running in a terminal takes its session along (TOM-720): the question says so.
     const inTerminal = recentSessions.data?.some((s) => s.threadId === id && s.mode === "terminal" && s.state !== "ended" && s.state !== "lost");
-    if ((id === threadId && busy) || !(await confirm({ body: t(inTerminal ? "agentPanel.deleteThreadEndsSession" : "agentPanel.deleteThreadConfirm") }))) return;
+    // An IM conversation's thread: its chat gets a new one with its next message (TOM-790).
+    const im = id === threadId && busy ? undefined : (await invoke("im.threadBindings", projectId, id).catch(() => []))[0];
+    const body = im ? t("agentPanel.deleteThreadIm", { where: im.name ?? t(im.group ? "agentPanel.imTheGroup" : "agentPanel.imTheChat") })
+      : t(inTerminal ? "agentPanel.deleteThreadEndsSession" : "agentPanel.deleteThreadConfirm");
+    if ((id === threadId && busy) || !(await confirm({ body }))) return;
     deleteThread.mutate(id, { onSuccess: () => { if (id === threadId) clearThread(); } });
   };
   // Ending a terminal session, from the bar or its view, asks first: its pane closes and its agent stops; one in another terminal app only leaves the bar.

@@ -197,6 +197,26 @@ describe("IM sessions and options", () => {
     await w.said(/^New conversation started$/);
   });
 
+  it("opens no conversation when the desktop deletes a channel's, until the channel writes again", async () => {
+    const w = await boot();
+    await w.receive(say("g", "hello", { group: true }));
+    await w.said(/^re:hello$/);
+    const old = w.bound("room");
+    const count = () => w.ctx.agent.store.threads(w.project.id, "assistant").length;
+    const before = count();
+    w.ctx.agent.deleteThread(w.project.id, old);
+    await expect.poll(() => w.bound("room")).toBe("");
+    // Several sweeps later, still none: deleting it again and again leaves nothing behind.
+    await new Promise(r => setTimeout(r, 200));
+    expect(count()).toBe(before - 1);
+    expect(w.ctx.im.threadBindings(w.project.id, old)).toEqual([]);
+
+    await w.receive(say("g2", "again", { group: true }));
+    await w.said(/^re:again$/);
+    expect(w.bound("room")).not.toBe(old);
+    expect(count()).toBe(before);
+  });
+
   describe("a question left open in the conversation it moves away from", () => {
     const STAYS = "This question stays in “ask”; /switch back to answer it.";
     /** Asks in this conversation; the card and the message id later edits of it target. */

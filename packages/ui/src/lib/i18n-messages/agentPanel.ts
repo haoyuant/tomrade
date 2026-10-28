@@ -140,6 +140,7 @@ export const agentPanel = {
     deleteThread: "Delete thread",
     deleteThreadConfirm: "Delete this thread permanently?",
     deleteThreadEndsSession: "Delete this thread permanently? Its terminal session ends too.",
+    deleteThreadIm: "Delete this thread permanently? It is {{where}}'s conversation in IM; the next message there starts a new one.",
     collapsePanel: "Collapse panel — [[cmd:assistant]]",
     collapseAssistantAria: "Collapse assistant panel",
 
@@ -188,6 +189,8 @@ export const agentPanel = {
     imGroupPrivate: "Turns you start here stay on the desktop; {{group}} doesn't see them.",
     imGroupSharing: "Your next turn here also goes to {{group}}.",
     imGroupShare: "Share next turn",
+    imTheGroup: "the group",
+    imTheChat: "the direct chat",
     steerNowTitle: "Send into the running turn; the agent reads it after its current step",
     steering: "Steering…",
     steered: "Steered mid-turn",
@@ -382,6 +385,7 @@ export const agentPanel = {
     deleteThread: "删除对话",
     deleteThreadConfirm: "永久删除这个对话？",
     deleteThreadEndsSession: "永久删除这个对话？它的终端会话也会结束。",
+    deleteThreadIm: "永久删除这个对话？这是 {{where}} 在 IM 里的对话；那里的下一条消息会开新对话。",
     collapsePanel: "收起面板 — [[cmd:assistant]]",
     collapseAssistantAria: "收起助手面板",
 
@@ -430,6 +434,8 @@ export const agentPanel = {
     imGroupPrivate: "在这里发起的轮次只留在桌面，{{group}} 看不到。",
     imGroupSharing: "你在这里的下一轮也会发到 {{group}}。",
     imGroupShare: "下一轮发到群里",
+    imTheGroup: "群里",
+    imTheChat: "私聊",
     steerNowTitle: "送进正在运行的这一轮；agent 做完当前这一步就会读到",
     steering: "插话中…",
     steered: "运行中插话",
